@@ -454,9 +454,9 @@ function renderForm(){
           Choose Photos
           <input type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">
         </label>
+        <button class="btn btn-purple" onclick="assessBook()" ${(!formData.images||formData.images.length===0||assessing)?"disabled":""}>🔍 ${assessing?"Assessing...":"Assess Book"}</button>
       </div>
-      <div id="img-preview" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"></div>
-      <button id="assess-btn" class="btn btn-purple" onclick="assessBook()" ${(!formData.images||formData.images.length===0||assessing)?"disabled":""} style="width:100%">🔍 ${assessing?"Assessing...":"Assess Book"}</button>
+      <div id="img-preview" style="display:flex;gap:8px;flex-wrap:wrap"></div>
     </div>
     <div class="form-grid-2">
       ${tf("Title *","title","Series title")}
@@ -534,23 +534,37 @@ function removeImg(i){formData.images=formData.images.filter((_,j)=>j!==i);rende
 
 async function handleImages(e){
   const files=Array.from(e.target.files);
-  if(!files.length)return;
   const imgs=await Promise.all(files.map(f=>new Promise(res=>{const r=new FileReader();r.onload=ev=>res(ev.target.result);r.readAsDataURL(f);})));
   formData.images=[...(formData.images||[]),...imgs];
   renderForm();
-  // Ensure button state is correct after async load
-  const assessBtn=document.getElementById("assess-btn");
-  if(assessBtn){assessBtn.disabled=formData.images.length===0||assessing;}
 }
 
 function cycleTreatment(key){
   const v=formData[key];formData[key]=v===null?true:v===true?false:null;renderForm();
 }
 
+async function compressImage(dataUrl, maxDim=900, quality=0.72){
+  return new Promise(res=>{
+    const img=new Image();
+    img.onload=()=>{
+      let w=img.width, h=img.height;
+      if(w>maxDim||h>maxDim){if(w>h){h=Math.round(h*maxDim/w);w=maxDim;}else{w=Math.round(w*maxDim/h);h=maxDim;}}
+      const c=document.createElement("canvas");c.width=w;c.height=h;
+      c.getContext("2d").drawImage(img,0,0,w,h);
+      res(c.toDataURL("image/jpeg",quality));
+    };
+    img.src=dataUrl;
+  });
+}
+
 async function submitForm(){
   if(!formData.title?.trim()){alert("Title is required.");return;}
+  syncMsg("Compressing images...");
+  const compressedImages=await Promise.all((formData.images||[]).map(img=>compressImage(img)));
+  syncMsg(null);
   const id=formData.id||`comic:user_${Date.now()}`;
   const rec={...formData,id,
+    images:compressedImages,
     purchasePrice:formData.purchasePrice!==""?parseFloat(formData.purchasePrice):null,
     taxesFeesShipping:formData.taxesFeesShipping!==""?parseFloat(formData.taxesFeesShipping):null,
     gradingCost:formData.gradingCost!==""?parseFloat(formData.gradingCost):null,
