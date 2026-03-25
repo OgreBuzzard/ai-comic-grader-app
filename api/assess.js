@@ -29,7 +29,7 @@ export default async function handler(req, res) {
 - issueDate: cover date as printed, e.g. "2/68"
 - publisher: publisher name
 - grade: your numeric grade as a string, e.g. "7.0"
-- pageQuality: CGC page quality designation, e.g. "OW/W"
+- pageQuality: CGC page quality designation — must be one of exactly these values: "White", "Off-White to White", "Off-White", "OW/W", "Cream to OW", "Cream", "C/OW", "OW", "W", "Light Tan to OW", "Light Tan to Cream", "Light Tan", "Tan to OW", "Tan to Cream", "Tan", "Dark Tan to OW", "Dark Tan", "Brown to OW", "Brown to Tan", "Brown", "Brown/Brittle", "Slightly Brittle", "Brittle"
 - graderNotes: CGC-format defect notes, concise, using official CGC terminology
 - myAssessment: 2-3 sentence grading rationale explaining dominant defects and grade
 - press: true if pressing is recommended, false if not, null if unclear
