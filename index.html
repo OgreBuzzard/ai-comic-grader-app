@@ -389,11 +389,11 @@ async function assessBook(){
   const compressed=await Promise.all(formData.images.slice(0,6).map(img=>new Promise(res=>{
     const image=new Image();
     image.onload=()=>{
-      let w=image.width,h=image.height,max=1200;
+      let w=image.width,h=image.height,max=900;
       if(w>max||h>max){if(w>h){h=Math.round(h*max/w);w=max;}else{w=Math.round(w*max/h);h=max;}}
       const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;
       canvas.getContext("2d").drawImage(image,0,0,w,h);
-      res(canvas.toDataURL("image/jpeg",0.8));
+      res(canvas.toDataURL("image/jpeg",0.50));
     };
     image.src=img;
   })));
@@ -543,11 +543,11 @@ function cycleTreatment(key){
   const v=formData[key];formData[key]=v===null?true:v===true?false:null;renderForm();
 }
 
-async function compressImage(dataUrl, maxDim=900, quality=0.72){
+async function compressImage(dataUrl,maxDim=900,quality=0.50){
   return new Promise(res=>{
     const img=new Image();
     img.onload=()=>{
-      let w=img.width, h=img.height;
+      let w=img.width,h=img.height;
       if(w>maxDim||h>maxDim){if(w>h){h=Math.round(h*maxDim/w);w=maxDim;}else{w=Math.round(w*maxDim/h);h=maxDim;}}
       const c=document.createElement("canvas");c.width=w;c.height=h;
       c.getContext("2d").drawImage(img,0,0,w,h);
