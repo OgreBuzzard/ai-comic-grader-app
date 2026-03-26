@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Comics">
   <meta name="theme-color" content="#0d0d0f">
-  <title>CGC Collection</title>
+  <title>AI Comic Grader</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
 
@@ -103,12 +103,10 @@
   <div id="header">
     <div id="header-row">
       <button id="header-title" onclick="showList()">
-        <span class="main">CGC COLLECTION</span>
-        <span class="sub">Database</span>
+        <span class="main">AI COMIC GRADER</span>
       </button>
       <button class="btn btn-gold" id="add-btn" onclick="showAdd()">+ Add Book</button>
     </div>
-    <div id="header-stats"></div>
   </div>
   <div id="main"></div>
 </div>
@@ -189,12 +187,7 @@ async function deleteComic(id){
   showList();
 }
 
-function updateStats(){
-  const avg=comics.length?(comics.reduce((s,c)=>s+parseFloat(c.grade||0),0)/comics.length).toFixed(1):null;
-  const inv=comics.reduce((s,c)=>s+totalCost(c),0);
-  document.getElementById("header-stats").textContent=
-    `${comics.length} books${avg?` · avg ${avg}`:""}${inv>0?` · ${fmt$(inv)} invested`:""}`;
-}
+function updateStats(){}
 
 function showList(){
   view="list";selected=null;
@@ -301,16 +294,17 @@ function showDetail(id){
   if(selected.images?.length>0){
     const imgs=selected.images;
     html+=`<div style="margin-top:16px">`;
-    // Row 1: front cover full width (slot 0)
+    // Row 1: front cover full width
     if(imgs[0]) html+=`<img class="detail-cover" src="${imgs[0]}" onclick="openLightbox('${selected.id}',0)">`;
-    // Row 2: back cover + interior spread side by side (slots 1 & 2)
+    // Row 2: back cover (1/3) + interior spread (2/3)
     if(imgs[1]||imgs[2]){
-      html+=`<div class="photo-row2">`;
-      if(imgs[1]) html+=`<img src="${imgs[1]}" onclick="openLightbox('${selected.id}',1)">`;
-      if(imgs[2]) html+=`<img src="${imgs[2]}" onclick="openLightbox('${selected.id}',2)">`;
+      html+=`<div style="display:grid;grid-template-columns:1fr 2fr;gap:4px;margin-top:4px">`;
+      if(imgs[1]) html+=`<img src="${imgs[1]}" onclick="openLightbox('${selected.id}',1)" style="width:100%;aspect-ratio:2/3;object-fit:cover;border-radius:4px;cursor:zoom-in;border:1px solid #2a2420;background:#0a0a0a">`;
+      else html+=`<div></div>`;
+      if(imgs[2]) html+=`<img src="${imgs[2]}" onclick="openLightbox('${selected.id}',2)" style="width:100%;aspect-ratio:2/1;object-fit:cover;border-radius:4px;cursor:zoom-in;border:1px solid #2a2420;background:#0a0a0a">`;
       html+=`</div>`;
     }
-    // Row 3: spine full width (slot 3)
+    // Row 3: spine full width
     if(imgs[3]) html+=`<img class="photo-spine" src="${imgs[3]}" onclick="openLightbox('${selected.id}',3)">`;
     html+=`</div>`;
   }
@@ -423,7 +417,7 @@ async function assessBook(){
     const parsed=await resp.json();
     if(parsed.error)throw new Error(parsed.error);
 
-    formData.title=(parsed.title||formData.title||"").trim().replace(/\s+/g," ");
+    formData.title=(parsed.title||formData.title||"").trim().replace(/\s+/g," ").replace(/^The\s+/i,"");
     formData.issue=parsed.issue!=null?String(parsed.issue):formData.issue||"";
     formData.issueDate=parsed.issueDate||formData.issueDate||"";
     formData.publisher=parsed.publisher||formData.publisher||"";
@@ -455,6 +449,10 @@ function renderForm(){
   function tf(label,field,ph=""){
     return`<div><label class="field-label">${label}</label><input value="${esc(formData[field]||"")}" oninput="formData['${field}']=this.value" placeholder="${ph}"></div>`;
   }
+  function mf(label,field){
+    const val=formData[field]!=null&&formData[field]!==""?formData[field]:"";
+    return`<div><label class="field-label">${label}</label><div style="position:relative"><span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#6b5e52;font-size:13px;pointer-events:none">$</span><input value="${esc(val)}" inputmode="decimal" pattern="[0-9.]*" oninput="formData['${field}']=this.value" placeholder="0.00" style="padding-left:22px"></div></div>`;
+  }
   function df(label,field,monthOnly=false){
     const val=formData[field]||"";
     // Convert stored YYYY-MM-DD to input value; month-only fields use YYYY-MM
@@ -478,7 +476,7 @@ function renderForm(){
       <label class="field-label">Photos <span style="color:#4a4040;font-size:10px;letter-spacing:1px">— up to 4, drag to reorder</span></label>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
         ${[0,1,2,3].map(i=>{
-          const slotLabels=["Front Cover","Back Cover","Interior","Spine"];
+          const slotLabels=["Front Cover","Back Cover","Interior Spread","Spine"];
           const img=(formData.images||[])[i];
           const isSpine=i===3;
           const style=isSpine?"grid-column:1/-1;min-height:70px":"min-height:120px";
@@ -527,14 +525,14 @@ function renderForm(){
     <div class="cost-box">
       <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>
       <div class="form-grid-2">
-        ${tf("Purchase Price ($)","purchasePrice","0.00")}
-        ${tf("Taxes / Fees / Shipping ($)","taxesFeesShipping","0.00")}
-        ${tf("Grading / Pressing ($)","gradingCost","0.00")}
-        ${tf("CGC Return Shipping ($)","cgcShipping","0.00")}
+        ${mf("Purchase Price ($)","purchasePrice")}
+        ${mf("Taxes / Fees / Shipping ($)","taxesFeesShipping")}
+        ${mf("Grading / Pressing ($)","gradingCost")}
+        ${mf("CGC Return Shipping ($)","cgcShipping")}
       </div>
     </div>
     <div class="form-grid-2">
-      ${tf("Fair Market Value ($)","fmv","0.00")}
+      ${mf("Fair Market Value ($)","fmv")}
       ${df("FMV Date","fmvDate",true)}
     </div>
     <div>
@@ -617,7 +615,7 @@ async function compressImage(dataUrl,maxDim=900,quality=0.50){
 
 async function submitForm(){
   if(!formData.title?.trim()){alert("Title is required.");return;}
-  formData.title=formData.title.trim().replace(/\s+/g," ");
+  formData.title=formData.title.trim().replace(/\s+/g," ").replace(/^The\s+/i,"");
   syncMsg("Compressing images...");
   const compressedImages=await Promise.all((formData.images||[]).filter(Boolean).map(img=>compressImage(img)));
   syncMsg(null);
