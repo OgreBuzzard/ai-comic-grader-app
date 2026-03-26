@@ -407,7 +407,7 @@ async function assessBook(){
       if(w>max||h>max){if(w>h){h=Math.round(h*max/w);w=max;}else{w=Math.round(w*max/h);h=max;}}
       const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;
       canvas.getContext("2d").drawImage(image,0,0,w,h);
-      res(canvas.toDataURL("image/jpeg",0.8));
+      res(canvas.toDataURL("image/jpeg",0.50));
     };
     image.src=img;
   })));
@@ -423,7 +423,7 @@ async function assessBook(){
     const parsed=await resp.json();
     if(parsed.error)throw new Error(parsed.error);
 
-    formData.title=parsed.title||formData.title||"";
+    formData.title=(parsed.title||formData.title||"").trim().replace(/\s+/g," ");
     formData.issue=parsed.issue!=null?String(parsed.issue):formData.issue||"";
     formData.issueDate=parsed.issueDate||formData.issueDate||"";
     formData.publisher=parsed.publisher||formData.publisher||"";
@@ -601,10 +601,28 @@ function cycleTreatment(key){
   const v=formData[key];formData[key]=v===null?true:v===true?false:null;renderForm();
 }
 
+async function compressImage(dataUrl,maxDim=900,quality=0.50){
+  return new Promise(res=>{
+    const img=new Image();
+    img.onload=()=>{
+      let w=img.width,h=img.height;
+      if(w>maxDim||h>maxDim){if(w>h){h=Math.round(h*maxDim/w);w=maxDim;}else{w=Math.round(w*maxDim/h);h=maxDim;}}
+      const c=document.createElement("canvas");c.width=w;c.height=h;
+      c.getContext("2d").drawImage(img,0,0,w,h);
+      res(c.toDataURL("image/jpeg",quality));
+    };
+    img.src=dataUrl;
+  });
+}
+
 async function submitForm(){
   if(!formData.title?.trim()){alert("Title is required.");return;}
+  formData.title=formData.title.trim().replace(/\s+/g," ");
+  syncMsg("Compressing images...");
+  const compressedImages=await Promise.all((formData.images||[]).filter(Boolean).map(img=>compressImage(img)));
+  syncMsg(null);
   const id=formData.id||`comic:user_${Date.now()}`;
-  const rec={...formData,id,
+  const rec={...formData,id,images:compressedImages,
     purchasePrice:formData.purchasePrice!==""?parseFloat(formData.purchasePrice):null,
     taxesFeesShipping:formData.taxesFeesShipping!==""?parseFloat(formData.taxesFeesShipping):null,
     gradingCost:formData.gradingCost!==""?parseFloat(formData.gradingCost):null,
