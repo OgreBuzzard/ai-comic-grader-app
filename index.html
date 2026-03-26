@@ -74,9 +74,17 @@
     .badge-cgc { background: #1a2a1a; border-color: #2a4a2a; color: #6abf6a; }
     .badge-raw { background: #2a2010; border-color: #4a3a10; color: #a09040; }
     .row-meta { font-size: 11px; color: #6b5e52; margin-top: 2px; display: flex; gap: 8px; flex-wrap: wrap; }
-    .detail-cover { width: 100%; max-height: 500px; object-fit: contain; border-radius: 4px; cursor: zoom-in; border: 1px solid #2a2420; margin-top: 8px; background: #0a0a0a; }
-    .thumb-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-    .thumb-row img { width: 72px; height: 100px; object-fit: cover; border-radius: 4px; cursor: zoom-in; border: 1px solid #2a2420; }
+    .detail-cover { width: 100%; object-fit: cover; border-radius: 4px; cursor: zoom-in; border: 1px solid #2a2420; background: #0a0a0a; display: block; }
+    .photo-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 4px; }
+    .photo-row2 img { width: 100%; aspect-ratio: 3/4; object-fit: cover; border-radius: 4px; cursor: zoom-in; border: 1px solid #2a2420; background: #0a0a0a; display: block; }
+    .photo-spine { width: 100%; aspect-ratio: 16/5; object-fit: cover; border-radius: 4px; cursor: zoom-in; border: 1px solid #2a2420; background: #0a0a0a; display: block; margin-top: 4px; }
+    .drag-slot { border: 2px dashed #3a3028; border-radius: 6px; background: #0d0d0f; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 4px; cursor: pointer; position: relative; overflow: hidden; transition: border-color 0.15s; }
+    .drag-slot:hover { border-color: #c8a96e; }
+    .drag-slot.drag-over { border-color: #00d4a0; background: #0a1a12; }
+    .drag-slot img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; }
+    .drag-slot .slot-label { font-size: 10px; color: #6b5e52; letter-spacing: 1px; text-transform: uppercase; pointer-events: none; }
+    .drag-slot .slot-x { position: absolute; top: 4px; right: 4px; background: #ef4444; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; color: #fff; font-size: 12px; display: flex; align-items: center; justify-content: center; z-index: 10; }
+    input[type="date"] { background: #0d0d0f; border: 1px solid #2a2420; border-radius: 4px; color: #e8e0d5; padding: 8px 10px; font-size: 13px; font-family: inherit; outline: none; width: 100%; color-scheme: dark; }
     .section-label { font-size: 11px; color: #6b5e52; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 4px; }
     .field-val { font-size: 13px; color: #c8b89a; }
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
@@ -291,13 +299,19 @@ function showDetail(id){
     </div>`;
 
   if(selected.images?.length>0){
-    html+=`<div style="margin-top:20px"><div class="section-label">Images</div>
-      <img class="detail-cover" src="${selected.images[0]}" onclick="openLightbox('${selected.id}',0)">`;
-    if(selected.images.length>1){
-      html+=`<div class="thumb-row">`;
-      selected.images.slice(1).forEach((img,i)=>{html+=`<img src="${img}" onclick="openLightbox('${selected.id}',${i+1})">`;});
+    const imgs=selected.images;
+    html+=`<div style="margin-top:16px">`;
+    // Row 1: front cover full width (slot 0)
+    if(imgs[0]) html+=`<img class="detail-cover" src="${imgs[0]}" onclick="openLightbox('${selected.id}',0)">`;
+    // Row 2: back cover + interior spread side by side (slots 1 & 2)
+    if(imgs[1]||imgs[2]){
+      html+=`<div class="photo-row2">`;
+      if(imgs[1]) html+=`<img src="${imgs[1]}" onclick="openLightbox('${selected.id}',1)">`;
+      if(imgs[2]) html+=`<img src="${imgs[2]}" onclick="openLightbox('${selected.id}',2)">`;
       html+=`</div>`;
     }
+    // Row 3: spine full width (slot 3)
+    if(imgs[3]) html+=`<img class="photo-spine" src="${imgs[3]}" onclick="openLightbox('${selected.id}',3)">`;
     html+=`</div>`;
   }
 
@@ -386,14 +400,14 @@ async function assessBook(){
   syncMsg("Compressing images...");
 
   // Compress images before sending
-  const compressed=await Promise.all(formData.images.slice(0,6).map(img=>new Promise(res=>{
+  const compressed=await Promise.all(formData.images.slice(0,4).map(img=>new Promise(res=>{
     const image=new Image();
     image.onload=()=>{
-      let w=image.width,h=image.height,max=900;
+      let w=image.width,h=image.height,max=1200;
       if(w>max||h>max){if(w>h){h=Math.round(h*max/w);w=max;}else{w=Math.round(w*max/h);h=max;}}
       const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;
       canvas.getContext("2d").drawImage(image,0,0,w,h);
-      res(canvas.toDataURL("image/jpeg",0.50));
+      res(canvas.toDataURL("image/jpeg",0.8));
     };
     image.src=img;
   })));
@@ -430,10 +444,23 @@ async function assessBook(){
   assessing=false;
 }
 
+function setDateField(field,val,monthOnly){
+  if(!val){formData[field]="";return;}
+  // Store as YYYY-MM-DD (append -01 for month-only)
+  formData[field]=monthOnly?val:val;
+}
+
 function renderForm(){
   const isEdit=!!formData.id;
   function tf(label,field,ph=""){
     return`<div><label class="field-label">${label}</label><input value="${esc(formData[field]||"")}" oninput="formData['${field}']=this.value" placeholder="${ph}"></div>`;
+  }
+  function df(label,field,monthOnly=false){
+    const val=formData[field]||"";
+    // Convert stored YYYY-MM-DD to input value; month-only fields use YYYY-MM
+    const inputVal=monthOnly?(val.length>=7?val.slice(0,7):val):(val.length>=10?val.slice(0,10):val);
+    const type=monthOnly?"month":"date";
+    return`<div><label class="field-label">${label}</label><input type="${type}" value="${esc(inputVal)}" onchange="setDateField('${field}',this.value,${monthOnly})"></div>`;
   }
   function treatBtn(key,label){
     const v=formData[key];
@@ -448,15 +475,29 @@ function renderForm(){
   <h2 style="font-size:18px;margin:16px 0 20px;color:#c8a96e">${isEdit?"Edit Book":"Add Book"}</h2>
   <div class="card" style="display:flex;flex-direction:column;gap:14px">
     <div>
-      <label class="field-label">Photos</label>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
-        <label class="btn btn-dark" style="cursor:pointer;display:inline-block">
-          Choose Photos
-          <input type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">
-        </label>
-        <button class="btn btn-purple" onclick="assessBook()" ${(!formData.images||formData.images.length===0||assessing)?"disabled":""}>🔍 ${assessing?"Assessing...":"Assess Book"}</button>
+      <label class="field-label">Photos <span style="color:#4a4040;font-size:10px;letter-spacing:1px">— up to 4, drag to reorder</span></label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        ${[0,1,2,3].map(i=>{
+          const slotLabels=["Front Cover","Back Cover","Interior","Spine"];
+          const img=(formData.images||[])[i];
+          const isSpine=i===3;
+          const style=isSpine?"grid-column:1/-1;min-height:70px":"min-height:120px";
+          return img
+            ? `<div class="drag-slot" style="${style}" draggable="true"
+                ondragstart="dragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})">
+                <img src="${img}">
+                <button class="slot-x" onclick="event.stopPropagation();removeImg(${i})">×</button>
+               </div>`
+            : `<div class="drag-slot" style="${style}"
+                ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"
+                onclick="document.getElementById('photo-input').click()">
+                <span class="slot-label">${slotLabels[i]}</span>
+                <span style="font-size:20px;color:#3a3028">+</span>
+               </div>`;
+        }).join("")}
       </div>
-      <div id="img-preview" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+      <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">
+      <button id="assess-btn" class="btn btn-purple" onclick="assessBook()" ${(!formData.images||formData.images.length===0||assessing)?"disabled":""} style="width:100%">🔍 ${assessing?"Assessing...":"Assess Book"}</button>
     </div>
     <div class="form-grid-2">
       ${tf("Title *","title","Series title")}
@@ -480,8 +521,8 @@ function renderForm(){
     </div>
     ${tf("Seller","seller","Name / source")}
     <div class="form-grid-2">
-      ${tf("Date Acquired","dateAcquired","YYYY-MM-DD")}
-      ${tf("Date Graded","slabbingDate","YYYY-MM-DD")}
+      ${df("Date Acquired","dateAcquired")}
+      ${df("Date Graded","slabbingDate")}
     </div>
     <div class="cost-box">
       <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>
@@ -494,7 +535,7 @@ function renderForm(){
     </div>
     <div class="form-grid-2">
       ${tf("Fair Market Value ($)","fmv","0.00")}
-      ${tf("FMV Date","fmvDate","YYYY-MM")}
+      ${df("FMV Date","fmvDate",true)}
     </div>
     <div>
       <label class="field-label">Treatment Candidates</label>
@@ -516,55 +557,54 @@ function renderForm(){
   </div>`;
 
   document.getElementById("main").innerHTML=html;
-  renderImgPreview();
 }
 
-function renderImgPreview(){
-  const el=document.getElementById("img-preview");
-  if(!el)return;
-  el.innerHTML=(formData.images||[]).map((img,i)=>
-    `<div style="position:relative">
-      <img src="${img}" style="width:60px;height:84px;object-fit:cover;border-radius:3px;border:1px solid #2a2420">
-      <button onclick="removeImg(${i})" style="position:absolute;top:-6px;right:-6px;background:#ef4444;border:none;border-radius:50%;width:18px;height:18px;cursor:pointer;color:#fff;font-size:11px;padding:0;display:flex;align-items:center;justify-content:center">×</button>
-    </div>`
-  ).join("");
+function renderImgPreview(){}
+
+function removeImg(i){
+  const imgs=[...(formData.images||[])];
+  imgs[i]=null;
+  while(imgs.length&&imgs[imgs.length-1]===null)imgs.pop();
+  formData.images=imgs;
+  renderForm();
 }
 
-function removeImg(i){formData.images=formData.images.filter((_,j)=>j!==i);renderImgPreview();renderForm();}
+let _dragSrc=null;
+function dragStart(e,i){_dragSrc=i;e.dataTransfer.effectAllowed="move";}
+function dragOver(e){e.preventDefault();e.currentTarget.classList.add("drag-over");}
+function dragLeave(e){e.currentTarget.classList.remove("drag-over");}
+function dropSlot(e,target){
+  e.preventDefault();
+  e.currentTarget.classList.remove("drag-over");
+  if(_dragSrc===null||_dragSrc===target){_dragSrc=null;return;}
+  const imgs=[...(formData.images||[])];
+  while(imgs.length<4)imgs.push(null);
+  const tmp=imgs[_dragSrc];imgs[_dragSrc]=imgs[target]||null;imgs[target]=tmp;
+  while(imgs.length&&imgs[imgs.length-1]===null)imgs.pop();
+  formData.images=imgs;
+  _dragSrc=null;
+  renderForm();
+}
 
 async function handleImages(e){
   const files=Array.from(e.target.files);
-  const imgs=await Promise.all(files.map(f=>new Promise(res=>{const r=new FileReader();r.onload=ev=>res(ev.target.result);r.readAsDataURL(f);})));
-  formData.images=[...(formData.images||[]),...imgs];
+  if(!files.length)return;
+  const newImgs=await Promise.all(files.map(f=>new Promise(res=>{const r=new FileReader();r.onload=ev=>res(ev.target.result);r.readAsDataURL(f);})));
+  const current=(formData.images||[]).filter(Boolean);
+  formData.images=[...current,...newImgs].slice(0,4);
   renderForm();
+  const btn=document.getElementById("assess-btn");
+  if(btn)btn.disabled=formData.images.filter(Boolean).length===0||assessing;
 }
 
 function cycleTreatment(key){
   const v=formData[key];formData[key]=v===null?true:v===true?false:null;renderForm();
 }
 
-async function compressImage(dataUrl,maxDim=900,quality=0.50){
-  return new Promise(res=>{
-    const img=new Image();
-    img.onload=()=>{
-      let w=img.width,h=img.height;
-      if(w>maxDim||h>maxDim){if(w>h){h=Math.round(h*maxDim/w);w=maxDim;}else{w=Math.round(w*maxDim/h);h=maxDim;}}
-      const c=document.createElement("canvas");c.width=w;c.height=h;
-      c.getContext("2d").drawImage(img,0,0,w,h);
-      res(c.toDataURL("image/jpeg",quality));
-    };
-    img.src=dataUrl;
-  });
-}
-
 async function submitForm(){
   if(!formData.title?.trim()){alert("Title is required.");return;}
-  syncMsg("Compressing images...");
-  const compressedImages=await Promise.all((formData.images||[]).map(img=>compressImage(img)));
-  syncMsg(null);
   const id=formData.id||`comic:user_${Date.now()}`;
   const rec={...formData,id,
-    images:compressedImages,
     purchasePrice:formData.purchasePrice!==""?parseFloat(formData.purchasePrice):null,
     taxesFeesShipping:formData.taxesFeesShipping!==""?parseFloat(formData.taxesFeesShipping):null,
     gradingCost:formData.gradingCost!==""?parseFloat(formData.gradingCost):null,
