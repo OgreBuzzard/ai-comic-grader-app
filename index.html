@@ -445,7 +445,7 @@ async function assessBook(){
     const parsed=await resp.json();
     if(parsed.error)throw new Error(parsed.error);
 
-    formData.title=parsed.title||formData.title||"";
+    formData.title=(parsed.title||formData.title||"").trim().replace(/\s+/g," ").replace(/^The\s+/i,"");
     formData.issue=parsed.issue!=null?String(parsed.issue):formData.issue||"";
     formData.issueDate=parsed.issueDate||formData.issueDate||"";
     formData.publisher=parsed.publisher||formData.publisher||"";
@@ -487,8 +487,13 @@ function setDateField(field,val,monthOnly){
 
 function renderForm(){
   const isEdit=!!formData.id;
-  function tf(label,field,ph=""){
-    return`<div><label class="field-label">${label}</label><input value="${esc(formData[field]||"")}" oninput="formData['${field}']=this.value" placeholder="${ph}"></div>`;
+  function tf(label,field,ph="",numeric=false){
+    const mode=numeric?` inputmode="decimal" pattern="[0-9.]*"`:"";
+    return`<div><label class="field-label">${label}</label><input value="${esc(formData[field]||"")}"${mode} oninput="formData['${field}']=this.value" placeholder="${ph}"></div>`;
+  }
+  function mf(label,field){
+    const val=formData[field]!=null&&formData[field]!==""?formData[field]:"";
+    return`<div><label class="field-label">${label}</label><div style="position:relative"><span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#6b5e52;font-size:13px;pointer-events:none">$</span><input value="${esc(val)}" inputmode="decimal" pattern="[0-9.]*" oninput="formData['${field}']=this.value" placeholder="0.00" style="padding-left:22px"></div></div>`;
   }
   function df(label,field,monthOnly=false){
     const val=formData[field]||"";
@@ -532,11 +537,12 @@ function renderForm(){
         }).join("")}
       </div>
       <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">
-      <button id="assess-btn" class="btn btn-cgc" onclick="assessBook()" ${(!formData.images||formData.images.length===0||assessing)?"disabled":""} style="width:100%">CGC ${assessing?"Assessing...":"Assess CGC Grade"}</button>
+      <button id="assess-btn" class="btn btn-cgc" onclick="assessBook()" ${(!formData.images||formData.images.length===0||assessing)?"disabled":""} style="width:100%">${assessing?"Assessing...":"Assess CGC Grade"}</button>
+      <button id="assess-psa-btn" class="btn btn-psa" onclick="assessPSA()" ${(!formData.images||formData.images.length===0||assessing)?"disabled":""} style="width:100%;margin-top:6px">${assessing?"Assessing...":"Assess PSA Grade"}</button>
     </div>
     <div class="form-grid-2">
       ${tf("Title *","title","Series title")}
-      ${tf("Issue #","issue","Issue number")}
+      ${tf("Issue #","issue","Issue number",true)}
       ${tf("Issue Date","issueDate","Cover date")}
       ${tf("Publisher","publisher","Publisher")}
     </div>
@@ -551,7 +557,7 @@ function renderForm(){
       </select></div>
     </div>
     <div class="form-grid-2">
-      ${tf("CGC Grade","cgcGrade","CGC grade if slabbed")}
+      ${tf("CGC Grade","cgcGrade","CGC grade if slabbed",true)}
       ${tf("CGC Cert #","cgcCert","Cert number")}
     </div>
     <div><label class="field-label">Seller</label>
@@ -565,14 +571,14 @@ function renderForm(){
     <div class="cost-box">
       <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>
       <div class="form-grid-2">
-        ${tf("Purchase Price ($)","purchasePrice","0.00")}
-        ${tf("Taxes / Fees / Shipping ($)","taxesFeesShipping","0.00")}
-        ${tf("Grading / Pressing ($)","gradingCost","0.00")}
-        ${tf("CGC Return Shipping ($)","cgcShipping","0.00")}
+        ${mf("Purchase Price ($)","purchasePrice")}
+        ${mf("Taxes / Fees / Shipping ($)","taxesFeesShipping")}
+        ${mf("Grading / Pressing ($)","gradingCost")}
+        ${mf("CGC Return Shipping ($)","cgcShipping")}
       </div>
     </div>
     <div class="form-grid-2">
-      ${tf("Fair Market Value ($)","fmv","0.00")}
+      ${mf("Fair Market Value ($)","fmv")}
       ${df("FMV Date","fmvDate",true)}
     </div>
     <div>
@@ -686,27 +692,11 @@ function cycleTreatment(key){
   const v=formData[key];formData[key]=v===null?true:v===true?false:null;renderForm();
 }
 
-async function compressImage(dataUrl,maxDim=900,quality=0.50){
-  return new Promise(res=>{
-    const img=new Image();
-    img.onload=()=>{
-      let w=img.width,h=img.height;
-      if(w>maxDim||h>maxDim){if(w>h){h=Math.round(h*maxDim/w);w=maxDim;}else{w=Math.round(w*maxDim/h);h=maxDim;}}
-      const c=document.createElement("canvas");c.width=w;c.height=h;
-      c.getContext("2d").drawImage(img,0,0,w,h);
-      res(c.toDataURL("image/jpeg",quality));
-    };
-    img.src=dataUrl;
-  });
-}
-
 async function submitForm(){
   if(!formData.title?.trim()){alert("Title is required.");return;}
-  syncMsg("Compressing images...");
-  const compressedImages=await Promise.all((formData.images||[]).filter(Boolean).map(img=>compressImage(img)));
-  syncMsg(null);
+  formData.title=formData.title.trim().replace(/\s+/g," ").replace(/^The\s+/i,"");
   const id=formData.id||`comic:user_${Date.now()}`;
-  const rec={...formData,id,images:compressedImages,
+  const rec={...formData,id,
     purchasePrice:formData.purchasePrice!==""?parseFloat(formData.purchasePrice):null,
     taxesFeesShipping:formData.taxesFeesShipping!==""?parseFloat(formData.taxesFeesShipping):null,
     gradingCost:formData.gradingCost!==""?parseFloat(formData.gradingCost):null,
