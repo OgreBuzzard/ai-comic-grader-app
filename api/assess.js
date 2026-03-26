@@ -8,7 +8,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'API key not configured' });
   }
 
-  const { images } = req.body;
+  const { images, grader = "CGC" } = req.body;
   if (!images || images.length === 0) {
     return res.status(400).json({ error: 'No images provided' });
   }
