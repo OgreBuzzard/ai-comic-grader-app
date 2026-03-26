@@ -686,10 +686,27 @@ function cycleTreatment(key){
   const v=formData[key];formData[key]=v===null?true:v===true?false:null;renderForm();
 }
 
+async function compressImage(dataUrl,maxDim=900,quality=0.50){
+  return new Promise(res=>{
+    const img=new Image();
+    img.onload=()=>{
+      let w=img.width,h=img.height;
+      if(w>maxDim||h>maxDim){if(w>h){h=Math.round(h*maxDim/w);w=maxDim;}else{w=Math.round(w*maxDim/h);h=maxDim;}}
+      const c=document.createElement("canvas");c.width=w;c.height=h;
+      c.getContext("2d").drawImage(img,0,0,w,h);
+      res(c.toDataURL("image/jpeg",quality));
+    };
+    img.src=dataUrl;
+  });
+}
+
 async function submitForm(){
   if(!formData.title?.trim()){alert("Title is required.");return;}
+  syncMsg("Compressing images...");
+  const compressedImages=await Promise.all((formData.images||[]).filter(Boolean).map(img=>compressImage(img)));
+  syncMsg(null);
   const id=formData.id||`comic:user_${Date.now()}`;
-  const rec={...formData,id,
+  const rec={...formData,id,images:compressedImages,
     purchasePrice:formData.purchasePrice!==""?parseFloat(formData.purchasePrice):null,
     taxesFeesShipping:formData.taxesFeesShipping!==""?parseFloat(formData.taxesFeesShipping):null,
     gradingCost:formData.gradingCost!==""?parseFloat(formData.gradingCost):null,
