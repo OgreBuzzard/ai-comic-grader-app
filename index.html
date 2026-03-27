@@ -76,6 +76,20 @@
     .grade-badge { min-width: 48px; text-align: center; background: #0d0d0f; border-radius: 4px; padding: 6px 3px; flex-shrink: 0; border: 1px solid; }
     .grade-num { font-size: 16px; font-weight: 700; line-height: 1; }
     .grade-lbl { font-size: 7px; opacity: 0.7; margin-top: 2px; }
+    /* Unified badge system — all same outer size */
+    .ubadge { width: 64px; flex-shrink: 0; border-radius: 5px; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,0.3); border: 1.5px solid rgba(0,0,0,0.2); display: flex; flex-direction: column; }
+    .ubadge-strip { height: 18px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .ubadge-strip span { font-size: 8px; font-weight: 800; letter-spacing: 1.5px; color: #fff; }
+    .ubadge-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 5px 3px; }
+    .ubadge-num { font-size: 17px; font-weight: 800; line-height: 1; }
+    .ubadge-lbl { font-size: 7px; letter-spacing: 0.3px; text-align: center; line-height: 1.2; }
+    /* List row variant — slightly smaller */
+    .ubadge-sm { width: 52px; flex-shrink: 0; border-radius: 4px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.3); border: 1.5px solid rgba(0,0,0,0.2); display: flex; flex-direction: column; }
+    .ubadge-sm .ubadge-strip { height: 14px; }
+    .ubadge-sm .ubadge-strip span { font-size: 7px; }
+    .ubadge-sm .ubadge-body { padding: 3px 2px; }
+    .ubadge-sm .ubadge-num { font-size: 14px; }
+    .ubadge-sm .ubadge-lbl { font-size: 6.5px; }
     .badge { font-size: 10px; border-radius: 3px; padding: 1px 5px; border: 1px solid; }
     .badge-cgc { background: #1a2a1a; border-color: #2a4a2a; color: #6abf6a; }
     .badge-raw { background: #2a2010; border-color: #4a3a10; color: #a09040; }
@@ -142,15 +156,61 @@ function displayGrade(c,showPSA=false){
   return {gradeVal:"—",type:"none"};
 }
 function gradeBadgeStyle(c,showPSA=false){
+  // Legacy helper used by detail right-column official badge only
   const dg=displayGrade(c,showPSA);
   const gc=dg.type==="none"?"#4a4040":gradeColor(dg.gradeVal);
   let fill="transparent",topLabel="";
-  if(dg.type==="cgc-official"){fill="#68A0D8";topLabel="CGC";}
-  else if(dg.type==="psa-official"){fill="#FF2040";topLabel="PSA";}
-  else if(dg.type==="cgc-ai"){fill="rgba(104,160,216,0.25)";}
-  else if(dg.type==="psa-ai"){fill="rgba(255,32,64,0.20)";}
+  if(dg.type==="cgc-official"){fill="#1a5fa8";topLabel="CGC";}
+  else if(dg.type==="psa-official"){fill="#b91c1c";topLabel="PSA";}
+  else if(dg.type==="cgc-ai"){fill="rgba(26,95,168,0.18)";}
+  else if(dg.type==="psa-ai"){fill="rgba(185,28,28,0.18)";}
   else if(dg.type==="raw"){fill="#1a1a1a";}
   return {fill,topLabel,gc,gradeVal:dg.gradeVal};
+}
+
+function buildBadge(gradeVal,type,designation,sm){
+  const cls=sm?"ubadge ubadge-sm":"ubadge";
+  const lbl=GRADE_LABELS[gradeVal]||"";
+  const isOfficial=type==="cgc-official"||type==="psa-official";
+  const isAiCgc=type==="cgc-ai";
+  const isAiPsa=type==="psa-ai";
+  let stripColor="#1a5fa8",stripLabel="CGC";
+  if(type==="psa-official"){stripColor="#b91c1c";stripLabel="PSA";}
+  if(designation==="restored"){stripColor="#7c3aed";stripLabel="RESTORED";}
+  if(designation==="qualified"){stripColor="#166534";stripLabel="QUALIFIED";}
+  let bodyBg="#fff",numColor="#000",lblColor="#333",borderColor="rgba(0,0,0,0.25)";
+  if(isAiCgc){bodyBg="#1a5fa8";numColor="#fff";lblColor="rgba(255,255,255,0.85)";borderColor="#1e40af";}
+  if(isAiPsa){bodyBg="#b91c1c";numColor="#fff";lblColor="rgba(255,255,255,0.85)";borderColor="#991b1b";}
+  const typeLabel=isAiCgc?"AI CGC":isAiPsa?"AI PSA":"MY GRADE";
+  if(isOfficial){
+    return `<div class="${cls}" style="border-color:${borderColor}"><div class="ubadge-strip" style="background:${stripColor}"><span>${stripLabel}</span></div><div class="ubadge-body" style="background:#fff"><div class="ubadge-num" style="color:#000">${esc(gradeVal)}</div><div class="ubadge-lbl" style="color:#333">${esc(lbl)}</div></div></div>`;
+  }
+  const myBg=type==="my"?"#fff":bodyBg;
+  const myNum=type==="my"?"#000":numColor;
+  const myLbl=type==="my"?"#444":lblColor;
+  const myBorder=type==="my"?"#666":borderColor;
+  const myLabelColor=isAiCgc||isAiPsa?"rgba(255,255,255,0.7)":"#888";
+  const myLabelBg=type==="my"?"#fff":bodyBg;
+  return `<div class="${cls}" style="border-color:${myBorder}"><div class="ubadge-strip" style="background:${myLabelBg};border-bottom:1px solid rgba(0,0,0,0.08)"><span style="color:${myLabelColor}">${typeLabel}</span></div><div class="ubadge-body" style="background:${myBg}"><div class="ubadge-num" style="color:${myNum}">${esc(gradeVal)}</div><div class="ubadge-lbl" style="color:${myLbl}">${esc(lbl)}</div></div></div>`;
+}
+
+function aiCgcGrade(c){
+  if(c.assessedCGCGrade)return c.assessedCGCGrade;
+  if((c.myAssessment||c.aiAssessment)&&c.grade)return c.grade;
+  return null;
+}
+
+function buildGradeRowHTML(c,sm){
+  const badges=[];
+  if(c.cgcGrade)badges.push(buildBadge(c.cgcGrade,"cgc-official",c.cgcDesignation||"universal",sm));
+  if(c.psaGrade)badges.push(buildBadge(c.psaGrade,"psa-official",c.psaDesignation||"universal",sm));
+  const aiCgc=aiCgcGrade(c);
+  if(aiCgc)badges.push(buildBadge(aiCgc,"cgc-ai","",sm));
+  if(c.assessedPSAGrade)badges.push(buildBadge(c.assessedPSAGrade,"psa-ai","",sm));
+  const gradeIsAiCgc=!c.assessedCGCGrade&&!!(c.myAssessment||c.aiAssessment)&&!!c.grade;
+  if(c.grade&&!gradeIsAiCgc&&!c.cgcGrade&&!c.psaGrade)badges.push(buildBadge(c.grade,"my","",sm));
+  if(badges.length===0)return"";
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start">${badges.join("")}</div>`;
 }
 function fmt$(v){return v!=null&&v>0?`$${v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—";}
 function totalCost(c){return[c.purchasePrice,c.taxesFeesShipping,c.gradingCost,c.cgcShipping].filter(v=>v!=null&&v>0).reduce((a,b)=>a+b,0);}
@@ -272,7 +332,7 @@ function renderList(){
             :(!c.cgcCert?`<span class="badge badge-raw">RAW</span>`:"");
           html+=`<div class="comic-row" onclick="showDetail('${esc(c.id)}')">
             ${thumb}
-            ${(()=>{const bs=gradeBadgeStyle(c);return`<div class="grade-badge" style="border-color:${bs.gc};background:${bs.fill};padding:0;overflow:hidden;display:flex;flex-direction:column;align-items:stretch">${bs.topLabel?`<div style="background:white;color:#111;font-size:7px;font-weight:800;letter-spacing:1px;text-align:center;padding:1px 2px;line-height:1">${bs.topLabel}</div>`:""}<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px 3px"><div class="grade-num" style="color:${bs.gc}">${esc(bs.gradeVal)}</div><div class="grade-lbl" style="color:${bs.gc};opacity:0.7">${esc(GRADE_LABELS[bs.gradeVal]||"")}</div></div></div>`;})()} 
+            ${buildGradeRowHTML(c,true)}
             <div style="flex:1;min-width:0">
               <div style="font-size:13px;font-weight:600;color:#e8e0d5;line-height:1.2">${esc(c.title)}</div>
               <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px">
@@ -314,17 +374,22 @@ function showDetail(id){
         ${selected.seller?`<div style="font-size:12px;color:#6b5e52;margin-top:4px">Purchased from: ${esc(selected.seller)}</div>`:""}
       </div>
       <div style="text-align:right;flex-shrink:0">
-        <div>
-          ${(()=>{const showPSA=window._showPSA||false;const bs=gradeBadgeStyle(selected,showPSA);return`<div style="background:${bs.fill};border:1px solid ${bs.gc};border-radius:6px;overflow:hidden;min-width:80px;text-align:center">${bs.topLabel?`<div style="background:white;color:#111;font-size:8px;font-weight:800;letter-spacing:1px;padding:2px;line-height:1">${bs.topLabel}</div>`:""}<div style="padding:6px 8px"><div style="font-size:36px;font-weight:700;color:${bs.gc};line-height:1">${esc(bs.gradeVal)}</div><div style="font-size:12px;color:${bs.gc};opacity:0.8">${esc(GRADE_LABELS[bs.gradeVal]||"")}</div></div></div>`;})()}
-          ${selected.assessedPSAGrade?`<label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:11px;color:#6b5e52;cursor:pointer"><input type="checkbox" ${window._showPSA?"checked":""} onchange="window._showPSA=this.checked;showDetail(selected.id)"> Show AI PSA</label>`:""}
-        </div>
-        <div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">
-          ${selected.cgcGrade?`<div style="font-size:11px;color:#68A0D8">CGC ${esc(selected.cgcGrade)}${selected.cgcCert?" · #"+esc(selected.cgcCert):""}</div>`:""}
-          ${selected.psaGrade?`<div style="font-size:11px;color:#FF2040">PSA ${esc(selected.psaGrade)}${selected.psaCert?" · #"+esc(selected.psaCert):""}</div>`:""}
-          ${selected.assessedCGCGrade?`<div style="font-size:11px;color:rgba(104,160,216,0.9)">AI CGC: ${esc(selected.assessedCGCGrade)} ${GRADE_LABELS[selected.assessedCGCGrade]||""}</div>`:""}
-          ${selected.assessedPSAGrade?`<div style="font-size:11px;color:rgba(255,32,64,0.8)">AI PSA: ${esc(selected.assessedPSAGrade)} ${GRADE_LABELS[selected.assessedPSAGrade]||""}</div>`:""}
-          ${(!selected.cgcGrade&&!selected.psaGrade)?`<div style="font-size:11px;color:#a09040">Raw / Unslabbed</div>`:""}
-        </div>
+        ${(()=>{
+          // Show official CGC or PSA badge only; AI grades move to the badge row below images
+          if(selected.cgcGrade){
+            const des=selected.cgcDesignation||"universal";
+            let sc="#1a5fa8",sl="CGC";
+            if(des==="restored"){sc="#7c3aed";sl="RESTORED";}
+            if(des==="qualified"){sc="#166534";sl="QUALIFIED";}
+            return`<div style="border:1.5px solid rgba(0,0,0,0.2);border-radius:6px;overflow:hidden;width:80px;box-shadow:0 2px 8px rgba(0,0,0,0.3)"><div style="background:${sc};padding:3px;text-align:center;font-size:8px;font-weight:800;letter-spacing:1.5px;color:#fff">${sl}</div><div style="background:#fff;padding:6px 8px;text-align:center"><div style="font-size:36px;font-weight:800;color:#000;line-height:1">${esc(selected.cgcGrade)}</div><div style="font-size:11px;color:#333;margin-top:2px">${esc(GRADE_LABELS[selected.cgcGrade]||"")}</div></div></div>`;
+          }
+          if(selected.psaGrade){
+            return`<div style="border:1.5px solid rgba(0,0,0,0.2);border-radius:6px;overflow:hidden;width:80px;box-shadow:0 2px 8px rgba(0,0,0,0.3)"><div style="background:#b91c1c;padding:3px;text-align:center;font-size:8px;font-weight:800;letter-spacing:1.5px;color:#fff">PSA</div><div style="background:#fff;padding:6px 8px;text-align:center"><div style="font-size:36px;font-weight:800;color:#000;line-height:1">${esc(selected.psaGrade)}</div><div style="font-size:11px;color:#333;margin-top:2px">${esc(GRADE_LABELS[selected.psaGrade]||"")}</div></div></div>`;
+          }
+          return"";
+        })()}
+        ${selected.cgcCert?`<div style="font-size:10px;color:#4a4040;margin-top:6px">#${esc(selected.cgcCert)}</div>`:""}
+        ${selected.psaCert?`<div style="font-size:10px;color:#4a4040;margin-top:4px">#${esc(selected.psaCert)}</div>`:""}
       </div>
     </div>`;
 
@@ -344,6 +409,10 @@ function showDetail(id){
     if(imgs[3]) html+=`<img class="photo-spine" src="${imgs[3]}" onclick="openLightbox('${selected.id}',3)">`;
     html+=`</div>`;
   }
+
+  // Grade badge row — below images, above Page Quality
+  const gradeRow=buildGradeRowHTML(selected,false);
+  if(gradeRow) html+=`<div style="margin-top:16px">${gradeRow}</div>`;
 
   html+=`<div class="divider"></div>
   <div class="grid-2">
