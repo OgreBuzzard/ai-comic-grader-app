@@ -12,6 +12,39 @@ export default async function handler(req, res) {
     return { type: 'image', source: { type: 'base64', media_type: mediaType, data } };
   });
 
+  // Fetch page quality reference image (used for all raw book assessments)
+  async function fetchPageQualityReference(baseUrl) {
+    try {
+      const url = `${baseUrl}/Grade_Reference/pq.jpg`;
+      const resp = await fetch(url);
+      if (!resp.ok) return null;
+      const buf = await resp.arrayBuffer();
+      const b64 = Buffer.from(buf).toString('base64');
+      return { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Fetch grade reference image for the assessed grade
+  async function fetchGradeReference(grade, baseUrl) {
+    const validGrades = ['5.0','5.5','6.0','6.5','7.0','7.5','8.0','8.5','9.0','9.2','9.4','9.6','9.8','9.9','10.0'];
+    const gradeStr = String(parseFloat(grade).toFixed(1));
+    if (!validGrades.includes(gradeStr)) return null;
+    const filename = gradeStr.replace('.', '_') + '.jpg';
+    const url = `${baseUrl}/Grade_Reference/${filename}`;
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) return null;
+      const buf = await resp.arrayBuffer();
+      const b64 = Buffer.from(buf).toString('base64');
+      const ct = resp.headers.get('content-type') || 'image/jpeg';
+      return { type: 'image', source: { type: 'base64', media_type: ct, data: b64 } };
+    } catch (e) {
+      return null;
+    }
+  }
+
 
   // Build grader notes context to append to prompts
   const notesContext = [];
@@ -81,38 +114,9 @@ export default async function handler(req, res) {
   }
 
 
-  // Fetch page quality reference image (used for all raw book assessments)
-  async function fetchPageQualityReference(baseUrl) {
-    try {
-      const url = `${baseUrl}/Grade_Reference/pq.jpg`;
-      const resp = await fetch(url);
-      if (!resp.ok) return null;
-      const buf = await resp.arrayBuffer();
-      const b64 = Buffer.from(buf).toString('base64');
-      return { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } };
-    } catch (e) {
-      return null;
-    }
-  }
 
-  // Fetch grade reference image for the assessed grade
-  async function fetchGradeReference(grade, baseUrl) {
-    const validGrades = ['5.0','5.5','6.0','6.5','7.0','7.5','8.0','8.5','9.0','9.2','9.4','9.6','9.8','9.9','10.0'];
-    const gradeStr = String(parseFloat(grade).toFixed(1));
-    if (!validGrades.includes(gradeStr)) return null;
-    const filename = gradeStr.replace('.', '_') + '.jpg';
-    const url = `${baseUrl}/Grade_Reference/${filename}`;
-    try {
-      const resp = await fetch(url);
-      if (!resp.ok) return null;
-      const buf = await resp.arrayBuffer();
-      const b64 = Buffer.from(buf).toString('base64');
-      const ct = resp.headers.get('content-type') || 'image/jpeg';
-      return { type: 'image', source: { type: 'base64', media_type: ct, data: b64 } };
-    } catch (e) {
-      return null;
-    }
-  }
+
+
 
   const isCGC = grader !== 'PSA';
 
