@@ -68,6 +68,8 @@ export default async function handler(req, res) {
   }
   const notesBlock = notesContext.length > 0 ? '\n\n' + notesContext.join('\n\n') : '';
 
+  const isCGC = grader !== 'PSA';
+
   // Fetch ComicVine cover reference image if title and issue are available
   let referenceImageBlock = null;
   const baseUrl = req.headers['x-forwarded-host']
@@ -109,8 +111,6 @@ export default async function handler(req, res) {
 
 
 
-
-  const isCGC = grader !== 'PSA';
 
   const cgcPrompt = `You are a CGC comic book grading expert. Analyze the provided photos and return a JSON object.
 
