@@ -362,8 +362,6 @@ function renderList(){
         groups[title].forEach(c=>{
           const gc=gradeColor(c.grade);
           const thumb=c.images?.[0]?`<img class="comic-thumb" src="${c.images[0]}" loading="lazy">`:"";
-          const cgcBadge=c.cgcGrade?`<span class="badge badge-cgc">CGC ${esc(c.cgcGrade)}</span>`
-            :(!c.cgcCert?`<span class="badge badge-raw">RAW</span>`:"");
           html+=`<div class="comic-row" onclick="showDetail('${esc(c.id)}')">
             ${thumb}
             ${buildListBadge(c)}
@@ -371,10 +369,7 @@ function renderList(){
               <div style="font-size:13px;font-weight:600;color:#1a1614;line-height:1.2">${esc(c.title)}</div>
               <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px">
                 ${c.issue?`<span style="font-size:13px;color:#3a2e24">${formatIssue(c.issue)}</span>`:""}
-                ${cgcBadge}
-              </div>
-              <div class="row-meta">
-                ${c.pageQuality?`<span>${esc(c.pageQuality)}</span>`:""}
+                ${c.pageQuality?`<span style="font-size:11px;color:#8a7a6a">${esc(c.pageQuality)}</span>`:""}
               </div>
             </div>
             ${(()=>{
@@ -565,7 +560,9 @@ async function assessGrade(){
     if(!cgcResp.ok){const e=await cgcResp.text();throw new Error("CGC error: "+e);}
     const cgc=await cgcResp.json();
     if(cgc.error)throw new Error(cgc.error);
-    const psaResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images:compressed,grader:"PSA",cgcGrade:cgc.grade||""})});
+    // Only pass official grader notes if a slab label was detected in the photos
+    const slabDetected=!!(cgc.labelDetected&&(cgc.officialCGCGrade||cgc.officialPSAGrade));
+    const psaResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images:compressed,grader:"PSA",cgcGrade:cgc.grade||"",cgcGraderNotes:slabDetected?formData.graderNotes||"":"",psaGraderNotes:slabDetected?formData.psaNotes||"":""})});
     if(!psaResp.ok){const e=await psaResp.text();throw new Error("PSA error: "+e);}
     const psa=await psaResp.json();
     if(psa.error)throw new Error(psa.error);
