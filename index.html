@@ -54,7 +54,7 @@
     .btn { border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer; font-size: 13px; font-weight: 600; font-family: inherit; }
     .btn-gold { background: #c8a96e; color: #0d0d0f; }
     .btn-dark { background: #e8e0d5; color: #2a1e14; }
-    .btn-ghost { background: none; border: none; color: #8a7a6a; cursor: pointer; font-size: 13px; padding: 0; }
+    .btn-ghost { background: none; border: none; color: #8a7a6a; cursor: pointer; font-size: 14px; font-weight: 600; padding: 10px 4px; min-height: 44px; display: inline-flex; align-items: center; }
     .btn-purple { background: #3a1a60; color: #c8a0ff; }
     .btn-cgc { background: #1a3a5c; color: #7ab8e8; }
     .btn-psa { background: #5c1a1a; color: #e87a7a; }
@@ -112,7 +112,7 @@
     .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     .cost-box { background: #f8f6f3; border: 1px solid #ccc8c0; border-radius: 6px; padding: 14px 16px; }
     .treatment-btn { padding: 6px 14px; border-radius: 4px; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid; font-family: inherit; }
-    .sticky-back { position: sticky; top: 56px; z-index: 90; background: #f5f4f2; padding: 8px 0 4px; margin-bottom: 4px; }
+    .sticky-back { position: sticky; top: 56px; z-index: 90; background: #f5f4f2; padding: 10px 0 6px; margin-bottom: 4px; }
     #lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.93); display: flex; align-items: center; justify-content: center; z-index: 1000; cursor: zoom-out; padding: 20px; }
     #lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; }
     #sync-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 2000; background: #f0eaff; border-bottom: 2px solid #7a40cf; padding: 10px 16px; display: flex; align-items: center; gap: 10px; }
@@ -316,7 +316,25 @@ function renderList(){
 
   const groups={};
   filt.forEach(c=>{const t=c.title||"Unknown";if(!groups[t])groups[t]=[];groups[t].push(c);});
-  Object.values(groups).forEach(g=>g.sort((a,b)=>{const na=parseFloat(a.issue)||0,nb=parseFloat(b.issue)||0;if(na!==nb)return na-nb;return(a.issue||"").localeCompare(b.issue||"");}));
+  Object.values(groups).forEach(g=>g.sort((a,b)=>{
+    // 1. Issue number ascending
+    const na=parseFloat(a.issue)||0,nb=parseFloat(b.issue)||0;
+    if(na!==nb)return na-nb;
+    const is=a.issue||"",ibs=b.issue||"";
+    if(is!==ibs)return is.localeCompare(ibs);
+    // 2. Grade descending (use best available grade)
+    const ga=parseFloat(a.cgcGrade||a.psaGrade||a.assessedCGCGrade||a.grade||0);
+    const gb=parseFloat(b.cgcGrade||b.psaGrade||b.assessedCGCGrade||b.grade||0);
+    if(gb!==ga)return gb-ga;
+    // 3. Official graded above AI/raw
+    const offA=!!(a.cgcGrade||a.psaGrade),offB=!!(b.cgcGrade||b.psaGrade);
+    if(offA!==offB)return offA?-1:1;
+    // 4. Earlier purchase date first
+    const da=a.dateAcquired||"9999",db=b.dateAcquired||"9999";
+    if(da!==db)return da.localeCompare(db);
+    // 5. Earlier dateAdded
+    return new Date(a.dateAdded)-new Date(b.dateAdded);
+  }));
   const titles=Object.keys(groups).sort((a,b)=>a.localeCompare(b));
 
   let html=`<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
@@ -359,6 +377,14 @@ function renderList(){
                 ${c.pageQuality?`<span>${esc(c.pageQuality)}</span>`:""}
               </div>
             </div>
+            ${(()=>{
+              // PSA secondary pip: show only when PSA differs from AI CGC by at least 0.5
+              const acg=parseFloat(c.assessedCGCGrade||(((c.myAssessment||c.aiAssessment)&&c.grade)?c.grade:null)||0);
+              const apsa=parseFloat(c.assessedPSAGrade||0);
+              if(c.assessedPSAGrade&&c.psaNotes&&apsa&&acg&&apsa!==acg)
+                return `<div style="align-self:flex-end;margin-bottom:2px;background:#b91c1c;border-radius:3px;padding:2px 5px;text-align:center;min-width:36px"><div style="font-size:11px;font-weight:800;color:#fff;line-height:1">${esc(c.assessedPSAGrade)}</div><div style="font-size:6px;color:rgba(255,255,255,0.75);letter-spacing:0.5px">PSA</div></div>`;
+              return "";
+            })()}
           </div>`;
         });
         html+=`</div>`;
