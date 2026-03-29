@@ -12,11 +12,23 @@ export default async function handler(req, res) {
     return { type: 'image', source: { type: 'base64', media_type: mediaType, data } };
   });
 
+  // Fetch with timeout helper
+  async function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const resp = await fetch(url, { ...options, signal: controller.signal });
+      return resp;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   // Fetch page quality reference image (used for all raw book assessments)
   async function fetchPageQualityReference(baseUrl) {
     try {
       const url = `${baseUrl}/Grade_Reference/pq.jpg`;
-      const resp = await fetch(url);
+      const resp = await fetchWithTimeout(url, {}, 4000);
       if (!resp.ok) return null;
       const buf = await resp.arrayBuffer();
       const b64 = Buffer.from(buf).toString('base64');
@@ -34,7 +46,7 @@ export default async function handler(req, res) {
     const filename = gradeStr.replace('.', '_') + '.jpg';
     const url = `${baseUrl}/Grade_Reference/${filename}`;
     try {
-      const resp = await fetch(url);
+      const resp = await fetchWithTimeout(url, {}, 4000);
       if (!resp.ok) return null;
       const buf = await resp.arrayBuffer();
       const b64 = Buffer.from(buf).toString('base64');
@@ -62,55 +74,35 @@ export default async function handler(req, res) {
     ? `https://${req.headers['x-forwarded-host']}`
     : (req.headers['host'] ? `https://${req.headers['host']}` : '');
 
-  if (grader === 'CGC' && title && issueNumber && COMICVINE_API_KEY) {
-    try {
-      // Search ComicVine for the issue
-      const searchTitle = title.replace(/^The\s+/i, '').trim();
-      const cvUrl = `https://comicvine.gamespot.com/api/issues/?api_key=${COMICVINE_API_KEY}&format=json&filter=volume_id:${encodeURIComponent(searchTitle)},issue_number:${encodeURIComponent(issueNumber)}&field_list=image,volume,issue_number&limit=1`;
-      
-      // Use volume name search instead
-      const cvSearchUrl = `https://comicvine.gamespot.com/api/search/?api_key=${COMICVINE_API_KEY}&format=json&query=${encodeURIComponent(searchTitle + ' ' + issueNumber)}&resources=issue&field_list=image,volume,issue_number&limit=5`;
-      
-      const cvResp = await fetch(cvSearchUrl, {
-        headers: { 'User-Agent': 'ComicGraderApp/1.0' }
-      });
-      
-      if (cvResp.ok) {
-        const cvData = await cvResp.json();
-        const results = cvData.results || [];
-        
-        // Find best match: same issue number
-        const match = results.find(r => {
-          const issNum = String(r.issue_number || '').replace(/^0+/, '');
-          const targetIss = String(issueNumber).replace(/^0+/, '');
-          return issNum === targetIss;
-        }) || results[0];
-        
-        if (match && match.image && match.image.medium_url) {
-          // Fetch the cover image
-          const imgResp = await fetch(match.image.medium_url);
-          if (imgResp.ok) {
-            const imgBuffer = await imgResp.arrayBuffer();
-            const imgBase64 = Buffer.from(imgBuffer).toString('base64');
-            const contentType = imgResp.headers.get('content-type') || 'image/jpeg';
-            referenceImageBlock = {
-              type: 'image',
-              source: { type: 'base64', media_type: contentType, data: imgBase64 }
-            };
-            console.log('ComicVine cover reference fetched successfully');
+  // Run ComicVine cover fetch and page quality fetch in parallel
+  let pageQualityImageBlock = null;
+  if (isCGC) {
+    const cvFetch = (title && issueNumber && COMICVINE_API_KEY) ? (async () => {
+      try {
+        const searchTitle = title.replace(/^The\s+/i, '').trim();
+        const cvSearchUrl = `https://comicvine.gamespot.com/api/search/?api_key=${COMICVINE_API_KEY}&format=json&query=${encodeURIComponent(searchTitle + ' ' + issueNumber)}&resources=issue&field_list=image,volume,issue_number&limit=5`;
+        const cvResp = await fetchWithTimeout(cvSearchUrl, { headers: { 'User-Agent': 'ComicGraderApp/1.0' } }, 5000);
+        if (cvResp.ok) {
+          const cvData = await cvResp.json();
+          const results = cvData.results || [];
+          const match = results.find(r => {
+            const issNum = String(r.issue_number || '').replace(/^0+/, '');
+            const targetIss = String(issueNumber).replace(/^0+/, '');
+            return issNum === targetIss;
+          }) || results[0];
+          if (match && match.image && match.image.medium_url) {
+            const imgResp = await fetchWithTimeout(match.image.medium_url, {}, 4000);
+            if (imgResp.ok) {
+              const imgBuffer = await imgResp.arrayBuffer();
+              referenceImageBlock = { type: 'image', source: { type: 'base64', media_type: imgResp.headers.get('content-type') || 'image/jpeg', data: Buffer.from(imgBuffer).toString('base64') } };
+            }
           }
         }
-      }
-    } catch (e) {
-      // Reference fetch failed — proceed without it
-      console.log('ComicVine fetch failed:', e.message);
-    }
-  }
+      } catch (e) { console.log('ComicVine fetch failed:', e.message); }
+    })() : Promise.resolve();
 
-  // Fetch page quality reference for CGC raw assessments
-  let pageQualityImageBlock = null;
-  if (isCGC && baseUrl) {
-    pageQualityImageBlock = await fetchPageQualityReference(baseUrl);
+    const pqFetch = baseUrl ? fetchPageQualityReference(baseUrl).then(r => { pageQualityImageBlock = r; }) : Promise.resolve();
+    await Promise.all([cvFetch, pqFetch]);
   }
 
 
