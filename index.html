@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Comics">
   <meta name="theme-color" content="#0d0d0f">
-  <title>CGC Collection</title>
+  <title>Comic Grader Database</title>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
 
@@ -77,19 +77,19 @@
     .grade-num { font-size: 16px; font-weight: 700; line-height: 1; }
     .grade-lbl { font-size: 7px; opacity: 0.7; margin-top: 2px; }
     /* Unified badge system — all same outer size */
-    .ubadge { width: 64px; flex-shrink: 0; border-radius: 5px; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,0.3); border: 1.5px solid rgba(0,0,0,0.2); display: flex; flex-direction: column; }
-    .ubadge-strip { height: 18px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .ubadge { width: 64px; height: 64px; flex-shrink: 0; border-radius: 5px; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,0.25); border: 1.5px solid rgba(0,0,0,0.15); display: flex; flex-direction: column; }
+    .ubadge-strip { height: 17px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .ubadge-strip span { font-size: 8px; font-weight: 800; letter-spacing: 1.5px; color: #fff; }
-    .ubadge-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 5px 3px; }
-    .ubadge-num { font-size: 17px; font-weight: 800; line-height: 1; }
-    .ubadge-lbl { font-size: 7px; letter-spacing: 0.3px; text-align: center; line-height: 1.2; }
-    /* List row variant — slightly smaller */
-    .ubadge-sm { width: 52px; flex-shrink: 0; border-radius: 4px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.3); border: 1.5px solid rgba(0,0,0,0.2); display: flex; flex-direction: column; }
+    .ubadge-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0px; }
+    .ubadge-num { font-size: 20px; font-weight: 800; line-height: 1; }
+    .ubadge-lbl { font-size: 7.5px; letter-spacing: 0.3px; text-align: center; line-height: 1.2; margin-top: 1px; }
+    /* List row variant — slightly smaller, still square */
+    .ubadge-sm { width: 56px; height: 56px; flex-shrink: 0; border-radius: 4px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.2); border: 1.5px solid rgba(0,0,0,0.15); display: flex; flex-direction: column; }
     .ubadge-sm .ubadge-strip { height: 14px; }
     .ubadge-sm .ubadge-strip span { font-size: 7px; }
-    .ubadge-sm .ubadge-body { padding: 3px 2px; }
-    .ubadge-sm .ubadge-num { font-size: 14px; }
-    .ubadge-sm .ubadge-lbl { font-size: 6.5px; }
+    .ubadge-sm .ubadge-body { gap: 0px; }
+    .ubadge-sm .ubadge-num { font-size: 17px; }
+    .ubadge-sm .ubadge-lbl { font-size: 7px; margin-top: 1px; }
     .badge { font-size: 10px; border-radius: 3px; padding: 1px 5px; border: 1px solid; }
     .badge-cgc { background: #1a2a1a; border-color: #2a4a2a; color: #6abf6a; }
     .badge-raw { background: #2a2010; border-color: #4a3a10; color: #a09040; }
@@ -123,7 +123,7 @@
   <div id="header">
     <div id="header-row">
       <button id="header-title" onclick="showList()">
-        <span class="main">CGC COLLECTION</span>
+        <span class="main">Comic Grader</span>
         <span class="sub">Database</span>
       </button>
       <button class="btn btn-gold" id="add-btn" onclick="showAdd()">+ Add Book</button>
@@ -245,7 +245,7 @@ async function initFirebase(){
   fsOnSnapshot=window._fsOnSnapshot;
   await loadComics();
   fsOnSnapshot(fsCollection(db,"comics"),snap=>{
-    comics=snap.docs.map(d=>d.data());
+    comics=snap.docs.map(d=>d.data()).map(c=>({...c,pageQuality:normPageQuality(c.pageQuality)}));
     if(view==="list")renderList();
     updateStats();
   });
@@ -255,7 +255,7 @@ async function loadComics(){
   syncMsg("Loading collection...");
   try{
     const snap=await fsGetDocs(fsCollection(db,"comics"));
-    comics=snap.docs.map(d=>d.data());
+    comics=snap.docs.map(d=>d.data()).map(c=>({...c,pageQuality:normPageQuality(c.pageQuality)}));
     if(comics.length===0&&!seeded){
       seeded=true;
       syncMsg("Seeding initial data...");
@@ -284,10 +284,15 @@ async function deleteComic(id){
 }
 
 function updateStats(){
-  const avg=comics.length?(comics.reduce((s,c)=>s+parseFloat(c.grade||0),0)/comics.length).toFixed(1):null;
-  const inv=comics.reduce((s,c)=>s+totalCost(c),0);
-  document.getElementById("header-stats").textContent=
-    `${comics.length} books${avg?` · avg ${avg}`:""}${inv>0?` · ${fmt$(inv)} invested`:""}`;
+  const total=comics.length;
+  const cgc=comics.filter(c=>c.cgcGrade).length;
+  const psa=comics.filter(c=>c.psaGrade).length;
+  const raw=comics.filter(c=>!c.cgcGrade&&!c.psaGrade).length;
+  const parts=[`${total} book${total!==1?"s":""}`];
+  if(cgc>0)parts.push(`${cgc} CGC`);
+  if(psa>0)parts.push(`${psa} PSA`);
+  if(raw>0)parts.push(`${raw} raw`);
+  document.getElementById("header-stats").textContent=parts.join(" · ");
 }
 
 function showList(){
@@ -844,6 +849,15 @@ async function submitForm(){
 
 function cancelForm(){if(selected){showDetail(selected.id);}else{showList();}}
 
+
+function normPageQuality(pq){
+  if(!pq)return pq;
+  const map={"OW/W":"Off-White to White","C/OW":"Cream to Off-White","OW":"Off-White","W":"White",
+    "Cream to OW":"Cream to Off-White","Light Tan to OW":"Light Tan to Off-White",
+    "Tan to OW":"Tan to Off-White","Dark Tan to OW":"Dark Tan to Off-White",
+    "Brown to OW":"Brown to Off-White"};
+  return map[pq]||pq;
+}
 if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{});}
 initFirebase();
 </script>
