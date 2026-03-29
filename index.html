@@ -870,6 +870,8 @@ async function submitForm(){
   const id=formData.id||`comic:user_${Date.now()}`;
   const rec={...formData,id,
     images:finalImages,
+    _savedImages:undefined,
+    _imagesChanged:undefined,
     purchasePrice:formData.purchasePrice!==""?parseFloat(formData.purchasePrice):null,
     taxesFeesShipping:formData.taxesFeesShipping!==""?parseFloat(formData.taxesFeesShipping):null,
     gradingCost:formData.gradingCost!==""?parseFloat(formData.gradingCost):null,
