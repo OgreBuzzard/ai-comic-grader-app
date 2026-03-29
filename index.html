@@ -559,10 +559,20 @@ async function assessGrade(){
     const compressed=await Promise.all(imgs.slice(0,4).map(img=>compressImage(img)));
 
     // Run CGC first, then pass its grade to PSA so PSA anchors correctly
+    syncMsg("CGC assessment — analyzing photos...");
     const cgcResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images:compressed,grader:"CGC",title:formData.title||"",issueNumber:formData.issue||""})});
     if(!cgcResp.ok){const e=await cgcResp.text();throw new Error("CGC error: "+e);}
     const cgc=await cgcResp.json();
     if(cgc.error)throw new Error(cgc.error);
+
+    // Show diagnostic info
+    const d=cgc._diagnostics||{};
+    const dParts=[];
+    if(d.comicvineRef)dParts.push("✓ ComicVine cover");
+    else dParts.push("✗ ComicVine cover");
+    if(d.gradeRef)dParts.push("✓ Grade reference");
+    else dParts.push("✗ Grade reference");
+    syncMsg(`CGC complete (${dParts.join(" · ")}) — running PSA...`);
     // Only pass official grader notes if a slab label was detected in the photos
     const slabDetected=!!(cgc.labelDetected&&(cgc.officialCGCGrade||cgc.officialPSAGrade));
     const psaResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images:compressed,grader:"PSA",cgcGrade:cgc.grade||"",cgcGraderNotes:slabDetected?formData.graderNotes||"":"",psaGraderNotes:slabDetected?formData.psaNotes||"":""})});
