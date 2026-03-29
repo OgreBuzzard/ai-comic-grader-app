@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/assess.js": {
+      "maxDuration": 60
+    }
+  }
+}
