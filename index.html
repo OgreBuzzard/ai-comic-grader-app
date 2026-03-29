@@ -570,6 +570,8 @@ async function assessGrade(){
     const dParts=[];
     if(d.comicvineRef)dParts.push("✓ ComicVine cover");
     else dParts.push("✗ ComicVine cover");
+    if(d.pageQualityRef)dParts.push("✓ Page quality ref");
+    else dParts.push("✗ Page quality ref");
     if(d.gradeRef)dParts.push("✓ Grade reference");
     else dParts.push("✗ Grade reference");
     syncMsg(`CGC complete (${dParts.join(" · ")}) — running PSA...`);
