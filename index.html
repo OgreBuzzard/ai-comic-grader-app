@@ -530,6 +530,9 @@ function showEdit(id){
     fmv:c.fmv!=null?String(c.fmv):"",
     fmvDate:c.fmvDate||""
   };
+  // Snapshot the original Firestore images so they can never be lost on save
+  formData._savedImages=[...(c.images||[])];
+  formData._imagesChanged=false;
   view="add";_assessed=!!(c.assessedCGCGrade||c.aiAssessment);document.getElementById("add-btn").style.display="none";renderForm();
 }
 
@@ -816,6 +819,7 @@ function removeImg(i){
   imgs[i]=null;
   while(imgs.length&&imgs[imgs.length-1]===null)imgs.pop();
   formData.images=imgs;
+  formData._imagesChanged=true;
   renderForm();
 }
 
@@ -832,6 +836,7 @@ function dropSlot(e,target){
   const tmp=imgs[_dragSrc];imgs[_dragSrc]=imgs[target]||null;imgs[target]=tmp;
   while(imgs.length&&imgs[imgs.length-1]===null)imgs.pop();
   formData.images=imgs;
+  formData._imagesChanged=true;
   _dragSrc=null;
   renderForm();
 }
@@ -842,6 +847,7 @@ async function handleImages(e){
   const newImgs=await Promise.all(files.map(f=>new Promise(res=>{const r=new FileReader();r.onload=ev=>res(ev.target.result);r.readAsDataURL(f);})));
   const current=(formData.images||[]).filter(Boolean);
   formData.images=[...current,...newImgs].slice(0,4);
+  formData._imagesChanged=true;
   renderForm();
   const btn=document.getElementById("assess-btn");
   if(btn)btn.disabled=formData.images.filter(Boolean).length===0||assessing;
@@ -857,10 +863,13 @@ async function submitForm(){
   if(formData.seller?.trim())updateSellerList(formData.seller.trim());
   syncMsg("Compressing images...");
   const rawImages=(formData.images||[]).filter(Boolean);
-  const compressedImages=rawImages.length>0?await Promise.all(rawImages.map(img=>compressImage(img))):[];
+  const compressedImages=rawImages.length>0&&formData._imagesChanged?await Promise.all(rawImages.map(img=>compressImage(img))):[];
   syncMsg(null);
   const existingComic=formData.id?comics.find(c=>c.id===formData.id):null;
-  const finalImages=compressedImages.length>0?compressedImages:(existingComic?.images||[]);
+  // Use compressed new images if user changed them, otherwise preserve Firestore images exactly
+  const finalImages=formData._imagesChanged
+    ?(compressedImages.length>0?compressedImages:[])
+    :(formData._savedImages||existingComic?.images||[]);
   const id=formData.id||`comic:user_${Date.now()}`;
   const rec={...formData,id,
     images:finalImages,
