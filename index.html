@@ -112,6 +112,7 @@
     .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     .cost-box { background: #f8f6f3; border: 1px solid #ccc8c0; border-radius: 6px; padding: 14px 16px; }
     .treatment-btn { padding: 6px 14px; border-radius: 4px; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid; font-family: inherit; }
+    .sticky-back { position: sticky; top: 56px; z-index: 90; background: #f5f4f2; padding: 8px 0 4px; margin-bottom: 4px; }
     #lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.93); display: flex; align-items: center; justify-content: center; z-index: 1000; cursor: zoom-out; padding: 20px; }
     #lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; }
     #sync-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 2000; background: #f0eaff; border-bottom: 2px solid #7a40cf; padding: 10px 16px; display: flex; align-items: center; gap: 10px; }
@@ -227,7 +228,7 @@ function formatDate(d){if(!d)return null;const months=["Jan","Feb","Mar","Apr","
 function formatIssue(i){if(!i)return null;const m=i.match(/^A(\d+)$/i);if(m)return`Annual #${m[1]}`;return`#${i}`;}
 function esc(s){return s?String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"):""}
 
-let comics=[], collapsed={}, view="list", selected=null, sortBy="title", search="";
+let comics=[], collapsed={}, view="list", selected=null, sortBy="title", search="", _listScrollY=0;
 let db, fsCollection, fsGetDocs, fsSetDoc, fsDeleteDoc, fsDoc, fsOnSnapshot;
 let seeded=false;
 
@@ -299,6 +300,7 @@ function showList(){
   view="list";selected=null;
   document.getElementById("add-btn").style.display="";
   renderList();
+  requestAnimationFrame(()=>window.scrollTo(0,_listScrollY));
 }
 
 function renderList(){
@@ -370,14 +372,15 @@ function renderList(){
 function toggleGroup(title){collapsed[title]=collapsed[title]===false?true:false;renderList();}
 
 function showDetail(id){
+  _listScrollY=window.scrollY||document.documentElement.scrollTop||0;
   selected=comics.find(c=>c.id===id);
   if(!selected)return;
   view="detail";
   document.getElementById("add-btn").style.display="none";
   const gc=gradeColor(selected.grade);
   const cost=totalCost(selected);
-  let html=`<button class="btn-ghost" onclick="showList()" style="margin-bottom:4px">← Back</button>
-  <div class="card" style="border-top:3px solid ${gc};margin-top:8px;background:#fff">
+  let html=`<div class="sticky-back"><button class="btn-ghost" onclick="showList()">← Back</button></div>
+  <div class="card" style="border-top:3px solid ${gc};margin-top:4px;background:#fff">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px">
       <div>
         <h2 style="font-size:22px;color:#1a1614">${esc(selected.title)}</h2>
@@ -408,17 +411,10 @@ function showDetail(id){
 
   if(selected.images?.length>0){
     const imgs=selected.images;
-    html+=`<div style="margin-top:16px">`;
-    // Row 1: front cover full width (slot 0)
+    html+=`<div style="margin-top:16px;display:flex;flex-direction:column;gap:6px">`;
     if(imgs[0]) html+=`<img class="detail-cover" src="${imgs[0]}" onclick="openLightbox('${selected.id}',0)">`;
-    // Row 2: back cover + interior spread side by side (slots 1 & 2)
-    if(imgs[1]||imgs[2]){
-      html+=`<div class="photo-row2">`;
-      if(imgs[1]) html+=`<img src="${imgs[1]}" onclick="openLightbox('${selected.id}',1)">`;
-      if(imgs[2]) html+=`<img src="${imgs[2]}" onclick="openLightbox('${selected.id}',2)">`;
-      html+=`</div>`;
-    }
-    // Row 3: spine full width (slot 3)
+    if(imgs[1]) html+=`<img class="detail-cover" src="${imgs[1]}" onclick="openLightbox('${selected.id}',1)">`;
+    if(imgs[2]) html+=`<img class="detail-cover" src="${imgs[2]}" onclick="openLightbox('${selected.id}',2)">`;
     if(imgs[3]) html+=`<img class="photo-spine" src="${imgs[3]}" onclick="openLightbox('${selected.id}',3)">`;
     html+=`</div>`;
   }
@@ -460,7 +456,8 @@ function showDetail(id){
   }
 
   if(selected.cgcNotes)html+=`<div style="margin-top:20px"><div class="section-label" style="color:#4a7a4a">Label Notes</div><div class="notes-box" style="border-color:#1a3a1a;color:#80b080">${esc(selected.cgcNotes)}</div></div>`;
-  if(selected.graderNotes)html+=`<div style="margin-top:20px"><div class="section-label">Grader Notes</div><div class="notes-box">${esc(selected.graderNotes)}</div></div>`;
+  if(selected.graderNotes)html+=`<div style="margin-top:20px"><div class="section-label">CGC Grader Notes</div><div class="notes-box">${esc(selected.graderNotes)}</div></div>`;
+  if(selected.aiGraderNotes)html+=`<div style="margin-top:20px"><div class="section-label" style="color:#4a7a9a">AI Grader Notes</div><div class="notes-box" style="border-color:#1a3a5c;color:#4a7a9a">${esc(selected.aiGraderNotes)}</div></div>`;
   const _aiText=selected.aiAssessment||selected.myAssessment||"";
   if(_aiText)html+=`<div style="margin-top:20px"><div class="section-label">AI Assessment</div><div class="notes-box" style="font-style:normal;color:#6a5a4a">${esc(_aiText)}</div></div>`;
   if(selected.psaNotes)html+=`<div style="margin-top:20px"><div class="section-label" style="color:#FF2040">PSA Notes</div><div class="notes-box" style="border-color:#5c1a1a;color:#e87a7a">${esc(selected.psaNotes)}</div></div>`;
@@ -477,7 +474,8 @@ function showDetail(id){
 function confirmDelete(id){
   const btn=document.getElementById("del-btn");
   if(btn.dataset.confirm==="1"){deleteComic(id);}
-  else{btn.dataset.confirm="1";btn.textContent="Tap again to confirm";btn.style.background="#ef4444";btn.style.color="#fff";}
+  else if(btn.dataset.confirm==="ready"){btn.dataset.confirm="1";btn.textContent="Tap again to confirm";btn.style.background="#ef4444";btn.style.color="#fff";}
+  else{btn.dataset.confirm="ready";btn.textContent="Delete…";btn.style.background="#fee2e2";btn.style.color="#991b1b";}
 }
 
 function openLightbox(id,idx){
@@ -487,16 +485,18 @@ function openLightbox(id,idx){
   document.getElementById("lightbox").style.display="flex";
 }
 
-const EMPTY={title:"",issue:"",issueDate:"",publisher:"",grade:"",cgcGrade:"",cgcCert:"",psaGrade:"",psaCert:"",pageQuality:"",graderNotes:"",cgcNotes:"",aiAssessment:"",psaNotes:"",notes:"",slabbingDate:"",dateAcquired:"",purchasePrice:"",taxesFeesShipping:"",gradingCost:"",cgcShipping:"",fmv:"",fmvDate:"",press:null,uv:null,clean:null,seller:"",images:[],assessedCGCGrade:"",assessedPSAGrade:""};
+const EMPTY={title:"",issue:"",issueDate:"",publisher:"",grade:"",cgcGrade:"",cgcCert:"",psaGrade:"",psaCert:"",pageQuality:"",graderNotes:"",aiGraderNotes:"",cgcNotes:"",aiAssessment:"",psaNotes:"",notes:"",slabbingDate:"",dateAcquired:"",purchasePrice:"",taxesFeesShipping:"",gradingCost:"",cgcShipping:"",fmv:"",fmvDate:"",press:null,uv:null,clean:null,seller:"",images:[],assessedCGCGrade:"",assessedPSAGrade:""};
 let formData={...EMPTY};
 let assessing=false;
+let _assessed=false; // tracks if current form has been assessed
 
-function showAdd(){formData={...EMPTY};view="add";document.getElementById("add-btn").style.display="none";renderForm();}
+function showAdd(){formData={...EMPTY};view="add";_assessed=false;document.getElementById("add-btn").style.display="none";renderForm();}
 
 function showEdit(id){
   const c=comics.find(x=>x.id===id);
   if(!c)return;
   formData={...EMPTY,...c,
+    pageQuality:normPageQuality(c.pageQuality),
     purchasePrice:c.purchasePrice!=null?String(c.purchasePrice):"",
     taxesFeesShipping:c.taxesFeesShipping!=null?String(c.taxesFeesShipping):"",
     gradingCost:c.gradingCost!=null?String(c.gradingCost):"",
@@ -504,7 +504,7 @@ function showEdit(id){
     fmv:c.fmv!=null?String(c.fmv):"",
     fmvDate:c.fmvDate||""
   };
-  view="add";document.getElementById("add-btn").style.display="none";renderForm();
+  view="add";_assessed=!!(c.assessedCGCGrade||c.aiAssessment);document.getElementById("add-btn").style.display="none";renderForm();
 }
 
 async function compressImage(dataUrl,maxDim=900,quality=0.50){
@@ -531,16 +531,14 @@ async function assessGrade(){
     // Compress images once, reuse for both calls
     const compressed=await Promise.all(imgs.slice(0,4).map(img=>compressImage(img)));
 
-    // Call CGC and PSA in parallel
-    const [cgcResp, psaResp]=await Promise.all([
-      fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images:compressed,grader:"CGC"})}),
-      fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images:compressed,grader:"PSA"})})
-    ]);
+    // Run CGC first, then pass its grade to PSA so PSA anchors correctly
+    const cgcResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images:compressed,grader:"CGC"})});
     if(!cgcResp.ok){const e=await cgcResp.text();throw new Error("CGC error: "+e);}
-    if(!psaResp.ok){const e=await psaResp.text();throw new Error("PSA error: "+e);}
     const cgc=await cgcResp.json();
-    const psa=await psaResp.json();
     if(cgc.error)throw new Error(cgc.error);
+    const psaResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images:compressed,grader:"PSA",cgcGrade:cgc.grade||""})});
+    if(!psaResp.ok){const e=await psaResp.text();throw new Error("PSA error: "+e);}
+    const psa=await psaResp.json();
     if(psa.error)throw new Error(psa.error);
 
     // Populate title/issue/publisher from CGC result
@@ -565,13 +563,17 @@ async function assessGrade(){
     // AI assessed grades (always populated)
     formData.assessedCGCGrade=cgc.grade||"";
     formData.assessedPSAGrade=psa.grade||"";
-    formData.pageQuality=cgc.pageQuality||formData.pageQuality;
+    formData.pageQuality=cgc.pageQuality?normPageQuality(cgc.pageQuality):formData.pageQuality;
 
-    // Grader notes: deduplicated CGC list
-    formData.graderNotes=cgc.graderNotes||"";
+    // AI grader notes go into separate field; leave graderNotes for official CGC notes
+    formData.aiGraderNotes=cgc.graderNotes||"";
 
     // AI Assessment: combined CGC rationale
     formData.aiAssessment=cgc.aiAssessment||"";
+    // Label notes (key issue notations from right side of slab label)
+    if(cgc.labelNotes&&cgc.labelNotes.trim()){
+      formData.cgcNotes=cgc.labelNotes.trim()+(formData.cgcNotes?("\n"+formData.cgcNotes):"");
+    }
 
     // PSA Notes: only if PSA differs from CGC in meaningful ways
     formData.psaNotes=psa.psaNotes||"";
@@ -581,6 +583,7 @@ async function assessGrade(){
     if(cgc.uv!==undefined&&cgc.uv!==null)formData.uv=cgc.uv;
     if(cgc.clean!==undefined&&cgc.clean!==null)formData.clean=cgc.clean;
 
+    _assessed=true;
     syncMsg(null);
     renderForm();
   }catch(e){
@@ -635,17 +638,16 @@ function renderForm(){
     return`<button class="treatment-btn" style="background:${bg};border-color:${bc};color:${col}" onclick="cycleTreatment('${key}')">${label}: ${txt}</button>`;
   }
 
-  let html=`<button class="btn-ghost" onclick="cancelForm()" style="margin-bottom:4px">← Back</button>
-  <h2 style="font-size:18px;margin:16px 0 20px;color:#c8a96e">${isEdit?"Edit Book":"Add Book"}</h2>
+  let html=`<div class="sticky-back"><button class="btn-ghost" onclick="cancelForm()">← Back</button></div>
+  <h2 style="font-size:18px;margin:8px 0 20px;color:#c8a96e">${isEdit?"Edit Book":"Add Book"}</h2>
   <div class="card" style="display:flex;flex-direction:column;gap:14px">
     <div>
       <label class="field-label">Photos <span style="color:#9a8a7a;font-size:10px;letter-spacing:1px">— up to 4, drag to reorder</span></label>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px">
         ${[0,1,2,3].map(i=>{
           const slotLabels=["Front Cover","Back Cover","Interior","Spine"];
           const img=(formData.images||[])[i];
-          const isSpine=i===3;
-          const style=isSpine?"grid-column:1/-1;min-height:70px":"min-height:120px";
+          const style=i===3?"min-height:70px":"min-height:140px";
           return img
             ? `<div class="drag-slot" style="${style}" draggable="true"
                 ondragstart="dragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})">
@@ -661,7 +663,7 @@ function renderForm(){
         }).join("")}
       </div>
       <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">
-      <button id="assess-btn" class="btn btn-cgc" onclick="assessGrade()" ${(!formData.images||formData.images.filter(Boolean).length===0||assessing)?"disabled":""} style="width:100%;background:#2a4a6a;color:#a8d0f0">${assessing?"Assessing...":"Assess Grade"}</button>
+      <button id="assess-btn" class="btn btn-cgc" onclick="assessGrade()" ${(!formData.images||formData.images.filter(Boolean).length===0||assessing)?"disabled":""} style="width:100%;background:${assessing?"#1a3a5c":_assessed?"#1a4a2a":"#2a4a6a"};color:${assessing?"#a8d0f0":_assessed?"#6abf6a":"#a8d0f0"}">${assessing?"Assessing…":_assessed?"Re-assess Grade":"Assess Grade"}</button>
     </div>
     <div class="form-grid-2">
       ${tf("Title *","title","Series title")}
@@ -720,7 +722,8 @@ function renderForm(){
       <div style="font-size:10px;color:#9a8a7a;margin-top:4px">Tap to cycle: — → Y → N</div>
     </div>
     <div><label class="field-label">Label Notes</label><textarea rows="2" oninput="formData.cgcNotes=this.value">${esc(formData.cgcNotes||"")}</textarea></div>
-    ${formData.graderNotes?`<div><label class="field-label">Grader Notes</label><textarea rows="4" style="font-style:italic" oninput="formData.graderNotes=this.value">${esc(formData.graderNotes||"")}</textarea></div>`:`<div><label class="field-label">Grader Notes</label><textarea rows="3" style="font-style:italic" placeholder="Auto-filled by Assess Grade" oninput="formData.graderNotes=this.value"></textarea></div>`}
+    <div><label class="field-label">CGC Grader Notes</label><textarea rows="${formData.graderNotes?4:2}" style="font-style:italic" placeholder="Official CGC grader notes (manual entry)" oninput="formData.graderNotes=this.value">${esc(formData.graderNotes||"")}</textarea></div>
+    ${formData.aiGraderNotes?`<div><label class="field-label" style="color:#4a7a9a">AI Grader Notes</label><textarea rows="4" style="font-style:italic;border-color:#1a3a5c" oninput="formData.aiGraderNotes=this.value">${esc(formData.aiGraderNotes||"")}</textarea></div>`:""}
     <div><label class="field-label">AI Assessment</label><textarea rows="${Math.max(4,Math.ceil((formData.aiAssessment||"").length/80))}" oninput="formData.aiAssessment=this.value" placeholder="Auto-filled by Assess Grade">${esc(formData.aiAssessment||"")}</textarea></div>
     ${formData.psaNotes?`<div><label class="field-label" style="color:#e87a7a">PSA Notes</label><textarea rows="3" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes||"")}</textarea></div>`:""}
     <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes||"")}</textarea></div>
