@@ -2,7 +2,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'API key not configured' });
-  const { images, grader = 'CGC', cgcGrade = null } = req.body;
+  const { images, grader = 'CGC', cgcGrade = null, cgcGraderNotes = '', psaGraderNotes = '' } = req.body;
   if (!images || images.length === 0) return res.status(400).json({ error: 'No images provided' });
 
   const imageBlocks = images.map(img => {
@@ -11,6 +11,16 @@ export default async function handler(req, res) {
     return { type: 'image', source: { type: 'base64', media_type: mediaType, data } };
   });
 
+
+  // Build grader notes context to append to prompts
+  const notesContext = [];
+  if (cgcGraderNotes && cgcGraderNotes.trim()) {
+    notesContext.push(`OFFICIAL CGC GRADER NOTES FOR THIS BOOK:\n${cgcGraderNotes.trim()}\nThese are the official defects documented by CGC graders. Factor in any interior defects listed here (staple rust, page quality issues, centerfold detachment, interior tanning, etc.) that may not be visible in the photos when forming your regrade assessment.`);
+  }
+  if (psaGraderNotes && psaGraderNotes.trim()) {
+    notesContext.push(`OFFICIAL PSA GRADER NOTES FOR THIS BOOK:\n${psaGraderNotes.trim()}\nThese are the official defects documented by PSA graders. Factor these in when forming your assessment.`);
+  }
+  const notesBlock = notesContext.length > 0 ? '\n\n' + notesContext.join('\n\n') : '';
   const isCGC = grader !== 'PSA';
 
   const cgcPrompt = `You are a CGC comic book grading expert. Analyze the provided photos and return a JSON object.
@@ -65,30 +75,37 @@ GRADER NOTES FORMAT:
 UV: only for white covers with tanning on unprinted areas. Ink-protection mask available.
 Press: spine roll=yes, edge fraying=no, corner creases=yes, tanning=no.
 
-Return ONLY valid JSON, no markdown.`;
+Return ONLY valid JSON, no markdown.${notesBlock}`;
 
-  const psaPrompt = `You are a PSA comic book grading expert. The CGC AI assessment for this comic assigned a grade of ${cgcGrade || 'unknown'}. Your job is to determine whether PSA's grading methodology would produce a DIFFERENT result for THIS SPECIFIC BOOK based on what you can see in the photos.
+  const psaPrompt = `You are a PSA comic book grading expert. The CGC AI assessment for this comic assigned a grade of ${cgcGrade || 'unknown'}. Assess whether PSA would grade this book differently.
 
 Return this JSON:
 {
   "grade": "your AI PSA grade — must be one of: 10, 9.8, 9.6, 9.4, 9.2, 9.0, 8.5, 8.0, 7.5, 7.0, 6.5, 6.0, 5.5, 5.0, 4.5, 4.0, 3.5, 3.0, 2.5, 2.0, 1.5, 1.0, 0.5, 0.3",
-  "psaNotes": "1-2 sentences explaining the specific reason THIS book would grade differently at PSA. Must cite a concrete, visible characteristic of this specific book — not general market tendencies. Empty string if PSA would give the same grade.",
+  "psaNotes": "1-2 sentences explaining why PSA would grade this differently, grounded in what you can observe about this specific book. Empty string if same grade.",
   "labelDetected": false,
   "officialPSAGrade": null,
   "officialPSACert": null
 }
 
-RULES:
-1. DEFAULT IS SAME GRADE. Start from ${cgcGrade || 'unknown'} and only move if you have a specific, concrete reason visible in the photos.
-2. A different grade requires a book-specific defect or characteristic — not general statements about PSA market tendencies or Silver Age generosity.
-3. Valid reasons to go HIGHER: a specific visible defect that PSA's eye-appeal weighting would discount (e.g. a very minor tick on an otherwise immaculate book where overall presentation is exceptional).
-4. Valid reasons to go LOWER: a specific visible defect PSA penalizes more heavily (e.g. tape, which PSA always treats as a defect never restoration).
-5. "Good eye appeal" alone is NOT a valid reason. "Silver Age book" alone is NOT a valid reason. Almost every Silver Age book has some eye appeal. If you cannot point to something specific and visible that PSA treats differently from CGC, return the same grade with empty psaNotes.
-6. If psaNotes is empty string, grade must equal ${cgcGrade || 'unknown'}.
+CONTEXT:
+PSA entered comic grading in mid-2025 and is still establishing its calibration. Early real-world data from collectors who submitted the same books to both companies suggests PSA tends to run slightly more generous than CGC on average, particularly on Silver and Bronze Age material — though not universally. PSA's graders come from a card grading background where eye appeal and overall presentation are weighted more holistically alongside defect enumeration.
 
-Legitimate PSA-specific differences:
-- Tape: PSA always grades tape as a defect (never restoration) — may lower vs CGC
-- Conservation work: PSA's "Conserved" designation may treat professional archival repairs more favorably than CGC
+HOW TO APPROACH THIS:
+Start from the CGC grade of ${cgcGrade || 'unknown'}. Consider whether any of the following apply to THIS SPECIFIC BOOK based on what you can see:
+
+Reasons PSA might grade HIGHER:
+- The book presents exceptionally well — strong color saturation, flat spine, clean overall presentation — in a way that PSA's eye-appeal emphasis would reward beyond what the defect list suggests
+- Silver or Bronze Age books with good eye appeal, where PSA's newer-entrant tendency toward generosity has been documented
+- Defects are minor and isolated, and the overall impression of the book is stronger than the technical grade implies
+- The book has been pressed and the remaining defects are minimal relative to the strong presentation
+
+Reasons PSA might grade LOWER:
+- Tape of any kind — PSA always treats tape as a defect, never as restoration
+- Accumulated small defects that collectively undermine eye appeal more than any single defect would suggest
+- Prominent spine stress that significantly affects the visual presentation even if technically graded as "light"
+
+It's reasonable for most mid-grade Silver Age books in good condition to come back half a point higher at PSA given current calibration patterns. It's also reasonable to find no difference for books where defects are clear and enumerable rather than presentation-based. Use your judgment on the specific book in front of you. Do not invent defects or characteristics not visible in the photos. If psaNotes is empty string, grade must equal ${cgcGrade || 'unknown'}.
 
 If a PSA label is visible: set labelDetected=true, officialPSAGrade to label grade, officialPSACert to cert number.
 
@@ -130,6 +147,11 @@ Return ONLY valid JSON, no markdown.`;
     let parsed;
     try { parsed = JSON.parse(clean); }
     catch (e) { return res.status(500).json({ error: 'Failed to parse response: ' + text }); }
+
+    // Normalize grade to always include decimal (e.g. "10" → "10.0", "9" → "9.0")
+    if (parsed.grade && !String(parsed.grade).includes('.')) {
+      parsed.grade = parseFloat(parsed.grade).toFixed(1);
+    }
 
     return res.status(200).json(parsed);
   } catch (err) {
