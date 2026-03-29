@@ -480,8 +480,8 @@ function showDetail(id){
   }
 
   if(selected.cgcNotes)html+=`<div style="margin-top:20px"><div class="section-label" style="color:#4a7a4a">Label Notes</div><div class="notes-box" style="border-color:#1a3a1a;color:#80b080">${esc(selected.cgcNotes)}</div></div>`;
-  if(selected.graderNotes)html+=`<div style="margin-top:20px"><div class="section-label">CGC Grader Notes</div><div class="notes-box">${esc(selected.graderNotes)}</div></div>`;
-  if(selected.aiGraderNotes)html+=`<div style="margin-top:20px"><div class="section-label" style="color:#4a7a9a">AI Grader Notes</div><div class="notes-box" style="border-color:#1a3a5c;color:#4a7a9a">${esc(selected.aiGraderNotes)}</div></div>`;
+  if(selected.graderNotes)html+=`<div style="margin-top:20px"><div class="section-label">CGC Grader Notes</div><div class="notes-box" style="white-space:pre-line">${esc(selected.graderNotes)}</div></div>`;
+  if(selected.aiGraderNotes)html+=`<div style="margin-top:20px"><div class="section-label" style="color:#4a7a9a">AI Grader Notes</div><div class="notes-box" style="border-color:#1a3a5c;color:#4a7a9a;white-space:pre-line">${esc(selected.aiGraderNotes)}</div></div>`;
   const _aiText=selected.aiAssessment||selected.myAssessment||"";
   if(_aiText)html+=`<div style="margin-top:20px"><div class="section-label">AI Assessment</div><div class="notes-box" style="font-style:normal;color:#6a5a4a">${esc(_aiText)}</div></div>`;
   if(selected.psaNotes)html+=`<div style="margin-top:20px"><div class="section-label" style="color:#FF2040">PSA Notes</div><div class="notes-box" style="border-color:#5c1a1a;color:#e87a7a">${esc(selected.psaNotes)}</div></div>`;
