@@ -377,7 +377,8 @@ function renderList(){
               const acg=parseFloat(c.assessedCGCGrade||(((c.myAssessment||c.aiAssessment)&&c.grade)?c.grade:null)||0);
               const apsa=parseFloat(c.assessedPSAGrade||0);
               if(c.assessedPSAGrade&&c.psaNotes&&apsa&&acg&&apsa!==acg)
-                return `<div style="align-self:flex-end;margin-bottom:2px;background:#b91c1c;border-radius:3px;padding:2px 5px;text-align:center;min-width:36px"><div style="font-size:11px;font-weight:800;color:#fff;line-height:1">${esc(c.assessedPSAGrade)}</div><div style="font-size:6px;color:rgba(255,255,255,0.75);letter-spacing:0.5px">PSA</div></div>`;
+                const psaDisp=String(c.assessedPSAGrade).includes('.')?c.assessedPSAGrade:parseFloat(c.assessedPSAGrade).toFixed(1);
+                return `<div style="align-self:flex-end;margin-bottom:2px;background:#b91c1c;border-radius:3px;padding:2px 5px;text-align:center;width:36px;height:36px;display:flex;flex-direction:column;align-items:center;justify-content:center;box-sizing:border-box"><div style="font-size:11px;font-weight:800;color:#fff;line-height:1">${esc(psaDisp)}</div><div style="font-size:6px;color:rgba(255,255,255,0.75);letter-spacing:0.5px">PSA</div></div>`;
               return "";
             })()}
           </div>`;
@@ -588,7 +589,7 @@ async function assessGrade(){
 
     // AI assessed grades (always populated)
     formData.assessedCGCGrade=cgc.grade||"";
-    formData.assessedPSAGrade=psa.grade||"";
+    formData.assessedPSAGrade=psa.grade?(String(psa.grade).includes(".")?String(psa.grade):parseFloat(psa.grade).toFixed(1)):"";
     formData.pageQuality=cgc.pageQuality?normPageQuality(cgc.pageQuality):formData.pageQuality;
 
     // AI grader notes go into separate field; leave graderNotes for official CGC notes
