@@ -68,9 +68,18 @@ GRADE CALIBRATION:
 - Your grade in the "grade" field MUST match the grade you state in aiAssessment. They must be identical.
 
 GRADER NOTES FORMAT:
-- One bullet per defect: • Spine stress lines, color-breaking, light
-- Omit if book is essentially perfect (9.8+)
+- One bullet per defect, each on its own line starting with •
+- ALWAYS check for missing pieces, chips, or tears first — these are structural defects with hard grade ceilings and must be listed first if present
+- A missing corner or edge piece of 1/4" or more must be noted explicitly as "Missing piece" or "Chip out" with location and approximate size
 - Use official CGC terminology. Always note whether stress lines are color-breaking or not.
+- Omit if book is essentially perfect (9.8+)
+
+MISSING PIECE / CHIP OUT GRADE CEILINGS (CGC):
+- Small chip (under 1/4"): caps around 9.0–9.4 depending on location
+- Moderate chip (1/4"–1/2"): caps around 8.0–8.5
+- Large chip or missing piece (over 1/2"): caps around 4.0–6.0
+- Very large missing piece (over 1"): caps around 2.0–4.0
+These ceilings apply regardless of other defects — a book cannot grade above its structural damage.
 
 UV: only for white covers with tanning on unprinted areas. Ink-protection mask available.
 Press: spine roll=yes, edge fraying=no, corner creases=yes, tanning=no.
