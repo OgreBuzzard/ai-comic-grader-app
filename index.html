@@ -559,7 +559,7 @@ async function assessGrade(){
     const compressed=await Promise.all(imgs.slice(0,4).map(img=>compressImage(img)));
 
     // Run CGC first, then pass its grade to PSA so PSA anchors correctly
-    const cgcResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images:compressed,grader:"CGC"})});
+    const cgcResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images:compressed,grader:"CGC",title:formData.title||"",issueNumber:formData.issue||""})});
     if(!cgcResp.ok){const e=await cgcResp.text();throw new Error("CGC error: "+e);}
     const cgc=await cgcResp.json();
     if(cgc.error)throw new Error(cgc.error);
