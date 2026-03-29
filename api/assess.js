@@ -2,7 +2,8 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'API key not configured' });
-  const { images, grader = 'CGC', cgcGrade = null, cgcGraderNotes = '', psaGraderNotes = '' } = req.body;
+  const COMICVINE_API_KEY = process.env.COMICVINE_API_KEY || '';
+  const { images, grader = 'CGC', cgcGrade = null, cgcGraderNotes = '', psaGraderNotes = '', title = '', issueNumber = '' } = req.body;
   if (!images || images.length === 0) return res.status(400).json({ error: 'No images provided' });
 
   const imageBlocks = images.map(img => {
@@ -21,11 +22,93 @@ export default async function handler(req, res) {
     notesContext.push(`OFFICIAL PSA GRADER NOTES FOR THIS BOOK:\n${psaGraderNotes.trim()}\nThese are the official defects documented by PSA graders. Factor these in when forming your assessment.`);
   }
   const notesBlock = notesContext.length > 0 ? '\n\n' + notesContext.join('\n\n') : '';
+
+  // Fetch ComicVine cover reference image if title and issue are available
+  let referenceImageBlock = null;
+  if (grader === 'CGC' && title && issueNumber && COMICVINE_API_KEY) {
+    try {
+      // Search ComicVine for the issue
+      const searchTitle = title.replace(/^The\s+/i, '').trim();
+      const cvUrl = `https://comicvine.gamespot.com/api/issues/?api_key=${COMICVINE_API_KEY}&format=json&filter=volume_id:${encodeURIComponent(searchTitle)},issue_number:${encodeURIComponent(issueNumber)}&field_list=image,volume,issue_number&limit=1`;
+      
+      // Use volume name search instead
+      const cvSearchUrl = `https://comicvine.gamespot.com/api/search/?api_key=${COMICVINE_API_KEY}&format=json&query=${encodeURIComponent(searchTitle + ' ' + issueNumber)}&resources=issue&field_list=image,volume,issue_number&limit=5`;
+      
+      const cvResp = await fetch(cvSearchUrl, {
+        headers: { 'User-Agent': 'ComicGraderApp/1.0' }
+      });
+      
+      if (cvResp.ok) {
+        const cvData = await cvResp.json();
+        const results = cvData.results || [];
+        
+        // Find best match: same issue number
+        const match = results.find(r => {
+          const issNum = String(r.issue_number || '').replace(/^0+/, '');
+          const targetIss = String(issueNumber).replace(/^0+/, '');
+          return issNum === targetIss;
+        }) || results[0];
+        
+        if (match && match.image && match.image.medium_url) {
+          // Fetch the cover image
+          const imgResp = await fetch(match.image.medium_url);
+          if (imgResp.ok) {
+            const imgBuffer = await imgResp.arrayBuffer();
+            const imgBase64 = Buffer.from(imgBuffer).toString('base64');
+            const contentType = imgResp.headers.get('content-type') || 'image/jpeg';
+            referenceImageBlock = {
+              type: 'image',
+              source: { type: 'base64', media_type: contentType, data: imgBase64 }
+            };
+          }
+        }
+      }
+    } catch (e) {
+      // Reference fetch failed — proceed without it
+      console.log('ComicVine fetch failed:', e.message);
+    }
+  }
+
+
+  // Fetch grade reference image for the assessed grade
+  async function fetchGradeReference(grade, baseUrl) {
+    const validGrades = ['5.0','5.5','6.0','6.5','7.0','7.5','8.0','8.5','9.0','9.2','9.4','9.6','9.8','9.9','10.0'];
+    const gradeStr = String(parseFloat(grade).toFixed(1));
+    if (!validGrades.includes(gradeStr)) return null;
+    const filename = gradeStr.replace('.', '_') + '.jpg';
+    const url = `${baseUrl}/Grade_Reference/${filename}`;
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) return null;
+      const buf = await resp.arrayBuffer();
+      const b64 = Buffer.from(buf).toString('base64');
+      const ct = resp.headers.get('content-type') || 'image/jpeg';
+      return { type: 'image', source: { type: 'base64', media_type: ct, data: b64 } };
+    } catch (e) {
+      return null;
+    }
+  }
+
   const isCGC = grader !== 'PSA';
 
   const cgcPrompt = `You are a CGC comic book grading expert. Analyze the provided photos and return a JSON object.
 
-FIRST: Check if a CGC or PSA grading label/slab is visible in any photo. If so:
+STEP 1 — MANDATORY STRUCTURAL INSPECTION (do this before anything else):
+Examine every corner and every edge of the cover in the photos with maximum care. Look specifically for:
+- Any missing paper, chips, or pieces torn away from corners or edges
+- Any holes through the cover
+- Any tears that result in paper loss
+
+If you see ANY missing piece or chip — even small — you MUST list it first in graderNotes with its location and approximate size. A missing corner piece of 1" is an extremely significant defect that places a hard ceiling on the grade. Do not let overall cover impression override what you can see at the corners. Check the lower right corner, lower left corner, upper right corner, and upper left corner individually and explicitly.
+
+MISSING PIECE GRADE CEILINGS:
+- Small chip under 1/4": max ~9.0 depending on location
+- Moderate chip 1/4"–1/2": max ~8.0
+- Large chip or piece over 1/2": max ~5.0
+- Missing piece over 1": max ~3.0
+- Missing piece over 2": Incomplete designation
+
+STEP 2 — Check if a CGC or PSA grading label/slab is visible in any photo. If so:
 - Read the grade, cert number, and page quality directly from the label
 - Read the CENTER of the label for special designations (Married Pages, pedigree collection names, restoration notes)
 - Read the RIGHT SIDE of the label for key issue notations (first appearances, deaths, new costumes, significant story events)
@@ -137,8 +220,12 @@ Return ONLY valid JSON, no markdown.`;
         messages: [{
           role: 'user',
           content: [
+            ...(referenceImageBlock ? [
+              { type: 'text', text: 'REFERENCE IMAGE: The following image is a clean cover scan of this exact issue from ComicVine, showing how the book should look without damage. Use it to identify missing pieces, color loss, and damage by comparing against your assessment photos.' },
+              referenceImageBlock
+            ] : []),
             ...imageBlocks,
-            { type: 'text', text: 'Please assess this comic and return the JSON grading object.' }
+            { type: 'text', text: 'Please assess this comic. IMPORTANT: Before listing any other defects, examine each corner individually for missing pieces or chips. Then return the JSON grading object.' }
           ]
         }]
       })
@@ -160,6 +247,50 @@ Return ONLY valid JSON, no markdown.`;
     // Normalize grade to always include decimal (e.g. "10" → "10.0", "9" → "9.0")
     if (parsed.grade && !String(parsed.grade).includes('.')) {
       parsed.grade = parseFloat(parsed.grade).toFixed(1);
+    }
+
+    // Grade reference refinement pass (CGC only, grade in 5.0–10.0 range)
+    if (isCGC && !parsed.labelDetected && parsed.grade) {
+      const baseUrl = req.headers['x-forwarded-host']
+        ? `https://${req.headers['x-forwarded-host']}`
+        : (req.headers['host'] ? `https://${req.headers['host']}` : '');
+      const refImage = baseUrl ? await fetchGradeReference(parsed.grade, baseUrl) : null;
+      if (refImage) {
+        const refPrompt = `You previously assessed this comic as grade ${parsed.grade}. Here is the official CGC grading reference page for ${parsed.grade}. Compare your assessment photos against this reference. If the reference shows the book should look better or worse than what you assessed, adjust your grade. Return the same JSON format with your refined grade and updated graderNotes and aiAssessment. If ${parsed.grade} still seems correct, return the same grade.${notesBlock}`;
+        try {
+          const refResp = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+            body: JSON.stringify({
+              model: 'claude-opus-4-5',
+              max_tokens: 1000,
+              system: systemPrompt,
+              messages: [{
+                role: 'user',
+                content: [
+                  { type: 'text', text: `GRADE REFERENCE for ${parsed.grade}: The following image shows what a CGC ${parsed.grade} book looks like with annotated defects.` },
+                  refImage,
+                  ...imageBlocks,
+                  { type: 'text', text: refPrompt }
+                ]
+              }]
+            })
+          });
+          if (refResp.ok) {
+            const refData = await refResp.json();
+            const refText = refData.content?.map(b => b.text || '').join('') || '';
+            const refClean = refText.replace(/```json|```/g, '').trim();
+            const refParsed = JSON.parse(refClean);
+            if (refParsed.grade) {
+              if (!String(refParsed.grade).includes('.')) refParsed.grade = parseFloat(refParsed.grade).toFixed(1);
+              parsed = refParsed;
+            }
+          }
+        } catch (e) {
+          // Refinement failed — use original assessment
+          console.log('Grade reference refinement failed:', e.message);
+        }
+      }
     }
 
     return res.status(200).json(parsed);
