@@ -117,6 +117,59 @@
     #lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; }
     #sync-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 2000; background: #f0eaff; border-bottom: 2px solid #7a40cf; padding: 10px 16px; display: flex; align-items: center; gap: 10px; }
     #sync-bar .spin-sm { width: 14px; height: 14px; border: 2px solid #9a70ef; border-top-color: #6a30cf; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+  
+    /* Assessment progress modal */
+    #assess-modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1000;
+      display: flex; align-items: center; justify-content: center; padding: 24px;
+    }
+    #assess-modal {
+      background: #fff; border-radius: 18px; padding: 28px 24px 24px;
+      width: 100%; max-width: 360px; box-shadow: 0 8px 40px rgba(0,0,0,0.18);
+    }
+    #assess-modal h3 {
+      font-size: 17px; font-weight: 700; color: #1a1614; margin: 0 0 20px;
+      text-align: center; letter-spacing: 0.02em;
+    }
+    .assess-step {
+      display: flex; align-items: center; gap: 12px;
+      padding: 8px 0; border-bottom: 1px solid #f0ece6; font-size: 14px; color: #5a4e44;
+    }
+    .assess-step:last-of-type { border-bottom: none; }
+    .assess-step-icon {
+      width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; transition: all 0.3s ease;
+    }
+    .assess-step-icon.pending { background: #f0ece6; color: #b0a090; }
+    .assess-step-icon.running {
+      background: #e8f0f8; color: #2a5a8a;
+      animation: pulse-ring 1.2s ease-in-out infinite;
+    }
+    .assess-step-icon.done { background: #e8f4ec; color: #2a7a4a; }
+    .assess-step-icon.skipped { background: #f4f0e8; color: #a09060; }
+    .assess-step-icon.failed { background: #fce8e8; color: #c03030; }
+    @keyframes pulse-ring {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(42,90,138,0.3); }
+      50% { box-shadow: 0 0 0 5px rgba(42,90,138,0); }
+    }
+    .assess-step-label { flex: 1; font-weight: 500; }
+    .assess-step-detail { font-size: 11px; color: #8a7a6a; margin-top: 1px; }
+    #assess-result-preview {
+      margin-top: 20px; padding: 16px; background: #f8f6f3;
+      border-radius: 10px; display: none;
+    }
+    #assess-result-preview .result-grades {
+      display: flex; gap: 10px; justify-content: center; margin-bottom: 12px;
+    }
+    #assess-complete-btn {
+      width: 100%; margin-top: 14px; padding: 14px;
+      background: #2a4a6a; color: #a8d0f0; border: none; border-radius: 10px;
+      font-size: 15px; font-weight: 700; cursor: pointer; letter-spacing: 0.04em;
+      display: none;
+    }
+    #assess-complete-btn:hover { background: #1a3a5a; }
+
   </style>
 </head>
 <body>
@@ -548,88 +601,157 @@ async function compressImage(dataUrl,maxDim=900,quality=0.50){
   });
 }
 
+
+// Assessment progress modal
+let _pendingAssessResult = null;
+
+function showAssessModal() {
+  const steps = [
+    {id:'analyzing', label:'Analyzing Photos', detail:''},
+    {id:'populating', label:'Populating Info', detail:''},
+    {id:'mint', label:'Comparing to Mint', detail:''},
+    {id:'pq', label:'Page Quality Check', detail:''},
+    {id:'confirming', label:'Confirming Grade', detail:''},
+    {id:'psa', label:'PSA Variance', detail:''}
+  ];
+  const stepsHTML = steps.map(st => `
+    <div class="assess-step" id="step-${st.id}">
+      <div class="assess-step-icon pending" id="icon-${st.id}">·</div>
+      <div style="flex:1">
+        <div class="assess-step-label">${st.label}</div>
+        <div class="assess-step-detail" id="detail-${st.id}"></div>
+      </div>
+    </div>`).join('');
+
+  const overlay = document.createElement('div');
+  overlay.id = 'assess-modal-overlay';
+  overlay.innerHTML = `
+    <div id="assess-modal">
+      <h3>Assessment in Progress</h3>
+      ${stepsHTML}
+      <div id="assess-result-preview">
+        <div class="result-grades" id="result-grades"></div>
+        <div style="font-size:12px;color:#8a7a6a;text-align:center" id="result-pq"></div>
+      </div>
+      <button id="assess-complete-btn" onclick="completeAssessment()">Complete</button>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+function setStep(id, state, detail='') {
+  const icon = document.getElementById('icon-'+id);
+  const det = document.getElementById('detail-'+id);
+  if (!icon) return;
+  icon.className = 'assess-step-icon ' + state;
+  icon.textContent = state === 'done' ? '✓' : state === 'failed' ? '✗' : state === 'skipped' ? '—' : state === 'running' ? '·' : '·';
+  if (det && detail) det.textContent = detail;
+}
+
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function animateStepsFromDiagnostics(d) {
+  // Analyzing — already done when we get here
+  await delay(120);
+  setStep('analyzing', 'done');
+  await delay(180);
+  setStep('populating', 'done');
+  await delay(180);
+  setStep('mint', d.comicvineRef ? 'done' : 'skipped', d.comicvineRef ? 'Cover found' : 'Not found');
+  await delay(180);
+  setStep('pq', d.pageQualityRef ? 'done' : 'skipped', d.pageQualityRef ? 'Reference loaded' : 'Not loaded');
+  await delay(180);
+  setStep('confirming', d.gradeRef ? 'done' : 'skipped', d.gradeRef ? 'Grade confirmed' : 'Single pass');
+}
+
+function showResultPreview(cgc, psa) {
+  const preview = document.getElementById('assess-result-preview');
+  const gradesEl = document.getElementById('result-grades');
+  const pqEl = document.getElementById('result-pq');
+  if (!preview) return;
+
+  const cgcGrade = normalizeGrade(cgc.grade || '');
+  const psaGrade = normalizeGrade(psa.grade || '');
+  const pq = cgc.pageQuality ? normPageQuality(cgc.pageQuality) : '';
+
+  gradesEl.innerHTML = (cgcGrade ? buildBadge(cgcGrade, 'cgc-ai', '', true) : '') +
+                       (psaGrade ? buildBadge(psaGrade, 'psa-ai', '', true) : '');
+  if (pq) pqEl.textContent = pq;
+
+  preview.style.display = 'block';
+  const btn = document.getElementById('assess-complete-btn');
+  if (btn) btn.style.display = 'block';
+}
+
+function completeAssessment() {
+  if (!_pendingAssessResult) return;
+  const {cgc, psa} = _pendingAssessResult;
+
+  // Populate formData from held results
+  formData.title=(cgc.title||formData.title||'').trim().replace(/\s+/g,' ').replace(/^The\s+/i,'');
+  formData.issue=cgc.issue!=null?String(cgc.issue):formData.issue||'';
+  formData.issueDate=cgc.issueDate||formData.issueDate||'';
+  formData.publisher=cgc.publisher||formData.publisher||'';
+  if(cgc.labelDetected&&cgc.officialCGCGrade){
+    formData.cgcGrade=cgc.officialCGCGrade;
+    if(cgc.officialCGCCert)formData.cgcCert=cgc.officialCGCCert;
+    if(cgc.officialPageQuality)formData.pageQuality=cgc.officialPageQuality;
+  }
+  if(psa.labelDetected&&psa.officialPSAGrade){
+    formData.psaGrade=psa.officialPSAGrade;
+    if(psa.officialPSACert)formData.psaCert=psa.officialPSACert;
+    if(psa.officialPageQuality&&!formData.pageQuality)formData.pageQuality=psa.officialPageQuality;
+  }
+  formData.assessedCGCGrade=cgc.grade||'';
+  formData.assessedPSAGrade=psa.grade?(String(psa.grade).includes('.')?String(psa.grade):parseFloat(psa.grade).toFixed(1)):'';
+  formData.pageQuality=cgc.pageQuality?normPageQuality(cgc.pageQuality):formData.pageQuality;
+  formData.aiGraderNotes=cgc.graderNotes||'';
+  formData.aiAssessment=cgc.aiAssessment||'';
+  if(cgc.labelNotes&&cgc.labelNotes.trim())formData.cgcNotes=cgc.labelNotes.trim()+(formData.cgcNotes?('\n'+formData.cgcNotes):'');
+  formData.psaNotes=psa.psaNotes||'';
+  if(cgc.press!==undefined&&cgc.press!==null)formData.press=cgc.press;
+  if(cgc.uv!==undefined&&cgc.uv!==null)formData.uv=cgc.uv;
+  if(cgc.clean!==undefined&&cgc.clean!==null)formData.clean=cgc.clean;
+
+  _assessed=true;
+  _pendingAssessResult=null;
+  const overlay = document.getElementById('assess-modal-overlay');
+  if (overlay) overlay.remove();
+  renderForm();
+}
+
+function dismissAssessModal(err) {
+  const overlay = document.getElementById('assess-modal-overlay');
+  if (overlay) overlay.remove();
+  if (err) alert('Assessment failed: ' + err);
+}
+
 async function assessGrade(){
   const imgs=(formData.images||[]).filter(Boolean);
   if(imgs.length===0){alert("Add at least one photo first.");return;}
   if(assessing)return;
   assessing=true;
-  syncMsg("Assessing — please wait...");
+  showAssessModal();
+  setStep('analyzing','running','Reading photos...');
   try{
-    // Compress images once, reuse for both calls
     const compressed=await Promise.all(imgs.slice(0,4).map(img=>compressImage(img)));
-
-    // Run CGC first, then pass its grade to PSA so PSA anchors correctly
-    syncMsg("CGC assessment — analyzing photos...");
     const cgcResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images:compressed,grader:"CGC",title:formData.title||"",issueNumber:formData.issue||""})});
     if(!cgcResp.ok){const e=await cgcResp.text();throw new Error("CGC error: "+e);}
     const cgc=await cgcResp.json();
     if(cgc.error)throw new Error(cgc.error);
-
-    // Show diagnostic info
     const d=cgc._diagnostics||{};
-    const dParts=[];
-    if(d.comicvineRef)dParts.push("✓ ComicVine cover");
-    else dParts.push("✗ ComicVine cover");
-    if(d.pageQualityRef)dParts.push("✓ Page quality ref");
-    else dParts.push("✗ Page quality ref");
-    if(d.gradeRef)dParts.push("✓ Grade reference");
-    else dParts.push("✗ Grade reference");
-    syncMsg(`CGC complete (${dParts.join(" · ")}) — running PSA...`);
-    // Only pass official grader notes if a slab label was detected in the photos
+    await animateStepsFromDiagnostics(d);
+    setStep('psa','running','Checking variance...');
     const slabDetected=!!(cgc.labelDetected&&(cgc.officialCGCGrade||cgc.officialPSAGrade));
     const psaResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images:compressed,grader:"PSA",cgcGrade:cgc.grade||"",cgcGraderNotes:slabDetected?formData.graderNotes||"":"",psaGraderNotes:slabDetected?formData.psaNotes||"":""})});
     if(!psaResp.ok){const e=await psaResp.text();throw new Error("PSA error: "+e);}
     const psa=await psaResp.json();
     if(psa.error)throw new Error(psa.error);
-
-    // Populate title/issue/publisher from CGC result
-    formData.title=(cgc.title||formData.title||"").trim().replace(/\s+/g," ").replace(/^The\s+/i,"");
-    formData.issue=cgc.issue!=null?String(cgc.issue):formData.issue||"";
-    formData.issueDate=cgc.issueDate||formData.issueDate||"";
-    formData.publisher=cgc.publisher||formData.publisher||"";
-
-    // If CGC label detected in image, populate official CGC grade/cert
-    if(cgc.labelDetected&&cgc.officialCGCGrade){
-      formData.cgcGrade=cgc.officialCGCGrade;
-      if(cgc.officialCGCCert)formData.cgcCert=cgc.officialCGCCert;
-      if(cgc.officialPageQuality)formData.pageQuality=cgc.officialPageQuality;
-    }
-    // If PSA label detected
-    if(psa.labelDetected&&psa.officialPSAGrade){
-      formData.psaGrade=psa.officialPSAGrade;
-      if(psa.officialPSACert)formData.psaCert=psa.officialPSACert;
-      if(psa.officialPageQuality&&!formData.pageQuality)formData.pageQuality=psa.officialPageQuality;
-    }
-
-    // AI assessed grades (always populated)
-    formData.assessedCGCGrade=cgc.grade||"";
-    formData.assessedPSAGrade=psa.grade?(String(psa.grade).includes(".")?String(psa.grade):parseFloat(psa.grade).toFixed(1)):"";
-    formData.pageQuality=cgc.pageQuality?normPageQuality(cgc.pageQuality):formData.pageQuality;
-
-    // AI grader notes go into separate field; leave graderNotes for official CGC notes
-    formData.aiGraderNotes=cgc.graderNotes||"";
-
-    // AI Assessment: combined CGC rationale
-    formData.aiAssessment=cgc.aiAssessment||"";
-    // Label notes (key issue notations from right side of slab label)
-    if(cgc.labelNotes&&cgc.labelNotes.trim()){
-      formData.cgcNotes=cgc.labelNotes.trim()+(formData.cgcNotes?("\n"+formData.cgcNotes):"");
-    }
-
-    // PSA Notes: only if PSA differs from CGC in meaningful ways
-    formData.psaNotes=psa.psaNotes||"";
-
-    // Treatment candidates from CGC
-    if(cgc.press!==undefined&&cgc.press!==null)formData.press=cgc.press;
-    if(cgc.uv!==undefined&&cgc.uv!==null)formData.uv=cgc.uv;
-    if(cgc.clean!==undefined&&cgc.clean!==null)formData.clean=cgc.clean;
-
-    _assessed=true;
-    syncMsg(null);
-    renderForm();
+    await delay(180);
+    setStep('psa','done',psa.psaNotes?'Variance found':'Same grade');
+    _pendingAssessResult={cgc,psa};
+    showResultPreview(cgc,psa);
   }catch(e){
-    syncMsg(null);
-    alert("Assessment failed: "+e.message);
+    dismissAssessModal(e.message);
   }
   assessing=false;
 }
