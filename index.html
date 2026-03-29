@@ -176,6 +176,7 @@ function detectDesignation(c){
   if(/\bqualified\b/i.test(h))return"qualified";
   return"universal";
 }
+function normalizeGrade(g){if(!g)return g;const gs=String(g);return gs.includes(".")?gs:parseFloat(gs).toFixed(1);}
 function buildBadge(gradeVal,type,designation,sm){
   const cls=sm?"ubadge ubadge-sm":"ubadge";
   const lbl=GRADE_LABELS[gradeVal]||"";
@@ -215,8 +216,8 @@ function buildGradeRowHTML(c){
   if(c.cgcGrade)badges.push(buildBadge(c.cgcGrade,"cgc-official",des,false));
   if(c.psaGrade)badges.push(buildBadge(c.psaGrade,"psa-official",c.psaDesignation||"universal",false));
   const ac=aiCgcGrade(c);
-  if(ac)badges.push(buildBadge(ac,"cgc-ai","",false));
-  if(c.assessedPSAGrade&&c.psaNotes)badges.push(buildBadge(c.assessedPSAGrade,"psa-ai","",false));
+  if(ac)badges.push(buildBadge(normalizeGrade(ac),"cgc-ai","",false));
+  if(c.assessedPSAGrade)badges.push(buildBadge(normalizeGrade(c.assessedPSAGrade),"psa-ai","",false));
   const gradeIsAiCgc=!c.assessedCGCGrade&&!!(c.myAssessment||c.aiAssessment)&&!!c.grade;
   if(c.grade&&!gradeIsAiCgc&&!c.cgcGrade&&!c.psaGrade&&!ac)badges.push(buildBadge(c.grade,"my","",false));
   if(badges.length===0)return"";
@@ -725,9 +726,9 @@ function renderForm(){
         ${PAGE_QUALITIES.map(q=>`<option value="${q}"${formData.pageQuality===q?" selected":""}>${q}</option>`).join("")}
       </select></div>
     </div>
-    ${formData.assessedCGCGrade||formData.assessedPSAGrade?`<div style="display:flex;gap:10px;font-size:12px;color:#8a7a6a;align-items:center">
-      ${formData.assessedCGCGrade?`<span style="color:#68A0D8">AI CGC: <strong>${esc(formData.assessedCGCGrade)}</strong></span>`:""}
-      ${formData.assessedPSAGrade?`<span style="color:#FF2040">AI PSA: <strong>${esc(formData.assessedPSAGrade)}</strong></span>`:""}
+    ${formData.assessedCGCGrade||formData.assessedPSAGrade?`<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;margin-top:4px">
+      ${formData.assessedCGCGrade?buildBadge(normalizeGrade(formData.assessedCGCGrade),"cgc-ai","",true):""}
+      ${formData.assessedPSAGrade?buildBadge(normalizeGrade(formData.assessedPSAGrade),"psa-ai","",true):""}
     </div>`:""}
     ${df("Grading Date","slabbingDate")}
     <div><label class="field-label">Seller</label>
