@@ -60,6 +60,7 @@ export default async function handler(req, res) {
               type: 'image',
               source: { type: 'base64', media_type: contentType, data: imgBase64 }
             };
+            console.log('ComicVine cover reference fetched successfully');
           }
         }
       }
@@ -284,6 +285,7 @@ Return ONLY valid JSON, no markdown.`;
             if (refParsed.grade) {
               if (!String(refParsed.grade).includes('.')) refParsed.grade = parseFloat(refParsed.grade).toFixed(1);
               parsed = refParsed;
+              parsed._diagnostics = { comicvineRef: referenceImageBlock !== null, gradeRef: true };
             }
           }
         } catch (e) {
@@ -293,6 +295,11 @@ Return ONLY valid JSON, no markdown.`;
       }
     }
 
+    // Attach diagnostic info
+    parsed._diagnostics = {
+      comicvineRef: referenceImageBlock !== null,
+      gradeRef: false  // will be updated below if refinement runs
+    };
     return res.status(200).json(parsed);
   } catch (err) {
     return res.status(500).json({ error: err.message });
