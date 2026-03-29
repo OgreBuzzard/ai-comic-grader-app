@@ -67,24 +67,28 @@ Press: spine roll=yes, edge fraying=no, corner creases=yes, tanning=no.
 
 Return ONLY valid JSON, no markdown.`;
 
-  const psaPrompt = `You are a PSA comic book grading expert. The CGC assessment for this comic has already been completed and assigned an AI CGC grade of ${cgcGrade || 'unknown'}. Your ONLY job is to determine if PSA would grade this differently from that CGC grade, and explain why.
+  const psaPrompt = `You are a PSA comic book grading expert. The CGC AI assessment for this comic assigned a grade of ${cgcGrade || 'unknown'}. Your job is to determine whether PSA's grading methodology would produce a DIFFERENT result for THIS SPECIFIC BOOK based on what you can see in the photos.
 
 Return this JSON:
 {
-  "grade": "your AI PSA grade as string — must be one of PSA's valid grades: 10, 9.8, 9.6, 9.4, 9.2, 9.0, 8.5, 8.0, 7.5, 7.0, 6.5, 6.0, 5.5, 5.0, 4.5, 4.0, 3.5, 3.0, 2.5, 2.0, 1.5, 1.0, 0.5, 0.3",
-  "psaNotes": "1-3 sentences describing ONLY where PSA would grade differently from the CGC grade of ${cgcGrade || 'unknown'}. Reference the CGC grade explicitly. Empty string '' if PSA would give the same grade.",
+  "grade": "your AI PSA grade — must be one of: 10, 9.8, 9.6, 9.4, 9.2, 9.0, 8.5, 8.0, 7.5, 7.0, 6.5, 6.0, 5.5, 5.0, 4.5, 4.0, 3.5, 3.0, 2.5, 2.0, 1.5, 1.0, 0.5, 0.3",
+  "psaNotes": "1-2 sentences explaining the specific reason THIS book would grade differently at PSA. Must cite a concrete, visible characteristic of this specific book — not general market tendencies. Empty string if PSA would give the same grade.",
   "labelDetected": false,
   "officialPSAGrade": null,
   "officialPSACert": null
 }
 
-CRITICAL: The CGC grade for this book is ${cgcGrade || 'unknown'}. Your PSA grade must be compared against that specific number. If you think PSA would give the same grade, set psaNotes to "" and set grade equal to the CGC grade.
+RULES:
+1. DEFAULT IS SAME GRADE. Start from ${cgcGrade || 'unknown'} and only move if you have a specific, concrete reason visible in the photos.
+2. A different grade requires a book-specific defect or characteristic — not general statements about PSA market tendencies or Silver Age generosity.
+3. Valid reasons to go HIGHER: a specific visible defect that PSA's eye-appeal weighting would discount (e.g. a very minor tick on an otherwise immaculate book where overall presentation is exceptional).
+4. Valid reasons to go LOWER: a specific visible defect PSA penalizes more heavily (e.g. tape, which PSA always treats as a defect never restoration).
+5. "Good eye appeal" alone is NOT a valid reason. "Silver Age book" alone is NOT a valid reason. Almost every Silver Age book has some eye appeal. If you cannot point to something specific and visible that PSA treats differently from CGC, return the same grade with empty psaNotes.
+6. If psaNotes is empty string, grade must equal ${cgcGrade || 'unknown'}.
 
-PSA differs from CGC in these specific ways:
-- PSA explicitly weights eye appeal more heavily — a book that presents beautifully may grade higher even with noted defects
-- PSA may run slightly more generous on Silver/Bronze Age books
-- PSA's restoration designation is "Conserved" (professional) vs "Restored" (amateur); tape is always a defect
-- If PSA would give the same grade as CGC, psaNotes must be empty string ""
+Legitimate PSA-specific differences:
+- Tape: PSA always grades tape as a defect (never restoration) — may lower vs CGC
+- Conservation work: PSA's "Conserved" designation may treat professional archival repairs more favorably than CGC
 
 If a PSA label is visible: set labelDetected=true, officialPSAGrade to label grade, officialPSACert to cert number.
 
