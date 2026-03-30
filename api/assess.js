@@ -299,7 +299,7 @@ Return ONLY valid JSON, no markdown.`;
                 ]
               }]
             })
-          }, {}, 25000);
+          }, 25000);
           if (refResp.ok) {
             const refData = await refResp.json();
             const refText = refData.content?.map(b => b.text || '').join('') || '';
