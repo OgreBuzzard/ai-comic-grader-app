@@ -48,10 +48,12 @@ export default async function handler(req, res) {
     console.log('Fetching grade ref:', url);
     try {
       const resp = await fetchWithTimeout(url, {}, 4000);
-      console.log('Grade ref response:', resp.status);
+      console.log('Grade ref response status:', resp.status, 'ok:', resp.ok);
       if (!resp.ok) return null;
       const buf = await resp.arrayBuffer();
+      console.log('Grade ref buffer size:', buf.byteLength);
       const b64 = Buffer.from(buf).toString('base64');
+      console.log('Grade ref b64 length:', b64.length);
       const ct = resp.headers.get('content-type') || 'image/jpeg';
       return { type: 'image', source: { type: 'base64', media_type: ct, data: b64 } };
     } catch (e) {
