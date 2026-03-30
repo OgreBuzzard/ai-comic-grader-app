@@ -45,8 +45,10 @@ export default async function handler(req, res) {
     if (!validGrades.includes(gradeStr)) return null;
     const filename = gradeStr.replace('.', '_') + '.jpg';
     const url = `${baseUrl}/Grade_Reference/${filename}`;
+    console.log('Fetching grade ref:', url);
     try {
       const resp = await fetchWithTimeout(url, {}, 4000);
+      console.log('Grade ref response:', resp.status);
       if (!resp.ok) return null;
       const buf = await resp.arrayBuffer();
       const b64 = Buffer.from(buf).toString('base64');
@@ -72,9 +74,12 @@ export default async function handler(req, res) {
 
   // Fetch ComicVine cover reference image if title and issue are available
   let referenceImageBlock = null;
-  const baseUrl = req.headers['x-forwarded-host']
+  const baseUrl = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : req.headers['x-forwarded-host']
     ? `https://${req.headers['x-forwarded-host']}`
     : (req.headers['host'] ? `https://${req.headers['host']}` : '');
+  console.log('baseUrl:', baseUrl);
 
   // Run ComicVine cover fetch and page quality fetch in parallel
   let pageQualityImageBlock = null;
