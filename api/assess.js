@@ -281,7 +281,7 @@ Return ONLY valid JSON, no markdown.`;
       if (refImage) {
         const refPrompt = `You previously assessed this comic as grade ${parsed.grade}. Here is the official CGC grading reference page for ${parsed.grade}. Compare your assessment photos against this reference. If the reference shows the book should look better or worse than what you assessed, adjust your grade. Return the same JSON format with your refined grade and updated graderNotes and aiAssessment. If ${parsed.grade} still seems correct, return the same grade.${notesBlock}`;
         try {
-          const refResp = await fetch('https://api.anthropic.com/v1/messages', {
+          const refResp = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
             body: JSON.stringify({
@@ -298,7 +298,7 @@ Return ONLY valid JSON, no markdown.`;
                 ]
               }]
             })
-          });
+          }, {}, 25000);
           if (refResp.ok) {
             const refData = await refResp.json();
             const refText = refData.content?.map(b => b.text || '').join('') || '';
