@@ -128,8 +128,8 @@
       width: 100%; max-width: 360px; box-shadow: 0 8px 40px rgba(0,0,0,0.18);
     }
     #assess-modal h3 {
-      font-size: 17px; font-weight: 700; color: #1a1614; margin: 0 0 20px;
-      text-align: center; letter-spacing: 0.02em;
+      font-size: 17px; font-weight: 700; color: #1a1614; margin: 0;
+      letter-spacing: 0.02em;
     }
     .assess-step {
       display: flex; align-items: center; gap: 12px;
@@ -424,6 +424,16 @@ function renderList(){
               <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px">
                 ${c.issue?`<span style="font-size:13px;color:#3a2e24">${formatIssue(c.issue)}</span>`:""}
                 ${c.pageQuality?`<span style="font-size:11px;color:#8a7a6a">${esc(c.pageQuality)}</span>`:""}
+                ${(()=>{
+                  if(!c.fmv||c.fmv<=0)return "";
+                  const fmvStr="$"+c.fmv.toLocaleString("en-US",{minimumFractionDigits:0,maximumFractionDigits:0});
+                  if(!c.fmvDate)return `<span style="font-size:11px;color:#8a7a6a">${fmvStr}</span>`;
+                  const months=(Date.now()-new Date(c.fmvDate).getTime())/(1000*60*60*24*30.5);
+                  if(months<6)return `<span style="font-size:11px;color:#4a7a4a;font-weight:600">${fmvStr}</span>`;
+                  if(months<12)return `<span style="font-size:11px;color:#a07820;font-weight:600" title="FMV may be outdated">~${fmvStr}</span>`;
+                  const yr=new Date(c.fmvDate).getFullYear();
+                  return `<span style="font-size:11px;color:#9a8a7a" title="FMV from ${yr}">est. ${fmvStr}</span>`;
+                })()}
               </div>
             </div>
             ${(()=>{
@@ -496,15 +506,21 @@ function showDetail(id){
     html+=`</div>`;
   }
 
-  // Grade badge row — below images, above Page Quality
+  // Grade badge row + PQ box on same line
   const gradeRow=buildGradeRowHTML(selected);
-  if(gradeRow) html+=`<div style="margin-top:16px">${gradeRow}</div>`;
+  if(gradeRow||selected.pageQuality){
+    html+=`<div style="margin-top:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      ${gradeRow||""}
+      ${selected.pageQuality?`<div><div class="section-label" style="margin-bottom:4px">Page Quality</div>${buildPQBox(selected.pageQuality)}</div>`:""}
+    </div>`;
+  }
 
   html+=`<div class="divider"></div>
   <div class="grid-2">
-    ${selected.pageQuality?`<div><div class="section-label">Page Quality</div><div class="field-val">${esc(selected.pageQuality)}</div></div>`:""}
     ${selected.slabbingDate?`<div><div class="section-label">Date Graded</div><div class="field-val">${esc(selected.slabbingDate)}</div></div>`:""}
     ${selected.dateAcquired?`<div><div class="section-label">Date Acquired</div><div class="field-val">${formatDate(selected.dateAcquired)}</div></div>`:""}
+    ${cost>0?`<div><div class="section-label">Total Cost</div><div class="field-val" style="color:#8abf8a;font-weight:700">${fmt$(cost)}</div></div>`:""}
+    ${selected.fmv?`<div><div class="section-label">FMV${selected.fmvDate?` <span style="font-weight:400;color:#9a8a9a;font-size:10px">${esc(selected.fmvDate)}</span>`:""}</div><div class="field-val" style="color:#a078df;font-weight:700">${fmt$(selected.fmv)}</div></div>`:""}
   </div>`;
 
   const treatments=[["Press",selected.press],["UV",selected.uv],["Clean",selected.clean]].filter(([,v])=>v!==null&&v!==undefined);
@@ -525,12 +541,7 @@ function showDetail(id){
     <div><div class="section-label">CGC Shipping</div><div class="field-val">${fmt$(selected.cgcShipping)}</div></div>
   </div>`;
 
-  if(cost>0||selected.fmv){
-    html+=`<div style="display:flex;gap:16px;align-items:center;margin-top:12px;flex-wrap:wrap">`;
-    if(cost>0)html+=`<div style="padding:8px 12px;background:#f8f6f3;border:1px solid #2a3a2a;border-radius:4px"><span style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase">Total Cost </span><span style="font-size:16px;font-weight:700;color:#8abf8a;margin-left:8px">${fmt$(cost)}</span></div>`;
-    if(selected.fmv)html+=`<div style="padding:8px 12px;background:#f8f6f3;border:1px solid #2a1a3a;border-radius:4px;display:flex;gap:10px;align-items:center"><span style="font-size:11px;color:#8a6abf;letter-spacing:2px;text-transform:uppercase">FMV</span><span style="font-size:16px;font-weight:700;color:#a078df">${fmt$(selected.fmv)}</span>${selected.fmvDate?`<span style="font-size:11px;color:#6b5e72">as of ${esc(selected.fmvDate)}</span>`:""}</div>`;
-    html+=`</div>`;
-  }
+
 
   if(selected.cgcNotes)html+=`<div style="margin-top:20px"><div class="section-label" style="color:#4a7a4a">Label Notes</div><div class="notes-box" style="border-color:#1a3a1a;color:#80b080">${esc(selected.cgcNotes)}</div></div>`;
   if(selected.graderNotes)html+=`<div style="margin-top:20px"><div class="section-label">CGC Grader Notes</div><div class="notes-box" style="white-space:pre-line">${esc(selected.graderNotes)}</div></div>`;
@@ -627,7 +638,10 @@ function showAssessModal() {
   overlay.id = 'assess-modal-overlay';
   overlay.innerHTML = `
     <div id="assess-modal">
-      <h3>Assessment in Progress</h3>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <h3 style="margin:0">Assessment in Progress</h3>
+        <button onclick="dismissAssessModal()" style="background:none;border:none;font-size:20px;color:#8a7a6a;cursor:pointer;padding:0 0 0 8px;line-height:1" aria-label="Cancel">×</button>
+      </div>
       ${stepsHTML}
       <div id="assess-result-preview">
         <div class="result-grades" id="result-grades"></div>
@@ -663,6 +677,25 @@ async function animateStepsFromDiagnostics(d) {
   setStep('confirming', d.gradeRef ? 'done' : 'skipped', d.gradeRef ? 'Grade confirmed' : 'Single pass');
 }
 
+const PQ_COLORS={
+  "White":{"bg":"#EEE8DC","text":"#5a4e3a"},
+  "Off-White to White":{"bg":"#EAE0C2","text":"#5a4e3a"},
+  "Off-White":{"bg":"#E0D3B2","text":"#5a4e3a"},
+  "Cream to Off-White":{"bg":"#D7C898","text":"#4a3e28"},
+  "Cream":{"bg":"#CDBE90","text":"#4a3e28"},
+  "Light Tan to Cream":{"bg":"#D5BC97","text":"#4a3e28"},
+  "Light Tan":{"bg":"#CFB489","text":"#3a2e18"},
+  "Tan":{"bg":"#C49E74","text":"#3a2e18"},
+};
+
+function buildPQBox(pq, size='normal') {
+  if (!pq) return '';
+  const colors = PQ_COLORS[pq] || {bg:'#f0ece6', text:'#5a4e44'};
+  const pad = size === 'small' ? '4px 10px' : '8px 16px';
+  const fs = size === 'small' ? '11px' : '13px';
+  const fw = '600';
+  return `<div style="background:${colors.bg};color:${colors.text};padding:${pad};border-radius:8px;font-size:${fs};font-weight:${fw};letter-spacing:0.03em;display:inline-block">${pq}</div>`;
+}
 function showResultPreview(cgc, psa) {
   const preview = document.getElementById('assess-result-preview');
   const gradesEl = document.getElementById('result-grades');
@@ -675,7 +708,7 @@ function showResultPreview(cgc, psa) {
 
   gradesEl.innerHTML = (cgcGrade ? buildBadge(cgcGrade, 'cgc-ai', '', true) : '') +
                        (psaGrade ? buildBadge(psaGrade, 'psa-ai', '', true) : '');
-  if (pq) pqEl.textContent = pq;
+  if (pq) pqEl.innerHTML = buildPQBox(pq);
 
   preview.style.display = 'block';
   const btn = document.getElementById('assess-complete-btn');
@@ -855,10 +888,12 @@ function renderForm(){
         <option value="">— select grade —</option>
         ${GRADES.map(g=>`<option value="${g}"${formData.grade===g?" selected":""}>${g} — ${GRADE_LABELS[g]}</option>`).join("")}
       </select></div>
-      <div><label class="field-label">Page Quality</label><select onchange="formData.pageQuality=this.value">
+      <div><label class="field-label">Page Quality</label><select onchange="formData.pageQuality=this.value;renderForm()">
         <option value="">— select pages —</option>
         ${PAGE_QUALITIES.map(q=>`<option value="${q}"${formData.pageQuality===q?" selected":""}>${q}</option>`).join("")}
-      </select></div>
+      </select>
+      ${formData.pageQuality?`<div style="margin-top:6px">${buildPQBox(formData.pageQuality,'small')}</div>`:""}
+      </div>
     </div>
     ${formData.assessedCGCGrade||formData.assessedPSAGrade?`<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;margin-top:4px">
       ${formData.assessedCGCGrade?buildBadge(normalizeGrade(formData.assessedCGCGrade),"cgc-ai","",true):""}
