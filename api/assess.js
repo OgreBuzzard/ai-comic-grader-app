@@ -45,15 +45,11 @@ export default async function handler(req, res) {
     if (!validGrades.includes(gradeStr)) return null;
     const filename = gradeStr.replace('.', '_') + '.jpg';
     const url = `${baseUrl}/Grade_Reference/${filename}`;
-    console.log('Fetching grade ref:', url);
     try {
       const resp = await fetchWithTimeout(url, {}, 4000);
-      console.log('Grade ref response status:', resp.status, 'ok:', resp.ok);
       if (!resp.ok) return null;
       const buf = await resp.arrayBuffer();
-      console.log('Grade ref buffer size:', buf.byteLength);
       const b64 = Buffer.from(buf).toString('base64');
-      console.log('Grade ref b64 length:', b64.length);
       const ct = resp.headers.get('content-type') || 'image/jpeg';
       return { type: 'image', source: { type: 'base64', media_type: ct, data: b64 } };
     } catch (e) {
@@ -81,7 +77,6 @@ export default async function handler(req, res) {
     : (process.env.VERCEL_PROJECT_PRODUCTION_URL
     ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
     : '');
-  console.log('baseUrl:', baseUrl, '| host:', req.headers['host']);
 
   // Run ComicVine cover fetch and page quality fetch in parallel
   let pageQualityImageBlock = null;
@@ -107,7 +102,6 @@ export default async function handler(req, res) {
             }
           }
         }
-      } catch (e) { console.log('ComicVine fetch failed:', e.message); }
     })() : Promise.resolve();
 
     const pqFetch = baseUrl ? fetchPageQualityReference(baseUrl).then(r => { pageQualityImageBlock = r; }) : Promise.resolve();
@@ -282,10 +276,8 @@ Return ONLY valid JSON, no markdown.`;
     }
 
     // Grade reference refinement pass (CGC only, grade in 5.0–10.0 range)
-    console.log('Grade ref check — isCGC:', isCGC, 'labelDetected:', parsed.labelDetected, 'grade:', parsed.grade, 'baseUrl:', baseUrl);
     if (isCGC && !parsed.labelDetected && parsed.grade) {
       const refImage = baseUrl ? await fetchGradeReference(parsed.grade, baseUrl) : null;
-      console.log('refImage fetched:', refImage !== null);
       if (refImage) {
         const refPrompt = `You previously assessed this comic as grade ${parsed.grade}. Here is the official CGC grading reference page for ${parsed.grade}. Compare your assessment photos against this reference. If the reference shows the book should look better or worse than what you assessed, adjust your grade. Return the same JSON format with your refined grade and updated graderNotes and aiAssessment. If ${parsed.grade} still seems correct, return the same grade.${notesBlock}`;
         try {
@@ -320,16 +312,16 @@ Return ONLY valid JSON, no markdown.`;
           }
         } catch (e) {
           // Refinement failed — use original assessment
-          console.log('Grade reference refinement failed:', e.message);
         }
       }
     }
 
-    // Attach diagnostic info
+    // Attach diagnostic info (preserve gradeRef if already set by refinement pass)
+    const gradeRefSucceeded = parsed._diagnostics?.gradeRef === true;
     parsed._diagnostics = {
       comicvineRef: referenceImageBlock !== null,
       pageQualityRef: pageQualityImageBlock !== null,
-      gradeRef: false  // will be updated below if refinement runs
+      gradeRef: gradeRefSucceeded
     };
     return res.status(200).json(parsed);
   } catch (err) {
