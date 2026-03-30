@@ -143,15 +143,16 @@
     }
     .assess-step-icon.pending { background: #f0ece6; color: #b0a090; }
     .assess-step-icon.running {
-      background: #e8f0f8; color: #2a5a8a;
-      animation: pulse-ring 1.2s ease-in-out infinite;
+      background: transparent;
+      border: 2.5px solid #dde8f4;
+      border-top-color: #2a5a8a;
+      animation: spin-arc 0.9s linear infinite;
     }
     .assess-step-icon.done { background: #e8f4ec; color: #2a7a4a; }
-    .assess-step-icon.skipped { background: #f4f0e8; color: #a09060; }
+    .assess-step-icon.skipped { background: #fce8e8; color: #c03030; }
     .assess-step-icon.failed { background: #fce8e8; color: #c03030; }
-    @keyframes pulse-ring {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(42,90,138,0.3); }
-      50% { box-shadow: 0 0 0 5px rgba(42,90,138,0); }
+    @keyframes spin-arc {
+      to { transform: rotate(360deg); }
     }
     .assess-step-label { flex: 1; font-weight: 500; }
     .assess-step-detail { font-size: 11px; color: #8a7a6a; margin-top: 1px; }
@@ -635,9 +636,9 @@ function showAssessModal() {
   ];
   const stepsHTML = steps.map(st => `
     <div class="assess-step" id="step-${st.id}">
-      <div class="assess-step-icon pending" id="icon-${st.id}">·</div>
+      <div class="assess-step-icon pending" id="icon-${st.id}"></div>
       <div style="flex:1">
-        <div class="assess-step-label">${st.label}</div>
+        <div class="assess-step-label" id="label-${st.id}" data-base="${st.label}">${st.label}</div>
         <div class="assess-step-detail" id="detail-${st.id}"></div>
       </div>
     </div>`).join('');
@@ -647,7 +648,7 @@ function showAssessModal() {
   overlay.innerHTML = `
     <div id="assess-modal">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-        <h3 style="margin:0">Assessment in Progress</h3>
+        <h3 style="margin:0">Assessing</h3>
         <button onclick="dismissAssessModal()" style="background:none;border:none;font-size:20px;color:#8a7a6a;cursor:pointer;padding:0 0 0 8px;line-height:1" aria-label="Cancel">×</button>
       </div>
       ${stepsHTML}
@@ -663,26 +664,27 @@ function showAssessModal() {
 function setStep(id, state, detail='') {
   const icon = document.getElementById('icon-'+id);
   const det = document.getElementById('detail-'+id);
+  const lbl = document.getElementById('label-'+id);
   if (!icon) return;
   icon.className = 'assess-step-icon ' + state;
-  icon.textContent = state === 'done' ? '✓' : state === 'failed' ? '✗' : state === 'skipped' ? '—' : state === 'running' ? '·' : '·';
-  if (det && detail) det.textContent = detail;
+  icon.textContent = state === 'done' ? '✓' : state === 'failed' ? '✗' : '';
+  if (lbl) lbl.textContent = lbl.dataset.base + (state === 'running' ? '...' : '');
+  if (det) det.textContent = (state !== 'running' && state !== 'skipped') ? detail : '';
 }
 
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function animateStepsFromDiagnostics(d) {
-  // Analyzing — already done when we get here
   await delay(120);
   setStep('analyzing', 'done');
   await delay(180);
   setStep('populating', 'done');
   await delay(180);
-  setStep('mint', d.comicvineRef ? 'done' : 'skipped', d.comicvineRef ? 'Cover found' : 'Not found');
+  setStep('mint', d.comicvineRef ? 'done' : 'failed');
   await delay(180);
-  setStep('pq', d.pageQualityRef ? 'done' : 'skipped', d.pageQualityRef ? 'Reference loaded' : 'Not loaded');
+  setStep('pq', d.pageQualityRef ? 'done' : 'failed');
   await delay(180);
-  setStep('confirming', d.gradeRef ? 'done' : 'skipped', d.gradeRef ? 'Grade confirmed' : 'Single pass');
+  setStep('confirming', d.gradeRef ? 'done' : 'failed');
 }
 
 const PQ_COLORS={
@@ -788,7 +790,7 @@ async function assessGrade(){
     const psa=await psaResp.json();
     if(psa.error)throw new Error(psa.error);
     await delay(180);
-    setStep('psa','done',psa.psaNotes?'Variance found':'Same grade');
+    setStep('psa','done');
     _pendingAssessResult={cgc,psa};
     showResultPreview(cgc,psa);
   }catch(e){
