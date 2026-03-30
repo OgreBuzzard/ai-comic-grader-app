@@ -102,6 +102,7 @@ export default async function handler(req, res) {
             }
           }
         }
+      } catch (e) { /* CV fetch failed — proceed without reference */ }
     })() : Promise.resolve();
 
     const pqFetch = baseUrl ? fetchPageQualityReference(baseUrl).then(r => { pageQualityImageBlock = r; }) : Promise.resolve();
