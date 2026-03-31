@@ -532,7 +532,7 @@ function showDetail(id){
     ${selected.fmv?`<div><div class="section-label">FMV${selected.fmvDate?` <span style="font-weight:400;color:#9a8a9a;font-size:10px">${esc(selected.fmvDate)}</span>`:""}</div><div class="field-val" style="color:#a078df;font-weight:700">${fmt$(selected.fmv)}</div></div>`:""}
   </div>`;
 
-  const treatments=[["Press",selected.press],["UV",selected.uv],["Clean",selected.clean]].filter(([,v])=>v!==null&&v!==undefined);
+  const treatments=[["Press",selected.press],["UV",selected.uv],["Clean",selected.clean]].filter(([,v])=>v===true||v===false);
   if(treatments.length>0){
     html+=`<div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">`;
     treatments.forEach(([label,val])=>{
@@ -777,7 +777,7 @@ async function assessGrade(){
   setStep('analyzing','running','Reading photos...');
   try{
     const compressed=await Promise.all(imgs.slice(0,4).map(img=>compressImage(img)));
-    const cgcResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images:compressed,grader:"CGC",title:formData.title||"",issueNumber:formData.issue||""})});
+    const cgcResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images:compressed,grader:"CGC",title:formData.title||"",issueNumber:formData.issue||"",issueDate:formData.issueDate||""})});
     if(!cgcResp.ok){const e=await cgcResp.text();throw new Error("CGC error: "+e);}
     const cgc=await cgcResp.json();
     if(cgc.error)throw new Error(cgc.error);
@@ -843,11 +843,13 @@ function renderForm(){
   }
   function treatBtn(key,label){
     const v=formData[key];
-    const bg=v===true?"#1a2a10":v===false?"#2a1a10":"#1a1a1a";
-    const bc=v===true?"#4a7a20":v===false?"#5a2a10":"#3a3a3a";
-    const col=v===true?"#8abf40":v===false?"#bf6040":"#6b6b6b";
-    const txt=v===true?"Y":v===false?"N":"—";
-    return`<button class="treatment-btn" style="background:${bg};border-color:${bc};color:${col}" onclick="cycleTreatment('${key}')">${label}: ${txt}</button>`;
+    const isDone=v==="done";
+    const bg=v===true?"#1a2a10":v===false?"#2a1a10":isDone?"#0a1a1a":"#1a1a1a";
+    const bc=v===true?"#4a7a20":v===false?"#5a2a10":isDone?"#1a4a4a":"#3a3a3a";
+    const col=v===true?"#8abf40":v===false?"#bf6040":isDone?"#40bfbf":"#6b6b6b";
+    const txt=v===true?"Y":v===false?"N":isDone?"✓":"—";
+    const cancelBtn=(v===true||v===false||isDone)?`<button onclick="cancelTreatment('${key}',event)" style="margin-left:6px;background:none;border:none;color:#9a6a6a;font-size:13px;cursor:pointer;padding:0;line-height:1" title="Remove recommendation">×</button>`:"";
+    return`<span style="display:inline-flex;align-items:center"><button class="treatment-btn" style="background:${bg};border-color:${bc};color:${col}" onclick="cycleTreatment('${key}')">${label}: ${txt}</button>${cancelBtn}</span>`;
   }
 
   let html=`<div class="sticky-back"><button class="btn-ghost" onclick="cancelForm()">← Back</button></div>
@@ -1051,7 +1053,14 @@ async function handleImages(e){
 }
 
 function cycleTreatment(key){
-  const v=formData[key];formData[key]=v===null?true:v===true?false:null;renderForm();
+  const v=formData[key];
+  formData[key]=v===null?true:v===true?false:v===false?"done":null;
+  renderForm();
+}
+function cancelTreatment(key,e){
+  e.stopPropagation();
+  formData[key]=null;
+  renderForm();
 }
 
 async function submitForm(){
