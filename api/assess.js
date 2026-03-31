@@ -81,7 +81,7 @@ export default async function handler(req, res) {
   // Run ComicVine cover fetch and page quality fetch in parallel
   let pageQualityImageBlock = null;
   if (isCGC) {
-    const cvDiag = { step: 'init', searchTitle: '', volCount: 0, candidateCount: 0, error: null };
+    const cvDiag = { step: 'init', searchTitle: '', volCount: 0, candidateCount: 0, error: null, hasKey: !!COMICVINE_API_KEY, hasTitle: !!title, hasIssue: !!issueNumber };
     const cvFetch = (title && issueNumber && COMICVINE_API_KEY) ? (async () => {
       try {
         const searchTitle = title.replace(/^The\s+/i, '').trim();
