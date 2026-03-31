@@ -101,9 +101,12 @@ export default async function handler(req, res) {
       const volResp = await fetchWithTimeout(volumeUrl, { headers: { 'User-Agent': 'ComicGraderApp/1.0' } }, 6000);
       if (volResp.ok) {
         const volData = await volResp.json();
-        const volumes = (volData.results || []).filter(v =>
-          v.name && v.name.toLowerCase() === searchTitle.toLowerCase()
-        );
+        const titleLower = searchTitle.toLowerCase();
+        const volumes = (volData.results || []).filter(v => {
+          if (!v.name) return false;
+          const vl = v.name.toLowerCase();
+          return vl === titleLower || vl === 'the ' + titleLower || vl.replace(/^the\s+/, '') === titleLower;
+        });
         if (volumes.length > 0) {
           const issueResults = await Promise.all(volumes.map(async vol => {
             try {
