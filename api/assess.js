@@ -81,69 +81,83 @@ export default async function handler(req, res) {
   // Run ComicVine cover fetch and page quality fetch in parallel
   let pageQualityImageBlock = null;
   if (isCGC) {
+    const cvDiag = { step: 'init', searchTitle: '', volCount: 0, candidateCount: 0, error: null };
     const cvFetch = (title && issueNumber && COMICVINE_API_KEY) ? (async () => {
       try {
         const searchTitle = title.replace(/^The\s+/i, '').trim();
-        // Two-step lookup: find volumes by exact name, then issue by number+date
-      const cleanIssue = String(issueNumber).replace(/^0+/, '') || '0';
-      function parseIssueDate(dateStr) {
-        if (!dateStr) return null;
-        const parts = String(dateStr).trim().split('/');
-        if (parts.length < 2) return null;
-        const month = parseInt(parts[0], 10);
-        let year = parseInt(parts[1], 10);
-        if (isNaN(month) || isNaN(year)) return null;
-        if (year < 100) year = year <= 29 ? 2000 + year : 1900 + year;
-        return { month, year };
-      }
-      const parsedDate = parseIssueDate(issueDate);
-      const volumeUrl = `https://comicvine.gamespot.com/api/volumes/?api_key=${COMICVINE_API_KEY}&format=json&filter=name:${encodeURIComponent(searchTitle)}&field_list=id,name,start_year&limit=20`;
-      const volResp = await fetchWithTimeout(volumeUrl, { headers: { 'User-Agent': 'ComicGraderApp/1.0' } }, 6000);
-      if (volResp.ok) {
-        const volData = await volResp.json();
-        const titleLower = searchTitle.toLowerCase();
-        const volumes = (volData.results || []).filter(v => {
-          if (!v.name) return false;
-          const vl = v.name.toLowerCase();
-          return vl === titleLower || vl === 'the ' + titleLower || vl.replace(/^the\s+/, '') === titleLower;
-        });
-        if (volumes.length > 0) {
-          const issueResults = await Promise.all(volumes.map(async vol => {
-            try {
-              const issueUrl = `https://comicvine.gamespot.com/api/issues/?api_key=${COMICVINE_API_KEY}&format=json&filter=volume:${vol.id},issue_number:${encodeURIComponent(cleanIssue)}&field_list=id,cover_date,image&limit=5`;
-              const issResp = await fetchWithTimeout(issueUrl, { headers: { 'User-Agent': 'ComicGraderApp/1.0' } }, 6000);
-              if (!issResp.ok) return null;
-              const issData = await issResp.json();
-              return (issData.results || []).length ? issData.results[0] : null;
-            } catch (e) { return null; }
-          }));
-          const candidates = issueResults.filter(Boolean);
-          let best = null;
-          if (parsedDate && candidates.length > 1) {
-            for (const c of candidates) {
-              if (!c.cover_date) continue;
-              const [cvYear, cvMonth] = c.cover_date.split('-').map(Number);
-              if (cvYear === parsedDate.year && cvMonth === parsedDate.month) { best = c; break; }
-            }
-            if (!best) {
+        cvDiag.searchTitle = searchTitle;
+        cvDiag.step = 'vol_fetch';
+        const cleanIssue = String(issueNumber).replace(/^0+/, '') || '0';
+        function parseIssueDate(dateStr) {
+          if (!dateStr) return null;
+          const parts = String(dateStr).trim().split('/');
+          if (parts.length < 2) return null;
+          const month = parseInt(parts[0], 10);
+          let year = parseInt(parts[1], 10);
+          if (isNaN(month) || isNaN(year)) return null;
+          if (year < 100) year = year <= 29 ? 2000 + year : 1900 + year;
+          return { month, year };
+        }
+        const parsedDate = parseIssueDate(issueDate);
+        const volumeUrl = `https://comicvine.gamespot.com/api/volumes/?api_key=${COMICVINE_API_KEY}&format=json&filter=name:${encodeURIComponent(searchTitle)}&field_list=id,name,start_year&limit=20`;
+        const volResp = await fetchWithTimeout(volumeUrl, { headers: { 'User-Agent': 'ComicGraderApp/1.0' } }, 6000);
+        cvDiag.volHttpStatus = volResp.status;
+        if (volResp.ok) {
+          const volData = await volResp.json();
+          cvDiag.volTotalResults = volData.number_of_total_results || 0;
+          cvDiag.volNames = (volData.results || []).map(v => v.name).slice(0, 5);
+          const titleLower = searchTitle.toLowerCase();
+          const volumes = (volData.results || []).filter(v => {
+            if (!v.name) return false;
+            const vl = v.name.toLowerCase();
+            return vl === titleLower || vl === 'the ' + titleLower || vl.replace(/^the\s+/, '') === titleLower;
+          });
+          cvDiag.volCount = volumes.length;
+          cvDiag.step = 'issue_fetch';
+          if (volumes.length > 0) {
+            const issueResults = await Promise.all(volumes.map(async vol => {
+              try {
+                const issueUrl = `https://comicvine.gamespot.com/api/issues/?api_key=${COMICVINE_API_KEY}&format=json&filter=volume:${vol.id},issue_number:${encodeURIComponent(cleanIssue)}&field_list=id,cover_date,image&limit=5`;
+                const issResp = await fetchWithTimeout(issueUrl, { headers: { 'User-Agent': 'ComicGraderApp/1.0' } }, 6000);
+                if (!issResp.ok) return null;
+                const issData = await issResp.json();
+                return (issData.results || []).length ? issData.results[0] : null;
+              } catch (e) { return null; }
+            }));
+            const candidates = issueResults.filter(Boolean);
+            cvDiag.candidateCount = candidates.length;
+            cvDiag.step = 'pick_best';
+            let best = null;
+            if (parsedDate && candidates.length > 1) {
               for (const c of candidates) {
                 if (!c.cover_date) continue;
-                const [cvYear] = c.cover_date.split('-').map(Number);
-                if (cvYear === parsedDate.year) { best = c; break; }
+                const [cvYear, cvMonth] = c.cover_date.split('-').map(Number);
+                if (cvYear === parsedDate.year && cvMonth === parsedDate.month) { best = c; break; }
+              }
+              if (!best) {
+                for (const c of candidates) {
+                  if (!c.cover_date) continue;
+                  const [cvYear] = c.cover_date.split('-').map(Number);
+                  if (cvYear === parsedDate.year) { best = c; break; }
+                }
               }
             }
-          }
-          if (!best) best = candidates[0];
-          if (best && best.image && best.image.medium_url) {
-            const imgResp = await fetchWithTimeout(best.image.medium_url, {}, 4000);
-            if (imgResp.ok) {
-              const imgBuffer = await imgResp.arrayBuffer();
-              referenceImageBlock = { type: 'image', source: { type: 'base64', media_type: imgResp.headers.get('content-type') || 'image/jpeg', data: Buffer.from(imgBuffer).toString('base64') } };
+            if (!best) best = candidates[0];
+            cvDiag.step = 'img_fetch';
+            if (best && best.image && best.image.medium_url) {
+              const imgResp = await fetchWithTimeout(best.image.medium_url, {}, 4000);
+              cvDiag.imgHttpStatus = imgResp.status;
+              if (imgResp.ok) {
+                const imgBuffer = await imgResp.arrayBuffer();
+                referenceImageBlock = { type: 'image', source: { type: 'base64', media_type: imgResp.headers.get('content-type') || 'image/jpeg', data: Buffer.from(imgBuffer).toString('base64') } };
+                cvDiag.step = 'success';
+              }
+            } else {
+              cvDiag.step = 'no_image_url';
             }
           }
         }
-      }
-      } catch (e) { /* CV fetch failed — proceed without reference */ }
+      } catch (e) { cvDiag.error = e.message; cvDiag.step = 'exception'; }
     })() : Promise.resolve();
 
     const pqFetch = baseUrl ? fetchPageQualityReference(baseUrl).then(r => { pageQualityImageBlock = r; }) : Promise.resolve();
@@ -363,7 +377,8 @@ Return ONLY valid JSON, no markdown.`;
     parsed._diagnostics = {
       comicvineRef: referenceImageBlock !== null,
       pageQualityRef: pageQualityImageBlock !== null,
-      gradeRef: gradeRefSucceeded
+      gradeRef: gradeRefSucceeded,
+      cvDiag: cvDiag || null
     };
     return res.status(200).json(parsed);
   } catch (err) {
