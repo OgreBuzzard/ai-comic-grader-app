@@ -3,7 +3,7 @@ export default async function handler(req, res) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'API key not configured' });
   const COMICVINE_API_KEY = process.env.COMICVINE_API_KEY || '';
-  const { images, grader = 'CGC', cgcGrade = null, cgcGraderNotes = '', psaGraderNotes = '', title = '', issueNumber = '' } = req.body;
+  const { images, grader = 'CGC', cgcGrade = null, cgcGraderNotes = '', psaGraderNotes = '', title = '', issueNumber = '', issueDate = '' } = req.body;
   if (!images || images.length === 0) return res.status(400).json({ error: 'No images provided' });
 
   const imageBlocks = images.map(img => {
@@ -84,24 +84,62 @@ export default async function handler(req, res) {
     const cvFetch = (title && issueNumber && COMICVINE_API_KEY) ? (async () => {
       try {
         const searchTitle = title.replace(/^The\s+/i, '').trim();
-        const cvSearchUrl = `https://comicvine.gamespot.com/api/search/?api_key=${COMICVINE_API_KEY}&format=json&query=${encodeURIComponent(searchTitle + ' ' + issueNumber)}&resources=issue&field_list=image,volume,issue_number&limit=5`;
-        const cvResp = await fetchWithTimeout(cvSearchUrl, { headers: { 'User-Agent': 'ComicGraderApp/1.0' } }, 5000);
-        if (cvResp.ok) {
-          const cvData = await cvResp.json();
-          const results = cvData.results || [];
-          const match = results.find(r => {
-            const issNum = String(r.issue_number || '').replace(/^0+/, '');
-            const targetIss = String(issueNumber).replace(/^0+/, '');
-            return issNum === targetIss;
-          }) || results[0];
-          if (match && match.image && match.image.medium_url) {
-            const imgResp = await fetchWithTimeout(match.image.medium_url, {}, 4000);
+        // Two-step lookup: find volumes by exact name, then issue by number+date
+      const cleanIssue = String(issueNumber).replace(/^0+/, '') || '0';
+      function parseIssueDate(dateStr) {
+        if (!dateStr) return null;
+        const parts = String(dateStr).trim().split('/');
+        if (parts.length < 2) return null;
+        const month = parseInt(parts[0], 10);
+        let year = parseInt(parts[1], 10);
+        if (isNaN(month) || isNaN(year)) return null;
+        if (year < 100) year = year <= 29 ? 2000 + year : 1900 + year;
+        return { month, year };
+      }
+      const parsedDate = parseIssueDate(issueDate);
+      const volumeUrl = `https://comicvine.gamespot.com/api/volumes/?api_key=${COMICVINE_API_KEY}&format=json&filter=name:${encodeURIComponent(searchTitle)}&field_list=id,name,start_year&limit=20`;
+      const volResp = await fetchWithTimeout(volumeUrl, { headers: { 'User-Agent': 'ComicGraderApp/1.0' } }, 6000);
+      if (volResp.ok) {
+        const volData = await volResp.json();
+        const volumes = (volData.results || []).filter(v =>
+          v.name && v.name.toLowerCase() === searchTitle.toLowerCase()
+        );
+        if (volumes.length > 0) {
+          const issueResults = await Promise.all(volumes.map(async vol => {
+            try {
+              const issueUrl = `https://comicvine.gamespot.com/api/issues/?api_key=${COMICVINE_API_KEY}&format=json&filter=volume:${vol.id},issue_number:${encodeURIComponent(cleanIssue)}&field_list=id,cover_date,image&limit=5`;
+              const issResp = await fetchWithTimeout(issueUrl, { headers: { 'User-Agent': 'ComicGraderApp/1.0' } }, 6000);
+              if (!issResp.ok) return null;
+              const issData = await issResp.json();
+              return (issData.results || []).length ? issData.results[0] : null;
+            } catch (e) { return null; }
+          }));
+          const candidates = issueResults.filter(Boolean);
+          let best = null;
+          if (parsedDate && candidates.length > 1) {
+            for (const c of candidates) {
+              if (!c.cover_date) continue;
+              const [cvYear, cvMonth] = c.cover_date.split('-').map(Number);
+              if (cvYear === parsedDate.year && cvMonth === parsedDate.month) { best = c; break; }
+            }
+            if (!best) {
+              for (const c of candidates) {
+                if (!c.cover_date) continue;
+                const [cvYear] = c.cover_date.split('-').map(Number);
+                if (cvYear === parsedDate.year) { best = c; break; }
+              }
+            }
+          }
+          if (!best) best = candidates[0];
+          if (best && best.image && best.image.medium_url) {
+            const imgResp = await fetchWithTimeout(best.image.medium_url, {}, 4000);
             if (imgResp.ok) {
               const imgBuffer = await imgResp.arrayBuffer();
               referenceImageBlock = { type: 'image', source: { type: 'base64', media_type: imgResp.headers.get('content-type') || 'image/jpeg', data: Buffer.from(imgBuffer).toString('base64') } };
             }
           }
         }
+      }
       } catch (e) { /* CV fetch failed — proceed without reference */ }
     })() : Promise.resolve();
 
