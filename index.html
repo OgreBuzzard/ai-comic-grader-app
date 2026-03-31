@@ -14,7 +14,7 @@
   <!-- Firebase -->
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
-    import { getFirestore, collection, getDocs, setDoc, deleteDoc, doc, onSnapshot }
+    import { getFirestore, collection, getDocs, setDoc, deleteDoc, doc, onSnapshot, getDoc }
       from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 
     const firebaseConfig = {
@@ -35,6 +35,7 @@
     window._fsDeleteDoc = deleteDoc;
     window._fsDoc = doc;
     window._fsOnSnapshot = onSnapshot;
+    window._fsGetDoc = getDoc;
     window._firebaseReady = true;
     window.dispatchEvent(new Event('firebase-ready'));
   </script>
@@ -292,7 +293,7 @@ function formatIssue(i){if(!i)return null;const m=i.match(/^A(\d+)$/i);if(m)retu
 function esc(s){return s?String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"):""}
 
 let comics=[], collapsed={}, view="list", selected=null, sortBy="title", search="", _listScrollY=0;
-let db, fsCollection, fsGetDocs, fsSetDoc, fsDeleteDoc, fsDoc, fsOnSnapshot;
+let db, fsCollection, fsGetDocs, fsSetDoc, fsDeleteDoc, fsDoc, fsOnSnapshot, fsGetDoc;
 let seeded=false;
 
 function syncMsg(msg){
@@ -305,7 +306,7 @@ function syncMsg(msg){
 async function initFirebase(){
   if(!window._firebaseReady){await new Promise(res=>window.addEventListener('firebase-ready',res,{once:true}));}
   db=window._db;fsCollection=window._fsCollection;fsGetDocs=window._fsGetDocs;
-  fsSetDoc=window._fsSetDoc;fsDeleteDoc=window._fsDeleteDoc;fsDoc=window._fsDoc;
+  fsSetDoc=window._fsSetDoc;fsDeleteDoc=window._fsDeleteDoc;fsDoc=window._fsDoc;fsGetDoc=window._fsGetDoc;
   fsOnSnapshot=window._fsOnSnapshot;
   await loadComics();
   fsOnSnapshot(fsCollection(db,"comics"),snap=>{
@@ -321,10 +322,15 @@ async function loadComics(){
     const snap=await fsGetDocs(fsCollection(db,"comics"));
     comics=snap.docs.map(d=>d.data()).map(c=>({...c,pageQuality:normPageQuality(c.pageQuality)}));
     if(comics.length===0&&!seeded){
-      seeded=true;
-      syncMsg("Seeding initial data...");
-      for(const c of SEED_COMICS){await fsSetDoc(fsDoc(db,"comics",c.id),c);}
-      comics=[...SEED_COMICS];
+      // Check meta/seeded guard before seeding — prevents re-seed on transient empty reads
+      const metaSnap=await fsGetDoc(fsDoc(db,"meta","seeded"));
+      if(!metaSnap.exists()){
+        seeded=true;
+        syncMsg("Seeding initial data...");
+        for(const c of SEED_COMICS){await fsSetDoc(fsDoc(db,"comics",c.id),c);}
+        await fsSetDoc(fsDoc(db,"meta","seeded"),{seededAt:new Date().toISOString()});
+        comics=[...SEED_COMICS];
+      }
     }
   }catch(e){console.error("Load error:",e);comics=[...SEED_COMICS];}
   syncMsg(null);
