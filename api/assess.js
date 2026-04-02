@@ -69,8 +69,16 @@ export default async function handler(req, res) {
       if (!listResp.ok) return null;
       const files = await listResp.json();
       if (!Array.isArray(files)) return null;
-      const jpegFiles = files.filter(f => /\.(jpg|jpeg)$/i.test(f.name)).slice(0, 10);
-      if (jpegFiles.length === 0) return null;
+      const allJpegs = files.filter(f => /\.(jpg|jpeg)$/i.test(f.name));
+      if (allJpegs.length === 0) return null;
+      // Sort by grade value and pick 5 evenly spaced across the range
+      const graded = allJpegs.map(f => {
+        const m = f.name.match(/([\d]+[._][\d]+)\.jpe?g$/i);
+        const val = m ? parseFloat(m[1].replace('_', '.')) : 0;
+        return { f, val };
+      }).sort((a, b) => a.val - b.val);
+      const step = Math.max(1, Math.floor(graded.length / 5));
+      const jpegFiles = graded.filter((_, i) => i % step === 0).slice(0, 5).map(g => g.f);
       const imageBlocks = await Promise.all(jpegFiles.map(async f => {
         try {
           const imgResp = await fetchWithTimeout(f.download_url, {}, 5000);
