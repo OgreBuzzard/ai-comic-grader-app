@@ -610,7 +610,7 @@ function showEdit(id){
   // Snapshot the original Firestore images so they can never be lost on save
   formData._savedImages=[...(c.images||[])];
   formData._imagesChanged=false;
-  view="add";_assessed=!!(c.assessedCGCGrade||c.aiAssessment);document.getElementById("add-btn").style.display="none";renderForm();
+  view="add";_assessed=!!(c.assessedCGCGrade||c.aiAssessment);document.getElementById("add-btn").style.display="none";renderForm();window.scrollTo(0,0);
 }
 
 async function compressImage(dataUrl,maxDim=900,quality=0.50){
@@ -655,7 +655,7 @@ function showAssessModal() {
   overlay.innerHTML = `
     <div id="assess-modal">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-        <h3 style="margin:0">Assessing</h3>
+        <h3 style="margin:0">Assessing${formData.title ? ` ${esc(formData.title)} #${esc(formData.issue||"")}` : ""}</h3>
         <button onclick="dismissAssessModal()" style="background:none;border:none;font-size:20px;color:#8a7a6a;cursor:pointer;padding:0 0 0 8px;line-height:1" aria-label="Cancel">×</button>
       </div>
       ${stepsHTML}
