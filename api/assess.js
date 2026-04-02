@@ -377,9 +377,15 @@ Return ONLY valid JSON, no markdown.`;
       parsed.grade = parseFloat(parsed.grade).toFixed(1);
     }
 
-    // Grade reference refinement pass (CGC only, grade in 5.0–10.0 range)
-    if (isCGC && !parsed.labelDetected && parsed.grade) {
-      const refImage = baseUrl ? await fetchGradeReference(parsed.grade, baseUrl) : null;
+    // Fetch grade reference and known copies in parallel
+    const [knownCopiesAvailable, gradeRefImage] = isCGC && !parsed.labelDetected ? await Promise.all([
+      (title && issueNumber) ? fetchKnownCopies(title, issueNumber) : Promise.resolve(null),
+      parsed.grade ? fetchGradeReference(parsed.grade, baseUrl) : Promise.resolve(null)
+    ]) : [null, null];
+
+    // Grade reference refinement pass (CGC only, skipped if known copies will run)
+    if (isCGC && !parsed.labelDetected && parsed.grade && gradeRefImage && !knownCopiesAvailable) {
+      const refImage = gradeRefImage;
       if (refImage) {
         const refPrompt = `You previously assessed this comic as grade ${parsed.grade}. Here is the official CGC grading reference page for ${parsed.grade}. Compare your assessment photos against this reference. If the reference shows the book should look better or worse than what you assessed, adjust your grade. Return the same JSON format with your refined grade and updated graderNotes and aiAssessment. If ${parsed.grade} still seems correct, return the same grade.${notesBlock}`;
         try {
@@ -387,8 +393,8 @@ Return ONLY valid JSON, no markdown.`;
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
             body: JSON.stringify({
-              model: 'claude-opus-4-5',
-              max_tokens: 1000,
+              model: 'claude-haiku-4-5-20251001',
+              max_tokens: 650,
               system: systemPrompt,
               messages: [{
                 role: 'user',
@@ -420,8 +426,8 @@ Return ONLY valid JSON, no markdown.`;
 
     // Known copies refinement pass (CGC only, if ref folder exists for this title/issue)
     let knownCopiesRef = false;
-    if (isCGC && !parsed.labelDetected && title && issueNumber) {
-      const knownCopies = await fetchKnownCopies(title, issueNumber);
+    if (isCGC && !parsed.labelDetected && knownCopiesAvailable) {
+      const knownCopies = knownCopiesAvailable;
       if (knownCopies) {
         const gradeList = knownCopies.map(c => c.gradeLabel).join(', ');
         const knownPrompt = `You have assessed this comic as grade ${parsed.grade}. The following images show verified CGC-graded copies of the same issue (${title} #${issueNumber}) at known grades: ${gradeList}. Each image is labeled with its grade. Compare the book you assessed against these known copies and determine where it falls. Explicitly state which two grades it falls between, or confirm it matches a specific grade. Adjust your grade if the comparison warrants it. Return the same JSON format with your refined grade, updated graderNotes, and updated aiAssessment that mentions which known copies it was compared against and where it fell.${notesBlock}`;
@@ -439,8 +445,8 @@ Return ONLY valid JSON, no markdown.`;
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
             body: JSON.stringify({
-              model: 'claude-opus-4-5',
-              max_tokens: 1000,
+              model: 'claude-haiku-4-5-20251001',
+              max_tokens: 400,
               system: systemPrompt,
               messages: [{ role: 'user', content: knownContent }]
             })
