@@ -61,6 +61,7 @@ export default async function handler(req, res) {
 
 
   // Fetch known copy reference images for a specific title/issue if a ref folder exists
+  const knownCopiesDiag = {};
   async function fetchKnownCopies(title, issue) {
     try {
       const slug = title.replace(/[^a-zA-Z0-9-]+/g, '_').replace(/^_|_$/g, '');
@@ -68,9 +69,13 @@ export default async function handler(req, res) {
       const folderName = `${slug}_${issueClean}_Ref`;
       const apiUrl = `https://api.github.com/repos/OgreBuzzard/ai-comic-grader-app/contents/${encodeURIComponent(folderName)}`;
       const listResp = await fetchWithTimeout(apiUrl, { headers: { 'User-Agent': 'ComicGraderApp/1.0' } }, 5000);
-      if (!listResp.ok) return null;
+      knownCopiesDiag.folderName = folderName;
+      knownCopiesDiag.apiStatus = listResp.status;
+      if (!listResp.ok) { knownCopiesDiag.error = `HTTP ${listResp.status}`; return null; }
       const files = await listResp.json();
-      if (!Array.isArray(files)) return null;
+      knownCopiesDiag.isArray = Array.isArray(files);
+      knownCopiesDiag.fileCount = Array.isArray(files) ? files.length : 0;
+      if (!Array.isArray(files)) { knownCopiesDiag.error = 'not array: ' + JSON.stringify(files).slice(0, 100); return null; }
       const allJpegs = files.filter(f => /\.(jpg|jpeg)$/i.test(f.name));
       if (allJpegs.length === 0) return null;
       // Sort by grade value and pick 5 evenly spaced across the range
@@ -464,6 +469,7 @@ Return ONLY valid JSON, no markdown.`;
       pageQualityRef: pageQualityImageBlock !== null,
       gradeRef: gradeRefSucceeded,
       knownCopiesRef,
+      knownCopiesDiag,
       pqError,
       cvDiag: cvDiag || null
     };
