@@ -84,8 +84,8 @@ export default async function handler(req, res) {
         const val = m ? parseFloat(m[1].replace('_', '.')) : 0;
         return { f, val };
       }).sort((a, b) => a.val - b.val);
-      const step = Math.max(1, Math.floor(graded.length / 5));
-      const jpegFiles = graded.filter((_, i) => i % step === 0).slice(0, 5).map(g => g.f);
+      const step = Math.max(1, Math.floor(graded.length / 3));
+      const jpegFiles = graded.filter((_, i) => i % step === 0).slice(0, 3).map(g => g.f);
       const imageBlocks = await Promise.all(jpegFiles.map(async f => {
         try {
           const imgResp = await fetchWithTimeout(f.download_url, {}, 5000);
@@ -377,6 +377,35 @@ Return ONLY valid JSON, no markdown.`;
       parsed.grade = parseFloat(parsed.grade).toFixed(1);
     }
 
+  const CGC_GRADE_DESCRIPTIONS = {
+    "10.0": `Perfect in every way. No stress lines, razor sharp corners, flat cover, no bends or creases. Full gloss, vibrant colors, no tanning/foxing/soiling. White pages only.`,
+    "9.9": `One small non-color-breaking bend or one non-color-breaking spine stress line allowed. Perfectly cut, no edge or corner wear. Off-white to white pages acceptable.`,
+    "9.8": `One or two handling defects allowed: a very small color-breaking stress line, a couple of light bends, tiny wear on one corner or around a staple. Cream to off-white pages rarely acceptable.`,
+    "9.6": `A few very small defects: small color-breaking stress lines, very small corner wear, tiny edge crease, very small staple tear, very light tanning, one very small stain. Nothing below cream to off-white pages.`,
+    "9.4": `One or a couple of light handling defects: small spine split, one or two small color-breaking corner/edge creases, very small chip, very slight spine roll. Several small non-color-breaking stress lines or a few color-breaking ones.`,
+    "9.2": `More apparent regular handling defects. Still considerable eye appeal requiring close inspection. An accumulation of several tiny flaws or one significant flaw (crease, tear, missing piece, stain, or tanning).`,
+    "9.0": `Color-breaking defects more evident. Minor fraying or small 1/4" missing piece allowed. Small areas of tape or sticky residue acceptable. Cover may be partially detached from one staple.`,
+    "8.5": `Bridge between 9.0 and 8.0. One or two defects barely exceeding 9.0 limits: length of crease, number of stress lines, size of chip or tear. Light fraying to corners or color-breaking edge wear. Limit for light tan to off-white pages.`,
+    "8.0": `Considerable minor defects or a couple of moderate ones. 1"-2" color-breaking corner/edge crease, up to 1" tear, 1/2" spine split, 1/2"x1/2" piece missing. Moderate rust on staples. Small spine roll of 1/8".`,
+    "7.5": `One or two defects barely exceeding 8.0, or accumulation. 2" color-breaking crease or 1" tear (not both). Moderate foxing or tanning (not simultaneously with significant tears/creases). Slight spine roll.`,
+    "7.0": `More prominent creasing and tears. Crease up to 4". 1" spine split, 1/4" spine roll. Mostly sharp edges and corners still expected. One fully detached staple (of two). Color-breaking reader's crease ~half spine length.`,
+    "6.5": `Accumulation of small defects or one large one. Tape up to 1" allowed. Maximum grade for slightly brittle pages. Cover partially detached from both staples allowed. Tears accumulate up to 2".`,
+    "6.0": `Mid-grade. Creases up to 7" accumulation. 1.5" spine split. Spine rolled up to 1/2". Up to 1"x1" piece missing from cover. Two interior wraps detached. Heavy rust on staples.`,
+    "5.5": `Accumulation of 6.0 defects appearing below 6.0. Full color-breaking subscription crease on front allowed. One full and one half staple detachment. Tear up to 3". Heavy fingerprints on cover.`,
+    "5.0": `Larger accumulation of 6.0 defects. 2" spine split. Up to 3" tape strip on outer cover. Creases up to half the cover. Heavy fading but colors not completely washed out. Up to 10" interior tear.`,
+    "4.5": `Lower end of mid-grade. Up to 2"x2" missing from cover. Tears totaling up to 4". Spine roll up to 1". One full punch hole through entire book.`,
+    "4.0": `Complete but with accumulation of defects: tears, creases, missing pieces, spine roll, staining, tanning, staple detachments. Usually highest grade for fully detached cover. Spine split up to 3".`,
+    "3.5": `Threshold for brittle pages (lowest page quality allowed). Both staples removed = max 3.5. Detached covers/pages reattached with tape usually not higher than 3.5.`,
+    "3.0": `One major defect to cover, or large accumulation of average defects. Spine split up to 5", 6" cover tear, 3" tear through book. Up to 3"x3" piece missing from cover.`,
+    "2.5": `Worn and tattered. Heavy creasing, tears, staining, pieces out. Tape often present repairing detached cover or large spine split. Spine split greater than half spine length.`,
+    "2.0": `Same defects as 2.5 but more severe or numerous. Still complete and readable. Few singularly quantifiable defects: mostly split spine, very large staining affecting most of book.`,
+    "1.8": `Most common single defect: fully split spine (clean, little missing paper, no major repairs). Missing interior parts up to 4"x4" affecting story. Only one of these major defects present.`,
+    "1.5": `Fully split spine reattached with tape or staples. Or missing pieces slightly exceeding 3"x3" from cover with significant other defects. Structural integrity compromised but still complete and readable.`,
+    "1.0": `Heavily damaged. Up to 1/4 of cover missing. Full splitting of interior and cover from brittleness. Still relatively complete and readable.`,
+    "0.5": `Accumulation of extensive defects, or missing significant portions of cover or interior. 1/3 or more of front or back cover can be missing. Missing pages common. Requires gentle handling.`,
+    "NG": `No Grade. Missing entire cover (coverless), or front cover present with less than half interior pages, or back cover present with less than 3/4 interior pages.`,
+  };
+
     // Fetch grade reference and known copies in parallel
     const [knownCopiesAvailable, gradeRefImage] = isCGC && !parsed.labelDetected ? await Promise.all([
       (title && issueNumber) ? fetchKnownCopies(title, issueNumber) : Promise.resolve(null),
@@ -387,7 +416,8 @@ Return ONLY valid JSON, no markdown.`;
     if (isCGC && !parsed.labelDetected && parsed.grade && gradeRefImage && !knownCopiesAvailable) {
       const refImage = gradeRefImage;
       if (refImage) {
-        const refPrompt = `You previously assessed this comic as grade ${parsed.grade}. Here is the official CGC grading reference page for ${parsed.grade}. Compare your assessment photos against this reference. If the reference shows the book should look better or worse than what you assessed, adjust your grade. Return the same JSON format with your refined grade and updated graderNotes and aiAssessment. If ${parsed.grade} still seems correct, return the same grade.${notesBlock}`;
+        const gradeDesc = CGC_GRADE_DESCRIPTIONS[parsed.grade] || '';
+        const refPrompt = `You previously assessed this comic as grade ${parsed.grade}. CGC ${parsed.grade} definition: ${gradeDesc} The reference image shows an example CGC ${parsed.grade} copy with annotated defects. Compare your assessment photos against this definition and reference image. Adjust your grade if warranted. Return the same JSON format with your refined grade and updated graderNotes and aiAssessment. If ${parsed.grade} still seems correct, return the same grade.${notesBlock}`;
         try {
           const refResp = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
             method: 'POST',
