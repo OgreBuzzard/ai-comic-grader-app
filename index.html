@@ -150,7 +150,7 @@
       animation: spin-arc 0.9s linear infinite;
     }
     .assess-step-icon.done { background: #e8f4ec; color: #2a7a4a; }
-    .assess-step-icon.skipped { background: #fce8e8; color: #c03030; }
+    .assess-step-icon.skipped { background: #f0f0f0; color: #9a9a9a; }
     .assess-step-icon.failed { background: #fce8e8; color: #c03030; }
     @keyframes spin-arc {
       to { transform: rotate(360deg); }
@@ -289,7 +289,7 @@ function buildGradeRowHTML(c){
 function fmt$(v){return v!=null&&v>0?`$${v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—";}
 function totalCost(c){return[c.purchasePrice,c.taxesFeesShipping,c.gradingCost,c.cgcShipping].filter(v=>v!=null&&v>0).reduce((a,b)=>a+b,0);}
 function formatDate(d){if(!d)return null;const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];const p=d.split("-");if(p.length<3)return d;const mo=parseInt(p[1],10)-1;if(isNaN(mo)||mo<0||mo>11)return d;return months[mo]+" "+p[2].replace(/^0/,"")+", "+p[0];}
-function formatIssue(i){if(!i)return null;const m=i.match(/^A(\d+)$/i);if(m)return`Annual #${m[1]}`;return`#${i}`;}
+function formatIssue(i,t){if(!i)return null;const m=i.match(/^A(\d+)$/i);if(m){const isAnnualTitle=t&&/annual$/i.test(t.trim());return isAnnualTitle?`#${m[1]}`:`Annual #${m[1]}`;}return`#${i}`;}
 function esc(s){return s?String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"):""}
 
 let comics=[], collapsed={}, view="list", selected=null, sortBy="title", search="", _listScrollY=0;
@@ -437,7 +437,7 @@ function renderList(){
             <div style="flex:1;min-width:0">
               <div style="font-size:13px;font-weight:600;color:#1a1614;line-height:1.2">${esc(c.title)}</div>
               <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px">
-                ${c.issue?`<span style="font-size:13px;color:#3a2e24">${formatIssue(c.issue)}</span>`:""}
+                ${c.issue?`<span style="font-size:13px;color:#3a2e24">${formatIssue(c.issue,c.title)}</span>`:""}
                 ${c.pageQuality?`<span style="font-size:11px;color:#8a7a6a">${esc(PQ_ABBREV[c.pageQuality]||c.pageQuality)}</span>`:""}
                 ${(()=>{
                   if(!c.fmv||c.fmv<=0)return "";
@@ -486,7 +486,7 @@ function showDetail(id){
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px">
       <div>
         <h2 style="font-size:22px;color:#1a1614">${esc(selected.title)}</h2>
-        ${selected.issue?`<div style="font-size:16px;color:#3a2e24;margin-top:2px">${formatIssue(selected.issue)}</div>`:""}
+        ${selected.issue?`<div style="font-size:16px;color:#3a2e24;margin-top:2px">${formatIssue(selected.issue,selected.title)}</div>`:""}
         <div style="font-size:13px;color:#8a7a6a;margin-top:4px">${[selected.publisher,selected.issueDate].filter(Boolean).map(esc).join(" · ")}</div>
         ${selected.cgcCert?`<div style="font-size:12px;color:#9a8a7a;margin-top:4px">Cert #${esc(selected.cgcCert)}</div>`:""}
         ${selected.seller?`<div style="font-size:12px;color:#8a7a6a;margin-top:4px">Purchased from: ${esc(selected.seller)}</div>`:""}
@@ -638,6 +638,7 @@ function showAssessModal() {
     {id:'mint', label:'Comparing to Mint', detail:''},
     {id:'pq', label:'Page Quality Check', detail:''},
     {id:'confirming', label:'Confirming Grade', detail:''},
+    {id:'known', label:'Comparing Known Copies', detail:''},
     {id:'psa', label:'PSA Variance', detail:''}
   ];
   const stepsHTML = steps.map(st => `
@@ -673,7 +674,7 @@ function setStep(id, state, detail='') {
   const lbl = document.getElementById('label-'+id);
   if (!icon) return;
   icon.className = 'assess-step-icon ' + state;
-  icon.textContent = state === 'done' ? '✓' : state === 'failed' ? '✗' : '';
+  icon.textContent = state === 'done' ? '✓' : state === 'failed' ? '✗' : state === 'skipped' ? '—' : '';
   if (lbl) lbl.textContent = lbl.dataset.base + (state === 'running' ? '...' : '');
   if (det) det.textContent = (state !== 'running' && state !== 'skipped') ? detail : '';
 }
@@ -691,6 +692,7 @@ async function animateStepsFromDiagnostics(d) {
   setStep('pq', d.pageQualityRef ? 'done' : 'failed');
   await delay(180);
   setStep('confirming', d.gradeRef ? 'done' : 'failed');
+  if(d.knownCopiesRef !== undefined) setStep('known', d.knownCopiesRef ? 'done' : 'skipped');
 }
 
 const PQ_COLORS={
