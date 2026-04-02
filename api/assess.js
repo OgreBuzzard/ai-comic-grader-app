@@ -61,7 +61,7 @@ export default async function handler(req, res) {
   // Fetch known copy reference images for a specific title/issue if a ref folder exists
   async function fetchKnownCopies(title, issue) {
     try {
-      const slug = title.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '');
+      const slug = title.replace(/[^a-zA-Z0-9-]+/g, '_').replace(/^_|_$/g, '');
       const issueClean = String(issue).replace(/[^a-zA-Z0-9.]/g, '_');
       const folderName = `${slug}_${issueClean}_Ref`;
       const apiUrl = `https://api.github.com/repos/OgreBuzzard/ai-comic-grader-app/contents/${encodeURIComponent(folderName)}`;
@@ -259,6 +259,8 @@ GRADE CALIBRATION:
 
 GRADER NOTES FORMAT:
 - One bullet per defect, each on its own line starting with •
+- Only document defects that are PRESENT. Never note the absence of a defect (e.g. never write "no missing piece" or "no chips detected")
+- Group identical defects across corners when possible (e.g. "Upper corners: blunted with minor wear" instead of separate bullets for left and right)
 - ALWAYS check for missing pieces, chips, or tears first — these are structural defects with hard grade ceilings and must be listed first if present
 - A missing corner or edge piece of 1/4" or more must be noted explicitly as "Missing piece" or "Chip out" with location and approximate size
 - Use official CGC terminology. Always note whether stress lines are color-breaking or not.
