@@ -27,7 +27,7 @@ export default async function handler(req, res) {
   // Fetch page quality reference image (used for all raw book assessments)
   async function fetchPageQualityReference(baseUrl) {
     try {
-      const url = `${baseUrl}/Grade_Reference/pq.jpg`;
+      const url = `https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/Grade_Reference/pq.jpg`;
       const resp = await fetchWithTimeout(url, {}, 4000);
       if (!resp.ok) return null;
       const buf = await resp.arrayBuffer();
@@ -40,11 +40,11 @@ export default async function handler(req, res) {
 
   // Fetch grade reference image for the assessed grade
   async function fetchGradeReference(grade, baseUrl) {
-    const validGrades = ['5.0','5.5','6.0','6.5','7.0','7.5','8.0','8.5','9.0','9.2','9.4','9.6','9.8','9.9','10.0'];
-    const gradeStr = String(parseFloat(grade).toFixed(1));
-    if (!validGrades.includes(gradeStr)) return null;
+    const validGrades = ['0.5','1.0','1.5','1.8','2.0','2.5','3.0','3.5','4.0','4.5','5.0','5.5','6.0','6.5','7.0','7.5','8.0','8.5','9.0','9.2','9.4','9.6','9.8','9.9','10.0'];
+    const gradeStr = grade === 'NG' ? 'NG' : String(parseFloat(grade).toFixed(1));
+    if (!validGrades.includes(gradeStr) && gradeStr !== 'NG') return null;
     const filename = gradeStr.replace('.', '_') + '.jpg';
-    const url = `${baseUrl}/Grade_Reference/${filename}`;
+    const url = `https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/Grade_Reference/${filename}`;
     try {
       const resp = await fetchWithTimeout(url, {}, 4000);
       if (!resp.ok) return null;
@@ -57,6 +57,35 @@ export default async function handler(req, res) {
     }
   }
 
+
+  // Fetch known copy reference images for a specific title/issue if a ref folder exists
+  async function fetchKnownCopies(title, issue) {
+    try {
+      const slug = title.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '');
+      const issueClean = String(issue).replace(/[^a-zA-Z0-9.]/g, '_');
+      const folderName = `${slug}_${issueClean}_Ref`;
+      const apiUrl = `https://api.github.com/repos/OgreBuzzard/ai-comic-grader-app/contents/${encodeURIComponent(folderName)}`;
+      const listResp = await fetchWithTimeout(apiUrl, { headers: { 'User-Agent': 'ComicGraderApp/1.0' } }, 5000);
+      if (!listResp.ok) return null;
+      const files = await listResp.json();
+      if (!Array.isArray(files)) return null;
+      const jpegFiles = files.filter(f => /\.(jpg|jpeg)$/i.test(f.name)).slice(0, 10);
+      if (jpegFiles.length === 0) return null;
+      const imageBlocks = await Promise.all(jpegFiles.map(async f => {
+        try {
+          const imgResp = await fetchWithTimeout(f.download_url, {}, 5000);
+          if (!imgResp.ok) return null;
+          const buf = await imgResp.arrayBuffer();
+          const b64 = Buffer.from(buf).toString('base64');
+          const gradeMatch = f.name.match(/([\d.]+)\.jpe?g$/i);
+          const gradeLabel = gradeMatch ? gradeMatch[1] : f.name;
+          return { gradeLabel, block: { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } } };
+        } catch (e) { return null; }
+      }));
+      const valid = imageBlocks.filter(Boolean);
+      return valid.length > 0 ? valid : null;
+    } catch (e) { return null; }
+  }
 
   // Build grader notes context to append to prompts
   const notesContext = [];
@@ -372,12 +401,57 @@ Return ONLY valid JSON, no markdown.`;
       }
     }
 
+    // Known copies refinement pass (CGC only, if ref folder exists for this title/issue)
+    let knownCopiesRef = false;
+    if (isCGC && !parsed.labelDetected && title && issueNumber) {
+      const knownCopies = await fetchKnownCopies(title, issueNumber);
+      if (knownCopies) {
+        const gradeList = knownCopies.map(c => c.gradeLabel).join(', ');
+        const knownPrompt = `You have assessed this comic as grade ${parsed.grade}. The following images show verified CGC-graded copies of the same issue (${title} #${issueNumber}) at known grades: ${gradeList}. Each image is labeled with its grade. Compare the book you assessed against these known copies and determine where it falls. Explicitly state which two grades it falls between, or confirm it matches a specific grade. Adjust your grade if the comparison warrants it. Return the same JSON format with your refined grade, updated graderNotes, and updated aiAssessment that mentions which known copies it was compared against and where it fell.${notesBlock}`;
+        try {
+          const knownContent = [
+            { type: 'text', text: `KNOWN GRADED COPIES OF ${title} #${issueNumber}:` },
+            ...knownCopies.flatMap(c => [
+              { type: 'text', text: `Grade ${c.gradeLabel}:` },
+              c.block
+            ]),
+            ...imageBlocks,
+            { type: 'text', text: knownPrompt }
+          ];
+          const knownResp = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+            body: JSON.stringify({
+              model: 'claude-opus-4-5',
+              max_tokens: 1000,
+              system: systemPrompt,
+              messages: [{ role: 'user', content: knownContent }]
+            })
+          }, 30000);
+          if (knownResp.ok) {
+            const knownData = await knownResp.json();
+            const knownText = knownData.content?.map(b => b.text || '').join('') || '';
+            const knownClean = knownText.replace(/```json|```/g, '').trim();
+            const knownParsed = JSON.parse(knownClean);
+            if (knownParsed.grade) {
+              if (!String(knownParsed.grade).includes('.')) knownParsed.grade = parseFloat(knownParsed.grade).toFixed(1);
+              parsed = knownParsed;
+              knownCopiesRef = true;
+            }
+          }
+        } catch (e) {
+          // Known copies refinement failed — use previous assessment
+        }
+      }
+    }
+
     // Attach diagnostic info (preserve gradeRef if already set by refinement pass)
     const gradeRefSucceeded = parsed._diagnostics?.gradeRef === true;
     parsed._diagnostics = {
       comicvineRef: referenceImageBlock !== null,
       pageQualityRef: pageQualityImageBlock !== null,
       gradeRef: gradeRefSucceeded,
+      knownCopiesRef,
       cvDiag: cvDiag || null
     };
     return res.status(200).json(parsed);
