@@ -68,7 +68,7 @@ export default async function handler(req, res) {
       const issueClean = String(issue).replace(/[^a-zA-Z0-9.]/g, '_');
       const folderName = `${slug}_${issueClean}_Ref`;
       const apiUrl = `https://api.github.com/repos/OgreBuzzard/ai-comic-grader-app/contents/${encodeURIComponent(folderName)}`;
-      const listResp = await fetchWithTimeout(apiUrl, { headers: { 'User-Agent': 'ComicGraderApp/1.0' } }, 5000);
+      const listResp = await fetchWithTimeout(apiUrl, { headers: { 'User-Agent': 'ComicGraderApp/1.0' } }, 3000);
       knownCopiesDiag.folderName = folderName;
       knownCopiesDiag.apiStatus = listResp.status;
       if (!listResp.ok) { knownCopiesDiag.error = `HTTP ${listResp.status}`; return null; }
@@ -88,7 +88,7 @@ export default async function handler(req, res) {
       const jpegFiles = graded.filter((_, i) => i % step === 0).slice(0, 3).map(g => g.f);
       const imageBlocks = await Promise.all(jpegFiles.map(async f => {
         try {
-          const imgResp = await fetchWithTimeout(f.download_url, {}, 5000);
+          const imgResp = await fetchWithTimeout(f.download_url, {}, 3000);
           if (!imgResp.ok) return null;
           const buf = await imgResp.arrayBuffer();
           const b64 = Buffer.from(buf).toString('base64');
@@ -412,10 +412,14 @@ Return ONLY valid JSON, no markdown.`;
       parsed.grade ? fetchGradeReference(parsed.grade, baseUrl) : Promise.resolve(null)
     ]) : [null, null];
 
-    // Grade reference refinement pass (CGC only, skipped if known copies will run)
-    if (isCGC && !parsed.labelDetected && parsed.grade && gradeRefImage && !knownCopiesAvailable) {
-      const refImage = gradeRefImage;
-      if (refImage) {
+    // Run grade reference and known copies refinement passes in parallel
+    let gradeRefSuccessLocal = false;
+    let knownCopiesRef = false;
+
+    const refineResults = await Promise.all([
+      // Grade reference pass
+      (async () => {
+        if (!isCGC || parsed.labelDetected || !parsed.grade || !gradeRefImage) return null;
         const gradeDesc = CGC_GRADE_DESCRIPTIONS[parsed.grade] || '';
         const refPrompt = `You previously assessed this comic as grade ${parsed.grade}. CGC ${parsed.grade} definition: ${gradeDesc} The reference image shows an example CGC ${parsed.grade} copy with annotated defects. Compare your assessment photos against this definition and reference image. Adjust your grade if warranted. Return the same JSON format with your refined grade and updated graderNotes and aiAssessment. If ${parsed.grade} still seems correct, return the same grade.${notesBlock}`;
         try {
@@ -426,51 +430,40 @@ Return ONLY valid JSON, no markdown.`;
               model: 'claude-haiku-4-5-20251001',
               max_tokens: 650,
               system: systemPrompt,
-              messages: [{
-                role: 'user',
-                content: [
-                  { type: 'text', text: `GRADE REFERENCE for ${parsed.grade}: The following image shows what a CGC ${parsed.grade} book looks like with annotated defects.` },
-                  refImage,
-                  ...imageBlocks,
-                  { type: 'text', text: refPrompt }
-                ]
-              }]
+              messages: [{ role: 'user', content: [
+                { type: 'text', text: `GRADE REFERENCE for ${parsed.grade}: The following image shows what a CGC ${parsed.grade} book looks like with annotated defects.` },
+                gradeRefImage,
+                ...imageBlocks,
+                { type: 'text', text: refPrompt }
+              ]}]
             })
-          }, 25000);
-          if (refResp.ok) {
-            const refData = await refResp.json();
-            const refText = refData.content?.map(b => b.text || '').join('') || '';
-            const refClean = refText.replace(/```json|```/g, '').trim();
-            const refParsed = JSON.parse(refClean);
-            if (refParsed.grade) {
-              if (!String(refParsed.grade).includes('.')) refParsed.grade = parseFloat(refParsed.grade).toFixed(1);
-              parsed = refParsed;
-              parsed._diagnostics = { comicvineRef: referenceImageBlock !== null, gradeRef: true };
-            }
+          }, 20000);
+          if (!refResp.ok) return null;
+          const refData = await refResp.json();
+          const refText = refData.content?.map(b => b.text || '').join('') || '';
+          const refClean = refText.replace(/```json|```/g, '').trim();
+          const refParsed = JSON.parse(refClean);
+          if (refParsed.grade) {
+            if (!String(refParsed.grade).includes('.')) refParsed.grade = parseFloat(refParsed.grade).toFixed(1);
+            return { type: 'gradeRef', result: refParsed };
           }
-        } catch (e) {
-          // Refinement failed — use original assessment
-        }
-      }
-    }
+          return null;
+        } catch (e) { return null; }
+      })(),
 
-    // Known copies refinement pass (CGC only, if ref folder exists for this title/issue)
-    let knownCopiesRef = false;
-    if (isCGC && !parsed.labelDetected && knownCopiesAvailable) {
-      const knownCopies = knownCopiesAvailable;
-      if (knownCopies) {
+      // Known copies pass
+      (async () => {
+        if (!isCGC || parsed.labelDetected || !knownCopiesAvailable) return null;
+        const knownCopies = knownCopiesAvailable;
         const gradeList = knownCopies.map(c => c.gradeLabel).join(', ');
         const knownPrompt = `You have assessed this comic as grade ${parsed.grade}. The following images show verified CGC-graded copies of the same issue (${title} #${issueNumber}) at known grades: ${gradeList}. Each image is labeled with its grade. Compare the book you assessed against these known copies and determine where it falls. Explicitly state which two grades it falls between, or confirm it matches a specific grade. Adjust your grade if the comparison warrants it. Return the same JSON format with your refined grade, updated graderNotes, and updated aiAssessment that mentions which known copies it was compared against and where it fell.${notesBlock}`;
+        const knownContent = [
+          { type: 'text', text: `KNOWN GRADED COPIES OF ${title} #${issueNumber}:` },
+          ...knownCopies.flatMap(c => [{ type: 'text', text: `Grade ${c.gradeLabel}:` }, c.block]),
+          ...imageBlocks,
+          { type: 'text', text: knownPrompt }
+        ];
         try {
-          const knownContent = [
-            { type: 'text', text: `KNOWN GRADED COPIES OF ${title} #${issueNumber}:` },
-            ...knownCopies.flatMap(c => [
-              { type: 'text', text: `Grade ${c.gradeLabel}:` },
-              c.block
-            ]),
-            ...imageBlocks,
-            { type: 'text', text: knownPrompt }
-          ];
           const knownResp = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
@@ -480,26 +473,33 @@ Return ONLY valid JSON, no markdown.`;
               system: systemPrompt,
               messages: [{ role: 'user', content: knownContent }]
             })
-          }, 30000);
-          if (knownResp.ok) {
-            const knownData = await knownResp.json();
-            const knownText = knownData.content?.map(b => b.text || '').join('') || '';
-            const knownClean = knownText.replace(/```json|```/g, '').trim();
-            const knownParsed = JSON.parse(knownClean);
-            if (knownParsed.grade) {
-              if (!String(knownParsed.grade).includes('.')) knownParsed.grade = parseFloat(knownParsed.grade).toFixed(1);
-              parsed = knownParsed;
-              knownCopiesRef = true;
-            }
+          }, 25000);
+          if (!knownResp.ok) return null;
+          const knownData = await knownResp.json();
+          const knownText = knownData.content?.map(b => b.text || '').join('') || '';
+          const knownClean = knownText.replace(/```json|```/g, '').trim();
+          const knownParsed = JSON.parse(knownClean);
+          if (knownParsed.grade) {
+            if (!String(knownParsed.grade).includes('.')) knownParsed.grade = parseFloat(knownParsed.grade).toFixed(1);
+            return { type: 'knownCopies', result: knownParsed };
           }
-        } catch (e) {
-          // Known copies refinement failed — use previous assessment
-        }
-      }
+          return null;
+        } catch (e) { return null; }
+      })()
+    ]);
+
+    // Apply results — known copies wins if both succeed (more specific)
+    for (const r of refineResults) {
+      if (!r) continue;
+      if (r.type === 'gradeRef') { parsed = r.result; gradeRefSuccessLocal = true; }
+    }
+    for (const r of refineResults) {
+      if (!r) continue;
+      if (r.type === 'knownCopies') { parsed = r.result; knownCopiesRef = true; }
     }
 
     // Attach diagnostic info (preserve gradeRef if already set by refinement pass)
-    const gradeRefSucceeded = parsed._diagnostics?.gradeRef === true;
+    const gradeRefSucceeded = gradeRefSuccessLocal || parsed._diagnostics?.gradeRef === true;
     parsed._diagnostics = {
       comicvineRef: referenceImageBlock !== null,
       pageQualityRef: pageQualityImageBlock !== null,
