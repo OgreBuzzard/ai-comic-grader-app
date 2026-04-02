@@ -25,15 +25,17 @@ export default async function handler(req, res) {
   }
 
   // Fetch page quality reference image (used for all raw book assessments)
+  let pqError = null;
   async function fetchPageQualityReference(baseUrl) {
     try {
-      const url = `https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/Grade_Reference/pq.jpg`;
+      const url = `${baseUrl}/Grade_Reference/pq.jpg`;
       const resp = await fetchWithTimeout(url, {}, 4000);
-      if (!resp.ok) return null;
+      if (!resp.ok) { pqError = `HTTP ${resp.status}`; return null; }
       const buf = await resp.arrayBuffer();
       const b64 = Buffer.from(buf).toString('base64');
       return { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } };
     } catch (e) {
+      pqError = e.message;
       return null;
     }
   }
@@ -44,7 +46,7 @@ export default async function handler(req, res) {
     const gradeStr = grade === 'NG' ? 'NG' : String(parseFloat(grade).toFixed(1));
     if (!validGrades.includes(gradeStr) && gradeStr !== 'NG') return null;
     const filename = gradeStr.replace('.', '_') + '.jpg';
-    const url = `https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/Grade_Reference/${filename}`;
+    const url = `${baseUrl}/Grade_Reference/${filename}`;
     try {
       const resp = await fetchWithTimeout(url, {}, 4000);
       if (!resp.ok) return null;
@@ -462,6 +464,7 @@ Return ONLY valid JSON, no markdown.`;
       pageQualityRef: pageQualityImageBlock !== null,
       gradeRef: gradeRefSucceeded,
       knownCopiesRef,
+      pqError,
       cvDiag: cvDiag || null
     };
     return res.status(200).json(parsed);
