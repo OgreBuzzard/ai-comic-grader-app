@@ -891,7 +891,7 @@ function renderForm(){
         }).join("")}
       </div>
       <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">
-      <div style="display:flex;justify-content:center;margin-top:4px"><button id="assess-btn" class="btn btn-cgc" onclick="assessGrade()" ${(!formData.images||formData.images.filter(Boolean).length===0||assessing)?"disabled":""} style="width:75%;min-height:56px;background:${assessing?"#1a3a5c":_assessed?"#1a4a2a":"#2a4a6a"};color:${assessing?"#a8d0f0":_assessed?"#6abf6a":"#a8d0f0"}">${assessing?"Assessing…":_assessed?"Re-assess Grade":"Assess Grade"}</button></div>
+      <div style="display:flex;justify-content:center;margin-top:4px"><button id="assess-btn" class="btn btn-cgc" onclick="assessGrade()" ${(!formData.images||formData.images.filter(Boolean).length===0||assessing)?"disabled":""} style="width:75%;min-height:56px;border-radius:14px;background:${assessing?"#1a3a5c":_assessed?"#1a4a2a":"#2a4a6a"};color:${assessing?"#a8d0f0":_assessed?"#6abf6a":"#a8d0f0"}">${assessing?"Assessing…":_assessed?"Re-assess Grade":"Assess Grade"}</button></div>
     </div>
     <div class="form-grid-2">
       ${tf("Title *","title","Series title")}
@@ -899,14 +899,17 @@ function renderForm(){
       ${tf("Issue Date","issueDate","Cover date")}
       ${tf("Publisher","publisher","Publisher")}
     </div>
-    <div class="form-grid-2">
-      ${tf("CGC Grade","cgcGrade","e.g. 9.4",true)}
-      ${tf("CGC Cert #","cgcCert","Cert number")}
-    </div>
-    <div class="form-grid-2">
-      ${tf("PSA Grade","psaGrade","e.g. 9.4",true)}
-      ${tf("PSA Cert #","psaCert","Cert number")}
-    </div>
+    <details style="margin-bottom:4px"${formData.cgcGrade||formData.cgcCert||formData.psaGrade||formData.psaCert?" open":""}>
+      <summary style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#8a7a6a;cursor:pointer;user-select:none;padding:6px 0;list-style:none;display:flex;align-items:center;gap:6px"><span style="font-size:14px;color:#b0a090">▸</span>Official Grades</summary>
+      <div class="form-grid-2" style="margin-top:8px">
+        ${tf("CGC Grade","cgcGrade","e.g. 9.4",true)}
+        ${tf("CGC Cert #","cgcCert","Cert number")}
+      </div>
+      <div class="form-grid-2">
+        ${tf("PSA Grade","psaGrade","e.g. 9.4",true)}
+        ${tf("PSA Cert #","psaCert","Cert number")}
+      </div>
+    </details>
     <div class="form-grid-2">
       <div><label class="field-label">My Grade</label><select onchange="formData.grade=this.value">
         <option value="">— select grade —</option>
@@ -920,7 +923,7 @@ function renderForm(){
       </div>
     </div>
     ${formData.assessedCGCGrade||formData.assessedPSAGrade?`<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;margin-top:4px">${formData.assessedCGCGrade?buildBadge(normalizeGrade(formData.assessedCGCGrade),"cgc-ai","",true):""}${formData.assessedPSAGrade?buildBadge(normalizeGrade(formData.assessedPSAGrade),"psa-ai","",true):""}</div>`:""}
-    ${(formData.assessmentHistory||[]).length>0?`<div style="margin-top:6px;display:flex;flex-direction:column;gap:4px">${(formData.assessmentHistory||[]).map((h,i)=>`<div style="display:flex;align-items:center;gap:8px;opacity:0.65">${buildBadge(normalizeGrade(h.grade),"cgc-ai","",true)}${h.pageQuality?`<span style="font-size:11px;color:#6a5a4a">${h.pageQuality}</span>`:""}<button onclick="formData.assessmentHistory.splice(${i},1);renderForm()" style="margin-left:auto;background:none;border:none;color:#9a6a6a;font-size:14px;cursor:pointer;padding:2px 4px;line-height:1">×</button></div>`).join("")}</div>`:""}
+    ${(formData.assessmentHistory||[]).length>0?`<div style="margin-top:6px;display:flex;flex-direction:column;gap:4px">${(formData.assessmentHistory||[]).map((h,i)=>`<div style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap;opacity:0.65">${buildBadge(normalizeGrade(h.grade),"cgc-ai","",true)}${h.pageQuality?buildPQBox(h.pageQuality,"small"):""}<button onclick="formData.assessmentHistory.splice(${i},1);renderForm()" style="margin-left:auto;flex-shrink:0;background:none;border:none;color:#9a6a6a;font-size:14px;cursor:pointer;padding:2px 4px;line-height:1">×</button></div>`).join("")}</div>`:""}
     ${df("Grading Date","slabbingDate")}
     <div><label class="field-label">Seller</label>
       <input value="${esc(formData.seller||"")}" list="seller-list" oninput="formData.seller=this.value;updateSellerList(this.value)" placeholder="Name / source" autocomplete="off">
