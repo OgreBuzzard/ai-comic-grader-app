@@ -414,7 +414,7 @@ Return ONLY valid JSON, no markdown.`;
   };
 
     // Fetch grade reference and known copies in parallel
-    const [knownCopiesAvailable, gradeRefImage] = isCGC && !parsed.labelDetected ? await Promise.all([
+    const [knownCopiesAvailable, gradeRefImage] = isCGC ? await Promise.all([
       (title && issueNumber) ? fetchKnownCopies(title, issueNumber) : Promise.resolve(null),
       parsed.grade ? fetchGradeReference(parsed.grade, baseUrl) : Promise.resolve(null)
     ]) : [null, null];
@@ -460,7 +460,7 @@ Return ONLY valid JSON, no markdown.`;
 
       // Known copies pass
       (async () => {
-        if (!isCGC || parsed.labelDetected || !knownCopiesAvailable) return null;
+        if (!isCGC || !knownCopiesAvailable) return null;
         const knownCopies = knownCopiesAvailable;
         const gradeList = knownCopies.map(c => c.gradeLabel).join(', ');
         const knownPrompt = `You have assessed this comic as grade ${parsed.grade}. The following images show verified CGC-graded copies of the same issue (${title} #${issueNumber}) at known grades: ${gradeList}. Each image is labeled with its grade. Compare the book you assessed against these known copies and determine where it falls. Explicitly state which two grades it falls between, or confirm it matches a specific grade. Adjust your grade if the comparison warrants it. Return the same JSON format with your refined grade, updated graderNotes, and updated aiAssessment that mentions which known copies it was compared against and where it fell.${notesBlock}`;
