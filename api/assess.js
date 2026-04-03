@@ -24,6 +24,13 @@ export default async function handler(req, res) {
     }
   }
 
+  function normalizeMediaType(ct) {
+    const t = (ct || '').toLowerCase().split(';')[0].trim();
+    if (t === 'image/jpg') return 'image/jpeg';
+    if (['image/jpeg','image/png','image/gif','image/webp'].includes(t)) return t;
+    return 'image/jpeg';
+  }
+
   // Fetch page quality reference image (used for all raw book assessments)
   let pqError = null;
   async function fetchPageQualityReference(baseUrl) {
@@ -52,7 +59,7 @@ export default async function handler(req, res) {
       if (!resp.ok) return null;
       const buf = await resp.arrayBuffer();
       const b64 = Buffer.from(buf).toString('base64');
-      const ct = resp.headers.get('content-type') || 'image/jpeg';
+      const ct = normalizeMediaType(resp.headers.get('content-type'));
       return { type: 'image', source: { type: 'base64', media_type: ct, data: b64 } };
     } catch (e) {
       return null;
@@ -193,7 +200,7 @@ export default async function handler(req, res) {
               cvDiag.imgHttpStatus = imgResp.status;
               if (imgResp.ok) {
                 const imgBuffer = await imgResp.arrayBuffer();
-                referenceImageBlock = { type: 'image', source: { type: 'base64', media_type: imgResp.headers.get('content-type') || 'image/jpeg', data: Buffer.from(imgBuffer).toString('base64') } };
+                referenceImageBlock = { type: 'image', source: { type: 'base64', media_type: normalizeMediaType(imgResp.headers.get('content-type')), data: Buffer.from(imgBuffer).toString('base64') } };
                 cvDiag.step = 'success';
               }
             } else {
