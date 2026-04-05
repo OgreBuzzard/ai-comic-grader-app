@@ -9,6 +9,8 @@
   <meta name="theme-color" content="#0d0d0f">
   <title>Comic Grader Database</title>
   <link rel="manifest" href="manifest.json">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
   <link rel="apple-touch-icon" href="icon-192.png">
 
   <!-- Firebase -->
@@ -116,7 +118,7 @@
     .sticky-back { position: sticky; top: 56px; z-index: 90; background: #f5f4f2; padding: 10px 0 6px; margin-bottom: 4px; }
     #lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.93); display: flex; align-items: center; justify-content: center; z-index: 1000; cursor: zoom-out; padding: 20px; }
     #lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; }
-    #sync-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 2000; background: #f0eaff; border-bottom: 2px solid #7a40cf; padding: 10px 16px; display: flex; align-items: center; gap: 10px; }
+    #sync-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 9998; background: #f0eaff; border-bottom: 2px solid #7a40cf; padding: 10px 16px; display: flex; align-items: center; gap: 10px; }
     #sync-bar .spin-sm { width: 14px; height: 14px; border: 2px solid #9a70ef; border-top-color: #6a30cf; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
   
     /* Assessment progress modal */
@@ -176,12 +178,11 @@
   <style>
     /* ── Splash Screen ──────────────────────────────────────────────── */
     #splash {
-      position: fixed; inset: 0; z-index: 9999;
-      background: #d4c4a0;
+      position: fixed; inset: 0; z-index: 10000;
+      background: #c8b88a;
       display: flex; flex-direction: column;
-      align-items: center; justify-content: flex-end;
+      align-items: stretch; justify-content: flex-end;
       overflow: hidden;
-      font-family: 'Courier New', Courier, monospace;
     }
     #splash-robot {
       position: absolute;
@@ -190,7 +191,7 @@
       height: 100%;
       object-fit: cover;
       object-position: center top;
-      transform: translateY(100%);
+      transform: translateY(105%);
       opacity: 0;
       animation: robotDrop 0.8s cubic-bezier(0.34,1.4,0.64,1) 0.2s forwards;
     }
@@ -200,19 +201,18 @@
     #splash-text {
       position: relative;
       z-index: 2;
-      text-align: left;
-      padding: 0 28px 48px 28px;
+      text-align: center;
+      padding: 20px 16px 44px 16px;
       width: 100%;
       box-sizing: border-box;
-      min-height: 110px;
+      background: #0a0a0a;
     }
     #splash-text .line {
       display: block;
-      font-size: clamp(15px, 4.5vw, 22px);
-      font-weight: 700;
-      letter-spacing: 0.18em;
-      color: #1a1008;
-      text-shadow: 0 1px 0 rgba(255,255,255,0.3);
+      font-family: 'Press Start 2P', monospace;
+      font-size: clamp(13px, 3.8vw, 18px);
+      line-height: 1.7;
+      color: #e8f820;
       text-transform: uppercase;
       opacity: 0;
       white-space: nowrap;
@@ -998,10 +998,9 @@ function renderForm(){
         <option value="">— select pages —</option>
         ${PAGE_QUALITIES.map(q=>`<option value="${q}"${formData.pageQuality===q?" selected":""}>${q}</option>`).join("")}
       </select>
-      ${formData.pageQuality?`<div style="margin-top:6px">${buildPQBox(formData.pageQuality,'small')}</div>`:""}
       </div>
     </div>
-    ${formData.assessedCGCGrade||formData.assessedPSAGrade?`<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;margin-top:4px">${formData.assessedCGCGrade?buildBadge(normalizeGrade(formData.assessedCGCGrade),"cgc-ai","",true):""}${formData.assessedPSAGrade?buildBadge(normalizeGrade(formData.assessedPSAGrade),"psa-ai","",true):""}</div>`:""}
+    ${(formData.assessedCGCGrade||formData.assessedPSAGrade||formData.pageQuality)?`<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px">${formData.assessedCGCGrade?buildBadge(normalizeGrade(formData.assessedCGCGrade),"cgc-ai","",true):""}${formData.assessedPSAGrade?buildBadge(normalizeGrade(formData.assessedPSAGrade),"psa-ai","",true):""}${formData.pageQuality?buildPQBox(formData.pageQuality,"small"):""}</div>`:""}
     ${(formData.assessmentHistory||[]).length>0?`<div style="margin-top:6px;display:flex;flex-direction:column;gap:4px">${(formData.assessmentHistory||[]).map((h,i)=>`<div style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap;opacity:0.65">${buildBadge(normalizeGrade(h.grade),"cgc-ai","",true)}${h.pageQuality?buildPQBox(h.pageQuality,"small"):""}<button onclick="formData.assessmentHistory.splice(${i},1);renderForm()" style="margin-left:auto;flex-shrink:0;background:none;border:none;color:#9a6a6a;font-size:14px;cursor:pointer;padding:2px 4px;line-height:1">×</button></div>`).join("")}</div>`:""}
     ${df("Grading Date","slabbingDate")}
     <div><label class="field-label">Seller</label>
