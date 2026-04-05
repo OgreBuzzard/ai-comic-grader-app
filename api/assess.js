@@ -252,7 +252,7 @@ Return this JSON structure:
   "grade": "your AI CGC grade as string e.g. 7.0",
   "pageQuality": "use FULL FORM ONLY — one of: White, Off-White to White, Off-White, Cream to Off-White, Cream, Light Tan to Off-White, Light Tan to Cream, Light Tan, Tan to Off-White, Tan to Cream, Tan, Dark Tan to Off-White, Dark Tan, Brown to Off-White, Brown to Tan, Brown, Brown/Brittle, Slightly Brittle, Brittle",
   "graderNotes": "bullet-pointed defect list using official CGC terminology, one defect per line starting with •. Empty string if book is essentially perfect.",
-  "aiAssessment": "2-4 sentences. Lead with overall impression. Name dominant defects. State grade and rationale. Note press/UV/clean recommendations. If an existing CGC grade is visible on a label, compare your assessment to it and note whether a regrade might yield a different result.",
+  "aiAssessment": "50-100 words. Lead with overall impression and dominant defects. State the grade and rationale ONCE. If a CGC label is visible, compare your assessment to it in one sentence. Note press/UV/clean only if recommended — skip if not. Never repeat a defect already stated. Never restate the grade range more than once.",
   "labelNotes": "Key issue notations and special designations from the label's center and right side only. Examples: '1st app. Spider-Man', 'Death of Gwen Stacy', 'Part of the John Burke Collection', 'Married Pages'. Empty string if none or no label visible.",
   "press": true/false/null,
   "uv": true/false/null,
@@ -281,7 +281,8 @@ GRADE CALIBRATION:
 
 GRADER NOTES FORMAT:
 - One bullet per defect, each on its own line starting with •
-- Only document defects that are PRESENT. Never note the absence of a defect (e.g. never write "no missing piece" or "no chips detected")
+- Only document defects that are CLEARLY AND DIRECTLY VISIBLE in the photos. Never infer or speculate about structural damage (cover detachment, staple loosening, missing pieces) that is not unambiguously confirmed in the image. If you cannot see it clearly, do not list it.
+- Each defect must be distinct. Do not list the same defect twice in different phrasings.
 - Group identical defects across corners when possible (e.g. "Upper corners: blunted with minor wear" instead of separate bullets for left and right)
 - ALWAYS check for missing pieces, chips, or tears first — these are structural defects with hard grade ceilings and must be listed first if present
 - A missing corner or edge piece of 1/4" or more must be noted explicitly as "Missing piece" or "Chip out" with location and approximate size
@@ -305,7 +306,7 @@ Return ONLY valid JSON, no markdown.${notesBlock}`;
 Return this JSON:
 {
   "grade": "your AI PSA grade — must be one of: 10, 9.8, 9.6, 9.4, 9.2, 9.0, 8.5, 8.0, 7.5, 7.0, 6.5, 6.0, 5.5, 5.0, 4.5, 4.0, 3.5, 3.0, 2.5, 2.0, 1.5, 1.0, 0.5, 0.3",
-  "psaNotes": "1-2 sentences explaining why PSA would grade this differently, grounded in what you can observe about this specific book. Empty string if same grade.",
+  "psaNotes": "1-2 sentences maximum. Focus only on why PSA would differ: eye appeal vs. enumerated defects, and Silver Age generosity if applicable. Do not identify the issue, name the key, or restate defects already in graderNotes. Empty string if same grade.",
   "labelDetected": false,
   "officialPSAGrade": null,
   "officialPSACert": null
