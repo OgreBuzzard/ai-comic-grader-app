@@ -53,21 +53,29 @@
     // Watch auth state — drives the whole app
     onAuthStateChanged(auth, async (user) => {
       window._currentUser = user;
+      const authScreen = document.getElementById('auth-screen');
+      const appEl = document.getElementById('app');
       if (user) {
-        document.getElementById('auth-screen')?.remove();
-        document.getElementById('app').style.display = '';
+        // Signed in — hide auth screen, show app
+        if (authScreen) authScreen.style.display = 'none';
+        if (appEl) appEl.style.display = '';
+        // Signal firebase-ready if not already done
+        if (!window._firebaseReady) {
+          window._firebaseReady = true;
+          window.dispatchEvent(new Event('firebase-ready'));
+        }
         await loadUserCredits();
-        window.dispatchEvent(new Event('firebase-ready'));
       } else {
-        // Not signed in — show auth screen
-        document.getElementById('app').style.display = 'none';
-        if (!document.getElementById('auth-screen')) {
-          showAuthScreen();
+        // Not signed in — show auth screen, hide app
+        if (authScreen) authScreen.style.display = 'flex';
+        if (appEl) appEl.style.display = 'none';
+        // Still mark firebase as ready so initFirebase doesn't deadlock
+        if (!window._firebaseReady) {
+          window._firebaseReady = true;
+          window.dispatchEvent(new Event('firebase-ready'));
         }
       }
     });
-
-    window._firebaseReady = true;
   </script>
 
   <style>
@@ -288,7 +296,7 @@
 <body style="overflow:hidden">
 
 <!-- Auth Screen — shown when not signed in -->
-<div id="auth-screen" style="display:none;position:fixed;inset:0;z-index:10001;background:#0a0a0a;align-items:center;justify-content:center;flex-direction:column;gap:24px">
+<div id="auth-screen" style="display:flex;position:fixed;inset:0;z-index:10001;background:#0a0a0a;align-items:center;justify-content:center;flex-direction:column;gap:24px">
   <img src="icon-512.png" style="width:160px;height:160px;object-fit:contain;border-radius:16px;opacity:0.9">
   <div style="text-align:center">
     <div style="font-family:'Doto',sans-serif;font-size:22px;color:#e8f820;letter-spacing:0.06em;margin-bottom:6px">AI COMIC GRADER</div>
@@ -446,6 +454,8 @@ async function initFirebase(){
   db=window._db;fsCollection=window._fsCollection;fsGetDocs=window._fsGetDocs;
   fsSetDoc=window._fsSetDoc;fsDeleteDoc=window._fsDeleteDoc;fsDoc=window._fsDoc;fsGetDoc=window._fsGetDoc;
   fsOnSnapshot=window._fsOnSnapshot;
+  // Wait for auth — if not signed in, don't load comics
+  if(!window._currentUser){ return; }
   await loadComics();
   fsOnSnapshot(fsCollection(db,"comics"),snap=>{
     comics=snap.docs.map(d=>d.data()).map(c=>({...c,pageQuality:normPageQuality(c.pageQuality)}));
@@ -491,18 +501,12 @@ async function deleteComic(id){
   showList();
 }
 
-function showAuthScreen(){
-  const el = document.createElement('div');
-  el.id = 'auth-screen';
-  el.style.cssText = 'display:flex;position:fixed;inset:0;z-index:10001;background:#0a0a0a;align-items:center;justify-content:center;flex-direction:column;gap:24px';
-  el.innerHTML = document.getElementById('auth-screen')?.innerHTML || '';
-  document.body.appendChild(el);
-}
-
 async function signInGoogle(){
   try {
     await window._signInWithPopup(window._auth, window._googleProvider);
-    // onAuthStateChanged handles the rest
+    // onAuthStateChanged hides the auth screen and shows app
+    // Now load comics
+    await loadComics();
   } catch(e) {
     if(e.code !== 'auth/popup-closed-by-user'){
       alert('Sign in failed: ' + e.message);
@@ -1472,7 +1476,7 @@ initFirebase();
         <div style="font-size:12px;color:#6a5a4a;margin-top:2px">20¢ per assessment</div>
       </button>
       <button onclick="buyCredits('pro')" style="background:#1a1008;border:2px solid #1a1008;border-radius:10px;padding:14px 16px;cursor:pointer;text-align:left">
-        <div style="font-size:16px;font-weight:700;color:#c8a96e">$50 — 300 assessments</div>
+        <div style="font-size:16px;font-weight:700;color:#c8a96e">$80 — 500 assessments</div>
         <div style="font-size:12px;color:#a89070;margin-top:2px">Best value · 16¢ per assessment</div>
       </button>
     </div>
