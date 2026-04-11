@@ -789,8 +789,9 @@ function showDetail(id){
   if(selected.graderNotes)html+=`<div style="margin-top:20px"><div class="section-label">CGC Grader Notes</div><div class="notes-box" style="white-space:pre-line">${esc(selected.graderNotes)}</div></div>`;
   if(selected.aiGraderNotes)html+=`<div style="margin-top:20px"><div class="section-label" style="color:#4a7a9a">AI Grader Notes</div><div class="notes-box" style="border-color:#1a3a5c;color:#4a7a9a;white-space:pre-line">${esc(selected.aiGraderNotes)}</div></div>`;
   const _aiText=selected.aiAssessment||selected.myAssessment||"";
-  if(_aiText)html+=`<div style="margin-top:20px"><div class="section-label">AI Assessment</div><div class="notes-box" style="font-style:normal;color:#6a5a4a">${esc(_aiText)}</div></div>`;
+  if(_aiText)html+=`<div style="margin-top:20px"><div class="section-label">AI Assessment${selected.highGradeTier?` <span style="font-size:10px;background:#1a3a1a;color:#6abf6a;border-radius:4px;padding:2px 6px;font-weight:700;letter-spacing:0.05em;margin-left:6px">HIGH-GRADE ±3</span>`:""}</div><div class="notes-box" style="font-style:normal;color:#6a5a4a">${esc(_aiText)}</div></div>`;
   if(selected.psaNotes)html+=`<div style="margin-top:20px"><div class="section-label" style="color:#FF2040">PSA Notes</div><div class="notes-box" style="border-color:#5c1a1a;color:#e87a7a">${esc(selected.psaNotes)}</div></div>`;
+  if(selected.roboGrade)html+=`<div style="margin-top:20px">${buildRoboGradeDisplay(selected.roboGrade)}</div>`;
   if(selected.notes)html+=`<div style="margin-top:20px"><div class="section-label">My Notes</div><div style="font-size:13px;color:#6a5a4a;line-height:1.7">${esc(selected.notes)}</div></div>`;
 
   html+=`<div style="display:flex;gap:10px;margin-top:24px">
@@ -815,7 +816,7 @@ function openLightbox(id,idx){
   document.getElementById("lightbox").style.display="flex";
 }
 
-const EMPTY={title:"",issue:"",issueDate:"",publisher:"",grade:"",cgcGrade:"",cgcCert:"",psaGrade:"",psaCert:"",pageQuality:"",graderNotes:"",aiGraderNotes:"",cgcNotes:"",aiAssessment:"",psaNotes:"",notes:"",slabbingDate:"",dateAcquired:"",purchasePrice:"",taxesFeesShipping:"",gradingCost:"",cgcShipping:"",fmv:"",fmvDate:"",press:null,uv:null,clean:null,seller:"",images:[],assessedCGCGrade:"",assessedPSAGrade:"",assessmentHistory:[]};
+const EMPTY={title:"",issue:"",issueDate:"",publisher:"",grade:"",cgcGrade:"",cgcCert:"",psaGrade:"",psaCert:"",pageQuality:"",graderNotes:"",aiGraderNotes:"",cgcNotes:"",aiAssessment:"",psaNotes:"",notes:"",slabbingDate:"",dateAcquired:"",purchasePrice:"",taxesFeesShipping:"",gradingCost:"",cgcShipping:"",fmv:"",fmvDate:"",press:null,uv:null,clean:null,seller:"",images:[],assessedCGCGrade:"",assessedPSAGrade:"",assessmentHistory:[],roboGrade:null,highGradeTier:false};
 let formData={...EMPTY};
 let assessing=false;
 let _assessed=false; // tracks if current form has been assessed
@@ -889,6 +890,11 @@ function showAssessModal() {
       <div id="assess-result-preview">
         <div class="result-grades" id="result-grades"></div>
         <div style="font-size:12px;color:#8a7a6a;text-align:center" id="result-pq"></div>
+        <div id="hg-upgrade-row" style="display:none;margin-top:12px;padding:10px;background:#1a2a1a;border-radius:8px;border:1px solid #3a6a3a">
+          <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:0.05em;margin-bottom:6px">HIGH-GRADE TIER AVAILABLE</div>
+          <div style="font-size:11px;color:#8a9a8a;margin-bottom:8px">This book graded at 8.0 or above. Add 4 corner macro photos for a more precise assessment.</div>
+          <button id="hg-upgrade-btn" onclick="startHighGradeUpgrade()" style="width:100%;padding:10px;background:#2a5a2a;color:#80e080;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer">+ Add Corner Macros</button>
+        </div>
       </div>
       <button id="assess-complete-btn" onclick="completeAssessment()">Complete</button>
     </div>`;
@@ -958,6 +964,124 @@ function showResultPreview(cgc, psa) {
   preview.style.display = 'block';
   const btn = document.getElementById('assess-complete-btn');
   if (btn) btn.style.display = 'block';
+
+  // Show high-grade upgrade option if CGC or PSA >= 8.0
+  const cgcNum = parseFloat(cgcGrade) || 0;
+  const psaNum = parseFloat(psaGrade) || 0;
+  const hgRow = document.getElementById('hg-upgrade-row');
+  if (hgRow && (cgcNum >= 8.0 || psaNum >= 8.0)) {
+    hgRow.style.display = 'block';
+  }
+}
+
+function startHighGradeUpgrade() {
+  const btn = document.getElementById('hg-upgrade-btn');
+  if (btn) { btn.textContent = 'Select 4 Corner Photos...'; btn.disabled = true; }
+
+  // Create hidden file input for corner macros
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.multiple = true;
+  input.onchange = async (e) => {
+    const files = Array.from(e.target.files).slice(0, 4);
+    if (files.length === 0) {
+      if (btn) { btn.textContent = '+ Add Corner Macros'; btn.disabled = false; }
+      return;
+    }
+    if (btn) btn.textContent = `${files.length} photo${files.length>1?'s':''} selected — Re-assessing…`;
+
+    try {
+      // Compress corner images
+      const cornerImgs = await Promise.all(files.map(f => new Promise(res => {
+        const reader = new FileReader();
+        reader.onload = ev => {
+          const img = new Image();
+          img.onload = () => {
+            const MAX = 900, Q = 0.5;
+            const scale = Math.min(MAX/img.width, MAX/img.height, 1);
+            const c = document.createElement('canvas');
+            c.width = Math.round(img.width*scale);
+            c.height = Math.round(img.height*scale);
+            c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+            res(c.toDataURL('image/jpeg', Q));
+          };
+          img.src = ev.target.result;
+        };
+        reader.readAsDataURL(f);
+      })));
+
+      // Combine original 4 images + corner macros
+      const origImgs = (formData.images || []).filter(Boolean).slice(0, 4);
+      const origCompressed = await Promise.all(origImgs.map(img => compressImage(img)));
+      const allImages = [...origCompressed, ...cornerImgs];
+
+      const token = window._currentUser ? (await window._currentUser.getIdToken()) : null;
+
+      // Re-run CGC with high-grade flag
+      const cgcResp = await fetch('/api/assess', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-secret': '022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d',
+          ...(token ? {'Authorization': 'Bearer ' + token} : {})
+        },
+        body: JSON.stringify({
+          images: allImages,
+          grader: 'CGC',
+          highGrade: true,
+          title: formData.title || '',
+          issueNumber: formData.issue || '',
+          issueDate: formData.issueDate || ''
+        })
+      });
+
+      if (!cgcResp.ok) throw new Error('High-grade CGC failed');
+      const cgcHG = await cgcResp.json();
+
+      // Re-run PSA
+      const psaResp = await fetch('/api/assess', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-secret': '022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d',
+          ...(token ? {'Authorization': 'Bearer ' + token} : {})
+        },
+        body: JSON.stringify({
+          images: allImages,
+          grader: 'PSA',
+          cgcGrade: cgcHG.grade || ''
+        })
+      });
+
+      const psaHG = psaResp.ok ? await psaResp.json() : _pendingAssessResult.psa;
+
+      // Update pending result with high-grade refined grades
+      cgcHG._roboGrade = _pendingAssessResult.cgc._roboGrade; // preserve RoboGrade
+      cgcHG._highGradeTier = true;
+      _pendingAssessResult = { cgc: cgcHG, psa: psaHG };
+
+      // Update the preview
+      const gradesEl = document.getElementById('result-grades');
+      const pqEl = document.getElementById('result-pq');
+      const cgcGrade = normalizeGrade(cgcHG.grade || '');
+      const psaGrade = normalizeGrade(psaHG.grade || '');
+      const pq = cgcHG.pageQuality ? normPageQuality(cgcHG.pageQuality) : '';
+      if (gradesEl) gradesEl.innerHTML =
+        (cgcGrade ? buildBadge(cgcGrade, 'cgc-ai', '', true) : '') +
+        (psaGrade ? buildBadge(psaGrade, 'psa-ai', '', true) : '');
+      if (pq && pqEl) pqEl.innerHTML = buildPQBox(pq);
+
+      // Update upgrade row to show success
+      const hgRow = document.getElementById('hg-upgrade-row');
+      if (hgRow) hgRow.innerHTML = '<div style="font-size:11px;color:#6abf6a;font-weight:700;text-align:center">✓ High-Grade Detail Assessment Complete (±3)</div>';
+
+    } catch(e) {
+      if (btn) { btn.textContent = 'Retry Corner Macros'; btn.disabled = false; }
+      console.error('High-grade upgrade failed:', e);
+    }
+  };
+  input.click();
 }
 
 function decrementCredit(){
@@ -1001,6 +1125,8 @@ function completeAssessment() {
   }
   formData.assessedCGCGrade=cgc.grade||'';
   formData.assessedPSAGrade=psa.grade?(String(psa.grade).includes('.')?String(psa.grade):parseFloat(psa.grade).toFixed(1)):'';
+  if(cgc._roboGrade)formData.roboGrade=cgc._roboGrade;
+  formData.highGradeTier=!!(cgc._highGradeTier);
   formData.pageQuality=cgc.pageQuality?normPageQuality(cgc.pageQuality):formData.pageQuality;
   formData.aiGraderNotes=cgc.graderNotes||'';
   formData.aiAssessment=cgc.aiAssessment||'';
@@ -1059,6 +1185,19 @@ async function assessGrade(){
     if(psa.error)throw new Error(psa.error);
     await delay(180);
     setStep('psa','done');
+    setStep('psa','done');
+
+    // RoboGrade — third pass, runs in parallel with result display
+    setStep('analyzing','running','Running RoboGrade...');
+    try{
+      const roboResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json","x-client-secret":"022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",...(window._currentUser?{"Authorization":"Bearer "+(await window._currentUser.getIdToken())}:{})},body:JSON.stringify({images:compressed,grader:"ROBO"})});
+      if(roboResp.ok){
+        const robo=await roboResp.json();
+        if(robo.roboGrade) cgc._roboGrade=robo.roboGrade;
+      }
+    }catch(e){ /* RoboGrade is non-blocking */ }
+    setStep('analyzing','done');
+
     _pendingAssessResult={cgc,psa};
     showResultPreview(cgc,psa);
     onAssessmentSuccess();
@@ -1213,6 +1352,7 @@ function renderForm(){
     ${formData.aiGraderNotes?`<div><label class="field-label" style="color:#4a7a9a">AI Grader Notes</label><textarea rows="4" style="font-style:italic;border-color:#1a3a5c" oninput="formData.aiGraderNotes=this.value">${esc(formData.aiGraderNotes||"")}</textarea></div>`:""}
     <div><label class="field-label">AI Assessment</label><textarea rows="${Math.max(4,Math.ceil((formData.aiAssessment||"").length/80))}" oninput="formData.aiAssessment=this.value" placeholder="Auto-filled by Assess Grade">${esc(formData.aiAssessment||"")}</textarea></div>
     ${formData.psaNotes?`<div><label class="field-label" style="color:#e87a7a">PSA Notes</label><textarea rows="3" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes||"")}</textarea></div>`:""}
+    ${formData.roboGrade?buildRoboGradeDisplay(formData.roboGrade):""}
     <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes||"")}</textarea></div>
     <div style="display:flex;gap:10px;padding-top:4px">
       <button class="btn btn-gold" onclick="submitForm()">${isEdit?"Save Changes":"Add to Collection"}</button>
@@ -1224,6 +1364,71 @@ function renderForm(){
 }
 
 function renderImgPreview(){}
+
+function buildRoboGradeDisplay(rg) {
+  if (!rg) return '';
+  const score = rg.score;
+  const scoreStr = score >= 80 ? score.toFixed(1) : Math.round(score).toString();
+  const scoreColor = score >= 80 ? '#4a9a4a' : score >= 60 ? '#4a6a9a' : score >= 40 ? '#9a7a2a' : '#9a3a3a';
+  
+  // Build defect list
+  const defectRows = (defects, label) => {
+    if (!defects || defects.length === 0) return '';
+    const rows = defects.map(d => {
+      const cb = d.colorBreaking === true ? ' <span style="color:#c84a4a;font-size:10px">[CB]</span>' : '';
+      return `<div style="display:flex;gap:6px;padding:3px 0;border-bottom:1px solid #2a2a3a;font-size:12px">
+        <span style="flex:2;color:#c0b8a8">${d.type}${cb}</span>
+        <span style="flex:2;color:#8a8a9a">${d.location}</span>
+        <span style="flex:1;color:#8a8a9a;text-align:center">${d.measurement}</span>
+        <span style="flex:0 0 40px;color:#c84a4a;text-align:right">−${d.deduction}</span>
+      </div>`;
+    }).join('');
+    return `<div style="margin-top:6px">
+      <div style="font-size:10px;letter-spacing:1px;color:#6a6a8a;text-transform:uppercase;margin-bottom:4px">${label}</div>
+      <div style="display:flex;gap:6px;padding:2px 0;font-size:10px;color:#5a5a7a;border-bottom:1px solid #3a3a4a">
+        <span style="flex:2">Defect</span><span style="flex:2">Location</span>
+        <span style="flex:1;text-align:center">Measurement</span>
+        <span style="flex:0 0 40px;text-align:right">Pts</span>
+      </div>
+      ${rows}
+    </div>`;
+  };
+
+  const cf = rg.colorFading || {};
+  const fadingRows = [
+    cf.front && cf.front.severity !== 'none' ? `<div style="display:flex;gap:6px;padding:3px 0;border-bottom:1px solid #2a2a3a;font-size:12px"><span style="flex:2;color:#c0b8a8">Color fading</span><span style="flex:2;color:#8a8a9a">Front cover</span><span style="flex:1;color:#8a8a9a;text-align:center">${cf.front.severity}</span><span style="flex:0 0 40px;color:#c84a4a;text-align:right">−${cf.front.deduction}</span></div>` : '',
+    cf.back && cf.back.severity !== 'none' ? `<div style="display:flex;gap:6px;padding:3px 0;border-bottom:1px solid #2a2a3a;font-size:12px"><span style="flex:2;color:#c0b8a8">Color fading</span><span style="flex:2;color:#8a8a9a">Back cover</span><span style="flex:1;color:#8a8a9a;text-align:center">${cf.back.severity}</span><span style="flex:0 0 40px;color:#c84a4a;text-align:right">−${cf.back.deduction}</span></div>` : '',
+  ].filter(Boolean).join('');
+
+  return `<div style="background:#0d0d1a;border:1.5px solid #2a2a5a;border-radius:12px;padding:14px;margin-bottom:8px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div>
+        <div style="font-size:10px;letter-spacing:2px;color:#5a5a9a;text-transform:uppercase">RoboGrade v${rg.version}</div>
+        <div style="font-size:11px;color:#5a5a9a;margin-top:2px">${rg.tier} tier · ±${rg.confidenceRange}${rg.pageQuality ? ' · PQ: ' + rg.pageQuality : ''}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:36px;font-weight:700;line-height:1;color:${scoreColor}">${scoreStr}</div>
+        <div style="font-size:10px;color:#5a5a9a">/ 100</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:10px">
+      <div style="flex:1;background:#1a1a2a;border-radius:8px;padding:8px;text-align:center">
+        <div style="font-size:18px;font-weight:700;color:#6a6ab0">${rg.frontCoverScore >= 80 ? rg.frontCoverScore.toFixed(1) : Math.round(rg.frontCoverScore)}</div>
+        <div style="font-size:10px;color:#5a5a9a">Front (×0.80)</div>
+      </div>
+      <div style="flex:1;background:#1a1a2a;border-radius:8px;padding:8px;text-align:center">
+        <div style="font-size:18px;font-weight:700;color:#6a6ab0">${rg.backCoverScore >= 80 ? rg.backCoverScore.toFixed(1) : Math.round(rg.backCoverScore)}</div>
+        <div style="font-size:10px;color:#5a5a9a">Back (×0.20)</div>
+      </div>
+    </div>
+    ${defectRows(rg.frontDefects, 'Front Cover Defects')}
+    ${defectRows(rg.backDefects, 'Back Cover Defects')}
+    ${fadingRows ? `<div style="margin-top:6px"><div style="font-size:10px;letter-spacing:1px;color:#6a6a8a;text-transform:uppercase;margin-bottom:4px">Color Fading</div>${fadingRows}</div>` : ''}
+    ${rg.assessmentNotes ? `<div style="margin-top:10px;font-size:11px;font-style:italic;color:#5a5a7a;line-height:1.5">${rg.assessmentNotes}</div>` : ''}
+  </div>`;
+}
+
+
 
 async function assessPSA(){
   if(!formData.images||formData.images.filter(Boolean).length===0){alert("Add at least one photo first.");return;}
