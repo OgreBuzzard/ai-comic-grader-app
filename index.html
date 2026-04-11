@@ -457,30 +457,36 @@ async function initFirebase(){
   // Wait for auth — if not signed in, don't load comics
   if(!window._currentUser){ return; }
   await loadComics();
-  fsOnSnapshot(fsCollection(db,"comics"),snap=>{
+  fsOnSnapshot(userComicsCollection(),snap=>{
     comics=snap.docs.map(d=>d.data()).map(c=>({...c,pageQuality:normPageQuality(c.pageQuality)}));
     if(view==="list")renderList();
     updateStats();
   });
 }
 
+function userComicsCollection(){
+  const uid = window._currentUser?.uid;
+  if(!uid) throw new Error('Not signed in');
+  return fsCollection(db, 'users', uid, 'comics');
+}
+function userMetaDoc(name){
+  const uid = window._currentUser?.uid;
+  if(!uid) throw new Error('Not signed in');
+  return fsDoc(db, 'users', uid, 'meta', name);
+}
+function userComicDoc(id){
+  const uid = window._currentUser?.uid;
+  if(!uid) throw new Error('Not signed in');
+  return fsDoc(db, 'users', uid, 'comics', id);
+}
+
 async function loadComics(){
   syncMsg("Loading collection...");
   try{
-    const snap=await fsGetDocs(fsCollection(db,"comics"));
+    const snap=await fsGetDocs(userComicsCollection());
     comics=snap.docs.map(d=>d.data()).map(c=>({...c,pageQuality:normPageQuality(c.pageQuality)}));
-    if(comics.length===0&&!seeded){
-      // Check meta/seeded guard before seeding — prevents re-seed on transient empty reads
-      const metaSnap=await fsGetDoc(fsDoc(db,"meta","seeded"));
-      if(!metaSnap.exists()){
-        seeded=true;
-        syncMsg("Seeding initial data...");
-        for(const c of SEED_COMICS){await fsSetDoc(fsDoc(db,"comics",c.id),c);}
-        await fsSetDoc(fsDoc(db,"meta","seeded"),{seededAt:new Date().toISOString()});
-        comics=[...SEED_COMICS];
-      }
-    }
-  }catch(e){console.error("Load error:",e);comics=[...SEED_COMICS];}
+    // No seeding for new users — they start with an empty collection
+  }catch(e){console.error("Load error:",e);comics=[];}
   syncMsg(null);
   renderList();
   updateStats();
@@ -488,14 +494,14 @@ async function loadComics(){
 
 async function saveComic(rec){
   syncMsg("Saving...");
-  try{await fsSetDoc(fsDoc(db,"comics",rec.id),rec);}
+  try{await fsSetDoc(userComicDoc(rec.id),rec);}
   catch(e){alert("Save failed: "+e.message);}
   syncMsg(null);
 }
 
 async function deleteComic(id){
   syncMsg("Deleting...");
-  try{await fsDeleteDoc(fsDoc(db,"comics",id));}
+  try{await fsDeleteDoc(userComicDoc(id));}
   catch(e){alert("Delete failed: "+e.message);}
   syncMsg(null);
   showList();
