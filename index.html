@@ -270,6 +270,7 @@
         <span class="sub">Database</span>
       </button>
       <button class="btn btn-gold" id="add-btn" onclick="showAdd()">+ Add Book</button>
+      <button class="btn" onclick="showBuyCredits()" style="background:#2a1a08;color:#c8a96e;font-size:12px;padding:6px 12px;border-radius:8px;border:1.5px solid #c8a96e" id="credits-btn">Buy Credits</button>
     </div>
     <div id="header-stats"></div>
   </div>
@@ -449,7 +450,50 @@ function updateStats(){
   if(cgc>0)parts.push(`${cgc} CGC`);
   if(psa>0)parts.push(`${psa} PSA`);
   if(raw>0)parts.push(`${raw} raw`);
-  document.getElementById("header-stats").textContent=parts.join(" · ");
+  const creditsStr = window._userCredits !== undefined ? ` · ${window._userCredits} credit${window._userCredits!==1?"s":""}` : "";
+  document.getElementById("header-stats").textContent=parts.join(" · ")+creditsStr;
+}
+
+async function loadUserCredits(){
+  if(!window._currentUser) return;
+  try {
+    const db=window._db;
+    const fsDoc=window._fsDoc;
+    const fsGetDoc=window._fsGetDoc;
+    const snap = await fsGetDoc(fsDoc(db,"users",window._currentUser.uid));
+    if(snap.exists()){
+      const data = snap.data();
+      window._userCredits = data.assessmentCredits || 0;
+    } else {
+      window._userCredits = 0;
+    }
+    updateStats();
+  } catch(e){ console.error("Failed to load credits:", e); }
+}
+
+async function buyCredits(pkg){
+  if(!window._currentUser){ alert("Please sign in to purchase credits."); return; }
+  try {
+    const token = await window._currentUser.getIdToken();
+    const resp = await fetch("/api/checkout", {
+      method: "POST",
+      headers: {"Content-Type":"application/json","Authorization":"Bearer "+token},
+      body: JSON.stringify({package: pkg})
+    });
+    const data = await resp.json();
+    if(data.url){ window.location.href = data.url; }
+    else { alert("Failed to start checkout: " + (data.error||"Unknown error")); }
+  } catch(e){ alert("Checkout error: " + e.message); }
+}
+
+function showBuyCredits(){
+  const modal = document.getElementById("buy-credits-modal");
+  if(modal) modal.style.display="flex";
+}
+
+function hideBuyCredits(){
+  const modal = document.getElementById("buy-credits-modal");
+  if(modal) modal.style.display="none";
 }
 
 function showList(){
@@ -820,6 +864,22 @@ function showResultPreview(cgc, psa) {
   if (btn) btn.style.display = 'block';
 }
 
+function decrementCredit(){
+  if(window._userCredits !== undefined && window._userCredits > 0){
+    window._userCredits--;
+    updateStats();
+    // Write to Firestore in background
+    if(window._currentUser && window._db){
+      const {getFirestore, doc, updateDoc, increment} = window._fsDecrementHelpers || {};
+      // Use raw firebase calls since we have db reference
+      try {
+        const userRef = window._fsDoc(window._db, "users", window._currentUser.uid);
+        window._fsSetDoc(userRef, {assessmentCredits: Math.max(0, window._userCredits)}, {merge: true});
+      } catch(e){ console.error("Failed to decrement credits in Firestore:", e); }
+    }
+  }
+}
+
 function completeAssessment() {
   if (!_pendingAssessResult) return;
   const {cgc, psa} = _pendingAssessResult;
@@ -861,6 +921,10 @@ function completeAssessment() {
   renderForm();
 }
 
+function onAssessmentSuccess(){
+  decrementCredit();
+}
+
 function dismissAssessModal(err) {
   const overlay = document.getElementById('assess-modal-overlay');
   if (overlay) overlay.remove();
@@ -871,12 +935,21 @@ async function assessGrade(){
   const imgs=(formData.images||[]).filter(Boolean);
   if(imgs.length===0){alert("Add at least one photo first.");return;}
   if(assessing)return;
+
+  // Check credits
+  if(window._userCredits !== undefined && window._userCredits <= 0){
+    if(confirm("You have no assessment credits remaining. Would you like to buy more?")){
+      showBuyCredits();
+    }
+    return;
+  }
+
   assessing=true;
   showAssessModal();
   setStep('analyzing','running','Reading photos...');
   try{
     const compressed=await Promise.all(imgs.slice(0,4).map(img=>compressImage(img)));
-    const cgcResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images:compressed,grader:"CGC",title:formData.title||"",issueNumber:formData.issue||"",issueDate:formData.issueDate||""})});
+    const cgcResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json","x-client-secret":"022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d"},body:JSON.stringify({images:compressed,grader:"CGC",title:formData.title||"",issueNumber:formData.issue||"",issueDate:formData.issueDate||""})});
     if(!cgcResp.ok){const e=await cgcResp.text();throw new Error("CGC error: "+e);}
     const cgc=await cgcResp.json();
     if(cgc.error)throw new Error(cgc.error);
@@ -884,7 +957,7 @@ async function assessGrade(){
     await animateStepsFromDiagnostics(d);
     setStep('psa','running','Checking variance...');
     const slabDetected=!!(cgc.labelDetected&&(cgc.officialCGCGrade||cgc.officialPSAGrade));
-    const psaResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({images:compressed,grader:"PSA",cgcGrade:cgc.grade||"",cgcGraderNotes:slabDetected?formData.graderNotes||"":"",psaGraderNotes:slabDetected?formData.psaNotes||"":""})});
+    const psaResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json","x-client-secret":"022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d"},body:JSON.stringify({images:compressed,grader:"PSA",cgcGrade:cgc.grade||"",cgcGraderNotes:slabDetected?formData.graderNotes||"":"",psaGraderNotes:slabDetected?formData.psaNotes||"":""})});
     if(!psaResp.ok){const e=await psaResp.text();throw new Error("PSA error: "+e);}
     const psa=await psaResp.json();
     if(psa.error)throw new Error(psa.error);
@@ -892,6 +965,7 @@ async function assessGrade(){
     setStep('psa','done');
     _pendingAssessResult={cgc,psa};
     showResultPreview(cgc,psa);
+    onAssessmentSuccess();
   }catch(e){
     dismissAssessModal(e.message);
   }
@@ -1075,7 +1149,7 @@ async function assessPSA(){
   try{
     const resp=await fetch("/api/assess",{
       method:"POST",
-      headers:{"Content-Type":"application/json"},
+      headers:{"Content-Type":"application/json","x-client-secret":"022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d"},
       body:JSON.stringify({images:compressed,grader:"PSA"})
     });
     if(!resp.ok){const e=await resp.text();throw new Error("Server error: "+e);}
@@ -1207,7 +1281,6 @@ if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catc
 // ── Splash Screen ──────────────────────────────────────────────────
 (function runSplash() {
   const lines = [
-    "GREETINGS, HUMAN.",
     "MY POSITRONIC BRAIN",
     "IS READY TO GRADE",
     "YOUR COMIC BOOKS."
@@ -1278,7 +1351,47 @@ if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catc
   typeAll();
 })();
 
+// Handle Stripe payment return
+(function checkPaymentReturn(){
+  const params = new URLSearchParams(window.location.search);
+  const payment = params.get('payment');
+  const credits = params.get('credits');
+  if(payment === 'success' && credits){
+    setTimeout(()=>{
+      alert(`Payment successful! ${credits} assessment credits have been added to your account.`);
+      loadUserCredits();
+    }, 1500);
+  } else if(payment === 'cancelled'){
+    setTimeout(()=>{ alert('Payment cancelled. No charges were made.'); }, 500);
+  }
+  // Clean URL
+  if(payment){ window.history.replaceState({}, '', '/'); }
+})();
+
 initFirebase();
 </script>
+
+<!-- Buy Credits Modal -->
+<div id="buy-credits-modal" style="display:none;position:fixed;inset:0;z-index:8000;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;padding:20px">
+  <div style="background:#fff;border-radius:16px;padding:28px 24px;max-width:360px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,0.3)">
+    <h2 style="margin:0 0 6px;font-size:20px;color:#1a1008">Buy Assessments</h2>
+    <p style="margin:0 0 20px;font-size:13px;color:#6a5a4a">Credits are used one per assessment (CGC + PSA counts as one).</p>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <button onclick="buyCredits('starter')" style="background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:14px 16px;cursor:pointer;text-align:left">
+        <div style="font-size:16px;font-weight:700;color:#1a1008">$5 — 20 assessments</div>
+        <div style="font-size:12px;color:#6a5a4a;margin-top:2px">25¢ per assessment</div>
+      </button>
+      <button onclick="buyCredits('standard')" style="background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:14px 16px;cursor:pointer;text-align:left">
+        <div style="font-size:16px;font-weight:700;color:#1a1008">$20 — 100 assessments</div>
+        <div style="font-size:12px;color:#6a5a4a;margin-top:2px">20¢ per assessment</div>
+      </button>
+      <button onclick="buyCredits('pro')" style="background:#1a1008;border:2px solid #1a1008;border-radius:10px;padding:14px 16px;cursor:pointer;text-align:left">
+        <div style="font-size:16px;font-weight:700;color:#c8a96e">$50 — 300 assessments</div>
+        <div style="font-size:12px;color:#a89070;margin-top:2px">Best value · 16¢ per assessment</div>
+      </button>
+    </div>
+    <button onclick="hideBuyCredits()" style="margin-top:16px;width:100%;background:none;border:none;color:#8a7a6a;font-size:14px;cursor:pointer;padding:8px">Cancel</button>
+  </div>
+</div>
 </body>
 </html>
