@@ -1,5 +1,11 @@
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  // Auth check — reject requests without the correct client secret
+  const clientSecret = req.headers['x-client-secret'];
+  if (!clientSecret || clientSecret !== process.env.CLIENT_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'API key not configured' });
   const COMICVINE_API_KEY = process.env.COMICVINE_API_KEY || '';
