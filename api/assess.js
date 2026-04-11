@@ -1,9 +1,29 @@
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  // Auth check — reject requests without the correct client secret
+  // Auth check — verify Firebase ID token
+  const authHeader = req.headers['authorization'] || '';
+  const idToken = authHeader.replace('Bearer ', '');
   const clientSecret = req.headers['x-client-secret'];
-  if (!clientSecret || clientSecret !== process.env.CLIENT_SECRET) {
+
+  // Accept either a valid Firebase token OR the static secret (fallback during transition)
+  let userId = null;
+  if (idToken) {
+    try {
+      const { initializeApp, getApps, cert } = await import('firebase-admin/app');
+      const { getAuth } = await import('firebase-admin/auth');
+      if (!getApps().length) {
+        initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
+      }
+      const decoded = await getAuth().verifyIdToken(idToken);
+      userId = decoded.uid;
+    } catch(e) {
+      // Token invalid — fall through to secret check
+    }
+  }
+
+  // If no valid token, check static secret as fallback
+  if (!userId && (!clientSecret || clientSecret !== process.env.CLIENT_SECRET)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   const apiKey = process.env.ANTHROPIC_API_KEY;
