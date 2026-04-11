@@ -1,3 +1,127 @@
+
+// ── RoboGrade v1.0 ────────────────────────────────────────────────────────────
+async function handleRoboGrade(req, res, images, apiKey) {
+  if (!images || images.length === 0) return res.status(400).json({ error: 'No images provided' });
+
+  // Default weight table (amendable via Firestore config/robograde_weights in future)
+  const WEIGHTS = {
+    missingPiecePerQuarterSqIn: 15,
+    tearWithLossPerIn:          10,
+    tearNoLossPerIn:             5,
+    creaseColorBreakingPerIn:    5,
+    creaseNonColorBreakingPerIn: 2,
+    cornerBluntingPer16th:       3,
+    spineStressLineEach:         1,
+    spineRoll:                   8,
+    soilingPerPct:               0.8,
+    writingPerPct:               5,
+    stapleRustMinor:             3,
+    stapleRustModerate:          6,
+    stapleRustHeavy:             10,
+    tapePerPct:                  12,
+    colorFadingMax:              15,
+  };
+
+  const imageBlocks = images.map(img => {
+    const [header, data] = img.split(',');
+    const mt = (header.match(/data:(.*);base64/) || [])[1] || 'image/jpeg';
+    const norm = mt === 'image/jpg' ? 'image/jpeg' : mt;
+    return { type: 'image', source: { type: 'base64', media_type: norm, data } };
+  });
+
+  const roboPrompt = `You are RoboGrade v1.0, an AI-native comic book condition measurement system. You assess condition by measuring defects directly from photographs using the ruler visible on the green cutting mat for physical scale. Ruler markings are in inches.
+
+IMPORTANT PRINCIPLES:
+- Only report defects that are CLEARLY AND DIRECTLY VISIBLE in the photos
+- Use the ruler for all measurements — estimate in inches or fractions thereof
+- Do not infer defects you cannot see
+- A green cutting mat with a ruler is the photography surface — ignore the mat in your assessment
+
+DEFECT WEIGHT TABLE (points deducted from 100 per cover):
+- Missing piece: ${WEIGHTS.missingPiecePerQuarterSqIn} pts per 1/4 sq inch
+- Tear with paper loss: ${WEIGHTS.tearWithLossPerIn} pts per inch
+- Tear without paper loss: ${WEIGHTS.tearNoLossPerIn} pts per inch
+- Crease, color-breaking: ${WEIGHTS.creaseColorBreakingPerIn} pts per inch
+- Crease, non-color-breaking: ${WEIGHTS.creaseNonColorBreakingPerIn} pts per inch
+- Corner blunting: ${WEIGHTS.cornerBluntingPer16th} pts per 1/16 inch radius
+- Spine stress lines: ${WEIGHTS.spineStressLineEach} pt each
+- Spine roll: ${WEIGHTS.spineRoll} pts if present
+- Soiling/foxing: ${WEIGHTS.soilingPerPct} pts per % of cover area
+- Writing/stamps: ${WEIGHTS.writingPerPct} pts per % of cover area
+- Staple rust: ${WEIGHTS.stapleRustMinor} minor / ${WEIGHTS.stapleRustModerate} moderate / ${WEIGHTS.stapleRustHeavy} heavy
+- Tape: ${WEIGHTS.tapePerPct} pts per % of cover area
+- Color fading/tanning: 0–${WEIGHTS.colorFadingMax} pts based on severity
+
+SCORING:
+- Start at 100 for front cover, 100 for back cover
+- Subtract deductions for each observed defect. Minimum 0.
+- RoboGrade = (frontScore × 0.80) + (backScore × 0.20)
+- Round to nearest integer UNLESS score is above 80 (keep one decimal in that case)
+- Tier: standard, confidenceRange: 8
+
+PAGE QUALITY — measure average color of unprinted white margin areas on interior pages if visible:
+- Compare to pure white. Assign one of: White / Off-White to White / Off-White / Cream to Off-White / Cream / Light Tan / Tan / Dark Tan / Brown
+- If no interior page photo is provided, set pageQuality to null
+
+Return ONLY valid JSON, no markdown:
+{
+  "roboGrade": {
+    "score": <integer if <=80, one decimal if >80>,
+    "version": "1.0",
+    "tier": "standard",
+    "confidenceRange": 8,
+    "frontCoverScore": <number>,
+    "backCoverScore": <number>,
+    "pageQuality": "<tier name or null>",
+    "frontDefects": [
+      {
+        "type": "<defect type>",
+        "location": "<where on cover>",
+        "measurement": "<measured dimension>",
+        "colorBreaking": <true/false/null>,
+        "deduction": <number>,
+        "notes": "<brief observation>"
+      }
+    ],
+    "backDefects": [ <same structure> ],
+    "colorFading": {
+      "front": { "severity": "<none/mild/moderate/heavy>", "deduction": <number> },
+      "back":  { "severity": "<none/mild/moderate/heavy>", "deduction": <number> }
+    },
+    "assessmentNotes": "<1-2 sentences on overall condition and what could not be assessed>"
+  }
+}`;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: 'claude-opus-4-6',
+        max_tokens: 1500,
+        messages: [{ role: 'user', content: [...imageBlocks, { type: 'text', text: roboPrompt }] }]
+      })
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      return res.status(500).json({ error: 'RoboGrade API error: ' + err });
+    }
+
+    const data = await response.json();
+    const text = data.content?.map(b => b.text || '').join('') || '';
+    const clean = text.replace(/```json|```/g, '').trim();
+
+    let parsed;
+    try { parsed = JSON.parse(clean); }
+    catch (e) { return res.status(500).json({ error: 'RoboGrade parse error: ' + text }); }
+
+    return res.status(200).json(parsed);
+  } catch (err) {
+    return res.status(500).json({ error: 'RoboGrade error: ' + err.message });
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -29,7 +153,10 @@ export default async function handler(req, res) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'API key not configured' });
   const COMICVINE_API_KEY = process.env.COMICVINE_API_KEY || '';
-  const { images, grader = 'CGC', cgcGrade = null, cgcGraderNotes = '', psaGraderNotes = '', title = '', issueNumber = '', issueDate = '' } = req.body;
+  const { images, grader = 'CGC', cgcGrade = null, cgcGraderNotes = '', psaGraderNotes = '', title = '', issueNumber = '', issueDate = '', highGrade = false } = req.body;
+
+  // RoboGrade — separate handler, returns early
+  if (grader === 'ROBO') return handleRoboGrade(req, res, images, apiKey);
   if (!images || images.length === 0) return res.status(400).json({ error: 'No images provided' });
 
   const imageBlocks = images.map(img => {
@@ -387,7 +514,9 @@ Return ONLY valid JSON, no markdown.`;
               pageQualityImageBlock
             ] : []),
             ...imageBlocks,
-            { type: 'text', text: 'Please assess this comic. IMPORTANT: Before listing any other defects, examine each corner individually for missing pieces or chips. Then return the JSON grading object.' }
+            { type: 'text', text: highGrade
+          ? 'Please assess this comic at HIGH-GRADE DETAIL tier. The first 4 images are standard assessment photos. The final 4 images are macro corner photographs (upper-left, upper-right, lower-left, lower-right). Use the corner macros to precisely evaluate corner sharpness, micro-creasing, and any small defects that determine grades between 8.0 and 10.0. Return a refined grade. Confidence range for this assessment is ±3. IMPORTANT: Examine each corner macro individually and explicitly before returning your grade.'
+          : 'Please assess this comic. IMPORTANT: Before listing any other defects, examine each corner individually for missing pieces or chips. Then return the JSON grading object.' }
           ]
         }]
       })
@@ -534,6 +663,7 @@ Return ONLY valid JSON, no markdown.`;
 
     // Attach diagnostic info (preserve gradeRef if already set by refinement pass)
     const gradeRefSucceeded = gradeRefSuccessLocal || parsed._diagnostics?.gradeRef === true;
+    parsed._highGradeTier = highGrade || false;
     parsed._diagnostics = {
       comicvineRef: referenceImageBlock !== null,
       pageQualityRef: pageQualityImageBlock !== null,
