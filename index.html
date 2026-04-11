@@ -18,6 +18,8 @@
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
     import { getFirestore, collection, getDocs, setDoc, deleteDoc, doc, onSnapshot, getDoc }
       from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+    import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+      from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
 
     const firebaseConfig = {
       apiKey: "AIzaSyCDfjpnL94J0L09vJpg3I8ANu6zUzrrKxM",
@@ -38,8 +40,34 @@
     window._fsDoc = doc;
     window._fsOnSnapshot = onSnapshot;
     window._fsGetDoc = getDoc;
+    // Auth setup
+    const auth = getAuth(app);
+    const googleProvider = new GoogleAuthProvider();
+    window._auth = auth;
+    window._googleProvider = googleProvider;
+    window._signInWithPopup = signInWithPopup;
+    window._signOut = signOut;
+    window._onAuthStateChanged = onAuthStateChanged;
+    window._GoogleAuthProvider = GoogleAuthProvider;
+
+    // Watch auth state — drives the whole app
+    onAuthStateChanged(auth, async (user) => {
+      window._currentUser = user;
+      if (user) {
+        document.getElementById('auth-screen')?.remove();
+        document.getElementById('app').style.display = '';
+        await loadUserCredits();
+        window.dispatchEvent(new Event('firebase-ready'));
+      } else {
+        // Not signed in — show auth screen
+        document.getElementById('app').style.display = 'none';
+        if (!document.getElementById('auth-screen')) {
+          showAuthScreen();
+        }
+      }
+    });
+
     window._firebaseReady = true;
-    window.dispatchEvent(new Event('firebase-ready'));
   </script>
 
   <style>
@@ -258,11 +286,32 @@
   </style>
 </head>
 <body style="overflow:hidden">
+
+<!-- Auth Screen — shown when not signed in -->
+<div id="auth-screen" style="display:none;position:fixed;inset:0;z-index:10001;background:#0a0a0a;align-items:center;justify-content:center;flex-direction:column;gap:24px">
+  <img src="icon-512.png" style="width:160px;height:160px;object-fit:contain;border-radius:16px;opacity:0.9">
+  <div style="text-align:center">
+    <div style="font-family:'Doto',sans-serif;font-size:22px;color:#e8f820;letter-spacing:0.06em;margin-bottom:6px">AI COMIC GRADER</div>
+    <div style="font-size:13px;color:#6a6a6a;letter-spacing:0.1em">SIGN IN TO CONTINUE</div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:12px;width:280px">
+    <button onclick="signInGoogle()" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;color:#1a1a1a;border:none;border-radius:10px;padding:14px 20px;font-size:15px;font-weight:600;cursor:pointer;width:100%">
+      <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      Sign in with Google
+    </button>
+    <button onclick="signInApple()" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#1a1a1a;color:#fff;border:1.5px solid #333;border-radius:10px;padding:14px 20px;font-size:15px;font-weight:600;cursor:pointer;width:100%">
+      <svg width="20" height="20" viewBox="0 0 814 1000"><path fill="#fff" d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-57.8-155.5-127.4C46 411.6 0 320.2 0 233.7 0 89.6 73.4 17 144.5 17c53.9 0 99.1 36.3 133.6 36.3 32.8 0 84.5-38.8 144.5-38.8 22.9 0 108.2 2.5 170.3 82.3zm-194.5-122c28.3-35.6 48.5-85.4 48.5-135.3 0-6.9-.6-13.9-1.9-19.5-45.9 1.9-99.8 30.6-131.8 71.9-26.5 33.3-50.8 82.5-50.8 133.1 0 7.5 1.3 15 1.9 17.5 3.1.6 8.1 1.3 13.1 1.3 41.3 0 90.1-27.7 120.9-69z"/></svg>
+      Sign in with Apple
+    </button>
+  </div>
+  <div style="font-size:11px;color:#444;text-align:center;max-width:260px;line-height:1.5">By signing in you agree to our terms of service. Your collection data is private to your account.</div>
+</div>
+
 <div id="splash">
   <img id="splash-robot" src="icon-512.png" alt="">
   <div id="splash-text"></div>
 </div>
-<div id="app">
+<div id="app" style="display:none">
   <div id="header">
     <div id="header-row">
       <button id="header-title" onclick="showList()">
@@ -271,6 +320,7 @@
       </button>
       <button class="btn btn-gold" id="add-btn" onclick="showAdd()">+ Add Book</button>
       <button class="btn" onclick="showBuyCredits()" style="background:#2a1a08;color:#c8a96e;font-size:12px;padding:6px 12px;border-radius:8px;border:1.5px solid #c8a96e" id="credits-btn">Buy Credits</button>
+      <button onclick="signOutUser()" style="background:none;border:none;color:#8a7a6a;font-size:12px;cursor:pointer;padding:6px 8px" title="Sign out">⎋ Out</button>
     </div>
     <div id="header-stats"></div>
   </div>
@@ -439,6 +489,42 @@ async function deleteComic(id){
   catch(e){alert("Delete failed: "+e.message);}
   syncMsg(null);
   showList();
+}
+
+function showAuthScreen(){
+  const el = document.createElement('div');
+  el.id = 'auth-screen';
+  el.style.cssText = 'display:flex;position:fixed;inset:0;z-index:10001;background:#0a0a0a;align-items:center;justify-content:center;flex-direction:column;gap:24px';
+  el.innerHTML = document.getElementById('auth-screen')?.innerHTML || '';
+  document.body.appendChild(el);
+}
+
+async function signInGoogle(){
+  try {
+    await window._signInWithPopup(window._auth, window._googleProvider);
+    // onAuthStateChanged handles the rest
+  } catch(e) {
+    if(e.code !== 'auth/popup-closed-by-user'){
+      alert('Sign in failed: ' + e.message);
+    }
+  }
+}
+
+async function signInApple(){
+  try {
+    const { OAuthProvider } = await import('https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js');
+    const provider = new OAuthProvider('apple.com');
+    await window._signInWithPopup(window._auth, provider);
+  } catch(e) {
+    if(e.code !== 'auth/popup-closed-by-user'){
+      alert('Apple sign in failed: ' + e.message);
+    }
+  }
+}
+
+async function signOutUser(){
+  if(!confirm('Sign out?')) return;
+  await window._signOut(window._auth);
 }
 
 function updateStats(){
@@ -949,7 +1035,7 @@ async function assessGrade(){
   setStep('analyzing','running','Reading photos...');
   try{
     const compressed=await Promise.all(imgs.slice(0,4).map(img=>compressImage(img)));
-    const cgcResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json","x-client-secret":"022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d"},body:JSON.stringify({images:compressed,grader:"CGC",title:formData.title||"",issueNumber:formData.issue||"",issueDate:formData.issueDate||""})});
+    const cgcResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json","x-client-secret":"022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",...(window._currentUser?{"Authorization":"Bearer "+(await window._currentUser.getIdToken())}:{})},body:JSON.stringify({images:compressed,grader:"CGC",title:formData.title||"",issueNumber:formData.issue||"",issueDate:formData.issueDate||""})});
     if(!cgcResp.ok){const e=await cgcResp.text();throw new Error("CGC error: "+e);}
     const cgc=await cgcResp.json();
     if(cgc.error)throw new Error(cgc.error);
@@ -957,7 +1043,7 @@ async function assessGrade(){
     await animateStepsFromDiagnostics(d);
     setStep('psa','running','Checking variance...');
     const slabDetected=!!(cgc.labelDetected&&(cgc.officialCGCGrade||cgc.officialPSAGrade));
-    const psaResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json","x-client-secret":"022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d"},body:JSON.stringify({images:compressed,grader:"PSA",cgcGrade:cgc.grade||"",cgcGraderNotes:slabDetected?formData.graderNotes||"":"",psaGraderNotes:slabDetected?formData.psaNotes||"":""})});
+    const psaResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json","x-client-secret":"022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",...(window._currentUser?{"Authorization":"Bearer "+(await window._currentUser.getIdToken())}:{})},body:JSON.stringify({images:compressed,grader:"PSA",cgcGrade:cgc.grade||"",cgcGraderNotes:slabDetected?formData.graderNotes||"":"",psaGraderNotes:slabDetected?formData.psaNotes||"":""})});
     if(!psaResp.ok){const e=await psaResp.text();throw new Error("PSA error: "+e);}
     const psa=await psaResp.json();
     if(psa.error)throw new Error(psa.error);
