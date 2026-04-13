@@ -153,7 +153,7 @@ export default async function handler(req, res) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'API key not configured' });
   const COMICVINE_API_KEY = process.env.COMICVINE_API_KEY || '';
-  const { images, grader = 'CGC', cgcGrade = null, cgcGraderNotes = '', psaGraderNotes = '', title = '', issueNumber = '', issueDate = '', highGrade = false } = req.body;
+  const { images, grader = 'CGC', cgcGrade = null, cgcGraderNotes = '', psaGraderNotes = '', title = '', issueNumber = '', issueDate = '', highGrade = false, restorationCheck = false } = req.body;
 
   // RoboGrade — separate handler, returns early
   if (grader === 'ROBO') return handleRoboGrade(req, res, images, apiKey);
@@ -514,7 +514,9 @@ Return ONLY valid JSON, no markdown.`;
               pageQualityImageBlock
             ] : []),
             ...imageBlocks,
-            { type: 'text', text: highGrade
+            { type: 'text', text: restorationCheck
+          ? 'Please assess this comic at RESTORATION CHECK tier. Images 1-4 are the standard assessment photos (front, back, interior centerfold, raking light). Images 5-8 are restoration-specific: image 5 is the interior front cover, image 6 is the interior back cover, image 7 is a close-up of the interior centerfold staples, image 8 is the front cover photographed under UV light. Evaluate all 8 images for evidence of restoration. For each restoration type below, state clearly whether evidence is FOUND, NOT FOUND, or INCONCLUSIVE. Restoration types to check: color touch (UV glow, inconsistent color texture), piece fill (texture mismatch, color inconsistency at edges), tear seals (paper buildup, shine, stiffness), spine split seals (interior spine reinforcement, unusual adhesive), reinforcement (paper or tape applied to interior covers or spine), piece re-attachment (misaligned paper grain, adhesive traces), cleaning (uneven surface sheen, paper fiber disruption), staple replacement (wrong gauge, misaligned holes, clenching pattern differs), reglossing (uniform artificial sheen inconsistent with age), glue (adhesive residue on interior covers or spine). Set restorationFlag to true if any restoration type shows FOUND. Set restorationSuspected to true if any show INCONCLUSIVE. The grade should reflect restored status if restoration is confirmed — assign the appropriate qualified grade. Return the same JSON format with additional restorationReport field.'
+          : highGrade
           ? 'Please assess this comic at HIGH-GRADE DETAIL tier. The first 4 images are standard assessment photos. The final 4 images are macro corner photographs (upper-left, upper-right, lower-left, lower-right). Use the corner macros to precisely evaluate corner sharpness, micro-creasing, and any small defects that determine grades between 8.0 and 10.0. Return a refined grade. Confidence range for this assessment is ±3. IMPORTANT: Examine each corner macro individually and explicitly before returning your grade.'
           : 'Please assess this comic. IMPORTANT: Before listing any other defects, examine each corner individually for missing pieces or chips. Then return the JSON grading object.' }
           ]
@@ -664,6 +666,7 @@ Return ONLY valid JSON, no markdown.`;
     // Attach diagnostic info (preserve gradeRef if already set by refinement pass)
     const gradeRefSucceeded = gradeRefSuccessLocal || parsed._diagnostics?.gradeRef === true;
     parsed._highGradeTier = highGrade || false;
+    parsed._restorationCheckTier = restorationCheck || false;
     parsed._diagnostics = {
       comicvineRef: referenceImageBlock !== null,
       pageQualityRef: pageQualityImageBlock !== null,
