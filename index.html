@@ -789,8 +789,19 @@ function showDetail(id){
   if(selected.graderNotes)html+=`<div style="margin-top:20px"><div class="section-label">CGC Grader Notes</div><div class="notes-box" style="white-space:pre-line">${esc(selected.graderNotes)}</div></div>`;
   if(selected.aiGraderNotes)html+=`<div style="margin-top:20px"><div class="section-label" style="color:#4a7a9a">AI Grader Notes</div><div class="notes-box" style="border-color:#1a3a5c;color:#4a7a9a;white-space:pre-line">${esc(selected.aiGraderNotes)}</div></div>`;
   const _aiText=selected.aiAssessment||selected.myAssessment||"";
-  if(_aiText)html+=`<div style="margin-top:20px"><div class="section-label">AI Assessment${selected.highGradeTier?` <span style="font-size:10px;background:#1a3a1a;color:#6abf6a;border-radius:4px;padding:2px 6px;font-weight:700;letter-spacing:0.05em;margin-left:6px">HIGH-GRADE ±3</span>`:""}</div><div class="notes-box" style="font-style:normal;color:#6a5a4a">${esc(_aiText)}</div></div>`;
+  if(_aiText)html+=`<div style="margin-top:20px"><div class="section-label">AI Assessment${selected.highGradeTier?` <span style="font-size:10px;background:#1a3a1a;color:#6abf6a;border-radius:4px;padding:2px 6px;font-weight:700;letter-spacing:0.05em;margin-left:6px">HIGH-GRADE ±3</span>`:""}${selected.restorationCheckTier?` <span style="font-size:10px;background:#3a1a05;color:#e0904a;border-radius:4px;padding:2px 6px;font-weight:700;letter-spacing:0.05em;margin-left:4px">RC${selected.restorationFlag?" ⚠":""}</span>`:""}}</div><div class="notes-box" style="font-style:normal;color:#6a5a4a">${esc(_aiText)}</div></div>`;
   if(selected.psaNotes)html+=`<div style="margin-top:20px"><div class="section-label" style="color:#FF2040">PSA Notes</div><div class="notes-box" style="border-color:#5c1a1a;color:#e87a7a">${esc(selected.psaNotes)}</div></div>`;
+  if(selected.restorationCheckTier){
+    const rpt=selected.restorationReport||{};
+    const found=Object.entries(rpt).filter(([,v])=>v==='FOUND').map(([k])=>k);
+    const susp=Object.entries(rpt).filter(([,v])=>v==='INCONCLUSIVE').map(([k])=>k);
+    let rHtml=`<div style="margin-top:20px"><div class="section-label" style="color:#e0904a">Restoration Check ${selected.restorationFlag?'<span style="color:#ff6a3a">⚠ RESTORATION DETECTED</span>':'<span style="color:#6abf6a">✓ Clean</span>'}</div><div class="notes-box" style="border-color:#5a2a0a;background:#1a0d05">`;
+    if(found.length)rHtml+=`<div style="color:#ff7a4a;font-size:12px;margin-bottom:4px"><strong>Found:</strong> ${found.join(', ')}</div>`;
+    if(susp.length)rHtml+=`<div style="color:#e0904a;font-size:12px;margin-bottom:4px"><strong>Suspected:</strong> ${susp.join(', ')}</div>`;
+    if(!found.length&&!susp.length)rHtml+=`<div style="color:#6abf6a;font-size:12px">No restoration evidence detected across all checked types.</div>`;
+    rHtml+='</div></div>';
+    html+=rHtml;
+  }
   if(selected.roboGrade)html+=`<div style="margin-top:20px">${buildRoboGradeDisplay(selected.roboGrade)}</div>`;
   if(selected.notes)html+=`<div style="margin-top:20px"><div class="section-label">My Notes</div><div style="font-size:13px;color:#6a5a4a;line-height:1.7">${esc(selected.notes)}</div></div>`;
 
@@ -816,7 +827,7 @@ function openLightbox(id,idx){
   document.getElementById("lightbox").style.display="flex";
 }
 
-const EMPTY={title:"",issue:"",issueDate:"",publisher:"",grade:"",cgcGrade:"",cgcCert:"",psaGrade:"",psaCert:"",pageQuality:"",graderNotes:"",aiGraderNotes:"",cgcNotes:"",aiAssessment:"",psaNotes:"",notes:"",slabbingDate:"",dateAcquired:"",purchasePrice:"",taxesFeesShipping:"",gradingCost:"",cgcShipping:"",fmv:"",fmvDate:"",press:null,uv:null,clean:null,seller:"",images:[],assessedCGCGrade:"",assessedPSAGrade:"",assessmentHistory:[],roboGrade:null,highGradeTier:false};
+const EMPTY={title:"",issue:"",issueDate:"",publisher:"",grade:"",cgcGrade:"",cgcCert:"",psaGrade:"",psaCert:"",pageQuality:"",graderNotes:"",aiGraderNotes:"",cgcNotes:"",aiAssessment:"",psaNotes:"",notes:"",slabbingDate:"",dateAcquired:"",purchasePrice:"",taxesFeesShipping:"",gradingCost:"",cgcShipping:"",fmv:"",fmvDate:"",press:null,uv:null,clean:null,seller:"",images:[],assessedCGCGrade:"",assessedPSAGrade:"",assessmentHistory:[],roboGrade:null,highGradeTier:false,restorationCheckTier:false,restorationReport:null,restorationFlag:false};
 let formData={...EMPTY};
 let assessing=false;
 let _assessed=false; // tracks if current form has been assessed
@@ -896,6 +907,11 @@ function showAssessModal() {
           <button id="hg-upgrade-btn" onclick="startHighGradeUpgrade()" style="width:100%;padding:10px;background:#2a5a2a;color:#80e080;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer">+ Add Corner Macros</button>
         </div>
       </div>
+      <div id="rc-upgrade-row" style="display:none;margin-top:10px;padding:10px;background:#2a1a0a;border-radius:8px;border:1px solid #6a3a1a">
+          <div style="font-size:11px;color:#e0904a;font-weight:700;letter-spacing:0.05em;margin-bottom:6px">RESTORATION CHECK AVAILABLE</div>
+          <div style="font-size:11px;color:#9a8a7a;margin-bottom:8px">Add 4 restoration-specific photos: interior front cover, interior back cover, staple close-up, and UV front cover.</div>
+          <button id="rc-upgrade-btn" onclick="startRestorationCheck()" style="width:100%;padding:10px;background:#5a2a0a;color:#f0a060;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer">+ Add Restoration Photos</button>
+        </div>
       <button id="assess-complete-btn" onclick="completeAssessment()">Complete</button>
     </div>`;
   document.body.appendChild(overlay);
@@ -972,6 +988,9 @@ function showResultPreview(cgc, psa) {
   if (hgRow && (cgcNum >= 8.0 || psaNum >= 8.0)) {
     hgRow.style.display = 'block';
   }
+  // Restoration check always available
+  const rcRow = document.getElementById('rc-upgrade-row');
+  if (rcRow) rcRow.style.display = 'block';
 }
 
 function startHighGradeUpgrade() {
@@ -1084,6 +1103,122 @@ function startHighGradeUpgrade() {
   input.click();
 }
 
+function startRestorationCheck() {
+  const btn = document.getElementById('rc-upgrade-btn');
+  if (btn) { btn.textContent = 'Select 4 Restoration Photos...'; btn.disabled = true; }
+
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.multiple = true;
+  input.onchange = async (e) => {
+    const files = Array.from(e.target.files).slice(0, 4);
+    if (files.length === 0) {
+      if (btn) { btn.textContent = '+ Add Restoration Photos'; btn.disabled = false; }
+      return;
+    }
+    if (btn) btn.textContent = `${files.length} photo${files.length>1?'s':''} selected — Checking…`;
+
+    try {
+      // Compress restoration images
+      const rcImgs = await Promise.all(files.map(f => new Promise(res => {
+        const reader = new FileReader();
+        reader.onload = ev => {
+          const img = new Image();
+          img.onload = () => {
+            const MAX = 900, Q = 0.5;
+            const scale = Math.min(MAX/img.width, MAX/img.height, 1);
+            const c = document.createElement('canvas');
+            c.width = Math.round(img.width*scale);
+            c.height = Math.round(img.height*scale);
+            c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+            res(c.toDataURL('image/jpeg', Q));
+          };
+          img.src = ev.target.result;
+        };
+        reader.readAsDataURL(f);
+      })));
+
+      // Combine original 4 images + restoration images (8 total)
+      const origImgs = (formData.images || []).filter(Boolean).slice(0, 4);
+      const origCompressed = await Promise.all(origImgs.map(img => compressImage(img)));
+      const allImages = [...origCompressed, ...rcImgs];
+
+      const token = window._currentUser ? (await window._currentUser.getIdToken()) : null;
+      const headers = {
+        'Content-Type': 'application/json',
+        'x-client-secret': '022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d',
+        ...(token ? {'Authorization': 'Bearer ' + token} : {})
+      };
+
+      // Run CGC with restorationCheck flag
+      const cgcResp = await fetch('/api/assess', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          images: allImages,
+          grader: 'CGC',
+          restorationCheck: true,
+          cgcGraderNotes: formData.graderNotes || '',
+          title: formData.title || '',
+          issueNumber: formData.issue || '',
+          issueDate: formData.issueDate || ''
+        })
+      });
+
+      if (!cgcResp.ok) throw new Error('Restoration check failed');
+      const cgcRC = await cgcResp.json();
+
+      // Run PSA with updated grade
+      const psaResp = await fetch('/api/assess', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          images: allImages,
+          grader: 'PSA',
+          cgcGrade: cgcRC.grade || ''
+        })
+      });
+      const psaRC = psaResp.ok ? await psaResp.json() : _pendingAssessResult.psa;
+
+      // Preserve existing enhancements
+      cgcRC._roboGrade = _pendingAssessResult.cgc._roboGrade;
+      cgcRC._highGradeTier = _pendingAssessResult.cgc._highGradeTier;
+      cgcRC._restorationCheckTier = true;
+      _pendingAssessResult = { cgc: cgcRC, psa: psaRC };
+
+      // Update preview grades
+      const gradesEl = document.getElementById('result-grades');
+      const pqEl = document.getElementById('result-pq');
+      const cgcGrade = normalizeGrade(cgcRC.grade || '');
+      const psaGrade = normalizeGrade(psaRC.grade || '');
+      const pq = cgcRC.pageQuality ? normPageQuality(cgcRC.pageQuality) : '';
+      if (gradesEl) gradesEl.innerHTML =
+        (cgcGrade ? buildBadge(cgcGrade, 'cgc-ai', '', true) : '') +
+        (psaGrade ? buildBadge(psaGrade, 'psa-ai', '', true) : '');
+      if (pq && pqEl) pqEl.innerHTML = buildPQBox(pq);
+
+      // Show restoration result summary
+      const rcRow = document.getElementById('rc-upgrade-row');
+      if (rcRow) {
+        const report = cgcRC.restorationReport || {};
+        const found = Object.entries(report).filter(([,v]) => v === 'FOUND').map(([k]) => k);
+        const suspected = Object.entries(report).filter(([,v]) => v === 'INCONCLUSIVE').map(([k]) => k);
+        let summary = '';
+        if (found.length) summary += `<div style="color:#ff7a4a;font-weight:700;margin-top:4px">⚠ Restoration found: ${found.join(', ')}</div>`;
+        if (suspected.length) summary += `<div style="color:#e0904a;margin-top:2px">Suspected: ${suspected.join(', ')}</div>`;
+        if (!found.length && !suspected.length) summary = '<div style="color:#6abf6a;font-weight:700;margin-top:4px">✓ No restoration detected</div>';
+        rcRow.innerHTML = `<div style="font-size:11px;color:#e0904a;font-weight:700;letter-spacing:0.05em">RESTORATION CHECK COMPLETE</div>${summary}`;
+      }
+
+    } catch(e) {
+      if (btn) { btn.textContent = 'Retry Restoration Photos'; btn.disabled = false; }
+      console.error('Restoration check failed:', e);
+    }
+  };
+  input.click();
+}
+
 function decrementCredit(){
   if(window._userCredits !== undefined && window._userCredits > 0){
     window._userCredits--;
@@ -1127,6 +1262,9 @@ function completeAssessment() {
   formData.assessedPSAGrade=psa.grade?(String(psa.grade).includes('.')?String(psa.grade):parseFloat(psa.grade).toFixed(1)):'';
   if(cgc._roboGrade)formData.roboGrade=cgc._roboGrade;
   formData.highGradeTier=!!(cgc._highGradeTier);
+  formData.restorationCheckTier=!!(cgc._restorationCheckTier);
+  if(cgc.restorationReport)formData.restorationReport=cgc.restorationReport;
+  formData.restorationFlag=!!(cgc.restorationFlag);
   formData.pageQuality=cgc.pageQuality?normPageQuality(cgc.pageQuality):formData.pageQuality;
   formData.aiGraderNotes=cgc.graderNotes||'';
   formData.aiAssessment=cgc.aiAssessment||'';
