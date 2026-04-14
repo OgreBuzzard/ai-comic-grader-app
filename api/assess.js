@@ -1,162 +1,9 @@
-
-// ── RoboGrade v1.0 ────────────────────────────────────────────────────────────
-async function handleRoboGrade(req, res, images, apiKey) {
-  if (!images || images.length === 0) return res.status(400).json({ error: 'No images provided' });
-
-  // Default weight table (amendable via Firestore config/robograde_weights in future)
-  const WEIGHTS = {
-    missingPiecePerQuarterSqIn: 15,
-    tearWithLossPerIn:          10,
-    tearNoLossPerIn:             5,
-    creaseColorBreakingPerIn:    5,
-    creaseNonColorBreakingPerIn: 2,
-    cornerBluntingPer16th:       3,
-    spineStressLineEach:         1,
-    spineRoll:                   8,
-    soilingPerPct:               0.8,
-    writingPerPct:               5,
-    stapleRustMinor:             3,
-    stapleRustModerate:          6,
-    stapleRustHeavy:             10,
-    tapePerPct:                  12,
-    colorFadingMax:              15,
-  };
-
-  const imageBlocks = images.map(img => {
-    const [header, data] = img.split(',');
-    const mt = (header.match(/data:(.*);base64/) || [])[1] || 'image/jpeg';
-    const norm = mt === 'image/jpg' ? 'image/jpeg' : mt;
-    return { type: 'image', source: { type: 'base64', media_type: norm, data } };
-  });
-
-  const roboPrompt = `You are RoboGrade v1.0, an AI-native comic book condition measurement system. You assess condition by measuring defects directly from photographs using the ruler visible on the green cutting mat for physical scale. Ruler markings are in inches.
-
-IMPORTANT PRINCIPLES:
-- Only report defects that are CLEARLY AND DIRECTLY VISIBLE in the photos
-- Use the ruler for all measurements — estimate in inches or fractions thereof
-- Do not infer defects you cannot see
-- A green cutting mat with a ruler is the photography surface — ignore the mat in your assessment
-
-DEFECT WEIGHT TABLE (points deducted from 100 per cover):
-- Missing piece: ${WEIGHTS.missingPiecePerQuarterSqIn} pts per 1/4 sq inch
-- Tear with paper loss: ${WEIGHTS.tearWithLossPerIn} pts per inch
-- Tear without paper loss: ${WEIGHTS.tearNoLossPerIn} pts per inch
-- Crease, color-breaking: ${WEIGHTS.creaseColorBreakingPerIn} pts per inch
-- Crease, non-color-breaking: ${WEIGHTS.creaseNonColorBreakingPerIn} pts per inch
-- Corner blunting: ${WEIGHTS.cornerBluntingPer16th} pts per 1/16 inch radius
-- Spine stress lines: ${WEIGHTS.spineStressLineEach} pt each
-- Spine roll: ${WEIGHTS.spineRoll} pts if present
-- Soiling/foxing: ${WEIGHTS.soilingPerPct} pts per % of cover area
-- Writing/stamps: ${WEIGHTS.writingPerPct} pts per % of cover area
-- Staple rust: ${WEIGHTS.stapleRustMinor} minor / ${WEIGHTS.stapleRustModerate} moderate / ${WEIGHTS.stapleRustHeavy} heavy
-- Tape: ${WEIGHTS.tapePerPct} pts per % of cover area
-- Color fading/tanning: 0–${WEIGHTS.colorFadingMax} pts based on severity
-
-SCORING:
-- Start at 100 for front cover, 100 for back cover
-- Subtract deductions for each observed defect. Minimum 0.
-- RoboGrade = (frontScore × 0.80) + (backScore × 0.20)
-- Round to nearest integer UNLESS score is above 80 (keep one decimal in that case)
-- Tier: standard, confidenceRange: 8
-
-PAGE QUALITY — measure average color of unprinted white margin areas on interior pages if visible:
-- Compare to pure white. Assign one of: White / Off-White to White / Off-White / Cream to Off-White / Cream / Light Tan / Tan / Dark Tan / Brown
-- If no interior page photo is provided, set pageQuality to null
-
-Return ONLY valid JSON, no markdown:
-{
-  "roboGrade": {
-    "score": <integer if <=80, one decimal if >80>,
-    "version": "1.0",
-    "tier": "standard",
-    "confidenceRange": 8,
-    "frontCoverScore": <number>,
-    "backCoverScore": <number>,
-    "pageQuality": "<tier name or null>",
-    "frontDefects": [
-      {
-        "type": "<defect type>",
-        "location": "<where on cover>",
-        "measurement": "<measured dimension>",
-        "colorBreaking": <true/false/null>,
-        "deduction": <number>,
-        "notes": "<brief observation>"
-      }
-    ],
-    "backDefects": [ <same structure> ],
-    "colorFading": {
-      "front": { "severity": "<none/mild/moderate/heavy>", "deduction": <number> },
-      "back":  { "severity": "<none/mild/moderate/heavy>", "deduction": <number> }
-    },
-    "assessmentNotes": "<1-2 sentences on overall condition and what could not be assessed>"
-  }
-}`;
-
-  try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
-        model: 'claude-opus-4-6',
-        max_tokens: 1500,
-        messages: [{ role: 'user', content: [...imageBlocks, { type: 'text', text: roboPrompt }] }]
-      })
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      return res.status(500).json({ error: 'RoboGrade API error: ' + err });
-    }
-
-    const data = await response.json();
-    const text = data.content?.map(b => b.text || '').join('') || '';
-    const clean = text.replace(/```json|```/g, '').trim();
-
-    let parsed;
-    try { parsed = JSON.parse(clean); }
-    catch (e) { return res.status(500).json({ error: 'RoboGrade parse error: ' + text }); }
-
-    return res.status(200).json(parsed);
-  } catch (err) {
-    return res.status(500).json({ error: 'RoboGrade error: ' + err.message });
-  }
-}
-
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-
-  // Auth check — verify Firebase ID token
-  const authHeader = req.headers['authorization'] || '';
-  const idToken = authHeader.replace('Bearer ', '');
-  const clientSecret = req.headers['x-client-secret'];
-
-  // Accept either a valid Firebase token OR the static secret (fallback during transition)
-  let userId = null;
-  if (idToken) {
-    try {
-      const { initializeApp, getApps, cert } = await import('firebase-admin/app');
-      const { getAuth } = await import('firebase-admin/auth');
-      if (!getApps().length) {
-        initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
-      }
-      const decoded = await getAuth().verifyIdToken(idToken);
-      userId = decoded.uid;
-    } catch(e) {
-      // Token invalid — fall through to secret check
-    }
-  }
-
-  // If no valid token, check static secret as fallback
-  if (!userId && (!clientSecret || clientSecret !== process.env.CLIENT_SECRET)) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'API key not configured' });
   const COMICVINE_API_KEY = process.env.COMICVINE_API_KEY || '';
-  const { images, grader = 'CGC', cgcGrade = null, cgcGraderNotes = '', psaGraderNotes = '', title = '', issueNumber = '', issueDate = '', highGrade = false, restorationCheck = false } = req.body;
-
-  // RoboGrade — separate handler, returns early
-  if (grader === 'ROBO') return handleRoboGrade(req, res, images, apiKey);
+  const { images, grader = 'CGC', cgcGrade = null, cgcGraderNotes = '', psaGraderNotes = '', title = '', issueNumber = '' } = req.body;
   if (!images || images.length === 0) return res.status(400).json({ error: 'No images provided' });
 
   const imageBlocks = images.map(img => {
@@ -177,34 +24,25 @@ export default async function handler(req, res) {
     }
   }
 
-  function normalizeMediaType(ct) {
-    const t = (ct || '').toLowerCase().split(';')[0].trim();
-    if (t === 'image/jpg') return 'image/jpeg';
-    if (['image/jpeg','image/png','image/gif','image/webp'].includes(t)) return t;
-    return 'image/jpeg';
-  }
-
   // Fetch page quality reference image (used for all raw book assessments)
-  let pqError = null;
   async function fetchPageQualityReference(baseUrl) {
     try {
       const url = `${baseUrl}/Grade_Reference/pq.jpg`;
       const resp = await fetchWithTimeout(url, {}, 4000);
-      if (!resp.ok) { pqError = `HTTP ${resp.status}`; return null; }
+      if (!resp.ok) return null;
       const buf = await resp.arrayBuffer();
       const b64 = Buffer.from(buf).toString('base64');
       return { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } };
     } catch (e) {
-      pqError = e.message;
       return null;
     }
   }
 
   // Fetch grade reference image for the assessed grade
   async function fetchGradeReference(grade, baseUrl) {
-    const validGrades = ['0.5','1.0','1.5','1.8','2.0','2.5','3.0','3.5','4.0','4.5','5.0','5.5','6.0','6.5','7.0','7.5','8.0','8.5','9.0','9.2','9.4','9.6','9.8','9.9','10.0'];
-    const gradeStr = grade === 'NG' ? 'NG' : String(parseFloat(grade).toFixed(1));
-    if (!validGrades.includes(gradeStr) && gradeStr !== 'NG') return null;
+    const validGrades = ['5.0','5.5','6.0','6.5','7.0','7.5','8.0','8.5','9.0','9.2','9.4','9.6','9.8','9.9','10.0'];
+    const gradeStr = String(parseFloat(grade).toFixed(1));
+    if (!validGrades.includes(gradeStr)) return null;
     const filename = gradeStr.replace('.', '_') + '.jpg';
     const url = `${baseUrl}/Grade_Reference/${filename}`;
     try {
@@ -212,55 +50,13 @@ export default async function handler(req, res) {
       if (!resp.ok) return null;
       const buf = await resp.arrayBuffer();
       const b64 = Buffer.from(buf).toString('base64');
-      const ct = normalizeMediaType(resp.headers.get('content-type'));
+      const ct = resp.headers.get('content-type') || 'image/jpeg';
       return { type: 'image', source: { type: 'base64', media_type: ct, data: b64 } };
     } catch (e) {
       return null;
     }
   }
 
-
-  // Fetch known copy reference images for a specific title/issue if a ref folder exists
-  const knownCopiesDiag = {};
-  async function fetchKnownCopies(title, issue) {
-    try {
-      const slug = title.replace(/[^a-zA-Z0-9-]+/g, '_').replace(/^_|_$/g, '');
-      const issueClean = String(issue).replace(/[^a-zA-Z0-9.]/g, '_');
-      const folderName = `${slug}_${issueClean}_Ref`;
-      const apiUrl = `https://api.github.com/repos/OgreBuzzard/ai-comic-grader-app/contents/${encodeURIComponent(folderName)}`;
-      const listResp = await fetchWithTimeout(apiUrl, { headers: { 'User-Agent': 'ComicGraderApp/1.0' } }, 3000);
-      knownCopiesDiag.folderName = folderName;
-      knownCopiesDiag.apiStatus = listResp.status;
-      if (!listResp.ok) { knownCopiesDiag.error = `HTTP ${listResp.status}`; return null; }
-      const files = await listResp.json();
-      knownCopiesDiag.isArray = Array.isArray(files);
-      knownCopiesDiag.fileCount = Array.isArray(files) ? files.length : 0;
-      if (!Array.isArray(files)) { knownCopiesDiag.error = 'not array: ' + JSON.stringify(files).slice(0, 100); return null; }
-      const allJpegs = files.filter(f => /\.(jpg|jpeg)$/i.test(f.name));
-      if (allJpegs.length === 0) return null;
-      // Sort by grade value and pick 5 evenly spaced across the range
-      const graded = allJpegs.map(f => {
-        const m = f.name.match(/([\d]+[._][\d]+)\.jpe?g$/i);
-        const val = m ? parseFloat(m[1].replace('_', '.')) : 0;
-        return { f, val };
-      }).sort((a, b) => a.val - b.val);
-      const step = Math.max(1, Math.floor(graded.length / 3));
-      const jpegFiles = graded.filter((_, i) => i % step === 0).slice(0, 3).map(g => g.f);
-      const imageBlocks = await Promise.all(jpegFiles.map(async f => {
-        try {
-          const imgResp = await fetchWithTimeout(f.download_url, {}, 3000);
-          if (!imgResp.ok) return null;
-          const buf = await imgResp.arrayBuffer();
-          const b64 = Buffer.from(buf).toString('base64');
-          const gradeMatch = f.name.match(/([\d.]+)\.jpe?g$/i);
-          const gradeLabel = gradeMatch ? gradeMatch[1] : f.name;
-          return { gradeLabel, block: { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } } };
-        } catch (e) { return null; }
-      }));
-      const valid = imageBlocks.filter(Boolean);
-      return valid.length > 0 ? valid : null;
-    } catch (e) { return null; }
-  }
 
   // Build grader notes context to append to prompts
   const notesContext = [];
@@ -284,84 +80,29 @@ export default async function handler(req, res) {
 
   // Run ComicVine cover fetch and page quality fetch in parallel
   let pageQualityImageBlock = null;
-  const cvDiag = { step: 'init', searchTitle: '', volCount: 0, candidateCount: 0, error: null, hasKey: !!COMICVINE_API_KEY, hasTitle: !!title, hasIssue: !!issueNumber };
   if (isCGC) {
     const cvFetch = (title && issueNumber && COMICVINE_API_KEY) ? (async () => {
       try {
         const searchTitle = title.replace(/^The\s+/i, '').trim();
-        cvDiag.searchTitle = searchTitle;
-        cvDiag.step = 'vol_fetch';
-        const cleanIssue = String(issueNumber).replace(/^0+/, '') || '0';
-        function parseIssueDate(dateStr) {
-          if (!dateStr) return null;
-          const parts = String(dateStr).trim().split('/');
-          if (parts.length < 2) return null;
-          const month = parseInt(parts[0], 10);
-          let year = parseInt(parts[1], 10);
-          if (isNaN(month) || isNaN(year)) return null;
-          if (year < 100) year = year <= 29 ? 2000 + year : 1900 + year;
-          return { month, year };
-        }
-        const parsedDate = parseIssueDate(issueDate);
-        const volumeUrl = `https://comicvine.gamespot.com/api/volumes/?api_key=${COMICVINE_API_KEY}&format=json&filter=name:${encodeURIComponent(searchTitle)}&field_list=id,name,start_year&limit=20`;
-        const volResp = await fetchWithTimeout(volumeUrl, { headers: { 'User-Agent': 'ComicGraderApp/1.0' } }, 6000);
-        cvDiag.volHttpStatus = volResp.status;
-        if (volResp.ok) {
-          const volData = await volResp.json();
-          cvDiag.volTotalResults = volData.number_of_total_results || 0;
-          cvDiag.volNames = (volData.results || []).map(v => v.name).slice(0, 5);
-          const titleLower = searchTitle.toLowerCase();
-          const volumes = (volData.results || []).filter(v => {
-            if (!v.name) return false;
-            const vl = v.name.toLowerCase();
-            return vl === titleLower || vl === 'the ' + titleLower || vl.replace(/^the\s+/, '') === titleLower;
-          });
-          cvDiag.volCount = volumes.length;
-          cvDiag.step = 'issue_fetch';
-          if (volumes.length > 0) {
-            const issueResults = await Promise.all(volumes.map(async vol => {
-              try {
-                const issueUrl = `https://comicvine.gamespot.com/api/issues/?api_key=${COMICVINE_API_KEY}&format=json&filter=volume:${vol.id},issue_number:${encodeURIComponent(cleanIssue)}&field_list=id,cover_date,image&limit=5`;
-                const issResp = await fetchWithTimeout(issueUrl, { headers: { 'User-Agent': 'ComicGraderApp/1.0' } }, 6000);
-                if (!issResp.ok) return null;
-                const issData = await issResp.json();
-                return (issData.results || []).length ? issData.results[0] : null;
-              } catch (e) { return null; }
-            }));
-            const candidates = issueResults.filter(Boolean);
-            cvDiag.candidateCount = candidates.length;
-            cvDiag.step = 'pick_best';
-            let best = null;
-            if (parsedDate && candidates.length > 1) {
-              for (const c of candidates) {
-                if (!c.cover_date) continue;
-                const [cvYear, cvMonth] = c.cover_date.split('-').map(Number);
-                if (cvYear === parsedDate.year && cvMonth === parsedDate.month) { best = c; break; }
-              }
-              if (!best) {
-                for (const c of candidates) {
-                  if (!c.cover_date) continue;
-                  const [cvYear] = c.cover_date.split('-').map(Number);
-                  if (cvYear === parsedDate.year) { best = c; break; }
-                }
-              }
-            }
-            if (!best) best = candidates[0];
-            cvDiag.step = 'img_fetch';
-            if (best && best.image && best.image.medium_url) {
-              const imgResp = await fetchWithTimeout(best.image.medium_url, {}, 4000);
-              cvDiag.imgHttpStatus = imgResp.status;
-              if (imgResp.ok) {
-                const imgBuffer = await imgResp.arrayBuffer();
-                referenceImageBlock = { type: 'image', source: { type: 'base64', media_type: normalizeMediaType(imgResp.headers.get('content-type')), data: Buffer.from(imgBuffer).toString('base64') } };
-                cvDiag.step = 'success';
-              }
-            } else {
-              cvDiag.step = 'no_image_url';
+        const cvSearchUrl = `https://comicvine.gamespot.com/api/search/?api_key=${COMICVINE_API_KEY}&format=json&query=${encodeURIComponent(searchTitle + ' ' + issueNumber)}&resources=issue&field_list=image,volume,issue_number&limit=5`;
+        const cvResp = await fetchWithTimeout(cvSearchUrl, { headers: { 'User-Agent': 'ComicGraderApp/1.0' } }, 5000);
+        if (cvResp.ok) {
+          const cvData = await cvResp.json();
+          const results = cvData.results || [];
+          const match = results.find(r => {
+            const issNum = String(r.issue_number || '').replace(/^0+/, '');
+            const targetIss = String(issueNumber).replace(/^0+/, '');
+            return issNum === targetIss;
+          }) || results[0];
+          if (match && match.image && match.image.medium_url) {
+            const imgResp = await fetchWithTimeout(match.image.medium_url, {}, 4000);
+            if (imgResp.ok) {
+              const imgBuffer = await imgResp.arrayBuffer();
+              referenceImageBlock = { type: 'image', source: { type: 'base64', media_type: imgResp.headers.get('content-type') || 'image/jpeg', data: Buffer.from(imgBuffer).toString('base64') } };
             }
           }
         }
-      } catch (e) { cvDiag.error = e.message; cvDiag.step = 'exception'; }
+      } catch (e) { /* CV fetch failed — proceed without reference */ }
     })() : Promise.resolve();
 
     const pqFetch = baseUrl ? fetchPageQualityReference(baseUrl).then(r => { pageQualityImageBlock = r; }) : Promise.resolve();
@@ -405,7 +146,7 @@ Return this JSON structure:
   "grade": "your AI CGC grade as string e.g. 7.0",
   "pageQuality": "use FULL FORM ONLY — one of: White, Off-White to White, Off-White, Cream to Off-White, Cream, Light Tan to Off-White, Light Tan to Cream, Light Tan, Tan to Off-White, Tan to Cream, Tan, Dark Tan to Off-White, Dark Tan, Brown to Off-White, Brown to Tan, Brown, Brown/Brittle, Slightly Brittle, Brittle",
   "graderNotes": "bullet-pointed defect list using official CGC terminology, one defect per line starting with •. Empty string if book is essentially perfect.",
-  "aiAssessment": "50-100 words. Lead with overall impression and dominant defects. State the grade and rationale ONCE. If a CGC label is visible, compare your assessment to it in one sentence. Note press/UV/clean only if recommended — skip if not. Never repeat a defect already stated. Never restate the grade range more than once.",
+  "aiAssessment": "2-4 sentences. Lead with overall impression. Name dominant defects. State grade and rationale. Note press/UV/clean recommendations. If an existing CGC grade is visible on a label, compare your assessment to it and note whether a regrade might yield a different result.",
   "labelNotes": "Key issue notations and special designations from the label's center and right side only. Examples: '1st app. Spider-Man', 'Death of Gwen Stacy', 'Part of the John Burke Collection', 'Married Pages'. Empty string if none or no label visible.",
   "press": true/false/null,
   "uv": true/false/null,
@@ -434,9 +175,6 @@ GRADE CALIBRATION:
 
 GRADER NOTES FORMAT:
 - One bullet per defect, each on its own line starting with •
-- Only document defects that are CLEARLY AND DIRECTLY VISIBLE in the photos. Never infer or speculate about structural damage (cover detachment, staple loosening, missing pieces) that is not unambiguously confirmed in the image. If you cannot see it clearly, do not list it.
-- Each defect must be distinct. Do not list the same defect twice in different phrasings.
-- Group identical defects across corners when possible (e.g. "Upper corners: blunted with minor wear" instead of separate bullets for left and right)
 - ALWAYS check for missing pieces, chips, or tears first — these are structural defects with hard grade ceilings and must be listed first if present
 - A missing corner or edge piece of 1/4" or more must be noted explicitly as "Missing piece" or "Chip out" with location and approximate size
 - Use official CGC terminology. Always note whether stress lines are color-breaking or not.
@@ -452,6 +190,60 @@ These ceilings apply regardless of other defects — a book cannot grade above i
 UV: only for white covers with tanning on unprinted areas. Ink-protection mask available.
 Press: spine roll=yes, edge fraying=no, corner creases=yes, tanning=no.
 
+INDEX OF DEFECTS — GRADE IMPACT REFERENCE:
+DEFECT IMPACT BY GRADE RANGE (from CGC Index of Defects):
+Key: [minimal = little/no impact] [moderate = impact based on severity] [significant = common/major impact]
+
+Defect               | Minimal (little/no impact) | Moderate (severity-dependent) | Significant (common/major)
+---------------------|---------------------------|-------------------------------|---------------------------
+Distribution ink     | 0.5–6.5                   | 7.0–8.0                       | 8.5–9.9
+Stress lines         | 0.5–6.5                   | 7.0–8.5                       | 9.0–10.0
+Bend                 | 0.5–7.5                   | 8.0–9.8                       | 9.9–10.0
+Stamp                | 0.5–7.5                   | 8.0–9.2                       | 9.4–10.0
+Printer tear         | 0.5–7.5                   | 8.0–9.2                       | 9.4–10.0
+Soiling              | 0.5–6.5                   | 7.0–8.5                       | 9.0–10.0
+Bindery chip         | 0.5–6.5                   | 7.0–8.5                       | 9.0–10.0
+Bindery tear         | 0.5–6.5                   | 7.0–8.5                       | 9.0–10.0
+Crease               | 0.5–2.5                   | 3.0–4.0 / 5.5–8.0             | 4.5–5.0 / 8.5–10.0
+Stain                | 0.5–1.5                   | 1.8–3.5                       | 4.0–10.0
+Printer hole         | 0.5–6.5                   | 7.0–8.5                       | 9.0–10.0
+Rust stains          | 0.5–5.5                   | 6.0–8.0                       | 8.5–10.0
+Erasure mark         | 0.5–5.5                   | 6.0–8.0                       | 8.5–10.0
+Marvel tears         | 0.5–5.5                   | 6.0–8.0                       | 8.5–10.0
+Shadow               | 0.5–5.5                   | 6.0–8.0                       | 8.5–10.0
+Fingerprints         | 0.5–4.5                   | 5.0–7.0                       | 7.5–10.0
+Staple rust          | 0.5–4.5                   | 5.0–7.0                       | 7.5–10.0
+Staple tears         | 0.5–4.5                   | 5.0–7.0                       | 7.5–10.0
+Foxing               | 0.5–4.5                   | 5.0–7.0                       | 7.5–10.0
+Tanning              | 0.5–4.5                   | 5.0–7.0                       | 7.5–10.0
+Writing              | 0.5–4.5                   | 5.0–7.0                       | 7.5–10.0
+Tear                 | 0.5–2.0                   | 2.5–4.0 / 5.5–6.0             | 4.5–5.0 / 6.5–10.0
+Missing piece (cover)| 0.5 only                  | 1.0–1.5                       | 1.8–9.6 (always severe)
+Fade                 | 0.5–3.5                   | 4.0–6.5                       | 7.0–10.0
+Marvel chipping      | 0.5–3.5                   | 4.0–7.0                       | 7.5–10.0
+Spine roll           | 0.5–3.5                   | 4.0–6.0                       | 6.5–10.0
+Tape stain           | 0.5–3.5                   | 4.0–6.0                       | 6.5–10.0
+Spine split          | 0.5–1.0                   | 1.5–2.5                       | 3.0–9.9
+Sticker              | 0.5–4.5                   | 5.0–7.5                       | 8.0–10.0
+Name written on cover| 0.5–3.5                   | 4.0–6.5                       | 7.0–10.0
+Staple detached      | 0.5–3.5                   | 4.0–6.0                       | 6.5–9.9
+Tape                 | 0.5–2.5                   | 3.0–5.0                       | 5.5–9.9
+Staple holes         | 0.5–3.5                   | 4.0–6.5                       | 7.0–9.9
+Detached wrap        | 0.5–3.0                   | 3.5–5.5                       | 6.0–9.6
+Staple extra (a.m.)  | 0.5–3.5                   | 4.0–7.0                       | 7.5–9.6
+Detached page        | 0.5–3.0                   | 3.5–5.5                       | 6.0–9.4
+Staple removed       | 0.5–3.0                   | 3.5–5.5                       | 6.0–9.4
+Missing piece (int.) | 0.5–2.5                   | 3.0–5.0                       | 5.5–9.4
+Detached cover       | 0.5–2.0                   | 2.5–4.0                       | 4.5–9.2
+Missing page/wrap    | 0.5 only                  | —                             | 1.0 and above (always red)
+
+CRITICAL IMPLICATIONS FOR GRADING:
+- A defect that is "minimal" at low grades becomes "significant" at high grades. A stress line that barely affects a 5.0 book is grade-defining on a 9.4.
+- Missing piece (cover) and missing page/wrap are significant at virtually all grade levels — there is no grade range where these are inconsequential.
+- Spine split is significant from 3.0 upward — a book with a spine split cannot grade above 2.5 without it being a major qualifier.
+- Crease, tear, stain, and tape all become significant in the mid-to-high grade range even if minor in appearance.
+- When assessing a book that appears to be in the 8.0–10.0 range, treat stress lines, bends, soiling, distribution ink, stamps, and printer tears as potentially grade-defining defects that must be explicitly evaluated.
+
 Return ONLY valid JSON, no markdown.${notesBlock}`;
 
   const psaPrompt = `You are a PSA comic book grading expert. The CGC AI assessment for this comic assigned a grade of ${cgcGrade || 'unknown'}. Assess whether PSA would grade this book differently.
@@ -459,7 +251,7 @@ Return ONLY valid JSON, no markdown.${notesBlock}`;
 Return this JSON:
 {
   "grade": "your AI PSA grade — must be one of: 10, 9.8, 9.6, 9.4, 9.2, 9.0, 8.5, 8.0, 7.5, 7.0, 6.5, 6.0, 5.5, 5.0, 4.5, 4.0, 3.5, 3.0, 2.5, 2.0, 1.5, 1.0, 0.5, 0.3",
-  "psaNotes": "1-2 sentences maximum. Focus only on why PSA would differ: eye appeal vs. enumerated defects, and Silver Age generosity if applicable. Do not identify the issue, name the key, or restate defects already in graderNotes. Empty string if same grade.",
+  "psaNotes": "1-2 sentences explaining why PSA would grade this differently, grounded in what you can observe about this specific book. Empty string if same grade.",
   "labelDetected": false,
   "officialPSAGrade": null,
   "officialPSACert": null
@@ -514,11 +306,7 @@ Return ONLY valid JSON, no markdown.`;
               pageQualityImageBlock
             ] : []),
             ...imageBlocks,
-            { type: 'text', text: restorationCheck
-          ? 'Please assess this comic at RESTORATION CHECK tier. Images 1-4 are the standard assessment photos (front, back, interior centerfold, raking light). Images 5-8 are restoration-specific: image 5 is the interior front cover, image 6 is the interior back cover, image 7 is a close-up of the interior centerfold staples, image 8 is the front cover photographed under UV light. Evaluate all 8 images for evidence of restoration. For each restoration type below, state clearly whether evidence is FOUND, NOT FOUND, or INCONCLUSIVE. Restoration types to check: color touch (UV glow, inconsistent color texture), piece fill (texture mismatch, color inconsistency at edges), tear seals (paper buildup, shine, stiffness), spine split seals (interior spine reinforcement, unusual adhesive), reinforcement (paper or tape applied to interior covers or spine), piece re-attachment (misaligned paper grain, adhesive traces), cleaning (uneven surface sheen, paper fiber disruption), staple replacement (wrong gauge, misaligned holes, clenching pattern differs), reglossing (uniform artificial sheen inconsistent with age), glue (adhesive residue on interior covers or spine). Set restorationFlag to true if any restoration type shows FOUND. Set restorationSuspected to true if any show INCONCLUSIVE. The grade should reflect restored status if restoration is confirmed — assign the appropriate qualified grade. Return the same JSON format with additional restorationReport field.'
-          : highGrade
-          ? 'Please assess this comic at HIGH-GRADE DETAIL tier. The first 4 images are standard assessment photos. The final 4 images are macro corner photographs (upper-left, upper-right, lower-left, lower-right). Use the corner macros to precisely evaluate corner sharpness, micro-creasing, and any small defects that determine grades between 8.0 and 10.0. Return a refined grade. Confidence range for this assessment is ±3. IMPORTANT: Examine each corner macro individually and explicitly before returning your grade.'
-          : 'Please assess this comic. IMPORTANT: Before listing any other defects, examine each corner individually for missing pieces or chips. Then return the JSON grading object.' }
+            { type: 'text', text: 'Please assess this comic. IMPORTANT: Before listing any other defects, examine each corner individually for missing pieces or chips. Then return the JSON grading object.' }
           ]
         }]
       })
@@ -542,139 +330,53 @@ Return ONLY valid JSON, no markdown.`;
       parsed.grade = parseFloat(parsed.grade).toFixed(1);
     }
 
-  const CGC_GRADE_DESCRIPTIONS = {
-    "10.0": `Perfect in every way. No stress lines, razor sharp corners, flat cover, no bends or creases. Full gloss, vibrant colors, no tanning/foxing/soiling. White pages only.`,
-    "9.9": `One small non-color-breaking bend or one non-color-breaking spine stress line allowed. Perfectly cut, no edge or corner wear. Off-white to white pages acceptable.`,
-    "9.8": `One or two handling defects allowed: a very small color-breaking stress line, a couple of light bends, tiny wear on one corner or around a staple. Cream to off-white pages rarely acceptable.`,
-    "9.6": `A few very small defects: small color-breaking stress lines, very small corner wear, tiny edge crease, very small staple tear, very light tanning, one very small stain. Nothing below cream to off-white pages.`,
-    "9.4": `One or a couple of light handling defects: small spine split, one or two small color-breaking corner/edge creases, very small chip, very slight spine roll. Several small non-color-breaking stress lines or a few color-breaking ones.`,
-    "9.2": `More apparent regular handling defects. Still considerable eye appeal requiring close inspection. An accumulation of several tiny flaws or one significant flaw (crease, tear, missing piece, stain, or tanning).`,
-    "9.0": `Color-breaking defects more evident. Minor fraying or small 1/4" missing piece allowed. Small areas of tape or sticky residue acceptable. Cover may be partially detached from one staple.`,
-    "8.5": `Bridge between 9.0 and 8.0. One or two defects barely exceeding 9.0 limits: length of crease, number of stress lines, size of chip or tear. Light fraying to corners or color-breaking edge wear. Limit for light tan to off-white pages.`,
-    "8.0": `Considerable minor defects or a couple of moderate ones. 1"-2" color-breaking corner/edge crease, up to 1" tear, 1/2" spine split, 1/2"x1/2" piece missing. Moderate rust on staples. Small spine roll of 1/8".`,
-    "7.5": `One or two defects barely exceeding 8.0, or accumulation. 2" color-breaking crease or 1" tear (not both). Moderate foxing or tanning (not simultaneously with significant tears/creases). Slight spine roll.`,
-    "7.0": `More prominent creasing and tears. Crease up to 4". 1" spine split, 1/4" spine roll. Mostly sharp edges and corners still expected. One fully detached staple (of two). Color-breaking reader's crease ~half spine length.`,
-    "6.5": `Accumulation of small defects or one large one. Tape up to 1" allowed. Maximum grade for slightly brittle pages. Cover partially detached from both staples allowed. Tears accumulate up to 2".`,
-    "6.0": `Mid-grade. Creases up to 7" accumulation. 1.5" spine split. Spine rolled up to 1/2". Up to 1"x1" piece missing from cover. Two interior wraps detached. Heavy rust on staples.`,
-    "5.5": `Accumulation of 6.0 defects appearing below 6.0. Full color-breaking subscription crease on front allowed. One full and one half staple detachment. Tear up to 3". Heavy fingerprints on cover.`,
-    "5.0": `Larger accumulation of 6.0 defects. 2" spine split. Up to 3" tape strip on outer cover. Creases up to half the cover. Heavy fading but colors not completely washed out. Up to 10" interior tear.`,
-    "4.5": `Lower end of mid-grade. Up to 2"x2" missing from cover. Tears totaling up to 4". Spine roll up to 1". One full punch hole through entire book.`,
-    "4.0": `Complete but with accumulation of defects: tears, creases, missing pieces, spine roll, staining, tanning, staple detachments. Usually highest grade for fully detached cover. Spine split up to 3".`,
-    "3.5": `Threshold for brittle pages (lowest page quality allowed). Both staples removed = max 3.5. Detached covers/pages reattached with tape usually not higher than 3.5.`,
-    "3.0": `One major defect to cover, or large accumulation of average defects. Spine split up to 5", 6" cover tear, 3" tear through book. Up to 3"x3" piece missing from cover.`,
-    "2.5": `Worn and tattered. Heavy creasing, tears, staining, pieces out. Tape often present repairing detached cover or large spine split. Spine split greater than half spine length.`,
-    "2.0": `Same defects as 2.5 but more severe or numerous. Still complete and readable. Few singularly quantifiable defects: mostly split spine, very large staining affecting most of book.`,
-    "1.8": `Most common single defect: fully split spine (clean, little missing paper, no major repairs). Missing interior parts up to 4"x4" affecting story. Only one of these major defects present.`,
-    "1.5": `Fully split spine reattached with tape or staples. Or missing pieces slightly exceeding 3"x3" from cover with significant other defects. Structural integrity compromised but still complete and readable.`,
-    "1.0": `Heavily damaged. Up to 1/4 of cover missing. Full splitting of interior and cover from brittleness. Still relatively complete and readable.`,
-    "0.5": `Accumulation of extensive defects, or missing significant portions of cover or interior. 1/3 or more of front or back cover can be missing. Missing pages common. Requires gentle handling.`,
-    "NG": `No Grade. Missing entire cover (coverless), or front cover present with less than half interior pages, or back cover present with less than 3/4 interior pages.`,
-  };
-
-    // Fetch grade reference and known copies in parallel
-    const [knownCopiesAvailable, gradeRefImage] = isCGC ? await Promise.all([
-      (title && issueNumber) ? fetchKnownCopies(title, issueNumber) : Promise.resolve(null),
-      parsed.grade ? fetchGradeReference(parsed.grade, baseUrl) : Promise.resolve(null)
-    ]) : [null, null];
-
-    // Run grade reference and known copies refinement passes in parallel
-    let gradeRefSuccessLocal = false;
-    let knownCopiesRef = false;
-
-    const refineResults = await Promise.all([
-      // Grade reference pass
-      (async () => {
-        if (!isCGC || parsed.labelDetected || !parsed.grade || !gradeRefImage) return null;
-        const gradeDesc = CGC_GRADE_DESCRIPTIONS[parsed.grade] || '';
-        const refPrompt = `You previously assessed this comic as grade ${parsed.grade}. CGC ${parsed.grade} definition: ${gradeDesc} The reference image shows an example CGC ${parsed.grade} copy with annotated defects. Compare your assessment photos against this definition and reference image. Adjust your grade if warranted. Return the same JSON format with your refined grade and updated graderNotes and aiAssessment. If ${parsed.grade} still seems correct, return the same grade.${notesBlock}`;
+    // Grade reference refinement pass (CGC only, grade in 5.0–10.0 range)
+    if (isCGC && !parsed.labelDetected && parsed.grade) {
+      const refImage = baseUrl ? await fetchGradeReference(parsed.grade, baseUrl) : null;
+      if (refImage) {
+        const refPrompt = `You previously assessed this comic as grade ${parsed.grade}. Here is the official CGC grading reference page for ${parsed.grade}. Compare your assessment photos against this reference. If the reference shows the book should look better or worse than what you assessed, adjust your grade. Return the same JSON format with your refined grade and updated graderNotes and aiAssessment. If ${parsed.grade} still seems correct, return the same grade.${notesBlock}`;
         try {
           const refResp = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
             body: JSON.stringify({
-              model: 'claude-haiku-4-5-20251001',
-              max_tokens: 650,
+              model: 'claude-opus-4-5',
+              max_tokens: 1000,
               system: systemPrompt,
-              messages: [{ role: 'user', content: [
-                { type: 'text', text: `GRADE REFERENCE for ${parsed.grade}: The following image shows what a CGC ${parsed.grade} book looks like with annotated defects.` },
-                gradeRefImage,
-                ...imageBlocks,
-                { type: 'text', text: refPrompt }
-              ]}]
-            })
-          }, 20000);
-          if (!refResp.ok) return null;
-          const refData = await refResp.json();
-          const refText = refData.content?.map(b => b.text || '').join('') || '';
-          const refClean = refText.replace(/```json|```/g, '').trim();
-          const refParsed = JSON.parse(refClean);
-          if (refParsed.grade) {
-            if (!String(refParsed.grade).includes('.')) refParsed.grade = parseFloat(refParsed.grade).toFixed(1);
-            return { type: 'gradeRef', result: refParsed };
-          }
-          return null;
-        } catch (e) { return null; }
-      })(),
-
-      // Known copies pass
-      (async () => {
-        if (!isCGC || !knownCopiesAvailable) return null;
-        const knownCopies = knownCopiesAvailable;
-        const gradeList = knownCopies.map(c => c.gradeLabel).join(', ');
-        const knownPrompt = `You have assessed this comic as grade ${parsed.grade}. The following images show verified CGC-graded copies of the same issue (${title} #${issueNumber}) at known grades: ${gradeList}. Each image is labeled with its grade. Compare the book you assessed against these known copies and determine where it falls. Explicitly state which two grades it falls between, or confirm it matches a specific grade. Adjust your grade if the comparison warrants it. Return the same JSON format with your refined grade, updated graderNotes, and updated aiAssessment that mentions which known copies it was compared against and where it fell.${notesBlock}`;
-        const knownContent = [
-          { type: 'text', text: `KNOWN GRADED COPIES OF ${title} #${issueNumber}:` },
-          ...knownCopies.flatMap(c => [{ type: 'text', text: `Grade ${c.gradeLabel}:` }, c.block]),
-          ...imageBlocks,
-          { type: 'text', text: knownPrompt }
-        ];
-        try {
-          const knownResp = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-            body: JSON.stringify({
-              model: 'claude-haiku-4-5-20251001',
-              max_tokens: 400,
-              system: systemPrompt,
-              messages: [{ role: 'user', content: knownContent }]
+              messages: [{
+                role: 'user',
+                content: [
+                  { type: 'text', text: `GRADE REFERENCE for ${parsed.grade}: The following image shows what a CGC ${parsed.grade} book looks like with annotated defects.` },
+                  refImage,
+                  ...imageBlocks,
+                  { type: 'text', text: refPrompt }
+                ]
+              }]
             })
           }, 25000);
-          if (!knownResp.ok) return null;
-          const knownData = await knownResp.json();
-          const knownText = knownData.content?.map(b => b.text || '').join('') || '';
-          const knownClean = knownText.replace(/```json|```/g, '').trim();
-          const knownParsed = JSON.parse(knownClean);
-          if (knownParsed.grade) {
-            if (!String(knownParsed.grade).includes('.')) knownParsed.grade = parseFloat(knownParsed.grade).toFixed(1);
-            return { type: 'knownCopies', result: knownParsed };
+          if (refResp.ok) {
+            const refData = await refResp.json();
+            const refText = refData.content?.map(b => b.text || '').join('') || '';
+            const refClean = refText.replace(/```json|```/g, '').trim();
+            const refParsed = JSON.parse(refClean);
+            if (refParsed.grade) {
+              if (!String(refParsed.grade).includes('.')) refParsed.grade = parseFloat(refParsed.grade).toFixed(1);
+              parsed = refParsed;
+              parsed._diagnostics = { comicvineRef: referenceImageBlock !== null, gradeRef: true };
+            }
           }
-          return null;
-        } catch (e) { return null; }
-      })()
-    ]);
-
-    // Apply results — known copies wins if both succeed (more specific)
-    for (const r of refineResults) {
-      if (!r) continue;
-      if (r.type === 'gradeRef') { parsed = r.result; gradeRefSuccessLocal = true; }
-    }
-    for (const r of refineResults) {
-      if (!r) continue;
-      if (r.type === 'knownCopies') { parsed = r.result; knownCopiesRef = true; }
+        } catch (e) {
+          // Refinement failed — use original assessment
+        }
+      }
     }
 
     // Attach diagnostic info (preserve gradeRef if already set by refinement pass)
-    const gradeRefSucceeded = gradeRefSuccessLocal || parsed._diagnostics?.gradeRef === true;
-    parsed._highGradeTier = highGrade || false;
-    parsed._restorationCheckTier = restorationCheck || false;
+    const gradeRefSucceeded = parsed._diagnostics?.gradeRef === true;
     parsed._diagnostics = {
       comicvineRef: referenceImageBlock !== null,
       pageQualityRef: pageQualityImageBlock !== null,
-      gradeRef: gradeRefSucceeded,
-      knownCopiesRef,
-      knownCopiesDiag,
-      pqError,
-      cvDiag: cvDiag || null
+      gradeRef: gradeRefSucceeded
     };
     return res.status(200).json(parsed);
   } catch (err) {
