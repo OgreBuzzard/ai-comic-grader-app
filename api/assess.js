@@ -1,3 +1,5 @@
+import { getCensus, formatCensusForPrompt } from './census.js';
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -244,7 +246,7 @@ CRITICAL IMPLICATIONS FOR GRADING:
 - Crease, tear, stain, and tape all become significant in the mid-to-high grade range even if minor in appearance.
 - When assessing a book that appears to be in the 8.0–10.0 range, treat stress lines, bends, soiling, distribution ink, stamps, and printer tears as potentially grade-defining defects that must be explicitly evaluated.
 
-Return ONLY valid JSON, no markdown.${notesBlock}`;
+Return ONLY valid JSON, no markdown.${notesBlock}${(() => { const c = formatCensusForPrompt(title, issueNumber); return c ? '\n\n' + c : ''; })()}`;
 
   const psaPrompt = `You are a PSA comic book grading expert. The CGC AI assessment for this comic assigned a grade of ${cgcGrade || 'unknown'}. Assess whether PSA would grade this book differently.
 
