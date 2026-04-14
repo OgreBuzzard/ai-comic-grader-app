@@ -155,6 +155,33 @@
     #lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.93); display: flex; align-items: center; justify-content: center; z-index: 1000; cursor: zoom-out; padding: 20px; }
     #lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; }
     #sync-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 9998; background: #f0eaff; border-bottom: 2px solid #7a40cf; padding: 10px 16px; display: flex; align-items: center; gap: 10px; }
+    /* Settings panel */
+    #settings-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 2000;
+      display: flex; align-items: flex-start; justify-content: flex-end;
+    }
+    #settings-panel {
+      background: #141210; width: min(320px, 90vw); height: 100vh;
+      overflow-y: auto; padding: 0; box-shadow: -4px 0 24px rgba(0,0,0,0.4);
+      animation: slideInRight 0.22s ease;
+    }
+    @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+    .settings-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 20px 18px 16px; border-bottom: 1px solid #2a2420;
+    }
+    .settings-section-label {
+      font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+      color: #6a5a4a; padding: 16px 18px 6px;
+    }
+    .settings-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 13px 18px; border-bottom: 1px solid #1e1c1a; cursor: pointer;
+    }
+    .settings-row:active { background: #1e1c1a; }
+    .settings-row .sr-label { font-size: 14px; color: #c8b8a8; }
+    .settings-row .sr-detail { font-size: 12px; color: #6a5a4a; margin-top: 2px; }
+    .settings-row .sr-right { font-size: 18px; color: #4a3a2a; }
     #sync-bar .spin-sm { width: 14px; height: 14px; border: 2px solid #9a70ef; border-top-color: #6a30cf; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
   
     /* Assessment progress modal */
@@ -328,12 +355,75 @@
       </button>
       <button class="btn btn-gold" id="add-btn" onclick="showAdd()">+ Add Book</button>
       <button class="btn" onclick="showBuyCredits()" style="background:#2a1a08;color:#c8a96e;font-size:12px;padding:6px 12px;border-radius:8px;border:1.5px solid #c8a96e" id="credits-btn">Buy Credits</button>
-      <button onclick="signOutUser()" style="background:none;border:none;color:#8a7a6a;font-size:12px;cursor:pointer;padding:6px 8px" title="Sign out">⎋ Out</button>
+      <button onclick="openSettings()" style="background:none;border:none;color:#8a7a6a;font-size:18px;cursor:pointer;padding:6px 8px;line-height:1" title="Settings" id="settings-btn">⚙</button>
     </div>
     <div id="header-stats"></div>
   </div>
   <div id="main"></div>
 </div>
+<div id="settings-overlay" style="display:none" onclick="if(event.target===this)closeSettings()">
+  <div id="settings-panel">
+    <div class="settings-header">
+      <div style="font-size:16px;font-weight:700;color:#c8b8a8;letter-spacing:0.04em">Settings</div>
+      <button onclick="closeSettings()" style="background:none;border:none;color:#6a5a4a;font-size:22px;cursor:pointer;line-height:1">×</button>
+    </div>
+
+    <!-- Account -->
+    <div class="settings-section-label">Account</div>
+    <div class="settings-row" style="cursor:default">
+      <div>
+        <div class="sr-label" id="settings-email">—</div>
+        <div class="sr-detail">Signed in with Google</div>
+      </div>
+    </div>
+    <div class="settings-row" onclick="openSettings_buyCredits()">
+      <div>
+        <div class="sr-label">Credits</div>
+        <div class="sr-detail" id="settings-credits">—</div>
+      </div>
+      <div class="sr-right">›</div>
+    </div>
+
+    <!-- Collection -->
+    <div class="settings-section-label">Collection</div>
+    <div class="settings-row" style="cursor:default">
+      <div>
+        <div class="sr-label">Books with images</div>
+        <div class="sr-detail" id="settings-img-count">—</div>
+      </div>
+    </div>
+    <div class="settings-row" onclick="exportCollection()">
+      <div>
+        <div class="sr-label">Export Collection</div>
+        <div class="sr-detail">Download all your data as a ZIP file</div>
+      </div>
+      <div class="sr-right">↓</div>
+    </div>
+
+    <!-- Notifications (placeholder for future) -->
+    <div class="settings-section-label">Notifications</div>
+    <div class="settings-row" style="cursor:default;opacity:0.4">
+      <div>
+        <div class="sr-label">Email notifications</div>
+        <div class="sr-detail">Coming soon</div>
+      </div>
+    </div>
+
+    <!-- Danger zone -->
+    <div class="settings-section-label">Account Actions</div>
+    <div class="settings-row" onclick="signOutUser()">
+      <div class="sr-label" style="color:#e87a7a">Sign Out</div>
+      <div class="sr-right">›</div>
+    </div>
+    <div style="padding:24px 18px 40px">
+      <div style="font-size:11px;color:#4a3a2a;line-height:1.6">
+        AI Comic Grader v1.0 · Assessment credits are non-refundable.
+        Images are stored securely in your personal account.
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="lightbox" style="display:none" onclick="this.style.display='none'">
   <img id="lightbox-img" src="">
 </div>
@@ -560,6 +650,8 @@ async function loadUserCredits(){
     if(snap.exists()){
       const data = snap.data();
       window._userCredits = data.assessmentCredits || 0;
+      if (data.everPurchased) window._userEverPaid = true;
+      else if (window._userCredits > 0) window._userEverPaid = true;
     } else {
       window._userCredits = 0;
     }
@@ -1219,6 +1311,124 @@ function startRestorationCheck() {
   input.click();
 }
 
+// ── Image cap helpers ────────────────────────────────────────────────────────
+const IMAGE_SOFT_CAP = 20;  // nudge at this many books with images
+const IMAGE_HARD_CAP = 25;  // block uploads beyond this (free accounts)
+const IMAGE_PAID_CAP = 1000; // cap for paid accounts
+
+function countBooksWithImages() {
+  return comics.filter(c => c.images && c.images.length > 0).length;
+}
+
+function userHasPaidCredits() {
+  // User is "paid" if they have ever purchased credits — we track via a flag
+  // For now: if they have credits OR have ever had them (stored in _userEverPaid)
+  return !!(window._userEverPaid || (window._userCredits && window._userCredits > 0));
+}
+
+function checkImageCap(isExistingBook) {
+  // Don't apply cap when editing a book that already has images
+  if (isExistingBook) return 'ok';
+  const count = countBooksWithImages();
+  const paid = userHasPaidCredits();
+  const hardCap = paid ? IMAGE_PAID_CAP : IMAGE_HARD_CAP;
+  if (count >= hardCap) return 'hard';
+  if (!paid && count >= IMAGE_SOFT_CAP) return 'soft';
+  return 'ok';
+}
+
+// ── Settings panel ────────────────────────────────────────────────────────────
+function openSettings() {
+  const overlay = document.getElementById('settings-overlay');
+  if (!overlay) return;
+
+  // Populate account info
+  const emailEl = document.getElementById('settings-email');
+  if (emailEl && window._currentUser) emailEl.textContent = window._currentUser.email || '—';
+
+  const credEl = document.getElementById('settings-credits');
+  if (credEl) {
+    const c = window._userCredits || 0;
+    credEl.textContent = `${c} credit${c !== 1 ? 's' : ''} remaining`;
+  }
+
+  const imgEl = document.getElementById('settings-img-count');
+  if (imgEl) {
+    const n = countBooksWithImages();
+    const paid = userHasPaidCredits();
+    const cap = paid ? IMAGE_PAID_CAP : IMAGE_HARD_CAP;
+    imgEl.textContent = `${n} of ${cap} (${paid ? 'paid account' : 'free account'})`;
+  }
+
+  overlay.style.display = 'flex';
+}
+
+function closeSettings() {
+  const overlay = document.getElementById('settings-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+function openSettings_buyCredits() {
+  closeSettings();
+  showBuyCredits();
+}
+
+// ── Export Collection ─────────────────────────────────────────────────────────
+async function exportCollection() {
+  if (!comics.length) { alert('Nothing to export — your collection is empty.'); return; }
+
+  // Dynamically load JSZip
+  const statusEl = document.getElementById('settings-img-count');
+  const origText = statusEl ? statusEl.textContent : '';
+  if (statusEl) statusEl.textContent = 'Preparing export…';
+
+  try {
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+      s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+
+    const zip = new JSZip();
+
+    // Collection JSON (no images — those go as files)
+    const collectionData = comics.map(c => {
+      const {images, ...rest} = c;
+      return rest;
+    });
+    zip.file('collection.json', JSON.stringify(collectionData, null, 2));
+
+    // Images folder, one subfolder per book
+    const imgFolder = zip.folder('images');
+    comics.forEach(c => {
+      if (!c.images || !c.images.length) return;
+      const safeName = `${(c.title||'unknown').replace(/[^a-z0-9]/gi,'_')}_${c.issue||''}`.replace(/__+/g,'_').toLowerCase();
+      const bookFolder = imgFolder.folder(safeName);
+      c.images.forEach((img, i) => {
+        if (!img || !img.startsWith('data:')) return;
+        const [header, data] = img.split(',');
+        const ext = header.includes('png') ? 'png' : 'jpg';
+        bookFolder.file(`image_${i+1}.${ext}`, data, {base64: true});
+      });
+    });
+
+    // Generate and download
+    const blob = await zip.generateAsync({type: 'blob', compression: 'DEFLATE', compressionOptions: {level: 6}});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `comic-grader-collection-${new Date().toISOString().slice(0,10)}.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    if (statusEl) statusEl.textContent = origText;
+  } catch(e) {
+    if (statusEl) statusEl.textContent = origText;
+    alert('Export failed: ' + e.message);
+  }
+}
+
 function decrementCredit(){
   if(window._userCredits !== undefined && window._userCredits > 0){
     window._userCredits--;
@@ -1646,6 +1856,24 @@ function dropSlot(e,target){
 async function handleImages(e){
   const files=Array.from(e.target.files);
   if(!files.length)return;
+
+  // Check image cap — only applies to new books or books without existing images
+  const isExistingWithImages = !!(formData.id && formData._savedImages && formData._savedImages.length > 0);
+  const capStatus = checkImageCap(isExistingWithImages);
+  if (capStatus === 'hard') {
+    const paid = userHasPaidCredits();
+    if (paid) {
+      alert(`You've reached the ${IMAGE_PAID_CAP}-book image limit. Please contact support if you need more storage.`);
+    } else {
+      showImageCapModal('hard');
+    }
+    e.target.value = '';
+    return;
+  }
+  if (capStatus === 'soft') {
+    showImageCapModal('soft');
+    // Soft nudge — still allow the upload, just show the message
+  }
   const newImgs=await Promise.all(files.map(f=>new Promise(res=>{const r=new FileReader();r.onload=ev=>res(ev.target.result);r.readAsDataURL(f);})));
   // Place images forward from tapped slot, wrapping if needed (max 4 slots)
   const imgs=[...(formData.images||[])];
@@ -1662,6 +1890,37 @@ async function handleImages(e){
   renderForm();
   const btn=document.getElementById("assess-btn");
   if(btn)btn.disabled=formData.images.filter(Boolean).length===0||assessing;
+}
+
+function showImageCapModal(type) {
+  const existing = document.getElementById('image-cap-modal');
+  if (existing) existing.remove();
+
+  const isHard = type === 'hard';
+  const overlay = document.createElement('div');
+  overlay.id = 'image-cap-modal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:3000;display:flex;align-items:center;justify-content:center;padding:24px';
+  overlay.innerHTML = `
+    <div style="background:#141210;border-radius:16px;padding:28px 24px;max-width:320px;width:100%;border:1.5px solid ${isHard?'#8b1a1a':'#6a4a10'}">
+      <div style="font-size:18px;font-weight:700;color:${isHard?'#e87a7a':'#c8a96e'};margin-bottom:12px">
+        ${isHard ? '🚫 Image Storage Full' : '📸 Storage Limit Approaching'}
+      </div>
+      <div style="font-size:13px;color:#a09080;line-height:1.6;margin-bottom:20px">
+        ${isHard
+          ? `You've reached the free limit of ${IMAGE_HARD_CAP} books with photos. Purchase any credit package to continue adding images — no limit applies to your text entries.`
+          : `You've added photos to ${IMAGE_SOFT_CAP} books. You can add photos to ${IMAGE_HARD_CAP - IMAGE_SOFT_CAP} more books on the free plan. Purchase credits to unlock unlimited photo storage.`
+        }
+      </div>
+      <div style="display:flex;gap:10px">
+        <button onclick="document.getElementById('image-cap-modal').remove();showBuyCredits()" style="flex:2;padding:12px;background:#2a4a6a;color:#a8d0f0;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer">
+          Buy Credits
+        </button>
+        <button onclick="document.getElementById('image-cap-modal').remove()" style="flex:1;padding:12px;background:#1e1c1a;color:#6a5a4a;border:none;border-radius:10px;font-size:14px;cursor:pointer">
+          ${isHard ? 'Cancel' : 'Continue'}
+        </button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
 }
 
 function cycleTreatment(key){
