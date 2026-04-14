@@ -2,10 +2,10 @@ import Stripe from 'stripe';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-// Credit packages
+// Credit packages — price IDs from Stripe dashboard
 const PACKAGES = {
-  starter: { credits: 10,  amount: 500,  label: '10 assessments' },   // $5.00 ($0.50 each)
-  pro:     { credits: 200, amount: 5000, label: '200 assessments' },  // $50.00 ($0.25 each)
+  starter: { credits: 10,  priceId: 'price_1TM7iQAJVXkUtIkTC5KqZKVB' },  // $5.00 ($0.50 each)
+  pro:     { credits: 200, priceId: 'price_1TM7ufAJVXkUtIkTfj6oSAYz' },  // $50.00 ($0.25 each)
 };
 
 export default async function handler(req, res) {
@@ -37,17 +37,7 @@ export default async function handler(req, res) {
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       mode: 'payment',
-      line_items: [{
-        price_data: {
-          currency: 'usd',
-          product_data: {
-            name: `AI Comic Grader — ${selected.label}`,
-            description: `${selected.credits} AI comic book assessments`,
-          },
-          unit_amount: selected.amount,
-        },
-        quantity: 1,
-      }],
+      line_items: [{ price: selected.priceId, quantity: 1 }],
       metadata: {
         userId,
         credits: selected.credits,
