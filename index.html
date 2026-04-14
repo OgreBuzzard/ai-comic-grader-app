@@ -120,14 +120,14 @@
     .ubadge-strip { height: 17px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .ubadge-strip span { font-size: 8px; font-weight: 800; letter-spacing: 1.5px; color: #fff; }
     .ubadge-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0px; }
-    .ubadge-num { font-size: 20px; font-weight: 800; line-height: 1; }
+    .ubadge-num { font-size: 26px; font-weight: 800; line-height: 1; }
     .ubadge-lbl { font-size: 7.5px; letter-spacing: 0.3px; text-align: center; line-height: 1.2; margin-top: 1px; }
     /* List row variant — slightly smaller, still square */
     .ubadge-sm { width: 56px; height: 56px; flex-shrink: 0; border-radius: 4px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.2); border: 1.5px solid rgba(0,0,0,0.15); display: flex; flex-direction: column; }
     .ubadge-sm .ubadge-strip { height: 14px; }
     .ubadge-sm .ubadge-strip span { font-size: 7px; }
     .ubadge-sm .ubadge-body { gap: 0px; }
-    .ubadge-sm .ubadge-num { font-size: 17px; }
+    .ubadge-sm .ubadge-num { font-size: 21px; }
     .ubadge-sm .ubadge-lbl { font-size: 7px; margin-top: 1px; }
     .badge { font-size: 10px; border-radius: 3px; padding: 1px 5px; border: 1px solid; }
     .badge-cgc { background: #1a2a1a; border-color: #2a4a2a; color: #6abf6a; }
@@ -2076,16 +2076,12 @@ initFirebase();
     <p style="margin:0 0 20px;font-size:13px;color:#6a5a4a">Credits are used one per assessment (CGC + PSA counts as one).</p>
     <div style="display:flex;flex-direction:column;gap:12px">
       <button onclick="buyCredits('starter')" style="background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:14px 16px;cursor:pointer;text-align:left">
-        <div style="font-size:16px;font-weight:700;color:#1a1008">$5 — 20 assessments</div>
-        <div style="font-size:12px;color:#6a5a4a;margin-top:2px">25¢ per assessment</div>
-      </button>
-      <button onclick="buyCredits('standard')" style="background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:14px 16px;cursor:pointer;text-align:left">
-        <div style="font-size:16px;font-weight:700;color:#1a1008">$20 — 100 assessments</div>
-        <div style="font-size:12px;color:#6a5a4a;margin-top:2px">20¢ per assessment</div>
+        <div style="font-size:16px;font-weight:700;color:#1a1008">$5 — 10 assessments</div>
+        <div style="font-size:12px;color:#6a5a4a;margin-top:2px">50¢ per assessment</div>
       </button>
       <button onclick="buyCredits('pro')" style="background:#1a1008;border:2px solid #1a1008;border-radius:10px;padding:14px 16px;cursor:pointer;text-align:left">
-        <div style="font-size:16px;font-weight:700;color:#c8a96e">$80 — 500 assessments</div>
-        <div style="font-size:12px;color:#a89070;margin-top:2px">Best value · 16¢ per assessment</div>
+        <div style="font-size:16px;font-weight:700;color:#c8a96e">$50 — 200 assessments</div>
+        <div style="font-size:12px;color:#a89070;margin-top:2px">Best value · 25¢ per assessment</div>
       </button>
     </div>
     <button onclick="hideBuyCredits()" style="margin-top:16px;width:100%;background:none;border:none;color:#8a7a6a;font-size:14px;cursor:pointer;padding:8px">Cancel</button>
