@@ -53,12 +53,14 @@ export default async function handler(req, res) {
         if (userDoc.exists) {
           tx.update(userRef, {
             assessmentCredits: FieldValue.increment(parseInt(credits)),
+            everPurchased: true,
             lastPurchaseDate: new Date().toISOString(),
             totalPurchased: FieldValue.increment(parseInt(credits)),
           });
         } else {
           tx.set(userRef, {
             assessmentCredits: parseInt(credits),
+            everPurchased: true,
             lastPurchaseDate: new Date().toISOString(),
             totalPurchased: parseInt(credits),
             createdAt: new Date().toISOString(),
