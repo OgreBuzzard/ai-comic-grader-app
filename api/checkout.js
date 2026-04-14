@@ -4,9 +4,8 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 // Credit packages
 const PACKAGES = {
-  starter:  { credits: 20,  amount: 500,  label: '20 assessments' },   // $5.00
-  standard: { credits: 100, amount: 2000, label: '100 assessments' },  // $20.00
-  pro:      { credits: 300, amount: 5000, label: '300 assessments' },  // $50.00
+  starter: { credits: 10,  amount: 500,  label: '10 assessments' },   // $5.00 ($0.50 each)
+  pro:     { credits: 200, amount: 5000, label: '200 assessments' },  // $50.00 ($0.25 each)
 };
 
 export default async function handler(req, res) {
