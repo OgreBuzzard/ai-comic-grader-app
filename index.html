@@ -20,6 +20,8 @@
       from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
     import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
       from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+    import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject }
+      from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js';
 
     const firebaseConfig = {
       apiKey: "AIzaSyCDfjpnL94J0L09vJpg3I8ANu6zUzrrKxM",
@@ -32,7 +34,13 @@
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
+    const storage = getStorage(app);
     window._db = db;
+    window._storage = storage;
+    window._fsRef = ref;
+    window._fsUploadBytes = uploadBytes;
+    window._fsGetDownloadURL = getDownloadURL;
+    window._fsDeleteObject = deleteObject;
     window._fsCollection = collection;
     window._fsGetDocs = getDocs;
     window._fsSetDoc = setDoc;
@@ -120,14 +128,14 @@
     .ubadge-strip { height: 17px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .ubadge-strip span { font-size: 8px; font-weight: 800; letter-spacing: 1.5px; color: #fff; }
     .ubadge-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0px; }
-    .ubadge-num { font-size: 26px; font-weight: 800; line-height: 1; }
+    .ubadge-num { font-size: 20px; font-weight: 800; line-height: 1; }
     .ubadge-lbl { font-size: 7.5px; letter-spacing: 0.3px; text-align: center; line-height: 1.2; margin-top: 1px; }
     /* List row variant — slightly smaller, still square */
     .ubadge-sm { width: 56px; height: 56px; flex-shrink: 0; border-radius: 4px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.2); border: 1.5px solid rgba(0,0,0,0.15); display: flex; flex-direction: column; }
     .ubadge-sm .ubadge-strip { height: 14px; }
     .ubadge-sm .ubadge-strip span { font-size: 7px; }
     .ubadge-sm .ubadge-body { gap: 0px; }
-    .ubadge-sm .ubadge-num { font-size: 21px; }
+    .ubadge-sm .ubadge-num { font-size: 17px; }
     .ubadge-sm .ubadge-lbl { font-size: 7px; margin-top: 1px; }
     .badge { font-size: 10px; border-radius: 3px; padding: 1px 5px; border: 1px solid; }
     .badge-cgc { background: #1a2a1a; border-color: #2a4a2a; color: #6abf6a; }
@@ -1518,32 +1526,30 @@ async function assessGrade(){
   showAssessModal();
   setStep('analyzing','running','Reading photos...');
   try{
-    const compressed=await Promise.all(imgs.slice(0,4).map(img=>compressImage(img)));
-    const cgcResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json","x-client-secret":"022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",...(window._currentUser?{"Authorization":"Bearer "+(await window._currentUser.getIdToken())}:{})},body:JSON.stringify({images:compressed,grader:"CGC",title:formData.title||"",issueNumber:formData.issue||"",issueDate:formData.issueDate||""})});
-    if(!cgcResp.ok){const e=await cgcResp.text();throw new Error("CGC error: "+e);}
-    const cgc=await cgcResp.json();
-    if(cgc.error)throw new Error(cgc.error);
-    const d=cgc._diagnostics||{};
+    // Convert any Storage URLs to base64 DataURLs before compressing for API
+    const dataUrls=await Promise.all(imgs.slice(0,4).map(async img=>{
+      if(img.startsWith('http')){
+        // Fetch Storage URL and convert to base64
+        const resp=await fetch(img);
+        const blob=await resp.blob();
+        return new Promise(res=>{const r=new FileReader();r.onload=ev=>res(ev.target.result);r.readAsDataURL(blob);});
+      }
+      return img; // already a DataURL
+    }));
+    const compressed=await Promise.all(dataUrls.map(img=>compressImage(img)));
+    // UNIFIED SINGLE CALL — CGC + PSA + RoboGrade in one request
+    const unifiedResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json","x-client-secret":"022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",...(window._currentUser?{"Authorization":"Bearer "+(await window._currentUser.getIdToken())}:{})},body:JSON.stringify({images:compressed,grader:"CGC",title:formData.title||"",issueNumber:formData.issue||"",issueDate:formData.issueDate||""})});
+    if(!unifiedResp.ok){const e=await unifiedResp.text();throw new Error("Assessment error: "+e);}
+    const unified=await unifiedResp.json();
+    if(unified.error)throw new Error(unified.error);
+    // Destructure unified response
+    const cgc=unified.cgc||unified; // fallback for backward compat
+    const psa=unified.psa||{};
+    if(unified.roboGrade) cgc._roboGrade=unified.roboGrade;
+    const d=unified._diagnostics||cgc._diagnostics||{};
     await animateStepsFromDiagnostics(d);
-    setStep('psa','running','Checking variance...');
-    const slabDetected=!!(cgc.labelDetected&&(cgc.officialCGCGrade||cgc.officialPSAGrade));
-    const psaResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json","x-client-secret":"022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",...(window._currentUser?{"Authorization":"Bearer "+(await window._currentUser.getIdToken())}:{})},body:JSON.stringify({images:compressed,grader:"PSA",cgcGrade:cgc.grade||"",cgcGraderNotes:slabDetected?formData.graderNotes||"":"",psaGraderNotes:slabDetected?formData.psaNotes||"":""})});
-    if(!psaResp.ok){const e=await psaResp.text();throw new Error("PSA error: "+e);}
-    const psa=await psaResp.json();
-    if(psa.error)throw new Error(psa.error);
     await delay(180);
     setStep('psa','done');
-    setStep('psa','done');
-
-    // RoboGrade — third pass, runs in parallel with result display
-    setStep('analyzing','running','Running RoboGrade...');
-    try{
-      const roboResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json","x-client-secret":"022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",...(window._currentUser?{"Authorization":"Bearer "+(await window._currentUser.getIdToken())}:{})},body:JSON.stringify({images:compressed,grader:"ROBO"})});
-      if(roboResp.ok){
-        const robo=await roboResp.json();
-        if(robo.roboGrade) cgc._roboGrade=robo.roboGrade;
-      }
-    }catch(e){ /* RoboGrade is non-blocking */ }
     setStep('analyzing','done');
 
     _pendingAssessResult={cgc,psa};
@@ -1715,64 +1721,57 @@ function renderImgPreview(){}
 
 function buildRoboGradeDisplay(rg) {
   if (!rg) return '';
-  const score = rg.score;
-  const scoreStr = score >= 80 ? score.toFixed(1) : Math.round(score).toString();
-  const scoreColor = score >= 80 ? '#4a9a4a' : score >= 60 ? '#4a6a9a' : score >= 40 ? '#9a7a2a' : '#9a3a3a';
-  
-  // Build defect list
+  // grade is a whole number integer (0-100 scale)
+  const score = typeof rg.grade === 'number' ? rg.grade : parseInt(rg.grade) || 0;
+  // Forest green color scheme — distinct from CGC Qualified olive
+  const borderColor = '#2a5a0a';
+  const bgColor = '#0f1a05';
+  const accentColor = score >= 75 ? '#6abf10' : score >= 50 ? '#8abf20' : score >= 30 ? '#aaaa20' : '#c84a2a';
+  const scoreColor = score >= 75 ? '#aaee30' : score >= 50 ? '#ccee30' : score >= 30 ? '#ddcc20' : '#cc4444';
+  const labelColor = '#7abf20';
+  const subColor = '#4a7a10';
+  const tableTextColor = '#b8e870';
+  const tableSubColor = '#6a9a30';
+
+  // Build defect rows for front and back
   const defectRows = (defects, label) => {
     if (!defects || defects.length === 0) return '';
     const rows = defects.map(d => {
+      const name = d.name || d.type || '';
       const cb = d.colorBreaking === true ? ' <span style="color:#c84a4a;font-size:10px">[CB]</span>' : '';
-      return `<div style="display:flex;gap:6px;padding:3px 0;border-bottom:1px solid #2a2a3a;font-size:12px">
-        <span style="flex:2;color:#c0b8a8">${d.type}${cb}</span>
-        <span style="flex:2;color:#8a8a9a">${d.location}</span>
-        <span style="flex:1;color:#8a8a9a;text-align:center">${d.measurement}</span>
-        <span style="flex:0 0 40px;color:#c84a4a;text-align:right">−${d.deduction}</span>
+      const pts = d.pointsDeducted !== undefined ? d.pointsDeducted : (d.deduction || '');
+      return `<div style="display:flex;gap:6px;padding:3px 0;border-bottom:1px solid ${borderColor};font-size:12px">
+        <span style="flex:2;color:${tableTextColor}">${name}${cb}</span>
+        <span style="flex:2;color:${tableSubColor}">${d.location||''}</span>
+        <span style="flex:1;color:${tableSubColor};text-align:center">${d.measurement||''}</span>
+        <span style="flex:0 0 40px;color:#c87a5a;text-align:right">${pts ? '−'+pts : ''}</span>
       </div>`;
     }).join('');
-    return `<div style="margin-top:6px">
-      <div style="font-size:10px;letter-spacing:1px;color:#6a6a8a;text-transform:uppercase;margin-bottom:4px">${label}</div>
-      <div style="display:flex;gap:6px;padding:2px 0;font-size:10px;color:#5a5a7a;border-bottom:1px solid #3a3a4a">
+    return `<div style="margin-top:8px">
+      <div style="font-size:10px;letter-spacing:1px;color:${labelColor};text-transform:uppercase;margin-bottom:4px">${label}</div>
+      <div style="display:flex;gap:6px;padding:2px 0;font-size:10px;color:${subColor};border-bottom:1px solid ${borderColor}">
         <span style="flex:2">Defect</span><span style="flex:2">Location</span>
-        <span style="flex:1;text-align:center">Measurement</span>
+        <span style="flex:1;text-align:center">Size</span>
         <span style="flex:0 0 40px;text-align:right">Pts</span>
       </div>
       ${rows}
     </div>`;
   };
 
-  const cf = rg.colorFading || {};
-  const fadingRows = [
-    cf.front && cf.front.severity !== 'none' ? `<div style="display:flex;gap:6px;padding:3px 0;border-bottom:1px solid #2a2a3a;font-size:12px"><span style="flex:2;color:#c0b8a8">Color fading</span><span style="flex:2;color:#8a8a9a">Front cover</span><span style="flex:1;color:#8a8a9a;text-align:center">${cf.front.severity}</span><span style="flex:0 0 40px;color:#c84a4a;text-align:right">−${cf.front.deduction}</span></div>` : '',
-    cf.back && cf.back.severity !== 'none' ? `<div style="display:flex;gap:6px;padding:3px 0;border-bottom:1px solid #2a2a3a;font-size:12px"><span style="flex:2;color:#c0b8a8">Color fading</span><span style="flex:2;color:#8a8a9a">Back cover</span><span style="flex:1;color:#8a8a9a;text-align:center">${cf.back.severity}</span><span style="flex:0 0 40px;color:#c84a4a;text-align:right">−${cf.back.deduction}</span></div>` : '',
-  ].filter(Boolean).join('');
-
-  return `<div style="background:#0d0d1a;border:1.5px solid #2a2a5a;border-radius:12px;padding:14px;margin-bottom:8px">
+  return `<div style="background:${bgColor};border:1.5px solid ${borderColor};border-radius:12px;padding:14px;margin-bottom:8px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
       <div>
-        <div style="font-size:10px;letter-spacing:2px;color:#5a5a9a;text-transform:uppercase">RoboGrade v${rg.version}</div>
-        <div style="font-size:11px;color:#5a5a9a;margin-top:2px">${rg.tier} tier · ±${rg.confidenceRange}${rg.pageQuality ? ' · PQ: ' + rg.pageQuality : ''}</div>
+        <div style="font-size:10px;letter-spacing:2px;color:${labelColor};text-transform:uppercase">RoboGrade v${rg.version||'1.0'}</div>
+        <div style="font-size:11px;color:${subColor};margin-top:2px">AI-native condition score · covers only</div>
       </div>
       <div style="text-align:right">
-        <div style="font-size:36px;font-weight:700;line-height:1;color:${scoreColor}">${scoreStr}</div>
-        <div style="font-size:10px;color:#5a5a9a">/ 100</div>
-      </div>
-    </div>
-    <div style="display:flex;gap:10px;margin-bottom:10px">
-      <div style="flex:1;background:#1a1a2a;border-radius:8px;padding:8px;text-align:center">
-        <div style="font-size:18px;font-weight:700;color:#6a6ab0">${rg.frontCoverScore >= 80 ? rg.frontCoverScore.toFixed(1) : Math.round(rg.frontCoverScore)}</div>
-        <div style="font-size:10px;color:#5a5a9a">Front (×0.80)</div>
-      </div>
-      <div style="flex:1;background:#1a1a2a;border-radius:8px;padding:8px;text-align:center">
-        <div style="font-size:18px;font-weight:700;color:#6a6ab0">${rg.backCoverScore >= 80 ? rg.backCoverScore.toFixed(1) : Math.round(rg.backCoverScore)}</div>
-        <div style="font-size:10px;color:#5a5a9a">Back (×0.20)</div>
+        <div style="font-size:40px;font-weight:700;line-height:1;color:${scoreColor}">${score}</div>
+        <div style="font-size:10px;color:${subColor}">/ 100</div>
       </div>
     </div>
     ${defectRows(rg.frontDefects, 'Front Cover Defects')}
     ${defectRows(rg.backDefects, 'Back Cover Defects')}
-    ${fadingRows ? `<div style="margin-top:6px"><div style="font-size:10px;letter-spacing:1px;color:#6a6a8a;text-transform:uppercase;margin-bottom:4px">Color Fading</div>${fadingRows}</div>` : ''}
-    ${rg.assessmentNotes ? `<div style="margin-top:10px;font-size:11px;font-style:italic;color:#5a5a7a;line-height:1.5">${rg.assessmentNotes}</div>` : ''}
+    ${rg.assessmentNotes ? `<div style="margin-top:10px;font-size:11px;font-style:italic;color:${subColor};line-height:1.5">${rg.assessmentNotes}</div>` : ''}
   </div>`;
 }
 
@@ -1874,16 +1873,21 @@ async function handleImages(e){
     showImageCapModal('soft');
     // Soft nudge — still allow the upload, just show the message
   }
+  // Read as DataURL for preview only — keep original File for Storage upload
   const newImgs=await Promise.all(files.map(f=>new Promise(res=>{const r=new FileReader();r.onload=ev=>res(ev.target.result);r.readAsDataURL(f);})));
   // Place images forward from tapped slot, wrapping if needed (max 4 slots)
   const imgs=[...(formData.images||[])];
+  const fileObjs=[...(formData._fileObjects||[null,null,null,null])];
   while(imgs.length<4)imgs.push(null);
+  while(fileObjs.length<4)fileObjs.push(null);
   const count=Math.min(newImgs.length,4);
   for(let n=0;n<count;n++){
     const slot=(_tappedSlot+n)%4;
     imgs[slot]=newImgs[n];
+    fileObjs[slot]=files[n]||null;
   }
   formData.images=imgs.filter(Boolean);
+  formData._fileObjects=fileObjs;
   formData._imagesChanged=true;
   // Reset file input so same files can be re-selected if needed
   e.target.value="";
@@ -1938,16 +1942,52 @@ async function submitForm(){
   if(!formData.title?.trim()){alert("Title is required.");return;}
   formData.title=formData.title.trim().replace(/\s+/g," ").replace(/^The\s+/i,"");
   if(formData.seller?.trim())updateSellerList(formData.seller.trim());
-  syncMsg("Compressing images...");
-  const rawImages=(formData.images||[]).filter(Boolean);
-  const compressedImages=rawImages.length>0&&formData._imagesChanged?await Promise.all(rawImages.map(img=>compressImage(img))):[];
-  syncMsg(null);
-  const existingComic=formData.id?comics.find(c=>c.id===formData.id):null;
-  // Use compressed new images if user changed them, otherwise preserve Firestore images exactly
-  const finalImages=formData._imagesChanged
-    ?(compressedImages.length>0?compressedImages:[])
-    :(formData._savedImages||existingComic?.images||[]);
   const id=formData.id||`comic:user_${Date.now()}`;
+  const existingComic=formData.id?comics.find(c=>c.id===formData.id):null;
+
+  let finalImages;
+  if(!formData._imagesChanged){
+    // No changes — preserve exactly what was saved
+    finalImages=formData._savedImages||existingComic?.images||[];
+  } else {
+    syncMsg("Uploading images...");
+    const userId=window._currentUser?.uid;
+    const fileObjs=formData._fileObjects||[];
+    const currentImgs=formData.images||[];
+    const uploadedUrls=[];
+
+    for(let i=0;i<currentImgs.length;i++){
+      const img=currentImgs[i];
+      if(!img)continue;
+      const file=fileObjs[i];
+      if(file&&userId){
+        // New file — upload to Firebase Storage
+        try{
+          const ext=file.type==='image/png'?'png':'jpg';
+          const path=`users/${userId}/${id.replace(/:/g,'_')}_img${i}.${ext}`;
+          const storageRef=window._fsRef(window._storage,path);
+          const snap=await window._fsUploadBytes(storageRef,file);
+          const url=await window._fsGetDownloadURL(snap.ref);
+          uploadedUrls.push(url);
+        }catch(err){
+          console.error('Storage upload failed, falling back to base64:',err);
+          // Fallback: compress and store as base64 if Storage fails
+          const compressed=await compressImage(img);
+          uploadedUrls.push(compressed);
+        }
+      } else if(img.startsWith('http')){
+        // Already a Storage URL — keep it
+        uploadedUrls.push(img);
+      } else {
+        // Existing base64 — compress and keep (backward compat)
+        const compressed=await compressImage(img);
+        uploadedUrls.push(compressed);
+      }
+    }
+    finalImages=uploadedUrls;
+    syncMsg(null);
+  }
+
   const rec={...formData,id,
     images:finalImages,
     purchasePrice:formData.purchasePrice!==""?parseFloat(formData.purchasePrice):null,
@@ -1960,6 +2000,7 @@ async function submitForm(){
   };
   delete rec._savedImages;
   delete rec._imagesChanged;
+  delete rec._fileObjects;
   await saveComic(rec);
   showList();
 }
@@ -2076,12 +2117,16 @@ initFirebase();
     <p style="margin:0 0 20px;font-size:13px;color:#6a5a4a">Credits are used one per assessment (CGC + PSA counts as one).</p>
     <div style="display:flex;flex-direction:column;gap:12px">
       <button onclick="buyCredits('starter')" style="background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:14px 16px;cursor:pointer;text-align:left">
-        <div style="font-size:16px;font-weight:700;color:#1a1008">$5 — 10 assessments</div>
-        <div style="font-size:12px;color:#6a5a4a;margin-top:2px">50¢ per assessment</div>
+        <div style="font-size:16px;font-weight:700;color:#1a1008">$5 — 20 assessments</div>
+        <div style="font-size:12px;color:#6a5a4a;margin-top:2px">25¢ per assessment</div>
+      </button>
+      <button onclick="buyCredits('standard')" style="background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:14px 16px;cursor:pointer;text-align:left">
+        <div style="font-size:16px;font-weight:700;color:#1a1008">$20 — 100 assessments</div>
+        <div style="font-size:12px;color:#6a5a4a;margin-top:2px">20¢ per assessment</div>
       </button>
       <button onclick="buyCredits('pro')" style="background:#1a1008;border:2px solid #1a1008;border-radius:10px;padding:14px 16px;cursor:pointer;text-align:left">
-        <div style="font-size:16px;font-weight:700;color:#c8a96e">$50 — 200 assessments</div>
-        <div style="font-size:12px;color:#a89070;margin-top:2px">Best value · 25¢ per assessment</div>
+        <div style="font-size:16px;font-weight:700;color:#c8a96e">$80 — 500 assessments</div>
+        <div style="font-size:12px;color:#a89070;margin-top:2px">Best value · 16¢ per assessment</div>
       </button>
     </div>
     <button onclick="hideBuyCredits()" style="margin-top:16px;width:100%;background:none;border:none;color:#8a7a6a;font-size:14px;cursor:pointer;padding:8px">Cancel</button>
