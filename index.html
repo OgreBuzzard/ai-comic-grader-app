@@ -977,7 +977,7 @@ async function compressImage(dataUrl,maxDim=900,quality=0.50){
 let _pendingAssessResult = null;
 
 // === Assessment Modal Assets ===
-const ASSESS_MODAL_BG   = 'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/progress_modal.PNG';
+const ASSESS_MODAL_BG    = 'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/progress_modal.PNG';
 const ASSESS_DEFAULT_BOX = 'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/default_box.PNG';
 const ASSESS_SUCCESS_BOX = 'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/success_box.PNG';
 const ASSESS_FAILURE_BOX = 'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/failure_box.PNG';
@@ -1000,26 +1000,21 @@ function showAssessModal() {
   modal.style.backgroundSize = '100% 100%';
   modal.style.backgroundRepeat = 'no-repeat';
 
-  // Render step boxes
-  const W=960,H=1451;
+  // 7 step boxes — sized to fill their slots, NO text (artwork has it)
   const stepDefs = [
-    {id:'analyzing', y:217, label:'Analyzing Photos'},
-    {id:'populating', y:384, label:'Populating Info'},
-    {id:'mint',       y:550, label:'Comparing to Mint'},
-    {id:'pq',         y:721, label:'Page Quality Check'},
-    {id:'confirming', y:887, label:'Confirming Grade'},
-    {id:'psa',        y:1056,label:'CGC / PSA / RoboGrade'},
-    {id:'known',      y:1225,label:'Checking Known Copies'},
+    {id:'analyzing', y:217},
+    {id:'populating', y:384},
+    {id:'mint',       y:550},
+    {id:'pq',         y:721},
+    {id:'confirming', y:887},
+    {id:'psa',        y:1056},
+    {id:'known',      y:1225},
   ];
   stepDefs.forEach(s => {
     const box = document.createElement('div');
     box.id = 'modal-box-' + s.id;
-    box.style.cssText = `position:absolute;left:${66/W*100}%;top:${s.y/H*100}%;width:${828/W*100}%;height:${133/H*100}%;background-size:100% 100%;background-repeat:no-repeat;display:flex;align-items:center;justify-content:center;`;
+    box.style.cssText = `position:absolute;left:${66/960*100}%;top:${s.y/1451*100}%;width:${828/960*100}%;height:${133/1451*100}%;background-size:100% 100%;background-repeat:no-repeat;`;
     box.style.backgroundImage = "url('" + ASSESS_DEFAULT_BOX + "')";
-    const lbl = document.createElement('span');
-    lbl.style.cssText = "font-family:'Courier New',monospace;font-weight:700;font-size:clamp(9px,2.8vw,15px);letter-spacing:0.1em;text-transform:uppercase;color:#1a1a1a;";
-    lbl.textContent = s.label;
-    box.appendChild(lbl);
     modal.appendChild(box);
   });
 
@@ -1027,17 +1022,17 @@ function showAssessModal() {
   const gridImg = document.createElement('img');
   gridImg.id = 'modal-grid-frame';
   gridImg.src = ASSESS_FRAMES[0];
-  gridImg.style.cssText = `position:absolute;left:${680/W*100}%;top:${43/H*100}%;width:${160/W*100}%;height:${160/H*100}%;pointer-events:none;`;
+  gridImg.style.cssText = `position:absolute;left:${680/960*100}%;top:${43/1451*100}%;width:${160/960*100}%;height:${160/1451*100}%;pointer-events:none;`;
   modal.appendChild(gridImg);
 
-  // Result area + upgrade rows + complete button (hidden initially)
+  // Result preview area (grades + PQ + upgrade rows + complete btn)
   const resultDiv = document.createElement('div');
   resultDiv.id = 'assess-result-preview';
-  resultDiv.style.cssText = 'position:absolute;bottom:2%;left:6%;right:6%;display:none;';
+  resultDiv.style.cssText = 'position:absolute;bottom:0;left:0;right:0;padding:12px 16px 16px;background:rgba(13,13,15,0.95);display:none;';
   resultDiv.innerHTML = `
-    <div class="result-grades" id="result-grades"></div>
+    <div class="result-grades" id="result-grades" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:6px;"></div>
     <div style="font-size:12px;color:#8a7a6a;text-align:center" id="result-pq"></div>
-    <div id="hg-upgrade-row" style="display:none;margin-top:12px;padding:10px;background:#1a2a1a;border-radius:8px;border:1px solid #3a6a3a">
+    <div id="hg-upgrade-row" style="display:none;margin-top:10px;padding:10px;background:#1a2a1a;border-radius:8px;border:1px solid #3a6a3a">
       <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:0.05em;margin-bottom:6px">HIGH-GRADE TIER AVAILABLE</div>
       <div style="font-size:11px;color:#8a9a8a;margin-bottom:8px">This book graded at 8.0 or above. Add 4 corner macro photos for a more precise assessment.</div>
       <button id="hg-upgrade-btn" onclick="startHighGradeUpgrade()" style="width:100%;padding:10px;background:#2a5a2a;color:#80e080;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer">+ Add Corner Macros</button>
@@ -1046,9 +1041,9 @@ function showAssessModal() {
 
   const rcRow = document.createElement('div');
   rcRow.id = 'rc-upgrade-row';
-  rcRow.style.cssText = 'display:none;position:absolute;bottom:2%;left:6%;right:6%;padding:10px;background:#2a1a0a;border-radius:8px;border:1px solid #6a3a1a;';
+  rcRow.style.cssText = 'display:none;position:absolute;bottom:0;left:0;right:0;padding:10px 16px;background:rgba(42,26,10,0.95);border-top:1px solid #6a3a1a;';
   rcRow.innerHTML = `
-    <div style="font-size:11px;color:#e0904a;font-weight:700;letter-spacing:0.05em;margin-bottom:6px">RESTORATION CHECK AVAILABLE</div>
+    <div style="font-size:11px;color:#e0904a;font-weight:700;letter-spacing:0.05em;margin-bottom:4px">RESTORATION CHECK AVAILABLE</div>
     <div style="font-size:11px;color:#9a8a7a;margin-bottom:8px">Add 4 restoration-specific photos: interior front cover, interior back cover, staple close-up, and UV front cover.</div>
     <button id="rc-upgrade-btn" onclick="startRestorationCheck()" style="width:100%;padding:10px;background:#5a2a0a;color:#f0a060;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer">+ Add Restoration Photos</button>`;
   modal.appendChild(rcRow);
@@ -1056,7 +1051,7 @@ function showAssessModal() {
   const completeBtn = document.createElement('button');
   completeBtn.id = 'assess-complete-btn';
   completeBtn.onclick = completeAssessment;
-  completeBtn.style.cssText = 'display:none;position:absolute;bottom:1%;left:10%;right:10%;padding:12px;background:#c8a96e;color:#0d0d0f;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;';
+  completeBtn.style.cssText = 'display:none;position:absolute;bottom:0;left:0;right:0;padding:14px;background:#c8a96e;color:#0d0d0f;border:none;font-size:15px;font-weight:700;cursor:pointer;';
   completeBtn.textContent = 'Complete';
   modal.appendChild(completeBtn);
 
@@ -1080,8 +1075,9 @@ function setStep(id, state, detail='') {
   } else if (state === 'failed') {
     box.style.backgroundImage = "url('" + ASSESS_FAILURE_BOX + "')";
   } else if (state === 'skipped') {
-    const lbl = box.querySelector('span');
-    if (lbl) lbl.style.opacity = '0.35';
+    box.style.opacity = '0.45';
+  } else if (state === 'running') {
+    box.style.backgroundImage = "url('" + ASSESS_DEFAULT_BOX + "')";
   }
 }
 
@@ -1587,33 +1583,28 @@ async function assessGrade(){
   showAssessModal();
   setStep('analyzing','running','Reading photos...');
   try{
-    const compressed=await Promise.all(imgs.slice(0,4).map(img=>compressImage(img)));
-    const cgcResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json","x-client-secret":"022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",...(window._currentUser?{"Authorization":"Bearer "+(await window._currentUser.getIdToken())}:{})},body:JSON.stringify({images:compressed,grader:"CGC",title:formData.title||"",issueNumber:formData.issue||"",issueDate:formData.issueDate||""})});
-    if(!cgcResp.ok){const e=await cgcResp.text();throw new Error("CGC error: "+e);}
-    const cgc=await cgcResp.json();
-    if(cgc.error)throw new Error(cgc.error);
-    const d=cgc._diagnostics||{};
-    await animateStepsFromDiagnostics(d);
-    setStep('psa','running','Checking variance...');
-    const slabDetected=!!(cgc.labelDetected&&(cgc.officialCGCGrade||cgc.officialPSAGrade));
-    const psaResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json","x-client-secret":"022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",...(window._currentUser?{"Authorization":"Bearer "+(await window._currentUser.getIdToken())}:{})},body:JSON.stringify({images:compressed,grader:"PSA",cgcGrade:cgc.grade||"",cgcGraderNotes:slabDetected?formData.graderNotes||"":"",psaGraderNotes:slabDetected?formData.psaNotes||"":""})});
-    if(!psaResp.ok){const e=await psaResp.text();throw new Error("PSA error: "+e);}
-    const psa=await psaResp.json();
-    if(psa.error)throw new Error(psa.error);
-    await delay(180);
-    setStep('psa','done');
-    setStep('psa','done');
-
-    // RoboGrade — third pass, runs in parallel with result display
-    setStep('analyzing','running','Running RoboGrade...');
-    try{
-      const roboResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json","x-client-secret":"022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",...(window._currentUser?{"Authorization":"Bearer "+(await window._currentUser.getIdToken())}:{})},body:JSON.stringify({images:compressed,grader:"ROBO"})});
-      if(roboResp.ok){
-        const robo=await roboResp.json();
-        if(robo.roboGrade) cgc._roboGrade=robo.roboGrade;
+    // Convert Storage URLs to DataURLs before compressing for API
+    const dataUrls=await Promise.all(imgs.slice(0,4).map(async img=>{
+      if(img.startsWith('http')){
+        const resp=await fetch(img);
+        const blob=await resp.blob();
+        return new Promise(res=>{const r=new FileReader();r.onload=ev=>res(ev.target.result);r.readAsDataURL(blob);});
       }
-    }catch(e){ /* RoboGrade is non-blocking */ }
-    setStep('analyzing','done');
+      return img;
+    }));
+    const compressed=await Promise.all(dataUrls.map(img=>compressImage(img)));
+
+    // Unified single call — CGC + PSA + RoboGrade
+    const unifiedResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json","x-client-secret":"022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",...(window._currentUser?{"Authorization":"Bearer "+(await window._currentUser.getIdToken())}:{})},body:JSON.stringify({images:compressed,grader:"CGC",title:formData.title||"",issueNumber:formData.issue||"",issueDate:formData.issueDate||""})});
+    if(!unifiedResp.ok){const e=await unifiedResp.text();throw new Error("Assessment error: "+e);}
+    const unified=await unifiedResp.json();
+    if(unified.error)throw new Error(unified.error);
+    // Destructure — assess.js returns {cgc, psa, roboGrade, _diagnostics}
+    const cgc={...(unified.cgc||unified)};
+    const psa=unified.psa||{};
+    if(unified.roboGrade) cgc._roboGrade=unified.roboGrade;
+    const d=unified._diagnostics||cgc._diagnostics||{};
+    await animateStepsFromDiagnostics(d);
 
     _pendingAssessResult={cgc,psa};
     showResultPreview(cgc,psa);
