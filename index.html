@@ -996,7 +996,7 @@ function showAssessModal() {
   // Outer wrapper — sets the aspect ratio and clips everything
   const modal = document.createElement('div');
   modal.id = 'assess-modal';
-  modal.style.cssText = 'position:relative;width:min(calc(100vw - 32px),400px);aspect-ratio:960/1451;border-radius:12px;overflow:hidden;flex-shrink:0;background:#1d8478;';
+  modal.style.cssText = 'position:relative;width:min(calc(100vw - 32px),400px);aspect-ratio:960/1451;border-radius:12px;overflow:hidden;flex-shrink:0;';
 
   // LAYER 1 (bottom): colored step boxes — sit in the slots
   const stepDefs = [
@@ -1011,7 +1011,7 @@ function showAssessModal() {
   stepDefs.forEach(s => {
     const box = document.createElement('div');
     box.id = 'modal-box-' + s.id;
-    box.style.cssText = `position:absolute;left:${66/960*100}%;top:${s.y/1451*100}%;width:${828/960*100}%;height:${133/1451*100}%;background-size:100% 100%;background-repeat:no-repeat;z-index:1;`;
+    box.style.cssText = `position:absolute;left:${55/960*100}%;top:${s.y/1451*100}%;width:${850/960*100}%;height:${133/1451*100}%;background-size:100% 100%;background-repeat:no-repeat;z-index:1;`;
     box.style.backgroundImage = "url('" + ASSESS_DEFAULT_BOX + "')";
     modal.appendChild(box);
   });
@@ -1033,23 +1033,24 @@ function showAssessModal() {
   // LAYER 4: result panel — grades + PQ + complete button, above everything
   const resultDiv = document.createElement('div');
   resultDiv.id = 'assess-result-preview';
-  resultDiv.style.cssText = 'position:absolute;bottom:0;left:0;right:0;padding:12px 16px 16px;background:rgba(13,13,15,0.95);display:none;z-index:4;';
+  resultDiv.style.cssText = 'position:absolute;bottom:0;left:0;right:0;padding:14px 16px 0;background:rgba(13,13,15,0.96);display:none;z-index:4;';
   resultDiv.innerHTML = `
-    <div class="result-grades" id="result-grades" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:6px;"></div>
-    <div style="font-size:12px;color:#8a7a6a;text-align:center" id="result-pq"></div>
-    <div id="hg-upgrade-row" style="display:none;margin-top:10px;padding:10px;background:#1a2a1a;border-radius:8px;border:1px solid #3a6a3a">
+    <div id="result-grades" style="display:flex;gap:10px;justify-content:center;flex-wrap:nowrap;margin-bottom:10px;"></div>
+    <div id="result-pq" style="font-size:13px;color:#8a7a6a;text-align:center;margin-bottom:10px;"></div>
+    <div id="hg-upgrade-row" style="display:none;margin-bottom:10px;padding:10px;background:#1a2a1a;border-radius:8px;border:1px solid #3a6a3a">
       <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:0.05em;margin-bottom:6px">HIGH-GRADE TIER AVAILABLE</div>
       <div style="font-size:11px;color:#8a9a8a;margin-bottom:8px">This book graded at 8.0 or above. Add 4 corner macro photos for a more precise assessment.</div>
       <button id="hg-upgrade-btn" onclick="startHighGradeUpgrade()" style="width:100%;padding:10px;background:#2a5a2a;color:#80e080;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer">+ Add Corner Macros</button>
     </div>`;
   modal.appendChild(resultDiv);
 
+  // Complete button lives inside result div, appended by showResultPreview
   const completeBtn = document.createElement('button');
   completeBtn.id = 'assess-complete-btn';
   completeBtn.onclick = completeAssessment;
-  completeBtn.style.cssText = 'display:none;position:absolute;bottom:0;left:0;right:0;padding:14px;background:#c8a96e;color:#0d0d0f;border:none;font-size:15px;font-weight:700;cursor:pointer;z-index:5;';
+  completeBtn.style.cssText = 'display:none;width:100%;margin-top:10px;padding:16px;background:#c8a96e;color:#0d0d0f;border:none;font-size:16px;font-weight:700;cursor:pointer;border-radius:0;';
   completeBtn.textContent = 'Complete';
-  modal.appendChild(completeBtn);
+  resultDiv.appendChild(completeBtn);
 
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
@@ -1125,10 +1126,31 @@ function showResultPreview(cgc, psa) {
   const psaGrade = normalizeGrade(psa.grade || '');
   const pq = cgc.pageQuality ? normPageQuality(cgc.pageQuality) : '';
 
-  gradesEl.innerHTML = (cgcGrade ? buildBadge(cgcGrade, 'cgc-ai', '', true) : '') +
-                       (psaGrade ? buildBadge(psaGrade, 'psa-ai', '', true) : '');
+  // Build larger grade display for modal
+  const makeModalBadge = (grade, type) => {
+    if (!grade) return '';
+    const colors = {
+      'cgc-ai': {bg:'#2a5a8a', text:'#e0f0ff', label:'CGC AI'},
+      'psa-ai': {bg:'#8a2a2a', text:'#ffe0e0', label:'PSA AI'},
+    };
+    const c = colors[type] || {bg:'#3a3a3a', text:'#ffffff', label:type.toUpperCase()};
+    return `<div style="flex:1;max-width:120px;background:${c.bg};border-radius:8px;padding:10px 8px;text-align:center">
+      <div style="font-size:28px;font-weight:800;color:${c.text};line-height:1">${grade}</div>
+      <div style="font-size:10px;color:${c.text};opacity:0.7;margin-top:2px;letter-spacing:1px">${c.label}</div>
+    </div>`;
+  };
+  gradesEl.innerHTML = makeModalBadge(cgcGrade, 'cgc-ai') + makeModalBadge(psaGrade, 'psa-ai');
   if (pq) pqEl.innerHTML = buildPQBox(pq);
 
+  // Add RoboGrade badge if available
+  const roboGrade = window._pendingRoboGrade;
+  if (roboGrade && roboGrade.grade !== undefined) {
+    const roboScore = Math.round(typeof roboGrade.grade === 'number' ? roboGrade.grade : parseInt(roboGrade.grade) || 0);
+    gradesEl.innerHTML += `<div style="flex:1;max-width:120px;background:#0f1a05;border:1px solid #2a5a0a;border-radius:8px;padding:10px 8px;text-align:center">
+      <div style="font-size:28px;font-weight:800;color:#aaee30;line-height:1">${roboScore}</div>
+      <div style="font-size:10px;color:#7abf20;opacity:0.9;margin-top:2px;letter-spacing:1px">ROBOGRADE</div>
+    </div>`;
+  }
   preview.style.display = 'block';
   const btn = document.getElementById('assess-complete-btn');
   if (btn) btn.style.display = 'block';
@@ -1601,6 +1623,7 @@ async function assessGrade(){
     await animateStepsFromDiagnostics(d);
 
     _pendingAssessResult={cgc,psa};
+    window._pendingRoboGrade = cgc._roboGrade || null;
     showResultPreview(cgc,psa);
     onAssessmentSuccess();
   }catch(e){
