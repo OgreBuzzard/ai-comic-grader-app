@@ -2,10 +2,11 @@ import Stripe from 'stripe';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-// Credit packages — price IDs from Stripe dashboard
+// Credit packages — price IDs from Stripe dashboard (TEST MODE)
+// TODO: Replace with live mode price IDs before launch
 const PACKAGES = {
-  starter: { credits: 10,  priceId: 'price_1TM7iQAJVXkUtIkTC5KqZKVB' },  // $5.00 ($0.50 each)
-  pro:     { credits: 200, priceId: 'price_1TM7ufAJVXkUtIkTfj6oSAYz' },  // $50.00 ($0.25 each)
+  starter: { credits: 5,   priceId: 'price_1TM7iQAJVXkUtIkTC5KqZKVB' },  // $5.00 ($1.00 each)
+  pro:     { credits: 100, priceId: 'price_1TM7ufAJVXkUtIkTfj6oSAYz' },  // $50.00 ($0.50 each)
 };
 
 export default async function handler(req, res) {
