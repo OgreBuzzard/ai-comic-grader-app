@@ -526,6 +526,14 @@ function buildGradeRowHTML(c){
   if(c.assessedPSAGrade)badges.push(buildBadge(normalizeGrade(c.assessedPSAGrade),"psa-ai","",false));
   const gradeIsAiCgc=!c.assessedCGCGrade&&!!(c.myAssessment||c.aiAssessment)&&!!c.grade;
   if(c.grade&&!gradeIsAiCgc&&!c.cgcGrade&&!c.psaGrade&&!ac)badges.push(buildBadge(c.grade,"my","",false));
+  // RoboGrade badge
+  if(c.roboGrade&&c.roboGrade.score!=null){
+    const rgScore=Math.round(c.roboGrade.score);
+    badges.push(`<div style="background:#0f1a05;border:1px solid #2a5a0a;border-radius:8px;padding:6px 10px;text-align:center;min-width:52px">
+      <div style="font-size:18px;font-weight:800;color:#aaee30;line-height:1">${rgScore}</div>
+      <div style="font-size:8px;color:#7abf20;letter-spacing:1px;margin-top:1px">ROBOGRADE</div>
+    </div>`);
+  }
   if(badges.length===0)return"";
   return `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start">${badges.join("")}</div>`;
 }
@@ -1730,6 +1738,26 @@ function renderForm(){
       <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">
       <div style="display:flex;justify-content:center;margin-top:4px"><button id="assess-btn" class="btn btn-cgc" onclick="assessGrade()" ${(!formData.images||formData.images.filter(Boolean).length===0||assessing)?"disabled":""} style="width:75%;min-height:56px;border-radius:14px;background:${assessing?"#1a3a5c":_assessed?"#1a4a2a":"#2a4a6a"};color:${assessing?"#a8d0f0":_assessed?"#6abf6a":"#a8d0f0"}">${assessing?"Assessing…":_assessed?"Re-assess Grade":"Assess Grade"}</button></div>
       ${_assessed?`<div style="display:flex;justify-content:center;margin-top:8px"><button id="rc-upgrade-btn" onclick="startRestorationCheck()" style="width:75%;padding:10px;background:#5a2a8a;color:#d0a0f0;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer">Restoration Check</button></div>`:""}
+      ${_assessed?(()=>{
+        const acg=formData.assessedCGCGrade?normalizeGrade(formData.assessedCGCGrade):'';
+        const apsa=formData.assessedPSAGrade?normalizeGrade(formData.assessedPSAGrade):'';
+        const pq=formData.pageQuality?normPageQuality(formData.pageQuality):'';
+        const rg=formData.roboGrade;
+        const rgScore=rg&&rg.score!=null?Math.round(rg.score):null;
+        if(!acg&&!apsa&&!rgScore) return '';
+        return `<div style="margin-top:14px;padding:12px 14px;background:#141210;border:1px solid #2a2420;border-radius:10px;">
+          <div style="font-size:10px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase;margin-bottom:8px">Assessment Results</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;">
+            ${acg?buildBadge(acg,'cgc-ai','',false):''}
+            ${apsa?buildBadge(apsa,'psa-ai','',false):''}
+            ${rgScore!=null?`<div style="background:#0f1a05;border:1px solid #2a5a0a;border-radius:8px;padding:8px 12px;text-align:center;min-width:64px">
+              <div style="font-size:22px;font-weight:800;color:#aaee30;line-height:1">${rgScore}</div>
+              <div style="font-size:9px;color:#7abf20;letter-spacing:1px;margin-top:2px">ROBOGRADE</div>
+            </div>`:''}
+            ${pq?`<div style="margin-left:auto;align-self:center">${buildPQBox(pq)}</div>`:''}
+          </div>
+        </div>`;
+      })():''}
     </div>
     <div class="form-grid-2">
       ${tf("Title *","title","Series title")}
