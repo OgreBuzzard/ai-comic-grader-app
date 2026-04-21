@@ -991,7 +991,7 @@ const ASSESS_FRAMES = [
 function showAssessModal() {
   const overlay = document.createElement('div');
   overlay.id = 'assess-modal-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.75);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;gap:0;overflow-y:auto;';
 
   // Outer wrapper — sets the aspect ratio and clips everything
   const modal = document.createElement('div');
@@ -1000,18 +1000,18 @@ function showAssessModal() {
 
   // LAYER 1 (bottom): colored step boxes — sit in the slots
   const stepDefs = [
-    {id:'analyzing', y:217},
-    {id:'populating', y:384},
-    {id:'mint',       y:550},
-    {id:'pq',         y:721},
-    {id:'confirming', y:887},
-    {id:'psa',        y:1056},
-    {id:'known',      y:1225},
+    {id:'analyzing', top:14.955, height:9.097},
+    {id:'populating', top:26.465, height:9.235},
+    {id:'mint',       top:37.560, height:9.855},
+    {id:'pq',         top:49.690, height:9.442},
+    {id:'confirming', top:60.924, height:9.580},
+    {id:'psa',        top:72.502, height:9.717},
+    {id:'known',      top:84.218, height:9.649},
   ];
   stepDefs.forEach(s => {
     const box = document.createElement('div');
     box.id = 'modal-box-' + s.id;
-    box.style.cssText = `position:absolute;left:${55/960*100}%;top:${s.y/1451*100}%;width:${850/960*100}%;height:${133/1451*100}%;background-size:100% 100%;background-repeat:no-repeat;z-index:1;`;
+    box.style.cssText = `position:absolute;left:1.042%;top:${s.top}%;width:97.812%;height:${s.height}%;background-size:100% 100%;background-repeat:no-repeat;z-index:1;`;
     box.style.backgroundImage = "url('" + ASSESS_DEFAULT_BOX + "')";
     modal.appendChild(box);
   });
@@ -1033,7 +1033,7 @@ function showAssessModal() {
   // LAYER 4: result panel — grades + PQ + complete button, above everything
   const resultDiv = document.createElement('div');
   resultDiv.id = 'assess-result-preview';
-  resultDiv.style.cssText = 'position:absolute;bottom:0;left:0;right:0;padding:14px 16px 0;background:rgba(13,13,15,0.96);display:none;z-index:4;';
+  resultDiv.style.cssText = 'padding:14px 16px 0;background:#0d0d0f;border:1px solid #2a2a3a;border-radius:0 0 12px 12px;display:none;margin-top:-8px;';
   resultDiv.innerHTML = `
     <div id="result-grades" style="display:flex;gap:10px;justify-content:center;flex-wrap:nowrap;margin-bottom:10px;"></div>
     <div id="result-pq" style="font-size:13px;color:#8a7a6a;text-align:center;margin-bottom:10px;"></div>
@@ -1042,7 +1042,7 @@ function showAssessModal() {
       <div style="font-size:11px;color:#8a9a8a;margin-bottom:8px">This book graded at 8.0 or above. Add 4 corner macro photos for a more precise assessment.</div>
       <button id="hg-upgrade-btn" onclick="startHighGradeUpgrade()" style="width:100%;padding:10px;background:#2a5a2a;color:#80e080;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer">+ Add Corner Macros</button>
     </div>`;
-  modal.appendChild(resultDiv);
+  // resultDiv moved to resultsWrapper below modal
 
   // Complete button lives inside result div, appended by showResultPreview
   const completeBtn = document.createElement('button');
@@ -1052,8 +1052,18 @@ function showAssessModal() {
   completeBtn.textContent = 'Complete';
   resultDiv.appendChild(completeBtn);
 
+  // Results wrapper sits below the modal card
+  const resultsWrapper = document.createElement('div');
+  resultsWrapper.style.cssText = 'width:min(calc(100vw - 32px),400px);';
+  resultsWrapper.appendChild(resultDiv);
+  resultsWrapper.appendChild(completeBtn);
+
   overlay.appendChild(modal);
+  overlay.appendChild(resultsWrapper);
   document.body.appendChild(overlay);
+
+  // First step is running immediately
+  setStep('analyzing', 'running');
 
   // Start grid animation
   let frameIdx = 0;
@@ -1151,6 +1161,10 @@ function showResultPreview(cgc, psa) {
       <div style="font-size:10px;color:#7abf20;opacity:0.9;margin-top:2px;letter-spacing:1px">ROBOGRADE</div>
     </div>`;
   }
+  // Stop grid animation — assessment complete
+  if (window._modalFrameTimer) { clearInterval(window._modalFrameTimer); window._modalFrameTimer = null; }
+  const gridEl = document.getElementById('modal-grid-frame');
+  if (gridEl) gridEl.style.display = 'none';
   preview.style.display = 'block';
   const btn = document.getElementById('assess-complete-btn');
   if (btn) btn.style.display = 'block';
@@ -1707,7 +1721,6 @@ function renderForm(){
                 onclick="_tappedSlot=${i};document.getElementById('photo-input').click()">
                 <img src="${SLOT_GHOSTS[i]}" style="width:100%;height:auto;display:block;border-radius:4px;opacity:0.7;">
                 <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;">
-                  <span class="slot-label">${slotLabels[i]}</span>
                   <span style="font-size:20px;color:#6a5a4a">+</span>
                 </div>
                </div>`;
