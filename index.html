@@ -1720,8 +1720,9 @@ function renderForm(){
                 ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"
                 onclick="_tappedSlot=${i};document.getElementById('photo-input').click()">
                 <img src="${SLOT_GHOSTS[i]}" style="width:100%;height:auto;display:block;border-radius:4px;opacity:0.7;">
-                <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;">
-                  <span style="font-size:20px;color:#6a5a4a">+</span>
+                <div style="position:absolute;inset:0;pointer-events:none;">
+                  <span style="position:absolute;top:8px;left:10px;font-size:11px;font-weight:700;color:#000;letter-spacing:1px;text-transform:uppercase;background:rgba(255,255,255,0.75);padding:2px 6px;border-radius:3px;">${slotLabels[i]}</span>
+                  <span style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:20px;color:#6a5a4a">+</span>
                 </div>
                </div>`;
         }).join("")}
@@ -1790,9 +1791,9 @@ function renderForm(){
     </div>
     <div><label class="field-label">Label Notes</label><textarea rows="2" oninput="formData.cgcNotes=this.value">${esc(formData.cgcNotes||"")}</textarea></div>
     <div><label class="field-label">CGC Grader Notes</label><textarea rows="${formData.graderNotes?4:2}" style="font-style:italic" placeholder="Official CGC grader notes (manual entry)" oninput="formData.graderNotes=this.value">${esc(formData.graderNotes||"")}</textarea></div>
-    ${formData.aiGraderNotes?`<div><label class="field-label" style="color:#4a7a9a">AI Grader Notes</label><textarea rows="4" style="font-style:italic;border-color:#1a3a5c" oninput="formData.aiGraderNotes=this.value">${esc(formData.aiGraderNotes||"")}</textarea></div>`:""}
-    <div><label class="field-label">AI Assessment</label><textarea rows="${Math.max(4,Math.ceil((formData.aiAssessment||"").length/80))}" oninput="formData.aiAssessment=this.value" placeholder="Auto-filled by Assess Grade">${esc(formData.aiAssessment||"")}</textarea></div>
-    ${formData.psaNotes?`<div><label class="field-label" style="color:#e87a7a">PSA Notes</label><textarea rows="3" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes||"")}</textarea></div>`:""}
+    ${formData.aiGraderNotes?`<div><label class="field-label" style="color:#4a7a9a">AI Grader Notes</label><textarea rows="8" style="font-style:italic;border-color:#1a3a5c" oninput="formData.aiGraderNotes=this.value">${esc(formData.aiGraderNotes||"")}</textarea></div>`:""}
+    <div><label class="field-label">AI Assessment</label><textarea rows="${Math.max(12,Math.ceil((formData.aiAssessment||"").length/80))}" oninput="formData.aiAssessment=this.value" placeholder="Auto-filled by Assess Grade">${esc(formData.aiAssessment||"")}</textarea></div>
+    ${formData.psaNotes?`<div><label class="field-label" style="color:#e87a7a">PSA Notes</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes||"")}</textarea></div>`:""}
     ${formData.roboGrade?buildRoboGradeDisplay(formData.roboGrade):""}
     <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes||"")}</textarea></div>
     <div style="display:flex;gap:10px;padding-top:4px">
