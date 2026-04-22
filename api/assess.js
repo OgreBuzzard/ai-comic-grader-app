@@ -148,17 +148,10 @@ export default async function handler(req, res) {
   const photoCount   = images.length;
   const baseConf     = photoCount >= 4 ? 8 : photoCount === 3 ? 12 : 16;
 
-  // ── RoboGrade formula string (resolved now, embedded in prompt) ─────────────
-  let roboFormula;
-  if (!hasBackCover) {
-    roboFormula = 'RoboGrade = FrontCoverScore × 1.0 (no back cover photo provided)';
-  } else if (!hasPQPhoto && !cgcGrade) {
-    roboFormula = 'RoboGrade = (FrontCoverScore × 0.78) + (BackCoverScore × 0.22)  [PQ excluded — no photo, no graded reference]';
-  } else {
-    roboFormula = 'RoboGrade = (FrontCoverScore × 0.70) + (BackCoverScore × 0.20) + (PageQualityScore × 0.10)';
-  }
-  const backScoreDefault  = hasBackCover  ? '0.0'  : 'null';
-  const pqScoreDefault    = (hasPQPhoto || cgcGrade) ? '0' : 'null';
+  // ── RoboGrade formula (4-category, backwards from final score) ───────────────
+  // Score = (Front × 0.5) + (Back × 0.2) + (Spine × 0.2) + (Interior × 0.1)
+  // Spine includes inner corners at top and bottom of spine
+  const backScoreDefault = hasBackCover ? '0.0' : 'null';
 
   // ── Unified system prompt: one image pass, neutral first, three grades ───────
   const systemPrompt = `You are an expert comic book condition analyst. Examine the photos ONCE and record neutral observations, then derive three independent grades from those observations.
@@ -174,41 +167,35 @@ DEFECT INVENTORY — for every defect record:
 • Type (use official CGC terminology)
 • Location (which corner, edge, or area)
 • Measurement (use the ruler visible in photos for scale)
-• Coverage % (estimated % of total cover area affected)
+• Severity: High, Med, or Low
 • Whether any crease is color-breaking
+• Category: Front | Back | Spine | Interior
+  - Front: front cover surface and outer front corners
+  - Back: back cover surface and outer back corners
+  - Spine: spine surface, spine roll, spine stress lines, and inner corners at top/bottom of spine
+  - Interior: pages, staples, interior printing
 
 PAGE QUALITY:
 Assess from any interior photo. Cameras under artificial light make pages look more yellowed — assign ONE TIER HIGHER than what you see in the photo.
 Full designations only: White, Off-White to White, Off-White, Cream to Off-White, Cream, Light Tan to Cream, Light Tan, Tan, Brown, Brown/Brittle, Brittle.
 
-COVER SCORES for RoboGrade (0–100 each, calculated INDEPENDENTLY per cover):
-Start each cover at 100. Apply deductions:
-Deduction = Coverage% × Severity Multiplier
-• Missing piece/chip: 15× (hard ceilings: >1/4"→max 60, >1/2"→max 40, detached→0)
-• Tape: 10×
-• Color-breaking crease: 8–12× (8=minor, 10=moderate, 12=severe)
-• Staining: 4–6×
-• Non-CB crease: 3–5×
-• Spine stress lines: 2–4× (2=1–2 lines, 3=3–5, 4=6+ or CB)
-• Soiling/foxing: 1–2×
-• Color fading: 1–3×
-• Spine roll: 2–4× (raking light photo)
-• Surface creasing: 2–3× (raking light photo)
-Corner blunting (not coverage formula — use radius directly):
-  1/16" = −3 pts | 2/16" = −6 pts | 3/16" = −10 pts | 4/16"+ = −15 pts per corner.
-Front and back must be scored INDEPENDENTLY — they will almost never be identical on a used book.
-
-PQ score: White=100, OW/W=92, OW=82, C/OW=70, Cream=58, LT/C=45, LT=32, Tan=20, Brown=8, Brittle=0
+PQ score for interior component: White=100, OW/W=92, OW=82, C/OW=70, Cream=58, LT/C=45, LT=32, Tan=20, Brown=8, Brittle=0
 
 ════════════════════════════════════
 PHASE 2 — THREE GRADES FROM YOUR OBSERVATIONS
 ════════════════════════════════════
 
 ── ROBOGRADE (primary, AI-native) ──
-${roboFormula}
-Score rounded to one decimal. Confidence base: ±${baseConf}.
-Add +3 for glare/poor focus, +2 no raking light, +2 staples not visible, +4 restoration suspected.
-List every defect individually — one object per defect with coverage%, multiplier, and deduction. Sort by deduction descending.
+Formula: Score = (Front × 0.5) + (Back × 0.2) + (Spine × 0.2) + (Interior × 0.1)
+
+Step 1: Arrive at a holistic final score (0–100) based on your overall impression of the book's condition.
+Step 2: Assess the Interior score independently from the page quality (use PQ score above).
+Step 3: Determine which category has worse defects — Front or Back — and assign component scores accordingly.
+Step 4: Work backwards from your final score and Interior score to derive Front, Back, and Spine scores that satisfy the formula exactly.
+  Example: Score=56, Interior=70 → (Front×0.5)+(Back×0.2)+(Spine×0.2) = 56-(70×0.1) = 49
+  Then distribute 49 across Front×0.5, Back×0.2, Spine×0.2 based on relative severity of defects in each category.
+${!hasBackCover ? 'No back cover photo provided — set backScore to null, redistribute weights: Front×0.7, Spine×0.2, Interior×0.1.' : ''}
+Confidence base: ±${baseConf}. Adjust up if: glare/poor focus, no raking light photo, staples not visible, restoration suspected.
 
 ── CGC GRADE ──
 Apply CGC standards to your defect inventory from Phase 1.
@@ -258,17 +245,17 @@ RETURN ONLY THIS JSON — no markdown, no preamble
   "officialPSAGrade": null,
   "officialPSACert": null,
   "roboGrade": {
-    "version": "1.0",
-    "tier": "Standard",
+    "version": "2.0",
     "score": 0.0,
     "confidenceRange": ${baseConf},
-    "frontCoverScore": 0.0,
-    "backCoverScore": ${backScoreDefault},
-    "pageQualityScore": ${pqScoreDefault},
+    "frontScore": 0.0,
+    "backScore": ${backScoreDefault},
+    "spineScore": 0.0,
+    "interiorScore": 0,
     "pageQuality": "",
-    "frontDefects": [{"type":"","location":"","measurement":"","coverage":"","colorBreaking":false,"multiplier":0,"deduction":0.0}],
-    "backDefects": [],
-    "rakingLightDefects": [],
+    "defects": [
+      {"type":"","location":"","measurement":"","severity":"Med","colorBreaking":false,"category":"Front"}
+    ],
     "stapleCondition": "",
     "restorationFlags": [],
     "assessmentNotes": ""
