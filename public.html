@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>RoboGrade Assessment</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Display:ital,wdth,wght@0,62.5,900;0,75,700;0,100,400&family=Noto+Sans+Mono:wdth,wght@62.5,700;62.5,600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --ink:       #0d0f0a;
+    --paper:     #f0ede6;
+    --sage:      #d4d9be;
+    --olive:     #1a2208;
+    --olive-mid: #3a5010;
+    --olive-lt:  #6a8030;
+    --chartreuse:#b8d820;
+    --mid:       #6a7a5a;
+    --light:     #9aaa7a;
+    --rule:      #b0b89a;
+  }
+
+  html { background: var(--paper); color: var(--ink); }
+
+  body {
+    font-family: 'Noto Sans Display', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0 0 60px;
+  }
+
+  /* ── Header bar ── */
+  header {
+    width: 100%;
+    background: var(--olive);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .wordmark {
+    font-family: 'Noto Sans Display', sans-serif;
+    font-weight: 900;
+    font-stretch: condensed;
+    font-size: 18px;
+    color: var(--chartreuse);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .wordmark span {
+    color: var(--olive-lt);
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 3px;
+    display: block;
+    margin-top: -2px;
+  }
+
+  .disclaimer {
+    font-size: 10px;
+    color: var(--olive-lt);
+    letter-spacing: 0.5px;
+    text-align: right;
+    max-width: 240px;
+    line-height: 1.5;
+  }
+
+  /* ── Content wrapper ── */
+  .content {
+    width: 100%;
+    max-width: 680px;
+    padding: 0 16px;
+  }
+
+  /* ── Score hero ── */
+  .hero {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+    padding: 32px 0 24px;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 24px;
+  }
+
+  .score-box {
+    background: var(--olive);
+    border-radius: 18px;
+    width: 130px;
+    height: 130px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  .score-wordmark {
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--olive-lt);
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    position: absolute;
+    top: 10px;
+  }
+
+  .score-num {
+    font-family: 'Noto Sans Display', sans-serif;
+    font-weight: 900;
+    font-stretch: extra-condensed;
+    font-size: 72px;
+    color: var(--chartreuse);
+    line-height: 1;
+  }
+
+  .score-prec {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--olive-lt);
+    position: absolute;
+    bottom: 10px;
+    letter-spacing: 1px;
+  }
+
+  .hero-info {
+    flex: 1;
+    padding-top: 4px;
+  }
+
+  .book-title {
+    font-family: 'Noto Sans Display', sans-serif;
+    font-weight: 900;
+    font-stretch: condensed;
+    font-size: 28px;
+    color: var(--ink);
+    line-height: 1.1;
+    margin-bottom: 4px;
+  }
+
+  .book-issue {
+    font-size: 16px;
+    font-weight: 700;
+    color: #444;
+    margin-bottom: 2px;
+  }
+
+  .book-printing {
+    font-size: 13px;
+    color: var(--mid);
+    margin-bottom: 12px;
+  }
+
+  .meta-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 3px 10px;
+    align-items: baseline;
+  }
+
+  .meta-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--light);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .meta-value {
+    font-family: 'Noto Sans Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink);
+    letter-spacing: 1px;
+  }
+
+  .pq-badge {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 3px 10px;
+    background: #e8e4d8;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--mid);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  /* ── Section headers ── */
+  .section-header {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--light);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  /* ── Defect breakdown ── */
+  .breakdown {
+    margin-bottom: 32px;
+  }
+
+  .score-formula {
+    background: var(--sage);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    font-size: 13px;
+    color: var(--mid);
+    line-height: 1.6;
+  }
+
+  .score-formula strong {
+    color: var(--olive);
+  }
+
+  .score-formula .formula-result {
+    font-family: 'Noto Sans Mono', monospace;
+    font-weight: 700;
+    color: var(--olive);
+    font-size: 14px;
+  }
+
+  .component-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 8px 0;
+    border-bottom: 1px solid #e8e4d8;
+    gap: 12px;
+  }
+
+  .component-row:last-child { border-bottom: none; }
+
+  .component-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink);
+    min-width: 120px;
+  }
+
+  .component-score {
+    font-family: 'Noto Sans Mono', monospace;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--olive);
+  }
+
+  .defect-list {
+    margin-top: 4px;
+    padding-left: 0;
+    list-style: none;
+  }
+
+  .defect-item {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 8px;
+    align-items: baseline;
+    padding: 5px 0;
+    border-bottom: 1px solid #eceae4;
+    font-size: 12px;
+  }
+
+  .defect-item:last-child { border-bottom: none; }
+
+  .defect-type { color: #444; }
+  .defect-location { color: var(--mid); font-size: 11px; }
+  .defect-mult { color: var(--light); font-size: 11px; font-family: 'Noto Sans Mono', monospace; }
+  .defect-ded {
+    font-family: 'Noto Sans Mono', monospace;
+    font-weight: 700;
+    color: #c84a4a;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .no-defects {
+    font-size: 13px;
+    color: var(--light);
+    font-style: italic;
+    padding: 8px 0;
+  }
+
+  /* ── Images ── */
+  .images-section {
+    margin-bottom: 32px;
+  }
+
+  .image-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .image-grid img {
+    width: 100%;
+    border-radius: 6px;
+    display: block;
+    background: var(--sage);
+    object-fit: cover;
+    aspect-ratio: 3/4;
+  }
+
+  .image-grid img:first-child {
+    grid-column: 1 / -1;
+    aspect-ratio: 3/4;
+  }
+
+  /* ── States ── */
+  .state {
+    text-align: center;
+    padding: 80px 24px;
+    color: var(--mid);
+  }
+
+  .state-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    display: block;
+  }
+
+  .state-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--ink);
+    margin-bottom: 8px;
+  }
+
+  .state-sub {
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  /* ── Footer ── */
+  footer {
+    width: 100%;
+    max-width: 680px;
+    padding: 24px 16px 0;
+    border-top: 1px solid var(--rule);
+    font-size: 11px;
+    color: var(--light);
+    line-height: 1.7;
+    text-align: center;
+  }
+
+  @media (max-width: 480px) {
+    .hero { flex-direction: column; align-items: flex-start; gap: 16px; }
+    .score-box { width: 110px; height: 110px; }
+    .score-num { font-size: 60px; }
+    .book-title { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wordmark">
+    RoboGrader
+    <span>AI COMIC ASSESSMENT</span>
+  </div>
+  <div class="disclaimer">Not affiliated with CGC, PSA,<br>or any official grading service.</div>
+</header>
+
+<div class="content">
+  <div id="app">
+    <div class="state">
+      <span class="state-icon">⬡</span>
+      <div class="state-title">Loading assessment…</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(async () => {
+  const app = document.getElementById('app');
+
+  // Extract ID from URL: /id/A3X7K2 or ?id=A3X7K2
+  const pathMatch = location.pathname.match(/\/id\/([0-9A-NP-Za-np-z]{6})$/i);
+  const id = pathMatch ? pathMatch[1].toUpperCase()
+            : new URLSearchParams(location.search).get('id')?.toUpperCase();
+
+  if (!id || !/^[0-9A-NP-Z]{6}$/.test(id)) {
+    app.innerHTML = `<div class="state">
+      <span class="state-icon">✕</span>
+      <div class="state-title">Invalid ID</div>
+      <div class="state-sub">The URL doesn't contain a valid RoboGrade assessment ID.</div>
+    </div>`;
+    return;
+  }
+
+  // Fetch from lookup API
+  let data;
+  try {
+    const resp = await fetch(`/api/lookup?id=${id}`);
+    if (resp.status === 404) throw { code: 404, msg: 'Assessment ID not found.' };
+    if (resp.status === 403) throw { code: 403, msg: 'This assessment is private.' };
+    if (!resp.ok) throw { code: resp.status, msg: 'Server error. Please try again.' };
+    data = await resp.json();
+  } catch (e) {
+    app.innerHTML = `<div class="state">
+      <span class="state-icon">${e.code === 404 ? '?' : e.code === 403 ? '🔒' : '⚠'}</span>
+      <div class="state-title">${e.code === 404 ? 'Not Found' : e.code === 403 ? 'Private' : 'Error'}</div>
+      <div class="state-sub">${e.msg || 'Something went wrong.'}</div>
+    </div>`;
+    return;
+  }
+
+  const rg = data.roboGrade || {};
+  const score = rg.score != null ? Math.round(rg.score) : '—';
+  const prec  = rg.confidenceRange ? `±${rg.confidenceRange}` : '';
+  const pq    = data.pageQuality || '';
+
+  // Format grade date in viewer's local timezone
+  let gradeDateStr = '—';
+  if (data.roboGradeDate) {
+    const d = new Date(data.roboGradeDate);
+    gradeDateStr = d.toLocaleDateString('en-US', {
+      month: '2-digit', day: '2-digit', year: 'numeric',
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+    });
+  }
+
+  // Update page title
+  document.title = `RoboGrade ${score} — ${data.title || ''} #${data.issue || ''}`;
+
+  // ── Defect rendering helpers ──────────────────────────────────
+  function renderDefects(defects, label) {
+    if (!defects || defects.length === 0) {
+      return `<div class="no-defects">No ${label.toLowerCase()} defects recorded.</div>`;
+    }
+    return `<ul class="defect-list">${defects.map(d => `
+      <li class="defect-item">
+        <div>
+          <div class="defect-type">${esc(d.type || '')}${d.colorBreaking ? ' <span style="color:#c84a4a;font-size:10px">CB</span>' : ''}</div>
+          <div class="defect-location">${esc(d.location || '')}${d.measurement ? ' · ' + esc(d.measurement) : ''}</div>
+        </div>
+        <span class="defect-mult">${d.multiplier ? d.multiplier + '×' : ''}</span>
+        <span class="defect-ded">${d.deduction != null ? '−' + d.deduction.toFixed(1) : ''}</span>
+      </li>`).join('')}</ul>`;
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ── Score formula ─────────────────────────────────────────────
+  const fcs  = rg.frontCoverScore  != null ? rg.frontCoverScore.toFixed(1)  : '—';
+  const bcs  = rg.backCoverScore   != null ? rg.backCoverScore.toFixed(1)   : '—';
+  const pqs  = rg.pageQualityScore != null ? rg.pageQualityScore            : '—';
+  const total = rg.score != null ? rg.score.toFixed(1) : '—';
+
+  const formulaHTML = (rg.frontCoverScore != null) ? `
+    <div class="score-formula">
+      <strong>Score formula:</strong><br>
+      (${fcs} × 0.70) + (${bcs} × 0.20) + (${pqs} × 0.10) =
+      <span class="formula-result">${total} / 100</span>
+    </div>` : '';
+
+  // ── Images ────────────────────────────────────────────────────
+  const imagesHTML = (data.images && data.images.length > 0) ? `
+    <div class="images-section">
+      <div class="section-header">Photos</div>
+      <div class="image-grid">
+        ${data.images.map((src, i) =>
+          `<img src="${esc(src)}" alt="Photo ${i+1}" loading="lazy">`
+        ).join('')}
+      </div>
+    </div>` : '';
+
+  // ── Staple + restoration ──────────────────────────────────────
+  const extrasHTML = [
+    rg.stapleCondition ? `<div style="margin-top:8px;font-size:12px;color:var(--mid)"><strong>Staples:</strong> ${esc(rg.stapleCondition)}</div>` : '',
+    rg.restorationFlags && rg.restorationFlags.length
+      ? `<div style="margin-top:6px;font-size:12px;color:#c84a4a"><strong>⚠ Restoration flags:</strong> ${rg.restorationFlags.map(esc).join(', ')}</div>` : ''
+  ].join('');
+
+  // ── Render ────────────────────────────────────────────────────
+  app.innerHTML = `
+    <div class="hero">
+      <div class="score-box">
+        <div class="score-wordmark">ROBOGRADE</div>
+        <div class="score-num">${score}</div>
+        ${prec ? `<div class="score-prec">${prec}</div>` : ''}
+      </div>
+      <div class="hero-info">
+        <div class="book-title">${esc(data.title || '—')}</div>
+        <div class="book-issue">#${esc(data.issue || '—')}${data.issueDate ? '  ·  ' + esc(data.issueDate) : ''}</div>
+        ${data.printing ? `<div class="book-printing">${esc(data.printing)}</div>` : ''}
+        ${pq ? `<div class="pq-badge">Pages: ${esc(pq)}</div>` : ''}
+        <div class="meta-grid" style="margin-top:12px">
+          <span class="meta-label">Graded</span><span class="meta-value">${gradeDateStr}</span>
+          <span class="meta-label">ID</span><span class="meta-value">${esc(data.roboGradeId || id)}</span>
+        </div>
+      </div>
+    </div>
+
+    ${imagesHTML}
+
+    <div class="breakdown">
+      <div class="section-header">Assessment Breakdown</div>
+      ${formulaHTML}
+
+      <div class="component-row">
+        <div>
+          <div class="component-label">Front Cover <span style="font-size:11px;color:var(--light);font-weight:400">× 0.70</span></div>
+          ${renderDefects(rg.frontDefects, 'front cover')}
+          ${rg.rakingLightDefects && rg.rakingLightDefects.length ? `<div style="margin-top:6px;font-size:11px;color:var(--light);font-weight:700;letter-spacing:1px">RAKING LIGHT</div>${renderDefects(rg.rakingLightDefects, 'raking light')}` : ''}
+          ${extrasHTML}
+        </div>
+        <div class="component-score">${fcs}</div>
+      </div>
+
+      <div class="component-row">
+        <div>
+          <div class="component-label">Back Cover <span style="font-size:11px;color:var(--light);font-weight:400">× 0.20</span></div>
+          ${renderDefects(rg.backDefects, 'back cover')}
+        </div>
+        <div class="component-score">${bcs}</div>
+      </div>
+
+      <div class="component-row">
+        <div>
+          <div class="component-label">Page Quality <span style="font-size:11px;color:var(--light);font-weight:400">× 0.10</span></div>
+          ${pq ? `<div style="font-size:12px;color:var(--mid);padding:5px 0">${esc(pq)}</div>` : ''}
+        </div>
+        <div class="component-score">${pqs}</div>
+      </div>
+
+      ${rg.assessmentNotes ? `<div style="margin-top:16px;font-size:13px;color:var(--mid);line-height:1.6;font-style:italic">${esc(rg.assessmentNotes)}</div>` : ''}
+    </div>
+  `;
+
+  // Footer
+  document.querySelector('.content').insertAdjacentHTML('beforeend', `
+    <footer>
+      RoboGrade is an AI-generated condition assessment produced by the Unerring RoboGrader.
+      It is not affiliated with CGC, PSA, or any official comic book grading service.
+      Grades reflect the condition of the book at the time of assessment.
+      Books may change condition over time — always verify with current photos.
+      <br><br>
+      <a href="/" style="color:var(--olive-lt);text-decoration:none">← Back to AI Comic Grader</a>
+    </footer>
+  `);
+
+})();
+</script>
+</body>
+</html>

@@ -8,6 +8,12 @@
     },
     "api/webhook.js": {
       "maxDuration": 30
+    },
+    "api/lookup.js": {
+      "maxDuration": 10
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/id/:id", "destination": "/public.html" }
+  ]
 }
