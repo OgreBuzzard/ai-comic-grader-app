@@ -313,14 +313,9 @@ RETURN ONLY THIS JSON — no markdown, no preamble
 
     const data = await response.json();
     const text = data.content[0].text.trim();
-    // Strip any markdown fencing and extract just the JSON object
     let clean = text.replace(/```json/gi, '').replace(/```/g, '').replace(/'''/g, '').trim();
-    // If there's still non-JSON preamble, find the first { and last }
-    const firstBrace = clean.indexOf('{');
-    const lastBrace = clean.lastIndexOf('}');
-    if (firstBrace > 0 || (firstBrace === 0 && lastBrace < clean.length - 1)) {
-      if (firstBrace !== -1 && lastBrace !== -1) clean = clean.slice(firstBrace, lastBrace + 1);
-    }
+    const _fb = clean.indexOf('{'), _lb = clean.lastIndexOf('}');
+    if (_fb !== -1 && _lb !== -1 && (_fb > 0 || _lb < clean.length - 1)) clean = clean.slice(_fb, _lb + 1);
 
     let parsed;
     try { parsed = JSON.parse(clean); }
