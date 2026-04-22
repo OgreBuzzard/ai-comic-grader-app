@@ -544,7 +544,7 @@ function buildGradeRowHTML(c){
   if(c.grade&&!gradeIsAiCgc&&!c.cgcGrade&&!c.psaGrade&&!ac)badges.push(buildBadge(c.grade,"my","",false));
   if(c.roboGrade&&c.roboGrade.score!=null){
     const rgScore=Math.round(c.roboGrade.score);
-    badges.push(`<div style="background:#0f1a05;border:1.5px solid #3a5a0a;border-radius:10px;width:56px;height:56px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0"><div style="font-size:20px;font-weight:900;color:#b8d820;line-height:1">${rgScore}</div><div style="font-size:8px;color:#7abf20;letter-spacing:1px;margin-top:2px">ROBOGRADE</div></div>`);
+    badges.push(`<div style="background:#0f1a05;border:1.5px solid #3a5a0a;border-radius:10px;width:64px;height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0"><div style="font-size:20px;font-weight:900;color:#b8d820;line-height:1">${rgScore}</div><div style="font-size:8px;color:#7abf20;letter-spacing:1px;margin-top:2px">ROBOGRADE</div></div>`);
   }
   if(badges.length===0)return"";
   return `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start">${badges.join("")}</div>`;
@@ -954,7 +954,7 @@ function showDetail(id){
 }
 
 function printLabel(id) {
-  const comic = window._comics ? window._comics.find(c => c.id === id) : null;
+  const comic = (window._comics || comics || []).find(c => c.id === id);
   if (!comic || !comic.roboGrade) return;
 
   const rg = comic.roboGrade;
@@ -1076,7 +1076,7 @@ async function togglePublicListing(id, val) {
     await fsSetDoc(ref, { publicListing: val }, { merge: true });
 
     // Also update the ids registry if this book has a roboGradeId
-    const comic = window._comics ? window._comics.find(c => c.id === id) : null;
+    const comic = (window._comics || comics || []).find(c => c.id === id);
     if (comic && comic.roboGradeId) {
       const idRef = fsDoc(window._db, 'robograde_ids', comic.roboGradeId);
       await fsSetDoc(idRef, { public: val }, { merge: true });
@@ -1326,7 +1326,7 @@ function showResultPreview(cgc, psa) {
     };
     const c = configs[type] || {bg:'#3a3a3a', text:'#ffffff', label:type.toUpperCase()};
     const border = c.border ? `border:${c.border};` : '';
-    return `<div style="width:80px;height:80px;${border}background:${c.bg};border-radius:8px;padding:8px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0">
+    return `<div style="width:80px;height:80px;${border}background:${c.bg};border-radius:10px;padding:8px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0">
       <div style="font-size:26px;font-weight:800;color:${c.text};line-height:1">${grade}</div>
       <div style="font-size:9px;color:${c.text};opacity:0.7;margin-top:3px;letter-spacing:1px">${c.label}</div>
     </div>`;
@@ -1848,12 +1848,12 @@ async function assessGrade(){
     const unified=await unifiedResp.json();
     if(unified.error)throw new Error(unified.error);
     const cgc={...(unified.cgc||unified)};
-    const psa=unified.psa||{};
-    // RoboGrade comes from assess.js server-side pass — no client-side fallback
+    // PSA grade lives directly on unified response in new architecture
+    const psa = unified.psa || (unified.psaGrade ? { grade: unified.psaGrade, psaNotes: unified.psaNotes || '' } : {});
+    // RoboGrade comes from assess.js server-side pass
     if(unified.roboGrade){
       cgc._roboGrade=unified.roboGrade;
     }
-    // PSA grade from server response if present
     if(unified.psaGrade) cgc._psaGrade=unified.psaGrade;
     const d=unified._diagnostics||cgc._diagnostics||{};
     await animateStepsFromDiagnostics(d);
@@ -1984,7 +1984,353 @@ function renderForm(){
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;">
         ${formData.assessedCGCGrade?buildBadge(normalizeGrade(formData.assessedCGCGrade),"cgc-ai","",false):""}
         ${formData.assessedPSAGrade?buildBadge(normalizeGrade(formData.assessedPSAGrade),"psa-ai","",false):""}
-        ${formData.roboGrade&&formData.roboGrade.score!=null?`<div style="background:#0f1a05;border:1.5px solid #3a5a0a;border-radius:10px;width:64px;height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0"><div style="font-size:22px;font-weight:900;color:#b8d820;line-height:1">${Math.round(formData.roboGrade.score)}</div><div style="font-size:8px;color:#7abf20;letter-spacing:1px;margin-top:2px">ROBOGRADE</div></div>`:""}
+        ${formData.roboGrade&&formData.roboGrade.score!=null?`<div style="background:#0f1a05;border:1.5px solid #3a5a0a;border-radius:10px;width:80px;height:80px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0"><div style="font-size:26px;font-weight:900;color:#b8d820;line-height:1">${Math.round(formData.roboGrade.score)}</div><div style="font-size:8px;color:#7abf20;letter-spacing:1px;margin-top:2px">ROBOGRADE</div></div>`:""}
+        ${formData.pageQuality?`<div style="margin-left:auto;align-self:center">${buildPQBox(formData.pageQuality)}</div>`:""}
+      </div>
+    </div>`:""}
+    ${(formData.assessmentHistory||[]).length>0?`<div style="margin-top:10px;padding:10px 14px;background:#100e0c;border:1px solid #1e1c1a;border-radius:8px;">
+      <div style="font-size:10px;letter-spacing:2px;color:#4a3a2a;text-transform:uppercase;margin-bottom:6px">Past Assessments</div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        ${(formData.assessmentHistory||[]).map((h,i)=>`<div style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap;opacity:0.65">
+          ${buildBadge(normalizeGrade(h.grade),"cgc-ai","",true)}
+          ${h.pageQuality?buildPQBox(h.pageQuality,"small"):""}
+          <button onclick="formData.assessmentHistory.splice(${i},1);renderForm()" style="margin-left:auto;flex-shrink:0;background:none;border:none;color:#9a6a6a;font-size:14px;cursor:pointer;padding:2px 4px;line-height:1">×</button>
+        </div>`).join("")}
+      </div>
+    </div>`:""}
+
+    ${df("Grading Date","slabbingDate")}
+    <div><label class="field-label">Seller</label>
+      <input value="${esc(formData.seller||"")}" list="seller-list" oninput="formData.seller=this.value;updateSellerList(this.value)" placeholder="Name / source" autocomplete="off">
+      <datalist id="seller-list">${getSellerSuggestions().map(s=>`<option value="${esc(s)}">`).join("")}</datalist>
+    </div>
+    ${df("Date Acquired","dateAcquired")}
+    <div class="cost-box">
+      <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>
+      <div class="form-grid-2">
+        ${mf("Purchase Price ($)","purchasePrice")}
+        ${mf("Taxes / Fees / Shipping ($)","taxesFeesShipping")}
+        ${mf("Grading / Pressing ($)","gradingCost")}
+        ${mf("CGC Return Shipping ($)","cgcShipping")}
+      </div>
+    </div>
+    <div class="form-grid-2">
+      ${mf("Fair Market Value ($)","fmv")}
+      ${df("FMV Date","fmvDate",true)}
+    </div>
+    <div>
+      <label class="field-label">Treatment Candidates</label>
+      <div style="display:flex;gap:10px">
+        ${treatBtn("press","Press")}
+        ${treatBtn("uv","UV")}
+        ${treatBtn("clean","Clean")}
+      </div>
+      <div style="font-size:10px;color:#9a8a7a;margin-top:4px">Tap to cycle: — → Y → N</div>
+    </div>
+    ${(formData.cgcGrade||formData.psaGrade||formData.cgcNotes)?`<div><label class="field-label">Label Notes</label><textarea rows="2" oninput="formData.cgcNotes=this.value">${esc(formData.cgcNotes||"")}</textarea></div>`:""}
+    ${(formData.cgcGrade||formData.graderNotes)?`<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes?4:2}" style="font-style:italic" placeholder="Official grader notes" oninput="formData.graderNotes=this.value">${esc(formData.graderNotes||"")}</textarea></div>`:""}
+    ${formData.aiGraderNotes?`<div><label class="field-label" style="color:#4a7a9a">AI Grader Notes</label><textarea rows="8" style="font-style:italic;border-color:#1a3a5c" oninput="formData.aiGraderNotes=this.value">${esc(formData.aiGraderNotes||"")}</textarea></div>`:""}
+    ${formData.aiAssessment?`<div><label class="field-label">AI Assessment</label><textarea rows="${Math.max(12,Math.ceil(formData.aiAssessment.length/80))}" oninput="formData.aiAssessment=this.value">${esc(formData.aiAssessment)}</textarea></div>`:""}
+    ${formData.psaNotes?`<div><label class="field-label" style="color:#e87a7a">PSA Notes</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes||"")}</textarea></div>`:""}
+    ${formData.roboGrade?buildRoboGradeDisplay(formData.roboGrade):""}
+    <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes||"")}</textarea></div>
+    <div style="display:flex;gap:10px;padding-top:4px">
+      <button class="btn btn-gold" onclick="submitForm()">${isEdit?"Save Changes":"Add to Collection"}</button>
+      <button class="btn btn-dark" onclick="cancelForm()">Cancel</button>
+    </div>
+  </div>`;
+
+  document.getElementById("main").innerHTML=html;
+}
+
+function renderImgPreview(){}
+
+function buildRoboGradeDisplay(rg) {
+  if (!rg) return '';
+
+  const score    = rg.score;
+  const scoreRounded = Math.round(score);
+
+  const OLIVE      = '#1a2208';
+  const CHARTREUSE = '#b8d820';
+  const OLIVE_LT   = '#6a8030';
+  const OLIVE_MID  = '#3a5010';
+  const LIGHT      = '#7a8a5a';
+  const RULE       = '#2a3a12';
+  const BG         = '#0f1a05';
+
+  // Severity color
+  function sevColor(s) {
+    if (!s) return LIGHT;
+    const u = s.toUpperCase();
+    if (u === 'HIGH') return '#e08080';
+    if (u === 'MED')  return '#e0b860';
+    return '#a8b888'; // LOW
+  }
+
+  // Group defects by category
+  const defects = rg.defects || [];
+  const cats = ['Front','Back','Spine','Interior'];
+  const byCat = {};
+  cats.forEach(c => byCat[c] = []);
+  defects.forEach(d => {
+    const cat = d.category || 'Front';
+    if (byCat[cat]) byCat[cat].push(d);
+    else byCat['Front'].push(d);
+  });
+
+  function defectList(arr) {
+    if (!arr.length) return `<div style="font-size:10px;color:${LIGHT};font-style:italic;padding:3px 0">None observed</div>`;
+    return arr.map(d => {
+      const cb  = d.colorBreaking ? ` <span style="color:#e05050;font-size:9px">CB</span>` : '';
+      const loc = d.location && d.location !== 'N/A' ? ` · ${d.location}` : '';
+      const meas = d.measurement && d.measurement !== 'N/A' ? ` · ${d.measurement.replace(/^~\s*/,'')}` : '';
+      const sev = d.severity || 'Low';
+      return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:3px 0;border-bottom:1px solid ${RULE};font-size:11px;gap:8px">
+        <span style="color:#c8d8a8">${d.type}${cb}<span style="color:${LIGHT};font-size:10px">${loc}${meas}</span></span>
+        <span style="color:${sevColor(sev)};font-weight:700;font-size:10px;white-space:nowrap;flex-shrink:0">${sev.toUpperCase()}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // Component scores
+  const fs  = rg.frontScore    != null ? Math.round(rg.frontScore)    : '—';
+  const bs  = rg.backScore     != null ? Math.round(rg.backScore)     : '—';
+  const ss  = rg.spineScore    != null ? Math.round(rg.spineScore)    : '—';
+  const ins = rg.interiorScore != null ? Math.round(rg.interiorScore) : '—';
+
+  // Category sections
+  function catSection(label, score, weight, defArr) {
+    return `<div style="margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <span style="font-size:10px;font-weight:700;color:${OLIVE_LT};letter-spacing:1px">${label} <span style="color:${LIGHT};font-weight:400">×${weight}</span></span>
+        <span style="font-size:16px;font-weight:800;color:${CHARTREUSE}">${score}</span>
+      </div>
+      ${defectList(defArr)}
+    </div>`;
+  }
+
+  const sectionsHTML = [
+    catSection('FRONT',    fs,  '0.5', byCat['Front']),
+    catSection('BACK',     bs,  '0.2', byCat['Back']),
+    catSection('SPINE',    ss,  '0.2', byCat['Spine']),
+    catSection('INTERIOR', ins, '0.1', byCat['Interior']),
+  ].join(`<div style="border-top:1px solid ${RULE};margin:6px 0"></div>`);
+
+  const extrasHTML = [
+    rg.stapleCondition ? `<div style="font-size:11px;color:${LIGHT};margin-top:6px"><strong style="color:#a8b888">Staples:</strong> ${rg.stapleCondition}</div>` : '',
+    rg.restorationFlags&&rg.restorationFlags.length ? `<div style="font-size:11px;color:#e05050;margin-top:4px">⚠ Restoration flags: ${rg.restorationFlags.join(', ')}</div>` : '',
+    rg.assessmentNotes ? `<div style="font-size:11px;color:${LIGHT};margin-top:6px;font-style:italic">${rg.assessmentNotes}</div>` : '',
+  ].filter(Boolean).join('');
+
+  return `<div style="background:${BG};border:1.5px solid ${OLIVE_MID};border-radius:12px;padding:14px;margin-bottom:8px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+      <div style="background:${OLIVE};border-radius:16px;width:88px;height:88px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;border:1.5px solid ${OLIVE_MID}">
+        <div style="font-size:8px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:2px">ROBOGRADE</div>
+        <div style="display:flex;align-items:flex-start;gap:2px">
+          <span style="font-size:42px;font-weight:900;color:${CHARTREUSE};line-height:1">${scoreRounded}</span>
+          <span style="font-size:13px;font-weight:700;color:${OLIVE_LT};margin-top:4px">±${rg.confidenceRange||8}</span>
+        </div>
+        <div style="font-size:7px;color:#2a4a10;margin-top:2px">V${rg.version||'2.0'}</div>
+      </div>
+      <div style="flex:1">
+        <div style="font-size:10px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:8px">CONDITION ASSESSMENT</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
+          <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
+            <div style="font-size:18px;font-weight:800;color:${CHARTREUSE}">${fs}</div>
+            <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px">FRONT ×0.5</div>
+          </div>
+          <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
+            <div style="font-size:18px;font-weight:800;color:${CHARTREUSE}">${bs}</div>
+            <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px">BACK ×0.2</div>
+          </div>
+          <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
+            <div style="font-size:18px;font-weight:800;color:${CHARTREUSE}">${ss}</div>
+            <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px">SPINE ×0.2</div>
+          </div>
+          <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
+            <div style="font-size:18px;font-weight:800;color:${CHARTREUSE}">${ins}</div>
+            <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px">INTERIOR ×0.1</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="border-top:1px solid ${RULE};padding-top:10px">
+      ${sectionsHTML}
+    </div>
+    ${extrasHTML}
+  </div>`;
+}
+
+}
+
+async function assessGrade(){
+  const imgs=(formData.images||[]).filter(Boolean);
+  if(imgs.length===0){alert("Add at least one photo first.");return;}
+  if(assessing)return;
+
+  // Check credits
+  if(window._userCredits !== undefined && window._userCredits <= 0){
+    if(confirm("You have no assessment credits remaining. Would you like to buy more?")){
+      showBuyCredits();
+    }
+    return;
+  }
+
+  assessing=true;
+  showAssessModal();
+  try{
+    const dataUrls=await Promise.all(imgs.slice(0,4).map(async img=>{
+      if(img.startsWith('http')){
+        const resp=await fetch(img);
+        const blob=await resp.blob();
+        return new Promise(res=>{const r=new FileReader();r.onload=ev=>res(ev.target.result);r.readAsDataURL(blob);});
+      }
+      return img;
+    }));
+    const compressed=await Promise.all(dataUrls.map(img=>compressImage(img)));
+    const unifiedResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json","x-client-secret":"022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",...(window._currentUser?{"Authorization":"Bearer "+(await window._currentUser.getIdToken())}:{})},body:JSON.stringify({images:compressed,grader:"CGC",title:formData.title||"",issueNumber:formData.issue||"",issueDate:formData.issueDate||""})});
+    if(!unifiedResp.ok){const e=await unifiedResp.text();throw new Error("Assessment error: "+e);}
+    const unified=await unifiedResp.json();
+    if(unified.error)throw new Error(unified.error);
+    const cgc={...(unified.cgc||unified)};
+    // PSA grade lives directly on unified response in new architecture
+    const psa = unified.psa || (unified.psaGrade ? { grade: unified.psaGrade, psaNotes: unified.psaNotes || '' } : {});
+    // RoboGrade comes from assess.js server-side pass
+    if(unified.roboGrade){
+      cgc._roboGrade=unified.roboGrade;
+    }
+    if(unified.psaGrade) cgc._psaGrade=unified.psaGrade;
+    const d=unified._diagnostics||cgc._diagnostics||{};
+    await animateStepsFromDiagnostics(d);
+    _pendingAssessResult={cgc,psa};
+    window._pendingRoboGrade=cgc._roboGrade||null;
+    showResultPreview(cgc,psa);
+    onAssessmentSuccess();
+  }catch(e){
+    dismissAssessModal(e.message);
+  }
+  assessing=false;
+}
+
+// Seller autocomplete
+let _sellerList = JSON.parse(localStorage.getItem("sellerList")||"[]");
+const SEED_SELLERS = ["Michael at Poteet's Pop Culture","Tyson at Amazing Heroes","eBay","ECCC","Front Row Card Show, Tacoma"];
+SEED_SELLERS.forEach(s=>{if(!_sellerList.includes(s))_sellerList.push(s);});
+
+function getSellerSuggestions(){return _sellerList.sort();}
+function updateSellerList(val){
+  if(val&&val.trim()&&!_sellerList.includes(val.trim())){
+    _sellerList.push(val.trim());
+    try{localStorage.setItem("sellerList",JSON.stringify(_sellerList));}catch(e){}
+  }
+}
+
+function setDateField(field,val,monthOnly){
+  if(!val){formData[field]="";return;}
+  // Store as YYYY-MM-DD (append -01 for month-only)
+  formData[field]=monthOnly?val:val;
+}
+
+const SLOT_GHOSTS=[
+  "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Front_Cover.jpg",
+  "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Back_Cover.jpg",
+  "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Page_Quality.jpg",
+  "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Raking_Light.jpg",
+];
+
+function renderForm(){
+  const isEdit=!!formData.id;
+  function tf(label,field,ph="",numeric=false){
+    const mode=numeric?` inputmode="decimal" pattern="[0-9.]*"`:"";
+    return`<div><label class="field-label">${label}</label><input value="${esc(formData[field]||"")}"${mode} oninput="formData['${field}']=this.value" placeholder="${ph}"></div>`;
+  }
+  function mf(label,field){
+    const val=formData[field]!=null&&formData[field]!==""?formData[field]:"";
+    return`<div><label class="field-label">${label}</label><div style="position:relative"><span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#8a7a6a;font-size:13px;pointer-events:none">$</span><input value="${esc(val)}" inputmode="decimal" pattern="[0-9.]*" oninput="formData['${field}']=this.value" placeholder="0.00" style="padding-left:22px"></div></div>`;
+  }
+  function df(label,field,monthOnly=false){
+    const val=formData[field]||"";
+    // Convert stored YYYY-MM-DD to input value; month-only fields use YYYY-MM
+    const inputVal=monthOnly?(val.length>=7?val.slice(0,7):val):(val.length>=10?val.slice(0,10):val);
+    const type=monthOnly?"month":"date";
+    return`<div><label class="field-label">${label}</label><input type="${type}" value="${esc(inputVal)}" onchange="setDateField('${field}',this.value,${monthOnly})"></div>`;
+  }
+  function treatBtn(key,label){
+    const v=formData[key];
+    const isDone=v==="done";
+    const bg=v===true?"#1a2a10":v===false?"#2a1a10":isDone?"#0a1a1a":"#1a1a1a";
+    const bc=v===true?"#4a7a20":v===false?"#5a2a10":isDone?"#1a4a4a":"#3a3a3a";
+    const col=v===true?"#8abf40":v===false?"#bf6040":isDone?"#40bfbf":"#6b6b6b";
+    const txt=v===true?"Y":v===false?"N":isDone?"✓":"—";
+    const cancelBtn=(v===true||v===false||isDone)?`<button onclick="cancelTreatment('${key}',event)" style="margin-left:6px;background:none;border:none;color:#9a6a6a;font-size:13px;cursor:pointer;padding:0;line-height:1" title="Remove recommendation">×</button>`:"";
+    return`<span style="display:inline-flex;align-items:center"><button class="treatment-btn" style="background:${bg};border-color:${bc};color:${col}" onclick="cycleTreatment('${key}')">${label}: ${txt}</button>${cancelBtn}</span>`;
+  }
+
+  let html=`<div class="sticky-back"><button class="btn-ghost" onclick="cancelForm()">← Back</button></div>
+  <h2 style="font-size:18px;margin:8px 0 20px;color:#c8a96e">${isEdit?"Edit Book":"Add Book"}</h2>
+  <div class="card" style="display:flex;flex-direction:column;gap:14px">
+    <div>
+      <label class="field-label">Photos <span style="color:#9a8a7a;font-size:10px;letter-spacing:1px">— up to 4, drag to reorder</span></label>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px">
+        ${[0,1,2,3].map(i=>{
+          const slotLabels=["Front Cover","Back Cover","Interior","Spine"];
+          const img=(formData.images||[])[i];
+          const style="";
+          return img
+            ? `<div class="drag-slot" style="${style}" draggable="true"
+                ondragstart="dragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"
+                onclick="_tappedSlot=${i};document.getElementById('photo-input').click()">
+                <img src="${img}">
+                <button class="slot-x" onclick="event.stopPropagation();removeImg(${i})">×</button>
+               </div>`
+            : `<div class="drag-slot" style="padding:0;background:none;"
+                ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"
+                onclick="_tappedSlot=${i};document.getElementById('photo-input').click()">
+                <img src="${SLOT_GHOSTS[i]}" style="width:100%;height:auto;display:block;border-radius:4px;opacity:0.7;">
+                <div style="position:absolute;inset:0;pointer-events:none;">
+                  <span style="position:absolute;top:8px;left:10px;font-size:11px;font-weight:700;color:#000;letter-spacing:1px;text-transform:uppercase;background:rgba(255,255,255,0.75);padding:2px 6px;border-radius:3px;">${slotLabels[i]}</span>
+                </div>
+               </div>`;
+        }).join("")}
+      </div>
+      <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">
+      <div style="display:flex;justify-content:center;margin-top:4px"><button id="assess-btn" class="btn btn-cgc" onclick="assessGrade()" ${(!formData.images||formData.images.filter(Boolean).length===0||assessing)?"disabled":""} style="width:75%;min-height:56px;border-radius:14px;background:${assessing?"#1a3a5c":_assessed?"#1a4a2a":"#2a4a6a"};color:${assessing?"#a8d0f0":_assessed?"#6abf6a":"#a8d0f0"}">${assessing?"Assessing…":_assessed?"Re-assess Grade":"Assess Grade"}</button></div>
+    </div>
+    <div class="form-grid-2">
+      ${tf("Title *","title","Series title")}
+      ${tf("Issue #","issue","Issue number",true)}
+      ${tf("Issue Date","issueDate","Cover date")}
+      ${tf("Publisher","publisher","Publisher")}
+    </div>
+    <details style="margin-bottom:4px"${formData.cgcGrade||formData.cgcCert||formData.psaGrade||formData.psaCert?" open":""}>
+      <summary style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#8a7a6a;cursor:pointer;user-select:none;padding:6px 0;list-style:none;display:flex;align-items:center;gap:6px"><span style="font-size:14px;color:#b0a090">▸</span>Official Grades</summary>
+      <div class="form-grid-2" style="margin-top:8px">
+        ${tf("CGC Grade","cgcGrade","e.g. 9.4",true)}
+        ${tf("CGC Cert #","cgcCert","Cert number")}
+      </div>
+      <div class="form-grid-2">
+        ${tf("PSA Grade","psaGrade","e.g. 9.4",true)}
+        ${tf("PSA Cert #","psaCert","Cert number")}
+      </div>
+    </details>
+    <div class="form-grid-2">
+      <div><label class="field-label">My Grade</label><select onchange="formData.grade=this.value">
+        <option value="">— select grade —</option>
+        ${GRADES.map(g=>`<option value="${g}"${formData.grade===g?" selected":""}>${g} — ${GRADE_LABELS[g]}</option>`).join("")}
+      </select></div>
+      <div><label class="field-label">Page Quality</label><select onchange="formData.pageQuality=this.value;renderForm()">
+        <option value="">— select pages —</option>
+        ${PAGE_QUALITIES.map(q=>`<option value="${q}"${formData.pageQuality===q?" selected":""}>${q}</option>`).join("")}
+      </select>
+      </div>
+    </div>
+    ${_assessed?`<div style="margin-top:14px;padding:12px 14px;background:#141210;border:1px solid #2a2420;border-radius:10px;">
+      <div style="font-size:10px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase;margin-bottom:8px">Assessment Results</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;">
+        ${formData.assessedCGCGrade?buildBadge(normalizeGrade(formData.assessedCGCGrade),"cgc-ai","",false):""}
+        ${formData.assessedPSAGrade?buildBadge(normalizeGrade(formData.assessedPSAGrade),"psa-ai","",false):""}
+        ${formData.roboGrade&&formData.roboGrade.score!=null?`<div style="background:#0f1a05;border:1.5px solid #3a5a0a;border-radius:10px;width:80px;height:80px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0"><div style="font-size:26px;font-weight:900;color:#b8d820;line-height:1">${Math.round(formData.roboGrade.score)}</div><div style="font-size:8px;color:#7abf20;letter-spacing:1px;margin-top:2px">ROBOGRADE</div></div>`:""}
         ${formData.pageQuality?`<div style="margin-left:auto;align-self:center">${buildPQBox(formData.pageQuality)}</div>`:""}
       </div>
     </div>`:""}
@@ -2070,15 +2416,26 @@ function buildRoboGradeDisplay(rg) {
 
   let defectRowsHTML;
   if (allDefects.length > 0) {
-    defectRowsHTML = allDefects.map(d => {
+    // Deduplicate: merge entries with identical type+location+deduction
+    const seen = new Map();
+    const deduped = [];
+    for (const d of allDefects) {
+      const key = (d.type||'') + '|' + (d.location||'') + '|' + (d.deduction||0);
+      if (!seen.has(key)) { seen.set(key, true); deduped.push(d); }
+    }
+    defectRowsHTML = deduped.map(d => {
       const cb = d.colorBreaking ? ` <span style="color:#e05050;font-size:9px">CB</span>` : '';
       const loc = d.location ? ` · <span style="color:${LIGHT}">${d.location}</span>` : '';
+      // Clean measurement: remove ~ prefix, skip N/A
+      const meas = d.measurement && d.measurement !== 'N/A' ? ' · ' + d.measurement.replace(/^~\s*/,'') : '';
+      const cov  = d.coverage  && d.coverage  !== 'N/A' ? ' · ' + d.coverage.replace(/^~\s*/,'')  : '';
+      const ded  = typeof d.deduction === 'number' ? Math.round(d.deduction) : d.deduction;
       return `<div style="display:grid;grid-template-columns:1fr auto;gap:8px;padding:5px 0;border-bottom:1px solid ${RULE};font-size:11px;align-items:baseline">
         <div>
           <span style="color:#c8d8a8">${d.type}${cb}</span>
-          <span style="color:${LIGHT};font-size:10px">${loc}${d.measurement ? ' · ' + d.measurement : ''}${d.coverage ? ' · ' + d.coverage : ''}</span>
+          <span style="color:${LIGHT};font-size:10px">${loc}${meas}${cov}</span>
         </div>
-        <span style="color:#e08080;font-weight:700;white-space:nowrap;font-family:monospace">−${typeof d.deduction === 'number' ? d.deduction.toFixed(1) : d.deduction}</span>
+        <span style="color:#e08080;font-weight:700;white-space:nowrap;font-family:monospace">−${ded}</span>
       </div>`;
     }).join('');
   } else if (rg.assessmentNotes) {
@@ -2120,7 +2477,7 @@ function buildRoboGradeDisplay(rg) {
         <div style="font-size:8px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;position:absolute;top:8px">ROBOGRADE</div>
         <div style="display:flex;align-items:flex-start;gap:2px">
           <span style="font-size:42px;font-weight:900;color:${CHARTREUSE};line-height:1">${scoreRounded}</span>
-          <span style="font-size:14px;font-weight:700;color:${OLIVE_LT};margin-top:4px">±${rg.confidenceRange||8}</span>
+          <span style="font-size:13px;font-weight:700;color:${OLIVE_LT};margin-top:4px">±${rg.confidenceRange||8}</span>
         </div>
         <div style="font-size:7px;color:#2a4a10;position:absolute;bottom:7px">V${rg.version||'1.0'}</div>
       </div>
