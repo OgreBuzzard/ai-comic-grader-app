@@ -1121,7 +1121,7 @@ const ASSESS_FRAMES = [
 function showAssessModal() {
   const overlay = document.createElement('div');
   overlay.id = 'assess-modal-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.75);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:40px;padding-left:16px;padding-right:16px;padding-bottom:16px;gap:0;overflow-y:auto;';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.75);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:40px;padding-left:16px;padding-right:16px;padding-bottom:16px;gap:0;overflow:hidden;';
 
   const modal = document.createElement('div');
   modal.id = 'assess-modal';
@@ -1140,7 +1140,13 @@ function showAssessModal() {
     const box = document.createElement('div');
     box.id = 'modal-box-' + s.id;
     box.style.cssText = `position:absolute;left:1.042%;top:${s.top}%;width:97.812%;height:${s.height}%;background-size:100% 100%;background-repeat:no-repeat;z-index:1;`;
-    box.style.backgroundImage = "url('" + ASSESS_DEFAULT_BOX + "')";
+    // Analyzing starts green (running); all others start as default
+    if (s.id === 'analyzing') {
+      box.style.backgroundImage = "url('" + ASSESS_SUCCESS_BOX + "')";
+      box.style.opacity = '0.65';
+    } else {
+      box.style.backgroundImage = "url('" + ASSESS_DEFAULT_BOX + "')";
+    }
     modal.appendChild(box);
   });
 
@@ -1285,6 +1291,13 @@ function showResultPreview(cgc, psa) {
   preview.style.display = 'block';
   const btn = document.getElementById('assess-complete-btn');
   if (btn) btn.style.display = 'block';
+  // Shrink modal so result preview and Complete button are always visible without scrolling
+  const modalEl = document.getElementById('assess-modal');
+  if (modalEl) {
+    modalEl.style.maxHeight = 'calc(100vh - 280px)';
+    modalEl.style.aspectRatio = 'unset';
+    modalEl.style.overflow = 'hidden';
+  }
 
   const cgcNum = parseFloat(cgcGrade) || 0;
   const psaNum = parseFloat(psaGrade) || 0;
@@ -1888,8 +1901,26 @@ function renderForm(){
       </select>
       </div>
     </div>
-    ${(formData.assessedCGCGrade||formData.assessedPSAGrade||formData.pageQuality)?`<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px">${formData.assessedCGCGrade?buildBadge(normalizeGrade(formData.assessedCGCGrade),"cgc-ai","",true):""}${formData.assessedPSAGrade?buildBadge(normalizeGrade(formData.assessedPSAGrade),"psa-ai","",true):""}${formData.pageQuality?buildPQBox(formData.pageQuality,"small"):""}</div>`:""}
-    ${(formData.assessmentHistory||[]).length>0?`<div style="margin-top:6px;display:flex;flex-direction:column;gap:4px">${(formData.assessmentHistory||[]).map((h,i)=>`<div style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap;opacity:0.65">${buildBadge(normalizeGrade(h.grade),"cgc-ai","",true)}${h.pageQuality?buildPQBox(h.pageQuality,"small"):""}<button onclick="formData.assessmentHistory.splice(${i},1);renderForm()" style="margin-left:auto;flex-shrink:0;background:none;border:none;color:#9a6a6a;font-size:14px;cursor:pointer;padding:2px 4px;line-height:1">×</button></div>`).join("")}</div>`:""}
+    ${_assessed?`<div style="margin-top:14px;padding:12px 14px;background:#141210;border:1px solid #2a2420;border-radius:10px;">
+      <div style="font-size:10px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase;margin-bottom:8px">Assessment Results</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;">
+        ${formData.assessedCGCGrade?buildBadge(normalizeGrade(formData.assessedCGCGrade),"cgc-ai","",false):""}
+        ${formData.assessedPSAGrade?buildBadge(normalizeGrade(formData.assessedPSAGrade),"psa-ai","",false):""}
+        ${formData.roboGrade&&formData.roboGrade.score!=null?`<div style="background:#0f1a05;border:1px solid #2a5a0a;border-radius:8px;padding:6px 10px;text-align:center;min-width:52px"><div style="font-size:18px;font-weight:800;color:#aaee30;line-height:1">${Math.round(formData.roboGrade.score)}</div><div style="font-size:8px;color:#7abf20;letter-spacing:1px;margin-top:1px">ROBOGRADE</div></div>`:""}
+        ${formData.pageQuality?`<div style="margin-left:auto;align-self:center">${buildPQBox(formData.pageQuality)}</div>`:""}
+      </div>
+    </div>`:""}
+    ${(formData.assessmentHistory||[]).length>0?`<div style="margin-top:10px;padding:10px 14px;background:#100e0c;border:1px solid #1e1c1a;border-radius:8px;">
+      <div style="font-size:10px;letter-spacing:2px;color:#4a3a2a;text-transform:uppercase;margin-bottom:6px">Past Assessments</div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        ${(formData.assessmentHistory||[]).map((h,i)=>`<div style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap;opacity:0.65">
+          ${buildBadge(normalizeGrade(h.grade),"cgc-ai","",true)}
+          ${h.pageQuality?buildPQBox(h.pageQuality,"small"):""}
+          <button onclick="formData.assessmentHistory.splice(${i},1);renderForm()" style="margin-left:auto;flex-shrink:0;background:none;border:none;color:#9a6a6a;font-size:14px;cursor:pointer;padding:2px 4px;line-height:1">×</button>
+        </div>`).join("")}
+      </div>
+    </div>`:""}
+
     ${df("Grading Date","slabbingDate")}
     <div><label class="field-label">Seller</label>
       <input value="${esc(formData.seller||"")}" list="seller-list" oninput="formData.seller=this.value;updateSellerList(this.value)" placeholder="Name / source" autocomplete="off">
@@ -1938,71 +1969,105 @@ function renderImgPreview(){}
 
 function buildRoboGradeDisplay(rg) {
   if (!rg) return '';
+
   const score = rg.score;
-  const scoreStr = score >= 80 ? score.toFixed(1) : Math.round(score).toString();
-  const scoreColor = score >= 80 ? '#4a9a4a' : score >= 60 ? '#4a6a9a' : score >= 40 ? '#9a7a2a' : '#9a3a3a';
-  
-  // Build defect list
-  const defectRows = (defects, label) => {
-    if (!defects || defects.length === 0) return '';
-    const rows = defects.map(d => {
-      const cb = d.colorBreaking === true ? ' <span style="color:#c84a4a;font-size:10px">[CB]</span>' : '';
-      return `<div style="display:flex;gap:6px;padding:3px 0;border-bottom:1px solid #2a2a3a;font-size:12px">
-        <span style="flex:2;color:#c0b8a8">${d.type}${cb}</span>
-        <span style="flex:2;color:#8a8a9a">${d.location}</span>
-        <span style="flex:1;color:#8a8a9a;text-align:center">${d.measurement}</span>
-        <span style="flex:0 0 40px;color:#c84a4a;text-align:right">−${d.deduction}</span>
-      </div>`;
-    }).join('');
-    return `<div style="margin-top:6px">
-      <div style="font-size:10px;letter-spacing:1px;color:#6a6a8a;text-transform:uppercase;margin-bottom:4px">${label}</div>
-      <div style="display:flex;gap:6px;padding:2px 0;font-size:10px;color:#5a5a7a;border-bottom:1px solid #3a3a4a">
-        <span style="flex:2">Defect</span><span style="flex:2">Location</span>
-        <span style="flex:1;text-align:center">Measurement</span>
-        <span style="flex:0 0 40px;text-align:right">Pts</span>
-      </div>
-      ${rows}
+  const scoreRounded = Math.round(score);
+
+  // Label-matching color palette
+  const OLIVE      = '#1a2208';
+  const CHARTREUSE = '#b8d820';
+  const OLIVE_LT   = '#6a8030';
+  const OLIVE_MID  = '#3a5010';
+  const LIGHT      = '#7a8a5a';
+  const RULE       = '#2a3a12';
+  const BG         = '#0f1a05';
+
+  // All defects combined and sorted by deduction descending
+  const allDefects = [
+    ...(rg.frontDefects   || []).map(d => ({...d, surface: 'Front'})),
+    ...(rg.rakingLightDefects || []).map(d => ({...d, surface: 'Front (raking)'})),
+    ...(rg.backDefects    || []).map(d => ({...d, surface: 'Back'})),
+  ].filter(d => d.deduction > 0)
+   .sort((a,b) => b.deduction - a.deduction);
+
+  const defectRowsHTML = allDefects.length === 0
+    ? `<div style="font-size:11px;color:${LIGHT};font-style:italic;padding:6px 0">No defects recorded.</div>`
+    : allDefects.map(d => {
+        const cb = d.colorBreaking ? ` <span style="color:#e05050;font-size:9px">CB</span>` : '';
+        const loc = d.location ? ` · <span style="color:${LIGHT}">${d.location}</span>` : '';
+        return `<div style="display:grid;grid-template-columns:1fr auto;gap:8px;padding:4px 0;border-bottom:1px solid ${RULE};font-size:11px;align-items:baseline">
+          <div>
+            <span style="color:#c8d8a8">${d.type}${cb}</span>
+            <span style="color:${LIGHT};font-size:10px">${loc}${d.measurement ? ' · ' + d.measurement : ''}${d.coverage ? ' · ' + d.coverage : ''}</span>
+          </div>
+          <span style="color:#e08080;font-weight:700;white-space:nowrap;font-family:monospace">−${typeof d.deduction === 'number' ? d.deduction.toFixed(1) : d.deduction}</span>
+        </div>`;
+      }).join('');
+
+  // Component scores
+  const fcs = rg.frontCoverScore != null ? rg.frontCoverScore.toFixed(1) : '—';
+  const bcs = rg.backCoverScore  != null ? rg.backCoverScore.toFixed(1)  : '—';
+  const pqs = rg.pageQualityScore != null ? rg.pageQualityScore : null;
+
+  // Formula line
+  let formulaHTML = '';
+  if (rg.frontCoverScore != null) {
+    const parts = [`(${fcs} × 0.70)`];
+    if (rg.backCoverScore != null)  parts.push(`(${bcs} × 0.20)`);
+    if (pqs != null)                parts.push(`(${pqs} × 0.10)`);
+    formulaHTML = `<div style="margin-top:10px;padding:8px 10px;background:${OLIVE};border-radius:6px;font-size:11px;color:${OLIVE_LT};line-height:1.7;font-family:monospace">
+      ${parts.join(' + ')} = <span style="color:${CHARTREUSE};font-weight:700">${score.toFixed(1)}</span>
+      ${rg.stapleCondition ? `<br><span style="color:${LIGHT}">Staples: </span>${rg.stapleCondition}` : ''}
+      ${rg.restorationFlags&&rg.restorationFlags.length ? `<br><span style="color:#e05050">⚠ Restoration: </span>${rg.restorationFlags.join(', ')}` : ''}
     </div>`;
-  };
+  }
 
-  const cf = rg.colorFading || {};
-  const fadingRows = [
-    cf.front && cf.front.severity !== 'none' ? `<div style="display:flex;gap:6px;padding:3px 0;border-bottom:1px solid #2a2a3a;font-size:12px"><span style="flex:2;color:#c0b8a8">Color fading</span><span style="flex:2;color:#8a8a9a">Front cover</span><span style="flex:1;color:#8a8a9a;text-align:center">${cf.front.severity}</span><span style="flex:0 0 40px;color:#c84a4a;text-align:right">−${cf.front.deduction}</span></div>` : '',
-    cf.back && cf.back.severity !== 'none' ? `<div style="display:flex;gap:6px;padding:3px 0;border-bottom:1px solid #2a2a3a;font-size:12px"><span style="flex:2;color:#c0b8a8">Color fading</span><span style="flex:2;color:#8a8a9a">Back cover</span><span style="flex:1;color:#8a8a9a;text-align:center">${cf.back.severity}</span><span style="flex:0 0 40px;color:#c84a4a;text-align:right">−${cf.back.deduction}</span></div>` : '',
-  ].filter(Boolean).join('');
+  // Component boxes — only show back if present
+  const backBox = rg.backCoverScore != null ? `
+    <div style="flex:1;background:${OLIVE};border-radius:8px;padding:8px;text-align:center">
+      <div style="font-size:20px;font-weight:800;color:${CHARTREUSE}">${bcs}</div>
+      <div style="font-size:9px;color:${OLIVE_LT};letter-spacing:1px;margin-top:2px">BACK ×0.20</div>
+    </div>` : '';
 
-  return `<div style="background:#0d0d1a;border:1.5px solid #2a2a5a;border-radius:12px;padding:14px;margin-bottom:8px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-      <div>
-        <div style="font-size:10px;letter-spacing:2px;color:#5a5a9a;text-transform:uppercase">RoboGrade v${rg.version}</div>
-        <div style="font-size:11px;color:#5a5a9a;margin-top:2px">${rg.tier} tier · ±${rg.confidenceRange}${rg.pageQuality ? ' · PQ: ' + rg.pageQuality : ''}</div>
+  const pqBox = pqs != null ? `
+    <div style="flex:1;background:${OLIVE};border-radius:8px;padding:8px;text-align:center">
+      <div style="font-size:20px;font-weight:800;color:${CHARTREUSE}">${pqs}</div>
+      <div style="font-size:9px;color:${OLIVE_LT};letter-spacing:1px;margin-top:2px">PAGES ×0.10</div>
+    </div>` : '';
+
+  return `<div style="background:${BG};border:1.5px solid ${OLIVE_MID};border-radius:12px;padding:14px;margin-bottom:8px">
+    <!-- Header row: score box left, wordmark right -->
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+      <div style="background:${OLIVE};border-radius:12px;width:80px;height:80px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative">
+        <div style="font-size:8px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;position:absolute;top:8px">ROBOGRADE</div>
+        <div style="display:flex;align-items:flex-start;gap:2px">
+          <span style="font-size:42px;font-weight:900;color:${CHARTREUSE};line-height:1">${scoreRounded}</span>
+          <span style="font-size:14px;font-weight:700;color:${OLIVE_LT};margin-top:4px">±${rg.confidenceRange||8}</span>
+        </div>
+        <div style="font-size:7px;color:#2a4a10;position:absolute;bottom:7px">V${rg.version||'1.0'}</div>
       </div>
-      <div style="text-align:right">
-        <div style="font-size:36px;font-weight:700;line-height:1;color:${scoreColor}">${scoreStr}</div>
-        <div style="font-size:10px;color:#5a5a9a">/ 100</div>
+      <div style="flex:1">
+        <div style="font-size:10px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">${rg.tier||''} Tier Assessment</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <div style="flex:1;background:${OLIVE};border-radius:8px;padding:8px;text-align:center">
+            <div style="font-size:20px;font-weight:800;color:${CHARTREUSE}">${fcs}</div>
+            <div style="font-size:9px;color:${OLIVE_LT};letter-spacing:1px;margin-top:2px">FRONT ×0.70</div>
+          </div>
+          ${backBox}
+          ${pqBox}
+        </div>
       </div>
     </div>
-    <div style="display:flex;gap:10px;margin-bottom:10px">
-      <div style="flex:1;background:#1a1a2a;border-radius:8px;padding:8px;text-align:center">
-        <div style="font-size:18px;font-weight:700;color:#6a6ab0">${rg.frontCoverScore >= 80 ? rg.frontCoverScore.toFixed(1) : Math.round(rg.frontCoverScore)}</div>
-        <div style="font-size:10px;color:#5a5a9a">Front (×0.80)</div>
-      </div>
-      <div style="flex:1;background:#1a1a2a;border-radius:8px;padding:8px;text-align:center">
-        <div style="font-size:18px;font-weight:700;color:#6a6ab0">${rg.backCoverScore >= 80 ? rg.backCoverScore.toFixed(1) : Math.round(rg.backCoverScore)}</div>
-        <div style="font-size:10px;color:#5a5a9a">Back (×0.20)</div>
-      </div>
+
+    <!-- Defects -->
+    <div style="border-top:1px solid ${RULE};padding-top:10px">
+      <div style="font-size:9px;font-weight:700;color:${LIGHT};letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">Defects</div>
+      ${defectRowsHTML}
     </div>
-    ${defectRows(rg.frontDefects, 'Front Cover Defects')}
-    ${defectRows(rg.backDefects, 'Back Cover Defects')}
-    ${fadingRows ? `<div style="margin-top:6px"><div style="font-size:10px;letter-spacing:1px;color:#6a6a8a;text-transform:uppercase;margin-bottom:4px">Color Fading</div>${fadingRows}</div>` : ''}
-    ${(rg.frontCoverScore != null && rg.backCoverScore != null) ? `<div style="margin-top:8px;padding:8px;background:#0a0a12;border-radius:6px;font-size:10px;color:#5a5a7a;line-height:1.6">
-      <span style="color:#4a4a8a">Score: </span>(${rg.frontCoverScore.toFixed(1)} × 0.70) + (${rg.backCoverScore.toFixed(1)} × 0.20) + (${rg.pageQualityScore||0} × 0.10) = <span style="color:#aaee30;font-weight:700">${rg.score.toFixed(1)}</span>
-      ${rg.stapleCondition ? `<br><span style="color:#4a4a8a">Staples: </span>${rg.stapleCondition}` : ''}
-      ${rg.restorationFlags && rg.restorationFlags.length ? `<br><span style="color:#c84a4a">⚠ Restoration flags: </span>${rg.restorationFlags.join(', ')}` : ''}
-    </div>` : ''}
+
+    ${formulaHTML}
   </div>`;
 }
-
 
 
 async function assessPSA(){
