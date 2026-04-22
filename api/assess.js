@@ -286,7 +286,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
       },
       body: JSON.stringify({
         model: 'claude-opus-4-6',
-        max_tokens: 1024,
+        max_tokens: 4096,
         system: systemPrompt,
         messages: [{
           role: 'user',
