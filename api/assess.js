@@ -313,7 +313,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
 
     const data = await response.json();
     const text = data.content[0].text.trim();
-    const clean = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+    const clean = text.replace(/```json/gi, '').replace(/```/g, '').trim();
 
     let parsed;
     try { parsed = JSON.parse(clean); }
