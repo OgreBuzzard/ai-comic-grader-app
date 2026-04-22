@@ -353,9 +353,12 @@ RETURN ONLY THIS JSON — no markdown, no preamble
           if (refResp.ok) {
             const refData = await refResp.json();
             const refText = refData.content?.map(b => b.text || '').join('') || '';
-            const refClean = refText.replace(/```json|```/g, '').trim();
-            const refParsed = JSON.parse(refClean);
-            if (refParsed.grade) {
+            let refClean = refText.replace(/```json/gi, '').replace(/```/g, '').replace(/'''/g, '').trim();
+            const _rfb = refClean.indexOf('{'), _rlb = refClean.lastIndexOf('}');
+            if (_rfb !== -1 && _rlb !== -1) refClean = refClean.slice(_rfb, _rlb + 1);
+            let refParsed;
+            try { refParsed = JSON.parse(refClean); } catch(e) { refParsed = null; }
+            if (refParsed && refParsed.grade) {
               if (!String(refParsed.grade).includes('.')) refParsed.grade = parseFloat(refParsed.grade).toFixed(1);
               const _sRobo = parsed.roboGrade;
               const _sPsa  = parsed.psaGrade;
