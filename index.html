@@ -544,7 +544,7 @@ function buildGradeRowHTML(c){
   if(c.grade&&!gradeIsAiCgc&&!c.cgcGrade&&!c.psaGrade&&!ac)badges.push(buildBadge(c.grade,"my","",false));
   if(c.roboGrade&&c.roboGrade.score!=null){
     const rgScore=Math.round(c.roboGrade.score);
-    badges.push(`<div style="background:#0f1a05;border:1px solid #2a5a0a;border-radius:8px;padding:6px 10px;text-align:center;min-width:52px"><div style="font-size:18px;font-weight:800;color:#aaee30;line-height:1">${rgScore}</div><div style="font-size:8px;color:#7abf20;letter-spacing:1px;margin-top:1px">ROBOGRADE</div></div>`);
+    badges.push(`<div style="background:#0f1a05;border:1.5px solid #3a5a0a;border-radius:10px;width:56px;height:56px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0"><div style="font-size:20px;font-weight:900;color:#b8d820;line-height:1">${rgScore}</div><div style="font-size:8px;color:#7abf20;letter-spacing:1px;margin-top:2px">ROBOGRADE</div></div>`);
   }
   if(badges.length===0)return"";
   return `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start">${badges.join("")}</div>`;
@@ -1121,7 +1121,7 @@ const ASSESS_FRAMES = [
 function showAssessModal() {
   const overlay = document.createElement('div');
   overlay.id = 'assess-modal-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.75);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:40px;padding-left:16px;padding-right:16px;padding-bottom:16px;gap:0;overflow:hidden;';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.75);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:40px;padding-left:16px;padding-right:16px;padding-bottom:16px;gap:0;overflow-y:auto;';
 
   const modal = document.createElement('div');
   modal.id = 'assess-modal';
@@ -1142,8 +1142,9 @@ function showAssessModal() {
     box.style.cssText = `position:absolute;left:1.042%;top:${s.top}%;width:97.812%;height:${s.height}%;background-size:100% 100%;background-repeat:no-repeat;z-index:1;`;
     // Analyzing starts green (running); all others start as default
     if (s.id === 'analyzing') {
-      box.style.backgroundImage = "url('" + ASSESS_SUCCESS_BOX + "')";
-      box.style.opacity = '0.65';
+      box.style.backgroundImage = 'none';
+      box.style.background = 'rgba(120,180,60,0.55)';
+      box.style.borderRadius = '8px';
     } else {
       box.style.backgroundImage = "url('" + ASSESS_DEFAULT_BOX + "')";
     }
@@ -1199,15 +1200,18 @@ function setStep(id, state, detail='') {
   const box = document.getElementById('modal-box-' + id);
   if (!box) return;
   if (state === 'done') {
+    box.style.background = '';
     box.style.backgroundImage = "url('" + ASSESS_SUCCESS_BOX + "')";
+    box.style.backgroundSize = '100% 100%';
     box.style.opacity = '1';
   } else if (state === 'failed') {
     box.style.backgroundImage = "url('" + ASSESS_FAILURE_BOX + "')";
   } else if (state === 'skipped') {
     box.style.opacity = '0.45';
   } else if (state === 'running') {
-    box.style.backgroundImage = "url('" + ASSESS_SUCCESS_BOX + "')";
-    box.style.opacity = '0.65';
+    box.style.backgroundImage = 'none';
+    box.style.background = 'rgba(120,180,60,0.55)';
+    box.style.borderRadius = '8px';
   }
 }
 
@@ -1291,12 +1295,11 @@ function showResultPreview(cgc, psa) {
   preview.style.display = 'block';
   const btn = document.getElementById('assess-complete-btn');
   if (btn) btn.style.display = 'block';
-  // Shrink modal so result preview and Complete button are always visible without scrolling
-  const modalEl = document.getElementById('assess-modal');
-  if (modalEl) {
-    modalEl.style.maxHeight = 'calc(100vh - 280px)';
-    modalEl.style.aspectRatio = 'unset';
-    modalEl.style.overflow = 'hidden';
+  // Scroll overlay to show result — modal stays full size, no distortion
+  const overlayEl = document.getElementById('assess-modal-overlay');
+  if (overlayEl) {
+    overlayEl.style.overflowY = 'auto';
+    setTimeout(() => overlayEl.scrollTo({top: overlayEl.scrollHeight, behavior: 'smooth'}), 80);
   }
 
   const cgcNum = parseFloat(cgcGrade) || 0;
@@ -1769,14 +1772,12 @@ async function assessGrade(){
     if(unified.error)throw new Error(unified.error);
     const cgc={...(unified.cgc||unified)};
     const psa=unified.psa||{};
-    // Build RoboGrade from assess.js response (roboGrade key) or derive from CGC grade
+    // RoboGrade comes from assess.js server-side pass — no client-side fallback
     if(unified.roboGrade){
       cgc._roboGrade=unified.roboGrade;
-    } else if(cgc.grade){
-      const cgcNum=parseFloat(cgc.grade)||0;
-      const roboScore=Math.round(((cgcNum-0.5)/9.5)*100);
-      cgc._roboGrade={score:roboScore,version:'1.0',tier:cgcNum>=9.0?'High':cgcNum>=7.0?'Mid':'Low',confidenceRange:8,pageQuality:cgc.pageQuality||'',assessmentNotes:'',frontDefects:[],backDefects:[],frontCoverScore:roboScore,backCoverScore:roboScore,pageQualityScore:82,colorFading:{}};
     }
+    // PSA grade from server response if present
+    if(unified.psaGrade) cgc._psaGrade=unified.psaGrade;
     const d=unified._diagnostics||cgc._diagnostics||{};
     await animateStepsFromDiagnostics(d);
     _pendingAssessResult={cgc,psa};
@@ -1906,7 +1907,7 @@ function renderForm(){
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;">
         ${formData.assessedCGCGrade?buildBadge(normalizeGrade(formData.assessedCGCGrade),"cgc-ai","",false):""}
         ${formData.assessedPSAGrade?buildBadge(normalizeGrade(formData.assessedPSAGrade),"psa-ai","",false):""}
-        ${formData.roboGrade&&formData.roboGrade.score!=null?`<div style="background:#0f1a05;border:1px solid #2a5a0a;border-radius:8px;padding:6px 10px;text-align:center;min-width:52px"><div style="font-size:18px;font-weight:800;color:#aaee30;line-height:1">${Math.round(formData.roboGrade.score)}</div><div style="font-size:8px;color:#7abf20;letter-spacing:1px;margin-top:1px">ROBOGRADE</div></div>`:""}
+        ${formData.roboGrade&&formData.roboGrade.score!=null?`<div style="background:#0f1a05;border:1.5px solid #3a5a0a;border-radius:10px;width:64px;height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0"><div style="font-size:22px;font-weight:900;color:#b8d820;line-height:1">${Math.round(formData.roboGrade.score)}</div><div style="font-size:8px;color:#7abf20;letter-spacing:1px;margin-top:2px">ROBOGRADE</div></div>`:""}
         ${formData.pageQuality?`<div style="margin-left:auto;align-self:center">${buildPQBox(formData.pageQuality)}</div>`:""}
       </div>
     </div>`:""}
@@ -1990,37 +1991,37 @@ function buildRoboGradeDisplay(rg) {
   ].filter(d => d.deduction > 0)
    .sort((a,b) => b.deduction - a.deduction);
 
-  const defectRowsHTML = allDefects.length === 0
-    ? `<div style="font-size:11px;color:${LIGHT};font-style:italic;padding:6px 0">No defects recorded.</div>`
-    : allDefects.map(d => {
-        const cb = d.colorBreaking ? ` <span style="color:#e05050;font-size:9px">CB</span>` : '';
-        const loc = d.location ? ` · <span style="color:${LIGHT}">${d.location}</span>` : '';
-        return `<div style="display:grid;grid-template-columns:1fr auto;gap:8px;padding:4px 0;border-bottom:1px solid ${RULE};font-size:11px;align-items:baseline">
-          <div>
-            <span style="color:#c8d8a8">${d.type}${cb}</span>
-            <span style="color:${LIGHT};font-size:10px">${loc}${d.measurement ? ' · ' + d.measurement : ''}${d.coverage ? ' · ' + d.coverage : ''}</span>
-          </div>
-          <span style="color:#e08080;font-weight:700;white-space:nowrap;font-family:monospace">−${typeof d.deduction === 'number' ? d.deduction.toFixed(1) : d.deduction}</span>
-        </div>`;
-      }).join('');
+  let defectRowsHTML;
+  if (allDefects.length > 0) {
+    defectRowsHTML = allDefects.map(d => {
+      const cb = d.colorBreaking ? ` <span style="color:#e05050;font-size:9px">CB</span>` : '';
+      const loc = d.location ? ` · <span style="color:${LIGHT}">${d.location}</span>` : '';
+      return `<div style="display:grid;grid-template-columns:1fr auto;gap:8px;padding:5px 0;border-bottom:1px solid ${RULE};font-size:11px;align-items:baseline">
+        <div>
+          <span style="color:#c8d8a8">${d.type}${cb}</span>
+          <span style="color:${LIGHT};font-size:10px">${loc}${d.measurement ? ' · ' + d.measurement : ''}${d.coverage ? ' · ' + d.coverage : ''}</span>
+        </div>
+        <span style="color:#e08080;font-weight:700;white-space:nowrap;font-family:monospace">−${typeof d.deduction === 'number' ? d.deduction.toFixed(1) : d.deduction}</span>
+      </div>`;
+    }).join('');
+  } else if (rg.assessmentNotes) {
+    // No structured defects — show assessment notes as fallback
+    defectRowsHTML = `<div style="font-size:11px;color:${LIGHT};line-height:1.6;padding:4px 0">${rg.assessmentNotes}</div>`;
+  } else {
+    defectRowsHTML = `<div style="font-size:11px;color:${LIGHT};font-style:italic;padding:6px 0">No structured defect data — re-assess to generate breakdown.</div>`;
+  }
 
   // Component scores
   const fcs = rg.frontCoverScore != null ? rg.frontCoverScore.toFixed(1) : '—';
   const bcs = rg.backCoverScore  != null ? rg.backCoverScore.toFixed(1)  : '—';
   const pqs = rg.pageQualityScore != null ? rg.pageQualityScore : null;
 
-  // Formula line
-  let formulaHTML = '';
-  if (rg.frontCoverScore != null) {
-    const parts = [`(${fcs} × 0.70)`];
-    if (rg.backCoverScore != null)  parts.push(`(${bcs} × 0.20)`);
-    if (pqs != null)                parts.push(`(${pqs} × 0.10)`);
-    formulaHTML = `<div style="margin-top:10px;padding:8px 10px;background:${OLIVE};border-radius:6px;font-size:11px;color:${OLIVE_LT};line-height:1.7;font-family:monospace">
-      ${parts.join(' + ')} = <span style="color:${CHARTREUSE};font-weight:700">${score.toFixed(1)}</span>
-      ${rg.stapleCondition ? `<br><span style="color:${LIGHT}">Staples: </span>${rg.stapleCondition}` : ''}
-      ${rg.restorationFlags&&rg.restorationFlags.length ? `<br><span style="color:#e05050">⚠ Restoration: </span>${rg.restorationFlags.join(', ')}` : ''}
-    </div>`;
-  }
+  // Extras (staples, restoration) — no math formula
+  const extrasHTML2 = [
+    rg.stapleCondition ? `<div style="margin-top:8px;font-size:11px;color:${LIGHT}"><strong style="color:#a8b888">Staples:</strong> ${rg.stapleCondition}</div>` : '',
+    rg.restorationFlags&&rg.restorationFlags.length ? `<div style="margin-top:4px;font-size:11px;color:#e05050">⚠ Restoration flags: ${rg.restorationFlags.join(', ')}</div>` : '',
+  ].filter(Boolean).join('');
+  const formulaHTML = extrasHTML2 ? `<div style="margin-top:8px">${extrasHTML2}</div>` : '';
 
   // Component boxes — only show back if present
   const backBox = rg.backCoverScore != null ? `
@@ -2038,7 +2039,7 @@ function buildRoboGradeDisplay(rg) {
   return `<div style="background:${BG};border:1.5px solid ${OLIVE_MID};border-radius:12px;padding:14px;margin-bottom:8px">
     <!-- Header row: score box left, wordmark right -->
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-      <div style="background:${OLIVE};border-radius:12px;width:80px;height:80px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative">
+      <div style="background:${OLIVE};border-radius:16px;width:88px;height:88px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;border:1.5px solid ${OLIVE_MID}">
         <div style="font-size:8px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;position:absolute;top:8px">ROBOGRADE</div>
         <div style="display:flex;align-items:flex-start;gap:2px">
           <span style="font-size:42px;font-weight:900;color:${CHARTREUSE};line-height:1">${scoreRounded}</span>
@@ -2047,9 +2048,9 @@ function buildRoboGradeDisplay(rg) {
         <div style="font-size:7px;color:#2a4a10;position:absolute;bottom:7px">V${rg.version||'1.0'}</div>
       </div>
       <div style="flex:1">
-        <div style="font-size:10px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">${rg.tier||''} Tier Assessment</div>
+        <div style="font-size:10px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">Condition Assessment</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <div style="flex:1;background:${OLIVE};border-radius:8px;padding:8px;text-align:center">
+          <div style="flex:1;padding:8px;text-align:center">
             <div style="font-size:20px;font-weight:800;color:${CHARTREUSE}">${fcs}</div>
             <div style="font-size:9px;color:${OLIVE_LT};letter-spacing:1px;margin-top:2px">FRONT ×0.70</div>
           </div>
