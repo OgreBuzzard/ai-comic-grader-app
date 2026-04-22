@@ -78,7 +78,7 @@ export default async function handler(req, res) {
   }
   const notesBlock = notesContext.length > 0 ? '\n\n' + notesContext.join('\n\n') : '';
 
-  const isCGC = grader !== 'PSA';
+  const isCGC = true; // Unified prompt — PSA and RoboGrade derived within single pass
 
   // Fetch ComicVine cover reference image if title and issue are available
   let referenceImageBlock = null;
@@ -124,173 +124,157 @@ export default async function handler(req, res) {
 
 
 
-  const cgcPrompt = `You are a CGC comic book grading expert. Analyze the provided photos and return a JSON object.
+  // ── Census lookup ──────────────────────────────────────────────────────────
+  const _CENSUS = {"amazing spiderman_300":{"t":"Amazing Spider-Man","i":"300","n":40292,"avg":8.58,"p98":5.4,"p96":14.4,"p94":16.1,"phi":35.9},"spawn_1":{"t":"Spawn","i":"1","n":38159,"avg":9.55,"p98":48.8,"p96":24.2,"p94":11.7,"phi":85.0},"amazing spiderman_361":{"t":"Amazing Spider-Man","i":"361","n":33917,"avg":9.35,"p98":22.8,"p96":33.7,"p94":18.3,"phi":74.8},"new mutants_98":{"t":"New Mutants","i":"98","n":32416,"avg":9.09,"p98":17.1,"p96":26.0,"p94":17.4,"phi":60.6},"wolverine limited series_1":{"t":"Wolverine Limited Series","i":"1","n":32345,"avg":9.02,"p98":18.5,"p96":22.2,"p94":16.8,"phi":57.7},"uncanny xmen_266":{"t":"Uncanny X-Men","i":"266","n":28297,"avg":9.13,"p98":17.8,"p96":26.3,"p94":17.9,"phi":62.1},"amazing spiderman_252":{"t":"Amazing Spider-Man","i":"252","n":27182,"avg":8.86,"p98":8.7,"p96":19.0,"p94":18.4,"phi":46.1},"venom lethal protector_1":{"t":"Venom: Lethal Protector","i":"1","n":26104,"avg":9.54,"p98":53.0,"p96":21.1,"p94":10.5,"phi":84.8},"wolverine_1":{"t":"Wolverine","i":"1","n":23121,"avg":9.09,"p98":18.9,"p96":21.3,"p94":17.1,"phi":57.4},"star wars_1":{"t":"Star Wars","i":"1","n":22008,"avg":8.65,"p98":12.0,"p96":13.7,"p94":14.5,"phi":40.2},"amazing spiderman_129":{"t":"Amazing Spider-Man","i":"129","n":20025,"avg":6.88,"p98":1.1,"p96":3.1,"p94":5.0,"phi":9.3},"incredible hulk_181":{"t":"Incredible Hulk","i":"181","n":19707,"avg":6.53,"p98":0.9,"p96":2.2,"p94":3.3,"phi":6.5},"giantsize xmen_1":{"t":"Giant-Size X-Men","i":"1","n":15045,"avg":6.69,"p98":1.9,"p96":3.4,"p94":4.6,"phi":10.0},"amazing spiderman_238":{"t":"Amazing Spider-Man","i":"238","n":13978,"avg":8.67,"p98":7.0,"p96":16.1,"p94":14.8,"phi":38.0},"amazing spiderman_194":{"t":"Amazing Spider-Man","i":"194","n":13690,"avg":8.03,"p98":4.8,"p96":10.3,"p94":11.6,"phi":26.7},"fantastic four_48":{"t":"Fantastic Four","i":"48","n":10878,"avg":5.3,"p98":0.5,"p96":1.0,"p94":1.3,"phi":2.8},"amazing spiderman_1":{"t":"Amazing Spider-Man","i":"1","n":11651,"avg":6.96,"p98":40.4,"p96":8.3,"p94":2.7,"phi":51.4},"xmen_94":{"t":"X-Men","i":"94","n":11275,"avg":6.8,"p98":0.5,"p96":1.3,"p94":3.1,"phi":4.9},"amazing spiderman_50":{"t":"Amazing Spider-Man","i":"50","n":8704,"avg":5.46,"p98":0.1,"p96":0.2,"p94":0.7,"phi":1.0},"incredible hulk_180":{"t":"Incredible Hulk","i":"180","n":9791,"avg":6.74,"p98":0.9,"p96":2.2,"p94":3.8,"phi":6.9},"iron man_1":{"t":"Iron Man","i":"1","n":9740,"avg":6.18,"p98":0.5,"p96":1.1,"p94":2.2,"phi":3.8},"amazing spiderman_121":{"t":"Amazing Spider-Man","i":"121","n":9009,"avg":7.11,"p98":1.2,"p96":3.0,"p94":5.3,"phi":9.5},"xmen_101":{"t":"X-Men","i":"101","n":9391,"avg":7.68,"p98":2.8,"p96":6.0,"p94":8.7,"phi":17.5},"daredevil_1":{"t":"Daredevil","i":"1","n":7090,"avg":4.44,"p98":0.0,"p96":0.5,"p94":0.6,"phi":1.1},"fantastic four_52":{"t":"Fantastic Four","i":"52","n":8383,"avg":5.3,"p98":0.1,"p96":0.2,"p94":0.6,"phi":0.8},"amazing spiderman_122":{"t":"Amazing Spider-Man","i":"122","n":7654,"avg":7.3,"p98":1.6,"p96":3.3,"p94":6.9,"phi":11.7},"captain america_100":{"t":"Captain America","i":"100","n":6993,"avg":6.44,"p98":0.7,"p96":1.0,"p94":2.4,"phi":4.2},"avengers_57":{"t":"Avengers","i":"57","n":7051,"avg":6.46,"p98":0.3,"p96":0.9,"p94":2.1,"phi":3.2},"avengers_4":{"t":"Avengers","i":"4","n":5775,"avg":4.79,"p98":0.1,"p96":0.5,"p94":0.7,"phi":1.3},"avengers_1":{"t":"Avengers","i":"1","n":6023,"avg":3.81,"p98":0.0,"p96":0.1,"p94":0.2,"phi":0.3},"amazing fantasy_15":{"t":"Amazing Fantasy","i":"15","n":5744,"avg":5.06,"p98":6.8,"p96":9.1,"p94":5.5,"phi":21.4},"fantastic four_1":{"t":"Fantastic Four","i":"1","n":3203,"avg":3.33,"p98":0.0,"p96":0.1,"p94":0.1,"phi":0.2},"tales of suspense_39":{"t":"Tales of Suspense","i":"39","n":3050,"avg":4.11,"p98":0.0,"p96":0.2,"p94":0.7,"phi":0.9},"journey into mystery_83":{"t":"Journey Into Mystery","i":"83","n":2668,"avg":3.81,"p98":0.0,"p96":0.0,"p94":0.4,"phi":0.5},"amazing spiderman_33":{"t":"Amazing Spider-Man","i":"33","n":3432,"avg":6.75,"p98":1.7,"p96":3.9,"p94":4.9,"phi":10.4},"avengers_3":{"t":"Avengers","i":"3","n":2072,"avg":5.31,"p98":0.0,"p96":0.5,"p94":0.8,"phi":1.3},"amazing spiderman_64":{"t":"Amazing Spider-Man","i":"64","n":2789,"avg":7.95,"p98":3.4,"p96":7.6,"p94":10.5,"phi":21.5},"amazing spiderman_67":{"t":"Amazing Spider-Man","i":"67","n":2078,"avg":7.51,"p98":0.9,"p96":2.8,"p94":7.7,"phi":11.3}};
+  function _censusKey(t, i) {
+    return (t||'').toLowerCase().replace(/^the\s+/i,'').replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim()
+      + '_' + String(i||'').toLowerCase().trim();
+  }
+  function getCensusContext(t, i) {
+    const d = _CENSUS[_censusKey(t, i)];
+    if (!d) return '';
+    return `\n\nCGC CENSUS DATA FOR THIS BOOK (${d.t} #${d.i}):`
+      + `\nTotal CGC submissions: ${d.n.toLocaleString()} copies`
+      + `\nAverage CGC grade: ${d.avg}`
+      + `\nGrade distribution: 9.8=${d.p98}%, 9.6=${d.p96}%, 9.4=${d.p94}%, 9.4+=${d.phi}%`
+      + `\nCALIBRATION: Anchor your grade to this data. If ${d.phi}% of submissions grade 9.4+,`
+      + ` a high-grade copy is realistic. The average of ${d.avg} shows what most copies look like.`;
+  }
+  const censusContext = getCensusContext(title, issueNumber);
 
-STEP 1 — MANDATORY STRUCTURAL INSPECTION (do this before anything else):
-Examine every corner and every edge of the cover in the photos with maximum care. Look specifically for:
-- Any missing paper, chips, or pieces torn away from corners or edges
-- Any holes through the cover
-- Any tears that result in paper loss
+  // ── Photo availability ──────────────────────────────────────────────────────
+  const hasPQPhoto   = pageQualityImageBlock !== null;
+  const hasBackCover = images.length >= 2;
+  const photoCount   = images.length;
+  const baseConf     = photoCount >= 4 ? 8 : photoCount === 3 ? 12 : 16;
 
-If you see ANY missing piece or chip — even small — you MUST list it first in graderNotes with its location and approximate size. A missing corner piece of 1" is an extremely significant defect that places a hard ceiling on the grade. Do not let overall cover impression override what you can see at the corners. Check the lower right corner, lower left corner, upper right corner, and upper left corner individually and explicitly.
+  // ── RoboGrade formula string (resolved now, embedded in prompt) ─────────────
+  let roboFormula;
+  if (!hasBackCover) {
+    roboFormula = 'RoboGrade = FrontCoverScore × 1.0 (no back cover photo provided)';
+  } else if (!hasPQPhoto && !cgcGrade) {
+    roboFormula = 'RoboGrade = (FrontCoverScore × 0.78) + (BackCoverScore × 0.22)  [PQ excluded — no photo, no graded reference]';
+  } else {
+    roboFormula = 'RoboGrade = (FrontCoverScore × 0.70) + (BackCoverScore × 0.20) + (PageQualityScore × 0.10)';
+  }
+  const backScoreDefault  = hasBackCover  ? '0.0'  : 'null';
+  const pqScoreDefault    = (hasPQPhoto || cgcGrade) ? '0' : 'null';
 
-MISSING PIECE GRADE CEILINGS:
-- Small chip under 1/4": max ~9.0 depending on location
-- Moderate chip 1/4"–1/2": max ~8.0
-- Large chip or piece over 1/2": max ~5.0
-- Missing piece over 1": max ~3.0
-- Missing piece over 2": Incomplete designation
+  // ── Unified system prompt: one image pass, neutral first, three grades ───────
+  const systemPrompt = `You are an expert comic book condition analyst. Examine the photos ONCE and record neutral observations, then derive three independent grades from those observations.
 
-STEP 2 — Check if a CGC or PSA grading label/slab is visible in any photo. If so:
-- Read the grade, cert number, and page quality directly from the label
-- Read the CENTER of the label for special designations (Married Pages, pedigree collection names, restoration notes)
-- Read the RIGHT SIDE of the label for key issue notations (first appearances, deaths, new costumes, significant story events)
-- Skip the left side (creator credits — not needed)
+════════════════════════════════════
+PHASE 1 — NEUTRAL OBSERVATIONS
+════════════════════════════════════
 
-Return this JSON structure:
+STRUCTURAL CHECK (mandatory first):
+Examine every corner and every edge. Look for missing pieces, chips, tears, holes. Check all four corners individually and explicitly. If ANY missing piece or chip exists, note its location and approximate size first.
+
+DEFECT INVENTORY — for every defect record:
+• Type (use official CGC terminology)
+• Location (which corner, edge, or area)
+• Measurement (use the ruler visible in photos for scale)
+• Coverage % (estimated % of total cover area affected)
+• Whether any crease is color-breaking
+
+PAGE QUALITY:
+Assess from any interior photo. Cameras under artificial light make pages look more yellowed — assign ONE TIER HIGHER than what you see in the photo.
+Full designations only: White, Off-White to White, Off-White, Cream to Off-White, Cream, Light Tan to Cream, Light Tan, Tan, Brown, Brown/Brittle, Brittle.
+
+COVER SCORES for RoboGrade (0–100 each, calculated INDEPENDENTLY per cover):
+Start each cover at 100. Apply deductions:
+Deduction = Coverage% × Severity Multiplier
+• Missing piece/chip: 15× (hard ceilings: >1/4"→max 60, >1/2"→max 40, detached→0)
+• Tape: 10×
+• Color-breaking crease: 8–12× (8=minor, 10=moderate, 12=severe)
+• Staining: 4–6×
+• Non-CB crease: 3–5×
+• Spine stress lines: 2–4× (2=1–2 lines, 3=3–5, 4=6+ or CB)
+• Soiling/foxing: 1–2×
+• Color fading: 1–3×
+• Spine roll: 2–4× (raking light photo)
+• Surface creasing: 2–3× (raking light photo)
+Corner blunting (not coverage formula — use radius directly):
+  1/16" = −3 pts | 2/16" = −6 pts | 3/16" = −10 pts | 4/16"+ = −15 pts per corner.
+Front and back must be scored INDEPENDENTLY — they will almost never be identical on a used book.
+
+PQ score: White=100, OW/W=92, OW=82, C/OW=70, Cream=58, LT/C=45, LT=32, Tan=20, Brown=8, Brittle=0
+
+════════════════════════════════════
+PHASE 2 — THREE GRADES FROM YOUR OBSERVATIONS
+════════════════════════════════════
+
+── ROBOGRADE (primary, AI-native) ──
+${roboFormula}
+Score rounded to one decimal. Confidence base: ±${baseConf}.
+Add +3 for glare/poor focus, +2 no raking light, +2 staples not visible, +4 restoration suspected.
+List every defect individually — one object per defect with coverage%, multiplier, and deduction. Sort by deduction descending.
+
+── CGC GRADE ──
+Apply CGC standards to your defect inventory from Phase 1.
+Grade calibration:
+• Assign 9.0–9.6 for minor defects. Do not cap at 8.5 out of caution.
+• Strong eye appeal + flat spine + bright colors + sharp corners = high grade.
+• At high grades (8.5+), stress lines, bends, soiling, and printer tears become potentially grade-defining.
+• Missing piece ceilings: <1/4"→max ~9.0 | 1/4"–1/2"→max ~8.0 | >1/2"→max ~5.0 | >1"→max ~3.0
+• UV: white covers with tanning on unprinted areas only.
+• Press: spine roll=yes | edge fraying=no | corner creases=yes | tanning=no.
+Grader notes: one bullet per defect starting with •, official CGC terminology, always note CB vs non-CB.
+
+── PSA GRADE ──
+PSA has no published standard. Derive PSA from your CGC grade.
+PSA graders come from a card background and emphasize eye appeal holistically. Early market data suggests PSA runs slightly more generous than CGC on Silver/Bronze Age material — not universally.
+Start from your CGC grade. Adjust:
+  HIGHER when: strong eye appeal beyond defect list, Silver/Bronze Age with good overall presentation.
+  LOWER when: tape present (PSA always notes tape), accumulated small defects undermine eye appeal.
+  SAME when: defects are clearly enumerable and eye appeal matches technical grade.
+Do not invent defects not visible in photos. If same grade, psaNotes must be empty string.
+
+If a CGC or PSA label is visible: read grade, cert number, page quality, and key issue notations directly from it.
+${censusContext}${notesBlock}
+
+════════════════════════════════════
+RETURN ONLY THIS JSON — no markdown, no preamble
+════════════════════════════════════
 {
-  "title": "series title — strip any leading The",
-  "issue": "issue number e.g. 57 or A1 for annuals",
-  "issueDate": "cover date as printed e.g. 2/68",
+  "title": "series title, strip leading The",
+  "issue": "e.g. 57 or A1",
+  "issueDate": "cover date e.g. 2/68",
   "publisher": "publisher name",
-  "grade": "your AI CGC grade as string e.g. 7.0",
-  "pageQuality": "use FULL FORM ONLY — one of: White, Off-White to White, Off-White, Cream to Off-White, Cream, Light Tan to Off-White, Light Tan to Cream, Light Tan, Tan to Off-White, Tan to Cream, Tan, Dark Tan to Off-White, Dark Tan, Brown to Off-White, Brown to Tan, Brown, Brown/Brittle, Slightly Brittle, Brittle",
-  "graderNotes": "bullet-pointed defect list using official CGC terminology, one defect per line starting with •. Empty string if book is essentially perfect.",
-  "aiAssessment": "2-4 sentences. Lead with overall impression. Name dominant defects. State grade and rationale. Note press/UV/clean recommendations. If an existing CGC grade is visible on a label, compare your assessment to it and note whether a regrade might yield a different result.",
-  "labelNotes": "Key issue notations and special designations from the label's center and right side only. Examples: '1st app. Spider-Man', 'Death of Gwen Stacy', 'Part of the John Burke Collection', 'Married Pages'. Empty string if none or no label visible.",
-  "press": true/false/null,
-  "uv": true/false/null,
-  "clean": true/false/null,
+  "pageQuality": "full designation e.g. Off-White to White",
+  "grade": "CGC AI grade e.g. 7.0",
+  "graderNotes": "• one bullet per defect, official CGC terminology",
+  "aiAssessment": "2-4 sentences: overall impression, dominant defects, grade rationale, press/UV/clean recs",
+  "labelNotes": "key issue notations from label if visible, empty string if none",
+  "press": true,
+  "uv": false,
+  "clean": null,
   "labelDetected": false,
   "officialCGCGrade": null,
   "officialCGCCert": null,
-  "officialPageQuality": null
-}
-
-If a CGC label IS visible: set labelDetected=true, officialCGCGrade to the grade on the label, officialCGCCert to the cert number, officialPageQuality to the page quality on the label (full form, not abbreviated).
-
-PAGE QUALITY — CRITICAL CALIBRATION:
-Phone cameras under artificial light make pages look significantly more yellowed than they are in neutral light. Always assign ONE TIER HIGHER than what you see in the photo.
-- Photo looks "Cream to Off-White" → assign "Off-White"
-- Photo looks "Off-White" → assign "Off-White to White"
-- Only assign "Cream to Off-White" if tanning is heavy, brown, and completely unambiguous
-- "Off-White" is the Silver Age baseline. "Off-White to White" is common for Bronze Age.
-- NEVER use abbreviations. Always write the full designation.
-
-GRADE CALIBRATION:
-- Assign 9.0–9.6 when defects are minor. Do not cap at 8.5 out of caution.
-- Strong eye appeal, flat spine, bright colors, sharp corners = high grade.
-- Challenge existing CGC grades when evidence warrants.
-- Your grade in the "grade" field MUST match the grade you state in aiAssessment. They must be identical.
-
-GRADER NOTES FORMAT:
-- One bullet per defect, each on its own line starting with •
-- ALWAYS check for missing pieces, chips, or tears first — these are structural defects with hard grade ceilings and must be listed first if present
-- A missing corner or edge piece of 1/4" or more must be noted explicitly as "Missing piece" or "Chip out" with location and approximate size
-- Use official CGC terminology. Always note whether stress lines are color-breaking or not.
-- Omit if book is essentially perfect (9.8+)
-
-MISSING PIECE / CHIP OUT GRADE CEILINGS (CGC):
-- Small chip (under 1/4"): caps around 9.0–9.4 depending on location
-- Moderate chip (1/4"–1/2"): caps around 8.0–8.5
-- Large chip or missing piece (over 1/2"): caps around 4.0–6.0
-- Very large missing piece (over 1"): caps around 2.0–4.0
-These ceilings apply regardless of other defects — a book cannot grade above its structural damage.
-
-UV: only for white covers with tanning on unprinted areas. Ink-protection mask available.
-Press: spine roll=yes, edge fraying=no, corner creases=yes, tanning=no.
-
-INDEX OF DEFECTS — GRADE IMPACT REFERENCE:
-DEFECT IMPACT BY GRADE RANGE (from CGC Index of Defects):
-Key: [minimal = little/no impact] [moderate = impact based on severity] [significant = common/major impact]
-
-Defect               | Minimal (little/no impact) | Moderate (severity-dependent) | Significant (common/major)
----------------------|---------------------------|-------------------------------|---------------------------
-Distribution ink     | 0.5–6.5                   | 7.0–8.0                       | 8.5–9.9
-Stress lines         | 0.5–6.5                   | 7.0–8.5                       | 9.0–10.0
-Bend                 | 0.5–7.5                   | 8.0–9.8                       | 9.9–10.0
-Stamp                | 0.5–7.5                   | 8.0–9.2                       | 9.4–10.0
-Printer tear         | 0.5–7.5                   | 8.0–9.2                       | 9.4–10.0
-Soiling              | 0.5–6.5                   | 7.0–8.5                       | 9.0–10.0
-Bindery chip         | 0.5–6.5                   | 7.0–8.5                       | 9.0–10.0
-Bindery tear         | 0.5–6.5                   | 7.0–8.5                       | 9.0–10.0
-Crease               | 0.5–2.5                   | 3.0–4.0 / 5.5–8.0             | 4.5–5.0 / 8.5–10.0
-Stain                | 0.5–1.5                   | 1.8–3.5                       | 4.0–10.0
-Printer hole         | 0.5–6.5                   | 7.0–8.5                       | 9.0–10.0
-Rust stains          | 0.5–5.5                   | 6.0–8.0                       | 8.5–10.0
-Erasure mark         | 0.5–5.5                   | 6.0–8.0                       | 8.5–10.0
-Marvel tears         | 0.5–5.5                   | 6.0–8.0                       | 8.5–10.0
-Shadow               | 0.5–5.5                   | 6.0–8.0                       | 8.5–10.0
-Fingerprints         | 0.5–4.5                   | 5.0–7.0                       | 7.5–10.0
-Staple rust          | 0.5–4.5                   | 5.0–7.0                       | 7.5–10.0
-Staple tears         | 0.5–4.5                   | 5.0–7.0                       | 7.5–10.0
-Foxing               | 0.5–4.5                   | 5.0–7.0                       | 7.5–10.0
-Tanning              | 0.5–4.5                   | 5.0–7.0                       | 7.5–10.0
-Writing              | 0.5–4.5                   | 5.0–7.0                       | 7.5–10.0
-Tear                 | 0.5–2.0                   | 2.5–4.0 / 5.5–6.0             | 4.5–5.0 / 6.5–10.0
-Missing piece (cover)| 0.5 only                  | 1.0–1.5                       | 1.8–9.6 (always severe)
-Fade                 | 0.5–3.5                   | 4.0–6.5                       | 7.0–10.0
-Marvel chipping      | 0.5–3.5                   | 4.0–7.0                       | 7.5–10.0
-Spine roll           | 0.5–3.5                   | 4.0–6.0                       | 6.5–10.0
-Tape stain           | 0.5–3.5                   | 4.0–6.0                       | 6.5–10.0
-Spine split          | 0.5–1.0                   | 1.5–2.5                       | 3.0–9.9
-Sticker              | 0.5–4.5                   | 5.0–7.5                       | 8.0–10.0
-Name written on cover| 0.5–3.5                   | 4.0–6.5                       | 7.0–10.0
-Staple detached      | 0.5–3.5                   | 4.0–6.0                       | 6.5–9.9
-Tape                 | 0.5–2.5                   | 3.0–5.0                       | 5.5–9.9
-Staple holes         | 0.5–3.5                   | 4.0–6.5                       | 7.0–9.9
-Detached wrap        | 0.5–3.0                   | 3.5–5.5                       | 6.0–9.6
-Staple extra (a.m.)  | 0.5–3.5                   | 4.0–7.0                       | 7.5–9.6
-Detached page        | 0.5–3.0                   | 3.5–5.5                       | 6.0–9.4
-Staple removed       | 0.5–3.0                   | 3.5–5.5                       | 6.0–9.4
-Missing piece (int.) | 0.5–2.5                   | 3.0–5.0                       | 5.5–9.4
-Detached cover       | 0.5–2.0                   | 2.5–4.0                       | 4.5–9.2
-Missing page/wrap    | 0.5 only                  | —                             | 1.0 and above (always red)
-
-CRITICAL IMPLICATIONS FOR GRADING:
-- A defect that is "minimal" at low grades becomes "significant" at high grades. A stress line that barely affects a 5.0 book is grade-defining on a 9.4.
-- Missing piece (cover) and missing page/wrap are significant at virtually all grade levels — there is no grade range where these are inconsequential.
-- Spine split is significant from 3.0 upward — a book with a spine split cannot grade above 2.5 without it being a major qualifier.
-- Crease, tear, stain, and tape all become significant in the mid-to-high grade range even if minor in appearance.
-- When assessing a book that appears to be in the 8.0–10.0 range, treat stress lines, bends, soiling, distribution ink, stamps, and printer tears as potentially grade-defining defects that must be explicitly evaluated.
-
-Return ONLY valid JSON, no markdown.${notesBlock}`;
-
-  const psaPrompt = `You are a PSA comic book grading expert. The CGC AI assessment for this comic assigned a grade of ${cgcGrade || 'unknown'}. Assess whether PSA would grade this book differently.
-
-Return this JSON:
-{
-  "grade": "your AI PSA grade — must be one of: 10, 9.8, 9.6, 9.4, 9.2, 9.0, 8.5, 8.0, 7.5, 7.0, 6.5, 6.0, 5.5, 5.0, 4.5, 4.0, 3.5, 3.0, 2.5, 2.0, 1.5, 1.0, 0.5, 0.3",
-  "psaNotes": "1-2 sentences explaining why PSA would grade this differently, grounded in what you can observe about this specific book. Empty string if same grade.",
-  "labelDetected": false,
+  "officialPageQuality": null,
+  "psaGrade": "PSA AI grade",
+  "psaNotes": "why PSA differs, empty string if same",
   "officialPSAGrade": null,
-  "officialPSACert": null
-}
+  "officialPSACert": null,
+  "roboGrade": {
+    "version": "1.0",
+    "tier": "Standard",
+    "score": 0.0,
+    "confidenceRange": ${baseConf},
+    "frontCoverScore": 0.0,
+    "backCoverScore": ${backScoreDefault},
+    "pageQualityScore": ${pqScoreDefault},
+    "pageQuality": "",
+    "frontDefects": [{"type":"","location":"","measurement":"","coverage":"","colorBreaking":false,"multiplier":0,"deduction":0.0}],
+    "backDefects": [],
+    "rakingLightDefects": [],
+    "stapleCondition": "",
+    "restorationFlags": [],
+    "assessmentNotes": ""
+  }
+}`;
 
-CONTEXT:
-PSA entered comic grading in mid-2025 and is still establishing its calibration. Early real-world data from collectors who submitted the same books to both companies suggests PSA tends to run slightly more generous than CGC on average, particularly on Silver and Bronze Age material — though not universally. PSA's graders come from a card grading background where eye appeal and overall presentation are weighted more holistically alongside defect enumeration.
-
-HOW TO APPROACH THIS:
-Start from the CGC grade of ${cgcGrade || 'unknown'}. Consider whether any of the following apply to THIS SPECIFIC BOOK based on what you can see:
-
-Reasons PSA might grade HIGHER:
-- The book presents exceptionally well — strong color saturation, flat spine, clean overall presentation — in a way that PSA's eye-appeal emphasis would reward beyond what the defect list suggests
-- Silver or Bronze Age books with good eye appeal, where PSA's newer-entrant tendency toward generosity has been documented
-- Defects are minor and isolated, and the overall impression of the book is stronger than the technical grade implies
-- The book has been pressed and the remaining defects are minimal relative to the strong presentation
-
-Reasons PSA might grade LOWER:
-- Tape of any kind — PSA always treats tape as a defect, never as restoration
-- Accumulated small defects that collectively undermine eye appeal more than any single defect would suggest
-- Prominent spine stress that significantly affects the visual presentation even if technically graded as "light"
-
-It's reasonable for most mid-grade Silver Age books in good condition to come back half a point higher at PSA given current calibration patterns. It's also reasonable to find no difference for books where defects are clear and enumerable rather than presentation-based. Use your judgment on the specific book in front of you. Do not invent defects or characteristics not visible in the photos. If psaNotes is empty string, grade must equal ${cgcGrade || 'unknown'}.
-
-If a PSA label is visible: set labelDetected=true, officialPSAGrade to label grade, officialPSACert to cert number.
-
-Return ONLY valid JSON, no markdown.`;
-
-  const systemPrompt = isCGC ? cgcPrompt : psaPrompt;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -371,7 +355,13 @@ Return ONLY valid JSON, no markdown.`;
             const refParsed = JSON.parse(refClean);
             if (refParsed.grade) {
               if (!String(refParsed.grade).includes('.')) refParsed.grade = parseFloat(refParsed.grade).toFixed(1);
+              const _sRobo = parsed.roboGrade;
+              const _sPsa  = parsed.psaGrade;
+              const _sPsaN = parsed.psaNotes;
               parsed = refParsed;
+              if (_sRobo && !parsed.roboGrade) parsed.roboGrade = _sRobo;
+              if (_sPsa  && !parsed.psaGrade)  parsed.psaGrade  = _sPsa;
+              if (_sPsaN && !parsed.psaNotes)  parsed.psaNotes  = _sPsaN;
               parsed._diagnostics = { comicvineRef: referenceImageBlock !== null, gradeRef: true };
             }
           }
@@ -381,13 +371,18 @@ Return ONLY valid JSON, no markdown.`;
       }
     }
 
-    // Attach diagnostic info (preserve gradeRef if already set by refinement pass)
+    // Attach diagnostic info
     const gradeRefSucceeded = parsed._diagnostics?.gradeRef === true;
     parsed._diagnostics = {
       comicvineRef: referenceImageBlock !== null,
       pageQualityRef: pageQualityImageBlock !== null,
-      gradeRef: gradeRefSucceeded
+      gradeRef: gradeRefSucceeded,
+      psaGrade:  !!(parsed.psaGrade),
+      roboGrade: !!(parsed.roboGrade)
     };
+    if (parsed.psaGrade && !String(parsed.psaGrade).includes('.')) {
+      parsed.psaGrade = parseFloat(parsed.psaGrade).toFixed(1);
+    }
     return res.status(200).json(parsed);
   } catch (err) {
     return res.status(500).json({ error: err.message });
