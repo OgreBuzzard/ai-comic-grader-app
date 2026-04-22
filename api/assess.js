@@ -2,14 +2,24 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'API key not configured' });
+
+  // Anthropic only accepts these four media types — normalize everything else to image/jpeg
+  function normalizeMediaType(mt) {
+    if (!mt) return 'image/jpeg';
+    const clean = mt.toLowerCase().split(';')[0].trim();
+    const valid = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (valid.includes(clean)) return clean;
+    if (clean === 'image/jpg') return 'image/jpeg';
+    return 'image/jpeg'; // safe fallback
+  }
   const COMICVINE_API_KEY = process.env.COMICVINE_API_KEY || '';
   const { images, grader = 'CGC', cgcGrade = null, cgcGraderNotes = '', psaGraderNotes = '', title = '', issueNumber = '' } = req.body;
   if (!images || images.length === 0) return res.status(400).json({ error: 'No images provided' });
 
   const imageBlocks = images.map(img => {
     const [header, data] = img.split(',');
-    const mediaType = header.match(/data:(.*);base64/)[1];
-    return { type: 'image', source: { type: 'base64', media_type: mediaType, data } };
+    const rawType = header.match(/data:(.*);base64/)[1];
+    return { type: 'image', source: { type: 'base64', media_type: normalizeMediaType(rawType), data } };
   });
 
   // Fetch with timeout helper
@@ -51,7 +61,7 @@ export default async function handler(req, res) {
       const buf = await resp.arrayBuffer();
       const b64 = Buffer.from(buf).toString('base64');
       const ct = resp.headers.get('content-type') || 'image/jpeg';
-      return { type: 'image', source: { type: 'base64', media_type: ct, data: b64 } };
+      return { type: 'image', source: { type: 'base64', media_type: normalizeMediaType(ct), data: b64 } };
     } catch (e) {
       return null;
     }
@@ -98,7 +108,7 @@ export default async function handler(req, res) {
             const imgResp = await fetchWithTimeout(match.image.medium_url, {}, 4000);
             if (imgResp.ok) {
               const imgBuffer = await imgResp.arrayBuffer();
-              referenceImageBlock = { type: 'image', source: { type: 'base64', media_type: imgResp.headers.get('content-type') || 'image/jpeg', data: Buffer.from(imgBuffer).toString('base64') } };
+              referenceImageBlock = { type: 'image', source: { type: 'base64', media_type: normalizeMediaType(imgResp.headers.get('content-type')), data: Buffer.from(imgBuffer).toString('base64') } };
             }
           }
         }
@@ -378,125 +388,6 @@ Return ONLY valid JSON, no markdown.`;
       pageQualityRef: pageQualityImageBlock !== null,
       gradeRef: gradeRefSucceeded
     };
-
-    // ── RoboGrade pass (CGC only, non-label books) ──────────────────────────
-    if (isCGC && !parsed.labelDetected) {
-      const photoCount = images.length;
-      const baseConfidence = photoCount >= 4 ? 8 : photoCount === 3 ? 12 : 16;
-
-      const roboPrompt = `You are the RoboGrade engine, an AI-native comic book condition measurement system.
-
-The following CGC assessment has already been made for this book:
-Grade: ${parsed.grade}
-Page Quality: ${parsed.pageQuality || 'unknown'}
-Grader Notes: ${parsed.graderNotes || 'none'}
-
-Using the submitted photographs and the CGC observations above as context, produce a RoboGrade assessment.
-
-THE FORMULA
-RoboGrade = (FrontCoverScore × 0.70) + (BackCoverScore × 0.20) + (PageQualityScore × 0.10)
-Each component scores 0–100. Final score rounded to one decimal.
-
-COVER SCORING
-Each cover starts at 100. Deduct points per defect using:
-Deduction = Coverage% × Severity Multiplier
-
-Coverage% = your estimate of what percentage of the total cover area is affected. Use the ruler in the photo for scale. State coverage explicitly.
-
-Severity multipliers:
-- Missing piece/chip: 15× (apply first — hard ceilings apply)
-- Tape: 10×
-- Color-breaking crease: 8–12× (8=minor, 10=moderate, 12=severe)
-- Staining (permanent): 4–6×
-- Non-color-breaking crease: 3–5× (3=light, 5=heavy)
-- Spine stress lines: 2–4× (2=1-2 lines, 3=3-5 lines, 4=6+ or CB)
-- Soiling/foxing: 1–2× (1=removable, 2=permanent)
-- Color fading: 1–3× (1=slight, 2=moderate, 3=heavy)
-- Spine roll: 2–4× (from raking light photo if available)
-- Surface creasing: 2–3× (from raking light photo if available)
-
-Corner blunting — use measured radius directly, do NOT use coverage formula:
-- 1/16 in radius: −3 pts per corner
-- 2/16 in radius: −6 pts per corner
-- 3/16 in radius: −10 pts per corner
-- 4/16 in or more: −15 pts per corner
-
-Hard ceilings from structural defects:
-- Missing piece >1/4 in: front cover cannot exceed 60
-- Missing piece >1/2 in: front cover cannot exceed 40
-- Full cover detachment: front cover = 0
-
-PAGE QUALITY SCORE — map directly from CGC designation:
-White=100, Off-White to White=92, Off-White=82, Cream to Off-White=70, Cream=58, Light Tan to Cream=45, Light Tan=32, Tan=20, Brown=8, Brown/Brittle or Brittle=0
-
-PRECISION
-Base ± for ${photoCount} photo(s) submitted: ±${baseConfidence}
-Add to base for each of the following if applicable:
-+3 if glare or reflection obscures defects
-+3 if poor focus or heavy compression
-+2 if no raking light photo provided
-+2 if interior photo does not clearly show staples
-+4 if restoration markers are ambiguous or suspected
-
-RAKING LIGHT PHOTO
-If a raking light photo is present, assess spine roll, surface creasing, staple impressions, and embossing. Apply these defects to the front cover score.
-
-INTERIOR PHOTO
-Confirm page quality. Note staple condition (rust, replacement, looseness). Note centerfold detachment if visible.
-
-Return ONLY this JSON, no markdown:
-{
-  "version": "1.0",
-  "tier": "Standard",
-  "score": 0.0,
-  "confidenceRange": ${baseConfidence},
-  "frontCoverScore": 0.0,
-  "backCoverScore": 0.0,
-  "pageQualityScore": 0,
-  "pageQuality": "${parsed.pageQuality || ''}",
-  "frontDefects": [
-    { "type": "", "location": "", "measurement": "", "coverage": "", "colorBreaking": false, "multiplier": 0, "deduction": 0.0 }
-  ],
-  "backDefects": [],
-  "rakingLightDefects": [],
-  "stapleCondition": "",
-  "restorationFlags": [],
-  "assessmentNotes": ""
-}
-
-List every defect individually. Show coverage%, multiplier, and deduction for each. Do not group defects.`;
-
-      try {
-        const roboResp = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify({
-            model: 'claude-opus-4-6',
-            max_tokens: 2000,
-            messages: [{
-              role: 'user',
-              content: [
-                ...imageBlocks,
-                { type: 'text', text: roboPrompt }
-              ]
-            }]
-          })
-        }, 45000);
-
-        if (roboResp.ok) {
-          const roboData = await roboResp.json();
-          const roboText = roboData.content?.map(b => b.text || '').join('') || '';
-          const roboClean = roboText.replace(/```json|```/g, '').trim();
-          const roboParsed = JSON.parse(roboClean);
-          parsed.roboGrade = roboParsed;
-          parsed._diagnostics.roboGrade = true;
-        }
-      } catch (e) {
-        // RoboGrade is non-blocking — CGC/PSA result still returned
-        parsed._diagnostics.roboGrade = false;
-      }
-    }
-
     return res.status(200).json(parsed);
   } catch (err) {
     return res.status(500).json({ error: err.message });
