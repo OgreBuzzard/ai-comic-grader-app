@@ -362,6 +362,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
     if (isCGC && !parsed.labelDetected && parsed.grade) {
       const refImage = baseUrl ? await fetchGradeReference(parsed.grade, baseUrl) : null;
       if (refImage) {
+        const refinementSystemPrompt = systemPrompt.replace(CGC_GRADE_TIERS.trim(), gradeTierContext(parsed.grade));
         const refPrompt = `You previously assessed this comic as grade ${parsed.grade}. Here is the official CGC grading reference page for ${parsed.grade}. Compare your assessment photos against this reference. If the reference shows the book should look better or worse than what you assessed, adjust your grade. Return the same JSON format with your refined grade and updated graderNotes and aiAssessment. If ${parsed.grade} still seems correct, return the same grade.${notesBlock}`;
         try {
           const refResp = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
@@ -370,7 +371,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
             body: JSON.stringify({
               model: 'claude-opus-4-5',
               max_tokens: 1000,
-              system: systemPrompt,
+              system: refinementSystemPrompt,
               messages: [{
                 role: 'user',
                 content: [
