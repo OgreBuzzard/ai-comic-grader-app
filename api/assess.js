@@ -230,14 +230,30 @@ PHASE 2 — THREE GRADES FROM YOUR OBSERVATIONS
 ── ROBOGRADE (primary, AI-native) ──
 Formula: Score = (Front × 0.5) + (Back × 0.2) + (Spine × 0.2) + (Interior × 0.1)
 
-Step 1: Arrive at a holistic final score (0–100) based on your overall impression of the book's condition.
-Step 2: Assess the Interior score independently from the page quality (use PQ score above).
-Step 3: Determine which category has worse defects — Front or Back — and assign component scores accordingly.
-Step 4: Work backwards from your final score and Interior score to derive Front, Back, and Spine scores that satisfy the formula exactly.
-  Example: Score=56, Interior=70 → (Front×0.5)+(Back×0.2)+(Spine×0.2) = 56-(70×0.1) = 49
-  Then distribute 49 across Front×0.5, Back×0.2, Spine×0.2 based on relative severity of defects in each category.
+RULE: Score each category independently from defects in that category ONLY.
+  - 100 = pristine, no defects in that category
+  - 90s = very minor defect(s) only
+  - 80s = a few small or one moderate defect
+  - 70s = moderate defect accumulation
+  - 60s = significant defects but book still structurally sound
+  - 50s = major issues affecting presentation
+  - 40s and below = severe, extensive, or structural defects
+Examples:
+  - Back cover with ZERO defects observed → backScore = 100 (or 98-100 for trace wear not worth listing).
+  - Back cover with one small corner blunt → backScore = 92-95.
+  - Back cover with moderate creasing and color-breaking bend → backScore = 70-78.
+The "no back photo provided" case is different: set backScore to null and redistribute weights.
+
+Step 1: Assign Front score (0-100) based on front-cover defects only.
+Step 2: Assign Back score (0-100) based on back-cover defects only. If none observed, score is 98-100.
+Step 3: Assign Spine score (0-100) based on spine defects only.
+Step 4: Assign Interior score using the PQ scale above. Start from the PQ score, then deduct for staple/interior defects if any.
+Step 5: Compute final score: (Front×0.5) + (Back×0.2) + (Spine×0.2) + (Interior×0.1). Round to nearest integer.
+
 ${!hasBackCover ? 'No back cover photo provided — set backScore to null, redistribute weights: Front×0.7, Spine×0.2, Interior×0.1.' : ''}
 Confidence base: ±${baseConf}. Adjust up if: glare/poor focus, no raking light photo, staples not visible, restoration suspected.
+
+CRITICAL: The final score MUST equal the weighted sum of components. If your holistic impression of the book disagrees with the computed score by more than 2 points, REVISIT your component scores — a component score is wrong, not the formula.
 
 ── CGC GRADE ──
 Apply CGC standards to your defect inventory from Phase 1.
@@ -481,6 +497,33 @@ RETURN ONLY THIS JSON — no markdown, no preamble
     if (parsed.psaGrade && !String(parsed.psaGrade).includes('.')) {
       parsed.psaGrade = parseFloat(parsed.psaGrade).toFixed(1);
     }
+
+    // RoboGrade math verification — final score must equal weighted sum of components.
+    // The model sometimes outputs a score that doesn't match its own components.
+    // Always recompute from components so the displayed score is consistent with
+    // the component breakdown the user sees.
+    if (parsed.roboGrade && typeof parsed.roboGrade.score === 'number') {
+      const rg = parsed.roboGrade;
+      const f = typeof rg.frontScore    === 'number' ? rg.frontScore    : null;
+      const b = typeof rg.backScore     === 'number' ? rg.backScore     : null;
+      const s = typeof rg.spineScore    === 'number' ? rg.spineScore    : null;
+      const i = typeof rg.interiorScore === 'number' ? rg.interiorScore : null;
+      if (f != null && s != null && i != null) {
+        let computed;
+        if (b == null) {
+          // No back cover — redistributed weights: Front×0.7, Spine×0.2, Interior×0.1
+          computed = (f * 0.7) + (s * 0.2) + (i * 0.1);
+        } else {
+          computed = (f * 0.5) + (b * 0.2) + (s * 0.2) + (i * 0.1);
+        }
+        const original = rg.score;
+        rg.score = Math.round(computed * 10) / 10;
+        if (Math.abs(computed - original) > 2) {
+          rg._mathCorrected = { declared: original, computed: rg.score };
+        }
+      }
+    }
+
     return res.status(200).json(parsed);
   } catch (err) {
     return res.status(500).json({ error: err.message });
