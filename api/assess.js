@@ -13,7 +13,19 @@ export default async function handler(req, res) {
     return 'image/jpeg'; // safe fallback
   }
   const COMICVINE_API_KEY = process.env.COMICVINE_API_KEY || '';
-  const { images, grader = 'CGC', cgcGrade = null, cgcGraderNotes = '', psaGraderNotes = '', title = '', issueNumber = '' } = req.body;
+  const {
+    images,
+    grader = 'CGC',
+    cgcGrade = null,
+    cgcGraderNotes = '',
+    psaGraderNotes = '',
+    title = '',
+    issueNumber = '',
+    highGrade = false,
+    initialRoboGrade = null,
+    initialCgcGrade = '',
+    initialPsaGrade = ''
+  } = req.body;
   if (!images || images.length === 0) return res.status(400).json({ error: 'No images provided' });
 
   const imageBlocks = images.map(img => {
@@ -148,6 +160,53 @@ export default async function handler(req, res) {
   const photoCount   = images.length;
   const baseConf     = photoCount >= 4 ? 8 : photoCount === 3 ? 12 : 16;
 
+  // ── High-grade block ────────────────────────────────────────────────────────
+  // When highGrade=true, 4 corner macros (TL, TR, BL, BR) are appended after the
+  // standard 4 images. The initial RG is passed in so we can enforce the floor
+  // rule and keep Back/Interior scores unchanged (those categories aren't
+  // re-examined by corner macros).
+  const initialRGScore  = (highGrade && initialRoboGrade && typeof initialRoboGrade.score === 'number') ? Math.round(initialRoboGrade.score) : null;
+  const initialFront    = (highGrade && initialRoboGrade && typeof initialRoboGrade.frontScore    === 'number') ? Math.round(initialRoboGrade.frontScore)    : null;
+  const initialBack     = (highGrade && initialRoboGrade && typeof initialRoboGrade.backScore     === 'number') ? Math.round(initialRoboGrade.backScore)     : null;
+  const initialSpine    = (highGrade && initialRoboGrade && typeof initialRoboGrade.spineScore    === 'number') ? Math.round(initialRoboGrade.spineScore)    : null;
+  const initialInterior = (highGrade && initialRoboGrade && typeof initialRoboGrade.interiorScore === 'number') ? Math.round(initialRoboGrade.interiorScore) : null;
+
+  const highGradeBlock = highGrade ? `
+════════════════════════════════════
+HIGH-GRADE ASSESSMENT MODE
+════════════════════════════════════
+
+This is a second-pass high-grade assessment. The user has added 4 corner macros (positions 5-8 in the image set, order: Top Left, Top Right, Bottom Left, Bottom Right of the FRONT cover) to allow tighter grading.
+
+INITIAL ASSESSMENT (from the standard 4-photo pass):
+• Initial RG: ${initialRGScore != null ? initialRGScore : 'unknown'}
+• Initial CGC: ${initialCgcGrade || 'unknown'}
+• Initial PSA: ${initialPsaGrade || 'unknown'}
+• Initial component scores — Front: ${initialFront ?? '?'}, Back: ${initialBack ?? '?'}, Spine: ${initialSpine ?? '?'}, Interior: ${initialInterior ?? '?'}
+
+RULES FOR HIGH-GRADE ASSESSMENT:
+
+1. FLOOR RULE: The initial grades are a floor, not a guess. The final RG must be ≥ ${initialRGScore != null ? initialRGScore : 80}, the CGC grade must be ≥ ${initialCgcGrade || '8.0'}, and the PSA grade must be ≥ ${initialPsaGrade || '8.0'}. Initial assessments on high-grade books tend to run conservative because wide shots don't show corner detail — the macros are here to confirm or raise, not lower.
+
+2. DROP EXCEPTION: You may drop below the floor ONLY if a corner macro reveals a specific, describable defect that was not visible in the original wide shot (for example, a color-breaking stress line hidden by glare, or a tiny corner crease invisible at wide angle). If you drop, you must call out the specific new defect in graderNotes with its exact location, and you must explain in aiAssessment why it wasn't visible before. If you cannot name a specific new defect, do not drop.
+
+3. CATEGORIES YOU CAN CHANGE: Only Front and Spine. The corner macros give you more information about the front cover and the inner corners at the top and bottom of the spine. Back and Interior were not re-examined.
+
+4. CATEGORIES YOU MUST NOT CHANGE: Back score stays at ${initialBack ?? 'initial value'}. Interior score stays at ${initialInterior ?? 'initial value'}. Copy these forward exactly from the initial assessment. Do not re-derive them.
+
+5. RG RANGE: The final RG score must be in the range [${initialRGScore != null ? initialRGScore : 80}, 100]. CGC must be in [${initialCgcGrade || '8.0'}, 10.0]. PSA must be in [${initialPsaGrade || '8.0'}, 10.0].
+
+6. CENSUS ANCHOR: Take the census distribution seriously. If 35%+ of submissions grade 9.4+, the book in front of you has a high prior probability of being 9.4+. If the average census grade is 9.5, a clean-looking copy should be in that vicinity. Do not under-grade a clean book because you feel cautious.
+
+7. PRESUMPTION OF CLEAN: The default assumption for each corner macro is "this corner is clean and confirms a high grade." Only conclude a corner is damaged if you can specifically identify and name the defect. Do not invent defects.
+
+8. CONFIDENCE: High-grade assessments use a "+" suffix instead of ±N in the display. You do not need to adjust confidenceRange.
+
+9. FREQUENCY REMINDER: 40% of CGC-graded books receive a 9.8. This is the single most common outcome. If the book looks pristine in all 8 photos, 9.8 is the likely answer, not a conservative 9.4.
+
+` : '';
+
+
   // ── RoboGrade formula (4-category, backwards from final score) ───────────────
   // Score = (Front × 0.5) + (Back × 0.2) + (Spine × 0.2) + (Interior × 0.1)
   // Spine includes inner corners at top and bottom of spine
@@ -197,6 +256,35 @@ NG: Missing entire cover (coverless). Also: front cover present but back cover a
 
   // ── Unified system prompt: one image pass, neutral first, three grades ───────
   const systemPrompt = `You are an expert comic book condition analyst. Examine the photos ONCE and record neutral observations, then derive three independent grades from those observations.
+
+════════════════════════════════════
+PHASE 0 — GATE CHECK (mandatory first)
+════════════════════════════════════
+
+Before grading, determine what the photos actually show.
+
+Classify the content into ONE of these buckets:
+  COMIC     — a comic book, single-issue or trade, including adult comics (Vampirella, Heavy Metal, underground comix), horror titles, and pornographic comics from known publishers. Magazines like Playboy are NOT comics.
+  NOT_COMIC — anything that isn't a comic book: magazines, trade paperbacks (unless clearly graphic novels), photos of random objects, screenshots, people, animals, blank paper, trading cards, prose books, tests/abuse.
+  FLAGGED   — photos containing real-world graphic violence, actual injury or gore (not comic-art depictions), explicit pornographic photography (not comic art), child sexual content, or extremist symbols outside a clear historical/educational comic context.
+
+Key distinctions:
+• Horror comic covers with blood, gore, or monster imagery → COMIC (the art is the art)
+• Suggestive or partially nude comic art (Vampirella, Sin City, underground) → COMIC
+• Pornographic comic from a known publisher (Eros, Last Gasp, Fantagraphics erotic line, etc.) → COMIC
+• A photo of an actual person, even fully clothed → NOT_COMIC unless a comic book is the clear subject
+• A photo showing real blood, real injury, or real violence → FLAGGED
+• A Playboy, Penthouse, Hustler, or similar magazine → NOT_COMIC (these are magazines, not comics)
+
+For questionable comic-art content: if you can identify a likely title and issue, and the user provided a title, treat as COMIC. If you cannot identify the book at all and the imagery is pornographic or disturbing, treat as FLAGGED.
+
+If NOT_COMIC or FLAGGED: return ONLY this JSON and STOP. Do not grade. Do not speculate on defects.
+{
+  "gateResult": "NOT_COMIC" or "FLAGGED",
+  "gateReason": "one short sentence explaining what you observed"
+}
+
+If COMIC: set "gateResult": "COMIC" in the output and proceed with Phases 1 and 2.
 
 ════════════════════════════════════
 PHASE 1 — NEUTRAL OBSERVATIONS
@@ -340,17 +428,18 @@ Do not invent defects not visible in photos. If the PSA grade equals the CGC gra
 
 If a CGC or PSA label is visible: read grade, cert number, page quality, and key issue notations directly from it.
 ${censusContext}${notesBlock}
-
+${highGradeBlock}
 ════════════════════════════════════
 RETURN ONLY THIS JSON — no markdown, no preamble
 ════════════════════════════════════
 {
+  "gateResult": "COMIC",
   "title": "series title, strip leading The",
   "issue": "e.g. 57 or A1",
   "issueDate": "cover date e.g. 2/68",
   "publisher": "publisher name",
   "pageQuality": "full designation e.g. Off-White to White",
-  "grade": "CGC AI grade e.g. 7.0",
+  "grade": "CGC grade estimate e.g. 7.0",
   "graderNotes": "• one bullet per defect, official CGC terminology",
   "aiAssessment": "2-4 sentences: overall impression, dominant defects, grade rationale, press/UV/clean recs",
   "labelNotes": "key issue notations from label if visible, empty string if none",
@@ -361,7 +450,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
   "officialCGCGrade": null,
   "officialCGCCert": null,
   "officialPageQuality": null,
-  "psaGrade": "PSA AI grade",
+  "psaGrade": "PSA grade estimate",
   "psaNotes": "why PSA differs, empty string if same",
   "officialPSAGrade": null,
   "officialPSACert": null,
@@ -407,8 +496,15 @@ RETURN ONLY THIS JSON — no markdown, no preamble
               { type: 'text', text: 'PAGE QUALITY REFERENCE: The following image shows the CGC page quality color scale from White (10) down to Tan (5). If any of your assessment photos show interior pages, compare the non-inked white space color against this scale to determine page quality. When in doubt, round up — most Silver and Bronze Age books grade at Off-White or higher.' },
               pageQualityImageBlock
             ] : []),
-            ...imageBlocks,
-            { type: 'text', text: 'Please assess this comic. IMPORTANT: Before listing any other defects, examine each corner individually for missing pieces or chips. Then return the JSON grading object.' }
+            ...(highGrade && imageBlocks.length >= 8 ? [
+              { type: 'text', text: 'STANDARD ASSESSMENT PHOTOS (1-4): front cover, back cover, interior/page quality, raking light / spine.' },
+              ...imageBlocks.slice(0, 4),
+              { type: 'text', text: 'CORNER MACROS (5-8), in order: Top Left, Top Right, Bottom Left, Bottom Right of the front cover. Use these to confirm or refine the Front score only. Remember the floor rule and the drop exception from the HIGH-GRADE ASSESSMENT MODE section.' },
+              ...imageBlocks.slice(4, 8)
+            ] : imageBlocks),
+            { type: 'text', text: highGrade
+              ? 'Please perform the high-grade assessment. Apply the floor rule: the final RG, CGC, and PSA grades must be at or above the initial values unless a specific new defect is identified in the corner macros. Carry Back and Interior scores forward unchanged. Return the JSON grading object.'
+              : 'Please assess this comic. IMPORTANT: Before listing any other defects, examine each corner individually for missing pieces or chips. Then return the JSON grading object.' }
           ]
         }]
       })
@@ -428,6 +524,21 @@ RETURN ONLY THIS JSON — no markdown, no preamble
     let parsed;
     try { parsed = JSON.parse(clean); }
     catch (e) { return res.status(500).json({ error: 'Failed to parse response: ' + text }); }
+
+    // ── Gate check: if the model determined this isn't a comic or is flagged content,
+    //    return early with a special response. Client uses this to refund the credit
+    //    and increment strike counter.
+    if (parsed.gateResult && parsed.gateResult !== 'COMIC') {
+      return res.status(200).json({
+        gateResult: parsed.gateResult,
+        gateReason: parsed.gateReason || '',
+        _diagnostics: {
+          comicvineRef: referenceImageBlock !== null,
+          pageQualityRef: pageQualityImageBlock !== null,
+          gateTerminated: true
+        }
+      });
+    }
 
     // Normalize grade to always include decimal (e.g. "10" → "10.0", "9" → "9.0")
     if (parsed.grade && !String(parsed.grade).includes('.')) {
@@ -522,6 +633,89 @@ RETURN ONLY THIS JSON — no markdown, no preamble
           rg._mathCorrected = { declared: original, computed: rg.score };
         }
       }
+    }
+
+    // ── High-grade enforcement (safety net) ───────────────────────────────────
+    // Even with a good prompt, the model occasionally drifts on high-grade passes.
+    // Enforce the carry-through and floor rules in code.
+    if (highGrade && initialRoboGrade && parsed.roboGrade) {
+      const rg = parsed.roboGrade;
+      const enforcement = [];
+
+      // 1. Carry Back and Interior forward unchanged — the macros don't cover them.
+      if (typeof initialRoboGrade.backScore === 'number' && rg.backScore !== initialRoboGrade.backScore) {
+        enforcement.push(`back carried ${rg.backScore} → ${initialRoboGrade.backScore}`);
+        rg.backScore = initialRoboGrade.backScore;
+      }
+      if (typeof initialRoboGrade.interiorScore === 'number' && rg.interiorScore !== initialRoboGrade.interiorScore) {
+        enforcement.push(`interior carried ${rg.interiorScore} → ${initialRoboGrade.interiorScore}`);
+        rg.interiorScore = initialRoboGrade.interiorScore;
+      }
+
+      // 2. Recompute final score with the carried-through values.
+      const f = typeof rg.frontScore    === 'number' ? rg.frontScore    : null;
+      const b = typeof rg.backScore     === 'number' ? rg.backScore     : null;
+      const s = typeof rg.spineScore    === 'number' ? rg.spineScore    : null;
+      const i = typeof rg.interiorScore === 'number' ? rg.interiorScore : null;
+      if (f != null && s != null && i != null) {
+        const computed = (b == null)
+          ? (f * 0.7) + (s * 0.2) + (i * 0.1)
+          : (f * 0.5) + (b * 0.2) + (s * 0.2) + (i * 0.1);
+        rg.score = Math.round(computed * 10) / 10;
+      }
+
+      // 3. Floor rule for RG: unless the model explicitly flagged new defects in
+      //    graderNotes (which would justify a drop), never go below the initial
+      //    RG score. We detect a justified drop heuristically: the aiAssessment
+      //    mentions "macro" or "corner" AND describes a defect not in the initial.
+      const initialScore = typeof initialRoboGrade.score === 'number' ? initialRoboGrade.score : null;
+      if (initialScore != null && rg.score < initialScore) {
+        const notes = String(parsed.aiAssessment || '').toLowerCase();
+        const mentionsMacro = notes.includes('macro') || notes.includes('corner');
+        if (!mentionsMacro) {
+          // No justification — snap back to initial floor
+          enforcement.push(`RG score floored ${rg.score} → ${initialScore}`);
+          rg.score = initialScore;
+          // Also re-floor the front component if that's what dragged it down
+          // by the same proportion: raise frontScore enough to hit the floor.
+          if (b != null && typeof s === 'number' && typeof i === 'number') {
+            const needed = (initialScore - (b * 0.2) - (s * 0.2) - (i * 0.1)) / 0.5;
+            if (f != null && needed > f) {
+              rg.frontScore = Math.round(needed * 10) / 10;
+            }
+          }
+        }
+      }
+
+      // 4. Floor rule for CGC grade: never go below the initial CGC grade unless
+      //    a corner-macro defect justifies the drop (heuristic same as above).
+      const cgcFloor = parseFloat(initialCgcGrade);
+      const cgcNew   = parseFloat(parsed.grade);
+      if (!isNaN(cgcFloor) && !isNaN(cgcNew) && cgcNew < cgcFloor) {
+        const notes = String(parsed.aiAssessment || '').toLowerCase();
+        const mentionsMacro = notes.includes('macro') || notes.includes('corner');
+        if (!mentionsMacro) {
+          enforcement.push(`CGC grade floored ${parsed.grade} → ${initialCgcGrade}`);
+          parsed.grade = String(cgcFloor.toFixed(1));
+        }
+      }
+
+      // 5. Floor rule for PSA grade — same logic.
+      const psaFloor = parseFloat(initialPsaGrade);
+      const psaNew   = parseFloat(parsed.psaGrade);
+      if (!isNaN(psaFloor) && !isNaN(psaNew) && psaNew < psaFloor) {
+        const notes = String(parsed.aiAssessment || '').toLowerCase();
+        const mentionsMacro = notes.includes('macro') || notes.includes('corner');
+        if (!mentionsMacro) {
+          enforcement.push(`PSA grade floored ${parsed.psaGrade} → ${initialPsaGrade}`);
+          parsed.psaGrade = String(psaFloor.toFixed(1));
+        }
+      }
+
+      if (enforcement.length > 0) {
+        rg._highGradeEnforcement = enforcement;
+      }
+      rg._highGradePass = true;
     }
 
     return res.status(200).json(parsed);
