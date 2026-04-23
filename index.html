@@ -13,6 +13,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Doto:wght@700;900&display=swap" rel="stylesheet">
   <link rel="apple-touch-icon" href="icon-192.png">
 
+  <!-- Panzoom: MIT-licensed library for pinch/zoom/pan on lightbox images -->
+  <script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
+
   <!-- Firebase -->
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
@@ -159,8 +162,12 @@
     .cost-box { background: #f8f6f3; border: 1px solid #ccc8c0; border-radius: 6px; padding: 14px 16px; }
     .treatment-btn { padding: 6px 14px; border-radius: 4px; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid; font-family: inherit; }
     .sticky-back { position: sticky; top: 56px; z-index: 90; background: #f5f4f2; padding: 10px 0 6px; margin-bottom: 4px; }
-    #lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.93); display: flex; align-items: center; justify-content: center; z-index: 1000; cursor: zoom-out; padding: 20px; }
-    #lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; }
+    #lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.93); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 20px; overflow: hidden; touch-action: none; }
+    #lightbox-stage { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; touch-action: none; }
+    #lightbox-img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; pointer-events: auto; }
+    #lightbox-close { position: absolute; top: 14px; right: 14px; width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; border: 1.5px solid rgba(255,255,255,0.3); font-size: 22px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; z-index: 1002; padding: 0; }
+    #lightbox-close:hover { background: rgba(0,0,0,0.85); }
+    #lightbox-hint { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); font-size: 11px; color: rgba(255,255,255,0.5); letter-spacing: 1.5px; pointer-events: none; z-index: 1001; }
     #sync-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 9998; background: #f0eaff; border-bottom: 2px solid #7a40cf; padding: 10px 16px; display: flex; align-items: center; gap: 10px; }
     /* Settings panel */
     #settings-overlay {
@@ -328,10 +335,6 @@
       <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
       Sign in with Google
     </button>
-    <button onclick="signInApple()" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#1a1a1a;color:#fff;border:1.5px solid #333;border-radius:10px;padding:14px 20px;font-size:15px;font-weight:600;cursor:pointer;width:100%">
-      <svg width="20" height="20" viewBox="0 0 814 1000"><path fill="#fff" d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-57.8-155.5-127.4C46 411.6 0 320.2 0 233.7 0 89.6 73.4 17 144.5 17c53.9 0 99.1 36.3 133.6 36.3 32.8 0 84.5-38.8 144.5-38.8 22.9 0 108.2 2.5 170.3 82.3zm-194.5-122c28.3-35.6 48.5-85.4 48.5-135.3 0-6.9-.6-13.9-1.9-19.5-45.9 1.9-99.8 30.6-131.8 71.9-26.5 33.3-50.8 82.5-50.8 133.1 0 7.5 1.3 15 1.9 17.5 3.1.6 8.1 1.3 13.1 1.3 41.3 0 90.1-27.7 120.9-69z"/></svg>
-      Sign in with Apple
-    </button>
   </div>
   <div style="font-size:11px;color:#444;text-align:center;max-width:260px;line-height:1.5">By signing in you agree to our terms of service. Your collection data is private to your account.</div>
 </div>
@@ -434,8 +437,12 @@
   </div>
 </div>
 
-<div id="lightbox" style="display:none" onclick="this.style.display='none'">
-  <img id="lightbox-img" src="">
+<div id="lightbox" style="display:none">
+  <div id="lightbox-stage">
+    <img id="lightbox-img" src="">
+  </div>
+  <button id="lightbox-close" onclick="closeLightbox()" aria-label="Close">×</button>
+  <div id="lightbox-hint">PINCH OR DOUBLE-TAP TO ZOOM</div>
 </div>
 <div id="sync-bar" style="display:none">
   <div class="spin-sm"></div>
@@ -521,18 +528,27 @@ function buildListBadge(c){
 function buildGradeRowHTML(c){
   const des=detectDesignation(c);
   const badges=[];
-  // Order: RoboGrade first, then CGC AI, then PSA AI (matches assessment modal)
-  // Official CGC/PSA badges only appear if there's no AI grade
+  // Order: RoboGrade first, then CGC (official OR predicted, never both), then PSA (same)
   if(c.roboGrade&&c.roboGrade.score!=null){
     const rgScore=Math.round(c.roboGrade.score);
     badges.push(`<div class="ubadge" style="background:#0f1a05;border-color:#3a5010"><div class="ubadge-body" style="background:#0f1a05"><div class="ubadge-num" style="color:#b8d820">${rgScore}</div><div class="ubadge-lbl" style="color:#b8d820;opacity:0.7">RG</div></div></div>`);
   }
-  if(c.cgcGrade)badges.push(buildBadge(c.cgcGrade,"cgc-official",des,false));
-  if(c.psaGrade)badges.push(buildBadge(c.psaGrade,"psa-official",c.psaDesignation||"universal",false));
-  const ac=aiCgcGrade(c);
-  if(ac)badges.push(buildBadge(normalizeGrade(ac),"cgc-ai","",false));
-  if(c.assessedPSAGrade)badges.push(buildBadge(normalizeGrade(c.assessedPSAGrade),"psa-ai","",false));
+  // CGC: official takes precedence. Otherwise RG-predicted.
+  if(c.cgcGrade){
+    badges.push(buildBadge(c.cgcGrade,"cgc-official",des,false));
+  } else {
+    const ac=aiCgcGrade(c);
+    if(ac)badges.push(buildBadge(normalizeGrade(ac),"cgc-ai","",false));
+  }
+  // PSA: official takes precedence. Otherwise RG-predicted.
+  if(c.psaGrade){
+    badges.push(buildBadge(c.psaGrade,"psa-official",c.psaDesignation||"universal",false));
+  } else if(c.assessedPSAGrade){
+    badges.push(buildBadge(normalizeGrade(c.assessedPSAGrade),"psa-ai","",false));
+  }
+  // My Grade fallback (raw book, no assessment yet)
   const gradeIsAiCgc=!c.assessedCGCGrade&&!!(c.myAssessment||c.aiAssessment)&&!!c.grade;
+  const ac=aiCgcGrade(c);
   if(c.grade&&!gradeIsAiCgc&&!c.cgcGrade&&!c.psaGrade&&!ac)badges.push(buildBadge(c.grade,"my","",false));
   if(badges.length===0)return"";
   return `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;justify-content:center">${badges.join("")}</div>`;
@@ -834,7 +850,7 @@ function showDetail(id){
     html+=`</div>`;
   }
 
-  // Assessment results — RoboGrade, CGC AI, PSA AI badges + centered PQ pill
+  // Assessment results — RG, CGC, PSA badges + centered PQ pill
   const gradeRow=buildGradeRowHTML(selected);
   if(gradeRow||selected.pageQuality){
     html+=`<div style="margin-top:16px;padding:14px;background:#0d0d0f;border:1px solid #2a2a3a;border-radius:10px;display:flex;flex-direction:column;align-items:center;gap:10px">
@@ -882,9 +898,9 @@ function showDetail(id){
 
   if(selected.cgcNotes)html+=`<div style="margin-top:20px"><div class="section-label" style="color:#4a7a4a">Label Notes</div><div class="notes-box" style="border-color:#1a3a1a;color:#80b080">${esc(selected.cgcNotes)}</div></div>`;
   if(selected.graderNotes)html+=`<div style="margin-top:20px"><div class="section-label">Grader Notes</div><div class="notes-box" style="white-space:pre-line">${esc(selected.graderNotes)}</div></div>`;
-  if(selected.aiGraderNotes)html+=`<div style="margin-top:20px"><div class="section-label" style="color:#4a7a9a">AI Grader Notes</div><div class="notes-box" style="border-color:#1a3a5c;color:#4a7a9a;white-space:pre-line">${esc(selected.aiGraderNotes)}</div></div>`;
+  if(selected.aiGraderNotes)html+=`<div style="margin-top:20px"><div class="section-label" style="color:#4a7a9a">RG Notes</div><div class="notes-box" style="border-color:#1a3a5c;color:#4a7a9a;white-space:pre-line">${esc(selected.aiGraderNotes)}</div></div>`;
   const _aiText=selected.aiAssessment||selected.myAssessment||"";
-  if(_aiText)html+=`<div style="margin-top:20px"><div class="section-label">AI Assessment${selected.highGradeTier?` <span style="font-size:10px;background:#1a3a1a;color:#6abf6a;border-radius:4px;padding:2px 6px;font-weight:700;letter-spacing:0.05em;margin-left:6px">HIGH-GRADE ±3</span>`:""}${selected.restorationCheckTier?` <span style="font-size:10px;background:#3a1a05;color:#e0904a;border-radius:4px;padding:2px 6px;font-weight:700;letter-spacing:0.05em;margin-left:4px">RC${selected.restorationFlag?" ⚠":""}</span>`:""}}</div><div class="notes-box" style="font-style:normal;color:#6a5a4a">${esc(_aiText)}</div></div>`;
+  if(_aiText)html+=`<div style="margin-top:20px"><div class="section-label">RG Assessment${selected.highGradeTier?` <span style="font-size:10px;background:#1a3a1a;color:#6abf6a;border-radius:4px;padding:2px 6px;font-weight:700;letter-spacing:0.05em;margin-left:6px">HIGH-GRADE</span>`:""}${selected.restorationCheckTier?` <span style="font-size:10px;background:#3a1a05;color:#e0904a;border-radius:4px;padding:2px 6px;font-weight:700;letter-spacing:0.05em;margin-left:4px">RC${selected.restorationFlag?" ⚠":""}</span>`:""}</div><div class="notes-box" style="font-style:normal;color:#6a5a4a">${esc(_aiText)}</div></div>`;
   if(selected.psaNotes)html+=`<div style="margin-top:20px"><div class="section-label" style="color:#FF2040">PSA Notes</div><div class="notes-box" style="border-color:#5c1a1a;color:#e87a7a">${esc(selected.psaNotes)}</div></div>`;
   if(selected.restorationCheckTier){
     const rpt=selected.restorationReport||{};
@@ -929,7 +945,8 @@ function printLabel(id) {
 
   const rg = comic.roboGrade;
   const score = Math.round(rg.score ?? 0);
-  const precision = rg.confidenceRange ? `±${rg.confidenceRange}` : '±8';
+  // 80+ RG: suppress precision band, show "+"; else show ±N
+  const precision = score >= 80 ? '+' : `±${rg.confidenceRange || 8}`;
   const title = comic.title || '';
   const issue = comic.issue ? `#${comic.issue}` : '';
   const issueDate = comic.issueDate || '';
@@ -942,7 +959,7 @@ function printLabel(id) {
   }).replace(/\//g, '/');
 
   // Open print window with label
-  const win = window.open('', '_blank', 'width=900,height=600');
+  const win = window.open('', '_blank', 'width=900,height=700');
   win.document.write(`<!DOCTYPE html>
 <html>
 <head>
@@ -952,7 +969,7 @@ function printLabel(id) {
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Display:wght@900&family=Noto+Sans+Mono:wdth=62.5;wght@800&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 20px; font-family: sans-serif; }
+  body { background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 20px; font-family: sans-serif; padding: 20px; }
   .label-wrap { width: 756px; height: 288px; position: relative; }
   .label {
     width: 756px; height: 288px;
@@ -990,8 +1007,22 @@ function printLabel(id) {
   .qr-col #qrc canvas, .qr-col #qrc img { width: 118px !important; height: 118px !important; }
   .verify { font-size: 11px; color: #7a8a5a; letter-spacing: 1px; font-family: sans-serif; text-align: center; }
   .url { font-size: 13px; color: #6a7a5a; font-family: sans-serif; text-align: right; position: absolute; right: 12px; bottom: 18px; }
+  .action-row { display: flex; gap: 14px; margin-top: 8px; }
+  .btn-print, .btn-back {
+    padding: 16px 40px; border: none; border-radius: 10px;
+    font-size: 18px; font-weight: 800; cursor: pointer;
+    letter-spacing: 1.5px; min-width: 180px;
+  }
+  .btn-print { background: #1a2208; color: #b8d820; }
+  .btn-back { background: #5a4030; color: #f0e0c0; }
+  .btn-print:hover { background: #243010; }
+  .btn-back:hover { background: #6a5038; }
+  .labels-link {
+    margin-top: 18px; font-size: 13px; color: #555544; text-align: center;
+  }
+  .labels-link a { color: #1a5fa8; text-decoration: underline; }
   @media print {
-    body { margin: 0; background: white; justify-content: flex-start; }
+    body { margin: 0; background: white; justify-content: flex-start; padding: 0; }
     .no-print { display: none; }
   }
 </style>
@@ -1021,7 +1052,14 @@ function printLabel(id) {
   </div>
   <div class="url">robograder.com/id/${gradeId}</div>
 </div>
-<button class="no-print" onclick="window.print()" style="padding:12px 28px;background:#1a2208;color:#b8d820;border:none;border-radius:8px;font-size:16px;font-weight:700;cursor:pointer;margin-top:16px">Print</button>
+<div class="action-row no-print">
+  <button class="btn-back" onclick="window.close()">← Back</button>
+  <button class="btn-print" onclick="window.print()">Print</button>
+</div>
+<div class="labels-link no-print">
+  Prints on Avery 5160 address labels —
+  <a href="https://www.amazon.com/s?k=avery+5160+labels" target="_blank" rel="noopener">buy on Amazon</a>
+</div>
 <script>
   new QRCode(document.getElementById('qrc'), {
     text: 'https://robograder.com/id/${gradeId}',
@@ -1081,14 +1119,79 @@ function confirmDelete(id){
   else{btn.dataset.confirm="ready";btn.textContent="Delete…";btn.style.background="#fee2e2";btn.style.color="#991b1b";}
 }
 
+let _panzoomInstance = null;
+let _lightboxLastTap = 0;
+
 function openLightbox(id,idx){
   const c=comics.find(x=>x.id===id);
   if(!c||!c.images?.[idx])return;
-  document.getElementById("lightbox-img").src=c.images[idx];
-  document.getElementById("lightbox").style.display="flex";
+  const img = document.getElementById("lightbox-img");
+  const box = document.getElementById("lightbox");
+  img.src = c.images[idx];
+  box.style.display = "flex";
+
+  // Initialize panzoom on the image. Requires the global Panzoom function
+  // from the CDN script; degrade gracefully if unavailable.
+  if (typeof Panzoom === 'function') {
+    // Tear down any previous instance before creating a new one
+    if (_panzoomInstance) {
+      try { _panzoomInstance.destroy(); } catch(e){}
+      _panzoomInstance = null;
+    }
+    // Wait for the image to load before measuring bounds
+    const init = () => {
+      _panzoomInstance = Panzoom(img, {
+        maxScale: 6,
+        minScale: 1,
+        contain: 'outside',
+        step: 0.4,
+        animate: true
+      });
+      // Wheel-zoom on desktop
+      img.parentElement.addEventListener('wheel', _panzoomInstance.zoomWithWheel);
+      // Double-tap to toggle zoom
+      img.addEventListener('touchend', handleDoubleTap);
+      img.addEventListener('dblclick', handleDoubleTap);
+    };
+    if (img.complete) init();
+    else img.addEventListener('load', init, {once:true});
+  }
+
+  // Tapping outside the image (background) closes the lightbox.
+  // Tapping the image itself should not close (panzoom handles gestures there).
+  box.onclick = (e) => {
+    if (e.target === box || e.target.id === 'lightbox-stage') closeLightbox();
+  };
 }
 
-const EMPTY={title:"",issue:"",issueDate:"",publisher:"",grade:"",cgcGrade:"",cgcCert:"",psaGrade:"",psaCert:"",pageQuality:"",graderNotes:"",aiGraderNotes:"",cgcNotes:"",aiAssessment:"",psaNotes:"",notes:"",slabbingDate:"",dateAcquired:"",purchasePrice:"",taxesFeesShipping:"",gradingCost:"",cgcShipping:"",fmv:"",fmvDate:"",press:null,uv:null,clean:null,seller:"",images:[],assessedCGCGrade:"",assessedPSAGrade:"",assessmentHistory:[],roboGrade:null,roboGradeId:'',roboGradeDate:'',publicListing:false,highGradeTier:false,restorationCheckTier:false,restorationReport:null,restorationFlag:false};
+function handleDoubleTap(e) {
+  if (!_panzoomInstance) return;
+  const now = Date.now();
+  const isDouble = e.type === 'dblclick' || (now - _lightboxLastTap < 300);
+  _lightboxLastTap = now;
+  if (!isDouble) return;
+  e.preventDefault();
+  const current = _panzoomInstance.getScale();
+  if (current > 1.1) {
+    _panzoomInstance.reset();
+  } else {
+    _panzoomInstance.zoom(2.5, { animate: true });
+  }
+}
+
+function closeLightbox() {
+  const box = document.getElementById("lightbox");
+  if (_panzoomInstance) {
+    try { _panzoomInstance.destroy(); } catch(e){}
+    _panzoomInstance = null;
+  }
+  // Reset image transform in case panzoom wasn't available
+  const img = document.getElementById("lightbox-img");
+  if (img) img.style.transform = '';
+  if (box) box.style.display = 'none';
+}
+
+const EMPTY={title:"",issue:"",issueDate:"",publisher:"",grade:"",cgcGrade:"",cgcCert:"",psaGrade:"",psaCert:"",pageQuality:"",graderNotes:"",aiGraderNotes:"",cgcNotes:"",aiAssessment:"",psaNotes:"",notes:"",slabbingDate:"",dateAcquired:"",purchasePrice:"",taxesFeesShipping:"",gradingCost:"",cgcShipping:"",fmv:"",fmvDate:"",press:null,uv:null,clean:null,seller:"",images:[],cornerImages:[],assessedCGCGrade:"",assessedPSAGrade:"",assessmentHistory:[],roboGrade:null,roboGradeId:'',roboGradeDate:'',publicListing:false,highGradeTier:false,highGradeUnlocked:false,restorationCheckTier:false,restorationReport:null,restorationFlag:false};
 let formData={...EMPTY};
 let assessing=false;
 let _assessed=false; // tracks if current form has been assessed
@@ -1109,6 +1212,7 @@ function showEdit(id){
   };
   // Snapshot the original Firestore images so they can never be lost on save
   formData._savedImages=[...(c.images||[])];
+  formData._savedCornerImages=[...(c.cornerImages||[])];
   formData._imagesChanged=false;
   view="add";_assessed=!!(c.assessedCGCGrade||c.aiAssessment);document.getElementById("add-btn").style.display="none";renderForm();window.scrollTo(0,0);
 }
@@ -1204,18 +1308,8 @@ function showAssessModal() {
   completeBtn.textContent = 'COMPLETE';
   resultDiv.appendChild(completeBtn);
 
-  // High-grade upgrade row — shown below the modal if triggered
-  const hgDiv = document.createElement('div');
-  hgDiv.id = 'hg-upgrade-row';
-  hgDiv.style.cssText = 'display:none;margin-top:12px;padding:10px;background:#1a2a1a;border-radius:8px;border:1px solid #3a6a3a;width:min(calc(100vw - 32px),380px);box-sizing:border-box;';
-  hgDiv.innerHTML = `
-    <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:0.05em;margin-bottom:6px">HIGH-GRADE TIER AVAILABLE</div>
-    <div style="font-size:11px;color:#8a9a8a;margin-bottom:8px">Add 4 corner macro photos for a more precise assessment.</div>
-    <button id="hg-upgrade-btn" onclick="startHighGradeUpgrade()" style="width:100%;padding:10px;background:#2a5a2a;color:#80e080;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer">+ Add Corner Macros</button>`;
-
   modal.appendChild(resultDiv);
   overlay.appendChild(modal);
-  overlay.appendChild(hgDiv);
   document.body.appendChild(overlay);
 
   // First step green immediately
@@ -1413,8 +1507,8 @@ function showResultPreview(cgc, psa) {
   // Build badge shells with empty value slots for the animation to fill
   const makeBadge = (type, valueId) => {
     const configs = {
-      'cgc-ai':   {bg:'#2a5a8a', text:'#e0f0ff', label:'CGC AI'},
-      'psa-ai':   {bg:'#8a2a2a', text:'#ffe0e0', label:'PSA AI'},
+      'cgc-ai':   {bg:'#2a5a8a', text:'#e0f0ff', label:'CGC'},
+      'psa-ai':   {bg:'#8a2a2a', text:'#ffe0e0', label:'PSA'},
       'robograde':{bg:'#0f1a05', text:'#aaee30', label:'RG', border:'1.5px solid #3a5010'},
     };
     const c = configs[type];
@@ -1459,9 +1553,22 @@ function showResultPreview(cgc, psa) {
   }
 
   // Complete button — fade + scale in at 5500ms
+  // If RG ≥ 80, the button becomes a "High-Grade Assess Unlocked" affordance.
+  // Tapping it still just completes/closes the modal (same as Complete) — the
+  // high-grade assessment itself is kicked off from the detail/edit page.
   setTimeout(() => {
     const btn = document.getElementById('assess-complete-btn');
     if (btn) {
+      const hgUnlocked = (roboScore != null && roboScore >= 80);
+      // Always set the flag explicitly — re-assessments that drop below 80 must clear it
+      if (_pendingAssessResult && _pendingAssessResult.cgc) {
+        _pendingAssessResult.cgc._highGradeUnlocked = hgUnlocked;
+      }
+      if (hgUnlocked) {
+        btn.innerHTML = `<div style="font-size:13px;font-weight:800;letter-spacing:2px;line-height:1.2">HIGH-GRADE ASSESS</div><div style="font-size:11px;font-weight:700;letter-spacing:3px;opacity:0.85;margin-top:3px">UNLOCKED</div>`;
+        btn.style.background = '#2a7a3a';
+        btn.style.textAlign = 'center';
+      }
       btn.style.display = 'block';
       btn.style.opacity = '0';
       btn.style.transform = 'scale(0.85)';
@@ -1473,14 +1580,6 @@ function showResultPreview(cgc, psa) {
     }
   }, 5500);
 
-  // High-grade upgrade row — show after complete button if criteria met
-  const cgcNum = parseFloat(cgcGrade) || 0;
-  const psaNum = parseFloat(psaGrade) || 0;
-  const hgRow = document.getElementById('hg-upgrade-row');
-  if (hgRow && (cgcNum >= 8.0 || psaNum >= 8.0)) {
-    setTimeout(() => { hgRow.style.display = 'block'; }, 5800);
-  }
-
   // Scroll overlay to show result
   const overlayEl = document.getElementById('assess-modal-overlay');
   if (overlayEl) {
@@ -1489,114 +1588,93 @@ function showResultPreview(cgc, psa) {
   }
 }
 
-function startHighGradeUpgrade() {
-  const btn = document.getElementById('hg-upgrade-btn');
-  if (btn) { btn.textContent = 'Select 4 Corner Photos...'; btn.disabled = true; }
+async function assessHighGrade() {
+  const imgs = (formData.images || []).filter(Boolean);
+  const corners = (formData.cornerImages || []).filter(Boolean);
+  if (imgs.length < 4) { alert('All 4 main photos are required for high-grade assessment.'); return; }
+  if (corners.length < 4) { alert('All 4 corner photos are required for high-grade assessment.'); return; }
+  if (assessing) return;
 
-  // Create hidden file input for corner macros
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = 'image/*';
-  input.multiple = true;
-  input.onchange = async (e) => {
-    const files = Array.from(e.target.files).slice(0, 4);
-    if (files.length === 0) {
-      if (btn) { btn.textContent = '+ Add Corner Macros'; btn.disabled = false; }
+  // Check credits — high-grade costs 1 credit
+  if (window._userCredits !== undefined && window._userCredits <= 0) {
+    if (confirm('You have no assessment credits remaining. Would you like to buy more?')) {
+      showBuyCredits();
+    }
+    return;
+  }
+
+  // We need the initial RG to carry Back and Interior scores through
+  const initialRG = formData.roboGrade;
+  if (!initialRG) {
+    alert('Run a standard assessment first before running high-grade.');
+    return;
+  }
+
+  assessing = true;
+  showAssessModal();
+  try {
+    // Compress all 8 images (4 main + 4 corner macros)
+    const allImages = [...imgs.slice(0,4), ...corners.slice(0,4)];
+    const dataUrls = await Promise.all(allImages.map(async img => {
+      if (img.startsWith('http')) {
+        const resp = await fetch(img);
+        const blob = await resp.blob();
+        return new Promise(res => { const r = new FileReader(); r.onload = ev => res(ev.target.result); r.readAsDataURL(blob); });
+      }
+      return img;
+    }));
+    const compressed = await Promise.all(dataUrls.map(img => compressImage(img)));
+
+    const token = window._currentUser ? (await window._currentUser.getIdToken()) : null;
+    const resp = await fetch('/api/assess', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-client-secret': '022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d',
+        ...(token ? {'Authorization': 'Bearer ' + token} : {})
+      },
+      body: JSON.stringify({
+        images: compressed,
+        grader: 'CGC',
+        highGrade: true,
+        initialRoboGrade: initialRG,
+        initialCgcGrade: formData.assessedCGCGrade || '',
+        initialPsaGrade: formData.assessedPSAGrade || '',
+        title: formData.title || '',
+        issueNumber: formData.issue || '',
+        issueDate: formData.issueDate || ''
+      })
+    });
+
+    if (!resp.ok) { const e = await resp.text(); throw new Error('High-grade assessment error: ' + e); }
+    const unified = await resp.json();
+    if (unified.error) throw new Error(unified.error);
+
+    // Gate can still fire on high-grade
+    if (unified.gateResult && unified.gateResult !== 'COMIC') {
+      await incrementStrike(unified.gateResult, unified.gateReason || '');
+      showGateTerminatedPreview(unified.gateResult, unified.gateReason || '');
+      assessing = false;
       return;
     }
-    if (btn) btn.textContent = `${files.length} photo${files.length>1?'s':''} selected — Re-assessing…`;
 
-    try {
-      // Compress corner images
-      const cornerImgs = await Promise.all(files.map(f => new Promise(res => {
-        const reader = new FileReader();
-        reader.onload = ev => {
-          const img = new Image();
-          img.onload = () => {
-            const MAX = 900, Q = 0.5;
-            const scale = Math.min(MAX/img.width, MAX/img.height, 1);
-            const c = document.createElement('canvas');
-            c.width = Math.round(img.width*scale);
-            c.height = Math.round(img.height*scale);
-            c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-            res(c.toDataURL('image/jpeg', Q));
-          };
-          img.src = ev.target.result;
-        };
-        reader.readAsDataURL(f);
-      })));
+    const cgc = {...(unified.cgc || unified)};
+    const psa = unified.psa || (unified.psaGrade ? { grade: unified.psaGrade, psaNotes: unified.psaNotes || '' } : {});
+    if (unified.roboGrade) cgc._roboGrade = unified.roboGrade;
+    if (unified.psaGrade) cgc._psaGrade = unified.psaGrade;
+    cgc._highGradeTier = true;
+    cgc._highGradeUnlocked = (unified.roboGrade && unified.roboGrade.score >= 80);
 
-      // Combine original 4 images + corner macros
-      const origImgs = (formData.images || []).filter(Boolean).slice(0, 4);
-      const origCompressed = await Promise.all(origImgs.map(img => compressImage(img)));
-      const allImages = [...origCompressed, ...cornerImgs];
-
-      const token = window._currentUser ? (await window._currentUser.getIdToken()) : null;
-
-      // Re-run CGC with high-grade flag
-      const cgcResp = await fetch('/api/assess', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-client-secret': '022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d',
-          ...(token ? {'Authorization': 'Bearer ' + token} : {})
-        },
-        body: JSON.stringify({
-          images: allImages,
-          grader: 'CGC',
-          highGrade: true,
-          title: formData.title || '',
-          issueNumber: formData.issue || '',
-          issueDate: formData.issueDate || ''
-        })
-      });
-
-      if (!cgcResp.ok) throw new Error('High-grade CGC failed');
-      const cgcHG = await cgcResp.json();
-
-      // Re-run PSA
-      const psaResp = await fetch('/api/assess', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-client-secret': '022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d',
-          ...(token ? {'Authorization': 'Bearer ' + token} : {})
-        },
-        body: JSON.stringify({
-          images: allImages,
-          grader: 'PSA',
-          cgcGrade: cgcHG.grade || ''
-        })
-      });
-
-      const psaHG = psaResp.ok ? await psaResp.json() : _pendingAssessResult.psa;
-
-      // Update pending result with high-grade refined grades
-      cgcHG._roboGrade = _pendingAssessResult.cgc._roboGrade; // preserve RoboGrade
-      cgcHG._highGradeTier = true;
-      _pendingAssessResult = { cgc: cgcHG, psa: psaHG };
-
-      // Update the preview
-      const gradesEl = document.getElementById('result-grades');
-      const pqEl = document.getElementById('result-pq');
-      const cgcGrade = normalizeGrade(cgcHG.grade || '');
-      const psaGrade = normalizeGrade(psaHG.grade || '');
-      const pq = cgcHG.pageQuality ? normPageQuality(cgcHG.pageQuality) : '';
-      if (gradesEl) gradesEl.innerHTML =
-        (cgcGrade ? buildBadge(cgcGrade, 'cgc-ai', '', true) : '') +
-        (psaGrade ? buildBadge(psaGrade, 'psa-ai', '', true) : '');
-      if (pq && pqEl) pqEl.innerHTML = buildPQBox(pq);
-
-      // Update upgrade row to show success
-      const hgRow = document.getElementById('hg-upgrade-row');
-      if (hgRow) hgRow.innerHTML = '<div style="font-size:11px;color:#6abf6a;font-weight:700;text-align:center">✓ High-Grade Detail Assessment Complete (±3)</div>';
-
-    } catch(e) {
-      if (btn) { btn.textContent = 'Retry Corner Macros'; btn.disabled = false; }
-      console.error('High-grade upgrade failed:', e);
-    }
-  };
-  input.click();
+    const d = unified._diagnostics || {};
+    await animateStepsFromDiagnostics(d);
+    _pendingAssessResult = {cgc, psa};
+    window._pendingRoboGrade = cgc._roboGrade || null;
+    showResultPreview(cgc, psa);
+    onAssessmentSuccess();
+  } catch(e) {
+    dismissAssessModal(e.message);
+  }
+  assessing = false;
 }
 
 function startRestorationCheck() {
@@ -1913,6 +1991,7 @@ function completeAssessment() {
     formData.roboGradeDate = new Date().toISOString(); // store as ISO, display as local
   }
   formData.highGradeTier=!!(cgc._highGradeTier);
+  formData.highGradeUnlocked=!!(cgc._highGradeUnlocked);
   formData.restorationCheckTier=!!(cgc._restorationCheckTier);
   if(cgc.restorationReport)formData.restorationReport=cgc.restorationReport;
   formData.restorationFlag=!!(cgc.restorationFlag);
@@ -1972,6 +2051,17 @@ async function assessGrade(){
     if(!unifiedResp.ok){const e=await unifiedResp.text();throw new Error("Assessment error: "+e);}
     const unified=await unifiedResp.json();
     if(unified.error)throw new Error(unified.error);
+
+    // ── Gate check: if the assessment was terminated because the photos aren't
+    //    a valid comic book, show the flag UI and don't charge a credit.
+    //    Also track strikes; at 3 the account is flagged for review.
+    if(unified.gateResult && unified.gateResult !== 'COMIC'){
+      await incrementStrike(unified.gateResult, unified.gateReason||'');
+      showGateTerminatedPreview(unified.gateResult, unified.gateReason||'');
+      assessing=false;
+      return;
+    }
+
     const cgc={...(unified.cgc||unified)};
     // PSA grade lives directly on unified response in new architecture
     const psa = unified.psa || (unified.psaGrade ? { grade: unified.psaGrade, psaNotes: unified.psaNotes || '' } : {});
@@ -1990,6 +2080,86 @@ async function assessGrade(){
     dismissAssessModal(e.message);
   }
   assessing=false;
+}
+
+// Show a terminated-assessment preview when the gate catches NOT_COMIC or FLAGGED
+function showGateTerminatedPreview(gateResult, reason) {
+  // Stop the grid frame animation
+  if (window._modalFrameTimer) { clearInterval(window._modalFrameTimer); window._modalFrameTimer = null; }
+  const gridEl = document.getElementById('modal-grid-frame');
+  if (gridEl) gridEl.style.display = 'none';
+
+  // Mark all steps as failed
+  const allSteps = ['analyzing','populating','mint','pq','grading','confirming'];
+  allSteps.forEach((s,i) => {
+    setTimeout(()=>setStep(s,'failed'),120+i*60);
+  });
+
+  // Show the result preview with the terminated state
+  const preview = document.getElementById('assess-result-preview');
+  const gradesEl = document.getElementById('result-grades');
+  const pqEl = document.getElementById('result-pq');
+  if (!preview) return;
+
+  const label = gateResult === 'FLAGGED' ? 'INAPPROPRIATE' : 'NOT A COMIC';
+  const bg    = gateResult === 'FLAGGED' ? '#3a1010' : '#2a2018';
+  const fg    = gateResult === 'FLAGGED' ? '#ff6060' : '#ffb060';
+
+  gradesEl.innerHTML = `<div style="padding:12px 18px;background:${bg};color:${fg};border-radius:10px;font-size:17px;font-weight:900;letter-spacing:2px;text-align:center;border:1.5px solid ${fg};box-shadow:0 2px 10px rgba(0,0,0,0.4)">${label}</div>`;
+  pqEl.innerHTML = reason ? `<div style="font-size:11px;color:#a09080;font-style:italic;padding:4px 12px;text-align:center;line-height:1.4">${esc(reason)}</div>` : '';
+
+  preview.style.display = 'block';
+
+  // Replace Complete with Cancel — just closes modal, no credit charged
+  setTimeout(() => {
+    const btn = document.getElementById('assess-complete-btn');
+    if (btn) {
+      btn.textContent = 'CANCEL';
+      btn.style.background = '#5a3030';
+      btn.style.display = 'block';
+      btn.style.opacity = '0';
+      btn.style.transform = 'scale(0.85)';
+      btn.style.transition = 'opacity 280ms ease-out, transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1)';
+      btn.onclick = () => { dismissAssessModal(null); };
+      requestAnimationFrame(() => {
+        btn.style.opacity = '1';
+        btn.style.transform = 'scale(1)';
+      });
+    }
+  }, 800);
+}
+
+// Track a strike in Firestore. At 3 strikes, flag the account for review.
+// TODO: when the account is flagged, send an email to wherethehellismatt@gmail.com.
+// This requires either (a) a Firebase Cloud Function watching the flaggedAt field,
+// or (b) a Vercel serverless function with a transactional email provider.
+// For now, flagged accounts can be found via Firestore query:
+//   db.collection('users').where('accountFlagged', '==', true).get()
+async function incrementStrike(gateResult, reason) {
+  try {
+    if (!window._currentUser || !window._db) return;
+    const userRef = window._fsDoc(window._db, 'users', window._currentUser.uid);
+    const snap = await window._fsGetDoc(userRef);
+    const prev = (snap.exists() && snap.data().strikes) || 0;
+    const strikes = prev + 1;
+    const strikeHistory = (snap.exists() && snap.data().strikeHistory) || [];
+    strikeHistory.push({
+      timestamp: new Date().toISOString(),
+      gateResult, reason
+    });
+    const update = {
+      strikes,
+      strikeHistory,
+      lastStrikeAt: new Date().toISOString()
+    };
+    if (strikes >= 3) {
+      update.accountFlagged = true;
+      update.flaggedAt = update.flaggedAt || new Date().toISOString();
+    }
+    await window._fsSetDoc(userRef, update, {merge: true});
+  } catch(e) {
+    console.error('Strike tracking failed:', e);
+  }
 }
 
 // Seller autocomplete
@@ -2073,6 +2243,41 @@ function renderForm(){
                </div>`;
         }).join("")}
       </div>
+      ${formData.highGradeUnlocked ? `
+      <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">
+        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">HIGH-GRADE CORNER MACROS</div>
+        <div style="font-size:11px;color:#8a9a8a;margin-bottom:10px;line-height:1.5">Close-up photos of all four front-cover corners, one per slot. The high-grade pass uses these to tighten the grade.</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${[0,1,2,3].map(i=>{
+            const cornerLabels=["Top Left","Top Right","Bottom Left","Bottom Right"];
+            const img=(formData.cornerImages||[])[i];
+            return img
+              ? `<div class="drag-slot" draggable="true"
+                  ondragstart="cornerDragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="cornerDropSlot(event,${i})"
+                  onclick="_tappedCornerSlot=${i};document.getElementById('corner-photo-input').click()">
+                  <img src="${img}">
+                  <button class="slot-x" onclick="event.stopPropagation();removeCornerImg(${i})">×</button>
+                 </div>`
+              : `<div class="drag-slot" style="padding:0;background:#1a1a1a;min-height:100px;"
+                  ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="cornerDropSlot(event,${i})"
+                  onclick="_tappedCornerSlot=${i};document.getElementById('corner-photo-input').click()">
+                  <div style="color:#8a8a8a;font-size:13px;font-weight:600;letter-spacing:1.5px;padding:30px 10px;text-align:center">${cornerLabels[i].toUpperCase()}<div style="font-size:10px;opacity:0.6;margin-top:4px;letter-spacing:0.5px">Tap to add photo</div></div>
+                 </div>`;
+          }).join("")}
+        </div>
+        <input id="corner-photo-input" type="file" accept="image/*" multiple onchange="handleCornerImages(event)" style="display:none">
+        ${(()=>{
+          const cornerCount=(formData.cornerImages||[]).filter(Boolean).length;
+          const ready=cornerCount===4 && !assessing;
+          const ambient=cornerCount===4?"#1a4a2a":"#2a2a2a";
+          const ambientText=cornerCount===4?"#6abf6a":"#6a6a6a";
+          return `<div style="display:flex;justify-content:center;margin-top:12px">
+            <button id="hg-assess-btn" onclick="assessHighGrade()" ${ready?"":"disabled"} style="width:75%;min-height:52px;border-radius:12px;background:${ambient};color:${ambientText};border:none;font-size:14px;font-weight:700;letter-spacing:1.5px;cursor:${ready?"pointer":"not-allowed"}">
+              ${assessing?"Assessing…":`HIGH-GRADE ASSESS ${cornerCount<4?`(${cornerCount}/4)`:""}`}
+            </button>
+          </div>`;
+        })()}
+      </div>` : ''}
       <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">
       <div style="display:flex;justify-content:center;margin-top:4px"><button id="assess-btn" class="btn btn-cgc" onclick="assessGrade()" ${(!formData.images||formData.images.filter(Boolean).length===0||assessing)?"disabled":""} style="width:75%;min-height:56px;border-radius:14px;background:${assessing?"#1a3a5c":_assessed?"#1a4a2a":"#2a4a6a"};color:${assessing?"#a8d0f0":_assessed?"#6abf6a":"#a8d0f0"}">${assessing?"Assessing…":_assessed?"Re-assess Grade":"Assess Grade"}</button></div>
     </div>
@@ -2109,7 +2314,7 @@ function renderForm(){
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;">
         ${formData.assessedCGCGrade?buildBadge(normalizeGrade(formData.assessedCGCGrade),"cgc-ai","",false):""}
         ${formData.assessedPSAGrade?buildBadge(normalizeGrade(formData.assessedPSAGrade),"psa-ai","",false):""}
-        ${formData.roboGrade&&formData.roboGrade.score!=null?`<div style="background:#0f1a05;border:1.5px solid #3a5a0a;border-radius:10px;width:80px;height:80px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0"><div style="font-size:26px;font-weight:900;color:#b8d820;line-height:1">${Math.round(formData.roboGrade.score)}</div><div style="font-size:8px;color:#7abf20;letter-spacing:1px;margin-top:2px">ROBOGRADE</div></div>`:""}
+        ${formData.roboGrade&&formData.roboGrade.score!=null?`<div style="background:#0f1a05;border:1.5px solid #3a5a0a;border-radius:10px;width:80px;height:80px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0"><div style="font-size:26px;font-weight:900;color:#b8d820;line-height:1">${Math.round(formData.roboGrade.score)}</div><div style="font-size:8px;color:#7abf20;letter-spacing:1px;margin-top:2px">RG</div></div>`:""}
         ${formData.pageQuality?`<div style="margin-left:auto;align-self:center">${buildPQBox(formData.pageQuality)}</div>`:""}
       </div>
     </div>`:""}
@@ -2154,8 +2359,8 @@ function renderForm(){
     </div>
     ${(formData.cgcGrade||formData.psaGrade||formData.cgcNotes)?`<div><label class="field-label">Label Notes</label><textarea rows="2" oninput="formData.cgcNotes=this.value">${esc(formData.cgcNotes||"")}</textarea></div>`:""}
     ${(formData.cgcGrade||formData.graderNotes)?`<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes?4:2}" style="font-style:italic" placeholder="Official grader notes" oninput="formData.graderNotes=this.value">${esc(formData.graderNotes||"")}</textarea></div>`:""}
-    ${formData.aiGraderNotes?`<div><label class="field-label" style="color:#4a7a9a">AI Grader Notes</label><textarea rows="8" style="font-style:italic;border-color:#1a3a5c" oninput="formData.aiGraderNotes=this.value">${esc(formData.aiGraderNotes||"")}</textarea></div>`:""}
-    ${formData.aiAssessment?`<div><label class="field-label">AI Assessment</label><textarea rows="${Math.max(12,Math.ceil(formData.aiAssessment.length/80))}" oninput="formData.aiAssessment=this.value">${esc(formData.aiAssessment)}</textarea></div>`:""}
+    ${formData.aiGraderNotes?`<div><label class="field-label" style="color:#4a7a9a">RG Notes</label><textarea rows="8" style="font-style:italic;border-color:#1a3a5c" oninput="formData.aiGraderNotes=this.value">${esc(formData.aiGraderNotes||"")}</textarea></div>`:""}
+    ${formData.aiAssessment?`<div><label class="field-label">RG Assessment</label><textarea rows="${Math.max(12,Math.ceil(formData.aiAssessment.length/80))}" oninput="formData.aiAssessment=this.value">${esc(formData.aiAssessment)}</textarea></div>`:""}
     ${formData.psaNotes?`<div><label class="field-label" style="color:#e87a7a">PSA Notes</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes||"")}</textarea></div>`:""}
     ${formData.roboGrade?buildRoboGradeDisplay(formData.roboGrade):""}
     <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes||"")}</textarea></div>
@@ -2255,7 +2460,7 @@ function buildRoboGradeDisplay(rg) {
         <div style="font-size:8px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:2px">RG</div>
         <div style="display:flex;align-items:flex-start;gap:2px">
           <span style="font-size:42px;font-weight:900;color:${CHARTREUSE};line-height:1">${scoreRounded}</span>
-          <span style="font-size:13px;font-weight:700;color:${OLIVE_LT};margin-top:4px">±${rg.confidenceRange||8}</span>
+          <span style="font-size:13px;font-weight:700;color:${OLIVE_LT};margin-top:4px">${scoreRounded >= 80 ? '+' : '±'+(rg.confidenceRange||8)}</span>
         </div>
         <div style="font-size:7px;color:#2a4a10;margin-top:2px">V${rg.version||'2.0'}</div>
       </div>
@@ -2401,6 +2606,50 @@ async function handleImages(e){
   if(btn)btn.disabled=formData.images.filter(Boolean).length===0||assessing;
 }
 
+// ── Corner image handlers (for high-grade assessment) ─────────────────────────
+let _tappedCornerSlot=0;
+let _cornerDragSrc=null;
+
+function cornerDragStart(e,i){_cornerDragSrc=i;e.dataTransfer.effectAllowed="move";}
+function cornerDropSlot(e,target){
+  e.preventDefault();
+  e.currentTarget.classList.remove("drag-over");
+  if(_cornerDragSrc===null||_cornerDragSrc===target){_cornerDragSrc=null;return;}
+  const imgs=[...(formData.cornerImages||[])];
+  while(imgs.length<4)imgs.push(null);
+  const tmp=imgs[_cornerDragSrc];imgs[_cornerDragSrc]=imgs[target]||null;imgs[target]=tmp;
+  formData.cornerImages=imgs;
+  formData._imagesChanged=true;
+  _cornerDragSrc=null;
+  renderForm();
+}
+
+function removeCornerImg(i){
+  const imgs=[...(formData.cornerImages||[])];
+  while(imgs.length<4)imgs.push(null);
+  imgs[i]=null;
+  formData.cornerImages=imgs;
+  formData._imagesChanged=true;
+  renderForm();
+}
+
+async function handleCornerImages(e){
+  const files=Array.from(e.target.files);
+  if(!files.length)return;
+  const newImgs=await Promise.all(files.map(f=>new Promise(res=>{const r=new FileReader();r.onload=ev=>res(ev.target.result);r.readAsDataURL(f);})));
+  const imgs=[...(formData.cornerImages||[])];
+  while(imgs.length<4)imgs.push(null);
+  const count=Math.min(newImgs.length,4);
+  for(let n=0;n<count;n++){
+    const slot=(_tappedCornerSlot+n)%4;
+    imgs[slot]=newImgs[n];
+  }
+  formData.cornerImages=imgs;
+  formData._imagesChanged=true;
+  e.target.value="";
+  renderForm();
+}
+
 function showImageCapModal(type) {
   const existing = document.getElementById('image-cap-modal');
   if (existing) existing.remove();
@@ -2450,15 +2699,22 @@ async function submitForm(){
   syncMsg("Compressing images...");
   const rawImages=(formData.images||[]).filter(Boolean);
   const compressedImages=rawImages.length>0&&formData._imagesChanged?await Promise.all(rawImages.map(img=>compressImage(img))):[];
+  // Also compress corner images (high-grade macros) if changed
+  const rawCornerImages=(formData.cornerImages||[]).filter(Boolean);
+  const compressedCornerImages=rawCornerImages.length>0&&formData._imagesChanged?await Promise.all(rawCornerImages.map(img=>compressImage(img))):[];
   syncMsg(null);
   const existingComic=formData.id?comics.find(c=>c.id===formData.id):null;
   // Use compressed new images if user changed them, otherwise preserve Firestore images exactly
   const finalImages=formData._imagesChanged
     ?(compressedImages.length>0?compressedImages:[])
     :(formData._savedImages||existingComic?.images||[]);
+  const finalCornerImages=formData._imagesChanged
+    ?compressedCornerImages
+    :(formData._savedCornerImages||existingComic?.cornerImages||[]);
   const id=formData.id||`comic:user_${Date.now()}`;
   const rec={...formData,id,
     images:finalImages,
+    cornerImages:finalCornerImages,
     publicListing: !!(window._publicByDefault),
     purchasePrice:formData.purchasePrice!==""?parseFloat(formData.purchasePrice):null,
     taxesFeesShipping:formData.taxesFeesShipping!==""?parseFloat(formData.taxesFeesShipping):null,
@@ -2469,6 +2725,7 @@ async function submitForm(){
     dateAdded:formData.dateAdded||new Date().toISOString()
   };
   delete rec._savedImages;
+  delete rec._savedCornerImages;
   delete rec._imagesChanged;
   // ── RoboGrade ID uniqueness guarantee ───────────────────────────
   // Check /robograde_ids/{id} before saving. If taken, regenerate and retry.
