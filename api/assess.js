@@ -153,6 +153,48 @@ export default async function handler(req, res) {
   // Spine includes inner corners at top and bottom of spine
   const backScoreDefault = hasBackCover ? '0.0' : 'null';
 
+  // ── CGC grade tier thresholds (factual allowances per grade, reworded) ────────
+  const CGC_GRADE_TIERS = `
+10.0: Flawless in every respect. No handling or manufacturing defects. Interior must be White — OW/W pages cannot reach 10.0. No distribution ink, printer tears, bindery tears. Only one pre-1975 book has ever received this grade.
+9.9: One small non-color-breaking bend allowed, or one non-color-breaking spine stress line. No corner or edge wear. Off-White to White pages minimum; Off-White pages cannot reach 9.9. Tiny distribution ink permitted.
+9.8: One or two minor handling defects allowed (e.g., very small color-breaking spine stress, light bend). Cream to OW pages generally cannot reach 9.8. Minor printer defects acceptable if run-wide. For Silver/Bronze: slightly impacted staples, minor distribution ink, printer creases, light ink transfer, extra manufacturing staples, one small printer or Marvel tear allowed. For Golden Age: small bindery tear or chip, slightly off-register cover, light dust shadows or tanning, unobtrusive date stamps or small writing sometimes permitted. Rarest high grade for pre-1965 material; essentially nonexistent in Golden Age. Page quality cannot be Cream to OW or lower.
+9.6: A few more small defects allowed but each must be very minor — a couple of tiny color-breaking spine stress lines, very small wear to one or two corners, a tiny edge crease, very small edge or staple tear, very light cover tanning, slight staple discoloration, one very small light stain (spot of foxing, tiny rust stain, small disturbed-ink spot). One small manufacturing chip allowed (bindery, Marvel chip, or printer chip) but no handling-caused missing pieces. Squarebounds: one small staple-caused hole allowed; very small spine split up to 1/16" allowed. Minor gloss imperfections visible only in raking light allowed. Nothing below Cream to OW in page quality. Interior pages can have minor defects.
+9.4: Several small or a couple of moderate defects. A few tiny spine stress lines, very small corner blunting, one small edge tear or crease, very light soiling or tanning. Staples clean, firmly attached. Pages supple. Some binding/printing defects permitted. Unobtrusive date stamps or minor writing allowed. Cream to OW pages generally acceptable.
+9.2: More wear starting to show. Minor spine ticks, light corner blunting. Still presents well. A few moderate defects beginning.
+9.0: Increasing wear but still strong presentation. Minor bends, small color-breaking creases, minor chips. Possible minor sun/dust shadows or light tanning. Light Tan to OW pages generally cap here.
+8.5: One moderate defect or a cluster of small defects. Cover shows wear but retains reasonable gloss.
+8.0: Minor bends or creases that break color; minor chips on edges. Minor tanning possible. At the lower end of 8.0, minor tape may appear (noted on label). Books with a single neatly detached centerfold (one staple) start at 8.0. Light Tan to OW pages max grade: 8.5.
+7.5: Accumulation of defects; cover shows moderate wear. Generally flat, some gloss remains.
+7.0: Longer tears possible, color discoloration, fading, light soiling, light stains. Cover detached at one staple possible. Detached centerfold with both staples possible.
+6.5: Significant wear accumulation. Some structural defects possible.
+6.0: Multiple defects including longer tears, soiling, fading. Missing inserts possible.
+5.5: Substantial wear. Cover gloss significantly reduced.
+5.0: Moderate to substantial accumulation of defects.
+4.0: Multiple major defects. Larger tears, heavy creases, abrasions, severe stains. Cover inks possibly faded. Some story or ad pages may be missing. Interior panels or coupons can be cut. Excessive tape possible. An otherwise high-grade book missing only story pages or front/back cover (not both) starts here.
+3.0: Complete but severe defects throughout. Large missing pieces possible. Covers or pages possibly detached. Significant tape possible.
+2.0: Heavily worn and damaged. May be stained. Extensive tape repairs. Stories complete but ad pages, coupons, or panels may be missing. Spine or cover possibly split.
+1.5: Fully split spine reattached with tape or staples counts as 1.5 (clean split alone = 1.8). Missing cover pieces can slightly exceed 3"×3".
+0.5: Extensive defect accumulation or significant missing parts (1/3+ of front or back cover). No single defect alone causes 0.5 — it requires combination. Staining severe enough to cause color loss, staple disintegration, or brittleness together can reach 0.5.
+NG: Missing entire cover (coverless). Also: front cover present but back cover absent and less than half of interior pages present; or back cover present but front absent and less than 3/4 of interior present.
+`;
+
+  // Returns the 3-4 tier definitions most relevant to a given numeric grade
+  function gradeTierContext(gradeStr) {
+    const g = parseFloat(gradeStr);
+    if (isNaN(g)) return CGC_GRADE_TIERS; // return all if unknown
+    // Select adjacent tiers
+    const allTiers = CGC_GRADE_TIERS.trim().split('\n').filter(l => l.trim());
+    const tierGrades = [10.0, 9.9, 9.8, 9.6, 9.4, 9.2, 9.0, 8.5, 8.0, 7.5, 7.0, 6.5, 6.0, 5.5, 5.0, 4.0, 3.0, 2.0, 1.5, 0.5];
+    const idx = tierGrades.findIndex(t => g >= t);
+    const lo = Math.max(0, idx - 1);
+    const hi = Math.min(tierGrades.length - 1, idx + 2);
+    const relevant = new Set(tierGrades.slice(lo, hi + 1).map(String));
+    return allTiers.filter(line => {
+      const m = line.match(/^(\d+\.?\d*)/);
+      return m && relevant.has(m[1]);
+    }).join('\n');
+  }
+
   // ── Unified system prompt: one image pass, neutral first, three grades ───────
   const systemPrompt = `You are an expert comic book condition analyst. Examine the photos ONCE and record neutral observations, then derive three independent grades from those observations.
 
@@ -207,6 +249,9 @@ Grade calibration:
 • UV: white covers with tanning on unprinted areas only.
 • Press: spine roll=yes | edge fraying=no | corner creases=yes | tanning=no.
 Grader notes: one bullet per defect starting with •, official CGC terminology, always note CB vs non-CB.
+
+CGC GRADE TIER REFERENCE — what each grade officially permits:
+${CGC_GRADE_TIERS.trim()}
 
 ── PSA GRADE ──
 PSA has no published standard. Derive PSA from your CGC grade.
