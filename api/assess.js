@@ -254,13 +254,73 @@ CGC GRADE TIER REFERENCE — what each grade officially permits:
 ${CGC_GRADE_TIERS.trim()}
 
 ── PSA GRADE ──
-PSA has no published standard. Derive PSA from your CGC grade.
-PSA graders come from a card background and emphasize eye appeal holistically. Early market data suggests PSA runs slightly more generous than CGC on Silver/Bronze Age material — not universally.
-Start from your CGC grade. Adjust:
-  HIGHER when: strong eye appeal beyond defect list, Silver/Bronze Age with good overall presentation.
-  LOWER when: tape present (PSA always notes tape), accumulated small defects undermine eye appeal.
-  SAME when: defects are clearly enumerable and eye appeal matches technical grade.
-Do not invent defects not visible in photos. If same grade, psaNotes must be empty string.
+PSA entered comic grading in July 2025. They use the same numeric scale as CGC but with fewer intermediate steps and their own page quality terminology. PSA weights eye appeal more explicitly than CGC — a book that presents well at a grade boundary should get the benefit of the doubt.
+
+PSA numeric grades (no 9.2, no 1.8, no 1.5; bottom is 0.3 not 0.5):
+10, 9.8, 9.6, 9.4, 9.2, 9.0, 8.5, 8.0, 7.5, 7.0, 6.5, 6.0, 5.5, 5.0, 4.5, 4.0, 3.5, 3.0, 2.5, 2.0, 1.5, 1.0, 0.5, 0.3
+
+PSA GRADE TIER REFERENCE (what each grade officially permits):
+10 (Gem Mint): Effectively flawless. No handling defects; only trace printing defects. White or exceptionally white pages.
+9.8 (Near Mint/Mint): Nearly perfect. Only the smallest printing or handling defects. Flat cover, well-centered, bright color, sharp corners. Off-White to White pages at minimum.
+9.6 (Near Mint+): Sharp corners, very limited wear. Minor spine stress with a few color breaks permitted. Trace edge or corner wear. Strong gloss. Cream/OW to White pages acceptable. Distributor markings permitted with minor overspray. Arrival dates permitted.
+9.4 (Near Mint): A few tiny spine stresses, one small edge tear, or minor corner blunting. Cover flat and firmly secured, only trace fading or surface wear. Staples clean. Supple pages, cream/OW to White. Small bindery/printing defects allowed. Unobtrusive date stamps permitted.
+9.2 (Near Mint-): Slight wear beginning. Small spine ticks, small corner blunting. Still presents strongly with high eye appeal.
+9.0 (VF/NM): Wear more apparent but eye appeal still strong. Small bends, small color-breaking creases, small chips. Minor sun or dust shadows and light tanning possible.
+8.5 (VF+): Accumulation of small defects or one moderate defect. Cover shows wear but retains reasonable gloss.
+8.0 (VF): Small bends, small color-breaking creases, minor edge chips. Minor shadows or tanning. At the low end of 8.0, small tape may be present (noted on label). A book with a single neatly detached centerfold (one staple) starts at 8.0.
+7.5 (VF-): Accumulation of defects, moderate cover wear. Generally flat, gloss mostly intact.
+7.0 (FN/VF): Longer tears, color discoloration, fading, soiling, light stains possible. Cover detached at one staple or centerfold detached at both staples possible.
+6.5 (FN+): Significant wear accumulation. Some structural defects possible.
+6.0 (FN): Longer tears, more soiling, more fading. Missing inserts possible.
+5.5 (FN-): Substantial wear, reduced cover gloss.
+5.0 (VG/FN): Moderate to substantial defect accumulation.
+4.5 / 4.0 (VG+ / VG): Major defects. Larger tears, heavy creases, abrasions, severe stains. Cover inks possibly faded. Some story or ad pages can be missing; panels or coupons may be cut. Heavy tape may be present. An otherwise high-grade book missing a front or back cover (not both) or missing story pages starts here.
+3.5 / 3.0 (VG- / G/VG): Complete with all pages but glaring defects or a heavy accumulation of smaller defects. Possibly large missing pieces. Covers or pages possibly detached. Gloss usually gone. Significant tape possible.
+2.5 / 2.0 (G+ / G): Worn and damaged. May be stained. Extensive tape repairs. Stories complete but ad pages, coupons, or panels may be missing. Spine or cover possibly split.
+1.5 / 1.0 (Fa/G / Fa): Heavy accumulation of major defects across the book.
+0.5 (Poor): Heavily defaced, multiple major defects, some missing pieces.
+0.3 (Poor Incomplete): Coverless or missing wraps, pages, or staples. Very low page quality.
+
+Special PSA designations:
+• Authentic (AU) — authentication only, no numeric grade
+• Conserved — professional conservation using archivally safe, reversible materials
+• Restored — amateur restoration using non-archival or non-reversible materials
+• Married — wrong-issue cover or pages added; noted on label but graded normally
+• Qualified — used when noted defects would otherwise distort the numeric grade
+
+PSA page quality scale (10 designations — note these are NOT the same as CGC's scale):
+White | Off-White to White | Off-White | Cream to Off-White | Cream | Light Tan to Off-White | Light Tan | Tan | Brown | Brittle
+Caps: Light Tan to Off-White max grade 8.5; Brittle max grade 3.5.
+"White" on a pre-1984 book means exceptionally preserved, not merely light-colored — PSA requires White pages for a 10.
+
+PSA-specific calibration rules:
+• Tape is ALWAYS treated as a defect and always noted on the label — PSA never classifies tape as restoration.
+• Pressing and cleaning prior to submission are accepted. Pressed comics receive full numeric grades (unlike pressed cards).
+• Distributor ink or markings are permitted at 9.6+ if overspray is minor.
+• Arrival dates do not affect grade.
+• Professional (Conserved) work is distinguished from amateur (Restored) work — the quality-plus-quantity A/B/C × 1-5 scheme used by CGC does NOT apply to PSA.
+• Eye appeal is weighted explicitly: at grade boundaries, a book with strong presentation (bright colors, flat spine, sharp corners) earns the higher grade.
+
+Deriving the PSA grade from your CGC assessment:
+Start from your CGC grade. Apply these adjustments in this order:
+  1. If tape is present, PSA grade is AT MOST equal to CGC — often one tier lower because PSA's explicit tape-as-defect rule bites harder.
+  2. If defects are clearly enumerable and eye appeal matches the defect list, keep PSA the same as CGC.
+  3. If eye appeal exceeds what the defect list implies (strong gloss, bright color, flat spine, sharp corners, minimal tanning), adjust PSA upward by one tier — especially for Silver and Bronze Age material where early market data shows PSA running slightly more generous than CGC.
+  4. PSA has fewer intermediate grades than CGC. If your CGC grade lands at 9.2, 1.8, or 1.5, you must round to the nearest PSA grade: 9.2→9.2 (exists on both), 1.8→2.0, 1.5→1.5 (exists on both). Most CGC grades have a PSA equivalent.
+  5. If your CGC grade is 0.5 Poor and the book is coverless or missing wraps/pages/staples, PSA grade should be 0.3.
+
+Map page quality to PSA's 10-designation scale (do NOT use CGC's scale for PSA):
+CGC "Off-White to White" → PSA "Off-White to White"
+CGC "Off-White" → PSA "Off-White"
+CGC "Cream to Off-White" → PSA "Cream to Off-White"
+CGC "Light Tan to Off-White" → PSA "Light Tan to Off-White" (caps grade at 8.5)
+CGC "Light Tan to Cream" → PSA "Light Tan" (PSA has no "to Cream" variant)
+CGC "Tan to Off-White" or "Tan to Cream" → PSA "Tan"
+CGC "Brown to Off-White" or "Brown to Tan" or "Brown" → PSA "Brown"
+CGC "Brown/Brittle" or "Slightly Brittle" → PSA "Brown" (if still structurally sound) or "Brittle"
+CGC "Brittle" → PSA "Brittle" (caps grade at 3.5)
+
+Do not invent defects not visible in photos. If the PSA grade equals the CGC grade, psaNotes must be an empty string. When PSA differs, explain the reason in psaNotes in 1-2 sentences (e.g. "Eye appeal argues for the higher grade — strong color saturation and flat spine despite the minor stress lines.").
 
 If a CGC or PSA label is visible: read grade, cert number, page quality, and key issue notations directly from it.
 ${censusContext}${notesBlock}
