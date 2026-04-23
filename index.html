@@ -229,20 +229,7 @@
     }
     .assess-step-label { flex: 1; font-weight: 500; }
     .assess-step-detail { font-size: 11px; color: #8a7a6a; margin-top: 1px; }
-    #assess-result-preview {
-      margin-top: 20px; padding: 16px; background: #f8f6f3;
-      border-radius: 10px; display: none;
-    }
-    #assess-result-preview .result-grades {
-      display: flex; gap: 10px; justify-content: center; margin-bottom: 12px;
-    }
-    #assess-complete-btn {
-      width: 100%; margin-top: 14px; padding: 14px;
-      background: #2a4a6a; color: #a8d0f0; border: none; border-radius: 10px;
-      font-size: 15px; font-weight: 700; cursor: pointer; letter-spacing: 0.04em;
-      display: none;
-    }
-    #assess-complete-btn:hover { background: #1a3a5a; }
+    /* Note: assess-result-preview is positioned/styled inline inside showAssessModal */
 
 
   <style>
@@ -534,6 +521,12 @@ function buildListBadge(c){
 function buildGradeRowHTML(c){
   const des=detectDesignation(c);
   const badges=[];
+  // Order: RoboGrade first, then CGC AI, then PSA AI (matches assessment modal)
+  // Official CGC/PSA badges only appear if there's no AI grade
+  if(c.roboGrade&&c.roboGrade.score!=null){
+    const rgScore=Math.round(c.roboGrade.score);
+    badges.push(`<div class="ubadge" style="background:#0f1a05;border-color:#3a5010"><div class="ubadge-body" style="background:#0f1a05"><div class="ubadge-num" style="color:#b8d820">${rgScore}</div><div class="ubadge-lbl" style="color:#b8d820;opacity:0.7">RG</div></div></div>`);
+  }
   if(c.cgcGrade)badges.push(buildBadge(c.cgcGrade,"cgc-official",des,false));
   if(c.psaGrade)badges.push(buildBadge(c.psaGrade,"psa-official",c.psaDesignation||"universal",false));
   const ac=aiCgcGrade(c);
@@ -541,12 +534,8 @@ function buildGradeRowHTML(c){
   if(c.assessedPSAGrade)badges.push(buildBadge(normalizeGrade(c.assessedPSAGrade),"psa-ai","",false));
   const gradeIsAiCgc=!c.assessedCGCGrade&&!!(c.myAssessment||c.aiAssessment)&&!!c.grade;
   if(c.grade&&!gradeIsAiCgc&&!c.cgcGrade&&!c.psaGrade&&!ac)badges.push(buildBadge(c.grade,"my","",false));
-  if(c.roboGrade&&c.roboGrade.score!=null){
-    const rgScore=Math.round(c.roboGrade.score);
-    badges.push(`<div style="background:#0f1a05;border:1.5px solid #3a5a0a;border-radius:10px;width:64px;height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0"><div style="font-size:20px;font-weight:900;color:#b8d820;line-height:1">${rgScore}</div><div style="font-size:8px;color:#7abf20;letter-spacing:1px;margin-top:2px">ROBOGRADE</div></div>`);
-  }
   if(badges.length===0)return"";
-  return `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start">${badges.join("")}</div>`;
+  return `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;justify-content:center">${badges.join("")}</div>`;
 }
 function fmt$(v){return v!=null&&v>0?`$${v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—";}
 function totalCost(c){return[c.purchasePrice,c.taxesFeesShipping,c.gradingCost,c.cgcShipping].filter(v=>v!=null&&v>0).reduce((a,b)=>a+b,0);}
@@ -833,38 +822,11 @@ function showDetail(id){
   const gc=gradeColor(selected.grade);
   const cost=totalCost(selected);
   let html=`<div class="sticky-back"><button class="btn-ghost" onclick="showList()">← Back</button></div>
-  <div class="card" style="border-top:3px solid ${gc};margin-top:4px;background:#fff">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px">
-      <div>
-        <h2 style="font-size:22px;color:#1a1614">${esc(selected.title)}</h2>
-        ${selected.issue?`<div style="font-size:16px;color:#3a2e24;margin-top:2px">${formatIssue(selected.issue,selected.title)}</div>`:""}
-        <div style="font-size:13px;color:#8a7a6a;margin-top:4px">${[selected.publisher,selected.issueDate].filter(Boolean).map(esc).join(" · ")}</div>
-        ${selected.cgcCert?`<div style="font-size:12px;color:#9a8a7a;margin-top:4px">Cert #${esc(selected.cgcCert)}</div>`:""}
-        ${selected.seller?`<div style="font-size:12px;color:#8a7a6a;margin-top:4px">Purchased from: ${esc(selected.seller)}</div>`:""}
-      </div>
-      <div style="text-align:right;flex-shrink:0">
-        ${(()=>{
-          // Show official CGC or PSA badge only; AI grades move to the badge row below images
-          if(selected.cgcGrade){
-            const des=detectDesignation(selected);
-            let sc="#1a5fa8",sl="CGC";
-            if(des==="restored"){sc="#7c3aed";sl="CGC";}
-            if(des==="qualified"){sc="#166534";sl="QUALIFIED";}
-            return`<div style="border:1.5px solid rgba(0,0,0,0.2);border-radius:6px;overflow:hidden;width:80px;box-shadow:0 2px 8px rgba(0,0,0,0.3)"><div style="background:${sc};padding:3px;text-align:center;font-size:8px;font-weight:800;letter-spacing:1.5px;color:#fff">${sl}</div><div style="background:#fff;padding:6px 8px;text-align:center"><div style="font-size:36px;font-weight:800;color:#000;line-height:1">${esc(selected.cgcGrade)}</div><div style="font-size:11px;color:#333;margin-top:2px">${esc(GRADE_LABELS[selected.cgcGrade]||"")}</div></div></div>`;
-          }
-          if(selected.psaGrade){
-            return`<div style="border:1.5px solid rgba(0,0,0,0.2);border-radius:6px;overflow:hidden;width:80px;box-shadow:0 2px 8px rgba(0,0,0,0.3)"><div style="background:#b91c1c;padding:3px;text-align:center;font-size:8px;font-weight:800;letter-spacing:1.5px;color:#fff">PSA</div><div style="background:#fff;padding:6px 8px;text-align:center"><div style="font-size:36px;font-weight:800;color:#000;line-height:1">${esc(selected.psaGrade)}</div><div style="font-size:11px;color:#333;margin-top:2px">${esc(GRADE_LABELS[selected.psaGrade]||"")}</div></div></div>`;
-          }
-          return"";
-        })()}
-        ${selected.cgcCert?`<div style="font-size:10px;color:#9a8a7a;margin-top:6px">#${esc(selected.cgcCert)}</div>`:""}
-        ${selected.psaCert?`<div style="font-size:10px;color:#9a8a7a;margin-top:4px">#${esc(selected.psaCert)}</div>`:""}
-      </div>
-    </div>`;
+  <div class="card" style="border-top:3px solid ${gc};margin-top:4px;background:#fff">`;
 
   if(selected.images?.length>0){
     const imgs=selected.images;
-    html+=`<div style="margin-top:16px;display:flex;flex-direction:column;gap:6px">`;
+    html+=`<div style="display:flex;flex-direction:column;gap:6px">`;
     if(imgs[0]) html+=`<img class="detail-cover" src="${imgs[0]}" onclick="openLightbox('${selected.id}',0)">`;
     if(imgs[1]) html+=`<img class="detail-cover" src="${imgs[1]}" onclick="openLightbox('${selected.id}',1)">`;
     if(imgs[2]) html+=`<img class="detail-cover" src="${imgs[2]}" onclick="openLightbox('${selected.id}',2)">`;
@@ -872,14 +834,23 @@ function showDetail(id){
     html+=`</div>`;
   }
 
-  // Grade badge row + PQ box on same line
+  // Assessment results — RoboGrade, CGC AI, PSA AI badges + centered PQ pill
   const gradeRow=buildGradeRowHTML(selected);
   if(gradeRow||selected.pageQuality){
-    html+=`<div style="margin-top:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    html+=`<div style="margin-top:16px;padding:14px;background:#0d0d0f;border:1px solid #2a2a3a;border-radius:10px;display:flex;flex-direction:column;align-items:center;gap:10px">
       ${gradeRow||""}
-      ${selected.pageQuality?`<div><div class="section-label" style="margin-bottom:4px">Page Quality</div>${buildPQBox(selected.pageQuality)}</div>`:""}
+      ${selected.pageQuality?`<div style="display:flex;justify-content:center">${buildPQBox(selected.pageQuality)}</div>`:""}
     </div>`;
   }
+
+  html+=`<div style="margin-top:20px">
+    <h2 style="font-size:22px;color:#1a1614">${esc(selected.title)}</h2>
+    ${selected.issue?`<div style="font-size:16px;color:#3a2e24;margin-top:2px">${formatIssue(selected.issue,selected.title)}</div>`:""}
+    <div style="font-size:13px;color:#8a7a6a;margin-top:4px">${[selected.publisher,selected.issueDate].filter(Boolean).map(esc).join(" · ")}</div>
+    ${selected.cgcCert?`<div style="font-size:12px;color:#9a8a7a;margin-top:4px">Cert #${esc(selected.cgcCert)}</div>`:""}
+    ${selected.psaCert?`<div style="font-size:12px;color:#9a8a7a;margin-top:4px">Cert #${esc(selected.psaCert)}</div>`:""}
+    ${selected.seller?`<div style="font-size:12px;color:#8a7a6a;margin-top:4px">Purchased from: ${esc(selected.seller)}</div>`:""}
+  </div>`;
 
   html+=`<div class="divider"></div>
   <div class="grid-2">
@@ -1444,7 +1415,7 @@ function showResultPreview(cgc, psa) {
     const configs = {
       'cgc-ai':   {bg:'#2a5a8a', text:'#e0f0ff', label:'CGC AI'},
       'psa-ai':   {bg:'#8a2a2a', text:'#ffe0e0', label:'PSA AI'},
-      'robograde':{bg:'#0f1a05', text:'#aaee30', label:'ROBOGRADE', border:'1.5px solid #3a5010'},
+      'robograde':{bg:'#0f1a05', text:'#aaee30', label:'RG', border:'1.5px solid #3a5010'},
     };
     const c = configs[type];
     const border = c.border ? `border:${c.border};` : '';
@@ -2234,7 +2205,7 @@ function buildRoboGradeDisplay(rg) {
   });
 
   function defectList(arr) {
-    if (!arr.length) return `<div style="font-size:10px;color:${LIGHT};font-style:italic;padding:3px 0">None observed</div>`;
+    if (!arr.length) return ''; // leave empty sections blank
     return arr.map(d => {
       const cb  = d.colorBreaking ? ` <span style="color:#e05050;font-size:9px">CB</span>` : '';
       const loc = d.location && d.location !== 'N/A' ? ` · ${d.location}` : '';
@@ -2253,11 +2224,12 @@ function buildRoboGradeDisplay(rg) {
   const ss  = rg.spineScore    != null ? Math.round(rg.spineScore)    : '—';
   const ins = rg.interiorScore != null ? Math.round(rg.interiorScore) : '—';
 
-  // Category sections
-  function catSection(label, score, weight, defArr) {
+  // Category sections — only render if there are defects
+  function catSection(label, score, defArr) {
+    if (!defArr.length) return ''; // hide entire empty sections
     return `<div style="margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-        <span style="font-size:10px;font-weight:700;color:${OLIVE_LT};letter-spacing:1px">${label} <span style="color:${LIGHT};font-weight:400">×${weight}</span></span>
+        <span style="font-size:10px;font-weight:700;color:${OLIVE_LT};letter-spacing:1px">${label}</span>
         <span style="font-size:16px;font-weight:800;color:${CHARTREUSE}">${score}</span>
       </div>
       ${defectList(defArr)}
@@ -2265,22 +2237,22 @@ function buildRoboGradeDisplay(rg) {
   }
 
   const sectionsHTML = [
-    catSection('FRONT',    fs,  '0.5', byCat['Front']),
-    catSection('BACK',     bs,  '0.2', byCat['Back']),
-    catSection('SPINE',    ss,  '0.2', byCat['Spine']),
-    catSection('INTERIOR', ins, '0.1', byCat['Interior']),
-  ].join(`<div style="border-top:1px solid ${RULE};margin:6px 0"></div>`);
+    catSection('FRONT',    fs,  byCat['Front']),
+    catSection('BACK',     bs,  byCat['Back']),
+    catSection('SPINE',    ss,  byCat['Spine']),
+    catSection('INTERIOR', ins, byCat['Interior']),
+  ].filter(Boolean).join(`<div style="border-top:1px solid ${RULE};margin:6px 0"></div>`);
 
+  // Keep staples and restoration flags only; drop the redundant assessmentNotes paragraph
   const extrasHTML = [
     rg.stapleCondition ? `<div style="font-size:11px;color:${LIGHT};margin-top:6px"><strong style="color:#a8b888">Staples:</strong> ${rg.stapleCondition}</div>` : '',
     rg.restorationFlags&&rg.restorationFlags.length ? `<div style="font-size:11px;color:#e05050;margin-top:4px">⚠ Restoration flags: ${rg.restorationFlags.join(', ')}</div>` : '',
-    rg.assessmentNotes ? `<div style="font-size:11px;color:${LIGHT};margin-top:6px;font-style:italic">${rg.assessmentNotes}</div>` : '',
   ].filter(Boolean).join('');
 
   return `<div style="background:${BG};border:1.5px solid ${OLIVE_MID};border-radius:12px;padding:14px;margin-bottom:8px">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
       <div style="background:${OLIVE};border-radius:16px;width:88px;height:88px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;border:1.5px solid ${OLIVE_MID}">
-        <div style="font-size:8px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:2px">ROBOGRADE</div>
+        <div style="font-size:8px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:2px">RG</div>
         <div style="display:flex;align-items:flex-start;gap:2px">
           <span style="font-size:42px;font-weight:900;color:${CHARTREUSE};line-height:1">${scoreRounded}</span>
           <span style="font-size:13px;font-weight:700;color:${OLIVE_LT};margin-top:4px">±${rg.confidenceRange||8}</span>
@@ -2292,26 +2264,24 @@ function buildRoboGradeDisplay(rg) {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
           <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
             <div style="font-size:18px;font-weight:800;color:${CHARTREUSE}">${fs}</div>
-            <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px">FRONT ×0.5</div>
+            <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px">FRONT</div>
           </div>
           <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
             <div style="font-size:18px;font-weight:800;color:${CHARTREUSE}">${bs}</div>
-            <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px">BACK ×0.2</div>
+            <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px">BACK</div>
           </div>
           <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
             <div style="font-size:18px;font-weight:800;color:${CHARTREUSE}">${ss}</div>
-            <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px">SPINE ×0.2</div>
+            <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px">SPINE</div>
           </div>
           <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
             <div style="font-size:18px;font-weight:800;color:${CHARTREUSE}">${ins}</div>
-            <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px">INTERIOR ×0.1</div>
+            <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px">INTERIOR</div>
           </div>
         </div>
       </div>
     </div>
-    <div style="border-top:1px solid ${RULE};padding-top:10px">
-      ${sectionsHTML}
-    </div>
+    ${sectionsHTML ? `<div style="border-top:1px solid ${RULE};padding-top:10px">${sectionsHTML}</div>` : ''}
     ${extrasHTML}
   </div>`;
 }
