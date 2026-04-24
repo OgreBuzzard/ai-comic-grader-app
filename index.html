@@ -2750,7 +2750,8 @@ function buildRoboGradeDisplay(rg) {
     }).join('');
   }
 
-  // Component scores
+  // Component scores — integers only. v2.0 additive system:
+  // Front 0-50, Back 0-20, Spine 0-20, Interior 0-10. Final = sum.
   const fs  = rg.frontScore    != null ? Math.round(rg.frontScore)    : '—';
   const bs  = rg.backScore     != null ? Math.round(rg.backScore)     : '—';
   const ss  = rg.spineScore    != null ? Math.round(rg.spineScore)    : '—';
