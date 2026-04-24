@@ -10,7 +10,7 @@
   <title>RoboGrader</title>
   <link rel="manifest" href="manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Doto:wght@700;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <link rel="apple-touch-icon" href="icon-192.png">
 
   <!-- Panzoom: MIT-licensed library for pinch/zoom/pan on lightbox images -->
@@ -91,15 +91,49 @@
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { height: 100%; background: #f5f4f2; color: #1a1614; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; }
+    /* Start black to prevent white flash on iOS app open — the splash lives on a black background */
+    html, body { height: 100%; background: #0a0a0a; color: #1a1614; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; }
+    /* Once the app is visible, the body below the fixed splash should be light */
+    body.app-ready { background: #f5f4f2; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    #app { min-height: 100vh; display: flex; flex-direction: column; }
-    #header { background: #ffffff; border-bottom: 1px solid #d8d0c8; padding: 14px 16px 12px; position: sticky; top: 0; z-index: 100; }
+    #app { min-height: 100vh; display: flex; flex-direction: column; background: #f5f4f2; }
+    #header { background: #ffffff; border-bottom: 1px solid #d8d0c8; padding: 12px 14px 10px; position: sticky; top: 0; z-index: 100; }
     #header-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-    #header-title { background: none; border: none; cursor: pointer; color: #1a1614; padding: 0; text-align: left; }
-    #header-title span.main { font-size: 18px; font-weight: 700; letter-spacing: 1px; }
+    #header-title { background: none; border: none; cursor: pointer; color: #1a1614; padding: 0; text-align: left; flex-shrink: 0; }
+    #header-title span.main { font-size: 17px; font-weight: 700; letter-spacing: 0.5px; }
+    .header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    /* Coin button — renders the coin SVG with credit count inside */
+    #credit-coin-btn {
+      position: relative; background: none; border: none; padding: 0; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 30px; height: 30px;
+    }
+    #credit-coin-btn svg { display: block; filter: drop-shadow(0 1px 2px rgba(120,85,20,0.35)); }
+    #credit-coin-count {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 800;
+      color: #3a2a08;
+      font-family: -apple-system, 'SF Pro Text', sans-serif;
+      letter-spacing: -0.02em;
+      text-shadow: 0 0.5px 0 rgba(255,250,220,0.6);
+      pointer-events: none;
+    }
+    /* Top-bar action buttons — short and compact */
+    .btn-topbar {
+      font-size: 13px; font-weight: 700; padding: 7px 12px; border-radius: 8px;
+      border: none; cursor: pointer; font-family: inherit; line-height: 1;
+      min-height: 32px;
+    }
+    .btn-topbar.btn-buy { background: #2a1a08; color: #c8a96e; border: 1.5px solid #c8a96e; }
+    .btn-topbar.btn-add { background: #c8a96e; color: #0d0d0f; }
+    .btn-gear {
+      background: none; border: none; color: #8a7a6a; font-size: 22px; cursor: pointer;
+      padding: 4px 6px; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
+      width: 32px; height: 32px; flex-shrink: 0;
+    }
+    .btn-gear:hover { color: #5a4a3a; }
     #header-title span.sub { font-size: 10px; color: #9a8a7a; letter-spacing: 3px; text-transform: uppercase; margin-left: 8px; }
-    #header-stats { font-size: 11px; color: #8a7a6a; margin-top: 4px; }
     #main { flex: 1; max-width: 900px; margin: 0 auto; width: 100%; padding: 16px 12px; }
     .btn { border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer; font-size: 13px; font-weight: 600; font-family: inherit; }
     .btn-gold { background: #c8a96e; color: #0d0d0f; }
@@ -241,95 +275,83 @@
 
 
   <style>
-    /* ── Splash Screen ──────────────────────────────────────────────── */
+    /* ── Page baseline — black to prevent white flash on iOS app open ── */
+    html, body { background: #0a0a0a; }
+
+    /* ── Splash Screen (v2) ──────────────────────────────────────────── */
     #splash {
       position: fixed; inset: 0; z-index: 10000;
-      background: #c8b88a;
+      background: #0a0a0a;
       display: flex; flex-direction: column;
-      align-items: center; justify-content: space-between;
+      align-items: center; justify-content: center;
       overflow: hidden;
     }
-    /* Robot image — constrained to upper portion */
+    /* Robograder mascot — slides up from bottom */
     #splash-robot {
-      width: 100%;
-      flex: 1 1 0;
-      min-height: 0;
+      max-width: min(62vw, 330px);
+      max-height: 52vh;
+      width: auto;
+      height: auto;
       object-fit: contain;
-      object-position: center bottom;
-      transform: translateY(-105%);
+      transform: translateY(120vh);
       opacity: 0;
-      animation: robotDrop 0.8s cubic-bezier(0.34,1.4,0.64,1) 0.2s forwards;
+      animation: robotSlideUp 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.15s forwards;
     }
-    @keyframes robotDrop {
+    @keyframes robotSlideUp {
       to { transform: translateY(0); opacity: 1; }
     }
-    /* Text block — fixed at bottom */
+    /* Text block — positioned below the robot, centered */
     #splash-text {
-      flex-shrink: 0;
+      text-align: center;
+      padding: 28px 24px 24px 24px;
       width: 100%;
       box-sizing: border-box;
-      text-align: center;
-      padding: 22px 20px 52px 20px;
-      background: #080808;
-      transform: translateY(105%);
-      opacity: 0;
-      animation: textRise 0.6s ease-out 0.5s forwards;
-    }
-    @keyframes textRise {
-      to { transform: translateY(0); opacity: 1; }
+      min-height: 130px;
     }
     #splash-text .line {
       display: block;
-      font-family: 'Doto', sans-serif;
-      font-weight: 700;
-      font-size: clamp(14px, 4vw, 20px);
-      line-height: 1.75;
-      color: #e8f820;
-      letter-spacing: 0.06em;
+      font-family: 'Share Tech Mono', 'Courier New', monospace;
+      font-weight: 400;
+      font-size: clamp(15px, 4.3vw, 22px);
+      line-height: 1.9;
+      color: #d4e82a;
+      text-shadow: 0 0 14px rgba(184, 216, 32, 0.38);
+      letter-spacing: 0.12em;
       text-transform: uppercase;
-      opacity: 0;
       white-space: nowrap;
       overflow: hidden;
       width: 0;
+      margin: 0 auto;
     }
     #splash-text .line.typing {
-      opacity: 1;
       animation: typeReveal var(--dur, 0.8s) steps(var(--chars, 20), end) forwards;
     }
     @keyframes typeReveal {
       to { width: var(--full-width, 300px); }
     }
-    @keyframes blink { 50% { opacity: 0; } }
-    /* Exit: robot slides up, text slides down */
+    /* Exit: robot slides down off-screen + splash fades out */
     #splash.exit #splash-robot {
-      animation: robotUp 0.5s ease-in forwards;
+      animation: robotSlideDown 0.55s cubic-bezier(0.55, 0, 0.7, 0.15) forwards;
     }
-    #splash.exit #splash-text {
-      animation: textDown 0.45s ease-in forwards;
-    }
-    @keyframes robotUp {
-      to { transform: translateY(-110%); opacity: 0; }
-    }
-    @keyframes textDown {
-      to { transform: translateY(110%); opacity: 0; }
+    @keyframes robotSlideDown {
+      to { transform: translateY(120vh); opacity: 1; }
     }
     #splash.exit {
-      animation: splashFade 0.55s ease-in 0.35s forwards;
+      animation: splashFade 0.35s ease-out 0.3s forwards;
     }
     @keyframes splashFade {
       to { opacity: 0; pointer-events: none; }
     }
-  </style>
   </style>
 </head>
 <body style="overflow:hidden">
 
 <!-- Auth Screen — shown when not signed in -->
 <div id="auth-screen" style="display:flex;position:fixed;inset:0;z-index:10001;background:#0a0a0a;align-items:center;justify-content:center;flex-direction:column;gap:24px">
-  <img src="icon-512.png" style="width:160px;height:160px;object-fit:contain;border-radius:16px;opacity:0.9">
+  <img src="assets/Robograder_Load.jpg" style="width:180px;height:auto;max-height:220px;object-fit:contain;opacity:0.95">
   <div style="text-align:center">
-    <div style="font-family:'Doto',sans-serif;font-size:22px;color:#e8f820;letter-spacing:0.06em;margin-bottom:6px">AI COMIC GRADER</div>
-    <div style="font-size:13px;color:#6a6a6a;letter-spacing:0.1em">SIGN IN TO CONTINUE</div>
+    <div style="font-family:'Share Tech Mono','Courier New',monospace;font-size:22px;color:#d4e82a;letter-spacing:0.12em;margin-bottom:6px;text-shadow:0 0 14px rgba(184,216,32,0.38)">ROBOGRADER</div>
+    <div style="font-size:12px;color:#6a6a6a;letter-spacing:0.15em;font-family:'Share Tech Mono','Courier New',monospace">SIGN IN TO CONTINUE</div>
   </div>
   <div style="display:flex;flex-direction:column;gap:12px;width:280px">
     <button onclick="signInGoogle()" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;color:#1a1a1a;border:none;border-radius:10px;padding:14px 20px;font-size:15px;font-weight:600;cursor:pointer;width:100%">
@@ -341,7 +363,7 @@
 </div>
 
 <div id="splash">
-  <img id="splash-robot" src="icon-512.png" alt="">
+  <img id="splash-robot" src="assets/Robograder_Load.jpg" alt="">
   <div id="splash-text"></div>
 </div>
 <div id="app" style="display:none">
@@ -350,11 +372,26 @@
       <button id="header-title" onclick="showList()">
         <span class="main">RoboGrader</span>
       </button>
-      <button class="btn btn-gold" id="add-btn" onclick="showAdd()">+ Add Book</button>
-      <button class="btn" onclick="showBuyCredits()" style="background:#2a1a08;color:#c8a96e;font-size:12px;padding:6px 12px;border-radius:8px;border:1.5px solid #c8a96e" id="credits-btn">Buy Credits</button>
-      <button onclick="openSettings()" style="background:none;border:none;color:#8a7a6a;font-size:18px;cursor:pointer;padding:6px 8px;line-height:1" title="Settings" id="settings-btn">⚙</button>
+      <div class="header-actions">
+        <button id="credit-coin-btn" onclick="showBuyCredits()" title="Your credits" aria-label="Your credits">
+          <svg viewBox="0 0 40 40" width="30" height="30" aria-hidden="true">
+            <defs>
+              <radialGradient id="coin-grad" cx="0.35" cy="0.35" r="0.75">
+                <stop offset="0%" stop-color="#fde89a"/>
+                <stop offset="50%" stop-color="#e6bb4a"/>
+                <stop offset="100%" stop-color="#8c6a1a"/>
+              </radialGradient>
+            </defs>
+            <circle cx="20" cy="20" r="18.5" fill="url(#coin-grad)" stroke="#5a4010" stroke-width="1.2"/>
+            <circle cx="20" cy="20" r="15.5" fill="none" stroke="#a57a20" stroke-width="0.7" opacity="0.55"/>
+          </svg>
+          <span id="credit-coin-count">0</span>
+        </button>
+        <button class="btn btn-topbar btn-buy" onclick="showBuyCredits()" id="credits-btn">Buy</button>
+        <button class="btn btn-topbar btn-add" id="add-btn" onclick="showAdd()">+ Add</button>
+        <button class="btn-gear" onclick="openSettings()" title="Settings" id="settings-btn" aria-label="Settings">⚙</button>
+      </div>
     </div>
-    <div id="header-stats"></div>
   </div>
   <div id="main"></div>
 </div>
@@ -633,13 +670,13 @@ function userComicDoc(id){
 }
 
 async function loadComics(){
-  syncMsg("Loading collection...");
+  // Splash screen covers initial load; no purple sync bar during app boot.
+  // syncMsg is still used for Saving/Deleting after the app is running.
   try{
     const snap=await fsGetDocs(userComicsCollection());
     comics=snap.docs.map(d=>d.data()).map(c=>({...c,pageQuality:normPageQuality(c.pageQuality)}));
     // No seeding for new users — they start with an empty collection
   }catch(e){console.error("Load error:",e);comics=[];}
-  syncMsg(null);
   renderList();
   updateStats();
 }
@@ -678,16 +715,16 @@ async function signOutUser(){
 }
 
 function updateStats(){
-  const total=comics.length;
-  const cgc=comics.filter(c=>c.cgcGrade).length;
-  const psa=comics.filter(c=>c.psaGrade).length;
-  const raw=comics.filter(c=>!c.cgcGrade&&!c.psaGrade).length;
-  const parts=[`${total} book${total!==1?"s":""}`];
-  if(cgc>0)parts.push(`${cgc} CGC`);
-  if(psa>0)parts.push(`${psa} PSA`);
-  if(raw>0)parts.push(`${raw} raw`);
-  const creditsStr = window._userCredits !== undefined ? ` · ${window._userCredits} credit${window._userCredits!==1?"s":""}` : "";
-  document.getElementById("header-stats").textContent=parts.join(" · ")+creditsStr;
+  // Header is now minimal — just the coin with credit count. No book-count bar.
+  const coinCount = document.getElementById("credit-coin-count");
+  if (coinCount) {
+    const credits = window._userCredits !== undefined ? window._userCredits : 0;
+    coinCount.textContent = credits > 999 ? '999+' : credits;
+    // Size down the text slightly when multi-digit so it fits inside the coin
+    if (credits >= 100) coinCount.style.fontSize = '9px';
+    else if (credits >= 10) coinCount.style.fontSize = '11px';
+    else coinCount.style.fontSize = '12px';
+  }
 }
 
 async function loadUserCredits(){
@@ -3108,7 +3145,7 @@ if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catc
   const lines = [
     "MY POSITRONIC BRAIN",
     "IS READY TO GRADE",
-    "YOUR COMIC BOOKS."
+    "YOUR COMIC BOOKS"
   ];
   const container = document.getElementById('splash-text');
   let lineIndex = 0;
@@ -3116,7 +3153,7 @@ if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catc
 
   function measureLine(text) {
     const tmp = document.createElement('span');
-    tmp.style.cssText = 'position:absolute;visibility:hidden;font-family:Courier New,Courier,monospace;font-weight:700;letter-spacing:0.18em;font-size:clamp(14px,4vw,20px);text-transform:uppercase;white-space:nowrap';
+    tmp.style.cssText = 'position:absolute;visibility:hidden;font-family:"Share Tech Mono","Courier New",monospace;letter-spacing:0.12em;font-size:clamp(15px,4.3vw,22px);text-transform:uppercase;white-space:nowrap';
     tmp.textContent = text;
     document.body.appendChild(tmp);
     const w = tmp.offsetWidth;
@@ -3162,6 +3199,8 @@ if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catc
     const splash = document.getElementById('splash');
     if (!splash) return;
     splash.classList.add('exit');
+    // Mark the body as ready so page chrome can reveal cleanly below the splash
+    document.body.classList.add('app-ready');
     setTimeout(() => {
       splash.style.display = 'none';
       document.body.style.overflow = '';
