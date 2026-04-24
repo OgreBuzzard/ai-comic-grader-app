@@ -1233,7 +1233,8 @@ function openLightbox(id,idx){
       _panzoomInstance = Panzoom(img, {
         maxScale: 6,
         minScale: 1,
-        contain: 'outside',
+        contain: 'inside',
+        canvas: true,
         step: 0.4,
         animate: true
       });
