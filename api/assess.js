@@ -3,7 +3,61 @@ export default async function handler(req, res) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'API key not configured' });
 
-  // Anthropic only accepts these four media types — normalize everything else to image/jpeg
+  // ── Abuse prevention helpers ─────────────────────────────────────────────
+  // Inline so the function can be invoked from anywhere in the handler.
+  const STRIKE_LOCKOUT_THRESHOLD = 3;
+  const STRIKE_LOCKOUT_WINDOW_MS = 24 * 60 * 60 * 1000;
+  const STRIKE_LOCKOUT_DURATION_MS = 24 * 60 * 60 * 1000;
+  const STRIKE_PERMANENT_THRESHOLD = 10;
+  const STRIKE_PERMANENT_WINDOW_MS = 96 * 60 * 60 * 1000;
+
+  function countStrikesInWindow(strikeHistory, windowMs) {
+    if (!Array.isArray(strikeHistory)) return 0;
+    const cutoff = Date.now() - windowMs;
+    return strikeHistory.filter(s => {
+      const t = new Date(s.timestamp).getTime();
+      return !isNaN(t) && t >= cutoff;
+    }).length;
+  }
+
+  // Lazy-init Firebase Admin and return a getFirestore instance, or null on error.
+  async function getAdminDb() {
+    try {
+      if (!process.env.FIREBASE_SERVICE_ACCOUNT) return null;
+      const { initializeApp, getApps, cert } = await import('firebase-admin/app');
+      const { getFirestore } = await import('firebase-admin/firestore');
+      if (!getApps().length) {
+        initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
+      }
+      return getFirestore();
+    } catch(e) {
+      console.error('Firebase Admin init failed:', e);
+      return null;
+    }
+  }
+
+  // Verify the Firebase ID token from the Authorization header. Returns uid or null.
+  async function verifyUidFromAuthHeader(req) {
+    try {
+      const auth = req.headers.authorization || req.headers.Authorization || '';
+      const m = auth.match(/^Bearer\s+(.+)$/);
+      if (!m) return null;
+      const idToken = m[1];
+      const { getAuth } = await import('firebase-admin/auth');
+      // Initialize admin app if not already done
+      const { initializeApp, getApps, cert } = await import('firebase-admin/app');
+      if (!getApps().length) {
+        initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
+      }
+      const decoded = await getAuth().verifyIdToken(idToken);
+      return decoded.uid;
+    } catch(e) {
+      console.error('Token verification failed:', e);
+      return null;
+    }
+  }
+
+  // ── Anthropic media type normalization ───────────────────────────────────
   function normalizeMediaType(mt) {
     if (!mt) return 'image/jpeg';
     const clean = mt.toLowerCase().split(';')[0].trim();
@@ -27,6 +81,46 @@ export default async function handler(req, res) {
     initialPsaGrade = ''
   } = req.body;
   if (!images || images.length === 0) return res.status(400).json({ error: 'No images provided' });
+
+  // ── Server-side abuse check ──────────────────────────────────────────────
+  // Verify the user's identity, check for permanent flag or active lockout.
+  // Fails open on infrastructure error (no service account, network issue) so
+  // legitimate users aren't locked out by our problems. Client also checks.
+  let _authedUid = null;
+  let _userRef = null;
+  let _userData = null;
+  try {
+    const uid = await verifyUidFromAuthHeader(req);
+    if (uid) {
+      _authedUid = uid;
+      const db = await getAdminDb();
+      if (db) {
+        _userRef = db.collection('users').doc(uid);
+        const snap = await _userRef.get();
+        if (snap.exists) {
+          _userData = snap.data();
+          if (_userData.accountFlagged) {
+            return res.status(403).json({
+              error: 'account_flagged',
+              message: 'Your account has been flagged for review due to repeated invalid uploads. Please contact support if you believe this is an error.'
+            });
+          }
+          if (_userData.assessmentLockedUntil) {
+            const unlockAt = new Date(_userData.assessmentLockedUntil).getTime();
+            if (unlockAt > Date.now()) {
+              return res.status(429).json({
+                error: 'temp_lockout',
+                unlockAt: _userData.assessmentLockedUntil,
+                message: `Assessment temporarily locked due to repeated invalid uploads. Try again after ${new Date(_userData.assessmentLockedUntil).toLocaleString()}.`
+              });
+            }
+          }
+        }
+      }
+    }
+  } catch(e) {
+    console.error('Abuse check failed (continuing):', e);
+  }
 
   const imageBlocks = images.map(img => {
     const [header, data] = img.split(',');
@@ -306,10 +400,17 @@ DEFECT INVENTORY — for every defect record:
   - Interior: pages, staples, interior printing
 
 PAGE QUALITY:
-Assess from any interior photo. Cameras under artificial light make pages look more yellowed — assign ONE TIER HIGHER than what you see in the photo.
+Assess from any interior photo. Phone cameras under artificial light consistently make pages look more yellowed than they actually are.
+
+TWO ANCHORING RULES:
+
+1. AGE-AWARE DEFAULT. Books published before 1985 (Silver Age and Bronze Age) overwhelmingly have Off-White or better pages in the wild. Genuinely cream or tan pages are rare and tied to specific storage conditions (damp, sunlight, acidic storage). For a pre-1985 book, default to Off-White or better unless you see SPECIFIC evidence to the contrary: visible foxing, uneven tanning patterns at edges only (typical of sun exposure), obvious brittleness, or dark cream color that fills the whole page uniformly. If the paper just "looks a bit yellow" under indoor light but is otherwise clean and supple, that's Off-White or Off-White to White, not Cream or Cream to Off-White.
+
+2. FAVOR THE WHITER TIER WHEN AMBIGUOUS. When comparing against the reference scale image, if the sample sits between two reference colors, pick the whiter designation. Use the darker designation only when the sample is clearly at or past that reference tone.
+
 Full designations only: White, Off-White to White, Off-White, Cream to Off-White, Cream, Light Tan to Cream, Light Tan, Tan, Brown, Brown/Brittle, Brittle.
 
-PQ score for interior component: White=100, OW/W=92, OW=82, C/OW=70, Cream=58, LT/C=45, LT=32, Tan=20, Brown=8, Brittle=0
+PQ score for interior component: White=100, OW/W=94, OW=86, C/OW=76, Cream=64, LT/C=50, LT=36, Tan=22, Brown=10, Brittle=0
 
 ════════════════════════════════════
 PHASE 2 — THREE GRADES FROM YOUR OBSERVATIONS
@@ -526,12 +627,47 @@ RETURN ONLY THIS JSON — no markdown, no preamble
     catch (e) { return res.status(500).json({ error: 'Failed to parse response: ' + text }); }
 
     // ── Gate check: if the model determined this isn't a comic or is flagged content,
-    //    return early with a special response. Client uses this to refund the credit
-    //    and increment strike counter.
+    //    return early with a special response. Server records the strike
+    //    (authoritative; client also tries but server is source of truth) and
+    //    applies cool-off rules per STRIKE_LOCKOUT_* constants above.
     if (parsed.gateResult && parsed.gateResult !== 'COMIC') {
+      let _lockoutInfo = null;
+      // Record strike server-side if we have an authenticated user
+      if (_userRef) {
+        try {
+          const snap = await _userRef.get();
+          const data = snap.exists ? snap.data() : {};
+          const strikeHistory = Array.isArray(data.strikeHistory) ? [...data.strikeHistory] : [];
+          strikeHistory.push({
+            timestamp: new Date().toISOString(),
+            gateResult: parsed.gateResult,
+            reason: parsed.gateReason || ''
+          });
+          const totalStrikes = strikeHistory.length;
+          const recent24h = countStrikesInWindow(strikeHistory, STRIKE_LOCKOUT_WINDOW_MS);
+          const recent96h = countStrikesInWindow(strikeHistory, STRIKE_PERMANENT_WINDOW_MS);
+          const update = {
+            strikes: totalStrikes,
+            strikeHistory,
+            lastStrikeAt: new Date().toISOString()
+          };
+          if (recent96h >= STRIKE_PERMANENT_THRESHOLD) {
+            update.accountFlagged = true;
+            update.flaggedAt = data.flaggedAt || new Date().toISOString();
+            _lockoutInfo = { type: 'permanent' };
+          } else if (recent24h >= STRIKE_LOCKOUT_THRESHOLD) {
+            update.assessmentLockedUntil = new Date(Date.now() + STRIKE_LOCKOUT_DURATION_MS).toISOString();
+            _lockoutInfo = { type: 'temp', unlockAt: update.assessmentLockedUntil };
+          }
+          await _userRef.set(update, { merge: true });
+        } catch(e) {
+          console.error('Server-side strike recording failed:', e);
+        }
+      }
       return res.status(200).json({
         gateResult: parsed.gateResult,
         gateReason: parsed.gateReason || '',
+        lockout: _lockoutInfo,
         _diagnostics: {
           comicvineRef: referenceImageBlock !== null,
           pageQualityRef: pageQualityImageBlock !== null,
