@@ -304,7 +304,7 @@ RULES FOR HIGH-GRADE ASSESSMENT:
   // ── RoboGrade formula (4-category, backwards from final score) ───────────────
   // Score = (Front × 0.5) + (Back × 0.2) + (Spine × 0.2) + (Interior × 0.1)
   // Spine includes inner corners at top and bottom of spine
-  const backScoreDefault = hasBackCover ? '0.0' : 'null';
+  const backScoreDefault = hasBackCover ? '0' : 'null';
 
   // ── CGC grade tier thresholds (factual allowances per grade, reworded) ────────
   const CGC_GRADE_TIERS = `
@@ -417,32 +417,62 @@ PHASE 2 — THREE GRADES FROM YOUR OBSERVATIONS
 ════════════════════════════════════
 
 ── ROBOGRADE (primary, AI-native) ──
-Formula: Score = (Front × 0.5) + (Back × 0.2) + (Spine × 0.2) + (Interior × 0.1)
+Scoring: four components summed directly to the final. Each component has its own maximum:
+  Front:    0–50 points  (front cover surface and outer front corners)
+  Back:     0–20 points  (back cover surface and outer back corners)
+  Spine:    0–20 points  (spine surface, spine roll, inner corners at spine, staple area)
+  Interior: 0–10 points  (page quality, staple condition, interior printing/defects)
+
+Final score = Front + Back + Spine + Interior. Always between 0 and 100.
+
+All scores are INTEGERS. No decimals anywhere. Round naturally.
 
 RULE: Score each category independently from defects in that category ONLY.
-  - 100 = pristine, no defects in that category
-  - 90s = very minor defect(s) only
-  - 80s = a few small or one moderate defect
-  - 70s = moderate defect accumulation
-  - 60s = significant defects but book still structurally sound
-  - 50s = major issues affecting presentation
-  - 40s and below = severe, extensive, or structural defects
-Examples:
-  - Back cover with ZERO defects observed → backScore = 100 (or 98-100 for trace wear not worth listing).
-  - Back cover with one small corner blunt → backScore = 92-95.
-  - Back cover with moderate creasing and color-breaking bend → backScore = 70-78.
-The "no back photo provided" case is different: set backScore to null and redistribute weights.
+A perfect score in a category means no observed defects. Deduct from the maximum based on defect severity and accumulation.
 
-Step 1: Assign Front score (0-100) based on front-cover defects only.
-Step 2: Assign Back score (0-100) based on back-cover defects only. If none observed, score is 98-100.
-Step 3: Assign Spine score (0-100) based on spine defects only.
-Step 4: Assign Interior score using the PQ scale above. Start from the PQ score, then deduct for staple/interior defects if any.
-Step 5: Compute final score: (Front×0.5) + (Back×0.2) + (Spine×0.2) + (Interior×0.1). Round to nearest integer.
+Per-category calibration (applied proportionally to the category maximum):
+  Front (max 50):
+    • 50 = pristine, sharp corners, flat, no observed defects
+    • 47-49 = a single trace defect (minor corner wear, light spine-adjacent tick)
+    • 43-46 = one small defect or trace accumulation
+    • 38-42 = minor defects present, still strong eye appeal
+    • 30-37 = moderate defect accumulation or one color-breaking defect
+    • 20-29 = substantial wear or significant defect
+    • 10-19 = major structural or cosmetic issues
+    • 0-9 = severe, extensive, possibly structural compromise
+  Back (max 20):
+    • 20 = pristine, no observed defects
+    • 18-19 = trace wear only
+    • 15-17 = minor defect or light accumulation
+    • 11-14 = moderate defect accumulation
+    • 7-10 = substantial wear or significant defect
+    • 0-6 = major issues
+  Spine (max 20):
+    • 20 = pristine spine, no roll, no stress lines, no fraying, staples clean
+    • 18-19 = trace — one very minor non-color-breaking tick
+    • 15-17 = light stress lines, slight roll, or minor corner blunting at spine
+    • 11-14 = multiple stress lines, visible roll, minor fraying, or one color-breaking crease
+    • 7-10 = significant stress accumulation, split starting, staple pull
+    • 0-6 = severe structural issues at spine
+  Interior (max 10):
+    • 10 = White or Off-White to White pages, clean staples
+    • 8-9 = Off-White or Cream to Off-White pages, clean interior
+    • 5-7 = Cream or Light Tan pages, or minor interior defects on better pages
+    • 3-4 = Tan pages or significant interior defects
+    • 0-2 = Brown, Brittle, major interior damage
 
-${!hasBackCover ? 'No back cover photo provided — set backScore to null, redistribute weights: Front×0.7, Spine×0.2, Interior×0.1.' : ''}
+No back cover photo provided case: set backScore to null. Redistribute the 20 Back points into Front, raising Front's maximum to 70. All other categories unchanged.
+
+Step 1: Assign Front score (0–50) based on front-cover defects only.
+Step 2: Assign Back score (0–20) based on back-cover defects only. If none observed, score is 19–20.
+Step 3: Assign Spine score (0–20) based on spine defects only.
+Step 4: Assign Interior score (0–10) using the calibration above. Start from PQ, then deduct for staple/interior defects.
+Step 5: Compute final score: Front + Back + Spine + Interior. Simple addition.
+
+${!hasBackCover ? 'No back cover photo provided — set backScore to null. Front max becomes 70 (absorbing Back\'s 20). Total still 0–100.' : ''}
 Confidence base: ±${baseConf}. Adjust up if: glare/poor focus, no raking light photo, staples not visible, restoration suspected.
 
-CRITICAL: The final score MUST equal the weighted sum of components. If your holistic impression of the book disagrees with the computed score by more than 2 points, REVISIT your component scores — a component score is wrong, not the formula.
+CRITICAL: The final score is literally Front + Back + Spine + Interior. The arithmetic must check out exactly. If your holistic impression disagrees with the sum by more than 2 points, revisit the component scores — one is wrong, not the formula.
 
 ── CGC GRADE ──
 Apply CGC standards to your defect inventory from Phase 1.
@@ -557,11 +587,11 @@ RETURN ONLY THIS JSON — no markdown, no preamble
   "officialPSACert": null,
   "roboGrade": {
     "version": "2.0",
-    "score": 0.0,
+    "score": 0,
     "confidenceRange": ${baseConf},
-    "frontScore": 0.0,
+    "frontScore": 0,
     "backScore": ${backScoreDefault},
-    "spineScore": 0.0,
+    "spineScore": 0,
     "interiorScore": 0,
     "pageQuality": "",
     "defects": [
@@ -745,26 +775,42 @@ RETURN ONLY THIS JSON — no markdown, no preamble
       parsed.psaGrade = parseFloat(parsed.psaGrade).toFixed(1);
     }
 
-    // RoboGrade math verification — final score must equal weighted sum of components.
+    // RoboGrade math verification — final score is the sum of components.
     // The model sometimes outputs a score that doesn't match its own components.
-    // Always recompute from components so the displayed score is consistent with
-    // the component breakdown the user sees.
+    // Always recompute from components so the displayed score is consistent.
+    //
+    // Score ranges (v2.0 additive system):
+    //   Front:    0-50  (or 0-70 if no back cover photo)
+    //   Back:     0-20  (or null if no back cover photo)
+    //   Spine:    0-20
+    //   Interior: 0-10
+    //   Score:    Front + Back + Spine + Interior
     if (parsed.roboGrade && typeof parsed.roboGrade.score === 'number') {
       const rg = parsed.roboGrade;
-      const f = typeof rg.frontScore    === 'number' ? rg.frontScore    : null;
-      const b = typeof rg.backScore     === 'number' ? rg.backScore     : null;
-      const s = typeof rg.spineScore    === 'number' ? rg.spineScore    : null;
-      const i = typeof rg.interiorScore === 'number' ? rg.interiorScore : null;
+      const clampInt = (n, min, max) => Math.max(min, Math.min(max, Math.round(n)));
+      let f = typeof rg.frontScore    === 'number' ? rg.frontScore    : null;
+      let b = typeof rg.backScore     === 'number' ? rg.backScore     : null;
+      let s = typeof rg.spineScore    === 'number' ? rg.spineScore    : null;
+      let i = typeof rg.interiorScore === 'number' ? rg.interiorScore : null;
       if (f != null && s != null && i != null) {
-        let computed;
+        // Clamp each component to its valid range and round to integer
         if (b == null) {
-          // No back cover — redistributed weights: Front×0.7, Spine×0.2, Interior×0.1
-          computed = (f * 0.7) + (s * 0.2) + (i * 0.1);
+          // No back cover — Front absorbs Back's 20 points, so max is 70
+          f = clampInt(f, 0, 70);
         } else {
-          computed = (f * 0.5) + (b * 0.2) + (s * 0.2) + (i * 0.1);
+          f = clampInt(f, 0, 50);
+          b = clampInt(b, 0, 20);
         }
-        const original = rg.score;
-        rg.score = Math.round(computed * 10) / 10;
+        s = clampInt(s, 0, 20);
+        i = clampInt(i, 0, 10);
+        // Write clamped values back
+        rg.frontScore    = f;
+        if (b != null) rg.backScore = b;
+        rg.spineScore    = s;
+        rg.interiorScore = i;
+        const computed = f + (b || 0) + s + i;
+        const original = Math.round(rg.score);
+        rg.score = computed;
         if (Math.abs(computed - original) > 2) {
           rg._mathCorrected = { declared: original, computed: rg.score };
         }
@@ -794,17 +840,17 @@ RETURN ONLY THIS JSON — no markdown, no preamble
       const s = typeof rg.spineScore    === 'number' ? rg.spineScore    : null;
       const i = typeof rg.interiorScore === 'number' ? rg.interiorScore : null;
       if (f != null && s != null && i != null) {
-        const computed = (b == null)
-          ? (f * 0.7) + (s * 0.2) + (i * 0.1)
-          : (f * 0.5) + (b * 0.2) + (s * 0.2) + (i * 0.1);
-        rg.score = Math.round(computed * 10) / 10;
+        // Additive v2.0 system: score is Front + Back + Spine + Interior.
+        // If no back cover, Front's max was 70 (absorbing Back's 20).
+        const computed = f + (b || 0) + s + i;
+        rg.score = computed;
       }
 
       // 3. Floor rule for RG: unless the model explicitly flagged new defects in
       //    graderNotes (which would justify a drop), never go below the initial
       //    RG score. We detect a justified drop heuristically: the aiAssessment
       //    mentions "macro" or "corner" AND describes a defect not in the initial.
-      const initialScore = typeof initialRoboGrade.score === 'number' ? initialRoboGrade.score : null;
+      const initialScore = typeof initialRoboGrade.score === 'number' ? Math.round(initialRoboGrade.score) : null;
       if (initialScore != null && rg.score < initialScore) {
         const notes = String(parsed.aiAssessment || '').toLowerCase();
         const mentionsMacro = notes.includes('macro') || notes.includes('corner');
@@ -812,12 +858,13 @@ RETURN ONLY THIS JSON — no markdown, no preamble
           // No justification — snap back to initial floor
           enforcement.push(`RG score floored ${rg.score} → ${initialScore}`);
           rg.score = initialScore;
-          // Also re-floor the front component if that's what dragged it down
-          // by the same proportion: raise frontScore enough to hit the floor.
-          if (b != null && typeof s === 'number' && typeof i === 'number') {
-            const needed = (initialScore - (b * 0.2) - (s * 0.2) - (i * 0.1)) / 0.5;
+          // Also re-floor the front component to make the arithmetic work.
+          // In the additive system: Front = initialScore - Back - Spine - Interior
+          if (typeof s === 'number' && typeof i === 'number') {
+            const needed = initialScore - (b || 0) - s - i;
+            const frontMax = (b == null) ? 70 : 50;
             if (f != null && needed > f) {
-              rg.frontScore = Math.round(needed * 10) / 10;
+              rg.frontScore = Math.max(0, Math.min(frontMax, Math.round(needed)));
             }
           }
         }
