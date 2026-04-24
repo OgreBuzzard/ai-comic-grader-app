@@ -11,6 +11,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link rel="preload" href="assets/Robograder_Load.jpg" as="image">
   <link rel="apple-touch-icon" href="icon-192.png">
 
   <!-- Panzoom: MIT-licensed library for pinch/zoom/pan on lightbox images -->
@@ -284,20 +285,27 @@
       background: #0a0a0a;
       overflow: hidden;
     }
-    /* Robograder mascot — full-bleed, slides up from bottom */
+    /* Robograder mascot — full-bleed, slides up from bottom.
+       Using background-image on a div (not an <img> tag) so the element has
+       size from the moment it renders, independent of image load state.
+       This prevents the "pop-in" behavior where the image appears at its
+       final position the instant the JPG finishes downloading. */
     #splash-robot {
       position: absolute;
       inset: 0;
       width: 100%;
       height: 100%;
-      object-fit: cover;
-      object-position: center center;
+      background-image: url('assets/Robograder_Load.jpg');
+      background-size: cover;
+      background-position: center center;
+      background-repeat: no-repeat;
       transform: translateY(110vh);
-      opacity: 0;
+      will-change: transform;
       animation: robotSlideUp 0.75s cubic-bezier(0.22, 1, 0.36, 1) 0.1s forwards;
     }
     @keyframes robotSlideUp {
-      to { transform: translateY(0); opacity: 1; }
+      from { transform: translateY(110vh); }
+      to { transform: translateY(0); }
     }
     /* Gradient fade at the bottom so text is readable over the image */
     #splash-gradient {
@@ -354,7 +362,8 @@
       animation: robotSlideDown 0.55s cubic-bezier(0.55, 0, 0.7, 0.15) forwards;
     }
     @keyframes robotSlideDown {
-      to { transform: translateY(110vh); opacity: 1; }
+      from { transform: translateY(0); }
+      to { transform: translateY(110vh); }
     }
     #splash.exit {
       animation: splashFade 0.35s ease-out 0.3s forwards;
@@ -367,11 +376,10 @@
 <body style="overflow:hidden">
 
 <!-- Auth Screen — shown when not signed in -->
-<div id="auth-screen" style="display:flex;position:fixed;inset:0;z-index:10001;background:#0a0a0a;align-items:center;justify-content:center;flex-direction:column;gap:24px">
-  <img src="assets/Robograder_Load.jpg" style="width:180px;height:auto;max-height:220px;object-fit:contain;opacity:0.95">
+<div id="auth-screen" style="display:flex;position:fixed;inset:0;z-index:10001;background:#0a0a0a;align-items:center;justify-content:center;flex-direction:column;gap:36px;padding:20px">
   <div style="text-align:center">
-    <div style="font-family:'Share Tech Mono','Courier New',monospace;font-size:22px;color:#d4e82a;letter-spacing:0.12em;margin-bottom:6px;text-shadow:0 0 14px rgba(184,216,32,0.38)">ROBOGRADER</div>
-    <div style="font-size:12px;color:#6a6a6a;letter-spacing:0.15em;font-family:'Share Tech Mono','Courier New',monospace">SIGN IN TO CONTINUE</div>
+    <div style="font-family:'Share Tech Mono','Courier New',monospace;font-size:32px;color:#d4e82a;letter-spacing:0.16em;margin-bottom:10px;text-shadow:0 0 16px rgba(184,216,32,0.4)">ROBOGRADER</div>
+    <div style="font-size:12px;color:#6a6a6a;letter-spacing:0.22em;font-family:'Share Tech Mono','Courier New',monospace">COMIC GRADING APP</div>
   </div>
   <div style="display:flex;flex-direction:column;gap:12px;width:280px">
     <button onclick="signInGoogle()" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;color:#1a1a1a;border:none;border-radius:10px;padding:14px 20px;font-size:15px;font-weight:600;cursor:pointer;width:100%">
@@ -383,7 +391,7 @@
 </div>
 
 <div id="splash">
-  <img id="splash-robot" src="assets/Robograder_Load.jpg" alt="">
+  <div id="splash-robot" role="img" aria-label="RoboGrader mascot"></div>
   <div id="splash-gradient"></div>
   <div id="splash-text"></div>
 </div>
@@ -690,6 +698,69 @@ function userComicDoc(id){
   return fsDoc(db, 'users', uid, 'comics', id);
 }
 
+// ── Sample entry for new users ──────────────────────────────────────────────
+// A curated "here's what a graded book looks like" example that appears when
+// the user's Firestore collection is empty AND they haven't dismissed it.
+// Client-side only — never written to Firestore. Dismissed on first real save
+// or manual delete; the dismissal flag lives on the user doc so it syncs across
+// devices.
+const SAMPLE_COMIC_ID = 'sample_unerring_robograder_1';
+const SAMPLE_COMIC = {
+  id: SAMPLE_COMIC_ID,
+  _isSample: true,
+  title: 'The Unerring Robograder',
+  issue: '1',
+  issueDate: 'April 2026',
+  publisher: 'Robograder',
+  grade: '10.0',
+  assessedCGCGrade: '10.0',
+  assessedPSAGrade: '10.0',
+  pageQuality: 'White',
+  aiAssessment: 'Certified flawless by the Unerring Robograder.',
+  aiGraderNotes: '',
+  psaNotes: '',
+  notes: '',
+  cgcGrade: '',
+  cgcCert: '',
+  psaGrade: '',
+  psaCert: '',
+  press: null,
+  uv: null,
+  clean: null,
+  purchasePrice: '',
+  seller: '',
+  images: [
+    'assets/ghosts/Front_Cover.jpg',
+    'assets/ghosts/Back_Cover.jpg',
+    'assets/ghosts/Page_Quality.jpg',
+    'assets/ghosts/Raking_Light.jpg'
+  ],
+  cornerImages: [],
+  assessmentHistory: [],
+  roboGrade: {
+    version: '2.0',
+    score: 100,
+    confidenceRange: 0,
+    frontScore: 50,
+    backScore: 20,
+    spineScore: 20,
+    interiorScore: 10,
+    pageQuality: 'White',
+    defects: [],
+    stapleCondition: 'Clean, centered, no rust or migration',
+    restorationFlags: [],
+    assessmentNotes: 'Certified flawless by the Unerring Robograder.'
+  },
+  roboGradeId: '',
+  roboGradeDate: '',
+  publicListing: false,
+  highGradeTier: false,
+  highGradeUnlocked: false,
+  restorationCheckTier: false,
+  restorationReport: null,
+  restorationFlag: false
+};
+
 async function loadComics(){
   // Splash screen covers initial load; no purple sync bar during app boot.
   // syncMsg is still used for Saving/Deleting after the app is running.
@@ -698,23 +769,59 @@ async function loadComics(){
     comics=snap.docs.map(d=>d.data()).map(c=>({...c,pageQuality:normPageQuality(c.pageQuality)}));
     // No seeding for new users — they start with an empty collection
   }catch(e){console.error("Load error:",e);comics=[];}
+
+  // Inject sample entry for users who haven't dismissed it and have no books yet.
+  // The dismissal flag is read from the user's Firestore doc (loaded by
+  // loadUserCredits, which runs before loadComics in the auth handler).
+  if (comics.length === 0 && window._sampleDismissed !== true) {
+    comics = [{...SAMPLE_COMIC}];
+  }
+
   renderList();
   updateStats();
 }
 
 async function saveComic(rec){
+  // Don't save the sample itself — it should never exist in Firestore.
+  if (rec && rec.id === SAMPLE_COMIC_ID) return;
   syncMsg("Saving...");
-  try{await fsSetDoc(userComicDoc(rec.id),rec);}
+  try{
+    await fsSetDoc(userComicDoc(rec.id),rec);
+    // First real save dismisses the sample entry permanently
+    await dismissSampleIfNeeded();
+  }
   catch(e){alert("Save failed: "+e.message);}
   syncMsg(null);
 }
 
 async function deleteComic(id){
+  // Manual deletion of the sample entry: just dismiss it, no Firestore call.
+  if (id === SAMPLE_COMIC_ID) {
+    comics = comics.filter(c => c.id !== SAMPLE_COMIC_ID);
+    await dismissSampleIfNeeded();
+    showList();
+    return;
+  }
   syncMsg("Deleting...");
   try{await fsDeleteDoc(userComicDoc(id));}
   catch(e){alert("Delete failed: "+e.message);}
   syncMsg(null);
   showList();
+}
+
+// Write the dismissal flag once, so the sample never re-appears for this account
+// on any device. Idempotent — safe to call multiple times.
+async function dismissSampleIfNeeded() {
+  if (window._sampleDismissed === true) return;
+  window._sampleDismissed = true;
+  try {
+    if (window._currentUser && window._db) {
+      const userRef = window._fsDoc(window._db, 'users', window._currentUser.uid);
+      await window._fsSetDoc(userRef, { sampleDismissed: true }, { merge: true });
+    }
+  } catch(e) {
+    console.error('Failed to dismiss sample:', e);
+  }
 }
 
 async function signInGoogle(){
@@ -758,6 +865,7 @@ async function loadUserCredits(){
     if(snap.exists()){
       const data = snap.data();
       window._userCredits = data.assessmentCredits || 0;
+      window._sampleDismissed = data.sampleDismissed === true;
       if (data.everPurchased) window._userEverPaid = true;
       else if (window._userCredits > 0) window._userEverPaid = true;
     } else {
@@ -768,6 +876,7 @@ async function loadUserCredits(){
         freeCreditsGranted: true
       });
       window._userCredits = 5;
+      window._sampleDismissed = false;
     }
     updateStats();
   } catch(e){ console.error("Failed to load credits:", e); }
@@ -985,8 +1094,21 @@ function showDetail(id){
   document.getElementById("add-btn").style.display="none";
   const gc=gradeColor(selected.grade);
   const cost=totalCost(selected);
+  const isSample = selected._isSample === true;
   let html=`<div class="sticky-back"><button class="btn-ghost" onclick="showList()">← Back</button></div>
   <div class="card" style="border-top:3px solid ${gc};margin-top:4px;background:#fff">`;
+
+  // Sample-entry banner: explains this is a demo so the user doesn't get confused
+  // when Edit / Print / public toggle are disabled.
+  if (isSample) {
+    html += `<div style="background:#fff8e0;border:1px solid #c8a040;border-radius:10px;padding:12px 14px;margin-bottom:14px;display:flex;gap:12px;align-items:flex-start">
+      <div style="font-size:20px;flex-shrink:0">✨</div>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:700;color:#6a4a08;letter-spacing:0.02em;margin-bottom:3px">Sample Entry</div>
+        <div style="font-size:12px;color:#7a5a1a;line-height:1.5">This is an example of what a graded book looks like. Add your first book to clear it, or tap Delete below to remove it now.</div>
+      </div>
+    </div>`;
+  }
 
   if(selected.images?.length>0){
     const imgs=selected.images;
@@ -1064,23 +1186,26 @@ function showDetail(id){
   if(selected.roboGrade)html+=`<div style="margin-top:20px">${buildRoboGradeDisplay(selected.roboGrade)}</div>`;
   if(selected.notes)html+=`<div style="margin-top:20px"><div class="section-label">My Notes</div><div style="font-size:13px;color:#6a5a4a;line-height:1.7">${esc(selected.notes)}</div></div>`;
 
-  // Public/private toggle row
-  const isPublic = !!(selected.publicListing);
-  html+=`<div style="display:flex;align-items:center;gap:12px;margin-top:20px;padding:10px 14px;background:#141210;border:1px solid #2a2420;border-radius:10px;">
-    <div style="flex:1">
-      <div style="font-size:12px;font-weight:700;color:#8a7a6a;letter-spacing:0.05em">${isPublic ? '🔓 Public listing' : '🔒 Private'}</div>
-      <div style="font-size:11px;color:#4a3a2a;margin-top:2px">${isPublic ? 'Grade, photos, and RoboGrade are publicly visible' : 'Only visible to you'}</div>
-    </div>
-    <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer;flex-shrink:0">
-      <input type="checkbox" ${isPublic ? 'checked' : ''} onchange="togglePublicListing('${esc(selected.id)}', this.checked)"
-        style="opacity:0;width:0;height:0;position:absolute">
-      <span style="position:absolute;inset:0;border-radius:12px;background:${isPublic ? '#3a7a20' : '#2a2a2a'};transition:background 0.2s" id="detail-public-track"></span>
-      <span style="position:absolute;left:${isPublic ? '23px' : '3px'};top:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left 0.2s" id="detail-public-thumb"></span>
-    </label>
-  </div>`;
+  // Public/private toggle row — hidden on the sample entry (it's never public)
+  if (!isSample) {
+    const isPublic = !!(selected.publicListing);
+    html+=`<div style="display:flex;align-items:center;gap:12px;margin-top:20px;padding:10px 14px;background:#141210;border:1px solid #2a2420;border-radius:10px;">
+      <div style="flex:1">
+        <div style="font-size:12px;font-weight:700;color:#8a7a6a;letter-spacing:0.05em">${isPublic ? '🔓 Public listing' : '🔒 Private'}</div>
+        <div style="font-size:11px;color:#4a3a2a;margin-top:2px">${isPublic ? 'Grade, photos, and RoboGrade are publicly visible' : 'Only visible to you'}</div>
+      </div>
+      <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer;flex-shrink:0">
+        <input type="checkbox" ${isPublic ? 'checked' : ''} onchange="togglePublicListing('${esc(selected.id)}', this.checked)"
+          style="opacity:0;width:0;height:0;position:absolute">
+        <span style="position:absolute;inset:0;border-radius:12px;background:${isPublic ? '#3a7a20' : '#2a2a2a'};transition:background 0.2s" id="detail-public-track"></span>
+        <span style="position:absolute;left:${isPublic ? '23px' : '3px'};top:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left 0.2s" id="detail-public-thumb"></span>
+      </label>
+    </div>`;
+  }
+  // Action buttons — Edit/Print are hidden for sample entry (view-only demo)
   html+=`<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
-    ${selected.roboGrade ? `<button class="btn" onclick="printLabel('${esc(selected.id)}')" style="background:#1a2208;color:#b8d820;border:1.5px solid #3a5010">Print Label</button>` : ''}
-    <button class="btn btn-gold" onclick="showEdit('${esc(selected.id)}')">Edit</button>
+    ${(!isSample && selected.roboGrade) ? `<button class="btn" onclick="printLabel('${esc(selected.id)}')" style="background:#1a2208;color:#b8d820;border:1.5px solid #3a5010">Print Label</button>` : ''}
+    ${!isSample ? `<button class="btn btn-gold" onclick="showEdit('${esc(selected.id)}')">Edit</button>` : ''}
     <button class="btn btn-dark" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')">Delete</button>
   </div></div>`;
 
