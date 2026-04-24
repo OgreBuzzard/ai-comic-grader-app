@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privacy Policy — RoboGrader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Display:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --ink: #0d0f0a;
+    --paper: #f0ede6;
+    --olive: #1a2208;
+    --olive-lt: #6a8030;
+    --chartreuse: #b8d820;
+    --mid: #6a7a5a;
+    --rule: #b0b89a;
+  }
+  html { background: var(--paper); color: var(--ink); }
+  body { font-family: 'Noto Sans Display', sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 0 0 60px; line-height: 1.6; }
+  header { width: 100%; background: var(--olive); padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .wordmark { font-weight: 900; font-size: 18px; color: var(--chartreuse); letter-spacing: 2px; text-transform: uppercase; }
+  .wordmark span { color: var(--olive-lt); font-weight: 700; }
+  .back { color: var(--chartreuse); opacity: 0.8; text-decoration: none; font-size: 13px; letter-spacing: 1px; }
+  .back:hover { opacity: 1; }
+  main { max-width: 720px; width: 100%; padding: 40px 28px; }
+  h1 { font-size: 32px; font-weight: 900; margin-bottom: 8px; letter-spacing: -0.5px; }
+  .updated { color: var(--mid); font-size: 13px; margin-bottom: 32px; }
+  h2 { font-size: 18px; font-weight: 700; margin-top: 32px; margin-bottom: 10px; color: var(--olive); }
+  p { margin-bottom: 14px; font-size: 15px; }
+  ul { margin: 10px 0 14px 24px; }
+  li { margin-bottom: 6px; font-size: 15px; }
+  a { color: var(--olive); text-decoration: underline; }
+  .contact { margin-top: 40px; padding: 20px; background: #e8e4d8; border-left: 3px solid var(--olive-lt); border-radius: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <a class="back" href="/">← Back to RoboGrader</a>
+  <div class="wordmark">Robo<span>Grader</span></div>
+</header>
+<main>
+  <h1>Privacy Policy</h1>
+  <div class="updated">Last updated: April 23, 2026</div>
+
+  <p>This is the privacy policy for RoboGrader, a comic book grading assistant. We tried to write it plainly. If anything is unclear, email us.</p>
+
+  <h2>What we collect</h2>
+  <p>When you use RoboGrader, we collect:</p>
+  <ul>
+    <li><strong>Your email address and name</strong>, from Google Sign-In when you create an account.</li>
+    <li><strong>The photos you upload</strong> of your comics, along with any metadata you enter (title, issue, grades, purchase price, notes, etc.).</li>
+    <li><strong>The grades we generate</strong> for your comics, and a record of each assessment you run.</li>
+    <li><strong>Basic technical logs</strong> like IP address, browser type, and page requests, via our hosting provider (Vercel). These are kept for a short time for debugging and security purposes.</li>
+  </ul>
+
+  <h2>Where it lives</h2>
+  <p>Your account data and your comic records (including the photos you upload) are stored in Google's Firebase Firestore. Assessments are processed by sending photos and a prompt to Anthropic's Claude API. Anthropic does not train its public models on API inputs and outputs. Payment processing, when enabled, will be handled by Stripe.</p>
+
+  <h2>What we do with it</h2>
+  <p>We use your data to run the app for you. Specifically:</p>
+  <ul>
+    <li>Storing and displaying your comic collection and assessment history</li>
+    <li>Generating grades and grader notes for the comics you submit</li>
+    <li>Tracking your assessment credit balance</li>
+    <li>Showing your public listing page (only if you choose to make a specific book public)</li>
+    <li>Debugging and improving the app</li>
+  </ul>
+  <p>We don't sell your data. We don't show you ads. We don't share your data with third parties except the service providers named above, who each have their own privacy terms.</p>
+
+  <h2>Public listings</h2>
+  <p>When you mark a comic as public, a page at <code>robograder.com/id/XXXXXX</code> becomes visible to anyone with the link. That page shows the RoboGrade score, the photos you uploaded, and basic identifying info about the comic. It does <strong>not</strong> show your CGC or PSA grade estimates, your purchase price, your personal notes, or your email address. You can make a comic private again at any time from the detail page.</p>
+
+  <h2>How we use your data to improve the service</h2>
+  <p>We may use anonymized assessment data — comic photos with personal information removed — to improve grading accuracy and develop new features. Anonymized means your name, email, account ID, purchase prices, and personal notes are stripped before any internal analysis or model training. The photos themselves and the resulting grades may be used.</p>
+  <p>This is opt-out. You can disable it any time in Settings under "Help improve RoboGrader." If you opt out, no future assessments will be used for improvement work. Data from past assessments that has already been incorporated into training sets cannot always be removed retroactively, but we do not retain identifying linkage between training data and your account.</p>
+  <p>Anonymized data is never shared outside our service or used for any purpose other than improving the grading system.</p>
+
+  <h2>Inactive accounts</h2>
+  <p>To manage storage costs and keep our systems healthy, we may delete inactive accounts after 12 months of no sign-in. Before any such deletion, we will send a notice to the email address on file at least 30 days in advance, giving you the opportunity to sign in (which immediately resets the inactivity timer) or to export your data. Accounts with active paid credits or recent purchases are exempt from automatic inactivity deletion.</p>
+
+  <h2>Deleting your data</h2>
+  <p>You can delete individual comics from within the app at any time. You can delete your entire account from Settings → Delete Account, which permanently removes your account, all your saved comics, all uploaded photos, and any remaining credits. This is irreversible.</p>
+
+  <h2>Children</h2>
+  <p>RoboGrader is not designed for users under 13. Don't sign up if you're under 13.</p>
+
+  <h2>Changes to this policy</h2>
+  <p>If we materially change how we handle your data, we'll post an update here and notify users through the app or via email.</p>
+
+  <div class="contact">
+    <strong>Questions?</strong> Email <a href="mailto:wherethehellismatt@gmail.com">wherethehellismatt@gmail.com</a>.
+  </div>
+</main>
+</body>
+</html>

@@ -75,6 +75,7 @@
           window.dispatchEvent(new Event('firebase-ready'));
         }
         await loadUserCredits();
+        await checkTermsAcceptance();
       } else {
         // Not signed in — show auth screen, hide app
         if (authScreen) authScreen.style.display = 'flex';
@@ -422,10 +423,40 @@
       </div>
     </div>
 
+    <div class="settings-row" style="cursor:default">
+      <div style="flex:1">
+        <div class="sr-label">Help improve RoboGrader</div>
+        <div class="sr-detail">Allow your anonymized comic photos and assessment data to be used to improve grading accuracy. Your name and personal data are never included.</div>
+      </div>
+      <div style="margin-left:12px;flex-shrink:0">
+        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer">
+          <input type="checkbox" id="settings-training-toggle" onchange="saveTrainingSetting(this.checked)"
+            style="opacity:0;width:0;height:0;position:absolute">
+          <span id="settings-training-track" style="position:absolute;inset:0;border-radius:12px;background:#2a2a2a;transition:background 0.2s"></span>
+          <span id="settings-training-thumb" style="position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left 0.2s"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="settings-row" style="cursor:default;padding-top:6px;padding-bottom:6px">
+      <div style="font-size:12px;color:#6a5a4a">
+        <a href="/privacy.html" target="_blank" rel="noopener" style="color:#8a9aaa;text-decoration:underline">Privacy Policy</a>
+        &nbsp;·&nbsp;
+        <a href="/terms.html" target="_blank" rel="noopener" style="color:#8a9aaa;text-decoration:underline">Terms of Service</a>
+      </div>
+    </div>
+
     <!-- Danger zone -->
     <div class="settings-section-label">Account Actions</div>
     <div class="settings-row" onclick="signOutUser()">
       <div class="sr-label" style="color:#e87a7a">Sign Out</div>
+      <div class="sr-right">›</div>
+    </div>
+    <div class="settings-row" onclick="deleteAccountFlow()">
+      <div>
+        <div class="sr-label" style="color:#e87a7a">Delete Account</div>
+        <div class="sr-detail">Permanently delete your account and all your data.</div>
+      </div>
       <div class="sr-right">›</div>
     </div>
     <div style="padding:24px 18px 40px">
@@ -641,18 +672,6 @@ async function signInGoogle(){
   }
 }
 
-async function signInApple(){
-  try {
-    const { OAuthProvider } = await import('https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js');
-    const provider = new OAuthProvider('apple.com');
-    await window._signInWithPopup(window._auth, provider);
-  } catch(e) {
-    if(e.code !== 'auth/popup-closed-by-user'){
-      alert('Apple sign in failed: ' + e.message);
-    }
-  }
-}
-
 async function signOutUser(){
   if(!confirm('Sign out?')) return;
   await window._signOut(window._auth);
@@ -694,6 +713,77 @@ async function loadUserCredits(){
     }
     updateStats();
   } catch(e){ console.error("Failed to load credits:", e); }
+}
+
+// ── Terms acceptance ─────────────────────────────────────────────────────────
+// Bump this version whenever Terms or Privacy materially change; the modal
+// will re-appear for all users until they re-accept.
+const TERMS_VERSION = '2026-04-23-b';
+
+async function checkTermsAcceptance(){
+  if(!window._currentUser) return;
+  try {
+    const db = window._db;
+    const userRef = window._fsDoc(db, 'users', window._currentUser.uid);
+    const snap = await window._fsGetDoc(userRef);
+    const data = snap.exists() ? snap.data() : {};
+    if (data.termsAccepted && data.termsVersion === TERMS_VERSION) return;
+    showTermsModal();
+  } catch(e){
+    console.error('Terms check failed:', e);
+  }
+}
+
+function showTermsModal(){
+  // If modal already present, don't double-up
+  if (document.getElementById('terms-modal')) return;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'terms-modal';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.78);display:flex;align-items:center;justify-content:center;padding:20px;';
+
+  const box = document.createElement('div');
+  box.style.cssText = 'background:#f0ede6;color:#0d0f0a;border-radius:14px;padding:28px 26px;max-width:460px;width:100%;max-height:88vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,0.5);';
+  box.innerHTML = `
+    <div style="font-size:22px;font-weight:900;letter-spacing:-0.3px;margin-bottom:6px;color:#1a2208">Welcome to RoboGrader</div>
+    <div style="font-size:12px;color:#6a7a5a;letter-spacing:2px;text-transform:uppercase;font-weight:700;margin-bottom:20px">Alpha Release</div>
+    <p style="font-size:14px;line-height:1.55;margin-bottom:14px">RoboGrader is a comic grading assistant in early testing. Before you dive in, please read and agree to how it works.</p>
+    <ul style="font-size:13.5px;line-height:1.55;margin:10px 0 18px 20px">
+      <li style="margin-bottom:8px"><strong>Grades are estimates, not official.</strong> RoboGrader produces informational grades. They are not CGC, PSA, or any professional grading service's official grades.</li>
+      <li style="margin-bottom:8px"><strong>Don't rely on RG grades for sales or insurance.</strong> Use them for your own tracking and as a gut check before submitting to a real grading service.</li>
+      <li style="margin-bottom:8px"><strong>Upload only comic book photos.</strong> Non-comic or inappropriate content will be flagged; three flags can trigger account review.</li>
+      <li style="margin-bottom:8px"><strong>This is an alpha release.</strong> Expect bugs. Please tell us what you find.</li>
+    </ul>
+    <p style="font-size:13px;color:#3a4a28;margin-bottom:20px">Full details in our <a href="/terms.html" target="_blank" rel="noopener" style="color:#1a2208;text-decoration:underline">Terms of Service</a> and <a href="/privacy.html" target="_blank" rel="noopener" style="color:#1a2208;text-decoration:underline">Privacy Policy</a>.</p>
+    <div style="display:flex;gap:10px;flex-direction:column">
+      <button id="terms-agree-btn" style="padding:14px;background:#1a2208;color:#b8d820;border:none;border-radius:10px;font-size:15px;font-weight:800;letter-spacing:1.5px;cursor:pointer">I AGREE — LET ME IN</button>
+      <button id="terms-decline-btn" style="padding:10px;background:transparent;color:#6a7a5a;border:none;font-size:12px;letter-spacing:1px;cursor:pointer;text-decoration:underline">I don't agree — sign me out</button>
+    </div>`;
+
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  document.getElementById('terms-agree-btn').onclick = async () => {
+    try {
+      const db = window._db;
+      const userRef = window._fsDoc(db, 'users', window._currentUser.uid);
+      await window._fsSetDoc(userRef, {
+        termsAccepted: true,
+        termsVersion: TERMS_VERSION,
+        termsAcceptedAt: new Date().toISOString()
+      }, { merge: true });
+      overlay.remove();
+    } catch(e){
+      alert('Failed to save agreement. Please try again.');
+      console.error(e);
+    }
+  };
+  document.getElementById('terms-decline-btn').onclick = async () => {
+    overlay.remove();
+    if (window._signOut && window._auth) {
+      await window._signOut(window._auth);
+    }
+  };
 }
 
 async function buyCredits(pkg){
@@ -1217,7 +1307,11 @@ function showEdit(id){
   view="add";_assessed=!!(c.assessedCGCGrade||c.aiAssessment);document.getElementById("add-btn").style.display="none";renderForm();window.scrollTo(0,0);
 }
 
-async function compressImage(dataUrl,maxDim=900,quality=0.50){
+async function compressImage(dataUrl,maxDim=800,quality=0.42){
+  // Target: ~50-80 KB per image so 8 images + metadata fit in Firestore's
+  // 1,048,576 byte document cap. Default 800px/0.42 gives comfortable headroom.
+  // For high-grade assessments with 8 images, this matters; for standard 4-image
+  // books the old limits were fine but the tighter values still look good.
   return new Promise(res=>{
     const img=new Image();
     img.onload=()=>{
@@ -1553,16 +1647,20 @@ function showResultPreview(cgc, psa) {
   }
 
   // Complete button — fade + scale in at 5500ms
-  // If RG ≥ 80, the button becomes a "High-Grade Assess Unlocked" affordance.
-  // Tapping it still just completes/closes the modal (same as Complete) — the
-  // high-grade assessment itself is kicked off from the detail/edit page.
+  // If RG ≥ 80 AND this is the FIRST pass (not a high-grade pass already),
+  // the button becomes a "High-Grade Assess Unlocked" affordance.
+  // After a high-grade pass completes (cgc._highGradePass=true), always show COMPLETE —
+  // there's no further upgrade path.
   setTimeout(() => {
     const btn = document.getElementById('assess-complete-btn');
     if (btn) {
-      const hgUnlocked = (roboScore != null && roboScore >= 80);
-      // Always set the flag explicitly — re-assessments that drop below 80 must clear it
+      const isHighGradePass = !!(cgc && cgc._highGradePass);
+      const hgUnlocked = (roboScore != null && roboScore >= 80) && !isHighGradePass;
+      // Always set the flag explicitly — re-assessments that drop below 80 must clear it.
+      // After a high-grade pass, the flag stays true only if the RG is still ≥ 80 (the
+      // corner slots remain visible on the detail page) but we never re-offer the pass.
       if (_pendingAssessResult && _pendingAssessResult.cgc) {
-        _pendingAssessResult.cgc._highGradeUnlocked = hgUnlocked;
+        _pendingAssessResult.cgc._highGradeUnlocked = (roboScore != null && roboScore >= 80);
       }
       if (hgUnlocked) {
         btn.innerHTML = `<div style="font-size:13px;font-weight:800;letter-spacing:2px;line-height:1.2">HIGH-GRADE ASSESS</div><div style="font-size:11px;font-weight:700;letter-spacing:3px;opacity:0.85;margin-top:3px">UNLOCKED</div>`;
@@ -1594,6 +1692,13 @@ async function assessHighGrade() {
   if (imgs.length < 4) { alert('All 4 main photos are required for high-grade assessment.'); return; }
   if (corners.length < 4) { alert('All 4 corner photos are required for high-grade assessment.'); return; }
   if (assessing) return;
+
+  // Abuse prevention: block locked-out or flagged accounts
+  const eligibility = await checkAssessmentEligibility();
+  if (!eligibility.allowed) {
+    alert(eligibility.message);
+    return;
+  }
 
   // Check credits — high-grade costs 1 credit
   if (window._userCredits !== undefined && window._userCredits <= 0) {
@@ -1652,8 +1757,9 @@ async function assessHighGrade() {
 
     // Gate can still fire on high-grade
     if (unified.gateResult && unified.gateResult !== 'COMIC') {
-      await incrementStrike(unified.gateResult, unified.gateReason || '');
-      showGateTerminatedPreview(unified.gateResult, unified.gateReason || '');
+      // Server tracks strikes authoritatively when authenticated; fall back if not
+      if (!('lockout' in unified)) await incrementStrike(unified.gateResult, unified.gateReason || '');
+      showGateTerminatedPreview(unified.gateResult, unified.gateReason || '', unified.lockout);
       assessing = false;
       return;
     }
@@ -1843,8 +1949,150 @@ function loadPublicSetting() {
   }
 }
 
+// ── Training opt-in (Help improve RoboGrader) ────────────────────────────────
+// Stored on the user's Firestore doc so it persists across devices.
+// Default for new users: opt-in (true). Users can opt out at any time.
+async function saveTrainingSetting(val) {
+  window._trainingOptIn = val;
+  const track = document.getElementById('settings-training-track');
+  const thumb = document.getElementById('settings-training-thumb');
+  if (track) track.style.background = val ? '#3a7a20' : '#2a2a2a';
+  if (thumb) thumb.style.left = val ? '23px' : '3px';
+  if (!window._currentUser || !window._db) return;
+  try {
+    const userRef = window._fsDoc(window._db, 'users', window._currentUser.uid);
+    await window._fsSetDoc(userRef, {
+      trainingOptIn: val,
+      trainingOptInUpdatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch(e) {
+    console.error('Failed to save training opt-in:', e);
+  }
+}
+
+async function loadTrainingSetting() {
+  let val = true; // default: opt-in
+  if (window._currentUser && window._db) {
+    try {
+      const snap = await window._fsGetDoc(window._fsDoc(window._db, 'users', window._currentUser.uid));
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.trainingOptIn === false) val = false;
+      }
+    } catch(e) { console.error('Failed to load training opt-in:', e); }
+  }
+  window._trainingOptIn = val;
+  const cb = document.getElementById('settings-training-toggle');
+  if (cb) {
+    cb.checked = val;
+    const track = document.getElementById('settings-training-track');
+    const thumb = document.getElementById('settings-training-thumb');
+    if (track) track.style.background = val ? '#3a7a20' : '#2a2a2a';
+    if (thumb) thumb.style.left = val ? '23px' : '3px';
+  }
+}
+
+// ── Account self-deletion ────────────────────────────────────────────────────
+// Two-step confirmation, then deletes:
+//   1. All comics under users/{uid}/comics/
+//   2. All robograde_ids/{id} entries belonging to this user
+//   3. The users/{uid} doc itself
+//   4. The Firebase Auth user (signs them out)
+async function deleteAccountFlow() {
+  if (!window._currentUser || !window._db) return;
+
+  // Step 1: warn about consequences
+  const ok1 = confirm(
+    "Delete your RoboGrader account?\n\n" +
+    "This will permanently delete:\n" +
+    "• Your account and sign-in credentials\n" +
+    "• All your saved comics and assessments\n" +
+    "• All photos you've uploaded\n" +
+    "• Any remaining assessment credits\n\n" +
+    "This cannot be undone. Continue?"
+  );
+  if (!ok1) return;
+
+  // Step 2: type-to-confirm
+  const typed = prompt('Type DELETE (in capitals) to confirm permanent deletion of your account:');
+  if (typed !== 'DELETE') {
+    alert('Deletion cancelled.');
+    return;
+  }
+
+  // Show progress
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:11000;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;color:#c8b8a8;font-size:16px;';
+  overlay.textContent = 'Deleting account...';
+  document.body.appendChild(overlay);
+
+  try {
+    const db = window._db;
+    const uid = window._currentUser.uid;
+    const fsCollection = window._fsCollection;
+    const fsGetDocs = window._fsGetDocs;
+    const fsDeleteDoc = window._fsDeleteDoc;
+    const fsDoc = window._fsDoc;
+
+    // 1. Delete all comic documents in users/{uid}/comics/
+    if (fsCollection && fsGetDocs && fsDeleteDoc) {
+      const comicsCol = fsCollection(db, 'users', uid, 'comics');
+      const comicsSnap = await fsGetDocs(comicsCol);
+      const comicIds = [];
+      comicsSnap.forEach(d => {
+        comicIds.push(d.id);
+        const data = d.data();
+        if (data.roboGradeId) comicIds.push('__rg__' + data.roboGradeId);
+      });
+      // Delete each comic doc
+      for (const docId of comicIds) {
+        if (docId.startsWith('__rg__')) continue;
+        try {
+          await fsDeleteDoc(fsDoc(db, 'users', uid, 'comics', docId));
+        } catch(e) { console.error('Failed to delete comic', docId, e); }
+      }
+      // Delete robograde_ids entries
+      for (const docId of comicIds) {
+        if (!docId.startsWith('__rg__')) continue;
+        const rgId = docId.replace('__rg__', '');
+        try {
+          await fsDeleteDoc(fsDoc(db, 'robograde_ids', rgId));
+        } catch(e) { console.error('Failed to delete robograde_id', rgId, e); }
+      }
+    }
+
+    // 2. Delete the user doc
+    try {
+      await fsDeleteDoc(fsDoc(db, 'users', uid));
+    } catch(e) { console.error('Failed to delete user doc:', e); }
+
+    // 3. Delete the auth user. If recent-sign-in is required, the catch will
+    //    instruct the user to sign in again and retry.
+    try {
+      await window._currentUser.delete();
+    } catch(e) {
+      if (e.code === 'auth/requires-recent-login') {
+        alert('Your account data has been deleted, but for security reasons you need to sign in again to remove your sign-in credentials. Please sign in once more, then return to Settings → Delete Account to finish removing your account.');
+      } else {
+        console.error('Auth user delete failed:', e);
+      }
+      // Sign them out anyway
+      if (window._signOut && window._auth) await window._signOut(window._auth);
+    }
+  } catch(e) {
+    overlay.remove();
+    alert('Account deletion failed: ' + e.message + '\n\nSome data may have been deleted. Please contact support to ensure full removal.');
+    return;
+  }
+
+  overlay.remove();
+  alert('Your account has been deleted.');
+  // The auth state change handler will redirect to the sign-in screen.
+}
+
 function openSettings() {
   loadPublicSetting();
+  loadTrainingSetting();
   const overlay = document.getElementById('settings-overlay');
   if (!overlay) return;
 
@@ -2027,6 +2275,13 @@ async function assessGrade(){
   if(imgs.length===0){alert("Add at least one photo first.");return;}
   if(assessing)return;
 
+  // Abuse prevention: block locked-out or flagged accounts
+  const eligibility = await checkAssessmentEligibility();
+  if (!eligibility.allowed) {
+    alert(eligibility.message);
+    return;
+  }
+
   // Check credits
   if(window._userCredits !== undefined && window._userCredits <= 0){
     if(confirm("You have no assessment credits remaining. Would you like to buy more?")){
@@ -2054,10 +2309,10 @@ async function assessGrade(){
 
     // ── Gate check: if the assessment was terminated because the photos aren't
     //    a valid comic book, show the flag UI and don't charge a credit.
-    //    Also track strikes; at 3 the account is flagged for review.
+    //    Server tracks strikes authoritatively; client falls back if not authed.
     if(unified.gateResult && unified.gateResult !== 'COMIC'){
-      await incrementStrike(unified.gateResult, unified.gateReason||'');
-      showGateTerminatedPreview(unified.gateResult, unified.gateReason||'');
+      if (!('lockout' in unified)) await incrementStrike(unified.gateResult, unified.gateReason||'');
+      showGateTerminatedPreview(unified.gateResult, unified.gateReason||'', unified.lockout);
       assessing=false;
       return;
     }
@@ -2083,7 +2338,7 @@ async function assessGrade(){
 }
 
 // Show a terminated-assessment preview when the gate catches NOT_COMIC or FLAGGED
-function showGateTerminatedPreview(gateResult, reason) {
+function showGateTerminatedPreview(gateResult, reason, lockout) {
   // Stop the grid frame animation
   if (window._modalFrameTimer) { clearInterval(window._modalFrameTimer); window._modalFrameTimer = null; }
   const gridEl = document.getElementById('modal-grid-frame');
@@ -2106,7 +2361,17 @@ function showGateTerminatedPreview(gateResult, reason) {
   const fg    = gateResult === 'FLAGGED' ? '#ff6060' : '#ffb060';
 
   gradesEl.innerHTML = `<div style="padding:12px 18px;background:${bg};color:${fg};border-radius:10px;font-size:17px;font-weight:900;letter-spacing:2px;text-align:center;border:1.5px solid ${fg};box-shadow:0 2px 10px rgba(0,0,0,0.4)">${label}</div>`;
-  pqEl.innerHTML = reason ? `<div style="font-size:11px;color:#a09080;font-style:italic;padding:4px 12px;text-align:center;line-height:1.4">${esc(reason)}</div>` : '';
+
+  // Build the explanation: gate reason, plus lockout warning if applicable
+  let pqContent = '';
+  if (reason) pqContent += `<div style="font-size:11px;color:#a09080;font-style:italic;padding:4px 12px;text-align:center;line-height:1.4">${esc(reason)}</div>`;
+  if (lockout && lockout.type === 'permanent') {
+    pqContent += `<div style="font-size:11px;color:#ff8080;font-weight:700;padding:8px 12px;text-align:center;line-height:1.4;letter-spacing:0.5px">⚠ Account flagged for review — repeated invalid uploads</div>`;
+  } else if (lockout && lockout.type === 'temp') {
+    const unlockAt = lockout.unlockAt ? new Date(lockout.unlockAt).toLocaleString() : '';
+    pqContent += `<div style="font-size:11px;color:#ffb060;font-weight:700;padding:8px 12px;text-align:center;line-height:1.4;letter-spacing:0.5px">Assessment locked for 24 hours${unlockAt?`<br><span style="opacity:0.85;font-weight:500">until ${esc(unlockAt)}</span>`:''}</div>`;
+  }
+  pqEl.innerHTML = pqContent;
 
   preview.style.display = 'block';
 
@@ -2129,33 +2394,94 @@ function showGateTerminatedPreview(gateResult, reason) {
   }, 800);
 }
 
-// Track a strike in Firestore. At 3 strikes, flag the account for review.
-// TODO: when the account is flagged, send an email to wherethehellismatt@gmail.com.
-// This requires either (a) a Firebase Cloud Function watching the flaggedAt field,
-// or (b) a Vercel serverless function with a transactional email provider.
-// For now, flagged accounts can be found via Firestore query:
-//   db.collection('users').where('accountFlagged', '==', true).get()
+// ── Abuse prevention: strike-based cool-offs ────────────────────────────────
+// Failed assessments (gate-blocked: NOT_COMIC or FLAGGED) are tracked.
+// Rules:
+//   3 strikes in a rolling 24-hour window → 24-hour assessment lockout
+//   10 strikes in a rolling 96-hour window → permanent account flag
+// Both are also enforced server-side in /api/assess. Client check is for UX.
+const STRIKE_LOCKOUT_THRESHOLD = 3;       // strikes in 24h that trigger lockout
+const STRIKE_LOCKOUT_WINDOW_MS = 24 * 60 * 60 * 1000;
+const STRIKE_LOCKOUT_DURATION_MS = 24 * 60 * 60 * 1000;
+const STRIKE_PERMANENT_THRESHOLD = 10;    // strikes in 96h that trigger permanent block
+const STRIKE_PERMANENT_WINDOW_MS = 96 * 60 * 60 * 1000;
+
+function countStrikesInWindow(strikeHistory, windowMs) {
+  if (!Array.isArray(strikeHistory)) return 0;
+  const cutoff = Date.now() - windowMs;
+  return strikeHistory.filter(s => {
+    const t = new Date(s.timestamp).getTime();
+    return !isNaN(t) && t >= cutoff;
+  }).length;
+}
+
+// Check whether the user can currently submit an assessment.
+// Returns {allowed: boolean, reason?: string, unlockAt?: Date}.
+async function checkAssessmentEligibility() {
+  try {
+    if (!window._currentUser || !window._db) return { allowed: true };
+    const userRef = window._fsDoc(window._db, 'users', window._currentUser.uid);
+    const snap = await window._fsGetDoc(userRef);
+    if (!snap.exists()) return { allowed: true };
+    const data = snap.data();
+    if (data.accountFlagged) {
+      return {
+        allowed: false,
+        reason: 'permanent',
+        message: 'Your account has been flagged for review due to repeated invalid uploads. Please contact support if you believe this is an error.'
+      };
+    }
+    if (data.assessmentLockedUntil) {
+      const unlockAt = new Date(data.assessmentLockedUntil);
+      if (unlockAt.getTime() > Date.now()) {
+        return {
+          allowed: false,
+          reason: 'lockout',
+          unlockAt,
+          message: `Assessment is temporarily locked due to repeated invalid uploads. Try again after ${unlockAt.toLocaleString()}.`
+        };
+      }
+    }
+    return { allowed: true };
+  } catch(e) {
+    console.error('Eligibility check failed:', e);
+    return { allowed: true }; // fail open — server still enforces
+  }
+}
+
+// Track a strike in Firestore. Applies rolling-window cool-offs:
+//   3 strikes in 24h → 24-hour lockout
+//   10 strikes in 96h → permanent account flag
 async function incrementStrike(gateResult, reason) {
   try {
     if (!window._currentUser || !window._db) return;
     const userRef = window._fsDoc(window._db, 'users', window._currentUser.uid);
     const snap = await window._fsGetDoc(userRef);
-    const prev = (snap.exists() && snap.data().strikes) || 0;
-    const strikes = prev + 1;
-    const strikeHistory = (snap.exists() && snap.data().strikeHistory) || [];
+    const data = snap.exists() ? snap.data() : {};
+    const strikeHistory = Array.isArray(data.strikeHistory) ? [...data.strikeHistory] : [];
     strikeHistory.push({
       timestamp: new Date().toISOString(),
       gateResult, reason
     });
+    const totalStrikes = strikeHistory.length;
+    const recent24h = countStrikesInWindow(strikeHistory, STRIKE_LOCKOUT_WINDOW_MS);
+    const recent96h = countStrikesInWindow(strikeHistory, STRIKE_PERMANENT_WINDOW_MS);
+
     const update = {
-      strikes,
+      strikes: totalStrikes,
       strikeHistory,
       lastStrikeAt: new Date().toISOString()
     };
-    if (strikes >= 3) {
+
+    // Permanent block (takes priority over temp lockout)
+    if (recent96h >= STRIKE_PERMANENT_THRESHOLD) {
       update.accountFlagged = true;
-      update.flaggedAt = update.flaggedAt || new Date().toISOString();
+      update.flaggedAt = data.flaggedAt || new Date().toISOString();
+    } else if (recent24h >= STRIKE_LOCKOUT_THRESHOLD) {
+      // 24-hour lockout
+      update.assessmentLockedUntil = new Date(Date.now() + STRIKE_LOCKOUT_DURATION_MS).toISOString();
     }
+
     await window._fsSetDoc(userRef, update, {merge: true});
   } catch(e) {
     console.error('Strike tracking failed:', e);
