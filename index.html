@@ -1234,8 +1234,22 @@ function printLabel(id) {
 
   const rg = comic.roboGrade;
   const score = Math.round(rg.score ?? 0);
-  // 80+ RG: suppress precision band, show "+"; else show ±N
-  const precision = score >= 80 ? '+' : `±${rg.confidenceRange || 8}`;
+  // ── Precision suffix logic ──────────────────────────────────────────────
+  // 100 → no suffix (perfect score, no uncertainty to express)
+  // High-grade unlocked → ±N (narrower confidence range, e.g. ±3)
+  // Initial only, 80+   → "+" (signals "hasn't run high-grade assessment yet")
+  // Initial only, <80   → ±N (standard confidence range, e.g. ±8)
+  const highGradeRun = !!comic.highGradeUnlocked;
+  let precision = '';
+  if (score < 100) {
+    if (highGradeRun) {
+      precision = `±${rg.confidenceRange || 3}`;
+    } else if (score >= 80) {
+      precision = '+';
+    } else {
+      precision = `±${rg.confidenceRange || 8}`;
+    }
+  }
   const title = comic.title || '';
   const issue = comic.issue ? `#${comic.issue}` : '';
   const issueDate = comic.issueDate || '';
@@ -1247,7 +1261,30 @@ function printLabel(id) {
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
   }).replace(/\//g, '/');
 
-  // Open print window with label
+  // ── DESIGN NOTES (DO NOT DRIFT) ──────────────────────────────────────────
+  // This label was carefully iterated to a locked-down state. The CSS below
+  // is the validated baseline. Subsequent edits should ONLY change behavior
+  // explicitly approved by Matt; do not refactor styling for "consistency"
+  // with other parts of the app — this label is its own surface.
+  //
+  // Specifically protected decisions (do not change without Matt's approval):
+  //   - Dark olive score box (#1a2208) with chartreuse number (#b8d820)
+  //   - 38px score-box corner radius
+  //   - Score box wordmark "ROBOGRADE" (not ROBOGRADER) — book is the result
+  //   - Date/ID font: Noto Sans Mono (deliberate look, NOT a slashed-zero bug)
+  //   - .iss in plain sans-serif (deliberate contrast with display title)
+  //   - GRADED/ID alignment via margin-left:54px + min-width adjustments
+  //   - Info column anchored to BOTTOM (justify-content: flex-end)
+  //   - 756×288 absolute label dimensions (Avery 5160 at 288 DPI)
+  //   - QR + URL point to robograder.app
+  //
+  // Layered changes over the locked baseline:
+  //   - 1st Printing now appears BELOW issue+date (was above pre-locked)
+  //   - URL/QR target robograder.app (was robograder.com)
+  //   - V2.0 version stamp (was V1.0)
+  //   - Precision suffix logic per the four-tier rule above
+  // ────────────────────────────────────────────────────────────────────────
+
   const win = window.open('', '_blank', 'width=900,height=700');
   win.document.write(`<!DOCTYPE html>
 <html>
@@ -1258,7 +1295,7 @@ function printLabel(id) {
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Display:wght@900&family=Noto+Sans+Mono:wdth=62.5;wght@800&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 20px; font-family: sans-serif; padding: 20px; }
+  body { background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 20px; font-family: sans-serif; }
   .label-wrap { width: 756px; height: 288px; position: relative; }
   .label {
     width: 756px; height: 288px;
@@ -1311,7 +1348,7 @@ function printLabel(id) {
   }
   .labels-link a { color: #1a5fa8; text-decoration: underline; }
   @media print {
-    body { margin: 0; background: white; justify-content: flex-start; padding: 0; }
+    body { margin: 0; background: white; justify-content: flex-start; }
     .no-print { display: none; }
   }
 </style>
@@ -1321,7 +1358,7 @@ function printLabel(id) {
   <div class="score-box">
     <div class="rg-word">ROBOGRADE</div>
     <div class="rg-num">${score}</div>
-    <div class="rg-prec">${precision}</div>
+    ${precision ? `<div class="rg-prec">${precision}</div>` : ''}
     <div class="rg-v">V2.0</div>
   </div>
   <div class="info">
@@ -1339,7 +1376,7 @@ function printLabel(id) {
     <div id="qrc"></div>
     <div class="verify">SCAN TO VERIFY</div>
   </div>
-  <div class="url">robograder.com/id/${gradeId}</div>
+  <div class="url">robograder.app/id/${gradeId}</div>
 </div>
 <div class="action-row no-print">
   <button class="btn-back" onclick="window.close()">← Back</button>
@@ -1351,7 +1388,7 @@ function printLabel(id) {
 </div>
 <script>
   new QRCode(document.getElementById('qrc'), {
-    text: 'https://robograder.com/id/${gradeId}',
+    text: 'https://robograder.app/id/${gradeId}',
     width: 118, height: 118,
     colorDark: '#1a2208', colorLight: '#d4d9be',
     correctLevel: QRCode.CorrectLevel.M
