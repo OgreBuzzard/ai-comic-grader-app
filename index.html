@@ -611,8 +611,13 @@ function aiCgcGrade(c){
   if((c.myAssessment||c.aiAssessment)&&c.grade)return c.grade;
   return null;
 }
-// List row: exactly ONE badge, priority order
+// List row primary badge: RoboGrade (the proprietary, public-facing grade)
 function buildListBadge(c){
+  if(c.roboGrade && c.roboGrade.score != null){
+    const rgScore = Math.round(c.roboGrade.score);
+    return `<div class="ubadge ubadge-sm" style="border-color:#3a5010;background:#0f1a05"><div class="ubadge-body" style="background:#0f1a05"><div class="ubadge-num" style="color:#b8d820">${rgScore}</div><div class="ubadge-lbl" style="color:#b8d820;opacity:0.7">RG</div></div></div>`;
+  }
+  // No RG yet: fall back to the prior priority order so the row isn't empty
   if(c.cgcGrade)return buildBadge(c.cgcGrade,"cgc-official",detectDesignation(c),true);
   if(c.psaGrade)return buildBadge(c.psaGrade,"psa-official",c.psaDesignation||"universal",true);
   const ac=aiCgcGrade(c);
@@ -620,6 +625,35 @@ function buildListBadge(c){
   if(c.assessedPSAGrade&&c.psaNotes)return buildBadge(c.assessedPSAGrade,"psa-ai","",true);
   if(c.grade)return buildBadge(c.grade,"my","",true);
   return"";
+}
+// List row right column: small CGC pip stacked above small PSA pip.
+// Each pip is 36×36 to match the prior PSA-only pip size. Colors match
+// the official/AI badge styles. Hidden when neither grade is available.
+function buildListCgcPsaStack(c){
+  const cgcVal = c.cgcGrade || c.assessedCGCGrade || (((c.myAssessment||c.aiAssessment)&&c.grade)?c.grade:null);
+  const psaVal = c.psaGrade || c.assessedPSAGrade;
+  if(!cgcVal && !psaVal) return "";
+  const isCgcOfficial = !!c.cgcGrade;
+  const isPsaOfficial = !!c.psaGrade;
+  const cgcDispRaw = cgcVal ? normalizeGrade(cgcVal) : null;
+  const psaDispRaw = psaVal ? normalizeGrade(psaVal) : null;
+  const pip = (val, type, isOfficial) => {
+    if(!val) return `<div style="width:36px;height:36px"></div>`; // empty placeholder for alignment
+    const bg = type === 'cgc' ? '#1a5fa8' : '#b91c1c';
+    const valDisp = String(val).includes('.')?val:parseFloat(val).toFixed(1);
+    // Official badges have a white body w/ colored strip; AI badges are solid color.
+    if(isOfficial){
+      return `<div style="width:36px;height:36px;border-radius:3px;overflow:hidden;background:#fff;border:1px solid rgba(0,0,0,0.25);display:flex;flex-direction:column">
+        <div style="background:${bg};color:#fff;font-size:6px;font-weight:800;letter-spacing:0.5px;text-align:center;line-height:1.5;height:11px">${type==='cgc'?'CGC':'PSA'}</div>
+        <div style="flex:1;display:flex;align-items:center;justify-content:center"><span style="font-size:11px;font-weight:800;color:#000;line-height:1">${valDisp}</span></div>
+      </div>`;
+    }
+    return `<div style="background:${bg};border-radius:3px;width:36px;height:36px;display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="font-size:11px;font-weight:800;color:#fff;line-height:1">${valDisp}</div><div style="font-size:6px;color:rgba(255,255,255,0.75);letter-spacing:0.5px">${type==='cgc'?'CGC':'PSA'}</div></div>`;
+  };
+  return `<div style="display:flex;flex-direction:column;gap:2px;align-self:center">
+    ${pip(cgcDispRaw, 'cgc', isCgcOfficial)}
+    ${pip(psaDispRaw, 'psa', isPsaOfficial)}
+  </div>`;
 }
 // Detail view: full row of all grades
 function buildGradeRowHTML(c){
@@ -1064,16 +1098,7 @@ function renderList(){
                 })()}
               </div>
             </div>
-            ${(()=>{
-              // PSA secondary pip: show only when PSA differs from AI CGC by at least 0.5
-              const acg=parseFloat(c.assessedCGCGrade||(((c.myAssessment||c.aiAssessment)&&c.grade)?c.grade:null)||0);
-              const apsa=parseFloat(c.assessedPSAGrade||0);
-              if(c.assessedPSAGrade&&c.psaNotes&&apsa&&acg&&apsa!==acg){
-                const psaDisp=String(c.assessedPSAGrade).includes('.')?c.assessedPSAGrade:parseFloat(c.assessedPSAGrade).toFixed(1);
-                return `<div style="align-self:flex-end;margin-bottom:2px;background:#b91c1c;border-radius:3px;padding:2px 5px;text-align:center;width:36px;height:36px;display:flex;flex-direction:column;align-items:center;justify-content:center;box-sizing:border-box"><div style="font-size:11px;font-weight:800;color:#fff;line-height:1">${esc(psaDisp)}</div><div style="font-size:6px;color:rgba(255,255,255,0.75);letter-spacing:0.5px">PSA</div></div>`;
-              }
-              return "";
-            })()}
+            ${buildListCgcPsaStack(c)}
           </div>`;
         });
         html+=`</div>`;
