@@ -155,21 +155,21 @@
     .group-header { font-size: 12px; font-weight: 700; color: #2a1e14; letter-spacing: 1.5px; text-transform: uppercase; padding: 8px 0 8px; border-bottom: 1px solid #ccc8c0; margin-bottom: 6px; cursor: pointer; display: flex; align-items: center; gap: 8px; user-select: none; }
     .group-chevron { font-size: 13px; color: #6b5e52; transition: transform 0.2s; display: inline-block; }
     .group-chevron.open { transform: rotate(90deg); }
-    .comic-row { background: #ffffff; border: 1px solid #ddd8d0; border-radius: 6px; padding: 10px 10px; cursor: pointer; display: flex; align-items: center; gap: 10px; margin-bottom: 5px; transition: background 0.15s; }
+    .comic-row { background: #ffffff; border: 1px solid #ddd8d0; border-radius: 12px; padding: 10px 10px; cursor: pointer; display: flex; align-items: center; gap: 10px; margin-bottom: 5px; transition: background 0.15s; }
     .comic-row:hover { background: #f0ece6; }
-    .comic-thumb { align-self: stretch; object-fit: cover; border-radius: 3px; flex-shrink: 0; width: 52px; }
+    .comic-thumb { align-self: stretch; object-fit: cover; border-radius: 8px; flex-shrink: 0; width: 52px; }
     .grade-badge { min-width: 48px; text-align: center; background: #f0ece6; border-radius: 4px; padding: 6px 3px; flex-shrink: 0; border: 1px solid; }
     .grade-num { font-size: 16px; font-weight: 700; line-height: 1; }
     .grade-lbl { font-size: 7px; opacity: 0.7; margin-top: 2px; }
     /* Unified badge system — all same outer size */
-    .ubadge { width: 64px; height: 64px; flex-shrink: 0; border-radius: 5px; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,0.25); border: 1.5px solid rgba(0,0,0,0.15); display: flex; flex-direction: column; }
+    .ubadge { width: 64px; height: 64px; flex-shrink: 0; border-radius: 14px; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,0.25); border: 1.5px solid rgba(0,0,0,0.15); display: flex; flex-direction: column; }
     .ubadge-strip { height: 17px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .ubadge-strip span { font-size: 8px; font-weight: 800; letter-spacing: 1.5px; color: #fff; }
     .ubadge-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0px; }
     .ubadge-num { font-size: 20px; font-weight: 800; line-height: 1; }
     .ubadge-lbl { font-size: 7.5px; letter-spacing: 0.3px; text-align: center; line-height: 1.2; margin-top: 1px; }
-    /* List row variant — slightly smaller, still square */
-    .ubadge-sm { width: 56px; height: 56px; flex-shrink: 0; border-radius: 4px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.2); border: 1.5px solid rgba(0,0,0,0.15); display: flex; flex-direction: column; }
+    /* List row variant — corner radius scales proportionally (~21% of side) */
+    .ubadge-sm { width: 56px; height: 56px; flex-shrink: 0; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.2); border: 1.5px solid rgba(0,0,0,0.15); display: flex; flex-direction: column; }
     .ubadge-sm .ubadge-strip { height: 14px; }
     .ubadge-sm .ubadge-strip span { font-size: 7px; }
     .ubadge-sm .ubadge-body { gap: 0px; }
@@ -615,7 +615,7 @@ function aiCgcGrade(c){
 function buildListBadge(c){
   if(c.roboGrade && c.roboGrade.score != null){
     const rgScore = Math.round(c.roboGrade.score);
-    return `<div class="ubadge ubadge-sm" style="border-color:#3a5010;background:#0f1a05"><div class="ubadge-body" style="background:#0f1a05"><div class="ubadge-num" style="color:#b8d820">${rgScore}</div><div class="ubadge-lbl" style="color:#b8d820;opacity:0.7">RG</div></div></div>`;
+    return `<div class="ubadge ubadge-sm" style="border-color:#6a8a3a;background:#d4ec9a"><div class="ubadge-body" style="background:#d4ec9a;justify-content:flex-end;padding-bottom:7px"><div class="ubadge-num" style="color:#1a3a1e;font-size:24px;line-height:1">${rgScore}</div><div class="ubadge-lbl" style="color:#2d4a20;opacity:0.85;margin-top:4px">RG</div></div></div>`;
   }
   // No RG yet: fall back to the prior priority order so the row isn't empty
   if(c.cgcGrade)return buildBadge(c.cgcGrade,"cgc-official",detectDesignation(c),true);
@@ -626,33 +626,24 @@ function buildListBadge(c){
   if(c.grade)return buildBadge(c.grade,"my","",true);
   return"";
 }
-// List row right column: small CGC pip stacked above small PSA pip.
-// Each pip is 36×36 to match the prior PSA-only pip size. Colors match
-// the official/AI badge styles. Hidden when neither grade is available.
+// List row right column: a single CGC pip (PSA omitted from condensed view).
+// Real CGC slab grades render as white-body with blue strip; AI-predicted CGC
+// renders as a solid blue square with subtle "CGC" label. Both 36×36 with
+// proportionally-scaled 8px corner radius. Numbers anchored low.
 function buildListCgcPsaStack(c){
   const cgcVal = c.cgcGrade || c.assessedCGCGrade || (((c.myAssessment||c.aiAssessment)&&c.grade)?c.grade:null);
-  const psaVal = c.psaGrade || c.assessedPSAGrade;
-  if(!cgcVal && !psaVal) return "";
-  const isCgcOfficial = !!c.cgcGrade;
-  const isPsaOfficial = !!c.psaGrade;
-  const cgcDispRaw = cgcVal ? normalizeGrade(cgcVal) : null;
-  const psaDispRaw = psaVal ? normalizeGrade(psaVal) : null;
-  const pip = (val, type, isOfficial) => {
-    if(!val) return `<div style="width:36px;height:36px"></div>`; // empty placeholder for alignment
-    const bg = type === 'cgc' ? '#1a5fa8' : '#b91c1c';
-    const valDisp = String(val).includes('.')?val:parseFloat(val).toFixed(1);
-    // Official badges have a white body w/ colored strip; AI badges are solid color.
-    if(isOfficial){
-      return `<div style="width:36px;height:36px;border-radius:3px;overflow:hidden;background:#fff;border:1px solid rgba(0,0,0,0.25);display:flex;flex-direction:column">
-        <div style="background:${bg};color:#fff;font-size:6px;font-weight:800;letter-spacing:0.5px;text-align:center;line-height:1.5;height:11px">${type==='cgc'?'CGC':'PSA'}</div>
-        <div style="flex:1;display:flex;align-items:center;justify-content:center"><span style="font-size:11px;font-weight:800;color:#000;line-height:1">${valDisp}</span></div>
-      </div>`;
-    }
-    return `<div style="background:${bg};border-radius:3px;width:36px;height:36px;display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="font-size:11px;font-weight:800;color:#fff;line-height:1">${valDisp}</div><div style="font-size:6px;color:rgba(255,255,255,0.75);letter-spacing:0.5px">${type==='cgc'?'CGC':'PSA'}</div></div>`;
-  };
-  return `<div style="display:flex;flex-direction:column;gap:2px;align-self:center">
-    ${pip(cgcDispRaw, 'cgc', isCgcOfficial)}
-    ${pip(psaDispRaw, 'psa', isPsaOfficial)}
+  if(!cgcVal) return "";
+  const isOfficial = !!c.cgcGrade;
+  const v = String(cgcVal).includes('.') ? cgcVal : parseFloat(cgcVal).toFixed(1);
+  if(isOfficial){
+    return `<div style="width:36px;height:36px;border-radius:8px;overflow:hidden;background:#fff;border:1px solid rgba(0,0,0,0.25);display:flex;flex-direction:column;flex-shrink:0;align-self:center">
+      <div style="background:#1a5fa8;color:#fff;font-size:8px;font-weight:800;letter-spacing:0.5px;text-align:center;line-height:1.5;height:11px">CGC</div>
+      <div style="flex:1;display:flex;align-items:flex-end;justify-content:center;padding-bottom:3px"><span style="font-size:12px;font-weight:800;color:#000;line-height:1">${v}</span></div>
+    </div>`;
+  }
+  return `<div style="background:#1a5fa8;border-radius:8px;width:36px;height:36px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:4px;flex-shrink:0;align-self:center">
+    <div style="font-size:12px;font-weight:800;color:#fff;line-height:1">${v}</div>
+    <div style="font-size:8px;color:rgba(255,255,255,0.75);letter-spacing:0.5px;margin-top:3px">CGC</div>
   </div>`;
 }
 // Detail view: full row of all grades
