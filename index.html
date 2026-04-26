@@ -36,6 +36,10 @@
   <!-- Panzoom: MIT-licensed library for pinch/zoom/pan on lightbox images -->
   <script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
 
+  <!-- Cropper.js: MIT-licensed image cropping library, used in Edit view -->
+  <script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.1/dist/cropper.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.1/dist/cropper.min.css">
+
   <!-- Firebase -->
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
@@ -210,6 +214,18 @@
     .drag-slot img { width: 100%; height: auto; display: block; border-radius: 4px; }
     .drag-slot .slot-label { font-size: 10px; color: #9a8a7a; letter-spacing: 1px; text-transform: uppercase; pointer-events: none; }
     .drag-slot .slot-x { position: absolute; top: 4px; right: 4px; background: #ef4444; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; color: #fff; font-size: 12px; display: flex; align-items: center; justify-content: center; z-index: 10; }
+    .drag-slot .slot-edit { position: absolute; top: 4px; left: 4px; background: rgba(20, 20, 20, 0.7); border: none; border-radius: 50%; width: 32px; height: 32px; cursor: pointer; color: #fff; font-size: 16px; display: flex; align-items: center; justify-content: center; z-index: 10; padding: 0; }
+    .drag-slot .slot-edit:hover { background: rgba(20, 20, 20, 0.9); }
+    /* Cropper modal: full-screen overlay with image, controls below */
+    #cropper-modal { position: fixed; inset: 0; background: #000; z-index: 1000; display: none; flex-direction: column; }
+    #cropper-modal.open { display: flex; }
+    #cropper-stage { flex: 1; min-height: 0; position: relative; background: #000; overflow: hidden; }
+    #cropper-stage img { display: block; max-width: 100%; }
+    #cropper-controls { padding: 16px; background: #1a1a1a; display: flex; gap: 10px; justify-content: space-between; align-items: center; border-top: 1px solid #333; }
+    #cropper-controls button { flex: 1; padding: 14px 0; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; }
+    #cropper-cancel { background: #333; color: #ccc; }
+    #cropper-confirm { background: #1a4a2a; color: #6abf6a; }
+    #cropper-cancel:active, #cropper-confirm:active { transform: scale(0.97); }
     input[type="date"] { background: #ffffff; border: 1px solid #ccc8c0; border-radius: 4px; color: #1a1614; padding: 8px 10px; font-size: 13px; font-family: inherit; outline: none; width: 100%; color-scheme: light; }
     .section-label { font-size: 11px; color: #8a7a6a; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 4px; }
     .field-val { font-size: 13px; color: #3a2e24; }
@@ -561,6 +577,17 @@
   </div>
   <button id="lightbox-close" onclick="closeLightbox()" aria-label="Close">×</button>
   <div id="lightbox-hint">PINCH OR DOUBLE-TAP TO ZOOM</div>
+</div>
+
+<!-- Cropper modal: opens when user taps the edit button on a filled photo slot in Edit view -->
+<div id="cropper-modal">
+  <div id="cropper-stage">
+    <img id="cropper-img" src="" alt="">
+  </div>
+  <div id="cropper-controls">
+    <button id="cropper-cancel" onclick="cancelCrop()">Cancel</button>
+    <button id="cropper-confirm" onclick="confirmCrop()">Apply Crop</button>
+  </div>
 </div>
 <div id="sync-bar" style="display:none">
   <div class="spin-sm"></div>
@@ -3383,6 +3410,7 @@ function renderForm(){
                 ondragstart="dragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"
                 onclick="_tappedSlot=${i};document.getElementById('photo-input').click()">
                 <img src="${img}">
+                <button class="slot-edit" onclick="event.stopPropagation();openCropper('main',${i})" aria-label="Crop photo">✎</button>
                 <button class="slot-x" onclick="event.stopPropagation();removeImg(${i})">×</button>
                </div>`
             : `<div class="drag-slot" style="padding:0;background:none;"
@@ -3408,6 +3436,7 @@ function renderForm(){
                   ondragstart="cornerDragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="cornerDropSlot(event,${i})"
                   onclick="_tappedCornerSlot=${i};document.getElementById('corner-photo-input').click()">
                   <img src="${img}">
+                  <button class="slot-edit" onclick="event.stopPropagation();openCropper('corner',${i})" aria-label="Crop photo">✎</button>
                   <button class="slot-x" onclick="event.stopPropagation();removeCornerImg(${i})">×</button>
                  </div>`
               : `<div class="drag-slot" style="padding:0;background:#1a1a1a;min-height:100px;"
@@ -3698,6 +3727,113 @@ function removeImg(i){
   while(imgs.length&&imgs[imgs.length-1]===null)imgs.pop();
   formData.images=imgs;
   formData._imagesChanged=true;
+  renderForm();
+}
+
+// ── In-app cropper (Edit view only) ─────────────────────────────────────────
+// User taps the pencil icon on any filled photo slot → cropper modal opens.
+// Aspect ratio constraints:
+//   - Front cover (slot 0), Back cover (slot 1): 2:3 portrait guide
+//   - All others (Interior, Spine, corner macros, restoration): free crop
+// On Apply, the cropped result replaces the slot's image (still as a data URL
+// at this point — Save will compress + upload it to Cloud Storage).
+let _cropperInstance = null;
+let _cropperTarget = null; // { type: 'main'|'corner', index: number }
+
+function openCropper(type, index) {
+  const list = type === 'corner' ? formData.cornerImages : formData.images;
+  const src = (list || [])[index];
+  if (!src) return;
+
+  // Front and back covers get a 2:3 aspect guide; everything else is free crop.
+  const aspectRatio = (type === 'main' && (index === 0 || index === 1)) ? 2/3 : NaN;
+
+  _cropperTarget = { type, index };
+  const modal = document.getElementById('cropper-modal');
+  const img = document.getElementById('cropper-img');
+
+  // Reset any prior cropper instance before mounting a new one
+  if (_cropperInstance) {
+    try { _cropperInstance.destroy(); } catch(e) {}
+    _cropperInstance = null;
+  }
+
+  // For already-uploaded Storage URLs we need CORS access to read the pixel
+  // data into the cropping canvas. Setting crossorigin BEFORE src triggers
+  // the browser to send the proper CORS headers. For data: URLs this is a
+  // no-op. (Firebase Storage download URLs do return access-control-allow-origin.)
+  if (src.startsWith('http')) {
+    img.crossOrigin = 'anonymous';
+  } else {
+    img.removeAttribute('crossorigin');
+  }
+  img.src = src;
+  modal.classList.add('open');
+
+  // Wait for the image to be loaded (and laid out in the DOM) before attaching Cropper
+  const attach = () => {
+    if (typeof Cropper !== 'function') {
+      alert('Cropper library failed to load. Try refreshing the page.');
+      cancelCrop();
+      return;
+    }
+    _cropperInstance = new Cropper(img, {
+      aspectRatio: aspectRatio,
+      viewMode: 1,
+      autoCropArea: 0.9,
+      background: false,
+      modal: true,
+      guides: true,
+      center: true,
+      highlight: false,
+      dragMode: 'move',
+      toggleDragModeOnDblclick: false,
+      responsive: true,
+      checkOrientation: false
+    });
+  };
+  if (img.complete && img.naturalWidth > 0) attach();
+  else img.addEventListener('load', attach, { once: true });
+}
+
+function cancelCrop() {
+  const modal = document.getElementById('cropper-modal');
+  if (_cropperInstance) {
+    try { _cropperInstance.destroy(); } catch(e) {}
+    _cropperInstance = null;
+  }
+  modal.classList.remove('open');
+  _cropperTarget = null;
+}
+
+function confirmCrop() {
+  if (!_cropperInstance || !_cropperTarget) { cancelCrop(); return; }
+
+  // Get the cropped canvas at full resolution. We pass the result back as a
+  // data URL so it slots back into formData.images/cornerImages exactly like
+  // a freshly-picked photo. The processImagesForSave() pipeline will compress
+  // and upload it on Save just like any new image.
+  // We deliberately don't downscale here — Save handles compression.
+  const canvas = _cropperInstance.getCroppedCanvas({
+    imageSmoothingEnabled: true,
+    imageSmoothingQuality: 'high'
+  });
+  if (!canvas) { cancelCrop(); return; }
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+
+  const { type, index } = _cropperTarget;
+  if (type === 'corner') {
+    const list = [...(formData.cornerImages || [])];
+    list[index] = dataUrl;
+    formData.cornerImages = list;
+  } else {
+    const list = [...(formData.images || [])];
+    list[index] = dataUrl;
+    formData.images = list;
+  }
+  formData._imagesChanged = true;
+
+  cancelCrop();
   renderForm();
 }
 
