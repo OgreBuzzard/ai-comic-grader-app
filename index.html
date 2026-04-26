@@ -226,6 +226,21 @@
     #cropper-cancel { background: #333; color: #ccc; }
     #cropper-confirm { background: #1a4a2a; color: #6abf6a; }
     #cropper-cancel:active, #cropper-confirm:active { transform: scale(0.97); }
+    /* Cropper.js handle styling overrides — make corner/edge points larger
+       and rounded, more touch-friendly than the library defaults. */
+    .cropper-point { width: 14px !important; height: 14px !important; opacity: 1 !important; background-color: #4a9eff !important; border-radius: 50% !important; box-shadow: 0 0 0 2px rgba(255,255,255,0.5); }
+    .cropper-point.point-n, .cropper-point.point-s { left: 50% !important; margin-left: -7px !important; }
+    .cropper-point.point-e, .cropper-point.point-w { top: 50% !important; margin-top: -7px !important; }
+    .cropper-point.point-ne { top: -7px !important; right: -7px !important; margin: 0 !important; }
+    .cropper-point.point-nw { top: -7px !important; left: -7px !important; margin: 0 !important; }
+    .cropper-point.point-se { bottom: -7px !important; right: -7px !important; margin: 0 !important; width: 14px !important; height: 14px !important; }
+    .cropper-point.point-sw { bottom: -7px !important; left: -7px !important; margin: 0 !important; }
+    .cropper-point.point-n { top: -7px !important; }
+    .cropper-point.point-s { bottom: -7px !important; }
+    .cropper-point.point-e { right: -7px !important; }
+    .cropper-point.point-w { left: -7px !important; }
+    .cropper-line { background-color: #4a9eff !important; opacity: 0.6 !important; }
+    .cropper-view-box { outline: 2px solid #4a9eff !important; outline-color: #4a9eff !important; }
     input[type="date"] { background: #ffffff; border: 1px solid #ccc8c0; border-radius: 4px; color: #1a1614; padding: 8px 10px; font-size: 13px; font-family: inherit; outline: none; width: 100%; color-scheme: light; }
     .section-label { font-size: 11px; color: #8a7a6a; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 4px; }
     .field-val { font-size: 13px; color: #3a2e24; }
@@ -3410,7 +3425,7 @@ function renderForm(){
                 ondragstart="dragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"
                 onclick="_tappedSlot=${i};document.getElementById('photo-input').click()">
                 <img src="${img}">
-                <button class="slot-edit" onclick="event.stopPropagation();openCropper('main',${i})" aria-label="Crop photo">✎</button>
+                <button class="slot-edit" onclick="event.stopPropagation();openCropper('main',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8 V4 H8"/><path d="M16 4 H20 V8"/><path d="M20 16 V20 H16"/><path d="M8 20 H4 V16"/></svg></button>
                 <button class="slot-x" onclick="event.stopPropagation();removeImg(${i})">×</button>
                </div>`
             : `<div class="drag-slot" style="padding:0;background:none;"
@@ -3436,7 +3451,7 @@ function renderForm(){
                   ondragstart="cornerDragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="cornerDropSlot(event,${i})"
                   onclick="_tappedCornerSlot=${i};document.getElementById('corner-photo-input').click()">
                   <img src="${img}">
-                  <button class="slot-edit" onclick="event.stopPropagation();openCropper('corner',${i})" aria-label="Crop photo">✎</button>
+                  <button class="slot-edit" onclick="event.stopPropagation();openCropper('corner',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8 V4 H8"/><path d="M16 4 H20 V8"/><path d="M20 16 V20 H16"/><path d="M8 20 H4 V16"/></svg></button>
                   <button class="slot-x" onclick="event.stopPropagation();removeCornerImg(${i})">×</button>
                  </div>`
               : `<div class="drag-slot" style="padding:0;background:#1a1a1a;min-height:100px;"
@@ -3745,9 +3760,6 @@ function openCropper(type, index) {
   const src = (list || [])[index];
   if (!src) return;
 
-  // Front and back covers get a 2:3 aspect guide; everything else is free crop.
-  const aspectRatio = (type === 'main' && (index === 0 || index === 1)) ? 2/3 : NaN;
-
   _cropperTarget = { type, index };
   const modal = document.getElementById('cropper-modal');
   const img = document.getElementById('cropper-img');
@@ -3758,29 +3770,54 @@ function openCropper(type, index) {
     _cropperInstance = null;
   }
 
+  // Clear the src first so a failed load doesn't show a previous image —
+  // this protects against the stale-image bug where Cropper.js can't read
+  // a CORS-blocked Storage URL and we'd see the LAST successfully-loaded
+  // image instead of an error state.
+  img.removeAttribute('src');
+  img.removeAttribute('crossorigin');
+
   // For already-uploaded Storage URLs we need CORS access to read the pixel
   // data into the cropping canvas. Setting crossorigin BEFORE src triggers
-  // the browser to send the proper CORS headers. For data: URLs this is a
-  // no-op. (Firebase Storage download URLs do return access-control-allow-origin.)
+  // the browser to send proper CORS headers. For data: URLs this is a no-op.
   if (src.startsWith('http')) {
     img.crossOrigin = 'anonymous';
-  } else {
-    img.removeAttribute('crossorigin');
   }
+
+  // Track load failures so we can show a clear error state instead of a stale image.
+  const onErrorOnce = () => {
+    img.removeEventListener('load', attach);
+    alert(
+      'Could not load this image for cropping.\n\n' +
+      'This usually happens when older photos were uploaded before CORS settings were applied to the storage bucket. ' +
+      'You may need to delete and re-upload this photo to enable cropping.'
+    );
+    cancelCrop();
+  };
+  img.addEventListener('error', onErrorOnce, { once: true });
+
   img.src = src;
   modal.classList.add('open');
 
+  // For front cover (slot 0) and back cover (slot 1), default the crop box to
+  // a 2:3 ratio as a starting suggestion — but DO NOT lock it. The user can
+  // freely adjust all corners and sides. (Cropper.js has no built-in "preset
+  // aspect that's adjustable"; we set initial bounds via setData() after init
+  // and leave aspectRatio as NaN.)
+  const showCoverGuide = (type === 'main' && (index === 0 || index === 1));
+
   // Wait for the image to be loaded (and laid out in the DOM) before attaching Cropper
   const attach = () => {
+    img.removeEventListener('error', onErrorOnce);
     if (typeof Cropper !== 'function') {
       alert('Cropper library failed to load. Try refreshing the page.');
       cancelCrop();
       return;
     }
     _cropperInstance = new Cropper(img, {
-      aspectRatio: aspectRatio,
+      aspectRatio: NaN, // free crop in all cases — corner handles can adjust shape
       viewMode: 1,
-      autoCropArea: 0.9,
+      autoCropArea: 0.92,
       background: false,
       modal: true,
       guides: true,
@@ -3789,7 +3826,27 @@ function openCropper(type, index) {
       dragMode: 'move',
       toggleDragModeOnDblclick: false,
       responsive: true,
-      checkOrientation: false
+      checkOrientation: false,
+      ready: showCoverGuide ? function() {
+        // Re-shape the initial crop box to 2:3 portrait centered on the image,
+        // sized to fill ~92% of the smaller dimension.
+        const data = _cropperInstance.getCanvasData();
+        const targetW = data.height * (2/3);
+        let cropW, cropH;
+        if (targetW <= data.width * 0.92) {
+          cropH = data.height * 0.92;
+          cropW = cropH * (2/3);
+        } else {
+          cropW = data.width * 0.92;
+          cropH = cropW * (3/2);
+        }
+        _cropperInstance.setCropBoxData({
+          left: data.left + (data.width - cropW) / 2,
+          top: data.top + (data.height - cropH) / 2,
+          width: cropW,
+          height: cropH
+        });
+      } : null
     });
   };
   if (img.complete && img.naturalWidth > 0) attach();
