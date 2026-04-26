@@ -2305,9 +2305,13 @@ function userHasPaidCredits() {
 function checkImageCap(isExistingBook) {
   // Don't apply cap when editing a book that already has images
   if (isExistingBook) return 'ok';
-  // Admin bypass — same pattern as export rate limit
+  // Admin bypass — Matt's account, for testing without paying.
+  // TODO: post-LLC, replace email check with a Firestore-managed "admin" flag
+  // on the user document, set by a separate admin tool. Hardcoding an email is
+  // brittle (forwarding aliases don't work, account changes break it) and bad
+  // hygiene (the admin identity lives in client code).
   const userEmail = (window._currentUser && window._currentUser.email) || '';
-  if (userEmail.toLowerCase() === 'support@robograder.app') return 'ok';
+  if (userEmail.toLowerCase() === 'wherethehellismatt@gmail.com') return 'ok';
   const count = countBooksWithImages();
   const paid = userHasPaidCredits();
   const hardCap = paid ? IMAGE_PAID_CAP : IMAGE_HARD_CAP;
@@ -2540,7 +2544,7 @@ async function exportCollection() {
   const EXPORT_LIMIT = 3;
   const EXPORT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
   const userEmail = (window._currentUser && window._currentUser.email) || '';
-  const isAdmin = userEmail.toLowerCase() === 'support@robograder.app';
+  const isAdmin = userEmail.toLowerCase() === 'wherethehellismatt@gmail.com';
 
   let userRef = null;
   let userSnap = null;
@@ -2674,7 +2678,7 @@ async function refreshExportRemainingDisplay() {
   const detailEl = document.getElementById('export-detail');
   if (!detailEl) return;
   const userEmail = (window._currentUser && window._currentUser.email) || '';
-  if (userEmail.toLowerCase() === 'support@robograder.app') {
+  if (userEmail.toLowerCase() === 'wherethehellismatt@gmail.com') {
     detailEl.textContent = 'Download all your data as a ZIP file';
     return;
   }
