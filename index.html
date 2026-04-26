@@ -9,13 +9,13 @@
   <meta name="theme-color" content="#0d0d0f">
 
   <!-- Standard description for search engines -->
-  <meta name="description" content="AI-powered comic book grading. Photograph your comic, get an instant grade, share a verifiable certification.">
+  <meta name="description" content="Instant comic book grading. Photograph your comic, get a grade in seconds, share a verifiable certification.">
 
   <!-- Open Graph (Facebook, iMessage, Slack, Discord, LinkedIn, etc.) -->
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Robograder">
   <meta property="og:title" content="Robograder">
-  <meta property="og:description" content="AI-powered comic book grading.">
+  <meta property="og:description" content="Instant comic book grading.">
   <meta property="og:url" content="https://robograder.app">
   <meta property="og:image" content="https://robograder.app/Robograder_Load.jpg">
   <meta property="og:image:alt" content="Robograder mascot">
@@ -23,7 +23,7 @@
   <!-- Twitter / X Card -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Robograder">
-  <meta name="twitter:description" content="AI-powered comic book grading.">
+  <meta name="twitter:description" content="Instant comic book grading.">
   <meta name="twitter:image" content="https://robograder.app/Robograder_Load.jpg">
 
   <title>Robograder</title>
@@ -410,7 +410,7 @@
 </div>
 
 <div id="splash">
-  <div id="splash-robot" role="img" aria-label="RoboGrader mascot"></div>
+  <div id="splash-robot" role="img" aria-label="Robograder mascot"></div>
   <div id="splash-gradient"></div>
   <div id="splash-text"></div>
 </div>
@@ -418,7 +418,7 @@
   <div id="header">
     <div id="header-row-top">
       <button id="header-title" onclick="showList()">
-        <span class="main">RoboGrader</span>
+        <span class="main">Robograder</span>
       </button>
       <button class="btn-gear" onclick="openSettings()" title="Settings" id="settings-btn" aria-label="Settings">⚙</button>
     </div>
@@ -477,7 +477,7 @@
     <div class="settings-row" onclick="exportCollection()">
       <div>
         <div class="sr-label">Export Collection</div>
-        <div class="sr-detail">Download all your data as a ZIP file</div>
+        <div class="sr-detail" id="export-detail">Download all your data as a ZIP file</div>
       </div>
       <div class="sr-right">↓</div>
     </div>
@@ -510,7 +510,7 @@
 
     <div class="settings-row" style="cursor:default">
       <div style="flex:1">
-        <div class="sr-label">Help improve RoboGrader</div>
+        <div class="sr-label">Help improve Robograder</div>
         <div class="sr-detail">Allow your anonymized comic photos and assessment data to be used to improve grading accuracy. Your name and personal data are never included.</div>
       </div>
       <div style="margin-left:12px;flex-shrink:0">
@@ -546,7 +546,7 @@
     </div>
     <div style="padding:24px 18px 40px">
       <div style="font-size:11px;color:#4a3a2a;line-height:1.6">
-        RoboGrader v1.0 · Assessment credits are non-refundable.
+        Robograder v2.0 · Assessment credits are non-refundable.
         Images are stored securely in your personal account.
       </div>
     </div>
@@ -956,11 +956,11 @@ function showTermsModal(){
   const box = document.createElement('div');
   box.style.cssText = 'background:#f0ede6;color:#0d0f0a;border-radius:14px;padding:28px 26px;max-width:460px;width:100%;max-height:88vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,0.5);';
   box.innerHTML = `
-    <div style="font-size:22px;font-weight:900;letter-spacing:-0.3px;margin-bottom:6px;color:#1a2208">Welcome to RoboGrader</div>
+    <div style="font-size:22px;font-weight:900;letter-spacing:-0.3px;margin-bottom:6px;color:#1a2208">Welcome to Robograder</div>
     <div style="font-size:12px;color:#6a7a5a;letter-spacing:2px;text-transform:uppercase;font-weight:700;margin-bottom:20px">Alpha Release</div>
-    <p style="font-size:14px;line-height:1.55;margin-bottom:14px">RoboGrader is a comic grading assistant in early testing. Before you dive in, please read and agree to how it works.</p>
+    <p style="font-size:14px;line-height:1.55;margin-bottom:14px">Robograder is a comic grading assistant in early testing. Before you dive in, please read and agree to how it works.</p>
     <ul style="font-size:13.5px;line-height:1.55;margin:10px 0 18px 20px">
-      <li style="margin-bottom:8px"><strong>Grades are estimates, not official.</strong> RoboGrader produces informational grades. They are not CGC, PSA, or any professional grading service's official grades.</li>
+      <li style="margin-bottom:8px"><strong>Grades are estimates, not official.</strong> Robograder produces informational grades. They are not CGC, PSA, or any professional grading service's official grades.</li>
       <li style="margin-bottom:8px"><strong>Don't rely on RG grades for sales or insurance.</strong> Use them for your own tracking and as a gut check before submitting to a real grading service.</li>
       <li style="margin-bottom:8px"><strong>Upload only comic book photos.</strong> Non-comic or inappropriate content will be flagged; three flags can trigger account review.</li>
       <li style="margin-bottom:8px"><strong>This is an alpha release.</strong> Expect bugs. Please tell us what you find.</li>
@@ -2234,7 +2234,7 @@ function loadPublicSetting() {
   }
 }
 
-// ── Training opt-in (Help improve RoboGrader) ────────────────────────────────
+// ── Training opt-in (Help improve Robograder) ────────────────────────────────
 // Stored on the user's Firestore doc so it persists across devices.
 // Default for new users: opt-in (true). Users can opt out at any time.
 async function saveTrainingSetting(val) {
@@ -2288,7 +2288,7 @@ async function deleteAccountFlow() {
 
   // Step 1: warn about consequences
   const ok1 = confirm(
-    "Delete your RoboGrader account?\n\n" +
+    "Delete your Robograder account?\n\n" +
     "This will permanently delete:\n" +
     "• Your account and sign-in credentials\n" +
     "• All your saved comics and assessments\n" +
@@ -2399,6 +2399,9 @@ function openSettings() {
     imgEl.textContent = `${n} of ${cap} (${paid ? 'paid account' : 'free account'})`;
   }
 
+  // Show how many exports remain in the current rolling window
+  refreshExportRemainingDisplay();
+
   overlay.style.display = 'flex';
 }
 
@@ -2416,7 +2419,46 @@ function openSettings_buyCredits() {
 async function exportCollection() {
   if (!comics.length) { alert('Nothing to export — your collection is empty.'); return; }
 
-  // Dynamically load JSZip
+  // ── Rate limit: 3 exports per rolling 30-day window per user. ──────────
+  // Stored as exportLog[] on the user document (array of ISO date strings,
+  // pruned to last 30 days on every check). Admin bypass for support email.
+  // The UI shows the remaining count but never the policy itself, so bad
+  // actors who hit the limit don't know the period and can't time abuse.
+  const EXPORT_LIMIT = 3;
+  const EXPORT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+  const userEmail = (window._currentUser && window._currentUser.email) || '';
+  const isAdmin = userEmail.toLowerCase() === 'support@robograder.app';
+
+  let userRef = null;
+  let userSnap = null;
+  let exportLog = [];
+  if (!isAdmin && window._currentUser) {
+    try {
+      userRef = window._fsDoc(window._db, 'users', window._currentUser.uid);
+      userSnap = await window._fsGetDoc(userRef);
+      const data = userSnap.exists() ? userSnap.data() : {};
+      const raw = Array.isArray(data.exportLog) ? data.exportLog : [];
+      const cutoff = Date.now() - EXPORT_WINDOW_MS;
+      exportLog = raw.filter(iso => {
+        const t = Date.parse(iso);
+        return Number.isFinite(t) && t >= cutoff;
+      });
+      if (exportLog.length >= EXPORT_LIMIT) {
+        // Tell the user when their next export becomes available, without
+        // telling them what the policy is.
+        const oldest = exportLog.slice().sort()[0];
+        const nextAvail = new Date(Date.parse(oldest) + EXPORT_WINDOW_MS);
+        const dateStr = nextAvail.toLocaleDateString();
+        alert(`You've reached the export limit. Next export available ${dateStr}.`);
+        return;
+      }
+    } catch(e) {
+      // If we can't read the user doc for any reason, fail open — better to
+      // let the user export than block them on a transient Firestore error.
+      console.warn('Export rate-limit check failed; proceeding:', e);
+    }
+  }
+
   const statusEl = document.getElementById('settings-img-count');
   const origText = statusEl ? statusEl.textContent : '';
   if (statusEl) statusEl.textContent = 'Preparing export…';
@@ -2430,42 +2472,229 @@ async function exportCollection() {
     });
 
     const zip = new JSZip();
+    const exportDate = new Date().toISOString();
+    const userId = (window._currentUser && window._currentUser.uid) || 'unknown';
 
-    // Collection JSON (no images — those go as files)
+    // ── Self-describing export metadata ──
+    zip.file('_export_info.json', JSON.stringify({
+      app: 'Robograder',
+      appVersion: '2.0',
+      exportDate,
+      userEmail: userEmail || 'unknown',
+      userId,
+      bookCount: comics.length,
+      totalImages: comics.reduce((s, c) => s + ((c.images || []).length), 0),
+      schemaNotes: {
+        roboGrade: 'Proprietary public-facing grade (0-100) with component breakdown and defects',
+        cgcAI: 'AI prediction of the grade CGC would assign (internal use only)',
+        psaAI: 'AI prediction of the grade PSA would assign (internal use only)',
+        cgcGrade: 'Real CGC slab grade (only present for slabbed books)',
+        psaGrade: 'Real PSA slab grade (only present for slabbed books)'
+      }
+    }, null, 2));
+
+    // ── Collection JSON (metadata only — images are separate files) ──
     const collectionData = comics.map(c => {
       const {images, ...rest} = c;
+      const safeName = makeSafeBookName(c);
+      rest._archiveFolder = `images/${safeName}`;
+      rest._archiveImageCount = (images || []).length;
       return rest;
     });
     zip.file('collection.json', JSON.stringify(collectionData, null, 2));
 
-    // Images folder, one subfolder per book
+    // ── Images folder ──
     const imgFolder = zip.folder('images');
     comics.forEach(c => {
       if (!c.images || !c.images.length) return;
-      const safeName = `${(c.title||'unknown').replace(/[^a-z0-9]/gi,'_')}_${c.issue||''}`.replace(/__+/g,'_').toLowerCase();
+      const safeName = makeSafeBookName(c);
       const bookFolder = imgFolder.folder(safeName);
+      const labels = ['front_cover', 'back_cover', 'page_quality', 'raking_light'];
       c.images.forEach((img, i) => {
         if (!img || !img.startsWith('data:')) return;
         const [header, data] = img.split(',');
         const ext = header.includes('png') ? 'png' : 'jpg';
-        bookFolder.file(`image_${i+1}.${ext}`, data, {base64: true});
+        const slotLabel = labels[i] || `image_${i+1}`;
+        bookFolder.file(`${slotLabel}.${ext}`, data, {base64: true});
       });
     });
+
+    // ── Standalone viewer HTML so the archive can be browsed without the live app ──
+    zip.file('viewer.html', buildArchiveViewer());
 
     // Generate and download
     const blob = await zip.generateAsync({type: 'blob', compression: 'DEFLATE', compressionOptions: {level: 6}});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `comic-grader-collection-${new Date().toISOString().slice(0,10)}.zip`;
+    a.download = `robograder-collection-${new Date().toISOString().slice(0,10)}.zip`;
     a.click();
     URL.revokeObjectURL(url);
+
+    // Record the export in the user log (non-blocking; UI already advanced).
+    if (!isAdmin && userRef) {
+      try {
+        const newLog = [...exportLog, exportDate];
+        await window._fsSetDoc(userRef, { exportLog: newLog }, { merge: true });
+        // Update the visible "remaining" count on the Settings row
+        updateExportRemainingDisplay(EXPORT_LIMIT - newLog.length);
+      } catch(e) {
+        console.warn('Could not write exportLog:', e);
+      }
+    }
 
     if (statusEl) statusEl.textContent = origText;
   } catch(e) {
     if (statusEl) statusEl.textContent = origText;
     alert('Export failed: ' + e.message);
   }
+}
+
+// Compute and display the remaining export count on the Settings row.
+// Called on Settings open and after each export. Reads exportLog from the
+// user document, prunes entries older than 30 days, displays remaining count.
+async function refreshExportRemainingDisplay() {
+  const detailEl = document.getElementById('export-detail');
+  if (!detailEl) return;
+  const userEmail = (window._currentUser && window._currentUser.email) || '';
+  if (userEmail.toLowerCase() === 'support@robograder.app') {
+    detailEl.textContent = 'Download all your data as a ZIP file';
+    return;
+  }
+  if (!window._currentUser || !window._db || !window._fsGetDoc) {
+    detailEl.textContent = 'Download all your data as a ZIP file';
+    return;
+  }
+  try {
+    const userRef = window._fsDoc(window._db, 'users', window._currentUser.uid);
+    const snap = await window._fsGetDoc(userRef);
+    const data = snap.exists() ? snap.data() : {};
+    const raw = Array.isArray(data.exportLog) ? data.exportLog : [];
+    const cutoff = Date.now() - (30 * 24 * 60 * 60 * 1000);
+    const recent = raw.filter(iso => {
+      const t = Date.parse(iso);
+      return Number.isFinite(t) && t >= cutoff;
+    }).length;
+    const remaining = Math.max(0, 3 - recent);
+    updateExportRemainingDisplay(remaining);
+  } catch(e) {
+    detailEl.textContent = 'Download all your data as a ZIP file';
+  }
+}
+
+function updateExportRemainingDisplay(remaining) {
+  const detailEl = document.getElementById('export-detail');
+  if (!detailEl) return;
+  if (remaining <= 0) {
+    detailEl.textContent = 'Download all your data as a ZIP file: 0 remaining.';
+  } else {
+    detailEl.textContent = `Download all your data as a ZIP file: ${remaining} remaining.`;
+  }
+}
+
+// Helper: produce a filesystem-safe folder name from a comic record.
+// Lowercase, alphanumeric + underscore only, with title and issue both in the name.
+function makeSafeBookName(c) {
+  const title = (c.title || 'unknown').toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+  const issue = c.issue ? `_${String(c.issue).replace(/[^a-z0-9]/gi, '')}` : '';
+  return `${title}${issue}`.slice(0, 80); // cap length
+}
+
+// Builds a self-contained HTML viewer that can be opened from the unzipped archive.
+// Uses fetch() to load collection.json from the same directory and renders the books
+// as a scrollable list with thumbnails. No external dependencies — opens directly in
+// any browser without an internet connection. Useful for offline archive review.
+function buildArchiveViewer() {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Robograder Collection Archive</title>
+<style>
+  body { font-family: -apple-system, "SF Pro Text", sans-serif; background: #f5f4f2; margin: 0; padding: 20px; color: #1a1614; }
+  .header { max-width: 1200px; margin: 0 auto 20px; }
+  .header h1 { font-size: 28px; margin: 0 0 4px; }
+  .header .meta { font-size: 13px; color: #8a7a6a; }
+  .grid { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }
+  .book { background: #ffffff; border: 1px solid #ddd8d0; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .book .title { font-weight: 700; font-size: 16px; line-height: 1.2; }
+  .book .issue { font-size: 13px; color: #8a7a6a; }
+  .grades { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+  .grade-pip { background: #1a3a1e; color: #b8d820; padding: 6px 10px; border-radius: 8px; font-weight: 700; font-size: 14px; min-width: 56px; text-align: center; }
+  .grade-pip.cgc { background: #1a5fa8; color: #fff; }
+  .grade-pip.psa { background: #b91c1c; color: #fff; }
+  .grade-pip .lbl { display: block; font-size: 9px; opacity: 0.75; letter-spacing: 0.5px; }
+  .imgs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+  .imgs img { width: 100%; height: 120px; object-fit: cover; border-radius: 6px; background: #eee; }
+  .defects { font-size: 12px; color: #5a4a3a; margin-top: 6px; }
+  .defects strong { color: #1a1614; }
+  .err { background: #fff8e8; border: 1px solid #e8d4a0; border-radius: 8px; padding: 16px; max-width: 1200px; margin: 0 auto; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <h1>Robograder Collection Archive</h1>
+    <div class="meta" id="meta">Loading…</div>
+  </div>
+  <div id="content"></div>
+<script>
+  // Load collection.json from same directory as this viewer
+  fetch('collection.json')
+    .then(r => r.json())
+    .then(books => {
+      fetch('_export_info.json').then(r => r.json()).then(info => {
+        document.getElementById('meta').textContent =
+          \`\${info.bookCount} books · \${info.totalImages} images · exported \${new Date(info.exportDate).toLocaleDateString()}\`;
+      }).catch(() => {});
+
+      const content = document.getElementById('content');
+      const grid = document.createElement('div');
+      grid.className = 'grid';
+      books.forEach(b => {
+        const div = document.createElement('div');
+        div.className = 'book';
+        const rg = b.roboGrade || {};
+        const cgc = b.cgcGrade || b.assessedCGCGrade || '—';
+        const psa = b.psaGrade || b.assessedPSAGrade || '—';
+        div.innerHTML = \`
+          <div>
+            <div class="title">\${escapeHtml(b.title || 'Untitled')}</div>
+            <div class="issue">#\${escapeHtml(b.issue || '?')} \${b.issueDate ? '· ' + escapeHtml(b.issueDate) : ''}</div>
+          </div>
+          <div class="grades">
+            \${rg.score != null ? '<div class="grade-pip"><span class="lbl">RG</span>' + Math.round(rg.score) + '</div>' : ''}
+            \${cgc !== '—' ? '<div class="grade-pip cgc"><span class="lbl">CGC' + (b.cgcGrade ? '' : ' AI') + '</span>' + cgc + '</div>' : ''}
+            \${psa !== '—' ? '<div class="grade-pip psa"><span class="lbl">PSA' + (b.psaGrade ? '' : ' AI') + '</span>' + psa + '</div>' : ''}
+          </div>
+          \${rg.defects && rg.defects.length ? '<div class="defects"><strong>RG defects:</strong> ' + rg.defects.map(d => escapeHtml((d.type||'') + (d.severity ? ' (' + d.severity + ')' : ''))).join(', ') + '</div>' : ''}
+          \${b._archiveFolder && b._archiveImageCount ? buildImgs(b._archiveFolder, b._archiveImageCount) : ''}
+        \`;
+        grid.appendChild(div);
+      });
+      content.appendChild(grid);
+    })
+    .catch(err => {
+      document.getElementById('content').innerHTML =
+        '<div class="err"><strong>Could not load collection.json.</strong> Make sure this viewer.html is in the same folder as collection.json (i.e. the unzipped archive root). Open in a browser by double-clicking. Some browsers block local file access — if that happens, try Firefox or run a local server.</div>';
+    });
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function buildImgs(folder, count) {
+    const labels = ['front_cover', 'back_cover', 'page_quality', 'raking_light'];
+    let html = '<div class="imgs">';
+    for (let i = 0; i < Math.min(count, 4); i++) {
+      const slot = labels[i] || ('image_' + (i+1));
+      // Try jpg first, browser will silently fail and show broken icon if it's png — minor cosmetic issue, acceptable
+      html += '<img src="' + folder + '/' + slot + '.jpg" alt="' + slot + '" onerror="this.src=\\'' + folder + '/' + slot + '.png\\';this.onerror=null">';
+    }
+    html += '</div>';
+    return html;
+  }
+</script>
+</body>
+</html>`;
 }
 
 function decrementCredit(){
