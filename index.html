@@ -33,6 +33,11 @@
   <link rel="preload" href="assets/Robograder_Load.jpg" as="image">
   <link rel="apple-touch-icon" href="icon-192.png">
 
+  <!-- Preconnect to Firebase Storage so the first thumbnail/image fetch
+       doesn't pay DNS+TLS latency. Saves ~200-400ms on first image load. -->
+  <link rel="preconnect" href="https://firebasestorage.googleapis.com" crossorigin>
+  <link rel="dns-prefetch" href="https://firebasestorage.googleapis.com">
+
   <!-- Panzoom: MIT-licensed library for pinch/zoom/pan on lightbox images -->
   <script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
 
@@ -86,6 +91,13 @@
     window._onAuthStateChanged = onAuthStateChanged;
     window._GoogleAuthProvider = GoogleAuthProvider;
 
+    // Initialize loading state — true until both credits and collection finish loading.
+    // While true, the header right-side controls (coin/Buy/Add) are hidden and a
+    // simple "Loading…" pill is shown instead, and the list area shows a placeholder.
+    // This prevents the alarming "0 credits, empty collection" flash on cold starts
+    // when Firebase Auth takes a few seconds to re-establish.
+    window._loadingState = true;
+
     // Watch auth state — drives the whole app
     onAuthStateChanged(auth, async (user) => {
       window._currentUser = user;
@@ -102,11 +114,14 @@
         }
         await loadUserCredits();
         await checkTermsAcceptance();
+        // _loadingState gets cleared inside loadComics() once the collection
+        // finishes loading. Don't clear it here — credits alone aren't enough.
       } else {
-        // Not signed in — show auth screen, hide app
+        // Not signed in — show auth screen, hide app. Loading state irrelevant
+        // because the auth screen is what's shown.
+        window._loadingState = false;
         if (authScreen) authScreen.style.display = 'flex';
         if (appEl) appEl.style.display = 'none';
-        // Still mark firebase as ready so initFirebase doesn't deadlock
         if (!window._firebaseReady) {
           window._firebaseReady = true;
           window.dispatchEvent(new Event('firebase-ready'));
@@ -463,7 +478,14 @@
       <button class="btn-gear" onclick="openSettings()" title="Settings" id="settings-btn" aria-label="Settings">⚙</button>
     </div>
     <div id="header-row-bottom">
-      <button id="credit-coin-btn" onclick="showBuyCredits()" title="Your credits" aria-label="Your credits">
+      <!-- Loading pill: shown while window._loadingState is true (auth handshake +
+           initial collection fetch). Replaced by the real coin/Buy/Add buttons
+           once loadComics() completes. -->
+      <div id="header-loading-pill" style="display:flex;align-items:center;gap:8px;padding:6px 14px;background:rgba(0,0,0,0.04);border-radius:18px;color:#8a7a6a;font-size:13px;font-weight:500;letter-spacing:0.3px">
+        <div style="width:14px;height:14px;border:2px solid #c8b8a8;border-top-color:#5a4a3a;border-radius:50%;animation:spin 0.9s linear infinite"></div>
+        <span>Loading…</span>
+      </div>
+      <button id="credit-coin-btn" onclick="showBuyCredits()" title="Your credits" aria-label="Your credits" style="display:none">
         <svg viewBox="0 0 40 40" width="30" height="30" aria-hidden="true">
           <defs>
             <radialGradient id="coin-grad" cx="0.35" cy="0.35" r="0.75">
@@ -477,8 +499,8 @@
         </svg>
         <span id="credit-coin-count">0</span>
       </button>
-      <button class="btn btn-topbar btn-buy" onclick="showBuyCredits()" id="credits-btn">Buy</button>
-      <button class="btn btn-topbar btn-add" id="add-btn" onclick="showAdd()">+ Add</button>
+      <button class="btn btn-topbar btn-buy" onclick="showBuyCredits()" id="credits-btn" style="display:none">Buy</button>
+      <button class="btn btn-topbar btn-add" id="add-btn" onclick="showAdd()" style="display:none">+ Add</button>
     </div>
   </div>
   <div id="main"></div>
@@ -872,8 +894,34 @@ async function loadComics(){
     comics = [{...SAMPLE_COMIC}];
   }
 
+  // Loading state is officially over — collection has arrived. Refresh the
+  // header to show real credits/Buy/Add and let renderList show the real list.
+  window._loadingState = false;
+  refreshHeaderControls();
+
   renderList();
   updateStats();
+}
+
+// Show/hide header right-side controls based on _loadingState. Called by
+// loadComics on completion, and by anything else that needs to refresh.
+function refreshHeaderControls() {
+  const loading = !!window._loadingState;
+  const coinBtn = document.getElementById('credit-coin-btn');
+  const buyBtn = document.getElementById('credits-btn');
+  const addBtn = document.getElementById('add-btn');
+  const placeholder = document.getElementById('header-loading-pill');
+  if (loading) {
+    if (coinBtn) coinBtn.style.display = 'none';
+    if (buyBtn) buyBtn.style.display = 'none';
+    if (addBtn) addBtn.style.display = 'none';
+    if (placeholder) placeholder.style.display = '';
+  } else {
+    if (coinBtn) coinBtn.style.display = '';
+    if (buyBtn) buyBtn.style.display = '';
+    if (addBtn) addBtn.style.display = '';
+    if (placeholder) placeholder.style.display = 'none';
+  }
 }
 
 async function saveComic(rec){
@@ -1090,13 +1138,27 @@ function hideBuyCredits(){
 
 function showList(){
   view="list";selected=null;
-  document.getElementById("add-btn").style.display="";
+  // Re-show add button only if loading is complete; otherwise refreshHeaderControls
+  // handles it correctly (keeps the loading pill visible).
+  refreshHeaderControls();
   renderList();
   requestAnimationFrame(()=>window.scrollTo(0,_listScrollY));
 }
 
 function renderList(){
   const main=document.getElementById("main");
+  // Initial loading state: collection hasn't arrived from Firestore yet.
+  // Show a clear "Loading your collection…" placeholder instead of the empty
+  // state, so users don't think their books are gone.
+  if (window._loadingState) {
+    main.innerHTML = `
+      <div style="padding:60px 20px;text-align:center;color:#8a7a6a">
+        <div style="width:32px;height:32px;border:3px solid #ddd8d0;border-top-color:#5a4a3a;border-radius:50%;animation:spin 0.9s linear infinite;margin:0 auto 16px"></div>
+        <div style="font-size:14px;letter-spacing:0.3px">Loading your collection…</div>
+      </div>
+    `;
+    return;
+  }
   let filt=comics.filter(c=>{
     const q=search.toLowerCase();
     return!q||c.title?.toLowerCase().includes(q)||c.issue?.toLowerCase().includes(q)||c.cgcCert?.includes(q);
@@ -1153,10 +1215,12 @@ function renderList(){
         html+=`<div>`;
         groups[title].forEach(c=>{
           const gc=gradeColor(c.grade);
-          // Prefer thumbnail (~15KB, fast). Fall back to full image for old
+          // Prefer thumbnail (~10-15KB, fast). Fall back to full image for old
           // books, sample entry, or any case where thumbnails[] isn't populated.
+          // Eager-load (no lazy attribute) — thumbs are tiny and we want the list
+          // ready to scroll without per-row stalls when groups are expanded.
           const thumbSrc = c.thumbnails?.[0] || c.images?.[0];
-          const thumb = thumbSrc ? `<img class="comic-thumb" src="${thumbSrc}" loading="lazy">` : "";
+          const thumb = thumbSrc ? `<img class="comic-thumb" src="${thumbSrc}" decoding="async">` : "";
           html+=`<div class="comic-row" onclick="showDetail('${esc(c.id)}')">
             ${thumb}
             ${buildListBadge(c)}
@@ -1553,30 +1617,35 @@ async function processImagesForSave(images, comicId, slotNames, options = {}) {
   for (let i = 0; i < images.length; i++) {
     const img = images[i];
     if (!img) continue;
+    // Thumbnails are only used in the list view, which only shows the front
+    // cover (slot 0). Generating thumbs for back/PQ/raking is wasted work
+    // and storage. Restrict to slot 0 only.
+    const wantThumb = generateThumbs && i === 0;
     if (isDataUrl(img)) {
-      // New photo — compress to Blob (full + thumb) and upload both in parallel.
+      // New photo — compress to Blob (full + maybe thumb) and upload in parallel.
       const slot = slotNames[i] || `image_${i+1}`;
       const tasks = [
         compressImage(img, 1400, 0.65, true).then(blob =>
           uploadImageToStorage(blob, comicId, slot)
         )
       ];
-      if (generateThumbs) {
+      if (wantThumb) {
+        // 160px is enough for the 52px-wide list view at 3x retina (156px).
         tasks.push(
-          compressImage(img, 200, 0.7, true).then(blob =>
+          compressImage(img, 160, 0.7, true).then(blob =>
             uploadImageToStorage(blob, comicId, `${slot}_thumb`)
           )
         );
       }
       const urls = await Promise.all(tasks);
       fullResult.push(urls[0]);
-      thumbResult.push(generateThumbs ? urls[1] : null);
+      thumbResult.push(wantThumb ? urls[1] : null);
     } else {
       // Already a URL — pass through. Preserve the parallel thumbnail if we have
       // one in existingThumbs; otherwise leave empty (display will fall back to
       // the full image, which still works just slightly slower).
       fullResult.push(img);
-      thumbResult.push(generateThumbs ? (existingThumbs[i] || null) : null);
+      thumbResult.push(wantThumb ? (existingThumbs[i] || null) : null);
     }
   }
   return { images: fullResult, thumbnails: thumbResult };
@@ -3368,13 +3437,6 @@ function openCropper(type, index) {
   img.src = src;
   modal.classList.add('open');
 
-  // For front cover (slot 0) and back cover (slot 1), default the crop box to
-  // a 2:3 ratio as a starting suggestion — but DO NOT lock it. The user can
-  // freely adjust all corners and sides. (Cropper.js has no built-in "preset
-  // aspect that's adjustable"; we set initial bounds via setData() after init
-  // and leave aspectRatio as NaN.)
-  const showCoverGuide = (type === 'main' && (index === 0 || index === 1));
-
   // Wait for the image to be loaded (and laid out in the DOM) before attaching Cropper
   const attach = () => {
     img.removeEventListener('error', onErrorOnce);
@@ -3384,9 +3446,9 @@ function openCropper(type, index) {
       return;
     }
     _cropperInstance = new Cropper(img, {
-      aspectRatio: NaN, // free crop in all cases — edge handles can adjust shape
+      aspectRatio: NaN, // free crop in all cases — edge handles adjust shape
       viewMode: 1,
-      autoCropArea: 0.92,
+      autoCropArea: 1.0, // start with crop box filling the full image
       background: false,
       modal: true,
       guides: true,
@@ -3396,27 +3458,7 @@ function openCropper(type, index) {
       toggleDragModeOnDblclick: false,
       movable: false, // additionally lock the frame from being dragged around
       responsive: true,
-      checkOrientation: false,
-      ready: showCoverGuide ? function() {
-        // Re-shape the initial crop box to 2:3 portrait centered on the image,
-        // sized to fill ~92% of the smaller dimension.
-        const data = _cropperInstance.getCanvasData();
-        const targetW = data.height * (2/3);
-        let cropW, cropH;
-        if (targetW <= data.width * 0.92) {
-          cropH = data.height * 0.92;
-          cropW = cropH * (2/3);
-        } else {
-          cropW = data.width * 0.92;
-          cropH = cropW * (3/2);
-        }
-        _cropperInstance.setCropBoxData({
-          left: data.left + (data.width - cropW) / 2,
-          top: data.top + (data.height - cropH) / 2,
-          width: cropW,
-          height: cropH
-        });
-      } : null
+      checkOrientation: false
     });
 
     // Double-tap inside the frame expands the crop box to fill the whole image.
