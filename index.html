@@ -2114,12 +2114,9 @@ async function assessHighGrade() {
       }
       return img;
     }));
-    // Compress for the assess endpoint — keep the OLD smaller defaults (900px / 0.5)
-    // for transmission to Anthropic. The 1400px/0.65 archival quality is for Cloud
-    // Storage; sending it to the API would 3x the request body, balloon Anthropic
-    // image-token cost, and (as observed in testing) trigger service worker
-    // failures on the larger payload.
-    const compressed = await Promise.all(dataUrls.map(img => compressImage(img, 900, 0.5)));
+    // Use default compression (1400px/0.65) — matches what's stored in Cloud Storage,
+    // so the assessment evaluates exactly what the user sees in their archive.
+    const compressed = await Promise.all(dataUrls.map(img => compressImage(img)));
 
     const token = window._currentUser ? (await window._currentUser.getIdToken()) : null;
     const resp = await fetch('/api/assess', {
@@ -2212,7 +2209,7 @@ function startRestorationCheck() {
 
       // Combine original 4 images + restoration images (8 total)
       const origImgs = (formData.images || []).filter(Boolean).slice(0, 4);
-      const origCompressed = await Promise.all(origImgs.map(img => compressImage(img, 900, 0.5)));
+      const origCompressed = await Promise.all(origImgs.map(img => compressImage(img)));
       const allImages = [...origCompressed, ...rcImgs];
 
       const token = window._currentUser ? (await window._currentUser.getIdToken()) : null;
@@ -2308,6 +2305,9 @@ function userHasPaidCredits() {
 function checkImageCap(isExistingBook) {
   // Don't apply cap when editing a book that already has images
   if (isExistingBook) return 'ok';
+  // Admin bypass — same pattern as export rate limit
+  const userEmail = (window._currentUser && window._currentUser.email) || '';
+  if (userEmail.toLowerCase() === 'support@robograder.app') return 'ok';
   const count = countBooksWithImages();
   const paid = userHasPaidCredits();
   const hardCap = paid ? IMAGE_PAID_CAP : IMAGE_HARD_CAP;
@@ -3123,7 +3123,7 @@ async function assessGrade(){
       }
       return img;
     }));
-    const compressed=await Promise.all(dataUrls.map(img=>compressImage(img, 900, 0.5)));
+    const compressed=await Promise.all(dataUrls.map(img=>compressImage(img)));
     const unifiedResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json","x-client-secret":"022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",...(window._currentUser?{"Authorization":"Bearer "+(await window._currentUser.getIdToken())}:{})},body:JSON.stringify({images:compressed,grader:"CGC",title:formData.title||"",issueNumber:formData.issue||"",issueDate:formData.issueDate||""})});
     if(!unifiedResp.ok){const e=await unifiedResp.text();throw new Error("Assessment error: "+e);}
     const unified=await unifiedResp.json();
