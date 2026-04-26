@@ -43,7 +43,7 @@
       from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
     import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
       from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
-    import { getStorage, ref, uploadBytes, getDownloadURL }
+    import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject, listAll }
       from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js';
 
     const firebaseConfig = {
@@ -63,6 +63,8 @@
     window._fsRef = ref;
     window._fsUploadBytes = uploadBytes;
     window._fsGetDownloadURL = getDownloadURL;
+    window._fsDeleteObject = deleteObject;
+    window._fsListAll = listAll;
     window._fsCollection = collection;
     window._fsGetDocs = getDocs;
     window._fsSetDoc = setDoc;
@@ -847,8 +849,19 @@ async function deleteComic(id){
     return;
   }
   syncMsg("Deleting...");
-  try{await fsDeleteDoc(userComicDoc(id));}
-  catch(e){alert("Delete failed: "+e.message);}
+  try {
+    // Delete Storage objects under users/{uid}/comics/{id}/ before the Firestore doc.
+    // This guarantees no orphaned blobs even if the doc delete fails — at worst we
+    // leave a Firestore record pointing at empty storage paths, which the display
+    // code already handles gracefully (broken-image icons in slots, no crash).
+    if (window._currentUser) {
+      const prefix = `users/${window._currentUser.uid}/comics/${id}`;
+      await deleteStorageFolder(prefix);
+    }
+    await fsDeleteDoc(userComicDoc(id));
+  } catch(e) {
+    alert("Delete failed: " + e.message);
+  }
   syncMsg(null);
   showList();
 }
@@ -1592,22 +1605,110 @@ function showEdit(id){
   view="add";_assessed=!!(c.assessedCGCGrade||c.aiAssessment);document.getElementById("add-btn").style.display="none";renderForm();window.scrollTo(0,0);
 }
 
-async function compressImage(dataUrl,maxDim=800,quality=0.42){
-  // Target: ~50-80 KB per image so 8 images + metadata fit in Firestore's
-  // 1,048,576 byte document cap. Default 800px/0.42 gives comfortable headroom.
-  // For high-grade assessments with 8 images, this matters; for standard 4-image
-  // books the old limits were fine but the tighter values still look good.
-  return new Promise(res=>{
-    const img=new Image();
-    img.onload=()=>{
-      let w=img.width,h=img.height;
-      if(w>maxDim||h>maxDim){if(w>h){h=Math.round(h*maxDim/w);w=maxDim;}else{w=Math.round(w*maxDim/h);h=maxDim;}}
-      const c=document.createElement("canvas");c.width=w;c.height=h;
-      c.getContext("2d").drawImage(img,0,0,w,h);
-      res(c.toDataURL("image/jpeg",quality));
+async function compressImage(dataUrl, maxDim=1400, quality=0.65, asBlob=false){
+  // Defaults bumped to 1400px / 0.65 quality for Cloud Storage migration
+  // (Session 13). Old defaults were 800px / 0.42 to fit base64 in Firestore's
+  // 1MB document cap. Storage has no such constraint, so we get meaningfully
+  // better fidelity at modest cost (~150-400 KB per image vs. ~50-80 KB).
+  //
+  // Two output modes:
+  //   asBlob=false (default): returns a data URL string — used by assess.js
+  //     payload (server still receives base64 images for the Anthropic call)
+  //   asBlob=true: returns a Blob object — used for Cloud Storage upload
+  return new Promise(res => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if (w > maxDim || h > maxDim) {
+        if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; }
+        else       { w = Math.round(w * maxDim / h); h = maxDim; }
+      }
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      if (asBlob) {
+        c.toBlob(blob => res(blob), "image/jpeg", quality);
+      } else {
+        res(c.toDataURL("image/jpeg", quality));
+      }
     };
-    img.src=dataUrl;
+    img.src = dataUrl;
   });
+}
+
+// ── Cloud Storage helpers ────────────────────────────────────────────────────
+//
+// Slot names — stable, descriptive identifiers that appear in the storage path.
+// Adding new slots later (uv_cover, front_interior, etc. for restoration checks)
+// is a one-line change to either array.
+const STORAGE_SLOTS_MAIN = ['front_cover', 'back_cover', 'page_quality', 'raking_light'];
+const STORAGE_SLOTS_CORNER = ['corner_tl', 'corner_tr', 'corner_bl', 'corner_br'];
+
+// Upload one image Blob to Cloud Storage and return the download URL.
+// Path: users/{uid}/comics/{comicId}/{slot}.jpg
+// Re-uploading the same slot path overwrites the existing file (auto-cleanup).
+async function uploadImageToStorage(blob, comicId, slot) {
+  if (!window._currentUser || !window._storage) {
+    throw new Error('Storage not initialized');
+  }
+  const uid = window._currentUser.uid;
+  const path = `users/${uid}/comics/${comicId}/${slot}.jpg`;
+  const storageRef = window._fsRef(window._storage, path);
+  await window._fsUploadBytes(storageRef, blob, { contentType: 'image/jpeg' });
+  return await window._fsGetDownloadURL(storageRef);
+}
+
+// Detect whether an entry in formData.images is a freshly-picked photo (data URL)
+// or an already-uploaded reference (https URL). Determines whether re-upload is needed.
+function isDataUrl(s) {
+  return typeof s === 'string' && s.startsWith('data:');
+}
+
+// Process a list of images for save: anything that's a data URL gets compressed
+// to a Blob, uploaded to Storage, and replaced with the resulting download URL.
+// Anything that's already a URL (existing comic, sample entry, previously saved)
+// passes through unchanged — no re-upload, no extra cost.
+async function processImagesForSave(images, comicId, slotNames, progressCb) {
+  const result = [];
+  let uploaded = 0;
+  for (let i = 0; i < images.length; i++) {
+    const img = images[i];
+    if (!img) continue;
+    if (isDataUrl(img)) {
+      // New photo — compress to Blob and upload
+      const blob = await compressImage(img, 1400, 0.65, true);
+      const slot = slotNames[i] || `image_${i+1}`;
+      const url = await uploadImageToStorage(blob, comicId, slot);
+      result.push(url);
+      uploaded++;
+      if (progressCb) progressCb(uploaded, images.filter(isDataUrl).length);
+    } else {
+      // Already a URL — pass through
+      result.push(img);
+    }
+  }
+  return result;
+}
+
+// List and delete every storage object under a path prefix.
+// Used by deleteComic (deletes one comic's folder) and account deletion (whole user folder).
+// Firebase Storage doesn't have a "delete folder" primitive — we list contents recursively
+// and delete each file individually.
+async function deleteStorageFolder(pathPrefix) {
+  if (!window._storage || !window._fsListAll || !window._fsDeleteObject) return;
+  try {
+    const folderRef = window._fsRef(window._storage, pathPrefix);
+    const listing = await window._fsListAll(folderRef);
+    // Delete all files at this level
+    await Promise.all(listing.items.map(item => window._fsDeleteObject(item).catch(() => {})));
+    // Recurse into subfolders (in our schema, none under a single comic — but defensive for user-level)
+    for (const subfolder of listing.prefixes) {
+      await deleteStorageFolder(subfolder.fullPath);
+    }
+  } catch(e) {
+    // Folder may not exist — that's fine, treat as already-deleted
+    console.warn('deleteStorageFolder:', pathPrefix, e.message);
+  }
 }
 
 
@@ -2346,12 +2447,19 @@ async function deleteAccountFlow() {
       }
     }
 
-    // 2. Delete the user doc
+    // 2. Delete all Storage objects under users/{uid}/.
+    //    Without this, deleted-account image blobs would orphan in Cloud Storage
+    //    and continue accruing (tiny) storage charges. listAll + recursive delete.
+    try {
+      await deleteStorageFolder(`users/${uid}`);
+    } catch(e) { console.error('Failed to wipe Storage folder:', e); }
+
+    // 3. Delete the user doc
     try {
       await fsDeleteDoc(fsDoc(db, 'users', uid));
     } catch(e) { console.error('Failed to delete user doc:', e); }
 
-    // 3. Delete the auth user. If recent-sign-in is required, the catch will
+    // 4. Delete the auth user. If recent-sign-in is required, the catch will
     //    instruct the user to sign in again and retry.
     try {
       await window._currentUser.delete();
@@ -3732,22 +3840,39 @@ async function submitForm(){
   if(!formData.title?.trim()){alert("Title is required.");return;}
   formData.title=formData.title.trim().replace(/\s+/g," ").replace(/^The\s+/i,"");
   if(formData.seller?.trim())updateSellerList(formData.seller.trim());
-  syncMsg("Compressing images...");
-  const rawImages=(formData.images||[]).filter(Boolean);
-  const compressedImages=rawImages.length>0&&formData._imagesChanged?await Promise.all(rawImages.map(img=>compressImage(img))):[];
-  // Also compress corner images (high-grade macros) if changed
-  const rawCornerImages=(formData.cornerImages||[]).filter(Boolean);
-  const compressedCornerImages=rawCornerImages.length>0&&formData._imagesChanged?await Promise.all(rawCornerImages.map(img=>compressImage(img))):[];
-  syncMsg(null);
-  const existingComic=formData.id?comics.find(c=>c.id===formData.id):null;
-  // Use compressed new images if user changed them, otherwise preserve Firestore images exactly
-  const finalImages=formData._imagesChanged
-    ?(compressedImages.length>0?compressedImages:[])
-    :(formData._savedImages||existingComic?.images||[]);
-  const finalCornerImages=formData._imagesChanged
-    ?compressedCornerImages
-    :(formData._savedCornerImages||existingComic?.cornerImages||[]);
-  const id=formData.id||`comic:user_${Date.now()}`;
+
+  // Determine the comic ID first — we need it for the storage path.
+  // (Generated here so new books and edits both use the same upload path.)
+  const id = formData.id || `comic:user_${Date.now()}`;
+
+  // ── Image processing & upload to Cloud Storage ──
+  // formData.images[] may contain a mix of:
+  //   - data URLs (newly added in this edit session) → compress + upload
+  //   - https URLs (already-uploaded existing photos) → pass through unchanged
+  // Same logic for cornerImages.
+  const rawImages = (formData.images || []).filter(Boolean);
+  const rawCornerImages = (formData.cornerImages || []).filter(Boolean);
+  const newImageCount = rawImages.filter(isDataUrl).length + rawCornerImages.filter(isDataUrl).length;
+
+  let finalImages, finalCornerImages;
+  try {
+    if (formData._imagesChanged && newImageCount > 0) {
+      syncMsg(`Uploading ${newImageCount} image${newImageCount === 1 ? '' : 's'}...`);
+      finalImages = await processImagesForSave(rawImages, id, STORAGE_SLOTS_MAIN);
+      finalCornerImages = await processImagesForSave(rawCornerImages, id, STORAGE_SLOTS_CORNER);
+    } else {
+      // No changes — preserve the previously-saved URLs
+      const existingComic = formData.id ? comics.find(c => c.id === formData.id) : null;
+      finalImages = formData._savedImages || existingComic?.images || [];
+      finalCornerImages = formData._savedCornerImages || existingComic?.cornerImages || [];
+    }
+    syncMsg(null);
+  } catch(e) {
+    syncMsg(null);
+    alert(`Image upload failed: ${e.message}\n\nPlease try again.`);
+    return;
+  }
+
   const rec={...formData,id,
     images:finalImages,
     cornerImages:finalCornerImages,
