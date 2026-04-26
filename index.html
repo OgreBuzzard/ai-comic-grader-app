@@ -2519,8 +2519,12 @@ async function exportCollection() {
       });
     });
 
-    // ── Standalone viewer HTML so the archive can be browsed without the live app ──
-    zip.file('viewer.html', buildArchiveViewer());
+    // ── Standalone archive HTML so the export can be browsed without the live app.
+    // Self-contained: collection data embedded inline so no fetch() is needed.
+    // This avoids the browser's file:// CORS restrictions when the user
+    // double-clicks the file from Finder. ──
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    zip.file(`robograder_archive_${dateStamp}.html`, buildArchiveViewer(collectionData, exportDate, comics.length));
 
     // Generate and download
     const blob = await zip.generateAsync({type: 'blob', compression: 'DEFLATE', compressionOptions: {level: 6}});
@@ -2600,19 +2604,29 @@ function makeSafeBookName(c) {
   return `${title}${issue}`.slice(0, 80); // cap length
 }
 
-// Builds a self-contained HTML viewer that can be opened from the unzipped archive.
-// Uses fetch() to load collection.json from the same directory and renders the books
-// as a scrollable list with thumbnails. No external dependencies — opens directly in
-// any browser without an internet connection. Useful for offline archive review.
+// Builds a self-contained HTML archive that can be opened from the unzipped folder.
+// The collection data is embedded inline as a JSON literal so no fetch() is needed —
+// avoids the file:// CORS restrictions that block sibling-file access in Safari and
+// Chrome when the user double-clicks the HTML.
 //
 // Built as an array of plain strings (not a single template literal) to avoid
 // escape-character ambiguity with the nested backticks inside the embedded script.
-function buildArchiveViewer() {
+function buildArchiveViewer(collectionData, exportDate, bookCount) {
+  // Embed data via a <script> tag with a JSON literal. Use JSON.stringify with
+  // careful escaping — the browser parses this as JS literal, so any <, >, & in
+  // the JSON value strings need to be safe. JSON.stringify already handles quotes
+  // and backslashes; we just need to break up the closing-script-tag sequence
+  // in any defect text (extremely unlikely but defensive).
+  const safeJson = JSON.stringify(collectionData).replace(/<\/script/gi, '<\\/script');
+  const totalImages = collectionData.reduce((s, c) => s + (c._archiveImageCount || 0), 0);
+  const exportDateStr = new Date(exportDate).toLocaleDateString();
+
   const lines = [
     '<!DOCTYPE html>',
     '<html lang="en">',
     '<head>',
     '<meta charset="UTF-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
     '<title>Robograder Collection Archive</title>',
     '<style>',
     '  body { font-family: -apple-system, "SF Pro Text", sans-serif; background: #f5f4f2; margin: 0; padding: 20px; color: #1a1614; }',
@@ -2632,55 +2646,16 @@ function buildArchiveViewer() {
     '  .imgs img { width: 100%; height: 120px; object-fit: cover; border-radius: 6px; background: #eee; }',
     '  .defects { font-size: 12px; color: #5a4a3a; margin-top: 6px; }',
     '  .defects strong { color: #1a1614; }',
-    '  .err { background: #fff8e8; border: 1px solid #e8d4a0; border-radius: 8px; padding: 16px; max-width: 1200px; margin: 0 auto; }',
     '</style>',
     '</head>',
     '<body>',
     '  <div class="header">',
     '    <h1>Robograder Collection Archive</h1>',
-    '    <div class="meta" id="meta">Loading...</div>',
+    '    <div class="meta">' + bookCount + ' books \u00b7 ' + totalImages + ' images \u00b7 exported ' + exportDateStr + '</div>',
     '  </div>',
     '  <div id="content"></div>',
     '<' + 'script>',
-    '  fetch("collection.json")',
-    '    .then(function(r){ return r.json(); })',
-    '    .then(function(books){',
-    '      fetch("_export_info.json").then(function(r){ return r.json(); }).then(function(info){',
-    '        document.getElementById("meta").textContent =',
-    '          info.bookCount + " books \u00b7 " + info.totalImages + " images \u00b7 exported " + new Date(info.exportDate).toLocaleDateString();',
-    '      }).catch(function(){});',
-    '      var content = document.getElementById("content");',
-    '      var grid = document.createElement("div");',
-    '      grid.className = "grid";',
-    '      books.forEach(function(b){',
-    '        var div = document.createElement("div");',
-    '        div.className = "book";',
-    '        var rg = b.roboGrade || {};',
-    '        var cgc = b.cgcGrade || b.assessedCGCGrade || "\u2014";',
-    '        var psa = b.psaGrade || b.assessedPSAGrade || "\u2014";',
-    '        var html = "";',
-    '        html += "<div>";',
-    '        html += "<div class=\\"title\\">" + escapeHtml(b.title || "Untitled") + "</div>";',
-    '        html += "<div class=\\"issue\\">#" + escapeHtml(b.issue || "?") + (b.issueDate ? " \u00b7 " + escapeHtml(b.issueDate) : "") + "</div>";',
-    '        html += "</div>";',
-    '        html += "<div class=\\"grades\\">";',
-    '        if (rg.score != null) html += "<div class=\\"grade-pip\\"><span class=\\"lbl\\">RG</span>" + Math.round(rg.score) + "</div>";',
-    '        if (cgc !== "\u2014") html += "<div class=\\"grade-pip cgc\\"><span class=\\"lbl\\">CGC" + (b.cgcGrade ? "" : " AI") + "</span>" + cgc + "</div>";',
-    '        if (psa !== "\u2014") html += "<div class=\\"grade-pip psa\\"><span class=\\"lbl\\">PSA" + (b.psaGrade ? "" : " AI") + "</span>" + psa + "</div>";',
-    '        html += "</div>";',
-    '        if (rg.defects && rg.defects.length) {',
-    '          html += "<div class=\\"defects\\"><strong>RG defects:</strong> " + rg.defects.map(function(d){ return escapeHtml((d.type||"") + (d.severity ? " (" + d.severity + ")" : "")); }).join(", ") + "</div>";',
-    '        }',
-    '        if (b._archiveFolder && b._archiveImageCount) html += buildImgs(b._archiveFolder, b._archiveImageCount);',
-    '        div.innerHTML = html;',
-    '        grid.appendChild(div);',
-    '      });',
-    '      content.appendChild(grid);',
-    '    })',
-    '    .catch(function(err){',
-    '      document.getElementById("content").innerHTML =',
-    '        \'<div class="err"><strong>Could not load collection.json.</strong> Make sure this viewer.html is in the same folder as collection.json (i.e. the unzipped archive root). Open in a browser by double-clicking. Some browsers block local file access \u2014 if that happens, try Firefox or run a local server.</div>\';',
-    '    });',
+    '  var BOOKS = ' + safeJson + ';',
     '  function escapeHtml(s) {',
     '    return String(s).replace(/[&<>"\\\']/g, function(c){',
     '      return ({"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;","\\\'":"&#39;"})[c];',
@@ -2697,6 +2672,33 @@ function buildArchiveViewer() {
     '    html += "</div>";',
     '    return html;',
     '  }',
+    '  var content = document.getElementById("content");',
+    '  var grid = document.createElement("div");',
+    '  grid.className = "grid";',
+    '  BOOKS.forEach(function(b){',
+    '    var div = document.createElement("div");',
+    '    div.className = "book";',
+    '    var rg = b.roboGrade || {};',
+    '    var cgc = b.cgcGrade || b.assessedCGCGrade || "\u2014";',
+    '    var psa = b.psaGrade || b.assessedPSAGrade || "\u2014";',
+    '    var html = "";',
+    '    html += "<div>";',
+    '    html += "<div class=\\"title\\">" + escapeHtml(b.title || "Untitled") + "</div>";',
+    '    html += "<div class=\\"issue\\">#" + escapeHtml(b.issue || "?") + (b.issueDate ? " \u00b7 " + escapeHtml(b.issueDate) : "") + "</div>";',
+    '    html += "</div>";',
+    '    html += "<div class=\\"grades\\">";',
+    '    if (rg.score != null) html += "<div class=\\"grade-pip\\"><span class=\\"lbl\\">RG</span>" + Math.round(rg.score) + "</div>";',
+    '    if (cgc !== "\u2014") html += "<div class=\\"grade-pip cgc\\"><span class=\\"lbl\\">CGC" + (b.cgcGrade ? "" : " AI") + "</span>" + cgc + "</div>";',
+    '    if (psa !== "\u2014") html += "<div class=\\"grade-pip psa\\"><span class=\\"lbl\\">PSA" + (b.psaGrade ? "" : " AI") + "</span>" + psa + "</div>";',
+    '    html += "</div>";',
+    '    if (rg.defects && rg.defects.length) {',
+    '      html += "<div class=\\"defects\\"><strong>RG defects:</strong> " + rg.defects.map(function(d){ return escapeHtml((d.type||"") + (d.severity ? " (" + d.severity + ")" : "")); }).join(", ") + "</div>";',
+    '    }',
+    '    if (b._archiveFolder && b._archiveImageCount) html += buildImgs(b._archiveFolder, b._archiveImageCount);',
+    '    div.innerHTML = html;',
+    '    grid.appendChild(div);',
+    '  });',
+    '  content.appendChild(grid);',
     '<' + '/script>',
     '</body>',
     '</html>'
