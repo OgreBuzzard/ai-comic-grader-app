@@ -226,19 +226,26 @@
     #cropper-cancel { background: #333; color: #ccc; }
     #cropper-confirm { background: #1a4a2a; color: #6abf6a; }
     #cropper-cancel:active, #cropper-confirm:active { transform: scale(0.97); }
-    /* Cropper.js handle styling overrides — make corner/edge points larger
-       and rounded, more touch-friendly than the library defaults. */
-    .cropper-point { width: 14px !important; height: 14px !important; opacity: 1 !important; background-color: #4a9eff !important; border-radius: 50% !important; box-shadow: 0 0 0 2px rgba(255,255,255,0.5); }
-    .cropper-point.point-n, .cropper-point.point-s { left: 50% !important; margin-left: -7px !important; }
-    .cropper-point.point-e, .cropper-point.point-w { top: 50% !important; margin-top: -7px !important; }
-    .cropper-point.point-ne { top: -7px !important; right: -7px !important; margin: 0 !important; }
-    .cropper-point.point-nw { top: -7px !important; left: -7px !important; margin: 0 !important; }
-    .cropper-point.point-se { bottom: -7px !important; right: -7px !important; margin: 0 !important; width: 14px !important; height: 14px !important; }
-    .cropper-point.point-sw { bottom: -7px !important; left: -7px !important; margin: 0 !important; }
-    .cropper-point.point-n { top: -7px !important; }
-    .cropper-point.point-s { bottom: -7px !important; }
-    .cropper-point.point-e { right: -7px !important; }
-    .cropper-point.point-w { left: -7px !important; }
+    /* Cropper.js styling: simplified UX with only 4 edge handles (no corners).
+       Edge handles are large pill shapes for easy thumb-grabbing on mobile.
+       Touch target = visual element in Cropper.js, so bigger visual = bigger
+       hit area. Adding extra padding via pseudo-elements gives even more margin. */
+    .cropper-point.point-ne, .cropper-point.point-nw,
+    .cropper-point.point-se, .cropper-point.point-sw { display: none !important; }
+    .cropper-point { background-color: #4a9eff !important; opacity: 1 !important; box-shadow: 0 0 0 2px rgba(255,255,255,0.5); border-radius: 8px !important; }
+    /* North/south edge handles: horizontal pill spanning a portion of the edge */
+    .cropper-point.point-n, .cropper-point.point-s { width: 56px !important; height: 18px !important; left: 50% !important; margin-left: -28px !important; }
+    .cropper-point.point-n { top: -9px !important; }
+    .cropper-point.point-s { bottom: -9px !important; top: auto !important; }
+    /* East/west edge handles: vertical pill spanning a portion of the edge */
+    .cropper-point.point-e, .cropper-point.point-w { width: 18px !important; height: 56px !important; top: 50% !important; margin-top: -28px !important; }
+    .cropper-point.point-e { right: -9px !important; }
+    .cropper-point.point-w { left: -9px !important; right: auto !important; }
+    /* Invisible padding around each handle for additional touch margin */
+    .cropper-point.point-n::before, .cropper-point.point-s::before,
+    .cropper-point.point-e::before, .cropper-point.point-w::before {
+      content: ''; position: absolute; inset: -12px; background: transparent;
+    }
     .cropper-line { background-color: #4a9eff !important; opacity: 0.6 !important; }
     .cropper-view-box { outline: 2px solid #4a9eff !important; outline-color: #4a9eff !important; }
     input[type="date"] { background: #ffffff; border: 1px solid #ccc8c0; border-radius: 4px; color: #1a1614; padding: 8px 10px; font-size: 13px; font-family: inherit; outline: none; width: 100%; color-scheme: light; }
@@ -3425,7 +3432,7 @@ function renderForm(){
                 ondragstart="dragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"
                 onclick="_tappedSlot=${i};document.getElementById('photo-input').click()">
                 <img src="${img}">
-                <button class="slot-edit" onclick="event.stopPropagation();openCropper('main',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8 V4 H8"/><path d="M16 4 H20 V8"/><path d="M20 16 V20 H16"/><path d="M8 20 H4 V16"/></svg></button>
+                <button class="slot-edit" onclick="event.stopPropagation();openCropper('main',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>
                 <button class="slot-x" onclick="event.stopPropagation();removeImg(${i})">×</button>
                </div>`
             : `<div class="drag-slot" style="padding:0;background:none;"
@@ -3451,7 +3458,7 @@ function renderForm(){
                   ondragstart="cornerDragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="cornerDropSlot(event,${i})"
                   onclick="_tappedCornerSlot=${i};document.getElementById('corner-photo-input').click()">
                   <img src="${img}">
-                  <button class="slot-edit" onclick="event.stopPropagation();openCropper('corner',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8 V4 H8"/><path d="M16 4 H20 V8"/><path d="M20 16 V20 H16"/><path d="M8 20 H4 V16"/></svg></button>
+                  <button class="slot-edit" onclick="event.stopPropagation();openCropper('corner',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>
                   <button class="slot-x" onclick="event.stopPropagation();removeCornerImg(${i})">×</button>
                  </div>`
               : `<div class="drag-slot" style="padding:0;background:#1a1a1a;min-height:100px;"
@@ -3815,7 +3822,7 @@ function openCropper(type, index) {
       return;
     }
     _cropperInstance = new Cropper(img, {
-      aspectRatio: NaN, // free crop in all cases — corner handles can adjust shape
+      aspectRatio: NaN, // free crop in all cases — edge handles can adjust shape
       viewMode: 1,
       autoCropArea: 0.92,
       background: false,
@@ -3823,8 +3830,9 @@ function openCropper(type, index) {
       guides: true,
       center: true,
       highlight: false,
-      dragMode: 'move',
+      dragMode: 'none', // tapping inside the frame does NOT move the whole frame
       toggleDragModeOnDblclick: false,
+      movable: false, // additionally lock the frame from being dragged around
       responsive: true,
       checkOrientation: false,
       ready: showCoverGuide ? function() {
@@ -3848,6 +3856,39 @@ function openCropper(type, index) {
         });
       } : null
     });
+
+    // Double-tap inside the frame expands the crop box to fill the whole image.
+    // This is a discoverable "reset" — easier than dragging four edges back out
+    // when the auto-cropped box is too tight. Listens at the modal level so it
+    // works even when the user double-taps on Cropper's view box.
+    let _lastCropTap = 0;
+    const stage = document.getElementById('cropper-stage');
+    const dblHandler = (e) => {
+      const now = Date.now();
+      if (now - _lastCropTap < 320) {
+        // Two taps in quick succession → maximize crop box
+        if (_cropperInstance) {
+          const canvas = _cropperInstance.getCanvasData();
+          _cropperInstance.setCropBoxData({
+            left: canvas.left,
+            top: canvas.top,
+            width: canvas.width,
+            height: canvas.height
+          });
+        }
+        _lastCropTap = 0;
+        e.preventDefault();
+      } else {
+        _lastCropTap = now;
+      }
+    };
+    // Remove any prior listener before adding (each open could re-bind)
+    if (stage._dblHandler) stage.removeEventListener('touchend', stage._dblHandler);
+    if (stage._dblClickHandler) stage.removeEventListener('dblclick', stage._dblClickHandler);
+    stage._dblHandler = dblHandler;
+    stage._dblClickHandler = dblHandler;
+    stage.addEventListener('touchend', dblHandler);
+    stage.addEventListener('dblclick', dblHandler);
   };
   if (img.complete && img.naturalWidth > 0) attach();
   else img.addEventListener('load', attach, { once: true });
