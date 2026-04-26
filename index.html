@@ -2604,97 +2604,104 @@ function makeSafeBookName(c) {
 // Uses fetch() to load collection.json from the same directory and renders the books
 // as a scrollable list with thumbnails. No external dependencies — opens directly in
 // any browser without an internet connection. Useful for offline archive review.
+//
+// Built as an array of plain strings (not a single template literal) to avoid
+// escape-character ambiguity with the nested backticks inside the embedded script.
 function buildArchiveViewer() {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>Robograder Collection Archive</title>
-<style>
-  body { font-family: -apple-system, "SF Pro Text", sans-serif; background: #f5f4f2; margin: 0; padding: 20px; color: #1a1614; }
-  .header { max-width: 1200px; margin: 0 auto 20px; }
-  .header h1 { font-size: 28px; margin: 0 0 4px; }
-  .header .meta { font-size: 13px; color: #8a7a6a; }
-  .grid { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }
-  .book { background: #ffffff; border: 1px solid #ddd8d0; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
-  .book .title { font-weight: 700; font-size: 16px; line-height: 1.2; }
-  .book .issue { font-size: 13px; color: #8a7a6a; }
-  .grades { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
-  .grade-pip { background: #1a3a1e; color: #b8d820; padding: 6px 10px; border-radius: 8px; font-weight: 700; font-size: 14px; min-width: 56px; text-align: center; }
-  .grade-pip.cgc { background: #1a5fa8; color: #fff; }
-  .grade-pip.psa { background: #b91c1c; color: #fff; }
-  .grade-pip .lbl { display: block; font-size: 9px; opacity: 0.75; letter-spacing: 0.5px; }
-  .imgs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
-  .imgs img { width: 100%; height: 120px; object-fit: cover; border-radius: 6px; background: #eee; }
-  .defects { font-size: 12px; color: #5a4a3a; margin-top: 6px; }
-  .defects strong { color: #1a1614; }
-  .err { background: #fff8e8; border: 1px solid #e8d4a0; border-radius: 8px; padding: 16px; max-width: 1200px; margin: 0 auto; }
-</style>
-</head>
-<body>
-  <div class="header">
-    <h1>Robograder Collection Archive</h1>
-    <div class="meta" id="meta">Loading…</div>
-  </div>
-  <div id="content"></div>
-<script>
-  // Load collection.json from same directory as this viewer
-  fetch('collection.json')
-    .then(r => r.json())
-    .then(books => {
-      fetch('_export_info.json').then(r => r.json()).then(info => {
-        document.getElementById('meta').textContent =
-          \`\${info.bookCount} books · \${info.totalImages} images · exported \${new Date(info.exportDate).toLocaleDateString()}\`;
-      }).catch(() => {});
-
-      const content = document.getElementById('content');
-      const grid = document.createElement('div');
-      grid.className = 'grid';
-      books.forEach(b => {
-        const div = document.createElement('div');
-        div.className = 'book';
-        const rg = b.roboGrade || {};
-        const cgc = b.cgcGrade || b.assessedCGCGrade || '—';
-        const psa = b.psaGrade || b.assessedPSAGrade || '—';
-        div.innerHTML = \`
-          <div>
-            <div class="title">\${escapeHtml(b.title || 'Untitled')}</div>
-            <div class="issue">#\${escapeHtml(b.issue || '?')} \${b.issueDate ? '· ' + escapeHtml(b.issueDate) : ''}</div>
-          </div>
-          <div class="grades">
-            \${rg.score != null ? '<div class="grade-pip"><span class="lbl">RG</span>' + Math.round(rg.score) + '</div>' : ''}
-            \${cgc !== '—' ? '<div class="grade-pip cgc"><span class="lbl">CGC' + (b.cgcGrade ? '' : ' AI') + '</span>' + cgc + '</div>' : ''}
-            \${psa !== '—' ? '<div class="grade-pip psa"><span class="lbl">PSA' + (b.psaGrade ? '' : ' AI') + '</span>' + psa + '</div>' : ''}
-          </div>
-          \${rg.defects && rg.defects.length ? '<div class="defects"><strong>RG defects:</strong> ' + rg.defects.map(d => escapeHtml((d.type||'') + (d.severity ? ' (' + d.severity + ')' : ''))).join(', ') + '</div>' : ''}
-          \${b._archiveFolder && b._archiveImageCount ? buildImgs(b._archiveFolder, b._archiveImageCount) : ''}
-        \`;
-        grid.appendChild(div);
-      });
-      content.appendChild(grid);
-    })
-    .catch(err => {
-      document.getElementById('content').innerHTML =
-        '<div class="err"><strong>Could not load collection.json.</strong> Make sure this viewer.html is in the same folder as collection.json (i.e. the unzipped archive root). Open in a browser by double-clicking. Some browsers block local file access — if that happens, try Firefox or run a local server.</div>';
-    });
-
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  }
-  function buildImgs(folder, count) {
-    const labels = ['front_cover', 'back_cover', 'page_quality', 'raking_light'];
-    let html = '<div class="imgs">';
-    for (let i = 0; i < Math.min(count, 4); i++) {
-      const slot = labels[i] || ('image_' + (i+1));
-      // Try jpg first, browser will silently fail and show broken icon if it's png — minor cosmetic issue, acceptable
-      html += '<img src="' + folder + '/' + slot + '.jpg" alt="' + slot + '" onerror="this.src=\\'' + folder + '/' + slot + '.png\\';this.onerror=null">';
-    }
-    html += '</div>';
-    return html;
-  }
-</script>
-</body>
-</html>`;
+  const lines = [
+    '<!DOCTYPE html>',
+    '<html lang="en">',
+    '<head>',
+    '<meta charset="UTF-8">',
+    '<title>Robograder Collection Archive</title>',
+    '<style>',
+    '  body { font-family: -apple-system, "SF Pro Text", sans-serif; background: #f5f4f2; margin: 0; padding: 20px; color: #1a1614; }',
+    '  .header { max-width: 1200px; margin: 0 auto 20px; }',
+    '  .header h1 { font-size: 28px; margin: 0 0 4px; }',
+    '  .header .meta { font-size: 13px; color: #8a7a6a; }',
+    '  .grid { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }',
+    '  .book { background: #ffffff; border: 1px solid #ddd8d0; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }',
+    '  .book .title { font-weight: 700; font-size: 16px; line-height: 1.2; }',
+    '  .book .issue { font-size: 13px; color: #8a7a6a; }',
+    '  .grades { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }',
+    '  .grade-pip { background: #1a3a1e; color: #b8d820; padding: 6px 10px; border-radius: 8px; font-weight: 700; font-size: 14px; min-width: 56px; text-align: center; }',
+    '  .grade-pip.cgc { background: #1a5fa8; color: #fff; }',
+    '  .grade-pip.psa { background: #b91c1c; color: #fff; }',
+    '  .grade-pip .lbl { display: block; font-size: 9px; opacity: 0.75; letter-spacing: 0.5px; }',
+    '  .imgs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }',
+    '  .imgs img { width: 100%; height: 120px; object-fit: cover; border-radius: 6px; background: #eee; }',
+    '  .defects { font-size: 12px; color: #5a4a3a; margin-top: 6px; }',
+    '  .defects strong { color: #1a1614; }',
+    '  .err { background: #fff8e8; border: 1px solid #e8d4a0; border-radius: 8px; padding: 16px; max-width: 1200px; margin: 0 auto; }',
+    '</style>',
+    '</head>',
+    '<body>',
+    '  <div class="header">',
+    '    <h1>Robograder Collection Archive</h1>',
+    '    <div class="meta" id="meta">Loading...</div>',
+    '  </div>',
+    '  <div id="content"></div>',
+    '<' + 'script>',
+    '  fetch("collection.json")',
+    '    .then(function(r){ return r.json(); })',
+    '    .then(function(books){',
+    '      fetch("_export_info.json").then(function(r){ return r.json(); }).then(function(info){',
+    '        document.getElementById("meta").textContent =',
+    '          info.bookCount + " books \u00b7 " + info.totalImages + " images \u00b7 exported " + new Date(info.exportDate).toLocaleDateString();',
+    '      }).catch(function(){});',
+    '      var content = document.getElementById("content");',
+    '      var grid = document.createElement("div");',
+    '      grid.className = "grid";',
+    '      books.forEach(function(b){',
+    '        var div = document.createElement("div");',
+    '        div.className = "book";',
+    '        var rg = b.roboGrade || {};',
+    '        var cgc = b.cgcGrade || b.assessedCGCGrade || "\u2014";',
+    '        var psa = b.psaGrade || b.assessedPSAGrade || "\u2014";',
+    '        var html = "";',
+    '        html += "<div>";',
+    '        html += "<div class=\\"title\\">" + escapeHtml(b.title || "Untitled") + "</div>";',
+    '        html += "<div class=\\"issue\\">#" + escapeHtml(b.issue || "?") + (b.issueDate ? " \u00b7 " + escapeHtml(b.issueDate) : "") + "</div>";',
+    '        html += "</div>";',
+    '        html += "<div class=\\"grades\\">";',
+    '        if (rg.score != null) html += "<div class=\\"grade-pip\\"><span class=\\"lbl\\">RG</span>" + Math.round(rg.score) + "</div>";',
+    '        if (cgc !== "\u2014") html += "<div class=\\"grade-pip cgc\\"><span class=\\"lbl\\">CGC" + (b.cgcGrade ? "" : " AI") + "</span>" + cgc + "</div>";',
+    '        if (psa !== "\u2014") html += "<div class=\\"grade-pip psa\\"><span class=\\"lbl\\">PSA" + (b.psaGrade ? "" : " AI") + "</span>" + psa + "</div>";',
+    '        html += "</div>";',
+    '        if (rg.defects && rg.defects.length) {',
+    '          html += "<div class=\\"defects\\"><strong>RG defects:</strong> " + rg.defects.map(function(d){ return escapeHtml((d.type||"") + (d.severity ? " (" + d.severity + ")" : "")); }).join(", ") + "</div>";',
+    '        }',
+    '        if (b._archiveFolder && b._archiveImageCount) html += buildImgs(b._archiveFolder, b._archiveImageCount);',
+    '        div.innerHTML = html;',
+    '        grid.appendChild(div);',
+    '      });',
+    '      content.appendChild(grid);',
+    '    })',
+    '    .catch(function(err){',
+    '      document.getElementById("content").innerHTML =',
+    '        \'<div class="err"><strong>Could not load collection.json.</strong> Make sure this viewer.html is in the same folder as collection.json (i.e. the unzipped archive root). Open in a browser by double-clicking. Some browsers block local file access \u2014 if that happens, try Firefox or run a local server.</div>\';',
+    '    });',
+    '  function escapeHtml(s) {',
+    '    return String(s).replace(/[&<>"\\\']/g, function(c){',
+    '      return ({"&":"&amp;","<":"&lt;",">":"&gt;","\\"":"&quot;","\\\'":"&#39;"})[c];',
+    '    });',
+    '  }',
+    '  function buildImgs(folder, count) {',
+    '    var labels = ["front_cover", "back_cover", "page_quality", "raking_light"];',
+    '    var html = \'<div class="imgs">\';',
+    '    var max = Math.min(count, 4);',
+    '    for (var i = 0; i < max; i++) {',
+    '      var slot = labels[i] || ("image_" + (i+1));',
+    '      html += \'<img src="\' + folder + \'/\' + slot + \'.jpg" alt="\' + slot + \'" onerror="this.src=\\\'\' + folder + \'/\' + slot + \'.png\\\';this.onerror=null">\';',
+    '    }',
+    '    html += "</div>";',
+    '    return html;',
+    '  }',
+    '<' + '/script>',
+    '</body>',
+    '</html>'
+  ];
+  return lines.join('\n');
 }
 
 function decrementCredit(){
