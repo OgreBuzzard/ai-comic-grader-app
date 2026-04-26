@@ -235,7 +235,12 @@
     #cropper-modal { position: fixed; inset: 0; background: #000; z-index: 1000; display: none; flex-direction: column; }
     #cropper-modal.open { display: flex; }
     #cropper-stage { flex: 1; min-height: 0; position: relative; background: #000; overflow: hidden; }
-    #cropper-stage img { display: block; max-width: 100%; }
+    /* Cropper image is hidden until Cropper.js attaches and lays it out properly.
+       Without this, the raw <img> renders top-aligned at natural size, then
+       jumps when Cropper finishes initializing. The .ready class is added by
+       openCropper() right before Cropper attaches. */
+    #cropper-stage img { display: block; max-width: 100%; visibility: hidden; }
+    #cropper-stage.ready img { visibility: visible; }
     #cropper-controls { padding: 16px; background: #1a1a1a; display: flex; gap: 10px; justify-content: space-between; align-items: center; border-top: 1px solid #333; }
     #cropper-controls button { flex: 1; padding: 14px 0; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; }
     #cropper-cancel { background: #333; color: #ccc; }
@@ -1622,7 +1627,12 @@ async function processImagesForSave(images, comicId, slotNames, options = {}) {
     // and storage. Restrict to slot 0 only.
     const wantThumb = generateThumbs && i === 0;
     if (isDataUrl(img)) {
-      // New photo — compress to Blob (full + maybe thumb) and upload in parallel.
+      // New photo — compress + upload the full-size image to Cloud Storage.
+      // Thumbnail (if needed) is generated as a small base64 data URL and
+      // stored INLINE in the Firestore comic doc. This eliminates the per-
+      // thumbnail HTTP round-trip on list view, making the list render
+      // instantly. At 160px / 0.85 quality, each base64 thumb is ~20-30KB,
+      // well under the 1MB doc cap even with many books.
       const slot = slotNames[i] || `image_${i+1}`;
       const tasks = [
         compressImage(img, 1400, 0.65, true).then(blob =>
@@ -1630,20 +1640,15 @@ async function processImagesForSave(images, comicId, slotNames, options = {}) {
         )
       ];
       if (wantThumb) {
-        // 160px is enough for the 52px-wide list view at 3x retina (156px).
-        tasks.push(
-          compressImage(img, 160, 0.7, true).then(blob =>
-            uploadImageToStorage(blob, comicId, `${slot}_thumb`)
-          )
-        );
+        // Inline base64 thumbnail: returned as a data URL string, not uploaded.
+        tasks.push(compressImage(img, 160, 0.85, false));
       }
-      const urls = await Promise.all(tasks);
-      fullResult.push(urls[0]);
-      thumbResult.push(wantThumb ? urls[1] : null);
+      const results = await Promise.all(tasks);
+      fullResult.push(results[0]);
+      thumbResult.push(wantThumb ? results[1] : null);
     } else {
-      // Already a URL — pass through. Preserve the parallel thumbnail if we have
-      // one in existingThumbs; otherwise leave empty (display will fall back to
-      // the full image, which still works just slightly slower).
+      // Already a URL — pass through. Preserve the parallel thumbnail if we
+      // have one in existingThumbs.
       fullResult.push(img);
       thumbResult.push(wantThumb ? (existingThumbs[i] || null) : null);
     }
@@ -3458,7 +3463,14 @@ function openCropper(type, index) {
       toggleDragModeOnDblclick: false,
       movable: false, // additionally lock the frame from being dragged around
       responsive: true,
-      checkOrientation: false
+      checkOrientation: false,
+      ready: function() {
+        // Cropper has fully laid out the image and overlay — reveal the stage.
+        // Without this gate, the raw <img> shows top-aligned at natural size
+        // for ~1s before Cropper finishes initializing, causing a visible jump.
+        const stage = document.getElementById('cropper-stage');
+        if (stage) stage.classList.add('ready');
+      }
     });
 
     // Double-tap inside the frame expands the crop box to fill the whole image.
@@ -3500,11 +3512,14 @@ function openCropper(type, index) {
 
 function cancelCrop() {
   const modal = document.getElementById('cropper-modal');
+  const stage = document.getElementById('cropper-stage');
   if (_cropperInstance) {
     try { _cropperInstance.destroy(); } catch(e) {}
     _cropperInstance = null;
   }
   modal.classList.remove('open');
+  // Reset ready state so next open hides the image until Cropper attaches again
+  if (stage) stage.classList.remove('ready');
   _cropperTarget = null;
 }
 
