@@ -176,6 +176,15 @@
     .btn-gear:hover { color: #5a4a3a; }
     #header-title span.sub { font-size: 10px; color: #9a8a7a; letter-spacing: 3px; text-transform: uppercase; margin-left: 8px; }
     #main { flex: 1; max-width: 900px; margin: 0 auto; width: 100%; padding: 16px 12px; }
+    /* List-view-only cream background pilot. Extends to viewport edges via
+       negative margin, then absorbs the padding back. Detail/edit views render
+       in the same #main but without this wrapper, so they keep the white bg. */
+    .list-bg {
+      background: #d4d9be;
+      margin: -16px -12px -16px -12px;
+      padding: 16px 12px;
+      min-height: calc(100vh - 200px);
+    }
     .btn { border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer; font-size: 13px; font-weight: 600; font-family: inherit; }
     .btn-gold { background: #c8a96e; color: #0d0d0f; }
     .btn-dark { background: #e8e0d5; color: #2a1e14; }
@@ -192,8 +201,8 @@
     label.field-label { display: block; font-size: 11px; color: #8a7a6a; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
     .card { background: #ffffff; border: 1px solid #ddd8d0; border-radius: 8px; padding: 16px 14px; }
     .divider { height: 1px; background: #ddd8d0; margin: 16px 0; }
-    .group-header { font-size: 12px; font-weight: 700; color: #2a1e14; letter-spacing: 1.5px; text-transform: uppercase; padding: 8px 0 8px; border-bottom: 1px solid #ccc8c0; margin-bottom: 6px; cursor: pointer; display: flex; align-items: center; gap: 8px; user-select: none; }
-    .group-chevron { font-size: 13px; color: #6b5e52; transition: transform 0.2s; display: inline-block; }
+    .group-header { font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700; color: #2a1e14; letter-spacing: 2px; text-transform: uppercase; padding: 8px 0 8px; border-bottom: 1px solid #ccc8c0; margin-bottom: 6px; cursor: pointer; display: flex; align-items: center; gap: 8px; user-select: none; }
+    .group-chevron { font-family: 'Barlow Condensed', sans-serif; font-size: 14px; color: #6b5e52; transition: transform 0.2s; display: inline-block; }
     .group-chevron.open { transform: rotate(90deg); }
     .comic-row { background: #ffffff; border: 1px solid #ddd8d0; border-radius: 12px; padding: 10px 10px; cursor: pointer; display: flex; align-items: center; gap: 10px; margin-bottom: 5px; transition: background 0.15s; }
     .comic-row:hover { background: #f0ece6; }
@@ -788,9 +797,9 @@ function buildListBadge(c){
     // beneath in muted olive #6a8030. Same Noto Sans Display condensed font as
     // the label number. Smaller than the label so we keep the basic visual but
     // not the precision suffix or "ROBOGRADE" wordmark — those need real estate.
-    return `<div style="width:60px;height:60px;background:#1a2208;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative">
-      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:32px;font-weight:900;color:#b8d820;line-height:1">${rgScore}</div>
-      <div style="font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;color:#6a8030;letter-spacing:1px;margin-top:2px">RG</div>
+    return `<div style="width:56px;height:56px;background:#e8f0c0;border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid #c8d098">
+      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:#1a2208;line-height:1">${rgScore}</div>
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;color:#5a7030;letter-spacing:1px;margin-top:2px">RG</div>
     </div>`;
   }
   // No RG yet: fall back to the prior priority order so the row isn't empty
@@ -806,23 +815,28 @@ function buildListBadge(c){
 // Real CGC slab grades render as white-body with blue strip; AI-predicted CGC
 // renders as a solid blue square with subtle "CGC" label. Both 36×36 with
 // proportionally-scaled 8px corner radius. Pip sits flush with the bottom of
-// the thumbnail (align-self:flex-end) to signal its lesser importance vs the
-// primary RG badge above.
+// the RG box (achieved by wrapping in a 56-tall container that's vertically
+// centered like the RG box, and pinning the pip to its bottom).
 function buildListCgcPsaStack(c){
   const cgcVal = c.cgcGrade || c.assessedCGCGrade || (((c.myAssessment||c.aiAssessment)&&c.grade)?c.grade:null);
   if(!cgcVal) return "";
   const isOfficial = !!c.cgcGrade;
   const v = String(cgcVal).includes('.') ? cgcVal : parseFloat(cgcVal).toFixed(1);
+  // The wrapper is 56px tall (matching the RG box) and vertically centered in
+  // the row. The pip sits at the bottom of the wrapper, so its bottom edge
+  // aligns with the RG box's bottom edge regardless of overall row height.
+  const wrapStart = `<div style="height:56px;display:flex;flex-direction:column;justify-content:flex-end;align-self:center;flex-shrink:0">`;
+  const wrapEnd = `</div>`;
   if(isOfficial){
-    return `<div style="width:36px;height:36px;border-radius:8px;overflow:hidden;background:#fff;border:1px solid rgba(0,0,0,0.25);display:flex;flex-direction:column;flex-shrink:0;align-self:flex-end">
+    return `${wrapStart}<div style="width:36px;height:36px;border-radius:8px;overflow:hidden;background:#fff;border:1px solid rgba(0,0,0,0.25);display:flex;flex-direction:column">
       <div style="background:#1a5fa8;color:#fff;font-size:8px;font-weight:800;letter-spacing:0.5px;text-align:center;line-height:1.5;height:11px">CGC</div>
       <div style="flex:1;display:flex;align-items:center;justify-content:center"><span style="font-size:12px;font-weight:800;color:#000;line-height:1">${v}</span></div>
-    </div>`;
+    </div>${wrapEnd}`;
   }
-  return `<div style="background:#1a5fa8;border-radius:8px;width:36px;height:36px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:4px;flex-shrink:0;align-self:flex-end">
+  return `${wrapStart}<div style="background:#1a5fa8;border-radius:8px;width:36px;height:36px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:4px">
     <div style="font-size:12px;font-weight:800;color:#fff;line-height:1">${v}</div>
     <div style="font-size:8px;color:rgba(255,255,255,0.75);letter-spacing:0.5px;margin-top:3px">CGC</div>
-  </div>`;
+  </div>${wrapEnd}`;
 }
 // Detail view: full row of all grades
 function buildGradeRowHTML(c){
@@ -859,23 +873,35 @@ function formatDate(d){if(!d)return null;const months=["Jan","Feb","Mar","Apr","
 function formatIssue(i,t){if(!i)return null;const m=i.match(/^A(\d+)$/i);if(m){const isAnnualTitle=t&&/annual$/i.test(t.trim());return isAnnualTitle?`#${m[1]}`:`Annual #${m[1]}`;}return`#${i}`;}
 
 // Compact issue date for list rows: "April 2026" → "Apr 2026", "Summer 1942"
-// → "Sum 1942". Falls through unchanged for shapes we don't recognize.
+// → "Sum 1942", "3/63" → "Mar 1963". Falls through unchanged for shapes we
+// don't recognize.
 function formatIssueDateCompact(d) {
   if (!d) return null;
   const s = String(d).trim();
   // Already compact (3-letter month/season followed by year) — leave alone.
-  if (/^[A-Z][a-z]{2}\s+\d{4}$/.test(s)) return s;
+  if (/^[A-Z][a-z]{2,3}\s+\d{4}$/.test(s)) return s;
   const monthAbbrev = {
     january:'Jan',february:'Feb',march:'Mar',april:'Apr',may:'May',june:'Jun',
     july:'Jul',august:'Aug',september:'Sep',october:'Oct',november:'Nov',december:'Dec',
     spring:'Spr',summer:'Sum',fall:'Fall',autumn:'Fall',winter:'Win',
     'fall/winter':'F/W','spring/summer':'S/S','winter/spring':'W/S','summer/fall':'S/F'
   };
+  const MONTH_BY_NUM = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   // "April 2026" / "Summer 1942" style
-  const m = s.match(/^([A-Za-z\/]+)\s+(\d{4})$/);
+  let m = s.match(/^([A-Za-z\/]+)\s+(\d{4})$/);
   if (m) {
     const key = m[1].toLowerCase();
     if (monthAbbrev[key]) return `${monthAbbrev[key]} ${m[2]}`;
+  }
+  // Numeric "M/YY" or "MM/YY" or "M/YYYY" or "MM/YYYY" — old AI prompt format.
+  // Two-digit years are assumed 1900s for ≥30, 2000s for <30. (Comic publishing
+  // dates < 1930 are essentially never seen in modern collections.)
+  m = s.match(/^(\d{1,2})\/(\d{2}|\d{4})$/);
+  if (m) {
+    const month = parseInt(m[1], 10);
+    let year = parseInt(m[2], 10);
+    if (m[2].length === 2) year = year >= 30 ? 1900 + year : 2000 + year;
+    if (month >= 1 && month <= 12) return `${MONTH_BY_NUM[month]} ${year}`;
   }
   // Year-only: just return it
   if (/^\d{4}$/.test(s)) return s;
@@ -1333,10 +1359,10 @@ function renderList(){
             ${thumb}
             ${buildListBadge(c)}
             <div style="flex:1;min-width:0">
-              <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:17px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>
+              <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>
               <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">
-                ${c.issue?`<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:500;color:#3a2e24">${formatIssue(c.issue,c.title)}</span>`:""}
-                ${c.issueDate?`<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:500;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>`:""}
+                ${c.issue?`<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${formatIssue(c.issue,c.title)}</span>`:""}
+                ${c.issueDate?`<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>`:""}
                 ${(()=>{
                   if(!c.fmv||c.fmv<=0)return "";
                   const fmvStr="$"+c.fmv.toLocaleString("en-US",{minimumFractionDigits:0,maximumFractionDigits:0});
@@ -1357,7 +1383,7 @@ function renderList(){
       html+=`</div>`;
     });
   }
-  main.innerHTML=html;
+  main.innerHTML=`<div class="list-bg">${html}</div>`;
 }
 
 function toggleGroup(title){collapsed[title]=collapsed[title]===false?true:false;renderList();}
