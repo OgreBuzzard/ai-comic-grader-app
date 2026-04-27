@@ -486,7 +486,7 @@
       <!-- Loading pill: shown while window._loadingState is true (auth handshake +
            initial collection fetch). Replaced by the real coin/Buy/Add buttons
            once loadComics() completes. -->
-      <div id="header-loading-pill" style="display:flex;align-items:center;gap:8px;padding:6px 14px;background:rgba(0,0,0,0.04);border-radius:18px;color:#8a7a6a;font-size:13px;font-weight:500;letter-spacing:0.3px">
+      <div id="header-loading-pill" style="display:flex;align-items:center;gap:8px;padding:6px 14px;background:rgba(0,0,0,0.04);border-radius:18px;color:#8a7a6a;font-size:13px;font-weight:500;letter-spacing:0.3px;margin-right:auto">
         <div style="width:14px;height:14px;border:2px solid #c8b8a8;border-top-color:#5a4a3a;border-radius:50%;animation:spin 0.9s linear infinite"></div>
         <span>Loading…</span>
       </div>
@@ -783,13 +783,14 @@ function aiCgcGrade(c){
 function buildListBadge(c){
   if(c.roboGrade && c.roboGrade.score != null){
     const rgScore = Math.round(c.roboGrade.score);
-    // List-view RG box: matches the label's score-box treatment.
-    // Dark olive bg #1a2208, chartreuse number #b8d820, with a small "RG" label
-    // beneath in muted olive #6a8030. Same Noto Sans Display condensed font as
-    // the label number. Smaller than the label so we keep the basic visual but
-    // not the precision suffix or "ROBOGRADE" wordmark — those need real estate.
+    // "+" indicator: shown when high-grade IS available but hasn't been run yet.
+    // Score must be ≥80 (qualified for high-grade tier) AND highGradeUnlocked
+    // is false (high-grade pass not yet completed). Acts as both reminder and
+    // upsell. Score=100 (perfect) does not show + because there's no further
+    // refinement to be had.
+    const showPlus = rgScore >= 80 && rgScore < 100 && !c.highGradeUnlocked;
     return `<div style="width:56px;height:56px;background:#e8f0c0;border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid #c8d098">
-      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:#1a2208;line-height:1">${rgScore}</div>
+      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:#1a2208;line-height:1">${rgScore}${showPlus?'<span style="font-size:18px;font-weight:700;color:#5a7030;margin-left:1px">+</span>':''}</div>
       <div style="font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;color:#5a7030;letter-spacing:1px;margin-top:2px">RG</div>
     </div>`;
   }
@@ -1375,11 +1376,16 @@ function showDetail(id){
   if(!selected)return;
   view="detail";
   document.getElementById("add-btn").style.display="none";
-  const gc=gradeColor(selected.grade);
   const cost=totalCost(selected);
   const isSample = selected._isSample === true;
-  let html=`<div class="sticky-back"><button class="btn-ghost" onclick="showList()">← Back</button></div>
-  <div class="card" style="border-top:3px solid ${gc};margin-top:4px;background:#fff">`;
+
+  // Top row: Back on left, Edit on right (Edit hidden for sample). Both share
+  // the sticky band that pins to the header during scroll.
+  let html=`<div class="sticky-back" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+    <button class="btn-ghost" onclick="showList()">← Back</button>
+    ${!isSample ? `<button class="btn btn-gold" onclick="showEdit('${esc(selected.id)}')">Edit</button>` : ''}
+  </div>
+  <div class="card" style="margin-top:4px;background:#fff">`;
 
   // Sample-entry banner: explains this is a demo so the user doesn't get confused
   // when Edit / Print / public toggle are disabled.
@@ -1393,9 +1399,23 @@ function showDetail(id){
     </div>`;
   }
 
+  // Title block — moved ABOVE images per Session 14 detail-view restructure.
+  // Title first, then issue + publication date on one line, then publisher.
+  // Cert numbers and seller live in their own block after this; they're
+  // metadata, not identity.
+  html+=`<div>
+    <h2 style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:26px;font-weight:900;color:#0d0d0f;line-height:1.1;margin:0">${esc(selected.title)}</h2>
+    ${(selected.issue||selected.issueDate)?`<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:6px">
+      ${selected.issue?`<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:18px;font-weight:600;color:#3a2e24">${formatIssue(selected.issue,selected.title)}</span>`:""}
+      ${selected.issueDate?`<span style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(selected.issueDate))}</span>`:""}
+    </div>`:""}
+    ${selected.publisher?`<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:500;color:#8a7a6a;margin-top:4px">${esc(selected.publisher)}</div>`:""}
+  </div>`;
+
+  // Images block — moved to after the title/issue/publisher header.
   if(selected.images?.length>0){
     const imgs=selected.images;
-    html+=`<div style="display:flex;flex-direction:column;gap:6px">`;
+    html+=`<div style="display:flex;flex-direction:column;gap:6px;margin-top:16px">`;
     if(imgs[0]) html+=`<img class="detail-cover" src="${imgs[0]}" onclick="openLightbox('${selected.id}',0)">`;
     if(imgs[1]) html+=`<img class="detail-cover" src="${imgs[1]}" onclick="openLightbox('${selected.id}',1)">`;
     if(imgs[2]) html+=`<img class="detail-cover" src="${imgs[2]}" onclick="openLightbox('${selected.id}',2)">`;
@@ -1412,14 +1432,15 @@ function showDetail(id){
     </div>`;
   }
 
-  html+=`<div style="margin-top:20px">
-    <h2 style="font-size:22px;color:#1a1614">${esc(selected.title)}</h2>
-    ${selected.issue?`<div style="font-size:16px;color:#3a2e24;margin-top:2px">${formatIssue(selected.issue,selected.title)}</div>`:""}
-    <div style="font-size:13px;color:#8a7a6a;margin-top:4px">${[selected.publisher,selected.issueDate].filter(Boolean).map(esc).join(" · ")}</div>
-    ${selected.cgcCert?`<div style="font-size:12px;color:#9a8a7a;margin-top:4px">Cert #${esc(selected.cgcCert)}</div>`:""}
-    ${selected.psaCert?`<div style="font-size:12px;color:#9a8a7a;margin-top:4px">Cert #${esc(selected.psaCert)}</div>`:""}
-    ${selected.seller?`<div style="font-size:12px;color:#8a7a6a;margin-top:4px">Purchased from: ${esc(selected.seller)}</div>`:""}
-  </div>`;
+  // Cert numbers and seller — metadata that follows the assessment results.
+  // Held in a separate small block (not part of the main title header anymore).
+  if(selected.cgcCert||selected.psaCert||selected.seller){
+    html+=`<div style="margin-top:14px">
+      ${selected.cgcCert?`<div style="font-size:12px;color:#9a8a7a;margin-top:4px">Cert #${esc(selected.cgcCert)}</div>`:""}
+      ${selected.psaCert?`<div style="font-size:12px;color:#9a8a7a;margin-top:4px">Cert #${esc(selected.psaCert)}</div>`:""}
+      ${selected.seller?`<div style="font-size:12px;color:#8a7a6a;margin-top:4px">Purchased from: ${esc(selected.seller)}</div>`:""}
+    </div>`;
+  }
 
   html+=`<div class="divider"></div>
   <div class="grid-2">
@@ -1472,10 +1493,16 @@ function showDetail(id){
   // Public/private toggle row — hidden on the sample entry (it's never public)
   if (!isSample) {
     const isPublic = !!(selected.publicListing);
+    const idForLink = selected.roboGradeId || '';
+    // When public, "ID link" links to the public listing page for this book.
+    // When private, no link is shown — just "Private Listing".
+    const publicSubline = idForLink
+      ? `Grades, Images, and Robograde can be viewed with <a href="https://robograder.app/id/${esc(idForLink)}" target="_blank" rel="noopener" style="color:#7aaeff;text-decoration:underline;font-weight:600">ID link</a>`
+      : `Grades, Images, and Robograde can be viewed once a Robograde ID is assigned`;
     html+=`<div style="display:flex;align-items:center;gap:12px;margin-top:20px;padding:10px 14px;background:#141210;border:1px solid #2a2420;border-radius:10px;">
       <div style="flex:1">
-        <div style="font-size:12px;font-weight:700;color:#8a7a6a;letter-spacing:0.05em">${isPublic ? '🔓 Public listing' : '🔒 Private'}</div>
-        <div style="font-size:11px;color:#4a3a2a;margin-top:2px">${isPublic ? 'Grade, photos, and RoboGrade are publicly visible' : 'Only visible to you'}</div>
+        <div style="font-size:12px;font-weight:700;color:#8a7a6a;letter-spacing:0.05em">${isPublic ? 'Public Listing' : 'Private Listing'}</div>
+        ${isPublic ? `<div style="font-size:11px;color:#6a5a4a;margin-top:3px;line-height:1.5">${publicSubline}</div>` : ''}
       </div>
       <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer;flex-shrink:0">
         <input type="checkbox" ${isPublic ? 'checked' : ''} onchange="togglePublicListing('${esc(selected.id)}', this.checked)"
@@ -1485,14 +1512,17 @@ function showDetail(id){
       </label>
     </div>`;
   }
-  // Action buttons — Edit/Print are hidden for sample entry (view-only demo)
+  // Bottom row: Print Label and Delete only. Edit moved to top sticky bar.
   html+=`<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
     ${(!isSample && selected.roboGrade) ? `<button class="btn" onclick="printLabel('${esc(selected.id)}')" style="background:#1a2208;color:#b8d820;border:1.5px solid #3a5010">Print Label</button>` : ''}
-    ${!isSample ? `<button class="btn btn-gold" onclick="showEdit('${esc(selected.id)}')">Edit</button>` : ''}
     <button class="btn btn-dark" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')">Delete</button>
   </div></div>`;
 
   document.getElementById("main").innerHTML=html;
+  // Force scroll to top whenever a detail view loads. Without this, opening a
+  // detail view leaves the user wherever they were on the previous detail view
+  // (or whatever scroll persisted), which is confusing.
+  window.scrollTo(0, 0);
 }
 
 // Print label code lives in /print-label.js — loaded dynamically when needed.
