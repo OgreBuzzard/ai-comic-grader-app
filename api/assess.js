@@ -567,7 +567,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
   "gateResult": "COMIC",
   "title": "series title, strip leading The",
   "issue": "e.g. 57 or A1",
-  "issueDate": "cover date e.g. 2/68",
+  "issueDate": "cover date as 'Mon YYYY', e.g. 'Feb 1968' or 'Sep 1942'; for season-only books use 'Spr/Sum/Fall/Win YYYY' e.g. 'Sum 1942'",
   "publisher": "publisher name",
   "pageQuality": "full designation e.g. Off-White to White",
   "grade": "CGC grade estimate e.g. 7.0",
