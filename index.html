@@ -219,7 +219,7 @@
     .badge-cgc { background: #1a2a1a; border-color: #2a4a2a; color: #6abf6a; }
     .badge-raw { background: #2a2010; border-color: #4a3a10; color: #a09040; }
     .row-meta { font-size: 11px; color: #6b5e52; margin-top: 2px; display: flex; gap: 8px; flex-wrap: wrap; }
-    .detail-cover { width: 100%; object-fit: cover; border-radius: 4px; cursor: zoom-in; border: 1px solid #ddd8d0; background: #f0ece6; display: block; }
+    .detail-cover { width: 100%; min-height: 200px; object-fit: cover; border-radius: 4px; cursor: zoom-in; border: 1px solid #ddd8d0; background: #f0ece6; display: block; }
     .photo-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 4px; }
     .photo-row2 img { width: 100%; aspect-ratio: 3/4; object-fit: cover; border-radius: 4px; cursor: zoom-in; border: 1px solid #ddd8d0; background: #f0ece6; display: block; }
     .photo-spine { width: 100%; aspect-ratio: 16/5; object-fit: cover; border-radius: 4px; cursor: zoom-in; border: 1px solid #ddd8d0; background: #f0ece6; display: block; margin-top: 4px; }
@@ -563,7 +563,7 @@
     <div class="settings-row" style="cursor:default">
       <div style="flex:1">
         <div class="sr-label">Make new assessments public</div>
-        <div class="sr-detail">Public listings show title, issue, grade, and photos only — never prices, notes, or personal data.</div>
+        <div class="sr-detail">Public listings show Robograde, photos, title, and issue only — never prices, notes, CGC/PSA grades, or personal data.</div>
       </div>
       <div style="margin-left:12px;flex-shrink:0">
         <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer">
@@ -831,31 +831,43 @@ function buildListCgcPsaStack(c){
   </div>${wrapEnd}`;
 }
 // Detail view: full row of all grades
+// Render a vertically-stacked badge pair: official grade on top, AI prediction
+// below, both at full size. Used in detail view and edit view's Assessment
+// Results block when a graded book has both an official grade AND an AI
+// prediction (the CPR signal — "Crack Press Regrade" — where the AI sees
+// potential for a higher grade than the slab currently has). No visual
+// emphasis on disagreement; we leave the user to draw their own conclusion.
+function buildStackedGradePair(officialBadge, aiBadge) {
+  if (!officialBadge && !aiBadge) return '';
+  if (!officialBadge) return aiBadge;
+  if (!aiBadge) return officialBadge;
+  return `<div style="display:flex;flex-direction:column;gap:6px;align-items:center">${officialBadge}${aiBadge}</div>`;
+}
+
 function buildGradeRowHTML(c){
   const des=detectDesignation(c);
   const badges=[];
-  // Order: RoboGrade first, then CGC (official OR predicted, never both), then PSA (same)
+  // Order: RoboGrade ALWAYS first, then CGC pair (official + AI if both),
+  // then PSA pair (official + AI if both). When only one of CGC/PSA exists
+  // (just official OR just AI), it's shown alone, no pair wrapper.
   if(c.roboGrade&&c.roboGrade.score!=null){
     const rgScore=Math.round(c.roboGrade.score);
     badges.push(`<div class="ubadge" style="background:#0f1a05;border-color:#3a5010"><div class="ubadge-body" style="background:#0f1a05"><div class="ubadge-num" style="color:#b8d820">${rgScore}</div><div class="ubadge-lbl" style="color:#b8d820;opacity:0.7">RG</div></div></div>`);
   }
-  // CGC: official takes precedence. Otherwise RG-predicted.
-  if(c.cgcGrade){
-    badges.push(buildBadge(c.cgcGrade,"cgc-official",des,false));
-  } else {
-    const ac=aiCgcGrade(c);
-    if(ac)badges.push(buildBadge(normalizeGrade(ac),"cgc-ai","",false));
-  }
-  // PSA: official takes precedence. Otherwise RG-predicted.
-  if(c.psaGrade){
-    badges.push(buildBadge(c.psaGrade,"psa-official",c.psaDesignation||"universal",false));
-  } else if(c.assessedPSAGrade){
-    badges.push(buildBadge(normalizeGrade(c.assessedPSAGrade),"psa-ai","",false));
-  }
-  // My Grade fallback (raw book, no assessment yet)
+  // CGC: stacked pair if both official and AI prediction exist
+  const cgcOfficial = c.cgcGrade ? buildBadge(c.cgcGrade,"cgc-official",des,false) : null;
+  const cgcAi_grade = aiCgcGrade(c);
+  const cgcAi = cgcAi_grade ? buildBadge(normalizeGrade(cgcAi_grade),"cgc-ai","",false) : null;
+  const cgcStack = buildStackedGradePair(cgcOfficial, cgcAi);
+  if (cgcStack) badges.push(cgcStack);
+  // PSA: stacked pair if both official and AI prediction exist
+  const psaOfficial = c.psaGrade ? buildBadge(c.psaGrade,"psa-official",c.psaDesignation||"universal",false) : null;
+  const psaAi = c.assessedPSAGrade ? buildBadge(normalizeGrade(c.assessedPSAGrade),"psa-ai","",false) : null;
+  const psaStack = buildStackedGradePair(psaOfficial, psaAi);
+  if (psaStack) badges.push(psaStack);
+  // My Grade fallback (raw book, no assessment yet, no CGC/PSA at all)
   const gradeIsAiCgc=!c.assessedCGCGrade&&!!(c.myAssessment||c.aiAssessment)&&!!c.grade;
-  const ac=aiCgcGrade(c);
-  if(c.grade&&!gradeIsAiCgc&&!c.cgcGrade&&!c.psaGrade&&!ac)badges.push(buildBadge(c.grade,"my","",false));
+  if(c.grade&&!gradeIsAiCgc&&!c.cgcGrade&&!c.psaGrade&&!cgcAi_grade)badges.push(buildBadge(c.grade,"my","",false));
   if(badges.length===0)return"";
   return `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;justify-content:center">${badges.join("")}</div>`;
 }
@@ -1413,13 +1425,22 @@ function showDetail(id){
   </div>`;
 
   // Images block — moved to after the title/issue/publisher header.
+  // The forceReflow handler addresses an intermittent partial-render bug where
+  // the browser computed image box height from incomplete decode data and
+  // never recalculated, leaving a thin band of pixels with empty space below.
+  // Symptom signature: tab-switching forces a re-layout that resolves it,
+  // confirming this is a layout-stale-state issue, not a network/decode one.
+  // Fix: explicitly read offsetHeight to force a reflow once the image's
+  // intrinsic dimensions are known. Also runs immediately for cache-hit
+  // images that may have loaded before the onload listener could attach.
   if(selected.images?.length>0){
     const imgs=selected.images;
+    const imgAttrs = `loading="eager" decoding="async" onload="window.forceImgReflow(this)"`;
     html+=`<div style="display:flex;flex-direction:column;gap:6px;margin-top:16px">`;
-    if(imgs[0]) html+=`<img class="detail-cover" src="${imgs[0]}" onclick="openLightbox('${selected.id}',0)">`;
-    if(imgs[1]) html+=`<img class="detail-cover" src="${imgs[1]}" onclick="openLightbox('${selected.id}',1)">`;
-    if(imgs[2]) html+=`<img class="detail-cover" src="${imgs[2]}" onclick="openLightbox('${selected.id}',2)">`;
-    if(imgs[3]) html+=`<img class="photo-spine" src="${imgs[3]}" onclick="openLightbox('${selected.id}',3)">`;
+    if(imgs[0]) html+=`<img class="detail-cover" src="${imgs[0]}" ${imgAttrs} onclick="openLightbox('${selected.id}',0)">`;
+    if(imgs[1]) html+=`<img class="detail-cover" src="${imgs[1]}" ${imgAttrs} onclick="openLightbox('${selected.id}',1)">`;
+    if(imgs[2]) html+=`<img class="detail-cover" src="${imgs[2]}" ${imgAttrs} onclick="openLightbox('${selected.id}',2)">`;
+    if(imgs[3]) html+=`<img class="photo-spine" src="${imgs[3]}" ${imgAttrs} onclick="openLightbox('${selected.id}',3)">`;
     html+=`</div>`;
   }
 
@@ -1517,7 +1538,33 @@ function showDetail(id){
   // detail view leaves the user wherever they were on the previous detail view
   // (or whatever scroll persisted), which is confusing.
   window.scrollTo(0, 0);
+
+  // Handle the cache-hit case: if an image was already loaded when innerHTML
+  // inserted it, the onload handler may not fire. Manually run forceImgReflow
+  // on any images marked complete to catch them. New images that are still
+  // loading will get their onload handler fired normally when bytes arrive.
+  document.querySelectorAll('.detail-cover, .photo-spine').forEach(img => {
+    if (img.complete && img.naturalHeight > 0) {
+      window.forceImgReflow(img);
+    }
+  });
 }
+
+// Force browser reflow for an image element. Reading offsetHeight is the
+// canonical "force layout recalc" trick — the browser MUST run layout to
+// answer the read, so any stale state is flushed. Used to fix the intermittent
+// detail-view partial-render bug confirmed by the tab-switch reproduction.
+window.forceImgReflow = function(imgEl) {
+  if (!imgEl) return;
+  // Reading offsetHeight forces synchronous layout. The void cast prevents
+  // any linter from flagging the unused expression.
+  void imgEl.offsetHeight;
+  // Belt-and-suspenders: also explicitly clear any inline height that might
+  // have been computed from stale intrinsic dimensions.
+  if (imgEl.style.height && imgEl.style.height !== 'auto') {
+    imgEl.style.height = '';
+  }
+};
 
 // Print label code lives in /print-label.js — loaded dynamically when needed.
 // Cuts ~6KB / 198 lines from the main bundle for a feature most users invoke
@@ -1534,7 +1581,8 @@ async function printLabel(id) {
 }
 
 async function togglePublicListing(id, val) {
-  // Update Firestore record
+  // Optimistic visual update on the toggle itself, so the user gets immediate
+  // feedback while the network round-trip happens.
   const track = document.getElementById('detail-public-track');
   const thumb = document.getElementById('detail-public-thumb');
   if (track) track.style.background = val ? '#3a7a20' : '#2a2a2a';
@@ -1554,16 +1602,17 @@ async function togglePublicListing(id, val) {
     // Update local state
     if (comic) comic.publicListing = val;
 
-    // Refresh detail view label
-    const labelEl = document.querySelector('#detail-public-track');
-    if (labelEl) {
-      const parentDiv = labelEl.closest('div[style*="141210"]');
-      if (parentDiv) {
-        const textEl = parentDiv.querySelector('div:first-child div:first-child');
-        if (textEl) textEl.textContent = val ? '🔓 Public listing' : '🔒 Private';
-        const subEl = parentDiv.querySelector('div:first-child div:last-child');
-        if (subEl) subEl.textContent = val ? 'Grade, photos, and RoboGrade are publicly visible' : 'Only visible to you';
-      }
+    // Re-render the entire detail view so the public/private text block,
+    // any conditional sub-lines, and any other state-dependent rendering
+    // all update from a single source of truth (the showDetail template).
+    // This is more robust than DOM traversal patches that have to mirror
+    // showDetail's structure exactly.
+    if (selected && selected.id === id) {
+      const savedScroll = window.scrollY || document.documentElement.scrollTop || 0;
+      showDetail(id);
+      // showDetail resets scroll to top; restore the user's position so they
+      // don't get bounced when they tap the toggle near the bottom.
+      requestAnimationFrame(() => window.scrollTo(0, savedScroll));
     }
   } catch(e) {
     alert('Failed to update: ' + e.message);
@@ -3285,9 +3334,19 @@ function renderForm(){
     ${_assessed?`<div style="margin-top:14px;padding:12px 14px;background:#141210;border:1px solid #2a2420;border-radius:10px;">
       <div style="font-size:10px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase;margin-bottom:8px">Assessment Results</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;">
-        ${formData.assessedCGCGrade?buildBadge(normalizeGrade(formData.assessedCGCGrade),"cgc-ai","",false):""}
-        ${formData.assessedPSAGrade?buildBadge(normalizeGrade(formData.assessedPSAGrade),"psa-ai","",false):""}
         ${formData.roboGrade&&formData.roboGrade.score!=null?`<div style="background:#0f1a05;border:1.5px solid #3a5a0a;border-radius:10px;width:80px;height:80px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0"><div style="font-size:26px;font-weight:900;color:#b8d820;line-height:1">${Math.round(formData.roboGrade.score)}</div><div style="font-size:8px;color:#7abf20;letter-spacing:1px;margin-top:2px">RG</div></div>`:""}
+        ${(()=>{
+          // CGC stack: official on top if present, AI below if present
+          const off = formData.cgcGrade ? buildBadge(formData.cgcGrade,"cgc-official",detectDesignation(formData),false) : "";
+          const ai  = formData.assessedCGCGrade ? buildBadge(normalizeGrade(formData.assessedCGCGrade),"cgc-ai","",false) : "";
+          return buildStackedGradePair(off, ai);
+        })()}
+        ${(()=>{
+          // PSA stack: same pattern
+          const off = formData.psaGrade ? buildBadge(formData.psaGrade,"psa-official",formData.psaDesignation||"universal",false) : "";
+          const ai  = formData.assessedPSAGrade ? buildBadge(normalizeGrade(formData.assessedPSAGrade),"psa-ai","",false) : "";
+          return buildStackedGradePair(off, ai);
+        })()}
         ${formData.pageQuality?`<div style="margin-left:auto;align-self:center">${buildPQBox(formData.pageQuality)}</div>`:""}
       </div>
     </div>`:""}
@@ -3331,7 +3390,7 @@ function renderForm(){
       <div style="font-size:10px;color:#9a8a7a;margin-top:4px">Tap to cycle: — → Y → N</div>
     </div>
     ${(formData.cgcGrade||formData.psaGrade||formData.cgcNotes)?`<div><label class="field-label">Label Notes</label><textarea rows="2" oninput="formData.cgcNotes=this.value">${esc(formData.cgcNotes||"")}</textarea></div>`:""}
-    ${(formData.cgcGrade||formData.graderNotes)?`<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes?4:2}" style="font-style:italic" placeholder="Official grader notes" oninput="formData.graderNotes=this.value">${esc(formData.graderNotes||"")}</textarea></div>`:""}
+    ${(formData.cgcGrade||formData.graderNotes)?`<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes?4:2}" style="font-style:italic" placeholder="Official grader notes (will be considered in assessment predictions)" oninput="formData.graderNotes=this.value">${esc(formData.graderNotes||"")}</textarea></div>`:""}
     ${formData.aiGraderNotes?`<div><label class="field-label" style="color:#4a7a9a">RG Notes</label><textarea rows="8" style="font-style:italic;border-color:#1a3a5c" oninput="formData.aiGraderNotes=this.value">${esc(formData.aiGraderNotes||"")}</textarea></div>`:""}
     ${formData.aiAssessment?`<div><label class="field-label">RG Assessment</label><textarea rows="${Math.max(12,Math.ceil(formData.aiAssessment.length/80))}" oninput="formData.aiAssessment=this.value">${esc(formData.aiAssessment)}</textarea></div>`:""}
     ${formData.psaNotes?`<div><label class="field-label" style="color:#e87a7a">PSA Notes</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes||"")}</textarea></div>`:""}
