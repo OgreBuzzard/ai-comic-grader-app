@@ -686,6 +686,77 @@ function detectDesignation(c){
   return"universal";
 }
 function normalizeGrade(g){if(!g)return g;const gs=String(g);return gs.includes(".")?gs:parseFloat(gs).toFixed(1);}
+
+// ── Title normalization ──────────────────────────────────────────────────────
+// Forces canonical series names regardless of what the cover or label says.
+// Comic publishers are inconsistent: cover may say "X-Men" or "Uncanny X-Men"
+// for the same continuous run, individual issues may drop the adjective. We
+// pick a canonical form (the one CGC/Marvel/databases agree on) and normalize
+// every input — manual entry, CGC-label auto-fill, AI assessment auto-fill —
+// to that form on the way in.
+//
+// Some series names collide across volumes (e.g. "X-Men" is both the 1963 vol. 1
+// and the 1991 vol. 2). For these, normalizeTitle accepts an optional issueDate
+// and uses year-based disambiguation. If no date is available, default to the
+// older / more valuable volume.
+//
+// Add new entries below as title variations come up. Keep keys lowercased and
+// stripped of "The "; the helper does that prep before lookup.
+
+// Simple aliases — same canonical regardless of date.
+const TITLE_ALIASES = {
+  'uncanny x-men': 'Uncanny X-Men',
+  'uncanny x men': 'Uncanny X-Men',
+  'uncanny xmen': 'Uncanny X-Men',
+};
+
+// Date-disambiguated aliases — same input, different canonical based on year.
+// Each entry maps a normalized key to a function that takes the parsed year
+// (number, or null) and returns the canonical title.
+const TITLE_ALIASES_DATED = {
+  'x-men': disambiguateXMen,
+  'x men': disambiguateXMen,
+  'xmen': disambiguateXMen,
+};
+
+// X-Men disambiguation:
+//   1963-1990 → Uncanny X-Men (vol. 1, issues #1-544; covers said both "X-Men"
+//                and "Uncanny X-Men" inconsistently throughout)
+//   1991+     → X-Men (vol. 2, the Jim Lee launch; later renamed New X-Men in
+//                2001, then X-Men: Legacy in 2008. We treat the whole run as
+//                "X-Men" for collection purposes.)
+//   Unknown   → default to Uncanny X-Men (older, far more valuable, much more
+//                likely entry for a Silver/Bronze Age collector)
+function disambiguateXMen(year) {
+  if (year && year >= 1991) return 'X-Men';
+  return 'Uncanny X-Men';
+}
+
+// Extract a 4-digit year from the various date shapes that flow through the
+// app — CGC labels say "1965", "Aug 1980", "1992-04", AI assessment outputs
+// vary. Returns a number or null.
+function extractYearFromIssueDate(s) {
+  if (!s) return null;
+  if (typeof s === 'number') return s >= 1900 && s <= 2100 ? s : null;
+  const m = String(s).match(/(19|20)\d{2}/);
+  return m ? parseInt(m[0], 10) : null;
+}
+
+// Normalize a comic title to canonical form. Runs AFTER the existing trim/
+// collapse/strip-"The" logic, so the lookup key is already cleaned up.
+// issueDate is optional — pass it whenever available so volume disambiguation
+// works (e.g. X-Men 1963 → "Uncanny X-Men" vs X-Men 1991 → "X-Men").
+function normalizeTitle(s, issueDate) {
+  if (!s) return s;
+  const trimmed = s.trim().replace(/\s+/g, ' ').replace(/^The\s+/i, '');
+  const key = trimmed.toLowerCase();
+  if (TITLE_ALIASES[key]) return TITLE_ALIASES[key];
+  if (TITLE_ALIASES_DATED[key]) {
+    const year = extractYearFromIssueDate(issueDate);
+    return TITLE_ALIASES_DATED[key](year);
+  }
+  return trimmed;
+}
 function buildBadge(gradeVal,type,designation,sm){
   const cls=sm?"ubadge ubadge-sm":"ubadge";
   const lbl=GRADE_LABELS[gradeVal]||"";
@@ -712,7 +783,15 @@ function aiCgcGrade(c){
 function buildListBadge(c){
   if(c.roboGrade && c.roboGrade.score != null){
     const rgScore = Math.round(c.roboGrade.score);
-    return `<div class="ubadge ubadge-sm" style="border-color:#6a8a3a;background:#d4ec9a"><div class="ubadge-body" style="background:#d4ec9a;justify-content:flex-end;padding-bottom:7px"><div class="ubadge-num" style="color:#1a3a1e;font-size:24px;line-height:1">${rgScore}</div><div class="ubadge-lbl" style="color:#2d4a20;opacity:0.85;margin-top:4px">RG</div></div></div>`;
+    // List-view RG box: matches the label's score-box treatment.
+    // Dark olive bg #1a2208, chartreuse number #b8d820, with a small "RG" label
+    // beneath in muted olive #6a8030. Same Noto Sans Display condensed font as
+    // the label number. Smaller than the label so we keep the basic visual but
+    // not the precision suffix or "ROBOGRADE" wordmark — those need real estate.
+    return `<div style="width:60px;height:60px;background:#1a2208;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative">
+      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:32px;font-weight:900;color:#b8d820;line-height:1">${rgScore}</div>
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;color:#6a8030;letter-spacing:1px;margin-top:2px">RG</div>
+    </div>`;
   }
   // No RG yet: fall back to the prior priority order so the row isn't empty
   if(c.cgcGrade)return buildBadge(c.cgcGrade,"cgc-official",detectDesignation(c),true);
@@ -726,19 +805,21 @@ function buildListBadge(c){
 // List row right column: a single CGC pip (PSA omitted from condensed view).
 // Real CGC slab grades render as white-body with blue strip; AI-predicted CGC
 // renders as a solid blue square with subtle "CGC" label. Both 36×36 with
-// proportionally-scaled 8px corner radius. Numbers anchored low.
+// proportionally-scaled 8px corner radius. Pip sits flush with the bottom of
+// the thumbnail (align-self:flex-end) to signal its lesser importance vs the
+// primary RG badge above.
 function buildListCgcPsaStack(c){
   const cgcVal = c.cgcGrade || c.assessedCGCGrade || (((c.myAssessment||c.aiAssessment)&&c.grade)?c.grade:null);
   if(!cgcVal) return "";
   const isOfficial = !!c.cgcGrade;
   const v = String(cgcVal).includes('.') ? cgcVal : parseFloat(cgcVal).toFixed(1);
   if(isOfficial){
-    return `<div style="width:36px;height:36px;border-radius:8px;overflow:hidden;background:#fff;border:1px solid rgba(0,0,0,0.25);display:flex;flex-direction:column;flex-shrink:0;align-self:center">
+    return `<div style="width:36px;height:36px;border-radius:8px;overflow:hidden;background:#fff;border:1px solid rgba(0,0,0,0.25);display:flex;flex-direction:column;flex-shrink:0;align-self:flex-end">
       <div style="background:#1a5fa8;color:#fff;font-size:8px;font-weight:800;letter-spacing:0.5px;text-align:center;line-height:1.5;height:11px">CGC</div>
-      <div style="flex:1;display:flex;align-items:flex-end;justify-content:center;padding-bottom:3px"><span style="font-size:12px;font-weight:800;color:#000;line-height:1">${v}</span></div>
+      <div style="flex:1;display:flex;align-items:center;justify-content:center"><span style="font-size:12px;font-weight:800;color:#000;line-height:1">${v}</span></div>
     </div>`;
   }
-  return `<div style="background:#1a5fa8;border-radius:8px;width:36px;height:36px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:4px;flex-shrink:0;align-self:center">
+  return `<div style="background:#1a5fa8;border-radius:8px;width:36px;height:36px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:4px;flex-shrink:0;align-self:flex-end">
     <div style="font-size:12px;font-weight:800;color:#fff;line-height:1">${v}</div>
     <div style="font-size:8px;color:rgba(255,255,255,0.75);letter-spacing:0.5px;margin-top:3px">CGC</div>
   </div>`;
@@ -776,6 +857,30 @@ function fmt$(v){return v!=null&&v>0?`$${v.toLocaleString("en-US",{minimumFracti
 function totalCost(c){return[c.purchasePrice,c.taxesFeesShipping,c.gradingCost,c.cgcShipping].filter(v=>v!=null&&v>0).reduce((a,b)=>a+b,0);}
 function formatDate(d){if(!d)return null;const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];const p=d.split("-");if(p.length<3)return d;const mo=parseInt(p[1],10)-1;if(isNaN(mo)||mo<0||mo>11)return d;return months[mo]+" "+p[2].replace(/^0/,"")+", "+p[0];}
 function formatIssue(i,t){if(!i)return null;const m=i.match(/^A(\d+)$/i);if(m){const isAnnualTitle=t&&/annual$/i.test(t.trim());return isAnnualTitle?`#${m[1]}`:`Annual #${m[1]}`;}return`#${i}`;}
+
+// Compact issue date for list rows: "April 2026" → "Apr 2026", "Summer 1942"
+// → "Sum 1942". Falls through unchanged for shapes we don't recognize.
+function formatIssueDateCompact(d) {
+  if (!d) return null;
+  const s = String(d).trim();
+  // Already compact (3-letter month/season followed by year) — leave alone.
+  if (/^[A-Z][a-z]{2}\s+\d{4}$/.test(s)) return s;
+  const monthAbbrev = {
+    january:'Jan',february:'Feb',march:'Mar',april:'Apr',may:'May',june:'Jun',
+    july:'Jul',august:'Aug',september:'Sep',october:'Oct',november:'Nov',december:'Dec',
+    spring:'Spr',summer:'Sum',fall:'Fall',autumn:'Fall',winter:'Win',
+    'fall/winter':'F/W','spring/summer':'S/S','winter/spring':'W/S','summer/fall':'S/F'
+  };
+  // "April 2026" / "Summer 1942" style
+  const m = s.match(/^([A-Za-z\/]+)\s+(\d{4})$/);
+  if (m) {
+    const key = m[1].toLowerCase();
+    if (monthAbbrev[key]) return `${monthAbbrev[key]} ${m[2]}`;
+  }
+  // Year-only: just return it
+  if (/^\d{4}$/.test(s)) return s;
+  return s;
+}
 function esc(s){return s?String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"):""}
 
 let comics=[], collapsed={}, view="list", selected=null, sortBy="title", search="", _listScrollY=0;
@@ -1196,13 +1301,11 @@ function renderList(){
   }));
   const titles=Object.keys(groups).sort((a,b)=>a.localeCompare(b));
 
-  let html=`<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-    <input placeholder="Search…" value="${esc(search)}" oninput="search=this.value;renderList()" style="flex:1;min-width:180px">
-    <select onchange="sortBy=this.value;renderList()">
+  let html=`<div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+    <select onchange="sortBy=this.value;renderList()" style="font-family:'Barlow Condensed',sans-serif;font-size:15px;font-weight:600;padding:6px 10px">
       <option value="title"${sortBy==="title"?" selected":""}>Title A–Z</option>
-      <option value="grade"${sortBy==="grade"?" selected":""}>Grade ↓</option>
       <option value="dateAdded"${sortBy==="dateAdded"?" selected":""}>Date Added</option>
-      <option value="cost"${sortBy==="cost"?" selected":""}>Cost ↓</option>
+      <option value="grade"${sortBy==="grade"?" selected":""}>Grade ↓</option>
     </select>
   </div>`;
 
@@ -1230,19 +1333,19 @@ function renderList(){
             ${thumb}
             ${buildListBadge(c)}
             <div style="flex:1;min-width:0">
-              <div style="font-size:13px;font-weight:600;color:#1a1614;line-height:1.2">${esc(c.title)}</div>
-              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px">
-                ${c.issue?`<span style="font-size:13px;color:#3a2e24">${formatIssue(c.issue,c.title)}</span>`:""}
-                ${c.pageQuality?`<span style="font-size:11px;color:#8a7a6a">${esc(PQ_ABBREV[c.pageQuality]||c.pageQuality)}</span>`:""}
+              <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:17px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>
+              <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">
+                ${c.issue?`<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:500;color:#3a2e24">${formatIssue(c.issue,c.title)}</span>`:""}
+                ${c.issueDate?`<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:500;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>`:""}
                 ${(()=>{
                   if(!c.fmv||c.fmv<=0)return "";
                   const fmvStr="$"+c.fmv.toLocaleString("en-US",{minimumFractionDigits:0,maximumFractionDigits:0});
-                  if(!c.fmvDate)return `<span style="font-size:11px;color:#8a7a6a">${fmvStr}</span>`;
+                  if(!c.fmvDate)return `<span style="font-family:'Barlow Condensed',sans-serif;font-size:13px;color:#8a7a6a">${fmvStr}</span>`;
                   const months=(Date.now()-new Date(c.fmvDate).getTime())/(1000*60*60*24*30.5);
-                  if(months<6)return `<span style="font-size:11px;color:#4a7a4a;font-weight:600">FMV ${fmvStr}</span>`;
-                  if(months<12)return `<span style="font-size:11px;color:#a07820;font-weight:600" title="FMV may be outdated">FMV ~${fmvStr}</span>`;
+                  if(months<6)return `<span style="font-family:'Barlow Condensed',sans-serif;font-size:13px;color:#4a7a4a;font-weight:600">FMV ${fmvStr}</span>`;
+                  if(months<12)return `<span style="font-family:'Barlow Condensed',sans-serif;font-size:13px;color:#a07820;font-weight:600" title="FMV may be outdated">FMV ~${fmvStr}</span>`;
                   const yr=new Date(c.fmvDate).getFullYear();
-                  return `<span style="font-size:11px;color:#9a8a7a" title="FMV from ${yr}">FMV est. ${fmvStr}</span>`;
+                  return `<span style="font-family:'Barlow Condensed',sans-serif;font-size:13px;color:#9a8a7a" title="FMV from ${yr}">FMV est. ${fmvStr}</span>`;
                 })()}
               </div>
             </div>
@@ -2723,7 +2826,7 @@ function completeAssessment() {
   const {cgc, psa} = _pendingAssessResult;
 
   // Populate formData from held results
-  formData.title=(cgc.title||formData.title||'').trim().replace(/\s+/g,' ').replace(/^The\s+/i,'');
+  formData.title=normalizeTitle((cgc.title||formData.title||'').trim().replace(/\s+/g,' ').replace(/^The\s+/i,''), cgc.issueDate||formData.issueDate);
   formData.issue=cgc.issue!=null?String(cgc.issue):formData.issue||'';
   formData.issueDate=cgc.issueDate||formData.issueDate||'';
   formData.publisher=cgc.publisher||formData.publisher||'';
@@ -3358,7 +3461,7 @@ async function assessPSA(){
     if(!resp.ok){const e=await resp.text();throw new Error("Server error: "+e);}
     const parsed=await resp.json();
     if(parsed.error)throw new Error(parsed.error);
-    formData.title=(parsed.title||formData.title||"").trim().replace(/\s+/g," ").replace(/^The\s+/i,"");
+    formData.title=normalizeTitle((parsed.title||formData.title||"").trim().replace(/\s+/g," ").replace(/^The\s+/i,""), parsed.issueDate||formData.issueDate);
     formData.issue=parsed.issue!=null?String(parsed.issue):formData.issue||"";
     formData.issueDate=parsed.issueDate||formData.issueDate||"";
     formData.publisher=parsed.publisher||formData.publisher||"";
@@ -3719,7 +3822,7 @@ function cancelTreatment(key,e){
 
 async function submitForm(){
   if(!formData.title?.trim()){alert("Title is required.");return;}
-  formData.title=formData.title.trim().replace(/\s+/g," ").replace(/^The\s+/i,"");
+  formData.title=normalizeTitle(formData.title.trim().replace(/\s+/g," ").replace(/^The\s+/i,""), formData.issueDate);
   if(formData.seller?.trim())updateSellerList(formData.seller.trim());
 
   // Determine the comic ID first — we need it for the storage path.
