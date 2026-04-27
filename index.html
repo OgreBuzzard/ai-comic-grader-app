@@ -1493,16 +1493,10 @@ function showDetail(id){
   // Public/private toggle row — hidden on the sample entry (it's never public)
   if (!isSample) {
     const isPublic = !!(selected.publicListing);
-    const idForLink = selected.roboGradeId || '';
-    // When public, "ID link" links to the public listing page for this book.
-    // When private, no link is shown — just "Private Listing".
-    const publicSubline = idForLink
-      ? `Grades, Images, and Robograde can be viewed with <a href="https://robograder.app/id/${esc(idForLink)}" target="_blank" rel="noopener" style="color:#7aaeff;text-decoration:underline;font-weight:600">ID link</a>`
-      : `Grades, Images, and Robograde can be viewed once a Robograde ID is assigned`;
     html+=`<div style="display:flex;align-items:center;gap:12px;margin-top:20px;padding:10px 14px;background:#141210;border:1px solid #2a2420;border-radius:10px;">
       <div style="flex:1">
         <div style="font-size:12px;font-weight:700;color:#8a7a6a;letter-spacing:0.05em">${isPublic ? 'Public Listing' : 'Private Listing'}</div>
-        ${isPublic ? `<div style="font-size:11px;color:#6a5a4a;margin-top:3px;line-height:1.5">${publicSubline}</div>` : ''}
+        ${isPublic ? `<div style="font-size:11px;color:#6a5a4a;margin-top:3px;line-height:1.5">Robograde and Images can be viewed with ID link</div>` : ''}
       </div>
       <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer;flex-shrink:0">
         <input type="checkbox" ${isPublic ? 'checked' : ''} onchange="togglePublicListing('${esc(selected.id)}', this.checked)"
