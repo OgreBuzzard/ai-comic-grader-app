@@ -176,15 +176,6 @@
     .btn-gear:hover { color: #5a4a3a; }
     #header-title span.sub { font-size: 10px; color: #9a8a7a; letter-spacing: 3px; text-transform: uppercase; margin-left: 8px; }
     #main { flex: 1; max-width: 900px; margin: 0 auto; width: 100%; padding: 16px 12px; }
-    /* List-view-only cream background pilot. Extends to viewport edges via
-       negative margin, then absorbs the padding back. Detail/edit views render
-       in the same #main but without this wrapper, so they keep the white bg. */
-    .list-bg {
-      background: #d4d9be;
-      margin: -16px -12px -16px -12px;
-      padding: 16px 12px;
-      min-height: calc(100vh - 200px);
-    }
     .btn { border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer; font-size: 13px; font-weight: 600; font-family: inherit; }
     .btn-gold { background: #c8a96e; color: #0d0d0f; }
     .btn-dark { background: #e8e0d5; color: #2a1e14; }
@@ -201,12 +192,12 @@
     label.field-label { display: block; font-size: 11px; color: #8a7a6a; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
     .card { background: #ffffff; border: 1px solid #ddd8d0; border-radius: 8px; padding: 16px 14px; }
     .divider { height: 1px; background: #ddd8d0; margin: 16px 0; }
-    .group-header { font-family: 'Barlow Condensed', sans-serif; font-size: 14px; font-weight: 700; color: #2a1e14; letter-spacing: 2px; text-transform: uppercase; padding: 8px 0 8px; border-bottom: 1px solid #ccc8c0; margin-bottom: 6px; cursor: pointer; display: flex; align-items: center; gap: 8px; user-select: none; }
-    .group-chevron { font-family: 'Barlow Condensed', sans-serif; font-size: 14px; color: #6b5e52; transition: transform 0.2s; display: inline-block; }
+    .group-header { font-family: 'Barlow Condensed', sans-serif; font-size: 10px; font-weight: 700; color: #2a1e14; letter-spacing: 2px; text-transform: uppercase; padding: 8px 0 8px; border-bottom: 1px solid #ccc8c0; margin-bottom: 6px; cursor: pointer; display: flex; align-items: center; gap: 8px; user-select: none; }
+    .group-chevron { font-family: 'Barlow Condensed', sans-serif; font-size: 11px; color: #6b5e52; transition: transform 0.2s; display: inline-block; }
     .group-chevron.open { transform: rotate(90deg); }
     .comic-row { background: #ffffff; border: 1px solid #ddd8d0; border-radius: 12px; padding: 10px 10px; cursor: pointer; display: flex; align-items: center; gap: 10px; margin-bottom: 5px; transition: background 0.15s; }
     .comic-row:hover { background: #f0ece6; }
-    .comic-thumb { align-self: stretch; object-fit: cover; border-radius: 8px; flex-shrink: 0; width: 52px; }
+    .comic-thumb { align-self: stretch; object-fit: cover; border-radius: 0; flex-shrink: 0; width: 52px; }
     .grade-badge { min-width: 48px; text-align: center; background: #f0ece6; border-radius: 4px; padding: 6px 3px; flex-shrink: 0; border: 1px solid; }
     .grade-num { font-size: 16px; font-weight: 700; line-height: 1; }
     .grade-lbl { font-size: 7px; opacity: 0.7; margin-top: 2px; }
@@ -1363,16 +1354,6 @@ function renderList(){
               <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">
                 ${c.issue?`<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${formatIssue(c.issue,c.title)}</span>`:""}
                 ${c.issueDate?`<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>`:""}
-                ${(()=>{
-                  if(!c.fmv||c.fmv<=0)return "";
-                  const fmvStr="$"+c.fmv.toLocaleString("en-US",{minimumFractionDigits:0,maximumFractionDigits:0});
-                  if(!c.fmvDate)return `<span style="font-family:'Barlow Condensed',sans-serif;font-size:13px;color:#8a7a6a">${fmvStr}</span>`;
-                  const months=(Date.now()-new Date(c.fmvDate).getTime())/(1000*60*60*24*30.5);
-                  if(months<6)return `<span style="font-family:'Barlow Condensed',sans-serif;font-size:13px;color:#4a7a4a;font-weight:600">FMV ${fmvStr}</span>`;
-                  if(months<12)return `<span style="font-family:'Barlow Condensed',sans-serif;font-size:13px;color:#a07820;font-weight:600" title="FMV may be outdated">FMV ~${fmvStr}</span>`;
-                  const yr=new Date(c.fmvDate).getFullYear();
-                  return `<span style="font-family:'Barlow Condensed',sans-serif;font-size:13px;color:#9a8a7a" title="FMV from ${yr}">FMV est. ${fmvStr}</span>`;
-                })()}
               </div>
             </div>
             ${buildListCgcPsaStack(c)}
@@ -1383,7 +1364,7 @@ function renderList(){
       html+=`</div>`;
     });
   }
-  main.innerHTML=`<div class="list-bg">${html}</div>`;
+  main.innerHTML=html;
 }
 
 function toggleGroup(title){collapsed[title]=collapsed[title]===false?true:false;renderList();}
