@@ -757,6 +757,112 @@ function normalizeTitle(s, issueDate) {
   }
   return trimmed;
 }
+
+// ── Comic ID generation (added S11) ─────────────────────────────────────────
+// Old IDs in the wild: comic:0103, comic:user_asm45, comic:user_1745692100123.
+// New format: comic:{title-abbr}-{issue-padded-3}-{timestamp}
+//   e.g. comic:asm-064-1745692100123, comic:uxm-141-1745692100456
+// The timestamp suffix preserves uniqueness; the prefix is human-readable so
+// Matt can scan the Firestore doc list without selecting each entry. Existing
+// IDs are NOT migrated — only new books use the new format.
+//
+// Title abbreviations: known Marvel/DC titles get short codes; everything else
+// falls back to a slugified version of the (already-normalized) title.
+const COMIC_TITLE_ABBR = {
+  'amazing spider-man': 'asm',
+  'spectacular spider-man': 'spec',
+  'web of spider-man': 'web',
+  'uncanny x-men': 'uxm',
+  'x-men': 'xm',
+  'x-factor': 'xfac',
+  'x-force': 'xfor',
+  'new mutants': 'nmut',
+  'wolverine': 'wolv',
+  'incredible hulk': 'hulk',
+  'fantastic four': 'ff',
+  'avengers': 'aveng',
+  'west coast avengers': 'wca',
+  'iron man': 'im',
+  'captain america': 'cap',
+  'thor': 'thor',
+  'journey into mystery': 'jim',
+  'tales of suspense': 'tos',
+  'tales to astonish': 'tta',
+  'strange tales': 'st',
+  'daredevil': 'dd',
+  'doctor strange': 'doc',
+  'silver surfer': 'ss',
+  'sub-mariner': 'sub',
+  'punisher': 'pun',
+  'ghost rider': 'gr',
+  'conan the barbarian': 'conan',
+  'savage sword of conan': 'ssoc',
+  'tomb of dracula': 'tod',
+  'marvel team-up': 'mtu',
+  'marvel two-in-one': 'mtio',
+  'marvel premiere': 'mp',
+  'marvel spotlight': 'msl',
+  'master of kung fu': 'mokf',
+  'power man and iron fist': 'pmif',
+  'power man': 'pm',
+  'iron fist': 'if',
+  'moon knight': 'mk',
+  'nova': 'nova',
+  'warlock': 'warl',
+  'star wars': 'sw',
+  // DC
+  'action comics': 'ac',
+  'detective comics': 'dc',
+  'superman': 'sup',
+  'batman': 'bat',
+  'world\'s finest comics': 'wfc',
+  'world\'s finest': 'wfc',
+  'wonder woman': 'ww',
+  'green lantern': 'gl',
+  'green arrow': 'ga',
+  'flash': 'flash',
+  'justice league of america': 'jla',
+  'justice league': 'jl',
+  'teen titans': 'tt',
+  'new teen titans': 'ntt',
+  'legion of super-heroes': 'losh',
+  'aquaman': 'aqua',
+  'house of mystery': 'hom',
+  'house of secrets': 'hos',
+  'brave and the bold': 'bb',
+  'all-star comics': 'asc',
+  'all-star squadron': 'ass',
+  'sandman': 'sand',
+  'swamp thing': 'swth'
+};
+
+function abbreviateTitleForId(title) {
+  if (!title) return 'untitled';
+  const key = title.trim().toLowerCase();
+  if (COMIC_TITLE_ABBR[key]) return COMIC_TITLE_ABBR[key];
+  // Fallback: slugify. Keep alphanumerics and hyphens; collapse runs.
+  return key
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32) || 'untitled';
+}
+
+function padIssueForId(issue) {
+  if (issue == null || issue === '') return '000';
+  // Strip non-digits (e.g. "Annual 1", "#52" → "1", "52"); pad to 3.
+  // Issues over 999 (Action Comics, Detective Comics) overflow gracefully —
+  // they just won't sort cleanly past 999, which is acceptable.
+  const digits = String(issue).replace(/\D/g, '');
+  if (!digits) return '000';
+  return digits.padStart(3, '0');
+}
+
+function buildComicId(title, issue) {
+  const abbr = abbreviateTitleForId(title);
+  const issueStr = padIssueForId(issue);
+  return `comic:${abbr}-${issueStr}-${Date.now()}`;
+}
+
 function buildBadge(gradeVal,type,designation,sm){
   const cls=sm?"ubadge ubadge-sm":"ubadge";
   const lbl=GRADE_LABELS[gradeVal]||"";
@@ -1071,6 +1177,18 @@ async function saveComic(rec){
   // schemaVersion gets stamped here. submitForm always sets it; this catches
   // any future paths (assessment-only updates, migrations, etc.) that don't.
   if (rec && rec.schemaVersion == null) rec.schemaVersion = 2;
+  // Ownership lifecycle (added S11). Field is written on every save during beta
+  // so that all data is future-proofed for the post-beta UI/sorting work. The
+  // three valid values are 'Owned', 'Sold', and 'Watching'. Anything missing
+  // defaults to 'Owned' — this catches existing books on their next save and
+  // any future code paths that forget to set it. dateSold and salePrice are
+  // only meaningful when ownership === 'Sold'; for Owned/Watching they remain
+  // null and are not displayed.
+  if (rec) {
+    if (rec.ownership == null) rec.ownership = 'Owned';
+    if (rec.dateSold === undefined) rec.dateSold = null;
+    if (rec.salePrice === undefined) rec.salePrice = null;
+  }
   syncMsg("Saving...");
   try{
     await fsSetDoc(userComicDoc(rec.id),rec);
@@ -1160,15 +1278,35 @@ async function loadUserCredits(){
     const fsDoc=window._fsDoc;
     const fsGetDoc=window._fsGetDoc;
     const snap = await fsGetDoc(fsDoc(db,"users",window._currentUser.uid));
+    // Pull profile fields from Firebase Auth — populated by Google Sign-In automatically.
+    // Name + email only; photoURL not needed for admin debugging UX.
+    const profile = {
+      displayName: window._currentUser.displayName || null,
+      email: window._currentUser.email || null
+    };
     if(snap.exists()){
       const data = snap.data();
       window._userCredits = data.assessmentCredits || 0;
       window._sampleDismissed = data.sampleDismissed === true;
       if (data.everPurchased) window._userEverPaid = true;
       else if (window._userCredits > 0) window._userEverPaid = true;
+      // Profile-field backfill (added S11). Existing users may have signed up
+      // before we wrote profile data to Firestore. On every sign-in, refresh
+      // displayName/email if either is missing or out of date. This is for
+      // Matt's debugging/admin UX in the Firebase console — he wants to
+      // identify users by name instead of UID. Merge-write so we don't
+      // clobber other fields. Only write if something would change.
+      const needsUpdate =
+        data.displayName !== profile.displayName ||
+        data.email !== profile.email;
+      if (needsUpdate) {
+        const userRef = window._fsDoc(db, "users", window._currentUser.uid);
+        await window._fsSetDoc(userRef, profile, { merge: true });
+      }
     } else {
       const userRef = window._fsDoc(db, "users", window._currentUser.uid);
       await window._fsSetDoc(userRef, {
+        ...profile,
         assessmentCredits: 5,
         createdAt: new Date().toISOString(),
         freeCreditsGranted: true
@@ -3917,7 +4055,9 @@ async function submitForm(){
 
   // Determine the comic ID first — we need it for the storage path.
   // (Generated here so new books and edits both use the same upload path.)
-  const id = formData.id || `comic:user_${Date.now()}`;
+  // New format (S11): comic:{title-abbr}-{issue-padded}-{timestamp} for
+  // human-readable Firestore doc lists. Old IDs preserved unchanged on edit.
+  const id = formData.id || buildComicId(formData.title, formData.issue);
 
   // ── Image processing & upload to Cloud Storage ──
   // formData.images[] may contain a mix of:
@@ -3965,6 +4105,13 @@ async function submitForm(){
     thumbnails:finalThumbnails,
     cornerImages:finalCornerImages,
     publicListing: !!(window._publicByDefault),
+    // Ownership lifecycle (added S11). Defaults to 'Owned' for new books and
+    // preserves any existing value (e.g. 'Sold', 'Watching') if already set.
+    // dateSold + salePrice are populated only when ownership === 'Sold';
+    // otherwise they stay null and are not displayed in the UI.
+    ownership: formData.ownership || 'Owned',
+    dateSold: formData.dateSold || null,
+    salePrice: formData.salePrice !== "" && formData.salePrice != null ? parseFloat(formData.salePrice) : null,
     purchasePrice:formData.purchasePrice!==""?parseFloat(formData.purchasePrice):null,
     taxesFeesShipping:formData.taxesFeesShipping!==""?parseFloat(formData.taxesFeesShipping):null,
     gradingCost:formData.gradingCost!==""?parseFloat(formData.gradingCost):null,
