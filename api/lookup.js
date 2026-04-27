@@ -66,6 +66,7 @@ export default async function handler(req, res) {
       images:        comic.images || [],
       // Page quality is condition info, not personal — include it
       pageQuality:   comic.pageQuality || '',
+      highGradeUnlocked: comic.highGradeUnlocked || false,
     };
 
     return res.status(200).json(publicRecord);
