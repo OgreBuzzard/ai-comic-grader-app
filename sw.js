@@ -1,4 +1,4 @@
-const CACHE = 'cgc-v1';
+const CACHE = 'robograder-v2';
 const ASSETS = ['/', '/index.html', '/manifest.json'];
 
 self.addEventListener('install', e => {
