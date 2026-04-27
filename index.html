@@ -112,6 +112,17 @@
           window._firebaseReady = true;
           window.dispatchEvent(new Event('firebase-ready'));
         }
+        // Hydrate the "public by default" preference from localStorage at sign-in
+        // (S11 fix). Previously, _publicByDefault was only populated when the user
+        // opened Settings — so adding a book without opening Settings first meant
+        // the setting was undefined and the book defaulted to private regardless
+        // of the toggle state. Now it's hydrated as soon as the app is usable.
+        try {
+          const stored = localStorage.getItem('rg_public_default');
+          window._publicByDefault = stored === '1';
+        } catch(e) {
+          window._publicByDefault = false;
+        }
         await loadUserCredits();
         await checkTermsAcceptance();
         // _loadingState gets cleared inside loadComics() once the collection
@@ -242,10 +253,12 @@
     #cropper-stage img { display: block; max-width: 100%; visibility: hidden; }
     #cropper-stage.ready img { visibility: visible; }
     #cropper-controls { padding: 16px; background: #1a1a1a; display: flex; gap: 10px; justify-content: space-between; align-items: center; border-top: 1px solid #333; }
-    #cropper-controls button { flex: 1; padding: 14px 0; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; }
+    #cropper-controls button { padding: 14px 0; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; }
+    #cropper-cancel, #cropper-confirm { flex: 1; }
+    #cropper-rotate { flex: 0 0 56px; height: 48px; padding: 0; display: flex; align-items: center; justify-content: center; background: #333; color: #ccc; }
     #cropper-cancel { background: #333; color: #ccc; }
     #cropper-confirm { background: #1a4a2a; color: #6abf6a; }
-    #cropper-cancel:active, #cropper-confirm:active { transform: scale(0.97); }
+    #cropper-cancel:active, #cropper-confirm:active, #cropper-rotate:active { transform: scale(0.97); }
     /* Cropper.js styling: simplified UX with only 4 edge handles (no corners).
        Edge handles are large pill shapes for easy thumb-grabbing on mobile.
        Touch target = visual element in Cropper.js, so bigger visual = bigger
@@ -635,6 +648,9 @@
   </div>
   <div id="cropper-controls">
     <button id="cropper-cancel" onclick="cancelCrop()">Cancel</button>
+    <button id="cropper-rotate" onclick="rotateCropImage()" aria-label="Rotate counter-clockwise 90 degrees" title="Rotate left">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 9 8 9"/></svg>
+    </button>
     <button id="cropper-confirm" onclick="confirmCrop()">Apply Crop</button>
   </div>
 </div>
@@ -1582,6 +1598,63 @@ function showDetail(id){
     html+=`</div>`;
   }
 
+  // Corner images (high-grade) — render only when high-grade has been unlocked
+  // for this book. Display in clockwise order: TL → TR → BR → BL.
+  // Storage order is [0=TL, 1=TR, 2=BL, 3=BR] (STORAGE_SLOTS_CORNER), so the
+  // display order picks indices 0, 1, 3, 2 to walk clockwise. Indices into
+  // openLightbox are kept as the raw cornerImages indices so the lightbox
+  // opens the right photo. The lightbox's internal navigation may step in
+  // storage order rather than clockwise order — acceptable for now.
+  if(selected.highGradeUnlocked && selected.cornerImages?.length>0){
+    const ci = selected.cornerImages;
+    const imgAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
+    const labels = ['Top Left','Top Right','Bottom Right','Bottom Left'];
+    const order = [0, 1, 3, 2]; // clockwise: TL, TR, BR, BL
+    html += `<div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
+    order.forEach((srcIdx, displayIdx) => {
+      const url = ci[srcIdx];
+      if (url) {
+        html += `<div style="position:relative">
+          <img class="detail-corner" src="${url}" ${imgAttrs} onclick="openCornerLightbox('${selected.id}',${srcIdx})" style="width:100%;display:block;border-radius:4px;background:#1a1a1a">
+          <div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(0,0,0,0.55);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${labels[displayIdx].toUpperCase()}</div>
+        </div>`;
+      }
+    });
+    html += `</div>`;
+  }
+
+  // Restoration check images — placeholder. The restoration check feature
+  // currently runs against transient images that are not persisted on the
+  // comic record (see ~L2487). When that flow is updated to save the four
+  // restoration photos in a discrete `restorationImages` array, this block
+  // will render them in the order: Front UV → Front Interior → Back Interior
+  // → Interior Staples. Until then this is a no-op so the UI does not break.
+  if(selected.restorationCheckTier && Array.isArray(selected.restorationImages) && selected.restorationImages.length>0){
+    const ri = selected.restorationImages;
+    const imgAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
+    const rLabels = ['Front UV','Front Interior','Back Interior','Interior Staples'];
+    html += `<div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
+    rLabels.forEach((label, idx) => {
+      const url = ri[idx];
+      if (url) {
+        html += `<div style="position:relative">
+          <img class="detail-corner" src="${url}" ${imgAttrs} style="width:100%;display:block;border-radius:4px;background:#1a1a1a">
+          <div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(0,0,0,0.55);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${label.toUpperCase()}</div>
+        </div>`;
+      }
+    });
+    html += `</div>`;
+  }
+
+  // Robograde results block — moved up immediately after the image area
+  // (S11 detail-view restructure). Heading is "Robograde Results" rather
+  // than "Condition Assessment" (condition is implicit). The buildRoboGrade
+  // helper now receives the full comic so it can read highGradeUnlocked
+  // for the precision suffix.
+  if(selected.roboGrade){
+    html+=`<div style="margin-top:16px">${buildRoboGradeDisplay(selected.roboGrade, selected)}</div>`;
+  }
+
   // Assessment results — RG, CGC, PSA badges + centered PQ pill
   const gradeRow=buildGradeRowHTML(selected);
   if(gradeRow||selected.pageQuality){
@@ -1646,7 +1719,6 @@ function showDetail(id){
     rHtml+='</div></div>';
     html+=rHtml;
   }
-  if(selected.roboGrade)html+=`<div style="margin-top:20px">${buildRoboGradeDisplay(selected.roboGrade)}</div>`;
   if(selected.notes)html+=`<div style="margin-top:20px"><div class="section-label">My Notes</div><div style="font-size:13px;color:#6a5a4a;line-height:1.7">${esc(selected.notes)}</div></div>`;
 
   // Public/private toggle row — hidden on the sample entry (it's never public)
@@ -1808,6 +1880,43 @@ function openLightbox(id,idx){
 
   // Tapping outside the image (background) closes the lightbox.
   // Tapping the image itself should not close (panzoom handles gestures there).
+  box.onclick = (e) => {
+    if (e.target === box || e.target.id === 'lightbox-stage') closeLightbox();
+  };
+}
+
+// Corner-image variant (S11). Reads from cornerImages instead of images.
+// Otherwise identical lightbox behavior (panzoom, double-tap, background-close).
+function openCornerLightbox(id, idx){
+  const c = comics.find(x => x.id === id);
+  if (!c || !c.cornerImages?.[idx]) return;
+  const img = document.getElementById("lightbox-img");
+  const box = document.getElementById("lightbox");
+  img.src = c.cornerImages[idx];
+  box.style.display = "flex";
+
+  if (typeof Panzoom === 'function') {
+    if (_panzoomInstance) {
+      try { _panzoomInstance.destroy(); } catch(e){}
+      _panzoomInstance = null;
+    }
+    const init = () => {
+      _panzoomInstance = Panzoom(img, {
+        maxScale: 6,
+        minScale: 1,
+        contain: 'inside',
+        canvas: true,
+        step: 0.4,
+        animate: true
+      });
+      img.parentElement.addEventListener('wheel', _panzoomInstance.zoomWithWheel);
+      img.addEventListener('touchend', handleDoubleTap);
+      img.addEventListener('dblclick', handleDoubleTap);
+    };
+    if (img.complete) init();
+    else img.addEventListener('load', init, {once:true});
+  }
+
   box.onclick = (e) => {
     if (e.target === box || e.target.id === 'lightbox-stage') closeLightbox();
   };
@@ -3532,7 +3641,7 @@ function renderForm(){
     ${formData.aiGraderNotes?`<div><label class="field-label" style="color:#4a7a9a">RG Notes</label><textarea rows="8" style="font-style:italic;border-color:#1a3a5c" oninput="formData.aiGraderNotes=this.value">${esc(formData.aiGraderNotes||"")}</textarea></div>`:""}
     ${formData.aiAssessment?`<div><label class="field-label">RG Assessment</label><textarea rows="${Math.max(12,Math.ceil(formData.aiAssessment.length/80))}" oninput="formData.aiAssessment=this.value">${esc(formData.aiAssessment)}</textarea></div>`:""}
     ${formData.psaNotes?`<div><label class="field-label" style="color:#e87a7a">PSA Notes</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes||"")}</textarea></div>`:""}
-    ${formData.roboGrade?buildRoboGradeDisplay(formData.roboGrade):""}
+    ${formData.roboGrade?buildRoboGradeDisplay(formData.roboGrade, formData):""}
     <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes||"")}</textarea></div>
     <div style="display:flex;gap:10px;padding-top:4px">
       <button class="btn btn-gold" onclick="submitForm()">${isEdit?"Save Changes":"Add to Collection"}</button>
@@ -3545,7 +3654,7 @@ function renderForm(){
 
 function renderImgPreview(){}
 
-function buildRoboGradeDisplay(rg) {
+function buildRoboGradeDisplay(rg, comic) {
   if (!rg) return '';
 
   const score    = rg.score;
@@ -3558,6 +3667,21 @@ function buildRoboGradeDisplay(rg) {
   const LIGHT      = '#7a8a5a';
   const RULE       = '#2a3a12';
   const BG         = '#0f1a05';
+
+  // Precision suffix logic (S11) — mirrors print-label.js exactly.
+  // Score 100      → no suffix (perfect, no uncertainty)
+  // High-grade run → ±N (narrower confidence range, default ±3)
+  // Score ≥80, no high-grade → "+" (signals high-grade is available)
+  // Score <80, no high-grade → ±N (standard range, default ±8)
+  // The previous version used `score >= 80 ? '+' : '±N'` and never read
+  // highGradeUnlocked, which meant a high-graded 86 still showed "+".
+  const highGradeRun = !!(comic && comic.highGradeUnlocked);
+  let precision = '';
+  if (scoreRounded < 100) {
+    if (highGradeRun) precision = `±${rg.confidenceRange || 3}`;
+    else if (scoreRounded >= 80) precision = '+';
+    else precision = `±${rg.confidenceRange || 8}`;
+  }
 
   // Severity color
   function sevColor(s) {
@@ -3625,35 +3749,38 @@ function buildRoboGradeDisplay(rg) {
     rg.restorationFlags&&rg.restorationFlags.length ? `<div style="font-size:11px;color:#e05050;margin-top:4px">⚠ Restoration flags: ${rg.restorationFlags.join(', ')}</div>` : '',
   ].filter(Boolean).join('');
 
+  // Layout (S11): heading "ROBOGRADE RESULTS" spans full container width on
+  // top so the score box (left) and 2x2 sub-grade grid (right) can both
+  // start from the same baseline below it. Previously the heading was nested
+  // inside the right column, where it wrapped to two lines and pushed the
+  // sub-grade boxes down out of alignment with the top of the score box.
   return `<div style="background:${BG};border:1.5px solid ${OLIVE_MID};border-radius:12px;padding:14px;margin-bottom:8px">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+    <div style="font-size:10px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:10px">ROBOGRADE RESULTS</div>
+    <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:14px">
       <div style="background:${OLIVE};border-radius:16px;width:88px;height:88px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;border:1.5px solid ${OLIVE_MID}">
         <div style="font-size:8px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:2px">RG</div>
         <div style="display:flex;align-items:flex-start;gap:2px">
           <span style="font-size:42px;font-weight:900;color:${CHARTREUSE};line-height:1">${scoreRounded}</span>
-          <span style="font-size:13px;font-weight:700;color:${OLIVE_LT};margin-top:4px">${scoreRounded >= 80 ? '+' : '±'+(rg.confidenceRange||8)}</span>
+          ${precision ? `<span style="font-size:13px;font-weight:700;color:${OLIVE_LT};margin-top:4px">${precision}</span>` : ''}
         </div>
         <div style="font-size:7px;color:#2a4a10;margin-top:2px">V${rg.version||'2.0'}</div>
       </div>
-      <div style="flex:1">
-        <div style="font-size:10px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:8px">CONDITION ASSESSMENT</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
-          <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
-            <div style="font-size:18px;font-weight:800;color:${CHARTREUSE}">${fs}</div>
-            <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px">FRONT</div>
-          </div>
-          <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
-            <div style="font-size:18px;font-weight:800;color:${CHARTREUSE}">${bs}</div>
-            <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px">BACK</div>
-          </div>
-          <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
-            <div style="font-size:18px;font-weight:800;color:${CHARTREUSE}">${ss}</div>
-            <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px">SPINE</div>
-          </div>
-          <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
-            <div style="font-size:18px;font-weight:800;color:${CHARTREUSE}">${ins}</div>
-            <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px">INTERIOR</div>
-          </div>
+      <div style="flex:1;display:grid;grid-template-columns:1fr 1fr;gap:4px">
+        <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
+          <div style="font-size:18px;font-weight:800;color:${CHARTREUSE}">${fs}</div>
+          <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px">FRONT</div>
+        </div>
+        <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
+          <div style="font-size:18px;font-weight:800;color:${CHARTREUSE}">${bs}</div>
+          <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px">BACK</div>
+        </div>
+        <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
+          <div style="font-size:18px;font-weight:800;color:${CHARTREUSE}">${ss}</div>
+          <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px">SPINE</div>
+        </div>
+        <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
+          <div style="font-size:18px;font-weight:800;color:${CHARTREUSE}">${ins}</div>
+          <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px">INTERIOR</div>
         </div>
       </div>
     </div>
@@ -3852,6 +3979,24 @@ function cancelCrop() {
   // Reset ready state so next open hides the image until Cropper attaches again
   if (stage) stage.classList.remove('ready');
   _cropperTarget = null;
+}
+
+// Rotate the image counter-clockwise 90° (S11). Cropper.js's rotate() is
+// relative; -90 rotates by 90° CCW. After rotation, reset the crop box to
+// full bounds — otherwise the previous box can land outside the new image
+// orientation and Cropper.js shows it as a tiny strip in the corner.
+function rotateCropImage() {
+  if (!_cropperInstance) return;
+  _cropperInstance.rotate(-90);
+  // Re-fit the canvas to the container after rotation (Cropper handles the math)
+  // and reset the crop box to full image bounds for clean continued editing.
+  const canvas = _cropperInstance.getCanvasData();
+  _cropperInstance.setCropBoxData({
+    left: canvas.left,
+    top: canvas.top,
+    width: canvas.width,
+    height: canvas.height
+  });
 }
 
 function confirmCrop() {
