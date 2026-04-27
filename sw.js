@@ -13,8 +13,15 @@ self.addEventListener('activate', e => {
   self.clients.claim();
 });
 
-self.addEventListener('fetch', e => {
-  e.respondWith(
-    fetch(e.request).catch(() => caches.match(e.request))
-  );
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+
+  // Never intercept API requests — they're dynamic, per-user, often POST with
+  // bodies that can't be cached safely. Letting them pass through to the
+  // network avoids the "Returned response is null" error class.
+  if (url.pathname.startsWith('/api/')) {
+    return; // no respondWith — browser handles the fetch normally
+  }
+
+  // ... rest of existing handler
 });
