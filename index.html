@@ -19,7 +19,7 @@
   <meta property="og:url" content="https://robograder.app">
   <meta property="og:image" content="https://robograder.app/og-card.jpg">
   <meta property="og:image:width" content="1254">
-  <meta property="og:image:height" content="1134">
+  <meta property="og:image:height" content="660">
   <meta property="og:image:alt" content="Robograder mascot holding a Silver Age comic book">
 
   <!-- Twitter / X Card -->
@@ -295,8 +295,9 @@
     .treatment-btn { padding: 6px 14px; border-radius: 4px; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid; font-family: inherit; }
     .sticky-back { position: sticky; top: 56px; z-index: 90; background: #f5f4f2; padding: 10px 0 6px; margin-bottom: 4px; }
     #lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.93); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 20px; overflow: hidden; touch-action: none; }
-    #lightbox-stage { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; touch-action: none; }
-    #lightbox-img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; pointer-events: auto; }
+    #lightbox-stage { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; touch-action: none; overflow: hidden; }
+    #lightbox-img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; pointer-events: auto; touch-action: none; -webkit-touch-callout: none; cursor: grab; }
+    #lightbox-img:active { cursor: grabbing; }
     #lightbox-close { position: absolute; top: 14px; right: 14px; width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; border: 1.5px solid rgba(255,255,255,0.3); font-size: 22px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; z-index: 1002; padding: 0; }
     #lightbox-close:hover { background: rgba(0,0,0,0.85); }
     #lightbox-hint { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); font-size: 11px; color: rgba(255,255,255,0.5); letter-spacing: 1.5px; pointer-events: none; z-index: 1001; }
@@ -1881,6 +1882,63 @@ function confirmDelete(id){
 let _panzoomInstance = null;
 let _lightboxLastTap = 0;
 
+// Shared panzoom setup for both lightbox variants (S11 pinch-zoom fix).
+// Previously inlined separately in openLightbox and openCornerLightbox; the
+// `canvas: true` mode was triggering measurement issues with our flex layout
+// where vertical pan worked but pinch was dead. Refactored:
+//   - Drop `canvas: true` — transform the <img> directly, simpler and more
+//     reliable cross-browser.
+//   - Use `contain: 'outside'` instead of 'inside' so the image can be panned
+//     freely when zoomed in (inside containment was clamping pan to the
+//     viewport, which combined with our flex centering caused the constrained
+//     vertical-only drag behavior).
+//   - Init only after the image has real intrinsic dimensions (naturalWidth>0)
+//     — Panzoom can't compute bounds on a 0×0 image, and the previous
+//     `img.complete` check was unreliable for cache-hit edges.
+function _attachPanzoomToLightbox() {
+  const img = document.getElementById('lightbox-img');
+  const box = document.getElementById('lightbox');
+  if (typeof Panzoom !== 'function') return;
+
+  // Tear down any previous instance before creating a new one
+  if (_panzoomInstance) {
+    try { _panzoomInstance.destroy(); } catch(e){}
+    _panzoomInstance = null;
+  }
+
+  const init = () => {
+    // Reset any leftover transform from a prior session before initializing
+    img.style.transform = '';
+    _panzoomInstance = Panzoom(img, {
+      maxScale: 6,
+      minScale: 1,
+      contain: 'outside',
+      step: 0.4,
+      animate: true,
+      // Explicitly enable touch + pinch (defaults are true but being explicit
+      // helps debugging and protects against future Panzoom version changes)
+      pinchAndPan: true,
+      // Cursor handled by CSS; don't let Panzoom override
+      cursor: false
+    });
+    // Wheel-zoom on desktop — bind on the box, not just the parent of img,
+    // so wheel events anywhere in the lightbox zoom the image
+    box.addEventListener('wheel', _panzoomInstance.zoomWithWheel, { passive: false });
+    // Double-tap to toggle zoom
+    img.addEventListener('touchend', handleDoubleTap);
+    img.addEventListener('dblclick', handleDoubleTap);
+  };
+
+  // Image must have real dimensions for Panzoom to compute its bounds.
+  // naturalWidth is 0 until the image has actually decoded, even if .complete
+  // is true (some cache-hit cases hit this).
+  if (img.naturalWidth > 0) {
+    init();
+  } else {
+    img.addEventListener('load', init, { once: true });
+  }
+}
+
 function openLightbox(id,idx){
   const c=comics.find(x=>x.id===id);
   if(!c||!c.images?.[idx])return;
@@ -1889,33 +1947,7 @@ function openLightbox(id,idx){
   img.src = c.images[idx];
   box.style.display = "flex";
 
-  // Initialize panzoom on the image. Requires the global Panzoom function
-  // from the CDN script; degrade gracefully if unavailable.
-  if (typeof Panzoom === 'function') {
-    // Tear down any previous instance before creating a new one
-    if (_panzoomInstance) {
-      try { _panzoomInstance.destroy(); } catch(e){}
-      _panzoomInstance = null;
-    }
-    // Wait for the image to load before measuring bounds
-    const init = () => {
-      _panzoomInstance = Panzoom(img, {
-        maxScale: 6,
-        minScale: 1,
-        contain: 'inside',
-        canvas: true,
-        step: 0.4,
-        animate: true
-      });
-      // Wheel-zoom on desktop
-      img.parentElement.addEventListener('wheel', _panzoomInstance.zoomWithWheel);
-      // Double-tap to toggle zoom
-      img.addEventListener('touchend', handleDoubleTap);
-      img.addEventListener('dblclick', handleDoubleTap);
-    };
-    if (img.complete) init();
-    else img.addEventListener('load', init, {once:true});
-  }
+  _attachPanzoomToLightbox();
 
   // Tapping outside the image (background) closes the lightbox.
   // Tapping the image itself should not close (panzoom handles gestures there).
@@ -1934,27 +1966,7 @@ function openCornerLightbox(id, idx){
   img.src = c.cornerImages[idx];
   box.style.display = "flex";
 
-  if (typeof Panzoom === 'function') {
-    if (_panzoomInstance) {
-      try { _panzoomInstance.destroy(); } catch(e){}
-      _panzoomInstance = null;
-    }
-    const init = () => {
-      _panzoomInstance = Panzoom(img, {
-        maxScale: 6,
-        minScale: 1,
-        contain: 'inside',
-        canvas: true,
-        step: 0.4,
-        animate: true
-      });
-      img.parentElement.addEventListener('wheel', _panzoomInstance.zoomWithWheel);
-      img.addEventListener('touchend', handleDoubleTap);
-      img.addEventListener('dblclick', handleDoubleTap);
-    };
-    if (img.complete) init();
-    else img.addEventListener('load', init, {once:true});
-  }
+  _attachPanzoomToLightbox();
 
   box.onclick = (e) => {
     if (e.target === box || e.target.id === 'lightbox-stage') closeLightbox();
