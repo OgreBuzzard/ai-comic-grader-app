@@ -1303,7 +1303,19 @@ async function signInGoogle(){
     // Now load comics
     await loadComics();
   } catch(e) {
-    if(e.code !== 'auth/popup-closed-by-user'){
+    // Suppress benign Firebase Auth error codes that show as scary popups
+    // but represent user/environment conditions rather than real failures:
+    //   popup-closed-by-user      → user manually closed the Google popup
+    //   cancelled-popup-request   → user double-tapped Sign In; second tap
+    //                                superseded the first (S11 fix)
+    //   popup-blocked             → browser silently blocked the popup
+    // None of these warrant interrupting the user — they can simply tap again.
+    const benignCodes = new Set([
+      'auth/popup-closed-by-user',
+      'auth/cancelled-popup-request',
+      'auth/popup-blocked'
+    ]);
+    if (!benignCodes.has(e.code)) {
       alert('Sign in failed: ' + e.message);
     }
   }
