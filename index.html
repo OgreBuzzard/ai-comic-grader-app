@@ -17,20 +17,24 @@
   <meta property="og:title" content="Robograder">
   <meta property="og:description" content="Instant comic book grading.">
   <meta property="og:url" content="https://robograder.app">
-  <meta property="og:image" content="https://robograder.app/Robograder_Load.jpg">
-  <meta property="og:image:alt" content="Robograder mascot">
+  <meta property="og:image" content="https://robograder.app/og-card.jpg">
+  <meta property="og:image:width" content="1254">
+  <meta property="og:image:height" content="1134">
+  <meta property="og:image:alt" content="Robograder mascot holding a Silver Age comic book">
 
   <!-- Twitter / X Card -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Robograder">
   <meta name="twitter:description" content="Instant comic book grading.">
-  <meta name="twitter:image" content="https://robograder.app/Robograder_Load.jpg">
+  <meta name="twitter:image" content="https://robograder.app/og-card.jpg">
+  <meta name="twitter:image:alt" content="Robograder mascot holding a Silver Age comic book">
 
   <title>Robograder</title>
   <link rel="manifest" href="manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
-  <link rel="preload" href="assets/Robograder_Load.jpg" as="image">
+  <link rel="preload" href="assets/Robograder_Background.jpg" as="image">
+  <link rel="preload" href="assets/Robograder_v2_Load.png" as="image">
   <link rel="apple-touch-icon" href="icon-192.png">
 
   <!-- Preconnect to Firebase Storage so the first thumbnail/image fetch
@@ -377,27 +381,51 @@
       background: #0a0a0a;
       overflow: hidden;
     }
-    /* Robograder mascot — full-bleed, slides up from bottom.
-       Using background-image on a div (not an <img> tag) so the element has
-       size from the moment it renders, independent of image load state.
-       This prevents the "pop-in" behavior where the image appears at its
-       final position the instant the JPG finishes downloading. */
-    #splash-robot {
+    /* Splash background — yellow circuit-board texture (S11). Sits behind the
+       Robograder character. Both this and the character share the same slide
+       animation so they move as a unit. The background gives the splash some
+       graphic life beyond solid black, and the circuit-board motif fits the
+       "robot doing technical work" vibe. */
+    #splash-bg {
       position: absolute;
       inset: 0;
       width: 100%;
       height: 100%;
-      background-image: url('assets/Robograder_Load.jpg');
+      background-image: url('assets/Robograder_Background.jpg');
       background-size: cover;
       background-position: center center;
       background-repeat: no-repeat;
       transform: translateY(110vh);
       will-change: transform;
-      animation: robotSlideUp 0.75s cubic-bezier(0.22, 1, 0.36, 1) 0.1s forwards;
+      animation: splashSlideUp 0.75s cubic-bezier(0.22, 1, 0.36, 1) 0.1s forwards;
     }
-    @keyframes robotSlideUp {
+    /* Robograder mascot — the v2 character on top of the background.
+       Uses an <img> tag rather than background-image so PNG transparency
+       works (the character has a transparent background; we want to see
+       the circuit pattern behind him). Sized to dominate the upper half
+       of the viewport with room below for the typing text. */
+    #splash-robot {
+      position: absolute;
+      left: 0; right: 0;
+      top: 50%;
+      margin: 0 auto;
+      max-width: 80vw;
+      max-height: 70vh;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      transform: translateY(calc(-50% + 110vh));
+      will-change: transform;
+      animation: splashRobotSlideUp 0.75s cubic-bezier(0.22, 1, 0.36, 1) 0.1s forwards;
+      pointer-events: none;
+    }
+    @keyframes splashSlideUp {
       from { transform: translateY(110vh); }
       to { transform: translateY(0); }
+    }
+    @keyframes splashRobotSlideUp {
+      from { transform: translateY(calc(-50% + 110vh)); }
+      to { transform: translateY(-50%); }
     }
     /* Gradient fade at the bottom so text is readable over the image */
     #splash-gradient {
@@ -412,6 +440,7 @@
       pointer-events: none;
       opacity: 0;
       animation: fadeIn 0.6s ease-out 0.5s forwards;
+      z-index: 1;
     }
     @keyframes fadeIn {
       to { opacity: 1; }
@@ -449,13 +478,22 @@
     @keyframes typeReveal {
       to { width: var(--full-width, 300px); }
     }
-    /* Exit: robot slides down off-screen + splash fades out */
-    #splash.exit #splash-robot {
-      animation: robotSlideDown 0.55s cubic-bezier(0.55, 0, 0.7, 0.15) forwards;
+    /* Exit: background and robot both slide down off-screen + splash fades out.
+       Both elements use independent slide-down animations so the layered move
+       reads as a single curtain falling. */
+    #splash.exit #splash-bg {
+      animation: splashSlideDown 0.55s cubic-bezier(0.55, 0, 0.7, 0.15) forwards;
     }
-    @keyframes robotSlideDown {
+    #splash.exit #splash-robot {
+      animation: splashRobotSlideDown 0.55s cubic-bezier(0.55, 0, 0.7, 0.15) forwards;
+    }
+    @keyframes splashSlideDown {
       from { transform: translateY(0); }
       to { transform: translateY(110vh); }
+    }
+    @keyframes splashRobotSlideDown {
+      from { transform: translateY(-50%); }
+      to { transform: translateY(calc(-50% + 110vh)); }
     }
     #splash.exit {
       animation: splashFade 0.35s ease-out 0.3s forwards;
@@ -483,7 +521,8 @@
 </div>
 
 <div id="splash">
-  <div id="splash-robot" role="img" aria-label="Robograder mascot"></div>
+  <div id="splash-bg" role="presentation" aria-hidden="true"></div>
+  <img id="splash-robot" src="assets/Robograder_v2_Load.png" alt="Robograder mascot">
   <div id="splash-gradient"></div>
   <div id="splash-text"></div>
 </div>
