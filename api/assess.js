@@ -69,6 +69,8 @@ export default async function handler(req, res) {
   const COMICVINE_API_KEY = process.env.COMICVINE_API_KEY || '';
   const {
     images,
+    slotsFilled = null,    // S11: explicit slot map (front/back/interior/raking).
+                           // Older clients may not send this; we infer from array length when null.
     grader = 'CGC',
     cgcGrade = null,
     cgcGraderNotes = '',
@@ -269,10 +271,19 @@ export default async function handler(req, res) {
   const censusContext = getCensusContext(title, issueNumber);
 
   // ── Photo availability ──────────────────────────────────────────────────────
-  const hasPQPhoto   = pageQualityImageBlock !== null;
-  const hasBackCover = images.length >= 2;
-  const photoCount   = images.length;
-  const baseConf     = photoCount >= 4 ? 8 : photoCount === 3 ? 12 : 16;
+  // hasInteriorPhoto: whether the user submitted a photo intended as interior/page-quality
+  //   reference. Trust the explicit slotsFilled map when the client sent one; fall back
+  //   to "3+ images implies an interior was probably included" for older clients.
+  // hasPQReference: whether we successfully fetched the PQ reference image from the repo.
+  // Both are needed for a meaningful page quality assessment — the reference alone is
+  // useless without an interior to compare against.
+  const hasInteriorPhoto = slotsFilled
+    ? !!slotsFilled.interior
+    : images.length >= 3;
+  const hasPQReference = pageQualityImageBlock !== null;
+  const hasBackCover   = slotsFilled ? !!slotsFilled.back : images.length >= 2;
+  const photoCount     = images.length;
+  const baseConf       = photoCount >= 4 ? 8 : photoCount === 3 ? 12 : 16;
 
   // ── High-grade block ────────────────────────────────────────────────────────
   // When highGrade=true, 4 corner macros (TL, TR, BL, BR) are appended after the
@@ -776,6 +787,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
           comicvineRef: referenceImageBlock !== null,
           pageQualityRef: pageQualityImageBlock !== null,
           pageQualityRefIsPsa: pqIsPsaReference,
+          hasInteriorPhoto: hasInteriorPhoto,
           gateTerminated: true
         }
       });
@@ -843,6 +855,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
       comicvineRef: referenceImageBlock !== null,
       pageQualityRef: pageQualityImageBlock !== null,
       pageQualityRefIsPsa: pqIsPsaReference,
+      hasInteriorPhoto: hasInteriorPhoto,
       gradeRef: gradeRefSucceeded,
       psaGrade:  !!(parsed.psaGrade),
       roboGrade: !!(parsed.roboGrade)
