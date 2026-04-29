@@ -446,6 +446,10 @@ THREE ANCHORING RULES:
 
 2. ANCHOR AGAINST THE REFERENCE (when present). When a Page Quality Reference image is provided, use it as the literal ground truth. The reference shows real interior photos of professionally graded books labeled with their actual page quality designations. Match the closest reference example. The reference covers the upper part of the scale; if the interior you are assessing looks comparable to ANY of the reference photos, the answer is Off-White to White or White accordingly. ONLY assign Off-White or lower when the interior is visibly more tanned than EVERY reference example.
 
+   STEPWISE FALLBACK BELOW THE REFERENCE: When you decide the interior IS warmer than every reference example, the next step down is **Off-White**, not Cream to Off-White. Do not skip a tier. C/OW requires substantial evidence of tanning beyond what would justify OW — a noticeably yellowed or cream cast across the page, not just "warmer than the reference whites." If you are dropping below the reference floor at all, the burden of proof is on the C/OW or lower designation; OW is the conservative default below the reference.
+
+   COMPARE EYE TO EYE, NOT BOOK TO BOOK. The reference photos and the photo you are assessing may have different lighting conditions, white balance, or exposure. Compare the unprinted page areas (margins between panels, gutters, white speech balloons) of the assessment photo to the unprinted page areas of the reference photos. Do not be misled by overall photo warmth that comes from the camera, the surface beneath the book, or ambient lighting. The page tone is what matters — not the surrounding photo cast.
+
 3. FAVOR THE WHITER TIER WHEN AMBIGUOUS. When sample sits between two reference colors, pick the whiter designation. Use the darker designation only when the sample is clearly at or past that reference tone.
 
 Full designations only: White, Off-White to White, Off-White, Cream to Off-White, Cream, Light Tan to Cream, Light Tan, Tan, Brown, Brown/Brittle, Brittle.
@@ -530,6 +534,14 @@ CRITICAL: The final score is literally Front + Back + Spine + Interior. The arit
 
 ── CGC GRADE ──
 Apply CGC standards to your defect inventory from Phase 1.
+
+GRADING PHILOSOPHY (v2.1) — THINK LIKE BLACKJACK:
+The cost of overshooting a grade is asymmetric and much higher than the cost of undershooting. If a user submits a book to PSA or CGC based on your prediction and the official grade comes in lower than what you predicted, that is a costly outcome for the user (the submission fee, the shipping, the wait, and the disappointment). They will lose trust in Robograder. If instead you predict slightly low and the official grade comes in higher, the user is delighted — they got a "bonus" they didn't expect.
+
+Therefore: when calibrating between two adjacent grade points, prefer the lower one. When uncertain whether a defect rises to a grade-affecting level, count it. When the holistic impression sits between two grades, pick the lower. The exception is when defects are clearly minor and eye appeal is strong — never grade conservatively just for safety. The goal is precision: get as close to the official grade as you can WITHOUT going over. Like blackjack: 21 is perfect, 20 is great, 22 is a bust.
+
+This applies to BOTH the CGC grade and the RoboGrade. Component scores derived in Phase 2 should reflect this same conservative-when-uncertain disposition.
+
 Grade calibration:
 • Assign 9.0–9.6 for minor defects. Do not cap at 8.5 out of caution.
 • Strong eye appeal + flat spine + bright colors + sharp corners = high grade.
