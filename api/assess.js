@@ -140,18 +140,32 @@ export default async function handler(req, res) {
     }
   }
 
-  // Fetch page quality reference image (used for all raw book assessments)
+  // Fetch page quality reference image (used for all raw book assessments).
+  // Prefer pq_psa.jpg (v2.1+ — built from PSA-graded interior photos with PSA's
+  // designations), fall back to pq.jpg (the original CGC-grading-book scan).
+  // The fallback exists so deployments work cleanly during the upgrade window
+  // before pq_psa.jpg is uploaded to the repo. Once it lands, every assessment
+  // uses it automatically.
   async function fetchPageQualityReference(baseUrl) {
-    try {
-      const url = `${baseUrl}/Grade_Reference/pq.jpg`;
-      const resp = await fetchWithTimeout(url, {}, 4000);
-      if (!resp.ok) return null;
-      const buf = await resp.arrayBuffer();
-      const b64 = Buffer.from(buf).toString('base64');
-      return { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } };
-    } catch (e) {
-      return null;
+    const candidates = [
+      `${baseUrl}/Grade_Reference/pq_psa.jpg`,
+      `${baseUrl}/Grade_Reference/pq.jpg`
+    ];
+    for (const url of candidates) {
+      try {
+        const resp = await fetchWithTimeout(url, {}, 4000);
+        if (!resp.ok) continue;
+        const buf = await resp.arrayBuffer();
+        const b64 = Buffer.from(buf).toString('base64');
+        return {
+          imageBlock: { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } },
+          isPsaReference: url.endsWith('pq_psa.jpg')
+        };
+      } catch (e) {
+        // try next candidate
+      }
     }
+    return null;
   }
 
   // Fetch grade reference image for the assessed grade
@@ -196,6 +210,7 @@ export default async function handler(req, res) {
 
   // Run ComicVine cover fetch and page quality fetch in parallel
   let pageQualityImageBlock = null;
+  let pqIsPsaReference = false;  // true once pq_psa.jpg is uploaded; prompt language adapts
   if (isCGC) {
     const cvFetch = (title && issueNumber && COMICVINE_API_KEY) ? (async () => {
       try {
@@ -221,7 +236,12 @@ export default async function handler(req, res) {
       } catch (e) { /* CV fetch failed — proceed without reference */ }
     })() : Promise.resolve();
 
-    const pqFetch = baseUrl ? fetchPageQualityReference(baseUrl).then(r => { pageQualityImageBlock = r; }) : Promise.resolve();
+    const pqFetch = baseUrl ? fetchPageQualityReference(baseUrl).then(r => {
+      if (r) {
+        pageQualityImageBlock = r.imageBlock;
+        pqIsPsaReference = r.isPsaReference;
+      }
+    }) : Promise.resolve();
     await Promise.all([cvFetch, pqFetch]);
   }
 
@@ -387,6 +407,8 @@ PHASE 1 — NEUTRAL OBSERVATIONS
 STRUCTURAL CHECK (mandatory first):
 Examine every corner and every edge. Look for missing pieces, chips, tears, holes. Check all four corners individually and explicitly. If ANY missing piece or chip exists, note its location and approximate size first.
 
+EPISTEMIC HUMILITY: A photograph cannot show everything that an in-hand inspection reveals. Tiny missing pieces (under 1/16"), faint creases, and small back-cover defects can hide in shadow, glare, or low pixel density. Do NOT make confident absence-claims like "no missing pieces observed" or "no tears detected" in your notes — those statements have been wrong before and they don't belong in the inventory anyway (the inventory is what you DO see, not what you don't). Simply omit absent defects from the inventory.
+
 DEFECT INVENTORY — for every defect record:
 • Type (use official CGC terminology)
 • Location (which corner, edge, or area)
@@ -399,14 +421,21 @@ DEFECT INVENTORY — for every defect record:
   - Spine: spine surface, spine roll, spine stress lines, and inner corners at top/bottom of spine
   - Interior: pages, staples, interior printing
 
+EYE APPEAL DISCIPLINE (v2.1):
+You are inventorying observable defects, not auditing the book for everything that could be wrong. A typical Silver Age book has 4-8 distinct defects worth noting at any grade — not 12-15. Resist the urge to find a defect on every corner, every edge, and every surface area. If a corner looks fine, no defect goes in the inventory. If three of four corners are clean and one is blunted, the inventory has ONE corner blunting entry, not four (one real + three "no defect" entries).
+
+When the photos show a book that "presents well" — strong color saturation, flat spine, sharp-looking corners, bright cover — your inventory should reflect that. A clean-presenting book with three real defects inventories as three defects, not as three real defects plus eight imagined ones from over-scrutiny.
+
 PAGE QUALITY:
-Assess from any interior photo. Phone cameras under artificial light consistently make pages look more yellowed than they actually are.
+Assess from any interior photo. Phone cameras under typical indoor lighting consistently make pages look 1-2 tiers more yellowed than they actually are. Calibration data from 10 PSA-graded books in 2026 showed that the prior calibration was systematically under-reading PQ by 2 tiers on average — books PSA called Off-White to White were being called Cream to Off-White. The rules below correct that.
 
-TWO ANCHORING RULES:
+THREE ANCHORING RULES:
 
-1. AGE-AWARE DEFAULT. Books published before 1985 (Silver Age and Bronze Age) overwhelmingly have Off-White or better pages in the wild. Genuinely cream or tan pages are rare and tied to specific storage conditions (damp, sunlight, acidic storage). For a pre-1985 book, default to Off-White or better unless you see SPECIFIC evidence to the contrary: visible foxing, uneven tanning patterns at edges only (typical of sun exposure), obvious brittleness, or dark cream color that fills the whole page uniformly. If the paper just "looks a bit yellow" under indoor light but is otherwise clean and supple, that's Off-White or Off-White to White, not Cream or Cream to Off-White.
+1. AGE-AWARE DEFAULT (STRENGTHENED). Books published before 1985 (Silver Age and Bronze Age) overwhelmingly grade at Off-White to White or White in the wild. Genuinely cream or tan pages are uncommon and tied to specific storage conditions (damp, sun-bleaching, acidic storage). For a pre-1985 book, the default page quality is Off-White to White unless you see SPECIFIC, NAMEABLE evidence to the contrary. "The page looks a bit yellow under indoor light" is NOT specific evidence — that is camera/lighting bias and the rule above tells you to discount it. Specific evidence means: visible foxing dots or rust marks, brown-tinged edges that contrast with a lighter center, obvious brittleness or splitting, or uniform tone visibly darker than the photo's white balance reference. Without that, default to OW/W.
 
-2. FAVOR THE WHITER TIER WHEN AMBIGUOUS. When comparing against the reference scale image, if the sample sits between two reference colors, pick the whiter designation. Use the darker designation only when the sample is clearly at or past that reference tone.
+2. ANCHOR AGAINST THE REFERENCE (when present). When a Page Quality Reference image is provided, use it as the literal ground truth. The reference shows real interior photos of professionally graded books labeled with their actual page quality designations. Match the closest reference example. The reference covers the upper part of the scale; if the interior you are assessing looks comparable to ANY of the reference photos, the answer is Off-White to White or White accordingly. ONLY assign Off-White or lower when the interior is visibly more tanned than EVERY reference example.
+
+3. FAVOR THE WHITER TIER WHEN AMBIGUOUS. When sample sits between two reference colors, pick the whiter designation. Use the darker designation only when the sample is clearly at or past that reference tone.
 
 Full designations only: White, Off-White to White, Off-White, Cream to Off-White, Cream, Light Tan to Cream, Light Tan, Tan, Brown, Brown/Brittle, Brittle.
 
@@ -455,11 +484,25 @@ Per-category calibration (applied proportionally to the category maximum):
     • 7-10 = significant stress accumulation, split starting, staple pull
     • 0-6 = severe structural issues at spine
   Interior (max 10):
-    • 10 = White or Off-White to White pages, clean staples
-    • 8-9 = Off-White or Cream to Off-White pages, clean interior
-    • 5-7 = Cream or Light Tan pages, or minor interior defects on better pages
-    • 3-4 = Tan pages or significant interior defects
-    • 0-2 = Brown, Brittle, major interior damage
+    Interior score is DERIVED from page quality. Start from the PQ-mapped value below, then apply at most one small deduction for staple or interior defects. Never assign an interior score that contradicts the PQ designation.
+    PQ → starting interior score:
+      • White                   → 10
+      • Off-White to White      → 9
+      • Off-White               → 8
+      • Cream to Off-White      → 7
+      • Cream                   → 6
+      • Light Tan to Cream      → 5
+      • Light Tan               → 4
+      • Tan                     → 3
+      • Brown                   → 2
+      • Brown/Brittle           → 1
+      • Brittle                 → 0
+    Deductions (apply at most ONE, capped to -2):
+      • Staple rust or significant oxidation: -1
+      • Detached centerfold or detached interior wrap: -2 (capped)
+      • Significant interior soiling, foxing, or stains: -1
+      • Missing interior page or coupon: -2 (capped)
+    SAFETY FLOOR: An interior score of 0 is reserved for Brittle pages or for severe interior damage. NEVER assign 0 to a book with White, Off-White to White, or Off-White pages — that is internally inconsistent and will be flagged as a bug.
 
 No back cover photo provided case: set backScore to null. Redistribute the 20 Back points into Front, raising Front's maximum to 70. All other categories unchanged.
 
@@ -483,7 +526,35 @@ Grade calibration:
 • Missing piece ceilings: <1/4"→max ~9.0 | 1/4"–1/2"→max ~8.0 | >1/2"→max ~5.0 | >1"→max ~3.0
 • UV: white covers with tanning on unprinted areas only.
 • Press: spine roll=yes | edge fraying=no | corner creases=yes | tanning=no.
-Grader notes: one bullet per defect starting with •, official CGC terminology, always note CB vs non-CB.
+Grader notes — PSA-STYLE RESTRAINT (v2.1 calibration):
+
+PSA's grader notes are the gold standard for clarity. PSA describes a typical Silver Age 7.0 book with one or two sentences per cover side, naming only the defects that matter to the grade. RG's prior versions were over-enumerating — listing 12-15 separate notes for a mid-grade book with the same defects repeated across multiple corners. Match PSA's restraint.
+
+CONSOLIDATION RULES (apply BEFORE writing notes):
+  • Group same defect type across multiple locations into ONE note. Do NOT write four separate corner-blunting notes; write "Corner blunting, all four corners" or "Corner blunting, top right and bottom right". Same applies to spine stress lines (consolidate to "Spine stress lines, multiple along full spine length"), edge wear, soiling, etc.
+  • Never note absence of defects. Do NOT write "no missing pieces observed", "no tape detected", "no restoration", "pages supple, no brittleness". Absence is the default — only call out what IS there.
+  • Never restate page quality in notes. PQ has its own field; mentioning it again in notes is duplicative clutter.
+  • Never note things that are not defects: arrival dates, distributor markings, pedigree marks, normal manufacturing characteristics. Note these only if they affect the grade.
+  • Never describe handling history ("book has been read multiple times") — describe the defects themselves.
+
+TARGET NOTE COUNT:
+  • High grade (8.5+): 1-4 notes
+  • Mid grade (5.0-8.0): 3-7 notes
+  • Low grade (3.0-4.5): 5-10 notes
+  • Heavy damage (below 3.0): 8-15 notes
+  More than these counts indicates over-enumeration. Consolidate.
+
+COLOR-BREAKING CALIBRATION:
+  Color-breaking ("CB") is a specific, restrained classification. A typical Silver Age book has 0-2 color-breaking defects, NOT 5-10. Reserve CB for clearly-visible breaks where the printed color is interrupted by the crease/fold/stress line. Surface stress lines that don't visibly break color should be noted as non-color-breaking, OR — when the book has many stress lines that are mostly clean — omit the CB qualifier entirely with phrasing like "Multiple light spine stress lines, mostly non-color-breaking".
+
+  Default position: a stress line is non-color-breaking unless you can see the color discontinuity in the photo.
+
+SEVERITY DISCIPLINE:
+  PSA's notes use restrained language — "stress lines, some break color", "edge wear", "tiny piece missing", "light tanning". RG should match this register. AVOID escalated language like "multiple", "moderate", "significant", "heavy", "extensive" unless the defect actually warrants it. A book with normal shelf wear gets "Light edge wear", not "Moderate edge wear and abrasion throughout".
+
+  Same applies to severity field: do not over-call High severity. Most Silver Age defects are Low or Med. High is reserved for defects that actually drop a grade tier on their own (color-breaking creases, missing pieces over 1/4", spine splits, tape, etc.).
+
+Format: one bullet per note starting with •, official CGC terminology, mark CB only when truly color-breaking.
 
 CGC GRADE TIER REFERENCE — what each grade officially permits:
 ${CGC_GRADE_TIERS.trim()}
@@ -586,7 +657,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
   "officialPSAGrade": null,
   "officialPSACert": null,
   "roboGrade": {
-    "version": "2.0",
+    "version": "2.1",
     "score": 0,
     "confidenceRange": ${baseConf},
     "frontScore": 0,
@@ -624,7 +695,10 @@ RETURN ONLY THIS JSON — no markdown, no preamble
               referenceImageBlock
             ] : []),
             ...(pageQualityImageBlock ? [
-              { type: 'text', text: 'PAGE QUALITY REFERENCE: The following image shows the CGC page quality color scale from White (10) down to Tan (5). If any of your assessment photos show interior pages, compare the non-inked white space color against this scale to determine page quality. When in doubt, round up — most Silver and Bronze Age books grade at Off-White or higher.' },
+              { type: 'text', text: pqIsPsaReference
+                ? 'PAGE QUALITY REFERENCE (calibrated against PSA): The following image shows interior photos of real books that were professionally graded by PSA, labeled with PSA\'s actual page quality designation for each book. These are the ground-truth anchor for your page quality assessment. The reference covers the upper part of the scale (White through Off-White to White) — every interior shown is at OW/W or better. RULE: If the interior photo of the book you are assessing looks comparable in tone to ANY of the reference examples, assign Off-White to White or White accordingly — match the closest reference. Only assign Off-White or lower if the interior is visibly more tanned than EVERY reference image. The vast majority of Silver and Bronze Age books fall within this OW/W-and-better range. Use the same designations PSA uses (and which are also valid CGC designations).'
+                : 'PAGE QUALITY REFERENCE: The following image shows the CGC page quality color scale from White (10) down to Tan (5). If any of your assessment photos show interior pages, compare the non-inked white space color against this scale to determine page quality. When in doubt, round up — most Silver and Bronze Age books grade at Off-White or higher.'
+              },
               pageQualityImageBlock
             ] : []),
             ...(highGrade && imageBlocks.length >= 8 ? [
@@ -701,6 +775,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
         _diagnostics: {
           comicvineRef: referenceImageBlock !== null,
           pageQualityRef: pageQualityImageBlock !== null,
+          pageQualityRefIsPsa: pqIsPsaReference,
           gateTerminated: true
         }
       });
@@ -767,6 +842,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
     parsed._diagnostics = {
       comicvineRef: referenceImageBlock !== null,
       pageQualityRef: pageQualityImageBlock !== null,
+      pageQualityRefIsPsa: pqIsPsaReference,
       gradeRef: gradeRefSucceeded,
       psaGrade:  !!(parsed.psaGrade),
       roboGrade: !!(parsed.roboGrade)
