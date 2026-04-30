@@ -4402,6 +4402,21 @@ function normPageQuality(pq){
 if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{});}
 // ── Splash Screen ──────────────────────────────────────────────────
 (function runSplash() {
+  // S11: skip the splash entirely when the user is returning from a Stripe
+  // checkout redirect. They just spent money; making them sit through the
+  // full splash + typewriter sequence feels like the app reset itself. Hide
+  // it immediately so the success modal can appear over the app shell.
+  const returnParams = new URLSearchParams(window.location.search);
+  if (returnParams.get('payment')) {
+    const splash = document.getElementById('splash');
+    if (splash) {
+      splash.style.display = 'none';
+      document.body.classList.add('app-ready');
+      document.body.style.overflow = '';
+    }
+    return;
+  }
+
   const lines = [
     "MY POSITRONIC BRAIN",
     "IS READY TO GRADE",
@@ -4476,19 +4491,43 @@ if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catc
 })();
 
 // Handle Stripe payment return
+// S11: replaced native alert() with styled in-app modals. Native dialogs broke
+// the app's visual continuity — they look like OS popups, not part of the app.
+function showPaymentSuccess(credits) {
+  const m = document.getElementById('payment-success-modal');
+  const n = document.getElementById('payment-success-credits');
+  if (n) n.textContent = credits;
+  if (m) m.style.display = 'flex';
+}
+function hidePaymentSuccess() {
+  const m = document.getElementById('payment-success-modal');
+  if (m) m.style.display = 'none';
+}
+function showPaymentCancelled() {
+  const m = document.getElementById('payment-cancelled-modal');
+  if (m) m.style.display = 'flex';
+}
+function hidePaymentCancelled() {
+  const m = document.getElementById('payment-cancelled-modal');
+  if (m) m.style.display = 'none';
+}
+
 (function checkPaymentReturn(){
   const params = new URLSearchParams(window.location.search);
   const payment = params.get('payment');
   const credits = params.get('credits');
   if(payment === 'success' && credits){
+    // Brief delay so the app shell has time to render before the modal lands.
+    // The splash is already skipped (see runSplash), but Firebase Auth + Firestore
+    // still take a moment to resolve and we want the user to land in the app first.
     setTimeout(()=>{
-      alert(`Payment successful! ${credits} assessment credits have been added to your account.`);
+      showPaymentSuccess(credits);
       loadUserCredits();
-    }, 1500);
+    }, 800);
   } else if(payment === 'cancelled'){
-    setTimeout(()=>{ alert('Payment cancelled. No charges were made.'); }, 500);
+    setTimeout(()=>{ showPaymentCancelled(); }, 400);
   }
-  // Clean URL
+  // Clean URL so a refresh doesn't re-trigger the modal
   if(payment){ window.history.replaceState({}, '', '/'); }
 })();
 
@@ -4515,6 +4554,34 @@ initFirebase();
       </button>
     </div>
     <button onclick="hideBuyCredits()" style="margin-top:16px;width:100%;background:none;border:none;color:#8a7a6a;font-size:14px;cursor:pointer;padding:8px">Cancel</button>
+  </div>
+</div>
+<!-- Payment Success Modal (S11) -->
+<!-- Shown when Stripe redirects back to /?payment=success&credits=N. Replaces the
+     native alert() that previously broke the app's visual continuity. Styled to
+     match the buy-credits modal so the post-purchase confirmation feels like part
+     of the app, not an OS dialog. -->
+<div id="payment-success-modal" style="display:none;position:fixed;inset:0;z-index:8000;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;padding:20px">
+  <div style="background:#fff;border-radius:16px;padding:28px 24px;max-width:360px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,0.3);text-align:center">
+    <!-- Gold checkmark badge — visual confirmation before the user reads a word -->
+    <div style="width:64px;height:64px;border-radius:50%;background:#1a1008;margin:0 auto 16px;display:flex;align-items:center;justify-content:center">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#c8a96e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="20 6 9 17 4 12"/>
+      </svg>
+    </div>
+    <h2 style="margin:0 0 8px;font-size:20px;color:#1a1008">Payment successful</h2>
+    <p style="margin:0 0 4px;font-size:15px;color:#3a2a1a"><span id="payment-success-credits" style="font-weight:700">0</span> assessment credits added to your account.</p>
+    <p style="margin:0 0 22px;font-size:13px;color:#8a7a6a">Receipt sent to your email by Stripe.</p>
+    <button onclick="hidePaymentSuccess()" style="background:#1a1008;color:#c8a96e;border:none;border-radius:10px;padding:14px 24px;font-size:15px;font-weight:700;cursor:pointer;width:100%">Continue</button>
+  </div>
+</div>
+
+<!-- Payment Cancelled Modal (S11) -->
+<div id="payment-cancelled-modal" style="display:none;position:fixed;inset:0;z-index:8000;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;padding:20px">
+  <div style="background:#fff;border-radius:16px;padding:28px 24px;max-width:360px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,0.3);text-align:center">
+    <h2 style="margin:0 0 8px;font-size:20px;color:#1a1008">Payment cancelled</h2>
+    <p style="margin:0 0 22px;font-size:14px;color:#6a5a4a">No charges were made to your card.</p>
+    <button onclick="hidePaymentCancelled()" style="background:#1a1008;color:#c8a96e;border:none;border-radius:10px;padding:14px 24px;font-size:15px;font-weight:700;cursor:pointer;width:100%">OK</button>
   </div>
 </div>
 </body>
