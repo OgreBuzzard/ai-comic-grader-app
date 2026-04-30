@@ -32,7 +32,8 @@
   <title>Robograder</title>
   <link rel="manifest" href="manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Noto+Sans+Display:wdth,wght@62.5..100,500;700;900&display=swap" rel="stylesheet">
   <link rel="preload" href="assets/Robograder_Background.jpg" as="image">
   <link rel="preload" href="assets/Robograder_v2_Load.png" as="image">
   <link rel="apple-touch-icon" href="icon-192.png">
@@ -557,13 +558,12 @@
       <button id="header-title" onclick="showList()">
         <span class="main">Robograder</span>
       </button>
-      <button class="btn-gear" onclick="openSettings()" title="Settings" id="settings-btn" aria-label="Settings">⚙</button>
-    </div>
-    <div id="header-row-bottom">
-      <!-- Loading pill: shown while window._loadingState is true (auth handshake +
-           initial collection fetch). Replaced by the real coin/Buy/Add buttons
-           once loadComics() completes. -->
-      <div id="header-loading-pill" style="display:flex;align-items:center;gap:8px;padding:6px 14px;background:rgba(0,0,0,0.04);border-radius:18px;color:#8a7a6a;font-size:13px;font-weight:500;letter-spacing:0.3px;margin-right:auto">
+      <!-- All header controls share the row with the title (S11). Previously the
+           controls lived on a separate row beneath the title, which made the
+           sticky header tall enough to obscure the Back/Edit buttons in the
+           detail view sticky bar. Single row = roughly half the vertical real
+           estate, leaving Back/Edit accessible without scrolling. -->
+      <div id="header-loading-pill" style="display:flex;align-items:center;gap:8px;padding:6px 14px;background:rgba(0,0,0,0.04);border-radius:18px;color:#8a7a6a;font-size:13px;font-weight:500;letter-spacing:0.3px;margin-left:auto">
         <div style="width:14px;height:14px;border:2px solid #c8b8a8;border-top-color:#5a4a3a;border-radius:50%;animation:spin 0.9s linear infinite"></div>
         <span>Loading…</span>
       </div>
@@ -583,6 +583,7 @@
       </button>
       <button class="btn btn-topbar btn-buy" onclick="showBuyCredits()" id="credits-btn" style="display:none">Buy</button>
       <button class="btn btn-topbar btn-add" id="add-btn" onclick="showAdd()" style="display:none">+ Add</button>
+      <button class="btn-gear" onclick="openSettings()" title="Settings" id="settings-btn" aria-label="Settings">⚙</button>
     </div>
   </div>
   <div id="main"></div>
@@ -3793,11 +3794,14 @@ function buildRoboGradeDisplay(rg, comic) {
 
   // Severity color
   function sevColor(s) {
-    if (!s) return LIGHT;
+    if (!s) return PAPER_INK_LT;
     const u = s.toUpperCase();
-    if (u === 'HIGH') return '#e08080';
-    if (u === 'MED')  return '#e0b860';
-    return '#a8b888'; // LOW
+    // Tuned for the printout paper bands (pale green / cream backgrounds).
+    // Previous values were tuned for the dark olive panel and read washed-out
+    // on light paper. These are deeper, more saturated.
+    if (u === 'HIGH') return '#a8202a'; // crimson
+    if (u === 'MED')  return '#a86010'; // burnt orange
+    return '#3a5018';                    // forest green for LOW
   }
 
   // Group defects by category
@@ -3814,9 +3818,14 @@ function buildRoboGradeDisplay(rg, comic) {
   function defectList(arr, startIdx) {
     if (!arr.length) return ''; // leave empty sections blank
     return arr.map((d, i) => {
-      const cb  = d.colorBreaking ? ` <span style="color:#a85020;font-size:10px;font-style:italic;font-family:'IBM Plex Mono',monospace">color breaking</span>` : '';
-      const loc = d.location && d.location !== 'N/A' ? ` · ${d.location}` : '';
-      const meas = d.measurement && d.measurement !== 'N/A' ? ` · ${d.measurement.replace(/^~\s*/,'')}` : '';
+      // Build comma-separated detail string from location, measurement, and
+      // color-breaking flag (when set). Color-breaking now reads as plain text
+      // alongside other details — no separate styling, no acronym.
+      const detailParts = [];
+      if (d.location && d.location !== 'N/A') detailParts.push(d.location);
+      if (d.measurement && d.measurement !== 'N/A') detailParts.push(d.measurement.replace(/^~\s*/,''));
+      if (d.colorBreaking) detailParts.push('color breaking');
+      const detailStr = detailParts.length ? ` - ${detailParts.join(', ')}` : '';
       const sev = d.severity || 'Low';
       // Printout paper banding — alternating cream/green stripes per row.
       // Indices use the running counter `startIdx + i` so banding stays
@@ -3824,8 +3833,8 @@ function buildRoboGradeDisplay(rg, comic) {
       const rowIdx = (startIdx || 0) + i;
       const rowBg = (rowIdx % 2 === 0) ? PAPER_GREEN : PAPER_CREAM;
       return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 10px;font-size:11px;gap:8px;background:${rowBg};font-family:'IBM Plex Mono','Menlo',monospace">
-        <span style="color:${PAPER_INK}">${d.type}${cb}<span style="color:${PAPER_INK_LT};font-size:10px">${loc}${meas}</span></span>
-        <span style="color:${sevColor(sev)};font-weight:700;font-size:10px;white-space:nowrap;flex-shrink:0">${sev.toUpperCase()}</span>
+        <span style="color:${PAPER_INK}"><strong>${d.type}</strong>${detailStr}</span>
+        <span style="color:${sevColor(sev)};font-weight:800;font-size:11px;white-space:nowrap;flex-shrink:0;letter-spacing:0.5px">${sev.toUpperCase()}</span>
       </div>`;
     }).join('');
   }
@@ -3909,8 +3918,8 @@ function buildRoboGradeDisplay(rg, comic) {
       } catch(e) { dateStr = ''; }
     }
     provenanceHTML = `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:${OLIVE};border-radius:6px;margin-bottom:10px;font-family:'IBM Plex Mono','Menlo',monospace;font-size:11px">
-      ${dateStr ? `<div><span style="color:${OLIVE_LT};letter-spacing:1px;font-size:9px;font-weight:700">GRADED</span> <span style="color:${CHARTREUSE};margin-left:6px">${dateStr}</span></div>` : '<div></div>'}
-      ${comic.roboGradeId ? `<div><span style="color:${OLIVE_LT};letter-spacing:1px;font-size:9px;font-weight:700">ID</span> <span style="color:${CHARTREUSE};margin-left:6px;letter-spacing:0.5px">${comic.roboGradeId}</span></div>` : ''}
+      ${comic.roboGradeId ? `<div><span style="color:${OLIVE_LT};letter-spacing:1px;font-size:9px;font-weight:700">ID</span> <span style="color:${CHARTREUSE};margin-left:6px;letter-spacing:0.5px">${comic.roboGradeId}</span></div>` : '<div></div>'}
+      ${dateStr ? `<div><span style="color:${OLIVE_LT};letter-spacing:1px;font-size:9px;font-weight:700">GRADED</span> <span style="color:${CHARTREUSE};margin-left:6px">${dateStr}</span></div>` : ''}
     </div>`;
   }
 
@@ -3923,13 +3932,13 @@ function buildRoboGradeDisplay(rg, comic) {
   return `<div style="background:${BG};border:1.5px solid ${OLIVE_MID};border-radius:12px;padding:14px 14px 0;margin-bottom:8px;overflow:hidden">
     <div style="font-size:10px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:10px">ROBOGRADE RESULTS</div>
     <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px">
-      <div style="background:${OLIVE};border-radius:16px;width:88px;height:88px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;border:1.5px solid ${OLIVE_MID}">
+      <div style="background:${OLIVE};border-radius:16px;width:88px;height:88px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;border:1.5px solid ${OLIVE_MID};position:relative">
         <div style="font-size:8px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:2px">RG</div>
-        <div style="display:flex;align-items:flex-start;gap:2px">
-          <span style="font-size:42px;font-weight:900;color:${CHARTREUSE};line-height:1">${scoreRounded}</span>
-          ${precision ? `<span style="font-size:13px;font-weight:700;color:${OLIVE_LT};margin-top:4px">${precision}</span>` : ''}
+        <div style="position:relative;display:flex;justify-content:center;align-items:flex-end;width:100%">
+          <span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:40px;font-weight:900;color:${CHARTREUSE};line-height:1">${scoreRounded}</span>
+          ${precision ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:11px;font-weight:700;color:${OLIVE_LT};position:absolute;left:calc(50% + 18px);bottom:6px;white-space:nowrap">${precision}</span>` : ''}
         </div>
-        <div style="font-size:7px;color:#2a4a10;margin-top:2px">V${rg.version||'2.0'}</div>
+        <div style="font-size:8px;font-weight:700;color:#7aa030;letter-spacing:1px;margin-top:3px">V${rg.version||'2.0'}</div>
       </div>
       <div style="flex:1;display:grid;grid-template-columns:1fr 1fr;gap:4px">
         <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
@@ -4636,22 +4645,28 @@ initFirebase();
       <button onclick="buyCredits('comic_stack')" style="display:flex;align-items:center;gap:14px;background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:12px 16px;cursor:pointer;text-align:left;width:100%">
         <img src="/assets/products/Comic_Stack.png" alt="" width="64" height="64" style="flex-shrink:0;object-fit:contain">
         <div style="flex:1;min-width:0">
-          <div style="font-size:16px;font-weight:700;color:#1a1008">Comic Stack — $10</div>
-          <div style="font-size:13px;color:#3a2a1a;margin-top:2px">10 assessments · $1.00 each</div>
+          <div style="font-size:16px;font-weight:700;color:#1a1008">Comic Stack</div>
+          <div style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$10</div>
+          <div style="font-size:13px;color:#3a2a1a;margin-top:3px">10 assessments</div>
+          <div style="font-size:12px;color:#6a5a4a;margin-top:1px">($1 each)</div>
         </div>
       </button>
       <button onclick="buyCredits('comic_wall')" style="display:flex;align-items:center;gap:14px;background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:12px 16px;cursor:pointer;text-align:left;width:100%">
         <img src="/assets/products/Comic_Wall.png" alt="" width="64" height="64" style="flex-shrink:0;object-fit:contain">
         <div style="flex:1;min-width:0">
-          <div style="font-size:16px;font-weight:700;color:#1a1008">Comic Wall — $30</div>
-          <div style="font-size:13px;color:#3a2a1a;margin-top:2px">40 assessments · 75¢ each</div>
+          <div style="font-size:16px;font-weight:700;color:#1a1008">Comic Wall</div>
+          <div style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$30</div>
+          <div style="font-size:13px;color:#3a2a1a;margin-top:3px">40 assessments</div>
+          <div style="font-size:12px;color:#6a5a4a;margin-top:1px">($0.75 each)</div>
         </div>
       </button>
-      <button onclick="buyCredits('short_box')" style="display:flex;align-items:center;gap:14px;background:#1a1008;border:2px solid #1a1008;border-radius:10px;padding:12px 16px;cursor:pointer;text-align:left;width:100%">
+      <button onclick="buyCredits('short_box')" style="display:flex;align-items:center;gap:14px;background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:12px 16px;cursor:pointer;text-align:left;width:100%">
         <img src="/assets/products/Short_Box.png" alt="" width="64" height="64" style="flex-shrink:0;object-fit:contain">
         <div style="flex:1;min-width:0">
-          <div style="font-size:16px;font-weight:700;color:#c8a96e">Short Box — $100</div>
-          <div style="font-size:13px;color:#a89070;margin-top:2px">Best value · 150 assessments · 67¢ each</div>
+          <div style="font-size:16px;font-weight:700;color:#1a1008">Short Box</div>
+          <div style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$100</div>
+          <div style="font-size:13px;color:#3a2a1a;margin-top:3px">150 assessments</div>
+          <div style="font-size:12px;color:#6a5a4a;margin-top:1px">($0.67 each)</div>
         </div>
       </button>
     </div>
