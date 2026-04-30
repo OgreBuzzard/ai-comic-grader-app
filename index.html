@@ -102,8 +102,26 @@
     // when Firebase Auth takes a few seconds to re-establish.
     window._loadingState = true;
 
+    // Auth screen fallback (S11): the auth screen is hidden by default so we don't
+    // flash it during the normal ~50-200ms Firebase Auth resolution window. But if
+    // Firebase genuinely hangs — network failure, third-party cookies blocked, etc —
+    // we don't want the user staring at a black screen forever. After 3 seconds with
+    // no auth resolution, reveal the auth screen so they at least have a sign-in
+    // path. The onAuthStateChanged callback clears this timer when it fires.
+    window._authFallbackTimer = setTimeout(() => {
+      if (window._currentUser === undefined) {
+        const authScreen = document.getElementById('auth-screen');
+        if (authScreen) authScreen.style.display = 'flex';
+      }
+    }, 3000);
+
     // Watch auth state — drives the whole app
     onAuthStateChanged(auth, async (user) => {
+      // Cancel the fallback timer — auth has resolved cleanly.
+      if (window._authFallbackTimer) {
+        clearTimeout(window._authFallbackTimer);
+        window._authFallbackTimer = null;
+      }
       window._currentUser = user;
       const authScreen = document.getElementById('auth-screen');
       const appEl = document.getElementById('app');
@@ -507,7 +525,13 @@
 <body style="overflow:hidden">
 
 <!-- Auth Screen — shown when not signed in -->
-<div id="auth-screen" style="display:flex;position:fixed;inset:0;z-index:10001;background:#0a0a0a;align-items:center;justify-content:center;flex-direction:column;gap:36px;padding:20px">
+<!-- Auth screen — hidden by default (S11 fix). Showing it as the default state caused
+     a flash on every cold load because Firebase Auth takes ~50-200ms to read the
+     persisted session from IndexedDB; during that window currentUser is null, the
+     auth screen would show, then onAuthStateChanged would fire with the real user
+     and the screen would swap. Now hidden until onAuthStateChanged actually fires
+     with no user. A 3s fallback timer in <script> reveals it if Firebase hangs. -->
+<div id="auth-screen" style="display:none;position:fixed;inset:0;z-index:10001;background:#0a0a0a;align-items:center;justify-content:center;flex-direction:column;gap:36px;padding:20px">
   <div style="text-align:center">
     <div style="font-family:'Share Tech Mono','Courier New',monospace;font-size:32px;color:#d4e82a;letter-spacing:0.16em;margin-bottom:10px;text-shadow:0 0 16px rgba(184,216,32,0.4)">ROBOGRADER</div>
     <div style="font-size:12px;color:#6a6a6a;letter-spacing:0.22em;font-family:'Share Tech Mono','Courier New',monospace">COMIC GRADING APP</div>
@@ -3787,15 +3811,20 @@ function buildRoboGradeDisplay(rg, comic) {
     else byCat['Front'].push(d);
   });
 
-  function defectList(arr) {
+  function defectList(arr, startIdx) {
     if (!arr.length) return ''; // leave empty sections blank
-    return arr.map(d => {
-      const cb  = d.colorBreaking ? ` <span style="color:#e05050;font-size:9px">CB</span>` : '';
+    return arr.map((d, i) => {
+      const cb  = d.colorBreaking ? ` <span style="color:#a85020;font-size:10px;font-style:italic;font-family:'IBM Plex Mono',monospace">color breaking</span>` : '';
       const loc = d.location && d.location !== 'N/A' ? ` · ${d.location}` : '';
       const meas = d.measurement && d.measurement !== 'N/A' ? ` · ${d.measurement.replace(/^~\s*/,'')}` : '';
       const sev = d.severity || 'Low';
-      return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:3px 0;border-bottom:1px solid ${RULE};font-size:11px;gap:8px">
-        <span style="color:#c8d8a8">${d.type}${cb}<span style="color:${LIGHT};font-size:10px">${loc}${meas}</span></span>
+      // Printout paper banding — alternating cream/green stripes per row.
+      // Indices use the running counter `startIdx + i` so banding stays
+      // continuous across category sections rather than restarting with each.
+      const rowIdx = (startIdx || 0) + i;
+      const rowBg = (rowIdx % 2 === 0) ? PAPER_GREEN : PAPER_CREAM;
+      return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 10px;font-size:11px;gap:8px;background:${rowBg};font-family:'IBM Plex Mono','Menlo',monospace">
+        <span style="color:${PAPER_INK}">${d.type}${cb}<span style="color:${PAPER_INK_LT};font-size:10px">${loc}${meas}</span></span>
         <span style="color:${sevColor(sev)};font-weight:700;font-size:10px;white-space:nowrap;flex-shrink:0">${sev.toUpperCase()}</span>
       </div>`;
     }).join('');
@@ -3808,15 +3837,30 @@ function buildRoboGradeDisplay(rg, comic) {
   const ss  = rg.spineScore    != null ? Math.round(rg.spineScore)    : '—';
   const ins = rg.interiorScore != null ? Math.round(rg.interiorScore) : '—';
 
-  // Category sections — only render if there are defects
+  // Printout paper palette (S11) — vintage tractor-feed continuous-form paper:
+  // pale mint-green bars and slightly-off-white cream bars, dark olive ink.
+  // Reference image confirmed muted greens, not saturated. The category-header
+  // strip uses a darker olive band to anchor section breaks visually.
+  const PAPER_GREEN    = '#cce8b8';   // pale mint-green band
+  const PAPER_CREAM    = '#f4f0dc';   // off-white cream band
+  const PAPER_HEADER   = '#a8c898';   // slightly bolder green for category headers
+  const PAPER_INK      = '#1f2a08';   // dark olive ink
+  const PAPER_INK_LT   = '#5a6a3a';   // muted ink for secondary detail
+
+  // Category sections — only render if there are defects. Each row gets a
+  // running-index passed in so green/cream banding flows continuously across
+  // categories rather than resetting at each section break.
+  let runningIdx = 0;
   function catSection(label, score, defArr) {
     if (!defArr.length) return ''; // hide entire empty sections
-    return `<div style="margin-bottom:8px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-        <span style="font-size:10px;font-weight:700;color:${OLIVE_LT};letter-spacing:1px">${label}</span>
-        <span style="font-size:16px;font-weight:800;color:${CHARTREUSE}">${score}</span>
+    const startIdx = runningIdx;
+    runningIdx += defArr.length;
+    return `<div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:${PAPER_HEADER};border-top:1px solid ${PAPER_INK_LT};border-bottom:1px solid ${PAPER_INK_LT}">
+        <span style="font-size:10px;font-weight:700;color:${PAPER_INK};letter-spacing:1.5px;font-family:'IBM Plex Mono','Menlo',monospace">${label}</span>
+        <span style="font-size:14px;font-weight:800;color:${PAPER_INK};font-family:'IBM Plex Mono','Menlo',monospace">${score}</span>
       </div>
-      ${defectList(defArr)}
+      ${defectList(defArr, startIdx)}
     </div>`;
   }
 
@@ -3825,22 +3869,60 @@ function buildRoboGradeDisplay(rg, comic) {
     catSection('BACK',     bs,  byCat['Back']),
     catSection('SPINE',    ss,  byCat['Spine']),
     catSection('INTERIOR', ins, byCat['Interior']),
-  ].filter(Boolean).join(`<div style="border-top:1px solid ${RULE};margin:6px 0"></div>`);
-
-  // Keep staples and restoration flags only; drop the redundant assessmentNotes paragraph
-  const extrasHTML = [
-    rg.stapleCondition ? `<div style="font-size:11px;color:${LIGHT};margin-top:6px"><strong style="color:#a8b888">Staples:</strong> ${rg.stapleCondition}</div>` : '',
-    rg.restorationFlags&&rg.restorationFlags.length ? `<div style="font-size:11px;color:#e05050;margin-top:4px">⚠ Restoration flags: ${rg.restorationFlags.join(', ')}</div>` : '',
   ].filter(Boolean).join('');
+
+  // Hide the staples line entirely when there are no defects to call out (S11).
+  // The Results box is for defects only — "Clean, no rust observed" is just
+  // restating the absence of a problem, which clutters without informing.
+  // Heuristic: hide if the text starts with "Clean" or contains "no rust",
+  // "no oxidation", "no migration" without contradicting language. If the model
+  // ever does report a real staple defect (rust, recessed, popped, etc.), the
+  // text won't match these patterns and the line will display normally.
+  function staplesAreClean(s) {
+    if (!s) return true;
+    const lower = s.toLowerCase();
+    if (/^clean\b/.test(lower)) return true;
+    // "no rust" / "no oxidation" / "no migration" without a "but" or "except" — clean enough to hide
+    if (/\bno\s+(rust|oxidation|migration)\b/.test(lower) && !/\b(but|except|however|some|minor|slight|trace)\b/.test(lower)) return true;
+    return false;
+  }
+
+  // Staples and restoration flags appear at the bottom of the printout if they
+  // have something to say. Styled to live on the cream paper rather than the
+  // dark Results-header surface.
+  const extrasHTML = [
+    (rg.stapleCondition && !staplesAreClean(rg.stapleCondition)) ? `<div style="padding:6px 10px;background:${PAPER_CREAM};font-size:11px;color:${PAPER_INK};font-family:'IBM Plex Mono','Menlo',monospace"><strong>Staples:</strong> ${rg.stapleCondition}</div>` : '',
+    rg.restorationFlags&&rg.restorationFlags.length ? `<div style="padding:6px 10px;background:${PAPER_CREAM};font-size:11px;color:#a02020;font-family:'IBM Plex Mono','Menlo',monospace">⚠ Restoration flags: ${rg.restorationFlags.join(', ')}</div>` : '',
+  ].filter(Boolean).join('');
+
+  // Grade date + RG ID block (S11): provenance info that lives between the
+  // score panel and the defect printout. Appears only when the comic actually
+  // has been Robograded. Date displays in local format (e.g. "Apr 29, 2026")
+  // rather than the stored ISO. ID shown verbatim in monospace.
+  let provenanceHTML = '';
+  if (comic && (comic.roboGradeDate || comic.roboGradeId)) {
+    let dateStr = '';
+    if (comic.roboGradeDate) {
+      try {
+        const dt = new Date(comic.roboGradeDate);
+        dateStr = dt.toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' });
+      } catch(e) { dateStr = ''; }
+    }
+    provenanceHTML = `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:${OLIVE};border-radius:6px;margin-bottom:10px;font-family:'IBM Plex Mono','Menlo',monospace;font-size:11px">
+      ${dateStr ? `<div><span style="color:${OLIVE_LT};letter-spacing:1px;font-size:9px;font-weight:700">GRADED</span> <span style="color:${CHARTREUSE};margin-left:6px">${dateStr}</span></div>` : '<div></div>'}
+      ${comic.roboGradeId ? `<div><span style="color:${OLIVE_LT};letter-spacing:1px;font-size:9px;font-weight:700">ID</span> <span style="color:${CHARTREUSE};margin-left:6px;letter-spacing:0.5px">${comic.roboGradeId}</span></div>` : ''}
+    </div>`;
+  }
 
   // Layout (S11): heading "ROBOGRADE RESULTS" spans full container width on
   // top so the score box (left) and 2x2 sub-grade grid (right) can both
-  // start from the same baseline below it. Previously the heading was nested
-  // inside the right column, where it wrapped to two lines and pushed the
-  // sub-grade boxes down out of alignment with the top of the score box.
-  return `<div style="background:${BG};border:1.5px solid ${OLIVE_MID};border-radius:12px;padding:14px;margin-bottom:8px">
+  // start from the same baseline below it. The defect listing is styled as
+  // 1970s tractor-feed printout paper (alternating mint-green and cream bands,
+  // monospace font, dark olive ink) to read as "what the Robograder printed
+  // out about this book." Extends to the rounded bottom corners of the panel.
+  return `<div style="background:${BG};border:1.5px solid ${OLIVE_MID};border-radius:12px;padding:14px 14px 0;margin-bottom:8px;overflow:hidden">
     <div style="font-size:10px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:10px">ROBOGRADE RESULTS</div>
-    <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:14px">
+    <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px">
       <div style="background:${OLIVE};border-radius:16px;width:88px;height:88px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;border:1.5px solid ${OLIVE_MID}">
         <div style="font-size:8px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:2px">RG</div>
         <div style="display:flex;align-items:flex-start;gap:2px">
@@ -3868,8 +3950,19 @@ function buildRoboGradeDisplay(rg, comic) {
         </div>
       </div>
     </div>
-    ${sectionsHTML ? `<div style="border-top:1px solid ${RULE};padding-top:10px">${sectionsHTML}</div>` : ''}
-    ${extrasHTML}
+    ${provenanceHTML}
+    ${sectionsHTML || extrasHTML ? `<div style="margin:0 -14px;border-top:2px solid ${OLIVE_MID};border-bottom:1.5px solid ${OLIVE_MID};position:relative">
+      <!-- Faux perforated edges, tractor-feed style. Repeating radial gradients
+           draw small dark circles down each margin to read as feed holes. The
+           edges are subtle by design — too prominent and they'd dominate the
+           defect data. -->
+      <div style="position:absolute;left:0;top:0;bottom:0;width:8px;background-image:radial-gradient(circle at 4px 8px, ${OLIVE_MID} 1.5px, transparent 1.6px);background-size:8px 14px;background-repeat:repeat-y;background-color:${PAPER_CREAM};z-index:1"></div>
+      <div style="position:absolute;right:0;top:0;bottom:0;width:8px;background-image:radial-gradient(circle at 4px 8px, ${OLIVE_MID} 1.5px, transparent 1.6px);background-size:8px 14px;background-repeat:repeat-y;background-color:${PAPER_CREAM};z-index:1"></div>
+      <div style="margin:0 8px;background:${PAPER_CREAM}">
+        ${sectionsHTML}
+        ${extrasHTML}
+      </div>
+    </div>` : ''}
   </div>`;
 }
 
@@ -4540,17 +4633,26 @@ initFirebase();
     <h2 style="margin:0 0 6px;font-size:20px;color:#1a1008">Buy Assessments</h2>
     <p style="margin:0 0 20px;font-size:13px;color:#6a5a4a">One credit per assessment. CGC and PSA together count as one.</p>
     <div style="display:flex;flex-direction:column;gap:12px">
-      <button onclick="buyCredits('comic_stack')" style="background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:14px 16px;cursor:pointer;text-align:left">
-        <div style="font-size:16px;font-weight:700;color:#1a1008">Comic Stack — $10</div>
-        <div style="font-size:13px;color:#3a2a1a;margin-top:2px">10 assessments · $1.00 each</div>
+      <button onclick="buyCredits('comic_stack')" style="display:flex;align-items:center;gap:14px;background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:12px 16px;cursor:pointer;text-align:left;width:100%">
+        <img src="/assets/products/Comic_Stack.png" alt="" width="64" height="64" style="flex-shrink:0;object-fit:contain">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:16px;font-weight:700;color:#1a1008">Comic Stack — $10</div>
+          <div style="font-size:13px;color:#3a2a1a;margin-top:2px">10 assessments · $1.00 each</div>
+        </div>
       </button>
-      <button onclick="buyCredits('comic_wall')" style="background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:14px 16px;cursor:pointer;text-align:left">
-        <div style="font-size:16px;font-weight:700;color:#1a1008">Comic Wall — $30</div>
-        <div style="font-size:13px;color:#3a2a1a;margin-top:2px">40 assessments · 75¢ each</div>
+      <button onclick="buyCredits('comic_wall')" style="display:flex;align-items:center;gap:14px;background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:12px 16px;cursor:pointer;text-align:left;width:100%">
+        <img src="/assets/products/Comic_Wall.png" alt="" width="64" height="64" style="flex-shrink:0;object-fit:contain">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:16px;font-weight:700;color:#1a1008">Comic Wall — $30</div>
+          <div style="font-size:13px;color:#3a2a1a;margin-top:2px">40 assessments · 75¢ each</div>
+        </div>
       </button>
-      <button onclick="buyCredits('short_box')" style="background:#1a1008;border:2px solid #1a1008;border-radius:10px;padding:14px 16px;cursor:pointer;text-align:left">
-        <div style="font-size:16px;font-weight:700;color:#c8a96e">Short Box — $100</div>
-        <div style="font-size:13px;color:#a89070;margin-top:2px">Best value · 150 assessments · 67¢ each</div>
+      <button onclick="buyCredits('short_box')" style="display:flex;align-items:center;gap:14px;background:#1a1008;border:2px solid #1a1008;border-radius:10px;padding:12px 16px;cursor:pointer;text-align:left;width:100%">
+        <img src="/assets/products/Short_Box.png" alt="" width="64" height="64" style="flex-shrink:0;object-fit:contain">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:16px;font-weight:700;color:#c8a96e">Short Box — $100</div>
+          <div style="font-size:13px;color:#a89070;margin-top:2px">Best value · 150 assessments · 67¢ each</div>
+        </div>
       </button>
     </div>
     <button onclick="hideBuyCredits()" style="margin-top:16px;width:100%;background:none;border:none;color:#8a7a6a;font-size:14px;cursor:pointer;padding:8px">Cancel</button>
