@@ -547,8 +547,7 @@ Grade calibration:
 • Strong eye appeal + flat spine + bright colors + sharp corners = high grade.
 • At high grades (8.5+), stress lines, bends, soiling, and printer tears become potentially grade-defining.
 • Missing piece ceilings: <1/4"→max ~9.0 | 1/4"–1/2"→max ~8.0 | >1/2"→max ~5.0 | >1"→max ~3.0
-• UV: white covers with tanning on unprinted areas only.
-• Press: spine roll=yes | edge fraying=no | corner creases=yes | tanning=no.
+• ENHANCE: a single yes/no judgment about whether professional treatment (any of pressing, UV, or cleaning, or any combination) is likely to improve this book's grade. Output "Y" if any of these would help: visible spine roll or rippling that pressing could correct, color-breaking creases that pressing might soften, soiling that cleaning could lift, or tanning on unprinted white areas that UV could lighten. Output "N" if defects are dominated by structural damage that no treatment can address (missing pieces, tears, severe creases, stains that have set). Leave null if uncertain.
 Grader notes — PSA-STYLE RESTRAINT (v2.1 calibration):
 
 PSA's grader notes are the gold standard for clarity. PSA describes a typical Silver Age 7.0 book with one or two sentences per cover side, naming only the defects that matter to the grade. RG's prior versions were over-enumerating — listing 12-15 separate notes for a mid-grade book with the same defects repeated across multiple corners. Match PSA's restraint.
@@ -568,7 +567,7 @@ TARGET NOTE COUNT:
   More than these counts indicates over-enumeration. Consolidate.
 
 COLOR-BREAKING CALIBRATION:
-  Color-breaking ("CB") is a specific, restrained classification. A typical Silver Age book has 0-2 color-breaking defects, NOT 5-10. Reserve CB for clearly-visible breaks where the printed color is interrupted by the crease/fold/stress line. Surface stress lines that don't visibly break color should be noted as non-color-breaking, OR — when the book has many stress lines that are mostly clean — omit the CB qualifier entirely with phrasing like "Multiple light spine stress lines, mostly non-color-breaking".
+  Color-breaking is a specific, restrained classification. A typical Silver Age book has 0-2 color-breaking defects, NOT 5-10. Reserve the color-breaking flag for clearly-visible breaks where the printed color is interrupted by the crease/fold/stress line. Surface stress lines that don't visibly break color should be noted as non-color-breaking, OR — when the book has many stress lines that are mostly clean — omit the color-breaking qualifier entirely with phrasing like "Multiple light spine stress lines, mostly non-color-breaking".
 
   Default position: a stress line is non-color-breaking unless you can see the color discontinuity in the photo.
 
@@ -577,7 +576,7 @@ SEVERITY DISCIPLINE:
 
   Same applies to severity field: do not over-call High severity. Most Silver Age defects are Low or Med. High is reserved for defects that actually drop a grade tier on their own (color-breaking creases, missing pieces over 1/4", spine splits, tape, etc.).
 
-Format: one bullet per note starting with •, official CGC terminology, mark CB only when truly color-breaking.
+Format: one bullet per note starting with •, official CGC terminology, mark color-breaking only when truly color-breaking.
 
 CGC GRADE TIER REFERENCE — what each grade officially permits:
 ${CGC_GRADE_TIERS.trim()}
@@ -666,11 +665,10 @@ RETURN ONLY THIS JSON — no markdown, no preamble
   "pageQuality": "full designation e.g. Off-White to White",
   "grade": "CGC grade estimate e.g. 7.0",
   "graderNotes": "• one bullet per defect, official CGC terminology",
-  "aiAssessment": "2-4 sentences: overall impression, dominant defects, grade rationale, press/UV/clean recs",
+  "aiAssessment": "2-4 sentences: overall impression, dominant defects, grade rationale, enhancement judgment",
   "labelNotes": "key issue notations from label if visible, empty string if none",
-  "press": true,
-  "uv": false,
-  "clean": null,
+  "keyInfo": "1-2 sentences about key-issue significance — ONLY populate if (a) the issue appears in the census data injected above AND (b) you are confident the fact is widely documented. Examples: 'First full appearance of Wolverine.' / 'First appearance of the Punisher.' Stay silent (empty string) if the issue is not a recognized key, even if you might guess at its significance. Better to omit than to hallucinate.",
+  "enhance": true,
   "labelDetected": false,
   "officialCGCGrade": null,
   "officialCGCCert": null,
