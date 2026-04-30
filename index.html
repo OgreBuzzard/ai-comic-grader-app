@@ -109,12 +109,23 @@
     // we don't want the user staring at a black screen forever. After 3 seconds with
     // no auth resolution, reveal the auth screen so they at least have a sign-in
     // path. The onAuthStateChanged callback clears this timer when it fires.
-    window._authFallbackTimer = setTimeout(() => {
-      if (window._currentUser === undefined) {
-        const authScreen = document.getElementById('auth-screen');
-        if (authScreen) authScreen.style.display = 'flex';
+    //
+    // BUT: do NOT reveal the auth screen if the Firebase auth module hasn't loaded
+    // yet — the sign-in button would be wired to undefined functions and tapping
+    // it would throw "window._signInWithPopup is not a function". Instead, retry
+    // the check periodically until Firebase modules ARE ready, then show the auth
+    // screen if still no user.
+    function tryRevealAuthScreen() {
+      if (window._currentUser !== undefined) return; // user resolved, never mind
+      if (typeof window._signInWithPopup !== 'function') {
+        // Firebase auth still loading — try again shortly
+        setTimeout(tryRevealAuthScreen, 500);
+        return;
       }
-    }, 3000);
+      const authScreen = document.getElementById('auth-screen');
+      if (authScreen) authScreen.style.display = 'flex';
+    }
+    window._authFallbackTimer = setTimeout(tryRevealAuthScreen, 3000);
 
     // Watch auth state — drives the whole app
     onAuthStateChanged(auth, async (user) => {
@@ -312,7 +323,14 @@
     .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     .cost-box { background: #f8f6f3; border: 1px solid #ccc8c0; border-radius: 6px; padding: 14px 16px; }
     .treatment-btn { padding: 6px 14px; border-radius: 4px; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid; font-family: inherit; }
-    .sticky-back { position: sticky; top: 56px; z-index: 90; background: #f5f4f2; padding: 10px 0 6px; margin-bottom: 4px; }
+    /* Sticky-back bar (used by detail and edit views for Back / Edit buttons).
+       The offset uses --header-h, a CSS variable updated by JS to match the
+       actual measured header height — see updateHeaderHeight() further down.
+       The fallback 56px matches a typical single-row header so the bar lands
+       in the right spot even before JS runs. Earlier hardcoded 56px caused a
+       visible gap below the header when the header height changed (e.g. after
+       collapsing from two rows to one, or removing the wordmark). */
+    .sticky-back { position: sticky; top: var(--header-h, 56px); z-index: 90; background: #f5f4f2; padding: 10px 0 6px; margin-bottom: 4px; }
     #lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.93); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 20px; overflow: hidden; touch-action: none; }
     #lightbox-stage { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; touch-action: none; overflow: hidden; }
     #lightbox-img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; pointer-events: auto; touch-action: none; -webkit-touch-callout: none; cursor: grab; }
@@ -555,15 +573,16 @@
 <div id="app" style="display:none">
   <div id="header">
     <div id="header-row-top">
-      <button id="header-title" onclick="showList()">
-        <span class="main">Robograder</span>
-      </button>
-      <!-- All header controls share the row with the title (S11). Previously the
-           controls lived on a separate row beneath the title, which made the
-           sticky header tall enough to obscure the Back/Edit buttons in the
-           detail view sticky bar. Single row = roughly half the vertical real
-           estate, leaving Back/Edit accessible without scrolling. -->
-      <div id="header-loading-pill" style="display:flex;align-items:center;gap:8px;padding:6px 14px;background:rgba(0,0,0,0.04);border-radius:18px;color:#8a7a6a;font-size:13px;font-weight:500;letter-spacing:0.3px;margin-left:auto">
+      <!-- Header is a single row of controls (S11). Previously held the
+           "Robograder" wordmark on the left, but the title plus loading pill
+           plus coin plus Buy plus Add plus gear collectively overflowed on
+           narrow phones. The wordmark was the lowest-utility element of the
+           bunch — the user knows which app they're in — so it's been removed
+           in favor of the controls fitting cleanly. The list view's empty
+           state still says "No books yet" with branding context if needed.
+           Future option (post-beta): bring back the wordmark conditionally
+           on detail and edit views, where the row is less crowded. -->
+      <div id="header-loading-pill" style="display:flex;align-items:center;gap:8px;padding:6px 14px;background:rgba(0,0,0,0.04);border-radius:18px;color:#8a7a6a;font-size:13px;font-weight:500;letter-spacing:0.3px;margin-right:auto">
         <div style="width:14px;height:14px;border:2px solid #c8b8a8;border-top-color:#5a4a3a;border-radius:50%;animation:spin 0.9s linear infinite"></div>
         <span>Loading…</span>
       </div>
@@ -582,7 +601,7 @@
         <span id="credit-coin-count">0</span>
       </button>
       <button class="btn btn-topbar btn-buy" onclick="showBuyCredits()" id="credits-btn" style="display:none">Buy</button>
-      <button class="btn btn-topbar btn-add" id="add-btn" onclick="showAdd()" style="display:none">+ Add</button>
+      <button class="btn btn-topbar btn-add" id="add-btn" onclick="showAdd()" style="display:none">Add</button>
       <button class="btn-gear" onclick="openSettings()" title="Settings" id="settings-btn" aria-label="Settings">⚙</button>
     </div>
   </div>
@@ -1571,7 +1590,7 @@ function renderList(){
   </div>`;
 
   if(titles.length===0){
-    html+=`<div style="text-align:center;padding:80px 20px;color:#8a7a6a"><div style="font-size:40px;margin-bottom:16px">📚</div><div style="font-size:18px;color:#6a5a4a;margin-bottom:8px">No books yet</div></div>`;
+    html+=`<div style="text-align:center;padding:80px 20px;color:#8a7a6a"><div style="font-size:18px;color:#6a5a4a;margin-bottom:8px">No books yet</div><div style="font-size:13px;color:#8a7a6a">Tap + Add to start your collection.</div></div>`;
   } else {
     titles.forEach(title=>{
       const isOpen=collapsed[title]===false;
@@ -4701,5 +4720,37 @@ initFirebase();
     <button onclick="hidePaymentCancelled()" style="background:#1a1008;color:#c8a96e;border:none;border-radius:10px;padding:14px 24px;font-size:15px;font-weight:700;cursor:pointer;width:100%">OK</button>
   </div>
 </div>
+<!-- Header-height observer (S11): keeps --header-h CSS variable in sync
+     with the real height of the sticky #header. The .sticky-back bar (Back
+     and Edit on detail view) reads this variable to position itself flush
+     against the bottom of the header. Earlier the offset was hardcoded to
+     56px; when header height changed (collapsed from two rows to one, or
+     wordmark removed) a visible gap appeared. ResizeObserver keeps it
+     correct across all view changes and orientation changes. -->
+<script>
+(function watchHeaderHeight() {
+  const header = document.getElementById('header');
+  if (!header) return;
+  function update() {
+    const h = header.offsetHeight;
+    if (h > 0) {
+      document.documentElement.style.setProperty('--header-h', h + 'px');
+    }
+  }
+  // Initial measure (header may still be loading fonts; do a few retries to
+  // catch the final-rendered height after web fonts settle in)
+  update();
+  setTimeout(update, 100);
+  setTimeout(update, 500);
+  // Live updates: ResizeObserver fires when header content changes (e.g. coin
+  // count changing from 0 to 100 wraps differently, view switches between
+  // list and detail with different button visibility, etc).
+  if (typeof ResizeObserver === 'function') {
+    new ResizeObserver(update).observe(header);
+  }
+  // Final safety net: orientation/window resize
+  window.addEventListener('resize', update);
+})();
+</script>
 </body>
 </html>
