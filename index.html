@@ -331,13 +331,24 @@
        visible gap below the header when the header height changed (e.g. after
        collapsing from two rows to one, or removing the wordmark). */
     .sticky-back { position: sticky; top: var(--header-h, 56px); z-index: 90; background: #f5f4f2; padding: 10px 0 6px; margin-bottom: 4px; }
-    #lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.93); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 20px; overflow: hidden; touch-action: none; }
+    /* Lightbox (S11 fixes):
+       - Uses `100dvh` for the height so iOS Safari's collapsing address bar
+         doesn't cause the image to extend below the visible viewport. `100vh`
+         reports the maximum viewport height which on iOS is the address-bar-
+         hidden state; if you load the page with the bar visible, the image
+         renders too tall and clips at the bottom.
+       - Padding-top and padding-bottom honor safe-area-inset to avoid the
+         iOS notch and home indicator.
+       - The previous 20px padding all around forced the image into a smaller
+         box than necessary; with proper viewport sizing we can tighten the
+         margins so more of the image is visible. */
+    #lightbox { position: fixed; inset: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.95); display: none; align-items: center; justify-content: center; z-index: 1000; padding: max(env(safe-area-inset-top, 12px), 12px) 8px max(env(safe-area-inset-bottom, 12px), 12px); overflow: hidden; touch-action: none; }
     #lightbox-stage { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; touch-action: none; overflow: hidden; }
     #lightbox-img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; pointer-events: auto; touch-action: none; -webkit-touch-callout: none; cursor: grab; }
     #lightbox-img:active { cursor: grabbing; }
-    #lightbox-close { position: absolute; top: 14px; right: 14px; width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; border: 1.5px solid rgba(255,255,255,0.3); font-size: 22px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; z-index: 1002; padding: 0; }
+    #lightbox-close { position: absolute; top: max(env(safe-area-inset-top, 14px), 14px); right: 14px; width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; border: 1.5px solid rgba(255,255,255,0.3); font-size: 22px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; z-index: 1002; padding: 0; }
     #lightbox-close:hover { background: rgba(0,0,0,0.85); }
-    #lightbox-hint { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); font-size: 11px; color: rgba(255,255,255,0.5); letter-spacing: 1.5px; pointer-events: none; z-index: 1001; }
+    #lightbox-hint { position: absolute; bottom: max(env(safe-area-inset-bottom, 18px), 18px); left: 50%; transform: translateX(-50%); font-size: 11px; color: rgba(255,255,255,0.5); letter-spacing: 1.5px; pointer-events: none; z-index: 1001; }
     #sync-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 9998; background: #f0eaff; border-bottom: 2px solid #7a40cf; padding: 10px 16px; display: flex; align-items: center; gap: 10px; }
     /* Settings panel */
     #settings-overlay {
@@ -1182,14 +1193,22 @@ const SAMPLE_COMIC = {
   aiAssessment: 'Certified flawless by the Unerring Robograder.',
   aiGraderNotes: '',
   psaNotes: '',
+  keyInfo: '',  // S11: census-gated annotations about key issue significance.
+                // Populated by AI only when (a) the issue is in the ~2,359-book
+                // census list, AND (b) the AI is confident about the fact.
+                // Hidden in detail view if Label Notes already covers it.
   notes: '',
   cgcGrade: '',
   cgcCert: '',
   psaGrade: '',
   psaCert: '',
-  press: null,
-  uv: null,
-  clean: null,
+  press: null,    // legacy (S11): retained for old books; no longer written
+  uv: null,       // legacy (S11): retained for old books; no longer written
+  clean: null,    // legacy (S11): retained for old books; no longer written
+  enhance: null,  // S11: replaces Press/UV/Clean trio with a single judgment.
+                  // Y = book likely to benefit from any of pressing, UV, or
+                  // cleaning. N = no enhancement expected to help. null =
+                  // not assessed or AI uncertain.
   purchasePrice: '',
   seller: '',
   images: [
@@ -1672,6 +1691,10 @@ function showDetail(id){
       ${selected.issueDate?`<span style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(selected.issueDate))}</span>`:""}
     </div>`:""}
     ${selected.publisher?`<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:500;color:#8a7a6a;margin-top:4px">${esc(selected.publisher)}</div>`:""}
+    ${(selected.cgcCert || selected.psaCert)?`<div style="font-family:'IBM Plex Mono','Menlo',monospace;font-size:13px;color:#5a4a3a;margin-top:6px;letter-spacing:0.3px">
+      ${selected.cgcCert?`<div><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">CGC</span> <span style="margin-left:6px">${esc(selected.cgcCert)}</span></div>`:""}
+      ${selected.psaCert?`<div style="margin-top:2px"><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">PSA</span> <span style="margin-left:6px">${esc(selected.psaCert)}</span></div>`:""}
+    </div>`:""}
   </div>`;
 
   // Images block — moved to after the title/issue/publisher header.
@@ -1751,90 +1774,232 @@ function showDetail(id){
     html+=`<div style="margin-top:16px">${buildRoboGradeDisplay(selected.roboGrade, selected)}</div>`;
   }
 
-  // Assessment results — RG, CGC, PSA badges + centered PQ pill
-  const gradeRow=buildGradeRowHTML(selected);
-  if(gradeRow||selected.pageQuality){
-    html+=`<div style="margin-top:16px;padding:14px;background:#0d0d0f;border:1px solid #2a2a3a;border-radius:10px;display:flex;flex-direction:column;align-items:center;gap:10px">
-      ${gradeRow||""}
-      ${selected.pageQuality?`<div style="display:flex;justify-content:center">${buildPQBox(selected.pageQuality)}</div>`:""}
+  // Predictions box (S11 restructure): three side-by-side boxes for CGC official,
+  // CGC predicted, and PSA predicted — followed by Page Quality underneath.
+  // RoboGrade is NOT shown here because it already has its own dedicated Robograde
+  // Results panel above. Each of the three grade boxes only renders when its
+  // value exists, so a raw book (just CGC AI + PSA AI) shows two; a graded book
+  // with predictions shows all three; a book with only an official grade shows
+  // one. Page quality logic:
+  //   • Graded book → PQ comes from the label (user-entered), display it
+  //   • Raw book with PQ set → AI predicted from interior photo, display it
+  //   • Raw book without PQ → omit (no interior photo was provided)
+  const cgcOfficialBadge = selected.cgcGrade ? buildBadge(selected.cgcGrade, "cgc-official", detectDesignation(selected), false) : null;
+  const cgcAiGrade = aiCgcGrade(selected);
+  const cgcAiBadge = cgcAiGrade ? buildBadge(normalizeGrade(cgcAiGrade), "cgc-ai", "", false) : null;
+  const psaAiBadge = selected.assessedPSAGrade ? buildBadge(normalizeGrade(selected.assessedPSAGrade), "psa-ai", "", false) : null;
+  const psaOfficialBadge = selected.psaGrade ? buildBadge(selected.psaGrade, "psa-official", selected.psaDesignation || "universal", false) : null;
+
+  // Build the row of boxes in fixed order: CGC official → CGC predicted → PSA official → PSA predicted.
+  // A book can only be officially graded by ONE service — CGC or PSA, never both — so at most one
+  // of cgcOfficialBadge / psaOfficialBadge will exist at a time. Typical combinations:
+  //   • Raw book post-assessment: CGC predicted + PSA predicted (2 boxes)
+  //   • CGC-graded book post-assessment: CGC official + CGC predicted + PSA predicted (3 boxes)
+  //   • PSA-graded book post-assessment: CGC predicted + PSA official + PSA predicted (3 boxes)
+  //   • Raw book never assessed: 0 boxes (the whole prediction box is hidden)
+  // All four boxes at once never occurs.
+  const predictionBoxes = [cgcOfficialBadge, cgcAiBadge, psaOfficialBadge, psaAiBadge].filter(Boolean);
+
+  // Page quality display logic (S11):
+  //   • Graded book (cgcGrade or psaGrade present) → PQ comes from the label entry, display it
+  //   • Raw book WITH interior photo (images[2] present, the page_quality slot) → AI predicted from real interior data, display it
+  //   • Raw book WITHOUT interior photo → omit PQ even if AI guessed at it, since the prediction would be unreliable without an interior shot
+  const isGraded = !!(selected.cgcGrade || selected.psaGrade);
+  const hasInteriorPhoto = !!(selected.images && selected.images[2]);
+  const showPQ = selected.pageQuality && (isGraded || hasInteriorPhoto);
+
+  if (predictionBoxes.length > 0 || showPQ) {
+    html += `<div style="margin-top:16px;padding:14px;background:#0d0d0f;border:1px solid #2a2a3a;border-radius:10px;display:flex;flex-direction:column;align-items:center;gap:12px">`;
+    if (predictionBoxes.length > 0) {
+      html += `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;justify-content:center">${predictionBoxes.join("")}</div>`;
+    }
+    if (showPQ) {
+      html += `<div style="display:flex;justify-content:center">${buildPQBox(selected.pageQuality)}</div>`;
+    }
+    html += `</div>`;
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Detail view bottom half (S11 reorder).
+  // Top-half (above) ends with the prediction box. Below this point, the
+  // sequence is: collector decisions → analysis → metadata → cost → publishing.
+  // Order rationale: Enhance/My Notes are decisions about what the user
+  // wants to do with the book. Then the text analysis blocks (Label Notes,
+  // Key Info, Grader Notes, Defect Notes, Condition Assessment, Restoration,
+  // PSA Variance) flow from grading data through reasoning. Date and seller
+  // metadata follow. Cost breakdown is rare and only renders if any of the
+  // four cost fields are populated. Public toggle and action buttons close.
+  // ───────────────────────────────────────────────────────────────────────
+
+  // ─── Enhance toggle ───
+  // Replaces the prior Press/UV/Clean trio with a single judgment about
+  // whether the book is likely to benefit from any enhancement (pressing,
+  // UV treatment, cleaning, or any combination thereof). For new books this
+  // comes directly from the AI's enhance field; for legacy books with old
+  // press/uv/clean values, derive enhance for display so the data isn't lost.
+  let enhanceVal = selected.enhance;
+  if (enhanceVal === null || enhanceVal === undefined) {
+    const legacyVals = [selected.press, selected.uv, selected.clean].filter(v => v === true || v === false);
+    if (legacyVals.length > 0) {
+      enhanceVal = legacyVals.some(v => v === true) ? true : false;
+    }
+  }
+  if (enhanceVal === true || enhanceVal === false) {
+    const isYes = enhanceVal === true;
+    html += `<div style="margin-top:16px"><div style="display:inline-block;padding:5px 12px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:1px;background:${isYes?"#1a2a10":"#2a1a10"};border:1px solid ${isYes?"#4a7a20":"#5a2a10"};color:${isYes?"#8abf40":"#bf6040"}">Enhance: ${isYes?"Y":"N"}</div></div>`;
+  }
+
+  // ─── My Notes ───
+  // User-entered notes about plans for the book, purchase context, etc.
+  // Hidden if user hasn't entered anything in Edit view.
+  if(selected.notes) {
+    html += `<div style="margin-top:20px"><div class="section-label">My Notes</div><div style="font-size:13px;color:#6a5a4a;line-height:1.7">${esc(selected.notes)}</div></div>`;
+  }
+
+  // ─── Label Notes ───
+  // Text extracted from the official label of a graded book. ONLY shown for
+  // graded books (cgcGrade or psaGrade present) AND only when the AI extracted
+  // something. For raw books, see Key Info below — that field can fill the
+  // same role using census data.
+  const showLabelNotes = isGraded && selected.cgcNotes && selected.cgcNotes.trim();
+  if(showLabelNotes) {
+    html += `<div style="margin-top:20px"><div class="section-label" style="color:#4a7a4a">Label Notes</div><div class="notes-box" style="border-color:#1a3a1a;color:#80b080">${esc(selected.cgcNotes)}</div></div>`;
+  }
+
+  // ─── Key Info ───
+  // AI-populated annotation about a key issue's significance (first appearance,
+  // major event, etc.) — but ONLY when (a) the issue is in the census list, AND
+  // (b) the AI was confident enough to populate it. Skipped if Label Notes
+  // already covered the book, since the label typically annotates the same info.
+  if(!showLabelNotes && selected.keyInfo && selected.keyInfo.trim()) {
+    html += `<div style="margin-top:20px"><div class="section-label" style="color:#4a7a4a">Key Info</div><div class="notes-box" style="border-color:#1a3a1a;color:#80b080">${esc(selected.keyInfo)}</div></div>`;
+  }
+
+  // ─── Grader Notes ───
+  // Manually entered by user from a CGC/PSA label. Only appears on officially
+  // graded books AND only if the user has entered something in Edit view.
+  if(isGraded && selected.graderNotes) {
+    html += `<div style="margin-top:20px"><div class="section-label">Grader Notes</div><div class="notes-box" style="white-space:pre-line">${esc(selected.graderNotes)}</div></div>`;
+  }
+
+  // ─── Defect Notes (was RG Notes) ───
+  // AI-written bullet list of defects observed. The RG-prefixed naming was
+  // confusing now that the Robograde Results panel exists; "Defect Notes" is
+  // grader-agnostic and accurately describes what's in the field.
+  if(selected.aiGraderNotes) {
+    html += `<div style="margin-top:20px"><div class="section-label" style="color:#4a7a9a">Defect Notes</div><div class="notes-box" style="border-color:#1a3a5c;color:#4a7a9a;white-space:pre-line">${esc(selected.aiGraderNotes)}</div></div>`;
+  }
+
+  // ─── Condition Assessment (was RG Assessment) ───
+  // The freeform AI analysis paragraph: overall impression, dominant defects,
+  // grade rationale, enhancement judgment. Header simplified — no HG/RC badges
+  // (high-grade status is implicit in the score, restoration findings live in
+  // the Restoration Check block below).
+  const _aiText = selected.aiAssessment || selected.myAssessment || "";
+  if(_aiText) {
+    html += `<div style="margin-top:20px"><div class="section-label">Condition Assessment</div><div class="notes-box" style="font-style:normal;color:#6a5a4a">${esc(_aiText)}</div></div>`;
+  }
+
+  // ─── Restoration Check ───
+  // Only renders if the book ran through the paid Restoration Check tier.
+  // Lists found and suspected restoration types, or confirms clean.
+  if(selected.restorationCheckTier) {
+    const rpt = selected.restorationReport || {};
+    const found = Object.entries(rpt).filter(([,v]) => v === 'FOUND').map(([k]) => k);
+    const susp = Object.entries(rpt).filter(([,v]) => v === 'INCONCLUSIVE').map(([k]) => k);
+    let rHtml = `<div style="margin-top:20px"><div class="section-label" style="color:#e0904a">Restoration Check ${selected.restorationFlag ? '<span style="color:#ff6a3a">⚠ RESTORATION DETECTED</span>' : '<span style="color:#6abf6a">✓ Clean</span>'}</div><div class="notes-box" style="border-color:#5a2a0a;background:#1a0d05">`;
+    if(found.length) rHtml += `<div style="color:#ff7a4a;font-size:12px;margin-bottom:4px"><strong>Found:</strong> ${found.join(', ')}</div>`;
+    if(susp.length) rHtml += `<div style="color:#e0904a;font-size:12px;margin-bottom:4px"><strong>Suspected:</strong> ${susp.join(', ')}</div>`;
+    if(!found.length && !susp.length) rHtml += `<div style="color:#6abf6a;font-size:12px">No restoration evidence detected across all checked types.</div>`;
+    rHtml += '</div></div>';
+    html += rHtml;
+  }
+
+  // ─── PSA Variance (was PSA Notes) ───
+  // Only appears when the AI's PSA prediction differs meaningfully from its CGC
+  // prediction; AI returns empty string when they're the same. Renamed from
+  // "PSA Notes" to "PSA Variance" so the purpose is self-evident from the header.
+  if(selected.psaNotes) {
+    html += `<div style="margin-top:20px"><div class="section-label" style="color:#FF2040">PSA Variance</div><div class="notes-box" style="border-color:#5c1a1a;color:#e87a7a">${esc(selected.psaNotes)}</div></div>`;
+  }
+
+  // ─── Date Graded / Date Acquired / Total Cost / FMV grid ───
+  // Per-cell rendering: each cell only appears if its value is set. Whole grid
+  // is hidden if none are set, since otherwise we'd render a divider above
+  // empty space.
+  const hasAnyDateCost = !!(selected.slabbingDate || selected.dateAcquired || cost > 0 || selected.fmv);
+  if(hasAnyDateCost) {
+    html += `<div class="divider"></div>
+    <div class="grid-2">
+      ${selected.slabbingDate ? `<div><div class="section-label">Date Graded</div><div class="field-val">${esc(selected.slabbingDate)}</div></div>` : ""}
+      ${selected.dateAcquired ? `<div><div class="section-label">Date Acquired</div><div class="field-val">${formatDate(selected.dateAcquired)}</div></div>` : ""}
+      ${cost > 0 ? `<div><div class="section-label">Total Cost</div><div class="field-val" style="color:#8abf8a;font-weight:700">${fmt$(cost)}</div></div>` : ""}
+      ${selected.fmv ? `<div><div class="section-label">FMV${selected.fmvDate ? ` <span style="font-weight:400;color:#9a8a9a;font-size:10px">${esc(selected.fmvDate)}</span>` : ""}</div><div class="field-val" style="color:#a078df;font-weight:700">${fmt$(selected.fmv)}</div></div>` : ""}
     </div>`;
   }
 
-  // Cert numbers and seller — metadata that follows the assessment results.
-  // Held in a separate small block (not part of the main title header anymore).
-  if(selected.cgcCert||selected.psaCert||selected.seller){
-    html+=`<div style="margin-top:14px">
-      ${selected.cgcCert?`<div style="font-size:12px;color:#9a8a7a;margin-top:4px">Cert #${esc(selected.cgcCert)}</div>`:""}
-      ${selected.psaCert?`<div style="font-size:12px;color:#9a8a7a;margin-top:4px">Cert #${esc(selected.psaCert)}</div>`:""}
-      ${selected.seller?`<div style="font-size:12px;color:#8a7a6a;margin-top:4px">Purchased from: ${esc(selected.seller)}</div>`:""}
+  // ─── Seller ───
+  // Just a one-line "Purchased from: X" if user entered a seller in Edit view.
+  if(selected.seller) {
+    html += `<div style="margin-top:14px"><div style="font-size:12px;color:#8a7a6a">Purchased from: ${esc(selected.seller)}</div></div>`;
+  }
+
+  // ─── Cost Breakdown ───
+  // Only shown if at least one of the four cost fields is populated. Previously
+  // rendered unconditionally with "—" placeholders, which read as cluttered
+  // empty data on books the user hasn't filled in financial data for.
+  const hasAnyCost = !!(selected.purchasePrice || selected.taxesFeesShipping || selected.gradingCost || selected.cgcShipping);
+  if(hasAnyCost) {
+    html += `<div class="divider"></div>
+    <div class="section-label" style="color:#6a8a6a">Cost Breakdown</div>
+    <div class="grid-2" style="margin-top:10px">
+      ${selected.purchasePrice ? `<div><div class="section-label">Purchase Price</div><div class="field-val">${fmt$(selected.purchasePrice)}</div></div>` : ""}
+      ${selected.taxesFeesShipping ? `<div><div class="section-label">Taxes/Fees/Ship</div><div class="field-val">${fmt$(selected.taxesFeesShipping)}</div></div>` : ""}
+      ${selected.gradingCost ? `<div><div class="section-label">Grading Cost</div><div class="field-val">${fmt$(selected.gradingCost)}</div></div>` : ""}
+      ${selected.cgcShipping ? `<div><div class="section-label">CGC Shipping</div><div class="field-val">${fmt$(selected.cgcShipping)}</div></div>` : ""}
     </div>`;
   }
 
-  html+=`<div class="divider"></div>
-  <div class="grid-2">
-    ${selected.slabbingDate?`<div><div class="section-label">Date Graded</div><div class="field-val">${esc(selected.slabbingDate)}</div></div>`:""}
-    ${selected.dateAcquired?`<div><div class="section-label">Date Acquired</div><div class="field-val">${formatDate(selected.dateAcquired)}</div></div>`:""}
-    ${cost>0?`<div><div class="section-label">Total Cost</div><div class="field-val" style="color:#8abf8a;font-weight:700">${fmt$(cost)}</div></div>`:""}
-    ${selected.fmv?`<div><div class="section-label">FMV${selected.fmvDate?` <span style="font-weight:400;color:#9a8a9a;font-size:10px">${esc(selected.fmvDate)}</span>`:""}</div><div class="field-val" style="color:#a078df;font-weight:700">${fmt$(selected.fmv)}</div></div>`:""}
-  </div>`;
-
-  const treatments=[["Press",selected.press],["UV",selected.uv],["Clean",selected.clean]].filter(([,v])=>v===true||v===false);
-  if(treatments.length>0){
-    html+=`<div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">`;
-    treatments.forEach(([label,val])=>{
-      html+=`<div style="padding:4px 10px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:1px;background:${val?"#1a2a10":"#2a1a10"};border:1px solid ${val?"#4a7a20":"#5a2a10"};color:${val?"#8abf40":"#bf6040"}">${label}: ${val?"Y":"N"}</div>`;
-    });
-    html+=`</div>`;
-  }
-
-  html+=`<div class="divider"></div>
-  <div class="section-label" style="color:#6a8a6a">Cost Breakdown</div>
-  <div class="grid-2" style="margin-top:10px">
-    <div><div class="section-label">Purchase Price</div><div class="field-val">${fmt$(selected.purchasePrice)}</div></div>
-    <div><div class="section-label">Taxes/Fees/Ship</div><div class="field-val">${fmt$(selected.taxesFeesShipping)}</div></div>
-    <div><div class="section-label">Grading Cost</div><div class="field-val">${fmt$(selected.gradingCost)}</div></div>
-    <div><div class="section-label">CGC Shipping</div><div class="field-val">${fmt$(selected.cgcShipping)}</div></div>
-  </div>`;
-
-
-
-  if(selected.cgcNotes)html+=`<div style="margin-top:20px"><div class="section-label" style="color:#4a7a4a">Label Notes</div><div class="notes-box" style="border-color:#1a3a1a;color:#80b080">${esc(selected.cgcNotes)}</div></div>`;
-  if(selected.graderNotes)html+=`<div style="margin-top:20px"><div class="section-label">Grader Notes</div><div class="notes-box" style="white-space:pre-line">${esc(selected.graderNotes)}</div></div>`;
-  if(selected.aiGraderNotes)html+=`<div style="margin-top:20px"><div class="section-label" style="color:#4a7a9a">RG Notes</div><div class="notes-box" style="border-color:#1a3a5c;color:#4a7a9a;white-space:pre-line">${esc(selected.aiGraderNotes)}</div></div>`;
-  const _aiText=selected.aiAssessment||selected.myAssessment||"";
-  if(_aiText)html+=`<div style="margin-top:20px"><div class="section-label">RG Assessment${selected.highGradeTier?` <span style="font-size:10px;background:#1a3a1a;color:#6abf6a;border-radius:4px;padding:2px 6px;font-weight:700;letter-spacing:0.05em;margin-left:6px">HIGH-GRADE</span>`:""}${selected.restorationCheckTier?` <span style="font-size:10px;background:#3a1a05;color:#e0904a;border-radius:4px;padding:2px 6px;font-weight:700;letter-spacing:0.05em;margin-left:4px">RC${selected.restorationFlag?" ⚠":""}</span>`:""}</div><div class="notes-box" style="font-style:normal;color:#6a5a4a">${esc(_aiText)}</div></div>`;
-  if(selected.psaNotes)html+=`<div style="margin-top:20px"><div class="section-label" style="color:#FF2040">PSA Notes</div><div class="notes-box" style="border-color:#5c1a1a;color:#e87a7a">${esc(selected.psaNotes)}</div></div>`;
-  if(selected.restorationCheckTier){
-    const rpt=selected.restorationReport||{};
-    const found=Object.entries(rpt).filter(([,v])=>v==='FOUND').map(([k])=>k);
-    const susp=Object.entries(rpt).filter(([,v])=>v==='INCONCLUSIVE').map(([k])=>k);
-    let rHtml=`<div style="margin-top:20px"><div class="section-label" style="color:#e0904a">Restoration Check ${selected.restorationFlag?'<span style="color:#ff6a3a">⚠ RESTORATION DETECTED</span>':'<span style="color:#6abf6a">✓ Clean</span>'}</div><div class="notes-box" style="border-color:#5a2a0a;background:#1a0d05">`;
-    if(found.length)rHtml+=`<div style="color:#ff7a4a;font-size:12px;margin-bottom:4px"><strong>Found:</strong> ${found.join(', ')}</div>`;
-    if(susp.length)rHtml+=`<div style="color:#e0904a;font-size:12px;margin-bottom:4px"><strong>Suspected:</strong> ${susp.join(', ')}</div>`;
-    if(!found.length&&!susp.length)rHtml+=`<div style="color:#6abf6a;font-size:12px">No restoration evidence detected across all checked types.</div>`;
-    rHtml+='</div></div>';
-    html+=rHtml;
-  }
-  if(selected.notes)html+=`<div style="margin-top:20px"><div class="section-label">My Notes</div><div style="font-size:13px;color:#6a5a4a;line-height:1.7">${esc(selected.notes)}</div></div>`;
-
-  // Public/private toggle row — hidden on the sample entry (it's never public)
+  // ─── Public/private toggle ───
+  // Hidden on the sample entry (it's never public). No container box, no
+  // dark theming — just an inline row that fits the cream page background.
+  // Public state shows explanatory text; Private state shows clarifying
+  // "Info cannot be seen publicly" text below the label.
   if (!isSample) {
     const isPublic = !!(selected.publicListing);
-    html+=`<div style="display:flex;align-items:center;gap:12px;margin-top:20px;padding:10px 14px;background:#141210;border:1px solid #2a2420;border-radius:10px;">
+    html += `<div style="display:flex;align-items:center;gap:12px;margin-top:20px">
       <div style="flex:1">
-        <div style="font-size:12px;font-weight:700;color:#8a7a6a;letter-spacing:0.05em">${isPublic ? 'Public Listing' : 'Private Listing'}</div>
-        ${isPublic ? `<div style="font-size:11px;color:#6a5a4a;margin-top:3px;line-height:1.5">Robograde and Images can be viewed with ID link</div>` : ''}
+        <div style="font-size:13px;font-weight:700;color:#3a2e24;letter-spacing:0.05em">${isPublic ? 'Public Listing' : 'Private Listing'}</div>
+        <div style="font-size:11px;color:#8a7a6a;margin-top:3px;line-height:1.5">${isPublic ? 'Robograde score and images can be viewed from public ID link' : 'Info cannot be seen publicly'}</div>
       </div>
       <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer;flex-shrink:0">
         <input type="checkbox" ${isPublic ? 'checked' : ''} onchange="togglePublicListing('${esc(selected.id)}', this.checked)"
           style="opacity:0;width:0;height:0;position:absolute">
-        <span style="position:absolute;inset:0;border-radius:12px;background:${isPublic ? '#3a7a20' : '#2a2a2a'};transition:background 0.2s" id="detail-public-track"></span>
-        <span style="position:absolute;left:${isPublic ? '23px' : '3px'};top:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left 0.2s" id="detail-public-thumb"></span>
+        <span style="position:absolute;inset:0;border-radius:12px;background:${isPublic ? '#3a7a20' : '#bbb6ad'};transition:background 0.2s" id="detail-public-track"></span>
+        <span style="position:absolute;left:${isPublic ? '23px' : '3px'};top:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left 0.2s;box-shadow:0 1px 2px rgba(0,0,0,0.2)" id="detail-public-thumb"></span>
       </label>
     </div>`;
   }
-  // Bottom row: Print Label and Delete only. Edit moved to top sticky bar.
-  html+=`<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
+
+  // ─── "Update With Official Grade" placeholder (S11, deferred to post-beta) ───
+  // Reserved location for the upcoming feature. When implemented, this button
+  // will allow users to submit photos of their book in its CGC/PSA slab to run
+  // a free re-assessment knowing it's the same book. Requires anti-abuse work:
+  // verify book identity matches original assessment, slab authenticity check,
+  // rate limiting per book, and abandon if photos don't match.
+  // Disabled placeholder for now so the layout slot is reserved.
+  // Hidden on sample entry.
+  if (!isSample && selected.roboGrade) {
+    html += `<div style="margin-top:14px">
+      <button disabled style="background:#e8e3d8;color:#a89e8e;border:1.5px solid #c8c0b4;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;cursor:not-allowed;opacity:0.6" title="Coming soon">Update With Official Grade <span style="font-size:10px;font-weight:500;opacity:0.7;margin-left:4px">(coming soon)</span></button>
+    </div>`;
+  }
+
+  // ─── Print Label / Delete ───
+  // Bottom action row. Edit moved to top sticky bar in S10. Print Label
+  // requires a roboGrade (you can't print a label for a book that hasn't
+  // been graded yet).
+  html += `<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
     ${(!isSample && selected.roboGrade) ? `<button class="btn" onclick="printLabel('${esc(selected.id)}')" style="background:#1a2208;color:#b8d820;border:1.5px solid #3a5010">Print Label</button>` : ''}
     <button class="btn btn-dark" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')">Delete</button>
   </div></div>`;
@@ -1968,7 +2133,15 @@ function _attachPanzoomToLightbox() {
     _panzoomInstance = Panzoom(img, {
       maxScale: 6,
       minScale: 1,
-      contain: 'outside',
+      // S11 fix: 'inside' means the image is fully contained within the
+      // viewer with letterbox margins as needed. The previous 'outside'
+      // mode forced the image to fill the container by cropping — for tall
+      // comic covers this clipped the bottom of the image and the user
+      // couldn't zoom out to see the whole thing (minScale: 1 + outside =
+      // only the cropped fill view available). With 'inside', minScale: 1
+      // is the natural "fit the whole image" zoom level, and zooming up to
+      // maxScale: 6 lets users inspect detail.
+      contain: 'inside',
       step: 0.4,
       animate: true,
       // Explicitly enable touch + pinch (defaults are true but being explicit
@@ -2056,7 +2229,7 @@ function closeLightbox() {
   if (box) box.style.display = 'none';
 }
 
-const EMPTY={title:"",issue:"",issueDate:"",publisher:"",grade:"",cgcGrade:"",cgcCert:"",psaGrade:"",psaCert:"",pageQuality:"",graderNotes:"",aiGraderNotes:"",cgcNotes:"",aiAssessment:"",psaNotes:"",notes:"",slabbingDate:"",dateAcquired:"",purchasePrice:"",taxesFeesShipping:"",gradingCost:"",cgcShipping:"",fmv:"",fmvDate:"",press:null,uv:null,clean:null,seller:"",images:[],cornerImages:[],assessedCGCGrade:"",assessedPSAGrade:"",assessmentHistory:[],roboGrade:null,roboGradeId:'',roboGradeDate:'',publicListing:false,highGradeTier:false,highGradeUnlocked:false,restorationCheckTier:false,restorationReport:null,restorationFlag:false};
+const EMPTY={title:"",issue:"",issueDate:"",publisher:"",grade:"",cgcGrade:"",cgcCert:"",psaGrade:"",psaCert:"",pageQuality:"",graderNotes:"",aiGraderNotes:"",cgcNotes:"",keyInfo:"",aiAssessment:"",psaNotes:"",notes:"",slabbingDate:"",dateAcquired:"",purchasePrice:"",taxesFeesShipping:"",gradingCost:"",cgcShipping:"",fmv:"",fmvDate:"",press:null,uv:null,clean:null,enhance:null,seller:"",images:[],cornerImages:[],assessedCGCGrade:"",assessedPSAGrade:"",assessmentHistory:[],roboGrade:null,roboGradeId:'',roboGradeDate:'',publicListing:false,highGradeTier:false,highGradeUnlocked:false,restorationCheckTier:false,restorationReport:null,restorationFlag:false};
 let formData={...EMPTY};
 let assessing=false;
 let _assessed=false; // tracks if current form has been assessed
@@ -3305,9 +3478,18 @@ function completeAssessment() {
   formData.aiAssessment=cgc.aiAssessment||'';
   if(cgc.labelNotes&&cgc.labelNotes.trim())formData.cgcNotes=cgc.labelNotes.trim()+(formData.cgcNotes?('\n'+formData.cgcNotes):'');
   formData.psaNotes=psa.psaNotes||'';
-  if(cgc.press!==undefined&&cgc.press!==null)formData.press=cgc.press;
-  if(cgc.uv!==undefined&&cgc.uv!==null)formData.uv=cgc.uv;
-  if(cgc.clean!==undefined&&cgc.clean!==null)formData.clean=cgc.clean;
+  // Key Info (S11): only populated by AI when the issue is in the census list
+  // and the AI is confident. Empty for non-key issues. Don't overwrite if user
+  // has already manually edited it; only fill in if currently empty.
+  if(cgc.keyInfo && cgc.keyInfo.trim() && !formData.keyInfo) formData.keyInfo = cgc.keyInfo.trim();
+  // Enhance toggle (S11): the AI now returns a single enhance: 'Y' | 'N' | null
+  // value instead of separate press/uv/clean booleans. For backward compat with
+  // pre-v2.1 responses that may still include legacy fields, derive enhance
+  // from any of them being true.
+  if (cgc.enhance === 'Y' || cgc.enhance === true) formData.enhance = true;
+  else if (cgc.enhance === 'N' || cgc.enhance === false) formData.enhance = false;
+  else if (cgc.press === true || cgc.uv === true || cgc.clean === true) formData.enhance = true;
+  else if (cgc.press === false && cgc.uv === false && cgc.clean === false) formData.enhance = false;
 
   _assessed=true;
   _pendingAssessResult=null;
@@ -3756,19 +3938,18 @@ function renderForm(){
       ${df("FMV Date","fmvDate",true)}
     </div>
     <div>
-      <label class="field-label">Treatment Candidates</label>
+      <label class="field-label">Enhance Candidate</label>
       <div style="display:flex;gap:10px">
-        ${treatBtn("press","Press")}
-        ${treatBtn("uv","UV")}
-        ${treatBtn("clean","Clean")}
+        ${treatBtn("enhance","Enhance")}
       </div>
-      <div style="font-size:10px;color:#9a8a7a;margin-top:4px">Tap to cycle: — → Y → N</div>
+      <div style="font-size:10px;color:#9a8a7a;margin-top:4px">Y = book likely to benefit from press, UV, or cleaning. Tap to cycle: — → Y → N</div>
     </div>
     ${(formData.cgcGrade||formData.psaGrade||formData.cgcNotes)?`<div><label class="field-label">Label Notes</label><textarea rows="2" oninput="formData.cgcNotes=this.value">${esc(formData.cgcNotes||"")}</textarea></div>`:""}
+    ${formData.keyInfo?`<div><label class="field-label">Key Info</label><textarea rows="2" oninput="formData.keyInfo=this.value" placeholder="Key issue significance (auto-filled for census issues)">${esc(formData.keyInfo||"")}</textarea></div>`:""}
     ${(formData.cgcGrade||formData.graderNotes)?`<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes?4:2}" style="font-style:italic" placeholder="Official grader notes (will be considered in assessment predictions)" oninput="formData.graderNotes=this.value">${esc(formData.graderNotes||"")}</textarea></div>`:""}
-    ${formData.aiGraderNotes?`<div><label class="field-label" style="color:#4a7a9a">RG Notes</label><textarea rows="8" style="font-style:italic;border-color:#1a3a5c" oninput="formData.aiGraderNotes=this.value">${esc(formData.aiGraderNotes||"")}</textarea></div>`:""}
-    ${formData.aiAssessment?`<div><label class="field-label">RG Assessment</label><textarea rows="${Math.max(12,Math.ceil(formData.aiAssessment.length/80))}" oninput="formData.aiAssessment=this.value">${esc(formData.aiAssessment)}</textarea></div>`:""}
-    ${formData.psaNotes?`<div><label class="field-label" style="color:#e87a7a">PSA Notes</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes||"")}</textarea></div>`:""}
+    ${formData.aiGraderNotes?`<div><label class="field-label" style="color:#4a7a9a">Defect Notes</label><textarea rows="8" style="font-style:italic;border-color:#1a3a5c" oninput="formData.aiGraderNotes=this.value">${esc(formData.aiGraderNotes||"")}</textarea></div>`:""}
+    ${formData.aiAssessment?`<div><label class="field-label">Condition Assessment</label><textarea rows="${Math.max(12,Math.ceil(formData.aiAssessment.length/80))}" oninput="formData.aiAssessment=this.value">${esc(formData.aiAssessment)}</textarea></div>`:""}
+    ${formData.psaNotes?`<div><label class="field-label" style="color:#e87a7a">PSA Variance</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes||"")}</textarea></div>`:""}
     ${formData.roboGrade?buildRoboGradeDisplay(formData.roboGrade, formData):""}
     <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes||"")}</textarea></div>
     <div style="display:flex;gap:10px;padding-top:4px">
@@ -4030,9 +4211,13 @@ async function assessPSA(){
     formData.pageQuality=parsed.pageQuality||formData.pageQuality;
     formData.graderNotes=parsed.graderNotes||formData.graderNotes||"";
     formData.myAssessment=parsed.myAssessment||formData.myAssessment||"";
-    if(parsed.press!==undefined&&parsed.press!==null)formData.press=parsed.press;
-    if(parsed.uv!==undefined&&parsed.uv!==null)formData.uv=parsed.uv;
-    if(parsed.clean!==undefined&&parsed.clean!==null)formData.clean=parsed.clean;
+    // Key Info (S11): same fill-only-if-empty behavior as primary path
+    if(parsed.keyInfo && parsed.keyInfo.trim() && !formData.keyInfo) formData.keyInfo = parsed.keyInfo.trim();
+    // Enhance toggle (S11): same translation as the cgc parse path above.
+    if (parsed.enhance === 'Y' || parsed.enhance === true) formData.enhance = true;
+    else if (parsed.enhance === 'N' || parsed.enhance === false) formData.enhance = false;
+    else if (parsed.press === true || parsed.uv === true || parsed.clean === true) formData.enhance = true;
+    else if (parsed.press === false && parsed.uv === false && parsed.clean === false) formData.enhance = false;
     syncMsg(null);
     renderForm();
   }catch(e){
