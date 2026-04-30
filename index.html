@@ -1061,33 +1061,13 @@ function buildStackedGradePair(officialBadge, aiBadge) {
   return `<div style="display:flex;flex-direction:column;gap:6px;align-items:center">${officialBadge}${aiBadge}</div>`;
 }
 
-function buildGradeRowHTML(c){
-  const des=detectDesignation(c);
-  const badges=[];
-  // Order: RoboGrade ALWAYS first, then CGC pair (official + AI if both),
-  // then PSA pair (official + AI if both). When only one of CGC/PSA exists
-  // (just official OR just AI), it's shown alone, no pair wrapper.
-  if(c.roboGrade&&c.roboGrade.score!=null){
-    const rgScore=Math.round(c.roboGrade.score);
-    badges.push(`<div class="ubadge" style="background:#0f1a05;border-color:#3a5010"><div class="ubadge-body" style="background:#0f1a05"><div class="ubadge-num" style="color:#b8d820">${rgScore}</div><div class="ubadge-lbl" style="color:#b8d820;opacity:0.7">RG</div></div></div>`);
-  }
-  // CGC: stacked pair if both official and AI prediction exist
-  const cgcOfficial = c.cgcGrade ? buildBadge(c.cgcGrade,"cgc-official",des,false) : null;
-  const cgcAi_grade = aiCgcGrade(c);
-  const cgcAi = cgcAi_grade ? buildBadge(normalizeGrade(cgcAi_grade),"cgc-ai","",false) : null;
-  const cgcStack = buildStackedGradePair(cgcOfficial, cgcAi);
-  if (cgcStack) badges.push(cgcStack);
-  // PSA: stacked pair if both official and AI prediction exist
-  const psaOfficial = c.psaGrade ? buildBadge(c.psaGrade,"psa-official",c.psaDesignation||"universal",false) : null;
-  const psaAi = c.assessedPSAGrade ? buildBadge(normalizeGrade(c.assessedPSAGrade),"psa-ai","",false) : null;
-  const psaStack = buildStackedGradePair(psaOfficial, psaAi);
-  if (psaStack) badges.push(psaStack);
-  // My Grade fallback (raw book, no assessment yet, no CGC/PSA at all)
-  const gradeIsAiCgc=!c.assessedCGCGrade&&!!(c.myAssessment||c.aiAssessment)&&!!c.grade;
-  if(c.grade&&!gradeIsAiCgc&&!c.cgcGrade&&!c.psaGrade&&!cgcAi_grade)badges.push(buildBadge(c.grade,"my","",false));
-  if(badges.length===0)return"";
-  return `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;justify-content:center">${badges.join("")}</div>`;
-}
+// Note (S11): the previous buildGradeRowHTML helper that combined RoboGrade,
+// CGC official/predicted, and PSA official/predicted into a single grade row
+// was removed when the detail view's prediction box was restructured into
+// individual side-by-side boxes (CGC official → CGC predicted → PSA official
+// → PSA predicted) with RoboGrade in its own dedicated panel above. The
+// inline logic in showDetail() replaces it. buildStackedGradePair is still
+// used by the edit form's results preview.
 function fmt$(v){return v!=null&&v>0?`$${v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—";}
 function totalCost(c){return[c.purchasePrice,c.taxesFeesShipping,c.gradingCost,c.cgcShipping].filter(v=>v!=null&&v>0).reduce((a,b)=>a+b,0);}
 function formatDate(d){if(!d)return null;const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];const p=d.split("-");if(p.length<3)return d;const mo=parseInt(p[1],10)-1;if(isNaN(mo)||mo<0||mo>11)return d;return months[mo]+" "+p[2].replace(/^0/,"")+", "+p[0];}
@@ -1898,6 +1878,42 @@ function showDetail(id){
   const _aiText = selected.aiAssessment || selected.myAssessment || "";
   if(_aiText) {
     html += `<div style="margin-top:20px"><div class="section-label">Condition Assessment</div><div class="notes-box" style="font-style:normal;color:#6a5a4a">${esc(_aiText)}</div></div>`;
+  }
+
+  // ─── Past Assessments ───
+  // Read-only list of prior assessment runs (CGC predicted, PSA predicted,
+  // RG score + version, page quality). Captured each time the book is
+  // re-assessed and the previous values are about to be overwritten. The
+  // edit view shows the same data with × buttons to remove entries.
+  const history = selected.assessmentHistory || [];
+  if (history.length > 0) {
+    let histHtml = `<div style="margin-top:20px"><div class="section-label">Past Assessments</div><div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">`;
+    history.forEach(h => {
+      const parts = [];
+      if (h.rgScore != null) {
+        const v = h.rgVersion ? ` v${h.rgVersion}` : '';
+        parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;font-weight:700;color:#5a7030">RG ${h.rgScore}${v}</span>`);
+      }
+      if (h.grade) {
+        parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;color:#3a5a8a">CGC ${normalizeGrade(h.grade)}</span>`);
+      }
+      if (h.psaGrade) {
+        parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;color:#8a3a3a">PSA ${normalizeGrade(h.psaGrade)}</span>`);
+      }
+      if (h.pageQuality) {
+        parts.push(`<span style="font-size:11px;color:#8a7a6a">${esc(h.pageQuality)}</span>`);
+      }
+      const dateStr = h.date ? (() => {
+        try { return new Date(h.date).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' }); }
+        catch(e){ return ''; }
+      })() : '';
+      histHtml += `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 10px;background:#f4f0e6;border:1px solid #d8d0c0;border-radius:6px;font-size:12px">
+        ${parts.join('<span style="color:#c8b8a8">·</span>')}
+        ${dateStr ? `<span style="margin-left:auto;font-size:11px;color:#9a8a7a">${dateStr}</span>` : ''}
+      </div>`;
+    });
+    histHtml += `</div></div>`;
+    html += histHtml;
   }
 
   // ─── Restoration Check ───
@@ -3458,7 +3474,19 @@ function completeAssessment() {
   }
   if(formData.assessedCGCGrade){
     if(!formData.assessmentHistory)formData.assessmentHistory=[];
-    formData.assessmentHistory.unshift({grade:formData.assessedCGCGrade,pageQuality:formData.pageQuality||''});
+    // Capture full snapshot of the prior assessment before it's overwritten:
+    // CGC predicted, PSA predicted, RG score + version, page quality, and a
+    // timestamp. Older entries may only have grade+pageQuality (legacy shape);
+    // the renderer handles missing fields gracefully.
+    const prior = {
+      grade: formData.assessedCGCGrade,
+      psaGrade: formData.assessedPSAGrade || '',
+      pageQuality: formData.pageQuality || '',
+      rgScore: formData.roboGrade && formData.roboGrade.score != null ? Math.round(formData.roboGrade.score) : null,
+      rgVersion: formData.roboGrade && formData.roboGrade.version ? formData.roboGrade.version : null,
+      date: formData.roboGradeDate || ''
+    };
+    formData.assessmentHistory.unshift(prior);
   }
   formData.assessedCGCGrade=cgc.grade||'';
   formData.assessedPSAGrade=psa.grade?(String(psa.grade).includes('.')?String(psa.grade):parseFloat(psa.grade).toFixed(1)):'';
@@ -3907,23 +3935,17 @@ function renderForm(){
         ${formData.pageQuality?`<div style="margin-left:auto;align-self:center">${buildPQBox(formData.pageQuality)}</div>`:""}
       </div>
     </div>`:""}
-    ${(formData.assessmentHistory||[]).length>0?`<div style="margin-top:10px;padding:10px 14px;background:#100e0c;border:1px solid #1e1c1a;border-radius:8px;">
-      <div style="font-size:10px;letter-spacing:2px;color:#4a3a2a;text-transform:uppercase;margin-bottom:6px">Past Assessments</div>
-      <div style="display:flex;flex-direction:column;gap:4px">
-        ${(formData.assessmentHistory||[]).map((h,i)=>`<div style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap;opacity:0.65">
-          ${buildBadge(normalizeGrade(h.grade),"cgc-ai","",true)}
-          ${h.pageQuality?buildPQBox(h.pageQuality,"small"):""}
-          <button onclick="formData.assessmentHistory.splice(${i},1);renderForm()" style="margin-left:auto;flex-shrink:0;background:none;border:none;color:#9a6a6a;font-size:14px;cursor:pointer;padding:2px 4px;line-height:1">×</button>
-        </div>`).join("")}
-      </div>
-    </div>`:""}
 
-    ${df("Grading Date","slabbingDate")}
+    <!-- Transaction metadata block (S11): reordered to chronology of acquiring →
+         grading → pricing. Date Acquired first (when the user got the book),
+         Seller (where from), Grading Date (when CGC/PSA returned it), full
+         Cost Breakdown, then current FMV. -->
+    ${df("Date Acquired","dateAcquired")}
     <div><label class="field-label">Seller</label>
       <input value="${esc(formData.seller||"")}" list="seller-list" oninput="formData.seller=this.value;updateSellerList(this.value)" placeholder="Name / source" autocomplete="off">
       <datalist id="seller-list">${getSellerSuggestions().map(s=>`<option value="${esc(s)}">`).join("")}</datalist>
     </div>
-    ${df("Date Acquired","dateAcquired")}
+    ${df("Grading Date","slabbingDate")}
     <div class="cost-box">
       <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>
       <div class="form-grid-2">
@@ -3937,18 +3959,50 @@ function renderForm(){
       ${mf("Fair Market Value ($)","fmv")}
       ${df("FMV Date","fmvDate",true)}
     </div>
+
+    <!-- Analysis block (S11): mirrors detail-view ordering after the
+         transaction metadata. Each text section is gated on having content
+         (or, for fields the user can author, on the appropriate condition).
+         Past Assessments lives between Condition Assessment and PSA Variance,
+         matching the detail view. The × buttons let the user delete stale
+         history entries before saving. -->
     <div>
       <label class="field-label">Enhance Candidate</label>
       <div style="display:flex;gap:10px">
         ${treatBtn("enhance","Enhance")}
       </div>
-      <div style="font-size:10px;color:#9a8a7a;margin-top:4px">Y = book likely to benefit from press, UV, or cleaning. Tap to cycle: — → Y → N</div>
+      <div style="font-size:10px;color:#9a8a7a;margin-top:4px">Y = book likely to benefit from press, UV, or cleaning. Tap to cycle: — → Y → N → ✓</div>
     </div>
     ${(formData.cgcGrade||formData.psaGrade||formData.cgcNotes)?`<div><label class="field-label">Label Notes</label><textarea rows="2" oninput="formData.cgcNotes=this.value">${esc(formData.cgcNotes||"")}</textarea></div>`:""}
-    ${formData.keyInfo?`<div><label class="field-label">Key Info</label><textarea rows="2" oninput="formData.keyInfo=this.value" placeholder="Key issue significance (auto-filled for census issues)">${esc(formData.keyInfo||"")}</textarea></div>`:""}
+    ${formData.keyInfo?`<div><label class="field-label">Key Info</label><textarea rows="2" readonly style="background:#1a1a18;color:#a89878;cursor:not-allowed" title="Key Info is populated by the assessment when the issue is in the recognized-key list. Not user-editable.">${esc(formData.keyInfo||"")}</textarea></div>`:""}
     ${(formData.cgcGrade||formData.graderNotes)?`<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes?4:2}" style="font-style:italic" placeholder="Official grader notes (will be considered in assessment predictions)" oninput="formData.graderNotes=this.value">${esc(formData.graderNotes||"")}</textarea></div>`:""}
     ${formData.aiGraderNotes?`<div><label class="field-label" style="color:#4a7a9a">Defect Notes</label><textarea rows="8" style="font-style:italic;border-color:#1a3a5c" oninput="formData.aiGraderNotes=this.value">${esc(formData.aiGraderNotes||"")}</textarea></div>`:""}
     ${formData.aiAssessment?`<div><label class="field-label">Condition Assessment</label><textarea rows="${Math.max(12,Math.ceil(formData.aiAssessment.length/80))}" oninput="formData.aiAssessment=this.value">${esc(formData.aiAssessment)}</textarea></div>`:""}
+    ${(formData.assessmentHistory||[]).length>0?`<div style="margin-top:10px;padding:10px 14px;background:#100e0c;border:1px solid #1e1c1a;border-radius:8px;">
+      <div style="font-size:10px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase;margin-bottom:6px">Past Assessments</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        ${(formData.assessmentHistory||[]).map((h,i)=>{
+          const parts=[];
+          if (h.rgScore != null) {
+            const v = h.rgVersion ? ` v${h.rgVersion}` : '';
+            parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;font-weight:700;color:#7aa030;font-size:12px">RG ${h.rgScore}${v}</span>`);
+          }
+          if (h.grade) {
+            parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;color:#6a8aa8;font-size:12px">CGC ${normalizeGrade(h.grade)}</span>`);
+          }
+          if (h.psaGrade) {
+            parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;color:#a86a6a;font-size:12px">PSA ${normalizeGrade(h.psaGrade)}</span>`);
+          }
+          if (h.pageQuality) {
+            parts.push(`<span style="font-size:11px;color:#8a7a6a">${esc(h.pageQuality)}</span>`);
+          }
+          return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 8px;background:#181614;border-radius:5px;opacity:0.85">
+            ${parts.join('<span style="color:#4a3a2a">·</span>')}
+            <button onclick="formData.assessmentHistory.splice(${i},1);renderForm()" style="margin-left:auto;flex-shrink:0;background:none;border:none;color:#9a6a6a;font-size:14px;cursor:pointer;padding:2px 4px;line-height:1" title="Remove this entry">×</button>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>`:""}
     ${formData.psaNotes?`<div><label class="field-label" style="color:#e87a7a">PSA Variance</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes||"")}</textarea></div>`:""}
     ${formData.roboGrade?buildRoboGradeDisplay(formData.roboGrade, formData):""}
     <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes||"")}</textarea></div>
@@ -4123,14 +4177,16 @@ function buildRoboGradeDisplay(rg, comic) {
     </div>`;
   }
 
-  // Layout (S11): heading "ROBOGRADE RESULTS" spans full container width on
+  // Layout (S11): heading "ROBOGRADE SCORE" spans full container width on
   // top so the score box (left) and 2x2 sub-grade grid (right) can both
   // start from the same baseline below it. The defect listing is styled as
   // 1970s tractor-feed printout paper (alternating mint-green and cream bands,
   // monospace font, dark olive ink) to read as "what the Robograder printed
   // out about this book." Extends to the rounded bottom corners of the panel.
+  // (Header was "ROBOGRADE RESULTS" until S11; renamed to clarify the
+  // distinction between Robograde — the score — and Robograder — the app.)
   return `<div style="background:${BG};border:1.5px solid ${OLIVE_MID};border-radius:12px;padding:14px 14px 0;margin-bottom:8px;overflow:hidden">
-    <div style="font-size:10px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:10px">ROBOGRADE RESULTS</div>
+    <div style="font-size:10px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:10px">ROBOGRADE SCORE</div>
     <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px">
       <div style="background:${OLIVE};border-radius:16px;width:88px;height:88px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;border:1.5px solid ${OLIVE_MID};position:relative">
         <div style="font-size:8px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:2px">RG</div>
