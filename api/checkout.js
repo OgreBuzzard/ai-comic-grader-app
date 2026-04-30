@@ -2,11 +2,12 @@ import Stripe from 'stripe';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-// Credit packages — price IDs from Stripe dashboard (TEST MODE)
-// TODO: Replace with live mode price IDs before launch
+// Credit packages — LIVE MODE price IDs from Stripe dashboard (S11)
+// All three are one-time payments; webhook fulfills credits via metadata.credits
 const PACKAGES = {
-  starter: { credits: 5,   priceId: 'price_1TM7iQAJVXkUtIkTC5KqZKVB' },  // $5.00 ($1.00 each)
-  pro:     { credits: 100, priceId: 'price_1TM7ufAJVXkUtIkTfj6oSAYz' },  // $50.00 ($0.50 each)
+  comic_stack: { credits: 10,  priceId: 'price_1TRiZdAJVXkUtIkTabh9WbaK', name: 'Comic Stack' },  // $10  ($1.00 each)
+  comic_wall:  { credits: 40,  priceId: 'price_1TRibUAJVXkUtIkTjFBhmBdJ', name: 'Comic Wall'  },  // $30  ($0.75 each)
+  short_box:   { credits: 150, priceId: 'price_1TRibzAJVXkUtIkTiEgc7QCM', name: 'Short Box'   },  // $100 ($0.67 each)
 };
 
 export default async function handler(req, res) {
@@ -44,8 +45,8 @@ export default async function handler(req, res) {
         credits: selected.credits,
         package: pkg,
       },
-      success_url: `${process.env.APP_URL || 'https://ai-comic-grader-app.vercel.app'}/?payment=success&credits=${selected.credits}`,
-      cancel_url: `${process.env.APP_URL || 'https://ai-comic-grader-app.vercel.app'}/?payment=cancelled`,
+      success_url: `${process.env.APP_URL || 'https://robograder.app'}/?payment=success&credits=${selected.credits}`,
+      cancel_url: `${process.env.APP_URL || 'https://robograder.app'}/?payment=cancelled`,
     });
 
     res.status(200).json({ url: session.url });
