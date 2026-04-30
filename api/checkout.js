@@ -13,19 +13,6 @@ const PACKAGES = {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  // S11 DEBUG: confirm env var is reaching the function. Logs presence + length only,
-  // never the secret itself. Remove once Stripe checkout is verified working.
-  const k = process.env.STRIPE_SECRET_KEY;
-  console.log('STRIPE_SECRET_KEY diagnostic:', {
-    present: !!k,
-    type: typeof k,
-    length: k ? k.length : 0,
-    prefix: k ? k.slice(0, 7) : null,           // shows "sk_live" or "sk_test" without revealing rest
-    hasWhitespace: k ? /\s/.test(k) : false,
-    hasQuotes: k ? /["']/.test(k) : false,
-    envVarsWithStripeInName: Object.keys(process.env).filter(n => n.toUpperCase().includes('STRIPE'))
-  });
-
   // Verify Firebase auth token
   const authHeader = req.headers['authorization'] || '';
   const idToken = authHeader.replace('Bearer ', '');
