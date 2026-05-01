@@ -343,8 +343,25 @@
          box than necessary; with proper viewport sizing we can tighten the
          margins so more of the image is visible. */
     #lightbox { position: fixed; inset: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.95); display: none; align-items: center; justify-content: center; z-index: 1000; padding: max(env(safe-area-inset-top, 12px), 12px) 8px max(env(safe-area-inset-bottom, 12px), 12px); overflow: hidden; touch-action: none; }
-    #lightbox-stage { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; touch-action: none; overflow: hidden; }
-    #lightbox-img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; pointer-events: auto; touch-action: none; -webkit-touch-callout: none; cursor: grab; }
+    /* lightbox-stage uses CSS grid with `place-items:center` rather than flex
+       centering. Flex was conflicting with Panzoom's transform — Panzoom
+       applies translate/scale to the <img> element, but the flex parent's
+       centering logic was interfering with pan-bounds calculation, causing
+       pinch to fail and pan to only work in one direction. Grid centering
+       is more compatible because Panzoom's translate values move the
+       element relative to its grid cell origin (top-left), and the cell is
+       sized to fill the stage. The image still appears centered when at
+       scale 1 because of `place-items:center`. */
+    /* Lightbox structure (S11):
+         - #lightbox-stage uses grid place-items:center to center the panzoom wrapper
+         - #lightbox-panzoom-wrap is what Panzoom transforms (translate + scale).
+           Its dimensions follow the image. Panzoom's pan-bounds calculation
+           works correctly against this wrapper since the wrapper isn't being
+           laid out by competing flex/grid logic.
+         - #lightbox-img inside the wrapper just renders at natural fit. */
+    #lightbox-stage { width: 100%; height: 100%; display: grid; place-items: center; touch-action: none; overflow: hidden; }
+    #lightbox-panzoom-wrap { max-width: 100%; max-height: 100%; touch-action: none; }
+    #lightbox-img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; pointer-events: auto; touch-action: none; -webkit-touch-callout: none; cursor: grab; display: block; }
     #lightbox-img:active { cursor: grabbing; }
     #lightbox-close { position: absolute; top: max(env(safe-area-inset-top, 14px), 14px); right: 14px; width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; border: 1.5px solid rgba(255,255,255,0.3); font-size: 22px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; z-index: 1002; padding: 0; }
     #lightbox-close:hover { background: rgba(0,0,0,0.85); }
@@ -730,7 +747,17 @@
 
 <div id="lightbox" style="display:none">
   <div id="lightbox-stage">
-    <img id="lightbox-img" src="">
+    <!-- Wrapper element that Panzoom transforms (S11). Per Panzoom docs, the
+         most reliable pattern is for Panzoom to operate on a wrapper div
+         rather than the image element directly. The wrapper is sized to fit
+         its content; Panzoom's translate/scale apply to the wrapper, and the
+         <img> inside just renders at natural object-fit:contain dimensions.
+         This avoids the pan-bounds calculation conflicts that occur when
+         Panzoom tries to manage transforms on an element that's also being
+         laid out by a flex/grid parent. -->
+    <div id="lightbox-panzoom-wrap">
+      <img id="lightbox-img" src="">
+    </div>
   </div>
   <button id="lightbox-close" onclick="closeLightbox()" aria-label="Close">×</button>
   <div id="lightbox-hint">PINCH OR DOUBLE-TAP TO ZOOM</div>
@@ -2135,6 +2162,7 @@ let _lightboxLastTap = 0;
 //     `img.complete` check was unreliable for cache-hit edges.
 function _attachPanzoomToLightbox() {
   const img = document.getElementById('lightbox-img');
+  const wrap = document.getElementById('lightbox-panzoom-wrap');
   const box = document.getElementById('lightbox');
   if (typeof Panzoom !== 'function') return;
 
@@ -2146,33 +2174,28 @@ function _attachPanzoomToLightbox() {
 
   const init = () => {
     // Reset any leftover transform from a prior session before initializing
+    wrap.style.transform = '';
     img.style.transform = '';
-    _panzoomInstance = Panzoom(img, {
+    // S11 fix: attach Panzoom to the WRAPPER, not the image. Previously
+    // Panzoom transformed the <img> directly while a flex parent tried to
+    // center it, which broke pan-bounds calculation (pan only worked
+    // downward, pinch was dead). The wrapper pattern is what Panzoom's
+    // docs recommend and avoids the layout conflict entirely.
+    _panzoomInstance = Panzoom(wrap, {
       maxScale: 6,
       minScale: 1,
-      // S11 fix: 'inside' means the image is fully contained within the
-      // viewer with letterbox margins as needed. The previous 'outside'
-      // mode forced the image to fill the container by cropping — for tall
-      // comic covers this clipped the bottom of the image and the user
-      // couldn't zoom out to see the whole thing (minScale: 1 + outside =
-      // only the cropped fill view available). With 'inside', minScale: 1
-      // is the natural "fit the whole image" zoom level, and zooming up to
-      // maxScale: 6 lets users inspect detail.
-      contain: 'inside',
+      contain: 'outside',
       step: 0.4,
       animate: true,
-      // Explicitly enable touch + pinch (defaults are true but being explicit
-      // helps debugging and protects against future Panzoom version changes)
       pinchAndPan: true,
-      // Cursor handled by CSS; don't let Panzoom override
       cursor: false
     });
     // Wheel-zoom on desktop — bind on the box, not just the parent of img,
     // so wheel events anywhere in the lightbox zoom the image
     box.addEventListener('wheel', _panzoomInstance.zoomWithWheel, { passive: false });
-    // Double-tap to toggle zoom
-    img.addEventListener('touchend', handleDoubleTap);
-    img.addEventListener('dblclick', handleDoubleTap);
+    // Double-tap to toggle zoom — bind on wrapper which is what Panzoom owns
+    wrap.addEventListener('touchend', handleDoubleTap);
+    wrap.addEventListener('dblclick', handleDoubleTap);
   };
 
   // Image must have real dimensions for Panzoom to compute its bounds.
@@ -2240,7 +2263,11 @@ function closeLightbox() {
     try { _panzoomInstance.destroy(); } catch(e){}
     _panzoomInstance = null;
   }
-  // Reset image transform in case panzoom wasn't available
+  // Reset transforms in case panzoom wasn't available. Wrapper is the
+  // primary panzoom target (S11); the img reset is belt-and-suspenders for
+  // any prior-session leftover from earlier code paths.
+  const wrap = document.getElementById("lightbox-panzoom-wrap");
+  if (wrap) wrap.style.transform = '';
   const img = document.getElementById("lightbox-img");
   if (img) img.style.transform = '';
   if (box) box.style.display = 'none';
