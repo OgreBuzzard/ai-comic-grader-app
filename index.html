@@ -738,7 +738,7 @@
     </div>
     <div style="padding:24px 18px 40px">
       <div style="font-size:11px;color:#4a3a2a;line-height:1.6">
-        Robograder v2.0 · Assessment credits are non-refundable.
+        Robograder v2.2 · Assessment credits are non-refundable.
         Images are stored securely in your personal account.
       </div>
     </div>
@@ -1817,6 +1817,7 @@ function showDetail(id){
 
   if (predictionBoxes.length > 0 || showPQ) {
     html += `<div style="margin-top:16px;padding:14px;background:#0d0d0f;border:1px solid #2a2a3a;border-radius:10px;display:flex;flex-direction:column;align-items:center;gap:12px">`;
+    html += `<div style="font-size:10px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase;text-align:center;width:100%">Grader Predictions</div>`;
     if (predictionBoxes.length > 0) {
       html += `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;justify-content:center">${predictionBoxes.join("")}</div>`;
     }
@@ -1851,9 +1852,19 @@ function showDetail(id){
       enhanceVal = legacyVals.some(v => v === true) ? true : false;
     }
   }
-  if (enhanceVal === true || enhanceVal === false) {
-    const isYes = enhanceVal === true;
-    html += `<div style="margin-top:16px"><div style="display:inline-block;padding:5px 12px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:1px;background:${isYes?"#1a2a10":"#2a1a10"};border:1px solid ${isYes?"#4a7a20":"#5a2a10"};color:${isYes?"#8abf40":"#bf6040"}">Enhance: ${isYes?"Y":"N"}</div></div>`;
+  // Enhancement Candidate display states (S11 expanded):
+  //   - true → "Yes" (book is a good candidate)
+  //   - false → "No" (not a candidate)
+  //   - "done" → "Done" (already enhanced)
+  //   - "dontcare" → "Don't Care" (collector explicitly opted out)
+  //   - null/undefined → don't display the field at all
+  if (enhanceVal === true || enhanceVal === false || enhanceVal === "done" || enhanceVal === "dontcare") {
+    let bg, bc, col, txt;
+    if (enhanceVal === true) { bg="#1a2a10"; bc="#4a7a20"; col="#8abf40"; txt="Yes"; }
+    else if (enhanceVal === false) { bg="#2a1a10"; bc="#5a2a10"; col="#bf6040"; txt="No"; }
+    else if (enhanceVal === "done") { bg="#0a1a2a"; bc="#1a3a5c"; col="#5a9adf"; txt="Done"; }
+    else { bg="#1a1a18"; bc="#3a3a35"; col="#9a8a7a"; txt="Don't Care"; }
+    html += `<div style="margin-top:16px"><div style="display:inline-block;padding:5px 12px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:1px;background:${bg};border:1px solid ${bc};color:${col}">Enhancement: ${txt}</div></div>`;
   }
 
   // ─── My Notes ───
@@ -2168,15 +2179,16 @@ function _attachPanzoomToLightbox() {
     // Reset any leftover transform from a prior session before initializing
     wrap.style.transform = '';
     img.style.transform = '';
-    // S11 fix: attach Panzoom to the WRAPPER, not the image. Previously
-    // Panzoom transformed the <img> directly while a flex parent tried to
-    // center it, which broke pan-bounds calculation (pan only worked
-    // downward, pinch was dead). The wrapper pattern is what Panzoom's
-    // docs recommend and avoids the layout conflict entirely.
+    // Panzoom config (S11): no `contain` option. We tried 'inside' (broke
+    // pan to vertical-only and killed pinch) and 'outside' (cropped-fill
+    // baseline that made the image too zoomed at scale 1, with snap-back
+    // when panning revealed letterbox). Neither worked. Without `contain`,
+    // Panzoom freely pans and zooms — the user can over-pan past the edges,
+    // but the basic pinch and zoom motions actually work. Better permissive
+    // than broken.
     _panzoomInstance = Panzoom(wrap, {
       maxScale: 6,
-      minScale: 1,
-      contain: 'outside',
+      minScale: 0.5,
       step: 0.4,
       animate: true,
       pinchAndPan: true,
@@ -3839,12 +3851,23 @@ function renderForm(){
     const val=formData[field]!=null&&formData[field]!==""?formData[field]:"";
     return`<div><label class="field-label">${label}</label><div style="position:relative"><span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#8a7a6a;font-size:13px;pointer-events:none">$</span><input value="${esc(val)}" inputmode="decimal" pattern="[0-9.]*" oninput="formData['${field}']=this.value" placeholder="0.00" style="padding-left:22px"></div></div>`;
   }
-  function df(label,field,monthOnly=false){
+  function df(label,field,monthOnly=false,placeholder='Apr 18, 1938'){
     const val=formData[field]||"";
     // Convert stored YYYY-MM-DD to input value; month-only fields use YYYY-MM
     const inputVal=monthOnly?(val.length>=7?val.slice(0,7):val):(val.length>=10?val.slice(0,10):val);
     const type=monthOnly?"month":"date";
-    return`<div><label class="field-label">${label}</label><input type="${type}" value="${esc(inputVal)}" onchange="setDateField('${field}',this.value,${monthOnly})"></div>`;
+    // Date inputs are tricky on iOS — they don't honor `placeholder` and they
+    // render the picker icon at the right edge which can cause the visual
+    // width to exceed the form-grid cell. Force the field to fit its
+    // container with width:100% and box-sizing:border-box, and left-align
+    // both empty-state text and entered values. The ghost placeholder is
+    // simulated with an absolute-positioned span when the field is empty,
+    // since `placeholder` on type="date" is unreliable across browsers.
+    const showGhost = !inputVal;
+    return`<div><label class="field-label">${label}</label><div style="position:relative">
+      <input type="${type}" value="${esc(inputVal)}" onchange="setDateField('${field}',this.value,${monthOnly});this.parentElement.querySelector('.date-ghost')?.remove()" style="width:100%;box-sizing:border-box;text-align:left;${showGhost?'color:transparent':''}">
+      ${showGhost?`<span class="date-ghost" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#a89e8e;font-size:14px;pointer-events:none">${placeholder}</span>`:''}
+    </div></div>`;
   }
   function treatBtn(key,label){
     const v=formData[key];
@@ -3931,7 +3954,11 @@ function renderForm(){
     </div>
     ${(isEdit || _assessed || _addManualMode) ? `
     <div class="form-grid-2">
-      ${tf('Title <span style="color:#c0392b">*</span>',"title","Series title")}
+      <!-- Title gets a special handler (not the generic tf) because we need
+           live-toggle the save button as the user types. Using tf would
+           require either a full renderForm on every keystroke (kills focus)
+           or a separate handler — this is cleaner. -->
+      <div><label class="field-label">Title<span style="color:#c0392b;margin-left:2px">*</span></label><input id="title-input" value="${esc(formData.title||"")}" oninput="formData.title=this.value;const b=document.getElementById('save-btn');b.disabled=!this.value.trim();b.style.opacity=this.value.trim()?'':'0.5';b.style.cursor=this.value.trim()?'':'not-allowed'" placeholder="Series title"></div>
       ${tf("Issue","issue","Issue number",true)}
       ${tf("Pub Date","issueDate","Cover date")}
       ${tf("Publisher","publisher","Publisher")}
@@ -3991,9 +4018,9 @@ function renderForm(){
          badges) and the page quality pill. RoboGrade is no longer in this row
          — it has its own dedicated panel above. The RG box was redundant
          with the panel and made the row visually unbalanced. -->
-    ${_assessed?`<div style="margin-top:14px;padding:12px 14px;background:#141210;border:1px solid #2a2420;border-radius:10px;">
-      <div style="font-size:10px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase;margin-bottom:8px">Grader Predictions</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;">
+    ${_assessed?`<div style="margin-top:14px;padding:12px 14px;background:#141210;border:1px solid #2a2420;border-radius:10px;display:flex;flex-direction:column;align-items:center;gap:10px">
+      <div style="font-size:10px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase;text-align:center;width:100%">Grader Predictions</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;justify-content:center">
         ${(()=>{
           // CGC stack: official on top if present, AI below if present
           const off = formData.cgcGrade ? buildBadge(formData.cgcGrade,"cgc-official",detectDesignation(formData),false) : "";
@@ -4006,46 +4033,27 @@ function renderForm(){
           const ai  = formData.assessedPSAGrade ? buildBadge(normalizeGrade(formData.assessedPSAGrade),"psa-ai","",false) : "";
           return buildStackedGradePair(off, ai);
         })()}
-        ${formData.pageQuality?`<div style="margin-left:auto;align-self:center">${buildPQBox(formData.pageQuality)}</div>`:""}
       </div>
+      ${formData.pageQuality?`<div style="display:flex;justify-content:center">${buildPQBox(formData.pageQuality)}</div>`:""}
     </div>`:""}
 
-    <!-- Transaction metadata block (S11): reordered to chronology of acquiring →
-         grading → pricing. Date Acquired first (when the user got the book),
-         Seller (where from), Grading Date (when CGC/PSA returned it), full
-         Cost Breakdown, then current FMV. -->
+    <!-- Transaction metadata block (S11): chronology of acquiring → grading.
+         Cost/FMV moved to bottom of analysis section, after Condition
+         Assessment, per user direction. -->
     ${df("Date Acquired","dateAcquired")}
     <div><label class="field-label">Seller</label>
       <input value="${esc(formData.seller||"")}" list="seller-list" oninput="formData.seller=this.value;updateSellerList(this.value)" placeholder="Name / source" autocomplete="off">
       <datalist id="seller-list">${getSellerSuggestions().map(s=>`<option value="${esc(s)}">`).join("")}</datalist>
     </div>
     ${df("Grading Date","slabbingDate")}
-    <div class="cost-box">
-      <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>
-      <div class="form-grid-2">
-        ${mf("Purchase Price ($)","purchasePrice")}
-        ${mf("Taxes / Fees / Shipping ($)","taxesFeesShipping")}
-        ${mf("Grading / Pressing ($)","gradingCost")}
-        ${mf("CGC Return Shipping ($)","cgcShipping")}
-      </div>
-    </div>
-    <div class="form-grid-2">
-      ${mf("Fair Market Value ($)","fmv")}
-      ${df("FMV Date","fmvDate",true)}
-    </div>
 
-    <!-- Analysis block (S11): mirrors detail-view ordering after the
-         transaction metadata. Each text section is gated on having content
-         (or, for fields the user can author, on the appropriate condition).
-         Past Assessments lives between Condition Assessment and PSA Variance,
-         matching the detail view. The × buttons let the user delete stale
-         history entries before saving. -->
-    <div>
-      <label class="field-label">Enhance Candidate</label>
-      <div style="display:flex;gap:10px">
-        ${treatBtn("enhance","Enhance")}
-      </div>
-    </div>
+    <!-- Analysis block (S11 reorder per user direction):
+         Defect Notes, Condition Assessment first
+         Then Enhancement Candidate
+         Then Cost Breakdown (now including FMV inside it)
+         Other gated text fields (Label Notes, Key Info, Grader Notes,
+         Past Assessments, PSA Variance) live in their previous positions
+         around these. -->
     ${(formData.cgcGrade||formData.psaGrade||formData.cgcNotes)?`<div><label class="field-label">Label Notes</label><textarea rows="2" oninput="formData.cgcNotes=this.value">${esc(formData.cgcNotes||"")}</textarea></div>`:""}
     ${formData.keyInfo?`<div><label class="field-label">Key Info</label><textarea rows="2" readonly style="background:#ece8de;color:#5a4a3a;cursor:not-allowed;border-color:#c8c0b0" title="Key Info is populated by the assessment when the issue is in the recognized-key list. Not user-editable.">${esc(formData.keyInfo||"")}</textarea></div>`:""}
     ${(formData.cgcGrade||formData.graderNotes)?`<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes?4:2}" style="font-style:italic" placeholder="Official grader notes (will be considered in assessment predictions)" oninput="formData.graderNotes=this.value">${esc(formData.graderNotes||"")}</textarea></div>`:""}
@@ -4078,9 +4086,34 @@ function renderForm(){
       </div>
     </div>`:""}
     ${formData.psaNotes?`<div><label class="field-label" style="color:#e87a7a">PSA Variance</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes||"")}</textarea></div>`:""}
+
+    <!-- Enhancement Candidate (S11): renamed from "Enhance Candidate"; moved
+         to between Condition Assessment and Cost Breakdown per user direction. -->
+    <div>
+      <label class="field-label">Enhancement Candidate</label>
+      <div style="display:flex;gap:10px">
+        ${treatBtn("enhance","Enhance")}
+      </div>
+    </div>
+
+    <!-- Cost Breakdown (S11): now includes FMV ($) and FMV Date inside the
+         container, since they're financial fields conceptually grouped with
+         the cost data. -->
+    <div class="cost-box">
+      <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>
+      <div class="form-grid-2">
+        ${mf("Purchase Price ($)","purchasePrice")}
+        ${mf("Taxes / Fees / Shipping ($)","taxesFeesShipping")}
+        ${mf("Grading / Pressing ($)","gradingCost")}
+        ${mf("CGC Return Shipping ($)","cgcShipping")}
+        ${mf("FMV ($)","fmv")}
+        ${df("FMV Date","fmvDate",true)}
+      </div>
+    </div>
+
     <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes||"")}</textarea></div>
     <div style="display:flex;gap:10px;padding-top:4px">
-      <button class="btn btn-gold" onclick="submitForm()">${isEdit?"Save Changes":"Add to Collection"}</button>
+      <button id="save-btn" class="btn btn-gold" onclick="submitForm()" ${formData.title?.trim() ? "" : "disabled"} style="${formData.title?.trim() ? "" : "opacity:0.5;cursor:not-allowed"}">${isEdit?"Save Changes":"Add to Collection"}</button>
       <button class="btn btn-dark" onclick="cancelForm()">Cancel</button>
     </div>
     ` : `
@@ -4105,13 +4138,28 @@ function buildRoboGradeDisplay(rg, comic) {
   const score    = rg.score;
   const scoreRounded = Math.round(score);
 
-  const OLIVE      = '#1a2208';
+  // Color palette (S11 — mascot-green theme, color-matched to the actual
+  // Robograder character):
+  // OLIVE      → ROBOT_BODY: forest green, mid-tone of the mascot's body.
+  //               Warm forest-green, NOT cyan-leaning. Was '#152a1a' in
+  //               an earlier iteration which read too cool/metallic; the
+  //               actual character is closer to a saturated forest green
+  //               with lime highlights.
+  // CHARTREUSE → score color, unchanged
+  // OLIVE_LT   → secondary text on dark panel
+  // OLIVE_MID  → border / mid-rule
+  // SECTION_HD → darker green for FRONT/BACK/SPINE/INTERIOR section headers
+  //               on the printout-paper bands
+  // BG         → panel surround, slightly darker than the body so the body
+  //               cells stand out against it
+  const OLIVE      = '#2a4a1e';   // mascot body mid-tone — forest green
   const CHARTREUSE = '#b8d820';
-  const OLIVE_LT   = '#6a8030';
-  const OLIVE_MID  = '#3a5010';
-  const LIGHT      = '#7a8a5a';
-  const RULE       = '#2a3a12';
-  const BG         = '#0f1a05';
+  const OLIVE_LT   = '#7aa838';   // mascot lime-highlight tone for secondary text
+  const OLIVE_MID  = '#4a7028';   // border between body cells
+  const SECTION_HD = '#1a3818';   // darker than OLIVE_LT for paper-band headers
+  const LIGHT      = '#9abf60';
+  const RULE       = '#3a5818';
+  const BG         = '#152e10';   // panel surround — deepest forest tone
 
   // Precision suffix logic (S11) — mirrors print-label.js exactly.
   // Score 100      → no suffix (perfect, no uncertainty)
@@ -4189,7 +4237,8 @@ function buildRoboGradeDisplay(rg, comic) {
   const PAPER_GREEN    = '#cce8b8';   // pale mint-green band
   const PAPER_CREAM    = '#f4f0dc';   // off-white cream band
   const PAPER_HEADER   = '#a8c898';   // slightly bolder green for category headers
-  const PAPER_INK      = '#1f2a08';   // dark olive ink
+  const PAPER_INK      = '#1f2a08';   // dark olive ink for body text
+  const PAPER_INK_HD   = '#0a1404';   // darker still — used for FRONT/BACK/SPINE/INTERIOR headers so they pop on the green band
   const PAPER_INK_LT   = '#5a6a3a';   // muted ink for secondary detail
 
   // Category sections — only render if there are defects. Each row gets a
@@ -4202,8 +4251,8 @@ function buildRoboGradeDisplay(rg, comic) {
     runningIdx += defArr.length;
     return `<div>
       <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:${PAPER_HEADER};border-top:1px solid ${PAPER_INK_LT};border-bottom:1px solid ${PAPER_INK_LT}">
-        <span style="font-size:10px;font-weight:700;color:${PAPER_INK};letter-spacing:1.5px;font-family:'IBM Plex Mono','Menlo',monospace">${label}</span>
-        <span style="font-size:14px;font-weight:800;color:${PAPER_INK};font-family:'IBM Plex Mono','Menlo',monospace">${score}</span>
+        <span style="font-size:10px;font-weight:700;color:${PAPER_INK_HD};letter-spacing:1.5px;font-family:'IBM Plex Mono','Menlo',monospace">${label}</span>
+        <span style="font-size:14px;font-weight:800;color:${PAPER_INK_HD};font-family:'IBM Plex Mono','Menlo',monospace">${score}</span>
       </div>
       ${defectList(defArr, startIdx)}
     </div>`;
@@ -4268,15 +4317,15 @@ function buildRoboGradeDisplay(rg, comic) {
   // (Header was "ROBOGRADE RESULTS" until S11; renamed to clarify the
   // distinction between Robograde — the score — and Robograder — the app.)
   return `<div style="background:${BG};border:1.5px solid ${OLIVE_MID};border-radius:12px;padding:14px 14px 0;margin-bottom:8px;overflow:hidden">
-    <div style="font-size:10px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:10px">ROBOGRADE SCORE</div>
+    <div style="font-size:12px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:10px;text-align:center">ROBOGRADE SCORE</div>
     <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px">
       <div style="background:${OLIVE};border-radius:16px;width:88px;height:88px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;border:1.5px solid ${OLIVE_MID};position:relative">
         <div style="font-size:8px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:2px">RG</div>
         <div style="position:relative;display:flex;justify-content:center;align-items:flex-end;width:100%">
           <span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:40px;font-weight:900;color:${CHARTREUSE};line-height:1">${scoreRounded}</span>
-          ${precision ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:11px;font-weight:700;color:${OLIVE_LT};position:absolute;left:calc(50% + 18px);bottom:6px;white-space:nowrap">${precision}</span>` : ''}
+          ${precision ? `<span style="font-family:system-ui,sans-serif;font-size:13px;font-weight:700;color:${OLIVE_LT};position:absolute;left:calc(50% + 18px);bottom:14px;white-space:nowrap;letter-spacing:1px">${precision.replace('±', '± ')}</span>` : ''}
         </div>
-        <div style="font-size:8px;font-weight:700;color:#7aa030;letter-spacing:1px;margin-top:3px">V${rg.version||'2.0'}</div>
+        <div style="font-size:8px;font-weight:700;color:#5a7028;letter-spacing:1px;margin-top:3px;opacity:0.85">V${rg.version||'2.0'}</div>
       </div>
       <div style="flex:1;display:grid;grid-template-columns:1fr 1fr;gap:4px">
         <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
@@ -4734,7 +4783,10 @@ function cancelTreatment(key,e){
 }
 
 async function submitForm(){
-  if(!formData.title?.trim()){alert("Title is required.");return;}
+  // Title is now gated by the disabled save button in renderForm — if we're
+  // here, title is non-empty. Keeping this as a no-op safety check in case
+  // the gating fails for any reason.
+  if(!formData.title?.trim()){return;}
   formData.title=normalizeTitle(formData.title.trim().replace(/\s+/g," ").replace(/^The\s+/i,""), formData.issueDate);
   if(formData.seller?.trim())updateSellerList(formData.seller.trim());
 
@@ -4841,7 +4893,11 @@ async function submitForm(){
   }
 
   await saveComic(rec);
-  showList();
+  // Navigate to Detail view of the just-saved book rather than List. Users
+  // expect to verify their save took effect; landing on Detail is the natural
+  // next step. Cancel still routes through cancelForm() which goes to Detail
+  // for an existing book or List for a new-but-cancelled add.
+  showDetail(rec.id);
 }
 
 function cancelForm(){if(selected){showDetail(selected.id);}else{showList();}}
