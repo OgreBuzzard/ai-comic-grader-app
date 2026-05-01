@@ -499,8 +499,8 @@ Per-category calibration (applied proportionally to the category maximum):
     • 7-10 = significant stress accumulation, split starting, staple pull
     • 0-6 = severe structural issues at spine
   Interior (max 10):
-    Interior score is DERIVED from page quality. Start from the PQ-mapped value below, then apply at most one small deduction for staple or interior defects. Never assign an interior score that contradicts the PQ designation.
-    PQ → starting interior score:
+    Interior score is DERIVED from page quality. Start from the PQ-mapped value below. If NO documented interior defect is present (no staple rust, no detached centerfold, no missing page, no significant interior soiling), the interior score MUST equal the PQ-mapped value exactly. Do NOT apply any deduction without a corresponding documented defect. A "general feeling" that the interior is rough is not a deduction trigger.
+    PQ → starting interior score (this IS the final score when no deduction applies):
       • White                   → 10
       • Off-White to White      → 9
       • Off-White               → 8
@@ -512,11 +512,16 @@ Per-category calibration (applied proportionally to the category maximum):
       • Brown                   → 2
       • Brown/Brittle           → 1
       • Brittle                 → 0
-    Deductions (apply at most ONE, capped to -2):
+    Deductions (apply at most ONE, capped to -2; only when the corresponding defect is observed AND noted in the defect list):
       • Staple rust or significant oxidation: -1
       • Detached centerfold or detached interior wrap: -2 (capped)
       • Significant interior soiling, foxing, or stains: -1
       • Missing interior page or coupon: -2 (capped)
+    EXAMPLES of correct output:
+      • OW/W pages, no documented interior defect → Interior = 9
+      • White pages, staple rust noted → Interior = 9 (10 - 1)
+      • Off-White pages, no interior defects in the response → Interior = 8 (NOT 7)
+      • Cream pages, missing centerfold → Interior = 5 (capped at -2)
     SAFETY FLOOR: An interior score of 0 is reserved for Brittle pages or for severe interior damage. NEVER assign 0 to a book with White, Off-White to White, or Off-White pages — that is internally inconsistent and will be flagged as a bug.
 
 No back cover photo provided case: set backScore to null. Redistribute the 20 Back points into Front, raising Front's maximum to 70. All other categories unchanged.
@@ -678,7 +683,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
   "officialPSAGrade": null,
   "officialPSACert": null,
   "roboGrade": {
-    "version": "2.1",
+    "version": "2.2",
     "score": 0,
     "confidenceRange": ${baseConf},
     "frontScore": 0,
@@ -891,6 +896,40 @@ RETURN ONLY THIS JSON — no markdown, no preamble
       let b = typeof rg.backScore     === 'number' ? rg.backScore     : null;
       let s = typeof rg.spineScore    === 'number' ? rg.spineScore    : null;
       let i = typeof rg.interiorScore === 'number' ? rg.interiorScore : null;
+
+      // ── Interior-from-PQ enforcement (S11 calibration safety net) ─────────
+      // The prompt rule says interior = PQ-mapped value if no deduction is
+      // documented. The model occasionally drifts and applies an unjustified
+      // -1. Enforce the rule deterministically here. If interior < PQ-mapped
+      // AND no deduction-trigger keyword appears in the defect list, clamp
+      // interior up to the PQ-mapped value.
+      const PQ_TO_INTERIOR = {
+        'White': 10, 'Off-White to White': 9, 'Off-White': 8,
+        'Cream to Off-White': 7, 'Cream': 6, 'Light Tan to Cream': 5,
+        'Light Tan': 4, 'Tan': 3, 'Brown': 2, 'Brown/Brittle': 1, 'Brittle': 0,
+      };
+      const pqMapped = PQ_TO_INTERIOR[rg.pageQuality];
+      if (typeof pqMapped === 'number' && typeof i === 'number' && i < pqMapped) {
+        // Look for deduction triggers in the defect list. The prompt asks for
+        // these specific kinds of interior defects to justify a deduction:
+        // staple rust, detached centerfold, missing page, interior soiling.
+        const defects = Array.isArray(rg.defects) ? rg.defects : [];
+        const interiorDefectText = defects
+          .filter(d => d && (d.category === 'Interior' || d.location?.toLowerCase().includes('interior')))
+          .map(d => `${d.type || ''} ${d.location || ''} ${d.notes || ''}`.toLowerCase())
+          .join(' ');
+        const hasTrigger = (
+          /staple\s*(rust|oxid)/.test(interiorDefectText) ||
+          /detached/.test(interiorDefectText) ||
+          /missing\s*(page|coupon|wrap|centerfold)/.test(interiorDefectText) ||
+          /(soiling|foxing|stain)/.test(interiorDefectText)
+        );
+        if (!hasTrigger) {
+          i = pqMapped;
+          rg._interiorClamped = { from: rg.interiorScore, to: pqMapped, reason: `PQ "${rg.pageQuality}" maps to ${pqMapped}, no documented deduction trigger` };
+        }
+      }
+
       if (f != null && s != null && i != null) {
         // Clamp each component to its valid range and round to integer
         if (b == null) {
