@@ -2025,19 +2025,11 @@ function showDetail(id){
     </div>`;
   }
 
-  // ─── "Update With Official Grade" placeholder (S11, deferred to post-beta) ───
-  // Reserved location for the upcoming feature. When implemented, this button
-  // will allow users to submit photos of their book in its CGC/PSA slab to run
-  // a free re-assessment knowing it's the same book. Requires anti-abuse work:
-  // verify book identity matches original assessment, slab authenticity check,
-  // rate limiting per book, and abandon if photos don't match.
-  // Disabled placeholder for now so the layout slot is reserved.
-  // Hidden on sample entry.
-  if (!isSample && selected.roboGrade) {
-    html += `<div style="margin-top:14px">
-      <button disabled style="background:#e8e3d8;color:#a89e8e;border:1.5px solid #c8c0b4;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;cursor:not-allowed;opacity:0.6" title="Coming soon">Update With Official Grade <span style="font-size:10px;font-weight:500;opacity:0.7;margin-left:4px">(coming soon)</span></button>
-    </div>`;
-  }
+  // ─── "Update With Official Grade" feature (deferred — button hidden) ───
+  // Will eventually allow users to submit photos of their book in its CGC/PSA
+  // slab to run a free re-assessment, with anti-abuse work to verify book
+  // identity, slab authenticity, rate limiting, etc. Significant effort —
+  // hidden entirely until built rather than showing a "coming soon" placeholder.
 
   // ─── Print Label / Delete ───
   // Bottom action row. Edit moved to top sticky bar in S10. Print Label
@@ -2277,8 +2269,17 @@ const EMPTY={title:"",issue:"",issueDate:"",publisher:"",grade:"",cgcGrade:"",cg
 let formData={...EMPTY};
 let assessing=false;
 let _assessed=false; // tracks if current form has been assessed
+// Add-flow only (S11): when true, show the full form on Add. When false (default),
+// collapse the form below Assess Grade and show an "Enter Manually" button. The
+// goal is to orient first-time users toward photos-first; users who want to type
+// in a book without photos are one tap away. Reset to false on every showAdd().
+// Once an assessment runs (_assessed becomes true), the full form is always shown
+// regardless of this flag — the user needs to see what got populated.
+let _addManualMode=false;
 
-function showAdd(){formData={...EMPTY};view="add";_assessed=false;document.getElementById("add-btn").style.display="none";renderForm();}
+function showAdd(){formData={...EMPTY};view="add";_assessed=false;_addManualMode=false;document.getElementById("add-btn").style.display="none";renderForm();}
+
+function enterManualMode(){_addManualMode=true;renderForm();}
 
 function showEdit(id){
   const c=comics.find(x=>x.id===id);
@@ -3926,8 +3927,9 @@ function renderForm(){
         })()}
       </div>` : ''}
       <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">
-      <div style="display:flex;justify-content:center;margin-top:4px"><button id="assess-btn" class="btn btn-cgc" onclick="assessGrade()" ${(!formData.images||formData.images.filter(Boolean).length===0||assessing)?"disabled":""} style="width:75%;min-height:56px;border-radius:14px;background:${assessing?"#1a3a5c":_assessed?"#1a4a2a":"#2a4a6a"};color:${assessing?"#a8d0f0":_assessed?"#6abf6a":"#a8d0f0"}">${assessing?"Assessing…":_assessed?"Re-assess Grade":"Assess Grade"}</button></div>
+      <div style="display:flex;justify-content:center;margin-top:4px"><button id="assess-btn" class="btn btn-cgc" onclick="assessGrade()" ${(!formData.images||!formData.images[0]||assessing)?"disabled":""} style="width:75%;min-height:56px;border-radius:14px;background:${assessing?"#1a3a5c":_assessed?"#1a4a2a":"#2a4a6a"};color:${assessing?"#a8d0f0":_assessed?"#6abf6a":"#a8d0f0"}">${assessing?"Assessing…":_assessed?"Re-assess Grade":"Assess Grade"}</button></div>
     </div>
+    ${(isEdit || _assessed || _addManualMode) ? `
     <div class="form-grid-2">
       ${tf('Title <span style="color:#c0392b">*</span>',"title","Series title")}
       ${tf("Issue","issue","Issue number",true)}
@@ -4081,6 +4083,15 @@ function renderForm(){
       <button class="btn btn-gold" onclick="submitForm()">${isEdit?"Save Changes":"Add to Collection"}</button>
       <button class="btn btn-dark" onclick="cancelForm()">Cancel</button>
     </div>
+    ` : `
+    <!-- Add-flow collapsed state (S11): show only the Enter Manually button.
+         Steers users toward photos-first by hiding the form fields until
+         either (a) they tap Enter Manually, or (b) an assessment runs and
+         _assessed becomes true. Edit view always shows the full form. -->
+    <div style="display:flex;justify-content:center;margin-top:8px">
+      <button class="btn btn-dark" onclick="enterManualMode()" style="width:75%;min-height:48px;border-radius:12px;font-size:14px;letter-spacing:1px">Enter Manually</button>
+    </div>
+    `}
   </div>`;
 
   document.getElementById("main").innerHTML=html;
