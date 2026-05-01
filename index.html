@@ -159,7 +159,7 @@
         }
         await loadUserCredits();
         await checkTermsAcceptance();
-        // _loadingState gets cleared inside loadComics() once the collection
+        // _loadingState gets cleared inside loadItems() once the collection
         // finishes loading. Don't clear it here — credits alone aren't enough.
       } else {
         // Not signed in — show auth screen, hide app. Loading state irrelevant
@@ -1137,7 +1137,7 @@ function formatIssueDateCompact(d) {
 }
 function esc(s){return s?String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"):""}
 
-let comics=[], collapsed={}, view="list", selected=null, sortBy="title", search="", _listScrollY=0;
+let items=[], collapsed={}, view="list", selected=null, sortBy="title", search="", _listScrollY=0;
 let db, fsCollection, fsGetDocs, fsSetDoc, fsDeleteDoc, fsDoc, fsOnSnapshot, fsGetDoc;
 let seeded=false;
 
@@ -1153,30 +1153,108 @@ async function initFirebase(){
   db=window._db;fsCollection=window._fsCollection;fsGetDocs=window._fsGetDocs;
   fsSetDoc=window._fsSetDoc;fsDeleteDoc=window._fsDeleteDoc;fsDoc=window._fsDoc;fsGetDoc=window._fsGetDoc;
   fsOnSnapshot=window._fsOnSnapshot;
-  // Wait for auth — if not signed in, don't load comics
+  // Wait for auth — if not signed in, don't load items
   if(!window._currentUser){ return; }
-  await loadComics();
-  fsOnSnapshot(userComicsCollection(),snap=>{
-    comics=snap.docs.map(d=>d.data()).map(c=>({...c,pageQuality:normPageQuality(c.pageQuality)}));
+  // Run the comics → items migration before any reads/listens (S11). Idempotent —
+  // safe to call on every sign-in. No-op for new users and for users already migrated.
+  await migrateComicsToItems();
+  await loadItems();
+  fsOnSnapshot(userItemsCollection(),snap=>{
+    items=snap.docs.map(d=>d.data()).map(c=>({...c,pageQuality:normPageQuality(c.pageQuality)}));
     if(view==="list")renderList();
     updateStats();
   });
 }
 
-function userComicsCollection(){
+// `items` is the live collection name (S11 rename from `comics`). The eventual
+// schema split between comics and trading cards will be a `type` field on each
+// doc; the collection itself holds all item types. Old `comics` collection is
+// preserved during migration and deleted per-user once their docs have been
+// successfully copied to `items`.
+function userItemsCollection(){
   const uid = window._currentUser?.uid;
   if(!uid) throw new Error('Not signed in');
-  return fsCollection(db, 'users', uid, 'comics');
+  return fsCollection(db, 'users', uid, 'items');
 }
 function userMetaDoc(name){
   const uid = window._currentUser?.uid;
   if(!uid) throw new Error('Not signed in');
   return fsDoc(db, 'users', uid, 'meta', name);
 }
-function userComicDoc(id){
+function userItemDoc(id){
+  const uid = window._currentUser?.uid;
+  if(!uid) throw new Error('Not signed in');
+  return fsDoc(db, 'users', uid, 'items', id);
+}
+
+// Legacy `comics` collection — only used by the migration path, never written to.
+function userLegacyComicsCollection(){
+  const uid = window._currentUser?.uid;
+  if(!uid) throw new Error('Not signed in');
+  return fsCollection(db, 'users', uid, 'comics');
+}
+function userLegacyComicDoc(id){
   const uid = window._currentUser?.uid;
   if(!uid) throw new Error('Not signed in');
   return fsDoc(db, 'users', uid, 'comics', id);
+}
+
+// Migration: comics → items (S11). Runs once per user on sign-in. Idempotent.
+//
+// Strategy: check if user has any docs in `items`. If yes, migration was already
+// completed (or they're a new user starting fresh on `items`). If no, check the
+// legacy `comics` collection. If empty there too, this is a brand-new user —
+// nothing to migrate. If `comics` has docs, copy each to `items` (preserving
+// id), stamp `type: 'comic'` if missing, then delete from `comics` after all
+// copies succeed.
+//
+// Failure mode: if any copy fails, we abort BEFORE deleting from `comics` so
+// the source data is never lost. The user's app might temporarily show an
+// empty collection (because items is partially populated), but their data is
+// intact in `comics` and the next sign-in will retry the migration.
+//
+// Storage paths: existing docs reference Cloud Storage URLs that point at the
+// old `users/{uid}/comics/{id}/` paths. Those URLs remain valid — the actual
+// blobs aren't moved. New uploads (any new image taken after this migration)
+// will write to `users/{uid}/items/{id}/` per the updated upload code.
+async function migrateComicsToItems() {
+  if (!window._currentUser) return;
+  if (!db) return;
+  const uid = window._currentUser.uid;
+  try {
+    // Check if items is already populated for this user
+    const itemsSnap = await fsGetDocs(userItemsCollection());
+    if (itemsSnap.size > 0) {
+      // Migration already done, or new user starting on items
+      return;
+    }
+    // Check legacy comics collection
+    const comicsSnap = await fsGetDocs(userLegacyComicsCollection());
+    if (comicsSnap.size === 0) {
+      // No legacy data and no items — brand new user, nothing to do
+      return;
+    }
+    console.log(`Migrating ${comicsSnap.size} comics → items for user ${uid}`);
+    // Copy phase
+    const copies = [];
+    for (const docSnap of comicsSnap.docs) {
+      const data = docSnap.data();
+      // Stamp type if missing on legacy data
+      if (!data.type) data.type = 'comic';
+      copies.push(fsSetDoc(userItemDoc(docSnap.id), data));
+    }
+    await Promise.all(copies);
+    console.log(`Migration copy phase complete (${copies.length} docs).`);
+    // Delete phase — only runs after all copies succeeded
+    const deletes = comicsSnap.docs.map(docSnap => fsDeleteDoc(userLegacyComicDoc(docSnap.id)));
+    await Promise.all(deletes);
+    console.log(`Migration cleanup complete (${deletes.length} legacy docs removed).`);
+  } catch (e) {
+    console.error('Migration failed:', e);
+    // Don't throw — the user's data is still safe in `comics` and the app
+    // will continue with whatever migration progress was made. Next sign-in
+    // will retry.
+  }
 }
 
 // ── Sample entry for new users ──────────────────────────────────────────────
@@ -1189,43 +1267,21 @@ const SAMPLE_COMIC_ID = 'sample_unerring_robograder_1';
 const SAMPLE_COMIC = {
   id: SAMPLE_COMIC_ID,
   _isSample: true,
+  type: 'comic',
+  // Identity
   title: 'The Unerring Robograder',
   issue: '1',
   issueDate: 'April 2026',
   publisher: 'Robograder',
+  // Grade fields
   grade: '10.0',
-  assessedCGCGrade: '10.0',
-  assessedPSAGrade: '10.0',
   pageQuality: 'White',
-  aiAssessment: 'Certified flawless by the Unerring Robograder.',
-  aiGraderNotes: '',
-  psaNotes: '',
-  keyInfo: '',  // S11: census-gated annotations about key issue significance.
-                // Populated by AI only when (a) the issue is in the ~2,359-book
-                // census list, AND (b) the AI is confident about the fact.
-                // Hidden in detail view if Label Notes already covers it.
-  notes: '',
   cgcGrade: '',
   cgcCert: '',
   psaGrade: '',
   psaCert: '',
-  press: null,    // legacy (S11): retained for old books; no longer written
-  uv: null,       // legacy (S11): retained for old books; no longer written
-  clean: null,    // legacy (S11): retained for old books; no longer written
-  enhance: null,  // S11: replaces Press/UV/Clean trio with a single judgment.
-                  // Y = book likely to benefit from any of pressing, UV, or
-                  // cleaning. N = no enhancement expected to help. null =
-                  // not assessed or AI uncertain.
-  purchasePrice: '',
-  seller: '',
-  images: [
-    'assets/ghosts/Front_Cover.jpg',
-    'assets/ghosts/Back_Cover.jpg',
-    'assets/ghosts/Page_Quality.jpg',
-    'assets/ghosts/Raking_Light.jpg'
-  ],
-  cornerImages: [],
-  assessmentHistory: [],
+  assessedCGCGrade: '10.0',
+  assessedPSAGrade: '10.0',
   roboGrade: {
     version: '2.0',
     score: 100,
@@ -1242,28 +1298,57 @@ const SAMPLE_COMIC = {
   },
   roboGradeId: '',
   roboGradeDate: '',
-  publicListing: false,
+  // Status flags
   highGradeTier: false,
   highGradeUnlocked: false,
   restorationCheckTier: false,
   restorationReport: null,
-  restorationFlag: false
+  restorationFlag: false,
+  enhance: null,  // S11: replaces Press/UV/Clean trio with a single judgment.
+                  // Y = book likely to benefit from any of pressing, UV, or
+                  // cleaning. N = no enhancement expected to help. null =
+                  // not assessed or AI uncertain.
+  press: null,    // legacy (S11): retained for old books; no longer written
+  uv: null,       // legacy (S11): retained for old books; no longer written
+  clean: null,    // legacy (S11): retained for old books; no longer written
+  publicListing: false,
+  // Transaction
+  purchasePrice: '',
+  seller: '',
+  // Images
+  images: [
+    'assets/ghosts/Front_Cover.jpg',
+    'assets/ghosts/Back_Cover.jpg',
+    'assets/ghosts/Page_Quality.jpg',
+    'assets/ghosts/Raking_Light.jpg'
+  ],
+  cornerImages: [],
+  // Long text fields
+  keyInfo: '',  // S11: census-gated annotations about key issue significance.
+                // Populated by AI only when (a) the issue is in the ~2,359-book
+                // census list, AND (b) the AI is confident about the fact.
+                // Hidden in detail view if Label Notes already covers it.
+  aiGraderNotes: '',
+  aiAssessment: 'Certified flawless by the Unerring Robograder.',
+  psaNotes: '',
+  assessmentHistory: [],
+  notes: ''
 };
 
-async function loadComics(){
+async function loadItems(){
   // Splash screen covers initial load; no purple sync bar during app boot.
   // syncMsg is still used for Saving/Deleting after the app is running.
   try{
-    const snap=await fsGetDocs(userComicsCollection());
-    comics=snap.docs.map(d=>d.data()).map(c=>({...c,pageQuality:normPageQuality(c.pageQuality)}));
+    const snap=await fsGetDocs(userItemsCollection());
+    items=snap.docs.map(d=>d.data()).map(c=>({...c,pageQuality:normPageQuality(c.pageQuality)}));
     // No seeding for new users — they start with an empty collection
-  }catch(e){console.error("Load error:",e);comics=[];}
+  }catch(e){console.error("Load error:",e);items=[];}
 
   // Inject sample entry for users who haven't dismissed it and have no books yet.
   // The dismissal flag is read from the user's Firestore doc (loaded by
   // loadUserCredits, which runs before loadComics in the auth handler).
-  if (comics.length === 0 && window._sampleDismissed !== true) {
-    comics = [{...SAMPLE_COMIC}];
+  if (items.length === 0 && window._sampleDismissed !== true) {
+    items = [{...SAMPLE_COMIC}];
   }
 
   // Loading state is officially over — collection has arrived. Refresh the
@@ -1296,7 +1381,7 @@ function refreshHeaderControls() {
   }
 }
 
-async function saveComic(rec){
+async function saveItem(rec){
   // Don't save the sample itself — it should never exist in Firestore.
   if (rec && rec.id === SAMPLE_COMIC_ID) return;
   // Defensive: any code path that saves a comic without explicitly setting
@@ -1311,13 +1396,17 @@ async function saveComic(rec){
   // only meaningful when ownership === 'Sold'; for Owned/Watching they remain
   // null and are not displayed.
   if (rec) {
+    // type field (S11): forward-prep for the eventual `comics` → `items`
+    // collection rename when TCG support lands. Every record saved now
+    // declares its type so the migration won't need to back-fill it.
+    if (rec.type == null) rec.type = 'comic';
     if (rec.ownership == null) rec.ownership = 'Owned';
     if (rec.dateSold === undefined) rec.dateSold = null;
     if (rec.salePrice === undefined) rec.salePrice = null;
   }
   syncMsg("Saving...");
   try{
-    await fsSetDoc(userComicDoc(rec.id),rec);
+    await fsSetDoc(userItemDoc(rec.id),rec);
     // First real save dismisses the sample entry permanently
     await dismissSampleIfNeeded();
   }
@@ -1325,25 +1414,31 @@ async function saveComic(rec){
   syncMsg(null);
 }
 
-async function deleteComic(id){
+async function deleteItem(id){
   // Manual deletion of the sample entry: just dismiss it, no Firestore call.
   if (id === SAMPLE_COMIC_ID) {
-    comics = comics.filter(c => c.id !== SAMPLE_COMIC_ID);
+    items = items.filter(c => c.id !== SAMPLE_COMIC_ID);
     await dismissSampleIfNeeded();
     showList();
     return;
   }
   syncMsg("Deleting...");
   try {
-    // Delete Storage objects under users/{uid}/comics/{id}/ before the Firestore doc.
-    // This guarantees no orphaned blobs even if the doc delete fails — at worst we
-    // leave a Firestore record pointing at empty storage paths, which the display
-    // code already handles gracefully (broken-image icons in slots, no crash).
+    // Delete Storage objects before the Firestore doc. Two paths to sweep:
+    //   - users/{uid}/items/{id}/   — new path for books uploaded post-rename
+    //   - users/{uid}/comics/{id}/  — legacy path; books that existed before
+    //                                 the comics→items migration kept their
+    //                                 storage at this path (only the Firestore
+    //                                 collection was renamed; blobs stayed put).
+    // Sweeping both keeps Storage clean regardless of which generation a book
+    // originally came from. Either deletion can fail silently — at worst we
+    // leave orphan blobs, no functional impact.
     if (window._currentUser) {
-      const prefix = `users/${window._currentUser.uid}/comics/${id}`;
-      await deleteStorageFolder(prefix);
+      const uid = window._currentUser.uid;
+      await deleteStorageFolder(`users/${uid}/items/${id}`);
+      await deleteStorageFolder(`users/${uid}/comics/${id}`);
     }
-    await fsDeleteDoc(userComicDoc(id));
+    await fsDeleteDoc(userItemDoc(id));
   } catch(e) {
     alert("Delete failed: " + e.message);
   }
@@ -1371,7 +1466,7 @@ async function signInGoogle(){
     await window._signInWithPopup(window._auth, window._googleProvider);
     // onAuthStateChanged hides the auth screen and shows app
     // Now load comics
-    await loadComics();
+    await loadItems();
   } catch(e) {
     // Suppress benign Firebase Auth error codes that show as scary popups
     // but represent user/environment conditions rather than real failures:
@@ -1575,7 +1670,7 @@ function renderList(){
     `;
     return;
   }
-  let filt=comics.filter(c=>{
+  let filt=items.filter(c=>{
     const q=search.toLowerCase();
     return!q||c.title?.toLowerCase().includes(q)||c.issue?.toLowerCase().includes(q)||c.cgcCert?.includes(q);
   });
@@ -1660,7 +1755,7 @@ function toggleGroup(title){collapsed[title]=collapsed[title]===false?true:false
 
 function showDetail(id){
   _listScrollY=window.scrollY||document.documentElement.scrollTop||0;
-  selected=comics.find(c=>c.id===id);
+  selected=items.find(c=>c.id===id);
   if(!selected)return;
   view="detail";
   document.getElementById("add-btn").style.display="none";
@@ -2088,7 +2183,7 @@ window.forceImgReflow = function(imgEl) {
 // Cuts ~6KB / 198 lines from the main bundle for a feature most users invoke
 // rarely, if at all.
 async function printLabel(id) {
-  const comic = (window._comics || comics || []).find(c => c.id === id);
+  const comic = items.find(c => c.id === id);
   if (!comic || !comic.roboGrade) return;
   try {
     const mod = await import('/print-label.js');
@@ -2107,11 +2202,11 @@ async function togglePublicListing(id, val) {
   if (thumb) thumb.style.left = val ? '23px' : '3px';
 
   try {
-    const ref = fsDoc(window._db, 'users', window._currentUser.uid, 'comics', id);
+    const ref = fsDoc(window._db, 'users', window._currentUser.uid, 'items', id);
     await fsSetDoc(ref, { publicListing: val }, { merge: true });
 
     // Also update the ids registry if this book has a roboGradeId
-    const comic = (window._comics || comics || []).find(c => c.id === id);
+    const comic = items.find(c => c.id === id);
     if (comic && comic.roboGradeId) {
       const idRef = fsDoc(window._db, 'robograde_ids', comic.roboGradeId);
       await fsSetDoc(idRef, { public: val }, { merge: true });
@@ -2142,7 +2237,7 @@ async function togglePublicListing(id, val) {
 
 function confirmDelete(id){
   const btn=document.getElementById("del-btn");
-  if(btn.dataset.confirm==="1"){deleteComic(id);}
+  if(btn.dataset.confirm==="1"){deleteItem(id);}
   else if(btn.dataset.confirm==="ready"){btn.dataset.confirm="1";btn.textContent="Tap again to confirm";btn.style.background="#ef4444";btn.style.color="#fff";}
   else{btn.dataset.confirm="ready";btn.textContent="Delete…";btn.style.background="#fee2e2";btn.style.color="#991b1b";}
 }
@@ -2213,7 +2308,7 @@ function _attachPanzoomToLightbox() {
 }
 
 function openLightbox(id,idx){
-  const c=comics.find(x=>x.id===id);
+  const c=items.find(x=>x.id===id);
   if(!c||!c.images?.[idx])return;
   const img = document.getElementById("lightbox-img");
   const box = document.getElementById("lightbox");
@@ -2232,7 +2327,7 @@ function openLightbox(id,idx){
 // Corner-image variant (S11). Reads from cornerImages instead of images.
 // Otherwise identical lightbox behavior (panzoom, double-tap, background-close).
 function openCornerLightbox(id, idx){
-  const c = comics.find(x => x.id === id);
+  const c = items.find(x => x.id === id);
   if (!c || !c.cornerImages?.[idx]) return;
   const img = document.getElementById("lightbox-img");
   const box = document.getElementById("lightbox");
@@ -2277,7 +2372,74 @@ function closeLightbox() {
   if (box) box.style.display = 'none';
 }
 
-const EMPTY={title:"",issue:"",issueDate:"",publisher:"",grade:"",cgcGrade:"",cgcCert:"",psaGrade:"",psaCert:"",pageQuality:"",graderNotes:"",aiGraderNotes:"",cgcNotes:"",keyInfo:"",aiAssessment:"",psaNotes:"",notes:"",slabbingDate:"",dateAcquired:"",purchasePrice:"",taxesFeesShipping:"",gradingCost:"",cgcShipping:"",fmv:"",fmvDate:"",press:null,uv:null,clean:null,enhance:null,seller:"",images:[],cornerImages:[],assessedCGCGrade:"",assessedPSAGrade:"",assessmentHistory:[],roboGrade:null,roboGradeId:'',roboGradeDate:'',publicListing:false,highGradeTier:false,highGradeUnlocked:false,restorationCheckTier:false,restorationReport:null,restorationFlag:false};
+// EMPTY constant — defines the canonical field order for new comic records.
+// Field grouping mirrors detail-view ordering and Firestore Console scannability:
+//   1. Identity (title, issue, dates, publisher) — top so the record is recognizable at a glance
+//   2. Grade fields (My Grade, PQ, official grades, AI predictions, RG)
+//   3. Status flags (tier flags, ownership, public toggle, enhance)
+//   4. Transaction metadata (dates, seller, costs, FMV)
+//   5. Images (medium-size data)
+//   6. Long text fields (notes, narratives, history) — last so Firestore Console
+//      doesn't show a wall of text before the structured fields
+// `type: 'comic'` is forward-prep for the eventual `comics` → `items` collection
+// rename when TCG (trading card) support is added; every record saved from
+// now on declares its type so the migration won't need to back-fill it.
+const EMPTY={
+  // Identity
+  type:"comic",
+  title:"",
+  issue:"",
+  issueDate:"",
+  publisher:"",
+  // Grade fields
+  grade:"",
+  pageQuality:"",
+  cgcGrade:"",
+  cgcCert:"",
+  psaGrade:"",
+  psaCert:"",
+  assessedCGCGrade:"",
+  assessedPSAGrade:"",
+  roboGrade:null,
+  roboGradeId:'',
+  roboGradeDate:'',
+  // Status flags
+  highGradeTier:false,
+  highGradeUnlocked:false,
+  restorationCheckTier:false,
+  restorationReport:null,
+  restorationFlag:false,
+  enhance:null,
+  press:null,    // legacy (S11): retained for old books; no longer written
+  uv:null,       // legacy (S11): retained for old books; no longer written
+  clean:null,    // legacy (S11): retained for old books; no longer written
+  ownership:'Owned',
+  dateSold:null,
+  salePrice:null,
+  publicListing:false,
+  // Transaction
+  dateAcquired:"",
+  seller:"",
+  slabbingDate:"",
+  purchasePrice:"",
+  taxesFeesShipping:"",
+  gradingCost:"",
+  cgcShipping:"",
+  fmv:"",
+  fmvDate:"",
+  // Images
+  images:[],
+  cornerImages:[],
+  // Long text fields
+  cgcNotes:"",
+  keyInfo:"",
+  graderNotes:"",
+  aiGraderNotes:"",
+  aiAssessment:"",
+  psaNotes:"",
+  assessmentHistory:[],
+  notes:""
+};
 let formData={...EMPTY};
 let assessing=false;
 let _assessed=false; // tracks if current form has been assessed
@@ -2294,7 +2456,7 @@ function showAdd(){formData={...EMPTY};view="add";_assessed=false;_addManualMode
 function enterManualMode(){_addManualMode=true;renderForm();}
 
 function showEdit(id){
-  const c=comics.find(x=>x.id===id);
+  const c=items.find(x=>x.id===id);
   if(!c)return;
   formData={...EMPTY,...c,
     pageQuality:normPageQuality(c.pageQuality),
@@ -2352,14 +2514,16 @@ const STORAGE_SLOTS_MAIN = ['front_cover', 'back_cover', 'page_quality', 'raking
 const STORAGE_SLOTS_CORNER = ['corner_tl', 'corner_tr', 'corner_bl', 'corner_br'];
 
 // Upload one image Blob to Cloud Storage and return the download URL.
-// Path: users/{uid}/comics/{comicId}/{slot}.jpg
+// Path: users/{uid}/items/{itemId}/{slot}.jpg (was users/{uid}/comics/...
+// before the S11 collection rename — old URLs in existing Firestore docs
+// remain valid because they're stored as full HTTPS URLs).
 // Re-uploading the same slot path overwrites the existing file (auto-cleanup).
-async function uploadImageToStorage(blob, comicId, slot) {
+async function uploadImageToStorage(blob, itemId, slot) {
   if (!window._currentUser || !window._storage) {
     throw new Error('Storage not initialized');
   }
   const uid = window._currentUser.uid;
-  const path = `users/${uid}/comics/${comicId}/${slot}.jpg`;
+  const path = `users/${uid}/items/${itemId}/${slot}.jpg`;
   const storageRef = window._fsRef(window._storage, path);
   await window._fsUploadBytes(storageRef, blob, { contentType: 'image/jpeg' });
   return await window._fsGetDownloadURL(storageRef);
@@ -3035,7 +3199,7 @@ const IMAGE_HARD_CAP = 25;  // block uploads beyond this (free accounts)
 const IMAGE_PAID_CAP = 1000; // cap for paid accounts
 
 function countBooksWithImages() {
-  return comics.filter(c => c.images && c.images.length > 0).length;
+  return items.filter(c => c.images && c.images.length > 0).length;
 }
 
 function userHasPaidCredits() {
@@ -3131,7 +3295,7 @@ async function loadTrainingSetting() {
 
 // ── Account self-deletion ────────────────────────────────────────────────────
 // Two-step confirmation, then deletes:
-//   1. All comics under users/{uid}/comics/
+//   1. All items under users/{uid}/items/  AND any legacy users/{uid}/comics/
 //   2. All robograde_ids/{id} entries belonging to this user
 //   3. The users/{uid} doc itself
 //   4. The Firebase Auth user (signs them out)
@@ -3171,27 +3335,36 @@ async function deleteAccountFlow() {
     const fsDeleteDoc = window._fsDeleteDoc;
     const fsDoc = window._fsDoc;
 
-    // 1. Delete all comic documents in users/{uid}/comics/
+    // 1. Delete all item documents in users/{uid}/items/  AND  users/{uid}/comics/
+    //    Both collections are swept because account deletion needs to clear all
+    //    user data regardless of whether the user has been migrated. Most users
+    //    by now will only have data in items; a user who hasn't signed in since
+    //    the migration code shipped may still have data in comics (their next
+    //    sign-in would have migrated, but they're deleting first).
     if (fsCollection && fsGetDocs && fsDeleteDoc) {
-      const comicsCol = fsCollection(db, 'users', uid, 'comics');
-      const comicsSnap = await fsGetDocs(comicsCol);
-      const comicIds = [];
-      comicsSnap.forEach(d => {
-        comicIds.push(d.id);
-        const data = d.data();
-        if (data.roboGradeId) comicIds.push('__rg__' + data.roboGradeId);
-      });
-      // Delete each comic doc
-      for (const docId of comicIds) {
-        if (docId.startsWith('__rg__')) continue;
+      const allItemIds = [];
+      const robograde_ids_to_delete = [];
+
+      const sweepCollection = async (collectionName) => {
+        const col = fsCollection(db, 'users', uid, collectionName);
+        const snap = await fsGetDocs(col);
+        for (const d of snap.docs) {
+          allItemIds.push({ collection: collectionName, id: d.id });
+          const data = d.data();
+          if (data.roboGradeId) robograde_ids_to_delete.push(data.roboGradeId);
+        }
+      };
+      await sweepCollection('items');
+      await sweepCollection('comics');
+
+      // Delete each item doc
+      for (const { collection, id } of allItemIds) {
         try {
-          await fsDeleteDoc(fsDoc(db, 'users', uid, 'comics', docId));
-        } catch(e) { console.error('Failed to delete comic', docId, e); }
+          await fsDeleteDoc(fsDoc(db, 'users', uid, collection, id));
+        } catch(e) { console.error(`Failed to delete ${collection}/${id}`, e); }
       }
       // Delete robograde_ids entries
-      for (const docId of comicIds) {
-        if (!docId.startsWith('__rg__')) continue;
-        const rgId = docId.replace('__rg__', '');
+      for (const rgId of robograde_ids_to_delete) {
         try {
           await fsDeleteDoc(fsDoc(db, 'robograde_ids', rgId));
         } catch(e) { console.error('Failed to delete robograde_id', rgId, e); }
@@ -3276,7 +3449,7 @@ function openSettings_buyCredits() {
 
 // ── Export Collection ─────────────────────────────────────────────────────────
 async function exportCollection() {
-  if (!comics.length) { alert('Nothing to export — your collection is empty.'); return; }
+  if (!items.length) { alert('Nothing to export — your collection is empty.'); return; }
 
   // ── Rate limit: 3 exports per rolling 30-day window per user. ──────────
   // Stored as exportLog[] on the user document (array of ISO date strings,
@@ -3347,8 +3520,8 @@ async function exportCollection() {
       exportDate,
       userEmail: userEmail || 'unknown',
       userId,
-      bookCount: comics.length,
-      totalImages: comics.reduce((s, c) => s + ((c.images || []).length), 0),
+      bookCount: items.length,
+      totalImages: items.reduce((s, c) => s + ((c.images || []).length), 0),
       schemaNotes: {
         roboGrade: 'Proprietary public-facing grade (0-100) with component breakdown and defects',
         cgcAI: 'AI prediction of the grade CGC would assign (internal use only)',
@@ -3359,7 +3532,7 @@ async function exportCollection() {
     }, null, 2));
 
     // ── Collection JSON (metadata only — images are separate files) ──
-    const collectionData = comics.map(c => {
+    const collectionData = items.map(c => {
       const {images, ...rest} = c;
       const safeName = makeSafeBookName(c);
       rest._archiveFolder = `images/${safeName}`;
@@ -3370,7 +3543,7 @@ async function exportCollection() {
 
     // ── Images folder ──
     const imgFolder = zip.folder('images');
-    comics.forEach(c => {
+    items.forEach(c => {
       if (!c.images || !c.images.length) return;
       const safeName = makeSafeBookName(c);
       const bookFolder = imgFolder.folder(safeName);
@@ -3389,7 +3562,7 @@ async function exportCollection() {
     // This avoids the browser's file:// CORS restrictions when the user
     // double-clicks the file from Finder. ──
     const dateStamp = new Date().toISOString().slice(0, 10);
-    zip.file(`robograder_archive_${dateStamp}.html`, buildArchiveViewer(collectionData, exportDate, comics.length));
+    zip.file(`robograder_archive_${dateStamp}.html`, buildArchiveViewer(collectionData, exportDate, items.length));
 
     // Generate and download
     const blob = await zip.generateAsync({type: 'blob', compression: 'DEFLATE', compressionOptions: {level: 6}});
@@ -3856,17 +4029,22 @@ function renderForm(){
     // Convert stored YYYY-MM-DD to input value; month-only fields use YYYY-MM
     const inputVal=monthOnly?(val.length>=7?val.slice(0,7):val):(val.length>=10?val.slice(0,10):val);
     const type=monthOnly?"month":"date";
-    // Date inputs are tricky on iOS — they don't honor `placeholder` and they
-    // render the picker icon at the right edge which can cause the visual
-    // width to exceed the form-grid cell. Force the field to fit its
-    // container with width:100% and box-sizing:border-box, and left-align
-    // both empty-state text and entered values. The ghost placeholder is
-    // simulated with an absolute-positioned span when the field is empty,
-    // since `placeholder` on type="date" is unreliable across browsers.
+    // S11: date inputs were spilling out of their container on iOS. Native
+    // type="date" inputs reserve width for the picker calendar icon AND for
+    // the date format hint text inside the input, even when a value is set.
+    // The previous fix used webkit-appearance:none + min-width:0 + padding-
+    // right:10px but didn't fully constrain the input. This version adds:
+    //   - max-width:100% on input (defensive against intrinsic min sizing)
+    //   - overflow:hidden on the wrapping div (clips any overflow if it
+    //     happens despite the input constraints)
+    //   - right:30px on the ghost placeholder so it can't extend past the
+    //     picker icon area
+    //   - overflow:hidden + text-overflow:ellipsis on ghost (graceful
+    //     fallback if the placeholder is wider than the available space)
     const showGhost = !inputVal;
-    return`<div><label class="field-label">${label}</label><div style="position:relative">
-      <input type="${type}" value="${esc(inputVal)}" onchange="setDateField('${field}',this.value,${monthOnly});this.parentElement.querySelector('.date-ghost')?.remove()" style="width:100%;box-sizing:border-box;text-align:left;${showGhost?'color:transparent':''}">
-      ${showGhost?`<span class="date-ghost" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#a89e8e;font-size:14px;pointer-events:none">${placeholder}</span>`:''}
+    return`<div><label class="field-label">${label}</label><div style="position:relative;max-width:100%;overflow:hidden">
+      <input type="${type}" value="${esc(inputVal)}" onchange="setDateField('${field}',this.value,${monthOnly});this.parentElement.querySelector('.date-ghost')?.remove()" style="width:100%;max-width:100%;box-sizing:border-box;text-align:left;-webkit-appearance:none;appearance:none;min-width:0;padding-right:10px;${showGhost?'color:transparent':''}">
+      ${showGhost?`<span class="date-ghost" style="position:absolute;left:12px;right:30px;top:50%;transform:translateY(-50%);color:#a89e8e;font-size:14px;pointer-events:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${placeholder}</span>`:''}
     </div></div>`;
   }
   function treatBtn(key,label){
@@ -3950,6 +4128,27 @@ function renderForm(){
         })()}
       </div>` : ''}
       <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">
+
+      <!-- S11: Pre-assessment Grader Notes (Option B for the chicken-and-egg
+           problem). For graded books in slabs, the official grader notes are
+           highly informative inputs to the AI assessment — but we don't
+           know a book is graded until after the AI has assessed it, so the
+           field would normally be unavailable on first-pass. This collapsible
+           section gives users who have a slabbed book a way to enter the
+           grader notes BEFORE running the assessment. Defaults closed so
+           the standard image-first flow stays visually clean for raw books;
+           opens with a single tap. Only renders pre-assessment in the
+           image-first flow (no _assessed, no _addManualMode, no isEdit) —
+           after assessment, the Grader Notes field appears in the normal
+           form section below where it can also be edited. -->
+      ${!_assessed && !_addManualMode && !isEdit ? `<details style="margin-top:14px;background:#f4f1ea;border:1px solid #d8d2c2;border-radius:6px;padding:0">
+        <summary style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#7a6a5a;cursor:pointer;user-select:none;padding:10px 14px;list-style:none;display:flex;align-items:center;gap:6px"><span style="font-size:11px;color:#a89e8e">▸</span>Optional: official label info</summary>
+        <div style="padding:0 14px 14px">
+          <div style="font-size:12px;color:#7a6a5a;line-height:1.5;margin-bottom:10px;font-style:italic">If your book is in a CGC or PSA slab, type the grader notes here before assessing — they'll improve accuracy.</div>
+          <textarea rows="4" style="font-style:italic;width:100%;box-sizing:border-box" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes||"")}</textarea>
+        </div>
+      </details>` : ''}
+
       <div style="display:flex;justify-content:center;margin-top:4px"><button id="assess-btn" class="btn btn-cgc" onclick="assessGrade()" ${(!formData.images||!formData.images[0]||assessing)?"disabled":""} style="width:75%;min-height:56px;border-radius:14px;background:${assessing?"#1a3a5c":_assessed?"#1a4a2a":"#2a4a6a"};color:${assessing?"#a8d0f0":_assessed?"#6abf6a":"#a8d0f0"}">${assessing?"Assessing…":_assessed?"Re-assess Grade":"Assess Grade"}</button></div>
     </div>
     ${(isEdit || _assessed || _addManualMode) ? `
@@ -3963,15 +4162,14 @@ function renderForm(){
       ${tf("Pub Date","issueDate","Cover date")}
       ${tf("Publisher","publisher","Publisher")}
     </div>
-    <!-- Official Grades visibility (S11):
-         • Not yet assessed (no roboGrade): show both CGC and PSA fields so user
-           can manually enter cert info before assessing.
-         • Assessed and AI determined raw (no cgcGrade/psaGrade/cgcCert/psaCert
-           ever populated): hide entire Official Grades section. The user said
-           "Get rid of Official Grades if the book has already been assessed
-           and came back raw."
-         • Assessed and CGC info present: show CGC fields only.
-         • Assessed and PSA info present: show PSA fields only.
+    <!-- Official Grades fields (S11): the disclosure container "OFFICIAL GRADES"
+         was removed. CGC Grade/Cert and PSA Grade/Cert sit as their own ordinary
+         fields when relevant.
+         Visibility:
+         • Not yet assessed (no roboGrade): show both CGC and PSA grids.
+         • Assessed and AI determined raw (no grades/certs): hide both.
+         • Assessed and CGC info present: show CGC grid only.
+         • Assessed and PSA info present: show PSA grid only.
          A book can be CGC OR PSA officially, never both. -->
     ${(()=>{
       const hasOfficialCGC = !!(formData.cgcGrade || formData.cgcCert);
@@ -3981,18 +4179,20 @@ function renderForm(){
       if (isAssessedRaw) return ""; // hide entirely
       const showCGC = !everAssessed || hasOfficialCGC;
       const showPSA = !everAssessed || hasOfficialPSA;
-      const isOpen = hasOfficialCGC || hasOfficialPSA;
-      return `<details style="margin-bottom:4px"${isOpen?" open":""}>
-        <summary style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#8a7a6a;cursor:pointer;user-select:none;padding:6px 0;list-style:none;display:flex;align-items:center;gap:6px"><span style="font-size:14px;color:#b0a090">▸</span>Official Grades</summary>
-        ${showCGC?`<div class="form-grid-2" style="margin-top:8px">
+      let h = "";
+      if (showCGC) {
+        h += `<div class="form-grid-2">
           ${tf("CGC Grade","cgcGrade","e.g. 9.4",true)}
           ${tf("CGC Cert #","cgcCert","Cert number")}
-        </div>`:""}
-        ${showPSA?`<div class="form-grid-2"${showCGC?"":` style="margin-top:8px"`}>
+        </div>`;
+      }
+      if (showPSA) {
+        h += `<div class="form-grid-2">
           ${tf("PSA Grade","psaGrade","e.g. 9.4",true)}
           ${tf("PSA Cert #","psaCert","Cert number")}
-        </div>`:""}
-      </details>`;
+        </div>`;
+      }
+      return h;
     })()}
     <div class="form-grid-2">
       <div><label class="field-label">My Grade</label><select onchange="formData.grade=this.value">
@@ -4014,24 +4214,19 @@ function renderForm(){
     ${formData.roboGrade?buildRoboGradeDisplay(formData.roboGrade, formData):""}
 
     <!-- Grader Predictions (S11): renamed from "Assessment Results". This row
-         shows ONLY the CGC and PSA stacks (official badges + AI-predicted
-         badges) and the page quality pill. RoboGrade is no longer in this row
-         — it has its own dedicated panel above. The RG box was redundant
-         with the panel and made the row visually unbalanced. -->
+         shows all of the relevant grade badges side-by-side: CGC Official, CGC
+         AI, PSA Official, PSA AI. A book can only be officially graded by one
+         service (CGC or PSA, not both), so at most 3 badges ever appear at
+         once — three boxes fit comfortably on one row. -->
     ${_assessed?`<div style="margin-top:14px;padding:12px 14px;background:#141210;border:1px solid #2a2420;border-radius:10px;display:flex;flex-direction:column;align-items:center;gap:10px">
       <div style="font-size:10px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase;text-align:center;width:100%">Grader Predictions</div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;justify-content:center">
+      <div style="display:flex;gap:10px;align-items:flex-start;justify-content:center;flex-wrap:wrap">
         ${(()=>{
-          // CGC stack: official on top if present, AI below if present
-          const off = formData.cgcGrade ? buildBadge(formData.cgcGrade,"cgc-official",detectDesignation(formData),false) : "";
-          const ai  = formData.assessedCGCGrade ? buildBadge(normalizeGrade(formData.assessedCGCGrade),"cgc-ai","",false) : "";
-          return buildStackedGradePair(off, ai);
-        })()}
-        ${(()=>{
-          // PSA stack: same pattern
-          const off = formData.psaGrade ? buildBadge(formData.psaGrade,"psa-official",formData.psaDesignation||"universal",false) : "";
-          const ai  = formData.assessedPSAGrade ? buildBadge(normalizeGrade(formData.assessedPSAGrade),"psa-ai","",false) : "";
-          return buildStackedGradePair(off, ai);
+          const cgcOff = formData.cgcGrade ? buildBadge(formData.cgcGrade,"cgc-official",detectDesignation(formData),false) : "";
+          const cgcAi  = formData.assessedCGCGrade ? buildBadge(normalizeGrade(formData.assessedCGCGrade),"cgc-ai","",false) : "";
+          const psaOff = formData.psaGrade ? buildBadge(formData.psaGrade,"psa-official",formData.psaDesignation||"universal",false) : "";
+          const psaAi  = formData.assessedPSAGrade ? buildBadge(normalizeGrade(formData.assessedPSAGrade),"psa-ai","",false) : "";
+          return [cgcOff, cgcAi, psaOff, psaAi].filter(Boolean).join("");
         })()}
       </div>
       ${formData.pageQuality?`<div style="display:flex;justify-content:center">${buildPQBox(formData.pageQuality)}</div>`:""}
@@ -4054,9 +4249,18 @@ function renderForm(){
          Other gated text fields (Label Notes, Key Info, Grader Notes,
          Past Assessments, PSA Variance) live in their previous positions
          around these. -->
-    ${(formData.cgcGrade||formData.psaGrade||formData.cgcNotes)?`<div><label class="field-label">Label Notes</label><textarea rows="2" oninput="formData.cgcNotes=this.value">${esc(formData.cgcNotes||"")}</textarea></div>`:""}
-    ${formData.keyInfo?`<div><label class="field-label">Key Info</label><textarea rows="2" readonly style="background:#ece8de;color:#5a4a3a;cursor:not-allowed;border-color:#c8c0b0" title="Key Info is populated by the assessment when the issue is in the recognized-key list. Not user-editable.">${esc(formData.keyInfo||"")}</textarea></div>`:""}
-    ${(formData.cgcGrade||formData.graderNotes)?`<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes?4:2}" style="font-style:italic" placeholder="Official grader notes (will be considered in assessment predictions)" oninput="formData.graderNotes=this.value">${esc(formData.graderNotes||"")}</textarea></div>`:""}
+    ${(formData.cgcGrade||formData.psaGrade||formData.cgcNotes)?`<div><label class="field-label">Label Notes</label><textarea rows="3" oninput="formData.cgcNotes=this.value">${esc(formData.cgcNotes||"")}</textarea></div>`:""}
+    ${(()=>{
+      // Key Info edit-view gate (S11): mirror the detail view's logic — Key Info
+      // is hidden when Label Notes is showing, since they describe the same thing.
+      // Label Notes shows when book is graded AND has cgcNotes content; in that
+      // case Key Info would be redundant.
+      const showLabelNotesEdit = (formData.cgcGrade||formData.psaGrade) && formData.cgcNotes && formData.cgcNotes.trim();
+      if (showLabelNotesEdit) return "";
+      if (!formData.keyInfo) return "";
+      return `<div><label class="field-label">Key Info</label><textarea rows="3" readonly style="cursor:not-allowed;background:#ffffff;color:#1a1614" title="Key Info is populated by the assessment when the issue is in the recognized-key list. Not user-editable.">${esc(formData.keyInfo||"")}</textarea></div>`;
+    })()}
+    ${(formData.cgcGrade||formData.psaGrade||formData.graderNotes)?`<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes?5:3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes||"")}</textarea></div>`:""}
     ${formData.aiGraderNotes?`<div><label class="field-label" style="color:#4a7a9a">Defect Notes</label><textarea rows="8" style="font-style:italic;border-color:#1a3a5c" oninput="formData.aiGraderNotes=this.value">${esc(formData.aiGraderNotes||"")}</textarea></div>`:""}
     ${formData.aiAssessment?`<div><label class="field-label">Condition Assessment</label><textarea rows="${Math.max(12,Math.ceil(formData.aiAssessment.length/80))}" oninput="formData.aiAssessment=this.value">${esc(formData.aiAssessment)}</textarea></div>`:""}
     ${(formData.assessmentHistory||[]).length>0?`<div style="margin-top:10px;padding:10px 14px;background:#100e0c;border:1px solid #1e1c1a;border-radius:8px;">
@@ -4320,10 +4524,10 @@ function buildRoboGradeDisplay(rg, comic) {
     <div style="font-size:12px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:10px;text-align:center">ROBOGRADE SCORE</div>
     <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px">
       <div style="background:${OLIVE};border-radius:16px;width:88px;height:88px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;border:1.5px solid ${OLIVE_MID};position:relative">
+        ${precision ? `<span style="font-family:system-ui,-apple-system,sans-serif;font-size:11px;font-weight:700;color:${OLIVE_LT};position:absolute;top:6px;right:7px;white-space:nowrap;letter-spacing:0.2px;line-height:1">${precision.replace('±','± ')}</span>` : ''}
         <div style="font-size:8px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:2px">RG</div>
         <div style="position:relative;display:flex;justify-content:center;align-items:flex-end;width:100%">
           <span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:40px;font-weight:900;color:${CHARTREUSE};line-height:1">${scoreRounded}</span>
-          ${precision ? `<span style="font-family:system-ui,sans-serif;font-size:13px;font-weight:700;color:${OLIVE_LT};position:absolute;left:calc(50% + 18px);bottom:14px;white-space:nowrap;letter-spacing:1px">${precision.replace('±', '± ')}</span>` : ''}
         </div>
         <div style="font-size:8px;font-weight:700;color:#5a7028;letter-spacing:1px;margin-top:3px;opacity:0.85">V${rg.version||'2.0'}</div>
       </div>
@@ -4811,7 +5015,7 @@ async function submitForm(){
       syncMsg(`Uploading ${newImageCount} image${newImageCount === 1 ? '' : 's'}...`);
       // Preserve existing thumbnails for any pass-through images so we don't
       // re-generate them needlessly.
-      const existingComic = formData.id ? comics.find(c => c.id === formData.id) : null;
+      const existingComic = formData.id ? items.find(c => c.id === formData.id) : null;
       const existingThumbs = existingComic?.thumbnails || [];
       const mainResult = await processImagesForSave(rawImages, id, STORAGE_SLOTS_MAIN, {
         generateThumbs: true, existingThumbs
@@ -4824,7 +5028,7 @@ async function submitForm(){
       finalCornerImages = cornerResult.images;
     } else {
       // No changes — preserve the previously-saved URLs (and thumbnails).
-      const existingComic = formData.id ? comics.find(c => c.id === formData.id) : null;
+      const existingComic = formData.id ? items.find(c => c.id === formData.id) : null;
       finalImages = formData._savedImages || existingComic?.images || [];
       finalThumbnails = existingComic?.thumbnails || [];
       finalCornerImages = formData._savedCornerImages || existingComic?.cornerImages || [];
@@ -4836,11 +5040,17 @@ async function submitForm(){
     return;
   }
 
-  const rec={...formData,id,
+  // Build the saved record. Field order follows EMPTY's canonical grouping:
+  // identity → grade → status → transaction → images → long text. The spread
+  // of formData puts most fields in canonical order; explicit overrides below
+  // are placed into the appropriate group (or close to it) so the saved doc
+  // reads top-to-bottom in a sensible way in Firestore Console.
+  const rec={...formData,
+    // Identity / system
+    id,
+    type: formData.type || 'comic',
     schemaVersion: 2, // v2 = Storage URLs + thumbnails (post-Session-14 migration). v1 was base64 in Firestore.
-    images:finalImages,
-    thumbnails:finalThumbnails,
-    cornerImages:finalCornerImages,
+    // Status flags
     publicListing: !!(window._publicByDefault),
     // Ownership lifecycle (added S11). Defaults to 'Owned' for new books and
     // preserves any existing value (e.g. 'Sold', 'Watching') if already set.
@@ -4849,12 +5059,18 @@ async function submitForm(){
     ownership: formData.ownership || 'Owned',
     dateSold: formData.dateSold || null,
     salePrice: formData.salePrice !== "" && formData.salePrice != null ? parseFloat(formData.salePrice) : null,
+    // Transaction (numeric coercion)
     purchasePrice:formData.purchasePrice!==""?parseFloat(formData.purchasePrice):null,
     taxesFeesShipping:formData.taxesFeesShipping!==""?parseFloat(formData.taxesFeesShipping):null,
     gradingCost:formData.gradingCost!==""?parseFloat(formData.gradingCost):null,
     cgcShipping:formData.cgcShipping!==""?parseFloat(formData.cgcShipping):null,
     fmv:formData.fmv!==""?parseFloat(formData.fmv):null,
     fmvDate:formData.fmvDate||null,
+    // Images
+    images:finalImages,
+    thumbnails:finalThumbnails,
+    cornerImages:finalCornerImages,
+    // System metadata (last)
     dateAdded:formData.dateAdded||new Date().toISOString()
   };
   delete rec._savedImages;
@@ -4892,7 +5108,7 @@ async function submitForm(){
     }
   }
 
-  await saveComic(rec);
+  await saveItem(rec);
   // Navigate to Detail view of the just-saved book rather than List. Users
   // expect to verify their save took effect; landing on Detail is the natural
   // next step. Cancel still routes through cancelForm() which goes to Detail
