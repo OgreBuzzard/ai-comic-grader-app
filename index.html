@@ -5529,6 +5529,11 @@ const CAMERA_GUIDE_MAIN   = ['guide_comic.svg','guide_comic.svg','guide_pq.svg',
 const CAMERA_GUIDE_CORNER = ['guide_corner_tl.svg','guide_corner_tr.svg','guide_corner_bl.svg','guide_corner_br.svg'];
 const CAMERA_LABEL_MAIN   = ['Front Cover','Back Cover','Page Quality','Spine (Raking)'];
 const CAMERA_LABEL_CORNER = ['Top Left Corner','Top Right Corner','Bottom Left Corner','Bottom Right Corner'];
+// SHORT labels for the in-SVG slot label that sits under/inside the guide
+// frame. Per-slot, these are what the user actually looks at while framing —
+// the modal header at the top is easy to miss when focused on the subject.
+const CAMERA_SHORT_LABEL_MAIN   = ['FRONT', 'BACK', 'PAGE QUALITY', 'SPINE'];
+const CAMERA_SHORT_LABEL_CORNER = ['TOP LEFT', 'TOP RIGHT', 'BOTTOM LEFT', 'BOTTOM RIGHT'];
 
 // Walkthrough CAPTURE ORDER — separate from storage index because the visual
 // sequence that feels natural to the user differs from the storage layout.
@@ -5644,11 +5649,13 @@ function cameraOpenSlot(slotIndex) {
   if (!_cameraState) return;
   _cameraState.current = slotIndex;
   const { kind, mode, queue } = _cameraState;
-  const guideFile = (kind === 'corner' ? CAMERA_GUIDE_CORNER : CAMERA_GUIDE_MAIN)[slotIndex];
-  const label     = (kind === 'corner' ? CAMERA_LABEL_CORNER : CAMERA_LABEL_MAIN)[slotIndex];
+  const guideFile  = (kind === 'corner' ? CAMERA_GUIDE_CORNER       : CAMERA_GUIDE_MAIN)[slotIndex];
+  const label      = (kind === 'corner' ? CAMERA_LABEL_CORNER       : CAMERA_LABEL_MAIN)[slotIndex];
+  const shortLabel = (kind === 'corner' ? CAMERA_SHORT_LABEL_CORNER : CAMERA_SHORT_LABEL_MAIN)[slotIndex];
 
   // Load the SVG inline so it can fill the stage and be styled. Using <img>
-  // would also work but inline gives us future hooks for stroke color tweaks.
+  // would also work but inline gives us the ability to update the slot label
+  // dynamically (and could be used for future stroke color tweaks).
   const guideEl = document.getElementById('camera-guide');
   fetch('/assets/guides/' + guideFile)
     .then(r => r.text())
@@ -5656,6 +5663,12 @@ function cameraOpenSlot(slotIndex) {
       // Strip the dark <rect> background — it's preview-only, transparent in production.
       const cleaned = svgText.replace(/<rect[^>]*fill="#1a1a1a"[^>]*\/>/, '');
       guideEl.innerHTML = cleaned;
+      // Inject the short slot label into the SVG's #slot-label element if present.
+      // This lets the comic guide (used for both FRONT and BACK) display the right
+      // label per slot. Guides without a #slot-label element (e.g. spine, which has
+      // its own hardcoded SPINE text) silently no-op.
+      const labelEl = guideEl.querySelector('#slot-label');
+      if (labelEl) labelEl.textContent = shortLabel;
     })
     .catch(err => {
       console.warn('[camera] guide fetch failed:', err);
