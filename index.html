@@ -1244,6 +1244,7 @@ async function initFirebase(){
   // and the snapshot listener so the first read sees v3 data and flattenForApp
   // produces the expected flat in-memory shape.
   await migrateAllItemsToNested();
+  await migrateCornerSwap();
   await loadItems();
   fsOnSnapshot(userItemsCollection(),snap=>{
     items=snap.docs.map(d=>flattenForApp({id:d.id,...d.data()})).map(c=>({...c,pageQuality:normPageQuality(c.pageQuality)}));
@@ -1450,24 +1451,34 @@ function flattenForApp(doc) {
 }
 function nestForFirestore(rec) {
   if (!rec) return rec;
-  const out = {};
   const comicData = {};
+  const otherFields = {};
   for (const [k, v] of Object.entries(rec)) {
     if (COMIC_DROP_FIELDS.includes(k)) continue;
     if (k.startsWith('_')) continue;
     if (k === 'imagesMeta' || k === 'cornerMeta') continue;
     if (k === 'images' || k === 'cornerImages') continue;
+    if (k === 'schemaVersion' || k === 'type') continue;  // explicitly placed below
     if (COMIC_DATA_FIELDS.includes(k)) {
       comicData[k] = v;
     } else {
-      out[k] = v;
+      otherFields[k] = v;
     }
   }
-  out.schemaVersion = 3;
-  out.type = rec.type || 'comic';
-  out.comicData = comicData;
-  out.images       = zipImageArray(rec.images,       rec.imagesMeta);
-  out.cornerImages = zipImageArray(rec.cornerImages, rec.cornerMeta);
+  // Build the Firestore doc with a deliberate field order. Firestore Console
+  // displays fields roughly in insertion order, so putting comicData FIRST
+  // means title/issue/issueDate (the first three keys of comicData) are
+  // visible the moment a doc is opened — no scrolling required to see what
+  // book this is. type and schemaVersion are pinned next as type identifiers.
+  // Then images, cornerImages, and finally all other root fields.
+  const out = {
+    comicData,
+    type: rec.type || 'comic',
+    schemaVersion: 3,
+    images:       zipImageArray(rec.images,       rec.imagesMeta),
+    cornerImages: zipImageArray(rec.cornerImages, rec.cornerMeta),
+    ...otherFields
+  };
   return out;
 }
 
@@ -1572,6 +1583,88 @@ async function migrateAllItemsToNested() {
     console.error('[schema v3] FAILED — partial state may exist. Will retry on next sign-in.', err);
     console.error('[schema v3] Per-doc errors:', errors);
     return { skipped: false, migrated, alreadyV3, failed, error: err.message, errors };
+  }
+}
+
+// ── One-time corner-index swap migration ───────────────────────────────────
+// Pre-S11 the form labeled corner slot 2 as "Bottom Right" and slot 3 as
+// "Bottom Left", so users uploaded photos under those labels. The new UI uses
+// row-major order (slot 2 = BL, slot 3 = BR) which matches the detail-view
+// 2x2 grid and the assess.js prompt expectations. To bring existing records
+// into the new mapping, we swap indices 2 and 3 in cornerImages and cornerMeta
+// for any record that has them. Idempotent via meta/corner_swap marker.
+//
+// IMPORTANT calibration note: this also fixes a latent assessment bug. The
+// assess prompt documents corner order as "TL, TR, BL, BR" (row-major), but
+// under the old labels users uploaded BR photos to slot 2 (labeled "BR") which
+// the AI then read as BL. After this swap, photos and AI prompt agree on
+// corner identity — high-grade assessments on swapped books may shift slightly
+// because the AI is now seeing the right photo for each corner.
+async function migrateCornerSwap() {
+  try {
+    const metaSnap = await window._fsGetDoc(userMetaDoc('corner_swap'));
+    if (metaSnap.exists() && metaSnap.data()?.done === true) {
+      return { skipped: true };
+    }
+  } catch (e) { /* marker doesn't exist — first run, continue */ }
+
+  let swapped = 0, untouched = 0, failed = 0;
+  const errors = [];
+  try {
+    const snap = await fsGetDocs(userItemsCollection());
+    if (snap.empty) {
+      await fsSetDoc(userMetaDoc('corner_swap'), {
+        done: true, ranAt: new Date().toISOString(), swappedCount: 0
+      });
+      return { skipped: false, swapped: 0, untouched: 0, failed: 0 };
+    }
+
+    const writes = [];
+    for (const docSnap of snap.docs) {
+      const data = docSnap.data();
+      const corners = data.cornerImages;
+      // Skip docs without 4 corner entries — partial sets weren't reliably
+      // captured under either labeling and the swap doesn't apply.
+      if (!Array.isArray(corners) || corners.length < 4) {
+        untouched++;
+        continue;
+      }
+
+      // Swap indices 2 and 3 in cornerImages array.
+      const newCorners = [...corners];
+      [newCorners[2], newCorners[3]] = [newCorners[3], newCorners[2]];
+
+      // Mirror the swap in the embedded image objects' metadata if present
+      // (no separate cornerMeta in storage — metadata is embedded in each
+      // image object under v3 schema, so swapping the array suffices).
+
+      try {
+        writes.push(
+          fsSetDoc(userItemDoc(docSnap.id), { cornerImages: newCorners }, { merge: true })
+            .then(() => { swapped++; })
+            .catch(err => {
+              failed++;
+              errors.push({ id: docSnap.id, message: err.message });
+              throw err;
+            })
+        );
+      } catch (e) {
+        failed++;
+        errors.push({ id: docSnap.id, message: e.message });
+        throw e;
+      }
+    }
+    if (writes.length > 0) await Promise.all(writes);
+    await fsSetDoc(userMetaDoc('corner_swap'), {
+      done: true, ranAt: new Date().toISOString(),
+      swappedCount: swapped, untouchedCount: untouched
+    });
+    console.log(`[corner swap] Complete — ${swapped} swapped, ${untouched} untouched`);
+    return { skipped: false, swapped, untouched, failed: 0 };
+  } catch (err) {
+    console.error('[corner swap] FAILED — partial state may exist. Will retry on next sign-in.', err);
+    console.error('[corner swap] Per-doc errors:', errors);
+    return { skipped: false, swapped, untouched, failed, error: err.message, errors };
   }
 }
 
@@ -2158,15 +2251,22 @@ function showDetail(id){
   if(selected.highGradeUnlocked && selected.cornerImages?.length>0){
     const ci = selected.cornerImages;
     const imgAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
-    const labels = ['Top Left','Top Right','Bottom Right','Bottom Left'];
-    const order = [0, 1, 3, 2]; // clockwise: TL, TR, BR, BL
+    // Storage index → display position is now row-major (natural grid order):
+    //   index 0 = TL → top-left of grid
+    //   index 1 = TR → top-right
+    //   index 2 = BL → bottom-left
+    //   index 3 = BR → bottom-right
+    // The grid recreates the front cover layout when corners are captured.
+    // Capture sequence is decoupled from this — see CAMERA_CAPTURE_ORDER_CORNER
+    // for the visual clockwise walkthrough that still feels natural.
+    const labels = ['Top Left','Top Right','Bottom Left','Bottom Right'];
     html += `<div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
-    order.forEach((srcIdx, displayIdx) => {
+    [0,1,2,3].forEach(srcIdx => {
       const url = ci[srcIdx];
       if (url) {
         html += `<div style="position:relative">
           <img class="detail-corner" src="${url}" ${imgAttrs} onclick="openCornerLightbox('${selected.id}',${srcIdx})" style="width:100%;display:block;border-radius:4px;background:#1a1a1a">
-          <div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(0,0,0,0.55);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${labels[displayIdx].toUpperCase()}</div>
+          <div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(0,0,0,0.55);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${labels[srcIdx].toUpperCase()}</div>
         </div>`;
       }
     });
@@ -4426,7 +4526,7 @@ function renderForm(){
         <div style="font-size:11px;color:#8a9a8a;margin-bottom:10px;line-height:1.5">Close-up photos of all four front-cover corners, one per slot. The high-grade pass uses these to tighten the grade.</div>
         <div style="display:flex;flex-direction:column;gap:8px">
           ${[0,1,2,3].map(i=>{
-            const cornerLabels=["Top Left","Top Right","Bottom Right","Bottom Left"];
+            const cornerLabels=["Top Left","Top Right","Bottom Left","Bottom Right"];
             const img=(formData.cornerImages||[])[i];
             return img
               ? `<div class="drag-slot" draggable="true"
@@ -5309,12 +5409,24 @@ window._cameraSupported = (() => {
   return isMobileUA && hasGetUserMedia;
 })();
 
-// SVG guide source paths. Indexed by slot for main and corner. Files live in
-// assets/guides/ and are served as static assets by Vercel.
+// SVG guide source paths. Indexed by STORAGE INDEX (not capture order).
+// Files live in assets/guides/ and are served as static assets by Vercel.
+//   index 0 = TL, 1 = TR, 2 = BL, 3 = BR  (row-major; matches detail-view grid)
 const CAMERA_GUIDE_MAIN   = ['guide_comic.svg','guide_comic.svg','guide_pq.svg','guide_spine.svg'];
 const CAMERA_GUIDE_CORNER = ['guide_corner_tl.svg','guide_corner_tr.svg','guide_corner_bl.svg','guide_corner_br.svg'];
 const CAMERA_LABEL_MAIN   = ['Front Cover','Back Cover','Page Quality','Spine (Raking)'];
 const CAMERA_LABEL_CORNER = ['Top Left Corner','Top Right Corner','Bottom Left Corner','Bottom Right Corner'];
+
+// Walkthrough CAPTURE ORDER — separate from storage index because the visual
+// sequence that feels natural to the user differs from the storage layout.
+// Main set: same as storage index (FC, BC, PQ, Spine — already a sensible flow).
+// Corner set: clockwise around the front cover (TL → TR → BR → BL), which
+// matches how a person physically rotates a book to photograph each corner.
+// The walkthrough queues slots in this order; each capture lands at the
+// indicated storage index, so the detail-view 2x2 grid still recreates the
+// cover layout naturally.
+const CAMERA_CAPTURE_ORDER_MAIN   = [0, 1, 2, 3];        // FC → BC → PQ → Spine
+const CAMERA_CAPTURE_ORDER_CORNER = [0, 1, 3, 2];        // TL → TR → BR → BL (clockwise)
 
 // Camera modal state. Reset on close.
 let _cameraState = null;
@@ -5356,16 +5468,20 @@ function tapSlot(slotIndex, kind) {
   }
 
   // Walkthrough launch: tap on an empty slot in a form with multiple empty slots.
-  // Build queue from this slot forward through all empty slots of the same kind.
+  // Build queue from this slot forward through all empty slots of the same kind,
+  // following the CAPTURE ORDER (which differs from storage index for corners
+  // — see CAMERA_CAPTURE_ORDER_CORNER for the clockwise rationale).
   const list = (kind === 'corner' ? formData.cornerImages : formData.images) || [];
-  const allSlots = [0,1,2,3];
-  const emptySlots = allSlots.filter(i => !list[i]);
-  const isMultiEmpty = emptySlots.length > 1 && emptySlots.includes(slotIndex);
+  const captureOrder = (kind === 'corner' ? CAMERA_CAPTURE_ORDER_CORNER : CAMERA_CAPTURE_ORDER_MAIN);
+  // Empty slots in capture-order sequence:
+  const emptySlotsInOrder = captureOrder.filter(i => !list[i]);
+  const isMultiEmpty = emptySlotsInOrder.length > 1 && emptySlotsInOrder.includes(slotIndex);
 
   if (isMultiEmpty) {
-    // Walkthrough mode: queue is empties starting at slotIndex, wrapping forward.
-    const startIdx = emptySlots.indexOf(slotIndex);
-    const queue = [...emptySlots.slice(startIdx + 1)];  // remaining after current
+    // Walkthrough mode: queue is empties starting at the tapped slot, advancing
+    // through the capture-order sequence.
+    const startIdx = emptySlotsInOrder.indexOf(slotIndex);
+    const queue = [...emptySlotsInOrder.slice(startIdx + 1)];  // remaining after current
     cameraOpen({
       mode: 'walkthrough',
       kind,
