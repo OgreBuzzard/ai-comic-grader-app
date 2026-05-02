@@ -404,6 +404,49 @@
     margin-bottom: 32px;
   }
 
+  /* Integrity badge (S12) — paper-aesthetic version of the index.html pill.
+     Both states render here (verified + unverified). Sits beside the Photos
+     section header, right-aligned. Verified uses olive on sage; unverified
+     uses muted amber — desaturated from --warn so the page doesn't read as
+     "error", just "informational warning". */
+  .photos-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .photos-header-row .section-header {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+  .integrity-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 10px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    user-select: none;
+  }
+  .integrity-verified {
+    background: var(--sage);
+    color: #2a3a18;
+    border: 1px solid var(--olive-lt);
+  }
+  .integrity-unverified {
+    background: #f0e2c4;
+    color: #6a4a18;
+    border: 1px solid #c8a868;
+  }
+  .integrity-icon { font-size: 13px; line-height: 1; }
+
   .image-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -645,9 +688,34 @@
     </div>` : '';
 
   // ── Photos ────────────────────────────────────────────────────
+  // Integrity pill (S12). lookup.js computes verificationState server-side
+  // ('verified' | 'unverified' | 'empty'). Public surface renders BOTH the
+  // verified and unverified states — this is where the integrity signal
+  // actually matters to a buyer evaluating the listing. 'empty' renders
+  // nothing (rare — pre-assessment record with public link, edge case).
+  const buildIntegrityPill = (state) => {
+    if (state === 'verified') {
+      return `<div class="integrity-pill integrity-verified" title="All assessed photos were captured in-app">
+        <span class="integrity-icon">📷</span>
+        <span>Verified: in-app photos</span>
+      </div>`;
+    }
+    if (state === 'unverified') {
+      return `<div class="integrity-pill integrity-unverified" title="At least one assessed photo was uploaded from outside the app">
+        <span class="integrity-icon">⚠</span>
+        <span>Unverified: photos captured outside of app</span>
+      </div>`;
+    }
+    return '';
+  };
+  const integrityPillHTML = buildIntegrityPill(data.verificationState);
+
   const imagesHTML = (data.images && data.images.length > 0) ? `
     <div class="images-section">
-      <div class="section-header">Photos</div>
+      <div class="photos-header-row">
+        <div class="section-header">Photos</div>
+        ${integrityPillHTML}
+      </div>
       <div class="image-grid">
         ${data.images.map((src, i) =>
           `<img src="${esc(src)}" alt="Photo ${i+1}" loading="lazy" decoding="async">`
