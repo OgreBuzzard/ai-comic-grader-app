@@ -40,6 +40,16 @@ export default async function handler(req, res) {
       payment_method_types: ['card'],
       mode: 'payment',
       line_items: [{ price: selected.priceId, quantity: 1 }],
+      // Stripe Tax integration (S11). automatic_tax computes the right rate
+      // based on buyer location and our registrations (currently WA only).
+      // Requires a billing address to compute against — without it, Stripe
+      // can't determine jurisdiction and the session creation fails.
+      automatic_tax: { enabled: true },
+      billing_address_collection: 'required',
+      // Tax-ID collection is offered (not required) so business buyers can
+      // self-identify for B2B tax handling. Stripe handles reverse-charge
+      // and exemptions automatically when a valid tax ID is provided.
+      tax_id_collection: { enabled: true },
       metadata: {
         userId,
         credits: selected.credits,
