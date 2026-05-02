@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
+  <rect width="800" height="600" fill="#1a1a1a"/>
+
+  <!--
+    Top-Left corner macro.
+    L-shape (⌐) traces the corner of the comic.
+    The corner-point is upper-left in the frame; the comic body extends to bottom-right.
+    User fills ~50% of frame with the corner.
+
+    Corner-point location: (200, 150)  — upper-left area
+    Vertical leg goes DOWN from corner: (200, 150) to (200, 450)
+    Horizontal leg goes RIGHT from corner: (200, 150) to (600, 150)
+  -->
+  <polyline points="200,450 200,150 600,150"
+            fill="none" stroke="#7aa838" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round"/>
+
+  <text x="400" y="30" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="12" fill="#7aa838" opacity="0.5">TOP-LEFT CORNER MACRO</text>
+</svg>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
+  <rect width="800" height="600" fill="#1a1a1a"/>
+
+  <!--
+    Bottom-Right corner macro.
+    L-shape (⌐ rotated) traces the corner.
+    Corner-point is lower-right; comic body extends to upper-left.
+
+    Corner-point: (600, 450)
+    Vertical leg UP: (600, 450) to (600, 150)
+    Horizontal leg LEFT: (600, 450) to (200, 450)
+  -->
+  <polyline points="600,150 600,450 200,450"
+            fill="none" stroke="#7aa838" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round"/>
+
+  <text x="400" y="30" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="12" fill="#7aa838" opacity="0.5">BOTTOM-RIGHT CORNER MACRO</text>
+</svg>

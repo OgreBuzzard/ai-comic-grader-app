@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
+  <rect width="800" height="600" fill="#1a1a1a"/>
+
+  <!--
+    Bottom macro guide for Pokémon cards — TILTED with visibly rounded bottom corners.
+    Mirror of top macro. Open-top trapezoid:
+      Bottom edge: y = 520, full width 640px (x: 80–720)
+      Sides converge inward by ~5% per side going up
+      Card body extends past viewport top (y < 0)
+    Bottom corners use 14px arc radius.
+  -->
+  <path d="M 112 0
+           L 80 500
+           A 20 20 0 0 0 100 520
+           L 700 520
+           A 20 20 0 0 0 720 500
+           L 688 0"
+        fill="none" stroke="#7aa838" stroke-width="2"/>
+
+  <text x="400" y="30" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="12" fill="#7aa838" opacity="0.5">BOTTOM MACRO (FRONT &amp; BACK) — TILTED</text>
+</svg>

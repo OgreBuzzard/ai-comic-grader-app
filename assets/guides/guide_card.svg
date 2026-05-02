@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
+  <rect width="800" height="600" fill="#1a1a1a"/>
+
+  <!--
+    Standard Pokémon (TCG) card outline.
+    Card aspect ratio: 2.5 × 3.5 inches → 0.7143
+    Guide occupies central 80% of viewport height: 480px tall
+    Width at that ratio: 480 × 0.7143 = 342.9px
+    Centered: x = (800 - 342.9) / 2 = 228.6, y = (600 - 480) / 2 = 60
+
+    Corner radius increased to 14px (visually clear at preview scale).
+    Geometric reality is ~3mm radius on a 63mm-wide card (4.8px at this scale)
+    but at typical display sizes that reads as essentially sharp.
+    14px exaggerates slightly to communicate "this is a card, with rounded corners,
+    not a comic with sharp corners."
+  -->
+  <rect x="228.6" y="60" width="342.9" height="480"
+        rx="20" ry="20"
+        fill="none" stroke="#7aa838" stroke-width="2"/>
+
+  <text x="400" y="30" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="12" fill="#7aa838" opacity="0.5">FRONT / BACK / RAKING</text>
+</svg>
