@@ -264,6 +264,16 @@
     .badge-cgc { background: #1a2a1a; border-color: #2a4a2a; color: #6abf6a; }
     .badge-raw { background: #2a2010; border-color: #4a3a10; color: #a09040; }
     .row-meta { font-size: 11px; color: #6b5e52; margin-top: 2px; display: flex; gap: 8px; flex-wrap: wrap; }
+    /* Integrity badge (S12) — small pill that signals whether assessed photos
+       were captured in-app. Verified shows on detail view + public + assess
+       results; unverified shows ONLY on public + assess results (kept off
+       the user's private detail view to avoid a permanent stain on every
+       record from users who don't share publicly). Amber, not red — this is
+       informational, not an error. */
+    .integrity-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 12px; font-size: 11px; font-weight: 600; letter-spacing: 0.2px; user-select: none; }
+    .integrity-verified { background: rgba(40, 80, 50, 0.85); color: #b8e6c0; border: 1px solid rgba(120, 180, 130, 0.4); }
+    .integrity-unverified { background: rgba(70, 55, 30, 0.85); color: #e8d4a8; border: 1px solid rgba(160, 130, 80, 0.4); }
+    .integrity-icon { font-size: 12px; line-height: 1; }
     .detail-cover { width: 100%; min-height: 200px; object-fit: cover; border-radius: 4px; cursor: zoom-in; border: 1px solid #ddd8d0; background: #f0ece6; display: block; }
     .photo-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 4px; }
     .photo-row2 img { width: 100%; aspect-ratio: 3/4; object-fit: cover; border-radius: 4px; cursor: zoom-in; border: 1px solid #ddd8d0; background: #f0ece6; display: block; }
@@ -1158,9 +1168,14 @@ async function initFirebase(){
   // Run the comics → items migration before any reads/listens (S11). Idempotent —
   // safe to call on every sign-in. No-op for new users and for users already migrated.
   await migrateComicsToItems();
+  // Run the schema v3 nested-per-type migration (S12). Idempotent — fast skip
+  // via meta/migration marker once a user is on v3. Must run BEFORE loadItems
+  // and the snapshot listener so the first read sees v3 data and flattenForApp
+  // produces the expected flat in-memory shape.
+  await migrateAllItemsToNested();
   await loadItems();
   fsOnSnapshot(userItemsCollection(),snap=>{
-    items=snap.docs.map(d=>d.data()).map(c=>({...c,pageQuality:normPageQuality(c.pageQuality)}));
+    items=snap.docs.map(d=>flattenForApp({id:d.id,...d.data()})).map(c=>({...c,pageQuality:normPageQuality(c.pageQuality)}));
     if(view==="list")renderList();
     updateStats();
   });
@@ -1257,6 +1272,238 @@ async function migrateComicsToItems() {
   }
 }
 
+// ── Schema v3 translators (Path A: parallel arrays in memory) ──────────────
+//
+// Storage format (Firestore, schemaVersion 3): nested per-type
+//   {
+//     id, type, schemaVersion: 3,
+//     ...rootMetadata,
+//     comicData: {...},
+//     cardData?: {...},
+//     images:        [{url, source, capturedAt}, ...],
+//     cornerImages:  [{url, source, capturedAt}, ...],
+//     thumbnails:    ['data:...', ...]      // unchanged — inline base64, no provenance
+//   }
+//
+// In-memory format (window.items[], formData): flat — comic-specific fields
+// promoted to root. Image arrays are kept as FLAT STRINGS so the existing
+// upload pipeline (isDataUrl check, slot-aware upload, _savedImages snapshot)
+// and ~150 display-side read sites that index `c.images[i]` directly continue
+// to work unchanged. Per-image provenance lives in PARALLEL METADATA ARRAYS:
+//
+//   item.images       === ['url1', 'url2', ...]
+//   item.imagesMeta   === [{source:'upload',capturedAt:null}, ...]
+//   item.cornerImages === ['urlA', 'urlB', ...]
+//   item.cornerMeta   === [{source:'camera',capturedAt:'2026-...'}, ...]
+//
+// Indices align 1:1. The translators are the only code that splits/zips
+// these — call sites read the parallel metadata only when they need
+// provenance (badge UI, future filters).
+const COMIC_DATA_FIELDS = [
+  'title','issue','issueDate','publisher',
+  'grade','pageQuality',
+  'cgcGrade','cgcCert','cgcNotes',
+  'psaGrade','psaCert','psaNotes',
+  'assessedCGCGrade','assessedPSAGrade',
+  'keyInfo','graderNotes','aiGraderNotes','aiAssessment',
+  'roboGrade',
+  'highGradeTier','highGradeUnlocked',
+  'restorationCheckTier','restorationReport','restorationFlag',
+  'enhance',
+  'slabbingDate',
+  'assessmentHistory'
+];
+const COMIC_DROP_FIELDS = ['press','uv','clean'];
+const DEFAULT_IMG_META = { source: 'upload', capturedAt: null };
+
+function splitImageArray(arr) {
+  if (!Array.isArray(arr)) return { urls: [], metas: [] };
+  const urls = [], metas = [];
+  for (const entry of arr) {
+    if (!entry) continue;
+    if (typeof entry === 'string') {
+      urls.push(entry);
+      metas.push({ ...DEFAULT_IMG_META });
+    } else if (typeof entry === 'object' && entry.url) {
+      urls.push(entry.url);
+      metas.push({
+        source: entry.source || 'upload',
+        capturedAt: entry.capturedAt || null
+      });
+    }
+  }
+  return { urls, metas };
+}
+function zipImageArray(urls, metas) {
+  const out = [];
+  if (!Array.isArray(urls)) return out;
+  for (let i = 0; i < urls.length; i++) {
+    const url = urls[i];
+    if (!url) continue;
+    const m = (Array.isArray(metas) && metas[i]) ? metas[i] : DEFAULT_IMG_META;
+    out.push({
+      url,
+      source: m.source || 'upload',
+      capturedAt: m.capturedAt || null
+    });
+  }
+  return out;
+}
+function flattenForApp(doc) {
+  if (!doc) return doc;
+  if (doc.schemaVersion === 3) {
+    const { comicData = {}, cardData = {}, images, cornerImages, ...root } = doc;
+    const main   = splitImageArray(images);
+    const corner = splitImageArray(cornerImages);
+    return {
+      ...root,
+      ...comicData,
+      ...cardData,
+      images: main.urls,
+      imagesMeta: main.metas,
+      cornerImages: corner.urls,
+      cornerMeta: corner.metas
+    };
+  }
+  // Legacy v1/v2: flat already, image arrays are flat strings. Synthesize
+  // default metadata so every loaded item has the parallel arrays present.
+  const main   = splitImageArray(doc.images);
+  const corner = splitImageArray(doc.cornerImages);
+  return {
+    ...doc,
+    images: main.urls,
+    imagesMeta: main.metas,
+    cornerImages: corner.urls,
+    cornerMeta: corner.metas
+  };
+}
+function nestForFirestore(rec) {
+  if (!rec) return rec;
+  const out = {};
+  const comicData = {};
+  for (const [k, v] of Object.entries(rec)) {
+    if (COMIC_DROP_FIELDS.includes(k)) continue;
+    if (k.startsWith('_')) continue;
+    if (k === 'imagesMeta' || k === 'cornerMeta') continue;
+    if (k === 'images' || k === 'cornerImages') continue;
+    if (COMIC_DATA_FIELDS.includes(k)) {
+      comicData[k] = v;
+    } else {
+      out[k] = v;
+    }
+  }
+  out.schemaVersion = 3;
+  out.type = rec.type || 'comic';
+  out.comicData = comicData;
+  out.images       = zipImageArray(rec.images,       rec.imagesMeta);
+  out.cornerImages = zipImageArray(rec.cornerImages, rec.cornerMeta);
+  return out;
+}
+
+// Verification state for the integrity badge. Combines main + corner
+// metadata: every assessed image must be source:'camera' for verified.
+// Returns 'verified' | 'unverified' | 'empty'.
+function getVerificationState(item) {
+  const main   = item?.imagesMeta || [];
+  const corner = item?.cornerMeta || [];
+  const all = [...main, ...corner];
+  if (all.length === 0) return 'empty';
+  return all.every(m => m?.source === 'camera') ? 'verified' : 'unverified';
+}
+
+// HTML for the integrity pill. `forPublic` controls whether the unverified
+// state renders (true on public listing only) — detail view and assessment
+// results screen pass false, so unverified renders as nothing in those
+// surfaces. Verified always renders on every surface that calls this.
+function buildIntegrityPill(item, forPublic = false) {
+  const state = getVerificationState(item);
+  if (state === 'verified') {
+    return `<div class="integrity-pill integrity-verified" title="All assessed photos were captured in-app">
+      <span class="integrity-icon">📷</span>
+      <span class="integrity-text">Verified: in-app photos</span>
+    </div>`;
+  }
+  if (state === 'unverified' && forPublic) {
+    return `<div class="integrity-pill integrity-unverified" title="At least one assessed photo was uploaded from outside the app">
+      <span class="integrity-icon">⚠</span>
+      <span class="integrity-text">Unverified: photos captured outside of app</span>
+    </div>`;
+  }
+  return '';
+}
+
+// ── Bulk per-user migration to schema v3 ───────────────────────────────────
+// Runs once per user on sign-in, after the comics→items migration (S11).
+// Idempotent — fast no-op skip if already v3 (uses meta/migration marker).
+async function migrateAllItemsToNested() {
+  // Fast-path: marker doc tells us this user is already on v3.
+  try {
+    const metaSnap = await window._fsGetDoc(userMetaDoc('migration'));
+    if (metaSnap.exists() && metaSnap.data()?.schemaVersion === 3) {
+      return { skipped: true };
+    }
+  } catch (e) {
+    // Marker doesn't exist — first time running. Continue.
+  }
+
+  let migrated = 0, alreadyV3 = 0, failed = 0;
+  const errors = [];
+
+  try {
+    const snap = await fsGetDocs(userItemsCollection());
+    if (snap.empty) {
+      // New user with nothing to migrate. Stamp the marker so we skip cleanly.
+      await fsSetDoc(userMetaDoc('migration'), {
+        schemaVersion: 3,
+        migratedAt: new Date().toISOString(),
+        itemCount: 0
+      });
+      console.log('[schema v3] No items — stamped marker for fresh user');
+      return { skipped: false, migrated: 0, alreadyV3: 0, failed: 0 };
+    }
+
+    const writes = [];
+    for (const docSnap of snap.docs) {
+      const data = docSnap.data();
+      if (data.schemaVersion === 3) { alreadyV3++; continue; }
+      try {
+        const flat   = flattenForApp({ id: docSnap.id, ...data });
+        const nested = nestForFirestore(flat);
+        delete nested.id;  // doc ID is the key, not a stored field
+        writes.push(
+          fsSetDoc(userItemDoc(docSnap.id), nested)
+            .then(() => { migrated++; })
+            .catch(err => {
+              failed++;
+              errors.push({ id: docSnap.id, message: err.message });
+              throw err;
+            })
+        );
+      } catch (e) {
+        failed++;
+        errors.push({ id: docSnap.id, message: e.message });
+        throw e;
+      }
+    }
+
+    if (writes.length > 0) await Promise.all(writes);
+
+    await fsSetDoc(userMetaDoc('migration'), {
+      schemaVersion: 3,
+      migratedAt: new Date().toISOString(),
+      itemCount: snap.size,
+      migratedCount: migrated,
+      alreadyV3Count: alreadyV3
+    });
+    console.log(`[schema v3] Complete — ${migrated} migrated, ${alreadyV3} already v3, ${snap.size} total`);
+    return { skipped: false, migrated, alreadyV3, failed: 0 };
+  } catch (err) {
+    console.error('[schema v3] FAILED — partial state may exist. Will retry on next sign-in.', err);
+    console.error('[schema v3] Per-doc errors:', errors);
+    return { skipped: false, migrated, alreadyV3, failed, error: err.message, errors };
+  }
+}
+
 // ── Sample entry for new users ──────────────────────────────────────────────
 // A curated "here's what a graded book looks like" example that appears when
 // the user's Firestore collection is empty AND they haven't dismissed it.
@@ -1340,7 +1587,7 @@ async function loadItems(){
   // syncMsg is still used for Saving/Deleting after the app is running.
   try{
     const snap=await fsGetDocs(userItemsCollection());
-    items=snap.docs.map(d=>d.data()).map(c=>({...c,pageQuality:normPageQuality(c.pageQuality)}));
+    items=snap.docs.map(d=>flattenForApp({id:d.id,...d.data()})).map(c=>({...c,pageQuality:normPageQuality(c.pageQuality)}));
     // No seeding for new users — they start with an empty collection
   }catch(e){console.error("Load error:",e);items=[];}
 
@@ -1384,10 +1631,6 @@ function refreshHeaderControls() {
 async function saveItem(rec){
   // Don't save the sample itself — it should never exist in Firestore.
   if (rec && rec.id === SAMPLE_COMIC_ID) return;
-  // Defensive: any code path that saves a comic without explicitly setting
-  // schemaVersion gets stamped here. submitForm always sets it; this catches
-  // any future paths (assessment-only updates, migrations, etc.) that don't.
-  if (rec && rec.schemaVersion == null) rec.schemaVersion = 2;
   // Ownership lifecycle (added S11). Field is written on every save during beta
   // so that all data is future-proofed for the post-beta UI/sorting work. The
   // three valid values are 'Owned', 'Sold', and 'Watching'. Anything missing
@@ -1406,7 +1649,14 @@ async function saveItem(rec){
   }
   syncMsg("Saving...");
   try{
-    await fsSetDoc(userItemDoc(rec.id),rec);
+    // Schema v3 (S12): nest the record before write. Translator handles the
+    // flat→nested transform: comic-specific fields move into comicData, image
+    // arrays zip with their parallel metadata into objects, legacy enhance
+    // fields drop, schemaVersion stamps to 3. Centralizing here means EVERY
+    // save path (submitForm, ownership updates, archive edits) goes nested
+    // automatically — no per-callsite changes needed.
+    const nested = nestForFirestore(rec);
+    await fsSetDoc(userItemDoc(rec.id), nested);
     // First real save dismisses the sample entry permanently
     await dismissSampleIfNeeded();
   }
@@ -1811,7 +2061,15 @@ function showDetail(id){
   if(selected.images?.length>0){
     const imgs=selected.images;
     const imgAttrs = `loading="eager" decoding="async" onload="window.forceImgReflow(this)"`;
+    // Integrity badge (S12) — Detail view shows VERIFIED state only. Unverified
+    // would render as a permanent "stain" pill on every record that didn't use
+    // in-app capture, which feels punitive for users who don't share publicly.
+    // Public listing surfaces the unverified state where it actually matters.
+    const integrityHtml = buildIntegrityPill(selected, /* forPublic */ false);
     html+=`<div style="display:flex;flex-direction:column;gap:6px;margin-top:16px">`;
+    if (integrityHtml) {
+      html+=`<div style="display:flex;justify-content:flex-end;margin-bottom:2px">${integrityHtml}</div>`;
+    }
     if(imgs[0]) html+=`<img class="detail-cover" src="${imgs[0]}" ${imgAttrs} onclick="openLightbox('${selected.id}',0)">`;
     if(imgs[1]) html+=`<img class="detail-cover" src="${imgs[1]}" ${imgAttrs} onclick="openLightbox('${selected.id}',1)">`;
     if(imgs[2]) html+=`<img class="detail-cover" src="${imgs[2]}" ${imgAttrs} onclick="openLightbox('${selected.id}',2)">`;
@@ -4212,6 +4470,16 @@ function renderForm(){
          before the Grader Predictions row below it. Previously rendered at
          the bottom of the form; moved up to match the detail-view ordering. -->
     ${formData.roboGrade?buildRoboGradeDisplay(formData.roboGrade, formData):""}
+    <!-- Integrity badge (S12) — Assessment results screen shows BOTH states.
+         This is the moment-of-truth surface: the user just got a grade and
+         needs to know whether the result will display as Verified on a public
+         link before they save. If they wanted Verified and didn't get it,
+         they can retake/recapture in-app before saving. Placed right below
+         the Robograde panel so it associates visually with the grade output. -->
+    ${formData.roboGrade ? (() => {
+      const pill = buildIntegrityPill(formData, /* forPublic */ true);
+      return pill ? `<div style="display:flex;justify-content:center;margin-top:10px">${pill}</div>` : '';
+    })() : ''}
 
     <!-- Grader Predictions (S11): renamed from "Assessment Results". This row
          shows all of the relevant grade badges side-by-side: CGC Official, CGC
@@ -5040,16 +5308,44 @@ async function submitForm(){
     return;
   }
 
+  // Per-image provenance metadata (S12). Built parallel to finalImages /
+  // finalCornerImages so the badge UI knows whether each photo was captured
+  // in-app or uploaded. Until Camera UI ships, every newly-added image is
+  // marked source:'upload'. Existing images preserve whatever metadata was
+  // already on the loaded record (for v3 docs) or default to 'upload' (for
+  // v1/v2 docs that pre-date the metadata system).
+  const existingComicForMeta = formData.id ? items.find(c => c.id === formData.id) : null;
+  const existingImagesMeta = formData.imagesMeta || existingComicForMeta?.imagesMeta || [];
+  const existingCornerMeta = formData.cornerMeta || existingComicForMeta?.cornerMeta || [];
+  // Walk finalImages: if the URL matches what was previously saved at this
+  // index, preserve its metadata; otherwise stamp as a fresh upload. (When
+  // Camera UI lands, the capture flow will pre-populate formData.imagesMeta
+  // with source:'camera' entries; this reconciliation step still works
+  // because the URL-vs-existing match falls through to the formData entry.)
+  const finalImagesMeta = finalImages.map((url, i) => {
+    const prevUrl = existingComicForMeta?.images?.[i];
+    if (url === prevUrl && existingImagesMeta[i]) return existingImagesMeta[i];
+    return existingImagesMeta[i] || { source: 'upload', capturedAt: new Date().toISOString() };
+  });
+  const finalCornerMeta = finalCornerImages.map((url, i) => {
+    const prevUrl = existingComicForMeta?.cornerImages?.[i];
+    if (url === prevUrl && existingCornerMeta[i]) return existingCornerMeta[i];
+    return existingCornerMeta[i] || { source: 'upload', capturedAt: new Date().toISOString() };
+  });
+
   // Build the saved record. Field order follows EMPTY's canonical grouping:
   // identity → grade → status → transaction → images → long text. The spread
   // of formData puts most fields in canonical order; explicit overrides below
   // are placed into the appropriate group (or close to it) so the saved doc
   // reads top-to-bottom in a sensible way in Firestore Console.
+  //
+  // NOTE: schemaVersion is intentionally NOT set here. nestForFirestore (in
+  // saveItem) always stamps schemaVersion:3 on write — setting it here would
+  // either be redundant (if 3) or wrong (if a stale value survives the spread).
   const rec={...formData,
     // Identity / system
     id,
     type: formData.type || 'comic',
-    schemaVersion: 2, // v2 = Storage URLs + thumbnails (post-Session-14 migration). v1 was base64 in Firestore.
     // Status flags
     publicListing: !!(window._publicByDefault),
     // Ownership lifecycle (added S11). Defaults to 'Owned' for new books and
@@ -5068,14 +5364,19 @@ async function submitForm(){
     fmvDate:formData.fmvDate||null,
     // Images
     images:finalImages,
+    imagesMeta:finalImagesMeta,
     thumbnails:finalThumbnails,
     cornerImages:finalCornerImages,
+    cornerMeta:finalCornerMeta,
     // System metadata (last)
     dateAdded:formData.dateAdded||new Date().toISOString()
   };
   delete rec._savedImages;
   delete rec._savedCornerImages;
   delete rec._imagesChanged;
+  // Strip stale schemaVersion if it carried in via the formData spread — the
+  // translator (in saveItem) is the single source of truth for this field.
+  delete rec.schemaVersion;
   // ── RoboGrade ID uniqueness guarantee ───────────────────────────
   // Check /robograde_ids/{id} before saving. If taken, regenerate and retry.
   // Probability of needing even one retry: ~1 in 1.8 billion. Max 5 attempts.
