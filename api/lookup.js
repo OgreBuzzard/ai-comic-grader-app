@@ -1,3 +1,15 @@
+// Public listing lookup — resolves a Robograde ID to a public-safe record.
+//
+// Endpoint chain:
+//   1. /robograde_ids/{ID}  → registry doc with {comicId, userId, public}
+//   2. /users/{userId}/items/{comicId}  (S11) → falls back to /comics/{comicId} (legacy)
+//   3. Tolerates both v3 (nested per-type) and pre-v3 (flat) document shapes
+//   4. Whitelists fields and computes integrity badge state server-side
+//
+// What we DON'T return: prices, notes (any kind), seller, personal dates,
+// purchase metadata, internal flags. Public listing is grade + condition +
+// images + provenance signal — nothing that aids a doctored-image scam.
+
 export default async function handler(req, res) {
   // Allow unauthenticated GET requests from any origin (public endpoint)
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -37,36 +49,89 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: 'Assessment record missing' });
     }
 
-    // Step 2: fetch the comic record from the owner's collection
-    const comicDoc = await db
+    // Step 2: fetch the record. Try `items` first (S11 rename), fall back to
+    // `comics` for any registry entry that pre-dates the migration and hasn't
+    // had the owner sign in to trigger their per-user comics→items migration.
+    // Once every active user has signed in post-S11, the fallback path becomes
+    // dead code — safe to remove in a future cleanup pass.
+    let comicDoc = await db
       .collection('users').doc(userId)
-      .collection('comics').doc(comicId)
+      .collection('items').doc(comicId)
       .get();
+
+    if (!comicDoc.exists) {
+      comicDoc = await db
+        .collection('users').doc(userId)
+        .collection('comics').doc(comicId)
+        .get();
+    }
 
     if (!comicDoc.exists) {
       return res.status(404).json({ error: 'Assessment record not found' });
     }
 
-    const comic = comicDoc.data();
+    const raw = comicDoc.data();
 
-    // Step 3: verify the record is still marked public and IDs match
+    // Step 3: flatten v3 nested shape to a single object for downstream reads.
+    // v3 has comic-specific fields inside `comicData`; pre-v3 has them flat at
+    // root. Tolerate both.
+    const comic = (raw.schemaVersion === 3)
+      ? { ...raw, ...(raw.comicData || {}), ...(raw.cardData || {}) }
+      : raw;
+
+    // Step 4: verify the record is still marked public and IDs match.
+    // publicListing lives at the root in both shapes (it's universal metadata,
+    // not type-specific), and roboGradeId likewise — so these reads work
+    // regardless of the spread above.
     if (!comic.publicListing || comic.roboGradeId !== gradeId) {
       return res.status(403).json({ error: 'This assessment is private' });
     }
 
-    // Step 4: return only public-safe fields — never prices, notes, or personal data
+    // Step 5: normalize image arrays to flat URL strings + compute integrity.
+    // v3 stores images as [{url, source, capturedAt}]; pre-v3 stored them as
+    // plain URL strings. The badge needs to know whether ALL assessed photos
+    // (main + corner) were captured in-app. Pre-v3 records have no provenance
+    // metadata at all and are treated as 'unverified' — accurate, since the
+    // capture system didn't exist when those photos were taken.
+    const mainEntries   = Array.isArray(raw.images)        ? raw.images        : [];
+    const cornerEntries = Array.isArray(raw.cornerImages)  ? raw.cornerImages  : [];
+
+    const flatImages = mainEntries
+      .map(e => (typeof e === 'string' ? e : (e && e.url) || null))
+      .filter(Boolean);
+
+    // Verification check — combines main + corner. Every assessed photo must
+    // be source:'camera'. Any string entry (legacy, pre-metadata) counts as
+    // upload. Empty arrays return 'empty' (rendered as nothing on the public
+    // page).
+    const allEntries = [...mainEntries, ...cornerEntries];
+    let verificationState;
+    if (allEntries.length === 0) {
+      verificationState = 'empty';
+    } else {
+      const allCamera = allEntries.every(e =>
+        e && typeof e === 'object' && e.source === 'camera'
+      );
+      verificationState = allCamera ? 'verified' : 'unverified';
+    }
+
+    // Step 6: return only public-safe fields — never prices, notes, or personal data
     const publicRecord = {
-      roboGradeId:   comic.roboGradeId,
-      roboGradeDate: comic.roboGradeDate,
-      roboGrade:     comic.roboGrade || null,
-      title:         comic.title || '',
-      issue:         comic.issue || '',
-      issueDate:     comic.issueDate || '',
-      printing:      comic.printing || null,
-      images:        comic.images || [],
+      roboGradeId:       comic.roboGradeId,
+      roboGradeDate:     comic.roboGradeDate,
+      roboGrade:         comic.roboGrade || null,
+      title:             comic.title || '',
+      issue:             comic.issue || '',
+      issueDate:         comic.issueDate || '',
+      printing:          comic.printing || null,
+      images:            flatImages,
       // Page quality is condition info, not personal — include it
-      pageQuality:   comic.pageQuality || '',
+      pageQuality:       comic.pageQuality || '',
       highGradeUnlocked: comic.highGradeUnlocked || false,
+      // Integrity badge state (S12). 'verified' = all assessed photos were
+      // captured in-app; 'unverified' = at least one was uploaded; 'empty' =
+      // no images. public.html renders the corresponding pill.
+      verificationState,
     };
 
     return res.status(200).json(publicRecord);
