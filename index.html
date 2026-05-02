@@ -305,34 +305,42 @@
     #cropper-cancel:active, #cropper-confirm:active, #cropper-rotate:active { transform: scale(0.97); }
     /* ── Camera capture modal (S11) ─────────────────────────────────────
        Full-viewport overlay for in-app photo capture. Live <video> stream
-       fills the screen; an SVG guide overlays it; capture button at bottom.
+       fills the screen letterboxed (contain, not cover) so what the user
+       frames is exactly what gets captured. SVG guide overlays the video
+       in the same letterboxed area; both share the same aspect ratio so
+       guide alignment matches the captured image precisely.
        Z-index 1100 sits ABOVE cropper-modal (1000) so the cropper-sequence
        at end-of-walkthrough opens on top of the camera modal which then
        gets dismissed when the cropper sequence completes. */
     #camera-modal { position: fixed; inset: 0; background: #000; z-index: 1100; display: none; flex-direction: column; }
     #camera-modal.open { display: flex; }
     #camera-stage { flex: 1; min-height: 0; position: relative; background: #000; overflow: hidden; }
-    #camera-video { width: 100%; height: 100%; object-fit: cover; display: block; background: #000; }
-    /* The SVG guide is absolutely positioned to fill the stage. The SVG itself
-       has a transparent background (the dark rect in the source files is for
-       preview only — production overlay shows live video through). preserveAspectRatio
-       is set on the SVG element to maintain guide proportions across screen sizes. */
-    #camera-guide { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    /* object-fit: contain (NOT cover) — letterbox the camera feed inside the
+       phone aspect so the user frames against the actual capture area, not a
+       cropped center slice. The black letterbox bars are intentional. */
+    #camera-video { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+    /* The SVG guide overlay sits in the same stage and uses the same aspect
+       behavior. SVG's preserveAspectRatio defaults to xMidYMid meet which
+       letterboxes identically to object-fit: contain. Guide and video align. */
+    #camera-guide { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; display: flex; align-items: center; justify-content: center; }
     #camera-guide svg { width: 100%; height: 100%; display: block; }
-    /* Top header: walkthrough progress + close button. Semi-opaque dark bar so
-       text reads against any video content. */
-    #camera-header { position: absolute; top: 0; left: 0; right: 0; padding: 12px 16px; background: linear-gradient(to bottom, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0) 100%); display: flex; justify-content: space-between; align-items: center; pointer-events: none; }
+    /* Top header sits below iOS notch / status bar safe area. env(safe-area-inset-top)
+       is 0 on devices without a notch, ~47-59px on iPhones with one. Without this
+       inset the progress text was hidden behind the status bar / dynamic island. */
+    #camera-header { position: absolute; top: 0; left: 0; right: 0; padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 12px; background: linear-gradient(to bottom, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0) 100%); display: flex; justify-content: space-between; align-items: center; pointer-events: none; gap: 12px; }
     #camera-header > * { pointer-events: auto; }
-    #camera-progress { color: #fff; font-size: 14px; font-weight: 700; letter-spacing: 1px; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
-    #camera-close { background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.2); color: #fff; width: 36px; height: 36px; border-radius: 50%; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; line-height: 1; }
-    #camera-close:active { background: rgba(0,0,0,0.7); }
-    /* Bottom controls: large capture button centered, "Use upload instead" link to the side. */
-    #camera-controls { padding: 24px 16px 36px; background: linear-gradient(to top, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0) 100%); display: flex; justify-content: space-around; align-items: center; gap: 12px; }
-    #camera-capture { width: 76px; height: 76px; border-radius: 50%; background: #fff; border: 5px solid rgba(255,255,255,0.4); cursor: pointer; padding: 0; box-shadow: 0 0 0 2px rgba(0,0,0,0.3); transition: transform 0.1s; }
-    #camera-capture:active { transform: scale(0.92); }
+    #camera-progress { color: #fff; font-size: 16px; font-weight: 700; letter-spacing: 0.5px; text-shadow: 0 1px 4px rgba(0,0,0,0.9); flex: 1; }
+    #camera-close { background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.25); color: #fff; width: 40px; height: 40px; min-width: 40px; border-radius: 50%; font-size: 22px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; line-height: 1; flex-shrink: 0; }
+    #camera-close:active { background: rgba(0,0,0,0.75); }
+    /* Bottom controls. Capture button is centered absolutely so the upload
+       link doesn't push it off-center. Bottom inset for safe area. */
+    #camera-controls { position: relative; padding: 20px 16px calc(env(safe-area-inset-bottom, 0px) + 24px); background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0) 100%); min-height: 110px; }
+    #camera-capture { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 76px; height: 76px; min-width: 76px; min-height: 76px; max-width: 76px; max-height: 76px; border-radius: 50%; background: #fff; border: 5px solid rgba(255,255,255,0.4); cursor: pointer; padding: 0; box-shadow: 0 0 0 2px rgba(0,0,0,0.4); transition: transform 0.1s; box-sizing: content-box; }
+    #camera-capture:active { transform: translate(-50%, -50%) scale(0.92); }
     #camera-capture:disabled { opacity: 0.5; cursor: not-allowed; }
-    #camera-upload-link { background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.25); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 12px; font-weight: 600; letter-spacing: 0.5px; cursor: pointer; }
-    #camera-upload-link:active { background: rgba(0,0,0,0.7); }
+    /* Upload-instead anchored to the left, doesn't fight capture button for layout. */
+    #camera-upload-link { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.25); color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; letter-spacing: 0.3px; cursor: pointer; max-width: calc(50% - 60px); line-height: 1.2; }
+    #camera-upload-link:active { background: rgba(0,0,0,0.75); }
     /* Permission-denied dialog (sits inside camera-modal area but overlays the video). */
     #camera-perm-dialog { position: absolute; inset: 0; background: rgba(0,0,0,0.85); display: none; flex-direction: column; align-items: center; justify-content: center; padding: 24px; z-index: 10; }
     #camera-perm-dialog.show { display: flex; }
@@ -845,9 +853,8 @@
     </div>
   </div>
   <div id="camera-controls">
-    <button id="camera-upload-link" onclick="cameraUploadInstead()">Upload Instead</button>
+    <button id="camera-upload-link" onclick="cameraUploadInstead()">Upload<br>Instead</button>
     <button id="camera-capture" onclick="cameraCapture()" aria-label="Capture photo"></button>
-    <div style="width:90px"><!-- spacer so capture button stays centered --></div>
   </div>
 </div>
 <div id="sync-bar" style="display:none">
