@@ -4,31 +4,22 @@
     User lays comic flat, lights from one side at low angle, photographs across.
     Phone is held in landscape orientation parallel to the comic's long edge.
 
-    Trapezoid represents perspective foreshortening at low camera angle:
-      NEAR edge (the spine itself, closest to camera) = LONG line at bottom.
-      FAR edge (opposite edge of cover, recedes from camera) = SHORTER line up top.
-
-    Sized to ~98% of viewport (pushed to edges):
-      Near edge: y=580, x range 20–780 (760 wide)
-      Far edge:  y=120, x range 180–620 (440 wide, ~58% of near)
-
-    Rotation hint in upper-left to indicate landscape.
-    "SPINE" text label inside trapezoid — kept as-is per Matt's note that
-    raking-light shots are unfamiliar enough to warrant the in-SVG label.
+    Trapezoid: NEAR edge (spine, closest to camera) = LONG line at bottom.
+                FAR edge (opposite) = SHORTER line up top.
+    Rotation hint upper-left.
+    "SPINE" label inside the trapezoid — this is the slot identifier (no
+    separate slot-label needed; spine doesn't reuse a generic guide template).
   -->
-
-  <polygon points="20,580 780,580 620,120 180,120"
+  <polygon points="20,540 780,540 620,80 180,80"
            fill="none" stroke="#7aa838" stroke-width="6"
            stroke-linejoin="round"/>
 
-  <!-- "SPINE" label centered in the trapezoid, large enough to read clearly -->
-  <text x="400" y="380" text-anchor="middle"
+  <text x="400" y="340" text-anchor="middle"
         font-family="system-ui, sans-serif"
         font-size="56" font-weight="700"
         fill="#7aa838" opacity="0.75"
         letter-spacing="6">SPINE</text>
 
-  <!-- Rotation hint: curved arrow upper-left -->
   <g transform="translate(60, 60)" opacity="0.75">
     <path d="M 0,15 A 18,18 0 0 1 30,0" fill="none" stroke="#7aa838" stroke-width="4" stroke-linecap="round"/>
     <polyline points="26,-4 30,0 26,5" fill="none" stroke="#7aa838" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>

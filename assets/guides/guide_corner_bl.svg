@@ -1,5 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
-  <!-- Bottom-Left corner macro. Corner-point: (40, 570). Up to (40, 60). Right to (760, 570). -->
+  <!-- Bottom-Left corner macro. Corner-point: (40, 570). Up to (40, 60). Right to (760, 570).
+       Slot label placed at TOP since the L-shape's horizontal leg sits at y=570
+       (would crowd a bottom label). -->
+  <text id="slot-label" x="400" y="40"
+        text-anchor="middle"
+        font-family="system-ui, sans-serif"
+        font-size="32" font-weight="700"
+        fill="#7aa838" opacity="0.85"
+        letter-spacing="4">BOTTOM LEFT</text>
   <path d="M 40,60 L 40,558 Q 40,570 52,570 L 760,570"
         fill="none" stroke="#7aa838" stroke-width="6"
         stroke-linecap="round" stroke-linejoin="round"/>

@@ -1,17 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
   <!--
     Comic outline guide — used for FRONT cover and BACK cover.
-    Sized to ~98% of viewport (was 92% in prior iteration; testing showed
-    comics fit comfortably smaller than expected so we're pushing closer to
-    edges). 12px corner rounding for slightly softer feel without
-    abandoning the rectangular comic shape. Stroke-6 for visibility.
+    Note: the same file is reused for both. The slot label below ("FRONT" /
+    "BACK") is set DYNAMICALLY by cameraOpenSlot() in index.html, which finds
+    the <text id="slot-label"> element and updates its content per slot.
+    See CAMERA_LABEL_MAIN for the source of truth on slot labels.
 
-    Comic aspect ratio: 6.625 × 10.25 inches → 0.6463 width:height.
-    Target: 98% of viewport HEIGHT = 588.
-      Comic height: 588
-      Comic width:  588 × 0.6463 = 380
-      Centered: x = (800 - 380) / 2 = 210, y = (600 - 588) / 2 = 6
+    Sized to 98% of viewport, 12px corner rounding, stroke-6.
+    Outline: 380 wide × 588 tall, centered at (210, 6).
+    Label: bottom-centered, 36pt, 75% opacity to not compete with the frame.
   -->
   <rect x="210" y="6" width="380" height="588" rx="12" ry="12"
         fill="none" stroke="#7aa838" stroke-width="6"/>
+  <!-- Slot label inside the SVG, immediately below the outline -->
+  <text id="slot-label" x="400" y="595"
+        text-anchor="middle"
+        font-family="system-ui, sans-serif"
+        font-size="32" font-weight="700"
+        fill="#7aa838" opacity="0.85"
+        letter-spacing="4">FRONT</text>
 </svg>

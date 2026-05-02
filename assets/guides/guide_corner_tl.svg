@@ -7,4 +7,10 @@
   <path d="M 40,540 L 40,42 Q 40,30 52,30 L 760,30"
         fill="none" stroke="#7aa838" stroke-width="6"
         stroke-linecap="round" stroke-linejoin="round"/>
+  <text id="slot-label" x="400" y="595"
+        text-anchor="middle"
+        font-family="system-ui, sans-serif"
+        font-size="32" font-weight="700"
+        fill="#7aa838" opacity="0.85"
+        letter-spacing="4">TOP LEFT</text>
 </svg>

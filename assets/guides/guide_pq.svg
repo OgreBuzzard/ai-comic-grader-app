@@ -6,41 +6,34 @@
     the visible area. When phone is in portrait, it fits cramped in the middle
     — visual cue that rotation is expected.
 
-    Two pages side-by-side, 6.625w × 10.25t each → combined 13.25 × 10.25 (1.293 ratio).
-    Fitting ~95% of width: pages span x=20 to x=780 (760 wide).
-    Height: 760 / 1.293 = 588. Centered: y = (600 - 588) / 2 = 6.
-
     Layout:
-      LEFT page: solid stroke, 3-sided (open toward center fold).
-      RIGHT page: dashed stroke, 3-sided (open toward center fold).
-      No line at center fold — that's the actual physical fold, no guide needed.
-      Two staple markers ON the centerfold axis, drawn as THIN strokes (not
-      thick filled rects) so they don't obscure the actual staples being framed.
-      Rotation arrow (curved) in upper-left corner suggests phone rotation.
-
-    Corner rounding 12px on the page outlines for slight softness.
+      LEFT page outline: solid stroke, 3-sided (open toward centerfold).
+      RIGHT page outline: dashed stroke, 3-sided (open toward centerfold).
+      Two staple markers ON centerfold axis, drawn as THIN strokes.
+      Rotation arrow in upper-left to suggest phone rotation.
+      Slot label below the page outlines (id=slot-label, set per-slot by JS).
   -->
 
-  <!-- LEFT page outline: 3-sided, opens toward centerfold (x=400) -->
-  <path d="M 400,6 L 32,6 Q 20,6 20,18 L 20,582 Q 20,594 32,594 L 400,594"
+  <path d="M 400,6 L 32,6 Q 20,6 20,18 L 20,540 Q 20,552 32,552 L 400,552"
         fill="none" stroke="#7aa838" stroke-width="6"
         stroke-linejoin="round"/>
-
-  <!-- RIGHT page outline: 3-sided, dashed, opens toward centerfold -->
-  <path d="M 400,6 L 768,6 Q 780,6 780,18 L 780,582 Q 780,594 768,594 L 400,594"
+  <path d="M 400,6 L 768,6 Q 780,6 780,18 L 780,540 Q 780,552 768,552 L 400,552"
         fill="none" stroke="#7aa838" stroke-width="6"
         stroke-dasharray="14 14"
         stroke-linejoin="round"/>
 
-  <!-- Staple markers: thin vertical lines on centerfold axis. Stroke-6 to
-       match other guide lines, NOT thick filled rects. -->
-  <line x1="400" y1="135" x2="400" y2="175" stroke="#7aa838" stroke-width="6" stroke-linecap="round"/>
-  <line x1="400" y1="425" x2="400" y2="465" stroke="#7aa838" stroke-width="6" stroke-linecap="round"/>
+  <line x1="400" y1="120" x2="400" y2="160" stroke="#7aa838" stroke-width="6" stroke-linecap="round"/>
+  <line x1="400" y1="395" x2="400" y2="435" stroke="#7aa838" stroke-width="6" stroke-linecap="round"/>
 
-  <!-- Rotation hint: curved arrow in upper-left, suggesting "rotate phone".
-       Small enough to not compete with the page outlines. -->
   <g transform="translate(60, 60)" opacity="0.75">
     <path d="M 0,15 A 18,18 0 0 1 30,0" fill="none" stroke="#7aa838" stroke-width="4" stroke-linecap="round"/>
     <polyline points="26,-4 30,0 26,5" fill="none" stroke="#7aa838" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
+
+  <text id="slot-label" x="400" y="590"
+        text-anchor="middle"
+        font-family="system-ui, sans-serif"
+        font-size="32" font-weight="700"
+        fill="#7aa838" opacity="0.85"
+        letter-spacing="4">PAGE QUALITY</text>
 </svg>
