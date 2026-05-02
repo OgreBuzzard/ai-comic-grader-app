@@ -1,19 +1,36 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
   <!--
-    Spine raking-light guide. Trapezoid representing perspective at low angle:
-      NEAR edge (spine being photographed) = LONG line at bottom of frame.
-      FAR edge (opposite page edge) = SHORTER line in upper portion.
-      The cover surface recedes upward, foreshortened.
+    Spine raking-light guide — designed LANDSCAPE.
+    User lays comic flat, lights from one side at low angle, photographs across.
+    Phone is held in landscape orientation parallel to the comic's long edge.
 
-    Resized to ~92% width target:
-      Near edge: y=560, x range 32–768 (736 wide)
-      Far edge:  y=170, x range 180–620 (440 wide, 60% of near)
-      Vertical span: 390px (foreshortening more pronounced when scaled up)
+    Trapezoid represents perspective foreshortening at low camera angle:
+      NEAR edge (the spine itself, closest to camera) = LONG line at bottom.
+      FAR edge (opposite edge of cover, recedes from camera) = SHORTER line up top.
+
+    Sized to ~98% of viewport (pushed to edges):
+      Near edge: y=580, x range 20–780 (760 wide)
+      Far edge:  y=120, x range 180–620 (440 wide, ~58% of near)
+
+    Rotation hint in upper-left to indicate landscape.
+    "SPINE" text label inside trapezoid — kept as-is per Matt's note that
+    raking-light shots are unfamiliar enough to warrant the in-SVG label.
   -->
-  <polygon points="32,560 768,560 620,170 180,170"
+
+  <polygon points="20,580 780,580 620,120 180,120"
            fill="none" stroke="#7aa838" stroke-width="6"
            stroke-linejoin="round"/>
-  <!-- "SPINE" label inside near edge — bigger now to actually be readable -->
-  <text x="400" y="600" text-anchor="middle" font-family="system-ui, sans-serif"
-        font-size="32" font-weight="700" fill="#7aa838" opacity="0.75">SPINE</text>
+
+  <!-- "SPINE" label centered in the trapezoid, large enough to read clearly -->
+  <text x="400" y="380" text-anchor="middle"
+        font-family="system-ui, sans-serif"
+        font-size="56" font-weight="700"
+        fill="#7aa838" opacity="0.75"
+        letter-spacing="6">SPINE</text>
+
+  <!-- Rotation hint: curved arrow upper-left -->
+  <g transform="translate(60, 60)" opacity="0.75">
+    <path d="M 0,15 A 18,18 0 0 1 30,0" fill="none" stroke="#7aa838" stroke-width="4" stroke-linecap="round"/>
+    <polyline points="26,-4 30,0 26,5" fill="none" stroke="#7aa838" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
 </svg>

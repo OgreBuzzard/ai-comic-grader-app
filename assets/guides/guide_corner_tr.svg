@@ -1,7 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
-  <!-- Top-Right corner macro. Corner-point: (700, 75). Vertical leg DOWN to
-       (700, 525). Horizontal leg LEFT to (100, 75). -->
-  <polyline points="700,525 700,75 100,75"
-            fill="none" stroke="#7aa838" stroke-width="6"
-            stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Top-Right corner macro. Corner-point: (760, 30). Down to (760, 540). Left to (40, 30). -->
+  <path d="M 760,540 L 760,42 Q 760,30 748,30 L 40,30"
+        fill="none" stroke="#7aa838" stroke-width="6"
+        stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

@@ -1,28 +1,46 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
   <!--
-    Page Quality guide — open centerfold, staples only.
-    Each page outline drawn as a 3-sided shape OPEN toward the centerfold.
-    No line at x=400 between pages so the actual physical fold isn't competed
-    with by a guide line. Two staple markers on the centerfold axis.
+    Page Quality guide — open centerfold, designed LANDSCAPE.
+    User rotates phone to landscape for this shot. When phone is in landscape,
+    this 800×600 viewBox fills the screen and the centerfold occupies most of
+    the visible area. When phone is in portrait, it fits cramped in the middle
+    — visual cue that rotation is expected.
 
-    Open-centerfold proportions (two pages side-by-side):
-      Each page is 6.625 wide × 10.25 tall → 0.6463 ratio
-      Two pages side-by-side = 13.25 × 10.25 → 1.293 ratio (landscape)
-      Fitting 92% of width: pages span x=32 to x=768 (736 wide)
-      Each page height: 736 / 1.293 = 569
-      Centered vertically: y = (600 - 569) / 2 = 15.5
+    Two pages side-by-side, 6.625w × 10.25t each → combined 13.25 × 10.25 (1.293 ratio).
+    Fitting ~95% of width: pages span x=20 to x=780 (760 wide).
+    Height: 760 / 1.293 = 588. Centered: y = (600 - 588) / 2 = 6.
 
-    Staples at top and bottom 1/4 of centerfold height:
-      Staple positions: y=145 (top quarter), y=440 (bottom quarter), x≈400
+    Layout:
+      LEFT page: solid stroke, 3-sided (open toward center fold).
+      RIGHT page: dashed stroke, 3-sided (open toward center fold).
+      No line at center fold — that's the actual physical fold, no guide needed.
+      Two staple markers ON the centerfold axis, drawn as THIN strokes (not
+      thick filled rects) so they don't obscure the actual staples being framed.
+      Rotation arrow (curved) in upper-left corner suggests phone rotation.
+
+    Corner rounding 12px on the page outlines for slight softness.
   -->
-  <!-- LEFT page: solid, 3-sided, open toward center -->
-  <polyline points="400,15 32,15 32,584 400,584"
-            fill="none" stroke="#7aa838" stroke-width="6"/>
-  <!-- RIGHT page: dotted, 3-sided, open toward center -->
-  <polyline points="400,15 768,15 768,584 400,584"
-            fill="none" stroke="#7aa838" stroke-width="6"
-            stroke-dasharray="14 14"/>
-  <!-- Staple markers: vertical bars sized to be obvious at this stroke weight -->
-  <rect x="394" y="135" width="12" height="36" fill="#7aa838"/>
-  <rect x="394" y="429" width="12" height="36" fill="#7aa838"/>
+
+  <!-- LEFT page outline: 3-sided, opens toward centerfold (x=400) -->
+  <path d="M 400,6 L 32,6 Q 20,6 20,18 L 20,582 Q 20,594 32,594 L 400,594"
+        fill="none" stroke="#7aa838" stroke-width="6"
+        stroke-linejoin="round"/>
+
+  <!-- RIGHT page outline: 3-sided, dashed, opens toward centerfold -->
+  <path d="M 400,6 L 768,6 Q 780,6 780,18 L 780,582 Q 780,594 768,594 L 400,594"
+        fill="none" stroke="#7aa838" stroke-width="6"
+        stroke-dasharray="14 14"
+        stroke-linejoin="round"/>
+
+  <!-- Staple markers: thin vertical lines on centerfold axis. Stroke-6 to
+       match other guide lines, NOT thick filled rects. -->
+  <line x1="400" y1="135" x2="400" y2="175" stroke="#7aa838" stroke-width="6" stroke-linecap="round"/>
+  <line x1="400" y1="425" x2="400" y2="465" stroke="#7aa838" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- Rotation hint: curved arrow in upper-left, suggesting "rotate phone".
+       Small enough to not compete with the page outlines. -->
+  <g transform="translate(60, 60)" opacity="0.75">
+    <path d="M 0,15 A 18,18 0 0 1 30,0" fill="none" stroke="#7aa838" stroke-width="4" stroke-linecap="round"/>
+    <polyline points="26,-4 30,0 26,5" fill="none" stroke="#7aa838" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
 </svg>

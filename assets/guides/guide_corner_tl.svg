@@ -1,9 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
   <!-- Top-Left corner macro. L-shape (⌐): corner-point upper-left, body extends
-       toward bottom-right. User fills frame with the corner.
-       Corner-point: (100, 75). Vertical leg DOWN to (100, 525). Horizontal leg
-       RIGHT to (700, 75). Each leg ~75% of viewport span. -->
-  <polyline points="100,525 100,75 700,75"
-            fill="none" stroke="#7aa838" stroke-width="6"
-            stroke-linecap="round" stroke-linejoin="round"/>
+       toward bottom-right. Sized to ~95% of viewport — corner-point near the
+       upper-left edge, legs extending most of the way across.
+       Slight 12px rounding at the bend for design consistency.
+       Corner-point: (40, 30). Down to (40, 540). Right to (760, 30). -->
+  <path d="M 40,540 L 40,42 Q 40,30 52,30 L 760,30"
+        fill="none" stroke="#7aa838" stroke-width="6"
+        stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
