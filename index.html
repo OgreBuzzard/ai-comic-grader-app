@@ -303,6 +303,44 @@
     #cropper-cancel { background: #333; color: #ccc; }
     #cropper-confirm { background: #1a4a2a; color: #6abf6a; }
     #cropper-cancel:active, #cropper-confirm:active, #cropper-rotate:active { transform: scale(0.97); }
+    /* ── Camera capture modal (S11) ─────────────────────────────────────
+       Full-viewport overlay for in-app photo capture. Live <video> stream
+       fills the screen; an SVG guide overlays it; capture button at bottom.
+       Z-index 1100 sits ABOVE cropper-modal (1000) so the cropper-sequence
+       at end-of-walkthrough opens on top of the camera modal which then
+       gets dismissed when the cropper sequence completes. */
+    #camera-modal { position: fixed; inset: 0; background: #000; z-index: 1100; display: none; flex-direction: column; }
+    #camera-modal.open { display: flex; }
+    #camera-stage { flex: 1; min-height: 0; position: relative; background: #000; overflow: hidden; }
+    #camera-video { width: 100%; height: 100%; object-fit: cover; display: block; background: #000; }
+    /* The SVG guide is absolutely positioned to fill the stage. The SVG itself
+       has a transparent background (the dark rect in the source files is for
+       preview only — production overlay shows live video through). preserveAspectRatio
+       is set on the SVG element to maintain guide proportions across screen sizes. */
+    #camera-guide { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    #camera-guide svg { width: 100%; height: 100%; display: block; }
+    /* Top header: walkthrough progress + close button. Semi-opaque dark bar so
+       text reads against any video content. */
+    #camera-header { position: absolute; top: 0; left: 0; right: 0; padding: 12px 16px; background: linear-gradient(to bottom, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0) 100%); display: flex; justify-content: space-between; align-items: center; pointer-events: none; }
+    #camera-header > * { pointer-events: auto; }
+    #camera-progress { color: #fff; font-size: 14px; font-weight: 700; letter-spacing: 1px; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
+    #camera-close { background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.2); color: #fff; width: 36px; height: 36px; border-radius: 50%; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; line-height: 1; }
+    #camera-close:active { background: rgba(0,0,0,0.7); }
+    /* Bottom controls: large capture button centered, "Use upload instead" link to the side. */
+    #camera-controls { padding: 24px 16px 36px; background: linear-gradient(to top, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0) 100%); display: flex; justify-content: space-around; align-items: center; gap: 12px; }
+    #camera-capture { width: 76px; height: 76px; border-radius: 50%; background: #fff; border: 5px solid rgba(255,255,255,0.4); cursor: pointer; padding: 0; box-shadow: 0 0 0 2px rgba(0,0,0,0.3); transition: transform 0.1s; }
+    #camera-capture:active { transform: scale(0.92); }
+    #camera-capture:disabled { opacity: 0.5; cursor: not-allowed; }
+    #camera-upload-link { background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.25); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 12px; font-weight: 600; letter-spacing: 0.5px; cursor: pointer; }
+    #camera-upload-link:active { background: rgba(0,0,0,0.7); }
+    /* Permission-denied dialog (sits inside camera-modal area but overlays the video). */
+    #camera-perm-dialog { position: absolute; inset: 0; background: rgba(0,0,0,0.85); display: none; flex-direction: column; align-items: center; justify-content: center; padding: 24px; z-index: 10; }
+    #camera-perm-dialog.show { display: flex; }
+    #camera-perm-dialog .perm-card { background: #1a1a1a; border: 1px solid #333; border-radius: 12px; padding: 24px; max-width: 340px; text-align: center; }
+    #camera-perm-dialog h3 { color: #c8a96e; font-size: 16px; margin-bottom: 12px; letter-spacing: 0.5px; }
+    #camera-perm-dialog p { color: #b0a898; font-size: 13px; line-height: 1.6; margin-bottom: 20px; }
+    #camera-perm-dialog button { width: 100%; padding: 14px; border: none; border-radius: 8px; background: #1a4a2a; color: #6abf6a; font-size: 14px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; }
+    #camera-perm-dialog button:active { transform: scale(0.97); }
     /* Cropper.js styling: simplified UX with only 4 edge handles (no corners).
        Edge handles are large pill shapes for easy thumb-grabbing on mobile.
        Touch target = visual element in Cropper.js, so bigger visual = bigger
@@ -784,6 +822,32 @@
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 9 8 9"/></svg>
     </button>
     <button id="cropper-confirm" onclick="confirmCrop()">Apply Crop</button>
+  </div>
+</div>
+<!-- Camera capture modal (S11) — lives between cropper modal and sync bar.
+     Hidden by default; opened by tapSlot() when in-app capture is supported.
+     The video, guide, and controls are constructed in HTML; cameraOpen() and
+     friends manage state. See "Camera capture pipeline" section in script. -->
+<div id="camera-modal">
+  <div id="camera-stage">
+    <video id="camera-video" autoplay playsinline muted></video>
+    <div id="camera-guide"></div>
+    <div id="camera-header">
+      <div id="camera-progress"></div>
+      <button id="camera-close" onclick="cameraExit()" aria-label="Exit camera">×</button>
+    </div>
+    <div id="camera-perm-dialog">
+      <div class="perm-card">
+        <h3>Camera Access Needed</h3>
+        <p>In-app capture is what powers the "Verified" badge on your public listings. Tap below to use the upload picker for this photo, or grant camera access in your browser settings to enable in-app capture.</p>
+        <button onclick="cameraPermissionFallback()">Use Upload Instead</button>
+      </div>
+    </div>
+  </div>
+  <div id="camera-controls">
+    <button id="camera-upload-link" onclick="cameraUploadInstead()">Upload Instead</button>
+    <button id="camera-capture" onclick="cameraCapture()" aria-label="Capture photo"></button>
+    <div style="width:90px"><!-- spacer so capture button stays centered --></div>
   </div>
 </div>
 <div id="sync-bar" style="display:none">
@@ -4334,14 +4398,14 @@ function renderForm(){
           return img
             ? `<div class="drag-slot" style="${style}" draggable="true"
                 ondragstart="dragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"
-                onclick="_tappedSlot=${i};document.getElementById('photo-input').click()">
+                onclick="tapSlot(${i},'main')">
                 <img src="${img}">
                 <button class="slot-edit" onclick="event.stopPropagation();openCropper('main',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>
                 <button class="slot-x" onclick="event.stopPropagation();removeImg(${i})">×</button>
                </div>`
             : `<div class="drag-slot" style="padding:0;background:none;"
                 ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"
-                onclick="_tappedSlot=${i};document.getElementById('photo-input').click()">
+                onclick="tapSlot(${i},'main')">
                 <img src="${SLOT_GHOSTS[i]}" style="width:100%;height:auto;display:block;border-radius:4px;opacity:0.7;">
                 <div style="position:absolute;inset:0;pointer-events:none;">
                   <span style="position:absolute;top:8px;left:10px;font-size:11px;font-weight:700;color:#000;letter-spacing:1px;text-transform:uppercase;background:rgba(255,255,255,0.75);padding:2px 6px;border-radius:3px;">${slotLabels[i]}</span>
@@ -4360,14 +4424,14 @@ function renderForm(){
             return img
               ? `<div class="drag-slot" draggable="true"
                   ondragstart="cornerDragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="cornerDropSlot(event,${i})"
-                  onclick="_tappedCornerSlot=${i};document.getElementById('corner-photo-input').click()">
+                  onclick="tapSlot(${i},'corner')">
                   <img src="${img}">
                   <button class="slot-edit" onclick="event.stopPropagation();openCropper('corner',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>
                   <button class="slot-x" onclick="event.stopPropagation();removeCornerImg(${i})">×</button>
                  </div>`
               : `<div class="drag-slot" style="padding:0;background:#1a1a1a;min-height:100px;"
                   ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="cornerDropSlot(event,${i})"
-                  onclick="_tappedCornerSlot=${i};document.getElementById('corner-photo-input').click()">
+                  onclick="tapSlot(${i},'corner')">
                   <div style="color:#8a8a8a;font-size:13px;font-weight:600;letter-spacing:1.5px;padding:30px 10px;text-align:center">${cornerLabels[i].toUpperCase()}<div style="font-size:10px;opacity:0.6;margin-top:4px;letter-spacing:0.5px">Tap to add photo</div></div>
                  </div>`;
           }).join("")}
@@ -5032,6 +5096,15 @@ function cancelCrop() {
   // Reset ready state so next open hides the image until Cropper attaches again
   if (stage) stage.classList.remove('ready');
   _cropperTarget = null;
+  // S11 camera flow: if a cropper-sequence is in progress (camera walkthrough
+  // landed photos in formData and is iterating crops), resolve the sequencer
+  // so it advances to the next captured image. The just-cancelled image stays
+  // in formData uncropped — still source:'camera', still verified.
+  if (_cropperSequenceResolve) {
+    const r = _cropperSequenceResolve;
+    _cropperSequenceResolve = null;
+    r();
+  }
 }
 
 // Rotate the image counter-clockwise 90° (S11). Cropper.js's rotate() is
@@ -5081,9 +5154,7 @@ function confirmCrop() {
 
   cancelCrop();
   renderForm();
-}
-
-let _dragSrc=null;
+}let _dragSrc=null;
 let _tappedSlot=0;
 function dragStart(e,i){_dragSrc=i;e.dataTransfer.effectAllowed="move";}
 function dragOver(e){e.preventDefault();e.currentTarget.classList.add("drag-over");}
@@ -5202,6 +5273,285 @@ async function handleCornerImages(e){
   formData._imagesChanged=true;
   e.target.value="";
   renderForm();
+}
+
+// ── Camera capture pipeline (S11) ──────────────────────────────────────────
+// In-app photo capture using getUserMedia + SVG guide overlays. Powers the
+// "Verified: in-app photos" badge by stamping captured images with
+// imagesMeta[i].source = 'camera'. Mobile-only (capability gated on
+// _cameraSupported); desktop falls through to the file-picker upload flow.
+//
+// Two modes:
+//   • walkthrough — multi-slot guided sequence. User taps an empty slot, camera
+//     opens for that slot, captures, advances to next empty slot. After all
+//     captures are taken, fires cropper-modal sequence in order. Exiting
+//     mid-walkthrough keeps captured-but-uncropped photos and discards them
+//     (they were never cropped → never landed in formData).
+//   • single — one slot, one capture. User taps a filled slot, camera opens
+//     for that slot only, captures, cropper opens, returns to form.
+//
+// Re-tapping a completed slot during walkthrough jumps the walkthrough back
+// to that slot for re-capture.
+
+// Capability detection. Mobile UA + getUserMedia presence required.
+// Conservative on viewport-width as a proxy for "phone, not desktop with touch
+// screen". Tablets (iPads with rear cameras) qualify.
+window._cameraSupported = (() => {
+  const isMobileUA = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  const hasGetUserMedia = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  return isMobileUA && hasGetUserMedia;
+})();
+
+// SVG guide source paths. Indexed by slot for main and corner. Files live in
+// assets/guides/ and are served as static assets by Vercel.
+const CAMERA_GUIDE_MAIN   = ['guide_comic.svg','guide_comic.svg','guide_pq.svg','guide_spine.svg'];
+const CAMERA_GUIDE_CORNER = ['guide_corner_tl.svg','guide_corner_tr.svg','guide_corner_bl.svg','guide_corner_br.svg'];
+const CAMERA_LABEL_MAIN   = ['Front Cover','Back Cover','Page Quality','Spine (Raking)'];
+const CAMERA_LABEL_CORNER = ['Top Left Corner','Top Right Corner','Bottom Left Corner','Bottom Right Corner'];
+
+// Camera modal state. Reset on close.
+let _cameraState = null;
+//   {
+//     mode: 'walkthrough' | 'single',
+//     kind: 'main' | 'corner',
+//     queue: [slotIndex, ...],   // remaining slots to capture in order
+//     current: slotIndex,         // currently displayed slot
+//     captures: [{slot, dataUrl}, ...],  // captured-but-not-yet-cropped pile
+//     stream: MediaStream,        // active video stream — must be stopped on close
+//   }
+
+// Central slot-tap router. Replaces the inline onclick handlers that used to
+// directly trigger the file picker. Decides camera-vs-upload based on device
+// capability, slot kind, and current state.
+function tapSlot(slotIndex, kind) {
+  // Desktop / unsupported → existing file-picker behavior, exactly as before.
+  if (!window._cameraSupported) {
+    if (kind === 'corner') {
+      _tappedCornerSlot = slotIndex;
+      document.getElementById('corner-photo-input').click();
+    } else {
+      _tappedSlot = slotIndex;
+      document.getElementById('photo-input').click();
+    }
+    return;
+  }
+
+  // Mid-walkthrough re-tap on a completed (or different) slot: jump the
+  // walkthrough back to that slot. The captures pile is preserved so anything
+  // already captured stays in the queue for the cropper sequence at the end.
+  if (_cameraState && _cameraState.mode === 'walkthrough' && _cameraState.kind === kind) {
+    _cameraState.current = slotIndex;
+    // Drop this slot from the queue if it's there, then prepend it. Keeps the
+    // post-tap walk continuing from this slot forward.
+    _cameraState.queue = _cameraState.queue.filter(s => s !== slotIndex);
+    cameraOpenSlot(slotIndex);
+    return;
+  }
+
+  // Walkthrough launch: tap on an empty slot in a form with multiple empty slots.
+  // Build queue from this slot forward through all empty slots of the same kind.
+  const list = (kind === 'corner' ? formData.cornerImages : formData.images) || [];
+  const allSlots = [0,1,2,3];
+  const emptySlots = allSlots.filter(i => !list[i]);
+  const isMultiEmpty = emptySlots.length > 1 && emptySlots.includes(slotIndex);
+
+  if (isMultiEmpty) {
+    // Walkthrough mode: queue is empties starting at slotIndex, wrapping forward.
+    const startIdx = emptySlots.indexOf(slotIndex);
+    const queue = [...emptySlots.slice(startIdx + 1)];  // remaining after current
+    cameraOpen({
+      mode: 'walkthrough',
+      kind,
+      queue,
+      current: slotIndex,
+      captures: [],
+    });
+  } else {
+    // Single-slot mode: filled slot, or only-empty-slot. One shot, then crop, return.
+    cameraOpen({
+      mode: 'single',
+      kind,
+      queue: [],
+      current: slotIndex,
+      captures: [],
+    });
+  }
+}
+
+// Open the camera modal with the given state, request camera, attach to video.
+async function cameraOpen(state) {
+  _cameraState = { ...state, stream: null };
+  const modal = document.getElementById('camera-modal');
+  const permDialog = document.getElementById('camera-perm-dialog');
+  permDialog.classList.remove('show');
+  modal.classList.add('open');
+  cameraOpenSlot(state.current);
+
+  // Request rear camera. facingMode: 'environment' is a hint — some devices
+  // honor it strictly, others fall back to default. Either way we get a stream.
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } },
+      audio: false
+    });
+    _cameraState.stream = stream;
+    const video = document.getElementById('camera-video');
+    video.srcObject = stream;
+  } catch (err) {
+    console.warn('[camera] getUserMedia failed:', err);
+    permDialog.classList.add('show');
+  }
+}
+
+// Update the modal UI to reflect a specific slot (guide image, header text).
+function cameraOpenSlot(slotIndex) {
+  if (!_cameraState) return;
+  _cameraState.current = slotIndex;
+  const { kind, mode, queue } = _cameraState;
+  const guideFile = (kind === 'corner' ? CAMERA_GUIDE_CORNER : CAMERA_GUIDE_MAIN)[slotIndex];
+  const label     = (kind === 'corner' ? CAMERA_LABEL_CORNER : CAMERA_LABEL_MAIN)[slotIndex];
+
+  // Load the SVG inline so it can fill the stage and be styled. Using <img>
+  // would also work but inline gives us future hooks for stroke color tweaks.
+  const guideEl = document.getElementById('camera-guide');
+  fetch('/assets/guides/' + guideFile)
+    .then(r => r.text())
+    .then(svgText => {
+      // Strip the dark <rect> background — it's preview-only, transparent in production.
+      const cleaned = svgText.replace(/<rect[^>]*fill="#1a1a1a"[^>]*\/>/, '');
+      guideEl.innerHTML = cleaned;
+    })
+    .catch(err => {
+      console.warn('[camera] guide fetch failed:', err);
+      guideEl.innerHTML = '';
+    });
+
+  // Header progress text. Walkthrough shows "X of Y — Slot Name"; single mode
+  // shows just the slot name.
+  const progress = document.getElementById('camera-progress');
+  if (mode === 'walkthrough') {
+    const total = queue.length + 1 + _cameraState.captures.length;
+    const done  = _cameraState.captures.length + 1;
+    progress.textContent = `${done} of ${total} — ${label}`;
+  } else {
+    progress.textContent = label;
+  }
+}
+
+// Capture the current frame from the video stream as a data URL. Stash it on
+// the captures pile, advance to next slot OR exit if walkthrough is complete.
+function cameraCapture() {
+  if (!_cameraState || !_cameraState.stream) return;
+  const video = document.getElementById('camera-video');
+  if (!video.videoWidth || !video.videoHeight) return;
+
+  // Draw current frame to a canvas at the video's intrinsic resolution.
+  // No downscale here — the cropper + processImagesForSave pipeline handle that.
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+
+  _cameraState.captures.push({ slot: _cameraState.current, dataUrl });
+
+  // Advance: walkthrough → next queued slot, or finish & cropper sequence.
+  if (_cameraState.mode === 'walkthrough' && _cameraState.queue.length > 0) {
+    const nextSlot = _cameraState.queue.shift();
+    cameraOpenSlot(nextSlot);
+  } else {
+    cameraFinish();
+  }
+}
+
+// Walkthrough complete — close camera, run cropper sequence over captures.
+async function cameraFinish() {
+  if (!_cameraState) return;
+  const { kind, captures } = _cameraState;
+  cameraCloseStream();
+  document.getElementById('camera-modal').classList.remove('open');
+  _cameraState = null;
+
+  // Drop each captured image into formData with source:'camera' metadata,
+  // then fire the cropper modal sequentially per capture. cropper-confirm
+  // continues to the next capture in the sequence; cropper-cancel keeps the
+  // uncropped capture as-is (still source:'camera', still verified).
+  await runCropperSequence(captures, kind);
+}
+
+// Sequentially invoke the cropper for each captured image. Each confirm/cancel
+// resolves the per-image promise and advances to the next. The cropper UI
+// already exists and is reused as-is — we just wrap its open/close in a
+// promise per item.
+async function runCropperSequence(captures, kind) {
+  for (const cap of captures) {
+    // Place the capture into the form first so cropper has something to read.
+    // imagesMeta is stamped here — even if the user cancels the crop, the
+    // photo stays with source:'camera' (they did capture it in-app).
+    const listKey     = kind === 'corner' ? 'cornerImages' : 'images';
+    const metaKey     = kind === 'corner' ? 'cornerMeta'   : 'imagesMeta';
+    const list = [...(formData[listKey] || [])];
+    while (list.length <= cap.slot) list.push(null);
+    list[cap.slot] = cap.dataUrl;
+    formData[listKey] = list;
+
+    const meta = [...(formData[metaKey] || [])];
+    while (meta.length <= cap.slot) meta.push(null);
+    meta[cap.slot] = { source: 'camera', capturedAt: new Date().toISOString() };
+    formData[metaKey] = meta;
+
+    formData._imagesChanged = true;
+
+    // Now open cropper for this slot and wait for it to close.
+    await new Promise(resolve => {
+      _cropperSequenceResolve = resolve;
+      openCropper(kind, cap.slot);
+    });
+    _cropperSequenceResolve = null;
+  }
+  renderForm();
+}
+let _cropperSequenceResolve = null;
+
+// Wired to the X button. Stops stream, closes modal, runs cropper sequence
+// on whatever was already captured (per spec: walkthrough exit keeps progress).
+function cameraExit() {
+  if (!_cameraState) return;
+  cameraFinish();
+}
+
+// "Upload Instead" — drop out of camera flow into the file picker for the
+// current slot. Single-slot mode only meaningfully; in walkthrough mode this
+// also drops out (user explicitly opted out of camera for this session).
+function cameraUploadInstead() {
+  if (!_cameraState) return;
+  const { kind, current } = _cameraState;
+  cameraCloseStream();
+  document.getElementById('camera-modal').classList.remove('open');
+  _cameraState = null;
+  if (kind === 'corner') {
+    _tappedCornerSlot = current;
+    document.getElementById('corner-photo-input').click();
+  } else {
+    _tappedSlot = current;
+    document.getElementById('photo-input').click();
+  }
+}
+
+// Permission-denied dialog dismiss → same as upload-instead path.
+function cameraPermissionFallback() {
+  cameraUploadInstead();
+}
+
+// Stop the camera stream. Critical for releasing the camera on iOS where
+// leaving it active drains battery and locks other tabs out of the camera.
+function cameraCloseStream() {
+  if (_cameraState && _cameraState.stream) {
+    _cameraState.stream.getTracks().forEach(t => t.stop());
+  }
+  const video = document.getElementById('camera-video');
+  if (video) video.srcObject = null;
 }
 
 function showImageCapModal(type) {
