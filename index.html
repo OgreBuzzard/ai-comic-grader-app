@@ -1386,7 +1386,7 @@ const COMIC_DATA_FIELDS = [
   'assessmentHistory'
 ];
 const COMIC_DROP_FIELDS = ['press','uv','clean'];
-const DEFAULT_IMG_META = { source: 'upload', capturedAt: null };
+const DEFAULT_IMG_META = { source: 'upload', capturedAt: null, hash: null };
 
 function splitImageArray(arr) {
   if (!Array.isArray(arr)) return { urls: [], metas: [] };
@@ -1400,7 +1400,8 @@ function splitImageArray(arr) {
       urls.push(entry.url);
       metas.push({
         source: entry.source || 'upload',
-        capturedAt: entry.capturedAt || null
+        capturedAt: entry.capturedAt || null,
+        hash: entry.hash || null
       });
     }
   }
@@ -1416,7 +1417,8 @@ function zipImageArray(urls, metas) {
     out.push({
       url,
       source: m.source || 'upload',
-      capturedAt: m.capturedAt || null
+      capturedAt: m.capturedAt || null,
+      hash: m.hash || null
     });
   }
   return out;
@@ -2964,6 +2966,89 @@ function isDataUrl(s) {
   return typeof s === 'string' && s.startsWith('data:');
 }
 
+// ── Image hashing for duplicate-assessment detection ──────────────────────────
+// Computes a stable SHA-256 hash of an image's bytes (or for data URLs, of the
+// base64-decoded payload). Used to detect when a user is re-running an
+// assessment on photos they've already assessed before. Hashes are stamped onto
+// imagesMeta[i].hash at upload time and compared on subsequent assessments.
+//
+// For data URLs: hash the base64 portion (the actual image bytes).
+// For HTTPS URLs: fetch the bytes and hash. Cached per-URL for the session
+// since storage URLs are immutable once written.
+const _hashCache = new Map();
+
+async function hashImage(urlOrDataUrl) {
+  if (!urlOrDataUrl) return null;
+
+  // Cached?
+  if (_hashCache.has(urlOrDataUrl)) return _hashCache.get(urlOrDataUrl);
+
+  try {
+    let bytes;
+    if (isDataUrl(urlOrDataUrl)) {
+      // Strip the "data:image/...;base64," prefix and decode.
+      const base64 = urlOrDataUrl.split(',')[1] || '';
+      const binary = atob(base64);
+      bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    } else {
+      // Fetch and read as ArrayBuffer.
+      const resp = await fetch(urlOrDataUrl);
+      const buf = await resp.arrayBuffer();
+      bytes = new Uint8Array(buf);
+    }
+    const hashBuf = await crypto.subtle.digest('SHA-256', bytes);
+    const hashArr = Array.from(new Uint8Array(hashBuf));
+    const hashHex = hashArr.map(b => b.toString(16).padStart(2, '0')).join('');
+    _hashCache.set(urlOrDataUrl, hashHex);
+    return hashHex;
+  } catch (e) {
+    console.warn('[hashImage] Failed to hash:', e);
+    return null;
+  }
+}
+
+// Compute hashes for an array of images. Returns array of same length with
+// hashes (or nulls for failures). Runs in parallel.
+async function hashImageArray(imgs) {
+  if (!Array.isArray(imgs)) return [];
+  return Promise.all(imgs.map(img => hashImage(img)));
+}
+
+// Detect whether the current formData images match an existing assessed record.
+// Returns the matching record if found, or null. "Match" means all 4 main
+// images have the same hashes as those of an existing record (in any order —
+// users may reorder photos but the photos themselves are identical).
+//
+// Constraints:
+//   - Compare main-image hashes only (ignore corner macros — they're
+//     incidental to the initial assessment match)
+//   - Require all 4 hashes present on both sides; partial matches don't count
+//   - Skip the current record being edited (would always match itself)
+//   - Skip records without a roboGrade (no completed assessment to dedupe against)
+async function findDuplicateAssessment(currentImages, currentItemId) {
+  if (!Array.isArray(currentImages) || currentImages.length < 4) return null;
+  const filtered = currentImages.filter(Boolean);
+  if (filtered.length < 4) return null;
+
+  const currentHashes = (await hashImageArray(filtered)).filter(Boolean);
+  if (currentHashes.length < 4) return null;
+  const currentSet = new Set(currentHashes);
+
+  for (const item of (window.items || [])) {
+    if (!item || item.id === currentItemId) continue;
+    if (!item.roboGrade) continue;  // not yet assessed
+    const existingMetas = item.imagesMeta || [];
+    const existingHashes = existingMetas
+      .map(m => m && m.hash)
+      .filter(Boolean);
+    if (existingHashes.length < 4) continue;
+    const allMatch = existingHashes.every(h => currentSet.has(h));
+    if (allMatch) return item;
+  }
+  return null;
+}
+
 // Process a list of images for save. For each new photo (data URL):
 //   1. Compress to 1400px / 0.65 quality, upload as the full-size image
 //   2. Compress to 200px / 0.7 quality, upload as the thumbnail (sibling file)
@@ -4206,6 +4291,34 @@ async function assessGrade(){
     }
     return;
   }
+
+  // Duplicate-assessment detection (S12). If the user's current photos match
+  // photos from an existing assessed record, ask before proceeding. The
+  // _bypassDuplicateCheck flag is set when the user explicitly opts in via the
+  // confirm modal — that flag clears here on the next clean assessment attempt.
+  if (!formData._bypassDuplicateCheck) {
+    const dup = await findDuplicateAssessment(formData.images, formData.id);
+    if (dup) {
+      const dupGrade = dup.roboGrade?.score ?? '?';
+      const dupGradeStr = (typeof dupGrade === 'number') ? dupGrade.toFixed(1) : '?';
+      const dupDate = dup.roboGradeDate ? new Date(dup.roboGradeDate).toLocaleDateString() : 'unknown';
+      const dupTitle = dup.title || 'an existing book';
+      const dupIssue = dup.issue ? `#${dup.issue}` : '';
+      const ok = confirm(
+        `These photos match an existing assessment:\n\n` +
+        `${dupTitle} ${dupIssue}\n` +
+        `Robograde Score: ${dupGradeStr}\n` +
+        `Assessed: ${dupDate}\n\n` +
+        `Re-running may produce a slightly different grade due to natural assessment variance. ` +
+        `Run anyway? (1 credit will be used.)`
+      );
+      if (!ok) return;
+      formData._bypassDuplicateCheck = true;
+    }
+  }
+  // Clear the bypass flag after this assessment runs so a fresh attempt with
+  // unrelated photos still triggers detection.
+  delete formData._bypassDuplicateCheck;
 
   assessing=true;
   showAssessModal();
@@ -5795,16 +5908,30 @@ async function submitForm(){
   // Camera UI lands, the capture flow will pre-populate formData.imagesMeta
   // with source:'camera' entries; this reconciliation step still works
   // because the URL-vs-existing match falls through to the formData entry.)
-  const finalImagesMeta = finalImages.map((url, i) => {
+  //
+  // Hashes (S12 duplicate-detection): computed on the final stored URL bytes.
+  // Preserved from existing meta when URL is unchanged; recomputed for new
+  // URLs. Hash of compressed/uploaded JPEG, not the raw data URL — that's the
+  // version any future assessment will see.
+  const finalImagesMeta = await Promise.all(finalImages.map(async (url, i) => {
     const prevUrl = existingComicForMeta?.images?.[i];
     if (url === prevUrl && existingImagesMeta[i]) return existingImagesMeta[i];
-    return existingImagesMeta[i] || { source: 'upload', capturedAt: new Date().toISOString() };
-  });
-  const finalCornerMeta = finalCornerImages.map((url, i) => {
+    const baseMeta = existingImagesMeta[i] || { source: 'upload', capturedAt: new Date().toISOString(), hash: null };
+    // Recompute hash if it's missing OR the URL changed.
+    if (!baseMeta.hash || url !== prevUrl) {
+      baseMeta.hash = await hashImage(url);
+    }
+    return baseMeta;
+  }));
+  const finalCornerMeta = await Promise.all(finalCornerImages.map(async (url, i) => {
     const prevUrl = existingComicForMeta?.cornerImages?.[i];
     if (url === prevUrl && existingCornerMeta[i]) return existingCornerMeta[i];
-    return existingCornerMeta[i] || { source: 'upload', capturedAt: new Date().toISOString() };
-  });
+    const baseMeta = existingCornerMeta[i] || { source: 'upload', capturedAt: new Date().toISOString(), hash: null };
+    if (!baseMeta.hash || url !== prevUrl) {
+      baseMeta.hash = await hashImage(url);
+    }
+    return baseMeta;
+  }));
 
   // Build the saved record. Field order follows EMPTY's canonical grouping:
   // identity → grade → status → transaction → images → long text. The spread
