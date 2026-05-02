@@ -1,38 +1,28 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
-  <rect width="800" height="600" fill="#1a1a1a"/>
-
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
   <!--
     Page Quality guide — open centerfold, staples only.
     Each page outline drawn as a 3-sided shape OPEN toward the centerfold.
-    No line is drawn at x=400 between the pages, so the actual physical fold
-    in the photo isn't visually competed with by a guide line.
-    Two staple markers are the only feature on the centerfold axis.
+    No line at x=400 between pages so the actual physical fold isn't competed
+    with by a guide line. Two staple markers on the centerfold axis.
 
-    Page geometry:
-      LEFT page: outer left at x=100, top at y=68, bottom at y=532, INNER edge OPEN
-        Drawn as polyline: (400,68) → (100,68) → (100,532) → (400,532)
-      RIGHT page: outer right at x=700, similar but mirrored, dotted
-        Drawn as polyline: (400,68) → (700,68) → (700,532) → (400,532)
+    Open-centerfold proportions (two pages side-by-side):
+      Each page is 6.625 wide × 10.25 tall → 0.6463 ratio
+      Two pages side-by-side = 13.25 × 10.25 → 1.293 ratio (landscape)
+      Fitting 92% of width: pages span x=32 to x=768 (736 wide)
+      Each page height: 736 / 1.293 = 569
+      Centered vertically: y = (600 - 569) / 2 = 15.5
 
-    Staple markers at center fold:
-      x range 398–402 (4px wide), y 175–193 (top) and y 407–425 (bottom)
+    Staples at top and bottom 1/4 of centerfold height:
+      Staple positions: y=145 (top quarter), y=440 (bottom quarter), x≈400
   -->
-
-  <!-- LEFT page: solid, 3-sided (open toward center) -->
-  <polyline points="400,68 100,68 100,532 400,532"
-            fill="none" stroke="#7aa838" stroke-width="2"/>
-
-  <!-- RIGHT page: dotted, 3-sided (open toward center) -->
-  <polyline points="400,68 700,68 700,532 400,532"
-            fill="none" stroke="#7aa838" stroke-width="2"
-            stroke-dasharray="6 6"/>
-
-  <!-- Staple markers: small vertical rectangles at 1/4 and 3/4 of the centerfold height -->
-  <rect x="398" y="175" width="4" height="18"
-        fill="#7aa838" stroke="none"/>
-  <rect x="398" y="407" width="4" height="18"
-        fill="#7aa838" stroke="none"/>
-
-  <text x="400" y="30" text-anchor="middle" font-family="system-ui, sans-serif"
-        font-size="12" fill="#7aa838" opacity="0.5">PAGE QUALITY (CENTERFOLD)</text>
+  <!-- LEFT page: solid, 3-sided, open toward center -->
+  <polyline points="400,15 32,15 32,584 400,584"
+            fill="none" stroke="#7aa838" stroke-width="6"/>
+  <!-- RIGHT page: dotted, 3-sided, open toward center -->
+  <polyline points="400,15 768,15 768,584 400,584"
+            fill="none" stroke="#7aa838" stroke-width="6"
+            stroke-dasharray="14 14"/>
+  <!-- Staple markers: vertical bars sized to be obvious at this stroke weight -->
+  <rect x="394" y="135" width="12" height="36" fill="#7aa838"/>
+  <rect x="394" y="429" width="12" height="36" fill="#7aa838"/>
 </svg>

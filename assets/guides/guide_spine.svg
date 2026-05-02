@@ -1,39 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
-  <rect width="800" height="600" fill="#1a1a1a"/>
-
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
   <!--
-    Spine raking-light guide — REDRAWN from real photo reference.
-    Based on geometry observed in actual low-angle raking shot:
-      Camera is positioned LOW to the table (4–6 inches above the surface),
-      looking nearly along the cover plane at ~15° above horizontal.
-      The comic lies flat, cover up.
+    Spine raking-light guide. Trapezoid representing perspective at low angle:
+      NEAR edge (spine being photographed) = LONG line at bottom of frame.
+      FAR edge (opposite page edge) = SHORTER line in upper portion.
+      The cover surface recedes upward, foreshortened.
 
-    What the user sees in viewfinder:
-      - NEAR edge (the spine, being photographed) = LONG horizontal line at BOTTOM
-        of frame, taking ~85% of viewport width
-      - Cover surface receding UP and AWAY, heavily foreshortened
-      - FAR edge (the page edge on the opposite side) = SHORTER horizontal line
-        positioned in the upper portion of frame, ~60% of near edge width
-      - Total visible vertical span ~33% of viewport (heavy compression at low angle)
-
-    Geometry:
-      Near edge: y=420, x range 60–740 (680px wide)
-      Far edge:  y=220, x range 196–604 (408px wide)
-      Vertical span: 200px (from y=220 to y=420)
-      Sides slope inward going up — perspective convergence
-
-    Note the trapezoid sits in the LOWER-CENTER of the viewport, with empty space
-    above (where the camera frame extends past the comic) and below (where the
-    table surface is in front of the comic). This matches what users actually see.
+    Resized to ~92% width target:
+      Near edge: y=560, x range 32–768 (736 wide)
+      Far edge:  y=170, x range 180–620 (440 wide, 60% of near)
+      Vertical span: 390px (foreshortening more pronounced when scaled up)
   -->
-  <polygon points="60,420 740,420 604,220 196,220"
-           fill="none" stroke="#7aa838" stroke-width="2"/>
-
-  <!-- Small label on the near edge to reinforce orientation: this IS the spine -->
-  <text x="400" y="440" text-anchor="middle"
-        font-family="system-ui, sans-serif" font-size="10"
-        fill="#7aa838" opacity="0.6">SPINE</text>
-
-  <text x="400" y="30" text-anchor="middle" font-family="system-ui, sans-serif"
-        font-size="12" fill="#7aa838" opacity="0.5">SPINE (RAKING LIGHT)</text>
+  <polygon points="32,560 768,560 620,170 180,170"
+           fill="none" stroke="#7aa838" stroke-width="6"
+           stroke-linejoin="round"/>
+  <!-- "SPINE" label inside near edge — bigger now to actually be readable -->
+  <text x="400" y="600" text-anchor="middle" font-family="system-ui, sans-serif"
+        font-size="32" font-weight="700" fill="#7aa838" opacity="0.75">SPINE</text>
 </svg>
