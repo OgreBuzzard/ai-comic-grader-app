@@ -8,33 +8,33 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!--
-  Font system mirrors the locked print label design (see print-label.js
-  DESIGN NOTES). Three fonts:
+  Font system mirrors index.html so the shared RoboGrade panel renders
+  identically on both surfaces:
     - Noto Sans Display @ 62.5% width  → score number, title, issue
-    - Noto Sans Mono   @ 62.5% width  → grade date, ID
-    - Barlow Condensed                 → labels, body text, wordmarks
-  Locking on these specific fonts gives identical rendering across iOS
-  Safari, macOS Chrome, Windows, Android. Browser-default sans-serif
-  drifts heavily across platforms — the same problem we fixed in the
-  label design.
+    - Barlow Condensed                 → labels, body, identity text
+    - IBM Plex Mono falls back to Menlo via system stack (matches index.html)
 -->
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Display:wdth,wght@62.5..100,500;700;900&family=Noto+Sans+Mono:wdth,wght@62.5,700;62.5,800&family=Barlow+Condensed:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Display:wdth,wght@62.5..100,500;700;900&family=Barlow+Condensed:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<!-- Shared RoboGrade panel renderer (S12). Same module index.html uses for
+     the detail view. Edit only at /robograde-panel.js. -->
+<script src="/robograde-panel.js"></script>
+
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    /* Palette: same as the locked print label */
     --ink:       #0d0d0f;
-    --paper:    #f5f3ee;
-    --sage:      #d4d9be;  /* label background */
-    --olive:     #1a2208;  /* score-box background */
-    --olive-mid: #3a5010;
-    --olive-lt:  #6a8030;  /* "ROBOGRADE" wordmark color */
-    --chartreuse:#b8d820;  /* score number color */
+    --paper:     #f5f3ee;
     --mid:       #6a7a5a;
     --light:     #9aaa7a;
     --rule:      #b0b89a;
     --warn:      #c84a4a;
+    /* Mascot greens — match detail view's palette so the integrity pill
+       and any other accents tie into the RoboGrade panel visually. */
+    --olive-deep: #152e10;
+    --olive-mid:  #4a7028;
+    --olive-lt:   #7aa838;
   }
 
   html { background: var(--paper); color: var(--ink); }
@@ -50,480 +50,178 @@
 
   header {
     width: 100%;
-    background: var(--olive);
-    padding: 14px 24px;
+    max-width: 720px;
+    padding: 18px 20px 12px;
     display: flex;
+    justify-content: center;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
   }
-
   .wordmark {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-weight: 800;
-    font-size: 22px;
-    color: var(--chartreuse);
-    letter-spacing: 3px;
-    text-transform: uppercase;
-    line-height: 1;
+    font-family: 'Noto Sans Display', sans-serif;
+    font-stretch: 62.5%;
+    font-weight: 900;
+    font-size: 28px;
+    letter-spacing: 0.02em;
+    color: var(--ink);
+    text-align: center;
   }
-
   .wordmark span {
-    color: var(--olive-lt);
-    font-weight: 600;
-    font-size: 10px;
-    letter-spacing: 2.5px;
     display: block;
-    margin-top: 4px;
-  }
-
-  .disclaimer {
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 10px;
-    color: var(--olive-lt);
-    letter-spacing: 0.5px;
-    text-align: right;
-    max-width: 240px;
-    line-height: 1.5;
+    font-stretch: 100%;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--mid);
+    margin-top: 2px;
   }
 
   .content {
     width: 100%;
-    max-width: 680px;
+    max-width: 720px;
     padding: 0 16px;
   }
 
-  /* ── Hero: score box + book identity ── */
-  .hero {
-    display: flex;
-    align-items: flex-start;
-    gap: 20px;
-    padding: 32px 0 24px;
-    border-bottom: 1px solid var(--rule);
-    margin-bottom: 24px;
-  }
-
-  .score-box {
-    background: var(--olive);
-    border-radius: 18px;
-    width: 130px;
-    height: 130px;
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-  }
-
-  .score-wordmark {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--olive-lt);
-    letter-spacing: 2.5px;
-    text-transform: uppercase;
-    position: absolute;
-    top: 12px;
-  }
-
-  .score-num {
+  /* Identity block — title, issue + date, publisher. Mirrors detail view's
+     title block layout and typography. Sits above the RoboGrade panel. */
+  .identity { margin: 14px 0 18px; }
+  .identity .book-title {
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
+    font-size: 28px;
     font-weight: 900;
-    font-size: 76px;
-    color: var(--chartreuse);
-    line-height: 1;
-  }
-
-  .score-prec {
-    position: absolute;
-    top: 38px;
-    right: 14px;
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--chartreuse);
-    opacity: 0.92;
-    line-height: 1;
-  }
-
-  .score-version {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 10px;
-    color: var(--olive-lt);
-    font-weight: 500;
-    position: absolute;
-    bottom: 10px;
-    letter-spacing: 1px;
-  }
-
-  .hero-info {
-    flex: 1;
-    padding-top: 4px;
-    min-width: 0;
-  }
-
-  .book-title {
-    font-family: 'Noto Sans Display', sans-serif;
-    font-stretch: 62.5%;
-    font-weight: 900;
-    font-size: 30px;
     color: var(--ink);
     line-height: 1.1;
-    margin-bottom: 6px;
-    word-wrap: break-word;
   }
-
-  .book-issue-row {
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-    flex-wrap: wrap;
-    margin-bottom: 8px;
+  .identity .issue-row {
+    display: flex; align-items: baseline; gap: 10px;
+    flex-wrap: wrap; margin-top: 6px;
   }
-
-  .book-issue {
+  .identity .book-issue {
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
-    font-size: 18px;
-    font-weight: 600;
+    font-size: 18px; font-weight: 600;
     color: #3a2e24;
   }
-
-  .book-date {
+  .identity .book-date {
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--mid);
+    font-size: 16px; font-weight: 600;
+    color: #7a6a5a;
   }
-
-  .book-printing {
+  .identity .book-publisher {
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--mid);
-    margin-bottom: 12px;
+    font-size: 14px; font-weight: 500;
+    color: #8a7a6a; margin-top: 4px;
   }
 
-  .pq-badge {
-    display: inline-block;
-    margin-top: 8px;
-    padding: 4px 12px;
-    background: #e8e4d8;
-    border: 1px solid var(--rule);
-    border-radius: 4px;
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--mid);
-    letter-spacing: 1.5px;
-    text-transform: uppercase;
-  }
-
-  .meta-grid {
-    display: grid;
-    grid-template-columns: max-content max-content;
-    column-gap: 14px;
-    row-gap: 4px;
-    align-items: baseline;
-    margin-top: 16px;
-  }
-
-  .meta-label {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--light);
-    letter-spacing: 1.5px;
-    text-transform: uppercase;
-    text-align: right;
-  }
-
-  .meta-value {
-    font-family: 'Noto Sans Mono', monospace;
-    font-size: 13px;
-    font-weight: 800;
-    color: var(--ink);
-    letter-spacing: 0.5px;
-  }
-
-  /* ── Section headers ── */
-  .section-header {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--light);
-    letter-spacing: 3px;
-    text-transform: uppercase;
-    margin-bottom: 12px;
-    padding-bottom: 6px;
-    border-bottom: 1px solid var(--rule);
-  }
-
-  /* ── Component breakdown (v2.0 additive) ── */
-  .breakdown {
-    margin-bottom: 32px;
-  }
-
-  .score-formula {
-    background: var(--sage);
-    border-radius: 8px;
-    padding: 14px 18px;
-    margin-bottom: 18px;
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 14px;
-    color: var(--mid);
-    line-height: 1.6;
-  }
-
-  .score-formula strong {
-    color: var(--olive);
-    font-weight: 700;
-  }
-
-  .formula-line {
-    font-family: 'Noto Sans Mono', monospace;
-    font-weight: 700;
-    color: var(--olive);
-    font-size: 13px;
-    margin-top: 6px;
-    letter-spacing: 0.3px;
-  }
-
-  .formula-result {
-    font-family: 'Noto Sans Mono', monospace;
-    font-weight: 800;
-    color: var(--olive);
-    font-size: 15px;
-    letter-spacing: 0.3px;
-  }
-
-  .component-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    padding: 12px 0;
-    border-bottom: 1px solid #e8e4d8;
-    gap: 12px;
-  }
-
-  .component-row:last-child { border-bottom: none; }
-
-  .component-label {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--ink);
-    min-width: 110px;
-    letter-spacing: 0.5px;
-  }
-
-  .component-cap {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 11px;
-    color: var(--light);
-    font-weight: 500;
-    margin-left: 6px;
-  }
-
-  .component-score {
-    font-family: 'Noto Sans Mono', monospace;
-    font-size: 16px;
-    font-weight: 800;
-    color: var(--olive);
-    letter-spacing: 0.5px;
-    flex-shrink: 0;
-  }
-
-  /* ── Defects ── */
-  .defect-list {
-    margin-top: 6px;
-    padding-left: 0;
-    list-style: none;
-  }
-
-  .defect-item {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 6px;
-    padding: 5px 0;
-    border-bottom: 1px solid #eceae4;
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 13px;
-  }
-
-  .defect-item:last-child { border-bottom: none; }
-
-  .defect-severity {
-    display: inline-block;
-    padding: 1px 6px;
-    border-radius: 3px;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    flex-shrink: 0;
-  }
-
-  .sev-high { background: #f4d4d4; color: #8a2a2a; }
-  .sev-med  { background: #f4ead4; color: #8a6a2a; }
-  .sev-low  { background: #e4ecd4; color: #4a6a2a; }
-
-  .defect-type {
-    color: #2a2218;
-    font-weight: 600;
-  }
-
-  .defect-cb {
-    background: var(--warn);
-    color: #fff;
-    font-size: 9px;
-    font-weight: 700;
-    padding: 1px 4px;
-    border-radius: 2px;
-    letter-spacing: 0.5px;
-  }
-
-  .defect-meta {
-    color: var(--mid);
-    font-size: 12px;
-  }
-
-  .no-defects {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 13px;
-    color: var(--light);
-    font-style: italic;
-    padding: 8px 0;
-  }
-
-  /* ── Photos ── */
-  .images-section {
-    margin-bottom: 32px;
-  }
-
-  /* Integrity badge (S12) — paper-aesthetic version of the index.html pill.
-     Both states render here (verified + unverified). Sits beside the Photos
-     section header, right-aligned. Verified uses olive on sage; unverified
-     uses muted amber — desaturated from --warn so the page doesn't read as
-     "error", just "informational warning". */
+  /* Photos section — mirrors detail view's image gallery layout.
+     Index 0 = front cover, 1 = back cover, 2 = page-quality interior,
+     3 = spine. */
+  .photos-section { margin-top: 18px; }
   .photos-header-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 12px;
-    padding-bottom: 6px;
-    border-bottom: 1px solid var(--rule);
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 10px;
   }
-  .photos-header-row .section-header {
-    margin-bottom: 0;
-    padding-bottom: 0;
-    border-bottom: none;
-  }
-  .integrity-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    border-radius: 10px;
+  .photos-header {
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.3px;
-    user-select: none;
+    font-size: 12px; font-weight: 700;
+    color: var(--mid);
+    letter-spacing: 0.18em; text-transform: uppercase;
   }
+  .image-stack { display: flex; flex-direction: column; gap: 6px; }
+  .image-stack img.detail-cover,
+  .image-stack img.photo-spine {
+    width: 100%; display: block; border-radius: 4px;
+    background: #f0eee8; cursor: pointer;
+  }
+
+  /* Corner-macro grid (high-grade only). 2×2 grid mirrors detail view. */
+  .corner-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+    margin-top: 6px;
+  }
+  .corner-grid .corner-tile { position: relative; }
+  .corner-grid img {
+    width: 100%; display: block; border-radius: 4px;
+    background: #f0eee8; cursor: pointer;
+  }
+  .corner-grid .corner-label {
+    position: absolute; top: 4px; left: 6px;
+    font-size: 9px; font-weight: 700;
+    color: #fff; background: rgba(0, 0, 0, 0.55);
+    padding: 2px 6px; border-radius: 3px;
+    letter-spacing: 0.05em;
+    font-family: 'Barlow Condensed', sans-serif;
+  }
+
+  /* Integrity pill — matches detail view's olive-on-sage / muted-amber
+     styling so verified books read instantly as legit and unverified
+     books carry visible weight. */
+  .integrity-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 12px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 11px; font-weight: 600;
+    letter-spacing: 0.5px; line-height: 1.3;
+  }
+  .integrity-icon { font-size: 12px; line-height: 1; }
   .integrity-verified {
-    background: var(--sage);
-    color: #2a3a18;
-    border: 1px solid var(--olive-lt);
+    background: #d4d9be; color: #3a4a18; border: 1px solid #a8b890;
   }
   .integrity-unverified {
-    background: #f0e2c4;
-    color: #6a4a18;
-    border: 1px solid #c8a868;
-  }
-  .integrity-icon { font-size: 13px; line-height: 1; }
-
-  .image-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
+    background: #f4e8cc; color: #8a6a18; border: 1px solid #c8b880;
   }
 
-  .image-grid img {
-    width: 100%;
-    display: block;
-    background: var(--sage);
-    object-fit: cover;
-    aspect-ratio: 3/4;
-  }
-
-  .image-grid img:first-child {
-    grid-column: 1 / -1;
-    aspect-ratio: 3/4;
-  }
-
-  /* ── States (loading / error) ── */
-  .state {
-    text-align: center;
-    padding: 80px 24px;
-    color: var(--mid);
-  }
-
-  .state-icon {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 48px;
-    font-weight: 800;
-    margin-bottom: 16px;
-    display: block;
-    color: var(--olive-lt);
-  }
-
-  .state-title {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 22px;
-    font-weight: 700;
-    color: var(--ink);
-    margin-bottom: 8px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-  }
-
-  .state-sub {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 14px;
-    line-height: 1.6;
-  }
-
-  /* ── Footer ── */
+  /* Footer disclaimer — sole disclaimer surface (we removed the duplicate
+     at the top). Same warm-paper aesthetic. */
   footer {
-    width: 100%;
-    max-width: 680px;
-    padding: 24px 16px 0;
-    border-top: 1px solid var(--rule);
+    margin-top: 28px; padding: 18px 16px;
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 12px;
-    color: var(--mid);
-    line-height: 1.7;
+    font-size: 12px; color: var(--mid); line-height: 1.55;
     text-align: center;
+    border-top: 1px solid var(--rule);
+    max-width: 640px; width: 100%;
   }
-
   footer a {
-    color: var(--olive);
-    text-decoration: none;
-    font-weight: 600;
+    color: var(--olive-mid); text-decoration: none; font-weight: 700;
   }
 
-  footer a:hover { text-decoration: underline; }
+  /* Loading / error states. */
+  .state {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 48px 20px; text-align: center; color: var(--mid);
+  }
+  .state-icon { font-size: 36px; margin-bottom: 10px; }
+  .state-title { font-size: 18px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
+  .state-sub { font-size: 13px; line-height: 1.5; }
+
+  /* Lightbox — simple full-screen overlay for clickable image enlargement.
+     No pinch-zoom (kept light), just tap-to-open and tap-anywhere-to-close. */
+  #lightbox {
+    position: fixed; inset: 0;
+    background: rgba(0, 0, 0, 0.92);
+    display: none; align-items: center; justify-content: center;
+    z-index: 1000; padding: 20px; cursor: pointer;
+  }
+  #lightbox.show { display: flex; }
+  #lightbox img {
+    max-width: 100%; max-height: 100%;
+    object-fit: contain; display: block;
+  }
+  #lightbox .close-hint {
+    position: absolute; top: 16px; right: 18px;
+    color: rgba(255, 255, 255, 0.7);
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 14px; letter-spacing: 0.1em; text-transform: uppercase;
+    pointer-events: none;
+  }
 
   @media (max-width: 480px) {
-    .hero { flex-direction: column; align-items: flex-start; gap: 16px; }
-    .score-box { width: 110px; height: 110px; }
-    .score-num { font-size: 62px; }
-    .book-title { font-size: 24px; }
+    .identity .book-title { font-size: 24px; }
+    .identity .book-issue { font-size: 16px; }
+    .identity .book-date  { font-size: 14px; }
   }
 </style>
 </head>
@@ -534,7 +232,6 @@
     Robograder
     <span>AI Comic Assessment</span>
   </div>
-  <div class="disclaimer">Not affiliated with CGC, PSA,<br>or any official grading service.</div>
 </header>
 
 <div class="content">
@@ -544,6 +241,12 @@
       <div class="state-title">Loading…</div>
     </div>
   </div>
+</div>
+
+<!-- Lightbox overlay — populated on image click -->
+<div id="lightbox" onclick="this.classList.remove('show')">
+  <span class="close-hint">Tap to close</span>
+  <img id="lightbox-img" alt="">
 </div>
 
 <script>
@@ -582,34 +285,6 @@
 
   const rg = data.roboGrade || {};
   const score = rg.score != null ? Math.round(rg.score) : '—';
-  // Precision suffix logic mirrors print-label.js:
-  //   - 100      → no suffix
-  //   - high-grade run    → ±N (small confidence range)
-  //   - initial only ≥ 80 → "+"
-  //   - initial only < 80 → ±N (standard confidence)
-  const highGradeRun = !!data.highGradeUnlocked;
-  let precision = '';
-  if (typeof score === 'number' && score < 100) {
-    if (highGradeRun) {
-      precision = `±${rg.confidenceRange || 3}`;
-    } else if (score >= 80) {
-      precision = '+';
-    } else {
-      precision = `±${rg.confidenceRange || 8}`;
-    }
-  }
-  const pq = data.pageQuality || '';
-  const version = (rg.version || '2.0');
-
-  // Format grade date in viewer's local timezone, MM/DD/YYYY
-  let gradeDateStr = '—';
-  if (data.roboGradeDate) {
-    const d = new Date(data.roboGradeDate);
-    gradeDateStr = d.toLocaleDateString('en-US', {
-      month: '2-digit', day: '2-digit', year: 'numeric',
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
-    });
-  }
 
   document.title = `Robograde ${score} — ${data.title || ''} #${data.issue || ''}`;
 
@@ -620,18 +295,17 @@
       .replace(/>/g, '&gt;');
   }
 
-  // Compact issue-date formatter — mirrors index.html's logic. "April 1962"
-  // → "Apr 1962", "3/63" → "Mar 1963", "Summer 1942" → "Sum 1942".
+  // Compact issue-date formatter — mirrors index.html's logic.
   function formatIssueDateCompact(d) {
     if (!d) return '';
     const s = String(d).trim();
     if (/^[A-Z][a-z]{2,3}\s+\d{4}$/.test(s)) return s;
     const monthAbbrev = {
-      january:'Jan',february:'Feb',march:'Mar',april:'Apr',may:'May',june:'Jun',
-      july:'Jul',august:'Aug',september:'Sep',october:'Oct',november:'Nov',december:'Dec',
-      spring:'Spr',summer:'Sum',fall:'Fall',autumn:'Fall',winter:'Win'
+      january: 'Jan', february: 'Feb', march: 'Mar', april: 'Apr', may: 'May', june: 'Jun',
+      july: 'Jul', august: 'Aug', september: 'Sep', october: 'Oct', november: 'Nov', december: 'Dec',
+      spring: 'Spr', summer: 'Sum', fall: 'Fall', autumn: 'Fall', winter: 'Win'
     };
-    const MONTH_BY_NUM = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const MONTH_BY_NUM = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     let m = s.match(/^([A-Za-z\/]+)\s+(\d{4})$/);
     if (m) {
       const key = m[1].toLowerCase();
@@ -648,156 +322,94 @@
     return s;
   }
 
-  // ── Defect rendering (v2.0 schema) ────────────────────────────
-  // v2.0 defects have: type, location, measurement, severity (High/Med/Low),
-  // colorBreaking (boolean), category (Front|Back|Spine|Interior).
-  function renderDefectsForCategory(defects, category, label) {
-    const filtered = (defects || []).filter(d => d.category === category);
-    if (filtered.length === 0) {
-      return `<div class="no-defects">No defects recorded.</div>`;
-    }
-    return `<ul class="defect-list">${filtered.map(d => `
-      <li class="defect-item">
-        <span class="defect-severity sev-${(d.severity || 'low').toLowerCase()}">${esc(d.severity || 'Low')}</span>
-        <span class="defect-type">${esc(d.type || '')}</span>
-        ${d.colorBreaking ? '<span class="defect-cb">CB</span>' : ''}
-        ${d.location ? `<span class="defect-meta">· ${esc(d.location)}</span>` : ''}
-        ${d.measurement ? `<span class="defect-meta">· ${esc(d.measurement)}</span>` : ''}
-      </li>`).join('')}</ul>`;
+  // Issue formatter — strips leading "#" if present so we render it ourselves.
+  function formatIssue(issue) {
+    const s = String(issue || '').trim();
+    return s.startsWith('#') ? s : `#${s}`;
   }
 
-  // ── v2.0 score formula explanation ────────────────────────────
-  // Robograde v2.0 is additive, not weighted:
-  //   Front (0-50) + Back (0-20) + Spine (0-20) + Interior (0-10) = score (0-100)
-  const fs  = rg.frontScore    != null ? rg.frontScore    : 0;
-  const bs  = rg.backScore     != null ? rg.backScore     : 0;
-  const sps = rg.spineScore    != null ? rg.spineScore    : 0;
-  const is  = rg.interiorScore != null ? rg.interiorScore : 0;
-  const total = (typeof score === 'number') ? score : '—';
+  // Identity block (title, issue, date, publisher). Cert numbers (cgcCert /
+  // psaCert) intentionally omitted — public surface should not associate
+  // Robograder with CGC/PSA brand identity.
+  const identityHTML = `
+    <div class="identity">
+      <div class="book-title">${esc(data.title || '—')}</div>
+      ${(data.issue || data.issueDate) ? `<div class="issue-row">
+        ${data.issue ? `<span class="book-issue">${esc(formatIssue(data.issue))}</span>` : ''}
+        ${data.issueDate ? `<span class="book-date">${esc(formatIssueDateCompact(data.issueDate))}</span>` : ''}
+      </div>` : ''}
+      ${data.publisher ? `<div class="book-publisher">${esc(data.publisher)}</div>` : ''}
+    </div>
+  `;
 
-  const formulaHTML = (rg.frontScore != null) ? `
-    <div class="score-formula">
-      <strong>Score formula (Robograde v${esc(version)})</strong>
-      <div class="formula-line">
-        Front (0–50) + Back (0–20) + Spine (0–20) + Interior (0–10)
-      </div>
-      <div class="formula-line">
-        ${fs} + ${bs} + ${sps} + ${is} =
-        <span class="formula-result">${total} / 100</span>
-      </div>
-    </div>` : '';
-
-  // ── Photos ────────────────────────────────────────────────────
-  // Integrity pill (S12). lookup.js computes verificationState server-side
-  // ('verified' | 'unverified' | 'empty'). Public surface renders BOTH the
-  // verified and unverified states — this is where the integrity signal
-  // actually matters to a buyer evaluating the listing. 'empty' renders
-  // nothing (rare — pre-assessment record with public link, edge case).
+  // Integrity pill — verified state in olive-on-sage, unverified in muted
+  // amber. Public surface renders BOTH states.
   const buildIntegrityPill = (state) => {
     if (state === 'verified') {
       return `<div class="integrity-pill integrity-verified" title="All assessed photos were captured in-app">
-        <span class="integrity-icon">📷</span>
-        <span>Verified: in-app photos</span>
+        <span class="integrity-icon">📷</span><span>Verified: in-app photos</span>
       </div>`;
     }
     if (state === 'unverified') {
       return `<div class="integrity-pill integrity-unverified" title="At least one assessed photo was uploaded from outside the app">
-        <span class="integrity-icon">⚠</span>
-        <span>Unverified: photos captured outside of app</span>
+        <span class="integrity-icon">⚠</span><span>Unverified: photos from outside app</span>
       </div>`;
     }
     return '';
   };
   const integrityPillHTML = buildIntegrityPill(data.verificationState);
 
-  const imagesHTML = (data.images && data.images.length > 0) ? `
-    <div class="images-section">
-      <div class="photos-header-row">
-        <div class="section-header">Photos</div>
-        ${integrityPillHTML}
+  // Photo gallery — mirrors detail view's layout.
+  // Index 0=front, 1=back, 2=page-quality interior, 3=spine.
+  // All clickable to open lightbox.
+  const photoBlock = (() => {
+    if (!data.images || data.images.length === 0) return '';
+    const imgs = data.images;
+    let inner = '';
+    if (imgs[0]) inner += `<img class="detail-cover" src="${esc(imgs[0])}" alt="Front cover" loading="eager" decoding="async" onclick="openLightbox('${esc(imgs[0])}')">`;
+    if (imgs[1]) inner += `<img class="detail-cover" src="${esc(imgs[1])}" alt="Back cover" loading="eager" decoding="async" onclick="openLightbox('${esc(imgs[1])}')">`;
+    if (imgs[2]) inner += `<img class="detail-cover" src="${esc(imgs[2])}" alt="Page quality interior" loading="eager" decoding="async" onclick="openLightbox('${esc(imgs[2])}')">`;
+    if (imgs[3]) inner += `<img class="photo-spine" src="${esc(imgs[3])}" alt="Spine" loading="eager" decoding="async" onclick="openLightbox('${esc(imgs[3])}')">`;
+    return `
+      <div class="photos-section">
+        <div class="photos-header-row">
+          <div class="photos-header">Photos</div>
+          ${integrityPillHTML}
+        </div>
+        <div class="image-stack">${inner}</div>
       </div>
-      <div class="image-grid">
-        ${data.images.map((src, i) =>
-          `<img src="${esc(src)}" alt="Photo ${i+1}" loading="lazy" decoding="async">`
-        ).join('')}
-      </div>
-    </div>` : '';
+    `;
+  })();
 
-  // ── Restoration flags + assessment notes ──────────────────────
-  const restorationHTML = (rg.restorationFlags && rg.restorationFlags.length)
-    ? `<div style="margin-top:14px;padding:10px 14px;background:#f4d4d4;border-left:4px solid var(--warn);border-radius:4px;font-family:'Barlow Condensed',sans-serif;font-size:13px;color:#8a2a2a"><strong>Restoration flags:</strong> ${rg.restorationFlags.map(esc).join(', ')}</div>`
-    : '';
+  // Corner macros (high-grade only). 2×2 row-major grid:
+  //   index 0=TL, 1=TR, 2=BL, 3=BR
+  // Reconstructs the front cover layout when corners were captured properly.
+  const cornerBlock = (() => {
+    if (!data.highGradeUnlocked || !data.cornerImages || data.cornerImages.length === 0) return '';
+    const ci = data.cornerImages;
+    const labels = ['Top Left', 'Top Right', 'Bottom Left', 'Bottom Right'];
+    let tiles = '';
+    for (let i = 0; i < 4; i++) {
+      if (ci[i]) {
+        tiles += `<div class="corner-tile">
+          <img src="${esc(ci[i])}" alt="${labels[i]} corner" loading="lazy" decoding="async" onclick="openLightbox('${esc(ci[i])}')">
+          <div class="corner-label">${labels[i].toUpperCase()}</div>
+        </div>`;
+      }
+    }
+    return `<div class="corner-grid">${tiles}</div>`;
+  })();
 
-  const assessmentNotesHTML = rg.assessmentNotes
-    ? `<div style="margin-top:18px;font-family:'Barlow Condensed',sans-serif;font-size:14px;color:var(--mid);line-height:1.7;font-style:italic">${esc(rg.assessmentNotes)}</div>`
-    : '';
+  // Render the RoboGrade panel via the shared module. The function takes the
+  // roboGrade subobject and the full record (for highGradeUnlocked, dates,
+  // ID). Public's `data` shape mirrors what the module expects.
+  const robogradePanelHTML = window.RobograderPanel.buildDisplay(rg, data);
 
-  // ── Render ────────────────────────────────────────────────────
   app.innerHTML = `
-    <div class="hero">
-      <div class="score-box">
-        <div class="score-wordmark">Robograde</div>
-        <div class="score-num">${score}</div>
-        ${precision ? `<div class="score-prec">${precision}</div>` : ''}
-        <div class="score-version">V${esc(version)}</div>
-      </div>
-      <div class="hero-info">
-        <div class="book-title">${esc(data.title || '—')}</div>
-        ${(data.issue || data.issueDate) ? `<div class="book-issue-row">
-          ${data.issue ? `<span class="book-issue">#${esc(data.issue)}</span>` : ''}
-          ${data.issueDate ? `<span class="book-date">${esc(formatIssueDateCompact(data.issueDate))}</span>` : ''}
-        </div>` : ''}
-        ${data.printing ? `<div class="book-printing">${esc(data.printing)}</div>` : ''}
-        ${pq ? `<div class="pq-badge">Pages: ${esc(pq)}</div>` : ''}
-        <div class="meta-grid">
-          <span class="meta-label">Graded</span><span class="meta-value">${gradeDateStr}</span>
-          <span class="meta-label">ID</span><span class="meta-value">${esc(data.roboGradeId || id)}</span>
-        </div>
-      </div>
-    </div>
-
-    ${imagesHTML}
-
-    <div class="breakdown">
-      <div class="section-header">Robograde Breakdown</div>
-      ${formulaHTML}
-
-      <div class="component-row">
-        <div style="flex:1;min-width:0">
-          <div class="component-label">Front Cover<span class="component-cap">/ 50</span></div>
-          ${renderDefectsForCategory(rg.defects, 'Front', 'front cover')}
-        </div>
-        <div class="component-score">${fs}</div>
-      </div>
-
-      <div class="component-row">
-        <div style="flex:1;min-width:0">
-          <div class="component-label">Back Cover<span class="component-cap">/ 20</span></div>
-          ${renderDefectsForCategory(rg.defects, 'Back', 'back cover')}
-        </div>
-        <div class="component-score">${bs}</div>
-      </div>
-
-      <div class="component-row">
-        <div style="flex:1;min-width:0">
-          <div class="component-label">Spine<span class="component-cap">/ 20</span></div>
-          ${renderDefectsForCategory(rg.defects, 'Spine', 'spine')}
-        </div>
-        <div class="component-score">${sps}</div>
-      </div>
-
-      <div class="component-row">
-        <div style="flex:1;min-width:0">
-          <div class="component-label">Interior<span class="component-cap">/ 10</span></div>
-          ${renderDefectsForCategory(rg.defects, 'Interior', 'interior')}
-          ${rg.stapleCondition ? `<div style="margin-top:8px;font-family:'Barlow Condensed',sans-serif;font-size:12px;color:var(--mid)"><strong>Staples:</strong> ${esc(rg.stapleCondition)}</div>` : ''}
-        </div>
-        <div class="component-score">${is}</div>
-      </div>
-
-      ${restorationHTML}
-      ${assessmentNotesHTML}
-    </div>
+    ${identityHTML}
+    ${robogradePanelHTML}
+    ${photoBlock}
+    ${cornerBlock}
   `;
 
   document.querySelector('.content').insertAdjacentHTML('beforeend', `
@@ -812,6 +424,14 @@
   `);
 
 })();
+
+// Lightbox open — exposed at top level so onclick handlers can call it.
+function openLightbox(src) {
+  const lb = document.getElementById('lightbox');
+  const img = document.getElementById('lightbox-img');
+  img.src = src;
+  lb.classList.add('show');
+}
 </script>
 </body>
 </html>
