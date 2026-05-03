@@ -100,6 +100,12 @@ export default async function handler(req, res) {
       .map(e => (typeof e === 'string' ? e : (e && e.url) || null))
       .filter(Boolean);
 
+    // Corner macros — exposed on public surface so the high-grade 2×2 grid
+    // can render. Same shape normalization as main images.
+    const flatCornerImages = cornerEntries
+      .map(e => (typeof e === 'string' ? e : (e && e.url) || null))
+      .filter(Boolean);
+
     // Verification check — combines main + corner. Every assessed photo must
     // be source:'camera'. Any string entry (legacy, pre-metadata) counts as
     // upload. Empty arrays return 'empty' (rendered as nothing on the public
@@ -123,8 +129,10 @@ export default async function handler(req, res) {
       title:             comic.title || '',
       issue:             comic.issue || '',
       issueDate:         comic.issueDate || '',
+      publisher:         comic.publisher || '',
       printing:          comic.printing || null,
       images:            flatImages,
+      cornerImages:      flatCornerImages,
       // Page quality is condition info, not personal — include it
       pageQuality:       comic.pageQuality || '',
       highGradeUnlocked: comic.highGradeUnlocked || false,
