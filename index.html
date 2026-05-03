@@ -335,9 +335,83 @@
     /* Bottom controls. Capture button is centered absolutely so the upload
        link doesn't push it off-center. Bottom inset for safe area. */
     #camera-controls { position: relative; padding: 20px 16px calc(env(safe-area-inset-bottom, 0px) + 24px); background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0) 100%); min-height: 110px; }
-    #camera-capture { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 76px; height: 76px; min-width: 76px; min-height: 76px; max-width: 76px; max-height: 76px; border-radius: 50%; background: #fff; border: 5px solid rgba(255,255,255,0.4); cursor: pointer; padding: 0; box-shadow: 0 0 0 2px rgba(0,0,0,0.4); transition: transform 0.1s; box-sizing: content-box; }
-    #camera-capture:active { transform: translate(-50%, -50%) scale(0.92); }
+    /* iOS-style capture button: outer ring + inner solid white circle.
+       The outer ring is the touchable button; the inner circle is a pseudo-
+       element that shrinks slightly on press. ::before draws the inner circle
+       absolutely-centered so the button itself remains a clean target. */
+    #camera-capture {
+      position: absolute; left: 50%; top: 50%;
+      transform: translate(-50%, -50%);
+      width: 80px; height: 80px;
+      min-width: 80px; min-height: 80px;
+      max-width: 80px; max-height: 80px;
+      border-radius: 50%;
+      background: transparent;
+      border: 4px solid rgba(255,255,255,0.95);
+      cursor: pointer;
+      padding: 0;
+      box-shadow: 0 0 0 2px rgba(0,0,0,0.4);
+      transition: transform 0.1s;
+      box-sizing: border-box;
+    }
+    #camera-capture::before {
+      content: '';
+      position: absolute;
+      left: 50%; top: 50%;
+      transform: translate(-50%, -50%);
+      width: 64px; height: 64px;
+      border-radius: 50%;
+      background: #fff;
+      transition: transform 0.1s, background 0.1s;
+    }
+    #camera-capture:active::before { transform: translate(-50%, -50%) scale(0.85); background: #d8d8d8; }
     #camera-capture:disabled { opacity: 0.5; cursor: not-allowed; }
+    /* Shutter flash overlay (S12). Briefly cuts the viewfinder to black on
+       capture as feedback. iOS-camera convention: a quick black-frame flash
+       takes the place of a shutter sound (which we deliberately don't play —
+       sounds are problematic in PWA contexts). 80ms feels snappy without
+       being subliminal. */
+    #camera-flash {
+      position: absolute; inset: 0;
+      background: #000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 80ms ease-out;
+      z-index: 5;
+    }
+    #camera-flash.flash { opacity: 1; transition: none; }
+    /* Lens selector (S12). Floating row of pill buttons in the lower-right
+       quadrant of the stage when multiple rear lenses are detected (iPhone
+       Pro models with telephoto). Hidden when only one rear lens exists.
+       Positioned just above the controls bar, right side, so it doesn't
+       compete with the capture button or upload-instead button. */
+    #camera-lens-selector {
+      position: absolute;
+      right: 16px;
+      bottom: 130px;
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+      z-index: 6;
+    }
+    #camera-lens-selector.show { display: flex; }
+    .lens-btn {
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      background: rgba(0,0,0,0.55);
+      border: 1px solid rgba(255,255,255,0.25);
+      color: #fff;
+      font-size: 13px; font-weight: 700;
+      cursor: pointer;
+      padding: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .lens-btn.active {
+      background: rgba(255,255,255,0.95);
+      color: #000;
+      border-color: #fff;
+    }
+    .lens-btn:active { transform: scale(0.92); }
     /* Upload-instead anchored to the left, doesn't fight capture button for layout. */
     #camera-upload-link { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.25); color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; letter-spacing: 0.3px; cursor: pointer; max-width: calc(50% - 60px); line-height: 1.2; }
     #camera-upload-link:active { background: rgba(0,0,0,0.75); }
@@ -840,6 +914,8 @@
   <div id="camera-stage">
     <video id="camera-video" autoplay playsinline muted></video>
     <div id="camera-guide"></div>
+    <div id="camera-flash"></div>
+    <div id="camera-lens-selector"></div>
     <div id="camera-header">
       <div id="camera-progress"></div>
       <button id="camera-close" onclick="cameraExit()" aria-label="Exit camera">×</button>
@@ -853,7 +929,7 @@
     </div>
   </div>
   <div id="camera-controls">
-    <button id="camera-upload-link" onclick="cameraUploadInstead()">Upload<br>Instead</button>
+    <button id="camera-upload-link" onclick="cameraUploadInstead()">Photo<br>Library</button>
     <button id="camera-capture" onclick="cameraCapture()" aria-label="Capture photo"></button>
   </div>
 </div>
@@ -2349,6 +2425,14 @@ function showDetail(id){
     }
     if (showPQ) {
       html += `<div style="display:flex;justify-content:center">${buildPQBox(selected.pageQuality)}</div>`;
+    }
+    // Non-affiliation disclaimer (S12). Renders only when we're actually
+    // showing CGC/PSA grade predictions — not when the box is just PQ.
+    // Plain, factual, brief. Sized small so it sits as a footnote, not a
+    // warning. The intent is making implied endorsement legally untenable
+    // for any reasonable observer of the surface.
+    if (predictionBoxes.length > 0) {
+      html += `<div style="font-size:10px;color:#6a5a4a;text-align:center;width:100%;line-height:1.4;margin-top:2px;font-style:italic">Independent prediction. Robograder is not affiliated with CGC or PSA.</div>`;
     }
     html += `</div>`;
   }
@@ -5522,16 +5606,13 @@ window._cameraSupported = (() => {
   return isMobileUA && hasGetUserMedia;
 })();
 
-// SVG guide source paths. Indexed by STORAGE INDEX (not capture order).
-// Files live in assets/guides/ and are served as static assets by Vercel.
+// Camera labels — full text for the modal header at top of screen, and short
+// text for the in-SVG slot labels generated by buildGuideSVG().
 //   index 0 = TL, 1 = TR, 2 = BL, 3 = BR  (row-major; matches detail-view grid)
-const CAMERA_GUIDE_MAIN   = ['guide_comic.svg','guide_comic.svg','guide_pq.svg','guide_spine.svg'];
-const CAMERA_GUIDE_CORNER = ['guide_corner_tl.svg','guide_corner_tr.svg','guide_corner_bl.svg','guide_corner_br.svg'];
 const CAMERA_LABEL_MAIN   = ['Front Cover','Back Cover','Page Quality','Spine (Raking)'];
 const CAMERA_LABEL_CORNER = ['Top Left Corner','Top Right Corner','Bottom Left Corner','Bottom Right Corner'];
-// SHORT labels for the in-SVG slot label that sits under/inside the guide
-// frame. Per-slot, these are what the user actually looks at while framing —
-// the modal header at the top is easy to miss when focused on the subject.
+// SHORT labels for the in-SVG slot label rendered next to the guide frame.
+// Per-slot, these are what the user actually looks at while framing.
 const CAMERA_SHORT_LABEL_MAIN   = ['FRONT', 'BACK', 'PAGE QUALITY', 'SPINE'];
 const CAMERA_SHORT_LABEL_CORNER = ['TOP LEFT', 'TOP RIGHT', 'BOTTOM LEFT', 'BOTTOM RIGHT'];
 
@@ -5621,26 +5702,152 @@ function tapSlot(slotIndex, kind) {
 
 // Open the camera modal with the given state, request camera, attach to video.
 async function cameraOpen(state) {
-  _cameraState = { ...state, stream: null };
+  _cameraState = { ...state, stream: null, lenses: [], currentLensIdx: 0 };
   const modal = document.getElementById('camera-modal');
   const permDialog = document.getElementById('camera-perm-dialog');
   permDialog.classList.remove('show');
   modal.classList.add('open');
   cameraOpenSlot(state.current);
 
-  // Request rear camera. facingMode: 'environment' is a hint — some devices
-  // honor it strictly, others fall back to default. Either way we get a stream.
+  // Lens detection + initial stream.
+  // iOS 16.3+ exposes individual rear lenses (wide/ultrawide/telephoto) as
+  // separate videoinput devices via enumerateDevices. We use this to give
+  // users true OPTICAL zoom by switching lenses (no digital interpolation).
+  // On phones with a single rear camera (e.g., non-Pro iPhones), there's just
+  // one device and the lens selector stays hidden.
+  //
+  // We need permission first before enumerateDevices populates labels — so:
+  //   1. Request basic environment camera (gets permission)
+  //   2. Enumerate devices, filter to rear-facing ones
+  //   3. If multiple, classify by label (wide / 2x / 3x / etc.) and prefer
+  //      the highest optical zoom available as default
+  //   4. Show lens selector UI, switch to chosen lens
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
+    // Step 1: permission-establishing request
+    const initialStream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: 'environment' } },
       audio: false
     });
-    _cameraState.stream = stream;
+    _cameraState.stream = initialStream;
     const video = document.getElementById('camera-video');
-    video.srcObject = stream;
+    video.srcObject = initialStream;
+
+    // Step 2-3: enumerate lenses (after permission so labels are populated)
+    try {
+      const allDevices = await navigator.mediaDevices.enumerateDevices();
+      const videoInputs = allDevices.filter(d => d.kind === 'videoinput');
+      // Heuristic: rear cameras have labels containing "back" or "rear" or
+      // the iOS-specific labels like "Back Camera", "Back Ultra Wide Camera",
+      // "Back Telephoto Camera", "Back Dual Camera". Front cameras say "Front".
+      // If labels are blank (privacy mode), we get no lenses and skip the UI.
+      const rearLenses = videoInputs.filter(d => {
+        const label = (d.label || '').toLowerCase();
+        return label && !label.includes('front') &&
+               (label.includes('back') || label.includes('rear') || label.includes('environment'));
+      });
+      // Classify each rear lens by its zoom level. iOS labels include words
+      // like "Ultra Wide" (0.5x), no qualifier (1x wide), "Telephoto" (2x or
+      // 3x depending on iPhone model). We tag each with a numeric zoom value
+      // for sorting and display.
+      const classified = rearLenses.map(d => {
+        const label = (d.label || '').toLowerCase();
+        let zoom = 1;
+        if (label.includes('ultra wide') || label.includes('ultrawide')) zoom = 0.5;
+        else if (label.includes('telephoto')) {
+          // Telephoto on iPhones: 2x for non-Pro Max older Pros, 3x for newer
+          // Pros and Pro Maxes. Without device-specific knowledge we can't
+          // distinguish, so we tag generically as "tele" and figure out later.
+          zoom = 3;  // optimistic; will display "3x" if it's the only telephoto
+        }
+        return { device: d, zoom, label: d.label };
+      });
+      // Sort ascending by zoom for UI ordering (0.5x, 1x, 3x).
+      classified.sort((a, b) => a.zoom - b.zoom);
+      _cameraState.lenses = classified;
+
+      // Pick default lens: prefer highest zoom available, but never 0.5x
+      // (ultrawide is bad for detail capture). If only ultrawide + 1x, use 1x.
+      // Otherwise prefer the telephoto.
+      let defaultIdx = classified.findIndex(l => l.zoom === 1);  // start at 1x
+      const teleIdx = classified.findIndex(l => l.zoom > 1);
+      if (teleIdx >= 0) defaultIdx = teleIdx;
+      if (defaultIdx < 0) defaultIdx = classified.length - 1;  // fallback to last
+      _cameraState.currentLensIdx = defaultIdx;
+
+      // Render lens-selector UI if more than one rear lens
+      renderLensSelector();
+      // Switch to default lens if it's not the one we already opened
+      if (classified.length > 1 && defaultIdx >= 0) {
+        await switchToLens(defaultIdx);
+      }
+    } catch (enumErr) {
+      console.warn('[camera] enumerate failed:', enumErr);
+      // Non-fatal — initial stream still works, just no lens selector
+    }
   } catch (err) {
     console.warn('[camera] getUserMedia failed:', err);
     permDialog.classList.add('show');
+  }
+}
+
+// Render lens-selector UI based on _cameraState.lenses. Hidden if 0-1 lenses.
+function renderLensSelector() {
+  const sel = document.getElementById('camera-lens-selector');
+  if (!_cameraState || !_cameraState.lenses || _cameraState.lenses.length <= 1) {
+    sel.classList.remove('show');
+    sel.innerHTML = '';
+    return;
+  }
+  // Build buttons: top to bottom = high zoom to low zoom (so closest button
+  // to capture button is the most-used)
+  const buttons = _cameraState.lenses.map((lens, idx) => {
+    const active = (idx === _cameraState.currentLensIdx) ? 'active' : '';
+    const display = lens.zoom < 1
+      ? `${lens.zoom}\u00d7`        // 0.5×
+      : `${Math.round(lens.zoom)}\u00d7`;  // 1×, 3×
+    return `<button class="lens-btn ${active}" data-idx="${idx}" onclick="switchToLens(${idx})">${display}</button>`;
+  }).reverse().join('');  // reverse so high-zoom is on top
+  sel.innerHTML = buttons;
+  sel.classList.add('show');
+}
+
+// Switch to a specific lens by stopping the current stream and starting a new
+// one constrained to the chosen lens's deviceId. This is true optical zoom on
+// devices with multiple physical rear lenses (mostly iPhone Pro models).
+async function switchToLens(idx) {
+  if (!_cameraState || !_cameraState.lenses[idx]) return;
+  const lens = _cameraState.lenses[idx];
+
+  // Stop current stream first to release the camera.
+  if (_cameraState.stream) {
+    _cameraState.stream.getTracks().forEach(t => t.stop());
+  }
+
+  try {
+    const newStream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: { exact: lens.device.deviceId } },
+      audio: false
+    });
+    _cameraState.stream = newStream;
+    _cameraState.currentLensIdx = idx;
+    const video = document.getElementById('camera-video');
+    video.srcObject = newStream;
+    renderLensSelector();  // update active button
+  } catch (err) {
+    console.warn('[camera] lens switch failed, falling back:', err);
+    // Re-acquire any stream we can to avoid leaving the user with a black
+    // screen
+    try {
+      const fallback = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false
+      });
+      _cameraState.stream = fallback;
+      const video = document.getElementById('camera-video');
+      video.srcObject = fallback;
+    } catch (e2) {
+      console.warn('[camera] fallback also failed:', e2);
+    }
   }
 }
 
@@ -5649,31 +5856,20 @@ function cameraOpenSlot(slotIndex) {
   if (!_cameraState) return;
   _cameraState.current = slotIndex;
   const { kind, mode, queue } = _cameraState;
-  const guideFile  = (kind === 'corner' ? CAMERA_GUIDE_CORNER       : CAMERA_GUIDE_MAIN)[slotIndex];
   const label      = (kind === 'corner' ? CAMERA_LABEL_CORNER       : CAMERA_LABEL_MAIN)[slotIndex];
   const shortLabel = (kind === 'corner' ? CAMERA_SHORT_LABEL_CORNER : CAMERA_SHORT_LABEL_MAIN)[slotIndex];
 
-  // Load the SVG inline so it can fill the stage and be styled. Using <img>
-  // would also work but inline gives us the ability to update the slot label
-  // dynamically (and could be used for future stroke color tweaks).
+  // Render the guide programmatically. We measure the camera-stage's actual
+  // pixel dimensions and generate an SVG whose viewBox matches exactly — no
+  // letterboxing inside the SVG. Combined with object-fit:contain on the
+  // video element, this means the guide outline is sized against the visible
+  // camera feed, not against an internal SVG aspect ratio that gets letterbox-
+  // squashed (the prior bug that made guides look small).
   const guideEl = document.getElementById('camera-guide');
-  fetch('/assets/guides/' + guideFile)
-    .then(r => r.text())
-    .then(svgText => {
-      // Strip the dark <rect> background — it's preview-only, transparent in production.
-      const cleaned = svgText.replace(/<rect[^>]*fill="#1a1a1a"[^>]*\/>/, '');
-      guideEl.innerHTML = cleaned;
-      // Inject the short slot label into the SVG's #slot-label element if present.
-      // This lets the comic guide (used for both FRONT and BACK) display the right
-      // label per slot. Guides without a #slot-label element (e.g. spine, which has
-      // its own hardcoded SPINE text) silently no-op.
-      const labelEl = guideEl.querySelector('#slot-label');
-      if (labelEl) labelEl.textContent = shortLabel;
-    })
-    .catch(err => {
-      console.warn('[camera] guide fetch failed:', err);
-      guideEl.innerHTML = '';
-    });
+  const stage = document.getElementById('camera-stage');
+  const W = stage.clientWidth || window.innerWidth;
+  const H = stage.clientHeight || window.innerHeight;
+  guideEl.innerHTML = buildGuideSVG(kind, slotIndex, shortLabel, W, H);
 
   // Header progress text. Walkthrough shows "X of Y — Slot Name"; single mode
   // shows just the slot name.
@@ -5687,12 +5883,217 @@ function cameraOpenSlot(slotIndex) {
   }
 }
 
+// Build the SVG guide for a given slot at the given viewport dimensions.
+// Returns an SVG string. The viewBox matches W×H exactly so coordinates inside
+// are pixel-equivalent to the rendered output. This eliminates the double-
+// letterbox issue that made earlier static SVGs render small.
+//
+// Geometry conventions:
+//   - Comic outline aspect ratio: 6.625 × 10.25 = 0.6463 (W:H)
+//   - All guides use stroke-6 olive-green (#7aa838)
+//   - All guides have 12px corner rounding (rx=12)
+//   - Comic outline target: 98% of viewport height (or width-bounded for landscape)
+//   - Slot label sits OUTSIDE the comic frame (top or bottom depending on guide)
+//   - Stroke and font sizes scale somewhat with viewport; pinned to the smaller
+//     dimension so they don't get monstrous on landscape phones.
+function buildGuideSVG(kind, slotIndex, shortLabel, W, H) {
+  const isLandscape = W > H;
+  // Stroke and font sizes — modest scaling based on the smaller dimension
+  // so they look right on both landscape and portrait orientations.
+  const minDim = Math.min(W, H);
+  const stroke = Math.max(5, Math.round(minDim * 0.012));     // ~6 on 480px
+  const fontSize = Math.max(20, Math.round(minDim * 0.055));  // ~26 on 480px
+  const labelMargin = Math.round(fontSize * 1.6);
+  const stk = `stroke="#7aa838" stroke-width="${stroke}" fill="none"`;
+  const stkRound = `${stk} stroke-linecap="round" stroke-linejoin="round"`;
+  const labelStyle = `font-family="system-ui,sans-serif" font-size="${fontSize}" font-weight="700" fill="#7aa838" opacity="0.85" letter-spacing="${Math.round(fontSize * 0.12)}"`;
+
+  // Dispatch by kind+slot
+  if (kind === 'corner') {
+    return buildCornerGuide(slotIndex, shortLabel, W, H, stroke, fontSize, labelMargin, stk, stkRound, labelStyle);
+  }
+  // Main flow
+  if (slotIndex === 0 || slotIndex === 1) {
+    // FRONT (0) or BACK (1) — comic outline
+    return buildComicGuide(shortLabel, W, H, stroke, fontSize, labelMargin, stk, labelStyle);
+  }
+  if (slotIndex === 2) {
+    // PAGE QUALITY — landscape centerfold
+    return buildPQGuide(shortLabel, W, H, isLandscape, stroke, fontSize, labelMargin, stk, stkRound, labelStyle);
+  }
+  if (slotIndex === 3) {
+    // SPINE — landscape thin-strip
+    return buildSpineGuide(shortLabel, W, H, isLandscape, stroke, fontSize, labelMargin, stk, stkRound, labelStyle);
+  }
+  return '';
+}
+
+// Comic outline (FRONT, BACK). Comic aspect 0.6463. Sized to fill 95% of the
+// SHORTER dimension's worth of space, accounting for label below the frame.
+function buildComicGuide(shortLabel, W, H, stroke, fontSize, labelMargin, stk, labelStyle) {
+  // Available height after reserving space for label below
+  const labelHeight = labelMargin + fontSize + 8;
+  const availH = H - labelHeight;
+  // Comic outline: width = h × 0.6463
+  // We try to fit 96% of available height first, then check if width also fits
+  let h = Math.round(availH * 0.96);
+  let w = Math.round(h * 0.6463);
+  if (w > W * 0.96) {
+    // Width-bound instead
+    w = Math.round(W * 0.96);
+    h = Math.round(w / 0.6463);
+  }
+  const x = Math.round((W - w) / 2);
+  const y = Math.round((availH - h) / 2);
+  const labelY = y + h + labelMargin;
+  const safeLabelY = Math.min(labelY, H - 12);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
+    <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" ry="12" ${stk}/>
+    <text x="${W/2}" y="${safeLabelY}" text-anchor="middle" ${labelStyle}>${shortLabel}</text>
+  </svg>`;
+}
+
+// Page Quality guide. Open centerfold = landscape orientation.
+// Two pages side-by-side. Each page outline is 3-sided, opening toward the
+// centerfold (left page open right; right page open left). Staples on
+// centerfold axis as thin lines (don't obscure actual staples).
+//
+// Label rotation: when phone is portrait, the label is rotated 90° so it
+// reads vertically (sideways). User naturally rotates phone to make label
+// readable; that's the cue to use landscape. When phone IS landscape,
+// label reads horizontally (right-side up).
+function buildPQGuide(shortLabel, W, H, isLandscape, stroke, fontSize, labelMargin, stk, stkRound, labelStyle) {
+  // Open centerfold aspect = 13.25 × 10.25 = 1.293 W:H (landscape)
+  const labelHeight = labelMargin + fontSize + 8;
+  const availH = H - labelHeight;
+  let combinedW = Math.round(W * 0.96);
+  let pageH = Math.round(combinedW / 1.293);
+  if (pageH > availH * 0.96) {
+    pageH = Math.round(availH * 0.96);
+    combinedW = Math.round(pageH * 1.293);
+  }
+  const xLeft = Math.round((W - combinedW) / 2);
+  const xRight = xLeft + combinedW;
+  const xMid = Math.round(W / 2);
+  const yTop = Math.round((availH - pageH) / 2);
+  const yBot = yTop + pageH;
+  // Staples on centerfold axis, at ~1/4 and ~3/4 of pageH
+  const stapleY1 = yTop + Math.round(pageH * 0.22);
+  const stapleY2 = yTop + Math.round(pageH * 0.78);
+  const stapleLen = Math.round(pageH * 0.07);
+  // 3-sided page outlines (open toward centerfold)
+  const cornerR = 12;
+  const labelY = yBot + labelMargin;
+  const safeLabelY = Math.min(labelY, H - 12);
+  // Label rotation cue: vertical when portrait, horizontal when landscape
+  const labelTransform = isLandscape ? '' : `transform="rotate(-90 ${W/2} ${safeLabelY})"`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
+    <path d="M ${xMid},${yTop} L ${xLeft+cornerR},${yTop} Q ${xLeft},${yTop} ${xLeft},${yTop+cornerR} L ${xLeft},${yBot-cornerR} Q ${xLeft},${yBot} ${xLeft+cornerR},${yBot} L ${xMid},${yBot}" ${stk} stroke-linejoin="round"/>
+    <path d="M ${xMid},${yTop} L ${xRight-cornerR},${yTop} Q ${xRight},${yTop} ${xRight},${yTop+cornerR} L ${xRight},${yBot-cornerR} Q ${xRight},${yBot} ${xRight-cornerR},${yBot} L ${xMid},${yBot}" ${stk} stroke-linejoin="round" stroke-dasharray="14 14"/>
+    <line x1="${xMid}" y1="${stapleY1 - stapleLen}" x2="${xMid}" y2="${stapleY1 + stapleLen}" ${stkRound}/>
+    <line x1="${xMid}" y1="${stapleY2 - stapleLen}" x2="${xMid}" y2="${stapleY2 + stapleLen}" ${stkRound}/>
+    <text x="${W/2}" y="${safeLabelY}" text-anchor="middle" ${labelStyle} ${labelTransform}>${shortLabel}</text>
+  </svg>`;
+}
+
+// Spine raking-light guide. LANDSCAPE orientation.
+// Comic lying flat photographed at low angle. Trapezoid represents the spine
+// and a sliver of the cover — NEAR edge (spine) at bottom is the long line,
+// FAR edge (other side of cover) at top is shorter (foreshortened). Height of
+// the trapezoid is much shorter than a full comic since it's just a strip
+// near the spine. Staple markings on the spine edge (bottom long line) help
+// clarify which side is the spine.
+function buildSpineGuide(shortLabel, W, H, isLandscape, stroke, fontSize, labelMargin, stk, stkRound, labelStyle) {
+  // Trapezoid is a STRIP (not a full comic). Use ~30% of viewport height,
+  // centered roughly in the middle so user has framing room above/below.
+  const labelHeight = labelMargin + fontSize + 8;
+  const stripH = Math.round(H * 0.30);
+  // Near (bottom) edge = long: 95% of viewport width
+  const nearW = Math.round(W * 0.95);
+  // Far (top) edge = ~60% of near (perspective foreshortening)
+  const farW = Math.round(nearW * 0.62);
+  // Vertical position: centered with label below
+  const yBot = Math.round((H - labelHeight + stripH) / 2);
+  const yTop = yBot - stripH;
+  const xNearL = Math.round((W - nearW) / 2);
+  const xNearR = xNearL + nearW;
+  const xFarL = Math.round((W - farW) / 2);
+  const xFarR = xFarL + farW;
+  // Staple markings on near edge (the spine edge): two small notches inside
+  // the bottom long line, ~25% and ~75% of way along
+  const stapleX1 = xNearL + Math.round(nearW * 0.25);
+  const stapleX2 = xNearL + Math.round(nearW * 0.75);
+  const stapleSize = Math.max(8, Math.round(stripH * 0.10));
+  const labelY = yBot + labelMargin;
+  const safeLabelY = Math.min(labelY, H - 12);
+  const labelTransform = isLandscape ? '' : `transform="rotate(-90 ${W/2} ${safeLabelY})"`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
+    <polygon points="${xNearL},${yBot} ${xNearR},${yBot} ${xFarR},${yTop} ${xFarL},${yTop}" ${stk} stroke-linejoin="round"/>
+    <line x1="${stapleX1}" y1="${yBot - stapleSize}" x2="${stapleX1}" y2="${yBot + stapleSize}" ${stkRound}/>
+    <line x1="${stapleX2}" y1="${yBot - stapleSize}" x2="${stapleX2}" y2="${yBot + stapleSize}" ${stkRound}/>
+    <text x="${W/2}" y="${safeLabelY}" text-anchor="middle" ${labelStyle} ${labelTransform}>${shortLabel}</text>
+  </svg>`;
+}
+
+// Corner macro guides. L-shape with corner-point near the matching viewport
+// corner. Legs extend nearly to the OPPOSITE viewport edges to encourage tight
+// framing. Label sits at the side OPPOSITE the corner-point so it doesn't
+// overlap the comic surface.
+//
+// slotIndex mapping: 0=TL, 1=TR, 2=BL, 3=BR
+function buildCornerGuide(slotIndex, shortLabel, W, H, stroke, fontSize, labelMargin, stk, stkRound, labelStyle) {
+  // Inset from the viewport edge — small, encouraging the user to fill the
+  // frame with the comic corner.
+  const inset = Math.round(Math.min(W, H) * 0.04);
+  // Leg length — extend to ~94% of viewport in each direction
+  const legX = W - inset - Math.round(W * 0.04);
+  const legY = H - inset - Math.round(H * 0.04);
+  let path, labelX, labelY;
+  switch (slotIndex) {
+    case 0: // TL — corner-point upper-left
+      path = `M ${inset},${legY} L ${inset},${inset + 12} Q ${inset},${inset} ${inset + 12},${inset} L ${legX},${inset}`;
+      // Label at bottom-right (away from corner point)
+      labelX = W * 0.75;
+      labelY = H - labelMargin / 2;
+      break;
+    case 1: // TR — corner-point upper-right
+      path = `M ${legX},${legY} L ${legX},${inset + 12} Q ${legX},${inset} ${legX - 12},${inset} L ${inset},${inset}`;
+      labelX = W * 0.25;
+      labelY = H - labelMargin / 2;
+      break;
+    case 2: // BL — corner-point lower-left
+      path = `M ${inset},${inset} L ${inset},${legY - 12} Q ${inset},${legY} ${inset + 12},${legY} L ${legX},${legY}`;
+      labelX = W * 0.75;
+      labelY = labelMargin;
+      break;
+    case 3: // BR — corner-point lower-right
+      path = `M ${legX},${inset} L ${legX},${legY - 12} Q ${legX},${legY} ${legX - 12},${legY} L ${inset},${legY}`;
+      labelX = W * 0.25;
+      labelY = labelMargin;
+      break;
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
+    <path d="${path}" ${stkRound}/>
+    <text x="${labelX}" y="${labelY}" text-anchor="middle" ${labelStyle}>${shortLabel}</text>
+  </svg>`;
+}
+
 // Capture the current frame from the video stream as a data URL. Stash it on
 // the captures pile, advance to next slot OR exit if walkthrough is complete.
 function cameraCapture() {
   if (!_cameraState || !_cameraState.stream) return;
   const video = document.getElementById('camera-video');
   if (!video.videoWidth || !video.videoHeight) return;
+
+  // Shutter flash — brief black overlay as visual capture confirmation
+  // (S12). 80ms is long enough to be perceived, short enough to feel snappy.
+  // No sound (sounds are problematic in PWA contexts and many users have
+  // their phones muted).
+  const flash = document.getElementById('camera-flash');
+  if (flash) {
+    flash.classList.add('flash');
+    setTimeout(() => flash.classList.remove('flash'), 80);
+  }
 
   // Draw current frame to a canvas at the video's intrinsic resolution.
   // No downscale here — the cropper + processImagesForSave pipeline handle that.
