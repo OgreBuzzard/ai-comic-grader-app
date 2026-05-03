@@ -1327,6 +1327,19 @@ async function initFirebase(){
   await migrateAllItemsToNested();
   await migrateCornerSwap();
   await loadItems();
+
+  // Pre-warm the print-label module so the first Print Label tap doesn't
+  // pay the dynamic-import cost (which would break Safari's user-gesture
+  // chain). Fire-and-forget — if it fails here, the click handler will
+  // retry it lazily.
+  _preloadLabelModule()
+    .then(mod => {
+      // Clear the print queue on every app load — per spec, the queue is
+      // a session-only feature, not persistent across reloads.
+      if (mod && typeof mod.clearLabelQueue === 'function') mod.clearLabelQueue();
+    })
+    .catch(() => { /* tolerated; lazy load on click is the fallback */ });
+
   fsOnSnapshot(userItemsCollection(),snap=>{
     items=snap.docs.map(d=>flattenForApp({id:d.id,...d.data()})).map(c=>({...c,pageQuality:normPageQuality(c.pageQuality)}));
     if(view==="list")renderList();
@@ -2702,12 +2715,28 @@ window.forceImgReflow = function(imgEl) {
 // Print label code lives in /print-label.js — loaded dynamically when needed.
 // Cuts ~6KB / 198 lines from the main bundle for a feature most users invoke
 // rarely, if at all.
+//
+// The module is PRE-WARMED at app init (see _preloadLabelModule below) so
+// the first tap doesn't pay async-import cost. Without pre-warming, Safari
+// breaks the user-gesture chain during the await and the first tap's
+// label modal would either fail to open or pop a popup blocker.
+let _labelModulePromise = null;
+function _preloadLabelModule() {
+  if (!_labelModulePromise) {
+    _labelModulePromise = import('/print-label.js').catch(e => {
+      _labelModulePromise = null;  // allow retry
+      throw e;
+    });
+  }
+  return _labelModulePromise;
+}
+
 async function printLabel(id) {
   const comic = items.find(c => c.id === id);
   if (!comic || !comic.roboGrade) return;
   try {
-    const mod = await import('/print-label.js');
-    mod.printLabelForComic(comic);
+    const mod = await _preloadLabelModule();
+    mod.openLabelViewer(comic, items);
   } catch(e) {
     alert('Failed to load label printer: ' + e.message);
   }
