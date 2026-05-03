@@ -100,8 +100,23 @@ export function printLabelForComic(comic) {
      non-display text. See DESIGN NOTES above for why this matters. */
   @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Display:wdth,wght@62.5..100,500;700;900&family=Noto+Sans+Mono:wdth,wght@62.5,800&family=Barlow+Condensed:wght@400;500;600;700;800&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 20px; font-family: 'Barlow Condensed', sans-serif; }
-  .label-wrap { width: 1152px; height: 288px; position: relative; }
+  body { background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 20px; font-family: 'Barlow Condensed', sans-serif; padding: 20px; }
+  /* Screen preview scaling: label is 1152px wide (Avery 8161 at 288 DPI),
+     wider than most browser windows when not maximized. Scale down for
+     the on-screen preview so the user can see the whole label without
+     horizontal scroll. The transform-origin keeps the label visually
+     centered in its wrapper.
+
+     Print is unaffected — @media print below resets the scale to 1,
+     so the printed output is always at true 4"×1". */
+  .label-wrap { width: 1152px; height: 288px; position: relative; transform: scale(0.6); transform-origin: top center; margin-bottom: -115px; /* compensate for visual height after scaling so action buttons sit close */ }
+  /* Larger displays (≥1280px wide) can show the label at full size. */
+  @media (min-width: 1280px) {
+    .label-wrap { transform: scale(0.85); margin-bottom: -45px; }
+  }
+  @media (min-width: 1500px) {
+    .label-wrap { transform: scale(1); margin-bottom: 0; }
+  }
   .label {
     width: 1152px; height: 288px;
     background: #d4d9be;
@@ -122,8 +137,13 @@ export function printLabelForComic(comic) {
   }
   .rg-word { font-size: 24px; font-weight: 700; color: #6a8030; letter-spacing: 3px; font-family: 'Barlow Condensed', sans-serif; position: absolute; top: 14px; }
   .rg-num { font-size: 148px; font-weight: 900; color: #b8d820; line-height: 1; font-family: 'Noto Sans Display', sans-serif; font-stretch: 62.5%; }
-  /* Precision overlays absolutely so it cannot affect score-number centering */
-  .rg-prec { position: absolute; top: 80px; right: 22px; font-size: 32px; font-weight: 700; color: #b8d820; opacity: 0.92; font-family: 'Barlow Condensed', sans-serif; line-height: 1; }
+  /* Precision overlays absolutely so it cannot affect score-number centering.
+     Uses the Noto Sans Display variable font at 62.5% stretch — same family
+     as the score number — because Barlow Condensed doesn't ship a condensed
+     ± glyph and falls back to system sans for that character, producing
+     mismatched widths between "±" and the digit. Noto Sans Display has
+     the ± at correct condensed width. */
+  .rg-prec { position: absolute; top: 80px; right: 22px; font-size: 32px; font-weight: 700; color: #b8d820; opacity: 0.92; font-family: 'Noto Sans Display', sans-serif; font-stretch: 62.5%; line-height: 1; }
   .rg-v { font-size: 20px; color: #5a7030; font-family: 'Barlow Condensed', sans-serif; font-weight: 500; position: absolute; bottom: 14px; letter-spacing: 1px; }
   /* Info column TOP-anchored; flows downward from there.
      Right boundary at 144px from edge keeps the QR+URL block clear.
@@ -134,8 +154,11 @@ export function printLabelForComic(comic) {
   /* Title font bumped from 32px to 38px to fill the wider label without
      looking sparse. Meta-block fonts also get small bumps for proportion. */
   .ttl { font-size: 38px; font-weight: 900; color: #0d0d0f; line-height: 1.1; font-family: 'Noto Sans Display', sans-serif; font-stretch: 62.5%; }
-  /* Issue + date uses Noto Sans Display 500 (lighter, condensed, contrasts w/ title weight) */
-  .iss { font-size: 26px; font-weight: 500; color: #333; font-family: 'Noto Sans Display', sans-serif; font-stretch: 62.5%; }
+  /* Issue + date: weight 600 (was 500) so it reads with a touch more
+     authority. Issue number and date separated by a flexbox gap rather
+     than inline whitespace so the spacing is consistent and visually
+     deliberate. */
+  .iss { font-size: 26px; font-weight: 600; color: #333; font-family: 'Noto Sans Display', sans-serif; font-stretch: 62.5%; display: flex; gap: 24px; align-items: baseline; }
   .prt { font-size: 20px; color: #555544; font-family: 'Barlow Condensed', sans-serif; font-weight: 500; }
   .info-lower { padding-top: 10px; }
   /* Grid alignment: GRADED and ID right-aligned to same column edge; values left-aligned in their own column */
@@ -164,7 +187,9 @@ export function printLabelForComic(comic) {
   }
   .labels-link a { color: #1a5fa8; text-decoration: underline; }
   @media print {
-    body { margin: 0; background: white; justify-content: flex-start; }
+    body { margin: 0; background: white; justify-content: flex-start; padding: 0; }
+    /* Reset screen-preview scaling — print at true 4"×1" */
+    .label-wrap { transform: none; margin-bottom: 0; }
     .no-print { display: none; }
   }
 </style>
@@ -180,7 +205,7 @@ export function printLabelForComic(comic) {
   <div class="info">
     <div class="info-upper">
       <div class="ttl">${title}</div>
-      <div class="iss">${issue}${issueDate ? '   ' + issueDate : ''}</div>
+      <div class="iss">${issue ? `<span>${issue}</span>` : ''}${issueDate ? `<span>${issueDate}</span>` : ''}</div>
       ${printing ? `<div class="prt">${printing}</div>` : ''}
     </div>
     <div class="info-lower">
