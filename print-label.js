@@ -93,6 +93,14 @@ export function openLabelViewer(comic, allItems) {
   // Inject styles once
   ensureStylesInjected();
 
+  // Pre-load the QR library now (fire-and-forget) so by the time the user
+  // taps Print, the library is loaded and `new QRCode(...)` calls are
+  // synchronous. Without this, the first Print tap fires window.print()
+  // BEFORE QRs render and the print sheet shows blank/missing QR codes.
+  ensureQRCodeLoaded().catch(err => {
+    console.warn('[label] QR library preload failed:', err);
+  });
+
   // Initial render
   renderModal(modal, comic, allItems);
 }
@@ -143,6 +151,12 @@ function ensureStylesInjected() {
     padding: 12px 16px;
     background: #f4f0e8;
     border-bottom: 1px solid #e0d8c8;
+    gap: 12px;
+  }
+  .lvm-header-text {
+    display: flex; flex-direction: column;
+    gap: 2px;
+    min-width: 0;
   }
   .lvm-title {
     font-family: 'Barlow Condensed', sans-serif;
@@ -150,11 +164,18 @@ function ensureStylesInjected() {
     color: #3a3028;
     letter-spacing: 1px; text-transform: uppercase;
   }
+  .lvm-subtitle {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 12px; font-weight: 500;
+    color: #7a6a5a;
+    letter-spacing: 0.3px;
+  }
   .lvm-queue-count {
     font-family: 'Barlow Condensed', sans-serif;
     font-size: 13px; font-weight: 600;
     color: #5a5040;
     letter-spacing: 0.5px;
+    flex-shrink: 0;
   }
   .lvm-queue-count.full { color: #a04018; }
 
@@ -197,7 +218,9 @@ function ensureStylesInjected() {
     top: 0; left: 0;
     --lvm-scale: var(--lvm-frame-scale, 0.32);
   }
-  /* Responsive scaling tiers — use whichever fits the available width. */
+  /* CSS-only fallback scaling tiers in case fitPreviewToFrame() doesn't run
+     (e.g. JS error before measurement). The JS-computed scale overrides
+     these via inline style. */
   @media (min-width: 480px) { .lvm-preview-frame { --lvm-frame-scale: 0.40; } }
   @media (min-width: 600px) { .lvm-preview-frame { --lvm-frame-scale: 0.55; } }
 
@@ -266,8 +289,8 @@ function ensureStylesInjected() {
     font-stretch: 62.5%;
   }
   .rg-label .rg-prec {
-    position: absolute; top: 80px; right: 22px;
-    font-size: 32px; font-weight: 700;
+    position: absolute; top: 60px; right: 18px;
+    font-size: 26px; font-weight: 700;
     color: #b8d820; opacity: 0.92;
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
@@ -360,7 +383,7 @@ function ensureStylesInjected() {
      8161 (4"×1" labels, sheet 8.5"×11"). It lives in the DOM at all times
      but is hidden on screen via .lvm-print-sheet:not(.printing). When the
      user taps Print, we add .printing and call window.print(); CSS @media
-     print hides everything else. */
+     print hides everything else via display:none. */
   .lvm-print-sheet {
     display: none;
     position: fixed; inset: 0;
@@ -406,31 +429,43 @@ function ensureStylesInjected() {
     width: 1152px; height: 288px;
   }
 
-  /* Actual print rules. */
+  /* Actual print rules. Use display:none (not visibility:hidden) to ensure
+     the modal's translucent background and other body content don't paint
+     to the print pages. visibility:hidden preserves layout space and any
+     opaque/translucent backgrounds on parents still paint — that's why the
+     prior approach produced 7 pages of black. */
   @media print {
     @page {
       size: 8.5in 11in;
       margin: 0;
     }
     /* Hide everything by default during print */
-    body > * { visibility: hidden !important; }
-    /* Then show only the print sheet */
+    body > * { display: none !important; }
+    /* Then show only the print sheet (and ancestors that contain it) */
     .lvm-print-sheet,
     .lvm-print-sheet * {
+      display: revert !important;
       visibility: visible !important;
     }
-    .lvm-print-sheet {
+    .lvm-print-sheet.printing {
+      display: block !important;
       position: absolute !important;
       left: 0; top: 0;
       width: 8.5in; height: 11in;
+      background: white !important;
     }
     .lvm-print-sheet .print-sheet-grid {
+      display: grid !important;
       width: 8.5in; height: 11in;
     }
-    /* Modal chrome must not show during print */
-    #label-viewer-modal {
-      visibility: hidden !important;
+    .lvm-print-sheet .print-cell {
+      display: block !important;
     }
+    .lvm-print-sheet .print-cell-empty {
+      display: block !important;
+    }
+    /* Modal must be display:none so it doesn't paint */
+    #label-viewer-modal { display: none !important; }
   }
   `;
   document.head.appendChild(style);
@@ -447,14 +482,17 @@ function renderModal(modal, comic, allItems) {
   const labelHTML = renderLabelMarkup(comic);
   const queueClass = queueCount >= QUEUE_LIMIT ? 'lvm-queue-count full' : 'lvm-queue-count';
 
-  const queueBtnLabel = inQueue ? 'Queued — Remove' : `Add to Queue`;
+  const queueBtnLabel = inQueue ? 'Remove from Queue' : `Add to Queue`;
   const queueBtnClass = inQueue ? 'lvm-btn lvm-btn-queue is-queued' : 'lvm-btn lvm-btn-queue';
   const queueBtnDisabled = (!inQueue && queueCount >= QUEUE_LIMIT);
 
   modal.innerHTML = `
     <div class="lvm-card">
       <div class="lvm-header">
-        <div class="lvm-title">Print Label</div>
+        <div class="lvm-header-text">
+          <div class="lvm-title">Print Label</div>
+          <div class="lvm-subtitle">Labels print 20 to a sheet</div>
+        </div>
         <div class="${queueClass}">Queue: ${queueCount} / ${QUEUE_LIMIT}</div>
       </div>
       <div class="lvm-preview-area">
@@ -497,6 +535,31 @@ function renderModal(modal, comic, allItems) {
 
   // Open the modal
   modal.classList.add('open');
+
+  // Compute the preview scale dynamically based on the actual preview area
+  // width. This is more reliable than CSS breakpoints because the modal
+  // width depends on viewport, padding, and dynamic platform chrome (e.g.
+  // PWA safe-area insets) — none of which CSS media queries can capture.
+  // Run on next tick so the modal layout has settled.
+  requestAnimationFrame(() => fitPreviewToFrame(modal));
+}
+
+// Measure the preview-area width and set the CSS variable that scales the
+// preview so the entire 1152px label fits comfortably inside.
+function fitPreviewToFrame(modal) {
+  const area = modal.querySelector('.lvm-preview-area');
+  const frame = modal.querySelector('.lvm-preview-frame');
+  if (!area || !frame) return;
+  // Available width = preview area's content width minus its horizontal
+  // padding (which is 2 × 16px = 32px in the CSS below).
+  const areaStyle = getComputedStyle(area);
+  const padX = parseFloat(areaStyle.paddingLeft) + parseFloat(areaStyle.paddingRight);
+  const avail = area.clientWidth - padX;
+  if (avail <= 0) return;
+  // Label intrinsic width is 1152px. Compute scale factor and clamp to a
+  // sensible max so we don't blow up the label on huge displays.
+  const scale = Math.min(0.85, Math.max(0.18, avail / 1152));
+  frame.style.setProperty('--lvm-frame-scale', scale.toFixed(4));
 }
 
 function closeModal(modal) {
@@ -509,9 +572,6 @@ function closeModal(modal) {
 
 function handlePrint(modal, currentComic, allItems) {
   const queue = readQueue();
-  // If the current comic is in the queue, use queue as-is. Otherwise, the
-  // user tapped Print without adding to queue (Print would be disabled, but
-  // defensively handle). In either case, queue is what we print.
   if (queue.length === 0) return;
 
   // Look up each queued comic from allItems
@@ -539,23 +599,24 @@ function handlePrint(modal, currentComic, allItems) {
   }
   sheet.innerHTML = `<div class="print-sheet-grid">${cellsHTML}</div>`;
 
-  // Render QR codes for all print-sheet labels
+  // Render QR codes for all print-sheet labels (synchronous now since the
+  // QR library was pre-loaded when the modal opened).
   renderQRsIn(sheet);
 
-  // Show the print sheet, trigger print, then clean up
+  // Show the print sheet, then call window.print() SYNCHRONOUSLY in the
+  // same tick as the user's gesture. Safari treats anything after a setTimeout
+  // as automatic and blocks it with the "blocked from automatically printing"
+  // dialog. The QR library generates QR canvas elements synchronously once
+  // the script is loaded, so no async wait is needed here.
   sheet.classList.add('printing');
+  window.print();
 
-  // Allow QR rendering to complete (synchronous in qrcodejs but the layout
-  // engine needs a tick to flush). 50ms is generous.
-  setTimeout(() => {
-    window.print();
-    // After print dialog closes (or is cancelled), clear queue + reset.
-    // The queue clears regardless — per spec, Print is a "send and reset"
-    // operation, not a "send and keep."
-    sheet.classList.remove('printing');
-    clearQueue();
-    closeModal(modal);
-  }, 100);
+  // After window.print() returns (the dialog has closed or been dismissed,
+  // synchronously on most browsers, async on iOS but always completes before
+  // any user interaction), clean up: clear queue + close modal.
+  sheet.classList.remove('printing');
+  clearQueue();
+  closeModal(modal);
 }
 
 // ── Label markup builder ───────────────────────────────────────────────────
@@ -660,21 +721,34 @@ function ensureQRCodeLoaded() {
 }
 
 function renderQRsIn(container) {
+  // Synchronous path when QR library is already loaded. This is critical
+  // for the print path: window.print() must be called in the same tick as
+  // the user gesture to avoid Safari's "blocked from automatically printing"
+  // dialog, so QR rendering must NOT defer to a microtask.
+  if (window.QRCode) {
+    renderQRsImmediately(container);
+    return;
+  }
+  // Fallback: library not yet loaded, render after it arrives. Used only by
+  // the modal preview at first-open if user taps Print before preload finishes.
   ensureQRCodeLoaded().then(() => {
-    const qrEls = container.querySelectorAll('.qrc');
-    qrEls.forEach(el => {
-      const id = el.getAttribute('data-qr-id');
-      if (!id) return;
-      // Clear any prior contents (in case of re-render)
-      el.innerHTML = '';
-      new window.QRCode(el, {
-        text: `https://robograder.app/id/${id}`,
-        width: 118, height: 118,
-        colorDark: '#1a2208', colorLight: '#d4d9be',
-        correctLevel: window.QRCode.CorrectLevel.M
-      });
-    });
+    renderQRsImmediately(container);
   }).catch(err => {
     console.warn('[label] QR render failed:', err);
+  });
+}
+
+function renderQRsImmediately(container) {
+  const qrEls = container.querySelectorAll('.qrc');
+  qrEls.forEach(el => {
+    const id = el.getAttribute('data-qr-id');
+    if (!id) return;
+    el.innerHTML = '';  // clear any prior contents
+    new window.QRCode(el, {
+      text: `https://robograder.app/id/${id}`,
+      width: 118, height: 118,
+      colorDark: '#1a2208', colorLight: '#d4d9be',
+      correctLevel: window.QRCode.CorrectLevel.M
+    });
   });
 }

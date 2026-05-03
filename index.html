@@ -2662,6 +2662,17 @@ function showDetail(id){
         <span style="position:absolute;left:${isPublic ? '23px' : '3px'};top:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left 0.2s;box-shadow:0 1px 2px rgba(0,0,0,0.2)" id="detail-public-thumb"></span>
       </label>
     </div>`;
+    // View / Share links — only when the listing is public AND has an ID.
+    // View opens the public page in a new tab; Share invokes the OS share
+    // sheet via navigator.share() so users can text/email/copy the link
+    // through whatever channel their OS supports.
+    if (isPublic && selected.roboGradeId) {
+      const publicUrl = `https://robograder.app/id/${esc(selected.roboGradeId)}`;
+      html += `<div style="display:flex;gap:18px;margin-top:8px;padding-left:2px">
+        <a href="${publicUrl}" target="_blank" rel="noopener" style="font-size:13px;font-weight:700;color:#3a7a20;text-decoration:none;letter-spacing:0.04em">View →</a>
+        <a href="#" onclick="sharePublicListing('${esc(selected.roboGradeId)}', '${esc(selected.title || '').replace(/'/g, "\\'")}', '${esc(selected.issue || '').replace(/'/g, "\\'")}'); return false;" style="font-size:13px;font-weight:700;color:#3a7a20;text-decoration:none;letter-spacing:0.04em">Share</a>
+      </div>`;
+    }
   }
 
   // ─── "Update With Official Grade" feature (deferred — button hidden) ───
@@ -2739,6 +2750,42 @@ async function printLabel(id) {
     mod.openLabelViewer(comic, items);
   } catch(e) {
     alert('Failed to load label printer: ' + e.message);
+  }
+}
+
+// Share the public listing URL via the OS share sheet (Web Share API).
+// Falls back to clipboard copy when navigator.share is unavailable (mostly
+// desktop browsers). Used by the Share link beneath the public/private toggle.
+async function sharePublicListing(roboGradeId, title, issue) {
+  if (!roboGradeId) return;
+  const url = `https://robograder.app/id/${roboGradeId}`;
+  const issueStr = issue ? ` #${issue}` : '';
+  const shareData = {
+    title: `Robograder: ${title}${issueStr}`,
+    text: `${title}${issueStr} — Robograder assessment`,
+    url
+  };
+  // Web Share API — preferred. Available in iOS Safari, Android Chrome, and
+  // most modern mobile browsers. Triggers the native OS share sheet.
+  if (navigator.share) {
+    try {
+      await navigator.share(shareData);
+    } catch (err) {
+      // User cancelled is normal; only log unexpected errors.
+      if (err && err.name !== 'AbortError') {
+        console.warn('[share] navigator.share failed:', err);
+      }
+    }
+    return;
+  }
+  // Fallback: copy to clipboard. Mostly relevant on desktop where Share
+  // doesn't make sense as a system gesture.
+  try {
+    await navigator.clipboard.writeText(url);
+    alert('Link copied to clipboard:\n' + url);
+  } catch (err) {
+    // Last-ditch fallback: prompt with the URL so the user can copy manually.
+    prompt('Copy this link:', url);
   }
 }
 
