@@ -48,8 +48,15 @@ export function printLabelForComic(comic) {
   //   - Dark olive score box (#1a2208) with chartreuse number (#b8d820)
   //   - 38px score-box corner radius
   //   - Score box wordmark "ROBOGRADE" (not ROBOGRADER) — book is the result
-  //   - 756×288 absolute label dimensions (Avery 5160 at 288 DPI)
+  //   - 1152×288 absolute label dimensions (Avery 8161 at 288 DPI = 4"×1")
   //   - QR + URL point to robograder.app
+  //
+  // Avery 8161 layout (S12 May 2): switched from 5160 (2.625"×1", 30/sheet)
+  // because 5160 was too small in physical use. 8161 is 4"×1", 20/sheet (2×10).
+  // The extra ~400px of width was distributed to the info column — title
+  // and meta block now have comfortable breathing room. Score box and QR
+  // module dimensions retained at 5160 sizing to keep the score the visual
+  // anchor of the label.
   //
   // Font system (the key insight from Session 12):
   //   - Original code used `font-family: sans-serif` which on iPhone Safari
@@ -94,9 +101,9 @@ export function printLabelForComic(comic) {
   @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Display:wdth,wght@62.5..100,500;700;900&family=Noto+Sans+Mono:wdth,wght@62.5,800&family=Barlow+Condensed:wght@400;500;600;700;800&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 20px; font-family: 'Barlow Condensed', sans-serif; }
-  .label-wrap { width: 756px; height: 288px; position: relative; }
+  .label-wrap { width: 1152px; height: 288px; position: relative; }
   .label {
-    width: 756px; height: 288px;
+    width: 1152px; height: 288px;
     background: #d4d9be;
     border: 1px solid #8a9a6a;
     border-radius: 4px;
@@ -118,19 +125,24 @@ export function printLabelForComic(comic) {
   /* Precision overlays absolutely so it cannot affect score-number centering */
   .rg-prec { position: absolute; top: 80px; right: 22px; font-size: 32px; font-weight: 700; color: #b8d820; opacity: 0.92; font-family: 'Barlow Condensed', sans-serif; line-height: 1; }
   .rg-v { font-size: 20px; color: #5a7030; font-family: 'Barlow Condensed', sans-serif; font-weight: 500; position: absolute; bottom: 14px; letter-spacing: 1px; }
-  /* Info column TOP-anchored; flows downward from there */
+  /* Info column TOP-anchored; flows downward from there.
+     Right boundary at 144px from edge keeps the QR+URL block clear.
+     Width grew from ~330px (5160) to ~726px (8161) — about 2.2× more
+     horizontal room for the title, issue, and meta block. */
   .info { position: absolute; left: 282px; top: 18px; right: 144px; display: flex; flex-direction: column; }
   .info-upper { padding-bottom: 8px; border-bottom: 1px solid #b0b89a; margin-bottom: 0; }
-  .ttl { font-size: 32px; font-weight: 900; color: #0d0d0f; line-height: 1.1; font-family: 'Noto Sans Display', sans-serif; font-stretch: 62.5%; }
+  /* Title font bumped from 32px to 38px to fill the wider label without
+     looking sparse. Meta-block fonts also get small bumps for proportion. */
+  .ttl { font-size: 38px; font-weight: 900; color: #0d0d0f; line-height: 1.1; font-family: 'Noto Sans Display', sans-serif; font-stretch: 62.5%; }
   /* Issue + date uses Noto Sans Display 500 (lighter, condensed, contrasts w/ title weight) */
-  .iss { font-size: 22px; font-weight: 500; color: #333; font-family: 'Noto Sans Display', sans-serif; font-stretch: 62.5%; }
-  .prt { font-size: 18px; color: #555544; font-family: 'Barlow Condensed', sans-serif; font-weight: 500; }
-  .info-lower { padding-top: 8px; }
+  .iss { font-size: 26px; font-weight: 500; color: #333; font-family: 'Noto Sans Display', sans-serif; font-stretch: 62.5%; }
+  .prt { font-size: 20px; color: #555544; font-family: 'Barlow Condensed', sans-serif; font-weight: 500; }
+  .info-lower { padding-top: 10px; }
   /* Grid alignment: GRADED and ID right-aligned to same column edge; values left-aligned in their own column */
-  .meta-grid { display: grid; grid-template-columns: max-content max-content; column-gap: 14px; row-gap: 4px; align-items: baseline; }
-  .meta-lbl { font-size: 20px; font-weight: 600; color: #7a8a5a; font-family: 'Barlow Condensed', sans-serif; text-align: right; letter-spacing: 0.5px; }
+  .meta-grid { display: grid; grid-template-columns: max-content max-content; column-gap: 16px; row-gap: 5px; align-items: baseline; }
+  .meta-lbl { font-size: 22px; font-weight: 600; color: #7a8a5a; font-family: 'Barlow Condensed', sans-serif; text-align: right; letter-spacing: 0.5px; }
   /* Mono values: Noto Sans Mono with wdth=62.5 already loaded — no explicit font-stretch needed */
-  .meta-val { font-size: 20px; font-weight: 800; color: #0d0d0f; font-family: 'Noto Sans Mono', monospace; }
+  .meta-val { font-size: 22px; font-weight: 800; color: #0d0d0f; font-family: 'Noto Sans Mono', monospace; }
   .qr-col { position: absolute; right: 12px; top: 14px; width: 122px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
   .qr-col #qrc canvas, .qr-col #qrc img { width: 118px !important; height: 118px !important; }
   .verify { font-size: 14px; color: #7a8a5a; letter-spacing: 1px; font-family: 'Barlow Condensed', sans-serif; font-weight: 600; text-align: center; }
@@ -189,8 +201,8 @@ export function printLabelForComic(comic) {
   <button class="btn-print" onclick="window.print()">Print</button>
 </div>
 <div class="labels-link no-print">
-  Prints on Avery 5160 address labels —
-  <a href="https://www.amazon.com/s?k=avery+5160+labels" target="_blank" rel="noopener">buy on Amazon</a>
+  Prints on Avery 8161 address labels —
+  <a href="https://www.amazon.com/s?k=avery+8161+labels" target="_blank" rel="noopener">buy on Amazon</a>
 </div>
 <script>
   new QRCode(document.getElementById('qrc'), {
