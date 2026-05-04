@@ -381,7 +381,7 @@
       background: #000;
       opacity: 0;
       pointer-events: none;
-      transition: opacity 80ms ease-out;
+      transition: opacity 120ms ease-out;
       z-index: 5;
     }
     #camera-flash.flash { opacity: 1; transition: none; }
@@ -1604,7 +1604,7 @@ function buildIntegrityPill(item, forPublic = false) {
   if (state === 'unverified' && forPublic) {
     return `<div class="integrity-pill integrity-unverified" title="At least one assessed photo was uploaded from outside the app">
       <span class="integrity-icon">⚠</span>
-      <span class="integrity-text">Unverified: photos captured outside of app</span>
+      <span class="integrity-text">Unverified: photos taken outside of app</span>
     </div>`;
   }
   return '';
@@ -2667,10 +2667,13 @@ function showDetail(id){
     // sheet via navigator.share() so users can text/email/copy the link
     // through whatever channel their OS supports.
     if (isPublic && selected.roboGradeId) {
-      const publicUrl = `https://robograder.app/id/${esc(selected.roboGradeId)}`;
-      html += `<div style="display:flex;gap:18px;margin-top:8px;padding-left:2px">
-        <a href="${publicUrl}" target="_blank" rel="noopener" style="font-size:13px;font-weight:700;color:#3a7a20;text-decoration:none;letter-spacing:0.04em">View →</a>
-        <a href="#" onclick="sharePublicListing('${esc(selected.roboGradeId)}', '${esc(selected.title || '').replace(/'/g, "\\'")}', '${esc(selected.issue || '').replace(/'/g, "\\'")}'); return false;" style="font-size:13px;font-weight:700;color:#3a7a20;text-decoration:none;letter-spacing:0.04em">Share</a>
+      // View opens an in-app modal preview (iframe) so the user stays inside
+      // the PWA. Share invokes the OS share sheet to send the actual public
+      // URL to others. Both styled as olive-bordered buttons to make the
+      // affordance obvious — earlier text-link styling was too easy to miss.
+      html += `<div style="display:flex;gap:10px;margin-top:10px">
+        <button onclick="openPublicPreview('${esc(selected.roboGradeId)}')" style="background:#fff;border:1.5px solid #3a7a20;color:#3a7a20;border-radius:8px;padding:8px 18px;font-size:15px;font-weight:700;letter-spacing:0.04em;cursor:pointer;font-family:inherit">View Link</button>
+        <button onclick="sharePublicListing('${esc(selected.roboGradeId)}', '${esc(selected.title || '').replace(/'/g, "\\'")}', '${esc(selected.issue || '').replace(/'/g, "\\'")}')" style="background:#fff;border:1.5px solid #3a7a20;color:#3a7a20;border-radius:8px;padding:8px 18px;font-size:15px;font-weight:700;letter-spacing:0.04em;cursor:pointer;font-family:inherit">Share</button>
       </div>`;
     }
   }
@@ -2751,6 +2754,50 @@ async function printLabel(id) {
   } catch(e) {
     alert('Failed to load label printer: ' + e.message);
   }
+}
+
+// Open the public listing in an in-app modal preview rather than navigating
+// to it in a new browser tab. Solves the "Back to Robograder forces app
+// reload" problem (S12 — there's no clean way to navigate back into the
+// PWA from a Safari window). The modal contains an iframe that loads
+// /id/XXXXXX, so the user sees exactly what others would see, but stays
+// inside the app the entire time. Tap-outside-to-close mirrors the print
+// label modal pattern.
+function openPublicPreview(roboGradeId) {
+  if (!roboGradeId) return;
+  let modal = document.getElementById('public-preview-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'public-preview-modal';
+    // Inline styles since we want this self-contained — no extra stylesheet
+    // required to render. Same layout pattern as the label viewer modal.
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);display:none;align-items:center;justify-content:center;z-index:1500;padding:0;touch-action:none';
+    document.body.appendChild(modal);
+    // Tap outside the card closes the modal
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closePublicPreview();
+    });
+  }
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:14px;width:calc(100vw - 24px);max-width:720px;height:calc(100vh - 80px);display:flex;flex-direction:column;overflow:hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#f4f0e8;border-bottom:1px solid #e0d8c8">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;color:#3a3028;letter-spacing:1px;text-transform:uppercase">Link Preview</div>
+        <button onclick="closePublicPreview()" style="background:transparent;border:none;font-size:22px;color:#7a6a5a;cursor:pointer;padding:0 8px;line-height:1" aria-label="Close">×</button>
+      </div>
+      <iframe src="/id/${roboGradeId}" style="flex:1;width:100%;border:none;background:#f5f3ee" title="Public listing preview"></iframe>
+    </div>
+  `;
+  // Stop card-internal clicks from bubbling to the backdrop close handler
+  const card = modal.firstElementChild;
+  if (card) card.addEventListener('click', (e) => e.stopPropagation());
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function closePublicPreview() {
+  const modal = document.getElementById('public-preview-modal');
+  if (modal) modal.style.display = 'none';
+  document.body.style.overflow = '';
 }
 
 // Share the public listing URL via the OS share sheet (Web Share API).
@@ -5465,15 +5512,19 @@ window._cameraSupported = (() => {
   return isMobileUA && hasGetUserMedia;
 })();
 
-// Camera labels — full text for the modal header at top of screen, and short
-// text for the in-SVG slot labels generated by buildGuideSVG().
+// Camera labels — full text for the modal header at top of screen.
+// SHORT labels are no longer used in JS (now embedded directly in the
+// static SVG guide files for each slot's specific text).
 //   index 0 = TL, 1 = TR, 2 = BL, 3 = BR  (row-major; matches detail-view grid)
 const CAMERA_LABEL_MAIN   = ['Front Cover','Back Cover','Page Quality','Spine (Raking)'];
 const CAMERA_LABEL_CORNER = ['Top Left Corner','Top Right Corner','Bottom Left Corner','Bottom Right Corner'];
-// SHORT labels for the in-SVG slot label rendered next to the guide frame.
-// Per-slot, these are what the user actually looks at while framing.
-const CAMERA_SHORT_LABEL_MAIN   = ['FRONT', 'BACK', 'PAGE QUALITY', 'SPINE'];
-const CAMERA_SHORT_LABEL_CORNER = ['TOP LEFT', 'TOP RIGHT', 'BOTTOM LEFT', 'BOTTOM RIGHT'];
+
+// SVG file paths for each slot. Restored S12 May 3 after JS-generated guides
+// were replaced with hand-authored static SVGs from Matt. Front and Back are
+// now separate files (used to share guide_comic.svg) so each can carry its
+// own embedded slot label text.
+const CAMERA_GUIDE_MAIN   = ['guide_front.svg','guide_back.svg','guide_pq.svg','guide_spine.svg'];
+const CAMERA_GUIDE_CORNER = ['guide_corner_tl.svg','guide_corner_tr.svg','guide_corner_bl.svg','guide_corner_br.svg'];
 
 // Walkthrough CAPTURE ORDER — separate from storage index because the visual
 // sequence that feels natural to the user differs from the storage layout.
@@ -5710,25 +5761,26 @@ async function switchToLens(idx) {
   }
 }
 
-// Update the modal UI to reflect a specific slot (guide image, header text).
+// Update the modal UI to reflect a specific slot. Loads the per-slot static
+// SVG guide from /assets/guides/ and writes it into the camera overlay.
 function cameraOpenSlot(slotIndex) {
   if (!_cameraState) return;
   _cameraState.current = slotIndex;
   const { kind, mode, queue } = _cameraState;
-  const label      = (kind === 'corner' ? CAMERA_LABEL_CORNER       : CAMERA_LABEL_MAIN)[slotIndex];
-  const shortLabel = (kind === 'corner' ? CAMERA_SHORT_LABEL_CORNER : CAMERA_SHORT_LABEL_MAIN)[slotIndex];
+  const guideFile = (kind === 'corner' ? CAMERA_GUIDE_CORNER : CAMERA_GUIDE_MAIN)[slotIndex];
+  const label     = (kind === 'corner' ? CAMERA_LABEL_CORNER : CAMERA_LABEL_MAIN)[slotIndex];
 
-  // Render the guide programmatically. We measure the camera-stage's actual
-  // pixel dimensions and generate an SVG whose viewBox matches exactly — no
-  // letterboxing inside the SVG. Combined with object-fit:contain on the
-  // video element, this means the guide outline is sized against the visible
-  // camera feed, not against an internal SVG aspect ratio that gets letterbox-
-  // squashed (the prior bug that made guides look small).
+  // Fetch the static SVG and inject as inline markup. Inline (not <img>)
+  // because some legacy code paths styled the SVG via CSS — kept inline here
+  // for forward consistency in case future tweaks need it.
   const guideEl = document.getElementById('camera-guide');
-  const stage = document.getElementById('camera-stage');
-  const W = stage.clientWidth || window.innerWidth;
-  const H = stage.clientHeight || window.innerHeight;
-  guideEl.innerHTML = buildGuideSVG(kind, slotIndex, shortLabel, W, H);
+  fetch('/assets/guides/' + guideFile)
+    .then(r => r.text())
+    .then(svgText => { guideEl.innerHTML = svgText; })
+    .catch(err => {
+      console.warn('[camera] guide fetch failed:', err);
+      guideEl.innerHTML = '';
+    });
 
   // Header progress text. Walkthrough shows "X of Y — Slot Name"; single mode
   // shows just the slot name.
@@ -5742,216 +5794,21 @@ function cameraOpenSlot(slotIndex) {
   }
 }
 
-// Build the SVG guide for a given slot at the given viewport dimensions.
-// Returns an SVG string. The viewBox matches W×H exactly so coordinates inside
-// are pixel-equivalent to the rendered output. This eliminates the double-
-// letterbox issue that made earlier static SVGs render small.
-//
-// Geometry conventions:
-//   - Comic outline aspect ratio: 6.625 × 10.25 = 0.6463 (W:H)
-//   - All guides use stroke-6 olive-green (#7aa838)
-//   - All guides have 12px corner rounding (rx=12)
-//   - Comic outline target: 98% of viewport height (or width-bounded for landscape)
-//   - Slot label sits OUTSIDE the comic frame (top or bottom depending on guide)
-//   - Stroke and font sizes scale somewhat with viewport; pinned to the smaller
-//     dimension so they don't get monstrous on landscape phones.
-function buildGuideSVG(kind, slotIndex, shortLabel, W, H) {
-  const isLandscape = W > H;
-  // Stroke and font sizes — modest scaling based on the smaller dimension
-  // so they look right on both landscape and portrait orientations.
-  const minDim = Math.min(W, H);
-  const stroke = Math.max(5, Math.round(minDim * 0.012));     // ~6 on 480px
-  const fontSize = Math.max(20, Math.round(minDim * 0.055));  // ~26 on 480px
-  const labelMargin = Math.round(fontSize * 1.6);
-  const stk = `stroke="#7aa838" stroke-width="${stroke}" fill="none"`;
-  const stkRound = `${stk} stroke-linecap="round" stroke-linejoin="round"`;
-  const labelStyle = `font-family="system-ui,sans-serif" font-size="${fontSize}" font-weight="700" fill="#7aa838" opacity="0.85" letter-spacing="${Math.round(fontSize * 0.12)}"`;
-
-  // Dispatch by kind+slot
-  if (kind === 'corner') {
-    return buildCornerGuide(slotIndex, shortLabel, W, H, stroke, fontSize, labelMargin, stk, stkRound, labelStyle);
-  }
-  // Main flow
-  if (slotIndex === 0 || slotIndex === 1) {
-    // FRONT (0) or BACK (1) — comic outline
-    return buildComicGuide(shortLabel, W, H, stroke, fontSize, labelMargin, stk, labelStyle);
-  }
-  if (slotIndex === 2) {
-    // PAGE QUALITY — landscape centerfold
-    return buildPQGuide(shortLabel, W, H, isLandscape, stroke, fontSize, labelMargin, stk, stkRound, labelStyle);
-  }
-  if (slotIndex === 3) {
-    // SPINE — landscape thin-strip
-    return buildSpineGuide(shortLabel, W, H, isLandscape, stroke, fontSize, labelMargin, stk, stkRound, labelStyle);
-  }
-  return '';
-}
-
-// Comic outline (FRONT, BACK). Comic aspect 0.6463. Sized to fill 95% of the
-// SHORTER dimension's worth of space, accounting for label below the frame.
-function buildComicGuide(shortLabel, W, H, stroke, fontSize, labelMargin, stk, labelStyle) {
-  // Available height after reserving space for label below
-  const labelHeight = labelMargin + fontSize + 8;
-  const availH = H - labelHeight;
-  // Comic outline: width = h × 0.6463
-  // We try to fit 96% of available height first, then check if width also fits
-  let h = Math.round(availH * 0.96);
-  let w = Math.round(h * 0.6463);
-  if (w > W * 0.96) {
-    // Width-bound instead
-    w = Math.round(W * 0.96);
-    h = Math.round(w / 0.6463);
-  }
-  const x = Math.round((W - w) / 2);
-  const y = Math.round((availH - h) / 2);
-  const labelY = y + h + labelMargin;
-  const safeLabelY = Math.min(labelY, H - 12);
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
-    <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" ry="12" ${stk}/>
-    <text x="${W/2}" y="${safeLabelY}" text-anchor="middle" ${labelStyle}>${shortLabel}</text>
-  </svg>`;
-}
-
-// Page Quality guide. Open centerfold = landscape orientation.
-// Two pages side-by-side. Each page outline is 3-sided, opening toward the
-// centerfold (left page open right; right page open left). Staples on
-// centerfold axis as thin lines (don't obscure actual staples).
-//
-// Label rotation: when phone is portrait, the label is rotated 90° so it
-// reads vertically (sideways). User naturally rotates phone to make label
-// readable; that's the cue to use landscape. When phone IS landscape,
-// label reads horizontally (right-side up).
-function buildPQGuide(shortLabel, W, H, isLandscape, stroke, fontSize, labelMargin, stk, stkRound, labelStyle) {
-  // Open centerfold aspect = 13.25 × 10.25 = 1.293 W:H (landscape)
-  const labelHeight = labelMargin + fontSize + 8;
-  const availH = H - labelHeight;
-  let combinedW = Math.round(W * 0.96);
-  let pageH = Math.round(combinedW / 1.293);
-  if (pageH > availH * 0.96) {
-    pageH = Math.round(availH * 0.96);
-    combinedW = Math.round(pageH * 1.293);
-  }
-  const xLeft = Math.round((W - combinedW) / 2);
-  const xRight = xLeft + combinedW;
-  const xMid = Math.round(W / 2);
-  const yTop = Math.round((availH - pageH) / 2);
-  const yBot = yTop + pageH;
-  // Staples on centerfold axis, at ~1/4 and ~3/4 of pageH
-  const stapleY1 = yTop + Math.round(pageH * 0.22);
-  const stapleY2 = yTop + Math.round(pageH * 0.78);
-  const stapleLen = Math.round(pageH * 0.07);
-  // 3-sided page outlines (open toward centerfold)
-  const cornerR = 12;
-  const labelY = yBot + labelMargin;
-  const safeLabelY = Math.min(labelY, H - 12);
-  // Label rotation cue: vertical when portrait, horizontal when landscape
-  const labelTransform = isLandscape ? '' : `transform="rotate(-90 ${W/2} ${safeLabelY})"`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
-    <path d="M ${xMid},${yTop} L ${xLeft+cornerR},${yTop} Q ${xLeft},${yTop} ${xLeft},${yTop+cornerR} L ${xLeft},${yBot-cornerR} Q ${xLeft},${yBot} ${xLeft+cornerR},${yBot} L ${xMid},${yBot}" ${stk} stroke-linejoin="round"/>
-    <path d="M ${xMid},${yTop} L ${xRight-cornerR},${yTop} Q ${xRight},${yTop} ${xRight},${yTop+cornerR} L ${xRight},${yBot-cornerR} Q ${xRight},${yBot} ${xRight-cornerR},${yBot} L ${xMid},${yBot}" ${stk} stroke-linejoin="round" stroke-dasharray="14 14"/>
-    <line x1="${xMid}" y1="${stapleY1 - stapleLen}" x2="${xMid}" y2="${stapleY1 + stapleLen}" ${stkRound}/>
-    <line x1="${xMid}" y1="${stapleY2 - stapleLen}" x2="${xMid}" y2="${stapleY2 + stapleLen}" ${stkRound}/>
-    <text x="${W/2}" y="${safeLabelY}" text-anchor="middle" ${labelStyle} ${labelTransform}>${shortLabel}</text>
-  </svg>`;
-}
-
-// Spine raking-light guide. LANDSCAPE orientation.
-// Comic lying flat photographed at low angle. Trapezoid represents the spine
-// and a sliver of the cover — NEAR edge (spine) at bottom is the long line,
-// FAR edge (other side of cover) at top is shorter (foreshortened). Height of
-// the trapezoid is much shorter than a full comic since it's just a strip
-// near the spine. Staple markings on the spine edge (bottom long line) help
-// clarify which side is the spine.
-function buildSpineGuide(shortLabel, W, H, isLandscape, stroke, fontSize, labelMargin, stk, stkRound, labelStyle) {
-  // Trapezoid is a STRIP (not a full comic). Use ~30% of viewport height,
-  // centered roughly in the middle so user has framing room above/below.
-  const labelHeight = labelMargin + fontSize + 8;
-  const stripH = Math.round(H * 0.30);
-  // Near (bottom) edge = long: 95% of viewport width
-  const nearW = Math.round(W * 0.95);
-  // Far (top) edge = ~60% of near (perspective foreshortening)
-  const farW = Math.round(nearW * 0.62);
-  // Vertical position: centered with label below
-  const yBot = Math.round((H - labelHeight + stripH) / 2);
-  const yTop = yBot - stripH;
-  const xNearL = Math.round((W - nearW) / 2);
-  const xNearR = xNearL + nearW;
-  const xFarL = Math.round((W - farW) / 2);
-  const xFarR = xFarL + farW;
-  // Staple markings on near edge (the spine edge): two small notches inside
-  // the bottom long line, ~25% and ~75% of way along
-  const stapleX1 = xNearL + Math.round(nearW * 0.25);
-  const stapleX2 = xNearL + Math.round(nearW * 0.75);
-  const stapleSize = Math.max(8, Math.round(stripH * 0.10));
-  const labelY = yBot + labelMargin;
-  const safeLabelY = Math.min(labelY, H - 12);
-  const labelTransform = isLandscape ? '' : `transform="rotate(-90 ${W/2} ${safeLabelY})"`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
-    <polygon points="${xNearL},${yBot} ${xNearR},${yBot} ${xFarR},${yTop} ${xFarL},${yTop}" ${stk} stroke-linejoin="round"/>
-    <line x1="${stapleX1}" y1="${yBot - stapleSize}" x2="${stapleX1}" y2="${yBot + stapleSize}" ${stkRound}/>
-    <line x1="${stapleX2}" y1="${yBot - stapleSize}" x2="${stapleX2}" y2="${yBot + stapleSize}" ${stkRound}/>
-    <text x="${W/2}" y="${safeLabelY}" text-anchor="middle" ${labelStyle} ${labelTransform}>${shortLabel}</text>
-  </svg>`;
-}
-
-// Corner macro guides. L-shape with corner-point near the matching viewport
-// corner. Legs extend nearly to the OPPOSITE viewport edges to encourage tight
-// framing. Label sits at the side OPPOSITE the corner-point so it doesn't
-// overlap the comic surface.
-//
-// slotIndex mapping: 0=TL, 1=TR, 2=BL, 3=BR
-function buildCornerGuide(slotIndex, shortLabel, W, H, stroke, fontSize, labelMargin, stk, stkRound, labelStyle) {
-  // Inset from the viewport edge — small, encouraging the user to fill the
-  // frame with the comic corner.
-  const inset = Math.round(Math.min(W, H) * 0.04);
-  // Leg length — extend to ~94% of viewport in each direction
-  const legX = W - inset - Math.round(W * 0.04);
-  const legY = H - inset - Math.round(H * 0.04);
-  let path, labelX, labelY;
-  switch (slotIndex) {
-    case 0: // TL — corner-point upper-left
-      path = `M ${inset},${legY} L ${inset},${inset + 12} Q ${inset},${inset} ${inset + 12},${inset} L ${legX},${inset}`;
-      // Label at bottom-right (away from corner point)
-      labelX = W * 0.75;
-      labelY = H - labelMargin / 2;
-      break;
-    case 1: // TR — corner-point upper-right
-      path = `M ${legX},${legY} L ${legX},${inset + 12} Q ${legX},${inset} ${legX - 12},${inset} L ${inset},${inset}`;
-      labelX = W * 0.25;
-      labelY = H - labelMargin / 2;
-      break;
-    case 2: // BL — corner-point lower-left
-      path = `M ${inset},${inset} L ${inset},${legY - 12} Q ${inset},${legY} ${inset + 12},${legY} L ${legX},${legY}`;
-      labelX = W * 0.75;
-      labelY = labelMargin;
-      break;
-    case 3: // BR — corner-point lower-right
-      path = `M ${legX},${inset} L ${legX},${legY - 12} Q ${legX},${legY} ${legX - 12},${legY} L ${inset},${legY}`;
-      labelX = W * 0.25;
-      labelY = labelMargin;
-      break;
-  }
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
-    <path d="${path}" ${stkRound}/>
-    <text x="${labelX}" y="${labelY}" text-anchor="middle" ${labelStyle}>${shortLabel}</text>
-  </svg>`;
-}
-
-// Capture the current frame from the video stream as a data URL. Stash it on
-// the captures pile, advance to next slot OR exit if walkthrough is complete.
 function cameraCapture() {
   if (!_cameraState || !_cameraState.stream) return;
   const video = document.getElementById('camera-video');
   if (!video.videoWidth || !video.videoHeight) return;
 
   // Shutter flash — brief black overlay as visual capture confirmation
-  // (S12). 80ms is long enough to be perceived, short enough to feel snappy.
-  // No sound (sounds are problematic in PWA contexts and many users have
-  // their phones muted).
+  // (S12). 120ms is long enough to be clearly perceived without feeling
+  // sluggish. iOS Camera convention: a quick black-frame flash takes the
+  // place of a shutter sound (sounds are problematic in PWA contexts and
+  // many users have phones muted). Bumped from 80ms after testing showed
+  // the 80ms version was too subtle.
   const flash = document.getElementById('camera-flash');
   if (flash) {
     flash.classList.add('flash');
-    setTimeout(() => flash.classList.remove('flash'), 80);
+    setTimeout(() => flash.classList.remove('flash'), 120);
   }
 
   // Draw current frame to a canvas at the video's intrinsic resolution.
