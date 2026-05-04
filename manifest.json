@@ -4,6 +4,7 @@
   "description": "AI-powered comic book condition assessment",
   "start_url": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#0d0d0f",
   "theme_color": "#0d0d0f",
   "icons": [
