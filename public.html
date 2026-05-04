@@ -6,20 +6,17 @@
 <meta name="robots" content="noindex">
 <title>Robograder Assessment</title>
 
-<!-- Open Graph fallback (S12). Most link-preview engines (Twitter, Slack,
-     Discord, Mastodon, email previews) parse static HTML and don't run
-     JavaScript, so without these tags they show no preview at all.
-     iMessage uses Apple's previewer which DOES run JS — for iMessage,
-     the front cover of the actual book is picked up automatically from
-     the rendered <img> elements once lookup.js fetches the comic. So:
-       iMessage → real comic cover (via JS rendering, no OG tag needed)
-       Other    → branded Robograder fallback (these tags) -->
+<!-- No static og:image tag intentionally. Apple's iMessage link previewer
+     runs page JS and picks the largest visible image (the front cover)
+     when no og:image is specified. A static tag short-circuits that
+     logic and forces a generic image instead. Other platforms (Twitter,
+     Slack, Discord) won't show a preview without the tag — that's an
+     acceptable tradeoff per Matt's stated priorities (iMessage matters,
+     other platforms are nice-to-have). If we ever need full coverage,
+     server-side OG injection is the right fix. -->
 <meta property="og:title" content="Robograder Assessment">
 <meta property="og:description" content="View this comic's Robograde score and condition assessment.">
-<meta property="og:image" content="https://robograder.app/assets/Robograder_v2_Load.png">
 <meta property="og:type" content="website">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://robograder.app/assets/Robograder_v2_Load.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!--
@@ -303,18 +300,20 @@
 
   document.title = `Robograde ${score} — ${data.title || ''} #${data.issue || ''}`;
 
-  // Dynamically update OG image to point at the front cover. Static link-
-  // preview crawlers won't see this (their HTML fetch already happened
-  // before our script ran), but any crawler that DOES execute JS will
-  // pick up the comic-specific image. iMessage's Apple previewer renders
-  // the page and picks the largest visible image automatically — front
-  // cover loads first (loading="eager") so it usually becomes the pick.
+  // Create og:image and twitter:image dynamically once we know the front
+  // cover URL. Static link-preview crawlers won't see this (they fetched
+  // before our script ran), but Apple's previewer runs JS and uses these
+  // when present. We also update og:title with the book details.
   if (data.images && data.images[0]) {
-    const ogImg = document.querySelector('meta[property="og:image"]');
-    if (ogImg) ogImg.setAttribute('content', data.images[0]);
-    const twImg = document.querySelector('meta[name="twitter:image"]');
-    if (twImg) twImg.setAttribute('content', data.images[0]);
-    // Also update title to be book-specific
+    const head = document.head;
+    const ogImg = document.createElement('meta');
+    ogImg.setAttribute('property', 'og:image');
+    ogImg.setAttribute('content', data.images[0]);
+    head.appendChild(ogImg);
+    const twImg = document.createElement('meta');
+    twImg.setAttribute('name', 'twitter:image');
+    twImg.setAttribute('content', data.images[0]);
+    head.appendChild(twImg);
     const ogTitle = document.querySelector('meta[property="og:title"]');
     if (ogTitle) ogTitle.setAttribute('content', `Robograder: ${data.title || ''} #${data.issue || ''}`.trim());
   }
@@ -450,9 +449,29 @@
       Grades reflect the condition of the book at the time of assessment.
       Books may change condition over time — always verify with current photos.
       <br><br>
-      <a href="/" onclick="if (history.length > 1) { history.back(); return false; } return true;">← Back to Robograder</a>
+      <a href="/" id="back-to-rg">${document.referrer && document.referrer.includes(location.host) ? '← Back to Robograder' : 'Open Robograder →'}</a>
     </footer>
   `);
+
+  // The "Back to Robograder" link is genuinely problematic on cold-loaded
+  // public pages — there's no PWA to go back to, and href="/" reloads the
+  // app from scratch. We label the link based on context:
+  //   - If this page was opened from somewhere on robograder.app (referrer
+  //     check), use "← Back to Robograder" and history.back() so we return
+  //     to wherever the user came from in the same tab.
+  //   - If this page was opened cold (iMessage, paste in Safari, etc.),
+  //     use "Open Robograder →" and let the link load /. There's nowhere
+  //     to "go back to" from a cold deep link.
+  const backLink = document.getElementById('back-to-rg');
+  if (backLink && document.referrer && document.referrer.includes(location.host)) {
+    backLink.addEventListener('click', (e) => {
+      if (history.length > 1) {
+        e.preventDefault();
+        history.back();
+      }
+      // Otherwise let href="/" run as fallback
+    });
+  }
 
 })();
 

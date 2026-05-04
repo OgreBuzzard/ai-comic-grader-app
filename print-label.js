@@ -136,6 +136,16 @@ function ensureStylesInjected() {
   style.id = 'label-viewer-styles';
   style.textContent = `
   /* ── Modal chrome (screen only) ──────────────────────────────────────── */
+  /* Body scroll lock: when the modal is open, prevent the page underneath
+     from scrolling on touch. Without this, taps that land on the modal's
+     translucent backdrop or even on the label preview can scroll the
+     detail view behind. position:fixed on body would also work but causes
+     the page to jump to the top on close on iOS. The class-based touch-
+     action approach is non-disruptive. */
+  body.lvm-locked {
+    overflow: hidden;
+    touch-action: none;
+  }
   #label-viewer-modal {
     position: fixed; inset: 0;
     background: rgba(0, 0, 0, 0.85);
@@ -143,6 +153,9 @@ function ensureStylesInjected() {
     align-items: center; justify-content: center;
     z-index: 1500;
     padding: 0;
+    /* Catch all touches that don't reach the card so they don't bubble to
+       the page underneath. */
+    touch-action: none;
   }
   #label-viewer-modal.open { display: flex; }
 
@@ -154,6 +167,9 @@ function ensureStylesInjected() {
     max-height: calc(100vh - 24px);
     display: flex; flex-direction: column;
     overflow: hidden;
+    /* Restore native touch behavior inside the card so the preview area
+       can scroll if the label exceeds height (rare but possible). */
+    touch-action: auto;
   }
   .lvm-header {
     display: flex; justify-content: space-between; align-items: center;
@@ -252,11 +268,15 @@ function ensureStylesInjected() {
     line-height: 1.2;
   }
   .lvm-btn:active { transform: scale(0.97); }
-  .lvm-btn-back { background: #5a4030; color: #f0e0c0; }
-  .lvm-btn-back:active { background: #6a5038; }
-  .lvm-btn-queue { background: #4a6028; color: #d8e8b0; }
+  /* Queue toggle button — its label is the longest of the three actions
+     ("Remove from Queue") so we size it down a few points to keep it on
+     two lines instead of wrapping to three. */
+  .lvm-btn-queue {
+    background: #4a6028; color: #d8e8b0;
+    font-size: 11px;
+  }
   .lvm-btn-queue:active { background: #5a7030; }
-  .lvm-btn-queue.is-queued { background: #c8b890; color: #4a3818; }
+  .lvm-btn-queue.is-queued { background: #c8b890; color: #4a3818; font-size: 11px; }
   .lvm-btn-queue.is-queued:active { background: #d8c8a0; }
   .lvm-btn-queue:disabled { background: #c0c0b0; color: #888880; cursor: not-allowed; }
   .lvm-btn-print { background: #1a2208; color: #b8d820; }
@@ -304,6 +324,10 @@ function ensureStylesInjected() {
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
     line-height: 1;
+    /* Extra space between the ± and the digit so they read as separate
+       characters. Without this, the condensed font crowds them together
+       to where the symbol disappears into the digit visually. */
+    letter-spacing: 2px;
   }
   .rg-label .rg-v {
     font-size: 20px;
@@ -427,7 +451,6 @@ function renderModal(modal, comic, allItems) {
         </div>
       </div>
       <div class="lvm-actions">
-        <button class="lvm-btn lvm-btn-back" data-action="back">Back</button>
         <button class="${queueBtnClass}" data-action="toggle-queue" ${queueBtnDisabled ? 'disabled' : ''}>${queueBtnLabel}</button>
         <button class="lvm-btn lvm-btn-print" data-action="print" ${printDisabled ? 'disabled' : ''}>Save as PDF</button>
       </div>
@@ -437,10 +460,11 @@ function renderModal(modal, comic, allItems) {
   // Render QR for the previewed label
   renderQRsIn(modal);
 
-  // Wire up button handlers
-  modal.querySelector('[data-action="back"]').addEventListener('click', () => {
-    closeModal(modal);
-  });
+  // Wire up button handlers. Back button removed in favor of tap-outside-
+  // to-close — see backdrop handler below. Tap-outside semantically reads
+  // as "freeze and step away", which preserves the queue. A "Back" button
+  // reads as Cancel — and tapping it after just adding to the queue would
+  // feel like erasing what you just added. Tap-outside avoids that conflict.
   modal.querySelector('[data-action="toggle-queue"]').addEventListener('click', (e) => {
     if (e.currentTarget.disabled) return;
     if (isQueued(comic.id)) {
@@ -456,8 +480,21 @@ function renderModal(modal, comic, allItems) {
     handleSavePDF(modal, comic, allItems);
   });
 
-  // Open the modal
+  // Tap-outside-to-close. Backdrop click closes; clicks on .lvm-card stop
+  // propagation so they don't reach the backdrop handler.
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeModal(modal);
+  });
+  const card = modal.querySelector('.lvm-card');
+  if (card) {
+    card.addEventListener('click', (e) => e.stopPropagation());
+  }
+
+  // Open the modal + lock body scroll so the page underneath can't scroll
+  // when the user touches the preview area (which fills most of the screen
+  // on phones).
   modal.classList.add('open');
+  document.body.classList.add('lvm-locked');
 
   // Compute the preview scale dynamically based on the actual preview area
   // width. This is more reliable than CSS breakpoints because the modal
@@ -465,6 +502,11 @@ function renderModal(modal, comic, allItems) {
   // PWA safe-area insets) — none of which CSS media queries can capture.
   // Run on next tick so the modal layout has settled.
   requestAnimationFrame(() => fitPreviewToFrame(modal));
+}
+
+function closeModal(modal) {
+  modal.classList.remove('open');
+  document.body.classList.remove('lvm-locked');
 }
 
 // Measure the preview-area width and set the CSS variable that scales the
@@ -485,10 +527,6 @@ function fitPreviewToFrame(modal) {
   // sensible max so we don't blow up the label on huge displays.
   const scale = Math.min(0.85, Math.max(0.18, avail / 1152));
   frame.style.setProperty('--lvm-frame-scale', scale.toFixed(4));
-}
-
-function closeModal(modal) {
-  modal.classList.remove('open');
 }
 
 // ── PDF generation (jsPDF + html2canvas) ───────────────────────────────────
