@@ -279,13 +279,17 @@
     }
     .rg-btn-secondary:active { background: #f0f5e8; }
 
-    /* Category — destructive: cream + muted red */
+    /* Category — destructive: filled muted red. Modern design systems
+       (iOS, Material) use solid-color destructive buttons because the
+       danger has to be unmissable. The earlier cream-bg-with-red-border
+       approach was too subtle — it read as "secondary" rather than
+       "warning." The muted red (not pure red) keeps it non-aggressive
+       while still clearly destructive. */
     .rg-btn-destructive {
-      background: #f5f0e8;
-      color: #a02020;
-      border: 1.5px solid #c87878;
+      background: #a02020;
+      color: #fff;
     }
-    .rg-btn-destructive:active { background: #ede6d8; }
+    .rg-btn-destructive:active { background: #8a1a1a; }
 
     /* Category — ghost: transparent + muted */
     .rg-btn-ghost {
@@ -685,15 +689,20 @@
        S12: replaced static PNG with APNG animation (Robograder_Roll-in.apng).
        The animation has its own roll-in built in, so we no longer apply the
        CSS slide-up that the static PNG used. The character now starts
-       in-place and animates within itself. We retain the same sizing and
-       positioning. */
+       in-place and animates within itself.
+       The animation source has empty/transparent padding around the
+       character (the rolling-in motion happens within the frame). To make
+       the visible mascot appear at the size of the static splash, we scale
+       UP from the 80vw the static PNG used to 120vw. The animation
+       overflows viewport edges in the empty padding regions, which is fine
+       because those regions are transparent. */
     #splash-robot {
       position: absolute;
       left: 0; right: 0;
       top: 50%;
       margin: 0 auto;
-      max-width: 80vw;
-      max-height: 70vh;
+      max-width: 120vw;
+      max-height: 105vh;
       width: auto;
       height: auto;
       object-fit: contain;
@@ -2777,7 +2786,7 @@ function showDetail(id){
   // been graded yet).
   html += `<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
     ${(!isSample && selected.roboGrade) ? `<button class="rg-btn rg-btn-primary rg-btn-md" onclick="printLabel('${esc(selected.id)}')">Print Label</button>` : ''}
-    <button class="btn btn-dark" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')">Delete</button>
+    <button class="rg-btn rg-btn-destructive rg-btn-md" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')">Delete</button>
   </div></div>`;
 
   document.getElementById("main").innerHTML=html;
@@ -2968,8 +2977,19 @@ async function togglePublicListing(id, val) {
 function confirmDelete(id){
   const btn=document.getElementById("del-btn");
   if(btn.dataset.confirm==="1"){deleteItem(id);}
-  else if(btn.dataset.confirm==="ready"){btn.dataset.confirm="1";btn.textContent="Tap again to confirm";btn.style.background="#ef4444";btn.style.color="#fff";}
-  else{btn.dataset.confirm="ready";btn.textContent="Delete…";btn.style.background="#fee2e2";btn.style.color="#991b1b";}
+  else if(btn.dataset.confirm==="ready"){
+    // Stage 2: user has acknowledged the warning, one more tap commits.
+    btn.dataset.confirm="1";
+    btn.textContent="Tap again to confirm";
+  }
+  else{
+    // Stage 1: user tapped Delete. Make the button fully destructive
+    // styling and warn them. The button started as rg-btn-destructive
+    // (filled red) so there's nothing to swap visually — we just update
+    // the text to tell them what happens on the next tap.
+    btn.dataset.confirm="ready";
+    btn.textContent="Delete…";
+  }
 }
 
 let _panzoomInstance = null;
@@ -5169,7 +5189,7 @@ function renderForm(){
     <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes||"")}</textarea></div>
     <div style="display:flex;gap:10px;padding-top:4px">
       <button id="save-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="submitForm()" ${formData.title?.trim() ? "" : "disabled"}>${isEdit?"Save Changes":"Add to Collection"}</button>
-      <button class="btn btn-dark" onclick="cancelForm()">Cancel</button>
+      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cancelForm()">Cancel</button>
     </div>
     ` : `
     <!-- Add-flow collapsed state (S11): show only the Enter Manually button.
@@ -5745,6 +5765,14 @@ async function cameraOpen(state) {
     try {
       const allDevices = await navigator.mediaDevices.enumerateDevices();
       const videoInputs = allDevices.filter(d => d.kind === 'videoinput');
+      // DEBUG: log every video device the phone exposes. This helps diagnose
+      // when our lens-filter heuristic mis-matches a specific phone model.
+      // To capture: run camera, then in Safari Dev Tools (Mac connected to
+      // iPhone) → Console, search for "[camera] enumerated".
+      console.log('[camera] enumerated', videoInputs.length, 'video devices');
+      videoInputs.forEach((d, i) => {
+        console.log(`[camera] device ${i}: label="${d.label}" deviceId=${d.deviceId.slice(0, 8)}…`);
+      });
       // Match ONLY the physical wide and physical telephoto. "Wide" must
       // not be preceded by "Ultra"; "Telephoto" matches as-is.
       const lensOptions = [];
@@ -5760,6 +5788,9 @@ async function cameraOpen(state) {
         const label = (d.label || '').toLowerCase();
         return label.includes('back') && label.includes('telephoto');
       });
+      console.log('[camera] wide match:', wide ? wide.label : 'none');
+      console.log('[camera] tele match:', tele ? tele.label : 'none');
+      console.log('[camera] zoom constraint supported:', supportsZoomConstraint());
 
       // 1x — physical wide camera
       if (wide) {
