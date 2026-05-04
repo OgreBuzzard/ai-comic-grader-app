@@ -256,34 +256,13 @@ function ensureStylesInjected() {
     background: #f4f0e8;
     border-top: 1px solid #e0d8c8;
   }
-  .lvm-btn {
-    flex: 1;
-    padding: 12px 8px;
-    border: none;
-    border-radius: 10px;
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 12px; font-weight: 700;
-    letter-spacing: 1px; text-transform: uppercase;
-    cursor: pointer;
-    line-height: 1.2;
-  }
-  .lvm-btn:active { transform: scale(0.97); }
-  /* Queue toggle button — its label is the longest of the three actions
-     ("Remove from Queue") so we size it down a few points to keep it on
-     two lines instead of wrapping to three. */
-  .lvm-btn-queue {
-    background: #4a6028; color: #d8e8b0;
-    font-size: 11px;
-  }
-  .lvm-btn-queue:active { background: #5a7030; }
-  .lvm-btn-queue.is-queued { background: #c8b890; color: #4a3818; font-size: 11px; }
-  .lvm-btn-queue.is-queued:active { background: #d8c8a0; }
-  .lvm-btn-queue:disabled { background: #c0c0b0; color: #888880; cursor: not-allowed; }
-  .lvm-btn-print { background: #1a2208; color: #b8d820; }
-  .lvm-btn-print:active { background: #243010; }
-  .lvm-btn-print:disabled {
-    background: #c0c0b0; color: #888880; cursor: not-allowed;
-  }
+  /* Modal action buttons use the canonical .rg-btn-* system from the host
+     page (added S12 May 3). The only modal-specific override is flex:1 so
+     the buttons fill the action bar evenly. The Queue toggle gets a
+     slightly smaller font when its long "Remove from Queue" label is
+     active so it doesn't wrap to three lines. */
+  .lvm-actions .rg-btn { flex: 1; }
+  .rg-btn-queue-active { font-size: 12px !important; }
 
   /* ── Label visual styles (used in both preview AND print sheet) ──────── */
   .rg-label {
@@ -431,7 +410,12 @@ function renderModal(modal, comic, allItems) {
   const queueClass = queueCount >= QUEUE_LIMIT ? 'lvm-queue-count full' : 'lvm-queue-count';
 
   const queueBtnLabel = inQueue ? 'Remove from Queue' : `Add to Queue`;
-  const queueBtnClass = inQueue ? 'lvm-btn lvm-btn-queue is-queued' : 'lvm-btn lvm-btn-queue';
+  // When in queue, use destructive style to make the "remove" action visually
+  // distinct (and accurate — remove IS destructive in the modal context).
+  // When not in queue, use primary for the affirmative add.
+  const queueBtnCategory = inQueue ? 'rg-btn-destructive' : 'rg-btn-primary';
+  // The "Remove from Queue" label is long; mark it for the small-font tweak.
+  const queueBtnSizeMod = inQueue ? 'rg-btn-queue-active' : '';
   const queueBtnDisabled = (!inQueue && queueCount >= QUEUE_LIMIT);
 
   modal.innerHTML = `
@@ -451,8 +435,8 @@ function renderModal(modal, comic, allItems) {
         </div>
       </div>
       <div class="lvm-actions">
-        <button class="${queueBtnClass}" data-action="toggle-queue" ${queueBtnDisabled ? 'disabled' : ''}>${queueBtnLabel}</button>
-        <button class="lvm-btn lvm-btn-print" data-action="print" ${printDisabled ? 'disabled' : ''}>Save as PDF</button>
+        <button class="rg-btn ${queueBtnCategory} rg-btn-md ${queueBtnSizeMod}" data-action="toggle-queue" ${queueBtnDisabled ? 'disabled' : ''}>${queueBtnLabel}</button>
+        <button class="rg-btn rg-btn-primary rg-btn-md" data-action="print" ${printDisabled ? 'disabled' : ''}>Save as PDF</button>
       </div>
     </div>
   `;

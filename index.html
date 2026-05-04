@@ -226,6 +226,83 @@
     .btn-gear:hover { color: #5a4a3a; }
     #header-title span.sub { font-size: 10px; color: #9a8a7a; letter-spacing: 3px; text-transform: uppercase; margin-left: 8px; }
     #main { flex: 1; max-width: 900px; margin: 0 auto; width: 100%; padding: 16px 12px; }
+
+    /* ── CANONICAL BUTTON SYSTEM (S12) ─────────────────────────────────────
+       Five categories × three sizes. See Button_Audit_Phase1.md for the full
+       reasoning. New buttons should use these classes. The legacy .btn-*
+       classes below are kept for now to avoid breaking existing code, but
+       are being phased out — once all buttons migrate, they can be deleted.
+
+       Usage:
+         <button class="rg-btn rg-btn-primary rg-btn-md">Save</button>
+         <button class="rg-btn rg-btn-secondary rg-btn-md">View Link</button>
+         <button class="rg-btn rg-btn-destructive rg-btn-sm">Delete</button>
+         <button class="rg-btn rg-btn-ghost rg-btn-md">Cancel</button>
+         <button class="rg-btn rg-btn-branded rg-btn-lg">Buy Credits</button>
+
+       Size defaults to .rg-btn-md if omitted. Category is required.
+    */
+    .rg-btn {
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      line-height: 1.2;
+      transition: transform 0.1s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+    }
+    .rg-btn:active { transform: scale(0.97); }
+    .rg-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    /* Size variants */
+    .rg-btn-sm { padding: 8px 14px; font-size: 12px; min-height: 36px; }
+    .rg-btn-md { padding: 12px 20px; font-size: 14px; min-height: 44px; }
+    .rg-btn-lg { padding: 16px 24px; font-size: 16px; min-height: 52px; }
+
+    /* Category — primary: dark mascot olive + chartreuse */
+    .rg-btn-primary {
+      background: #1a2208;
+      color: #b8d820;
+    }
+    .rg-btn-primary:active { background: #243010; }
+
+    /* Category — secondary: white + olive */
+    .rg-btn-secondary {
+      background: #ffffff;
+      color: #3a7a20;
+      border: 1.5px solid #3a7a20;
+    }
+    .rg-btn-secondary:active { background: #f0f5e8; }
+
+    /* Category — destructive: cream + muted red */
+    .rg-btn-destructive {
+      background: #f5f0e8;
+      color: #a02020;
+      border: 1.5px solid #c87878;
+    }
+    .rg-btn-destructive:active { background: #ede6d8; }
+
+    /* Category — ghost: transparent + muted */
+    .rg-btn-ghost {
+      background: transparent;
+      color: #8a7a6a;
+    }
+    .rg-btn-ghost:active { color: #5a4a3a; }
+
+    /* Category — branded: dark warm + gold */
+    .rg-btn-branded {
+      background: #2a1a08;
+      color: #c8a96e;
+      border: 1.5px solid #c8a96e;
+    }
+    .rg-btn-branded:active { background: #3a240e; }
+    /* ── End canonical button system ──────────────────────────────────── */
+
     .btn { border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer; font-size: 13px; font-weight: 600; font-family: inherit; }
     .btn-gold { background: #c8a96e; color: #0d0d0f; }
     .btn-dark { background: #e8e0d5; color: #2a1e14; }
@@ -332,9 +409,13 @@
     /* Top header sits below iOS notch / status bar safe area. env(safe-area-inset-top)
        is 0 on devices without a notch, ~47-59px on iPhones with one. Without this
        inset the progress text was hidden behind the status bar / dynamic island. */
-    #camera-header { position: absolute; top: 0; left: 0; right: 0; padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 12px; background: linear-gradient(to bottom, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0) 100%); display: flex; justify-content: space-between; align-items: center; pointer-events: none; gap: 12px; }
+    #camera-header { position: absolute; top: 0; left: 0; right: 0; padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px 12px; background: linear-gradient(to bottom, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0) 100%); display: flex; justify-content: flex-end; align-items: center; pointer-events: none; gap: 12px; }
     #camera-header > * { pointer-events: auto; }
-    #camera-progress { color: #fff; font-size: 16px; font-weight: 700; letter-spacing: 0.5px; text-shadow: 0 1px 4px rgba(0,0,0,0.9); flex: 1; }
+    /* Progress text ("1 of 4 — Front Cover") hidden — the SVG guide for
+       each slot embeds its own label text inside the frame, which is more
+       glanceable. We keep the element so the existing JS that writes to it
+       doesn't need to be conditional. */
+    #camera-progress { display: none; }
     #camera-close { background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.25); color: #fff; width: 40px; height: 40px; min-width: 40px; border-radius: 50%; font-size: 22px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; line-height: 1; flex-shrink: 0; }
     #camera-close:active { background: rgba(0,0,0,0.75); }
     /* Bottom controls. Capture button is centered absolutely so the upload
@@ -774,7 +855,7 @@
   <div id="settings-panel">
     <div class="settings-header">
       <div style="font-size:16px;font-weight:700;color:#c8b8a8;letter-spacing:0.04em">Settings</div>
-      <button onclick="closeSettings()" style="background:none;border:none;color:#6a5a4a;font-size:22px;cursor:pointer;line-height:1">×</button>
+      <button class="rg-btn rg-btn-ghost" onclick="closeSettings()" style="font-size:22px;padding:0 8px;min-height:auto" aria-label="Close">×</button>
     </div>
 
     <!-- Account -->
@@ -1340,6 +1421,17 @@ async function initFirebase(){
     })
     .catch(() => { /* tolerated; lazy load on click is the fallback */ });
 
+  // Lock to portrait orientation. Manifest "orientation":"portrait" handles
+  // Android/Chrome PWAs; this JS call covers any browser that supports the
+  // Screen Orientation API. iOS Safari ignores both the manifest field AND
+  // this JS call — there's no way to force portrait on iOS today. Users on
+  // iOS will get the rotate-to-landscape behavior despite our preference;
+  // this isn't a fixable platform issue.
+  if (screen.orientation && typeof screen.orientation.lock === 'function') {
+    screen.orientation.lock('portrait').catch(() => {
+      // Silent failure — iOS throws here; nothing we can do
+    });
+  }
   fsOnSnapshot(userItemsCollection(),snap=>{
     items=snap.docs.map(d=>flattenForApp({id:d.id,...d.data()})).map(c=>({...c,pageQuality:normPageQuality(c.pageQuality)}));
     if(view==="list")renderList();
@@ -2102,8 +2194,8 @@ function showTermsModal(){
     </ul>
     <p style="font-size:13px;color:#3a4a28;margin-bottom:20px">Full details in our <a href="/terms.html" target="_blank" rel="noopener" style="color:#1a2208;text-decoration:underline">Terms of Service</a> and <a href="/privacy.html" target="_blank" rel="noopener" style="color:#1a2208;text-decoration:underline">Privacy Policy</a>.</p>
     <div style="display:flex;gap:10px;flex-direction:column">
-      <button id="terms-agree-btn" style="padding:14px;background:#1a2208;color:#b8d820;border:none;border-radius:10px;font-size:15px;font-weight:800;letter-spacing:1.5px;cursor:pointer">I AGREE — LET ME IN</button>
-      <button id="terms-decline-btn" style="padding:10px;background:transparent;color:#6a7a5a;border:none;font-size:12px;letter-spacing:1px;cursor:pointer;text-decoration:underline">I don't agree — sign me out</button>
+      <button id="terms-agree-btn" class="rg-btn rg-btn-primary rg-btn-lg">I agree — let me in</button>
+      <button id="terms-decline-btn" class="rg-btn rg-btn-ghost rg-btn-sm" style="text-decoration:underline">I don't agree — sign me out</button>
     </div>`;
 
   overlay.appendChild(box);
@@ -2672,8 +2764,8 @@ function showDetail(id){
       // URL to others. Both styled as olive-bordered buttons to make the
       // affordance obvious — earlier text-link styling was too easy to miss.
       html += `<div style="display:flex;gap:10px;margin-top:10px">
-        <button onclick="openPublicPreview('${esc(selected.roboGradeId)}')" style="background:#fff;border:1.5px solid #3a7a20;color:#3a7a20;border-radius:8px;padding:8px 18px;font-size:15px;font-weight:700;letter-spacing:0.04em;cursor:pointer;font-family:inherit">View Link</button>
-        <button onclick="sharePublicListing('${esc(selected.roboGradeId)}', '${esc(selected.title || '').replace(/'/g, "\\'")}', '${esc(selected.issue || '').replace(/'/g, "\\'")}')" style="background:#fff;border:1.5px solid #3a7a20;color:#3a7a20;border-radius:8px;padding:8px 18px;font-size:15px;font-weight:700;letter-spacing:0.04em;cursor:pointer;font-family:inherit">Share</button>
+        <button class="rg-btn rg-btn-secondary rg-btn-md" onclick="openPublicPreview('${esc(selected.roboGradeId)}')">View Link</button>
+        <button class="rg-btn rg-btn-secondary rg-btn-md" onclick="sharePublicListing('${esc(selected.roboGradeId)}', '${esc(selected.title || '').replace(/'/g, "\\'")}', '${esc(selected.issue || '').replace(/'/g, "\\'")}')">Share</button>
       </div>`;
     }
   }
@@ -2689,7 +2781,7 @@ function showDetail(id){
   // requires a roboGrade (you can't print a label for a book that hasn't
   // been graded yet).
   html += `<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
-    ${(!isSample && selected.roboGrade) ? `<button class="btn" onclick="printLabel('${esc(selected.id)}')" style="background:#1a2208;color:#b8d820;border:1.5px solid #3a5010">Print Label</button>` : ''}
+    ${(!isSample && selected.roboGrade) ? `<button class="rg-btn rg-btn-primary rg-btn-md" onclick="printLabel('${esc(selected.id)}')">Print Label</button>` : ''}
     <button class="btn btn-dark" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')">Delete</button>
   </div></div>`;
 
@@ -2782,7 +2874,7 @@ function openPublicPreview(roboGradeId) {
     <div style="background:#fff;border-radius:14px;width:calc(100vw - 24px);max-width:720px;height:calc(100vh - 80px);display:flex;flex-direction:column;overflow:hidden">
       <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#f4f0e8;border-bottom:1px solid #e0d8c8">
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;color:#3a3028;letter-spacing:1px;text-transform:uppercase">Link Preview</div>
-        <button onclick="closePublicPreview()" style="background:transparent;border:none;font-size:22px;color:#7a6a5a;cursor:pointer;padding:0 8px;line-height:1" aria-label="Close">×</button>
+        <button class="rg-btn rg-btn-ghost" onclick="closePublicPreview()" style="font-size:22px;padding:0 8px;min-height:auto" aria-label="Close">×</button>
       </div>
       <iframe src="/id/${roboGradeId}" style="flex:1;width:100%;border:none;background:#f5f3ee" title="Public listing preview"></iframe>
     </div>
@@ -5081,7 +5173,7 @@ function renderForm(){
 
     <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes||"")}</textarea></div>
     <div style="display:flex;gap:10px;padding-top:4px">
-      <button id="save-btn" class="btn btn-gold" onclick="submitForm()" ${formData.title?.trim() ? "" : "disabled"} style="${formData.title?.trim() ? "" : "opacity:0.5;cursor:not-allowed"}">${isEdit?"Save Changes":"Add to Collection"}</button>
+      <button id="save-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="submitForm()" ${formData.title?.trim() ? "" : "disabled"}>${isEdit?"Save Changes":"Add to Collection"}</button>
       <button class="btn btn-dark" onclick="cancelForm()">Cancel</button>
     </div>
     ` : `
@@ -5090,7 +5182,7 @@ function renderForm(){
          either (a) they tap Enter Manually, or (b) an assessment runs and
          _assessed becomes true. Edit view always shows the full form. -->
     <div style="display:flex;justify-content:center;margin-top:8px">
-      <button class="btn btn-dark" onclick="enterManualMode()" style="width:75%;min-height:48px;border-radius:12px;font-size:14px;letter-spacing:1px">Enter Manually</button>
+      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="enterManualMode()" style="width:75%">Enter Manually</button>
     </div>
     `}
   </div>`;
@@ -5642,52 +5734,71 @@ async function cameraOpen(state) {
     const video = document.getElementById('camera-video');
     video.srcObject = initialStream;
 
-    // Step 2-3: enumerate lenses (after permission so labels are populated)
+    // Step 2-3: enumerate lenses (after permission so labels are populated).
+    // We're MUCH more conservative about what we expose than the prior
+    // version. iOS reports many videoinput devices including:
+    //   - "Back Camera" (composite, auto-switches lenses)
+    //   - "Back Dual Camera" (wide+tele composite)
+    //   - "Back Triple Camera" (uw+wide+tele composite)
+    //   - "Back Wide Camera" (physical wide, 1x)
+    //   - "Back Ultra Wide Camera" (physical ultrawide, 0.5x)
+    //   - "Back Telephoto Camera" (physical tele, 2x or 3x depending on iPhone)
+    // We ONLY want the physical wide and physical telephoto. Composite
+    // cameras and "Back Camera" generic should not be exposed because
+    // they're functionally redundant with the physical lens choices and
+    // prior testing showed they all collapse to "1x" in our display.
     try {
       const allDevices = await navigator.mediaDevices.enumerateDevices();
       const videoInputs = allDevices.filter(d => d.kind === 'videoinput');
-      // Heuristic: rear cameras have labels containing "back" or "rear" or
-      // the iOS-specific labels like "Back Camera", "Back Ultra Wide Camera",
-      // "Back Telephoto Camera", "Back Dual Camera". Front cameras say "Front".
-      // If labels are blank (privacy mode), we get no lenses and skip the UI.
-      const rearLenses = videoInputs.filter(d => {
+      // Match ONLY the physical wide and physical telephoto. "Wide" must
+      // not be preceded by "Ultra"; "Telephoto" matches as-is.
+      const lensOptions = [];
+      // Find the wide camera (physical 1x). Used for both "1x" and "2x"
+      // entries — 2x is digital zoom on the wide sensor.
+      const wide = videoInputs.find(d => {
         const label = (d.label || '').toLowerCase();
-        return label && !label.includes('front') &&
-               (label.includes('back') || label.includes('rear') || label.includes('environment'));
+        // Match "Back Wide Camera" but NOT "Back Ultra Wide Camera"
+        return label.includes('back') && label.includes('wide') &&
+               !label.includes('ultra');
       });
-      // Classify each rear lens by its zoom level. iOS labels include words
-      // like "Ultra Wide" (0.5x), no qualifier (1x wide), "Telephoto" (2x or
-      // 3x depending on iPhone model). We tag each with a numeric zoom value
-      // for sorting and display.
-      const classified = rearLenses.map(d => {
+      const tele = videoInputs.find(d => {
         const label = (d.label || '').toLowerCase();
-        let zoom = 1;
-        if (label.includes('ultra wide') || label.includes('ultrawide')) zoom = 0.5;
-        else if (label.includes('telephoto')) {
-          // Telephoto on iPhones: 2x for non-Pro Max older Pros, 3x for newer
-          // Pros and Pro Maxes. Without device-specific knowledge we can't
-          // distinguish, so we tag generically as "tele" and figure out later.
-          zoom = 3;  // optimistic; will display "3x" if it's the only telephoto
-        }
-        return { device: d, zoom, label: d.label };
+        return label.includes('back') && label.includes('telephoto');
       });
-      // Sort ascending by zoom for UI ordering (0.5x, 1x, 3x).
-      classified.sort((a, b) => a.zoom - b.zoom);
-      _cameraState.lenses = classified;
 
-      // Pick default lens: prefer highest zoom available, but never 0.5x
-      // (ultrawide is bad for detail capture). If only ultrawide + 1x, use 1x.
-      // Otherwise prefer the telephoto.
-      let defaultIdx = classified.findIndex(l => l.zoom === 1);  // start at 1x
-      const teleIdx = classified.findIndex(l => l.zoom > 1);
-      if (teleIdx >= 0) defaultIdx = teleIdx;
-      if (defaultIdx < 0) defaultIdx = classified.length - 1;  // fallback to last
+      // 1x — physical wide camera
+      if (wide) {
+        lensOptions.push({ device: wide, zoom: 1, digitalZoom: 1, label: '1×' });
+      }
+      // 2x — digital zoom on the wide sensor. Only added if wide exists
+      // AND the browser supports the zoom MediaTrackConstraint. The wide
+      // sensor on iPhone 14 Pro and later has enough resolution that 2x
+      // digital crop is near-optical quality, AND focuses better than the
+      // physical telephoto (which has a long minimum focus distance).
+      if (wide && supportsZoomConstraint()) {
+        lensOptions.push({ device: wide, zoom: 2, digitalZoom: 2, label: '2×' });
+      }
+      // Telephoto (3x or whatever the device's tele is) — added so users
+      // who explicitly want optical telephoto still have it. Default is
+      // NOT this one because of focus issues at close range.
+      if (tele) {
+        lensOptions.push({ device: tele, zoom: 3, digitalZoom: 1, label: '3×' });
+      }
+
+      _cameraState.lenses = lensOptions;
+
+      // Default selection: prefer 2x (best for comic close-ups: high quality,
+      // good focus). Falls back to 1x if 2x not supported, falls back to
+      // first option if no 1x either.
+      let defaultIdx = lensOptions.findIndex(l => l.label === '2×');
+      if (defaultIdx < 0) defaultIdx = lensOptions.findIndex(l => l.label === '1×');
+      if (defaultIdx < 0) defaultIdx = 0;
       _cameraState.currentLensIdx = defaultIdx;
 
-      // Render lens-selector UI if more than one rear lens
+      // Render lens-selector UI if more than one option
       renderLensSelector();
       // Switch to default lens if it's not the one we already opened
-      if (classified.length > 1 && defaultIdx >= 0) {
+      if (lensOptions.length > 0 && defaultIdx >= 0) {
         await switchToLens(defaultIdx);
       }
     } catch (enumErr) {
@@ -5701,6 +5812,16 @@ async function cameraOpen(state) {
 }
 
 // Render lens-selector UI based on _cameraState.lenses. Hidden if 0-1 lenses.
+// Check whether the browser supports the zoom MediaTrackConstraint. Used to
+// gate the 2x digital-zoom-on-wide option — if zoom isn't supported, we can't
+// crop the wide sensor and 2x has no way to deliver, so we hide it.
+function supportsZoomConstraint() {
+  try {
+    const supported = navigator.mediaDevices.getSupportedConstraints();
+    return !!supported.zoom;
+  } catch { return false; }
+}
+
 function renderLensSelector() {
   const sel = document.getElementById('camera-lens-selector');
   if (!_cameraState || !_cameraState.lenses || _cameraState.lenses.length <= 1) {
@@ -5709,21 +5830,22 @@ function renderLensSelector() {
     return;
   }
   // Build buttons: top to bottom = high zoom to low zoom (so closest button
-  // to capture button is the most-used)
+  // to capture button is the most-used). Use the lens.label which is already
+  // formatted ("1×", "2×", "3×").
   const buttons = _cameraState.lenses.map((lens, idx) => {
     const active = (idx === _cameraState.currentLensIdx) ? 'active' : '';
-    const display = lens.zoom < 1
-      ? `${lens.zoom}\u00d7`        // 0.5×
-      : `${Math.round(lens.zoom)}\u00d7`;  // 1×, 3×
-    return `<button class="lens-btn ${active}" data-idx="${idx}" onclick="switchToLens(${idx})">${display}</button>`;
+    return `<button class="lens-btn ${active}" data-idx="${idx}" onclick="switchToLens(${idx})">${lens.label}</button>`;
   }).reverse().join('');  // reverse so high-zoom is on top
   sel.innerHTML = buttons;
   sel.classList.add('show');
 }
 
-// Switch to a specific lens by stopping the current stream and starting a new
-// one constrained to the chosen lens's deviceId. This is true optical zoom on
-// devices with multiple physical rear lenses (mostly iPhone Pro models).
+// Switch to a specific lens. Two paths:
+//   - Optical zoom: switch to a different physical lens (deviceId change)
+//   - Digital zoom: same deviceId as current, apply zoom constraint
+// On iPhone, the 2× option uses digital zoom on the wide sensor since this
+// produces better focus + image quality than the physical telephoto for
+// close-up subjects like comic books.
 async function switchToLens(idx) {
   if (!_cameraState || !_cameraState.lenses[idx]) return;
   const lens = _cameraState.lenses[idx];
@@ -5734,14 +5856,38 @@ async function switchToLens(idx) {
   }
 
   try {
-    const newStream = await navigator.mediaDevices.getUserMedia({
+    // Build constraints. deviceId always exact-matched to the lens. If the
+    // lens uses digital zoom (digitalZoom > 1), apply the zoom constraint.
+    const constraints = {
       video: { deviceId: { exact: lens.device.deviceId } },
       audio: false
-    });
+    };
+    if (lens.digitalZoom && lens.digitalZoom > 1) {
+      constraints.video.zoom = lens.digitalZoom;
+    }
+    const newStream = await navigator.mediaDevices.getUserMedia(constraints);
     _cameraState.stream = newStream;
     _cameraState.currentLensIdx = idx;
     const video = document.getElementById('camera-video');
     video.srcObject = newStream;
+
+    // Some browsers ignore the zoom constraint at getUserMedia time but
+    // honor it via track.applyConstraints() afterward. Try this as a
+    // belt-and-suspenders measure for digital-zoom lens options.
+    if (lens.digitalZoom && lens.digitalZoom > 1) {
+      try {
+        const track = newStream.getVideoTracks()[0];
+        const caps = track.getCapabilities ? track.getCapabilities() : null;
+        if (caps && caps.zoom) {
+          // Clamp requested zoom to the supported range
+          const z = Math.min(caps.zoom.max, Math.max(caps.zoom.min, lens.digitalZoom));
+          await track.applyConstraints({ advanced: [{ zoom: z }] });
+        }
+      } catch (zoomErr) {
+        console.warn('[camera] applyConstraints zoom failed:', zoomErr);
+      }
+    }
+
     renderLensSelector();  // update active button
   } catch (err) {
     console.warn('[camera] lens switch failed, falling back:', err);
@@ -5940,10 +6086,10 @@ function showImageCapModal(type) {
         }
       </div>
       <div style="display:flex;gap:10px">
-        <button onclick="document.getElementById('image-cap-modal').remove();showBuyCredits()" style="flex:2;padding:12px;background:#2a4a6a;color:#a8d0f0;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer">
+        <button class="rg-btn rg-btn-branded rg-btn-md" onclick="document.getElementById('image-cap-modal').remove();showBuyCredits()" style="flex:2">
           Buy Credits
         </button>
-        <button onclick="document.getElementById('image-cap-modal').remove()" style="flex:1;padding:12px;background:#1e1c1a;color:#6a5a4a;border:none;border-radius:10px;font-size:14px;cursor:pointer">
+        <button class="rg-btn rg-btn-ghost rg-btn-md" onclick="document.getElementById('image-cap-modal').remove()" style="flex:1">
           ${isHard ? 'Cancel' : 'Continue'}
         </button>
       </div>
@@ -6327,7 +6473,7 @@ initFirebase();
         </div>
       </button>
     </div>
-    <button onclick="hideBuyCredits()" style="margin-top:16px;width:100%;background:none;border:none;color:#8a7a6a;font-size:14px;cursor:pointer;padding:8px">Cancel</button>
+    <button class="rg-btn rg-btn-ghost rg-btn-md" onclick="hideBuyCredits()" style="margin-top:16px;width:100%">Cancel</button>
   </div>
 </div>
 <!-- Payment Success Modal (S11) -->
@@ -6346,7 +6492,7 @@ initFirebase();
     <h2 style="margin:0 0 8px;font-size:20px;color:#1a1008">Payment successful</h2>
     <p style="margin:0 0 4px;font-size:15px;color:#3a2a1a"><span id="payment-success-credits" style="font-weight:700">0</span> assessment credits added to your account.</p>
     <p style="margin:0 0 22px;font-size:13px;color:#8a7a6a">Receipt sent to your email by Stripe.</p>
-    <button onclick="hidePaymentSuccess()" style="background:#1a1008;color:#c8a96e;border:none;border-radius:10px;padding:14px 24px;font-size:15px;font-weight:700;cursor:pointer;width:100%">Continue</button>
+    <button class="rg-btn rg-btn-branded rg-btn-lg" onclick="hidePaymentSuccess()" style="width:100%">Continue</button>
   </div>
 </div>
 
