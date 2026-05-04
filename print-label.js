@@ -1,4 +1,4 @@
-// Robograder — Label viewer + print queue module (S12 rewrite)
+// Robograder — Label viewer + PDF generation module (S12 rewrite)
 // Loaded dynamically when the user clicks "Print Label" on a detail view.
 //
 // REWRITE SUMMARY (S12 May 3):
@@ -7,9 +7,16 @@
 //     the user-gesture chain that Safari requires for popups. Modal-based
 //     UX is also better long-term (no popup blocker fights, works in PWA).
 //   - Added queue mechanism: user can stack up to 20 labels for batch
-//     printing on a single Avery 8161 sheet (2×10 layout).
+//     PDF generation on a single Avery 8161 sheet (2×10 layout).
 //   - localStorage-backed queue, cleared on app reload (per Matt's spec —
 //     this is a session feature, not persistent).
+//   - Pivoted from window.print() to PDF generation (jsPDF + html2canvas).
+//     iOS PWA print pipeline was too unreliable: ~30-40s delays, blank-page
+//     output, "blocked from automatically printing" warnings even from real
+//     gestures. PDF gen is more reliable: render labels off-screen at high
+//     DPI, capture each as canvas, place at exact 8161 grid positions in
+//     a jsPDF document, save to user's Downloads. They open + print/AirDrop
+//     from there — the PDF renders identically wherever it's printed.
 //
 // LOCKED DESIGN — see DESIGN NOTES inside renderLabelMarkup() before
 // changing any visual styling. The font/layout/color choices are the
@@ -19,7 +26,9 @@
 // Public API:
 //   openLabelViewer(comic, allItems) — opens modal for the given comic.
 //                                       allItems is the items[] array used
-//                                       to look up queued comics at print time.
+//                                       to look up queued comics at PDF time.
+//   clearLabelQueue()                 — clears the localStorage queue (called
+//                                       by app init for session-only behavior).
 
 const QUEUE_KEY = 'robograder.labelQueue.v1';
 const QUEUE_LIMIT = 20;
@@ -237,7 +246,7 @@ function ensureStylesInjected() {
     border: none;
     border-radius: 10px;
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 14px; font-weight: 700;
+    font-size: 12px; font-weight: 700;
     letter-spacing: 1px; text-transform: uppercase;
     cursor: pointer;
     line-height: 1.2;
@@ -378,95 +387,10 @@ function ensureStylesInjected() {
     letter-spacing: 0.2px;
   }
 
-  /* ── Print sheet (shown only during print operation) ─────────────────── */
-  /* The print sheet contains up to 20 labels in a 2×10 grid sized to Avery
-     8161 (4"×1" labels, sheet 8.5"×11"). It lives in the DOM at all times
-     but is hidden on screen via .lvm-print-sheet:not(.printing). When the
-     user taps Print, we add .printing and call window.print(); CSS @media
-     print hides everything else via display:none. */
-  .lvm-print-sheet {
-    display: none;
-    position: fixed; inset: 0;
-    background: white;
-    z-index: 2000;
-  }
-  .lvm-print-sheet.printing { display: block; }
-  .print-sheet-grid {
-    width: 8.5in; height: 11in;
-    margin: 0;
-    padding: 0.5in 0.156in 0;
-    box-sizing: border-box;
-    display: grid;
-    grid-template-columns: 4in 4in;
-    grid-template-rows: repeat(10, 1in);
-    column-gap: 0.156in;
-    row-gap: 0;
-    background: white;
-  }
-  .print-sheet-grid .rg-label,
-  .print-sheet-grid .print-cell-empty {
-    width: 4in;
-    height: 1in;
-    border: none;
-    border-radius: 0;
-  }
-  /* Print cell: each grid cell holds one scaled label.
-     Scaling math:
-       Label intrinsic: 1152px wide × 288px tall
-       Target rendered: 4in × 1in
-       Browser default: 96 DPI → 4in = 384px, 1in = 96px
-       Scale factor: 384/1152 = 0.3333... AND 96/288 = 0.3333... ✓
-     Apply transform:scale(0.3333) with top-left origin so the scaled label
-     fills the cell starting from its upper-left corner. */
-  .print-cell {
-    width: 4in; height: 1in;
-    overflow: hidden;
-    position: relative;
-  }
-  .print-cell .rg-label {
-    transform-origin: top left;
-    transform: scale(0.3333);
-    width: 1152px; height: 288px;
-  }
-
-  /* Actual print rules. Use display:none (not visibility:hidden) to ensure
-     the modal's translucent background and other body content don't paint
-     to the print pages. visibility:hidden preserves layout space and any
-     opaque/translucent backgrounds on parents still paint — that's why the
-     prior approach produced 7 pages of black. */
-  @media print {
-    @page {
-      size: 8.5in 11in;
-      margin: 0;
-    }
-    /* Hide everything by default during print */
-    body > * { display: none !important; }
-    /* Then show only the print sheet (and ancestors that contain it) */
-    .lvm-print-sheet,
-    .lvm-print-sheet * {
-      display: revert !important;
-      visibility: visible !important;
-    }
-    .lvm-print-sheet.printing {
-      display: block !important;
-      position: absolute !important;
-      left: 0; top: 0;
-      width: 8.5in; height: 11in;
-      background: white !important;
-    }
-    .lvm-print-sheet .print-sheet-grid {
-      display: grid !important;
-      width: 8.5in; height: 11in;
-    }
-    .lvm-print-sheet .print-cell {
-      display: block !important;
-    }
-    .lvm-print-sheet .print-cell-empty {
-      display: block !important;
-    }
-    /* Modal must be display:none so it doesn't paint */
-    #label-viewer-modal { display: none !important; }
-  }
+  /* Print sheet markup is no longer used — PDF generation (handleSavePDF)
+     replaces window.print() entirely. The label DOM is captured by
+     html2canvas off-screen and embedded into a jsPDF document. See
+     handleSavePDF / generatePDF below for details. */
   `;
   document.head.appendChild(style);
 }
@@ -505,10 +429,9 @@ function renderModal(modal, comic, allItems) {
       <div class="lvm-actions">
         <button class="lvm-btn lvm-btn-back" data-action="back">Back</button>
         <button class="${queueBtnClass}" data-action="toggle-queue" ${queueBtnDisabled ? 'disabled' : ''}>${queueBtnLabel}</button>
-        <button class="lvm-btn lvm-btn-print" data-action="print" ${printDisabled ? 'disabled' : ''}>Print</button>
+        <button class="lvm-btn lvm-btn-print" data-action="print" ${printDisabled ? 'disabled' : ''}>Save as PDF</button>
       </div>
     </div>
-    <div class="lvm-print-sheet" id="lvm-print-sheet"></div>
   `;
 
   // Render QR for the previewed label
@@ -530,7 +453,7 @@ function renderModal(modal, comic, allItems) {
   });
   modal.querySelector('[data-action="print"]').addEventListener('click', (e) => {
     if (e.currentTarget.disabled) return;
-    handlePrint(modal, comic, allItems);
+    handleSavePDF(modal, comic, allItems);
   });
 
   // Open the modal
@@ -554,7 +477,9 @@ function fitPreviewToFrame(modal) {
   // padding (which is 2 × 16px = 32px in the CSS below).
   const areaStyle = getComputedStyle(area);
   const padX = parseFloat(areaStyle.paddingLeft) + parseFloat(areaStyle.paddingRight);
-  const avail = area.clientWidth - padX;
+  // Pull in another 4% margin so the label visibly clears the modal edges
+  // — a label that touches the right edge looks clipped even if it's not.
+  const avail = (area.clientWidth - padX) * 0.96;
   if (avail <= 0) return;
   // Label intrinsic width is 1152px. Compute scale factor and clamp to a
   // sensible max so we don't blow up the label on huge displays.
@@ -566,15 +491,45 @@ function closeModal(modal) {
   modal.classList.remove('open');
 }
 
-// ── Print orchestration ────────────────────────────────────────────────────
-// Builds the multi-label print sheet from queued comics, calls window.print(),
-// then clears the queue and closes the modal once print is initiated.
+// ── PDF generation (jsPDF + html2canvas) ───────────────────────────────────
+// We replaced window.print() with PDF generation in S12 because iOS PWA's
+// print pipeline was unreliable: ~30-40s delay before the print dialog
+// appeared, blank-page output, and Safari's "blocked from automatically
+// printing" warning even when called from a real user gesture.
+//
+// PDF generation is more reliable: we render labels at high DPI, place them
+// at exact Avery 8161 grid positions, and hand the user a downloaded PDF.
+// They open it in iOS Files / Preview and print/AirDrop/share from there.
+// The PDF renders identically wherever it's printed.
+//
+// Library loading: jsPDF and html2canvas both ~150KB combined. Lazy-loaded
+// on first Save tap so the module pre-warm doesn't pay this cost upfront.
 
-function handlePrint(modal, currentComic, allItems) {
+let _pdfLibsPromise = null;
+function ensurePdfLibsLoaded() {
+  if (window.jspdf && window.html2canvas) return Promise.resolve();
+  if (_pdfLibsPromise) return _pdfLibsPromise;
+  _pdfLibsPromise = Promise.all([
+    loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'),
+    loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'),
+  ]);
+  return _pdfLibsPromise;
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Failed to load: ' + src));
+    document.head.appendChild(s);
+  });
+}
+
+async function handleSavePDF(modal, currentComic, allItems) {
   const queue = readQueue();
   if (queue.length === 0) return;
 
-  // Look up each queued comic from allItems
   const itemsById = new Map(allItems.map(c => [c.id, c]));
   const comicsToprint = queue
     .map(id => itemsById.get(id))
@@ -587,36 +542,106 @@ function handlePrint(modal, currentComic, allItems) {
     return;
   }
 
-  // Build the print sheet
-  const sheet = modal.querySelector('#lvm-print-sheet');
-  let cellsHTML = '';
-  for (let i = 0; i < QUEUE_LIMIT; i++) {
-    if (i < comicsToprint.length) {
-      cellsHTML += `<div class="print-cell">${renderLabelMarkup(comicsToprint[i])}</div>`;
-    } else {
-      cellsHTML += `<div class="print-cell-empty"></div>`;
+  // Show a transient "Generating PDF…" overlay so the user knows something
+  // is happening (PDF gen takes 2-5s for a full sheet).
+  const saveBtn = modal.querySelector('[data-action="print"]');
+  const origLabel = saveBtn ? saveBtn.textContent : 'Save as PDF';
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Generating…';
+  }
+
+  try {
+    await ensurePdfLibsLoaded();
+    await generatePDF(comicsToprint, modal);
+    // Success — clear queue and re-render to show empty state
+    clearQueue();
+    renderModal(modal, currentComic, allItems);
+  } catch (err) {
+    console.error('[label] PDF generation failed:', err);
+    alert('PDF generation failed: ' + err.message);
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = origLabel;
     }
   }
-  sheet.innerHTML = `<div class="print-sheet-grid">${cellsHTML}</div>`;
+}
 
-  // Render QR codes for all print-sheet labels (synchronous now since the
-  // QR library was pre-loaded when the modal opened).
-  renderQRsIn(sheet);
+// Renders the print sheet's labels off-screen at high DPI, captures each as
+// a canvas via html2canvas, places them at exact Avery 8161 grid positions
+// in a jsPDF document, and triggers the download.
+//
+// 8161 grid positions (extracted from the official Avery PDF template):
+//   Top margin:    0.5in
+//   Left margin:   0.1667in
+//   Label:         4in × 1in
+//   Column gap:    0.1882in
+//   Row gap:       0in
+//   2 columns × 10 rows = 20 labels per sheet
+async function generatePDF(comics, modal) {
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({
+    orientation: 'portrait',
+    unit: 'in',
+    format: 'letter',  // 8.5 × 11
+  });
 
-  // Show the print sheet, then call window.print() SYNCHRONOUSLY in the
-  // same tick as the user's gesture. Safari treats anything after a setTimeout
-  // as automatic and blocks it with the "blocked from automatically printing"
-  // dialog. The QR library generates QR canvas elements synchronously once
-  // the script is loaded, so no async wait is needed here.
-  sheet.classList.add('printing');
-  window.print();
+  // Off-screen container for rendering labels at high DPI. We keep this in
+  // the DOM (not display:none) so html2canvas can measure it correctly, but
+  // position it off-screen via absolute positioning + negative coordinates.
+  const offscreen = document.createElement('div');
+  offscreen.style.cssText = 'position:fixed;left:-99999px;top:0;background:white;';
+  document.body.appendChild(offscreen);
 
-  // After window.print() returns (the dialog has closed or been dismissed,
-  // synchronously on most browsers, async on iOS but always completes before
-  // any user interaction), clean up: clear queue + close modal.
-  sheet.classList.remove('printing');
-  clearQueue();
-  closeModal(modal);
+  try {
+    // Pre-render all 20 cell labels (real ones + blanks) in the off-screen
+    // container so html2canvas can capture each. Doing this in batch is
+    // faster than serial appending.
+    let labelsHTML = '';
+    for (let i = 0; i < QUEUE_LIMIT; i++) {
+      if (i < comics.length) {
+        labelsHTML += `<div class="pdf-label-box" data-idx="${i}" style="width:1152px;height:288px;display:block;background:#d4d9be;">${renderLabelMarkup(comics[i])}</div>`;
+      }
+      // Skip blank cells — no need to render or place them in the PDF
+    }
+    offscreen.innerHTML = labelsHTML;
+
+    // Render QR codes synchronously (library is already loaded from the
+    // modal preview path).
+    renderQRsIn(offscreen);
+
+    // Wait one animation frame so layout + QR canvases are flushed before
+    // html2canvas captures.
+    await new Promise(r => requestAnimationFrame(r));
+
+    // Capture each label and place in PDF at correct grid position.
+    const boxes = offscreen.querySelectorAll('.pdf-label-box');
+    for (let i = 0; i < boxes.length; i++) {
+      const idx = parseInt(boxes[i].dataset.idx, 10);
+      const col = idx % 2;        // 0 = left column, 1 = right column
+      const row = Math.floor(idx / 2);  // 0-9
+      const x = 0.1667 + col * (4 + 0.1882);  // inches
+      const y = 0.5 + row * 1.0;  // inches
+
+      // html2canvas at 2× for crisper output without ballooning PDF size
+      const canvas = await window.html2canvas(boxes[i], {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#d4d9be',
+        logging: false,
+      });
+      const imgData = canvas.toDataURL('image/png');
+      pdf.addImage(imgData, 'PNG', x, y, 4, 1);
+    }
+
+    // Save / download. iOS Safari saves to Files → Downloads. Desktop
+    // browsers save to default Downloads folder.
+    const filename = `Robograder-Labels-${new Date().toISOString().slice(0, 10)}.pdf`;
+    pdf.save(filename);
+  } finally {
+    // Always clean up the off-screen container
+    document.body.removeChild(offscreen);
+  }
 }
 
 // ── Label markup builder ───────────────────────────────────────────────────
