@@ -1,27 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
-  <!--
-    Spine raking-light guide — designed LANDSCAPE.
-    User lays comic flat, lights from one side at low angle, photographs across.
-    Phone is held in landscape orientation parallel to the comic's long edge.
-
-    Trapezoid: NEAR edge (spine, closest to camera) = LONG line at bottom.
-                FAR edge (opposite) = SHORTER line up top.
-    Rotation hint upper-left.
-    "SPINE" label inside the trapezoid — this is the slot identifier (no
-    separate slot-label needed; spine doesn't reuse a generic guide template).
-  -->
-  <polygon points="20,540 780,540 620,80 180,80"
-           fill="none" stroke="#7aa838" stroke-width="6"
-           stroke-linejoin="round"/>
-
-  <text x="400" y="340" text-anchor="middle"
-        font-family="system-ui, sans-serif"
-        font-size="56" font-weight="700"
-        fill="#7aa838" opacity="0.75"
-        letter-spacing="6">SPINE</text>
-
-  <g transform="translate(60, 60)" opacity="0.75">
-    <path d="M 0,15 A 18,18 0 0 1 30,0" fill="none" stroke="#7aa838" stroke-width="4" stroke-linecap="round"/>
-    <polyline points="26,-4 30,0 26,5" fill="none" stroke="#7aa838" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-  </g>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 800 600" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;">
+    <g transform="matrix(-1.29025e-16,0.767932,-0.241735,-5.64479e-17,412.051,-10.1851)">
+        <path d="M26.285,540L781.56,540L690.406,80L117.439,80L26.285,540Z" style="fill:none;fill-rule:nonzero;stroke:rgb(122,168,56);stroke-width:6px;"/>
+    </g>
+    <g transform="matrix(-1.04783e-16,0.570413,-0.570413,-1.04783e-16,249.385,295.7)">
+        <text x="-90.747px" y="0px" style="font-family:'Helvetica-Bold', 'Helvetica';font-weight:700;font-size:56px;fill:rgb(122,168,56);">S<tspan x="-50.036px -9.324px 9.594px 53.396px " y="0px 0px 0px 0px ">PINE</tspan></text>
+    </g>
+    <g transform="matrix(0.77734,1.71636e-17,-1.77892e-17,0.75,-29.4221,10)">
+        <path d="M400,120L400,160" style="fill:none;fill-rule:nonzero;stroke:rgb(122,168,56);stroke-width:10.29px;stroke-linecap:round;stroke-linejoin:miter;"/>
+    </g>
+    <g transform="matrix(0.77734,1.71636e-17,-1.77892e-17,0.75,-29.4221,163.75)">
+        <path d="M400,395L400,435" style="fill:none;fill-rule:nonzero;stroke:rgb(122,168,56);stroke-width:10.29px;stroke-linecap:round;stroke-linejoin:miter;"/>
+    </g>
 </svg>

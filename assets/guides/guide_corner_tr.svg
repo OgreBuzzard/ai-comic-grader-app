@@ -1,12 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
-  <!-- Top-Right corner macro. Corner-point: (760, 30). Down to (760, 540). Left to (40, 30). -->
-  <path d="M 760,540 L 760,42 Q 760,30 748,30 L 40,30"
-        fill="none" stroke="#7aa838" stroke-width="6"
-        stroke-linecap="round" stroke-linejoin="round"/>
-  <text id="slot-label" x="400" y="595"
-        text-anchor="middle"
-        font-family="system-ui, sans-serif"
-        font-size="32" font-weight="700"
-        fill="#7aa838" opacity="0.85"
-        letter-spacing="4">TOP RIGHT</text>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 800 600" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;">
+    <g transform="matrix(1.05509,0,0,1.10173,-42.4403,4.04567)">
+        <path d="M760,540L760,42C760,34 756,30 748,30L40,30" style="fill:none;fill-rule:nonzero;stroke:rgb(122,168,56);stroke-width:6px;"/>
+    </g>
+    <g id="slot-label" transform="matrix(1,0,0,1,399.36,28.7485)">
+        <text x="-91.667px" y="0px" style="font-family:'Helvetica-Bold', 'Helvetica';font-weight:700;font-size:32px;fill:rgb(122,168,56);">T<tspan x="-71.403px -45.232px -23.171px -13px 11.389px 21.56px 47.731px 72.12px " y="0px 0px 0px 0px 0px 0px 0px 0px ">OP RIGHT</tspan></text>
+    </g>
 </svg>
