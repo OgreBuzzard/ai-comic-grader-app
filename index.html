@@ -35,7 +35,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Noto+Sans+Display:wdth,wght@62.5..100,500;700;900&display=swap" rel="stylesheet">
   <link rel="preload" href="assets/Robograder_Background.jpg" as="image">
-  <link rel="preload" href="assets/Robograder_v2_Load.png" as="image">
+  <link rel="preload" href="assets/Robograder_Roll-in.apng" as="image">
   <link rel="apple-touch-icon" href="icon-192.png">
 
   <!-- Preconnect to Firebase Storage so the first thumbnail/image fetch
@@ -682,10 +682,11 @@
       animation: splashSlideUp 0.75s cubic-bezier(0.22, 1, 0.36, 1) 0.1s forwards;
     }
     /* Robograder mascot — the v2 character on top of the background.
-       Uses an <img> tag rather than background-image so PNG transparency
-       works (the character has a transparent background; we want to see
-       the circuit pattern behind him). Sized to dominate the upper half
-       of the viewport with room below for the typing text. */
+       S12: replaced static PNG with APNG animation (Robograder_Roll-in.apng).
+       The animation has its own roll-in built in, so we no longer apply the
+       CSS slide-up that the static PNG used. The character now starts
+       in-place and animates within itself. We retain the same sizing and
+       positioning. */
     #splash-robot {
       position: absolute;
       left: 0; right: 0;
@@ -696,18 +697,12 @@
       width: auto;
       height: auto;
       object-fit: contain;
-      transform: translateY(calc(-50% + 110vh));
-      will-change: transform;
-      animation: splashRobotSlideUp 0.75s cubic-bezier(0.22, 1, 0.36, 1) 0.1s forwards;
+      transform: translateY(-50%);
       pointer-events: none;
     }
     @keyframes splashSlideUp {
       from { transform: translateY(110vh); }
       to { transform: translateY(0); }
-    }
-    @keyframes splashRobotSlideUp {
-      from { transform: translateY(calc(-50% + 110vh)); }
-      to { transform: translateY(-50%); }
     }
     /* Gradient fade at the bottom so text is readable over the image */
     #splash-gradient {
@@ -810,7 +805,7 @@
 
 <div id="splash">
   <div id="splash-bg" role="presentation" aria-hidden="true"></div>
-  <img id="splash-robot" src="assets/Robograder_v2_Load.png" alt="Robograder mascot">
+  <img id="splash-robot" src="assets/Robograder_Roll-in.apng" alt="Robograder mascot">
   <div id="splash-gradient"></div>
   <div id="splash-text"></div>
 </div>
@@ -6330,6 +6325,10 @@ if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catc
   const container = document.getElementById('splash-text');
   let lineIndex = 0;
   let done = false;
+  // Track when the splash mounted so we can ensure the roll-in animation
+  // gets to play through even on fast cold-loads where the typing finishes
+  // before the animation does.
+  const splashStartTime = Date.now();
 
   function measureLine(text) {
     const tmp = document.createElement('span');
@@ -6370,8 +6369,15 @@ if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catc
       await new Promise(r => setTimeout(r, 180)); // pause between lines
     }
     done = true;
-    // Hold a moment then dismiss
-    await new Promise(r => setTimeout(r, 800));
+    // Wait for the splash animation to also complete before dismissing.
+    // splashStartTime is set when splash mounts; the roll-in APNG runs for
+    // ~5 seconds. We hold until either the animation duration has elapsed
+    // (so user always sees the full roll-in) OR the user taps to skip.
+    // The "+800ms hold" the prior version had is replaced by this gating.
+    const ANIMATION_DURATION_MS = 5000;
+    const elapsed = Date.now() - splashStartTime;
+    const remaining = Math.max(0, ANIMATION_DURATION_MS - elapsed);
+    await new Promise(r => setTimeout(r, remaining));
     dismiss();
   }
 
