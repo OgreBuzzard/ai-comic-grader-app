@@ -48,6 +48,11 @@
        changes automatically. -->
   <script src="/robograde-panel.js"></script>
 
+  <!-- Laser-scan assessment animation (S12). Plays the chest-cavity scan
+       animation while an assessment API call is in flight. Exposes
+       window.RobograderScan.runScanAnimation(photoUrls). -->
+  <script src="/scan-animation.js"></script>
+
   <!-- Panzoom: MIT-licensed library for pinch/zoom/pan on lightbox images -->
   <script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
 
@@ -871,15 +876,13 @@
       <button class="btn btn-topbar btn-buy" onclick="showBuyCredits()" id="credits-btn" style="display:none">Buy</button>
       <button class="btn btn-topbar btn-add" id="add-btn" onclick="showAdd()" style="visibility:hidden">Add</button>
       <button class="btn-gear" onclick="openSettings()" title="Settings" id="settings-btn" aria-label="Settings">
-        <!-- Three-dot menu icon. Replaces all prior gear/equalizer/cog
-             attempts (S12). The three vertical dots are the universally
-             recognized "more options" affordance on iOS and Android — more
-             abstract than any gear shape, signals "settings/more" without
-             the mechanical-engineering connotation. -->
+        <!-- Flat abstract gear icon — solid white silhouette of a cog with
+             a cutout center hole. Matches Matt's reference (S12). The
+             prior versions (metallic gear, three-dot menu, equalizer
+             sliders) all read wrong — a flat universal gear is what
+             "settings" looks like. -->
         <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
-          <circle cx="12" cy="5" r="2"/>
-          <circle cx="12" cy="12" r="2"/>
-          <circle cx="12" cy="19" r="2"/>
+          <path d="M19.43 12.98c.04-.32.07-.64.07-.98 0-.34-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98 0 .33.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"/>
         </svg>
       </button>
     </div>
@@ -3596,9 +3599,12 @@ function setStep(id, state, detail='') {
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function animateStepsFromDiagnostics(d) {
+  // S12: "analyzing" step is now pre-marked green by showAssessModal()
+  // because the actual photo analysis happens during the laser-scan
+  // animation that runs BEFORE the modal appears. Skip the analyzing
+  // step animation here to avoid a redundant "mark green" of an already
+  // green box. Start the visible progression at "populating".
   await delay(120);
-  setStep('analyzing', 'done');
-  await delay(180);
   setStep('populating', 'done');
   await delay(180);
   setStep('mint', d.comicvineRef ? 'done' : 'failed');
@@ -4677,7 +4683,21 @@ async function assessGrade(){
   delete formData._bypassDuplicateCheck;
 
   assessing=true;
-  showAssessModal();
+
+  // S12: Launch the laser-scan animation in parallel with the API call.
+  // The user sees the chest cavity slide up and the photos get scanned
+  // while the API is genuinely working in the background. Spec from Matt:
+  //   - Animation always plays to completion (even if API finishes early)
+  //   - Modal hard-cuts in after animation finishes
+  //   - "Analyzing Photos" step is pre-marked green when modal appears
+  //   - Modal flow effectively starts at "Populating Info"
+  // The animation reads photos from formData.images directly (Cloud
+  // Storage URLs or data URLs — both work as background-image src).
+  // Per Matt: skip missing slots, only animate the ones with photos.
+  const scanController = window.RobograderScan
+    ? window.RobograderScan.runScanAnimation(formData.images || [])
+    : { promise: Promise.resolve(), cancel: () => {} };
+
   try{
     // Track which photo slots are populated. The images array gets filter(Boolean)'d
     // above, which loses slot semantics — slot 0 (front) vs slot 2 (interior) become
@@ -4701,9 +4721,21 @@ async function assessGrade(){
     }));
     const compressed=await Promise.all(dataUrls.map(img=>compressImage(img)));
     const unifiedResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json","x-client-secret":"022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",...(window._currentUser?{"Authorization":"Bearer "+(await window._currentUser.getIdToken())}:{})},body:JSON.stringify({images:compressed,slotsFilled,grader:"CGC",title:formData.title||"",issueNumber:formData.issue||"",issueDate:formData.issueDate||""})});
+
+    // Wait for the scan animation to finish before parsing the response
+    // and showing the progress modal. Per Matt's spec: complete the
+    // animation and then show error if there is one. So we await the
+    // animation BEFORE checking response status.
+    await scanController.promise;
+
     if(!unifiedResp.ok){const e=await unifiedResp.text();throw new Error("Assessment error: "+e);}
     const unified=await unifiedResp.json();
     if(unified.error)throw new Error(unified.error);
+
+    // Now show the progress modal (animation has finished — hard cut).
+    // The modal initializes with "analyzing" already green, so we
+    // effectively start the visible step progression at "populating".
+    showAssessModal();
 
     // ── Gate check: if the assessment was terminated because the photos aren't
     //    a valid comic book, show the flag UI and don't charge a credit.
