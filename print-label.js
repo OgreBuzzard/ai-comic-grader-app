@@ -33,6 +33,68 @@
 const QUEUE_KEY = 'robograder.labelQueue.v1';
 const QUEUE_LIMIT = 20;
 
+// ── Format definitions ─────────────────────────────────────────────────────
+// Two label sheet formats supported (S12, May 5):
+//
+//   SMALL — Avery 8161 (4" × 1") — 20 per sheet, 2 columns × 10 rows
+//     The default. Designed for general-purpose labeling on bagged-and-boarded
+//     comics. Dimensions extracted from the official Avery 8161 PDF template:
+//     top margin 0.5", left margin 0.1667", column gap 0.1882", no row gap.
+//
+//   LARGE — OL5450 (7.5" × 1.5") — 7 per sheet, 1 column × 7 rows
+//     Sized to fit over the front label on a CGC slab. Wider and taller
+//     than the Small format. Top margin 0.25", left margin 0.5", no gaps.
+//     Source: dimensions verified against the official OL5450 template.
+//
+// Pixel dimensions for the rendered label markup are at 288 DPI so the
+// jsPDF output preserves crisp QR codes and text at print resolution.
+const LABEL_FORMATS = {
+  small: {
+    name: 'small',
+    sheetCount: 20,
+    rows: 10, cols: 2,
+    labelW: 4.0, labelH: 1.0,      // inches
+    sheetTopMargin: 0.5,
+    sheetLeftMargin: 0.1667,
+    colGap: 0.1882,
+    rowGap: 0,
+    pixelW: 1152, pixelH: 288      // 288 DPI canonical render
+  },
+  large: {
+    name: 'large',
+    sheetCount: 7,
+    rows: 7, cols: 1,
+    labelW: 7.5, labelH: 1.5,
+    sheetTopMargin: 0.25,
+    sheetLeftMargin: 0.5,
+    colGap: 0,
+    rowGap: 0,
+    pixelW: 2160, pixelH: 432
+  }
+};
+
+// ── Label options (persisted via localStorage) ─────────────────────────────
+// User's size + price-tag toggle preferences. Persists across sessions so a
+// user printing CGC-slab labels doesn't have to reset Small every open.
+const OPTIONS_KEY = 'robograder.labelOptions.v1';
+
+function readOptions() {
+  try {
+    const raw = localStorage.getItem(OPTIONS_KEY);
+    if (!raw) return { size: 'small', priceTag: false };
+    const o = JSON.parse(raw);
+    return {
+      size: (o.size === 'large') ? 'large' : 'small',
+      priceTag: !!o.priceTag
+    };
+  } catch { return { size: 'small', priceTag: false }; }
+}
+
+function writeOptions(opts) {
+  try { localStorage.setItem(OPTIONS_KEY, JSON.stringify(opts)); }
+  catch (e) { console.warn('[label options] write failed:', e); }
+}
+
 // ── Queue helpers (localStorage-backed) ────────────────────────────────────
 // Queue stores comic IDs only — labels render fresh from the items[] array
 // at print time, so re-graded books reflect the latest assessment.
@@ -223,12 +285,13 @@ function ensureStylesInjected() {
     display: flex; align-items: center; justify-content: center;
   }
   .lvm-preview-wrap {
-    /* 1152x288 scaled to fit a typical phone width (~360px usable area
-       after modal padding). 360/1152 ≈ 0.31. We use 0.32 as the default
-       and let CSS variables override per breakpoint below. */
+    /* Size of the canonical label markup. Defaults match Large (1152×288);
+       overridden inline for Small (2160×432). */
+    --lvm-label-w: 1152px;
+    --lvm-label-h: 288px;
     --lvm-scale: 0.32;
-    width: 1152px;
-    height: 288px;
+    width: var(--lvm-label-w);
+    height: var(--lvm-label-h);
     transform: scale(var(--lvm-scale));
     transform-origin: top left;
     /* When scaling, the element occupies its UN-scaled size in flow. We
@@ -237,17 +300,21 @@ function ensureStylesInjected() {
   /* Outer container that consumes only the scaled visual size. The trick:
      wrap .lvm-preview-wrap in a div whose width/height are the SCALED
      dimensions, then position the scaled element absolutely inside. This
-     way flow layout uses the visible size, not the 1152x288 intrinsic. */
+     way flow layout uses the visible size, not the canonical intrinsic. */
   .lvm-preview-frame {
     position: relative;
-    width: calc(1152px * var(--lvm-frame-scale, 0.32));
-    height: calc(288px * var(--lvm-frame-scale, 0.32));
+    --lvm-label-w: 1152px;
+    --lvm-label-h: 288px;
+    width: calc(var(--lvm-label-w) * var(--lvm-frame-scale, 0.32));
+    height: calc(var(--lvm-label-h) * var(--lvm-frame-scale, 0.32));
     overflow: hidden;
   }
   .lvm-preview-frame .lvm-preview-wrap {
     position: absolute;
     top: 0; left: 0;
     --lvm-scale: var(--lvm-frame-scale, 0.32);
+    --lvm-label-w: inherit;
+    --lvm-label-h: inherit;
   }
   /* CSS-only fallback scaling tiers in case fitPreviewToFrame() doesn't run
      (e.g. JS error before measurement). The JS-computed scale overrides
@@ -269,6 +336,68 @@ function ensureStylesInjected() {
      active so it doesn't wrap to three lines. */
   .lvm-actions .rg-btn { flex: 1; }
   .rg-btn-queue-active { font-size: 12px !important; }
+
+  /* ── Options toggle row (S12, May 5) ──────────────────────────────────
+     Sits between the modal header and the label preview. Two toggles in
+     one row: size (Small/Large) on the left, price-tag (Include/Exclude)
+     on the right. Both visually look like text labels with an inline
+     pill-toggle so the row stays compact on phone widths. */
+  .lvm-toggle-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    background: #f4f0e8;
+    border-bottom: 1px solid #e0d8c8;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .lvm-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .lvm-toggle-label {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 13px; font-weight: 600;
+    color: #3a3028;
+    letter-spacing: 0.4px;
+  }
+  /* Pill toggle — two states, animates the background color and the dot's
+     horizontal position. Sized small (32×18) so the row reads as a
+     compact options strip rather than a heavyweight settings panel. */
+  .lvm-pill {
+    position: relative;
+    width: 32px; height: 18px;
+    background: #c0b8a8;
+    border-radius: 9px;
+    transition: background 0.15s ease;
+    flex-shrink: 0;
+  }
+  .lvm-pill::after {
+    content: '';
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 14px; height: 14px;
+    background: #fff;
+    border-radius: 50%;
+    transition: left 0.15s ease;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  }
+  .lvm-pill.on {
+    background: #5a7030;
+  }
+  .lvm-pill.on::after {
+    left: 16px;
+  }
+  /* When a toggle is disabled (e.g. the price-tag toggle while size is
+     small if we ever decide to lock it), dim the entire row segment. */
+  .lvm-toggle.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
 
   /* ── Label visual styles (used in both preview AND print sheet) ──────── */
   .rg-label {
@@ -324,7 +453,7 @@ function ensureStylesInjected() {
   }
   .rg-label .info {
     position: absolute;
-    left: 282px; top: 18px; right: 144px;
+    left: 282px; top: 14px; right: 144px;
     display: flex; flex-direction: column;
   }
   .rg-label .info-upper {
@@ -332,14 +461,22 @@ function ensureStylesInjected() {
     border-bottom: 1px solid #b0b89a;
     margin-bottom: 0;
   }
+  /* S12 May 5: Title and Issue font sizes bumped after Matt printed
+     Uncanny X-Men #151 and reported these were hard to read at arm's
+     length. Other label fields (printing, meta, URL, verify) were
+     readable enough as-is — bumped them in an earlier iteration but
+     reverted because the result was overstuffed for the cell.
+       ttl:  38 → 50 (+12)
+       iss:  26 → 36 (+10)
+     Score box and QR remain unchanged. */
   .rg-label .ttl {
-    font-size: 38px; font-weight: 900;
-    color: #0d0d0f; line-height: 1.1;
+    font-size: 50px; font-weight: 900;
+    color: #0d0d0f; line-height: 1.05;
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
   }
   .rg-label .iss {
-    font-size: 26px; font-weight: 600;
+    font-size: 36px; font-weight: 600;
     color: #333;
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
@@ -396,6 +533,198 @@ function ensureStylesInjected() {
     letter-spacing: 0.2px;
   }
 
+  /* ── Price pad (S12, May 5) ────────────────────────────────────────────
+     White rounded-rectangle space between the identity block and the QR
+     column, where a price can be hand-written. Only present when the
+     price-tag toggle is on. Implementation:
+       - Adds a .has-price modifier to .rg-label
+       - On Large: identity narrows from right:144px to right:380px,
+         price pad sits at right:144px width 220px, QR stays at right
+       - On Small: similar but proportional
+     The "Price" placeholder text is rendered in a faint, thin font near
+     the top of the pad — clear enough to read at-a-glance, light enough
+     not to compete with whatever the user writes in. */
+  .rg-label.has-price .info {
+    right: 380px;  /* leave room for the price pad on the right side */
+  }
+  .rg-label .price-pad {
+    display: none;
+  }
+  .rg-label.has-price .price-pad {
+    display: block;
+    position: absolute;
+    top: 18px; right: 144px;
+    width: 220px; height: 220px;
+    background: #ffffff;
+    border: 1px solid #b8c098;
+    border-radius: 14px;
+  }
+  .rg-label.has-price .price-pad .price-placeholder {
+    position: absolute;
+    top: 18px; left: 0; right: 0;
+    text-align: center;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 36px;
+    font-weight: 300;
+    color: #c0c8a8;
+    letter-spacing: 0.5px;
+  }
+
+  /* ── Large variant (CGC-slab, 7.5" × 1.5" → 2160 × 432 px) ──────────
+     Score box scales up to fill the taller cell. Identity block has more
+     horizontal room. QR column stays similar size (QR codes don't benefit
+     from being huge — phone cameras pick up smaller ones easily).
+     Layout proportions:
+       - Score box: 396 × 396 (was 252 × 252) — proportional growth
+       - Score box num: ~228 (was 148)
+       - Score box left: 18, top: 18
+       - Info: left: 432, right: 220 (or right:580 with price pad)
+       - QR col: right: 18, width: 184 (slightly larger, fits the height)
+       - URL: right: 18, bottom: 22 */
+  .rg-label-large {
+    width: 2160px; height: 432px;
+    background: #d4d9be;
+    border: 1px solid #8a9a6a;
+    border-radius: 6px;
+    position: relative;
+    overflow: hidden;
+    font-family: 'Barlow Condensed', sans-serif;
+    box-sizing: border-box;
+  }
+  .rg-label-large .score-box {
+    width: 396px; height: 396px;
+    background: #1a2208;
+    border-radius: 60px;
+    position: absolute;
+    left: 18px; top: 18px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .rg-label-large .rg-word {
+    font-size: 38px; font-weight: 700;
+    color: #6a8030; letter-spacing: 5px;
+    font-family: 'Barlow Condensed', sans-serif;
+    position: absolute; top: 22px;
+  }
+  .rg-label-large .rg-num {
+    font-size: 232px; font-weight: 900;
+    color: #b8d820; line-height: 1;
+    font-family: 'Noto Sans Display', sans-serif;
+    font-stretch: 62.5%;
+  }
+  .rg-label-large .rg-prec {
+    position: absolute; top: 92px; right: 28px;
+    font-size: 40px; font-weight: 700;
+    color: #b8d820; opacity: 0.92;
+    font-family: 'Noto Sans Display', sans-serif;
+    font-stretch: 62.5%;
+    line-height: 1;
+    letter-spacing: 3px;
+  }
+  .rg-label-large .rg-v {
+    font-size: 30px;
+    color: #5a7030;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 500;
+    position: absolute; bottom: 22px;
+    letter-spacing: 1.5px;
+  }
+  .rg-label-large .info {
+    position: absolute;
+    left: 444px; top: 28px; right: 220px;
+    display: flex; flex-direction: column;
+  }
+  .rg-label-large.has-price .info {
+    right: 580px;
+  }
+  .rg-label-large .info-upper {
+    padding-bottom: 14px;
+    border-bottom: 1px solid #b0b89a;
+  }
+  .rg-label-large .ttl {
+    font-size: 64px; font-weight: 900;
+    color: #0d0d0f; line-height: 1.1;
+    font-family: 'Noto Sans Display', sans-serif;
+    font-stretch: 62.5%;
+  }
+  .rg-label-large .iss {
+    font-size: 42px; font-weight: 600;
+    color: #333;
+    font-family: 'Noto Sans Display', sans-serif;
+    font-stretch: 62.5%;
+    display: flex; gap: 36px; align-items: baseline;
+  }
+  .rg-label-large .prt {
+    font-size: 32px; color: #555544;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 500;
+  }
+  .rg-label-large .info-lower { padding-top: 18px; }
+  .rg-label-large .meta-grid {
+    display: grid;
+    grid-template-columns: max-content max-content;
+    column-gap: 24px; row-gap: 8px;
+    align-items: baseline;
+  }
+  .rg-label-large .meta-lbl {
+    font-size: 36px; font-weight: 600;
+    color: #7a8a5a;
+    font-family: 'Barlow Condensed', sans-serif;
+    text-align: right; letter-spacing: 0.7px;
+  }
+  .rg-label-large .meta-val {
+    font-size: 36px; font-weight: 800;
+    color: #0d0d0f;
+    font-family: 'Noto Sans Mono', monospace;
+  }
+  .rg-label-large .qr-col {
+    position: absolute;
+    right: 18px; top: 22px;
+    width: 184px;
+    display: flex; flex-direction: column;
+    align-items: center; gap: 6px;
+  }
+  .rg-label-large .qr-col .qrc canvas,
+  .rg-label-large .qr-col .qrc img {
+    width: 178px !important;
+    height: 178px !important;
+  }
+  .rg-label-large .verify {
+    font-size: 22px; color: #7a8a5a;
+    letter-spacing: 1.5px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 600; text-align: center;
+  }
+  .rg-label-large .url {
+    font-size: 24px; color: #5a6a4a;
+    font-family: ui-monospace, "SF Mono", Menlo, "Cascadia Mono", "Roboto Mono", monospace;
+    font-weight: 500;
+    text-align: right;
+    position: absolute;
+    right: 18px; bottom: 26px;
+    letter-spacing: 0.3px;
+  }
+  /* Price pad for large variant — bigger, fills the taller cell */
+  .rg-label-large.has-price .price-pad {
+    display: block;
+    position: absolute;
+    top: 28px; right: 220px;
+    width: 340px; height: 376px;
+    background: #ffffff;
+    border: 1px solid #b8c098;
+    border-radius: 18px;
+  }
+  .rg-label-large.has-price .price-pad .price-placeholder {
+    position: absolute;
+    top: 28px; left: 0; right: 0;
+    text-align: center;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 56px;
+    font-weight: 300;
+    color: #c0c8a8;
+    letter-spacing: 0.8px;
+  }
+
   /* Print sheet markup is no longer used — PDF generation (handleSavePDF)
      replaces window.print() entirely. The label DOM is captured by
      html2canvas off-screen and embedded into a jsPDF document. See
@@ -412,8 +741,24 @@ function renderModal(modal, comic, allItems) {
   const inQueue = queue.includes(comic.id);
   const printDisabled = queueCount === 0 && !inQueue;
 
-  const labelHTML = renderLabelMarkup(comic);
-  const queueClass = queueCount >= QUEUE_LIMIT ? 'lvm-queue-count full' : 'lvm-queue-count';
+  // S12: read user's persisted size + price-tag preferences. These drive
+  // the label markup, the "X to a sheet" subtitle, and the PDF generation.
+  const opts = readOptions();
+  const fmt = LABEL_FORMATS[opts.size];
+
+  // Queue display tracks the active format's per-sheet count, NOT the
+  // global QUEUE_LIMIT. Per Matt's spec: "Queue: 1 / 7" when Large is
+  // selected, "Queue: 1 / 20" when Small. The actual queue cap stays at
+  // QUEUE_LIMIT (20) — Large format with >7 books just produces a
+  // multi-page PDF.
+  const queueCap = fmt.sheetCount;
+  // If the queue count exceeds the format's per-sheet capacity, the
+  // "queue full" visual styling kicks in, BUT we still allow saving —
+  // the PDF will just span multiple pages.
+  const queueOverflow = queueCount > queueCap;
+
+  const labelHTML = renderLabelMarkup(comic, opts);
+  const queueClass = queueOverflow ? 'lvm-queue-count full' : 'lvm-queue-count';
 
   const queueBtnLabel = inQueue ? 'Remove from Queue' : `Add to Queue`;
   // When in queue, use secondary style — "Remove from Queue" is an undo
@@ -424,20 +769,44 @@ function renderModal(modal, comic, allItems) {
   const queueBtnCategory = inQueue ? 'rg-btn-secondary' : 'rg-btn-primary';
   // The "Remove from Queue" label is long; mark it for the small-font tweak.
   const queueBtnSizeMod = inQueue ? 'rg-btn-queue-active' : '';
+  // Disable Add to Queue when the absolute QUEUE_LIMIT is reached — not
+  // the format-specific sheet count. Users can keep queuing past 7 in
+  // Large and the PDF will produce multiple pages, but past 20 we cap.
   const queueBtnDisabled = (!inQueue && queueCount >= QUEUE_LIMIT);
+
+  // Pluralize correctly on the subtitle. Tracks the active format's
+  // sheetCount: 20 for Small (Avery 8161), 7 for Large (OL5450).
+  const subtitleText = `Labels print ${fmt.sheetCount} to a sheet`;
+
+  // Toggle pill states: size pill is "on" when LARGE selected; price pill
+  // is "on" when price tag is included. The label text on the size toggle
+  // shows the CURRENTLY-ACTIVE size so users can see what they have set.
+  const sizePillClass = opts.size === 'large' ? 'lvm-pill on' : 'lvm-pill';
+  const sizeLabelText = opts.size === 'large' ? 'Large' : 'Small';
+  const pricePillClass = opts.priceTag ? 'lvm-pill on' : 'lvm-pill';
 
   modal.innerHTML = `
     <div class="lvm-card">
       <div class="lvm-header">
         <div class="lvm-title">Print Label</div>
         <div class="lvm-header-right">
-          <div class="${queueClass}">Queue: ${queueCount} / ${QUEUE_LIMIT}</div>
-          <div class="lvm-subtitle">Labels print 20 to a sheet</div>
+          <div class="${queueClass}">Queue: ${queueCount} / ${queueCap}</div>
+          <div class="lvm-subtitle">${subtitleText}</div>
+        </div>
+      </div>
+      <div class="lvm-toggle-row">
+        <div class="lvm-toggle" data-action="toggle-size" role="button" tabindex="0">
+          <span class="${sizePillClass}"></span>
+          <span class="lvm-toggle-label">${sizeLabelText}</span>
+        </div>
+        <div class="lvm-toggle" data-action="toggle-price" role="button" tabindex="0">
+          <span class="lvm-toggle-label">Include price tag</span>
+          <span class="${pricePillClass}"></span>
         </div>
       </div>
       <div class="lvm-preview-area">
-        <div class="lvm-preview-frame">
-          <div class="lvm-preview-wrap">
+        <div class="lvm-preview-frame" style="--lvm-label-w: ${fmt.pixelW}px; --lvm-label-h: ${fmt.pixelH}px;">
+          <div class="lvm-preview-wrap" style="--lvm-label-w: ${fmt.pixelW}px; --lvm-label-h: ${fmt.pixelH}px;">
             ${labelHTML}
           </div>
         </div>
@@ -451,6 +820,20 @@ function renderModal(modal, comic, allItems) {
 
   // Render QR for the previewed label
   renderQRsIn(modal);
+
+  // Wire up toggle handlers. Both toggles persist immediately on tap and
+  // re-render the modal so the user sees their selection reflected in the
+  // preview, subtitle, and (eventually) the PDF output.
+  modal.querySelector('[data-action="toggle-size"]').addEventListener('click', () => {
+    const cur = readOptions();
+    writeOptions({ ...cur, size: cur.size === 'large' ? 'small' : 'large' });
+    renderModal(modal, comic, allItems);
+  });
+  modal.querySelector('[data-action="toggle-price"]').addEventListener('click', () => {
+    const cur = readOptions();
+    writeOptions({ ...cur, priceTag: !cur.priceTag });
+    renderModal(modal, comic, allItems);
+  });
 
   // Wire up button handlers. Back button removed in favor of tap-outside-
   // to-close — see backdrop handler below. Tap-outside semantically reads
@@ -515,9 +898,13 @@ function fitPreviewToFrame(modal) {
   // — a label that touches the right edge looks clipped even if it's not.
   const avail = (area.clientWidth - padX) * 0.96;
   if (avail <= 0) return;
-  // Label intrinsic width is 1152px. Compute scale factor and clamp to a
-  // sensible max so we don't blow up the label on huge displays.
-  const scale = Math.min(0.85, Math.max(0.18, avail / 1152));
+  // Read the format's pixel width from the inline CSS variable on the
+  // frame (set in renderModal based on the active format). Falls back to
+  // 1152 (Large) if not set.
+  const labelW = parseFloat(frame.style.getPropertyValue('--lvm-label-w')) || 1152;
+  // Compute scale factor and clamp to a sensible max so we don't blow up
+  // the label on huge displays.
+  const scale = Math.min(0.85, Math.max(0.18, avail / labelW));
   frame.style.setProperty('--lvm-frame-scale', scale.toFixed(4));
 }
 
@@ -601,13 +988,18 @@ async function handleSavePDF(modal, currentComic, allItems) {
 // a canvas via html2canvas, places them at exact Avery 8161 grid positions
 // in a jsPDF document, and triggers the download.
 //
-// 8161 grid positions (extracted from the official Avery PDF template):
-//   Top margin:    0.5in
-//   Left margin:   0.1667in
-//   Label:         4in × 1in
-//   Column gap:    0.1882in
-//   Row gap:       0in
-//   2 columns × 10 rows = 20 labels per sheet
+// Generate the PDF using whichever format the user has currently selected.
+// Each label is rendered off-screen via html2canvas at 2× DPI, then placed
+// at the correct sheet-grid position in jsPDF. For Small format, the queue
+// (up to 20 labels) may span multiple sheets — we add new pages as needed.
+//
+// Format-specific grid positions (extracted from official PDF templates):
+//   LARGE (Avery 8161):
+//     Top margin 0.5", left margin 0.1667", column gap 0.1882", row gap 0
+//     Label 4" × 1", 2 cols × 10 rows = 20 per sheet
+//   SMALL (OL5450):
+//     Top margin 0.25", left margin 0.5", no gaps
+//     Label 7.5" × 1.5", 1 col × 7 rows = 7 per sheet
 async function generatePDF(comics, modal) {
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF({
@@ -615,6 +1007,15 @@ async function generatePDF(comics, modal) {
     unit: 'in',
     format: 'letter',  // 8.5 × 11
   });
+
+  // S12: read current options to determine format + price-tag inclusion.
+  // Capture them at PDF-generation time (NOT at queue-add time) so the
+  // active toggle state at the moment of Save dictates the output. This
+  // matches Matt's spec: "all the labels in the Queue would be saved in
+  // whichever label size and price tag setting is active when the button
+  // is tapped."
+  const opts = readOptions();
+  const fmt = LABEL_FORMATS[opts.size];
 
   // Off-screen container for rendering labels at high DPI. We keep this in
   // the DOM (not display:none) so html2canvas can measure it correctly, but
@@ -624,15 +1025,11 @@ async function generatePDF(comics, modal) {
   document.body.appendChild(offscreen);
 
   try {
-    // Pre-render all 20 cell labels (real ones + blanks) in the off-screen
-    // container so html2canvas can capture each. Doing this in batch is
-    // faster than serial appending.
+    // Pre-render every label box in the off-screen container so html2canvas
+    // can capture each. Each box is sized to the format's pixel dimensions.
     let labelsHTML = '';
-    for (let i = 0; i < QUEUE_LIMIT; i++) {
-      if (i < comics.length) {
-        labelsHTML += `<div class="pdf-label-box" data-idx="${i}" style="width:1152px;height:288px;display:block;background:#d4d9be;">${renderLabelMarkup(comics[i])}</div>`;
-      }
-      // Skip blank cells — no need to render or place them in the PDF
+    for (let i = 0; i < comics.length; i++) {
+      labelsHTML += `<div class="pdf-label-box" data-idx="${i}" style="width:${fmt.pixelW}px;height:${fmt.pixelH}px;display:block;background:#d4d9be;">${renderLabelMarkup(comics[i], opts)}</div>`;
     }
     offscreen.innerHTML = labelsHTML;
 
@@ -644,14 +1041,24 @@ async function generatePDF(comics, modal) {
     // html2canvas captures.
     await new Promise(r => requestAnimationFrame(r));
 
-    // Capture each label and place in PDF at correct grid position.
+    // Capture each label and place in PDF. For multi-page output (Small
+    // format with >7 queued items), we add a new page each time the per-
+    // sheet count overflows.
+    const perSheet = fmt.sheetCount;
     const boxes = offscreen.querySelectorAll('.pdf-label-box');
     for (let i = 0; i < boxes.length; i++) {
-      const idx = parseInt(boxes[i].dataset.idx, 10);
-      const col = idx % 2;        // 0 = left column, 1 = right column
-      const row = Math.floor(idx / 2);  // 0-9
-      const x = 0.1667 + col * (4 + 0.1882);  // inches
-      const y = 0.5 + row * 1.0;  // inches
+      const cellIdx = i % perSheet;            // 0 .. perSheet-1
+      const sheetIdx = Math.floor(i / perSheet);
+
+      // Add a new page when starting a new sheet (skip on first sheet).
+      if (cellIdx === 0 && sheetIdx > 0) {
+        pdf.addPage('letter', 'portrait');
+      }
+
+      const col = cellIdx % fmt.cols;
+      const row = Math.floor(cellIdx / fmt.cols);
+      const x = fmt.sheetLeftMargin + col * (fmt.labelW + fmt.colGap);
+      const y = fmt.sheetTopMargin + row * (fmt.labelH + fmt.rowGap);
 
       // html2canvas at 2× for crisper output without ballooning PDF size
       const canvas = await window.html2canvas(boxes[i], {
@@ -661,12 +1068,16 @@ async function generatePDF(comics, modal) {
         logging: false,
       });
       const imgData = canvas.toDataURL('image/png');
-      pdf.addImage(imgData, 'PNG', x, y, 4, 1);
+      pdf.addImage(imgData, 'PNG', x, y, fmt.labelW, fmt.labelH);
     }
 
     // Save / download. iOS Safari saves to Files → Downloads. Desktop
-    // browsers save to default Downloads folder.
-    const filename = `Robograder-Labels-${new Date().toISOString().slice(0, 10)}.pdf`;
+    // browsers save to default Downloads folder. Filename includes the
+    // format so users with both Small and Large PDFs in their Downloads
+    // can tell them apart at a glance.
+    const sizeTag = opts.size === 'large' ? 'CGC' : '8161';
+    const priceTag = opts.priceTag ? '-Price' : '';
+    const filename = `Robograder-Labels-${sizeTag}${priceTag}-${new Date().toISOString().slice(0, 10)}.pdf`;
     pdf.save(filename);
   } finally {
     // Always clean up the off-screen container
@@ -686,7 +1097,16 @@ async function generatePDF(comics, modal) {
 //   - 1152×288 absolute label dimensions (Avery 8161 at 288 DPI = 4"×1")
 //   - QR + URL point to robograder.app
 
-function renderLabelMarkup(comic) {
+function renderLabelMarkup(comic, opts) {
+  // S12: opts is { size, priceTag }. Defaults to small + no price tag if
+  // not supplied (preserves backward compatibility for any caller still
+  // using the single-argument form). Note: 'small' = the default Avery 8161
+  // (4"×1", 20 per sheet) — it's the long-standing "default size". 'large'
+  // is the OL5450 CGC-slab format (7.5"×1.5", 7 per sheet).
+  opts = opts || { size: 'small', priceTag: false };
+  const isLarge = opts.size === 'large';
+  const showPrice = !!opts.priceTag;
+
   const rg = comic.roboGrade;
   const score = Math.round(rg.score ?? 0);
 
@@ -718,8 +1138,13 @@ function renderLabelMarkup(comic) {
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
   }).replace(/\//g, '/');
 
+  // Wrapper class drives all visual differences between Small and Large,
+  // plus the .has-price modifier toggles the price pad on/off.
+  const wrapClass = (isLarge ? 'rg-label-large' : 'rg-label')
+    + (showPrice ? ' has-price' : '');
+
   return `
-    <div class="rg-label" data-grade-id="${gradeId}">
+    <div class="${wrapClass}" data-grade-id="${gradeId}">
       <div class="score-box">
         <div class="rg-word">ROBOGRADE</div>
         <div class="rg-num">${score}</div>
@@ -739,6 +1164,7 @@ function renderLabelMarkup(comic) {
           </div>
         </div>
       </div>
+      ${showPrice ? `<div class="price-pad"><div class="price-placeholder">Price</div></div>` : ''}
       <div class="qr-col">
         <div class="qrc" data-qr-id="${gradeId}"></div>
         <div class="verify">SCAN TO VERIFY</div>
@@ -799,9 +1225,16 @@ function renderQRsImmediately(container) {
     const id = el.getAttribute('data-qr-id');
     if (!id) return;
     el.innerHTML = '';  // clear any prior contents
+    // Detect label size by walking up to find which variant's class is on
+    // the parent. .rg-label-large (CGC-slab) uses a bigger QR (178×178);
+    // .rg-label (default Avery 8161) uses 118×118. The CSS will visually
+    // constrain the rendered canvas anyway, but the underlying data
+    // resolution should match the rendered pixels for crisp output.
+    const isLarge = !!el.closest('.rg-label-large');
+    const qrPx = isLarge ? 178 : 118;
     new window.QRCode(el, {
       text: `https://robograder.app/id/${id}`,
-      width: 118, height: 118,
+      width: qrPx, height: qrPx,
       colorDark: '#1a2208', colorLight: '#d4d9be',
       correctLevel: window.QRCode.CorrectLevel.M
     });
