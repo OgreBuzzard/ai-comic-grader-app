@@ -871,16 +871,15 @@
       <button class="btn btn-topbar btn-buy" onclick="showBuyCredits()" id="credits-btn" style="display:none">Buy</button>
       <button class="btn btn-topbar btn-add" id="add-btn" onclick="showAdd()" style="visibility:hidden">Add</button>
       <button class="btn-gear" onclick="openSettings()" title="Settings" id="settings-btn" aria-label="Settings">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <line x1="4" y1="6" x2="14" y2="6"/>
-          <line x1="18" y1="6" x2="20" y2="6"/>
-          <circle cx="16" cy="6" r="2.4" fill="currentColor"/>
-          <line x1="4" y1="12" x2="6" y2="12"/>
-          <line x1="10" y1="12" x2="20" y2="12"/>
-          <circle cx="8" cy="12" r="2.4" fill="currentColor"/>
-          <line x1="4" y1="18" x2="14" y2="18"/>
-          <line x1="18" y1="18" x2="20" y2="18"/>
-          <circle cx="16" cy="18" r="2.4" fill="currentColor"/>
+        <!-- Three-dot menu icon. Replaces all prior gear/equalizer/cog
+             attempts (S12). The three vertical dots are the universally
+             recognized "more options" affordance on iOS and Android — more
+             abstract than any gear shape, signals "settings/more" without
+             the mechanical-engineering connotation. -->
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
+          <circle cx="12" cy="5" r="2"/>
+          <circle cx="12" cy="12" r="2"/>
+          <circle cx="12" cy="19" r="2"/>
         </svg>
       </button>
     </div>
@@ -5814,17 +5813,31 @@ async function cameraOpen(state) {
       videoInputs.forEach((d, i) => {
         console.log(`[camera] device ${i}: label="${d.label}" deviceId=${d.deviceId.slice(0, 8)}…`);
       });
-      // Match ONLY the physical wide camera. "Wide" must not be preceded by
-      // "Ultra".
-      // Find the wide camera (physical 1x). Used for both "1x" and "2x"
-      // entries — 2x is digital zoom on the wide sensor.
-      const wide = videoInputs.find(d => {
+      // On iPhone Pro models, the physical "Back Wide Camera" is NOT
+      // exposed as a separate device — it's only accessible through
+      // composite cameras like "Back Camera", "Back Triple Camera", "Back
+      // Dual Wide Camera" (per S12 debug capture from Matt's phone showing
+      // 7 devices, none of them a standalone "Back Wide Camera"). On older
+      // non-Pro phones, "Back Wide Camera" IS a separate device.
+      // Strategy: prefer the iOS "Back Camera" composite (auto-selects
+      // the right physical lens at the requested zoom). Fall back to
+      // "Back Wide Camera" if it exists. Apply the zoom: 2.0 constraint
+      // either way — iOS routes that to the wide sensor's digital crop,
+      // which is what we want for comic-cover distance.
+      const backCamera = videoInputs.find(d => {
         const label = (d.label || '').toLowerCase();
-        // Match "Back Wide Camera" but NOT "Back Ultra Wide Camera"
-        return label.includes('back') && label.includes('wide') &&
-               !label.includes('ultra');
+        return label === 'back camera';
       });
-      console.log('[camera] wide match:', wide ? wide.label : 'none');
+      const standaloneWide = videoInputs.find(d => {
+        const label = (d.label || '').toLowerCase();
+        // Match exactly "Back Wide Camera" (older non-Pro phones), NOT
+        // "Back Dual Wide Camera" (Pro composite) or "Back Ultra Wide".
+        return label === 'back wide camera';
+      });
+      // Prefer "Back Camera" (broad iOS default) if present, since it
+      // handles zoom routing intelligently. Otherwise standalone wide.
+      const wide = backCamera || standaloneWide;
+      console.log('[camera] picked device:', wide ? wide.label : 'none');
       console.log('[camera] zoom constraint supported:', supportsZoomConstraint());
 
       // S12 simplification: don't expose a lens selector at all. Always
