@@ -178,10 +178,15 @@ function ensureStylesInjected() {
     border-bottom: 1px solid #e0d8c8;
     gap: 12px;
   }
-  .lvm-header-text {
+  /* Right-side stack: Queue count on top, subtitle directly under it.
+     Right-aligned so it visually pairs as a unit. The subtitle moved here
+     from under the Print Label title so it sits exactly where users look
+     for queue context (right under the count). */
+  .lvm-header-right {
     display: flex; flex-direction: column;
+    align-items: flex-end;
     gap: 2px;
-    min-width: 0;
+    flex-shrink: 0;
   }
   .lvm-title {
     font-family: 'Barlow Condensed', sans-serif;
@@ -194,6 +199,7 @@ function ensureStylesInjected() {
     font-size: 12px; font-weight: 500;
     color: #7a6a5a;
     letter-spacing: 0.3px;
+    text-align: right;
   }
   .lvm-queue-count {
     font-family: 'Barlow Condensed', sans-serif;
@@ -410,10 +416,12 @@ function renderModal(modal, comic, allItems) {
   const queueClass = queueCount >= QUEUE_LIMIT ? 'lvm-queue-count full' : 'lvm-queue-count';
 
   const queueBtnLabel = inQueue ? 'Remove from Queue' : `Add to Queue`;
-  // When in queue, use destructive style to make the "remove" action visually
-  // distinct (and accurate — remove IS destructive in the modal context).
-  // When not in queue, use primary for the affirmative add.
-  const queueBtnCategory = inQueue ? 'rg-btn-destructive' : 'rg-btn-primary';
+  // When in queue, use secondary style — "Remove from Queue" is an undo
+  // action, not destructive ("undestructive"). Destructive styling read as
+  // "are you sure you want to do this irreversibly" which overstates the
+  // weight; removing from queue is just reversing the recent add. Primary
+  // for the affirmative add when not in queue.
+  const queueBtnCategory = inQueue ? 'rg-btn-secondary' : 'rg-btn-primary';
   // The "Remove from Queue" label is long; mark it for the small-font tweak.
   const queueBtnSizeMod = inQueue ? 'rg-btn-queue-active' : '';
   const queueBtnDisabled = (!inQueue && queueCount >= QUEUE_LIMIT);
@@ -421,11 +429,11 @@ function renderModal(modal, comic, allItems) {
   modal.innerHTML = `
     <div class="lvm-card">
       <div class="lvm-header">
-        <div class="lvm-header-text">
-          <div class="lvm-title">Print Label</div>
+        <div class="lvm-title">Print Label</div>
+        <div class="lvm-header-right">
+          <div class="${queueClass}">Queue: ${queueCount} / ${QUEUE_LIMIT}</div>
           <div class="lvm-subtitle">Labels print 20 to a sheet</div>
         </div>
-        <div class="${queueClass}">Queue: ${queueCount} / ${QUEUE_LIMIT}</div>
       </div>
       <div class="lvm-preview-area">
         <div class="lvm-preview-frame">
