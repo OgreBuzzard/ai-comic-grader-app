@@ -448,30 +448,18 @@
       It is not affiliated with CGC, PSA, or any official comic book grading service.
       Grades reflect the condition of the book at the time of assessment.
       Books may change condition over time — always verify with current photos.
-      <br><br>
-      <a href="/" id="back-to-rg">${document.referrer && document.referrer.includes(location.host) ? '← Back to Robograder' : 'Open Robograder →'}</a>
     </footer>
   `);
 
-  // The "Back to Robograder" link is genuinely problematic on cold-loaded
-  // public pages — there's no PWA to go back to, and href="/" reloads the
-  // app from scratch. We label the link based on context:
-  //   - If this page was opened from somewhere on robograder.app (referrer
-  //     check), use "← Back to Robograder" and history.back() so we return
-  //     to wherever the user came from in the same tab.
-  //   - If this page was opened cold (iMessage, paste in Safari, etc.),
-  //     use "Open Robograder →" and let the link load /. There's nowhere
-  //     to "go back to" from a cold deep link.
-  const backLink = document.getElementById('back-to-rg');
-  if (backLink && document.referrer && document.referrer.includes(location.host)) {
-    backLink.addEventListener('click', (e) => {
-      if (history.length > 1) {
-        e.preventDefault();
-        history.back();
-      }
-      // Otherwise let href="/" run as fallback
-    });
-  }
+  // S12: Removed the "Back to Robograder" link. When the public listing
+  // is rendered inside the in-app iframe modal (the typical view path
+  // from inside the PWA), the modal's own × close button is right there
+  // in the upper right and is the natural way to dismiss. When the
+  // public link is opened cold (from iMessage etc.), the user is in
+  // Safari with its native back button — they don't need a link inside
+  // the page to navigate the browser. Either way, the inline link was
+  // adding clutter and creating a reload loop when it appeared inside
+  // the iframe. Better to omit entirely.
 
 })();
 
