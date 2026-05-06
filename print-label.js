@@ -584,9 +584,13 @@ function ensureStylesInjected() {
     position: absolute; bottom: 14px;
     letter-spacing: 1px;
   }
+  /* Info column — starts after the QR column on the left.
+     S12 May 6 v2: left edge bumped from 144 → 170px to accommodate the
+     wider QR padding (QR ends at x=154 after the left-edge fix; +16px
+     gap → info starts at 170). */
   .rg-label .info {
     position: absolute;
-    left: 144px; top: 14px; right: 282px;
+    left: 170px; top: 14px; right: 282px;
     display: flex; flex-direction: column;
   }
   .rg-label .info-upper {
@@ -638,9 +642,17 @@ function ensureStylesInjected() {
     color: #0d0d0f;
     font-family: 'Noto Sans Mono', monospace;
   }
+  /* QR column — anchored to the LEFT edge after the S12 May 6 mirror flip.
+     S12 May 6 v2: left edge bumped from 12 → 32px after Matt's printed-
+     label test showed the QR getting clipped on actual sheets. Avery's
+     printer-alignment tolerance is roughly ±1/16" (~18px at 288 DPI) so
+     a 12px margin had effectively zero safety. 32px = ~0.11" — clears
+     a typical Avery drift with room to spare. The QR canvas itself is
+     118px wide; total left-edge buffer (margin + padding to QR's first
+     module) is now ~34px. */
   .rg-label .qr-col {
     position: absolute;
-    left: 12px; top: 14px;
+    left: 32px; top: 14px;
     width: 122px;
     display: flex; flex-direction: column;
     align-items: center; gap: 4px;
@@ -656,13 +668,15 @@ function ensureStylesInjected() {
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 600; text-align: center;
   }
+  /* URL — paired with the QR at the bottom-left (S12 May 6 v2: left padded
+     to 32px to match the QR column above for a consistent left margin). */
   .rg-label .url {
     font-size: 16px; color: #5a6a4a;
     font-family: ui-monospace, "SF Mono", Menlo, "Cascadia Mono", "Roboto Mono", monospace;
     font-weight: 500;
     text-align: left;
     position: absolute;
-    left: 12px; bottom: 18px;
+    left: 32px; bottom: 18px;
     letter-spacing: 0.2px;
   }
 
