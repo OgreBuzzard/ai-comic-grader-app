@@ -511,37 +511,25 @@ function ensureStylesInjected() {
     box-shadow: 0 1px 2px rgba(0,0,0,0.15);
   }
 
-  /* ── Purchase link strip (S12 May 6) ───────────────────────────────────
-     Tucked below the toggle row; tells users where to buy the sheets that
-     match the currently-selected format. Subtle: muted color, small font,
-     centered, external-link arrow at the end. Whole strip is the click
-     target so users don't have to aim for the small text precisely. */
-  .lvm-buylink-row {
+  /* ── Purchase link button (S12 May 6 v2) ───────────────────────────────
+     Sits BELOW the action buttons (was above the preview area in v1).
+     Restyled as a proper button rather than an inline text link — Matt
+     flagged the v1 styling as "junk SEO link" feeling. Now reads as a
+     clear utility action with no preamble or arrow emoji.
+     Uses a thin row with a single secondary button. The button itself
+     uses the existing rg-btn-secondary system from the host page so it
+     visually relates to the action buttons above it. */
+  .lvm-buylink-footer {
     background: #f4f0e8;
-    border-bottom: 1px solid #e0d8c8;
-    padding: 8px 16px;
-    text-align: center;
+    border-top: 1px solid #e0d8c8;
+    padding: 8px 16px 12px;
+    display: flex; justify-content: center;
   }
-  .lvm-buylink {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 13px; font-weight: 500;
-    color: #5a4a38;
-    letter-spacing: 0.4px;
-    text-decoration: none;
-    border-bottom: 1px dotted #a89888;
-    padding-bottom: 1px;
-    transition: color 0.12s ease, border-color 0.12s ease;
-  }
-  .lvm-buylink:hover {
-    color: #1a4a30;
-    border-bottom-color: #1a4a30;
-  }
-  .lvm-buylink-arrow {
-    /* External-link arrow — slightly muted from the link text so it reads
-       as decoration not a separate clickable target. */
-    margin-left: 4px;
-    opacity: 0.7;
-    font-size: 11px;
+  .lvm-buylink-btn {
+    /* Inherits from rg-btn rg-btn-secondary rg-btn-sm in the host page;
+       this rule just constrains width so it doesn't span full row. */
+    min-width: 220px;
+    max-width: 100%;
   }
 
   /* ── Label visual styles (used in both preview AND print sheet) ──────── */
@@ -730,24 +718,26 @@ function ensureStylesInjected() {
      real estate; square labels can be placed in the upper-right corner of a
      bagged comic without clipping into the title or Marvel/DC box.
 
-     Layout (per Matt's spec):
-       - Title + issue/date + GRADED + ID stack at top-left
-       - Big score box upper-right (220 × 220, anchored to right edge)
-       - QR below score box (180 × 180, centered under score)
-       - Price pad bottom-left when toggle on (256 × 160)
-       - URL across bottom edge, left-aligned
+     Layout (S12 May 6, v2 — revised after first-render feedback):
+       - Score box upper-right (220 × 220, anchored to right edge)
+       - Title + issue/date + GRADED + ID stack at top-left, BIGGER fonts
+       - QR moved to bottom-right corner (was below score box)
+       - SCAN TO VERIFY text above the QR
+       - URL beneath the QR (paired with it — they're both verification)
+       - Price pad centered vertically in the empty middle/left region
+         when toggle on (was tucked at bottom-left)
 
-     Coordinate map (576 × 576 canvas):
-       Score box:  right:14, top:14, 220×220   → x=342-562, y=14-234
-       QR:         right:34, top:254, 180×180  → x=362-542, y=254-434
-       Verify lbl: right:34, top:438, ~180w    → below QR
-       Info col:   left:14, top:14, right:250  → x=14-326, top-anchored
-       Price pad:  left:14, bottom:38, 256×160 → x=14-270, y=378-538
-       URL:        left:14, bottom:12          → bottom strip
+     Coordinate map (576 × 576 canvas, v2):
+       Score box:     right:14, top:14, 220×220   → x=342-562, y=14-234
+       Info col:      left:14, top:14, right:250  → x=14-326, top-anchored
+       Verify lbl:    above QR via flex order:-1
+       QR:            right:14, bottom:38, 174×174→ x=388-562, y=364-538
+       URL:           right:14, bottom:14         → y=546-562 (under QR)
+       Price pad:     left:14, top:300, 256×160   → vertically centered
 
      For long titles ("Marvel Super Heroes Secret Wars"), title wraps to
-     2 lines at consistent font size — never shrinks. Three-line wrap is
-     theoretically possible but extremely rare for comic titles. */
+     2 lines at consistent font size — never shrinks. Two-line title still
+     leaves room above the price pad. */
   .rg-label-square {
     width: 576px; height: 576px;
     background: #d4d9be;
@@ -779,14 +769,19 @@ function ensureStylesInjected() {
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
   }
+  /* Precision modifier: positioned BELOW the top of the digit (per Matt's
+     v2 feedback — at top:50 in v1 it floated above the digit and clipped
+     the ± character). At top:80 it sits firmly inside the digit's vertical
+     band; smaller font (24 → 18px) and tighter letter-spacing keep it
+     compact so a 2-character value like "±10" fits without clipping. */
   .rg-label-square .rg-prec {
-    position: absolute; top: 50px; right: 16px;
-    font-size: 24px; font-weight: 700;
+    position: absolute; top: 80px; right: 12px;
+    font-size: 18px; font-weight: 700;
     color: #b8d820; opacity: 0.92;
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
     line-height: 1;
-    letter-spacing: 2px;
+    letter-spacing: 1.5px;
   }
   .rg-label-square .rg-v {
     font-size: 18px;
@@ -802,99 +797,120 @@ function ensureStylesInjected() {
     display: flex; flex-direction: column;
   }
   .rg-label-square .info-upper {
-    padding-bottom: 8px;
+    padding-bottom: 10px;
     border-bottom: 1px solid #b0b89a;
   }
+  /* S12 May 6 v2: title font bumped 30 → 38px after Matt flagged it read
+     too small at print scale. At 38px in a 312-px-wide info column, single
+     line fits ~17 chars ("Amazing Spider-Man" = 18, fits). Long titles
+     ("Marvel Super Heroes Secret Wars" = 31) wrap to 2 lines. The 2-line
+     case ends around y=180; price pad starts at y=300, leaving comfortable
+     gap. */
   .rg-label-square .ttl {
-    font-size: 30px; font-weight: 900;
+    font-size: 38px; font-weight: 900;
     color: #0d0d0f; line-height: 1.05;
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
-    /* Allow wrap to 2 lines for long titles. Hyphenation enabled for
-       extreme cases like "Marvel Super Heroes Secret Wars". */
     word-wrap: break-word;
   }
   .rg-label-square .iss {
-    font-size: 22px; font-weight: 600;
+    font-size: 26px; font-weight: 600;
     color: #333;
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
-    display: flex; gap: 12px; align-items: baseline;
+    display: flex; gap: 14px; align-items: baseline;
     margin-top: 4px;
   }
   .rg-label-square .prt {
-    font-size: 18px; color: #555544;
+    font-size: 20px; color: #555544;
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 500;
   }
-  .rg-label-square .info-lower { padding-top: 8px; }
+  .rg-label-square .info-lower { padding-top: 10px; }
   .rg-label-square .meta-grid {
     display: grid;
     grid-template-columns: max-content max-content;
-    column-gap: 12px; row-gap: 4px;
+    column-gap: 14px; row-gap: 5px;
     align-items: baseline;
   }
   .rg-label-square .meta-lbl {
-    font-size: 18px; font-weight: 600;
+    font-size: 22px; font-weight: 600;
     color: #7a8a5a;
     font-family: 'Barlow Condensed', sans-serif;
     text-align: right; letter-spacing: 0.5px;
   }
   .rg-label-square .meta-val {
-    font-size: 18px; font-weight: 800;
+    font-size: 22px; font-weight: 800;
     color: #0d0d0f;
     font-family: 'Noto Sans Mono', monospace;
   }
+  /* QR cluster (S12 May 6 v2): now anchored to BOTTOM-right corner with
+     three pieces stacked top-to-bottom — SCAN TO VERIFY above, QR square
+     below, URL underneath (URL is positioned separately at bottom:14).
+     Pairing the URL with the QR makes thematic sense (both are verification
+     mechanisms) and frees up the left/middle for the price pad to live in
+     negative space rather than corner-tucked. */
   .rg-label-square .qr-col {
     position: absolute;
-    right: 34px; top: 254px;
-    width: 180px;
+    right: 14px; bottom: 38px;
+    width: 174px;
     display: flex; flex-direction: column;
-    align-items: center; gap: 4px;
+    align-items: center; gap: 2px;
   }
   .rg-label-square .qr-col .qrc canvas,
   .rg-label-square .qr-col .qrc img {
     width: 174px !important;
     height: 174px !important;
   }
+  /* Verify text rendered ABOVE the QR via flex order:-1. The .verify span
+     is the second child in the DOM (per renderLabelMarkup), but order:-1
+     puts it first in the visual flex column. */
   .rg-label-square .verify {
     font-size: 14px; color: #7a8a5a;
     letter-spacing: 1.2px;
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 600; text-align: center;
+    order: -1;
+    margin-bottom: 2px;
   }
   .rg-label-square .url {
-    font-size: 16px; color: #5a6a4a;
+    font-size: 14px; color: #5a6a4a;
     font-family: ui-monospace, "SF Mono", Menlo, "Cascadia Mono", "Roboto Mono", monospace;
     font-weight: 500;
-    text-align: left;
+    text-align: right;
     position: absolute;
-    left: 14px; bottom: 12px;
+    right: 14px; bottom: 14px;
     letter-spacing: 0.2px;
   }
-  /* Price pad — bottom-left of the label, fills the lower-left quadrant.
-     Sized for handwritten prices: 256 × 160 px (~0.89 × 0.56 inch on the
-     printed sheet). When includePrice toggle is on and asking price is
-     known, the value renders centered inside; otherwise the faint "Price"
-     placeholder shows for hand-writing. */
+  /* Price pad — centered vertically in the empty middle of the label
+     (S12 May 6 v2 reposition). Previously tucked at bottom-left, which
+     read as cluttered next to the URL. Now it floats in the negative
+     space between the info column (which ends ~y=180-200 depending on
+     title length) and the QR cluster's verify-text bar (~y=340).
+     Pad: 256 × 160 at left:14, top:300 → vertical center at y=380. */
   .rg-label-square .price-pad {
     display: none;
   }
   .rg-label-square.has-price .price-pad {
     display: block;
     position: absolute;
-    left: 14px; bottom: 38px;
+    left: 14px; top: 300px;
     width: 256px; height: 160px;
     background: #ffffff;
     border: 1px solid #b8c098;
     border-radius: 14px;
   }
+  /* "Price" placeholder: smaller than v1 (visibility was the original
+     concern, not size — so dropping 40 → 32 makes the placeholder less
+     visually heavy without sacrificing readability) and positioned higher
+     in the pad (top:18 instead of 50) so the seller has room to write the
+     price below the label. */
   .rg-label-square.has-price .price-pad .price-placeholder {
     position: absolute;
-    top: 50px; left: 0; right: 0;
+    top: 18px; left: 0; right: 0;
     text-align: center;
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 40px;
+    font-size: 32px;
     font-weight: 600;
     color: #7a8a5a;
     letter-spacing: 0.5px;
@@ -1175,16 +1191,16 @@ function renderModal(modal, comic, allItems) {
   // open. Keep this directly under effectiveOpts.)
   const labelHTML = renderLabelMarkup(comic, effectiveOpts);
 
-  // S12 May 6: purchase link for the currently-selected format. Strip sits
-  // below the size toggle; updates whenever the user switches sizes (since
-  // renderModal re-runs on toggle). Falls back to no strip if a format
-  // somehow lacks an entry (defensive — shouldn't happen).
+  // S12 May 6 v2: purchase link now sits as a button below the action
+  // buttons (was above the preview in v1). Restyled as a proper button
+  // with no SEO-ish "Need labels?" preamble or arrow emoji. Updates when
+  // the user switches sizes since renderModal re-runs on toggle.
   const buyLink = LABEL_BUY_LINKS[opts.size];
   const buyLinkHTML = buyLink ? `
-      <div class="lvm-buylink-row">
-        <a class="lvm-buylink" href="${esc(buyLink.url)}" target="_blank" rel="noopener noreferrer">
-          Need labels? Buy ${esc(buyLink.label)} on ${esc(buyLink.vendor)}<span class="lvm-buylink-arrow">↗</span>
-        </a>
+      <div class="lvm-buylink-footer">
+        <button type="button" class="rg-btn rg-btn-secondary rg-btn-sm lvm-buylink-btn" data-action="open-buylink" data-url="${esc(buyLink.url)}">
+          Buy ${esc(buyLink.label)} on ${esc(buyLink.vendor)}
+        </button>
       </div>` : '';
 
   modal.innerHTML = `
@@ -1211,7 +1227,6 @@ function renderModal(modal, comic, allItems) {
           <span class="${includePricePillClass}"></span>
         </div>
       </div>` : ''}
-      ${buyLinkHTML}
       <div class="lvm-preview-area">
         <div class="lvm-preview-frame" style="--lvm-label-w: ${fmt.pixelW}px; --lvm-label-h: ${fmt.pixelH}px;">
           <div class="lvm-preview-wrap" style="--lvm-label-w: ${fmt.pixelW}px; --lvm-label-h: ${fmt.pixelH}px;">
@@ -1223,6 +1238,7 @@ function renderModal(modal, comic, allItems) {
         <button class="rg-btn ${queueBtnCategory} rg-btn-md ${queueBtnSizeMod}" data-action="toggle-queue" ${queueBtnDisabled ? 'disabled' : ''}>${queueBtnLabel}</button>
         <button class="rg-btn rg-btn-primary rg-btn-md" data-action="print" ${printDisabled ? 'disabled' : ''}>Save as PDF</button>
       </div>
+      ${buyLinkHTML}
     </div>
   `;
 
@@ -1259,6 +1275,20 @@ function renderModal(modal, comic, allItems) {
       const cur = readOptions();
       writeOptions({ ...cur, includePrice: !cur.includePrice });
       renderModal(modal, comic, allItems);
+    });
+  }
+
+  // S12 May 6 v2: buylink button — opens vendor URL in a new tab. Same
+  // safety attributes as the prior anchor (noopener noreferrer) but as
+  // window.open since the click target is now a button, not an <a>.
+  // The element only exists when LABEL_BUY_LINKS has an entry for the
+  // current size, so guard the listener wiring.
+  const buyLinkEl = modal.querySelector('[data-action="open-buylink"]');
+  if (buyLinkEl) {
+    buyLinkEl.addEventListener('click', () => {
+      const url = buyLinkEl.getAttribute('data-url');
+      if (!url) return;
+      window.open(url, '_blank', 'noopener,noreferrer');
     });
   }
 
