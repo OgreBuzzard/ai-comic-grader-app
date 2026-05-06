@@ -94,6 +94,36 @@ const LABEL_FORMATS = {
   }
 };
 
+// ── Purchase links (S12 May 6) ─────────────────────────────────────────────
+// Where to buy the actual label sheets for each format. Surfaced in the
+// Print Label modal as a subtle helper strip beneath the size toggle. Not
+// affiliate links; informational convenience only.
+//
+//   small  → Avery 8161 on Amazon (1×4, 20 per sheet, mailing labels —
+//            the most universally available collector option)
+//   square → Avery 22806 on Amazon (2×2, 12 per sheet — the new default;
+//            short Amazon shortlink provided by Matt)
+//   large  → OL5450 on OnlineLabels (7.5×1.5, 7 per sheet — only sold by
+//            OnlineLabels under their "Water Bottle Labels" SKU; matches
+//            CGC slab-label dimensions for slab overlay use)
+const LABEL_BUY_LINKS = {
+  small: {
+    label: 'Avery 8161',
+    url: 'https://www.amazon.com/Avery-White-Inkjet-Address-Labels/dp/B01LXUAKOY',
+    vendor: 'Amazon'
+  },
+  square: {
+    label: 'Avery 22806',
+    url: 'https://a.co/d/0fMlMbAB',
+    vendor: 'Amazon'
+  },
+  large: {
+    label: 'OL5450',
+    url: 'https://www.onlinelabels.com/products/OL5450',
+    vendor: 'OnlineLabels'
+  }
+};
+
 // ── Label options (persisted via localStorage) ─────────────────────────────
 // User's size + price-tag toggle preferences. Persists across sessions so a
 // user printing CGC-slab labels doesn't have to reset Small every open.
@@ -479,6 +509,39 @@ function ensureStylesInjected() {
     background: #5a7030;
     color: #fff;
     box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+  }
+
+  /* ── Purchase link strip (S12 May 6) ───────────────────────────────────
+     Tucked below the toggle row; tells users where to buy the sheets that
+     match the currently-selected format. Subtle: muted color, small font,
+     centered, external-link arrow at the end. Whole strip is the click
+     target so users don't have to aim for the small text precisely. */
+  .lvm-buylink-row {
+    background: #f4f0e8;
+    border-bottom: 1px solid #e0d8c8;
+    padding: 8px 16px;
+    text-align: center;
+  }
+  .lvm-buylink {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 13px; font-weight: 500;
+    color: #5a4a38;
+    letter-spacing: 0.4px;
+    text-decoration: none;
+    border-bottom: 1px dotted #a89888;
+    padding-bottom: 1px;
+    transition: color 0.12s ease, border-color 0.12s ease;
+  }
+  .lvm-buylink:hover {
+    color: #1a4a30;
+    border-bottom-color: #1a4a30;
+  }
+  .lvm-buylink-arrow {
+    /* External-link arrow — slightly muted from the link text so it reads
+       as decoration not a separate clickable target. */
+    margin-left: 4px;
+    opacity: 0.7;
+    font-size: 11px;
   }
 
   /* ── Label visual styles (used in both preview AND print sheet) ──────── */
@@ -1106,6 +1169,18 @@ function renderModal(modal, comic, allItems) {
     includePrice: showIncludePriceToggle && opts.includePrice
   };
 
+  // S12 May 6: purchase link for the currently-selected format. Strip sits
+  // below the size toggle; updates whenever the user switches sizes (since
+  // renderModal re-runs on toggle). Falls back to no strip if a format
+  // somehow lacks an entry (defensive — shouldn't happen).
+  const buyLink = LABEL_BUY_LINKS[opts.size];
+  const buyLinkHTML = buyLink ? `
+      <div class="lvm-buylink-row">
+        <a class="lvm-buylink" href="${esc(buyLink.url)}" target="_blank" rel="noopener noreferrer">
+          Need labels? Buy ${esc(buyLink.label)} on ${esc(buyLink.vendor)}<span class="lvm-buylink-arrow">↗</span>
+        </a>
+      </div>` : '';
+
   modal.innerHTML = `
     <div class="lvm-card">
       <div class="lvm-header">
@@ -1130,6 +1205,7 @@ function renderModal(modal, comic, allItems) {
           <span class="${includePricePillClass}"></span>
         </div>
       </div>` : ''}
+      ${buyLinkHTML}
       <div class="lvm-preview-area">
         <div class="lvm-preview-frame" style="--lvm-label-w: ${fmt.pixelW}px; --lvm-label-h: ${fmt.pixelH}px;">
           <div class="lvm-preview-wrap" style="--lvm-label-w: ${fmt.pixelW}px; --lvm-label-h: ${fmt.pixelH}px;">
