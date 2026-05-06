@@ -397,10 +397,48 @@
     #cropper-controls { padding: 16px; background: #1a1a1a; display: flex; gap: 10px; justify-content: space-between; align-items: center; border-top: 1px solid #333; }
     #cropper-controls button { padding: 14px 0; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; }
     #cropper-cancel, #cropper-confirm { flex: 1; }
-    #cropper-rotate { flex: 0 0 56px; height: 48px; padding: 0; display: flex; align-items: center; justify-content: center; background: #333; color: #ccc; }
     #cropper-cancel { background: #333; color: #ccc; }
     #cropper-confirm { background: #1a4a2a; color: #6abf6a; }
-    #cropper-cancel:active, #cropper-confirm:active, #cropper-rotate:active { transform: scale(0.97); }
+    #cropper-cancel:active, #cropper-confirm:active, .cropper-rotation-btn:active, #cropper-rotation-value:active { transform: scale(0.97); }
+    /* Fine-rotation cluster (S12): three connected buttons — minus, value
+       (clickable reset), plus. Sized smaller than the main action buttons
+       so they read as secondary controls. The center value display
+       turns olive when rotation is non-zero, signaling "tap to reset". */
+    #cropper-rotation-cluster {
+      display: flex;
+      align-items: center;
+      background: #2a2a2a;
+      border-radius: 8px;
+      overflow: hidden;
+      flex: 0 0 auto;
+    }
+    .cropper-rotation-btn {
+      width: 44px; height: 44px;
+      padding: 0 !important;
+      background: #2a2a2a !important;
+      color: #aaa !important;
+      font-size: 13px !important;
+      font-weight: 700 !important;
+      letter-spacing: 0 !important;
+      text-transform: none !important;
+      border-radius: 0 !important;
+      border-right: 1px solid #1a1a1a !important;
+    }
+    #cropper-rotation-value {
+      min-width: 56px;
+      height: 44px;
+      padding: 0 8px !important;
+      background: #2a2a2a !important;
+      color: #888 !important;
+      font-size: 14px !important;
+      font-weight: 700 !important;
+      letter-spacing: 0 !important;
+      text-transform: none !important;
+      border-radius: 0 !important;
+      border-right: 1px solid #1a1a1a !important;
+      transition: color 0.15s ease;
+    }
+    #cropper-rotation-value.rotated { color: #6abf6a !important; }
     /* ── Camera capture modal (S11) ─────────────────────────────────────
        Full-viewport overlay for in-app photo capture. Live <video> stream
        fills the screen letterboxed (contain, not cover) so what the user
@@ -708,8 +746,10 @@
        80vw the static PNG used to 104vw (30% larger than the static-PNG
        baseline). The animation overflows viewport edges in the empty
        padding regions, which is fine because those regions are transparent.
-       The animation source has a slight rightward bias in the framing —
-       the negative left margin pulls it ~50px back to optical center. */
+       Centering: previously had translateX(-50px) to compensate for the
+       OLD animation source's rightward bias. The new render Matt provided
+       in S12 is properly centered (1px offset from canvas center, verified
+       by pixel measurement), so no compensation is needed. */
     #splash-robot {
       position: absolute;
       left: 0; right: 0;
@@ -720,7 +760,7 @@
       width: auto;
       height: auto;
       object-fit: contain;
-      transform: translateY(-50%) translateX(-50px);
+      transform: translateY(-50%);
       pointer-events: none;
     }
     @keyframes splashSlideUp {
@@ -812,9 +852,68 @@
     @keyframes splashFade {
       to { opacity: 0; pointer-events: none; }
     }
+
+    /* ── Landscape-orientation block (S12 May 5) ────────────────────────
+       iOS workaround for orientation lock. See body comment for context. */
+    #orientation-block {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      background: #0a0a0a;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      padding: 20px;
+      text-align: center;
+    }
+    #orientation-block .orientation-block-title {
+      font-family: 'Share Tech Mono', 'Courier New', monospace;
+      font-size: 22px;
+      color: #d4e82a;
+      letter-spacing: 0.12em;
+      text-shadow: 0 0 16px rgba(184, 216, 32, 0.4);
+    }
+    #orientation-block .orientation-block-sub {
+      font-family: 'Share Tech Mono', 'Courier New', monospace;
+      font-size: 13px;
+      color: #6a6a6a;
+      letter-spacing: 0.16em;
+      max-width: 280px;
+      line-height: 1.5;
+    }
+    /* Show in landscape on phones. We restrict by max-height to avoid
+       triggering on landscape tablets/desktops where the app should
+       still be usable. 500px height covers all phones in landscape. */
+    @media (orientation: landscape) and (max-height: 500px) {
+      #orientation-block { display: flex; }
+    }
   </style>
 </head>
 <body style="overflow:hidden">
+
+<!-- Landscape-orientation block overlay (S12 May 5).
+     iOS Safari completely ignores the manifest "orientation":"portrait" field
+     AND the screen.orientation.lock() JS API. We tried both — neither works
+     on iOS, even when installed as a PWA. This overlay is the only viable
+     workaround: when the device is rotated to landscape, this overlay covers
+     the entire viewport with a "Please rotate to portrait" message, blocking
+     interaction with the underlying app until the user rotates back.
+     The CSS media query (orientation: landscape) drives visibility — the
+     overlay is normally display:none and flips to flex only when landscape.
+     Android Chrome PWAs honor the manifest field so they never see this
+     overlay; this is purely an iOS workaround. -->
+<div id="orientation-block" aria-hidden="true">
+  <svg viewBox="0 0 64 64" width="56" height="56" fill="none" stroke="#b8d820" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <rect x="14" y="6" width="36" height="52" rx="4"/>
+    <circle cx="32" cy="52" r="2" fill="#b8d820"/>
+    <path d="M52 18 q12 0 12 12" stroke-dasharray="3 3"/>
+    <polyline points="60 22 64 30 56 30"/>
+  </svg>
+  <div class="orientation-block-title">Please rotate to portrait</div>
+  <div class="orientation-block-sub">Robograder works best in portrait orientation</div>
+</div>
 
 <!-- Auth Screen — shown when not signed in -->
 <!-- Auth screen — hidden by default (S11 fix). Showing it as the default state caused
@@ -1024,9 +1123,15 @@
   </div>
   <div id="cropper-controls">
     <button id="cropper-cancel" onclick="cancelCrop()">Cancel</button>
-    <button id="cropper-rotate" onclick="rotateCropImage()" aria-label="Rotate counter-clockwise 90 degrees" title="Rotate left">
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><polyline points="3 4 3 9 8 9"/></svg>
-    </button>
+    <!-- Fine rotation cluster (S12): replaces the prior 90° rotate button.
+         Per-degree adjustment so users can straighten slightly-tilted photos
+         without the 90° button's reset-and-resize side effects. The angle
+         display in the middle is clickable to reset to 0°. -->
+    <div id="cropper-rotation-cluster" role="group" aria-label="Fine rotation">
+      <button class="cropper-rotation-btn" onclick="rotateCropImage(-1)" aria-label="Rotate counter-clockwise 1 degree" title="−1°">−1°</button>
+      <button id="cropper-rotation-value" onclick="resetCropRotation()" aria-label="Reset rotation to 0 degrees" title="Tap to reset to 0°">0°</button>
+      <button class="cropper-rotation-btn" onclick="rotateCropImage(1)" aria-label="Rotate clockwise 1 degree" title="+1°">+1°</button>
+    </div>
     <button id="cropper-confirm" onclick="confirmCrop()">Apply Crop</button>
   </div>
 </div>
@@ -3884,7 +3989,16 @@ async function assessHighGrade() {
   }
 
   assessing = true;
-  showAssessModal();
+
+  // S12: HG follows the same scan-animation flow as standard assessment.
+  // Animation runs in parallel with the API call. Modal opens after both
+  // complete. Note: HG sends 8 images (4 main + 4 corners) but the scan
+  // animation only shows the 4 main slots — corner macros are technical
+  // input, not part of the user-facing visual flow.
+  const scanController = window.RobograderScan
+    ? window.RobograderScan.runScanAnimation(formData.images || [])
+    : { promise: Promise.resolve(), cancel: () => {} };
+
   try {
     // Compress all 8 images (4 main + 4 corner macros)
     const allImages = [...imgs.slice(0,4), ...corners.slice(0,4)];
@@ -3921,9 +4035,17 @@ async function assessHighGrade() {
       })
     });
 
+    // Wait for scan animation to finish before processing the response.
+    await scanController.promise;
+
     if (!resp.ok) { const e = await resp.text(); throw new Error('High-grade assessment error: ' + e); }
     const unified = await resp.json();
     if (unified.error) throw new Error(unified.error);
+
+    // Show progress modal now (animation finished — hard cut). Modal opens
+    // with "analyzing" pre-marked green; visible step progression starts
+    // at "populating".
+    showAssessModal();
 
     // Gate can still fire on high-grade
     if (unified.gateResult && unified.gateResult !== 'COMIC') {
@@ -5045,7 +5167,12 @@ function renderForm(){
           }).join("")}
         </div>
         <input id="corner-photo-input" type="file" accept="image/*" multiple onchange="handleCornerImages(event)" style="display:none">
-        ${(()=>{
+        ${formData.highGradeTier ? '' : (()=>{
+          // S12: hide the button if a high-grade assessment has already
+          // been run on this entry. highGradeTier is set to true by
+          // assessHighGrade() once the HG pass completes successfully.
+          // Without this gate, the button kept appearing after a successful
+          // HG run and the user could re-trigger it inadvertently.
           const cornerCount=(formData.cornerImages||[]).filter(Boolean).length;
           const ready=cornerCount===4 && !assessing;
           const ambient=cornerCount===4?"#1a4a2a":"#2a2a2a";
@@ -5368,6 +5495,9 @@ function openCropper(type, index) {
   if (!src) return;
 
   _cropperTarget = { type, index };
+  // S12: reset accumulated rotation when opening a fresh crop session so
+  // consecutive crops don't leak rotation state from a previous one.
+  _cropperRotation = 0;
   const modal = document.getElementById('cropper-modal');
   const img = document.getElementById('cropper-img');
 
@@ -5496,22 +5626,48 @@ function cancelCrop() {
   }
 }
 
-// Rotate the image counter-clockwise 90° (S11). Cropper.js's rotate() is
-// relative; -90 rotates by 90° CCW. After rotation, reset the crop box to
-// full bounds — otherwise the previous box can land outside the new image
-// orientation and Cropper.js shows it as a tiny strip in the corner.
-function rotateCropImage() {
+// S12: replaced 90° rotation with fine ±1° adjustment for alignment correction.
+// Matt's S12 feedback: 90° rotation reset the crop box and redrew the image at a
+// different size that cropped off-screen, making it effectively useless. The
+// real need is fine alignment — when a photo is slightly tilted (1-5°), the
+// user wants to straighten it before cropping. Per-degree adjustment via two
+// buttons (with the live angle shown between them); Reset returns to 0°.
+//
+// Cropper.js's rotate() accepts arbitrary degrees but is RELATIVE — passing 1
+// rotates by 1° from current orientation. We track the cumulative angle in
+// _cropperRotation so "Reset" can reverse it cleanly.
+let _cropperRotation = 0;
+
+function rotateCropImage(degrees) {
   if (!_cropperInstance) return;
-  _cropperInstance.rotate(-90);
-  // Re-fit the canvas to the container after rotation (Cropper handles the math)
-  // and reset the crop box to full image bounds for clean continued editing.
-  const canvas = _cropperInstance.getCanvasData();
-  _cropperInstance.setCropBoxData({
-    left: canvas.left,
-    top: canvas.top,
-    width: canvas.width,
-    height: canvas.height
-  });
+  _cropperInstance.rotate(degrees);
+  _cropperRotation += degrees;
+  // Clamp display to ±180° just for sanity (cropper.js accepts any value).
+  if (_cropperRotation > 180)  _cropperRotation -= 360;
+  if (_cropperRotation < -180) _cropperRotation += 360;
+  updateRotationDisplay();
+}
+
+function resetCropRotation() {
+  if (!_cropperInstance || _cropperRotation === 0) return;
+  _cropperInstance.rotate(-_cropperRotation);
+  _cropperRotation = 0;
+  updateRotationDisplay();
+}
+
+function updateRotationDisplay() {
+  const el = document.getElementById('cropper-rotation-value');
+  if (!el) return;
+  // Show signed degrees with an explicit + for positive values so the
+  // direction is unambiguous. 0° is shown as plain "0°" without a sign.
+  if (_cropperRotation === 0) {
+    el.textContent = '0°';
+    el.classList.remove('rotated');
+  } else {
+    const sign = _cropperRotation > 0 ? '+' : '';
+    el.textContent = `${sign}${_cropperRotation}°`;
+    el.classList.add('rotated');
+  }
 }
 
 function confirmCrop() {
