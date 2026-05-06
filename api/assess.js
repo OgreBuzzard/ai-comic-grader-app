@@ -283,7 +283,18 @@ export default async function handler(req, res) {
   const hasPQReference = pageQualityImageBlock !== null;
   const hasBackCover   = slotsFilled ? !!slotsFilled.back : images.length >= 2;
   const photoCount     = images.length;
-  const baseConf       = photoCount >= 4 ? 8 : photoCount === 3 ? 12 : 16;
+  // Base confidence range. Tightens as evidence accumulates:
+  //   High-grade run (4 main + 4 corner macros = 8 images): ±3.
+  //     Corner macros directly inspect the most defect-prone areas, narrowing
+  //     uncertainty significantly compared to wide-frame standard photos.
+  //   Standard run with 4+ images: ±6 (was ±8 before May 6).
+  //     Tightened because the v2.2 calibration data is improving and ±8
+  //     was reading as overly conservative even on clean books.
+  //   3 images: ±12 (one main slot missing materially widens uncertainty).
+  //   <3 images: ±16 (very limited input).
+  const baseConf = highGrade
+    ? 3
+    : (photoCount >= 4 ? 6 : photoCount === 3 ? 12 : 16);
 
   // ── High-grade block ────────────────────────────────────────────────────────
   // When highGrade=true, 4 corner macros (TL, TR, BL, BR) are appended after the
@@ -325,7 +336,7 @@ RULES FOR HIGH-GRADE ASSESSMENT:
 
 7. PRESUMPTION OF CLEAN: The default assumption for each corner macro is "this corner is clean and confirms a high grade." Only conclude a corner is damaged if you can specifically identify and name the defect. Do not invent defects.
 
-8. CONFIDENCE: High-grade assessments use a "+" suffix instead of ±N in the display. You do not need to adjust confidenceRange.
+8. CONFIDENCE: For high-grade assessments, set confidenceRange between 3 and 6. Default to 3 (corner macros provide tight evidence). Widen toward 6 only if specific image-quality issues impair your read: heavy glare obscuring a corner, blurred macro, raking light too oblique to evaluate stress lines. Do not widen for "general caution" — only for image-quality issues you can name. Never exceed 6 on a high-grade run.
 
 9. FREQUENCY REMINDER: 40% of CGC-graded books receive a 9.8. This is the single most common outcome. If the book looks pristine in all 8 photos, 9.8 is the likely answer, not a conservative 9.4.
 
@@ -563,6 +574,11 @@ CONSOLIDATION RULES (apply BEFORE writing notes):
   • Never restate page quality in notes. PQ has its own field; mentioning it again in notes is duplicative clutter.
   • Never note things that are not defects: arrival dates, distributor markings, pedigree marks, normal manufacturing characteristics. Note these only if they affect the grade.
   • Never describe handling history ("book has been read multiple times") — describe the defects themselves.
+
+JUSTIFICATION RULES (S12 May 6 — added because RG was deducting from Back without listing any back defect):
+  • If a category (Front, Back, Spine) is below its maximum (Front<50, Back<20, Spine<20), there MUST be at least one defect entry in that category in the defects array. If you cannot name a specific defect for the category, then the category should NOT lose points. Score deduction without a named defect is incoherent and erodes trust in the assessment.
+  • Interior category is special: ALWAYS include at least one note about Interior in the defects array, even when the category is at full marks (10/10). At minimum, describe the page quality observation: "Interior: White pages" or "Interior: Off-White to White pages, supple, clean" or similar. Use category="Interior" for these. The reader needs to see that Interior was actually evaluated, not silently assumed.
+  • Interior PQ-summary notes are exempt from the "never restate page quality" rule above — the goal is to confirm Interior was evaluated. Keep these notes brief (1 short sentence) and never duplicate the standalone PQ field's exact wording.
 
 TARGET NOTE COUNT:
   • High grade (8.5+): 1-4 notes
@@ -1037,6 +1053,27 @@ RETURN ONLY THIS JSON — no markdown, no preamble
         rg._highGradeEnforcement = enforcement;
       }
       rg._highGradePass = true;
+    }
+
+    // ── Confidence range clamping (S12 May 6) ────────────────────────────
+    // Two-stage clamp regardless of high-grade or standard mode:
+    //   1. Mode cap: high-grade caps at 6, standard caps at 16. The model
+    //      occasionally returns excessive ranges; this protects against
+    //      egregious widening.
+    //   2. Score+conf cap: score + confidenceRange must not exceed 100.
+    //      A score of 94 with ±8 implies an upper bound of 102 which is
+    //      nonsensical (max grade is 100). Narrow the conf if needed so
+    //      that score + conf ≤ 100.
+    // Floor is 0 (perfect score 100 → 0; not negative).
+    if (parsed.roboGrade && typeof parsed.roboGrade.confidenceRange === 'number') {
+      const score = Math.round(parsed.roboGrade.score || 0);
+      const modeCap = highGrade ? 6 : 16;
+      let conf = Math.max(0, Math.min(modeCap, Math.round(parsed.roboGrade.confidenceRange)));
+      // Ceiling: if score + conf > 100, narrow conf to fit. Never widen
+      // (that would imply unsupported pessimism).
+      const headroom = Math.max(0, 100 - score);
+      if (conf > headroom) conf = headroom;
+      parsed.roboGrade.confidenceRange = conf;
     }
 
     return res.status(200).json(parsed);
