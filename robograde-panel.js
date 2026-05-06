@@ -56,15 +56,33 @@
 
     // Precision suffix logic (mirrors print-label.js exactly).
     // Score 100      → no suffix (perfect, no uncertainty)
-    // High-grade run → ±N (narrower confidence range, default ±3)
+    // High-grade run → ±N (narrower confidence range, default ±3, capped 6)
     // Score ≥80, no high-grade → "+" (signals high-grade is available)
     // Score <80, no high-grade → ±N (standard range, default ±8)
+    //
+    // S12 May 6: client-side clamping applied here too, defending against
+    // legacy records saved before the server-side clamp shipped:
+    //   - Mode cap (high-grade ≤6, standard ≤16) prevents nonsense ranges.
+    //   - Score+conf cap (score + N ≤ 100) prevents implied upper bounds
+    //     above 100 (e.g. score 94 ± 8 → range 102, capped to 94 ± 6 → 100).
     const highGradeRun = !!(comic && comic.highGradeUnlocked);
     let precision = '';
     if (scoreRounded < 100) {
-      if (highGradeRun) precision = `±${rg.confidenceRange || 3}`;
-      else if (scoreRounded >= 80) precision = '+';
-      else precision = `±${rg.confidenceRange || 8}`;
+      if (highGradeRun) {
+        let n = rg.confidenceRange != null ? Math.round(rg.confidenceRange) : 3;
+        n = Math.max(0, Math.min(6, n));
+        const headroom = Math.max(0, 100 - scoreRounded);
+        if (n > headroom) n = headroom;
+        precision = n > 0 ? `±${n}` : '';
+      } else if (scoreRounded >= 80) {
+        precision = '+';
+      } else {
+        let n = rg.confidenceRange != null ? Math.round(rg.confidenceRange) : 8;
+        n = Math.max(0, Math.min(16, n));
+        const headroom = Math.max(0, 100 - scoreRounded);
+        if (n > headroom) n = headroom;
+        precision = n > 0 ? `±${n}` : '';
+      }
     }
 
     // Severity color — tuned for the printout paper bands (pale green / cream

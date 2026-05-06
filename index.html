@@ -1564,19 +1564,28 @@ async function initFirebase(){
     })
     .catch(() => { /* tolerated; lazy load on click is the fallback */ });
 
-  // Lock to portrait orientation. Manifest "orientation":"portrait" handles
-  // Android/Chrome PWAs; this JS call covers any browser that supports the
-  // Screen Orientation API. iOS Safari ignores both the manifest field AND
-  // this JS call — there's no way to force portrait on iOS today. Users on
-  // iOS will get the rotate-to-landscape behavior despite our preference;
-  // this isn't a fixable platform issue.
-  if (screen.orientation && typeof screen.orientation.lock === 'function') {
-    screen.orientation.lock('portrait').catch(() => {
-      // Silent failure — iOS throws here; nothing we can do
-    });
-  }
+  // Orientation handling: NO JavaScript lock attempt. Two reasons:
+  //   1. Android/Chrome PWAs honor the manifest "orientation":"portrait"
+  //      field — they never rotate to landscape, so no JS needed.
+  //   2. iOS Safari ignores BOTH the manifest field AND screen.orientation.lock().
+  //      Apple deliberately doesn't allow web apps to force orientation, even
+  //      installed as PWAs. Calling lock() on iOS throws/rejects silently.
+  // We previously called screen.orientation.lock('portrait').catch(...) here.
+  // Removed in S12 to avoid future inconsistency: a partial-success lock (works
+  // on Android, fails on iOS) creates a silent platform asymmetry that's hard
+  // to reason about and easy to introduce bugs around (e.g. layout code
+  // assuming "this can never be landscape" when on iOS it can).
+  // Landscape detection now lives entirely in the CSS overlay
+  // (#orientation-block) which shows a rotate-to-portrait message on phones
+  // in landscape regardless of platform. Single code path.
   fsOnSnapshot(userItemsCollection(),snap=>{
     items=snap.docs.map(d=>flattenForApp({id:d.id,...d.data()})).map(c=>({...c,pageQuality:normPageQuality(c.pageQuality)}));
+    // S12: same sample-injection rule as initial loadItems. If the live
+    // collection is empty, show the sample. As soon as any real item exists,
+    // items.length > 0 and the sample drops out automatically.
+    if (items.length === 0) {
+      items = [{...SAMPLE_COMIC}];
+    }
     if(view==="list")renderList();
     updateStats();
   });
@@ -2086,10 +2095,18 @@ async function loadItems(){
     // No seeding for new users — they start with an empty collection
   }catch(e){console.error("Load error:",e);items=[];}
 
-  // Inject sample entry for users who haven't dismissed it and have no books yet.
-  // The dismissal flag is read from the user's Firestore doc (loaded by
-  // loadUserCredits, which runs before loadComics in the auth handler).
-  if (items.length === 0 && window._sampleDismissed !== true) {
+  // Inject sample entry whenever the user's collection is empty. S12 May 5
+  // change: removed dependency on the sampleDismissed flag entirely. The flag
+  // was problematic — Matt's smoke test surfaced cases where it was getting
+  // set unexpectedly (sample disappeared on credit purchase, when the only
+  // intended dismissal triggers are save and delete). Rather than chase the
+  // flag-mutation path, we just gate purely on collection emptiness:
+  //   - User has 0 saved items   → show sample
+  //   - User has ≥1 saved item   → don't show sample
+  // First save makes items.length transition from 0 to 1; sample auto-vanishes
+  // on the next render. No flag needed. No purchase or other state can
+  // accidentally dismiss the sample because there's no flag to mutate.
+  if (items.length === 0) {
     items = [{...SAMPLE_COMIC}];
   }
 
@@ -2147,6 +2164,7 @@ async function saveItem(rec){
     if (rec.ownership == null) rec.ownership = 'Owned';
     if (rec.dateSold === undefined) rec.dateSold = null;
     if (rec.salePrice === undefined) rec.salePrice = null;
+    if (rec.askingPrice === undefined) rec.askingPrice = null;
   }
   syncMsg("Saving...");
   try{
@@ -2869,10 +2887,12 @@ function showDetail(id){
   }
 
   // ─── Cost Breakdown ───
-  // Only shown if at least one of the four cost fields is populated. Previously
+  // Only shown if at least one of the cost fields is populated. Previously
   // rendered unconditionally with "—" placeholders, which read as cluttered
   // empty data on books the user hasn't filled in financial data for.
-  const hasAnyCost = !!(selected.purchasePrice || selected.taxesFeesShipping || selected.gradingCost || selected.cgcShipping);
+  // S12: askingPrice added — only renders in detail view if a value is set
+  // (per Matt's spec: "only appears in Detail view if a value has been entered").
+  const hasAnyCost = !!(selected.purchasePrice || selected.taxesFeesShipping || selected.gradingCost || selected.cgcShipping || selected.askingPrice);
   if(hasAnyCost) {
     html += `<div class="divider"></div>
     <div class="section-label" style="color:#6a8a6a">Cost Breakdown</div>
@@ -2881,6 +2901,7 @@ function showDetail(id){
       ${selected.taxesFeesShipping ? `<div><div class="section-label">Taxes/Fees/Ship</div><div class="field-val">${fmt$(selected.taxesFeesShipping)}</div></div>` : ""}
       ${selected.gradingCost ? `<div><div class="section-label">Grading Cost</div><div class="field-val">${fmt$(selected.gradingCost)}</div></div>` : ""}
       ${selected.cgcShipping ? `<div><div class="section-label">CGC Shipping</div><div class="field-val">${fmt$(selected.cgcShipping)}</div></div>` : ""}
+      ${selected.askingPrice ? `<div><div class="section-label">Asking Price</div><div class="field-val">${fmt$(selected.askingPrice)}</div></div>` : ""}
     </div>`;
   }
 
@@ -3311,6 +3332,13 @@ const EMPTY={
   ownership:'Owned',
   dateSold:null,
   salePrice:null,
+  // askingPrice (S12 May 6): the price the owner is currently asking for
+  // this book. Distinct from salePrice (which is reserved for the actual
+  // final transaction value when the book sells, used by a future Sold
+  // workflow). askingPrice is editable any time and surfaces on the printed
+  // label when the user enables both "Include price tag" and "Include
+  // asking price" in the label viewer modal.
+  askingPrice:"",
   publicListing:false,
   // Transaction
   dateAcquired:"",
@@ -3360,7 +3388,10 @@ function showEdit(id){
     gradingCost:c.gradingCost!=null?String(c.gradingCost):"",
     cgcShipping:c.cgcShipping!=null?String(c.cgcShipping):"",
     fmv:c.fmv!=null?String(c.fmv):"",
-    fmvDate:c.fmvDate||""
+    fmvDate:c.fmvDate||"",
+    // S12: askingPrice is hydrated alongside the other money fields. The save
+    // path at submitForm() coerces back to number/null on write.
+    askingPrice:c.askingPrice!=null?String(c.askingPrice):""
   };
   // Snapshot the original Firestore images so they can never be lost on save
   formData._savedImages=[...(c.images||[])];
@@ -5382,6 +5413,7 @@ function renderForm(){
         ${mf("CGC Return Shipping ($)","cgcShipping")}
         ${mf("FMV ($)","fmv")}
         ${df("FMV Date","fmvDate",true)}
+        ${mf("Asking Price ($)","askingPrice")}
       </div>
     </div>
 
@@ -6487,6 +6519,10 @@ async function submitForm(){
     ownership: formData.ownership || 'Owned',
     dateSold: formData.dateSold || null,
     salePrice: formData.salePrice !== "" && formData.salePrice != null ? parseFloat(formData.salePrice) : null,
+    // askingPrice (S12): the price the user is currently asking for the book.
+    // Distinct from salePrice (reserved for the future Sold flow's actual
+    // transaction value). Numeric coercion identical to other money fields.
+    askingPrice: formData.askingPrice !== "" && formData.askingPrice != null ? parseFloat(formData.askingPrice) : null,
     // Transaction (numeric coercion)
     purchasePrice:formData.purchasePrice!==""?parseFloat(formData.purchasePrice):null,
     taxesFeesShipping:formData.taxesFeesShipping!==""?parseFloat(formData.taxesFeesShipping):null,

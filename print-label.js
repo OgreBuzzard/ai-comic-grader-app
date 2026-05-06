@@ -81,13 +81,18 @@ const OPTIONS_KEY = 'robograder.labelOptions.v1';
 function readOptions() {
   try {
     const raw = localStorage.getItem(OPTIONS_KEY);
-    if (!raw) return { size: 'small', priceTag: false };
+    if (!raw) return { size: 'small', priceTag: false, includePrice: false };
     const o = JSON.parse(raw);
     return {
       size: (o.size === 'large') ? 'large' : 'small',
-      priceTag: !!o.priceTag
+      priceTag: !!o.priceTag,
+      // S12: includePrice controls whether the comic's askingPrice is rendered
+      // INSIDE the price pad. Only meaningful when priceTag is also true and
+      // the comic has an askingPrice set. UI toggle for this is conditionally
+      // shown — see renderModal.
+      includePrice: !!o.includePrice
     };
-  } catch { return { size: 'small', priceTag: false }; }
+  } catch { return { size: 'small', priceTag: false, includePrice: false }; }
 }
 
 function writeOptions(opts) {
@@ -398,6 +403,16 @@ function ensureStylesInjected() {
     opacity: 0.4;
     cursor: not-allowed;
   }
+  /* Secondary toggle row (S12) — appears below the main toggle row when
+     the conditional Include Price toggle is shown. Right-aligned (the
+     left half is empty) so it visually nests under the price tag toggle
+     above it. Slightly dimmer background for visual hierarchy. */
+  .lvm-toggle-row-secondary {
+    background: #ede9e0;
+    padding-top: 6px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #e0d8c8;
+  }
 
   /* ── Label visual styles (used in both preview AND print sheet) ──────── */
   .rg-label {
@@ -704,12 +719,17 @@ function ensureStylesInjected() {
     right: 18px; bottom: 26px;
     letter-spacing: 0.3px;
   }
-  /* Price pad for large variant — bigger, fills the taller cell */
+  /* Price pad for large variant — bigger, fills most of the taller cell.
+     Height calc: cell is 432 tall, URL band at bottom is 26+24=50 tall,
+     so the pad's bottom edge needs to be at most 432-50-12=370 (with 12px
+     gap above URL). Pad starts at top:28 → max height 342. Set 336 for a
+     touch more breathing room above the URL. (Was 376 — overlapped URL by
+     ~22px in earlier S12 build.) */
   .rg-label-large.has-price .price-pad {
     display: block;
     position: absolute;
     top: 28px; right: 220px;
-    width: 340px; height: 376px;
+    width: 340px; height: 336px;
     background: #ffffff;
     border: 1px solid #b8c098;
     border-radius: 18px;
@@ -723,6 +743,24 @@ function ensureStylesInjected() {
     font-weight: 300;
     color: #c0c8a8;
     letter-spacing: 0.8px;
+  }
+  /* Price value (when includePrice toggle is on) — bold and centered.
+     Size proportional to label format. */
+  .rg-label.has-price .price-pad .price-value {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Noto Sans Display', sans-serif;
+    font-stretch: 62.5%;
+    font-size: 80px;
+    font-weight: 900;
+    color: #1a2208;
+    letter-spacing: 0.5px;
+  }
+  .rg-label-large.has-price .price-pad .price-value {
+    font-size: 130px;
   }
 
   /* Print sheet markup is no longer used — PDF generation (handleSavePDF)
@@ -757,7 +795,7 @@ function renderModal(modal, comic, allItems) {
   // the PDF will just span multiple pages.
   const queueOverflow = queueCount > queueCap;
 
-  const labelHTML = renderLabelMarkup(comic, opts);
+  const labelHTML = renderLabelMarkup(comic, effectiveOpts);
   const queueClass = queueOverflow ? 'lvm-queue-count full' : 'lvm-queue-count';
 
   const queueBtnLabel = inQueue ? 'Remove from Queue' : `Add to Queue`;
@@ -785,6 +823,25 @@ function renderModal(modal, comic, allItems) {
   const sizeLabelText = opts.size === 'large' ? 'Large' : 'Small';
   const pricePillClass = opts.priceTag ? 'lvm-pill on' : 'lvm-pill';
 
+  // S12: Include Asking Price secondary toggle. Conditional visibility — only shows
+  // when BOTH:
+  //   1. priceTag is on (no point asking about value if pad isn't shown)
+  //   2. comic.askingPrice has a value (no value to include if not set)
+  // When hidden, includePrice option is treated as effectively off regardless
+  // of stored value. When shown, the toggle drives whether the asking-price
+  // value renders inside the pad or the pad stays blank for hand-writing.
+  const hasAskingPrice = comic.askingPrice != null && comic.askingPrice !== '' && Number(comic.askingPrice) > 0;
+  const showIncludePriceToggle = opts.priceTag && hasAskingPrice;
+  const includePricePillClass = opts.includePrice ? 'lvm-pill on' : 'lvm-pill';
+
+  // Effective options for rendering: includePrice only takes effect if the
+  // toggle is visible (i.e. price tag on AND asking price exists). This way
+  // a stored "true" value doesn't accidentally render a missing price.
+  const effectiveOpts = {
+    ...opts,
+    includePrice: showIncludePriceToggle && opts.includePrice
+  };
+
   modal.innerHTML = `
     <div class="lvm-card">
       <div class="lvm-header">
@@ -804,6 +861,14 @@ function renderModal(modal, comic, allItems) {
           <span class="${pricePillClass}"></span>
         </div>
       </div>
+      ${showIncludePriceToggle ? `
+      <div class="lvm-toggle-row lvm-toggle-row-secondary">
+        <div></div>
+        <div class="lvm-toggle" data-action="toggle-include-price" role="button" tabindex="0">
+          <span class="lvm-toggle-label">Include asking price</span>
+          <span class="${includePricePillClass}"></span>
+        </div>
+      </div>` : ''}
       <div class="lvm-preview-area">
         <div class="lvm-preview-frame" style="--lvm-label-w: ${fmt.pixelW}px; --lvm-label-h: ${fmt.pixelH}px;">
           <div class="lvm-preview-wrap" style="--lvm-label-w: ${fmt.pixelW}px; --lvm-label-h: ${fmt.pixelH}px;">
@@ -834,6 +899,16 @@ function renderModal(modal, comic, allItems) {
     writeOptions({ ...cur, priceTag: !cur.priceTag });
     renderModal(modal, comic, allItems);
   });
+  // S12: Include Price toggle (conditional). The element only exists in the
+  // DOM when showIncludePriceToggle is true, so guard the listener wiring.
+  const includePriceEl = modal.querySelector('[data-action="toggle-include-price"]');
+  if (includePriceEl) {
+    includePriceEl.addEventListener('click', () => {
+      const cur = readOptions();
+      writeOptions({ ...cur, includePrice: !cur.includePrice });
+      renderModal(modal, comic, allItems);
+    });
+  }
 
   // Wire up button handlers. Back button removed in favor of tap-outside-
   // to-close — see backdrop handler below. Tap-outside semantically reads
@@ -902,9 +977,15 @@ function fitPreviewToFrame(modal) {
   // frame (set in renderModal based on the active format). Falls back to
   // 1152 (Large) if not set.
   const labelW = parseFloat(frame.style.getPropertyValue('--lvm-label-w')) || 1152;
-  // Compute scale factor and clamp to a sensible max so we don't blow up
-  // the label on huge displays.
-  const scale = Math.min(0.85, Math.max(0.18, avail / labelW));
+  // Compute scale factor. Upper clamp at 0.85 prevents the label from
+  // blowing up to fill huge displays. Lower clamp deliberately removed
+  // (S12 May 6): Large format (2160px wide) was being clipped on phones
+  // because the previous min-clamp of 0.18 → 388px exceeded a typical
+  // 360px-wide preview area. Now the scale is purely (avail / labelW),
+  // so any label always fits its container width — even at the cost of
+  // small text on very narrow viewports. Maximum upper bound retained
+  // at 0.85 to keep the preview reasonable on tablets/desktops.
+  const scale = Math.min(0.85, avail / labelW);
   frame.style.setProperty('--lvm-frame-scale', scale.toFixed(4));
 }
 
@@ -1098,32 +1179,51 @@ async function generatePDF(comics, modal) {
 //   - QR + URL point to robograder.app
 
 function renderLabelMarkup(comic, opts) {
-  // S12: opts is { size, priceTag }. Defaults to small + no price tag if
-  // not supplied (preserves backward compatibility for any caller still
-  // using the single-argument form). Note: 'small' = the default Avery 8161
-  // (4"×1", 20 per sheet) — it's the long-standing "default size". 'large'
-  // is the OL5450 CGC-slab format (7.5"×1.5", 7 per sheet).
-  opts = opts || { size: 'small', priceTag: false };
+  // S12: opts is { size, priceTag, includePrice }. Defaults to small + no
+  // price tag + no included price if not supplied (preserves backward
+  // compatibility for any caller still using the single-argument form).
+  // Note: 'small' = the default Avery 8161 (4"×1", 20 per sheet) — it's the
+  // long-standing "default size". 'large' is the OL5450 CGC-slab format
+  // (7.5"×1.5", 7 per sheet).
+  // includePrice (S12 May 6): when true AND comic has an askingPrice, the
+  // value renders inside the price pad. Otherwise the pad shows the faint
+  // "Price" placeholder for handwriting.
+  opts = opts || { size: 'small', priceTag: false, includePrice: false };
   const isLarge = opts.size === 'large';
   const showPrice = !!opts.priceTag;
+  const includePrice = !!opts.includePrice;
 
   const rg = comic.roboGrade;
   const score = Math.round(rg.score ?? 0);
 
   // Precision suffix logic (same four-tier rule as the popup version):
   //   100 → no suffix
-  //   High-grade run → ±N (narrower confidence range, default ±3)
+  //   High-grade run → ±N (narrower confidence range, default ±3, capped 6)
   //   Initial only, 80+ → "+"
-  //   Initial only, <80 → ±N (default ±8)
+  //   Initial only, <80 → ±N (default ±8, capped 16)
+  //
+  // S12 May 6: client-side clamping applied here too, mirroring the same
+  // logic in robograde-panel.js. Defends against legacy records where the
+  // server-side clamp wasn't yet shipping. Two stages:
+  //   1. Mode cap: high-grade ≤6, standard ≤16
+  //   2. Score+conf cap: score + N must not exceed 100
   const highGradeRun = !!comic.highGradeUnlocked;
   let precision = '';
   if (score < 100) {
     if (highGradeRun) {
-      precision = `±${rg.confidenceRange || 3}`;
+      let n = rg.confidenceRange != null ? Math.round(rg.confidenceRange) : 3;
+      n = Math.max(0, Math.min(6, n));
+      const headroom = Math.max(0, 100 - score);
+      if (n > headroom) n = headroom;
+      precision = n > 0 ? `±${n}` : '';
     } else if (score >= 80) {
       precision = '+';
     } else {
-      precision = `±${rg.confidenceRange || 8}`;
+      let n = rg.confidenceRange != null ? Math.round(rg.confidenceRange) : 8;
+      n = Math.max(0, Math.min(16, n));
+      const headroom = Math.max(0, 100 - score);
+      if (n > headroom) n = headroom;
+      precision = n > 0 ? `±${n}` : '';
     }
   }
 
@@ -1164,7 +1264,22 @@ function renderLabelMarkup(comic, opts) {
           </div>
         </div>
       </div>
-      ${showPrice ? `<div class="price-pad"><div class="price-placeholder">Price</div></div>` : ''}
+      ${showPrice ? (() => {
+        // Price pad rendering. Two states:
+        //   includePrice=false → faint "Price" placeholder for handwriting
+        //   includePrice=true  → bold dollar value of comic.askingPrice
+        // The label modal logic gates includePrice on (priceTag && askingPrice
+        // > 0), so by the time we get here we trust the inputs.
+        if (includePrice && comic.askingPrice != null) {
+          const priceNum = Number(comic.askingPrice);
+          // Format with $ and 2 decimals if cents exist, no decimals if whole
+          const priceStr = priceNum % 1 === 0
+            ? `$${Math.round(priceNum)}`
+            : `$${priceNum.toFixed(2)}`;
+          return `<div class="price-pad"><div class="price-value">${priceStr}</div></div>`;
+        }
+        return `<div class="price-pad"><div class="price-placeholder">Price</div></div>`;
+      })() : ''}
       <div class="qr-col">
         <div class="qrc" data-qr-id="${gradeId}"></div>
         <div class="verify">SCAN TO VERIFY</div>
