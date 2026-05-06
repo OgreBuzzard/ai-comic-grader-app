@@ -1689,6 +1689,13 @@ function renderLabelMarkup(comic, opts) {
     }
   }
 
+  // S12 May 6: read assessment version from rg.version (not hardcoded V2.0
+  // anymore). The model returns version "2.2" in current assessments, but
+  // older books in the user's collection may carry "2.0" or "2.1" tags
+  // from prior schema versions — display whatever was actually computed.
+  // Falls back to "2.0" only if the field is missing entirely (extremely
+  // old records pre-versioning).
+  const versionStr = `V${esc(rg.version || '2.0')}`;
   const title = esc(comic.title || '');
   const issue = comic.issue ? `#${esc(comic.issue)}` : '';
   const issueDate = esc(comic.issueDate || '');
@@ -1713,7 +1720,7 @@ function renderLabelMarkup(comic, opts) {
         <div class="rg-word">ROBOGRADE</div>
         <div class="rg-num">${score}</div>
         ${precision ? `<div class="rg-prec">${precision}</div>` : ''}
-        <div class="rg-v">V2.0</div>
+        <div class="rg-v">${versionStr}</div>
       </div>
       <div class="info">
         <div class="info-upper">
