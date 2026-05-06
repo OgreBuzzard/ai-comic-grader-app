@@ -1115,7 +1115,6 @@ function renderModal(modal, comic, allItems) {
   // the PDF will just span multiple pages.
   const queueOverflow = queueCount > queueCap;
 
-  const labelHTML = renderLabelMarkup(comic, effectiveOpts);
   const queueClass = queueOverflow ? 'lvm-queue-count full' : 'lvm-queue-count';
 
   const queueBtnLabel = inQueue ? 'Remove from Queue' : `Add to Queue`;
@@ -1168,6 +1167,13 @@ function renderModal(modal, comic, allItems) {
     ...opts,
     includePrice: showIncludePriceToggle && opts.includePrice
   };
+
+  // Build the label preview markup. MUST come after effectiveOpts is declared
+  // since renderLabelMarkup reads from it. (S12 May 6 incident: this line
+  // ended up above effectiveOpts during the segmented-control + buylink
+  // refactor and triggered a temporal-dead-zone ReferenceError on every modal
+  // open. Keep this directly under effectiveOpts.)
+  const labelHTML = renderLabelMarkup(comic, effectiveOpts);
 
   // S12 May 6: purchase link for the currently-selected format. Strip sits
   // below the size toggle; updates whenever the user switches sizes (since
