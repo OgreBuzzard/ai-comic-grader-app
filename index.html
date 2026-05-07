@@ -5976,7 +5976,7 @@ window._cameraSupported = (() => {
 // SHORT labels are no longer used in JS (now embedded directly in the
 // static SVG guide files for each slot's specific text).
 //   index 0 = TL, 1 = TR, 2 = BL, 3 = BR  (row-major; matches detail-view grid)
-const CAMERA_LABEL_MAIN   = ['Front','Back','Page Quality','Spine (Raking)'];
+const CAMERA_LABEL_MAIN   = ['Front','Back','Page Quality','Spine'];
 const CAMERA_LABEL_CORNER = ['Top Left Corner','Top Right Corner','Bottom Left Corner','Bottom Right Corner'];
 
 // SVG file paths for each slot. Restored S12 May 3 after JS-generated guides
@@ -6465,10 +6465,10 @@ function cameraOpenSlot(slotIndex) {
   // Fetch the static SVG and inject as inline markup. Inline (not <img>)
   // because some legacy code paths styled the SVG via CSS — kept inline here
   // for forward consistency in case future tweaks need it. Cache-bust on
-  // every fetch (?v=s13c) so old SVGs don't get served from disk cache after
+  // every fetch (?v=s13d) so old SVGs don't get served from disk cache after
   // the S13 redesign deploy.
   const guideEl = document.getElementById('camera-guide');
-  fetch('/assets/guides/' + guideFile + '?v=s13c')
+  fetch('/assets/guides/' + guideFile + '?v=s13d')
     .then(r => r.text())
     .then(svgText => { guideEl.innerHTML = svgText; })
     .catch(err => {
