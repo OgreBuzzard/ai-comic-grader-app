@@ -5901,7 +5901,7 @@ window._cameraSupported = (() => {
 // SHORT labels are no longer used in JS (now embedded directly in the
 // static SVG guide files for each slot's specific text).
 //   index 0 = TL, 1 = TR, 2 = BL, 3 = BR  (row-major; matches detail-view grid)
-const CAMERA_LABEL_MAIN   = ['Front Cover','Back Cover','Page Quality','Spine (Raking)'];
+const CAMERA_LABEL_MAIN   = ['Front','Back','Page Quality','Spine (Raking)'];
 const CAMERA_LABEL_CORNER = ['Top Left Corner','Top Right Corner','Bottom Left Corner','Bottom Right Corner'];
 
 // SVG file paths for each slot. Restored S12 May 3 after JS-generated guides
@@ -5927,6 +5927,9 @@ let _cameraState = null;
 // S13: orientation listener handle. Wired in cameraOpen, torn down in
 // cameraCloseStream so we don't leak listeners across multiple camera sessions.
 let _cameraOrientationListener = null;
+// S13 v2: pending timeout for the orientation-reflow re-fetch. Cleared on
+// every new orientation event (debounce) and on camera close.
+let _cameraOrientationTimeout = null;
 //   {
 //     mode: 'walkthrough' | 'single',
 //     kind: 'main' | 'corner',
@@ -6009,18 +6012,30 @@ async function cameraOpen(state) {
   // S13: orientation reflow listener. iOS Safari can leave the SVG guide
   // sized for the prior orientation when the user rotates landscape→portrait,
   // producing a half-rendered guide stuck at the old aspect (the bug Matt
-  // reported with image 3 in the S13 kickoff). Forcing a re-fetch of the
-  // SVG on rotation re-evaluates viewport-relative sizing cleanly. Listener
-  // is wired here on open and torn down in cameraCloseStream / cameraFinish
-  // / cameraExit (which all unset _cameraState).
+  // reported with image 3 in the S13 kickoff).
+  //
+  // S13 v2 fix: the v1 implementation used requestAnimationFrame (~16ms)
+  // which fires while iOS is still mid-rotation-animation, producing a
+  // double-draw bug (old guide + new guide stacked at different sizes).
+  // v2 explicitly clears the guide element first AND uses a 350ms timeout
+  // to wait out the rotation animation before re-fetching. The clear-first
+  // step is what prevents stale-guide stacking even if the timeout fires
+  // mid-animation.
   if (!_cameraOrientationListener) {
     _cameraOrientationListener = () => {
-      // Defer one frame so the viewport dimensions have settled after the
-      // rotation animation. Without this, the re-fetched SVG sometimes
-      // measures against still-stale viewport dimensions.
-      requestAnimationFrame(() => {
+      // Clear the guide immediately so any stale content is gone before the
+      // new fetch lands. Without this, a slow SVG fetch on a slow connection
+      // can leave the old guide visible alongside the new one.
+      const guideEl = document.getElementById('camera-guide');
+      if (guideEl) guideEl.innerHTML = '';
+      // Defer the re-fetch by 350ms so iOS's rotation animation has settled.
+      // Tested empirically: 16ms (rAF) was too short, 100ms produced occasional
+      // mis-sized guides, 350ms is consistently clean.
+      if (_cameraOrientationTimeout) clearTimeout(_cameraOrientationTimeout);
+      _cameraOrientationTimeout = setTimeout(() => {
         if (_cameraState) cameraOpenSlot(_cameraState.current);
-      });
+        _cameraOrientationTimeout = null;
+      }, 350);
     };
     window.addEventListener('orientationchange', _cameraOrientationListener);
     window.addEventListener('resize', _cameraOrientationListener);
@@ -6268,7 +6283,7 @@ function cameraOpenSlot(slotIndex) {
   // every fetch (?v=s13) so old SVGs don't get served from disk cache after
   // the S13 redesign deploy.
   const guideEl = document.getElementById('camera-guide');
-  fetch('/assets/guides/' + guideFile + '?v=s13')
+  fetch('/assets/guides/' + guideFile + '?v=s13b')
     .then(r => r.text())
     .then(svgText => { guideEl.innerHTML = svgText; })
     .catch(err => {
@@ -6407,8 +6422,8 @@ function cameraPermissionFallback() {
 
 // Stop the camera stream. Critical for releasing the camera on iOS where
 // leaving it active drains battery and locks other tabs out of the camera.
-// Also tears down the S13 orientation-reflow listener so it doesn't keep
-// firing after the camera modal is closed.
+// Also tears down the S13 orientation-reflow listener and any pending
+// reflow timeout so they don't keep firing after the camera modal is closed.
 function cameraCloseStream() {
   if (_cameraState && _cameraState.stream) {
     _cameraState.stream.getTracks().forEach(t => t.stop());
@@ -6419,6 +6434,10 @@ function cameraCloseStream() {
     window.removeEventListener('orientationchange', _cameraOrientationListener);
     window.removeEventListener('resize', _cameraOrientationListener);
     _cameraOrientationListener = null;
+  }
+  if (_cameraOrientationTimeout) {
+    clearTimeout(_cameraOrientationTimeout);
+    _cameraOrientationTimeout = null;
   }
 }
 
