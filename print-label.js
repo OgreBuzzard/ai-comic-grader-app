@@ -1695,8 +1695,9 @@ function renderLabelMarkup(comic, opts) {
   }
 
   // S12 May 6: read assessment version from rg.version (not hardcoded V2.0
-  // anymore). The model returns version "2.2" in current assessments, but
-  // older books in the user's collection may carry "2.0" or "2.1" tags
+  // anymore). Current model returns "2.3" (S13 v7 — added paper-loss
+  // defect category, per-corner inspection, severe-defect cap). Older
+  // books in the user's collection may carry "2.0", "2.1", or "2.2" tags
   // from prior schema versions — display whatever was actually computed.
   // Falls back to "2.0" only if the field is missing entirely (extremely
   // old records pre-versioning).

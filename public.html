@@ -199,6 +199,43 @@
     color: var(--olive-mid); text-decoration: none; font-weight: 700;
   }
 
+  /* S13 v7: standalone-only marketing CTA. Sits above the footer, before
+     the disclaimer text. Hidden when public.html renders inside the
+     in-app iframe modal — the iframe gate happens in JS, not CSS. */
+  .rg-cta {
+    margin-top: 24px;
+    padding: 18px 16px;
+    text-align: center;
+    max-width: 640px;
+    width: 100%;
+  }
+  .rg-cta-line {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 14px;
+    color: var(--mid);
+    margin-bottom: 10px;
+    letter-spacing: 0.02em;
+  }
+  .rg-cta-btn {
+    display: inline-block;
+    padding: 12px 28px;
+    background: var(--olive-deep);
+    color: var(--olive-lt);
+    border-radius: 10px;
+    font-family: 'Noto Sans Display', sans-serif;
+    font-stretch: 62.5%;
+    font-weight: 800;
+    font-size: 15px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-decoration: none;
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+  .rg-cta-btn:active {
+    transform: scale(0.97);
+    background: #1f3814;
+  }
+
   /* Loading / error states. */
   .state {
     display: flex; flex-direction: column;
@@ -460,7 +497,23 @@
   // the page to navigate the browser. Either way, the inline link was
   // adding clutter and creating a reload loop when it appeared inside
   // the iframe. Better to omit entirely.
-
+  //
+  // S13 v7: Re-introduced as a marketing CTA, gated to standalone-only.
+  // The original removal was about the in-iframe case (modal's × button
+  // is there, link causes reload loop). But the standalone case is
+  // different: someone who scans the QR code on a printed label from a
+  // booth visitor's collection lands here as a brand-new visitor with
+  // no path forward into the app. The CTA gives them one. The iframe
+  // gate (window.self !== window.top) means it never appears inside the
+  // in-app modal where the original concerns apply.
+  if (window.self === window.top) {
+    document.querySelector('footer').insertAdjacentHTML('beforebegin', `
+      <div class="rg-cta">
+        <div class="rg-cta-line">Want to grade your own comics?</div>
+        <a class="rg-cta-btn" href="/">Open Robograder</a>
+      </div>
+    `);
+  }
 })();
 
 // Lightbox open — exposed at top level so onclick handlers can call it.
