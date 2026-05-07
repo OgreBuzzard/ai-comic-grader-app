@@ -426,8 +426,26 @@ If COMIC: set "gateResult": "COMIC" in the output and proceed with Phases 1 and 
 PHASE 1 — NEUTRAL OBSERVATIONS
 ════════════════════════════════════
 
-STRUCTURAL CHECK (mandatory first):
-Examine every corner and every edge. Look for missing pieces, chips, tears, holes. Check all four corners individually and explicitly. If ANY missing piece or chip exists, note its location and approximate size first.
+STRUCTURAL CHECK (mandatory first, do this BEFORE anything else):
+
+Step 1 — PAPER LOSS / MISSING PIECE inspection. Examine the cover edges and corners for any region where cover paper is GONE — not bent, not blunted, but absent, with the underlying interior page or nothing at all visible where the cover should be. Paper loss is categorically different from corner blunting:
+  • Corner blunting = paper still present, corner is rounded/softened/folded. Cosmetic.
+  • Paper loss / piece out = paper is GONE, white interior page or void visible. Structural.
+A 1" piece missing from a corner is NOT "corner blunting ~1/16""; it is "Piece out, ~1" along bottom edge, severe". Confusing these two is a critical failure.
+
+If you see paper loss anywhere, record it as defect type "Piece out" or "Missing piece" with category=Front (or Back/Spine as appropriate), and apply the missing-piece ceiling rule below to ALL grades immediately. Do NOT bury it under "corner blunting" or "edge wear".
+
+Step 2 — PER-CORNER INSPECTION. Look at each of the four corners individually:
+  • Top-left corner: condition?
+  • Top-right corner: condition?
+  • Bottom-left corner: condition?
+  • Bottom-right corner: condition?
+Internal inspection is per-corner. Output consolidation happens AFTER inspection: if every observed corner has the same defect kind and severity, write ONE consolidated note ("Corner blunting, all four corners, ~1/16" each"). If corners differ in defect kind or severity — for example, three blunted plus one with paper loss — write SEPARATE entries for the differing corners. Never homogenize a heterogeneous set into one entry.
+
+Step 3 — Edges and surfaces. Examine every edge (top, bottom, left, right) and the cover surfaces for tears, holes, creases, soiling, stress lines, and other defects.
+
+SELF-REVIEW BEFORE FINALIZING (S13 v7):
+After you have written your defect list, re-read it and ask: does any defect description contain language suggesting MAJOR damage — words like "chunk", "missing", "torn off", "piece out", "large", "significant tear", "tape covering", "color touched"? If yes, the defect's severity field MUST be "High" and the missing-piece ceiling / restoration cap must be applied to BOTH the CGC grade AND the RoboGrade. A defect described as significant cannot coexist with a mid-grade or high-grade output.
 
 EPISTEMIC HUMILITY: A photograph cannot show everything that an in-hand inspection reveals. Tiny missing pieces (under 1/16"), faint creases, and small back-cover defects can hide in shadow, glare, or low pixel density. Do NOT make confident absence-claims like "no missing pieces observed" or "no tears detected" in your notes — those statements have been wrong before and they don't belong in the inventory anyway (the inventory is what you DO see, not what you don't). Simply omit absent defects from the inventory.
 
@@ -563,13 +581,21 @@ Grade calibration:
 • Strong eye appeal + flat spine + bright colors + sharp corners = high grade.
 • At high grades (8.5+), stress lines, bends, soiling, and printer tears become potentially grade-defining.
 • Missing piece ceilings: <1/4"→max ~9.0 | 1/4"–1/2"→max ~8.0 | >1/2"→max ~5.0 | >1"→max ~3.0
+• SEVERE-DEFECT CAP (S13 v7): if ANY of the following defects is present, the final RoboGrade is capped at 35 and the predicted CGC/PSA grades are capped at 2.5, regardless of how clean the rest of the book is. CGC and PSA both apply this cap in their grading practice. Defects that trigger the cap:
+  • Paper loss / piece out larger than 1" in any single dimension
+  • Tape on the book (any quantity, any location — even a small piece)
+  • Missing interior pages or wraps
+  • Color touch / amateur color restoration
+  • Spine split running more than 50% of spine length
+  • Severe water damage with cockling or staining over a large area
+  This cap exists because these defects are structural and not improvable through normal handling or pressing — a book with one of them belongs in the Good or Fair grade range no matter how nice everything else looks. If the four-component sum exceeds 35 in the presence of one of these defects, scale all four components down proportionally to reach the cap (rough guide: front gets the largest absolute reduction since it's the largest component).
 • ENHANCE: a single yes/no judgment about whether professional treatment (any of pressing, UV, or cleaning, or any combination) is likely to improve this book's grade. Output "Y" if any of these would help: visible spine roll or rippling that pressing could correct, color-breaking creases that pressing might soften, soiling that cleaning could lift, or tanning on unprinted white areas that UV could lighten. Output "N" if defects are dominated by structural damage that no treatment can address (missing pieces, tears, severe creases, stains that have set). Leave null if uncertain.
 Grader notes — PSA-STYLE RESTRAINT (v2.1 calibration):
 
 PSA's grader notes are the gold standard for clarity. PSA describes a typical Silver Age 7.0 book with one or two sentences per cover side, naming only the defects that matter to the grade. RG's prior versions were over-enumerating — listing 12-15 separate notes for a mid-grade book with the same defects repeated across multiple corners. Match PSA's restraint.
 
 CONSOLIDATION RULES (apply BEFORE writing notes):
-  • Group same defect type across multiple locations into ONE note. Do NOT write four separate corner-blunting notes; write "Corner blunting, all four corners" or "Corner blunting, top right and bottom right". Same applies to spine stress lines (consolidate to "Spine stress lines, multiple along full spine length"), edge wear, soiling, etc.
+  • Group same defect type across multiple locations into ONE note ONLY when the locations share the same defect kind and severity. Do NOT write four separate corner-blunting notes if all four corners are blunted equally; write "Corner blunting, all four corners". But DO write separate notes when corners differ — e.g. "Corner blunting, top corners, ~1/16"" and "Piece out, bottom-right corner, ~1" if those are the actual conditions. Same applies to spine stress lines (consolidate to "Spine stress lines, multiple along full spine length"), edge wear, soiling, etc., when uniform; split when non-uniform.
   • Never note absence of defects. Do NOT write "no missing pieces observed", "no tape detected", "no restoration", "pages supple, no brittleness". Absence is the default — only call out what IS there.
   • Never restate page quality in notes. PQ has its own field; mentioning it again in notes is duplicative clutter.
   • Never note things that are not defects: arrival dates, distributor markings, pedigree marks, normal manufacturing characteristics. Note these only if they affect the grade.
@@ -699,7 +725,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
   "officialPSAGrade": null,
   "officialPSACert": null,
   "roboGrade": {
-    "version": "2.2",
+    "version": "2.3",
     "score": 0,
     "confidenceRange": ${baseConf},
     "frontScore": 0,
@@ -751,7 +777,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
             ] : imageBlocks),
             { type: 'text', text: highGrade
               ? 'Please perform the high-grade assessment. Apply the floor rule: the final RG, CGC, and PSA grades must be at or above the initial values unless a specific new defect is identified in the corner macros. Carry Back and Interior scores forward unchanged. Return the JSON grading object.'
-              : 'Please assess this comic. IMPORTANT: Before listing any other defects, examine each corner individually for missing pieces or chips. Then return the JSON grading object.' }
+              : 'Please assess this comic. CRITICAL FIRST STEP: examine every corner and every edge for paper loss / missing pieces (paper GONE, interior page visible underneath) BEFORE listing any other defects. Treat paper loss as a separate defect category from corner blunting — they are not interchangeable. Then examine each of the four corners individually and apply the per-corner inspection rule from the STRUCTURAL CHECK section. Then return the JSON grading object.' }
           ]
         }]
       })
