@@ -1,31 +1,32 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!--
-  Front cover guide (S13 v2).
+  Front cover guide (S13 v3).
 
-  Sized to fit comfortably inside the camera-stage's visible area between
-  the top header gradient and the bottom controls gradient. Earlier S13 v1
-  outline (576x890 in same viewBox) extended into both gradient bands and
-  rendered as if "off-screen" on phone.
+  Outline grown larger now that the slot label lives in the HTML overlay
+  band above the SVG, no longer inside the SVG itself. Earlier v2 outline
+  (477x738) had generous margin all around; v3 (564x870) takes more of the
+  visible camera area while still leaving ~120px of dark padding at top
+  (where the label sits) and bottom (above the controls bar gradient).
 
   Geometry:
     viewBox 600x1100 (portrait, ~9:16.5 phone aspect)
-    Outline rect x=61, y=181, w=477, h=738 — Silver Age comic aspect ~0.647
-    Centered horizontally with 61px viewBox margin (~40px on screen)
-    Centered vertically with 181px above and below in viewBox
-    Corner radius 16 viewBox units (~10 screen pixels) — slight rounding
-    for visual polish; comics are square-cut but a hint of curve reads
-    cleaner on screen
-    Stroke 4px non-scaling — uniform 4-screen-pixel weight regardless
-    of viewport scale
+    Outline rect x=18, y=115, w=564, h=870 — Silver Age comic aspect ~0.648
+    Centered horizontally with 18 px viewBox margin (~12 px on screen)
+    Centered vertically with 115 px above and 115 px below in viewBox
+    Corner radius 16 viewBox units (~10 screen pixels)
+    Stroke 4px non-scaling
 
-  Slot label is rendered separately as HTML overlay above the outline,
-  not embedded in this SVG.
+  On a typical iPhone Pro (~390x810 stage area), outline renders ~367 px
+  wide (94 % of stage) by ~566 px tall (70 % of stage), with ~122 px of
+  dark padding at top and bottom for the label and controls respectively.
+
+  Slot label is rendered separately as HTML overlay above the outline.
 -->
 <svg xmlns="http://www.w3.org/2000/svg"
      viewBox="0 0 600 1100"
      width="100%" height="100%"
      preserveAspectRatio="xMidYMid meet">
-  <rect x="61" y="181" width="477" height="738"
+  <rect x="18" y="115" width="564" height="870"
         rx="16" ry="16"
         fill="none"
         stroke="#7aa838"
