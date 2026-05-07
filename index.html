@@ -557,7 +557,13 @@
        pixels so it stays readable regardless of guide scale. The label sits
        centered between the upload-link spacer (left) and close button (right);
        both flanking elements are 40px wide so the label centers true. */
-    #camera-slot-label { color: #7aa838; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight: 800; font-size: 32px; letter-spacing: 2px; text-align: center; flex: 1; pointer-events: none; text-shadow: 0 1px 4px rgba(0,0,0,0.6); }
+    #camera-slot-label { color: #7aa838; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight: 800; font-size: 32px; letter-spacing: 2px; text-align: center; flex: 1; pointer-events: none; text-shadow: 0 1px 4px rgba(0,0,0,0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* S13 v7: corner-mode shrinks the slot label so longer strings like "Top
+       Right" don't wrap onto a second line. Uses body.camera-kind-corner
+       toggled by cameraOpen() based on _cameraState.kind. The combined font-
+       size + letter-spacing reduction gives a clear secondary visual hierarchy
+       for corner shots while still being legible. */
+    body.camera-kind-corner #camera-slot-label { font-size: 24px; letter-spacing: 1px; }
     #camera-progress { display: none; }
     /* Header spacer — invisible 40x40 box on the left side that mirrors the
        close button's footprint on the right. Keeps the slot label centered
@@ -4062,15 +4068,20 @@ function showResultPreview(cgc, psa) {
   }
 
   // Complete button — fade + scale in at 5500ms
-  // If RG ≥ 80 AND this is the FIRST pass (not a high-grade pass already),
-  // the button becomes a "High-Grade Assess Unlocked" affordance.
-  // After a high-grade pass completes (cgc._highGradePass=true), always show COMPLETE —
-  // there's no further upgrade path.
+  // Three label states for the post-assessment complete button:
+  //   1. "COMPLETE" — score < 80 (no HG eligibility)
+  //   2. "HIGH-GRADE ASSESS UNLOCKED" — score ≥ 80 AND no HG pass has run yet
+  //   3. "COMPLETED" — HG pass has already run on this entry
+  // S13 v7: state #3 was previously broken — `cgc._highGradePass` was never
+  // set anywhere in the codebase, so the button always showed "UNLOCKED"
+  // for high-grade scores regardless of whether HG had already been
+  // completed. Now reads formData.highGradeTier directly, which IS set to
+  // true by assessHighGrade() on success and persists across re-renders.
   setTimeout(() => {
     const btn = document.getElementById('assess-complete-btn');
     if (btn) {
-      const isHighGradePass = !!(cgc && cgc._highGradePass);
-      const hgUnlocked = (roboScore != null && roboScore >= 80) && !isHighGradePass;
+      const hgAlreadyRun = !!(formData && formData.highGradeTier);
+      const hgUnlocked = (roboScore != null && roboScore >= 80) && !hgAlreadyRun;
       // Always set the flag explicitly — re-assessments that drop below 80 must clear it.
       // After a high-grade pass, the flag stays true only if the RG is still ≥ 80 (the
       // corner slots remain visible on the detail page) but we never re-offer the pass.
@@ -4081,6 +4092,11 @@ function showResultPreview(cgc, psa) {
         btn.innerHTML = `<div style="font-size:13px;font-weight:800;letter-spacing:2px;line-height:1.2">HIGH-GRADE ASSESS</div><div style="font-size:11px;font-weight:700;letter-spacing:3px;opacity:0.85;margin-top:3px">UNLOCKED</div>`;
         btn.style.background = '#2a7a3a';
         btn.style.textAlign = 'center';
+      } else if (hgAlreadyRun) {
+        btn.innerHTML = `<div style="font-size:13px;font-weight:800;letter-spacing:2px;line-height:1.2">COMPLETED</div>`;
+        btn.style.textAlign = 'center';
+        // Keep default background — this isn't an action affordance, it's
+        // a confirmation that the assessment chain is fully done.
       }
       btn.style.display = 'block';
       btn.style.opacity = '0';
@@ -4134,11 +4150,13 @@ async function assessHighGrade() {
 
   // S12: HG follows the same scan-animation flow as standard assessment.
   // Animation runs in parallel with the API call. Modal opens after both
-  // complete. Note: HG sends 8 images (4 main + 4 corners) but the scan
-  // animation only shows the 4 main slots — corner macros are technical
-  // input, not part of the user-facing visual flow.
+  // complete. S13 v7: HG now scans the 4 CORNER MACROS, not the 4 main
+  // photos — the user just submitted the corners as new input and that's
+  // what they expect to see scanned. Showing the main photos again was
+  // misleading (Matt's beta feedback). The 'corner' kind switches the
+  // scan-animation slot table accordingly.
   const scanController = window.RobograderScan
-    ? window.RobograderScan.runScanAnimation(formData.images || [])
+    ? window.RobograderScan.runScanAnimation(formData.cornerImages || [], 'corner')
     : { promise: Promise.resolve(), cancel: () => {} };
 
   try {
@@ -5995,7 +6013,7 @@ window._cameraSupported = (() => {
 // static SVG guide files for each slot's specific text).
 //   index 0 = TL, 1 = TR, 2 = BL, 3 = BR  (row-major; matches detail-view grid)
 const CAMERA_LABEL_MAIN   = ['Front','Back','Interior','Spine'];
-const CAMERA_LABEL_CORNER = ['Top Left Corner','Top Right Corner','Bottom Left Corner','Bottom Right Corner'];
+const CAMERA_LABEL_CORNER = ['Top Left','Top Right','Bottom Left','Bottom Right'];
 
 // SVG file paths for each slot. Restored S12 May 3 after JS-generated guides
 // were replaced with hand-authored static SVGs from Matt. Front and Back are
@@ -6122,6 +6140,12 @@ async function cameraOpen(state) {
   // S13: body class signals "camera modal owns orientation behavior". CSS
   // suppresses the app-wide #orientation-block overlay while this is set.
   document.body.classList.add('camera-modal-open');
+  // S13 v7: kind-specific body class so CSS can size the slot-label
+  // differently for corner vs main slots. Corner labels ("Top Right" etc.)
+  // are noticeably longer than main labels ("Front") and were wrapping at
+  // the main-mode 32px size — Matt's beta smoke-test feedback.
+  document.body.classList.remove('camera-kind-main', 'camera-kind-corner');
+  document.body.classList.add(state.kind === 'corner' ? 'camera-kind-corner' : 'camera-kind-main');
   // S13 v6: enforce object-fit: cover at the JS level. The CSS rule on
   // #camera-video already sets this, but iOS Safari aggressively caches
   // CSS in PWA contexts; if the cached stylesheet still has the old
@@ -6261,7 +6285,18 @@ async function cameraOpen(state) {
       // routes intelligently (digital crop on wide for sub-telephoto values,
       // physical lens switch where available). Fall back to 1× if zoom isn't
       // supported on this device.
-      const targetZoom = _cameraState.kind === 'corner' ? 5 : 2;
+      // S13 v7: corner macros zoom-locked at 3x (was 5x). At 5x, corner
+      // photos came back blurry from a combination of three factors: hand
+      // shake amplifies linearly with magnification; iPhone telephoto has
+      // ~2.5 stops less light than the main lens, forcing slower shutter
+      // or higher ISO; and 5x telephoto has a longer minimum focus
+      // distance, which iOS silently falls back to digital crop on the
+      // main sensor when violated. 3x sits at the practical sweet spot —
+      // enough magnification for visible 1/16" defects, more forgiving
+      // on stability, and stays inside the optical telephoto focus range.
+      // If beta tuning data shows we're missing 1/32"-1/64" defects at
+      // 3x, push back to 4x — but start here.
+      const targetZoom = _cameraState.kind === 'corner' ? 3 : 2;
       const lensOptions = [];
       if (wide && supportsZoomConstraint()) {
         lensOptions.push({ device: wide, zoom: targetZoom, digitalZoom: targetZoom, label: targetZoom + '×' });
@@ -6690,6 +6725,7 @@ function cameraCloseStream() {
   // S13: drop the body class so the app-wide #orientation-block overlay
   // can resume firing on rotation outside the camera modal.
   document.body.classList.remove('camera-modal-open');
+  document.body.classList.remove('camera-kind-main', 'camera-kind-corner');
 }
 
 function showImageCapModal(type) {
