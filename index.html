@@ -460,6 +460,71 @@
        letterboxes identically to object-fit: contain. Guide and video align. */
     #camera-guide { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; display: flex; align-items: center; justify-content: center; }
     #camera-guide svg { width: 100%; height: 100%; display: block; }
+    /* S13: Rotate-orientation card. Shown inside the camera-stage when the
+       active slot's preferred orientation doesn't match the device's current
+       orientation. Replaces the camera viewfinder + guide for as long as the
+       mismatch persists; capture button disabled while shown. The card is
+       slot-orientation-aware (different message for "rotate to landscape"
+       vs "rotate to portrait") and updates instantly when the device
+       rotates. Sits at z-index 6 (above the guide, below permission-denied
+       dialog at z-index 10). */
+    #camera-rotate-card {
+      position: absolute; inset: 0;
+      background: #0a0a0a;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 32px;
+      z-index: 6;
+      text-align: center;
+    }
+    #camera-rotate-card.show { display: flex; }
+    #camera-rotate-card .rotate-icon {
+      font-size: 96px;
+      color: #7aa838;
+      line-height: 1;
+      margin-bottom: 24px;
+      transform-origin: center;
+      animation: rotate-hint 2.4s ease-in-out infinite;
+    }
+    /* Animation: subtle wiggle hint suggesting the rotation direction.
+       Different keyframes for landscape vs portrait — the JS sets a class
+       on the card that selects which animation runs. */
+    #camera-rotate-card.to-landscape .rotate-icon { animation-name: rotate-to-landscape; }
+    #camera-rotate-card.to-portrait .rotate-icon { animation-name: rotate-to-portrait; }
+    @keyframes rotate-to-landscape {
+      0%, 100% { transform: rotate(0deg); }
+      50%      { transform: rotate(-90deg); }
+    }
+    @keyframes rotate-to-portrait {
+      0%, 100% { transform: rotate(-90deg); }
+      50%      { transform: rotate(0deg); }
+    }
+    #camera-rotate-card .rotate-title {
+      color: #c8d8a8;
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-weight: 800;
+      font-size: 26px;
+      letter-spacing: 1.5px;
+      margin-bottom: 8px;
+    }
+    #camera-rotate-card .rotate-sub {
+      color: #888;
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      max-width: 280px;
+    }
+    /* S13: Suppress the app-wide orientation-block overlay while the camera
+       modal is open. The camera modal handles its own orientation guidance
+       per-slot (some slots WANT landscape — see Spine), so the app-wide
+       "rotate to portrait" message would fight with it. The camera-modal-open
+       body class is added/removed by cameraOpen / cameraCloseStream. */
+    body.camera-modal-open #orientation-block { display: none !important; }
+    /* S13: When the rotate card is active, dim the capture button to
+       indicate it's not currently usable. JS also disables the button. */
+    #camera-modal.rotate-needed #camera-capture { opacity: 0.3; pointer-events: none; }
     /* Top header sits below iOS notch / status bar safe area. env(safe-area-inset-top)
        is 0 on devices without a notch, ~47-59px on iPhones with one. Header now
        has THREE elements arranged left-center-right: spacer (left, for symmetry),
@@ -1167,6 +1232,16 @@
         <p>In-app capture is what powers the "Verified" badge on your public listings. Tap below to use the upload picker for this photo, or grant camera access in your browser settings to enable in-app capture.</p>
         <button onclick="cameraPermissionFallback()">Use Upload Instead</button>
       </div>
+    </div>
+    <!-- S13: Rotate-orientation card. Hidden by default; shown when the
+         active slot's preferred orientation doesn't match the device's
+         current orientation (e.g. Spine slot in portrait, PQ slot in
+         landscape). Replaces the camera viewfinder while shown. JS toggles
+         the .show class and the .to-landscape / .to-portrait class. -->
+    <div id="camera-rotate-card">
+      <div class="rotate-icon">⟳</div>
+      <div class="rotate-title" id="camera-rotate-title">Rotate to landscape</div>
+      <div class="rotate-sub" id="camera-rotate-sub">This shot works best with the phone turned sideways. Rotate your phone and the camera will appear automatically.</div>
     </div>
   </div>
   <div id="camera-controls">
@@ -5908,8 +5983,26 @@ const CAMERA_LABEL_CORNER = ['Top Left Corner','Top Right Corner','Bottom Left C
 // were replaced with hand-authored static SVGs from Matt. Front and Back are
 // now separate files (used to share guide_comic.svg) so each can carry its
 // own embedded slot label text.
-const CAMERA_GUIDE_MAIN   = ['guide_front.svg','guide_back.svg','guide_pq.svg','guide_spine.svg'];
+//
+// S13: Spine uses guide_spine_landscape.svg — only displayed when device is
+// rotated to landscape (otherwise the rotate-orientation card is shown).
+// PQ stays guide_pq.svg with its new bleed-off-right portrait design (only
+// displayed when device is in portrait).
+const CAMERA_GUIDE_MAIN   = ['guide_front.svg','guide_back.svg','guide_pq.svg','guide_spine_landscape.svg'];
 const CAMERA_GUIDE_CORNER = ['guide_corner_tl.svg','guide_corner_tr.svg','guide_corner_bl.svg','guide_corner_br.svg'];
+
+// S13: Per-slot preferred orientation. When the device's current orientation
+// doesn't match the slot's preferred, the camera modal shows a rotate-card
+// overlay instead of the viewfinder. Indices match storage indices for main
+// slots: 0=Front, 1=Back, 2=PQ, 3=Spine. Corner slots are all portrait.
+//
+// Why Spine wants landscape: the spine is the long edge of the comic; framing
+// it landscape allows much more pixels-per-defect along the spine's length.
+// Why PQ stays portrait: opening the centerfold and shooting both pages
+// landscape would technically work, but iOS camera goes haywire when the
+// active slot rotates the device. Portrait + the bleed-off-right design
+// (see guide_pq.svg) is the workable compromise.
+const CAMERA_SLOT_ORIENTATION_MAIN = ['portrait', 'portrait', 'portrait', 'landscape'];
 
 // Walkthrough CAPTURE ORDER — separate from storage index because the visual
 // sequence that feels natural to the user differs from the storage layout.
@@ -6008,6 +6101,9 @@ async function cameraOpen(state) {
   const permDialog = document.getElementById('camera-perm-dialog');
   permDialog.classList.remove('show');
   modal.classList.add('open');
+  // S13: body class signals "camera modal owns orientation behavior". CSS
+  // suppresses the app-wide #orientation-block overlay while this is set.
+  document.body.classList.add('camera-modal-open');
 
   // S13: orientation reflow listener. iOS Safari can leave the SVG guide
   // sized for the prior orientation when the user rotates landscape→portrait,
@@ -6018,9 +6114,13 @@ async function cameraOpen(state) {
   // which fires while iOS is still mid-rotation-animation, producing a
   // double-draw bug (old guide + new guide stacked at different sizes).
   // v2 explicitly clears the guide element first AND uses a 350ms timeout
-  // to wait out the rotation animation before re-fetching. The clear-first
-  // step is what prevents stale-guide stacking even if the timeout fires
-  // mid-animation.
+  // to wait out the rotation animation before re-fetching.
+  //
+  // S13 v3: also drives the rotate-orientation card. On every orientation
+  // change we call applyCameraOrientationState() IMMEDIATELY (no delay) so
+  // the rotate card appears/disappears in sync with the device's rotation,
+  // then the deferred re-fetch fires after settle to redraw the guide if
+  // we're now in the matching orientation.
   if (!_cameraOrientationListener) {
     _cameraOrientationListener = () => {
       // Clear the guide immediately so any stale content is gone before the
@@ -6028,9 +6128,13 @@ async function cameraOpen(state) {
       // can leave the old guide visible alongside the new one.
       const guideEl = document.getElementById('camera-guide');
       if (guideEl) guideEl.innerHTML = '';
-      // Defer the re-fetch by 350ms so iOS's rotation animation has settled.
-      // Tested empirically: 16ms (rAF) was too short, 100ms produced occasional
-      // mis-sized guides, 350ms is consistently clean.
+      // S13 v3: snap the rotate-card UI to the new orientation immediately.
+      // Don't wait for the 350ms settle — the user expects the card to
+      // appear/disappear with no perceptible lag when they rotate.
+      applyCameraOrientationState();
+      // Defer the SVG re-fetch by 350ms so iOS's rotation animation has
+      // settled. Tested empirically: 16ms (rAF) was too short, 100ms
+      // produced occasional mis-sized guides, 350ms is consistently clean.
       if (_cameraOrientationTimeout) clearTimeout(_cameraOrientationTimeout);
       _cameraOrientationTimeout = setTimeout(() => {
         if (_cameraState) cameraOpenSlot(_cameraState.current);
@@ -6257,6 +6361,64 @@ async function switchToLens(idx) {
   }
 }
 
+// S13: Detect device's current orientation. Returns 'portrait' or 'landscape'.
+// Uses window inner dimensions rather than screen.orientation API because
+// screen.orientation isn't reliable on iOS Safari and PWA contexts.
+function getCurrentOrientation() {
+  return (window.innerHeight >= window.innerWidth) ? 'portrait' : 'landscape';
+}
+
+// S13: Apply orientation-mismatch UI state. Called from cameraOpenSlot AND
+// from the orientation-change listener. Reads the current slot's preferred
+// orientation from CAMERA_SLOT_ORIENTATION_MAIN, compares to the device's
+// current orientation, and either:
+//   • shows the camera viewfinder + guide (orientation matches), OR
+//   • shows the rotate-orientation card (orientation mismatch)
+// Corner slots always prefer portrait — same logic applies.
+function applyCameraOrientationState() {
+  if (!_cameraState) return;
+  const { kind, current } = _cameraState;
+  // Corner slots all prefer portrait. Main slots use per-index lookup.
+  const preferred = (kind === 'corner') ? 'portrait' : CAMERA_SLOT_ORIENTATION_MAIN[current];
+  const actual = getCurrentOrientation();
+  const match = (preferred === actual);
+
+  const card = document.getElementById('camera-rotate-card');
+  const modal = document.getElementById('camera-modal');
+  const guideEl = document.getElementById('camera-guide');
+
+  if (!match) {
+    // Show rotate card with appropriate direction. Capture button dimmed
+    // via the modal's .rotate-needed class (CSS rule).
+    const title = document.getElementById('camera-rotate-title');
+    const sub = document.getElementById('camera-rotate-sub');
+    if (preferred === 'landscape') {
+      card.classList.add('to-landscape');
+      card.classList.remove('to-portrait');
+      if (title) title.textContent = 'Rotate to landscape';
+      if (sub) sub.textContent = 'This shot works best with the phone turned sideways. Rotate your phone and the camera will appear automatically.';
+    } else {
+      card.classList.add('to-portrait');
+      card.classList.remove('to-landscape');
+      if (title) title.textContent = 'Rotate to portrait';
+      if (sub) sub.textContent = 'This shot works best with the phone upright. Rotate your phone and the camera will appear automatically.';
+    }
+    card.classList.add('show');
+    modal.classList.add('rotate-needed');
+    // Clear the guide so a stale guide from the prior orientation isn't
+    // peeking through the rotate card.
+    if (guideEl) guideEl.innerHTML = '';
+  } else {
+    // Match: hide rotate card, re-fetch the slot's guide for the matching
+    // orientation. The orientation-listener path also calls cameraOpenSlot
+    // which re-fetches the guide; this branch handles the case where match
+    // was already true at slot-open time.
+    card.classList.remove('show', 'to-landscape', 'to-portrait');
+    modal.classList.remove('rotate-needed');
+  }
+  return match;
+}
+
 // Update the modal UI to reflect a specific slot. Loads the per-slot static
 // SVG guide from /assets/guides/ and writes both (a) the guide outline into
 // the camera overlay and (b) the slot label into the header overlay above
@@ -6266,6 +6428,11 @@ async function switchToLens(idx) {
 // rendered too small to read because the SVG had to letterbox-fit inside the
 // portrait viewport. HTML label sized in screen pixels stays legible at every
 // viewport size.
+//
+// S13: orientation-aware. If the slot's preferred orientation doesn't match
+// the device's current orientation, shows the rotate-card overlay instead
+// of fetching/displaying the SVG guide. Re-fetches the guide once the
+// orientation matches (driven by the orientation-change listener).
 function cameraOpenSlot(slotIndex) {
   if (!_cameraState) return;
   _cameraState.current = slotIndex;
@@ -6277,13 +6444,31 @@ function cameraOpenSlot(slotIndex) {
   const labelEl = document.getElementById('camera-slot-label');
   if (labelEl) labelEl.textContent = (label || '').toUpperCase();
 
+  // S13: Check orientation BEFORE fetching the guide. If mismatch, show
+  // the rotate card and return early — no point fetching a guide whose
+  // aspect won't fit the current viewport. The orientation-change listener
+  // will call cameraOpenSlot again once the device rotates correctly.
+  const orientationMatch = applyCameraOrientationState();
+  if (!orientationMatch) {
+    // Header progress text still updates so the slot context is visible.
+    const progress = document.getElementById('camera-progress');
+    if (mode === 'walkthrough') {
+      const total = queue.length + 1 + _cameraState.captures.length;
+      const done  = _cameraState.captures.length + 1;
+      progress.textContent = `${done} of ${total} — ${label}`;
+    } else {
+      progress.textContent = label;
+    }
+    return;
+  }
+
   // Fetch the static SVG and inject as inline markup. Inline (not <img>)
   // because some legacy code paths styled the SVG via CSS — kept inline here
   // for forward consistency in case future tweaks need it. Cache-bust on
-  // every fetch (?v=s13) so old SVGs don't get served from disk cache after
+  // every fetch (?v=s13c) so old SVGs don't get served from disk cache after
   // the S13 redesign deploy.
   const guideEl = document.getElementById('camera-guide');
-  fetch('/assets/guides/' + guideFile + '?v=s13b')
+  fetch('/assets/guides/' + guideFile + '?v=s13c')
     .then(r => r.text())
     .then(svgText => { guideEl.innerHTML = svgText; })
     .catch(err => {
@@ -6306,6 +6491,14 @@ function cameraOpenSlot(slotIndex) {
 
 function cameraCapture() {
   if (!_cameraState || !_cameraState.stream) return;
+  // S13: defensive guard. If the rotate-orientation card is showing, the
+  // device is in the wrong orientation for this slot — capture would produce
+  // a useless photo (e.g. portrait spine shot with the spine vertical).
+  // The CSS already disables pointer events on the capture button via
+  // .rotate-needed, but if anything else triggered this function we still
+  // want to bail.
+  const modal = document.getElementById('camera-modal');
+  if (modal && modal.classList.contains('rotate-needed')) return;
   const video = document.getElementById('camera-video');
   if (!video.videoWidth || !video.videoHeight) return;
 
@@ -6439,6 +6632,9 @@ function cameraCloseStream() {
     clearTimeout(_cameraOrientationTimeout);
     _cameraOrientationTimeout = null;
   }
+  // S13: drop the body class so the app-wide #orientation-block overlay
+  // can resume firing on rotation outside the camera modal.
+  document.body.classList.remove('camera-modal-open');
 }
 
 function showImageCapModal(type) {

@@ -732,26 +732,34 @@ function ensureStylesInjected() {
      real estate; square labels can be placed in the upper-right corner of a
      bagged comic without clipping into the title or Marvel/DC box.
 
-     Layout (S12 May 6, v2 — revised after first-render feedback):
-       - Score box upper-right (220 × 220, anchored to right edge)
-       - Title + issue/date + GRADED + ID stack at top-left, BIGGER fonts
-       - QR moved to bottom-right corner (was below score box)
-       - SCAN TO VERIFY text above the QR
-       - URL beneath the QR (paired with it — they're both verification)
-       - Price pad centered vertically in the empty middle/left region
-         when toggle on (was tucked at bottom-left)
+     Layout (S13 v3 — top/bottom split):
+       TOP HALF (y=14 to y=234):
+         - Price pad centered horizontally between left edge and score box,
+           220 tall to match score-box height for visual symmetry
+         - Score box right-anchored, 220 × 220
+       BOTTOM HALF (y=298 to y=562):
+         - Title + meta info span the full width minus right-side padding
+           (no QR in this row, so the title block has full horizontal room
+           — long titles like "Amazing Spider-Man" no longer wrap)
+         - QR cluster anchored bottom-right (smaller QR, 132 × 132)
+         - SCAN TO VERIFY above QR; URL below QR
 
-     Coordinate map (576 × 576 canvas, v2):
-       Score box:     right:14, top:14, 220×220   → x=342-562, y=14-234
-       Info col:      left:14, top:14, right:250  → x=14-326, top-anchored
-       Verify lbl:    above QR via flex order:-1
-       QR:            right:14, bottom:38, 174×174→ x=388-562, y=364-538
-       URL:           right:14, bottom:14         → y=546-562 (under QR)
-       Price pad:     left:14, top:300, 256×160   → vertically centered
+     Why the rework: in v2 the QR ate the right side of the label across
+     full height, which forced the title column to a 312-px sub-width. Long
+     titles wrapped to 2 lines. v3 confines the QR to a single bottom-right
+     cluster (~140 wide), so the title row gets the full 548 px width.
 
-     For long titles ("Marvel Super Heroes Secret Wars"), title wraps to
-     2 lines at consistent font size — never shrinks. Two-line title still
-     leaves room above the price pad. */
+     Coordinate map (576 × 576 canvas, v3):
+       Score box:     right:14, top:14, 220×220     → x=342-562, y=14-234
+       Price pad:     left:43, top:14, 256×220      → centered in left half
+       Info block:    left:14, top:298, right:170   → x=14-406, y starts 298
+       QR cluster:    right:14, bottom:38, 132×132  → x=430-562, y=406-538
+       URL:           right:14, bottom:14           → y=546-562 (under QR)
+
+     With the title block getting ~390-px width (vs. v2's 312), titles
+     up to about 23 chars fit on one line at 38px. "Amazing Spider-Man"
+     is 18 chars; "Marvel Super Heroes Secret Wars" (31 chars) still wraps.
+     */
   .rg-label-square {
     width: 576px; height: 576px;
     background: #d4d9be;
@@ -807,7 +815,7 @@ function ensureStylesInjected() {
   }
   .rg-label-square .info {
     position: absolute;
-    left: 14px; top: 14px; right: 250px;
+    left: 14px; top: 298px; right: 170px;
     display: flex; flex-direction: column;
   }
   .rg-label-square .info-upper {
@@ -858,23 +866,22 @@ function ensureStylesInjected() {
     color: #0d0d0f;
     font-family: 'Noto Sans Mono', monospace;
   }
-  /* QR cluster (S12 May 6 v2): now anchored to BOTTOM-right corner with
-     three pieces stacked top-to-bottom — SCAN TO VERIFY above, QR square
-     below, URL underneath (URL is positioned separately at bottom:14).
-     Pairing the URL with the QR makes thematic sense (both are verification
-     mechanisms) and frees up the left/middle for the price pad to live in
-     negative space rather than corner-tucked. */
+  /* QR cluster (S13 v3): smaller (132 px sq, was 174) and still anchored
+     bottom-right. The smaller QR frees enough horizontal room in the bottom
+     half for the title block to span ~390 px wide instead of v2's 312. QR
+     codes scan reliably down to ~100 px at typical phone-camera distance,
+     so 132 leaves comfortable margin. */
   .rg-label-square .qr-col {
     position: absolute;
     right: 14px; bottom: 38px;
-    width: 174px;
+    width: 132px;
     display: flex; flex-direction: column;
     align-items: center; gap: 2px;
   }
   .rg-label-square .qr-col .qrc canvas,
   .rg-label-square .qr-col .qrc img {
-    width: 174px !important;
-    height: 174px !important;
+    width: 132px !important;
+    height: 132px !important;
   }
   /* Verify text rendered ABOVE the QR via flex order:-1. The .verify span
      is the second child in the DOM (per renderLabelMarkup), but order:-1
@@ -896,35 +903,33 @@ function ensureStylesInjected() {
     right: 14px; bottom: 14px;
     letter-spacing: 0.2px;
   }
-  /* Price pad — centered vertically in the empty middle of the label
-     (S12 May 6 v2 reposition). Previously tucked at bottom-left, which
-     read as cluttered next to the URL. Now it floats in the negative
-     space between the info column (which ends ~y=180-200 depending on
-     title length) and the QR cluster's verify-text bar (~y=340).
-     Pad: 256 × 160 at left:14, top:300 → vertical center at y=380. */
+  /* Price pad — TOP HALF, centered horizontally between left edge of label
+     and left edge of score box (S13 v3 reposition). Available horizontal
+     room: x=0 to x=342 = 342 px. Pad width 256, centered: x = (342-256)/2 = 43.
+     Height 220 matches score-box height for visual symmetry across the top
+     row. v2 had the pad floating in middle-left at top:300, which read as
+     adrift; v3 anchors it to the same row as the score box for a clean
+     two-cell top half. */
   .rg-label-square .price-pad {
     display: none;
   }
   .rg-label-square.has-price .price-pad {
     display: block;
     position: absolute;
-    left: 14px; top: 300px;
-    width: 256px; height: 160px;
+    left: 43px; top: 14px;
+    width: 256px; height: 220px;
     background: #ffffff;
     border: 1px solid #b8c098;
     border-radius: 14px;
   }
-  /* "Price" placeholder: smaller than v1 (visibility was the original
-     concern, not size — so dropping 40 → 32 makes the placeholder less
-     visually heavy without sacrificing readability) and positioned higher
-     in the pad (top:18 instead of 50) so the seller has room to write the
-     price below the label. */
+  /* "Price" placeholder centered in the taller 220-px pad. */
   .rg-label-square.has-price .price-pad .price-placeholder {
     position: absolute;
-    top: 18px; left: 0; right: 0;
+    top: 50%; left: 0; right: 0;
+    transform: translateY(-50%);
     text-align: center;
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 32px;
+    font-size: 36px;
     font-weight: 600;
     color: #7a8a5a;
     letter-spacing: 0.5px;
@@ -1065,15 +1070,15 @@ function ensureStylesInjected() {
     letter-spacing: 0.3px;
   }
   /* Price pad for large variant — bigger, fills most of the taller cell.
-     Height calc: cell is 432 tall, URL band at bottom is 26+24=50 tall,
-     so the pad's bottom edge needs to be at most 432-50-12=370 (with 12px
-     gap above URL). Pad starts at top:28 → max height 342. Set 336 for a
-     touch more breathing room above the URL. (Was 376 — overlapped URL by
-     ~22px in earlier S12 build.) */
+     S13: nudged left from right:220 → right:250 to add visual breathing
+     room between the pad's right edge and the QR's left edge. v2 had ~18px
+     gap which read as cramped; v3 has ~48px gap which reads as cleanly
+     separated columns. Width unchanged at 340 — the extra 30 px comes off
+     the pad's right margin, not its width. */
   .rg-label-large.has-price .price-pad {
     display: block;
     position: absolute;
-    top: 28px; right: 220px;
+    top: 28px; right: 250px;
     width: 340px; height: 336px;
     background: #ffffff;
     border: 1px solid #b8c098;
