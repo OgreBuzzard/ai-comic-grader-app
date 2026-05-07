@@ -1,10 +1,19 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
-<svg width="100%" height="100%" viewBox="0 0 800 600" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;">
-    <g id="slot-label" transform="matrix(1,0,0,1,399.36,595.753)">
-        <text x="-119.877px" y="0px" style="font-family:'Helvetica-Bold', 'Helvetica';font-weight:700;font-size:32px;fill:rgb(122,168,56);">B<tspan x="-95.487px -69.317px -48.49px -28.225px -2.055px 25.882px 36.052px 56.879px 79.503px 100.33px " y="0px 0px 0px 0px 0px 0px 0px 0px 0px 0px ">OTTOM LEFT</tspan></text>
-    </g>
-    <g transform="matrix(1.05662,0,0,1.10223,-1.83441,-65.9179)">
-        <path d="M40,60L40,558C40,566 44,570 52,570L760,570" style="fill:none;fill-rule:nonzero;stroke:rgb(122,168,56);stroke-width:6px;"/>
-    </g>
+<!--
+  Bottom-Left corner macro guide (S13 v4 — full-screen-fill rebuild).
+
+  Mirrors the TL geometry vertically. Bend at (90, 900); vertical arm
+  extends up to (90, 200), horizontal arm extends right to (510, 900).
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 600 1100"
+     width="100%" height="100%"
+     preserveAspectRatio="xMidYMid slice">
+  <path d="M 510 900 L 90 900 L 90 200"
+        fill="none"
+        stroke="#7aa838"
+        stroke-width="4"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        vector-effect="non-scaling-stroke"/>
 </svg>

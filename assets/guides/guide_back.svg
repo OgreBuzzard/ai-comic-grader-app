@@ -5,7 +5,7 @@
 <svg xmlns="http://www.w3.org/2000/svg"
      viewBox="0 0 600 1100"
      width="100%" height="100%"
-     preserveAspectRatio="xMidYMid meet">
+     preserveAspectRatio="xMidYMid slice">
   <rect x="40" y="148" width="520" height="804"
         rx="16" ry="16"
         fill="none"
