@@ -1158,7 +1158,7 @@
     </div>
   </div>
   <div id="camera-controls">
-    <button id="camera-upload-link" onclick="cameraUploadInstead()">Pick a<br>Photo</button>
+    <button id="camera-upload-link" onclick="cameraUploadInstead()">Photo<br>Library</button>
     <button id="camera-capture" onclick="cameraCapture()" aria-label="Capture photo"></button>
   </div>
 </div>
@@ -2309,11 +2309,17 @@ async function loadUserCredits(){
       const userRef = window._fsDoc(db, "users", window._currentUser.uid);
       await window._fsSetDoc(userRef, {
         ...profile,
-        assessmentCredits: 5,
+        // S12 May 6: dropped from 5 → 3 to reduce dummy-account farming
+        // value (60% of original give-away, less worth the burner-Gmail
+        // friction) and reserve "5 free" as the questionnaire reward
+        // (giving the survey path higher relative perceived value).
+        // Sample book pre-loaded in the collection still demonstrates
+        // output quality before any of the 3 are spent.
+        assessmentCredits: 3,
         createdAt: new Date().toISOString(),
         freeCreditsGranted: true
       });
-      window._userCredits = 5;
+      window._userCredits = 3;
       window._sampleDismissed = false;
     }
     updateStats();
