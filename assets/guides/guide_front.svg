@@ -1,10 +1,29 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
-<svg width="100%" height="100%" viewBox="0 0 800 600" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;">
-    <g transform="matrix(0.951647,0,0,0.951647,19.341,0.290116)">
-        <path d="M590,18.61L590,581.39C590,588.35 584.35,594 577.39,594L222.61,594C215.65,594 210,588.35 210,581.39L210,18.61C210,11.65 215.65,6 222.61,6L577.39,6C584.35,6 590,11.65 590,18.61Z" style="fill:none;stroke:rgb(122,168,56);stroke-width:6px;"/>
-    </g>
-    <g id="slot-label" transform="matrix(1,0,0,1,399.36,596.681)">
-        <text x="-57.662px" y="0px" style="font-family:'Helvetica-Bold', 'Helvetica';font-weight:700;font-size:32px;fill:rgb(122,168,56);">F<tspan x="-36.835px -12.445px 13.725px 38.115px " y="0px 0px 0px 0px ">RONT</tspan></text>
-    </g>
+<!--
+  Front cover guide (S13 rebuild).
+
+  Portrait viewBox sized for phone aspect (~9:16-ish). Comic outline fills
+  ~96% of viewport width and ~81% of viewport height — Silver Age aspect
+  (6.625" × 10.25", ratio ~0.647). Slot label is intentionally NOT in the
+  SVG; an HTML overlay above the camera stage carries it instead, so the
+  label scales with screen pixels and never overlaps the framed cover.
+
+  Stroke: vector-effect="non-scaling-stroke" + stroke-width="6" gives a
+  uniform 6 screen-pixel stroke regardless of how the SVG scales to fit
+  the viewport. Color #7aa838 matches OLIVE_LT (locked S11).
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 600 1100"
+     width="100%" height="100%"
+     preserveAspectRatio="xMidYMid meet">
+  <!--
+    Comic outline. Sharp 90° corners (Silver/Bronze Age comics are square-cut).
+    x=12, y=105, width=576, height=890 → centered horizontally with 12px
+    margin each side, centered vertically with 105px above and below.
+  -->
+  <rect x="12" y="105" width="576" height="890"
+        fill="none"
+        stroke="#7aa838"
+        stroke-width="6"
+        vector-effect="non-scaling-stroke"/>
 </svg>
