@@ -395,15 +395,23 @@
     #cropper-stage img { display: block; max-width: 100%; visibility: hidden; }
     #cropper-stage.ready img { visibility: visible; }
     #cropper-controls { padding: 16px; background: #1a1a1a; display: flex; gap: 10px; justify-content: space-between; align-items: center; border-top: 1px solid #333; }
-    #cropper-controls button { padding: 14px 0; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; }
-    #cropper-cancel, #cropper-confirm { flex: 1; }
-    #cropper-cancel { background: #333; color: #ccc; }
-    #cropper-confirm { background: #1a4a2a; color: #6abf6a; }
+    /* S13 v6: cropper Cancel and Apply Crop now use the app-wide rg-btn
+       system (see .rg-btn classes near top of stylesheet). Removed the
+       cropper-specific button rule that previously forced uppercase +
+       extra letter-spacing — that styling was making "Cancel" / "Apply
+       Crop" overflow the buttons at the smaller widths needed to fit
+       the rotation cluster between them. The rg-btn-md size variant
+       (44 px min-height, 14 px font, 0.04em letter-spacing) leaves
+       comfortable horizontal room for both labels. */
+    #cropper-cancel, #cropper-confirm { flex: 1; min-width: 0; }
     #cropper-cancel:active, #cropper-confirm:active, .cropper-rotation-btn:active, #cropper-rotation-value:active { transform: scale(0.97); }
     /* Fine-rotation cluster (S12): three connected buttons — minus, value
        (clickable reset), plus. Sized smaller than the main action buttons
        so they read as secondary controls. The center value display
-       turns olive when rotation is non-zero, signaling "tap to reset". */
+       turns olive when rotation is non-zero, signaling "tap to reset".
+       S13 v6: tightened from 44px → 38px button width and 56px → 48px
+       value width to free up horizontal room for Cancel and Apply Crop
+       labels, which were overflowing at the prior cluster size. */
     #cropper-rotation-cluster {
       display: flex;
       align-items: center;
@@ -413,29 +421,33 @@
       flex: 0 0 auto;
     }
     .cropper-rotation-btn {
-      width: 44px; height: 44px;
+      width: 38px; height: 44px;
       padding: 0 !important;
       background: #2a2a2a !important;
       color: #aaa !important;
+      font-size: 12px !important;
+      font-weight: 700 !important;
+      letter-spacing: 0 !important;
+      text-transform: none !important;
+      border-radius: 0 !important;
+      border-right: 1px solid #1a1a1a !important;
+      border: none;
+      cursor: pointer;
+    }
+    #cropper-rotation-value {
+      min-width: 48px;
+      height: 44px;
+      padding: 0 6px !important;
+      background: #2a2a2a !important;
+      color: #888 !important;
       font-size: 13px !important;
       font-weight: 700 !important;
       letter-spacing: 0 !important;
       text-transform: none !important;
       border-radius: 0 !important;
       border-right: 1px solid #1a1a1a !important;
-    }
-    #cropper-rotation-value {
-      min-width: 56px;
-      height: 44px;
-      padding: 0 8px !important;
-      background: #2a2a2a !important;
-      color: #888 !important;
-      font-size: 14px !important;
-      font-weight: 700 !important;
-      letter-spacing: 0 !important;
-      text-transform: none !important;
-      border-radius: 0 !important;
-      border-right: 1px solid #1a1a1a !important;
+      border: none;
+      cursor: pointer;
       transition: color 0.15s ease;
     }
     #cropper-rotation-value.rotated { color: #6abf6a !important; }
@@ -451,13 +463,19 @@
     #camera-modal { position: fixed; inset: 0; background: #000; z-index: 1100; display: none; flex-direction: column; }
     #camera-modal.open { display: flex; }
     #camera-stage { flex: 1; min-height: 0; position: relative; background: #000; overflow: hidden; }
-    /* object-fit: contain (NOT cover) — letterbox the camera feed inside the
-       phone aspect so the user frames against the actual capture area, not a
-       cropped center slice. The black letterbox bars are intentional. */
-    #camera-video { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+    /* S13 v5: object-fit: cover (was contain) — video fills the entire
+       stage with no letterbox bars. The cost: the camera feed gets cropped
+       to fit the stage aspect, so what the user frames in the viewfinder
+       is NOT the same as what's in the raw video stream. cameraCapture()
+       compensates by computing the visible source rect and cropping the
+       captured image to match. The benefit: no more black bars wasting
+       horizontal space (especially noticeable in landscape on the Spine
+       slot, where the bars were ~33% of screen width with `contain`). */
+    #camera-video { width: 100%; height: 100%; object-fit: cover; display: block; background: #000; }
     /* The SVG guide overlay sits in the same stage and uses the same aspect
-       behavior. SVG's preserveAspectRatio defaults to xMidYMid meet which
-       letterboxes identically to object-fit: contain. Guide and video align. */
+       behavior. SVG's preserveAspectRatio default is meet (letterbox); we
+       set slice on each guide SVG itself to match cover. Guide and video
+       align after both are scaled to fill the stage. */
     #camera-guide { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; display: flex; align-items: center; justify-content: center; }
     #camera-guide svg { width: 100%; height: 100%; display: block; }
     /* S13: Rotate-orientation card. Shown inside the camera-stage when the
@@ -1197,7 +1215,7 @@
     <img id="cropper-img" src="" alt="">
   </div>
   <div id="cropper-controls">
-    <button id="cropper-cancel" onclick="cancelCrop()">Cancel</button>
+    <button id="cropper-cancel" class="rg-btn rg-btn-secondary rg-btn-md" onclick="cancelCrop()">Cancel</button>
     <!-- Fine rotation cluster (S12): replaces the prior 90° rotate button.
          Per-degree adjustment so users can straighten slightly-tilted photos
          without the 90° button's reset-and-resize side effects. The angle
@@ -1207,7 +1225,7 @@
       <button id="cropper-rotation-value" onclick="resetCropRotation()" aria-label="Reset rotation to 0 degrees" title="Tap to reset to 0°">0°</button>
       <button class="cropper-rotation-btn" onclick="rotateCropImage(1)" aria-label="Rotate clockwise 1 degree" title="+1°">+1°</button>
     </div>
-    <button id="cropper-confirm" onclick="confirmCrop()">Apply Crop</button>
+    <button id="cropper-confirm" class="rg-btn rg-btn-primary rg-btn-md" onclick="confirmCrop()">Apply Crop</button>
   </div>
 </div>
 <!-- Camera capture modal (S11) — lives between cropper modal and sync bar.
@@ -5976,7 +5994,7 @@ window._cameraSupported = (() => {
 // SHORT labels are no longer used in JS (now embedded directly in the
 // static SVG guide files for each slot's specific text).
 //   index 0 = TL, 1 = TR, 2 = BL, 3 = BR  (row-major; matches detail-view grid)
-const CAMERA_LABEL_MAIN   = ['Front','Back','Page Quality','Spine'];
+const CAMERA_LABEL_MAIN   = ['Front','Back','Interior','Spine'];
 const CAMERA_LABEL_CORNER = ['Top Left Corner','Top Right Corner','Bottom Left Corner','Bottom Right Corner'];
 
 // SVG file paths for each slot. Restored S12 May 3 after JS-generated guides
@@ -6104,6 +6122,15 @@ async function cameraOpen(state) {
   // S13: body class signals "camera modal owns orientation behavior". CSS
   // suppresses the app-wide #orientation-block overlay while this is set.
   document.body.classList.add('camera-modal-open');
+  // S13 v6: enforce object-fit: cover at the JS level. The CSS rule on
+  // #camera-video already sets this, but iOS Safari aggressively caches
+  // CSS in PWA contexts; if the cached stylesheet still has the old
+  // object-fit: contain value, the spine landscape view ends up
+  // letterboxed with big side bars (Matt's S13 v5 feedback). Setting
+  // .style.objectFit at runtime guarantees the correct value regardless
+  // of any cached stylesheet state.
+  const video = document.getElementById('camera-video');
+  if (video) video.style.objectFit = 'cover';
 
   // S13: orientation reflow listener. iOS Safari can leave the SVG guide
   // sized for the prior orientation when the user rotates landscape→portrait,
@@ -6465,10 +6492,10 @@ function cameraOpenSlot(slotIndex) {
   // Fetch the static SVG and inject as inline markup. Inline (not <img>)
   // because some legacy code paths styled the SVG via CSS — kept inline here
   // for forward consistency in case future tweaks need it. Cache-bust on
-  // every fetch (?v=s13d) so old SVGs don't get served from disk cache after
+  // every fetch (?v=s13e) so old SVGs don't get served from disk cache after
   // the S13 redesign deploy.
   const guideEl = document.getElementById('camera-guide');
-  fetch('/assets/guides/' + guideFile + '?v=s13d')
+  fetch('/assets/guides/' + guideFile + '?v=s13e')
     .then(r => r.text())
     .then(svgText => { guideEl.innerHTML = svgText; })
     .catch(err => {
@@ -6514,13 +6541,41 @@ function cameraCapture() {
     setTimeout(() => flash.classList.remove('flash'), 120);
   }
 
-  // Draw current frame to a canvas at the video's intrinsic resolution.
-  // No downscale here — the cropper + processImagesForSave pipeline handle that.
+  // S13 v5: Compute the source rectangle to crop, matching what's visually
+  // framed inside the stage under object-fit: cover. Without this, the
+  // captured photo would include the cropped-off video portions that the
+  // user couldn't see in the viewfinder — capture wouldn't match what they
+  // framed.
+  //
+  // Math: with cover, the video is scaled so it fully covers the stage; the
+  // smaller-axis ends up matching exactly, the larger-axis overflows and
+  // gets cropped center-aligned. To recover the visible source rect:
+  //   scale = max(stageW / videoW, stageH / videoH)
+  //   visibleVideoW (in source pixels) = stageW / scale
+  //   visibleVideoH (in source pixels) = stageH / scale
+  //   sx = (videoW - visibleVideoW) / 2   (centered crop horizontally)
+  //   sy = (videoH - visibleVideoH) / 2   (centered crop vertically)
+  // Either visibleVideoW == videoW (vertical-overflow case) or
+  // visibleVideoH == videoH (horizontal-overflow case), depending on aspect.
+  const stage = document.getElementById('camera-stage');
+  const stageW = stage.clientWidth;
+  const stageH = stage.clientHeight;
+  const videoW = video.videoWidth;
+  const videoH = video.videoHeight;
+  const coverScale = Math.max(stageW / videoW, stageH / videoH);
+  const visibleW = Math.round(stageW / coverScale);
+  const visibleH = Math.round(stageH / coverScale);
+  const sx = Math.round((videoW - visibleW) / 2);
+  const sy = Math.round((videoH - visibleH) / 2);
+
+  // Draw the visible source rect to a canvas at its intrinsic source-pixel
+  // resolution. The cropper + processImagesForSave pipeline downscales from
+  // here as needed.
   const canvas = document.createElement('canvas');
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+  canvas.width = visibleW;
+  canvas.height = visibleH;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(video, sx, sy, visibleW, visibleH, 0, 0, visibleW, visibleH);
   const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
 
   _cameraState.captures.push({ slot: _cameraState.current, dataUrl });

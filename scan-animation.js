@@ -24,12 +24,21 @@
   // ── Slot definitions ────────────────────────────────────────────────
   // Index in the photoUrls array MUST match the slot order from the
   // image upload UI: front=0, back=1, interior=2, raking/spine=3.
-  // scanDir is the direction the laser travels for each photo type.
+  //
+  // S13 v6: scan direction is NOT a per-slot property anymore — it's
+  // assigned by playback position in runSequence (1st down, 2nd up,
+  // 3rd down, 4th up). Mimics a photocopier alternating its lamp pass
+  // direction on each successive page. So a slot's scanDir comes from
+  // when it plays in the animation, not from which slot it is.
+  //
+  // rotate: true on the spine slot triggers the 90° vertical rotation of
+  // the captured spine photo so its long dimension fills the animation
+  // display height (the spine photo is captured landscape-wide).
   const SLOTS = [
-    { idx: 0, slotName: 'front',    scanDir: 'down'  },
-    { idx: 1, slotName: 'back',     scanDir: 'up'    },
-    { idx: 2, slotName: 'pq',       scanDir: 'right' },
-    { idx: 3, slotName: 'spine',    scanDir: 'left'  },
+    { idx: 0, slotName: 'front',    rotate: false },
+    { idx: 1, slotName: 'back',     rotate: false },
+    { idx: 2, slotName: 'pq',       rotate: false },
+    { idx: 3, slotName: 'spine',    rotate: true  },
   ];
 
   // ── Timing (ms) ─────────────────────────────────────────────────────
@@ -97,6 +106,44 @@
     .rg-scan-photo.reset    {
       transition: none !important;
       transform: translateX(-110%) !important;
+    }
+
+    /* S13 v6: spine photo rotation. The captured spine photo is wide-
+       landscape (the spine length runs horizontally across the frame).
+       In the portrait-oriented animation display container, that wide
+       landscape image renders only ~38% of the container height with
+       lots of empty space top and bottom — visually small.
+       Solution: render the spine photo via an <img> element (instead of
+       background-image) with pre-rotation dimensions that swap container
+       width and height, then rotate 90° around center. Result: the
+       contained image fits within the rotated bounds, which after rotation
+       align exactly with the container — visually filling the height.
+       The wrapper div continues to handle the slide-in via translateX. */
+    .rg-scan-photo.is-spine {
+      background-image: none !important;
+    }
+    .rg-scan-photo-img {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      /* Pre-rotation dimensions match the container exactly.
+         Container is 26.94vh wide × 39.3vh tall. */
+      width: 26.94vh;
+      height: 39.3vh;
+      object-fit: contain;
+      object-position: center;
+      transform: translate(-50%, -50%);
+    }
+    .rg-scan-photo-img.rotated {
+      /* Pre-rotation bounds are SWAPPED so post-rotation they match the
+         container. Pre-rotation: 39.3vh wide × 26.94vh tall (landscape
+         box, fits a wide spine photo nicely with object-fit:contain).
+         Post-rotation by -90°: visual bounds are 26.94vh wide × 39.3vh
+         tall — exactly fills the container, with the spine photo now
+         oriented vertically. */
+      width: 39.3vh;
+      height: 26.94vh;
+      transform: translate(-50%, -50%) rotate(-90deg);
     }
 
     .rg-scan-laser {
@@ -188,12 +235,23 @@
     display.className = 'rg-scan-display';
 
     // Build photo elements only for slots with photos. Each one gets the
-    // background-image of its actual photo.
+    // background-image of its actual photo. Spine slot (rotate:true) gets
+    // an inner <img> element instead so the photo can be rotated 90° to
+    // fill the portrait animation display container.
     activeSlots.forEach(slot => {
       const photo = document.createElement('div');
       photo.className = 'rg-scan-photo';
       photo.id = 'rg-scan-photo-' + slot.slotName;
-      photo.style.backgroundImage = `url('${escapeUrl(slot.url)}')`;
+      if (slot.rotate) {
+        photo.classList.add('is-spine');
+        const img = document.createElement('img');
+        img.className = 'rg-scan-photo-img rotated';
+        img.src = slot.url;
+        img.alt = '';
+        photo.appendChild(img);
+      } else {
+        photo.style.backgroundImage = `url('${escapeUrl(slot.url)}')`;
+      }
       display.appendChild(photo);
     });
 
@@ -230,20 +288,20 @@
     });
   }
 
-  async function scanPhoto(slot, cancelToken) {
+  async function scanPhoto(slot, scanDir, cancelToken) {
     if (cancelToken.cancelled) throw new Error('cancelled');
     const photoEl = document.getElementById('rg-scan-photo-' + slot.slotName);
     if (!photoEl) return;  // defensive — shouldn't happen, but safe
 
-    const isVerticalScan = slot.scanDir === 'down' || slot.scanDir === 'up';
+    const isVerticalScan = scanDir === 'down' || scanDir === 'up';
     const laser = document.getElementById(isVerticalScan ? 'rg-scan-laser-h' : 'rg-scan-laser-v');
 
     photoEl.classList.add('in-view');
     await wait(SLIDE_DURATION, cancelToken);
 
-    laser.classList.add('active', 'scan-' + slot.scanDir);
+    laser.classList.add('active', 'scan-' + scanDir);
     await wait(SCAN_DURATION, cancelToken);
-    laser.classList.remove('scan-' + slot.scanDir, 'active');
+    laser.classList.remove('scan-' + scanDir, 'active');
     await wait(PAUSE_AFTER_SCAN, cancelToken);
 
     photoEl.classList.remove('in-view');
@@ -264,9 +322,15 @@
 
   async function runSequence(activeSlots, cancelToken) {
     await wait(FIRST_PHOTO_DELAY, cancelToken);
-    for (const slot of activeSlots) {
+    // S13 v6: scan direction alternates by playback position, mimicking
+    // a photocopier lamp's alternating pass direction. Position 0 (1st
+    // photo to play) = down, position 1 = up, position 2 = down, etc.
+    // This is independent of which slot is in which position — only
+    // the order matters.
+    for (let i = 0; i < activeSlots.length; i++) {
       if (cancelToken.cancelled) throw new Error('cancelled');
-      await scanPhoto(slot, cancelToken);
+      const scanDir = (i % 2 === 0) ? 'down' : 'up';
+      await scanPhoto(activeSlots[i], scanDir, cancelToken);
     }
   }
 
