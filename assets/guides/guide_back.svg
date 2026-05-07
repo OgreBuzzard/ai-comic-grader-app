@@ -1,17 +1,12 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!--
-  Back cover guide (S13 v3).
-
-  Identical geometry to guide_front.svg v3. The HTML slot-label overlay
-  above the camera stage tells the user which side they're shooting; the
-  outline itself is the same shape because front and back covers have the
-  same dimensions.
+  Back cover guide (S13 v4). Identical geometry to guide_front.svg v4.
 -->
 <svg xmlns="http://www.w3.org/2000/svg"
      viewBox="0 0 600 1100"
      width="100%" height="100%"
      preserveAspectRatio="xMidYMid meet">
-  <rect x="18" y="115" width="564" height="870"
+  <rect x="40" y="148" width="520" height="804"
         rx="16" ry="16"
         fill="none"
         stroke="#7aa838"

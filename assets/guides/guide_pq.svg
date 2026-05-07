@@ -1,72 +1,18 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!--
-  Page Quality guide (S13 v3 — portrait, bleed-off-right design).
-
-  Used when the camera modal is on the Page Quality slot AND the device
-  is in portrait orientation. The landscape orientation of this slot is
-  blocked by an overlay card instructing "Rotate to portrait" — see
-  cameraOpenSlot's slot-orientation logic.
-
-  Why portrait, not landscape: PQ photo is the open centerfold spread.
-  Landscape would frame both pages cleanly — but iOS camera goes haywire
-  when the active slot rotates the device, and the existing app-wide
-  orientation overlay fights with the camera flow. Portrait + bleed-off
-  design is the workable compromise: user frames ONE page (the centerfold
-  page being graded) plus the staple seam plus a sliver of the opposite
-  page (used for white-balance reference).
-
-  Geometry:
-    viewBox 600x1100 (matches front/back guides for visual consistency)
-    Left page (solid outline): x=18, y=80, w=282, h=940
-      — fills the left half of the viewport, full vertical extent
-    Staple seam (dashed center line): x=300, y=100 to y=1000
-      — visual hint for where the centerfold staples should align
-    Staple markers (short horizontal bars on the seam): at y=325 and y=775
-      — concrete reminders that two staples need to be in frame
-    Right page (dashed outline, bleeds off right edge): x=300, y=80,
-      w=600, h=940 — extends 300 viewBox units past the right edge of the
-      viewport, conveying "you only need a sliver of this page visible"
-
-  The visible portion of the right page in the viewport (~300 viewBox
-  units = ~3.5 inches at typical comic-page scale) is well above the
-  ~2 inches of white reference needed for the model to lock white-balance.
-  Strokes 4 px non-scaling for visual consistency with front/back.
--->
-<svg xmlns="http://www.w3.org/2000/svg"
-     viewBox="0 0 600 1100"
-     width="100%" height="100%"
-     preserveAspectRatio="xMidYMid meet">
-  <!-- Left page: the centerfold page being graded. Solid outline. -->
-  <rect x="18" y="80" width="282" height="940"
-        rx="4" ry="4"
-        fill="none"
-        stroke="#7aa838"
-        stroke-width="4"
-        vector-effect="non-scaling-stroke"/>
-  <!-- Right page: white-reference page, bleeds off the right edge. Dashed. -->
-  <rect x="300" y="80" width="600" height="940"
-        rx="4" ry="4"
-        fill="none"
-        stroke="#7aa838"
-        stroke-width="4"
-        stroke-dasharray="14,10"
-        vector-effect="non-scaling-stroke"/>
-  <!-- Staple seam (dashed, dimmer than page outlines) -->
-  <line x1="300" y1="100" x2="300" y2="1000"
-        stroke="#7aa838"
-        stroke-width="3"
-        stroke-dasharray="6,8"
-        opacity="0.7"
-        vector-effect="non-scaling-stroke"/>
-  <!-- Staple markers — short horizontal bars on the seam -->
-  <line x1="280" y1="325" x2="320" y2="325"
-        stroke="#7aa838"
-        stroke-width="6"
-        stroke-linecap="round"
-        vector-effect="non-scaling-stroke"/>
-  <line x1="280" y1="775" x2="320" y2="775"
-        stroke="#7aa838"
-        stroke-width="6"
-        stroke-linecap="round"
-        vector-effect="non-scaling-stroke"/>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 600 1100" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;">
+    <g transform="matrix(9.12244e-17,-1.48981,1.48981,9.12244e-17,10.2688,1194.11)">
+        <g transform="matrix(-1.42795e-16,0.77734,-0.77734,-1.42795e-16,639.934,-10.6966)">
+            <path d="M400,6L32,6C24,6 20,10 20,18L20,540C20,548 24,552 32,552L400,552" style="fill:none;fill-rule:nonzero;stroke:rgb(122,168,56);stroke-width:4.02px;"/>
+        </g>
+        <g transform="matrix(-1.42795e-16,0.77734,-0.77734,-1.42795e-16,639.934,-10.6966)">
+            <path d="M400,6L768,6C776,6 780,10 780,18L780,540C780,548 776,552 768,552L400,552" style="fill:none;fill-rule:nonzero;stroke:rgb(122,168,56);stroke-width:4.02px;stroke-dasharray:9.39,9.39;"/>
+        </g>
+        <g transform="matrix(-1.42795e-16,0.77734,-0.77734,-1.42795e-16,639.934,-10.6966)">
+            <path d="M400,120L400,160" style="fill:none;fill-rule:nonzero;stroke:rgb(122,168,56);stroke-width:6px;stroke-linecap:round;stroke-linejoin:miter;"/>
+        </g>
+        <g transform="matrix(-1.42795e-16,0.77734,-0.77734,-1.42795e-16,639.934,-10.6966)">
+            <path d="M400,395L400,435" style="fill:none;fill-rule:nonzero;stroke:rgb(122,168,56);stroke-width:6px;stroke-linecap:round;stroke-linejoin:miter;"/>
+        </g>
+    </g>
 </svg>

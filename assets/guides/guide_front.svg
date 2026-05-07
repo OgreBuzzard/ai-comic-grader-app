@@ -1,32 +1,28 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!--
-  Front cover guide (S13 v3).
+  Front cover guide (S13 v4).
 
-  Outline grown larger now that the slot label lives in the HTML overlay
-  band above the SVG, no longer inside the SVG itself. Earlier v2 outline
-  (477x738) had generous margin all around; v3 (564x870) takes more of the
-  visible camera area while still leaving ~120px of dark padding at top
-  (where the label sits) and bottom (above the controls bar gradient).
+  Sized between v2 (477x738, too small per Matt's feedback) and v3
+  (564x870, cut into the dark bands per Matt's feedback). v4 splits the
+  difference at 520x804.
 
   Geometry:
     viewBox 600x1100 (portrait, ~9:16.5 phone aspect)
-    Outline rect x=18, y=115, w=564, h=870 — Silver Age comic aspect ~0.648
-    Centered horizontally with 18 px viewBox margin (~12 px on screen)
-    Centered vertically with 115 px above and 115 px below in viewBox
+    Outline rect x=40, y=148, w=520, h=804 — Silver Age aspect 0.647
     Corner radius 16 viewBox units (~10 screen pixels)
     Stroke 4px non-scaling
 
-  On a typical iPhone Pro (~390x810 stage area), outline renders ~367 px
-  wide (94 % of stage) by ~566 px tall (70 % of stage), with ~122 px of
-  dark padding at top and bottom for the label and controls respectively.
+  On a typical iPhone Pro stage (~390x810), outline renders ~338 px wide
+  by ~523 px tall, with ~144 px of dark padding at top (where the slot
+  label sits) and ~144 px at bottom (above the controls bar gradient).
 
-  Slot label is rendered separately as HTML overlay above the outline.
+  Slot label rendered separately as HTML overlay above the outline.
 -->
 <svg xmlns="http://www.w3.org/2000/svg"
      viewBox="0 0 600 1100"
      width="100%" height="100%"
      preserveAspectRatio="xMidYMid meet">
-  <rect x="18" y="115" width="564" height="870"
+  <rect x="40" y="148" width="520" height="804"
         rx="16" ry="16"
         fill="none"
         stroke="#7aa838"
