@@ -197,7 +197,15 @@
 
     .rg-scan-photo {
       position: absolute;
-      inset: 0;
+      /* S13 v12: cap photo at 80% of cavity dimensions, centered. With
+         the bottom-anchored width-fit chest, the cavity now renders much
+         larger (~460px tall on iPhone 14) than under the previous height-
+         fit math (~313px). Photos filling 100% of that felt visually
+         oversized — they dominated the screen. The 80% cap leaves a
+         margin around the photo so it sits within the cavity rather
+         than against its borders. */
+      left: 10%; top: 10%;
+      width: 80%; height: 80%;
       background-size: contain;
       background-position: center;
       background-repeat: no-repeat;
@@ -231,11 +239,21 @@
       transform: translate(-50%, -50%);
     }
     .rg-scan-photo-img.rotated {
-      /* Pre-rotation: width and height swapped (landscape box).
-         Post-rotation by -90°: visual bounds match the cavity. */
-      width:  ${(CAVITY.heightPct / CAVITY.widthPct * 100).toFixed(2)}%;
-      height: ${(CAVITY.widthPct / CAVITY.heightPct * 100).toFixed(2)}%;
-      transform: translate(-50%, -50%) rotate(-90deg);
+      /* S13 v12: corrected pre-rotation dimensions. The image needs to
+         be sized so that AFTER rotation, it fills the cavity. If cavity
+         is W×H, the pre-rotation image is H×W (transposed). In percent-
+         of-parent terms (parent = cavity, so 100%×100% = cavity), the
+         pre-rotation width = (H/W) of parent's width — but expressed as
+         a percentage of the parent's *width*, that's H/W × 100. Since
+         W/H of cavity in absolute pixels matches widthPct/heightPct,
+         the right formula is:
+           width  = widthPct/heightPct  × 100  (so post-rotate visual width = cavity width)
+           height = heightPct/widthPct  × 100
+         Earlier code had these swapped, leaving the rotated image
+         shorter than the cavity. */
+      width:  ${(CAVITY.widthPct / CAVITY.heightPct * 100).toFixed(2)}%;
+      height: ${(CAVITY.heightPct / CAVITY.widthPct * 100).toFixed(2)}%;
+      transform: translate(-50%, -50%) rotate(90deg);
     }
 
     .rg-scan-laser {

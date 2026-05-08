@@ -3817,11 +3817,13 @@ function mountStepTracker() {
   //   Left edge:   X=56 px → 11.81%
   //   Top edges:   Y=275, 350, 425, 500, 575 (75-px vertical step = 9.93%)
   //                → 36.42%, 46.36%, 56.29%, 66.23%, 76.16%
-  // The setStep mechanism still drives state via background-image swap
-  // (default_box / success_box / failure_box). All three of those PNGs
-  // need to be re-exported at 360×68 to match the carved-out openings
-  // in the new overlay (per Matt's spec — old box assets were a
-  // different size and would sit incorrectly).
+  // S13 v12: state visualization changed from background-image swap to
+  // translucent color tint. The overlay PNG has the button shapes AND
+  // text already drawn — we don't want to obscure that text with a
+  // separate boxed image. Instead, in default state the box is fully
+  // transparent (the overlay artwork shows through unchanged); on done,
+  // the box gets a translucent green tint over it; on failed, red.
+  // setStep() flips the background-color rather than the background-image.
   const BTN_LEFT_PCT   = 11.81;
   const BTN_WIDTH_PCT  = 75.95;
   const BTN_HEIGHT_PCT = 9.01;
@@ -3831,11 +3833,10 @@ function mountStepTracker() {
     return `<div id="tracker-box-${s.id}"
       style="position:absolute;left:${BTN_LEFT_PCT}%;top:${BTN_TOPS_PCT[i]}%;
              width:${BTN_WIDTH_PCT}%;height:${BTN_HEIGHT_PCT}%;
-             background-image:url('${ASSESS_DEFAULT_BOX}');
-             background-size:100% 100%;background-repeat:no-repeat;
-             display:flex;align-items:center;justify-content:center;
-             font-size:13px;font-weight:800;color:#1a1614;letter-spacing:1px;
-             pointer-events:none;">${s.label}</div>`;
+             background:transparent;
+             border-radius:${BTN_HEIGHT_PCT * 0.5}vw;
+             transition:background-color 200ms ease-out;
+             pointer-events:none;"></div>`;
   }).join('');
 
   // The overlay HTML: background artwork as <img> (so it scales with the
@@ -3856,27 +3857,24 @@ function mountStepTracker() {
 }
 
 function setStep(id, state, detail='') {
-  // S13 v9: tracker boxes now live inside the cavity overlay (managed
-  // by scan-animation.js). The DOM ID prefix changed from 'modal-box-'
-  // to 'tracker-box-' to make the new ownership explicit.
+  // S13 v12: state is shown via translucent color tint over the overlay
+  // PNG, not via background-image swap. The overlay artwork already has
+  // the gray button shapes with text drawn — we just need to *color* the
+  // button area to indicate state. Tints are translucent so the text
+  // shows through. Default = transparent (no tint, overlay artwork as-is).
   const box = document.getElementById('tracker-box-' + id);
   if (!box) return;
   if (state === 'done') {
-    box.style.background = '';
-    box.style.backgroundImage = "url('" + ASSESS_SUCCESS_BOX + "')";
-    box.style.backgroundSize = '100% 100%';
+    box.style.backgroundColor = 'rgba(80, 220, 60, 0.55)';   // green tint
     box.style.opacity = '1';
   } else if (state === 'failed') {
-    box.style.background = '';
-    box.style.backgroundImage = "url('" + ASSESS_FAILURE_BOX + "')";
-    box.style.backgroundSize = '100% 100%';
+    box.style.backgroundColor = 'rgba(220, 60, 50, 0.55)';   // red tint
     box.style.opacity = '1';
   } else if (state === 'skipped') {
-    box.style.opacity = '0.45';
+    box.style.backgroundColor = 'rgba(120, 120, 120, 0.45)'; // gray dim
+    box.style.opacity = '0.5';
   } else if (state === 'running') {
-    box.style.background = '';
-    box.style.backgroundImage = "url('" + ASSESS_SUCCESS_BOX + "')";
-    box.style.backgroundSize = '100% 100%';
+    box.style.backgroundColor = 'rgba(150, 220, 110, 0.35)'; // pale green pulse
     box.style.opacity = '1';
   }
 }
@@ -4248,17 +4246,17 @@ async function assessHighGrade() {
     // Wait for scan animation to finish before processing the response.
     await scanController.promise;
 
+    // S13 v12: mount the overlay IMMEDIATELY after scan completes, so the
+    // user sees the step tracker even while we're still waiting on the
+    // API. Previously this fired AFTER `await resp.json()`, which meant
+    // the user saw a frozen empty cavity for however long the API was
+    // slower than the scan (~2-5 seconds typical). Mount-now decouples
+    // the visual transition from API timing.
+    mountStepTracker();
+
     if (!resp.ok) { const e = await resp.text(); throw new Error('High-grade assessment error: ' + e); }
     const unified = await resp.json();
     if (unified.error) throw new Error(unified.error);
-
-    // S13 v10: scan animation is still onscreen (persistent shell).
-    // Slide the progress overlay in from the left at chest-image (X=46,
-    // Y=684). The overlay holds 5 step boxes — "analyzing" was removed
-    // because the laser-scan animation itself stands in for that step.
-    // animateStepsFromDiagnostics drives the 5 boxes (populating →
-    // mint → pq → grading → confirming).
-    mountStepTracker();
 
     // Gate can still fire on high-grade
     if (unified.gateResult && unified.gateResult !== 'COMIC') {
@@ -5097,17 +5095,17 @@ async function assessGrade(){
     // animation BEFORE checking response status.
     await scanController.promise;
 
+    // S13 v12: mount the overlay IMMEDIATELY after scan completes, so the
+    // user sees the step tracker even while we're still waiting on the
+    // API. Previously this fired AFTER `await unifiedResp.json()`, which
+    // meant the user saw a frozen empty cavity for however long the API
+    // was slower than the scan. Mount-now decouples the visual transition
+    // from API timing.
+    mountStepTracker();
+
     if(!unifiedResp.ok){const e=await unifiedResp.text();throw new Error("Assessment error: "+e);}
     const unified=await unifiedResp.json();
     if(unified.error)throw new Error(unified.error);
-
-    // S13 v10: scan animation is still onscreen (persistent shell).
-    // Slide the progress overlay in from the left at chest-image (X=46,
-    // Y=684). The overlay holds 5 step boxes — "analyzing" was removed
-    // because the laser-scan animation itself stands in for that step.
-    // animateStepsFromDiagnostics drives the 5 boxes (populating →
-    // mint → pq → grading → confirming).
-    mountStepTracker();
 
     // ── Gate check: if the assessment was terminated because the photos aren't
     //    a valid comic book, show the flag UI and don't charge a credit.
