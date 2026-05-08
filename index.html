@@ -3812,18 +3812,24 @@ function mountStepTracker() {
   ];
 
   // Step button positions inside the overlay (percentages of 474×755).
-  // Measured by Matt from the overlay artwork (S13 v10):
+  // Measured by Matt from the overlay artwork:
   //   Each button: 360×68 px (75.95% × 9.01%)
   //   Left edge:   X=56 px → 11.81%
   //   Top edges:   Y=275, 350, 425, 500, 575 (75-px vertical step = 9.93%)
   //                → 36.42%, 46.36%, 56.29%, 66.23%, 76.16%
-  // S13 v12: state visualization changed from background-image swap to
-  // translucent color tint. The overlay PNG has the button shapes AND
-  // text already drawn — we don't want to obscure that text with a
-  // separate boxed image. Instead, in default state the box is fully
-  // transparent (the overlay artwork shows through unchanged); on done,
-  // the box gets a translucent green tint over it; on failed, red.
-  // setStep() flips the background-color rather than the background-image.
+  //
+  // S13 v13: BACK to PNG box swap, but with the boxes layer rendered
+  // BEHIND the overlay. The overlay PNG has alpha-carved holes at the
+  // button positions; the box PNGs (default/success/failure) sit in
+  // those holes. The boxes are 100% opaque — no CSS transparency. State
+  // changes swap which PNG renders. The overlay's baked-in step text
+  // shows through because the artist drew the text directly on the
+  // overlay artwork (boxes have no text).
+  //
+  // The boxesHtml is now passed as a separate argument to
+  // slideOverlayIntoChest, which mounts it as a sibling of the overlay
+  // (lower z-index) so they slide in together but the overlay sits
+  // visually on top.
   const BTN_LEFT_PCT   = 11.81;
   const BTN_WIDTH_PCT  = 75.95;
   const BTN_HEIGHT_PCT = 9.01;
@@ -3833,49 +3839,38 @@ function mountStepTracker() {
     return `<div id="tracker-box-${s.id}"
       style="position:absolute;left:${BTN_LEFT_PCT}%;top:${BTN_TOPS_PCT[i]}%;
              width:${BTN_WIDTH_PCT}%;height:${BTN_HEIGHT_PCT}%;
-             background:transparent;
-             border-radius:${BTN_HEIGHT_PCT * 0.5}vw;
-             transition:background-color 200ms ease-out;
+             background-image:url('${ASSESS_DEFAULT_BOX}');
+             background-size:100% 100%;background-repeat:no-repeat;
              pointer-events:none;"></div>`;
   }).join('');
 
-  // The overlay HTML: background artwork as <img> (so it scales with the
-  // overlay container), then the 5 step boxes positioned absolutely over
-  // the artwork. The 4×4 light grid and gauge animations will be added
-  // here when Matt delivers those asset states.
+  // Overlay HTML: just the artwork PNG. The boxes live in their own
+  // container behind this. (Light grid + gauge animations will live
+  // here when Matt delivers asset states.)
   const overlayHtml = `
     <img src="${ASSESS_OVERLAY_BG}" alt=""
-         style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;" />
-    ${boxesHtml}`;
+         style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;" />`;
 
-  window.RobograderScan.slideOverlayIntoChest(overlayHtml);
-
-  // No more cycling grid frames — the working-indicator graphics (light
-  // grid + gauge) will be driven by separate animation logic once Matt
-  // delivers the asset states. The legacy _modalFrameTimer is left at
-  // null so dismissAssessModal's clearInterval is a safe no-op.
+  window.RobograderScan.slideOverlayIntoChest(overlayHtml, boxesHtml);
 }
 
 function setStep(id, state, detail='') {
-  // S13 v12: state is shown via translucent color tint over the overlay
-  // PNG, not via background-image swap. The overlay artwork already has
-  // the gray button shapes with text drawn — we just need to *color* the
-  // button area to indicate state. Tints are translucent so the text
-  // shows through. Default = transparent (no tint, overlay artwork as-is).
+  // S13 v13: state shown by swapping the box PNG (default/success/
+  // failure). The boxes are siblings of the overlay, behind it; the
+  // overlay's alpha-carved holes show whichever PNG is set on the box
+  // div's background. 100% opaque PNGs, no CSS transparency.
   const box = document.getElementById('tracker-box-' + id);
   if (!box) return;
   if (state === 'done') {
-    box.style.backgroundColor = 'rgba(80, 220, 60, 0.55)';   // green tint
-    box.style.opacity = '1';
+    box.style.backgroundImage = "url('" + ASSESS_SUCCESS_BOX + "')";
   } else if (state === 'failed') {
-    box.style.backgroundColor = 'rgba(220, 60, 50, 0.55)';   // red tint
-    box.style.opacity = '1';
+    box.style.backgroundImage = "url('" + ASSESS_FAILURE_BOX + "')";
   } else if (state === 'skipped') {
-    box.style.backgroundColor = 'rgba(120, 120, 120, 0.45)'; // gray dim
+    box.style.backgroundImage = "url('" + ASSESS_DEFAULT_BOX + "')";
     box.style.opacity = '0.5';
   } else if (state === 'running') {
-    box.style.backgroundColor = 'rgba(150, 220, 110, 0.35)'; // pale green pulse
-    box.style.opacity = '1';
+    // Use success_box for running too (same green look as done).
+    box.style.backgroundImage = "url('" + ASSESS_SUCCESS_BOX + "')";
   }
 }
 
@@ -4089,12 +4084,17 @@ function mountResults(cgc, psa) {
   // The full results panel HTML — score row, PQ row, COMPLETE button.
   // Inside the brushed-steel panel (full-width). Vertical layout via
   // flex column with proportional spacing.
+  // S13 v13: button uses align-self:center + width:auto + min-width
+  // to constrain width. width:100% in a flex column was making the
+  // button stretch full-screen even with max-width:320px. The score
+  // badges are also moved up (justify-content:center) so they sit
+  // centered in the panel rather than crammed at the top.
   const resultsHtml = `
-    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:6% 5% 6% 5%;box-sizing:border-box;gap:5%;">
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5% 3% 5%;box-sizing:border-box;gap:8px;">
       <div id="result-grades" style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badgesHtml}</div>
       <div id="result-pq" style="display:flex;align-items:center;justify-content:center;min-height:22px;"></div>
       <button id="assess-complete-btn"
-        style="width:100%;max-width:320px;height:48px;background:#3a9ee0;color:#fff;border:none;font-size:15px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,0.4);display:none;opacity:0;transform:scale(0.85);transition:opacity 280ms ease-out, transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1);">
+        style="align-self:center;width:auto;min-width:200px;max-width:280px;padding:0 28px;height:42px;background:#3a9ee0;color:#fff;border:none;font-size:14px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,0.4);display:none;opacity:0;transform:scale(0.85);transition:opacity 280ms ease-out, transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1);">
         COMPLETE
       </button>
     </div>`;
@@ -5138,20 +5138,20 @@ async function assessGrade(){
 }
 
 // Show a terminated-assessment preview when the gate catches NOT_COMIC or FLAGGED.
-// S13 v10: rewritten for the overlay-based shell architecture. The
-// progress overlay is already mounted by mountStepTracker(); we mark
-// all 5 steps failed (red), then slide the terminated message into the
-// brushed-steel results panel with a CANCEL button instead of COMPLETE.
+// S13 v13: simplified per Matt's feedback. The brushed-steel results
+// panel is small and the prior layout (label + reason + lockout warning
+// + CANCEL all stacked) was unreadable and pushed CANCEL offscreen.
+// New approach:
+//   • Results panel shows ONLY "NOT A COMIC" (or "INAPPROPRIATE") label
+//     and a CANCEL button. Clean and readable at the small size.
+//   • The reason text and lockout warning are shown in a separate styled
+//     popup with an OKAY button, displayed AFTER the user taps CANCEL
+//     (which dismisses the shell). Popup looks like a normal app dialog,
+//     not jammed into a results panel that wasn't sized for it.
 function showGateTerminatedPreview(gateResult, reason, lockout) {
-  // Stop any leftover grid-frame timer (no longer used in v10 but the
-  // clear is still defensive in case a stale timer is somehow active).
   if (window._modalFrameTimer) { clearInterval(window._modalFrameTimer); window._modalFrameTimer = null; }
 
-  // Mark all steps as failed
-  // S13 v10: 'analyzing' removed — that step is no longer in the
-  // overlay because the laser-scan animation itself is the analyzing
-  // visualization. The 5 remaining steps are the work that happens
-  // post-scan.
+  // Mark all 5 steps as failed.
   const allSteps = ['populating','mint','pq','grading','confirming'];
   allSteps.forEach((s,i) => {
     setTimeout(()=>setStep(s,'failed'),120+i*60);
@@ -5163,44 +5163,63 @@ function showGateTerminatedPreview(gateResult, reason, lockout) {
   }
 
   const label = gateResult === 'FLAGGED' ? 'INAPPROPRIATE' : 'NOT A COMIC';
-  const bg    = gateResult === 'FLAGGED' ? '#3a1010' : '#2a2018';
-  const fg    = gateResult === 'FLAGGED' ? '#ff6060' : '#ffb060';
 
-  // Build the explanation block
-  let lockoutContent = '';
-  if (reason) lockoutContent += `<div style="font-size:10px;color:#a09080;font-style:italic;padding:3px 10px;text-align:center;line-height:1.35">${esc(reason)}</div>`;
-  if (lockout && lockout.type === 'permanent') {
-    lockoutContent += `<div style="font-size:10px;color:#ff8080;font-weight:700;padding:4px 10px;text-align:center;line-height:1.35;letter-spacing:0.4px">⚠ Account flagged for review — repeated invalid uploads</div>`;
-  } else if (lockout && lockout.type === 'temp') {
-    const unlockAt = lockout.unlockAt ? new Date(lockout.unlockAt).toLocaleString() : '';
-    lockoutContent += `<div style="font-size:10px;color:#ffb060;font-weight:700;padding:4px 10px;text-align:center;line-height:1.35;letter-spacing:0.4px">Assessment locked for 24 hours${unlockAt?`<br><span style="opacity:0.85;font-weight:500">until ${esc(unlockAt)}</span>`:''}</div>`;
-  }
+  // Stash the reason + lockout for the post-cancel popup.
+  window._pendingGateExplanation = { label, gateResult, reason, lockout };
 
-  // Slot the terminated message + CANCEL button into the results panel.
+  // Results panel: just the label and CANCEL button. No reason text here.
   const html = `
-    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:6% 5% 6% 5%;box-sizing:border-box;gap:4%;">
-      <div style="padding:8px 16px;background:${bg};color:${fg};border-radius:8px;font-size:15px;font-weight:900;letter-spacing:1.5px;text-align:center;border:1.5px solid ${fg};box-shadow:0 2px 10px rgba(0,0,0,0.4)">${label}</div>
-      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;width:100%;">${lockoutContent}</div>
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:5% 5%;box-sizing:border-box;gap:5%;">
+      <div style="padding:8px 18px;background:#3a1810;color:#ff8060;border-radius:8px;font-size:16px;font-weight:900;letter-spacing:1.5px;text-align:center;border:1.5px solid #ff8060;box-shadow:0 2px 10px rgba(0,0,0,0.4)">${label}</div>
       <button id="assess-complete-btn"
-        style="width:100%;max-width:320px;height:44px;background:#5a3030;color:#fff;border:none;font-size:14px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,0.4);display:none;opacity:0;transform:scale(0.85);transition:opacity 280ms ease-out, transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1);">
+        style="width:auto;min-width:140px;max-width:280px;padding:0 24px;height:44px;background:#5a3030;color:#fff;border:none;font-size:14px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">
         CANCEL
       </button>
     </div>`;
 
   window.RobograderScan.slideResultsIntoPanel(html);
 
-  // Wire the CANCEL button after a short delay (lets the steps finish marking failed)
   setTimeout(() => {
     const btn = document.getElementById('assess-complete-btn');
     if (btn) {
-      btn.onclick = () => { dismissAssessModal(null); };
-      btn.style.display = 'block';
-      requestAnimationFrame(() => {
-        btn.style.opacity = '1';
-        btn.style.transform = 'scale(1)';
-      });
+      btn.onclick = () => {
+        dismissAssessModal(null);
+        // Show the explanation popup after the shell tears down.
+        setTimeout(() => showGateExplanationPopup(), 100);
+      };
     }
-  }, 800);
+  }, 600);
+}
+
+// Styled popup with reason + lockout + OKAY button. Shown after the
+// gate-terminated CANCEL is tapped (so the shell is gone first).
+function showGateExplanationPopup() {
+  const data = window._pendingGateExplanation;
+  if (!data) return;
+  window._pendingGateExplanation = null;
+
+  let lockoutHtml = '';
+  if (data.lockout && data.lockout.type === 'permanent') {
+    lockoutHtml = `<div style="margin-top:14px;padding:10px 14px;background:#3a1010;color:#ff8080;border-radius:8px;font-size:13px;font-weight:700;line-height:1.4;text-align:center">⚠ Account flagged for review — repeated invalid uploads</div>`;
+  } else if (data.lockout && data.lockout.type === 'temp') {
+    const unlockAt = data.lockout.unlockAt ? new Date(data.lockout.unlockAt).toLocaleString() : '';
+    lockoutHtml = `<div style="margin-top:14px;padding:10px 14px;background:#2a2010;color:#ffc080;border-radius:8px;font-size:13px;font-weight:700;line-height:1.4;text-align:center">Assessment locked for 24 hours${unlockAt?`<br><span style="font-weight:500;opacity:0.9">until ${esc(unlockAt)}</span>`:''}</div>`;
+  }
+
+  const popup = document.createElement('div');
+  popup.id = 'gate-explanation-popup';
+  popup.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:20px;';
+  popup.innerHTML = `
+    <div style="background:#fff;border-radius:14px;padding:24px 22px;max-width:380px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,0.3)">
+      <div style="font-size:18px;font-weight:900;color:#1a1008;letter-spacing:1px;text-align:center;margin-bottom:10px">${data.label}</div>
+      ${data.reason ? `<div style="font-size:14px;color:#3a2a1a;line-height:1.5;text-align:center">${esc(data.reason)}</div>` : ''}
+      ${lockoutHtml}
+      <button id="gate-explanation-okay" style="margin-top:18px;width:100%;height:46px;background:#3a9ee0;color:#fff;border:none;font-size:15px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px">OKAY</button>
+    </div>`;
+  document.body.appendChild(popup);
+  document.getElementById('gate-explanation-okay').onclick = () => {
+    popup.remove();
+  };
 }
 
 // ── Abuse prevention: strike-based cool-offs ────────────────────────────────

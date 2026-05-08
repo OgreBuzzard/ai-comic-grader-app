@@ -149,23 +149,25 @@
          results panel sit comfortably in the visible area. */
       width: 100vw;
       height: calc(100vw / 0.3153);
-      /* Initial position: shell starts BELOW the viewport (bottom edge
-         offscreen by its own full height). The slide-up animation
-         translates it to bottom = 0 so its bottom edge lines up with
-         viewport bottom. */
-      bottom: calc(-1 * (100vw / 0.3153));
-      transform: translateX(-50%);
+      /* Anchor to bottom of viewport. */
+      bottom: 0;
+      /* S13 v13: switched slide-up from animating bottom to transform
+         translateY(). Animating bottom triggers a layout recalculation
+         on every frame on iOS Safari, which caused the chest to "pop"
+         halfway through the slide instead of moving smoothly. Transform
+         is GPU-composited and animates buttery-smooth. The shell starts
+         translated DOWN by 100% (so it's positioned a full chest-height
+         below its anchor, offscreen below the viewport) and animates to
+         translateY(0) which puts it at the anchored bottom. The X
+         translation (-50%) for centering must stay in the transform
+         throughout — combine into a single transform. */
+      transform: translate(-50%, 100%);
       animation: rgShellSlideUp 3s cubic-bezier(0.22, 1, 0.36, 1) 0.2s forwards;
       pointer-events: none;
     }
     @keyframes rgShellSlideUp {
-      from { bottom: calc(-1 * (100vw / 0.3153)); }
-      /* Final position: bottom = 0 anchors the chest to the viewport
-         bottom. The brushed-steel results panel (last 13.66% of the
-         chest image) ends up flush with viewport bottom; the cavity
-         (38-75% of the chest) sits in the upper visible region.
-         Head extends above viewport, which is fine. */
-      to   { bottom: 0; }
+      from { transform: translate(-50%, 100%); }
+      to   { transform: translate(-50%, 0);    }
     }
 
     /* The chest image itself fills the shell. */
@@ -203,9 +205,13 @@
          fit math (~313px). Photos filling 100% of that felt visually
          oversized — they dominated the screen. The 80% cap leaves a
          margin around the photo so it sits within the cavity rather
-         than against its borders. */
-      left: 10%; top: 10%;
-      width: 80%; height: 80%;
+      /* S13 v13: cap further reduced from 80% to 60% of cavity. The
+         80% cap from v12 was an improvement but still left photos
+         dominating the screen on phones — the cavity itself is large
+         (~390×460 on iPhone 14). 60% gives ~234×276 photo area, which
+         reads as a "preview" rather than overwhelming the chest. */
+      left: 20%; top: 20%;
+      width: 60%; height: 60%;
       background-size: contain;
       background-position: center;
       background-repeat: no-repeat;
@@ -219,12 +225,14 @@
       transform: translateX(-110%) !important;
     }
 
-    /* Spine photo rotation — captured spine photos are wide-landscape
-       (spine length runs horizontally). In the portrait-oriented cavity
-       display container, the wide image renders short with empty space
-       above and below. Solution: render via <img> with pre-rotation
-       dimensions swapped, then rotate -90° around center. The contained
-       image fills the cavity's height after rotation. */
+    /* Spine photo rotation — captured spine photos are landscape (the
+       spine runs along the long edge of the captured image). To display
+       it as a vertical strip reading top-to-bottom, rotate -90°
+       (counter-clockwise). The .rg-scan-photo parent is now ~60% × 60%
+       of cavity (roughly square), so the rotated image fits naturally
+       inside without complex pre-rotation sizing math.
+       S13 v13: simplified after multiple wrong-direction iterations.
+       Using -90deg (CCW) which is the standard for spine display. */
     .rg-scan-photo.is-spine {
       background-image: none !important;
     }
@@ -239,21 +247,14 @@
       transform: translate(-50%, -50%);
     }
     .rg-scan-photo-img.rotated {
-      /* S13 v12: corrected pre-rotation dimensions. The image needs to
-         be sized so that AFTER rotation, it fills the cavity. If cavity
-         is W×H, the pre-rotation image is H×W (transposed). In percent-
-         of-parent terms (parent = cavity, so 100%×100% = cavity), the
-         pre-rotation width = (H/W) of parent's width — but expressed as
-         a percentage of the parent's *width*, that's H/W × 100. Since
-         W/H of cavity in absolute pixels matches widthPct/heightPct,
-         the right formula is:
-           width  = widthPct/heightPct  × 100  (so post-rotate visual width = cavity width)
-           height = heightPct/widthPct  × 100
-         Earlier code had these swapped, leaving the rotated image
-         shorter than the cavity. */
-      width:  ${(CAVITY.widthPct / CAVITY.heightPct * 100).toFixed(2)}%;
-      height: ${(CAVITY.heightPct / CAVITY.widthPct * 100).toFixed(2)}%;
-      transform: translate(-50%, -50%) rotate(90deg);
+      /* The parent container is roughly square (60% × 60% of cavity).
+         For a landscape source image, swapping pre-rotation dimensions
+         lets the contained image fill the parent's "long edge" after
+         rotation. Since the parent is square-ish, the practical effect
+         is just a -90° rotation of a contain-fit image. */
+      width:  100%;
+      height: 100%;
+      transform: translate(-50%, -50%) rotate(-90deg);
     }
 
     .rg-scan-laser {
@@ -338,7 +339,8 @@
     }
 
     /* Results panel — appears at the bottom of the chest in the brushed-
-       steel area. Slides UP from below to enter. */
+       steel area. Slides UP from below to enter. S13 v13: switched to
+       @keyframes for the same iOS reliability reason as the overlay. */
     .rg-scan-results {
       position: absolute;
       left:   ${RESULTS.leftPct}%;
@@ -347,23 +349,47 @@
       height: ${RESULTS.heightPct}%;
       overflow: hidden;
       transform: translateY(110%);
-      transition: transform ${RESULTS_SLIDE_TIME}ms cubic-bezier(0.22, 1, 0.36, 1);
       pointer-events: auto;
       z-index: 13;
     }
-    .rg-scan-results.in-view {
-      transform: translateY(0);
+    .rg-scan-results.slide-in {
+      animation: rgResultsSlideUp ${RESULTS_SLIDE_TIME}ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+    @keyframes rgResultsSlideUp {
+      from { transform: translateY(110%); }
+      to   { transform: translateY(0);    }
     }
 
-    /* Overlay panel — the Progress_Overlay.png artwork that slides in
-       from the left over the cavity area. Wider than the cavity itself
-       (extends from X=46 to X=520 in chest image coords; the cavity
-       runs roughly X=120 to X=500). The overlay is the artwork; child
-       elements (progress step boxes, light grid, gauge) are positioned
-       inside its coordinate system as percentages of the overlay's
-       own bounding box. Slides in from translateX(-110%) → 0 (the
-       -110% intentionally clears the chest's left edge entirely so
-       the overlay is offscreen-left at start). */
+    /* Step boxes layer — siblings of the overlay, positioned at the same
+       bounding box, but BEHIND the overlay (lower z-index). The overlay
+       PNG has alpha-carved holes where the buttons should appear; the box
+       PNGs (default/success/failure) live in this layer at the carved
+       positions and show through those holes. Boxes are 100% opaque so
+       the overlay's baked-in step text stays readable.
+       Slides in from the left in lockstep with the overlay. */
+    .rg-scan-boxes {
+      position: absolute;
+      left:   ${OVERLAY.leftPct}%;
+      top:    ${OVERLAY.topPct}%;
+      width:  ${OVERLAY.widthPct}%;
+      height: ${OVERLAY.heightPct}%;
+      overflow: visible;
+      pointer-events: none;
+      z-index: 13;
+    }
+    .rg-scan-boxes.slide-in {
+      animation: rgOverlaySlideIn ${OVERLAY_SLIDE_TIME}ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+
+    /* Overlay panel — the Progress_Overlay.png artwork. Sits ABOVE the
+       boxes layer; carved-out alpha holes in the overlay artwork let the
+       box PNGs show through. The overlay holds the step text (baked into
+       the artwork), the green chest panel, screws, the 4×4 light grid,
+       and the gauge. S13 v13: switched from CSS transition + class-toggle
+       to @keyframes animation. iOS Safari was inconsistent about applying
+       transform transitions when the element was added and mutated in
+       the same paint frame; @keyframes runs reliably because it doesn't
+       depend on a state-change observation. */
     .rg-scan-overlay {
       position: absolute;
       left:   ${OVERLAY.leftPct}%;
@@ -372,12 +398,15 @@
       height: ${OVERLAY.heightPct}%;
       overflow: visible;
       transform: translateX(-110%);
-      transition: transform ${OVERLAY_SLIDE_TIME}ms cubic-bezier(0.22, 1, 0.36, 1);
       pointer-events: auto;
       z-index: 14;
     }
-    .rg-scan-overlay.in-view {
-      transform: translateX(0);
+    .rg-scan-overlay.slide-in {
+      animation: rgOverlaySlideIn ${OVERLAY_SLIDE_TIME}ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+    @keyframes rgOverlaySlideIn {
+      from { transform: translateX(-110%); }
+      to   { transform: translateX(0);     }
     }
   `;
 
@@ -555,6 +584,8 @@
 
   // Slide a results panel up from the bottom into the brushed-steel area.
   // Returns the element so the caller can populate or update it.
+  // S13 v13: uses @keyframes animation (slide-in class) for iOS
+  // reliability; same reason as the overlay change.
   function slideResultsIntoPanel(html) {
     if (!_activeStage) return null;
     const shell = _activeStage.querySelector('.rg-scan-shell');
@@ -569,45 +600,71 @@
     results.innerHTML = html;
     shell.appendChild(results);
 
-    results.offsetHeight;
     requestAnimationFrame(() => {
-      results.classList.add('in-view');
+      requestAnimationFrame(() => {
+        results.classList.add('slide-in');
+      });
     });
 
     return results;
   }
 
   // Slide the Progress_Overlay artwork in from the left, positioned at
-  // chest-image (X=46, Y=684) per Matt's spec. The overlay extends
-  // beyond the cavity rectangle on both sides (left-aligned at 7.97%,
-  // ending at ~90% — the cavity itself is centered around 53.75% with
-  // width 65.9%). This is intentional: the overlay is its own artwork
-  // and frames the cavity from outside, not within.
+  // chest-image (X=46, Y=684) per Matt's spec. Mount also includes a
+  // step-boxes layer that sits BEHIND the overlay (lower z-index).
   //
-  // The caller passes HTML that will be rendered INSIDE the overlay
-  // container. Typically that's an <img> for the overlay PNG plus
-  // progress boxes/light-grid/gauge children positioned over it.
-  // Returns the overlay element so the caller can manipulate it (e.g.
-  // swap step-box images on state changes).
-  function slideOverlayIntoChest(html) {
+  // The caller passes html (the overlay's inner HTML) and an optional
+  // boxesHtml (the inner HTML of the boxes layer). The boxes are
+  // siblings of the overlay (peer DOM elements in the shell), not
+  // children. Both share the same bounding box (OVERLAY coordinates),
+  // and both slide-in together via the same @keyframes animation
+  // applied to both elements simultaneously.
+  //
+  // S13 v13: switched from class-toggle CSS transition to @keyframes
+  // animation. The previous approach was unreliable on iOS Safari —
+  // the transform transition wouldn't fire when the element was added
+  // to the DOM and the in-view class added in the same paint frame,
+  // even with a forced reflow + rAF. @keyframes runs reliably because
+  // the animation is triggered when the class is present at attachment
+  // time, not when the class transitions.
+  function slideOverlayIntoChest(html, boxesHtml) {
     if (!_activeStage) return null;
     const shell = _activeStage.querySelector('.rg-scan-shell');
     if (!shell) return null;
 
-    const existing = shell.querySelector('.rg-scan-overlay');
-    if (existing) existing.remove();
+    const existingOverlay = shell.querySelector('.rg-scan-overlay');
+    if (existingOverlay) existingOverlay.remove();
+    const existingBoxes = shell.querySelector('.rg-scan-boxes');
+    if (existingBoxes) existingBoxes.remove();
 
+    // Boxes layer FIRST (lower z-index) — opaque step boxes show through
+    // alpha-carved holes in the overlay.
+    const boxes = document.createElement('div');
+    boxes.className = 'rg-scan-boxes';
+    boxes.id = 'rg-scan-boxes';
+    if (boxesHtml) boxes.innerHTML = boxesHtml;
+    shell.appendChild(boxes);
+
+    // Overlay layer SECOND (higher z-index) — the artwork PNG with
+    // baked-in step text.
     const overlay = document.createElement('div');
     overlay.className = 'rg-scan-overlay';
     overlay.id = 'rg-scan-overlay';
     overlay.innerHTML = html;
     shell.appendChild(overlay);
 
-    // Force reflow so the initial offscreen-left transform is applied
-    // before we add the in-view class (which triggers the slide-in).
-    overlay.offsetHeight;
+    // Trigger the slide-in @keyframes animation by adding the slide-in
+    // class to BOTH elements. They animate in lockstep because they
+    // share the same keyframes definition.
+    // Two-step rAF to ensure the initial transform: translateX(-110%)
+    // state is committed to the rendering pipeline before the animation
+    // class is added — without this, iOS occasionally skips the start
+    // frame and the elements pop in instantly.
     requestAnimationFrame(() => {
-      overlay.classList.add('in-view');
+      requestAnimationFrame(() => {
+        boxes.classList.add('slide-in');
+        overlay.classList.add('slide-in');
+      });
     });
 
     // Fade out the laser-scan display under the overlay (parallel to
