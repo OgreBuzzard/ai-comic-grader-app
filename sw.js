@@ -12,11 +12,13 @@
 // strategy with explicit allow-listing of static assets and pass-through for
 // everything else (Firestore, Google Fonts, /api/, Cloud Storage URLs).
 //
-// Bumped cache name from v2 to v3 to invalidate the old buggy SW on any
-// device that already has it installed. The activate handler deletes any
-// non-current cache, which evicts v2's stale state.
+// Cache version history:
+//   v2 → v3: invalidated the buggy fetch-intercepting SW
+//   v3 → v4: invalidated cached manifest.json after RoboGrader → Robograder
+//            app-name correction. Existing installs need eviction so re-add
+//            picks up the corrected home-screen label.
 
-const CACHE = 'robograder-v3';
+const CACHE = 'robograder-v4';
 
 self.addEventListener('install', e => {
   // Skip the wait-for-existing-client step. New SW takes over immediately.
@@ -24,8 +26,8 @@ self.addEventListener('install', e => {
 });
 
 self.addEventListener('activate', e => {
-  // Wipe any older caches (notably the v2 one from the broken SW). Then
-  // claim clients so the new SW handles fetches without requiring a reload.
+  // Wipe any older caches (notably v2 and v3). Then claim clients so the
+  // new SW handles fetches without requiring a reload.
   e.waitUntil(
     caches.keys()
       .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))

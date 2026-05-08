@@ -1,6 +1,6 @@
 {
-  "name": "RoboGrader",
-  "short_name": "RoboGrader",
+  "name": "Robograder",
+  "short_name": "Robograder",
   "description": "AI-powered comic book condition assessment",
   "start_url": "/",
   "display": "standalone",
