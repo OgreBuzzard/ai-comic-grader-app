@@ -116,11 +116,22 @@
 
   // ── CSS injection ───────────────────────────────────────────────────
   // Self-contained .rg-scan-* prefix avoids any class collision.
-  // The shell sizes itself to fit the viewport HEIGHT (auto width based
-  // on chest image's aspect ratio). It does not horizontally fill the
-  // viewport — the chest image is portrait (577×1830, ratio 0.315).
-  // On a typical phone (~9:19.5 aspect ratio = 0.461), the shell will
-  // appear centered with black on either side — that's correct.
+  //
+  // S13 v11: shell sizing changed from height-fit to width-fit anchored
+  // to the bottom of the viewport. Earlier height-fit math (height:
+  // 100vh; width: 100vh * 0.3153) made the chest only ~63% of viewport
+  // width on iPhone — the cavity ended up tiny and the photo scan looked
+  // like a thumbnail in the middle of the screen. The chest's aspect
+  // ratio (0.315) is much narrower than a phone viewport (~0.46), so
+  // ANY full-image fit would either letterbox horizontally or extend
+  // vertically beyond the viewport.
+  //
+  // Width-fit + bottom-anchor is the right trade-off: the chest fills
+  // the viewport horizontally (cavity + results panel render at full
+  // useful size), and the head/face extends offscreen above. The user
+  // doesn't need to see the head during assessment — what matters is
+  // the cavity (laser scan + overlay) and the brushed-steel results
+  // panel, both of which now occupy the visible viewport area.
   const STYLES = `
     .rg-scan-stage {
       position: fixed;
@@ -132,25 +143,29 @@
     .rg-scan-shell {
       position: absolute;
       left: 50%;
-      /* Initial position: shell starts BELOW the viewport so the chest
-         image can slide up. The shell wrapper carries the image and all
-         overlays positioned within the image's coordinate system. */
-      top: 100vh;
-      height: 100vh;
-      /* Aspect ratio matches the new chest image: 577/1830 = 0.31530 */
-      width: calc(100vh * 0.3153);
+      /* Width-fit: chest fills viewport width. Aspect-derived height
+         (100vw / 0.3153) is taller than viewport on phones — that's
+         intentional. The head extends above viewport top; cavity and
+         results panel sit comfortably in the visible area. */
+      width: 100vw;
+      height: calc(100vw / 0.3153);
+      /* Initial position: shell starts BELOW the viewport (bottom edge
+         offscreen by its own full height). The slide-up animation
+         translates it to bottom = 0 so its bottom edge lines up with
+         viewport bottom. */
+      bottom: calc(-1 * (100vw / 0.3153));
       transform: translateX(-50%);
       animation: rgShellSlideUp 3s cubic-bezier(0.22, 1, 0.36, 1) 0.2s forwards;
       pointer-events: none;
     }
     @keyframes rgShellSlideUp {
-      from { top: 100vh; }
-      /* Final position: top = 0vh. Image fills viewport vertically.
-         The chest face fills the upper portion; the results panel sits
-         in the bottom 13.66% of the image. With a typical phone viewport
-         height ≈ 740-900vh-equivalent px, the brushed steel panel ends
-         up around y = 640-780px from the top, comfortably in view. */
-      to   { top: 0; }
+      from { bottom: calc(-1 * (100vw / 0.3153)); }
+      /* Final position: bottom = 0 anchors the chest to the viewport
+         bottom. The brushed-steel results panel (last 13.66% of the
+         chest image) ends up flush with viewport bottom; the cavity
+         (38-75% of the chest) sits in the upper visible region.
+         Head extends above viewport, which is fine. */
+      to   { bottom: 0; }
     }
 
     /* The chest image itself fills the shell. */
