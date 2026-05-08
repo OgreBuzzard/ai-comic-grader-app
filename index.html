@@ -3325,7 +3325,10 @@ function _attachPanzoomToLightbox() {
     // Wheel-zoom on desktop — bind on the box, not just the parent of img,
     // so wheel events anywhere in the lightbox zoom the image
     box.addEventListener('wheel', _panzoomInstance.zoomWithWheel, { passive: false });
-    // Double-tap to toggle zoom — bind on wrapper which is what Panzoom owns
+    // Double-tap to toggle zoom — bind on wrapper which is what Panzoom owns.
+    // S13 v7: also bind touchstart so handleDoubleTap can verify the gesture
+    // was single-finger, not a pinch ending.
+    wrap.addEventListener('touchstart', _trackTouchStart);
     wrap.addEventListener('touchend', handleDoubleTap);
     wrap.addEventListener('dblclick', handleDoubleTap);
   };
@@ -3374,10 +3377,40 @@ function openCornerLightbox(id, idx){
   };
 }
 
+// Track most recent touchstart fingers — used by handleDoubleTap to ignore
+// multi-finger gesture ends that aren't real taps. S13 v7 fix: previously,
+// the touchend handler fired on EVERY touchend, including the second finger
+// lifting from a pinch gesture. Two touchends within 300ms qualified as a
+// "double-tap" and triggered _panzoomInstance.reset() — which is exactly
+// the snap-back-after-pinch behavior Matt was seeing. Now we only count a
+// touchend as a tap candidate when the start of the same touch was with
+// exactly one finger.
+let _lightboxLastTouchFingers = 0;
+function _trackTouchStart(e) {
+  _lightboxLastTouchFingers = e.touches ? e.touches.length : 0;
+}
+
 function handleDoubleTap(e) {
   if (!_panzoomInstance) return;
+  // Synthesized dblclick from desktop is always a valid double-click — no
+  // touch tracking needed there.
+  if (e.type === 'dblclick') {
+    e.preventDefault();
+    const current = _panzoomInstance.getScale();
+    if (current > 1.1) _panzoomInstance.reset();
+    else _panzoomInstance.zoom(2.5, { animate: true });
+    return;
+  }
+  // For touchend: only count as a tap if the gesture was a SINGLE finger.
+  // Pinches end with at least 2 fingers in the start (and any non-zero
+  // remaining touches when one lifts), which we exclude here.
+  if (_lightboxLastTouchFingers !== 1) return;
+  // Also check current touches — by the time touchend fires for the
+  // last finger, e.touches.length should be 0. Anything else means we're
+  // mid-gesture and shouldn't fire double-tap logic.
+  if (e.touches && e.touches.length > 0) return;
   const now = Date.now();
-  const isDouble = e.type === 'dblclick' || (now - _lightboxLastTap < 300);
+  const isDouble = (now - _lightboxLastTap < 300);
   _lightboxLastTap = now;
   if (!isDouble) return;
   e.preventDefault();
@@ -4019,17 +4052,23 @@ function showResultPreview(cgc, psa) {
   const gridEl = document.getElementById('modal-grid-frame');
   if (gridEl) gridEl.style.display = 'none';
 
-  // Build badge shells with empty value slots for the animation to fill
+  // Build badge shells with type-specific initial values for the animation
+  // to count up from. S13 v7: replaced the em-dash placeholder with the
+  // animation start value, so RG starts at 0 and CGC/PSA at 0.0. The
+  // dash was confusing — it read as "no data" rather than "about to
+  // animate." Now the badge shows a coherent zero state from the moment
+  // it appears, and the count-up animation visibly starts moving it
+  // toward the final value.
   const makeBadge = (type, valueId) => {
     const configs = {
-      'cgc-ai':   {bg:'#2a5a8a', text:'#e0f0ff', label:'CGC'},
-      'psa-ai':   {bg:'#8a2a2a', text:'#ffe0e0', label:'PSA'},
-      'robograde':{bg:'#0f1a05', text:'#aaee30', label:'RG', border:'1.5px solid #3a5010'},
+      'cgc-ai':   {bg:'#2a5a8a', text:'#e0f0ff', label:'CGC',  initial: '0.0'},
+      'psa-ai':   {bg:'#8a2a2a', text:'#ffe0e0', label:'PSA',  initial: '0.0'},
+      'robograde':{bg:'#0f1a05', text:'#aaee30', label:'RG',   initial: '0', border:'1.5px solid #3a5010'},
     };
     const c = configs[type];
     const border = c.border ? `border:${c.border};` : '';
     return `<div style="width:64px;height:64px;${border}background:${c.bg};border-radius:10px;padding:6px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.3)">
-      <div id="${valueId}" style="font-size:22px;font-weight:800;color:${c.text};line-height:1">—</div>
+      <div id="${valueId}" style="font-size:22px;font-weight:800;color:${c.text};line-height:1">${c.initial}</div>
       <div style="font-size:8px;color:${c.text};opacity:0.7;margin-top:3px;letter-spacing:1px">${c.label}</div>
     </div>`;
   };
@@ -4825,7 +4864,7 @@ function generateRoboId() {
   return Array.from(arr).map(b => ALPHABET[b % ALPHABET.length]).join('');
 }
 
-function completeAssessment() {
+async function completeAssessment() {
   if (!_pendingAssessResult) return;
   const {cgc, psa} = _pendingAssessResult;
 
@@ -4902,7 +4941,25 @@ function completeAssessment() {
   _pendingAssessResult=null;
   const overlay = document.getElementById('assess-modal-overlay');
   if (overlay) overlay.remove();
-  renderForm();
+
+  // S13 v7: AUTO-SAVE flow. Previously this function rendered the Edit form
+  // and waited for the user to tap Save; users could lose the assessment
+  // (and the credit) by tapping Back without scrolling to Save. Now we save
+  // automatically and navigate straight to Detail view, where the user can
+  // tap Edit if they want to change anything. submitForm handles the image
+  // upload, registry registration, save to Firestore, and showDetail(rec.id)
+  // navigation in one call — same path the manual Save button has always
+  // used, just invoked programmatically.
+  //
+  // Edge case: submitForm has a guard that returns silently if title is
+  // empty. If the AI failed to identify the book AND the user didn't enter
+  // a title in the Add flow, we fall back to renderForm() so the user can
+  // manually fix the title before saving.
+  if (!formData.title?.trim()) {
+    renderForm();
+    return;
+  }
+  await submitForm();
 }
 
 function onAssessmentSuccess(){
