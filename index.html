@@ -782,45 +782,14 @@
     .settings-row .sr-right { font-size: 18px; color: #4a3a2a; }
     #sync-bar .spin-sm { width: 14px; height: 14px; border: 2px solid #9a70ef; border-top-color: #6a30cf; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
   
-    /* Assessment progress modal */
-    #assess-modal-overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1000;
-      display: flex; align-items: center; justify-content: center; padding: 24px;
-    }
-    #assess-modal {
-      background: #fff; border-radius: 18px; padding: 28px 24px 24px;
-      width: 100%; max-width: 360px; box-shadow: 0 8px 40px rgba(0,0,0,0.18);
-    }
-    #assess-modal h3 {
-      font-size: 17px; font-weight: 700; color: #1a1614; margin: 0;
-      letter-spacing: 0.02em;
-    }
-    .assess-step {
-      display: flex; align-items: center; gap: 12px;
-      padding: 8px 0; border-bottom: 1px solid #f0ece6; font-size: 14px; color: #5a4e44;
-    }
-    .assess-step:last-of-type { border-bottom: none; }
-    .assess-step-icon {
-      width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 13px; font-weight: 700; transition: all 0.3s ease;
-    }
-    .assess-step-icon.pending { background: #f0ece6; color: #b0a090; }
-    .assess-step-icon.running {
-      background: transparent;
-      border: 2.5px solid #dde8f4;
-      border-top-color: #2a5a8a;
-      animation: spin-arc 0.9s linear infinite;
-    }
-    .assess-step-icon.done { background: #e8f4ec; color: #2a7a4a; }
-    .assess-step-icon.skipped { background: #f0f0f0; color: #9a9a9a; }
-    .assess-step-icon.failed { background: #fce8e8; color: #c03030; }
-    @keyframes spin-arc {
-      to { transform: rotate(360deg); }
-    }
-    .assess-step-label { flex: 1; font-weight: 500; }
-    .assess-step-detail { font-size: 11px; color: #8a7a6a; margin-top: 1px; }
-    /* Note: assess-result-preview is positioned/styled inline inside showAssessModal */
+    /* Assessment progress modal — S13 v9: legacy CSS removed.
+       The modal flow is now hosted by scan-animation.js via the
+       persistent shell architecture. The chest image (Robograder_Scan_Frame.png)
+       is the modal background; the cavity holds the laser-scan animation
+       then the step tracker; the brushed-steel panel at the bottom holds
+       the score badges, PQ pill, and COMPLETE button.
+       The .assess-step-* classes were used only by the old modal and
+       have been removed; the new tracker styles live in scan-animation.js. */
 
 
   <style>
@@ -3792,6 +3761,12 @@ const ASSESS_MODAL_BG    = 'https://raw.githubusercontent.com/OgreBuzzard/ai-com
 const ASSESS_DEFAULT_BOX = 'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/default_box.PNG';
 const ASSESS_SUCCESS_BOX = 'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/success_box.PNG';
 const ASSESS_FAILURE_BOX = 'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/failure_box.PNG';
+// S13 v10: Progress_Overlay.PNG is the boxless overlay artwork (474×755,
+// alpha-cornered) — green metal panel + 4×4 light grid + gauge, with the
+// 5 progress button shapes intentionally OMITTED so we can position
+// default_box / success_box / failure_box sprites over the overlay
+// independently and animate their state via setStep().
+const ASSESS_OVERLAY_BG = 'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay.PNG';
 const ASSESS_FRAMES = [
   'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_01.PNG',
   'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_02.PNG',
@@ -3801,83 +3776,90 @@ const ASSESS_FRAMES = [
   'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_06.PNG',
 ];
 
-function showAssessModal() {
-  const overlay = document.createElement('div');
-  overlay.id = 'assess-modal-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.75);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:40px;padding-left:16px;padding-right:16px;padding-bottom:16px;gap:0;overflow-y:auto;';
+// Mount the progress overlay into the chest. Slides in from the left
+// at chest-image (X=46, Y=684) per Matt's spec. The overlay artwork
+// includes the green metal panel, the 4×4 light grid, and the gauge —
+// but NOT the 5 progress button shapes. We layer the existing
+// default_box / success_box / failure_box PNG sprites OVER the overlay
+// at fixed positions, so the same setStep() mechanism that drove the
+// old modal continues to work — just over a different parent.
+//
+// S13 v10: replaces the v9 boxes-in-cavity tracker. The shell is still
+// owned by scan-animation.js and stays onscreen until dismiss() is
+// called. mountStepTracker name retained for caller compatibility.
+//
+// Step IDs: populating, mint, pq, grading, confirming. The S12-era
+// "analyzing" step has been removed because the laser-scan animation
+// itself now stands in for that step (the user has already SEEN the
+// photos being analyzed by the time the overlay slides in).
+//
+// The 5 step boxes are positioned as percentages of the overlay's own
+// 474×755 bounding box. Vertical positions placeholder pending Matt's
+// measured pixel coordinates from the overlay artwork — the values
+// below will need updating once he provides them.
+function mountStepTracker() {
+  if (!window.RobograderScan || !window.RobograderScan.slideOverlayIntoChest) {
+    console.warn('mountStepTracker: scan-animation module not loaded (or missing slideOverlayIntoChest)');
+    return;
+  }
 
-  const modal = document.createElement('div');
-  modal.id = 'assess-modal';
-  modal.style.cssText = 'position:relative;width:min(calc(100vw - 32px),380px);aspect-ratio:380/600;overflow:hidden;flex-shrink:0;background:transparent;';
-
-  // Step positions measured from new 380×600 progress_modal.PNG
-  // All buttons share X=48, W=283, H=52 (px); Y varies per step
   const stepDefs = [
-    {id:'analyzing',  top: 9.3333},  // Y=56
-    {id:'populating', top:19.0000},  // Y=114
-    {id:'mint',       top:29.1667},  // Y=175
-    {id:'pq',         top:38.8333},  // Y=233
-    {id:'grading',    top:48.6667},  // Y=292
-    {id:'confirming', top:58.5000},  // Y=351
+    {id:'populating', label: 'POPULATING INFO'},
+    {id:'mint',       label: 'COMPARING TO MINT'},
+    {id:'pq',         label: 'PAGE QUALITY CHECK'},
+    {id:'grading',    label: 'GRADING'},
+    {id:'confirming', label: 'CONFIRMING GRADE'},
   ];
-  stepDefs.forEach(s => {
-    const box = document.createElement('div');
-    box.id = 'modal-box-' + s.id;
-    box.style.cssText = `position:absolute;left:12.6316%;top:${s.top}%;width:74.4737%;height:8.6667%;background-size:100% 100%;background-repeat:no-repeat;z-index:1;`;
-    // Analyzing starts green (running); all others start as default
-    if (s.id === 'analyzing') {
-      box.style.backgroundImage = "url('" + ASSESS_SUCCESS_BOX + "')";
-    } else {
-      box.style.backgroundImage = "url('" + ASSESS_DEFAULT_BOX + "')";
-    }
-    modal.appendChild(box);
-  });
 
-  const fgImg = document.createElement('img');
-  fgImg.src = ASSESS_MODAL_BG;
-  fgImg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;';
-  modal.appendChild(fgImg);
+  // Step button positions inside the overlay (percentages of 474×755).
+  // Measured by Matt from the overlay artwork (S13 v10):
+  //   Each button: 360×68 px (75.95% × 9.01%)
+  //   Left edge:   X=56 px → 11.81%
+  //   Top edges:   Y=275, 350, 425, 500, 575 (75-px vertical step = 9.93%)
+  //                → 36.42%, 46.36%, 56.29%, 66.23%, 76.16%
+  // The setStep mechanism still drives state via background-image swap
+  // (default_box / success_box / failure_box). All three of those PNGs
+  // need to be re-exported at 360×68 to match the carved-out openings
+  // in the new overlay (per Matt's spec — old box assets were a
+  // different size and would sit incorrectly).
+  const BTN_LEFT_PCT   = 11.81;
+  const BTN_WIDTH_PCT  = 75.95;
+  const BTN_HEIGHT_PCT = 9.01;
+  const BTN_TOPS_PCT = [36.42, 46.36, 56.29, 66.23, 76.16];
 
-  // Grid icon position measured from new PNG: X=283, Y=7, W=48, H=48
-  const gridImg = document.createElement('img');
-  gridImg.id = 'modal-grid-frame';
-  gridImg.src = ASSESS_FRAMES[0];
-  gridImg.style.cssText = `position:absolute;left:74.4737%;top:1.1667%;width:12.6316%;height:8.0000%;z-index:3;pointer-events:none;`;
-  modal.appendChild(gridImg);
+  const boxesHtml = stepDefs.map((s, i) => {
+    return `<div id="tracker-box-${s.id}"
+      style="position:absolute;left:${BTN_LEFT_PCT}%;top:${BTN_TOPS_PCT[i]}%;
+             width:${BTN_WIDTH_PCT}%;height:${BTN_HEIGHT_PCT}%;
+             background-image:url('${ASSESS_DEFAULT_BOX}');
+             background-size:100% 100%;background-repeat:no-repeat;
+             display:flex;align-items:center;justify-content:center;
+             font-size:13px;font-weight:800;color:#1a1614;letter-spacing:1px;
+             pointer-events:none;">${s.label}</div>`;
+  }).join('');
 
-  // Results area — pixel positions measured from new 380×600 progress_modal.PNG
-  // Gray panel starts at Y=412 (68.6667%), panel extends to Y=600
-  const resultDiv = document.createElement('div');
-  resultDiv.id = 'assess-result-preview';
-  resultDiv.style.cssText = 'position:absolute;left:0;top:68.6667%;width:100%;height:31.3333%;display:none;z-index:2;pointer-events:auto;';
-  resultDiv.innerHTML = `
-    <div id="result-grades" style="position:absolute;left:0;right:0;top:6.9149%;height:34.0426%;display:flex;gap:14px;justify-content:center;align-items:center;flex-wrap:nowrap;"></div>
-    <div id="result-pq" style="position:absolute;left:0;right:0;top:44.1489%;height:17.0213%;display:flex;align-items:center;justify-content:center;"></div>`;
+  // The overlay HTML: background artwork as <img> (so it scales with the
+  // overlay container), then the 5 step boxes positioned absolutely over
+  // the artwork. The 4×4 light grid and gauge animations will be added
+  // here when Matt delivers those asset states.
+  const overlayHtml = `
+    <img src="${ASSESS_OVERLAY_BG}" alt=""
+         style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;" />
+    ${boxesHtml}`;
 
-  const completeBtn = document.createElement('button');
-  completeBtn.id = 'assess-complete-btn';
-  completeBtn.onclick = completeAssessment;
-  completeBtn.style.cssText = 'position:absolute;left:12.63%;width:74.47%;top:64.8936%;height:29.7872%;display:none;background:#3a9ee0;color:#fff;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,0.4);';
-  completeBtn.textContent = 'COMPLETE';
-  resultDiv.appendChild(completeBtn);
+  window.RobograderScan.slideOverlayIntoChest(overlayHtml);
 
-  modal.appendChild(resultDiv);
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
-
-  // First step green immediately
-  setStep('analyzing', 'running');
-
-  let frameIdx = 0;
-  window._modalFrameTimer = setInterval(() => {
-    frameIdx = (frameIdx + 1) % ASSESS_FRAMES.length;
-    const el = document.getElementById('modal-grid-frame');
-    if (el) el.src = ASSESS_FRAMES[frameIdx];
-  }, 200);
+  // No more cycling grid frames — the working-indicator graphics (light
+  // grid + gauge) will be driven by separate animation logic once Matt
+  // delivers the asset states. The legacy _modalFrameTimer is left at
+  // null so dismissAssessModal's clearInterval is a safe no-op.
 }
 
 function setStep(id, state, detail='') {
-  const box = document.getElementById('modal-box-' + id);
+  // S13 v9: tracker boxes now live inside the cavity overlay (managed
+  // by scan-animation.js). The DOM ID prefix changed from 'modal-box-'
+  // to 'tracker-box-' to make the new ownership explicit.
+  const box = document.getElementById('tracker-box-' + id);
   if (!box) return;
   if (state === 'done') {
     box.style.background = '';
@@ -3902,11 +3884,13 @@ function setStep(id, state, detail='') {
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function animateStepsFromDiagnostics(d) {
-  // S12: "analyzing" step is now pre-marked green by showAssessModal()
-  // because the actual photo analysis happens during the laser-scan
-  // animation that runs BEFORE the modal appears. Skip the analyzing
-  // step animation here to avoid a redundant "mark green" of an already
-  // green box. Start the visible progression at "populating".
+  // S13 v10: the 'analyzing' step has been removed from the overlay
+  // entirely. The laser-scan animation that runs during photo upload
+  // is the analyzing visualization — by the time this function runs,
+  // the user has already SEEN the photos being processed. The 5 step
+  // boxes that remain are the work that happens after scan: populate
+  // metadata, compare to mint reference, page quality check, grade
+  // reference, confirm grade.
   await delay(120);
   setStep('populating', 'done');
   await delay(180);
@@ -4052,11 +4036,23 @@ function animatePageQuality(pqEl, target, duration) {
   });
 }
 
-function showResultPreview(cgc, psa) {
-  const preview = document.getElementById('assess-result-preview');
-  const gradesEl = document.getElementById('result-grades');
-  const pqEl = document.getElementById('result-pq');
-  if (!preview) return;
+function mountResults(cgc, psa) {
+  // S13 v9: Renders the post-assessment results into the brushed-steel
+  // panel at the bottom of the persistent shell. Replaces the old
+  // showResultPreview which targeted the freestanding modal's gray
+  // panel area.
+  //
+  // Layout inside the 240px-tall results panel:
+  //   • Top breathing room ~6px
+  //   • Score badges row (RG, CGC, PSA) — 56px tall, centered horizontally
+  //   • PQ pill — 22px tall
+  //   • COMPLETE button — 48px tall, full-width with side padding
+  //   • Bottom breathing room ~6px
+  // Total: ~138-150px of content in a ~240px panel — comfortable.
+  if (!window.RobograderScan || !window.RobograderScan.slideResultsIntoPanel) {
+    console.warn('mountResults: scan-animation module not loaded');
+    return;
+  }
 
   const cgcGrade = normalizeGrade(cgc.grade || '');
   const psaGrade = normalizeGrade(psa.grade || '');
@@ -4064,18 +4060,14 @@ function showResultPreview(cgc, psa) {
   const roboGrade = window._pendingRoboGrade;
   const roboScore = (roboGrade && roboGrade.score != null) ? Math.round(roboGrade.score) : null;
 
-  // Stop the grid frame animation and hide the grid
+  // Stop the grid frame animation. Tracker stays visible in the cavity
+  // — it's a permanent record of which steps passed/failed.
   if (window._modalFrameTimer) { clearInterval(window._modalFrameTimer); window._modalFrameTimer = null; }
-  const gridEl = document.getElementById('modal-grid-frame');
+  const gridEl = document.getElementById('tracker-grid-frame');
   if (gridEl) gridEl.style.display = 'none';
 
   // Build badge shells with type-specific initial values for the animation
-  // to count up from. S13 v7: replaced the em-dash placeholder with the
-  // animation start value, so RG starts at 0 and CGC/PSA at 0.0. The
-  // dash was confusing — it read as "no data" rather than "about to
-  // animate." Now the badge shows a coherent zero state from the moment
-  // it appears, and the count-up animation visibly starts moving it
-  // toward the final value.
+  // to count up from. RG starts at 0, CGC/PSA at 0.0.
   const makeBadge = (type, valueId) => {
     const configs = {
       'cgc-ai':   {bg:'#2a5a8a', text:'#e0f0ff', label:'CGC',  initial: '0.0'},
@@ -4084,23 +4076,40 @@ function showResultPreview(cgc, psa) {
     };
     const c = configs[type];
     const border = c.border ? `border:${c.border};` : '';
-    return `<div style="width:64px;height:64px;${border}background:${c.bg};border-radius:10px;padding:6px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.3)">
-      <div id="${valueId}" style="font-size:22px;font-weight:800;color:${c.text};line-height:1">${c.initial}</div>
-      <div style="font-size:8px;color:${c.text};opacity:0.7;margin-top:3px;letter-spacing:1px">${c.label}</div>
+    return `<div style="width:56px;height:56px;${border}background:${c.bg};border-radius:9px;padding:5px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
+      <div id="${valueId}" style="font-size:20px;font-weight:800;color:${c.text};line-height:1">${c.initial}</div>
+      <div style="font-size:7.5px;color:${c.text};opacity:0.75;margin-top:2px;letter-spacing:0.8px">${c.label}</div>
     </div>`;
   };
 
-  // Order: RoboGrade (yellow), CGC (blue), PSA (red) — matches mock
-  let html = '';
-  if (roboScore != null)      html += makeBadge('robograde', 'anim-val-robo');
-  if (cgcGrade)               html += makeBadge('cgc-ai',    'anim-val-cgc');
-  if (psaGrade)               html += makeBadge('psa-ai',    'anim-val-psa');
-  gradesEl.innerHTML = html;
+  // Order: RoboGrade, CGC, PSA — matches the in-app convention.
+  let badgesHtml = '';
+  if (roboScore != null)      badgesHtml += makeBadge('robograde', 'anim-val-robo');
+  if (cgcGrade)               badgesHtml += makeBadge('cgc-ai',    'anim-val-cgc');
+  if (psaGrade)               badgesHtml += makeBadge('psa-ai',    'anim-val-psa');
 
-  // Show the results area
-  preview.style.display = 'block';
+  // The full results panel HTML — score row, PQ row, COMPLETE button.
+  // Inside the brushed-steel panel (full-width). Vertical layout via
+  // flex column with proportional spacing.
+  const resultsHtml = `
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:6% 5% 6% 5%;box-sizing:border-box;gap:5%;">
+      <div id="result-grades" style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badgesHtml}</div>
+      <div id="result-pq" style="display:flex;align-items:center;justify-content:center;min-height:22px;"></div>
+      <button id="assess-complete-btn"
+        style="width:100%;max-width:320px;height:48px;background:#3a9ee0;color:#fff;border:none;font-size:15px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,0.4);display:none;opacity:0;transform:scale(0.85);transition:opacity 280ms ease-out, transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1);">
+        COMPLETE
+      </button>
+    </div>`;
 
-  // Animation schedule (per session-10 spec):
+  window.RobograderScan.slideResultsIntoPanel(resultsHtml);
+
+  // Wire the COMPLETE button after it's in the DOM
+  setTimeout(() => {
+    const btn = document.getElementById('assess-complete-btn');
+    if (btn) btn.onclick = completeAssessment;
+  }, 50);
+
+  // Animation schedule (matches prior spec):
   //   RoboGrade: 0ms start, 2000ms duration
   //   CGC:       1000ms start, 2000ms duration
   //   PSA:       2000ms start, 2000ms duration
@@ -4109,6 +4118,7 @@ function showResultPreview(cgc, psa) {
   const roboEl = document.getElementById('anim-val-robo');
   const cgcEl  = document.getElementById('anim-val-cgc');
   const psaEl  = document.getElementById('anim-val-psa');
+  const pqEl   = document.getElementById('result-pq');
 
   if (roboEl && roboScore != null) {
     animateRoboGrade(roboEl, roboScore, 2000);
@@ -4124,54 +4134,38 @@ function showResultPreview(cgc, psa) {
   }
 
   // Complete button — fade + scale in at 5500ms
-  // Three label states for the post-assessment complete button:
+  // Three label states (per S13 v7 fix):
   //   1. "COMPLETE" — score < 80 (no HG eligibility)
-  //   2. "HIGH-GRADE ASSESS UNLOCKED" — score ≥ 80 AND no HG pass has run yet
+  //   2. "HIGH-GRADE ASSESS UNLOCKED" — score ≥ 80 AND no HG pass yet
   //   3. "COMPLETED" — HG pass has already run on this entry
-  // S13 v7: state #3 was previously broken — `cgc._highGradePass` was never
-  // set anywhere in the codebase, so the button always showed "UNLOCKED"
-  // for high-grade scores regardless of whether HG had already been
-  // completed. Now reads formData.highGradeTier directly, which IS set to
-  // true by assessHighGrade() on success and persists across re-renders.
   setTimeout(() => {
     const btn = document.getElementById('assess-complete-btn');
     if (btn) {
       const hgAlreadyRun = !!(formData && formData.highGradeTier);
       const hgUnlocked = (roboScore != null && roboScore >= 80) && !hgAlreadyRun;
-      // Always set the flag explicitly — re-assessments that drop below 80 must clear it.
-      // After a high-grade pass, the flag stays true only if the RG is still ≥ 80 (the
-      // corner slots remain visible on the detail page) but we never re-offer the pass.
       if (_pendingAssessResult && _pendingAssessResult.cgc) {
         _pendingAssessResult.cgc._highGradeUnlocked = (roboScore != null && roboScore >= 80);
       }
       if (hgUnlocked) {
-        btn.innerHTML = `<div style="font-size:13px;font-weight:800;letter-spacing:2px;line-height:1.2">HIGH-GRADE ASSESS</div><div style="font-size:11px;font-weight:700;letter-spacing:3px;opacity:0.85;margin-top:3px">UNLOCKED</div>`;
+        btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">HIGH-GRADE ASSESS</div><div style="font-size:10px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
         btn.style.background = '#2a7a3a';
         btn.style.textAlign = 'center';
       } else if (hgAlreadyRun) {
         btn.innerHTML = `<div style="font-size:13px;font-weight:800;letter-spacing:2px;line-height:1.2">COMPLETED</div>`;
         btn.style.textAlign = 'center';
-        // Keep default background — this isn't an action affordance, it's
-        // a confirmation that the assessment chain is fully done.
       }
       btn.style.display = 'block';
-      btn.style.opacity = '0';
-      btn.style.transform = 'scale(0.85)';
-      btn.style.transition = 'opacity 280ms ease-out, transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1)';
       requestAnimationFrame(() => {
         btn.style.opacity = '1';
         btn.style.transform = 'scale(1)';
       });
     }
   }, 5500);
-
-  // Scroll overlay to show result
-  const overlayEl = document.getElementById('assess-modal-overlay');
-  if (overlayEl) {
-    overlayEl.style.overflowY = 'auto';
-    setTimeout(() => overlayEl.scrollTo({top: overlayEl.scrollHeight, behavior: 'smooth'}), 80);
-  }
 }
+
+// Backward-compat alias — older code may still call showResultPreview.
+// Forward to mountResults so a stale call site doesn't break.
+function showResultPreview(cgc, psa) { return mountResults(cgc, psa); }
 
 async function assessHighGrade() {
   const imgs = (formData.images || []).filter(Boolean);
@@ -4258,10 +4252,13 @@ async function assessHighGrade() {
     const unified = await resp.json();
     if (unified.error) throw new Error(unified.error);
 
-    // Show progress modal now (animation finished — hard cut). Modal opens
-    // with "analyzing" pre-marked green; visible step progression starts
-    // at "populating".
-    showAssessModal();
+    // S13 v10: scan animation is still onscreen (persistent shell).
+    // Slide the progress overlay in from the left at chest-image (X=46,
+    // Y=684). The overlay holds 5 step boxes — "analyzing" was removed
+    // because the laser-scan animation itself stands in for that step.
+    // animateStepsFromDiagnostics drives the 5 boxes (populating →
+    // mint → pq → grading → confirming).
+    mountStepTracker();
 
     // Gate can still fire on high-grade
     if (unified.gateResult && unified.gateResult !== 'COMIC') {
@@ -4283,7 +4280,7 @@ async function assessHighGrade() {
     await animateStepsFromDiagnostics(d);
     _pendingAssessResult = {cgc, psa};
     window._pendingRoboGrade = cgc._roboGrade || null;
-    showResultPreview(cgc, psa);
+    mountResults(cgc, psa);
     onAssessmentSuccess();
   } catch(e) {
     dismissAssessModal(e.message);
@@ -4956,8 +4953,12 @@ async function completeAssessment() {
 
   _assessed=true;
   _pendingAssessResult=null;
-  const overlay = document.getElementById('assess-modal-overlay');
-  if (overlay) overlay.remove();
+  // S13 v9: dismiss the persistent shell. Replaces the old `assess-modal-overlay`
+  // direct DOM removal — the shell + cavity tracker + results panel are all
+  // owned by scan-animation.js and torn down via dismiss().
+  if (window.RobograderScan && window.RobograderScan.dismiss) {
+    window.RobograderScan.dismiss();
+  }
 
   // S13 v7: AUTO-SAVE flow. Previously this function rendered the Edit form
   // and waited for the user to tap Save; users could lose the assessment
@@ -4984,9 +4985,17 @@ function onAssessmentSuccess(){
 }
 
 function dismissAssessModal(err) {
+  // S13 v9: shell teardown is owned by scan-animation.js. We tell it to
+  // dismiss; it tears down the chest, cavity, results panel, and overlay.
   if (window._modalFrameTimer) { clearInterval(window._modalFrameTimer); window._modalFrameTimer = null; }
-  const overlay = document.getElementById('assess-modal-overlay');
-  if (overlay) overlay.remove();
+  if (window.RobograderScan && window.RobograderScan.dismiss) {
+    window.RobograderScan.dismiss();
+  } else {
+    // Fallback: if the scan module isn't loaded for some reason, look for
+    // the legacy modal overlay and remove it. Shouldn't happen in practice.
+    const overlay = document.getElementById('assess-modal-overlay');
+    if (overlay) overlay.remove();
+  }
   if (err) alert('Assessment failed: ' + err);
 }
 
@@ -5040,15 +5049,19 @@ async function assessGrade(){
 
   assessing=true;
 
-  // S12: Launch the laser-scan animation in parallel with the API call.
-  // The user sees the chest cavity slide up and the photos get scanned
-  // while the API is genuinely working in the background. Spec from Matt:
-  //   - Animation always plays to completion (even if API finishes early)
-  //   - Modal hard-cuts in after animation finishes
-  //   - "Analyzing Photos" step is pre-marked green when modal appears
-  //   - Modal flow effectively starts at "Populating Info"
-  // The animation reads photos from formData.images directly (Cloud
-  // Storage URLs or data URLs — both work as background-image src).
+  // S13 v9: Launch the laser-scan animation in parallel with the API call.
+  // The user sees the chest slide up and the photos scanned while the API
+  // is working in the background. The chest stays onscreen for the entire
+  // assessment (persistent shell):
+  //   - Scan animation plays to completion (~12s) regardless of API timing
+  //   - When scan finishes, mountStepTracker slides the 6-step tracker
+  //     into the cavity from the left
+  //   - "Analyzing Photos" pre-marked green; visible progression starts
+  //     at "Populating Info"
+  //   - mountResults slides the score badges + PQ pill + COMPLETE button
+  //     up into the brushed-steel results panel at the bottom
+  //   - User taps COMPLETE → completeAssessment() dismisses the shell and
+  //     auto-saves to Detail view
   // Per Matt: skip missing slots, only animate the ones with photos.
   const scanController = window.RobograderScan
     ? window.RobograderScan.runScanAnimation(formData.images || [])
@@ -5088,10 +5101,13 @@ async function assessGrade(){
     const unified=await unifiedResp.json();
     if(unified.error)throw new Error(unified.error);
 
-    // Now show the progress modal (animation has finished — hard cut).
-    // The modal initializes with "analyzing" already green, so we
-    // effectively start the visible step progression at "populating".
-    showAssessModal();
+    // S13 v10: scan animation is still onscreen (persistent shell).
+    // Slide the progress overlay in from the left at chest-image (X=46,
+    // Y=684). The overlay holds 5 step boxes — "analyzing" was removed
+    // because the laser-scan animation itself stands in for that step.
+    // animateStepsFromDiagnostics drives the 5 boxes (populating →
+    // mint → pq → grading → confirming).
+    mountStepTracker();
 
     // ── Gate check: if the assessment was terminated because the photos aren't
     //    a valid comic book, show the flag UI and don't charge a credit.
@@ -5115,7 +5131,7 @@ async function assessGrade(){
     await animateStepsFromDiagnostics(d);
     _pendingAssessResult={cgc,psa};
     window._pendingRoboGrade=cgc._roboGrade||null;
-    showResultPreview(cgc,psa);
+    mountResults(cgc,psa);
     onAssessmentSuccess();
   }catch(e){
     dismissAssessModal(e.message);
@@ -5123,55 +5139,64 @@ async function assessGrade(){
   assessing=false;
 }
 
-// Show a terminated-assessment preview when the gate catches NOT_COMIC or FLAGGED
+// Show a terminated-assessment preview when the gate catches NOT_COMIC or FLAGGED.
+// S13 v10: rewritten for the overlay-based shell architecture. The
+// progress overlay is already mounted by mountStepTracker(); we mark
+// all 5 steps failed (red), then slide the terminated message into the
+// brushed-steel results panel with a CANCEL button instead of COMPLETE.
 function showGateTerminatedPreview(gateResult, reason, lockout) {
-  // Stop the grid frame animation
+  // Stop any leftover grid-frame timer (no longer used in v10 but the
+  // clear is still defensive in case a stale timer is somehow active).
   if (window._modalFrameTimer) { clearInterval(window._modalFrameTimer); window._modalFrameTimer = null; }
-  const gridEl = document.getElementById('modal-grid-frame');
-  if (gridEl) gridEl.style.display = 'none';
 
   // Mark all steps as failed
-  const allSteps = ['analyzing','populating','mint','pq','grading','confirming'];
+  // S13 v10: 'analyzing' removed — that step is no longer in the
+  // overlay because the laser-scan animation itself is the analyzing
+  // visualization. The 5 remaining steps are the work that happens
+  // post-scan.
+  const allSteps = ['populating','mint','pq','grading','confirming'];
   allSteps.forEach((s,i) => {
     setTimeout(()=>setStep(s,'failed'),120+i*60);
   });
 
-  // Show the result preview with the terminated state
-  const preview = document.getElementById('assess-result-preview');
-  const gradesEl = document.getElementById('result-grades');
-  const pqEl = document.getElementById('result-pq');
-  if (!preview) return;
+  if (!window.RobograderScan || !window.RobograderScan.slideResultsIntoPanel) {
+    console.warn('showGateTerminatedPreview: scan-animation module not loaded');
+    return;
+  }
 
   const label = gateResult === 'FLAGGED' ? 'INAPPROPRIATE' : 'NOT A COMIC';
   const bg    = gateResult === 'FLAGGED' ? '#3a1010' : '#2a2018';
   const fg    = gateResult === 'FLAGGED' ? '#ff6060' : '#ffb060';
 
-  gradesEl.innerHTML = `<div style="padding:12px 18px;background:${bg};color:${fg};border-radius:10px;font-size:17px;font-weight:900;letter-spacing:2px;text-align:center;border:1.5px solid ${fg};box-shadow:0 2px 10px rgba(0,0,0,0.4)">${label}</div>`;
-
-  // Build the explanation: gate reason, plus lockout warning if applicable
-  let pqContent = '';
-  if (reason) pqContent += `<div style="font-size:11px;color:#a09080;font-style:italic;padding:4px 12px;text-align:center;line-height:1.4">${esc(reason)}</div>`;
+  // Build the explanation block
+  let lockoutContent = '';
+  if (reason) lockoutContent += `<div style="font-size:10px;color:#a09080;font-style:italic;padding:3px 10px;text-align:center;line-height:1.35">${esc(reason)}</div>`;
   if (lockout && lockout.type === 'permanent') {
-    pqContent += `<div style="font-size:11px;color:#ff8080;font-weight:700;padding:8px 12px;text-align:center;line-height:1.4;letter-spacing:0.5px">⚠ Account flagged for review — repeated invalid uploads</div>`;
+    lockoutContent += `<div style="font-size:10px;color:#ff8080;font-weight:700;padding:4px 10px;text-align:center;line-height:1.35;letter-spacing:0.4px">⚠ Account flagged for review — repeated invalid uploads</div>`;
   } else if (lockout && lockout.type === 'temp') {
     const unlockAt = lockout.unlockAt ? new Date(lockout.unlockAt).toLocaleString() : '';
-    pqContent += `<div style="font-size:11px;color:#ffb060;font-weight:700;padding:8px 12px;text-align:center;line-height:1.4;letter-spacing:0.5px">Assessment locked for 24 hours${unlockAt?`<br><span style="opacity:0.85;font-weight:500">until ${esc(unlockAt)}</span>`:''}</div>`;
+    lockoutContent += `<div style="font-size:10px;color:#ffb060;font-weight:700;padding:4px 10px;text-align:center;line-height:1.35;letter-spacing:0.4px">Assessment locked for 24 hours${unlockAt?`<br><span style="opacity:0.85;font-weight:500">until ${esc(unlockAt)}</span>`:''}</div>`;
   }
-  pqEl.innerHTML = pqContent;
 
-  preview.style.display = 'block';
+  // Slot the terminated message + CANCEL button into the results panel.
+  const html = `
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:6% 5% 6% 5%;box-sizing:border-box;gap:4%;">
+      <div style="padding:8px 16px;background:${bg};color:${fg};border-radius:8px;font-size:15px;font-weight:900;letter-spacing:1.5px;text-align:center;border:1.5px solid ${fg};box-shadow:0 2px 10px rgba(0,0,0,0.4)">${label}</div>
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;width:100%;">${lockoutContent}</div>
+      <button id="assess-complete-btn"
+        style="width:100%;max-width:320px;height:44px;background:#5a3030;color:#fff;border:none;font-size:14px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,0.4);display:none;opacity:0;transform:scale(0.85);transition:opacity 280ms ease-out, transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1);">
+        CANCEL
+      </button>
+    </div>`;
 
-  // Replace Complete with Cancel — just closes modal, no credit charged
+  window.RobograderScan.slideResultsIntoPanel(html);
+
+  // Wire the CANCEL button after a short delay (lets the steps finish marking failed)
   setTimeout(() => {
     const btn = document.getElementById('assess-complete-btn');
     if (btn) {
-      btn.textContent = 'CANCEL';
-      btn.style.background = '#5a3030';
-      btn.style.display = 'block';
-      btn.style.opacity = '0';
-      btn.style.transform = 'scale(0.85)';
-      btn.style.transition = 'opacity 280ms ease-out, transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1)';
       btn.onclick = () => { dismissAssessModal(null); };
+      btn.style.display = 'block';
       requestAnimationFrame(() => {
         btn.style.opacity = '1';
         btn.style.transform = 'scale(1)';
