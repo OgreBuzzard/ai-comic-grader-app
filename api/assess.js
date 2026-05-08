@@ -513,6 +513,16 @@ Per-category calibration (applied proportionally to the category maximum):
     • 20-29 = substantial wear or significant defect
     • 10-19 = major structural or cosmetic issues
     • 0-9 = severe, extensive, possibly structural compromise
+    CUMULATIVE-FRONT-DEFECT RULE (v2.4): If the front cover shows widespread
+    soiling/discoloration AND has multiple additional defects (any combination
+    of corner blunting + edge wear + a crease + spine-side stress), Front
+    sub-score MUST be ≤ 30 regardless of how each individual defect is rated.
+    Mid-grade books (CGC 3.0-4.5 territory) routinely show this combination.
+    Without this rule, individual defects each get rated as Med severity and
+    the sum lands in the 32-40 range, which corresponds to a CGC 5.5-7.0 cover.
+    The point is the cumulative effect: a cover with widespread soiling AND
+    multiple additional wear features is a 30-or-below cover even if no
+    single defect is High severity. When in doubt at 30, go to 28.
   Back (max 20):
     • 20 = pristine, no observed defects
     • 18-19 = trace wear only
@@ -725,7 +735,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
   "officialPSAGrade": null,
   "officialPSACert": null,
   "roboGrade": {
-    "version": "2.3",
+    "version": "2.4",
     "score": 0,
     "confidenceRange": ${baseConf},
     "frontScore": 0,
@@ -990,9 +1000,66 @@ RETURN ONLY THIS JSON — no markdown, no preamble
         rg.interiorScore = i;
         const computed = f + (b || 0) + s + i;
         const original = Math.round(rg.score);
-        rg.score = computed;
-        if (Math.abs(computed - original) > 2) {
-          rg._mathCorrected = { declared: original, computed: rg.score };
+        const divergence = Math.abs(computed - original);
+        // v2.4: When the model's holistic declared score and the component-sum
+        // computed score disagree by more than 8 points, prefer the LOWER of
+        // the two. Calibration data (S13: ASM #8 v2.3, ASM #62 v2.2, ASM #64
+        // v2.2) showed a consistent pattern where declared was the more
+        // accurate read: Front sub-scores were systematically over-allocated
+        // (mid-grade books were getting 26-30 of 50 points when 20-22 was
+        // appropriate), and the prior rule (always taking computed) dragged
+        // the displayed Robograde upward by 9-14 points across all three
+        // sample books. The model's holistic prose grade tracked the visible
+        // condition more closely than its componentized math.
+        //
+        // The 8-point threshold preserves the original behavior for normal
+        // rounding/clamping discrepancies (1-7 points) which are usually just
+        // arithmetic drift, while flagging the cases where the two reads
+        // are genuinely telling different stories. The calibration pattern
+        // showed real over-allocation kicking in around the 9-point mark
+        // (ASM #62 had a 9-point divergence and still came out half a grade
+        // too high), so 8 is the cleanest cut-off.
+        //
+        // When we override to the lower value, we also rebalance the sub-
+        // scores so they still sum to the displayed Robograde — otherwise
+        // a user reading sub-scores on Detail view sees 26+10+12+9=57 while
+        // the headline number shows 40, which reads as a bug. Front absorbs
+        // the entire correction (since over-allocation originates there),
+        // unless that would push Front below 0, in which case we fall back
+        // to proportional reduction.
+        if (divergence > 8) {
+          const chosen = Math.min(computed, original);
+          rg.score = chosen;
+          if (chosen < computed) {
+            // Subtract the gap from Front; if not enough, distribute remainder
+            // across all categories proportionally.
+            const gap = computed - chosen;
+            if (f - gap >= 0) {
+              rg.frontScore = f - gap;
+            } else {
+              // Front absorbs what it can, rest goes proportionally to others
+              const fGap = f;
+              rg.frontScore = 0;
+              const remainGap = gap - fGap;
+              const pool = (b || 0) + s + i;
+              if (pool > 0) {
+                if (b != null) rg.backScore     = Math.max(0, Math.round(b - remainGap * (b / pool)));
+                rg.spineScore    = Math.max(0, Math.round(s - remainGap * (s / pool)));
+                rg.interiorScore = Math.max(0, Math.round(i - remainGap * (i / pool)));
+              }
+            }
+          }
+          rg._mathCorrected = {
+            declared: original,
+            computed: computed,
+            chosen: chosen,
+            rule: 'divergence>8, prefer lower; sub-scores rebalanced'
+          };
+        } else {
+          rg.score = computed;
+          if (divergence > 2) {
+            rg._mathCorrected = { declared: original, computed: rg.score };
+          }
         }
       }
     }
