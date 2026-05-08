@@ -34,12 +34,29 @@
   // rotate: true on the spine slot triggers the 90° vertical rotation of
   // the captured spine photo so its long dimension fills the animation
   // display height (the spine photo is captured landscape-wide).
-  const SLOTS = [
+  const SLOTS_MAIN = [
     { idx: 0, slotName: 'front',    rotate: false },
     { idx: 1, slotName: 'back',     rotate: false },
     { idx: 2, slotName: 'pq',       rotate: false },
     { idx: 3, slotName: 'spine',    rotate: true  },
   ];
+
+  // S13 v7: corner-macro slot table for high-grade scan animation. HG
+  // sends the 4 corner macros to the model and the user expects to see
+  // those 4 photos scanned — NOT the 4 main slots they already saw on
+  // the standard pass. Each corner macro is a portrait close-up of a
+  // single corner of the cover; no rotation needed and no special
+  // per-slot treatment. Photocopier-alternating scan direction (the
+  // position-based rule in runSequence) applies as usual.
+  const SLOTS_CORNER = [
+    { idx: 0, slotName: 'corner-tl', rotate: false },
+    { idx: 1, slotName: 'corner-tr', rotate: false },
+    { idx: 2, slotName: 'corner-bl', rotate: false },
+    { idx: 3, slotName: 'corner-br', rotate: false },
+  ];
+
+  // Backwards-compatible alias — older code may still reference SLOTS.
+  const SLOTS = SLOTS_MAIN;
 
   // ── Timing (ms) ─────────────────────────────────────────────────────
   // All values match the v4 prototype Matt approved. Don't change without
@@ -340,12 +357,21 @@
   }
 
   // ── Public API ─────────────────────────────────────────────────────
-  function runScanAnimation(photoUrls) {
+  // photoUrls: flat array of up to 4 URLs in slot order.
+  // kind:      'main' (default) or 'corner'. Selects which slot table to
+  //            iterate over. Standard assessment uses 'main' (front, back,
+  //            pq, spine); high-grade assessment uses 'corner' (the 4
+  //            corner macros). The two flows visually look identical
+  //            except for which photos slide through and the spine
+  //            rotation (only present in 'main').
+  function runScanAnimation(photoUrls, kind) {
     injectStyles();
+
+    const slotTable = (kind === 'corner') ? SLOTS_CORNER : SLOTS_MAIN;
 
     // Filter to only slots that have photos. Per Matt's spec: skip
     // missing slots, only animate ones that exist.
-    const activeSlots = SLOTS
+    const activeSlots = slotTable
       .filter(s => photoUrls && photoUrls[s.idx])
       .map(s => ({ ...s, url: photoUrls[s.idx] }));
 

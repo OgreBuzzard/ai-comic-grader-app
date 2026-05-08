@@ -499,21 +499,38 @@
     }
     #camera-rotate-card.show { display: flex; }
     #camera-rotate-card .rotate-icon {
-      font-size: 96px;
+      width: 96px; height: 96px;
       color: #7aa838;
-      line-height: 1;
       margin-bottom: 24px;
-      transform-origin: center;
+      transform-origin: center center;
       animation: rotate-hint 2.4s ease-in-out infinite;
+    }
+    /* S13 v8: replaced the Unicode `⟳` glyph with an inline SVG. The glyph
+       wasn't centered within its character box (extra whitespace below the
+       visual arrow), so transform-origin: center rotated around the box
+       center, not the visual center, producing a swing rather than a true
+       rotation. The SVG uses viewBox -50 -50 100 100 so the geometric
+       center is exactly (0,0) and matches transform-origin: center.
+       The base SVG draws a counter-clockwise arrow (arrowhead at upper
+       left, arc opening at lower right). The to-landscape card needs a
+       clockwise arrow, achieved via scaleX(-1) on .rotate-icon-cw. */
+    #camera-rotate-card .rotate-icon svg {
+      width: 100%; height: 100%; display: block;
+    }
+    #camera-rotate-card.to-landscape .rotate-icon svg {
+      transform: scaleX(-1);
     }
     /* Animation: subtle wiggle hint suggesting the rotation direction.
        Different keyframes for landscape vs portrait — the JS sets a class
-       on the card that selects which animation runs. */
+       on the card that selects which animation runs.
+       S13 v8: to-landscape direction flipped from -90 → 0 → -90 to
+       0 → +90 → 0, so the wiggle direction matches the (now mirrored)
+       arrow's clockwise visual cue. */
     #camera-rotate-card.to-landscape .rotate-icon { animation-name: rotate-to-landscape; }
     #camera-rotate-card.to-portrait .rotate-icon { animation-name: rotate-to-portrait; }
     @keyframes rotate-to-landscape {
       0%, 100% { transform: rotate(0deg); }
-      50%      { transform: rotate(-90deg); }
+      50%      { transform: rotate(90deg); }
     }
     @keyframes rotate-to-portrait {
       0%, 100% { transform: rotate(-90deg); }
@@ -1190,7 +1207,7 @@
     </div>
     <div style="padding:24px 18px 40px">
       <div style="font-size:11px;color:#4a3a2a;line-height:1.6">
-        Robograder v2.3 · Assessment credits are non-refundable.
+        Robograder v2.4 · Assessment credits are non-refundable.
         Images are stored securely in your personal account.
       </div>
     </div>
@@ -1263,7 +1280,7 @@
          landscape). Replaces the camera viewfinder while shown. JS toggles
          the .show class and the .to-landscape / .to-portrait class. -->
     <div id="camera-rotate-card">
-      <div class="rotate-icon">⟳</div>
+      <div class="rotate-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="-50 -50 100 100" aria-hidden="true"><path d="M 6.25 35.45 A 36 36 0 1 1 -18.00 -31.18" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round"/><polygon points="-18.00,-31.18 -27.06,-18.94 -33.12,-29.30" fill="currentColor"/></svg></div>
       <div class="rotate-title" id="camera-rotate-title">Rotate to landscape</div>
       <div class="rotate-sub" id="camera-rotate-sub">This shot works best with the phone turned sideways. Rotate your phone and the camera will appear automatically.</div>
     </div>
