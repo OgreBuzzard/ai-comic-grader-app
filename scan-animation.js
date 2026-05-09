@@ -42,6 +42,67 @@
 (function() {
   'use strict';
 
+  // ── Diagnostic logger (S13 v14) ─────────────────────────────────────
+  // On-screen debug overlay so we can see what the runtime is actually
+  // doing during the assessment animation. Independent of console logs
+  // because we can't open DevTools on the phone. Pinned to top-right of
+  // viewport, semi-transparent, scrolls if needed.
+  //
+  // Toggle with window.RobograderScan.setDebug(true|false). Default ON
+  // for now while we're debugging the modal flow; flip to false for
+  // production.
+  let _debugEnabled = true;
+  let _debugStartTime = 0;
+  let _debugPanel = null;
+
+  function debugInit() {
+    if (!_debugEnabled) return;
+    if (_debugPanel && _debugPanel.parentNode) _debugPanel.remove();
+    _debugStartTime = performance.now();
+    _debugPanel = document.createElement('div');
+    _debugPanel.id = 'rg-debug-panel';
+    _debugPanel.style.cssText = 'position:fixed;top:env(safe-area-inset-top,0);right:0;width:240px;max-height:50vh;overflow-y:auto;background:rgba(0,0,0,0.85);color:#0f0;font-family:monospace;font-size:9px;line-height:1.3;padding:6px 8px;z-index:9999;pointer-events:none;border-bottom-left-radius:6px;';
+    document.body.appendChild(_debugPanel);
+    debugLog('=== DEBUG START ===');
+  }
+
+  function debugLog(msg) {
+    if (!_debugEnabled || !_debugPanel) return;
+    const t = ((performance.now() - _debugStartTime) / 1000).toFixed(2);
+    const line = document.createElement('div');
+    line.textContent = `[+${t}s] ${msg}`;
+    _debugPanel.appendChild(line);
+    _debugPanel.scrollTop = _debugPanel.scrollHeight;
+  }
+
+  // Inspect an element's computed transform — useful for confirming
+  // whether a slide-in animation is firing or stuck. Returns the
+  // matrix value as a string or 'none'.
+  function debugTransform(el) {
+    if (!el) return 'null';
+    try {
+      const t = window.getComputedStyle(el).transform;
+      return t || 'none';
+    } catch (e) {
+      return 'err:' + e.message;
+    }
+  }
+
+  function debugCleanup() {
+    // Leave the debug panel onscreen even after dismiss so the user can
+    // screenshot it. They'll see it disappear when they navigate away.
+    // (Or we can remove it explicitly via setDebug(false).)
+  }
+
+  function setDebug(enabled) {
+    _debugEnabled = !!enabled;
+    if (!_debugEnabled && _debugPanel && _debugPanel.parentNode) {
+      _debugPanel.remove();
+      _debugPanel = null;
+    }
+  }
+
+
   // ── Slot definitions ────────────────────────────────────────────────
   // Index in the photoUrls array MUST match the slot order from the
   // image upload UI: front=0, back=1, interior=2, raking/spine=3.
@@ -490,13 +551,18 @@
 
   async function scanPhoto(slot, scanDir, cancelToken) {
     if (cancelToken.cancelled) throw new Error('cancelled');
+    debugLog(`scanPhoto start: ${slot.slotName} dir=${scanDir}`);
     const photoEl = document.getElementById('rg-scan-photo-' + slot.slotName);
-    if (!photoEl) return;
+    if (!photoEl) {
+      debugLog(`  ⚠ photo element missing: ${slot.slotName}`);
+      return;
+    }
 
     const isVerticalScan = scanDir === 'down' || scanDir === 'up';
     const laser = document.getElementById(isVerticalScan ? 'rg-scan-laser-h' : 'rg-scan-laser-v');
 
     photoEl.classList.add('in-view');
+    debugLog(`  ${slot.slotName}: in-view added, transform=${debugTransform(photoEl).substring(0,30)}`);
     await wait(SLIDE_DURATION, cancelToken);
 
     laser.classList.add('active', 'scan-' + scanDir);
@@ -506,6 +572,7 @@
 
     photoEl.classList.remove('in-view');
     photoEl.classList.add('out-view');
+    debugLog(`  ${slot.slotName}: out-view added, transform=${debugTransform(photoEl).substring(0,30)}`);
     await wait(SLIDE_DURATION, cancelToken);
 
     photoEl.classList.remove('out-view');
@@ -516,15 +583,19 @@
         photoEl.classList.remove('reset');
       }
     });
+    debugLog(`  ${slot.slotName}: scan done`);
   }
 
   async function runSequence(activeSlots, cancelToken) {
+    debugLog(`runSequence start, waiting FIRST_PHOTO_DELAY=${FIRST_PHOTO_DELAY}ms`);
     await wait(FIRST_PHOTO_DELAY, cancelToken);
+    debugLog('first photo delay elapsed, starting photo loop');
     for (let i = 0; i < activeSlots.length; i++) {
       if (cancelToken.cancelled) throw new Error('cancelled');
       const scanDir = (i % 2 === 0) ? 'down' : 'up';
       await scanPhoto(activeSlots[i], scanDir, cancelToken);
     }
+    debugLog('runSequence done');
   }
 
   // ── Public lifecycle ────────────────────────────────────────────────
@@ -541,9 +612,7 @@
   }
 
   function dismiss() {
-    // Graceful end-of-flow teardown. Same as the destructive teardown but
-    // semantically meaningful — caller is saying "we're done with the
-    // shell now, results have been saved."
+    debugLog('dismiss called');
     teardown();
   }
 
@@ -587,9 +656,16 @@
   // S13 v13: uses @keyframes animation (slide-in class) for iOS
   // reliability; same reason as the overlay change.
   function slideResultsIntoPanel(html) {
-    if (!_activeStage) return null;
+    debugLog(`slideResultsIntoPanel called, htmlLen=${(html||'').length}`);
+    if (!_activeStage) {
+      debugLog('  ⚠ no active stage');
+      return null;
+    }
     const shell = _activeStage.querySelector('.rg-scan-shell');
-    if (!shell) return null;
+    if (!shell) {
+      debugLog('  ⚠ no shell');
+      return null;
+    }
 
     const existing = shell.querySelector('.rg-scan-results');
     if (existing) existing.remove();
@@ -599,10 +675,18 @@
     results.id = 'rg-scan-results';
     results.innerHTML = html;
     shell.appendChild(results);
+    debugLog(`  results appended, transform=${debugTransform(results).substring(0,30)}`);
 
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         results.classList.add('slide-in');
+        debugLog('  slide-in class added (rAF×2)');
+        setTimeout(() => {
+          debugLog(`  results transform @+50ms: ${debugTransform(results).substring(0,40)}`);
+        }, 50);
+        setTimeout(() => {
+          debugLog(`  results transform @+500ms: ${debugTransform(results).substring(0,40)}`);
+        }, 500);
       });
     });
 
@@ -628,9 +712,16 @@
   // the animation is triggered when the class is present at attachment
   // time, not when the class transitions.
   function slideOverlayIntoChest(html, boxesHtml) {
-    if (!_activeStage) return null;
+    debugLog(`slideOverlayIntoChest called, htmlLen=${(html||'').length}, boxesLen=${(boxesHtml||'').length}`);
+    if (!_activeStage) {
+      debugLog('  ⚠ no active stage, aborting');
+      return null;
+    }
     const shell = _activeStage.querySelector('.rg-scan-shell');
-    if (!shell) return null;
+    if (!shell) {
+      debugLog('  ⚠ no shell element, aborting');
+      return null;
+    }
 
     const existingOverlay = shell.querySelector('.rg-scan-overlay');
     if (existingOverlay) existingOverlay.remove();
@@ -644,6 +735,7 @@
     boxes.id = 'rg-scan-boxes';
     if (boxesHtml) boxes.innerHTML = boxesHtml;
     shell.appendChild(boxes);
+    debugLog(`  boxes appended, transform=${debugTransform(boxes).substring(0,30)}`);
 
     // Overlay layer SECOND (higher z-index) — the artwork PNG with
     // baked-in step text.
@@ -652,24 +744,27 @@
     overlay.id = 'rg-scan-overlay';
     overlay.innerHTML = html;
     shell.appendChild(overlay);
+    debugLog(`  overlay appended, transform=${debugTransform(overlay).substring(0,30)}`);
 
     // Trigger the slide-in @keyframes animation by adding the slide-in
     // class to BOTH elements. They animate in lockstep because they
     // share the same keyframes definition.
-    // Two-step rAF to ensure the initial transform: translateX(-110%)
-    // state is committed to the rendering pipeline before the animation
-    // class is added — without this, iOS occasionally skips the start
-    // frame and the elements pop in instantly.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         boxes.classList.add('slide-in');
         overlay.classList.add('slide-in');
+        debugLog('  slide-in class added (rAF×2)');
+        // Sample transform 50ms in to confirm animation is running
+        setTimeout(() => {
+          debugLog(`  overlay transform @+50ms: ${debugTransform(overlay).substring(0,40)}`);
+        }, 50);
+        setTimeout(() => {
+          debugLog(`  overlay transform @+700ms: ${debugTransform(overlay).substring(0,40)}`);
+        }, 700);
       });
     });
 
-    // Fade out the laser-scan display under the overlay (parallel to
-    // what slideTrackerIntoCavity does — the cavity content is now
-    // covered by the overlay artwork).
+    // Fade out the laser-scan display under the overlay.
     const display = shell.querySelector('.rg-scan-display');
     if (display) {
       display.style.transition = 'opacity 300ms ease-out';
@@ -683,11 +778,16 @@
   // photoUrls: flat array of up to 4 URLs in slot order.
   // kind:      'main' (default) or 'corner'. Selects which slot table.
   function runScanAnimation(photoUrls, kind) {
+    debugInit();
+    debugLog(`runScanAnimation called: kind=${kind||'main'}, photos=${(photoUrls||[]).filter(Boolean).length}`);
     injectStyles();
 
     // Defensive: if a previous shell wasn't dismissed (e.g. error path),
     // tear it down before starting a fresh one.
-    if (_activeStage) teardown();
+    if (_activeStage) {
+      debugLog('teardown previous shell');
+      teardown();
+    }
 
     const slotTable = (kind === 'corner') ? SLOTS_CORNER : SLOTS_MAIN;
 
@@ -695,10 +795,29 @@
       .filter(s => photoUrls && photoUrls[s.idx])
       .map(s => ({ ...s, url: photoUrls[s.idx] }));
 
+    debugLog(`activeSlots: [${activeSlots.map(s => s.slotName).join(',')}]`);
+
     // Edge case: no photos. Build the shell anyway so the persistent
     // mode works for callers that wanted the shell up regardless. The
     // promise resolves immediately because there's nothing to scan.
     _activeStage = buildDom(activeSlots);
+    debugLog('shell mounted to DOM');
+
+    // After mount, log what the shell's transform is. If iOS isn't
+    // honoring our keyframe animation we'll see the transform stuck at
+    // matrix(...,100%,...) → didn't move.
+    setTimeout(() => {
+      const shell = document.querySelector('.rg-scan-shell');
+      debugLog(`shell transform @100ms: ${debugTransform(shell).substring(0,40)}`);
+    }, 100);
+    setTimeout(() => {
+      const shell = document.querySelector('.rg-scan-shell');
+      debugLog(`shell transform @1500ms: ${debugTransform(shell).substring(0,40)}`);
+    }, 1500);
+    setTimeout(() => {
+      const shell = document.querySelector('.rg-scan-shell');
+      debugLog(`shell transform @3500ms: ${debugTransform(shell).substring(0,40)}`);
+    }, 3500);
 
     const cancelToken = {
       cancelled: false,
@@ -716,10 +835,11 @@
           // S13 v9: do NOT teardown on success — the shell persists until
           // dismiss() is called. Teardown on cancel/error only.
           if (err.message === 'cancelled') {
-            // Already torn down by the cancel() call.
+            debugLog('scan cancelled');
             return;
           }
           // Unexpected error — tear down to avoid leaving the shell stuck.
+          debugLog(`scan error: ${err.message}`);
           teardown();
           throw err;
         });
@@ -728,6 +848,7 @@
     return {
       promise,
       cancel: () => {
+        debugLog('cancel called externally');
         cancelToken.cancelled = true;
         cancelToken._timers.forEach(t => clearTimeout(t));
         cancelToken._timers.clear();
@@ -743,6 +864,8 @@
     slideOverlayIntoChest,
     slideResultsIntoPanel,
     dismiss,
+    setDebug,
+    debugLog,  // exposed so index.html can log mountStepTracker, setStep, etc.
     // Constants exposed for caller diagnostics / testing
     _CAVITY: CAVITY,
     _OVERLAY: OVERLAY,
