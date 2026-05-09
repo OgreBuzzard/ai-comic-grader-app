@@ -2462,7 +2462,11 @@ function showTermsModal(){
       <li style="margin-bottom:8px"><strong>Upload only comic book photos.</strong> Non-comic or inappropriate content will be flagged; three flags can trigger account review.</li>
       <li style="margin-bottom:8px"><strong>This is an alpha release.</strong> Expect bugs. Please tell us what you find.</li>
     </ul>
-    <p style="font-size:13px;color:#3a4a28;margin-bottom:20px">Full details in our <a href="/terms.html" target="_blank" rel="noopener" style="color:#1a2208;text-decoration:underline">Terms of Service</a> and <a href="/privacy.html" target="_blank" rel="noopener" style="color:#1a2208;text-decoration:underline">Privacy Policy</a>.</p>
+    <p style="font-size:13px;color:#3a4a28;margin-bottom:14px">Full details in our <a href="/terms.html" target="_blank" rel="noopener" style="color:#1a2208;text-decoration:underline">Terms of Service</a> and <a href="/privacy.html" target="_blank" rel="noopener" style="color:#1a2208;text-decoration:underline">Privacy Policy</a>.</p>
+    <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:#e6e2d6;border-radius:8px;margin-bottom:18px;cursor:pointer;user-select:none;">
+      <input type="checkbox" id="terms-email-optin" checked style="margin-top:2px;flex-shrink:0;width:16px;height:16px;cursor:pointer;accent-color:#3a5818">
+      <span style="font-size:13px;line-height:1.45;color:#1a2208">Email me when public beta launches and for occasional product updates. (Unsubscribe anytime.)</span>
+    </label>
     <div style="display:flex;gap:10px;flex-direction:column">
       <button id="terms-agree-btn" class="rg-btn rg-btn-primary rg-btn-lg">I agree — let me in</button>
       <button id="terms-decline-btn" class="rg-btn rg-btn-ghost rg-btn-sm" style="text-decoration:underline">I don't agree — sign me out</button>
@@ -2473,12 +2477,16 @@ function showTermsModal(){
 
   document.getElementById('terms-agree-btn').onclick = async () => {
     try {
+      const optInEl = document.getElementById('terms-email-optin');
+      const emailOptIn = !!(optInEl && optInEl.checked);
       const db = window._db;
       const userRef = window._fsDoc(db, 'users', window._currentUser.uid);
       await window._fsSetDoc(userRef, {
         termsAccepted: true,
         termsVersion: TERMS_VERSION,
-        termsAcceptedAt: new Date().toISOString()
+        termsAcceptedAt: new Date().toISOString(),
+        emailOptIn: emailOptIn,
+        emailOptInUpdatedAt: new Date().toISOString()
       }, { merge: true });
       overlay.remove();
     } catch(e){
@@ -3798,6 +3806,9 @@ const ASSESS_FRAMES = [
 // measured pixel coordinates from the overlay artwork — the values
 // below will need updating once he provides them.
 function mountStepTracker() {
+  if (window.RobograderScan && window.RobograderScan.debugLog) {
+    window.RobograderScan.debugLog('mountStepTracker called');
+  }
   if (!window.RobograderScan || !window.RobograderScan.slideOverlayIntoChest) {
     console.warn('mountStepTracker: scan-animation module not loaded (or missing slideOverlayIntoChest)');
     return;
@@ -3855,12 +3866,20 @@ function mountStepTracker() {
 }
 
 function setStep(id, state, detail='') {
+  if (window.RobograderScan && window.RobograderScan.debugLog) {
+    window.RobograderScan.debugLog(`setStep: ${id} → ${state}`);
+  }
   // S13 v13: state shown by swapping the box PNG (default/success/
   // failure). The boxes are siblings of the overlay, behind it; the
   // overlay's alpha-carved holes show whichever PNG is set on the box
   // div's background. 100% opaque PNGs, no CSS transparency.
   const box = document.getElementById('tracker-box-' + id);
-  if (!box) return;
+  if (!box) {
+    if (window.RobograderScan && window.RobograderScan.debugLog) {
+      window.RobograderScan.debugLog(`  ⚠ box not found: tracker-box-${id}`);
+    }
+    return;
+  }
   if (state === 'done') {
     box.style.backgroundImage = "url('" + ASSESS_SUCCESS_BOX + "')";
   } else if (state === 'failed') {
@@ -3877,6 +3896,9 @@ function setStep(id, state, detail='') {
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function animateStepsFromDiagnostics(d) {
+  if (window.RobograderScan && window.RobograderScan.debugLog) {
+    window.RobograderScan.debugLog(`animateStepsFromDiagnostics called, d keys: ${Object.keys(d||{}).join(',') || 'none'}`);
+  }
   // S13 v10: the 'analyzing' step has been removed from the overlay
   // entirely. The laser-scan animation that runs during photo upload
   // is the analyzing visualization — by the time this function runs,
@@ -4030,6 +4052,9 @@ function animatePageQuality(pqEl, target, duration) {
 }
 
 function mountResults(cgc, psa) {
+  if (window.RobograderScan && window.RobograderScan.debugLog) {
+    window.RobograderScan.debugLog('mountResults called');
+  }
   // S13 v9: Renders the post-assessment results into the brushed-steel
   // panel at the bottom of the persistent shell. Replaces the old
   // showResultPreview which targeted the freestanding modal's gray
@@ -4245,6 +4270,9 @@ async function assessHighGrade() {
 
     // Wait for scan animation to finish before processing the response.
     await scanController.promise;
+    if (window.RobograderScan && window.RobograderScan.debugLog) {
+      window.RobograderScan.debugLog('hg: scanController.promise resolved');
+    }
 
     // S13 v12: mount the overlay IMMEDIATELY after scan completes, so the
     // user sees the step tracker even while we're still waiting on the
@@ -4256,6 +4284,9 @@ async function assessHighGrade() {
 
     if (!resp.ok) { const e = await resp.text(); throw new Error('High-grade assessment error: ' + e); }
     const unified = await resp.json();
+    if (window.RobograderScan && window.RobograderScan.debugLog) {
+      window.RobograderScan.debugLog('hg: API returned, unified.gateResult=' + (unified.gateResult||'COMIC'));
+    }
     if (unified.error) throw new Error(unified.error);
 
     // Gate can still fire on high-grade
@@ -5094,6 +5125,9 @@ async function assessGrade(){
     // animation and then show error if there is one. So we await the
     // animation BEFORE checking response status.
     await scanController.promise;
+    if (window.RobograderScan && window.RobograderScan.debugLog) {
+      window.RobograderScan.debugLog('std: scanController.promise resolved');
+    }
 
     // S13 v12: mount the overlay IMMEDIATELY after scan completes, so the
     // user sees the step tracker even while we're still waiting on the
@@ -5105,6 +5139,9 @@ async function assessGrade(){
 
     if(!unifiedResp.ok){const e=await unifiedResp.text();throw new Error("Assessment error: "+e);}
     const unified=await unifiedResp.json();
+    if (window.RobograderScan && window.RobograderScan.debugLog) {
+      window.RobograderScan.debugLog('std: API returned, unified.gateResult=' + (unified.gateResult||'COMIC'));
+    }
     if(unified.error)throw new Error(unified.error);
 
     // ── Gate check: if the assessment was terminated because the photos aren't
