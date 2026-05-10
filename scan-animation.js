@@ -146,27 +146,24 @@
     heightPct: 37.16,
   };
   const RESULTS = {
-    // S13 v16: grew topPct from 86.34 to 83 (and heightPct from 13.66 to
-    // 17). The brushed-steel artwork only fills the bottom ~13.66% of
-    // the chest image, but content (score row + PQ + button) needs more
-    // vertical room on phone viewports. Extending into the metal seam
-    // strip above the brushed steel is acceptable visually.
+    // S13 v16: brushed-steel band stretched upward by 85px in the chest
+    // art (now spans y=1495 to y=1830 in chest image coords). Total
+    // panel is now 335px tall (was 250). Gives content room without
+    // crowding the COMPLETE button.
     leftPct:   0,
-    topPct:    83,
+    topPct:    81.69,    // 1495/1830
     widthPct:  100,
-    heightPct: 17,
+    heightPct: 18.31,    // 335/1830
   };
-  // S13 v10: Overlay panel — the Progress_Overlay.png artwork (474×755
-  // native pixels in the 577×1830 chest image's coordinate system).
-  // Final position pinned at chest-image X=46, Y=684 per Matt's spec.
-  // Slides in from the left (starting fully off-screen at X=-474).
-  // Holds the 5 progress step boxes plus the working-indicator graphics
-  // (4×4 light grid, gauge needle).
+  // S13 v10: Overlay panel — the Progress_Overlay.png artwork
+  // S13 v16: shortened from 755px to 747px tall (Matt's update). Top-
+  // left position unchanged at chest-image (X=46, Y=684); buttons inside
+  // the overlay are at the same percentage positions.
   const OVERLAY = {
     leftPct:   46 / 577 * 100,    //  7.97%
     topPct:    684 / 1830 * 100,  // 37.38%
     widthPct:  474 / 577 * 100,   // 82.15%
-    heightPct: 755 / 1830 * 100,  // 41.26%
+    heightPct: 747 / 1830 * 100,  // 40.82%
   };
 
   // ── Timing (ms) ─────────────────────────────────────────────────────
