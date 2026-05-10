@@ -4094,9 +4094,11 @@ function mountResults(cgc, psa) {
     };
     const c = configs[type];
     const border = c.border ? `border:${c.border};` : '';
-    return `<div style="width:56px;height:56px;${border}background:${c.bg};border-radius:9px;padding:5px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
-      <div id="${valueId}" style="font-size:20px;font-weight:800;color:${c.text};line-height:1">${c.initial}</div>
-      <div style="font-size:7.5px;color:${c.text};opacity:0.75;margin-top:2px;letter-spacing:0.8px">${c.label}</div>
+    // S13 v15: shrunk from 56px to 48px to fit the brushed-steel panel
+    // height with the button on a phone. Score+PQ+button were overflowing.
+    return `<div style="width:48px;height:48px;${border}background:${c.bg};border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
+      <div id="${valueId}" style="font-size:17px;font-weight:800;color:${c.text};line-height:1">${c.initial}</div>
+      <div style="font-size:7px;color:${c.text};opacity:0.75;margin-top:2px;letter-spacing:0.8px">${c.label}</div>
     </div>`;
   };
 
@@ -4119,7 +4121,7 @@ function mountResults(cgc, psa) {
       <div id="result-grades" style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badgesHtml}</div>
       <div id="result-pq" style="display:flex;align-items:center;justify-content:center;min-height:22px;"></div>
       <button id="assess-complete-btn"
-        style="align-self:center;width:auto;min-width:200px;max-width:280px;padding:0 28px;height:42px;background:#3a9ee0;color:#fff;border:none;font-size:14px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,0.4);display:none;opacity:0;transform:scale(0.85);transition:opacity 280ms ease-out, transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1);">
+        style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:36px;background:#3a9ee0;color:#fff;border:none;font-size:13px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);display:none;opacity:0;transform:scale(0.85);transition:opacity 280ms ease-out, transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1);">
         COMPLETE
       </button>
     </div>`;
@@ -4248,7 +4250,8 @@ async function assessHighGrade() {
     const compressed = await Promise.all(dataUrls.map(img => compressImage(img)));
 
     const token = window._currentUser ? (await window._currentUser.getIdToken()) : null;
-    const resp = await fetch('/api/assess', {
+    // S13 v15: kick off API call WITHOUT awaiting (same fix as standard flow)
+    const respPromise = fetch('/api/assess', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -4282,6 +4285,8 @@ async function assessHighGrade() {
     // the visual transition from API timing.
     mountStepTracker();
 
+    // Now await the API
+    const resp = await respPromise;
     if (!resp.ok) { const e = await resp.text(); throw new Error('High-grade assessment error: ' + e); }
     const unified = await resp.json();
     if (window.RobograderScan && window.RobograderScan.debugLog) {
@@ -5118,12 +5123,18 @@ async function assessGrade(){
       return img;
     }));
     const compressed=await Promise.all(dataUrls.map(img=>compressImage(img)));
-    const unifiedResp=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json","x-client-secret":"022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",...(window._currentUser?{"Authorization":"Bearer "+(await window._currentUser.getIdToken())}:{})},body:JSON.stringify({images:compressed,slotsFilled,grader:"CGC",title:formData.title||"",issueNumber:formData.issue||"",issueDate:formData.issueDate||""})});
 
-    // Wait for the scan animation to finish before parsing the response
-    // and showing the progress modal. Per Matt's spec: complete the
-    // animation and then show error if there is one. So we await the
-    // animation BEFORE checking response status.
+    // S13 v15: kick off the API call WITHOUT awaiting it, so we can
+    // separately await the scan promise first. Previously the await on
+    // fetch() happened on the same line, blocking until the API returned
+    // before we could even check whether scan was done. That created
+    // 25-second dead gaps between scan-finish and overlay-appear when
+    // the API was slow.
+    const unifiedRespPromise = fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json","x-client-secret":"022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",...(window._currentUser?{"Authorization":"Bearer "+(await window._currentUser.getIdToken())}:{})},body:JSON.stringify({images:compressed,slotsFilled,grader:"CGC",title:formData.title||"",issueNumber:formData.issue||"",issueDate:formData.issueDate||""})});
+
+    // Wait for the scan animation to finish first, regardless of API
+    // status. The chest + cavity scan is the user-visible animation;
+    // the API call runs in the background and can be awaited later.
     await scanController.promise;
     if (window.RobograderScan && window.RobograderScan.debugLog) {
       window.RobograderScan.debugLog('std: scanController.promise resolved');
@@ -5131,11 +5142,13 @@ async function assessGrade(){
 
     // S13 v12: mount the overlay IMMEDIATELY after scan completes, so the
     // user sees the step tracker even while we're still waiting on the
-    // API. Previously this fired AFTER `await unifiedResp.json()`, which
-    // meant the user saw a frozen empty cavity for however long the API
-    // was slower than the scan. Mount-now decouples the visual transition
-    // from API timing.
+    // API. Mount-now decouples the visual transition from API timing.
     mountStepTracker();
+
+    // NOW await the API. If it's already resolved (scan was slower), this
+    // returns immediately. If still in flight, the overlay is already up
+    // and the user sees the step tracker rather than a frozen cavity.
+    const unifiedResp = await unifiedRespPromise;
 
     if(!unifiedResp.ok){const e=await unifiedResp.text();throw new Error("Assessment error: "+e);}
     const unified=await unifiedResp.json();

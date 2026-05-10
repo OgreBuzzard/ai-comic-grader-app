@@ -165,7 +165,7 @@
 
   // ── Timing (ms) ─────────────────────────────────────────────────────
   const CHEST_SLIDE_DELAY  = 200;
-  const CHEST_SLIDE_TIME   = 3000;
+  const CHEST_SLIDE_TIME   = 1500;  // S13 v15: was 3000 — too long; user saw nothing then a fast pop
   const DISPLAY_FADE_DELAY = 100;
   const SLIDE_DURATION     = 1000;
   const SCAN_DURATION      = 2000;
@@ -223,7 +223,7 @@
          translation (-50%) for centering must stay in the transform
          throughout — combine into a single transform. */
       transform: translate(-50%, 100%);
-      animation: rgShellSlideUp 3s cubic-bezier(0.22, 1, 0.36, 1) 0.2s forwards;
+      animation: rgShellSlideUp 1.5s cubic-bezier(0.22, 1, 0.36, 1) 0.2s forwards;
       pointer-events: none;
     }
     @keyframes rgShellSlideUp {
@@ -253,7 +253,9 @@
       height: ${CAVITY.heightPct}%;
       overflow: hidden;
       opacity: 0;
-      animation: rgScanFadeIn 0.3s ease-out 3.3s forwards;
+      /* S13 v15: delay reduced from 3.3s to 1.8s to match the shorter
+         chest slide-up. Display fades in just after chest arrives. */
+      animation: rgScanFadeIn 0.3s ease-out 1.8s forwards;
       pointer-events: none;
     }
     @keyframes rgScanFadeIn { to { opacity: 1; } }
@@ -427,7 +429,12 @@
        PNGs (default/success/failure) live in this layer at the carved
        positions and show through those holes. Boxes are 100% opaque so
        the overlay's baked-in step text stays readable.
-       Slides in from the left in lockstep with the overlay. */
+       Slides in from the left in lockstep with the overlay.
+       S13 v15: added initial transform: translateX(-110%) so the boxes
+       don't flash visible at their final position before the @keyframes
+       animation starts. Without this, there was a one-frame gap between
+       DOM append and class-add where the boxes rendered at translateX(0)
+       briefly. */
     .rg-scan-boxes {
       position: absolute;
       left:   ${OVERLAY.leftPct}%;
@@ -435,6 +442,7 @@
       width:  ${OVERLAY.widthPct}%;
       height: ${OVERLAY.heightPct}%;
       overflow: visible;
+      transform: translateX(-110%);
       pointer-events: none;
       z-index: 13;
     }
