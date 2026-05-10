@@ -48,10 +48,11 @@
   // because we can't open DevTools on the phone. Pinned to top-right of
   // viewport, semi-transparent, scrolls if needed.
   //
-  // Toggle with window.RobograderScan.setDebug(true|false). Default ON
-  // for now while we're debugging the modal flow; flip to false for
-  // production.
-  let _debugEnabled = true;
+  // Toggle with window.RobograderScan.setDebug(true|false).
+  // S13 v16: defaulted OFF for production. Flip to true to re-enable
+  // when debugging the modal flow. The debug code stays in place so
+  // we can turn it back on without re-instrumenting everything.
+  let _debugEnabled = false;
   let _debugStartTime = 0;
   let _debugPanel = null;
 
@@ -145,10 +146,15 @@
     heightPct: 37.16,
   };
   const RESULTS = {
+    // S13 v16: grew topPct from 86.34 to 83 (and heightPct from 13.66 to
+    // 17). The brushed-steel artwork only fills the bottom ~13.66% of
+    // the chest image, but content (score row + PQ + button) needs more
+    // vertical room on phone viewports. Extending into the metal seam
+    // strip above the brushed steel is acceptable visually.
     leftPct:   0,
-    topPct:    86.34,
+    topPct:    83,
     widthPct:  100,
-    heightPct: 13.66,
+    heightPct: 17,
   };
   // S13 v10: Overlay panel — the Progress_Overlay.png artwork (474×755
   // native pixels in the 577×1830 chest image's coordinate system).
