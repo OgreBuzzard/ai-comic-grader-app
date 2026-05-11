@@ -47,6 +47,11 @@ export default async function handler(req, res) {
 
       const db = getFirestore();
       const userRef = db.collection('users').doc(userId);
+      const purchaseRef = db.collection('purchases').doc(session.id);
+
+      // Amount in cents from Stripe. amount_total is preferred (includes tax);
+      // fall back to amount_subtotal for older payloads. Both are ints in cents.
+      const amountCents = session.amount_total ?? session.amount_subtotal ?? 0;
 
       await db.runTransaction(async (tx) => {
         const userDoc = await tx.get(userRef);
@@ -66,6 +71,21 @@ export default async function handler(req, res) {
             createdAt: new Date().toISOString(),
           });
         }
+        // Per-purchase ledger entry for the admin dashboard. Keyed by
+        // session.id for natural idempotency: if Stripe retries the webhook
+        // (which it does on 5xx), the second write is a no-op overwrite of
+        // identical data. Refunds reverse credits on the user doc but DO NOT
+        // touch this ledger — the ledger reflects gross revenue.
+        tx.set(purchaseRef, {
+          userId,
+          credits: parseInt(credits),
+          amountCents,
+          sessionId: session.id,
+          createdAt: new Date().toISOString(),
+          // Indexed timestamp for range queries; same value as createdAt but
+          // typed so Firestore can sort/filter without string-comparing ISO.
+          createdAtMs: Date.now(),
+        });
       });
 
       console.log(`Credited ${credits} assessments to user ${userId}`);
