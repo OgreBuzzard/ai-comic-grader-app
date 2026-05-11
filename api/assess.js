@@ -253,22 +253,19 @@ export default async function handler(req, res) {
 
 
   // ── Census lookup ──────────────────────────────────────────────────────────
-  const _CENSUS = {"amazing spiderman_300":{"t":"Amazing Spider-Man","i":"300","n":40292,"avg":8.58,"p98":5.4,"p96":14.4,"p94":16.1,"phi":35.9},"spawn_1":{"t":"Spawn","i":"1","n":38159,"avg":9.55,"p98":48.8,"p96":24.2,"p94":11.7,"phi":85.0},"amazing spiderman_361":{"t":"Amazing Spider-Man","i":"361","n":33917,"avg":9.35,"p98":22.8,"p96":33.7,"p94":18.3,"phi":74.8},"new mutants_98":{"t":"New Mutants","i":"98","n":32416,"avg":9.09,"p98":17.1,"p96":26.0,"p94":17.4,"phi":60.6},"wolverine limited series_1":{"t":"Wolverine Limited Series","i":"1","n":32345,"avg":9.02,"p98":18.5,"p96":22.2,"p94":16.8,"phi":57.7},"uncanny xmen_266":{"t":"Uncanny X-Men","i":"266","n":28297,"avg":9.13,"p98":17.8,"p96":26.3,"p94":17.9,"phi":62.1},"amazing spiderman_252":{"t":"Amazing Spider-Man","i":"252","n":27182,"avg":8.86,"p98":8.7,"p96":19.0,"p94":18.4,"phi":46.1},"venom lethal protector_1":{"t":"Venom: Lethal Protector","i":"1","n":26104,"avg":9.54,"p98":53.0,"p96":21.1,"p94":10.5,"phi":84.8},"wolverine_1":{"t":"Wolverine","i":"1","n":23121,"avg":9.09,"p98":18.9,"p96":21.3,"p94":17.1,"phi":57.4},"star wars_1":{"t":"Star Wars","i":"1","n":22008,"avg":8.65,"p98":12.0,"p96":13.7,"p94":14.5,"phi":40.2},"amazing spiderman_129":{"t":"Amazing Spider-Man","i":"129","n":20025,"avg":6.88,"p98":1.1,"p96":3.1,"p94":5.0,"phi":9.3},"incredible hulk_181":{"t":"Incredible Hulk","i":"181","n":19707,"avg":6.53,"p98":0.9,"p96":2.2,"p94":3.3,"phi":6.5},"giantsize xmen_1":{"t":"Giant-Size X-Men","i":"1","n":15045,"avg":6.69,"p98":1.9,"p96":3.4,"p94":4.6,"phi":10.0},"amazing spiderman_238":{"t":"Amazing Spider-Man","i":"238","n":13978,"avg":8.67,"p98":7.0,"p96":16.1,"p94":14.8,"phi":38.0},"amazing spiderman_194":{"t":"Amazing Spider-Man","i":"194","n":13690,"avg":8.03,"p98":4.8,"p96":10.3,"p94":11.6,"phi":26.7},"fantastic four_48":{"t":"Fantastic Four","i":"48","n":10878,"avg":5.3,"p98":0.5,"p96":1.0,"p94":1.3,"phi":2.8},"amazing spiderman_1":{"t":"Amazing Spider-Man","i":"1","n":11651,"avg":6.96,"p98":40.4,"p96":8.3,"p94":2.7,"phi":51.4},"xmen_94":{"t":"X-Men","i":"94","n":11275,"avg":6.8,"p98":0.5,"p96":1.3,"p94":3.1,"phi":4.9},"amazing spiderman_50":{"t":"Amazing Spider-Man","i":"50","n":8704,"avg":5.46,"p98":0.1,"p96":0.2,"p94":0.7,"phi":1.0},"incredible hulk_180":{"t":"Incredible Hulk","i":"180","n":9791,"avg":6.74,"p98":0.9,"p96":2.2,"p94":3.8,"phi":6.9},"iron man_1":{"t":"Iron Man","i":"1","n":9740,"avg":6.18,"p98":0.5,"p96":1.1,"p94":2.2,"phi":3.8},"amazing spiderman_121":{"t":"Amazing Spider-Man","i":"121","n":9009,"avg":7.11,"p98":1.2,"p96":3.0,"p94":5.3,"phi":9.5},"xmen_101":{"t":"X-Men","i":"101","n":9391,"avg":7.68,"p98":2.8,"p96":6.0,"p94":8.7,"phi":17.5},"daredevil_1":{"t":"Daredevil","i":"1","n":7090,"avg":4.44,"p98":0.0,"p96":0.5,"p94":0.6,"phi":1.1},"fantastic four_52":{"t":"Fantastic Four","i":"52","n":8383,"avg":5.3,"p98":0.1,"p96":0.2,"p94":0.6,"phi":0.8},"amazing spiderman_122":{"t":"Amazing Spider-Man","i":"122","n":7654,"avg":7.3,"p98":1.6,"p96":3.3,"p94":6.9,"phi":11.7},"captain america_100":{"t":"Captain America","i":"100","n":6993,"avg":6.44,"p98":0.7,"p96":1.0,"p94":2.4,"phi":4.2},"avengers_57":{"t":"Avengers","i":"57","n":7051,"avg":6.46,"p98":0.3,"p96":0.9,"p94":2.1,"phi":3.2},"avengers_4":{"t":"Avengers","i":"4","n":5775,"avg":4.79,"p98":0.1,"p96":0.5,"p94":0.7,"phi":1.3},"avengers_1":{"t":"Avengers","i":"1","n":6023,"avg":3.81,"p98":0.0,"p96":0.1,"p94":0.2,"phi":0.3},"amazing fantasy_15":{"t":"Amazing Fantasy","i":"15","n":5744,"avg":5.06,"p98":6.8,"p96":9.1,"p94":5.5,"phi":21.4},"fantastic four_1":{"t":"Fantastic Four","i":"1","n":3203,"avg":3.33,"p98":0.0,"p96":0.1,"p94":0.1,"phi":0.2},"tales of suspense_39":{"t":"Tales of Suspense","i":"39","n":3050,"avg":4.11,"p98":0.0,"p96":0.2,"p94":0.7,"phi":0.9},"journey into mystery_83":{"t":"Journey Into Mystery","i":"83","n":2668,"avg":3.81,"p98":0.0,"p96":0.0,"p94":0.4,"phi":0.5},"amazing spiderman_33":{"t":"Amazing Spider-Man","i":"33","n":3432,"avg":6.75,"p98":1.7,"p96":3.9,"p94":4.9,"phi":10.4},"avengers_3":{"t":"Avengers","i":"3","n":2072,"avg":5.31,"p98":0.0,"p96":0.5,"p94":0.8,"phi":1.3},"amazing spiderman_64":{"t":"Amazing Spider-Man","i":"64","n":2789,"avg":7.95,"p98":3.4,"p96":7.6,"p94":10.5,"phi":21.5},"amazing spiderman_67":{"t":"Amazing Spider-Man","i":"67","n":2078,"avg":7.51,"p98":0.9,"p96":2.8,"p94":7.7,"phi":11.3}};
-  function _censusKey(t, i) {
-    return (t||'').toLowerCase().replace(/^the\s+/i,'').replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim()
-      + '_' + String(i||'').toLowerCase().trim();
+  // Full 2,359-issue CGC census table lives in ./census.js. We import the
+  // formatter function and call it with this book's title+issue; it returns
+  // either a paragraph of injected calibration context (when the issue is in
+  // the census) or an empty string (when it isn't). Only the matched entry's
+  // ~100 tokens are added to the prompt — the underlying table size has no
+  // effect on per-assessment token cost.
+  let censusContext = '';
+  try {
+    const { formatCensusForPrompt } = await import('./census.js');
+    censusContext = formatCensusForPrompt(title, issueNumber) || '';
+  } catch (e) {
+    console.error('[census] lookup failed, continuing without census context:', e?.message || e);
   }
-  function getCensusContext(t, i) {
-    const d = _CENSUS[_censusKey(t, i)];
-    if (!d) return '';
-    return `\n\nCGC CENSUS DATA FOR THIS BOOK (${d.t} #${d.i}):`
-      + `\nTotal CGC submissions: ${d.n.toLocaleString()} copies`
-      + `\nAverage CGC grade: ${d.avg}`
-      + `\nGrade distribution: 9.8=${d.p98}%, 9.6=${d.p96}%, 9.4=${d.p94}%, 9.4+=${d.phi}%`
-      + `\nCALIBRATION: Anchor your grade to this data. If ${d.phi}% of submissions grade 9.4+,`
-      + ` a high-grade copy is realistic. The average of ${d.avg} shows what most copies look like.`;
-  }
-  const censusContext = getCensusContext(title, issueNumber);
 
   // ── Photo availability ──────────────────────────────────────────────────────
   // hasInteriorPhoto: whether the user submitted a photo intended as interior/page-quality
@@ -708,7 +705,13 @@ CGC "Brittle" → PSA "Brittle" (caps grade at 3.5)
 Do not invent defects not visible in photos. If the PSA grade equals the CGC grade, psaNotes must be an empty string. When PSA differs, explain the reason in psaNotes in 1-2 sentences (e.g. "Eye appeal argues for the higher grade — strong color saturation and flat spine despite the minor stress lines.").
 
 If a CGC or PSA label is visible: read grade, cert number, page quality, and key issue notations directly from it.
-${censusContext}${notesBlock}
+${censusContext}
+CRITICAL — CENSUS USE IS INTERNAL ONLY:
+The CGC census data above (if present) is a calibration anchor for you, NOT a fact to share with the user. The graderNotes, aiAssessment, psaNotes, and labelNotes fields are all user-visible. NEVER mention the census, submission counts, average grades across submissions, distribution percentages, statistical priors, population data, or any phrasing that reveals you consulted external data about this issue. NEVER write things like "the census average for this book is X," "most copies grade lower," "statistically this should be a Y," "based on submission data," or "I'm anchoring to the population." The user must read the assessment as if you graded only what you see in their photos.
+
+If census data raised or lowered your grade from what the photos alone would suggest, justify the grade using on-the-book observations — defects you actually see, eye appeal, page quality, structural condition — never the statistics. If you cannot find an on-the-book justification for the census-informed grade, trust the photos over the census and grade what you see. The census is a sanity check, not an override.
+
+${notesBlock}
 ${highGradeBlock}
 ════════════════════════════════════
 RETURN ONLY THIS JSON — no markdown, no preamble
@@ -722,7 +725,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
   "pageQuality": "full designation e.g. Off-White to White",
   "grade": "CGC grade estimate e.g. 7.0",
   "graderNotes": "• one bullet per defect, official CGC terminology",
-  "aiAssessment": "2-4 sentences: overall impression, dominant defects, grade rationale, enhancement judgment",
+  "aiAssessment": "2-4 sentences: overall impression, dominant defects, grade rationale, enhancement judgment. Describe ONLY what you see in this specific copy's photos — defects, eye appeal, page quality, structure. NEVER mention census data, submission counts, average grades, distribution percentages, statistical anchoring, or any external data about this issue. Grade rationale must reference the book's actual condition, not population statistics.",
   "labelNotes": "key issue notations from label if visible, empty string if none",
   "keyInfo": "1-2 sentences about key-issue significance — ONLY populate if (a) the issue appears in the census data injected above AND (b) you are confident the fact is widely documented. Examples: 'First full appearance of Wolverine.' / 'First appearance of the Punisher.' Stay silent (empty string) if the issue is not a recognized key, even if you might guess at its significance. Better to omit than to hallucinate.",
   "enhance": true,
@@ -735,7 +738,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
   "officialPSAGrade": null,
   "officialPSACert": null,
   "roboGrade": {
-    "version": "2.41",
+    "version": "2.42",
     "score": 0,
     "confidenceRange": ${baseConf},
     "frontScore": 0,
@@ -747,8 +750,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
       {"type":"","location":"","measurement":"","severity":"Med","colorBreaking":false,"category":"Front"}
     ],
     "stapleCondition": "",
-    "restorationFlags": [],
-    "assessmentNotes": ""
+    "restorationFlags": []
   }
 }`;
 
