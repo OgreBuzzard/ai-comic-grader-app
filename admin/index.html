@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#152e10">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Robograder Admin</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23152e10'/%3E%3Ctext x='50' y='65' text-anchor='middle' font-size='50' font-family='Helvetica' font-weight='bold' fill='%237aa838'%3ERG%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #0e1a0a;
+    --panel: #1a2d12;
+    --panel-2: #243f1a;
+    --rule: #3a5818;
+    --text: #e8efe0;
+    --text-dim: #9abf60;
+    --accent: #7aa838;
+    --accent-soft: #4a7028;
+    --danger: #c75450;
+    --safe-top: env(safe-area-inset-top, 0);
+    --safe-bot: env(safe-area-inset-bottom, 0);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior-y: none;
+  }
+  body {
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding-top: var(--safe-top);
+    padding-bottom: var(--safe-bot);
+  }
+  header {
+    position: sticky;
+    top: var(--safe-top);
+    z-index: 10;
+    background: var(--panel);
+    border-bottom: 1px solid var(--rule);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  header h1 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+    color: var(--accent);
+    letter-spacing: 0.04em;
+  }
+  header .back {
+    background: none;
+    border: 1px solid var(--accent-soft);
+    color: var(--accent);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  header .back:active { background: var(--panel-2); }
+  header .sign-out {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 13px;
+    cursor: pointer;
+    padding: 4px 8px;
+  }
+  main {
+    padding: 16px;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+
+  /* Sign-in screen */
+  .signin {
+    min-height: calc(100vh - 60px);
+    min-height: calc(100dvh - 60px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px;
+  }
+  .signin p { color: var(--text-dim); margin-bottom: 24px; }
+  .signin button {
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    padding: 14px 28px;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .signin .err { color: var(--danger); margin-top: 16px; font-size: 14px; }
+
+  /* Loading state */
+  .loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+  .err-banner {
+    background: rgba(199, 84, 80, 0.15);
+    border: 1px solid var(--danger);
+    color: var(--text);
+    padding: 12px;
+    border-radius: 6px;
+    margin-bottom: 16px;
+    font-size: 14px;
+  }
+
+  /* Stats cards */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  @media (min-width: 600px) {
+    .stats-grid { grid-template-columns: 1fr 1fr 1fr; }
+  }
+  .stat-card {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .stat-card h3 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    margin: 0 0 8px;
+    font-weight: 600;
+  }
+  .stat-card .total {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 6px;
+    line-height: 1;
+  }
+  .stat-card .breakouts {
+    display: flex;
+    gap: 12px;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .stat-card .breakouts span strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  /* Sort controls */
+  .sort-bar {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .sort-bar button {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    color: var(--text-dim);
+    padding: 6px 10px;
+    border-radius: 14px;
+    font-size: 12px;
+    white-space: nowrap;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sort-bar button.active {
+    background: var(--accent-soft);
+    color: var(--text);
+    border-color: var(--accent);
+  }
+  .sort-bar button .dir { opacity: 0.7; margin-left: 4px; }
+
+  /* User & item list rows */
+  .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 16px;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .row:active { background: var(--panel-2); }
+  .row .main { min-width: 0; flex: 1; }
+  .row .title {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .row .sub {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 3px;
+  }
+  .row .meta {
+    text-align: right;
+    margin-left: 12px;
+    flex-shrink: 0;
+  }
+  .row .meta .big {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .row .meta .label {
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .load-more {
+    width: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--rule);
+    color: var(--accent);
+    padding: 12px;
+    border-radius: 6px;
+    margin-top: 12px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+
+  /* User detail */
+  .user-detail .profile {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
+  }
+  .user-detail .profile h2 {
+    margin: 0 0 4px;
+    font-size: 18px;
+    color: var(--accent);
+  }
+  .user-detail .profile .email {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin-bottom: 12px;
+    word-break: break-all;
+  }
+  .user-detail .profile .pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .pill {
+    background: var(--panel-2);
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    padding: 3px 10px;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .pill strong { color: var(--text); font-weight: 600; }
+
+  .section-h {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    margin: 0 0 8px;
+    font-weight: 600;
+  }
+
+  /* Item detail */
+  .item-detail .field-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .item-detail .field-grid .label,
+  .item-detail .field-grid .value {
+    padding: 8px 12px;
+    font-size: 13px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .item-detail .field-grid .label {
+    color: var(--text-dim);
+    background: var(--panel-2);
+  }
+  .item-detail .field-grid .value {
+    color: var(--text);
+    word-break: break-word;
+  }
+  .item-detail .field-grid > :nth-last-child(-n+2) { border-bottom: none; }
+
+  .item-detail .scores {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    margin-bottom: 16px;
+  }
+  .score-cell {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 10px 6px;
+    text-align: center;
+  }
+  .score-cell .num {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--accent);
+    line-height: 1;
+  }
+  .score-cell .lbl {
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  .notes-block {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+  }
+  .notes-block h4 {
+    font-size: 11px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin: 0 0 6px;
+    letter-spacing: 0.08em;
+  }
+  .notes-block p {
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text);
+    margin: 0;
+    white-space: pre-wrap;
+  }
+
+  .images-block {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .img-wrap {
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .img-wrap .label {
+    padding: 6px 12px;
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    border-bottom: 1px solid var(--rule);
+  }
+  .img-wrap img {
+    width: 100%;
+    display: block;
+  }
+
+  .empty {
+    text-align: center;
+    color: var(--text-dim);
+    padding: 40px 20px;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<div id="root">
+  <div class="loading">Loading…</div>
+</div>
+
+<!-- Firebase SDK (compat libs match the pattern used in the main app) -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+
+<script>
+// ── Firebase config ────────────────────────────────────────────────────────
+// Same project as the main app. These are public client keys — security is
+// enforced server-side by the admin email allowlist on each API endpoint.
+const firebaseConfig = {
+  apiKey: "REPLACE_WITH_FIREBASE_API_KEY",
+  authDomain: "REPLACE_WITH_AUTH_DOMAIN",
+  projectId: "REPLACE_WITH_PROJECT_ID",
+  storageBucket: "REPLACE_WITH_STORAGE_BUCKET",
+  messagingSenderId: "REPLACE_WITH_SENDER_ID",
+  appId: "REPLACE_WITH_APP_ID"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+
+// ── State ──────────────────────────────────────────────────────────────────
+const state = {
+  user: null,           // Firebase user object
+  idToken: null,        // Cached for API calls
+  view: 'dashboard',    // 'dashboard' | 'user' | 'item'
+  selectedUid: null,
+  selectedItemId: null,
+  sort: 'displayName',
+  dir: 'asc',
+  users: [],
+  hasMore: false,
+  stats: null,
+  error: null,
+};
+
+const root = document.getElementById('root');
+
+// ── API helper ─────────────────────────────────────────────────────────────
+async function api(path) {
+  if (!state.idToken) state.idToken = await state.user.getIdToken();
+  let res = await fetch(path, {
+    headers: { Authorization: 'Bearer ' + state.idToken }
+  });
+  // Token might have expired — refresh once and retry.
+  if (res.status === 401) {
+    state.idToken = await state.user.getIdToken(true);
+    res = await fetch(path, {
+      headers: { Authorization: 'Bearer ' + state.idToken }
+    });
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+// ── Auth ───────────────────────────────────────────────────────────────────
+auth.onAuthStateChanged(async (user) => {
+  if (!user) {
+    state.user = null;
+    state.idToken = null;
+    renderSignIn();
+    return;
+  }
+  state.user = user;
+  state.idToken = await user.getIdToken();
+  renderDashboard();
+});
+
+async function signIn() {
+  try {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    await auth.signInWithPopup(provider);
+  } catch (e) {
+    state.error = e.message || String(e);
+    renderSignIn();
+  }
+}
+
+async function signOut() {
+  await auth.signOut();
+}
+
+// ── Rendering ──────────────────────────────────────────────────────────────
+function renderSignIn() {
+  root.innerHTML = `
+    <header>
+      <h1>ROBOGRADER ADMIN</h1>
+    </header>
+    <div class="signin">
+      <p>Admin access required.</p>
+      <button id="signin-btn">Sign in with Google</button>
+      ${state.error ? `<div class="err">${escapeHtml(state.error)}</div>` : ''}
+    </div>
+  `;
+  document.getElementById('signin-btn').onclick = signIn;
+}
+
+async function renderDashboard() {
+  state.view = 'dashboard';
+  state.selectedUid = null;
+  state.selectedItemId = null;
+  root.innerHTML = `
+    <header>
+      <h1>ROBOGRADER ADMIN</h1>
+      <button class="sign-out" id="signout-btn">Sign out</button>
+    </header>
+    <main>
+      <div id="stats-section"><div class="loading">Loading stats…</div></div>
+      <h3 class="section-h">Users</h3>
+      <div class="sort-bar" id="sort-bar"></div>
+      <div id="users-section"><div class="loading">Loading users…</div></div>
+    </main>
+  `;
+  document.getElementById('signout-btn').onclick = signOut;
+  renderSortBar();
+  loadStats();
+  loadUsers(true);
+}
+
+function renderSortBar() {
+  const sorts = [
+    { key: 'displayName', label: 'Name' },
+    { key: 'assessmentCredits', label: 'Credits' },
+    { key: 'itemCount', label: 'Items' },
+    { key: 'lastAssessment', label: 'Last Assessed' },
+  ];
+  const bar = document.getElementById('sort-bar');
+  bar.innerHTML = sorts.map(s => `
+    <button data-key="${s.key}" class="${state.sort === s.key ? 'active' : ''}">
+      ${s.label}${state.sort === s.key ? ` <span class="dir">${state.dir === 'asc' ? '↑' : '↓'}</span>` : ''}
+    </button>
+  `).join('');
+  bar.querySelectorAll('button').forEach(btn => {
+    btn.onclick = () => {
+      const key = btn.dataset.key;
+      if (state.sort === key) {
+        // Same column: toggle direction
+        state.dir = state.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        // New column: pick a sensible default direction
+        state.sort = key;
+        state.dir = key === 'displayName' ? 'asc' : 'desc';
+      }
+      renderSortBar();
+      loadUsers(true);
+    };
+  });
+}
+
+async function loadStats() {
+  try {
+    state.stats = await api('/api/stats');
+    renderStats();
+  } catch (e) {
+    document.getElementById('stats-section').innerHTML =
+      `<div class="err-banner">Stats failed: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function renderStats() {
+  if (!state.stats) return;
+  const { accounts, items, revenue } = state.stats;
+  const dollars = c => '$' + (c / 100).toFixed(2);
+  document.getElementById('stats-section').innerHTML = `
+    <div class="stats-grid">
+      <div class="stat-card">
+        <h3>Accounts</h3>
+        <div class="total">${accounts.total}</div>
+        <div class="breakouts">
+          <span><strong>${accounts.day}</strong> 24h</span>
+          <span><strong>${accounts.week}</strong> 7d</span>
+          <span><strong>${accounts.month}</strong> 30d</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <h3>Items</h3>
+        <div class="total">${items.total}</div>
+        <div class="breakouts">
+          <span><strong>${items.day}</strong> 24h</span>
+          <span><strong>${items.week}</strong> 7d</span>
+          <span><strong>${items.month}</strong> 30d</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <h3>Revenue</h3>
+        <div class="total">${dollars(revenue.totalCents)}</div>
+        <div class="breakouts">
+          <span><strong>${dollars(revenue.dayCents)}</strong> 24h</span>
+          <span><strong>${dollars(revenue.weekCents)}</strong> 7d</span>
+          <span><strong>${dollars(revenue.monthCents)}</strong> 30d</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function loadUsers(reset = false) {
+  if (reset) {
+    state.users = [];
+    state.hasMore = false;
+  }
+  const offset = state.users.length;
+  try {
+    const res = await api(`/api/users?sort=${state.sort}&dir=${state.dir}&limit=50&offset=${offset}`);
+    state.users = state.users.concat(res.users);
+    state.hasMore = res.hasMore;
+    renderUsers();
+  } catch (e) {
+    document.getElementById('users-section').innerHTML =
+      `<div class="err-banner">Users failed: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function renderUsers() {
+  const sec = document.getElementById('users-section');
+  if (state.users.length === 0) {
+    sec.innerHTML = '<div class="empty">No users yet.</div>';
+    return;
+  }
+  const rightLabel = ({
+    displayName: u => ({ big: u.assessmentCredits, label: 'credits' }),
+    assessmentCredits: u => ({ big: u.assessmentCredits, label: 'credits' }),
+    itemCount: u => ({ big: u.itemCount, label: 'items' }),
+    lastAssessment: u => ({
+      big: u.lastAssessment ? new Date(u.lastAssessment).toLocaleDateString() : '—',
+      label: 'last grade'
+    }),
+  })[state.sort];
+  sec.innerHTML = state.users.map(u => {
+    const r = rightLabel(u);
+    return `
+      <div class="row" data-uid="${u.uid}">
+        <div class="main">
+          <div class="title">${escapeHtml(u.displayName)}</div>
+          <div class="sub">${u.itemCount} item${u.itemCount === 1 ? '' : 's'} · ${escapeHtml(u.email)}</div>
+        </div>
+        <div class="meta">
+          <div class="big">${escapeHtml(String(r.big))}</div>
+          <div class="label">${r.label}</div>
+        </div>
+      </div>
+    `;
+  }).join('') + (state.hasMore ? `<button class="load-more" id="load-more-btn">Load more</button>` : '');
+  sec.querySelectorAll('.row').forEach(row => {
+    row.onclick = () => showUser(row.dataset.uid);
+  });
+  if (state.hasMore) {
+    document.getElementById('load-more-btn').onclick = () => loadUsers(false);
+  }
+}
+
+async function showUser(uid) {
+  state.view = 'user';
+  state.selectedUid = uid;
+  root.innerHTML = `
+    <header>
+      <button class="back" id="back-btn">← Users</button>
+      <h1>USER</h1>
+      <button class="sign-out" id="signout-btn">Sign out</button>
+    </header>
+    <main class="user-detail">
+      <div class="loading">Loading user…</div>
+    </main>
+  `;
+  document.getElementById('back-btn').onclick = renderDashboard;
+  document.getElementById('signout-btn').onclick = signOut;
+  try {
+    const { user, items } = await api(`/api/user?uid=${encodeURIComponent(uid)}`);
+    renderUserDetail(user, items);
+  } catch (e) {
+    document.querySelector('main').innerHTML =
+      `<div class="err-banner">User load failed: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function renderUserDetail(user, items) {
+  document.querySelector('main').innerHTML = `
+    <div class="profile">
+      <h2>${escapeHtml(user.displayName)}</h2>
+      <div class="email">${escapeHtml(user.email)}</div>
+      <div class="pills">
+        <span class="pill">Credits: <strong>${user.assessmentCredits}</strong></span>
+        <span class="pill">Items: <strong>${items.length}</strong></span>
+        <span class="pill">Purchased total: <strong>${user.totalPurchased}</strong></span>
+        ${user.createdAt ? `<span class="pill">Joined: <strong>${new Date(user.createdAt).toLocaleDateString()}</strong></span>` : ''}
+      </div>
+    </div>
+    <h3 class="section-h">Items (${items.length})</h3>
+    ${items.length === 0
+      ? '<div class="empty">No items yet.</div>'
+      : items.map(it => `
+          <div class="row" data-id="${it.id}">
+            <div class="main">
+              <div class="title">${escapeHtml(it.title)}${it.issue ? ' #' + escapeHtml(it.issue) : ''}</div>
+              <div class="sub">${it.roboGradeDate ? new Date(it.roboGradeDate).toLocaleDateString() : 'no date'} · ID ${escapeHtml(it.roboGradeId)}</div>
+            </div>
+            <div class="meta">
+              <div class="big">${it.score ?? '—'}</div>
+              <div class="label">RG</div>
+            </div>
+          </div>
+        `).join('')
+    }
+  `;
+  document.querySelectorAll('.row').forEach(row => {
+    row.onclick = () => showItem(user.uid, row.dataset.id);
+  });
+}
+
+async function showItem(uid, id) {
+  state.view = 'item';
+  state.selectedItemId = id;
+  root.innerHTML = `
+    <header>
+      <button class="back" id="back-btn">← User</button>
+      <h1>ITEM</h1>
+      <button class="sign-out" id="signout-btn">Sign out</button>
+    </header>
+    <main class="item-detail">
+      <div class="loading">Loading item…</div>
+    </main>
+  `;
+  document.getElementById('back-btn').onclick = () => showUser(uid);
+  document.getElementById('signout-btn').onclick = signOut;
+  try {
+    const { item } = await api(`/api/item?uid=${encodeURIComponent(uid)}&id=${encodeURIComponent(id)}`);
+    renderItemDetail(item);
+  } catch (e) {
+    document.querySelector('main').innerHTML =
+      `<div class="err-banner">Item load failed: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function renderItemDetail(it) {
+  const v = (x) => (x === null || x === undefined || x === '') ? '—' : x;
+  const fieldGrid = (pairs) => `
+    <div class="field-grid">
+      ${pairs.map(([l, val]) =>
+        `<div class="label">${escapeHtml(l)}</div><div class="value">${escapeHtml(String(v(val)))}</div>`
+      ).join('')}
+    </div>
+  `;
+
+  const imgLabel = (i, total) => {
+    if (total === 4) return ['Front', 'Back', 'Page Quality', 'Spine'][i] || `Image ${i+1}`;
+    return `Image ${i+1}`;
+  };
+
+  document.querySelector('main').innerHTML = `
+    <div class="profile" style="margin-bottom:16px;">
+      <h2>${escapeHtml(it.title)}${it.issue ? ' #' + escapeHtml(it.issue) : ''}</h2>
+      <div class="pills">
+        ${it.publisher ? `<span class="pill">${escapeHtml(it.publisher)}</span>` : ''}
+        ${it.issueDate ? `<span class="pill">${escapeHtml(it.issueDate)}</span>` : ''}
+        ${it.publicListing ? `<span class="pill" style="color:var(--accent);">Public</span>` : `<span class="pill">Private</span>`}
+        ${it.version ? `<span class="pill">v${escapeHtml(it.version)}</span>` : ''}
+      </div>
+    </div>
+
+    <h3 class="section-h">Sub-scores</h3>
+    <div class="scores">
+      <div class="score-cell"><div class="num">${v(it.frontScore)}</div><div class="lbl">Front</div></div>
+      <div class="score-cell"><div class="num">${v(it.backScore)}</div><div class="lbl">Back</div></div>
+      <div class="score-cell"><div class="num">${v(it.spineScore)}</div><div class="lbl">Spine</div></div>
+      <div class="score-cell"><div class="num">${v(it.interiorScore)}</div><div class="lbl">Interior</div></div>
+    </div>
+
+    <h3 class="section-h">Grades</h3>
+    ${fieldGrid([
+      ['Robograde Score', it.score],
+      ['Confidence Range', it.confidenceRange != null ? '±' + it.confidenceRange : '—'],
+      ['Assessed CGC Grade', it.assessedCGCGrade],
+      ['Page Quality', it.pageQuality],
+    ])}
+
+    <h3 class="section-h">Assessment Metadata</h3>
+    ${fieldGrid([
+      ['Robograde ID', it.roboGradeId],
+      ['Robograde Date', it.roboGradeDate ? new Date(it.roboGradeDate).toLocaleString() : null],
+    ])}
+
+    ${it.aiGraderNotes ? `
+      <div class="notes-block">
+        <h4>AI Grader Notes</h4>
+        <p>${escapeHtml(it.aiGraderNotes)}</p>
+      </div>` : ''}
+
+    ${it.aiAssessment ? `
+      <div class="notes-block">
+        <h4>AI Assessment</h4>
+        <p>${escapeHtml(it.aiAssessment)}</p>
+      </div>` : ''}
+
+    ${it.images.length > 0 ? `
+      <h3 class="section-h">Images (${it.images.length})</h3>
+      <div class="images-block">
+        ${it.images.map((url, i) => `
+          <div class="img-wrap">
+            <div class="label">${imgLabel(i, it.images.length)}</div>
+            <img src="${escapeAttr(url)}" alt="" loading="lazy">
+          </div>
+        `).join('')}
+      </div>
+    ` : '<div class="empty">No images.</div>'}
+
+    ${it.cornerImages && it.cornerImages.length > 0 ? `
+      <h3 class="section-h" style="margin-top:20px;">Corner Macros (${it.cornerImages.length})</h3>
+      <div class="images-block">
+        ${it.cornerImages.map((url, i) => `
+          <div class="img-wrap">
+            <div class="label">${['Top Left','Top Right','Bottom Left','Bottom Right'][i] || ('Corner ' + (i+1))}</div>
+            <img src="${escapeAttr(url)}" alt="" loading="lazy">
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
+  `;
+}
+
+// ── Utility ────────────────────────────────────────────────────────────────
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[c]);
+}
+function escapeAttr(s) {
+  return escapeHtml(s);
+}
+</script>
+</body>
+</html>
