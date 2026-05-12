@@ -106,6 +106,86 @@
   }
   .signin .err { color: var(--danger); margin-top: 16px; font-size: 14px; }
 
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .tabs button {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tabs button.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .tabs button:not(.active):active { color: var(--text); }
+
+  /* Search input */
+  .search-input {
+    width: 100%;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    color: var(--text);
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-size: 14px;
+    margin-bottom: 12px;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  .search-input::placeholder { color: var(--text-dim); }
+  .search-input:focus { outline: none; border-color: var(--accent); }
+
+  /* Count line */
+  .count-line {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+  }
+
+  /* Item-row with thumbnail */
+  .item-row {
+    align-items: center;
+  }
+  .row-thumb {
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+    margin-right: 12px;
+    background: var(--panel-2);
+    border-radius: 4px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .row-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .row-thumb.empty::before {
+    content: '?';
+    color: var(--text-dim);
+    font-size: 18px;
+    opacity: 0.5;
+  }
+
   /* Loading state */
   .loading {
     display: flex;
@@ -433,10 +513,17 @@ const state = {
   view: 'dashboard',    // 'dashboard' | 'user' | 'item'
   selectedUid: null,
   selectedItemId: null,
+  tab: 'users',         // 'users' | 'items'
   sort: 'displayName',
   dir: 'asc',
   users: [],
   hasMore: false,
+  itemsSort: 'date',
+  itemsDir: 'desc',
+  itemsList: [],
+  itemsHasMore: false,
+  itemsTotal: 0,
+  itemSearch: '',
   stats: null,
   error: null,
 };
@@ -516,15 +603,55 @@ async function renderDashboard() {
     </header>
     <main>
       <div id="stats-section"><div class="loading">Loading stats…</div></div>
-      <h3 class="section-h">Users</h3>
-      <div class="sort-bar" id="sort-bar"></div>
-      <div id="users-section"><div class="loading">Loading users…</div></div>
+      <div class="tabs" id="tabs">
+        <button data-tab="users" class="${state.tab === 'items' ? '' : 'active'}">Users</button>
+        <button data-tab="items" class="${state.tab === 'items' ? 'active' : ''}">All Items</button>
+      </div>
+      <div id="tab-content"></div>
     </main>
   `;
   document.getElementById('signout-btn').onclick = signOut;
-  renderSortBar();
+  document.querySelectorAll('#tabs button').forEach(btn => {
+    btn.onclick = () => {
+      state.tab = btn.dataset.tab;
+      renderDashboard();
+    };
+  });
   loadStats();
+  if (state.tab === 'items') {
+    renderItemsTab();
+  } else {
+    renderUsersTab();
+  }
+}
+
+function renderUsersTab() {
+  document.getElementById('tab-content').innerHTML = `
+    <div class="sort-bar" id="sort-bar"></div>
+    <div id="users-section"><div class="loading">Loading users…</div></div>
+  `;
+  renderSortBar();
   loadUsers(true);
+}
+
+function renderItemsTab() {
+  document.getElementById('tab-content').innerHTML = `
+    <input type="search" id="items-search" placeholder="Search title, issue, or user…" class="search-input" value="${escapeAttr(state.itemSearch || '')}">
+    <div class="sort-bar" id="items-sort-bar"></div>
+    <div id="items-section"><div class="loading">Loading items…</div></div>
+  `;
+  // Debounce search input so we don't fire a request on every keystroke
+  const searchInput = document.getElementById('items-search');
+  let searchTimer = null;
+  searchInput.oninput = (e) => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      state.itemSearch = e.target.value;
+      loadItems(true);
+    }, 300);
+  };
+  renderItemsSortBar();
+  loadItems(true);
 }
 
 function renderSortBar() {
@@ -659,6 +786,88 @@ function renderUsers() {
   }
 }
 
+function renderItemsSortBar() {
+  const sorts = [
+    { key: 'date', label: 'Date' },
+    { key: 'title', label: 'Title' },
+  ];
+  const bar = document.getElementById('items-sort-bar');
+  if (!bar) return;
+  bar.innerHTML = sorts.map(s => `
+    <button data-key="${s.key}" class="${state.itemsSort === s.key ? 'active' : ''}">
+      ${s.label}${state.itemsSort === s.key ? ` <span class="dir">${state.itemsDir === 'asc' ? '↑' : '↓'}</span>` : ''}
+    </button>
+  `).join('');
+  bar.querySelectorAll('button').forEach(btn => {
+    btn.onclick = () => {
+      const key = btn.dataset.key;
+      if (state.itemsSort === key) {
+        state.itemsDir = state.itemsDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        state.itemsSort = key;
+        state.itemsDir = key === 'title' ? 'asc' : 'desc';
+      }
+      renderItemsSortBar();
+      loadItems(true);
+    };
+  });
+}
+
+async function loadItems(reset = false) {
+  if (reset) {
+    state.itemsList = [];
+    state.itemsHasMore = false;
+  }
+  const offset = state.itemsList.length;
+  const q = encodeURIComponent(state.itemSearch || '');
+  try {
+    const res = await api(`/api/items?sort=${state.itemsSort}&dir=${state.itemsDir}&limit=50&offset=${offset}&q=${q}`);
+    state.itemsList = state.itemsList.concat(res.items);
+    state.itemsHasMore = res.hasMore;
+    state.itemsTotal = res.total;
+    renderItemsList();
+  } catch (e) {
+    const sec = document.getElementById('items-section');
+    if (sec) sec.innerHTML = `<div class="err-banner">Items failed: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function renderItemsList() {
+  const sec = document.getElementById('items-section');
+  if (!sec) return;
+  if (state.itemsList.length === 0) {
+    sec.innerHTML = state.itemSearch
+      ? `<div class="empty">No items match "${escapeHtml(state.itemSearch)}".</div>`
+      : '<div class="empty">No items yet.</div>';
+    return;
+  }
+  const countLine = state.itemSearch
+    ? `<div class="count-line">${state.itemsTotal} match${state.itemsTotal === 1 ? '' : 'es'}</div>`
+    : `<div class="count-line">${state.itemsTotal} total item${state.itemsTotal === 1 ? '' : 's'}</div>`;
+  sec.innerHTML = countLine + state.itemsList.map(it => {
+    const thumbSrc = it.inlineThumb || it.thumbUrl;
+    return `
+      <div class="row item-row" data-uid="${it.uid}" data-id="${it.id}">
+        ${thumbSrc ? `<div class="row-thumb"><img src="${escapeAttr(thumbSrc)}" alt="" loading="lazy"></div>` : '<div class="row-thumb empty"></div>'}
+        <div class="main">
+          <div class="title">${escapeHtml(it.title)}${it.issue ? ' #' + escapeHtml(it.issue) : ''}</div>
+          <div class="sub">${escapeHtml(it.userName)} · ${it.roboGradeDate ? new Date(it.roboGradeDate).toLocaleDateString() : 'no date'}</div>
+        </div>
+        <div class="meta">
+          <div class="big">${it.score ?? '—'}${it.highGradeAssessed ? '<span style="font-size:14px;color:var(--accent);margin-left:2px;">+</span>' : ''}</div>
+          <div class="label">RG</div>
+        </div>
+      </div>
+    `;
+  }).join('') + (state.itemsHasMore ? `<button class="load-more" id="load-more-items-btn">Load more</button>` : '');
+  sec.querySelectorAll('.item-row').forEach(row => {
+    row.onclick = () => showItem(row.dataset.uid, row.dataset.id, 'items');
+  });
+  if (state.itemsHasMore) {
+    document.getElementById('load-more-items-btn').onclick = () => loadItems(false);
+  }
+}
+
 async function showUser(uid) {
   state.view = 'user';
   state.selectedUid = uid;
@@ -715,16 +924,19 @@ function renderUserDetail(user, items, publicRate) {
     }
   `;
   document.querySelectorAll('.row').forEach(row => {
-    row.onclick = () => showItem(user.uid, row.dataset.id);
+    row.onclick = () => showItem(user.uid, row.dataset.id, 'user');
   });
 }
 
-async function showItem(uid, id) {
+async function showItem(uid, id, fromTab) {
   state.view = 'item';
   state.selectedItemId = id;
+  // fromTab tells us where the user came from so "Back" goes back to the
+  // right place. 'items' = all-items list; otherwise = a user's profile.
+  const fromItemsList = fromTab === 'items';
   root.innerHTML = `
     <header>
-      <button class="back" id="back-btn">← User</button>
+      <button class="back" id="back-btn">← ${fromItemsList ? 'All Items' : 'User'}</button>
       <h1>ITEM</h1>
       <button class="sign-out" id="signout-btn">Sign out</button>
     </header>
@@ -732,7 +944,13 @@ async function showItem(uid, id) {
       <div class="loading">Loading item…</div>
     </main>
   `;
-  document.getElementById('back-btn').onclick = () => showUser(uid);
+  document.getElementById('back-btn').onclick = () => {
+    if (fromItemsList) {
+      renderDashboard();
+    } else {
+      showUser(uid);
+    }
+  };
   document.getElementById('signout-btn').onclick = signOut;
   try {
     const { item } = await api(`/api/item?uid=${encodeURIComponent(uid)}&id=${encodeURIComponent(id)}`);
