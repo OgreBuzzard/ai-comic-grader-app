@@ -897,6 +897,7 @@ function renderUserDetail(user, items, publicRate) {
     <div class="profile">
       <h2>${escapeHtml(user.displayName)}</h2>
       <div class="email">${escapeHtml(user.email)}</div>
+      <div class="email" style="font-family: ui-monospace, SFMono-Regular, monospace; font-size: 11px; opacity: 0.7;">UID: ${escapeHtml(user.uid)}</div>
       <div class="pills">
         <span class="pill">Credits: <strong>${user.assessmentCredits}</strong></span>
         <span class="pill">Items: <strong>${items.length}</strong></span>
