@@ -9,6 +9,21 @@
 //
 // Auth: same admin-email gate.
 
+
+
+
+// Helper: unescape if env var was double-escaped during paste.
+function parseServiceAccount() {
+  let raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (!raw) throw new Error('FIREBASE_SERVICE_ACCOUNT not set');
+  if (raw.indexOf('\\"') !== -1) {
+    raw = raw.split('\\"').join('"');
+    raw = raw.split('\\\\').join('\\');
+    raw = raw.split('\\n').join('\n');
+  }
+  return JSON.parse(raw);
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -20,7 +35,7 @@ export default async function handler(req, res) {
     const { getFirestore } = await import('firebase-admin/firestore');
 
     if (!getApps().length) {
-      initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
+      initializeApp({ credential: cert(parseServiceAccount()) });
     }
 
     // ── Auth gate ────────────────────────────────────────────────────────────

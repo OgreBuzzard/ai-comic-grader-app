@@ -1,63 +1,90 @@
-// /api/stats.js — DIAGNOSTIC VERSION
-// Reports what's actually in FIREBASE_SERVICE_ACCOUNT without exposing the value.
+// /api/stats.js
+// Top-level dashboard aggregates.
+
+// Helper: unescape if env var was double-escaped during paste.
+function parseServiceAccount() {
+  let raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (!raw) throw new Error('FIREBASE_SERVICE_ACCOUNT not set');
+  if (raw.includes('\\"')) {
+    raw = raw.replace(/\\"/g, '"').replace(/\\\\/g, '\\').replace(/\\n/g, '\n');
+  }
+  return JSON.parse(raw);
+}
 
 export default async function handler(req, res) {
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-
-  if (raw === undefined) {
-    return res.status(500).json({
-      diagnostic: 'FIREBASE_SERVICE_ACCOUNT is undefined — env var not set or not deployed',
-    });
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Character codes of the first 5 and last 5 characters.
-  // 123 = { (correct opening for JSON)
-  // 8220 = " left smart quote (WRONG — not valid JSON)
-  // 8221 = " right smart quote (WRONG)
-  // 34 = " straight quote (correct)
-  // 32 = space, 9 = tab, 10 = newline, 13 = carriage return (any of these at start = problem)
-  // 65279 = BOM (byte order mark — invisible, common paste-from-Word issue)
-  const firstChars = [];
-  const lastChars = [];
-  for (let i = 0; i < Math.min(5, raw.length); i++) {
-    firstChars.push({ pos: i, char: raw[i], code: raw.charCodeAt(i) });
-  }
-  for (let i = Math.max(0, raw.length - 5); i < raw.length; i++) {
-    lastChars.push({ pos: i, char: raw[i], code: raw.charCodeAt(i) });
-  }
-
-  // Try to parse and report exactly where it fails
-  let parseError = null;
   try {
-    JSON.parse(raw);
-    parseError = 'NONE — JSON parses successfully';
-  } catch (e) {
-    parseError = e.message;
-  }
+    const { initializeApp, getApps, cert } = await import('firebase-admin/app');
+    const { getAuth } = await import('firebase-admin/auth');
+    const { getFirestore } = await import('firebase-admin/firestore');
 
-  // Look for smart quotes anywhere in the first 200 chars
-  let smartQuotesFound = [];
-  for (let i = 0; i < Math.min(raw.length, 200); i++) {
-    const code = raw.charCodeAt(i);
-    if (code === 8220 || code === 8221 || code === 8216 || code === 8217) {
-      smartQuotesFound.push({ pos: i, code });
-      if (smartQuotesFound.length >= 5) break;
+    if (!getApps().length) {
+      initializeApp({ credential: cert(parseServiceAccount()) });
     }
-  }
 
-  return res.status(500).json({
-    diagnostic: 'FIREBASE_SERVICE_ACCOUNT env var inspection',
-    length: raw.length,
-    firstChars,
-    lastChars,
-    parseError,
-    smartQuotesFound: smartQuotesFound.length > 0 ? smartQuotesFound : 'none in first 200 chars',
-    interpretation: {
-      shouldStartWith: '{ (charCode 123)',
-      shouldEndWith: '} (charCode 125)',
-      validQuoteCharCode: 34,
-      invalidSmartQuoteCodes: [8216, 8217, 8220, 8221],
-      bomCode: 65279,
-    },
-  });
+    const auth = req.headers.authorization || '';
+    const m = auth.match(/^Bearer\s+(.+)$/);
+    if (!m) return res.status(401).json({ error: 'Unauthorized' });
+
+    let decoded;
+    try { decoded = await getAuth().verifyIdToken(m[1]); }
+    catch { return res.status(401).json({ error: 'Unauthorized' }); }
+
+    const adminEmails = (process.env.ADMIN_EMAILS || '')
+      .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+    const callerEmail = (decoded.email || '').toLowerCase();
+    if (!callerEmail || !adminEmails.includes(callerEmail)) {
+      console.warn(`[admin-stats] denied: ${callerEmail || '<no email>'}`);
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const now = Date.now();
+    const DAY = 24 * 60 * 60 * 1000;
+    const cutoffs = { day: now - DAY, week: now - 7 * DAY, month: now - 30 * DAY };
+
+    const db = getFirestore();
+
+    const usersSnap = await db.collection('users').get();
+    const accounts = { total: usersSnap.size, day: 0, week: 0, month: 0 };
+    for (const doc of usersSnap.docs) {
+      const ms = Date.parse(doc.data().createdAt || '');
+      if (Number.isNaN(ms)) continue;
+      if (ms >= cutoffs.day) accounts.day++;
+      if (ms >= cutoffs.week) accounts.week++;
+      if (ms >= cutoffs.month) accounts.month++;
+    }
+
+    const itemsSnap = await db.collectionGroup('items').get();
+    const items = { total: itemsSnap.size, day: 0, week: 0, month: 0 };
+    for (const doc of itemsSnap.docs) {
+      const d = doc.data();
+      const ms = Date.parse(d.roboGradeDate || d.dateAcquired || '');
+      if (Number.isNaN(ms)) continue;
+      if (ms >= cutoffs.day) items.day++;
+      if (ms >= cutoffs.week) items.week++;
+      if (ms >= cutoffs.month) items.month++;
+    }
+
+    const purchasesSnap = await db.collection('purchases').get();
+    const revenue = { totalCents: 0, dayCents: 0, weekCents: 0, monthCents: 0 };
+    for (const doc of purchasesSnap.docs) {
+      const d = doc.data();
+      const amt = d.amountCents || 0;
+      const ms = d.createdAtMs || Date.parse(d.createdAt || '');
+      revenue.totalCents += amt;
+      if (Number.isNaN(ms)) continue;
+      if (ms >= cutoffs.day) revenue.dayCents += amt;
+      if (ms >= cutoffs.week) revenue.weekCents += amt;
+      if (ms >= cutoffs.month) revenue.monthCents += amt;
+    }
+
+    return res.status(200).json({ accounts, items, revenue, generatedAt: new Date().toISOString() });
+
+  } catch (e) {
+    console.error('[admin-stats] error:', e);
+    return res.status(500).json({ error: 'Stats computation failed' });
+  }
 }
