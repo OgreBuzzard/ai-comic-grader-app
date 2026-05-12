@@ -6,7 +6,7 @@ function parseServiceAccount() {
   let raw = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (!raw) throw new Error('FIREBASE_SERVICE_ACCOUNT not set');
   if (raw.includes('\\"')) {
-    raw = raw.replace(/\\"/g, '"').replace(/\\\\/g, '\\').replace(/\\n/g, '\n');
+    raw = raw.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
   }
   return JSON.parse(raw);
 }

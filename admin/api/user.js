@@ -18,7 +18,6 @@ function parseServiceAccount() {
   if (raw.indexOf('\\"') !== -1) {
     raw = raw.split('\\"').join('"');
     raw = raw.split('\\\\').join('\\');
-    raw = raw.split('\\n').join('\n');
   }
   return JSON.parse(raw);
 }
