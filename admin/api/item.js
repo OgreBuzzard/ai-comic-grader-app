@@ -118,6 +118,7 @@ export default async function handler(req, res) {
       aiGraderNotes: flat.aiGraderNotes || rg.graderNotes || '',
       aiAssessment: flat.aiAssessment || rg.aiAssessment || '',
       psaNotes: flat.psaNotes || rg.psaNotes || '',
+      labelNotes: flat.labelNotes || '',
       keyInfo: flat.keyInfo || '',
 
       // Images

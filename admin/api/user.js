@@ -87,6 +87,13 @@ export default async function handler(req, res) {
       const flat = (raw.schemaVersion === 3)
         ? { ...raw, ...(raw.comicData || {}), ...(raw.cardData || {}) }
         : raw;
+      // High-grade refinement run = corner images present.
+      // raw.cornerImages preserved on either schema version since it lives
+      // at the root, not inside comicData.
+      const cornerArr = Array.isArray(raw.cornerImages) ? raw.cornerImages : [];
+      const highGradeAssessed = cornerArr.filter(e =>
+        typeof e === 'string' ? e : (e && e.url)
+      ).length > 0;
       return {
         id: d.id,
         title: flat.title || '(untitled)',
@@ -96,6 +103,7 @@ export default async function handler(req, res) {
         score: flat.roboGrade?.score ?? null,
         assessedCGCGrade: flat.assessedCGCGrade ?? null,
         publicListing: !!flat.publicListing,
+        highGradeAssessed,
       };
     });
 
@@ -106,7 +114,16 @@ export default async function handler(req, res) {
       return bm - am;
     });
 
-    return res.status(200).json({ user, items });
+    // Public-listing rate is the practical signal for "does this user
+    // prefer public?" since the actual `publicByDefault` preference lives
+    // in localStorage on their device, not in Firestore. With ≥3 items the
+    // rate is a useful proxy; below that it's just noise.
+    const publicCount = items.filter(it => it.publicListing).length;
+    const publicRate = items.length > 0
+      ? { publicCount, totalCount: items.length, percent: Math.round(100 * publicCount / items.length) }
+      : null;
+
+    return res.status(200).json({ user, items, publicRate });
 
   } catch (e) {
     console.error('[admin-user] error:', e);
