@@ -675,15 +675,15 @@ async function showUser(uid) {
   document.getElementById('back-btn').onclick = renderDashboard;
   document.getElementById('signout-btn').onclick = signOut;
   try {
-    const { user, items } = await api(`/api/user?uid=${encodeURIComponent(uid)}`);
-    renderUserDetail(user, items);
+    const { user, items, publicRate } = await api(`/api/user?uid=${encodeURIComponent(uid)}`);
+    renderUserDetail(user, items, publicRate);
   } catch (e) {
     document.querySelector('main').innerHTML =
       `<div class="err-banner">User load failed: ${escapeHtml(e.message)}</div>`;
   }
 }
 
-function renderUserDetail(user, items) {
+function renderUserDetail(user, items, publicRate) {
   document.querySelector('main').innerHTML = `
     <div class="profile">
       <h2>${escapeHtml(user.displayName)}</h2>
@@ -693,6 +693,8 @@ function renderUserDetail(user, items) {
         <span class="pill">Items: <strong>${items.length}</strong></span>
         <span class="pill">Purchased total: <strong>${user.totalPurchased}</strong></span>
         ${user.createdAt ? `<span class="pill">Joined: <strong>${new Date(user.createdAt).toLocaleDateString()}</strong></span>` : ''}
+        <span class="pill" style="${user.trainingOptIn ? 'color:var(--accent);' : 'color:var(--text-dim);'}">Training: <strong>${user.trainingOptIn ? 'opt-in' : 'opt-out'}</strong></span>
+        ${publicRate ? `<span class="pill">Public listings: <strong>${publicRate.publicCount}/${publicRate.totalCount}</strong> (${publicRate.percent}%)</span>` : ''}
       </div>
     </div>
     <h3 class="section-h">Items (${items.length})</h3>
@@ -705,7 +707,7 @@ function renderUserDetail(user, items) {
               <div class="sub">${it.roboGradeDate ? new Date(it.roboGradeDate).toLocaleDateString() : 'no date'} · ID ${escapeHtml(it.roboGradeId)}</div>
             </div>
             <div class="meta">
-              <div class="big">${it.score ?? '—'}</div>
+              <div class="big">${it.score ?? '—'}${it.highGradeAssessed ? '<span style="font-size:14px;color:var(--accent);margin-left:2px;">+</span>' : ''}</div>
               <div class="label">RG</div>
             </div>
           </div>
@@ -764,6 +766,7 @@ function renderItemDetail(it) {
         ${it.issueDate ? `<span class="pill">${escapeHtml(it.issueDate)}</span>` : ''}
         ${it.publicListing ? `<span class="pill" style="color:var(--accent);">Public</span>` : `<span class="pill">Private</span>`}
         ${it.version ? `<span class="pill">v${escapeHtml(it.version)}</span>` : ''}
+        ${it.cornerImages && it.cornerImages.length > 0 ? `<span class="pill" style="color:var(--accent);"><strong>HG</strong> assessed</span>` : ''}
       </div>
     </div>
 
@@ -779,6 +782,8 @@ function renderItemDetail(it) {
     ${fieldGrid([
       ['Robograde Score', it.score],
       ['Confidence Range', it.confidenceRange != null ? '±' + it.confidenceRange : '—'],
+      ['CGC AI Prediction', it.cgcAIGrade],
+      ['PSA AI Prediction', it.psaAIGrade],
       ['Assessed CGC Grade', it.assessedCGCGrade],
       ['Page Quality', it.pageQuality],
     ])}
@@ -788,6 +793,18 @@ function renderItemDetail(it) {
       ['Robograde ID', it.roboGradeId],
       ['Robograde Date', it.roboGradeDate ? new Date(it.roboGradeDate).toLocaleString() : null],
     ])}
+
+    ${it.keyInfo ? `
+      <div class="notes-block">
+        <h4>Key Info</h4>
+        <p>${escapeHtml(it.keyInfo)}</p>
+      </div>` : ''}
+
+    ${it.labelNotes ? `
+      <div class="notes-block">
+        <h4>Label Notes</h4>
+        <p>${escapeHtml(it.labelNotes)}</p>
+      </div>` : ''}
 
     ${it.aiGraderNotes ? `
       <div class="notes-block">
@@ -799,6 +816,12 @@ function renderItemDetail(it) {
       <div class="notes-block">
         <h4>AI Assessment</h4>
         <p>${escapeHtml(it.aiAssessment)}</p>
+      </div>` : ''}
+
+    ${it.psaNotes ? `
+      <div class="notes-block">
+        <h4>PSA Variance</h4>
+        <p>${escapeHtml(it.psaNotes)}</p>
       </div>` : ''}
 
     ${it.images.length > 0 ? `
