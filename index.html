@@ -3698,6 +3698,39 @@ async function findDuplicateAssessment(currentImages, currentItemId) {
 // Returns: { images: [urls], thumbnails: [urls] } in the same order as input.
 // Thumbnails are skipped for the corner-image flow (only main images appear
 // in list view, so no point paying for corner thumbs).
+// S13 v17: Parallel pre-upload during the assessment animation.
+//
+// Called from assessGrade() right after the API has returned the (possibly
+// normalized) title. We build the comicId, start the image uploads (which
+// take ~3-8s for 4 photos), and return a promise that resolves when uploads
+// are done. The promise is stashed on formData._preUploadPromise so
+// submitForm() can await it instead of running its own upload pass.
+//
+// The animation runs for ~17 more seconds after the API returns, so by the
+// time the user taps COMPLETE, uploads have typically finished and the
+// save-to-Firestore feels instant (no several-second hang on COMPLETE).
+//
+// Returns a promise that resolves to:
+//   { id, mainResult, cornerResult }
+// or rejects on upload failure. The caller (assessGrade) catches and logs;
+// submitForm has a fallback to upload anyway if the pre-upload didn't run
+// or returned no result.
+async function startPreUpload(rawImages, rawCornerImages, comicId) {
+  if (window.RobograderScan && window.RobograderScan.debugLog) {
+    window.RobograderScan.debugLog(`startPreUpload: id=${comicId}, images=${rawImages.filter(Boolean).length}, corners=${rawCornerImages.filter(Boolean).length}`);
+  }
+  const mainResult = await processImagesForSave(rawImages, comicId, STORAGE_SLOTS_MAIN, {
+    generateThumbs: true,
+  });
+  const cornerResult = await processImagesForSave(rawCornerImages, comicId, STORAGE_SLOTS_CORNER, {
+    generateThumbs: false,
+  });
+  if (window.RobograderScan && window.RobograderScan.debugLog) {
+    window.RobograderScan.debugLog(`startPreUpload done: ${mainResult.images.length} main URLs, ${cornerResult.images.length} corner URLs`);
+  }
+  return { id: comicId, mainResult, cornerResult };
+}
+
 async function processImagesForSave(images, comicId, slotNames, options = {}) {
   const { generateThumbs = false, existingThumbs = [] } = options;
   const fullResult = [];
@@ -3862,6 +3895,11 @@ function mountStepTracker() {
          style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;" />`;
 
   window.RobograderScan.slideOverlayIntoChest(overlayHtml, boxesHtml);
+
+  // S13 v17: the grid cycle + needle pulse + first progress button
+  // are kicked off from animateStepsFromDiagnostics after the overlay
+  // slide-in completes, so the timing is gated on API arrival and we
+  // don't have races between the slide-in timeout and the step pacing.
 }
 
 function setStep(id, state, detail='') {
@@ -3898,18 +3936,35 @@ async function animateStepsFromDiagnostics(d) {
   if (window.RobograderScan && window.RobograderScan.debugLog) {
     window.RobograderScan.debugLog(`animateStepsFromDiagnostics called, d keys: ${Object.keys(d||{}).join(',') || 'none'}`);
   }
-  // S13 v10: the 'analyzing' step has been removed from the overlay
-  // entirely. The laser-scan animation that runs during photo upload
-  // is the analyzing visualization — by the time this function runs,
-  // the user has already SEEN the photos being processed. The 5 step
-  // boxes that remain are the work that happens after scan: populate
-  // metadata, compare to mint reference, page quality check, grade
-  // reference, confirm grade.
-  await delay(120);
+  // S13 v17: this function now owns the entire Phase C-D sequence:
+  //   1. Wait for overlay slide-in (2000ms) to complete
+  //   2. Start cycling grid + needle pulse
+  //   3. Mark POPULATING INFO done (1st step)
+  //   4. Pace remaining 4 steps at 1.5s intervals
+  //
+  // API gating: this function is called only after the API has returned,
+  // so by the time we hit step 4, both conditions ("min 1.5s spacing"
+  // AND "API responded") are satisfied. The animation timing is fixed
+  // here because the API has already responded.
+  //
+  // Total Phase C-D duration: 2000ms (slide-in) + 1500ms × 4 (paced
+  // steps) = 8000ms. With API arrival around 12s into the assessment
+  // and overlay slide starting at ~19s, the final step completes around
+  // 27s — close to but slightly faster than the storyboard's 0:30.
+  // Caller does its own delays for score reveal after this returns.
+  await delay(2000);
+  // Start grid + needle now that the overlay is fully in place.
+  if (window.RobograderScan && window.RobograderScan.startGridCycle) {
+    window.RobograderScan.startGridCycle();
+  }
+  if (window.RobograderScan && window.RobograderScan.startNeedlePulse) {
+    window.RobograderScan.startNeedlePulse();
+  }
   setStep('populating', 'done');
-  await delay(180);
+  const STEP_GAP = 1500;
+  await delay(STEP_GAP);
   setStep('mint', d.comicvineRef ? 'done' : 'failed');
-  await delay(180);
+  await delay(STEP_GAP);
   // Page Quality Check fails (red) if EITHER:
   //   • The reference image couldn't be fetched from the repo, OR
   //   • The user didn't include an interior photo (no page to compare against).
@@ -3920,9 +3975,9 @@ async function animateStepsFromDiagnostics(d) {
   const interiorIncluded = d.hasInteriorPhoto !== false; // undefined → assume yes
   const pqOk = d.pageQualityRef && interiorIncluded;
   setStep('pq', pqOk ? 'done' : 'failed');
-  await delay(180);
+  await delay(STEP_GAP);
   setStep('grading', 'done');
-  await delay(180);
+  await delay(STEP_GAP);
   setStep('confirming', d.gradeRef ? 'done' : 'failed');
 }
 
@@ -4082,6 +4137,21 @@ function mountResults(cgc, psa) {
   if (window._modalFrameTimer) { clearInterval(window._modalFrameTimer); window._modalFrameTimer = null; }
   const gridEl = document.getElementById('tracker-grid-frame');
   if (gridEl) gridEl.style.display = 'none';
+
+  // S13 v17: stop the new cycling-grid animation and the needle pulse.
+  // The needle then sweeps smoothly to its final score-derived angle
+  // (Phase E start). Grid frames freeze on whichever frame was active
+  // at stop time — fine; the assessing animation is done, so the grid
+  // displaying any of its 8 states is a reasonable resting visual.
+  if (window.RobograderScan && window.RobograderScan.stopGridCycle) {
+    window.RobograderScan.stopGridCycle();
+  }
+  if (window.RobograderScan && window.RobograderScan.stopNeedlePulse) {
+    window.RobograderScan.stopNeedlePulse();
+  }
+  if (window.RobograderScan && window.RobograderScan.sweepNeedleToScore && roboScore != null) {
+    window.RobograderScan.sweepNeedleToScore(roboScore);
+  }
 
   // Build badge shells with type-specific initial values for the animation
   // to count up from. RG starts at 0, CGC/PSA at 0.0.
@@ -4308,6 +4378,37 @@ async function assessHighGrade() {
     if (unified.psaGrade) cgc._psaGrade = unified.psaGrade;
     cgc._highGradeTier = true;
     cgc._highGradeUnlocked = (unified.roboGrade && unified.roboGrade.score >= 80);
+
+    // S13 v17: kick off pre-upload in parallel with the rest of the
+    // animation. Same pattern as the standard flow; for HG we have both
+    // main and corner images to upload. By the time the user taps
+    // COMPLETE, uploads should be done.
+    try {
+      const normalizedTitle = normalizeTitle(
+        (cgc.title || formData.title || '').trim().replace(/\s+/g, ' ').replace(/^The\s+/i, ''),
+        cgc.issueDate || formData.issueDate
+      );
+      const issueForId = cgc.issue != null ? String(cgc.issue) : (formData.issue || '');
+      const preUploadId = formData.id || buildComicId(normalizedTitle, issueForId);
+      const rawImages = (formData.images || []).filter(Boolean);
+      const rawCornerImages = (formData.cornerImages || []).filter(Boolean);
+      const hasNewImages = rawImages.some(isDataUrl) || rawCornerImages.some(isDataUrl);
+      if (hasNewImages && formData._imagesChanged !== false) {
+        formData._preUploadId = preUploadId;
+        formData._preUploadPromise = startPreUpload(rawImages, rawCornerImages, preUploadId)
+          .catch(err => {
+            if (window.RobograderScan && window.RobograderScan.debugLog) {
+              window.RobograderScan.debugLog(`hg pre-upload failed: ${err.message}`);
+            }
+            console.warn('[pre-upload hg] failed:', err);
+            formData._preUploadPromise = null;
+            formData._preUploadId = null;
+            return null;
+          });
+      }
+    } catch (e) {
+      console.warn('[pre-upload hg] setup failed:', e);
+    }
 
     const d = unified._diagnostics || {};
     await animateStepsFromDiagnostics(d);
@@ -5174,6 +5275,46 @@ async function assessGrade(){
       cgc._roboGrade=unified.roboGrade;
     }
     if(unified.psaGrade) cgc._psaGrade=unified.psaGrade;
+
+    // S13 v17: Pre-upload images to Cloud Storage in parallel with the
+    // rest of the assessment animation. By the time the user reaches the
+    // results panel (~17s from this point) and taps COMPLETE, the
+    // uploads have typically already finished and submitForm()'s save
+    // path is just a Firestore write — no several-second hang on tap.
+    //
+    // We use the post-API title (AI may have normalized it) when building
+    // the comicId so uploads land at the same path submitForm() will use.
+    // The promise is stashed on formData so submitForm can await it.
+    // Fire-and-forget — submitForm has a fallback that runs the upload
+    // synchronously if _preUploadPromise is missing or fails.
+    try {
+      const normalizedTitle = normalizeTitle(
+        (cgc.title || formData.title || '').trim().replace(/\s+/g, ' ').replace(/^The\s+/i, ''),
+        cgc.issueDate || formData.issueDate
+      );
+      const issueForId = cgc.issue != null ? String(cgc.issue) : (formData.issue || '');
+      const preUploadId = formData.id || buildComicId(normalizedTitle, issueForId);
+      const rawImages = (formData.images || []).filter(Boolean);
+      const rawCornerImages = (formData.cornerImages || []).filter(Boolean);
+      const hasNewImages = rawImages.some(isDataUrl) || rawCornerImages.some(isDataUrl);
+      if (hasNewImages && formData._imagesChanged !== false) {
+        formData._preUploadId = preUploadId;
+        formData._preUploadPromise = startPreUpload(rawImages, rawCornerImages, preUploadId)
+          .catch(err => {
+            if (window.RobograderScan && window.RobograderScan.debugLog) {
+              window.RobograderScan.debugLog(`pre-upload failed (will retry in submitForm): ${err.message}`);
+            }
+            console.warn('[pre-upload] failed:', err);
+            // Clear the promise so submitForm falls through to its own upload path.
+            formData._preUploadPromise = null;
+            formData._preUploadId = null;
+            return null;
+          });
+      }
+    } catch (e) {
+      console.warn('[pre-upload] setup failed (will retry in submitForm):', e);
+    }
+
     const d=unified._diagnostics||cgc._diagnostics||{};
     await animateStepsFromDiagnostics(d);
     _pendingAssessResult={cgc,psa};
@@ -6969,20 +7110,51 @@ async function submitForm(){
   let finalImages, finalCornerImages, finalThumbnails;
   try {
     if (formData._imagesChanged && newImageCount > 0) {
-      syncMsg(`Uploading ${newImageCount} image${newImageCount === 1 ? '' : 's'}...`);
-      // Preserve existing thumbnails for any pass-through images so we don't
-      // re-generate them needlessly.
-      const existingComic = formData.id ? items.find(c => c.id === formData.id) : null;
-      const existingThumbs = existingComic?.thumbnails || [];
-      const mainResult = await processImagesForSave(rawImages, id, STORAGE_SLOTS_MAIN, {
-        generateThumbs: true, existingThumbs
-      });
-      const cornerResult = await processImagesForSave(rawCornerImages, id, STORAGE_SLOTS_CORNER, {
-        generateThumbs: false
-      });
-      finalImages = mainResult.images;
-      finalThumbnails = mainResult.thumbnails;
-      finalCornerImages = cornerResult.images;
+      // S13 v17: If assessGrade kicked off a pre-upload after the API
+      // returned, await it here instead of running a second upload. The
+      // pre-upload uses the same comicId we just built (or built before
+      // the user reached COMPLETE), so the URLs are identical to what a
+      // fresh upload would produce. If the pre-upload promise is missing
+      // (assess wasn't run, or pre-upload setup failed) or the awaited
+      // result is null (pre-upload upload failed and rejected the
+      // promise), we fall through to a fresh upload.
+      let preUpload = null;
+      if (formData._preUploadPromise && formData._preUploadId === id) {
+        syncMsg('Finishing upload…');
+        try {
+          preUpload = await formData._preUploadPromise;
+        } catch (e) {
+          console.warn('[pre-upload] await failed; falling back to fresh upload:', e);
+          preUpload = null;
+        }
+        // One-shot: clear so a future submit (e.g. user re-edits) gets
+        // a fresh upload path. Avoids reusing stale URLs across edits.
+        formData._preUploadPromise = null;
+        formData._preUploadId = null;
+      }
+
+      if (preUpload && preUpload.mainResult && preUpload.cornerResult) {
+        // Pre-upload succeeded — use its results directly.
+        finalImages = preUpload.mainResult.images;
+        finalThumbnails = preUpload.mainResult.thumbnails;
+        finalCornerImages = preUpload.cornerResult.images;
+      } else {
+        // No pre-upload result available — run the upload now.
+        syncMsg(`Uploading ${newImageCount} image${newImageCount === 1 ? '' : 's'}...`);
+        // Preserve existing thumbnails for any pass-through images so we don't
+        // re-generate them needlessly.
+        const existingComic = formData.id ? items.find(c => c.id === formData.id) : null;
+        const existingThumbs = existingComic?.thumbnails || [];
+        const mainResult = await processImagesForSave(rawImages, id, STORAGE_SLOTS_MAIN, {
+          generateThumbs: true, existingThumbs
+        });
+        const cornerResult = await processImagesForSave(rawCornerImages, id, STORAGE_SLOTS_CORNER, {
+          generateThumbs: false
+        });
+        finalImages = mainResult.images;
+        finalThumbnails = mainResult.thumbnails;
+        finalCornerImages = cornerResult.images;
+      }
     } else {
       // No changes — preserve the previously-saved URLs (and thumbnails).
       const existingComic = formData.id ? items.find(c => c.id === formData.id) : null;
