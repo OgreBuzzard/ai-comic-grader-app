@@ -3837,6 +3837,13 @@ const ASSESS_MODAL_BG    = 'https://raw.githubusercontent.com/OgreBuzzard/ai-com
 const ASSESS_DEFAULT_BOX = 'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/default_box.PNG';
 const ASSESS_SUCCESS_BOX = 'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/success_box.PNG';
 const ASSESS_FAILURE_BOX = 'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/failure_box.PNG';
+// S13 v23 (May 13): moved ASSESS_OVERLAY_BG up from below to be alongside
+// the other asset constants. The preload IIFE below references this
+// constant, and previously the preload ran BEFORE the declaration further
+// down, throwing a ReferenceError at script-load time that broke every
+// subsequent line of JS — including the splash-dismiss logic, leaving
+// the app stuck on the splash screen with the APNG looping forever.
+const ASSESS_OVERLAY_BG = 'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay.PNG';
 
 // S13 v19: preload the three box-state images at script-load time so
 // setStep's background-image swap is instant. Without this, the first
@@ -3861,7 +3868,8 @@ const ASSESS_FAILURE_BOX = 'https://raw.githubusercontent.com/OgreBuzzard/ai-com
 // 5 progress button shapes intentionally OMITTED so we can position
 // default_box / success_box / failure_box sprites over the overlay
 // independently and animate their state via setStep().
-const ASSESS_OVERLAY_BG = 'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay.PNG';
+// (ASSESS_OVERLAY_BG declared above with the other modal asset URLs so
+// the preload IIFE can reference it without a temporal-dead-zone error.)
 const ASSESS_FRAMES = [
   'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_01.PNG',
   'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_02.PNG',
