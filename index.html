@@ -1807,7 +1807,7 @@ async function migrateComicsToItems() {
 // these — call sites read the parallel metadata only when they need
 // provenance (badge UI, future filters).
 const COMIC_DATA_FIELDS = [
-  'title','issue','issueDate','publisher',
+  'title','issue','issueDate','publisher','printing',
   'grade','pageQuality',
   'cgcGrade','cgcCert','cgcNotes',
   'psaGrade','psaCert','psaNotes',
@@ -1823,6 +1823,18 @@ const COMIC_DATA_FIELDS = [
 const COMIC_DROP_FIELDS = ['press','uv','clean'];
 const DEFAULT_IMG_META = { source: 'upload', capturedAt: null, hash: null };
 
+// Returns true if a comic's `printing` field indicates a facsimile or reprint.
+// Centralized so the public-listing lock and any other reprint-aware UI all
+// agree on the rule. Case-insensitive; accepts either "Facsimile" wording
+// (Facsimile Reprint, Facsimile Reprint (2019), etc.) or "Reprint" wording.
+// Original-printing books have empty `printing` and return false. Variant
+// designations that aren't reprints (e.g., "Newsstand variant", "2nd print")
+// also return false — those are still authentic-era books.
+function isFacsimilePrinting(printing) {
+  if (!printing || typeof printing !== 'string') return false;
+  const p = printing.toLowerCase();
+  return p.includes('facsimile') || p.includes('reprint');
+}
 function splitImageArray(arr) {
   if (!Array.isArray(arr)) return { urls: [], metas: [] };
   const urls = [], metas = [];
@@ -2671,6 +2683,7 @@ function showDetail(id){
       ${selected.issue?`<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:18px;font-weight:600;color:#3a2e24">${formatIssue(selected.issue,selected.title)}</span>`:""}
       ${selected.issueDate?`<span style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(selected.issueDate))}</span>`:""}
     </div>`:""}
+    ${selected.printing?`<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#6a5a4a;margin-top:4px">${esc(selected.printing)}</div>`:""}
     ${selected.publisher?`<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:500;color:#8a7a6a;margin-top:4px">${esc(selected.publisher)}</div>`:""}
     ${(selected.cgcCert || selected.psaCert)?`<div style="font-family:'IBM Plex Mono','Menlo',monospace;font-size:13px;color:#5a4a3a;margin-top:6px;letter-spacing:0.3px">
       ${selected.cgcCert?`<div><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">CGC</span> <span style="margin-left:6px">${esc(selected.cgcCert)}</span></div>`:""}
@@ -3022,31 +3035,49 @@ function showDetail(id){
   // "Info cannot be seen publicly" text below the label.
   if (!isSample) {
     const isPublic = !!(selected.publicListing);
-    html += `<div style="display:flex;align-items:center;gap:12px;margin-top:20px">
-      <div style="flex:1">
-        <div style="font-size:13px;font-weight:700;color:#3a2e24;letter-spacing:0.05em">${isPublic ? 'Public Listing' : 'Private Listing'}</div>
-        <div style="font-size:11px;color:#8a7a6a;margin-top:3px;line-height:1.5">${isPublic ? 'Robograde score and images can be viewed from public ID link' : 'Info cannot be seen publicly'}</div>
-      </div>
-      <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer;flex-shrink:0">
-        <input type="checkbox" ${isPublic ? 'checked' : ''} onchange="togglePublicListing('${esc(selected.id)}', this.checked)"
-          style="opacity:0;width:0;height:0;position:absolute">
-        <span style="position:absolute;inset:0;border-radius:12px;background:${isPublic ? '#3a7a20' : '#bbb6ad'};transition:background 0.2s" id="detail-public-track"></span>
-        <span style="position:absolute;left:${isPublic ? '23px' : '3px'};top:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left 0.2s;box-shadow:0 1px 2px rgba(0,0,0,0.2)" id="detail-public-thumb"></span>
-      </label>
-    </div>`;
-    // View / Share links — only when the listing is public AND has an ID.
-    // View opens the public page in a new tab; Share invokes the OS share
-    // sheet via navigator.share() so users can text/email/copy the link
-    // through whatever channel their OS supports.
-    if (isPublic && selected.roboGradeId) {
-      // View opens an in-app modal preview (iframe) so the user stays inside
-      // the PWA. Share invokes the OS share sheet to send the actual public
-      // URL to others. Both styled as olive-bordered buttons to make the
-      // affordance obvious — earlier text-link styling was too easy to miss.
-      html += `<div style="display:flex;gap:10px;margin-top:10px">
-        <button class="rg-btn rg-btn-secondary rg-btn-md" onclick="openPublicPreview('${esc(selected.roboGradeId)}')">View Link</button>
-        <button class="rg-btn rg-btn-secondary rg-btn-md" onclick="sharePublicListing('${esc(selected.roboGradeId)}', '${esc(selected.title || '').replace(/'/g, "\\'")}', '${esc(selected.issue || '').replace(/'/g, "\\'")}')">Share</button>
+    const isReprintLocked = isFacsimilePrinting(selected.printing);
+    if (isReprintLocked) {
+      // Public listing is blocked for facsimile/reprint books. Reprints
+      // must not be passed off as originals on public listings — the lock
+      // is the integrity guarantee for any public viewer scanning a label.
+      html += `<div style="display:flex;align-items:center;gap:12px;margin-top:20px;opacity:0.85">
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:700;color:#7a4a2a;letter-spacing:0.05em">Public Listing Disabled</div>
+          <div style="font-size:11px;color:#8a6a5a;margin-top:3px;line-height:1.5">This book has been identified as a Facsimile Reprint and cannot be publicly listed.</div>
+        </div>
+        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:not-allowed;flex-shrink:0;opacity:0.5">
+          <input type="checkbox" disabled style="opacity:0;width:0;height:0;position:absolute">
+          <span style="position:absolute;inset:0;border-radius:12px;background:#bbb6ad"></span>
+          <span style="position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,0.2)"></span>
+        </label>
       </div>`;
+    } else {
+      html += `<div style="display:flex;align-items:center;gap:12px;margin-top:20px">
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:700;color:#3a2e24;letter-spacing:0.05em">${isPublic ? 'Public Listing' : 'Private Listing'}</div>
+          <div style="font-size:11px;color:#8a7a6a;margin-top:3px;line-height:1.5">${isPublic ? 'Robograde score and images can be viewed from public ID link' : 'Info cannot be seen publicly'}</div>
+        </div>
+        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer;flex-shrink:0">
+          <input type="checkbox" ${isPublic ? 'checked' : ''} onchange="togglePublicListing('${esc(selected.id)}', this.checked)"
+            style="opacity:0;width:0;height:0;position:absolute">
+          <span style="position:absolute;inset:0;border-radius:12px;background:${isPublic ? '#3a7a20' : '#bbb6ad'};transition:background 0.2s" id="detail-public-track"></span>
+          <span style="position:absolute;left:${isPublic ? '23px' : '3px'};top:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left 0.2s;box-shadow:0 1px 2px rgba(0,0,0,0.2)" id="detail-public-thumb"></span>
+        </label>
+      </div>`;
+      // View / Share links — only when the listing is public AND has an ID.
+      // View opens the public page in a new tab; Share invokes the OS share
+      // sheet via navigator.share() so users can text/email/copy the link
+      // through whatever channel their OS supports.
+      if (isPublic && selected.roboGradeId) {
+        // View opens an in-app modal preview (iframe) so the user stays inside
+        // the PWA. Share invokes the OS share sheet to send the actual public
+        // URL to others. Both styled as olive-bordered buttons to make the
+        // affordance obvious — earlier text-link styling was too easy to miss.
+        html += `<div style="display:flex;gap:10px;margin-top:10px">
+          <button class="rg-btn rg-btn-secondary rg-btn-md" onclick="openPublicPreview('${esc(selected.roboGradeId)}')">View Link</button>
+          <button class="rg-btn rg-btn-secondary rg-btn-md" onclick="sharePublicListing('${esc(selected.roboGradeId)}', '${esc(selected.title || '').replace(/'/g, "\\'")}', '${esc(selected.issue || '').replace(/'/g, "\\'")}')">Share</button>
+        </div>`;
+      }
     }
   }
 
@@ -3209,13 +3240,25 @@ async function sharePublicListing(roboGradeId, title, issue) {
 }
 
 async function togglePublicListing(id, val) {
+  // Defense in depth: even though the UI shows a disabled control for
+  // facsimile/reprint books, refuse the operation here if someone bypasses
+  // the UI (e.g., via manual JS or an older client showing a stale state).
+  // Authoritative server-side enforcement is a separate todo.
+  if (val) {
+    const comic = items.find(c => c.id === id);
+    if (comic && isFacsimilePrinting(comic.printing)) {
+      alert('This book has been identified as a Facsimile Reprint and cannot be publicly listed.');
+      try { showDetail(id); } catch(e) {}
+      return;
+    }
+  }
+
   // Optimistic visual update on the toggle itself, so the user gets immediate
   // feedback while the network round-trip happens.
   const track = document.getElementById('detail-public-track');
   const thumb = document.getElementById('detail-public-thumb');
   if (track) track.style.background = val ? '#3a7a20' : '#2a2a2a';
   if (thumb) thumb.style.left = val ? '23px' : '3px';
-
   try {
     const ref = fsDoc(window._db, 'users', window._currentUser.uid, 'items', id);
     await fsSetDoc(ref, { publicListing: val }, { merge: true });
@@ -3450,6 +3493,15 @@ const EMPTY={
   issue:"",
   issueDate:"",
   publisher:"",
+  // printing: variant/printing designation. Empty for typical original-printing
+  // books. Populated by assess.js when the model identifies the book as a
+  // non-standard printing — most importantly "Facsimile Reprint" (or
+  // "Facsimile Reprint (YYYY)" with the reprint year when visible). Also used
+  // for "2nd print", "Newsstand variant", etc. Surfaces on the print label
+  // (already wired) and on detail/edit views between issue date and publisher.
+  // When this field contains "Facsimile" or "Reprint", public listing is
+  // blocked — reprints must not be passed off as originals on public listings.
+  printing:"",
   // Grade fields
   grade:"",
   pageQuality:"",
@@ -4536,9 +4588,17 @@ async function assessHighGrade() {
 
     // Gate can still fire on high-grade
     if (unified.gateResult && unified.gateResult !== 'COMIC') {
-      // Server tracks strikes authoritatively when authenticated; fall back if not
-      if (!('lockout' in unified)) await incrementStrike(unified.gateResult, unified.gateReason || '');
-      showGateTerminatedPreview(unified.gateResult, unified.gateReason || '', unified.lockout);
+      // Server tracks strikes authoritatively when authenticated; fall back if not.
+      // MISSING_COVER is excluded from strikes — pre-API gate, no expense to
+      // protect against, user just needs to add the missing photo.
+      const isStrikeGate = unified.gateResult !== 'MISSING_COVER';
+      if (isStrikeGate && !('lockout' in unified)) {
+        await incrementStrike(unified.gateResult, unified.gateReason || '');
+      }
+      showGateTerminatedPreview(unified.gateResult, unified.gateReason || '', unified.lockout, {
+        cropFailure: unified.cropFailure || null,
+        missingCover: unified.missingCover || null
+      });
       assessing = false;
       return;
     }
@@ -5472,8 +5532,14 @@ async function assessGrade(){
     //    a valid comic book, show the flag UI and don't charge a credit.
     //    Server tracks strikes authoritatively; client falls back if not authed.
     if(unified.gateResult && unified.gateResult !== 'COMIC'){
-      if (!('lockout' in unified)) await incrementStrike(unified.gateResult, unified.gateReason||'');
-      showGateTerminatedPreview(unified.gateResult, unified.gateReason||'', unified.lockout);
+      const isStrikeGate = unified.gateResult !== 'MISSING_COVER';
+      if (isStrikeGate && !('lockout' in unified)) {
+        await incrementStrike(unified.gateResult, unified.gateReason||'');
+      }
+      showGateTerminatedPreview(unified.gateResult, unified.gateReason||'', unified.lockout, {
+        cropFailure: unified.cropFailure || null,
+        missingCover: unified.missingCover || null
+      });
       assessing=false;
       return;
     }
@@ -5546,9 +5612,16 @@ async function assessGrade(){
 //     popup with an OKAY button, displayed AFTER the user taps CANCEL
 //     (which dismisses the shell). Popup looks like a normal app dialog,
 //     not jammed into a results panel that wasn't sized for it.
-function showGateTerminatedPreview(gateResult, reason, lockout) {
+// Show a terminated-assessment preview when the gate catches a non-COMIC
+// result. Handles four gate types:
+//   - NOT_COMIC, FLAGGED: show "NOT A COMIC" / "INAPPROPRIATE" label
+//   - MISSING_COVER: show "MISSING COVER" label, requires both front and back
+//   - CROP_FAILURE: show "CROPPED PHOTO" label, requires full cover visible
+// Optional `details` object carries the structured payload for the latter two:
+//   { cropFailure: {frontFourCornersVisible, backFourCornersVisible, frontIssue, backIssue},
+//     missingCover: {frontMissing, backMissing} }
+function showGateTerminatedPreview(gateResult, reason, lockout, details) {
   if (window._modalFrameTimer) { clearInterval(window._modalFrameTimer); window._modalFrameTimer = null; }
-
   // S13 v18: stop the grid + needle animations on a gate failure too,
   // and don't sweep the needle (no score). Needle goes back to off.
   if (window.RobograderScan && window.RobograderScan.stopGridCycle) {
@@ -5560,23 +5633,27 @@ function showGateTerminatedPreview(gateResult, reason, lockout) {
   if (window.RobograderScan && window.RobograderScan.setNeedleAngle) {
     window.RobograderScan.setNeedleAngle(-48);
   }
-
   // Mark all 5 steps as failed.
   const allSteps = ['populating','mint','pq','grading','confirming'];
   allSteps.forEach((s,i) => {
     setTimeout(()=>setStep(s,'failed'),120+i*60);
   });
-
   if (!window.RobograderScan || !window.RobograderScan.slideResultsIntoPanel) {
     console.warn('showGateTerminatedPreview: scan-animation module not loaded');
     return;
   }
-
-  const label = gateResult === 'FLAGGED' ? 'INAPPROPRIATE' : 'NOT A COMIC';
-
-  // Stash the reason + lockout for the post-cancel popup.
-  window._pendingGateExplanation = { label, gateResult, reason, lockout };
-
+  // Label dispatch — short, uppercase, fits a single line on the result panel.
+  let label;
+  switch (gateResult) {
+    case 'FLAGGED':        label = 'INAPPROPRIATE'; break;
+    case 'MISSING_COVER':  label = 'MISSING COVER'; break;
+    case 'CROP_FAILURE':   label = 'CROPPED PHOTO'; break;
+    case 'NOT_COMIC':
+    default:               label = 'NOT A COMIC'; break;
+  }
+  // Stash for the post-cancel popup, including any structured details from
+  // the new MISSING_COVER and CROP_FAILURE gates.
+  window._pendingGateExplanation = { label, gateResult, reason, lockout, details: details || null };
   // Results panel: just the label and CANCEL button. No reason text here.
   const html = `
     <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:5% 5%;box-sizing:border-box;gap:5%;">
@@ -5586,9 +5663,7 @@ function showGateTerminatedPreview(gateResult, reason, lockout) {
         CANCEL
       </button>
     </div>`;
-
   window.RobograderScan.slideResultsIntoPanel(html);
-
   setTimeout(() => {
     const btn = document.getElementById('assess-complete-btn');
     if (btn) {
@@ -5607,7 +5682,6 @@ function showGateExplanationPopup() {
   const data = window._pendingGateExplanation;
   if (!data) return;
   window._pendingGateExplanation = null;
-
   let lockoutHtml = '';
   if (data.lockout && data.lockout.type === 'permanent') {
     lockoutHtml = `<div style="margin-top:14px;padding:10px 14px;background:#3a1010;color:#ff8080;border-radius:8px;font-size:13px;font-weight:700;line-height:1.4;text-align:center">⚠ Account flagged for review — repeated invalid uploads</div>`;
@@ -5615,14 +5689,49 @@ function showGateExplanationPopup() {
     const unlockAt = data.lockout.unlockAt ? new Date(data.lockout.unlockAt).toLocaleString() : '';
     lockoutHtml = `<div style="margin-top:14px;padding:10px 14px;background:#2a2010;color:#ffc080;border-radius:8px;font-size:13px;font-weight:700;line-height:1.4;text-align:center">Assessment locked for 24 hours${unlockAt?`<br><span style="font-weight:500;opacity:0.9">until ${esc(unlockAt)}</span>`:''}</div>`;
   }
-
+  // Build the body content. For MISSING_COVER and CROP_FAILURE, prefer
+  // specific per-cover guidance built from the structured payload over the
+  // generic reason string. Falls back to the server's reason text otherwise.
+  let bodyHtml = '';
+  const details = data.details || {};
+  if (data.gateResult === 'MISSING_COVER' && details.missingCover) {
+    const m = details.missingCover;
+    let msg = '';
+    if (m.frontMissing && m.backMissing) {
+      msg = 'Both a front and a back cover photo are required to assess a comic. Please add both photos and try again.';
+    } else if (m.frontMissing) {
+      msg = 'A front cover photo is required to assess a comic. Please add a front cover photo and try again.';
+    } else if (m.backMissing) {
+      msg = 'A back cover photo is required to assess a comic. Both front and back must be photographed so the full book can be evaluated. Please add a back cover photo and try again.';
+    } else {
+      msg = data.reason || 'Front and back cover photos are required.';
+    }
+    bodyHtml = `<div style="font-size:14px;color:#3a2a1a;line-height:1.5;text-align:left">${esc(msg)}</div>`;
+  } else if (data.gateResult === 'CROP_FAILURE' && details.cropFailure) {
+    const c = details.cropFailure;
+    const intro = `All four corners and edges of both the front and back cover must be visible in the photo. Cropped photos can hide critical details that change the assessment.`;
+    let specific = '';
+    if (!c.frontFourCornersVisible && c.frontIssue) {
+      specific += `<div style="margin-top:10px"><strong style="color:#3a2a1a">Front cover:</strong> ${esc(c.frontIssue)}</div>`;
+    } else if (!c.frontFourCornersVisible) {
+      specific += `<div style="margin-top:10px"><strong style="color:#3a2a1a">Front cover:</strong> not fully visible in photo.</div>`;
+    }
+    if (!c.backFourCornersVisible && c.backIssue) {
+      specific += `<div style="margin-top:6px"><strong style="color:#3a2a1a">Back cover:</strong> ${esc(c.backIssue)}</div>`;
+    } else if (!c.backFourCornersVisible) {
+      specific += `<div style="margin-top:6px"><strong style="color:#3a2a1a">Back cover:</strong> not fully visible in photo.</div>`;
+    }
+    bodyHtml = `<div style="font-size:14px;color:#3a2a1a;line-height:1.5;text-align:left">${esc(intro)}${specific}<div style="margin-top:10px;font-size:13px;color:#6a5a4a">Please retake or re-crop the photo and try again.</div></div>`;
+  } else if (data.reason) {
+    bodyHtml = `<div style="font-size:14px;color:#3a2a1a;line-height:1.5;text-align:center">${esc(data.reason)}</div>`;
+  }
   const popup = document.createElement('div');
   popup.id = 'gate-explanation-popup';
   popup.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:20px;';
   popup.innerHTML = `
     <div style="background:#fff;border-radius:14px;padding:24px 22px;max-width:380px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,0.3)">
       <div style="font-size:18px;font-weight:900;color:#1a1008;letter-spacing:1px;text-align:center;margin-bottom:10px">${data.label}</div>
-      ${data.reason ? `<div style="font-size:14px;color:#3a2a1a;line-height:1.5;text-align:center">${esc(data.reason)}</div>` : ''}
+      ${bodyHtml}
       ${lockoutHtml}
       <button id="gate-explanation-okay" style="margin-top:18px;width:100%;height:46px;background:#3a9ee0;color:#fff;border:none;font-size:15px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px">OKAY</button>
     </div>`;
