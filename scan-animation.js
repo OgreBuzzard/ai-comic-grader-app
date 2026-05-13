@@ -326,16 +326,25 @@
       background-size: contain;
       background-position: center;
       background-repeat: no-repeat;
-      transform: translateX(-110%);
+      /* S13 v19: changed from translateX(-110%) → translateX(-100%).
+         Photo width is exactly the slit-to-slit distance (83.4% of
+         cavity = same as right_slit_X - left_slit_X). translateX(-100%)
+         of self puts photo's RIGHT edge exactly at the left slit
+         (photo's natural left is 2.6%, -100% of width = -83.4%, so
+         photo's left edge ends at 2.6% - 83.4% = -80.8%; right edge
+         at -80.8% + 83.4% = 2.6%, exactly the left slit). The previous
+         -110% put the photo 8.3% (~48px on phone) past the slit,
+         showing extra empty space before slide-in. */
+      transform: translateX(-100%);
       /* S13 v18: 500ms photo slide (was 1000ms — storyboard calls for
          faster transitions to fit the per-photo 4-second cycle). */
       transition: transform 500ms cubic-bezier(0.65, 0, 0.35, 1);
     }
     .rg-scan-photo.in-view  { transform: translateX(0);    }
-    .rg-scan-photo.out-view { transform: translateX(110%); }
+    .rg-scan-photo.out-view { transform: translateX(100%); }
     .rg-scan-photo.reset    {
       transition: none !important;
-      transform: translateX(-110%) !important;
+      transform: translateX(-100%) !important;
     }
 
     /* Spine photo rotation — captured spine photos are landscape (the
@@ -576,7 +585,15 @@
       height: 18.54%;
       transform: translate(-50%, -100%) rotate(var(--rg-needle-rot, -48deg));
       transform-origin: 50% 100%;
-      transition: transform 200ms ease-out;
+      /* S13 v19: removed CSS transition. The JS setInterval at 33ms
+         (~30fps) drives the angle directly via --rg-needle-rot. The
+         previous 200ms ease-out transition combined with 33ms JS
+         updates was creating a backlog of 6+ overlapping transitions
+         per cycle, choking the main thread enough that setTimeout
+         callbacks for animateStepsFromDiagnostics were delayed by
+         ~14s in v18 testing. The final-sweep class adds back a 2000ms
+         transition for the single smooth sweep to the score-derived
+         angle in Phase E. */
       pointer-events: none;
       z-index: 2;
     }
@@ -679,21 +696,21 @@
     return `
       <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;">
         <div style="display:flex;gap:12px;justify-content:center;align-items:center;">
-          <div style="width:56px;height:56px;border:1.5px solid #3a5010;background:#0f1a05;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
-            <div style="font-size:20px;font-weight:800;color:#aaee30;line-height:1">0</div>
-            <div style="font-size:8px;color:#aaee30;opacity:0.75;margin-top:2px;letter-spacing:0.8px">RG</div>
+          <div style="width:64px;height:64px;border:1.5px solid #3a5010;background:#0f1a05;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
+            <div style="font-size:22px;font-weight:800;color:#aaee30;line-height:1">0</div>
+            <div style="font-size:9px;color:#aaee30;opacity:0.75;margin-top:2px;letter-spacing:0.8px">RG</div>
           </div>
-          <div style="width:56px;height:56px;background:#2a5a8a;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
-            <div style="font-size:20px;font-weight:800;color:#e0f0ff;line-height:1">0.0</div>
-            <div style="font-size:8px;color:#e0f0ff;opacity:0.75;margin-top:2px;letter-spacing:0.8px">CGC</div>
+          <div style="width:64px;height:64px;background:#2a5a8a;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
+            <div style="font-size:22px;font-weight:800;color:#e0f0ff;line-height:1">0.0</div>
+            <div style="font-size:9px;color:#e0f0ff;opacity:0.75;margin-top:2px;letter-spacing:0.8px">CGC</div>
           </div>
-          <div style="width:56px;height:56px;background:#8a2a2a;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
-            <div style="font-size:20px;font-weight:800;color:#ffe0e0;line-height:1">0.0</div>
-            <div style="font-size:8px;color:#ffe0e0;opacity:0.75;margin-top:2px;letter-spacing:0.8px">PSA</div>
+          <div style="width:64px;height:64px;background:#8a2a2a;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
+            <div style="font-size:22px;font-weight:800;color:#ffe0e0;line-height:1">0.0</div>
+            <div style="font-size:9px;color:#ffe0e0;opacity:0.75;margin-top:2px;letter-spacing:0.8px">PSA</div>
           </div>
         </div>
         <div id="result-pq" style="display:flex;align-items:center;justify-content:center;min-height:22px;">
-          <div style="background:#EEE8DC;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">White</div>
+          <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>
         </div>
         <button id="assess-complete-btn" disabled
           style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:36px;background:#5a5a5a;color:#bbb;border:none;font-size:13px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">

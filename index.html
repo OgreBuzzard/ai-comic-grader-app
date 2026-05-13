@@ -3803,6 +3803,18 @@ const ASSESS_MODAL_BG    = 'https://raw.githubusercontent.com/OgreBuzzard/ai-com
 const ASSESS_DEFAULT_BOX = 'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/default_box.PNG';
 const ASSESS_SUCCESS_BOX = 'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/success_box.PNG';
 const ASSESS_FAILURE_BOX = 'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/failure_box.PNG';
+
+// S13 v19: preload the three box-state images at script-load time so
+// setStep's background-image swap is instant. Without this, the first
+// time a box transitions from default → success the new image has to
+// load from network, and there's a visible transparent gap where the
+// cavity shows through the button location.
+(function preloadAssessBoxes() {
+  [ASSESS_DEFAULT_BOX, ASSESS_SUCCESS_BOX, ASSESS_FAILURE_BOX].forEach(url => {
+    const img = new Image();
+    img.src = url;
+  });
+})();
 // S13 v10: Progress_Overlay.PNG is the boxless overlay artwork (474×755,
 // alpha-cornered) — green metal panel + 4×4 light grid + gauge, with the
 // 5 progress button shapes intentionally OMITTED so we can position
@@ -4175,9 +4187,10 @@ function mountResults(cgc, psa) {
   const gridEl = document.getElementById('tracker-grid-frame');
   if (gridEl) gridEl.style.display = 'none';
 
-  // Build badge shells. 56px (8px bigger than v17's 48px per user
-  // feedback in frame 37). Initial values 0 / 0.0 / 0.0; count up to
-  // final via animateRoboGrade / animateGradeList.
+  // Build badge shells. 64px (S13 v19, was 56px in v18 per user
+  // feedback in frame 4 of v18 test — still room to grow). Initial
+  // values 0 / 0.0 / 0.0; count up to final via animateRoboGrade /
+  // animateGradeList.
   const makeBadge = (type, valueId) => {
     const configs = {
       'cgc-ai':   {bg:'#2a5a8a', text:'#e0f0ff', label:'CGC',  initial: '0.0'},
@@ -4186,9 +4199,9 @@ function mountResults(cgc, psa) {
     };
     const c = configs[type];
     const border = c.border ? `border:${c.border};` : '';
-    return `<div style="width:56px;height:56px;${border}background:${c.bg};border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
-      <div id="${valueId}" style="font-size:20px;font-weight:800;color:${c.text};line-height:1">${c.initial}</div>
-      <div style="font-size:8px;color:${c.text};opacity:0.75;margin-top:2px;letter-spacing:0.8px">${c.label}</div>
+    return `<div style="width:64px;height:64px;${border}background:${c.bg};border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
+      <div id="${valueId}" style="font-size:22px;font-weight:800;color:${c.text};line-height:1">${c.initial}</div>
+      <div style="font-size:9px;color:${c.text};opacity:0.75;margin-top:2px;letter-spacing:0.8px">${c.label}</div>
     </div>`;
   };
 
@@ -4200,12 +4213,14 @@ function mountResults(cgc, psa) {
   // The button STARTS as a disabled gray "ASSESSING" — same look as
   // the placeholder. After the count-up animations finish, JS swaps
   // its styling to the active blue/green COMPLETE/HIGH-GRADE button.
-  // No fade-in, no slide — in-place restyle so the user perceives the
-  // SAME button became active (not a new button appeared).
+  // PQ pill starts with white "White" placeholder; replaced in-place
+  // with actual PQ designation after score animations done. No cycle.
   const resultsHtml = `
     <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;">
       <div id="result-grades" style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badgesHtml}</div>
-      <div id="result-pq" style="display:flex;align-items:center;justify-content:center;min-height:22px;"></div>
+      <div id="result-pq" style="display:flex;align-items:center;justify-content:center;min-height:22px;">
+        <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>
+      </div>
       <button id="assess-complete-btn" disabled
         style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:36px;background:#5a5a5a;color:#bbb;border:none;font-size:13px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">
         ASSESSING
@@ -4219,8 +4234,8 @@ function mountResults(cgc, psa) {
   //   RoboGrade: 0ms start, 2000ms duration
   //   CGC:       1000ms start, 2000ms duration
   //   PSA:       2000ms start, 2000ms duration
-  //   PQ:        0ms start, 1800ms duration (linear cycle thru 7 designations)
-  //   ASSESSING → COMPLETE/HIGH-GRADE: at 4000ms (after all counts done)
+  //   PQ pill:   in-place swap at 4000ms (after all counts done)
+  //   ASSESSING → COMPLETE: at 4200ms (just after PQ swap)
   const roboEl = document.getElementById('anim-val-robo');
   const cgcEl  = document.getElementById('anim-val-cgc');
   const psaEl  = document.getElementById('anim-val-psa');
@@ -4235,14 +4250,22 @@ function mountResults(cgc, psa) {
   if (psaEl && psaGrade) {
     setTimeout(() => animateGradeList(psaEl, psaGrade, PSA_GRADE_LIST, 2000), 2000);
   }
+
+  // S13 v19: PQ pill in-place swap (no cycle). After score animations
+  // complete at 4000ms, replace the "White" placeholder with the actual
+  // assessed designation. Crossfade-style swap could be added later if
+  // the instant swap feels too abrupt.
   if (pq && pqEl) {
-    animatePageQuality(pqEl, pq, 1800);
+    setTimeout(() => {
+      const colors = PQ_COLORS[pq] || {bg:'#f0ece6', text:'#5a4e44'};
+      pqEl.innerHTML = `<div style="background:${colors.bg};color:${colors.text};padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">${pq}</div>`;
+      dbg(`mountResults: PQ pill set to "${pq}"`);
+    }, 4000);
   }
 
   // S13 v18: ASSESSING → active button (in-place styling change).
-  // No fade-in, no slide-in — same DOM element, restyled. User
-  // perceives "the button is now ready" rather than "a new button
-  // appeared."
+  // Same DOM element, restyled. User perceives "the button is now
+  // ready" rather than "a new button appeared."
   setTimeout(() => {
     const btn = document.getElementById('assess-complete-btn');
     if (!btn) return;
@@ -4270,7 +4293,7 @@ function mountResults(cgc, psa) {
     btn.style.cursor = 'pointer';
     btn.onclick = completeAssessment;
     dbg('mountResults: ASSESSING → active button');
-  }, 4000);
+  }, 4200);
 }
 
 // Backward-compat alias — older code may still call showResultPreview.
@@ -4307,6 +4330,14 @@ async function assessHighGrade() {
   }
 
   assessing = true;
+
+  // S13 v19: same immediate button-text update as standard flow.
+  const _hgBtn = document.getElementById('hg-assess-btn') || document.getElementById('assess-btn');
+  if (_hgBtn) {
+    _hgBtn.textContent = 'ASSESSING…';
+    _hgBtn.disabled = true;
+    _hgBtn.style.opacity = '0.75';
+  }
 
   // S12: HG follows the same scan-animation flow as standard assessment.
   // Animation runs in parallel with the API call. Modal opens after both
@@ -4408,6 +4439,9 @@ async function assessHighGrade() {
       const rawCornerImages = (formData.cornerImages || []).filter(Boolean);
       const hasNewImages = rawImages.some(isDataUrl) || rawCornerImages.some(isDataUrl);
       if (hasNewImages && formData._imagesChanged !== false) {
+        // S13 v19: persist the id onto formData so submitForm finds the
+        // SAME id when it runs (see standard flow note above).
+        if (!formData.id) formData.id = preUploadId;
         formData._preUploadId = preUploadId;
         formData._preUploadPromise = startPreUpload(rawImages, rawCornerImages, preUploadId)
           .catch(err => {
@@ -5101,31 +5135,39 @@ async function completeAssessment() {
 
   _assessed=true;
   _pendingAssessResult=null;
-  // S13 v9: dismiss the persistent shell. Replaces the old `assess-modal-overlay`
-  // direct DOM removal — the shell + cavity tracker + results panel are all
-  // owned by scan-animation.js and torn down via dismiss().
-  if (window.RobograderScan && window.RobograderScan.dismiss) {
-    window.RobograderScan.dismiss();
-  }
 
-  // S13 v7: AUTO-SAVE flow. Previously this function rendered the Edit form
+  // S13 v9: AUTO-SAVE flow. Previously this function rendered the Edit form
   // and waited for the user to tap Save; users could lose the assessment
   // (and the credit) by tapping Back without scrolling to Save. Now we save
   // automatically and navigate straight to Detail view, where the user can
   // tap Edit if they want to change anything. submitForm handles the image
   // upload, registry registration, save to Firestore, and showDetail(rec.id)
-  // navigation in one call — same path the manual Save button has always
-  // used, just invoked programmatically.
+  // navigation in one call.
+  //
+  // S13 v19: dismiss() the chest AFTER submitForm completes (was BEFORE).
+  // Dismissing first revealed the Edit view briefly during the save, then
+  // flashed to Detail — looked janky. Now the chest holds (with the
+  // COMPLETE button still showing) during the save, then navigates
+  // straight to Detail in one transition.
   //
   // Edge case: submitForm has a guard that returns silently if title is
   // empty. If the AI failed to identify the book AND the user didn't enter
   // a title in the Add flow, we fall back to renderForm() so the user can
   // manually fix the title before saving.
   if (!formData.title?.trim()) {
+    if (window.RobograderScan && window.RobograderScan.dismiss) {
+      window.RobograderScan.dismiss();
+    }
     renderForm();
     return;
   }
   await submitForm();
+  // submitForm() navigates to Detail when it's done; THIS dismiss happens
+  // just before the Detail view renders, so the chest comes down at the
+  // same moment Detail comes up. Visually clean.
+  if (window.RobograderScan && window.RobograderScan.dismiss) {
+    window.RobograderScan.dismiss();
+  }
 }
 
 function onAssessmentSuccess(){
@@ -5196,6 +5238,19 @@ async function assessGrade(){
   delete formData._bypassDuplicateCheck;
 
   assessing=true;
+
+  // S13 v19: immediately update the Assess button text so the user sees
+  // a response to their tap. There's a ~1s gap before the chest slide
+  // becomes visually obvious (CSS keyframe + ease-in), and re-rendering
+  // the whole edit form to flip the button label is slower than just
+  // mutating the button directly. Both possible button IDs ('assess-btn'
+  // and 'hg-assess-btn') handled.
+  const _assessBtn = document.getElementById('assess-btn') || document.getElementById('hg-assess-btn');
+  if (_assessBtn) {
+    _assessBtn.textContent = 'ASSESSING…';
+    _assessBtn.disabled = true;
+    _assessBtn.style.opacity = '0.75';
+  }
 
   // S13 v9: Launch the laser-scan animation in parallel with the API call.
   // The user sees the chest slide up and the photos scanned while the API
@@ -5306,6 +5361,10 @@ async function assessGrade(){
       const rawCornerImages = (formData.cornerImages || []).filter(Boolean);
       const hasNewImages = rawImages.some(isDataUrl) || rawCornerImages.some(isDataUrl);
       if (hasNewImages && formData._imagesChanged !== false) {
+        // S13 v19: persist the id onto formData so submitForm finds the
+        // SAME id when it runs (its own buildComicId() call would use a
+        // fresh Date.now() suffix, breaking the cache match).
+        if (!formData.id) formData.id = preUploadId;
         formData._preUploadId = preUploadId;
         formData._preUploadPromise = startPreUpload(rawImages, rawCornerImages, preUploadId)
           .catch(err => {
