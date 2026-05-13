@@ -3941,6 +3941,27 @@ function setStep(id, state, detail='') {
 
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+// S13 v20: requestAnimationFrame-based delay. Unlike setTimeout, RAF is
+// tied to the browser's render loop and survives the heavy timer
+// throttling iOS Safari applies when other animations (CSS keyframes,
+// frequent style mutations) are running. In v18/v19 testing, setTimeout
+// callbacks for animateStepsFromDiagnostics were being delayed by
+// 14-25 seconds because the page's overall animation activity (chest
+// slide + photo transitions + overlay slide + grid cycle + needle pulse)
+// pushed the timer queue back. RAF runs once per browser-paint frame,
+// which means even if setTimeout is throttled to fire 2x/second, RAF
+// keeps ticking at ~60Hz and accurate ms tracking is preserved.
+function delayRAF(ms) {
+  return new Promise(resolve => {
+    const start = performance.now();
+    function check() {
+      if (performance.now() - start >= ms) resolve();
+      else requestAnimationFrame(check);
+    }
+    requestAnimationFrame(check);
+  });
+}
+
 async function animateStepsFromDiagnostics(d) {
   const dbg = (msg) => {
     if (window.RobograderScan && window.RobograderScan.debugLog) {
@@ -3959,11 +3980,15 @@ async function animateStepsFromDiagnostics(d) {
   // 1.5s pacing is purely visual (the user sees buttons light one by
   // one rather than all at once).
   //
-  // Diagnostic logging at every step. If the v17 19-second freeze
-  // recurs, the debug panel will show the last step that completed,
-  // making it obvious where it hung.
+  // Diagnostic logging at every step. If the v17/v18/v19 freeze recurs,
+  // the debug panel will show the last step that completed.
+  // S13 v20: switched from delay() (setTimeout) to delayRAF()
+  // (requestAnimationFrame). iOS Safari was throttling setTimeout by
+  // 10-25× while CSS animations + setInterval callbacks were running,
+  // delaying setStep calls by tens of seconds. RAF runs once per render
+  // frame and isn't throttled the same way.
   dbg('astFD: about to delay 2000ms for overlay slide-in');
-  await delay(2000);
+  await delayRAF(2000);
   dbg('astFD: 2000ms delay done; starting grid + needle');
   if (window.RobograderScan && window.RobograderScan.startGridCycle) {
     window.RobograderScan.startGridCycle();
@@ -3977,24 +4002,21 @@ async function animateStepsFromDiagnostics(d) {
   dbg('astFD: populating marked done');
 
   const STEP_GAP = 1500;
-  await delay(STEP_GAP);
+  await delayRAF(STEP_GAP);
   dbg('astFD: 1.5s gap 1 done; marking mint');
   setStep('mint', d.comicvineRef ? 'done' : 'failed');
 
-  await delay(STEP_GAP);
+  await delayRAF(STEP_GAP);
   dbg('astFD: 1.5s gap 2 done; marking pq');
-  // Page Quality Check fails (red) if EITHER:
-  //   • The reference image couldn't be fetched from the repo, OR
-  //   • The user didn't include an interior photo.
   const interiorIncluded = d.hasInteriorPhoto !== false;
   const pqOk = d.pageQualityRef && interiorIncluded;
   setStep('pq', pqOk ? 'done' : 'failed');
 
-  await delay(STEP_GAP);
+  await delayRAF(STEP_GAP);
   dbg('astFD: 1.5s gap 3 done; marking grading');
   setStep('grading', 'done');
 
-  await delay(STEP_GAP);
+  await delayRAF(STEP_GAP);
   dbg('astFD: 1.5s gap 4 done; marking confirming');
   setStep('confirming', d.gradeRef ? 'done' : 'failed');
   dbg('astFD: all steps done');
@@ -4223,7 +4245,7 @@ function mountResults(cgc, psa) {
       </div>
       <button id="assess-complete-btn" disabled
         style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:36px;background:#5a5a5a;color:#bbb;border:none;font-size:13px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">
-        ASSESSING
+        ASSESSING…
       </button>
     </div>`;
 

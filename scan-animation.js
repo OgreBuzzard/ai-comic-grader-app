@@ -326,25 +326,22 @@
       background-size: contain;
       background-position: center;
       background-repeat: no-repeat;
-      /* S13 v19: changed from translateX(-110%) → translateX(-100%).
-         Photo width is exactly the slit-to-slit distance (83.4% of
-         cavity = same as right_slit_X - left_slit_X). translateX(-100%)
-         of self puts photo's RIGHT edge exactly at the left slit
-         (photo's natural left is 2.6%, -100% of width = -83.4%, so
-         photo's left edge ends at 2.6% - 83.4% = -80.8%; right edge
-         at -80.8% + 83.4% = 2.6%, exactly the left slit). The previous
-         -110% put the photo 8.3% (~48px on phone) past the slit,
-         showing extra empty space before slide-in. */
-      transform: translateX(-100%);
-      /* S13 v18: 500ms photo slide (was 1000ms — storyboard calls for
-         faster transitions to fit the per-photo 4-second cycle). */
+      /* S13 v20: back to translateX(±110%). The v19 ±100% (which my
+         math said was "exact at slit boundary") didn't account for
+         background-size: contain — the actual visible comic image sits
+         centered INSIDE the photo div with margins on the sides (taller
+         comics → wider side margins). So even when the div is exactly
+         at the slit, the visible image is inset from the div's edge and
+         remains visible past the slit. ±110% pushes the div 8.3% past
+         the slit on each side, hiding the centered comic image. */
+      transform: translateX(-110%);
       transition: transform 500ms cubic-bezier(0.65, 0, 0.35, 1);
     }
     .rg-scan-photo.in-view  { transform: translateX(0);    }
-    .rg-scan-photo.out-view { transform: translateX(100%); }
+    .rg-scan-photo.out-view { transform: translateX(110%); }
     .rg-scan-photo.reset    {
       transition: none !important;
-      transform: translateX(-100%) !important;
+      transform: translateX(-110%) !important;
     }
 
     /* Spine photo rotation — captured spine photos are landscape (the
@@ -714,7 +711,7 @@
         </div>
         <button id="assess-complete-btn" disabled
           style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:36px;background:#5a5a5a;color:#bbb;border:none;font-size:13px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">
-          ASSESSING
+          ASSESSING…
         </button>
       </div>`;
   }
@@ -1053,10 +1050,21 @@
   function sweepNeedleToScore(score) {
     const el = document.getElementById('rg-scan-needle');
     if (!el) return;
-    el.classList.add('final-sweep');
     const angle = _scoreToAngle(score);
-    el.style.setProperty('--rg-needle-rot', `${angle}deg`);
-    debugLog(`needle sweep → score ${score} → ${angle.toFixed(1)}deg`);
+    // S13 v20: add .final-sweep class FIRST so the CSS transition is
+    // registered. Then in the next paint frame, set the angle so the
+    // browser interpolates from the current angle to the new one.
+    // Doing both in the same tick caused the browser to apply both
+    // changes simultaneously and snap to the new angle (no visible
+    // sweep). The pulse setInterval has been stopped before this is
+    // called, so the angle written before this is whatever the last
+    // pulse tick set — which is a real angle the browser can
+    // transition from.
+    el.classList.add('final-sweep');
+    requestAnimationFrame(() => {
+      el.style.setProperty('--rg-needle-rot', `${angle}deg`);
+      debugLog(`needle sweep → score ${score} → ${angle.toFixed(1)}deg`);
+    });
   }
 
   // ── Public API ─────────────────────────────────────────────────────
