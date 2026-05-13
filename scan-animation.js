@@ -52,10 +52,11 @@
   // S13 v16: defaulted OFF for production. Flip to true to re-enable
   // when debugging the modal flow. The debug code stays in place so
   // we can turn it back on without re-instrumenting everything.
-  // S13 v18: debug logging is ON by default for this build to diagnose
-  // the 19-second freeze seen in v17 testing. Turn off via
-  // window.RobograderScan.setDebug(false) once the freeze is fixed.
-  let _debugEnabled = true;
+  // S13 v18: debug logging is OFF by default for public deploys.
+  // Turn on per-session via window.RobograderScan.setDebug(true) from
+  // the JS console, or flip this default to true when investigating
+  // a reproducible issue.
+  let _debugEnabled = false;
   let _debugStartTime = 0;
   let _debugPanel = null;
 
