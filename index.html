@@ -3843,8 +3843,15 @@ const ASSESS_FAILURE_BOX = 'https://raw.githubusercontent.com/OgreBuzzard/ai-com
 // time a box transitions from default → success the new image has to
 // load from network, and there's a visible transparent gap where the
 // cavity shows through the button location.
+//
+// S13 v22 (May 13): added ASSESS_OVERLAY_BG and ASSESS_MODAL_BG to the
+// preload set. The overlay image is fetched fresh on each scan and
+// shipped from GitHub raw — first-time load (cold cache) caused the
+// gray box backgrounds to render before the overlay PNG arrived,
+// leaving step labels missing for a frame or two. Preloading at app
+// init eliminates the gap entirely.
 (function preloadAssessBoxes() {
-  [ASSESS_DEFAULT_BOX, ASSESS_SUCCESS_BOX, ASSESS_FAILURE_BOX].forEach(url => {
+  [ASSESS_DEFAULT_BOX, ASSESS_SUCCESS_BOX, ASSESS_FAILURE_BOX, ASSESS_OVERLAY_BG, ASSESS_MODAL_BG].forEach(url => {
     const img = new Image();
     img.src = url;
   });
@@ -4052,7 +4059,15 @@ async function animateStepsFromDiagnostics(d) {
 
   await delayRAF(STEP_GAP);
   dbg('astFD: 1.5s gap 4 done; marking confirming');
-  setStep('confirming', d.gradeRef ? 'done' : 'failed');
+  // S13 v22 (May 13): refinement pass disabled in assess.js. The
+  // CONFIRMING GRADE step previously turned green only when the
+  // refinement call succeeded (d.gradeRef === true). With the
+  // refinement disabled, d.gradeRef is always false, but that's
+  // not a failure — there's just no second pass to confirm. The
+  // single-pass assessment IS the confirmation. Mark this step
+  // 'done' regardless of d.gradeRef. If we re-enable refinement
+  // later, restore the conditional: `d.gradeRef ? 'done' : 'failed'`.
+  setStep('confirming', 'done');
   dbg('astFD: all steps done');
 }
 

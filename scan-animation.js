@@ -52,14 +52,13 @@
   // S13 v16: defaulted OFF for production. Flip to true to re-enable
   // when debugging the modal flow. The debug code stays in place so
   // we can turn it back on without re-instrumenting everything.
-  // S13 v21: debug logging ON for this build to validate the freeze
-  // fix. The 20-second pause between scan-complete and POPULATING
-  // turned out to be the API call not being launched until after
-  // main-thread-blocking image compression. v21 yields between
-  // compressions and reduces compression intensity. If the freeze
-  // persists, the debug log will show whether it's still the
-  // compression hot path or something else.
-  let _debugEnabled = true;
+  // S13 v22 (May 13): debug OFF for production. v21 testing identified
+  // the refinement pass in assess.js as the source of the long pause
+  // between scan-complete and step buttons cycling green. With that
+  // pass disabled, the freeze should be gone. Re-enable via
+  // window.RobograderScan.setDebug(true) in console if anything else
+  // needs diagnosis.
+  let _debugEnabled = false;
   let _debugStartTime = 0;
   let _debugPanel = null;
 
