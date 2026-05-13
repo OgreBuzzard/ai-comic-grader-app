@@ -3958,6 +3958,29 @@ function mountStepTracker() {
          style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;" />`;
 
   window.RobograderScan.slideOverlayIntoChest(overlayHtml, boxesHtml);
+
+  // S13 v23 (May 13): now that the API typically returns within ~5s of
+  // overlay slide-in (refinement pass disabled), we use the slide-in
+  // completion as our visual anchor to start step 1 of the tracker —
+  // not the API return. This gives the user immediate visual progress
+  // feedback ("POPULATING INFO" lights green + the grid light animation
+  // starts cycling) as soon as the overlay lands, bridging the ~5s
+  // wait for the API to come back with grading results.
+  //
+  // Sequencing of remaining steps (MINT, PAGE QUALITY CHECK, GRADING,
+  // CONFIRMING GRADE) still happens in animateStepsFromDiagnostics,
+  // which is called only after the API returns. That function detects
+  // that POPULATING is already done and starts from MINT.
+  //
+  // The overlay slide-in takes ~2000ms (see OVERLAY_SLIDE_TIME in
+  // scan-animation.js). We delay this work by 2000ms to coincide with
+  // its completion.
+  setTimeout(() => {
+    if (window.RobograderScan && window.RobograderScan.startGridCycle) {
+      window.RobograderScan.startGridCycle();
+    }
+    setStep('populating', 'done');
+  }, 2000);
 }
 
 function setStep(id, state, detail='') {
@@ -4018,55 +4041,63 @@ async function animateStepsFromDiagnostics(d) {
     }
   };
   dbg(`animateStepsFromDiagnostics called, d keys: ${Object.keys(d||{}).join(',') || 'none'}`);
-  // S13 v18: this function owns the entire Phase C-D sequence.
-  //   1. Wait for overlay slide-in to complete (2000ms)
-  //   2. Start grid cycle + needle pulse
-  //   3. Mark POPULATING INFO done
-  //   4. Pace remaining 4 steps at 1500ms intervals
+  // S13 v23 (May 13): RESTRUCTURED.
   //
-  // The function is called from assessGrade AFTER the API has returned,
-  // so by the time we reach step 4 the API has already responded. The
-  // 1.5s pacing is purely visual (the user sees buttons light one by
-  // one rather than all at once).
+  // Previously this function:
+  //   1. Waited 2000ms for overlay slide-in
+  //   2. Started grid cycle + needle pulse
+  //   3. Marked POPULATING done
+  //   4. Paced remaining 4 steps at 1500ms intervals
   //
-  // Diagnostic logging at every step. If the v17/v18/v19 freeze recurs,
-  // the debug panel will show the last step that completed.
-  // S13 v20: switched from delay() (setTimeout) to delayRAF()
-  // (requestAnimationFrame). iOS Safari was throttling setTimeout by
-  // 10-25× while CSS animations + setInterval callbacks were running,
-  // delaying setStep calls by tens of seconds. RAF runs once per render
-  // frame and isn't throttled the same way.
-  dbg('astFD: about to delay 2000ms for overlay slide-in');
-  await delayRAF(2000);
-  dbg('astFD: 2000ms delay done; starting grid + needle');
+  // But it only ran AFTER the API returned, and the API now takes ~5s
+  // (refinement pass disabled). That meant 5s of dead time between the
+  // overlay landing and any visible progress.
+  //
+  // New choreography (refinement-pass-disabled era):
+  //   - mountStepTracker (called pre-API) schedules the grid cycle to
+  //     start and POPULATING to light green 2000ms after overlay slides
+  //     in — bridging the API wait visually.
+  //   - This function (called post-API) starts at MINT, paces 4 buttons
+  //     at 1500ms intervals.
+  //   - Needle pulse starts when PAGE QUALITY CHECK lights (button 3),
+  //     per Matt's spec. Pulse + grid both run through the final three
+  //     button-lights, then both stop in mountResults when the sweep
+  //     to score-derived angle begins.
+  //
+  // If somehow POPULATING wasn't already lit by mountStepTracker (e.g.
+  // assess flow took an unexpected path), we set it here as a safety
+  // net so the user doesn't end up with a permanently-gray first step.
+  // Same for grid cycle — startGridCycle is idempotent so calling it
+  // twice (once here, once in mountStepTracker's setTimeout) is safe.
+  setStep('populating', 'done');
   if (window.RobograderScan && window.RobograderScan.startGridCycle) {
     window.RobograderScan.startGridCycle();
-    dbg('astFD: startGridCycle returned');
   }
-  if (window.RobograderScan && window.RobograderScan.startNeedlePulse) {
-    window.RobograderScan.startNeedlePulse();
-    dbg('astFD: startNeedlePulse returned');
-  }
-  setStep('populating', 'done');
-  dbg('astFD: populating marked done');
+  dbg('astFD: populating marked done + grid started (safety net)');
 
   const STEP_GAP = 1500;
+
   await delayRAF(STEP_GAP);
-  dbg('astFD: 1.5s gap 1 done; marking mint');
+  dbg('astFD: gap 1 done; marking mint');
   setStep('mint', d.comicvineRef ? 'done' : 'failed');
 
   await delayRAF(STEP_GAP);
-  dbg('astFD: 1.5s gap 2 done; marking pq');
+  dbg('astFD: gap 2 done; marking pq + starting needle pulse');
   const interiorIncluded = d.hasInteriorPhoto !== false;
   const pqOk = d.pageQualityRef && interiorIncluded;
   setStep('pq', pqOk ? 'done' : 'failed');
+  // S13 v23: needle pulse starts when PAGE QUALITY CHECK lights, not at
+  // POPULATING. Grid cycle is already running from mountStepTracker.
+  if (window.RobograderScan && window.RobograderScan.startNeedlePulse) {
+    window.RobograderScan.startNeedlePulse();
+  }
 
   await delayRAF(STEP_GAP);
-  dbg('astFD: 1.5s gap 3 done; marking grading');
+  dbg('astFD: gap 3 done; marking grading');
   setStep('grading', 'done');
 
   await delayRAF(STEP_GAP);
-  dbg('astFD: 1.5s gap 4 done; marking confirming');
+  dbg('astFD: gap 4 done; marking confirming');
   // S13 v22 (May 13): refinement pass disabled in assess.js. The
   // CONFIRMING GRADE step previously turned green only when the
   // refinement call succeeded (d.gradeRef === true). With the
@@ -4246,20 +4277,32 @@ function mountResults(cgc, psa) {
   const roboGrade = window._pendingRoboGrade;
   const roboScore = (roboGrade && roboGrade.score != null) ? Math.round(roboGrade.score) : null;
 
-  // S13 v18: stop the cycling grid + needle pulse. Then sweep needle
-  // smoothly to the final score-derived angle (Phase E).
-  if (window.RobograderScan && window.RobograderScan.stopGridCycle) {
-    window.RobograderScan.stopGridCycle();
-    dbg('mountResults: stopGridCycle returned');
-  }
-  if (window.RobograderScan && window.RobograderScan.stopNeedlePulse) {
-    window.RobograderScan.stopNeedlePulse();
-    dbg('mountResults: stopNeedlePulse returned');
-  }
-  if (window.RobograderScan && window.RobograderScan.sweepNeedleToScore && roboScore != null) {
-    window.RobograderScan.sweepNeedleToScore(roboScore);
-    dbg(`mountResults: sweep needle to score ${roboScore}`);
-  }
+  // S13 v23 (May 13): let grid AND needle pulse both run for one more
+  // 2-second cycle before transitioning. Matches Matt's storyboard:
+  // button 5 lights up → grid keeps cycling, needle keeps pulsing for
+  // 2 more seconds → at the 2000ms mark BOTH transition together:
+  // grid stops, needle stops pulsing and begins its 2000ms sweep to
+  // the final score-derived angle.
+  //
+  // Keeping the needle pulsing during the extra grid cycle (rather
+  // than freezing it for 2 seconds before the sweep) avoids a dead
+  // moment where motion stops entirely. The two motion changes
+  // happen on the same beat, so the user sees one continuous
+  // choreography end-to-end.
+  setTimeout(() => {
+    if (window.RobograderScan && window.RobograderScan.stopGridCycle) {
+      window.RobograderScan.stopGridCycle();
+      dbg('mountResults: stopGridCycle (after 2s delay) returned');
+    }
+    if (window.RobograderScan && window.RobograderScan.stopNeedlePulse) {
+      window.RobograderScan.stopNeedlePulse();
+      dbg('mountResults: stopNeedlePulse returned');
+    }
+    if (window.RobograderScan && window.RobograderScan.sweepNeedleToScore && roboScore != null) {
+      window.RobograderScan.sweepNeedleToScore(roboScore);
+      dbg(`mountResults: sweep needle to score ${roboScore}`);
+    }
+  }, 2000);
 
   // Legacy timer cleanup (old modal animation system)
   if (window._modalFrameTimer) { clearInterval(window._modalFrameTimer); window._modalFrameTimer = null; }
