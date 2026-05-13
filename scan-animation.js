@@ -52,11 +52,14 @@
   // S13 v16: defaulted OFF for production. Flip to true to re-enable
   // when debugging the modal flow. The debug code stays in place so
   // we can turn it back on without re-instrumenting everything.
-  // S13 v18: debug logging is OFF by default for public deploys.
-  // Turn on per-session via window.RobograderScan.setDebug(true) from
-  // the JS console, or flip this default to true when investigating
-  // a reproducible issue.
-  let _debugEnabled = false;
+  // S13 v21: debug logging ON for this build to validate the freeze
+  // fix. The 20-second pause between scan-complete and POPULATING
+  // turned out to be the API call not being launched until after
+  // main-thread-blocking image compression. v21 yields between
+  // compressions and reduces compression intensity. If the freeze
+  // persists, the debug log will show whether it's still the
+  // compression hot path or something else.
+  let _debugEnabled = true;
   let _debugStartTime = 0;
   let _debugPanel = null;
 
@@ -303,45 +306,54 @@
     }
     @keyframes rgScanFadeIn { to { opacity: 1; } }
 
-    .rg-scan-photo {
+    /* S13 v21: slit-to-slit clipping container. Positioned at the
+       exact slit coordinates within the cavity (left:2.6% width:83.4%),
+       full height of the cavity. overflow:hidden clips photos at the
+       slit boundaries so they truly "disappear into the slit" rather
+       than continuing visible past it. Lasers stay direct children of
+       display (they need to extend wider than the slits). */
+    .rg-scan-slot-wrap {
       position: absolute;
-      /* S13 v18: Photo geometry now derived from the cavity's slit
-         positions measured from the chest art (see chest annotations
-         in S13 design docs). The cavity has two thin vertical slits
-         at viewport pixel X=200 and X=688 (in an 888-wide frame),
-         with Y range 396–1100 — these define the photo's travel
-         boundary and visual size:
-           Left slit cavity-relative X:  2.6%
-           Right slit cavity-relative X: 86.0%
-           Slit Y range:                 20.6% to 87.9% of cavity
-         Photo sits centered between slits, fits within slit Y range.
-         Photo width = 83.4% of cavity (space between slits).
-         Photo height = 67.3% of cavity (slit Y range).
-         Off-screen entry at translateX(-110%) hides photo behind the
-         left slit; exit at translateX(110%) hides behind right slit. */
       left:   2.6%;
       top:    20.6%;
       width:  83.4%;
       height: 67.3%;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .rg-scan-photo {
+      position: absolute;
+      /* S13 v21: photo now fills 100% of its slot-wrap (which is itself
+         positioned at the slit coords). The photo enters from the left
+         slit at translateX(-100%) — its right edge AT the wrap's left
+         edge (= left slit). At translateX(0) it fills the wrap. At
+         translateX(+100%) its left edge is AT the wrap's right edge
+         (= right slit) — fully outside the wrap and clipped to invisible.
+         The math is now clean because the wrap's boundaries ARE the
+         slits.
+
+         OLD attempt (v18-v20): photo was positioned directly in the
+         display with the same slit-coord left/width values. The display
+         clipped at its own edges (cavity boundaries) which extended
+         past the slits, so photo visuals leaked into the 14% strip
+         between the right slit and the cavity edge. Fixed by adding
+         the slot-wrap. */
+      left:   0;
+      top:    0;
+      width:  100%;
+      height: 100%;
       background-size: contain;
       background-position: center;
       background-repeat: no-repeat;
-      /* S13 v20: back to translateX(±110%). The v19 ±100% (which my
-         math said was "exact at slit boundary") didn't account for
-         background-size: contain — the actual visible comic image sits
-         centered INSIDE the photo div with margins on the sides (taller
-         comics → wider side margins). So even when the div is exactly
-         at the slit, the visible image is inset from the div's edge and
-         remains visible past the slit. ±110% pushes the div 8.3% past
-         the slit on each side, hiding the centered comic image. */
-      transform: translateX(-110%);
+      transform: translateX(-100%);
       transition: transform 500ms cubic-bezier(0.65, 0, 0.35, 1);
     }
     .rg-scan-photo.in-view  { transform: translateX(0);    }
-    .rg-scan-photo.out-view { transform: translateX(110%); }
+    .rg-scan-photo.out-view { transform: translateX(100%); }
     .rg-scan-photo.reset    {
       transition: none !important;
-      transform: translateX(-110%) !important;
+      transform: translateX(-100%) !important;
     }
 
     /* Spine photo rotation — captured spine photos are landscape (the
@@ -637,6 +649,21 @@
     display.id = 'rg-scan-display';
 
     activeSlots.forEach(slot => {
+      // S13 v21: wrap each photo in a slit-to-slit clipping container.
+      // The .rg-scan-display fills the full cavity (so lasers can extend
+      // beyond the slits as before), but the photos need to be clipped
+      // at the slits — otherwise they slide past the visual slit-stripe
+      // in the chest art and remain visible in the 14% strip between
+      // the right slit and the cavity's right edge (which is what made
+      // photos look like they were "disappearing too far to the right"
+      // in v20 testing). The slot wrap is positioned at slit-to-slit
+      // coordinates (cavity-X 2.6% to 86%), has overflow:hidden, and
+      // contains the .rg-scan-photo. The photo now fills 100% of the
+      // wrap (slit-to-slit width) and translates ±100% to enter/exit
+      // through the slits — clean and self-clipping.
+      const slotWrap = document.createElement('div');
+      slotWrap.className = 'rg-scan-slot-wrap';
+
       const photo = document.createElement('div');
       photo.className = 'rg-scan-photo';
       photo.id = 'rg-scan-photo-' + slot.slotName;
@@ -650,7 +677,8 @@
       } else {
         photo.style.backgroundImage = `url('${escapeUrl(slot.url)}')`;
       }
-      display.appendChild(photo);
+      slotWrap.appendChild(photo);
+      display.appendChild(slotWrap);
     });
 
     const laserH = document.createElement('div');

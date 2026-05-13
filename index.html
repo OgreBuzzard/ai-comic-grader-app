@@ -3549,6 +3549,14 @@ async function compressImage(dataUrl, maxDim=1400, quality=0.65, asBlob=false){
   // 1MB document cap. Storage has no such constraint, so we get meaningfully
   // better fidelity at modest cost (~150-400 KB per image vs. ~50-80 KB).
   //
+  // S13 v21 (May 13): briefly reduced to 1024px / 0.55 to investigate a
+  // suspected compression-time freeze. Reverted same session — debug
+  // logs showed compression was NOT the freeze culprit (it takes a few
+  // seconds, not 20). The reduction would have hurt grading quality
+  // without addressing the real cause. If you ever see "compress[N] >5000ms"
+  // in the debug log on a real device, that's the only reason to revisit
+  // these defaults; the maxDim drop to 1024 cuts encode time ~40%.
+  //
   // Two output modes:
   //   asBlob=false (default): returns a data URL string — used by assess.js
   //     payload (server still receives base64 images for the Anthropic call)
@@ -3572,6 +3580,32 @@ async function compressImage(dataUrl, maxDim=1400, quality=0.65, asBlob=false){
     };
     img.src = dataUrl;
   });
+}
+
+// S13 v21 (May 13): sequential compression with main-thread yields
+// between images. ORIGINAL hypothesis was that Promise.all(map(compressImage))
+// blocked the main thread for 20+ seconds (since canvas.toDataURL is
+// synchronous, the Promise.all parallelism was theatrical). Yielding
+// via requestAnimationFrame between images lets RAF/setTimeout drain
+// between encodes.
+//
+// LATER FINDING: debug logs needed to confirm whether compression is
+// actually the freeze. If compression total is <5 seconds, this function
+// is overkill and we can revert to Promise.all. Kept for now because
+// the diagnostic logging built into it is useful for ongoing investigation.
+async function compressImagesSequentially(dataUrls) {
+  const out = [];
+  for (let i = 0; i < dataUrls.length; i++) {
+    const t0 = performance.now();
+    out.push(await compressImage(dataUrls[i]));
+    const t1 = performance.now();
+    if (window.RobograderScan && window.RobograderScan.debugLog) {
+      window.RobograderScan.debugLog(`  compress[${i}] ${Math.round(t1-t0)}ms`);
+    }
+    // Yield to the event loop so pending RAF/setTimeout can fire.
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  }
+  return out;
 }
 
 // ── Cloud Storage helpers ────────────────────────────────────────────────────
@@ -4383,9 +4417,11 @@ async function assessHighGrade() {
       }
       return img;
     }));
-    // Use default compression (1400px/0.65) — matches what's stored in Cloud Storage,
-    // so the assessment evaluates exactly what the user sees in their archive.
-    const compressed = await Promise.all(dataUrls.map(img => compressImage(img)));
+    // S13 v21: sequential compression with main-thread yields. See
+    // compressImagesSequentially definition for why. The defaults are
+    // also now 1024px / 0.55 quality (down from 1400 / 0.65) for
+    // faster encode.
+    const compressed = await compressImagesSequentially(dataUrls);
 
     const token = window._currentUser ? (await window._currentUser.getIdToken()) : null;
     // S13 v15: kick off API call WITHOUT awaiting (same fix as standard flow)
@@ -4530,7 +4566,8 @@ function startRestorationCheck() {
 
       // Combine original 4 images + restoration images (8 total)
       const origImgs = (formData.images || []).filter(Boolean).slice(0, 4);
-      const origCompressed = await Promise.all(origImgs.map(img => compressImage(img)));
+      // S13 v21: sequential compression for the same reason as assessGrade.
+      const origCompressed = await compressImagesSequentially(origImgs);
       const allImages = [...origCompressed, ...rcImgs];
 
       const token = window._currentUser ? (await window._currentUser.getIdToken()) : null;
@@ -5293,6 +5330,12 @@ async function assessGrade(){
     : { promise: Promise.resolve(), cancel: () => {} };
 
   try{
+    const _dbg = (msg) => {
+      if (window.RobograderScan && window.RobograderScan.debugLog) {
+        window.RobograderScan.debugLog(msg);
+      }
+    };
+    _dbg('std: try block enter');
     // Track which photo slots are populated. The images array gets filter(Boolean)'d
     // above, which loses slot semantics — slot 0 (front) vs slot 2 (interior) become
     // indistinguishable on the server. slotsFilled preserves that information so the
@@ -5305,6 +5348,7 @@ async function assessGrade(){
       interior: !!rawImages[2],
       raking:   !!rawImages[3]
     };
+    _dbg('std: about to fetch dataUrls');
     const dataUrls=await Promise.all(imgs.slice(0,4).map(async img=>{
       if(img.startsWith('http')){
         const resp=await fetch(img);
@@ -5313,7 +5357,17 @@ async function assessGrade(){
       }
       return img;
     }));
-    const compressed=await Promise.all(dataUrls.map(img=>compressImage(img)));
+    _dbg(`std: dataUrls done (${dataUrls.length}); compressing`);
+    // S13 v21: switched from Promise.all(map(compressImage)) to
+    // compressImagesSequentially() which yields to the event loop
+    // between each image. This lets the scan animation's RAF callbacks
+    // and the eventual setTimeout-based delays in animateStepsFromDiagnostics
+    // run smoothly instead of being deferred until the compression
+    // burst completes. Combined with reduced compression defaults
+    // (1024px / 0.55 quality), the assessment-launch freeze should
+    // be substantially reduced.
+    const compressed=await compressImagesSequentially(dataUrls);
+    _dbg('std: compression done; firing API');
 
     // S13 v15: kick off the API call WITHOUT awaiting it, so we can
     // separately await the scan promise first. Previously the await on
