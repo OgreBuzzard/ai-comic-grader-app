@@ -84,6 +84,37 @@ export default async function handler(req, res) {
   } = req.body;
   if (!images || images.length === 0) return res.status(400).json({ error: 'No images provided' });
 
+  // ── Front + back cover requirement (server-side gate, pre-API) ─────────────
+  // Every assessment must include both a front and back cover photo. Single-cover
+  // assessments are blocked because (a) facsimile editions can hide markers on
+  // either side and the model needs both to confidently identify reprints, and
+  // (b) public listings require both, so allowing single-cover assessments would
+  // produce un-listable records.
+  //
+  // This check uses the explicit slotsFilled map when sent by the client (post-S11
+  // clients always send it); falls back to "must have at least 2 images" for older
+  // clients. No credit is charged on this failure — the client routes the user
+  // back to the Edit view with a message.
+  {
+    const _hasFront = slotsFilled ? !!slotsFilled.front : (images.length >= 1);
+    const _hasBack  = slotsFilled ? !!slotsFilled.back  : (images.length >= 2);
+    if (!_hasFront || !_hasBack) {
+      return res.status(200).json({
+        gateResult: 'MISSING_COVER',
+        gateReason: !_hasFront && !_hasBack
+          ? 'Both front and back cover photos are required.'
+          : !_hasFront
+            ? 'A front cover photo is required.'
+            : 'A back cover photo is required.',
+        missingCover: {
+          frontMissing: !_hasFront,
+          backMissing:  !_hasBack
+        },
+        _diagnostics: { gateTerminated: true, preApiGate: true }
+      });
+    }
+  }
+
   // ── Server-side abuse check ──────────────────────────────────────────────
   // Verify the user's identity, check for permanent flag or active lockout.
   // Fails open on infrastructure error (no service account, network issue) so
@@ -409,9 +440,10 @@ PHASE 0 — GATE CHECK (mandatory first)
 Before grading, determine what the photos actually show.
 
 Classify the content into ONE of these buckets:
-  COMIC     — a comic book, single-issue or trade, including adult comics (Vampirella, Heavy Metal, underground comix), horror titles, and pornographic comics from known publishers. Magazines like Playboy are NOT comics.
-  NOT_COMIC — anything that isn't a comic book: magazines, trade paperbacks (unless clearly graphic novels), photos of random objects, screenshots, people, animals, blank paper, trading cards, prose books, tests/abuse.
-  FLAGGED   — photos containing real-world graphic violence, actual injury or gore (not comic-art depictions), explicit pornographic photography (not comic art), child sexual content, or extremist symbols outside a clear historical/educational comic context.
+  COMIC         — a comic book, single-issue or trade, including adult comics (Vampirella, Heavy Metal, underground comix), horror titles, and pornographic comics from known publishers. Magazines like Playboy are NOT comics.
+  NOT_COMIC     — anything that isn't a comic book: magazines, trade paperbacks (unless clearly graphic novels), photos of random objects, screenshots, people, animals, blank paper, trading cards, prose books, tests/abuse.
+  FLAGGED       — photos containing real-world graphic violence, actual injury or gore (not comic-art depictions), explicit pornographic photography (not comic art), child sexual content, or extremist symbols outside a clear historical/educational comic context.
+  CROP_FAILURE  — the comic IS a comic, but one or both of the cover photos is cropped such that part of the comic extends outside the image boundary. See the CROP CHECK section below.
 
 Key distinctions:
 • Horror comic covers with blood, gore, or monster imagery → COMIC (the art is the art)
@@ -422,6 +454,37 @@ Key distinctions:
 • A Playboy, Penthouse, Hustler, or similar magazine → NOT_COMIC (these are magazines, not comics)
 
 For questionable comic-art content: if you can identify a likely title and issue, and the user provided a title, treat as COMIC. If you cannot identify the book at all and the imagery is pornographic or disturbing, treat as FLAGGED.
+
+CROP CHECK (apply ONLY if content is otherwise COMIC):
+Examine the front cover photo and the back cover photo (if a back cover photo was submitted). For each, confirm that ALL FOUR CORNERS AND ALL FOUR EDGES of the comic are visible inside the image boundary. A "corner" or "edge" means the physical corner/edge of the comic book itself, not the corner of the photo.
+
+Pass criteria — ALL must be true:
+  • All four corners of the comic are inside the image frame
+  • All four edges of the comic are visible from corner to corner
+  • No portion of the comic extends past any side of the photo
+
+Fail criteria — ANY one triggers CROP_FAILURE:
+  • A corner of the comic is outside the image frame
+  • An edge of the comic extends past the image boundary on any side (the comic "bleeds off" the photo edge)
+  • The cover content (logo, title, art, indicia, UPC, price box, publisher box, "FACSIMILE EDITION" wording) is cut off by any photo edge
+  • A significant portion of the cover is missing from the photo
+
+Note: A tight crop where the comic almost fills the frame is FINE as long as the full comic is visible. The check fails only when the comic itself extends past a photo edge — not when the margin around it is small.
+
+This check is STRICT for a reason. The margins of a comic cover are exactly where facsimile-edition markers, modern Marvel/DC logos, UPCs, and key restoration evidence live. A photo that crops out the top edge of the comic could be hiding "FACSIMILE EDITION" text in that margin. A photo that crops out the bottom-right corner could be hiding a modern UPC.
+
+Common failure pattern: user fills the frame with the comic such that one or more edges of the comic extends past the photo boundary. This MUST fail — even if every visible part of the cover looks fine, the cut-off margin could contain disqualifying evidence.
+
+If CROP_FAILURE: return ONLY this JSON and STOP. Do not grade. Do not speculate on defects.
+{
+  "gateResult": "CROP_FAILURE",
+  "cropFailure": {
+    "frontFourCornersVisible": true or false,
+    "backFourCornersVisible": true or false,
+    "frontIssue": "short description of what's cropped on front cover, or empty string if front is fine",
+    "backIssue": "short description of what's cropped on back cover, or empty string if back is fine or back was not submitted"
+  }
+}
 
 If NOT_COMIC or FLAGGED: return ONLY this JSON and STOP. Do not grade. Do not speculate on defects.
 {
@@ -452,6 +515,23 @@ Step 2 — PER-CORNER INSPECTION. Look at each of the four corners individually:
 Internal inspection is per-corner. Output consolidation happens AFTER inspection: if every observed corner has the same defect kind and severity, write ONE consolidated note ("Corner blunting, all four corners, ~1/16" each"). If corners differ in defect kind or severity — for example, three blunted plus one with paper loss — write SEPARATE entries for the differing corners. Never homogenize a heterogeneous set into one entry.
 
 Step 3 — Edges and surfaces. Examine every edge (top, bottom, left, right) and the cover surfaces for tears, holes, creases, soiling, stress lines, and other defects.
+
+Step 4 — FACSIMILE / REPRINT INSPECTION (mandatory). Before grading, determine whether this book is an original printing or a modern facsimile/reprint. Marvel, DC, and other publishers regularly release facsimile editions of famous key issues (Amazing Fantasy #15, Hulk #181, Action Comics #1, Detective Comics #27, X-Men #1, Fantastic Four #1, Captain America Comics #1, etc.). These reproduce the original cover faithfully — same art, same logo, same trade dress, same price box, sometimes same indicia text — and can fool a casual inspection.
+
+Look for ANY of these modern-era markers anywhere in the submitted photos:
+  • The text "FACSIMILE EDITION" anywhere on cover, back cover, indicia, or spine
+  • A modern UPC barcode anywhere on the cover (originals printed before 1976 had no UPC; even original 1976+ books had a specific UPC layout that differs from modern Marvel/DC trade dress)
+  • Back cover with a modern Marvel or DC advertisement or house ad (originals had period ads — Daisy BB guns, Hostess fruit pies, X-Ray Specs, etc.)
+  • Indicia (on inside front cover or first page) showing TWO publication dates — original year AND a modern year, or modern publisher address (e.g., Marvel's modern address "1290 Avenue of the Americas" or "135 W 50th St" instead of the original publisher's period address)
+  • Modern paper stock — bright clean white at page edges, no period-appropriate aging despite the cover claiming a Silver/Golden Age date
+  • Cover print quality noticeably sharper than period offset printing could achieve (modern digital reproduction vs. 1960s newsprint)
+  • Modern publisher logo placement, color, or design
+
+If you find ANY of these markers: populate the printing field with "Facsimile Reprint" (append the year in parentheses if visible, e.g., "Facsimile Reprint (2019)"). Set issueDate to the reprint year, NOT the original year. State the facsimile finding plainly in aiAssessment — the user needs to know they have a reprint, not the original.
+
+If the book appears genuinely period-appropriate (no modern markers, period-appropriate paper aging, original publisher trade dress, era-correct printing quality): leave printing as empty string and proceed normally.
+
+When uncertain: lean toward populating "Facsimile Reprint". A reprint mislabeled as authentic creates a much worse user outcome than an authentic book correctly graded but conservatively flagged for review.
 
 SELF-REVIEW BEFORE FINALIZING (S13 v7):
 After you have written your defect list, re-read it and ask: does any defect description contain language suggesting MAJOR damage — words like "chunk", "missing", "torn off", "piece out", "large", "significant tear", "tape covering", "color touched"? If yes, the defect's severity field MUST be "High" and the missing-piece ceiling / restoration cap must be applied to BOTH the CGC grade AND the RoboGrade. A defect described as significant cannot coexist with a mid-grade or high-grade output.
@@ -727,8 +807,9 @@ RETURN ONLY THIS JSON — no markdown, no preamble
   "gateResult": "COMIC",
   "title": "series title, strip leading The",
   "issue": "e.g. 57 or A1",
-  "issueDate": "cover date as 'Mon YYYY', e.g. 'Feb 1968' or 'Sep 1942'; for season-only books use 'Spr/Sum/Fall/Win YYYY' e.g. 'Sum 1942'",
+  "issueDate": "cover date as 'Mon YYYY', e.g. 'Feb 1968' or 'Sep 1942'; for season-only books use 'Spr/Sum/Fall/Win YYYY' e.g. 'Sum 1942'. If this is a facsimile or reprint (see 'printing' field), use the reprint's ACTUAL publication year, NOT the original year. For example: a 2019 facsimile of Amazing Fantasy #15 has issueDate 'Dec 2019', not 'Aug 1962'.",
   "publisher": "publisher name",
+  "printing": "Printing or variant designation. Leave EMPTY STRING for typical original-printing copies (the default — most books). Populate ONLY when there is clear evidence of a non-standard printing. Conventions: 'Facsimile Reprint' (or 'Facsimile Reprint (YYYY)' if the reprint year is visible in indicia or back cover) when this is a modern facsimile edition that reproduces an original key issue — Marvel and DC have published many of these; '2nd print' / '3rd print' / etc. for direct-edition reprints from the original era; 'Newsstand variant' for distinguishable newsstand copies of direct-edition books; 'Reprint' for older non-facsimile reprints. CRITICAL: when populating 'Facsimile Reprint', also note the facsimile finding plainly in aiAssessment so the user understands what they have, and use the reprint year (not the original year) for issueDate.",
   "pageQuality": "full designation e.g. Off-White to White",
   "grade": "CGC grade estimate e.g. 7.0",
   "graderNotes": "• one bullet per defect, official CGC terminology",
@@ -745,7 +826,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
   "officialPSAGrade": null,
   "officialPSACert": null,
   "roboGrade": {
-    "version": "2.42",
+    "version": "2.5",
     "score": 0,
     "confidenceRange": ${baseConf},
     "frontScore": 0,
@@ -821,6 +902,13 @@ RETURN ONLY THIS JSON — no markdown, no preamble
     //    return early with a special response. Server records the strike
     //    (authoritative; client also tries but server is source of truth) and
     //    applies cool-off rules per STRIKE_LOCKOUT_* constants above.
+    //
+    //    All non-COMIC gate results record a strike — NOT_COMIC, FLAGGED, and
+    //    CROP_FAILURE all count. CROP_FAILURE is included because a user gets 3
+    //    strikes per day before any lockout, which is plenty of room to learn
+    //    the photo requirements from a single mistake. Repeated crop failures
+    //    in one day suggest intentional behavior or a failure to read the
+    //    in-app guidance, both of which warrant the cool-off.
     if (parsed.gateResult && parsed.gateResult !== 'COMIC') {
       let _lockoutInfo = null;
       // Record strike server-side if we have an authenticated user
@@ -858,6 +946,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
       return res.status(200).json({
         gateResult: parsed.gateResult,
         gateReason: parsed.gateReason || '',
+        cropFailure: parsed.cropFailure || null,
         lockout: _lockoutInfo,
         _diagnostics: {
           comicvineRef: referenceImageBlock !== null,
