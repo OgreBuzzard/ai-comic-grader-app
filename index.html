@@ -3698,23 +3698,25 @@ async function findDuplicateAssessment(currentImages, currentItemId) {
 // Returns: { images: [urls], thumbnails: [urls] } in the same order as input.
 // Thumbnails are skipped for the corner-image flow (only main images appear
 // in list view, so no point paying for corner thumbs).
-// S13 v17: Parallel pre-upload during the assessment animation.
+// S13 v18: Parallel pre-upload during the assessment animation.
 //
-// Called from assessGrade() right after the API has returned the (possibly
-// normalized) title. We build the comicId, start the image uploads (which
-// take ~3-8s for 4 photos), and return a promise that resolves when uploads
-// are done. The promise is stashed on formData._preUploadPromise so
-// submitForm() can await it instead of running its own upload pass.
+// Called from assessGrade()/assessHighGrade() right after the API
+// returns. We build the comicId from the AI's (possibly normalized)
+// title, then run image uploads in parallel with the rest of the
+// animation. The promise is stashed on formData._preUploadPromise;
+// submitForm awaits it instead of doing its own upload pass.
 //
-// The animation runs for ~17 more seconds after the API returns, so by the
-// time the user taps COMPLETE, uploads have typically finished and the
-// save-to-Firestore feels instant (no several-second hang on COMPLETE).
+// Why this matters: the animation runs ~30s end-to-end. Image uploads
+// take 3-8s for 4 photos. By kicking off uploads as soon as we have a
+// comicId (API return, ~12-15s in), we have ~15-18s of remaining
+// animation time for uploads to complete in the background. By the
+// time the user taps COMPLETE, the save is just a Firestore write
+// (sub-second) instead of a 6-second hang.
 //
 // Returns a promise that resolves to:
 //   { id, mainResult, cornerResult }
-// or rejects on upload failure. The caller (assessGrade) catches and logs;
-// submitForm has a fallback to upload anyway if the pre-upload didn't run
-// or returned no result.
+// or rejects on upload failure. The caller catches and clears the
+// cached promise so submitForm falls back to a fresh upload.
 async function startPreUpload(rawImages, rawCornerImages, comicId) {
   if (window.RobograderScan && window.RobograderScan.debugLog) {
     window.RobograderScan.debugLog(`startPreUpload: id=${comicId}, images=${rawImages.filter(Boolean).length}, corners=${rawCornerImages.filter(Boolean).length}`);
@@ -3895,11 +3897,6 @@ function mountStepTracker() {
          style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;" />`;
 
   window.RobograderScan.slideOverlayIntoChest(overlayHtml, boxesHtml);
-
-  // S13 v17: the grid cycle + needle pulse + first progress button
-  // are kicked off from animateStepsFromDiagnostics after the overlay
-  // slide-in completes, so the timing is gated on API arrival and we
-  // don't have races between the slide-in timeout and the step pacing.
 }
 
 function setStep(id, state, detail='') {
@@ -3933,52 +3930,62 @@ function setStep(id, state, detail='') {
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function animateStepsFromDiagnostics(d) {
-  if (window.RobograderScan && window.RobograderScan.debugLog) {
-    window.RobograderScan.debugLog(`animateStepsFromDiagnostics called, d keys: ${Object.keys(d||{}).join(',') || 'none'}`);
-  }
-  // S13 v17: this function now owns the entire Phase C-D sequence:
-  //   1. Wait for overlay slide-in (2000ms) to complete
-  //   2. Start cycling grid + needle pulse
-  //   3. Mark POPULATING INFO done (1st step)
-  //   4. Pace remaining 4 steps at 1.5s intervals
+  const dbg = (msg) => {
+    if (window.RobograderScan && window.RobograderScan.debugLog) {
+      window.RobograderScan.debugLog(msg);
+    }
+  };
+  dbg(`animateStepsFromDiagnostics called, d keys: ${Object.keys(d||{}).join(',') || 'none'}`);
+  // S13 v18: this function owns the entire Phase C-D sequence.
+  //   1. Wait for overlay slide-in to complete (2000ms)
+  //   2. Start grid cycle + needle pulse
+  //   3. Mark POPULATING INFO done
+  //   4. Pace remaining 4 steps at 1500ms intervals
   //
-  // API gating: this function is called only after the API has returned,
-  // so by the time we hit step 4, both conditions ("min 1.5s spacing"
-  // AND "API responded") are satisfied. The animation timing is fixed
-  // here because the API has already responded.
+  // The function is called from assessGrade AFTER the API has returned,
+  // so by the time we reach step 4 the API has already responded. The
+  // 1.5s pacing is purely visual (the user sees buttons light one by
+  // one rather than all at once).
   //
-  // Total Phase C-D duration: 2000ms (slide-in) + 1500ms × 4 (paced
-  // steps) = 8000ms. With API arrival around 12s into the assessment
-  // and overlay slide starting at ~19s, the final step completes around
-  // 27s — close to but slightly faster than the storyboard's 0:30.
-  // Caller does its own delays for score reveal after this returns.
+  // Diagnostic logging at every step. If the v17 19-second freeze
+  // recurs, the debug panel will show the last step that completed,
+  // making it obvious where it hung.
+  dbg('astFD: about to delay 2000ms for overlay slide-in');
   await delay(2000);
-  // Start grid + needle now that the overlay is fully in place.
+  dbg('astFD: 2000ms delay done; starting grid + needle');
   if (window.RobograderScan && window.RobograderScan.startGridCycle) {
     window.RobograderScan.startGridCycle();
+    dbg('astFD: startGridCycle returned');
   }
   if (window.RobograderScan && window.RobograderScan.startNeedlePulse) {
     window.RobograderScan.startNeedlePulse();
+    dbg('astFD: startNeedlePulse returned');
   }
   setStep('populating', 'done');
+  dbg('astFD: populating marked done');
+
   const STEP_GAP = 1500;
   await delay(STEP_GAP);
+  dbg('astFD: 1.5s gap 1 done; marking mint');
   setStep('mint', d.comicvineRef ? 'done' : 'failed');
+
   await delay(STEP_GAP);
+  dbg('astFD: 1.5s gap 2 done; marking pq');
   // Page Quality Check fails (red) if EITHER:
   //   • The reference image couldn't be fetched from the repo, OR
-  //   • The user didn't include an interior photo (no page to compare against).
-  // hasInteriorPhoto is set explicitly by the client when slotsFilled is sent;
-  // older clients without the flag will return undefined, in which case we fall
-  // back to assuming an interior was included so we don't cry wolf on legacy
-  // requests in flight during deployment.
-  const interiorIncluded = d.hasInteriorPhoto !== false; // undefined → assume yes
+  //   • The user didn't include an interior photo.
+  const interiorIncluded = d.hasInteriorPhoto !== false;
   const pqOk = d.pageQualityRef && interiorIncluded;
   setStep('pq', pqOk ? 'done' : 'failed');
+
   await delay(STEP_GAP);
+  dbg('astFD: 1.5s gap 3 done; marking grading');
   setStep('grading', 'done');
+
   await delay(STEP_GAP);
+  dbg('astFD: 1.5s gap 4 done; marking confirming');
   setStep('confirming', d.gradeRef ? 'done' : 'failed');
+  dbg('astFD: all steps done');
 }
 
 const PQ_COLORS={
@@ -4075,52 +4082,68 @@ function animateGradeList(el, target, list, duration) {
   });
 }
 
-// Animate through page quality designations, landing on target
+// Animate through page quality designations.
+// S13 v18: cycles through ALL 7 designations (not slicing to target) at
+// linear pacing so the user perceives the cycle. Previous easeOutCubic
+// + slice-to-target produced a single visible step from White → final
+// because eased-time front-loads. Fixed pacing: ~220ms per designation
+// for 7 designations + brief settle = roughly 1800ms total, then land
+// on the target (which may or may not be in the cycle list).
 function animatePageQuality(pqEl, target, duration) {
   return new Promise(resolve => {
-    const list = PQ_CYCLE_ORDER;
-    const tgtIdx = list.findIndex(pq => pq === target);
-    const stopIdx = tgtIdx >= 0 ? tgtIdx : Math.floor(list.length / 2);
-    // If target is outside cycle list (e.g. a multi-tone CGC designation), still cycle then set final
-    const path = list.slice(0, stopIdx + 1);
     if (!target) { resolve(); return; }
-
+    const list = PQ_CYCLE_ORDER;  // 7 designations White → Light Tan
+    const cycleMs = Math.max(0, duration - 200);  // leave 200ms to settle
+    const perItem = cycleMs / list.length;
     const start = performance.now();
-    let lastPQ = null;
+    let lastIdx = -1;
     function renderPQ(pq) {
       const colors = PQ_COLORS[pq] || {bg:'#f0ece6', text:'#5a4e44'};
       pqEl.innerHTML = `<div style="background:${colors.bg};color:${colors.text};padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">${pq}</div>`;
     }
     function tick(now) {
       const elapsed = now - start;
-      const t = Math.min(elapsed / duration, 1);
-      const eased = easeOutCubic(t);
-      const idx = Math.min(Math.floor(eased * path.length), path.length - 1);
-      const pq = path[idx];
-      if (pq !== lastPQ) { renderPQ(pq); lastPQ = pq; }
-      if (t < 1) requestAnimationFrame(tick);
-      else { renderPQ(target); resolve(); }
+      if (elapsed >= duration) {
+        renderPQ(target);
+        resolve();
+        return;
+      }
+      // Linear progression through the list during the cycle window.
+      // After cycleMs, we settle on the target.
+      let pq;
+      if (elapsed < cycleMs) {
+        const idx = Math.min(Math.floor(elapsed / perItem), list.length - 1);
+        pq = list[idx];
+      } else {
+        pq = target;
+      }
+      if (lastIdx === -1 || pq !== list[lastIdx]) {
+        renderPQ(pq);
+        lastIdx = list.indexOf(pq);
+      }
+      requestAnimationFrame(tick);
     }
     requestAnimationFrame(tick);
   });
 }
 
 function mountResults(cgc, psa) {
-  if (window.RobograderScan && window.RobograderScan.debugLog) {
-    window.RobograderScan.debugLog('mountResults called');
-  }
-  // S13 v9: Renders the post-assessment results into the brushed-steel
-  // panel at the bottom of the persistent shell. Replaces the old
-  // showResultPreview which targeted the freestanding modal's gray
-  // panel area.
+  const dbg = (msg) => {
+    if (window.RobograderScan && window.RobograderScan.debugLog) {
+      window.RobograderScan.debugLog(msg);
+    }
+  };
+  dbg('mountResults called');
+  // S13 v18: the results panel is pre-mounted (with placeholder values
+  // and a gray ASSESSING button) by scan-animation.js's buildDom, and
+  // rides up with the chest from t=0. mountResults updates the panel's
+  // innerHTML with the real values + the FINAL button states, then
+  // runs the count-up animations.
   //
-  // Layout inside the 240px-tall results panel:
-  //   • Top breathing room ~6px
-  //   • Score badges row (RG, CGC, PSA) — 56px tall, centered horizontally
-  //   • PQ pill — 22px tall
-  //   • COMPLETE button — 48px tall, full-width with side padding
-  //   • Bottom breathing room ~6px
-  // Total: ~138-150px of content in a ~240px panel — comfortable.
+  // Layout (8px taller/wider than v17 per user feedback):
+  //   • Score badges row (RG, CGC, PSA) — 64px × 64px each
+  //   • PQ pill row — 22px tall
+  //   • COMPLETE/HIGH-GRADE button — 36px tall
   if (!window.RobograderScan || !window.RobograderScan.slideResultsIntoPanel) {
     console.warn('mountResults: scan-animation module not loaded');
     return;
@@ -4132,29 +4155,29 @@ function mountResults(cgc, psa) {
   const roboGrade = window._pendingRoboGrade;
   const roboScore = (roboGrade && roboGrade.score != null) ? Math.round(roboGrade.score) : null;
 
-  // Stop the grid frame animation. Tracker stays visible in the cavity
-  // — it's a permanent record of which steps passed/failed.
+  // S13 v18: stop the cycling grid + needle pulse. Then sweep needle
+  // smoothly to the final score-derived angle (Phase E).
+  if (window.RobograderScan && window.RobograderScan.stopGridCycle) {
+    window.RobograderScan.stopGridCycle();
+    dbg('mountResults: stopGridCycle returned');
+  }
+  if (window.RobograderScan && window.RobograderScan.stopNeedlePulse) {
+    window.RobograderScan.stopNeedlePulse();
+    dbg('mountResults: stopNeedlePulse returned');
+  }
+  if (window.RobograderScan && window.RobograderScan.sweepNeedleToScore && roboScore != null) {
+    window.RobograderScan.sweepNeedleToScore(roboScore);
+    dbg(`mountResults: sweep needle to score ${roboScore}`);
+  }
+
+  // Legacy timer cleanup (old modal animation system)
   if (window._modalFrameTimer) { clearInterval(window._modalFrameTimer); window._modalFrameTimer = null; }
   const gridEl = document.getElementById('tracker-grid-frame');
   if (gridEl) gridEl.style.display = 'none';
 
-  // S13 v17: stop the new cycling-grid animation and the needle pulse.
-  // The needle then sweeps smoothly to its final score-derived angle
-  // (Phase E start). Grid frames freeze on whichever frame was active
-  // at stop time — fine; the assessing animation is done, so the grid
-  // displaying any of its 8 states is a reasonable resting visual.
-  if (window.RobograderScan && window.RobograderScan.stopGridCycle) {
-    window.RobograderScan.stopGridCycle();
-  }
-  if (window.RobograderScan && window.RobograderScan.stopNeedlePulse) {
-    window.RobograderScan.stopNeedlePulse();
-  }
-  if (window.RobograderScan && window.RobograderScan.sweepNeedleToScore && roboScore != null) {
-    window.RobograderScan.sweepNeedleToScore(roboScore);
-  }
-
-  // Build badge shells with type-specific initial values for the animation
-  // to count up from. RG starts at 0, CGC/PSA at 0.0.
+  // Build badge shells. 56px (8px bigger than v17's 48px per user
+  // feedback in frame 37). Initial values 0 / 0.0 / 0.0; count up to
+  // final via animateRoboGrade / animateGradeList.
   const makeBadge = (type, valueId) => {
     const configs = {
       'cgc-ai':   {bg:'#2a5a8a', text:'#e0f0ff', label:'CGC',  initial: '0.0'},
@@ -4163,52 +4186,41 @@ function mountResults(cgc, psa) {
     };
     const c = configs[type];
     const border = c.border ? `border:${c.border};` : '';
-    // S13 v15: shrunk from 56px to 48px to fit the brushed-steel panel
-    // height with the button on a phone. Score+PQ+button were overflowing.
-    return `<div style="width:48px;height:48px;${border}background:${c.bg};border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
-      <div id="${valueId}" style="font-size:17px;font-weight:800;color:${c.text};line-height:1">${c.initial}</div>
-      <div style="font-size:7px;color:${c.text};opacity:0.75;margin-top:2px;letter-spacing:0.8px">${c.label}</div>
+    return `<div style="width:56px;height:56px;${border}background:${c.bg};border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
+      <div id="${valueId}" style="font-size:20px;font-weight:800;color:${c.text};line-height:1">${c.initial}</div>
+      <div style="font-size:8px;color:${c.text};opacity:0.75;margin-top:2px;letter-spacing:0.8px">${c.label}</div>
     </div>`;
   };
 
-  // Order: RoboGrade, CGC, PSA — matches the in-app convention.
   let badgesHtml = '';
   if (roboScore != null)      badgesHtml += makeBadge('robograde', 'anim-val-robo');
   if (cgcGrade)               badgesHtml += makeBadge('cgc-ai',    'anim-val-cgc');
   if (psaGrade)               badgesHtml += makeBadge('psa-ai',    'anim-val-psa');
 
-  // The full results panel HTML — score row, PQ row, COMPLETE button.
-  // Inside the brushed-steel panel (full-width). Vertical layout via
-  // flex column with proportional spacing.
-  // S13 v13: button uses align-self:center + width:auto + min-width
-  // to constrain width. width:100% in a flex column was making the
-  // button stretch full-screen even with max-width:320px. The score
-  // badges are also moved up (justify-content:center) so they sit
-  // centered in the panel rather than crammed at the top.
+  // The button STARTS as a disabled gray "ASSESSING" — same look as
+  // the placeholder. After the count-up animations finish, JS swaps
+  // its styling to the active blue/green COMPLETE/HIGH-GRADE button.
+  // No fade-in, no slide — in-place restyle so the user perceives the
+  // SAME button became active (not a new button appeared).
   const resultsHtml = `
-    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5% 3% 5%;box-sizing:border-box;gap:8px;">
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;">
       <div id="result-grades" style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badgesHtml}</div>
       <div id="result-pq" style="display:flex;align-items:center;justify-content:center;min-height:22px;"></div>
-      <button id="assess-complete-btn"
-        style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:36px;background:#3a9ee0;color:#fff;border:none;font-size:13px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);display:none;opacity:0;transform:scale(0.85);transition:opacity 280ms ease-out, transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1);">
-        COMPLETE
+      <button id="assess-complete-btn" disabled
+        style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:36px;background:#5a5a5a;color:#bbb;border:none;font-size:13px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">
+        ASSESSING
       </button>
     </div>`;
 
   window.RobograderScan.slideResultsIntoPanel(resultsHtml);
+  dbg('mountResults: results html replaced');
 
-  // Wire the COMPLETE button after it's in the DOM
-  setTimeout(() => {
-    const btn = document.getElementById('assess-complete-btn');
-    if (btn) btn.onclick = completeAssessment;
-  }, 50);
-
-  // Animation schedule (matches prior spec):
+  // Animation schedule:
   //   RoboGrade: 0ms start, 2000ms duration
   //   CGC:       1000ms start, 2000ms duration
   //   PSA:       2000ms start, 2000ms duration
-  //   PQ:        0ms start, 5000ms duration
-  //   Complete:  appears at 5500ms
+  //   PQ:        0ms start, 1800ms duration (linear cycle thru 7 designations)
+  //   ASSESSING → COMPLETE/HIGH-GRADE: at 4000ms (after all counts done)
   const roboEl = document.getElementById('anim-val-robo');
   const cgcEl  = document.getElementById('anim-val-cgc');
   const psaEl  = document.getElementById('anim-val-psa');
@@ -4224,37 +4236,41 @@ function mountResults(cgc, psa) {
     setTimeout(() => animateGradeList(psaEl, psaGrade, PSA_GRADE_LIST, 2000), 2000);
   }
   if (pq && pqEl) {
-    animatePageQuality(pqEl, pq, 5000);
+    animatePageQuality(pqEl, pq, 1800);
   }
 
-  // Complete button — fade + scale in at 5500ms
-  // Three label states (per S13 v7 fix):
-  //   1. "COMPLETE" — score < 80 (no HG eligibility)
-  //   2. "HIGH-GRADE ASSESS UNLOCKED" — score ≥ 80 AND no HG pass yet
-  //   3. "COMPLETED" — HG pass has already run on this entry
+  // S13 v18: ASSESSING → active button (in-place styling change).
+  // No fade-in, no slide-in — same DOM element, restyled. User
+  // perceives "the button is now ready" rather than "a new button
+  // appeared."
   setTimeout(() => {
     const btn = document.getElementById('assess-complete-btn');
-    if (btn) {
-      const hgAlreadyRun = !!(formData && formData.highGradeTier);
-      const hgUnlocked = (roboScore != null && roboScore >= 80) && !hgAlreadyRun;
-      if (_pendingAssessResult && _pendingAssessResult.cgc) {
-        _pendingAssessResult.cgc._highGradeUnlocked = (roboScore != null && roboScore >= 80);
-      }
-      if (hgUnlocked) {
-        btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">HIGH-GRADE ASSESS</div><div style="font-size:10px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
-        btn.style.background = '#2a7a3a';
-        btn.style.textAlign = 'center';
-      } else if (hgAlreadyRun) {
-        btn.innerHTML = `<div style="font-size:13px;font-weight:800;letter-spacing:2px;line-height:1.2">COMPLETED</div>`;
-        btn.style.textAlign = 'center';
-      }
-      btn.style.display = 'block';
-      requestAnimationFrame(() => {
-        btn.style.opacity = '1';
-        btn.style.transform = 'scale(1)';
-      });
+    if (!btn) return;
+    const hgAlreadyRun = !!(formData && formData.highGradeTier);
+    const hgUnlocked = (roboScore != null && roboScore >= 80) && !hgAlreadyRun;
+    if (_pendingAssessResult && _pendingAssessResult.cgc) {
+      _pendingAssessResult.cgc._highGradeUnlocked = (roboScore != null && roboScore >= 80);
     }
-  }, 5500);
+    if (hgUnlocked) {
+      btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">HIGH-GRADE ASSESS</div><div style="font-size:10px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
+      btn.style.background = '#2a7a3a';
+      btn.style.color = '#fff';
+      btn.style.textAlign = 'center';
+    } else if (hgAlreadyRun) {
+      btn.innerHTML = `<div style="font-size:13px;font-weight:800;letter-spacing:2px;line-height:1.2">COMPLETED</div>`;
+      btn.style.background = '#3a9ee0';
+      btn.style.color = '#fff';
+      btn.style.textAlign = 'center';
+    } else {
+      btn.innerHTML = 'COMPLETE';
+      btn.style.background = '#3a9ee0';
+      btn.style.color = '#fff';
+    }
+    btn.disabled = false;
+    btn.style.cursor = 'pointer';
+    btn.onclick = completeAssessment;
+    dbg('mountResults: ASSESSING → active button');
+  }, 4000);
 }
 
 // Backward-compat alias — older code may still call showResultPreview.
@@ -4379,10 +4395,8 @@ async function assessHighGrade() {
     cgc._highGradeTier = true;
     cgc._highGradeUnlocked = (unified.roboGrade && unified.roboGrade.score >= 80);
 
-    // S13 v17: kick off pre-upload in parallel with the rest of the
-    // animation. Same pattern as the standard flow; for HG we have both
-    // main and corner images to upload. By the time the user taps
-    // COMPLETE, uploads should be done.
+    // S13 v18: same pre-upload pattern as standard flow. HG uploads
+    // include both main and corner images.
     try {
       const normalizedTitle = normalizeTitle(
         (cgc.title || formData.title || '').trim().replace(/\s+/g, ' ').replace(/^The\s+/i, ''),
@@ -5276,17 +5290,11 @@ async function assessGrade(){
     }
     if(unified.psaGrade) cgc._psaGrade=unified.psaGrade;
 
-    // S13 v17: Pre-upload images to Cloud Storage in parallel with the
-    // rest of the assessment animation. By the time the user reaches the
-    // results panel (~17s from this point) and taps COMPLETE, the
-    // uploads have typically already finished and submitForm()'s save
-    // path is just a Firestore write — no several-second hang on tap.
-    //
-    // We use the post-API title (AI may have normalized it) when building
-    // the comicId so uploads land at the same path submitForm() will use.
-    // The promise is stashed on formData so submitForm can await it.
-    // Fire-and-forget — submitForm has a fallback that runs the upload
-    // synchronously if _preUploadPromise is missing or fails.
+    // S13 v18: kick off image upload in parallel with the remaining
+    // animation. By the time the user reaches COMPLETE (~30s in),
+    // uploads have typically finished and submitForm() just does a
+    // Firestore write. Falls back to in-submitForm upload if this
+    // promise rejects or doesn't run.
     try {
       const normalizedTitle = normalizeTitle(
         (cgc.title || formData.title || '').trim().replace(/\s+/g, ' ').replace(/^The\s+/i, ''),
@@ -5302,17 +5310,16 @@ async function assessGrade(){
         formData._preUploadPromise = startPreUpload(rawImages, rawCornerImages, preUploadId)
           .catch(err => {
             if (window.RobograderScan && window.RobograderScan.debugLog) {
-              window.RobograderScan.debugLog(`pre-upload failed (will retry in submitForm): ${err.message}`);
+              window.RobograderScan.debugLog(`pre-upload failed: ${err.message}`);
             }
-            console.warn('[pre-upload] failed:', err);
-            // Clear the promise so submitForm falls through to its own upload path.
+            console.warn('[pre-upload std] failed:', err);
             formData._preUploadPromise = null;
             formData._preUploadId = null;
             return null;
           });
       }
     } catch (e) {
-      console.warn('[pre-upload] setup failed (will retry in submitForm):', e);
+      console.warn('[pre-upload std] setup failed:', e);
     }
 
     const d=unified._diagnostics||cgc._diagnostics||{};
@@ -5340,6 +5347,18 @@ async function assessGrade(){
 //     not jammed into a results panel that wasn't sized for it.
 function showGateTerminatedPreview(gateResult, reason, lockout) {
   if (window._modalFrameTimer) { clearInterval(window._modalFrameTimer); window._modalFrameTimer = null; }
+
+  // S13 v18: stop the grid + needle animations on a gate failure too,
+  // and don't sweep the needle (no score). Needle goes back to off.
+  if (window.RobograderScan && window.RobograderScan.stopGridCycle) {
+    window.RobograderScan.stopGridCycle();
+  }
+  if (window.RobograderScan && window.RobograderScan.stopNeedlePulse) {
+    window.RobograderScan.stopNeedlePulse();
+  }
+  if (window.RobograderScan && window.RobograderScan.setNeedleAngle) {
+    window.RobograderScan.setNeedleAngle(-48);
+  }
 
   // Mark all 5 steps as failed.
   const allSteps = ['populating','mint','pq','grading','confirming'];
@@ -7110,39 +7129,31 @@ async function submitForm(){
   let finalImages, finalCornerImages, finalThumbnails;
   try {
     if (formData._imagesChanged && newImageCount > 0) {
-      // S13 v17: If assessGrade kicked off a pre-upload after the API
-      // returned, await it here instead of running a second upload. The
-      // pre-upload uses the same comicId we just built (or built before
-      // the user reached COMPLETE), so the URLs are identical to what a
-      // fresh upload would produce. If the pre-upload promise is missing
-      // (assess wasn't run, or pre-upload setup failed) or the awaited
-      // result is null (pre-upload upload failed and rejected the
-      // promise), we fall through to a fresh upload.
+      // S13 v18: if assessGrade kicked off pre-upload in parallel with
+      // the animation, the upload may already be done. Await the cached
+      // promise instead of running a second upload. Falls through to
+      // a fresh upload if the cache is missing or returned null.
       let preUpload = null;
       if (formData._preUploadPromise && formData._preUploadId === id) {
         syncMsg('Finishing upload…');
         try {
           preUpload = await formData._preUploadPromise;
         } catch (e) {
-          console.warn('[pre-upload] await failed; falling back to fresh upload:', e);
+          console.warn('[pre-upload] await failed; running fresh upload:', e);
           preUpload = null;
         }
         // One-shot: clear so a future submit (e.g. user re-edits) gets
-        // a fresh upload path. Avoids reusing stale URLs across edits.
+        // a fresh upload path.
         formData._preUploadPromise = null;
         formData._preUploadId = null;
       }
 
       if (preUpload && preUpload.mainResult && preUpload.cornerResult) {
-        // Pre-upload succeeded — use its results directly.
         finalImages = preUpload.mainResult.images;
         finalThumbnails = preUpload.mainResult.thumbnails;
         finalCornerImages = preUpload.cornerResult.images;
       } else {
-        // No pre-upload result available — run the upload now.
         syncMsg(`Uploading ${newImageCount} image${newImageCount === 1 ? '' : 's'}...`);
-        // Preserve existing thumbnails for any pass-through images so we don't
-        // re-generate them needlessly.
         const existingComic = formData.id ? items.find(c => c.id === formData.id) : null;
         const existingThumbs = existingComic?.thumbnails || [];
         const mainResult = await processImagesForSave(rawImages, id, STORAGE_SLOTS_MAIN, {

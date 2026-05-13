@@ -52,7 +52,10 @@
   // S13 v16: defaulted OFF for production. Flip to true to re-enable
   // when debugging the modal flow. The debug code stays in place so
   // we can turn it back on without re-instrumenting everything.
-  let _debugEnabled = false;
+  // S13 v18: debug logging is ON by default for this build to diagnose
+  // the 19-second freeze seen in v17 testing. Turn off via
+  // window.RobograderScan.setDebug(false) once the freeze is fixed.
+  let _debugEnabled = true;
   let _debugStartTime = 0;
   let _debugPanel = null;
 
@@ -167,29 +170,41 @@
   };
 
   // ── Timing (ms) ─────────────────────────────────────────────────────
-  // S13 v17: retimed against storyboard.
-  //   0:00 → tap Assess Grade. Chest cavity begins sliding up (2000ms).
-  //   0:02 → chest landed. 1000ms pause.
-  //   0:03 → image1 slides in (500ms). Scan (3000ms). Slide out (500ms).
-  //          Sequential, NOT overlapping with image2 slide-in.
-  //   0:07 → image2 slides in. (Same per-photo pattern.)
-  //   0:11 → image3 slides in.
-  //   0:15 → image4 slides in.
-  //   0:19 → photo loop ends.
-  // Per-photo total: 4000ms (500 in + 3000 scan + 500 out). 4 photos × 4s
-  // = 16s. Plus 2s chest + 1s pause + 0s after last photo = 19s, matches
-  // the storyboard exactly.
+  // S13 v18: full retiming for the persistent-results-panel architecture.
+  //   0:00 → tap Assess Grade.
+  //   0:00.2 → chest cavity AND results panel begin sliding up together
+  //            (2000ms ease-in-out).
+  //   0:02.2 → chest landed. Results panel landed too. 1000ms pause.
+  //   0:03.2 → photo 1 slides in (500ms ease-in-out)
+  //            scan (3000ms down)
+  //            slide out (500ms ease-in-out)
+  //   0:07.2 → photo 2 starts. Same pattern, scan direction up.
+  //   0:11.2 → photo 3 starts. Scan down.
+  //   0:15.2 → photo 4 starts. Scan up.
+  //   0:19.2 → photo loop ends.
+  //   0:19.2 → progress overlay slides in from the RIGHT (2000ms).
+  //   0:21.2 → overlay in place. Grid cycle + needle pulse start.
+  //            POPULATING INFO lights green.
+  //   0:22.7, 0:24.2, 0:25.7, 0:27.2 → remaining 4 buttons light at
+  //   1500ms intervals (paced + API-gated; API has typically returned
+  //   by now since it ran in parallel from t=0).
+  //   0:27.2 → grid cycle stops, needle pulses stops, needle sweeps to
+  //   final score angle (2000ms). Score boxes count up. PQ pill cycles
+  //   through 7 designations (1800ms linear) and lands on final.
+  //   0:30.0 → ASSESSING button becomes COMPLETE (in-place style change).
+  //
+  // Total: ~30 seconds animation, then holds on COMPLETE until tap.
   const CHEST_SLIDE_DELAY  = 200;
   const CHEST_SLIDE_TIME   = 2000;
   const POST_CHEST_PAUSE   = 1000;
   const DISPLAY_FADE_DELAY = 100;
-  const SLIDE_DURATION     = 500;   // S13 v17: was 1000 — storyboard calls for 500ms slides
-  const SCAN_DURATION      = 3000;  // S13 v17: was 2000 — storyboard scan is 3000ms
-  const PAUSE_AFTER_SCAN   = 0;     // S13 v17: was 200 — slide-out runs immediately after scan
+  const SLIDE_DURATION     = 500;
+  const SCAN_DURATION      = 3000;
+  const PAUSE_AFTER_SCAN   = 0;
   const FIRST_PHOTO_DELAY  = CHEST_SLIDE_DELAY + CHEST_SLIDE_TIME + POST_CHEST_PAUSE;
-  const TRACKER_SLIDE_TIME = 2000;  // S13 v17: storyboard calls for 2000ms overlay slide-in
-  const RESULTS_SLIDE_TIME = 400;   // results panel slides up from below
-  const OVERLAY_SLIDE_TIME = 2000;  // S13 v17: was 600 — overlay slide is now 2000ms from right
+  const TRACKER_SLIDE_TIME = 2000;
+  const RESULTS_SLIDE_TIME = 2000;  // Results panel slides up with the chest, same duration
+  const OVERLAY_SLIDE_TIME = 2000;  // Progress overlay slides in from the right
 
   // ── CSS injection ───────────────────────────────────────────────────
   // Self-contained .rg-scan-* prefix avoids any class collision.
@@ -213,7 +228,12 @@
     .rg-scan-stage {
       position: fixed;
       inset: 0;
-      background: #000;
+      /* S13 v18: background removed. The chest now slides up over the
+         user's existing Edit view, giving a seamless transition instead
+         of a hard cut to black. The stage is transparent but still
+         blocks pointer events so the user can't accidentally tap Edit
+         controls while the chest is sliding up. */
+      background: transparent;
       overflow: hidden;
       z-index: 8500;
     }
@@ -239,7 +259,13 @@
          translation (-50%) for centering must stay in the transform
          throughout — combine into a single transform. */
       transform: translate(-50%, 100%);
-      animation: rgShellSlideUp 2s cubic-bezier(0.22, 1, 0.36, 1) 0.2s forwards;
+      /* S13 v18: ease-in-out so the chest doesn't pop into motion. The
+         old ease-out (cubic-bezier 0.22, 1, 0.36, 1) was near-linear at
+         the start, so frame 3 of the user's test recording showed the
+         chest appearing well up the screen rather than emerging
+         gradually from the bottom. ease-in-out gives a smooth on-ramp.
+         Duration extended to 2000ms to match storyboard timing. */
+      animation: rgShellSlideUp 2000ms cubic-bezier(0.65, 0, 0.35, 1) 0.2s forwards;
       pointer-events: none;
     }
     @keyframes rgShellSlideUp {
@@ -269,9 +295,8 @@
       height: ${CAVITY.heightPct}%;
       overflow: hidden;
       opacity: 0;
-      /* S13 v17: chest slide is now 2000ms starting at 200ms, so it
-         lands at 2200ms. Display fades in just after chest arrives, so
-         the cavity is visible during the 1s pre-photo-1 pause. */
+      /* S13 v18: chest slide is now 2000ms starting at 200ms, so it
+         lands at 2200ms. Display fades in just after that. */
       animation: rgScanFadeIn 0.3s ease-out 2.3s forwards;
       pointer-events: none;
     }
@@ -279,24 +304,31 @@
 
     .rg-scan-photo {
       position: absolute;
-      /* S13 v12: cap photo at 80% of cavity dimensions, centered. With
-         the bottom-anchored width-fit chest, the cavity now renders much
-         larger (~460px tall on iPhone 14) than under the previous height-
-         fit math (~313px). Photos filling 100% of that felt visually
-         oversized — they dominated the screen. The 80% cap leaves a
-         margin around the photo so it sits within the cavity rather
-      /* S13 v13: cap further reduced from 80% to 60% of cavity. The
-         80% cap from v12 was an improvement but still left photos
-         dominating the screen on phones — the cavity itself is large
-         (~390×460 on iPhone 14). 60% gives ~234×276 photo area, which
-         reads as a "preview" rather than overwhelming the chest. */
-      left: 20%; top: 20%;
-      width: 60%; height: 60%;
+      /* S13 v18: Photo geometry now derived from the cavity's slit
+         positions measured from the chest art (see chest annotations
+         in S13 design docs). The cavity has two thin vertical slits
+         at viewport pixel X=200 and X=688 (in an 888-wide frame),
+         with Y range 396–1100 — these define the photo's travel
+         boundary and visual size:
+           Left slit cavity-relative X:  2.6%
+           Right slit cavity-relative X: 86.0%
+           Slit Y range:                 20.6% to 87.9% of cavity
+         Photo sits centered between slits, fits within slit Y range.
+         Photo width = 83.4% of cavity (space between slits).
+         Photo height = 67.3% of cavity (slit Y range).
+         Off-screen entry at translateX(-110%) hides photo behind the
+         left slit; exit at translateX(110%) hides behind right slit. */
+      left:   2.6%;
+      top:    20.6%;
+      width:  83.4%;
+      height: 67.3%;
       background-size: contain;
       background-position: center;
       background-repeat: no-repeat;
       transform: translateX(-110%);
-      transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+      /* S13 v18: 500ms photo slide (was 1000ms — storyboard calls for
+         faster transitions to fit the per-photo 4-second cycle). */
+      transition: transform 500ms cubic-bezier(0.65, 0, 0.35, 1);
     }
     .rg-scan-photo.in-view  { transform: translateX(0);    }
     .rg-scan-photo.out-view { transform: translateX(110%); }
@@ -307,12 +339,12 @@
 
     /* Spine photo rotation — captured spine photos are landscape (the
        spine runs along the long edge of the captured image). To display
-       it as a vertical strip reading top-to-bottom, rotate -90°
-       (counter-clockwise). The .rg-scan-photo parent is now ~60% × 60%
-       of cavity (roughly square), so the rotated image fits naturally
-       inside without complex pre-rotation sizing math.
-       S13 v13: simplified after multiple wrong-direction iterations.
-       Using -90deg (CCW) which is the standard for spine display. */
+       it as a vertical strip reading top-to-bottom, we rotate.
+       S13 v18: switched from -90deg (CCW) to +90deg (CW) because the
+       previous orientation showed the spine upside-down in real device
+       testing (the dust-flap side of comics is at the top after rotation,
+       not bottom). The art-side of the spine should be at the top of
+       the displayed photo, which means a +90 (clockwise) rotation. */
     .rg-scan-photo.is-spine {
       background-image: none !important;
     }
@@ -327,14 +359,9 @@
       transform: translate(-50%, -50%);
     }
     .rg-scan-photo-img.rotated {
-      /* The parent container is roughly square (60% × 60% of cavity).
-         For a landscape source image, swapping pre-rotation dimensions
-         lets the contained image fill the parent's "long edge" after
-         rotation. Since the parent is square-ish, the practical effect
-         is just a -90° rotation of a contain-fit image. */
       width:  100%;
       height: 100%;
-      transform: translate(-50%, -50%) rotate(-90deg);
+      transform: translate(-50%, -50%) rotate(90deg);
     }
 
     .rg-scan-laser {
@@ -345,8 +372,11 @@
     }
     .rg-scan-laser.active { opacity: 1; }
     .rg-scan-laser.horizontal {
-      left: -5%;
-      width: 110%;
+      /* S13 v18: laser horizontal extent now matches the slit-to-slit
+         distance (same as photo width) so the beam appears to emit
+         from one slit and reach the other. */
+      left: 2.6%;
+      width: 83.4%;
       height: 4px;
       background: linear-gradient(to right,
         rgba(83, 179, 230, 0)   0%,
@@ -360,8 +390,9 @@
         0 0 32px rgba(83, 179, 230, 0.4);
     }
     .rg-scan-laser.vertical {
-      top: -5%;
-      height: 110%;
+      /* S13 v18: vertical-scan extent matches slit Y range. */
+      top:    20.6%;
+      height: 67.3%;
       width: 4px;
       background: linear-gradient(to bottom,
         rgba(83, 179, 230, 0)   0%,
@@ -390,10 +421,13 @@
         filter: brightness(1.3);
       }
     }
-    @keyframes rgScanDown  { from { top: 0%;   } to { top: 100%;  } }
-    @keyframes rgScanUp    { from { top: 100%; } to { top: 0%;    } }
-    @keyframes rgScanRight { from { left: 0%;  } to { left: 100%; } }
-    @keyframes rgScanLeft  { from { left: 100%;} to { left: 0%;   } }
+    /* S13 v18: scan range = slit Y range (20.6% to 87.9% of cavity).
+       Vertical scans (down/up) for the laser bar's top position.
+       Scan duration 3000ms matches storyboard. */
+    @keyframes rgScanDown  { from { top: 20.6%; } to { top: 87.9%;  } }
+    @keyframes rgScanUp    { from { top: 87.9%; } to { top: 20.6%;  } }
+    @keyframes rgScanRight { from { left: 2.6%; } to { left: 86.0%; } }
+    @keyframes rgScanLeft  { from { left: 86.0%;} to { left: 2.6%;  } }
     .rg-scan-laser.scan-down  { animation: rgScanDown  3s cubic-bezier(0.42, 0, 0.58, 1) forwards, rgScanFlicker 0.15s infinite alternate; }
     .rg-scan-laser.scan-up    { animation: rgScanUp    3s cubic-bezier(0.42, 0, 0.58, 1) forwards, rgScanFlicker 0.15s infinite alternate; }
     .rg-scan-laser.scan-right { animation: rgScanRight 3s cubic-bezier(0.42, 0, 0.58, 1) forwards, rgScanFlicker 0.15s infinite alternate; }
@@ -418,9 +452,13 @@
       transform: translateX(0);
     }
 
-    /* Results panel — appears at the bottom of the chest in the brushed-
-       steel area. Slides UP from below to enter. S13 v13: switched to
-       @keyframes for the same iOS reliability reason as the overlay. */
+    /* Results panel — sits in the brushed-steel area at the bottom of
+       the chest. S13 v18: pre-rendered as part of buildDom so it slides
+       up TOGETHER with the chest, eliminating the separate slide-in
+       animation. The panel content is set via setResultsContent (which
+       replaces innerHTML). On first render the content is placeholder
+       score boxes + PQ pill + gray "ASSESSING" button; mountResults
+       (in index.html) populates the real values and animates them. */
     .rg-scan-results {
       position: absolute;
       left:   ${RESULTS.leftPct}%;
@@ -428,16 +466,8 @@
       width:  ${RESULTS.widthPct}%;
       height: ${RESULTS.heightPct}%;
       overflow: hidden;
-      transform: translateY(110%);
       pointer-events: auto;
       z-index: 13;
-    }
-    .rg-scan-results.slide-in {
-      animation: rgResultsSlideUp ${RESULTS_SLIDE_TIME}ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-    }
-    @keyframes rgResultsSlideUp {
-      from { transform: translateY(110%); }
-      to   { transform: translateY(0);    }
     }
 
     /* Step boxes layer — siblings of the overlay, positioned at the same
@@ -459,10 +489,7 @@
       width:  ${OVERLAY.widthPct}%;
       height: ${OVERLAY.heightPct}%;
       overflow: visible;
-      /* S13 v17: slide IN from the RIGHT (per storyboard frame 12).
-         Earlier versions slid in from the left; new design slides from
-         right. Initial transform is translateX(+110%) so the element
-         starts off-screen to the right and animates to translateX(0). */
+      /* S13 v18: slides in from the right (translateX +110% → 0). */
       transform: translateX(110%);
       pointer-events: none;
       z-index: 13;
@@ -475,12 +502,7 @@
        boxes layer; carved-out alpha holes in the overlay artwork let the
        box PNGs show through. The overlay holds the step text (baked into
        the artwork), the green chest panel, screws, the 4×4 light grid,
-       and the gauge. S13 v13: switched from CSS transition + class-toggle
-       to @keyframes animation. iOS Safari was inconsistent about applying
-       transform transitions when the element was added and mutated in
-       the same paint frame; @keyframes runs reliably because it doesn't
-       depend on a state-change observation.
-       S13 v17: slide direction flipped from left to right. */
+       and the gauge. S13 v18: slides in from the right per storyboard. */
     .rg-scan-overlay {
       position: absolute;
       left:   ${OVERLAY.leftPct}%;
@@ -500,17 +522,23 @@
       to   { transform: translateX(0);    }
     }
 
-    /* S13 v17: 4×4 light grid — 8 frames cycling at 250ms. Positioned
-       inside the overlay at X=57, Y=91 (overlay bounding box 474×755),
-       160×160 px. Active during Phase D (overlay arrival through end
-       of progress buttons); stopped at start of Phase E (score reveal).
-       Position is set in percentages so it scales with the overlay. */
+    /* S13 v18: cycling light grid (8 frames at 250ms each). Positioned
+       inside the overlay at viewport-pixel X=57, Y=91 with size 160×160
+       within the overlay's 474×755 bounding box.
+         Left: 57/474 = 12.03%
+         Top:  91/755 = 12.05%
+         Width:  160/474 = 33.76%
+         Height: 160/755 = 21.19%
+       All 8 frames stacked at this position, opacity 0 until the active
+       class is applied to one. The grid does NOT auto-start — it starts
+       only when startGridCycle() is called (after overlay slide-in
+       completes) and stops at mountResults time. */
     .rg-scan-grid {
       position: absolute;
-      left:   12.03%;     /* 57/474 */
-      top:    12.05%;     /*  91/755 */
-      width:  33.76%;     /* 160/474 */
-      height: 21.19%;     /* 160/755 */
+      left:   12.03%;
+      top:    12.05%;
+      width:  33.76%;
+      height: 21.19%;
       pointer-events: none;
       z-index: 1;
     }
@@ -526,32 +554,25 @@
       opacity: 1;
     }
 
-    /* S13 v17: Red needle. Single PNG, CSS-rotated. Pivot at
-       bottom-center of the needle (transform-origin: 50% 100%). Needle
-       PNG is 11px wide and tall — sized as % of overlay so it scales
-       with the chest. Positioned so the pivot point is at X=330, Y=190
-       within the 474×755 overlay (left=69.62%, top=25.17%).
-       The visible needle extends UP from the pivot. We give the element
-       a height equal to the needle's visible length and anchor its
-       bottom at the pivot; the PNG fills that box (object-fit:contain)
-       so rotation visually swings the needle's tip.
-       Off / score 0  → rotate(-48deg)
-       Score 50       → rotate(0deg)
-       Score 100      → rotate(+48deg)
-       Default starting position: -48deg (off).
-       Animation during Phase D: sine pulse, 1s per cycle, varying
-       amplitudes (driven by JS via setting --rg-needle-rot per frame).
-       Phase E: smoothly transitions to its final score-derived angle. */
+    /* S13 v18: red needle. Single PNG, CSS-rotated via
+       --rg-needle-rot. Pivot at bottom-center (transform-origin
+       50% 100%). Pivot point in overlay coords: X=330, Y=206
+       (lowered 16px from initial spec of Y=190 per user testing
+       in frame 28). Wrap element extends UPWARD from pivot.
+         pivot X: 330/474 = 69.62%
+         pivot Y: 206/755 = 27.28%
+         wrap width:  11/474 = 2.32%
+         wrap height: 140/755 = 18.54%
+       Off / score 0   → rotate(-48deg)
+       Score 50        → rotate(0deg)
+       Score 100       → rotate(+48deg)
+       Default starting position: -48deg (off / pre-pulse). */
     .rg-scan-needle-wrap {
       position: absolute;
-      /* The wrap is anchored so its bottom-center is at the pivot. We
-         draw a box that extends UPWARD from the pivot. The needle PNG
-         is ~140px tall in the artwork's coordinates (visually scaled),
-         which is 18.54% of the 755-tall overlay. */
-      left:   69.62%;     /* 330/474 — pivot X */
-      top:    25.17%;     /* 190/755 — pivot Y (bottom of wrap) */
-      width:  2.32%;      /*  11/474 */
-      height: 18.54%;     /* 140/755 — needle visible length */
+      left:   69.62%;
+      top:    27.28%;
+      width:  2.32%;
+      height: 18.54%;
       transform: translate(-50%, -100%) rotate(var(--rg-needle-rot, -48deg));
       transform-origin: 50% 100%;
       transition: transform 200ms ease-out;
@@ -565,8 +586,6 @@
       object-position: bottom center;
       pointer-events: none;
     }
-    /* During Phase E the needle does a single smooth sweep to its
-       final angle. Class .final-sweep extends the transition duration. */
     .rg-scan-needle-wrap.final-sweep {
       transition: transform 2000ms cubic-bezier(0.22, 1, 0.36, 1);
     }
@@ -629,9 +648,57 @@
     display.appendChild(laserV);
 
     shell.appendChild(display);
+
+    // S13 v18: Results panel mounted as part of the initial DOM so it
+    // slides up TOGETHER with the chest (it's a child of the shell,
+    // which is what slides). Initial content is the placeholder layout
+    // — three 0-value score boxes, "White" PQ pill, gray ASSESSING
+    // button. mountResults (called from index.html when the API
+    // returns) replaces innerHTML with the real values and animations.
+    const results = document.createElement('div');
+    results.className = 'rg-scan-results';
+    results.id = 'rg-scan-results';
+    results.innerHTML = buildResultsPlaceholder();
+    shell.appendChild(results);
+
     stage.appendChild(shell);
     document.body.appendChild(stage);
     return stage;
+  }
+
+  // S13 v18: Placeholder content for the results panel — shown from
+  // the moment the chest starts sliding up. Three 0-value score boxes
+  // (matching the same dimensions index.html's mountResults uses, +8px
+  // per Matt's frame-37 feedback), a "White" PQ placeholder pill, and
+  // a disabled gray "ASSESSING" button below. This is JUST the layout;
+  // index.html's mountResults replaces this innerHTML at the end of
+  // the animation with the real animated values, then transforms the
+  // ASSESSING button into COMPLETE.
+  function buildResultsPlaceholder() {
+    return `
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;">
+        <div style="display:flex;gap:12px;justify-content:center;align-items:center;">
+          <div style="width:56px;height:56px;border:1.5px solid #3a5010;background:#0f1a05;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
+            <div style="font-size:20px;font-weight:800;color:#aaee30;line-height:1">0</div>
+            <div style="font-size:8px;color:#aaee30;opacity:0.75;margin-top:2px;letter-spacing:0.8px">RG</div>
+          </div>
+          <div style="width:56px;height:56px;background:#2a5a8a;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
+            <div style="font-size:20px;font-weight:800;color:#e0f0ff;line-height:1">0.0</div>
+            <div style="font-size:8px;color:#e0f0ff;opacity:0.75;margin-top:2px;letter-spacing:0.8px">CGC</div>
+          </div>
+          <div style="width:56px;height:56px;background:#8a2a2a;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
+            <div style="font-size:20px;font-weight:800;color:#ffe0e0;line-height:1">0.0</div>
+            <div style="font-size:8px;color:#ffe0e0;opacity:0.75;margin-top:2px;letter-spacing:0.8px">PSA</div>
+          </div>
+        </div>
+        <div id="result-pq" style="display:flex;align-items:center;justify-content:center;min-height:22px;">
+          <div style="background:#EEE8DC;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">White</div>
+        </div>
+        <button id="assess-complete-btn" disabled
+          style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:36px;background:#5a5a5a;color:#bbb;border:none;font-size:13px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">
+          ASSESSING
+        </button>
+      </div>`;
   }
 
   function escapeUrl(url) {
@@ -705,8 +772,8 @@
   let _activeCancelToken = null;
 
   function teardown() {
-    // S13 v17: stop grid + needle animation timers so they don't run
-    // against a torn-down DOM.
+    // S13 v18: stop animation timers BEFORE removing DOM so they don't
+    // run against a torn-down tree.
     stopGridCycle();
     stopNeedlePulse();
     if (_activeStage && _activeStage.parentNode) {
@@ -760,41 +827,23 @@
   // Returns the element so the caller can populate or update it.
   // S13 v13: uses @keyframes animation (slide-in class) for iOS
   // reliability; same reason as the overlay change.
+  // S13 v18: was slideResultsIntoPanel; the results panel is now
+  // pre-mounted by buildDom and rides up with the chest, so there's
+  // no separate slide. This function is the in-place update hook
+  // used by mountResults (when final values are ready) and
+  // showGateTerminatedPreview. Name retained for backward compat.
   function slideResultsIntoPanel(html) {
-    debugLog(`slideResultsIntoPanel called, htmlLen=${(html||'').length}`);
+    debugLog(`slideResultsIntoPanel (in-place update) called, htmlLen=${(html||'').length}`);
     if (!_activeStage) {
       debugLog('  ⚠ no active stage');
       return null;
     }
-    const shell = _activeStage.querySelector('.rg-scan-shell');
-    if (!shell) {
-      debugLog('  ⚠ no shell');
+    const results = _activeStage.querySelector('.rg-scan-results');
+    if (!results) {
+      debugLog('  ⚠ no results panel');
       return null;
     }
-
-    const existing = shell.querySelector('.rg-scan-results');
-    if (existing) existing.remove();
-
-    const results = document.createElement('div');
-    results.className = 'rg-scan-results';
-    results.id = 'rg-scan-results';
     results.innerHTML = html;
-    shell.appendChild(results);
-    debugLog(`  results appended, transform=${debugTransform(results).substring(0,30)}`);
-
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        results.classList.add('slide-in');
-        debugLog('  slide-in class added (rAF×2)');
-        setTimeout(() => {
-          debugLog(`  results transform @+50ms: ${debugTransform(results).substring(0,40)}`);
-        }, 50);
-        setTimeout(() => {
-          debugLog(`  results transform @+500ms: ${debugTransform(results).substring(0,40)}`);
-        }, 500);
-      });
-    });
-
     return results;
   }
 
@@ -833,8 +882,11 @@
     const existingBoxes = shell.querySelector('.rg-scan-boxes');
     if (existingBoxes) existingBoxes.remove();
 
-    // Stop any prior grid cycle (in case overlay is remounted)
+    // S13 v18: defensive — stop any prior grid cycle / needle pulse.
+    // The overlay can be remounted (e.g. if assess errors and retries);
+    // those timers must not survive across remounts.
     stopGridCycle();
+    stopNeedlePulse();
 
     // Boxes layer FIRST (lower z-index) — opaque step boxes show through
     // alpha-carved holes in the overlay.
@@ -846,9 +898,10 @@
     debugLog(`  boxes appended, transform=${debugTransform(boxes).substring(0,30)}`);
 
     // Overlay layer SECOND (higher z-index) — the artwork PNG with
-    // baked-in step text. S13 v17: we also inject the cycling grid
-    // frames and the rotating needle as children of the overlay so they
-    // ride along with the slide-in animation.
+    // baked-in step text. S13 v18: we also inject the cycling grid
+    // (8 frame imgs, all initially opacity:0) and the needle as
+    // children of the overlay so they ride along with the slide-in
+    // and are part of the same alpha-positioned region.
     const overlay = document.createElement('div');
     overlay.className = 'rg-scan-overlay';
     overlay.id = 'rg-scan-overlay';
@@ -864,7 +917,6 @@
         boxes.classList.add('slide-in');
         overlay.classList.add('slide-in');
         debugLog('  slide-in class added (rAF×2)');
-        // Sample transform 50ms in to confirm animation is running
         setTimeout(() => {
           debugLog(`  overlay transform @+50ms: ${debugTransform(overlay).substring(0,40)}`);
         }, 50);
@@ -884,25 +936,21 @@
     return overlay;
   }
 
-  // ── S13 v17: 4×4 light grid (8-frame cycle) ─────────────────────────
-  // Builds the DOM for the grid — 8 stacked <img> elements, all
-  // absolutely positioned and overlapping. Active frame's <img> gets
-  // class 'active' (opacity 1); others stay opacity 0. We cycle the
-  // active class via a setInterval; the DOM stays static once built.
+  // ── S13 v18: cycling light grid (8 frames, 250ms each) ─────────────
+  // Built as 8 stacked <img> elements, all opacity:0 until activated.
+  // startGridCycle adds .active to one image at a time, rotating
+  // every 250ms. stopGridCycle clears all .active so the grid goes
+  // dark (no frame visible).
   function buildGridHtml() {
     let html = '<div class="rg-scan-grid" id="rg-scan-grid">';
     for (let i = 1; i <= 8; i++) {
       const idx = String(i).padStart(2, '0');
-      // S13 v17: PNG extension preserved as Matt uploaded the files
-      // (frame_01.PNG ... frame_08.PNG). Linux file systems are case-
-      // sensitive on Vercel; if Matt's files are .png lowercase this
-      // line is the one to change.
-      html += `<img src="assets/modal/frame_${idx}.PNG" alt="" class="${i === 1 ? 'active' : ''}" />`;
+      // Filename casing matches the repo: frame_01.PNG ... frame_08.PNG.
+      html += `<img src="assets/modal/frame_${idx}.PNG" alt="" />`;
     }
     html += '</div>';
     return html;
   }
-
   let _gridCycleTimer = null;
   let _gridCycleIdx = 0;
   function startGridCycle() {
@@ -916,6 +964,7 @@
     if (imgs.length === 0) return;
     debugLog('grid cycle started');
     _gridCycleIdx = 0;
+    imgs[0].classList.add('active');
     _gridCycleTimer = setInterval(() => {
       imgs.forEach(img => img.classList.remove('active'));
       _gridCycleIdx = (_gridCycleIdx + 1) % imgs.length;
@@ -926,41 +975,38 @@
     if (_gridCycleTimer) {
       clearInterval(_gridCycleTimer);
       _gridCycleTimer = null;
-      debugLog('grid cycle stopped');
     }
+    // S13 v18: also clear all .active so no frame is visible — matches
+    // frame-35 spec (grid returns to off state when results appear).
+    const grid = document.getElementById('rg-scan-grid');
+    if (grid) {
+      grid.querySelectorAll('img').forEach(img => img.classList.remove('active'));
+    }
+    debugLog('grid cycle stopped');
   }
 
-  // ── S13 v17: Red needle ─────────────────────────────────────────────
-  // Single PNG, CSS-rotated via --rg-needle-rot. Pulses during Phase D
-  // (driven by JS sine wave at varying amplitudes), then sweeps to its
-  // final score-derived angle during Phase E.
+  // ── S13 v18: red needle ────────────────────────────────────────────
+  // Single PNG, CSS-rotated. Pulses during Phase D, sweeps to final
+  // score angle during Phase E.
   function buildNeedleHtml() {
     return `<div class="rg-scan-needle-wrap" id="rg-scan-needle">
       <img src="assets/modal/Red_Needle.png" alt="" />
     </div>`;
   }
-
-  // Map score 0..100 to angle -48..+48 degrees. Score is clamped.
   function _scoreToAngle(score) {
     const s = Math.max(0, Math.min(100, Number(score) || 0));
     return -48 + (s / 100) * 96;
   }
-  // Set the needle angle directly (instant), in degrees. Useful for the
-  // off / starting state and for testing.
   function setNeedleAngle(degrees) {
     const el = document.getElementById('rg-scan-needle');
     if (!el) return;
     el.style.setProperty('--rg-needle-rot', `${degrees}deg`);
   }
-
-  // Pulse animation: oscillates the needle around 0deg with varying
-  // amplitudes, one full pulse per ~1 second. The driver is JS, not CSS,
-  // so we can vary amplitude per pulse for a more organic feel.
   let _needlePulseTimer = null;
   let _needlePulseStart = 0;
-  let _needleCurrentAmp = 25;  // current pulse amplitude (degrees)
+  let _needleCurrentAmp = 25;
   function startNeedlePulse() {
-    if (_needlePulseTimer) return; // already pulsing
+    if (_needlePulseTimer) return;
     const el = document.getElementById('rg-scan-needle');
     if (!el) {
       debugLog('  ⚠ startNeedlePulse: needle element not found');
@@ -968,16 +1014,12 @@
     }
     debugLog('needle pulse started');
     _needlePulseStart = performance.now();
-    _needleCurrentAmp = 25 + Math.random() * 20; // 25..45 deg first pulse
-    // Use a 33ms tick (~30fps) so the sine motion is smooth; transition
-    // CSS smooths between ticks. Phase: 0..1 over 1s; sin(phase*2π) gives
-    // a full +→0→-→0 cycle. After each 1s cycle, randomize amplitude.
+    _needleCurrentAmp = 25 + Math.random() * 20;
     _needlePulseTimer = setInterval(() => {
       const now = performance.now();
       const phase = ((now - _needlePulseStart) % 1000) / 1000;
       if (phase < 0.05 && (now - _needlePulseStart) > 100) {
-        // New pulse starting — vary amplitude
-        _needleCurrentAmp = 15 + Math.random() * 35; // 15..50 deg
+        _needleCurrentAmp = 15 + Math.random() * 35;
       }
       const angle = Math.sin(phase * 2 * Math.PI) * _needleCurrentAmp;
       el.style.setProperty('--rg-needle-rot', `${angle}deg`);
@@ -990,12 +1032,6 @@
       debugLog('needle pulse stopped');
     }
   }
-
-  // Phase E: smoothly sweep the needle to its final score-derived angle.
-  // Caller passes the final score (0..100). Uses CSS transition for a
-  // single smooth sweep. Does NOT stop the pulse — caller must call
-  // stopNeedlePulse() first or the pulse will immediately resume
-  // overwriting the angle.
   function sweepNeedleToScore(score) {
     const el = document.getElementById('rg-scan-needle');
     if (!el) return;
@@ -1097,7 +1133,7 @@
     dismiss,
     setDebug,
     debugLog,  // exposed so index.html can log mountStepTracker, setStep, etc.
-    // S13 v17: grid + needle control
+    // S13 v18: grid + needle control
     startGridCycle,
     stopGridCycle,
     startNeedlePulse,
