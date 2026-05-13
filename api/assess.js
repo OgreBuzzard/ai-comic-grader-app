@@ -254,15 +254,27 @@ export default async function handler(req, res) {
 
   // ── Census lookup ──────────────────────────────────────────────────────────
   // Full 2,359-issue CGC census table lives in ./census.js. We import the
-  // formatter function and call it with this book's title+issue; it returns
-  // either a paragraph of injected calibration context (when the issue is in
-  // the census) or an empty string (when it isn't). Only the matched entry's
-  // ~100 tokens are added to the prompt — the underlying table size has no
-  // effect on per-assessment token cost.
-  let censusContext = '';
+  // formatter function and call it with this book's title+issue. On match,
+  // we inject both the census data AND the wrapper instructions about how
+  // to use it. On no-match (the majority of calls — we cover ~2,500 issues
+  // out of millions), we inject nothing, saving ~800 tokens per call.
+  // The underlying table size has no effect on per-assessment token cost.
+  // Build the full census block conditionally. When there's no census match,
+  // we skip the entire instructional wrapper too — sending ~800 tokens of
+  // "don't mention the census" guidance with no census attached costs money
+  // for no benefit. Only inject when there's actual data to anchor against.
+  let censusBlock = '';
   try {
     const { formatCensusForPrompt } = await import('./census.js');
-    censusContext = formatCensusForPrompt(title, issueNumber) || '';
+    const censusContext = formatCensusForPrompt(title, issueNumber) || '';
+    if (censusContext) {
+      censusBlock = `${censusContext}
+CRITICAL — CENSUS USE IS INTERNAL ONLY:
+The CGC census data above is a calibration anchor for you, NOT a fact to share with the user. The graderNotes, aiAssessment, psaNotes, and labelNotes fields are all user-visible. NEVER mention the census, submission counts, average grades across submissions, distribution percentages, statistical priors, population data, or any phrasing that reveals you consulted external data about this issue. NEVER write things like "the census average for this book is X," "most copies grade lower," "statistically this should be a Y," "based on submission data," or "I'm anchoring to the population." The user must read the assessment as if you graded only what you see in their photos.
+
+If census data raised or lowered your grade from what the photos alone would suggest, justify the grade using on-the-book observations — defects you actually see, eye appeal, page quality, structural condition — never the statistics. If you cannot find an on-the-book justification for the census-informed grade, trust the photos over the census and grade what you see. The census is a sanity check, not an override.
+`;
+    }
   } catch (e) {
     console.error('[census] lookup failed, continuing without census context:', e?.message || e);
   }
@@ -705,12 +717,7 @@ CGC "Brittle" → PSA "Brittle" (caps grade at 3.5)
 Do not invent defects not visible in photos. If the PSA grade equals the CGC grade, psaNotes must be an empty string. When PSA differs, explain the reason in psaNotes in 1-2 sentences (e.g. "Eye appeal argues for the higher grade — strong color saturation and flat spine despite the minor stress lines.").
 
 If a CGC or PSA label is visible: read grade, cert number, page quality, and key issue notations directly from it.
-${censusContext}
-CRITICAL — CENSUS USE IS INTERNAL ONLY:
-The CGC census data above (if present) is a calibration anchor for you, NOT a fact to share with the user. The graderNotes, aiAssessment, psaNotes, and labelNotes fields are all user-visible. NEVER mention the census, submission counts, average grades across submissions, distribution percentages, statistical priors, population data, or any phrasing that reveals you consulted external data about this issue. NEVER write things like "the census average for this book is X," "most copies grade lower," "statistically this should be a Y," "based on submission data," or "I'm anchoring to the population." The user must read the assessment as if you graded only what you see in their photos.
-
-If census data raised or lowered your grade from what the photos alone would suggest, justify the grade using on-the-book observations — defects you actually see, eye appeal, page quality, structural condition — never the statistics. If you cannot find an on-the-book justification for the census-informed grade, trust the photos over the census and grade what you see. The census is a sanity check, not an override.
-
+${censusBlock}
 ${notesBlock}
 ${highGradeBlock}
 ════════════════════════════════════
