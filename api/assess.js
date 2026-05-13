@@ -867,66 +867,137 @@ RETURN ONLY THIS JSON — no markdown, no preamble
       parsed.grade = parseFloat(parsed.grade).toFixed(1);
     }
 
-    // Grade reference refinement pass (CGC only, grade in 5.0–10.0 range)
-    if (isCGC && !parsed.labelDetected && parsed.grade) {
-      const refImage = baseUrl ? await fetchGradeReference(parsed.grade, baseUrl) : null;
-      if (refImage) {
-        const refinementSystemPrompt = systemPrompt.replace(CGC_GRADE_TIERS.trim(), gradeTierContext(parsed.grade));
-        const refPrompt = `You previously assessed this comic as grade ${parsed.grade}. Here is the official CGC grading reference page for ${parsed.grade}. Compare your assessment photos against this reference. If the reference shows the book should look better or worse than what you assessed, adjust your grade. Return the same JSON format with your refined grade and updated graderNotes and aiAssessment. If ${parsed.grade} still seems correct, return the same grade.
-
-IMPORTANT — do not name the reference book in your notes. The reference is a real CGC-graded comic that we use as a calibration anchor, but users do not see it and would be confused if their book was being compared against a different title. In your graderNotes and aiAssessment, refer to it generically as "the ${parsed.grade} reference" or "the reference at this grade" — never as "Hulk 181", "Hulk #181", "the Hulk reference", or any specific issue name. Examples:
-  GOOD: "Compared to the ${parsed.grade} reference..."
-  GOOD: "The reference at this grade shows..."
-  BAD: "Compared to the Hulk 181 reference..."
-  BAD: "Comparing to Hulk #181 at ${parsed.grade}..."
-${notesBlock}`;
-        try {
-          const refResp = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-            body: JSON.stringify({
-              model: 'claude-opus-4-5',
-              max_tokens: 1000,
-              system: refinementSystemPrompt,
-              messages: [{
-                role: 'user',
-                content: [
-                  { type: 'text', text: `GRADE REFERENCE for ${parsed.grade}: The following image is a real CGC ${parsed.grade} comic with annotated defects, used as a calibration anchor. Do not name the title or issue number of this reference book in your output — refer to it generically as "the ${parsed.grade} reference."` },
-                  refImage,
-                  ...imageBlocks,
-                  { type: 'text', text: refPrompt }
-                ]
-              }]
-            })
-          }, 25000);
-          if (refResp.ok) {
-            const refData = await refResp.json();
-            const refText = refData.content?.map(b => b.text || '').join('') || '';
-            let refClean = refText.replace(/```json/gi, '').replace(/```/g, '').replace(/'''/g, '').trim();
-            const _rfb = refClean.indexOf('{'), _rlb = refClean.lastIndexOf('}');
-            if (_rfb !== -1 && _rlb !== -1) refClean = refClean.slice(_rfb, _rlb + 1);
-            let refParsed;
-            try { refParsed = JSON.parse(refClean); } catch(e) { refParsed = null; }
-            if (refParsed && refParsed.grade) {
-              if (!String(refParsed.grade).includes('.')) refParsed.grade = parseFloat(refParsed.grade).toFixed(1);
-              const _sRobo = parsed.roboGrade;
-              const _sPsa  = parsed.psaGrade;
-              const _sPsaN = parsed.psaNotes;
-              parsed = refParsed;
-              if (_sRobo && !parsed.roboGrade) parsed.roboGrade = _sRobo;
-              if (_sPsa  && !parsed.psaGrade)  parsed.psaGrade  = _sPsa;
-              if (_sPsaN && !parsed.psaNotes)  parsed.psaNotes  = _sPsaN;
-              parsed._diagnostics = { comicvineRef: referenceImageBlock !== null, gradeRef: true };
-            }
-          }
-        } catch (e) {
-          // Refinement failed — use original assessment
-        }
-      }
-    }
+    // ─────────────────────────────────────────────────────────────────────
+    // Grade reference refinement pass — DISABLED May 13, 2026 (S13 v22).
+    //
+    // ORIGINAL DESIGN (Matt, pre-S13): the CONFIRMING GRADE step was
+    // supposed to be a CHEAP IN-PROMPT calibration — include Hulk 181
+    // reference images at the assessed grade plus one step above and
+    // below in the SAME single Anthropic call, and let the model
+    // self-check. No second API call. The reference images were the
+    // calibration anchor; the model's existing pass would land more
+    // accurately because it had real graded examples to compare
+    // against in-context.
+    //
+    // WHAT THIS CODE DID INSTEAD: a full second Anthropic call with the
+    // user's photos + ONE reference image at the assessed grade. Doubled
+    // the cost and roughly doubled the latency. It's not what was asked
+    // for — it's a different feature that got built under the same name.
+    //
+    // Why we're disabling rather than fixing in place:
+    //   1. It runs on EVERY raw-CGC assessment (the "5.0-10.0 range"
+    //      comment was aspirational; the condition was actually just
+    //      isCGC && !labelDetected && parsed.grade).
+    //   2. Doubled per-assessment cost ($0.08 → ~$0.16).
+    //   3. Doubled per-assessment latency. Verified via debug-log timing
+    //      on a real device: API total ~45s, of which ~22s was the
+    //      refinement pass. Caused the visible "freeze" between scan
+    //      animation completing and the step buttons cycling green —
+    //      the freeze the team chased for multiple build iterations
+    //      thinking it was an animation timer bug.
+    //   4. Calibration evidence that it improved grading accuracy was
+    //      never collected. We don't have data showing it actually
+    //      helped — only the cost and latency it definitely added.
+    //
+    // FUTURE WORK to restore the ORIGINAL intent (not this implementation):
+    //   - In the primary prompt assembly above, after the user's photos
+    //     are added to imageBlocks, also append THREE reference images:
+    //     Hulk 181 at the predicted grade, one tier above, one tier below.
+    //   - This requires knowing the grade BEFORE the call, which means
+    //     either (a) running a tiny preliminary pass to get a rough
+    //     grade then a full pass with references (still two calls),
+    //     or (b) including a wider reference set (e.g. 5.0, 7.0, 9.0,
+    //     9.6, 9.8) so the model can self-calibrate across the range
+    //     in a single call. Option (b) is the cheaper architectural
+    //     match for "no second API call."
+    //   - Each added reference image adds ~$0.012 + small latency,
+    //     so 5 references adds ~$0.06 and a few seconds. Still cheaper
+    //     than the doubled-call refinement was.
+    //
+    // To restore the (broken) refinement pass implementation as-is:
+    // uncomment the block below. If you do, narrow the trigger to
+    // grade >= 8.5 at minimum, and use 'claude-opus-4-6' to match the
+    // primary call (the block below already has this fix applied).
+    //
+    // The downstream parsed._diagnostics.gradeRef field will now always
+    // be false. The client's animateStepsFromDiagnostics treats absence
+    // of gradeRef as "done" (not "failed") for the CONFIRMING GRADE
+    // step — since the single-pass assessment IS the confirmation when
+    // no separate refinement runs.
+    //
+    // if (isCGC && !parsed.labelDetected && parsed.grade) {
+    //   const refImage = baseUrl ? await fetchGradeReference(parsed.grade, baseUrl) : null;
+    //   if (refImage) {
+    //     const refinementSystemPrompt = systemPrompt.replace(CGC_GRADE_TIERS.trim(), gradeTierContext(parsed.grade));
+    //     const refPrompt = `You previously assessed this comic as grade ${parsed.grade}. Here is the official CGC grading reference page for ${parsed.grade}. Compare your assessment photos against this reference. If the reference shows the book should look better or worse than what you assessed, adjust your grade. Return the same JSON format with your refined grade and updated graderNotes and aiAssessment. If ${parsed.grade} still seems correct, return the same grade.
+    //
+    // IMPORTANT — do not name the reference book in your notes. The reference is a real CGC-graded comic that we use as a calibration anchor, but users do not see it and would be confused if their book was being compared against a different title. In your graderNotes and aiAssessment, refer to it generically as "the ${parsed.grade} reference" or "the reference at this grade" — never as "Hulk 181", "Hulk #181", "the Hulk reference", or any specific issue name. Examples:
+    //   GOOD: "Compared to the ${parsed.grade} reference..."
+    //   GOOD: "The reference at this grade shows..."
+    //   BAD: "Compared to the Hulk 181 reference..."
+    //   BAD: "Comparing to Hulk #181 at ${parsed.grade}..."
+    // ${notesBlock}`;
+    //     try {
+    //       const refResp = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
+    //         method: 'POST',
+    //         headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+    //         body: JSON.stringify({
+    //           model: 'claude-opus-4-6',  // was 'claude-opus-4-5' — switched to 4.6 to match primary call if re-enabled
+    //           max_tokens: 1000,
+    //           system: refinementSystemPrompt,
+    //           messages: [{
+    //             role: 'user',
+    //             content: [
+    //               { type: 'text', text: `GRADE REFERENCE for ${parsed.grade}: The following image is a real CGC ${parsed.grade} comic with annotated defects, used as a calibration anchor. Do not name the title or issue number of this reference book in your output — refer to it generically as "the ${parsed.grade} reference."` },
+    //               refImage,
+    //               ...imageBlocks,
+    //               { type: 'text', text: refPrompt }
+    //             ]
+    //           }]
+    //         })
+    //       }, 25000);
+    //       if (refResp.ok) {
+    //         const refData = await refResp.json();
+    //         const refText = refData.content?.map(b => b.text || '').join('') || '';
+    //         let refClean = refText.replace(/```json/gi, '').replace(/```/g, '').replace(/'''/g, '').trim();
+    //         const _rfb = refClean.indexOf('{'), _rlb = refClean.lastIndexOf('}');
+    //         if (_rfb !== -1 && _rlb !== -1) refClean = refClean.slice(_rfb, _rlb + 1);
+    //         let refParsed;
+    //         try { refParsed = JSON.parse(refClean); } catch(e) { refParsed = null; }
+    //         if (refParsed && refParsed.grade) {
+    //           if (!String(refParsed.grade).includes('.')) refParsed.grade = parseFloat(refParsed.grade).toFixed(1);
+    //           const _sRobo = parsed.roboGrade;
+    //           const _sPsa  = parsed.psaGrade;
+    //           const _sPsaN = parsed.psaNotes;
+    //           parsed = refParsed;
+    //           if (_sRobo && !parsed.roboGrade) parsed.roboGrade = _sRobo;
+    //           if (_sPsa  && !parsed.psaGrade)  parsed.psaGrade  = _sPsa;
+    //           if (_sPsaN && !parsed.psaNotes)  parsed.psaNotes  = _sPsaN;
+    //           parsed._diagnostics = { comicvineRef: referenceImageBlock !== null, gradeRef: true };
+    //         }
+    //       }
+    //     } catch (e) {
+    //       // Refinement failed — use original assessment
+    //     }
+    //   }
+    // }
+    // ─────────────────────────────────────────────────────────────────────
 
     // Attach diagnostic info
-    const gradeRefSucceeded = parsed._diagnostics?.gradeRef === true;
+    // Note (May 13, 2026): with the refinement pass disabled, gradeRef
+    // is always false. The client's animateStepsFromDiagnostics marks
+    // the CONFIRMING GRADE step as "failed" (red) when gradeRef is false.
+    // That's actually misleading now — there's no failure, we just
+    // aren't running that step. Either:
+    //   (a) update animateStepsFromDiagnostics to treat absence of
+    //       gradeRef as "skipped" not "failed" (mark green or omit
+    //       the step from the tracker), or
+    //   (b) reword the step label so "CONFIRMING GRADE" no longer
+    //       implies the refinement pass, and always set it to 'done'
+    //       when gradeRef === false (because the single-pass assessment
+    //       IS the confirmation).
+    // Going with (b) at the client side — simpler change.
+    const gradeRefSucceeded = false;  // refinement pass disabled
     parsed._diagnostics = {
       comicvineRef: referenceImageBlock !== null,
       pageQualityRef: pageQualityImageBlock !== null,
