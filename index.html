@@ -3036,6 +3036,13 @@ function showDetail(id){
   if (!isSample) {
     const isPublic = !!(selected.publicListing);
     const isReprintLocked = isFacsimilePrinting(selected.printing);
+    // S14: public listing is also locked when ownership !== 'Owned'. A public
+    // listing asserts that the user OWNS the book pictured; a Watching or Sold
+    // book shouldn't be displayed under that assertion. Facsimile lock takes
+    // precedence in the explanation text (it's the more specific reason and
+    // the more durable one — ownership can be cycled back, facsimile can't).
+    const ownership = selected.ownership || 'Owned';
+    const isOwnershipLocked = ownership !== 'Owned';
     if (isReprintLocked) {
       // Public listing is blocked for facsimile/reprint books. Reprints
       // must not be passed off as originals on public listings — the lock
@@ -3044,6 +3051,26 @@ function showDetail(id){
         <div style="flex:1">
           <div style="font-size:13px;font-weight:700;color:#7a4a2a;letter-spacing:0.05em">Public Listing Disabled</div>
           <div style="font-size:11px;color:#8a6a5a;margin-top:3px;line-height:1.5">This book has been identified as a Facsimile Reprint and cannot be publicly listed.</div>
+        </div>
+        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:not-allowed;flex-shrink:0;opacity:0.5">
+          <input type="checkbox" disabled style="opacity:0;width:0;height:0;position:absolute">
+          <span style="position:absolute;inset:0;border-radius:12px;background:#bbb6ad"></span>
+          <span style="position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,0.2)"></span>
+        </label>
+      </div>`;
+    } else if (isOwnershipLocked) {
+      // Public listing is blocked when the book isn't marked Owned. The
+      // explanation tells the user how to re-enable it (cycle ownership back
+      // to Owned on the Edit view). Note: turning ownership back to Owned
+      // does NOT auto-restore publicListing — the user must opt in again
+      // from this toggle. That's an intentional safety net against the
+      // case where they cycled ownership without realizing it would clear
+      // the public listing.
+      const ownLabel = ownership === 'Sold' ? 'Sold' : 'Watching';
+      html += `<div style="display:flex;align-items:center;gap:12px;margin-top:20px;opacity:0.85">
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:700;color:#7a4a2a;letter-spacing:0.05em">Public Listing Disabled</div>
+          <div style="font-size:11px;color:#8a6a5a;margin-top:3px;line-height:1.5">This book is marked ${esc(ownLabel)}. Only Owned books can be publicly listed.</div>
         </div>
         <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:not-allowed;flex-shrink:0;opacity:0.5">
           <input type="checkbox" disabled style="opacity:0;width:0;height:0;position:absolute">
@@ -3248,6 +3275,15 @@ async function togglePublicListing(id, val) {
     const comic = items.find(c => c.id === id);
     if (comic && isFacsimilePrinting(comic.printing)) {
       alert('This book has been identified as a Facsimile Reprint and cannot be publicly listed.');
+      try { showDetail(id); } catch(e) {}
+      return;
+    }
+    // S14: same defense for ownership lock. Only Owned books can be publicly
+    // listed. Watching/Sold books fail this guard. UI shows a disabled
+    // toggle in the same case but this catches direct calls and stale
+    // clients.
+    if (comic && comic.ownership && comic.ownership !== 'Owned') {
+      alert('Only books marked Owned can be publicly listed.');
       try { showDetail(id); } catch(e) {}
       return;
     }
@@ -3572,6 +3608,24 @@ let _addManualMode=false;
 function showAdd(){formData={...EMPTY};view="add";_assessed=false;_addManualMode=false;document.getElementById("add-btn").style.visibility="hidden";renderForm();}
 
 function enterManualMode(){_addManualMode=true;renderForm();}
+
+// S14: cycle the ownership field through Owned → Watching → Sold → Owned.
+// Wired to a single button in the collapsed Add/Edit flow (between Assess
+// Grade and Enter Manually). Each tap advances; the button label re-renders
+// to show the new state. Leaving the 'Owned' state forces publicListing
+// off — only owned books can be publicly listed, since the public listing
+// asserts ownership of the book pictured. If a user later returns ownership
+// to 'Owned', publicListing stays off and they must opt-in again from the
+// detail view — that's deliberate; we don't auto-flip it back on.
+function cycleOwnership(){
+  const cur = formData.ownership || 'Owned';
+  const next = cur === 'Owned' ? 'Watching'
+             : cur === 'Watching' ? 'Sold'
+             : 'Owned';
+  formData.ownership = next;
+  if (next !== 'Owned') formData.publicListing = false;
+  renderForm();
+}
 
 function showEdit(id){
   const c=items.find(x=>x.id===id);
@@ -4027,7 +4081,18 @@ function mountStepTracker() {
   // The overlay slide-in takes ~2000ms (see OVERLAY_SLIDE_TIME in
   // scan-animation.js). We delay this work by 2000ms to coincide with
   // its completion.
-  setTimeout(() => {
+  //
+  // S14 fix: capture the timer handle on window so showGateTerminatedPreview
+  // can cancel it. Previously, if the API returned a gate failure (especially
+  // MISSING_COVER, which is a pre-API gate and returns almost instantly)
+  // before this 2000ms timer fired, the gate handler would call
+  // stopGridCycle() — but this orphaned setTimeout would still fire ~2s later
+  // and call startGridCycle() AFTER the gate UI was already on screen,
+  // leaving the grid lights cycling underneath the failure label. Storing
+  // the handle lets the gate path clearTimeout() before it can fire.
+  if (window._gridCycleStartTimer) clearTimeout(window._gridCycleStartTimer);
+  window._gridCycleStartTimer = setTimeout(() => {
+    window._gridCycleStartTimer = null;
     if (window.RobograderScan && window.RobograderScan.startGridCycle) {
       window.RobograderScan.startGridCycle();
     }
@@ -5254,6 +5319,15 @@ async function completeAssessment() {
   formData.issue=cgc.issue!=null?String(cgc.issue):formData.issue||'';
   formData.issueDate=cgc.issueDate||formData.issueDate||'';
   formData.publisher=cgc.publisher||formData.publisher||'';
+  // S14 fix: assess.js v2.5 returns the `printing` field with "Facsimile Reprint"
+  // (or "Facsimile Reprint (YYYY)") when the model identifies a reprint, and
+  // empty string for original-printing books. completeAssessment was hand-copying
+  // every other identity field from cgc.* but missing this one, so the value
+  // never landed on formData and never made it to Firestore. Empty-string
+  // assignment is INTENTIONAL: an empty `printing` from a fresh assessment is
+  // the explicit "original printing" signal and should clear any stale value
+  // from a prior re-assessment of the same book.
+  formData.printing=cgc.printing||'';
   if(cgc.labelDetected&&cgc.officialCGCGrade){
     formData.cgcGrade=cgc.officialCGCGrade;
     if(cgc.officialCGCCert)formData.cgcCert=cgc.officialCGCCert;
@@ -5622,6 +5696,16 @@ async function assessGrade(){
 //     missingCover: {frontMissing, backMissing} }
 function showGateTerminatedPreview(gateResult, reason, lockout, details) {
   if (window._modalFrameTimer) { clearInterval(window._modalFrameTimer); window._modalFrameTimer = null; }
+  // S14: cancel the pending grid-cycle start scheduled by mountStepTracker.
+  // mountStepTracker schedules startGridCycle() to fire 2000ms after the
+  // overlay slides in (to bridge the API wait visually). If the API gates
+  // before 2000ms elapses, that pending setTimeout would orphan and start
+  // the grid AFTER the gate UI was already up. Clearing it here, before
+  // stopGridCycle(), prevents the race.
+  if (window._gridCycleStartTimer) {
+    clearTimeout(window._gridCycleStartTimer);
+    window._gridCycleStartTimer = null;
+  }
   // S13 v18: stop the grid + needle animations on a gate failure too,
   // and don't sweep the needle (no score). Needle goes back to off.
   if (window.RobograderScan && window.RobograderScan.stopGridCycle) {
@@ -5646,7 +5730,18 @@ function showGateTerminatedPreview(gateResult, reason, lockout, details) {
   let label;
   switch (gateResult) {
     case 'FLAGGED':        label = 'INAPPROPRIATE'; break;
-    case 'MISSING_COVER':  label = 'MISSING COVER'; break;
+    case 'MISSING_COVER': {
+      // S14: use the structured payload to pick the specific label. assess.js
+      // emits missingCover: {frontMissing, backMissing} on the pre-API gate;
+      // the label should match so the user knows exactly which photo is the
+      // problem before they tap CANCEL into the explanation popup.
+      const m = (details && details.missingCover) || {};
+      if (m.frontMissing && m.backMissing) label = 'MISSING COVERS';
+      else if (m.frontMissing)             label = 'MISSING FRONT COVER';
+      else if (m.backMissing)              label = 'MISSING BACK COVER';
+      else                                 label = 'MISSING COVER';
+      break;
+    }
     case 'CROP_FAILURE':   label = 'CROPPED PHOTO'; break;
     case 'NOT_COMIC':
     default:               label = 'NOT A COMIC'; break;
@@ -6190,7 +6285,19 @@ function renderForm(){
     <!-- Add-flow collapsed state (S11): show only the Enter Manually button.
          Steers users toward photos-first by hiding the form fields until
          either (a) they tap Enter Manually, or (b) an assessment runs and
-         _assessed becomes true. Edit view always shows the full form. -->
+         _assessed becomes true. Edit view always shows the full form.
+         S14: ownership cycle toggle inserted above Enter Manually. Lets a
+         user mark a book as Owned (default) / Watching / Sold before
+         assessing — so they can assess someone else's book without
+         claiming it, or track a book they're considering buying.
+         Public-listing is locked off whenever ownership !== 'Owned';
+         the cycleOwnership handler clears formData.publicListing on
+         transitions out of Owned so a stale 'true' can't be saved. -->
+    <div style="display:flex;justify-content:center;margin-top:10px">
+      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cycleOwnership()" style="width:75%">
+        ${(formData.ownership||'Owned').toUpperCase()}
+      </button>
+    </div>
     <div style="display:flex;justify-content:center;margin-top:8px">
       <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="enterManualMode()" style="width:75%">Enter Manually</button>
     </div>
