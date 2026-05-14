@@ -35,7 +35,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Noto+Sans+Display:wdth,wght@62.5..100,500;700;900&display=swap" rel="stylesheet">
   <link rel="preload" href="assets/Robograder_Background.jpg" as="image">
-  <link rel="preload" href="assets/Robograder_Roll-in.apng" as="image">
+  <link rel="preload" href="assets/Robograder_v4_Load.png" as="image">
+  <link rel="preload" href="assets/Robograder_Logo.png" as="image">
   <link rel="apple-touch-icon" href="icon-192.png">
 
   <!-- Preconnect to Firebase Storage so the first thumbnail/image fetch
@@ -134,6 +135,10 @@
       }
       const authScreen = document.getElementById('auth-screen');
       if (authScreen) authScreen.style.display = 'flex';
+      // S14: tell the splash we have something to show (the auth screen).
+      // Without this, the splash would hang on its max-dwell timer instead
+      // of dismissing into the sign-in UI when the user is signed out.
+      if (typeof window.signalAppReady === 'function') window.signalAppReady();
     }
     window._authFallbackTimer = setTimeout(tryRevealAuthScreen, 3000);
 
@@ -181,6 +186,9 @@
           window._firebaseReady = true;
           window.dispatchEvent(new Event('firebase-ready'));
         }
+        // S14: signal the splash to dismiss into the auth screen. See
+        // tryRevealAuthScreen for the rationale; same reason here.
+        if (typeof window.signalAppReady === 'function') window.signalAppReady();
       }
     });
   </script>
@@ -796,17 +804,27 @@
     /* ── Page baseline — black to prevent white flash on iOS app open ── */
     html, body { background: #0a0a0a; }
 
-    /* ── Splash Screen (v2) ──────────────────────────────────────────── */
+    /* ── Splash Screen (v3, S14) ───────────────────────────────────────
+       Redesign goals:
+       - Background present when splash mounts (no slide-up). The S12
+         slide-up caused the robot to "pop in" at the wrong moment because
+         the APNG was decoding while still off-screen.
+       - Robograder slides in from the LEFT (was: pops into place after a
+         vertical reveal). Single clear entrance, single focal point.
+       - Title logo at top center, fades in after the robot settles.
+       - No typed text — the logo carries the brand message.
+       - Splash dismissal is gated on app-ready (collection loaded OR auth
+         screen revealed OR fallback timeout), not a fixed timer. This
+         eliminates the gray/white loading-pill gap between splash and
+         list view that was the worst part of the prior experience. */
     #splash {
       position: fixed; inset: 0; z-index: 10000;
       background: #0a0a0a;
       overflow: hidden;
     }
-    /* Splash background — yellow circuit-board texture (S11). Sits behind the
-       Robograder character. Both this and the character share the same slide
-       animation so they move as a unit. The background gives the splash some
-       graphic life beyond solid black, and the circuit-board motif fits the
-       "robot doing technical work" vibe. */
+    /* Splash background — yellow circuit-board texture. Present from frame
+       one (no slide-up animation). Fades in over 0.2s so the cut from
+       black isn't abrupt on the first paint. */
     #splash-bg {
       position: absolute;
       inset: 0;
@@ -816,25 +834,20 @@
       background-size: cover;
       background-position: center center;
       background-repeat: no-repeat;
-      transform: translateY(110vh);
-      will-change: transform;
-      animation: splashSlideUp 0.75s cubic-bezier(0.22, 1, 0.36, 1) 0.1s forwards;
+      opacity: 0;
+      animation: splashBgFadeIn 0.2s ease-out forwards;
     }
-    /* Robograder mascot — the v2 character on top of the background.
-       S12: replaced static PNG with APNG animation (Robograder_Roll-in.apng).
-       The animation has its own roll-in built in, so we no longer apply the
-       CSS slide-up that the static PNG used. The character now starts
-       in-place and animates within itself.
-       The animation source has empty/transparent padding around the
-       character (the rolling-in motion happens within the frame). To make
-       the visible mascot appear at appropriate size, we scale UP from the
-       80vw the static PNG used to 104vw (30% larger than the static-PNG
-       baseline). The animation overflows viewport edges in the empty
-       padding regions, which is fine because those regions are transparent.
-       Centering: previously had translateX(-50px) to compensate for the
-       OLD animation source's rightward bias. The new render Matt provided
-       in S12 is properly centered (1px offset from canvas center, verified
-       by pixel measurement), so no compensation is needed. */
+    @keyframes splashBgFadeIn {
+      to { opacity: 1; }
+    }
+    /* Robograder mascot — slides in from the LEFT.
+       Starts off-screen-left (translateX(-120%) is enough margin that the
+       character is fully hidden even when the canvas has empty padding).
+       Lands centered. Subtle overshoot+settle for character.
+       Sizing matches the old splash: max-width 104vw, max-height 91vh,
+       centered. The vertical center is preserved (translateY(-50%)).
+       Asset: assets/Robograder_v4_Load.png — static PNG, no APNG roll-in.
+       The slide-in IS the entrance animation now. */
     #splash-robot {
       position: absolute;
       left: 0; right: 0;
@@ -845,94 +858,43 @@
       width: auto;
       height: auto;
       object-fit: contain;
-      transform: translateY(-50%);
+      transform: translate(-120%, -50%);
       pointer-events: none;
+      animation: splashRobotSlideIn 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.2s forwards;
     }
-    @keyframes splashSlideUp {
-      from { transform: translateY(110vh); }
-      to { transform: translateY(0); }
+    @keyframes splashRobotSlideIn {
+      from { transform: translate(-120%, -50%); }
+      to   { transform: translate(0, -50%); }
     }
-    /* Gradient fade at the bottom so text is readable over the image */
-    #splash-gradient {
+    /* Title logo — top center, above the robot. Fades in after the robot
+       has finished sliding (delay ≥ 0.2s + 0.9s = 1.1s). Width tops out at
+       72vw for narrow phones; capped via max-width so it never overflows.
+       If the asset file is missing, onerror in the HTML hides the element
+       so we don't show a broken-image icon. */
+    #splash-logo {
       position: absolute;
-      left: 0; right: 0; bottom: 0;
-      /* Reduced from 46% so the gradient stays well below the text area
-         (text now sits at top:8vh). The previous tall gradient was bleeding
-         into the text region and reducing readability. */
-      height: 30%;
-      background: linear-gradient(to top,
-        rgba(0,0,0,0.88) 0%,
-        rgba(0,0,0,0.72) 30%,
-        rgba(0,0,0,0.35) 70%,
-        rgba(0,0,0,0) 100%);
-      pointer-events: none;
+      left: 50%;
+      top: 5vh;
+      transform: translateX(-50%);
+      max-width: 72vw;
+      max-height: 14vh;
+      width: auto;
+      height: auto;
       opacity: 0;
-      animation: fadeIn 0.6s ease-out 0.5s forwards;
-      z-index: 1;
-    }
-    @keyframes fadeIn {
-      to { opacity: 1; }
-    }
-    /* Text block — positioned at upper-eighth of viewport for max separation
-       from the mascot below and the gradient at the bottom. Earlier
-       placements at 12vh and 10vh still felt cramped relative to the
-       character; 8vh gives the text a proper margin. */
-    #splash-text {
-      position: absolute;
-      left: 0; right: 0;
-      top: 8vh;
-      text-align: center;
-      padding: 0 20px;
+      pointer-events: none;
+      animation: splashLogoFadeIn 0.5s ease-out 1.0s forwards;
       z-index: 2;
     }
-    /* Text styling — readability over a varied background. We DROPPED the
-       text-shadow blur because rgba blur on white-on-yellow read as a halo
-       that pushed adjacent characters together rather than lifting them.
-       Heavier text-stroke replaces the blur — pure black outline on white
-       fill provides edge contrast against any color. Stroke is 1.5px (was
-       0.8px) for a heavier outline that doesn't need any blur to back it
-       up. */
-    #splash-text .line {
-      display: block;
-      font-family: 'Share Tech Mono', 'Courier New', monospace;
-      font-weight: 400;
-      font-size: clamp(18px, 5.6vw, 28px);
-      line-height: 1.55;
-      color: #ffffff;
-      -webkit-text-stroke: 1.5px #000000;
-      paint-order: stroke fill;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      white-space: nowrap;
-      overflow: hidden;
-      width: 0;
-      margin: 0 auto;
+    @keyframes splashLogoFadeIn {
+      to { opacity: 1; }
     }
-    #splash-text .line.typing {
-      animation: typeReveal var(--dur, 0.8s) steps(var(--chars, 20), end) forwards;
-    }
-    @keyframes typeReveal {
-      to { width: var(--full-width, 300px); }
-    }
-    /* Exit: background and robot both slide down off-screen + splash fades out.
-       Both elements use independent slide-down animations so the layered move
-       reads as a single curtain falling. */
-    #splash.exit #splash-bg {
-      animation: splashSlideDown 0.55s cubic-bezier(0.55, 0, 0.7, 0.15) forwards;
-    }
-    #splash.exit #splash-robot {
-      animation: splashRobotSlideDown 0.55s cubic-bezier(0.55, 0, 0.7, 0.15) forwards;
-    }
-    @keyframes splashSlideDown {
-      from { transform: translateY(0); }
-      to { transform: translateY(110vh); }
-    }
-    @keyframes splashRobotSlideDown {
-      from { transform: translateY(-50%); }
-      to { transform: translateY(calc(-50% + 110vh)); }
-    }
+    /* Exit: splash fades out cleanly. Robot and logo go with the parent
+       fade — no separate slide-down. The list view is already rendered
+       behind us by the time we dismiss (the gate-on-app-ready logic
+       guarantees this), so the cleanest reveal is just an opacity
+       crossfade rather than a curtain slide. */
     #splash.exit {
-      animation: splashFade 0.35s ease-out 0.3s forwards;
+      animation: splashFade 0.45s ease-out forwards;
     }
     @keyframes splashFade {
       to { opacity: 0; pointer-events: none; }
@@ -1023,9 +985,12 @@
 
 <div id="splash">
   <div id="splash-bg" role="presentation" aria-hidden="true"></div>
-  <img id="splash-robot" src="assets/Robograder_Roll-in.apng" alt="Robograder mascot">
-  <div id="splash-gradient"></div>
-  <div id="splash-text"></div>
+  <img id="splash-robot" src="assets/Robograder_v4_Load.png" alt="Robograder mascot">
+  <!-- S14: title logo. If the asset is missing from /assets/, onerror hides
+       the img so we don't show a broken-image placeholder. Once the logo
+       file ships, no code change needed. -->
+  <img id="splash-logo" src="assets/Robograder_Logo.png" alt="Robograder"
+       onerror="this.style.display='none'">
 </div>
 <div id="app" style="display:none">
   <div id="header">
@@ -2225,6 +2190,12 @@ async function loadItems(){
 
   renderList();
   updateStats();
+
+  // S14: signal the splash that the app shell is ready to show. The splash
+  // is listening for this and will dismiss (after its min-dwell floor) as
+  // soon as it fires. Without this, the splash would hang on its max-dwell
+  // timer even after the list is fully painted behind it.
+  if (typeof window.signalAppReady === 'function') window.signalAppReady();
 }
 
 // Show/hide header right-side controls based on _loadingState. Called by
@@ -2689,6 +2660,31 @@ function showDetail(id){
       ${selected.cgcCert?`<div><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">CGC</span> <span style="margin-left:6px">${esc(selected.cgcCert)}</span></div>`:""}
       ${selected.psaCert?`<div style="margin-top:2px"><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">PSA</span> <span style="margin-left:6px">${esc(selected.psaCert)}</span></div>`:""}
     </div>`:""}
+    ${isSample ? "" : (() => {
+      // S14: ownership pill in detail view. Tappable — cycles Owned → Watching
+      // → Sold and writes to Firestore immediately (like togglePublicListing).
+      // Leaving Owned auto-clears publicListing for state consistency; the
+      // detail view re-renders after save and the public-listing block at the
+      // bottom will pick up the change via the locked branch.
+      const own = selected.ownership || 'Owned';
+      // Color-code the three states so a glance tells the story: green-tinted
+      // for Owned (in collection), warm amber for Watching (interest), neutral
+      // gray for Sold (out of collection).
+      const styleByState = {
+        'Owned':    { bg:'#e8f0d8', fg:'#3a5a18', border:'#a8c870' },
+        'Watching': { bg:'#fff0d8', fg:'#7a5018', border:'#d8a868' },
+        'Sold':     { bg:'#e8e8e8', fg:'#4a4a4a', border:'#a8a8a8' }
+      };
+      const s = styleByState[own] || styleByState['Owned'];
+      return `<div style="margin-top:10px">
+        <button onclick="cycleOwnershipFromDetail('${esc(selected.id)}')"
+          style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;
+                 padding:5px 12px;border-radius:14px;cursor:pointer;
+                 background:${s.bg};color:${s.fg};border:1px solid ${s.border}">
+          ${own.toUpperCase()}
+        </button>
+      </div>`;
+    })()}
   </div>`;
 
   // Images block — moved to after the title/issue/publisher header.
@@ -3326,6 +3322,53 @@ async function togglePublicListing(id, val) {
     // Revert toggle visually
     if (track) track.style.background = !val ? '#3a7a20' : '#2a2a2a';
     if (thumb) thumb.style.left = !val ? '23px' : '3px';
+  }
+}
+
+// S14: cycle ownership from the detail-view pill. Mirrors togglePublicListing's
+// save pattern (immediate Firestore write with merge, then re-render the
+// detail view from a single source of truth). When ownership moves off
+// 'Owned', publicListing is auto-cleared in the SAME write — that's the
+// integrity guarantee: a public listing asserts the user owns the book, so
+// the moment they say they don't, the public listing disappears. The
+// robograde_ids registry is also updated in lock-step so /api/lookup
+// returns 403 immediately, no propagation gap.
+async function cycleOwnershipFromDetail(id) {
+  const comic = items.find(c => c.id === id);
+  if (!comic) return;
+  const cur = comic.ownership || 'Owned';
+  const next = cur === 'Owned' ? 'Watching'
+             : cur === 'Watching' ? 'Sold'
+             : 'Owned';
+  // Build the update. publicListing only flips when (a) we're leaving Owned
+  // AND (b) it was true to begin with — otherwise leave it untouched.
+  const update = { ownership: next };
+  const wasPublic = !!comic.publicListing;
+  const willClearPublic = (next !== 'Owned') && wasPublic;
+  if (willClearPublic) update.publicListing = false;
+
+  try {
+    const ref = fsDoc(window._db, 'users', window._currentUser.uid, 'items', id);
+    await fsSetDoc(ref, update, { merge: true });
+
+    // Mirror the registry flip if applicable (same pattern as togglePublicListing).
+    if (willClearPublic && comic.roboGradeId) {
+      const idRef = fsDoc(window._db, 'robograde_ids', comic.roboGradeId);
+      await fsSetDoc(idRef, { public: false }, { merge: true });
+    }
+
+    // Update local state
+    comic.ownership = next;
+    if (willClearPublic) comic.publicListing = false;
+
+    // Re-render detail view; preserve scroll like togglePublicListing does.
+    if (selected && selected.id === id) {
+      const savedScroll = window.scrollY || document.documentElement.scrollTop || 0;
+      showDetail(id);
+      requestAnimationFrame(() => window.scrollTo(0, savedScroll));
+    }
+  } catch(e) {
+    alert('Failed to update ownership: ' + e.message);
   }
 }
 
@@ -6102,6 +6145,29 @@ function renderForm(){
       <div style="display:flex;justify-content:center;margin-top:4px"><button id="assess-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="assessGrade()" ${(!formData.images||!formData.images[0]||assessing)?"disabled":""} style="width:75%${assessing ? ';background:#1a3a5c;color:#a8d0f0' : _assessed ? ';background:#1a4a2a;color:#6abf6a' : ''}">${assessing?"Assessing…":_assessed?"Re-assess Grade":"Assess Grade"}</button></div>
     </div>
     ${(isEdit || _assessed || _addManualMode) ? `
+    ${(() => {
+      // S14: ownership pill at top of expanded Edit form. Same look and
+      // tap-to-cycle behavior as the detail-view pill, but writes to
+      // formData and re-renders the form (no Firestore save until the
+      // user submits the form). Clears formData.publicListing on
+      // transitions out of Owned, mirroring the collapsed-state toggle
+      // and the detail-view handler.
+      const own = formData.ownership || 'Owned';
+      const styleByState = {
+        'Owned':    { bg:'#e8f0d8', fg:'#3a5a18', border:'#a8c870' },
+        'Watching': { bg:'#fff0d8', fg:'#7a5018', border:'#d8a868' },
+        'Sold':     { bg:'#e8e8e8', fg:'#4a4a4a', border:'#a8a8a8' }
+      };
+      const s = styleByState[own] || styleByState['Owned'];
+      return `<div style="margin-top:14px;margin-bottom:6px">
+        <button onclick="cycleOwnership()"
+          style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;
+                 padding:5px 12px;border-radius:14px;cursor:pointer;
+                 background:${s.bg};color:${s.fg};border:1px solid ${s.border}">
+          ${own.toUpperCase()}
+        </button>
+      </div>`;
+    })()}
     <div class="form-grid-2">
       <!-- Title gets a special handler (not the generic tf) because we need
            live-toggle the save button as the user types. Using tf would
@@ -6286,18 +6352,32 @@ function renderForm(){
          Steers users toward photos-first by hiding the form fields until
          either (a) they tap Enter Manually, or (b) an assessment runs and
          _assessed becomes true. Edit view always shows the full form.
-         S14: ownership cycle toggle inserted above Enter Manually. Lets a
+         S14: ownership cycle pill inserted above Enter Manually. Lets a
          user mark a book as Owned (default) / Watching / Sold before
          assessing — so they can assess someone else's book without
-         claiming it, or track a book they're considering buying.
-         Public-listing is locked off whenever ownership !== 'Owned';
-         the cycleOwnership handler clears formData.publicListing on
-         transitions out of Owned so a stale 'true' can't be saved. -->
-    <div style="display:flex;justify-content:center;margin-top:10px">
-      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cycleOwnership()" style="width:75%">
-        ${(formData.ownership||'Owned').toUpperCase()}
-      </button>
-    </div>
+         claiming it, or track a book they're considering buying. Same
+         pill style as detail and edit views (color-coded by state),
+         centered between the two full-width buttons. Public-listing is
+         locked off whenever ownership !== 'Owned'; the cycleOwnership
+         handler clears formData.publicListing on transitions out of
+         Owned so a stale 'true' can't be saved. -->
+    ${(() => {
+      const own = formData.ownership || 'Owned';
+      const styleByState = {
+        'Owned':    { bg:'#e8f0d8', fg:'#3a5a18', border:'#a8c870' },
+        'Watching': { bg:'#fff0d8', fg:'#7a5018', border:'#d8a868' },
+        'Sold':     { bg:'#e8e8e8', fg:'#4a4a4a', border:'#a8a8a8' }
+      };
+      const s = styleByState[own] || styleByState['Owned'];
+      return `<div style="display:flex;justify-content:center;margin-top:14px">
+        <button onclick="cycleOwnership()"
+          style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;
+                 padding:5px 12px;border-radius:14px;cursor:pointer;
+                 background:${s.bg};color:${s.fg};border:1px solid ${s.border}">
+          ${own.toUpperCase()}
+        </button>
+      </div>`;
+    })()}
     <div style="display:flex;justify-content:center;margin-top:8px">
       <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="enterManualMode()" style="width:75%">Enter Manually</button>
     </div>
@@ -7736,12 +7816,29 @@ function normPageQuality(pq){
   return map[pq]||pq;
 }
 if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{});}
-// ── Splash Screen ──────────────────────────────────────────────────
+// ── Splash Screen (v3, S14) ────────────────────────────────────────
+// Dismissal is gated on app-ready (collection loaded OR auth screen
+// revealed OR fallback timeout), not on a fixed timer. The old fixed-
+// timer dismissal caused the splash to vanish before the app shell
+// was ready, leaving a 3+ second "Loading…" gap on a white background.
+// Now the splash holds until there's something real to show.
+//
+// Timing model:
+//   minDwell    1500ms — the splash never dismisses earlier than this,
+//                        so warm starts (cached auth, fast Firestore)
+//                        don't see a 200ms flicker.
+//   maxDwell    8000ms — the splash always dismisses by this point,
+//                        even if app-ready never fires (network down,
+//                        Firebase hung, etc.). The user then sees
+//                        whatever's behind — the loading pill or the
+//                        auth screen — but not a frozen splash.
+//   appReady    flag set by other code paths (loadItems completion or
+//                        auth-screen reveal) via signalAppReady().
 (function runSplash() {
   // S11: skip the splash entirely when the user is returning from a Stripe
   // checkout redirect. They just spent money; making them sit through the
-  // full splash + typewriter sequence feels like the app reset itself. Hide
-  // it immediately so the success modal can appear over the app shell.
+  // full splash sequence feels like the app reset itself. Hide it
+  // immediately so the success modal can appear over the app shell.
   const returnParams = new URLSearchParams(window.location.search);
   if (returnParams.get('payment')) {
     const splash = document.getElementById('splash');
@@ -7753,131 +7850,95 @@ if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catc
     return;
   }
 
-  // Skip the long splash animation for returning users. localStorage flag
-  // is set after first successful splash play. The animated APNG is large
-  // (~3.5MB) and the typed-text intro is meant for first-impression delight,
-  // not every-launch friction. Returning users see a static brand frame
-  // (the final mascot pose) and a quick fade-out, no typed text.
-  const isFirstLaunch = !localStorage.getItem('robograder.firstLaunchSeen');
+  const splash = document.getElementById('splash');
+  if (!splash) return;
 
-  // Returning users: swap the animated APNG for the static final-frame PNG.
-  // Static PNG is ~115KB vs the APNG's ~3.5MB — meaningful savings on every
-  // load after the first. Falls back gracefully to the APNG (or whatever's
-  // currently in src) if the static PNG isn't present in the repo.
-  if (!isFirstLaunch) {
-    const robotImg = document.getElementById('splash-robot');
-    if (robotImg) {
-      // Set up a fallback: if the static PNG fails to load, leave the
-      // existing src (the APNG) intact rather than showing a broken image.
-      const fallbackSrc = robotImg.src;
-      robotImg.onerror = () => { robotImg.onerror = null; robotImg.src = fallbackSrc; };
-      robotImg.src = 'assets/Robograder_v3_Load.png';
-    }
-  }
-
-  const lines = [
-    "MY POSITRONIC BRAIN",
-    "IS READY TO GRADE",
-    "YOUR COMIC BOOKS"
-  ];
-  const container = document.getElementById('splash-text');
-  let lineIndex = 0;
-  let done = false;
-  // Track when the splash mounted so we can ensure the roll-in animation
-  // gets to play through even on fast cold-loads where the typing finishes
-  // before the animation does.
   const splashStartTime = Date.now();
-
-  // Returning-user fast path: skip text entirely, dismiss as soon as the
-  // basic splash render has had time to be perceived (~1.5s).
-  if (!isFirstLaunch) {
-    setTimeout(() => {
-      done = true;
-      dismiss();
-    }, 1500);
-  }
-
-  function measureLine(text) {
-    const tmp = document.createElement('span');
-    tmp.style.cssText = 'position:absolute;visibility:hidden;font-family:"Share Tech Mono","Courier New",monospace;letter-spacing:0.14em;font-size:clamp(18px,5.6vw,28px);text-transform:uppercase;white-space:nowrap';
-    tmp.textContent = text;
-    document.body.appendChild(tmp);
-    const w = tmp.offsetWidth;
-    document.body.removeChild(tmp);
-    return w;
-  }
-
-  function typeLine(text, delay) {
-    return new Promise(resolve => {
-      setTimeout(() => {
-        const el = document.createElement('span');
-        el.className = 'line';
-        const chars = text.length;
-        // Half-speed typing (was 0.06s/char; now 0.12s/char). Same minimum
-        // floor of 0.5s for very short lines so they don't snap in.
-        const dur = Math.max(0.5, chars * 0.12);
-        const fullWidth = measureLine(text) + 4;
-        el.textContent = text;
-        el.style.setProperty('--chars', chars);
-        el.style.setProperty('--dur', dur + 's');
-        el.style.setProperty('--full-width', fullWidth + 'px');
-        container.appendChild(el);
-        // Force reflow then add class
-        el.offsetWidth;
-        el.classList.add('typing');
-        el.addEventListener('animationend', () => resolve(), { once: true });
-      }, delay);
-    });
-  }
-
-  async function typeAll() {
-    // Don't run typing on returning-user fast path — handled by the early
-    // dismiss timer above.
-    if (!isFirstLaunch) return;
-
-    // 2s initial delay — gives the roll-in APNG time to settle the mascot
-    // into his final pose before any text appears. Otherwise the typing
-    // started immediately and competed with the entrance animation.
-    let cumDelay = 2000;
-    for (let i = 0; i < lines.length; i++) {
-      const lineEl = await typeLine(lines[i], cumDelay);
-      cumDelay = 0; // each waits for prev to finish
-      await new Promise(r => setTimeout(r, 180)); // pause between lines
-    }
-    done = true;
-    // Mark first launch complete so subsequent loads skip the long animation.
-    try { localStorage.setItem('robograder.firstLaunchSeen', '1'); } catch {}
-    // Wait for the splash animation to also complete before dismissing.
-    // splashStartTime is set when splash mounts; the roll-in APNG runs for
-    // ~5 seconds. We hold until either the animation duration has elapsed
-    // (so user always sees the full roll-in) OR the user taps to skip.
-    // The "+800ms hold" the prior version had is replaced by this gating.
-    const ANIMATION_DURATION_MS = 5000;
-    const elapsed = Date.now() - splashStartTime;
-    const remaining = Math.max(0, ANIMATION_DURATION_MS - elapsed);
-    await new Promise(r => setTimeout(r, remaining));
-    dismiss();
-  }
+  const MIN_DWELL_MS = 1500;
+  const MAX_DWELL_MS = 8000;
+  let dismissed = false;
 
   function dismiss() {
-    const splash = document.getElementById('splash');
-    if (!splash) return;
+    if (dismissed) return;
+    dismissed = true;
     splash.classList.add('exit');
-    // Mark the body as ready so page chrome can reveal cleanly below the splash
     document.body.classList.add('app-ready');
+    // Splash fade is 0.45s (matches CSS animation duration). Remove after
+    // animation completes so it's gone from the DOM, not just invisible.
     setTimeout(() => {
       splash.style.display = 'none';
       document.body.style.overflow = '';
-    }, 900);
+    }, 450);
   }
 
-  // Tap/click anywhere to skip
-  document.getElementById('splash').addEventListener('click', () => {
-    if (!done) dismiss();
-  }, { once: true });
+  // Compute how long to wait before dismissal. If the app is already
+  // ready, we still hold for the remainder of MIN_DWELL_MS so a fast
+  // load doesn't flash the splash for a frame. If app-ready hasn't
+  // fired, we wait for it OR for MAX_DWELL_MS to elapse, whichever
+  // comes first.
+  function tryDismiss() {
+    if (dismissed) return;
+    const elapsed = Date.now() - splashStartTime;
+    if (!window._appReadyToShow) {
+      // Not ready yet — try again when it fires (the 'app-ready' event
+      // listener below will call this), or when MAX_DWELL_MS expires.
+      return;
+    }
+    if (elapsed < MIN_DWELL_MS) {
+      setTimeout(tryDismiss, MIN_DWELL_MS - elapsed);
+      return;
+    }
+    dismiss();
+  }
 
-  typeAll();
+  // Listen for the app-ready signal. Fires once when collection has
+  // loaded OR the auth screen has been revealed.
+  window.addEventListener('app-ready', tryDismiss, { once: true });
+
+  // Early-call guard: if signalAppReady fired BEFORE we registered the
+  // listener above (e.g., Firebase auth resolved very fast and the
+  // signed-out auth-screen path ran before this IIFE was reached), the
+  // event is already gone and we'd hang on MAX_DWELL_MS. tryDismiss
+  // checks _appReadyToShow directly, so a manual call here catches the
+  // missed event without any extra plumbing.
+  if (window._appReadyToShow) tryDismiss();
+
+  // Safety net: dismiss after MAX_DWELL_MS regardless. The user gets
+  // whatever's behind (loading pill or auth screen) — both are valid
+  // app states, far better than a frozen splash on a hung connection.
+  setTimeout(() => {
+    if (!dismissed) dismiss();
+  }, MAX_DWELL_MS);
+
+  // Tap/click anywhere to skip. Honored only after MIN_DWELL_MS so a
+  // panicked early tap doesn't expose an unready app — they'd see the
+  // loading pill flicker for a moment, which is the experience we're
+  // trying to eliminate.
+  splash.addEventListener('click', () => {
+    const elapsed = Date.now() - splashStartTime;
+    if (elapsed >= MIN_DWELL_MS) dismiss();
+  });
 })();
+
+// signalAppReady — called by other code paths when the app shell is
+// ready to display content. Two callers:
+//   - loadItems() completion (signed-in users with collection loaded)
+//   - auth screen reveal (signed-out users; show splash → auth screen)
+// Idempotent: subsequent calls are no-ops because _appReadyToShow is
+// flag-guarded and the event listener is { once: true }.
+//
+// Early-call safety: if a caller fires signalAppReady BEFORE the splash
+// IIFE's addEventListener has been attached, the dispatched event is
+// missed. The IIFE handles this by re-checking _appReadyToShow inside
+// its tryDismiss path — but for completeness, we also let the flag be
+// set pre-definition: callers can write window._appReadyToShow = true
+// directly OR call window.signalAppReady(), and the splash IIFE
+// inspects the flag on every tryDismiss invocation.
+window.signalAppReady = function signalAppReady() {
+  if (window._appReadyToShow) return;
+  window._appReadyToShow = true;
+  window.dispatchEvent(new Event('app-ready'));
+};
 
 // Handle Stripe payment return
 // S11: replaced native alert() with styled in-app modals. Native dialogs broke
