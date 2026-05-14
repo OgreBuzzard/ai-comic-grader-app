@@ -1,12 +1,16 @@
 // /api/admin/user.js
-// Single user profile with full items list.
+// Single user profile with full items list, plus admin-only writes.
 //
-// Query params:
-//   uid — user UID (required)
+// GET ?uid=...
+//   Returns: { user: {...}, items: [...], publicRate: {...} }
 //
-// Returns: { user: {...}, items: [{id, title, issue, roboGradeDate, score, ...}] }
+// PATCH ?uid=...
+//   Body: { assessmentCredits: number }
+//   Returns: { ok: true, user: {...updated user...} }
+//   Only assessmentCredits is currently writable; additional fields can be
+//   added to the allowlist below as needed. Server enforces integer bounds.
 //
-// Auth: same admin-email gate.
+// Auth: same admin-email gate for both methods.
 
 
 
@@ -23,7 +27,7 @@ function parseServiceAccount() {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'GET') {
+  if (req.method !== 'GET' && req.method !== 'PATCH') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
@@ -57,9 +61,128 @@ export default async function handler(req, res) {
     const uid = (req.query.uid || '').toString().trim();
     if (!uid) return res.status(400).json({ error: 'uid required' });
 
-    // ── Fetch user ───────────────────────────────────────────────────────────
     const db = getFirestore();
     const userRef = db.collection('users').doc(uid);
+
+    // ── PATCH: write allowed fields + audit log entry, atomically ───────────
+    // Currently the only writable field is assessmentCredits. To add more,
+    // extend the validation block — each field needs its own type/range check
+    // and its own line in the changeBits / audit entry below.
+    if (req.method === 'PATCH') {
+      const body = req.body || {};
+      const update = {};
+
+      if (Object.prototype.hasOwnProperty.call(body, 'assessmentCredits')) {
+        const n = Number(body.assessmentCredits);
+        // Reject non-integers, negatives, and unreasonably large values.
+        // The 10,000 ceiling is well above any legitimate Pro purchase
+        // (largest current package is 100 credits / $50). If we ever sell
+        // larger packs this needs bumping.
+        if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0 || n > 10000) {
+          return res.status(400).json({
+            error: 'assessmentCredits must be an integer between 0 and 10000'
+          });
+        }
+        update.assessmentCredits = n;
+      }
+
+      if (Object.keys(update).length === 0) {
+        return res.status(400).json({ error: 'No writable fields in body' });
+      }
+
+      // Atomic write: user doc update + audit log entry in a single
+      // transaction. Either both succeed or both fail. Without this, a
+      // user-doc update with a failed audit write would leave us with an
+      // invisible adjustment; the reverse would leave a phantom audit
+      // entry. The transaction reads the prior doc inside the same
+      // transaction so the old→new delta in the audit log matches what
+      // actually changed (handles the rare case where the user doc was
+      // mutated between our prior read and our write).
+      let auditWritten = null;   // captures the new doc id for the response
+      let noOp = false;          // set true if before === after for the field
+      try {
+        await db.runTransaction(async (tx) => {
+          const priorSnap = await tx.get(userRef);
+          if (!priorSnap.exists) {
+            throw new Error('USER_NOT_FOUND');
+          }
+          const before = priorSnap.data();
+
+          // No-op guard: if every field in the update already matches the
+          // stored value, skip both writes. Otherwise we'd create a junk
+          // audit entry every time the admin opened the editor and tapped
+          // SAVE without changing anything. We set a flag and bail out of
+          // the transaction body (no writes performed → no commit cost).
+          const isNoOp = Object.entries(update).every(
+            ([k, v]) => before[k] === v
+          );
+          if (isNoOp) { noOp = true; return; }
+
+          // Build one audit doc per PATCH call. Even when multiple fields
+          // change in the same call (none today, but the schema is ready),
+          // we record them as a single adjustment event — the per-field
+          // breakdown is in the changes[] array.
+          const nowMs = Date.now();
+          const changes = Object.entries(update).map(([field, newValue]) => ({
+            field,
+            oldValue: before[field] ?? null,
+            newValue,
+            delta: (typeof before[field] === 'number' && typeof newValue === 'number')
+              ? (newValue - before[field])
+              : null
+          }));
+
+          const auditRef = db.collection('credit_adjustments').doc();
+          tx.set(auditRef, {
+            userId:     uid,
+            adminEmail: callerEmail,
+            adminUid:   decoded.uid || null,
+            changes,
+            // Convenience top-level mirrors for the most common single-field
+            // case (assessmentCredits). Lets a dashboard query sort/filter on
+            // these without unrolling the changes[] array.
+            primaryField:    changes[0].field,
+            primaryOldValue: changes[0].oldValue,
+            primaryNewValue: changes[0].newValue,
+            primaryDelta:    changes[0].delta,
+            reason:     (typeof body.reason === 'string' ? body.reason : ''),
+            at:         new Date(nowMs).toISOString(),
+            atMs:       nowMs
+          });
+          auditWritten = auditRef.id;
+
+          // The user-doc update goes through the same transaction — both
+          // commit together or both are rolled back. update() requires the
+          // doc to exist (we verified above via priorSnap.exists).
+          tx.update(userRef, update);
+        });
+      } catch (txErr) {
+        if (txErr.message === 'USER_NOT_FOUND') {
+          return res.status(404).json({ error: 'User not found' });
+        }
+        // Anything else: re-throw to the outer catch for a 500 response.
+        throw txErr;
+      }
+
+      if (noOp) {
+        return res.status(400).json({
+          error: 'No change — new value matches current value'
+        });
+      }
+
+      // Best-effort log line for at-a-glance Vercel inspection. The audit
+      // log collection is the source of truth; this is just a convenience.
+      const changeBits = Object.entries(update).map(([k, v]) =>
+        `${k} → ${v}`
+      ).join(', ');
+      console.log(`[admin-user] ${callerEmail} updated ${uid}: ${changeBits} (audit ${auditWritten})`);
+
+      // Fall through to GET-shaped response below so the dashboard can
+      // re-render from the same payload shape it already handles, without
+      // a second round-trip.
+    }
+
+    // ── Fetch user ───────────────────────────────────────────────────────────
     const userDoc = await userRef.get();
     if (!userDoc.exists) return res.status(404).json({ error: 'User not found' });
 

@@ -95,17 +95,24 @@ export default async function handler(req, res) {
       issue: flat.issue || '',
       issueDate: flat.issueDate || '',
       publisher: flat.publisher || '',
+      // S14: printing (e.g. "Facsimile Reprint (2019)") surfaces in the
+      // header pill row when populated. Empty string for typical
+      // original-printing books.
+      printing: flat.printing || '',
 
       // Assessment metadata
       roboGradeDate: flat.roboGradeDate || null,
       roboGradeId: flat.roboGradeId || '',
       version: rg.version || null,
 
-      // Grades
+      // Grades.
+      // S14: removed cgcAIGrade and psaAIGrade — those fields are never
+      // populated on item docs (the assess.js response writes its CGC/PSA
+      // predictions to assessedCGCGrade/assessedPSAGrade, not to those
+      // legacy field names). The two were rendering as blank for every
+      // item and confusing rather than informing.
       assessedCGCGrade: flat.assessedCGCGrade ?? null,
-      assessedCGCPSAGrade: flat.assessedPSAGrade ?? null,
-      cgcAIGrade: flat.cgcAIGrade ?? rg.cgcGrade ?? null,
-      psaAIGrade: flat.psaAIGrade ?? rg.psaGrade ?? null,
+      assessedPSAGrade: flat.assessedPSAGrade ?? null,
       score: rg.score ?? null,
       confidenceRange: rg.confidenceRange ?? null,
       frontScore: rg.frontScore ?? null,
