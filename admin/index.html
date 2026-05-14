@@ -525,23 +525,39 @@ const state = {
   itemsTotal: 0,
   itemSearch: '',
   stats: null,
+  // S14: when truthy, the credits pill on the user-detail view renders as an
+  // inline editor instead of a static value. Reset whenever we leave the
+  // user-detail view or switch to a different user.
+  creditsEditOpen: false,
   error: null,
 };
 
 const root = document.getElementById('root');
 
 // ── API helper ─────────────────────────────────────────────────────────────
-async function api(path) {
+// S14: accepts an opts object so PATCH/POST with a JSON body works through
+// the same auth + token-refresh path as GET. opts.method defaults to GET;
+// opts.body is JSON-stringified automatically and Content-Type is set.
+async function api(path, opts) {
+  opts = opts || {};
+  const method = opts.method || 'GET';
   if (!state.idToken) state.idToken = await state.user.getIdToken();
-  let res = await fetch(path, {
-    headers: { Authorization: 'Bearer ' + state.idToken }
-  });
+  const buildInit = (token) => {
+    const init = {
+      method,
+      headers: { Authorization: 'Bearer ' + token }
+    };
+    if (opts.body !== undefined) {
+      init.headers['Content-Type'] = 'application/json';
+      init.body = JSON.stringify(opts.body);
+    }
+    return init;
+  };
+  let res = await fetch(path, buildInit(state.idToken));
   // Token might have expired — refresh once and retry.
   if (res.status === 401) {
     state.idToken = await state.user.getIdToken(true);
-    res = await fetch(path, {
-      headers: { Authorization: 'Bearer ' + state.idToken }
-    });
+    res = await fetch(path, buildInit(state.idToken));
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -871,6 +887,8 @@ function renderItemsList() {
 async function showUser(uid) {
   state.view = 'user';
   state.selectedUid = uid;
+  // S14: clear any stale editor state from a previous user-detail visit.
+  state.creditsEditOpen = false;
   root.innerHTML = `
     <header>
       <button class="back" id="back-btn">← Users</button>
@@ -893,13 +911,43 @@ async function showUser(uid) {
 }
 
 function renderUserDetail(user, items, publicRate) {
+  // S14: cache the latest payload so editor handlers can re-render after a
+  // PATCH without re-fetching. The editor only mutates assessmentCredits;
+  // items and publicRate are unchanged by a credit-only update.
+  state.currentUserDetail = { user, items, publicRate };
+
+  // Credits pill: tappable in closed state (opens the editor); inline
+  // number-input + Save/Cancel in open state. The closed pill uses the
+  // same .pill class plus a few inline overrides to communicate
+  // interactivity (pointer cursor + accent-bordered hover). The open
+  // editor lives in the same place so the user's eye doesn't jump.
+  const creditsHtml = state.creditsEditOpen
+    ? `<span class="pill" style="padding:6px 10px;display:inline-flex;align-items:center;gap:6px;border-color:var(--accent);">
+         Credits:
+         <input id="credits-input" type="number" inputmode="numeric" min="0" max="10000" step="1"
+                value="${user.assessmentCredits}"
+                style="width:84px;background:var(--bg);color:var(--text);border:1px solid var(--rule);
+                       border-radius:6px;padding:4px 6px;font-size:13px;font-family:inherit;
+                       appearance:textfield;-moz-appearance:textfield;-webkit-appearance:none;
+                       margin:0;">
+         <button id="credits-save" style="background:var(--accent);color:var(--bg);border:none;
+                 border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;
+                 letter-spacing:0.05em;">SAVE</button>
+         <button id="credits-cancel" style="background:transparent;color:var(--text-dim);
+                 border:1px solid var(--rule);border-radius:6px;padding:4px 10px;font-size:11px;
+                 font-weight:600;cursor:pointer;letter-spacing:0.05em;">CANCEL</button>
+       </span>`
+    : `<span id="credits-pill" class="pill" style="cursor:pointer;" title="Tap to edit">
+         Credits: <strong>${user.assessmentCredits}</strong>
+       </span>`;
+
   document.querySelector('main').innerHTML = `
     <div class="profile">
       <h2>${escapeHtml(user.displayName)}</h2>
       <div class="email">${escapeHtml(user.email)}</div>
       <div class="email" style="font-family: ui-monospace, SFMono-Regular, monospace; font-size: 11px; opacity: 0.7;">UID: ${escapeHtml(user.uid)}</div>
       <div class="pills">
-        <span class="pill">Credits: <strong>${user.assessmentCredits}</strong></span>
+        ${creditsHtml}
         <span class="pill">Items: <strong>${items.length}</strong></span>
         <span class="pill">Purchased total: <strong>${user.totalPurchased}</strong></span>
         ${user.createdAt ? `<span class="pill">Joined: <strong>${new Date(user.createdAt).toLocaleDateString()}</strong></span>` : ''}
@@ -924,9 +972,83 @@ function renderUserDetail(user, items, publicRate) {
         `).join('')
     }
   `;
+
+  // ── Credits editor wiring ───────────────────────────────────────────────
+  if (state.creditsEditOpen) {
+    const input  = document.getElementById('credits-input');
+    const save   = document.getElementById('credits-save');
+    const cancel = document.getElementById('credits-cancel');
+    // Focus + select-all so the admin can just type the new value over
+    // whatever was there. Pre-selection is more useful than start-of-input
+    // for the common "I want to set this to N" workflow.
+    if (input) { input.focus(); input.select(); }
+    // Enter saves, Escape cancels. Both are intuitive shortcuts; without
+    // them this is a three-tap interaction.
+    if (input) {
+      input.onkeydown = (e) => {
+        if (e.key === 'Enter')  { e.preventDefault(); save.click(); }
+        if (e.key === 'Escape') { e.preventDefault(); cancel.click(); }
+      };
+    }
+    if (save)   save.onclick   = () => saveCredits(user.uid);
+    if (cancel) cancel.onclick = () => {
+      state.creditsEditOpen = false;
+      const cached = state.currentUserDetail;
+      renderUserDetail(cached.user, cached.items, cached.publicRate);
+    };
+  } else {
+    const pill = document.getElementById('credits-pill');
+    if (pill) pill.onclick = () => {
+      state.creditsEditOpen = true;
+      const cached = state.currentUserDetail;
+      renderUserDetail(cached.user, cached.items, cached.publicRate);
+    };
+  }
+
   document.querySelectorAll('.row').forEach(row => {
     row.onclick = () => showItem(user.uid, row.dataset.id, 'user');
   });
+}
+
+// S14: PATCH the user doc with the new credit value. On success, the
+// endpoint returns the same shape as GET, so we feed it back into
+// renderUserDetail directly — no extra round-trip needed. On failure,
+// surface the error inline above the pills and leave the editor open so
+// the admin can fix and retry.
+async function saveCredits(uid) {
+  const input = document.getElementById('credits-input');
+  const save  = document.getElementById('credits-save');
+  if (!input) return;
+  const n = parseInt(input.value, 10);
+  if (!Number.isFinite(n) || n < 0 || n > 10000) {
+    alert('Credits must be an integer between 0 and 10000.');
+    input.focus(); input.select();
+    return;
+  }
+  // No-op short-circuit: if the value didn't change, just close the editor.
+  // Without this, the server returns a 400 ("No change") that gets surfaced
+  // as a "Failed to update" alert, which is wrong messaging for a no-op.
+  // Server still enforces the same rule as defense-in-depth (and to prevent
+  // junk audit entries from stale clients).
+  const cached = state.currentUserDetail;
+  if (cached && cached.user && cached.user.assessmentCredits === n) {
+    state.creditsEditOpen = false;
+    renderUserDetail(cached.user, cached.items, cached.publicRate);
+    return;
+  }
+  // Disable the buttons while in-flight so a double-tap doesn't fire twice.
+  if (save) { save.disabled = true; save.textContent = 'SAVING…'; }
+  try {
+    const { user, items, publicRate } = await api(
+      `/api/user?uid=${encodeURIComponent(uid)}`,
+      { method: 'PATCH', body: { assessmentCredits: n } }
+    );
+    state.creditsEditOpen = false;
+    renderUserDetail(user, items, publicRate);
+  } catch (e) {
+    alert('Failed to update credits: ' + e.message);
+    if (save) { save.disabled = false; save.textContent = 'SAVE'; }
+  }
 }
 
 async function showItem(uid, id, fromTab) {
@@ -983,6 +1105,7 @@ function renderItemDetail(it) {
       <div class="pills">
         ${it.publisher ? `<span class="pill">${escapeHtml(it.publisher)}</span>` : ''}
         ${it.issueDate ? `<span class="pill">${escapeHtml(it.issueDate)}</span>` : ''}
+        ${it.printing ? `<span class="pill" style="color:var(--accent);">${escapeHtml(it.printing)}</span>` : ''}
         ${it.publicListing ? `<span class="pill" style="color:var(--accent);">Public</span>` : `<span class="pill">Private</span>`}
         ${it.version ? `<span class="pill">v${escapeHtml(it.version)}</span>` : ''}
         ${it.cornerImages && it.cornerImages.length > 0 ? `<span class="pill" style="color:var(--accent);"><strong>HG</strong> assessed</span>` : ''}
@@ -1001,9 +1124,8 @@ function renderItemDetail(it) {
     ${fieldGrid([
       ['Robograde Score', it.score],
       ['Confidence Range', it.confidenceRange != null ? '±' + it.confidenceRange : '—'],
-      ['CGC AI Prediction', it.cgcAIGrade],
-      ['PSA AI Prediction', it.psaAIGrade],
       ['Assessed CGC Grade', it.assessedCGCGrade],
+      ['Assessed PSA Grade', it.assessedPSAGrade],
       ['Page Quality', it.pageQuality],
     ])}
 
