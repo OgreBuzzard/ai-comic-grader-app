@@ -1674,12 +1674,33 @@ function renderLabelMarkup(comic, opts) {
   // server-side clamp wasn't yet shipping. Two stages:
   //   1. Mode cap: high-grade ≤6, standard ≤16
   //   2. Score+conf cap: score + N must not exceed 100
+  // S12 May 6: read assessment version from rg.version (not hardcoded V2.0
+  // anymore). Current model returns "2.3" (S13 v7 — added paper-loss
+  // defect category, per-corner inspection, severe-defect cap). Older
+  // books in the user's collection may carry "2.0", "2.1", or "2.2" tags
+  // from prior schema versions — display whatever was actually computed.
+  // Falls back to "2.0" only if the field is missing entirely (extremely
+  // old records pre-versioning).
+  //
+  // S14: precision widening applied after the mode-cap, same as
+  // robograde-panel.js. The label is a snapshot tied to the print date,
+  // and the precision printed should reflect today's reduced certainty
+  // about a book originally assessed N years ago. Re-printing a label
+  // years from now will show a wider ± than the original printing —
+  // that's intentional. The print date is on the label too, so the
+  // pairing reads correctly: "as of this print, with N years of paper
+  // aging since the original assessment, the precision is wider."
   const highGradeRun = !!comic.highGradeUnlocked;
+  const assessmentDateISO = comic.roboGradeDate;
+  const widenFn = (window.RobograderPanel && window.RobograderPanel.widenPrecisionForAge)
+    ? window.RobograderPanel.widenPrecisionForAge
+    : function(n){ return n; };  // defensive fallback if panel module didn't load
   let precision = '';
   if (score < 100) {
     if (highGradeRun) {
       let n = rg.confidenceRange != null ? Math.round(rg.confidenceRange) : 3;
       n = Math.max(0, Math.min(6, n));
+      n = widenFn(n, assessmentDateISO);
       const headroom = Math.max(0, 100 - score);
       if (n > headroom) n = headroom;
       precision = n > 0 ? `±${n}` : '';
@@ -1688,19 +1709,13 @@ function renderLabelMarkup(comic, opts) {
     } else {
       let n = rg.confidenceRange != null ? Math.round(rg.confidenceRange) : 8;
       n = Math.max(0, Math.min(16, n));
+      n = widenFn(n, assessmentDateISO);
       const headroom = Math.max(0, 100 - score);
       if (n > headroom) n = headroom;
       precision = n > 0 ? `±${n}` : '';
     }
   }
 
-  // S12 May 6: read assessment version from rg.version (not hardcoded V2.0
-  // anymore). Current model returns "2.3" (S13 v7 — added paper-loss
-  // defect category, per-corner inspection, severe-defect cap). Older
-  // books in the user's collection may carry "2.0", "2.1", or "2.2" tags
-  // from prior schema versions — display whatever was actually computed.
-  // Falls back to "2.0" only if the field is missing entirely (extremely
-  // old records pre-versioning).
   const versionStr = `V${esc(rg.version || '2.0')}`;
   const title = esc(comic.title || '');
   const issue = comic.issue ? `#${esc(comic.issue)}` : '';

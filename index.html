@@ -174,6 +174,21 @@
         }
         await loadUserCredits();
         await checkTermsAcceptance();
+        // S14: warm the browser cache for the assessment chest image
+        // (~1.5MB) immediately after sign-in. On a slow cellular first
+        // launch this image was being fetched on-demand when the user
+        // tapped Assess, and if it hadn't arrived by the time the
+        // animation started, the chest shell rendered as empty space —
+        // the rest of the animation (photos sliding, lasers firing)
+        // then played out over whatever was behind it (the edit view).
+        // Issuing the request here lets it download in the background
+        // while the user navigates and takes photos; by the time they
+        // assess, it's already in cache. Fire-and-forget; no need to
+        // await — even a partial download is better than starting cold,
+        // and a failed preload doesn't break anything (the existing
+        // on-demand load still runs at assessment time).
+        const _chestPreload = new Image();
+        _chestPreload.src = 'assets/Robograder_Scan_Frame.png';
         // _loadingState gets cleared inside loadItems() once the collection
         // finishes loading. Don't clear it here — credits alone aren't enough.
       } else {
@@ -759,6 +774,15 @@
     #lightbox-img:active { cursor: grabbing; }
     #lightbox-close { position: absolute; top: max(env(safe-area-inset-top, 14px), 14px); right: 14px; width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; border: 1.5px solid rgba(255,255,255,0.3); font-size: 22px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; z-index: 1002; padding: 0; }
     #lightbox-close:hover { background: rgba(0,0,0,0.85); }
+    /* S14: save-to-photos button mirrors the close button on the opposite
+       corner. Same size and chrome treatment so the lightbox reads as
+       having two equivalent action affordances. The download arrow SVG is
+       inline (no asset round-trip) and uses currentColor so the hover
+       state propagates without extra rules. */
+    #lightbox-save { position: absolute; top: max(env(safe-area-inset-top, 14px), 14px); left: 14px; width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; border: 1.5px solid rgba(255,255,255,0.3); cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 1002; padding: 0; }
+    #lightbox-save:hover { background: rgba(0,0,0,0.85); }
+    #lightbox-save:disabled { opacity: 0.5; cursor: wait; }
+    #lightbox-save svg { width: 20px; height: 20px; pointer-events: none; }
     #lightbox-hint { position: absolute; bottom: max(env(safe-area-inset-bottom, 18px), 18px); left: 50%; transform: translateX(-50%); font-size: 11px; color: rgba(255,255,255,0.5); letter-spacing: 1.5px; pointer-events: none; z-index: 1001; }
     #sync-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 9998; background: #f0eaff; border-bottom: 2px solid #7a40cf; padding: 10px 16px; display: flex; align-items: center; gap: 10px; }
     /* Settings panel */
@@ -1163,6 +1187,17 @@
     </div>
   </div>
   <button id="lightbox-close" onclick="closeLightbox()" aria-label="Close">×</button>
+  <!-- S14: save-to-photos. On iOS Safari (incl. PWA), navigator.share opens
+       the native share sheet where the user picks "Save Image". On Android
+       Chrome, same UI. On desktop, falls back to a standard download link.
+       The handler does the platform detection. -->
+  <button id="lightbox-save" onclick="saveLightboxImage()" aria-label="Save image">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="7 10 12 15 17 10"/>
+      <line x1="12" y1="15" x2="12" y2="3"/>
+    </svg>
+  </button>
   <div id="lightbox-hint">PINCH OR DOUBLE-TAP TO ZOOM</div>
 </div>
 
@@ -1332,6 +1367,77 @@ function extractYearFromIssueDate(s) {
 // collapse/strip-"The" logic, so the lookup key is already cleaned up.
 // issueDate is optional — pass it whenever available so volume disambiguation
 // works (e.g. X-Men 1963 → "Uncanny X-Men" vs X-Men 1991 → "X-Men").
+// ── Value-key registry (S14) ────────────────────────────────────────────
+// Fetches the value-key list from /api/value_keys once per page load and
+// installs window.matchValueKey for the Deep-Assessment gate to call.
+// The list is small (~3-5KB) and cached at the edge for an hour. While
+// the fetch is in flight, matchValueKey is undefined, so the gate falls
+// back to score-only — graceful degradation. If a user assesses a key
+// book before the fetch completes, they'd miss the value-list unlock
+// on that one assessment; re-running or running another assessment after
+// the fetch lands picks it up. In practice the fetch completes in ms.
+//
+// The matchValueKey function is replicated from api/value_keys.js so
+// the client can match locally without round-tripping to the server.
+// If the server-side list updates, the client picks up the new list on
+// the next page load via the fetch below.
+let _valueKeys = null;
+function _normalizeKeyTitle(s) {
+  if (!s) return '';
+  return s.toString().trim().replace(/\s+/g, ' ').replace(/^The\s+/i, '').toLowerCase();
+}
+function _normalizeKeyIssue(s) {
+  if (s == null) return '';
+  return s.toString().trim().replace(/^#/, '').replace(/^0+(\d)/, '$1');
+}
+window.matchValueKey = function matchValueKey(title, issue, publisher, printing) {
+  if (!_valueKeys) return null;
+  // Hard exclusion: facsimiles and reprints never qualify, no matter how
+  // perfect the title+issue match. A 2019 Hulk #181 facsimile is not the
+  // 1974 first Wolverine. The printing field comes from assess.js v2.5+
+  // and is empty string for original-printing books.
+  if (printing && String(printing).trim() !== '') return null;
+  const nt = _normalizeKeyTitle(title);
+  const ni = _normalizeKeyIssue(issue);
+  if (!nt || !ni) return null;
+  const np = (publisher || '').toString().trim().toLowerCase();
+  for (const entry of _valueKeys) {
+    if (_normalizeKeyIssue(entry.issue) !== ni) continue;
+    const canon = _normalizeKeyTitle(entry.title);
+    const titleHit = (canon === nt) ||
+      (entry.aliases || []).some(a => _normalizeKeyTitle(a) === nt);
+    if (!titleHit) continue;
+    // Cross-publisher disambiguation: when the entry pins a publisher,
+    // require it to match. Substring match in either direction handles
+    // 'Gold Key' vs 'Gold Key Comics' kinds of differences.
+    if (entry.publisher) {
+      const ep = entry.publisher.toLowerCase();
+      if (!np || (!np.includes(ep) && !ep.includes(np))) continue;
+    }
+    return entry;
+  }
+  return null;
+};
+// Kick off the fetch immediately. No await — fire and forget. Done as an
+// IIFE so we can use async/await syntax cleanly without polluting the
+// outer scope.
+(async function loadValueKeys() {
+  try {
+    const r = await fetch('/api/value_keys', { cache: 'default' });
+    if (!r.ok) {
+      console.warn('[value_keys] fetch failed:', r.status);
+      return;
+    }
+    const data = await r.json();
+    if (data && Array.isArray(data.keys)) {
+      _valueKeys = data.keys;
+      console.log(`[value_keys] loaded ${data.keys.length} entries (v${data.version || '?'})`);
+    }
+  } catch (e) {
+    console.warn('[value_keys] load error:', e?.message || e);
+  }
+})();
+
 function normalizeTitle(s, issueDate) {
   if (!s) return s;
   const trimmed = s.trim().replace(/\s+/g, ' ').replace(/^The\s+/i, '');
@@ -2371,6 +2477,17 @@ async function loadUserCredits(){
       window._sampleDismissed = data.sampleDismissed === true;
       if (data.everPurchased) window._userEverPaid = true;
       else if (window._userCredits > 0) window._userEverPaid = true;
+      // S14: hydrate trainingOptIn cache here, alongside the other user-doc
+      // fields, so openSettings can render the toggle synchronously from a
+      // known-good value instead of from the HTML default (which is OFF).
+      // The prior race-condition bug: openSettings called loadTrainingSetting
+      // without await, leaving the toggle visually OFF for ~200ms until the
+      // async fetch returned. Users saw OFF, tapped to turn ON, then assumed
+      // the setting kept reverting — but it was always actually ON. With the
+      // cache populated at login, openSettings now reads window._trainingOptIn
+      // and renders the correct visual state on the first paint.
+      // Default true (opt-in) when the field is absent.
+      window._trainingOptIn = data.trainingOptIn !== false;
       // Profile-field backfill (added S11). Existing users may have signed up
       // before we wrote profile data to Firestore. On every sign-in, refresh
       // displayName/email if either is missing or out of date. This is for
@@ -2400,6 +2517,8 @@ async function loadUserCredits(){
       });
       window._userCredits = 3;
       window._sampleDismissed = false;
+      // S14: new-user cache default for trainingOptIn — opt-in by default.
+      window._trainingOptIn = true;
     }
     updateStats();
   } catch(e){ console.error("Failed to load credits:", e); }
@@ -2936,8 +3055,25 @@ function showDetail(id){
       const parts = [];
       if (h.rgScore != null) {
         const v = h.rgVersion ? ` v${h.rgVersion}` : '';
-        const plus = h.rgScore >= 80 && h.rgScore < 100 ? '+' : '';
-        parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;font-weight:700;color:#5a7030">RG ${h.rgScore}${plus}${v}</span>`);
+        // S14: show the precision suffix recorded at assessment time, NOT
+        // age-widened. Past Assessments is a historical ledger — entries
+        // remain frozen at the values that were asserted on their date.
+        // Mirrors the buildRoboGradeDisplay logic: high-grade entries get
+        // the recorded ±N (or "+" placeholder if it was somehow missing),
+        // score ≥80 non-high-grade shows "+", below 80 standard shows ±N
+        // or empty if no range was recorded. Legacy entries without
+        // rgConfidenceRange just omit the suffix.
+        let precSuffix = '';
+        if (h.rgScore < 100) {
+          if (h.rgHighGradeUnlocked && h.rgConfidenceRange != null) {
+            precSuffix = h.rgConfidenceRange > 0 ? ` ±${h.rgConfidenceRange}` : '';
+          } else if (h.rgScore >= 80 && !h.rgHighGradeUnlocked) {
+            precSuffix = '+';
+          } else if (h.rgConfidenceRange != null) {
+            precSuffix = h.rgConfidenceRange > 0 ? ` ±${h.rgConfidenceRange}` : '';
+          }
+        }
+        parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;font-weight:700;color:#5a7030">RG ${h.rgScore}${precSuffix}${v}</span>`);
       }
       if (h.grade) {
         parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;color:#3a5a8a">CGC ${normalizeGrade(h.grade)}</span>`);
@@ -3551,6 +3687,92 @@ function closeLightbox() {
   const img = document.getElementById("lightbox-img");
   if (img) img.style.transform = '';
   if (box) box.style.display = 'none';
+}
+
+// S14: save the currently-displayed lightbox image to the user's photo
+// library (or downloads, depending on platform). Strategy:
+//   1. iOS / Android with Web Share API + canShare({files}): use
+//      navigator.share. The native share sheet appears with "Save Image"
+//      as a built-in option (iOS) or "Save to Photos" (Android Chrome).
+//      This is the ONLY way to reach iOS Photos from a web page — there
+//      is no direct API.
+//   2. Desktop / browsers without canShare: create an <a download> link
+//      and click it programmatically. Triggers a normal file download.
+//
+// Both paths need the image as a Blob first. Most lightbox sources are
+// either base64 data URLs (already a fetchable string) or Firebase
+// Storage URLs (configured with CORS, so fetch() works). On the rare
+// fetch failure, we fall back to opening the image in a new tab — the
+// user can then long-press on iOS to invoke "Save Image" from the
+// native context menu.
+async function saveLightboxImage() {
+  const btn = document.getElementById('lightbox-save');
+  const img = document.getElementById('lightbox-img');
+  if (!img || !img.src) return;
+  if (btn) btn.disabled = true;
+  try {
+    // Fetch the image bytes. Same-origin and CORS-configured remotes
+    // both work; data: URLs work via the same fetch path in modern browsers.
+    const resp = await fetch(img.src);
+    if (!resp.ok) throw new Error('fetch failed: ' + resp.status);
+    const blob = await resp.blob();
+
+    // Build a sensible filename. Use the URL's last path segment when
+    // possible, otherwise a generic stamp. Extension comes from the
+    // blob's MIME type so PNGs get .png and JPEGs get .jpg.
+    let ext = 'jpg';
+    if (blob.type === 'image/png') ext = 'png';
+    else if (blob.type === 'image/webp') ext = 'webp';
+    else if (blob.type === 'image/gif') ext = 'gif';
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const filename = `robograder-${stamp}.${ext}`;
+    const file = new File([blob], filename, { type: blob.type });
+
+    // Web Share API path. The canShare({files}) probe is critical —
+    // some browsers (older Firefox, in-app webviews) expose share but
+    // can't handle files; calling share() without checking throws.
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file] });
+        // User completed the share (or cancelled — share doesn't tell us
+        // which on iOS; resolution either way). Done.
+        return;
+      } catch (shareErr) {
+        // AbortError = user cancelled. Swallow silently — they chose not
+        // to save, which is a valid outcome, not an error to report.
+        if (shareErr && shareErr.name === 'AbortError') return;
+        // Anything else: fall through to the download link path.
+        console.warn('share failed, falling back to download:', shareErr);
+      }
+    }
+
+    // Download link fallback. Works on desktop browsers, Firefox mobile,
+    // anything else without functional file-sharing. Creates a temporary
+    // object URL so we don't keep the blob alive longer than needed.
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // Defer revoke so the browser has time to start the download. 1s is
+    // generous; downloads start within tens of ms in practice.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+  } catch(e) {
+    console.warn('Save image failed:', e);
+    // Last-resort fallback: open the image in a new tab. iOS Safari users
+    // can then long-press → Save Image. Desktop users get a plain image
+    // page they can right-click → Save.
+    try {
+      window.open(img.src, '_blank', 'noopener');
+    } catch(openErr) {
+      alert('Unable to save image. Try long-pressing the image to save it manually.');
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 // EMPTY constant — defines the canonical field order for new comic records.
@@ -4548,16 +4770,51 @@ function mountResults(cgc, psa) {
   // S13 v18: ASSESSING → active button (in-place styling change).
   // Same DOM element, restyled. User perceives "the button is now
   // ready" rather than "a new button appeared."
+  //
+  // S14: Deep Assessment unlock gate broadened. The original gate was
+  // "RG score ≥80". Three new triggers added:
+  //   1. assessedCGCGrade ≥ 8.0 — the model's CGC prediction (CGC AI)
+  //   2. assessedPSAGrade ≥ 8.0 — the model's PSA prediction (PSA AI)
+  //   3. valueListMatch on (title, issue, publisher, printing)
+  // The value-list path captures low-grade key issues — a 1.5 X-Men #1
+  // is a $10K+ book that the score-based gate would never unlock, but
+  // its owner has every reason to want the most precise assessment
+  // available. Value-list matches are hard-excluded for facsimiles
+  // (printing must be empty); see api/value_keys.js for the registry
+  // and matcher.
+  //
+  // UI rename: "HIGH-GRADE ASSESS UNLOCKED" → "DEEP ASSESS UNLOCKED".
+  // Internal variable names keep highGrade* — mass-rename across the
+  // schema, Firestore writes, and assess.js would be high-risk for
+  // low return three days from beta. The user-facing string is what
+  // matters.
   setTimeout(() => {
     const btn = document.getElementById('assess-complete-btn');
     if (!btn) return;
     const hgAlreadyRun = !!(formData && formData.highGradeTier);
-    const hgUnlocked = (roboScore != null && roboScore >= 80) && !hgAlreadyRun;
+    const cgcAINum = parseFloat(cgc && cgc.grade);
+    const psaAINum = parseFloat(psa && psa.grade);
+    const scoreGate    = (roboScore != null && roboScore >= 80);
+    const cgcAIGate    = Number.isFinite(cgcAINum) && cgcAINum >= 8.0;
+    const psaAIGate    = Number.isFinite(psaAINum) && psaAINum >= 8.0;
+    // Value-list lookup: lazily initialized at app load (see initValueKeys
+    // below). Falls back to no-match if the fetch hasn't completed yet —
+    // the user can re-assess later and pick up the value-list unlock.
+    const valueGate = (typeof window.matchValueKey === 'function')
+      ? !!window.matchValueKey(
+          cgc && cgc.title,
+          cgc && cgc.issue,
+          cgc && cgc.publisher,
+          cgc && cgc.printing
+        )
+      : false;
+    const qualifies = scoreGate || cgcAIGate || psaAIGate || valueGate;
+    const hgUnlocked = qualifies && !hgAlreadyRun;
     if (_pendingAssessResult && _pendingAssessResult.cgc) {
-      _pendingAssessResult.cgc._highGradeUnlocked = (roboScore != null && roboScore >= 80);
+      _pendingAssessResult.cgc._highGradeUnlocked = qualifies;
     }
     if (hgUnlocked) {
-      btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">HIGH-GRADE ASSESS</div><div style="font-size:10px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
+      btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">DEEP ASSESS</div><div style="font-size:10px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
       btn.style.background = '#2a7a3a';
       btn.style.color = '#fff';
       btn.style.textAlign = 'center';
@@ -4585,8 +4842,8 @@ function showResultPreview(cgc, psa) { return mountResults(cgc, psa); }
 async function assessHighGrade() {
   const imgs = (formData.images || []).filter(Boolean);
   const corners = (formData.cornerImages || []).filter(Boolean);
-  if (imgs.length < 4) { alert('All 4 main photos are required for high-grade assessment.'); return; }
-  if (corners.length < 4) { alert('All 4 corner photos are required for high-grade assessment.'); return; }
+  if (imgs.length < 4) { alert('All 4 main photos are required for Deep Assessment.'); return; }
+  if (corners.length < 4) { alert('All 4 corner photos are required for Deep Assessment.'); return; }
   if (assessing) return;
 
   // Abuse prevention: block locked-out or flagged accounts
@@ -4607,7 +4864,7 @@ async function assessHighGrade() {
   // We need the initial RG to carry Back and Interior scores through
   const initialRG = formData.roboGrade;
   if (!initialRG) {
-    alert('Run a standard assessment first before running high-grade.');
+    alert('Run a standard assessment first before running Deep Assessment.');
     return;
   }
 
@@ -4687,7 +4944,7 @@ async function assessHighGrade() {
 
     // Now await the API
     const resp = await respPromise;
-    if (!resp.ok) { const e = await resp.text(); throw new Error('High-grade assessment error: ' + e); }
+    if (!resp.ok) { const e = await resp.text(); throw new Error('Deep Assessment error: ' + e); }
     const unified = await resp.json();
     if (window.RobograderScan && window.RobograderScan.debugLog) {
       window.RobograderScan.debugLog('hg: API returned, unified.gateResult=' + (unified.gateResult||'COMIC'));
@@ -4716,7 +4973,24 @@ async function assessHighGrade() {
     if (unified.roboGrade) cgc._roboGrade = unified.roboGrade;
     if (unified.psaGrade) cgc._psaGrade = unified.psaGrade;
     cgc._highGradeTier = true;
-    cgc._highGradeUnlocked = (unified.roboGrade && unified.roboGrade.score >= 80);
+    // S14: post-Deep, mark highGradeUnlocked using the same triple-gate +
+    // value-list logic as the initial-assess site. This flag drives the
+    // tighter precision-display mode (±N capped 6 instead of standard
+    // ±N capped 16); since the Deep run actually produced the data, the
+    // tighter mode is justified. Without this, a Deep run that didn't
+    // result in score ≥80 would display in loose-precision mode even
+    // though the underlying data is the high-precision data.
+    const _cgcAINum = parseFloat(cgc.grade);
+    const _psaAINum = parseFloat(psa && psa.grade);
+    const _vmatch = (typeof window.matchValueKey === 'function')
+      ? !!window.matchValueKey(cgc.title, cgc.issue, cgc.publisher, cgc.printing)
+      : false;
+    cgc._highGradeUnlocked = (
+      (unified.roboGrade && unified.roboGrade.score >= 80) ||
+      (Number.isFinite(_cgcAINum) && _cgcAINum >= 8.0) ||
+      (Number.isFinite(_psaAINum) && _psaAINum >= 8.0) ||
+      _vmatch
+    );
 
     // S13 v18: same pre-upload pattern as standard flow. HG uploads
     // include both main and corner images.
@@ -4958,6 +5232,28 @@ async function saveTrainingSetting(val) {
 }
 
 async function loadTrainingSetting() {
+  // S14: cache-first. window._trainingOptIn is hydrated at login by
+  // loadUserCredits. When openSettings calls this, the value is already
+  // available — set the toggle visual state synchronously, no waiting.
+  // The async fetch below is now a refresh-from-source backup that only
+  // runs if the cache is somehow missing (auth flow edge cases). The
+  // prior implementation always did the async fetch, leaving the toggle
+  // visually OFF for ~200ms after opening settings — the bug Matt was
+  // seeing (he tapped to "fix" an OFF toggle that was about to flip ON
+  // on its own).
+  if (window._trainingOptIn !== undefined) {
+    const val = !!window._trainingOptIn;
+    const cb = document.getElementById('settings-training-toggle');
+    if (cb) {
+      cb.checked = val;
+      const track = document.getElementById('settings-training-track');
+      const thumb = document.getElementById('settings-training-thumb');
+      if (track) track.style.background = val ? '#3a7a20' : '#2a2a2a';
+      if (thumb) thumb.style.left = val ? '23px' : '3px';
+    }
+    return;
+  }
+  // Fallback: cache miss. Fetch from Firestore and populate.
   let val = true; // default: opt-in
   if (window._currentUser && window._db) {
     try {
@@ -5393,6 +5689,13 @@ async function completeAssessment() {
       pageQuality: formData.pageQuality || '',
       rgScore: formData.roboGrade && formData.roboGrade.score != null ? Math.round(formData.roboGrade.score) : null,
       rgVersion: formData.roboGrade && formData.roboGrade.version ? formData.roboGrade.version : null,
+      // S14: capture the confidence range at assessment time. Past
+      // Assessments displays this AS-RECORDED — no age widening — so the
+      // entry remains the historical snapshot of what RG asserted on
+      // that date with that level of precision. Legacy entries missing
+      // this field render without it (renderer is null-safe).
+      rgConfidenceRange: formData.roboGrade && formData.roboGrade.confidenceRange != null ? Math.round(formData.roboGrade.confidenceRange) : null,
+      rgHighGradeUnlocked: !!formData.highGradeUnlocked,
       date: formData.roboGradeDate || ''
     };
     formData.assessmentHistory.unshift(prior);
@@ -6078,8 +6381,8 @@ function renderForm(){
       </div>
       ${formData.highGradeUnlocked ? `
       <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">
-        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">HIGH-GRADE CORNER MACROS</div>
-        <div style="font-size:11px;color:#8a9a8a;margin-bottom:10px;line-height:1.5">Close-up photos of all four front-cover corners, one per slot. The high-grade pass uses these to tighten the grade.</div>
+        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">DEEP ASSESSMENT CORNER MACROS</div>
+        <div style="font-size:11px;color:#8a9a8a;margin-bottom:10px;line-height:1.5">Close-up photos of all four front-cover corners, one per slot. The Deep Assessment pass uses these to tighten the grade.</div>
         <div style="display:flex;flex-direction:column;gap:8px">
           ${[0,1,2,3].map(i=>{
             const cornerLabels=["Top Left","Top Right","Bottom Left","Bottom Right"];
@@ -6112,7 +6415,7 @@ function renderForm(){
           const ambientText=cornerCount===4?"#6abf6a":"#6a6a6a";
           return `<div style="display:flex;justify-content:center;margin-top:12px">
             <button id="hg-assess-btn" onclick="assessHighGrade()" ${ready?"":"disabled"} style="width:75%;min-height:52px;border-radius:12px;background:${ambient};color:${ambientText};border:none;font-size:14px;font-weight:700;letter-spacing:1.5px;cursor:${ready?"pointer":"not-allowed"}">
-              ${assessing?"Assessing…":`HIGH-GRADE ASSESS ${cornerCount<4?`(${cornerCount}/4)`:""}`}
+              ${assessing?"Assessing…":`DEEP ASSESS ${cornerCount<4?`(${cornerCount}/4)`:""}`}
             </button>
           </div>`;
         })()}

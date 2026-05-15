@@ -29,6 +29,81 @@
 (function () {
   'use strict';
 
+  // ── Time-degraded precision modifier (S14) ─────────────────────────────
+  // The grade itself never changes after assessment — it's testimony, a
+  // record of what RG saw on a specific date. But the *precision modifier*
+  // (the ± range around the score) reflects how well we can know the book's
+  // condition today from a photo taken then. That precision degrades with
+  // time: paper acidifies, moisture creeps in, UV fades inks, slabs flex.
+  // None of this is visible in the original photo, so as years accumulate
+  // the photo tells us less about the book in the buyer's hand right now.
+  //
+  // Curve: piecewise. Anchors hand-tuned to feel right at each milestone:
+  //   0 yrs → +0,  8 → +1,  15 → +2,  21 → +3,  26 → +4,  30 → +5,  33 → +6.
+  // After year 33, +1 every 2 years.
+  // Cap at 99 — eventually the photo tells us so little that any score on
+  // a 1–100 scale could plausibly apply. Cap reached around year 219.
+  //
+  // The widening is ADDITIVE on top of the original confidence range. A
+  // book originally assessed at ±3 that's now 8 years old displays as ±4.
+  // Re-assessing resets the clock: the new assessment date becomes "now"
+  // and widening starts over from the new (presumably tighter) base.
+  const PRECISION_DECAY_ANCHORS = [
+    [0,  0],
+    [8,  1],
+    [15, 2],
+    [21, 3],
+    [26, 4],
+    [30, 5],
+    [33, 6],
+  ];
+  const PRECISION_DECAY_MAX = 99;
+
+  function precisionWideningForYears(years) {
+    if (!Number.isFinite(years) || years <= 0) return 0;
+    // Phase 1: piecewise linear through the anchor points.
+    for (let i = 0; i < PRECISION_DECAY_ANCHORS.length - 1; i++) {
+      const [y0, w0] = PRECISION_DECAY_ANCHORS[i];
+      const [y1, w1] = PRECISION_DECAY_ANCHORS[i + 1];
+      if (years >= y0 && years <= y1) {
+        // Floor rather than round so the widening only ticks up to the
+        // next integer when we actually reach the next anchor's year.
+        // (A book 4 years old should feel like ±0, not get rounded up.)
+        const frac = (years - y0) / (y1 - y0);
+        return Math.floor(w0 + frac * (w1 - w0));
+      }
+    }
+    // Phase 2: past the last anchor (year 33), +1 every 2 years.
+    const [lastY, lastW] = PRECISION_DECAY_ANCHORS[PRECISION_DECAY_ANCHORS.length - 1];
+    const extra = Math.floor((years - lastY) / 2);
+    return Math.min(PRECISION_DECAY_MAX, lastW + extra);
+  }
+
+  // widenPrecisionForAge(originalRange, assessmentDateISO, [nowMs])
+  //   originalRange: number from rg.confidenceRange (integer, the ± value
+  //                  computed at assessment time).
+  //   assessmentDateISO: ISO string from comic.roboGradeDate, or null.
+  //   nowMs (optional): test seam; defaults to Date.now().
+  //
+  // Returns the WIDENED range — original + age-based widening, additive.
+  // If assessmentDateISO is missing or unparseable, returns the original
+  // unchanged (we don't fabricate a "since when" date; better to under-
+  // widen than mislead). Cap at PRECISION_DECAY_MAX even if the original
+  // was already huge.
+  function widenPrecisionForAge(originalRange, assessmentDateISO, nowMs) {
+    const orig = Number.isFinite(originalRange) ? Math.max(0, Math.round(originalRange)) : 0;
+    if (!assessmentDateISO) return orig;
+    const t = Date.parse(assessmentDateISO);
+    if (!Number.isFinite(t)) return orig;
+    const now = (nowMs != null) ? nowMs : Date.now();
+    // 365.25 day-year average accounts for leap years without precision
+    // we can't afford. A few hours one way or the other doesn't matter for
+    // a function that increments at year boundaries.
+    const years = (now - t) / (365.25 * 24 * 60 * 60 * 1000);
+    const widening = precisionWideningForYears(years);
+    return Math.min(PRECISION_DECAY_MAX, orig + widening);
+  }
+
   function buildRoboGradeDisplay(rg, comic) {
     if (!rg) return '';
 
@@ -65,12 +140,28 @@
     //   - Mode cap (high-grade ≤6, standard ≤16) prevents nonsense ranges.
     //   - Score+conf cap (score + N ≤ 100) prevents implied upper bounds
     //     above 100 (e.g. score 94 ± 8 → range 102, capped to 94 ± 6 → 100).
+    //
+    // S14: age-based widening applied AFTER the original mode-cap and
+    // BEFORE the score+headroom cap. Order matters — the mode cap (≤6 for
+    // high-grade, ≤16 standard) protects against bad original data, then
+    // age widening extends the range based on time elapsed, then the
+    // headroom cap (score + N ≤ 100) prevents the display from implying
+    // a grade above 100. Without that final cap, a 70-year-old score-90
+    // book would widen to ±50, implying upper bound 140 — nonsense. The
+    // cap reads "the book is somewhere between (score - N) and 100" which
+    // is what we mean. Lower bound isn't explicitly floored at 0 because
+    // headroom-only capping handles that asymmetrically: a score-90 ±60
+    // becomes a score-90 ±10 (capped to top), and a score-10 ±60 stays a
+    // score-10 ±60 (lower bound implied to be near zero — fine, that's
+    // truthful).
     const highGradeRun = !!(comic && comic.highGradeUnlocked);
+    const assessmentDateISO = comic && comic.roboGradeDate;
     let precision = '';
     if (scoreRounded < 100) {
       if (highGradeRun) {
         let n = rg.confidenceRange != null ? Math.round(rg.confidenceRange) : 3;
         n = Math.max(0, Math.min(6, n));
+        n = widenPrecisionForAge(n, assessmentDateISO);
         const headroom = Math.max(0, 100 - scoreRounded);
         if (n > headroom) n = headroom;
         precision = n > 0 ? `±${n}` : '';
@@ -79,6 +170,7 @@
       } else {
         let n = rg.confidenceRange != null ? Math.round(rg.confidenceRange) : 8;
         n = Math.max(0, Math.min(16, n));
+        n = widenPrecisionForAge(n, assessmentDateISO);
         const headroom = Math.max(0, 100 - scoreRounded);
         if (n > headroom) n = headroom;
         precision = n > 0 ? `±${n}` : '';
@@ -242,5 +334,12 @@
 
   // Expose under a namespace so we don't pollute the global scope and so the
   // intent ("this is the shared RoboGrader panel") is clear at every call site.
-  window.RobograderPanel = { buildDisplay: buildRoboGradeDisplay };
+  // S14: widenPrecisionForAge also exposed so print-label.js and index.html
+  // can use the same widening function — single source of truth for the
+  // age-decay curve, no risk of the three surfaces drifting apart.
+  window.RobograderPanel = {
+    buildDisplay: buildRoboGradeDisplay,
+    widenPrecisionForAge: widenPrecisionForAge,
+    precisionWideningForYears: precisionWideningForYears,
+  };
 })();
