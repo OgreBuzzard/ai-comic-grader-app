@@ -659,6 +659,29 @@
       z-index: 5;
     }
     #camera-flash.flash { opacity: 1; transition: none; }
+    /* S14: focusing indicator. Shown briefly between shutter-tap and the
+       actual capture, while we trigger an autofocus pass and let the lens
+       settle. Without this, the 350ms wait feels like the app froze;
+       with it, users understand we're doing something deliberate and
+       hold the phone steadier. Centered "Focusing…" text with a subtle
+       backdrop dim — readable over any image content, doesn't compete
+       with the guide overlay. */
+    #camera-focusing {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.18);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      text-shadow: 0 0 8px rgba(0,0,0,0.7);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 100ms ease-out;
+      z-index: 6;
+    }
+    #camera-focusing.active { opacity: 1; }
     /* Lens selector (S12). Floating row of pill buttons in the lower-right
        quadrant of the stage when multiple rear lenses are detected (iPhone
        Pro models with telephoto). Hidden when only one rear lens exists.
@@ -890,27 +913,35 @@
       from { transform: translate(-120%, -50%); }
       to   { transform: translate(0, -50%); }
     }
-    /* Title logo — top center, above the robot. Fades in after the robot
-       has finished sliding (delay ≥ 0.2s + 0.9s = 1.1s). Width tops out at
-       72vw for narrow phones; capped via max-width so it never overflows.
+    /* Title logo — top center, above the robot. S14 second pass: drops in
+       from above the viewport rather than fading in place, and 20% larger
+       (max-width 72vw → 86.4vw, max-height 14vh → 16.8vh). Drop-in
+       animation runs after the robot has finished sliding (delay ≥ 0.2s
+       + 0.9s = 1.1s) so the two entrances don't visually compete. The
+       drop uses translateY rather than top:* animation because transform
+       is GPU-accelerated and the centering transform on X stays composed
+       cleanly. Final resting position is top:5vh.
        If the asset file is missing, onerror in the HTML hides the element
        so we don't show a broken-image icon. */
     #splash-logo {
       position: absolute;
       left: 50%;
       top: 5vh;
-      transform: translateX(-50%);
-      max-width: 72vw;
-      max-height: 14vh;
+      transform: translate(-50%, -120vh);
+      max-width: 86.4vw;
+      max-height: 16.8vh;
       width: auto;
       height: auto;
       opacity: 0;
       pointer-events: none;
-      animation: splashLogoFadeIn 0.5s ease-out 1.0s forwards;
+      animation: splashLogoDropIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) 1.0s forwards;
       z-index: 2;
     }
-    @keyframes splashLogoFadeIn {
-      to { opacity: 1; }
+    @keyframes splashLogoDropIn {
+      to {
+        transform: translate(-50%, 0);
+        opacity: 1;
+      }
     }
     /* Exit: splash fades out cleanly. Robot and logo go with the parent
        fade — no separate slide-down. The list view is already rendered
@@ -1229,6 +1260,7 @@
     <video id="camera-video" autoplay playsinline muted></video>
     <div id="camera-guide"></div>
     <div id="camera-flash"></div>
+    <div id="camera-focusing">FOCUSING…</div>
     <div id="camera-lens-selector"></div>
     <div id="camera-header">
       <div id="camera-header-spacer"></div>
@@ -5779,6 +5811,57 @@ function onAssessmentSuccess(){
   decrementCredit();
 }
 
+// S14: translate raw API/network errors into human-readable messages.
+// The two errors users were seeing during the run-up to beta:
+//
+//   1. Anthropic 529 Overloaded — Anthropic's inference capacity is
+//      saturated; the response body wraps their {"type":"overloaded_error",
+//      "message":"Overloaded"} envelope inside our error JSON. Users
+//      were seeing the entire stringified JSON with backslash-escaped
+//      quotes. Useless and alarming.
+//
+//   2. Vercel FUNCTION_INVOCATION_TIMEOUT — our serverless function hit
+//      the 60s maxDuration limit. Body is plain text. Less common but
+//      happens on large facsimile assessments where the model takes
+//      longer than usual.
+//
+// The translator pattern-matches on signal strings inside the raw
+// error and returns a short, actionable message. Anything unrecognized
+// falls through to a generic "try again" message — the raw error is
+// still logged to console for debugging.
+function describeAssessmentError(rawErr) {
+  const text = String(rawErr || '');
+  // Anthropic overload: their service is throttling. Retry usually
+  // works within a minute. Credit was not deducted; safe to retry.
+  if (/overloaded_error|Overloaded|529/i.test(text)) {
+    return "Robograder is busy right now. Please wait a moment and try again. (No credit was used.)";
+  }
+  // Vercel function timeout: our backend took longer than the 60s limit.
+  // Often a slow Anthropic response on complex assessments. Retry may
+  // or may not work; the user should try once and contact support if
+  // it persists.
+  if (/FUNCTION_INVOCATION_TIMEOUT|timeout/i.test(text)) {
+    return "The assessment took too long and was cut off. Please try again. If this keeps happening, please contact support. (No credit was used.)";
+  }
+  // Anthropic rate limit: throttled per-account / per-minute. Same
+  // recovery as overload but the typical wait is shorter.
+  if (/rate_limit|rate limit|429/i.test(text)) {
+    return "Too many assessments in a short time. Please wait a minute and try again. (No credit was used.)";
+  }
+  // Network-side failure (offline, DNS, connection reset, etc.).
+  if (/Failed to fetch|NetworkError|ECONN|ENOTFOUND|fetch failed/i.test(text)) {
+    return "Network problem reaching Robograder. Check your connection and try again. (No credit was used.)";
+  }
+  // Auth/permission failures — usually means the user's session expired.
+  if (/401|403|Unauthorized|Forbidden/i.test(text)) {
+    return "Your session may have expired. Please reload the app and sign in again. (No credit was used.)";
+  }
+  // Default: generic message. Raw error is still in console for support
+  // if Matt asks the user to send a screenshot.
+  console.warn('[assess] unmatched error:', text);
+  return "Assessment failed. Please try again. If this keeps happening, please contact support. (No credit was used.)";
+}
+
 function dismissAssessModal(err) {
   // S13 v9: shell teardown is owned by scan-animation.js. We tell it to
   // dismiss; it tears down the chest, cavity, results panel, and overlay.
@@ -5791,7 +5874,10 @@ function dismissAssessModal(err) {
     const overlay = document.getElementById('assess-modal-overlay');
     if (overlay) overlay.remove();
   }
-  if (err) alert('Assessment failed: ' + err);
+  // S14: translate raw error into a human-readable message rather than
+  // dumping JSON or stack-text into an alert. Raw error still hits the
+  // console for diagnostics.
+  if (err) alert(describeAssessmentError(err));
 }
 
 async function assessGrade(){
@@ -7676,7 +7762,7 @@ function cameraOpenSlot(slotIndex) {
   }
 }
 
-function cameraCapture() {
+async function cameraCapture() {
   if (!_cameraState || !_cameraState.stream) return;
   // S13: defensive guard. If the rotate-orientation card is showing, the
   // device is in the wrong orientation for this slot — capture would produce
@@ -7688,6 +7774,54 @@ function cameraCapture() {
   if (modal && modal.classList.contains('rotate-needed')) return;
   const video = document.getElementById('camera-video');
   if (!video.videoWidth || !video.videoHeight) return;
+
+  // S14: focus-pass + hold before capture. The prior implementation grabbed
+  // a frame from the video stream the instant the shutter was tapped,
+  // which often produced soft photos: continuous autofocus may be mid-hunt
+  // when the user taps, and at 2× digital zoom even slight hand motion
+  // shows as motion blur. We now do three things before the capture:
+  //   1. Disable the shutter button to prevent a double-tap firing twice.
+  //   2. Trigger a single-shot AF pass via track constraints. iOS Safari
+  //      ignores focusMode:'single-shot' on most versions but doesn't
+  //      error — the wait below still gives continuous-AF time to settle
+  //      on a stable scene.
+  //   3. Show a "FOCUSING…" indicator and hold for 350ms. The visible
+  //      indicator is critical: without it, the delay feels broken;
+  //      with it, users instinctively hold steadier.
+  // After the hold, the original capture code runs unchanged.
+  const captureBtn = document.getElementById('camera-capture');
+  const focusing = document.getElementById('camera-focusing');
+  if (captureBtn) captureBtn.disabled = true;
+  if (focusing) focusing.classList.add('active');
+
+  try {
+    // Attempt a single-shot AF pass. Wrap in try/catch because the
+    // constraint syntax varies across browsers and not all support it.
+    // If it throws or is ignored, fall through to the hold — continuous
+    // AF (the default on getUserMedia streams) will settle during the
+    // wait below anyway.
+    const track = _cameraState.stream.getVideoTracks()[0];
+    if (track && track.applyConstraints) {
+      try {
+        await track.applyConstraints({ advanced: [{ focusMode: 'single-shot' }] });
+      } catch (afErr) {
+        // Some browsers reject focusMode constraints outright. Try a
+        // softer hint: re-asserting continuous mode also triggers a
+        // fresh focus pass on iOS Safari in practice.
+        try {
+          await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+        } catch (e2) { /* silent: just rely on the hold */ }
+      }
+    }
+
+    // Hold to let the lens settle. 350ms is empirically the sweet spot
+    // for hand-held capture: long enough that AF reliably converges
+    // and that any micro-motion from the tap itself has damped out,
+    // short enough that the interaction still feels responsive.
+    await new Promise(r => setTimeout(r, 350));
+  } finally {
+    if (focusing) focusing.classList.remove('active');
+  }
 
   // Shutter flash — brief black overlay as visual capture confirmation
   // (S12). 120ms is long enough to be clearly perceived without feeling
@@ -7739,6 +7873,12 @@ function cameraCapture() {
   const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
 
   _cameraState.captures.push({ slot: _cameraState.current, dataUrl });
+
+  // Re-enable shutter button. Done before the advance call so that if the
+  // next slot is on the same modal (walkthrough mode), the button is ready
+  // immediately. cameraFinish() tears down the modal so the button state
+  // doesn't matter there.
+  if (captureBtn) captureBtn.disabled = false;
 
   // Advance: walkthrough → next queued slot, or finish & cropper sequence.
   if (_cameraState.mode === 'walkthrough' && _cameraState.queue.length > 0) {
