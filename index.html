@@ -358,7 +358,100 @@
     label.field-label { display: block; font-size: 11px; color: #8a7a6a; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
     .card { background: #ffffff; border: 1px solid #ddd8d0; border-radius: 8px; padding: 16px 14px; }
     .divider { height: 1px; background: #ddd8d0; margin: 16px 0; }
-    .group-header { font-family: 'Barlow Condensed', sans-serif; font-size: 10px; font-weight: 700; color: #2a1e14; letter-spacing: 2px; text-transform: uppercase; padding: 8px 0 8px; border-bottom: 1px solid #ccc8c0; margin-bottom: 6px; cursor: pointer; display: flex; align-items: center; gap: 8px; user-select: none; }
+    /* S14: Grade a Comic CTA tile. Replaces the small "Add" button in the
+       top bar with a prominent entry point inside the list view itself.
+       Two states:
+         .large  → empty-collection state (only the sample present).
+                   Tall tile with a big cover thumbnail and headline text.
+                   Sits above the sort selector since there's nothing else
+                   competing for attention at empty state.
+         .compact → user has real books. Single-row tile with small thumb
+                   and inline label. Still the first thing visible inside
+                   the list, but doesn't dominate.
+       The cover thumbnail re-uses the sample comic's front cover image
+       (assets/ghosts/Front_Cover.jpg). That creates intentional visual
+       continuity between the CTA and the sample book — the sample is "what
+       Robograder output looks like" and the CTA is "make your own." */
+    .grade-cta {
+      display: flex; align-items: center;
+      background: linear-gradient(135deg, #f5ead0 0%, #ecdba8 100%);
+      border: 1.5px solid #c8a850;
+      border-radius: 12px;
+      cursor: pointer;
+      user-select: none;
+      transition: transform 80ms ease-out, box-shadow 80ms ease-out;
+      box-shadow: 0 1px 3px rgba(40, 30, 10, 0.12);
+    }
+    .grade-cta:active { transform: scale(0.985); box-shadow: 0 0 0 rgba(0,0,0,0); }
+    .grade-cta.large {
+      flex-direction: column; align-items: center;
+      padding: 22px 20px 24px;
+      gap: 14px;
+      margin: 8px 0 24px;
+      text-align: center;
+    }
+    .grade-cta.large .grade-cta-thumb {
+      width: 56%; max-width: 220px;
+      aspect-ratio: 660 / 1014;  /* matches the sample cover image ratio */
+      object-fit: cover;
+      border-radius: 6px;
+      box-shadow: 0 3px 10px rgba(40, 30, 10, 0.25);
+    }
+    .grade-cta.large .grade-cta-headline {
+      font-family: 'Noto Sans Display', sans-serif;
+      font-stretch: 62.5%;
+      font-size: 26px;
+      font-weight: 900;
+      color: #2a1e14;
+      letter-spacing: 0.5px;
+      line-height: 1.1;
+    }
+    .grade-cta.large .grade-cta-sub {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      color: #6a5430;
+      margin-top: 4px;
+      max-width: 280px;
+      line-height: 1.4;
+    }
+    .grade-cta.compact {
+      flex-direction: row;
+      padding: 10px 14px 10px 10px;
+      gap: 12px;
+      margin: 8px 0 16px;
+    }
+    .grade-cta.compact .grade-cta-thumb {
+      width: 44px; height: 64px;
+      object-fit: cover;
+      border-radius: 4px;
+      box-shadow: 0 1px 4px rgba(40, 30, 10, 0.2);
+      flex-shrink: 0;
+    }
+    .grade-cta.compact .grade-cta-headline {
+      font-family: 'Noto Sans Display', sans-serif;
+      font-stretch: 62.5%;
+      font-size: 17px;
+      font-weight: 900;
+      color: #2a1e14;
+      letter-spacing: 0.3px;
+      flex: 1;
+      min-width: 0;
+    }
+    .grade-cta.compact .grade-cta-chevron {
+      font-size: 22px;
+      color: #8a6a30;
+      font-weight: 700;
+      flex-shrink: 0;
+      padding: 0 4px;
+    }
+    /* S14: group headers in the list view were rendering at 10px with 2px
+       letter-spacing — small AND wide-spaced is the worst combination for
+       legibility (the spacing visually disconnects the letters, the size
+       makes them faint). Bumped to 13px with letter-spacing 1px. Keeps
+       the uppercase styling so the visual taxonomy (uppercase = section
+       header, mixed-case = content) is preserved, just made readable. */
+    .group-header { font-family: 'Barlow Condensed', sans-serif; font-size: 13px; font-weight: 700; color: #2a1e14; letter-spacing: 1px; text-transform: uppercase; padding: 8px 0 8px; border-bottom: 1px solid #ccc8c0; margin-bottom: 6px; cursor: pointer; display: flex; align-items: center; gap: 8px; user-select: none; }
     .group-chevron { font-family: 'Barlow Condensed', sans-serif; font-size: 11px; color: #6b5e52; transition: transform 0.2s; display: inline-block; }
     .group-chevron.open { transform: rotate(90deg); }
     .comic-row { background: #ffffff; border: 1px solid #ddd8d0; border-radius: 12px; padding: 10px 10px; cursor: pointer; display: flex; align-items: center; gap: 10px; margin-bottom: 5px; transition: background 0.15s; }
@@ -1078,7 +1171,16 @@
         <span id="credit-coin-count">0</span>
       </button>
       <button class="btn btn-topbar btn-buy" onclick="showBuyCredits()" id="credits-btn" style="display:none">Buy</button>
-      <button class="btn btn-topbar btn-add" id="add-btn" onclick="showAdd()" style="visibility:hidden">Add</button>
+      <!-- S14: Add button removed from top bar in favor of the Grade a Comic
+           CTA tile rendered inside the list view (see renderList). Rationale:
+           new users had no clear entry point — the small "Add" button was
+           easy to miss, and the empty-state body copy ("Tap + Add") wasn't
+           a real call-to-action. The CTA tile uses the sample comic's front
+           cover as a thumbnail, sits prominently above the list, and reads
+           "Grade a Comic" — naming the actual action rather than the
+           data-management abstraction. Users with books see a smaller
+           version of the same tile so the entry point remains discoverable
+           without dominating the view. -->
       <button class="btn-gear" onclick="openSettings()" title="Settings" id="settings-btn" aria-label="Settings">
         <!-- Flat abstract gear icon — solid white silhouette of a cog with
              a cutout center hole. Matches Matt's reference (S12). The
@@ -2715,7 +2817,29 @@ function renderList(){
   }));
   const titles=Object.keys(groups).sort((a,b)=>a.localeCompare(b));
 
-  let html=`<div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+  // S14: Grade a Comic CTA tile. Replaces the top-bar Add button. Tile size
+  // toggles based on whether the user has real books or only the sample —
+  // hasRealBooks is items.some(c => c.id !== SAMPLE_COMIC_ID) rather than
+  // items.length > 1 so the check is robust even if the sample has been
+  // deleted (sample-removal is a deliberate user action that shouldn't
+  // shrink the CTA back to large).
+  const hasRealBooks = items.some(c => c.id !== SAMPLE_COMIC_ID);
+  const ctaThumb = 'assets/ghosts/Front_Cover.jpg';
+  const ctaHtml = hasRealBooks
+    ? `<div class="grade-cta compact" onclick="showAdd()" role="button" aria-label="Grade a Comic">
+         <img class="grade-cta-thumb" src="${ctaThumb}" alt="" decoding="async">
+         <div class="grade-cta-headline">Grade a Comic</div>
+         <div class="grade-cta-chevron">›</div>
+       </div>`
+    : `<div class="grade-cta large" onclick="showAdd()" role="button" aria-label="Grade a Comic">
+         <img class="grade-cta-thumb" src="${ctaThumb}" alt="" decoding="async">
+         <div>
+           <div class="grade-cta-headline">Grade a Comic</div>
+           <div class="grade-cta-sub">Take a few photos and Robograder will grade it for you.</div>
+         </div>
+       </div>`;
+
+  let html = ctaHtml + `<div style="display:flex;justify-content:flex-end;margin-bottom:16px">
     <select onchange="sortBy=this.value;renderList()" style="font-family:'Barlow Condensed',sans-serif;font-size:15px;font-weight:600;padding:6px 10px">
       <option value="title"${sortBy==="title"?" selected":""}>Title A–Z</option>
       <option value="dateAdded"${sortBy==="dateAdded"?" selected":""}>Date Added</option>
@@ -2724,7 +2848,12 @@ function renderList(){
   </div>`;
 
   if(titles.length===0){
-    html+=`<div style="text-align:center;padding:80px 20px;color:#8a7a6a"><div style="font-size:18px;color:#6a5a4a;margin-bottom:8px">No books yet</div><div style="font-size:13px;color:#8a7a6a">Tap + Add to start your collection.</div></div>`;
+    // S14: empty-state message removed — the CTA tile above IS the empty
+    // state guidance. Showing both ("No books yet" + CTA tile) was
+    // redundant. titles.length===0 effectively means the user has cleared
+    // everything including the sample, which is rare; if they do reach
+    // here, the CTA is still right above this point.
+    html+=``;
   } else {
     titles.forEach(title=>{
       const isOpen=collapsed[title]===false;
@@ -2771,7 +2900,9 @@ function showDetail(id){
   selected=items.find(c=>c.id===id);
   if(!selected)return;
   view="detail";
-  document.getElementById("add-btn").style.visibility="hidden";
+  // S14: add-btn removed from top bar. Guard kept defensive in case any
+  // stale DOM lingers from older builds.
+  const _ab=document.getElementById("add-btn");if(_ab)_ab.style.visibility="hidden";
   const cost=totalCost(selected);
   const isSample = selected._isSample === true;
 
@@ -3902,7 +4033,7 @@ let _assessed=false; // tracks if current form has been assessed
 // regardless of this flag — the user needs to see what got populated.
 let _addManualMode=false;
 
-function showAdd(){formData={...EMPTY};view="add";_assessed=false;_addManualMode=false;document.getElementById("add-btn").style.visibility="hidden";renderForm();}
+function showAdd(){formData={...EMPTY};view="add";_assessed=false;_addManualMode=false;const ab=document.getElementById("add-btn");if(ab)ab.style.visibility="hidden";renderForm();}
 
 function enterManualMode(){_addManualMode=true;renderForm();}
 
@@ -3943,7 +4074,10 @@ function showEdit(id){
   formData._savedImages=[...(c.images||[])];
   formData._savedCornerImages=[...(c.cornerImages||[])];
   formData._imagesChanged=false;
-  view="add";_assessed=!!(c.assessedCGCGrade||c.aiAssessment);document.getElementById("add-btn").style.visibility="hidden";renderForm();window.scrollTo(0,0);
+  view="add";_assessed=!!(c.assessedCGCGrade||c.aiAssessment);
+  // S14: add-btn removed from top bar; defensive guard for stale DOM.
+  const _ab2=document.getElementById("add-btn");if(_ab2)_ab2.style.visibility="hidden";
+  renderForm();window.scrollTo(0,0);
 }
 
 async function compressImage(dataUrl, maxDim=1400, quality=0.65, asBlob=false){
