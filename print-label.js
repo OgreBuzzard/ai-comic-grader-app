@@ -60,25 +60,42 @@ const LABEL_FORMATS = {
     rowGap: 0,
     pixelW: 1152, pixelH: 288      // 288 DPI canonical render
   },
-  // S12 May 6: Square format (Avery 22806 / OnlineLabels OL3016 — same grid).
-  // 2"×2" labels, 12 per sheet (3 cols × 4 rows). Spec verified from the
-  // OnlineLabels OL3016 product page (the 22806 template is a cross-brand
-  // standard so any seller's "12-per-sheet 2×2" sheet will align):
-  //   Top/bottom margins: 0.25"
-  //   Left/right margins: 0.25"
-  //   Horizontal pitch:   3"     (label 2" + gap 1")
-  //   Vertical pitch:     2.8333" (label 2" + gap 0.8333")
-  // Pixel canvas: 576 × 576 at 288 DPI (matches Small's 288 DPI density).
-  // Recommended Amazon source: Avery 22806 — https://a.co/d/0fMlMbAB
+  // S14: Small L prints on the SAME Avery 8161 stock as Small (4"×1",
+  // 20/sheet) — only the on-label artwork differs (mirrored + tightened
+  // to a 3.5" content width). Sheet geometry is therefore identical to
+  // 'small'; the difference is purely in renderLabelMarkup's CSS class.
+  'small-l': {
+    name: 'small-l',
+    sheetCount: 20,
+    rows: 10, cols: 2,
+    labelW: 4.0, labelH: 1.0,
+    sheetTopMargin: 0.5,
+    sheetLeftMargin: 0.1667,
+    colGap: 0.1882,
+    rowGap: 0,
+    pixelW: 1152, pixelH: 288
+  },
+  // Square format — Avery 22806, 2"×2", 12 per sheet (3 cols × 4 rows).
+  // S14: spacing CORRECTED against the user's actual Avery 22806 template
+  // PDF (geometry extracted directly from the template's label rects).
+  // The previous values came from an "OnlineLabels OL3016" product-page
+  // spec that does NOT match the Avery 22806 sheet — every label was
+  // offset and the error compounded down the sheet. Authoritative values
+  // from the template:
+  //   Top/left margin:  0.625"
+  //   Label:            2.000" × 2.000"
+  //   Column pitch:     2.625"  (label 2" + gap 0.625")
+  //   Row pitch:        2.5833" (label 2" + gap 0.5833")
+  // Pixel canvas unchanged: 576 × 576 at 288 DPI.
   square: {
     name: 'square',
     sheetCount: 12,
     rows: 4, cols: 3,
     labelW: 2.0, labelH: 2.0,
-    sheetTopMargin: 0.25,
-    sheetLeftMargin: 0.25,
-    colGap: 1.0,                   // horizontal gap between labels
-    rowGap: 0.8333,                // vertical gap between labels
+    sheetTopMargin: 0.625,
+    sheetLeftMargin: 0.625,
+    colGap: 0.625,                 // horizontal gap (col pitch 2.625 − 2.0)
+    rowGap: 0.5833,                // vertical gap (row pitch 2.5833 − 2.0)
     pixelW: 576, pixelH: 576       // 288 DPI canonical render
   },
   large: {
@@ -135,7 +152,11 @@ const LABEL_BUY_LINKS = {
 // without clipping into the title or Marvel/DC box.
 const OPTIONS_KEY = 'robograder.labelOptions.v1';
 
-const VALID_SIZES = ['small', 'square', 'large'];
+// S14: 'small-l' is the mirrored/tightened Small variant (right edge at
+// 3.5"). The original 'small' is now surfaced in the UI as "Small R" but
+// the stored key stays 'small' for backward compatibility with users who
+// already picked it.
+const VALID_SIZES = ['small', 'small-l', 'square', 'large'];
 
 function readOptions() {
   try {
@@ -483,6 +504,7 @@ function ensureStylesInjected() {
      button that re-renders the modal on click. */
   .lvm-segment-group {
     display: inline-flex;
+    flex-wrap: wrap;
     background: #e8e1d2;
     border: 1px solid #c8bea8;
     border-radius: 14px;
@@ -493,8 +515,11 @@ function ensureStylesInjected() {
     font-family: 'Barlow Condensed', sans-serif;
     font-size: 13px; font-weight: 600;
     color: #5a4a38;
-    letter-spacing: 0.5px;
-    padding: 5px 12px;
+    letter-spacing: 0.3px;
+    /* S14: tightened 12→10 horizontal so four segments (Small R / Small L
+       / Square / Large) fit on one row on narrow phones; the group can
+       wrap as a last resort rather than overflow the modal. */
+    padding: 5px 10px;
     border-radius: 12px;
     cursor: pointer;
     background: transparent;
@@ -565,7 +590,13 @@ function ensureStylesInjected() {
     font-stretch: 62.5%;
   }
   .rg-label .rg-prec {
-    position: absolute; top: 60px; right: 18px;
+    /* S14: was top:60 right:18 which overlapped the upper-right of the
+       148px score digit and clipped the ± glyph. Moved to a centered
+       band directly under the ROBOGRADE word and ABOVE the number, so
+       it never collides with the digit regardless of value width
+       (±3 vs ±16). Full-width + centered rather than right-pinned. */
+    position: absolute; top: 44px; left: 0; right: 0;
+    text-align: center;
     font-size: 26px; font-weight: 700;
     color: #b8d820; opacity: 0.92;
     font-family: 'Noto Sans Display', sans-serif;
@@ -632,13 +663,15 @@ function ensureStylesInjected() {
     align-items: baseline;
   }
   .rg-label .meta-lbl {
-    font-size: 22px; font-weight: 600;
+    /* S14: +2pt (22→24) per user — Grade/Date and ID/Value were a touch
+       small to read at arm's length on the printed Small label. */
+    font-size: 24px; font-weight: 600;
     color: #7a8a5a;
     font-family: 'Barlow Condensed', sans-serif;
     text-align: right; letter-spacing: 0.5px;
   }
   .rg-label .meta-val {
-    font-size: 22px; font-weight: 800;
+    font-size: 24px; font-weight: 800;
     color: #0d0d0f;
     font-family: 'Noto Sans Mono', monospace;
   }
@@ -678,6 +711,194 @@ function ensureStylesInjected() {
     position: absolute;
     left: 32px; bottom: 18px;
     letter-spacing: 0.2px;
+  }
+
+  /* ── Small L variant (S14) ────────────────────────────────────────────
+     A mirrored, tightened variant of the Small label for fitting inside
+     comic cases. Same physical label stock as Small (Avery 8161, 4"×1",
+     1152×288 px at 288 DPI) but the printed CONTENT is constrained so its
+     right edge lands at 3.5" from the left (x=1008px), leaving 0.5"
+     (144px) clear on the right so it sits cleanly in the user's cases.
+
+     Layout (top-to-bottom in the content column, score box on the LEFT):
+       • Score box   — left edge, 252×252 (same as Small R)
+       • Title       — right of the score box, top
+       • Issue + Pub date — one line below title
+       • Printing    — line below that
+       • GRADED / Grade Date — below (2pt larger than Small R baseline)
+       • ID / ID value       — below (2pt larger)
+       • QR code     — right-aligned, right edge at x=1008 (0.5" from
+                        the physical right edge of the label)
+       • SCAN TO VERIFY — under the QR
+       • robograder URL — under that
+       • Optional price pad — to the LEFT of the QR column
+
+     Geometry math (288 DPI):
+       Score box:  left 18,  width 252  → x = 18 … 270
+       Content:    left 290 … right boundary depends on price/QR
+       QR col:     118px wide; right edge at x=1008 → left ≈ x=874
+                   (qr-col width 134, left = 1008-134 = 874)
+       Price pad:  when shown, sits left of QR: width 200, right edge
+                   at x=854 (20px gap to QR) → left x=654
+       Content right boundary: x=634 (no price) or x=634 (kept constant;
+                   the info column is comfortably clear of both) */
+  .rg-label-l {
+    width: 1152px; height: 288px;
+    background: linear-gradient(180deg, #6f8f4a 0%, #93ab66 38%, #c2cc9e 100%);
+    border: 1px solid #8a9a6a;
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+    font-family: 'Barlow Condensed', sans-serif;
+    box-sizing: border-box;
+  }
+  .rg-label-l .score-box {
+    width: 252px; height: 252px;
+    background: #1a2208;
+    border-radius: 38px;
+    position: absolute;
+    left: 18px; top: 18px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .rg-label-l .rg-word {
+    font-size: 24px; font-weight: 700;
+    color: #6a8030; letter-spacing: 3px;
+    font-family: 'Barlow Condensed', sans-serif;
+    position: absolute; top: 14px;
+  }
+  .rg-label-l .rg-num {
+    font-size: 148px; font-weight: 900;
+    color: #b8d820; line-height: 1;
+    font-family: 'Noto Sans Display', sans-serif;
+    font-stretch: 62.5%;
+  }
+  .rg-label-l .rg-prec {
+    /* Same above-the-number treatment as Small R (S14 clip fix). */
+    position: absolute; top: 44px; left: 0; right: 0;
+    text-align: center;
+    font-size: 26px; font-weight: 700;
+    color: #b8d820; opacity: 0.92;
+    font-family: 'Noto Sans Display', sans-serif;
+    font-stretch: 62.5%;
+    line-height: 1;
+    letter-spacing: 2px;
+  }
+  .rg-label-l .rg-v {
+    font-size: 20px;
+    color: #5a7030;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 500;
+    position: absolute; bottom: 14px;
+    letter-spacing: 1px;
+  }
+  /* Content column: right of the score box. Right boundary keeps it clear
+     of the price pad / QR column on the right side. */
+  .rg-label-l .info {
+    position: absolute;
+    left: 290px; top: 14px; right: 322px;
+    display: flex; flex-direction: column;
+  }
+  .rg-label-l.has-price .info { right: 522px; }
+  .rg-label-l .info-upper {
+    padding-bottom: 8px;
+    border-bottom: 1px solid #b0b89a;
+  }
+  .rg-label-l .ttl {
+    font-size: 50px; font-weight: 900;
+    color: #0d0d0f; line-height: 1.05;
+    font-family: 'Noto Sans Display', sans-serif;
+    font-stretch: 62.5%;
+  }
+  .rg-label-l .iss {
+    font-size: 36px; font-weight: 600;
+    color: #333;
+    font-family: 'Noto Sans Display', sans-serif;
+    font-stretch: 62.5%;
+    display: flex; gap: 24px; align-items: baseline;
+  }
+  .rg-label-l .prt {
+    font-size: 20px; color: #555544;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 500;
+  }
+  .rg-label-l .info-lower { padding-top: 10px; }
+  .rg-label-l .meta-grid {
+    display: grid;
+    grid-template-columns: max-content max-content;
+    column-gap: 16px; row-gap: 5px;
+    align-items: baseline;
+  }
+  /* +2pt vs Small R's already-bumped 24 → 26, per user spec for Small L. */
+  .rg-label-l .meta-lbl {
+    font-size: 26px; font-weight: 600;
+    color: #7a8a5a;
+    font-family: 'Barlow Condensed', sans-serif;
+    text-align: right; letter-spacing: 0.5px;
+  }
+  .rg-label-l .meta-val {
+    font-size: 26px; font-weight: 800;
+    color: #0d0d0f;
+    font-family: 'Noto Sans Mono', monospace;
+  }
+  /* QR column — right edge at x=1008 (3.5" from left / 0.5" from the
+     physical right edge). qr-col is 134 wide → left = 874. */
+  .rg-label-l .qr-col {
+    position: absolute;
+    left: 874px; top: 14px;
+    width: 134px;
+    display: flex; flex-direction: column;
+    align-items: center; gap: 4px;
+  }
+  .rg-label-l .qr-col .qrc canvas,
+  .rg-label-l .qr-col .qrc img {
+    width: 118px !important;
+    height: 118px !important;
+  }
+  .rg-label-l .verify {
+    font-size: 14px; color: #7a8a5a;
+    letter-spacing: 1px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 600; text-align: center;
+  }
+  .rg-label-l .url {
+    font-size: 16px; color: #5a6a4a;
+    font-family: ui-monospace, "SF Mono", Menlo, "Cascadia Mono", "Roboto Mono", monospace;
+    font-weight: 500;
+    text-align: center;
+    position: absolute;
+    left: 874px; width: 134px; bottom: 18px;
+    letter-spacing: 0.2px;
+  }
+  /* Price pad — to the LEFT of the QR column. Width 200, right edge at
+     x=854 (20px gap to the QR col at x=874) → left x=654. */
+  .rg-label-l .price-pad { display: none; }
+  .rg-label-l.has-price .price-pad {
+    display: block;
+    position: absolute;
+    left: 654px; top: 18px;
+    width: 200px; height: 220px;
+    background: #ffffff;
+    border: 1px solid #b8c098;
+    border-radius: 14px;
+  }
+  .rg-label-l.has-price .price-pad .price-placeholder {
+    position: absolute;
+    top: 16px; left: 0; right: 0;
+    text-align: center;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 36px; font-weight: 600;
+    color: #7a8a5a; letter-spacing: 0.5px;
+  }
+  .rg-label-l.has-price .price-pad .price-value {
+    position: absolute;
+    top: 50%; left: 0; right: 0;
+    transform: translateY(-50%);
+    text-align: center;
+    font-family: 'Noto Sans Display', sans-serif;
+    font-stretch: 62.5%;
+    font-size: 52px; font-weight: 900;
+    color: #0d0d0f;
   }
 
   /* ── Price pad (S12, May 5) ────────────────────────────────────────────
@@ -727,39 +948,28 @@ function ensureStylesInjected() {
   }
 
   /* ── Square variant (Avery 22806, 2" × 2" → 576 × 576 px) ──────────────
-     S12 May 6: new format introduced to solve the placement problem from
-     Matt's print test. Rectangular labels obscure too much horizontal cover
-     real estate; square labels can be placed in the upper-right corner of a
-     bagged comic without clipping into the title or Marvel/DC box.
+     S14 OVERHAUL. New layout per user direction:
 
-     Layout (S13 v3 — top/bottom split):
-       TOP HALF (y=14 to y=234):
-         - Price pad centered horizontally between left edge and score box,
-           220 tall to match score-box height for visual symmetry
-         - Score box right-anchored, 220 × 220
-       BOTTOM HALF (y=298 to y=562):
-         - Title + meta info span the full width minus right-side padding
-           (no QR in this row, so the title block has full horizontal room
-           — long titles like "Amazing Spider-Man" no longer wrap)
-         - QR cluster anchored bottom-right (smaller QR, 132 × 132)
-         - SCAN TO VERIFY above QR; URL below QR
+       TOP-RIGHT:  Score box, 220×220 (right:14 top:14). Precision
+                   modifier sits ABOVE the big number (carried over from
+                   the Small/Large clip fix — no more ± collision).
+       TOP-LEFT:   Title in the corner (narrow column beside the score
+                   box), then Issue+PubDate, then printing, then
+                   GRADED/Grade Date, then ID/ID value, stacked downward.
+       BOTTOM-LEFT:  QR cluster — SCAN TO VERIFY above, QR, URL below.
+       BOTTOM-RIGHT: Optional price pad.
 
-     Why the rework: in v2 the QR ate the right side of the label across
-     full height, which forced the title column to a 312-px sub-width. Long
-     titles wrapped to 2 lines. v3 confines the QR to a single bottom-right
-     cluster (~140 wide), so the title row gets the full 548 px width.
+     Coordinate map (576 × 576):
+       Score box:   right:14,  top:14,   220×220  → x=342-562, y=14-234
+       Info column: left:18,   top:14,   right:248 → x=18-328,  y from 14
+                    (right:248 keeps a 14px gutter to the score box at
+                     x=342; width ≈ 310px)
+       QR cluster:  left:18,   bottom:14, 150 wide → x=18-168, anchored
+                    bottom-left; SCAN above (flex order:-1), URL below
+       Price pad:   right:18,  bottom:14, 210×190 → bottom-right corner
 
-     Coordinate map (576 × 576 canvas, v3):
-       Score box:     right:14, top:14, 220×220     → x=342-562, y=14-234
-       Price pad:     left:43, top:14, 256×220      → centered in left half
-       Info block:    left:14, top:298, right:170   → x=14-406, y starts 298
-       QR cluster:    right:14, bottom:38, 132×132  → x=430-562, y=406-538
-       URL:           right:14, bottom:14           → y=546-562 (under QR)
-
-     With the title block getting ~390-px width (vs. v2's 312), titles
-     up to about 23 chars fit on one line at 38px. "Amazing Spider-Man"
-     is 18 chars; "Marvel Super Heroes Secret Wars" (31 chars) still wraps.
-     */
+     The info column is tall (y=14 down to ~y=400 before the QR/price row)
+     so the five stacked fields fit even for 2-line titles. */
   .rg-label-square {
     width: 576px; height: 576px;
     background: linear-gradient(180deg, #6f8f4a 0%, #93ab66 38%, #c2cc9e 100%);
@@ -791,14 +1001,13 @@ function ensureStylesInjected() {
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
   }
-  /* Precision modifier: positioned BELOW the top of the digit (per Matt's
-     v2 feedback — at top:50 in v1 it floated above the digit and clipped
-     the ± character). At top:80 it sits firmly inside the digit's vertical
-     band; smaller font (24 → 18px) and tighter letter-spacing keep it
-     compact so a 2-character value like "±10" fits without clipping. */
+  /* S14: precision ABOVE the number (centered band under ROBOGRADE),
+     consistent with the Small/Large fix. Was top:80 right:12 which
+     overlapped the 130px digit and clipped the ± glyph. */
   .rg-label-square .rg-prec {
-    position: absolute; top: 80px; right: 12px;
-    font-size: 18px; font-weight: 700;
+    position: absolute; top: 38px; left: 0; right: 0;
+    text-align: center;
+    font-size: 20px; font-weight: 700;
     color: #b8d820; opacity: 0.92;
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
@@ -813,30 +1022,27 @@ function ensureStylesInjected() {
     position: absolute; bottom: 12px;
     letter-spacing: 1px;
   }
+  /* Info column — TOP-LEFT corner, beside the score box. */
   .rg-label-square .info {
     position: absolute;
-    left: 14px; top: 298px; right: 170px;
+    left: 18px; top: 14px; right: 248px;
     display: flex; flex-direction: column;
   }
   .rg-label-square .info-upper {
-    padding-bottom: 10px;
+    padding-bottom: 8px;
     border-bottom: 1px solid #b0b89a;
   }
-  /* S12 May 6 v2: title font bumped 30 → 38px after Matt flagged it read
-     too small at print scale. At 38px in a 312-px-wide info column, single
-     line fits ~17 chars ("Amazing Spider-Man" = 18, fits). Long titles
-     ("Marvel Super Heroes Secret Wars" = 31) wrap to 2 lines. The 2-line
-     case ends around y=180; price pad starts at y=300, leaving comfortable
-     gap. */
   .rg-label-square .ttl {
-    font-size: 38px; font-weight: 900;
+    /* Narrower column now (~310px beside the score box), so 34px keeps
+       a typical title to 1-2 lines. */
+    font-size: 34px; font-weight: 900;
     color: #0d0d0f; line-height: 1.05;
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
     word-wrap: break-word;
   }
   .rg-label-square .iss {
-    font-size: 26px; font-weight: 600;
+    font-size: 24px; font-weight: 600;
     color: #333;
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
@@ -844,9 +1050,10 @@ function ensureStylesInjected() {
     margin-top: 4px;
   }
   .rg-label-square .prt {
-    font-size: 20px; color: #555544;
+    font-size: 19px; color: #555544;
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 500;
+    margin-top: 3px;
   }
   .rg-label-square .info-lower { padding-top: 10px; }
   .rg-label-square .meta-grid {
@@ -866,15 +1073,12 @@ function ensureStylesInjected() {
     color: #0d0d0f;
     font-family: 'Noto Sans Mono', monospace;
   }
-  /* QR cluster (S13 v3): smaller (132 px sq, was 174) and still anchored
-     bottom-right. The smaller QR frees enough horizontal room in the bottom
-     half for the title block to span ~390 px wide instead of v2's 312. QR
-     codes scan reliably down to ~100 px at typical phone-camera distance,
-     so 132 leaves comfortable margin. */
+  /* QR cluster — BOTTOM-LEFT corner. SCAN TO VERIFY above (flex order:-1),
+     QR, then URL beneath. */
   .rg-label-square .qr-col {
     position: absolute;
-    right: 14px; bottom: 38px;
-    width: 132px;
+    left: 18px; bottom: 34px;
+    width: 150px;
     display: flex; flex-direction: column;
     align-items: center; gap: 2px;
   }
@@ -883,9 +1087,6 @@ function ensureStylesInjected() {
     width: 132px !important;
     height: 132px !important;
   }
-  /* Verify text rendered ABOVE the QR via flex order:-1. The .verify span
-     is the second child in the DOM (per renderLabelMarkup), but order:-1
-     puts it first in the visual flex column. */
   .rg-label-square .verify {
     font-size: 14px; color: #7a8a5a;
     letter-spacing: 1.2px;
@@ -894,42 +1095,35 @@ function ensureStylesInjected() {
     order: -1;
     margin-bottom: 2px;
   }
+  /* URL under the QR, left-aligned with the QR cluster. */
   .rg-label-square .url {
-    font-size: 14px; color: #5a6a4a;
+    font-size: 13px; color: #5a6a4a;
     font-family: ui-monospace, "SF Mono", Menlo, "Cascadia Mono", "Roboto Mono", monospace;
     font-weight: 500;
-    text-align: right;
+    text-align: center;
     position: absolute;
-    right: 14px; bottom: 14px;
+    left: 18px; width: 150px; bottom: 14px;
     letter-spacing: 0.2px;
   }
-  /* Price pad — TOP HALF, centered horizontally between left edge of label
-     and left edge of score box (S13 v3 reposition). Available horizontal
-     room: x=0 to x=342 = 342 px. Pad width 256, centered: x = (342-256)/2 = 43.
-     Height 220 matches score-box height for visual symmetry across the top
-     row. v2 had the pad floating in middle-left at top:300, which read as
-     adrift; v3 anchors it to the same row as the score box for a clean
-     two-cell top half. */
+  /* Price pad — BOTTOM-RIGHT corner. */
   .rg-label-square .price-pad {
     display: none;
   }
   .rg-label-square.has-price .price-pad {
     display: block;
     position: absolute;
-    left: 43px; top: 14px;
-    width: 256px; height: 220px;
+    right: 18px; bottom: 14px;
+    width: 210px; height: 190px;
     background: #ffffff;
     border: 1px solid #b8c098;
     border-radius: 14px;
   }
-  /* "Price" placeholder centered in the taller 220-px pad. */
   .rg-label-square.has-price .price-pad .price-placeholder {
     position: absolute;
-    top: 50%; left: 0; right: 0;
-    transform: translateY(-50%);
+    top: 14px; left: 0; right: 0;
     text-align: center;
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 36px;
+    font-size: 34px;
     font-weight: 600;
     color: #7a8a5a;
     letter-spacing: 0.5px;
@@ -978,7 +1172,10 @@ function ensureStylesInjected() {
     font-stretch: 62.5%;
   }
   .rg-label-large .rg-prec {
-    position: absolute; top: 92px; right: 28px;
+    /* S14: was top:92 right:28, overlapping the 232px digit and clipping
+       the ± glyph. Centered band under ROBOGRADE, above the number. */
+    position: absolute; top: 70px; left: 0; right: 0;
+    text-align: center;
     font-size: 40px; font-weight: 700;
     color: #b8d820; opacity: 0.92;
     font-family: 'Noto Sans Display', sans-serif;
@@ -1113,9 +1310,9 @@ function ensureStylesInjected() {
     font-size: 130px;
   }
   .rg-label-square.has-price .price-pad .price-value {
-    /* Square pad is 256 × 160 — sized between Small (220 sq) and Large
-       (340 × 336). Font sized for the wider, shorter pad. */
-    font-size: 90px;
+    /* S14: square pad is now 210×190 (bottom-right corner). 72px keeps a
+       4-5 char value ("$1,200") inside the narrower pad without clipping. */
+    font-size: 72px;
   }
 
   /* Print sheet markup is no longer used — PDF generation (handleSavePDF)
@@ -1177,9 +1374,10 @@ function renderModal(modal, comic, allItems) {
     `<button type="button" class="lvm-segment${opts.size === size ? ' active' : ''}" data-action="set-size" data-size="${size}">${label}</button>`;
   const sizeSegments = `
     <div class="lvm-segment-group">
-      ${seg('small',  'Small')}
-      ${seg('square', 'Square')}
-      ${seg('large',  'Large')}
+      ${seg('small',   'Small R')}
+      ${seg('small-l', 'Small L')}
+      ${seg('square',  'Square')}
+      ${seg('large',   'Large')}
     </div>`;
 
   const pricePillClass = opts.priceTag ? 'lvm-pill on' : 'lvm-pill';
@@ -1622,6 +1820,7 @@ async function generatePDF(comics, modal) {
     //   Large  → "CGC"   (CGC-slab overlay, OL5450, 7.5×1.5, 7/sheet)
     const sizeTag = opts.size === 'large' ? 'CGC'
                   : opts.size === 'square' ? '22806'
+                  : opts.size === 'small-l' ? '8161-L'
                   : '8161';
     const priceTag = opts.priceTag ? '-Price' : '';
     const filename = `Robograder-Labels-${sizeTag}${priceTag}-${new Date().toISOString().slice(0, 10)}.pdf`;
@@ -1657,6 +1856,7 @@ function renderLabelMarkup(comic, opts) {
   opts = opts || { size: 'square', priceTag: false, includePrice: false };
   const isLarge  = opts.size === 'large';
   const isSquare = opts.size === 'square';
+  const isSmallL = opts.size === 'small-l';
   const showPrice = !!opts.priceTag;
   const includePrice = !!opts.includePrice;
 
@@ -1732,6 +1932,7 @@ function renderLabelMarkup(comic, opts) {
   // plus the .has-price modifier toggles the price pad on/off.
   const baseClass = isLarge ? 'rg-label-large'
                   : isSquare ? 'rg-label-square'
+                  : isSmallL ? 'rg-label-l'
                   : 'rg-label';
   const wrapClass = baseClass + (showPrice ? ' has-price' : '');
 
