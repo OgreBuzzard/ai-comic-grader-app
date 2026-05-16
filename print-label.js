@@ -277,7 +277,31 @@ function ensureStylesInjected() {
   if (!document.querySelector('link[data-label-fonts]')) {
     const fonts = document.createElement('link');
     fonts.rel = 'stylesheet';
-    fonts.href = 'https://fonts.googleapis.com/css2?family=Noto+Sans+Display:wdth,wght@62.5..100,500;700;900&family=Noto+Sans+Mono:wdth,wght@62.5,800&family=Barlow+Condensed:wght@400;500;600;700;800&display=swap';
+    // S14 FIX — root cause of "all condensed text broke at once".
+    // The previous URL was:
+    //   Noto+Sans+Display:wdth,wght@62.5..100,500;700;900
+    //   &Noto+Sans+Mono:wdth,wght@62.5,800
+    // Two fatal problems with the Google Fonts CSS2 API:
+    //  1. When a family declares multiple axes (wdth,wght), EVERY
+    //     ;-separated instance must be a COMPLETE tuple in alphabetical
+    //     axis order. "62.5..100,500;700;900" is not — after the first
+    //     tuple it lists bare weights with no width coordinate, which is
+    //     malformed.
+    //  2. Noto Sans Mono is monospace and has NO wdth axis at all, so
+    //     "Noto+Sans+Mono:wdth,wght@62.5,800" is invalid.
+    // Either error makes Google Fonts 400 the WHOLE combined request and
+    // serve nothing — so the condensed faces never loaded and every
+    // element relying on font-stretch:62.5% (the score number, GRADED/ID
+    // values, etc.) silently fell back to a default font with wrong
+    // metrics. That cascade — not the score-box markup — is what was
+    // throwing the layout off.
+    // Correct form: pair the width RANGE with each weight as full
+    // tuples for Display; request Mono with only its valid wght axis.
+    fonts.href = 'https://fonts.googleapis.com/css2'
+      + '?family=Noto+Sans+Display:wdth,wght@62.5..100,500;62.5..100,700;62.5..100,900'
+      + '&family=Noto+Sans+Mono:wght@800'
+      + '&family=Barlow+Condensed:wght@400;500;600;700;800'
+      + '&display=swap';
     fonts.setAttribute('data-label-fonts', 'true');
     document.head.appendChild(fonts);
   }
@@ -584,33 +608,36 @@ function ensureStylesInjected() {
     position: absolute; top: 14px;
   }
   .rg-label .rg-num-wrap {
-    /* S14: number + precision laid out together so precision is anchored
-       to the DIGIT, not the score box. inline-flex with baseline-ish
-       alignment; the precision is a superscript hung off the number's
-       top-right. This is deterministic regardless of how the flexbox
-       centers the number — no fragile absolute top: math. */
+    /* Holds ONLY the number. This is the flex child the score-box
+       centers → the NUMBER is exactly centered, always. The precision
+       is a SEPARATE absolutely-positioned child of .score-box (out of
+       flow, zero width here) so it can never shift this. The recurring
+       bug was making number+precision one centered unit; they must be
+       independent. */
     display: inline-flex;
-    align-items: flex-start;
     line-height: 1;
   }
   .rg-label .rg-num {
-    font-size: 148px; font-weight: 900;
+    /* S14: −8pt (148→140) per user; still the dominant element, just
+       not oversized. Centered in the box on its own. */
+    font-size: 140px; font-weight: 900;
     color: #b8d820; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
   }
   .rg-label .rg-prec {
-    /* Superscript off the top-right of the number. margin-top:0 keeps it
-       aligned to the digit's top; small left gap separates it. Sized
-       well below the digit so it reads as a modifier, not a second
-       number. */
+    /* Upper-right of the score box, ABSOLUTELY positioned so it is out
+       of flow and cannot displace the centered number. Anchored to the
+       box (not the digit) at a fixed top/right inset — sits in the
+       corner like a superscript marker. Condensed face (now that the
+       font URL is fixed) keeps ±NN compact. */
+    position: absolute;
+    top: 40px; right: 22px;
     font-size: 30px; font-weight: 700;
     color: #b8d820; opacity: 0.9;
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
     line-height: 1;
-    margin-left: 4px;
-    margin-top: 6px;
     letter-spacing: 1px;
     white-space: nowrap;
   }
@@ -776,25 +803,24 @@ function ensureStylesInjected() {
   }
   .rg-label-l .rg-num-wrap {
     display: inline-flex;
-    align-items: flex-start;
     line-height: 1;
   }
   .rg-label-l .rg-num {
-    font-size: 148px; font-weight: 900;
+    font-size: 140px; font-weight: 900;
     color: #b8d820; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
   }
   .rg-label-l .rg-prec {
-    /* Superscript off the digit's top-right (S14 — relative to the
-       number, not the box; matches Small R). */
+    /* Absolute to the score-box corner, out of flow — never displaces
+       the centered number. Matches Small R. */
+    position: absolute;
+    top: 40px; right: 22px;
     font-size: 30px; font-weight: 700;
     color: #b8d820; opacity: 0.9;
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
     line-height: 1;
-    margin-left: 4px;
-    margin-top: 6px;
     letter-spacing: 1px;
     white-space: nowrap;
   }
@@ -1024,26 +1050,24 @@ function ensureStylesInjected() {
   }
   .rg-label-square .rg-num-wrap {
     display: inline-flex;
-    align-items: flex-start;
     line-height: 1;
   }
   .rg-label-square .rg-num {
-    font-size: 130px; font-weight: 900;
+    font-size: 122px; font-weight: 900;
     color: #b8d820; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
   }
-  /* S14: precision as a superscript off the digit's top-right (relative
-     to the number, not the box — deterministic regardless of centering).
-     Smaller (24px) to suit the 130px square digit. */
+  /* Precision absolute to the score-box corner, out of flow — never
+     displaces the centered number. Inset scaled to the 220px box. */
   .rg-label-square .rg-prec {
+    position: absolute;
+    top: 34px; right: 18px;
     font-size: 24px; font-weight: 700;
     color: #b8d820; opacity: 0.9;
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
     line-height: 1;
-    margin-left: 3px;
-    margin-top: 5px;
     letter-spacing: 1px;
     white-space: nowrap;
   }
@@ -1200,25 +1224,24 @@ function ensureStylesInjected() {
   }
   .rg-label-large .rg-num-wrap {
     display: inline-flex;
-    align-items: flex-start;
     line-height: 1;
   }
   .rg-label-large .rg-num {
-    font-size: 232px; font-weight: 900;
+    font-size: 224px; font-weight: 900;
     color: #b8d820; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
   }
   .rg-label-large .rg-prec {
-    /* Superscript off the digit's top-right (S14 — relative to the
-       number, not the box). 46px to suit the 232px large digit. */
+    /* Absolute to the score-box corner, out of flow — never displaces
+       the centered number. Inset scaled to the 396px box. */
+    position: absolute;
+    top: 64px; right: 36px;
     font-size: 46px; font-weight: 700;
     color: #b8d820; opacity: 0.9;
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
     line-height: 1;
-    margin-left: 6px;
-    margin-top: 10px;
     letter-spacing: 1.5px;
     white-space: nowrap;
   }
@@ -1979,9 +2002,8 @@ function renderLabelMarkup(comic, opts) {
     <div class="${wrapClass}" data-grade-id="${gradeId}">
       <div class="score-box">
         <div class="rg-word">ROBOGRADE</div>
-        <div class="rg-num-wrap">
-          <span class="rg-num">${score}</span>${precision ? `<span class="rg-prec">${precision}</span>` : ''}
-        </div>
+        <div class="rg-num-wrap"><span class="rg-num">${score}</span></div>
+        ${precision ? `<span class="rg-prec">${precision}</span>` : ''}
         <div class="rg-v">${versionStr}</div>
       </div>
       <div class="info">
