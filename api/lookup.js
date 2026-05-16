@@ -135,6 +135,12 @@ export default async function handler(req, res) {
       cornerImages:      flatCornerImages,
       // Page quality is condition info, not personal — include it
       pageQuality:       comic.pageQuality || '',
+      // S14 unification: predictedGrade is now a public field. New items
+      // write it directly; legacy items have it synthesized from
+      // assessedCGCGrade by the client-side flattener on save. Public
+      // surface no longer names CGC — the legal-exposure tradeoff that
+      // motivated the unification in the first place.
+      predictedGrade:    comic.predictedGrade || comic.assessedCGCGrade || null,
       highGradeUnlocked: comic.highGradeUnlocked || false,
       // Integrity badge state (S12). 'verified' = all assessed photos were
       // captured in-app; 'unverified' = at least one was uploaded; 'empty' =
