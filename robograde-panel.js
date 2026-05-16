@@ -257,11 +257,40 @@
       </div>`;
     }
 
+    // S14: Interior justification row. catSection('INTERIOR') renders
+    // nothing when there are no interior DEFECTS (correct — page quality
+    // is not a defect). But on a graded book the interior score is
+    // derived from the slab label's page-quality designation, and with
+    // the section absent the user had no idea why Interior scored what it
+    // did. If there are no interior defects but we have a pageQuality
+    // value, emit an informational (non-defect) row that states the
+    // derivation, so the Interior score is explained rather than
+    // unexplained. Styled distinctly from defect rows (it's not a flaw).
+    const pq = (rg.pageQuality && String(rg.pageQuality).trim()) ? String(rg.pageQuality).trim() : '';
+    // Local escaper — pageQuality is model-generated text. Even though the
+    // expected values are constrained designations ("Off-White to White"
+    // etc.), escape defensively before injecting into innerHTML.
+    const pqEsc = (s) => String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    let interiorSectionHTML = catSection('INTERIOR', ins, byCat['Interior']);
+    if (!interiorSectionHTML && pq) {
+      interiorSectionHTML = `<div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:${PAPER_HEADER};border-top:1px solid ${PAPER_INK_LT};border-bottom:1px solid ${PAPER_INK_LT}">
+          <span style="font-size:10px;font-weight:700;color:${PAPER_INK_HD};letter-spacing:1.5px;font-family:'IBM Plex Mono','Menlo',monospace">INTERIOR</span>
+          <span style="font-size:14px;font-weight:800;color:${PAPER_INK_HD};font-family:'IBM Plex Mono','Menlo',monospace">${ins}</span>
+        </div>
+        <div style="padding:7px 10px;background:${PAPER_CREAM};font-size:11px;color:${PAPER_INK_LT};font-family:'IBM Plex Mono','Menlo',monospace;line-height:1.45;font-style:italic">
+          Interior page quality derived as ${pqEsc(pq)} from label info.
+        </div>
+      </div>`;
+    }
+
     const sectionsHTML = [
       catSection('FRONT',    fs,  byCat['Front']),
       catSection('BACK',     bs,  byCat['Back']),
       catSection('SPINE',    ss,  byCat['Spine']),
-      catSection('INTERIOR', ins, byCat['Interior']),
+      interiorSectionHTML,
     ].filter(Boolean).join('');
 
     // Hide the staples line when there are no defects to call out.

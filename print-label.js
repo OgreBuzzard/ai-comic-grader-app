@@ -583,6 +583,16 @@ function ensureStylesInjected() {
     font-family: 'Barlow Condensed', sans-serif;
     position: absolute; top: 14px;
   }
+  .rg-label .rg-num-wrap {
+    /* S14: number + precision laid out together so precision is anchored
+       to the DIGIT, not the score box. inline-flex with baseline-ish
+       alignment; the precision is a superscript hung off the number's
+       top-right. This is deterministic regardless of how the flexbox
+       centers the number — no fragile absolute top: math. */
+    display: inline-flex;
+    align-items: flex-start;
+    line-height: 1;
+  }
   .rg-label .rg-num {
     font-size: 148px; font-weight: 900;
     color: #b8d820; line-height: 1;
@@ -590,22 +600,19 @@ function ensureStylesInjected() {
     font-stretch: 62.5%;
   }
   .rg-label .rg-prec {
-    /* S14: was top:60 right:18 which overlapped the upper-right of the
-       148px score digit and clipped the ± glyph. Moved to a centered
-       band directly under the ROBOGRADE word and ABOVE the number, so
-       it never collides with the digit regardless of value width
-       (±3 vs ±16). Full-width + centered rather than right-pinned. */
-    position: absolute; top: 44px; left: 0; right: 0;
-    text-align: center;
-    font-size: 26px; font-weight: 700;
-    color: #b8d820; opacity: 0.92;
+    /* Superscript off the top-right of the number. margin-top:0 keeps it
+       aligned to the digit's top; small left gap separates it. Sized
+       well below the digit so it reads as a modifier, not a second
+       number. */
+    font-size: 30px; font-weight: 700;
+    color: #b8d820; opacity: 0.9;
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
     line-height: 1;
-    /* Extra space between the ± and the digit so they read as separate
-       characters. Without this, the condensed font crowds them together
-       to where the symbol disappears into the digit visually. */
-    letter-spacing: 2px;
+    margin-left: 4px;
+    margin-top: 6px;
+    letter-spacing: 1px;
+    white-space: nowrap;
   }
   .rg-label .rg-v {
     font-size: 20px;
@@ -767,6 +774,11 @@ function ensureStylesInjected() {
     font-family: 'Barlow Condensed', sans-serif;
     position: absolute; top: 14px;
   }
+  .rg-label-l .rg-num-wrap {
+    display: inline-flex;
+    align-items: flex-start;
+    line-height: 1;
+  }
   .rg-label-l .rg-num {
     font-size: 148px; font-weight: 900;
     color: #b8d820; line-height: 1;
@@ -774,15 +786,17 @@ function ensureStylesInjected() {
     font-stretch: 62.5%;
   }
   .rg-label-l .rg-prec {
-    /* Same above-the-number treatment as Small R (S14 clip fix). */
-    position: absolute; top: 44px; left: 0; right: 0;
-    text-align: center;
-    font-size: 26px; font-weight: 700;
-    color: #b8d820; opacity: 0.92;
+    /* Superscript off the digit's top-right (S14 — relative to the
+       number, not the box; matches Small R). */
+    font-size: 30px; font-weight: 700;
+    color: #b8d820; opacity: 0.9;
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
     line-height: 1;
-    letter-spacing: 2px;
+    margin-left: 4px;
+    margin-top: 6px;
+    letter-spacing: 1px;
+    white-space: nowrap;
   }
   .rg-label-l .rg-v {
     font-size: 20px;
@@ -845,10 +859,14 @@ function ensureStylesInjected() {
      physical right edge). qr-col is 134 wide → left = 874. */
   .rg-label-l .qr-col {
     position: absolute;
+    /* QR column right edge at x=1008 (0.5" from the label's physical
+       right edge / 3.5" from left). align-items:flex-end so the QR
+       canvas's right edge lands exactly on x=1008, matching the URL
+       beneath it (which is right-anchored to the same line). */
     left: 874px; top: 14px;
     width: 134px;
     display: flex; flex-direction: column;
-    align-items: center; gap: 4px;
+    align-items: flex-end; gap: 4px;
   }
   .rg-label-l .qr-col .qrc canvas,
   .rg-label-l .qr-col .qrc img {
@@ -862,13 +880,22 @@ function ensureStylesInjected() {
     font-weight: 600; text-align: center;
   }
   .rg-label-l .url {
-    font-size: 16px; color: #5a6a4a;
+    /* S14 fix: the URL was positioned correctly (left:874 width:134, same
+       as the QR column) but the string "robograder.app/id/XXXXXX" (~24
+       chars) is far wider than 134px at 16px mono, so it overflowed the
+       column and ran to the label's right edge — looking unaligned even
+       though the box wasn't. Fix: anchor by RIGHT edge to x=1008 (the
+       label's 0.5"-from-edge line, matching where the QR's right edge
+       sits) and shrink so the whole URL fits within the printed-content
+       zone (right edge 3.5" from left). right = 1152 − 1008 = 144. */
+    font-size: 13px; color: #5a6a4a;
     font-family: ui-monospace, "SF Mono", Menlo, "Cascadia Mono", "Roboto Mono", monospace;
     font-weight: 500;
-    text-align: center;
+    text-align: right;
     position: absolute;
-    left: 874px; width: 134px; bottom: 18px;
-    letter-spacing: 0.2px;
+    right: 144px; bottom: 18px;
+    letter-spacing: 0px;
+    white-space: nowrap;
   }
   /* Price pad — to the LEFT of the QR column. Width 200, right edge at
      x=854 (20px gap to the QR col at x=874) → left x=654. */
@@ -995,24 +1022,30 @@ function ensureStylesInjected() {
     font-family: 'Barlow Condensed', sans-serif;
     position: absolute; top: 12px;
   }
+  .rg-label-square .rg-num-wrap {
+    display: inline-flex;
+    align-items: flex-start;
+    line-height: 1;
+  }
   .rg-label-square .rg-num {
     font-size: 130px; font-weight: 900;
     color: #b8d820; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
   }
-  /* S14: precision ABOVE the number (centered band under ROBOGRADE),
-     consistent with the Small/Large fix. Was top:80 right:12 which
-     overlapped the 130px digit and clipped the ± glyph. */
+  /* S14: precision as a superscript off the digit's top-right (relative
+     to the number, not the box — deterministic regardless of centering).
+     Smaller (24px) to suit the 130px square digit. */
   .rg-label-square .rg-prec {
-    position: absolute; top: 38px; left: 0; right: 0;
-    text-align: center;
-    font-size: 20px; font-weight: 700;
-    color: #b8d820; opacity: 0.92;
+    font-size: 24px; font-weight: 700;
+    color: #b8d820; opacity: 0.9;
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
     line-height: 1;
-    letter-spacing: 1.5px;
+    margin-left: 3px;
+    margin-top: 5px;
+    letter-spacing: 1px;
+    white-space: nowrap;
   }
   .rg-label-square .rg-v {
     font-size: 18px;
@@ -1165,6 +1198,11 @@ function ensureStylesInjected() {
     font-family: 'Barlow Condensed', sans-serif;
     position: absolute; top: 22px;
   }
+  .rg-label-large .rg-num-wrap {
+    display: inline-flex;
+    align-items: flex-start;
+    line-height: 1;
+  }
   .rg-label-large .rg-num {
     font-size: 232px; font-weight: 900;
     color: #b8d820; line-height: 1;
@@ -1172,16 +1210,17 @@ function ensureStylesInjected() {
     font-stretch: 62.5%;
   }
   .rg-label-large .rg-prec {
-    /* S14: was top:92 right:28, overlapping the 232px digit and clipping
-       the ± glyph. Centered band under ROBOGRADE, above the number. */
-    position: absolute; top: 70px; left: 0; right: 0;
-    text-align: center;
-    font-size: 40px; font-weight: 700;
-    color: #b8d820; opacity: 0.92;
+    /* Superscript off the digit's top-right (S14 — relative to the
+       number, not the box). 46px to suit the 232px large digit. */
+    font-size: 46px; font-weight: 700;
+    color: #b8d820; opacity: 0.9;
     font-family: 'Noto Sans Display', sans-serif;
     font-stretch: 62.5%;
     line-height: 1;
-    letter-spacing: 3px;
+    margin-left: 6px;
+    margin-top: 10px;
+    letter-spacing: 1.5px;
+    white-space: nowrap;
   }
   .rg-label-large .rg-v {
     font-size: 30px;
@@ -1940,8 +1979,9 @@ function renderLabelMarkup(comic, opts) {
     <div class="${wrapClass}" data-grade-id="${gradeId}">
       <div class="score-box">
         <div class="rg-word">ROBOGRADE</div>
-        <div class="rg-num">${score}</div>
-        ${precision ? `<div class="rg-prec">${precision}</div>` : ''}
+        <div class="rg-num-wrap">
+          <span class="rg-num">${score}</span>${precision ? `<span class="rg-prec">${precision}</span>` : ''}
+        </div>
         <div class="rg-v">${versionStr}</div>
       </div>
       <div class="info">

@@ -64,7 +64,7 @@
   <!-- Firebase -->
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
-    import { getFirestore, collection, getDocs, setDoc, deleteDoc, doc, onSnapshot, getDoc }
+    import { getFirestore, collection, getDocs, setDoc, deleteDoc, doc, onSnapshot, getDoc, updateDoc, increment }
       from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
     import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
       from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
@@ -97,6 +97,12 @@
     window._fsDoc = doc;
     window._fsOnSnapshot = onSnapshot;
     window._fsGetDoc = getDoc;
+    // S14: atomic field ops. Credit decrement MUST be a server-side
+    // atomic increment(-1), never a client-computed setDoc, or a stale
+    // local count (e.g. a transient 0 from a slow/failed read) can
+    // overwrite the true balance in Firestore. See decrementCredit().
+    window._fsUpdateDoc = updateDoc;
+    window._fsIncrement = increment;
     // Auth setup
     const auth = getAuth(app);
     const googleProvider = new GoogleAuthProvider();
@@ -267,17 +273,41 @@
        "Grade" label so it reads as the comic-grading action without
        widening the row much. Green to distinguish it from the gold Buy
        (different action class) and tie to the brand primary. */
+    /* S14 (corrected): the top-bar Grade button at the size we actually
+       agreed on — same visual weight as the old compact CTA tile, NOT a
+       shrunken green "Grade" chip. Amber gradient (matches the tile and
+       the Buy button family), full "Grade a Comic" label, ~44px-tall
+       cover thumbnail. The header grows to fit this rather than the
+       button being squeezed to the old 32px control height — that was
+       the explicit plan and I'd implemented it wrong. .btn-grade does
+       NOT inherit the 32px min-height path because it sets its own. */
     .btn-topbar.btn-grade {
-      background: #2a7a3a; color: #fff; border: 1.5px solid #1f5f2c;
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 5px 11px 5px 6px;
+      background: linear-gradient(135deg, #f0d99a 0%, #e3c069 100%);
+      color: #2a1e14;
+      border: 1.5px solid #c8a850;
+      display: inline-flex; align-items: center; gap: 9px;
+      padding: 6px 16px 6px 7px;
+      min-height: 0;            /* override .btn-topbar's 32px floor */
+      border-radius: 12px;
+      box-shadow: 0 2px 7px rgba(40,30,10,0.22);
+      line-height: 1;
     }
     .btn-topbar.btn-grade .grade-btn-thumb {
-      width: 18px; height: 26px; object-fit: cover;
-      border-radius: 3px; flex-shrink: 0;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.35);
+      width: 30px; height: 44px; object-fit: cover;
+      border-radius: 4px; flex-shrink: 0;
+      box-shadow: 0 1px 4px rgba(40,30,10,0.25);
     }
-    .btn-topbar.btn-grade:active { filter: brightness(0.92); }
+    .btn-topbar.btn-grade span {
+      font-family: 'Noto Sans Display', sans-serif;
+      font-stretch: 62.5%;
+      font-size: 16px; font-weight: 900;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+    }
+    .btn-topbar.btn-grade:active {
+      filter: brightness(0.95);
+      transform: scale(0.97);
+    }
     .btn-gear {
       background: none; border: none; color: #8a7a6a; cursor: pointer;
       padding: 4px 6px; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
@@ -382,6 +412,23 @@
     .btn:disabled { background: #1c1814; color: #4a3e34; cursor: not-allowed; }
     input, select, textarea { background: #ffffff; border: 1px solid #ccc8c0; border-radius: 4px; color: #1a1614; padding: 8px 10px; font-size: 13px; font-family: inherit; outline: none; width: 100%; }
     label.field-label { display: block; font-size: 11px; color: #8a7a6a; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+    /* S14 (anti-fraud): read-only field display for Pub Date / Printing on
+       graded books. Visually distinct from editable inputs — muted fill,
+       no interactive border, a small lock affordance — so it's clearly
+       informational and not an input the user is expected to fill. */
+    .ro-field {
+      font-size: 15px; color: #c8bcae;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid #2a2420; border-radius: 8px;
+      padding: 10px 12px; padding-right: 30px;
+      position: relative; min-height: 20px;
+      font-family: 'Barlow Condensed', sans-serif; font-weight: 600;
+    }
+    .ro-field::after {
+      content: "🔒"; position: absolute; right: 10px; top: 50%;
+      transform: translateY(-50%); font-size: 11px; opacity: 0.4;
+    }
+    .ro-field.ro-empty { color: #6a5e50; font-weight: 500; }
     .card { background: #ffffff; border: 1px solid #ddd8d0; border-radius: 8px; padding: 16px 14px; }
     .divider { height: 1px; background: #ddd8d0; margin: 16px 0; }
     /* S14: Grade a Comic CTA tile. Replaces the small "Add" button in the
@@ -981,6 +1028,46 @@
       position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 2000;
       display: flex; align-items: flex-start; justify-content: flex-end;
     }
+    /* S14: app-styled confirm dialog (replaces native confirm()). Centered
+       card, dark panel matching the app's surfaces, green primary action
+       consistent with the rest of the UI. */
+    #app-confirm-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.62); z-index: 3000;
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px;
+    }
+    #app-confirm-box {
+      background: #141210; border: 1px solid #2a2420;
+      border-radius: 14px; width: min(380px, 100%);
+      padding: 22px 22px 18px; box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+      animation: appConfirmIn 0.16s ease;
+    }
+    @keyframes appConfirmIn {
+      from { opacity: 0; transform: translateY(8px) scale(0.98); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    #app-confirm-msg {
+      color: #d8ccc0; font-size: 15px; line-height: 1.5;
+      font-family: 'Barlow Condensed', sans-serif; font-weight: 500;
+      margin-bottom: 20px;
+    }
+    #app-confirm-actions {
+      display: flex; gap: 10px; justify-content: flex-end;
+    }
+    #app-confirm-actions button {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 14px; font-weight: 700; letter-spacing: 0.5px;
+      padding: 9px 18px; border-radius: 9px; cursor: pointer;
+      border: 1px solid transparent;
+    }
+    #app-confirm-cancel {
+      background: transparent; color: #9a8a7a; border-color: #3a322c;
+    }
+    #app-confirm-cancel:active { background: rgba(255,255,255,0.04); }
+    #app-confirm-ok {
+      background: #2a7a3a; color: #fff; border-color: #1f5f2c;
+    }
+    #app-confirm-ok:active { filter: brightness(0.93); }
     #settings-panel {
       background: #141210; width: min(320px, 90vw); height: 100vh;
       overflow-y: auto; padding: 0; box-shadow: -4px 0 24px rgba(0,0,0,0.4);
@@ -1293,7 +1380,7 @@
            edit isn't silently discarded. -->
       <button class="btn btn-topbar btn-grade" onclick="gradeFromHeader()" id="grade-btn" aria-label="Grade a Comic" title="Grade a Comic" style="display:none">
         <img src="assets/ghosts/Front_Cover.jpg" alt="" decoding="async" class="grade-btn-thumb">
-        <span>Grade</span>
+        <span>Grade a Comic</span>
       </button>
       <button class="btn-gear" onclick="openSettings()" title="Settings" id="settings-btn" aria-label="Settings">
         <!-- Flat abstract gear icon — solid white silhouette of a cog with
@@ -1308,6 +1395,19 @@
     </div>
   </div>
   <div id="main"></div>
+</div>
+<!-- S14: app-styled confirm dialog. Replaces native confirm() for the
+     Grade-from-Edit guard (and reusable for any future confirm). Native
+     confirm() can't be styled and looked out of place. appConfirm()
+     drives this. -->
+<div id="app-confirm-overlay" style="display:none" onclick="if(event.target===this)_appConfirmResolve(false)">
+  <div id="app-confirm-box" role="dialog" aria-modal="true" aria-labelledby="app-confirm-msg">
+    <div id="app-confirm-msg"></div>
+    <div id="app-confirm-actions">
+      <button type="button" id="app-confirm-cancel" onclick="_appConfirmResolve(false)">Cancel</button>
+      <button type="button" id="app-confirm-ok" onclick="_appConfirmResolve(true)">Continue</button>
+    </div>
+  </div>
 </div>
 <div id="settings-overlay" style="display:none" onclick="if(event.target===this)closeSettings()">
   <div id="settings-panel">
@@ -2593,7 +2693,13 @@ function refreshHeaderControls() {
     if (coinBtn) coinBtn.style.display = 'none';
     if (buyBtn) buyBtn.style.display = 'none';
     if (addBtn) addBtn.style.display = 'none';
-    if (gradeBtn) gradeBtn.style.display = 'none';
+    // S14: only hide the grade button while genuinely still loading AND
+    // it hasn't been shown yet. Once it's been revealed, leave it alone —
+    // re-hiding then re-showing it on every List↔Detail↔Edit transition
+    // (each of which calls refreshHeaderControls) was causing a visible
+    // one-frame flicker of the whole top bar. View changes are not
+    // loading events; the button is global and should never blink.
+    if (gradeBtn && !gradeBtn.dataset.shown) gradeBtn.style.display = 'none';
     if (placeholder) placeholder.style.display = '';
   } else {
     if (coinBtn) coinBtn.style.display = '';
@@ -2605,27 +2711,69 @@ function refreshHeaderControls() {
       // to list view should re-show Add visually.
       addBtn.style.visibility = 'visible';
     }
-    // S14: Grade button is shown in ALL views (list/detail/edit) once
-    // past loading. It's the app's core action and should always be one
-    // tap away. No per-view hiding — unlike the legacy Add button it's
-    // not view-scoped.
-    if (gradeBtn) {
+    // S14: Grade button shows in ALL views once past loading. Mark it
+    // shown once and make subsequent calls no-ops so repeated
+    // refreshHeaderControls() invocations on view changes don't re-write
+    // its style and reflow the bar (the flicker). It's never hidden
+    // again for the rest of the session.
+    if (gradeBtn && !gradeBtn.dataset.shown) {
       gradeBtn.style.display = '';
       gradeBtn.style.visibility = 'visible';
+      gradeBtn.dataset.shown = '1';
     }
     if (placeholder) placeholder.style.display = 'none';
   }
 }
 
+// S14: promise-based, app-styled replacement for window.confirm(). Native
+// confirm() can't be themed and looked jarring inside the app. Resolves
+// true on Continue, false on Cancel / overlay tap / Escape. Single in-
+// flight dialog at a time (the Grade guard is the only caller; this is
+// enough — no queueing needed).
+let _appConfirmResolver = null;
+function appConfirm(message, okLabel) {
+  return new Promise((resolve) => {
+    _appConfirmResolver = resolve;
+    const overlay = document.getElementById('app-confirm-overlay');
+    const msgEl = document.getElementById('app-confirm-msg');
+    const okEl = document.getElementById('app-confirm-ok');
+    if (!overlay || !msgEl) { resolve(window.confirm(message)); return; }
+    msgEl.textContent = message;
+    if (okEl && okLabel) okEl.textContent = okLabel;
+    overlay.style.display = 'flex';
+    const onKey = (e) => {
+      if (e.key === 'Escape') _appConfirmResolve(false);
+      else if (e.key === 'Enter') _appConfirmResolve(true);
+    };
+    overlay._onKey = onKey;
+    document.addEventListener('keydown', onKey);
+  });
+}
+function _appConfirmResolve(val) {
+  const overlay = document.getElementById('app-confirm-overlay');
+  if (overlay) {
+    overlay.style.display = 'none';
+    if (overlay._onKey) {
+      document.removeEventListener('keydown', overlay._onKey);
+      overlay._onKey = null;
+    }
+  }
+  const r = _appConfirmResolver;
+  _appConfirmResolver = null;
+  if (r) r(!!val);
+}
+
 // S14: guarded entry point for the top-bar Grade button. From list or
 // detail it just starts a new grading flow. From the add/edit form it
-// confirms first, because showAdd() resets formData and would silently
-// discard an in-progress edit/assessment. The guard is intentionally a
-// simple confirm() — the form has no incremental autosave, so "are you
-// sure" is the honest prompt rather than pretending we can preserve work.
-function gradeFromHeader() {
+// confirms first (via the app-styled appConfirm, not native confirm),
+// because showAdd() resets formData and would silently discard an
+// in-progress edit/assessment.
+async function gradeFromHeader() {
   if (view === 'add' || view === 'edit') {
-    const ok = confirm('Start grading a new comic? Any unsaved changes to the current entry will be lost.');
+    const ok = await appConfirm(
+      'Start grading a new comic? Any unsaved changes to the current entry will be lost.',
+      'Start New'
+    );
     if (!ok) return;
   }
   showAdd();
@@ -2749,12 +2897,24 @@ function updateStats(){
   // Header is now minimal — just the coin with credit count. No book-count bar.
   const coinCount = document.getElementById("credit-coin-count");
   if (coinCount) {
-    const credits = window._userCredits !== undefined ? window._userCredits : 0;
-    coinCount.textContent = credits > 999 ? '999+' : credits;
-    // Size down the text slightly when multi-digit so it fits inside the coin
-    if (credits >= 100) coinCount.style.fontSize = '9px';
-    else if (credits >= 10) coinCount.style.fontSize = '11px';
-    else coinCount.style.fontSize = '12px';
+    // S14 (credit-integrity): when the balance isn't known yet (undefined —
+    // e.g. a read in flight, or a transiently-absent field that we now
+    // refuse to coerce to 0), show a neutral "·" rather than "0". A hard
+    // 0 in the coin badge looks like the user is broke and was part of
+    // the alarming "I lost all my credits" report. The real value paints
+    // as soon as a successful read resolves.
+    if (window._userCredits === undefined || window._userCredits === null) {
+      coinCount.textContent = '·';
+      coinCount.style.fontSize = '12px';
+    } else {
+      const credits = window._userCredits;
+      coinCount.textContent = credits > 999 ? '999+' : credits;
+      // Size down the text slightly when multi-digit so it fits inside the coin
+      if (credits >= 100) coinCount.style.fontSize = '9px';
+      else if (credits >= 10) coinCount.style.fontSize = '11px';
+      else coinCount.style.fontSize = '12px';
+    }
+    return;
   }
 }
 
@@ -2773,7 +2933,23 @@ async function loadUserCredits(){
     };
     if(snap.exists()){
       const data = snap.data();
-      window._userCredits = data.assessmentCredits || 0;
+      // S14 (credit-integrity): do NOT coerce a missing/undefined field to
+      // 0 here. `data.assessmentCredits || 0` was turning any read where
+      // the field was transiently absent into a local 0, which the old
+      // decrementCredit could then write back over the real balance. An
+      // existing user doc should always have the field; if it's somehow a
+      // non-number, keep the prior known value rather than zeroing the UI.
+      // Only fall to 0 when the stored value is explicitly 0.
+      if (typeof data.assessmentCredits === 'number') {
+        window._userCredits = data.assessmentCredits;
+      } else if (window._userCredits === undefined) {
+        // No prior value and the field is absent/non-numeric — leave
+        // undefined so updateStats shows a safe placeholder and nothing
+        // writes a fabricated count back. (updateStats already guards
+        // undefined.) A subsequent successful read will populate it.
+        console.warn('assessmentCredits missing/non-numeric on existing user doc; leaving balance unset rather than zeroing');
+      }
+      // else: keep the existing in-memory value, don't overwrite with 0.
       window._sampleDismissed = data.sampleDismissed === true;
       if (data.everPurchased) window._userEverPaid = true;
       else if (window._userCredits > 0) window._userEverPaid = true;
@@ -5952,6 +6128,29 @@ function openSettings() {
   const overlay = document.getElementById('settings-overlay');
   if (!overlay) return;
 
+  // S14 fix: the training toggle's HTML hardcodes the OFF appearance
+  // (track #2a2a2a, thumb left:3px). If the cache (window._trainingOptIn)
+  // is populated, paint the correct state HERE, synchronously, BEFORE the
+  // overlay becomes visible — otherwise the user sees a definitive OFF
+  // for a frame (or longer, if loadTrainingSetting falls into its async
+  // Firestore fallback because the cache wasn't hydrated yet). This is
+  // the root of the recurring "the toggle keeps turning itself off"
+  // report: it was never actually off in Firestore; the UI was painting
+  // a false OFF before the real value loaded. Defaulting the unknown
+  // case to ON (true) matches the documented opt-in default and is the
+  // safe direction — a user who has opted in should never see OFF.
+  {
+    const optIn = (window._trainingOptIn !== undefined)
+      ? !!window._trainingOptIn
+      : true;
+    const cb = document.getElementById('settings-training-toggle');
+    const track = document.getElementById('settings-training-track');
+    const thumb = document.getElementById('settings-training-thumb');
+    if (cb) cb.checked = optIn;
+    if (track) track.style.background = optIn ? '#3a7a20' : '#2a2a2a';
+    if (thumb) thumb.style.left = optIn ? '23px' : '3px';
+  }
+
   // Populate account info
   const emailEl = document.getElementById('settings-email');
   if (emailEl && window._currentUser) emailEl.textContent = window._currentUser.email || '—';
@@ -6176,15 +6375,36 @@ function updateExportRemainingDisplay(remaining) {
 
 function decrementCredit(){
   if(window._userCredits !== undefined && window._userCredits > 0){
+    // Optimistic local update for instant UI feedback.
     window._userCredits--;
     updateStats();
-    // Write to Firestore in background
     if(window._currentUser && window._db){
-      const {getFirestore, doc, updateDoc, increment} = window._fsDecrementHelpers || {};
-      // Use raw firebase calls since we have db reference
       try {
         const userRef = window._fsDoc(window._db, "users", window._currentUser.uid);
-        window._fsSetDoc(userRef, {assessmentCredits: Math.max(0, window._userCredits)}, {merge: true});
+        // S14 FIX (credit-integrity): use Firestore's ATOMIC increment(-1)
+        // rather than writing the client's local count. The old code did
+        // setDoc({assessmentCredits: Math.max(0, window._userCredits)}),
+        // which writes whatever the client currently thinks the balance
+        // is. If a transient slow/failed read had set window._userCredits
+        // to 0 (loadUserCredits' `data.assessmentCredits || 0` coerces a
+        // missing field to 0), this write would persist 0 and destroy the
+        // real balance. An atomic server-side increment(-1) is computed
+        // from the authoritative stored value and is immune to whatever
+        // stale number the client holds. updateDoc (not setDoc) so it
+        // fails loudly if the doc somehow doesn't exist rather than
+        // silently creating a doc with only this field.
+        if (window._fsUpdateDoc && window._fsIncrement) {
+          window._fsUpdateDoc(userRef, {
+            assessmentCredits: window._fsIncrement(-1)
+          }).catch(e => console.error("Atomic credit decrement failed:", e));
+        } else {
+          // Defensive fallback if the helpers somehow didn't load. Still
+          // prefer not to clobber: only write if our local value is a
+          // sane positive number.
+          if (Number.isFinite(window._userCredits) && window._userCredits >= 0) {
+            window._fsSetDoc(userRef, {assessmentCredits: window._userCredits}, {merge: true});
+          }
+        }
       } catch(e){ console.error("Failed to decrement credits in Firestore:", e); }
     }
   }
@@ -6927,6 +7147,24 @@ function renderForm(){
     const mode=numeric?` inputmode="decimal" pattern="[0-9.]*"`:"";
     return`<div><label class="field-label">${label}</label><input value="${esc(formData[field]||"")}"${mode} oninput="formData['${field}']=this.value" placeholder="${ph}"></div>`;
   }
+  // S14 (anti-fraud): read-only field. Pub Date and Printing must NOT be
+  // user-alterable on a graded book — a user could otherwise edit a
+  // facsimile/reprint's date or printing to make it present as an
+  // original (e.g. blank the "Facsimile Reprint" and set a 1963 date on
+  // a 2019 reprint, then show the inflated label to a buyer). These
+  // values are determined by the assessment and are locked once set.
+  // Rendered visually distinct (muted, no border) so it reads as
+  // informational, not an empty editable input. The value still shows;
+  // it just can't be changed. If the field is empty there's nothing to
+  // protect or display, so it renders a faint "—".
+  function rof(label,field){
+    const v = formData[field];
+    const shown = (v!=null && String(v).trim()!=="") ? esc(v) : "—";
+    const empty = !(v!=null && String(v).trim()!=="");
+    return `<div><label class="field-label">${label}</label>`
+      + `<div class="ro-field${empty?' ro-empty':''}" title="Locked — set by the assessment and not editable">`
+      + `${shown}</div></div>`;
+  }
   function mf(label,field){
     const val=formData[field]!=null&&formData[field]!==""?formData[field]:"";
     return`<div><label class="field-label">${label}</label><div style="position:relative"><span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#8a7a6a;font-size:13px;pointer-events:none">$</span><input value="${esc(val)}" inputmode="decimal" pattern="[0-9.]*" oninput="formData['${field}']=this.value" placeholder="0.00" style="padding-left:22px"></div></div>`;
@@ -7095,9 +7333,20 @@ function renderForm(){
            or a separate handler — this is cleaner. -->
       <div><label class="field-label">Title<span style="color:#c0392b;margin-left:2px">*</span></label><input id="title-input" value="${esc(formData.title||"")}" oninput="formData.title=this.value;const b=document.getElementById('save-btn');b.disabled=!this.value.trim();b.style.opacity=this.value.trim()?'':'0.5';b.style.cursor=this.value.trim()?'':'not-allowed'" placeholder="Series title"></div>
       ${tf("Issue","issue","Issue number",true)}
-      ${tf("Pub Date","issueDate","Cover date")}
+      ${formData.roboGrade ? rof("Pub Date","issueDate") : tf("Pub Date","issueDate","Cover date")}
       ${tf("Publisher","publisher","Publisher")}
     </div>
+    ${formData.roboGrade && (formData.printing && String(formData.printing).trim()) ? `
+    <!-- S14 (anti-fraud): Printing is shown read-only on a graded book.
+         It is NOT in the editable grid at all (a blank editable Printing
+         would also be a fraud vector — a user could leave a reprint's
+         printing empty). It only appears here when the assessment
+         actually populated it (e.g. "Facsimile Reprint"), so the label
+         and Detail view stay truthful and the user can't strip it. -->
+    <div class="form-grid-2"><div>
+      <label class="field-label">Printing</label>
+      <div class="ro-field" title="Locked — set by the assessment and not editable">${esc(formData.printing)}</div>
+    </div></div>` : ''}
     <!-- Official Grades fields (S11): the disclosure container "OFFICIAL GRADES"
          was removed. CGC Grade/Cert and PSA Grade/Cert sit as their own ordinary
          fields when relevant.
