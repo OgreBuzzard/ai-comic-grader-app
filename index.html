@@ -433,23 +433,50 @@
       flex-direction: row;
       align-items: center;
       justify-content: center;
-      padding: 12px 18px;
-      gap: 12px;
-      margin: 8px auto 16px;
-      max-width: 420px;
-      /* S14: pin to the top of the list scroll area so the primary action
-         is always reachable, the way it was when Add lived in the top bar.
-         The list's scroll container is the page; sticky top:0 keeps the
-         button visible as the collection scrolls under it. Slight elevation
-         + opaque background so list rows don't bleed through. */
+      padding: 9px 18px 9px 12px;
+      gap: 11px;
+      /* S14 fix: narrow, centered, button-shaped. Full-bleed amber
+         rounded rectangle read as a section panel, not a control. Capping
+         the width and centering it makes it unmistakably a button.
+         Tightened further per booth feedback: 220→184px and snugger
+         padding so two stacked words next to a 30px thumb form a compact
+         pill, not a wide bar. */
+      margin: 10px auto 18px;
+      width: max-content;
+      max-width: 184px;
+      /* S14 fix: the clipping bug. The CTA and #header are BOTH
+         position:sticky in the same scroll container. #header is
+         top:0 / z-index:100. Its rendered height is exactly 53px:
+         tallest child is a 32px control (Buy / coin / gear), plus
+         10px+10px vertical padding, plus the 1px bottom border. The CTA
+         was top:8px / z-index:20, so on scroll it pinned UNDER the
+         header and only a sliver showed (see user screenshot). Pin it
+         at 60px (53px header + 7px gap) and keep z-index BELOW the
+         header (90 < 100) so the header always wins during the brief
+         scroll transition where they could momentarily overlap.
+         No env(safe-area-inset-top) here: #header doesn't add it either
+         (the status-bar band is page layout, not header padding), so
+         adding it would double-count and push the CTA too far down.
+         If the header's control height or padding ever changes, update
+         this: (tallest header child) + 20px padding + 1px border + 7px. */
       position: sticky;
-      top: 8px;
-      z-index: 20;
-      box-shadow: 0 2px 10px rgba(40, 30, 10, 0.18);
+      top: 60px;
+      z-index: 90;
+      box-shadow: 0 3px 12px rgba(40, 30, 10, 0.28);
       background: linear-gradient(135deg, #f0d99a 0%, #e3c069 100%);
+      border: 1.5px solid #c8a850;
+      border-radius: 14px;
+      transition: transform 0.08s ease, box-shadow 0.08s ease;
+      cursor: pointer;
+    }
+    /* Press feedback — a button the user can physically depress reads as
+       a button. Subtle scale + shadow collapse on tap. */
+    .grade-cta.compact:active {
+      transform: scale(0.96);
+      box-shadow: 0 1px 5px rgba(40, 30, 10, 0.3);
     }
     .grade-cta.compact .grade-cta-thumb {
-      width: 34px; height: 50px;
+      width: 30px; height: 44px;
       object-fit: cover;
       border-radius: 4px;
       box-shadow: 0 1px 4px rgba(40, 30, 10, 0.25);
@@ -458,13 +485,19 @@
     .grade-cta.compact .grade-cta-headline {
       font-family: 'Noto Sans Display', sans-serif;
       font-stretch: 62.5%;
-      font-size: 18px;
+      font-size: 17px;
       font-weight: 900;
       color: #2a1e14;
       letter-spacing: 0.3px;
       flex: 0 1 auto;
       min-width: 0;
-      text-align: center;
+      /* S14: two-line wrap. "Grade a Comic" on one line forced the button
+         wide; stacking it keeps the button compact and tall enough to
+         read as a press target. line-height tight so the two lines sit
+         as a unit next to the thumbnail. */
+      text-align: left;
+      line-height: 1.05;
+      white-space: normal;
     }
     /* S14: group headers in the list view were rendering at 10px with 2px
        letter-spacing — small AND wide-spaced is the worst combination for
@@ -3068,7 +3101,7 @@ function renderList(){
   const ctaHtml = hasRealBooks
     ? `<div class="grade-cta compact" onclick="showAdd()" role="button" aria-label="Grade a Comic">
          <img class="grade-cta-thumb" src="${ctaThumb}" alt="" decoding="async">
-         <div class="grade-cta-headline">Grade a Comic</div>
+         <div class="grade-cta-headline">Grade a<br>Comic</div>
        </div>`
     : `<div class="grade-cta large" onclick="showAdd()" role="button" aria-label="Grade a Comic">
          <img class="grade-cta-thumb" src="${ctaThumb}" alt="" decoding="async">
