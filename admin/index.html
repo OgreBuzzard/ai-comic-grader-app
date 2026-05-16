@@ -513,7 +513,11 @@ const state = {
   view: 'dashboard',    // 'dashboard' | 'user' | 'item'
   selectedUid: null,
   selectedItemId: null,
-  tab: 'users',         // 'users' | 'items'
+  // S14: default tab changed from 'users' to 'items'. Matt's usual entry
+  // point is "what assessments came in recently" rather than "who are my
+  // users." itemsSort + itemsDir already default to date/desc which is
+  // exactly the right starting sort for that intent.
+  tab: 'items',         // 'users' | 'items'
   sort: 'displayName',
   dir: 'asc',
   users: [],
@@ -754,7 +758,11 @@ async function loadUsers(reset = false) {
   }
   const offset = state.users.length;
   try {
-    const res = await api(`/api/users?sort=${state.sort}&dir=${state.dir}&limit=50&offset=${offset}`);
+    // S14: page size dropped from 50 to 20. 50 was hitting noticeable load
+    // delay on the items endpoint especially (admin SDK reads + per-item
+    // doc lookups). 20 is plenty for an at-a-glance view; Load More is
+    // there for deeper digs.
+    const res = await api(`/api/users?sort=${state.sort}&dir=${state.dir}&limit=20&offset=${offset}`);
     state.users = state.users.concat(res.users);
     state.hasMore = res.hasMore;
     renderUsers();
@@ -837,7 +845,7 @@ async function loadItems(reset = false) {
   const offset = state.itemsList.length;
   const q = encodeURIComponent(state.itemSearch || '');
   try {
-    const res = await api(`/api/items?sort=${state.itemsSort}&dir=${state.itemsDir}&limit=50&offset=${offset}&q=${q}`);
+    const res = await api(`/api/items?sort=${state.itemsSort}&dir=${state.itemsDir}&limit=20&offset=${offset}&q=${q}`);
     state.itemsList = state.itemsList.concat(res.items);
     state.itemsHasMore = res.hasMore;
     state.itemsTotal = res.total;
@@ -971,6 +979,26 @@ function renderUserDetail(user, items, publicRate) {
           </div>
         `).join('')
     }
+    <!-- S14: danger zone. Delete-account button sits well below the items
+         list so it's not adjacent to anything you'd casually tap. The
+         button itself is muted by default (text-only treatment) and
+         becomes destructive-red only on confirm. Two-step confirm:
+         (1) initial confirm() with a clear warning, (2) typed-email
+         confirmation that must match the target account's email. -->
+    <div style="margin-top:48px;padding-top:20px;border-top:1px solid var(--rule);">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:10px;font-weight:600;">Danger zone</div>
+      <button id="delete-account-btn"
+              style="background:transparent;color:#c0392b;border:1px solid #c0392b;
+                     border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;
+                     cursor:pointer;letter-spacing:0.05em;">
+        Delete this account
+      </button>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:6px;line-height:1.5;">
+        Permanently removes Auth user, all items and photos, and registry entries.
+        Purchases, credit adjustments, and promo redemptions are retained.
+        Cannot be undone.
+      </div>
+    </div>
   `;
 
   // ── Credits editor wiring ───────────────────────────────────────────────
@@ -1008,6 +1036,81 @@ function renderUserDetail(user, items, publicRate) {
   document.querySelectorAll('.row').forEach(row => {
     row.onclick = () => showItem(user.uid, row.dataset.id, 'user');
   });
+
+  // S14: delete-account button wiring. Two confirmations required:
+  //   1. confirm() with a plain-English warning summary.
+  //   2. prompt() asking the admin to type the target email — that
+  //      text is sent to the server as confirmEmail; server verifies
+  //      it matches the target user's email before doing anything.
+  // After successful delete, navigate back to the users tab so the
+  // deleted user isn't still highlighted in the URL/state.
+  const delBtn = document.getElementById('delete-account-btn');
+  if (delBtn) {
+    delBtn.onclick = () => deleteAccount(user);
+  }
+}
+
+// S14: hard-delete a user account via the admin endpoint. The two-step
+// confirmation is enforced both client-side (this function) AND
+// server-side (the endpoint checks the typed email matches). Double
+// confirmation prevents fat-finger deletions of the wrong account.
+async function deleteAccount(user) {
+  const summary = `Delete this account?\n\n` +
+    `Name:   ${user.displayName || '(no name)'}\n` +
+    `Email:  ${user.email || '(no email)'}\n` +
+    `UID:    ${user.uid}\n\n` +
+    `This will permanently remove the Auth user, the Firestore doc, ` +
+    `all items, all photos, and all registry entries.\n\n` +
+    `Purchases, credit adjustments, and promo redemptions will be RETAINED.\n\n` +
+    `Cannot be undone.`;
+  if (!confirm(summary)) return;
+
+  // Second confirmation: type the email back. This is the typed-confirmation
+  // pattern that protects against "I clicked the wrong row" mistakes —
+  // the admin has to look at the email and type it character-for-character.
+  const typed = prompt(
+    `Type the user's email to confirm deletion:\n\n${user.email || '(no email on file)'}`
+  );
+  if (typed == null) return;  // cancelled
+  // Allow empty when account has no email — server enforces match server-side.
+  const trimmed = typed.trim().toLowerCase();
+  if (user.email && trimmed !== user.email.toLowerCase()) {
+    alert('Email did not match. Deletion cancelled.');
+    return;
+  }
+
+  const btn = document.getElementById('delete-account-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Deleting…'; }
+
+  try {
+    const data = await api('/api/admin_delete_user', {
+      method: 'POST',
+      body: {
+        uid: user.uid,
+        confirmEmail: trimmed,
+      },
+    });
+    if (!data || !data.ok) {
+      throw new Error('Unexpected response');
+    }
+    alert(`Account deleted.\n\n` +
+          `Auth removed:       ${data.summary.authDeleted ? 'yes' : 'no'}\n` +
+          `User doc removed:   ${data.summary.userDocDeleted ? 'yes' : 'no'}\n` +
+          `Items removed:      ${data.summary.itemsDeleted}\n` +
+          `Comics removed:     ${data.summary.comicsDeleted}\n` +
+          `Meta docs removed:  ${data.summary.metaDeleted}\n` +
+          `Registry removed:   ${data.summary.robogradeIdsDeleted}\n` +
+          `Storage cleared:    ${data.summary.storageObjectsDeleted}`);
+    // Return to users tab and refresh list so the deleted user is gone.
+    state.view = 'dashboard';
+    state.tab = 'users';
+    state.selectedUid = null;
+    render();
+    loadUsers(true);
+  } catch (e) {
+    alert('Delete failed: ' + (e.message || 'unknown error'));
+    if (btn) { btn.disabled = false; btn.textContent = 'Delete this account'; }
+  }
 }
 
 // S14: PATCH the user doc with the new credit value. On success, the
