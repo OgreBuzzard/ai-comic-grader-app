@@ -35,8 +35,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Noto+Sans+Display:wdth,wght@62.5..100,500;700;900&display=swap" rel="stylesheet">
   <link rel="preload" href="assets/Robograder_Background.jpg" as="image">
-  <link rel="preload" href="assets/Robograder_v4_Load.png" as="image">
-  <link rel="preload" href="assets/Robograder_Logo.png" as="image">
+  <link rel="preload" href="assets/Robograder_v4_Load.webp" as="image">
+  <link rel="preload" href="assets/Robograder_Logo.webp" as="image">
   <link rel="apple-touch-icon" href="icon-192.png">
 
   <!-- Preconnect to Firebase Storage so the first thumbnail/image fetch
@@ -1026,7 +1026,16 @@
       object-fit: contain;
       transform: translate(-120%, -50%);
       pointer-events: none;
-      animation: splashRobotSlideIn 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.2s forwards;
+      /* S14: entrance no longer fires on a page-load wall clock. The
+         animation is attached only once #splash has .assets-ready, which
+         JS adds after both splash images have decode()'d. Before that the
+         robot just sits offscreen-left (its from-state), so a slow
+         connection shows an empty splash bg rather than a half-painted
+         robot frozen mid-slide. */
+      animation: none;
+    }
+    #splash.assets-ready #splash-robot {
+      animation: splashRobotSlideIn 0.9s cubic-bezier(0.22, 1, 0.36, 1) 0.1s forwards;
     }
     @keyframes splashRobotSlideIn {
       from { transform: translate(-120%, -50%); }
@@ -1053,8 +1062,15 @@
       height: auto;
       opacity: 0;
       pointer-events: none;
-      animation: splashLogoDropIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) 1.0s forwards;
+      /* S14: same gating as the robot — drop-in only after assets decode.
+         Delay is measured from when .assets-ready lands, not page load,
+         so the robot-then-logo choreography is preserved regardless of
+         how long the images took to arrive. */
+      animation: none;
       z-index: 2;
+    }
+    #splash.assets-ready #splash-logo {
+      animation: splashLogoDropIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.9s forwards;
     }
     @keyframes splashLogoDropIn {
       to {
@@ -1159,11 +1175,11 @@
 
 <div id="splash">
   <div id="splash-bg" role="presentation" aria-hidden="true"></div>
-  <img id="splash-robot" src="assets/Robograder_v4_Load.png" alt="Robograder mascot">
+  <img id="splash-robot" src="assets/Robograder_v4_Load.webp" alt="Robograder mascot">
   <!-- S14: title logo. If the asset is missing from /assets/, onerror hides
        the img so we don't show a broken-image placeholder. Once the logo
        file ships, no code change needed. -->
-  <img id="splash-logo" src="assets/Robograder_Logo.png" alt="Robograder"
+  <img id="splash-logo" src="assets/Robograder_Logo.webp" alt="Robograder"
        onerror="this.style.display='none'">
 </div>
 <div id="app" style="display:none">
@@ -8727,6 +8743,54 @@ if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catc
 
   const splash = document.getElementById('splash');
   if (!splash) return;
+
+  // S14: trigger the entrance animations only once both splash images
+  // have actually decoded. The screenshot bug (robot frozen partway
+  // through its slide on slow cellular) was caused by the CSS animations
+  // firing on a page-load wall clock while the image bytes were still in
+  // flight. We add .assets-ready after decode() resolves for both; the
+  // CSS keyframes are attached to `#splash.assets-ready` so nothing
+  // animates until the artwork is paint-ready.
+  //
+  // Safety: if an image hangs (dead network mid-load), we still reveal
+  // after a 2.5s cap so the user isn't staring at a bare background. In
+  // that degraded case the animation may still play against a
+  // not-yet-complete image, but that's strictly better than today's
+  // behavior and the overall splash maxDwell (8s) still bounds the worst
+  // case. The decode() path is the common case and fixes the reported bug.
+  (function gateSplashEntrance() {
+    const robot = document.getElementById('splash-robot');
+    const logo  = document.getElementById('splash-logo');
+    let triggered = false;
+    const reveal = () => {
+      if (triggered) return;
+      triggered = true;
+      splash.classList.add('assets-ready');
+    };
+    const waitFor = (img) => {
+      if (!img) return Promise.resolve();
+      // decode() is the reliable "fully ready to paint" signal. Fall back
+      // to load/complete for older engines or if decode rejects (e.g.
+      // the logo's onerror path when the asset is absent).
+      if (img.decode) {
+        return img.decode().catch(() => {
+          return new Promise((res) => {
+            if (img.complete) return res();
+            img.addEventListener('load',  res, { once: true });
+            img.addEventListener('error', res, { once: true });
+          });
+        });
+      }
+      return new Promise((res) => {
+        if (img.complete) return res();
+        img.addEventListener('load',  res, { once: true });
+        img.addEventListener('error', res, { once: true });
+      });
+    };
+    Promise.all([waitFor(robot), waitFor(logo)]).then(reveal);
+    // Hard safety cap — never hold the entrance longer than 2.5s.
+    setTimeout(reveal, 2500);
+  })();
 
   const splashStartTime = Date.now();
   const MIN_DWELL_MS = 1500;
