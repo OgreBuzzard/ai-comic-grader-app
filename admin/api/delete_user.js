@@ -1,4 +1,12 @@
-// admin/api/admin_delete_user.js
+// admin/api/delete_user.js   (called by the admin dashboard as /api/delete_user)
+//
+// Naming: the admin dashboard is its own Vercel deployment rooted at
+// /admin, so its function root is admin/api/ and the client calls these
+// as /api/<name> with NO "admin_" prefix — matching the sibling
+// endpoints user.js, users.js, item.js, items.js, stats.js. An earlier
+// version of this file was named admin_delete_user.js and called as
+// /api/admin_delete_user, which 404'd because no such function path
+// exists. Do not reintroduce the prefix.
 //
 // Admin-only: hard-delete a user account. Wipes everything in Auth and
 // Firestore that belongs to the user, plus their Cloud Storage objects,
