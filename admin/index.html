@@ -1055,9 +1055,11 @@ function renderUserDetail(user, items, publicRate) {
 // server-side (the endpoint checks the typed email matches). Double
 // confirmation prevents fat-finger deletions of the wrong account.
 async function deleteAccount(user) {
+  const hasEmail = !!(user.email && user.email.trim());
+  const uidSuffix = (user.uid || '').slice(-6);
   const summary = `Delete this account?\n\n` +
     `Name:   ${user.displayName || '(no name)'}\n` +
-    `Email:  ${user.email || '(no email)'}\n` +
+    `Email:  ${user.email || '(no email — legacy account)'}\n` +
     `UID:    ${user.uid}\n\n` +
     `This will permanently remove the Auth user, the Firestore doc, ` +
     `all items, all photos, and all registry entries.\n\n` +
@@ -1065,17 +1067,27 @@ async function deleteAccount(user) {
     `Cannot be undone.`;
   if (!confirm(summary)) return;
 
-  // Second confirmation: type the email back. This is the typed-confirmation
-  // pattern that protects against "I clicked the wrong row" mistakes —
-  // the admin has to look at the email and type it character-for-character.
-  const typed = prompt(
-    `Type the user's email to confirm deletion:\n\n${user.email || '(no email on file)'}`
-  );
+  // Second confirmation: typed-back token. For accounts WITH an email, type
+  // the email. For very old accounts with NO email (fields are just
+  // assessmentCredits/createdAt/freeCreditsGranted/termsAccepted/
+  // termsAcceptedAt/termsVersion), type the last 6 chars of the UID — the
+  // only stable identifier these ghost accounts have. Server enforces the
+  // same rule, so this client check is the first line, not the only line.
+  let promptMsg, expected;
+  if (hasEmail) {
+    promptMsg = `Type the user's email to confirm deletion:\n\n${user.email}`;
+    expected = user.email.trim().toLowerCase();
+  } else {
+    promptMsg = `This is a legacy account with no email.\n\nType the last 6 characters of its UID to confirm deletion:\n\n${user.uid}\n                                          ^^^^^^\n(type: ${uidSuffix})`;
+    expected = uidSuffix.toLowerCase();
+  }
+  const typed = prompt(promptMsg);
   if (typed == null) return;  // cancelled
-  // Allow empty when account has no email — server enforces match server-side.
   const trimmed = typed.trim().toLowerCase();
-  if (user.email && trimmed !== user.email.toLowerCase()) {
-    alert('Email did not match. Deletion cancelled.');
+  if (trimmed !== expected) {
+    alert(hasEmail
+      ? 'Email did not match. Deletion cancelled.'
+      : 'UID suffix did not match. Deletion cancelled.');
     return;
   }
 
@@ -1087,7 +1099,7 @@ async function deleteAccount(user) {
       method: 'POST',
       body: {
         uid: user.uid,
-        confirmEmail: trimmed,
+        confirmEmail: trimmed,   // server reads body.confirmEmail || body.confirmToken
       },
     });
     if (!data || !data.ok) {
