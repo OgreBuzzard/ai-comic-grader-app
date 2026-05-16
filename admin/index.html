@@ -1095,7 +1095,7 @@ async function deleteAccount(user) {
   if (btn) { btn.disabled = true; btn.textContent = 'Deleting…'; }
 
   try {
-    const data = await api('/api/admin_delete_user', {
+    const data = await api('/api/delete_user', {
       method: 'POST',
       body: {
         uid: user.uid,
