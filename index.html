@@ -262,6 +262,22 @@
        distinct from the green primary buttons elsewhere. */
     .btn-topbar.btn-buy { background: #c8a96e; color: #1a1008; border: 1.5px solid #a88a4e; }
     .btn-topbar.btn-add { background: #c8a96e; color: #0d0d0f; }
+    /* S14: compact top-bar Grade button. Same 32px control height as Buy
+       so the header does NOT grow taller. Small thumbnail + short
+       "Grade" label so it reads as the comic-grading action without
+       widening the row much. Green to distinguish it from the gold Buy
+       (different action class) and tie to the brand primary. */
+    .btn-topbar.btn-grade {
+      background: #2a7a3a; color: #fff; border: 1.5px solid #1f5f2c;
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 11px 5px 6px;
+    }
+    .btn-topbar.btn-grade .grade-btn-thumb {
+      width: 18px; height: 26px; object-fit: cover;
+      border-radius: 3px; flex-shrink: 0;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.35);
+    }
+    .btn-topbar.btn-grade:active { filter: brightness(0.92); }
     .btn-gear {
       background: none; border: none; color: #8a7a6a; cursor: pointer;
       padding: 4px 6px; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
@@ -1263,6 +1279,22 @@
            data-management abstraction. Users with books see a smaller
            version of the same tile so the entry point remains discoverable
            without dominating the view. -->
+      <!-- S14 (revised): Grade a Comic returns to the top bar as a small
+           button between Buy and the gear. The in-list sticky CTA tile
+           was a recurring source of layout bugs (clipping behind the
+           header, floating oddly over the list) — a fixed top-bar slot
+           is bug-free and always discoverable, and this is the app's core
+           revenue action so the permanent real estate is justified. The
+           button is kept SMALL (matches the 32px top-bar control height,
+           no taller header) per explicit direction. Shown in List,
+           Detail, and Edit so the primary action is always one tap away;
+           refreshHeaderControls() manages visibility like Buy/coin. In
+           Edit it routes through a guarded handler so an in-progress
+           edit isn't silently discarded. -->
+      <button class="btn btn-topbar btn-grade" onclick="gradeFromHeader()" id="grade-btn" aria-label="Grade a Comic" title="Grade a Comic" style="display:none">
+        <img src="assets/ghosts/Front_Cover.jpg" alt="" decoding="async" class="grade-btn-thumb">
+        <span>Grade</span>
+      </button>
       <button class="btn-gear" onclick="openSettings()" title="Settings" id="settings-btn" aria-label="Settings">
         <!-- Flat abstract gear icon — solid white silhouette of a cog with
              a cutout center hole. Matches Matt's reference (S12). The
@@ -1921,7 +1953,7 @@ function formatIssueDateCompact(d) {
 }
 function esc(s){return s?String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"):""}
 
-let items=[], collapsed={}, view="list", selected=null, sortBy="ownership", search="", _listScrollY=0, _lastDetailId=null;
+let items=[], collapsed={}, view="list", selected=null, sortBy="title", search="", _listScrollY=0, _lastDetailId=null;
 let db, fsCollection, fsGetDocs, fsSetDoc, fsDeleteDoc, fsDoc, fsOnSnapshot, fsGetDoc;
 let seeded=false;
 
@@ -2555,11 +2587,13 @@ function refreshHeaderControls() {
   const coinBtn = document.getElementById('credit-coin-btn');
   const buyBtn = document.getElementById('credits-btn');
   const addBtn = document.getElementById('add-btn');
+  const gradeBtn = document.getElementById('grade-btn');
   const placeholder = document.getElementById('header-loading-pill');
   if (loading) {
     if (coinBtn) coinBtn.style.display = 'none';
     if (buyBtn) buyBtn.style.display = 'none';
     if (addBtn) addBtn.style.display = 'none';
+    if (gradeBtn) gradeBtn.style.display = 'none';
     if (placeholder) placeholder.style.display = '';
   } else {
     if (coinBtn) coinBtn.style.display = '';
@@ -2571,8 +2605,30 @@ function refreshHeaderControls() {
       // to list view should re-show Add visually.
       addBtn.style.visibility = 'visible';
     }
+    // S14: Grade button is shown in ALL views (list/detail/edit) once
+    // past loading. It's the app's core action and should always be one
+    // tap away. No per-view hiding — unlike the legacy Add button it's
+    // not view-scoped.
+    if (gradeBtn) {
+      gradeBtn.style.display = '';
+      gradeBtn.style.visibility = 'visible';
+    }
     if (placeholder) placeholder.style.display = 'none';
   }
+}
+
+// S14: guarded entry point for the top-bar Grade button. From list or
+// detail it just starts a new grading flow. From the add/edit form it
+// confirms first, because showAdd() resets formData and would silently
+// discard an in-progress edit/assessment. The guard is intentionally a
+// simple confirm() — the form has no incremental autosave, so "are you
+// sure" is the honest prompt rather than pretending we can preserve work.
+function gradeFromHeader() {
+  if (view === 'add' || view === 'edit') {
+    const ok = confirm('Start grading a new comic? Any unsaved changes to the current entry will be lost.');
+    if (!ok) return;
+  }
+  showAdd();
 }
 
 async function saveItem(rec){
@@ -3034,30 +3090,37 @@ function renderList(){
     const q=search.toLowerCase();
     return!q||c.title?.toLowerCase().includes(q)||c.issue?.toLowerCase().includes(q)||c.cgcCert?.includes(q);
   });
-  if(sortBy==="grade")filt.sort((a,b)=>parseFloat(b.grade)-parseFloat(a.grade));
-  else if(sortBy==="title")filt.sort((a,b)=>(a.title||"").localeCompare(b.title||""));
-  else if(sortBy==="cost")filt.sort((a,b)=>totalCost(b)-totalCost(a));
-  else if(sortBy==="dateAdded")filt.sort((a,b)=>new Date(b.dateAdded)-new Date(a.dateAdded));
-  // sortBy === "ownership" (the default) does not pre-sort here — the
-  // ownership partitioning below handles ordering. Inside each ownership
-  // section, books still fall into title groups sorted alphabetically.
 
-  // S14: ownership is the outermost partition. The user does not want
-  // Watching/Sold books mixed into the flow of books they own. Fixed
-  // section order: Owned → Sold → Watching. Within each section, the
-  // existing title-grouping applies unchanged. When the user picks a
-  // different sort (Title/Date/Grade) from the dropdown, ownership
-  // partitioning is bypassed and the whole collection sorts flat the
-  // old way — ownership grouping is specifically the "ownership" mode.
+  // S14 (revised): ownership partitioning is ALWAYS on. The user never
+  // wants Owned / Sold / Watching books interleaved — that's a hard
+  // requirement, not a sort mode. Fixed section order: Owned → Sold →
+  // Watching. The dropdown is a SECONDARY sort applied *within* each
+  // partition, not a top-level mode that can turn partitioning off.
+  // Default secondary sort is Title A–Z (the long-standing default that
+  // users are used to); the brief "Ownership" dropdown option has been
+  // removed because partitioning is now unconditional.
   const OWNERSHIP_ORDER = ['Owned','Sold','Watching'];
-  const partitionByOwnership = (sortBy === "ownership");
 
-  // buildTitleGroups: takes a flat list, returns { titles:[], groups:{} }
-  // using the same intra-title sort the app has always used.
+  // buildTitleGroups: takes a flat list, returns { titles:[], groups:{} }.
+  // The `sortBy` value chooses how the TITLE GROUPS are ordered relative
+  // to each other (and, for Date/Grade, can override the within-title
+  // order too). Intra-title issue ordering is preserved as the app has
+  // always done it.
   const buildTitleGroups = (list) => {
     const groups={};
     list.forEach(c=>{const t=c.title||"Unknown";if(!groups[t])groups[t]=[];groups[t].push(c);});
     Object.values(groups).forEach(g=>g.sort((a,b)=>{
+      // Date Added / Grade are explicit user choices that should win at
+      // the row level too, so honor them first; otherwise fall back to
+      // the canonical issue-ascending order.
+      if(sortBy==="dateAdded"){
+        const d=new Date(b.dateAdded)-new Date(a.dateAdded);
+        if(d!==0)return d;
+      } else if(sortBy==="grade"){
+        const ga=parseFloat(a.cgcGrade||a.psaGrade||a.predictedGrade||a.assessedCGCGrade||a.grade||0);
+        const gb=parseFloat(b.cgcGrade||b.psaGrade||b.predictedGrade||b.assessedCGCGrade||b.grade||0);
+        if(gb!==ga)return gb-ga;
+      }
       const na=parseFloat(a.issue)||0,nb=parseFloat(b.issue)||0;
       if(na!==nb)return na-nb;
       const is=a.issue||"",ibs=b.issue||"";
@@ -3071,49 +3134,44 @@ function renderList(){
       if(da!==db)return da.localeCompare(db);
       return new Date(a.dateAdded)-new Date(b.dateAdded);
     }));
-    const titles=Object.keys(groups).sort((a,b)=>a.localeCompare(b));
+    // Order the title groups themselves by the chosen secondary sort.
+    let titles=Object.keys(groups);
+    if(sortBy==="dateAdded"){
+      titles.sort((a,b)=>{
+        const la=Math.max(...groups[a].map(c=>+new Date(c.dateAdded)||0));
+        const lb=Math.max(...groups[b].map(c=>+new Date(c.dateAdded)||0));
+        return lb-la;
+      });
+    } else if(sortBy==="grade"){
+      titles.sort((a,b)=>{
+        const best=g=>Math.max(...groups[g].map(c=>parseFloat(c.cgcGrade||c.psaGrade||c.predictedGrade||c.assessedCGCGrade||c.grade||0)));
+        return best(b)-best(a);
+      });
+    } else {
+      titles.sort((a,b)=>a.localeCompare(b)); // Title A–Z (default)
+    }
     return { titles, groups };
   };
 
-  // sections: array of { ownership|null, titles, groups }. When not
-  // partitioning, a single section with ownership=null holds everything.
-  let sections;
-  if (partitionByOwnership) {
-    sections = OWNERSHIP_ORDER.map(own => {
-      const subset = filt.filter(c => (c.ownership || 'Owned') === own);
-      if (subset.length === 0) return null;
-      const { titles, groups } = buildTitleGroups(subset);
-      return { ownership: own, titles, groups };
-    }).filter(Boolean);
-  } else {
-    const { titles, groups } = buildTitleGroups(filt);
-    sections = [{ ownership: null, titles, groups }];
-  }
+  // sections: Owned → Sold → Watching, each with its own title groups.
+  // Empty ownership buckets are dropped so a collector with only Owned
+  // books doesn't see empty Sold/Watching headers.
+  const sections = OWNERSHIP_ORDER.map(own => {
+    const subset = filt.filter(c => (c.ownership || 'Owned') === own);
+    if (subset.length === 0) return null;
+    const { titles, groups } = buildTitleGroups(subset);
+    return { ownership: own, titles, groups };
+  }).filter(Boolean);
 
-  // S14: Grade a Comic CTA tile. Replaces the top-bar Add button. Tile size
-  // toggles based on whether the user has real books or only the sample —
-  // hasRealBooks is items.some(c => c.id !== SAMPLE_COMIC_ID) rather than
-  // items.length > 1 so the check is robust even if the sample has been
-  // deleted (sample-removal is a deliberate user action that shouldn't
-  // shrink the CTA back to large).
+  // S14 (revised): the in-list "Grade a Comic" CTA tile has been removed.
+  // It moved to the top bar (see #grade-btn) because the sticky in-list
+  // tile kept producing layout bugs (clipping under the header, floating
+  // oddly over the list). The top-bar button is always present and
+  // doesn't fight the scroll container. No tile is prepended to the list.
   const hasRealBooks = items.some(c => c.id !== SAMPLE_COMIC_ID);
-  const ctaThumb = 'assets/ghosts/Front_Cover.jpg';
-  const ctaHtml = hasRealBooks
-    ? `<div class="grade-cta compact" onclick="showAdd()" role="button" aria-label="Grade a Comic">
-         <img class="grade-cta-thumb" src="${ctaThumb}" alt="" decoding="async">
-         <div class="grade-cta-headline">Grade a<br>Comic</div>
-       </div>`
-    : `<div class="grade-cta large" onclick="showAdd()" role="button" aria-label="Grade a Comic">
-         <img class="grade-cta-thumb" src="${ctaThumb}" alt="" decoding="async">
-         <div>
-           <div class="grade-cta-headline">Grade a Comic</div>
-           <div class="grade-cta-sub">Submit photos of your comic and Robograder will grade it for you.</div>
-         </div>
-       </div>`;
 
-  let html = ctaHtml + `<div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+  let html = `<div style="display:flex;justify-content:flex-end;margin-bottom:16px">
     <select onchange="sortBy=this.value;renderList()" style="font-family:'Barlow Condensed',sans-serif;font-size:15px;font-weight:600;padding:6px 10px">
-      <option value="ownership"${sortBy==="ownership"?" selected":""}>Ownership</option>
       <option value="title"${sortBy==="title"?" selected":""}>Title A–Z</option>
       <option value="dateAdded"${sortBy==="dateAdded"?" selected":""}>Date Added</option>
       <option value="grade"${sortBy==="grade"?" selected":""}>Grade ↓</option>
@@ -3733,7 +3791,7 @@ function showDetail(id){
   // been graded yet).
   html += `<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
     ${(!isSample && selected.roboGrade) ? `<button class="rg-btn rg-btn-primary rg-btn-md" onclick="printLabel('${esc(selected.id)}')">Print Label</button>` : ''}
-    <button class="rg-btn rg-btn-destructive rg-btn-md" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')">Delete</button>
+    <button class="rg-btn rg-btn-destructive rg-btn-md" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')" style="min-width:172px">Delete</button>
   </div></div>`;
 
   document.getElementById("main").innerHTML=html;
