@@ -188,7 +188,7 @@
         // and a failed preload doesn't break anything (the existing
         // on-demand load still runs at assessment time).
         const _chestPreload = new Image();
-        _chestPreload.src = 'assets/Robograder_Scan_Frame.png';
+        _chestPreload.src = 'assets/Robograder_Scan_Frame.webp';
         // S14: also decode it, not just fetch it. A cached-but-undecoded
         // image still pays the decode cost on first paint, which is what
         // caused the scan overlay/chest to pop in a few frames late on
@@ -4648,7 +4648,7 @@ const ASSESS_FAILURE_BOX = 'https://raw.githubusercontent.com/OgreBuzzard/ai-com
 // down, throwing a ReferenceError at script-load time that broke every
 // subsequent line of JS — including the splash-dismiss logic, leaving
 // the app stuck on the splash screen with the APNG looping forever.
-const ASSESS_OVERLAY_BG = 'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay.PNG';
+const ASSESS_OVERLAY_BG = 'https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay.webp';
 
 // S13 v19: preload the three box-state images at script-load time so
 // setStep's background-image swap is instant. Without this, the first

@@ -657,7 +657,7 @@
     chest.decoding = 'sync';
     try { chest.fetchPriority = 'high'; } catch (e) {}
     chest.setAttribute('fetchpriority', 'high');
-    chest.src = 'assets/Robograder_Scan_Frame.png';
+    chest.src = 'assets/Robograder_Scan_Frame.webp';
     chest.alt = '';
     shell.appendChild(chest);
 
