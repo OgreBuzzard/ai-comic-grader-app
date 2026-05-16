@@ -38,9 +38,24 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 
+// Service-account parser. This MUST match the implementation used by the
+// other working admin endpoints (admin/api/user.js etc.) — they handle
+// the specific case this endpoint was failing on: when
+// FIREBASE_SERVICE_ACCOUNT was pasted into the Vercel env field with
+// double-escaped quotes (\\" instead of ") and double-escaped
+// backslashes, which happens routinely when copy-pasting a JSON key into
+// a dashboard text input. The earlier version of this function tried
+// plain JSON then base64 but did NOT un-escape, so it threw
+// "could not be parsed" on the exact env value every sibling endpoint
+// parses fine. Un-escape first (matching the siblings), then JSON.parse;
+// base64 retained only as a last-ditch fallback.
 function parseServiceAccount() {
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+  let raw = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (!raw) throw new Error('FIREBASE_SERVICE_ACCOUNT env var not set');
+  if (raw.indexOf('\\"') !== -1) {
+    raw = raw.split('\\"').join('"');
+    raw = raw.split('\\\\').join('\\');
+  }
   try {
     return JSON.parse(raw);
   } catch {
