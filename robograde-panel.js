@@ -38,26 +38,33 @@
   // None of this is visible in the original photo, so as years accumulate
   // the photo tells us less about the book in the buyer's hand right now.
   //
-  // Curve: piecewise. Anchors hand-tuned to feel right at each milestone:
-  //   0 yrs → +0,  8 → +1,  15 → +2,  21 → +3,  26 → +4,  30 → +5,  33 → +6.
-  // After year 33, +1 every 2 years.
+  // Curve: piecewise. Anchors hand-tuned to feel right at each milestone.
+  // S14 v2 (May 15): slowed the curve. The original anchors hit ±99 from a
+  // ±3 starting point at year 216; the slower curve below reaches ±99 from
+  // ±3 around year 495 — closer to the "pulp paper eventually turns to
+  // dust on the scale of centuries" framing we want. Anchor sequence:
+  //   0 yrs → +0, 10 → +1, 19 → +2, 27 → +3, 34 → +4, 40 → +5, 45 → +6.
+  // After year 45, +1 every 5 years (was +1 every 2 in v1).
   // Cap at 99 — eventually the photo tells us so little that any score on
-  // a 1–100 scale could plausibly apply. Cap reached around year 219.
+  // a 1-100 scale could plausibly apply.
   //
   // The widening is ADDITIVE on top of the original confidence range. A
-  // book originally assessed at ±3 that's now 8 years old displays as ±4.
+  // book originally assessed at ±3 that's now 10 years old displays as ±4.
   // Re-assessing resets the clock: the new assessment date becomes "now"
   // and widening starts over from the new (presumably tighter) base.
   const PRECISION_DECAY_ANCHORS = [
     [0,  0],
-    [8,  1],
-    [15, 2],
-    [21, 3],
-    [26, 4],
-    [30, 5],
-    [33, 6],
+    [10, 1],
+    [19, 2],
+    [27, 3],
+    [34, 4],
+    [40, 5],
+    [45, 6],
   ];
   const PRECISION_DECAY_MAX = 99;
+  // Step interval for the linear phase after the last anchor.
+  // S14 v2: 5 years per +1 (was 2 years per +1).
+  const PRECISION_DECAY_STEP_YEARS = 5;
 
   function precisionWideningForYears(years) {
     if (!Number.isFinite(years) || years <= 0) return 0;
@@ -73,9 +80,10 @@
         return Math.floor(w0 + frac * (w1 - w0));
       }
     }
-    // Phase 2: past the last anchor (year 33), +1 every 2 years.
+    // Phase 2: past the last anchor (year 45), +1 every N years
+    // (PRECISION_DECAY_STEP_YEARS).
     const [lastY, lastW] = PRECISION_DECAY_ANCHORS[PRECISION_DECAY_ANCHORS.length - 1];
-    const extra = Math.floor((years - lastY) / 2);
+    const extra = Math.floor((years - lastY) / PRECISION_DECAY_STEP_YEARS);
     return Math.min(PRECISION_DECAY_MAX, lastW + extra);
   }
 

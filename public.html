@@ -397,7 +397,7 @@
 
   // Identity block (title, issue, date, publisher). Cert numbers (cgcCert /
   // psaCert) intentionally omitted — public surface should not associate
-  // Robograder with CGC/PSA brand identity.
+  // Robograder with any third-party grading service brand identity.
   const identityHTML = `
     <div class="identity">
       <div class="book-title">${esc(data.title || '—')}</div>
@@ -482,7 +482,7 @@
   document.querySelector('.content').insertAdjacentHTML('beforeend', `
     <footer>
       Robograde is an AI-generated condition assessment produced by the Unerring Robograder.
-      It is not affiliated with CGC, PSA, or any official comic book grading service.
+      It is not affiliated with any professional grading service.
       Grades reflect the condition of the book at the time of assessment.
       Books may change condition over time — always verify with current photos.
     </footer>

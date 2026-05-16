@@ -1156,21 +1156,28 @@
         <div style="width:14px;height:14px;border:2px solid #c8b8a8;border-top-color:#5a4a3a;border-radius:50%;animation:spin 0.9s linear infinite"></div>
         <span>Loading…</span>
       </div>
-      <button id="credit-coin-btn" onclick="showBuyCredits()" title="Your credits" aria-label="Your credits" style="display:none">
-        <svg viewBox="0 0 40 40" width="30" height="30" aria-hidden="true">
-          <defs>
-            <radialGradient id="coin-grad" cx="0.35" cy="0.35" r="0.75">
-              <stop offset="0%" stop-color="#fde89a"/>
-              <stop offset="50%" stop-color="#e6bb4a"/>
-              <stop offset="100%" stop-color="#8c6a1a"/>
-            </radialGradient>
-          </defs>
-          <circle cx="20" cy="20" r="18.5" fill="url(#coin-grad)" stroke="#5a4010" stroke-width="1.2"/>
-          <circle cx="20" cy="20" r="15.5" fill="none" stroke="#a57a20" stroke-width="0.7" opacity="0.55"/>
-        </svg>
-        <span id="credit-coin-count">0</span>
-      </button>
-      <button class="btn btn-topbar btn-buy" onclick="showBuyCredits()" id="credits-btn" style="display:none">Buy</button>
+      <!-- S14: coin + Buy grouped on the left. Group has margin-right:auto
+           to push everything else (currently just the gear) to the right.
+           When the loading pill is visible, IT has margin-right:auto and
+           takes the left slot; once it disappears (display:none) and the
+           coin/buy reveal, this group's margin-right:auto kicks in. -->
+      <div id="header-left-group" style="display:flex;align-items:center;gap:8px;margin-right:auto">
+        <button id="credit-coin-btn" onclick="showBuyCredits()" title="Your credits" aria-label="Your credits" style="display:none">
+          <svg viewBox="0 0 40 40" width="30" height="30" aria-hidden="true">
+            <defs>
+              <radialGradient id="coin-grad" cx="0.35" cy="0.35" r="0.75">
+                <stop offset="0%" stop-color="#fde89a"/>
+                <stop offset="50%" stop-color="#e6bb4a"/>
+                <stop offset="100%" stop-color="#8c6a1a"/>
+              </radialGradient>
+            </defs>
+            <circle cx="20" cy="20" r="18.5" fill="url(#coin-grad)" stroke="#5a4010" stroke-width="1.2"/>
+            <circle cx="20" cy="20" r="15.5" fill="none" stroke="#a57a20" stroke-width="0.7" opacity="0.55"/>
+          </svg>
+          <span id="credit-coin-count">0</span>
+        </button>
+        <button class="btn btn-topbar btn-buy" onclick="showBuyCredits()" id="credits-btn" style="display:none">Buy</button>
+      </div>
       <!-- S14: Add button removed from top bar in favor of the Grade a Comic
            CTA tile rendered inside the list view (see renderList). Rationale:
            new users had no clear entry point — the small "Add" button was
@@ -1412,11 +1419,17 @@ const PQ_ABBREV={
 const PAGE_QUALITIES = ["White","Off-White to White","Off-White","Cream to Off-White","Cream","Light Tan to Off-White","Light Tan to Cream","Light Tan","Tan to Off-White","Tan to Cream","Tan","Dark Tan to Off-White","Dark Tan","Brown to Off-White","Brown to Tan","Brown","Brown/Brittle","Slightly Brittle","Brittle"];
 
 function gradeColor(g){const n=parseFloat(g);if(n>=9.8)return"#00d4a0";if(n>=9.0)return"#4db8ff";if(n>=7.0)return"#a78bfa";if(n>=5.0)return"#f59e0b";if(n>=3.0)return"#f97316";return"#ef4444";}
+// S14 unification: displayGrade now prefers predictedGrade over the legacy
+// assessedCGCGrade and never surfaces a separate PSA prediction. Order of
+// precedence: official CGC slab → official PSA slab → predicted (new
+// canonical field) → legacy assessedCGCGrade fallback (for items predating
+// the unification) → raw grade → none. The showPSA flag is retained as a
+// no-op parameter to avoid breaking callers; can be removed later.
 function displayGrade(c,showPSA=false){
   if(c.cgcGrade) return {gradeVal:c.cgcGrade,type:"cgc-official"};
   if(c.psaGrade) return {gradeVal:c.psaGrade,type:"psa-official"};
-  if(showPSA&&c.assessedPSAGrade) return {gradeVal:c.assessedPSAGrade,type:"psa-ai"};
-  if(c.assessedCGCGrade) return {gradeVal:c.assessedCGCGrade,type:"cgc-ai"};
+  if(c.predictedGrade) return {gradeVal:c.predictedGrade,type:"predicted"};
+  if(c.assessedCGCGrade) return {gradeVal:c.assessedCGCGrade,type:"predicted"};  // legacy fallback
   if(c.grade) return {gradeVal:c.grade,type:"raw"};
   return {gradeVal:"—",type:"none"};
 }
@@ -1427,8 +1440,7 @@ function gradeBadgeStyle(c,showPSA=false){
   let fill="transparent",topLabel="";
   if(dg.type==="cgc-official"){fill="#1a5fa8";topLabel="CGC";}
   else if(dg.type==="psa-official"){fill="#b91c1c";topLabel="PSA";}
-  else if(dg.type==="cgc-ai"){fill="rgba(26,95,168,0.18)";}
-  else if(dg.type==="psa-ai"){fill="rgba(185,28,28,0.18)";}
+  else if(dg.type==="predicted"){fill="rgba(26,95,168,0.18)";}
   else if(dg.type==="raw"){fill="#1a1a1a";}
   return {fill,topLabel,gc,gradeVal:dg.gradeVal};
 }
@@ -1699,14 +1711,22 @@ function buildBadge(gradeVal,type,designation,sm){
     else if(type==="psa-official"){sc="#b91c1c";}
     return `<div class="${cls}" style="border-color:rgba(0,0,0,0.25)"><div class="ubadge-strip" style="background:${sc}"><span>${sl}</span></div><div class="ubadge-body" style="background:#fff"><div class="ubadge-num" style="color:#000">${gradeVal}</div><div class="ubadge-lbl" style="color:#333">${lbl}</div></div></div>`;
   }
-  if(type==="cgc-ai")
+  // S14 unification: "predicted" is the new canonical predicted-grade badge.
+  // The old "cgc-ai" and "psa-ai" branches are kept as aliases routing to
+  // "predicted" so any straggling call site stays visually correct during
+  // and after the rollout. Blue treatment retained (was the cgc-ai blue).
+  // New code should pass "predicted" directly.
+  if(type==="predicted"||type==="cgc-ai"||type==="psa-ai")
     return `<div class="${cls}" style="border-color:#1e40af;background:#1a5fa8"><div class="ubadge-body" style="background:#1a5fa8"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.8)">${lbl}</div></div></div>`;
-  if(type==="psa-ai")
-    return `<div class="${cls}" style="border-color:#991b1b;background:#b91c1c"><div class="ubadge-body" style="background:#b91c1c"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.8)">${lbl}</div></div></div>`;
   // My Grade (raw/unassessed): dark badge
   return `<div class="${cls}" style="border-color:#333;background:#1a1a1a"><div class="ubadge-body" style="background:#1a1a1a"><div class="ubadge-num" style="color:#1a1614">${gradeVal}</div><div class="ubadge-lbl" style="color:#6a5a4a">${lbl}</div></div></div>`;
 }
+// S14 unification: function name kept for caller compatibility, but it now
+// returns predictedGrade first, falling back to assessedCGCGrade for
+// legacy items. The flattenForApp alias also populates predictedGrade on
+// every loaded record so the fallback is rarely needed in practice.
 function aiCgcGrade(c){
+  if(c.predictedGrade)return c.predictedGrade;
   if(c.assessedCGCGrade)return c.assessedCGCGrade;
   if((c.myAssessment||c.aiAssessment)&&c.grade)return c.grade;
   return null;
@@ -1729,20 +1749,22 @@ function buildListBadge(c){
   // No RG yet: fall back to the prior priority order so the row isn't empty
   if(c.cgcGrade)return buildBadge(c.cgcGrade,"cgc-official",detectDesignation(c),true);
   if(c.psaGrade)return buildBadge(c.psaGrade,"psa-official",c.psaDesignation||"universal",true);
+  // S14 unification: one predicted badge for the AI grade, not two. The
+  // separate PSA-AI badge with psaNotes guard is gone — psaNotes is no
+  // longer produced by the unified prompt. aiCgcGrade returns
+  // predictedGrade (preferred) or assessedCGCGrade (legacy fallback).
   const ac=aiCgcGrade(c);
-  if(ac)return buildBadge(ac,"cgc-ai","",true);
-  if(c.assessedPSAGrade&&c.psaNotes)return buildBadge(c.assessedPSAGrade,"psa-ai","",true);
+  if(ac)return buildBadge(ac,"predicted","",true);
   if(c.grade)return buildBadge(c.grade,"my","",true);
   return"";
 }
 // List row right column: a single CGC pip (PSA omitted from condensed view).
-// Real CGC slab grades render as white-body with blue strip; AI-predicted CGC
-// renders as a solid blue square with subtle "CGC" label. Both 36×36 with
-// proportionally-scaled 8px corner radius. Pip sits flush with the bottom of
-// the RG box (achieved by wrapping in a 56-tall container that's vertically
-// centered like the RG box, and pinning the pip to its bottom).
+// S14 unification: pip now sources from predictedGrade with legacy fallback,
+// and the "CGC" chrome label is dropped (becomes a neutral predicted-grade
+// pip). Official CGC slab grades still render with the white-body / blue
+// strip treatment since those reference an actual CGC-graded slab.
 function buildListCgcPsaStack(c){
-  const cgcVal = c.cgcGrade || c.assessedCGCGrade || (((c.myAssessment||c.aiAssessment)&&c.grade)?c.grade:null);
+  const cgcVal = c.cgcGrade || c.predictedGrade || c.assessedCGCGrade || (((c.myAssessment||c.aiAssessment)&&c.grade)?c.grade:null);
   if(!cgcVal) return "";
   const isOfficial = !!c.cgcGrade;
   const v = String(cgcVal).includes('.') ? cgcVal : parseFloat(cgcVal).toFixed(1);
@@ -1757,9 +1779,8 @@ function buildListCgcPsaStack(c){
       <div style="flex:1;display:flex;align-items:center;justify-content:center"><span style="font-size:12px;font-weight:800;color:#000;line-height:1">${v}</span></div>
     </div>${wrapEnd}`;
   }
-  return `${wrapStart}<div style="background:#1a5fa8;border-radius:8px;width:36px;height:36px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:4px">
-    <div style="font-size:12px;font-weight:800;color:#fff;line-height:1">${v}</div>
-    <div style="font-size:8px;color:rgba(255,255,255,0.75);letter-spacing:0.5px;margin-top:3px">CGC</div>
+  return `${wrapStart}<div style="background:#1a5fa8;border-radius:8px;width:36px;height:36px;display:flex;align-items:center;justify-content:center">
+    <div style="font-size:13px;font-weight:800;color:#fff;line-height:1">${v}</div>
   </div>${wrapEnd}`;
 }
 // Detail view: full row of all grades
@@ -2016,7 +2037,7 @@ const COMIC_DATA_FIELDS = [
   'grade','pageQuality',
   'cgcGrade','cgcCert','cgcNotes',
   'psaGrade','psaCert','psaNotes',
-  'assessedCGCGrade','assessedPSAGrade',
+  'assessedCGCGrade','assessedPSAGrade','predictedGrade',
   'keyInfo','graderNotes','aiGraderNotes','aiAssessment',
   'roboGrade',
   'highGradeTier','highGradeUnlocked',
@@ -2077,11 +2098,24 @@ function zipImageArray(urls, metas) {
 }
 function flattenForApp(doc) {
   if (!doc) return doc;
+  // S14 unification: ensure predictedGrade is populated on every loaded
+  // record. New assessments write it directly; legacy items only have
+  // assessedCGCGrade. The lazy alias here means the UI can read
+  // predictedGrade everywhere without checking for legacy fallback at
+  // each call site. We never write back to Firestore from here — purely
+  // read-side. The legacy assessedCGCGrade / assessedPSAGrade fields
+  // stay populated in storage for backward compat and possible revival.
+  const _addPredictedAlias = (rec) => {
+    if (rec && rec.predictedGrade == null && rec.assessedCGCGrade != null) {
+      rec.predictedGrade = rec.assessedCGCGrade;
+    }
+    return rec;
+  };
   if (doc.schemaVersion === 3) {
     const { comicData = {}, cardData = {}, images, cornerImages, ...root } = doc;
     const main   = splitImageArray(images);
     const corner = splitImageArray(cornerImages);
-    return {
+    return _addPredictedAlias({
       ...root,
       ...comicData,
       ...cardData,
@@ -2089,19 +2123,19 @@ function flattenForApp(doc) {
       imagesMeta: main.metas,
       cornerImages: corner.urls,
       cornerMeta: corner.metas
-    };
+    });
   }
   // Legacy v1/v2: flat already, image arrays are flat strings. Synthesize
   // default metadata so every loaded item has the parallel arrays present.
   const main   = splitImageArray(doc.images);
   const corner = splitImageArray(doc.cornerImages);
-  return {
+  return _addPredictedAlias({
     ...doc,
     images: main.urls,
     imagesMeta: main.metas,
     cornerImages: corner.urls,
     cornerMeta: corner.metas
-  };
+  });
 }
 function nestForFirestore(rec) {
   if (!rec) return rec;
@@ -2347,6 +2381,7 @@ const SAMPLE_COMIC = {
   psaCert: '',
   assessedCGCGrade: '10.0',
   assessedPSAGrade: '10.0',
+  predictedGrade: '10.0',
   roboGrade: {
     version: '2.0',
     score: 100,
@@ -2755,11 +2790,127 @@ async function buyCredits(pkg){
 function showBuyCredits(){
   const modal = document.getElementById("buy-credits-modal");
   if(modal) modal.style.display="flex";
+  // S14: refresh promo-code visibility every time we open the modal.
+  // The registry is date-bounded so we check on each open; this keeps a
+  // single long-running session honest if the user is still using the app
+  // when a promo expires.
+  refreshPromoRow();
 }
 
 function hideBuyCredits(){
   const modal = document.getElementById("buy-credits-modal");
   if(modal) modal.style.display="none";
+  // S14: clear any redemption feedback so the next open starts fresh.
+  const fb = document.getElementById("promo-feedback");
+  if (fb) { fb.textContent = ""; fb.style.color = ""; }
+  const inp = document.getElementById("promo-code-input");
+  if (inp) inp.value = "";
+}
+
+// ── Promo code system (S14) ───────────────────────────────────────────────
+// Client mirror of the server-side promo registry in api/redeem_promo.js.
+// Used only to decide whether to render the Promo Code input on the Buy
+// modal — every redemption attempt is still server-validated. If this
+// mirror drifts out of date, the UX bug is "input shown but redemption
+// errors" or "input hidden when it should be shown" — never an actual
+// credit grant the server didn't authorize.
+const PROMOS_CLIENT = [
+  {
+    code:       'FENCON26',
+    activeFrom: '2026-05-15T00:00:00-07:00',
+    expiresAt:  '2026-05-21T00:00:00-07:00',
+  },
+];
+
+function isAnyPromoActiveNow() {
+  const now = Date.now();
+  for (const p of PROMOS_CLIENT) {
+    const start = Date.parse(p.activeFrom);
+    const end   = Date.parse(p.expiresAt);
+    if (Number.isFinite(start) && Number.isFinite(end) && now >= start && now < end) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function refreshPromoRow() {
+  const row = document.getElementById("promo-code-row");
+  if (!row) return;
+  row.style.display = isAnyPromoActiveNow() ? "block" : "none";
+}
+
+async function redeemPromoCode() {
+  const inp = document.getElementById("promo-code-input");
+  const btn = document.getElementById("promo-redeem-btn");
+  const fb  = document.getElementById("promo-feedback");
+  if (!inp || !btn || !fb) return;
+
+  const code = (inp.value || "").trim().toUpperCase().replace(/\s+/g, "");
+  if (!code) {
+    fb.textContent = "Enter a code to redeem.";
+    fb.style.color = "#9a4a2a";
+    return;
+  }
+
+  // Auth check. The endpoint requires a Firebase ID token; if for any
+  // reason we don't have a current user, fail early with a friendly
+  // message rather than letting the request hit the server.
+  if (!window._currentUser || typeof window._currentUser.getIdToken !== "function") {
+    fb.textContent = "You must be signed in to redeem a code.";
+    fb.style.color = "#9a4a2a";
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "…";
+  fb.textContent = "";
+  fb.style.color = "";
+
+  try {
+    const token = await window._currentUser.getIdToken();
+    const resp = await fetch("/api/redeem_promo", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + token,
+      },
+      body: JSON.stringify({ code }),
+    });
+    const data = await resp.json().catch(() => ({}));
+
+    if (!resp.ok) {
+      fb.textContent = data.error || "Redemption failed.";
+      fb.style.color = "#9a4a2a";
+      return;
+    }
+
+    // Success. Update the local credit count so the UI reflects the new
+    // balance immediately, refresh header chrome, and surface a clear
+    // confirmation. Field stays populated for a moment so the user can
+    // see what they redeemed.
+    if (typeof data.newBalance === "number") {
+      window._userCredits = data.newBalance;
+    } else if (typeof data.creditsGranted === "number") {
+      window._userCredits = (window._userCredits || 0) + data.creditsGranted;
+    }
+    if (typeof refreshHeaderControls === "function") refreshHeaderControls();
+    // Also refresh the in-settings credits display if it's visible.
+    const credEl = document.getElementById("settings-credits");
+    if (credEl) credEl.textContent = String(window._userCredits || 0);
+
+    const granted = data.creditsGranted || 0;
+    fb.textContent = `+${granted} ${granted === 1 ? "credit" : "credits"} added. New balance: ${window._userCredits}.`;
+    fb.style.color = "#2a7a3a";
+    inp.value = "";
+  } catch (e) {
+    console.error("[promo] redeem error:", e);
+    fb.textContent = "Network error. Please try again.";
+    fb.style.color = "#9a4a2a";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "REDEEM";
+  }
 }
 
 function showList(){
@@ -2803,8 +2954,8 @@ function renderList(){
     const is=a.issue||"",ibs=b.issue||"";
     if(is!==ibs)return is.localeCompare(ibs);
     // 2. Grade descending (use best available grade)
-    const ga=parseFloat(a.cgcGrade||a.psaGrade||a.assessedCGCGrade||a.grade||0);
-    const gb=parseFloat(b.cgcGrade||b.psaGrade||b.assessedCGCGrade||b.grade||0);
+    const ga=parseFloat(a.cgcGrade||a.psaGrade||a.predictedGrade||a.assessedCGCGrade||a.grade||0);
+    const gb=parseFloat(b.cgcGrade||b.psaGrade||b.predictedGrade||b.assessedCGCGrade||b.grade||0);
     if(gb!==ga)return gb-ga;
     // 3. Official graded above AI/raw
     const offA=!!(a.cgcGrade||a.psaGrade),offB=!!(b.cgcGrade||b.psaGrade);
@@ -3004,8 +3155,9 @@ function showDetail(id){
   // openLightbox are kept as the raw cornerImages indices so the lightbox
   // opens the right photo. The lightbox's internal navigation may step in
   // storage order rather than clockwise order — acceptable for now.
-  if(selected.highGradeUnlocked && selected.cornerImages?.length>0){
-    const ci = selected.cornerImages;
+  if(selected.highGradeUnlocked){
+    const ci = selected.cornerImages || [];
+    const hasAnyCorner = ci.some(u => u);
     const imgAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
     // Storage index → display position is now row-major (natural grid order):
     //   index 0 = TL → top-left of grid
@@ -3016,6 +3168,18 @@ function showDetail(id){
     // Capture sequence is decoupled from this — see CAMERA_CAPTURE_ORDER_CORNER
     // for the visual clockwise walkthrough that still feels natural.
     const labels = ['Top Left','Top Right','Bottom Left','Bottom Right'];
+    // S14: ghost macros for empty corner slots when Deep is unlocked but
+    // the user hasn't shot the macros yet. Showing the ghosts on the
+    // Detail view immediately after Deep is unlocked tells the user
+    // "here's the next thing to do" — they can tap Edit to add the
+    // photos without first reading any instructions. The Edit view
+    // shows the same ghosts in slot form.
+    const cornerGhosts = [
+      'assets/ghosts/TopLeft_Macro.jpg',
+      'assets/ghosts/TopRight_Macro.jpg',
+      'assets/ghosts/BottomLeft_Macro.jpg',
+      'assets/ghosts/BottomRight_Macro.jpg'
+    ];
     html += `<div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
     [0,1,2,3].forEach(srcIdx => {
       const url = ci[srcIdx];
@@ -3024,9 +3188,24 @@ function showDetail(id){
           <img class="detail-corner" src="${url}" ${imgAttrs} onclick="openCornerLightbox('${selected.id}',${srcIdx})" style="width:100%;display:block;border-radius:4px;background:#1a1a1a">
           <div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(0,0,0,0.55);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${labels[srcIdx].toUpperCase()}</div>
         </div>`;
+      } else {
+        // Ghost slot. Same dim-image treatment as the Edit view's empty
+        // corner slots. Tapping does nothing here (the action is in
+        // Edit view); Detail view is a display surface. The presence
+        // of the ghosts is what conveys "you have something to do."
+        html += `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:1/1">
+          <img src="${cornerGhosts[srcIdx]}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.32" alt="">
+          <div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(0,0,0,0.55);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${labels[srcIdx].toUpperCase()}</div>
+        </div>`;
       }
     });
     html += `</div>`;
+    // S14: prompt the user to add the macros when none are populated yet.
+    // Once they've uploaded at least one, this line disappears — at that
+    // point the unfilled ghost slots speak for themselves.
+    if (!hasAnyCorner) {
+      html += `<div style="margin-top:10px;font-size:12px;color:#6abf6a;text-align:center;letter-spacing:0.5px">Tap Edit to add corner macros and complete your Deep Assessment.</div>`;
+    }
   }
 
   // Restoration check images — placeholder. The restoration check feature
@@ -3061,31 +3240,23 @@ function showDetail(id){
     html+=`<div style="margin-top:16px">${buildRoboGradeDisplay(selected.roboGrade, selected)}</div>`;
   }
 
-  // Predictions box (S11 restructure): three side-by-side boxes for CGC official,
-  // CGC predicted, and PSA predicted — followed by Page Quality underneath.
-  // RoboGrade is NOT shown here because it already has its own dedicated Robograde
-  // Results panel above. Each of the three grade boxes only renders when its
-  // value exists, so a raw book (just CGC AI + PSA AI) shows two; a graded book
-  // with predictions shows all three; a book with only an official grade shows
-  // one. Page quality logic:
-  //   • Graded book → PQ comes from the label (user-entered), display it
-  //   • Raw book with PQ set → AI predicted from interior photo, display it
-  //   • Raw book without PQ → omit (no interior photo was provided)
+  // Predictions box (S14 unification): one predicted-grade box, not two.
+  // The official-slab box (CGC or PSA, mutually exclusive) renders alongside
+  // when a slabbed book is present, so a graded book may show two boxes
+  // (official + predicted) and a raw book shows just one. The header label
+  // and disclaimer wording no longer name CGC or PSA — both removed in the
+  // unification. Page Quality renders beneath.
+  //
+  // Common combinations after unification:
+  //   • Raw book post-assessment: Predicted (1 box)
+  //   • CGC-graded book post-assessment: CGC official + Predicted (2 boxes)
+  //   • PSA-graded book post-assessment: PSA official + Predicted (2 boxes)
+  //   • Raw book never assessed: 0 boxes (panel hidden)
   const cgcOfficialBadge = selected.cgcGrade ? buildBadge(selected.cgcGrade, "cgc-official", detectDesignation(selected), false) : null;
-  const cgcAiGrade = aiCgcGrade(selected);
-  const cgcAiBadge = cgcAiGrade ? buildBadge(normalizeGrade(cgcAiGrade), "cgc-ai", "", false) : null;
-  const psaAiBadge = selected.assessedPSAGrade ? buildBadge(normalizeGrade(selected.assessedPSAGrade), "psa-ai", "", false) : null;
   const psaOfficialBadge = selected.psaGrade ? buildBadge(selected.psaGrade, "psa-official", selected.psaDesignation || "universal", false) : null;
-
-  // Build the row of boxes in fixed order: CGC official → CGC predicted → PSA official → PSA predicted.
-  // A book can only be officially graded by ONE service — CGC or PSA, never both — so at most one
-  // of cgcOfficialBadge / psaOfficialBadge will exist at a time. Typical combinations:
-  //   • Raw book post-assessment: CGC predicted + PSA predicted (2 boxes)
-  //   • CGC-graded book post-assessment: CGC official + CGC predicted + PSA predicted (3 boxes)
-  //   • PSA-graded book post-assessment: CGC predicted + PSA official + PSA predicted (3 boxes)
-  //   • Raw book never assessed: 0 boxes (the whole prediction box is hidden)
-  // All four boxes at once never occurs.
-  const predictionBoxes = [cgcOfficialBadge, cgcAiBadge, psaOfficialBadge, psaAiBadge].filter(Boolean);
+  const predictedGradeValue = aiCgcGrade(selected);
+  const predictedBadge = predictedGradeValue ? buildBadge(normalizeGrade(predictedGradeValue), "predicted", "", false) : null;
+  const predictionBoxes = [cgcOfficialBadge, psaOfficialBadge, predictedBadge].filter(Boolean);
 
   // Page quality display logic (S11):
   //   • Graded book (cgcGrade or psaGrade present) → PQ comes from the label entry, display it
@@ -3097,20 +3268,18 @@ function showDetail(id){
 
   if (predictionBoxes.length > 0 || showPQ) {
     html += `<div style="margin-top:16px;padding:14px;background:#0d0d0f;border:1px solid #2a2a3a;border-radius:10px;display:flex;flex-direction:column;align-items:center;gap:12px">`;
-    html += `<div style="font-size:10px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase;text-align:center;width:100%">Grader Predictions</div>`;
+    html += `<div style="font-size:10px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase;text-align:center;width:100%">Predicted Grade</div>`;
     if (predictionBoxes.length > 0) {
       html += `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;justify-content:center">${predictionBoxes.join("")}</div>`;
     }
     if (showPQ) {
       html += `<div style="display:flex;justify-content:center">${buildPQBox(selected.pageQuality)}</div>`;
     }
-    // Non-affiliation disclaimer (S12). Renders only when we're actually
-    // showing CGC/PSA grade predictions — not when the box is just PQ.
-    // Plain, factual, brief. Sized small so it sits as a footnote, not a
-    // warning. The intent is making implied endorsement legally untenable
-    // for any reasonable observer of the surface.
-    if (predictionBoxes.length > 0) {
-      html += `<div style="font-size:10px;color:#6a5a4a;text-align:center;width:100%;line-height:1.4;margin-top:2px;font-style:italic">Independent prediction. Robograder is not affiliated with CGC or PSA.</div>`;
+    // Non-affiliation disclaimer (S14 unification): generic wording, no
+    // company names. Renders only when we're actually showing a predicted
+    // grade — not when the box is just PQ.
+    if (predictedBadge) {
+      html += `<div style="font-size:10px;color:#6a5a4a;text-align:center;width:100%;line-height:1.4;margin-top:2px;font-style:italic">Independent prediction. Robograder is not affiliated with any professional grading service.</div>`;
     }
     html += `</div>`;
   }
@@ -3121,8 +3290,8 @@ function showDetail(id){
   // sequence is: collector decisions → analysis → metadata → cost → publishing.
   // Order rationale: Enhance/My Notes are decisions about what the user
   // wants to do with the book. Then the text analysis blocks (Label Notes,
-  // Key Info, Grader Notes, Defect Notes, Condition Assessment, Restoration,
-  // PSA Variance) flow from grading data through reasoning. Date and seller
+  // Key Info, Grader Notes, Defect Notes, Condition Assessment, Restoration)
+  // flow from grading data through reasoning. Date and seller
   // metadata follow. Cost breakdown is rare and only renders if any of the
   // four cost fields are populated. Public toggle and action buttons close.
   // ───────────────────────────────────────────────────────────────────────
@@ -3275,13 +3444,11 @@ function showDetail(id){
     html += rHtml;
   }
 
-  // ─── PSA Variance (was PSA Notes) ───
-  // Only appears when the AI's PSA prediction differs meaningfully from its CGC
-  // prediction; AI returns empty string when they're the same. Renamed from
-  // "PSA Notes" to "PSA Variance" so the purpose is self-evident from the header.
-  if(selected.psaNotes) {
-    html += `<div style="margin-top:20px"><div class="section-label" style="color:#FF2040">PSA Variance</div><div class="notes-box" style="border-color:#5c1a1a;color:#e87a7a">${esc(selected.psaNotes)}</div></div>`;
-  }
+  // ─── PSA Variance (S14 unification: REMOVED) ───
+  // The unified prompt no longer produces a separate PSA prediction with
+  // variance notes. Legacy items with psaNotes still in storage are
+  // silently ignored on display. The data isn't deleted — it stays in
+  // Firestore for revival if PSA prediction is ever brought back.
 
   // ─── Date Graded / Date Acquired / Total Cost / FMV grid ───
   // Per-cell rendering: each cell only appears if its value is set. Whole grid
@@ -3975,6 +4142,7 @@ const EMPTY={
   psaCert:"",
   assessedCGCGrade:"",
   assessedPSAGrade:"",
+  predictedGrade:"",
   roboGrade:null,
   roboGradeId:'',
   roboGradeDate:'',
@@ -4820,7 +4988,12 @@ function mountResults(cgc, psa) {
   }
 
   const cgcGrade = normalizeGrade(cgc.grade || '');
+  // S14 unification: psa.grade is no longer produced by the prompt; the
+  // variable is retained to feed the animation only if a legacy backend
+  // happens to populate it. The animation collapses CGC+PSA into one
+  // "predicted" badge below.
   const psaGrade = normalizeGrade(psa.grade || '');
+  const predictedGrade = cgcGrade || psaGrade;  // primary, then defensive fallback
   const pq = cgc.pageQuality ? normPageQuality(cgc.pageQuality) : '';
   const roboGrade = window._pendingRoboGrade;
   const roboScore = (roboGrade && roboGrade.score != null) ? Math.round(roboGrade.score) : null;
@@ -4863,9 +5036,14 @@ function mountResults(cgc, psa) {
   // animateGradeList.
   const makeBadge = (type, valueId) => {
     const configs = {
-      'cgc-ai':   {bg:'#2a5a8a', text:'#e0f0ff', label:'CGC',  initial: '0.0'},
-      'psa-ai':   {bg:'#8a2a2a', text:'#ffe0e0', label:'PSA',  initial: '0.0'},
-      'robograde':{bg:'#0f1a05', text:'#aaee30', label:'RG',   initial: '0', border:'1.5px solid #3a5010'},
+      // S14 unification: 'predicted' replaces the separate 'cgc-ai' and
+      // 'psa-ai' configs. The old red PSA color is gone; the predicted
+      // badge keeps the blue palette that was previously the CGC color.
+      // Legacy aliases retained so any straggling caller still works.
+      'predicted':{bg:'#2a5a8a', text:'#e0f0ff', label:'GRADE', initial:'0.0'},
+      'cgc-ai':   {bg:'#2a5a8a', text:'#e0f0ff', label:'GRADE', initial:'0.0'},
+      'psa-ai':   {bg:'#2a5a8a', text:'#e0f0ff', label:'GRADE', initial:'0.0'},
+      'robograde':{bg:'#0f1a05', text:'#aaee30', label:'RG',    initial:'0', border:'1.5px solid #3a5010'},
     };
     const c = configs[type];
     const border = c.border ? `border:${c.border};` : '';
@@ -4876,9 +5054,11 @@ function mountResults(cgc, psa) {
   };
 
   let badgesHtml = '';
-  if (roboScore != null)      badgesHtml += makeBadge('robograde', 'anim-val-robo');
-  if (cgcGrade)               badgesHtml += makeBadge('cgc-ai',    'anim-val-cgc');
-  if (psaGrade)               badgesHtml += makeBadge('psa-ai',    'anim-val-psa');
+  if (roboScore != null) badgesHtml += makeBadge('robograde', 'anim-val-robo');
+  // S14 unification: single predicted-grade badge replaces the prior
+  // CGC+PSA pair. The id stays 'anim-val-cgc' so any external animation
+  // code that targets it still works.
+  if (predictedGrade)    badgesHtml += makeBadge('predicted', 'anim-val-cgc');
 
   // The button STARTS as a disabled gray "ASSESSING" — same look as
   // the placeholder. After the count-up animations finish, JS swaps
@@ -4903,22 +5083,20 @@ function mountResults(cgc, psa) {
   // Animation schedule:
   //   RoboGrade: 0ms start, 2000ms duration
   //   CGC:       1000ms start, 2000ms duration
-  //   PSA:       2000ms start, 2000ms duration
+  //   (S14 unification: PSA animation removed — single predicted grade only)
   //   PQ pill:   in-place swap at 4000ms (after all counts done)
   //   ASSESSING → COMPLETE: at 4200ms (just after PQ swap)
   const roboEl = document.getElementById('anim-val-robo');
   const cgcEl  = document.getElementById('anim-val-cgc');
-  const psaEl  = document.getElementById('anim-val-psa');
   const pqEl   = document.getElementById('result-pq');
 
   if (roboEl && roboScore != null) {
     animateRoboGrade(roboEl, roboScore, 2000);
   }
-  if (cgcEl && cgcGrade) {
-    setTimeout(() => animateGradeList(cgcEl, cgcGrade, CGC_GRADE_LIST, 2000), 1000);
-  }
-  if (psaEl && psaGrade) {
-    setTimeout(() => animateGradeList(psaEl, psaGrade, PSA_GRADE_LIST, 2000), 2000);
+  if (cgcEl && predictedGrade) {
+    // S14 unification: single predicted-grade count-up. CGC_GRADE_LIST is
+    // the right step ladder to use (it has all the intermediate grades).
+    setTimeout(() => animateGradeList(cgcEl, predictedGrade, CGC_GRADE_LIST, 2000), 1000);
   }
 
   // S13 v19: PQ pill in-place swap (no cycle). After score animations
@@ -4958,11 +5136,12 @@ function mountResults(cgc, psa) {
     const btn = document.getElementById('assess-complete-btn');
     if (!btn) return;
     const hgAlreadyRun = !!(formData && formData.highGradeTier);
-    const cgcAINum = parseFloat(cgc && cgc.grade);
-    const psaAINum = parseFloat(psa && psa.grade);
+    // S14 unification: single predicted-grade gate. cgc.grade IS the
+    // predicted grade after unification (no separate PSA grade is
+    // produced). The legacy psaAIGate is removed.
+    const predictedNum = parseFloat(cgc && cgc.grade);
     const scoreGate    = (roboScore != null && roboScore >= 80);
-    const cgcAIGate    = Number.isFinite(cgcAINum) && cgcAINum >= 8.0;
-    const psaAIGate    = Number.isFinite(psaAINum) && psaAINum >= 8.0;
+    const predictedGate = Number.isFinite(predictedNum) && predictedNum >= 8.0;
     // Value-list lookup: lazily initialized at app load (see initValueKeys
     // below). Falls back to no-match if the fetch hasn't completed yet —
     // the user can re-assess later and pick up the value-list unlock.
@@ -4974,7 +5153,7 @@ function mountResults(cgc, psa) {
           cgc && cgc.printing
         )
       : false;
-    const qualifies = scoreGate || cgcAIGate || psaAIGate || valueGate;
+    const qualifies = scoreGate || predictedGate || valueGate;
     const hgUnlocked = qualifies && !hgAlreadyRun;
     if (_pendingAssessResult && _pendingAssessResult.cgc) {
       _pendingAssessResult.cgc._highGradeUnlocked = qualifies;
@@ -5086,8 +5265,14 @@ async function assessHighGrade() {
         grader: 'CGC',
         highGrade: true,
         initialRoboGrade: initialRG,
-        initialCgcGrade: formData.assessedCGCGrade || '',
-        initialPsaGrade: formData.assessedPSAGrade || '',
+        // S14 unification: floor sourced from predictedGrade (preferred) or
+        // legacy assessedCGCGrade fallback. initialPsaGrade sent as empty
+        // string — server-side floor for PSA was removed, so this param is
+        // unused on the server but retained in the body for backward compat
+        // with any deployed server version that hasn't picked up the
+        // unification yet.
+        initialCgcGrade: formData.predictedGrade || formData.assessedCGCGrade || '',
+        initialPsaGrade: '',
         title: formData.title || '',
         issueNumber: formData.issue || '',
         issueDate: formData.issueDate || ''
@@ -5146,15 +5331,14 @@ async function assessHighGrade() {
     // tighter mode is justified. Without this, a Deep run that didn't
     // result in score ≥80 would display in loose-precision mode even
     // though the underlying data is the high-precision data.
-    const _cgcAINum = parseFloat(cgc.grade);
-    const _psaAINum = parseFloat(psa && psa.grade);
+    // S14 unification: single predicted-grade gate post-Deep.
+    const _predictedNum = parseFloat(cgc.grade);
     const _vmatch = (typeof window.matchValueKey === 'function')
       ? !!window.matchValueKey(cgc.title, cgc.issue, cgc.publisher, cgc.printing)
       : false;
     cgc._highGradeUnlocked = (
       (unified.roboGrade && unified.roboGrade.score >= 80) ||
-      (Number.isFinite(_cgcAINum) && _cgcAINum >= 8.0) ||
-      (Number.isFinite(_psaAINum) && _psaAINum >= 8.0) ||
+      (Number.isFinite(_predictedNum) && _predictedNum >= 8.0) ||
       _vmatch
     );
 
@@ -5287,15 +5471,15 @@ function startRestorationCheck() {
       cgcRC._restorationCheckTier = true;
       _pendingAssessResult = { cgc: cgcRC, psa: psaRC };
 
-      // Update preview grades
+      // Update preview grades. S14 unification: single predicted badge.
       const gradesEl = document.getElementById('result-grades');
       const pqEl = document.getElementById('result-pq');
       const cgcGrade = normalizeGrade(cgcRC.grade || '');
       const psaGrade = normalizeGrade(psaRC.grade || '');
+      const predicted = cgcGrade || psaGrade;
       const pq = cgcRC.pageQuality ? normPageQuality(cgcRC.pageQuality) : '';
       if (gradesEl) gradesEl.innerHTML =
-        (cgcGrade ? buildBadge(cgcGrade, 'cgc-ai', '', true) : '') +
-        (psaGrade ? buildBadge(psaGrade, 'psa-ai', '', true) : '');
+        (predicted ? buildBadge(predicted, 'predicted', '', true) : '');
       if (pq && pqEl) pqEl.innerHTML = buildPQBox(pq);
 
       // Show restoration result summary
@@ -5843,14 +6027,15 @@ async function completeAssessment() {
     if(psa.officialPSACert)formData.psaCert=psa.officialPSACert;
     if(psa.officialPageQuality&&!formData.pageQuality)formData.pageQuality=psa.officialPageQuality;
   }
-  if(formData.assessedCGCGrade){
+  if(formData.assessedCGCGrade || formData.predictedGrade){
     if(!formData.assessmentHistory)formData.assessmentHistory=[];
-    // Capture full snapshot of the prior assessment before it's overwritten:
-    // CGC predicted, PSA predicted, RG score + version, page quality, and a
-    // timestamp. Older entries may only have grade+pageQuality (legacy shape);
-    // the renderer handles missing fields gracefully.
+    // Capture full snapshot of the prior assessment before it's overwritten.
+    // S14 unification: the unified prompt produces a single grade. We still
+    // store `grade` (the predicted value) and keep `psaGrade` in the entry
+    // shape as empty string for legacy compat — old entries had a real
+    // value, new ones don't, the renderer handles both.
     const prior = {
-      grade: formData.assessedCGCGrade,
+      grade: formData.predictedGrade || formData.assessedCGCGrade,
       psaGrade: formData.assessedPSAGrade || '',
       pageQuality: formData.pageQuality || '',
       rgScore: formData.roboGrade && formData.roboGrade.score != null ? Math.round(formData.roboGrade.score) : null,
@@ -5868,6 +6053,13 @@ async function completeAssessment() {
   }
   formData.assessedCGCGrade=cgc.grade||'';
   formData.assessedPSAGrade=psa.grade?(String(psa.grade).includes('.')?String(psa.grade):parseFloat(psa.grade).toFixed(1)):'';
+  // S14 unification: predictedGrade is the new canonical user-facing field.
+  // Populate alongside assessedCGCGrade (which stays for backward compat
+  // and possible PSA revival). The unification prompt only produces one
+  // grade now — cgc.grade IS the predicted grade. New items in Firestore
+  // get both fields; legacy items get predictedGrade synthesized from
+  // assessedCGCGrade on read (see flattenForApp).
+  formData.predictedGrade=cgc.grade||'';
   if(cgc._roboGrade){
     formData.roboGrade=cgc._roboGrade;
     // Generate assessment ID and capture local timestamp
@@ -6606,6 +6798,16 @@ function renderForm(){
         <div style="display:flex;flex-direction:column;gap:8px">
           ${[0,1,2,3].map(i=>{
             const cornerLabels=["Top Left","Top Right","Bottom Left","Bottom Right"];
+            // S14: ghost macros for empty corner slots. Same pattern as the
+            // main image slots — users see a faded reference of what the
+            // expected photo looks like before they tap to add. Reduces
+            // confusion about what each corner macro should look like.
+            const cornerGhosts=[
+              'assets/ghosts/TopLeft_Macro.jpg',
+              'assets/ghosts/TopRight_Macro.jpg',
+              'assets/ghosts/BottomLeft_Macro.jpg',
+              'assets/ghosts/BottomRight_Macro.jpg'
+            ];
             const img=(formData.cornerImages||[])[i];
             return img
               ? `<div class="drag-slot" draggable="true"
@@ -6615,10 +6817,11 @@ function renderForm(){
                   <button class="slot-edit" onclick="event.stopPropagation();openCropper('corner',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>
                   <button class="slot-x" onclick="event.stopPropagation();removeCornerImg(${i})">×</button>
                  </div>`
-              : `<div class="drag-slot" style="padding:0;background:#1a1a1a;min-height:100px;"
+              : `<div class="drag-slot" style="padding:0;background:#1a1a1a;min-height:100px;position:relative;overflow:hidden"
                   ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="cornerDropSlot(event,${i})"
                   onclick="tapSlot(${i},'corner')">
-                  <div style="color:#8a8a8a;font-size:13px;font-weight:600;letter-spacing:1.5px;padding:30px 10px;text-align:center">${cornerLabels[i].toUpperCase()}<div style="font-size:10px;opacity:0.6;margin-top:4px;letter-spacing:0.5px">Tap to add photo</div></div>
+                  <img src="${cornerGhosts[i]}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.32;pointer-events:none">
+                  <div style="position:relative;color:#fff;font-size:13px;font-weight:700;letter-spacing:1.5px;padding:30px 10px;text-align:center;text-shadow:0 1px 3px rgba(0,0,0,0.85)">${cornerLabels[i].toUpperCase()}<div style="font-size:10px;opacity:0.85;margin-top:4px;letter-spacing:0.5px;font-weight:500">Tap to add photo</div></div>
                  </div>`;
           }).join("")}
         </div>
@@ -6768,14 +6971,16 @@ function renderForm(){
          service (CGC or PSA, not both), so at most 3 badges ever appear at
          once — three boxes fit comfortably on one row. -->
     ${_assessed?`<div style="margin-top:14px;padding:12px 14px;background:#141210;border:1px solid #2a2420;border-radius:10px;display:flex;flex-direction:column;align-items:center;gap:10px">
-      <div style="font-size:10px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase;text-align:center;width:100%">Grader Predictions</div>
+      <div style="font-size:10px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase;text-align:center;width:100%">Predicted Grade</div>
       <div style="display:flex;gap:10px;align-items:flex-start;justify-content:center;flex-wrap:wrap">
         ${(()=>{
+          // S14 unification: official slab badge (CGC or PSA) + single
+          // predicted badge. The old two-AI-badge layout is gone.
           const cgcOff = formData.cgcGrade ? buildBadge(formData.cgcGrade,"cgc-official",detectDesignation(formData),false) : "";
-          const cgcAi  = formData.assessedCGCGrade ? buildBadge(normalizeGrade(formData.assessedCGCGrade),"cgc-ai","",false) : "";
           const psaOff = formData.psaGrade ? buildBadge(formData.psaGrade,"psa-official",formData.psaDesignation||"universal",false) : "";
-          const psaAi  = formData.assessedPSAGrade ? buildBadge(normalizeGrade(formData.assessedPSAGrade),"psa-ai","",false) : "";
-          return [cgcOff, cgcAi, psaOff, psaAi].filter(Boolean).join("");
+          const predVal = formData.predictedGrade || formData.assessedCGCGrade;
+          const predicted = predVal ? buildBadge(normalizeGrade(predVal),"predicted","",false) : "";
+          return [cgcOff, psaOff, predicted].filter(Boolean).join("");
         })()}
       </div>
       ${formData.pageQuality?`<div style="display:flex;justify-content:center">${buildPQBox(formData.pageQuality)}</div>`:""}
@@ -6796,7 +7001,7 @@ function renderForm(){
          Then Enhancement Candidate
          Then Cost Breakdown (now including FMV inside it)
          Other gated text fields (Label Notes, Key Info, Grader Notes,
-         Past Assessments, PSA Variance) live in their previous positions
+         Past Assessments) live in their previous positions
          around these. -->
     ${(formData.cgcGrade||formData.psaGrade||formData.cgcNotes)?`<div><label class="field-label">Label Notes</label><textarea rows="3" oninput="formData.cgcNotes=this.value">${esc(formData.cgcNotes||"")}</textarea></div>`:""}
     ${(()=>{
@@ -8565,7 +8770,7 @@ initFirebase();
 <div id="buy-credits-modal" style="display:none;position:fixed;inset:0;z-index:8000;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;padding:20px">
   <div style="background:#fff;border-radius:16px;padding:28px 24px;max-width:360px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,0.3)">
     <h2 style="margin:0 0 6px;font-size:20px;color:#1a1008">Buy Assessments</h2>
-    <p style="margin:0 0 20px;font-size:13px;color:#6a5a4a">One credit per assessment. CGC and PSA together count as one.</p>
+    <p style="margin:0 0 20px;font-size:13px;color:#6a5a4a">One credit per assessment.</p>
     <div style="display:flex;flex-direction:column;gap:12px">
       <button onclick="buyCredits('comic_stack')" style="display:flex;align-items:center;gap:14px;background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:12px 16px;cursor:pointer;text-align:left;width:100%">
         <img src="/assets/products/Comic_Stack.png" alt="" width="64" height="64" style="flex-shrink:0;object-fit:contain">
@@ -8595,7 +8800,30 @@ initFirebase();
         </div>
       </button>
     </div>
-    <button class="rg-btn rg-btn-ghost rg-btn-md" onclick="hideBuyCredits()" style="margin-top:16px;width:100%">Cancel</button>
+    <!-- S14: promo code input. Rendered only when at least one promo is
+         active today (window.isPromoActiveNow guard, set on modal show).
+         The server is authoritative on every redemption; this client-side
+         visibility check is purely UX — no point showing the field when
+         there's nothing to redeem. -->
+    <div id="promo-code-row" style="display:none;margin-top:16px;padding-top:14px;border-top:1px solid #e8dec8">
+      <label for="promo-code-input" style="display:block;font-size:12px;font-weight:700;color:#3a2a1a;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Promo Code</label>
+      <div style="display:flex;gap:8px;align-items:stretch">
+        <input id="promo-code-input" type="text" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false"
+               placeholder="Enter code"
+               oninput="this.value=this.value.toUpperCase()"
+               style="flex:1;min-width:0;padding:10px 12px;border:1.5px solid #c8a96e;border-radius:8px;font-size:14px;font-family:'IBM Plex Mono','Menlo',monospace;letter-spacing:1px;color:#1a1008;background:#fff">
+        <button id="promo-redeem-btn" onclick="redeemPromoCode()"
+                style="flex-shrink:0;padding:10px 16px;background:#1a1008;color:#c8a96e;border:none;border-radius:8px;font-size:13px;font-weight:700;letter-spacing:1px;cursor:pointer">REDEEM</button>
+      </div>
+      <div id="promo-feedback" style="font-size:12px;margin-top:8px;min-height:16px;line-height:1.4"></div>
+    </div>
+    <!-- S14: Cancel button restyled with a visible frame. The ghost
+         variant (text-only) was being lost at the bottom of the modal —
+         users were missing it. Inline override gives it a real button
+         affordance matching the modal's warm palette without changing
+         the rg-btn-ghost class globally (it's used elsewhere for true
+         text-button contexts). -->
+    <button onclick="hideBuyCredits()" style="margin-top:16px;width:100%;padding:12px 16px;background:#fff;color:#3a2a1a;border:1.5px solid #c8a96e;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;letter-spacing:0.5px">Cancel</button>
   </div>
 </div>
 <!-- Payment Success Modal (S11) -->
