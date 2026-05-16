@@ -535,7 +535,7 @@ function ensureStylesInjected() {
   /* ── Label visual styles (used in both preview AND print sheet) ──────── */
   .rg-label {
     width: 1152px; height: 288px;
-    background: #d4d9be;
+    background: linear-gradient(180deg, #6f8f4a 0%, #93ab66 38%, #c2cc9e 100%);
     border: 1px solid #8a9a6a;
     border-radius: 4px;
     position: relative;
@@ -762,7 +762,7 @@ function ensureStylesInjected() {
      */
   .rg-label-square {
     width: 576px; height: 576px;
-    background: #d4d9be;
+    background: linear-gradient(180deg, #6f8f4a 0%, #93ab66 38%, #c2cc9e 100%);
     border: 1px solid #8a9a6a;
     border-radius: 8px;
     position: relative;
@@ -948,7 +948,7 @@ function ensureStylesInjected() {
        - URL: right: 18, bottom: 22 */
   .rg-label-large {
     width: 2160px; height: 432px;
-    background: #d4d9be;
+    background: linear-gradient(180deg, #6f8f4a 0%, #93ab66 38%, #c2cc9e 100%);
     border: 1px solid #8a9a6a;
     border-radius: 6px;
     position: relative;
@@ -1544,7 +1544,7 @@ async function generatePDF(comics, modal) {
     // can capture each. Each box is sized to the format's pixel dimensions.
     let labelsHTML = '';
     for (let i = 0; i < comics.length; i++) {
-      labelsHTML += `<div class="pdf-label-box" data-idx="${i}" style="width:${fmt.pixelW}px;height:${fmt.pixelH}px;display:block;background:#d4d9be;">${renderLabelMarkup(comics[i], opts)}</div>`;
+      labelsHTML += `<div class="pdf-label-box" data-idx="${i}" style="width:${fmt.pixelW}px;height:${fmt.pixelH}px;display:block;background:linear-gradient(180deg, #6f8f4a 0%, #93ab66 38%, #c2cc9e 100%);">${renderLabelMarkup(comics[i], opts)}</div>`;
     }
     offscreen.innerHTML = labelsHTML;
 
@@ -1773,10 +1773,21 @@ function renderLabelMarkup(comic, opts) {
         return `<div class="price-pad"><div class="price-placeholder">Price</div></div>`;
       })() : ''}
       <div class="qr-col">
-        <div class="qrc" data-qr-id="${gradeId}"></div>
-        <div class="verify">SCAN TO VERIFY</div>
+        ${comic.publicListing
+          ? `<div class="qrc" data-qr-id="${gradeId}"></div>
+             <div class="verify">SCAN TO VERIFY</div>`
+          : `<!-- S14: private book — no QR. A scannable code that lands on a
+                  "this listing is private" page reads as broken to anyone
+                  who scans it (e.g. a booth visitor). Showing nothing is
+                  cleaner than showing a dead link. The grade ID still
+                  prints below for manual reference. -->
+             <div class="qr-private" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;text-align:center">
+               <div style="font-size:9px;letter-spacing:1.5px;color:#9a8a7a;text-transform:uppercase;line-height:1.5">Private<br>Listing</div>
+             </div>`}
       </div>
-      <div class="url">robograder.app/id/${gradeId}</div>
+      ${comic.publicListing
+        ? `<div class="url">robograder.app/id/${gradeId}</div>`
+        : `<div class="url" style="color:#b0a494">ID ${gradeId}</div>`}
     </div>
   `;
 }

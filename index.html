@@ -189,6 +189,16 @@
         // on-demand load still runs at assessment time).
         const _chestPreload = new Image();
         _chestPreload.src = 'assets/Robograder_Scan_Frame.png';
+        // S14: also decode it, not just fetch it. A cached-but-undecoded
+        // image still pays the decode cost on first paint, which is what
+        // caused the scan overlay/chest to pop in a few frames late on
+        // the first assessment. decode() forces the bitmap to be ready so
+        // the slide-up animation has nothing to wait for. Fire-and-forget;
+        // .decode() can reject if the image isn't loaded yet — harmless,
+        // the on-demand path still works.
+        if (_chestPreload.decode) {
+          _chestPreload.decode().catch(() => {});
+        }
         // _loadingState gets cleared inside loadItems() once the collection
         // finishes loading. Don't clear it here — credits alone aren't enough.
       } else {
@@ -385,10 +395,14 @@
     .grade-cta:active { transform: scale(0.985); box-shadow: 0 0 0 rgba(0,0,0,0); }
     .grade-cta.large {
       flex-direction: column; align-items: center;
-      padding: 22px 20px 24px;
-      gap: 14px;
-      margin: 8px 0 24px;
+      padding: 20px 22px;
+      gap: 12px;
+      margin: 8px auto 24px;
+      max-width: 360px;
       text-align: center;
+      /* S14: tighter + capped width + stronger elevation so even the
+         empty-state CTA reads as a tappable button, not a passive panel. */
+      box-shadow: 0 2px 10px rgba(40, 30, 10, 0.20);
     }
     .grade-cta.large .grade-cta-thumb {
       width: 56%; max-width: 220px;
@@ -417,33 +431,40 @@
     }
     .grade-cta.compact {
       flex-direction: row;
-      padding: 10px 14px 10px 10px;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 18px;
       gap: 12px;
-      margin: 8px 0 16px;
+      margin: 8px auto 16px;
+      max-width: 420px;
+      /* S14: pin to the top of the list scroll area so the primary action
+         is always reachable, the way it was when Add lived in the top bar.
+         The list's scroll container is the page; sticky top:0 keeps the
+         button visible as the collection scrolls under it. Slight elevation
+         + opaque background so list rows don't bleed through. */
+      position: sticky;
+      top: 8px;
+      z-index: 20;
+      box-shadow: 0 2px 10px rgba(40, 30, 10, 0.18);
+      background: linear-gradient(135deg, #f0d99a 0%, #e3c069 100%);
     }
     .grade-cta.compact .grade-cta-thumb {
-      width: 44px; height: 64px;
+      width: 34px; height: 50px;
       object-fit: cover;
       border-radius: 4px;
-      box-shadow: 0 1px 4px rgba(40, 30, 10, 0.2);
+      box-shadow: 0 1px 4px rgba(40, 30, 10, 0.25);
       flex-shrink: 0;
     }
     .grade-cta.compact .grade-cta-headline {
       font-family: 'Noto Sans Display', sans-serif;
       font-stretch: 62.5%;
-      font-size: 17px;
+      font-size: 18px;
       font-weight: 900;
       color: #2a1e14;
       letter-spacing: 0.3px;
-      flex: 1;
+      flex: 0 1 auto;
       min-width: 0;
-    }
-    .grade-cta.compact .grade-cta-chevron {
-      font-size: 22px;
-      color: #8a6a30;
-      font-weight: 700;
-      flex-shrink: 0;
-      padding: 0 4px;
+      text-align: center;
     }
     /* S14: group headers in the list view were rendering at 10px with 2px
        letter-spacing — small AND wide-spaced is the worst combination for
@@ -461,12 +482,17 @@
     .grade-num { font-size: 16px; font-weight: 700; line-height: 1; }
     .grade-lbl { font-size: 7px; opacity: 0.7; margin-top: 2px; }
     /* Unified badge system — all same outer size */
-    .ubadge { width: 64px; height: 64px; flex-shrink: 0; border-radius: 14px; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,0.25); border: 1.5px solid rgba(0,0,0,0.15); display: flex; flex-direction: column; }
-    .ubadge-strip { height: 17px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-    .ubadge-strip span { font-size: 8px; font-weight: 800; letter-spacing: 1.5px; color: #fff; }
+    /* S14: full-size prediction badge enlarged 64→88. The unification
+       means this box now holds at most two badges (official slab +
+       predicted) instead of the old four, so each can be substantially
+       bigger and more legible without crowding. Strip/num/label scale
+       proportionally. The list-row .ubadge-sm variant is unchanged. */
+    .ubadge { width: 88px; height: 88px; flex-shrink: 0; border-radius: 18px; overflow: hidden; box-shadow: 0 3px 9px rgba(0,0,0,0.28); border: 1.5px solid rgba(0,0,0,0.15); display: flex; flex-direction: column; }
+    .ubadge-strip { height: 22px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .ubadge-strip span { font-size: 10px; font-weight: 800; letter-spacing: 1.5px; color: #fff; }
     .ubadge-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0px; }
-    .ubadge-num { font-size: 20px; font-weight: 800; line-height: 1; }
-    .ubadge-lbl { font-size: 7.5px; letter-spacing: 0.3px; text-align: center; line-height: 1.2; margin-top: 1px; }
+    .ubadge-num { font-size: 30px; font-weight: 800; line-height: 1; }
+    .ubadge-lbl { font-size: 9.5px; letter-spacing: 0.3px; text-align: center; line-height: 1.2; margin-top: 2px; }
     /* List row variant — corner radius scales proportionally (~21% of side) */
     .ubadge-sm { width: 56px; height: 56px; flex-shrink: 0; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.2); border: 1.5px solid rgba(0,0,0,0.15); display: flex; flex-direction: column; }
     .ubadge-sm .ubadge-strip { height: 14px; }
@@ -1846,7 +1872,7 @@ function formatIssueDateCompact(d) {
 }
 function esc(s){return s?String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"):""}
 
-let items=[], collapsed={}, view="list", selected=null, sortBy="title", search="", _listScrollY=0;
+let items=[], collapsed={}, view="list", selected=null, sortBy="ownership", search="", _listScrollY=0, _lastDetailId=null;
 let db, fsCollection, fsGetDocs, fsSetDoc, fsDeleteDoc, fsDoc, fsOnSnapshot, fsGetDoc;
 let seeded=false;
 
@@ -2919,7 +2945,26 @@ function showList(){
   // handles it correctly (keeps the loading pill visible).
   refreshHeaderControls();
   renderList();
-  requestAnimationFrame(()=>window.scrollTo(0,_listScrollY));
+  requestAnimationFrame(()=>{
+    // S14: prefer scrolling the actual row we came from into view, so the
+    // user lands looking at the book they were just inspecting rather than
+    // a stale Y offset. Fall back to the saved Y if the row isn't in the
+    // DOM (e.g. its group is collapsed, or it was deleted).
+    let landed = false;
+    if (_lastDetailId) {
+      const row = document.querySelector(`.comic-row[data-row-id="${(window.CSS&&CSS.escape)?CSS.escape(_lastDetailId):_lastDetailId}"]`);
+      if (row && typeof row.scrollIntoView === 'function') {
+        row.scrollIntoView({ block: 'center' });
+        // Brief highlight so the eye finds it immediately.
+        row.style.transition = 'background-color 0.6s ease-out';
+        const prevBg = row.style.backgroundColor;
+        row.style.backgroundColor = 'rgba(200,169,110,0.28)';
+        setTimeout(() => { row.style.backgroundColor = prevBg || ''; }, 700);
+        landed = true;
+      }
+    }
+    if (!landed) window.scrollTo(0, _listScrollY);
+  });
 }
 
 function renderList(){
@@ -2943,30 +2988,58 @@ function renderList(){
   if(sortBy==="grade")filt.sort((a,b)=>parseFloat(b.grade)-parseFloat(a.grade));
   else if(sortBy==="title")filt.sort((a,b)=>(a.title||"").localeCompare(b.title||""));
   else if(sortBy==="cost")filt.sort((a,b)=>totalCost(b)-totalCost(a));
-  else filt.sort((a,b)=>new Date(b.dateAdded)-new Date(a.dateAdded));
+  else if(sortBy==="dateAdded")filt.sort((a,b)=>new Date(b.dateAdded)-new Date(a.dateAdded));
+  // sortBy === "ownership" (the default) does not pre-sort here — the
+  // ownership partitioning below handles ordering. Inside each ownership
+  // section, books still fall into title groups sorted alphabetically.
 
-  const groups={};
-  filt.forEach(c=>{const t=c.title||"Unknown";if(!groups[t])groups[t]=[];groups[t].push(c);});
-  Object.values(groups).forEach(g=>g.sort((a,b)=>{
-    // 1. Issue number ascending
-    const na=parseFloat(a.issue)||0,nb=parseFloat(b.issue)||0;
-    if(na!==nb)return na-nb;
-    const is=a.issue||"",ibs=b.issue||"";
-    if(is!==ibs)return is.localeCompare(ibs);
-    // 2. Grade descending (use best available grade)
-    const ga=parseFloat(a.cgcGrade||a.psaGrade||a.predictedGrade||a.assessedCGCGrade||a.grade||0);
-    const gb=parseFloat(b.cgcGrade||b.psaGrade||b.predictedGrade||b.assessedCGCGrade||b.grade||0);
-    if(gb!==ga)return gb-ga;
-    // 3. Official graded above AI/raw
-    const offA=!!(a.cgcGrade||a.psaGrade),offB=!!(b.cgcGrade||b.psaGrade);
-    if(offA!==offB)return offA?-1:1;
-    // 4. Earlier purchase date first
-    const da=a.dateAcquired||"9999",db=b.dateAcquired||"9999";
-    if(da!==db)return da.localeCompare(db);
-    // 5. Earlier dateAdded
-    return new Date(a.dateAdded)-new Date(b.dateAdded);
-  }));
-  const titles=Object.keys(groups).sort((a,b)=>a.localeCompare(b));
+  // S14: ownership is the outermost partition. The user does not want
+  // Watching/Sold books mixed into the flow of books they own. Fixed
+  // section order: Owned → Sold → Watching. Within each section, the
+  // existing title-grouping applies unchanged. When the user picks a
+  // different sort (Title/Date/Grade) from the dropdown, ownership
+  // partitioning is bypassed and the whole collection sorts flat the
+  // old way — ownership grouping is specifically the "ownership" mode.
+  const OWNERSHIP_ORDER = ['Owned','Sold','Watching'];
+  const partitionByOwnership = (sortBy === "ownership");
+
+  // buildTitleGroups: takes a flat list, returns { titles:[], groups:{} }
+  // using the same intra-title sort the app has always used.
+  const buildTitleGroups = (list) => {
+    const groups={};
+    list.forEach(c=>{const t=c.title||"Unknown";if(!groups[t])groups[t]=[];groups[t].push(c);});
+    Object.values(groups).forEach(g=>g.sort((a,b)=>{
+      const na=parseFloat(a.issue)||0,nb=parseFloat(b.issue)||0;
+      if(na!==nb)return na-nb;
+      const is=a.issue||"",ibs=b.issue||"";
+      if(is!==ibs)return is.localeCompare(ibs);
+      const ga=parseFloat(a.cgcGrade||a.psaGrade||a.predictedGrade||a.assessedCGCGrade||a.grade||0);
+      const gb=parseFloat(b.cgcGrade||b.psaGrade||b.predictedGrade||b.assessedCGCGrade||b.grade||0);
+      if(gb!==ga)return gb-ga;
+      const offA=!!(a.cgcGrade||a.psaGrade),offB=!!(b.cgcGrade||b.psaGrade);
+      if(offA!==offB)return offA?-1:1;
+      const da=a.dateAcquired||"9999",db=b.dateAcquired||"9999";
+      if(da!==db)return da.localeCompare(db);
+      return new Date(a.dateAdded)-new Date(b.dateAdded);
+    }));
+    const titles=Object.keys(groups).sort((a,b)=>a.localeCompare(b));
+    return { titles, groups };
+  };
+
+  // sections: array of { ownership|null, titles, groups }. When not
+  // partitioning, a single section with ownership=null holds everything.
+  let sections;
+  if (partitionByOwnership) {
+    sections = OWNERSHIP_ORDER.map(own => {
+      const subset = filt.filter(c => (c.ownership || 'Owned') === own);
+      if (subset.length === 0) return null;
+      const { titles, groups } = buildTitleGroups(subset);
+      return { ownership: own, titles, groups };
+    }).filter(Boolean);
+  } else {
+    const { titles, groups } = buildTitleGroups(filt);
+    sections = [{ ownership: null, titles, groups }];
+  }
 
   // S14: Grade a Comic CTA tile. Replaces the top-bar Add button. Tile size
   // toggles based on whether the user has real books or only the sample —
@@ -2980,74 +3053,98 @@ function renderList(){
     ? `<div class="grade-cta compact" onclick="showAdd()" role="button" aria-label="Grade a Comic">
          <img class="grade-cta-thumb" src="${ctaThumb}" alt="" decoding="async">
          <div class="grade-cta-headline">Grade a Comic</div>
-         <div class="grade-cta-chevron">›</div>
        </div>`
     : `<div class="grade-cta large" onclick="showAdd()" role="button" aria-label="Grade a Comic">
          <img class="grade-cta-thumb" src="${ctaThumb}" alt="" decoding="async">
          <div>
            <div class="grade-cta-headline">Grade a Comic</div>
-           <div class="grade-cta-sub">Take a few photos and Robograder will grade it for you.</div>
+           <div class="grade-cta-sub">Submit photos of your comic and Robograder will grade it for you.</div>
          </div>
        </div>`;
 
   let html = ctaHtml + `<div style="display:flex;justify-content:flex-end;margin-bottom:16px">
     <select onchange="sortBy=this.value;renderList()" style="font-family:'Barlow Condensed',sans-serif;font-size:15px;font-weight:600;padding:6px 10px">
+      <option value="ownership"${sortBy==="ownership"?" selected":""}>Ownership</option>
       <option value="title"${sortBy==="title"?" selected":""}>Title A–Z</option>
       <option value="dateAdded"${sortBy==="dateAdded"?" selected":""}>Date Added</option>
       <option value="grade"${sortBy==="grade"?" selected":""}>Grade ↓</option>
     </select>
   </div>`;
 
-  if(titles.length===0){
+  const anyBooks = sections.some(s => s.titles.length > 0);
+  if(!anyBooks){
     // S14: empty-state message removed — the CTA tile above IS the empty
     // state guidance. Showing both ("No books yet" + CTA tile) was
-    // redundant. titles.length===0 effectively means the user has cleared
-    // everything including the sample, which is rare; if they do reach
-    // here, the CTA is still right above this point.
+    // redundant.
     html+=``;
   } else {
-    titles.forEach(title=>{
-      const isOpen=collapsed[title]===false;
-      html+=`<div style="margin-bottom:16px">
-        <div class="group-header" onclick="toggleGroup('${esc(title)}')">
-          <span class="group-chevron${isOpen?" open":""}">›</span>
-          ${esc(title)} <span style="color:#9a8a7a;letter-spacing:1px">(${groups[title].length})</span>
+    sections.forEach(section => {
+      // Ownership section header (only when partitioning by ownership and
+      // there's more than one section — a collector with only Owned books
+      // doesn't need a redundant "OWNED" banner over their whole list).
+      if (section.ownership && sections.length > 1) {
+        const ownColors = {
+          'Owned':    { bg:'#e8f0d8', fg:'#3a5a18' },
+          'Sold':     { bg:'#e8e8e8', fg:'#4a4a4a' },
+          'Watching': { bg:'#fff0d8', fg:'#7a5018' }
+        };
+        const oc = ownColors[section.ownership] || ownColors['Owned'];
+        const count = section.titles.reduce((n,t)=>n+section.groups[t].length,0);
+        html += `<div style="display:flex;align-items:center;gap:8px;margin:18px 0 10px;padding:7px 12px;background:${oc.bg};border-radius:8px">
+          <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:${oc.fg}">${section.ownership}</span>
+          <span style="font-size:12px;color:${oc.fg};opacity:0.7;letter-spacing:0.5px">(${count})</span>
         </div>`;
-      if(isOpen){
-        html+=`<div>`;
-        groups[title].forEach(c=>{
-          const gc=gradeColor(c.grade);
-          // Prefer thumbnail (~10-15KB, fast). Fall back to full image for old
-          // books, sample entry, or any case where thumbnails[] isn't populated.
-          // Eager-load (no lazy attribute) — thumbs are tiny and we want the list
-          // ready to scroll without per-row stalls when groups are expanded.
-          const thumbSrc = c.thumbnails?.[0] || c.images?.[0];
-          const thumb = thumbSrc ? `<img class="comic-thumb" src="${thumbSrc}" decoding="async">` : "";
-          html+=`<div class="comic-row" onclick="showDetail('${esc(c.id)}')">
-            ${thumb}
-            ${buildListBadge(c)}
-            <div style="flex:1;min-width:0">
-              <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>
-              <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">
-                ${c.issue?`<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${formatIssue(c.issue,c.title)}</span>`:""}
-                ${c.issueDate?`<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>`:""}
-              </div>
-            </div>
-            ${buildListCgcPsaStack(c)}
-          </div>`;
-        });
-        html+=`</div>`;
       }
-      html+=`</div>`;
+      section.titles.forEach(title=>{
+        // Collapse key must be unique per ownership section so collapsing
+        // "Amazing Spider-Man" under Owned doesn't also collapse it under
+        // Watching. Prefix with the ownership when partitioning.
+        const collapseKey = section.ownership ? `${section.ownership}::${title}` : title;
+        const isOpen=collapsed[collapseKey]===false;
+        html+=`<div style="margin-bottom:16px">
+          <div class="group-header" onclick="toggleGroup('${esc(collapseKey)}')">
+            <span class="group-chevron${isOpen?" open":""}">›</span>
+            ${esc(title)} <span style="color:#9a8a7a;letter-spacing:1px">(${section.groups[title].length})</span>
+          </div>`;
+        if(isOpen){
+          html+=`<div>`;
+          section.groups[title].forEach(c=>{
+            const thumbSrc = c.thumbnails?.[0] || c.images?.[0];
+            const thumb = thumbSrc ? `<img class="comic-thumb" src="${thumbSrc}" decoding="async">` : "";
+            html+=`<div class="comic-row" data-row-id="${esc(c.id)}" onclick="showDetail('${esc(c.id)}')">
+              ${thumb}
+              ${buildListBadge(c)}
+              <div style="flex:1;min-width:0">
+                <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>
+                <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">
+                  ${c.issue?`<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${formatIssue(c.issue,c.title)}</span>`:""}
+                  ${c.issueDate?`<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>`:""}
+                </div>
+              </div>
+              ${buildListCgcPsaStack(c)}
+            </div>`;
+          });
+          html+=`</div>`;
+        }
+        html+=`</div>`;
+      });
     });
   }
   main.innerHTML=html;
 }
 
+
 function toggleGroup(title){collapsed[title]=collapsed[title]===false?true:false;renderList();}
 
 function showDetail(id){
   _listScrollY=window.scrollY||document.documentElement.scrollTop||0;
+  // S14: also remember WHICH item we drilled into. Scroll-Y alone is
+  // fragile — if the list re-renders at a different height (sort change,
+  // a group collapsed/expanded, ownership move) the saved Y lands in the
+  // wrong place and the user feels lost. On return we scroll the actual
+  // row element into view by id, falling back to Y only if the row isn't
+  // found (e.g. it moved to a now-collapsed group).
+  _lastDetailId = id;
   selected=items.find(c=>c.id===id);
   if(!selected)return;
   view="detail";
@@ -3093,32 +3190,28 @@ function showDetail(id){
       ${selected.cgcCert?`<div><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">CGC</span> <span style="margin-left:6px">${esc(selected.cgcCert)}</span></div>`:""}
       ${selected.psaCert?`<div style="margin-top:2px"><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">PSA</span> <span style="margin-left:6px">${esc(selected.psaCert)}</span></div>`:""}
     </div>`:""}
-    ${isSample ? "" : (() => {
-      // S14: ownership pill in detail view. Tappable — cycles Owned → Watching
-      // → Sold and writes to Firestore immediately (like togglePublicListing).
-      // Leaving Owned auto-clears publicListing for state consistency; the
-      // detail view re-renders after save and the public-listing block at the
-      // bottom will pick up the change via the locked branch.
-      const own = selected.ownership || 'Owned';
-      // Color-code the three states so a glance tells the story: green-tinted
-      // for Owned (in collection), warm amber for Watching (interest), neutral
-      // gray for Sold (out of collection).
-      const styleByState = {
-        'Owned':    { bg:'#e8f0d8', fg:'#3a5a18', border:'#a8c870' },
-        'Watching': { bg:'#fff0d8', fg:'#7a5018', border:'#d8a868' },
-        'Sold':     { bg:'#e8e8e8', fg:'#4a4a4a', border:'#a8a8a8' }
-      };
-      const s = styleByState[own] || styleByState['Owned'];
-      return `<div style="margin-top:10px">
-        <button onclick="cycleOwnershipFromDetail('${esc(selected.id)}')"
-          style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;
-                 padding:5px 12px;border-radius:14px;cursor:pointer;
-                 background:${s.bg};color:${s.fg};border:1px solid ${s.border}">
-          ${own.toUpperCase()}
-        </button>
-      </div>`;
-    })()}
   </div>`;
+
+  // S14: ownership pill MOVED out of the title block to below the images
+  // (per user direction — it shouldn't sit up top in detail/edit). Built
+  // here as a string, appended after the images block renders.
+  const ownershipPillHtml = isSample ? "" : (() => {
+    const own = selected.ownership || 'Owned';
+    const styleByState = {
+      'Owned':    { bg:'#e8f0d8', fg:'#3a5a18', border:'#a8c870' },
+      'Watching': { bg:'#fff0d8', fg:'#7a5018', border:'#d8a868' },
+      'Sold':     { bg:'#e8e8e8', fg:'#4a4a4a', border:'#a8a8a8' }
+    };
+    const s = styleByState[own] || styleByState['Owned'];
+    return `<div style="margin-top:14px;display:flex;justify-content:center">
+      <button onclick="cycleOwnershipFromDetail('${esc(selected.id)}')"
+        style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;
+               padding:6px 16px;border-radius:14px;cursor:pointer;
+               background:${s.bg};color:${s.fg};border:1px solid ${s.border}">
+        ${own.toUpperCase()}
+      </button>
+    </div>`;
+  })();
 
   // Images block — moved to after the title/issue/publisher header.
   // The forceReflow handler addresses an intermittent partial-render bug where
@@ -3147,6 +3240,11 @@ function showDetail(id){
     if(imgs[3]) html+=`<img class="photo-spine" src="${imgs[3]}" ${imgAttrs} onclick="openLightbox('${selected.id}',3)">`;
     html+=`</div>`;
   }
+
+  // S14: ownership pill sits directly below the images (was up in the
+  // title block). If there are no images for some reason it still
+  // renders here so the control is never lost.
+  html += ownershipPillHtml;
 
   // Corner images (high-grade) — render only when high-grade has been unlocked
   // for this book. Display in clockwise order: TL → TR → BR → BL.
@@ -3184,8 +3282,12 @@ function showDetail(id){
     [0,1,2,3].forEach(srcIdx => {
       const url = ci[srcIdx];
       if (url) {
-        html += `<div style="position:relative">
-          <img class="detail-corner" src="${url}" ${imgAttrs} onclick="openCornerLightbox('${selected.id}',${srcIdx})" style="width:100%;display:block;border-radius:4px;background:#1a1a1a">
+        // S14: constrain populated corner images to the 2:3 aspect ratio
+        // of the macro reference images so populated and ghost slots are
+        // the same height (object-fit:cover crops gracefully if a user's
+        // macro isn't exactly 2:3).
+        html += `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:2/3">
+          <img class="detail-corner" src="${url}" ${imgAttrs} onclick="openCornerLightbox('${selected.id}',${srcIdx})" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block">
           <div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(0,0,0,0.55);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${labels[srcIdx].toUpperCase()}</div>
         </div>`;
       } else {
@@ -3193,7 +3295,7 @@ function showDetail(id){
         // corner slots. Tapping does nothing here (the action is in
         // Edit view); Detail view is a display surface. The presence
         // of the ghosts is what conveys "you have something to do."
-        html += `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:1/1">
+        html += `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:2/3">
           <img src="${cornerGhosts[srcIdx]}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.32" alt="">
           <div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(0,0,0,0.55);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${labels[srcIdx].toUpperCase()}</div>
         </div>`;
@@ -3279,7 +3381,7 @@ function showDetail(id){
     // company names. Renders only when we're actually showing a predicted
     // grade — not when the box is just PQ.
     if (predictedBadge) {
-      html += `<div style="font-size:10px;color:#6a5a4a;text-align:center;width:100%;line-height:1.4;margin-top:2px;font-style:italic">Independent prediction. Robograder is not affiliated with any professional grading service.</div>`;
+      html += `<div style="font-size:10px;color:#6a5a4a;text-align:center;width:100%;line-height:1.4;margin-top:2px;font-style:italic">Independent prediction. Robograder is not affiliated with any encapsulation grading service.</div>`;
     }
     html += `</div>`;
   }
@@ -3840,19 +3942,17 @@ async function cycleOwnershipFromDetail(id) {
 
 function confirmDelete(id){
   const btn=document.getElementById("del-btn");
-  if(btn.dataset.confirm==="1"){deleteItem(id);}
-  else if(btn.dataset.confirm==="ready"){
-    // Stage 2: user has acknowledged the warning, one more tap commits.
-    btn.dataset.confirm="1";
-    btn.textContent="Tap again to confirm";
+  if(btn.dataset.confirm==="1"){
+    deleteItem(id);
   }
   else{
-    // Stage 1: user tapped Delete. Make the button fully destructive
-    // styling and warn them. The button started as rg-btn-destructive
-    // (filled red) so there's nothing to swap visually — we just update
-    // the text to tell them what happens on the next tap.
-    btn.dataset.confirm="ready";
-    btn.textContent="Delete…";
+    // S14: collapsed from a 3-tap to a 2-tap flow. The old intermediate
+    // "Delete…" state read as "processing" rather than "tap again",
+    // which confused users. Now: first tap arms + relabels clearly,
+    // second tap commits. Still a deliberate two-step guard against
+    // accidental taps, just without the misleading ellipsis stage.
+    btn.dataset.confirm="1";
+    btn.textContent="Tap again to confirm";
   }
 }
 
@@ -5159,7 +5259,7 @@ function mountResults(cgc, psa) {
       _pendingAssessResult.cgc._highGradeUnlocked = qualifies;
     }
     if (hgUnlocked) {
-      btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">DEEP ASSESS</div><div style="font-size:10px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
+      btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">DEEP ASSESSMENT</div><div style="font-size:10px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
       btn.style.background = '#2a7a3a';
       btn.style.color = '#fff';
       btn.style.textAlign = 'center';
@@ -6809,15 +6909,20 @@ function renderForm(){
               'assets/ghosts/BottomRight_Macro.jpg'
             ];
             const img=(formData.cornerImages||[])[i];
+            // S14: corner slots locked to 2:3 aspect ratio (matches the
+            // macro reference images). Was min-height:100px for empties
+            // and native-ratio for populated, which made the four slots
+            // render at inconsistent heights. object-fit:cover crops a
+            // user macro gracefully if it isn't exactly 2:3.
             return img
-              ? `<div class="drag-slot" draggable="true"
+              ? `<div class="drag-slot" draggable="true" style="aspect-ratio:2/3"
                   ondragstart="cornerDragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="cornerDropSlot(event,${i})"
                   onclick="tapSlot(${i},'corner')">
-                  <img src="${img}">
+                  <img src="${img}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">
                   <button class="slot-edit" onclick="event.stopPropagation();openCropper('corner',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>
                   <button class="slot-x" onclick="event.stopPropagation();removeCornerImg(${i})">×</button>
                  </div>`
-              : `<div class="drag-slot" style="padding:0;background:#1a1a1a;min-height:100px;position:relative;overflow:hidden"
+              : `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:2/3;position:relative;overflow:hidden"
                   ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="cornerDropSlot(event,${i})"
                   onclick="tapSlot(${i},'corner')">
                   <img src="${cornerGhosts[i]}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.32;pointer-events:none">
@@ -6838,7 +6943,7 @@ function renderForm(){
           const ambientText=cornerCount===4?"#6abf6a":"#6a6a6a";
           return `<div style="display:flex;justify-content:center;margin-top:12px">
             <button id="hg-assess-btn" onclick="assessHighGrade()" ${ready?"":"disabled"} style="width:75%;min-height:52px;border-radius:12px;background:${ambient};color:${ambientText};border:none;font-size:14px;font-weight:700;letter-spacing:1.5px;cursor:${ready?"pointer":"not-allowed"}">
-              ${assessing?"Assessing…":`DEEP ASSESS ${cornerCount<4?`(${cornerCount}/4)`:""}`}
+              ${assessing?"Assessing…":`DEEP ASSESSMENT ${cornerCount<4?`(${cornerCount}/4)`:""}`}
             </button>
           </div>`;
         })()}
@@ -6871,29 +6976,11 @@ function renderForm(){
       <div style="display:flex;justify-content:center;margin-top:4px"><button id="assess-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="assessGrade()" ${(!formData.images||!formData.images[0]||assessing)?"disabled":""} style="width:75%${assessing ? ';background:#1a3a5c;color:#a8d0f0' : _assessed ? ';background:#1a4a2a;color:#6abf6a' : ''}">${assessing?"Assessing…":_assessed?"Re-assess Grade":"Assess Grade"}</button></div>
     </div>
     ${(isEdit || _assessed || _addManualMode) ? `
-    ${(() => {
-      // S14: ownership pill at top of expanded Edit form. Same look and
-      // tap-to-cycle behavior as the detail-view pill, but writes to
-      // formData and re-renders the form (no Firestore save until the
-      // user submits the form). Clears formData.publicListing on
-      // transitions out of Owned, mirroring the collapsed-state toggle
-      // and the detail-view handler.
-      const own = formData.ownership || 'Owned';
-      const styleByState = {
-        'Owned':    { bg:'#e8f0d8', fg:'#3a5a18', border:'#a8c870' },
-        'Watching': { bg:'#fff0d8', fg:'#7a5018', border:'#d8a868' },
-        'Sold':     { bg:'#e8e8e8', fg:'#4a4a4a', border:'#a8a8a8' }
-      };
-      const s = styleByState[own] || styleByState['Owned'];
-      return `<div style="margin-top:14px;margin-bottom:6px">
-        <button onclick="cycleOwnership()"
-          style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;
-                 padding:5px 12px;border-radius:14px;cursor:pointer;
-                 background:${s.bg};color:${s.fg};border:1px solid ${s.border}">
-          ${own.toUpperCase()}
-        </button>
-      </div>`;
-    })()}
+    ${/* S14: the ownership pill that used to sit here (top of the expanded
+         edit form, above the metadata grid) was removed per user direction
+         — ownership shouldn't be up top. The edit form still has an
+         ownership pill lower down (near the publish/save controls) which
+         is the single retained placement. */ ''}
     <div class="form-grid-2">
       <!-- Title gets a special handler (not the generic tf) because we need
            live-toggle the save button as the user types. Using tf would
@@ -7844,9 +7931,15 @@ async function cameraOpen(state) {
       // main sensor when violated. 3x sits at the practical sweet spot —
       // enough magnification for visible 1/16" defects, more forgiving
       // on stability, and stays inside the optical telephoto focus range.
-      // If beta tuning data shows we're missing 1/32"-1/64" defects at
-      // 3x, push back to 4x — but start here.
-      const targetZoom = _cameraState.kind === 'corner' ? 3 : 2;
+      // S14: pushed 3x → 4x. User feedback: at 3x the corner macro
+      // doesn't feel meaningfully more zoomed than the 2x front-cover
+      // shot, which makes the macro step feel redundant. 4x gives a
+      // clearly tighter crop while staying short of the 5x blur regime.
+      // switchToLens still clamps to the device's reported caps.zoom.max,
+      // so phones that top out below 4x land at their max rather than
+      // failing. If beta data shows 4x reintroduces the blur problem,
+      // drop back to 3.5x.
+      const targetZoom = _cameraState.kind === 'corner' ? 4 : 2;
       const lensOptions = [];
       if (wide && supportsZoomConstraint()) {
         lensOptions.push({ device: wide, zoom: targetZoom, digitalZoom: targetZoom, label: targetZoom + '×' });

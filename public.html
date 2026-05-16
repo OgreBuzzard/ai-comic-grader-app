@@ -472,17 +472,41 @@
   // ID). Public's `data` shape mirrors what the module expects.
   const robogradePanelHTML = window.RobograderPanel.buildDisplay(rg, data);
 
+  // S14: predicted-grade block for public listings. Before the unification
+  // the predicted grade was withheld from public links for CGC/PSA legal
+  // reasons; now that it's a single un-branded "Predicted Grade" it's safe
+  // and valuable to surface (collectors want to share it). lookup.js
+  // exposes data.predictedGrade (new items write it; legacy items have it
+  // synthesized from assessedCGCGrade server-side). Render nothing if the
+  // field is absent so old links don't show an empty box.
+  const predictedBlock = (() => {
+    const g = data.predictedGrade;
+    if (g == null || g === '' ) return '';
+    const gv = String(g).includes('.') ? g : (parseFloat(g).toFixed ? parseFloat(g).toFixed(1) : g);
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin:22px 0">
+      <div style="font-size:11px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase">Predicted Grade</div>
+      <div style="width:104px;height:104px;background:#1a5fa8;border-radius:20px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,0.3)">
+        <div style="font-size:38px;font-weight:800;color:#fff;line-height:1">${gv}</div>
+      </div>
+      <div style="font-size:10px;color:#8a7a6a;text-align:center;max-width:280px;line-height:1.4;font-style:italic">Independent prediction. Robograder is not affiliated with any encapsulation grading service.</div>
+    </div>`;
+  })();
+
+  // S14: reordered per user direction — RoboGrade results first, then the
+  // predicted grade, then the images. Identity (title/issue) stays at the
+  // very top as the heading.
   app.innerHTML = `
     ${identityHTML}
+    ${robogradePanelHTML}
+    ${predictedBlock}
     ${photoBlock}
     ${cornerBlock}
-    ${robogradePanelHTML}
   `;
 
   document.querySelector('.content').insertAdjacentHTML('beforeend', `
     <footer>
       Robograde is an AI-generated condition assessment produced by the Unerring Robograder.
-      It is not affiliated with any professional grading service.
+      It is not affiliated with any encapsulation grading service.
       Grades reflect the condition of the book at the time of assessment.
       Books may change condition over time — always verify with current photos.
     </footer>

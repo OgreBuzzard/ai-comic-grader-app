@@ -231,14 +231,25 @@
     .rg-scan-stage {
       position: fixed;
       inset: 0;
-      /* S13 v18: background removed. The chest now slides up over the
-         user's existing Edit view, giving a seamless transition instead
-         of a hard cut to black. The stage is transparent but still
-         blocks pointer events so the user can't accidentally tap Edit
-         controls while the chest is sliding up. */
-      background: transparent;
+      /* S14: was background:transparent (S13 v18 chose that for a
+         "seamless" transition over the Edit view). But during the 2s
+         chest slide-up, the not-yet-covered area showed the Edit view
+         behind it — the "sliver" bug — and on some viewports a thin gap
+         persisted at full extension. Replaced with an opaque dark
+         backdrop that fades in fast (180ms) so the Edit view is hidden
+         almost immediately while the chest is still early in its slide.
+         The transition still reads as smooth because the backdrop fade
+         and the chest slide overlap. Color is the app's assess-mode
+         near-black so it matches the cavity surround. */
+      background: #0a0d07;
+      opacity: 0;
+      animation: rgStageFadeIn 180ms ease-out forwards;
       overflow: hidden;
       z-index: 8500;
+    }
+    @keyframes rgStageFadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
     }
     .rg-scan-shell {
       position: absolute;
@@ -639,6 +650,13 @@
 
     const chest = document.createElement('img');
     chest.className = 'rg-scan-chest';
+    // S14: sync decode + high priority so the chest bitmap is paint-ready
+    // the instant the shell mounts. Combined with the sign-in preload's
+    // decode() call, this stops the "overlay/chest pops in a few frames
+    // late" bug — the CSS slide-up no longer races the image decode.
+    chest.decoding = 'sync';
+    try { chest.fetchPriority = 'high'; } catch (e) {}
+    chest.setAttribute('fetchpriority', 'high');
     chest.src = 'assets/Robograder_Scan_Frame.png';
     chest.alt = '';
     shell.appendChild(chest);
@@ -726,11 +744,7 @@
           </div>
           <div style="width:64px;height:64px;background:#2a5a8a;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
             <div style="font-size:22px;font-weight:800;color:#e0f0ff;line-height:1">0.0</div>
-            <div style="font-size:9px;color:#e0f0ff;opacity:0.75;margin-top:2px;letter-spacing:0.8px">CGC</div>
-          </div>
-          <div style="width:64px;height:64px;background:#8a2a2a;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
-            <div style="font-size:22px;font-weight:800;color:#ffe0e0;line-height:1">0.0</div>
-            <div style="font-size:9px;color:#ffe0e0;opacity:0.75;margin-top:2px;letter-spacing:0.8px">PSA</div>
+            <div style="font-size:9px;color:#e0f0ff;opacity:0.75;margin-top:2px;letter-spacing:0.8px">GRADE</div>
           </div>
         </div>
         <div id="result-pq" style="display:flex;align-items:center;justify-content:center;min-height:22px;">
@@ -812,6 +826,35 @@
   // Held state for the active session.
   let _activeStage = null;
   let _activeCancelToken = null;
+  // S14: saved scroll Y for the body-scroll-lock. Null when not locked.
+  let _scrollLockY = null;
+
+  function lockBodyScroll() {
+    if (_scrollLockY !== null) return;  // already locked
+    _scrollLockY = window.scrollY || window.pageYOffset || 0;
+    const b = document.body;
+    b.style.position = 'fixed';
+    b.style.top = `-${_scrollLockY}px`;
+    b.style.left = '0';
+    b.style.right = '0';
+    b.style.width = '100%';
+    b.style.overflow = 'hidden';
+  }
+
+  function unlockBodyScroll() {
+    if (_scrollLockY === null) return;  // not locked
+    const b = document.body;
+    b.style.position = '';
+    b.style.top = '';
+    b.style.left = '';
+    b.style.right = '';
+    b.style.width = '';
+    b.style.overflow = '';
+    // Restore the exact pre-lock scroll position. Without this the page
+    // jumps to the top on dismiss, which is its own disorientation bug.
+    window.scrollTo(0, _scrollLockY);
+    _scrollLockY = null;
+  }
 
   function teardown() {
     // S13 v18: stop animation timers BEFORE removing DOM so they don't
@@ -821,6 +864,11 @@
     if (_activeStage && _activeStage.parentNode) {
       _activeStage.parentNode.removeChild(_activeStage);
     }
+    // S14: always release the scroll lock on teardown, even if the stage
+    // was already gone — defends against the lock leaking and freezing
+    // the whole app's scroll (which is exactly the "broken until restart"
+    // class of bug we're fixing).
+    unlockBodyScroll();
     _activeStage = null;
     _activeCancelToken = null;
   }
@@ -1122,6 +1170,21 @@
     // promise resolves immediately because there's nothing to scan.
     _activeStage = buildDom(activeSlots);
     debugLog('shell mounted to DOM');
+
+    // S14: lock body scroll while the scan stage is up. Two bugs this
+    // fixes, both caused by the page staying scrollable behind the fixed
+    // overlay:
+    //   (1) A sliver of the Edit view showed through and the user could
+    //       scroll it behind the transparent stage.
+    //   (2) Scrolling the Edit view mid-animation shifted the layout the
+    //       slide-in transform was computed against, so the chest could
+    //       slide too far and the scan animation rendered cropped off the
+    //       top — and stayed broken until app restart because the scroll
+    //       offset never reset.
+    // iOS Safari ignores `overflow:hidden` on body for touch scrolling,
+    // so we use the position:fixed + negative-top technique and restore
+    // the exact scroll position on teardown.
+    lockBodyScroll();
 
     // After mount, log what the shell's transform is. If iOS isn't
     // honoring our keyframe animation we'll see the transform stuck at
