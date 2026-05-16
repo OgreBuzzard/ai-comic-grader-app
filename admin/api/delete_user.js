@@ -107,11 +107,15 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Cannot delete your own account via this endpoint.' });
     }
 
-    // Confirmation token check. Client sends `confirmEmail`; we verify
-    // it matches the target user's email. This is the second pop-up
-    // confirmation Matt asked for — the client surfaces the email and
-    // asks the admin to type it back. Mismatch = abort.
-    const confirmEmail = (body.confirmEmail || '').toString().trim().toLowerCase();
+    // Confirmation token check. Two modes:
+    //   • Account HAS an email → client must echo the email (typed-back).
+    //   • Account has NO email (very old accounts predate email capture —
+    //     fields are just assessmentCredits/createdAt/freeCreditsGranted/
+    //     termsAccepted/termsAcceptedAt/termsVersion) → client must echo
+    //     the last 6 characters of the UID instead. Still a real "look at
+    //     it and type it" check, just keyed on the only stable identifier
+    //     these ghost accounts have.
+    const confirmToken = (body.confirmEmail || body.confirmToken || '').toString().trim().toLowerCase();
     let targetEmail = '';
     try {
       const targetAuth = await getAuth().getUser(targetUid);
@@ -123,10 +127,21 @@ export default async function handler(req, res) {
       console.warn(`[admin-delete-user] auth user not found for ${targetUid}; proceeding with Firestore cleanup only`);
       targetEmail = '';
     }
-    if (targetEmail && confirmEmail !== targetEmail) {
-      return res.status(400).json({
-        error: `Confirmation email mismatch. Type "${targetEmail}" to confirm.`
-      });
+    if (targetEmail) {
+      // Email exists → require email match.
+      if (confirmToken !== targetEmail) {
+        return res.status(400).json({
+          error: `Confirmation mismatch. Type "${targetEmail}" to confirm.`
+        });
+      }
+    } else {
+      // No email → require last-6-of-UID match (case-insensitive).
+      const uidSuffix = targetUid.slice(-6).toLowerCase();
+      if (confirmToken !== uidSuffix) {
+        return res.status(400).json({
+          error: `This account has no email on file. Type the last 6 characters of its ID ("${uidSuffix}") to confirm.`
+        });
+      }
     }
 
     const db = getFirestore();
