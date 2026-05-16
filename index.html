@@ -286,8 +286,9 @@
       color: #2a1e14;
       border: 1.5px solid #c8a850;
       display: inline-flex; align-items: center; gap: 9px;
-      padding: 6px 16px 6px 7px;
+      padding: 6px 14px 6px 7px;
       min-height: 0;            /* override .btn-topbar's 32px floor */
+      flex-shrink: 0;           /* never compress; sized to content only */
       border-radius: 12px;
       box-shadow: 0 2px 7px rgba(40,30,10,0.22);
       line-height: 1;
@@ -300,9 +301,16 @@
     .btn-topbar.btn-grade span {
       font-family: 'Noto Sans Display', sans-serif;
       font-stretch: 62.5%;
-      font-size: 16px; font-weight: 900;
+      font-size: 15px; font-weight: 900;
       letter-spacing: 0.3px;
-      white-space: nowrap;
+      /* S14 fix: was white-space:nowrap, which forced "Grade a Comic"
+         onto one line, widened the button, and pushed the gear off
+         screen / hid the credit count. Now two short lines ("Grade" /
+         "Comic") via a hard <br>; nowrap removed so it can't force the
+         row wider than the label text. line-height tight so the two
+         lines sit as a compact block beside the thumbnail. */
+      line-height: 1.05;
+      text-align: left;
     }
     .btn-topbar.btn-grade:active {
       filter: brightness(0.95);
@@ -1380,7 +1388,7 @@
            edit isn't silently discarded. -->
       <button class="btn btn-topbar btn-grade" onclick="gradeFromHeader()" id="grade-btn" aria-label="Grade a Comic" title="Grade a Comic" style="display:none">
         <img src="assets/ghosts/Front_Cover.jpg" alt="" decoding="async" class="grade-btn-thumb">
-        <span>Grade a Comic</span>
+        <span>Grade<br>Comic</span>
       </button>
       <button class="btn-gear" onclick="openSettings()" title="Settings" id="settings-btn" aria-label="Settings">
         <!-- Flat abstract gear icon — solid white silhouette of a cog with
