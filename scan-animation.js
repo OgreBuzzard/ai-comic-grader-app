@@ -231,25 +231,23 @@
     .rg-scan-stage {
       position: fixed;
       inset: 0;
-      /* S14: was background:transparent (S13 v18 chose that for a
-         "seamless" transition over the Edit view). But during the 2s
-         chest slide-up, the not-yet-covered area showed the Edit view
-         behind it — the "sliver" bug — and on some viewports a thin gap
-         persisted at full extension. Replaced with an opaque dark
-         backdrop that fades in fast (180ms) so the Edit view is hidden
-         almost immediately while the chest is still early in its slide.
-         The transition still reads as smooth because the backdrop fade
-         and the chest slide overlap. Color is the app's assess-mode
-         near-black so it matches the cavity surround. */
-      background: #0a0d07;
-      opacity: 0;
-      animation: rgStageFadeIn 180ms ease-out forwards;
+      /* TRANSPARENT — do not change this back to an opaque color.
+         History: S13 v18 deliberately made this transparent so the chest
+         rises up OVER the live Edit view instead of hard-cutting to
+         black. This took multiple sessions to get right and is the
+         intended look. An S14 change briefly set this to #0a0d07 to kill
+         a "sliver of Edit view visible / scrollable behind the overlay"
+         bug — that was the wrong fix and it reverted the see-through
+         rise. The CORRECT fix for the sliver/scroll bug is the body
+         scroll lock (lockBodyScroll/unlockBodyScroll, added the same
+         session): it freezes the page behind the overlay so nothing
+         scrolls and the visible Edit view is static during the ~2s chest
+         slide-up. Transparency + scroll lock together = the desired
+         behavior. If a sliver bug ever recurs, fix the scroll lock, NOT
+         this background. */
+      background: transparent;
       overflow: hidden;
       z-index: 8500;
-    }
-    @keyframes rgStageFadeIn {
-      from { opacity: 0; }
-      to   { opacity: 1; }
     }
     .rg-scan-shell {
       position: absolute;
