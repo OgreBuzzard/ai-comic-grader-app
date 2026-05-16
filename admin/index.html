@@ -479,9 +479,60 @@
     padding: 40px 20px;
     font-size: 14px;
   }
+  /* S14: in-app prompt dialog. Native prompt()/confirm() are unreliable
+     in mobile Safari and standalone PWA mode — they can be suppressed
+     entirely or silently return null, which is why the delete-account
+     email confirmation had "nowhere to type." This is a real text-input
+     modal styled to the admin theme. */
+  #ap-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.66);
+    z-index: 9000; display: none;
+    align-items: center; justify-content: center; padding: 22px;
+  }
+  #ap-box {
+    background: var(--panel); border: 1px solid var(--rule);
+    border-radius: 12px; width: min(420px, 100%);
+    padding: 20px 20px 16px;
+    box-shadow: 0 14px 44px rgba(0,0,0,0.55);
+  }
+  #ap-msg {
+    color: var(--text); font-size: 14px; line-height: 1.5;
+    white-space: pre-wrap; margin-bottom: 14px;
+  }
+  #ap-input {
+    width: 100%; box-sizing: border-box;
+    background: var(--bg); border: 1px solid var(--rule);
+    color: var(--text); font-size: 15px;
+    padding: 11px 12px; border-radius: 8px;
+    font-family: inherit; margin-bottom: 16px;
+  }
+  #ap-input:focus { outline: none; border-color: var(--accent); }
+  #ap-actions { display: flex; gap: 10px; justify-content: flex-end; }
+  #ap-actions button {
+    font-family: inherit; font-size: 14px; font-weight: 600;
+    padding: 9px 18px; border-radius: 8px; cursor: pointer;
+    border: 1px solid transparent;
+  }
+  #ap-cancel { background: var(--panel-2); color: var(--text-dim); border-color: var(--rule); }
+  #ap-ok { background: var(--danger); color: #fff; }
+  #ap-ok:active, #ap-cancel:active { filter: brightness(0.9); }
 </style>
 </head>
 <body>
+
+<!-- S14: in-app prompt dialog (replaces native prompt() for the delete
+     confirmation, which mobile Safari / standalone PWA mode can suppress). -->
+<div id="ap-overlay">
+  <div id="ap-box" role="dialog" aria-modal="true" aria-labelledby="ap-msg">
+    <div id="ap-msg"></div>
+    <input id="ap-input" type="text" autocomplete="off" autocapitalize="off"
+           autocorrect="off" spellcheck="false">
+    <div id="ap-actions">
+      <button type="button" id="ap-cancel">Cancel</button>
+      <button type="button" id="ap-ok">Confirm</button>
+    </div>
+  </div>
+</div>
 
 <div id="root">
   <div class="loading">Loading…</div>
@@ -1054,6 +1105,47 @@ function renderUserDetail(user, items, publicRate) {
 // confirmation is enforced both client-side (this function) AND
 // server-side (the endpoint checks the typed email matches). Double
 // confirmation prevents fat-finger deletions of the wrong account.
+// S14: promise-based in-app replacement for window.prompt(). Native
+// prompt() is unreliable in mobile Safari and is fully suppressed in
+// standalone/PWA display mode — it can return null without ever showing
+// a dialog, which is exactly why the delete-account email confirmation
+// had "nowhere to type." Resolves the entered string, or null on
+// cancel / overlay tap / Escape.
+let _apResolver = null;
+function appPrompt(message, okLabel) {
+  return new Promise((resolve) => {
+    _apResolver = resolve;
+    const overlay = document.getElementById('ap-overlay');
+    const msg = document.getElementById('ap-msg');
+    const input = document.getElementById('ap-input');
+    const ok = document.getElementById('ap-ok');
+    if (!overlay || !msg || !input) {
+      // Last-resort fallback — should not happen, but never trap the admin.
+      resolve(window.prompt(message));
+      return;
+    }
+    msg.textContent = message;
+    input.value = '';
+    if (ok && okLabel) ok.textContent = okLabel;
+    overlay.style.display = 'flex';
+    setTimeout(() => { try { input.focus(); } catch (e) {} }, 30);
+    const done = (val) => {
+      overlay.style.display = 'none';
+      document.removeEventListener('keydown', onKey);
+      const r = _apResolver; _apResolver = null;
+      if (r) r(val);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') done(null);
+      else if (e.key === 'Enter') done(input.value);
+    };
+    document.getElementById('ap-ok').onclick = () => done(input.value);
+    document.getElementById('ap-cancel').onclick = () => done(null);
+    overlay.onclick = (e) => { if (e.target === overlay) done(null); };
+    document.addEventListener('keydown', onKey);
+  });
+}
+
 async function deleteAccount(user) {
   const hasEmail = !!(user.email && user.email.trim());
   const uidSuffix = (user.uid || '').slice(-6);
@@ -1081,7 +1173,7 @@ async function deleteAccount(user) {
     promptMsg = `This is a legacy account with no email.\n\nType the last 6 characters of its UID to confirm deletion:\n\n${user.uid}\n                                          ^^^^^^\n(type: ${uidSuffix})`;
     expected = uidSuffix.toLowerCase();
   }
-  const typed = prompt(promptMsg);
+  const typed = await appPrompt(promptMsg, 'Delete Account');
   if (typed == null) return;  // cancelled
   const trimmed = typed.trim().toLowerCase();
   if (trimmed !== expected) {
