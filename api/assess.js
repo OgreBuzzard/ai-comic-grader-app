@@ -1,3 +1,12 @@
+// ============================================================================
+// RoboGrader assess.js  —  BUILD FINGERPRINT: S14-2026-05-16-2311-FACSIMILE-PQ
+// If the copy on GitHub does NOT show this exact fingerprint line, the file
+// did not deploy — you uploaded a stale/cached download. See deploy note.
+// This build includes: CGC/PSA unification (schema 3.0), the FACSIMILE
+// OUTPUT CONSISTENCY CHECK (printing-field fix), and the PAGE QUALITY IS
+// NOT A DEFECT rule. Bump the date-time portion on any future assess.js
+// change so deploy state is always visually verifiable on GitHub.
+// ============================================================================
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const apiKey = process.env.ANTHROPIC_API_KEY;
