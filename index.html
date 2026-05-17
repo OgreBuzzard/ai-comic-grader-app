@@ -580,6 +580,27 @@
     .group-chevron { font-family: 'Barlow Condensed', sans-serif; font-size: 11px; color: #6b5e52; transition: transform 0.2s; display: inline-block; }
     .group-chevron.open { transform: rotate(90deg); }
     .comic-row { background: #ffffff; border: 1px solid #ddd8d0; border-radius: 12px; padding: 10px 10px; cursor: pointer; display: flex; align-items: center; gap: 10px; margin-bottom: 5px; transition: background 0.15s; }
+    /* S14: swipe-to-delete container. The red Delete action sits behind,
+       pinned to the right; .swipe-fg is the opaque foreground that slides
+       left to reveal it. margin-bottom moved here so the gap is outside
+       the clipping container. */
+    .swipe-row { position: relative; margin-bottom: 5px; border-radius: 12px; overflow: hidden; }
+    .swipe-row .comic-row { margin-bottom: 0; }
+    .swipe-del {
+      position: absolute; top: 0; right: 0; bottom: 0;
+      width: 84px; border: none; cursor: pointer;
+      background: #d23b34; color: #fff;
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 15px; font-weight: 700; letter-spacing: 0.5px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .swipe-del:active { background: #b2302a; }
+    .swipe-fg {
+      position: relative; z-index: 1;
+      will-change: transform;
+      background: #ffffff;   /* must be opaque to cover the Delete action */
+      touch-action: pan-y;   /* allow vertical scroll; we manage horizontal */
+    }
     .comic-row:hover { background: #f0ece6; }
     .comic-thumb { align-self: stretch; object-fit: cover; border-radius: 0; flex-shrink: 0; width: 52px; }
     .grade-badge { min-width: 48px; text-align: center; background: #f0ece6; border-radius: 4px; padding: 6px 3px; flex-shrink: 0; border: 1px solid; }
@@ -939,6 +960,12 @@
     .lens-btn:active { transform: scale(0.92); }
     /* Upload-instead anchored to the left, doesn't fight capture button for layout. */
     #camera-upload-link { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.25); color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; letter-spacing: 0.3px; cursor: pointer; max-width: calc(50% - 60px); line-height: 1.2; }
+    /* S14: Skip button — right-side mirror of the Photo Library button,
+       same visual weight. Only display:block'd on the Interior slot via
+       JS. Amber-ish tint so it reads as "alternate action," distinct
+       from the neutral upload control. */
+    #camera-skip { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); background: rgba(60,45,10,0.7); border: 1px solid rgba(240,200,90,0.5); color: #f0d99a; padding: 10px 16px; border-radius: 8px; font-size: 12px; font-weight: 700; letter-spacing: 0.3px; cursor: pointer; max-width: calc(50% - 60px); line-height: 1.2; text-align: center; }
+    #camera-skip:active { background: rgba(60,45,10,0.9); }
     #camera-upload-link:active { background: rgba(0,0,0,0.75); }
     /* Permission-denied dialog (sits inside camera-modal area but overlays the video). */
     #camera-perm-dialog { position: absolute; inset: 0; background: rgba(0,0,0,0.85); display: none; flex-direction: column; align-items: center; justify-content: center; padding: 24px; z-index: 10; }
@@ -1613,6 +1640,13 @@
   <div id="camera-controls">
     <button id="camera-upload-link" onclick="cameraUploadInstead()">Photo<br>Library</button>
     <button id="camera-capture" onclick="cameraCapture()" aria-label="Capture photo"></button>
+    <!-- S14: Skip button. Only shown on the Interior (page_quality) slot.
+         Graded/slabbed books can't be opened to photograph the interior;
+         forcing a filler photo wastes data and can confuse the
+         assessment. Skipping leaves images[2] empty — the assessment
+         and PQ-display logic already handle a missing interior shot
+         (hasInteriorPhoto check). Front and Back remain required. -->
+    <button id="camera-skip" onclick="cameraSkipSlot()" style="display:none">Skip<br>Interior</button>
   </div>
 </div>
 <div id="sync-bar" style="display:none">
@@ -2824,6 +2858,26 @@ async function saveItem(rec){
   syncMsg(null);
 }
 
+// S14: swipe-to-delete commit. The swipe gesture + deliberate tap on the
+// revealed red Delete button IS the confirmation (matches iOS Mail /
+// Messages — a swipe is hard to do by accident and the tap is a separate
+// deliberate action). No extra modal: for a recoverable list item that
+// would be heavier friction than the platform convention. Reuses the
+// canonical deleteItem() so Storage + Firestore + legacy-path cleanup is
+// identical to deleting from the detail view; then re-renders the list.
+async function swipeDeleteItem(id){
+  try {
+    await deleteItem(id);
+  } catch (e) {
+    console.error('Swipe delete failed:', e);
+    syncMsg('Delete failed. Try again.');
+    return;
+  }
+  // deleteItem may navigate (sample path calls showList); for the normal
+  // path we ensure the list reflects the removal.
+  if (view === 'list') renderList();
+}
+
 async function deleteItem(id){
   // Manual deletion of the sample entry: just dismiss it, no Firestore call.
   if (id === SAMPLE_COMIC_ID) {
@@ -3402,17 +3456,30 @@ function renderList(){
           section.groups[title].forEach(c=>{
             const thumbSrc = c.thumbnails?.[0] || c.images?.[0];
             const thumb = thumbSrc ? `<img class="comic-thumb" src="${thumbSrc}" decoding="async">` : "";
-            html+=`<div class="comic-row" data-row-id="${esc(c.id)}" onclick="showDetail('${esc(c.id)}')">
-              ${thumb}
-              ${buildListBadge(c)}
-              <div style="flex:1;min-width:0">
-                <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>
-                <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">
-                  ${c.issue?`<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${formatIssue(c.issue,c.title)}</span>`:""}
-                  ${c.issueDate?`<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>`:""}
+            // S14: swipe-to-delete. The row is a sliding foreground over a
+            // fixed red Delete action. Touch handlers (wired after render)
+            // translate .swipe-fg on horizontal drag; a left swipe past
+            // threshold latches it open to reveal Delete. Tapping Delete
+            // removes the item (swipe + deliberate tap is itself the
+            // confirmation — matches iOS Mail/Messages; no extra modal,
+            // which would be heavier friction than the platform norm for
+            // a recoverable list item). The foreground keeps the original
+            // onclick=showDetail; the swipe handler suppresses that click
+            // when a drag occurred so swiping never opens the detail view.
+            html+=`<div class="swipe-row" data-swipe-id="${esc(c.id)}">
+              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>
+              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')">
+                ${thumb}
+                ${buildListBadge(c)}
+                <div style="flex:1;min-width:0">
+                  <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>
+                  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">
+                    ${c.issue?`<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${formatIssue(c.issue,c.title)}</span>`:""}
+                    ${c.issueDate?`<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>`:""}
+                  </div>
                 </div>
+                ${buildListCgcPsaStack(c)}
               </div>
-              ${buildListCgcPsaStack(c)}
             </div>`;
           });
           html+=`</div>`;
@@ -3422,6 +3489,112 @@ function renderList(){
     });
   }
   main.innerHTML=html;
+  wireSwipeRows();
+}
+
+// S14: tap handler for list rows. Replaces the inline showDetail call so
+// we can suppress the tap when the row was being swiped (a swipe should
+// never also open the detail view). _swipeJustHappened is set by the
+// touch handler and cleared shortly after.
+function onRowTap(ev, id){
+  if (window._swipeSuppressTap) { ev.preventDefault(); ev.stopPropagation(); return; }
+  // If any row is swiped open, a tap anywhere closes it instead of
+  // navigating — standard iOS behavior.
+  const openRow = document.querySelector('.swipe-fg.swiped-open');
+  if (openRow) {
+    openRow.classList.remove('swiped-open');
+    openRow.style.transform = '';
+    ev.preventDefault(); ev.stopPropagation();
+    return;
+  }
+  showDetail(id);
+}
+
+// S14: wire touch-drag swipe-to-delete on every rendered list row. Pure
+// touch events (works on iOS Safari, the target platform). Horizontal
+// drag past a threshold latches the row open; Delete button removes the
+// item via the existing deletion path. Vertical intent (scrolling) is
+// detected early and the gesture is abandoned so the list still scrolls.
+function wireSwipeRows(){
+  const OPEN_X = -84;          // px the foreground slides to reveal Delete
+  const LATCH  = -42;          // drag past this → latch open; else snap back
+  document.querySelectorAll('.swipe-row').forEach(rowEl => {
+    const fg = rowEl.querySelector('.swipe-fg');
+    const delBtn = rowEl.querySelector('.swipe-del');
+    if (!fg || fg._swipeWired) return;
+    fg._swipeWired = true;
+    let startX = 0, startY = 0, dx = 0, dragging = false, decided = false, horiz = false;
+
+    fg.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) return;
+      // Close any other open row first.
+      document.querySelectorAll('.swipe-fg.swiped-open').forEach(o => {
+        if (o !== fg) { o.classList.remove('swiped-open'); o.style.transform=''; }
+      });
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      dx = 0; dragging = true; decided = false; horiz = false;
+      fg.style.transition = 'none';
+    }, { passive: true });
+
+    fg.addEventListener('touchmove', (e) => {
+      if (!dragging) return;
+      const cx = e.touches[0].clientX, cy = e.touches[0].clientY;
+      const mvx = cx - startX, mvy = cy - startY;
+      if (!decided) {
+        // Decide gesture axis on first meaningful movement. Vertical →
+        // let the page scroll (abandon swipe). Horizontal → take over.
+        if (Math.abs(mvx) > 8 || Math.abs(mvy) > 8) {
+          decided = true;
+          horiz = Math.abs(mvx) > Math.abs(mvy);
+          if (!horiz) { dragging = false; return; }
+        } else {
+          return;
+        }
+      }
+      if (!horiz) return;
+      const base = fg.classList.contains('swiped-open') ? OPEN_X : 0;
+      dx = base + mvx;
+      if (dx > 0) dx = 0;             // can't slide right past closed
+      if (dx < OPEN_X - 20) dx = OPEN_X - 20;  // small rubber-band past open
+      fg.style.transform = `translateX(${dx}px)`;
+      // Prevent the page from scrolling while we're doing a horizontal drag.
+      if (e.cancelable) e.preventDefault();
+    }, { passive: false });
+
+    const endDrag = () => {
+      if (!dragging && !decided) return;
+      dragging = false;
+      fg.style.transition = 'transform 0.18s ease';
+      const shouldOpen = dx <= LATCH;
+      if (shouldOpen) {
+        fg.classList.add('swiped-open');
+        fg.style.transform = `translateX(${OPEN_X}px)`;
+      } else {
+        fg.classList.remove('swiped-open');
+        fg.style.transform = '';
+      }
+      // Suppress the click that fires at touchend if we actually dragged,
+      // so a swipe never also triggers navigation.
+      if (horiz && Math.abs(dx) > 6) {
+        window._swipeSuppressTap = true;
+        setTimeout(() => { window._swipeSuppressTap = false; }, 120);
+      }
+    };
+    fg.addEventListener('touchend', endDrag, { passive: true });
+    fg.addEventListener('touchcancel', endDrag, { passive: true });
+
+    if (delBtn && !delBtn._wired) {
+      delBtn._wired = true;
+      delBtn.addEventListener('click', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const id = delBtn.getAttribute('data-del-id');
+        // Reuse the canonical deletion path so storage/Firestore cleanup
+        // is identical to deleting from the detail view.
+        swipeDeleteItem(id);
+      });
+    }
+  });
 }
 
 
@@ -8513,6 +8686,15 @@ function cameraOpenSlot(slotIndex) {
   const labelEl = document.getElementById('camera-slot-label');
   if (labelEl) labelEl.textContent = (label || '').toUpperCase();
 
+  // S14: Skip button visibility. Only the main-kind Interior slot
+  // (STORAGE_SLOTS_MAIN index 2 = 'page_quality') can be skipped — it's
+  // the one you physically can't shoot on a slabbed/graded book. Front
+  // (0) and Back (1) stay mandatory; corner kind has no skippable slot.
+  const skipBtn = document.getElementById('camera-skip');
+  if (skipBtn) {
+    skipBtn.style.display = (kind === 'main' && slotIndex === 2) ? 'block' : 'none';
+  }
+
   // S13: Check orientation BEFORE fetching the guide. If mismatch, show
   // the rotate card and return early — no point fetching a guide whose
   // aspect won't fit the current viewport. The orientation-change listener
@@ -8555,6 +8737,26 @@ function cameraOpenSlot(slotIndex) {
     progress.textContent = `${done} of ${total} — ${label}`;
   } else {
     progress.textContent = label;
+  }
+}
+
+// S14: skip the current slot (Interior only — gated by the button's
+// visibility in cameraOpenSlot). Advances exactly like a capture EXCEPT
+// it pushes nothing to _cameraState.captures, so images[2] stays empty.
+// The downstream assessment path already treats a missing interior shot
+// correctly (hasInteriorPhoto / showPQ logic): page quality simply isn't
+// predicted from a (nonexistent) interior photo, which is the desired
+// behavior for a graded book whose PQ comes from the slab label instead.
+function cameraSkipSlot() {
+  if (!_cameraState) return;
+  // Defensive: only allow skipping the Interior slot, matching the
+  // button's visibility rule — never let this advance a required slot.
+  if (!(_cameraState.kind === 'main' && _cameraState.current === 2)) return;
+  if (_cameraState.mode === 'walkthrough' && _cameraState.queue.length > 0) {
+    const nextSlot = _cameraState.queue.shift();
+    cameraOpenSlot(nextSlot);
+  } else {
+    cameraFinish();
   }
 }
 
