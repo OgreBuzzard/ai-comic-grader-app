@@ -1,5 +1,5 @@
 // Robograder — Label viewer + PDF generation module (S12 rewrite)
-// BUILD FINGERPRINT: S14-2026-05-16-2345-MICROFIX-SCALEX
+// BUILD FINGERPRINT: S14-2026-05-17-LARGE-6.25IN-CGCTRIM
 // (If the label feature misbehaves, check this line in the deployed
 //  print-label.js — a stale cached upload shows an older fingerprint.
 //  This build: scaleX condensation for PDF, micro-preview loop fixed,
@@ -107,12 +107,22 @@ const LABEL_FORMATS = {
     name: 'large',
     sheetCount: 7,
     rows: 7, cols: 1,
-    labelW: 7.5, labelH: 1.5,
+    // S14: labelW shortened 7.5 → 6.25 (−1.25" off the right) so the
+    // printed label clears CGC's holographic authenticity seal. The
+    // OL5450 sheet is still physically 7.5"×1.5" per label; the user
+    // hand-trims the right 1.25". Row PITCH is driven by labelH (1.5)
+    // + rowGap (0), NOT labelW, so vertical sheet alignment is
+    // unchanged — only the image width placed by pdf.addImage shrinks,
+    // leaving the right 1.25" of each label cell blank for trimming.
+    // pixelW 2160 → 1800 keeps the capture box at 288 DPI for the new
+    // 6.25" width (6.25 × 288 = 1800); aspect ratio stays correct so
+    // the label is not distorted by html2canvas.
+    labelW: 6.25, labelH: 1.5,
     sheetTopMargin: 0.25,
     sheetLeftMargin: 0.5,
     colGap: 0,
     rowGap: 0,
-    pixelW: 2160, pixelH: 432
+    pixelW: 1800, pixelH: 432
   }
 };
 
@@ -1242,7 +1252,19 @@ function ensureStylesInjected() {
        - QR col: right: 18, width: 184 (slightly larger, fits the height)
        - URL: right: 18, bottom: 22 */
   .rg-label-large {
-    width: 2160px; height: 432px;
+    /* S14: width shortened from 2160px (7.5") to 1800px (6.25"), i.e.
+       1.25" trimmed off the RIGHT edge. Reason: these labels overlay
+       CGC slab cases, and the far-right 1.25" was covering CGC's
+       holographic authenticity seal and leaving residue when removed.
+       The user trims the printed sheet's right margin by hand; the
+       OL5450 stock is still 7.5"-pitch so sheet alignment is unchanged
+       (only labelW in LABEL_FORMATS shrinks, not the row pitch).
+       All right-anchored children (QR, URL, price pad, info right
+       boundary) use the CSS right property so they automatically
+       re-anchor to the new 1800px right edge — nothing is clipped, the
+       layout just becomes 360px narrower with everything still 18px
+       clear of the new right edge. 1800px = 6.25" at 288 DPI. */
+    width: 1800px; height: 432px;
     background: linear-gradient(180deg, #6f8f4a 0%, #93ab66 38%, #c2cc9e 100%);
     border: 1px solid #8a9a6a;
     border-radius: 6px;
