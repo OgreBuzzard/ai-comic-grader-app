@@ -1,5 +1,5 @@
 // Robograder — Label viewer + PDF generation module (S12 rewrite)
-// BUILD FINGERPRINT: S14-2026-05-17-LARGE-6.25IN-CGCTRIM
+// BUILD FINGERPRINT: S14-2026-05-17-ALL-LABELS-SCORE-PREC
 // (If the label feature misbehaves, check this line in the deployed
 //  print-label.js — a stale cached upload shows an older fingerprint.
 //  This build: scaleX condensation for PDF, micro-preview loop fixed,
@@ -634,16 +634,13 @@ function ensureStylesInjected() {
     line-height: 1;
   }
   .rg-label .rg-num {
-    /* S14: −8pt (148→140) per user; still the dominant element, just
-       not oversized. Centered in the box on its own.
-       S14 PDF FIX: html2canvas 1.4.1 ignores font-stretch (the wdth
-       variable axis) when rasterizing to canvas, so the condensed look
-       was lost in the saved PDF while correct on screen. Replaced
-       font-stretch:62.5% with an equivalent geometric scaleX(0.625),
-       which html2canvas DOES rasterize. transform-origin:center keeps
-       the number centered in the score box as before. inline-block so
-       the transform applies (transforms are no-ops on inline boxes). */
-    font-size: 140px; font-weight: 900;
+    /* S14: was 148, dropped to 140, now 150 — brought back up a touch
+       to match the Large label's score-prominence pass now that the
+       condensed scaleX text leaves room. Centered in the 252px box.
+       PDF FIX: scaleX(0.625) replaces font-stretch (html2canvas 1.4.1
+       ignores the wdth axis when rasterizing); transform-origin:center
+       keeps it centered; inline-block so the transform applies. */
+    font-size: 150px; font-weight: 900;
     color: #b8d820; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
@@ -653,13 +650,16 @@ function ensureStylesInjected() {
   .rg-label .rg-prec {
     /* Upper-right of the score box, ABSOLUTELY positioned so it is out
        of flow and cannot displace the centered number. Anchored to the
-       box (not the digit) at a fixed top/right inset.
-       S14 PDF FIX: scaleX(0.625) replaces font-stretch (see .rg-num).
-       transform-origin:right so the compressed text keeps its right
-       edge pinned at the right:22px inset and grows leftward. */
+       box at a fixed top/right inset.
+       S14: sized UP 30 → 50 to match the title (was barely readable in
+       print) — same rule applied to Large. scaleX(0.625) replaces
+       font-stretch; transform-origin:right keeps the compressed text
+       pinned at the right inset and growing leftward. Verified clear of
+       the 150px centered number (~10px gap; precision is absolute/out
+       of flow so it cannot displace the number regardless). */
     position: absolute;
-    top: 40px; right: 22px;
-    font-size: 30px; font-weight: 700;
+    top: 34px; right: 20px;
+    font-size: 50px; font-weight: 700;
     color: #b8d820; opacity: 0.9;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
@@ -846,7 +846,8 @@ function ensureStylesInjected() {
     line-height: 1;
   }
   .rg-label-l .rg-num {
-    font-size: 140px; font-weight: 900;
+    /* S14: 140 → 150, matching Small R / the Large prominence pass. */
+    font-size: 150px; font-weight: 900;
     color: #b8d820; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
@@ -855,10 +856,11 @@ function ensureStylesInjected() {
   }
   .rg-label-l .rg-prec {
     /* Absolute to the score-box corner, out of flow — never displaces
-       the centered number. Matches Small R. */
+       the centered number. Matches Small R: sized up 30 → 50 (= title)
+       with the tighter top:34/right:20 inset for the larger glyph. */
     position: absolute;
-    top: 40px; right: 22px;
-    font-size: 30px; font-weight: 700;
+    top: 34px; right: 20px;
+    font-size: 50px; font-weight: 700;
     color: #b8d820; opacity: 0.9;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
@@ -1101,7 +1103,9 @@ function ensureStylesInjected() {
     line-height: 1;
   }
   .rg-label-square .rg-num {
-    font-size: 122px; font-weight: 900;
+    /* S14: 122 → 130, matching the score-prominence pass on the other
+       labels (proportionally smaller bump to suit the 220px box). */
+    font-size: 130px; font-weight: 900;
     color: #b8d820; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
@@ -1109,11 +1113,14 @@ function ensureStylesInjected() {
     transform-origin: center;
   }
   /* Precision absolute to the score-box corner, out of flow — never
-     displaces the centered number. Inset scaled to the 220px box. */
+     displaces the centered number. S14: sized up 24 → 34 to match the
+     Square title (same rule as the other labels). top:30/right:16 inset
+     tuned for the larger glyph in the 220px box; verified ~18px clear
+     of the 130px centered number. */
   .rg-label-square .rg-prec {
     position: absolute;
-    top: 34px; right: 18px;
-    font-size: 24px; font-weight: 700;
+    top: 30px; right: 16px;
+    font-size: 34px; font-weight: 700;
     color: #b8d820; opacity: 0.9;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
@@ -1293,7 +1300,14 @@ function ensureStylesInjected() {
     line-height: 1;
   }
   .rg-label-large .rg-num {
-    font-size: 224px; font-weight: 900;
+    /* S14: bumped back up to 240px (from 224) — now that the condensed
+       text renders correctly in the PDF there is ample room, and the
+       user wants the headline score more prominent. Still centered in
+       the 396px box; the precision is a separate absolute element so a
+       larger number cannot collide with it (verified: 2-digit number at
+       240px scaleX(0.625) ≈ x123–273; precision right-anchored ≈ x290+,
+       ~17px clearance). */
+    font-size: 240px; font-weight: 900;
     color: #b8d820; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
@@ -1302,17 +1316,20 @@ function ensureStylesInjected() {
   }
   .rg-label-large .rg-prec {
     /* Absolute to the score-box corner, out of flow — never displaces
-       the centered number. Inset scaled to the 396px box. */
+       the centered number. S14: sized UP to 64px to match the title
+       (was 46px, barely readable in print per user). At
+       transform-origin:right it grows leftward from the right:36 inset,
+       staying clear of the centered number (see .rg-num note). */
     position: absolute;
-    top: 64px; right: 36px;
-    font-size: 46px; font-weight: 700;
+    top: 56px; right: 34px;
+    font-size: 64px; font-weight: 700;
     color: #b8d820; opacity: 0.9;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
     transform: scaleX(0.625);
     transform-origin: right center;
     line-height: 1;
-    letter-spacing: 1.5px;
+    letter-spacing: 1px;
     white-space: nowrap;
   }
   .rg-label-large .rg-v {
@@ -1325,11 +1342,18 @@ function ensureStylesInjected() {
   }
   .rg-label-large .info {
     position: absolute;
-    left: 444px; top: 28px; right: 220px;
+    /* S14: right boundary moved left 72px (220 → 292) to keep the same
+       gap to the QR column, which shifted left 0.25" for trim clearance.
+       Width = 1800 − 444 − 292 = 1064px. */
+    left: 444px; top: 28px; right: 292px;
     display: flex; flex-direction: column;
   }
   .rg-label-large.has-price .info {
-    right: 580px;
+    /* S14: with price tag, the info must clear the relocated price pad
+       (now at right:322, 340px wide → its left edge is 662 from the
+       right). Boundary moved left 72px (580 → 652) to preserve the
+       prior gap. Width = 1800 − 444 − 652 = 704px (still positive). */
+    right: 652px;
   }
   .rg-label-large .info-upper {
     padding-bottom: 14px;
@@ -1374,8 +1398,12 @@ function ensureStylesInjected() {
     font-family: 'Noto Sans Mono', monospace;
   }
   .rg-label-large .qr-col {
+    /* S14: shifted left 72px (0.25" @288DPI) — right:18 → right:90 — to
+       guarantee right-side clearance so no QR is cut off near the trim
+       edge. The price pad and .info right boundary shift by the same
+       72px to keep the column relationships intact. */
     position: absolute;
-    right: 18px; top: 22px;
+    right: 90px; top: 22px;
     width: 184px;
     display: flex; flex-direction: column;
     align-items: center; gap: 6px;
@@ -1386,7 +1414,9 @@ function ensureStylesInjected() {
     height: 178px !important;
   }
   .rg-label-large .verify {
-    font-size: 22px; color: #7a8a5a;
+    /* S14: +2pt (22 → 30px; 1pt = 4px @288DPI). Sits inside .qr-col so
+       it moves left with the QR automatically — no separate offset. */
+    font-size: 30px; color: #7a8a5a;
     letter-spacing: 1.5px;
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 600; text-align: center;
@@ -1397,19 +1427,23 @@ function ensureStylesInjected() {
     font-weight: 500;
     text-align: right;
     position: absolute;
-    right: 18px; bottom: 26px;
+    /* S14: shifted left 72px (right:18 → right:90) to stay aligned with
+       the QR column above it, which also moved left for trim clearance. */
+    right: 90px; bottom: 26px;
     letter-spacing: 0.3px;
   }
   /* Price pad for large variant — bigger, fills most of the taller cell.
      S13: nudged left from right:220 → right:250 to add visual breathing
-     room between the pad's right edge and the QR's left edge. v2 had ~18px
-     gap which read as cramped; v3 has ~48px gap which reads as cleanly
-     separated columns. Width unchanged at 340 — the extra 30 px comes off
-     the pad's right margin, not its width. */
+     room between the pad's right edge and the QR's left edge.
+     S14: shifted a further 72px left (right:250 → right:322) so it moves
+     in step with the QR/URL column's 0.25" leftward shift, preserving
+     the same gap between the price pad and the QR column. The
+     .info.has-price right boundary moves the same 72px (580 → 652) so
+     the text column doesn't run into the relocated pad. */
   .rg-label-large.has-price .price-pad {
     display: block;
     position: absolute;
-    top: 28px; right: 250px;
+    top: 28px; right: 322px;
     width: 340px; height: 336px;
     background: #ffffff;
     border: 1px solid #b8c098;
