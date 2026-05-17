@@ -1,4 +1,9 @@
 // Robograder — Label viewer + PDF generation module (S12 rewrite)
+// BUILD FINGERPRINT: S14-2026-05-16-2345-MICROFIX-SCALEX
+// (If the label feature misbehaves, check this line in the deployed
+//  print-label.js — a stale cached upload shows an older fingerprint.
+//  This build: scaleX condensation for PDF, micro-preview loop fixed,
+//  Large first-open clipping fixed, Small L URL + precision positioning.)
 // Loaded dynamically when the user clicks "Print Label" on a detail view.
 //
 // REWRITE SUMMARY (S12 May 3):
@@ -1669,18 +1674,35 @@ function renderModal(modal, comic, allItems) {
   // later size change (open animation finishing, chrome appearing,
   // rotation) re-fits automatically. Idempotent — recomputing with the
   // same measurements just sets the same scale.
+  // S14 fix: a SINGLE requestAnimationFrame ran fitPreviewToFrame before
+  // the modal's layout had settled, so the widest label (Large) clipped
+  // on first open. We recompute across several settle points so the
+  // measurement happens against final layout.
+  //
+  // S14 fix #2 (micro-preview regression): an earlier version of this
+  // ALSO attached a ResizeObserver to .lvm-preview-area. That created a
+  // feedback loop — fitPreviewToFrame() mutates the frame's scale, which
+  // changes the frame's rendered size, which changes the observed area's
+  // content size, which re-fires the observer, which computes a smaller
+  // scale… ratcheting the preview to microscopic size (user
+  // screenshot). A ResizeObserver must never observe an element whose
+  // size its own callback mutates. Removed entirely. Genuine viewport
+  // changes (rotation, window resize) are handled by window-level
+  // listeners instead — those fire only on real viewport changes, never
+  // as a side effect of the scale we set.
   const fit = () => fitPreviewToFrame(modal);
   requestAnimationFrame(fit);
   requestAnimationFrame(() => requestAnimationFrame(fit)); // after 2 frames
   setTimeout(fit, 60);
   setTimeout(fit, 200);   // after the open transition (~0.18s) completes
-  if (typeof ResizeObserver !== 'undefined') {
-    const area = modal.querySelector('.lvm-preview-area');
-    if (area && !area._fitObserver) {
-      const ro = new ResizeObserver(() => fit());
-      ro.observe(area);
-      area._fitObserver = ro;  // keep a ref so it isn't GC'd
-    }
+  if (!modal._fitViewportWired) {
+    modal._fitViewportWired = true;
+    const onViewportChange = () => {
+      if (modal.classList.contains('open')) fit();
+    };
+    window.addEventListener('resize', onViewportChange);
+    window.addEventListener('orientationchange', onViewportChange);
+    modal._fitViewportHandler = onViewportChange;
   }
 }
 
@@ -1695,30 +1717,40 @@ function fitPreviewToFrame(modal) {
   const area = modal.querySelector('.lvm-preview-area');
   const frame = modal.querySelector('.lvm-preview-frame');
   if (!area || !frame) return;
-  // Available width = preview area's content width minus its horizontal
-  // padding (which is 2 × 16px = 32px in the CSS below).
+  // Available WIDTH is scale-independent: the preview area's width is
+  // driven by the modal/viewport, not by the label's scale. Safe to use
+  // area.clientWidth.
   const areaStyle = getComputedStyle(area);
   const padX = parseFloat(areaStyle.paddingLeft) + parseFloat(areaStyle.paddingRight);
-  const padY = parseFloat(areaStyle.paddingTop) + parseFloat(areaStyle.paddingBottom);
   // Pull in another 4% margin so the label visibly clears the modal edges
   // — a label that touches the right edge looks clipped even if it's not.
   const availW = (area.clientWidth - padX) * 0.96;
-  const availH = (area.clientHeight - padY) * 0.96;
   if (availW <= 0) return;
+  // Available HEIGHT must NOT come from area.clientHeight: the frame is a
+  // child of the area, so if the area hugs its content, shrinking the
+  // label shrinks the area, which would feed back into a smaller scale
+  // on the next call — the ratchet-to-micro bug. Derive a STABLE height
+  // budget from the viewport instead: the preview should occupy at most
+  // ~38% of the visible viewport height. This value does not change when
+  // we change the label scale, so repeated fit() calls converge to the
+  // same result instead of spiralling. (The window-level resize listener
+  // re-runs fit on genuine viewport changes, which is correct.)
+  const vh = window.innerHeight || document.documentElement.clientHeight || 800;
+  const availH = vh * 0.38;
   // Read the format's pixel dimensions from inline CSS variables on the
   // frame (set in renderModal based on the active format). Falls back to
   // 1152×288 (Small) if not set.
   const labelW = parseFloat(frame.style.getPropertyValue('--lvm-label-w')) || 1152;
   const labelH = parseFloat(frame.style.getPropertyValue('--lvm-label-h')) || 288;
-  // Compute scale factor based on the MORE constraining dimension. Pre
-  // S12-May-6 this only considered width, which was fine for the long
-  // rectangular Small (4:1) and Large (5:1) — width was always the binding
-  // constraint. Square (1:1) made height matter equally, and on short
-  // viewports a width-only scale was producing a label taller than the
-  // preview area, forcing scroll. Use min of both ratios.
+  // Scale to the MORE constraining dimension so neither axis overflows
+  // (Square is 1:1 so height matters as much as width; the long Small/
+  // Large labels are width-bound).
   const scaleW = availW / labelW;
-  const scaleH = availH > 0 ? availH / labelH : scaleW;
+  const scaleH = availH / labelH;
   const scale = Math.min(0.85, scaleW, scaleH);
+  // Guard against a degenerate tiny scale (e.g. a transient 0-width
+  // measurement slipping through): never set below a sane floor.
+  if (scale < 0.05) return;
   frame.style.setProperty('--lvm-frame-scale', scale.toFixed(4));
 }
 
