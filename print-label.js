@@ -306,6 +306,7 @@ function ensureStylesInjected() {
     document.head.appendChild(fonts);
   }
 
+
   const style = document.createElement('style');
   style.id = 'label-viewer-styles';
   style.textContent = `
@@ -1676,6 +1677,51 @@ function fitPreviewToFrame(modal) {
 // retries fresh.
 
 let _pdfLibsPromise = null;
+// S14: resolve only once the label's web fonts are actually usable, so
+// html2canvas captures the condensed faces (not the fallback). Uses the
+// FontFace Loading API. We explicitly load() the specific
+// family/weight/stretch combos the label CSS depends on — listing them
+// makes document.fonts.ready meaningful (ready alone can resolve before
+// a lazily-injected <link>'s faces finish). Bounded so a slow/blocked
+// font CDN degrades to "print with whatever we have" instead of hanging
+// the export.
+function ensureLabelFontsReady() {
+  if (!document.fonts || !document.fonts.load) {
+    // No FontFace API (very old engine) — fall back to a fixed wait.
+    return new Promise(r => setTimeout(r, 600));
+  }
+  // The exact faces the label markup renders. font-stretch goes in the
+  // shorthand as a percentage keyword between style and size for the
+  // condensed Noto Sans Display; plain shorthands for the others.
+  const specs = [
+    '900 condensed 100px "Noto Sans Display"',
+    '700 condensed 100px "Noto Sans Display"',
+    '500 condensed 100px "Noto Sans Display"',
+    '800 100px "Noto Sans Mono"',
+    '700 100px "Barlow Condensed"',
+    '600 100px "Barlow Condensed"',
+    '500 100px "Barlow Condensed"',
+  ];
+  // Some engines reject the 'condensed' keyword in the load() shorthand;
+  // fall back to a non-stretch shorthand for those so the load() still
+  // resolves the family (the @font-face/axis still applies via CSS).
+  const loadOne = (s) => {
+    try {
+      return document.fonts.load(s).catch(() => null);
+    } catch (e) {
+      const noStretch = s.replace(' condensed ', ' ');
+      try { return document.fonts.load(noStretch).catch(() => null); }
+      catch (e2) { return Promise.resolve(null); }
+    }
+  };
+  const loads = Promise.all(specs.map(loadOne))
+    .then(() => document.fonts.ready)
+    .catch(() => null);
+  // Hard timeout: never let font loading block the export indefinitely.
+  const timeout = new Promise(r => setTimeout(r, 4000));
+  return Promise.race([loads, timeout]);
+}
+
 function ensurePdfLibsLoaded() {
   if (window.jspdf && window.html2canvas) return Promise.resolve();
   if (_pdfLibsPromise) return _pdfLibsPromise;
@@ -1812,8 +1858,28 @@ async function generatePDF(comics, modal) {
     // modal preview path).
     renderQRsIn(offscreen);
 
-    // Wait one animation frame so layout + QR canvases are flushed before
-    // html2canvas captures.
+    // S14 FIX — condensed text was rendering wrong in the printed PDF
+    // (titles colliding: "UncannyX-Men", "FantasticFour"). Root cause:
+    // html2canvas rasterizes whatever font is loaded AT CAPTURE TIME.
+    // The label font (Noto Sans Display, the condensed variable face) is
+    // requested via an injected <link>, but font fetch+parse is async
+    // and frequently NOT done within the single requestAnimationFrame we
+    // used to wait. html2canvas then captured the FALLBACK font — wider,
+    // un-condensed metrics — so titles laid out for condensed widths
+    // overflowed and letters ran together. The score numbers survived
+    // because they're large/isolated; the tightly-set titles did not.
+    //
+    // Fix: explicitly wait for the FontFace Loading API to confirm the
+    // exact faces we depend on are ready before capturing. We request
+    // the specific family+weight+stretch combos the labels actually use
+    // so document.fonts.load resolves only when those faces are usable,
+    // then await document.fonts.ready as a backstop. Bounded by a
+    // timeout so a font-CDN hiccup degrades to "capture anyway" rather
+    // than hanging the export forever.
+    await ensureLabelFontsReady();
+
+    // One more animation frame so layout + QR canvases are flushed after
+    // fonts settle (font swap can reflow text).
     await new Promise(r => requestAnimationFrame(r));
 
     // Capture each label and place in PDF. For multi-page output (Small
