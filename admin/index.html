@@ -1226,11 +1226,18 @@ async function deleteAccount(user) {
             `Meta docs removed:  ${data.summary.metaDeleted}\n` +
             `Registry removed:   ${data.summary.robogradeIdsDeleted}\n` +
             `Storage cleared:    ${data.summary.storageObjectsDeleted}`);
-      state.view = 'dashboard';
+      // S14 FIX: the previous code called render() + loadUsers(true) +
+      // set state.* directly. This codebase has NO bare render()
+      // function (it uses renderDashboard / renderUserDetail / etc.) —
+      // the ReferenceError "Can't find variable: render" fired AFTER the
+      // account was already deleted server-side, so the delete actually
+      // succeeded but the UI crashed instead of returning to the list.
+      // The canonical "return to the user list" is exactly what the
+      // detail view's Back button does: renderDashboard() (it resets
+      // state.view/selectedUid itself and calls loadUsers via
+      // renderUsersTab). Set the tab first so we land on Users.
       state.tab = 'users';
-      state.selectedUid = null;
-      render();
-      loadUsers(true);
+      renderDashboard();
       return true;
     } catch (e) {
       const msg = (e && e.message) || 'unknown error';
