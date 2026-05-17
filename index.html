@@ -1,4 +1,14 @@
 <!DOCTYPE html>
+<!-- ===========================================================================
+  RoboGrader index.html — BUILD FINGERPRINT: S14-2026-05-16-2330-SWIPEFLASH-SCALEX
+  To verify what's actually deployed: open the deployed page's source (or
+  view-source) and find this line. If the fingerprint differs from what
+  Claude last produced, a stale/cached index.html was uploaded (same Safari
+  download-cache issue proven with assess.js). This build includes: the
+  swipe-delete flash fix (visibility:hidden default), the scaleX label
+  condensation, the top-bar Grade button two-line wrap, the in-app delete
+  prompt, and the credit-integrity fix. Bump the datetime on any change.
+============================================================================ -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -592,8 +602,23 @@
       background: #d23b34; color: #fff;
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 15px; font-weight: 700; letter-spacing: 0.5px;
-      display: flex; align-items: center; justify-content: center;
+      align-items: center; justify-content: center;
+      /* S14 fix (strengthened): the Delete action is REMOVED FROM THE
+         RENDER TREE until a swipe is actually happening. The earlier
+         attempt used visibility:hidden, which still keeps the element in
+         the layout/paint tree — in a compositor edge case during the
+         scrollIntoView + transform that runs when returning from Detail,
+         a hidden-but-present absolutely-positioned layer can still flash
+         for one frame. display:none means the element is not in the
+         render tree at all and physically cannot paint. JS flips it to
+         display:flex the instant a horizontal drag is detected and back
+         to (the default) display:none when the row snaps closed. A
+         passive re-render (return-from-Detail) never adds .swipe-active,
+         so the Delete action is never rendered then — no flash possible
+         by construction, independent of paint timing. */
+      display: none;
     }
+    .swipe-row.swipe-active .swipe-del { display: flex; }
     .swipe-del:active { background: #b2302a; }
     .swipe-fg {
       position: relative; z-index: 1;
@@ -1646,7 +1671,7 @@
          assessment. Skipping leaves images[2] empty — the assessment
          and PQ-display logic already handle a missing interior shot
          (hasInteriorPhoto check). Front and Back remain required. -->
-    <button id="camera-skip" onclick="cameraSkipSlot()" style="display:none">Skip<br>Interior</button>
+    <button id="camera-skip" onclick="cameraSkipSlot()" style="display:none">Skip</button>
   </div>
 </div>
 <div id="sync-bar" style="display:none">
@@ -3504,6 +3529,14 @@ function onRowTap(ev, id){
   if (openRow) {
     openRow.classList.remove('swiped-open');
     openRow.style.transform = '';
+    const parentRow = openRow.closest('.swipe-row');
+    if (parentRow) {
+      setTimeout(() => {
+        if (!openRow.classList.contains('swiped-open')) {
+          parentRow.classList.remove('swipe-active');
+        }
+      }, 200);
+    }
     ev.preventDefault(); ev.stopPropagation();
     return;
   }
@@ -3548,6 +3581,10 @@ function wireSwipeRows(){
           decided = true;
           horiz = Math.abs(mvx) > Math.abs(mvy);
           if (!horiz) { dragging = false; return; }
+          // Horizontal drag confirmed — reveal the Delete action now
+          // (it's visibility:hidden until this point so it can never
+          // flash on a passive re-render).
+          rowEl.classList.add('swipe-active');
         } else {
           return;
         }
@@ -3573,6 +3610,14 @@ function wireSwipeRows(){
       } else {
         fg.classList.remove('swiped-open');
         fg.style.transform = '';
+        // Fully closed — re-hide the Delete action after the snap-back
+        // transition completes so it can't show through on a later
+        // re-render. 200ms covers the 0.18s transform transition.
+        setTimeout(() => {
+          if (!fg.classList.contains('swiped-open')) {
+            rowEl.classList.remove('swipe-active');
+          }
+        }, 200);
       }
       // Suppress the click that fires at touchend if we actually dragged,
       // so a swipe never also triggers navigation.

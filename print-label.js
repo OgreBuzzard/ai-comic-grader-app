@@ -641,7 +641,7 @@ function ensureStylesInjected() {
        box (not the digit) at a fixed top/right inset.
        S14 PDF FIX: scaleX(0.625) replaces font-stretch (see .rg-num).
        transform-origin:right so the compressed text keeps its right
-       edge pinned at the `right:22px` inset and grows leftward. */
+       edge pinned at the right:22px inset and grows leftward. */
     position: absolute;
     top: 40px; right: 22px;
     font-size: 30px; font-weight: 700;
