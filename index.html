@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!-- ===========================================================================
-  RoboGrader index.html — BUILD FINGERPRINT: S14-2026-05-16-2330-SWIPEFLASH-SCALEX
+  RoboGrader index.html — BUILD FINGERPRINT: S14-2026-05-17-SAMPLE-8.0
   To verify what's actually deployed: open the deployed page's source (or
   view-source) and find this line. If the fingerprint differs from what
   Claude last produced, a stale/cached index.html was uploaded (same Safari
@@ -449,137 +449,6 @@
     .ro-field.ro-empty { color: #6a5e50; font-weight: 500; }
     .card { background: #ffffff; border: 1px solid #ddd8d0; border-radius: 8px; padding: 16px 14px; }
     .divider { height: 1px; background: #ddd8d0; margin: 16px 0; }
-    /* S14: Grade a Comic CTA tile. Replaces the small "Add" button in the
-       top bar with a prominent entry point inside the list view itself.
-       Two states:
-         .large  → empty-collection state (only the sample present).
-                   Tall tile with a big cover thumbnail and headline text.
-                   Sits above the sort selector since there's nothing else
-                   competing for attention at empty state.
-         .compact → user has real books. Single-row tile with small thumb
-                   and inline label. Still the first thing visible inside
-                   the list, but doesn't dominate.
-       The cover thumbnail re-uses the sample comic's front cover image
-       (assets/ghosts/Front_Cover.jpg). That creates intentional visual
-       continuity between the CTA and the sample book — the sample is "what
-       Robograder output looks like" and the CTA is "make your own." */
-    .grade-cta {
-      display: flex; align-items: center;
-      background: linear-gradient(135deg, #f5ead0 0%, #ecdba8 100%);
-      border: 1.5px solid #c8a850;
-      border-radius: 12px;
-      cursor: pointer;
-      user-select: none;
-      transition: transform 80ms ease-out, box-shadow 80ms ease-out;
-      box-shadow: 0 1px 3px rgba(40, 30, 10, 0.12);
-    }
-    .grade-cta:active { transform: scale(0.985); box-shadow: 0 0 0 rgba(0,0,0,0); }
-    .grade-cta.large {
-      flex-direction: column; align-items: center;
-      padding: 20px 22px;
-      gap: 12px;
-      margin: 8px auto 24px;
-      max-width: 360px;
-      text-align: center;
-      /* S14: tighter + capped width + stronger elevation so even the
-         empty-state CTA reads as a tappable button, not a passive panel. */
-      box-shadow: 0 2px 10px rgba(40, 30, 10, 0.20);
-    }
-    .grade-cta.large .grade-cta-thumb {
-      width: 56%; max-width: 220px;
-      aspect-ratio: 660 / 1014;  /* matches the sample cover image ratio */
-      object-fit: cover;
-      border-radius: 6px;
-      box-shadow: 0 3px 10px rgba(40, 30, 10, 0.25);
-    }
-    .grade-cta.large .grade-cta-headline {
-      font-family: 'Noto Sans Display', sans-serif;
-      font-stretch: 62.5%;
-      font-size: 26px;
-      font-weight: 900;
-      color: #2a1e14;
-      letter-spacing: 0.5px;
-      line-height: 1.1;
-    }
-    .grade-cta.large .grade-cta-sub {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 14px;
-      font-weight: 500;
-      color: #6a5430;
-      margin-top: 4px;
-      max-width: 280px;
-      line-height: 1.4;
-    }
-    .grade-cta.compact {
-      flex-direction: row;
-      align-items: center;
-      justify-content: center;
-      padding: 9px 18px 9px 12px;
-      gap: 11px;
-      /* S14 fix: narrow, centered, button-shaped. Full-bleed amber
-         rounded rectangle read as a section panel, not a control. Capping
-         the width and centering it makes it unmistakably a button.
-         Tightened further per booth feedback: 220→184px and snugger
-         padding so two stacked words next to a 30px thumb form a compact
-         pill, not a wide bar. */
-      margin: 10px auto 18px;
-      width: max-content;
-      max-width: 184px;
-      /* S14 fix: the clipping bug. The CTA and #header are BOTH
-         position:sticky in the same scroll container. #header is
-         top:0 / z-index:100. Its rendered height is exactly 53px:
-         tallest child is a 32px control (Buy / coin / gear), plus
-         10px+10px vertical padding, plus the 1px bottom border. The CTA
-         was top:8px / z-index:20, so on scroll it pinned UNDER the
-         header and only a sliver showed (see user screenshot). Pin it
-         at 60px (53px header + 7px gap) and keep z-index BELOW the
-         header (90 < 100) so the header always wins during the brief
-         scroll transition where they could momentarily overlap.
-         No env(safe-area-inset-top) here: #header doesn't add it either
-         (the status-bar band is page layout, not header padding), so
-         adding it would double-count and push the CTA too far down.
-         If the header's control height or padding ever changes, update
-         this: (tallest header child) + 20px padding + 1px border + 7px. */
-      position: sticky;
-      top: 60px;
-      z-index: 90;
-      box-shadow: 0 3px 12px rgba(40, 30, 10, 0.28);
-      background: linear-gradient(135deg, #f0d99a 0%, #e3c069 100%);
-      border: 1.5px solid #c8a850;
-      border-radius: 14px;
-      transition: transform 0.08s ease, box-shadow 0.08s ease;
-      cursor: pointer;
-    }
-    /* Press feedback — a button the user can physically depress reads as
-       a button. Subtle scale + shadow collapse on tap. */
-    .grade-cta.compact:active {
-      transform: scale(0.96);
-      box-shadow: 0 1px 5px rgba(40, 30, 10, 0.3);
-    }
-    .grade-cta.compact .grade-cta-thumb {
-      width: 30px; height: 44px;
-      object-fit: cover;
-      border-radius: 4px;
-      box-shadow: 0 1px 4px rgba(40, 30, 10, 0.25);
-      flex-shrink: 0;
-    }
-    .grade-cta.compact .grade-cta-headline {
-      font-family: 'Noto Sans Display', sans-serif;
-      font-stretch: 62.5%;
-      font-size: 17px;
-      font-weight: 900;
-      color: #2a1e14;
-      letter-spacing: 0.3px;
-      flex: 0 1 auto;
-      min-width: 0;
-      /* S14: two-line wrap. "Grade a Comic" on one line forced the button
-         wide; stacking it keeps the button compact and tall enough to
-         read as a press target. line-height tight so the two lines sit
-         as a unit next to the thumbnail. */
-      text-align: left;
-      line-height: 1.05;
-      white-space: normal;
-    }
     /* S14: group headers in the list view were rendering at 10px with 2px
        letter-spacing — small AND wide-spaced is the worst combination for
        legibility (the spacing visually disconnects the letters, the size
@@ -794,39 +663,14 @@
       width: 96px; height: 96px;
       color: #7aa838;
       margin-bottom: 24px;
-      transform-origin: center center;
-      animation: rotate-hint 2.4s ease-in-out infinite;
+      /* S14: animation removed entirely per user — the rotating/wiggling
+         keyframes (combined with a separate scaleX mirror on the SVG)
+         fought each other and rendered as a broken swing, not a clean
+         rotation. The icon is now a static, unambiguous directional
+         arrow. No transform-origin / animation needed. */
     }
-    /* S13 v8: replaced the Unicode `⟳` glyph with an inline SVG. The glyph
-       wasn't centered within its character box (extra whitespace below the
-       visual arrow), so transform-origin: center rotated around the box
-       center, not the visual center, producing a swing rather than a true
-       rotation. The SVG uses viewBox -50 -50 100 100 so the geometric
-       center is exactly (0,0) and matches transform-origin: center.
-       The base SVG draws a counter-clockwise arrow (arrowhead at upper
-       left, arc opening at lower right). The to-landscape card needs a
-       clockwise arrow, achieved via scaleX(-1) on .rotate-icon-cw. */
     #camera-rotate-card .rotate-icon svg {
       width: 100%; height: 100%; display: block;
-    }
-    #camera-rotate-card.to-landscape .rotate-icon svg {
-      transform: scaleX(-1);
-    }
-    /* Animation: subtle wiggle hint suggesting the rotation direction.
-       Different keyframes for landscape vs portrait — the JS sets a class
-       on the card that selects which animation runs.
-       S13 v8: to-landscape direction flipped from -90 → 0 → -90 to
-       0 → +90 → 0, so the wiggle direction matches the (now mirrored)
-       arrow's clockwise visual cue. */
-    #camera-rotate-card.to-landscape .rotate-icon { animation-name: rotate-to-landscape; }
-    #camera-rotate-card.to-portrait .rotate-icon { animation-name: rotate-to-portrait; }
-    @keyframes rotate-to-landscape {
-      0%, 100% { transform: rotate(0deg); }
-      50%      { transform: rotate(90deg); }
-    }
-    @keyframes rotate-to-portrait {
-      0%, 100% { transform: rotate(-90deg); }
-      50%      { transform: rotate(0deg); }
     }
     #camera-rotate-card .rotate-title {
       color: #c8d8a8;
@@ -1657,7 +1501,7 @@
          landscape). Replaces the camera viewfinder while shown. JS toggles
          the .show class and the .to-landscape / .to-portrait class. -->
     <div id="camera-rotate-card">
-      <div class="rotate-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="-50 -50 100 100" aria-hidden="true"><path d="M 6.25 35.45 A 36 36 0 1 1 -18.00 -31.18" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round"/><polygon points="-18.00,-31.18 -27.06,-18.94 -33.12,-29.30" fill="currentColor"/></svg></div>
+      <div class="rotate-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"><rect x="34" y="20" width="32" height="56" rx="5"/><line x1="44" y1="68" x2="56" y2="68"/><path d="M 22 50 A 28 28 0 0 1 50 22" /><polyline points="50 13 50 22 41 22" /><path d="M 78 50 A 28 28 0 0 1 50 78" /><polyline points="50 87 50 78 59 78" /></svg></div>
       <div class="rotate-title" id="camera-rotate-title">Rotate to landscape</div>
       <div class="rotate-sub" id="camera-rotate-sub">This shot works best with the phone turned sideways. Rotate your phone and the camera will appear automatically.</div>
     </div>
@@ -2647,23 +2491,28 @@ const SAMPLE_COMIC = {
   issueDate: 'April 2026',
   publisher: 'Robograder',
   // Grade fields
-  grade: '10.0',
+  // S14: sample regraded from a perfect 10.0/100 to reflect the actual
+  // sample art, which clearly shows defects. Component scores per the
+  // owner: Front 37 (max 50), Back 18 (max 20), Spine 16 (max 20),
+  // Interior 9 (max 10) → RG 80. Predicted/CGC grade is 8.0 (VF),
+  // owner-confirmed.
+  grade: '8.0',
   pageQuality: 'White',
   cgcGrade: '',
   cgcCert: '',
   psaGrade: '',
   psaCert: '',
-  assessedCGCGrade: '10.0',
-  assessedPSAGrade: '10.0',
-  predictedGrade: '10.0',
+  assessedCGCGrade: '8.0',
+  assessedPSAGrade: '8.0',
+  predictedGrade: '8.0',
   roboGrade: {
     version: '2.0',
-    score: 100,
+    score: 80,
     confidenceRange: 0,
-    frontScore: 50,
-    backScore: 20,
-    spineScore: 20,
-    interiorScore: 10,
+    frontScore: 37,
+    backScore: 18,
+    spineScore: 16,
+    interiorScore: 9,
     pageQuality: 'White',
     defects: [],
     stapleCondition: 'Clean, centered, no rust or migration',
@@ -3443,9 +3292,14 @@ function renderList(){
 
   const anyBooks = sections.some(s => s.titles.length > 0);
   if(!anyBooks){
-    // S14: empty-state message removed — the CTA tile above IS the empty
-    // state guidance. Showing both ("No books yet" + CTA tile) was
-    // redundant.
+    // No in-list empty-state UI is needed: when a user's collection is
+    // empty, the Robograder #1 SAMPLE_COMIC is injected (see ~line 2576),
+    // so `sections` is never actually empty for a real first-run user —
+    // this branch is effectively unreachable in normal use. The sample
+    // book IS the first-run experience (it demonstrates a graded result),
+    // and the top-bar Grade button is the entry point to grade their own.
+    // (An earlier S14 attempt added a CTA card here; it was dead code
+    // because the sample comic always makes anyBooks true. Removed.)
     html+=``;
   } else {
     sections.forEach(section => {
@@ -5744,7 +5598,18 @@ function mountResults(cgc, psa) {
   setTimeout(() => {
     const btn = document.getElementById('assess-complete-btn');
     if (!btn) return;
-    const hgAlreadyRun = !!(formData && formData.highGradeTier);
+    // S14 FIX (recurring): after a Deep Assessment actually completes,
+    // this button was STILL showing "DEEP ASSESSMENT UNLOCKED". Cause:
+    // hgAlreadyRun was read from formData.highGradeTier, but the Deep
+    // flow marks its result on cgc._highGradeTier (NOT formData) — so
+    // post-Deep, hgAlreadyRun was false while qualifies was true (the
+    // book qualified; that's why Deep ran), making hgUnlocked true and
+    // re-showing the unlock prompt for an assessment the user just
+    // finished. The authoritative "this result IS a completed Deep run"
+    // signal is cgc._highGradeTier, set in assessHighGrade(). Treat that
+    // as already-run so the button reads COMPLETE and returns to Detail.
+    const isPostDeepRun = !!(cgc && cgc._highGradeTier);
+    const hgAlreadyRun = isPostDeepRun || !!(formData && formData.highGradeTier);
     // S14 unification: single predicted-grade gate. cgc.grade IS the
     // predicted grade after unification (no separate PSA grade is
     // produced). The legacy psaAIGate is removed.
@@ -5770,6 +5635,15 @@ function mountResults(cgc, psa) {
     if (hgUnlocked) {
       btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">DEEP ASSESSMENT</div><div style="font-size:10px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
       btn.style.background = '#2a7a3a';
+      btn.style.color = '#fff';
+      btn.style.textAlign = 'center';
+    } else if (isPostDeepRun) {
+      // S14 FIX: a just-completed Deep Assessment. The user explicitly
+      // does NOT want "DEEP ASSESSMENT UNLOCKED" (it's already done) nor
+      // a shouty "COMPLETED" — just a clean "Complete" that returns to
+      // Detail (completeAssessment → submitForm → showDetail).
+      btn.innerHTML = 'Complete';
+      btn.style.background = '#3a9ee0';
       btn.style.color = '#fff';
       btn.style.textAlign = 'center';
     } else if (hgAlreadyRun) {
@@ -7502,19 +7376,27 @@ function renderForm(){
           }).join("")}
         </div>
         <input id="corner-photo-input" type="file" accept="image/*" multiple onchange="handleCornerImages(event)" style="display:none">
-        ${formData.highGradeTier ? '' : (()=>{
-          // S12: hide the button if a high-grade assessment has already
-          // been run on this entry. highGradeTier is set to true by
-          // assessHighGrade() once the HG pass completes successfully.
-          // Without this gate, the button kept appearing after a successful
-          // HG run and the user could re-trigger it inadvertently.
+        ${(()=>{
+          // S14: Deep Assessment is now RE-RUNNABLE. Previously the
+          // button was hidden once formData.highGradeTier was true, so
+          // after one Deep run the only way to run another was to redo a
+          // full initial assessment first — costing 2 credits and
+          // feeling wrong in real use. A Deep re-run is a legitimate,
+          // desired action (e.g. after re-shooting better corner macros)
+          // and correctly costs only 1 credit (assessHighGrade checks
+          // "high-grade costs 1 credit"). The original concern was
+          // inadvertent re-triggering; that's addressed by relabeling a
+          // post-run press as "RE-RUN DEEP ASSESSMENT" (explicit intent)
+          // rather than by removing the capability.
+          const alreadyRun = !!formData.highGradeTier;
           const cornerCount=(formData.cornerImages||[]).filter(Boolean).length;
           const ready=cornerCount===4 && !assessing;
           const ambient=cornerCount===4?"#1a4a2a":"#2a2a2a";
           const ambientText=cornerCount===4?"#6abf6a":"#6a6a6a";
+          const baseLabel = alreadyRun ? 'RE-RUN DEEP ASSESSMENT' : 'DEEP ASSESSMENT';
           return `<div style="display:flex;justify-content:center;margin-top:12px">
             <button id="hg-assess-btn" onclick="assessHighGrade()" ${ready?"":"disabled"} style="width:75%;min-height:52px;border-radius:12px;background:${ambient};color:${ambientText};border:none;font-size:14px;font-weight:700;letter-spacing:1.5px;cursor:${ready?"pointer":"not-allowed"}">
-              ${assessing?"Assessing…":`DEEP ASSESSMENT ${cornerCount<4?`(${cornerCount}/4)`:""}`}
+              ${assessing?"Assessing…":`${baseLabel} ${cornerCount<4?`(${cornerCount}/4)`:""}`}
             </button>
           </div>`;
         })()}
@@ -8952,7 +8834,19 @@ async function cameraFinish() {
 // already exists and is reused as-is — we just wrap its open/close in a
 // promise per item.
 async function runCropperSequence(captures, kind) {
-  for (const cap of captures) {
+  // S14: crop in STORAGE/DISPLAY order, not capture order.
+  // Capture order is deliberately [FC, BC, Spine, Interior] for a smooth
+  // physical handling flow (do the spine before opening the book to its
+  // centerfold last). But the detail view displays photos in storage
+  // order [FC, BC, Interior, Spine], and the user found cropping in a
+  // third different order disorienting ("it feels wrong"). Cropping is a
+  // review step, so it should match what they'll see afterward. Sorting
+  // by slot index makes crop order == display order while leaving the
+  // capture walkthrough's physical flow untouched. (corner kind: slot
+  // index already equals display order, so the sort is a harmless
+  // identity there.)
+  const ordered = [...captures].sort((a, b) => a.slot - b.slot);
+  for (const cap of ordered) {
     // Place the capture into the form first so cropper has something to read.
     // imagesMeta is stamped here — even if the user cancels the crop, the
     // photo stays with source:'camera' (they did capture it in-app).
