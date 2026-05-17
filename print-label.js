@@ -1921,6 +1921,55 @@ async function generatePDF(comics, modal) {
         useCORS: true,
         backgroundColor: '#d4d9be',
         logging: false,
+        // S14 FIX (round 2) — the real reason condensed text was still
+        // wrong in the PDF. html2canvas renders into a CLONED document
+        // in a sandboxed iframe. Web fonts referenced by a parent <link>
+        // are re-fetched asynchronously by that clone, and html2canvas
+        // does NOT wait for the clone's fetch — so it rasterized the
+        // FALLBACK font even though the parent document had the real
+        // font loaded (which is why the on-screen preview was correct
+        // but the PDF was not — see user screenshots). Waiting on the
+        // PARENT's document.fonts.ready (the previous fix) could never
+        // solve this because it's the CLONE's font load that's late.
+        //
+        // onclone runs against the cloned document BEFORE rasterization
+        // and html2canvas awaits a returned promise. We re-inject the
+        // font <link> into the clone (so its @font-face rules exist
+        // there), explicitly load() the exact faces in the clone's own
+        // FontFaceSet, and await the clone's fonts.ready. Now the clone
+        // has the condensed faces resolved before it's drawn. Bounded by
+        // a timeout so a hung clone fetch degrades to "draw anyway"
+        // rather than freezing the export at the booth.
+        onclone: async (clonedDoc) => {
+          try {
+            if (!clonedDoc.querySelector('link[data-label-fonts]')) {
+              const src = document.querySelector('link[data-label-fonts]');
+              if (src) clonedDoc.head.appendChild(src.cloneNode(true));
+            }
+            const cf = clonedDoc.fonts;
+            if (cf && cf.load) {
+              const specs = [
+                '900 condensed 100px "Noto Sans Display"',
+                '700 condensed 100px "Noto Sans Display"',
+                '500 condensed 100px "Noto Sans Display"',
+                '800 100px "Noto Sans Mono"',
+                '700 100px "Barlow Condensed"',
+                '600 100px "Barlow Condensed"',
+                '500 100px "Barlow Condensed"',
+              ];
+              const loadOne = (s) => {
+                try { return cf.load(s).catch(() => null); }
+                catch (e) {
+                  try { return cf.load(s.replace(' condensed ', ' ')).catch(() => null); }
+                  catch (e2) { return Promise.resolve(null); }
+                }
+              };
+              const all = Promise.all(specs.map(loadOne))
+                .then(() => cf.ready).catch(() => null);
+              await Promise.race([all, new Promise(r => setTimeout(r, 3500))]);
+            }
+          } catch (e) { /* never let onclone throw — draw with what we have */ }
+        },
       });
       // JPEG instead of PNG: the label uses photographic-style anti-aliased
       // text and a flat olive background — JPEG at quality 0.92 is visually
