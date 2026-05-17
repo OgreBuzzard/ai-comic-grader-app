@@ -1175,46 +1175,85 @@ async function deleteAccount(user) {
   }
   const typed = await appPrompt(promptMsg, 'Delete Account');
   if (typed == null) return;  // cancelled
-  const trimmed = typed.trim().toLowerCase();
+  let trimmed = typed.trim().toLowerCase();
+  // S14: the client's expected value is a best guess (it's derived from
+  // the Firestore record's email, which can disagree with the Auth
+  // record the SERVER checks — the exact cause of the reported bug). So
+  // this is a soft warning, not a hard block: if it doesn't match what
+  // the client expected, confirm intent but still let the server be the
+  // authority. The server validates strictly and now offers a retry
+  // with its exact required value, so a wrong guess here is recoverable
+  // rather than a dead end.
   if (trimmed !== expected) {
-    alert(hasEmail
-      ? 'Email did not match. Deletion cancelled.'
-      : 'UID suffix did not match. Deletion cancelled.');
-    return;
+    const proceed = await appPrompt(
+      'That doesn\'t match what this screen expected, but the server will ' +
+      'verify independently (the server is the source of truth and may ' +
+      'require a different value for this account).\n\nRe-enter the ' +
+      'confirmation value to send to the server, or Cancel to abort:',
+      'Send to Server'
+    );
+    if (proceed == null) return;
+    trimmed = proceed.trim().toLowerCase();
   }
 
   const btn = document.getElementById('delete-account-btn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Deleting…'; }
 
-  try {
-    const data = await api('/api/delete_user', {
-      method: 'POST',
-      body: {
-        uid: user.uid,
-        confirmEmail: trimmed,   // server reads body.confirmEmail || body.confirmToken
-      },
-    });
-    if (!data || !data.ok) {
-      throw new Error('Unexpected response');
+  // S14 FIX — the real delete bug. The client decided whether to ask for
+  // the EMAIL or the UID-SUFFIX based on user.email from the FIRESTORE
+  // list record. The server decides based on the FIREBASE AUTH record
+  // (getAuth().getUser().email). For ghost accounts whose Firestore doc
+  // has no email but whose Auth user DOES (e.g. paulsonier2@gmail.com),
+  // the two disagree forever: client asks for the UID suffix, server
+  // demands the email, mismatch every time — exactly the user's
+  // screenshot. The server is the source of truth and its error message
+  // states precisely what to type. So: attempt with what we have, and if
+  // the server returns a confirmation mismatch, surface the server's
+  // requirement and let the admin retry with the correct value instead
+  // of dead-ending. confirmEmail is re-sent each attempt.
+  async function attemptDelete(confirmValue) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Deleting…'; }
+    try {
+      const data = await api('/api/delete_user', {
+        method: 'POST',
+        body: { uid: user.uid, confirmEmail: confirmValue },
+      });
+      if (!data || !data.ok) throw new Error('Unexpected response');
+      alert(`Account deleted.\n\n` +
+            `Auth removed:       ${data.summary.authDeleted ? 'yes' : 'no'}\n` +
+            `User doc removed:   ${data.summary.userDocDeleted ? 'yes' : 'no'}\n` +
+            `Items removed:      ${data.summary.itemsDeleted}\n` +
+            `Comics removed:     ${data.summary.comicsDeleted}\n` +
+            `Meta docs removed:  ${data.summary.metaDeleted}\n` +
+            `Registry removed:   ${data.summary.robogradeIdsDeleted}\n` +
+            `Storage cleared:    ${data.summary.storageObjectsDeleted}`);
+      state.view = 'dashboard';
+      state.tab = 'users';
+      state.selectedUid = null;
+      render();
+      loadUsers(true);
+      return true;
+    } catch (e) {
+      const msg = (e && e.message) || 'unknown error';
+      if (btn) { btn.disabled = false; btn.textContent = 'Delete this account'; }
+      // If the server told us a confirmation mismatch, it also told us
+      // exactly what string it wants. Re-prompt with that, pre-filled
+      // hint, and retry — rather than failing terminally on a client/
+      // server rule disagreement the admin can't otherwise resolve.
+      if (/confirmation mismatch|type the last 6|type "/i.test(msg)) {
+        const retry = await appPrompt(
+          'The server requires a specific confirmation value:\n\n' + msg +
+          '\n\nEnter it exactly to proceed, or Cancel to abort.',
+          'Confirm & Delete'
+        );
+        if (retry == null) return false;
+        return attemptDelete(retry.trim().toLowerCase());
+      }
+      alert('Delete failed: ' + msg);
+      return false;
     }
-    alert(`Account deleted.\n\n` +
-          `Auth removed:       ${data.summary.authDeleted ? 'yes' : 'no'}\n` +
-          `User doc removed:   ${data.summary.userDocDeleted ? 'yes' : 'no'}\n` +
-          `Items removed:      ${data.summary.itemsDeleted}\n` +
-          `Comics removed:     ${data.summary.comicsDeleted}\n` +
-          `Meta docs removed:  ${data.summary.metaDeleted}\n` +
-          `Registry removed:   ${data.summary.robogradeIdsDeleted}\n` +
-          `Storage cleared:    ${data.summary.storageObjectsDeleted}`);
-    // Return to users tab and refresh list so the deleted user is gone.
-    state.view = 'dashboard';
-    state.tab = 'users';
-    state.selectedUid = null;
-    render();
-    loadUsers(true);
-  } catch (e) {
-    alert('Delete failed: ' + (e.message || 'unknown error'));
-    if (btn) { btn.disabled = false; btn.textContent = 'Delete this account'; }
   }
+
+  await attemptDelete(trimmed);
 }
 
 // S14: PATCH the user doc with the new credit value. On success, the
