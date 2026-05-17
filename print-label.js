@@ -620,24 +620,36 @@ function ensureStylesInjected() {
   }
   .rg-label .rg-num {
     /* S14: −8pt (148→140) per user; still the dominant element, just
-       not oversized. Centered in the box on its own. */
+       not oversized. Centered in the box on its own.
+       S14 PDF FIX: html2canvas 1.4.1 ignores font-stretch (the wdth
+       variable axis) when rasterizing to canvas, so the condensed look
+       was lost in the saved PDF while correct on screen. Replaced
+       font-stretch:62.5% with an equivalent geometric scaleX(0.625),
+       which html2canvas DOES rasterize. transform-origin:center keeps
+       the number centered in the score box as before. inline-block so
+       the transform applies (transforms are no-ops on inline boxes). */
     font-size: 140px; font-weight: 900;
     color: #b8d820; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
-    font-stretch: 62.5%;
+    display: inline-block;
+    transform: scaleX(0.625);
+    transform-origin: center;
   }
   .rg-label .rg-prec {
     /* Upper-right of the score box, ABSOLUTELY positioned so it is out
        of flow and cannot displace the centered number. Anchored to the
-       box (not the digit) at a fixed top/right inset — sits in the
-       corner like a superscript marker. Condensed face (now that the
-       font URL is fixed) keeps ±NN compact. */
+       box (not the digit) at a fixed top/right inset.
+       S14 PDF FIX: scaleX(0.625) replaces font-stretch (see .rg-num).
+       transform-origin:right so the compressed text keeps its right
+       edge pinned at the `right:22px` inset and grows leftward. */
     position: absolute;
     top: 40px; right: 22px;
     font-size: 30px; font-weight: 700;
     color: #b8d820; opacity: 0.9;
     font-family: 'Noto Sans Display', sans-serif;
-    font-stretch: 62.5%;
+    display: inline-block;
+    transform: scaleX(0.625);
+    transform-origin: right center;
     line-height: 1;
     letter-spacing: 1px;
     white-space: nowrap;
@@ -673,17 +685,29 @@ function ensureStylesInjected() {
        iss:  26 → 36 (+10)
      Score box and QR remain unchanged. */
   .rg-label .ttl {
+    /* S14 PDF FIX: scaleX(0.625) replaces font-stretch (html2canvas
+       can't rasterize the wdth axis). transform-origin:left so the
+       title compresses toward the info column's left edge and stays
+       left-aligned exactly as before. The layout box is unchanged by
+       the transform, which is fine — the title was already constrained
+       by the fixed-width .info column; visually it now reads condensed
+       and fits more characters per line, matching the on-screen look. */
     font-size: 50px; font-weight: 900;
     color: #0d0d0f; line-height: 1.05;
     font-family: 'Noto Sans Display', sans-serif;
-    font-stretch: 62.5%;
+    transform: scaleX(0.625);
+    transform-origin: left center;
   }
   .rg-label .iss {
     font-size: 36px; font-weight: 600;
     color: #333;
     font-family: 'Noto Sans Display', sans-serif;
-    font-stretch: 62.5%;
+    /* S14 PDF FIX: scaleX(0.625) replaces font-stretch. The flex row
+       (issue + date) compresses as a unit incl. its gap — proportional
+       and visually identical to the condensed-axis result. */
     display: flex; gap: 24px; align-items: baseline;
+    transform: scaleX(0.625);
+    transform-origin: left center;
   }
   .rg-label .prt {
     font-size: 20px; color: #555544;
@@ -810,7 +834,9 @@ function ensureStylesInjected() {
     font-size: 140px; font-weight: 900;
     color: #b8d820; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
-    font-stretch: 62.5%;
+    display: inline-block;
+    transform: scaleX(0.625);
+    transform-origin: center;
   }
   .rg-label-l .rg-prec {
     /* Absolute to the score-box corner, out of flow — never displaces
@@ -820,7 +846,9 @@ function ensureStylesInjected() {
     font-size: 30px; font-weight: 700;
     color: #b8d820; opacity: 0.9;
     font-family: 'Noto Sans Display', sans-serif;
-    font-stretch: 62.5%;
+    display: inline-block;
+    transform: scaleX(0.625);
+    transform-origin: right center;
     line-height: 1;
     letter-spacing: 1px;
     white-space: nowrap;
@@ -849,13 +877,15 @@ function ensureStylesInjected() {
     font-size: 50px; font-weight: 900;
     color: #0d0d0f; line-height: 1.05;
     font-family: 'Noto Sans Display', sans-serif;
-    font-stretch: 62.5%;
+    transform: scaleX(0.625);
+    transform-origin: left center;
   }
   .rg-label-l .iss {
     font-size: 36px; font-weight: 600;
     color: #333;
     font-family: 'Noto Sans Display', sans-serif;
-    font-stretch: 62.5%;
+    transform: scaleX(0.625);
+    transform-origin: left center;
     display: flex; gap: 24px; align-items: baseline;
   }
   .rg-label-l .prt {
@@ -950,7 +980,9 @@ function ensureStylesInjected() {
     transform: translateY(-50%);
     text-align: center;
     font-family: 'Noto Sans Display', sans-serif;
-    font-stretch: 62.5%;
+    display: inline-block;
+    transform: scaleX(0.625);
+    transform-origin: center;
     font-size: 52px; font-weight: 900;
     color: #0d0d0f;
   }
@@ -1057,7 +1089,9 @@ function ensureStylesInjected() {
     font-size: 122px; font-weight: 900;
     color: #b8d820; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
-    font-stretch: 62.5%;
+    display: inline-block;
+    transform: scaleX(0.625);
+    transform-origin: center;
   }
   /* Precision absolute to the score-box corner, out of flow — never
      displaces the centered number. Inset scaled to the 220px box. */
@@ -1067,7 +1101,9 @@ function ensureStylesInjected() {
     font-size: 24px; font-weight: 700;
     color: #b8d820; opacity: 0.9;
     font-family: 'Noto Sans Display', sans-serif;
-    font-stretch: 62.5%;
+    display: inline-block;
+    transform: scaleX(0.625);
+    transform-origin: right center;
     line-height: 1;
     letter-spacing: 1px;
     white-space: nowrap;
@@ -1096,14 +1132,16 @@ function ensureStylesInjected() {
     font-size: 34px; font-weight: 900;
     color: #0d0d0f; line-height: 1.05;
     font-family: 'Noto Sans Display', sans-serif;
-    font-stretch: 62.5%;
+    transform: scaleX(0.625);
+    transform-origin: left center;
     word-wrap: break-word;
   }
   .rg-label-square .iss {
     font-size: 24px; font-weight: 600;
     color: #333;
     font-family: 'Noto Sans Display', sans-serif;
-    font-stretch: 62.5%;
+    transform: scaleX(0.625);
+    transform-origin: left center;
     display: flex; gap: 14px; align-items: baseline;
     margin-top: 4px;
   }
@@ -1231,7 +1269,9 @@ function ensureStylesInjected() {
     font-size: 224px; font-weight: 900;
     color: #b8d820; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
-    font-stretch: 62.5%;
+    display: inline-block;
+    transform: scaleX(0.625);
+    transform-origin: center;
   }
   .rg-label-large .rg-prec {
     /* Absolute to the score-box corner, out of flow — never displaces
@@ -1241,7 +1281,9 @@ function ensureStylesInjected() {
     font-size: 46px; font-weight: 700;
     color: #b8d820; opacity: 0.9;
     font-family: 'Noto Sans Display', sans-serif;
-    font-stretch: 62.5%;
+    display: inline-block;
+    transform: scaleX(0.625);
+    transform-origin: right center;
     line-height: 1;
     letter-spacing: 1.5px;
     white-space: nowrap;
@@ -1270,13 +1312,15 @@ function ensureStylesInjected() {
     font-size: 64px; font-weight: 900;
     color: #0d0d0f; line-height: 1.1;
     font-family: 'Noto Sans Display', sans-serif;
-    font-stretch: 62.5%;
+    transform: scaleX(0.625);
+    transform-origin: left center;
   }
   .rg-label-large .iss {
     font-size: 42px; font-weight: 600;
     color: #333;
     font-family: 'Noto Sans Display', sans-serif;
-    font-stretch: 62.5%;
+    transform: scaleX(0.625);
+    transform-origin: left center;
     display: flex; gap: 36px; align-items: baseline;
   }
   .rg-label-large .prt {
@@ -1363,7 +1407,9 @@ function ensureStylesInjected() {
     align-items: center;
     justify-content: center;
     font-family: 'Noto Sans Display', sans-serif;
-    font-stretch: 62.5%;
+    display: inline-block;
+    transform: scaleX(0.625);
+    transform-origin: center;
     font-size: 80px;
     font-weight: 900;
     color: #1a2208;
@@ -1612,8 +1658,30 @@ function renderModal(modal, comic, allItems) {
   // width. This is more reliable than CSS breakpoints because the modal
   // width depends on viewport, padding, and dynamic platform chrome (e.g.
   // PWA safe-area insets) — none of which CSS media queries can capture.
-  // Run on next tick so the modal layout has settled.
-  requestAnimationFrame(() => fitPreviewToFrame(modal));
+  //
+  // S14 fix: a SINGLE requestAnimationFrame ran fitPreviewToFrame before
+  // the modal's layout had fully settled (modal still animating in /
+  // fonts still loading), so area.clientWidth was not yet final. The
+  // Large label (the widest aspect ratio) got a slightly-too-large scale
+  // and clipped on the right; switching tabs re-ran the fit against a
+  // now-settled layout, which is why it "fixed itself." Fix: run it
+  // across several settle points AND attach a ResizeObserver so any
+  // later size change (open animation finishing, chrome appearing,
+  // rotation) re-fits automatically. Idempotent — recomputing with the
+  // same measurements just sets the same scale.
+  const fit = () => fitPreviewToFrame(modal);
+  requestAnimationFrame(fit);
+  requestAnimationFrame(() => requestAnimationFrame(fit)); // after 2 frames
+  setTimeout(fit, 60);
+  setTimeout(fit, 200);   // after the open transition (~0.18s) completes
+  if (typeof ResizeObserver !== 'undefined') {
+    const area = modal.querySelector('.lvm-preview-area');
+    if (area && !area._fitObserver) {
+      const ro = new ResizeObserver(() => fit());
+      ro.observe(area);
+      area._fitObserver = ro;  // keep a ref so it isn't GC'd
+    }
+  }
 }
 
 function closeModal(modal) {
