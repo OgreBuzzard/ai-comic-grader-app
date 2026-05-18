@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!-- ===========================================================================
-  RoboGrader index.html — BUILD FINGERPRINT: S14-2026-05-17-SAMPLE-8.0
+  RoboGrader index.html — BUILD FINGERPRINT: S14-2026-05-18-ANDROID-ROTATE-ZOOM
   To verify what's actually deployed: open the deployed page's source (or
   view-source) and find this line. If the fingerprint differs from what
   Claude last produced, a stale/cached index.html was uploaded (same Safari
@@ -687,6 +687,36 @@
       line-height: 1.5;
       max-width: 280px;
     }
+    /* S14: escape controls on the rotate card (no-trap guarantee). */
+    #camera-rotate-card .rotate-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 32px;
+      width: 100%;
+      max-width: 280px;
+    }
+    #camera-rotate-card .rotate-actions button {
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-size: 15px;
+      font-weight: 600;
+      padding: 13px 16px;
+      border-radius: 10px;
+      cursor: pointer;
+      border: 1px solid #3a5818;
+    }
+    #camera-rotate-card #camera-rotate-continue {
+      background: #7aa838;
+      color: #fff;
+      border-color: #7aa838;
+    }
+    #camera-rotate-card #camera-rotate-continue:active { background: #6a9530; }
+    #camera-rotate-card #camera-rotate-bail {
+      background: transparent;
+      color: #9abf60;
+      border-color: #3a5818;
+    }
+    #camera-rotate-card #camera-rotate-bail:active { background: rgba(122,168,56,0.12); }
     /* S13: Suppress the app-wide orientation-block overlay while the camera
        modal is open. The camera modal handles its own orientation guidance
        per-slot (some slots WANT landscape — see Spine), so the app-wide
@@ -1504,6 +1534,24 @@
       <div class="rotate-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"><rect x="34" y="20" width="32" height="56" rx="5"/><line x1="44" y1="68" x2="56" y2="68"/><path d="M 22 50 A 28 28 0 0 1 50 22" /><polyline points="50 13 50 22 41 22" /><path d="M 78 50 A 28 28 0 0 1 50 78" /><polyline points="50 87 50 78 59 78" /></svg></div>
       <div class="rotate-title" id="camera-rotate-title">Rotate to landscape</div>
       <div class="rotate-sub" id="camera-rotate-sub">This shot works best with the phone turned sideways. Rotate your phone and the camera will appear automatically.</div>
+      <!-- S14: ALWAYS-available escape. Previously the rotate card had no
+           way out: on Android, where orientation detection could fail to
+           clear, the user was fully trapped (no forward, no cancel, no
+           exit but to restart the app — reported live at the convention).
+           These two controls guarantee a path forward regardless of
+           whether rotation detection works:
+             • "I've rotated — continue" forces a fresh orientation
+               re-check (handles Android's stale innerWidth/innerHeight
+               after orientationchange).
+             • "Use Photo Library instead" drops cleanly into the file
+               picker via the existing cameraUploadInstead() teardown,
+               so the user can still finish the assessment. -->
+      <div class="rotate-actions">
+        <button type="button" id="camera-rotate-continue"
+          onclick="cameraRotateForceRecheck()">I've rotated — continue</button>
+        <button type="button" id="camera-rotate-bail"
+          onclick="cameraUploadInstead()">Use Photo Library instead</button>
+      </div>
     </div>
   </div>
   <div id="camera-controls">
@@ -8284,6 +8332,15 @@ async function cameraOpen(state) {
       // Don't wait for the 350ms settle — the user expects the card to
       // appear/disappear with no perceptible lag when they rotate.
       applyCameraOrientationState();
+      // S14 FIX (Android): the immediate call above can read stale
+      // innerWidth/innerHeight on Android Chrome right after
+      // orientationchange. Re-run after short delays so the card clears
+      // once the platform reports the settled orientation, instead of
+      // staying stuck. getCurrentOrientation() now also uses matchMedia
+      // (reliable cross-platform), but these re-checks make the
+      // automatic path robust even on slow devices.
+      setTimeout(() => { if (_cameraState) applyCameraOrientationState(); }, 250);
+      setTimeout(() => { if (_cameraState) applyCameraOrientationState(); }, 600);
       // Defer the SVG re-fetch by 350ms so iOS's rotation animation has
       // settled. Tested empirically: 16ms (rAF) was too short, 100ms
       // produced occasional mis-sized guides, 350ms is consistently clean.
@@ -8423,6 +8480,47 @@ async function cameraOpen(state) {
       // for 5×, and a phone with no zoom at all stays at 1×.
       if (lensOptions.length > 0) {
         await switchToLens(0);
+      } else {
+        // S14 FIX (Android zoom defaulting to 1×): the lens heuristic
+        // above matches iOS-only device labels ("back camera", "back
+        // wide camera"). Android exposes entirely different / empty
+        // labels, so `wide` was undefined, lensOptions stayed empty, and
+        // NO zoom constraint was ever applied — the camera sat at the
+        // device default 1× with no way to get closer (reported live at
+        // the convention on an Android phone). This platform-agnostic
+        // fallback skips label matching entirely: it reads the ACTUAL
+        // capabilities of the already-running initial stream's video
+        // track and, if the device reports a zoom range, applies our
+        // target zoom clamped to that range. Works on Android Chrome
+        // (and is harmless on iOS, where this branch only runs if the
+        // label heuristic already failed to find a lens).
+        try {
+          const track = _cameraState.stream
+            && _cameraState.stream.getVideoTracks
+            && _cameraState.stream.getVideoTracks()[0];
+          const caps = track && track.getCapabilities
+            ? track.getCapabilities() : null;
+          if (track && caps && caps.zoom
+              && typeof caps.zoom.max === 'number') {
+            const z = Math.min(
+              caps.zoom.max,
+              Math.max(caps.zoom.min || 1, targetZoom)
+            );
+            if (z > (caps.zoom.min || 1)) {
+              await track.applyConstraints({ advanced: [{ zoom: z }] });
+              console.log('[camera] Android/no-label fallback applied zoom',
+                z, 'of max', caps.zoom.max);
+            } else {
+              console.log('[camera] device reports zoom but range too narrow; staying at default');
+            }
+          } else {
+            console.log('[camera] no zoom capability on this device; 1× is the hardware limit');
+          }
+        } catch (zfErr) {
+          console.warn('[camera] Android zoom fallback failed:', zfErr);
+          // Non-fatal — user still has a working 1× camera and can use
+          // "Photo Library instead" for a closer shot if needed.
+        }
       }
     } catch (enumErr) {
       console.warn('[camera] enumerate failed:', enumErr);
@@ -8530,11 +8628,40 @@ async function switchToLens(idx) {
   }
 }
 
-// S13: Detect device's current orientation. Returns 'portrait' or 'landscape'.
-// Uses window inner dimensions rather than screen.orientation API because
-// screen.orientation isn't reliable on iOS Safari and PWA contexts.
+// S13/S14: Detect device orientation. Returns 'portrait' or 'landscape'.
+// S14 FIX (Android): the old logic used only window.innerHeight >=
+// window.innerWidth. On Android Chrome, after an orientationchange the
+// inner dimensions are NOT updated synchronously — they briefly report
+// the PREVIOUS orientation's size. The listener fired, read stale
+// dimensions, decided "still portrait", and the rotate card never
+// cleared even though the phone was physically rotated (the convention
+// Android dead-end). matchMedia('(orientation: landscape)') updates
+// reliably across iOS and Android, so use it as the PRIMARY signal and
+// fall back to the dimension check only if matchMedia is unavailable.
 function getCurrentOrientation() {
+  try {
+    if (window.matchMedia) {
+      if (window.matchMedia('(orientation: landscape)').matches) return 'landscape';
+      if (window.matchMedia('(orientation: portrait)').matches) return 'portrait';
+    }
+  } catch (e) { /* fall through to dimension heuristic */ }
   return (window.innerHeight >= window.innerWidth) ? 'portrait' : 'landscape';
+}
+
+// S14: user-invoked "I've rotated — continue" from the rotate card.
+// Guarantees a path forward even if the automatic orientationchange/
+// resize listeners missed the rotation (Android timing). Re-evaluates
+// orientation NOW, and if it still reads mismatched, also schedules a
+// deferred re-check so a late dimension update self-corrects without
+// trapping the user. If it matches, applyCameraOrientationState() hides
+// the card and restores the viewfinder.
+function cameraRotateForceRecheck() {
+  if (!_cameraState) return;
+  applyCameraOrientationState();
+  // Belt-and-suspenders: re-check again shortly in case the platform
+  // hadn't finished reporting the new orientation at tap time.
+  setTimeout(() => { if (_cameraState) applyCameraOrientationState(); }, 250);
+  setTimeout(() => { if (_cameraState) applyCameraOrientationState(); }, 600);
 }
 
 // S13: Apply orientation-mismatch UI state. Called from cameraOpenSlot AND
