@@ -176,8 +176,14 @@ export default async function handler(req, res) {
 
     const ref = await db.collection('transfers').add(transferDoc);
 
-    const title = (item.title || 'entry').toString();
-    const issue = item.issue ? ` #${item.issue}` : '';
+    // Schema v3 stores comic fields nested under comicData (the app
+    // flattens this via flattenForApp on read). transfer_send reads the
+    // raw Firestore doc, so title/issue must be pulled from comicData
+    // first, falling back to top-level for legacy v1/v2 (flat) items.
+    const cd = item.comicData || {};
+    const title = (cd.title || item.title || 'entry').toString();
+    const issueRaw = cd.issue || item.issue;
+    const issue = issueRaw ? ` #${issueRaw}` : '';
     return res.status(200).json({
       ok: true,
       transferId: ref.id,

@@ -92,8 +92,14 @@ export default async function handler(req, res) {
       // Track a representative title only while the group is size 1; once
       // it grows past 1 we null it (prompt shows count only for many).
       if (g.count === 1) {
-        g.singleTitle = (snapItem.title || 'entry').toString();
-        g.singleIssue = snapItem.issue ? String(snapItem.issue) : null;
+        // Schema v3 nests comic fields under comicData (the app flattens
+        // this on read via flattenForApp). The raw snapshot here is the
+        // stored nested doc, so read comicData first, fall back to top-
+        // level for legacy v1/v2 flat items.
+        const cd = snapItem.comicData || {};
+        g.singleTitle = (cd.title || snapItem.title || 'entry').toString();
+        const iss = cd.issue || snapItem.issue;
+        g.singleIssue = iss ? String(iss) : null;
       } else {
         g.singleTitle = null;
         g.singleIssue = null;
