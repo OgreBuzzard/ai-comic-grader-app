@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!-- ===========================================================================
-  RoboGrader index.html — BUILD FINGERPRINT: S14-2026-05-18-EDIT-OWNERSHIP-PILL
+  RoboGrader index.html — BUILD FINGERPRINT: S14-2026-05-18-CODEFIX-READONLY
   To verify what's actually deployed: open the deployed page's source (or
   view-source) and find this line. If the fingerprint differs from what
   Claude last produced, a stale/cached index.html was uploaded (same Safari
@@ -3050,6 +3050,17 @@ async function loadUserCredits(){
           console.warn('transferCode backfill write failed (will retry next sign-in):', e);
         }
       }
+      // S14 FIX: the client-side write above only sets the DISPLAY code
+      // on the user doc. A code is only RESOLVABLE by transfer_send once
+      // its transfer_codes/{CODE} reverse-index entry exists, and the
+      // client can't write that collection (Admin-SDK-only by rule).
+      // This server call creates/repairs that reverse-index entry for
+      // the current user (and reassigns on collision, earliest-claimant
+      // -wins). It is authoritative: if it returns a different code than
+      // we cached (collision reassignment), trust the server's. Fire-
+      // and-forget — never blocks sign-in; a transient failure just
+      // means the code isn't resolvable until the next sign-in retry.
+      ensureTransferCodeRegistered();
       // Profile-field backfill (added S11). Existing users may have signed up
       // before we wrote profile data to Firestore. On every sign-in, refresh
       // displayName/email if either is missing or out of date. This is for
@@ -6601,6 +6612,51 @@ document.addEventListener('input', (e) => {
 let _xferPolling = false;
 let _xferPromptOpen = false;
 
+// S14 FIX: ensure the signed-in user's transfer code is RESOLVABLE.
+// The client only writes the display code onto the user doc; the
+// transfer_codes reverse index (what transfer_send looks up) is
+// Admin-SDK-only. This calls the server to create/repair that entry
+// (reassigning on collision, earliest-claimant-wins). Authoritative:
+// the cached _transferCode is updated to whatever the server returns,
+// so the Settings display reflects a reassignment. Fire-and-forget;
+// never blocks sign-in. Idempotent server-side, so calling every
+// sign-in is fine.
+async function ensureTransferCodeRegistered() {
+  try {
+    if (!window._currentUser || typeof window._currentUser.getIdToken !== 'function') return;
+    const token = await window._currentUser.getIdToken();
+    const resp = await fetch('/api/transfer_register_code', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token,
+      },
+      body: JSON.stringify({}),
+    });
+    if (!resp.ok) {
+      console.warn('[transfer] register_code failed', resp.status,
+        '— code not resolvable until next sign-in');
+      return;
+    }
+    const data = await resp.json().catch(() => null);
+    if (data && data.ok && typeof data.code === 'string' && data.code.length === 4) {
+      // Server is authoritative — adopt its code (handles collision
+      // reassignment so Settings shows the working code, not a stale one).
+      if (window._transferCode !== data.code) {
+        window._transferCode = data.code;
+        const tcEl = document.getElementById('settings-transfer-code');
+        if (tcEl) tcEl.textContent = data.code;
+      }
+      if (data.action === 'reassigned-due-to-collision') {
+        console.log('[transfer] code reassigned (collision):',
+          data.previous, '→', data.code);
+      }
+    }
+  } catch (e) {
+    console.warn('[transfer] register_code error (non-fatal):', e);
+  }
+}
+
 async function checkPendingTransfers() {
   if (_xferPolling || _xferPromptOpen) return;
   if (!window._currentUser || typeof window._currentUser.getIdToken !== 'function') return;
@@ -8080,7 +8136,7 @@ function renderForm(){
          Other gated text fields (Label Notes, Key Info, Grader Notes,
          Past Assessments) live in their previous positions
          around these. -->
-    ${(formData.cgcGrade||formData.psaGrade||formData.cgcNotes)?`<div><label class="field-label">Label Notes</label><textarea rows="3" oninput="formData.cgcNotes=this.value">${esc(formData.cgcNotes||"")}</textarea></div>`:""}
+    ${(formData.cgcGrade||formData.psaGrade||formData.cgcNotes)?`<div><label class="field-label">Label Notes</label><textarea rows="3" readonly style="cursor:not-allowed" title="Label Notes is populated by the assessment. Not user-editable.">${esc(formData.cgcNotes||"")}</textarea></div>`:""}
     ${(()=>{
       // Key Info edit-view gate (S11): mirror the detail view's logic — Key Info
       // is hidden when Label Notes is showing, since they describe the same thing.
@@ -8092,8 +8148,8 @@ function renderForm(){
       return `<div><label class="field-label">Key Info</label><textarea rows="3" readonly style="cursor:not-allowed;background:#ffffff;color:#1a1614" title="Key Info is populated by the assessment when the issue is in the recognized-key list. Not user-editable.">${esc(formData.keyInfo||"")}</textarea></div>`;
     })()}
     ${(formData.cgcGrade||formData.psaGrade||formData.graderNotes)?`<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes?5:3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes||"")}</textarea></div>`:""}
-    ${formData.aiGraderNotes?`<div><label class="field-label" style="color:#4a7a9a">Defect Notes</label><textarea rows="8" style="font-style:italic;border-color:#1a3a5c" oninput="formData.aiGraderNotes=this.value">${esc(formData.aiGraderNotes||"")}</textarea></div>`:""}
-    ${formData.aiAssessment?`<div><label class="field-label">Condition Assessment</label><textarea rows="${Math.max(12,Math.ceil(formData.aiAssessment.length/80))}" oninput="formData.aiAssessment=this.value">${esc(formData.aiAssessment)}</textarea></div>`:""}
+    ${formData.aiGraderNotes?`<div><label class="field-label" style="color:#4a7a9a">Defect Notes</label><textarea rows="8" readonly style="font-style:italic;border-color:#1a3a5c;cursor:not-allowed" title="Defect Notes is populated by the assessment. Not user-editable.">${esc(formData.aiGraderNotes||"")}</textarea></div>`:""}
+    ${formData.aiAssessment?`<div><label class="field-label">Condition Assessment</label><textarea rows="${Math.max(12,Math.ceil(formData.aiAssessment.length/80))}" readonly style="cursor:not-allowed" title="Condition Assessment is populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>`:""}
     ${(formData.assessmentHistory||[]).length>0?`<div style="margin-top:10px;padding:10px 14px;background:#100e0c;border:1px solid #1e1c1a;border-radius:8px;">
       <div style="font-size:10px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase;margin-bottom:6px">Past Assessments</div>
       <div style="display:flex;flex-direction:column;gap:6px">
