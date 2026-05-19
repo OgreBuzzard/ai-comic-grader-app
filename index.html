@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!-- ===========================================================================
-  RoboGrader index.html — BUILD FINGERPRINT: S14-2026-05-18-XFER-PLUS-LISTING
+  RoboGrader index.html — BUILD FINGERPRINT: S14-2026-05-18-EDIT-OWNERSHIP-PILL
   To verify what's actually deployed: open the deployed page's source (or
   view-source) and find this line. If the fingerprint differs from what
   Claude last produced, a stale/cached index.html was uploaded (same Safari
@@ -4202,7 +4202,7 @@ function showDetail(id){
         // affordance obvious — earlier text-link styling was too easy to miss.
         html += `<div style="display:flex;gap:10px;margin-top:10px">
           <button class="rg-btn rg-btn-secondary rg-btn-md" onclick="openPublicPreview('${esc(selected.roboGradeId)}')">View Link</button>
-          <button class="rg-btn rg-btn-secondary rg-btn-md" onclick="sharePublicListing('${esc(selected.roboGradeId)}', '${esc(selected.title || '').replace(/'/g, "\\'")}', '${esc(selected.issue || '').replace(/'/g, "\\'")}')">Share / Copy for Listing</button>
+          <button class="rg-btn rg-btn-secondary rg-btn-md" onclick="sharePublicListing('${esc(selected.roboGradeId)}', '${esc(selected.title || '').replace(/'/g, "\\'")}', '${esc(selected.issue || '').replace(/'/g, "\\'")}')">Share</button>
         </div>`;
       }
     }
@@ -8151,6 +8151,32 @@ function renderForm(){
     </div>
 
     <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes||"")}</textarea></div>
+    ${/* S14 FIX: the ownership pill existed ONLY in the pre-assessment
+         (else) branch alongside "Enter Manually". The full form — which
+         is what Edit view renders (isEdit ? if-branch) — never showed it,
+         so an existing book's ownership couldn't be changed from Edit.
+         This is the same pill markup + cycleOwnership() handler used in
+         the else branch (identical, proven behavior), placed just above
+         Save/Cancel — the "near the publish/save controls" placement the
+         earlier comment intended as the single retained location. */ ''}
+    ${(() => {
+      const own = formData.ownership || 'Owned';
+      const styleByState = {
+        'Owned':    { bg:'#e8f0d8', fg:'#3a5a18', border:'#a8c870' },
+        'Watching': { bg:'#fff0d8', fg:'#7a5018', border:'#d8a868' },
+        'Sold':     { bg:'#e8e8e8', fg:'#4a4a4a', border:'#a8a8a8' }
+      };
+      const s = styleByState[own] || styleByState['Owned'];
+      return `<div style="display:flex;align-items:center;justify-content:center;gap:10px;margin:10px 0 2px">
+        <span style="font-family:'Barlow Condensed',sans-serif;font-size:12px;letter-spacing:1px;color:#8a7a6a">OWNERSHIP</span>
+        <button onclick="cycleOwnership()"
+          style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;
+                 padding:5px 14px;border-radius:14px;cursor:pointer;
+                 background:${s.bg};color:${s.fg};border:1px solid ${s.border}">
+          ${own.toUpperCase()}
+        </button>
+      </div>`;
+    })()}
     <div style="display:flex;gap:10px;padding-top:4px">
       <button id="save-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="submitForm()" ${formData.title?.trim() ? "" : "disabled"}>${isEdit?"Save":"Add to Collection"}</button>
       <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cancelForm()">Cancel</button>
