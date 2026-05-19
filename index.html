@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!-- ===========================================================================
-  RoboGrader index.html — BUILD FINGERPRINT: S14-2026-05-18-ISOLATION-TEST-NO-XFERREG
+  RoboGrader index.html — BUILD FINGERPRINT: S14-2026-05-18-FIRESTORE-LONGPOLL-FIX
   To verify what's actually deployed: open the deployed page's source (or
   view-source) and find this line. If the fingerprint differs from what
   Claude last produced, a stale/cached index.html was uploaded (same Safari
@@ -74,7 +74,7 @@
   <!-- Firebase -->
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
-    import { getFirestore, collection, getDocs, setDoc, deleteDoc, doc, onSnapshot, getDoc, updateDoc, increment }
+    import { getFirestore, initializeFirestore, collection, getDocs, setDoc, deleteDoc, doc, onSnapshot, getDoc, updateDoc, increment }
       from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
     import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
       from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
@@ -91,7 +91,19 @@
     };
 
     const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
+    // S14 FIX (offline-at-sign-in): plain getFirestore() defaults to
+    // WebChannel streaming, which fails to establish on first attempt on
+    // many networks/proxies/Safari — producing the "transport errored",
+    // 400 on Listen/channel, "client is offline", works-only-after-reload
+    // pattern. experimentalAutoDetectLongPolling makes the SDK detect a
+    // failing stream and fall back to long-polling immediately instead of
+    // failing the initial connection. This ONLY changes how the Firestore
+    // connection is established — no data, no logic, no rules affected.
+    // Isolation-tested: the offline behavior persisted with the transfer
+    // sign-in call disabled, ruling that out and pointing here.
+    const db = initializeFirestore(app, {
+      experimentalAutoDetectLongPolling: true,
+    });
     const storage = getStorage(app);
     window._db = db;
     window._storage = storage;
