@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!-- ===========================================================================
-  RoboGrader index.html — BUILD FINGERPRINT: S14-2026-05-18-ANDROID-ROTATE-ZOOM
+  RoboGrader index.html — BUILD FINGERPRINT: S14-2026-05-18-XFER-PLUS-LISTING
   To verify what's actually deployed: open the deployed page's source (or
   view-source) and find this line. If the fingerprint differs from what
   Claude last produced, a stale/cached index.html was uploaded (same Safari
@@ -214,6 +214,23 @@
         // the on-demand path still works.
         if (_chestPreload.decode) {
           _chestPreload.decode().catch(() => {});
+        }
+        // S14 Phase 3: poll for incoming Give transfers. Fire-and-forget
+        // and deferred — must NEVER block or delay app load (a slow or
+        // failed transfer check is invisible; the user just sees their
+        // collection as normal and gets the prompt a moment later, or on
+        // their next open). Slight delay so it doesn't contend with the
+        // initial collection load. Also re-checked on return-to-
+        // foreground via the visibilitychange listener registered once
+        // below.
+        setTimeout(() => { checkPendingTransfers(); }, 1500);
+        if (!window._xferVisHooked) {
+          window._xferVisHooked = true;
+          document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && window._currentUser) {
+              checkPendingTransfers();
+            }
+          });
         }
         // _loadingState gets cleared inside loadItems() once the collection
         // finishes loading. Don't clear it here — credits alone aren't enough.
@@ -1002,6 +1019,30 @@
       background: #2a7a3a; color: #fff; border-color: #1f5f2c;
     }
     #app-confirm-ok:active { filter: brightness(0.93); }
+    /* S14 Phase 2: Give dialog — same visual language as app-confirm. */
+    #give-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.62); z-index: 3000;
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px;
+    }
+    #give-box {
+      background: #141210; border: 1px solid #2a2420;
+      border-radius: 14px; width: min(380px, 100%);
+      padding: 22px 22px 18px; box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+      animation: appConfirmIn 0.16s ease;
+    }
+    #give-code-input:focus { outline: none; border-color: #7aa838; }
+    .give-btn {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 14px; font-weight: 700; letter-spacing: 0.5px;
+      padding: 9px 18px; border-radius: 9px; cursor: pointer;
+      border: 1px solid transparent;
+    }
+    .give-btn-cancel { background: transparent; color: #9a8a7a; border-color: #3a322c; }
+    .give-btn-cancel:active { background: rgba(255,255,255,0.04); }
+    .give-btn-ok { background: #2a7a3a; color: #fff; border-color: #1f5f2c; }
+    .give-btn-ok:active { filter: brightness(0.93); }
+    .give-btn-ok:disabled { opacity: 0.5; cursor: default; }
     #settings-panel {
       background: #141210; width: min(320px, 90vw); height: 100vh;
       overflow-y: auto; padding: 0; box-shadow: -4px 0 24px rgba(0,0,0,0.4);
@@ -1343,6 +1384,35 @@
     </div>
   </div>
 </div>
+<!-- S14 Phase 2: Give dialog. Two-step inside one overlay: (1) enter the
+     recipient's 4-char code, (2) confirm wording (matches Matt's
+     Scenario 1 script). Reuses the app-confirm visual language. -->
+<div id="give-overlay" style="display:none" onclick="if(event.target===this)closeGiveDialog()">
+  <div id="give-box" role="dialog" aria-modal="true" aria-labelledby="give-title">
+    <div id="give-title" style="color:#d8ccc0;font-size:17px;font-weight:700;font-family:'Barlow Condensed',sans-serif;letter-spacing:0.5px;margin-bottom:6px">Give this entry</div>
+    <div id="give-step1">
+      <div style="color:#9a8a7a;font-size:13px;font-family:'Barlow Condensed',sans-serif;line-height:1.5;margin-bottom:14px">
+        Enter the recipient's 4-character code. They can find it in their Settings under their email.
+      </div>
+      <input id="give-code-input" type="text" inputmode="latin" autocomplete="off"
+        autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="4"
+        placeholder="XXXX"
+        style="width:100%;box-sizing:border-box;background:#0c0a08;border:1px solid #3a322c;border-radius:10px;color:#d4e82a;font-family:'IBM Plex Mono','Menlo',monospace;font-size:28px;font-weight:700;letter-spacing:10px;text-align:center;padding:14px 0;margin-bottom:6px;text-transform:uppercase">
+      <div id="give-code-err" style="color:#c87a6a;font-size:12px;font-family:'Barlow Condensed',sans-serif;min-height:16px;margin-bottom:14px"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button type="button" class="give-btn give-btn-cancel" onclick="closeGiveDialog()">Cancel</button>
+        <button type="button" class="give-btn give-btn-ok" onclick="giveDialogNext()">Next</button>
+      </div>
+    </div>
+    <div id="give-step2" style="display:none">
+      <div id="give-confirm-msg" style="color:#d8ccc0;font-size:14px;font-family:'Barlow Condensed',sans-serif;line-height:1.55;margin-bottom:18px"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button type="button" class="give-btn give-btn-cancel" onclick="giveDialogBack()">Back</button>
+        <button type="button" class="give-btn give-btn-ok" id="give-confirm-btn" onclick="giveDialogConfirm()">Give</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div id="settings-overlay" style="display:none" onclick="if(event.target===this)closeSettings()">
   <div id="settings-panel">
     <div class="settings-header">
@@ -1357,6 +1427,19 @@
         <div class="sr-label" id="settings-email">—</div>
         <div class="sr-detail">Signed in with Google</div>
       </div>
+    </div>
+    <!-- S14 (transfer feature, Phase 1): the user's 4-char Give code,
+         directly beneath the email per design. Tappable to copy so the
+         user can hand it over easily; monospace + tracked so it's
+         unambiguous to read aloud at a convention. Phase 2 adds the
+         actual Give flow that consumes a recipient's code. -->
+    <div class="settings-row" style="cursor:pointer" onclick="copyTransferCode()">
+      <div>
+        <div class="sr-label">Your Give code</div>
+        <div class="sr-detail">Tap to copy · share this so others can Give you entries</div>
+      </div>
+      <div id="settings-transfer-code"
+        style="font-family:'IBM Plex Mono','Menlo',monospace;font-size:20px;font-weight:700;letter-spacing:3px;color:#c8b8a8">—</div>
     </div>
     <div class="settings-row" onclick="openSettings_buyCredits()">
       <div>
@@ -2948,6 +3031,25 @@ async function loadUserCredits(){
       // and renders the correct visual state on the first paint.
       // Default true (opt-in) when the field is absent.
       window._trainingOptIn = data.trainingOptIn !== false;
+      // S14 Phase 1 (transfer feature): backfill the 4-char transfer
+      // code for users who signed up BEFORE this feature existed, so
+      // nobody is ever code-less. Cache it for the Settings display
+      // either way. Same Phase-1 caveat as new-user assignment: true
+      // global uniqueness is a Phase-2 server concern; this is a
+      // candidate from a 1.05M space. Merge-write so other fields are
+      // untouched; only write when actually generating one.
+      if (typeof data.transferCode === 'string' && data.transferCode.length === 4) {
+        window._transferCode = data.transferCode;
+      } else {
+        const backfillCode = generateTransferCode();
+        window._transferCode = backfillCode;
+        try {
+          const tcRef = window._fsDoc(db, "users", window._currentUser.uid);
+          await window._fsSetDoc(tcRef, { transferCode: backfillCode }, { merge: true });
+        } catch (e) {
+          console.warn('transferCode backfill write failed (will retry next sign-in):', e);
+        }
+      }
       // Profile-field backfill (added S11). Existing users may have signed up
       // before we wrote profile data to Firestore. On every sign-in, refresh
       // displayName/email if either is missing or out of date. This is for
@@ -2963,6 +3065,17 @@ async function loadUserCredits(){
       }
     } else {
       const userRef = window._fsDoc(db, "users", window._currentUser.uid);
+      // S14 Phase 1 (transfer feature): assign the 4-char transfer code
+      // AT ACCOUNT CREATION (design decision — the convention-demo flow
+      // needs the code to exist the instant a first-time user signs in;
+      // they never open Settings). NOTE: true global uniqueness is
+      // enforced server-side in Phase 2 via the transfer_codes reverse
+      // index. Phase 1 generates a candidate from a 1.05M-code space
+      // (collision odds negligible at current scale); Phase 2's
+      // /api/transfer_send will validate/claim and, if a collision is
+      // ever detected, the server reassigns. Storing it now means the
+      // Settings UI and the eventual send flow have it immediately.
+      const newCode = generateTransferCode();
       await window._fsSetDoc(userRef, {
         ...profile,
         // S12 May 6: dropped from 5 → 3 to reduce dummy-account farming
@@ -2973,10 +3086,12 @@ async function loadUserCredits(){
         // output quality before any of the 3 are spent.
         assessmentCredits: 3,
         createdAt: new Date().toISOString(),
-        freeCreditsGranted: true
+        freeCreditsGranted: true,
+        transferCode: newCode
       });
       window._userCredits = 3;
       window._sampleDismissed = false;
+      window._transferCode = newCode;
       // S14: new-user cache default for trainingOptIn — opt-in by default.
       window._trainingOptIn = true;
     }
@@ -3921,7 +4036,17 @@ function showDetail(id){
         parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;font-weight:700;color:#5a7030">RG ${h.rgScore}${precSuffix}${v}</span>`);
       }
       if (h.grade) {
-        parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;color:#3a5a8a">CGC ${normalizeGrade(h.grade)}</span>`);
+        // S14: was hardcoded "CGC ${grade}", but h.grade is the
+        // PREDICTED grade (prior.grade = predictedGrade || assessedCGC,
+        // captured at re-assessment). Labeling a predicted value "CGC"
+        // is exactly the conflation the app-wide naming purge removed —
+        // the rest of the UI says "Predicted Grade" (see lines ~3784).
+        // History must match. (Rare pre-unification entries whose grade
+        // was a real slab value also render as "Predicted"; the data
+        // model never distinguished them and the consistent app-wide
+        // label is the lesser inconsistency vs. mislabeling every new
+        // entry as CGC.)
+        parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;color:#3a5a8a">Predicted ${normalizeGrade(h.grade)}</span>`);
       }
       if (h.psaGrade) {
         parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;color:#8a3a3a">PSA ${normalizeGrade(h.psaGrade)}</span>`);
@@ -4077,7 +4202,7 @@ function showDetail(id){
         // affordance obvious — earlier text-link styling was too easy to miss.
         html += `<div style="display:flex;gap:10px;margin-top:10px">
           <button class="rg-btn rg-btn-secondary rg-btn-md" onclick="openPublicPreview('${esc(selected.roboGradeId)}')">View Link</button>
-          <button class="rg-btn rg-btn-secondary rg-btn-md" onclick="sharePublicListing('${esc(selected.roboGradeId)}', '${esc(selected.title || '').replace(/'/g, "\\'")}', '${esc(selected.issue || '').replace(/'/g, "\\'")}')">Share</button>
+          <button class="rg-btn rg-btn-secondary rg-btn-md" onclick="sharePublicListing('${esc(selected.roboGradeId)}', '${esc(selected.title || '').replace(/'/g, "\\'")}', '${esc(selected.issue || '').replace(/'/g, "\\'")}')">Share / Copy for Listing</button>
         </div>`;
       }
     }
@@ -4089,12 +4214,26 @@ function showDetail(id){
   // identity, slab authenticity, rate limiting, etc. Significant effort —
   // hidden entirely until built rather than showing a "coming soon" placeholder.
 
-  // ─── Print Label / Delete ───
+  // ─── Print Label / Give / Delete ───
   // Bottom action row. Edit moved to top sticky bar in S10. Print Label
   // requires a roboGrade (you can't print a label for a book that hasn't
   // been graded yet).
+  // S14 Phase 2 (transfer feature): "Give" hands this entry's assessment
+  // to another user by their 4-char code. Per design it appears ONLY
+  // when ownership is Watching or Sold (you're giving a book that isn't
+  // staying in your collection as Owned), never for the sample fixture,
+  // and only for a graded entry (nothing to give if unassessed). It sits
+  // between Print Label and Delete. The button placement intentionally
+  // mirrors how the design described it ("below Share") — Share only
+  // renders for public listings above; Give is a peer action in the
+  // bottom row so it's always discoverable regardless of public state.
+  const _giveOwnership = selected.ownership || 'Owned';
+  const _canGive = !isSample
+    && selected.roboGrade
+    && (_giveOwnership === 'Watching' || _giveOwnership === 'Sold');
   html += `<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
     ${(!isSample && selected.roboGrade) ? `<button class="rg-btn rg-btn-primary rg-btn-md" onclick="printLabel('${esc(selected.id)}')">Print Label</button>` : ''}
+    ${_canGive ? `<button class="rg-btn rg-btn-secondary rg-btn-md" onclick="openGiveDialog('${esc(selected.id)}')" style="min-width:120px">Give</button>` : ''}
     <button class="rg-btn rg-btn-destructive rg-btn-md" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')" style="min-width:172px">Delete</button>
   </div></div>`;
 
@@ -4208,13 +4347,64 @@ function closePublicPreview() {
 // Share the public listing URL via the OS share sheet (Web Share API).
 // Falls back to clipboard copy when navigator.share is unavailable (mostly
 // desktop browsers). Used by the Share link beneath the public/private toggle.
+// S14: builds the plain-text listing summary that the Share button now
+// shares/copies (Option 1 — marketplace listing paste). Plain text only:
+// eBay and Shortboxed sanitize seller HTML/CSS, so this is deliberately
+// unformatted text + the existing public cert URL. Mirrors the app's own
+// RG display logic (score, ±N confidence, "+" for >=80 non-high-grade)
+// so the pasted text matches what the app and /id/ page show. Sourced
+// from the in-memory item by roboGradeId so the call site stays simple.
+function buildListingSummary(roboGradeId, title, issue) {
+  const url = `https://robograder.app/id/${roboGradeId}`;
+  const it = (items || []).find(c => c && c.roboGradeId === roboGradeId);
+  const issueStr = issue ? ` #${issue}` : '';
+  const header = `${title}${issueStr}`.trim();
+
+  // No item in memory (shouldn't happen from the detail view, but be
+  // safe): degrade to a minimal summary + link rather than throw.
+  if (!it) {
+    return { url, header, text:
+      `${header}\nRobograder assessment: ${url}` };
+  }
+
+  const rg = it.roboGrade || {};
+  const lines = [header, 'Assessed by Robograder'];
+
+  if (rg.score != null) {
+    const score = Math.round(rg.score);
+    let prec = '';
+    if (score < 100) {
+      if (it.highGradeUnlocked && rg.confidenceRange != null) {
+        prec = rg.confidenceRange > 0 ? ` \u00b1${Math.round(rg.confidenceRange)}` : '';
+      } else if (score >= 80 && !it.highGradeUnlocked) {
+        prec = '+';
+      } else if (rg.confidenceRange != null) {
+        prec = rg.confidenceRange > 0 ? ` \u00b1${Math.round(rg.confidenceRange)}` : '';
+      }
+    }
+    const ver = rg.version ? ` (v${rg.version})` : '';
+    lines.push(`RG ${score}${prec}${ver}`);
+  }
+
+  // Predicted grade — predictedGrade preferred, legacy assessedCGCGrade
+  // fallback. Labeled "Predicted" (never "CGC") per the app-wide naming.
+  const predicted = it.predictedGrade || it.assessedCGCGrade || '';
+  if (predicted) lines.push(`Predicted grade ${normalizeGrade(predicted)}`);
+
+  const pq = it.pageQuality || rg.pageQuality || '';
+  if (pq) lines.push(`Pages: ${pq}`);
+
+  lines.push(`Full assessment: ${url}`);
+  return { url, header, text: lines.join('\n') };
+}
+
 async function sharePublicListing(roboGradeId, title, issue) {
   if (!roboGradeId) return;
-  const url = `https://robograder.app/id/${roboGradeId}`;
-  const issueStr = issue ? ` #${issue}` : '';
+  const summary = buildListingSummary(roboGradeId, title, issue);
+  const url = summary.url;
   const shareData = {
-    title: `Robograder: ${title}${issueStr}`,
-    text: `${title}${issueStr} — Robograder assessment`,
+    title: `Robograder: ${summary.header}`,
+    text: summary.text,
     url
   };
   // Web Share API — preferred. Available in iOS Safari, Android Chrome, and
@@ -4230,14 +4420,15 @@ async function sharePublicListing(roboGradeId, title, issue) {
     }
     return;
   }
-  // Fallback: copy to clipboard. Mostly relevant on desktop where Share
-  // doesn't make sense as a system gesture.
+  // Fallback: copy the FULL summary (not just the URL) to the clipboard
+  // so a desktop user pasting into an eBay/Shortboxed listing gets the
+  // whole readable block, not a bare link.
   try {
-    await navigator.clipboard.writeText(url);
-    alert('Link copied to clipboard:\n' + url);
+    await navigator.clipboard.writeText(summary.text);
+    alert('Listing summary copied to clipboard:\n\n' + summary.text);
   } catch (err) {
-    // Last-ditch fallback: prompt with the URL so the user can copy manually.
-    prompt('Copy this link:', url);
+    // Last-ditch fallback: prompt with the summary so it can be copied.
+    prompt('Copy this listing summary:', summary.text);
   }
 }
 
@@ -6270,6 +6461,267 @@ async function deleteAccountFlow() {
   // The auth state change handler will redirect to the sign-in screen.
 }
 
+// ── S14 Phase 2: Give flow ──────────────────────────────────────────────
+// State for the in-progress Give. _giveItemId is the source item; the
+// validated code is read from the input at confirm time.
+let _giveItemId = null;
+
+function openGiveDialog(itemId) {
+  // Guard: never give the sample, never an unassessed/missing item.
+  const it = (items || []).find(c => c.id === itemId);
+  if (!it || it._isSample || !it.roboGrade) return;
+  _giveItemId = itemId;
+  const ov = document.getElementById('give-overlay');
+  const step1 = document.getElementById('give-step1');
+  const step2 = document.getElementById('give-step2');
+  const input = document.getElementById('give-code-input');
+  const err = document.getElementById('give-code-err');
+  if (!ov) return;
+  step1.style.display = '';
+  step2.style.display = 'none';
+  input.value = '';
+  err.textContent = '';
+  ov.style.display = 'flex';
+  setTimeout(() => { try { input.focus(); } catch (e) {} }, 50);
+}
+
+function closeGiveDialog() {
+  const ov = document.getElementById('give-overlay');
+  if (ov) ov.style.display = 'none';
+  _giveItemId = null;
+}
+
+function giveDialogBack() {
+  document.getElementById('give-step2').style.display = 'none';
+  document.getElementById('give-step1').style.display = '';
+}
+
+// Validate the typed code against the SAME alphabet the system uses.
+// Returns the normalized (uppercase) code or null.
+function _normalizeGiveCode(raw) {
+  const code = String(raw || '').trim().toUpperCase();
+  if (code.length !== 4) return null;
+  for (const ch of code) {
+    if (ID_ALPHABET.indexOf(ch) === -1) return null;
+  }
+  return code;
+}
+
+function giveDialogNext() {
+  const input = document.getElementById('give-code-input');
+  const err = document.getElementById('give-code-err');
+  const code = _normalizeGiveCode(input.value);
+  if (!code) {
+    err.textContent = 'Enter a valid 4-character code (letters/numbers, no O, U, 0 or 1).';
+    return;
+  }
+  if (code === window._transferCode) {
+    err.textContent = "That's your own code — pick the recipient's code.";
+    return;
+  }
+  err.textContent = '';
+  const it = (items || []).find(c => c.id === _giveItemId);
+  const own = (it && it.ownership) || 'Watching';
+  const keepState = own === 'Sold' ? 'Sold' : 'Watching';
+  // Confirm wording mirrors Matt's Scenario 1 script.
+  document.getElementById('give-confirm-msg').innerHTML =
+    `Give this Robograder entry to <b style="color:#d4e82a;font-family:'IBM Plex Mono',monospace;letter-spacing:1px">${code}</b>?<br><br>` +
+    `You'll keep a copy with a new ID, set to <b>${keepState}</b> and <b>Private</b>. ` +
+    `The recipient gets full access to it on their account once they accept.`;
+  document.getElementById('give-step1').style.display = 'none';
+  document.getElementById('give-step2').style.display = '';
+  // Stash the validated code on the confirm button so confirm doesn't
+  // re-read a possibly-mutated input.
+  document.getElementById('give-confirm-btn').dataset.code = code;
+}
+
+async function giveDialogConfirm() {
+  const btn = document.getElementById('give-confirm-btn');
+  const code = btn.dataset.code;
+  const itemId = _giveItemId;
+  if (!code || !itemId) { closeGiveDialog(); return; }
+  if (!window._currentUser || typeof window._currentUser.getIdToken !== 'function') {
+    alert('You must be signed in to give an entry.');
+    return;
+  }
+  btn.disabled = true;
+  const origLabel = btn.textContent;
+  btn.textContent = 'Sending…';
+  try {
+    const token = await window._currentUser.getIdToken();
+    const resp = await fetch('/api/transfer_send', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token,
+      },
+      body: JSON.stringify({ sourceItemId: itemId, toCode: code }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data || !data.ok) {
+      const msg = (data && data.error) || `Send failed (${resp.status})`;
+      btn.disabled = false;
+      btn.textContent = origLabel;
+      // Show the error back on step 1 so the user can correct the code.
+      giveDialogBack();
+      document.getElementById('give-code-err').textContent = msg;
+      return;
+    }
+    closeGiveDialog();
+    // Lightweight confirmation. Fire-and-forget per design — we do NOT
+    // wait to hear whether the recipient accepted.
+    alert(data.message || `Sent to ${code}. They'll see it next time they open the app.`);
+    // The source item is unchanged until the recipient ACCEPTS (the
+    // server snapshots at send time; A's copy is only re-IDed/flipped on
+    // accept, server-side). Nothing to mutate locally here.
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = origLabel;
+    giveDialogBack();
+    document.getElementById('give-code-err').textContent =
+      (e && e.message) || 'Network error — try again.';
+  }
+}
+
+// Live-uppercase the code input as the user types.
+document.addEventListener('input', (e) => {
+  if (e.target && e.target.id === 'give-code-input') {
+    const v = e.target.value.toUpperCase();
+    if (v !== e.target.value) e.target.value = v;
+  }
+});
+
+// ── S14 Phase 3: incoming transfer poll + batched-by-sender prompt ───────
+// Called on app open and return-to-foreground. Non-blocking: any failure
+// is swallowed (the user simply doesn't get prompted this cycle). One
+// prompt per SENDER (Matt Q4): single-entry batch names the title/issue;
+// multi-entry batch shows the count only. One Confirm accepts that
+// sender's whole batch. Re-entrancy guarded so overlapping polls (open
+// + quick foreground flip) don't double-prompt.
+let _xferPolling = false;
+let _xferPromptOpen = false;
+
+async function checkPendingTransfers() {
+  if (_xferPolling || _xferPromptOpen) return;
+  if (!window._currentUser || typeof window._currentUser.getIdToken !== 'function') return;
+  _xferPolling = true;
+  try {
+    const token = await window._currentUser.getIdToken();
+    const resp = await fetch('/api/transfer_pending', {
+      method: 'GET',
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    if (!resp.ok) return;
+    const data = await resp.json().catch(() => null);
+    if (!data || !data.ok || !Array.isArray(data.groups) || data.groups.length === 0) return;
+    // Present one sender-group at a time. After the user resolves the
+    // first, the next poll cycle picks up the next sender (keeps the UI
+    // simple — no stacked modals).
+    await promptTransferGroup(data.groups[0]);
+  } catch (e) {
+    // Silent — never disrupt the app over a transfer check.
+  } finally {
+    _xferPolling = false;
+  }
+}
+
+function _xferEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function _xferGroupLabel(g) {
+  // Only fromUid is known here — the pending endpoint intentionally does
+  // NOT leak the code→user reverse map, so the sender is phrased without
+  // exposing a uid or code.
+  if (g.count === 1 && g.singleTitle) {
+    const iss = g.singleIssue ? ` #${g.singleIssue}` : '';
+    return `Someone sent you an assessment: <b>${_xferEsc(g.singleTitle)}${_xferEsc(iss)}</b>.`;
+  }
+  return `Someone sent you <b>${g.count} assessments</b>.`;
+}
+
+async function promptTransferGroup(g) {
+  if (!g || !Array.isArray(g.transferIds) || g.transferIds.length === 0) return;
+  _xferPromptOpen = true;
+  try {
+    const msg = _xferGroupLabel(g) +
+      `<br><br>Accept ${g.count === 1 ? 'it' : 'them all'} into your collection? ` +
+      `You'll own ${g.count === 1 ? 'this entry' : 'these entries'} and can edit ${g.count === 1 ? 'it' : 'them'}.`;
+    const ok = await appConfirm(msg, g.count === 1 ? 'Accept' : `Accept all ${g.count}`);
+    const action = ok ? 'accept' : 'decline';
+    // Progress UI for large batches so the user doesn't think it hung
+    // (and so a force-quit mid-accept is understood as resumable —
+    // re-opening re-polls and the idempotent resolve finishes the rest).
+    const big = g.transferIds.length > 8;
+    if (big) syncMsg(`${ok ? 'Accepting' : 'Declining'} 0/${g.transferIds.length}…`);
+    const token = await window._currentUser.getIdToken();
+    // Chunk the batch so a 150-book accept doesn't exceed a serverless
+    // timeout and so progress advances visibly. Each chunk is
+    // independently idempotent; a failed chunk retries on next poll
+    // without duplicating the ones already done.
+    const CHUNK = 25;
+    let done = 0, accT = 0, decT = 0, failT = 0;
+    for (let i = 0; i < g.transferIds.length; i += CHUNK) {
+      const slice = g.transferIds.slice(i, i + CHUNK);
+      const r = await fetch('/api/transfer_resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ transferIds: slice, action }),
+      });
+      const rd = await r.json().catch(() => null);
+      if (rd && rd.summary) {
+        accT += rd.summary.accepted || 0;
+        decT += rd.summary.declined || 0;
+        failT += rd.summary.failed || 0;
+      }
+      done += slice.length;
+      if (big) syncMsg(`${ok ? 'Accepting' : 'Declining'} ${Math.min(done, g.transferIds.length)}/${g.transferIds.length}…`);
+    }
+    if (big) syncMsg(null);
+    if (ok) {
+      // Refresh the collection so newly-owned entries appear.
+      try { await loadItems(); if (typeof renderList === 'function') renderList(); } catch (e) {}
+      let m = `Added ${accT} ${accT === 1 ? 'entry' : 'entries'} to your collection.`;
+      if (failT > 0) m += ` ${failT} couldn't be added — reopen the app to retry ${failT === 1 ? 'it' : 'them'}.`;
+      alert(m);
+    }
+    // declined → silent; the sender isn't notified (fire-and-forget).
+  } catch (e) {
+    syncMsg(null);
+    // Don't alert on transient failure — the pending transfers remain
+    // pending and are offered again on the next poll.
+  } finally {
+    _xferPromptOpen = false;
+  }
+}
+
+// S14 Phase 1: copy the user's Give code to the clipboard. Same
+// clipboard pattern as the share-link copy (clipboard API → graceful
+// fallback). Brief inline confirmation on the row itself rather than a
+// blocking alert — a lightweight convenience tap a user may do
+// repeatedly while reading the code to several people at a table.
+async function copyTransferCode() {
+  const code = (typeof window._transferCode === 'string' && window._transferCode.length === 4)
+    ? window._transferCode : null;
+  if (!code) return;  // nothing valid to copy; row shows "—"
+  const tcEl = document.getElementById('settings-transfer-code');
+  const flash = (txt) => {
+    if (!tcEl) return;
+    const prev = tcEl.textContent;
+    tcEl.textContent = txt;
+    setTimeout(() => { tcEl.textContent = prev; }, 1100);
+  };
+  try {
+    await navigator.clipboard.writeText(code);
+    flash('Copied');
+  } catch (err) {
+    // Fallback for browsers without clipboard API access (older mobile
+    // Safari in some contexts): show it so the user can copy/read it.
+    prompt('Your Give code:', code);
+  }
+}
+
 function openSettings() {
   loadPublicSetting();
   loadTrainingSetting();
@@ -6302,6 +6754,18 @@ function openSettings() {
   // Populate account info
   const emailEl = document.getElementById('settings-email');
   if (emailEl && window._currentUser) emailEl.textContent = window._currentUser.email || '—';
+
+  // S14 Phase 1: show the user's 4-char Give code from the cache
+  // populated at sign-in (loadUserCredits assigns/backfills it). If for
+  // any reason it's not cached yet, fall back to a dash rather than
+  // generating a throwaway one here (a code shown must be the persisted
+  // one, never a transient mismatch).
+  const tcEl = document.getElementById('settings-transfer-code');
+  if (tcEl) {
+    tcEl.textContent =
+      (typeof window._transferCode === 'string' && window._transferCode.length === 4)
+        ? window._transferCode : '—';
+  }
 
   const credEl = document.getElementById('settings-credits');
   if (credEl) {
@@ -6558,20 +7022,34 @@ function decrementCredit(){
   }
 }
 
-function generateRoboId() {
-  // 6-char ID using a 32-character alphabet — 32^6 = ~1.07 billion unique IDs.
-  // Dropped characters (visually confusable / case-sensitive ambiguity):
-  //   0 → confusable with O
-  //   1 → confusable with I and L
-  //   O → confusable with 0
-  //   U → confusable with V
-  // The 32-character size is also mathematically clean: 2^5 = 32, so when we
-  // generate random bytes (0-255) and take modulo 32, the distribution is
-  // perfectly uniform with no modulo bias (since 256 = 32 × 8 exactly).
-  const ALPHABET = '23456789ABCDEFGHIJKLMNPQRSTVWXYZ';
-  const arr = new Uint8Array(6);
+// S14 (transfer feature): single source of truth for the confusable-safe
+// alphabet. Used by BOTH generateRoboId (6-char cert IDs) and
+// generateTransferCode (4-char user transfer codes) so the two can never
+// drift apart — the design requires transfer codes to look visually
+// consistent with cert IDs. Dropped chars (visually confusable):
+//   0↔O, 1↔I/L, O↔0, U↔V  →  excluded: 0, 1, O, U  (I and L are KEPT).
+// 32 chars = 2^5, so byte%32 over crypto.getRandomValues is perfectly
+// uniform (256 = 32×8, no modulo bias).
+const ID_ALPHABET = '23456789ABCDEFGHIJKLMNPQRSTVWXYZ';
+
+function _randomFromAlphabet(len) {
+  const arr = new Uint8Array(len);
   crypto.getRandomValues(arr);
-  return Array.from(arr).map(b => ALPHABET[b % ALPHABET.length]).join('');
+  return Array.from(arr).map(b => ID_ALPHABET[b % ID_ALPHABET.length]).join('');
+}
+
+function generateRoboId() {
+  // 6-char cert ID — 32^6 ≈ 1.07 billion unique IDs.
+  return _randomFromAlphabet(6);
+}
+
+// S14: 4-char user transfer code (the "Give to ID:XXXX" address). Same
+// alphabet as cert IDs. 32^4 ≈ 1.05M codes. Uniqueness is enforced
+// server-side at assignment via the transfer_codes reverse index
+// (Phase 2); this just produces a candidate. Collision handling is the
+// caller's responsibility (generate → check → retry).
+function generateTransferCode() {
+  return _randomFromAlphabet(4);
 }
 
 async function completeAssessment() {
@@ -7627,7 +8105,10 @@ function renderForm(){
             parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;font-weight:700;color:#7aa030;font-size:12px">RG ${h.rgScore}${plus}${v}</span>`);
           }
           if (h.grade) {
-            parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;color:#6a8aa8;font-size:12px">CGC ${normalizeGrade(h.grade)}</span>`);
+            // S14: same fix as detail-view history — h.grade is the
+            // PREDICTED grade, not an official CGC grade. Label
+            // consistently with the rest of the app.
+            parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;color:#6a8aa8;font-size:12px">Predicted ${normalizeGrade(h.grade)}</span>`);
           }
           if (h.psaGrade) {
             parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;color:#a86a6a;font-size:12px">PSA ${normalizeGrade(h.psaGrade)}</span>`);
