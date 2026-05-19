@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!-- ===========================================================================
-  RoboGrader index.html — BUILD FINGERPRINT: S14-2026-05-18-CODEFIX-READONLY
+  RoboGrader index.html — BUILD FINGERPRINT: S14-2026-05-18-ISOLATION-TEST-NO-XFERREG
   To verify what's actually deployed: open the deployed page's source (or
   view-source) and find this line. If the fingerprint differs from what
   Claude last produced, a stale/cached index.html was uploaded (same Safari
@@ -3060,7 +3060,14 @@ async function loadUserCredits(){
       // we cached (collision reassignment), trust the server's. Fire-
       // and-forget — never blocks sign-in; a transient failure just
       // means the code isn't resolvable until the next sign-in retry.
-      ensureTransferCodeRegistered();
+      //
+      // S14 ISOLATION TEST (2026-05-18): this ONE call is temporarily
+      // disabled to determine whether it causes the offline-at-sign-in
+      // behavior (credits/terms fail, reload needed). NOTHING ELSE is
+      // changed in this build. Persists with this off => not the cause,
+      // re-enable. Stops with this off => this call is interfering with
+      // Firestore connection setup. Re-enable by uncommenting next line.
+      // ensureTransferCodeRegistered();
       // Profile-field backfill (added S11). Existing users may have signed up
       // before we wrote profile data to Firestore. On every sign-in, refresh
       // displayName/email if either is missing or out of date. This is for
