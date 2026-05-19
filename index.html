@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!-- ===========================================================================
-  RoboGrader index.html — BUILD FINGERPRINT: S14-2026-05-18-SHARE-TEXT-TRIM
+  RoboGrader index.html — BUILD FINGERPRINT: S14-2026-05-18-STYLED-DIALOGS
   To verify what's actually deployed: open the deployed page's source (or
   view-source) and find this line. If the fingerprint differs from what
   Claude last produced, a stale/cached index.html was uploaded (same Safari
@@ -2796,7 +2796,13 @@ function appConfirm(message, okLabel, asHtml) {
     const overlay = document.getElementById('app-confirm-overlay');
     const msgEl = document.getElementById('app-confirm-msg');
     const okEl = document.getElementById('app-confirm-ok');
+    const cancelEl = document.getElementById('app-confirm-cancel');
     if (!overlay || !msgEl) { resolve(window.confirm(message)); return; }
+    // The modal DOM is shared with appAlert, which hides Cancel and
+    // relabels OK. Restore the two-button state every time so a confirm
+    // after an alert isn't missing its Cancel button.
+    if (cancelEl) cancelEl.style.display = '';
+    if (okEl) okEl.textContent = 'Continue';
     // Default stays textContent (safe for every existing plain-text
     // caller). asHtml is opt-in and only used by the transfer prompt,
     // whose only HTML is our own <b>/<br> and whose dynamic parts
@@ -2826,6 +2832,41 @@ function _appConfirmResolve(val) {
   const r = _appConfirmResolver;
   _appConfirmResolver = null;
   if (r) r(!!val);
+}
+
+// S14: styled single-button notice. Replaces raw alert() in the
+// transfer/give/share flow so those messages match the app instead of
+// rendering as bare iOS dialogs. Reuses the appConfirm modal DOM/CSS so
+// it's visually identical; just hides Cancel and shows one OK button.
+// Returns a Promise that resolves when dismissed (so callers can await
+// it if ordering matters). asHtml is opt-in, same escaping contract as
+// appConfirm. For the rare clipboard-fallback cases the message text is
+// shown selectable in the body so the user can still copy it manually —
+// a deliberate simplification rather than building a separate styled
+// text-prompt for an edge case that almost never fires.
+function appAlert(message, asHtml) {
+  return new Promise((resolve) => {
+    _appConfirmResolver = () => resolve(true);
+    const overlay = document.getElementById('app-confirm-overlay');
+    const msgEl = document.getElementById('app-confirm-msg');
+    const okEl = document.getElementById('app-confirm-ok');
+    const cancelEl = document.getElementById('app-confirm-cancel');
+    if (!overlay || !msgEl) { window.alert(message); resolve(true); return; }
+    if (asHtml) msgEl.innerHTML = message;
+    else msgEl.textContent = message;
+    // Single-button mode: hide Cancel, label the action "OK".
+    if (cancelEl) cancelEl.style.display = 'none';
+    if (okEl) okEl.textContent = 'OK';
+    // Let the body text be selectable so clipboard-fallback messages
+    // can still be copied by hand.
+    msgEl.style.userSelect = 'text';
+    overlay.style.display = 'flex';
+    const onKey = (e) => {
+      if (e.key === 'Escape' || e.key === 'Enter') _appConfirmResolve(true);
+    };
+    overlay._onKey = onKey;
+    document.addEventListener('keydown', onKey);
+  });
 }
 
 // S14: guarded entry point for the top-bar Grade button. From list or
@@ -4296,18 +4337,16 @@ function showDetail(id){
   // requires a roboGrade (you can't print a label for a book that hasn't
   // been graded yet).
   // S14 Phase 2 (transfer feature): "Give" hands this entry's assessment
-  // to another user by their 4-char code. Per design it appears ONLY
-  // when ownership is Watching or Sold (you're giving a book that isn't
-  // staying in your collection as Owned), never for the sample fixture,
-  // and only for a graded entry (nothing to give if unassessed). It sits
-  // between Print Label and Delete. The button placement intentionally
-  // mirrors how the design described it ("below Share") — Share only
-  // renders for public listings above; Give is a peer action in the
-  // bottom row so it's always discoverable regardless of public state.
-  const _giveOwnership = selected.ownership || 'Owned';
-  const _canGive = !isSample
-    && selected.roboGrade
-    && (_giveOwnership === 'Watching' || _giveOwnership === 'Sold');
+  // to another user by their 4-char code. Appears for any graded,
+  // non-sample entry regardless of ownership state. (The original
+  // Watching/Sold-only gate was removed — it never actually prevented
+  // the brief send→accept double-claim window it was meant to guard,
+  // since the accept flow re-points the cert and privatizes the
+  // sender's retained copy anyway. The two-step Give dialog is
+  // sufficient protection against an accidental give.) Not for the
+  // sample fixture, and nothing to give if unassessed. Sits between
+  // Print Label and Delete.
+  const _canGive = !isSample && selected.roboGrade;
   html += `<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
     ${(!isSample && selected.roboGrade) ? `<button class="rg-btn rg-btn-primary rg-btn-md" onclick="printLabel('${esc(selected.id)}')">Print Label</button>` : ''}
     ${_canGive ? `<button class="rg-btn rg-btn-secondary rg-btn-md" onclick="openGiveDialog('${esc(selected.id)}')" style="min-width:120px">Give</button>` : ''}
@@ -4431,16 +4470,19 @@ function closePublicPreview() {
 // RG display logic (score, ±N confidence, "+" for >=80 non-high-grade)
 // so the pasted text matches what the app and /id/ page show. Sourced
 // from the in-memory item by roboGradeId so the call site stays simple.
-function buildListingSummary(roboGradeId, title, issue) {
+function buildListingSummary(roboGradeId, title, issue, prefix) {
   const url = `https://robograder.app/id/${roboGradeId}`;
   const it = (items || []).find(c => c && c.roboGradeId === roboGradeId);
   const issueStr = issue ? ` #${issue}` : '';
   const header = `${title}${issueStr}`.trim();
+  // Optional first line (e.g. Give uses "You've been given an
+  // assessment."). Share passes nothing, so its output is unchanged.
+  const pfx = prefix ? `${prefix}\n` : '';
 
   // No item in memory (shouldn't happen from the detail view, but be
   // safe): degrade to a minimal summary + link rather than throw.
   if (!it) {
-    return { url, header, text: `${header}\n${url}` };
+    return { url, header, text: `${pfx}${header}\n${url}` };
   }
 
   const rg = it.roboGrade || {};
@@ -4470,17 +4512,25 @@ function buildListingSummary(roboGradeId, title, issue) {
   if (pq) lines.push(`Pages: ${pq}`);
 
   lines.push(url);
-  return { url, header, text: lines.join('\n') };
+  return { url, header, text: pfx + lines.join('\n') };
 }
 
 async function sharePublicListing(roboGradeId, title, issue) {
   if (!roboGradeId) return;
   const summary = buildListingSummary(roboGradeId, title, issue);
-  const url = summary.url;
+  // S14: deliberately NO `url` field in shareData. summary.text already
+  // ends with the bare URL as its last line, so the link still travels.
+  // Passing a separate `url` caused desktop share targets (notably macOS
+  // Messages) to keep ONLY the url and silently discard `text` — the
+  // reported "desktop sends just the link, no summary" bug. With text
+  // alone, the full summary (URL included) survives on desktop and
+  // mobile alike. Trade-off accepted: some targets that build a rich
+  // link-preview card from `url` will now show the plain text block
+  // instead — correct for the listing-paste use case, where the
+  // information must survive, not a preview.
   const shareData = {
     title: `Robograder: ${summary.header}`,
-    text: summary.text,
-    url
+    text: summary.text
   };
   // Web Share API — preferred. Available in iOS Safari, Android Chrome, and
   // most modern mobile browsers. Triggers the native OS share sheet.
@@ -4500,10 +4550,11 @@ async function sharePublicListing(roboGradeId, title, issue) {
   // whole readable block, not a bare link.
   try {
     await navigator.clipboard.writeText(summary.text);
-    alert('Listing summary copied to clipboard:\n\n' + summary.text);
+    appAlert('Listing summary copied to clipboard:\n\n' + summary.text);
   } catch (err) {
-    // Last-ditch fallback: prompt with the summary so it can be copied.
-    prompt('Copy this listing summary:', summary.text);
+    // Last-ditch: clipboard API unavailable. Show the text selectable in
+    // the styled notice so it can still be copied by hand.
+    appAlert('Copy this listing summary:\n\n' + summary.text);
   }
 }
 
@@ -6616,7 +6667,7 @@ async function giveDialogConfirm() {
   const itemId = _giveItemId;
   if (!code || !itemId) { closeGiveDialog(); return; }
   if (!window._currentUser || typeof window._currentUser.getIdToken !== 'function') {
-    alert('You must be signed in to give an entry.');
+    appAlert('You must be signed in to give an entry.');
     return;
   }
   btn.disabled = true;
@@ -6645,7 +6696,51 @@ async function giveDialogConfirm() {
     closeGiveDialog();
     // Lightweight confirmation. Fire-and-forget per design — we do NOT
     // wait to hear whether the recipient accepted.
-    alert(data.message || `Sent to ${code}. They'll see it next time they open the app.`);
+    await appAlert(data.message || `Sent to ${code}. They'll see it next time they open the app.`);
+    // S14: offer to notify the recipient. The receive side polls on app
+    // open, so a recipient who never opens the app won't know — this
+    // sends them the SAME rich summary as Share, with one extra header
+    // line ("You've been given an assessment.") and the entry's /id/
+    // URL so they tap straight to the cover + grade. Kept structurally
+    // SEPARATE from transfer creation (the transfer already succeeded
+    // above) so a future bulk multi-give can create N transfers and
+    // notify once at the end, reusing this exact path. Single-give only;
+    // there is no bulk give yet.
+    try {
+      const gi = (items || []).find(c => c && c.id === itemId);
+      if (gi && gi.roboGradeId) {
+        const wantNotify = await appConfirm(
+          `Transfer sent to ${code}.<br><br>Send them a text so they know to open the app and accept it?`,
+          'Notify', true);
+        if (wantNotify) {
+          const summary = buildListingSummary(
+            gi.roboGradeId, gi.title || '', gi.issue || '',
+            "You've been given an assessment.");
+          const shareData = {
+            title: `Robograder: ${summary.header}`,
+            text: summary.text,
+          };
+          if (navigator.share) {
+            try { await navigator.share(shareData); }
+            catch (err) {
+              if (err && err.name !== 'AbortError')
+                console.warn('[give-notify] share failed:', err);
+            }
+          } else {
+            try {
+              await navigator.clipboard.writeText(summary.text);
+              await appAlert('Notification copied to clipboard:\n\n' + summary.text);
+            } catch (err) {
+              await appAlert('Copy this notification:\n\n' + summary.text);
+            }
+          }
+        }
+      }
+    } catch (notifyErr) {
+      // Notify is best-effort; the transfer already succeeded. Never let
+      // a notify failure look like the give failed.
+      console.warn('[give-notify] error (transfer still sent):', notifyErr);
+    }
     // The source item is unchanged until the recipient ACCEPTS (the
     // server snapshots at send time; A's copy is only re-IDed/flipped on
     // accept, server-side). Nothing to mutate locally here.
@@ -6804,7 +6899,7 @@ async function promptTransferGroup(g) {
       try { await loadItems(); if (typeof renderList === 'function') renderList(); } catch (e) {}
       let m = `Added ${accT} ${accT === 1 ? 'entry' : 'entries'} to your collection.`;
       if (failT > 0) m += ` ${failT} couldn't be added — reopen the app to retry ${failT === 1 ? 'it' : 'them'}.`;
-      alert(m);
+      await appAlert(m);
     }
     // declined → silent; the sender isn't notified (fire-and-forget).
   } catch (e) {
@@ -6837,8 +6932,9 @@ async function copyTransferCode() {
     flash('Copied');
   } catch (err) {
     // Fallback for browsers without clipboard API access (older mobile
-    // Safari in some contexts): show it so the user can copy/read it.
-    prompt('Your Give code:', code);
+    // Safari in some contexts): show it selectable so the user can
+    // copy/read it. Styled to match the app rather than a raw prompt.
+    appAlert('Your Give code:\n\n' + code);
   }
 }
 
