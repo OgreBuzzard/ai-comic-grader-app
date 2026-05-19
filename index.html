@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!-- ===========================================================================
-  RoboGrader index.html — BUILD FINGERPRINT: S14-2026-05-18-FIRESTORE-LONGPOLL-FIX
+  RoboGrader index.html — BUILD FINGERPRINT: S14-2026-05-18-SIGNIN-READ-RETRY
   To verify what's actually deployed: open the deployed page's source (or
   view-source) and find this line. If the fingerprint differs from what
   Claude last produced, a stale/cached index.html was uploaded (same Safari
@@ -2997,13 +2997,45 @@ function updateStats(){
   }
 }
 
+// S14 (offline-at-sign-in): on a fresh sign-in, onAuthStateChanged can
+// fire BEFORE Firestore's backend channel is connected, so the first
+// getDoc for credits/terms returns "client is offline" / "unavailable"
+// and the user has to manually reload. These reads had NO retry — one
+// shot, then give up. This helper retries a Firestore read a few times
+// with a short backoff, but ONLY for the transient offline/unavailable
+// connection errors (a real permission-denied or not-found is returned
+// immediately, not retried). If the connection is merely "late", the
+// 2nd/3rd attempt succeeds and the manual-reload symptom disappears. If
+// it still fails after retries, the original error is thrown so the
+// existing catch/logging behaves exactly as before — no behavior change
+// on genuine failure, only recovery of the transient timing case.
+async function _fsReadWithRetry(doReadFn, attempts = 5, delayMs = 600) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await doReadFn();
+    } catch (e) {
+      lastErr = e;
+      const code = (e && e.code) || '';
+      const msg = (e && e.message) || '';
+      const transient =
+        code === 'unavailable' ||
+        code === 'deadline-exceeded' ||
+        /offline|unavailable|backend|transport/i.test(msg);
+      if (!transient || i === attempts - 1) throw e;
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  throw lastErr;
+}
+
 async function loadUserCredits(){
   if(!window._currentUser) return;
   try {
     const db=window._db;
     const fsDoc=window._fsDoc;
     const fsGetDoc=window._fsGetDoc;
-    const snap = await fsGetDoc(fsDoc(db,"users",window._currentUser.uid));
+    const snap = await _fsReadWithRetry(() => fsGetDoc(fsDoc(db,"users",window._currentUser.uid)));
     // Pull profile fields from Firebase Auth — populated by Google Sign-In automatically.
     // Name + email only; photoURL not needed for admin debugging UX.
     const profile = {
@@ -3139,7 +3171,7 @@ async function checkTermsAcceptance(){
   try {
     const db = window._db;
     const userRef = window._fsDoc(db, 'users', window._currentUser.uid);
-    const snap = await window._fsGetDoc(userRef);
+    const snap = await _fsReadWithRetry(() => window._fsGetDoc(userRef));
     const data = snap.exists() ? snap.data() : {};
     if (data.termsAccepted && data.termsVersion === TERMS_VERSION) return;
     showTermsModal();
