@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!-- ===========================================================================
-  RoboGrader index.html — BUILD FINGERPRINT: S14-2026-05-18-XFERREG-REENABLED
+  RoboGrader index.html — BUILD FINGERPRINT: S14-2026-05-18-SHARE-TEXT-TRIM
   To verify what's actually deployed: open the deployed page's source (or
   view-source) and find this line. If the fingerprint differs from what
   Claude last produced, a stale/cached index.html was uploaded (same Safari
@@ -2790,14 +2790,20 @@ function refreshHeaderControls() {
 // flight dialog at a time (the Grade guard is the only caller; this is
 // enough — no queueing needed).
 let _appConfirmResolver = null;
-function appConfirm(message, okLabel) {
+function appConfirm(message, okLabel, asHtml) {
   return new Promise((resolve) => {
     _appConfirmResolver = resolve;
     const overlay = document.getElementById('app-confirm-overlay');
     const msgEl = document.getElementById('app-confirm-msg');
     const okEl = document.getElementById('app-confirm-ok');
     if (!overlay || !msgEl) { resolve(window.confirm(message)); return; }
-    msgEl.textContent = message;
+    // Default stays textContent (safe for every existing plain-text
+    // caller). asHtml is opt-in and only used by the transfer prompt,
+    // whose only HTML is our own <b>/<br> and whose dynamic parts
+    // (title/issue) are already _xferEsc()-escaped before insertion —
+    // so there is no injection path.
+    if (asHtml) msgEl.innerHTML = message;
+    else msgEl.textContent = message;
     if (okEl && okLabel) okEl.textContent = okLabel;
     overlay.style.display = 'flex';
     const onKey = (e) => {
@@ -4434,12 +4440,11 @@ function buildListingSummary(roboGradeId, title, issue) {
   // No item in memory (shouldn't happen from the detail view, but be
   // safe): degrade to a minimal summary + link rather than throw.
   if (!it) {
-    return { url, header, text:
-      `${header}\nRobograder assessment: ${url}` };
+    return { url, header, text: `${header}\n${url}` };
   }
 
   const rg = it.roboGrade || {};
-  const lines = [header, 'Assessed by Robograder'];
+  const lines = [header];
 
   if (rg.score != null) {
     const score = Math.round(rg.score);
@@ -4453,19 +4458,18 @@ function buildListingSummary(roboGradeId, title, issue) {
         prec = rg.confidenceRange > 0 ? ` \u00b1${Math.round(rg.confidenceRange)}` : '';
       }
     }
-    const ver = rg.version ? ` (v${rg.version})` : '';
-    lines.push(`RG ${score}${prec}${ver}`);
+    lines.push(`Robograde: ${score}${prec}`);
   }
 
   // Predicted grade — predictedGrade preferred, legacy assessedCGCGrade
   // fallback. Labeled "Predicted" (never "CGC") per the app-wide naming.
   const predicted = it.predictedGrade || it.assessedCGCGrade || '';
-  if (predicted) lines.push(`Predicted grade ${normalizeGrade(predicted)}`);
+  if (predicted) lines.push(`Predicted grade: ${normalizeGrade(predicted)}`);
 
   const pq = it.pageQuality || rg.pageQuality || '';
   if (pq) lines.push(`Pages: ${pq}`);
 
-  lines.push(`Full assessment: ${url}`);
+  lines.push(url);
   return { url, header, text: lines.join('\n') };
 }
 
@@ -6764,7 +6768,7 @@ async function promptTransferGroup(g) {
     const msg = _xferGroupLabel(g) +
       `<br><br>Accept ${g.count === 1 ? 'it' : 'them all'} into your collection? ` +
       `You'll own ${g.count === 1 ? 'this entry' : 'these entries'} and can edit ${g.count === 1 ? 'it' : 'them'}.`;
-    const ok = await appConfirm(msg, g.count === 1 ? 'Accept' : `Accept all ${g.count}`);
+    const ok = await appConfirm(msg, g.count === 1 ? 'Accept' : `Accept all ${g.count}`, true);
     const action = ok ? 'accept' : 'decline';
     // Progress UI for large batches so the user doesn't think it hung
     // (and so a force-quit mid-accept is understood as resumable —
