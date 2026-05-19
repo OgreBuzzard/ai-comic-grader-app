@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!-- ===========================================================================
-  RoboGrader index.html — BUILD FINGERPRINT: S14-2026-05-18-SIGNIN-READ-RETRY
+  RoboGrader index.html — BUILD FINGERPRINT: S14-2026-05-18-SIGNOUT-RELOAD-FIX
   To verify what's actually deployed: open the deployed page's source (or
   view-source) and find this line. If the fingerprint differs from what
   Claude last produced, a stale/cached index.html was uploaded (same Safari
@@ -2970,6 +2970,16 @@ async function signInGoogle(){
 async function signOutUser(){
   if(!confirm('Sign out?')) return;
   await window._signOut(window._auth);
+  // S14 FIX (empty-collection-on-re-sign-in): the Firestore client is
+  // created ONCE at page load. Signing out tears down its auth-bound
+  // backend connection, but without a page reload that same orphaned
+  // client is reused on the next sign-in and never cleanly reconnects —
+  // producing the "first sign-in after a fresh load works, every
+  // subsequent sign-out/in is offline until I manually reload" symptom.
+  // Reloading on sign-out guarantees the next sign-in gets a fresh
+  // client with fresh auth (exactly what a manual reload was doing by
+  // hand). This is Firebase's recommended sign-out behavior for SPAs.
+  window.location.reload();
 }
 
 function updateStats(){
