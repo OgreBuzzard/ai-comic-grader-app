@@ -1,12 +1,3 @@
-// ============================================================================
-// RoboGrader assess.js  —  BUILD FINGERPRINT: S14-2026-05-16-2311-FACSIMILE-PQ
-// If the copy on GitHub does NOT show this exact fingerprint line, the file
-// did not deploy — you uploaded a stale/cached download. See deploy note.
-// This build includes: CGC/PSA unification (schema 3.0), the FACSIMILE
-// OUTPUT CONSISTENCY CHECK (printing-field fix), and the PAGE QUALITY IS
-// NOT A DEFECT rule. Bump the date-time portion on any future assess.js
-// change so deploy state is always visually verifiable on GitHub.
-// ============================================================================
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -240,7 +231,7 @@ export default async function handler(req, res) {
   }
   const notesBlock = notesContext.length > 0 ? '\n\n' + notesContext.join('\n\n') : '';
 
-  const isCGC = true; // S14 unification: single predicted grade. Variable retained for backward compat with downstream branches that read it; no PSA derivation occurs.
+  const isCGC = true; // Unified prompt — PSA and RoboGrade derived within single pass
 
   // Fetch ComicVine cover reference image if title and issue are available
   let referenceImageBlock = null;
@@ -310,7 +301,7 @@ export default async function handler(req, res) {
     if (censusContext) {
       censusBlock = `${censusContext}
 CRITICAL — CENSUS USE IS INTERNAL ONLY:
-The CGC census data above is a calibration anchor for you, NOT a fact to share with the user. The graderNotes, aiAssessment, and labelNotes fields are all user-visible. NEVER mention the census, submission counts, average grades across submissions, distribution percentages, statistical priors, population data, or any phrasing that reveals you consulted external data about this issue. NEVER write things like "the census average for this book is X," "most copies grade lower," "statistically this should be a Y," "based on submission data," or "I'm anchoring to the population." The user must read the assessment as if you graded only what you see in their photos.
+The CGC census data above is a calibration anchor for you, NOT a fact to share with the user. The graderNotes, aiAssessment, psaNotes, and labelNotes fields are all user-visible. NEVER mention the census, submission counts, average grades across submissions, distribution percentages, statistical priors, population data, or any phrasing that reveals you consulted external data about this issue. NEVER write things like "the census average for this book is X," "most copies grade lower," "statistically this should be a Y," "based on submission data," or "I'm anchoring to the population." The user must read the assessment as if you graded only what you see in their photos.
 
 If census data raised or lowered your grade from what the photos alone would suggest, justify the grade using on-the-book observations — defects you actually see, eye appeal, page quality, structural condition — never the statistics. If you cannot find an on-the-book justification for the census-informed grade, trust the photos over the census and grade what you see. The census is a sanity check, not an override.
 `;
@@ -365,12 +356,13 @@ This is a second-pass high-grade assessment. The user has added 4 corner macros 
 
 INITIAL ASSESSMENT (from the standard 4-photo pass):
 • Initial RG: ${initialRGScore != null ? initialRGScore : 'unknown'}
-• Initial predicted grade: ${initialCgcGrade || 'unknown'}
+• Initial CGC: ${initialCgcGrade || 'unknown'}
+• Initial PSA: ${initialPsaGrade || 'unknown'}
 • Initial component scores — Front: ${initialFront ?? '?'}, Back: ${initialBack ?? '?'}, Spine: ${initialSpine ?? '?'}, Interior: ${initialInterior ?? '?'}
 
 RULES FOR HIGH-GRADE ASSESSMENT:
 
-1. FLOOR RULE: The initial grades are a floor, not a guess. The final RG must be ≥ ${initialRGScore != null ? initialRGScore : 80} and the predicted grade must be ≥ ${initialCgcGrade || '8.0'}. Initial assessments on high-grade books tend to run conservative because wide shots don't show corner detail — the macros are here to confirm or raise, not lower.
+1. FLOOR RULE: The initial grades are a floor, not a guess. The final RG must be ≥ ${initialRGScore != null ? initialRGScore : 80}, the CGC grade must be ≥ ${initialCgcGrade || '8.0'}, and the PSA grade must be ≥ ${initialPsaGrade || '8.0'}. Initial assessments on high-grade books tend to run conservative because wide shots don't show corner detail — the macros are here to confirm or raise, not lower.
 
 2. DROP EXCEPTION: You may drop below the floor ONLY if a corner macro reveals a specific, describable defect that was not visible in the original wide shot (for example, a color-breaking stress line hidden by glare, or a tiny corner crease invisible at wide angle). If you drop, you must call out the specific new defect in graderNotes with its exact location, and you must explain in aiAssessment why it wasn't visible before. If you cannot name a specific new defect, do not drop.
 
@@ -378,7 +370,7 @@ RULES FOR HIGH-GRADE ASSESSMENT:
 
 4. CATEGORIES YOU MUST NOT CHANGE: Back score stays at ${initialBack ?? 'initial value'}. Interior score stays at ${initialInterior ?? 'initial value'}. Copy these forward exactly from the initial assessment. Do not re-derive them.
 
-5. RG RANGE: The final RG score must be in the range [${initialRGScore != null ? initialRGScore : 80}, 100]. The predicted grade must be in [${initialCgcGrade || '8.0'}, 10.0].
+5. RG RANGE: The final RG score must be in the range [${initialRGScore != null ? initialRGScore : 80}, 100]. CGC must be in [${initialCgcGrade || '8.0'}, 10.0]. PSA must be in [${initialPsaGrade || '8.0'}, 10.0].
 
 6. CENSUS ANCHOR: Take the census distribution seriously. If 35%+ of submissions grade 9.4+, the book in front of you has a high prior probability of being 9.4+. If the average census grade is 9.5, a clean-looking copy should be in that vicinity. Do not under-grade a clean book because you feel cautious.
 
@@ -386,7 +378,7 @@ RULES FOR HIGH-GRADE ASSESSMENT:
 
 8. CONFIDENCE: For high-grade assessments, set confidenceRange between 3 and 6. Default to 3 (corner macros provide tight evidence). Widen toward 6 only if specific image-quality issues impair your read: heavy glare obscuring a corner, blurred macro, raking light too oblique to evaluate stress lines. Do not widen for "general caution" — only for image-quality issues you can name. Never exceed 6 on a high-grade run.
 
-9. FREQUENCY REMINDER: 40% of professionally-graded books receive a 9.8. This is the single most common outcome. If the book looks pristine in all 8 photos, 9.8 is the likely answer, not a conservative 9.4.
+9. FREQUENCY REMINDER: 40% of CGC-graded books receive a 9.8. This is the single most common outcome. If the book looks pristine in all 8 photos, 9.8 is the likely answer, not a conservative 9.4.
 
 ` : '';
 
@@ -535,7 +527,7 @@ Look for ANY of these modern-era markers anywhere in the submitted photos:
   • Cover print quality noticeably sharper than period offset printing could achieve (modern digital reproduction vs. 1960s newsprint)
   • Modern publisher logo placement, color, or design
 
-If you find ANY of these markers: this is a facsimile/reprint and you MUST set the JSON "printing" field to "Facsimile Reprint" (append the year in parentheses if visible, e.g., "Facsimile Reprint (2019)"). This is not optional and it is not satisfied by mentioning the reprint elsewhere — the literal "printing" key in the returned JSON must contain that string. ALSO set issueDate to the reprint year (NOT the original year) and state the facsimile finding plainly in aiAssessment. All THREE outputs must agree: a modern issueDate or an aiAssessment that mentions "facsimile"/"reprint" while "printing" is empty is a self-contradictory, INVALID response.
+If you find ANY of these markers: populate the printing field with "Facsimile Reprint" (append the year in parentheses if visible, e.g., "Facsimile Reprint (2019)"). Set issueDate to the reprint year, NOT the original year. State the facsimile finding plainly in aiAssessment — the user needs to know they have a reprint, not the original.
 
 If the book appears genuinely period-appropriate (no modern markers, period-appropriate paper aging, original publisher trade dress, era-correct printing quality): leave printing as empty string and proceed normally.
 
@@ -543,8 +535,6 @@ When uncertain: lean toward populating "Facsimile Reprint". A reprint mislabeled
 
 SELF-REVIEW BEFORE FINALIZING (S13 v7):
 After you have written your defect list, re-read it and ask: does any defect description contain language suggesting MAJOR damage — words like "chunk", "missing", "torn off", "piece out", "large", "significant tear", "tape covering", "color touched"? If yes, the defect's severity field MUST be "High" and the missing-piece ceiling / restoration cap must be applied to BOTH the CGC grade AND the RoboGrade. A defect described as significant cannot coexist with a mid-grade or high-grade output.
-
-FACSIMILE OUTPUT CONSISTENCY CHECK (do this immediately before returning the JSON). Re-read your own issueDate and aiAssessment. If issueDate is a modern year (roughly 2000 or later) on a book whose cover art/trade dress is from the Golden, Silver, or Bronze Age, OR if aiAssessment contains the words "facsimile", "reprint", "reproduction", or "modern edition", then the "printing" field MUST be non-empty and MUST contain "Facsimile Reprint" (with year if known). Conversely, if "printing" is "Facsimile Reprint", issueDate MUST be the modern reprint year and aiAssessment MUST state the finding. If you detect any mismatch between these three fields, FIX the "printing" field before returning — do not return a response where the reprint finding appears in one field but not the "printing" field. The single most common failure is correctly dating a facsimile to its modern year while leaving "printing" empty; this check exists specifically to catch that.
 
 EPISTEMIC HUMILITY: A photograph cannot show everything that an in-hand inspection reveals. Tiny missing pieces (under 1/16"), faint creases, and small back-cover defects can hide in shadow, glare, or low pixel density. Do NOT make confident absence-claims like "no missing pieces observed" or "no tears detected" in your notes — those statements have been wrong before and they don't belong in the inventory anyway (the inventory is what you DO see, not what you don't). Simply omit absent defects from the inventory.
 
@@ -567,8 +557,6 @@ When the photos show a book that "presents well" — strong color saturation, fl
 
 PAGE QUALITY:
 Assess from any interior photo. Phone cameras under typical indoor lighting consistently make pages look 1-2 tiers more yellowed than they actually are. Calibration data from 10 PSA-graded books in 2026 showed that the prior calibration was systematically under-reading PQ by 2 tiers on average — books PSA called Off-White to White were being called Cream to Off-White. The rules below correct that.
-
-GRADED BOOK — NO INTERIOR PHOTO POSSIBLE: A slabbed (professionally graded) book cannot be opened, so no interior photo can be provided. When a grading slab label is visible and you can read its page quality designation, USE THE LABEL'S PAGE QUALITY as the definitive page quality and derive the interior score from it exactly as if it were observed. Do NOT penalize the assessment, lower confidence, or flag a missing interior photo when the label supplies the page quality — the label is a more authoritative source than a photo would be. A graded book assessed from front, back, spine, and label (no interior) is COMPLETE, not deficient. Only treat the interior as unknown if there is neither an interior photo NOR a readable label page quality.
 
 THREE ANCHORING RULES:
 
@@ -624,6 +612,50 @@ Per-category calibration (applied proportionally to the category maximum):
     The point is the cumulative effect: a cover with widespread soiling AND
     multiple additional wear features is a 30-or-below cover even if no
     single defect is High severity. When in doubt at 30, go to 28.
+    CREATOR-SIGNATURE RULE (v2.6, b′): If a marking on the cover is
+    CONFIDENTLY identifiable as a deliberate creator signature — meaning
+    it reads as a name written in a stylized signing manner, appears in
+    a customary signing location (cover face, title block area, or
+    splash), and is consistent with a creator's autograph (an
+    illustrator, writer, editor, or other professional associated with
+    the book) — treat it as a NOTED ATTRIBUTE, not a grade-limiting
+    defect. Specifically:
+      • Record the signature in the defects array with type "Creator
+        signature" (NOT "Writing on cover"), and set severity to "Low"
+        regardless of the signature's physical size.
+      • Do NOT treat the signature as the dominant grade-limiting
+        defect. The Front score must be driven by the OTHER physical
+        defects present (corner wear, creases, edge wear, soiling,
+        spine stress, etc.). A book with a clean front + a creator
+        signature should score in the same Front range as the SAME book
+        with no signature at all.
+      • In aiAssessment and aiGraderNotes, describe the signature as a
+        noted attribute (e.g. "Cover bears an apparent creator
+        signature reading 'Len Wein'"). Do NOT call it the dominant
+        defect, do NOT say it "prevents higher grades", do NOT use
+        damage language.
+      • You DO NOT and CANNOT authenticate signatures. Never say a
+        signature is genuine, authentic, real, verified, or consistent
+        with a creator's known style. Never offer an opinion on
+        authenticity. The phrase to use is "apparent signature reading
+        '<name>'" — the word "apparent" is required.
+      • EXCEPTION — disfigurement: if the signature is so large and
+        prominent that it physically dominates the cover image (e.g. a
+        cover-spanning paint-pen mark obscuring artwork across more
+        than half the cover), apply a SINGLE Med-severity deduction to
+        Front for the physical impact, but still record it as type
+        "Creator signature" and still describe it as a noted attribute,
+        not damage. This exception is for genuine disfigurement only —
+        a typical signature on the cover face does not qualify.
+    CONFIDENCE BAR: Apply this rule ONLY when you can read a plausible
+    creator name in a deliberate signing style. If the writing is
+    ambiguous (a scrawl, a number, an owner writing their name in
+    block letters in the bag-flap area, a price, a date stamp), treat
+    it as ordinary cover writing under the normal defect rubric — do
+    NOT neutralize unknown writing as a "signature" just because it
+    might be one. Erring toward "still a defect when unsure" is the
+    correct posture: under-noting an unconfirmed signature is
+    recoverable; over-neutralizing actual defacement is not.
   Back (max 20):
     • 20 = pristine, no observed defects
     • 18-19 = trace wear only
@@ -664,8 +696,6 @@ Per-category calibration (applied proportionally to the category maximum):
       • Cream pages, missing centerfold → Interior = 5 (capped at -2)
     SAFETY FLOOR: An interior score of 0 is reserved for Brittle pages or for severe interior damage. NEVER assign 0 to a book with White, Off-White to White, or Off-White pages — that is internally inconsistent and will be flagged as a bug.
 
-PAGE QUALITY IS NOT A DEFECT. Page quality is reported ONLY in the dedicated pageQuality field. NEVER create an entry in the defects array for page quality, and NEVER list page quality in graderNotes as if it were a flaw. This is especially important for graded books where the page quality comes from the slab label: a book with White or Off-White to White pages has EXCELLENT pages — emitting a defect line like "Interior: Off-White to White (Low)" is wrong and reads to the user as though clean white pages are a problem. The only time the interior generates a defects-array entry is when there is an ACTUAL physical interior defect (staple rust, detached centerfold, missing page, significant soiling/foxing/stains) — and that entry describes the defect itself, never the page color/tone. A book whose only interior characteristic is its page-quality tone has ZERO interior defect entries.
-
 No back cover photo provided case: set backScore to null. Redistribute the 20 Back points into Front, raising Front's maximum to 70. All other categories unchanged.
 
 Step 1: Assign Front score (0–50) based on front-cover defects only.
@@ -683,7 +713,7 @@ CRITICAL: The final score is literally Front + Back + Spine + Interior. The arit
 Apply CGC standards to your defect inventory from Phase 1.
 
 GRADING PHILOSOPHY (v2.1) — THINK LIKE BLACKJACK:
-The cost of overshooting a grade is asymmetric and much higher than the cost of undershooting. If a user submits a book for professional grading based on your prediction and the official grade comes in lower than what you predicted, that is a costly outcome for the user (the submission fee, the shipping, the wait, and the disappointment). They will lose trust in Robograder. If instead you predict slightly low and the official grade comes in higher, the user is delighted — they got a "bonus" they didn't expect.
+The cost of overshooting a grade is asymmetric and much higher than the cost of undershooting. If a user submits a book to PSA or CGC based on your prediction and the official grade comes in lower than what you predicted, that is a costly outcome for the user (the submission fee, the shipping, the wait, and the disappointment). They will lose trust in Robograder. If instead you predict slightly low and the official grade comes in higher, the user is delighted — they got a "bonus" they didn't expect.
 
 Therefore: when calibrating between two adjacent grade points, prefer the lower one. When uncertain whether a defect rises to a grade-affecting level, count it. When the holistic impression sits between two grades, pick the lower. The exception is when defects are clearly minor and eye appeal is strong — never grade conservatively just for safety. The goal is precision: get as close to the official grade as you can WITHOUT going over. Like blackjack: 21 is perfect, 20 is great, 22 is a bust.
 
@@ -694,7 +724,7 @@ Grade calibration:
 • Strong eye appeal + flat spine + bright colors + sharp corners = high grade.
 • At high grades (8.5+), stress lines, bends, soiling, and printer tears become potentially grade-defining.
 • Missing piece ceilings: <1/4"→max ~9.0 | 1/4"–1/2"→max ~8.0 | >1/2"→max ~5.0 | >1"→max ~3.0
-• SEVERE-DEFECT CAP (S13 v7): if ANY of the following defects is present, the final RoboGrade is capped at 35 and the predicted grade is capped at 2.5, regardless of how clean the rest of the book is. Professional grading services apply this cap in their grading practice. Defects that trigger the cap:
+• SEVERE-DEFECT CAP (S13 v7): if ANY of the following defects is present, the final RoboGrade is capped at 35 and the predicted CGC/PSA grades are capped at 2.5, regardless of how clean the rest of the book is. CGC and PSA both apply this cap in their grading practice. Defects that trigger the cap:
   • Paper loss / piece out larger than 1" in any single dimension
   • Tape on the book (any quantity, any location — even a small piece)
   • Missing interior pages or wraps
@@ -703,9 +733,9 @@ Grade calibration:
   • Severe water damage with cockling or staining over a large area
   This cap exists because these defects are structural and not improvable through normal handling or pressing — a book with one of them belongs in the Good or Fair grade range no matter how nice everything else looks. If the four-component sum exceeds 35 in the presence of one of these defects, scale all four components down proportionally to reach the cap (rough guide: front gets the largest absolute reduction since it's the largest component).
 • ENHANCE: a single yes/no judgment about whether professional treatment (any of pressing, UV, or cleaning, or any combination) is likely to improve this book's grade. Output "Y" if any of these would help: visible spine roll or rippling that pressing could correct, color-breaking creases that pressing might soften, soiling that cleaning could lift, or tanning on unprinted white areas that UV could lighten. Output "N" if defects are dominated by structural damage that no treatment can address (missing pieces, tears, severe creases, stains that have set). Leave null if uncertain.
-Grader notes — RESTRAINT AND CONSOLIDATION (v2.1 calibration):
+Grader notes — PSA-STYLE RESTRAINT (v2.1 calibration):
 
-Professional grader notes are written with discipline: a typical Silver Age 7.0 book is described with one or two sentences per cover side, naming only the defects that matter to the grade. RG's prior versions were over-enumerating — listing 12-15 separate notes for a mid-grade book with the same defects repeated across multiple corners. Match the discipline.
+PSA's grader notes are the gold standard for clarity. PSA describes a typical Silver Age 7.0 book with one or two sentences per cover side, naming only the defects that matter to the grade. RG's prior versions were over-enumerating — listing 12-15 separate notes for a mid-grade book with the same defects repeated across multiple corners. Match PSA's restraint.
 
 CONSOLIDATION RULES (apply BEFORE writing notes):
   • Group same defect type across multiple locations into ONE note ONLY when the locations share the same defect kind and severity. Do NOT write four separate corner-blunting notes if all four corners are blunted equally; write "Corner blunting, all four corners". But DO write separate notes when corners differ — e.g. "Corner blunting, top corners, ~1/16"" and "Piece out, bottom-right corner, ~1" if those are the actual conditions. Same applies to spine stress lines (consolidate to "Spine stress lines, multiple along full spine length"), edge wear, soiling, etc., when uniform; split when non-uniform.
@@ -732,7 +762,7 @@ COLOR-BREAKING CALIBRATION:
   Default position: a stress line is non-color-breaking unless you can see the color discontinuity in the photo.
 
 SEVERITY DISCIPLINE:
-  Professional grader notes use restrained language — "stress lines, some break color", "edge wear", "tiny piece missing", "light tanning". RG should match this register. AVOID escalated language like "multiple", "moderate", "significant", "heavy", "extensive" unless the defect actually warrants it. A book with normal shelf wear gets "Light edge wear", not "Moderate edge wear and abrasion throughout".
+  PSA's notes use restrained language — "stress lines, some break color", "edge wear", "tiny piece missing", "light tanning". RG should match this register. AVOID escalated language like "multiple", "moderate", "significant", "heavy", "extensive" unless the defect actually warrants it. A book with normal shelf wear gets "Light edge wear", not "Moderate edge wear and abrasion throughout".
 
   Same applies to severity field: do not over-call High severity. Most Silver Age defects are Low or Med. High is reserved for defects that actually drop a grade tier on their own (color-breaking creases, missing pieces over 1/4", spine splits, tape, etc.).
 
@@ -741,7 +771,76 @@ Format: one bullet per note starting with •, official CGC terminology, mark co
 CGC GRADE TIER REFERENCE — what each grade officially permits:
 ${CGC_GRADE_TIERS.trim()}
 
-If a professional grading slab label (CGC, PSA, or similar) is visible: read the grade, cert number, page quality, and key issue notations directly from it.
+── PSA GRADE ──
+PSA entered comic grading in July 2025. They use the same numeric scale as CGC but with fewer intermediate steps and their own page quality terminology. PSA weights eye appeal more explicitly than CGC — a book that presents well at a grade boundary should get the benefit of the doubt.
+
+PSA numeric grades (no 9.2, no 1.8, no 1.5; bottom is 0.3 not 0.5):
+10, 9.8, 9.6, 9.4, 9.2, 9.0, 8.5, 8.0, 7.5, 7.0, 6.5, 6.0, 5.5, 5.0, 4.5, 4.0, 3.5, 3.0, 2.5, 2.0, 1.5, 1.0, 0.5, 0.3
+
+PSA GRADE TIER REFERENCE (what each grade officially permits):
+10 (Gem Mint): Effectively flawless. No handling defects; only trace printing defects. White or exceptionally white pages.
+9.8 (Near Mint/Mint): Nearly perfect. Only the smallest printing or handling defects. Flat cover, well-centered, bright color, sharp corners. Off-White to White pages at minimum.
+9.6 (Near Mint+): Sharp corners, very limited wear. Minor spine stress with a few color breaks permitted. Trace edge or corner wear. Strong gloss. Cream/OW to White pages acceptable. Distributor markings permitted with minor overspray. Arrival dates permitted.
+9.4 (Near Mint): A few tiny spine stresses, one small edge tear, or minor corner blunting. Cover flat and firmly secured, only trace fading or surface wear. Staples clean. Supple pages, cream/OW to White. Small bindery/printing defects allowed. Unobtrusive date stamps permitted.
+9.2 (Near Mint-): Slight wear beginning. Small spine ticks, small corner blunting. Still presents strongly with high eye appeal.
+9.0 (VF/NM): Wear more apparent but eye appeal still strong. Small bends, small color-breaking creases, small chips. Minor sun or dust shadows and light tanning possible.
+8.5 (VF+): Accumulation of small defects or one moderate defect. Cover shows wear but retains reasonable gloss.
+8.0 (VF): Small bends, small color-breaking creases, minor edge chips. Minor shadows or tanning. At the low end of 8.0, small tape may be present (noted on label). A book with a single neatly detached centerfold (one staple) starts at 8.0.
+7.5 (VF-): Accumulation of defects, moderate cover wear. Generally flat, gloss mostly intact.
+7.0 (FN/VF): Longer tears, color discoloration, fading, soiling, light stains possible. Cover detached at one staple or centerfold detached at both staples possible.
+6.5 (FN+): Significant wear accumulation. Some structural defects possible.
+6.0 (FN): Longer tears, more soiling, more fading. Missing inserts possible.
+5.5 (FN-): Substantial wear, reduced cover gloss.
+5.0 (VG/FN): Moderate to substantial defect accumulation.
+4.5 / 4.0 (VG+ / VG): Major defects. Larger tears, heavy creases, abrasions, severe stains. Cover inks possibly faded. Some story or ad pages can be missing; panels or coupons may be cut. Heavy tape may be present. An otherwise high-grade book missing a front or back cover (not both) or missing story pages starts here.
+3.5 / 3.0 (VG- / G/VG): Complete with all pages but glaring defects or a heavy accumulation of smaller defects. Possibly large missing pieces. Covers or pages possibly detached. Gloss usually gone. Significant tape possible.
+2.5 / 2.0 (G+ / G): Worn and damaged. May be stained. Extensive tape repairs. Stories complete but ad pages, coupons, or panels may be missing. Spine or cover possibly split.
+1.5 / 1.0 (Fa/G / Fa): Heavy accumulation of major defects across the book.
+0.5 (Poor): Heavily defaced, multiple major defects, some missing pieces.
+0.3 (Poor Incomplete): Coverless or missing wraps, pages, or staples. Very low page quality.
+
+Special PSA designations:
+• Authentic (AU) — authentication only, no numeric grade
+• Conserved — professional conservation using archivally safe, reversible materials
+• Restored — amateur restoration using non-archival or non-reversible materials
+• Married — wrong-issue cover or pages added; noted on label but graded normally
+• Qualified — used when noted defects would otherwise distort the numeric grade
+
+PSA page quality scale (10 designations — note these are NOT the same as CGC's scale):
+White | Off-White to White | Off-White | Cream to Off-White | Cream | Light Tan to Off-White | Light Tan | Tan | Brown | Brittle
+Caps: Light Tan to Off-White max grade 8.5; Brittle max grade 3.5.
+"White" on a pre-1984 book means exceptionally preserved, not merely light-colored — PSA requires White pages for a 10.
+
+PSA-specific calibration rules:
+• Tape is ALWAYS treated as a defect and always noted on the label — PSA never classifies tape as restoration.
+• Pressing and cleaning prior to submission are accepted. Pressed comics receive full numeric grades (unlike pressed cards).
+• Distributor ink or markings are permitted at 9.6+ if overspray is minor.
+• Arrival dates do not affect grade.
+• Professional (Conserved) work is distinguished from amateur (Restored) work — the quality-plus-quantity A/B/C × 1-5 scheme used by CGC does NOT apply to PSA.
+• Eye appeal is weighted explicitly: at grade boundaries, a book with strong presentation (bright colors, flat spine, sharp corners) earns the higher grade.
+
+Deriving the PSA grade from your CGC assessment:
+Start from your CGC grade. Apply these adjustments in this order:
+  1. If tape is present, PSA grade is AT MOST equal to CGC — often one tier lower because PSA's explicit tape-as-defect rule bites harder.
+  2. If defects are clearly enumerable and eye appeal matches the defect list, keep PSA the same as CGC.
+  3. If eye appeal exceeds what the defect list implies (strong gloss, bright color, flat spine, sharp corners, minimal tanning), adjust PSA upward by one tier — especially for Silver and Bronze Age material where early market data shows PSA running slightly more generous than CGC.
+  4. PSA has fewer intermediate grades than CGC. If your CGC grade lands at 9.2, 1.8, or 1.5, you must round to the nearest PSA grade: 9.2→9.2 (exists on both), 1.8→2.0, 1.5→1.5 (exists on both). Most CGC grades have a PSA equivalent.
+  5. If your CGC grade is 0.5 Poor and the book is coverless or missing wraps/pages/staples, PSA grade should be 0.3.
+
+Map page quality to PSA's 10-designation scale (do NOT use CGC's scale for PSA):
+CGC "Off-White to White" → PSA "Off-White to White"
+CGC "Off-White" → PSA "Off-White"
+CGC "Cream to Off-White" → PSA "Cream to Off-White"
+CGC "Light Tan to Off-White" → PSA "Light Tan to Off-White" (caps grade at 8.5)
+CGC "Light Tan to Cream" → PSA "Light Tan" (PSA has no "to Cream" variant)
+CGC "Tan to Off-White" or "Tan to Cream" → PSA "Tan"
+CGC "Brown to Off-White" or "Brown to Tan" or "Brown" → PSA "Brown"
+CGC "Brown/Brittle" or "Slightly Brittle" → PSA "Brown" (if still structurally sound) or "Brittle"
+CGC "Brittle" → PSA "Brittle" (caps grade at 3.5)
+
+Do not invent defects not visible in photos. If the PSA grade equals the CGC grade, psaNotes must be an empty string. When PSA differs, explain the reason in psaNotes in 1-2 sentences (e.g. "Eye appeal argues for the higher grade — strong color saturation and flat spine despite the minor stress lines.").
+
+If a CGC or PSA label is visible: read grade, cert number, page quality, and key issue notations directly from it.
 ${censusBlock}
 ${notesBlock}
 ${highGradeBlock}
@@ -756,8 +855,8 @@ RETURN ONLY THIS JSON — no markdown, no preamble
   "publisher": "publisher name",
   "printing": "Printing or variant designation. Leave EMPTY STRING for typical original-printing copies (the default — most books). Populate ONLY when there is clear evidence of a non-standard printing. Conventions: 'Facsimile Reprint' (or 'Facsimile Reprint (YYYY)' if the reprint year is visible in indicia or back cover) when this is a modern facsimile edition that reproduces an original key issue — Marvel and DC have published many of these; '2nd print' / '3rd print' / etc. for direct-edition reprints from the original era; 'Newsstand variant' for distinguishable newsstand copies of direct-edition books; 'Reprint' for older non-facsimile reprints. CRITICAL: when populating 'Facsimile Reprint', also note the facsimile finding plainly in aiAssessment so the user understands what they have, and use the reprint year (not the original year) for issueDate.",
   "pageQuality": "full designation e.g. Off-White to White",
-  "grade": "predicted grade estimate e.g. 7.0",
-  "graderNotes": "• one bullet per defect, official grader terminology",
+  "grade": "CGC grade estimate e.g. 7.0",
+  "graderNotes": "• one bullet per defect, official CGC terminology",
   "aiAssessment": "2-4 sentences: overall impression, dominant defects, grade rationale, enhancement judgment. Describe ONLY what you see in this specific copy's photos — defects, eye appeal, page quality, structure. NEVER mention census data, submission counts, average grades, distribution percentages, statistical anchoring, or any external data about this issue. Grade rationale must reference the book's actual condition, not population statistics.",
   "labelNotes": "key issue notations from label if visible, empty string if none",
   "keyInfo": "1-2 sentences about key-issue significance — ONLY populate if (a) the issue appears in the census data injected above AND (b) you are confident the fact is widely documented. Examples: 'First full appearance of Wolverine.' / 'First appearance of the Punisher.' Stay silent (empty string) if the issue is not a recognized key, even if you might guess at its significance. Better to omit than to hallucinate.",
@@ -766,10 +865,12 @@ RETURN ONLY THIS JSON — no markdown, no preamble
   "officialCGCGrade": null,
   "officialCGCCert": null,
   "officialPageQuality": null,
+  "psaGrade": "PSA grade estimate",
+  "psaNotes": "why PSA differs, empty string if same",
   "officialPSAGrade": null,
   "officialPSACert": null,
   "roboGrade": {
-    "version": "3.0",
+    "version": "2.5",
     "score": 0,
     "confidenceRange": ${baseConf},
     "frontScore": 0,
@@ -819,7 +920,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
               ...imageBlocks.slice(4, 8)
             ] : imageBlocks),
             { type: 'text', text: highGrade
-              ? 'Please perform the high-grade assessment. Apply the floor rule: the final RG and predicted grade must be at or above the initial values unless a specific new defect is identified in the corner macros. Carry Back and Interior scores forward unchanged. Return the JSON grading object.'
+              ? 'Please perform the high-grade assessment. Apply the floor rule: the final RG, CGC, and PSA grades must be at or above the initial values unless a specific new defect is identified in the corner macros. Carry Back and Interior scores forward unchanged. Return the JSON grading object.'
               : 'Please assess this comic. CRITICAL FIRST STEP: examine every corner and every edge for paper loss / missing pieces (paper GONE, interior page visible underneath) BEFORE listing any other defects. Treat paper loss as a separate defect category from corner blunting — they are not interchangeable. Then examine each of the four corners individually and apply the per-corner inspection rule from the STRUCTURAL CHECK section. Then return the JSON grading object.' }
           ]
         }]
@@ -1043,14 +1144,9 @@ RETURN ONLY THIS JSON — no markdown, no preamble
       pageQualityRefIsPsa: pqIsPsaReference,
       hasInteriorPhoto: hasInteriorPhoto,
       gradeRef: gradeRefSucceeded,
-      psaGrade:  !!(parsed.psaGrade),   // S14 unification: kept for visibility; psaGrade is no longer requested in the schema but defensive in case the model returns one.
+      psaGrade:  !!(parsed.psaGrade),
       roboGrade: !!(parsed.roboGrade)
     };
-    // S14 unification: psaGrade is no longer in the JSON return schema, but
-    // we leave this coercion in place defensively. If the model returns one
-    // anyway (during rollout or due to in-context residue), the format
-    // normalization is harmless and keeps the field consistent for the
-    // legacy display path that may still read it.
     if (parsed.psaGrade && !String(parsed.psaGrade).includes('.')) {
       parsed.psaGrade = parseFloat(parsed.psaGrade).toFixed(1);
     }
@@ -1249,14 +1345,22 @@ RETURN ONLY THIS JSON — no markdown, no preamble
         const notes = String(parsed.aiAssessment || '').toLowerCase();
         const mentionsMacro = notes.includes('macro') || notes.includes('corner');
         if (!mentionsMacro) {
-          enforcement.push(`Predicted grade floored ${parsed.grade} → ${initialCgcGrade}`);
+          enforcement.push(`CGC grade floored ${parsed.grade} → ${initialCgcGrade}`);
           parsed.grade = String(cgcFloor.toFixed(1));
         }
       }
 
-      // S14 unification: PSA floor enforcement removed. The unified prompt
-      // no longer produces a separate psaGrade, so there's nothing to floor.
-      // The single grade goes through the floor rule above.
+      // 5. Floor rule for PSA grade — same logic.
+      const psaFloor = parseFloat(initialPsaGrade);
+      const psaNew   = parseFloat(parsed.psaGrade);
+      if (!isNaN(psaFloor) && !isNaN(psaNew) && psaNew < psaFloor) {
+        const notes = String(parsed.aiAssessment || '').toLowerCase();
+        const mentionsMacro = notes.includes('macro') || notes.includes('corner');
+        if (!mentionsMacro) {
+          enforcement.push(`PSA grade floored ${parsed.psaGrade} → ${initialPsaGrade}`);
+          parsed.psaGrade = String(psaFloor.toFixed(1));
+        }
+      }
 
       if (enforcement.length > 0) {
         rg._highGradeEnforcement = enforcement;

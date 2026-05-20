@@ -158,13 +158,58 @@ export default async function handler(req, res) {
     delete flat.comicData;
     delete flat.cardData;
 
-    // Step 5: audit log. Vercel function logs are timestamped automatically;
+    // Step 5: build short proxy URLs alongside each image, so external
+    // tools (notably web_fetch) that reject long URLs can retrieve the
+    // bytes via /api/inspect_img. The original long Firebase URLs are
+    // preserved (browsers/the app itself still use them); proxy URLs are
+    // added as a parallel field. Also emit a top-level _images summary
+    // so the most common use ("just give me the picture URLs") doesn't
+    // require digging through the images array structure.
+    const tokenForProxy = encodeURIComponent(provided);
+    const slotNames = ['front_cover', 'back_cover', 'page_quality', 'raking_light'];
+    const cornerNames = ['top_left', 'top_right', 'bottom_left', 'bottom_right'];
+    const proxyUrl = (kind, n) =>
+      `https://robograder.app/api/inspect_img?id=${gradeId}&kind=${kind}&n=${n}&token=${tokenForProxy}`;
+
+    if (Array.isArray(flat.images)) {
+      flat.images = flat.images.map((entry, n) => {
+        if (entry && typeof entry === 'object') {
+          return { ...entry, proxyUrl: proxyUrl('cover', n) };
+        }
+        // legacy: array of strings
+        return { url: entry, proxyUrl: proxyUrl('cover', n) };
+      });
+    }
+    if (Array.isArray(flat.cornerImages)) {
+      flat.cornerImages = flat.cornerImages.map((entry, n) => {
+        if (entry && typeof entry === 'object') {
+          return { ...entry, proxyUrl: proxyUrl('corner', n) };
+        }
+        return { url: entry, proxyUrl: proxyUrl('corner', n) };
+      });
+    }
+    // Convenience block: short-URL-only view of the images for any
+    // consumer that just wants to grab pictures by slot name.
+    const _images = {};
+    if (Array.isArray(flat.images)) {
+      flat.images.forEach((img, n) => {
+        if (img && img.proxyUrl) _images[slotNames[n] || `cover_${n}`] = img.proxyUrl;
+      });
+    }
+    if (Array.isArray(flat.cornerImages)) {
+      flat.cornerImages.forEach((img, n) => {
+        if (img && img.proxyUrl) _images[cornerNames[n] || `corner_${n}`] = img.proxyUrl;
+      });
+    }
+    flat._images = _images;
+
+    // Step 6: audit log. Vercel function logs are timestamped automatically;
     // we add the assessment ID, the user it belonged to, and the request
     // IP for cross-referencing. Doesn't log the token or any field values.
     const ip = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
     console.log(`[inspect] id=${gradeId} userId=${userId} ip=${ip}`);
 
-    // Step 6: return the full flattened record + the registry context.
+    // Step 7: return the full flattened record + the registry context.
     // Wrapping in {registry, comic} lets us expose the registry's
     // `public` flag (useful for spot-checking misconfigured private/
     // public state) without conflating it with the comic doc's own
