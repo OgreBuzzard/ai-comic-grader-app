@@ -1,3 +1,24 @@
+// =============================================================================
+// ROBOGRADE PROMPT VERSION
+// =============================================================================
+// Bump this string EVERY TIME the scoring/defect rules in the prompt
+// below change. The value is interpolated into the JSON schema the model
+// fills in, so a stale value here silently mis-stamps the prompt version
+// on every assessment record.
+//
+// Schema versioning convention:
+//   hundredths (+0.01) — minor tweaks (wording, clarification)
+//   tenths (+0.1)      — new rule, new defect category, gate change,
+//                        scoring change
+//   whole (+1.0)       — milestone release
+//
+// History:
+//   2.5 — facsimile detection + pre-API MISSING_COVER gate (S13)
+//   2.6 — (b′) signature reframe: minor Low deduction (S14, retracted)
+//   2.7 — neutral signature rule + Robograde 92 ceiling cap (S14)
+// =============================================================================
+const ROBOGRADE_VERSION = '2.7';
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -876,7 +897,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
   "officialPSAGrade": null,
   "officialPSACert": null,
   "roboGrade": {
-    "version": "2.5",
+    "version": "${ROBOGRADE_VERSION}",
     "score": 0,
     "confidenceRange": ${baseConf},
     "frontScore": 0,
