@@ -14,10 +14,10 @@
 //
 // History:
 //   2.5 — facsimile detection + pre-API MISSING_COVER gate (S13)
-//   2.6 — (b′) signature reframe: minor Low deduction (S14, retracted)
-//   2.7 — neutral signature rule + Robograde 92 ceiling cap (S14)
+//   3.0 — pre-convention milestone (S13/early S14) — live during convention launch
+//   3.1 — neutral signature rule + Robograde 92 ceiling cap (S14, post-convention)
 // =============================================================================
-const ROBOGRADE_VERSION = '2.7';
+const ROBOGRADE_VERSION = '3.1';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
