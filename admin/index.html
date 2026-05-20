@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ROBOGRADER admin/index.html — BUILD FINGERPRINT: S14-2026-05-18-ADMIN-VANITYCODES-TEMP -->
+<!-- ROBOGRADER admin/index.html — BUILD FINGERPRINT: S14-2026-05-19-ADMIN-SORTS-S14-CLEANUP -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -675,16 +675,6 @@ async function renderDashboard() {
     </header>
     <main>
       <div id="stats-section"><div class="loading">Loading stats…</div></div>
-      <!-- TEMPORARY (S14): one-shot vanity transfer-code assignment.
-           Remove this whole #temp-xfer-codes block in the next deploy
-           once the codes are confirmed assigned. Safe to click more than
-           once (the endpoint is idempotent). -->
-      <div id="temp-xfer-codes" style="border:1px solid #5a4a1a;background:#1c1810;border-radius:10px;padding:14px 16px;margin:14px 0">
-        <div style="font-size:13px;color:#c8b06a;font-weight:700;letter-spacing:0.04em;margin-bottom:4px">TEMPORARY — ONE-TIME SETUP</div>
-        <div style="font-size:13px;color:#9a8a6a;margin-bottom:10px">Assign vanity transfer codes (MATT / RICK / PAVL). Idempotent — safe to run more than once. This panel will be removed in the next deploy.</div>
-        <button id="run-xfer-codes" style="background:#c8a850;color:#1a1408;border:none;border-radius:8px;padding:9px 16px;font-weight:700;font-size:13px;cursor:pointer">Assign vanity codes</button>
-        <pre id="xfer-codes-result" style="display:none;white-space:pre-wrap;word-break:break-word;background:#0c0a06;border:1px solid #3a3320;border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:#c8c0a8;max-height:240px;overflow:auto"></pre>
-      </div>
       <div class="tabs" id="tabs">
         <button data-tab="users" class="${state.tab === 'items' ? '' : 'active'}">Users</button>
         <button data-tab="items" class="${state.tab === 'items' ? 'active' : ''}">All Items</button>
@@ -693,27 +683,6 @@ async function renderDashboard() {
     </main>
   `;
   document.getElementById('signout-btn').onclick = signOut;
-  // TEMPORARY (S14): vanity-code button handler. Remove with the panel.
-  const xferBtn = document.getElementById('run-xfer-codes');
-  if (xferBtn) {
-    xferBtn.onclick = async () => {
-      const out = document.getElementById('xfer-codes-result');
-      xferBtn.disabled = true;
-      const orig = xferBtn.textContent;
-      xferBtn.textContent = 'Working…';
-      out.style.display = 'block';
-      out.textContent = 'Calling /api/set_transfer_codes …';
-      try {
-        const r = await api('/api/set_transfer_codes', { method: 'POST', body: {} });
-        out.textContent = JSON.stringify(r, null, 2);
-      } catch (e) {
-        out.textContent = 'ERROR: ' + (e && e.message ? e.message : String(e));
-      } finally {
-        xferBtn.disabled = false;
-        xferBtn.textContent = orig;
-      }
-    };
-  }
   document.querySelectorAll('#tabs button').forEach(btn => {
     btn.onclick = () => {
       state.tab = btn.dataset.tab;
@@ -763,6 +732,7 @@ function renderSortBar() {
     { key: 'assessmentCredits', label: 'Credits' },
     { key: 'itemCount', label: 'Items' },
     { key: 'lastAssessment', label: 'Last Assessed' },
+    { key: 'createdAt', label: 'Last Created' },
   ];
   const bar = document.getElementById('sort-bar');
   bar.innerHTML = sorts.map(s => `
@@ -897,6 +867,7 @@ function renderItemsSortBar() {
   const sorts = [
     { key: 'date', label: 'Date' },
     { key: 'title', label: 'Title' },
+    { key: 'robograde', label: 'Robograde' },
   ];
   const bar = document.getElementById('items-sort-bar');
   if (!bar) return;
@@ -912,6 +883,9 @@ function renderItemsSortBar() {
         state.itemsDir = state.itemsDir === 'asc' ? 'desc' : 'asc';
       } else {
         state.itemsSort = key;
+        // Sensible default direction per column:
+        //   title → ascending (A→Z)
+        //   date, robograde → descending (newest first / highest first)
         state.itemsDir = key === 'title' ? 'asc' : 'desc';
       }
       renderItemsSortBar();
