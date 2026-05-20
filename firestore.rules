@@ -1,0 +1,147 @@
+// ============================================================================
+// Firestore Security Rules — Robograder
+// ============================================================================
+//
+// MANUAL SYNC ARRANGEMENT (S14):
+//
+// This file is a CHECKED-IN COPY of the rules that are deployed in Firebase.
+// It is NOT auto-deployed. The live rules live in the Firebase console under
+// Firestore Database → Rules. The chain of trust is:
+//
+//   Source of truth → the rules deployed in Firebase (only Firebase reads them)
+//   This file       → a documented copy kept in sync by hand so we have
+//                     version history and can review diffs alongside the
+//                     code that depends on the rules.
+//
+// To CHANGE the rules:
+//   1. Paste the new contents below.
+//   2. Open the Firebase console → Firestore → Rules.
+//   3. Paste the same contents into the editor.
+//   4. Click "Publish" to deploy.
+//   5. Commit this file to the repo.
+//
+// Skipping step 2-4 means the live rules are unchanged. Skipping step 5
+// means the repo and live state drift. Both halves matter.
+//
+// Vercel does NOT deploy these rules. There is no auto-deploy step from
+// this repo to Firebase for security rules. If we ever set up a build
+// hook that runs `firebase deploy --only firestore:rules`, that hook
+// would consume this exact file.
+//
+// ============================================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Items collection (S11): owner-only access. Public listings are
+    // served via /api/lookup (Admin SDK), NOT direct client reads —
+    // intentional, because Firestore rules are doc-level and would
+    // expose internal fields if a public-read rule were added here.
+    match /users/{userId}/items/{itemId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    // Legacy comics collection (S11): owner-only read+delete for the
+    // sign-in migration. Same reasoning as above — public reads route
+    // through /api/lookup.
+    match /users/{userId}/comics/{comicId} {
+      allow read, delete: if request.auth != null && request.auth.uid == userId;
+    }
+    // Meta subcollection: per-user marker docs.
+    match /users/{userId}/meta/{metaDoc} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    // User document: credits, settings, etc.
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    // RoboGrade ID registry: public read (cert-ID lookup), owner-only
+    // write/update/delete. Fields are only {userId, comicId, claimedAt,
+    // public} — no sensitive data.
+    //
+    // S14 AUDIT FIX: the previous rule was `allow write: if request.auth
+    // != null`, which let ANY signed-in user overwrite ANY cert ID's
+    // registry entry — a hijack hole, since /id/{ID} URLs are public and
+    // an attacker could re-point a target's cert to their own item.
+    //
+    // The split below permits exactly the three legitimate client write
+    // patterns:
+    //   create — first-time claim during assessment save (index.html line
+    //            ~7597). New doc's userId must equal the requesting uid.
+    //   update — public/private toggle on the user's OWN registry entry
+    //            (index.html line ~3270). The existing doc's userId must
+    //            equal the requesting uid, AND the userId + comicId
+    //            fields must not change — so a write can flip `public`
+    //            but cannot re-point the cert.
+    //   delete — account deletion cleanup (index.html line ~4947). The
+    //            existing doc's userId must equal the requesting uid.
+    match /robograde_ids/{gradeId} {
+      allow read: if true;
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null
+                    && resource.data.userId == request.auth.uid
+                    && request.resource.data.userId == resource.data.userId
+                    && request.resource.data.comicId == resource.data.comicId;
+      allow delete: if request.auth != null
+                    && resource.data.userId == request.auth.uid;
+    }
+    // Purchases ledger (S13): per-transaction revenue records written
+    // by the Stripe webhook (Admin SDK) and read by the admin dashboard
+    // API endpoints (Admin SDK). No client access — `allow read, write: if false`
+    // blocks every client request regardless of auth state. Admin SDK
+    // bypasses these rules entirely.
+    match /purchases/{purchaseId} {
+      allow read, write: if false;
+    }
+    // Credit adjustments ledger (S14): per-adjustment audit log written
+    // by /api/user PATCH (Admin SDK) when an admin changes a user's
+    // assessmentCredits value. Same access model as purchases — Admin
+    // SDK only, no client access at all. Bypassing this through the
+    // client would let an attacker forge audit entries to mask their
+    // own credit grants.
+    match /credit_adjustments/{adjustmentId} {
+      allow read, write: if false;
+    }
+    // Promo redemptions ledger (S14): per-redemption audit log written
+    // by /api/redeem_promo (Admin SDK) when a user successfully redeems
+    // a promo code. Same access model as the other ledgers — Admin SDK
+    // only, no client access. Bypassing this through the client would
+    // let an attacker forge redemption records to grant themselves
+    // credits without going through the actual redemption transaction.
+    match /promo_redemptions/{redemptionId} {
+      allow read, write: if false;
+    }
+    // Transfer feature (S14). Both collections are Admin-SDK-only —
+    // identical access model to the other server-mediated ledgers
+    // (purchases, credit_adjustments, etc.). The client NEVER reads or
+    // writes these directly; all transfer operations go through the
+    // /api/transfer_* endpoints (Admin SDK, which bypasses these rules).
+    //
+    // transfer_codes/{CODE} = { uid, vanity?, claimedAt } — the reverse
+    // index mapping a 4-char code → owning uid. Client read access would
+    // let anyone enumerate the code→user map (a privacy + targeted-spam
+    // surface); client write would let an attacker hijack or squat
+    // codes. Deny both; the send endpoint resolves codes server-side.
+    match /transfer_codes/{code} {
+      allow read, write: if false;
+    }
+    // transfers/{transferId} = pending/resolved transfer records incl.
+    // the item snapshot. Client access would expose in-transit book
+    // data and allow forging/!accepting transfers. Deny both; the
+    // pending/resolve endpoints mediate all access server-side.
+    match /transfers/{transferId} {
+      allow read, write: if false;
+    }
+    // Account deletions ledger (S14): per-deletion audit log written by
+    // /api/admin_delete_user (Admin SDK) when an admin hard-deletes a
+    // user account. Same access model as the other ledgers — Admin SDK
+    // only, no client access. This record is the only surviving trace of
+    // a deleted account (the user doc, items, and storage are gone), so
+    // client write access would let an attacker fabricate or erase the
+    // deletion trail. Client read access would expose deleted users'
+    // emails/UIDs. Deny both.
+    match /account_deletions/{deletionId} {
+      allow read, write: if false;
+    }
+  }
+}
