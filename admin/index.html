@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- ROBOGRADER admin/index.html — BUILD FINGERPRINT: S14-2026-05-19-ADMIN-SORTS-S14-CLEANUP -->
+<!-- ROBOGRADER admin/index.html — BUILD FINGERPRINT: S14-2026-05-19-LASTCREATED-LABEL-FIX -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -838,6 +838,10 @@ function renderUsers() {
     lastAssessment: u => ({
       big: u.lastAssessment ? new Date(u.lastAssessment).toLocaleDateString() : '—',
       label: 'last grade'
+    }),
+    createdAt: u => ({
+      big: u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—',
+      label: 'joined'
     }),
   })[state.sort];
   sec.innerHTML = state.users.map(u => {
