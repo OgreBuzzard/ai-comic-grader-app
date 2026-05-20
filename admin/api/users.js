@@ -64,7 +64,7 @@ export default async function handler(req, res) {
 
     // ── Params ───────────────────────────────────────────────────────────────
     const sort = (req.query.sort || 'displayName').toString();
-    const validSorts = ['displayName', 'assessmentCredits', 'itemCount', 'lastAssessment'];
+    const validSorts = ['displayName', 'assessmentCredits', 'itemCount', 'lastAssessment', 'createdAt'];
     if (!validSorts.includes(sort)) {
       return res.status(400).json({ error: `sort must be one of: ${validSorts.join(', ')}` });
     }
@@ -124,6 +124,15 @@ export default async function handler(req, res) {
         cmpResult = (a.itemCount || 0) - (b.itemCount || 0);
       } else if (sort === 'lastAssessment') {
         cmpResult = (a.lastAssessmentMs || 0) - (b.lastAssessmentMs || 0);
+      } else if (sort === 'createdAt') {
+        // Users without a createdAt timestamp (legacy accounts) sort to
+        // the bottom regardless of direction.
+        const am = Date.parse(a.createdAt || '') || 0;
+        const bm = Date.parse(b.createdAt || '') || 0;
+        if (!am && !bm) cmpResult = 0;
+        else if (!am) { return dir === 'desc' ? 1 : -1; }
+        else if (!bm) { return dir === 'desc' ? -1 : 1; }
+        else cmpResult = am - bm;
       }
       return dir === 'desc' ? -cmpResult : cmpResult;
     };

@@ -62,7 +62,7 @@ export default async function handler(req, res) {
 
     // ── Params ───────────────────────────────────────────────────────────────
     const sort = (req.query.sort || 'date').toString();
-    const validSorts = ['title', 'date'];
+    const validSorts = ['title', 'date', 'robograde'];
     if (!validSorts.includes(sort)) {
       return res.status(400).json({ error: `sort must be one of: ${validSorts.join(', ')}` });
     }
@@ -144,6 +144,18 @@ export default async function handler(req, res) {
           const bi = parseInt(b.issue) || 0;
           cmpResult = ai - bi;
         }
+      } else if (sort === 'robograde') {
+        // Items with no score (ungraded) sort to the bottom regardless of
+        // direction — they have no place in either end of a score ranking.
+        const aHas = typeof a.score === 'number';
+        const bHas = typeof b.score === 'number';
+        if (!aHas && !bHas) cmpResult = 0;
+        else if (!aHas) cmpResult = dir === 'desc' ? 1 : -1; // a goes after b on desc
+        else if (!bHas) cmpResult = dir === 'desc' ? -1 : 1;
+        else cmpResult = a.score - b.score;
+        // For the missing-score branches we've already accounted for direction,
+        // so return early to avoid the flip below.
+        if (!aHas || !bHas) return cmpResult;
       } else { // 'date'
         const am = Date.parse(a.roboGradeDate || '') || 0;
         const bm = Date.parse(b.roboGradeDate || '') || 0;
