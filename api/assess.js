@@ -612,41 +612,47 @@ Per-category calibration (applied proportionally to the category maximum):
     The point is the cumulative effect: a cover with widespread soiling AND
     multiple additional wear features is a 30-or-below cover even if no
     single defect is High severity. When in doubt at 30, go to 28.
-    CREATOR-SIGNATURE RULE (v2.6, b′): If a marking on the cover is
-    CONFIDENTLY identifiable as a deliberate creator signature — meaning
-    it reads as a name written in a stylized signing manner, appears in
-    a customary signing location (cover face, title block area, or
-    splash), and is consistent with a creator's autograph (an
-    illustrator, writer, editor, or other professional associated with
-    the book) — treat it as a NOTED ATTRIBUTE, not a grade-limiting
-    defect. Specifically:
-      • Record the signature in the defects array with type "Creator
-        signature" (NOT "Writing on cover"), and set severity to "Low"
-        regardless of the signature's physical size.
-      • Do NOT treat the signature as the dominant grade-limiting
-        defect. The Front score must be driven by the OTHER physical
-        defects present (corner wear, creases, edge wear, soiling,
-        spine stress, etc.). A book with a clean front + a creator
-        signature should score in the same Front range as the SAME book
-        with no signature at all.
+    CREATOR-SIGNATURE RULE (v2.7, neutral + ceiling cap): If a marking
+    on the cover is CONFIDENTLY identifiable as a deliberate creator
+    signature — meaning it reads as a name written in a stylized
+    signing manner, appears in a customary signing location, and is
+    consistent with a creator's autograph (illustrator, writer, editor,
+    or other professional associated with the book) — handle it as
+    follows:
+      • Record it in the defects array with type "Creator signature"
+        (NOT "Writing on cover"), severity "Low". The entry exists so
+        the owner can see the signature was identified and factored in.
+        It is INFORMATIONAL — see point below.
+      • Score Front, Back, Spine, and Interior AS IF THE SIGNATURE IS
+        NOT PRESENT. Do NOT deduct any points for the signature itself.
+        A clean signed book scores identically to the same clean book
+        with no signature. The signature does not lower the sub-score.
+      • CEILING CAP: a signed book CANNOT exceed Robograde 92 (predicted
+        ~9.6 / NM+). If the score calculation would land above 92, cap
+        it at 92. This reflects that an unverified signature on the
+        cover keeps a book out of the very top grade tier (Robograder
+        does not authenticate, so we cannot grant the "as if pristine"
+        ceiling), but it does NOT pull a mid- or high-grade book
+        downward. A book that would have scored 88 still scores 88; a
+        book that would have scored 95 caps to 92.
       • In aiAssessment and aiGraderNotes, describe the signature as a
         noted attribute (e.g. "Cover bears an apparent creator
-        signature reading 'Len Wein'"). Do NOT call it the dominant
-        defect, do NOT say it "prevents higher grades", do NOT use
-        damage language.
+        signature reading 'Len Wein'"). Do NOT use damage language.
+        Do NOT say it "prevents higher grades" except in the specific
+        sense of the 92 ceiling — and only mention the ceiling when
+        the book would otherwise have exceeded it.
       • You DO NOT and CANNOT authenticate signatures. Never say a
         signature is genuine, authentic, real, verified, or consistent
-        with a creator's known style. Never offer an opinion on
-        authenticity. The phrase to use is "apparent signature reading
+        with a creator's known style. Use "apparent signature reading
         '<name>'" — the word "apparent" is required.
-      • EXCEPTION — disfigurement: if the signature is so large and
+      • DISFIGUREMENT EXCEPTION: if the signature is so large and
         prominent that it physically dominates the cover image (e.g. a
         cover-spanning paint-pen mark obscuring artwork across more
-        than half the cover), apply a SINGLE Med-severity deduction to
-        Front for the physical impact, but still record it as type
-        "Creator signature" and still describe it as a noted attribute,
-        not damage. This exception is for genuine disfigurement only —
-        a typical signature on the cover face does not qualify.
+        than half the cover), apply a single Med-severity deduction to
+        Front for the physical impact. This exception is for genuine
+        disfigurement only — a typical signature on the cover face,
+        however large, does NOT qualify. If you are unsure whether
+        something qualifies as disfigurement, it does not.
     CONFIDENCE BAR: Apply this rule ONLY when you can read a plausible
     creator name in a deliberate signing style. If the writing is
     ambiguous (a scrawl, a number, an owner writing their name in
