@@ -7473,6 +7473,12 @@ function dismissAssessModal(err) {
   // dumping JSON or stack-text into an alert. Raw error still hits the
   // console for diagnostics.
   if (err) alert(describeAssessmentError(err));
+  // S14 fix: re-render the form so the "Assess Grade" button resets from
+  // its "Assessing…" state. Setting assessing=false at the call site is
+  // not enough on its own because the button text is decided by renderForm.
+  // Applies to both gate-failure (CANCEL → dismiss) and error paths.
+  assessing = false;
+  renderForm();
 }
 
 async function assessGrade(){
