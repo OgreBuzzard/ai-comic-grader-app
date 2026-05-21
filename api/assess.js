@@ -41,6 +41,54 @@ export default async function handler(req, res) {
     }).length;
   }
 
+  // Send an admin notification email via Resend when a user crosses the
+  // 24h-lockout or permanent-flag threshold. Fails silently — never blocks
+  // or alters the user-facing response. De-duping is handled by the caller:
+  // a `lastNotifiedAt` timestamp on the user doc prevents re-notifying for
+  // the same milestone within 24h.
+  //
+  // kind: 'lockout' (3-in-24h) or 'permanent' (10-in-96h).
+  // userData: the user doc data (email, createdAt, strikeHistory, etc.).
+  // userId: the Firestore uid for the affected user.
+  async function sendStrikeNotification(kind, userId, userData) {
+    if (!process.env.RESEND_API_KEY) return; // Email transport not configured.
+    try {
+      const isPermanent = kind === 'permanent';
+      const subject = isPermanent
+        ? 'Robograder: account permanently flagged (10 strikes in 96h)'
+        : 'Robograder: account locked (3 strikes in 24h)';
+      const recent = (userData.strikeHistory || []).slice(-15);
+      const strikeRows = recent.map(s =>
+        `  ${s.timestamp}  ${s.gateResult}${s.reason ? '  — ' + s.reason : ''}`
+      ).join('\n') || '  (none recorded)';
+      const body =
+        (isPermanent
+          ? 'A user account has hit 10 strikes in 96 hours and has been permanently flagged. Consider manual review.\n\n'
+          : 'A user account has hit 3 strikes in 24 hours and is locked out for 24 hours.\n\n') +
+        `User ID:        ${userId}\n` +
+        `Email:          ${userData.email || '(unknown)'}\n` +
+        `Account created: ${userData.createdAt || '(unknown)'}\n` +
+        `Total strikes:  ${(userData.strikeHistory || []).length}\n` +
+        `\nRecent strikes (up to last 15):\n${strikeRows}\n` +
+        `\nAdmin dashboard: https://admin.robograder.app/?uid=${encodeURIComponent(userId)}\n`;
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          from: 'Robograder Alerts <support@robograder.app>',
+          to: ['support@robograder.app'],
+          subject,
+          text: body
+        })
+      });
+    } catch(e) {
+      console.error('Strike notification email failed:', e);
+    }
+  }
+
   // Lazy-init Firebase Admin and return a getFirestore instance, or null on error.
   async function getAdminDb() {
     try {
@@ -1009,7 +1057,37 @@ RETURN ONLY THIS JSON — no markdown, no preamble
             update.assessmentLockedUntil = new Date(Date.now() + STRIKE_LOCKOUT_DURATION_MS).toISOString();
             _lockoutInfo = { type: 'temp', unlockAt: update.assessmentLockedUntil };
           }
+          // Notification de-dupe: only send for a given milestone if we
+          // haven't notified for that milestone in the last 24h. Tracked
+          // per-kind via lastNotifiedAt.{lockout,permanent} on the user doc.
+          // Without this, a determined abuser triggering strikes 4, 5, 6 in
+          // the same 24h would flood the support inbox.
+          const notifyDedupeMs = 24 * 60 * 60 * 1000;
+          const notifiedAt = data.lastNotifiedAt || {};
+          const shouldNotify = (kind) => {
+            const last = notifiedAt[kind] ? new Date(notifiedAt[kind]).getTime() : 0;
+            return (Date.now() - last) > notifyDedupeMs;
+          };
+          let notifyKind = null;
+          if (_lockoutInfo && _lockoutInfo.type === 'permanent' && shouldNotify('permanent')) {
+            notifyKind = 'permanent';
+          } else if (_lockoutInfo && _lockoutInfo.type === 'temp' && shouldNotify('lockout')) {
+            notifyKind = 'lockout';
+          }
+          if (notifyKind) {
+            update.lastNotifiedAt = { ...notifiedAt, [notifyKind]: new Date().toISOString() };
+          }
           await _userRef.set(update, { merge: true });
+          // Fire the email AFTER the write succeeds so the de-dupe is
+          // already persisted; if the email fails, we still won't re-send
+          // until the dedupe window expires. The send itself is async and
+          // never blocks the response.
+          if (notifyKind) {
+            // Pass the updated state (with the new strike + flag) so the
+            // email body reflects what actually got written.
+            const notifyData = { ...data, ...update };
+            sendStrikeNotification(notifyKind, _userRef.id, notifyData);
+          }
         } catch(e) {
           console.error('Server-side strike recording failed:', e);
         }
