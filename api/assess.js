@@ -43,15 +43,13 @@ export default async function handler(req, res) {
 
   // Send an admin notification email via Resend when a user crosses the
   // 24h-lockout or permanent-flag threshold. Fails silently — never blocks
-  // or alters the user-facing response. De-duping is handled by the caller:
-  // a `lastNotifiedAt` timestamp on the user doc prevents re-notifying for
-  // the same milestone within 24h.
-  //
-  // kind: 'lockout' (3-in-24h) or 'permanent' (10-in-96h).
-  // userData: the user doc data (email, createdAt, strikeHistory, etc.).
-  // userId: the Firestore uid for the affected user.
+  // or alters the user-facing response. De-duping handled by the caller
+  // (lastNotifiedAt on the user doc).
   async function sendStrikeNotification(kind, userId, userData) {
-    if (!process.env.RESEND_API_KEY) return; // Email transport not configured.
+    if (!process.env.RESEND_API_KEY) {
+      console.error('[strike-notify] RESEND_API_KEY not set, skipping');
+      return;
+    }
     try {
       const isPermanent = kind === 'permanent';
       const subject = isPermanent
@@ -71,7 +69,7 @@ export default async function handler(req, res) {
         `Total strikes:  ${(userData.strikeHistory || []).length}\n` +
         `\nRecent strikes (up to last 15):\n${strikeRows}\n` +
         `\nAdmin dashboard: https://admin.robograder.app/?uid=${encodeURIComponent(userId)}\n`;
-      await fetch('https://api.resend.com/emails', {
+      const resp = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
@@ -84,8 +82,14 @@ export default async function handler(req, res) {
           text: body
         })
       });
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => '(no body)');
+        console.error(`[strike-notify] Resend returned ${resp.status}: ${errText}`);
+      } else {
+        console.log(`[strike-notify] Sent ${kind} notification for ${userId}`);
+      }
     } catch(e) {
-      console.error('Strike notification email failed:', e);
+      console.error('[strike-notify] failed:', e);
     }
   }
 
@@ -1057,15 +1061,14 @@ RETURN ONLY THIS JSON — no markdown, no preamble
             update.assessmentLockedUntil = new Date(Date.now() + STRIKE_LOCKOUT_DURATION_MS).toISOString();
             _lockoutInfo = { type: 'temp', unlockAt: update.assessmentLockedUntil };
           }
-          // Notification de-dupe: only send for a given milestone if we
-          // haven't notified for that milestone in the last 24h. Tracked
-          // per-kind via lastNotifiedAt.{lockout,permanent} on the user doc.
-          // Without this, a determined abuser triggering strikes 4, 5, 6 in
-          // the same 24h would flood the support inbox.
+          // De-dupe per kind: only notify if we haven't already in 24h.
+          // The lastNotifiedAt timestamp is written BEFORE the email fires
+          // (in the same Firestore batch), so a transient email failure
+          // doesn't cause a re-send storm.
           const notifyDedupeMs = 24 * 60 * 60 * 1000;
           const notifiedAt = data.lastNotifiedAt || {};
-          const shouldNotify = (kind) => {
-            const last = notifiedAt[kind] ? new Date(notifiedAt[kind]).getTime() : 0;
+          const shouldNotify = (k) => {
+            const last = notifiedAt[k] ? new Date(notifiedAt[k]).getTime() : 0;
             return (Date.now() - last) > notifyDedupeMs;
           };
           let notifyKind = null;
@@ -1078,13 +1081,8 @@ RETURN ONLY THIS JSON — no markdown, no preamble
             update.lastNotifiedAt = { ...notifiedAt, [notifyKind]: new Date().toISOString() };
           }
           await _userRef.set(update, { merge: true });
-          // Fire the email AFTER the write succeeds so the de-dupe is
-          // already persisted; if the email fails, we still won't re-send
-          // until the dedupe window expires. The send itself is async and
-          // never blocks the response.
+          // Fire email AFTER the Firestore write — never blocks the response.
           if (notifyKind) {
-            // Pass the updated state (with the new strike + flag) so the
-            // email body reflects what actually got written.
             const notifyData = { ...data, ...update };
             sendStrikeNotification(notifyKind, _userRef.id, notifyData);
           }
