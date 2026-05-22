@@ -7473,12 +7473,6 @@ function dismissAssessModal(err) {
   // dumping JSON or stack-text into an alert. Raw error still hits the
   // console for diagnostics.
   if (err) alert(describeAssessmentError(err));
-  // S14 fix: re-render the form so the "Assess Grade" button resets from
-  // its "Assessing…" state. Setting assessing=false at the call site is
-  // not enough on its own because the button text is decided by renderForm.
-  // Applies to both gate-failure (CANCEL → dismiss) and error paths.
-  assessing = false;
-  renderForm();
 }
 
 async function assessGrade(){
@@ -8454,60 +8448,13 @@ function buildRoboGradeDisplay(rg, comic) {
 }
 
 
-async function assessPSA(){
-  if(!formData.images||formData.images.filter(Boolean).length===0){alert("Add at least one photo first.");return;}
-  if(assessing)return;
-  assessing=true;
-  syncMsg("Compressing images...");
-  const compressed=await Promise.all(formData.images.filter(Boolean).slice(0,4).map(img=>new Promise(res=>{
-    const image=new Image();
-    image.onload=()=>{
-      let w=image.width,h=image.height,max=900;
-      if(w>max||h>max){if(w>h){h=Math.round(h*max/w);w=max;}else{w=Math.round(w*max/h);h=max;}}
-      const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;
-      canvas.getContext("2d").drawImage(image,0,0,w,h);
-      res(canvas.toDataURL("image/jpeg",0.50));
-    };
-    image.src=img;
-  })));
-  syncMsg("Assessing PSA Grade — please wait...");
-  try{
-    const resp=await fetch("/api/assess",{
-      method:"POST",
-      headers:{"Content-Type":"application/json","x-client-secret":"022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d"},
-      body:JSON.stringify({images:compressed,grader:"PSA"})
-    });
-    if(!resp.ok){const e=await resp.text();throw new Error("Server error: "+e);}
-    const parsed=await resp.json();
-    if(parsed.error)throw new Error(parsed.error);
-    formData.title=normalizeTitle((parsed.title||formData.title||"").trim().replace(/\s+/g," ").replace(/^The\s+/i,""), parsed.issueDate||formData.issueDate);
-    formData.issue=parsed.issue!=null?String(parsed.issue):formData.issue||"";
-    formData.issueDate=parsed.issueDate||formData.issueDate||"";
-    formData.publisher=parsed.publisher||formData.publisher||"";
-    // PSA grade goes into a separate field
-    formData.psaGrade=parsed.grade||formData.psaGrade;
-    formData.pageQuality=parsed.pageQuality||formData.pageQuality;
-    formData.graderNotes=parsed.graderNotes||formData.graderNotes||"";
-    formData.myAssessment=parsed.myAssessment||formData.myAssessment||"";
-    // Key Info (S11): same fill-only-if-empty behavior as primary path
-    if(parsed.keyInfo && parsed.keyInfo.trim() && !formData.keyInfo) formData.keyInfo = parsed.keyInfo.trim();
-    // Enhance toggle (S11): same translation as the cgc parse path above.
-    // S11 user-state protection: don't overwrite Done or Don't Care.
-    const enhanceLocked = formData.enhance === "done" || formData.enhance === "dontcare";
-    if (!enhanceLocked) {
-      if (parsed.enhance === 'Y' || parsed.enhance === true) formData.enhance = true;
-      else if (parsed.enhance === 'N' || parsed.enhance === false) formData.enhance = false;
-      else if (parsed.press === true || parsed.uv === true || parsed.clean === true) formData.enhance = true;
-      else if (parsed.press === false && parsed.uv === false && parsed.clean === false) formData.enhance = false;
-    }
-    syncMsg(null);
-    renderForm();
-  }catch(e){
-    syncMsg(null);
-    alert("PSA Assessment failed: "+e.message);
-  }
-  assessing=false;
-}
+// ── assessPSA removed (S14) ──────────────────────────────────────────────────
+// Was a separate PSA assessment flow with its own image compression
+// (900px/0.50). Replaced by the unified /api/assess endpoint long ago;
+// zero callers in the codebase confirmed at S14 audit. The function's
+// 900px/0.50 compression was discovered during the resolution-regression
+// investigation but was never actually running. Deleted to remove the
+// confusing duplicate compression pipeline.
 
 function removeImg(i){
   const imgs=[...(formData.images||[])];
@@ -9099,9 +9046,21 @@ async function cameraOpen(state) {
   //      the highest optical zoom available as default
   //   4. Show lens selector UI, switch to chosen lens
   try {
-    // Step 1: permission-establishing request
+    // Step 1: permission-establishing request. Resolution constraints use
+    // `ideal` so the browser picks the highest-quality stream it can match.
+    // CRITICAL (S14): without explicit width/height constraints, Safari and
+    // most browsers default to ~640x480 preview streams — the camera UI's
+    // capture canvas then snapshots from that low-res stream, and the final
+    // saved images come out at ~350px. This silently broke image quality
+    // for every in-app capture since the camera UI shipped. The `ideal`
+    // values below request a near-4K stream when available; the browser
+    // falls back to the closest supported resolution.
     const initialStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' } },
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 2560 },
+        height: { ideal: 1920 }
+      },
       audio: false
     });
     _cameraState.stream = initialStream;
@@ -9306,10 +9265,16 @@ async function switchToLens(idx) {
   }
 
   try {
-    // Build constraints. deviceId always exact-matched to the lens. If the
-    // lens uses digital zoom (digitalZoom > 1), apply the zoom constraint.
+    // Build constraints. deviceId always exact-matched to the lens.
+    // Resolution constraints (S14): same `ideal` high-res request as the
+    // initial stream so a lens switch doesn't drop to low-res preview.
+    // Without this, switching lenses silently degrades capture quality.
     const constraints = {
-      video: { deviceId: { exact: lens.device.deviceId } },
+      video: {
+        deviceId: { exact: lens.device.deviceId },
+        width: { ideal: 2560 },
+        height: { ideal: 1920 }
+      },
       audio: false
     };
     if (lens.digitalZoom && lens.digitalZoom > 1) {
@@ -9345,7 +9310,11 @@ async function switchToLens(idx) {
     // screen
     try {
       const fallback = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 2560 },
+          height: { ideal: 1920 }
+        },
         audio: false
       });
       _cameraState.stream = fallback;
