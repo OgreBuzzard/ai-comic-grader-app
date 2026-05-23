@@ -19,8 +19,12 @@
 //   3.2 — STAPLE INSPECTION PROTOCOL: replaces default-clean staple assertions
 //         with required observation, resolution-honesty path, and precision
 //         widening when staples can't be reliably inspected (S14 May 22)
+//   3.3 — SPINE TICK INSPECTION PROTOCOL + enhancement tagging: required
+//         systematic sweep of spine edge for white-on-color ticks, severity
+//         rubric tied to Spine score deductions, pressing/cleaning candidate
+//         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '3.2';
+const ROBOGRADE_VERSION = '3.3';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -757,6 +761,51 @@ This protocol replaces default-clean staple assertions. Staple rust with migrati
      Do NOT use bare "Staples intact and firmly set, no visible rust or migration" as a default. That phrasing is now reserved for cases where you have actually verified each staple at adequate resolution.
 
   7. PRECISION WIDENING. If you used the "cannot be reliably determined" stapleCondition path in step 6, widen the confidence range (baseConf default is ${baseConf}; add at least +2 to the precision range for staple-inspection uncertainty alone). Also widen for: glare/poor focus, no raking light photo, restoration suspected.
+
+SPINE TICK INSPECTION PROTOCOL (v3.3, required for every assessment):
+
+Spine ticks are the single most common defect that distinguishes high grades. They are far more frequent than staple rust and appear on books from every era. The difference between a 9.4 and a 9.8 is often a matter of counting and grading spine ticks. Asserting a spine is "clean" when ticks are present is a credibility-destroying error. Apply this protocol in order:
+
+  1. VISUAL SIGNATURE. Spine ticks appear as small WHITE marks running along the spine edge of the cover — paper showing through where the ink has been stressed off by a small impact or fold. They are typically 1-3mm long, perpendicular or slightly diagonal to the spine. On dark-colored spine regions (blue, red, green covers) the white shows starkly. On white or cream spine regions ticks are nearly invisible and may only be detectable under raking light.
+     IMPORTANT: do NOT confuse spine ticks with (a) the artist's black ink lines, (b) printed elements, or (c) JPEG compression artifacts. Spine ticks are characteristically WHITE on a colored background. If a candidate mark is any color other than the white of bare paper, it is not a spine tick.
+
+  2. WHERE TO INSPECT.
+     • Front cover photo — primary source. Inspect the entire left edge of the front cover (the spine edge) from top to bottom, sweeping systematically. The middle third of the spine often is ONLY visible in this photo.
+     • Top-Left and Bottom-Left corner macros (when present in a deep assessment) — secondary source, higher per-pixel detail than the front cover for the top third and bottom third of the spine. These are the highest-confidence ticks since you can see them at higher resolution.
+     • Spine photo — generally not useful for spine tick inspection; the oblique angle hides surface marks on the cover face.
+     Note: the two corner macros cover only the top and bottom thirds of the spine. The middle third must be evaluated from the front cover photo regardless of whether deep is running.
+
+  3. SYSTEMATIC SWEEP. Do not glance at the spine and assert "clean." Sweep along its full length. For each candidate white mark, decide:
+     • Is it on the spine edge (within ~3mm of the left cover edge)? If not, it is something else (interior ink stress, printing defect).
+     • Is it characteristically white-on-colored-background? If colored or grey, dismiss as not-a-tick.
+     • Could it be print registration error? Genuine ticks have irregular hand-marked-looking edges. Print artifacts are typically regular dots, lines, or fine repeating textures.
+
+  4. RESOLUTION HONESTY. If the spine edge of the front cover is out of focus, in heavy glare, cropped out of frame, or otherwise not clearly resolvable, state this explicitly. Spine tick assessment requires being able to see the spine edge clearly. If you cannot, the honest output is "Spine tick condition cannot be reliably determined — clearer front cover photo or corner macros recommended." Do NOT default to "no spine ticks observed" when you couldn't actually inspect.
+
+  5. DEFECT ENTRY. For each tick or group of ticks observed, add a defect entry of type "Spine tick" with category "Spine" and severity based on count and visual extent:
+     • Low: 1–2 small ticks, not color-breaking (pressing/cleaning candidate)
+     • Med: 3–5 ticks, OR any single tick with color break (ink visibly disrupted exposing white paper)
+     • High: 6 or more ticks, OR multiple ticks with paper-fiber disruption (the surface paper itself is damaged, not just inked)
+     If ticks are present WITHOUT color break (the cover surface is impressed but the colored ink is not broken open), tag the defect's measurement field with the note "no color break, pressing candidate". This signals that an expert cleaner or presser may be able to substantially reduce the defect.
+     If ticks ARE color-breaking, note "color breaking" in the colorBreaking field of the defect entry as true.
+
+  6. SCORING IMPACT. Spine ticks affect the Spine score (0-20). General guidance:
+     • Low severity (1-2 non-color-breaking ticks): -1 to -2 Spine points
+     • Med severity (3-5 ticks, or any color-breaking tick): -3 to -6 Spine points
+     • High severity (6+ ticks or paper-fiber damage): -7 to -12 Spine points, often dropping the book out of the 9.x range entirely
+
+  7. PRECISION WIDENING. If you used the "cannot be reliably determined" path in step 4, add at least +2 to baseConf. Spine tick uncertainty is one of the most material sources of grade uncertainty between 9.0 and 9.8, so wider precision is appropriate when inspection isn't clean.
+
+ENHANCEMENT TAGGING (related to spine ticks AND general cover defects):
+
+When defects are observed that are removable by pressing or cleaning, flag them in the defect entry's measurement field with appropriate notation:
+  • Bend without color break → "pressing candidate" (the press may flatten the bend and significantly improve appearance)
+  • Spine tick without color break → "pressing candidate" (same — heat and pressure may reduce or remove the impression)
+  • Surface dirt, fingerprints, light smudges → "cleaning candidate" (expert cleaning may remove)
+  • Color-breaking defects (any kind) → NOT enhancement candidates — color break is permanent damage that pressing cannot restore
+  • Spine roll, missing pieces, tape residue, water damage → NOT enhancement candidates
+
+These tags help the user decide whether the book is worth submitting for professional enhancement before grading.
 
 Step 1: Assign Front score (0–50) based on front-cover defects only.
 Step 2: Assign Back score (0–20) based on back-cover defects only. If none observed, score is 19–20.
