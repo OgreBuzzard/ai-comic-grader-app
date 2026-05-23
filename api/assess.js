@@ -16,8 +16,11 @@
 //   2.5 — facsimile detection + pre-API MISSING_COVER gate (S13)
 //   3.0 — pre-convention milestone (S13/early S14) — live during convention launch
 //   3.1 — neutral signature rule + Robograde 92 ceiling cap (S14, post-convention)
+//   3.2 — STAPLE INSPECTION PROTOCOL: replaces default-clean staple assertions
+//         with required observation, resolution-honesty path, and precision
+//         widening when staples can't be reliably inspected (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '3.1';
+const ROBOGRADE_VERSION = '3.2';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -39,58 +42,6 @@ export default async function handler(req, res) {
       const t = new Date(s.timestamp).getTime();
       return !isNaN(t) && t >= cutoff;
     }).length;
-  }
-
-  // Send an admin notification email via Resend when a user crosses the
-  // 24h-lockout or permanent-flag threshold. Fails silently — never blocks
-  // or alters the user-facing response. De-duping handled by the caller
-  // (lastNotifiedAt on the user doc).
-  async function sendStrikeNotification(kind, userId, userData) {
-    if (!process.env.RESEND_API_KEY) {
-      console.error('[strike-notify] RESEND_API_KEY not set, skipping');
-      return;
-    }
-    try {
-      const isPermanent = kind === 'permanent';
-      const subject = isPermanent
-        ? 'Robograder: account permanently flagged (10 strikes in 96h)'
-        : 'Robograder: account locked (3 strikes in 24h)';
-      const recent = (userData.strikeHistory || []).slice(-15);
-      const strikeRows = recent.map(s =>
-        `  ${s.timestamp}  ${s.gateResult}${s.reason ? '  — ' + s.reason : ''}`
-      ).join('\n') || '  (none recorded)';
-      const body =
-        (isPermanent
-          ? 'A user account has hit 10 strikes in 96 hours and has been permanently flagged. Consider manual review.\n\n'
-          : 'A user account has hit 3 strikes in 24 hours and is locked out for 24 hours.\n\n') +
-        `User ID:        ${userId}\n` +
-        `Email:          ${userData.email || '(unknown)'}\n` +
-        `Account created: ${userData.createdAt || '(unknown)'}\n` +
-        `Total strikes:  ${(userData.strikeHistory || []).length}\n` +
-        `\nRecent strikes (up to last 15):\n${strikeRows}\n` +
-        `\nAdmin dashboard: https://admin.robograder.app/?uid=${encodeURIComponent(userId)}\n`;
-      const resp = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          from: 'Robograder Alerts <support@robograder.app>',
-          to: ['support@robograder.app'],
-          subject,
-          text: body
-        })
-      });
-      if (!resp.ok) {
-        const errText = await resp.text().catch(() => '(no body)');
-        console.error(`[strike-notify] Resend returned ${resp.status}: ${errText}`);
-      } else {
-        console.log(`[strike-notify] Sent ${kind} notification for ${userId}`);
-      }
-    } catch(e) {
-      console.error('[strike-notify] failed:', e);
-    }
   }
 
   // Lazy-init Firebase Admin and return a getFirestore instance, or null on error.
@@ -777,6 +728,36 @@ Per-category calibration (applied proportionally to the category maximum):
 
 No back cover photo provided case: set backScore to null. Redistribute the 20 Back points into Front, raising Front's maximum to 70. All other categories unchanged.
 
+STAPLE INSPECTION PROTOCOL (v3.2, May 22 — required for every assessment):
+
+This protocol replaces default-clean staple assertions. Staple rust with migration is one of the most common defects under-reported in image-based grading, and asserting "no rust" when staples aren't clearly visible has been a credibility failure. Apply this protocol in order:
+
+  1. ORIENT before describing. Identify which edge of each visible photo corresponds to the spine BEFORE describing staple condition. For a front cover photo, the spine is the LEFT edge. For a back cover photo, the spine is the RIGHT edge. For an interior page photo, the spine is wherever the binding is visible. State the orientation in your reasoning (it does not need to appear in the output JSON, but you must orient before observing).
+
+  2. LOCATE the two staples. Standard saddle-stitched comics have two staples, roughly one third and two thirds down the spine. In each photo where the spine edge is visible, note whether each staple position is visible OR obscured.
+
+  3. DESCRIBE what is visible, do NOT render a default verdict. For each staple location, observe:
+     • Is the staple head itself visible at this resolution and angle?
+     • If visible: what color is the metal? Silver/grey = clean. Brown/orange/black = oxidation likely.
+     • Discoloration in the paper surrounding the staple — brown/orange staining radiating outward indicates rust migration. Estimate extent (mm of spread) and intensity (faint/moderate/heavy).
+     • Structural state — appears intact, dislodged, popped, or missing?
+
+  4. RESOLUTION HONESTY. If the images do not allow reliable inspection of the staples (resolution too low, staples obscured by binding, photographed from angle that hides the staple area, or the staple region is out of focus), state this EXPLICITLY in the stapleCondition field. DO NOT default to "intact" or "clean" when you cannot actually verify. Under-reporting a condition you cannot confirm is the correct posture — over-claiming cleanliness misleads collectors who will later discover the issue when the book is professionally graded.
+
+  5. DEFECT ENTRY. If rust or rust migration is OBSERVED (not suspected, not defaulted-to-absent), add a defect entry of type "Staple rust" with category "Interior" and severity based on extent:
+     • Low: faint discoloration localized to within ~2mm of the staple
+     • Med: clear brown staining with migration extending ~3-8mm into surrounding paper
+     • High: heavy rust with extensive migration, multiple stained pages visible, or visible staple structural failure
+     If a staple is missing, dislodged, or popped, add a "Staple defect" entry at Med or High severity (category "Interior").
+
+  6. STAPLE CONDITION FIELD. The stapleCondition string in the JSON output must match one of these patterns:
+     • If staples verified clean at adequate resolution: a specific description like "Both staples visible, silver metal, no surrounding discoloration in spine paper of back cover."
+     • If staples not clearly visible at provided resolution: "Staple condition cannot be reliably determined from provided image resolution — close-up photo recommended for confirmation."
+     • If defect(s) observed: a specific description matching the defect entries, e.g. "Top staple shows brown rust with ~5mm migration into surrounding paper, visible on back cover spine edge."
+     Do NOT use bare "Staples intact and firmly set, no visible rust or migration" as a default. That phrasing is now reserved for cases where you have actually verified each staple at adequate resolution.
+
+  7. PRECISION WIDENING. If you used the "cannot be reliably determined" stapleCondition path in step 6, widen the confidence range (baseConf default is ${baseConf}; add at least +2 to the precision range for staple-inspection uncertainty alone). Also widen for: glare/poor focus, no raking light photo, restoration suspected.
+
 Step 1: Assign Front score (0–50) based on front-cover defects only.
 Step 2: Assign Back score (0–20) based on back-cover defects only. If none observed, score is 19–20.
 Step 3: Assign Spine score (0–20) based on spine defects only.
@@ -784,7 +765,7 @@ Step 4: Assign Interior score (0–10) using the calibration above. Start from P
 Step 5: Compute final score: Front + Back + Spine + Interior. Simple addition.
 
 ${!hasBackCover ? 'No back cover photo provided — set backScore to null. Front max becomes 70 (absorbing Back\'s 20). Total still 0–100.' : ''}
-Confidence base: ±${baseConf}. Adjust up if: glare/poor focus, no raking light photo, staples not visible, restoration suspected.
+Confidence base: ±${baseConf}. Adjust up if: glare/poor focus, no raking light photo, staples not visible (see STAPLE INSPECTION PROTOCOL step 7), restoration suspected.
 
 CRITICAL: The final score is literally Front + Back + Spine + Interior. The arithmetic must check out exactly. If your holistic impression disagrees with the sum by more than 2 points, revisit the component scores — one is wrong, not the formula.
 
@@ -1061,31 +1042,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
             update.assessmentLockedUntil = new Date(Date.now() + STRIKE_LOCKOUT_DURATION_MS).toISOString();
             _lockoutInfo = { type: 'temp', unlockAt: update.assessmentLockedUntil };
           }
-          // De-dupe per kind: only notify if we haven't already in 24h.
-          // The lastNotifiedAt timestamp is written BEFORE the email fires
-          // (in the same Firestore batch), so a transient email failure
-          // doesn't cause a re-send storm.
-          const notifyDedupeMs = 24 * 60 * 60 * 1000;
-          const notifiedAt = data.lastNotifiedAt || {};
-          const shouldNotify = (k) => {
-            const last = notifiedAt[k] ? new Date(notifiedAt[k]).getTime() : 0;
-            return (Date.now() - last) > notifyDedupeMs;
-          };
-          let notifyKind = null;
-          if (_lockoutInfo && _lockoutInfo.type === 'permanent' && shouldNotify('permanent')) {
-            notifyKind = 'permanent';
-          } else if (_lockoutInfo && _lockoutInfo.type === 'temp' && shouldNotify('lockout')) {
-            notifyKind = 'lockout';
-          }
-          if (notifyKind) {
-            update.lastNotifiedAt = { ...notifiedAt, [notifyKind]: new Date().toISOString() };
-          }
           await _userRef.set(update, { merge: true });
-          // Fire email AFTER the Firestore write — never blocks the response.
-          if (notifyKind) {
-            const notifyData = { ...data, ...update };
-            sendStrikeNotification(notifyKind, _userRef.id, notifyData);
-          }
         } catch(e) {
           console.error('Server-side strike recording failed:', e);
         }
