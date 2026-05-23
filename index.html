@@ -7332,6 +7332,15 @@ async function completeAssessment() {
       // this field render without it (renderer is null-safe).
       rgConfidenceRange: formData.roboGrade && formData.roboGrade.confidenceRange != null ? Math.round(formData.roboGrade.confidenceRange) : null,
       rgHighGradeUnlocked: !!formData.highGradeUnlocked,
+      // S14 May 23: capture the roboGradeId at history-snapshot time so
+      // orphaned assessment IDs (those that were the active roboGradeId on
+      // the comic doc at the time of a past assessment, but have since
+      // been replaced by a newer ID) can still be resolved by the public
+      // lookup endpoint. Forward-only: entries created before this fix
+      // have no roboGradeId in their history record. Once this is widely
+      // deployed, the lookup gate can be tightened back to match either
+      // the current roboGradeId OR any history entry's roboGradeId.
+      roboGradeId: formData.roboGradeId || '',
       date: formData.roboGradeDate || ''
     };
     formData.assessmentHistory.unshift(prior);
