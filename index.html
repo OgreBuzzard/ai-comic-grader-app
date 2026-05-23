@@ -8088,7 +8088,7 @@ function renderForm(){
       <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">
         <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">DEEP ASSESSMENT CORNER MACROS</div>
         <div style="font-size:11px;color:#8a9a8a;margin-bottom:10px;line-height:1.5">Close-up photos of all four front-cover corners, one per slot. The Deep Assessment pass uses these to tighten the grade.</div>
-        <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
           ${[0,1,2,3].map(i=>{
             const cornerLabels=["Top Left","Top Right","Bottom Left","Bottom Right"];
             // S14: ghost macros for empty corner slots. Same pattern as the
@@ -8879,7 +8879,7 @@ const CAMERA_SLOT_ORIENTATION_MAIN = ['portrait', 'portrait', 'portrait', 'lands
 // The walkthrough queues slots in this order; each capture lands at the
 // indicated storage index, so the detail-view 2x2 grid still recreates the
 // cover layout naturally.
-const CAMERA_CAPTURE_ORDER_MAIN   = [0, 1, 3, 2];        // FC → BC → Spine → PQ (S13: spine before PQ; physical flow is smoother — open to centerfold last, no need to close after)
+const CAMERA_CAPTURE_ORDER_MAIN   = [0, 3, 2, 1];        // FC → Spine → PQ → BC (S14 May 22: continuous physical handling — tilt to spine, open to centerfold, close and flip last. Eliminates the back-then-rotate-to-spine awkward reset of the earlier FC → BC → Spine → PQ order.)
 const CAMERA_CAPTURE_ORDER_CORNER = [0, 1, 3, 2];        // TL → TR → BR → BL (clockwise)
 
 // Camera modal state. Reset on close.
@@ -9665,18 +9665,17 @@ async function cameraFinish() {
 // already exists and is reused as-is — we just wrap its open/close in a
 // promise per item.
 async function runCropperSequence(captures, kind) {
-  // S14: crop in STORAGE/DISPLAY order, not capture order.
-  // Capture order is deliberately [FC, BC, Spine, Interior] for a smooth
-  // physical handling flow (do the spine before opening the book to its
-  // centerfold last). But the detail view displays photos in storage
-  // order [FC, BC, Interior, Spine], and the user found cropping in a
-  // third different order disorienting ("it feels wrong"). Cropping is a
-  // review step, so it should match what they'll see afterward. Sorting
-  // by slot index makes crop order == display order while leaving the
-  // capture walkthrough's physical flow untouched. (corner kind: slot
-  // index already equals display order, so the sort is a harmless
-  // identity there.)
-  const ordered = [...captures].sort((a, b) => a.slot - b.slot);
+  // S14 (May 22 reversal): crop in CAPTURE order, not storage order.
+  // Earlier in S14 this was sorted by slot index (storage display order:
+  // [FC, BC, Interior, Spine]) on the theory that crop-then-see should
+  // match. Reverted: the user now finds that cropping the spine
+  // immediately after capturing it — while it's still mentally fresh —
+  // is more natural than waiting through Interior first. Crop order now
+  // matches capture order [FC, BC, Spine, Interior]. Detail view storage
+  // order is unchanged. Corner kind: capture order is already
+  // [TL, TR, BR, BL] (clockwise) which differs from slot index, so this
+  // also fixes the corner-crop order to match clockwise capture.
+  const ordered = [...captures]; // already in capture order from the camera flow
   for (const cap of ordered) {
     // Place the capture into the form first so cropper has something to read.
     // imagesMeta is stamped here — even if the user cancels the crop, the
@@ -9694,6 +9693,17 @@ async function runCropperSequence(captures, kind) {
     formData[metaKey] = meta;
 
     formData._imagesChanged = true;
+
+    // S14 (May 22): skip cropper for corner macros. Corner macros are by
+    // definition close-up crops the user has already framed; an additional
+    // crop step is redundant and forces the user through 4 modal dialogs
+    // after they've already captured. The slot-edit (crop) button remains
+    // on each corner slot in Edit view for users who want to refine
+    // framing afterward. Main images still get the cropper (the full-cover
+    // photo benefits from a crop pass).
+    if (kind === 'corner') {
+      continue;
+    }
 
     // Now open cropper for this slot and wait for it to close.
     await new Promise(resolve => {
