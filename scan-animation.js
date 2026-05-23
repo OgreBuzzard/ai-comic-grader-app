@@ -386,8 +386,34 @@
       transform: translate(-50%, -50%);
     }
     .rg-scan-photo-img.rotated {
-      width:  100%;
+      /* S14 May 22: Fix rotated spine being too small.
+         Problem: prior rule (width:100% height:100% + rotate(90deg))
+         left the bounding box at container dimensions, then object-fit
+         contained the LANDSCAPE spine image inside that box leaving
+         most of the box empty above/below the strip. After rotation,
+         the strip floated as a small vertical sliver instead of
+         spanning the container.
+         Fix: explicit pre-rotation dimensions. We want post-rotation
+         vertical span to equal the container's height. Pre-rotation
+         that means the element's HORIZONTAL axis (its width) should
+         equal the container's height. Using height:100% as the
+         container-height-derived value, then setting width to match
+         via JS at runtime would be ideal, but for a pure CSS fix we
+         can use the parent's height via absolute inset positioning:
+         setting top:0 bottom:0 means the element's NATURAL height is
+         the parent's full height; we then swap that into width via
+         a 1:1 aspect ratio. After rotation the spine's content fills
+         the height via object-fit:contain working against the square
+         pre-rotation box. Tradeoff: the rotated spine occupies a
+         container-height × container-height square area, which on
+         a square container is correct; on a non-square container the
+         rotated spine will be capped by the smaller dimension. */
+      top: 50%;
+      left: 50%;
+      width: auto;
       height: 100%;
+      aspect-ratio: 1 / 1;
+      object-fit: contain;
       transform: translate(-50%, -50%) rotate(90deg);
     }
 

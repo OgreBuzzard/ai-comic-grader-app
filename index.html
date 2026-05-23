@@ -1755,7 +1755,16 @@ const TITLE_ALIASES_DATED = {
 //                "X-Men" for collection purposes.)
 //   Unknown   → default to Uncanny X-Men (older, far more valuable, much more
 //                likely entry for a Silver/Bronze Age collector)
-function disambiguateXMen(year) {
+//   Facsimile / reprint override (S14 May 23): facsimile editions are
+//                reproductions of original key issues. Every X-Men facsimile
+//                produced to date is a reprint of an issue from the original
+//                1963-1990 Uncanny run (Marvel only facsimiles keys; all
+//                X-Men keys are pre-1991). So for any printing flagged as
+//                facsimile/reprint, force "Uncanny X-Men" regardless of the
+//                (reprint's) issueDate year. This consolidates a 2023 X-Men #1
+//                facsimile under the same title as the 1963 original.
+function disambiguateXMen(year, printing) {
+  if (printing && /facsimile|reprint/i.test(printing)) return 'Uncanny X-Men';
   if (year && year >= 1991) return 'X-Men';
   return 'Uncanny X-Men';
 }
@@ -1845,14 +1854,14 @@ window.matchValueKey = function matchValueKey(title, issue, publisher, printing)
   }
 })();
 
-function normalizeTitle(s, issueDate) {
+function normalizeTitle(s, issueDate, printing) {
   if (!s) return s;
   const trimmed = s.trim().replace(/\s+/g, ' ').replace(/^The\s+/i, '');
   const key = trimmed.toLowerCase();
   if (TITLE_ALIASES[key]) return TITLE_ALIASES[key];
   if (TITLE_ALIASES_DATED[key]) {
     const year = extractYearFromIssueDate(issueDate);
-    return TITLE_ALIASES_DATED[key](year);
+    return TITLE_ALIASES_DATED[key](year, printing);
   }
   return trimmed;
 }
@@ -6195,7 +6204,8 @@ async function assessHighGrade() {
     try {
       const normalizedTitle = normalizeTitle(
         (cgc.title || formData.title || '').trim().replace(/\s+/g, ' ').replace(/^The\s+/i, ''),
-        cgc.issueDate || formData.issueDate
+        cgc.issueDate || formData.issueDate,
+        cgc.printing || formData.printing
       );
       const issueForId = cgc.issue != null ? String(cgc.issue) : (formData.issue || '');
       const preUploadId = formData.id || buildComicId(normalizedTitle, issueForId);
@@ -7273,7 +7283,7 @@ async function completeAssessment() {
   const {cgc, psa} = _pendingAssessResult;
 
   // Populate formData from held results
-  formData.title=normalizeTitle((cgc.title||formData.title||'').trim().replace(/\s+/g,' ').replace(/^The\s+/i,''), cgc.issueDate||formData.issueDate);
+  formData.title=normalizeTitle((cgc.title||formData.title||'').trim().replace(/\s+/g,' ').replace(/^The\s+/i,''), cgc.issueDate||formData.issueDate, cgc.printing||formData.printing);
   formData.issue=cgc.issue!=null?String(cgc.issue):formData.issue||'';
   formData.issueDate=cgc.issueDate||formData.issueDate||'';
   formData.publisher=cgc.publisher||formData.publisher||'';
@@ -7668,7 +7678,8 @@ async function assessGrade(){
     try {
       const normalizedTitle = normalizeTitle(
         (cgc.title || formData.title || '').trim().replace(/\s+/g, ' ').replace(/^The\s+/i, ''),
-        cgc.issueDate || formData.issueDate
+        cgc.issueDate || formData.issueDate,
+        cgc.printing || formData.printing
       );
       const issueForId = cgc.issue != null ? String(cgc.issue) : (formData.issue || '');
       const preUploadId = formData.id || buildComicId(normalizedTitle, issueForId);
@@ -9826,7 +9837,7 @@ async function submitForm(){
   // here, title is non-empty. Keeping this as a no-op safety check in case
   // the gating fails for any reason.
   if(!formData.title?.trim()){return;}
-  formData.title=normalizeTitle(formData.title.trim().replace(/\s+/g," ").replace(/^The\s+/i,""), formData.issueDate);
+  formData.title=normalizeTitle(formData.title.trim().replace(/\s+/g," ").replace(/^The\s+/i,""), formData.issueDate, formData.printing);
   if(formData.seller?.trim())updateSellerList(formData.seller.trim());
 
   // Determine the comic ID first — we need it for the storage path.
