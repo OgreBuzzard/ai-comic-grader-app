@@ -7303,9 +7303,15 @@ async function completeAssessment() {
     // store `grade` (the predicted value) and keep `psaGrade` in the entry
     // shape as empty string for legacy compat — old entries had a real
     // value, new ones don't, the renderer handles both.
+    // S14 unification: PSA AI prediction was removed in the unification.
+    // formData.assessedPSAGrade can still hold a value from a pre-purge
+    // assessment (and gets re-snapshotted into every new history entry
+    // unless explicitly cleared here). Don't carry it forward — new
+    // entries get empty psaGrade. Legacy entries that already have a
+    // value retain it in Firestore until manually cleared.
     const prior = {
       grade: formData.predictedGrade || formData.assessedCGCGrade,
-      psaGrade: formData.assessedPSAGrade || '',
+      psaGrade: '',
       pageQuality: formData.pageQuality || '',
       rgScore: formData.roboGrade && formData.roboGrade.score != null ? Math.round(formData.roboGrade.score) : null,
       rgVersion: formData.roboGrade && formData.roboGrade.version ? formData.roboGrade.version : null,
