@@ -2118,8 +2118,10 @@ function esc(s){return s?String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").re
 // Escape a string for safe use inside a SINGLE-QUOTED JS string literal that
 // is itself inside a DOUBLE-QUOTED HTML attribute (e.g. onclick="foo('...')").
 // Apostrophes break the inner JS string; backslashes break escape sequences.
-// HTML attribute parsing handles & and < on its own, but we still encode the
-// apostrophe as &#39; for defense-in-depth across attribute contexts.
+// Backslashes escape first (so the later \' doesn't itself get re-escaped),
+// then apostrophes become \', then HTML-special chars are entity-encoded for
+// the attribute context. Verified roundtrip-safe for apostrophes anywhere in
+// the string and for backslash+apostrophe combinations.
 // Use this anywhere a user-controlled string is interpolated into onclick=,
 // onchange=, etc. Plain text content keeps using esc().
 function escJsAttr(s){return s?String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"):""}
@@ -6250,6 +6252,8 @@ async function assessHighGrade() {
     dismissAssessModal(e.message);
   }
   assessing = false;
+  // S15: re-render so the "Assessing…" button resets on error path.
+  if (view === 'edit' || view === 'add') renderForm();
 }
 
 function startRestorationCheck() {
@@ -7734,6 +7738,11 @@ async function assessGrade(){
     dismissAssessModal(e.message);
   }
   assessing=false;
+  // S15: re-render the form so the "Assessing…" button label resets to
+  // "Re-assess Grade" on the error path. Previously the button stayed
+  // stuck and users had to trigger a render via some other state change
+  // (toggling ownership was the known workaround).
+  if (view === 'edit' || view === 'add') renderForm();
 }
 
 // Show a terminated-assessment preview when the gate catches NOT_COMIC or FLAGGED.
