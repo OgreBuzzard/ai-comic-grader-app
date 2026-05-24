@@ -74,7 +74,7 @@
   <!-- Firebase -->
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
-    import { getFirestore, initializeFirestore, collection, getDocs, setDoc, deleteDoc, doc, onSnapshot, getDoc, updateDoc, increment }
+    import { getFirestore, initializeFirestore, collection, getDocs, setDoc, deleteDoc, doc, onSnapshot, getDoc, updateDoc, increment, query, where }
       from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
     import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
       from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
@@ -125,6 +125,9 @@
     // overwrite the true balance in Firestore. See decrementCredit().
     window._fsUpdateDoc = updateDoc;
     window._fsIncrement = increment;
+    // S15: query/where for archive propagation on publicListing toggle.
+    window._fsQuery = query;
+    window._fsWhere = where;
     // Auth setup
     const auth = getAuth(app);
     const googleProvider = new GoogleAuthProvider();
@@ -2985,6 +2988,37 @@ async function deleteItem(id){
       await deleteStorageFolder(`users/${uid}/items/${id}`);
       await deleteStorageFolder(`users/${uid}/comics/${id}`);
     }
+
+    // S15: clean up archived_assessments for this comic before deleting
+    // the live doc. Without this, deleted-comic archives orphan in
+    // Firestore with no way to reach them. Also clean up the registry
+    // entries for both the archives' old roboGradeIds AND the live one.
+    if (window._db && window._currentUser?.uid && window._fsQuery && window._fsWhere) {
+      try {
+        const archCol = window._fsCollection(window._db, 'archived_assessments');
+        const q = window._fsQuery(
+          archCol,
+          window._fsWhere('archivedFromComicId', '==', id),
+          window._fsWhere('archivedUserId', '==', window._currentUser.uid)
+        );
+        const snap = await window._fsGetDocs(q);
+        for (const d of snap.docs) {
+          try {
+            await fsDeleteDoc(fsDoc(window._db, 'archived_assessments', d.id));
+            await fsDeleteDoc(fsDoc(window._db, 'robograde_ids', d.id));
+          } catch (e) { console.warn('[archive] delete-cleanup failed for', d.id, e); }
+        }
+      } catch (e) { console.warn('[archive] delete-cleanup query failed:', e); }
+    }
+    // Also drop the LIVE registry entry. Pre-S15 deleteItem left these
+    // orphaned; now we clean them up too.
+    const live = items.find(c => c.id === id);
+    if (live && live.roboGradeId && window._db) {
+      try {
+        await fsDeleteDoc(fsDoc(window._db, 'robograde_ids', live.roboGradeId));
+      } catch (e) { console.warn('[archive] live registry cleanup failed:', e); }
+    }
+
     await fsDeleteDoc(userItemDoc(id));
   } catch(e) {
     alert("Delete failed: " + e.message);
@@ -4617,6 +4651,38 @@ async function togglePublicListing(id, val) {
       await fsSetDoc(idRef, { public: val }, { merge: true });
     }
 
+    // S15: privacy mirror — propagate publicListing to all archive entries
+    // belonging to THIS comic. Archive entries are keyed by old roboGradeId
+    // but tagged with archivedFromComicId + archivedUserId for query.
+    // Fire-and-forget pattern — propagation failure must not block the UI.
+    if (window._db && window._currentUser?.uid && window._fsQuery && window._fsWhere) {
+      try {
+        const archCol = window._fsCollection(window._db, 'archived_assessments');
+        const q = window._fsQuery(
+          archCol,
+          window._fsWhere('archivedFromComicId', '==', id),
+          window._fsWhere('archivedUserId', '==', window._currentUser.uid)
+        );
+        const snap = await window._fsGetDocs(q);
+        // Update each archive's publicListing in parallel with the matching
+        // robograde_ids/{oldId}.public flag so /api/lookup sees both flip
+        // together. The current docs are small (~few KB each) and there will
+        // typically be only a handful per comic, so a parallel write is
+        // fine without a batched write.
+        await Promise.all(snap.docs.map(async d => {
+          const oldId = d.id;
+          const archRef = fsDoc(window._db, 'archived_assessments', oldId);
+          await fsSetDoc(archRef, { publicListing: val }, { merge: true });
+          // Mirror to the robograde_ids registry entry for the old ID so
+          // lookup.js's first-step public check resolves correctly.
+          const oldIdRef = fsDoc(window._db, 'robograde_ids', oldId);
+          await fsSetDoc(oldIdRef, { public: val }, { merge: true });
+        }));
+      } catch (e) {
+        console.warn('[archive] privacy propagation failed:', e);
+      }
+    }
+
     // Update local state
     if (comic) comic.publicListing = val;
 
@@ -4670,6 +4736,27 @@ async function cycleOwnershipFromDetail(id) {
     if (willClearPublic && comic.roboGradeId) {
       const idRef = fsDoc(window._db, 'robograde_ids', comic.roboGradeId);
       await fsSetDoc(idRef, { public: false }, { merge: true });
+    }
+
+    // S15: propagate the auto-clear to archive entries too, same pattern
+    // as togglePublicListing.
+    if (willClearPublic && window._db && window._currentUser?.uid && window._fsQuery && window._fsWhere) {
+      try {
+        const archCol = window._fsCollection(window._db, 'archived_assessments');
+        const q = window._fsQuery(
+          archCol,
+          window._fsWhere('archivedFromComicId', '==', id),
+          window._fsWhere('archivedUserId', '==', window._currentUser.uid)
+        );
+        const snap = await window._fsGetDocs(q);
+        await Promise.all(snap.docs.map(async d => {
+          const oldId = d.id;
+          await fsSetDoc(fsDoc(window._db, 'archived_assessments', oldId), { publicListing: false }, { merge: true });
+          await fsSetDoc(fsDoc(window._db, 'robograde_ids', oldId), { public: false }, { merge: true });
+        }));
+      } catch (e) {
+        console.warn('[archive] ownership-clear propagation failed:', e);
+      }
     }
 
     // Update local state
@@ -6582,6 +6669,25 @@ async function deleteAccountFlow() {
           await fsDeleteDoc(fsDoc(db, 'robograde_ids', rgId));
         } catch(e) { console.error('Failed to delete robograde_id', rgId, e); }
       }
+
+      // S15: also delete archived_assessments for this user. Query by
+      // archivedUserId to find all archive snapshots regardless of which
+      // (now-deleted) item they came from.
+      try {
+        if (window._fsQuery && window._fsWhere) {
+          const archCol = fsCollection(db, 'archived_assessments');
+          const archQ = window._fsQuery(archCol, window._fsWhere('archivedUserId', '==', uid));
+          const archSnap = await fsGetDocs(archQ);
+          for (const d of archSnap.docs) {
+            try {
+              await fsDeleteDoc(fsDoc(db, 'archived_assessments', d.id));
+              // Also clear the registry entry for the archive's old roboGradeId
+              // (id is the old roboGradeId itself).
+              await fsDeleteDoc(fsDoc(db, 'robograde_ids', d.id));
+            } catch(e) { console.error('Failed to delete archive', d.id, e); }
+          }
+        }
+      } catch(e) { console.error('Failed to sweep archived_assessments:', e); }
     }
 
     // 2. Delete all Storage objects under users/{uid}/.
@@ -7528,10 +7634,30 @@ async function assessGrade(){
   if(imgs.length===0){alert("Add at least one photo first.");return;}
   if(assessing)return;
 
+  // S15: immediate user-visible feedback so the user doesn't keep tapping
+  // while async work (eligibility check, image hashing for dup detection)
+  // runs invisibly. Without this, the first tap appears to do nothing
+  // until the chest slide starts ~2-4s later, and users multi-tap. The
+  // multi-tap then queues up duplicate assessments after `assessing` flips.
+  // Also lock the button via DOM to prevent the rapid multi-tap before
+  // `assessing` is set true further down.
+  const _earlyBtn = document.getElementById('assess-btn') || document.getElementById('hg-assess-btn');
+  if (_earlyBtn) {
+    _earlyBtn.textContent = 'Preparing…';
+    _earlyBtn.disabled = true;
+    _earlyBtn.style.opacity = '0.75';
+  }
+
   // Abuse prevention: block locked-out or flagged accounts
   const eligibility = await checkAssessmentEligibility();
   if (!eligibility.allowed) {
     alert(eligibility.message);
+    // Restore button state on early-exit paths.
+    if (_earlyBtn) {
+      _earlyBtn.textContent = _assessed ? 'Re-assess Grade' : 'Assess Grade';
+      _earlyBtn.disabled = false;
+      _earlyBtn.style.opacity = '';
+    }
     return;
   }
 
@@ -7540,6 +7666,11 @@ async function assessGrade(){
     if(confirm("You have no assessment credits remaining. Would you like to buy more?")){
       showBuyCredits();
     }
+    if (_earlyBtn) {
+      _earlyBtn.textContent = _assessed ? 'Re-assess Grade' : 'Assess Grade';
+      _earlyBtn.disabled = false;
+      _earlyBtn.style.opacity = '';
+    }
     return;
   }
 
@@ -7547,7 +7678,13 @@ async function assessGrade(){
   // photos from an existing assessed record, ask before proceeding. The
   // _bypassDuplicateCheck flag is set when the user explicitly opts in via the
   // confirm modal — that flag clears here on the next clean assessment attempt.
-  if (!formData._bypassDuplicateCheck) {
+  // S15: skip dup detection when this is a re-assessment of an already-assessed
+  // item. The user just tapped Re-assess on a book that already has a roboGrade
+  // — they know what they're doing, and the hash-by-fetch on Cloud Storage URLs
+  // adds 2-4s of invisible latency that was a major contributor to the
+  // multi-tap problem. New uploads of fresh photos still get the dup check.
+  const _isReassessOfAssessed = !!(formData.id && formData.roboGradeId);
+  if (!formData._bypassDuplicateCheck && !_isReassessOfAssessed) {
     const dup = await findDuplicateAssessment(formData.images, formData.id);
     if (dup) {
       const dupGrade = dup.roboGrade?.score ?? '?';
@@ -7563,7 +7700,14 @@ async function assessGrade(){
         `Re-running may produce a slightly different grade due to natural assessment variance. ` +
         `Run anyway? (1 credit will be used.)`
       );
-      if (!ok) return;
+      if (!ok) {
+        if (_earlyBtn) {
+          _earlyBtn.textContent = _assessed ? 'Re-assess Grade' : 'Assess Grade';
+          _earlyBtn.disabled = false;
+          _earlyBtn.style.opacity = '';
+        }
+        return;
+      }
       formData._bypassDuplicateCheck = true;
     }
   }
@@ -10049,6 +10193,65 @@ async function submitForm(){
   // Strip stale schemaVersion if it carried in via the formData spread — the
   // translator (in saveItem) is the single source of truth for this field.
   delete rec.schemaVersion;
+
+  // ── S15: orphaned-assessment archive ─────────────────────────────────
+  // When a book is re-assessed, a fresh roboGradeId is generated by
+  // assessGrade() and the old assessment data is about to be overwritten
+  // by saveItem() below. Before that happens, copy the existing assessment
+  // state into archived_assessments/{oldRoboGradeId} so the old ID
+  // remains resolvable via /api/lookup. The robograde_ids registry entry
+  // for the old ID stays in place — lookup.js's fallback will read the
+  // archive when the live item's roboGradeId no longer matches.
+  //
+  // Triggers only when:
+  //   - this is a re-assessment (formData.id existed before this submit)
+  //   - the live Firestore doc has a roboGradeId
+  //   - the live roboGradeId differs from the new one being saved
+  //
+  // Privacy mirror: publicListing on the archive matches the LIVE comic's
+  // current publicListing. If the user later toggles publicListing on the
+  // comic, togglePublicListing() also propagates to all archives for that
+  // comic (handled separately in that function).
+  if (formData.id && rec.roboGradeId && window._db && window._currentUser?.uid) {
+    try {
+      const liveRef = fsDoc(window._db, 'users', window._currentUser.uid, 'items', formData.id);
+      const liveSnap = await fsGetDoc(liveRef);
+      if (liveSnap.exists()) {
+        const liveData = liveSnap.data();
+        // Flatten v3 nested shape if present so the archive is self-contained
+        // and lookup.js can read it without knowing about schemaVersion.
+        const liveFlat = (liveData.schemaVersion === 3)
+          ? { ...liveData, ...(liveData.comicData || {}), ...(liveData.cardData || {}) }
+          : liveData;
+        const oldRoboGradeId = liveFlat.roboGradeId;
+        if (oldRoboGradeId && oldRoboGradeId !== rec.roboGradeId) {
+          // Snapshot the entire live record so the archive holds defects,
+          // narrative, sub-scores, page quality, images — everything needed
+          // to render a public listing identical to the live page at archive
+          // time. Strip nothing; lookup.js owns the public-safe field
+          // whitelist already.
+          const archiveRef = fsDoc(window._db, 'archived_assessments', oldRoboGradeId);
+          const archivePayload = {
+            ...liveFlat,
+            // Provenance fields so we can trace and (if needed) purge
+            archivedAt: new Date().toISOString(),
+            archivedFromComicId: formData.id,
+            archivedUserId: window._currentUser.uid,
+            // Privacy mirror at archive time. Public-listing toggles after
+            // archiving propagate through togglePublicListing.
+            publicListing: !!liveFlat.publicListing
+          };
+          await fsSetDoc(archiveRef, archivePayload);
+        }
+      }
+    } catch (e) {
+      // Archive failure must NOT block the save — re-assessment proceeds
+      // regardless. The old ID just stays orphaned (same behavior as
+      // before this archive system). Log so we know.
+      console.warn('[archive] failed to snapshot old assessment:', e);
+    }
+  }
+
   // ── RoboGrade ID uniqueness guarantee ───────────────────────────
   // Check /robograde_ids/{id} before saving. If taken, regenerate and retry.
   // Probability of needing even one retry: ~1 in 1.8 billion. Max 5 attempts.
