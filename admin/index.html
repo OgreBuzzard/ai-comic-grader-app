@@ -569,7 +569,7 @@ const state = {
   // point is "what assessments came in recently" rather than "who are my
   // users." itemsSort + itemsDir already default to date/desc which is
   // exactly the right starting sort for that intent.
-  tab: 'items',         // 'users' | 'items'
+  tab: 'items',         // 'users' | 'items' | 'timings'
   sort: 'displayName',
   dir: 'asc',
   users: [],
@@ -580,6 +580,12 @@ const state = {
   itemsHasMore: false,
   itemsTotal: 0,
   itemSearch: '',
+  // S15: Timings tab — diagnostic data from assess.js phaseTimings.
+  timingsList: [],
+  timingsHasMore: false,
+  timingsTotal: 0,
+  timingsFilter: 'all',  // 'all' | 'errors' | 'timeouts' | 'success'
+  timingsVersion: '',    // empty string = all versions
   stats: null,
   // S14: when truthy, the credits pill on the user-detail view renders as an
   // inline editor instead of a static value. Reset whenever we leave the
@@ -676,8 +682,9 @@ async function renderDashboard() {
     <main>
       <div id="stats-section"><div class="loading">Loading stats…</div></div>
       <div class="tabs" id="tabs">
-        <button data-tab="users" class="${state.tab === 'items' ? '' : 'active'}">Users</button>
+        <button data-tab="users" class="${state.tab === 'users' ? 'active' : ''}">Users</button>
         <button data-tab="items" class="${state.tab === 'items' ? 'active' : ''}">All Items</button>
+        <button data-tab="timings" class="${state.tab === 'timings' ? 'active' : ''}">Timings</button>
       </div>
       <div id="tab-content"></div>
     </main>
@@ -690,7 +697,9 @@ async function renderDashboard() {
     };
   });
   loadStats();
-  if (state.tab === 'items') {
+  if (state.tab === 'timings') {
+    renderTimingsTab();
+  } else if (state.tab === 'items') {
     renderItemsTab();
   } else {
     renderUsersTab();
@@ -951,6 +960,176 @@ function renderItemsList() {
   if (state.itemsHasMore) {
     document.getElementById('load-more-items-btn').onclick = () => loadItems(false);
   }
+}
+
+// ─── S15 Timings tab ─────────────────────────────────────────────────────
+// Shows phase timing data from assess.js writes to `assessment_timings`.
+// Default view: most-recent-first across all assessments. Filter chips for
+// errors / timeouts / success; version filter for v3.4 vs older.
+function renderTimingsTab() {
+  document.getElementById('tab-content').innerHTML = `
+    <div class="sort-bar" id="timings-filter-bar"></div>
+    <div id="timings-section"><div class="loading">Loading timings…</div></div>
+  `;
+  renderTimingsFilterBar();
+  loadTimings(true);
+}
+
+function renderTimingsFilterBar() {
+  const bar = document.getElementById('timings-filter-bar');
+  if (!bar) return;
+  const filters = [
+    ['all', 'All'],
+    ['errors', 'Errors'],
+    ['timeouts', 'Timeouts'],
+    ['success', 'Success only']
+  ];
+  bar.innerHTML = filters.map(([key, label]) => {
+    const active = state.timingsFilter === key ? 'active' : '';
+    return `<button class="${active}" data-filter="${key}">${label}</button>`;
+  }).join('') + `
+    <span style="margin-left:8px;font-size:12px;color:var(--text-dim)">v</span>
+    <input type="text" id="timings-version" value="${escapeAttr(state.timingsVersion || '')}" placeholder="any" style="width:42px;background:var(--panel-2);border:1px solid var(--panel-2);color:var(--text);padding:4px 6px;border-radius:4px;font-size:12px;">
+  `;
+  bar.querySelectorAll('button[data-filter]').forEach(btn => {
+    btn.onclick = () => {
+      state.timingsFilter = btn.dataset.filter;
+      loadTimings(true);
+      renderTimingsFilterBar();
+    };
+  });
+  const vIn = document.getElementById('timings-version');
+  if (vIn) {
+    let t = null;
+    vIn.oninput = () => {
+      clearTimeout(t);
+      t = setTimeout(() => {
+        state.timingsVersion = vIn.value.trim();
+        loadTimings(true);
+      }, 400);
+    };
+  }
+}
+
+async function loadTimings(reset = false) {
+  if (reset) {
+    state.timingsList = [];
+    state.timingsHasMore = false;
+  }
+  const offset = state.timingsList.length;
+  const params = new URLSearchParams({
+    limit: '50',
+    offset: String(offset),
+    filter: state.timingsFilter || 'all'
+  });
+  if (state.timingsVersion) params.set('version', state.timingsVersion);
+  try {
+    const res = await api(`/api/timings?${params.toString()}`);
+    state.timingsList = state.timingsList.concat(res.timings || []);
+    state.timingsHasMore = !!res.hasMore;
+    state.timingsTotal = res.total || 0;
+    renderTimingsList();
+  } catch (e) {
+    const sec = document.getElementById('timings-section');
+    if (sec) sec.innerHTML = `<div class="err-banner">Timings failed: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function renderTimingsList() {
+  const sec = document.getElementById('timings-section');
+  if (!sec) return;
+  if (state.timingsList.length === 0) {
+    sec.innerHTML = '<div class="empty">No timing data yet for this filter.</div>';
+    return;
+  }
+
+  // Aggregate stats across the visible page so Matt can eyeball averages
+  // without manually reading every row.
+  const totals = state.timingsList.map(t => t.totalMs || 0).filter(Boolean);
+  const primaries = state.timingsList.map(t => (t.phases && t.phases.primaryCallMs) || 0).filter(Boolean);
+  const refines = state.timingsList.map(t => (t.phases && t.phases.refineCallMs) || 0).filter(Boolean);
+  const mean = arr => arr.length ? Math.round(arr.reduce((a,b)=>a+b,0) / arr.length) : 0;
+  const p95 = arr => {
+    if (!arr.length) return 0;
+    const s = [...arr].sort((a,b)=>a-b);
+    return s[Math.min(s.length - 1, Math.floor(s.length * 0.95))];
+  };
+  const aggHtml = `
+    <div class="count-line">
+      <strong>${state.timingsTotal}</strong> rows · showing ${state.timingsList.length}
+      &nbsp;·&nbsp; mean total <strong>${mean(totals)}ms</strong>
+      &nbsp;·&nbsp; p95 total <strong>${p95(totals)}ms</strong>
+      &nbsp;·&nbsp; mean primary <strong>${mean(primaries)}ms</strong>
+      ${refines.length ? `&nbsp;·&nbsp; mean refine <strong>${mean(refines)}ms</strong>` : ''}
+    </div>
+  `;
+
+  const rows = state.timingsList.map(t => {
+    const p = t.phases || {};
+    const errored = !!t.errorMessage;
+    const timedOut = t.timedOut === true;
+    const tagHtml = errored
+      ? `<span style="background:#5a1818;color:#ffb0b0;padding:1px 6px;border-radius:3px;font-size:11px;">${timedOut ? 'TIMEOUT' : 'ERROR'}</span>`
+      : `<span style="background:var(--panel-2);color:var(--text-dim);padding:1px 6px;border-radius:3px;font-size:11px;">${t.gateResult || 'COMIC'}</span>`;
+    const dateStr = t.createdAt ? new Date(t.createdAt).toLocaleString() : '?';
+    const totalColor = (t.totalMs || 0) > 55000 ? '#ff8080' : (t.totalMs || 0) > 40000 ? '#ffc070' : 'var(--text)';
+    return `
+      <div class="row timing-row" data-key="${escapeAttr(t.key)}" style="cursor:pointer;">
+        <div class="main">
+          <div class="title" style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;">
+            ${escapeHtml(t.key)} ${tagHtml}
+            ${t.version ? `<span style="color:var(--text-dim);font-size:11px;margin-left:6px;">v${escapeHtml(t.version)}</span>` : ''}
+          </div>
+          <div class="sub" style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:11px;">
+            ${dateStr}
+            ${p.refImageFetchMs != null ? `&nbsp;·&nbsp;refImg ${p.refImageFetchMs}` : ''}
+            ${p.primaryCallMs != null ? `&nbsp;·&nbsp;<strong>primary ${p.primaryCallMs}</strong>` : ''}
+            ${p.primaryParseMs != null ? `&nbsp;·&nbsp;parse ${p.primaryParseMs}` : ''}
+            ${p.refineCallMs != null ? `&nbsp;·&nbsp;<strong>refine ${p.refineCallMs}</strong>` : (t.gradeRefRan === false ? '&nbsp;·&nbsp;<span style="color:var(--text-dim);">refine skipped</span>' : '')}
+            ${t.predictedGrade ? `&nbsp;·&nbsp;grade ${escapeHtml(t.predictedGrade)}` : ''}
+            ${t.gradeBeforeRefinement ? ` (was ${escapeHtml(t.gradeBeforeRefinement)})` : ''}
+            ${t.errorMessage ? `<br><span style="color:#ff8080;">${escapeHtml(String(t.errorMessage).slice(0, 200))}</span>` : ''}
+          </div>
+        </div>
+        <div class="meta">
+          <div class="big" style="color:${totalColor};">${t.totalMs ?? '—'}</div>
+          <div class="label">ms total</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  sec.innerHTML = aggHtml + rows + (state.timingsHasMore ? `<button class="load-more" id="load-more-timings-btn">Load more</button>` : '');
+  sec.querySelectorAll('.timing-row').forEach(row => {
+    row.onclick = () => {
+      const t = state.timingsList.find(x => x.key === row.dataset.key);
+      if (t) showTimingDetail(t);
+    };
+  });
+  if (state.timingsHasMore) {
+    document.getElementById('load-more-timings-btn').onclick = () => loadTimings(false);
+  }
+}
+
+function showTimingDetail(t) {
+  // Tap a row to see the full phase breakdown as JSON. Useful for sharing
+  // a specific timeout case in chat — copy-paste the JSON block.
+  const json = JSON.stringify(t, null, 2);
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow:auto;';
+  modal.innerHTML = `
+    <div style="background:var(--panel);max-width:720px;width:100%;border-radius:8px;padding:16px;color:var(--text);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h2 style="margin:0;font-size:16px;">Timing detail · ${escapeHtml(t.key)}</h2>
+        <button id="timing-close" style="background:var(--panel-2);color:var(--text);border:none;padding:6px 12px;border-radius:4px;cursor:pointer;">Close</button>
+      </div>
+      <pre style="background:#0d1808;padding:12px;border-radius:4px;font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;">${escapeHtml(json)}</pre>
+      <div style="margin-top:8px;font-size:11px;color:var(--text-dim);">Tap-and-hold the JSON to copy.</div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  document.getElementById('timing-close').onclick = () => modal.remove();
 }
 
 async function showUser(uid) {
