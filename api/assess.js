@@ -24,7 +24,7 @@
 //         rubric tied to Spine score deductions, pressing/cleaning candidate
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '3.6';
+const ROBOGRADE_VERSION = '3.7';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -1148,141 +1148,38 @@ RETURN ONLY THIS JSON — no markdown, no preamble
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Grade reference refinement pass — RESTORED May 23, 2026 (S15).
+    // Grade reference refinement pass — DISABLED May 24, 2026 (S15, v3.6).
     //
-    // History: this pass was disabled May 13 (S13) along with a costly
-    // refinement pass. Matt's clear position: only the costly extra pass
-    // was supposed to be removed; the grade-reference comparison should
-    // have been retained. v3.3 calibration drift (May 23: median +1.0 over
-    // PSA truth on the 10-book set) confirmed the loss.
+    // History:
+    //   - S13 (May 13): original Opus 4.5 refinement disabled (~$0.08, 8-25s cost,
+    //     no measurable quality lift).
+    //   - S15 (May 23): restored as a lighter-weight Hulk-181 reference comparison
+    //     after v3.3 calibration drift (+1.0 median over PSA truth) was traced to
+    //     missing grade anchoring.
+    //   - S15 (May 24): DISABLED again after 14 calls across Sonnet and Opus
+    //     versions produced `gradeBeforeRefinement: null` every single time.
+    //     Refinement confirmed every primary, including the +1.5 over-calls on
+    //     ASM #29. The design flaw is structural: refinement sees only the prior
+    //     assessment's TEXT SUMMARY, not the original images, so when primary
+    //     over-counts defects, refinement looks at the assessed-grade reference,
+    //     sees comparable defects (as described in the summary), and confirms.
+    //     It cannot independently disagree with primary's reading of the photos.
+    //     Net effect: +$0.025/asmt and +5-12s for no grade movement, ever.
     //
-    // S15 RESTORATION DESIGN (differs from the May 13 implementation):
-    //   - Trigger: unslabbed assessments only (`isCGC && !parsed.labelDetected
-    //     && parsed.grade`). Slabbed books pull grade from the printed label,
-    //     so refinement is moot.
-    //   - Reference set: 1 image at the assessed grade (base case). Neighbor
-    //     tiers (assessed ±1) can be added in a follow-up pass after this
-    //     is calibration-verified.
-    //   - DO NOT re-send user photos. The previous implementation included
-    //     the full imageBlocks array, doubling both cost and latency. The
-    //     model has its own prior text result + the new reference; that is
-    //     sufficient for "confirm or adjust the grade."
-    //   - Reference book is NEVER named in user-visible output. Prompt
-    //     enforces "the reference at this grade" / "the ${grade} reference"
-    //     phrasing only — never the actual title or issue number.
+    // If re-enabling, fix the design first. Two viable rewrites:
+    //   (a) Resend the user's original images to refinement alongside the
+    //       reference image. Refinement compares actual photos to reference
+    //       photo and can independently judge severity. Cost: ~+$0.05/asmt.
+    //   (b) Two-pass primary: include reference image in the primary call
+    //       itself, instructing the model to compare its assessment to the
+    //       reference before finalizing. Lower latency, better integration.
     //
-    // Cost delta vs. disabled state: +~$0.025/assessment.
-    //   (1 ref image ~$0.012 + ~500 input tokens + ~500-800 output tokens.)
-    // Latency delta: +~5-8s.
-    //
-    // Failure mode: any non-ok response, non-parseable JSON, missing ref
-    // image, or fetch timeout silently falls through with gradeRef=false.
-    // The original assessment is returned unchanged.
+    // Leaving the constant for downstream code that references gradeRefSucceeded
+    // (timing-doc gradeRefRan field, _diagnostics.gradeRef). Both will report
+    // false on every assessment now.
+    // ─────────────────────────────────────────────────────────────────────
     let gradeRefSucceeded = false;
-    if (isCGC && !parsed.labelDetected && parsed.grade) {
-      const _refineStart = Date.now();
-      const _refImgFetchStart = Date.now();
-      const refImage = baseUrl ? await fetchGradeReference(parsed.grade, baseUrl) : null;
-      phaseDelta('refineImageFetchMs', _refImgFetchStart);
-      if (refImage) {
-        // Build a compact text summary of the prior assessment to give the
-        // refinement call enough context to confirm or adjust the grade
-        // WITHOUT re-sending the original user photos.
-        const defectLines = (parsed.roboGrade && Array.isArray(parsed.roboGrade.defects))
-          ? parsed.roboGrade.defects.map(d => {
-              const sev = d.severity || 'Med';
-              const cb = d.colorBreaking ? ' [COLOR-BREAKING]' : '';
-              const loc = d.location ? ` @ ${d.location}` : '';
-              const meas = d.measurement ? ` (${d.measurement})` : '';
-              const cat = d.category ? ` <${d.category}>` : '';
-              return `  - ${sev}: ${d.type}${loc}${meas}${cb}${cat}`;
-            }).join('\n')
-          : '  (no defects listed)';
-        const rg = parsed.roboGrade || {};
-        const priorSummary = `PRIOR ASSESSMENT SUMMARY (to refine):
-  Grade: ${parsed.grade}
-  Page Quality: ${parsed.pageQuality || '(unset)'}
-  Robograde score: ${rg.score ?? '?'} = Front ${rg.frontScore ?? '?'} + Back ${rg.backScore ?? '?'} + Spine ${rg.spineScore ?? '?'} + Interior ${rg.interiorScore ?? '?'}
-  Confidence range: ±${rg.confidenceRange ?? '?'}
-  Staple condition: ${rg.stapleCondition || '(unset)'}
-  Defects:
-${defectLines}
-  Narrative: ${parsed.aiAssessment || '(none)'}
-  Grader notes: ${parsed.graderNotes || '(none)'}`;
-
-        const refPrompt = `You previously assessed this comic at grade ${parsed.grade}, based on photos you have already seen and analyzed. The summary of that prior assessment is above.
-
-You are now being shown a single image: an official grading-board reference for grade ${parsed.grade}. This is a real comic that was professionally graded at exactly ${parsed.grade}, used as a calibration anchor.
-
-Your task: compare the defects and overall condition described in your prior assessment summary against what is shown in the ${parsed.grade} reference image. Based on that comparison:
-  - If the defects you noted are MORE SEVERE than what the ${parsed.grade} reference exhibits, the book likely grades LOWER than ${parsed.grade}. Adjust downward.
-  - If the defects you noted are LESS SEVERE than what the ${parsed.grade} reference exhibits, the book likely grades HIGHER than ${parsed.grade}. Adjust upward.
-  - If the defects are roughly comparable in severity and distribution, ${parsed.grade} is correct. Confirm.
-
-Adjust by half-grade increments. Most refinements should be 0 or ±0.5; a ±1.0 swing should require clear evidence in the comparison.
-
-Return ONLY a JSON object with these fields:
-{
-  "grade": "refined grade as string with one decimal, e.g. 6.5",
-  "refinementReason": "1-2 sentences explaining what changed (or 'No change — defects align with the reference at this grade.')"
-}
-
-CRITICAL — do not name the reference book in any output. The reference is a real graded comic that we use internally as a calibration anchor, but it is not the book being assessed and naming it would confuse the user. Refer to it generically as "the ${parsed.grade} reference" or "the reference at this grade" — never as "Hulk 181", "Hulk #181", "the Hulk reference", or any specific title or issue number. This is non-negotiable.`;
-
-        try {
-          const _refineCallStart = Date.now();
-          // Dynamic refinement timeout. Total budget is ~58s (Vercel 60s
-          // ceiling minus safety margin for parsing + Firestore write).
-          // Use whatever's left, capped at 12s.
-          const _budgetLeft = Math.max(2000, Math.min(12000, 58000 - (Date.now() - T0)));
-          const refResp = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-            body: JSON.stringify({
-              model: 'claude-opus-4-6',
-              max_tokens: 600,
-              messages: [{
-                role: 'user',
-                content: [
-                  { type: 'text', text: priorSummary },
-                  { type: 'text', text: `REFERENCE IMAGE — grade ${parsed.grade}:` },
-                  refImage,
-                  { type: 'text', text: refPrompt }
-                ]
-              }]
-            })
-          }, _budgetLeft);
-          phaseDelta('refineCallMs', _refineCallStart);
-          if (refResp.ok) {
-            const refData = await refResp.json();
-            const refText = refData.content?.map(b => b.text || '').join('') || '';
-            let refClean = refText.replace(/```json/gi, '').replace(/```/g, '').replace(/'''/g, '').trim();
-            const _rfb = refClean.indexOf('{'), _rlb = refClean.lastIndexOf('}');
-            if (_rfb !== -1 && _rlb !== -1) refClean = refClean.slice(_rfb, _rlb + 1);
-            let refParsed = null;
-            try { refParsed = JSON.parse(refClean); } catch(e) { refParsed = null; }
-            if (refParsed && refParsed.grade) {
-              // Normalize and apply refined grade. Sub-scores and defect
-              // list stay as-is from the primary pass — only the headline
-              // grade and an optional refinement note are touched.
-              let refinedGrade = String(refParsed.grade);
-              if (!refinedGrade.includes('.')) refinedGrade = parseFloat(refinedGrade).toFixed(1);
-              if (refinedGrade !== parsed.grade) {
-                parsed.gradeBeforeRefinement = parsed.grade;
-                parsed.grade = refinedGrade;
-              }
-              if (refParsed.refinementReason) {
-                parsed.refinementReason = String(refParsed.refinementReason);
-              }
-              gradeRefSucceeded = true;
-            }
-          }
-        } catch (e) {
-          // Refinement failed — fall through with original assessment.
-        }
-      }
-      phaseDelta('refineTotalMs', _refineStart);
-    }
+    // (refinement block intentionally removed; see history comment above)
     // ─────────────────────────────────────────────────────────────────────
 
     parsed._diagnostics = {
