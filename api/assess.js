@@ -1025,7 +1025,11 @@ RETURN ONLY THIS JSON — no markdown, no preamble
   try {
     markPhase('promptAssemblyAtMs');
     const _primaryStart = Date.now();
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    // S15: hard 50s timeout on the primary call. Vercel kills the function
+    // at 60s; we need our own catch block to fire before then so the
+    // timing data can be written to Firestore. Without this, a timed-out
+    // assessment leaves no trace.
+    const response = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1062,7 +1066,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
           ]
         }]
       })
-    });
+    }, 50000);
     phaseDelta('primaryCallMs', _primaryStart);
 
     if (!response.ok) {
@@ -1233,6 +1237,10 @@ CRITICAL — do not name the reference book in any output. The reference is a re
 
         try {
           const _refineCallStart = Date.now();
+          // Dynamic refinement timeout. Total budget is ~58s (Vercel 60s
+          // ceiling minus safety margin for parsing + Firestore write).
+          // Use whatever's left, capped at 12s.
+          const _budgetLeft = Math.max(2000, Math.min(12000, 58000 - (Date.now() - T0)));
           const refResp = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
@@ -1249,7 +1257,7 @@ CRITICAL — do not name the reference book in any output. The reference is a re
                 ]
               }]
             })
-          }, 20000);
+          }, _budgetLeft);
           phaseDelta('refineCallMs', _refineCallStart);
           if (refResp.ok) {
             const refData = await refResp.json();
@@ -1539,13 +1547,14 @@ CRITICAL — do not name the reference book in any output. The reference is a re
     if (!parsed._diagnostics) parsed._diagnostics = {};
     parsed._diagnostics.phaseTimings = phaseTimings;
 
-    // Fire-and-forget Firestore write to assessment_timings/{key}. Never
-    // await — we don't want the timing log to add latency to the response.
-    // Key is the roboGradeId if available, else a timestamp fallback.
-    (async () => {
-      try {
-        const db = await getAdminDb();
-        if (!db) return;
+    // Await the Firestore write. On Vercel serverless, fire-and-forget
+    // promises often don't complete — the function process is suspended
+    // as soon as the response is sent. The wall-clock data is what makes
+    // this whole feature useful for diagnosing timeouts, so we pay the
+    // (small, <200ms typically) write latency to ensure it persists.
+    try {
+      const db = await getAdminDb();
+      if (db) {
         const key = (parsed.roboGrade && parsed.roboGrade.roboGradeId)
           || parsed.roboGradeId
           || `t_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -1562,20 +1571,19 @@ CRITICAL — do not name the reference book in any output. The reference is a re
           gradeBeforeRefinement: parsed.gradeBeforeRefinement || null,
           timedOut: false
         });
-      } catch (e) {
-        console.error('assessment_timings write failed (non-fatal):', e);
       }
-    })();
+    } catch (e) {
+      console.error('assessment_timings write failed (non-fatal):', e);
+    }
 
     return res.status(200).json(parsed);
   } catch (err) {
     // Capture timing even on error — these are the diagnostically valuable cases.
     phaseTimings.totalMs = Date.now() - T0;
     phaseTimings.errorAtMs = phaseTimings.totalMs;
-    (async () => {
-      try {
-        const db = await getAdminDb();
-        if (!db) return;
+    try {
+      const db = await getAdminDb();
+      if (db) {
         const key = `t_err_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         await db.collection('assessment_timings').doc(key).set({
           createdAt: new Date().toISOString(),
@@ -1586,10 +1594,10 @@ CRITICAL — do not name the reference book in any output. The reference is a re
           errorMessage: String(err.message || err).slice(0, 500),
           timedOut: /timeout|abort/i.test(String(err.message || err))
         });
-      } catch (e) {
-        console.error('assessment_timings (err path) write failed (non-fatal):', e);
       }
-    })();
+    } catch (e) {
+      console.error('assessment_timings (err path) write failed (non-fatal):', e);
+    }
     return res.status(500).json({ error: err.message, _diagnostics: { phaseTimings } });
   }
 }
