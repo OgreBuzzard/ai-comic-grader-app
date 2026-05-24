@@ -6253,7 +6253,18 @@ async function assessHighGrade() {
   }
   assessing = false;
   // S15: re-render so the "Assessing…" button resets on error path.
-  if (view === 'edit' || view === 'add') renderForm();
+  if (window.RobograderScan && window.RobograderScan.debugLog) {
+    window.RobograderScan.debugLog(`hg post-catch: view=${view}, assessing=${assessing}`);
+  }
+  if (view === 'edit' || view === 'add' || view === 'detail') {
+    renderForm();
+  }
+  const _stuck = document.getElementById('assess-btn') || document.getElementById('hg-assess-btn');
+  if (_stuck && _stuck.textContent && /ASSESS/i.test(_stuck.textContent)) {
+    _stuck.textContent = _assessed ? 'Re-assess Grade' : 'Assess Grade';
+    _stuck.disabled = false;
+    _stuck.style.opacity = '';
+  }
 }
 
 function startRestorationCheck() {
@@ -7742,7 +7753,23 @@ async function assessGrade(){
   // "Re-assess Grade" on the error path. Previously the button stayed
   // stuck and users had to trigger a render via some other state change
   // (toggling ownership was the known workaround).
-  if (view === 'edit' || view === 'add') renderForm();
+  // S15 hotfix: also handle 'detail' view in case user reached here via
+  // the detail panel's Re-assess action. Direct button DOM mutation
+  // fallback covers any case the view check misses.
+  if (window.RobograderScan && window.RobograderScan.debugLog) {
+    window.RobograderScan.debugLog(`std post-catch: view=${view}, assessing=${assessing}, will renderForm=${view==='edit'||view==='add'||view==='detail'}`);
+  }
+  if (view === 'edit' || view === 'add' || view === 'detail') {
+    renderForm();
+  }
+  // Defense in depth: directly reset any stuck assess button text/state
+  // in case renderForm() didn't catch the right view.
+  const _stuck = document.getElementById('assess-btn') || document.getElementById('hg-assess-btn');
+  if (_stuck && _stuck.textContent && /ASSESS/i.test(_stuck.textContent)) {
+    _stuck.textContent = _assessed ? 'Re-assess Grade' : 'Assess Grade';
+    _stuck.disabled = false;
+    _stuck.style.opacity = '';
+  }
 }
 
 // Show a terminated-assessment preview when the gate catches NOT_COMIC or FLAGGED.
