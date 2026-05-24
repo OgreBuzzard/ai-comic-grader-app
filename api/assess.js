@@ -24,7 +24,7 @@
 //         rubric tied to Spine score deductions, pressing/cleaning candidate
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '3.41';
+const ROBOGRADE_VERSION = '3.5';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -998,7 +998,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-opus-4-6',
+        model: 'claude-sonnet-4-6',
         max_tokens: 4096,
         system: systemPrompt,
         messages: [{
@@ -1524,7 +1524,8 @@ CRITICAL — do not name the reference book in any output. The reference is a re
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
-          model: 'claude-opus-4-6',
+          model: 'claude-sonnet-4-6',
+          refineModel: 'claude-opus-4-6',
           highGrade: !!highGrade,
           gradeRefRan: gradeRefSucceeded,
           gateResult: parsed.gateResult || 'COMIC',
@@ -1551,7 +1552,8 @@ CRITICAL — do not name the reference book in any output. The reference is a re
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
-          model: 'claude-opus-4-6',
+          model: 'claude-sonnet-4-6',
+          refineModel: 'claude-opus-4-6',
           errorMessage: String(err.message || err).slice(0, 500),
           timedOut: /timeout|abort/i.test(String(err.message || err))
         });
