@@ -24,7 +24,7 @@
 //         rubric tied to Spine score deductions, pressing/cleaning candidate
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '3.5';
+const ROBOGRADE_VERSION = '3.51';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -624,6 +624,11 @@ THREE ANCHORING RULES:
 
 3. FAVOR THE WHITER TIER WHEN AMBIGUOUS. When sample sits between two reference colors, pick the whiter designation. Use the darker designation only when the sample is clearly at or past that reference tone.
 
+4. APPLY THE TWO-PART TEST BEFORE TAGGING C/OW OR LOWER (v3.5). The single most common error pattern in calibration has been tagging Silver/Bronze Age books as Cream to Off-White when they are actually Off-White to White, driven by warm ambient lighting in the user's photos. Before assigning C/OW or lower, REQUIRE both of the following to be true:
+   (a) The unprinted page margins of the assessed photo are noticeably warmer than the unprinted margins of the WARMEST reference example, when compared margin-to-margin (not photo-to-photo).
+   (b) At least one piece of SPECIFIC, NAMEABLE evidence is present: visible foxing dots, rust marks, brown-tinged edges contrasting with a lighter center, obvious brittleness, or a uniform tone-shift visibly darker than any white element in the assessment photo (white speech balloon, white border, or a similar reference within the same shot).
+   If only (a) is true but (b) is absent, the warmth is camera/lighting bias. Default to OW/W or OW (whichever the margin tone supports). Tagging C/OW based on overall photo warmth alone is the error this rule exists to prevent.
+
 Full designations only: White, Off-White to White, Off-White, Cream to Off-White, Cream, Light Tan to Cream, Light Tan, Tan, Brown, Brown/Brittle, Brittle.
 
 PQ score for interior component: White=100, OW/W=94, OW=86, C/OW=76, Cream=64, LT/C=50, LT=36, Tan=22, Brown=10, Brittle=0
@@ -768,7 +773,7 @@ Rules:
   - stapleCondition field must be ONE of: (a) specific description matching verified-clean observation (e.g. "Both staples visible, silver, no surrounding discoloration"); (b) specific description matching observed defect; or (c) "Staple condition cannot be reliably determined from provided image resolution — close-up photo recommended for confirmation." Do NOT use the bare phrase "Staples intact and firmly set, no visible rust or migration" as a default; reserve it for actually-verified-clean cases.
   - If stapleCondition path (c) is used, add at least +2 to confidence range for staple inspection uncertainty alone (also widen for: glare, poor focus, no raking light, restoration suspected).
 
-SPINE TICK INSPECTION (v3.4 — required for every assessment):
+SPINE TICK INSPECTION (v3.5 — required for every assessment):
 
 Spine ticks are 1–3mm WHITE marks along the spine edge (left edge of front cover), perpendicular or slightly diagonal, where paper shows through stressed ink. They are the dominant defect distinguishing 9.4 from 9.8. White-on-colored-background is the signature — anything colored or grey is NOT a tick (it's interior ink, print artifact, or compression noise). White or cream spine regions are blind spots; ticks invisible there even when present.
 
@@ -776,12 +781,39 @@ Where to look: front cover photo (full length, especially middle third), corner 
 
 Rules:
   - NEVER default to "no spine ticks observed" when the spine edge isn't clearly resolvable (out of focus, glare, cropped, white-on-white). Honest output is "Spine tick condition cannot be reliably determined — clearer front cover photo or corner macros recommended."
-  - For each tick or group observed, add a "Spine tick" defect (category Spine):
-      Low  = 1–2 non-color-breaking ticks    → Spine score -1 to -2
-      Med  = 3–5 ticks OR any color-breaking → Spine score -3 to -6
-      High = 6+ ticks OR paper-fiber damage  → Spine score -7 to -12 (often drops out of 9.x)
+  - For each tick or group observed, add a "Spine tick" defect (category Spine). Severity tied to BOTH count and color-breaking, with explicit anchors:
+      Low  = 1–2 non-color-breaking ticks, no color-breaking         → Spine score -1 to -2
+      Med  = 3–5 non-color-breaking OR 1–2 color-breaking ticks      → Spine score -3 to -6
+      High = 6+ non-color-breaking OR 3+ color-breaking OR paper-fiber damage → Spine score -7 to -12 (often drops out of 9.x)
+    Color-breaking does not automatically jump to High. A book with 2 color-breaking ticks is Med, not High. The High threshold is 3+ color-breaking ticks OR 6+ total ticks OR paper-fiber damage.
   - Set defect.colorBreaking = true when ink is visibly disrupted exposing white paper. When colorBreaking = false, add "pressing candidate" to the defect.measurement field.
   - If the cannot-be-reliably-determined path is used, add at least +2 to confidence range.
+
+SPINE ROLL INSPECTION (v3.5 — required when a spine roll is observed):
+
+Spine roll is a curl/warp where the cover no longer lies flat — best assessed from the spine-edge photo (oblique side view). The defect is real, but variance across runs has been driven by inconsistent severity tagging of the SAME observation. Anchor severity to deflection of the spine edge from a flat reference plane:
+
+  Low  = barely perceptible roll, < 1/8" deflection from flat, cover essentially lies flat → Spine score -1 to -2
+  Med  = 1/8" to 1/4" deflection, modest cover lift visible from side angle               → Spine score -3 to -5
+  High = > 1/4" deflection, dramatic cover lift, book does not close flat                  → Spine score -6 to -10
+
+When you observe spine roll, include a deflection estimate in the defect.measurement field (e.g. "~3/16\"" or "~1/4\"") so the severity is justified by a number, not a vague qualifier. "Moderate spine roll" with no measurement is NOT an acceptable description — translate "moderate" to an estimate before tagging severity.
+
+Spine roll is NOT an enhancement candidate by default in the ENHANCEMENT TAGGING section, but a competent presser can reduce most non-extreme rolls. When colorBreaking is false and the roll is Low or Med, you may tag it "pressing candidate" in the measurement field if you also estimate deflection.
+
+MEASUREMENTS DISCIPLINE (v3.5):
+
+For ANY defect where extent is meaningful (spine roll, edge wear, soiling, tanning, creases, corner blunting), the defect.measurement field MUST contain a specific extent — a fraction of an inch, a percentage of area, a count, or a similar concrete value. Vague qualifiers ("moderate", "light", "minor", "extensive") are NOT measurements; they describe the defect but do not anchor its severity to anything checkable. Use those words in the description if helpful, but ALSO supply a measurement.
+
+Examples:
+  GOOD: measurement "~1/8\" each corner, paper present throughout"
+  GOOD: measurement "lower left quadrant, ~1 inch, non-color-breaking"
+  GOOD: measurement "~3/16\" deflection, pressing candidate"
+  BAD:  measurement "moderate" (vague — not a measurement)
+  BAD:  measurement "light" (vague — not a measurement)
+  BAD:  measurement "" (empty — no anchor for severity)
+
+This rule exists because variance in severity tags across runs on identical photos was traced to vague descriptions like "moderate" being tagged Low / Med / High inconsistently. Forcing a measurement forces the severity tag to be defensible against the rubric anchors above.
 
 ENHANCEMENT TAGGING (related to spine ticks AND general cover defects):
 
@@ -790,7 +822,8 @@ When defects are observed that are removable by pressing or cleaning, flag them 
   • Spine tick without color break → "pressing candidate" (same — heat and pressure may reduce or remove the impression)
   • Surface dirt, fingerprints, light smudges → "cleaning candidate" (expert cleaning may remove)
   • Color-breaking defects (any kind) → NOT enhancement candidates — color break is permanent damage that pressing cannot restore
-  • Spine roll, missing pieces, tape residue, water damage → NOT enhancement candidates
+  • Spine roll (Low or Med severity, non-color-breaking) → "pressing candidate" (a competent presser can typically reduce non-extreme rolls)
+  • Missing pieces, tape residue, water damage, High-severity spine roll → NOT enhancement candidates
 
 These tags help the user decide whether the book is worth submitting for professional enhancement before grading.
 
