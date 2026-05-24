@@ -31,6 +31,25 @@ export default async function handler(req, res) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'API key not configured' });
 
+  // ── S15 phase timing instrumentation ─────────────────────────────────────
+  // Wall-clock deltas at phase boundaries. Server-only — never sent to the
+  // Anthropic API (zero token cost). Attached to the response under
+  // _diagnostics.phaseTimings, and written fire-and-forget to a Firestore
+  // collection `assessment_timings/{roboGradeId}` (or a timestamp key on
+  // failure) for aggregate analysis across many assessments.
+  //
+  // Purpose: diagnose where the ~50% timeout failure rate is coming from.
+  // Until we have data on which phase dominates wall time, any "fix" is a
+  // guess.
+  const T0 = Date.now();
+  const phaseTimings = {};
+  function markPhase(name) {
+    phaseTimings[name] = Date.now() - T0;
+  }
+  function phaseDelta(name, since) {
+    phaseTimings[name] = Date.now() - since;
+  }
+
   // ── Abuse prevention helpers ─────────────────────────────────────────────
   // Inline so the function can be invoked from anywhere in the handler.
   const STRIKE_LOCKOUT_THRESHOLD = 3;
@@ -308,7 +327,9 @@ export default async function handler(req, res) {
         pqIsPsaReference = r.isPsaReference;
       }
     }) : Promise.resolve();
+    const _refImageStart = Date.now();
     await Promise.all([cvFetch, pqFetch]);
+    phaseDelta('refImageFetchMs', _refImageStart);
   }
 
 
@@ -1002,6 +1023,8 @@ RETURN ONLY THIS JSON — no markdown, no preamble
 
 
   try {
+    markPhase('promptAssemblyAtMs');
+    const _primaryStart = Date.now();
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -1040,12 +1063,14 @@ RETURN ONLY THIS JSON — no markdown, no preamble
         }]
       })
     });
+    phaseDelta('primaryCallMs', _primaryStart);
 
     if (!response.ok) {
       const err = await response.text();
-      return res.status(500).json({ error: 'Anthropic API error: ' + err });
+      return res.status(500).json({ error: 'Anthropic API error: ' + err, _diagnostics: { phaseTimings, primaryNotOk: true } });
     }
 
+    const _primaryParseStart = Date.now();
     const data = await response.json();
     const text = data.content[0].text.trim();
     let clean = text.replace(/```json/gi, '').replace(/```/g, '').replace(/'''/g, '').trim();
@@ -1054,7 +1079,8 @@ RETURN ONLY THIS JSON — no markdown, no preamble
 
     let parsed;
     try { parsed = JSON.parse(clean); }
-    catch (e) { return res.status(500).json({ error: 'Failed to parse response: ' + text }); }
+    catch (e) { return res.status(500).json({ error: 'Failed to parse response: ' + text, _diagnostics: { phaseTimings, parseError: true } }); }
+    phaseDelta('primaryParseMs', _primaryParseStart);
 
     // ── Gate check: if the model determined this isn't a comic or is flagged content,
     //    return early with a special response. Server records the strike
@@ -1101,6 +1127,7 @@ RETURN ONLY THIS JSON — no markdown, no preamble
           console.error('Server-side strike recording failed:', e);
         }
       }
+      phaseTimings.totalMs = Date.now() - T0;
       return res.status(200).json({
         gateResult: parsed.gateResult,
         gateReason: parsed.gateReason || '',
@@ -1111,7 +1138,8 @@ RETURN ONLY THIS JSON — no markdown, no preamble
           pageQualityRef: pageQualityImageBlock !== null,
           pageQualityRefIsPsa: pqIsPsaReference,
           hasInteriorPhoto: hasInteriorPhoto,
-          gateTerminated: true
+          gateTerminated: true,
+          phaseTimings: phaseTimings
         }
       });
     }
@@ -1154,7 +1182,10 @@ RETURN ONLY THIS JSON — no markdown, no preamble
     // The original assessment is returned unchanged.
     let gradeRefSucceeded = false;
     if (isCGC && !parsed.labelDetected && parsed.grade) {
+      const _refineStart = Date.now();
+      const _refImgFetchStart = Date.now();
       const refImage = baseUrl ? await fetchGradeReference(parsed.grade, baseUrl) : null;
+      phaseDelta('refineImageFetchMs', _refImgFetchStart);
       if (refImage) {
         // Build a compact text summary of the prior assessment to give the
         // refinement call enough context to confirm or adjust the grade
@@ -1201,6 +1232,7 @@ Return ONLY a JSON object with these fields:
 CRITICAL — do not name the reference book in any output. The reference is a real graded comic that we use internally as a calibration anchor, but it is not the book being assessed and naming it would confuse the user. Refer to it generically as "the ${parsed.grade} reference" or "the reference at this grade" — never as "Hulk 181", "Hulk #181", "the Hulk reference", or any specific title or issue number. This is non-negotiable.`;
 
         try {
+          const _refineCallStart = Date.now();
           const refResp = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
@@ -1218,6 +1250,7 @@ CRITICAL — do not name the reference book in any output. The reference is a re
               }]
             })
           }, 20000);
+          phaseDelta('refineCallMs', _refineCallStart);
           if (refResp.ok) {
             const refData = await refResp.json();
             const refText = refData.content?.map(b => b.text || '').join('') || '';
@@ -1246,6 +1279,7 @@ CRITICAL — do not name the reference book in any output. The reference is a re
           // Refinement failed — fall through with original assessment.
         }
       }
+      phaseDelta('refineTotalMs', _refineStart);
     }
     // ─────────────────────────────────────────────────────────────────────
 
@@ -1500,8 +1534,62 @@ CRITICAL — do not name the reference book in any output. The reference is a re
       parsed.roboGrade.confidenceRange = conf;
     }
 
+    // ── S15 phase timing finalize ────────────────────────────────────────
+    phaseTimings.totalMs = Date.now() - T0;
+    if (!parsed._diagnostics) parsed._diagnostics = {};
+    parsed._diagnostics.phaseTimings = phaseTimings;
+
+    // Fire-and-forget Firestore write to assessment_timings/{key}. Never
+    // await — we don't want the timing log to add latency to the response.
+    // Key is the roboGradeId if available, else a timestamp fallback.
+    (async () => {
+      try {
+        const db = await getAdminDb();
+        if (!db) return;
+        const key = (parsed.roboGrade && parsed.roboGrade.roboGradeId)
+          || parsed.roboGradeId
+          || `t_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        await db.collection('assessment_timings').doc(key).set({
+          createdAt: new Date().toISOString(),
+          totalMs: phaseTimings.totalMs,
+          phases: phaseTimings,
+          version: ROBOGRADE_VERSION,
+          model: 'claude-opus-4-6',
+          highGrade: !!highGrade,
+          gradeRefRan: gradeRefSucceeded,
+          gateResult: parsed.gateResult || 'COMIC',
+          predictedGrade: parsed.grade || null,
+          gradeBeforeRefinement: parsed.gradeBeforeRefinement || null,
+          timedOut: false
+        });
+      } catch (e) {
+        console.error('assessment_timings write failed (non-fatal):', e);
+      }
+    })();
+
     return res.status(200).json(parsed);
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    // Capture timing even on error — these are the diagnostically valuable cases.
+    phaseTimings.totalMs = Date.now() - T0;
+    phaseTimings.errorAtMs = phaseTimings.totalMs;
+    (async () => {
+      try {
+        const db = await getAdminDb();
+        if (!db) return;
+        const key = `t_err_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        await db.collection('assessment_timings').doc(key).set({
+          createdAt: new Date().toISOString(),
+          totalMs: phaseTimings.totalMs,
+          phases: phaseTimings,
+          version: ROBOGRADE_VERSION,
+          model: 'claude-opus-4-6',
+          errorMessage: String(err.message || err).slice(0, 500),
+          timedOut: /timeout|abort/i.test(String(err.message || err))
+        });
+      } catch (e) {
+        console.error('assessment_timings (err path) write failed (non-fatal):', e);
+      }
+    })();
+    return res.status(500).json({ error: err.message, _diagnostics: { phaseTimings } });
   }
 }
