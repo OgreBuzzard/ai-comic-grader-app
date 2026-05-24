@@ -2115,6 +2115,14 @@ function formatIssueDateCompact(d) {
   return s;
 }
 function esc(s){return s?String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"):""}
+// Escape a string for safe use inside a SINGLE-QUOTED JS string literal that
+// is itself inside a DOUBLE-QUOTED HTML attribute (e.g. onclick="foo('...')").
+// Apostrophes break the inner JS string; backslashes break escape sequences.
+// HTML attribute parsing handles & and < on its own, but we still encode the
+// apostrophe as &#39; for defense-in-depth across attribute contexts.
+// Use this anywhere a user-controlled string is interpolated into onclick=,
+// onchange=, etc. Plain text content keeps using esc().
+function escJsAttr(s){return s?String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"):""}
 
 let items=[], collapsed={}, view="list", selected=null, sortBy="title", search="", _listScrollY=0, _lastDetailId=null;
 let db, fsCollection, fsGetDocs, fsSetDoc, fsDeleteDoc, fsDoc, fsOnSnapshot, fsGetDoc;
@@ -3616,7 +3624,7 @@ function renderList(){
         const collapseKey = section.ownership ? `${section.ownership}::${title}` : title;
         const isOpen=collapsed[collapseKey]===false;
         html+=`<div style="margin-bottom:16px">
-          <div class="group-header" onclick="toggleGroup('${esc(collapseKey)}')">
+          <div class="group-header" onclick="toggleGroup('${escJsAttr(collapseKey)}')">
             <span class="group-chevron${isOpen?" open":""}">›</span>
             ${esc(title)} <span style="color:#9a8a7a;letter-spacing:1px">(${section.groups[title].length})</span>
           </div>`;
