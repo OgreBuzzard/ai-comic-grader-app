@@ -75,7 +75,7 @@ export default async function handler(req, res) {
     // Step 3: flatten v3 nested shape to a single object for downstream reads.
     // v3 has comic-specific fields inside `comicData`; pre-v3 has them flat at
     // root. Tolerate both.
-    const comic = (raw.schemaVersion === 3)
+    let comic = (raw.schemaVersion === 3)
       ? { ...raw, ...(raw.comicData || {}), ...(raw.cardData || {}) }
       : raw;
 
@@ -83,7 +83,25 @@ export default async function handler(req, res) {
     // publicListing lives at the root in both shapes (it's universal metadata,
     // not type-specific), and roboGradeId likewise — so these reads work
     // regardless of the spread above.
-    if (!comic.publicListing || comic.roboGradeId !== gradeId) {
+    //
+    // S15: if the live comic's roboGradeId doesn't match the requested ID,
+    // the assessment has been superseded by a re-assessment. Fall back to
+    // archived_assessments/{requestedId} which is written on every re-assess.
+    // Public visibility still gated by the registry (step 1 above) AND the
+    // archive's own publicListing flag (privacy mirror keeps these in sync).
+    if (comic.roboGradeId !== gradeId) {
+      const archDoc = await db.collection('archived_assessments').doc(gradeId).get();
+      if (!archDoc.exists) {
+        return res.status(403).json({ error: 'This assessment is private' });
+      }
+      const archRaw = archDoc.data();
+      if (!archRaw.publicListing) {
+        return res.status(403).json({ error: 'This assessment is private' });
+      }
+      // Archive is already stored flat (snapshot was flattened at write
+      // time in index.html submitForm). Use it directly.
+      comic = archRaw;
+    } else if (!comic.publicListing) {
       return res.status(403).json({ error: 'This assessment is private' });
     }
 
@@ -93,8 +111,10 @@ export default async function handler(req, res) {
     // (main + corner) were captured in-app. Pre-v3 records have no provenance
     // metadata at all and are treated as 'unverified' — accurate, since the
     // capture system didn't exist when those photos were taken.
-    const mainEntries   = Array.isArray(raw.images)        ? raw.images        : [];
-    const cornerEntries = Array.isArray(raw.cornerImages)  ? raw.cornerImages  : [];
+    // Read from `comic` (which may be the live record OR an archive snapshot
+    // per Step 4 fallback) — NOT `raw`, which is always the live doc.
+    const mainEntries   = Array.isArray(comic.images)        ? comic.images        : [];
+    const cornerEntries = Array.isArray(comic.cornerImages)  ? comic.cornerImages  : [];
 
     const flatImages = mainEntries
       .map(e => (typeof e === 'string' ? e : (e && e.url) || null))
