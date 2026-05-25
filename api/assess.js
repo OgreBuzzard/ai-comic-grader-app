@@ -24,7 +24,7 @@
 //         rubric tied to Spine score deductions, pressing/cleaning candidate
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '3.95';
+const ROBOGRADE_VERSION = '3.96';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -933,7 +933,7 @@ These limits exist because over-elaboration in the output is the dominant cause 
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-opus-4-6',
+        model: 'claude-sonnet-4-6',
         max_tokens: 4096,
         system: systemPrompt,
         messages: [{
@@ -962,7 +962,7 @@ These limits exist because over-elaboration in the output is the dominant cause 
           ]
         }]
       })
-    }, 50000);
+    }, 55000);
     phaseDelta('primaryCallMs', _primaryStart);
 
     if (!response.ok) {
