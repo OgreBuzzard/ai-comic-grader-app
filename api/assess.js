@@ -24,7 +24,7 @@
 //         rubric tied to Spine score deductions, pressing/cleaning candidate
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '3.81';
+const ROBOGRADE_VERSION = '3.9';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -375,7 +375,6 @@ If census data raised or lowered your grade from what the photos alone would sug
     ? !!slotsFilled.interior
     : images.length >= 3;
   const hasPQReference = pageQualityImageBlock !== null;
-  const hasBackCover   = slotsFilled ? !!slotsFilled.back : images.length >= 2;
   const photoCount     = images.length;
   // Base confidence range. Tightens as evidence accumulates:
   //   High-grade run (4 main + 4 corner macros = 8 images): ±3.
@@ -437,7 +436,6 @@ RULES FOR HIGH-GRADE ASSESSMENT:
   // ── RoboGrade formula (4-category, backwards from final score) ───────────────
   // Score = (Front × 0.5) + (Back × 0.2) + (Spine × 0.2) + (Interior × 0.1)
   // Spine includes inner corners at top and bottom of spine
-  const backScoreDefault = hasBackCover ? '0' : 'null';
 
   // ── CGC grade tier thresholds (factual allowances per grade, reworded) ────────
   const CGC_GRADE_TIERS = `
@@ -609,26 +607,27 @@ When the photos show a book that "presents well" — strong color saturation, fl
 PAGE QUALITY:
 Assess from any interior photo. Phone cameras under typical indoor lighting consistently make pages look 1-2 tiers more yellowed than they actually are. Calibration data from 10 PSA-graded books in 2026 showed that the prior calibration was systematically under-reading PQ by 2 tiers on average — books PSA called Off-White to White were being called Cream to Off-White. The rules below correct that.
 
-THREE ANCHORING RULES:
+FOUR ANCHORING RULES:
 
-1. AGE-AWARE DEFAULT (STRENGTHENED). Books published before 1985 (Silver Age and Bronze Age) overwhelmingly grade at Off-White to White or White in the wild. Genuinely cream or tan pages are uncommon and tied to specific storage conditions (damp, sun-bleaching, acidic storage). For a pre-1985 book, the default page quality is Off-White to White unless you see SPECIFIC, NAMEABLE evidence to the contrary. "The page looks a bit yellow under indoor light" is NOT specific evidence — that is camera/lighting bias and the rule above tells you to discount it. Specific evidence means: visible foxing dots or rust marks, brown-tinged edges that contrast with a lighter center, obvious brittleness or splitting, or uniform tone visibly darker than the photo's white balance reference. Without that, default to OW/W.
+1. AGE-AWARE DEFAULT. Books published before 1985 (Silver Age and Bronze Age) overwhelmingly grade at Off-White to White or White in the wild. Genuinely cream or tan pages are uncommon and tied to specific storage conditions (damp, sun-bleaching, acidic storage). For a pre-1985 book, the default page quality is Off-White to White unless you see SPECIFIC, NAMEABLE evidence to the contrary. "The page looks a bit yellow under indoor light" is NOT specific evidence — that is camera/lighting bias. Specific evidence means: visible foxing dots or rust marks, brown-tinged edges contrasting with a lighter center, obvious brittleness or splitting.
 
-2. ANCHOR AGAINST THE REFERENCE (when present). When a Page Quality Reference image is provided, use it as the literal ground truth. The reference shows real interior photos of professionally graded books labeled with their actual page quality designations. Match the closest reference example. The reference covers the upper part of the scale; if the interior you are assessing looks comparable to ANY of the reference photos, the answer is Off-White to White or White accordingly. ONLY assign Off-White or lower when the interior is visibly more tanned than EVERY reference example.
+2. ANCHOR AGAINST THE PSA REFERENCE IMAGE. A Page Quality Reference image (Grade_Reference/pq_psa.jpg) is provided on EVERY assessment. It shows real interior photos of PSA-graded Silver Age books labeled with their page quality designations across the upper part of the scale. Use it as ground truth. Match the closest reference example. If the interior you are assessing looks comparable to ANY of the reference photos, the answer is Off-White to White or White accordingly. Only assign Off-White or lower when the interior is visibly more tanned than EVERY reference example.
 
-   STEPWISE FALLBACK BELOW THE REFERENCE: When you decide the interior IS warmer than every reference example, the next step down is **Off-White**, not Cream to Off-White. Do not skip a tier. C/OW requires substantial evidence of tanning beyond what would justify OW — a noticeably yellowed or cream cast across the page, not just "warmer than the reference whites." If you are dropping below the reference floor at all, the burden of proof is on the C/OW or lower designation; OW is the conservative default below the reference.
+   COMPARE EYE TO EYE, NOT BOOK TO BOOK. The reference photos and the photo you are assessing have different lighting, white balance, and exposure. Compare the unprinted page areas (margins between panels, gutters, white speech balloons) of the assessment photo to the unprinted page areas of the reference photos. Page tone is what matters — not the surrounding photo cast.
 
-   COMPARE EYE TO EYE, NOT BOOK TO BOOK. The reference photos and the photo you are assessing may have different lighting conditions, white balance, or exposure. Compare the unprinted page areas (margins between panels, gutters, white speech balloons) of the assessment photo to the unprinted page areas of the reference photos. Do not be misled by overall photo warmth that comes from the camera, the surface beneath the book, or ambient lighting. The page tone is what matters — not the surrounding photo cast.
+   WHITE BACKING / WHITE REFERENCE TECHNIQUE: when the assessment photo includes a white backing board, white surface, or other clearly-white element next to the interior page, use it as a lighting-bias correction reference. A pure white surface should appear as RGB ~#FFFFFF under perfect lighting. Observe how much the white reference in THIS photo deviates from #FFFFFF — that deviation is the camera's white-balance shift. Mentally subtract that shift from the page tone before classifying. This technique applies only when a clearly-white element is visible in the photo; disregard otherwise.
 
-3. FAVOR THE WHITER TIER WHEN AMBIGUOUS. When sample sits between two reference colors, pick the whiter designation. Use the darker designation only when the sample is clearly at or past that reference tone.
+   STEPWISE FALLBACK BELOW THE REFERENCE: when you decide the interior IS warmer than every reference example, the next step down is Off-White, not Cream to Off-White. Do not skip a tier. C/OW requires substantial evidence of tanning beyond what would justify OW.
 
-4. APPLY THE TWO-PART TEST BEFORE TAGGING C/OW OR LOWER (v3.5). The single most common error pattern in calibration has been tagging Silver/Bronze Age books as Cream to Off-White when they are actually Off-White to White, driven by warm ambient lighting in the user's photos. Before assigning C/OW or lower, REQUIRE both of the following to be true:
+3. FAVOR THE WHITER TIER WHEN AMBIGUOUS. When the sample sits between two reference colors, pick the whiter designation. Use the darker designation only when the sample is clearly at or past that reference tone.
+
+4. TWO-PART TEST BEFORE TAGGING C/OW OR LOWER. Before assigning C/OW or lower, BOTH must be true:
    (a) The unprinted page margins of the assessed photo are noticeably warmer than the unprinted margins of the WARMEST reference example, when compared margin-to-margin (not photo-to-photo).
-   (b) At least one piece of SPECIFIC, NAMEABLE evidence is present: visible foxing dots, rust marks, brown-tinged edges contrasting with a lighter center, obvious brittleness, or a uniform tone-shift visibly darker than any white element in the assessment photo (white speech balloon, white border, or a similar reference within the same shot).
-   If only (a) is true but (b) is absent, the warmth is camera/lighting bias. Default to OW/W or OW (whichever the margin tone supports). Tagging C/OW based on overall photo warmth alone is the error this rule exists to prevent.
+   (b) At least one piece of SPECIFIC, NAMEABLE evidence is present: visible foxing dots, rust marks, brown-tinged edges contrasting with a lighter center, obvious brittleness, or a uniform tone-shift visibly darker than any white element in the assessment photo.
+   If only (a) is true but (b) is absent, the warmth is camera/lighting bias. Default to OW/W or OW.
 
-Full designations only: White, Off-White to White, Off-White, Cream to Off-White, Cream, Light Tan to Cream, Light Tan, Tan, Brown, Brown/Brittle, Brittle.
-
-PQ score for interior component: White=100, OW/W=94, OW=86, C/OW=76, Cream=64, LT/C=50, LT=36, Tan=22, Brown=10, Brittle=0
+PQ DESIGNATION ↔ INTERIOR SCORE (absolute 1:1 mapping, the Interior score MUST equal this number):
+  White = 10  •  Off-White to White = 9  •  Off-White = 8  •  Cream to Off-White = 7  •  Cream = 6  •  Light Tan to Cream = 5  •  Light Tan = 4  •  Tan = 3  •  Brown = 2  •  Brown/Brittle = 1  •  Brittle = 0
 
 ## PHASE 2 — THREE GRADES FROM YOUR OBSERVATIONS
 
@@ -674,39 +673,23 @@ Per-category calibration (applied proportionally to the category maximum):
     or other professional associated with the book) — handle it as
     follows:
       • Record it in the defects array with type "Creator signature"
-        (NOT "Writing on cover"), severity "Low". The entry exists so
-        the owner can see the signature was identified and factored in.
-        It is INFORMATIONAL — see point below.
-      • Score Front, Back, Spine, and Interior AS IF THE SIGNATURE IS
-        NOT PRESENT. Do NOT deduct any points for the signature itself.
-        A clean signed book scores identically to the same clean book
-        with no signature. The signature does not lower the sub-score.
-      • CEILING CAP: a signed book CANNOT exceed Robograde 92 (predicted
-        ~9.6 / NM+). If the score calculation would land above 92, cap
-        it at 92. This reflects that an unverified signature on the
-        cover keeps a book out of the very top grade tier (Robograder
-        does not authenticate, so we cannot grant the "as if pristine"
-        ceiling), but it does NOT pull a mid- or high-grade book
-        downward. A book that would have scored 88 still scores 88; a
-        book that would have scored 95 caps to 92.
-      • In aiAssessment and aiGraderNotes, describe the signature as a
-        noted attribute (e.g. "Cover bears an apparent creator
-        signature reading 'Len Wein'"). Do NOT use damage language.
-        Do NOT say it "prevents higher grades" except in the specific
-        sense of the 92 ceiling — and only mention the ceiling when
-        the book would otherwise have exceeded it.
-      • You DO NOT and CANNOT authenticate signatures. Never say a
-        signature is genuine, authentic, real, verified, or consistent
-        with a creator's known style. Use "apparent signature reading
-        '<name>'" — the word "apparent" is required.
+        (NOT "Writing on cover"). Leave the severity field empty (""):
+        a creator signature is neither a defect nor a graded attribute,
+        just an observed feature.
+      • Do NOT deduct any points for the signature, anywhere. Score
+        Front, Back, Spine, and Interior exactly as you would for the
+        same book without the signature.
+      • In aiAssessment, describe the signature as an observed feature
+        (e.g. "Cover bears an apparent signature reading 'Len Wein'").
+        The word "apparent" is required — Robograder does not and
+        cannot authenticate signatures.
       • DISFIGUREMENT EXCEPTION: if the signature is so large and
         prominent that it physically dominates the cover image (e.g. a
         cover-spanning paint-pen mark obscuring artwork across more
         than half the cover), apply a single Med-severity deduction to
         Front for the physical impact. This exception is for genuine
         disfigurement only — a typical signature on the cover face,
-        however large, does NOT qualify. If you are unsure whether
-        something qualifies as disfigurement, it does not.
+        however large, does NOT qualify. If you are unsure, it doesn't.
     CONFIDENCE BAR: Apply this rule ONLY when you can read a plausible
     creator name in a deliberate signing style. If the writing is
     ambiguous (a scrawl, a number, an owner writing their name in
@@ -731,8 +714,9 @@ Per-category calibration (applied proportionally to the category maximum):
     • 7-10 = significant stress accumulation, split starting, staple pull
     • 0-6 = severe structural issues at spine
   Interior (max 10):
-    Interior score is DERIVED from page quality. Start from the PQ-mapped value below. If NO documented interior defect is present (no staple rust, no detached centerfold, no missing page, no significant interior soiling), the interior score MUST equal the PQ-mapped value exactly. Do NOT apply any deduction without a corresponding documented defect. A "general feeling" that the interior is rough is not a deduction trigger.
-    PQ → starting interior score (this IS the final score when no deduction applies):
+    Interior score is a direct 1:1 mapping from the page quality designation. No deductions. Interior defects (staple rust, detached centerfold, etc.) are routed to the Spine score, not Interior. Soiling and foxing affecting the pages factor into the PQ designation itself; they do not get a separate Interior deduction. Missing interior pages are not currently within scope of photo-based assessment and should not be evaluated.
+
+    PQ → Interior score (absolute mapping):
       • White                   → 10
       • Off-White to White      → 9
       • Off-White               → 8
@@ -744,92 +728,51 @@ Per-category calibration (applied proportionally to the category maximum):
       • Brown                   → 2
       • Brown/Brittle           → 1
       • Brittle                 → 0
-    Deductions (apply at most ONE, capped to -2; only when the corresponding defect is observed AND noted in the defect list):
-      • Staple rust or significant oxidation: -1
-      • Detached centerfold or detached interior wrap: -2 (capped)
-      • Significant interior soiling, foxing, or stains: -1
-      • Missing interior page or coupon: -2 (capped)
-    EXAMPLES of correct output:
-      • OW/W pages, no documented interior defect → Interior = 9
-      • White pages, staple rust noted → Interior = 9 (10 - 1)
-      • Off-White pages, no interior defects in the response → Interior = 8 (NOT 7)
-      • Cream pages, missing centerfold → Interior = 5 (capped at -2)
-    SAFETY FLOOR: An interior score of 0 is reserved for Brittle pages or for severe interior damage. NEVER assign 0 to a book with White, Off-White to White, or Off-White pages — that is internally inconsistent and will be flagged as a bug.
 
-No back cover photo provided case: set backScore to null. Redistribute the 20 Back points into Front, raising Front's maximum to 70. All other categories unchanged.
-
-STAPLE INSPECTION (v3.4 — required for every assessment):
+STAPLE INSPECTION:
 
 Saddle-stitched comics have two staples ~1/3 and 2/3 down the spine. Spine edge: LEFT of front cover photo, RIGHT of back cover photo, at binding in interior photos.
 
-Rules:
-  - NEVER default to "clean" / "intact" / "no rust" when staples aren't clearly resolved. Cannot-verify is an honest answer; over-claiming is a credibility failure.
-  - "Staple rust" defect (category Interior) when oxidation IS observed (not suspected): Low = faint <2mm; Med = clear brown stain with 3–8mm migration; High = heavy migration, multiple pages stained, or structural failure. Missing/dislodged/popped staple → "Staple defect" Med or High (Interior).
-  - stapleCondition field must be ONE of: (a) specific description matching verified-clean observation (e.g. "Both staples visible, silver, no surrounding discoloration"); (b) specific description matching observed defect; or (c) "Staple condition cannot be reliably determined from provided image resolution — close-up photo recommended for confirmation." Do NOT use the bare phrase "Staples intact and firmly set, no visible rust or migration" as a default; reserve it for actually-verified-clean cases.
-  - If stapleCondition path (c) is used, add at least +2 to confidence range for staple inspection uncertainty alone (also widen for: glare, poor focus, no raking light, restoration suspected).
+  - If oxidation IS observed (not suspected), add a "Staple rust" defect with category Spine. Severity: Low = faint <2mm; Med = clear brown stain with 3–8mm migration; High = heavy migration, multiple pages stained, or structural failure.
+  - Missing/dislodged/popped staple → "Staple defect" Med or High, category Spine.
+  - If staples appear intact and clean, do NOT add a defect entry for them. The defect list is for defects, not for confirming the absence of defects.
 
-SPINE TICK INSPECTION (v3.5 — required for every assessment):
+SPINE TICK INSPECTION:
 
-Spine ticks are 1–3mm WHITE marks along the spine edge (left edge of front cover), perpendicular or slightly diagonal, where paper shows through stressed ink. They are the dominant defect distinguishing 9.4 from 9.8. White-on-colored-background is the signature — anything colored or grey is NOT a tick (it's interior ink, print artifact, or compression noise). White or cream spine regions are blind spots; ticks invisible there even when present.
+Spine ticks are 1–3mm WHITE marks along the spine edge (left edge of front cover), perpendicular or slightly diagonal, where paper shows through stressed ink. They are the dominant defect distinguishing 9.4 from 9.8. White-on-colored-background is the signature — anything colored or grey is NOT a tick (interior ink, print artifact, or compression noise). Spine ticks are harder to identify on white or cream spine regions but not impossible — look closely there too.
 
-Where to look: front cover photo (full length, especially middle third), corner macros TL+BL when present (high-resolution top/bottom thirds). Spine photo is NOT useful (oblique angle hides cover-face marks).
+Where to look: examine ALL available photos. The front cover photo shows the full spine length. Corner macros (TL, BL) when present show the top and bottom thirds at higher resolution. The spine photo is useful for cross-confirmation — a tick identified on the front cover can often be confirmed on the spine photo, and vice versa. If a candidate tick appears on one photo but cannot be confirmed on any other, it is more likely misidentified.
 
-Rules:
-  - NEVER default to "no spine ticks observed" when the spine edge isn't clearly resolvable (out of focus, glare, cropped, white-on-white). Honest output is "Spine tick condition cannot be reliably determined — clearer front cover photo or corner macros recommended."
-  - For each tick or group observed, add a "Spine tick" defect (category Spine). Severity tied to BOTH count and color-breaking, with explicit anchors:
-      Low  = 1–2 non-color-breaking ticks, no color-breaking         → Spine score -1 to -2
-      Med  = 3–5 non-color-breaking OR 1–2 color-breaking ticks      → Spine score -3 to -6
-      High = 6+ non-color-breaking OR 3+ color-breaking OR paper-fiber damage → Spine score -7 to -12 (often drops out of 9.x)
-    Color-breaking does not automatically jump to High. A book with 2 color-breaking ticks is Med, not High. The High threshold is 3+ color-breaking ticks OR 6+ total ticks OR paper-fiber damage.
-  - Set defect.colorBreaking = true when ink is visibly disrupted exposing white paper. When colorBreaking = false, add "pressing candidate" to the defect.measurement field.
-  - If the cannot-be-reliably-determined path is used, add at least +2 to confidence range.
+Scoring: deduct 1 Spine point per confidently observed tick. Set defect.colorBreaking = true when the ink is visibly disrupted exposing white paper.
 
-SPINE ROLL INSPECTION (v3.5 — required when a spine roll is observed):
+SPINE ROLL INSPECTION:
 
-Spine roll is a curl/warp where the cover no longer lies flat — best assessed from the spine-edge photo (oblique side view). The defect is real, but variance across runs has been driven by inconsistent severity tagging of the SAME observation. Anchor severity to deflection of the spine edge from a flat reference plane:
+Spine roll is a curl/warp where the cover no longer lies flat — best assessed from the spine-edge photo (oblique side view). Describe what you see using natural qualifiers (light, moderate, heavy). Spine score deductions: Low severity -1 to -2; Med -3 to -5; High -6 to -10.
 
-  Low  = barely perceptible roll, < 1/8" deflection from flat, cover essentially lies flat → Spine score -1 to -2
-  Med  = 1/8" to 1/4" deflection, modest cover lift visible from side angle               → Spine score -3 to -5
-  High = > 1/4" deflection, dramatic cover lift, book does not close flat                  → Spine score -6 to -10
+SEVERITY WORD MAPPING (applies to ALL defects):
 
-When you observe spine roll, include a deflection estimate in the defect.measurement field (e.g. "~3/16\"" or "~1/4\"") so the severity is justified by a number, not a vague qualifier. "Moderate spine roll" with no measurement is NOT an acceptable description — translate "moderate" to an estimate before tagging severity.
+Map descriptive qualifiers in your defect descriptions directly to the severity tag:
+  • "light", "minor", "slight", "small", "faint", "trace"           → Low
+  • "moderate", "medium", "noticeable"                              → Med
+  • "extensive", "heavy", "significant", "severe", "deep", "major"  → High
 
-Spine roll is NOT an enhancement candidate by default in the ENHANCEMENT TAGGING section, but a competent presser can reduce most non-extreme rolls. When colorBreaking is false and the roll is Low or Med, you may tag it "pressing candidate" in the measurement field if you also estimate deflection.
+A measurement (fraction of inch, percentage, count) is welcome in defect.measurement when it adds clarity, but it is NOT required. "Moderate spine roll" is an acceptable description with severity Med; no number needed. Use measurements when the extent meaningfully changes how the user understands the defect, not as bureaucracy.
 
-MEASUREMENTS DISCIPLINE (v3.5):
+ENHANCEMENT TAGGING:
 
-For ANY defect where extent is meaningful (spine roll, edge wear, soiling, tanning, creases, corner blunting), the defect.measurement field MUST contain a specific extent — a fraction of an inch, a percentage of area, a count, or a similar concrete value. Vague qualifiers ("moderate", "light", "minor", "extensive") are NOT measurements; they describe the defect but do not anchor its severity to anything checkable. Use those words in the description if helpful, but ALSO supply a measurement.
-
-Examples:
-  GOOD: measurement "~1/8\" each corner, paper present throughout"
-  GOOD: measurement "lower left quadrant, ~1 inch, non-color-breaking"
-  GOOD: measurement "~3/16\" deflection, pressing candidate"
-  BAD:  measurement "moderate" (vague — not a measurement)
-  BAD:  measurement "light" (vague — not a measurement)
-  BAD:  measurement "" (empty — no anchor for severity)
-
-This rule exists because variance in severity tags across runs on identical photos was traced to vague descriptions like "moderate" being tagged Low / Med / High inconsistently. Forcing a measurement forces the severity tag to be defensible against the rubric anchors above.
-
-ENHANCEMENT TAGGING (related to spine ticks AND general cover defects):
-
-When defects are observed that are removable by pressing or cleaning, flag them in the defect entry's measurement field with appropriate notation:
-  • Bend without color break → "pressing candidate" (the press may flatten the bend and significantly improve appearance)
-  • Spine tick without color break → "pressing candidate" (same — heat and pressure may reduce or remove the impression)
-  • Surface dirt, fingerprints, light smudges → "cleaning candidate" (expert cleaning may remove)
-  • Color-breaking defects (any kind) → NOT enhancement candidates — color break is permanent damage that pressing cannot restore
-  • Spine roll (Low or Med severity, non-color-breaking) → "pressing candidate" (a competent presser can typically reduce non-extreme rolls)
+When defects are observed that are removable by pressing or cleaning, flag them in the defect entry's measurement field:
+  • Bend without color break → "pressing candidate"
+  • Spine tick without color break → "pressing candidate"
+  • Surface dirt, fingerprints, light smudges → "cleaning candidate"
+  • Spine roll (Low or Med severity, non-color-breaking) → "pressing candidate"
+  • Color-breaking defects → NOT enhancement candidates (permanent damage)
   • Missing pieces, tape residue, water damage, High-severity spine roll → NOT enhancement candidates
 
 These tags help the user decide whether the book is worth submitting for professional enhancement before grading.
 
-Step 1: Assign Front score (0–50) based on front-cover defects only.
-Step 2: Assign Back score (0–20) based on back-cover defects only. If none observed, score is 19–20.
-Step 3: Assign Spine score (0–20) based on spine defects only.
-Step 4: Assign Interior score (0–10) using the calibration above. Start from PQ, then deduct for staple/interior defects.
-Step 5: Compute final score: Front + Back + Spine + Interior. Simple addition.
+These tags help the user decide whether the book is worth submitting for professional enhancement before grading.
 
-${!hasBackCover ? 'No back cover photo provided — set backScore to null. Front max becomes 70 (absorbing Back\'s 20). Total still 0–100.' : ''}
-Confidence base: ±${baseConf}. Adjust up if: glare/poor focus, no raking light photo, staples not visible (see STAPLE INSPECTION precision rule), restoration suspected.
+Confidence base: ±${baseConf}. Adjust up if: glare/poor focus, no raking light photo, staples not visible, restoration suspected.
 
 CRITICAL: The final score is literally Front + Back + Spine + Interior. The arithmetic must check out exactly. If your holistic impression disagrees with the sum by more than 2 points, revisit the component scores — one is wrong, not the formula.
 
@@ -848,30 +791,27 @@ Grade calibration:
 • Strong eye appeal + flat spine + bright colors + sharp corners = high grade.
 • At high grades (8.5+), stress lines, bends, soiling, and printer tears become potentially grade-defining.
 • Missing piece ceilings: <1/4"→max ~9.0 | 1/4"–1/2"→max ~8.0 | >1/2"→max ~5.0 | >1"→max ~3.0
-• SEVERE-DEFECT CAP (S13 v7): if ANY of the following defects is present, the final RoboGrade is capped at 35 and the predicted CGC grade is capped at 2.5, regardless of how clean the rest of the book is. CGC applies this cap in its grading practice. Defects that trigger the cap:
+• SEVERE-DEFECT CAP: if ANY of the following defects is present, the final RoboGrade is capped at 35 and the predicted CGC grade is capped at 2.5, regardless of how clean the rest of the book is. Defects that trigger the cap:
   • Paper loss / piece out larger than 1" in any single dimension
-  • Tape on the book (any quantity, any location — even a small piece)
-  • Missing interior pages or wraps
-  • Color touch / amateur color restoration
+  • Tape on the book (any quantity, any location — even a small piece). VISUAL SIGNATURE: tape generally appears as a portion of the book that is darker and glossier than the surrounding page, with straight edges and right-angle corners. Most often used along the spine to reinforce it, but may appear anywhere on the cover to mend a tear.
   • Spine split running more than 50% of spine length
   • Severe water damage with cockling or staining over a large area
-  This cap exists because these defects are structural and not improvable through normal handling or pressing — a book with one of them belongs in the Good or Fair grade range no matter how nice everything else looks. If the four-component sum exceeds 35 in the presence of one of these defects, scale all four components down proportionally to reach the cap (rough guide: front gets the largest absolute reduction since it's the largest component).
+  If the four-component sum exceeds 35 in the presence of one of these defects, scale all four components down proportionally to reach the cap (rough guide: front gets the largest absolute reduction since it's the largest component).
 • ENHANCE: a single yes/no judgment about whether professional treatment (any of pressing, UV, or cleaning, or any combination) is likely to improve this book's grade. Output "Y" if any of these would help: visible spine roll or rippling that pressing could correct, color-breaking creases that pressing might soften, soiling that cleaning could lift, or tanning on unprinted white areas that UV could lighten. Output "N" if defects are dominated by structural damage that no treatment can address (missing pieces, tears, severe creases, stains that have set). Leave null if uncertain.
-Grader notes — PSA-STYLE RESTRAINT (v2.1 calibration):
 
-PSA's grader notes are the gold standard for clarity. PSA describes a typical Silver Age 7.0 book with one or two sentences per cover side, naming only the defects that matter to the grade. RG's prior versions were over-enumerating — listing 12-15 separate notes for a mid-grade book with the same defects repeated across multiple corners. Match PSA's restraint.
+GRADER NOTES:
 
-CONSOLIDATION RULES (apply BEFORE writing notes):
-  • Group same defect type across multiple locations into ONE note ONLY when the locations share the same defect kind and severity. Do NOT write four separate corner-blunting notes if all four corners are blunted equally; write "Corner blunting, all four corners". But DO write separate notes when corners differ — e.g. "Corner blunting, top corners, ~1/16"" and "Piece out, bottom-right corner, ~1" if those are the actual conditions. Same applies to spine stress lines (consolidate to "Spine stress lines, multiple along full spine length"), edge wear, soiling, etc., when uniform; split when non-uniform.
-  • Never note absence of defects. Do NOT write "no missing pieces observed", "no tape detected", "no restoration", "pages supple, no brittleness". Absence is the default — only call out what IS there.
-  • Never restate page quality in notes. PQ has its own field; mentioning it again in notes is duplicative clutter.
-  • Never note things that are not defects: arrival dates, distributor markings, pedigree marks, normal manufacturing characteristics. Note these only if they affect the grade.
+Avoid over-enumerating the same defect repeatedly across multiple corners or surfaces. Be concise and use official CGC grading terminology.
+
+CONSOLIDATION RULES:
+  • Group same defect type across multiple locations into ONE note when the locations share the same defect kind and severity. Do NOT write four separate corner-blunting notes if all four corners are blunted equally; write "Corner blunting, all four corners". DO write separate notes when corners differ — e.g. "Corner blunting, top corners, light" and "Piece out, bottom-right corner" if those are the actual conditions. Same applies to spine stress lines, edge wear, soiling, etc., when uniform; split when non-uniform.
+  • Never note absence of defects. The defect list is for defects. Do not write "no missing pieces observed", "no tape detected", "no restoration", "pages supple, no brittleness". Absence is the default — only call out what IS there.
+  • Arrival dates, distributor markings, pedigree marks, and normal manufacturing characteristics are NOT defects. Do not put them in the defect list. If they are notable enough to mention, put them in aiAssessment (the assessment notes), not graderNotes.
   • Never describe handling history ("book has been read multiple times") — describe the defects themselves.
 
-JUSTIFICATION RULES (S12 May 6 — added because RG was deducting from Back without listing any back defect):
+JUSTIFICATION RULES:
   • If a category (Front, Back, Spine) is below its maximum (Front<50, Back<20, Spine<20), there MUST be at least one defect entry in that category in the defects array. If you cannot name a specific defect for the category, then the category should NOT lose points. Score deduction without a named defect is incoherent and erodes trust in the assessment.
-  • Interior category is special: ALWAYS include at least one note about Interior in the defects array, even when the category is at full marks (10/10). At minimum, describe the page quality observation: "Interior: White pages" or "Interior: Off-White to White pages, supple, clean" or similar. Use category="Interior" for these. The reader needs to see that Interior was actually evaluated, not silently assumed.
-  • Interior PQ-summary notes are exempt from the "never restate page quality" rule above — the goal is to confirm Interior was evaluated. Keep these notes brief (1 short sentence) and never duplicate the standalone PQ field's exact wording.
+  • Interior category: ALWAYS include at least one note in the defects array describing the page quality observation, even at full marks. Use category="Interior". The reader needs to see Interior was evaluated. The duplication with the standalone pageQuality field is acceptable here.
 
 TARGET NOTE COUNT:
   • High grade (8.5+): 1-4 notes
@@ -881,14 +821,7 @@ TARGET NOTE COUNT:
   More than these counts indicates over-enumeration. Consolidate.
 
 COLOR-BREAKING CALIBRATION:
-  Color-breaking is a specific, restrained classification. A typical Silver Age book has 0-2 color-breaking defects, NOT 5-10. Reserve the color-breaking flag for clearly-visible breaks where the printed color is interrupted by the crease/fold/stress line. Surface stress lines that don't visibly break color should be noted as non-color-breaking, OR — when the book has many stress lines that are mostly clean — omit the color-breaking qualifier entirely with phrasing like "Multiple light spine stress lines, mostly non-color-breaking".
-
-  Default position: a stress line is non-color-breaking unless you can see the color discontinuity in the photo.
-
-SEVERITY DISCIPLINE:
-  PSA's notes use restrained language — "stress lines, some break color", "edge wear", "tiny piece missing", "light tanning". RG should match this register. AVOID escalated language like "multiple", "moderate", "significant", "heavy", "extensive" unless the defect actually warrants it. A book with normal shelf wear gets "Light edge wear", not "Moderate edge wear and abrasion throughout".
-
-  Same applies to severity field: do not over-call High severity. Most Silver Age defects are Low or Med. High is reserved for defects that actually drop a grade tier on their own (color-breaking creases, missing pieces over 1/4", spine splits, tape, etc.).
+  Color-breaking is a specific, restrained classification. A typical Silver Age book has 0-2 color-breaking defects, NOT 5-10. Reserve the color-breaking flag for clearly-visible breaks where the printed color is interrupted by the crease/fold/stress line. Default position: a stress line is non-color-breaking unless you can see the color discontinuity in the photo.
 
 Format: one bullet per note starting with •, official CGC terminology, mark color-breaking only when truly color-breaking.
 
@@ -925,7 +858,7 @@ ${highGradeBlock}
     "score": 0,
     "confidenceRange": ${baseConf},
     "frontScore": 0,
-    "backScore": ${backScoreDefault},
+    "backScore": 0,
     "spineScore": 0,
     "interiorScore": 0,
     "pageQuality": "",
@@ -1137,48 +1070,31 @@ ${highGradeBlock}
       let s = typeof rg.spineScore    === 'number' ? rg.spineScore    : null;
       let i = typeof rg.interiorScore === 'number' ? rg.interiorScore : null;
 
-      // ── Interior-from-PQ enforcement (S11 calibration safety net) ─────────
-      // The prompt rule says interior = PQ-mapped value if no deduction is
-      // documented. The model occasionally drifts and applies an unjustified
-      // -1. Enforce the rule deterministically here. If interior < PQ-mapped
-      // AND no deduction-trigger keyword appears in the defect list, clamp
-      // interior up to the PQ-mapped value.
+      // ── Interior = PQ-mapped value (absolute, no deductions) ─────────────
+      // S15 v3.9: Interior score is a 1:1 mapping from page quality. Interior
+      // defects (staple rust, detached centerfold, etc.) route to the Spine
+      // score, not Interior. Soiling and foxing affecting the pages factor
+      // into the PQ designation itself. The model may still occasionally
+      // output a deduction-shaped interior score; enforce the absolute
+      // mapping here.
       const PQ_TO_INTERIOR = {
         'White': 10, 'Off-White to White': 9, 'Off-White': 8,
         'Cream to Off-White': 7, 'Cream': 6, 'Light Tan to Cream': 5,
         'Light Tan': 4, 'Tan': 3, 'Brown': 2, 'Brown/Brittle': 1, 'Brittle': 0,
       };
       const pqMapped = PQ_TO_INTERIOR[rg.pageQuality];
-      if (typeof pqMapped === 'number' && typeof i === 'number' && i < pqMapped) {
-        // Look for deduction triggers in the defect list. The prompt asks for
-        // these specific kinds of interior defects to justify a deduction:
-        // staple rust, detached centerfold, missing page, interior soiling.
-        const defects = Array.isArray(rg.defects) ? rg.defects : [];
-        const interiorDefectText = defects
-          .filter(d => d && (d.category === 'Interior' || d.location?.toLowerCase().includes('interior')))
-          .map(d => `${d.type || ''} ${d.location || ''} ${d.notes || ''}`.toLowerCase())
-          .join(' ');
-        const hasTrigger = (
-          /staple\s*(rust|oxid)/.test(interiorDefectText) ||
-          /detached/.test(interiorDefectText) ||
-          /missing\s*(page|coupon|wrap|centerfold)/.test(interiorDefectText) ||
-          /(soiling|foxing|stain)/.test(interiorDefectText)
-        );
-        if (!hasTrigger) {
-          i = pqMapped;
-          rg._interiorClamped = { from: rg.interiorScore, to: pqMapped, reason: `PQ "${rg.pageQuality}" maps to ${pqMapped}, no documented deduction trigger` };
-        }
+      if (typeof pqMapped === 'number' && typeof i === 'number' && i !== pqMapped) {
+        rg._interiorClamped = { from: rg.interiorScore, to: pqMapped, reason: `PQ "${rg.pageQuality}" maps to ${pqMapped} (absolute 1:1)` };
+        i = pqMapped;
       }
 
       if (f != null && s != null && i != null) {
-        // Clamp each component to its valid range and round to integer
-        if (b == null) {
-          // No back cover — Front absorbs Back's 20 points, so max is 70
-          f = clampInt(f, 0, 70);
-        } else {
-          f = clampInt(f, 0, 50);
-          b = clampInt(b, 0, 20);
-        }
+        // Clamp each component to its valid range and round to integer.
+        // Back is always present here — missing back cover is caught at the
+        // pre-API gate (returns gateResult: 'MISSING_COVER') so we never
+        // reach this code path with b == null on a real assessment.
+        f = clampInt(f, 0, 50);
+        if (b != null) b = clampInt(b, 0, 20);
         s = clampInt(s, 0, 20);
         i = clampInt(i, 0, 10);
         // Write clamped values back
