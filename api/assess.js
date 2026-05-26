@@ -24,12 +24,62 @@
 //         rubric tied to Spine score deductions, pressing/cleaning candidate
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '3.99b';
+const ROBOGRADE_VERSION = '3.99c';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'API key not configured' });
+
+  // ── v3.99c: SSE streaming mode ──────────────────────────────────────────────
+  // Clients that send `Accept: text/event-stream` get phase events as the
+  // assessment progresses, followed by a final result event. Phase boundaries
+  // are detected by scanning the streaming JSON output for field markers
+  // (gateResult / pageQuality / grade / roboGrade). No prompt change is needed.
+  //
+  // Clients that omit the Accept header (or send anything else) get the legacy
+  // single-shot JSON response unchanged. The two paths are kept fully separate
+  // so a bug in streaming can never corrupt the working JSON flow.
+  const acceptHeader = (req.headers['accept'] || req.headers['Accept'] || '').toLowerCase();
+  const wantsSSE = acceptHeader.includes('text/event-stream');
+
+  // SSE event writer. Sends one event per call. No-op when wantsSSE is false.
+  // The writer is safe to call before headers are set — it lazy-initializes
+  // the SSE response on first event.
+  let sseInitialized = false;
+  function sseEvent(type, dataObj) {
+    if (!wantsSSE) return;
+    if (!sseInitialized) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.setHeader('Connection', 'keep-alive');
+      // Disable nginx-style proxy buffering if any layer respects this hint.
+      res.setHeader('X-Accel-Buffering', 'no');
+      sseInitialized = true;
+    }
+    try {
+      res.write(`event: ${type}\ndata: ${JSON.stringify(dataObj)}\n\n`);
+      // Flush if available. Vercel's Node response doesn't expose flush()
+      // on all runtimes; the optional chain prevents a crash where it
+      // doesn't exist.
+      if (typeof res.flush === 'function') res.flush();
+    } catch (e) {
+      // If the client disconnected mid-stream, write() throws. Nothing to
+      // do — the timing record still gets written in the finally path.
+    }
+  }
+
+  // SSE-aware error responder. In SSE mode, emits an error event and ends
+  // the stream; otherwise falls through to res.status().json().
+  function sseError(status, payload) {
+    if (wantsSSE) {
+      sseEvent('error', { status, ...payload });
+      try { res.end(); } catch (e) {}
+      return;
+    }
+    return res.status(status).json(payload);
+  }
+  // ── end v3.99c SSE setup ────────────────────────────────────────────────────
 
   // ── S15 phase timing instrumentation ─────────────────────────────────────
   // Wall-clock deltas at phase boundaries. Server-only — never sent to the
@@ -793,76 +843,237 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
   try {
     markPhase('promptAssemblyAtMs');
     const _primaryStart = Date.now();
-    // S15: hard 50s timeout on the primary call. Vercel kills the function
-    // at 60s; we need our own catch block to fire before then so the
-    // timing data can be written to Firestore. Without this, a timed-out
-    // assessment leaves no trace.
-    const response = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-opus-4-6',
-        max_tokens: 4096,
-        system: systemPrompt,
-        messages: [{
-          role: 'user',
-          content: [
-            ...(referenceImageBlock ? [
-              { type: 'text', text: 'REFERENCE IMAGE: The following image is a clean cover scan of this exact issue from ComicVine, showing how the book should look without damage. Use it to identify missing pieces, color loss, and damage by comparing against your assessment photos.' },
-              referenceImageBlock
-            ] : []),
-            ...(pageQualityImageBlock ? [
-              { type: 'text', text: pqIsPsaReference
-                ? 'PAGE QUALITY REFERENCE (calibrated against PSA): The following image shows interior photos of real books that were professionally graded by PSA, labeled with PSA\'s actual page quality designation for each book. These are the ground-truth anchor for your page quality assessment. The reference covers the upper part of the scale (White through Off-White to White) — every interior shown is at OW/W or better. RULE: If the interior photo of the book you are assessing looks comparable in tone to ANY of the reference examples, assign Off-White to White or White accordingly — match the closest reference. Only assign Off-White or lower if the interior is visibly more tanned than EVERY reference image. The vast majority of Silver and Bronze Age books fall within this OW/W-and-better range. Use the same designations PSA uses (and which are also valid CGC designations).'
-                : 'PAGE QUALITY REFERENCE: The following image shows the CGC page quality color scale from White (10) down to Tan (5). If any of your assessment photos show interior pages, compare the non-inked white space color against this scale to determine page quality. When in doubt, round up — most Silver and Bronze Age books grade at Off-White or higher.'
-              },
-              pageQualityImageBlock
-            ] : []),
-            ...(highGrade && imageBlocks.length >= 8 ? [
-              { type: 'text', text: 'STANDARD ASSESSMENT PHOTOS (1-4): front cover, back cover, interior/page quality, raking light / spine.' },
-              ...imageBlocks.slice(0, 4),
-              { type: 'text', text: 'CORNER MACROS (5-8), in order: Top Left, Top Right, Bottom Left, Bottom Right of the front cover. Use these to confirm or refine the Front score only. Remember the floor rule and the drop exception from the HIGH-GRADE ASSESSMENT MODE section.' },
-              ...imageBlocks.slice(4, 8)
-            ] : imageBlocks),
-            { type: 'text', text: highGrade
-              ? 'Please perform the high-grade assessment. Apply the floor rule: the final RG and CGC grades must be at or above the initial values unless a specific new defect is identified in the corner macros. Carry Back and Interior scores forward unchanged. Return the JSON grading object.'
-              : 'Please assess this comic. CRITICAL FIRST STEP: complete the STRUCTURAL DAMAGE SCAN (tape, paper loss, tears around staples and edges) BEFORE categorizing any other defects. Do not allow pattern-matching to common defects obscure structural damage. Then return the JSON grading object.' }
-          ]
-        }]
-      })
-    }, 55000);
-    phaseDelta('primaryCallMs', _primaryStart);
 
-    if (!response.ok) {
-      const err = await response.text();
-      return res.status(500).json({ error: 'Anthropic API error: ' + err, _diagnostics: { phaseTimings, primaryNotOk: true } });
+    // v3.99c: emit phase 0 (populating done) the moment we're about to call
+    // Anthropic. All identification work (ComicVine fetch, image prep, gate
+    // check, prompt assembly) is finished by this point. In SSE mode, the
+    // client modal-tracker advances on this event. Non-SSE mode: no-op.
+    sseEvent('phase', { phase: 0, name: 'populating' });
+
+    // Build the messages payload (used by both streaming and non-streaming
+    // branches; identical content either way).
+    const _antBody = {
+      model: 'claude-opus-4-6',
+      max_tokens: 4096,
+      system: systemPrompt,
+      messages: [{
+        role: 'user',
+        content: [
+          ...(referenceImageBlock ? [
+            { type: 'text', text: 'REFERENCE IMAGE: The following image is a clean cover scan of this exact issue from ComicVine, showing how the book should look without damage. Use it to identify missing pieces, color loss, and damage by comparing against your assessment photos.' },
+            referenceImageBlock
+          ] : []),
+          ...(pageQualityImageBlock ? [
+            { type: 'text', text: pqIsPsaReference
+              ? 'PAGE QUALITY REFERENCE (calibrated against PSA): The following image shows interior photos of real books that were professionally graded by PSA, labeled with PSA\'s actual page quality designation for each book. These are the ground-truth anchor for your page quality assessment. The reference covers the upper part of the scale (White through Off-White to White) — every interior shown is at OW/W or better. RULE: If the interior photo of the book you are assessing looks comparable in tone to ANY of the reference examples, assign Off-White to White or White accordingly — match the closest reference. Only assign Off-White or lower if the interior is visibly more tanned than EVERY reference image. The vast majority of Silver and Bronze Age books fall within this OW/W-and-better range. Use the same designations PSA uses (and which are also valid CGC designations).'
+              : 'PAGE QUALITY REFERENCE: The following image shows the CGC page quality color scale from White (10) down to Tan (5). If any of your assessment photos show interior pages, compare the non-inked white space color against this scale to determine page quality. When in doubt, round up — most Silver and Bronze Age books grade at Off-White or higher.'
+            },
+            pageQualityImageBlock
+          ] : []),
+          ...(highGrade && imageBlocks.length >= 8 ? [
+            { type: 'text', text: 'STANDARD ASSESSMENT PHOTOS (1-4): front cover, back cover, interior/page quality, raking light / spine.' },
+            ...imageBlocks.slice(0, 4),
+            { type: 'text', text: 'CORNER MACROS (5-8), in order: Top Left, Top Right, Bottom Left, Bottom Right of the front cover. Use these to confirm or refine the Front score only. Remember the floor rule and the drop exception from the HIGH-GRADE ASSESSMENT MODE section.' },
+            ...imageBlocks.slice(4, 8)
+          ] : imageBlocks),
+          { type: 'text', text: highGrade
+            ? 'Please perform the high-grade assessment. Apply the floor rule: the final RG and CGC grades must be at or above the initial values unless a specific new defect is identified in the corner macros. Carry Back and Interior scores forward unchanged. Return the JSON grading object.'
+            : 'Please assess this comic. CRITICAL FIRST STEP: complete the STRUCTURAL DAMAGE SCAN (tape, paper loss, tears around staples and edges) BEFORE categorizing any other defects. Do not allow pattern-matching to common defects obscure structural damage. Then return the JSON grading object.' }
+        ]
+      }]
+    };
+
+    // ── v3.99c STREAMING BRANCH ────────────────────────────────────────────
+    // Variables we need to produce regardless of branch:
+    //   text                  : the model's raw output text
+    //   _usage, _inputTokens, _outputTokens, _cacheReadInputTokens,
+    //   _cacheCreationInputTokens, _stopReason, _responseModel  : token usage
+    //
+    // Both branches set these and then converge on the existing parse logic.
+    let text;
+    let _usage = {};
+    let _inputTokens = null;
+    let _outputTokens = null;
+    let _cacheReadInputTokens = null;
+    let _cacheCreationInputTokens = null;
+    let _stopReason = null;
+    let _responseModel = null;
+
+    if (wantsSSE) {
+      // Streaming branch: ask Anthropic for SSE, scan deltas for field
+      // markers, forward phase events to our SSE client.
+      _antBody.stream = true;
+
+      const ctrl = new AbortController();
+      const _streamTimeout = setTimeout(() => ctrl.abort(), 55000);
+
+      let streamResponse;
+      try {
+        streamResponse = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01'
+          },
+          body: JSON.stringify(_antBody),
+          signal: ctrl.signal
+        });
+      } catch (e) {
+        clearTimeout(_streamTimeout);
+        throw e;
+      }
+
+      if (!streamResponse.ok) {
+        clearTimeout(_streamTimeout);
+        const errBody = await streamResponse.text();
+        sseError(500, { error: 'Anthropic API error: ' + errBody, _diagnostics: { phaseTimings, primaryNotOk: true } });
+        return;
+      }
+
+      // Consume the Anthropic SSE stream. Events look like:
+      //   event: message_start
+      //   data: {"type":"message_start", "message": {...}}
+      //
+      //   event: content_block_delta
+      //   data: {"type":"content_block_delta", "delta":{"type":"text_delta","text":"..."}}
+      //
+      //   event: message_delta
+      //   data: {"type":"message_delta", "usage":{"output_tokens":...}}
+      //
+      //   event: message_stop
+      //   data: {"type":"message_stop"}
+      //
+      // We accumulate the text deltas, scan for field markers, and emit our
+      // own SSE events to the downstream client at phase boundaries.
+      const reader = streamResponse.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let accumulated = '';
+      const phasesEmitted = new Set(); // 0 already emitted above; track 1-4
+      let firstTokenSeen = false;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        // Split on SSE event delimiter (blank line).
+        const events = buffer.split('\n\n');
+        buffer = events.pop() || '';
+        for (const evt of events) {
+          // Parse 'data: ...' line(s) from this event.
+          const dataLines = evt.split('\n').filter(l => l.startsWith('data:')).map(l => l.slice(5).trim()).filter(Boolean);
+          if (!dataLines.length) continue;
+          const payload = dataLines.join('');
+          let parsedEvt;
+          try { parsedEvt = JSON.parse(payload); } catch (e) { continue; }
+          const t = parsedEvt.type;
+          if (t === 'content_block_delta' && parsedEvt.delta && parsedEvt.delta.type === 'text_delta') {
+            const chunk = parsedEvt.delta.text || '';
+            if (!firstTokenSeen && chunk) {
+              firstTokenSeen = true;
+              // Phase 1 (mint): model has begun producing tokens. Comparing
+              // to the ComicVine reference happens in Phase 1 of the prompt.
+              if (!phasesEmitted.has(1)) { sseEvent('phase', { phase: 1, name: 'mint' }); phasesEmitted.add(1); }
+            }
+            accumulated += chunk;
+            // Scan for field markers (cheap substring checks; the markers
+            // appear in stable JSON-field-declaration order).
+            if (!phasesEmitted.has(2) && accumulated.includes('"pageQuality"')) {
+              sseEvent('phase', { phase: 2, name: 'pq' });
+              phasesEmitted.add(2);
+            }
+            if (!phasesEmitted.has(3) && accumulated.includes('"grade"')) {
+              sseEvent('phase', { phase: 3, name: 'grading' });
+              phasesEmitted.add(3);
+            }
+            if (!phasesEmitted.has(4) && accumulated.includes('"roboGrade"')) {
+              sseEvent('phase', { phase: 4, name: 'confirming' });
+              phasesEmitted.add(4);
+            }
+          } else if (t === 'message_start' && parsedEvt.message) {
+            // Capture early usage info (input_tokens is set at message_start;
+            // output_tokens is updated in message_delta).
+            const u = parsedEvt.message.usage || {};
+            _inputTokens = u.input_tokens || _inputTokens;
+            _cacheReadInputTokens = u.cache_read_input_tokens || _cacheReadInputTokens;
+            _cacheCreationInputTokens = u.cache_creation_input_tokens || _cacheCreationInputTokens;
+            _responseModel = parsedEvt.message.model || _responseModel;
+          } else if (t === 'message_delta') {
+            const u = parsedEvt.usage || {};
+            _outputTokens = u.output_tokens || _outputTokens;
+            _stopReason = parsedEvt.delta && parsedEvt.delta.stop_reason || _stopReason;
+          }
+        }
+      }
+
+      clearTimeout(_streamTimeout);
+      phaseDelta('primaryCallMs', _primaryStart);
+      text = accumulated.trim();
+      _usage = {
+        input_tokens: _inputTokens,
+        output_tokens: _outputTokens,
+        cache_read_input_tokens: _cacheReadInputTokens,
+        cache_creation_input_tokens: _cacheCreationInputTokens
+      };
+
+      // Safety net: if scanning didn't catch every phase (e.g. the model
+      // narrated and the field markers never appeared in the expected
+      // order), emit any unfired phases now so the client modal-tracker
+      // can complete. The client's 1000ms floor will pace them.
+      for (const [p, n] of [[1,'mint'],[2,'pq'],[3,'grading'],[4,'confirming']]) {
+        if (!phasesEmitted.has(p)) { sseEvent('phase', { phase: p, name: n }); phasesEmitted.add(p); }
+      }
+    } else {
+      // ── Non-streaming branch (legacy, byte-identical behavior) ──────────
+      // S15: hard 55s timeout on the primary call. Vercel kills the function
+      // at 60s; we need our own catch block to fire before then so the
+      // timing data can be written to Firestore. Without this, a timed-out
+      // assessment leaves no trace.
+      const response = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify(_antBody)
+      }, 55000);
+      phaseDelta('primaryCallMs', _primaryStart);
+
+      if (!response.ok) {
+        const err = await response.text();
+        return res.status(500).json({ error: 'Anthropic API error: ' + err, _diagnostics: { phaseTimings, primaryNotOk: true } });
+      }
+
+      const data = await response.json();
+      // Capture token usage from Anthropic's response.
+      _usage = (data && data.usage) || {};
+      _inputTokens = _usage.input_tokens || null;
+      _outputTokens = _usage.output_tokens || null;
+      _cacheReadInputTokens = _usage.cache_read_input_tokens || null;
+      _cacheCreationInputTokens = _usage.cache_creation_input_tokens || null;
+      _stopReason = (data && data.stop_reason) || null;
+      _responseModel = (data && data.model) || null;
+      text = data.content[0].text.trim();
     }
 
-    const _primaryParseStart = Date.now();
-    const data = await response.json();
-    // Capture token usage from Anthropic's response (added v3.97 diagnostic).
-    // These are exactly what we need to test whether latency varies with
-    // output token count, input token count, or neither.
-    const _usage = (data && data.usage) || {};
-    const _inputTokens = _usage.input_tokens || null;
-    const _outputTokens = _usage.output_tokens || null;
-    const _cacheReadInputTokens = _usage.cache_read_input_tokens || null;
-    const _cacheCreationInputTokens = _usage.cache_creation_input_tokens || null;
-    const _stopReason = (data && data.stop_reason) || null;
-    const _responseModel = (data && data.model) || null;
-    const text = data.content[0].text.trim();
     const _rawTextChars = text.length;
+    const _primaryParseStart = Date.now();
     let clean = text.replace(/```json/gi, '').replace(/```/g, '').replace(/'''/g, '').trim();
     const _fb = clean.indexOf('{'), _lb = clean.lastIndexOf('}');
     if (_fb !== -1 && _lb !== -1 && (_fb > 0 || _lb < clean.length - 1)) clean = clean.slice(_fb, _lb + 1);
 
     let parsed;
     try { parsed = JSON.parse(clean); }
-    catch (e) { return res.status(500).json({ error: 'Failed to parse response: ' + text, _diagnostics: { phaseTimings, parseError: true } }); }
+    catch (e) {
+      if (wantsSSE) {
+        sseEvent('error', { error: 'Failed to parse response: ' + (text || '').slice(0, 500), _diagnostics: { phaseTimings, parseError: true } });
+        try { res.end(); } catch (err) {}
+        return;
+      }
+      return res.status(500).json({ error: 'Failed to parse response: ' + text, _diagnostics: { phaseTimings, parseError: true } });
+    }
     phaseDelta('primaryParseMs', _primaryParseStart);
 
     // ── Gate check: if the model determined this isn't a comic or is flagged content,
@@ -911,7 +1122,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
         }
       }
       phaseTimings.totalMs = Date.now() - T0;
-      return res.status(200).json({
+      const _gatePayload = {
         gateResult: parsed.gateResult,
         gateReason: parsed.gateReason || '',
         cropFailure: parsed.cropFailure || null,
@@ -924,7 +1135,13 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           gateTerminated: true,
           phaseTimings: phaseTimings
         }
-      });
+      };
+      if (wantsSSE) {
+        sseEvent('result', _gatePayload);
+        try { res.end(); } catch (e) {}
+        return;
+      }
+      return res.status(200).json(_gatePayload);
     }
 
     // Normalize grade to always include decimal (e.g. "10" → "10.0", "9" → "9.0")
@@ -1251,6 +1468,11 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       console.error('assessment_timings write failed (non-fatal):', e);
     }
 
+    if (wantsSSE) {
+      sseEvent('result', parsed);
+      try { res.end(); } catch (e) {}
+      return;
+    }
     return res.status(200).json(parsed);
   } catch (err) {
     // Capture timing even on error — these are the diagnostically valuable cases.
@@ -1280,6 +1502,11 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       }
     } catch (e) {
       console.error('assessment_timings (err path) write failed (non-fatal):', e);
+    }
+    if (wantsSSE) {
+      sseEvent('error', { error: err.message, _diagnostics: { phaseTimings } });
+      try { res.end(); } catch (e) {}
+      return;
     }
     return res.status(500).json({ error: err.message, _diagnostics: { phaseTimings } });
   }
