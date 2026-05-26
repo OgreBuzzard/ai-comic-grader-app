@@ -24,7 +24,7 @@
 //         rubric tied to Spine score deductions, pressing/cleaning candidate
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '3.99c';
+const ROBOGRADE_VERSION = '4.0';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -528,13 +528,42 @@ NG NO GRADE: Coverless books most often. Also: front cover present with <half of
   // tier nudged down for the others.
   const CGC_MULTI_DEFECT_RULE = `
 MULTI-DEFECT INTERACTION (apply during Phase 3):
-When a book has multiple defects from different categories, the grade is determined by the WORST applicable tier, then nudged DOWN further based on the others.
+When a book has multiple defects from different categories, the grade is determined by the WORST applicable tier, then nudged DOWN further based on the others. The tier definitions themselves describe the accumulation cases — 2.5 is "often worn and tattered, moderate-to-heavy creasing, tears, staining, pieces out, tape often present"; 3.0 is "one major cover defect OR large accumulation". When a book has many defects across multiple faces, read the LOWER tier definitions carefully — accumulation is what they describe.
 
 There is no "tape caps at X.X" rule. Tape's effect depends on its size, location, and what else is wrong with the book. A small piece of non-functional tape on an otherwise pristine book → 9.0. A piece of tape spanning the spine on an otherwise heavily-damaged book → may already be at 2.0; the tape may not lower it further.
 
 Missing pieces also gradient: a bindery chip → 9.6 OK; 1/4" missing → 9.0; 1/2"x1/2" → 8.0; 3"x3" → 3.0; 1/3 cover missing → 0.5. There is no single "missing piece = bad grade" cap.
 
 Example reasoning: a book has tape on the spine, paper loss on the back cover (~3"x3"), AND a 6" cover tear, AND extensive cumulative wear. The 3"x3" paper loss and 6" tear both place the book at 3.0 max per the tier definitions. The accumulated wear pushes lower. Realistic landing: 1.5-2.0, not 3.0.
+
+SEVERITY CALIBRATION — what makes a defect High, Med, or Low:
+  HIGH severity defects (each one of these alone is grade-defining):
+    • Any missing piece > 1/4" in any dimension
+    • Any tear > 1/2"
+    • Full-length spine wear with color loss
+    • Spine roll visible to the eye
+    • Tape (any size — tape is always at least Med, and Med only if pristine 1/8" hidden; visible tape is High)
+    • Writing that affects readability of cover text or art
+    • Soiling that obscures cover text or art (NOT just "soiling visible" — Med covers that. High = the soiling actively prevents reading or seeing artwork.)
+    • Color break that exposes white paper across more than a corner tip
+    • Staple rust visible on the cover
+    • Three or more corners with significant damage (color break, blunting to the point of rounded loss, or any corner piece-out)
+  MED severity:
+    • Missing piece up to 1/4"
+    • Tear up to 1/2"
+    • Cover crease (color-breaking) under ~1" not at a corner
+    • Light-to-moderate soiling not affecting readability
+    • One or two damaged corners
+    • Partial spine stress lines (not full length)
+    • Light tanning that affects gloss
+  LOW severity:
+    • Minor handling marks
+    • Single non-color-breaking crease
+    • Single corner blunt with no color loss
+    • Very light tanning visible only in raking light
+  Page quality is NEVER assigned a severity — it is a descriptive observation, not a defect.
+
+DEFECT NAMING DISCIPLINE — when a corner has multiple problems, name the most severe one. Do NOT say "corner blunting" if a corner has a piece-out (name it "piece out"), or a color break (name it "color break" or "color-breaking crease"), or a chip-out (name it "chip out"). "Blunting" specifically means a rounded, slightly worn corner with no color loss and no missing material. Reserve it for that specific case.
 `;
 
   // Returns the canonical CGC tier definitions. In single-pass mode (called
@@ -644,7 +673,7 @@ SPINE TICK ID: 1–3mm WHITE marks along spine edge (left of front cover photo),
 
 SPINE ROLL ID: curl/warp where cover no longer lies flat. Best assessed from spine-edge photo (oblique side view). Describe using natural qualifiers (light, moderate, heavy).
 
-STAPLE ID: two staples ~1/3 and 2/3 down the spine. Spine edge: LEFT of front cover photo, RIGHT of back cover photo, at binding in interior photos. Look for: oxidation (rust around staples or page migration), missing/dislodged/popped staples, structural failure. Clean intact staples → no defect entry (defect list is for defects, not absences).
+STAPLE ID: two staples ~1/3 and 2/3 down the spine. Spine edge: LEFT of front cover photo, RIGHT of back cover photo, at binding in interior photos. Look for: RUST (around staples or migrating to pages — always call this "rust", never "oxidation" or "oxidized" which understate the severity), missing/dislodged/popped staples, structural failure. Clean intact staples → no defect entry (defect list is for defects, not absences).
 
 FACSIMILE / REPRINT INSPECTION (mandatory). Marvel, DC, and others release facsimile editions of famous keys (Amazing Fantasy #15, Hulk #181, X-Men #1, etc.) that reproduce the original cover faithfully and can fool casual inspection. Markers:
   • "FACSIMILE EDITION" text anywhere on cover, back, indicia, or spine
@@ -667,8 +696,10 @@ DEFECT INVENTORY — for every defect:
 • Category: Front/Back/Spine/Interior
   - Front: front cover surface + outer front corners
   - Back: back cover surface + outer back corners
-  - Spine: spine surface, roll, stress lines, inner corners at top/bottom of spine
-  - Interior: pages, staples, interior printing
+  - Spine: spine surface, roll, stress lines, inner corners at top/bottom of spine, ALL STAPLE CONDITION (staple rust, missing staples, popped staples, holes around staple posts — every staple-related defect goes here, NOT Interior)
+  - Interior: pages, page quality, interior printing only (no staples — see Spine)
+
+CORNER NAMING — SPELL THEM OUT. When referring to corners, use full words: "top left", "top right", "bottom left", "bottom right". Never use the abbreviations TL, TR, BL, BR — they are not standard CGC shorthand. When two or more corners share the same defect, group them: "both bottom corners", "top and bottom right corners", "all four corners". Saves space without losing clarity.
 
 EYE APPEAL DISCIPLINE: inventory observable defects, not everything that could be wrong. A typical Silver Age book has 4-8 distinct defects worth noting at any grade — not 12-15. Clean-presenting book with three real defects inventories as three, not three plus eight imagined.
 
@@ -764,7 +795,7 @@ CONSOLIDATION:
 
 JUSTIFICATION RULES:
   • If a category (Front, Back, Spine) is below its maximum (Front<50, Back<20, Spine<20), there MUST be at least one defect entry in that category in the defects array. If you cannot name a specific defect for the category, then the category should NOT lose points. Score deduction without a named defect is incoherent and erodes trust in the assessment.
-  • Interior category: ALWAYS include at least one note in the defects array describing the page quality observation, even at full marks. Use category="Interior". The reader needs to see Interior was evaluated. The duplication with the standalone pageQuality field is acceptable here.
+  • Interior category: ALWAYS include at least one note in the defects array describing the page quality observation, even at full marks. Use category="Interior". The reader needs to see Interior was evaluated. The duplication with the standalone pageQuality field is acceptable here. PAGE QUALITY ENTRIES DO NOT GET A SEVERITY TAG — set severity to empty string "" for any defect entry whose type is "Page quality". Severity (Low/Med/High) only applies to actual defects; PQ is a descriptive observation, not a defect.
 
 TARGET NOTE COUNT:
   • High grade (8.5+): 1-4 notes
