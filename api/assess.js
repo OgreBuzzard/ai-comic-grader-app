@@ -24,7 +24,7 @@
 //         rubric tied to Spine score deductions, pressing/cleaning candidate
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '3.97';
+const ROBOGRADE_VERSION = '3.97-d';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -844,7 +844,18 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
 
     const _primaryParseStart = Date.now();
     const data = await response.json();
+    // Capture token usage from Anthropic's response (added v3.97 diagnostic).
+    // These are exactly what we need to test whether latency varies with
+    // output token count, input token count, or neither.
+    const _usage = (data && data.usage) || {};
+    const _inputTokens = _usage.input_tokens || null;
+    const _outputTokens = _usage.output_tokens || null;
+    const _cacheReadInputTokens = _usage.cache_read_input_tokens || null;
+    const _cacheCreationInputTokens = _usage.cache_creation_input_tokens || null;
+    const _stopReason = (data && data.stop_reason) || null;
+    const _responseModel = (data && data.model) || null;
     const text = data.content[0].text.trim();
+    const _rawTextChars = text.length;
     let clean = text.replace(/```json/gi, '').replace(/```/g, '').replace(/'''/g, '').trim();
     const _fb = clean.indexOf('{'), _lb = clean.lastIndexOf('}');
     if (_fb !== -1 && _lb !== -1 && (_fb > 0 || _lb < clean.length - 1)) clean = clean.slice(_fb, _lb + 1);
@@ -1213,6 +1224,20 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           gateResult: parsed.gateResult || 'COMIC',
           predictedGrade: parsed.grade || null,
           gradeBeforeRefinement: parsed.gradeBeforeRefinement || null,
+          // Diagnostic v3.97: token usage and output complexity. These are the
+          // missing variables we need to identify what's actually driving the
+          // per-call latency variance (the 22.7s vs 48.7s on identical prompt+model).
+          inputTokens: _inputTokens,
+          outputTokens: _outputTokens,
+          cacheReadInputTokens: _cacheReadInputTokens,
+          cacheCreationInputTokens: _cacheCreationInputTokens,
+          stopReason: _stopReason,
+          responseModel: _responseModel,
+          rawTextChars: _rawTextChars,
+          defectCount: Array.isArray(parsed.roboGrade && parsed.roboGrade.defects) ? parsed.roboGrade.defects.length : null,
+          imageCount: Array.isArray(imageBlocks) ? imageBlocks.length : null,
+          title: parsed.title || null,
+          issue: parsed.issue || null,
           timedOut: false
         });
       }
@@ -1236,6 +1261,13 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           version: ROBOGRADE_VERSION,
           model: 'claude-opus-4-6',
           refineModel: 'claude-opus-4-6',
+          // Diagnostic v3.97: imageCount is the only payload-side number we
+          // can reliably capture in the error path (API never returned, so
+          // no token usage). Helps identify whether timeouts cluster on
+          // higher-image-count requests (Deep Assessment with 8 images vs
+          // standard 4).
+          imageCount: (typeof imageBlocks !== 'undefined' && Array.isArray(imageBlocks)) ? imageBlocks.length : null,
+          highGrade: (typeof highGrade !== 'undefined') ? !!highGrade : null,
           errorMessage: String(err.message || err).slice(0, 500),
           timedOut: /timeout|abort/i.test(String(err.message || err))
         });
