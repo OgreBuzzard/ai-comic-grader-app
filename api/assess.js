@@ -24,7 +24,7 @@
 //         rubric tied to Spine score deductions, pressing/cleaning candidate
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '3.96';
+const ROBOGRADE_VERSION = '3.97';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -521,324 +521,196 @@ Example reasoning: a book has tape on the spine, paper loss on the back cover (~
 
 ## PHASE 0 — GATE CHECK (mandatory first)
 
-Before grading, determine what the photos actually show.
-
-Classify the content into ONE of these buckets:
-  COMIC         — a comic book, single-issue or trade, including adult comics, horror titles, and pornographic comics from known publishers. Magazines like Playboy are NOT comics.
-  NOT_COMIC     — anything that isn't a comic book: magazines, trade paperbacks (unless clearly graphic novels), photos of random objects, screenshots, people, animals, blank paper, trading cards, prose books, tests/abuse.
-  FLAGGED       — photos containing real-world graphic violence, actual injury or gore (not comic-art depictions), explicit pornographic photography (not comic art), child sexual content, or extremist symbols outside a clear historical/educational comic context.
-  CROP_FAILURE  — the comic IS a comic, but one or both of the cover photos is cropped such that part of the comic extends outside the image boundary. See the CROP CHECK section below.
+Classify content into ONE bucket:
+  COMIC — single-issue or trade, including adult comics, horror titles, pornographic comics from known publishers. Magazines like Playboy are NOT comics.
+  NOT_COMIC — magazines, trades (unless clearly graphic novels), random objects, screenshots, people, animals, blank paper, trading cards, prose books, tests/abuse.
+  FLAGGED — real-world graphic violence, actual injury/gore (not comic art), explicit pornographic photography (not comic art), child sexual content, or extremist symbols outside clear historical/educational comic context.
+  CROP_FAILURE — comic IS a comic, but cropping cuts part of the cover off (see CROP CHECK).
 
 Key distinctions:
-• Horror comic covers with blood, gore, or monster imagery → COMIC. Grade the book regardless of cover content; do not refuse based on imagery.
+• Horror comic with blood, gore, monster imagery → COMIC. Grade regardless of cover content; do not refuse based on imagery.
 • Suggestive or partially nude comic art (Vampirella, Sin City, underground) → COMIC
 • Pornographic comic from a known publisher (Eros, Last Gasp, Fantagraphics erotic line, etc.) → COMIC
-• A photo of an actual person, even fully clothed → NOT_COMIC unless a comic book is the clear subject
-• A photo showing real blood, real injury, or real violence → FLAGGED
-• A Playboy, Penthouse, Hustler, or similar magazine → NOT_COMIC (these are magazines, not comics)
+• Photo of an actual person, even fully clothed → NOT_COMIC unless a comic book is the clear subject
+• Photo of real blood/injury/violence → FLAGGED
+• Playboy/Penthouse/Hustler/similar → NOT_COMIC (magazines)
 
-For questionable comic-art content: if you can identify a likely title and issue from the cover, treat as COMIC. If you cannot identify the book at all and the imagery is pornographic or disturbing, treat as FLAGGED.
+Questionable comic-art content: if you can identify a likely title and issue from the cover, treat as COMIC. If unidentifiable AND imagery is pornographic or disturbing, treat as FLAGGED.
 
-CROP CHECK (apply ONLY if content is otherwise COMIC):
-Examine the front cover photo and the back cover photo (if a back cover photo was submitted). For each, confirm that ALL FOUR CORNERS AND ALL FOUR EDGES of the comic are visible inside the image boundary. A "corner" or "edge" means the physical corner/edge of the comic book itself, not the corner of the photo.
+CROP CHECK (only if otherwise COMIC):
+Examine front cover photo AND back cover photo (if submitted). For each, ALL FOUR CORNERS AND ALL FOUR EDGES of the COMIC (not the photo) must be inside the image frame.
 
-Pass criteria — ALL must be true:
-  • All four corners of the comic are inside the image frame
-  • All four edges of the comic are visible from corner to corner
-  • No portion of the comic extends past any side of the photo
+PASS: all four comic corners inside frame, all four edges visible corner-to-corner, no portion of comic extends past any side.
+FAIL (any one triggers CROP_FAILURE): a comic corner outside frame, an edge bleeds off the photo, cover content (logo, title, art, indicia, UPC, price box, publisher box, "FACSIMILE EDITION") cut off by any edge, or significant cover portion missing.
 
-Fail criteria — ANY one triggers CROP_FAILURE:
-  • A corner of the comic is outside the image frame
-  • An edge of the comic extends past the image boundary on any side (the comic "bleeds off" the photo edge)
-  • The cover content (logo, title, art, indicia, UPC, price box, publisher box, "FACSIMILE EDITION" wording) is cut off by any photo edge
-  • A significant portion of the cover is missing from the photo
+A tight crop where the comic almost fills the frame is FINE as long as the full comic is visible — the check fails only when the comic extends past a photo edge.
 
-Note: A tight crop where the comic almost fills the frame is FINE as long as the full comic is visible. The check fails only when the comic itself extends past a photo edge — not when the margin around it is small.
+This check is STRICT because comic margins are where facsimile markers, modern Marvel/DC logos, UPCs, and restoration evidence live. Cropped photos are also a common way users (deliberately or not) hide defects — corner damage, edge tears, staple problems. Treat any cropped edge as a possible defect-hiding photo.
 
-This check is STRICT for a reason. The margins of a comic cover are exactly where facsimile-edition markers, modern Marvel/DC logos, UPCs, and key restoration evidence live. A photo that crops out the top edge of the comic could be hiding "FACSIMILE EDITION" text in that margin. A photo that crops out the bottom-right corner could be hiding a modern UPC. Cropped photos are also a common way users (deliberately or not) hide defects from grading — corner damage, edge tears, or staple problems that would lower the grade. Treat any cropped edge as a possible defect-hiding photo.
-
-Common failure pattern: user fills the frame with the comic such that one or more edges of the comic extends past the photo boundary. This MUST fail — even if every visible part of the cover looks fine, the cut-off margin could contain disqualifying evidence.
-
-If CROP_FAILURE: return ONLY this JSON and STOP. Do not grade. Do not speculate on defects.
+If CROP_FAILURE: return ONLY this JSON and STOP.
 {
   "gateResult": "CROP_FAILURE",
   "cropFailure": {
     "frontFourCornersVisible": true or false,
     "backFourCornersVisible": true or false,
-    "frontIssue": "short description of what's cropped on front cover, or empty string if front is fine",
-    "backIssue": "short description of what's cropped on back cover, or empty string if back is fine or back was not submitted"
+    "frontIssue": "what's cropped on front, or empty string if fine",
+    "backIssue": "what's cropped on back, or empty string if fine or not submitted"
   }
 }
 
-If NOT_COMIC or FLAGGED: return ONLY this JSON and STOP. Do not grade. Do not speculate on defects.
+If NOT_COMIC or FLAGGED: return ONLY this JSON and STOP.
 {
   "gateResult": "NOT_COMIC" or "FLAGGED",
   "gateReason": "one short sentence explaining what you observed"
 }
 
-If COMIC: set "gateResult": "COMIC" in the output and proceed with Phases 1 and 2.
+If COMIC: set "gateResult": "COMIC" and proceed.
 
 ## PHASE 1 — NEUTRAL OBSERVATIONS
 
 STRUCTURAL DAMAGE SCAN — DO THIS FIRST, BEFORE ANYTHING ELSE:
 
-Three forms of damage are catastrophic to a comic's grade and are routinely misidentified as the lesser categories below them. You will scan for each one before you categorize any other defect, because once your mind has named what it sees as a "crease" or "edge wear" or "soiling", you will not go back and reconsider it as paper loss / tape / tear. Catch these FIRST or you will miss them.
+Three forms of damage are catastrophic to grade and routinely misidentified as lesser defects. Scan for each BEFORE categorizing any other defect — once your mind has named something "crease" or "edge wear" or "soiling", you will not reconsider it as paper loss/tape/tear. Catch these first.
 
-  CHECK 1 — TAPE on the book. Scan every photo, especially along the spine and over any tear repair, for tape. Tape's visual signature: a region of the cover that appears darker AND glossier than the surrounding paper, with straight or near-straight edges and right-angle corners, often running in a strip down the spine. Aged tape often shows horizontal cracks across its surface (the adhesive cracking) — these look like a row of small parallel breaks across the strip, NOT like paper creases. If you see this signature, name it as "Tape" — do NOT call it creases, stress lines, or soiling. Tape ANYWHERE on the book caps the grade per the severe-defect cap rule, so the cost of miscalling tape as creases is severe.
+  CHECK 1 — TAPE. Scan every photo, especially along the spine and over any tear repair. Visual signature: a region darker AND glossier than surrounding paper, straight or near-straight edges, right-angle corners, often a strip down the spine. Aged tape often shows horizontal cracks across its surface (adhesive cracking — looks like a row of small parallel breaks, NOT paper creases). If you see this signature, name it "Tape" — do NOT call it creases, stress lines, or soiling. Tape's grade impact is gradient per Phase 3 tier definitions, but miscalling it as creases loses the diagnostic entirely.
 
-  CHECK 2 — PAPER LOSS / MISSING PIECE. Examine the cover edges, corners, and entire cover surface for any region where cover paper is GONE — not bent, not blunted, but ABSENT, with the underlying interior page or background surface visible where the cover should be. VISUAL SIGNATURE: a rough edge of exposed paper fibers that breaks the expected rectangular shape of the cover. Beyond that rough edge, either the visible paper is a distinctly different color (interior page showing through) OR the underlying surface the comic has been placed on is visible. If the cover edge is smooth and the rectangular silhouette is preserved, it is NOT paper loss — it may be blunting, edge wear, or a crease. Paper loss requires the silhouette to be disrupted. If found, name it as "Piece out" or "Missing piece" — do NOT call it corner blunting, edge wear, or crease. Paper loss > 1" in any dimension caps the grade.
+  CHECK 2 — PAPER LOSS / MISSING PIECE. Examine edges, corners, surface for any region where cover paper is GONE — not bent, not blunted, but ABSENT, with interior page or background visible where cover should be. Signature: a rough edge of exposed paper fibers breaking the rectangular silhouette. Beyond it, visible paper is a distinctly different color (interior showing through) OR the surface the comic was placed on is visible. Smooth cover edge with preserved rectangular silhouette is NOT paper loss — it's blunting, edge wear, or crease. Paper loss requires silhouette disruption. If found, name "Piece out" or "Missing piece" — do NOT call it corner blunting, edge wear, or crease. Size impacts grade per Phase 3 tier definitions.
 
-  CHECK 3 — TEARS, especially around staples and along edges. A tear is a discontinuity in the cover where paper is split but not yet missing — the two sides of the split are still attached at one end. Inspect particularly: around each staple (top and bottom staples on both front and back covers — stress concentrates here and tears initiate at the staple holes), along the cover edges where it meets the spine, and any spot on the cover where a piece appears lifted, separated, or partially detached from the rest. A tear may show as a thin dark line, a visible split in the paper, or a section of cover that is angled differently from the surrounding flat area. If found, name it as "Tear" with location and length — do NOT call it edge wear, crease, or stress line. A tear > 1/2" is HIGH severity and significantly impacts the grade.
+  CHECK 3 — TEARS, especially around staples and along edges. A tear is a discontinuity where paper is split but not yet missing — the two sides still attached at one end. Inspect particularly: around each staple (top and bottom, both covers — stress concentrates here and tears initiate at the staple holes), along cover edges where they meet the spine, anywhere a piece appears lifted, separated, or partially detached. May show as a thin dark line, a visible split, or a section angled differently from surrounding flat area. If found, name "Tear" with location and length — do NOT call it edge wear, crease, or stress line. Tears > 1/2" are HIGH severity.
 
-If any of CHECK 1–3 finds a defect, record it FIRST in the defect list (before other defects) and apply the severe-defect cap (see below) if it triggers. Do not let pattern-matching to common defect categories obscure these structural failures.
+If CHECK 1–3 finds anything, record it FIRST in the defect list and let it inform the Phase 3 grade determination. Do not let pattern-matching to common defect categories obscure these structural failures.
 
-After completing all three checks above, proceed to the routine inspection below.
+After all three checks, proceed below.
 
-ROUTINE STRUCTURAL CHECK:
+ROUTINE INSPECTION:
 
-Paper loss is categorically different from corner blunting:
-  • Corner blunting = paper still present, corner is rounded/softened/folded. Cosmetic.
-  • Paper loss / piece out = paper is GONE, white interior page or void visible. Structural.
-A 1" piece missing from a corner is NOT "corner blunting ~1/16""; it is "Piece out, ~1" along bottom edge, severe". Confusing these two is a critical failure.
+PER-CORNER INSPECTION: examine TL, TR, BL, BR individually. Consolidate AFTER inspection: identical kind+severity across all four → one entry ("Corner blunting, all four corners, ~1/16""); differing corners → separate entries. Never homogenize heterogeneous corners.
 
-Step 1 — PER-CORNER INSPECTION. Look at each of the four corners individually:
-  • Top-left corner: condition?
-  • Top-right corner: condition?
-  • Bottom-left corner: condition?
-  • Bottom-right corner: condition?
-Internal inspection is per-corner. Output consolidation happens AFTER inspection: if every observed corner has the same defect kind and severity, write ONE consolidated note ("Corner blunting, all four corners, ~1/16" each"). If corners differ in defect kind or severity — for example, three blunted plus one with paper loss — write SEPARATE entries for the differing corners. Never homogenize a heterogeneous set into one entry.
+EDGES AND SURFACES: examine top/bottom/left/right edges and cover surfaces for creases, soiling, stress lines, other defects (tears and paper loss already caught in structural damage scan).
 
-Step 2 — Edges and surfaces. Examine every edge (top, bottom, left, right) and the cover surfaces for creases, soiling, stress lines, and other defects (tears and paper loss were already caught in the structural damage scan above).
+COLOR-BREAK DETECTION: a color break is a small region — often a few pixels wide — where ink is absent, exposing white/grey paper. Diagnostic for spine ticks, color-breaking creases, color-breaking stress lines. Scan continuous colored regions (especially dark saturated areas — blacks, deep reds, dense blues/greens) for small white/grey patches interrupting color. Common locations: spine edge (ticks), along any crease, at bent corner tips. Even a 2-3 pixel white spot counts. Small color breaks distinguish 9.6 from 9.4 — critical to call.
 
-COLOR-BREAK DETECTION TECHNIQUE: a color break is a small region — often only a few pixels wide — where the ink that normally covers the page is absent, exposing the white or grey paper beneath. They are easy to miss because they are small but they are diagnostic for spine ticks, color-breaking creases, and color-breaking stress lines. Scan every continuous colored region (especially dark, saturated areas — black backgrounds, deep red costumes, dense blues and greens) for small white or grey patches that interrupt the color. Common locations: along the spine edge (spine ticks), along the length of any crease, at corner tips where the cover has been bent. Even a single 2-3 pixel white spot in an otherwise solid color field counts as a color break and should be noted. Do not require the color break to be large or obvious — small color breaks are exactly the defects that distinguish a 9.6 from a 9.4 and are critical to call.
+SPINE TICK ID: 1–3mm WHITE marks along spine edge (left of front cover photo), perpendicular or slightly diagonal, paper showing through stressed ink. White-on-color is the signature — colored or grey is NOT a tick. Harder but not impossible on white/cream spine regions. Examine ALL photos: front cover for full spine length, TL+BL corner macros for top/bottom thirds at higher resolution, spine photo for cross-confirmation. A candidate tick visible on one photo but unconfirmable on others is more likely misidentified.
 
-SPINE TICK IDENTIFICATION: spine ticks are 1–3mm WHITE marks along the spine edge (left edge of front cover), perpendicular or slightly diagonal, where paper shows through stressed ink. They are the dominant defect distinguishing 9.4 from 9.8. White-on-colored-background is the signature — anything colored or grey is NOT a tick (interior ink, print artifact, or compression noise). Harder to identify on white or cream spine regions but not impossible — look closely there too. Where to look: examine ALL available photos. Front cover photo shows the full spine length. Corner macros (TL, BL) when present show the top and bottom thirds at higher resolution. The spine photo is useful for cross-confirmation — a tick identified on the front cover can often be confirmed on the spine photo, and vice versa. If a candidate tick appears on one photo but cannot be confirmed on any other, it is more likely misidentified.
+SPINE ROLL ID: curl/warp where cover no longer lies flat. Best assessed from spine-edge photo (oblique side view). Describe using natural qualifiers (light, moderate, heavy).
 
-SPINE ROLL IDENTIFICATION: spine roll is a curl/warp where the cover no longer lies flat — best assessed from the spine-edge photo (oblique side view). Describe what you see using natural qualifiers (light, moderate, heavy).
+STAPLE ID: two staples ~1/3 and 2/3 down the spine. Spine edge: LEFT of front cover photo, RIGHT of back cover photo, at binding in interior photos. Look for: oxidation (rust around staples or page migration), missing/dislodged/popped staples, structural failure. Clean intact staples → no defect entry (defect list is for defects, not absences).
 
-STAPLE IDENTIFICATION: saddle-stitched comics have two staples ~1/3 and 2/3 down the spine. Spine edge: LEFT of front cover photo, RIGHT of back cover photo, at binding in interior photos. Look for: oxidation (rust around staples or migration onto pages), missing/dislodged/popped staples, structural failure. If staples appear intact and clean, do NOT add a defect entry for them. The defect list is for defects, not for confirming the absence of defects.
-
-Step 3 — FACSIMILE / REPRINT INSPECTION (mandatory). Before grading, determine whether this book is an original printing or a modern facsimile/reprint. Marvel, DC, and other publishers regularly release facsimile editions of famous key issues (Amazing Fantasy #15, Hulk #181, X-Men #1, and other famous keys). These reproduce the original cover faithfully — same art, same logo, same trade dress, same price box, sometimes same indicia text — and can fool a casual inspection.
-
-Look for ANY of these modern-era markers anywhere in the submitted photos:
-  • The text "FACSIMILE EDITION" anywhere on cover, back cover, indicia, or spine
-  • A modern UPC barcode anywhere on the cover (originals printed before 1976 had no UPC; even original 1976+ books had a specific UPC layout that differs from modern Marvel/DC trade dress)
-  • Modern paper stock — bright clean white at page edges, no period-appropriate aging despite the cover claiming a Silver/Golden Age date
-  • Cover print quality noticeably sharper than period offset printing could achieve (modern digital reproduction vs. 1960s newsprint)
+FACSIMILE / REPRINT INSPECTION (mandatory). Marvel, DC, and others release facsimile editions of famous keys (Amazing Fantasy #15, Hulk #181, X-Men #1, etc.) that reproduce the original cover faithfully and can fool casual inspection. Markers:
+  • "FACSIMILE EDITION" text anywhere on cover, back, indicia, or spine
+  • Modern UPC barcode (pre-1976 originals had none; 1976+ originals used a specific layout different from modern Marvel/DC)
+  • Modern paper stock — bright clean white edges with no period aging despite a Silver/Golden Age cover date
+  • Print quality sharper than period offset printing (modern digital reproduction vs 1960s newsprint)
   • Modern publisher logo placement, color, or design
+If found: printing = "Facsimile Reprint" (append year in parentheses if visible, e.g., "Facsimile Reprint (2019)"); issueDate = reprint year; state the finding plainly in aiAssessment. Period-appropriate book with no modern markers: leave printing empty. When uncertain, lean toward populating "Facsimile Reprint" — mislabeling a reprint as authentic is a worse user outcome than the reverse.
 
-If you find ANY of these markers: populate the printing field with "Facsimile Reprint" (append the year in parentheses if visible, e.g., "Facsimile Reprint (2019)"). Set issueDate to the reprint year, NOT the original year. State the facsimile finding plainly in aiAssessment — the user needs to know they have a reprint, not the original.
+SELF-REVIEW BEFORE FINALIZING: if any defect description contains MAJOR-damage language ("chunk", "missing", "torn off", "piece out", "large", "significant tear", "tape covering", "color touched"), severity MUST be "High" and the grade reflects the structural impact per Phase 3 tier definitions.
 
-If the book appears genuinely period-appropriate (no modern markers, period-appropriate paper aging, original publisher trade dress, era-correct printing quality): leave printing as empty string and proceed normally.
+EPISTEMIC HUMILITY: photos can't show everything. Tiny missing pieces (<1/16"), faint creases, small back-cover defects can hide in shadow/glare/low resolution. Do NOT claim absences ("no missing pieces observed", "no tears detected"). Omit absent defects from the inventory.
 
-When uncertain: lean toward populating "Facsimile Reprint". A reprint mislabeled as authentic creates a much worse user outcome than an authentic book correctly graded but conservatively flagged for review.
-
-SELF-REVIEW BEFORE FINALIZING (S13 v7):
-After you have written your defect list, re-read it and ask: does any defect description contain language suggesting MAJOR damage — words like "chunk", "missing", "torn off", "piece out", "large", "significant tear", "tape covering", "color touched"? If yes, the defect's severity field MUST be "High" and the missing-piece ceiling / restoration cap must be applied to BOTH the CGC grade AND the RoboGrade. A defect described as significant cannot coexist with a mid-grade or high-grade output.
-
-EPISTEMIC HUMILITY: A photograph cannot show everything that an in-hand inspection reveals. Tiny missing pieces (under 1/16"), faint creases, and small back-cover defects can hide in shadow, glare, or low pixel density. Do NOT make confident absence-claims like "no missing pieces observed" or "no tears detected" in your notes — those statements have been wrong before and they don't belong in the inventory anyway (the inventory is what you DO see, not what you don't). Simply omit absent defects from the inventory.
-
-DEFECT INVENTORY — for every defect record:
-• Type (use official CGC terminology)
-• Location (which corner, edge, or area)
-• Measurement (assume standard comic dimensions for the era as scale reference — modern Marvel/DC: ~6.625" × 10.25"; Silver Age: ~7" × 10.25"; Bronze Age: ~6.875" × 10.25"; Golden Age: ~7.5" × 10.5". Estimate defect size proportionally to the comic's apparent dimensions in the photo.)
-• Severity: High, Med, or Low
-• Whether any crease is color-breaking
-• Category: Front | Back | Spine | Interior
-  - Front: front cover surface and outer front corners
-  - Back: back cover surface and outer back corners
-  - Spine: spine surface, spine roll, spine stress lines, and inner corners at top/bottom of spine
+DEFECT INVENTORY — for every defect:
+• Type (official CGC terminology)
+• Location (corner, edge, area)
+• Measurement (use comic dimensions for scale — modern Marvel/DC ~6.625"×10.25", Silver Age ~7"×10.25", Bronze Age ~6.875"×10.25", Golden Age ~7.5"×10.5". Estimate defect size proportionally.)
+• Severity: High/Med/Low
+• colorBreaking flag for creases
+• Category: Front/Back/Spine/Interior
+  - Front: front cover surface + outer front corners
+  - Back: back cover surface + outer back corners
+  - Spine: spine surface, roll, stress lines, inner corners at top/bottom of spine
   - Interior: pages, staples, interior printing
 
-EYE APPEAL DISCIPLINE (v2.1):
-You are inventorying observable defects, not auditing the book for everything that could be wrong. A typical Silver Age book has 4-8 distinct defects worth noting at any grade — not 12-15. Resist the urge to find a defect on every corner, every edge, and every surface area. If a corner looks fine, no defect goes in the inventory. If three of four corners are clean and one is blunted, the inventory has ONE corner blunting entry, not four (one real + three "no defect" entries).
-
-When the photos show a book that "presents well" — strong color saturation, flat spine, sharp-looking corners, bright cover — your inventory should reflect that. A clean-presenting book with three real defects inventories as three defects, not as three real defects plus eight imagined ones from over-scrutiny.
+EYE APPEAL DISCIPLINE: inventory observable defects, not everything that could be wrong. A typical Silver Age book has 4-8 distinct defects worth noting at any grade — not 12-15. Clean-presenting book with three real defects inventories as three, not three plus eight imagined.
 
 PAGE QUALITY:
-Assess from any interior photo. Phone cameras under typical indoor lighting consistently make pages look 1-2 tiers more yellowed than they actually are. Calibration data from 10 PSA-graded books in 2026 showed that the prior calibration was systematically under-reading PQ by 2 tiers on average — books PSA called Off-White to White were being called Cream to Off-White. The rules below correct that.
+Phone cameras under typical indoor lighting consistently make pages look 1-2 tiers more yellowed than they actually are. Calibration data from 10 PSA-graded 2026 books showed prior calibration was systematically under-reading PQ by 2 tiers — books PSA called OW/W were being called C/OW. Rules below correct that.
 
-FOUR ANCHORING RULES:
+1. AGE-AWARE DEFAULT. Pre-1985 books (Silver Age and Bronze Age) overwhelmingly grade OW/W or White in the wild. Genuinely cream or tan pages are uncommon and tied to specific storage conditions (damp, sun-bleaching, acidic storage). For pre-1985 books, default is OW/W unless you see SPECIFIC, NAMEABLE evidence: visible foxing dots or rust marks, brown-tinged edges contrasting with a lighter center, obvious brittleness. "Looks a bit yellow under indoor light" is camera/lighting bias, NOT specific evidence.
 
-1. AGE-AWARE DEFAULT. Books published before 1985 (Silver Age and Bronze Age) overwhelmingly grade at Off-White to White or White in the wild. Genuinely cream or tan pages are uncommon and tied to specific storage conditions (damp, sun-bleaching, acidic storage). For a pre-1985 book, the default page quality is Off-White to White unless you see SPECIFIC, NAMEABLE evidence to the contrary. "The page looks a bit yellow under indoor light" is NOT specific evidence — that is camera/lighting bias. Specific evidence means: visible foxing dots or rust marks, brown-tinged edges contrasting with a lighter center, obvious brittleness or splitting.
+2. ANCHOR AGAINST THE PSA REFERENCE IMAGE (Grade_Reference/pq_psa.jpg, provided every assessment). Shows real interior photos of PSA-graded Silver Age books labeled with their page quality designations across the upper scale. Ground truth — match the closest reference. If your assessment interior looks comparable to ANY reference photo, the answer is OW/W or White accordingly. Only assign OW or lower if visibly more tanned than EVERY reference example.
 
-2. ANCHOR AGAINST THE PSA REFERENCE IMAGE. A Page Quality Reference image (Grade_Reference/pq_psa.jpg) is provided on EVERY assessment. It shows real interior photos of PSA-graded Silver Age books labeled with their page quality designations across the upper part of the scale. Use it as ground truth. Match the closest reference example. If the interior you are assessing looks comparable to ANY of the reference photos, the answer is Off-White to White or White accordingly. Only assign Off-White or lower when the interior is visibly more tanned than EVERY reference example.
+   COMPARE EYE TO EYE, NOT BOOK TO BOOK. Reference photos and your assessment photo have different lighting/white balance/exposure. Compare unprinted page areas (margins between panels, gutters, white speech balloons) — page tone matters, not surrounding photo cast.
 
-   COMPARE EYE TO EYE, NOT BOOK TO BOOK. The reference photos and the photo you are assessing have different lighting, white balance, and exposure. Compare the unprinted page areas (margins between panels, gutters, white speech balloons) of the assessment photo to the unprinted page areas of the reference photos. Page tone is what matters — not the surrounding photo cast.
+   WHITE BACKING TECHNIQUE: if the assessment photo includes a white backing board or surface next to the interior page, use it as a lighting-bias correction reference. Pure white = RGB #FFFFFF. Observe deviation in THIS photo from #FFFFFF — that's the camera's white-balance shift. Mentally subtract before classifying. Skip if no clearly-white element visible.
 
-   WHITE BACKING / WHITE REFERENCE TECHNIQUE: when the assessment photo includes a white backing board, white surface, or other clearly-white element next to the interior page, use it as a lighting-bias correction reference. A pure white surface should appear as RGB ~#FFFFFF under perfect lighting. Observe how much the white reference in THIS photo deviates from #FFFFFF — that deviation is the camera's white-balance shift. Mentally subtract that shift from the page tone before classifying. This technique applies only when a clearly-white element is visible in the photo; disregard otherwise.
+   STEPWISE FALLBACK: if interior IS warmer than every reference, next step down is OW, not C/OW. Don't skip a tier. C/OW requires substantial tanning beyond what would justify OW.
 
-   STEPWISE FALLBACK BELOW THE REFERENCE: when you decide the interior IS warmer than every reference example, the next step down is Off-White, not Cream to Off-White. Do not skip a tier. C/OW requires substantial evidence of tanning beyond what would justify OW.
+3. FAVOR THE WHITER TIER WHEN AMBIGUOUS. Sample between two reference colors → pick the whiter designation. Use the darker only when clearly at or past that reference tone.
 
-3. FAVOR THE WHITER TIER WHEN AMBIGUOUS. When the sample sits between two reference colors, pick the whiter designation. Use the darker designation only when the sample is clearly at or past that reference tone.
+4. TWO-PART TEST BEFORE TAGGING C/OW OR LOWER. Both must be true:
+   (a) Unprinted page margins are noticeably warmer than the WARMEST reference example margin (compared margin-to-margin).
+   (b) At least one piece of specific evidence: visible foxing, rust marks, brown-tinged edges, obvious brittleness, or uniform tone-shift visibly darker than any white element in the assessment photo.
+   If only (a) without (b), the warmth is camera/lighting bias. Default to OW/W or OW.
 
-4. TWO-PART TEST BEFORE TAGGING C/OW OR LOWER. Before assigning C/OW or lower, BOTH must be true:
-   (a) The unprinted page margins of the assessed photo are noticeably warmer than the unprinted margins of the WARMEST reference example, when compared margin-to-margin (not photo-to-photo).
-   (b) At least one piece of SPECIFIC, NAMEABLE evidence is present: visible foxing dots, rust marks, brown-tinged edges contrasting with a lighter center, obvious brittleness, or a uniform tone-shift visibly darker than any white element in the assessment photo.
-   If only (a) is true but (b) is absent, the warmth is camera/lighting bias. Default to OW/W or OW.
-
-PQ DESIGNATION ↔ INTERIOR SCORE (absolute 1:1 mapping, the Interior score MUST equal this number):
-  White = 10  •  Off-White to White = 9  •  Off-White = 8  •  Cream to Off-White = 7  •  Cream = 6  •  Light Tan to Cream = 5  •  Light Tan = 4  •  Tan = 3  •  Brown = 2  •  Brown/Brittle = 1  •  Brittle = 0
+PQ DESIGNATION ↔ INTERIOR SCORE (absolute 1:1 mapping, Interior score MUST equal this number):
+  White=10 • OW/W=9 • OW=8 • C/OW=7 • Cream=6 • LT/C=5 • LT=4 • Tan=3 • Brown=2 • Brown/Brittle=1 • Brittle=0
 
 ## PHASE 2 — THREE GRADES FROM YOUR OBSERVATIONS
 
 ── ROBOGRADE (primary, AI-native) ──
-Scoring: four components summed directly to the final. Each component has its own maximum:
-  Front:    0–50 points  (front cover surface and outer front corners)
-  Back:     0–20 points  (back cover surface and outer back corners)
-  Spine:    0–20 points  (spine surface, spine roll, inner corners at spine, staple area)
-  Interior: 0–10 points  (page quality, staple condition, interior printing/defects)
+Four components summed directly to final. All scores INTEGERS, no decimals.
+  Front:    0–50  (front cover surface + outer front corners)
+  Back:     0–20  (back cover surface + outer back corners)
+  Spine:    0–20  (spine surface, roll, inner corners at spine, staple area)
+  Interior: 0–10  (page quality — 1:1 PQ map, no deductions)
+Final = Front + Back + Spine + Interior (0–100).
 
-Final score = Front + Back + Spine + Interior. Always between 0 and 100.
+Score each category independently from defects in that category ONLY. Perfect = no observed defects in that category. Deduct from max based on severity and accumulation.
 
-All scores are INTEGERS. No decimals anywhere. Round naturally.
+Per-category calibration (proportional to max):
+  Front (max 50): 50 pristine | 47-49 single trace | 43-46 one small or trace accumulation | 38-42 minor defects, strong eye appeal | 30-37 moderate accumulation or one color-breaking | 20-29 substantial wear or significant defect | 10-19 major issues | 0-9 severe/structural
+    CUMULATIVE-FRONT-DEFECT RULE: widespread soiling/discoloration + multiple additional defects (any combo of corner blunting + edge wear + crease + spine-side stress) → Front MUST be ≤ 30 regardless of individual severities. Mid-grade books (CGC 3.0-4.5) routinely show this. Without this, individual defects each rate Med and the sum lands 32-40 (CGC 5.5-7.0 territory). When in doubt at 30, go to 28.
+    CREATOR-SIGNATURE RULE: confidently identifiable creator signature (reads as a name in stylized signing manner, customary signing location, consistent with an autograph from someone associated with the book) → record as "Creator signature" (NOT "Writing on cover") with empty severity. NO point deduction anywhere. In aiAssessment describe as observed ("Cover bears an apparent signature reading 'Len Wein'") — word "apparent" required, Robograder does not authenticate. EXCEPTION: signature that physically dominates the cover (e.g., cover-spanning paint-pen mark obscuring >50% of artwork) → single Med Front deduction. Ambiguous writing (scrawls, numbers, owner names in block letters, prices, date stamps) → ordinary defect rubric, not signature. When in doubt, treat as defect.
+  Back (max 20): 20 pristine | 18-19 trace | 15-17 minor defect or light accumulation | 11-14 moderate | 7-10 substantial or significant defect | 0-6 major
+  Spine (max 20): 20 pristine | 18-19 trace, one very minor non-color-breaking tick | 15-17 light stress lines, slight roll, minor blunting at spine | 11-14 multiple stress lines, visible roll, minor fraying, or one color-breaking crease | 7-10 significant stress, split starting, staple pull | 0-6 severe structural
+  Interior (max 10): 1:1 mapping from PQ designation (mapping above). No deductions. Staple rust, detached centerfold, etc. → Spine. Soiling/foxing → factored into PQ designation. Missing interior pages out of scope.
 
-RULE: Score each category independently from defects in that category ONLY.
-A perfect score in a category means no observed defects. Deduct from the maximum based on defect severity and accumulation.
+SPINE TICK SCORING: deduct 1 Spine point per non-color-breaking tick, 2 Spine points per color-breaking tick. Set defect.colorBreaking = true when ink visibly disrupted exposing white paper.
 
-Per-category calibration (applied proportionally to the category maximum):
-  Front (max 50):
-    • 50 = pristine, sharp corners, flat, no observed defects
-    • 47-49 = a single trace defect (minor corner wear, light spine-adjacent tick)
-    • 43-46 = one small defect or trace accumulation
-    • 38-42 = minor defects present, still strong eye appeal
-    • 30-37 = moderate defect accumulation or one color-breaking defect
-    • 20-29 = substantial wear or significant defect
-    • 10-19 = major structural or cosmetic issues
-    • 0-9 = severe, extensive, possibly structural compromise
-    CUMULATIVE-FRONT-DEFECT RULE (v2.4): If the front cover shows widespread
-    soiling/discoloration AND has multiple additional defects (any combination
-    of corner blunting + edge wear + a crease + spine-side stress), Front
-    sub-score MUST be ≤ 30 regardless of how each individual defect is rated.
-    Mid-grade books (CGC 3.0-4.5 territory) routinely show this combination.
-    Without this rule, individual defects each get rated as Med severity and
-    the sum lands in the 32-40 range, which corresponds to a CGC 5.5-7.0 cover.
-    The point is the cumulative effect: a cover with widespread soiling AND
-    multiple additional wear features is a 30-or-below cover even if no
-    single defect is High severity. When in doubt at 30, go to 28.
-    CREATOR-SIGNATURE RULE (v2.7, neutral + ceiling cap): If a marking
-    on the cover is CONFIDENTLY identifiable as a deliberate creator
-    signature — meaning it reads as a name written in a stylized
-    signing manner, appears in a customary signing location, and is
-    consistent with a creator's autograph (illustrator, writer, editor,
-    or other professional associated with the book) — handle it as
-    follows:
-      • Record it in the defects array with type "Creator signature"
-        (NOT "Writing on cover"). Leave the severity field empty (""):
-        a creator signature is neither a defect nor a graded attribute,
-        just an observed feature.
-      • Do NOT deduct any points for the signature, anywhere. Score
-        Front, Back, Spine, and Interior exactly as you would for the
-        same book without the signature.
-      • In aiAssessment, describe the signature as an observed feature
-        (e.g. "Cover bears an apparent signature reading 'Len Wein'").
-        The word "apparent" is required — Robograder does not and
-        cannot authenticate signatures.
-      • DISFIGUREMENT EXCEPTION: if the signature is so large and
-        prominent that it physically dominates the cover image (e.g. a
-        cover-spanning paint-pen mark obscuring artwork across more
-        than half the cover), apply a single Med-severity deduction to
-        Front for the physical impact. This exception is for genuine
-        disfigurement only — a typical signature on the cover face,
-        however large, does NOT qualify. If you are unsure, it doesn't.
-    CONFIDENCE BAR: Apply this rule ONLY when you can read a plausible
-    creator name in a deliberate signing style. If the writing is
-    ambiguous (a scrawl, a number, an owner writing their name in
-    block letters in the bag-flap area, a price, a date stamp), treat
-    it as ordinary cover writing under the normal defect rubric — do
-    NOT neutralize unknown writing as a "signature" just because it
-    might be one. Erring toward "still a defect when unsure" is the
-    correct posture: under-noting an unconfirmed signature is
-    recoverable; over-neutralizing actual defacement is not.
-  Back (max 20):
-    • 20 = pristine, no observed defects
-    • 18-19 = trace wear only
-    • 15-17 = minor defect or light accumulation
-    • 11-14 = moderate defect accumulation
-    • 7-10 = substantial wear or significant defect
-    • 0-6 = major issues
-  Spine (max 20):
-    • 20 = pristine spine, no roll, no stress lines, no fraying, staples clean
-    • 18-19 = trace — one very minor non-color-breaking tick
-    • 15-17 = light stress lines, slight roll, or minor corner blunting at spine
-    • 11-14 = multiple stress lines, visible roll, minor fraying, or one color-breaking crease
-    • 7-10 = significant stress accumulation, split starting, staple pull
-    • 0-6 = severe structural issues at spine
-  Interior (max 10):
-    Interior score is a direct 1:1 mapping from the page quality designation. No deductions. Interior defects (staple rust, detached centerfold, etc.) are routed to the Spine score, not Interior. Soiling and foxing affecting the pages factor into the PQ designation itself; they do not get a separate Interior deduction. Missing interior pages are not currently within scope of photo-based assessment and should not be evaluated.
+SPINE ROLL SCORING: Low -1 to -2; Med -3 to -5; High -6 to -10.
 
-    PQ → Interior score (absolute mapping):
-      • White                   → 10
-      • Off-White to White      → 9
-      • Off-White               → 8
-      • Cream to Off-White      → 7
-      • Cream                   → 6
-      • Light Tan to Cream      → 5
-      • Light Tan               → 4
-      • Tan                     → 3
-      • Brown                   → 2
-      • Brown/Brittle           → 1
-      • Brittle                 → 0
-
-SPINE TICK SCORING: deduct 1 Spine point per confidently observed non-color-breaking tick, and 2 Spine points per confidently observed color-breaking tick. Set defect.colorBreaking = true when the ink is visibly disrupted exposing white paper. (Tick identification itself happens in Phase 1.)
-
-SPINE ROLL SCORING: Spine score deductions: Low severity -1 to -2; Med -3 to -5; High -6 to -10. (Roll identification and severity description happens in Phase 1.)
-
-STAPLE SCORING: Staple rust or staple defects route to the Spine category (not Interior). Severity: Low = faint <2mm; Med = clear brown stain with 3–8mm migration; High = heavy migration, multiple pages stained, or structural failure. Missing/dislodged/popped staple → Med or High.
+STAPLE SCORING: Staple defects → Spine category (not Interior). Severity: Low = faint <2mm; Med = clear brown stain with 3–8mm migration; High = heavy migration, multiple pages stained, or structural failure. Missing/dislodged/popped staple → Med or High.
 
 SEVERITY WORD MAPPING (applies to ALL defects):
+  • light/minor/slight/small/faint/trace → Low
+  • moderate/medium/noticeable → Med
+  • extensive/heavy/significant/severe/deep/major → High
+Measurement in defect.measurement is welcome when it adds clarity, but NOT required. "Moderate spine roll" with severity Med is acceptable.
 
-Map descriptive qualifiers in your defect descriptions directly to the severity tag:
-  • "light", "minor", "slight", "small", "faint", "trace"           → Low
-  • "moderate", "medium", "noticeable"                              → Med
-  • "extensive", "heavy", "significant", "severe", "deep", "major"  → High
-
-A measurement (fraction of inch, percentage, count) is welcome in defect.measurement when it adds clarity, but it is NOT required. "Moderate spine roll" is an acceptable description with severity Med; no number needed. Use measurements when the extent meaningfully changes how the user understands the defect, not as bureaucracy.
-
-ENHANCEMENT TAGGING:
-
-When defects are observed that are removable by pressing or cleaning, flag them in the defect entry's measurement field:
+ENHANCEMENT TAGGING — defects removable by pressing/cleaning get a measurement-field tag:
   • Bend without color break → "pressing candidate"
   • Spine tick without color break → "pressing candidate"
   • Surface dirt, fingerprints, light smudges → "cleaning candidate"
-  • Spine roll (Low or Med severity, non-color-breaking) → "pressing candidate"
-  • Color-breaking defects → NOT enhancement candidates (permanent damage)
-  • Missing pieces, tape residue, water damage, High-severity spine roll → NOT enhancement candidates
+  • Spine roll (Low or Med, non-color-breaking) → "pressing candidate"
+  • Color-breaking defects → NOT enhancement candidates (permanent)
+  • Missing pieces, tape residue, water damage, High spine roll → NOT enhancement candidates
 
-These tags help the user decide whether the book is worth submitting for professional enhancement before grading.
+Confidence base: ±${baseConf}. Adjust up if glare/poor focus, no raking light photo, staples not visible, restoration suspected.
 
-These tags help the user decide whether the book is worth submitting for professional enhancement before grading.
-
-Confidence base: ±${baseConf}. Adjust up if: glare/poor focus, no raking light photo, staples not visible, restoration suspected.
-
-CRITICAL: The final score is literally Front + Back + Spine + Interior. The arithmetic must check out exactly. If your holistic impression disagrees with the sum by more than 2 points, revisit the component scores — one is wrong, not the formula.
+CRITICAL: final = Front + Back + Spine + Interior exactly. If holistic impression disagrees with the sum by more than 2 points, revisit the components — one is wrong, not the formula.
 
 ── CGC GRADE ──
-Apply CGC standards to your defect inventory from Phase 1.
+Apply CGC standards to the defect inventory.
 
-GRADING PHILOSOPHY (v2.1) — THINK LIKE BLACKJACK:
-The cost of overshooting a grade is asymmetric and much higher than the cost of undershooting. If a user submits a book to PSA or CGC based on your prediction and the official grade comes in lower than what you predicted, that is a costly outcome for the user (the submission fee, the shipping, the wait, and the disappointment). They will lose trust in Robograder. If instead you predict slightly low and the official grade comes in higher, the user is delighted — they got a "bonus" they didn't expect.
+BLACKJACK PHILOSOPHY: cost of overshooting is asymmetric and much higher than undershooting. User submits to PSA/CGC based on your prediction; if official comes in lower, that's costly (fees, shipping, wait, disappointment, lost trust). If official comes in higher, user is delighted. Between two adjacent grades, prefer the lower. When uncertain whether a defect rises to grade-affecting, count it. Holistic impression between two grades → pick the lower. EXCEPTION: clearly minor defects with strong eye appeal — never grade conservatively just for safety. Goal: precision without going over. 21 is perfect, 20 is great, 22 is a bust.
 
-Therefore: when calibrating between two adjacent grade points, prefer the lower one. When uncertain whether a defect rises to a grade-affecting level, count it. When the holistic impression sits between two grades, pick the lower. The exception is when defects are clearly minor and eye appeal is strong — never grade conservatively just for safety. The goal is precision: get as close to the official grade as you can WITHOUT going over. Like blackjack: 21 is perfect, 20 is great, 22 is a bust.
-
-This applies to BOTH the CGC grade and the RoboGrade. Component scores derived in Phase 2 should reflect this same conservative-when-uncertain disposition.
+Applies to BOTH CGC grade and RoboGrade. Component scores in Phase 2 reflect this same conservative-when-uncertain disposition.
 
 Grade calibration:
-• Assign 9.0–9.6 for minor defects. Do not cap at 8.5 out of caution.
+• Assign 9.0–9.6 for minor defects. Don't cap at 8.5 out of caution.
 • Strong eye appeal + flat spine + bright colors + sharp corners = high grade.
-• At high grades (8.5+), stress lines, bends, soiling, and printer tears become potentially grade-defining.
-• For structural defects (tape, missing pieces, splits, water damage): there is NO hard cap. Their effect on the grade is gradient and depends on size, location, and what else is wrong with the book. See PHASE 3's CGC tier definitions below for the actual tier-by-tier allowances.
-• ENHANCE: a single yes/no judgment about whether professional treatment (any of pressing, UV, or cleaning, or any combination) is likely to improve this book's grade. Output "Y" if any of these would help: visible spine roll or rippling that pressing could correct, color-breaking creases that pressing might soften, soiling that cleaning could lift, or tanning on unprinted white areas that UV could lighten. Output "N" if defects are dominated by structural damage that no treatment can address (missing pieces, tears, severe creases, stains that have set). Leave null if uncertain.
+• At 8.5+, stress lines, bends, soiling, printer tears become potentially grade-defining.
+• Structural defects (tape, missing pieces, splits, water damage): NO hard cap. Effect is gradient per Phase 3 tier definitions.
+• ENHANCE: yes/no on whether pressing/UV/cleaning would improve grade. "Y" if visible spine roll/rippling pressing could correct, color-breaking creases pressing might soften, soiling cleaning could lift, or tanning on unprinted white areas UV could lighten. "N" if defects are dominated by structural damage no treatment fixes (missing pieces, tears, severe creases, set stains). null if uncertain.
 
-GRADER NOTES (drafted in Phase 2, finalized in Phase 4):
+GRADER NOTES (drafted Phase 2, finalized Phase 4):
+Avoid over-enumerating same defect across corners/surfaces. Concise, official CGC terminology.
 
-Avoid over-enumerating the same defect repeatedly across multiple corners or surfaces. Be concise and use official CGC grading terminology.
-
-CONSOLIDATION RULES:
-  • Group same defect type across multiple locations into ONE note when the locations share the same defect kind and severity. Do NOT write four separate corner-blunting notes if all four corners are blunted equally; write "Corner blunting, all four corners". DO write separate notes when corners differ — e.g. "Corner blunting, top corners, light" and "Piece out, bottom-right corner" if those are the actual conditions. Same applies to spine stress lines, edge wear, soiling, etc., when uniform; split when non-uniform.
-  • Never note absence of defects. The defect list is for defects. Do not write "no missing pieces observed", "no tape detected", "no restoration", "pages supple, no brittleness". Absence is the default — only call out what IS there.
-  • Arrival dates, distributor markings, pedigree marks, and normal manufacturing characteristics are NOT defects. Do not put them in the defect list. If they are notable enough to mention, put them in aiAssessment (the assessment notes), not graderNotes.
-  • Never describe handling history ("book has been read multiple times") — describe the defects themselves.
+CONSOLIDATION:
+  • Same defect type + same severity across locations → ONE entry ("Corner blunting, all four corners"). Differing kind or severity → separate entries. Never homogenize heterogeneous corners.
+  • Never note absence of defects ("no missing pieces", "no tape", "no restoration", "pages supple, no brittleness"). Absence is the default.
+  • Arrival dates, distributor markings, pedigree marks, normal manufacturing characteristics are NOT defects. If notable, mention in aiAssessment not graderNotes.
+  • Never describe handling history ("book has been read"). Describe defects.
 
 JUSTIFICATION RULES:
   • If a category (Front, Back, Spine) is below its maximum (Front<50, Back<20, Spine<20), there MUST be at least one defect entry in that category in the defects array. If you cannot name a specific defect for the category, then the category should NOT lose points. Score deduction without a named defect is incoherent and erodes trust in the assessment.
@@ -872,27 +744,27 @@ ${censusBlock}${notesBlock}${highGradeBlock}
 
 ## RETURN ONLY THIS JSON — no markdown, no preamble
 
-HARD OUTPUT LIMITS (enforce while writing — these are caps, not targets):
-  • defects array: MAXIMUM 12 entries. If you have more candidates than 12, consolidate by location ("Multiple corner blunting" rather than four separate entries) and drop trace defects in favor of grade-relevant ones.
-  • Each defect description (location + measurement fields combined): MAXIMUM 20 words.
-  • aiAssessment: MAXIMUM 3 sentences. Be direct.
-  • graderNotes bullets: MAXIMUM 8 entries, each MAXIMUM 15 words.
-  • keyInfo: MAXIMUM 2 sentences. Empty string if uncertain.
-These limits exist because over-elaboration in the output is the dominant cause of slow assessment runs. The same observation written more concisely takes less time to generate. Be thorough in observation, brief in writing.
+HARD OUTPUT LIMITS (enforce while writing):
+  • defects array: MAX 12 entries. Beyond 12, consolidate by location ("Multiple corner blunting") and drop trace defects in favor of grade-relevant ones.
+  • Each defect description (location + measurement combined): MAX 20 words.
+  • aiAssessment: MAX 3 sentences. Direct.
+  • graderNotes bullets: MAX 8 entries, MAX 15 words each.
+  • keyInfo: MAX 2 sentences. Empty string if uncertain.
+Over-elaboration in output is the dominant cause of slow runs. Be thorough in observation, brief in writing.
 
 {
   "gateResult": "COMIC",
   "title": "series title, strip leading The",
   "issue": "e.g. 57 or A1",
-  "issueDate": "cover date as 'Mon YYYY', e.g. 'Feb 1968' or 'Sep 1942'; for season-only books use 'Spr/Sum/Fall/Win YYYY' e.g. 'Sum 1942'. If this is a facsimile or reprint (see 'printing' field), use the reprint's ACTUAL publication year, NOT the original year. For example: a 2019 facsimile of Amazing Fantasy #15 has issueDate 'Dec 2019', not 'Aug 1962'.",
+  "issueDate": "cover date as 'Mon YYYY' (e.g. 'Feb 1968'); season-only books 'Spr/Sum/Fall/Win YYYY'. For facsimile/reprint (see 'printing'), use the REPRINT year, not the original. Example: 2019 facsimile of AF #15 → 'Dec 2019', not 'Aug 1962'.",
   "publisher": "publisher name",
-  "printing": "Printing or variant designation. Leave EMPTY STRING for typical original-printing copies (the default — most books). Populate ONLY when there is clear evidence of a non-standard printing. Conventions: 'Facsimile Reprint' (or 'Facsimile Reprint (YYYY)' if the reprint year is visible in indicia or back cover) when this is a modern facsimile edition that reproduces an original key issue; '2nd print' / '3rd print' / etc. for direct-edition reprints from the original era; 'Newsstand variant' for distinguishable newsstand copies of direct-edition books; 'Reprint' for older non-facsimile reprints. When populating 'Facsimile Reprint', also note the facsimile finding plainly in aiAssessment, and use the reprint year (not the original year) for issueDate.",
+  "printing": "Printing/variant designation. EMPTY STRING for typical original printings (default). Populate ONLY with clear evidence: 'Facsimile Reprint' (append year in parens if visible) for modern facsimile editions of original key issues; '2nd print'/'3rd print' for direct-edition reprints from the original era; 'Newsstand variant' for distinguishable newsstand copies; 'Reprint' for older non-facsimile reprints. When populating 'Facsimile Reprint', note the finding in aiAssessment and use the reprint year for issueDate.",
   "pageQuality": "full designation e.g. Off-White to White",
   "grade": "CGC grade estimate e.g. 7.0",
-  "graderNotes": "• one bullet per defect, official CGC terminology — max 8 bullets, max 15 words each",
-  "aiAssessment": "MAX 3 SENTENCES: overall impression, dominant defects, grade rationale. Describe ONLY what you see in this copy's photos. NEVER mention census data, submission counts, distribution percentages, or any external data about this issue.",
+  "graderNotes": "• one bullet per defect, official CGC terminology",
+  "aiAssessment": "Overall impression, dominant defects, grade rationale. ONLY what you see in this copy's photos. NEVER mention census/submission counts/distribution/external data.",
   "labelNotes": "key issue notations from label if visible, empty string if none",
-  "keyInfo": "MAX 2 sentences about key-issue significance — populate ONLY if (a) the issue appears in injected census data AND (b) the fact is widely documented. Empty string otherwise.",
+  "keyInfo": "Key-issue significance — populate ONLY if (a) the issue appears in injected census data AND (b) the fact is widely documented. Empty string otherwise.",
   "enhance": true,
   "labelDetected": false,
   "officialCGCGrade": null,
@@ -933,7 +805,7 @@ These limits exist because over-elaboration in the output is the dominant cause 
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: 'claude-opus-4-6',
         max_tokens: 4096,
         system: systemPrompt,
         messages: [{
