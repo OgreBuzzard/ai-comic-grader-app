@@ -24,7 +24,7 @@
 //         rubric tied to Spine score deductions, pressing/cleaning candidate
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '3.99';
+const ROBOGRADE_VERSION = '3.99b';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -742,7 +742,7 @@ If a CGC or PSA label is visible: read grade, cert number, page quality, and key
 ${censusBlock}${notesBlock}${highGradeBlock}
 ## PHASE 4 — OUTPUT
 
-RESPONSE FORMAT — STRICT: your entire response must be the JSON object below and nothing else. The first character of your response must be `{`. The last character must be `}`. Do not write any text before the JSON — no phase headers, no reasoning narration, no "let me check", no markdown, no acknowledgements. The phases above are your internal process; they do not appear in the response. Do not write any text after the JSON. If you have reasoning to share, it goes inside the JSON's aiAssessment field, written tersely.
+RESPONSE FORMAT — STRICT: your entire response must be the JSON object below and nothing else. The first character of your response must be the literal opening curly brace. The last character must be the literal closing curly brace. Do not write any text before the JSON — no phase headers, no reasoning narration, no "let me check", no markdown, no acknowledgements. The phases above are your internal process; they do not appear in the response. Do not write any text after the JSON. If you have reasoning to share, it goes inside the JSON's aiAssessment field, written tersely.
 
 HARD OUTPUT LIMITS (enforce while writing):
   • defects array: MAX 12 entries. Beyond 12, consolidate by location ("Multiple corner blunting") and drop trace defects in favor of grade-relevant ones.
