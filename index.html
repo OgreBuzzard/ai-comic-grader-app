@@ -6383,9 +6383,13 @@ async function assessHighGrade() {
     : { promise: Promise.resolve(), cancel: () => {} };
 
   try {
-    // Compress all 8 images (4 main + 4 corner macros)
-    const allImages = [...imgs.slice(0,4), ...corners.slice(0,4)];
-    const dataUrls = await Promise.all(allImages.map(async img => {
+    // v4.0 Move B: Deep Assessment now uses its own focused endpoint.
+    // Only the 4 corner macros are sent — the initial assessment's JSON
+    // is sent alongside so the server can carry Back/Interior forward
+    // and apply Front/Spine deltas from the new evidence only. Input
+    // payload drops from ~25,000 tokens (full prompt + 8 images) to
+    // ~12,000 (focused prompt + 4 macros + initial JSON).
+    const cornerDataUrls = await Promise.all(corners.slice(0, 4).map(async img => {
       if (img.startsWith('http')) {
         const resp = await fetch(img);
         const blob = await resp.blob();
@@ -6393,39 +6397,71 @@ async function assessHighGrade() {
       }
       return img;
     }));
-    // S13 v21: sequential compression with main-thread yields. See
-    // compressImagesSequentially definition for why. The defaults are
-    // also now 1024px / 0.55 quality (down from 1400 / 0.65) for
-    // faster encode.
-    const compressed = await compressImagesSequentially(dataUrls);
+    // S13 v21: sequential compression with main-thread yields. 1024px / 0.55
+    // quality.
+    const compressedCorners = await compressImagesSequentially(cornerDataUrls);
 
     const token = window._currentUser ? (await window._currentUser.getIdToken()) : null;
-    // S13 v15: kick off API call WITHOUT awaiting (same fix as standard flow)
-    const respPromise = fetch('/api/assess', {
+
+    // Build a compact initial-assessment payload for the deep endpoint. We
+    // include the fields the deep prompt expects to carry forward, plus the
+    // full roboGrade so the server can enforce Back/Interior carry-forward
+    // and apply the floor rule.
+    const _initialPayload = {
+      title: formData.title || '',
+      issue: formData.issue || '',
+      issueDate: formData.issueDate || '',
+      publisher: formData.publisher || '',
+      printing: formData.printing || '',
+      pageQuality: formData.pageQuality || initialRG.pageQuality || '',
+      grade: formData.predictedGrade || formData.assessedCGCGrade || '',
+      graderNotes: formData.graderNotes || '',
+      aiAssessment: formData.aiAssessment || '',
+      labelNotes: formData.labelNotes || '',
+      keyInfo: formData.keyInfo || '',
+      enhance: formData.enhance,
+      labelDetected: !!formData.labelDetected,
+      roboGrade: initialRG
+    };
+
+    const _deepFetchInit = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-client-secret': '022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d',
-        ...(token ? {'Authorization': 'Bearer ' + token} : {})
+        ...(token ? { 'Authorization': 'Bearer ' + token } : {})
       },
       body: JSON.stringify({
-        images: compressed,
-        grader: 'CGC',
-        highGrade: true,
-        initialRoboGrade: initialRG,
-        // S14 unification: floor sourced from predictedGrade (preferred) or
-        // legacy assessedCGCGrade fallback. initialPsaGrade sent as empty
-        // string — server-side floor for PSA was removed, so this param is
-        // unused on the server but retained in the body for backward compat
-        // with any deployed server version that hasn't picked up the
-        // unification yet.
-        initialCgcGrade: formData.predictedGrade || formData.assessedCGCGrade || '',
-        initialPsaGrade: '',
+        initialAssessment: _initialPayload,
+        cornerMacros: compressedCorners,
         title: formData.title || '',
-        issueNumber: formData.issue || '',
-        issueDate: formData.issueDate || ''
+        issueNumber: formData.issue || ''
       })
-    });
+    };
+
+    // Streaming path with buffered phase events — identical pattern to the
+    // standard assess flow.
+    let _bufferedPhases = [];
+    let _stepAnimator = null;
+    function _onPhase(payload) {
+      if (_stepAnimator) _stepAnimator.setPhase(payload.phase);
+      else _bufferedPhases.push(payload);
+    }
+    let respPromise;
+    let _usingStreaming = false;
+    if (typeof supportsResponseStreaming === 'function' && supportsResponseStreaming()) {
+      _usingStreaming = true;
+      respPromise = streamAssessRequest('/api/assess_deep', _deepFetchInit, _onPhase)
+        .catch(err => {
+          if (err && err.fallbackResponse) {
+            _usingStreaming = false;
+            return err.fallbackResponse;
+          }
+          throw err;
+        });
+    } else {
+      respPromise = fetch('/api/assess_deep', _deepFetchInit);
+    }
 
     // Wait for scan animation to finish before processing the response.
     await scanController.promise;
@@ -6433,28 +6469,37 @@ async function assessHighGrade() {
       window.RobograderScan.debugLog('hg: scanController.promise resolved');
     }
 
-    // S13 v12: mount the overlay IMMEDIATELY after scan completes, so the
-    // user sees the step tracker even while we're still waiting on the
-    // API. Previously this fired AFTER `await resp.json()`, which meant
-    // the user saw a frozen empty cavity for however long the API was
-    // slower than the scan (~2-5 seconds typical). Mount-now decouples
-    // the visual transition from API timing.
+    // S13 v12: mount the overlay IMMEDIATELY after scan completes.
     mountStepTracker();
 
+    // Animator goes up after the tracker DOM exists; flush buffered phase events.
+    if (_usingStreaming) {
+      _stepAnimator = makeStepAnimator();
+      for (const p of _bufferedPhases) _stepAnimator.setPhase(p.phase);
+      _bufferedPhases = [];
+    }
+
     // Now await the API
-    const resp = await respPromise;
-    if (!resp.ok) { const e = await resp.text(); throw new Error('Deep Assessment error: ' + e); }
-    const unified = await resp.json();
+    const _resp = await respPromise;
+
+    let unified;
+    if (_usingStreaming) {
+      unified = _resp;
+      if (_stepAnimator) {
+        _stepAnimator.finalize();
+        await _stepAnimator.promise;
+      }
+    } else {
+      if (!_resp.ok) { const e = await _resp.text(); throw new Error('Deep Assessment error: ' + e); }
+      unified = await _resp.json();
+    }
     if (window.RobograderScan && window.RobograderScan.debugLog) {
-      window.RobograderScan.debugLog('hg: API returned, unified.gateResult=' + (unified.gateResult||'COMIC'));
+      window.RobograderScan.debugLog('hg: API returned, unified.gateResult=' + (unified.gateResult || 'COMIC') + ', streaming=' + _usingStreaming);
     }
     if (unified.error) throw new Error(unified.error);
 
-    // Gate can still fire on high-grade
+    // Gate can still fire on Deep (rare — initial would have caught most)
     if (unified.gateResult && unified.gateResult !== 'COMIC') {
-      // Server tracks strikes authoritatively when authenticated; fall back if not.
-      // MISSING_COVER is excluded from strikes — pre-API gate, no expense to
-      // protect against, user just needs to add the missing photo.
       const isStrikeGate = unified.gateResult !== 'MISSING_COVER';
       if (isStrikeGate && !('lockout' in unified)) {
         await incrementStrike(unified.gateResult, unified.gateReason || '');
@@ -6473,13 +6518,7 @@ async function assessHighGrade() {
     if (unified.psaGrade) cgc._psaGrade = unified.psaGrade;
     cgc._highGradeTier = true;
     // S14: post-Deep, mark highGradeUnlocked using the same triple-gate +
-    // value-list logic as the initial-assess site. This flag drives the
-    // tighter precision-display mode (±N capped 6 instead of standard
-    // ±N capped 16); since the Deep run actually produced the data, the
-    // tighter mode is justified. Without this, a Deep run that didn't
-    // result in score ≥80 would display in loose-precision mode even
-    // though the underlying data is the high-precision data.
-    // S14 unification: single predicted-grade gate post-Deep.
+    // value-list logic. Drives tighter precision-display mode.
     const _predictedNum = parseFloat(cgc.grade);
     const _vmatch = (typeof window.matchValueKey === 'function')
       ? !!window.matchValueKey(cgc.title, cgc.issue, cgc.publisher, cgc.printing)
@@ -6490,8 +6529,7 @@ async function assessHighGrade() {
       _vmatch
     );
 
-    // S13 v18: same pre-upload pattern as standard flow. HG uploads
-    // include both main and corner images.
+    // S13 v18: same pre-upload pattern as standard flow.
     try {
       const normalizedTitle = normalizeTitle(
         (cgc.title || formData.title || '').trim().replace(/\s+/g, ' ').replace(/^The\s+/i, ''),
@@ -6504,8 +6542,6 @@ async function assessHighGrade() {
       const rawCornerImages = (formData.cornerImages || []).filter(Boolean);
       const hasNewImages = rawImages.some(isDataUrl) || rawCornerImages.some(isDataUrl);
       if (hasNewImages && formData._imagesChanged !== false) {
-        // S13 v19: persist the id onto formData so submitForm finds the
-        // SAME id when it runs (see standard flow note above).
         if (!formData.id) formData.id = preUploadId;
         formData._preUploadId = preUploadId;
         formData._preUploadPromise = startPreUpload(rawImages, rawCornerImages, preUploadId)
@@ -6524,7 +6560,10 @@ async function assessHighGrade() {
     }
 
     const d = unified._diagnostics || {};
-    await animateStepsFromDiagnostics(d);
+    // v4.0: when streaming, the step animator already walked the modal.
+    if (!_usingStreaming) {
+      await animateStepsFromDiagnostics(d);
+    }
     _pendingAssessResult = {cgc, psa};
     window._pendingRoboGrade = cgc._roboGrade || null;
     mountResults(cgc, psa);
