@@ -5760,6 +5760,200 @@ async function animateStepsFromDiagnostics(d) {
   dbg('astFD: all steps done');
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// v3.99c — SSE streaming support for /api/assess.
+//
+// The server (api/assess.js) emits SSE events when the client sends
+// Accept: text/event-stream. Phase events advance the step-tracker in
+// real time; the final result event carries the same JSON the legacy
+// flow returns. A 1000ms minimum floor per step keeps the visible
+// animation smooth even if phase events arrive in rapid succession.
+//
+// Path B scope: the scan animation runs untouched as before. This code
+// only takes over the post-scan/post-mount step-tracker advancement,
+// replacing animateStepsFromDiagnostics in the SSE path.
+//
+// Backward compat: if the server returns JSON instead of SSE, or the
+// browser doesn't support response.body.getReader(), the caller falls
+// back to legacy JSON handling. See useStreamingAssess() below.
+// ─────────────────────────────────────────────────────────────────────────
+
+// Detect whether the current browser supports the Streams API for fetch
+// response bodies. iOS Safari ≥14.1, Chrome ≥105, Firefox ≥102 all do.
+function supportsResponseStreaming() {
+  try {
+    return typeof ReadableStream !== 'undefined'
+      && typeof TextDecoder !== 'undefined'
+      && (new Response(new ReadableStream())).body
+      && typeof (new Response(new ReadableStream())).body.getReader === 'function';
+  } catch (e) {
+    return false;
+  }
+}
+
+// streamAssessRequest(url, fetchInit, onPhase)
+//   Performs a streaming POST. fetchInit is the standard fetch init object
+//   (method, headers, body); the helper adds Accept: text/event-stream.
+//   onPhase(phaseObj) fires for each phase event the server emits.
+//   Resolves with the parsed result object on 'result' event.
+//   Rejects on 'error' event or network failure.
+async function streamAssessRequest(url, fetchInit, onPhase) {
+  const init = { ...fetchInit };
+  init.headers = {
+    ...(fetchInit.headers || {}),
+    'Accept': 'text/event-stream'
+  };
+  const resp = await fetch(url, init);
+  // If server didn't honor the Accept header (e.g. older deploy), fall back
+  // to legacy JSON handling. Signal that by throwing a tagged error so the
+  // caller can recover gracefully.
+  const ctype = (resp.headers.get('Content-Type') || '').toLowerCase();
+  if (!ctype.includes('text/event-stream')) {
+    const err = new Error('Server did not return SSE');
+    err.fallbackResponse = resp;
+    throw err;
+  }
+  if (!resp.ok) {
+    throw new Error('Assessment error: ' + (await resp.text()));
+  }
+  if (!resp.body || typeof resp.body.getReader !== 'function') {
+    const err = new Error('Browser cannot stream response body');
+    err.fallbackResponse = resp;
+    throw err;
+  }
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let finalResult = null;
+  let finalError = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const frames = buffer.split('\n\n');
+    buffer = frames.pop() || '';
+    for (const frame of frames) {
+      // Parse the event type and payload from this SSE frame.
+      let evtType = 'message';
+      const dataLines = [];
+      for (const line of frame.split('\n')) {
+        if (line.startsWith('event:')) evtType = line.slice(6).trim();
+        else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+      }
+      if (!dataLines.length) continue;
+      let payload;
+      try { payload = JSON.parse(dataLines.join('')); } catch (e) { continue; }
+      if (evtType === 'phase') {
+        try { onPhase && onPhase(payload); } catch (e) { /* swallow */ }
+      } else if (evtType === 'result') {
+        finalResult = payload;
+      } else if (evtType === 'error') {
+        finalError = payload && payload.error ? payload.error : 'Assessment error';
+      }
+    }
+  }
+  if (finalError) throw new Error(finalError);
+  if (!finalResult) throw new Error('Stream ended without a result event');
+  return finalResult;
+}
+
+// makeStepAnimator() — drives the step-tracker advancement based on
+// phase events from the server, enforcing a 1000ms minimum floor per
+// step. Each phase event records the latest phase number; the animator
+// advances at the floor rate, never faster.
+//
+// Phase → step name mapping:
+//   0 = populating, 1 = mint, 2 = pq, 3 = grading, 4 = confirming
+//
+// Animator state machine:
+//   - awaitedPhase: highest phase number received from server
+//   - shownPhase:   highest phase already displayed in modal
+//   - When shownPhase < awaitedPhase and floor elapsed: advance shownPhase,
+//     fire side-effects (startGridCycle on phase 1, startNeedlePulse on
+//     phase 2), restart floor timer.
+//   - finalize(): caller signals server is done. Animator marks any
+//     unfired steps and resolves the promise.
+function makeStepAnimator() {
+  const STEP_FLOOR_MS = 1000;
+  const PHASE_TO_STEP = { 0: 'populating', 1: 'mint', 2: 'pq', 3: 'grading', 4: 'confirming' };
+  const dbg = (msg) => {
+    if (window.RobograderScan && window.RobograderScan.debugLog) {
+      window.RobograderScan.debugLog(msg);
+    }
+  };
+  let awaitedPhase = -1;
+  let shownPhase = -1;
+  let lastAdvanceAt = 0;
+  let finalized = false;
+  let resolveDone;
+  const donePromise = new Promise(r => { resolveDone = r; });
+
+  function advanceTo(phase) {
+    while (shownPhase < phase) {
+      shownPhase++;
+      const stepName = PHASE_TO_STEP[shownPhase];
+      if (!stepName) continue;
+      setStep(stepName, 'done');
+      dbg(`stepAnim: ${stepName} → done (phase ${shownPhase})`);
+      // Side-effects at specific step boundaries (preserve scan-animation
+      // behavior previously triggered in animateStepsFromDiagnostics).
+      if (shownPhase === 0) {
+        if (window.RobograderScan && window.RobograderScan.startGridCycle) {
+          window.RobograderScan.startGridCycle();
+        }
+      }
+      if (shownPhase === 2) {
+        if (window.RobograderScan && window.RobograderScan.startNeedlePulse) {
+          window.RobograderScan.startNeedlePulse();
+        }
+      }
+    }
+    lastAdvanceAt = performance.now();
+  }
+
+  async function tick() {
+    while (!finalized || shownPhase < awaitedPhase) {
+      if (shownPhase < awaitedPhase) {
+        const sinceLast = performance.now() - lastAdvanceAt;
+        const wait = Math.max(0, STEP_FLOOR_MS - sinceLast);
+        if (wait > 0) await delayRAF(wait);
+        advanceTo(shownPhase + 1);
+      } else {
+        // No work to do; sleep briefly and re-check.
+        await delayRAF(60);
+      }
+    }
+    // Finalized AND caught up. If finalize() raised the awaited phase to 4,
+    // we're done. Otherwise, advance any remaining steps with the floor.
+    while (shownPhase < 4) {
+      const sinceLast = performance.now() - lastAdvanceAt;
+      const wait = Math.max(0, STEP_FLOOR_MS - sinceLast);
+      if (wait > 0) await delayRAF(wait);
+      advanceTo(shownPhase + 1);
+    }
+    dbg('stepAnim: all steps shown, resolving done');
+    resolveDone();
+  }
+  tick();
+
+  return {
+    setPhase(p) {
+      if (typeof p !== 'number') return;
+      if (p > awaitedPhase) awaitedPhase = p;
+    },
+    finalize() {
+      // When the result event arrives, mark finalized. The tick loop will
+      // walk any remaining steps to phase 4 with the floor applied.
+      finalized = true;
+      if (awaitedPhase < 4) awaitedPhase = 4;
+    },
+    promise: donePromise
+  };
+}
+// ─────────────────────────────────────────────────────────────────────────
+
 const PQ_COLORS={
   "White":{"bg":"#EEE8DC","text":"#5a4e3a"},
   "Off-White to White":{"bg":"#EAE0C2","text":"#5a4e3a"},
@@ -7794,7 +7988,59 @@ async function assessGrade(){
     // before we could even check whether scan was done. That created
     // 25-second dead gaps between scan-finish and overlay-appear when
     // the API was slow.
-    const unifiedRespPromise = fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json","x-client-secret":"022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",...(window._currentUser?{"Authorization":"Bearer "+(await window._currentUser.getIdToken())}:{})},body:JSON.stringify({images:compressed,slotsFilled,grader:"CGC",title:formData.title||"",issueNumber:formData.issue||"",issueDate:formData.issueDate||""})});
+    //
+    // v3.99c: now uses streaming SSE when the browser supports it. Phase
+    // events from the server advance the step-tracker in real time. The
+    // animator is created AFTER mountStepTracker() (because the DOM has
+    // to exist first), so phase events that arrive before that point are
+    // buffered in a closure variable and replayed when the animator is up.
+    const _assessFetchInit = {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-client-secret": "022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",
+        ...(window._currentUser ? {"Authorization": "Bearer " + (await window._currentUser.getIdToken())} : {})
+      },
+      body: JSON.stringify({
+        images: compressed, slotsFilled, grader: "CGC",
+        title: formData.title || "",
+        issueNumber: formData.issue || "",
+        issueDate: formData.issueDate || ""
+      })
+    };
+
+    // Streaming path: fetch with SSE, buffer phase events until the
+    // step-tracker mounts, then forward to the animator. Falls back to
+    // legacy JSON if the browser can't stream or the server responds
+    // with JSON anyway (older deploy / network proxy that buffers SSE).
+    let _bufferedPhases = [];
+    let _stepAnimator = null;
+    function _onPhase(payload) {
+      if (_stepAnimator) {
+        _stepAnimator.setPhase(payload.phase);
+      } else {
+        _bufferedPhases.push(payload);
+      }
+    }
+
+    let unifiedRespPromise;
+    let _usingStreaming = false;
+    if (supportsResponseStreaming()) {
+      _usingStreaming = true;
+      unifiedRespPromise = streamAssessRequest("/api/assess", _assessFetchInit, _onPhase)
+        .catch(err => {
+          // If server didn't stream, recover with the underlying Response
+          // and signal a fallback so the post-mount code path reads JSON
+          // instead of expecting a streamed result.
+          if (err && err.fallbackResponse) {
+            _usingStreaming = false;
+            return err.fallbackResponse;
+          }
+          throw err;
+        });
+    } else {
+      unifiedRespPromise = fetch("/api/assess", _assessFetchInit);
+    }
 
     // Wait for the scan animation to finish first, regardless of API
     // status. The chest + cavity scan is the user-visible animation;
@@ -7809,17 +8055,41 @@ async function assessGrade(){
     // API. Mount-now decouples the visual transition from API timing.
     mountStepTracker();
 
+    // v3.99c: now that the tracker DOM exists, create the animator and
+    // flush any phase events buffered during the scan.
+    if (_usingStreaming) {
+      _stepAnimator = makeStepAnimator();
+      for (const p of _bufferedPhases) _stepAnimator.setPhase(p.phase);
+      _bufferedPhases = [];
+    }
+
     // NOW await the API. If it's already resolved (scan was slower), this
     // returns immediately. If still in flight, the overlay is already up
     // and the user sees the step tracker rather than a frozen cavity.
-    const unifiedResp = await unifiedRespPromise;
+    const _resp = await unifiedRespPromise;
 
-    if(!unifiedResp.ok){const e=await unifiedResp.text();throw new Error("Assessment error: "+e);}
-    const unified=await unifiedResp.json();
-    if (window.RobograderScan && window.RobograderScan.debugLog) {
-      window.RobograderScan.debugLog('std: API returned, unified.gateResult=' + (unified.gateResult||'COMIC'));
+    let unified;
+    if (_usingStreaming) {
+      // Streaming path: _resp IS the parsed result object (streamAssessRequest
+      // resolved with it directly). Phase 4 may or may not have already
+      // shown depending on timing. Tell the animator to finalize, then
+      // wait for it to finish walking remaining steps with the 1000ms
+      // floor before we hand off to mountResults().
+      unified = _resp;
+      if (_stepAnimator) {
+        _stepAnimator.finalize();
+        await _stepAnimator.promise;
+      }
+    } else {
+      // Legacy JSON path (either browser couldn't stream, or server fell
+      // back). Unchanged from prior behavior.
+      if (!_resp.ok) { const e = await _resp.text(); throw new Error("Assessment error: " + e); }
+      unified = await _resp.json();
     }
-    if(unified.error)throw new Error(unified.error);
+    if (window.RobograderScan && window.RobograderScan.debugLog) {
+      window.RobograderScan.debugLog('std: API returned, unified.gateResult=' + (unified.gateResult || 'COMIC') + ', streaming=' + _usingStreaming);
+    }
+    if (unified.error) throw new Error(unified.error);
 
     // ── Gate check: if the assessment was terminated because the photos aren't
     //    a valid comic book, show the flag UI and don't charge a credit.
@@ -7884,7 +8154,12 @@ async function assessGrade(){
     }
 
     const d=unified._diagnostics||cgc._diagnostics||{};
-    await animateStepsFromDiagnostics(d);
+    // v3.99c: when streaming was used, the step animator already walked
+    // the modal through phases 0-4 with the 1000ms floor. Skip the legacy
+    // diagnostic-flag-driven animation to avoid double-marking.
+    if (!_usingStreaming) {
+      await animateStepsFromDiagnostics(d);
+    }
     _pendingAssessResult={cgc,psa};
     window._pendingRoboGrade=cgc._roboGrade||null;
     mountResults(cgc,psa);
