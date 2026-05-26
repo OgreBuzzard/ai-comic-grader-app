@@ -24,7 +24,7 @@
 //         rubric tied to Spine score deductions, pressing/cleaning candidate
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '3.97-d';
+const ROBOGRADE_VERSION = '3.98';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -716,11 +716,11 @@ JUSTIFICATION RULES:
   • If a category (Front, Back, Spine) is below its maximum (Front<50, Back<20, Spine<20), there MUST be at least one defect entry in that category in the defects array. If you cannot name a specific defect for the category, then the category should NOT lose points. Score deduction without a named defect is incoherent and erodes trust in the assessment.
   • Interior category: ALWAYS include at least one note in the defects array describing the page quality observation, even at full marks. Use category="Interior". The reader needs to see Interior was evaluated. The duplication with the standalone pageQuality field is acceptable here.
 
-TARGET NOTE COUNT:
-  • High grade (8.5+): 1-4 notes
-  • Mid grade (5.0-8.0): 3-7 notes
-  • Low grade (3.0-4.5): 5-10 notes
-  • Heavy damage (below 3.0): 8-15 notes
+TARGET NOTE COUNT (hard cap is 6 from HARD OUTPUT LIMITS; aim lower):
+  • High grade (8.5+): 1-3 notes
+  • Mid grade (5.0-8.0): 3-5 notes
+  • Low grade (3.0-4.5): 4-6 notes
+  • Heavy damage (below 3.0): 5-6 notes (consolidate aggressively — "multiple creases, all edges" not five separate crease entries)
   More than these counts indicates over-enumeration. Consolidate.
 
 COLOR-BREAKING CALIBRATION:
@@ -744,13 +744,18 @@ ${censusBlock}${notesBlock}${highGradeBlock}
 
 ## RETURN ONLY THIS JSON — no markdown, no preamble
 
-HARD OUTPUT LIMITS (enforce while writing):
-  • defects array: MAX 12 entries. Beyond 12, consolidate by location ("Multiple corner blunting") and drop trace defects in favor of grade-relevant ones.
-  • Each defect description (location + measurement combined): MAX 20 words.
-  • aiAssessment: MAX 3 sentences. Direct.
-  • graderNotes bullets: MAX 8 entries, MAX 15 words each.
-  • keyInfo: MAX 2 sentences. Empty string if uncertain.
-Over-elaboration in output is the dominant cause of slow runs. Be thorough in observation, brief in writing.
+HARD OUTPUT LIMITS — STRICT, ENFORCE PER FIELD AS YOU WRITE EACH FIELD:
+These are the difference between an assessment that completes in 15 seconds and one that times out at 50+. Every word over these caps is wall-clock time the user is waiting. Count words as you write.
+
+  • defects array: MAX 10 entries. Beyond 10, consolidate by location ("Multiple corner blunting") and drop trace defects.
+  • Each defect entry: defect.location + defect.measurement combined ≤ 15 words.
+  • aiAssessment: MAX 2 sentences, MAX 35 words TOTAL across both. Write the dominant defect(s) and grade rationale only. No "overall impression" prose. Examples of correct length: "Light spine stress lines and minor corner wear keep this from a higher grade. Eye appeal remains strong." (17 words.) "Heavy spine roll plus tape on cover dominate; multiple stress lines and edge wear compound the loss." (18 words.)
+  • graderNotes bullets: MAX 6 entries, MAX 10 words each. One bullet per defect category, not per defect instance.
+  • keyInfo: MAX 1 sentence, MAX 20 words. Empty string for any book not in census or not a widely-known key. Most books should have keyInfo as "".
+  • labelNotes: MAX 1 short phrase. Empty string if no CGC/PSA label visible.
+  • printing: short designation only (e.g. "Facsimile Reprint (2019)"). Never write rationale prose in the printing field.
+
+DO NOT write to fill the schema. Empty strings are correct outputs for fields with no content. Do not produce prose to demonstrate effort. The user wants the grade, not an essay about it.
 
 {
   "gateResult": "COMIC",
@@ -761,10 +766,10 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
   "printing": "Printing/variant designation. EMPTY STRING for typical original printings (default). Populate ONLY with clear evidence: 'Facsimile Reprint' (append year in parens if visible) for modern facsimile editions of original key issues; '2nd print'/'3rd print' for direct-edition reprints from the original era; 'Newsstand variant' for distinguishable newsstand copies; 'Reprint' for older non-facsimile reprints. When populating 'Facsimile Reprint', note the finding in aiAssessment and use the reprint year for issueDate.",
   "pageQuality": "full designation e.g. Off-White to White",
   "grade": "CGC grade estimate e.g. 7.0",
-  "graderNotes": "• one bullet per defect, official CGC terminology",
-  "aiAssessment": "Overall impression, dominant defects, grade rationale. ONLY what you see in this copy's photos. NEVER mention census/submission counts/distribution/external data.",
-  "labelNotes": "key issue notations from label if visible, empty string if none",
-  "keyInfo": "Key-issue significance — populate ONLY if (a) the issue appears in injected census data AND (b) the fact is widely documented. Empty string otherwise.",
+  "graderNotes": "• one bullet per defect category, ≤10 words each, ≤6 bullets total",
+  "aiAssessment": "≤2 sentences, ≤35 words TOTAL. Dominant defects and grade rationale only. ONLY this copy's photos. NEVER mention census/distribution/external data.",
+  "labelNotes": "key issue notations from label if visible, ≤1 phrase, empty string if none",
+  "keyInfo": "key-issue significance, ≤1 sentence, ≤20 words. Empty string unless issue is in census AND is widely-known key. Most books: empty string.",
   "enhance": true,
   "labelDetected": false,
   "officialCGCGrade": null,
