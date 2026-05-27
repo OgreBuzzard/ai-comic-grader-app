@@ -7156,13 +7156,13 @@ async function ensureTransferCodeRegistered() {
   try {
     if (!window._currentUser || typeof window._currentUser.getIdToken !== 'function') return;
     const token = await window._currentUser.getIdToken();
-    const resp = await fetch('/api/transfer_register_code', {
+    const resp = await fetch('/api/transfer_recv', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer ' + token,
       },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ action: 'register_code' }),
     });
     if (!resp.ok) {
       console.warn('[transfer] register_code failed', resp.status,
@@ -7194,7 +7194,7 @@ async function checkPendingTransfers() {
   _xferPolling = true;
   try {
     const token = await window._currentUser.getIdToken();
-    const resp = await fetch('/api/transfer_pending', {
+    const resp = await fetch('/api/transfer_recv?action=pending', {
       method: 'GET',
       headers: { 'Authorization': 'Bearer ' + token },
     });
