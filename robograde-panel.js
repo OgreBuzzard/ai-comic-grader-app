@@ -115,12 +115,18 @@
         if (d.measurement && d.measurement !== 'N/A') detailParts.push(d.measurement.replace(/^~\s*/, ''));
         if (d.colorBreaking) detailParts.push('color breaking');
         const detailStr = detailParts.length ? ` - ${detailParts.join(', ')}` : '';
-        const sev = d.severity || 'Low';
+        // S15 May 28: do not fall through to 'Low' on empty severity.
+        // Page quality entries (and any other descriptive observation that
+        // isn't a defect) emit severity:"" deliberately — the prompt schema
+        // reserves Low/Med/High for actual defects. Previously this was
+        // `d.severity || 'Low'` which clobbered empty severity into LOW on
+        // display, even though the model was emitting it correctly.
+        const sev = (d.severity == null) ? 'Low' : d.severity;
         const rowIdx = (startIdx || 0) + i;
         const rowBg = (rowIdx % 2 === 0) ? PAPER_GREEN : PAPER_CREAM;
         return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 10px;font-size:11px;gap:8px;background:${rowBg};font-family:'IBM Plex Mono','Menlo',monospace">
           <span style="color:${PAPER_INK}"><strong>${d.type}</strong>${detailStr}</span>
-          <span style="color:${sevColor(sev)};font-weight:800;font-size:11px;white-space:nowrap;flex-shrink:0;letter-spacing:0.5px">${sev.toUpperCase()}</span>
+          ${sev ? `<span style="color:${sevColor(sev)};font-weight:800;font-size:11px;white-space:nowrap;flex-shrink:0;letter-spacing:0.5px">${sev.toUpperCase()}</span>` : ''}
         </div>`;
       }).join('');
     }
@@ -167,11 +173,25 @@
 
     // Hide the staples line when there are no defects to call out.
     function staplesAreClean(s) {
+      // Returns true when the stapleCondition text describes NO defect —
+      // in which case the display suppresses the row entirely. The model
+      // is asked (by the schema) to fill stapleCondition, and on books
+      // where the staples are fine OR not clearly visible, it produces
+      // strings like "Clean, no migration", "Staples appear intact",
+      // "Not clearly visible in provided photos". None of those are
+      // defects and none should render.
+      // S15 May 28: broadened to catch the "intact", "not visible",
+      // "not clearly visible", "no obvious", "appear" patterns that were
+      // slipping through and rendering under Interior.
       if (!s) return true;
       const lower = s.toLowerCase();
-      if (/^clean\b/.test(lower)) return true;
-      if (/\bno\s+(rust|oxidation|migration)\b/.test(lower) && !/\b(but|except|however|some|minor|slight|trace)\b/.test(lower)) return true;
-      return false;
+      // Defect signals — if ANY of these are present, the staple condition
+      // describes a real defect and should render.
+      const hasDefect = /\b(rust|oxidation|migration|missing|popped|pulled|loose|hole|stain|brown|orange|crooked|bent|tear)\b/.test(lower)
+                     && !/\bno\s+(rust|oxidation|migration|stain)\b/.test(lower);
+      if (hasDefect) return false;
+      // Otherwise, treat as a non-defect observation and suppress.
+      return true;
     }
 
     const extrasHTML = [
