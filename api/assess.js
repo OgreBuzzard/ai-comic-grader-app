@@ -24,7 +24,7 @@
 //         rubric tied to Spine score deductions, pressing/cleaning candidate
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '4.12';
+const ROBOGRADE_VERSION = '4.13';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -661,9 +661,7 @@ Three forms of damage are catastrophic to grade and routinely misidentified as l
     RUST (call it "rust", never "oxidation"): orange-brown staining originating AT a staple and bleeding outward into the surrounding paper, OR brown discoloration on the staple itself. Look at BOTH staples on every photo that shows the spine/interior. A staple that is brown rather than silver = rust. Orange-brown halo around a staple hole = rust migration. This is a Spine-category defect. Even light rust must be named — it indicates moisture exposure and only worsens.
     FOXING: scattered small reddish-brown SPOTS or speckles distributed across paper (not originating from a staple) — caused by mold/oxidation in the paper itself. Distinct from general soiling (which is broad, grey-brown, and dirt-like) and from rust (which originates at metal). Foxing is spotty and reddish; soiling is broad and grey; rust radiates from staples. Name foxing as "Foxing" and factor it into page quality, not as generic soiling.
 
-If CHECK 1–4 finds anything, record it FIRST in the defect list and let it inform the Phase 3 grade determination. Do not let pattern-matching to common defect categories obscure these structural failures.
-
-MANDATORY: you must report the result of this scan in the JSON "structuralScan" object — a yes/no for tape, paper loss, tears, and rust, each with a one-phrase reason. This is not optional. Forcing yourself to answer each one explicitly is what prevents the silent skip: you cannot write "tapePresent": false without having actually checked the spine for a straight-edged band. If present, the corresponding defect MUST also appear in the defects array. A structuralScan that says present:true with no matching defect entry is a contradiction — fix it before returning.
+If CHECK 1–4 finds anything, name it in the defects array — TAPE / MISSING PIECE / TEAR / RUST as the defect type, with location and severity. Do not let pattern-matching to common defect categories (creases, stress lines, edge wear, soiling) obscure these structural failures. The checks above are your internal observation step; the defects array is where findings show up in the output. There is no separate structuralScan field — your output of structural defects IS the defects array.
 
 After all four checks, proceed below.
 
@@ -783,6 +781,8 @@ SCORE CEILING — your precision modifier bounds your maximum score. With a ±${
 
 CRITICAL: final = Front + Back + Spine + Interior exactly. If holistic impression disagrees with the sum by more than 2 points, revisit the components — one is wrong, not the formula.
 
+CROSS-CATEGORY DISCIPLINE — a book is one book, in one condition. Front, Back, and Spine are facets of the same book, not independent observations. The same physical wear that produces visible defects on the front (long creases, color-breaking, blunted corners) is also acting on the back and the spine — they just have less printed surface to make defects visible on. A book whose Front looks like a 2.0 (4/50) does NOT have a 5.0 Back (10/20) or a 4.5 Spine (9/20); it has a 2.0 Back and a 2.0 Spine that LOOK less defective because there is less printed art to break and less spine surface to count discrete lines on. Do not reward "fewer countable defects on the back" with a meaningfully higher proportional grade than the front. After scoring components, do this check: convert each component to its proportional grade (Front/50, Back/20, Spine/20 — each as a percentage of full). If any two diverge by more than 25 percentage points, the lower-defect category is almost certainly under-deducted. Re-score it to roughly match the others. EXCEPTIONS that justify divergence: (a) a single category absorbed a uniquely localized defect (tape only on spine, large missing piece only on back); (b) page quality is genuinely independent of cover wear and the Interior/10 score does not need to match. Otherwise, equalize. The 7CQB6A example: Front 4/50 = 8%, Back 10/20 = 50%, Spine 9/20 = 45% — that 37-42 percentage-point gap between Front and Back/Spine is the signature of this error. Back and Spine should be ~2-3/20 each for a Front of 4/50.
+
 ── CGC GRADE ──
 Apply CGC standards to the defect inventory.
 
@@ -882,16 +882,6 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     "defects": [
       {"type":"","location":"","measurement":"","severity":"Med","colorBreaking":false,"category":"Front"}
     ],
-    "structuralScan": {
-      "tapePresent": false,
-      "tapeReason": "",
-      "paperLossPresent": false,
-      "paperLossReason": "",
-      "tearsPresent": false,
-      "tearsReason": "",
-      "rustPresent": false,
-      "rustReason": ""
-    },
     "stapleCondition": "",
     "restorationFlags": [],
     "signatures": []
@@ -1342,7 +1332,8 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
         // DOWN, never up), so it cannot inflate a grade. If it keeps firing
         // on heavy-damage books even after the scan improvements, that's a
         // signal the identification is still failing upstream — investigate
-        // the structuralScan output, don't trust the corrected number.
+        // the defects array directly (v4.13 dropped the structuralScan output
+        // field; structural findings now surface only via defects entries).
         //
         // When we override to the lower value, we also rebalance the sub-
         // scores so they still sum to the displayed Robograde — otherwise
