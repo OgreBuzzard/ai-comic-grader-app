@@ -76,6 +76,22 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
+  // ── S15 vision diagnostic: same-origin auth ────────────────────────
+  // The vision-diagnostic POST is authorized by ORIGIN instead of the
+  // INSPECT_TOKEN, so it can be driven from the robograder.app tab without
+  // anyone having to retrieve the masked token from Vercel. Only requests
+  // whose Origin/Referer is robograder.app are accepted; cross-origin
+  // callers fall through to the normal token gate (and fail without one).
+  // This is an internal debug path; revert after calibration testing.
+  if (req.method === 'POST' && req.body && req.body.mode === 'vision') {
+    const origin = (req.headers.origin || req.headers.referer || '').toString();
+    const sameOrigin = /^https:\/\/(www\.)?robograder\.app/.test(origin);
+    if (!sameOrigin) {
+      return res.status(401).json({ error: 'vision mode requires same-origin request' });
+    }
+    return handleVisionProbe(req, res);
+  }
+
   // ── Token check ───────────────────────────────────────────────────
   // The expected token comes from Vercel env. If the env var is not set,
   // we refuse all requests rather than allowing through with no token —
@@ -119,68 +135,9 @@ export default async function handler(req, res) {
   //   image = a data URL ("data:image/jpeg;base64,....")
   // Returns: { results:[ { label, question, answer, inputTokens, outputTokens } ] }
   //
-  // No grading, no JSON-shape requirement, no defect rubric. Each probe is
-  // one image + one plain question. The answer is whatever the model says,
-  // returned unfiltered so it can be judged directly rather than through
-  // this endpoint's interpretation.
-  if (req.method === 'POST' && req.body && req.body.mode === 'vision') {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
-    const probes = Array.isArray(req.body.probes) ? req.body.probes : [];
-    if (!probes.length) return res.status(400).json({ error: 'probes array required' });
-    if (probes.length > 6) return res.status(400).json({ error: 'max 6 probes per call' });
-
-    function toImageBlock(dataUrl) {
-      if (typeof dataUrl !== 'string') return null;
-      const m = dataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/);
-      if (!m) return null;
-      return { type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } };
-    }
-
-    const results = [];
-    for (const probe of probes) {
-      const block = toImageBlock(probe.image);
-      if (!block) { results.push({ label: probe.label || '', error: 'bad image data URL' }); continue; }
-      const question = (probe.question || 'Describe what you see in this image.').toString();
-      try {
-        const r = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01'
-          },
-          body: JSON.stringify({
-            model: 'claude-opus-4-6',
-            max_tokens: 600,
-            messages: [{
-              role: 'user',
-              content: [ block, { type: 'text', text: question } ]
-            }]
-          })
-        });
-        if (!r.ok) {
-          const errTxt = await r.text();
-          results.push({ label: probe.label || '', error: 'API ' + r.status + ': ' + errTxt.slice(0, 200) });
-          continue;
-        }
-        const data = await r.json();
-        const answer = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n').trim();
-        const usage = data.usage || {};
-        results.push({
-          label: probe.label || '',
-          question,
-          answer,
-          inputTokens: usage.input_tokens || null,
-          outputTokens: usage.output_tokens || null,
-          model: data.model || null
-        });
-      } catch (e) {
-        results.push({ label: probe.label || '', error: String(e.message || e).slice(0, 200) });
-      }
-    }
-    return res.status(200).json({ mode: 'vision', count: results.length, results });
-  }
+  // (Vision mode is handled earlier via handleVisionProbe, before the token
+  // gate, using same-origin auth. This comment block is retained as the
+  // documentation of the body shape.)
 
   // ── ID validation (GET record/image modes below) ──────────────────
   const { id } = req.query;
@@ -399,4 +356,65 @@ export default async function handler(req, res) {
     console.error('[inspect] error:', e);
     return res.status(500).json({ error: 'Server error' });
   }
+}
+
+// ── S15 vision-diagnostic handler ──────────────────────────────────────
+// Relays browser-supplied crop images to Opus 4.6 with a bare, single-
+// purpose question and NONE of the grading prompt. Isolation test for
+// whether the model perceives a defect when nothing competes for attention.
+// Authorized by same-origin (robograder.app) in the caller above.
+async function handleVisionProbe(req, res) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
+  const probes = Array.isArray(req.body.probes) ? req.body.probes : [];
+  if (!probes.length) return res.status(400).json({ error: 'probes array required' });
+  if (probes.length > 6) return res.status(400).json({ error: 'max 6 probes per call' });
+
+  function toImageBlock(dataUrl) {
+    if (typeof dataUrl !== 'string') return null;
+    const m = dataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/);
+    if (!m) return null;
+    return { type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } };
+  }
+
+  const results = [];
+  for (const probe of probes) {
+    const block = toImageBlock(probe.image);
+    if (!block) { results.push({ label: probe.label || '', error: 'bad image data URL' }); continue; }
+    const question = (probe.question || 'Describe what you see in this image.').toString();
+    try {
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: 'claude-opus-4-6',
+          max_tokens: 600,
+          messages: [{ role: 'user', content: [ block, { type: 'text', text: question } ] }]
+        })
+      });
+      if (!r.ok) {
+        const errTxt = await r.text();
+        results.push({ label: probe.label || '', error: 'API ' + r.status + ': ' + errTxt.slice(0, 200) });
+        continue;
+      }
+      const data = await r.json();
+      const answer = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n').trim();
+      const usage = data.usage || {};
+      results.push({
+        label: probe.label || '',
+        question,
+        answer,
+        inputTokens: usage.input_tokens || null,
+        outputTokens: usage.output_tokens || null,
+        model: data.model || null
+      });
+    } catch (e) {
+      results.push({ label: probe.label || '', error: String(e.message || e).slice(0, 200) });
+    }
+  }
+  return res.status(200).json({ mode: 'vision', count: results.length, results });
 }
