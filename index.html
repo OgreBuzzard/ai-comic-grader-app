@@ -901,6 +901,12 @@
     /* Permission-denied dialog (sits inside camera-modal area but overlays the video). */
     #camera-perm-dialog { position: absolute; inset: 0; background: rgba(0,0,0,0.85); display: none; flex-direction: column; align-items: center; justify-content: center; padding: 24px; z-index: 10; }
     #camera-perm-dialog.show { display: flex; }
+    /* S15 May 27: when the permission dialog is showing, the bottom Photo
+       Library button must be hidden — otherwise the user sees two paths
+       to the same destination on the same screen. Single action only.
+       The button lives in #camera-controls outside #camera-stage, so the
+       selector is a body-class scope set when perm dialog is up. */
+    body.camera-perm-shown #camera-upload-link { display: none; }
     #camera-perm-dialog .perm-card { background: #1a1a1a; border: 1px solid #333; border-radius: 12px; padding: 24px; max-width: 340px; text-align: center; }
     #camera-perm-dialog h3 { color: #c8a96e; font-size: 16px; margin-bottom: 12px; letter-spacing: 0.5px; }
     #camera-perm-dialog p { color: #b0a898; font-size: 13px; line-height: 1.6; margin-bottom: 20px; }
@@ -1619,8 +1625,8 @@
     <div id="camera-perm-dialog">
       <div class="perm-card">
         <h3>Camera Access Needed</h3>
-        <p>In-app capture is what powers the "Verified" badge on your public listings. Tap below to use the upload picker for this photo, or grant camera access in your browser settings to enable in-app capture.</p>
-        <button onclick="cameraPermissionFallback()">Use Upload Instead</button>
+        <p>In-app capture isn't available without camera access. You can still finish your assessment by choosing photos from your library.</p>
+        <button onclick="cameraPermissionFallback()">Choose from Library</button>
       </div>
     </div>
     <!-- S13: Rotate-orientation card. Hidden by default; shown when the
@@ -1869,6 +1875,100 @@ function normalizeTitle(s, issueDate, printing) {
   return trimmed;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Full Assessment eligibility (S15 May 27, v4.0)
+//
+// Mirrors api/assess_full.js FULL_ASSESSMENT_BOOKS. Must stay in sync; if
+// the server whitelist changes, change this too. Title/issue normalization
+// uses the server's bare-string lowercase form (NOT the app-wide
+// normalizeTitle which can return aliases), because the server matches on
+// the raw user-typed title against this list. Issue is bare integer string.
+// ─────────────────────────────────────────────────────────────────────────
+const FULL_ASSESSMENT_BOOKS = [
+  { title: 'action comics',           issue: '1',  slots: 32 },
+  { title: 'superman',                issue: '1',  slots: 32 },
+  { title: 'detective comics',        issue: '27', slots: 32 },
+  { title: 'batman',                  issue: '1',  slots: 32 },
+  { title: 'all-star comics',         issue: '8',  slots: 32 },
+  { title: 'marvel comics',           issue: '1',  slots: 32 },
+  { title: 'captain america comics',  issue: '1',  slots: 32 },
+  { title: 'amazing fantasy',         issue: '15', slots: 16 },
+  { title: 'fantastic four',          issue: '1',  slots: 16 },
+  { title: 'incredible hulk',         issue: '1',  slots: 16 },
+  { title: 'x-men',                   issue: '1',  slots: 16 },
+  { title: 'tales of suspense',       issue: '39', slots: 16 }
+];
+
+function _normTitleForFull(t) {
+  if (!t) return '';
+  return String(t).trim().toLowerCase().replace(/^the\s+/i, '').replace(/\s+/g, ' ');
+}
+
+function _normIssueForFull(i) {
+  if (i == null) return '';
+  const s = String(i).trim().replace(/^#/, '');
+  if (/^\d+$/.test(s)) return String(parseInt(s, 10));
+  return s;
+}
+
+// Returns the matching whitelist entry { title, issue, slots } or null.
+// Useful for: "should this book show the Full Assessment slots / button?"
+function isFullAssessmentEligible(item) {
+  if (!item) return null;
+  // Raw only — slabbed books can't have interior photos.
+  if (item.labelDetected === true) return null;
+  const t = _normTitleForFull(item.title);
+  const i = _normIssueForFull(item.issue);
+  return FULL_ASSESSMENT_BOOKS.find(b => b.title === t && b.issue === i) || null;
+}
+
+// Has the user already run a successful Full Assessment on this book?
+// Set by the server response and persisted on save.
+function isFullAssessmentComplete(item) {
+  return !!(item && item.fullAssessmentRan === true);
+}
+
+// Has the Deep Assessment been completed on this book? Required prereq
+// before Full unlock. Deep sets _highGradeTier on the cgc result and
+// highGradeAssessed on the persisted item (both names exist in legacy
+// codepaths; check either).
+function isDeepAssessmentComplete(item) {
+  return !!(item && (item.highGradeAssessed === true || item._highGradeTier === true || item.deepAssessmentRan === true));
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Signature helpers (S15 May 27, v4.0)
+//
+// The assess.js prompt populates roboGrade.signatures = [{signer}, ...]
+// when it identifies one or more signatures on the book. We display two
+// Signature Macro slots in edit view when signatures.length > 0, letting
+// the user add close-up photos of the signature(s). The macros are stored
+// but not assessed beyond storage — they're documentation for buyers.
+// Two slots is sufficient: most signed books have one signer, occasional
+// books have two, and books with 3+ signatures get a wider photo or just
+// the two most prominent ones.
+// ─────────────────────────────────────────────────────────────────────────
+function getSignatures(item) {
+  if (!item) return [];
+  const sigs = item.roboGrade && Array.isArray(item.roboGrade.signatures)
+    ? item.roboGrade.signatures
+    : (Array.isArray(item.signatures) ? item.signatures : []);
+  return sigs.filter(s => s && typeof s === 'object');
+}
+
+function hasIdentifiedSignatures(item) {
+  return getSignatures(item).length > 0;
+}
+
+// Returns a comma-joined list of named signers, or empty string if all
+// signatures are signer-unknown. Used in section labels and notes.
+function formatSignerList(item) {
+  const named = getSignatures(item).map(s => (s.signer || '').trim()).filter(Boolean);
+  if (!named.length) return '';
+  return named.join(', ');
+}
+
+
 // ── Comic ID generation (added S11) ─────────────────────────────────────────
 // Old IDs in the wild: comic:0103, comic:user_asm45, comic:user_1745692100123.
 // New format: comic:{title-abbr}-{issue-padded-3}-{timestamp}
@@ -1974,9 +2074,19 @@ function buildComicId(title, issue) {
   return `comic:${abbr}-${issueStr}-${Date.now()}`;
 }
 
-function buildBadge(gradeVal,type,designation,sm){
+function buildBadge(gradeVal,type,designation,sm,fullAssessment){
   const cls=sm?"ubadge ubadge-sm":"ubadge";
   const lbl=GRADE_LABELS[gradeVal]||"";
+  // S15 May 27 (v4.0): Full Assessment confers a gold treatment that
+  // overrides the normal color for the "predicted" badge type. CGC/PSA
+  // official badges are untouched — those reflect a real graded slab and
+  // their colors carry their own meaning. The gold is reserved for the
+  // app-generated Predicted Grade on a book whose interior has been
+  // fully documented per the 12-book Full Assessment whitelist.
+  if(fullAssessment && (type==="predicted"||type==="cgc-ai"||type==="psa-ai")){
+    // Gold scheme: warm gold border + body, dark text for readability.
+    return `<div class="${cls}" style="border-color:#b8860b;background:linear-gradient(180deg,#d4af37 0%,#b8860b 100%)"><div class="ubadge-body" style="background:transparent"><div class="ubadge-num" style="color:#3a2a08">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(58,42,8,0.85)">${lbl}</div></div></div>`;
+  }
   if(type==="cgc-official"||type==="psa-official"){
     let sc="#1a5fa8",sl=type==="psa-official"?"PSA":"CGC";
     if(designation==="restored"){sc="#7c3aed";sl="CGC";}
@@ -2027,7 +2137,7 @@ function buildListBadge(c){
   // longer produced by the unified prompt. aiCgcGrade returns
   // predictedGrade (preferred) or assessedCGCGrade (legacy fallback).
   const ac=aiCgcGrade(c);
-  if(ac)return buildBadge(ac,"predicted","",true);
+  if(ac)return buildBadge(ac,"predicted","",true,isFullAssessmentComplete(c));
   if(c.grade)return buildBadge(c.grade,"my","",true);
   return"";
 }
@@ -2327,7 +2437,10 @@ const COMIC_DATA_FIELDS = [
   'restorationCheckTier','restorationReport','restorationFlag',
   'enhance',
   'slabbingDate',
-  'assessmentHistory'
+  'assessmentHistory',
+  // S15 May 27 (v4.0): Full Assessment completion flag and the deep
+  // assessment marker (used by client-side eligibility checks).
+  'fullAssessmentRan','deepAssessmentRan'
 ];
 const COMIC_DROP_FIELDS = ['press','uv','clean'];
 const DEFAULT_IMG_META = { source: 'upload', capturedAt: null, hash: null };
@@ -3931,10 +4044,19 @@ function showDetail(id){
     if (integrityHtml) {
       html+=`<div style="display:flex;justify-content:flex-end;margin-bottom:2px">${integrityHtml}</div>`;
     }
-    if(imgs[0]) html+=`<img class="detail-cover" src="${imgs[0]}" ${imgAttrs} onclick="openLightbox('${selected.id}',0)">`;
-    if(imgs[1]) html+=`<img class="detail-cover" src="${imgs[1]}" ${imgAttrs} onclick="openLightbox('${selected.id}',1)">`;
-    if(imgs[2]) html+=`<img class="detail-cover" src="${imgs[2]}" ${imgAttrs} onclick="openLightbox('${selected.id}',2)">`;
+    // S15 May 27: image-slot layout compacted to match edit view.
+    // Row 1 (2-col grid): Front + Back side-by-side at half-width.
+    // Row 2: Spine, full-width (16/5 aspect).
+    // Row 3: Interior, full-width.
+    // Lightbox indices still map to storage order (0=Front, 1=Back, 2=Interior, 3=Spine).
+    if (imgs[0] || imgs[1]) {
+      html+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
+      html+= imgs[0] ? `<img class="detail-cover" src="${imgs[0]}" ${imgAttrs} onclick="openLightbox('${selected.id}',0)">` : `<div></div>`;
+      html+= imgs[1] ? `<img class="detail-cover" src="${imgs[1]}" ${imgAttrs} onclick="openLightbox('${selected.id}',1)">` : `<div></div>`;
+      html+=`</div>`;
+    }
     if(imgs[3]) html+=`<img class="photo-spine" src="${imgs[3]}" ${imgAttrs} onclick="openLightbox('${selected.id}',3)">`;
+    if(imgs[2]) html+=`<img class="detail-cover" src="${imgs[2]}" ${imgAttrs} onclick="openLightbox('${selected.id}',2)">`;
     html+=`</div>`;
   }
 
@@ -3942,6 +4064,30 @@ function showDetail(id){
   // title block). If there are no images for some reason it still
   // renders here so the control is never lost.
   html += ownershipPillHtml;
+
+  // S15 May 27 (v4.0): Signature macros render after Spine (i.e., right
+  // after the main images block) and before the Deep corner macros.
+  // Only render when (a) signatures were identified on assessment AND
+  // (b) at least one signature image slot is filled. Empty signature
+  // sections don't display in detail view.
+  if (hasIdentifiedSignatures(selected)) {
+    const sigImgs = (selected.signatureImages || []).filter(u => u);
+    if (sigImgs.length > 0) {
+      const imgAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
+      const signerLabel = formatSignerList(selected);
+      html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a6abf">
+        <div style="font-size:11px;color:#a08fd4;font-weight:700;letter-spacing:2px;margin-bottom:8px">SIGNATURE${sigImgs.length > 1 ? 'S' : ''}${signerLabel ? ` — ${esc(signerLabel)}` : ''}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
+      sigImgs.forEach((url, displayIdx) => {
+        // Find the original storage index so the lightbox opens the right one
+        const storageIdx = (selected.signatureImages || []).findIndex((u, i) => u === url && i >= displayIdx);
+        html += `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:1/1">
+          <img src="${url}" ${imgAttrs} onclick="openSignatureLightbox('${selected.id}',${storageIdx})" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in">
+        </div>`;
+      });
+      html += `</div></div>`;
+    }
+  }
 
   // Corner images (high-grade) — render only when high-grade has been unlocked
   // for this book. Display in clockwise order: TL → TR → BR → BL.
@@ -4007,6 +4153,30 @@ function showDetail(id){
     }
   }
 
+  // S15 May 27 (v4.0): Full Assessment interior spreads render in detail
+  // view when the book has been Fully Assessed. Gold-bordered grid below
+  // the corner macros. Only renders when fullAssessmentRan is true (the
+  // server-verified completion flag) so a partially-filled in-progress
+  // batch of interior slots doesn't display here — those live in edit
+  // view until submission verifies them.
+  if (isFullAssessmentComplete(selected)) {
+    const interior = selected.interiorImages || [];
+    if (interior.some(u => u)) {
+      const imgAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
+      html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #b8860b">
+        <div style="font-size:11px;color:#d4af37;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT — INTERIOR SPREADS</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
+      interior.forEach((url, idx) => {
+        if (!url) return;
+        html += `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:3/2">
+          <img src="${url}" ${imgAttrs} onclick="openInteriorLightbox('${selected.id}',${idx})" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in">
+          <div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(184,134,11,0.85);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${idx + 1}</div>
+        </div>`;
+      });
+      html += `</div></div>`;
+    }
+  }
+
   // Restoration check images — placeholder. The restoration check feature
   // currently runs against transient images that are not persisted on the
   // comic record (see ~L2487). When that flow is updated to save the four
@@ -4054,7 +4224,7 @@ function showDetail(id){
   const cgcOfficialBadge = selected.cgcGrade ? buildBadge(selected.cgcGrade, "cgc-official", detectDesignation(selected), false) : null;
   const psaOfficialBadge = selected.psaGrade ? buildBadge(selected.psaGrade, "psa-official", selected.psaDesignation || "universal", false) : null;
   const predictedGradeValue = aiCgcGrade(selected);
-  const predictedBadge = predictedGradeValue ? buildBadge(normalizeGrade(predictedGradeValue), "predicted", "", false) : null;
+  const predictedBadge = predictedGradeValue ? buildBadge(normalizeGrade(predictedGradeValue), "predicted", "", false, isFullAssessmentComplete(selected)) : null;
   const predictionBoxes = [cgcOfficialBadge, psaOfficialBadge, predictedBadge].filter(Boolean);
 
   // Page quality display logic (S11):
@@ -4892,6 +5062,38 @@ function openCornerLightbox(id, idx){
   };
 }
 
+// S15 May 27 (v4.0): Full Assessment interior spreads. Mirrors openCornerLightbox.
+function openInteriorLightbox(id, idx){
+  const c = items.find(x => x.id === id);
+  if (!c || !c.interiorImages?.[idx]) return;
+  const img = document.getElementById("lightbox-img");
+  const box = document.getElementById("lightbox");
+  img.src = c.interiorImages[idx];
+  box.style.display = "flex";
+
+  _attachPanzoomToLightbox();
+
+  box.onclick = (e) => {
+    if (e.target === box || e.target.id === 'lightbox-stage') closeLightbox();
+  };
+}
+
+// S15 May 27 (v4.0): signature macro lightbox.
+function openSignatureLightbox(id, idx){
+  const c = items.find(x => x.id === id);
+  if (!c || !c.signatureImages?.[idx]) return;
+  const img = document.getElementById("lightbox-img");
+  const box = document.getElementById("lightbox");
+  img.src = c.signatureImages[idx];
+  box.style.display = "flex";
+
+  _attachPanzoomToLightbox();
+
+  box.onclick = (e) => {
+    if (e.target === box || e.target.id === 'lightbox-stage') closeLightbox();
+  };
+}
+
 // Track most recent touchstart fingers — used by handleDoubleTap to ignore
 // multi-finger gesture ends that aren't real taps. S13 v7 fix: previously,
 // the touchend handler fired on EVERY touchend, including the second finger
@@ -5254,6 +5456,11 @@ async function compressImagesSequentially(dataUrls) {
 // is a one-line change to either array.
 const STORAGE_SLOTS_MAIN = ['front_cover', 'back_cover', 'page_quality', 'raking_light'];
 const STORAGE_SLOTS_CORNER = ['corner_tl', 'corner_tr', 'corner_bl', 'corner_br'];
+// S15 May 27 (v4.0): interior slot names for Full Assessment. Variable count
+// (16 or 32 per book) so we generate the names rather than hard-coding.
+function storageSlotsInterior(n) {
+  return Array.from({ length: n }, (_, i) => `interior_${String(i + 1).padStart(2, '0')}`);
+}
 
 // Upload one image Blob to Cloud Storage and return the download URL.
 // Path: users/{uid}/items/{itemId}/{slot}.jpg (was users/{uid}/comics/...
@@ -6303,14 +6510,33 @@ function mountResults(cgc, psa) {
       btn.style.color = '#fff';
       btn.style.textAlign = 'center';
     } else if (isPostDeepRun) {
-      // S14 FIX: a just-completed Deep Assessment. The user explicitly
-      // does NOT want "DEEP ASSESSMENT UNLOCKED" (it's already done) nor
-      // a shouty "COMPLETED" — just a clean "Complete" that returns to
-      // Detail (completeAssessment → submitForm → showDetail).
-      btn.innerHTML = 'Complete';
-      btn.style.background = '#3a9ee0';
-      btn.style.color = '#fff';
-      btn.style.textAlign = 'center';
+      // S15 May 27 (v4.0): after a successful Deep, check whether this
+      // book is on the Full Assessment whitelist and hasn't yet had Full
+      // run. If so, the next available action is Full Assessment.
+      // Sourcing: cgc carries the just-finished result; formData carries
+      // anything previously persisted. We honor either signal so we
+      // don't re-prompt a book whose Full was already completed.
+      const _fullEligible = isFullAssessmentEligible({
+        title: (cgc && cgc.title) || formData.title,
+        issue: (cgc && cgc.issue) || formData.issue,
+        labelDetected: (cgc && cgc.labelDetected) || formData.labelDetected
+      });
+      const _fullAlreadyRun = isFullAssessmentComplete(cgc) || isFullAssessmentComplete(formData);
+      if (_fullEligible && !_fullAlreadyRun) {
+        btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">FULL ASSESSMENT</div><div style="font-size:10px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
+        btn.style.background = '#b8860b';
+        btn.style.color = '#fff';
+        btn.style.textAlign = 'center';
+      } else {
+        // S14 FIX: a just-completed Deep Assessment. The user explicitly
+        // does NOT want "DEEP ASSESSMENT UNLOCKED" (it's already done) nor
+        // a shouty "COMPLETED" — just a clean "Complete" that returns to
+        // Detail (completeAssessment → submitForm → showDetail).
+        btn.innerHTML = 'Complete';
+        btn.style.background = '#3a9ee0';
+        btn.style.color = '#fff';
+        btn.style.textAlign = 'center';
+      }
     } else if (hgAlreadyRun) {
       btn.innerHTML = `<div style="font-size:13px;font-weight:800;letter-spacing:2px;line-height:1.2">COMPLETED</div>`;
       btn.style.background = '#3a9ee0';
@@ -8584,27 +8810,46 @@ function renderForm(){
     <div>
       <label class="field-label">Photos <span style="color:#9a8a7a;font-size:10px;letter-spacing:1px">— up to 4, drag to reorder</span></label>
       <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px">
-        ${[0,1,2,3].map(i=>{
-          const slotLabels=["Front Cover","Back Cover","Interior","Spine"];
-          const img=(formData.images||[])[i];
-          const style="";
-          return img
-            ? `<div class="drag-slot" style="${style}" draggable="true"
-                ondragstart="dragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"
-                onclick="tapSlot(${i},'main')">
-                <img src="${img}">
-                <button class="slot-edit" onclick="event.stopPropagation();openCropper('main',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>
-                <button class="slot-x" onclick="event.stopPropagation();removeImg(${i})">×</button>
-               </div>`
-            : `<div class="drag-slot" style="padding:0;background:none;"
-                ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"
-                onclick="tapSlot(${i},'main')">
-                <img src="${SLOT_GHOSTS[i]}" style="width:100%;height:auto;display:block;border-radius:4px;opacity:0.7;">
-                <div style="position:absolute;inset:0;pointer-events:none;">
-                  <span style="position:absolute;top:8px;left:10px;font-size:11px;font-weight:700;color:#000;letter-spacing:1px;text-transform:uppercase;background:rgba(255,255,255,0.75);padding:2px 6px;border-radius:3px;">${slotLabels[i]}</span>
-                </div>
-               </div>`;
-        }).join("")}
+        ${(() => {
+          // S15 May 27: image-slot layout compacted. Front + Back render on
+          // one row (half-width each); Spine and Interior each render full-
+          // width on their own row. Internal storage order is unchanged
+          // (0=Front, 1=Back, 2=Interior, 3=Spine) so drag-and-drop indices,
+          // assess.js payload order, and detail-view image refs keep working.
+          // The visual order is purely a render-time grouping. Pinch-zoom
+          // lightbox handles the small-thumbnail-needs-zoom case.
+          const slotLabels = ["Front Cover","Back Cover","Interior","Spine"];
+          const renderSlot = (i) => {
+            const img = (formData.images||[])[i];
+            return img
+              ? `<div class="drag-slot" draggable="true"
+                  ondragstart="dragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"
+                  onclick="tapSlot(${i},'main')">
+                  <img src="${img}">
+                  <button class="slot-edit" onclick="event.stopPropagation();openCropper('main',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>
+                  <button class="slot-x" onclick="event.stopPropagation();removeImg(${i})">×</button>
+                 </div>`
+              : `<div class="drag-slot" style="padding:0;background:none;"
+                  ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"
+                  onclick="tapSlot(${i},'main')">
+                  <img src="${SLOT_GHOSTS[i]}" style="width:100%;height:auto;display:block;border-radius:4px;opacity:0.7;">
+                  <div style="position:absolute;inset:0;pointer-events:none;">
+                    <span style="position:absolute;top:8px;left:10px;font-size:11px;font-weight:700;color:#000;letter-spacing:1px;text-transform:uppercase;background:rgba(255,255,255,0.75);padding:2px 6px;border-radius:3px;">${slotLabels[i]}</span>
+                  </div>
+                 </div>`;
+          };
+          // Row 1: Front (0) + Back (1) side-by-side
+          // Row 2: Spine (3) full-width
+          // Row 3: Interior (2) full-width
+          return `
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              ${renderSlot(0)}
+              ${renderSlot(1)}
+            </div>
+            ${renderSlot(3)}
+            ${renderSlot(2)}
+          `;
+        })()}
       </div>
       ${formData.highGradeUnlocked ? `
       <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">
@@ -8671,6 +8916,113 @@ function renderForm(){
           </div>`;
         })()}
       </div>` : ''}
+      ${(() => {
+        // ─────────────────────────────────────────────────────────────
+        // SIGNATURE MACRO SLOTS (S15 May 27, v4.0)
+        // Only renders when the assessment identified one or more
+        // signatures (roboGrade.signatures.length > 0). Two slots, half-
+        // width. Both optional — user can add 0, 1, or 2 close-ups. These
+        // photos are stored but not assessed (no grading work, no API
+        // call). They're documentation that a prospective buyer can use
+        // to inspect the signature(s) themselves.
+        //
+        // Placement: between the Deep corner macros and the Full
+        // Assessment interior slots (per Matt's spec, May 27 PM).
+        // ─────────────────────────────────────────────────────────────
+        if (!hasIdentifiedSignatures(formData)) return '';
+        const sigImgs = formData.signatureImages || [null, null];
+        const signerLabel = formatSignerList(formData);
+        return `
+          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a6abf">
+            <div style="font-size:11px;color:#a08fd4;font-weight:700;letter-spacing:2px;margin-bottom:4px">SIGNATURE MACROS</div>
+            <div style="font-size:11px;color:#9a8aaa;margin-bottom:10px;line-height:1.5">
+              ${signerLabel
+                ? `Identified: <strong style="color:#c8b4ff">${esc(signerLabel)}</strong>. Add close-up photos for buyer inspection — optional, two slots available.`
+                : `Signature${getSignatures(formData).length > 1 ? 's' : ''} identified on this book. Add close-up photos for buyer inspection — optional, two slots available.`}
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              ${[0, 1].map(i => {
+                const img = sigImgs[i];
+                return img
+                  ? `<div class="drag-slot" style="aspect-ratio:1/1;position:relative;overflow:hidden" onclick="tapSlot(${i},'signature')">
+                      <img src="${img}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">
+                      <button class="slot-edit" onclick="event.stopPropagation();openCropper('signature',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>
+                      <button class="slot-x" onclick="event.stopPropagation();removeSignatureImg(${i})">×</button>
+                     </div>`
+                  : `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:1/1;position:relative;overflow:hidden" onclick="tapSlot(${i},'signature')">
+                      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#7a6abf;font-size:12px;font-weight:600;letter-spacing:1px;text-align:center;padding:8px">
+                        <div style="font-size:20px;margin-bottom:4px">✎</div>
+                        <div>SIGNATURE ${i + 1}</div>
+                        <div style="font-size:10px;opacity:0.7;margin-top:4px">Tap to add</div>
+                      </div>
+                     </div>`;
+              }).join('')}
+            </div>
+            <input id="signature-photo-input" type="file" accept="image/*" multiple onchange="handleSignatureImages(event)" style="display:none">
+          </div>
+        `;
+      })()}
+      ${(() => {
+        // ─────────────────────────────────────────────────────────────
+        // FULL ASSESSMENT INTERIOR SLOTS (S15 May 27, v4.0)
+        // Only renders when:
+        //   • Book matches the 12-book whitelist (isFullAssessmentEligible)
+        //   • Deep Assessment has been completed (isDeepAssessmentComplete)
+        //   • Full Assessment has NOT yet been completed (so the section
+        //     doesn't re-prompt after a successful run — once Full is done,
+        //     the gold treatment lives on the score badge and the slots
+        //     are just persisted images that show in detail view)
+        //
+        // Slot count is per-book (16 for the 5 Silver Age books, 32 for
+        // the 7 Golden Age books). Renders as a 2-column grid.
+        //
+        // Note: signature macro section is intentionally NOT here yet —
+        // per Matt's ordering spec (May 27 PM), Signature goes between
+        // Spine in the photos section and the Deep corner macros, but it's
+        // a separate feature implementation in this session.
+        // ─────────────────────────────────────────────────────────────
+        const _fullEntry = isFullAssessmentEligible(formData);
+        if (!_fullEntry) return '';
+        if (!isDeepAssessmentComplete(formData)) return '';
+        if (isFullAssessmentComplete(formData)) return '';
+        const N = _fullEntry.slots;
+        const interior = formData.interiorImages || [];
+        const filled = interior.filter(Boolean).length;
+        const ready = filled === N && !assessing;
+        const slotsHtml = Array.from({length: N}).map((_, i) => {
+          const img = interior[i];
+          return img
+            ? `<div class="drag-slot" draggable="true" style="aspect-ratio:3/2;position:relative;overflow:hidden"
+                ondragstart="interiorDragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="interiorDropSlot(event,${i})"
+                onclick="tapSlot(${i},'interior')">
+                <img src="${img}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">
+                <button class="slot-edit" onclick="event.stopPropagation();openCropper('interior',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>
+                <button class="slot-x" onclick="event.stopPropagation();removeInteriorImg(${i})">×</button>
+               </div>`
+            : `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:3/2;position:relative;overflow:hidden"
+                ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="interiorDropSlot(event,${i})"
+                onclick="tapSlot(${i},'interior')">
+                <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:700;letter-spacing:1px;opacity:0.5">${i+1}</div>
+               </div>`;
+        }).join('');
+        return `
+          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #b8860b">
+            <div style="font-size:11px;color:#d4af37;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT — INTERIOR SPREADS</div>
+            <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">
+              This book qualifies for Full Assessment. Add ${N} interior 2-page spreads, in any order. Each slot accepts one image. Submission verifies the pages are real interior photos of this book — no grading work, just documentation that nothing is hidden.
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              ${slotsHtml}
+            </div>
+            <input id="interior-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorImages(event)" style="display:none">
+            <div style="display:flex;justify-content:center;margin-top:12px">
+              <button id="full-assess-btn" onclick="submitFullAssessment()" ${ready?'':'disabled'} style="width:75%;min-height:52px;border-radius:12px;background:${ready?'#b8860b':'#2a2a2a'};color:${ready?'#fff':'#6a6a6a'};border:none;font-size:14px;font-weight:700;letter-spacing:1.5px;cursor:${ready?'pointer':'not-allowed'}">
+                ${assessing?'Verifying…':`FULL ASSESSMENT ${filled<N?`(${filled}/${N})`:''}`}
+              </button>
+            </div>
+          </div>
+        `;
+      })()}
       <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">
 
       <!-- S11: Pre-assessment Grader Notes (Option B for the chicken-and-egg
@@ -9004,7 +9356,12 @@ let _cropperInstance = null;
 let _cropperTarget = null; // { type: 'main'|'corner', index: number }
 
 function openCropper(type, index) {
-  const list = type === 'corner' ? formData.cornerImages : formData.images;
+  // S15 May 27 (v4.0): added 'interior' and 'signature' kinds.
+  // Same cropper UI; just sources from the appropriate formData array.
+  const list = type === 'corner' ? formData.cornerImages
+             : type === 'interior' ? formData.interiorImages
+             : type === 'signature' ? formData.signatureImages
+             : formData.images;
   const src = (list || [])[index];
   if (!src) return;
 
@@ -9204,6 +9561,17 @@ function confirmCrop() {
     const list = [...(formData.cornerImages || [])];
     list[index] = dataUrl;
     formData.cornerImages = list;
+  } else if (type === 'interior') {
+    // S15 May 27 (v4.0): Full Assessment interior slots.
+    const list = [...(formData.interiorImages || [])];
+    list[index] = dataUrl;
+    formData.interiorImages = list;
+  } else if (type === 'signature') {
+    // S15 May 27 (v4.0): signature macro slots.
+    const list = [...(formData.signatureImages || [null, null])];
+    while (list.length < 2) list.push(null);
+    list[index] = dataUrl;
+    formData.signatureImages = list;
   } else {
     const list = [...(formData.images || [])];
     list[index] = dataUrl;
@@ -9334,6 +9702,252 @@ async function handleCornerImages(e){
   renderForm();
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Interior 2-page-spread slot helpers (S15 May 27, v4.0)
+//
+// These mirror the corner-slot helpers above, scaled up: Full Assessment
+// slots are 16 or 32 per book and live in formData.interiorImages. Each
+// entry is a data URL or a Cloud Storage URL. Submission verifies all
+// slots against the server's whitelist; on success, the book gets the
+// gold fullAssessmentRan flag and stays gold across all views.
+//
+// Drag-reorder: supported, same UX as corners. Reorder doesn't matter
+// semantically (server doesn't check sequence), but users may want it
+// for personal organization.
+// ─────────────────────────────────────────────────────────────────────────
+let _interiorDragSrc = null;
+function interiorDragStart(e, i) { _interiorDragSrc = i; e.dataTransfer.effectAllowed = "move"; }
+function interiorDropSlot(e, target) {
+  e.preventDefault();
+  e.currentTarget.classList.remove("drag-over");
+  if (_interiorDragSrc === null || _interiorDragSrc === target) { _interiorDragSrc = null; return; }
+  const entry = isFullAssessmentEligible(formData);
+  if (!entry) { _interiorDragSrc = null; return; }
+  const imgs = [...(formData.interiorImages || [])];
+  while (imgs.length < entry.slots) imgs.push(null);
+  const tmp = imgs[_interiorDragSrc];
+  imgs[_interiorDragSrc] = imgs[target] || null;
+  imgs[target] = tmp;
+  formData.interiorImages = imgs;
+  formData._imagesChanged = true;
+  _interiorDragSrc = null;
+  renderForm();
+}
+
+function removeInteriorImg(i) {
+  const entry = isFullAssessmentEligible(formData);
+  if (!entry) return;
+  const imgs = [...(formData.interiorImages || [])];
+  while (imgs.length < entry.slots) imgs.push(null);
+  imgs[i] = null;
+  formData.interiorImages = imgs;
+  formData._imagesChanged = true;
+  renderForm();
+}
+
+let _tappedInteriorSlot = 0;
+
+async function handleInteriorImages(e) {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+
+  const entry = isFullAssessmentEligible(formData);
+  if (!entry) { e.target.value = ""; return; }
+
+  const nonImage = files.find(f => !f.type.startsWith('image/'));
+  if (nonImage) {
+    alert(`"${nonImage.name}" doesn't look like an image file. Please pick photos only (JPG, PNG, HEIC, etc.).`);
+    e.target.value = '';
+    return;
+  }
+
+  const newImgs = await Promise.all(files.map(f => new Promise(res => {
+    const r = new FileReader();
+    r.onload = ev => res(ev.target.result);
+    r.readAsDataURL(f);
+  })));
+  const imgs = [...(formData.interiorImages || [])];
+  while (imgs.length < entry.slots) imgs.push(null);
+  // If the user picked multiple files from the library, fill consecutive
+  // slots from the tapped slot forward (wrapping at the end). Same UX as
+  // corner-image multi-select.
+  const count = Math.min(newImgs.length, entry.slots);
+  for (let n = 0; n < count; n++) {
+    const slot = (_tappedInteriorSlot + n) % entry.slots;
+    // Don't overwrite a populated slot from the wrap — only fill empties
+    // in the back-half of the wrap. If a populated slot blocks the wrap,
+    // skip it. This handles "I have 16 slots, 14 are filled, I picked
+    // 2 photos for the empty ones" naturally.
+    if (imgs[slot]) {
+      // Find next empty slot
+      let next = slot;
+      let probed = 0;
+      while (imgs[next] && probed < entry.slots) {
+        next = (next + 1) % entry.slots;
+        probed++;
+      }
+      if (probed >= entry.slots) break; // all full
+      imgs[next] = newImgs[n];
+    } else {
+      imgs[slot] = newImgs[n];
+    }
+  }
+  formData.interiorImages = imgs;
+  formData._imagesChanged = true;
+  e.target.value = "";
+  renderForm();
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Signature macro helpers (S15 May 27, v4.0)
+//
+// Two-slot signature photo storage. formData.signatureImages = [url|null, url|null].
+// No assessment — just persisted documentation photos. Detail view renders
+// whichever slots are filled (skipping nulls).
+// ─────────────────────────────────────────────────────────────────────────
+let _tappedSignatureSlot = 0;
+
+function removeSignatureImg(i) {
+  const imgs = [...(formData.signatureImages || [null, null])];
+  while (imgs.length < 2) imgs.push(null);
+  imgs[i] = null;
+  formData.signatureImages = imgs;
+  formData._imagesChanged = true;
+  renderForm();
+}
+
+async function handleSignatureImages(e) {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  const nonImage = files.find(f => !f.type.startsWith('image/'));
+  if (nonImage) {
+    alert(`"${nonImage.name}" doesn't look like an image file. Please pick photos only (JPG, PNG, HEIC, etc.).`);
+    e.target.value = '';
+    return;
+  }
+  const newImgs = await Promise.all(files.map(f => new Promise(res => {
+    const r = new FileReader();
+    r.onload = ev => res(ev.target.result);
+    r.readAsDataURL(f);
+  })));
+  const imgs = [...(formData.signatureImages || [null, null])];
+  while (imgs.length < 2) imgs.push(null);
+  // Fill from tapped slot forward, wrapping. Only 2 slots so this is simple.
+  const count = Math.min(newImgs.length, 2);
+  for (let n = 0; n < count; n++) {
+    const slot = (_tappedSignatureSlot + n) % 2;
+    imgs[slot] = newImgs[n];
+  }
+  formData.signatureImages = imgs;
+  formData._imagesChanged = true;
+  e.target.value = "";
+  renderForm();
+}
+
+
+// submitFullAssessment — uploads interior images, POSTs to /api/assess_full,
+// applies the result. Mirrors the assess.js flow but doesn't run a scan
+// animation (Full is a verification, not a grading). The user has already
+// completed initial + Deep on this book; the gold state lives on the
+// score badge and persists once the result comes back verified.
+async function submitFullAssessment() {
+  if (assessing) return;
+  const entry = isFullAssessmentEligible(formData);
+  if (!entry) { alert('This book is no longer Full Assessment eligible.'); return; }
+  if (!isDeepAssessmentComplete(formData)) {
+    alert('Deep Assessment must be completed before Full Assessment.');
+    return;
+  }
+  const interior = (formData.interiorImages || []).filter(Boolean);
+  if (interior.length !== entry.slots) {
+    alert(`Please fill all ${entry.slots} slots before submitting.`);
+    return;
+  }
+  // Check credits up front (server doesn't deduct — we do, on success).
+  if (typeof window._userCredits === 'number' && window._userCredits < 1) {
+    alert('You need at least 1 assessment credit to run a Full Assessment.');
+    return;
+  }
+
+  assessing = true;
+  renderForm();
+
+  const btn = document.getElementById('full-assess-btn');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = 'Verifying…';
+  }
+
+  try {
+    // Compress each interior image. Reuse the existing sequential
+    // compressor with conservative settings — these are documentation
+    // images, sharpness matters more than file size, but we still want
+    // to keep total payload reasonable. 32 images × ~250KB = ~8MB,
+    // within Vercel's 4.5MB body limit only with smaller per-image
+    // size, so we use 800px / 0.55 quality (~150KB each).
+    const compressed = await compressImagesSequentially(interior, { maxDim: 800, quality: 0.55 });
+
+    const token = window._currentUser ? (await window._currentUser.getIdToken()) : null;
+    const resp = await fetch('/api/assess_full', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': 'Bearer ' + token } : {})
+      },
+      body: JSON.stringify({
+        title: formData.title || '',
+        issueNumber: formData.issue || '',
+        interiorImages: compressed,
+        labelDetected: !!formData.labelDetected,
+        initialAssessmentComplete: true,  // we got here, so initial+deep both ran
+        deepAssessmentComplete: true
+      })
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(describeAssessmentError(text) || 'Verification failed: ' + text.slice(0, 200));
+    }
+    const result = await resp.json();
+
+    if (result.verified === true) {
+      // Success: mark the book Full-Assessed. Credit is charged through
+      // the standard success path (decrementCredit, called from
+      // onAssessmentSuccess in the regular assess flow). Mirror that
+      // behavior here so the book persists with fullAssessmentRan=true
+      // AND the user's credit count decrements atomically.
+      formData.fullAssessmentRan = true;
+      formData._imagesChanged = true;  // ensure save persists interior images
+      onAssessmentSuccess();  // decrements credit, updates stats
+      alert('Full Assessment complete. The score badge is now gold.');
+      // submitForm persists the new state to Firestore.
+      await submitForm();
+    } else if (result.rejected === true) {
+      // Verification failed. NO credit charged (we never called
+      // onAssessmentSuccess). Surface the imageIssues so the user knows
+      // which slots to fix.
+      const issues = result.imageIssues || [];
+      const reasons = (result.reasons || []).join(' ');
+      let msg = 'Full Assessment was rejected. No credit was charged.';
+      if (reasons) msg += '\n\n' + reasons;
+      if (issues.length) {
+        msg += '\n\nProblem images:';
+        issues.forEach(it => {
+          msg += `\n• Image ${it.index + 1}: ${it.issue || 'unspecified issue'}`;
+        });
+      }
+      alert(msg);
+    } else {
+      throw new Error('Unexpected verification response shape');
+    }
+  } catch (e) {
+    alert(describeAssessmentError(e.message) || 'Error: ' + e.message);
+  } finally {
+    assessing = false;
+    renderForm();
+  }
+}
+
 // ── Camera capture pipeline (S11) ──────────────────────────────────────────
 // In-app photo capture using getUserMedia + SVG guide overlays. Powers the
 // "Verified: in-app photos" badge by stamping captured images with
@@ -9425,6 +10039,28 @@ let _cameraOrientationTimeout = null;
 // directly trigger the file picker. Decides camera-vs-upload based on device
 // capability, slot kind, and current state.
 function tapSlot(slotIndex, kind) {
+  // S15 May 27 (v4.0): Full Assessment interior slots ALWAYS use the file
+  // picker, regardless of camera capability. Reasoning: Full Assessment is
+  // 16-32 photos per book; users will almost always be batch-uploading
+  // from their library rather than taking new photos. A camera walkthrough
+  // through 32 photos would be hostile UX. Library multi-select is the
+  // right tool. The picker accepts multiple files and fills consecutive
+  // slots from the tapped one forward.
+  if (kind === 'interior') {
+    _tappedInteriorSlot = slotIndex;
+    document.getElementById('interior-photo-input').click();
+    return;
+  }
+
+  // S15 May 27 (v4.0): signature macros also use the file picker — small
+  // number of slots (2), but typically the user shoots them post-hoc with
+  // a different lens setup than the cover walkthrough. No camera walk.
+  if (kind === 'signature') {
+    _tappedSignatureSlot = slotIndex;
+    document.getElementById('signature-photo-input').click();
+    return;
+  }
+
   // Desktop / unsupported → existing file-picker behavior, exactly as before.
   if (!window._cameraSupported) {
     if (kind === 'corner') {
@@ -9489,6 +10125,9 @@ async function cameraOpen(state) {
   const modal = document.getElementById('camera-modal');
   const permDialog = document.getElementById('camera-perm-dialog');
   permDialog.classList.remove('show');
+  // S15 May 27: ensure the perm-shown class is cleared on fresh open,
+  // in case a previous denial left it set.
+  document.body.classList.remove('camera-perm-shown');
   modal.classList.add('open');
   // S13: body class signals "camera modal owns orientation behavior". CSS
   // suppresses the app-wide #orientation-block overlay while this is set.
@@ -9676,26 +10315,43 @@ async function cameraOpen(state) {
       // so phones that top out below 4x land at their max rather than
       // failing. If beta data shows 4x reintroduces the blur problem,
       // drop back to 3.5x.
-      const targetZoom = _cameraState.kind === 'corner' ? 4 : 2;
+      // S15 May 27: cap corner zoom at 3× per Matt's spec. He decided
+      // anything beyond 3× is too zoomed-in for most phones and the
+      // ZOOM OUT toggle handles the "too tight" case. Previous 4× target
+      // (S14) was too aggressive in practice. 3× sits at the optical
+      // telephoto sweet spot — enough magnification for visible 1/16"
+      // defects without dropping into digital-crop-on-main-sensor.
+      const targetZoom = _cameraState.kind === 'corner' ? 3 : 2;
       const lensOptions = [];
+      // S15 May 27: ALWAYS build a 1× option and the target-zoom option,
+      // even when there's only one physical lens. The single ZOOM OUT /
+      // ZOOM IN toggle button (see renderLensSelector) flips between
+      // these. 1× is the absolute widest we'll ever go — no 0.5×
+      // ultrawide (distorts comic covers, per Matt's spec).
       if (wide && supportsZoomConstraint()) {
+        // Index 0 = 1× (zoomed out); index 1 = target zoom (zoomed in).
+        lensOptions.push({ device: wide, zoom: 1, digitalZoom: 1, label: '1×' });
         lensOptions.push({ device: wide, zoom: targetZoom, digitalZoom: targetZoom, label: targetZoom + '×' });
       } else if (wide) {
+        // No zoom support — only 1× lens is available. Toggle button
+        // will hide itself in renderLensSelector when lenses.length < 2.
         lensOptions.push({ device: wide, zoom: 1, digitalZoom: 1, label: '1×' });
       }
-      console.log('[camera] kind=' + _cameraState.kind + ' target=' + targetZoom + 'x auto-picked lens:', lensOptions[0]?.label || 'none (using initial stream)');
+      console.log('[camera] kind=' + _cameraState.kind + ' target=' + targetZoom + 'x lens options:', lensOptions.map(l => l.label).join(','));
 
       _cameraState.lenses = lensOptions;
-      _cameraState.currentLensIdx = 0;
+      // Start at the target zoom (index 1 if it exists, else 0).
+      _cameraState.currentLensIdx = lensOptions.length > 1 ? 1 : 0;
 
-      // Don't call renderLensSelector — the selector stays hidden by default
-      // when the lenses array has 0-1 entries. Switch to the auto-picked
-      // lens immediately if we have one. switchToLens applies the zoom
-      // constraint AND clamps to the device's reported caps.zoom.max — so
-      // a phone that only supports 3× max will land at 3× even if we asked
-      // for 5×, and a phone with no zoom at all stays at 1×.
+      // S15 May 27: render the toggle button (visible when lenses.length>=2).
+      // Initial zoom is the target zoom (index 1 if exists) — switchToLens
+      // applies the zoom constraint AND clamps to the device's reported
+      // caps.zoom.max — so a phone that only supports 3× max will land at
+      // 3× even if we asked for 5×, and a phone with no zoom at all stays
+      // at 1×.
       if (lensOptions.length > 0) {
-        await switchToLens(0);
+        await switchToLens(_cameraState.currentLensIdx);
+        renderLensSelector();
       } else {
         // S14 FIX (Android zoom defaulting to 1×): the lens heuristic
         // above matches iOS-only device labels ("back camera", "back
@@ -9745,6 +10401,9 @@ async function cameraOpen(state) {
   } catch (err) {
     console.warn('[camera] getUserMedia failed:', err);
     permDialog.classList.add('show');
+    // S15 May 27: body class so CSS can hide the bottom Photo Library
+    // button (avoids two paths to the same destination on a single screen).
+    document.body.classList.add('camera-perm-shown');
   }
 }
 
@@ -9761,19 +10420,21 @@ function supportsZoomConstraint() {
 
 function renderLensSelector() {
   const sel = document.getElementById('camera-lens-selector');
-  if (!_cameraState || !_cameraState.lenses || _cameraState.lenses.length <= 1) {
+  if (!_cameraState || !_cameraState.lenses || _cameraState.lenses.length < 2) {
+    // Only one lens (or none): nothing to toggle. Hide the selector.
     sel.classList.remove('show');
     sel.innerHTML = '';
     return;
   }
-  // Build buttons: top to bottom = high zoom to low zoom (so closest button
-  // to capture button is the most-used). Use the lens.label which is already
-  // formatted ("1×", "2×", "3×").
-  const buttons = _cameraState.lenses.map((lens, idx) => {
-    const active = (idx === _cameraState.currentLensIdx) ? 'active' : '';
-    return `<button class="lens-btn ${active}" data-idx="${idx}" onclick="switchToLens(${idx})">${lens.label}</button>`;
-  }).reverse().join('');  // reverse so high-zoom is on top
-  sel.innerHTML = buttons;
+  // S15 May 27: single toggle button, "ZOOM OUT" when above 1×,
+  // "ZOOM IN" when at 1×. Replaces the per-lens chip list. Per Matt's
+  // spec: 1× is the absolute widest (no 0.5×, ever), corner macros cap
+  // at 3×, main captures cap at 2×. Toggle flips between index 0 (1×)
+  // and index 1 (the kind's target zoom).
+  const atOne = _cameraState.currentLensIdx === 0;
+  const targetIdx = atOne ? 1 : 0;
+  const label = atOne ? 'ZOOM IN' : 'ZOOM OUT';
+  sel.innerHTML = `<button class="lens-btn active" onclick="switchToLens(${targetIdx})">${label}</button>`;
   sel.classList.add('show');
 }
 
@@ -10040,6 +10701,124 @@ function cameraSkipSlot() {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Slab-label detection (S15 May 27, v4.0 — Approach A)
+//
+// Local-only heuristic detection. CGC and PSA slabs have a clearly defined
+// rectangular label across the top ~15% of the photo, with a saturated
+// yellow (CGC) or white-on-blue (PSA) background. Raw books don't have
+// this — the top of the photo is the cover art, which is usually varied
+// in color and brightness across the row.
+//
+// We detect the label by sampling rows in the top 15% of the captured
+// image and checking each row's color uniformity + dominant hue. A "label
+// row" is one where the dominant pixel color is consistent across the
+// width AND is either CGC-yellow (high R+G, low B) or PSA-style (high
+// brightness with low saturation). If MOST rows in the top band are
+// label-like, we conclude this is a slabbed book.
+//
+// Returns: 'cgc' | 'psa' | null
+//
+// Cost: ~5ms on a 2560x1920 image (samples ~20 rows, ~200 pixels per row).
+// Runs synchronously on the captured dataUrl before the walkthrough
+// advances — invisible to the user.
+//
+// False positives we accept: a comic with a wide yellow horizontal band
+// across the top would skip the spine/interior. Rare for actual comics
+// (Golden Age books with bright yellow logos use vertical not horizontal
+// strips). User can re-run the capture if it goes wrong.
+//
+// False negatives we accept: an unusual slab variant (Restored label,
+// Qualified label) or a photo with unusual cropping (label cut off the
+// top of the frame). User just takes the spine/interior shots anyway.
+// ─────────────────────────────────────────────────────────────────────────
+function detectSlabLabel(dataUrl) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const W = img.naturalWidth || img.width;
+        const H = img.naturalHeight || img.height;
+        if (!W || !H) return resolve(null);
+
+        // Sample the top 15% of the image. Scale down to keep this cheap —
+        // 600px-wide sample is plenty for color analysis.
+        const sampleW = Math.min(W, 600);
+        const sampleH = Math.round((H * 0.15) * (sampleW / W));
+        const canvas = document.createElement('canvas');
+        canvas.width = sampleW;
+        canvas.height = sampleH;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, sampleW, sampleH);
+        const data = ctx.getImageData(0, 0, sampleW, sampleH).data;
+
+        // Walk row by row. For each row, compute mean R/G/B and stddev.
+        // A label row has: high uniformity (low stddev across the row)
+        // AND a characteristic color (CGC yellow OR PSA white).
+        const ROWS_TO_SAMPLE = 20;
+        const rowStep = Math.max(1, Math.floor(sampleH / ROWS_TO_SAMPLE));
+        let cgcRowCount = 0;
+        let psaRowCount = 0;
+        let totalRowsSampled = 0;
+
+        for (let y = 0; y < sampleH; y += rowStep) {
+          totalRowsSampled++;
+          let sumR = 0, sumG = 0, sumB = 0;
+          let sumR2 = 0, sumG2 = 0, sumB2 = 0;
+          const rowStart = y * sampleW * 4;
+          for (let x = 0; x < sampleW; x++) {
+            const i = rowStart + x * 4;
+            const r = data[i], g = data[i+1], b = data[i+2];
+            sumR += r; sumG += g; sumB += b;
+            sumR2 += r*r; sumG2 += g*g; sumB2 += b*b;
+          }
+          const meanR = sumR / sampleW;
+          const meanG = sumG / sampleW;
+          const meanB = sumB / sampleW;
+          const varR = (sumR2 / sampleW) - meanR * meanR;
+          const varG = (sumG2 / sampleW) - meanG * meanG;
+          const varB = (sumB2 / sampleW) - meanB * meanB;
+          const stddev = Math.sqrt((varR + varG + varB) / 3);
+
+          // Uniformity test: a label row should have stddev under ~45 across
+          // the row. Comic art usually exceeds this.
+          if (stddev > 45) continue;
+
+          // CGC yellow: high R, high G, lower B. Specifically the iconic
+          // CGC yellow is around RGB(240, 200, 50) — R>180, G>140, B<120.
+          if (meanR > 180 && meanG > 140 && meanB < 120 && meanR - meanB > 80) {
+            cgcRowCount++;
+            continue;
+          }
+          // PSA: top band is typically a near-white area with red lettering.
+          // Mean color is high brightness, low saturation. Mean R/G/B all
+          // above 200, max-min spread under 40.
+          const maxC = Math.max(meanR, meanG, meanB);
+          const minC = Math.min(meanR, meanG, meanB);
+          if (minC > 200 && (maxC - minC) < 40) {
+            psaRowCount++;
+            continue;
+          }
+        }
+
+        // A confident label needs at least 35% of sampled rows to look
+        // like a label of the same type. Empirically, real CGC slab photos
+        // get 60-90% match across the top band; raw books rarely top 10%.
+        const cgcRatio = cgcRowCount / Math.max(1, totalRowsSampled);
+        const psaRatio = psaRowCount / Math.max(1, totalRowsSampled);
+        if (cgcRatio >= 0.35) return resolve('cgc');
+        if (psaRatio >= 0.35) return resolve('psa');
+        return resolve(null);
+      } catch (e) {
+        console.warn('[label-detect] failed:', e);
+        return resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+}
+
 async function cameraCapture() {
   if (!_cameraState || !_cameraState.stream) return;
   // S13: defensive guard. If the rotate-orientation card is showing, the
@@ -10158,6 +10937,41 @@ async function cameraCapture() {
   // doesn't matter there.
   if (captureBtn) captureBtn.disabled = false;
 
+  // S15 May 27 (v4.0, Approach A): graded-book conditional capture flow.
+  // After the FRONT slot is captured in a main-kind walkthrough, run a
+  // local heuristic detection on the captured pixels. If a CGC/PSA slab
+  // label is detected:
+  //   • Drop slots 2 (interior/PQ) and 3 (spine) from the queue — they
+  //     can't be reliably photographed on a slabbed book.
+  //   • Keep slot 1 (back) so the user finishes with a back-cover capture.
+  //   • Set _cameraState.labelDetected so it can be carried into formData
+  //     at cameraFinish time. The assess.js endpoint will see this flag
+  //     and apply the high-precision modifier (fewer photos → wider
+  //     grade confidence range).
+  // Runs only on main-kind walkthroughs, only after the Front (slot 0)
+  // capture. Single-slot mode (user re-shooting one specific slot) is
+  // untouched. Detection is async (~5ms in practice) but we await it
+  // before advancing so the queue mutation completes before the next
+  // slot opens.
+  if (
+    _cameraState.mode === 'walkthrough'
+    && _cameraState.kind === 'main'
+    && _cameraState.current === 0
+  ) {
+    try {
+      const labelKind = await detectSlabLabel(dataUrl);
+      if (labelKind) {
+        console.log('[camera] slab label detected:', labelKind, '— pruning walkthrough to Back only');
+        // Keep only slot 1 (Back) in the queue; remove 2 and 3.
+        _cameraState.queue = _cameraState.queue.filter(s => s === 1);
+        _cameraState.labelDetected = true;
+        _cameraState.labelKind = labelKind;
+      }
+    } catch (e) {
+      console.warn('[camera] label detection threw, continuing normal walkthrough:', e);
+    }
+  }
+
   // Advance: walkthrough → next queued slot, or finish & cropper sequence.
   if (_cameraState.mode === 'walkthrough' && _cameraState.queue.length > 0) {
     const nextSlot = _cameraState.queue.shift();
@@ -10170,10 +10984,20 @@ async function cameraCapture() {
 // Walkthrough complete — close camera, run cropper sequence over captures.
 async function cameraFinish() {
   if (!_cameraState) return;
-  const { kind, captures } = _cameraState;
+  const { kind, captures, labelDetected, labelKind } = _cameraState;
   cameraCloseStream();
   document.getElementById('camera-modal').classList.remove('open');
   _cameraState = null;
+
+  // S15 May 27 (v4.0, Approach A): if a slab label was detected during
+  // the front-cover capture, stamp formData so the server-side assess
+  // call knows this is a slabbed book. The assess.js / assess_deep.js
+  // endpoints both read labelDetected and react accordingly (no interior
+  // grading; high-precision modifier on the front+back-only assessment).
+  if (labelDetected) {
+    formData.labelDetected = true;
+    formData.labelKind = labelKind || 'cgc';
+  }
 
   // Drop each captured image into formData with source:'camera' metadata,
   // then fire the cropper modal sequentially per capture. cropper-confirm
@@ -10291,6 +11115,9 @@ function cameraCloseStream() {
   // can resume firing on rotation outside the camera modal.
   document.body.classList.remove('camera-modal-open');
   document.body.classList.remove('camera-kind-main', 'camera-kind-corner');
+  // S15 May 27: drop the perm-shown class so the bottom Photo Library
+  // button is visible again the next time the camera opens.
+  document.body.classList.remove('camera-perm-shown');
 }
 
 function showImageCapModal(type) {
@@ -10364,9 +11191,21 @@ async function submitForm(){
   // Same logic for cornerImages.
   const rawImages = (formData.images || []).filter(Boolean);
   const rawCornerImages = (formData.cornerImages || []).filter(Boolean);
-  const newImageCount = rawImages.filter(isDataUrl).length + rawCornerImages.filter(isDataUrl).length;
+  // S15 May 27 (v4.0): Full Assessment interior spreads also need
+  // Cloud Storage upload (raw data URLs would blow Firestore's 1MB doc
+  // cap on a 32-image book). We don't filter(Boolean) the same way
+  // because the rendered grid is index-stable; we want nulls preserved.
+  // But for upload-detection we count populated slots only.
+  const rawInteriorImages = (formData.interiorImages || []);
+  const newInteriorCount = rawInteriorImages.filter(x => x && isDataUrl(x)).length;
+  // S15 May 27 (v4.0): signature macro images. Two slots, also routed
+  // through Cloud Storage. Index stability matters (left vs right slot
+  // gets different photos) so nulls are preserved.
+  const rawSignatureImages = (formData.signatureImages || []);
+  const newSignatureCount = rawSignatureImages.filter(x => x && isDataUrl(x)).length;
+  const newImageCount = rawImages.filter(isDataUrl).length + rawCornerImages.filter(isDataUrl).length + newInteriorCount + newSignatureCount;
 
-  let finalImages, finalCornerImages, finalThumbnails;
+  let finalImages, finalCornerImages, finalThumbnails, finalInteriorImages, finalSignatureImages;
   try {
     if (formData._imagesChanged && newImageCount > 0) {
       // S13 v18: if assessGrade kicked off pre-upload in parallel with
@@ -10406,12 +11245,45 @@ async function submitForm(){
         finalThumbnails = mainResult.thumbnails;
         finalCornerImages = cornerResult.images;
       }
+      // S15 May 27 (v4.0): interior spreads upload runs regardless of
+      // pre-upload branch (pre-upload was always main+corner only). The
+      // book must be Full-Assessed for these to exist; the variable slot
+      // count comes from the whitelist entry.
+      if (rawInteriorImages.length > 0) {
+        const _fullEntry = isFullAssessmentEligible(formData);
+        if (_fullEntry) {
+          syncMsg(`Uploading ${newInteriorCount || rawInteriorImages.length} interior spread${rawInteriorImages.length === 1 ? '' : 's'}...`);
+          const interiorResult = await processImagesForSave(
+            rawInteriorImages,
+            id,
+            storageSlotsInterior(_fullEntry.slots),
+            { generateThumbs: false }
+          );
+          finalInteriorImages = interiorResult.images;
+        }
+      }
+      // S15 May 27 (v4.0): signature macro upload. Fixed 2-slot capacity.
+      // Only runs if signatures were identified on assessment AND at
+      // least one slot has content.
+      if (rawSignatureImages.length > 0 && rawSignatureImages.some(Boolean)) {
+        syncMsg(`Uploading signature photo${newSignatureCount === 1 ? '' : 's'}...`);
+        const signatureResult = await processImagesForSave(
+          rawSignatureImages,
+          id,
+          ['signature_01', 'signature_02'],
+          { generateThumbs: false }
+        );
+        finalSignatureImages = signatureResult.images;
+      }
     } else {
       // No changes — preserve the previously-saved URLs (and thumbnails).
       const existingComic = formData.id ? items.find(c => c.id === formData.id) : null;
       finalImages = formData._savedImages || existingComic?.images || [];
       finalThumbnails = existingComic?.thumbnails || [];
       finalCornerImages = formData._savedCornerImages || existingComic?.cornerImages || [];
+      // S15 May 27 (v4.0): same for interior spreads and signature macros.
+      finalInteriorImages = formData._savedInteriorImages || existingComic?.interiorImages || formData.interiorImages || [];
+      finalSignatureImages = formData._savedSignatureImages || existingComic?.signatureImages || formData.signatureImages || [];
     }
     syncMsg(null);
   } catch(e) {
@@ -10498,11 +11370,22 @@ async function submitForm(){
     thumbnails:finalThumbnails,
     cornerImages:finalCornerImages,
     cornerMeta:finalCornerMeta,
+    // S15 May 27 (v4.0): Full Assessment interior spreads. Persist whatever
+    // was uploaded (or carried forward from a prior save). May be undefined
+    // for non-Full-eligible books — falsy values are filtered by Firestore
+    // serialization, but explicit null/empty-array is cleaner.
+    interiorImages: finalInteriorImages || formData.interiorImages || [],
+    // S15 May 27 (v4.0): signature macro photos. Persisted only when the
+    // book has identified signatures (book's roboGrade.signatures.length > 0).
+    // No-op array for books without signatures — safe to persist either way.
+    signatureImages: finalSignatureImages || formData.signatureImages || [],
     // System metadata (last)
     dateAdded:formData.dateAdded||new Date().toISOString()
   };
   delete rec._savedImages;
   delete rec._savedCornerImages;
+  delete rec._savedInteriorImages;
+  delete rec._savedSignatureImages;
   delete rec._imagesChanged;
   // Strip stale schemaVersion if it carried in via the formData spread — the
   // translator (in saveItem) is the single source of truth for this field.
