@@ -2119,11 +2119,14 @@ function buildListBadge(c){
   if(c.roboGrade && c.roboGrade.score != null){
     const rgScore = Math.round(c.roboGrade.score);
     // "+" indicator: shown when high-grade IS available but hasn't been run yet.
-    // Score must be ≥80 (qualified for high-grade tier) AND highGradeUnlocked
-    // is false (high-grade pass not yet completed). Acts as both reminder and
-    // upsell. Score=100 (perfect) does not show + because there's no further
-    // refinement to be had.
-    const showPlus = rgScore >= 80 && rgScore < 100 && !c.highGradeUnlocked;
+    // Score must be ≥90 (qualified for high-grade tier per S15 threshold raise)
+    // AND highGradeUnlocked is false (high-grade pass not yet completed). Acts
+    // as both reminder and upsell. Score=100 (perfect) does not show + because
+    // there's no further refinement to be had. Note: key books that unlock via
+    // the value-list rather than score won't show "+" here — that's acceptable,
+    // the "+" is a score-driven affordance and the Deep button still appears
+    // in the detail/results view via the valueGate path.
+    const showPlus = rgScore >= 90 && rgScore < 100 && !c.highGradeUnlocked;
     return `<div style="width:56px;height:56px;background:#e8f0c0;border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid #c8d098">
       <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:#1a2208;line-height:1">${rgScore}${showPlus?'<span style="font-size:18px;font-weight:700;color:#5a7030;margin-left:1px">+</span>':''}</div>
       <div style="font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;color:#5a7030;letter-spacing:1px;margin-top:2px">RG</div>
@@ -4368,7 +4371,7 @@ function showDetail(id){
         if (h.rgScore < 100) {
           if (h.rgHighGradeUnlocked && h.rgConfidenceRange != null) {
             precSuffix = h.rgConfidenceRange > 0 ? ` ±${h.rgConfidenceRange}` : '';
-          } else if (h.rgScore >= 80 && !h.rgHighGradeUnlocked) {
+          } else if (h.rgScore >= 90 && !h.rgHighGradeUnlocked) {
             precSuffix = '+';
           } else if (h.rgConfidenceRange != null) {
             precSuffix = h.rgConfidenceRange > 0 ? ` ±${h.rgConfidenceRange}` : '';
@@ -4477,13 +4480,14 @@ function showDetail(id){
   if (!isSample) {
     const isPublic = !!(selected.publicListing);
     const isReprintLocked = isFacsimilePrinting(selected.printing);
-    // S14: public listing is also locked when ownership !== 'Owned'. A public
-    // listing asserts that the user OWNS the book pictured; a Watching or Sold
-    // book shouldn't be displayed under that assertion. Facsimile lock takes
-    // precedence in the explanation text (it's the more specific reason and
-    // the more durable one — ownership can be cycled back, facsimile can't).
-    const ownership = selected.ownership || 'Owned';
-    const isOwnershipLocked = ownership !== 'Owned';
+    // S15 May 27: the ownership-based public-listing lock (Watching/Sold
+    // books couldn't be shared) has been REMOVED. In practice it was just
+    // a nuisance — Matt found himself flipping books from Watching to
+    // Owned solely to share them, which defeats the point. The lock never
+    // actually prevented anything; it only added friction. Watching and
+    // Sold books are now freely shareable. The facsimile/reprint lock
+    // stays — that one IS a real integrity guarantee (a reprint must not
+    // be passed off as an original on a public listing).
     if (isReprintLocked) {
       // Public listing is blocked for facsimile/reprint books. Reprints
       // must not be passed off as originals on public listings — the lock
@@ -4492,26 +4496,6 @@ function showDetail(id){
         <div style="flex:1">
           <div style="font-size:13px;font-weight:700;color:#7a4a2a;letter-spacing:0.05em">Public Listing Disabled</div>
           <div style="font-size:11px;color:#8a6a5a;margin-top:3px;line-height:1.5">This book has been identified as a Facsimile Reprint and cannot be publicly listed.</div>
-        </div>
-        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:not-allowed;flex-shrink:0;opacity:0.5">
-          <input type="checkbox" disabled style="opacity:0;width:0;height:0;position:absolute">
-          <span style="position:absolute;inset:0;border-radius:12px;background:#bbb6ad"></span>
-          <span style="position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,0.2)"></span>
-        </label>
-      </div>`;
-    } else if (isOwnershipLocked) {
-      // Public listing is blocked when the book isn't marked Owned. The
-      // explanation tells the user how to re-enable it (cycle ownership back
-      // to Owned on the Edit view). Note: turning ownership back to Owned
-      // does NOT auto-restore publicListing — the user must opt in again
-      // from this toggle. That's an intentional safety net against the
-      // case where they cycled ownership without realizing it would clear
-      // the public listing.
-      const ownLabel = ownership === 'Sold' ? 'Sold' : 'Watching';
-      html += `<div style="display:flex;align-items:center;gap:12px;margin-top:20px;opacity:0.85">
-        <div style="flex:1">
-          <div style="font-size:13px;font-weight:700;color:#7a4a2a;letter-spacing:0.05em">Public Listing Disabled</div>
-          <div style="font-size:11px;color:#8a6a5a;margin-top:3px;line-height:1.5">This book is marked ${esc(ownLabel)}. Only Owned books can be publicly listed.</div>
         </div>
         <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:not-allowed;flex-shrink:0;opacity:0.5">
           <input type="checkbox" disabled style="opacity:0;width:0;height:0;position:absolute">
@@ -4717,7 +4701,7 @@ function buildListingSummary(roboGradeId, title, issue, prefix) {
     if (score < 100) {
       if (it.highGradeUnlocked && rg.confidenceRange != null) {
         prec = rg.confidenceRange > 0 ? ` \u00b1${Math.round(rg.confidenceRange)}` : '';
-      } else if (score >= 80 && !it.highGradeUnlocked) {
+      } else if (score >= 90 && !it.highGradeUnlocked) {
         prec = '+';
       } else if (rg.confidenceRange != null) {
         prec = rg.confidenceRange > 0 ? ` \u00b1${Math.round(rg.confidenceRange)}` : '';
@@ -4891,47 +4875,20 @@ async function cycleOwnershipFromDetail(id) {
   const next = cur === 'Owned' ? 'Watching'
              : cur === 'Watching' ? 'Sold'
              : 'Owned';
-  // Build the update. publicListing only flips when (a) we're leaving Owned
-  // AND (b) it was true to begin with — otherwise leave it untouched.
+  // Build the update. S15 May 27: ownership changes NO LONGER clear the
+  // public listing. Previously leaving Owned auto-disabled sharing, which
+  // was the same nuisance Matt flagged — a Watching/Sold book is now
+  // freely shareable, so changing ownership shouldn't touch publicListing
+  // at all. (The facsimile lock is the only remaining sharing gate, and
+  // it's handled at render time in showDetail.)
   const update = { ownership: next };
-  const wasPublic = !!comic.publicListing;
-  const willClearPublic = (next !== 'Owned') && wasPublic;
-  if (willClearPublic) update.publicListing = false;
 
   try {
     const ref = fsDoc(window._db, 'users', window._currentUser.uid, 'items', id);
     await fsSetDoc(ref, update, { merge: true });
 
-    // Mirror the registry flip if applicable (same pattern as togglePublicListing).
-    if (willClearPublic && comic.roboGradeId) {
-      const idRef = fsDoc(window._db, 'robograde_ids', comic.roboGradeId);
-      await fsSetDoc(idRef, { public: false }, { merge: true });
-    }
-
-    // S15: propagate the auto-clear to archive entries too, same pattern
-    // as togglePublicListing.
-    if (willClearPublic && window._db && window._currentUser?.uid && window._fsQuery && window._fsWhere) {
-      try {
-        const archCol = window._fsCollection(window._db, 'archived_assessments');
-        const q = window._fsQuery(
-          archCol,
-          window._fsWhere('archivedFromComicId', '==', id),
-          window._fsWhere('archivedUserId', '==', window._currentUser.uid)
-        );
-        const snap = await window._fsGetDocs(q);
-        await Promise.all(snap.docs.map(async d => {
-          const oldId = d.id;
-          await fsSetDoc(fsDoc(window._db, 'archived_assessments', oldId), { publicListing: false }, { merge: true });
-          await fsSetDoc(fsDoc(window._db, 'robograde_ids', oldId), { public: false }, { merge: true });
-        }));
-      } catch (e) {
-        console.warn('[archive] ownership-clear propagation failed:', e);
-      }
-    }
-
     // Update local state
     comic.ownership = next;
-    if (willClearPublic) comic.publicListing = false;
 
     // Re-render detail view; preserve scroll like togglePublicListing does.
     if (selected && selected.id === id) {
@@ -5344,18 +5301,21 @@ function enterManualMode(){_addManualMode=true;renderForm();}
 // S14: cycle the ownership field through Owned → Watching → Sold → Owned.
 // Wired to a single button in the collapsed Add/Edit flow (between Assess
 // Grade and Enter Manually). Each tap advances; the button label re-renders
-// to show the new state. Leaving the 'Owned' state forces publicListing
-// off — only owned books can be publicly listed, since the public listing
-// asserts ownership of the book pictured. If a user later returns ownership
-// to 'Owned', publicListing stays off and they must opt-in again from the
-// detail view — that's deliberate; we don't auto-flip it back on.
+// to show the new state.
+// S15 May 27: ownership no longer affects public-listing eligibility.
+// Watching and Sold books are freely shareable (Matt found the old lock
+// to be pure friction — he kept flipping books to Owned just to share
+// them). The only remaining sharing gate is the facsimile/reprint lock,
+// which is a genuine integrity guarantee and lives in showDetail.
 function cycleOwnership(){
   const cur = formData.ownership || 'Owned';
   const next = cur === 'Owned' ? 'Watching'
              : cur === 'Watching' ? 'Sold'
              : 'Owned';
   formData.ownership = next;
-  if (next !== 'Owned') formData.publicListing = false;
+  // S15 May 27: ownership change no longer clears the public listing.
+  // Watching and Sold books are freely shareable now (see showDetail's
+  // sharing block — only the facsimile lock remains).
   renderForm();
 }
 
@@ -6486,8 +6446,13 @@ function mountResults(cgc, psa) {
     // predicted grade after unification (no separate PSA grade is
     // produced). The legacy psaAIGate is removed.
     const predictedNum = parseFloat(cgc && cgc.grade);
-    const scoreGate    = (roboScore != null && roboScore >= 80);
-    const predictedGate = Number.isFinite(predictedNum) && predictedNum >= 8.0;
+    // S15 May 27: Deep threshold raised from 80/8.0 to 90/9.0. Matt's
+    // read: 8.0 is too low a bar for GENERAL books — Deep should be
+    // reserved for genuinely high-grade copies where the corner-macro
+    // detail meaningfully tightens the grade. Key books bypass the score
+    // bar entirely via valueGate, so this only affects non-key books.
+    const scoreGate    = (roboScore != null && roboScore >= 90);
+    const predictedGate = Number.isFinite(predictedNum) && predictedNum >= 9.0;
     // Value-list lookup: lazily initialized at app load (see initValueKeys
     // below). Falls back to no-match if the fetch hasn't completed yet —
     // the user can re-assess later and pick up the value-list unlock.
@@ -6750,8 +6715,8 @@ async function assessHighGrade() {
       ? !!window.matchValueKey(cgc.title, cgc.issue, cgc.publisher, cgc.printing)
       : false;
     cgc._highGradeUnlocked = (
-      (unified.roboGrade && unified.roboGrade.score >= 80) ||
-      (Number.isFinite(_predictedNum) && _predictedNum >= 8.0) ||
+      (unified.roboGrade && unified.roboGrade.score >= 90) ||
+      (Number.isFinite(_predictedNum) && _predictedNum >= 9.0) ||
       _vmatch
     );
 
@@ -9197,7 +9162,7 @@ function renderForm(){
           const parts=[];
           if (h.rgScore != null) {
             const v = h.rgVersion ? ` v${h.rgVersion}` : '';
-            const plus = h.rgScore >= 80 && h.rgScore < 100 ? '+' : '';
+            const plus = h.rgScore >= 90 && h.rgScore < 100 ? '+' : '';
             parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;font-weight:700;color:#7aa030;font-size:12px">RG ${h.rgScore}${plus}${v}</span>`);
           }
           if (h.grade) {
@@ -11345,7 +11310,16 @@ async function submitForm(){
     id,
     type: formData.type || 'comic',
     // Status flags
-    publicListing: !!(window._publicByDefault),
+    // S15 May 28: preserve existing publicListing on every save. Previously
+    // this line was `publicListing: !!(window._publicByDefault)` which
+    // unconditionally overrode whatever the form had — so any re-assessment
+    // or edit silently flipped a public book back to private (regression
+    // observed on ZXMZT6 → 7CQB6A). The fix: only fall back to the user
+    // default when formData has no publicListing field at all (genuinely
+    // new book). Existing books keep whatever publicListing they had.
+    publicListing: (formData.publicListing != null)
+      ? !!formData.publicListing
+      : !!(window._publicByDefault),
     // Ownership lifecycle (added S11). Defaults to 'Owned' for new books and
     // preserves any existing value (e.g. 'Sold', 'Watching') if already set.
     // dateSold + salePrice are populated only when ownership === 'Sold';
