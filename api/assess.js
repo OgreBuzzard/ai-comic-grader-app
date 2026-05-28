@@ -24,7 +24,7 @@
 //         rubric tied to Spine score deductions, pressing/cleaning candidate
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '4.13';
+const ROBOGRADE_VERSION = '4.14';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -781,8 +781,6 @@ SCORE CEILING — your precision modifier bounds your maximum score. With a ±${
 
 CRITICAL: final = Front + Back + Spine + Interior exactly. If holistic impression disagrees with the sum by more than 2 points, revisit the components — one is wrong, not the formula.
 
-CROSS-CATEGORY DISCIPLINE — a book is one book, in one condition. Front, Back, and Spine are facets of the same book, not independent observations. The same physical wear that produces visible defects on the front (long creases, color-breaking, blunted corners) is also acting on the back and the spine — they just have less printed surface to make defects visible on. A book whose Front looks like a 2.0 (4/50) does NOT have a 5.0 Back (10/20) or a 4.5 Spine (9/20); it has a 2.0 Back and a 2.0 Spine that LOOK less defective because there is less printed art to break and less spine surface to count discrete lines on. Do not reward "fewer countable defects on the back" with a meaningfully higher proportional grade than the front. After scoring components, do this check: convert each component to its proportional grade (Front/50, Back/20, Spine/20 — each as a percentage of full). If any two diverge by more than 25 percentage points, the lower-defect category is almost certainly under-deducted. Re-score it to roughly match the others. EXCEPTIONS that justify divergence: (a) a single category absorbed a uniquely localized defect (tape only on spine, large missing piece only on back); (b) page quality is genuinely independent of cover wear and the Interior/10 score does not need to match. Otherwise, equalize. The 7CQB6A example: Front 4/50 = 8%, Back 10/20 = 50%, Spine 9/20 = 45% — that 37-42 percentage-point gap between Front and Back/Spine is the signature of this error. Back and Spine should be ~2-3/20 each for a Front of 4/50.
-
 ── CGC GRADE ──
 Apply CGC standards to the defect inventory.
 
@@ -882,7 +880,6 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     "defects": [
       {"type":"","location":"","measurement":"","severity":"Med","colorBreaking":false,"category":"Front"}
     ],
-    "stapleCondition": "",
     "restorationFlags": [],
     "signatures": []
   }
