@@ -24,7 +24,7 @@
 //         rubric tied to Spine score deductions, pressing/cleaning candidate
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '4.11';
+const ROBOGRADE_VERSION = '4.1';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -648,13 +648,6 @@ If COMIC: set "gateResult": "COMIC" and proceed.
 ## PHASE 1 — NEUTRAL OBSERVATIONS
 
 STRUCTURAL DAMAGE SCAN — DO THIS FIRST, BEFORE ANYTHING ELSE:
-
-Before you do anything else, before any other analysis, look at the photos and answer two plain questions:
-
-  1. DO YOU SEE TAPE on this comic — anywhere, but especially down the spine?
-  2. DO YOU SEE MISSING PIECES — paper that is gone, with anything (an interior page, a different surface) visible through the hole?
-
-Answer each one in your own words first, before applying any criteria. If your answer to either is yes, say so plainly and describe what you see. The criteria-based checks (CHECK 1, CHECK 2, etc.) below help you confirm and characterize what you see — but the questions come first. Looking at the book and answering "do I see tape?" is different from running a checklist of tape conditions; the question gets at perception directly. Treat the questions as the primary act and the checks as the verification.
 
 Three forms of damage are catastrophic to grade and routinely misidentified as lesser defects. Scan for each BEFORE categorizing any other defect — once your mind has named something "crease" or "edge wear" or "soiling", you will not reconsider it as paper loss/tape/tear. Catch these first.
 
