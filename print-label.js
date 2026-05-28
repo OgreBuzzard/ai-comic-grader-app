@@ -65,20 +65,39 @@ const LABEL_FORMATS = {
     rowGap: 0,
     pixelW: 1152, pixelH: 288      // 288 DPI canonical render
   },
-  // S14: Small L prints on the SAME Avery 8161 stock as Small (4"×1",
-  // 20/sheet) — only the on-label artwork differs (mirrored + tightened
-  // to a 3.5" content width). Sheet geometry is therefore identical to
-  // 'small'; the difference is purely in renderLabelMarkup's CSS class.
+  // S15 May 28 — Small L migrated from Avery 8161 (4"×1", 20/sheet) to
+  // Avery 5162 (4"×1.33", 14/sheet). The extra 0.33" of height is used
+  // for a top "wrap strip" that folds 90° over the top of a comic case
+  // so the book is identifiable when stored upright in a long box,
+  // without pulling it out. The bottom 1.00" is the face (identical to
+  // the prior Small L content); the middle 0.08" is the fold zone with
+  // a 2pt centered guide line at 1.04" from the bottom; the top 0.25"
+  // is the wrap strip that sits on top of the case. Small R unchanged
+  // (still on Avery 8161, no wrap — different use case for cases with
+  // no flat top surface like top loaders and mylars).
+  //
+  // Sheet geometry extracted directly from the official Avery 5162
+  // template PDF (same provenance method as the Square config — public
+  // specs have been wrong before, the template is authoritative):
+  //   Page: 8.5" × 11" letter
+  //   Top margin:   0.8326"  (792pt - 732.050pt label top)
+  //   Left margin:  0.1556"  (11.201pt)
+  //   Column gap:   0.1875"  (label 1 right = 299.201; label 2 left = 312.701)
+  //   Row gap:      0.0000"
+  //   Label:        4.0000" × 1.3333"  (288pt × 96pt)
+  //   Column pitch: 4.1875"
+  //   Row pitch:    1.3333"
+  // Pixel canvas: 1152 × 384 at 288 DPI (4.0 × 1.3333 inches).
   'small-l': {
     name: 'small-l',
-    sheetCount: 20,
-    rows: 10, cols: 2,
-    labelW: 4.0, labelH: 1.0,
-    sheetTopMargin: 0.5,
-    sheetLeftMargin: 0.1667,
-    colGap: 0.1882,
+    sheetCount: 14,
+    rows: 7, cols: 2,
+    labelW: 4.0, labelH: 1.3333,
+    sheetTopMargin: 0.8326,
+    sheetLeftMargin: 0.1556,
+    colGap: 0.1875,
     rowGap: 0,
-    pixelW: 1152, pixelH: 288
+    pixelW: 1152, pixelH: 384
   },
   // Square format — Avery 22806, 2"×2", 12 per sheet (3 cols × 4 rows).
   // S14: spacing CORRECTED against the user's actual Avery 22806 template
@@ -142,6 +161,14 @@ const LABEL_BUY_LINKS = {
   small: {
     label: 'Avery 8161',
     url: 'https://www.amazon.com/Avery-White-Inkjet-Address-Labels/dp/B01LXUAKOY',
+    vendor: 'Amazon'
+  },
+  // S15 May 28: Small L migrated to Avery 5162 (1-1/3" × 4", 14/sheet) to
+  // accommodate the new wrap-over-top design. Small R stays on 8161 for
+  // case types that have no flat top surface.
+  'small-l': {
+    label: 'Avery 5162',
+    url: 'https://a.co/d/00ywsNj2',
     vendor: 'Amazon'
   },
   square: {
@@ -817,7 +844,23 @@ function ensureStylesInjected() {
        Content right boundary: x=634 (no price) or x=634 (kept constant;
                    the info column is comfortably clear of both) */
   .rg-label-l {
-    width: 1152px; height: 288px;
+    /* S15 May 28: height 288 → 384 px (Avery 5162, 1.333" at 288 DPI).
+       Vertical layout from top:
+         •   0 … 72px  WRAP STRIP — 0.25" tall, sits on TOP of the comic
+                       case after the user folds the label 90° forward.
+         •  72 …  96px FOLD ZONE — 0.083" tall, dead space straddling the
+                       fold so 0.04" of clearance exists above the face
+                       and below the wrap strip (paper consumed by bend).
+                       A 2pt guide line is centered at y=84 (= 1.04"
+                       from the bottom) so the user knows where to fold.
+         •  96 … 384px FACE — 1.000" tall, identical content/layout to the
+                       previous Small L. Every existing CSS rule that
+                       targets a child of .rg-label-l uses absolute
+                       positioning anchored to the OLD top:0 of the face;
+                       we preserve that by wrapping the face content in
+                       a .face element positioned at top:96px so the
+                       children's coordinate space is unchanged. */
+    width: 1152px; height: 384px;
     background: linear-gradient(180deg, #6f8f4a 0%, #93ab66 38%, #c2cc9e 100%);
     border: 1px solid #8a9a6a;
     border-radius: 4px;
@@ -825,6 +868,98 @@ function ensureStylesInjected() {
     overflow: hidden;
     font-family: 'Barlow Condensed', sans-serif;
     box-sizing: border-box;
+  }
+  /* Face wrapper: positions the original Small L content 96px down from
+     the top edge so all the inner-element absolute coords (score box at
+     top:18, info at top:14, etc.) continue to render in the right place
+     relative to the FACE, not the new full-label-with-wrap canvas. */
+  .rg-label-l .face {
+    position: absolute;
+    left: 0; right: 0;
+    top: 96px;  /* 0.333" from top — face begins after wrap + fold zone */
+    height: 288px;
+  }
+  /* Fold guide: thin horizontal line at y=84 (1.04" from bottom), 2pt
+     (=8px at 288 DPI) tall, centered in the 0.083" fold zone. Tells the
+     user precisely where to bend the label. Subtle but visible — same
+     palette as the label border so it's understated but findable when
+     folding. */
+  .rg-label-l .fold-guide {
+    position: absolute;
+    left: 12px; right: 12px;
+    top: 80px; height: 8px;
+    background: #5a7030;
+    opacity: 0.6;
+    border-radius: 1px;
+  }
+  /* Wrap strip: top 0.25" of the label that wraps over the top of the
+     comic case. Single horizontal row, contents from left:
+       small score box (RG number only, no precision)
+       title  •  issue  •  pub date  •  printing (if any)  •  6-char ID
+     Padding 8px sides. Content baseline-aligned. Background blends with
+     the face gradient (transparent — inherits from .rg-label-l). */
+  .rg-label-l .wrap-strip {
+    position: absolute;
+    left: 0; right: 0;
+    top: 0; height: 72px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 12px;
+    box-sizing: border-box;
+    font-family: 'Barlow Condensed', sans-serif;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .rg-label-l .wrap-strip .ws-score {
+    flex: 0 0 auto;
+    width: 60px; height: 56px;
+    background: #1a2208;
+    border-radius: 10px;
+    display: flex;
+    align-items: center; justify-content: center;
+    color: #b8d820;
+    font-family: 'Noto Sans Display', sans-serif;
+    font-weight: 900;
+    font-size: 38px;
+    line-height: 1;
+  }
+  .rg-label-l .wrap-strip .ws-ttl {
+    flex: 0 1 auto;
+    font-size: 32px;
+    font-weight: 700;
+    color: #2a3a18;
+    letter-spacing: 0.2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .rg-label-l .wrap-strip .ws-iss,
+  .rg-label-l .wrap-strip .ws-date,
+  .rg-label-l .wrap-strip .ws-prt {
+    flex: 0 0 auto;
+    font-size: 26px;
+    font-weight: 600;
+    color: #3a4a28;
+  }
+  .rg-label-l .wrap-strip .ws-id {
+    flex: 0 0 auto;
+    margin-left: auto;
+    font-family: ui-monospace, "SF Mono", Menlo, "Cascadia Mono", "Roboto Mono", monospace;
+    font-size: 24px;
+    font-weight: 600;
+    color: #4a5a38;
+    letter-spacing: 1px;
+  }
+  /* Separator dot between wrap-strip fields. Pure CSS, no DOM needed.
+     Renders only between adjacent .ws-iss/.ws-date/.ws-prt elements. */
+  .rg-label-l .wrap-strip .ws-iss + .ws-date::before,
+  .rg-label-l .wrap-strip .ws-date + .ws-prt::before,
+  .rg-label-l .wrap-strip .ws-iss + .ws-prt::before {
+    content: '·';
+    margin-right: 14px;
+    color: #6a7a48;
+    font-weight: 700;
   }
   .rg-label-l .score-box {
     width: 252px; height: 252px;
@@ -1961,10 +2096,16 @@ async function handleSavePDF(modal, currentComic, allItems) {
 // (up to 20 labels) may span multiple sheets — we add new pages as needed.
 //
 // Format-specific grid positions (extracted from official PDF templates):
-//   LARGE (Avery 8161):
+//   SMALL (Avery 8161):
 //     Top margin 0.5", left margin 0.1667", column gap 0.1882", row gap 0
 //     Label 4" × 1", 2 cols × 10 rows = 20 per sheet
-//   SMALL (OL5450):
+//   SMALL-L (Avery 5162): S15 May 28
+//     Top margin 0.8326", left margin 0.1556", column gap 0.1875", row gap 0
+//     Label 4" × 1.3333", 2 cols × 7 rows = 14 per sheet
+//   SQUARE (Avery 22806):
+//     Top margin 0.625", left margin 0.625", column gap 0.625", row gap 0.5833"
+//     Label 2" × 2", 3 cols × 4 rows = 12 per sheet
+//   LARGE (OL5450):
 //     Top margin 0.25", left margin 0.5", no gaps
 //     Label 7.5" × 1.5", 1 col × 7 rows = 7 per sheet
 async function generatePDF(comics, modal) {
@@ -2153,7 +2294,7 @@ async function generatePDF(comics, modal) {
     //   Large  → "CGC"   (CGC-slab overlay, OL5450, 7.5×1.5, 7/sheet)
     const sizeTag = opts.size === 'large' ? 'CGC'
                   : opts.size === 'square' ? '22806'
-                  : opts.size === 'small-l' ? '8161-L'
+                  : opts.size === 'small-l' ? '5162'
                   : '8161';
     const priceTag = opts.priceTag ? '-Price' : '';
     const filename = `Robograder-Labels-${sizeTag}${priceTag}-${new Date().toISOString().slice(0, 10)}.pdf`;
@@ -2269,8 +2410,37 @@ function renderLabelMarkup(comic, opts) {
                   : 'rg-label';
   const wrapClass = baseClass + (showPrice ? ' has-price' : '');
 
+  // S15 May 28: Small L wrap-strip — the 0.25" strip at the top of the
+  // 4×1.333 label that folds 90° over the top of the comic case. Single
+  // horizontal row, score-box-only (no precision), then the same identifying
+  // fields as the face: title, issue, pub date, printing (if any), and the
+  // 6-char roboGradeId. Same orientation as the face — the user folds the
+  // strip backward (away from the face) so it reads correctly when viewed
+  // from above the case. The fold guide is a thin line halfway between the
+  // strip and the face, marking the 1.04"-from-bottom fold point.
+  const smallLWrap = isSmallL ? `
+      <div class="wrap-strip">
+        <div class="ws-score">${score}</div>
+        <div class="ws-ttl">${title}</div>
+        ${issue ? `<div class="ws-iss">${issue}</div>` : ''}
+        ${issueDate ? `<div class="ws-date">${issueDate}</div>` : ''}
+        ${printing ? `<div class="ws-prt">${printing}</div>` : ''}
+        <div class="ws-id">${gradeId}</div>
+      </div>
+      <div class="fold-guide"></div>
+  ` : '';
+  // For Small L, the face content lives inside a positioned wrapper so the
+  // child element's absolute coords (still anchored at the face's top:0)
+  // render correctly within the bottom 288px of the 384px canvas. For all
+  // other sizes the face wrapper is omitted and the children sit directly
+  // in the label canvas (unchanged behavior).
+  const faceOpen  = isSmallL ? '<div class="face">' : '';
+  const faceClose = isSmallL ? '</div>'             : '';
+
   return `
     <div class="${wrapClass}" data-grade-id="${gradeId}">
+      ${smallLWrap}
+      ${faceOpen}
       <div class="score-box">
         <div class="rg-word">ROBOGRADE</div>
         <div class="rg-num-wrap"><span class="rg-num">${score}</span></div>
@@ -2322,6 +2492,7 @@ function renderLabelMarkup(comic, opts) {
       ${comic.publicListing
         ? `<div class="url">robograder.app/id/${gradeId}</div>`
         : `<div class="url" style="color:#b0a494">ID ${gradeId}</div>`}
+      ${faceClose}
     </div>
   `;
 }
