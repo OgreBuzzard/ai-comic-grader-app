@@ -649,11 +649,12 @@ If COMIC: set "gateResult": "COMIC" and proceed.
 
 STRUCTURAL DAMAGE SCAN — DO THIS FIRST, BEFORE ANYTHING ELSE:
 
-QUADRANT SWEEP (do this before CHECK 1). A single glance at a full cover spreads your attention thin and blurs fine detail — a missing piece or a tape edge that is obvious up close disappears into an overall impression of "worn book." To counter this, examine each cover in PIECES, not as a whole. Mentally divide the front cover into four quadrants — top-left, top-right, bottom-left, bottom-right — plus the spine strip down one side. Then do the same for the back cover. Inspect EACH quadrant on its own, one at a time, as if it were a separate high-resolution close-up photo cropped to just that region. Within each quadrant, trace the outer edges and the corner, look across the printed artwork for any interruption, and look for any straight-edged band. Spend real attention per quadrant before moving to the next. Only after you have swept all quadrants of both covers do you form an overall impression. This region-by-region pass is how you surface the defects that a holistic look misses — treat it as zooming into each piece of the image in turn.
+Before you do anything else, before any other analysis, look at the photos and answer two plain questions:
 
-When sweeping a quadrant, two things in particular reward the close look:
-  • A region of printed artwork that simply ENDS — a figure's head or body cut off at a ragged line, a background that stops at a hard jagged border with a mismatched lighter field beyond it. At a glance this reads as "discoloration" or "wear"; up close per-quadrant it resolves as a HOLE with an interior page showing through. This is paper loss (see CHECK 2).
-  • A band running along the spine (or anywhere) with an edge straighter than any natural wear could produce. At a glance this reads as a "stress line" or "shadow"; up close per-quadrant the ruled straight edge resolves clearly. This is tape (see CHECK 1).
+  1. DO YOU SEE TAPE on this comic — anywhere, but especially down the spine?
+  2. DO YOU SEE MISSING PIECES — paper that is gone, with anything (an interior page, a different surface) visible through the hole?
+
+Answer each one in your own words first, before applying any criteria. If your answer to either is yes, say so plainly and describe what you see. The criteria-based checks (CHECK 1, CHECK 2, etc.) below help you confirm and characterize what you see — but the questions come first. Looking at the book and answering "do I see tape?" is different from running a checklist of tape conditions; the question gets at perception directly. Treat the questions as the primary act and the checks as the verification.
 
 Three forms of damage are catastrophic to grade and routinely misidentified as lesser defects. Scan for each BEFORE categorizing any other defect — once your mind has named something "crease" or "edge wear" or "soiling", you will not reconsider it as paper loss/tape/tear. Catch these first.
 
