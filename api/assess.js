@@ -24,7 +24,7 @@
 //         rubric tied to Spine score deductions, pressing/cleaning candidate
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '4.0';
+const ROBOGRADE_VERSION = '4.1';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -651,15 +651,21 @@ STRUCTURAL DAMAGE SCAN — DO THIS FIRST, BEFORE ANYTHING ELSE:
 
 Three forms of damage are catastrophic to grade and routinely misidentified as lesser defects. Scan for each BEFORE categorizing any other defect — once your mind has named something "crease" or "edge wear" or "soiling", you will not reconsider it as paper loss/tape/tear. Catch these first.
 
-  CHECK 1 — TAPE. Scan every photo, especially along the spine and over any tear repair. Visual signature: a region darker AND glossier than surrounding paper, straight or near-straight edges, right-angle corners, often a strip down the spine. Aged tape often shows horizontal cracks across its surface (adhesive cracking — looks like a row of small parallel breaks, NOT paper creases). If you see this signature, name it "Tape" — do NOT call it creases, stress lines, or soiling. Tape's grade impact is gradient per Phase 3 tier definitions, but miscalling it as creases loses the diagnostic entirely.
+  CHECK 1 — TAPE. Scan every photo, especially the spine. THE DECISIVE TEST IS GEOMETRY, NOT TONE: tape has STRAIGHT, PARALLEL, MACHINE-CUT edges. Damage does not. Ask: is there a band or region bounded by a straight line — an edge so straight it looks ruled, running continuously for an inch or more? Paper wear, creasing, and stress lines produce IRREGULAR, organic, wandering edges. They never draw a ruler-straight border down the length of a spine. So a darker or different-textured band running down the spine with a clean straight edge on one or both sides is TAPE — even if it also looks like wear, even if it has cracks across it, even if part of you wants to call it stress lines. The straight parallel border overrides every other interpretation. Multiple parallel straight-edged bands down the spine = multiple strips of reinforcing tape. Aged tape also shows horizontal cracks across its surface (adhesive cracking — a row of small parallel breaks) and is often glossier than surrounding paper, but the STRAIGHT EDGE is the test that settles it. If you find a straight-bordered band, name it "Tape" — do NOT call it stress lines, creases, or soiling. This is the single most-missed defect and miscalling it as stress lines destroys the assessment's integrity.
 
-  CHECK 2 — PAPER LOSS / MISSING PIECE. Examine edges, corners, surface for any region where cover paper is GONE — not bent, not blunted, but ABSENT, with interior page or background visible where cover should be. Signature: a rough edge of exposed paper fibers breaking the rectangular silhouette. Beyond it, visible paper is a distinctly different color (interior showing through) OR the surface the comic was placed on is visible. Smooth cover edge with preserved rectangular silhouette is NOT paper loss — it's blunting, edge wear, or crease. Paper loss requires silhouette disruption. If found, name "Piece out" or "Missing piece" — do NOT call it corner blunting, edge wear, or crease. Size impacts grade per Phase 3 tier definitions.
+  CHECK 2 — PAPER LOSS / MISSING PIECE. THE DECISIVE TEST IS THE SILHOUETTE AND WHAT SHOWS THROUGH. A missing piece means cover paper is GONE — and something BEHIND the cover is now visible in its place. Two tells, either one confirms it: (a) the rectangular silhouette of the cover is broken — a chunk of the outline is simply absent, with a jagged torn edge; (b) within the cover's interior, a region of the PRINTED IMAGE is interrupted by a patch that does not belong — printed artwork cut off mid-figure (a face sheared flat, a background ending at a hard jagged line), and beyond that line a DIFFERENT surface: an interior page (different color, different printing, sometimes text or art that doesn't match the cover ad) or the backdrop the comic rests on. If a printed figure's head or body simply ENDS at a ragged line and is replaced by a mismatched field, that field is an interior page showing through a HOLE — the cover is missing there. This is paper loss, not soiling, not a stain, not edge wear, not a crease. A large missing piece (2"×1.5" or anything of that scale) is catastrophic — CGC 1.5–2.0 territory — and must never be absorbed into "edge wear" or "soiling". Measure it and name it "Missing piece" / "Piece out" with HIGH severity. Smooth cover edge with intact rectangular silhouette and no show-through = NOT paper loss (that's blunting/edge wear). Silhouette disruption OR mismatched show-through field = paper loss, full stop.
 
   CHECK 3 — TEARS, especially around staples and along edges. A tear is a discontinuity where paper is split but not yet missing — the two sides still attached at one end. Inspect particularly: around each staple (top and bottom, both covers — stress concentrates here and tears initiate at the staple holes), along cover edges where they meet the spine, anywhere a piece appears lifted, separated, or partially detached. May show as a thin dark line, a visible split, or a section angled differently from surrounding flat area. If found, name "Tear" with location and length — do NOT call it edge wear, crease, or stress line. Tears > 1/2" are HIGH severity.
 
-If CHECK 1–3 finds anything, record it FIRST in the defect list and let it inform the Phase 3 grade determination. Do not let pattern-matching to common defect categories obscure these structural failures.
+  CHECK 4 — RUST and FOXING. Two distinct defects, both routinely missed or conflated:
+    RUST (call it "rust", never "oxidation"): orange-brown staining originating AT a staple and bleeding outward into the surrounding paper, OR brown discoloration on the staple itself. Look at BOTH staples on every photo that shows the spine/interior. A staple that is brown rather than silver = rust. Orange-brown halo around a staple hole = rust migration. This is a Spine-category defect. Even light rust must be named — it indicates moisture exposure and only worsens.
+    FOXING: scattered small reddish-brown SPOTS or speckles distributed across paper (not originating from a staple) — caused by mold/oxidation in the paper itself. Distinct from general soiling (which is broad, grey-brown, and dirt-like) and from rust (which originates at metal). Foxing is spotty and reddish; soiling is broad and grey; rust radiates from staples. Name foxing as "Foxing" and factor it into page quality, not as generic soiling.
 
-After all three checks, proceed below.
+If CHECK 1–4 finds anything, record it FIRST in the defect list and let it inform the Phase 3 grade determination. Do not let pattern-matching to common defect categories obscure these structural failures.
+
+MANDATORY: you must report the result of this scan in the JSON "structuralScan" object — a yes/no for tape, paper loss, tears, and rust, each with a one-phrase reason. This is not optional. Forcing yourself to answer each one explicitly is what prevents the silent skip: you cannot write "tapePresent": false without having actually checked the spine for a straight-edged band. If present, the corresponding defect MUST also appear in the defects array. A structuralScan that says present:true with no matching defect entry is a contradiction — fix it before returning.
+
+After all four checks, proceed below.
 
 ROUTINE INSPECTION:
 
@@ -773,6 +779,8 @@ ENHANCEMENT TAGGING — defects removable by pressing/cleaning get a measurement
 
 Confidence base: ±${baseConf}. Adjust up if glare/poor focus, no raking light photo, staples not visible, restoration suspected.
 
+SCORE CEILING — your precision modifier bounds your maximum score. With a ±${baseConf} precision modifier, your honest maximum score is ${100 - baseConf} (the modifier then allows the true grade to range up to 100). Do NOT assign a score above ${100 - baseConf} on this assessment.${highGrade ? ' This is a Deep Assessment with corner macros, so ±3 is justified and the ceiling is 97.' : ' A standard 4-photo assessment cannot see the fine corner and edge detail that distinguishes a near-perfect copy; the photos simply do not carry that information. A Deep Assessment (corner macros) is required to justify a score above ' + (100 - baseConf) + '. If the book genuinely looks pristine, score it at the ' + (100 - baseConf) + ' ceiling and let the ±' + baseConf + ' modifier express the upside — do not exceed the ceiling.'}
+
 CRITICAL: final = Front + Back + Spine + Interior exactly. If holistic impression disagrees with the sum by more than 2 points, revisit the components — one is wrong, not the formula.
 
 ── CGC GRADE ──
@@ -870,6 +878,16 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     "defects": [
       {"type":"","location":"","measurement":"","severity":"Med","colorBreaking":false,"category":"Front"}
     ],
+    "structuralScan": {
+      "tapePresent": false,
+      "tapeReason": "",
+      "paperLossPresent": false,
+      "paperLossReason": "",
+      "tearsPresent": false,
+      "tearsReason": "",
+      "rustPresent": false,
+      "rustReason": ""
+    },
     "stapleCondition": "",
     "restorationFlags": [],
     "signatures": []
@@ -1308,6 +1326,20 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
         // (ASM #62 had a 9-point divergence and still came out half a grade
         // too high), so 8 is the cleanest cut-off.
         //
+        // S15 NOTE: this rule was partly masking an identification failure.
+        // On heavily-damaged books, Front/Back were over-allocated BECAUSE
+        // severe defects (tape, paper loss, tears) were being mislabeled as
+        // soft defects (creases, edge wear) that don't subtract many points.
+        // The Phase 1 structural scan (CHECK 1-4, now forced into the JSON
+        // via structuralScan) is the real fix — when tape and missing pieces
+        // are correctly identified and scored, the components sum LOW on their
+        // own and this divergence correction never needs to fire. This rule
+        // stays as a safety net: it only ever takes Math.min (pulls the score
+        // DOWN, never up), so it cannot inflate a grade. If it keeps firing
+        // on heavy-damage books even after the scan improvements, that's a
+        // signal the identification is still failing upstream — investigate
+        // the structuralScan output, don't trust the corrected number.
+        //
         // When we override to the lower value, we also rebalance the sub-
         // scores so they still sum to the displayed Robograde — otherwise
         // a user reading sub-scores on Detail view sees 26+10+12+9=57 while
@@ -1439,6 +1471,38 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     //      nonsensical (max grade is 100). Narrow the conf if needed so
     //      that score + conf ≤ 100.
     // Floor is 0 (perfect score 100 → 0; not negative).
+    //
+    // S15 May 27 — SCORE CEILING (Matt's spec):
+    //   The highest score an assessment is willing to assign is bounded by
+    //   its OWN precision modifier. A 4-photo standard assessment carries
+    //   a ±6 base precision modifier; its honest upper bound is therefore
+    //   100 - 6 = 94, with the ±6 letting the true grade range up to 100.
+    //   A Deep assessment (corner macros) narrows the modifier to ±3, so
+    //   its ceiling is 100 - 3 = 97, with ±3 reaching up to 100.
+    //   Rationale: a 4-photo read simply cannot SEE enough to justify a
+    //   near-perfect score outright — the corner detail that distinguishes
+    //   a 9.4 from a 9.8 isn't present. The score ceiling enforces that
+    //   honesty structurally. The model is ALSO told this in the prompt,
+    //   but this clamp is the guarantee.
+    //   We use baseConf as the modifier (3 for high-grade, 6 for 4-photo
+    //   standard, wider for fewer photos). Cap = 100 - baseConf.
+    if (parsed.roboGrade && typeof parsed.roboGrade.score === 'number') {
+      const rawScore = Math.round(parsed.roboGrade.score);
+      const scoreCeiling = 100 - baseConf;
+      if (rawScore > scoreCeiling) {
+        parsed.roboGrade.score = scoreCeiling;
+        // Recompute the per-category scores proportionally? No — the
+        // sub-scores are diagnostic and the model set them deliberately.
+        // We only clamp the headline score. If sub-scores sum higher than
+        // the clamped headline, that's an acceptable display nuance (the
+        // headline is the honest ceiling; sub-scores show where the points
+        // were observed). A future pass could reconcile, but over-
+        // engineering the reconciliation risks distorting the diagnostic.
+        if (!parsed._diagnostics) parsed._diagnostics = {};
+        parsed._diagnostics.scoreCeilingApplied = { rawScore, ceiling: scoreCeiling, baseConf };
+      }
+    }
+
     if (parsed.roboGrade && typeof parsed.roboGrade.confidenceRange === 'number') {
       const score = Math.round(parsed.roboGrade.score || 0);
       const modeCap = highGrade ? 6 : 16;
