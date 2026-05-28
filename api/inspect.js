@@ -66,12 +66,15 @@ export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   res.setHeader('Pragma', 'no-cache');
 
-  // CORS — allow GET only. This is an internal tool; we don't need to
-  // open it up to other origins.
+  // CORS — allow GET and POST. GET serves the JSON record / image bytes
+  // (the original inspect behavior). POST is used only by the S15
+  // vision-diagnostic mode, which relays browser-supplied crop images to
+  // the model with a bare prompt (see the mode=vision branch below).
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Inspect-Token');
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   // ── Token check ───────────────────────────────────────────────────
   // The expected token comes from Vercel env. If the env var is not set,
@@ -84,7 +87,7 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const provided = (req.query.token || '').toString();
+  const provided = (req.headers['x-inspect-token'] || req.query.token || '').toString();
 
   // Constant-time comparison. Buffer.from with explicit lengths protects
   // against length-mismatch crashes (timingSafeEqual throws if the two
@@ -105,7 +108,81 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  // ── ID validation ─────────────────────────────────────────────────
+  // ── S15 VISION DIAGNOSTIC (POST mode=vision) ───────────────────────
+  // Isolation test: does Opus 4.6 perceive a specific defect when given a
+  // tight crop and a bare, single-purpose prompt — with NONE of the 12K-
+  // token grading prompt competing for attention? The browser does the
+  // cropping client-side and POSTs the crop data URLs here; this endpoint
+  // only relays them to the model and returns the RAW answer verbatim.
+  //
+  // Body: { mode:"vision", probes:[ { label, question, image }... ] }
+  //   image = a data URL ("data:image/jpeg;base64,....")
+  // Returns: { results:[ { label, question, answer, inputTokens, outputTokens } ] }
+  //
+  // No grading, no JSON-shape requirement, no defect rubric. Each probe is
+  // one image + one plain question. The answer is whatever the model says,
+  // returned unfiltered so it can be judged directly rather than through
+  // this endpoint's interpretation.
+  if (req.method === 'POST' && req.body && req.body.mode === 'vision') {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
+    const probes = Array.isArray(req.body.probes) ? req.body.probes : [];
+    if (!probes.length) return res.status(400).json({ error: 'probes array required' });
+    if (probes.length > 6) return res.status(400).json({ error: 'max 6 probes per call' });
+
+    function toImageBlock(dataUrl) {
+      if (typeof dataUrl !== 'string') return null;
+      const m = dataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/);
+      if (!m) return null;
+      return { type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } };
+    }
+
+    const results = [];
+    for (const probe of probes) {
+      const block = toImageBlock(probe.image);
+      if (!block) { results.push({ label: probe.label || '', error: 'bad image data URL' }); continue; }
+      const question = (probe.question || 'Describe what you see in this image.').toString();
+      try {
+        const r = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01'
+          },
+          body: JSON.stringify({
+            model: 'claude-opus-4-6',
+            max_tokens: 600,
+            messages: [{
+              role: 'user',
+              content: [ block, { type: 'text', text: question } ]
+            }]
+          })
+        });
+        if (!r.ok) {
+          const errTxt = await r.text();
+          results.push({ label: probe.label || '', error: 'API ' + r.status + ': ' + errTxt.slice(0, 200) });
+          continue;
+        }
+        const data = await r.json();
+        const answer = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n').trim();
+        const usage = data.usage || {};
+        results.push({
+          label: probe.label || '',
+          question,
+          answer,
+          inputTokens: usage.input_tokens || null,
+          outputTokens: usage.output_tokens || null,
+          model: data.model || null
+        });
+      } catch (e) {
+        results.push({ label: probe.label || '', error: String(e.message || e).slice(0, 200) });
+      }
+    }
+    return res.status(200).json({ mode: 'vision', count: results.length, results });
+  }
+
+  // ── ID validation (GET record/image modes below) ──────────────────
   const { id } = req.query;
   if (!id || !/^[0-9A-NP-Z]{6}$/.test(id.toUpperCase())) {
     return res.status(400).json({ error: 'Invalid ID format' });
