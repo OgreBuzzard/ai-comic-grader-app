@@ -5317,6 +5317,10 @@ const EMPTY={
 let formData={...EMPTY};
 let assessing=false;
 let _assessed=false; // tracks if current form has been assessed
+// S15 May 29: set true by completeAssessment when an assessment unlocked a
+// follow-on type (Deep/Full/Signature/Restoration); read once by submitForm
+// to land on Edit instead of Detail, then reset.
+let _routeToEditAfterSave=false;
 // Add-flow only (S11): when true, show the full form on Add. When false (default),
 // collapse the form below Assess Grade and show an "Enter Manually" button. The
 // goal is to orient first-time users toward photos-first; users who want to type
@@ -6545,6 +6549,15 @@ function mountResults(cgc, psa) {
     } else if (hgAlreadyRun) {
       btn.innerHTML = `<div style="font-size:13px;font-weight:800;letter-spacing:2px;line-height:1.2">COMPLETED</div>`;
       btn.style.background = '#3a9ee0';
+      btn.style.color = '#fff';
+      btn.style.textAlign = 'center';
+    } else if ((typeof hasIdentifiedSignatures === 'function') && hasIdentifiedSignatures(cgc && cgc._roboGrade ? {roboGrade: cgc._roboGrade} : cgc)) {
+      // S15 May 29: the assessment identified one or more signatures on the
+      // book. Surface that here instead of a plain COMPLETE so the user knows
+      // the next step is to add signature macro photos (which happens in Edit
+      // view — completeAssessment routes there because _sigDetected is true).
+      btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">SIGNATURE</div><div style="font-size:10px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">DETECTED</div>`;
+      btn.style.background = '#6a4ba8';
       btn.style.color = '#fff';
       btn.style.textAlign = 'center';
     } else {
@@ -8011,8 +8024,24 @@ async function completeAssessment() {
     renderForm();
     return;
   }
+  // S15 May 29: route to EDIT view (not Detail) whenever this assessment
+  // unlocked a new follow-on assessment type — Deep, Full, Signature, or
+  // Restoration — because each requires the user to take a next step (add
+  // corner/interior/signature photos, or review the restoration report) that
+  // lives in Edit view. Detail view is the right landing spot only for a
+  // terminal assessment that unlocked nothing further. Computed here from the
+  // freshly-populated formData; submitForm() reads the flag for its final nav.
+  const _sigDetected = (typeof hasIdentifiedSignatures === 'function')
+    ? hasIdentifiedSignatures(formData) : false;
+  _routeToEditAfterSave = !!(
+    formData.highGradeUnlocked ||      // Deep just unlocked
+    formData.restorationCheckTier ||   // Restoration unlocked / flagged
+    _sigDetected ||                    // signature(s) identified → add macro photos
+    (isFullAssessmentEligible(formData) && isDeepAssessmentComplete(formData) && !isFullAssessmentComplete(formData)) // Full now available
+  );
+
   await submitForm();
-  // submitForm() navigates to Detail when it's done; THIS dismiss happens
+  // submitForm() navigates when it's done; THIS dismiss happens
   // just before the Detail view renders, so the chest comes down at the
   // same moment Detail comes up. Visually clean.
   if (window.RobograderScan && window.RobograderScan.dismiss) {
@@ -8809,7 +8838,15 @@ function renderForm(){
     return`<span style="display:inline-flex;align-items:center"><button class="treatment-btn" style="background:${bg};border-color:${bc};color:${col}" onclick="cycleTreatment('${key}')">${txt}</button>${cancelBtn}</span>`;
   }
 
-  let html=`<div class="sticky-back"><button class="btn-ghost" onclick="cancelForm()">← Back</button></div>
+  // S15 May 29: Save moved to upper-right of the sticky header, mirroring
+  // the Detail view's Edit button position so the corner always holds the
+  // primary contextual action (Edit in Detail, Save/Add in Edit). Previously
+  // Save was only at the form bottom, requiring a full scroll after adding
+  // signature/interior images. Bottom Save kept as a familiar end-of-form
+  // exit. Back (cancel-without-save) stays on the left.
+  const _saveLabelTop = formData.id ? 'Save' : 'Add';
+  const _saveDisabledTop = (formData.title && formData.title.trim()) ? '' : 'disabled';
+  let html=`<div class="sticky-back" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><button class="btn-ghost" onclick="cancelForm()">← Back</button><button class="btn btn-gold" id="save-btn-top" onclick="submitForm()" ${_saveDisabledTop}>${_saveLabelTop}</button></div>
   <h2 style="font-size:18px;margin:8px 0 20px;color:#c8a96e">${isEdit?"Edit Book":"Add Book"}</h2>
   <div class="card" style="display:flex;flex-direction:column;gap:14px">
     <div>
@@ -8945,16 +8982,24 @@ function renderForm(){
                 ? `Identified: <strong style="color:#c8b4ff">${esc(signerLabel)}</strong>. Add close-up photos for buyer inspection — optional, two slots available.`
                 : `Signature${getSignatures(formData).length > 1 ? 's' : ''} identified on this book. Add close-up photos for buyer inspection — optional, two slots available.`}
             </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div style="display:flex;flex-direction:column;gap:10px;align-items:center">
               ${[0, 1].map(i => {
                 const img = sigImgs[i];
+                // S15 May 29: signature slots are now stacked (not a 2-col
+                // grid), each fixed at ~half screen width and centered. Empty
+                // slots use a 2:1 (width:height) ratio — a wide, short box that
+                // better matches a signature's shape than the old square. Once
+                // an image is added, width stays fixed at 50% but height goes
+                // auto so the slot adapts to the photo's true aspect ratio
+                // (object-fit:contain, no cropping — a signature macro should
+                // be shown whole, not cover-cropped).
                 return img
-                  ? `<div class="drag-slot" style="aspect-ratio:1/1;position:relative;overflow:hidden" onclick="tapSlot(${i},'signature')">
-                      <img src="${img}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">
+                  ? `<div class="drag-slot" style="width:50%;height:auto;position:relative;overflow:visible" onclick="tapSlot(${i},'signature')">
+                      <img src="${img}" style="display:block;width:100%;height:auto;border-radius:inherit">
                       <button class="slot-edit" onclick="event.stopPropagation();openCropper('signature',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>
                       <button class="slot-x" onclick="event.stopPropagation();removeSignatureImg(${i})">×</button>
                      </div>`
-                  : `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:1/1;position:relative;overflow:hidden" onclick="tapSlot(${i},'signature')">
+                  : `<div class="drag-slot" style="padding:0;background:#1a1a1a;width:50%;aspect-ratio:2/1;position:relative;overflow:hidden" onclick="tapSlot(${i},'signature')">
                       <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#7a6abf;font-size:12px;font-weight:600;letter-spacing:1px;text-align:center;padding:8px">
                         <div style="font-size:20px;margin-bottom:4px">✎</div>
                         <div>SIGNATURE ${i + 1}</div>
@@ -11506,6 +11551,15 @@ async function submitForm(){
   }
 
   await saveItem(rec);
+  // S15 May 29: route to Edit instead of Detail when this save followed an
+  // assessment that unlocked a new follow-on type (flag set in
+  // completeAssessment). The user's next step lives in Edit view. One-shot:
+  // reset the flag so ordinary edits/saves still land on Detail.
+  if (_routeToEditAfterSave) {
+    _routeToEditAfterSave = false;
+    showEdit(rec.id);
+    return;
+  }
   // Navigate to Detail view of the just-saved book rather than List. Users
   // expect to verify their save took effect; landing on Detail is the natural
   // next step. Cancel still routes through cancelForm() which goes to Detail
