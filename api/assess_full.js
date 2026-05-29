@@ -264,6 +264,13 @@ DEFAULT TO VERIFIED. The bar for rejection is OBVIOUS error.
 
     const _antBody = {
       model: 'claude-opus-4-8',
+      // S15 May 29: explicitly set effort=medium. Opus 4.8's default is 'high'
+      // which roughly 2.5x'd our input token count and pushed per-assessment
+      // cost from ~$0.10 to ~$0.16. Medium should claw most of that back
+      // without sacrificing the accuracy gains we measured on PSA calibration.
+      // If accuracy regresses meaningfully on the next 10-book run, bump back
+      // to 'high' (or drop to 'low' and re-test).
+      effort: 'medium',
       max_tokens: 1024,
       system: systemPrompt,
       messages: [{
