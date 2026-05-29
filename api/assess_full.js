@@ -52,7 +52,8 @@ const FULL_ASSESSMENT_BOOKS = [
   { title: 'amazing fantasy',         issue: '15', slots: 16 },
   { title: 'fantastic four',          issue: '1',  slots: 16 },
   { title: 'incredible hulk',         issue: '1',  slots: 16 },
-  { title: 'x-men',                   issue: '1',  slots: 16 },
+  { title: 'x-men',                   issue: '1',  slots: 16 },  // 1991+ X-Men relaunch
+  { title: 'uncanny x-men',           issue: '1',  slots: 16 },  // 1963 original AND all facsimiles (per disambiguateXMen in index.html)
   { title: 'tales of suspense',       issue: '39', slots: 16 }
 ];
 
