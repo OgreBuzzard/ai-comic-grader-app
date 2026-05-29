@@ -263,7 +263,7 @@ DEFAULT TO VERIFIED. The bar for rejection is OBVIOUS error.
     sseEvent('phase', { phase: 0, name: 'populating' });
 
     const _antBody = {
-      model: 'claude-opus-4-6',
+      model: 'claude-opus-4-8',
       max_tokens: 1024,
       system: systemPrompt,
       messages: [{
@@ -464,7 +464,7 @@ DEFAULT TO VERIFIED. The bar for rejection is OBVIOUS error.
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
-          model: 'claude-opus-4-6',
+          model: 'claude-opus-4-8',
           fullAssessment: true,
           verified: verified,
           rejected: !verified,
@@ -476,6 +476,19 @@ DEFAULT TO VERIFIED. The bar for rejection is OBVIOUS error.
           outputTokens: _outputTokens,
           cacheReadInputTokens: _cacheReadInputTokens,
           cacheCreationInputTokens: _cacheCreationInputTokens,
+          // S15 May 28: per-assessment dollar cost (Opus 4.8). Same rate
+          // block as assess.js — if model changes, update both.
+          costUsd: (function(){
+            const RATE_IN  = 5  / 1e6;
+            const RATE_OUT = 25 / 1e6;
+            const RATE_CACHE_READ   = RATE_IN * 0.10;
+            const RATE_CACHE_CREATE = RATE_IN * 1.25;
+            const inT  = _inputTokens || 0;
+            const outT = _outputTokens || 0;
+            const cr   = _cacheReadInputTokens || 0;
+            const cc   = _cacheCreationInputTokens || 0;
+            return +(inT * RATE_IN + outT * RATE_OUT + cr * RATE_CACHE_READ + cc * RATE_CACHE_CREATE).toFixed(6);
+          })(),
           stopReason: _stopReason,
           responseModel: _responseModel,
           rawTextChars: _rawTextChars,
@@ -506,9 +519,10 @@ DEFAULT TO VERIFIED. The bar for rejection is OBVIOUS error.
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
-          model: 'claude-opus-4-6',
+          model: 'claude-opus-4-8',
           fullAssessment: true,
           imageCount: Array.isArray(imageBlocks) ? imageBlocks.length : 0,
+          costUsd: 0,
           errorMessage: String(err.message || err).slice(0, 500),
           timedOut: /timeout|abort/i.test(String(err.message || err))
         });

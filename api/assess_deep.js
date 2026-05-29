@@ -30,7 +30,7 @@
 //   phase 4 (confirming)    — model has emitted revised roboGrade
 //
 // =============================================================================
-const ROBOGRADE_VERSION = '4.0';
+const ROBOGRADE_VERSION = '4.14';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -217,6 +217,20 @@ Look at the Top-Left and Top-Right corner macros provided. Compare against the i
   • Edge wear, edge tears, or small color breaks along the top edge
   • Foxing, rust marks, or staining not previously catalogued
 
+STRUCTURAL DAMAGE SCAN — DO FIRST on each macro before color-break analysis.
+The corner macros are the highest-resolution view you have; structural
+defects that escaped the wide shots are most likely to appear here.
+
+  CHECK 1 — TAPE. THE DECISIVE TEST IS GEOMETRY: tape has STRAIGHT, PARALLEL, MACHINE-CUT edges; damage does not. In the macros, look at the inner edge (spine side) and any portion of the spine visible at the corner. A band bounded by a ruler-straight line, running continuously, with a smoother surface than surrounding paper — TAPE, not stress lines, not creases, not soiling. Aged tape may also show regular horizontal cracks. Straight edge overrides every other interpretation.
+
+  CHECK 2 — PAPER LOSS / MISSING PIECE. Three tells, any one confirms it: (a) the cover silhouette is broken — a chunk of the corner outline is absent, with a jagged torn edge; (b) within the cover, printed artwork ends at a hard ragged line and beyond it a mismatched field is visible (interior page showing through a hole); (c) BROKEN PRINTED SHAPES — a known regular shape on the cover is no longer regular, OR a printed letter is incomplete (a circle with a jagged bite, a logo with a ragged interruption, an H missing its right vertical). Comics are printed mechanically; any irregular interruption of a regular printed shape is paper that has torn off. Not blunting, not edge wear, not soiling.
+
+  CHECK 3 — TEARS, especially at the inner-corner-at-spine and along the spine edge visible in the macro. A tear is a discontinuity where paper is split but not yet missing — sides still attached at one end. Thin dark line, visible split, section angled differently from the surrounding flat area. Tears > 1/2" are HIGH severity.
+
+  CHECK 4 — RUST. Orange-brown staining originating at a staple and bleeding into surrounding paper, OR a staple that is brown rather than silver. Even light rust is named "rust" (never "oxidation") and is a Spine-category defect.
+
+If any CHECK finds something not in the initial catalogue, add it as a deepAddition defect in Phase 3 with appropriate severity. Do not let pattern-matching to common defect categories (creases, edge wear, stress lines, soiling) obscure these structural defects.
+
 Color-break detection technique: a color break is a small region — often only a few pixels wide — where ink that normally covers the page is absent, exposing white/grey paper beneath. Scan dark saturated areas (deep colors) for small white or grey patches that interrupt the color.
 
 ## PHASE 2 — INSPECT BOTTOM CORNER MACROS (BL, BR)
@@ -229,13 +243,17 @@ For each new defect observed in the macros that was NOT in the initial catalogue
   • BACK sub-score: FROZEN. Do not change. No new back-cover evidence.
   • INTERIOR sub-score: FROZEN. Do not change. No new interior evidence.
 
-If the macros confirm rather than reveal — meaning everything in the macros was already accurately catalogued — leave Front and Spine sub-scores unchanged. NARROW the confidenceRange to reflect higher confidence in the existing scores (e.g. ±0.5 → ±0.25).
+If the macros confirm rather than reveal — meaning everything in the macros was already accurately catalogued — leave Front and Spine sub-scores unchanged. The confidenceRange for a Deep assessment is the integer 3 (representing ±3 on the 0-100 score scale). Do not narrow below 3; the score ceiling of 97 already encodes the residual uncertainty.
 
 ## PHASE 4 — CONFIRM THE REVISED GRADE
 Recompute the RoboGrade score (Front + Back + Spine + Interior). Map to a CGC grade. Verify against the tier definitions below. Read the candidate grade's definition AND one grade above AND one grade below — confirm the candidate is the best fit.
 
 CGC TIER REFERENCE (candidate ±1 only, focused on initial grade):
 ${gradeTierContext(initialGrade)}
+
+PAGE QUALITY SEVERITY — HARD RULE: any defect entry whose type is "Page quality" (or which describes page color, tanning designation, or paper tone) gets severity="" (empty string). Page quality is a descriptive observation, NOT a defect. Low/Med/High severity tags apply ONLY to actual defects.
+
+INTERIOR CATEGORY SCOPE — HARD RULE: the Interior category is for PAGE CONDITION ONLY — page quality, interior printing, interior tears, interior tanning, foxing on pages. Staples are NOT Interior. Staple condition, staple rust, staple-area tears, and any staple observation go in the SPINE category. Do not put staple entries in Interior. Do not include "staples appear intact" or any other non-defect observation; if there is no staple defect, say nothing about staples.
 
 ## RESPONSE FORMAT — STRICT
 Your entire response must be a JSON object and nothing else. The first character of your response must be the literal opening curly brace. The last character must be the literal closing curly brace. Do not write any text before the JSON. The phases above are your internal process; they do not appear in the response.
@@ -260,7 +278,7 @@ JSON shape (same as initial assessment, with deepAddition tags on new defects):
   "roboGrade": {
     "version": "${ROBOGRADE_VERSION}",
     "score": 0,
-    "confidenceRange": 0.25,
+    "confidenceRange": 3,
     "frontScore": 0,
     "backScore": ${initialRG.backScore == null ? 'null' : initialRG.backScore},
     "spineScore": 0,
@@ -286,7 +304,7 @@ HARD OUTPUT LIMITS:
     sseEvent('phase', { phase: 0, name: 'populating' });
 
     const _antBody = {
-      model: 'claude-opus-4-6',
+      model: 'claude-opus-4-8',
       max_tokens: 2048,
       system: systemPrompt,
       messages: [{
@@ -460,6 +478,17 @@ HARD OUTPUT LIMITS:
       const i = Number(parsed.roboGrade.interiorScore) || 0;
       parsed.roboGrade.score = f + b + s + i;
       parsed.roboGrade.version = ROBOGRADE_VERSION;
+
+      // S15 May 27 — SCORE CEILING (matches assess.js). A Deep Assessment
+      // carries a ±3 precision modifier, so its honest maximum score is
+      // 100 - 3 = 97, with the ±3 letting the true grade range up to 100.
+      // Even with corner macros, the assessment shouldn't claim a near-
+      // perfect outright score — 97 is the structural ceiling and the
+      // modifier expresses the upside. Clamp after the component recompute
+      // so a model that summed to 98-100 gets pulled back to 97.
+      if (typeof parsed.roboGrade.score === 'number' && parsed.roboGrade.score > 97) {
+        parsed.roboGrade.score = 97;
+      }
     }
 
     // FLOOR RULE: revised grade may not go BELOW the initial unless the model
@@ -498,7 +527,7 @@ HARD OUTPUT LIMITS:
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
-          model: 'claude-opus-4-6',
+          model: 'claude-opus-4-8',
           deepAssessment: true,
           gateResult: parsed.gateResult || 'COMIC',
           predictedGrade: parsed.grade || null,
@@ -508,6 +537,19 @@ HARD OUTPUT LIMITS:
           outputTokens: _outputTokens,
           cacheReadInputTokens: _cacheReadInputTokens,
           cacheCreationInputTokens: _cacheCreationInputTokens,
+          // S15 May 28: per-assessment dollar cost (Opus 4.8). Same rate
+          // block as assess.js — if model changes, update both.
+          costUsd: (function(){
+            const RATE_IN  = 5  / 1e6;
+            const RATE_OUT = 25 / 1e6;
+            const RATE_CACHE_READ   = RATE_IN * 0.10;
+            const RATE_CACHE_CREATE = RATE_IN * 1.25;
+            const inT  = _inputTokens || 0;
+            const outT = _outputTokens || 0;
+            const cr   = _cacheReadInputTokens || 0;
+            const cc   = _cacheCreationInputTokens || 0;
+            return +(inT * RATE_IN + outT * RATE_OUT + cr * RATE_CACHE_READ + cc * RATE_CACHE_CREATE).toFixed(6);
+          })(),
           stopReason: _stopReason,
           responseModel: _responseModel,
           rawTextChars: _rawTextChars,
@@ -541,9 +583,10 @@ HARD OUTPUT LIMITS:
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
-          model: 'claude-opus-4-6',
+          model: 'claude-opus-4-8',
           deepAssessment: true,
           imageCount: macroBlocks.length,
+          costUsd: 0,
           errorMessage: String(err.message || err).slice(0, 500),
           timedOut: /timeout|abort/i.test(String(err.message || err))
         });

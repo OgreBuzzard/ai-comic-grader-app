@@ -899,7 +899,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     // Build the messages payload (used by both streaming and non-streaming
     // branches; identical content either way).
     const _antBody = {
-      model: 'claude-opus-4-6',
+      model: 'claude-opus-4-8',
       max_tokens: 4096,
       system: systemPrompt,
       messages: [{
@@ -1527,8 +1527,8 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
-          model: 'claude-opus-4-6',
-          refineModel: 'claude-opus-4-6',
+          model: 'claude-opus-4-8',
+          refineModel: 'claude-opus-4-8',
           highGrade: !!highGrade,
           gradeRefRan: gradeRefSucceeded,
           gateResult: parsed.gateResult || 'COMIC',
@@ -1541,6 +1541,24 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           outputTokens: _outputTokens,
           cacheReadInputTokens: _cacheReadInputTokens,
           cacheCreationInputTokens: _cacheCreationInputTokens,
+          // S15 May 28: per-assessment dollar cost. Computed inline so the
+          // admin Logs view can display it without re-deriving from token
+          // counts and a hardcoded rate table. Opus 4.8 = $5/M input,
+          // $25/M output. Cache reads at 10% of input rate, cache creation
+          // at 1.25x input rate (Anthropic pricing as of May 2026). If we
+          // change models, this rate block must change with it — keep the
+          // constants here next to the model string.
+          costUsd: (function(){
+            const RATE_IN  = 5  / 1e6;   // $/token
+            const RATE_OUT = 25 / 1e6;
+            const RATE_CACHE_READ   = RATE_IN * 0.10;
+            const RATE_CACHE_CREATE = RATE_IN * 1.25;
+            const inT  = _inputTokens || 0;
+            const outT = _outputTokens || 0;
+            const cr   = _cacheReadInputTokens || 0;
+            const cc   = _cacheCreationInputTokens || 0;
+            return +(inT * RATE_IN + outT * RATE_OUT + cr * RATE_CACHE_READ + cc * RATE_CACHE_CREATE).toFixed(6);
+          })(),
           stopReason: _stopReason,
           responseModel: _responseModel,
           rawTextChars: _rawTextChars,
@@ -1580,8 +1598,8 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
-          model: 'claude-opus-4-6',
-          refineModel: 'claude-opus-4-6',
+          model: 'claude-opus-4-8',
+          refineModel: 'claude-opus-4-8',
           // Diagnostic v3.97: imageCount is the only payload-side number we
           // can reliably capture in the error path (API never returned, so
           // no token usage). Helps identify whether timeouts cluster on
@@ -1589,6 +1607,10 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           // standard 4).
           imageCount: (typeof imageBlocks !== 'undefined' && Array.isArray(imageBlocks)) ? imageBlocks.length : null,
           highGrade: (typeof highGrade !== 'undefined') ? !!highGrade : null,
+          // S15 May 28: errored assessments cost $0 because the API never
+          // returned (no tokens billed). Setting to 0 (not null) so the
+          // admin Logs view can sum/avg cleanly without null-handling.
+          costUsd: 0,
           errorMessage: String(err.message || err).slice(0, 500),
           timedOut: /timeout|abort/i.test(String(err.message || err))
         });
