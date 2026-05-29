@@ -901,17 +901,31 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     const _antBody = {
       model: 'claude-opus-4-8',
       // S15 May 29: explicitly set effort=medium via output_config. Opus 4.8's
-      // default is 'high' which roughly 2.5x'd our input token count and pushed
-      // per-assessment cost from ~$0.10 to ~$0.16. Medium should claw most of
-      // that back without sacrificing the accuracy gains measured on PSA
-      // calibration. If accuracy regresses meaningfully on the next 10-book
-      // run, bump back to 'high' (or drop to 'low' and re-test).
+      // default is 'high'; medium is the recommended default for non-coding
+      // workloads. NOTE: on a structured-JSON output task with no thinking,
+      // effort has limited impact on cost because output is dominated by the
+      // mandated schema. Effort becomes meaningful when paired with thinking
+      // (controls thinking depth) — see thinking field below.
       // IMPORTANT: effort lives inside output_config, NOT as a top-level
       // field. Per https://platform.claude.com/docs/en/build-with-claude/effort
-      // the API rejects top-level `effort` and the error happens before our
-      // timing-record write, so failures look silent (no Logs entry).
+      // the API silently ignores unknown top-level params, so a wrong shape
+      // produces no error but also no behavior change.
       output_config: { effort: 'medium' },
-      max_tokens: 4096,
+      // S15 May 29: enable adaptive thinking on Opus 4.8. Model decides when
+      // and how much to think; effort=medium scopes the depth. The hope is
+      // explicit reasoning helps the calibration step (defects → grade)
+      // where prior calibration drift suggests the model was guessing. NOT
+      // expected to help with perception (tape/missing-piece detection) —
+      // that's a vision limit, not a reasoning limit. Watch the next PSA
+      // calibration run for accuracy delta; revert this line if cost spikes
+      // without an accuracy gain.
+      thinking: { type: 'adaptive' },
+      // S15 May 29: bumped 4096 → 16384. Thinking tokens count toward
+      // max_tokens; 4096 risks the model running out mid-reasoning, which
+      // would manifest as truncated JSON and parse failures. 16k gives
+      // substantial thinking headroom + our ~1000-token JSON output without
+      // overcommitting. Tune down if observed thinking tokens stay small.
+      max_tokens: 16384,
       system: systemPrompt,
       messages: [{
         role: 'user',
@@ -1112,7 +1126,13 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       _cacheCreationInputTokens = _usage.cache_creation_input_tokens || null;
       _stopReason = (data && data.stop_reason) || null;
       _responseModel = (data && data.model) || null;
-      text = data.content[0].text.trim();
+      // S15 May 29: with adaptive thinking enabled (Opus 4.8), the first
+      // content block is a 'thinking' block and content[0].text is undefined.
+      // Find the text block by type rather than position. Falls back to
+      // content[0].text for backward compat with non-thinking responses
+      // (where content[0] IS the text block).
+      const _textBlock = (data.content || []).find(b => b && b.type === 'text');
+      text = (_textBlock ? _textBlock.text : data.content[0].text).trim();
     }
 
     const _rawTextChars = text.length;
