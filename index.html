@@ -872,21 +872,36 @@
       z-index: 6;
     }
     #camera-lens-selector.show { display: flex; }
+    /* S15 May 29: redesigned from per-lens chip list (small 44×44 circles
+       with short labels like "1×" / "2×") to a single TOGGLE pill saying
+       "ZOOM IN" or "ZOOM OUT". The old 44px circle was crushing the
+       longer label — pill is sized to content with consistent padding,
+       and the .active inversion (white background, black text) is gone
+       because there's no "selected vs unselected" state anymore. The
+       toggle uses the same dark-glass aesthetic as the other floating
+       camera controls (upload, skip) for visual consistency. */
     .lens-btn {
-      width: 44px; height: 44px;
-      border-radius: 50%;
+      min-width: 44px;
+      height: 36px;
+      padding: 0 14px;
+      border-radius: 18px;
       background: rgba(0,0,0,0.55);
       border: 1px solid rgba(255,255,255,0.25);
       color: #fff;
-      font-size: 13px; font-weight: 700;
+      font-size: 12px; font-weight: 700;
+      letter-spacing: 0.5px;
       cursor: pointer;
-      padding: 0;
-      display: flex; align-items: center; justify-content: center;
+      display: inline-flex; align-items: center; justify-content: center;
+      white-space: nowrap;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
     }
     .lens-btn.active {
-      background: rgba(255,255,255,0.95);
-      color: #000;
-      border-color: #fff;
+      /* No-op visual change — kept as a CSS hook in case the toggle
+         later needs a pressed/active state distinct from the default. */
+      background: rgba(0,0,0,0.55);
+      color: #fff;
+      border-color: rgba(255,255,255,0.25);
     }
     .lens-btn:active { transform: scale(0.92); }
     /* Upload-instead anchored to the left, doesn't fight capture button for layout. */
@@ -1895,7 +1910,8 @@ const FULL_ASSESSMENT_BOOKS = [
   { title: 'amazing fantasy',         issue: '15', slots: 16 },
   { title: 'fantastic four',          issue: '1',  slots: 16 },
   { title: 'incredible hulk',         issue: '1',  slots: 16 },
-  { title: 'x-men',                   issue: '1',  slots: 16 },
+  { title: 'x-men',                   issue: '1',  slots: 16 },  // 1991+ X-Men relaunch
+  { title: 'uncanny x-men',           issue: '1',  slots: 16 },  // 1963 original AND all facsimiles (per disambiguateXMen)
   { title: 'tales of suspense',       issue: '39', slots: 16 }
 ];
 
