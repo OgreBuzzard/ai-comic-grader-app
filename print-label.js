@@ -945,6 +945,13 @@ function ensureStylesInjected() {
   .rg-label-l .wrap-strip .ws-id {
     flex: 0 0 auto;
     margin-left: auto;
+    /* S15 May 29: align the ID's right edge with the face QR code, which
+       sits at x=1008 (0.5" from the physical right edge / 3.5" from left
+       — the trim line). The strip has 12px right padding; we need the ID
+       144px in from the right edge, so add 132px (144 − 12) of right
+       margin. After the user trims the label to 3.5", the ID and QR both
+       sit flush against the new right edge. */
+    margin-right: 132px;
     font-family: ui-monospace, "SF Mono", Menlo, "Cascadia Mono", "Roboto Mono", monospace;
     font-size: 24px;
     font-weight: 600;
