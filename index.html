@@ -5605,12 +5605,21 @@ async function startPreUpload(rawImages, rawCornerImages, comicId) {
 }
 
 async function processImagesForSave(images, comicId, slotNames, options = {}) {
-  const { generateThumbs = false, existingThumbs = [] } = options;
+  const { generateThumbs = false, existingThumbs = [], preserveNulls = false } = options;
   const fullResult = [];
   const thumbResult = [];
   for (let i = 0; i < images.length; i++) {
     const img = images[i];
-    if (!img) continue;
+    if (!img) {
+      // S15 May 29: when preserveNulls is set (signature + interior slots,
+      // where left-vs-right / page-N index position is meaningful), push an
+      // explicit null to keep array indices aligned with the slot layout.
+      // Without this the old `continue` collapsed [url, null] → [url], which
+      // broke index stability and could leave undefined holes downstream that
+      // Firestore rejects on write ("Unsupported field value: undefined").
+      if (preserveNulls) { fullResult.push(null); thumbResult.push(null); }
+      continue;
+    }
     // Thumbnails are only used in the list view, which only shows the front
     // cover (slot 0). Generating thumbs for back/PQ/raking is wasted work
     // and storage. Restrict to slot 0 only.
@@ -11253,7 +11262,7 @@ async function submitForm(){
             rawInteriorImages,
             id,
             storageSlotsInterior(_fullEntry.slots),
-            { generateThumbs: false }
+            { generateThumbs: false, preserveNulls: true }
           );
           finalInteriorImages = interiorResult.images;
         }
@@ -11267,7 +11276,7 @@ async function submitForm(){
           rawSignatureImages,
           id,
           ['signature_01', 'signature_02'],
-          { generateThumbs: false }
+          { generateThumbs: false, preserveNulls: true }
         );
         finalSignatureImages = signatureResult.images;
       }
@@ -11326,6 +11335,16 @@ async function submitForm(){
     }
     return baseMeta;
   }));
+
+  // S15 May 29: Firestore rejects `undefined` field values (throws
+  // "Unsupported field value: undefined"), but accepts `null`. Signature and
+  // interior arrays can pick up undefined holes from sparse-array operations
+  // upstream. Normalize them to null before the record is built so a save
+  // can never throw on an undefined slot. (images/cornerImages go through
+  // zipImageArray which already drops empties, so they're safe.)
+  const _sanitizeSlots = (arr) => Array.isArray(arr) ? arr.map(v => v === undefined ? null : v) : arr;
+  finalSignatureImages = _sanitizeSlots(finalSignatureImages);
+  finalInteriorImages = _sanitizeSlots(finalInteriorImages);
 
   // Build the saved record. Field order follows EMPTY's canonical grouping:
   // identity → grade → status → transaction → images → long text. The spread
