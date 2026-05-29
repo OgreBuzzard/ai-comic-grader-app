@@ -684,7 +684,7 @@ async function renderDashboard() {
       <div class="tabs" id="tabs">
         <button data-tab="users" class="${state.tab === 'users' ? 'active' : ''}">Users</button>
         <button data-tab="items" class="${state.tab === 'items' ? 'active' : ''}">All Items</button>
-        <button data-tab="timings" class="${state.tab === 'timings' ? 'active' : ''}">Timings</button>
+        <button data-tab="timings" class="${state.tab === 'timings' ? 'active' : ''}">Logs</button>
       </div>
       <div id="tab-content"></div>
     </main>
@@ -1031,7 +1031,7 @@ async function loadTimings(reset = false) {
     renderTimingsList();
   } catch (e) {
     const sec = document.getElementById('timings-section');
-    if (sec) sec.innerHTML = `<div class="err-banner">Timings failed: ${escapeHtml(e.message)}</div>`;
+    if (sec) sec.innerHTML = `<div class="err-banner">Logs failed: ${escapeHtml(e.message)}</div>`;
   }
 }
 
@@ -1048,7 +1048,15 @@ function renderTimingsList() {
   const totals = state.timingsList.map(t => t.totalMs || 0).filter(Boolean);
   const primaries = state.timingsList.map(t => (t.phases && t.phases.primaryCallMs) || 0).filter(Boolean);
   const refines = state.timingsList.map(t => (t.phases && t.phases.refineCallMs) || 0).filter(Boolean);
+  // S15 May 28: per-assessment cost was added to timing writes (see assess.js
+  // costUsd block). Aggregate across the visible page — sum is the spend,
+  // mean is per-assessment cost. Errored rows write costUsd: 0 (no tokens
+  // billed) so they don't skew the mean.
+  const costs = state.timingsList.map(t => +t.costUsd || 0).filter(c => c > 0);
   const mean = arr => arr.length ? Math.round(arr.reduce((a,b)=>a+b,0) / arr.length) : 0;
+  const sumCost = costs.reduce((a,b)=>a+b, 0);
+  const meanCost = costs.length ? sumCost / costs.length : 0;
+  const fmtCost = c => '$' + (c < 0.01 ? c.toFixed(4) : c.toFixed(c < 1 ? 3 : 2));
   const p95 = arr => {
     if (!arr.length) return 0;
     const s = [...arr].sort((a,b)=>a-b);
@@ -1061,6 +1069,7 @@ function renderTimingsList() {
       &nbsp;·&nbsp; p95 total <strong>${p95(totals)}ms</strong>
       &nbsp;·&nbsp; mean primary <strong>${mean(primaries)}ms</strong>
       ${refines.length ? `&nbsp;·&nbsp; mean refine <strong>${mean(refines)}ms</strong>` : ''}
+      ${costs.length ? `&nbsp;·&nbsp; mean cost <strong>${fmtCost(meanCost)}</strong> &nbsp;·&nbsp; total <strong>${fmtCost(sumCost)}</strong>` : ''}
     </div>
   `;
 
@@ -1088,6 +1097,7 @@ function renderTimingsList() {
             ${p.refineCallMs != null ? `&nbsp;·&nbsp;<strong>refine ${p.refineCallMs}</strong>` : (t.gradeRefRan === false ? '&nbsp;·&nbsp;<span style="color:var(--text-dim);">refine skipped</span>' : '')}
             ${t.predictedGrade ? `&nbsp;·&nbsp;grade ${escapeHtml(t.predictedGrade)}` : ''}
             ${t.gradeBeforeRefinement ? ` (was ${escapeHtml(t.gradeBeforeRefinement)})` : ''}
+            ${+t.costUsd > 0 ? `&nbsp;·&nbsp;<span style="color:var(--text-dim);">${fmtCost(+t.costUsd)}</span>` : ''}
             ${t.errorMessage ? `<br><span style="color:#ff8080;">${escapeHtml(String(t.errorMessage).slice(0, 200))}</span>` : ''}
           </div>
         </div>
