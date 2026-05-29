@@ -981,12 +981,19 @@ function ensureStylesInjected() {
     line-height: 1;
   }
   .rg-label-l .rg-num {
-    /* S14: 140 → 150, matching Small R / the Large prominence pass. */
-    font-size: 150px; font-weight: 900;
+    /* S15 May 29 (Option A test on Small L only): 150px → 160px font,
+       scaleX(0.625) → scaleX(0.75). Makes the score number larger and
+       less horizontally squished. Risk: ~22% width growth eats the
+       ~10px clearance to .rg-prec at the old size. If real-print test
+       shows the number colliding with the precision modifier, revert
+       to: font-size: 150px; transform: scaleX(0.625).
+       Other label variants (Small R / Square / Large) intentionally
+       unchanged pending verification on this one. */
+    font-size: 160px; font-weight: 900;
     color: #b8d820; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
-    transform: scaleX(0.625);
+    transform: scaleX(0.75);
     transform-origin: center;
   }
   .rg-label-l .rg-prec {
