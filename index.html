@@ -8982,24 +8982,22 @@ function renderForm(){
                 ? `Identified: <strong style="color:#c8b4ff">${esc(signerLabel)}</strong>. Add close-up photos for buyer inspection — optional, two slots available.`
                 : `Signature${getSignatures(formData).length > 1 ? 's' : ''} identified on this book. Add close-up photos for buyer inspection — optional, two slots available.`}
             </div>
-            <div style="display:flex;flex-direction:column;gap:10px;align-items:center">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start">
               ${[0, 1].map(i => {
                 const img = sigImgs[i];
-                // S15 May 29: signature slots are now stacked (not a 2-col
-                // grid), each fixed at ~half screen width and centered. Empty
-                // slots use a 2:1 (width:height) ratio — a wide, short box that
-                // better matches a signature's shape than the old square. Once
-                // an image is added, width stays fixed at 50% but height goes
-                // auto so the slot adapts to the photo's true aspect ratio
-                // (object-fit:contain, no cropping — a signature macro should
-                // be shown whole, not cover-cropped).
+                // S15 May 29: signature slots sit SIDE-BY-SIDE in one row (two
+                // columns). Empty slots use a 1:2 height-to-width ratio (wide,
+                // short — signature-shaped) via aspect-ratio:2/1. Once an image
+                // is added, the column width stays as-is but height goes auto so
+                // each slot adapts to its photo's true aspect ratio
+                // (object-fit shows the whole signature, no cover-cropping).
                 return img
-                  ? `<div class="drag-slot" style="width:50%;height:auto;position:relative;overflow:visible" onclick="tapSlot(${i},'signature')">
+                  ? `<div class="drag-slot" style="height:auto;position:relative;overflow:visible" onclick="tapSlot(${i},'signature')">
                       <img src="${img}" style="display:block;width:100%;height:auto;border-radius:inherit">
                       <button class="slot-edit" onclick="event.stopPropagation();openCropper('signature',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>
                       <button class="slot-x" onclick="event.stopPropagation();removeSignatureImg(${i})">×</button>
                      </div>`
-                  : `<div class="drag-slot" style="padding:0;background:#1a1a1a;width:50%;aspect-ratio:2/1;position:relative;overflow:hidden" onclick="tapSlot(${i},'signature')">
+                  : `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:2/1;position:relative;overflow:hidden" onclick="tapSlot(${i},'signature')">
                       <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#7a6abf;font-size:12px;font-weight:600;letter-spacing:1px;text-align:center;padding:8px">
                         <div style="font-size:20px;margin-bottom:4px">✎</div>
                         <div>SIGNATURE ${i + 1}</div>
