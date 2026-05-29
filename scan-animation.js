@@ -179,19 +179,19 @@
   //            (2000ms ease-in-out).
   //   0:02.2 → chest landed. Results panel landed too. 1000ms pause.
   //   0:03.2 → photo 1 slides in (500ms ease-in-out)
-  //            scan (3000ms down)
+  //            scan (2500ms down) — S15 May 29: was 3000ms
   //            slide out (500ms ease-in-out)
-  //   0:07.2 → photo 2 starts. Same pattern, scan direction up.
-  //   0:11.2 → photo 3 starts. Scan down.
-  //   0:15.2 → photo 4 starts. Scan up.
-  //   0:19.2 → photo loop ends.
-  //   0:19.2 → progress overlay slides in from the RIGHT (2000ms).
-  //   0:21.2 → overlay in place. Grid cycle + needle pulse start.
+  //   0:06.7 → photo 2 starts. Same pattern, scan direction up.
+  //   0:10.2 → photo 3 starts. Scan down.
+  //   0:13.7 → photo 4 starts. Scan up.
+  //   0:17.2 → photo loop ends.
+  //   0:17.2 → progress overlay slides in from the RIGHT (2000ms).
+  //   0:19.2 → overlay in place. Grid cycle + needle pulse start.
   //            POPULATING INFO lights green.
-  //   0:22.7, 0:24.2, 0:25.7, 0:27.2 → remaining 4 buttons light at
+  //   0:20.7, 0:22.2, 0:23.7, 0:25.2 → remaining 4 buttons light at
   //   1500ms intervals (paced + API-gated; API has typically returned
   //   by now since it ran in parallel from t=0).
-  //   0:27.2 → grid cycle stops, needle pulses stops, needle sweeps to
+  //   0:25.2 → grid cycle stops, needle pulses stops, needle sweeps to
   //   final score angle (2000ms). Score boxes count up. PQ pill cycles
   //   through 7 designations (1800ms linear) and lands on final.
   //   0:30.0 → ASSESSING button becomes COMPLETE (in-place style change).
@@ -202,7 +202,7 @@
   const POST_CHEST_PAUSE   = 1000;
   const DISPLAY_FADE_DELAY = 100;
   const SLIDE_DURATION     = 500;
-  const SCAN_DURATION      = 3000;
+  const SCAN_DURATION      = 2500;  // S15 May 29: was 3000. Trimmed 500ms per scan × 4 photos = 2s off total animation. CSS @keyframes durations on lines 484-487 changed in lockstep.
   const PAUSE_AFTER_SCAN   = 0;
   const FIRST_PHOTO_DELAY  = CHEST_SLIDE_DELAY + CHEST_SLIDE_TIME + POST_CHEST_PAUSE;
   const TRACKER_SLIDE_TIME = 2000;
@@ -476,15 +476,15 @@
     }
     /* S13 v18: scan range = slit Y range (20.6% to 87.9% of cavity).
        Vertical scans (down/up) for the laser bar's top position.
-       Scan duration 3000ms matches storyboard. */
+       Scan duration 2500ms matches storyboard (S15 May 29: was 3000ms). */
     @keyframes rgScanDown  { from { top: 20.6%; } to { top: 87.9%;  } }
     @keyframes rgScanUp    { from { top: 87.9%; } to { top: 20.6%;  } }
     @keyframes rgScanRight { from { left: 2.6%; } to { left: 86.0%; } }
     @keyframes rgScanLeft  { from { left: 86.0%;} to { left: 2.6%;  } }
-    .rg-scan-laser.scan-down  { animation: rgScanDown  3s cubic-bezier(0.42, 0, 0.58, 1) forwards, rgScanFlicker 0.15s infinite alternate; }
-    .rg-scan-laser.scan-up    { animation: rgScanUp    3s cubic-bezier(0.42, 0, 0.58, 1) forwards, rgScanFlicker 0.15s infinite alternate; }
-    .rg-scan-laser.scan-right { animation: rgScanRight 3s cubic-bezier(0.42, 0, 0.58, 1) forwards, rgScanFlicker 0.15s infinite alternate; }
-    .rg-scan-laser.scan-left  { animation: rgScanLeft  3s cubic-bezier(0.42, 0, 0.58, 1) forwards, rgScanFlicker 0.15s infinite alternate; }
+    .rg-scan-laser.scan-down  { animation: rgScanDown  2.5s cubic-bezier(0.42, 0, 0.58, 1) forwards, rgScanFlicker 0.15s infinite alternate; }
+    .rg-scan-laser.scan-up    { animation: rgScanUp    2.5s cubic-bezier(0.42, 0, 0.58, 1) forwards, rgScanFlicker 0.15s infinite alternate; }
+    .rg-scan-laser.scan-right { animation: rgScanRight 2.5s cubic-bezier(0.42, 0, 0.58, 1) forwards, rgScanFlicker 0.15s infinite alternate; }
+    .rg-scan-laser.scan-left  { animation: rgScanLeft  2.5s cubic-bezier(0.42, 0, 0.58, 1) forwards, rgScanFlicker 0.15s infinite alternate; }
 
     /* Step tracker overlay — slides into the cavity from the left after
        the laser-scan completes. Same coordinates as .rg-scan-display
