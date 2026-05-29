@@ -1945,11 +1945,26 @@ function isFullAssessmentComplete(item) {
 }
 
 // Has the Deep Assessment been completed on this book? Required prereq
-// before Full unlock. Deep sets _highGradeTier on the cgc result and
-// highGradeAssessed on the persisted item (both names exist in legacy
-// codepaths; check either).
+// before Full unlock.
+// S15 May 29 FIX: the field that actually persists to the item / formData
+// is `highGradeTier` (NO leading underscore). This function previously
+// checked only `highGradeAssessed` (the admin items-endpoint projection),
+// `_highGradeTier` (an underscore variant that never shipped to formData),
+// and `deepAssessmentRan` (set in the assess_deep.js response but not the
+// field that survives to the persisted record). Result: a completed Deep
+// (highGradeTier:true, 4 corner images present) read as INCOMPLETE, so the
+// Full Assessment slots never rendered and submitFullAssessment() wrongly
+// alerted "Deep must be completed first". Diagnosed against live formData
+// on the X-Men #1 facsimile (2XY5D9). Adding `highGradeTier` to the chain
+// fixes both gates (slot render ~line 8967 and submit guard ~line 9838).
+// The other names are kept for backward compat / the admin projection.
 function isDeepAssessmentComplete(item) {
-  return !!(item && (item.highGradeAssessed === true || item._highGradeTier === true || item.deepAssessmentRan === true));
+  return !!(item && (
+    item.highGradeTier === true ||      // canonical persisted field (formData)
+    item.highGradeAssessed === true ||  // admin items/user endpoint projection
+    item._highGradeTier === true ||     // legacy underscore variant
+    item.deepAssessmentRan === true     // assess_deep.js response flag
+  ));
 }
 
 // ─────────────────────────────────────────────────────────────────────────
