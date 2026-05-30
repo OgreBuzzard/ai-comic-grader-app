@@ -2543,7 +2543,7 @@ const COMIC_DATA_FIELDS = [
   'keyInfo','graderNotes','aiGraderNotes','aiAssessment',
   'roboGrade',
   'highGradeTier','highGradeUnlocked',
-  'restorationCheckTier','restorationReport','restorationFlag','restorationCheckRan','restorationImages',
+  'restorationCheckTier','restorationReport','restorationFlag','restorationCheckRan',
   'enhance',
   'slabbingDate',
   'assessmentHistory',
@@ -5453,6 +5453,9 @@ function showEdit(id){
   // Snapshot the original Firestore images so they can never be lost on save
   formData._savedImages=[...(c.images||[])];
   formData._savedCornerImages=[...(c.cornerImages||[])];
+  formData._savedInteriorImages=[...(c.interiorImages||[])];
+  formData._savedSignatureImages=[...(c.signatureImages||[])];
+  formData._savedRestorationImages=[...(c.restorationImages||[])];
   formData._imagesChanged=false;
   // S15 May 30: restoration slots start hidden on each fresh open (two-step
   // reveal). If a restoration check already ran, treat as revealed so its
@@ -6928,122 +6931,10 @@ async function assessHighGrade() {
   }
 }
 
-function startRestorationCheck() {
-  const btn = document.getElementById('rc-upgrade-btn');
-  if (btn) { btn.textContent = 'Select 4 Restoration Photos...'; btn.disabled = true; }
-
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = 'image/*';
-  input.multiple = true;
-  input.onchange = async (e) => {
-    const files = Array.from(e.target.files).slice(0, 4);
-    if (files.length === 0) {
-      if (btn) { btn.textContent = '+ Add Restoration Photos'; btn.disabled = false; }
-      return;
-    }
-    if (btn) btn.textContent = `${files.length} photo${files.length>1?'s':''} selected — Checking…`;
-
-    try {
-      // Compress restoration images
-      const rcImgs = await Promise.all(files.map(f => new Promise(res => {
-        const reader = new FileReader();
-        reader.onload = ev => {
-          const img = new Image();
-          img.onload = () => {
-            const MAX = 900, Q = 0.5;
-            const scale = Math.min(MAX/img.width, MAX/img.height, 1);
-            const c = document.createElement('canvas');
-            c.width = Math.round(img.width*scale);
-            c.height = Math.round(img.height*scale);
-            c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-            res(c.toDataURL('image/jpeg', Q));
-          };
-          img.src = ev.target.result;
-        };
-        reader.readAsDataURL(f);
-      })));
-
-      // Combine original 4 images + restoration images (8 total)
-      const origImgs = (formData.images || []).filter(Boolean).slice(0, 4);
-      // S13 v21: sequential compression for the same reason as assessGrade.
-      const origCompressed = await compressImagesSequentially(origImgs);
-      const allImages = [...origCompressed, ...rcImgs];
-
-      const token = window._currentUser ? (await window._currentUser.getIdToken()) : null;
-      const headers = {
-        'Content-Type': 'application/json',
-        'x-client-secret': '022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d',
-        ...(token ? {'Authorization': 'Bearer ' + token} : {})
-      };
-
-      // Run CGC with restorationCheck flag
-      const cgcResp = await fetch('/api/assess', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          images: allImages,
-          grader: 'CGC',
-          restorationCheck: true,
-          cgcGraderNotes: formData.graderNotes || '',
-          title: formData.title || '',
-          issueNumber: formData.issue || '',
-          issueDate: formData.issueDate || ''
-        })
-      });
-
-      if (!cgcResp.ok) throw new Error('Restoration check failed');
-      const cgcRC = await cgcResp.json();
-
-      // Run PSA with updated grade
-      const psaResp = await fetch('/api/assess', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          images: allImages,
-          grader: 'PSA',
-          cgcGrade: cgcRC.grade || ''
-        })
-      });
-      const psaRC = psaResp.ok ? await psaResp.json() : _pendingAssessResult.psa;
-
-      // Preserve existing enhancements
-      cgcRC._roboGrade = _pendingAssessResult.cgc._roboGrade;
-      cgcRC._highGradeTier = _pendingAssessResult.cgc._highGradeTier;
-      cgcRC._restorationCheckTier = true;
-      _pendingAssessResult = { cgc: cgcRC, psa: psaRC };
-
-      // Update preview grades. S14 unification: single predicted badge.
-      const gradesEl = document.getElementById('result-grades');
-      const pqEl = document.getElementById('result-pq');
-      const cgcGrade = normalizeGrade(cgcRC.grade || '');
-      const psaGrade = normalizeGrade(psaRC.grade || '');
-      const predicted = cgcGrade || psaGrade;
-      const pq = cgcRC.pageQuality ? normPageQuality(cgcRC.pageQuality) : '';
-      if (gradesEl) gradesEl.innerHTML =
-        (predicted ? buildBadge(predicted, 'predicted', '', true) : '');
-      if (pq && pqEl) pqEl.innerHTML = buildPQBox(pq);
-
-      // Show restoration result summary
-      const rcRow = document.getElementById('rc-upgrade-row');
-      if (rcRow) {
-        const report = cgcRC.restorationReport || {};
-        const found = Object.entries(report).filter(([,v]) => v === 'FOUND').map(([k]) => k);
-        const suspected = Object.entries(report).filter(([,v]) => v === 'INCONCLUSIVE').map(([k]) => k);
-        let summary = '';
-        if (found.length) summary += `<div style="color:#ff7a4a;font-weight:700;margin-top:4px">⚠ Restoration found: ${found.join(', ')}</div>`;
-        if (suspected.length) summary += `<div style="color:#e0904a;margin-top:2px">Suspected: ${suspected.join(', ')}</div>`;
-        if (!found.length && !suspected.length) summary = '<div style="color:#6abf6a;font-weight:700;margin-top:4px">✓ No restoration detected</div>';
-        rcRow.innerHTML = `<div style="font-size:11px;color:#e0904a;font-weight:700;letter-spacing:0.05em">RESTORATION CHECK COMPLETE</div>${summary}`;
-      }
-
-    } catch(e) {
-      if (btn) { btn.textContent = 'Retry Restoration Photos'; btn.disabled = false; }
-      console.error('Restoration check failed:', e);
-    }
-  };
-  input.click();
-}
+// S15 May 30: removed dead startRestorationCheck() — an earlier-design
+// restoration flow (4+4 images to /api/assess with a restorationCheck
+// flag) that was never wired (no rc-upgrade-btn, no caller). The live
+// Restoration Check is submitRestorationCheck() → /api/assess_deep mode:restoration.
 
 // ── Image cap helpers ────────────────────────────────────────────────────────
 const IMAGE_SOFT_CAP = 20;  // nudge at this many books with images
@@ -11702,9 +11593,15 @@ async function submitForm(){
   // gets different photos) so nulls are preserved.
   const rawSignatureImages = (formData.signatureImages || []);
   const newSignatureCount = rawSignatureImages.filter(x => x && isDataUrl(x)).length;
-  const newImageCount = rawImages.filter(isDataUrl).length + rawCornerImages.filter(isDataUrl).length + newInteriorCount + newSignatureCount;
+  // S15 May 30: restoration check images (4 slots: Interior Front, Interior
+  // Back, Interior Staple, UV Front). Routed through Cloud Storage like the
+  // others — must NOT be persisted raw in the Firestore doc (4 data URLs would
+  // risk the 1MB cap). preserveNulls keeps slot positions aligned.
+  const rawRestorationImages = (formData.restorationImages || []);
+  const newRestorationCount = rawRestorationImages.filter(x => x && isDataUrl(x)).length;
+  const newImageCount = rawImages.filter(isDataUrl).length + rawCornerImages.filter(isDataUrl).length + newInteriorCount + newSignatureCount + newRestorationCount;
 
-  let finalImages, finalCornerImages, finalThumbnails, finalInteriorImages, finalSignatureImages;
+  let finalImages, finalCornerImages, finalThumbnails, finalInteriorImages, finalSignatureImages, finalRestorationImages;
   try {
     if (formData._imagesChanged && newImageCount > 0) {
       // S13 v18: if assessGrade kicked off pre-upload in parallel with
@@ -11745,21 +11642,19 @@ async function submitForm(){
         finalCornerImages = cornerResult.images;
       }
       // S15 May 27 (v4.0): interior spreads upload runs regardless of
-      // pre-upload branch (pre-upload was always main+corner only). The
-      // book must be Full-Assessed for these to exist; the variable slot
-      // count comes from the whitelist entry.
-      if (rawInteriorImages.length > 0) {
-        const _fullEntry = isFullAssessmentEligible(formData);
-        if (_fullEntry) {
-          syncMsg(`Uploading ${newInteriorCount || rawInteriorImages.length} interior spread${rawInteriorImages.length === 1 ? '' : 's'}...`);
-          const interiorResult = await processImagesForSave(
-            rawInteriorImages,
-            id,
-            storageSlotsInterior(_fullEntry.slots),
-            { generateThumbs: false, preserveNulls: true }
-          );
-          finalInteriorImages = interiorResult.images;
-        }
+      // pre-upload branch (pre-upload was always main+corner only).
+      // S15 May 30: gate on "has interior images" rather than current Full
+      // eligibility — a book that ran Full must keep its 8 images even if its
+      // score later changes. Always 8 fixed slots now.
+      if (rawInteriorImages.some(Boolean)) {
+        syncMsg(`Uploading ${newInteriorCount || rawInteriorImages.filter(Boolean).length} interior image${rawInteriorImages.filter(Boolean).length === 1 ? '' : 's'}...`);
+        const interiorResult = await processImagesForSave(
+          rawInteriorImages,
+          id,
+          storageSlotsInterior(FULL_SLOT_COUNT),
+          { generateThumbs: false, preserveNulls: true }
+        );
+        finalInteriorImages = interiorResult.images;
       }
       // S15 May 27 (v4.0): signature macro upload. Fixed 2-slot capacity.
       // Only runs if signatures were identified on assessment AND at
@@ -11774,6 +11669,19 @@ async function submitForm(){
         );
         finalSignatureImages = signatureResult.images;
       }
+      // S15 May 30: restoration check upload. Fixed 4 slots:
+      // restoration_01..04 = Interior Front, Interior Back, Interior Staple,
+      // UV Front. Cloud Storage like the rest; preserveNulls for slot stability.
+      if (rawRestorationImages.length > 0 && rawRestorationImages.some(Boolean)) {
+        syncMsg(`Uploading restoration photo${newRestorationCount === 1 ? '' : 's'}...`);
+        const restorationResult = await processImagesForSave(
+          rawRestorationImages,
+          id,
+          ['restoration_01', 'restoration_02', 'restoration_03', 'restoration_04'],
+          { generateThumbs: false, preserveNulls: true }
+        );
+        finalRestorationImages = restorationResult.images;
+      }
     } else {
       // No changes — preserve the previously-saved URLs (and thumbnails).
       const existingComic = formData.id ? items.find(c => c.id === formData.id) : null;
@@ -11783,6 +11691,8 @@ async function submitForm(){
       // S15 May 27 (v4.0): same for interior spreads and signature macros.
       finalInteriorImages = formData._savedInteriorImages || existingComic?.interiorImages || formData.interiorImages || [];
       finalSignatureImages = formData._savedSignatureImages || existingComic?.signatureImages || formData.signatureImages || [];
+      // S15 May 30: same for restoration check images.
+      finalRestorationImages = formData._savedRestorationImages || existingComic?.restorationImages || formData.restorationImages || [];
     }
     syncMsg(null);
   } catch(e) {
@@ -11839,6 +11749,7 @@ async function submitForm(){
   const _sanitizeSlots = (arr) => Array.isArray(arr) ? arr.map(v => v === undefined ? null : v) : arr;
   finalSignatureImages = _sanitizeSlots(finalSignatureImages);
   finalInteriorImages = _sanitizeSlots(finalInteriorImages);
+  finalRestorationImages = _sanitizeSlots(finalRestorationImages);
 
   // Build the saved record. Field order follows EMPTY's canonical grouping:
   // identity → grade → status → transaction → images → long text. The spread
@@ -11897,6 +11808,10 @@ async function submitForm(){
     // book has identified signatures (book's roboGrade.signatures.length > 0).
     // No-op array for books without signatures — safe to persist either way.
     signatureImages: finalSignatureImages || formData.signatureImages || [],
+    // S15 May 30: restoration check photos — Cloud Storage URLs (uploaded
+    // above), NOT raw data URLs. Set explicitly here; restorationImages was
+    // removed from COMIC_DATA_FIELDS so the raw formData copy can't leak in.
+    restorationImages: finalRestorationImages || [],
     // System metadata (last)
     dateAdded:formData.dateAdded||new Date().toISOString()
   };
@@ -11904,6 +11819,7 @@ async function submitForm(){
   delete rec._savedCornerImages;
   delete rec._savedInteriorImages;
   delete rec._savedSignatureImages;
+  delete rec._savedRestorationImages;
   delete rec._imagesChanged;
   // Strip stale schemaVersion if it carried in via the formData spread — the
   // translator (in saveItem) is the single source of truth for this field.
