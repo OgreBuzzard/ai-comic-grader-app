@@ -188,9 +188,103 @@ export default async function handler(req, res) {
     // graded assessment is MORE certain than a 2-photo raw one because the
     // missing photos are structurally absent, not skipped.
     labelDetected = false,
-    labelKind = ''
+    labelKind = '',
+    // S16: when mode === 'slabcheck', assess.js does NOT run an assessment —
+    // it makes a tiny Haiku vision call to decide if the front photo shows a
+    // graded slab, logs cost/latency, and returns { detected, company }.
+    mode = null
   } = req.body;
   if (!images || images.length === 0) return res.status(400).json({ error: 'No images provided' });
+
+  // ── S16: slab-detection micro-call (mode:'slabcheck') ───────────────────────
+  // A tiny Haiku vision call answering "is this comic in a graded slab case?"
+  // at capture time, so the camera flow can skip interior/PQ/raking photos for
+  // slabbed books (which can't be opened). Folded into assess.js to reuse auth,
+  // the Anthropic key, and the assessment_timings logging — and to stay under
+  // the 12-function Vercel ceiling (a dedicated endpoint would be the 13th).
+  // ~$0.001–0.003/call (Haiku, one image, ~10-token answer). NEVER charges a
+  // credit. Logged to assessment_timings with kind:'slabcheck' so cost + speed
+  // appear in the admin Logs tab. Returns { detected, company, costUsd, ms }.
+  if (mode === 'slabcheck') {
+    const _sc0 = Date.now();
+    const uid = await verifyUidFromAuthHeader(req);
+    if (!uid) return res.status(401).json({ error: 'auth required' });
+    // Front cover = images[0]; accept a data-URL string or {data, mediaType}.
+    let imgBlock = null;
+    try {
+      const front = images[0];
+      if (typeof front === 'string' && front.startsWith('data:')) {
+        const comma = front.indexOf(',');
+        const header = front.slice(0, comma);
+        const data = front.slice(comma + 1);
+        const rawType = (header.match(/data:(.*);base64/) || [])[1];
+        imgBlock = { type: 'image', source: { type: 'base64', media_type: normalizeMediaType(rawType), data } };
+      } else if (front && front.data) {
+        imgBlock = { type: 'image', source: { type: 'base64', media_type: normalizeMediaType(front.mediaType || front.media_type), data: front.data } };
+      }
+    } catch (e) { imgBlock = null; }
+    if (!imgBlock) return res.status(400).json({ error: 'no front image' });
+
+    const scPrompt = 'You are looking at a photo of a single comic book. Decide ONE thing: is the comic encapsulated in a rigid third-party GRADING SLAB (a sealed hard plastic case with a printed grading label across the top — CGC, PSA, or CBCS), or is it a RAW, un-encased comic with no case and no grading label? A raw comic\'s top edge is its own cover art (publisher banner, price box, barcode) — that is NOT a grading label. Respond with ONLY a JSON object and nothing else: {"slab": true or false, "company": "CGC" | "PSA" | "CBCS" | null}. Set company only when slab is true and you can read which grader; otherwise null.';
+
+    let scText = '', scIn = 0, scOut = 0, scModel = '', scStop = '';
+    try {
+      const scResp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 100,
+          messages: [{ role: 'user', content: [imgBlock, { type: 'text', text: scPrompt }] }]
+        })
+      });
+      const scJson = await scResp.json();
+      scModel = scJson.model || '';
+      scStop = scJson.stop_reason || '';
+      if (scJson.usage) { scIn = scJson.usage.input_tokens || 0; scOut = scJson.usage.output_tokens || 0; }
+      const tb = Array.isArray(scJson.content) ? scJson.content.find(b => b.type === 'text') : null;
+      scText = tb ? tb.text : '';
+    } catch (e) {
+      return res.status(502).json({ error: 'slabcheck upstream failed' });
+    }
+
+    let detected = false, company = null;
+    try {
+      const mt = scText.match(/\{[\s\S]*\}/);
+      const obj = mt ? JSON.parse(mt[0]) : {};
+      detected = obj.slab === true;
+      company = detected && ['CGC', 'PSA', 'CBCS'].includes(obj.company) ? obj.company : null;
+    } catch (e) { detected = false; company = null; }
+
+    const scMs = Date.now() - _sc0;
+    // Haiku 4.5 pricing: $1/M input, $5/M output.
+    const scCost = +((scIn * (1 / 1e6)) + (scOut * (5 / 1e6))).toFixed(6);
+
+    // Fire-and-forget timing log → shows in the admin Logs tab.
+    (async () => {
+      try {
+        const db = await getAdminDb();
+        if (!db) return;
+        const key = `slab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        await db.collection('assessment_timings').doc(key).set({
+          kind: 'slabcheck',
+          uid,
+          createdAt: new Date().toISOString(),
+          totalMs: scMs,
+          inputTokens: scIn,
+          outputTokens: scOut,
+          costUsd: scCost,
+          responseModel: scModel,
+          stopReason: scStop,
+          slabDetected: detected,
+          slabCompany: company,
+          rawText: typeof scText === 'string' ? scText.slice(0, 500) : null
+        });
+      } catch (e) { console.error('slabcheck timing write failed (non-fatal):', e); }
+    })();
+
+    return res.status(200).json({ detected, company, costUsd: scCost, ms: scMs, model: scModel });
+  }
 
   // ── Front + back cover requirement (server-side gate, pre-API) ─────────────
   // Every assessment must include both a front and back cover photo. Single-cover
