@@ -30,7 +30,7 @@
 //   phase 4 (confirming)    — model has emitted revised roboGrade
 //
 // =============================================================================
-const ROBOGRADE_VERSION = '4.14';
+const ROBOGRADE_VERSION = '4.15';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -92,17 +92,23 @@ export default async function handler(req, res) {
     cornerMacros = [],           // [{type, source} blocks in Anthropic image format] or [data URLs]
     title = '',
     issueNumber = '',
+    // S15 May 30: Restoration Check mode. When mode==='restoration', this same
+    // endpoint runs a restoration examination instead of a deep grade
+    // refinement (folded in here rather than a 13th Vercel function — we're at
+    // the 12/12 cap). It takes 4 restoration images in this order:
+    //   [Interior Front, Interior Back, Interior Staple, UV Front]
+    // and returns a carefully-worded restorationReport (never a verdict).
+    mode = 'deep',
+    restorationImages = []       // 4 images for restoration mode
   } = req.body || {};
+
+  const isRestoration = mode === 'restoration';
 
   if (!initialAssessment || typeof initialAssessment !== 'object') {
     return sseError(400, { error: 'initialAssessment required' });
   }
-  if (!Array.isArray(cornerMacros) || cornerMacros.length !== 4) {
-    return sseError(400, { error: 'cornerMacros must be an array of 4 (TL, TR, BL, BR)' });
-  }
 
-  // Normalize the 4 macros into Anthropic image blocks. Accept either raw
-  // base64-data-URL strings or pre-formed image blocks.
+  // Mode-specific image validation.
   function toImageBlock(item) {
     if (item && typeof item === 'object' && item.type === 'image') return item;
     if (typeof item === 'string' && item.startsWith('data:')) {
@@ -112,10 +118,26 @@ export default async function handler(req, res) {
     }
     return null;
   }
-  const macroBlocks = cornerMacros.map(toImageBlock);
-  if (macroBlocks.some(b => !b)) {
-    return sseError(400, { error: 'cornerMacros: each entry must be a base64 data URL or Anthropic image block' });
+
+  let imageInputBlocks;   // the blocks sent to Anthropic (macros or restoration images)
+  if (isRestoration) {
+    if (!Array.isArray(restorationImages) || restorationImages.length !== 4) {
+      return sseError(400, { error: 'restorationImages must be an array of 4 (Interior Front, Interior Back, Interior Staple, UV Front)' });
+    }
+    imageInputBlocks = restorationImages.map(toImageBlock);
+    if (imageInputBlocks.some(b => !b)) {
+      return sseError(400, { error: 'restorationImages: each entry must be a base64 data URL or Anthropic image block' });
+    }
+  } else {
+    if (!Array.isArray(cornerMacros) || cornerMacros.length !== 4) {
+      return sseError(400, { error: 'cornerMacros must be an array of 4 (TL, TR, BL, BR)' });
+    }
+    imageInputBlocks = cornerMacros.map(toImageBlock);
+    if (imageInputBlocks.some(b => !b)) {
+      return sseError(400, { error: 'cornerMacros: each entry must be a base64 data URL or Anthropic image block' });
+    }
   }
+  const macroBlocks = imageInputBlocks;  // alias kept for the downstream message assembly
 
   // ── canonical CGC tier reference (copied from assess.js v3.99c) ─────────────
   const CGC_GRADE_TIERS = `
@@ -296,6 +318,57 @@ HARD OUTPUT LIMITS:
   • graderNotes: existing bullets + at most 3 [Deep]-prefixed bullets
 `;
 
+  // ── S15 May 30: Restoration Check prompt (mode==='restoration') ─────────────
+  // Examines 4 images for restoration indicators and produces a carefully-
+  // worded "Restoration Assessment" that NEVER asserts a verdict either way.
+  // Image order: [Interior Front, Interior Back, Interior Staple, UV Front].
+  // The UV Front MUST actually be under UV light — if it isn't, the model must
+  // detect the absence of UV and FAIL the check (uvLightPresent:false) rather
+  // than pretend to evaluate color touch it cannot see.
+  const restorationPrompt = `You are performing a RESTORATION CHECK on a vintage comic book. You are NOT grading it. You are looking for physical indicators that the book may have been restored, and reporting them with extreme care and NO definitive verdict.
+
+You are given exactly 4 images, in this order:
+1. INTERIOR FRONT — inside front cover / first interior pages.
+2. INTERIOR BACK — last interior pages / inside back cover.
+3. INTERIOR STAPLE — close view of the staples from inside the centerfold.
+4. UV FRONT — the FRONT COVER photographed under ULTRAVIOLET (blacklight) illumination.
+
+WHAT TO EXAMINE:
+- INTERIOR FRONT & BACK: look for leaf-casting (added paper pulp filling losses), reinforcement (added backing material, glue sheen, fibers that don't match the original paper), and color-touch bleed-through (ink or pigment visible from the BACK of the cover paper that indicates color was added to the front).
+- INTERIOR STAPLE: look for signs the staples are MODERN REPLACEMENTS (too shiny, wrong gauge, machine-perfect when the book is decades old) or have been BENT/MANIPULATED WITH TOOLS (tool marks, re-bent legs) — both suggest the pages were removed from the staples, often for a chemical cleaning bath, then re-assembled.
+- UV FRONT: under UV light, ADDED INK (color touch, over-painting) typically FLUORESCES DIFFERENTLY from the original printing — it appears as patches that don't match the surrounding original ink. This is the single most important restoration tell and is usually obvious under UV.
+
+CRITICAL — UV VERIFICATION FIRST:
+Before evaluating the UV Front image for color touch, confirm the image was ACTUALLY taken under UV light. UV-lit photos have a characteristic deep blue-violet cast, fluorescing bright spots (optical brighteners in modern paper/materials glow vivid white-blue), and generally dark, low-ambient surroundings. A normal photo under room light is NOT a UV photo.
+- If the 4th image is clearly NOT under UV light (normal daylight/indoor color, no blue-violet cast, no fluorescence): set "uvLightPresent": false and DO NOT attempt to evaluate color touch. The check fails — a restoration check cannot be completed without a real UV image of the front cover.
+- If it IS under UV light: set "uvLightPresent": true and evaluate normally.
+
+OUTPUT — CAREFULLY WORDED, NO VERDICT:
+The "restorationReport" field must describe WHETHER and WHERE telltale indicators are observed, WITHOUT ever stating a conclusion about whether the book is or is not restored. Acceptable phrasing: "Under UV, an area of the upper-left cover fluoresces differently from the surrounding original ink, which can be associated with added color; this is an observation, not a determination." If NO indicators are observed, say so but explicitly qualify that this does not guarantee the absence of restoration: "No indicators of restoration were observed in these images. This is not a guarantee that the book is unrestored — some restoration is undetectable without disassembly or professional examination." NEVER write "this book is restored" or "this book is not restored."
+
+## RESPONSE FORMAT — STRICT
+Your entire response must be a JSON object and nothing else. First character an opening curly brace, last character a closing curly brace.
+
+JSON shape:
+{
+  "restorationCheckRan": true,
+  "uvLightPresent": true | false,
+  "uvCheckFailed": true | false,
+  "restorationReport": "<carefully-worded observations per the rules above — NO verdict>",
+  "indicatorsObserved": true | false,
+  "findings": [
+    { "area": "interior_front | interior_back | interior_staple | uv_front", "observation": "<concise, ≤20 words>" }
+  ]
+}
+
+Rules:
+- If uvLightPresent is false, set uvCheckFailed true, indicatorsObserved false, and make restorationReport explain that the UV image was not taken under UV light and the check could not be completed. Provide findings for the three interior images only.
+- NEVER assert a restoration verdict. Observations only.
+- Do not mention internal references or priors. Report only what these 4 images show.
+`;
+
+  const activePrompt = isRestoration ? restorationPrompt : systemPrompt;
+
   try {
     markPhase('promptAssemblyAtMs');
     const _primaryStart = Date.now();
@@ -315,14 +388,20 @@ HARD OUTPUT LIMITS:
       // max_tokens. Deep's JSON output is smaller than initial (it's a
       // refinement, not a full assessment), so 8k headroom is appropriate.
       max_tokens: 8192,
-      system: systemPrompt,
+      system: activePrompt,
       messages: [{
         role: 'user',
-        content: [
-          { type: 'text', text: 'CORNER MACROS in order: Top-Left, Top-Right, Bottom-Left, Bottom-Right of the front cover.' },
-          ...macroBlocks,
-          { type: 'text', text: 'Perform the deep assessment. Apply the floor rule: revised RG and CGC grades must be at or above the initial values unless a specific new defect is identified in the macros. Return the JSON.' }
-        ]
+        content: isRestoration
+          ? [
+              { type: 'text', text: 'RESTORATION CHECK IMAGES in order: Interior Front, Interior Back, Interior Staple, UV Front (front cover under UV light).' },
+              ...macroBlocks,
+              { type: 'text', text: 'First verify the 4th image is genuinely under UV light. Then perform the restoration check and return the JSON. Report observations only — never a verdict.' }
+            ]
+          : [
+              { type: 'text', text: 'CORNER MACROS in order: Top-Left, Top-Right, Bottom-Left, Bottom-Right of the front cover.' },
+              ...macroBlocks,
+              { type: 'text', text: 'Perform the deep assessment. Apply the floor rule: revised RG and CGC grades must be at or above the initial values unless a specific new defect is identified in the macros. Return the JSON.' }
+            ]
       }]
     };
 
@@ -506,23 +585,29 @@ HARD OUTPUT LIMITS:
       }
     }
 
-    // FLOOR RULE: revised grade may not go BELOW the initial unless the model
-    // explicitly flagged a new defect. If no defect entry has deepAddition: true
-    // and the revised grade is lower, restore the initial grade and sub-scores.
-    const hasDeepAddition = Array.isArray(parsed.roboGrade?.defects)
-      && parsed.roboGrade.defects.some(d => d && d.deepAddition === true);
-    if (!hasDeepAddition && initialRG && initialRG.score != null && parsed.roboGrade) {
-      if ((Number(parsed.roboGrade.score) || 0) < Number(initialRG.score)) {
-        parsed.roboGrade.score = initialRG.score;
-        parsed.roboGrade.frontScore = initialRG.frontScore;
-        parsed.roboGrade.spineScore = initialRG.spineScore;
-        parsed.grade = initialAssessment.grade || parsed.grade;
+    // S15 May 30: the floor rule and grade-stamp logic below are DEEP-only.
+    // Restoration mode produces a restorationReport, not a grade, so skip them.
+    if (!isRestoration) {
+      // FLOOR RULE: revised grade may not go BELOW the initial unless the model
+      // explicitly flagged a new defect. If no defect entry has deepAddition: true
+      // and the revised grade is lower, restore the initial grade and sub-scores.
+      const hasDeepAddition = Array.isArray(parsed.roboGrade?.defects)
+        && parsed.roboGrade.defects.some(d => d && d.deepAddition === true);
+      if (!hasDeepAddition && initialRG && initialRG.score != null && parsed.roboGrade) {
+        if ((Number(parsed.roboGrade.score) || 0) < Number(initialRG.score)) {
+          parsed.roboGrade.score = initialRG.score;
+          parsed.roboGrade.frontScore = initialRG.frontScore;
+          parsed.roboGrade.spineScore = initialRG.spineScore;
+          parsed.grade = initialAssessment.grade || parsed.grade;
+        }
       }
+      parsed.deepAssessmentRan = true;
+    } else {
+      parsed.restorationCheckRan = true;
     }
-
-    parsed.deepAssessmentRan = true;
     parsed._diagnostics = {
-      deepAssessment: true,
+      deepAssessment: !isRestoration,
+      restorationCheck: isRestoration,
       initialGrade: initialAssessment.grade || null,
       revisedGrade: parsed.grade || null,
       gradeChanged: (initialAssessment.grade || null) !== (parsed.grade || null),
