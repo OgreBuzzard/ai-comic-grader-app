@@ -8312,7 +8312,12 @@ async function assessGrade(){
         images: compressed, slotsFilled, grader: "CGC",
         title: formData.title || "",
         issueNumber: formData.issue || "",
-        issueDate: formData.issueDate || ""
+        issueDate: formData.issueDate || "",
+        // S15 May 29: pass the slab signal so the server applies graded-book
+        // handling (isGraded prompt block + 10/4 precision ladder). Set by the
+        // camera flow's slab detector when a CGC/PSA/CBCS label is found.
+        labelDetected: !!formData.labelDetected,
+        labelKind: formData.labelKind || ""
       })
     };
 
@@ -11067,7 +11072,25 @@ async function cameraCapture() {
     && _cameraState.current === 0
   ) {
     try {
-      const labelKind = await detectSlabLabel(dataUrl);
+      // S15 May 29: use the calibrated SlabDetect (slab-detect.js) instead of
+      // the older detectSlabLabel heuristic. The old one keyed on CGC *yellow*
+      // and would miss CGC *blue* universal labels (95% of real cases).
+      // SlabDetect scored 10/10 on real handheld CGC shots. We load the just-
+      // captured front cover into an Image and analyze it. company is 'CGC' for
+      // blue/purple/green/yellow, 'PSA' for red; CBCS shares CGC colors so it
+      // reports as CGC (label text disambiguates server-side). Falls back to
+      // the old detector if SlabDetect isn't present for any reason.
+      let labelKind = null;
+      if (window.SlabDetect && typeof window.SlabDetect.analyze === 'function') {
+        const _img = await new Promise((res, rej) => {
+          const im = new Image(); im.onload = () => res(im);
+          im.onerror = () => rej(new Error('img load failed')); im.src = dataUrl;
+        });
+        const _r = window.SlabDetect.analyze(_img);
+        if (_r && _r.detected) labelKind = (_r.company || 'CGC').toLowerCase();
+      } else {
+        labelKind = await detectSlabLabel(dataUrl);
+      }
       if (labelKind) {
         console.log('[camera] slab label detected:', labelKind, '— pruning walkthrough to Back only');
         // Keep only slot 1 (Back) in the queue; remove 2 and 3.
