@@ -129,15 +129,17 @@ function isDeepListBook(title, issue) {
 // membership alone is NOT enough — a low-scoring copy of a key book doesn't
 // warrant Full Assessment. The grade>=3.0 path lets any decent-condition book
 // qualify regardless of list membership.
+// S15 May 30 gate (final): a book qualifies for Full Assessment ONLY if it is
+// on the Deep list AND meets a quality bar — RoboScore >= 30 OR predicted
+// grade >= 3.0. Deep-list membership is required; the score/grade check then
+// filters out low-condition copies of those key books.
 function isFullEligible({ title, issueNumber, roboScore, predictedGrade }) {
+  if (!isDeepListBook(title, issueNumber)) return { eligible: false, reason: 'not-deep-list' };
   const score = Number(roboScore);
   const grade = parseFloat(predictedGrade);
-  if (isDeepListBook(title, issueNumber) && Number.isFinite(score) && score >= 30) {
-    return { eligible: true, reason: 'deep-list+score>=30' };
-  }
-  if (Number.isFinite(grade) && grade >= 3.0) {
-    return { eligible: true, reason: 'grade>=3.0' };
-  }
+  const okScore = Number.isFinite(score) && score >= 30;
+  const okGrade = Number.isFinite(grade) && grade >= 3.0;
+  if (okScore || okGrade) return { eligible: true, reason: okScore ? 'deep-list+score>=30' : 'deep-list+grade>=3.0' };
   return { eligible: false, reason: 'below-threshold' };
 }
 
