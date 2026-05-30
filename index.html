@@ -1845,11 +1845,13 @@ function _normalizeKeyIssue(s) {
 }
 window.matchValueKey = function matchValueKey(title, issue, publisher, printing) {
   if (!_valueKeys) return null;
-  // Hard exclusion: facsimiles and reprints never qualify, no matter how
-  // perfect the title+issue match. A 2019 Hulk #181 facsimile is not the
-  // 1974 first Wolverine. The printing field comes from assess.js v2.5+
-  // and is empty string for original-printing books.
-  if (printing && String(printing).trim() !== '') return null;
+  // S15 May 30 (TESTING): printing exclusion is DISABLED so that any printing
+  // (including facsimiles/reprints) of a value-key book qualifies for Deep and
+  // therefore Full Assessment. Matt asked for this to test the reprint flow
+  // (e.g. X-Men #1 facsimile). The original rule excluded any book with a
+  // non-empty printing — a 2019 Hulk #181 facsimile is not the 1974 first
+  // Wolverine. TO REVERT: restore the line below.
+  //   if (printing && String(printing).trim() !== '') return null;
   const nt = _normalizeKeyTitle(title);
   const ni = _normalizeKeyIssue(issue);
   if (!nt || !ni) return null;
@@ -11325,11 +11327,21 @@ async function cameraCapture() {
         labelKind = await detectSlabLabel(dataUrl);
       }
       if (labelKind) {
-        console.log('[camera] slab label detected:', labelKind, '— pruning walkthrough to Back only');
-        // Keep only slot 1 (Back) in the queue; remove 2 and 3.
-        _cameraState.queue = _cameraState.queue.filter(s => s === 1);
-        _cameraState.labelDetected = true;
-        _cameraState.labelKind = labelKind;
+        // S15 May 30: AUTO-SKIP DISABLED. The SlabDetect color-band heuristic
+        // false-positives on raw covers — a raw comic's saturated top artwork
+        // (logos, banners) reads as a "label band", so ALL raw books were
+        // wrongly skipping the page-quality + raking slots. Calibration was
+        // only ever run slab-vs-slab (10/10), never slab-vs-raw, which is the
+        // actual discrimination needed; tightening to "full-width uniform band"
+        // both misses real handheld slabs AND still trips on some raw covers,
+        // so there's no clean color threshold. We keep DETECTION running (for
+        // logging + the field) but DO NOT prune the walkthrough. Revisit slab
+        // detection as a cheap vision micro-call (the model can tell a slab
+        // from a raw cover at any angle). To re-enable the prune, uncomment:
+        //   _cameraState.queue = _cameraState.queue.filter(s => s === 1);
+        //   _cameraState.labelDetected = true;
+        //   _cameraState.labelKind = labelKind;
+        console.log('[camera] slab-ish band detected (' + labelKind + ') but auto-skip is DISABLED — color heuristic false-positives on raw covers. Continuing full walkthrough.');
       }
     } catch (e) {
       console.warn('[camera] label detection threw, continuing normal walkthrough:', e);
