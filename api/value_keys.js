@@ -182,10 +182,10 @@ function normalizeIssue(s) {
  *                             a match — facsimiles and reprints never qualify).
  */
 function matchValueKey(title, issue, publisher, printing) {
-  // Hard exclusion 1: facsimiles and reprints. Even a perfect title+issue
-  // match on a $20 reprint should not unlock Deep Assessment — that book
-  // has nothing in common with the historic original beyond the cover art.
-  if (printing && String(printing).trim() !== '') return null;
+  // S15 May 30 (TESTING): printing exclusion DISABLED to allow reprints/
+  // facsimiles of value-key books to qualify for Deep/Full Assessment (Matt's
+  // request, mirrors the client change in index.html). TO REVERT, restore:
+  //   if (printing && String(printing).trim() !== '') return null;
 
   const nt = normalizeKeyTitle(title);
   const ni = normalizeIssue(issue);
