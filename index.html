@@ -1963,19 +1963,20 @@ function _isFullDeepListBook(item) {
 }
 
 // Returns a descriptor { slots: 8, slotDefs: FULL_SLOTS, reason } when the book
-// qualifies, or null. Gate (corrected May 30): (Deep-list AND RoboScore>=30)
-// OR predicted grade >= 3.0. Deep-list membership alone is NOT enough.
+// qualifies, or null. Gate (final May 30): must be a Deep-list book AND meet a
+// quality bar (RoboScore>=30 OR predicted grade>=3.0). Deep-list membership is
+// required.
 function isFullAssessmentEligible(item) {
   if (!item) return null;
   // Raw only — slabbed books can't have interior photos.
   if (item.labelDetected === true) return null;
+  if (!_isFullDeepListBook(item)) return null;
   const score = Number(item.roboGrade && item.roboGrade.score != null ? item.roboGrade.score : item.roboScore);
   const grade = parseFloat(item.predictedGrade || item.assessedCGCGrade);
-  let reason = null;
-  if (_isFullDeepListBook(item) && Number.isFinite(score) && score >= 30) reason = 'deep-list+score';
-  else if (Number.isFinite(grade) && grade >= 3.0) reason = 'grade';
-  if (!reason) return null;
-  return { slots: FULL_SLOT_COUNT, slotDefs: FULL_SLOTS, reason };
+  const okScore = Number.isFinite(score) && score >= 30;
+  const okGrade = Number.isFinite(grade) && grade >= 3.0;
+  if (!okScore && !okGrade) return null;
+  return { slots: FULL_SLOT_COUNT, slotDefs: FULL_SLOTS, reason: okScore ? 'deep-list+score' : 'deep-list+grade' };
 }
 
 // Has the user already run a successful Full Assessment on this book?
@@ -1983,6 +1984,40 @@ function isFullAssessmentEligible(item) {
 function isFullAssessmentComplete(item) {
   return !!(item && item.fullAssessmentRan === true);
 }
+
+// ── S15 May 30: Restoration Check helpers ───────────────────────────────────
+// Golden Age = publication date 1959 or earlier (our working definition for
+// restoration gating). issueDate is a free-ish string; pull the first 4-digit
+// year we can find and compare.
+function isGoldenAgeBook(item) {
+  if (!item) return false;
+  const d = String(item.issueDate || '');
+  const m = d.match(/\b(18|19|20)\d{2}\b/);
+  if (!m) return false;
+  return parseInt(m[0], 10) <= 1959;
+}
+
+// Restoration Check gate: Deep-list book OR Golden Age book. (Raw only — a
+// slabbed book can't have its interior/UV photographed.) Note: per spec, when
+// BOTH Deep and Restoration unlock, Deep takes precedence for the post-assess
+// button; the Restoration entry then lives as a separate "Check Restoration"
+// button in Edit view. This helper just answers "is the book restoration-
+// eligible at all".
+function isRestorationEligible(item) {
+  if (!item) return false;
+  if (item.labelDetected === true) return false;
+  return _isFullDeepListBook(item) || isGoldenAgeBook(item);
+}
+
+function isRestorationCheckComplete(item) {
+  return !!(item && item.restorationCheckRan === true);
+}
+
+// Two-step reveal state: the 4 restoration slots are hidden until the user taps
+// "Check Restoration". This module flag tracks that the slots have been
+// revealed for the currently-open book. Reset when a different book opens.
+let _restorationRevealed = false;
+function revealRestorationSlots() { _restorationRevealed = true; renderForm(); }
 
 // Has the Deep Assessment been completed on this book? Required prereq
 // before Full unlock.
@@ -2508,7 +2543,7 @@ const COMIC_DATA_FIELDS = [
   'keyInfo','graderNotes','aiGraderNotes','aiAssessment',
   'roboGrade',
   'highGradeTier','highGradeUnlocked',
-  'restorationCheckTier','restorationReport','restorationFlag',
+  'restorationCheckTier','restorationReport','restorationFlag','restorationCheckRan','restorationImages',
   'enhance',
   'slabbingDate',
   'assessmentHistory',
@@ -4484,17 +4519,21 @@ function showDetail(id){
     html += histHtml;
   }
 
-  // ─── Restoration Check ───
-  // Only renders if the book ran through the paid Restoration Check tier.
-  // Lists found and suspected restoration types, or confirms clean.
-  if(selected.restorationCheckTier) {
-    const rpt = selected.restorationReport || {};
-    const found = Object.entries(rpt).filter(([,v]) => v === 'FOUND').map(([k]) => k);
-    const susp = Object.entries(rpt).filter(([,v]) => v === 'INCONCLUSIVE').map(([k]) => k);
-    let rHtml = `<div style="margin-top:20px"><div class="section-label" style="color:#e0904a">Restoration Check ${selected.restorationFlag ? '<span style="color:#ff6a3a">⚠ RESTORATION DETECTED</span>' : '<span style="color:#6abf6a">✓ Clean</span>'}</div><div class="notes-box" style="border-color:#5a2a0a;background:#1a0d05">`;
-    if(found.length) rHtml += `<div style="color:#ff7a4a;font-size:12px;margin-bottom:4px"><strong>Found:</strong> ${found.join(', ')}</div>`;
-    if(susp.length) rHtml += `<div style="color:#e0904a;font-size:12px;margin-bottom:4px"><strong>Suspected:</strong> ${susp.join(', ')}</div>`;
-    if(!found.length && !susp.length) rHtml += `<div style="color:#6abf6a;font-size:12px">No restoration evidence detected across all checked types.</div>`;
+  // ─── Restoration Check (S15 May 30) ───
+  // Renders the carefully-worded Restoration Assessment. restorationReport is
+  // now a STRING (the model's no-verdict observations). We deliberately do NOT
+  // render a "DETECTED / CLEAN" verdict badge — the report itself is worded to
+  // avoid a conclusion either way. indicatorsObserved (restorationFlag) only
+  // tints the heading neutrally.
+  if(selected.restorationCheckTier || isRestorationCheckComplete(selected)) {
+    const report = typeof selected.restorationReport === 'string' ? selected.restorationReport.trim() : '';
+    let rHtml = `<div style="margin-top:20px"><div class="section-label" style="color:#c8a8e8">Restoration Assessment</div><div class="notes-box" style="border-color:#3a2a4a;background:#140d1a">`;
+    if (report) {
+      rHtml += `<div style="color:#d8c8e8;font-size:12px;line-height:1.55">${esc(report)}</div>`;
+    } else {
+      rHtml += `<div style="color:#9a8aaa;font-size:12px">Restoration Check ran, but no assessment text was recorded.</div>`;
+    }
+    rHtml += `<div style="color:#7a6a8a;font-size:10px;margin-top:8px;font-style:italic">Observations only — not a determination of restoration. Some restoration cannot be detected without professional examination.</div>`;
     rHtml += '</div></div>';
     html += rHtml;
   }
@@ -5415,6 +5454,10 @@ function showEdit(id){
   formData._savedImages=[...(c.images||[])];
   formData._savedCornerImages=[...(c.cornerImages||[])];
   formData._imagesChanged=false;
+  // S15 May 30: restoration slots start hidden on each fresh open (two-step
+  // reveal). If a restoration check already ran, treat as revealed so its
+  // slots/photos stay visible.
+  _restorationRevealed = isRestorationCheckComplete(c);
   view="add";_assessed=!!(c.assessedCGCGrade||c.aiAssessment);
   // S14: add-btn removed from top bar; defensive guard for stale DOM.
   const _ab2=document.getElementById("add-btn");if(_ab2)_ab2.style.visibility="hidden";
@@ -6600,6 +6643,18 @@ function mountResults(cgc, psa) {
       // view — completeAssessment routes there because _sigDetected is true).
       btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">SIGNATURE</div><div style="font-size:10px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">DETECTED</div>`;
       btn.style.background = '#6a4ba8';
+      btn.style.color = '#fff';
+      btn.style.textAlign = 'center';
+    } else if ((typeof isRestorationEligible === 'function') && isRestorationEligible(formData) && !isRestorationCheckComplete(formData)) {
+      // S15 May 30: Restoration eligible (Deep-list OR Golden Age). Note Deep
+      // takes precedence — if Deep just unlocked, that branch fired earlier in
+      // this chain and we never reach here. So this shows on restoration-
+      // eligible books where Deep is NOT the active unlock (e.g. a Golden Age
+      // book not on the Deep list). Routes to Edit (the flag in
+      // completeAssessment is set when restorationCheckTier/eligibility holds),
+      // where the "Check Restoration" button lives.
+      btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">RESTORATION CHECK</div><div style="font-size:10px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
+      btn.style.background = '#7a4ba8';
       btn.style.color = '#fff';
       btn.style.textAlign = 'center';
     } else {
@@ -8078,6 +8133,7 @@ async function completeAssessment() {
   _routeToEditAfterSave = !!(
     formData.highGradeUnlocked ||      // Deep just unlocked
     formData.restorationCheckTier ||   // Restoration unlocked / flagged
+    ((typeof isRestorationEligible === 'function') && isRestorationEligible(formData) && !isRestorationCheckComplete(formData)) || // Restoration newly available
     _sigDetected ||                    // signature(s) identified → add macro photos
     (isFullAssessmentEligible(formData) && isDeepAssessmentComplete(formData) && !isFullAssessmentComplete(formData)) // Full now available
   );
@@ -9112,7 +9168,88 @@ function renderForm(){
           </div>
         `;
       })()}
+      ${(() => {
+        // ─────────────────────────────────────────────────────────────
+        // RESTORATION CHECK (S15 May 30)
+        // Eligible: Deep-list OR Golden Age (<=1959), raw only. Two-step:
+        // a "Check Restoration" button reveals 4 slots (Interior Front,
+        // Interior Back, Interior Staple, UV Front). The first three SHARE
+        // with the Full Assessment slots (dedup). UV Front is gated behind a
+        // confirmation card (handled at capture time). Once 4 slots are
+        // filled, "Restoration Check" submits to /api/assess_deep mode=restoration.
+        // ─────────────────────────────────────────────────────────────
+        if (!isRestorationEligible(formData)) return '';
+        if (isRestorationCheckComplete(formData)) return '';
+
+        // Step 1: not yet revealed → show the "Check Restoration" button only.
+        if (!_restorationRevealed) {
+          return `
+            <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">
+              <div style="display:flex;justify-content:center">
+                <button onclick="revealRestorationSlots()" style="width:75%;min-height:48px;border-radius:12px;background:#3a2a4a;color:#c8a8e8;border:1px solid #7a4ba8;font-size:13px;font-weight:700;letter-spacing:1.5px;cursor:pointer">
+                  CHECK RESTORATION
+                </button>
+              </div>
+              <div style="font-size:10px;color:#9a8aaa;text-align:center;margin-top:8px;line-height:1.4">Adds 4 photos (interior + UV front) to check for restoration indicators. A UV light is required for the front-cover photo.</div>
+            </div>
+          `;
+        }
+
+        // Step 2: revealed → 4 named slots + submit button.
+        // Dedup: pull shared interior images from the Full slots when present.
+        // FULL_SLOTS indices: 0 interior_front, 1 interior_back, 3 interior_staple.
+        const fullInterior = formData.interiorImages || [];
+        const rImgs = formData.restorationImages || [];
+        // Seed shared slots from Full if the restoration slot is empty.
+        const seeded = [
+          rImgs[0] || fullInterior[0] || null,   // Interior Front  (Full idx 0)
+          rImgs[1] || fullInterior[1] || null,   // Interior Back   (Full idx 1)
+          rImgs[2] || fullInterior[3] || null,   // Interior Staple (Full idx 3 = interior_staple)
+          rImgs[3] || null                        // UV Front (restoration-only)
+        ];
+        const RSLOTS = [
+          { label: 'Interior Front',  hint: 'Inside front + first page (shared with Full)' },
+          { label: 'Interior Back',   hint: 'Last page + inside back (shared with Full)' },
+          { label: 'Interior Staple', hint: 'Staples from inside the centerfold (shared)' },
+          { label: 'UV Front',        hint: 'Front cover under UV light — UV light required' }
+        ];
+        const rFilled = seeded.filter(Boolean).length;
+        const rReady = rFilled === 4 && !assessing;
+        const rSlotsHtml = RSLOTS.map((slot, i) => {
+          const img = seeded[i];
+          return img
+            ? `<div class="drag-slot" style="aspect-ratio:3/2;position:relative;overflow:hidden" onclick="tapRestorationSlot(${i})">
+                <img src="${img}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">
+                <div style="position:absolute;left:0;right:0;bottom:0;background:linear-gradient(transparent,rgba(0,0,0,0.7));color:#fff;font-size:10px;font-weight:700;letter-spacing:0.5px;padding:8px 6px 4px;text-align:center">${slot.label.toUpperCase()}</div>
+                <button class="slot-x" onclick="event.stopPropagation();removeRestorationImg(${i})">×</button>
+               </div>`
+            : `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:3/2;position:relative;overflow:hidden" onclick="tapRestorationSlot(${i})">
+                <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#c8a8e8;font-size:12px;font-weight:700;letter-spacing:0.5px;text-align:center;padding:6px">
+                  <div>${slot.label.toUpperCase()}</div>
+                  <div style="font-size:9px;font-weight:500;opacity:0.7;margin-top:4px;line-height:1.3">${slot.hint}</div>
+                  <div style="font-size:9px;opacity:0.5;margin-top:4px">Tap to add</div>
+                </div>
+               </div>`;
+        }).join('');
+        return `
+          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">
+            <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">RESTORATION CHECK — 4 SLOTS</div>
+            <div style="font-size:11px;color:#9a8aaa;margin-bottom:10px;line-height:1.5">
+              Add the 4 photos below. The first three are shared with Full Assessment. The UV Front requires a UV (blacklight) photo of the front cover — you'll be prompted before that photo.
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              ${rSlotsHtml}
+            </div>
+            <div style="display:flex;justify-content:center;margin-top:12px">
+              <button id="restoration-check-btn" onclick="submitRestorationCheck()" ${rReady?'':'disabled'} style="width:75%;min-height:52px;border-radius:12px;background:${rReady?'#7a4ba8':'#2a2a2a'};color:${rReady?'#fff':'#6a6a6a'};border:none;font-size:14px;font-weight:700;letter-spacing:1.5px;cursor:${rReady?'pointer':'not-allowed'}">
+                ${assessing?'Checking…':`RESTORATION CHECK ${rFilled<4?`(${rFilled}/4)`:''}`}
+              </button>
+            </div>
+          </div>
+        `;
+      })()}
       <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">
+      <input id="restoration-photo-input" type="file" accept="image/*" onchange="handleRestorationImages(event)" style="display:none">
 
       <!-- S11: Pre-assessment Grader Notes (Option B for the chicken-and-egg
            problem). For graded books in slabs, the official grader notes are
@@ -9969,6 +10106,157 @@ async function handleSignatureImages(e) {
 // animation (Full is a verification, not a grading). The user has already
 // completed initial + Deep on this book; the gold state lives on the
 // score badge and persists once the result comes back verified.
+// ── S15 May 30: Restoration Check handlers ──────────────────────────────────
+let _tappedRestorationSlot = 0;
+
+function _ensureRestorationArray() {
+  // Seed restorationImages from the shared Full slots (Interior Front/Back/
+  // Staple) so the user doesn't re-shoot them. Full slot indices: 0=front,
+  // 1=back, 3=interior_staple. UV Front (index 3 here) is restoration-only.
+  const fullInterior = formData.interiorImages || [];
+  const r = [...(formData.restorationImages || [])];
+  while (r.length < 4) r.push(null);
+  if (!r[0]) r[0] = fullInterior[0] || null;
+  if (!r[1]) r[1] = fullInterior[1] || null;
+  if (!r[2]) r[2] = fullInterior[3] || null;
+  formData.restorationImages = r;
+  return r;
+}
+
+function removeRestorationImg(i) {
+  const r = _ensureRestorationArray();
+  r[i] = null;
+  formData.restorationImages = r;
+  formData._imagesChanged = true;
+  renderForm();
+}
+
+function tapRestorationSlot(i) {
+  _ensureRestorationArray();
+  _tappedRestorationSlot = i;
+  // Slot 3 = UV Front. Show the UV confirmation card FIRST.
+  if (i === 3) { showUvFrontCard(); return; }
+  // Slots 0-2 use the file picker (shared interior photos; usually already
+  // present from Full, but allow (re)adding here).
+  document.getElementById('restoration-photo-input').click();
+}
+
+// UV Front gate card: a simple modal with a UV-purple flashlight, "Okay"
+// (→ UV camera, reusing the Front guide relabeled "UV FRONT") and
+// "I don't have a UV light" (→ back to Edit).
+function showUvFrontCard() {
+  let card = document.getElementById('uv-front-card');
+  if (!card) {
+    card = document.createElement('div');
+    card.id = 'uv-front-card';
+    card.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.78);display:flex;align-items:center;justify-content:center;padding:24px';
+    card.innerHTML = `
+      <div style="background:#1a1226;border:1px solid #7a4ba8;border-radius:16px;max-width:340px;width:100%;padding:26px 22px;text-align:center">
+        <svg viewBox="0 0 64 64" width="64" height="64" style="margin:0 auto 14px;display:block" fill="none" stroke="#b06bff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="24" y="6" width="16" height="14" rx="2"/>
+          <path d="M22 20 H42 L38 30 H26 Z"/>
+          <rect x="27" y="30" width="10" height="26" rx="2"/>
+          <path d="M32 2 V-2 M44 8 L48 4 M20 8 L16 4" stroke="#b06bff" stroke-width="2.5"/>
+        </svg>
+        <div style="color:#e8d8ff;font-size:15px;font-weight:700;letter-spacing:0.5px;margin-bottom:8px">UV Front Photo</div>
+        <div style="color:#b8a8cc;font-size:12px;line-height:1.5;margin-bottom:20px">The next photo must be the front cover under a UV (blacklight) flashlight, in a dark room. UV light reveals added ink that wouldn't show otherwise. A restoration check can't be completed without it.</div>
+        <button onclick="uvCardProceed()" style="width:100%;min-height:48px;border-radius:10px;background:#7a4ba8;color:#fff;border:none;font-size:14px;font-weight:700;letter-spacing:1px;cursor:pointer;margin-bottom:10px">Okay</button>
+        <button onclick="uvCardCancel()" style="width:100%;min-height:44px;border-radius:10px;background:transparent;color:#a890c0;border:1px solid #5a3a7a;font-size:13px;font-weight:600;cursor:pointer">I don't have a UV light</button>
+      </div>`;
+    document.body.appendChild(card);
+  }
+  card.style.display = 'flex';
+}
+
+function uvCardCancel() {
+  const card = document.getElementById('uv-front-card');
+  if (card) card.style.display = 'none';
+  // Exit back to Edit view (we're already here — just close the card).
+}
+
+function uvCardProceed() {
+  const card = document.getElementById('uv-front-card');
+  if (card) card.style.display = 'none';
+  // UV Front capture: in-app camera reusing the Front guide overlay, relabeled
+  // "UV FRONT", on capable devices; file-picker fallback otherwise.
+  if (window._cameraSupported) {
+    cameraOpen({ mode: 'single', kind: 'uvfront', queue: [], current: 0, captures: [] });
+  } else {
+    document.getElementById('restoration-photo-input').click();
+  }
+}
+
+// File-picker fallback handler for restoration slots (and UV on desktop).
+async function handleRestorationImages(e) {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  const nonImage = files.find(f => !f.type.startsWith('image/'));
+  if (nonImage) { alert(`"${nonImage.name}" doesn't look like an image file.`); e.target.value=''; return; }
+  const dataUrl = await new Promise(res => { const r = new FileReader(); r.onload = ev => res(ev.target.result); r.readAsDataURL(files[0]); });
+  const r = _ensureRestorationArray();
+  r[_tappedRestorationSlot] = dataUrl;
+  formData.restorationImages = r;
+  formData._imagesChanged = true;
+  e.target.value = '';
+  renderForm();
+}
+
+async function submitRestorationCheck() {
+  if (assessing) return;
+  const r = _ensureRestorationArray();
+  const filled = r.filter(Boolean);
+  if (filled.length !== 4) { alert('Please add all 4 restoration photos first.'); return; }
+  if (typeof window._userCredits === 'number' && window._userCredits < 1) {
+    alert('You need at least 1 assessment credit to run a Restoration Check.');
+    return;
+  }
+  assessing = true; renderForm();
+  try {
+    // Compress the 4 in slot order [Interior Front, Interior Back, Interior Staple, UV Front].
+    const compressed = await compressImagesSequentially(r, { maxDim: 1000, quality: 0.6 });
+    const token = window._currentUser ? (await window._currentUser.getIdToken()) : null;
+    const resp = await fetch('/api/assess_deep', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': 'Bearer ' + token } : {}) },
+      body: JSON.stringify({
+        mode: 'restoration',
+        restorationImages: compressed,
+        initialAssessment: formData.roboGrade || { title: formData.title, issue: formData.issue },
+        title: formData.title || '',
+        issueNumber: formData.issue || ''
+      })
+    });
+    if (!resp.ok) { const t = await resp.text(); throw new Error(describeAssessmentError(t) || 'Restoration check failed: ' + t.slice(0,200)); }
+    const result = await resp.json();
+
+    // UV verification failed — the 4th image wasn't actually under UV light.
+    // Do NOT charge a credit; let the user retake.
+    if (result.uvCheckFailed === true || result.uvLightPresent === false) {
+      alert('The UV Front photo doesn\'t appear to be taken under UV light. A restoration check needs the front cover photographed under a UV (blacklight) flashlight in a dark room. Please retake the UV Front photo and try again. No credit was charged.');
+      return;
+    }
+
+    if (result.restorationCheckRan === true) {
+      formData.restorationCheckTier = true;
+      formData.restorationCheckRan = true;
+      formData.restorationReport = result.restorationReport || '';
+      formData.restorationFlag = result.indicatorsObserved === true;
+      formData._imagesChanged = true;
+      onAssessmentSuccess();
+      let msg = 'Restoration Check complete.';
+      if (result.restorationReport) msg += '\n\n' + result.restorationReport;
+      alert(msg);
+      await submitForm();
+    } else {
+      throw new Error('Unexpected Restoration Check response shape');
+    }
+  } catch (e) {
+    alert(describeAssessmentError(e.message) || 'Error: ' + e.message);
+  } finally {
+    assessing = false; renderForm();
+  }
+}
+
 async function submitFullAssessment() {
   if (assessing) return;
   const entry = isFullAssessmentEligible(formData);
@@ -10705,6 +10993,7 @@ function applyCameraOrientationState() {
   // per-index lookup.
   const preferred = (kind === 'corner' || kind === 'signature') ? 'portrait'
                   : kind === 'interior' ? getCurrentOrientation()  // matches whatever it is → never shows rotate card
+                  : kind === 'uvfront' ? 'portrait'                 // front cover = portrait
                   : CAMERA_SLOT_ORIENTATION_MAIN[current];
   const actual = getCurrentOrientation();
   const match = (preferred === actual);
@@ -10774,10 +11063,12 @@ function cameraOpenSlot(slotIndex) {
   const guideFile = (kind === 'corner' ? CAMERA_GUIDE_CORNER
               : kind === 'signature' ? [null, null]
               : kind === 'interior' ? [null,null,null,null,null,null,null,null]
+              : kind === 'uvfront' ? [CAMERA_GUIDE_MAIN[0]]   // S15 May 30: reuse the Front guide overlay
               : CAMERA_GUIDE_MAIN)[slotIndex];
   const label     = (kind === 'corner' ? CAMERA_LABEL_CORNER
               : kind === 'signature' ? ['Signature 1', 'Signature 2']
               : kind === 'interior' ? FULL_SLOTS.map(s => s.label)
+              : kind === 'uvfront' ? ['UV FRONT']            // relabel
               : CAMERA_LABEL_MAIN)[slotIndex];
 
   // Slot label in header overlay. Big chartreuse text above the framed cover.
@@ -11205,6 +11496,16 @@ async function runCropperSequence(captures, kind) {
   // also fixes the corner-crop order to match clockwise capture.
   const ordered = [...captures]; // already in capture order from the camera flow
   for (const cap of ordered) {
+    // S15 May 30: UV Front capture goes to restorationImages[3] (UV Front slot),
+    // not a parallel image list. Single capture, no cropper.
+    if (kind === 'uvfront') {
+      const r = [...(formData.restorationImages || [])];
+      while (r.length < 4) r.push(null);
+      r[3] = cap.dataUrl;
+      formData.restorationImages = r;
+      formData._imagesChanged = true;
+      continue;
+    }
     // Place the capture into the form first so cropper has something to read.
     // imagesMeta is stamped here — even if the user cancels the crop, the
     // photo stays with source:'camera' (they did capture it in-app).
