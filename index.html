@@ -64,6 +64,14 @@
        window.RobograderScan.runScanAnimation(photoUrls). -->
   <script src="/scan-animation.js"></script>
 
+  <!-- Slab (graded-comic) detection (S15 May 29). Client-side heuristic that
+       inspects a captured/uploaded front cover for a CGC/PSA/CBCS label band
+       and classifies it. Exposes window.SlabDetect.analyze(imgOrCanvas).
+       Calibrated: handheld CGC 10/10 detection + color; reference scans 10/10
+       detection, 7/10 color (CBCS/PSA tail). Detection drives the interior-
+       photo auto-skip; color drives the "Graded by ___" display only. -->
+  <script src="/slab-detect.js"></script>
+
   <!-- Panzoom: MIT-licensed library for pinch/zoom/pan on lightbox images -->
   <script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
 
@@ -9648,6 +9656,30 @@ function dropSlot(e,target){
   renderForm();
 }
 
+// S15 May 29: slab detection helper (Pass 2a — record only). Loads a front-
+// cover data URL into an Image, runs window.SlabDetect.analyze, and records the
+// result on formData. Records BOTH a positive and a negative result so a
+// re-shoot that's no longer a slab clears a stale flag. Does NOT yet skip
+// interior slots or alter scoring — that's Pass 2b, gated on verifying this
+// fires correctly. Always resolves; detection is convenience, never a blocker.
+async function detectSlabFromDataUrl(dataUrl){
+  if (!window.SlabDetect || typeof window.SlabDetect.analyze !== 'function') return null;
+  const img = await new Promise((res, rej) => {
+    const im = new Image();
+    im.onload = () => res(im);
+    im.onerror = () => rej(new Error('image load failed'));
+    im.src = dataUrl;
+  });
+  const r = window.SlabDetect.analyze(img);
+  // Record on formData. These mirror the existing slab fields the app already
+  // reads (labelDetected, isGraded via cgcGrade/psaGrade) — but we keep the
+  // raw detector output under _slabDetect for now so Pass 2b logic and any
+  // debugging can see exactly what fired without disturbing existing fields.
+  formData._slabDetect = r;
+  console.log('[slab] front-cover detection:', JSON.stringify(r));
+  return r;
+}
+
 async function handleImages(e){
   const files=Array.from(e.target.files);
   if(!files.length)return;
@@ -9690,6 +9722,12 @@ async function handleImages(e){
   }
   formData.images=imgs.filter(Boolean);
   formData._imagesChanged=true;
+  // S15 May 29: if the front cover (slot 0) was just set, run slab detection.
+  // Pass 2a: this only RECORDS the detection result on formData (isGraded,
+  // labelDetected, slabCompany) — it does NOT yet auto-skip interior slots or
+  // change scoring. That wiring comes once detection is verified on real
+  // captures. Detection is best-effort and never blocks the user.
+  if (imgs[0]) { try { await detectSlabFromDataUrl(imgs[0]); } catch(e){ console.warn('[slab] detect failed:', e); } }
   // Reset file input so same files can be re-selected if needed
   e.target.value="";
   renderForm();
@@ -10100,10 +10138,13 @@ function tapSlot(slotIndex, kind) {
     return;
   }
 
-  // S15 May 27 (v4.0): signature macros also use the file picker — small
-  // number of slots (2), but typically the user shoots them post-hoc with
-  // a different lens setup than the cover walkthrough. No camera walk.
-  if (kind === 'signature') {
+  // S15 May 29: signature macros now use the in-app camera (like corner
+  // macros) on camera-capable devices, with the file-picker as the desktop
+  // fallback. The signature camera flow is identical to corners EXCEPT it
+  // shows NO guide frame (a signature can be anywhere on the book) — just a
+  // text-only "Signature 1" / "Signature 2" label for orientation. Desktop /
+  // unsupported still uses the library picker below.
+  if (kind === 'signature' && !window._cameraSupported) {
     _tappedSignatureSlot = slotIndex;
     document.getElementById('signature-photo-input').click();
     return;
@@ -10137,8 +10178,12 @@ function tapSlot(slotIndex, kind) {
   // Build queue from this slot forward through all empty slots of the same kind,
   // following the CAPTURE ORDER (which differs from storage index for corners
   // — see CAMERA_CAPTURE_ORDER_CORNER for the clockwise rationale).
-  const list = (kind === 'corner' ? formData.cornerImages : formData.images) || [];
-  const captureOrder = (kind === 'corner' ? CAMERA_CAPTURE_ORDER_CORNER : CAMERA_CAPTURE_ORDER_MAIN);
+  const list = (kind === 'corner' ? formData.cornerImages
+              : kind === 'signature' ? formData.signatureImages
+              : formData.images) || [];
+  const captureOrder = (kind === 'corner' ? CAMERA_CAPTURE_ORDER_CORNER
+              : kind === 'signature' ? [0, 1]   // S15 May 29: 2 signature slots, simple L→R order
+              : CAMERA_CAPTURE_ORDER_MAIN);
   // Empty slots in capture-order sequence:
   const emptySlotsInOrder = captureOrder.filter(i => !list[i]);
   const isMultiEmpty = emptySlotsInOrder.length > 1 && emptySlotsInOrder.includes(slotIndex);
@@ -10609,8 +10654,8 @@ function cameraRotateForceRecheck() {
 function applyCameraOrientationState() {
   if (!_cameraState) return;
   const { kind, current } = _cameraState;
-  // Corner slots all prefer portrait. Main slots use per-index lookup.
-  const preferred = (kind === 'corner') ? 'portrait' : CAMERA_SLOT_ORIENTATION_MAIN[current];
+  // Corner + signature slots prefer portrait. Main slots use per-index lookup.
+  const preferred = (kind === 'corner' || kind === 'signature') ? 'portrait' : CAMERA_SLOT_ORIENTATION_MAIN[current];
   const actual = getCurrentOrientation();
   const match = (preferred === actual);
 
@@ -10668,8 +10713,16 @@ function cameraOpenSlot(slotIndex) {
   if (!_cameraState) return;
   _cameraState.current = slotIndex;
   const { kind, mode, queue } = _cameraState;
-  const guideFile = (kind === 'corner' ? CAMERA_GUIDE_CORNER : CAMERA_GUIDE_MAIN)[slotIndex];
-  const label     = (kind === 'corner' ? CAMERA_LABEL_CORNER : CAMERA_LABEL_MAIN)[slotIndex];
+  // S15 May 29: signature kind shows NO guide frame (a signature can be
+  // anywhere on a book — there's no fixed region to frame) and a text-only
+  // "Signature N" label. guideFile null → the guide-fetch below skips and the
+  // frame stays empty; only the header label renders.
+  const guideFile = (kind === 'corner' ? CAMERA_GUIDE_CORNER
+              : kind === 'signature' ? [null, null]
+              : CAMERA_GUIDE_MAIN)[slotIndex];
+  const label     = (kind === 'corner' ? CAMERA_LABEL_CORNER
+              : kind === 'signature' ? ['Signature 1', 'Signature 2']
+              : CAMERA_LABEL_MAIN)[slotIndex];
 
   // Slot label in header overlay. Big chartreuse text above the framed cover.
   const labelEl = document.getElementById('camera-slot-label');
@@ -10708,6 +10761,12 @@ function cameraOpenSlot(slotIndex) {
   // every fetch (?v=s13e) so old SVGs don't get served from disk cache after
   // the S13 redesign deploy.
   const guideEl = document.getElementById('camera-guide');
+  // S15 May 29: signature kind has no guide frame (guideFile null). Clear any
+  // previous guide and skip the fetch — the viewfinder shows only the live
+  // camera and the text label, no overlay box.
+  if (!guideFile) {
+    if (guideEl) guideEl.innerHTML = '';
+  } else {
   fetch('/assets/guides/' + guideFile + '?v=s13e')
     .then(r => r.text())
     .then(svgText => { guideEl.innerHTML = svgText; })
@@ -10715,6 +10774,7 @@ function cameraOpenSlot(slotIndex) {
       console.warn('[camera] guide fetch failed:', err);
       guideEl.innerHTML = '';
     });
+  }
 
   // Header progress text. Walkthrough shows "X of Y — Slot Name"; single mode
   // shows just the slot name. The element is hidden via CSS — kept here so
@@ -11074,8 +11134,12 @@ async function runCropperSequence(captures, kind) {
     // Place the capture into the form first so cropper has something to read.
     // imagesMeta is stamped here — even if the user cancels the crop, the
     // photo stays with source:'camera' (they did capture it in-app).
-    const listKey     = kind === 'corner' ? 'cornerImages' : 'images';
-    const metaKey     = kind === 'corner' ? 'cornerMeta'   : 'imagesMeta';
+    const listKey     = kind === 'corner' ? 'cornerImages'
+                      : kind === 'signature' ? 'signatureImages'
+                      : 'images';
+    const metaKey     = kind === 'corner' ? 'cornerMeta'
+                      : kind === 'signature' ? 'signatureMeta'
+                      : 'imagesMeta';
     const list = [...(formData[listKey] || [])];
     while (list.length <= cap.slot) list.push(null);
     list[cap.slot] = cap.dataUrl;
@@ -11095,7 +11159,10 @@ async function runCropperSequence(captures, kind) {
     // on each corner slot in Edit view for users who want to refine
     // framing afterward. Main images still get the cropper (the full-cover
     // photo benefits from a crop pass).
-    if (kind === 'corner') {
+    // S15 May 29: signature macros skip the cropper too, same rationale as
+    // corners — they're close-ups the user already framed at capture. The
+    // per-slot crop button remains in Edit view for later refinement.
+    if (kind === 'corner' || kind === 'signature') {
       continue;
     }
 
@@ -11105,6 +11172,11 @@ async function runCropperSequence(captures, kind) {
       openCropper(kind, cap.slot);
     });
     _cropperSequenceResolve = null;
+  }
+  // S15 May 29: after main-kind captures land, run slab detection on the front
+  // cover (slot 0) if it was part of this capture batch. Pass 2a: record only.
+  if (kind === 'main' && formData.images && formData.images[0]) {
+    try { await detectSlabFromDataUrl(formData.images[0]); } catch(e){ console.warn('[slab] detect failed:', e); }
   }
   renderForm();
 }
