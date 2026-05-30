@@ -3894,7 +3894,7 @@ function renderList(){
           html+=`<div>`;
           section.groups[title].forEach(c=>{
             const thumbSrc = c.thumbnails?.[0] || c.images?.[0];
-            const thumb = thumbSrc ? `<img class="comic-thumb" src="${thumbSrc}" decoding="async">` : "";
+            const thumb = thumbSrc ? `<img class="comic-thumb" data-src="${thumbSrc}" decoding="async" style="background:#221d18">` : "";
             // S14: swipe-to-delete. The row is a sliding foreground over a
             // fixed red Delete action. Touch handlers (wired after render)
             // translate .swipe-fg on horizontal drag; a left swipe past
@@ -3929,6 +3929,36 @@ function renderList(){
   }
   main.innerHTML=html;
   wireSwipeRows();
+  hydrateThumbs();
+}
+
+// S16: lazy-decode list thumbnails. The list stores each cover's 160px
+// thumbnail as an inline base64 data-URI; with a large collection (~160+
+// books) assigning all of them as <img src> at once forced the browser to
+// decode every thumbnail synchronously on first paint — up to ~39s to open
+// the app. Native loading="lazy" doesn't help because data-URIs are already
+// "loaded" (no network fetch to defer). Instead the markup uses data-src and
+// this observer assigns src (triggering decode) only as each thumb scrolls
+// near the viewport. Visible rows decode immediately; the rest hydrate on
+// scroll, so first paint is effectively instant regardless of collection size.
+function hydrateThumbs(){
+  const imgs = document.querySelectorAll('img.comic-thumb[data-src]');
+  if (!imgs.length) return;
+  if (window._thumbObserver) { window._thumbObserver.disconnect(); window._thumbObserver = null; }
+  if (!('IntersectionObserver' in window)) {
+    // Fallback for ancient engines: hydrate everything (old behavior).
+    imgs.forEach(img => { img.src = img.dataset.src; img.removeAttribute('data-src'); });
+    return;
+  }
+  window._thumbObserver = new IntersectionObserver((entries, obs) => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+      const img = entry.target;
+      if (img.dataset.src) { img.src = img.dataset.src; img.removeAttribute('data-src'); }
+      obs.unobserve(img);
+    });
+  }, { root: null, rootMargin: '300px 0px', threshold: 0.01 });
+  imgs.forEach(img => window._thumbObserver.observe(img));
 }
 
 // S14: tap handler for list rows. Replaces the inline showDetail call so
@@ -6495,7 +6525,7 @@ function mountResults(cgc, psa) {
   // PQ pill starts with white "White" placeholder; replaced in-place
   // with actual PQ designation after score animations done. No cycle.
   const resultsHtml = `
-    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;">
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">
       <div id="result-grades" style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badgesHtml}</div>
       <div id="result-pq" style="display:flex;align-items:center;justify-content:center;min-height:22px;">
         <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>
@@ -9728,21 +9758,31 @@ function dropSlot(e,target){
 // interior slots or alter scoring — that's Pass 2b, gated on verifying this
 // fires correctly. Always resolves; detection is convenience, never a blocker.
 async function detectSlabFromDataUrl(dataUrl){
-  if (!window.SlabDetect || typeof window.SlabDetect.analyze !== 'function') return null;
-  const img = await new Promise((res, rej) => {
-    const im = new Image();
-    im.onload = () => res(im);
-    im.onerror = () => rej(new Error('image load failed'));
-    im.src = dataUrl;
-  });
-  const r = window.SlabDetect.analyze(img);
-  // Record on formData. These mirror the existing slab fields the app already
-  // reads (labelDetected, isGraded via cgcGrade/psaGrade) — but we keep the
-  // raw detector output under _slabDetect for now so Pass 2b logic and any
-  // debugging can see exactly what fired without disturbing existing fields.
-  formData._slabDetect = r;
-  console.log('[slab] front-cover detection:', JSON.stringify(r));
-  return r;
+  // S16: vision micro-call slab detection (record-only / Pass 2a). POSTs the
+  // front cover to /api/assess with mode:'slabcheck' — a tiny Haiku call that
+  // returns { detected, company, costUsd, ms } and logs cost+latency to the
+  // admin Logs tab (kind:'slabcheck'). Replaces the abandoned client-side
+  // aspect detector (raw/slab aspects overlapped on real books). Best-effort:
+  // any failure resolves to null and never blocks capture. Does NOT yet skip
+  // interior slots — that's Pass 2b, enabled once the logs confirm accuracy.
+  if (!dataUrl) return null;
+  if (!window._currentUser || typeof window._currentUser.getIdToken !== 'function') return null;
+  try {
+    const token = await window._currentUser.getIdToken();
+    const resp = await fetch('/api/assess', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ mode: 'slabcheck', images: [dataUrl] })
+    });
+    if (!resp.ok) { console.warn('[slab] slabcheck HTTP', resp.status); return null; }
+    const r = await resp.json();
+    formData._slabDetect = r;
+    console.log('[slab] vision slabcheck:', JSON.stringify(r));
+    return r;
+  } catch (e) {
+    console.warn('[slab] slabcheck failed:', e?.message || e);
+    return null;
+  }
 }
 
 async function handleImages(e){
