@@ -6618,7 +6618,14 @@ function mountResults(cgc, psa) {
       const _fullEligible = isFullAssessmentEligible({
         title: (cgc && cgc.title) || formData.title,
         issue: (cgc && cgc.issue) || formData.issue,
-        labelDetected: (cgc && cgc.labelDetected) || formData.labelDetected
+        labelDetected: (cgc && cgc.labelDetected) || formData.labelDetected,
+        // S16 FIX: the May-30 gate also requires RoboScore>=30 OR grade>=3.0,
+        // but this caller passed only title/issue/labelDetected — so eligibility
+        // ALWAYS returned null and Full never unlocked after a Deep run (any
+        // book, not just reprints). Pass the score/grade already computed above.
+        roboScore: (typeof roboScore !== 'undefined' && roboScore != null) ? roboScore
+                   : (formData && formData.roboGrade && formData.roboGrade.score),
+        predictedGrade: (cgc && cgc.grade) || formData.predictedGrade || (formData && formData.assessedCGCGrade)
       });
       const _fullAlreadyRun = isFullAssessmentComplete(cgc) || isFullAssessmentComplete(formData);
       if (_fullEligible && !_fullAlreadyRun) {
@@ -9180,10 +9187,10 @@ function renderForm(){
            live-toggle the save button as the user types. Using tf would
            require either a full renderForm on every keystroke (kills focus)
            or a separate handler — this is cleaner. -->
-      <div><label class="field-label">Title<span style="color:#c0392b;margin-left:2px">*</span></label><input id="title-input" value="${esc(formData.title||"")}" oninput="formData.title=this.value;const b=document.getElementById('save-btn');b.disabled=!this.value.trim();b.style.opacity=this.value.trim()?'':'0.5';b.style.cursor=this.value.trim()?'':'not-allowed'" placeholder="Series title"></div>
-      ${tf("Issue","issue","Issue number",true)}
+      ${formData.roboGrade ? rof("Title","title") : `<div><label class="field-label">Title<span style="color:#c0392b;margin-left:2px">*</span></label><input id="title-input" value="${esc(formData.title||"")}" oninput="formData.title=this.value;const b=document.getElementById('save-btn');b.disabled=!this.value.trim();b.style.opacity=this.value.trim()?'':'0.5';b.style.cursor=this.value.trim()?'':'not-allowed'" placeholder="Series title"></div>`}
+      ${formData.roboGrade ? rof("Issue","issue") : tf("Issue","issue","Issue number",true)}
       ${formData.roboGrade ? rof("Pub Date","issueDate") : tf("Pub Date","issueDate","Cover date")}
-      ${tf("Publisher","publisher","Publisher")}
+      ${formData.roboGrade ? rof("Publisher","publisher") : tf("Publisher","publisher","Publisher")}
     </div>
     ${formData.roboGrade && (formData.printing && String(formData.printing).trim()) ? `
     <!-- S14 (anti-fraud): Printing is shown read-only on a graded book.
@@ -9233,11 +9240,6 @@ function renderForm(){
         <option value="">— select grade —</option>
         ${GRADES.map(g=>`<option value="${g}"${formData.grade===g?" selected":""}>${g} — ${GRADE_LABELS[g]}</option>`).join("")}
       </select></div>
-      <div><label class="field-label">Page Quality</label><select onchange="formData.pageQuality=this.value;renderForm()">
-        <option value="">— select pages —</option>
-        ${PAGE_QUALITIES.map(q=>`<option value="${q}"${formData.pageQuality===q?" selected":""}>${q}</option>`).join("")}
-      </select>
-      </div>
     </div>
 
     <!-- Robograde Score panel (S11): full RG display panel — score, sub-grades,
