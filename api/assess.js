@@ -177,7 +177,18 @@ export default async function handler(req, res) {
     highGrade = false,
     initialRoboGrade = null,
     initialCgcGrade = '',
-    initialPsaGrade = ''
+    initialPsaGrade = '',
+    // S15 May 29: graded/slabbed book signal. The client's slab detector
+    // (slab-detect.js) sets this when a CGC/PSA/CBCS label is found on the
+    // front cover; the camera flow then captures only front+back (interior
+    // can't be shot through the case). When true: the prompt gets an isGraded
+    // block (interior derived from the label's PQ designation, spine inferred
+    // from front+back), and the precision modifier uses the graded ladder
+    // (10 standard / per Deep) rather than the photo-count default — a 2-photo
+    // graded assessment is MORE certain than a 2-photo raw one because the
+    // missing photos are structurally absent, not skipped.
+    labelDetected = false,
+    labelKind = ''
   } = req.body;
   if (!images || images.length === 0) return res.status(400).json({ error: 'No images provided' });
 
@@ -434,9 +445,18 @@ CRITICAL — CENSUS USE IS INTERNAL ONLY: the census data above is a calibration
   //     was reading as overly conservative even on clean books.
   //   3 images: ±12 (one main slot missing materially widens uncertainty).
   //   <3 images: ±16 (very limited input).
-  const baseConf = highGrade
-    ? 3
-    : (photoCount >= 4 ? 6 : photoCount === 3 ? 12 : 16);
+  // S15 May 29: graded-book precision ladder (per Matt's slab spec). A slabbed
+  // book is assessed from front+back only, but with HIGHER confidence than a
+  // 2-photo raw book: the case guarantees the book is complete and flat, the
+  // interior PQ is read off the label, and spine is inferred from the wrap.
+  // Standard graded → modifier 10 (ceiling 90). Deep on a graded book →
+  // modifier 4 (ceiling 96). This deliberately overrides the photo-count
+  // default (which would punish the 2-photo slab with a 16 modifier).
+  const baseConf = labelDetected
+    ? (highGrade ? 4 : 10)
+    : (highGrade
+        ? 3
+        : (photoCount >= 4 ? 6 : photoCount === 3 ? 12 : 16));
 
   // ── High-grade block ────────────────────────────────────────────────────────
   // When highGrade=true, 4 corner macros (TL, TR, BL, BR) are appended after the
@@ -595,10 +615,24 @@ DEFECT NAMING DISCIPLINE — when a corner has multiple problems, name the most 
     return selected.join('\n') + '\n\n' + CGC_MULTI_DEFECT_RULE.trim();
   }
 
+  // ── S15 May 29: graded/slabbed-book prompt block ────────────────────────────
+  // Injected into the system prompt only when labelDetected is true. Tells the
+  // model it's seeing a slabbed book (front+back of the case only), how to
+  // derive the interior/PQ from the label, how to infer spine, and to report
+  // the grading company. Empty string for raw books (no behavior change).
+  const gradedBlock = labelDetected ? `
+GRADED / SLABBED BOOK — SPECIAL HANDLING (this assessment only):
+This comic is encapsulated in a third-party grading case (CGC / PSA / CBCS). You are seeing ONLY the front and back of the slab — there is no interior or raking-light photo, because the book cannot be opened.
+- INTERIOR / PAGE QUALITY: You cannot see the pages. Read the PAGE QUALITY designation printed on the label at the top of the front-cover photo (e.g. "WHITE PAGES", "OFF-WHITE TO WHITE", "OFF-WHITE") and use that as the page quality. Score the Interior sub-score from that designation, not from any visible page. If the label's page-quality text is unreadable (glare, angle, blur, or absent), DEFAULT to "Off-White to White" and an Interior sub-score of 9 of 10 — do not guess lower or higher.
+- SPINE: There is no dedicated spine photo. Infer spine condition from what is visible at the spine edge in the front and back images. Apply slightly more caution to the spine sub-score given the limited view, but do not invent defects you cannot see.
+- FRONT / BACK: Score normally from the two photos.
+- GRADING COMPANY: State which company graded the book in graderNotes — "Graded by CGC", "Graded by PSA", or "Graded by CBCS" — based on the label you can read. The client's color detector guessed: ${labelKind ? labelKind.toUpperCase() : 'unknown'} (use the actual label text if it disagrees).
+- GLARE / TILT: Glare on the plastic case, blur, or a tilted label should reduce overall confidence, not invent defects.
+` : '';
+
   // ── Unified system prompt: one image pass, neutral first, three grades ───────
   const systemPrompt = `You are an expert comic book condition analyst. Examine the photos ONCE and record neutral observations, then derive three independent grades from those observations.
-
-## PHASE 0 — GATE CHECK (mandatory first)
+${gradedBlock}## PHASE 0 — GATE CHECK (mandatory first)
 
 Classify content into ONE bucket:
   COMIC — single-issue or trade, including adult comics, horror titles, pornographic comics from known publishers. Magazines like Playboy are NOT comics.
