@@ -871,11 +871,16 @@
        Positioned just above the controls bar, right side, so it doesn't
        compete with the capture button or upload-instead button. */
     #camera-lens-selector {
+      /* S15 May 30: moved from bottom-right to bottom-CENTER (per Matt) so the
+         ZOOM IN / ZOOM OUT toggle sits centered above the capture button
+         rather than off to the side. */
       position: absolute;
-      right: 16px;
+      left: 50%;
+      transform: translateX(-50%);
       bottom: 130px;
       display: none;
       flex-direction: column;
+      align-items: center;
       gap: 6px;
       z-index: 6;
     }
@@ -1901,27 +1906,43 @@ function normalizeTitle(s, issueDate, printing) {
 // ─────────────────────────────────────────────────────────────────────────
 // Full Assessment eligibility (S15 May 27, v4.0)
 //
-// Mirrors api/assess_full.js FULL_ASSESSMENT_BOOKS. Must stay in sync; if
-// the server whitelist changes, change this too. Title/issue normalization
-// uses the server's bare-string lowercase form (NOT the app-wide
-// normalizeTitle which can return aliases), because the server matches on
-// the raw user-typed title against this list. Issue is bare integer string.
+// Mirrors api/assess_full.js (FULL_SLOTS + isFullEligible + DEEP_LIST_BOOKS).
+// Must stay in sync; if the server gate or slot defs change, change these too.
+// Title/issue normalization uses the server's bare-string lowercase form.
+// S15 May 30: Full Assessment REDESIGN — 8 fixed named slots, widened gate.
+// Mirrors api/assess_full.js (FULL_SLOTS + isFullEligible). Keep in sync.
+// The Deep-list books always qualify; other books qualify if RoboScore >= 30
+// OR predicted grade >= 3.0. Slabbed books never qualify (no interior photos).
 // ─────────────────────────────────────────────────────────────────────────
-const FULL_ASSESSMENT_BOOKS = [
-  { title: 'action comics',           issue: '1',  slots: 32 },
-  { title: 'superman',                issue: '1',  slots: 32 },
-  { title: 'detective comics',        issue: '27', slots: 32 },
-  { title: 'batman',                  issue: '1',  slots: 32 },
-  { title: 'all-star comics',         issue: '8',  slots: 32 },
-  { title: 'marvel comics',           issue: '1',  slots: 32 },
-  { title: 'captain america comics',  issue: '1',  slots: 32 },
-  { title: 'amazing fantasy',         issue: '15', slots: 16 },
-  { title: 'fantastic four',          issue: '1',  slots: 16 },
-  { title: 'incredible hulk',         issue: '1',  slots: 16 },
-  { title: 'x-men',                   issue: '1',  slots: 16 },  // 1991+ X-Men relaunch
-  { title: 'uncanny x-men',           issue: '1',  slots: 16 },  // 1963 original AND all facsimiles (per disambiguateXMen)
-  { title: 'tales of suspense',       issue: '39', slots: 16 }
+const FULL_DEEP_LIST = [
+  { title: 'action comics', issue: '1' },
+  { title: 'superman', issue: '1' },
+  { title: 'detective comics', issue: '27' },
+  { title: 'batman', issue: '1' },
+  { title: 'all-star comics', issue: '8' },
+  { title: 'marvel comics', issue: '1' },
+  { title: 'captain america comics', issue: '1' },
+  { title: 'amazing fantasy', issue: '15' },
+  { title: 'fantastic four', issue: '1' },
+  { title: 'incredible hulk', issue: '1' },
+  { title: 'x-men', issue: '1' },
+  { title: 'uncanny x-men', issue: '1' },
+  { title: 'tales of suspense', issue: '39' }
 ];
+
+// The 8 fixed slots (label + storage key + short helper line). Order is the
+// canonical submit order; storage keys match the server's FULL_SLOTS keys.
+const FULL_SLOTS = [
+  { key: 'interior_front',  label: 'Interior Front',  hint: '2-page spread, inside front + first page' },
+  { key: 'interior_back',   label: 'Interior Back',   hint: '2-page spread, last page + inside back' },
+  { key: 'exterior_staple', label: 'Exterior Staple', hint: 'Both staples, from outside the spine (macro)' },
+  { key: 'interior_staple', label: 'Interior Staple', hint: 'Both staples, from inside the centerfold (macro)' },
+  { key: 'top_pages',       label: 'Top Pages',       hint: 'Looking down at page tops; centerfold + bit of cover' },
+  { key: 'bottom_pages',    label: 'Bottom Pages',    hint: 'Looking up from the bottom; page bottoms' },
+  { key: 'outer_edge',      label: 'Outer Edge',      hint: 'Outer edge + back in raking light (trimming check)' },
+  { key: 'interior_spread', label: 'Interior Spread', hint: '2nd & 3rd interior story pages' }
+];
+const FULL_SLOT_COUNT = 8;
 
 function _normTitleForFull(t) {
   if (!t) return '';
@@ -1935,15 +1956,26 @@ function _normIssueForFull(i) {
   return s;
 }
 
-// Returns the matching whitelist entry { title, issue, slots } or null.
-// Useful for: "should this book show the Full Assessment slots / button?"
+function _isFullDeepListBook(item) {
+  const t = _normTitleForFull(item.title);
+  const i = _normIssueForFull(item.issue);
+  return FULL_DEEP_LIST.some(b => b.title === t && b.issue === i);
+}
+
+// Returns a descriptor { slots: 8, slotDefs: FULL_SLOTS, reason } when the book
+// qualifies, or null. Gate (corrected May 30): (Deep-list AND RoboScore>=30)
+// OR predicted grade >= 3.0. Deep-list membership alone is NOT enough.
 function isFullAssessmentEligible(item) {
   if (!item) return null;
   // Raw only — slabbed books can't have interior photos.
   if (item.labelDetected === true) return null;
-  const t = _normTitleForFull(item.title);
-  const i = _normIssueForFull(item.issue);
-  return FULL_ASSESSMENT_BOOKS.find(b => b.title === t && b.issue === i) || null;
+  const score = Number(item.roboGrade && item.roboGrade.score != null ? item.roboGrade.score : item.roboScore);
+  const grade = parseFloat(item.predictedGrade || item.assessedCGCGrade);
+  let reason = null;
+  if (_isFullDeepListBook(item) && Number.isFinite(score) && score >= 30) reason = 'deep-list+score';
+  else if (Number.isFinite(grade) && grade >= 3.0) reason = 'grade';
+  if (!reason) return null;
+  return { slots: FULL_SLOT_COUNT, slotDefs: FULL_SLOTS, reason };
 }
 
 // Has the user already run a successful Full Assessment on this book?
@@ -2482,7 +2514,9 @@ const COMIC_DATA_FIELDS = [
   'assessmentHistory',
   // S15 May 27 (v4.0): Full Assessment completion flag and the deep
   // assessment marker (used by client-side eligibility checks).
-  'fullAssessmentRan','deepAssessmentRan'
+  // S15 May 30: Full Assessment redesign output fields (notes + structural flags).
+  'fullAssessmentRan','deepAssessmentRan',
+  'fullAssessmentNotes','fullInteriorComplete','fullTrimmingSuspected'
 ];
 const COMIC_DROP_FIELDS = ['press','uv','clean'];
 const DEFAULT_IMG_META = { source: 'upload', capturedAt: null, hash: null };
@@ -9025,52 +9059,46 @@ function renderForm(){
       })()}
       ${(() => {
         // ─────────────────────────────────────────────────────────────
-        // FULL ASSESSMENT INTERIOR SLOTS (S15 May 27, v4.0)
-        // Only renders when:
-        //   • Book matches the 12-book whitelist (isFullAssessmentEligible)
-        //   • Deep Assessment has been completed (isDeepAssessmentComplete)
-        //   • Full Assessment has NOT yet been completed (so the section
-        //     doesn't re-prompt after a successful run — once Full is done,
-        //     the gold treatment lives on the score badge and the slots
-        //     are just persisted images that show in detail view)
-        //
-        // Slot count is per-book (16 for the 5 Silver Age books, 32 for
-        // the 7 Golden Age books). Renders as a 2-column grid.
-        //
-        // Note: signature macro section is intentionally NOT here yet —
-        // per Matt's ordering spec (May 27 PM), Signature goes between
-        // Spine in the photos section and the Deep corner macros, but it's
-        // a separate feature implementation in this session.
+        // FULL ASSESSMENT — 8 NAMED SLOTS (S15 May 30 redesign)
+        // Only renders when eligible (widened gate), Deep is complete, and
+        // Full hasn't been run yet. 8 fixed named slots, each with its own
+        // label + hint. This is a REAL (lighter) assessment that may adjust
+        // the grade and re-judge page quality — not just verification.
         // ─────────────────────────────────────────────────────────────
         const _fullEntry = isFullAssessmentEligible(formData);
         if (!_fullEntry) return '';
         if (!isDeepAssessmentComplete(formData)) return '';
         if (isFullAssessmentComplete(formData)) return '';
-        const N = _fullEntry.slots;
+        const N = FULL_SLOT_COUNT;
         const interior = formData.interiorImages || [];
         const filled = interior.filter(Boolean).length;
         const ready = filled === N && !assessing;
-        const slotsHtml = Array.from({length: N}).map((_, i) => {
+        const slotsHtml = FULL_SLOTS.map((slot, i) => {
           const img = interior[i];
           return img
             ? `<div class="drag-slot" draggable="true" style="aspect-ratio:3/2;position:relative;overflow:hidden"
                 ondragstart="interiorDragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="interiorDropSlot(event,${i})"
                 onclick="tapSlot(${i},'interior')">
                 <img src="${img}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">
+                <div style="position:absolute;left:0;right:0;bottom:0;background:linear-gradient(transparent,rgba(0,0,0,0.7));color:#fff;font-size:10px;font-weight:700;letter-spacing:0.5px;padding:8px 6px 4px;text-align:center">${slot.label.toUpperCase()}</div>
                 <button class="slot-edit" onclick="event.stopPropagation();openCropper('interior',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>
                 <button class="slot-x" onclick="event.stopPropagation();removeInteriorImg(${i})">×</button>
                </div>`
             : `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:3/2;position:relative;overflow:hidden"
                 ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="interiorDropSlot(event,${i})"
                 onclick="tapSlot(${i},'interior')">
-                <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:700;letter-spacing:1px;opacity:0.5">${i+1}</div>
+                <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#d4af37;font-size:12px;font-weight:700;letter-spacing:0.5px;text-align:center;padding:6px">
+                  <div>${slot.label.toUpperCase()}</div>
+                  <div style="font-size:9px;font-weight:500;opacity:0.7;margin-top:4px;line-height:1.3">${slot.hint}</div>
+                  <div style="font-size:9px;opacity:0.5;margin-top:4px">Tap to add</div>
+                </div>
                </div>`;
         }).join('');
         return `
           <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #b8860b">
-            <div style="font-size:11px;color:#d4af37;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT — INTERIOR SPREADS</div>
+            <div style="font-size:11px;color:#d4af37;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT — 8 SLOTS</div>
             <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">
-              This book qualifies for Full Assessment. Add ${N} interior 2-page spreads, in any order. Each slot accepts one image. Submission verifies the pages are real interior photos of this book — no grading work, just documentation that nothing is hidden.
+              This book qualifies for Full Assessment. Add all ${N} named photos below — each documents a specific part of the book's interior and structure. Once all 8 are added, Full Assessment runs a deeper confirmation of the grade and page quality.
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
               ${slotsHtml}
@@ -9078,7 +9106,7 @@ function renderForm(){
             <input id="interior-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorImages(event)" style="display:none">
             <div style="display:flex;justify-content:center;margin-top:12px">
               <button id="full-assess-btn" onclick="submitFullAssessment()" ${ready?'':'disabled'} style="width:75%;min-height:52px;border-radius:12px;background:${ready?'#b8860b':'#2a2a2a'};color:${ready?'#fff':'#6a6a6a'};border:none;font-size:14px;font-weight:700;letter-spacing:1.5px;cursor:${ready?'pointer':'not-allowed'}">
-                ${assessing?'Verifying…':`FULL ASSESSMENT ${filled<N?`(${filled}/${N})`:''}`}
+                ${assessing?'Assessing…':`FULL ASSESSMENT ${filled<N?`(${filled}/${N})`:''}`}
               </button>
             </div>
           </div>
@@ -9950,11 +9978,10 @@ async function submitFullAssessment() {
     return;
   }
   const interior = (formData.interiorImages || []).filter(Boolean);
-  if (interior.length !== entry.slots) {
-    alert(`Please fill all ${entry.slots} slots before submitting.`);
+  if (interior.length !== FULL_SLOT_COUNT) {
+    alert(`Please fill all ${FULL_SLOT_COUNT} slots before submitting.`);
     return;
   }
-  // Check credits up front (server doesn't deduct — we do, on success).
   if (typeof window._userCredits === 'number' && window._userCredits < 1) {
     alert('You need at least 1 assessment credit to run a Full Assessment.');
     return;
@@ -9966,17 +9993,14 @@ async function submitFullAssessment() {
   const btn = document.getElementById('full-assess-btn');
   if (btn) {
     btn.disabled = true;
-    btn.innerText = 'Verifying…';
+    btn.innerText = 'Assessing…';
   }
 
   try {
-    // Compress each interior image. Reuse the existing sequential
-    // compressor with conservative settings — these are documentation
-    // images, sharpness matters more than file size, but we still want
-    // to keep total payload reasonable. 32 images × ~250KB = ~8MB,
-    // within Vercel's 4.5MB body limit only with smaller per-image
-    // size, so we use 800px / 0.55 quality (~150KB each).
-    const compressed = await compressImagesSequentially(interior, { maxDim: 800, quality: 0.55 });
+    // Compress the 8 slot images in order. Documentation+assessment images —
+    // keep them reasonably sharp but within Vercel's 4.5MB body limit
+    // (8 × ~250KB is comfortable). Order is preserved = slot order.
+    const compressed = await compressImagesSequentially(interior, { maxDim: 1000, quality: 0.6 });
 
     const token = window._currentUser ? (await window._currentUser.getIdToken()) : null;
     const resp = await fetch('/api/assess_full', {
@@ -9988,48 +10012,58 @@ async function submitFullAssessment() {
       body: JSON.stringify({
         title: formData.title || '',
         issueNumber: formData.issue || '',
-        interiorImages: compressed,
+        interiorImages: compressed,            // 8 images in slot order
         labelDetected: !!formData.labelDetected,
-        initialAssessmentComplete: true,  // we got here, so initial+deep both ran
-        deepAssessmentComplete: true
+        initialAssessmentComplete: true,
+        deepAssessmentComplete: true,
+        // S15 May 30: new gate + re-judge inputs
+        roboScore: (formData.roboGrade && formData.roboGrade.score != null) ? formData.roboGrade.score : null,
+        predictedGrade: formData.predictedGrade || formData.assessedCGCGrade || null,
+        initialPageQuality: formData.pageQuality || '',
+        initialAssessment: formData.roboGrade || null
       })
     });
 
     if (!resp.ok) {
       const text = await resp.text();
-      throw new Error(describeAssessmentError(text) || 'Verification failed: ' + text.slice(0, 200));
+      throw new Error(describeAssessmentError(text) || 'Full Assessment failed: ' + text.slice(0, 200));
     }
     const result = await resp.json();
 
-    if (result.verified === true) {
-      // Success: mark the book Full-Assessed. Credit is charged through
-      // the standard success path (decrementCredit, called from
-      // onAssessmentSuccess in the regular assess flow). Mirror that
-      // behavior here so the book persists with fullAssessmentRan=true
-      // AND the user's credit count decrements atomically.
+    if (result.fullAssessmentRan === true) {
+      // S15 May 30: Full Assessment now produces a real grade + page-quality
+      // re-judgment. Apply them, mark the book Full-Assessed, charge the
+      // credit, persist. There's no rejection/refund path anymore.
       formData.fullAssessmentRan = true;
-      formData._imagesChanged = true;  // ensure save persists interior images
-      onAssessmentSuccess();  // decrements credit, updates stats
-      alert('Full Assessment complete. The score badge is now gold.');
-      // submitForm persists the new state to Firestore.
-      await submitForm();
-    } else if (result.rejected === true) {
-      // Verification failed. NO credit charged (we never called
-      // onAssessmentSuccess). Surface the imageIssues so the user knows
-      // which slots to fix.
-      const issues = result.imageIssues || [];
-      const reasons = (result.reasons || []).join(' ');
-      let msg = 'Full Assessment was rejected. No credit was charged.';
-      if (reasons) msg += '\n\n' + reasons;
+      if (result.grade != null && Number.isFinite(parseFloat(result.grade))) {
+        formData.predictedGrade = parseFloat(result.grade);
+        formData.assessedCGCGrade = parseFloat(result.grade);
+      }
+      if (result.pageQuality) formData.pageQuality = result.pageQuality;
+      if (result.confidenceRange != null && formData.roboGrade) {
+        formData.roboGrade.confidenceRange = result.confidenceRange;
+      }
+      if (result.fullAssessmentNotes) formData.fullAssessmentNotes = result.fullAssessmentNotes;
+      formData.fullInteriorComplete = result.interiorComplete !== false;
+      formData.fullTrimmingSuspected = result.trimmingSuspected === true;
+      formData._imagesChanged = true;  // persist the 8 interior images
+      onAssessmentSuccess();           // decrements credit, updates stats
+
+      // Surface any unusable-image notes without blocking — the grade still ran.
+      const issues = Array.isArray(result.imageIssues) ? result.imageIssues : [];
+      let msg = `Full Assessment complete. Grade: ${result.grade != null ? result.grade : '—'}`;
+      if (result.pageQualityChanged && result.pageQualityChanged !== 'same') {
+        msg += `\nPage quality adjusted ${result.pageQualityChanged}: ${result.pageQuality}`;
+      }
+      if (result.fullAssessmentNotes) msg += `\n\n${result.fullAssessmentNotes}`;
       if (issues.length) {
-        msg += '\n\nProblem images:';
-        issues.forEach(it => {
-          msg += `\n• Image ${it.index + 1}: ${it.issue || 'unspecified issue'}`;
-        });
+        msg += '\n\nSome images couldn\'t be fully assessed:';
+        issues.forEach(it => { msg += `\n• Image ${it.index + 1}: ${it.issue || 'unclear'}`; });
       }
       alert(msg);
+      await submitForm();
     } else {
-      throw new Error('Unexpected verification response shape');
+      throw new Error('Unexpected Full Assessment response shape');
     }
   } catch (e) {
     alert(describeAssessmentError(e.message) || 'Error: ' + e.message);
@@ -10137,7 +10171,10 @@ function tapSlot(slotIndex, kind) {
   // through 32 photos would be hostile UX. Library multi-select is the
   // right tool. The picker accepts multiple files and fills consecutive
   // slots from the tapped one forward.
-  if (kind === 'interior') {
+  if (kind === 'interior' && !window._cameraSupported) {
+    // S15 May 30: desktop / unsupported → file picker. On camera-capable
+    // devices, fall through to the camera walkthrough below (text-labeled
+    // slots, no guide frame — same pattern as signatures).
     _tappedInteriorSlot = slotIndex;
     document.getElementById('interior-photo-input').click();
     return;
@@ -10185,9 +10222,11 @@ function tapSlot(slotIndex, kind) {
   // — see CAMERA_CAPTURE_ORDER_CORNER for the clockwise rationale).
   const list = (kind === 'corner' ? formData.cornerImages
               : kind === 'signature' ? formData.signatureImages
+              : kind === 'interior' ? formData.interiorImages
               : formData.images) || [];
   const captureOrder = (kind === 'corner' ? CAMERA_CAPTURE_ORDER_CORNER
               : kind === 'signature' ? [0, 1]   // S15 May 29: 2 signature slots, simple L→R order
+              : kind === 'interior' ? [0,1,2,3,4,5,6,7]  // S15 May 30: 8 Full slots in slot order
               : CAMERA_CAPTURE_ORDER_MAIN);
   // Empty slots in capture-order sequence:
   const emptySlotsInOrder = captureOrder.filter(i => !list[i]);
@@ -10660,7 +10699,13 @@ function applyCameraOrientationState() {
   if (!_cameraState) return;
   const { kind, current } = _cameraState;
   // Corner + signature slots prefer portrait. Main slots use per-index lookup.
-  const preferred = (kind === 'corner' || kind === 'signature') ? 'portrait' : CAMERA_SLOT_ORIENTATION_MAIN[current];
+  // S15 May 30: corner + signature prefer portrait. Interior slots span mixed
+  // orientations (spreads landscape, staples/edges vary), so we don't enforce
+  // an orientation for interior — accept whatever the user frames. Main uses
+  // per-index lookup.
+  const preferred = (kind === 'corner' || kind === 'signature') ? 'portrait'
+                  : kind === 'interior' ? getCurrentOrientation()  // matches whatever it is → never shows rotate card
+                  : CAMERA_SLOT_ORIENTATION_MAIN[current];
   const actual = getCurrentOrientation();
   const match = (preferred === actual);
 
@@ -10722,11 +10767,17 @@ function cameraOpenSlot(slotIndex) {
   // anywhere on a book — there's no fixed region to frame) and a text-only
   // "Signature N" label. guideFile null → the guide-fetch below skips and the
   // frame stays empty; only the header label renders.
+  // S15 May 29-30: signature AND interior kinds show NO guide frame (no fixed
+  // region to frame) and a text-only label. guideFile null → guide-fetch skips,
+  // frame stays empty, only the header label renders. Interior uses the 8 Full
+  // slot labels.
   const guideFile = (kind === 'corner' ? CAMERA_GUIDE_CORNER
               : kind === 'signature' ? [null, null]
+              : kind === 'interior' ? [null,null,null,null,null,null,null,null]
               : CAMERA_GUIDE_MAIN)[slotIndex];
   const label     = (kind === 'corner' ? CAMERA_LABEL_CORNER
               : kind === 'signature' ? ['Signature 1', 'Signature 2']
+              : kind === 'interior' ? FULL_SLOTS.map(s => s.label)
               : CAMERA_LABEL_MAIN)[slotIndex];
 
   // Slot label in header overlay. Big chartreuse text above the framed cover.
@@ -11159,9 +11210,11 @@ async function runCropperSequence(captures, kind) {
     // photo stays with source:'camera' (they did capture it in-app).
     const listKey     = kind === 'corner' ? 'cornerImages'
                       : kind === 'signature' ? 'signatureImages'
+                      : kind === 'interior' ? 'interiorImages'
                       : 'images';
     const metaKey     = kind === 'corner' ? 'cornerMeta'
                       : kind === 'signature' ? 'signatureMeta'
+                      : kind === 'interior' ? 'interiorMeta'
                       : 'imagesMeta';
     const list = [...(formData[listKey] || [])];
     while (list.length <= cap.slot) list.push(null);
@@ -11185,7 +11238,9 @@ async function runCropperSequence(captures, kind) {
     // S15 May 29: signature macros skip the cropper too, same rationale as
     // corners — they're close-ups the user already framed at capture. The
     // per-slot crop button remains in Edit view for later refinement.
-    if (kind === 'corner' || kind === 'signature') {
+    // S15 May 30: interior (Full Assessment) captures also skip the cropper —
+    // 8 photos, the per-slot crop button remains in Edit for refinement.
+    if (kind === 'corner' || kind === 'signature' || kind === 'interior') {
       continue;
     }
 
