@@ -727,34 +727,47 @@
       line-height: 1.5;
       max-width: 280px;
     }
-    /* S14: escape controls on the rotate card (no-trap guarantee). */
+    /* S16: rotation now auto-advances; these are fallbacks, visually demoted
+       so the phone-rotation gesture reads as the primary action, not the tap. */
     #camera-rotate-card .rotate-actions {
       display: flex;
       flex-direction: column;
-      gap: 12px;
-      margin-top: 32px;
+      gap: 10px;
+      margin-top: 28px;
       width: 100%;
       max-width: 280px;
     }
     #camera-rotate-card .rotate-actions button {
       font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 600;
-      padding: 13px 16px;
+      padding: 11px 16px;
       border-radius: 10px;
       cursor: pointer;
-      border: 1px solid #3a5818;
+      border: 1px solid transparent;
+      background: transparent;
     }
+    /* Continue + skip are secondary text links (rotating is the real action). */
     #camera-rotate-card #camera-rotate-continue {
-      background: #7aa838;
-      color: #fff;
-      border-color: #7aa838;
-    }
-    #camera-rotate-card #camera-rotate-continue:active { background: #6a9530; }
-    #camera-rotate-card #camera-rotate-bail {
       background: transparent;
       color: #9abf60;
-      border-color: #3a5818;
+      border-color: transparent;
+      text-decoration: underline;
+      font-weight: 600;
+    }
+    #camera-rotate-card #camera-rotate-continue:active { color: #b8d885; }
+    #camera-rotate-card #camera-rotate-skip {
+      background: transparent;
+      color: #6a7a55;
+      border-color: transparent;
+      font-size: 13px;
+    }
+    #camera-rotate-card #camera-rotate-skip:active { color: #8a9a70; }
+    #camera-rotate-card #camera-rotate-bail {
+      background: transparent;
+      color: #6a7a55;
+      border: 1px solid #3a5818;
+      font-size: 13px;
     }
     #camera-rotate-card #camera-rotate-bail:active { background: rgba(122,168,56,0.12); }
     /* S13: Suppress the app-wide orientation-block overlay while the camera
@@ -796,7 +809,11 @@
     #camera-close:active { background: rgba(0,0,0,0.75); }
     /* Bottom controls. Capture button is centered absolutely so the upload
        link doesn't push it off-center. Bottom inset for safe area. */
-    #camera-controls { position: relative; padding: 20px 16px calc(env(safe-area-inset-bottom, 0px) + 24px); background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0) 100%); min-height: 110px; }
+    #camera-controls { position: absolute; left: 0; right: 0; bottom: 0; padding: 20px 16px calc(env(safe-area-inset-bottom, 0px) + 24px); background: linear-gradient(to top, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 100%); min-height: 110px; z-index: 7; pointer-events: none; }
+    /* S16: controls overlay the viewfinder (no solid bar eating the frame,
+       esp. in landscape). The bar itself ignores pointer events so taps pass
+       through to nothing; the actual buttons re-enable them. */
+    #camera-controls > * { pointer-events: auto; }
     /* iOS-style capture button: outer ring + inner solid white circle.
        The outer ring is the touchable button; the inner circle is a pseudo-
        element that shrinks slightly on press. ::before draws the inner circle
@@ -1663,39 +1680,38 @@
          landscape). Replaces the camera viewfinder while shown. JS toggles
          the .show class and the .to-landscape / .to-portrait class. -->
     <div id="camera-rotate-card">
-      <div class="rotate-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"><rect x="34" y="20" width="32" height="56" rx="5"/><line x1="44" y1="68" x2="56" y2="68"/><path d="M 22 50 A 28 28 0 0 1 50 22" /><polyline points="50 13 50 22 41 22" /><path d="M 78 50 A 28 28 0 0 1 50 78" /><polyline points="50 87 50 78 59 78" /></svg></div>
+      <div class="rotate-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"><rect x="40" y="32" width="20" height="36" rx="3.5"/><line x1="46" y1="62" x2="54" y2="62"/><path d="M 16 50 A 34 34 0 0 1 50 16" /><polyline points="50 6 50 16 40 16" /><path d="M 84 50 A 34 34 0 0 1 50 84" /><polyline points="50 94 50 84 60 84" /></svg></div>
       <div class="rotate-title" id="camera-rotate-title">Rotate to landscape</div>
-      <div class="rotate-sub" id="camera-rotate-sub">This shot works best with the phone turned sideways. Rotate your phone and the camera will appear automatically.</div>
-      <!-- S14: ALWAYS-available escape. Previously the rotate card had no
-           way out: on Android, where orientation detection could fail to
-           clear, the user was fully trapped (no forward, no cancel, no
-           exit but to restart the app — reported live at the convention).
-           These two controls guarantee a path forward regardless of
-           whether rotation detection works:
-             • "I've rotated — continue" forces a fresh orientation
-               re-check (handles Android's stale innerWidth/innerHeight
-               after orientationchange).
-             • "Use Photo Library instead" drops cleanly into the file
-               picker via the existing cameraUploadInstead() teardown,
-               so the user can still finish the assessment. -->
+      <div class="rotate-sub" id="camera-rotate-sub">Turn your phone sideways.</div>
+      <!-- Rotation normally auto-advances the moment the device orientation
+           matches (applyCameraOrientationState hides the card). The controls
+           below are fallbacks for phones whose orientation events don't fire
+           reliably (the original Android trap this card was built to prevent):
+             • "Rotated? Tap to continue" — small secondary link; forces a
+               fresh orientation re-check.
+             • "Skip rotation" — proceeds in the CURRENT orientation without
+               waiting for a match (cameraSkipRotation).
+           The Photo Library escape lives in the controls bar (z-index 7, above
+           this card), so it's tappable while the card shows — no separate
+           library button needed here. -->
       <div class="rotate-actions">
         <button type="button" id="camera-rotate-continue"
-          onclick="cameraRotateForceRecheck()">I've rotated — continue</button>
-        <button type="button" id="camera-rotate-bail"
-          onclick="cameraUploadInstead()">Use Photo Library instead</button>
+          onclick="cameraRotateForceRecheck()">Rotated? Tap to continue</button>
+        <button type="button" id="camera-rotate-skip"
+          onclick="cameraSkipRotation()">Skip rotation</button>
       </div>
     </div>
-  </div>
-  <div id="camera-controls">
-    <button id="camera-upload-link" onclick="cameraUploadInstead()">Photo<br>Library</button>
-    <button id="camera-capture" onclick="cameraCapture()" aria-label="Capture photo"></button>
-    <!-- S14: Skip button. Only shown on the Interior (page_quality) slot.
+    <div id="camera-controls">
+      <button id="camera-upload-link" onclick="cameraUploadInstead()">Photo<br>Library</button>
+      <button id="camera-capture" onclick="cameraCapture()" aria-label="Capture photo"></button>
+      <!-- S14: Skip button. Only shown on the Interior (page_quality) slot.
          Graded/slabbed books can't be opened to photograph the interior;
          forcing a filler photo wastes data and can confuse the
          assessment. Skipping leaves images[2] empty — the assessment
          and PQ-display logic already handle a missing interior shot
          (hasInteriorPhoto check). Front and Back remain required. -->
-    <button id="camera-skip" onclick="cameraSkipSlot()" style="display:none">Skip</button>
+      <button id="camera-skip" onclick="cameraSkipSlot()" style="display:none">Skip</button>
+    </div>
   </div>
 </div>
 <div id="sync-bar" style="display:none">
@@ -9505,6 +9521,7 @@ function removeImg(i){
 // at this point — Save will compress + upload it to Cloud Storage).
 let _cropperInstance = null;
 let _cropperTarget = null; // { type: 'main'|'corner', index: number }
+let _cropperOriginalSrc = null; // S16: uncropped source of the current crop session
 
 function openCropper(type, index) {
   // S15 May 27 (v4.0): added 'interior' and 'signature' kinds.
@@ -9517,6 +9534,9 @@ function openCropper(type, index) {
   if (!src) return;
 
   _cropperTarget = { type, index };
+  _cropperOriginalSrc = src; // S16: keep the uncropped source so slab detection
+                             // can run on the FULL frame (with the slab case +
+                             // label) instead of the cropped-to-cover result.
   // S12: reset accumulated rotation when opening a fresh crop session so
   // consecutive crops don't leak rotation state from a previous one.
   _cropperRotation = 0;
@@ -9727,6 +9747,15 @@ function confirmCrop() {
     const list = [...(formData.images || [])];
     list[index] = dataUrl;
     formData.images = list;
+    // S16: run slab detection on the FRONT cover (slot 0) using the UNCROPPED
+    // source — the slab case and grading label live outside the comic, so the
+    // cropped-to-cover image hides exactly the evidence the check needs. The
+    // earlier post-crop calls saw bare cover art and always returned "not a
+    // slab". Best-effort; never blocks. Record-only (Pass 2a) — no auto-skip yet.
+    if (index === 0 && _cropperOriginalSrc) {
+      const _origForDetect = _cropperOriginalSrc;
+      detectSlabFromDataUrl(_origForDetect).catch(e => console.warn('[slab] detect failed:', e));
+    }
   }
   formData._imagesChanged = true;
 
@@ -9768,11 +9797,38 @@ async function detectSlabFromDataUrl(dataUrl){
   if (!dataUrl) return null;
   if (!window._currentUser || typeof window._currentUser.getIdToken !== 'function') return null;
   try {
+    // Normalize the source to a small JPEG data-URL. The source may be a large
+    // uncropped camera frame (data:) or, when re-editing a saved book, a Storage
+    // http URL — the slabcheck endpoint only accepts data:. Downscale to 800px
+    // (ample to see a slab case + label) to keep the call ~$0.001 and fast.
+    const small = await (async () => {
+      try {
+        const im = await new Promise((res, rej) => {
+          const i = new Image();
+          if (dataUrl.startsWith('http')) i.crossOrigin = 'anonymous';
+          i.onload = () => res(i);
+          i.onerror = () => rej(new Error('img load failed'));
+          i.src = dataUrl;
+        });
+        const maxd = 800;
+        const scale = Math.min(1, maxd / Math.max(im.naturalWidth || im.width, im.naturalHeight || im.height));
+        const cw = Math.max(1, Math.round((im.naturalWidth || im.width) * scale));
+        const ch = Math.max(1, Math.round((im.naturalHeight || im.height) * scale));
+        const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+        cv.getContext('2d').drawImage(im, 0, 0, cw, ch);
+        return cv.toDataURL('image/jpeg', 0.8);
+      } catch (e) {
+        // If a Storage URL is CORS-blocked, fall back to the raw source only if
+        // it's already a data: URL; otherwise we can't send it.
+        return dataUrl.startsWith('data:') ? dataUrl : null;
+      }
+    })();
+    if (!small) { console.warn('[slab] could not prepare image (CORS?)'); return null; }
     const token = await window._currentUser.getIdToken();
     const resp = await fetch('/api/assess', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ mode: 'slabcheck', images: [dataUrl] })
+      body: JSON.stringify({ mode: 'slabcheck', images: [small] })
     });
     if (!resp.ok) { console.warn('[slab] slabcheck HTTP', resp.status); return null; }
     const r = await resp.json();
@@ -9827,12 +9883,8 @@ async function handleImages(e){
   }
   formData.images=imgs.filter(Boolean);
   formData._imagesChanged=true;
-  // S15 May 29: if the front cover (slot 0) was just set, run slab detection.
-  // Pass 2a: this only RECORDS the detection result on formData (isGraded,
-  // labelDetected, slabCompany) — it does NOT yet auto-skip interior slots or
-  // change scoring. That wiring comes once detection is verified on real
-  // captures. Detection is best-effort and never blocks the user.
-  if (imgs[0]) { try { await detectSlabFromDataUrl(imgs[0]); } catch(e){ console.warn('[slab] detect failed:', e); } }
+  // S16: slab detection now runs in confirmCrop() on the UNCROPPED front-cover
+  // frame (the slab case/label is cropped out otherwise). No detection call here.
   // Reset file input so same files can be re-selected if needed
   e.target.value="";
   renderForm();
@@ -10911,6 +10963,24 @@ function cameraRotateForceRecheck() {
   setTimeout(() => { if (_cameraState) applyCameraOrientationState(); }, 600);
 }
 
+// S16: proceed in the CURRENT orientation without waiting for an orientation
+// match. For phones whose orientation events don't fire reliably — the user
+// has physically rotated (or chooses to shoot as-is) but the card never
+// cleared. Force-hide the rotate card, drop the rotate-needed dim, and
+// re-fetch the slot guide for whatever orientation we're actually in.
+function cameraSkipRotation() {
+  if (!_cameraState) return;
+  _cameraState.rotationSkipped = true;
+  const card = document.getElementById('camera-rotate-card');
+  const modal = document.getElementById('camera-modal');
+  if (card) card.classList.remove('show', 'to-landscape', 'to-portrait');
+  if (modal) modal.classList.remove('rotate-needed');
+  // Re-open the slot UI so the guide/label render for the current orientation.
+  if (typeof cameraOpenSlot === 'function') {
+    try { cameraOpenSlot(_cameraState.current); } catch (e) {}
+  }
+}
+
 // S13: Apply orientation-mismatch UI state. Called from cameraOpenSlot AND
 // from the orientation-change listener. Reads the current slot's preferred
 // orientation from CAMERA_SLOT_ORIENTATION_MAIN, compares to the device's
@@ -10920,6 +10990,15 @@ function cameraRotateForceRecheck() {
 // Corner slots always prefer portrait — same logic applies.
 function applyCameraOrientationState() {
   if (!_cameraState) return;
+  // S16: if the user chose "Skip rotation" for this slot, never re-show the
+  // rotate card — they've opted to shoot in the current orientation.
+  if (_cameraState.rotationSkipped) {
+    const card = document.getElementById('camera-rotate-card');
+    const modal = document.getElementById('camera-modal');
+    if (card) card.classList.remove('show', 'to-landscape', 'to-portrait');
+    if (modal) modal.classList.remove('rotate-needed');
+    return true;
+  }
   const { kind, current } = _cameraState;
   // Corner + signature slots prefer portrait. Main slots use per-index lookup.
   // S15 May 30: corner + signature prefer portrait. Interior slots span mixed
@@ -10985,6 +11064,11 @@ function applyCameraOrientationState() {
 // orientation matches (driven by the orientation-change listener).
 function cameraOpenSlot(slotIndex) {
   if (!_cameraState) return;
+  // S16: a "Skip rotation" choice applies only to the slot it was made on.
+  // Clear it when moving to a different slot so the next slot's orientation
+  // guidance works normally. (cameraSkipRotation re-calls this with the SAME
+  // index, so a same-slot re-open preserves the skip.)
+  if (_cameraState.current !== slotIndex) _cameraState.rotationSkipped = false;
   _cameraState.current = slotIndex;
   const { kind, mode, queue } = _cameraState;
   // S15 May 29: signature kind shows NO guide frame (a signature can be
@@ -11349,44 +11433,24 @@ async function cameraCapture() {
     && _cameraState.current === 0
   ) {
     try {
-      // S15 May 29: use the calibrated SlabDetect (slab-detect.js) instead of
-      // the older detectSlabLabel heuristic. The old one keyed on CGC *yellow*
-      // and would miss CGC *blue* universal labels (95% of real cases).
-      // SlabDetect scored 10/10 on real handheld CGC shots. We load the just-
-      // captured front cover into an Image and analyze it. company is 'CGC' for
-      // blue/purple/green/yellow, 'PSA' for red; CBCS shares CGC colors so it
-      // reports as CGC (label text disambiguates server-side). Falls back to
-      // the old detector if SlabDetect isn't present for any reason.
-      let labelKind = null;
-      if (window.SlabDetect && typeof window.SlabDetect.analyze === 'function') {
-        const _img = await new Promise((res, rej) => {
-          const im = new Image(); im.onload = () => res(im);
-          im.onerror = () => rej(new Error('img load failed')); im.src = dataUrl;
-        });
-        const _r = window.SlabDetect.analyze(_img);
-        if (_r && _r.detected) labelKind = (_r.company || 'CGC').toLowerCase();
-      } else {
-        labelKind = await detectSlabLabel(dataUrl);
-      }
-      if (labelKind) {
-        // S15 May 30: AUTO-SKIP DISABLED. The SlabDetect color-band heuristic
-        // false-positives on raw covers — a raw comic's saturated top artwork
-        // (logos, banners) reads as a "label band", so ALL raw books were
-        // wrongly skipping the page-quality + raking slots. Calibration was
-        // only ever run slab-vs-slab (10/10), never slab-vs-raw, which is the
-        // actual discrimination needed; tightening to "full-width uniform band"
-        // both misses real handheld slabs AND still trips on some raw covers,
-        // so there's no clean color threshold. We keep DETECTION running (for
-        // logging + the field) but DO NOT prune the walkthrough. Revisit slab
-        // detection as a cheap vision micro-call (the model can tell a slab
-        // from a raw cover at any angle). To re-enable the prune, uncomment:
-        //   _cameraState.queue = _cameraState.queue.filter(s => s === 1);
-        //   _cameraState.labelDetected = true;
-        //   _cameraState.labelKind = labelKind;
-        console.log('[camera] slab-ish band detected (' + labelKind + ') but auto-skip is DISABLED — color heuristic false-positives on raw covers. Continuing full walkthrough.');
-      }
+      // S16: detect via the vision micro-call on the UNCROPPED front frame
+      // (dataUrl here is the raw capture, before the cropper — so the slab
+      // case + label are still in-frame, which is exactly what the check
+      // needs). The old client-side SlabDetect (aspect/color heuristic) was
+      // abandoned: raw and slab aspects overlap, and the color band trips on
+      // saturated raw cover art. detectSlabFromDataUrl POSTs to
+      // /api/assess mode:slabcheck, records formData._slabDetect, and logs to
+      // the admin Logs tab. RECORD ONLY — auto-skip (Pass 2b) stays off until
+      // the logs confirm slab-vs-raw accuracy. To enable the prune later:
+      //   if (r && r.detected) {
+      //     _cameraState.queue = _cameraState.queue.filter(s => s === 1);
+      //     _cameraState.labelDetected = true;
+      //     _cameraState.labelKind = r.company || 'CGC';
+      //   }
+      const r = await detectSlabFromDataUrl(dataUrl);
+      console.log('[camera] walkthrough front slabcheck:', JSON.stringify(r) + ' — auto-skip OFF (record only)');
     } catch (e) {
-      console.warn('[camera] label detection threw, continuing normal walkthrough:', e);
+      console.warn('[camera] slabcheck threw, continuing normal walkthrough:', e);
     }
   }
 
@@ -11497,11 +11561,8 @@ async function runCropperSequence(captures, kind) {
     });
     _cropperSequenceResolve = null;
   }
-  // S15 May 29: after main-kind captures land, run slab detection on the front
-  // cover (slot 0) if it was part of this capture batch. Pass 2a: record only.
-  if (kind === 'main' && formData.images && formData.images[0]) {
-    try { await detectSlabFromDataUrl(formData.images[0]); } catch(e){ console.warn('[slab] detect failed:', e); }
-  }
+  // S16: slab detection now runs in confirmCrop() on the UNCROPPED front-cover
+  // frame, so the slab case/label isn't cropped away before the check. No call here.
   renderForm();
 }
 let _cropperSequenceResolve = null;
@@ -11518,16 +11579,41 @@ function cameraExit() {
 // also drops out (user explicitly opted out of camera for this session).
 function cameraUploadInstead() {
   if (!_cameraState) return;
-  const { kind, current } = _cameraState;
+  const { kind, current, mode, captures } = _cameraState;
+  // S16: preserve photos already captured this session. Previously this
+  // discarded _cameraState (and its captures) before opening the picker, so
+  // bailing after the Front shot silently deleted that Front photo — an
+  // annoying waste of a deliberate capture. Now, if we're mid-walkthrough and
+  // have captures in hand, commit them through the normal cropper sequence
+  // (exactly like cameraFinish) BEFORE opening the picker, then let the user
+  // pick the remaining slot(s) from their library.
+  const hadCaptures = mode === 'walkthrough' && Array.isArray(captures) && captures.length > 0;
+  const savedKind = kind, savedCurrent = current, savedCaptures = hadCaptures ? [...captures] : null;
+  const savedLabelDetected = _cameraState.labelDetected, savedLabelKind = _cameraState.labelKind;
+
   cameraCloseStream();
   document.getElementById('camera-modal').classList.remove('open');
   _cameraState = null;
-  if (kind === 'corner') {
-    _tappedCornerSlot = current;
-    document.getElementById('corner-photo-input').click();
+
+  const openPicker = () => {
+    if (savedKind === 'corner') {
+      _tappedCornerSlot = savedCurrent;
+      document.getElementById('corner-photo-input').click();
+    } else {
+      _tappedSlot = savedCurrent;
+      document.getElementById('photo-input').click();
+    }
+  };
+
+  if (savedCaptures) {
+    // Carry any slab-detect flag forward, same as cameraFinish.
+    if (savedLabelDetected) { formData.labelDetected = true; formData.labelKind = savedLabelKind || 'cgc'; }
+    // Commit captured slot(s) via the cropper sequence, THEN open the picker
+    // for whatever's still missing. runCropperSequence is async; chain the
+    // picker so it opens after the crops are committed (not racing them).
+    runCropperSequence(savedCaptures, savedKind).then(openPicker).catch(openPicker);
   } else {
-    _tappedSlot = current;
-    document.getElementById('photo-input').click();
+    openPicker();
   }
 }
 
