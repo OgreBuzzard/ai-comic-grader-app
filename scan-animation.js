@@ -202,7 +202,8 @@
   const POST_CHEST_PAUSE   = 1000;
   const DISPLAY_FADE_DELAY = 100;
   const SLIDE_DURATION     = 500;
-  const SCAN_DURATION      = 2500;  // S15 May 29: was 3000. Trimmed 500ms per scan × 4 photos = 2s off total animation. CSS @keyframes durations on lines 484-487 changed in lockstep.
+  const SCAN_DURATION      = 2000;  // S16: was 2500 (and 3000 before). 2.0s per scan.
+  // CSS @keyframes durations below changed in lockstep.
   const PAUSE_AFTER_SCAN   = 0;
   const FIRST_PHOTO_DELAY  = CHEST_SLIDE_DELAY + CHEST_SLIDE_TIME + POST_CHEST_PAUSE;
   const TRACKER_SLIDE_TIME = 2000;
@@ -481,10 +482,10 @@
     @keyframes rgScanUp    { from { top: 87.9%; } to { top: 20.6%;  } }
     @keyframes rgScanRight { from { left: 2.6%; } to { left: 86.0%; } }
     @keyframes rgScanLeft  { from { left: 86.0%;} to { left: 2.6%;  } }
-    .rg-scan-laser.scan-down  { animation: rgScanDown  2.5s cubic-bezier(0.42, 0, 0.58, 1) forwards, rgScanFlicker 0.15s infinite alternate; }
-    .rg-scan-laser.scan-up    { animation: rgScanUp    2.5s cubic-bezier(0.42, 0, 0.58, 1) forwards, rgScanFlicker 0.15s infinite alternate; }
-    .rg-scan-laser.scan-right { animation: rgScanRight 2.5s cubic-bezier(0.42, 0, 0.58, 1) forwards, rgScanFlicker 0.15s infinite alternate; }
-    .rg-scan-laser.scan-left  { animation: rgScanLeft  2.5s cubic-bezier(0.42, 0, 0.58, 1) forwards, rgScanFlicker 0.15s infinite alternate; }
+    .rg-scan-laser.scan-down  { animation: rgScanDown  2.0s cubic-bezier(0.42, 0, 0.58, 1) forwards, rgScanFlicker 0.15s infinite alternate; }
+    .rg-scan-laser.scan-up    { animation: rgScanUp    2.0s cubic-bezier(0.42, 0, 0.58, 1) forwards, rgScanFlicker 0.15s infinite alternate; }
+    .rg-scan-laser.scan-right { animation: rgScanRight 2.0s cubic-bezier(0.42, 0, 0.58, 1) forwards, rgScanFlicker 0.15s infinite alternate; }
+    .rg-scan-laser.scan-left  { animation: rgScanLeft  2.0s cubic-bezier(0.42, 0, 0.58, 1) forwards, rgScanFlicker 0.15s infinite alternate; }
 
     /* Step tracker overlay — slides into the cavity from the left after
        the laser-scan completes. Same coordinates as .rg-scan-display

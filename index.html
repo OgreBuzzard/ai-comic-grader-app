@@ -722,6 +722,9 @@ onAuthStateChanged(auth, async user => {
        size + letter-spacing reduction gives a clear secondary visual hierarchy
        for corner shots while still being legible. */
     body.camera-kind-corner #camera-slot-label { font-size: 24px; letter-spacing: 1px; }
+    /* S16: Full Assessment (interior) slot labels are longer ("Interior Spread",
+       "Exterior Staples") and clipped at 32px. Halve them to fit. */
+    body.camera-kind-interior #camera-slot-label { font-size: 16px; letter-spacing: 1px; }
     #camera-progress { display: none; }
     /* Header spacer — invisible 40x40 box on the left side that mirrors the
        close button's footprint on the right. Keeps the slot label centered
@@ -1809,39 +1812,84 @@ const FULL_DEEP_LIST = [ {
   issue: "39"
 } ];
 
+// S16: FULL_SLOTS is in CAPTURE order = STORAGE order (interiorImages[i] maps to
+// FULL_SLOTS[i]; the camera walks 0..7 in this order — Matt's smoothest flow).
+// DISPLAY order/layout is separate (FULL_DISPLAY) — Edit & Detail show the three
+// interior-page slots as 1/3-width 3:2 tiles, then the five strip slots full-width 6:1.
 const FULL_SLOTS = [ {
-  key: "interior_front",
-  label: "Interior Front",
-  hint: "2-page spread, inside front + first page"
-}, {
-  key: "interior_back",
-  label: "Interior Back",
-  hint: "2-page spread, last page + inside back"
-}, {
   key: "exterior_staple",
-  label: "Exterior Staple",
+  label: "Exterior Staples",
   hint: "Both staples, from outside the spine (macro)"
-}, {
-  key: "interior_staple",
-  label: "Interior Staple",
-  hint: "Both staples, from inside the centerfold (macro)"
 }, {
   key: "top_pages",
   label: "Top Pages",
   hint: "Looking down at page tops; centerfold + bit of cover"
 }, {
-  key: "bottom_pages",
-  label: "Bottom Pages",
-  hint: "Looking up from the bottom; page bottoms"
-}, {
   key: "outer_edge",
   label: "Outer Edge",
   hint: "Outer edge + back in raking light (trimming check)"
 }, {
+  key: "bottom_pages",
+  label: "Bottom Pages",
+  hint: "Looking up from the bottom; page bottoms"
+}, {
+  key: "interior_front",
+  label: "Interior Front",
+  hint: "2-page spread, inside front + first page"
+}, {
   key: "interior_spread",
   label: "Interior Spread",
   hint: "2nd & 3rd interior story pages"
+}, {
+  key: "interior_staple",
+  label: "Interior Staples",
+  hint: "Both staples, from inside the centerfold (macro)"
+}, {
+  key: "interior_back",
+  label: "Interior Back",
+  hint: "2-page spread, last page + inside back"
 } ];
+
+// Display order + per-slot layout for Edit & Detail. `third` = 1/3-width tile
+// (3:2); otherwise full-width strip (6:1). Render looks up the storage index by
+// key so display order and storage order stay decoupled.
+const FULL_DISPLAY = [ {
+  key: "interior_front",
+  third: true,
+  aspect: "3 / 2"
+}, {
+  key: "interior_spread",
+  third: true,
+  aspect: "3 / 2"
+}, {
+  key: "interior_back",
+  third: true,
+  aspect: "3 / 2"
+}, {
+  key: "exterior_staple",
+  third: false,
+  aspect: "6 / 1"
+}, {
+  key: "top_pages",
+  third: false,
+  aspect: "6 / 1"
+}, {
+  key: "outer_edge",
+  third: false,
+  aspect: "6 / 1"
+}, {
+  key: "bottom_pages",
+  third: false,
+  aspect: "6 / 1"
+}, {
+  key: "interior_staple",
+  third: false,
+  aspect: "6 / 1"
+} ];
+
+function fullSlotIndex(key) {
+  return FULL_SLOTS.findIndex(s => s.key === key);
+}
 
 const FULL_SLOT_COUNT = 8;
 
@@ -3611,13 +3659,7 @@ function showDetail(id) {
   if (isFullAssessmentComplete(selected)) {
     const interior = selected.interiorImages || [];
     if (interior.some(u => u)) {
-      const imgAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
-      html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #b8860b">\n        <div style="font-size:11px;color:#d4af37;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT — INTERIOR SPREADS</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
-      interior.forEach((url, idx) => {
-        if (!url) return;
-        html += `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:3/2">\n          <img src="${url}" ${imgAttrs} onclick="openInteriorLightbox('${selected.id}',${idx})" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in">\n          <div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(184,134,11,0.85);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${idx + 1}</div>\n        </div>`;
-      });
-      html += `</div></div>`;
+      html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #b8860b">\n        <div style="font-size:11px;color:#d4af37;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT — INTERIOR &amp; STRUCTURE</div>\n        ${renderFullSlotGrid(interior, {editable: false, comicId: selected.id})}\n      </div>`;
     }
   }
   if (selected.restorationCheckTier && Array.isArray(selected.restorationImages) && selected.restorationImages.length > 0) {
@@ -3704,7 +3746,7 @@ function showDetail(id) {
     html += `<div style="margin-top:20px"><div class="section-label">Grader Notes</div><div class="notes-box" style="white-space:pre-line">${esc(selected.graderNotes)}</div></div>`;
   }
   if (selected.aiGraderNotes) {
-    html += `<div style="margin-top:20px"><div class="section-label" style="color:#4a7a9a">Defect Notes</div><div class="notes-box" style="border-color:#1a3a5c;color:#4a7a9a;white-space:pre-line">${esc(selected.aiGraderNotes)}</div></div>`;
+    html += `<div style="margin-top:20px"><div class="section-label" style="color:#4a7a9a">Defect Notes</div><div class="notes-box" style="border-color:#1a3a5c;color:#4a7a9a;white-space:pre-line">${esc(formatBulletNotes(selected.aiGraderNotes))}</div></div>`;
   }
   const _aiText = selected.aiAssessment || selected.myAssessment || "";
   if (_aiText) {
@@ -6772,18 +6814,16 @@ function renderForm() {
     }).join("")}\n            </div>\n            <input id="signature-photo-input" type="file" accept="image/*" multiple onchange="handleSignatureImages(event)" style="display:none">\n          </div>\n        `;
   })()}\n      ${(() => {
     const _fullEntry = isFullAssessmentEligible(formData);
-    if (!_fullEntry) return "";
+    const _fullDone = isFullAssessmentComplete(formData);
+    if (!_fullEntry && !_fullDone) return "";
     if (!isDeepAssessmentComplete(formData)) return "";
-    if (isFullAssessmentComplete(formData)) return "";
     const N = FULL_SLOT_COUNT;
     const interior = formData.interiorImages || [];
     const filled = interior.filter(Boolean).length;
     const ready = filled === N && !assessing;
-    const slotsHtml = FULL_SLOTS.map((slot, i) => {
-      const img = interior[i];
-      return img ? `<div class="drag-slot" draggable="true" style="aspect-ratio:3/2;position:relative;overflow:hidden"\n                ondragstart="interiorDragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="interiorDropSlot(event,${i})"\n                onclick="tapSlot(${i},'interior')">\n                <img src="${img}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">\n                <div style="position:absolute;left:0;right:0;bottom:0;background:linear-gradient(transparent,rgba(0,0,0,0.7));color:#fff;font-size:10px;font-weight:700;letter-spacing:0.5px;padding:8px 6px 4px;text-align:center">${slot.label.toUpperCase()}</div>\n                <button class="slot-edit" onclick="event.stopPropagation();openCropper('interior',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>\n                <button class="slot-x" onclick="event.stopPropagation();removeInteriorImg(${i})">×</button>\n               </div>` : `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:3/2;position:relative;overflow:hidden"\n                ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="interiorDropSlot(event,${i})"\n                onclick="tapSlot(${i},'interior')">\n                <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#d4af37;font-size:12px;font-weight:700;letter-spacing:0.5px;text-align:center;padding:6px">\n                  <div>${slot.label.toUpperCase()}</div>\n                  <div style="font-size:9px;font-weight:500;opacity:0.7;margin-top:4px;line-height:1.3">${slot.hint}</div>\n                  <div style="font-size:9px;opacity:0.5;margin-top:4px">Tap to add</div>\n                </div>\n               </div>`;
-    }).join("");
-    return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #b8860b">\n            <div style="font-size:11px;color:#d4af37;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT — 8 SLOTS</div>\n            <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">\n              This book qualifies for Full Assessment. Add all ${N} named photos below — each documents a specific part of the book's interior and structure. Once all 8 are added, Full Assessment runs a deeper confirmation of the grade and page quality.\n            </div>\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\n              ${slotsHtml}\n            </div>\n            <input id="interior-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="full-assess-btn" onclick="submitFullAssessment()" ${ready ? "" : "disabled"} style="width:75%;min-height:52px;border-radius:12px;background:${ready ? "#b8860b" : "#2a2a2a"};color:${ready ? "#fff" : "#6a6a6a"};border:none;font-size:14px;font-weight:700;letter-spacing:1.5px;cursor:${ready ? "pointer" : "not-allowed"}">\n                ${assessing ? "Assessing…" : `FULL ASSESSMENT ${filled < N ? `(${filled}/${N})` : ""}`}\n              </button>\n            </div>\n          </div>\n        `;
+    const blurb = _fullDone ? `Full Assessment has run on this book. You can replace any photo below and re-run to update the interior/structure findings.` : `This book qualifies for Full Assessment. Add all ${N} named photos below — each documents a specific part of the book's interior and structure. Once all 8 are added, Full Assessment runs a deeper confirmation of the grade and page quality.`;
+    const btnLabel = assessing ? "Assessing…" : _fullDone ? `RE-RUN FULL ASSESSMENT${filled < N ? ` (${filled}/${N})` : ""}` : `FULL ASSESSMENT${filled < N ? ` (${filled}/${N})` : ""}`;
+    return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #b8860b">\n            <div style="font-size:11px;color:#d4af37;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT — 8 SLOTS</div>\n            <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">${blurb}</div>\n            ${renderFullSlotGrid(interior, {editable: true})}\n            <input id="interior-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="full-assess-btn" onclick="submitFullAssessment()" ${ready ? "" : "disabled"} style="width:75%;min-height:52px;border-radius:12px;background:${ready ? "#b8860b" : "#2a2a2a"};color:${ready ? "#fff" : "#6a6a6a"};border:none;font-size:14px;font-weight:700;letter-spacing:1.5px;cursor:${ready ? "pointer" : "not-allowed"}">\n                ${btnLabel}\n              </button>\n            </div>\n          </div>\n        `;
   })()}\n      ${(() => {
     if (!isRestorationEligible(formData)) return "";
     if (isRestorationCheckComplete(formData)) return "";
@@ -6792,7 +6832,7 @@ function renderForm() {
     }
     const fullInterior = formData.interiorImages || [];
     const rImgs = formData.restorationImages || [];
-    const seeded = [ rImgs[0] || fullInterior[0] || null, rImgs[1] || fullInterior[1] || null, rImgs[2] || fullInterior[3] || null, rImgs[3] || null ];
+    const seeded = [ rImgs[0] || fullInterior[fullSlotIndex("interior_front")] || null, rImgs[1] || fullInterior[fullSlotIndex("interior_back")] || null, rImgs[2] || fullInterior[fullSlotIndex("interior_staple")] || null, rImgs[3] || null ];
     const RSLOTS = [ {
       label: "Interior Front",
       hint: "Inside front + first page (shared with Full)"
@@ -6843,7 +6883,7 @@ function renderForm() {
     if (showLabelNotesEdit) return "";
     if (!formData.keyInfo) return "";
     return `<div><label class="field-label">Key Info</label><textarea rows="3" readonly style="cursor:not-allowed;background:#ffffff;color:#1a1614" title="Key Info is populated by the assessment when the issue is in the recognized-key list. Not user-editable.">${esc(formData.keyInfo || "")}</textarea></div>`;
-  })()}\n    ${formData.cgcGrade || formData.psaGrade || formData.graderNotes ? `<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes ? 5 : 3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiGraderNotes ? `<div><label class="field-label" style="color:#4a7a9a">Defect Notes</label><textarea rows="8" readonly style="font-style:italic;border-color:#1a3a5c;cursor:not-allowed" title="Defect Notes is populated by the assessment. Not user-editable.">${esc(formData.aiGraderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiAssessment ? `<div><label class="field-label">Condition Assessment</label><textarea rows="${Math.max(12, Math.ceil(formData.aiAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Condition Assessment is populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>` : ""}\n    ${(formData.assessmentHistory || []).length > 0 ? `<div style="margin-top:10px;padding:10px 14px;background:#100e0c;border:1px solid #1e1c1a;border-radius:8px;">\n      <div style="font-size:10px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase;margin-bottom:6px">Past Assessments</div>\n      <div style="display:flex;flex-direction:column;gap:6px">\n        ${(formData.assessmentHistory || []).map((h, i) => {
+  })()}\n    ${formData.cgcGrade || formData.psaGrade || formData.graderNotes ? `<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes ? 5 : 3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiGraderNotes ? `<div><label class="field-label" style="color:#4a7a9a">Defect Notes</label><textarea rows="8" readonly style="font-style:italic;border-color:#1a3a5c;cursor:not-allowed" title="Defect Notes is populated by the assessment. Not user-editable.">${esc(formatBulletNotes(formData.aiGraderNotes || ""))}</textarea></div>` : ""}\n    ${formData.aiAssessment ? `<div><label class="field-label">Condition Assessment</label><textarea rows="${Math.max(12, Math.ceil(formData.aiAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Condition Assessment is populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>` : ""}\n    ${(formData.assessmentHistory || []).length > 0 ? `<div style="margin-top:10px;padding:10px 14px;background:#100e0c;border:1px solid #1e1c1a;border-radius:8px;">\n      <div style="font-size:10px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase;margin-bottom:6px">Past Assessments</div>\n      <div style="display:flex;flex-direction:column;gap:6px">\n        ${(formData.assessmentHistory || []).map((h, i) => {
     const parts = [];
     if (h.rgScore != null) {
       const v = h.rgVersion ? ` v${h.rgVersion}` : "";
@@ -6908,8 +6948,64 @@ function renderForm() {
 
 function renderImgPreview() {}
 
+// S16: ensure defect-note bullets render one-per-line. The model emits them as
+// a single "• a • b • c" string (no newlines); older assessments had newlines.
+// Split on the bullet char and rejoin newline-separated. Idempotent and
+// retroactive (fixes already-stored single-line notes at render time).
+function formatBulletNotes(s) {
+  if (!s) return s;
+  const parts = String(s).split("•").map(p => p.trim()).filter(Boolean);
+  if (parts.length <= 1) return String(s).trim();
+  return parts.map(p => "• " + p).join("\n");
+}
+
 function buildRoboGradeDisplay(rg, comic) {
   return window.RobograderPanel.buildDisplay(rg, comic);
+}
+
+// S16: shared Full Assessment slot grid for Edit (editable) and Detail (read-only).
+// Layout per FULL_DISPLAY: three interior-page tiles at 1/3 width 3:2 on one row,
+// then the five strip slots full-width 6:1 stacked. Storage index resolved by key
+// so display order is independent of storage/capture order.
+function renderFullSlotGrid(interior, opts) {
+  const editable = !!(opts && opts.editable);
+  const comicId = opts && opts.comicId;
+  const cell = d => {
+    const i = fullSlotIndex(d.key);
+    const slot = FULL_SLOTS[i];
+    const img = (interior || [])[i];
+    const labelTag = `<div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(184,134,11,0.85);padding:2px 6px;border-radius:3px;letter-spacing:0.04em">${slot.label.toUpperCase()}</div>`;
+    if (editable) {
+      if (img) {
+        return `<div class="drag-slot" draggable="true" style="aspect-ratio:${d.aspect};position:relative;overflow:hidden"
+                ondragstart="interiorDragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="interiorDropSlot(event,${i})"
+                onclick="tapSlot(${i},'interior')">
+                <img src="${img}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">
+                ${labelTag}
+                <button class="slot-edit" onclick="event.stopPropagation();openCropper('interior',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>
+                <button class="slot-x" onclick="event.stopPropagation();removeInteriorImg(${i})">×</button>
+               </div>`;
+      }
+      const emptyInner = d.third ? `<div>${slot.label.toUpperCase()}</div>
+                  <div style="font-size:9px;font-weight:500;opacity:0.7;margin-top:3px;line-height:1.25">${slot.hint}</div>
+                  <div style="font-size:9px;opacity:0.5;margin-top:3px">Tap to add</div>` : `<div style="display:flex;align-items:baseline;gap:6px;justify-content:center;flex-wrap:wrap"><span>${slot.label.toUpperCase()}</span><span style="font-size:9px;font-weight:500;opacity:0.6">${slot.hint}</span></div>`;
+      return `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:${d.aspect};position:relative;overflow:hidden"
+                ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="interiorDropSlot(event,${i})"
+                onclick="tapSlot(${i},'interior')">
+                <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#d4af37;font-size:11px;font-weight:700;letter-spacing:0.4px;text-align:center;padding:4px">${emptyInner}</div>
+               </div>`;
+    }
+    if (!img) return "";
+    const imgAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
+    return `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:${d.aspect}">
+        <img src="${img}" ${imgAttrs} onclick="openInteriorLightbox('${comicId}',${i})" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in">
+        ${labelTag}
+      </div>`;
+  };
+  const thirdsHtml = FULL_DISPLAY.filter(d => d.third).map(cell).join("");
+  const stripsHtml = FULL_DISPLAY.filter(d => !d.third).map(cell).join("");
+  return `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px">${thirdsHtml}</div>
+    <div style="display:flex;flex-direction:column;gap:6px">${stripsHtml}</div>`;
 }
 
 function removeImg(i) {
@@ -7651,12 +7747,15 @@ async function submitFullAssessment() {
         title: formData.title || "",
         issueNumber: formData.issue || "",
         interiorImages: compressed,
+        slotKeys: FULL_SLOTS.map(s => s.key),
         labelDetected: !!formData.labelDetected,
         initialAssessmentComplete: true,
         deepAssessmentComplete: true,
         roboScore: formData.roboGrade && formData.roboGrade.score != null ? formData.roboGrade.score : null,
         predictedGrade: formData.predictedGrade || formData.assessedCGCGrade || null,
         initialPageQuality: formData.pageQuality || "",
+        priorConditionAssessment: formData.aiAssessment || "",
+        priorDefectNotes: formData.aiGraderNotes || "",
         initialAssessment: formData.roboGrade || null
       })
     });
@@ -7676,6 +7775,7 @@ async function submitFullAssessment() {
         formData.roboGrade.confidenceRange = result.confidenceRange;
       }
       if (result.fullAssessmentNotes) formData.fullAssessmentNotes = result.fullAssessmentNotes;
+      if (result.aiAssessment && result.aiAssessment.trim()) formData.aiAssessment = result.aiAssessment.trim();
       formData.fullInteriorComplete = result.interiorComplete !== false;
       formData.fullTrimmingSuspected = result.trimmingSuspected === true;
       formData._imagesChanged = true;
@@ -7796,8 +7896,8 @@ async function cameraOpen(state) {
   document.body.classList.remove("camera-perm-shown");
   modal.classList.add("open");
   document.body.classList.add("camera-modal-open");
-  document.body.classList.remove("camera-kind-main", "camera-kind-corner");
-  document.body.classList.add(state.kind === "corner" ? "camera-kind-corner" : "camera-kind-main");
+  document.body.classList.remove("camera-kind-main", "camera-kind-corner", "camera-kind-interior");
+  document.body.classList.add(state.kind === "corner" ? "camera-kind-corner" : state.kind === "interior" ? "camera-kind-interior" : "camera-kind-main");
   const video = document.getElementById("camera-video");
   if (video) video.style.objectFit = "cover";
   if (!_cameraOrientationListener) {
@@ -8417,7 +8517,7 @@ function cameraCloseStream() {
     _cameraOrientationTimeout = null;
   }
   document.body.classList.remove("camera-modal-open");
-  document.body.classList.remove("camera-kind-main", "camera-kind-corner");
+  document.body.classList.remove("camera-kind-main", "camera-kind-corner", "camera-kind-interior");
   document.body.classList.remove("camera-perm-shown");
 }
 
