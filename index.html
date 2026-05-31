@@ -7044,8 +7044,16 @@ function confirmCrop() {
     list[index] = dataUrl;
     formData.images = list;
     if (index === 0 && _cropperOriginalSrc) {
-      const _origForDetect = _cropperOriginalSrc;
-      detectSlabFromDataUrl(_origForDetect).catch(e => console.warn("[slab] detect failed:", e));
+      if (formData._slabCheckedAtCapture) {
+        // Camera walkthrough already ran detection at front-capture time (to
+        // drive the interior/raking auto-skip). Don't re-fire. Clear the flag.
+        formData._slabCheckedAtCapture = false;
+      } else {
+        // Upload path (no walkthrough capture-time check): detect now on the
+        // uncropped source, record-only (no slots to prune for an upload).
+        const _origForDetect = _cropperOriginalSrc;
+        detectSlabFromDataUrl(_origForDetect).catch(e => console.warn("[slab] detect failed:", e));
+      }
     }
   }
   formData._imagesChanged = true;
@@ -8209,6 +8217,32 @@ async function cameraCapture() {
     slot: _cameraState.current,
     dataUrl: dataUrl
   });
+  // S16 Pass 2b: on the FRONT capture (slot 0) of a main walkthrough, run slab
+  // detection NOW on the raw uncropped frame, so a detected slab can prune the
+  // remaining interior (page_quality, slot 2) + raking (slot 3) slots before
+  // they're prompted — a slabbed book can't be opened to shoot those. ~0.8–1.2s
+  // (8s timeout fallback). Sets labelDetected so cameraFinish carries it to
+  // formData and the assessment uses the graded precision ladder.
+  if (_cameraState.mode === "walkthrough" && _cameraState.kind === "main" && _cameraState.current === 0) {
+    const labelEl = document.getElementById("camera-slot-label");
+    if (labelEl) labelEl.textContent = "CHECKING…";
+    let _slab = null;
+    try {
+      _slab = await detectSlabFromDataUrl(dataUrl);
+    } catch (e) {
+      console.warn("[camera] slabcheck threw:", e);
+    }
+    formData._slabCheckedAtCapture = true;
+    if (_slab && _slab.detected && _cameraState) {
+      _cameraState.queue = _cameraState.queue.filter(s => s !== 2 && s !== 3);
+      _cameraState.labelDetected = true;
+      _cameraState.labelKind = (_slab.company || "CGC").toLowerCase();
+      console.log("[camera] SLAB detected (" + _cameraState.labelKind + ") — skipping interior + raking; remaining queue:", _cameraState.queue);
+    } else {
+      console.log("[camera] not a slab (or detect unavailable) — full walkthrough");
+    }
+    if (!_cameraState) return;
+  }
   if (captureBtn) captureBtn.disabled = false;
   if (_cameraState.mode === "walkthrough" && _cameraState.queue.length > 0) {
     const nextSlot = _cameraState.queue.shift();
