@@ -291,7 +291,7 @@ JSON shape (same as initial assessment, with deepAddition tags on new defects):
   "pageQuality": "${initialAssessment.pageQuality || ''}",
   "grade": "revised CGC grade",
   "graderNotes": "• retain initial bullets; append any new deep-assessment bullets prefixed with [Deep]",
-  "aiAssessment": "≤2 sentences. If grade changed: note the deep-assessment finding briefly. If unchanged: 'Deep assessment confirms initial grade.'",
+  "aiAssessment": "PRESERVE the initial Condition Assessment EXACTLY as written below, then append ONE sentence stating whether the Deep Assessment confirmed or altered it. Initial text to preserve verbatim: ${JSON.stringify(initialAssessment.aiAssessment || '')}. Append ' Deep Assessment confirmed the initial findings.' if nothing changed, or ' Deep Assessment revised the grade: <brief reason>.' if the macros changed the grade. Do not rewrite or shorten the preserved text.",
   "labelNotes": "${initialAssessment.labelNotes || ''}",
   "keyInfo": "${initialAssessment.keyInfo || ''}",
   "enhance": ${initialAssessment.enhance == null ? 'null' : JSON.stringify(initialAssessment.enhance)},
@@ -314,7 +314,7 @@ JSON shape (same as initial assessment, with deepAddition tags on new defects):
 
 HARD OUTPUT LIMITS:
   • defects array: MAX 10 entries (initial + new deep additions combined)
-  • aiAssessment: MAX 2 sentences
+  • aiAssessment: preserved initial text + exactly ONE appended confirm/alter sentence
   • graderNotes: existing bullets + at most 3 [Deep]-prefixed bullets
 `;
 

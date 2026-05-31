@@ -301,7 +301,8 @@ WHAT TO DO WITH EACH IMAGE GROUP:
 - Page quality: compare the Interior Spread to the prior page-quality call (${initialPageQuality || 'not provided'}). KEEP the prior rating unless the spread shows page quality that is SUBSTANTIALLY different. Only move it when the difference is clear and material — small differences do not justify a change.
 
 WRITING THE UPDATED CONDITION ASSESSMENT (aiAssessment):
-- Start from the prior Condition Assessment and weave in the new interior/structure findings so it reads as one cohesive write-up.
+- PRESERVE the core information from the prior Condition Assessment — the cover-condition observations, the dominant defects, and the grade rationale already established. Do not drop or rewrite those findings.
+- Then APPEND the new findings from the 8 interior/structure images so the result reads as the original write-up followed by the additional interior/structure detail.
 - Mention tears or interior defects ONLY if they are actually visible. If the interior is clean, do NOT mention interior defects or page quality at all — say nothing about them rather than stating they are absent.
 - Mention trimming ONLY in the very rare case that there are genuine, clear signs of edge trimming. Do not raise trimming otherwise — not even to say it is absent.
 - Keep it buyer-facing, factual, and concise. Do not pad it.
