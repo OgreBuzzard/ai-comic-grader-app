@@ -59,23 +59,24 @@ const FULL_SLOT_COUNT = 8;
 // The 8 slots, in order. `key` is the storage slot name; `label` is the
 // user-facing name; `exam` is what the model examines this image for.
 const FULL_SLOTS = [
-  { key: 'interior_front', label: 'Interior Front',
-    exam: 'A 2-page spread of the inside front cover and first page. Examine for tanning, tears, foxing, stains, and other common interior defects. No cropping — the full spread should be visible.' },
-  { key: 'interior_back', label: 'Interior Back',
-    exam: 'A 2-page spread of the last page and inside back cover. Same examination as Interior Front: tanning, tears, foxing, stains, common interior defects.' },
-  { key: 'exterior_staple', label: 'Exterior Staple',
+  { key: 'exterior_staple', label: 'Exterior Staples',
     exam: 'Corner-macro zoom level, framing BOTH staples from the OUTSIDE of the book (the spine exterior). Examine closely for rust, discoloration, wear around the staple holes, and popped or missing staples.' },
-  { key: 'interior_staple', label: 'Interior Staple',
-    exam: 'Same close framing of both staples but from the INSIDE of the book (centerfold). Examine for rust, wear, popped staples, and any sign the staples were replaced or disturbed.' },
   { key: 'top_pages', label: 'Top Pages',
     exam: 'Looking down at the TOP of the book, showing the tops of all pages with the centerfold crease visible and a portion of the cover (to confirm it is the same book). Examine for tears, frays, and any sign that interior pages are missing or married (stuck/foreign pages).' },
+  { key: 'outer_edge', label: 'Outer Edge',
+    exam: 'The OUTER edge of the book (opposite the spine) with the back cover shown in raking light. Examine for tears and frays, and for signs of TRIMMING (an unnaturally clean, straight, or fresh-cut edge; reduced page margins). Trimming is very difficult to detect reliably — only flag it when the evidence is clear, and phrase any trimming observation cautiously.' },
   { key: 'bottom_pages', label: 'Bottom Pages',
     exam: 'Same as Top Pages but looking UP from the BOTTOM of the book. Together with Top Pages this confirms the interior pages are complete. Examine for tears, frays, missing or married pages.' },
-  { key: 'outer_edge', label: 'Outer Edge',
-    exam: 'A reversal of the Spine image — the OUTER edge of the book (opposite the spine) with the back cover shown in raking light. Examine for tears and frays, and for signs of TRIMMING (an unnaturally clean, straight, or fresh-cut edge; reduced page margins). Trimming is very difficult to detect reliably — only flag it when the evidence is clear, and phrase any trimming observation cautiously.' },
+  { key: 'interior_front', label: 'Interior Front',
+    exam: 'A 2-page spread of the inside front cover and first page. Examine for tanning, tears, foxing, stains, and other common interior defects. No cropping — the full spread should be visible.' },
   { key: 'interior_spread', label: 'Interior Spread',
-    exam: 'A 2-page spread of the SECOND and THIRD interior story pages. Examine the same way the initial Interior image was examined, and decide whether the initial page-quality assessment should remain, move up, or move down.' }
+    exam: 'A 2-page spread of the SECOND and THIRD interior story pages. Examine the same way the initial Interior image was examined, and decide whether the initial page-quality assessment should remain, move up, or move down.' },
+  { key: 'interior_staple', label: 'Interior Staples',
+    exam: 'Same close framing of both staples but from the INSIDE of the book (centerfold). Examine for rust, wear, popped staples, and any sign the staples were replaced or disturbed.' },
+  { key: 'interior_back', label: 'Interior Back',
+    exam: 'A 2-page spread of the last page and inside back cover. Same examination as Interior Front: tanning, tears, foxing, stains, common interior defects.' }
 ];
+const SPEC_BY_KEY = Object.fromEntries(FULL_SLOTS.map(s => [ s.key, s ]));
 
 
 // The historic high-value "Deep Assessment list" — these always qualify for
@@ -201,13 +202,16 @@ export default async function handler(req, res) {
   const {
     title = '',
     issueNumber = '',
-    interiorImages = [],          // 8 images, ORDER MATCHES FULL_SLOTS
+    interiorImages = [],          // 8 images, ORDER MATCHES slotKeys (or default FULL_SLOTS)
+    slotKeys = null,              // client's slot order for these images
     labelDetected = false,
     initialAssessmentComplete = false,
     deepAssessmentComplete = false,
     roboScore = null,             // 0-100 RG score (for the widened gate)
     predictedGrade = null,        // 0.5-10.0 CGC-scale grade (for the widened gate)
     initialPageQuality = '',      // the initial PQ call, so the model can re-judge it
+    priorConditionAssessment = '',// the existing Condition Assessment text to integrate into
+    priorDefectNotes = '',        // the existing Defect Notes (bullets), for context
     initialAssessment = null      // optional: the initial assessment JSON for context
   } = req.body || {};
 
@@ -270,55 +274,70 @@ export default async function handler(req, res) {
   // can move it), and re-judges page quality up/down from the Interior Spread.
   // Precision modifier may go as low as 1 or 0 — the 8 images give a near-
   // complete view of the book's interior and structure.
-  const slotList = FULL_SLOTS.map((s, i) =>
-    `${i + 1}. ${s.label} (image ${i + 1}): ${s.exam}`
-  ).join('\n');
+  // Align the per-image examination specs to the order the client actually sent
+  // (slotKeys). Falls back to the default FULL_SLOTS order. This keeps image i
+  // mapped to the right slot guidance even if the client reorders capture/storage.
+  const orderedSpecs = Array.isArray(slotKeys) && slotKeys.length === FULL_SLOT_COUNT && slotKeys.every(k => SPEC_BY_KEY[k]) ? slotKeys.map(k => SPEC_BY_KEY[k]) : FULL_SLOTS;
+  const slotList = orderedSpecs.map((s, i) => `${i + 1}. ${s.label} (image ${i + 1}): ${s.exam}`).join('\n');
 
-  const initialContext = initialAssessment
-    ? `\nINITIAL ASSESSMENT (for context — do not re-grade the cover from scratch; these 8 images are about the INTERIOR and STRUCTURE):\n${typeof initialAssessment === 'string' ? initialAssessment.slice(0, 4000) : JSON.stringify(initialAssessment).slice(0, 4000)}\n`
+  const initialContext = initialAssessment ? `\nINITIAL ASSESSMENT (for context — do not re-grade the cover from scratch; these 8 images are about the INTERIOR and STRUCTURE):\n${typeof initialAssessment === 'string' ? initialAssessment.slice(0, 4000) : JSON.stringify(initialAssessment).slice(0, 4000)}\n` : '';
+
+  const priorBlock = priorConditionAssessment && priorConditionAssessment.trim()
+    ? `\nPRIOR CONDITION ASSESSMENT (the existing buyer-facing write-up you are UPDATING — integrate the new findings into this; keep its accurate observations, do not contradict the cover findings without cause):\n"""\n${String(priorConditionAssessment).slice(0, 2500)}\n"""\n`
+    : '\n(No prior Condition Assessment text was provided — write a brief one from the interior/structure findings.)\n';
+  const priorDefectBlock = priorDefectNotes && priorDefectNotes.trim()
+    ? `\nPRIOR DEFECT NOTES (context only):\n${String(priorDefectNotes).slice(0, 1500)}\n`
     : '';
 
-  const systemPrompt = `You are performing a FULL ASSESSMENT of a vintage comic book — a deeper confirmation of an existing grade using 8 specific interior and structural images. You already have an initial grade (cover + corner macros). This pass examines the book's INTERIOR completeness and STRUCTURE, then settles on a final grade and page quality.
+  const systemPrompt = `You are performing a FULL ASSESSMENT of a vintage comic book. The book already has a grade and a written Condition Assessment from the initial (cover + corner) passes. Your job is to examine 8 specific INTERIOR and STRUCTURAL images and INTEGRATE what they reveal into the existing Condition Assessment — not to re-grade the book from scratch.
 
 You will receive exactly 8 images, in this fixed order, each with its own purpose:
 ${slotList}
-${initialContext}
-HOW TO ASSESS:
-- Examine each image by its specific standard above.
-- The Interior Front/Back and Interior Spread images inform PAGE QUALITY and interior defect findings (tanning, tears, foxing, stains).
-- The Exterior/Interior Staple images inform staple condition (rust, wear, replacement, popping).
-- The Top Pages / Bottom Pages images confirm the interior is COMPLETE — look for missing or married pages, tears, frays.
-- The Outer Edge image is for trimming detection (cautious — trimming is hard to detect; only flag with clear evidence) and edge defects.
-- PAGE QUALITY: re-judge the initial page-quality call (${initialPageQuality || 'not provided'}) using the interior images. Decide whether it should stay, move up, or move down. The Interior Spread is your primary anchor.
-- GRADE: you may ADJUST the grade based on what these interior/structural images reveal. A clean, complete interior with good staples supports the existing grade; discovered interior damage, missing pages, staple rust, or trimming evidence can lower it. Do not raise the grade above what the initial assessment supported on cover condition — interior findings confirm or reduce, they do not inflate.
-- PRECISION MODIFIER: with 8 images covering the interior and structure, your view is near-complete. Set confidenceRange (the precision modifier) as low as you honestly can — 1 is appropriate for a clean, fully-documented book; 0 only if you are certain. Widen only for specific image-quality problems you can name (glare, blur, an angle that hides a needed detail).
+${initialContext}${priorBlock}${priorDefectBlock}
+WHAT TO DO WITH EACH IMAGE GROUP:
+- Staple condition: from the Exterior Staples and Interior Staples photos — note rust, wear, popping, or replacement only if present.
+- Page completeness: from the Top Pages and Bottom Pages photos — confirm the interior pages are complete; flag missing or married pages only if you actually see evidence.
+- Interior cover tanning / defects: from the Interior Front and Interior Back photos — note tanning, tears, foxing, stains only if present.
+- Page quality: compare the Interior Spread to the prior page-quality call (${initialPageQuality || 'not provided'}). KEEP the prior rating unless the spread shows page quality that is SUBSTANTIALLY different. Only move it when the difference is clear and material — small differences do not justify a change.
+
+WRITING THE UPDATED CONDITION ASSESSMENT (aiAssessment):
+- Start from the prior Condition Assessment and weave in the new interior/structure findings so it reads as one cohesive write-up.
+- Mention tears or interior defects ONLY if they are actually visible. If the interior is clean, do NOT mention interior defects or page quality at all — say nothing about them rather than stating they are absent.
+- Mention trimming ONLY in the very rare case that there are genuine, clear signs of edge trimming. Do not raise trimming otherwise — not even to say it is absent.
+- Keep it buyer-facing, factual, and concise. Do not pad it.
+
+GRADE — IMPORTANT:
+- It is UNLIKELY the grade changes. Default to keeping the existing grade.
+- If it changes, it is almost always DOWNWARD, from newly discovered defects (staple damage, interior tanning, missing pages, trimming).
+- Only in a very rare case may the grade go UP, and only if the new photos cause you to reconsider a SPECIFIC defect that was previously assigned (e.g. something counted against the cover that the interior shows was not actually a defect). A higher grade must be explainable that way; never inflate from a generally clean interior.
+
+PAGE QUALITY: re-judge only per the rule above (substantial difference required).
+PRECISION MODIFIER: with 8 images covering the interior and structure, your view is near-complete. Set confidenceRange as low as you honestly can — 1 for a clean, fully-documented book; 0 only if certain. Widen only for specific, nameable image-quality problems (glare, blur, hidden angle).
 
 ## RESPONSE FORMAT — STRICT
 Your entire response must be a JSON object and nothing else. First character an opening curly brace, last character a closing curly brace. No text before or after.
 
 JSON shape:
 {
-  "grade": <number, final CGC-scale grade 0.5-10.0>,
+  "grade": <number, final CGC-scale grade 0.5-10.0 — usually unchanged>,
+  "gradeChanged": "<'same' | 'down' | 'up'>",
   "pageQuality": "<final page quality designation, e.g. 'Off-White to White'>",
   "pageQualityChanged": "<'same' | 'up' | 'down'>",
   "confidenceRange": <number, precision modifier, 0-6 — go as low as 1 or 0 when warranted>,
   "fullAssessmentRan": true,
+  "aiAssessment": "<the UPDATED Condition Assessment: the prior write-up with the new interior/structure findings integrated, following the rules above>",
   "slotFindings": [
     { "slot": "interior_front", "observations": "<what you saw — concise>" }
   ],
-  "interiorComplete": <true | false — false if Top/Bottom Pages suggest missing/married pages>,
+  "interiorComplete": <true | false — false only if Top/Bottom Pages show missing/married pages>,
   "trimmingSuspected": <true | false — only true with clear Outer Edge evidence>,
-  "fullAssessmentNotes": "<2-4 sentence buyer-facing summary of the interior + structure findings and how they affected the grade>",
-  "imageIssues": [
-    { "index": <0-based>, "issue": "<≤15 words: image unusable / wrong subject / too blurred to assess>" }
-  ]
+  "fullAssessmentNotes": "<1-3 sentence internal summary of what the interior/structure pass found and any grade/PQ effect>"
 }
 
 Rules:
 - Include a slotFindings entry for EACH of the 8 slots, in order, with brief observations.
-- imageIssues ONLY for images that cannot be assessed (wrong subject, unusable). An empty array means all 8 were assessable. This does NOT block the grade — note what you could and flag the rest.
-- Every "issue" and "observations" string concise. fullAssessmentNotes ≤ 4 sentences.
-- Never mention internal references, census data, or grade priors. Report only what these 8 images show.
+- Every "observations" string concise. fullAssessmentNotes ≤ 3 sentences.
+- Never mention internal references, census data, or grade priors. Report only what these 8 images show, integrated with the prior assessment text.
 `;
 
   try {
@@ -527,6 +546,9 @@ Rules:
     const trimmingSuspected = parsed.trimmingSuspected === true;
     const fullAssessmentNotes = (typeof parsed.fullAssessmentNotes === 'string')
       ? parsed.fullAssessmentNotes.trim() : '';
+    const aiAssessment = (typeof parsed.aiAssessment === 'string' && parsed.aiAssessment.trim())
+      ? parsed.aiAssessment.trim() : '';
+    const gradeChanged = ['same', 'up', 'down'].includes(parsed.gradeChanged) ? parsed.gradeChanged : 'same';
 
     // A Full Assessment always "runs" (it produces a grade); there is no
     // refund/rejection path anymore. imageIssues simply note any unusable
@@ -534,9 +556,11 @@ Rules:
     const result = {
       fullAssessmentRan: true,
       grade,
+      gradeChanged,
       pageQuality,
       pageQualityChanged,
       confidenceRange,
+      aiAssessment,
       slotFindings,
       interiorComplete,
       trimmingSuspected,
