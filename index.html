@@ -2063,11 +2063,16 @@ function buildComicId(title, issue) {
   return `comic:${abbr}-${issueStr}-${Date.now()}`;
 }
 
-function buildBadge(gradeVal, type, designation, sm, fullAssessment) {
+function buildBadge(gradeVal, type, designation, sm, fullAssessment, deepAssessment) {
   const cls = sm ? "ubadge ubadge-sm" : "ubadge";
   const lbl = GRADE_LABELS[gradeVal] || "";
   if (fullAssessment && (type === "predicted" || type === "cgc-ai" || type === "psa-ai")) {
     return `<div class="${cls}" style="border-color:#b8860b;background:linear-gradient(180deg,#d4af37 0%,#b8860b 100%)"><div class="ubadge-body" style="background:transparent"><div class="ubadge-num" style="color:#3a2a08">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(58,42,8,0.85)">${lbl}</div></div></div>`;
+  }
+  // S16: Deep Assessment (no Full yet) → silver box, distinct from the gold Full
+  // box and the blue raw-predicted box.
+  if (deepAssessment && (type === "predicted" || type === "cgc-ai" || type === "psa-ai")) {
+    return `<div class="${cls}" style="border-color:#8a8a8a;background:linear-gradient(180deg,#e8e8ec 0%,#a8a8b0 100%)"><div class="ubadge-body" style="background:transparent"><div class="ubadge-num" style="color:#2a2a30">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(42,42,48,0.85)">${lbl}</div></div></div>`;
   }
   if (type === "cgc-official" || type === "psa-official") {
     let sc = "#1a5fa8", sl = type === "psa-official" ? "PSA" : "CGC";
@@ -2102,7 +2107,7 @@ function buildListBadge(c) {
   if (c.cgcGrade) return buildBadge(c.cgcGrade, "cgc-official", detectDesignation(c), true);
   if (c.psaGrade) return buildBadge(c.psaGrade, "psa-official", c.psaDesignation || "universal", true);
   const ac = aiCgcGrade(c);
-  if (ac) return buildBadge(ac, "predicted", "", true, isFullAssessmentComplete(c));
+  if (ac) return buildBadge(ac, "predicted", "", true, isFullAssessmentComplete(c), isDeepAssessmentComplete(c));
   if (c.grade) return buildBadge(c.grade, "my", "", true);
   return "";
 }
@@ -3681,7 +3686,7 @@ function showDetail(id) {
   const cgcOfficialBadge = selected.cgcGrade ? buildBadge(selected.cgcGrade, "cgc-official", detectDesignation(selected), false) : null;
   const psaOfficialBadge = selected.psaGrade ? buildBadge(selected.psaGrade, "psa-official", selected.psaDesignation || "universal", false) : null;
   const predictedGradeValue = aiCgcGrade(selected);
-  const predictedBadge = predictedGradeValue ? buildBadge(normalizeGrade(predictedGradeValue), "predicted", "", false, isFullAssessmentComplete(selected)) : null;
+  const predictedBadge = predictedGradeValue ? buildBadge(normalizeGrade(predictedGradeValue), "predicted", "", false, isFullAssessmentComplete(selected), isDeepAssessmentComplete(selected)) : null;
   const predictionBoxes = [ cgcOfficialBadge, psaOfficialBadge, predictedBadge ].filter(Boolean);
   const isGraded = !!(selected.cgcGrade || selected.psaGrade);
   const hasInteriorPhoto = !!(selected.images && selected.images[2]);
@@ -5185,7 +5190,14 @@ function showResultPreview(cgc, psa) {
 async function assessHighGrade() {
   const imgs = (formData.images || []).filter(Boolean);
   const corners = (formData.cornerImages || []).filter(Boolean);
-  if (imgs.length < 4) {
+  // Slabbed books only ever capture front + back (interior + raking are skipped),
+  // so require just those two; raw books require all 4 main photos.
+  if (formData.labelDetected) {
+    if (!(formData.images || [])[0] || !(formData.images || [])[1]) {
+      alert("Front and back photos are required for Deep Assessment.");
+      return;
+    }
+  } else if (imgs.length < 4) {
     alert("All 4 main photos are required for Deep Assessment.");
     return;
   }
@@ -7729,6 +7741,12 @@ async function submitFullAssessment() {
     btn.disabled = true;
     btn.innerText = "Assessing…";
   }
+  // S16: run the 8-image Full Assessment scan animation (1.0s per scan) while the
+  // API call is in flight — mirrors the standard/Deep flow's scan shell.
+  const fullScanController = window.RobograderScan ? window.RobograderScan.runScanAnimation(interior, "full") : {
+    promise: Promise.resolve(),
+    cancel: () => {}
+  };
   try {
     const compressed = await compressImagesSequentially(interior, {
       maxDim: 1000,
@@ -7780,24 +7798,24 @@ async function submitFullAssessment() {
       formData.fullTrimmingSuspected = result.trimmingSuspected === true;
       formData._imagesChanged = true;
       onAssessmentSuccess();
-      const issues = Array.isArray(result.imageIssues) ? result.imageIssues : [];
-      let msg = `Full Assessment complete. Grade: ${result.grade != null ? result.grade : "—"}`;
-      if (result.pageQualityChanged && result.pageQualityChanged !== "same") {
-        msg += `\nPage quality adjusted ${result.pageQualityChanged}: ${result.pageQuality}`;
+      // Let the scan animation finish its visual pass, then tear it down and
+      // save. No pop-up — the result shows in Detail (updated grade + text and
+      // the gold "Full" grade box), matching the Deep Assessment flow.
+      try {
+        await fullScanController.promise;
+      } catch (_e) {}
+      if (window.RobograderScan && window.RobograderScan.dismiss) {
+        window.RobograderScan.dismiss();
       }
-      if (result.fullAssessmentNotes) msg += `\n\n${result.fullAssessmentNotes}`;
-      if (issues.length) {
-        msg += "\n\nSome images couldn't be fully assessed:";
-        issues.forEach(it => {
-          msg += `\n• Image ${it.index + 1}: ${it.issue || "unclear"}`;
-        });
-      }
-      alert(msg);
       await submitForm();
     } else {
       throw new Error("Unexpected Full Assessment response shape");
     }
   } catch (e) {
+    if (fullScanController && fullScanController.cancel) fullScanController.cancel();
+    if (window.RobograderScan && window.RobograderScan.dismiss) {
+      window.RobograderScan.dismiss();
+    }
     alert(describeAssessmentError(e.message) || "Error: " + e.message);
   } finally {
     assessing = false;
