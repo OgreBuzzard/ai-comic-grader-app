@@ -4367,7 +4367,14 @@ async function hashImage(urlOrDataUrl) {
       bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     } else {
-      const resp = await fetch(urlOrDataUrl);
+      const _ac = new AbortController();
+      const _to = setTimeout(() => _ac.abort(), 10000);
+      let resp;
+      try {
+        resp = await fetch(urlOrDataUrl, { signal: _ac.signal });
+      } finally {
+        clearTimeout(_to);
+      }
       const buf = await resp.arrayBuffer();
       bytes = new Uint8Array(buf);
     }
@@ -6104,7 +6111,10 @@ async function completeAssessment() {
   }
   const _sigDetected = typeof hasIdentifiedSignatures === "function" ? hasIdentifiedSignatures(formData) : false;
   _routeToEditAfterSave = !!(formData.highGradeUnlocked || formData.restorationCheckTier || typeof isRestorationEligible === "function" && isRestorationEligible(formData) && !isRestorationCheckComplete(formData) || _sigDetected || isFullAssessmentEligible(formData) && isDeepAssessmentComplete(formData) && !isFullAssessmentComplete(formData));
+  const _tComplete = Date.now();
+  console.log("[complete] tapped → submitForm start");
   await submitForm();
+  console.log("[complete] submitForm done in", Date.now() - _tComplete, "ms");
   if (window.RobograderScan && window.RobograderScan.dismiss) {
     window.RobograderScan.dismiss();
   }
@@ -7111,17 +7121,25 @@ async function detectSlabFromDataUrl(dataUrl) {
       return null;
     }
     const token = await window._currentUser.getIdToken();
-    const resp = await fetch("/api/assess", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + token
-      },
-      body: JSON.stringify({
-        mode: "slabcheck",
-        images: [ small ]
-      })
-    });
+    const _ac = new AbortController();
+    const _to = setTimeout(() => _ac.abort(), 8000);
+    let resp;
+    try {
+      resp = await fetch("/api/assess", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + token
+        },
+        body: JSON.stringify({
+          mode: "slabcheck",
+          images: [ small ]
+        }),
+        signal: _ac.signal
+      });
+    } finally {
+      clearTimeout(_to);
+    }
     if (!resp.ok) {
       console.warn("[slab] slabcheck HTTP", resp.status);
       return null;
@@ -8192,14 +8210,6 @@ async function cameraCapture() {
     dataUrl: dataUrl
   });
   if (captureBtn) captureBtn.disabled = false;
-  if (_cameraState.mode === "walkthrough" && _cameraState.kind === "main" && _cameraState.current === 0) {
-    try {
-      const r = await detectSlabFromDataUrl(dataUrl);
-      console.log("[camera] walkthrough front slabcheck:", JSON.stringify(r) + " — auto-skip OFF (record only)");
-    } catch (e) {
-      console.warn("[camera] slabcheck threw, continuing normal walkthrough:", e);
-    }
-  }
   if (_cameraState.mode === "walkthrough" && _cameraState.queue.length > 0) {
     const nextSlot = _cameraState.queue.shift();
     cameraOpenSlot(nextSlot);
@@ -8363,12 +8373,14 @@ async function submitForm() {
       let preUpload = null;
       if (formData._preUploadPromise && formData._preUploadId === id) {
         syncMsg("Finishing upload…");
+        const _tpu = Date.now();
         try {
           preUpload = await formData._preUploadPromise;
         } catch (e) {
           console.warn("[pre-upload] await failed; running fresh upload:", e);
           preUpload = null;
         }
+        console.log("[complete] pre-upload await:", Date.now() - _tpu, "ms");
         formData._preUploadPromise = null;
         formData._preUploadId = null;
       }
@@ -8433,6 +8445,7 @@ async function submitForm() {
   const existingComicForMeta = formData.id ? items.find(c => c.id === formData.id) : null;
   const existingImagesMeta = formData.imagesMeta || existingComicForMeta?.imagesMeta || [];
   const existingCornerMeta = formData.cornerMeta || existingComicForMeta?.cornerMeta || [];
+  const _tHash = Date.now();
   const finalImagesMeta = await Promise.all(finalImages.map(async (url, i) => {
     const prevUrl = existingComicForMeta?.images?.[i];
     if (url === prevUrl && existingImagesMeta[i]) return existingImagesMeta[i];
@@ -8460,6 +8473,7 @@ async function submitForm() {
     return baseMeta;
   }));
   const _sanitizeSlots = arr => Array.isArray(arr) ? arr.map(v => v === undefined ? null : v) : arr;
+  console.log("[complete] hash-meta:", Date.now() - _tHash, "ms");
   finalSignatureImages = _sanitizeSlots(finalSignatureImages);
   finalInteriorImages = _sanitizeSlots(finalInteriorImages);
   finalRestorationImages = _sanitizeSlots(finalRestorationImages);
@@ -8548,7 +8562,9 @@ async function submitForm() {
       }
     }
   }
+  const _tSave = Date.now();
   await saveItem(rec);
+  console.log("[complete] saveItem (Firestore):", Date.now() - _tSave, "ms");
   if (_routeToEditAfterSave) {
     _routeToEditAfterSave = false;
     showEdit(rec.id);
