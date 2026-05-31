@@ -804,6 +804,24 @@ onAuthStateChanged(auth, async user => {
       z-index: 6;
     }
     #camera-focusing.active { opacity: 1; }
+    /* S16: slab-detection indicator — a small rounded pill centered over the
+       viewfinder (replaces reusing the 32px slot label, which clipped). */
+    #camera-checking {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      display: none;
+      align-items: center; gap: 8px;
+      background: rgba(0,0,0,0.72);
+      color: #c8d8a8;
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-size: 14px; font-weight: 700; letter-spacing: 0.5px;
+      padding: 11px 18px; border-radius: 999px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+      pointer-events: none;
+      z-index: 8;
+      white-space: nowrap;
+    }
+    #camera-checking.show { display: flex; }
     /* Lens selector (S12). Floating row of pill buttons in the lower-right
        quadrant of the stage when multiple rear lenses are detected (iPhone
        Pro models with telephoto). Hidden when only one rear lens exists.
@@ -1493,6 +1511,7 @@ onAuthStateChanged(auth, async user => {
     <div id="camera-guide"></div>
     <div id="camera-flash"></div>
     <div id="camera-focusing">FOCUSING…</div>
+    <div id="camera-checking">Checking for slab…</div>
     <div id="camera-lens-selector"></div>
     <div id="camera-header">
       <div id="camera-header-spacer"></div>
@@ -1509,7 +1528,7 @@ onAuthStateChanged(auth, async user => {
     </div>
     
     <div id="camera-rotate-card">
-      <div class="rotate-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"><rect x="40" y="32" width="20" height="36" rx="3.5"/><line x1="46" y1="62" x2="54" y2="62"/><path d="M 16 50 A 34 34 0 0 1 50 16" /><polyline points="50 6 50 16 40 16" /><path d="M 84 50 A 34 34 0 0 1 50 84" /><polyline points="50 94 50 84 60 84" /></svg></div>
+      <div class="rotate-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true" fill="none"><path d="M60,35.5L60,64.5C60,66.432 58.432,68 56.5,68L43.5,68C41.568,68 40,66.432 40,64.5L40,35.5C40,33.568 41.568,32 43.5,32L56.5,32C58.432,32 60,33.568 60,35.5Z" style="fill:none;stroke:currentColor;stroke-width:6px;"/> <path d="M16,50C16,31.348 31.348,16 50,16" style="fill:none;fill-rule:nonzero;stroke:currentColor;stroke-width:6px;"/> <g transform="matrix(0.707107,-0.707107,0.707107,0.707107,7.47309,40.0416)"> <path d="M50,6L50,16L40,16" style="fill:none;fill-rule:nonzero;stroke:currentColor;stroke-width:6px;"/> </g> <path d="M84,50C84,68.652 68.652,84 50,84" style="fill:none;fill-rule:nonzero;stroke:currentColor;stroke-width:6px;"/> <g transform="matrix(0.707107,-0.707107,0.707107,0.707107,-44.7523,59.9584)"> <path d="M50,94L50,84L60,84" style="fill:none;fill-rule:nonzero;stroke:currentColor;stroke-width:6px;"/> </g></svg></div>
       <div class="rotate-title" id="camera-rotate-title">Rotate to landscape</div>
       
       <div class="rotate-actions">
@@ -2180,11 +2199,18 @@ async function initFirebase() {
   await migrateComicsToItems();
   await migrateAllItemsToNested();
   await migrateCornerSwap();
-  await loadItems();
   _preloadLabelModule().then(mod => {
     if (mod && typeof mod.clearLabelQueue === "function") mod.clearLabelQueue();
   }).catch(() => {});
+  // S16 (C): one live listener does BOTH the initial load and live updates.
+  // Previously startup ran loadItems() (a full getDocs) AND set up this
+  // onSnapshot, fetching the whole collection twice. The first emission now
+  // handles initial-load sequencing; an error callback falls back to a one-off
+  // getDocs so the app can never get stuck on the loading state.
+  let _firstSnap = true;
+  const _tSnap = Date.now();
   fsOnSnapshot(userItemsCollection(), snap => {
+    console.log("[load] snapshot", snap.docs.length, "docs in", Date.now() - _tSnap, "ms", _firstSnap ? "(initial)" : "(update)");
     items = snap.docs.map(d => flattenForApp({
       id: d.id,
       ...d.data()
@@ -2197,8 +2223,23 @@ async function initFirebase() {
         ...SAMPLE_COMIC
       } ];
     }
-    if (view === "list") renderList();
-    updateStats();
+    if (_firstSnap) {
+      _firstSnap = false;
+      window._loadingState = false;
+      refreshHeaderControls();
+      renderList();
+      updateStats();
+      if (typeof window.signalAppReady === "function") window.signalAppReady();
+    } else {
+      if (view === "list") renderList();
+      updateStats();
+    }
+  }, err => {
+    console.error("[load] snapshot listener error:", err);
+    if (_firstSnap) {
+      _firstSnap = false;
+      loadItems();
+    }
   });
 }
 
@@ -2636,8 +2677,10 @@ const SAMPLE_COMIC = {
 };
 
 async function loadItems() {
+  const _tLoad = Date.now();
   try {
     const snap = await fsGetDocs(userItemsCollection());
+    console.log("[load] fetch", snap.docs.length, "docs in", Date.now() - _tLoad, "ms");
     items = snap.docs.map(d => flattenForApp({
       id: d.id,
       ...d.data()
@@ -3298,7 +3341,9 @@ function renderList() {
       });
     });
   }
+  const _tRender = Date.now();
   main.innerHTML = html;
+  console.log("[load] renderList innerHTML set in", Date.now() - _tRender, "ms (rows:", items.length + ")");
   wireSwipeRows();
   hydrateThumbs();
 }
@@ -3317,6 +3362,19 @@ function hydrateThumbs() {
     });
     return;
   }
+  // S16: eagerly hydrate the first screenful (top rows are visible immediately)
+  // so they decode right away instead of showing the dark placeholder until the
+  // observer callback runs — that callback can be delayed behind the big
+  // innerHTML parse, which read as "black thumbnails for a few seconds."
+  const EAGER = 12;
+  for (let i = 0; i < imgs.length && i < EAGER; i++) {
+    if (imgs[i].dataset.src) {
+      imgs[i].src = imgs[i].dataset.src;
+      imgs[i].removeAttribute("data-src");
+    }
+  }
+  const rest = document.querySelectorAll("img.comic-thumb[data-src]");
+  if (!rest.length) return;
   window._thumbObserver = new IntersectionObserver((entries, obs) => {
     entries.forEach(entry => {
       if (!entry.isIntersecting) return;
@@ -3332,7 +3390,7 @@ function hydrateThumbs() {
     rootMargin: "300px 0px",
     threshold: 0.01
   });
-  imgs.forEach(img => window._thumbObserver.observe(img));
+  rest.forEach(img => window._thumbObserver.observe(img));
 }
 
 function onRowTap(ev, id) {
@@ -4450,7 +4508,7 @@ async function processImagesForSave(images, comicId, slotNames, options = {}) {
       const slot = slotNames[i] || `image_${i + 1}`;
       const tasks = [ compressImage(img, 1400, 0.65, true).then(blob => uploadImageToStorage(blob, comicId, slot)) ];
       if (wantThumb) {
-        tasks.push(compressImage(img, 160, 0.85, false));
+        tasks.push(compressImage(img, 120, 0.9, false));
       }
       const results = await Promise.all(tasks);
       fullResult.push(results[0]);
@@ -8224,14 +8282,15 @@ async function cameraCapture() {
   // (8s timeout fallback). Sets labelDetected so cameraFinish carries it to
   // formData and the assessment uses the graded precision ladder.
   if (_cameraState.mode === "walkthrough" && _cameraState.kind === "main" && _cameraState.current === 0) {
-    const labelEl = document.getElementById("camera-slot-label");
-    if (labelEl) labelEl.textContent = "CHECKING…";
+    const checkEl = document.getElementById("camera-checking");
+    if (checkEl) checkEl.classList.add("show");
     let _slab = null;
     try {
       _slab = await detectSlabFromDataUrl(dataUrl);
     } catch (e) {
       console.warn("[camera] slabcheck threw:", e);
     }
+    if (checkEl) checkEl.classList.remove("show");
     formData._slabCheckedAtCapture = true;
     if (_slab && _slab.detected && _cameraState) {
       _cameraState.queue = _cameraState.queue.filter(s => s !== 2 && s !== 3);
