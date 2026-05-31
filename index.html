@@ -1511,11 +1511,10 @@ onAuthStateChanged(auth, async user => {
     <div id="camera-rotate-card">
       <div class="rotate-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"><rect x="40" y="32" width="20" height="36" rx="3.5"/><line x1="46" y1="62" x2="54" y2="62"/><path d="M 16 50 A 34 34 0 0 1 50 16" /><polyline points="50 6 50 16 40 16" /><path d="M 84 50 A 34 34 0 0 1 50 84" /><polyline points="50 94 50 84 60 84" /></svg></div>
       <div class="rotate-title" id="camera-rotate-title">Rotate to landscape</div>
-      <div class="rotate-sub" id="camera-rotate-sub">Turn your phone sideways.</div>
       
       <div class="rotate-actions">
         <button type="button" id="camera-rotate-continue"
-          onclick="cameraRotateForceRecheck()">Rotated? Tap to continue</button>
+          onclick="cameraRotateForceRecheck()">Done</button>
         <button type="button" id="camera-rotate-skip"
           onclick="cameraSkipRotation()">Skip rotation</button>
       </div>
@@ -6685,13 +6684,13 @@ function renderForm() {
   }
   const _saveLabelTop = formData.id ? "Save" : "Add";
   const _saveDisabledTop = formData.title && formData.title.trim() ? "" : "disabled";
-  let html = `<div class="sticky-back" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><button class="btn-ghost" onclick="cancelForm()">← Back</button><button class="btn btn-gold" id="save-btn-top" onclick="submitForm()" ${_saveDisabledTop}>${_saveLabelTop}</button></div>\n  <h2 style="font-size:18px;margin:8px 0 20px;color:#c8a96e">${isEdit ? "Edit Book" : "Add Book"}</h2>\n  <div class="card" style="display:flex;flex-direction:column;gap:14px">\n    <div>\n      <label class="field-label">Photos <span style="color:#9a8a7a;font-size:10px;letter-spacing:1px">— up to 4, drag to reorder</span></label>\n      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px">\n        ${(() => {
+  let html = `<div class="sticky-back" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><button class="btn-ghost" onclick="cancelForm()">← Back</button><button class="btn btn-gold" id="save-btn-top" onclick="submitForm()" ${_saveDisabledTop}>${_saveLabelTop}</button></div>\n  <h2 style="font-size:18px;margin:8px 0 20px;color:#c8a96e">${isEdit ? "Edit Book" : "Add Book"}</h2>\n  <div class="card" style="display:flex;flex-direction:column;gap:14px">\n    <div>\n      <label class="field-label">Photos <span style="color:#9a8a7a;font-size:10px;letter-spacing:1px">— ${formData.labelDetected ? "front &amp; back (graded slab)" : "up to 4, drag to reorder"}</span></label>\n      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px">\n        ${(() => {
     const slotLabels = [ "Front Cover", "Back Cover", "Interior", "Spine" ];
     const renderSlot = i => {
       const img = (formData.images || [])[i];
       return img ? `<div class="drag-slot" draggable="true"\n                  ondragstart="dragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"\n                  onclick="tapSlot(${i},'main')">\n                  <img src="${img}">\n                  <button class="slot-edit" onclick="event.stopPropagation();openCropper('main',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>\n                  <button class="slot-x" onclick="event.stopPropagation();removeImg(${i})">×</button>\n                 </div>` : `<div class="drag-slot" style="padding:0;background:none;"\n                  ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"\n                  onclick="tapSlot(${i},'main')">\n                  <img src="${SLOT_GHOSTS[i]}" style="width:100%;height:auto;display:block;border-radius:4px;opacity:0.7;">\n                  <div style="position:absolute;inset:0;pointer-events:none;">\n                    <span style="position:absolute;top:8px;left:10px;font-size:11px;font-weight:700;color:#000;letter-spacing:1px;text-transform:uppercase;background:rgba(255,255,255,0.75);padding:2px 6px;border-radius:3px;">${slotLabels[i]}</span>\n                  </div>\n                 </div>`;
     };
-    return `\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">\n              ${renderSlot(0)}\n              ${renderSlot(1)}\n            </div>\n            ${renderSlot(3)}\n            ${renderSlot(2)}\n          `;
+    return formData.labelDetected ? `\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">\n              ${renderSlot(0)}\n              ${renderSlot(1)}\n            </div>\n          ` : `\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">\n              ${renderSlot(0)}\n              ${renderSlot(1)}\n            </div>\n            ${renderSlot(3)}\n            ${renderSlot(2)}\n          `;
   })()}\n      </div>\n      ${formData.highGradeUnlocked ? `\n      <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">DEEP ASSESSMENT CORNER MACROS</div>\n        <div style="font-size:11px;color:#8a9a8a;margin-bottom:10px;line-height:1.5">Close-up photos of all four front-cover corners, one per slot. The Deep Assessment pass uses these to tighten the grade.</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\n          ${[ 0, 1, 2, 3 ].map(i => {
     const cornerLabels = [ "Top Left", "Top Right", "Bottom Left", "Bottom Right" ];
     const cornerGhosts = [ "assets/ghosts/TopLeft_Macro.jpg", "assets/ghosts/TopRight_Macro.jpg", "assets/ghosts/BottomLeft_Macro.jpg", "assets/ghosts/BottomRight_Macro.jpg" ];
@@ -7825,7 +7824,11 @@ async function cameraOpen(state) {
       }
       console.log("[camera] kind=" + _cameraState.kind + " target=" + targetZoom + "x lens options:", lensOptions.map(l => l.label).join(","));
       _cameraState.lenses = lensOptions;
-      _cameraState.currentLensIdx = lensOptions.length > 1 ? 1 : 0;
+      // S16: default to 1× (wide) for main-kind captures (front/back/PQ/spine) —
+      // 2× was cropping the cover and forcing a manual Zoom Out every shot.
+      // Corners still default to the zoomed lens (close detail is the point).
+      const _zoomDefault = _cameraState.kind === "corner" && lensOptions.length > 1;
+      _cameraState.currentLensIdx = _zoomDefault ? 1 : 0;
       if (lensOptions.length > 0) {
         await switchToLens(_cameraState.currentLensIdx);
         renderLensSelector();
@@ -8010,17 +8013,14 @@ function applyCameraOrientationState() {
   const guideEl = document.getElementById("camera-guide");
   if (!match) {
     const title = document.getElementById("camera-rotate-title");
-    const sub = document.getElementById("camera-rotate-sub");
     if (preferred === "landscape") {
       card.classList.add("to-landscape");
       card.classList.remove("to-portrait");
       if (title) title.textContent = "Rotate to landscape";
-      if (sub) sub.textContent = "This shot works best with the phone turned sideways. Rotate your phone and the camera will appear automatically.";
     } else {
       card.classList.add("to-portrait");
       card.classList.remove("to-landscape");
       if (title) title.textContent = "Rotate to portrait";
-      if (sub) sub.textContent = "This shot works best with the phone upright. Rotate your phone and the camera will appear automatically.";
     }
     card.classList.add("show");
     modal.classList.add("rotate-needed");
