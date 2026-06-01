@@ -6221,7 +6221,7 @@ async function completeAssessment() {
     return;
   }
   const _sigDetected = typeof hasIdentifiedSignatures === "function" ? hasIdentifiedSignatures(formData) : false;
-  _routeToEditAfterSave = !!(formData.highGradeUnlocked || formData.restorationCheckTier || typeof isRestorationEligible === "function" && isRestorationEligible(formData) && !isRestorationCheckComplete(formData) || _sigDetected || isFullAssessmentEligible(formData) && isDeepAssessmentComplete(formData) && !isFullAssessmentComplete(formData));
+  _routeToEditAfterSave = !!((formData.highGradeUnlocked && !isDeepAssessmentComplete(formData)) || formData.restorationCheckTier || typeof isRestorationEligible === "function" && isRestorationEligible(formData) && !isRestorationCheckComplete(formData) || _sigDetected || isFullAssessmentEligible(formData) && isDeepAssessmentComplete(formData) && !isFullAssessmentComplete(formData));
   const _tComplete = Date.now();
   console.log("[complete] tapped → submitForm start");
   await submitForm();
