@@ -1914,16 +1914,21 @@ function _isFullDeepListBook(item) {
 function isFullAssessmentEligible(item) {
   if (!item) return null;
   if (item.labelDetected === true) return null;
-  if (!_isFullDeepListBook(item)) return null;
+  // Same qualifying gate as Deep Assessment: score ≥90, grade ≥9.0, or value-key match
   const score = Number(item.roboGrade && item.roboGrade.score != null ? item.roboGrade.score : item.roboScore);
   const grade = parseFloat(item.predictedGrade || item.assessedCGCGrade);
+  const scoreGate = Number.isFinite(score) && score >= 90;
+  const gradeGate = Number.isFinite(grade) && grade >= 9.0;
+  const valueGate = typeof window.matchValueKey === "function" ? !!window.matchValueKey(item.title, item.issue, item.publisher, item.printing) : false;
+  if (!scoreGate && !gradeGate && !valueGate) return null;
+  // Additional floor: exclude very low-grade books
   const okScore = Number.isFinite(score) && score >= 30;
   const okGrade = Number.isFinite(grade) && grade >= 3.0;
   if (!okScore && !okGrade) return null;
   return {
     slots: FULL_SLOT_COUNT,
     slotDefs: FULL_SLOTS,
-    reason: okScore ? "deep-list+score" : "deep-list+grade"
+    reason: scoreGate ? "score" : gradeGate ? "grade" : "value-key"
   };
 }
 
@@ -5138,6 +5143,8 @@ function mountResults(cgc, psa) {
       const _fullEligible = isFullAssessmentEligible({
         title: cgc && cgc.title || formData.title,
         issue: cgc && cgc.issue || formData.issue,
+        publisher: cgc && cgc.publisher || formData.publisher,
+        printing: cgc && cgc.printing || formData.printing,
         labelDetected: cgc && cgc.labelDetected || formData.labelDetected,
         roboScore: typeof roboScore !== "undefined" && roboScore != null ? roboScore : formData && formData.roboGrade && formData.roboGrade.score,
         predictedGrade: cgc && cgc.grade || formData.predictedGrade || formData && formData.assessedCGCGrade
