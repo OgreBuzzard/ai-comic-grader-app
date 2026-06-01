@@ -8234,14 +8234,20 @@ function cameraOpenSlot(slotIndex) {
     return;
   }
   const guideEl = document.getElementById("camera-guide");
-  if (!guideFile) {
-    if (guideEl) guideEl.innerHTML = "";
-  } else {
-    fetch("/assets/guides/" + guideFile + "?v=s13e").then(r => r.text()).then(svgText => {
-      guideEl.innerHTML = svgText;
+  // S16: clear stale guide immediately so the user never sees the previous
+  // slot's overlay while the new one loads. Also bump a sequence counter so
+  // a slow fetch from a prior slot can't overwrite a newer slot's guide.
+  if (guideEl) guideEl.innerHTML = "";
+  if (!_cameraState._guideSeq) _cameraState._guideSeq = 0;
+  const guideSeq = ++_cameraState._guideSeq;
+  if (guideFile) {
+    fetch("/assets/guides/" + guideFile + "?v=s16").then(r => r.text()).then(svgText => {
+      if (_cameraState && _cameraState._guideSeq === guideSeq) {
+        guideEl.innerHTML = svgText;
+      }
     }).catch(err => {
       console.warn("[camera] guide fetch failed:", err);
-      guideEl.innerHTML = "";
+      if (_cameraState && _cameraState._guideSeq === guideSeq) guideEl.innerHTML = "";
     });
   }
   const progress = document.getElementById("camera-progress");
@@ -8434,6 +8440,9 @@ async function cameraFinish() {
   const {kind: kind, captures: captures, labelDetected: labelDetected, labelKind: labelKind} = _cameraState;
   cameraCloseStream();
   document.getElementById("camera-modal").classList.remove("open");
+  // S16: clear the guide so stale SVG can't leak into the next camera session
+  const _gEl = document.getElementById("camera-guide");
+  if (_gEl) _gEl.innerHTML = "";
   _cameraState = null;
   if (labelDetected) {
     formData.labelDetected = true;
@@ -8494,6 +8503,9 @@ function cameraUploadInstead() {
   const savedLabelDetected = _cameraState.labelDetected, savedLabelKind = _cameraState.labelKind;
   cameraCloseStream();
   document.getElementById("camera-modal").classList.remove("open");
+  // S16: clear the guide so stale SVG can't leak into next session
+  const _gElUp = document.getElementById("camera-guide");
+  if (_gElUp) _gElUp.innerHTML = "";
   _cameraState = null;
   const openPicker = () => {
     if (savedKind === "corner") {
