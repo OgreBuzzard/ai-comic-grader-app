@@ -571,6 +571,13 @@ Rules:
       issue: normalizeIssueServer(issueNumber),
       slotCount: FULL_SLOT_COUNT,
       eligibility: elig.reason,
+      // S16: Recompute the RoboScore from the revised CGC grade. With 8
+      // interior/structure images on top of the main + corner photos, the
+      // evidence is near-complete. The score ceiling is 100 - confidenceRange
+      // (which can be 0 for a fully-documented, pristine book). This lets
+      // the Full Assessment score exceed the Deep ceiling (97) when the
+      // interior confirms a near-perfect book.
+      roboScore: Math.min(Math.round(grade * 10), 100 - confidenceRange),
       _diagnostics: { phaseTimings }
     };
 

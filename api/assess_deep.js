@@ -265,7 +265,11 @@ For each new defect observed in the macros that was NOT in the initial catalogue
   • BACK sub-score: FROZEN. Do not change. No new back-cover evidence.
   • INTERIOR sub-score: FROZEN. Do not change. No new interior evidence.
 
-If the macros confirm rather than reveal — meaning everything in the macros was already accurately catalogued — leave Front and Spine sub-scores unchanged. The confidenceRange for a Deep assessment is the integer 3 (representing ±3 on the 0-100 score scale). Do not narrow below 3; the score ceiling of 97 already encodes the residual uncertainty.
+If the macros REVEAL a new defect not in the initial catalogue (corner damage, spine ticks, tape, color breaks visible only at macro scale), add defect entries with deepAddition: true and adjust Front and Spine sub-scores downward accordingly. The revised grade may go BELOW the initial when new defects are found.
+
+If the macros CONFIRM the initial assessment — meaning everything visible was already catalogued — then consider whether the corners support the current score or suggest the book is at the HIGH or LOW end of its initial precision range. The initial assessment had a wide precision range (±6 to ±12). You now have close-up evidence of all four corners. If the corners are CLEANER than expected for the initial grade — crisp, tight, no hidden defects — the Front sub-score may be RAISED by 1–3 points. If the corners are WORSE than implied by the initial catalogue — e.g. soft with rounding not visible at full scale — the Front sub-score may be LOWERED by 1–3 points (tag the observation as deepAddition: true). If they're exactly as expected, leave scores unchanged.
+
+The confidenceRange for a Deep assessment is the integer 3 (representing ±3 on the 0-100 score scale). Do not narrow below 3; the score ceiling of 97 already encodes the residual uncertainty.
 
 ## PHASE 4 — CONFIRM THE REVISED GRADE
 Recompute the RoboGrade score (Front + Back + Spine + Interior). Map to a CGC grade. Verify against the tier definitions below. Read the candidate grade's definition AND one grade above AND one grade below — confirm the candidate is the best fit.
@@ -400,7 +404,7 @@ Rules:
           : [
               { type: 'text', text: 'CORNER MACROS in order: Top-Left, Top-Right, Bottom-Left, Bottom-Right of the front cover.' },
               ...macroBlocks,
-              { type: 'text', text: 'Perform the deep assessment. Apply the floor rule: revised RG and CGC grades must be at or above the initial values unless a specific new defect is identified in the macros. Return the JSON.' }
+              { type: 'text', text: 'Perform the deep assessment. If the macros reveal new defects, the grade may go down — tag them deepAddition: true. If the corners are cleaner than expected for the initial grade, the Front sub-score may rise by 1–3 points. If they match expectations, scores stay the same. Return the JSON.' }
             ]
       }]
     };
