@@ -1465,8 +1465,12 @@ onAuthStateChanged(auth, async user => {
       <div class="sr-right">›</div>
     </div>
     <div style="padding:24px 18px 40px">
-      <div style="font-size:11px;color:#4a3a2a;line-height:1.6">
-        Robograder v2.42 · Assessment credits are non-refundable.
+      <div style="text-align:center;margin-bottom:16px">
+        <div style="font-size:12px;font-weight:600;color:#7a6a5a;letter-spacing:0.5px;margin-bottom:4px">Need help or have feedback?</div>
+        <a href="mailto:support@robograder.app" style="font-size:14px;font-weight:700;color:#d4af37;text-decoration:none;letter-spacing:0.3px">support@robograder.app</a>
+      </div>
+      <div style="font-size:11px;color:#4a3a2a;line-height:1.6;text-align:center">
+        Robograder v4.15 · Assessment credits are non-refundable.
         Images are stored securely in your personal account.
       </div>
     </div>
@@ -2109,8 +2113,8 @@ function buildListBadge(c) {
     const showPlus = rgScore >= 90 && rgScore < 100 && !c.highGradeUnlocked;
     return `<div style="width:56px;height:56px;background:#e8f0c0;border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid #c8d098">\n      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:#1a2208;line-height:1">${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#5a7030;margin-left:1px">+</span>' : ""}</div>\n      <div style="font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;color:#5a7030;letter-spacing:1px;margin-top:2px">RG</div>\n    </div>`;
   }
-  if (c.cgcGrade) return buildBadge(c.cgcGrade, "cgc-official", detectDesignation(c), true);
-  if (c.psaGrade) return buildBadge(c.psaGrade, "psa-official", c.psaDesignation || "universal", true);
+  if (c.cgcGrade) return buildBadge(normalizeGrade(c.cgcGrade), "cgc-official", detectDesignation(c), true);
+  if (c.psaGrade) return buildBadge(normalizeGrade(c.psaGrade), "psa-official", c.psaDesignation || "universal", true);
   const ac = aiCgcGrade(c);
   if (ac) return buildBadge(ac, "predicted", "", true, isFullAssessmentComplete(c), isDeepAssessmentComplete(c));
   if (c.grade) return buildBadge(c.grade, "my", "", true);
@@ -2361,7 +2365,7 @@ async function migrateComicsToItems() {
   }
 }
 
-const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationCheckRan", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "deepAssessmentRan", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected" ];
+const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationCheckRan", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "deepAssessmentRan", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected" ];
 
 const COMIC_DROP_FIELDS = [ "press", "uv", "clean" ];
 
@@ -3688,8 +3692,8 @@ function showDetail(id) {
   if (selected.roboGrade) {
     html += `<div style="margin-top:16px">${buildRoboGradeDisplay(selected.roboGrade, selected)}</div>`;
   }
-  const cgcOfficialBadge = selected.cgcGrade ? buildBadge(selected.cgcGrade, "cgc-official", detectDesignation(selected), false) : null;
-  const psaOfficialBadge = selected.psaGrade ? buildBadge(selected.psaGrade, "psa-official", selected.psaDesignation || "universal", false) : null;
+  const cgcOfficialBadge = selected.cgcGrade ? buildBadge(normalizeGrade(selected.cgcGrade), "cgc-official", detectDesignation(selected), false) : null;
+  const psaOfficialBadge = selected.psaGrade ? buildBadge(normalizeGrade(selected.psaGrade), "psa-official", selected.psaDesignation || "universal", false) : null;
   const predictedGradeValue = aiCgcGrade(selected);
   const predictedBadge = predictedGradeValue ? buildBadge(normalizeGrade(predictedGradeValue), "predicted", "", false, isFullAssessmentComplete(selected), isDeepAssessmentComplete(selected)) : null;
   const predictionBoxes = [ cgcOfficialBadge, psaOfficialBadge, predictedBadge ].filter(Boolean);
@@ -5133,6 +5137,8 @@ function mountResults(cgc, psa) {
     const hgUnlocked = qualifies && !hgAlreadyRun;
     if (_pendingAssessResult && _pendingAssessResult.cgc) {
       _pendingAssessResult.cgc._highGradeUnlocked = qualifies;
+      // S16: track WHY it unlocked so Edit view can show the right explanation
+      _pendingAssessResult.cgc._highGradeReason = valueGate ? "key" : "grade";
     }
     if (hgUnlocked) {
       btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">DEEP ASSESSMENT</div><div style="font-size:10px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
@@ -5360,6 +5366,7 @@ async function assessHighGrade() {
     const _predictedNum = parseFloat(cgc.grade);
     const _vmatch = typeof window.matchValueKey === "function" ? !!window.matchValueKey(cgc.title, cgc.issue, cgc.publisher, cgc.printing) : false;
     cgc._highGradeUnlocked = unified.roboGrade && unified.roboGrade.score >= 90 || Number.isFinite(_predictedNum) && _predictedNum >= 9.0 || _vmatch;
+    cgc._highGradeReason = _vmatch ? "key" : "grade";
     try {
       const normalizedTitle = normalizeTitle((cgc.title || formData.title || "").trim().replace(/\s+/g, " ").replace(/^The\s+/i, ""), cgc.issueDate || formData.issueDate, cgc.printing || formData.printing);
       const issueForId = cgc.issue != null ? String(cgc.issue) : formData.issue || "";
@@ -6007,7 +6014,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: "2.0",
+      appVersion: "4.15",
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
@@ -6171,12 +6178,12 @@ async function completeAssessment() {
   formData.publisher = cgc.publisher || formData.publisher || "";
   formData.printing = cgc.printing || "";
   if (cgc.labelDetected && cgc.officialCGCGrade) {
-    formData.cgcGrade = cgc.officialCGCGrade;
+    formData.cgcGrade = normalizeGrade(cgc.officialCGCGrade);
     if (cgc.officialCGCCert) formData.cgcCert = cgc.officialCGCCert;
     if (cgc.officialPageQuality) formData.pageQuality = cgc.officialPageQuality;
   }
   if (psa.labelDetected && psa.officialPSAGrade) {
-    formData.psaGrade = psa.officialPSAGrade;
+    formData.psaGrade = normalizeGrade(psa.officialPSAGrade);
     if (psa.officialPSACert) formData.psaCert = psa.officialPSACert;
     if (psa.officialPageQuality && !formData.pageQuality) formData.pageQuality = psa.officialPageQuality;
   }
@@ -6205,6 +6212,7 @@ async function completeAssessment() {
   }
   formData.highGradeTier = !!cgc._highGradeTier;
   formData.highGradeUnlocked = !!cgc._highGradeUnlocked;
+  formData.highGradeReason = cgc._highGradeReason || "grade";
   formData.restorationCheckTier = !!cgc._restorationCheckTier;
   if (cgc.restorationReport) formData.restorationReport = cgc.restorationReport;
   formData.restorationFlag = !!cgc.restorationFlag;
@@ -6576,7 +6584,7 @@ function showGateTerminatedPreview(gateResult, reason, lockout, details) {
     lockout: lockout,
     details: details || null
   };
-  const html = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:5% 5%;box-sizing:border-box;gap:5%;">\n      <div style="padding:8px 18px;background:#3a1810;color:#ff8060;border-radius:8px;font-size:16px;font-weight:900;letter-spacing:1.5px;text-align:center;border:1.5px solid #ff8060;box-shadow:0 2px 10px rgba(0,0,0,0.4)">${label}</div>\n      <button id="assess-complete-btn"\n        style="width:auto;min-width:140px;max-width:280px;padding:0 24px;height:44px;background:#5a3030;color:#fff;border:none;font-size:14px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">\n        CANCEL\n      </button>\n    </div>`;
+  const html = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:5% 5%;box-sizing:border-box;gap:5%;">\n      <div style="display:flex;align-items:center;gap:12px">\n        <div style="padding:8px 18px;background:#3a1810;color:#ff8060;border-radius:8px;font-size:16px;font-weight:900;letter-spacing:1.5px;text-align:center;border:1.5px solid #ff8060;box-shadow:0 2px 10px rgba(0,0,0,0.4)">${label}</div>\n        <div style="display:flex;flex-direction:column;align-items:center;gap:2px">\n          <img src="assets/robocoin2.webp" style="width:48px;height:48px">\n          <div style="color:#d4af37;font-size:12px;font-weight:800;letter-spacing:0.5px">+1</div>\n        </div>\n      </div>\n      <button id="assess-complete-btn"\n        style="width:auto;min-width:140px;max-width:280px;padding:0 24px;height:44px;background:#5a3030;color:#fff;border:none;font-size:14px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">\n        CANCEL\n      </button>\n    </div>`;
   window.RobograderScan.slideResultsIntoPanel(html);
   setTimeout(() => {
     const btn = document.getElementById("assess-complete-btn");
@@ -6822,7 +6830,10 @@ function renderForm() {
     const ambient = cornerCount === 4 ? "#1a4a2a" : "#2a2a2a";
     const ambientText = cornerCount === 4 ? "#6abf6a" : "#6a6a6a";
     const baseLabel = alreadyRun ? "RE-RUN DEEP ASSESSMENT" : "DEEP ASSESSMENT";
-    return `<div style="display:flex;justify-content:center;margin-top:12px">\n            <button id="hg-assess-btn" onclick="assessHighGrade()" ${ready ? "" : "disabled"} style="width:75%;min-height:52px;border-radius:12px;background:${ambient};color:${ambientText};border:none;font-size:14px;font-weight:700;letter-spacing:1.5px;cursor:${ready ? "pointer" : "not-allowed"}">\n              ${assessing ? "Assessing…" : `${baseLabel} ${cornerCount < 4 ? `(${cornerCount}/4)` : ""}`}\n            </button>\n          </div>`;
+    const _hgReason = formData.highGradeReason === "key"
+      ? "This high-value key book can be graded more precisely with additional photos."
+      : "This high-grade book can be graded more precisely with additional photos.";
+    return `<div style="display:flex;justify-content:center;margin-top:12px">\n            <button id="hg-assess-btn" onclick="assessHighGrade()" ${ready ? "" : "disabled"} style="width:75%;min-height:52px;border-radius:12px;background:${ambient};color:${ambientText};border:none;font-size:14px;font-weight:700;letter-spacing:1.5px;cursor:${ready ? "pointer" : "not-allowed"}">\n              ${assessing ? "Assessing…" : `${baseLabel} ${cornerCount < 4 ? `(${cornerCount}/4)` : ""}`}\n            </button>\n          </div>\n          <div style="text-align:center;margin-top:8px;font-size:11px;color:#8a9a8a;line-height:1.4;padding:0 12px">${_hgReason}</div>`;
   })()}\n      </div>` : ""}\n      ${(() => {
     if (!hasIdentifiedSignatures(formData)) return "";
     const sigImgs = formData.signatureImages || [ null, null ];
@@ -6892,8 +6903,8 @@ function renderForm() {
     const pill = buildIntegrityPill(formData, true);
     return pill ? `<div style="display:flex;justify-content:center;margin-top:10px">${pill}</div>` : "";
   })() : ""}\n\n    \x3c!-- Grader Predictions (S11): renamed from "Assessment Results". This row\n         shows all of the relevant grade badges side-by-side: CGC Official, CGC\n         AI, PSA Official, PSA AI. A book can only be officially graded by one\n         service (CGC or PSA, not both), so at most 3 badges ever appear at\n         once — three boxes fit comfortably on one row. --\x3e\n    ${_assessed ? `<div style="margin-top:14px;padding:12px 14px;background:#141210;border:1px solid #2a2420;border-radius:10px;display:flex;flex-direction:column;align-items:center;gap:10px">\n      <div style="font-size:10px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase;text-align:center;width:100%">Predicted Grade</div>\n      <div style="display:flex;gap:10px;align-items:flex-start;justify-content:center;flex-wrap:wrap">\n        ${(() => {
-    const cgcOff = formData.cgcGrade ? buildBadge(formData.cgcGrade, "cgc-official", detectDesignation(formData), false) : "";
-    const psaOff = formData.psaGrade ? buildBadge(formData.psaGrade, "psa-official", formData.psaDesignation || "universal", false) : "";
+    const cgcOff = formData.cgcGrade ? buildBadge(normalizeGrade(formData.cgcGrade), "cgc-official", detectDesignation(formData), false) : "";
+    const psaOff = formData.psaGrade ? buildBadge(normalizeGrade(formData.psaGrade), "psa-official", formData.psaDesignation || "universal", false) : "";
     const predVal = formData.predictedGrade || formData.assessedCGCGrade;
     const predicted = predVal ? buildBadge(normalizeGrade(predVal), "predicted", "", false) : "";
     return [ cgcOff, psaOff, predicted ].filter(Boolean).join("");
@@ -7808,6 +7819,12 @@ async function submitFullAssessment() {
       if (result.pageQuality) formData.pageQuality = result.pageQuality;
       if (result.confidenceRange != null && formData.roboGrade) {
         formData.roboGrade.confidenceRange = result.confidenceRange;
+      }
+      // S16: Full Assessment recomputes the RoboScore with the confidence
+      // of 8 additional interior/structure images. This lets the score
+      // exceed the Deep ceiling (97) when the interior confirms quality.
+      if (result.roboScore != null && formData.roboGrade) {
+        formData.roboGrade.score = result.roboScore;
       }
       if (result.fullAssessmentNotes) formData.fullAssessmentNotes = result.fullAssessmentNotes;
       if (result.aiAssessment && result.aiAssessment.trim()) formData.aiAssessment = result.aiAssessment.trim();

@@ -129,9 +129,24 @@
     { idx: 2, slotName: 'corner-bl', rotate: false },
     { idx: 3, slotName: 'corner-br', rotate: false },
   ];
+  // S16: Full Assessment scans all 8 interior/structure images. Order matches
+  // the client's FULL_SLOTS storage order (exterior_staple, top_pages,
+  // outer_edge, bottom_pages, interior_front, interior_spread, interior_staple,
+  // interior_back). Each scans at 1.0s (half the main duration) since there are 8.
+  const SLOTS_FULL = [
+    { idx: 0, slotName: 'full-0', rotate: false },
+    { idx: 1, slotName: 'full-1', rotate: false },
+    { idx: 2, slotName: 'full-2', rotate: false },
+    { idx: 3, slotName: 'full-3', rotate: false },
+    { idx: 4, slotName: 'full-4', rotate: false },
+    { idx: 5, slotName: 'full-5', rotate: false },
+    { idx: 6, slotName: 'full-6', rotate: false },
+    { idx: 7, slotName: 'full-7', rotate: false },
+  ];
 
   // ── Region coordinates (% of chest image) ───────────────────────────
-  // Measured from the new 577×1830 Robograder_Scan_Frame.png. These
+  // Measured from the 577×1835 Robograder_Scan_Frame.webp (S16 update:
+  // 5px taller than original 1830, coin slot area added at the bottom).
   // numbers are the source of truth for where the cavity (laser-scan
   // display, step tracker) and the results panel (score badges, PQ
   // pill, COMPLETE button) appear on the shell.
@@ -177,32 +192,21 @@
   //   0:00 → tap Assess Grade.
   //   0:00.2 → chest cavity AND results panel begin sliding up together
   //            (2000ms ease-in-out).
-  //   0:02.2 → chest landed. Results panel landed too. 1000ms pause.
-  //   0:03.2 → photo 1 slides in (500ms ease-in-out)
-  //            scan (2500ms down) — S15 May 29: was 3000ms
-  //            slide out (500ms ease-in-out)
-  //   0:06.7 → photo 2 starts. Same pattern, scan direction up.
-  //   0:10.2 → photo 3 starts. Scan down.
-  //   0:13.7 → photo 4 starts. Scan up.
-  //   0:17.2 → photo loop ends.
-  //   0:17.2 → progress overlay slides in from the RIGHT (2000ms).
-  //   0:19.2 → overlay in place. Grid cycle + needle pulse start.
-  //            POPULATING INFO lights green.
-  //   0:20.7, 0:22.2, 0:23.7, 0:25.2 → remaining 4 buttons light at
-  //   1500ms intervals (paced + API-gated; API has typically returned
-  //   by now since it ran in parallel from t=0).
-  //   0:25.2 → grid cycle stops, needle pulses stops, needle sweeps to
-  //   final score angle (2000ms). Score boxes count up. PQ pill cycles
-  //   through 7 designations (1800ms linear) and lands on final.
-  //   0:30.0 → ASSESSING button becomes COMPLETE (in-place style change).
-  //
-  // Total: ~30 seconds animation, then holds on COMPLETE until tap.
+  //   0:02.2 → chest landed. Coin drop begins (1500ms: fade 0.5s, hold 0.5s,
+  //            drop+rotate 0.5s into the coin slot).
+  //   0:03.7 → coin gone. Photo 1 slides in.
   const CHEST_SLIDE_DELAY  = 200;
   const CHEST_SLIDE_TIME   = 2000;
-  const POST_CHEST_PAUSE   = 1000;
+  const COIN_DROP_TIME     = 1500;  // S16: coin fade + hold + drop into slot
+  const POST_CHEST_PAUSE   = COIN_DROP_TIME;
   const DISPLAY_FADE_DELAY = 100;
   const SLIDE_DURATION     = 500;
-  const SCAN_DURATION      = 2000;  // S16: was 2500 (and 3000 before). 2.0s per scan.
+  const SCAN_DURATION      = 2000;  // S16: was 2500 (and 3000 before). 2.0s per scan (main/corner).
+  // S16: Full Assessment scans 8 images, so it runs each scan at half the main
+  // duration (1.0s). _scanDurationMs is set per-run by runScanAnimation based on
+  // `kind` and applied as an inline animation-duration so it overrides the CSS
+  // keyframe duration (which stays 2.0s for the main/corner default).
+  let _scanDurationMs = SCAN_DURATION;
   // CSS @keyframes durations below changed in lockstep.
   const PAUSE_AFTER_SCAN   = 0;
   const FIRST_PHOTO_DELAY  = CHEST_SLIDE_DELAY + CHEST_SLIDE_TIME + POST_CHEST_PAUSE;
@@ -258,7 +262,7 @@
          intentional. The head extends above viewport top; cavity and
          results panel sit comfortably in the visible area. */
       width: 100vw;
-      height: calc(100vw / 0.3153);
+      height: calc(100vw / 0.3144);
       /* Anchor to bottom of viewport. */
       bottom: 0;
       /* S13 v13: switched slide-up from animating bottom to transform
@@ -486,6 +490,39 @@
     .rg-scan-laser.scan-up    { animation: rgScanUp    2.0s cubic-bezier(0.42, 0, 0.58, 1) forwards, rgScanFlicker 0.15s infinite alternate; }
     .rg-scan-laser.scan-right { animation: rgScanRight 2.0s cubic-bezier(0.42, 0, 0.58, 1) forwards, rgScanFlicker 0.15s infinite alternate; }
     .rg-scan-laser.scan-left  { animation: rgScanLeft  2.0s cubic-bezier(0.42, 0, 0.58, 1) forwards, rgScanFlicker 0.15s infinite alternate; }
+
+    /* S16: Coin drop animation — coin fades in, holds, drops into the slot
+       with a 90° CCW rotation. The clip container cuts visibility at the
+       coin slot Y-line (73.1% of the 577×1835 background). */
+    .rg-coin-clip {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 73.13%;   /* 1342 / 1835 — bottom of the coin slot */
+      overflow: hidden;
+      pointer-events: none;
+      z-index: 10;
+    }
+    .rg-coin {
+      position: absolute;
+      width: 16.6%;      /* 96 / 577 */
+      aspect-ratio: 1;
+      left: 50%;
+      top: 88.8%;        /* (1192) / 1342 — measured from Coin_Drop mockup */
+      transform: translate(-50%, 0) rotate(0deg);
+      opacity: 0;
+      animation: rgCoinFadeIn 0.5s ease forwards,
+                 rgCoinDrop 0.5s ease-in 1.0s forwards;
+      pointer-events: none;
+    }
+    @keyframes rgCoinFadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    @keyframes rgCoinDrop {
+      from { transform: translate(-50%, 0) rotate(0deg); }
+      to   { transform: translate(-50%, 250%) rotate(-90deg); }
+    }
 
     /* Step tracker overlay — slides into the cavity from the left after
        the laser-scan completes. Same coordinates as .rg-scan-display
@@ -815,8 +852,10 @@
     await wait(SLIDE_DURATION, cancelToken);
 
     laser.classList.add('active', 'scan-' + scanDir);
-    await wait(SCAN_DURATION, cancelToken);
+    laser.style.animationDuration = _scanDurationMs + 'ms, 0.15s';
+    await wait(_scanDurationMs, cancelToken);
     laser.classList.remove('scan-' + scanDir, 'active');
+    laser.style.animationDuration = '';
     await wait(PAUSE_AFTER_SCAN, cancelToken);
 
     photoEl.classList.remove('in-view');
@@ -1168,6 +1207,27 @@
   }
 
   // ── Public API ─────────────────────────────────────────────────────
+  // ── Coin drop (S16) ──────────────────────────────────────────────────
+  // Creates the coin element inside the shell. The CSS animation handles
+  // timing: fade in 0.5s → hold 0.5s → drop+rotate 0.5s into the slot.
+  // Auto-cleans after 1600ms. The coin is clipped by a container whose
+  // bottom edge is at the coin-slot Y-line.
+  function playCoinDrop(cancelToken) {
+    const shell = document.querySelector('.rg-scan-shell');
+    if (!shell) return;
+    const clip = document.createElement('div');
+    clip.className = 'rg-coin-clip';
+    const coin = document.createElement('img');
+    coin.src = 'assets/robocoin2.webp';
+    coin.className = 'rg-coin';
+    clip.appendChild(coin);
+    shell.appendChild(clip);
+    // Auto-cleanup after animation completes (1.5s + 100ms buffer)
+    const t = setTimeout(() => { if (clip.parentNode) clip.remove(); }, 1600);
+    if (cancelToken) cancelToken._timers.add(t);
+    debugLog('coin drop started');
+  }
+
   // photoUrls: flat array of up to 4 URLs in slot order.
   // kind:      'main' (default) or 'corner'. Selects which slot table.
   function runScanAnimation(photoUrls, kind) {
@@ -1182,7 +1242,9 @@
       teardown();
     }
 
-    const slotTable = (kind === 'corner') ? SLOTS_CORNER : SLOTS_MAIN;
+    const slotTable = (kind === 'corner') ? SLOTS_CORNER : (kind === 'full') ? SLOTS_FULL : SLOTS_MAIN;
+    // S16: Full Assessment runs 8 scans, so each is 1.0s (half the 2.0s main scan).
+    _scanDurationMs = (kind === 'full') ? 1000 : SCAN_DURATION;
 
     const activeSlots = slotTable
       .filter(s => photoUrls && photoUrls[s.idx])
@@ -1232,6 +1294,16 @@
       _timers: new Set()
     };
     _activeCancelToken = cancelToken;
+
+    // S16: Start the coin drop after the chest finishes sliding up.
+    // The coin animation runs for COIN_DROP_TIME (1500ms) = POST_CHEST_PAUSE,
+    // so it finishes right when FIRST_PHOTO_DELAY expires and the first
+    // photo scan begins. The coin CSS animation handles all timing internally.
+    const coinTimer = setTimeout(() => {
+      if (cancelToken.cancelled) return;
+      playCoinDrop(cancelToken);
+    }, CHEST_SLIDE_DELAY + CHEST_SLIDE_TIME);
+    cancelToken._timers.add(coinTimer);
 
     // The scan sequence (when there are photos to scan).
     let promise;
