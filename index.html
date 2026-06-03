@@ -3672,19 +3672,6 @@ function showDetail(id) {
     html += `</div>`;
   }
   html += ownershipPillHtml;
-  if (hasIdentifiedSignatures(selected)) {
-    const sigImgs = (selected.signatureImages || []).filter(u => u);
-    if (sigImgs.length > 0) {
-      const imgAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
-      const signerLabel = formatSignerList(selected);
-      html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a6abf">\n        <div style="font-size:11px;color:#a08fd4;font-weight:700;letter-spacing:2px;margin-bottom:8px">SIGNATURE${sigImgs.length > 1 ? "S" : ""}${signerLabel ? ` — ${esc(signerLabel)}` : ""}</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
-      sigImgs.forEach((url, displayIdx) => {
-        const storageIdx = (selected.signatureImages || []).findIndex((u, i) => u === url && i >= displayIdx);
-        html += `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:1/1">\n          <img src="${url}" ${imgAttrs} onclick="openSignatureLightbox('${selected.id}',${storageIdx})" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in">\n        </div>`;
-      });
-      html += `</div></div>`;
-    }
-  }
   if (selected.highGradeUnlocked) {
     const ci = selected.cornerImages || [];
     const hasAnyCorner = ci.some(u => u);
@@ -3723,6 +3710,19 @@ function showDetail(id) {
       }
     });
     html += `</div>`;
+  }
+  if (hasIdentifiedSignatures(selected)) {
+    const sigImgs = (selected.signatureImages || []).filter(u => u);
+    if (sigImgs.length > 0) {
+      const imgAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
+      const signerLabel = formatSignerList(selected);
+      html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a6abf">\n        <div style="font-size:11px;color:#a08fd4;font-weight:700;letter-spacing:2px;margin-bottom:8px">SIGNATURE${sigImgs.length > 1 ? "S" : ""}${signerLabel ? ` — ${esc(signerLabel)}` : ""}</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
+      sigImgs.forEach((url, displayIdx) => {
+        const storageIdx = (selected.signatureImages || []).findIndex((u, i) => u === url && i >= displayIdx);
+        html += `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:1/1">\n          <img src="${url}" ${imgAttrs} onclick="openSignatureLightbox('${selected.id}',${storageIdx})" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in">\n        </div>`;
+      });
+      html += `</div></div>`;
+    }
   }
   if (selected.roboGrade) {
     html += `<div style="margin-top:16px">${buildRoboGradeDisplay(selected.roboGrade, selected)}</div>`;
@@ -7952,6 +7952,7 @@ function tapSlot(slotIndex, kind) {
   const captureOrder = kind === "corner" ? CAMERA_CAPTURE_ORDER_CORNER : kind === "signature" ? [ 0, 1 ] : kind === "interior" ? [ 0, 1, 2, 3, 4, 5, 6, 7 ] : CAMERA_CAPTURE_ORDER_MAIN;
   const emptySlotsInOrder = captureOrder.filter(i => !list[i]);
   const isMultiEmpty = kind !== "signature" && emptySlotsInOrder.length > 1 && emptySlotsInOrder.includes(slotIndex);
+  console.log("[tapSlot] kind:", kind, "slot:", slotIndex, "emptySlots:", emptySlotsInOrder.length, "isMultiEmpty:", isMultiEmpty, "mode:", isMultiEmpty ? "walkthrough" : "single");
   if (isMultiEmpty) {
     const startIdx = emptySlotsInOrder.indexOf(slotIndex);
     const queue = [ ...emptySlotsInOrder.slice(startIdx + 1) ];
@@ -8481,6 +8482,7 @@ async function cameraCapture() {
     slot: _cameraState.current,
     dataUrl: dataUrl
   });
+  console.log("[camera] captured slot", _cameraState.current, "kind:", _cameraState.kind, "mode:", _cameraState.mode, "queue:", JSON.stringify(_cameraState.queue));
   // S16 Pass 2b: on the FRONT capture (slot 0) of a main walkthrough, run slab
   // detection NOW on the raw uncropped frame, so a detected slab can prune the
   // remaining interior (page_quality, slot 2) + raking (slot 3) slots before
@@ -8509,10 +8511,13 @@ async function cameraCapture() {
     if (!_cameraState) return;
   }
   if (captureBtn) captureBtn.disabled = false;
+  console.log("[camera] advance check: mode=", _cameraState?.mode, "queueLen=", _cameraState?.queue?.length, "kind=", _cameraState?.kind);
   if (_cameraState.mode === "walkthrough" && _cameraState.queue.length > 0) {
     const nextSlot = _cameraState.queue.shift();
+    console.log("[camera] advancing to slot", nextSlot);
     cameraOpenSlot(nextSlot);
   } else {
+    console.log("[camera] finishing — mode:", _cameraState?.mode, "queueEmpty:", !_cameraState?.queue?.length);
     cameraFinish();
   }
 }
