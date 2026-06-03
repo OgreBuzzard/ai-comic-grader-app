@@ -65,16 +65,16 @@ const FULL_SLOTS = [
     exam: 'Close-up of the BOTTOM staple from the OUTSIDE of the spine. Macro zoom. Examine for rust, discoloration, wear around the staple hole, popped or missing staple.' },
   { key: 'top_pages', label: 'Top Pages',
     exam: 'Looking down at the TOP of the book, showing the tops of all pages with the centerfold crease visible and a portion of the cover (to confirm it is the same book). Examine for tears, frays, and any sign that interior pages are missing or married (stuck/foreign pages).' },
-  { key: 'outer_edge', label: 'Outer Edge',
-    exam: 'The OUTER edge of the book (opposite the spine) with the back cover shown in raking light. Examine for tears and frays, and for signs of TRIMMING (an unnaturally clean, straight, or fresh-cut edge; reduced page margins). Trimming is very difficult to detect reliably — only flag it when the evidence is clear, and phrase any trimming observation cautiously.' },
   { key: 'bottom_pages', label: 'Bottom Pages',
     exam: 'Same as Top Pages but looking UP from the BOTTOM of the book. Together with Top Pages this confirms the interior pages are complete. Examine for tears, frays, missing or married pages.' },
+  { key: 'outer_edge', label: 'Outer Edge',
+    exam: 'The OUTER edge of the book (opposite the spine) with the back cover shown in raking light. Examine for tears and frays, and for signs of TRIMMING (an unnaturally clean, straight, or fresh-cut edge; reduced page margins). Trimming is very difficult to detect reliably — only flag it when the evidence is clear, and phrase any trimming observation cautiously.' },
   { key: 'interior_front', label: 'Interior Front',
     exam: 'A 2-page spread of the inside front cover and first page. Examine for tanning, tears, foxing, stains, and other common interior defects. No cropping — the full spread should be visible.' },
-  { key: 'interior_staple', label: 'Interior Staples',
-    exam: 'Same close framing of both staples but from the INSIDE of the book (centerfold). Examine for rust, wear, popped staples, and any sign the staples were replaced or disturbed.' },
   { key: 'interior_back', label: 'Interior Back',
-    exam: 'A 2-page spread of the last page and inside back cover. Same examination as Interior Front: tanning, tears, foxing, stains, common interior defects.' }
+    exam: 'A 2-page spread of the last page and inside back cover. Same examination as Interior Front: tanning, tears, foxing, stains, common interior defects.' },
+  { key: 'interior_staple', label: 'Interior Staples',
+    exam: 'Same close framing of both staples but from the INSIDE of the book (centerfold). Examine for rust, wear, popped staples, and any sign the staples were replaced or disturbed.' }
 ];
 const SPEC_BY_KEY = Object.fromEntries(FULL_SLOTS.map(s => [ s.key, s ]));
 
