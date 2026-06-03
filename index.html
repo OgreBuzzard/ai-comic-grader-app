@@ -3314,6 +3314,10 @@ async function redeemPromoCode() {
 
 function showList() {
   view = "list";
+  // S16: hide floating button bar when leaving form view
+  const _fb = document.getElementById("rg-float-btn-bar");
+  if (_fb) _fb.classList.remove("visible");
+  if (window._rgFloatObserver) { window._rgFloatObserver.disconnect(); window._rgFloatObserver = null; }
   selected = null;
   refreshHeaderControls();
   renderList();
@@ -3635,6 +3639,10 @@ function showDetail(id) {
   selected = items.find(c => c.id === id);
   if (!selected) return;
   view = "detail";
+  // S16: hide floating button bar when leaving form view
+  const _fb2 = document.getElementById("rg-float-btn-bar");
+  if (_fb2) _fb2.classList.remove("visible");
+  if (window._rgFloatObserver) { window._rgFloatObserver.disconnect(); window._rgFloatObserver = null; }
   const _ab = document.getElementById("add-btn");
   if (_ab) _ab.style.visibility = "hidden";
   const cost = totalCost(selected);
@@ -3664,7 +3672,7 @@ function showDetail(id) {
       }
     };
     const s = styleByState[own] || styleByState["Owned"];
-    return `<div style="margin-top:14px;display:flex;justify-content:center">\n      <button onclick="cycleOwnershipFromDetail('${esc(selected.id)}')"\n        style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;\n               padding:6px 16px;border-radius:14px;cursor:pointer;\n               background:${s.bg};color:${s.fg};border:1px solid ${s.border}">\n        ${own.toUpperCase()}\n      </button>\n    </div>`;
+    return `<div style="margin-top:10px;display:flex;justify-content:flex-start">\n      <button onclick="cycleOwnershipFromDetail('${esc(selected.id)}')"\n        style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;\n               padding:6px 16px;border-radius:14px;cursor:pointer;\n               background:${s.bg};color:${s.fg};border:1px solid ${s.border}">\n        ${own.toUpperCase()}\n      </button>\n    </div>`;
   })();
   if (selected.images?.length > 0) {
     const imgs = selected.images;
@@ -6998,7 +7006,7 @@ function renderForm() {
       }
     };
     const s = styleByState[own] || styleByState["Owned"];
-    return `<div style="display:flex;align-items:center;justify-content:center;gap:10px;margin:10px 0 2px">\n        <span style="font-family:'Barlow Condensed',sans-serif;font-size:12px;letter-spacing:1px;color:#8a7a6a">OWNERSHIP</span>\n        <button onclick="cycleOwnership()"\n          style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;\n                 padding:5px 14px;border-radius:14px;cursor:pointer;\n                 background:${s.bg};color:${s.fg};border:1px solid ${s.border}">\n          ${own.toUpperCase()}\n        </button>\n      </div>`;
+    return `<div style="display:flex;align-items:center;gap:10px;margin:10px 0 2px">\n        <span style="font-family:'Barlow Condensed',sans-serif;font-size:12px;letter-spacing:1px;color:#8a7a6a">OWNERSHIP</span>\n        <button onclick="cycleOwnership()"\n          style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;\n                 padding:5px 14px;border-radius:14px;cursor:pointer;\n                 background:${s.bg};color:${s.fg};border:1px solid ${s.border}">\n          ${own.toUpperCase()}\n        </button>\n      </div>`;
   })()}\n    <div style="display:flex;gap:10px;padding-top:4px">\n      <button id="save-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="submitForm()" ${formData.title?.trim() ? "" : "disabled"}>${isEdit ? "Save" : "Add to Collection"}</button>\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cancelForm()">Cancel</button>\n    </div>\n    ` : `\n    \x3c!-- Add-flow collapsed state (S11): show only the Enter Manually button.\n         Steers users toward photos-first by hiding the form fields until\n         either (a) they tap Enter Manually, or (b) an assessment runs and\n         _assessed becomes true. Edit view always shows the full form.\n         S14: ownership cycle pill inserted above Enter Manually. Lets a\n         user mark a book as Owned (default) / Watching / Sold before\n         assessing — so they can assess someone else's book without\n         claiming it, or track a book they're considering buying. Same\n         pill style as detail and edit views (color-coded by state),\n         centered between the two full-width buttons. Public-listing is\n         locked off whenever ownership !== 'Owned'; the cycleOwnership\n         handler clears formData.publicListing on transitions out of\n         Owned so a stale 'true' can't be saved. --\x3e\n    ${(() => {
     const own = formData.ownership || "Owned";
     const styleByState = {
@@ -7019,9 +7027,46 @@ function renderForm() {
       }
     };
     const s = styleByState[own] || styleByState["Owned"];
-    return `<div style="display:flex;justify-content:center;margin-top:14px">\n        <button onclick="cycleOwnership()"\n          style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;\n                 padding:5px 12px;border-radius:14px;cursor:pointer;\n                 background:${s.bg};color:${s.fg};border:1px solid ${s.border}">\n          ${own.toUpperCase()}\n        </button>\n      </div>`;
+    return `<div style="display:flex;justify-content:flex-start;margin-top:14px">\n        <button onclick="cycleOwnership()"\n          style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;\n                 padding:5px 12px;border-radius:14px;cursor:pointer;\n                 background:${s.bg};color:${s.fg};border:1px solid ${s.border}">\n          ${own.toUpperCase()}\n        </button>\n      </div>`;
   })()}\n    <div style="display:flex;justify-content:center;margin-top:8px">\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="enterManualMode()" style="width:75%">Enter Manually</button>\n    </div>\n    `}\n  </div>`;
   document.getElementById("main").innerHTML = html;
+
+  // S16: Floating assessment button — appears when any assessment button
+  // scrolls out of view so the user always knows actions are available.
+  // Observes the primary assess-btn; falls through to hg-assess-btn or
+  // full-assess-btn if those are the topmost visible action.
+  (function setupFloatingBtn() {
+    const bar = document.getElementById("rg-float-btn-bar");
+    const floatBtn = document.getElementById("rg-float-btn");
+    if (!bar || !floatBtn) return;
+    // Disconnect any previous observer
+    if (window._rgFloatObserver) { window._rgFloatObserver.disconnect(); window._rgFloatObserver = null; }
+    // Find the best button to watch and mirror
+    const assessBtn = document.getElementById("assess-btn");
+    const hgBtn = document.getElementById("hg-assess-btn");
+    const fullBtn = document.getElementById("full-assess-btn");
+    const target = assessBtn || hgBtn || fullBtn;
+    if (!target) { bar.classList.remove("visible"); return; }
+    // Mirror the target button's styling
+    if (target === fullBtn) {
+      floatBtn.className = "rg-btn rg-btn-assess rg-btn-gold";
+      floatBtn.textContent = "FULL ASSESSMENT";
+    } else if (target === hgBtn) {
+      floatBtn.className = "rg-btn rg-btn-assess rg-btn-silver";
+      floatBtn.textContent = "DEEP ASSESSMENT";
+    } else {
+      floatBtn.className = "rg-btn rg-btn-assess rg-btn-bronze";
+      floatBtn.textContent = target.textContent.trim();
+    }
+    floatBtn.onclick = () => target.click();
+    window._rgFloatObserver = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting) bar.classList.remove("visible");
+        else bar.classList.add("visible");
+      });
+    }, { threshold: 0.1 });
+    window._rgFloatObserver.observe(target);
+  })();
 }
 
 function renderImgPreview() {}
@@ -9172,5 +9217,9 @@ initFirebase();
   window.addEventListener("resize", update);
 })();
 </script>
+<div id="rg-float-btn-bar">
+  <button id="rg-float-btn" class="rg-btn rg-btn-assess rg-btn-bronze" onclick="document.getElementById('assess-btn')?.click()">ASSESS GRADE</button>
+</div>
+
 </body>
 </html>
