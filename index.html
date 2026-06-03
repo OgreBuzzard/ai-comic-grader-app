@@ -1869,9 +1869,13 @@ const FULL_DEEP_LIST = [ {
 // DISPLAY order/layout is separate (FULL_DISPLAY) — Edit & Detail show the three
 // interior-page slots as 1/3-width 3:2 tiles, then the five strip slots full-width 6:1.
 const FULL_SLOTS = [ {
-  key: "exterior_staple",
-  label: "Exterior Staples",
-  hint: "Both staples, from outside the spine (macro)"
+  key: "exterior_top_staple",
+  label: "Exterior Top Staple",
+  hint: "Close-up of the top staple from outside the spine"
+}, {
+  key: "exterior_bottom_staple",
+  label: "Exterior Bottom Staple",
+  hint: "Close-up of the bottom staple from outside the spine"
 }, {
   key: "top_pages",
   label: "Top Pages",
@@ -1889,10 +1893,6 @@ const FULL_SLOTS = [ {
   label: "Interior Front",
   hint: "2-page spread, inside front + first page"
 }, {
-  key: "interior_spread",
-  label: "Interior Spread",
-  hint: "2nd & 3rd interior story pages"
-}, {
   key: "interior_staple",
   label: "Interior Staples",
   hint: "Both staples, from inside the centerfold (macro)"
@@ -1902,12 +1902,15 @@ const FULL_SLOTS = [ {
   hint: "2-page spread, last page + inside back"
 } ];
 
-// S16 late: Display order + per-slot layout for Edit & Detail. `width` is
-// "full" (100% strip) or "half" (50% inline tile). `centered` puts a half-width
-// slot on its own row, centered. The interior_staple photo is captured portrait
-// but auto-rotated 90° CCW at capture time so it stores+displays as landscape.
+// S16: Exterior Staples split into two close-up shots (top + bottom).
+// Interior Spread dropped; interior_front + interior_back go side by side.
+// interior_staple captured portrait, auto-rotated 90° CCW at capture time.
 const FULL_DISPLAY = [ {
-  key: "exterior_staple",
+  key: "exterior_top_staple",
+  width: "full",
+  aspect: "5 / 1"
+}, {
+  key: "exterior_bottom_staple",
   width: "full",
   aspect: "5 / 1"
 }, {
@@ -1931,14 +1934,9 @@ const FULL_DISPLAY = [ {
   width: "half",
   aspect: "3 / 2"
 }, {
-  key: "interior_spread",
-  width: "half",
-  aspect: "3 / 2"
-}, {
   key: "interior_back",
   width: "half",
-  aspect: "3 / 2",
-  centered: true
+  aspect: "3 / 2"
 } ];
 
 function fullSlotIndex(key) {
@@ -8085,6 +8083,14 @@ async function cameraOpen(state) {
       audio: false
     });
     _cameraState.stream = initialStream;
+    // S16: Enable continuous auto-focus so close-up shots (exterior staples,
+    // interior staples) stay sharp without manual tap-to-focus.
+    try {
+      const _afTrack = initialStream.getVideoTracks()[0];
+      if (_afTrack && _afTrack.applyConstraints) {
+        await _afTrack.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
+      }
+    } catch (_afErr) { /* focusMode not supported on this device */ }
     const video = document.getElementById("camera-video");
     video.srcObject = initialStream;
     try {
@@ -8130,10 +8136,12 @@ async function cameraOpen(state) {
       }
       console.log("[camera] kind=" + _cameraState.kind + " target=" + targetZoom + "x lens options:", lensOptions.map(l => l.label).join(","));
       _cameraState.lenses = lensOptions;
-      // S16: default to 1× (wide) for main-kind captures (front/back/PQ/spine) —
-      // 2× was cropping the cover and forcing a manual Zoom Out every shot.
-      // Corners still default to the zoomed lens (close detail is the point).
-      const _zoomDefault = _cameraState.kind === "corner" && lensOptions.length > 1;
+      // S16: default to zoomed lens for corners AND Full Assessment close-up
+      // slots (exterior staples 0,1 + top/bottom pages 2,4 need macro detail).
+      // Outer Edge (3), Interior Front (5), Interior Staples (6), Interior Back (7)
+      // stay at wide (1×). Main-kind captures also default wide.
+      const _isZoomedInteriorSlot = _cameraState.kind === "interior" && [0, 1, 2, 4].includes(_cameraState.current);
+      const _zoomDefault = (_cameraState.kind === "corner" || _isZoomedInteriorSlot) && lensOptions.length > 1;
       _cameraState.currentLensIdx = _zoomDefault ? 1 : 0;
       if (lensOptions.length > 0) {
         await switchToLens(_cameraState.currentLensIdx);
