@@ -521,7 +521,7 @@
     }
     @keyframes rgCoinDrop {
       from { transform: translate(-50%, 0) rotate(0deg); }
-      to   { transform: translate(-50%, 250%) rotate(-90deg); }
+      to   { transform: translate(-50%, 250%) rotate(90deg); }
     }
 
     /* Step tracker overlay — slides into the cavity from the left after
