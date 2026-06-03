@@ -59,8 +59,10 @@ const FULL_SLOT_COUNT = 8;
 // The 8 slots, in order. `key` is the storage slot name; `label` is the
 // user-facing name; `exam` is what the model examines this image for.
 const FULL_SLOTS = [
-  { key: 'exterior_staple', label: 'Exterior Staples',
-    exam: 'Corner-macro zoom level, framing BOTH staples from the OUTSIDE of the book (the spine exterior). Examine closely for rust, discoloration, wear around the staple holes, and popped or missing staples.' },
+  { key: 'exterior_top_staple', label: 'Exterior Top Staple',
+    exam: 'Close-up of the TOP staple from the OUTSIDE of the spine. Macro zoom. Examine for rust, discoloration, wear around the staple hole, popped or missing staple.' },
+  { key: 'exterior_bottom_staple', label: 'Exterior Bottom Staple',
+    exam: 'Close-up of the BOTTOM staple from the OUTSIDE of the spine. Macro zoom. Examine for rust, discoloration, wear around the staple hole, popped or missing staple.' },
   { key: 'top_pages', label: 'Top Pages',
     exam: 'Looking down at the TOP of the book, showing the tops of all pages with the centerfold crease visible and a portion of the cover (to confirm it is the same book). Examine for tears, frays, and any sign that interior pages are missing or married (stuck/foreign pages).' },
   { key: 'outer_edge', label: 'Outer Edge',
@@ -69,8 +71,6 @@ const FULL_SLOTS = [
     exam: 'Same as Top Pages but looking UP from the BOTTOM of the book. Together with Top Pages this confirms the interior pages are complete. Examine for tears, frays, missing or married pages.' },
   { key: 'interior_front', label: 'Interior Front',
     exam: 'A 2-page spread of the inside front cover and first page. Examine for tanning, tears, foxing, stains, and other common interior defects. No cropping — the full spread should be visible.' },
-  { key: 'interior_spread', label: 'Interior Spread',
-    exam: 'A 2-page spread of the SECOND and THIRD interior story pages. Examine the same way the initial Interior image was examined, and decide whether the initial page-quality assessment should remain, move up, or move down.' },
   { key: 'interior_staple', label: 'Interior Staples',
     exam: 'Same close framing of both staples but from the INSIDE of the book (centerfold). Examine for rust, wear, popped staples, and any sign the staples were replaced or disturbed.' },
   { key: 'interior_back', label: 'Interior Back',
@@ -271,7 +271,7 @@ export default async function handler(req, res) {
   // ── S15 May 30: real 8-slot Full Assessment prompt ──────────────────────────
   // Each image maps to a named slot with its own examination standard. The
   // model examines all 8, may ADJUST the grade (interior/structural findings
-  // can move it), and re-judges page quality up/down from the Interior Spread.
+  // can move it), and re-judges page quality up/down from the Interior Front/Back.
   // Precision modifier may go as low as 1 or 0 — the 8 images give a near-
   // complete view of the book's interior and structure.
   // Align the per-image examination specs to the order the client actually sent
@@ -295,10 +295,10 @@ You will receive exactly 8 images, in this fixed order, each with its own purpos
 ${slotList}
 ${initialContext}${priorBlock}${priorDefectBlock}
 WHAT TO DO WITH EACH IMAGE GROUP:
-- Staple condition: from the Exterior Staples and Interior Staples photos — note rust, wear, popping, or replacement only if present.
+- Staple condition: from the Exterior Top Staple, Exterior Bottom Staple, and Interior Staples photos — note rust, wear, popping, or replacement only if present.
 - Page completeness: from the Top Pages and Bottom Pages photos — confirm the interior pages are complete; flag missing or married pages only if you actually see evidence.
 - Interior cover tanning / defects: from the Interior Front and Interior Back photos — note tanning, tears, foxing, stains only if present.
-- Page quality: compare the Interior Spread to the prior page-quality call (${initialPageQuality || 'not provided'}). KEEP the prior rating unless the spread shows page quality that is SUBSTANTIALLY different. Only move it when the difference is clear and material — small differences do not justify a change.
+- Page quality: compare the Interior Front and Interior Back photos to the prior page-quality call (${initialPageQuality || 'not provided'}). KEEP the prior rating unless the interior pages show page quality that is SUBSTANTIALLY different. Only move it when the difference is clear and material — small differences do not justify a change.
 
 WRITING THE UPDATED CONDITION ASSESSMENT (aiAssessment):
 - PRESERVE the core information from the prior Condition Assessment — the cover-condition observations, the dominant defects, and the grade rationale already established. Do not drop or rewrite those findings.
