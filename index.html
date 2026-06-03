@@ -379,17 +379,6 @@ onAuthStateChanged(auth, async user => {
       color: #a8d0f0 !important; border-color: rgba(168,208,240,0.15) !important;
     }
 
-    /* S16: Floating assessment button — appears when the main button
-       scrolls out of view so the user always knows they can assess. */
-    #rg-float-btn-bar {
-      display: none; position: fixed; bottom: 0; left: 0; right: 0;
-      z-index: 5500; padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
-      background: rgba(18,18,16,0.92); backdrop-filter: blur(8px);
-      border-top: 1px solid rgba(184,134,11,0.2);
-      justify-content: center;
-    }
-    #rg-float-btn-bar.visible { display: flex; }
-
     /* Category — secondary: white + olive */
     .rg-btn-secondary {
       background: #ffffff;
@@ -1866,8 +1855,8 @@ const FULL_DEEP_LIST = [ {
 
 // S16: FULL_SLOTS is in CAPTURE order = STORAGE order (interiorImages[i] maps to
 // FULL_SLOTS[i]; the camera walks 0..7 in this order — Matt's smoothest flow).
-// DISPLAY order/layout is separate (FULL_DISPLAY) — Edit & Detail show the three
-// interior-page slots as 1/3-width 3:2 tiles, then the five strip slots full-width 6:1.
+// DISPLAY order/layout matches capture order. Interior Staples is last (slot 7,
+// portrait, auto-rotated CW). Exterior staples and top/bottom pages are zoomed.
 const FULL_SLOTS = [ {
   key: "exterior_top_staple",
   label: "Exterior Top Staple",
@@ -1881,30 +1870,30 @@ const FULL_SLOTS = [ {
   label: "Top Pages",
   hint: "Looking down at page tops; centerfold + bit of cover"
 }, {
-  key: "outer_edge",
-  label: "Outer Edge",
-  hint: "Outer edge + back in raking light (trimming check)"
-}, {
   key: "bottom_pages",
   label: "Bottom Pages",
   hint: "Looking up from the bottom; page bottoms"
+}, {
+  key: "outer_edge",
+  label: "Outer Edge",
+  hint: "Outer edge + back in raking light (trimming check)"
 }, {
   key: "interior_front",
   label: "Interior Front",
   hint: "2-page spread, inside front + first page"
 }, {
-  key: "interior_staple",
-  label: "Interior Staples",
-  hint: "Both staples, from inside the centerfold (macro)"
-}, {
   key: "interior_back",
   label: "Interior Back",
   hint: "2-page spread, last page + inside back"
+}, {
+  key: "interior_staple",
+  label: "Interior Staples",
+  hint: "Both staples, from inside the centerfold (macro)"
 } ];
 
-// S16: Exterior Staples split into two close-up shots (top + bottom).
-// Interior Spread dropped; interior_front + interior_back go side by side.
-// interior_staple captured portrait, auto-rotated 90° CCW at capture time.
+// S16: Display order matches capture order. 5 full-width strips, then
+// interior_front + interior_back side by side, then interior_staple strip.
+// Interior Staples (slot 7) is captured portrait, auto-rotated CW at capture.
 const FULL_DISPLAY = [ {
   key: "exterior_top_staple",
   width: "full",
@@ -1918,15 +1907,11 @@ const FULL_DISPLAY = [ {
   width: "full",
   aspect: "5 / 1"
 }, {
-  key: "outer_edge",
-  width: "full",
-  aspect: "5 / 1"
-}, {
   key: "bottom_pages",
   width: "full",
   aspect: "5 / 1"
 }, {
-  key: "interior_staple",
+  key: "outer_edge",
   width: "full",
   aspect: "5 / 1"
 }, {
@@ -1937,6 +1922,10 @@ const FULL_DISPLAY = [ {
   key: "interior_back",
   width: "half",
   aspect: "3 / 2"
+}, {
+  key: "interior_staple",
+  width: "full",
+  aspect: "5 / 1"
 } ];
 
 function fullSlotIndex(key) {
@@ -3312,10 +3301,6 @@ async function redeemPromoCode() {
 
 function showList() {
   view = "list";
-  // S16: hide floating button bar when leaving form view
-  const _fb = document.getElementById("rg-float-btn-bar");
-  if (_fb) _fb.classList.remove("visible");
-  if (window._rgFloatObserver) { window._rgFloatObserver.disconnect(); window._rgFloatObserver = null; }
   selected = null;
   refreshHeaderControls();
   renderList();
@@ -3637,10 +3622,6 @@ function showDetail(id) {
   selected = items.find(c => c.id === id);
   if (!selected) return;
   view = "detail";
-  // S16: hide floating button bar when leaving form view
-  const _fb2 = document.getElementById("rg-float-btn-bar");
-  if (_fb2) _fb2.classList.remove("visible");
-  if (window._rgFloatObserver) { window._rgFloatObserver.disconnect(); window._rgFloatObserver = null; }
   const _ab = document.getElementById("add-btn");
   if (_ab) _ab.style.visibility = "hidden";
   const cost = totalCost(selected);
@@ -5467,7 +5448,7 @@ async function assessHighGrade() {
   }
   const _stuck = document.getElementById("assess-btn") || document.getElementById("hg-assess-btn");
   if (_stuck && _stuck.textContent && /ASSESS/i.test(_stuck.textContent)) {
-    _stuck.textContent = _assessed ? "RE-ASSESS GRADE" : "ASSESS GRADE";
+    _stuck.textContent = _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE";
     _stuck.disabled = false;
     _stuck.style.opacity = "";
   }
@@ -6356,7 +6337,7 @@ async function assessGrade() {
   if (!eligibility.allowed) {
     alert(eligibility.message);
     if (_earlyBtn) {
-      _earlyBtn.textContent = _assessed ? "RE-ASSESS GRADE" : "ASSESS GRADE";
+      _earlyBtn.textContent = _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE";
       _earlyBtn.disabled = false;
       _earlyBtn.style.opacity = "";
     }
@@ -6367,7 +6348,7 @@ async function assessGrade() {
       showBuyCredits();
     }
     if (_earlyBtn) {
-      _earlyBtn.textContent = _assessed ? "RE-ASSESS GRADE" : "ASSESS GRADE";
+      _earlyBtn.textContent = _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE";
       _earlyBtn.disabled = false;
       _earlyBtn.style.opacity = "";
     }
@@ -6385,7 +6366,7 @@ async function assessGrade() {
       const ok = confirm(`These photos match an existing assessment:\n\n` + `${dupTitle} ${dupIssue}\n` + `Robograde Score: ${dupGradeStr}\n` + `Assessed: ${dupDate}\n\n` + `Re-running may produce a slightly different grade due to natural assessment variance. ` + `Run anyway? (1 credit will be used.)`);
       if (!ok) {
         if (_earlyBtn) {
-          _earlyBtn.textContent = _assessed ? "RE-ASSESS GRADE" : "ASSESS GRADE";
+          _earlyBtn.textContent = _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE";
           _earlyBtn.disabled = false;
           _earlyBtn.style.opacity = "";
         }
@@ -6577,7 +6558,7 @@ async function assessGrade() {
   }
   const _stuck = document.getElementById("assess-btn") || document.getElementById("hg-assess-btn");
   if (_stuck && _stuck.textContent && /ASSESS/i.test(_stuck.textContent)) {
-    _stuck.textContent = _assessed ? "RE-ASSESS GRADE" : "ASSESS GRADE";
+    _stuck.textContent = _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE";
     _stuck.disabled = false;
     _stuck.style.opacity = "";
   }
@@ -6937,7 +6918,7 @@ function renderForm() {
       return img ? `<div class="drag-slot" style="aspect-ratio:3/2;position:relative;overflow:hidden" onclick="tapRestorationSlot(${i})">\n                <img src="${img}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">\n                <div style="position:absolute;left:0;right:0;bottom:0;background:linear-gradient(transparent,rgba(0,0,0,0.7));color:#fff;font-size:10px;font-weight:700;letter-spacing:0.5px;padding:8px 6px 4px;text-align:center">${slot.label.toUpperCase()}</div>\n                <button class="slot-x" onclick="event.stopPropagation();removeRestorationImg(${i})">×</button>\n               </div>` : `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:3/2;position:relative;overflow:hidden" onclick="tapRestorationSlot(${i})">\n                <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#c8a8e8;font-size:12px;font-weight:700;letter-spacing:0.5px;text-align:center;padding:6px">\n                  <div>${slot.label.toUpperCase()}</div>\n                  <div style="font-size:9px;font-weight:500;opacity:0.7;margin-top:4px;line-height:1.3">${slot.hint}</div>\n                  <div style="font-size:9px;opacity:0.5;margin-top:4px">Tap to add</div>\n                </div>\n               </div>`;
     }).join("");
     return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n            <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">RESTORATION CHECK — 4 SLOTS</div>\n            <div style="font-size:11px;color:#9a8aaa;margin-bottom:10px;line-height:1.5">\n              Add the 4 photos below. The first three are shared with Full Assessment. The UV Front requires a UV (blacklight) photo of the front cover — you'll be prompted before that photo.\n            </div>\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\n              ${rSlotsHtml}\n            </div>\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="restoration-check-btn" class="rg-btn rg-btn-assess rg-btn-purple${assessing ? ' assessing' : ''}" onclick="submitRestorationCheck()" ${rReady ? "" : "disabled"}>\n                ${assessing ? "Checking…" : `RESTORATION CHECK ${rFilled < 4 ? `(${rFilled}/4)` : ""}`}\n              </button>\n            </div>\n          </div>\n        `;
-  })()}\n      <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">\n      <input id="restoration-photo-input" type="file" accept="image/*" onchange="handleRestorationImages(event)" style="display:none">\n\n      \x3c!-- S11: Pre-assessment Grader Notes (Option B for the chicken-and-egg\n           problem). For graded books in slabs, the official grader notes are\n           highly informative inputs to the AI assessment — but we don't\n           know a book is graded until after the AI has assessed it, so the\n           field would normally be unavailable on first-pass. This collapsible\n           section gives users who have a slabbed book a way to enter the\n           grader notes BEFORE running the assessment. Defaults closed so\n           the standard image-first flow stays visually clean for raw books;\n           opens with a single tap. Only renders pre-assessment in the\n           image-first flow (no _assessed, no _addManualMode, no isEdit) —\n           after assessment, the Grader Notes field appears in the normal\n           form section below where it can also be edited. --\x3e\n      \x3c!-- The "Optional: official label info" collapsible was removed in S12.\n           It let users type CGC/PSA grader notes BEFORE assessment to nudge\n           accuracy. Pulled because:\n           - Used by an extreme minority of users (only those entering\n             already-graded books and willing to transcribe slab text)\n           - Cluttered the otherwise-clean image-first Add flow\n           - The same info can still be typed in the post-assessment form\n             where the Grader Notes field still lives.\n           If we want this back later, the JS field (formData.graderNotes)\n           still wires through to assess.js — only the UI was removed. --\x3e\n\n      <div style="display:flex;justify-content:center;margin-top:4px"><button id="assess-btn" class="rg-btn rg-btn-assess rg-btn-bronze${_assessed ? ' reassess' : ''}${assessing ? ' assessing' : ''}" onclick="assessGrade()" ${!formData.images || !formData.images[0] || assessing ? "disabled" : ""}>${assessing ? "Assessing…" : _assessed ? "RE-ASSESS GRADE" : "ASSESS GRADE"}</button></div>\n    </div>\n    ${isEdit || _assessed || _addManualMode ? `\n    ${""}\n    <div class="form-grid-2">\n      \x3c!-- Title gets a special handler (not the generic tf) because we need\n           live-toggle the save button as the user types. Using tf would\n           require either a full renderForm on every keystroke (kills focus)\n           or a separate handler — this is cleaner. --\x3e\n      ${formData.roboGrade ? rof("Title", "title") : `<div><label class="field-label">Title<span style="color:#c0392b;margin-left:2px">*</span></label><input id="title-input" value="${esc(formData.title || "")}" oninput="formData.title=this.value;const b=document.getElementById('save-btn');b.disabled=!this.value.trim();b.style.opacity=this.value.trim()?'':'0.5';b.style.cursor=this.value.trim()?'':'not-allowed'" placeholder="Series title"></div>`}\n      ${formData.roboGrade ? rof("Issue", "issue") : tf("Issue", "issue", "Issue number", true)}\n      ${formData.roboGrade ? rof("Pub Date", "issueDate") : tf("Pub Date", "issueDate", "Cover date")}\n      ${formData.roboGrade ? rof("Publisher", "publisher") : tf("Publisher", "publisher", "Publisher")}\n    </div>\n    ${formData.roboGrade && (formData.printing && String(formData.printing).trim()) ? `\n    \x3c!-- S14 (anti-fraud): Printing is shown read-only on a graded book.\n         It is NOT in the editable grid at all (a blank editable Printing\n         would also be a fraud vector — a user could leave a reprint's\n         printing empty). It only appears here when the assessment\n         actually populated it (e.g. "Facsimile Reprint"), so the label\n         and Detail view stay truthful and the user can't strip it. --\x3e\n    <div class="form-grid-2"><div>\n      <label class="field-label">Printing</label>\n      <div class="ro-field" title="Locked — set by the assessment and not editable">${esc(formData.printing)}</div>\n    </div></div>` : ""}\n    \x3c!-- Official Grades fields (S11): the disclosure container "OFFICIAL GRADES"\n         was removed. CGC Grade/Cert and PSA Grade/Cert sit as their own ordinary\n         fields when relevant.\n         Visibility:\n         • Not yet assessed (no roboGrade): show both CGC and PSA grids.\n         • Assessed and AI determined raw (no grades/certs): hide both.\n         • Assessed and CGC info present: show CGC grid only.\n         • Assessed and PSA info present: show PSA grid only.\n         A book can be CGC OR PSA officially, never both. --\x3e\n    ${(() => {
+  })()}\n      <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">\n      <input id="restoration-photo-input" type="file" accept="image/*" onchange="handleRestorationImages(event)" style="display:none">\n\n      \x3c!-- S11: Pre-assessment Grader Notes (Option B for the chicken-and-egg\n           problem). For graded books in slabs, the official grader notes are\n           highly informative inputs to the AI assessment — but we don't\n           know a book is graded until after the AI has assessed it, so the\n           field would normally be unavailable on first-pass. This collapsible\n           section gives users who have a slabbed book a way to enter the\n           grader notes BEFORE running the assessment. Defaults closed so\n           the standard image-first flow stays visually clean for raw books;\n           opens with a single tap. Only renders pre-assessment in the\n           image-first flow (no _assessed, no _addManualMode, no isEdit) —\n           after assessment, the Grader Notes field appears in the normal\n           form section below where it can also be edited. --\x3e\n      \x3c!-- The "Optional: official label info" collapsible was removed in S12.\n           It let users type CGC/PSA grader notes BEFORE assessment to nudge\n           accuracy. Pulled because:\n           - Used by an extreme minority of users (only those entering\n             already-graded books and willing to transcribe slab text)\n           - Cluttered the otherwise-clean image-first Add flow\n           - The same info can still be typed in the post-assessment form\n             where the Grader Notes field still lives.\n           If we want this back later, the JS field (formData.graderNotes)\n           still wires through to assess.js — only the UI was removed. --\x3e\n\n      <div style="display:flex;justify-content:center;margin-top:4px"><button id="assess-btn" class="rg-btn rg-btn-assess rg-btn-bronze${_assessed ? ' reassess' : ''}${assessing ? ' assessing' : ''}" onclick="assessGrade()" ${!formData.images || !formData.images[0] || assessing ? "disabled" : ""}>${assessing ? "Assessing…" : _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE"}</button></div>\n    </div>\n    ${isEdit || _assessed || _addManualMode ? `\n    ${""}\n    <div class="form-grid-2">\n      \x3c!-- Title gets a special handler (not the generic tf) because we need\n           live-toggle the save button as the user types. Using tf would\n           require either a full renderForm on every keystroke (kills focus)\n           or a separate handler — this is cleaner. --\x3e\n      ${formData.roboGrade ? rof("Title", "title") : `<div><label class="field-label">Title<span style="color:#c0392b;margin-left:2px">*</span></label><input id="title-input" value="${esc(formData.title || "")}" oninput="formData.title=this.value;const b=document.getElementById('save-btn');b.disabled=!this.value.trim();b.style.opacity=this.value.trim()?'':'0.5';b.style.cursor=this.value.trim()?'':'not-allowed'" placeholder="Series title"></div>`}\n      ${formData.roboGrade ? rof("Issue", "issue") : tf("Issue", "issue", "Issue number", true)}\n      ${formData.roboGrade ? rof("Pub Date", "issueDate") : tf("Pub Date", "issueDate", "Cover date")}\n      ${formData.roboGrade ? rof("Publisher", "publisher") : tf("Publisher", "publisher", "Publisher")}\n    </div>\n    ${formData.roboGrade && (formData.printing && String(formData.printing).trim()) ? `\n    \x3c!-- S14 (anti-fraud): Printing is shown read-only on a graded book.\n         It is NOT in the editable grid at all (a blank editable Printing\n         would also be a fraud vector — a user could leave a reprint's\n         printing empty). It only appears here when the assessment\n         actually populated it (e.g. "Facsimile Reprint"), so the label\n         and Detail view stay truthful and the user can't strip it. --\x3e\n    <div class="form-grid-2"><div>\n      <label class="field-label">Printing</label>\n      <div class="ro-field" title="Locked — set by the assessment and not editable">${esc(formData.printing)}</div>\n    </div></div>` : ""}\n    \x3c!-- Official Grades fields (S11): the disclosure container "OFFICIAL GRADES"\n         was removed. CGC Grade/Cert and PSA Grade/Cert sit as their own ordinary\n         fields when relevant.\n         Visibility:\n         • Not yet assessed (no roboGrade): show both CGC and PSA grids.\n         • Assessed and AI determined raw (no grades/certs): hide both.\n         • Assessed and CGC info present: show CGC grid only.\n         • Assessed and PSA info present: show PSA grid only.\n         A book can be CGC OR PSA officially, never both. --\x3e\n    ${(() => {
     const hasOfficialCGC = !!(formData.cgcGrade || formData.cgcCert);
     const hasOfficialPSA = !!(formData.psaGrade || formData.psaCert);
     const everAssessed = !!formData.roboGrade;
@@ -7028,43 +7009,6 @@ function renderForm() {
     return `<div style="display:flex;justify-content:flex-start;margin-top:14px">\n        <button onclick="cycleOwnership()"\n          style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;\n                 padding:5px 12px;border-radius:14px;cursor:pointer;\n                 background:${s.bg};color:${s.fg};border:1px solid ${s.border}">\n          ${own.toUpperCase()}\n        </button>\n      </div>`;
   })()}\n    <div style="display:flex;justify-content:center;margin-top:8px">\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="enterManualMode()" style="width:75%">Enter Manually</button>\n    </div>\n    `}\n  </div>`;
   document.getElementById("main").innerHTML = html;
-
-  // S16: Floating assessment button — appears when any assessment button
-  // scrolls out of view so the user always knows actions are available.
-  // Observes the primary assess-btn; falls through to hg-assess-btn or
-  // full-assess-btn if those are the topmost visible action.
-  (function setupFloatingBtn() {
-    const bar = document.getElementById("rg-float-btn-bar");
-    const floatBtn = document.getElementById("rg-float-btn");
-    if (!bar || !floatBtn) return;
-    // Disconnect any previous observer
-    if (window._rgFloatObserver) { window._rgFloatObserver.disconnect(); window._rgFloatObserver = null; }
-    // Find the best button to watch and mirror
-    const assessBtn = document.getElementById("assess-btn");
-    const hgBtn = document.getElementById("hg-assess-btn");
-    const fullBtn = document.getElementById("full-assess-btn");
-    const target = assessBtn || hgBtn || fullBtn;
-    if (!target) { bar.classList.remove("visible"); return; }
-    // Mirror the target button's styling
-    if (target === fullBtn) {
-      floatBtn.className = "rg-btn rg-btn-assess rg-btn-gold";
-      floatBtn.textContent = "FULL ASSESSMENT";
-    } else if (target === hgBtn) {
-      floatBtn.className = "rg-btn rg-btn-assess rg-btn-silver";
-      floatBtn.textContent = "DEEP ASSESSMENT";
-    } else {
-      floatBtn.className = "rg-btn rg-btn-assess rg-btn-bronze";
-      floatBtn.textContent = target.textContent.trim();
-    }
-    floatBtn.onclick = () => target.click();
-    window._rgFloatObserver = new IntersectionObserver(entries => {
-      entries.forEach(e => {
-        if (e.isIntersecting) bar.classList.remove("visible");
-        else bar.classList.add("visible");
-      });
-    }, { threshold: 0.1 });
-    window._rgFloatObserver.observe(target);
-  })();
 }
 
 function renderImgPreview() {}
@@ -7963,9 +7907,9 @@ const CAMERA_GUIDE_MAIN = [ "guide_front.svg", "guide_back.svg", "guide_pq.svg",
 const CAMERA_GUIDE_CORNER = [ "guide_corner_tl.svg", "guide_corner_tr.svg", "guide_corner_bl.svg", "guide_corner_br.svg" ];
 
 const CAMERA_SLOT_ORIENTATION_MAIN = [ "portrait", "portrait", "portrait", "landscape" ];
-// S16: Full Assessment slots — exterior strips + interior spreads = landscape;
-// interior_staple (slot 6) = portrait (auto-rotated 90° CCW at capture time)
-const CAMERA_SLOT_ORIENTATION_INTERIOR = [ "landscape", "landscape", "landscape", "landscape", "landscape", "landscape", "portrait", "landscape" ];
+// S16: Full Assessment slots — exterior staples + top/bottom pages = landscape;
+// interior_staple (slot 7) = portrait (auto-rotated CW at capture time)
+const CAMERA_SLOT_ORIENTATION_INTERIOR = [ "landscape", "landscape", "landscape", "landscape", "landscape", "landscape", "landscape", "portrait" ];
 
 const CAMERA_CAPTURE_ORDER_MAIN = [ 0, 3, 2, 1 ];
 
@@ -8137,10 +8081,10 @@ async function cameraOpen(state) {
       console.log("[camera] kind=" + _cameraState.kind + " target=" + targetZoom + "x lens options:", lensOptions.map(l => l.label).join(","));
       _cameraState.lenses = lensOptions;
       // S16: default to zoomed lens for corners AND Full Assessment close-up
-      // slots (exterior staples 0,1 + top/bottom pages 2,4 need macro detail).
-      // Outer Edge (3), Interior Front (5), Interior Staples (6), Interior Back (7)
+      // slots (exterior staples 0,1 + top/bottom pages 2,3 need macro detail).
+      // Outer Edge (4), Interior Front (5), Interior Back (6), Interior Staples (7)
       // stay at wide (1×). Main-kind captures also default wide.
-      const _isZoomedInteriorSlot = _cameraState.kind === "interior" && [0, 1, 2, 4].includes(_cameraState.current);
+      const _isZoomedInteriorSlot = _cameraState.kind === "interior" && [0, 1, 2, 3].includes(_cameraState.current);
       const _zoomDefault = (_cameraState.kind === "corner" || _isZoomedInteriorSlot) && lensOptions.length > 1;
       _cameraState.currentLensIdx = _zoomDefault ? 1 : 0;
       if (lensOptions.length > 0) {
@@ -8604,11 +8548,11 @@ async function runCropperSequence(captures, kind) {
     const metaKey = kind === "corner" ? "cornerMeta" : kind === "signature" ? "signatureMeta" : kind === "interior" ? "interiorMeta" : "imagesMeta";
     const list = [ ...formData[listKey] || [] ];
     while (list.length <= cap.slot) list.push(null);
-    // S16: Interior Staple (slot 6) is captured portrait; auto-rotate 90° CCW
+    // S16: Interior Staples (slot 7) is captured portrait; auto-rotate 90° CW
     // so it stores and displays as landscape (matching the 5:1 strip layout)
     let finalUrl = cap.dataUrl;
-    if (kind === "interior" && cap.slot === 6) {
-      try { finalUrl = await _rotateImage90CCW(cap.dataUrl); } catch (e) { console.warn("[camera] rotate failed, using original:", e); }
+    if (kind === "interior" && cap.slot === 7) {
+      try { finalUrl = await _rotateImage90CW(cap.dataUrl); } catch (e) { console.warn("[camera] rotate failed, using original:", e); }
     }
     list[cap.slot] = finalUrl;
     formData[listKey] = list;
@@ -8642,8 +8586,8 @@ async function runCropperSequence(captures, kind) {
 
 let _cropperSequenceResolve = null;
 
-// S16: rotate a data-URL image 90° counter-clockwise (portrait → landscape)
-function _rotateImage90CCW(dataUrl) {
+// S16: rotate a data-URL image 90° clockwise (portrait → landscape)
+function _rotateImage90CW(dataUrl) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
@@ -8651,8 +8595,8 @@ function _rotateImage90CCW(dataUrl) {
       c.width = img.height;
       c.height = img.width;
       const ctx = c.getContext("2d");
-      ctx.translate(0, c.height);
-      ctx.rotate(-Math.PI / 2);
+      ctx.translate(c.width, 0);
+      ctx.rotate(Math.PI / 2);
       ctx.drawImage(img, 0, 0);
       resolve(c.toDataURL("image/jpeg", 0.92));
     };
@@ -9225,9 +9169,6 @@ initFirebase();
   window.addEventListener("resize", update);
 })();
 </script>
-<div id="rg-float-btn-bar">
-  <button id="rg-float-btn" class="rg-btn rg-btn-assess rg-btn-bronze" onclick="document.getElementById('assess-btn')?.click()">ASSESS GRADE</button>
-</div>
 
 </body>
 </html>
