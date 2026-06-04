@@ -138,8 +138,25 @@ window._GoogleAuthProvider = GoogleAuthProvider;
 
 window._loadingState = true;
 
+// S16: Handle Apple Sign-In redirect result BEFORE onAuthStateChanged fires.
+// Without this, the auth screen flashes briefly during the redirect callback.
+window._pendingRedirect = true;
+getRedirectResult(auth).then(result => {
+  window._pendingRedirect = false;
+  if (result && result.user) {
+    console.log("[auth] Apple redirect sign-in successful:", result.user.email);
+  }
+}).catch(err => {
+  window._pendingRedirect = false;
+  console.log("[auth] redirect result error:", err.code, err.message);
+});
+
 function tryRevealAuthScreen() {
   if (window._currentUser !== undefined) return;
+  if (window._pendingRedirect) {
+    setTimeout(tryRevealAuthScreen, 500);
+    return;
+  }
   if (typeof window._signInWithPopup !== "function") {
     setTimeout(tryRevealAuthScreen, 500);
     return;
@@ -192,8 +209,11 @@ onAuthStateChanged(auth, async user => {
     }
   } else {
     window._loadingState = false;
-    if (authScreen) authScreen.style.display = "flex";
-    if (appEl) appEl.style.display = "none";
+    // S16: Don't show auth screen if an Apple redirect is still being processed
+    if (!window._pendingRedirect) {
+      if (authScreen) authScreen.style.display = "flex";
+      if (appEl) appEl.style.display = "none";
+    }
     if (!window._firebaseReady) {
       window._firebaseReady = true;
       window.dispatchEvent(new Event("firebase-ready"));
