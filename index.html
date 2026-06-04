@@ -1934,6 +1934,86 @@ function fullSlotIndex(key) {
 
 const FULL_SLOT_COUNT = 8;
 
+// ── Restoration Check Slots (S16 redesign) ──────────────────────────
+// 7 images: UV Front (unique) + 6 shared with Full Assessment.
+// Capture order = display order. Interior Staples (slot 6) is portrait,
+// auto-rotated CW at capture time.
+const RESTORATION_SLOTS = [ {
+  key: "uv_front",
+  label: "UV Front",
+  hint: "Front cover under UV light in a dark room, no ambient light"
+}, {
+  key: "exterior_top_staple",
+  label: "Exterior Top Staple",
+  hint: "Close-up of the top staple from outside the spine"
+}, {
+  key: "exterior_bottom_staple",
+  label: "Exterior Bottom Staple",
+  hint: "Close-up of the bottom staple from outside the spine"
+}, {
+  key: "outer_edge",
+  label: "Outer Edge",
+  hint: "Outer edge in raking light (trimming check)"
+}, {
+  key: "interior_front",
+  label: "Interior Front",
+  hint: "Inside front cover + first page (leaf-casting, reinforcement)"
+}, {
+  key: "interior_back",
+  label: "Interior Back",
+  hint: "Last page + inside back cover (leaf-casting, reinforcement)"
+}, {
+  key: "interior_staple",
+  label: "Interior Staples",
+  hint: "Both staples from inside the centerfold (replacement check)"
+} ];
+
+const RESTORATION_DISPLAY = [ {
+  key: "uv_front",
+  width: "full",
+  aspect: "3 / 4"
+}, {
+  key: "exterior_top_staple",
+  width: "full",
+  aspect: "5 / 1"
+}, {
+  key: "exterior_bottom_staple",
+  width: "full",
+  aspect: "5 / 1"
+}, {
+  key: "outer_edge",
+  width: "full",
+  aspect: "5 / 1"
+}, {
+  key: "interior_front",
+  width: "half",
+  aspect: "3 / 2"
+}, {
+  key: "interior_back",
+  width: "half",
+  aspect: "3 / 2"
+}, {
+  key: "interior_staple",
+  width: "full",
+  aspect: "5 / 1"
+} ];
+
+const RESTORATION_SLOT_COUNT = 7;
+
+// Mapping: Restoration slot index → Full Assessment slot index (null = unique)
+const RESTORATION_TO_FULL = [ null, 0, 1, 4, 5, 6, 7 ];
+// Mapping: Full Assessment slot index → Restoration slot index (null = not shared)
+const FULL_TO_RESTORATION = [ 1, 2, null, null, 3, 4, 5, 6 ];
+
+function restorationSlotIndex(key) {
+  return RESTORATION_SLOTS.findIndex(s => s.key === key);
+}
+
+// Camera orientation for restoration slots
+const CAMERA_SLOT_ORIENTATION_RESTORATION = [ "portrait", "landscape", "landscape", "landscape", "landscape", "landscape", "portrait" ];
+// Camera zoom for restoration slots (only exterior staples zoom in)
+const CAMERA_SLOT_ZOOM_RESTORATION = [ false, true, true, false, false, false, false ];
+
 function _normTitleForFull(t) {
   if (!t) return "";
   return String(t).trim().toLowerCase().replace(/^the\s+/i, "").replace(/\s+/g, " ");
@@ -1997,6 +2077,21 @@ let _restorationRevealed = false;
 
 function revealRestorationSlots() {
   _restorationRevealed = true;
+  // S16: Auto-populate shared Restoration slots from Full Assessment images
+  const fullImgs = formData.interiorImages || [];
+  const rImgs = [ ...formData.restorationImages || [] ];
+  while (rImgs.length < RESTORATION_SLOT_COUNT) rImgs.push(null);
+  let populated = 0;
+  RESTORATION_TO_FULL.forEach((fullIdx, rIdx) => {
+    if (fullIdx !== null && fullImgs[fullIdx] && !rImgs[rIdx]) {
+      rImgs[rIdx] = fullImgs[fullIdx];
+      populated++;
+    }
+  });
+  if (populated > 0) {
+    formData.restorationImages = rImgs;
+    console.log(`[restoration] auto-populated ${populated} slots from Full Assessment`);
+  }
   renderForm();
 }
 
@@ -6893,7 +6988,7 @@ function renderForm() {
     if (!isRestorationEligible(formData)) return "";
     if (isRestorationCheckComplete(formData)) return "";
     if (!_restorationRevealed) {
-      return `\n            <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n              <div style="display:flex;justify-content:center">\n                <button onclick="revealRestorationSlots()" style="width:75%;min-height:48px;border-radius:12px;background:#3a2a4a;color:#c8a8e8;border:1px solid #7a4ba8;font-size:13px;font-weight:700;letter-spacing:1.5px;cursor:pointer">\n                  CHECK RESTORATION\n                </button>\n              </div>\n              <div style="font-size:10px;color:#9a8aaa;text-align:center;margin-top:8px;line-height:1.4">Adds 4 photos (interior + UV front) to check for restoration indicators. A UV light is required for the front-cover photo.</div>\n            </div>\n          `;
+      return `\n            <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n              <div style="display:flex;justify-content:center">\n                <button onclick="revealRestorationSlots()" style="width:75%;min-height:48px;border-radius:12px;background:#3a2a4a;color:#c8a8e8;border:1px solid #7a4ba8;font-size:13px;font-weight:700;letter-spacing:1.5px;cursor:pointer">\n                  CHECK RESTORATION\n                </button>\n              </div>\n              <div style="font-size:10px;color:#9a8aaa;text-align:center;margin-top:8px;line-height:1.4">Adds 7 photos (UV front, staples, edge, interior) to check for restoration indicators. A UV light is required for the front-cover photo. 6 of 7 images are shared with Full Assessment.</div>\n            </div>\n          `;
     }
     const fullInterior = formData.interiorImages || [];
     const rImgs = formData.restorationImages || [];
@@ -7951,7 +8046,7 @@ function tapSlot(slotIndex, kind) {
   const list = (kind === "corner" ? formData.cornerImages : kind === "signature" ? formData.signatureImages : kind === "interior" ? formData.interiorImages : formData.images) || [];
   const captureOrder = kind === "corner" ? CAMERA_CAPTURE_ORDER_CORNER : kind === "signature" ? [ 0, 1 ] : kind === "interior" ? [ 0, 1, 2, 3, 4, 5, 6, 7 ] : CAMERA_CAPTURE_ORDER_MAIN;
   const emptySlotsInOrder = captureOrder.filter(i => !list[i]);
-  const isMultiEmpty = kind !== "signature" && emptySlotsInOrder.length > 1 && emptySlotsInOrder.includes(slotIndex);
+  const isMultiEmpty = kind !== "signature" && emptySlotsInOrder.length > 1 && (emptySlotsInOrder.includes(slotIndex) || kind === "interior");
   console.log("[tapSlot] kind:", kind, "slot:", slotIndex, "emptySlots:", emptySlotsInOrder.length, "isMultiEmpty:", isMultiEmpty, "mode:", isMultiEmpty ? "walkthrough" : "single");
   // S16 DEBUG: on-screen flash for interior so Matt can see without Mac hookup
   if (kind === "interior") {
