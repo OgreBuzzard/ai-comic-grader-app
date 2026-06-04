@@ -124,6 +124,7 @@ appleProvider.addScope("name");
 window._auth = auth;
 
 window._googleProvider = googleProvider;
+window._appleProvider = appleProvider;
 
 window._signInWithPopup = signInWithPopup;
 
@@ -3114,7 +3115,7 @@ async function signInGoogle() {
 // Prerequisite: enable Apple provider in Firebase Console → Authentication → Sign-in method.
 async function signInApple() {
   try {
-    await window._signInWithPopup(window._auth, appleProvider);
+    await window._signInWithPopup(window._auth, window._appleProvider);
     await loadItems();
   } catch (e) {
     const benignCodes = new Set([ "auth/popup-closed-by-user", "auth/cancelled-popup-request", "auth/popup-blocked" ]);
