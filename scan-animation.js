@@ -130,18 +130,18 @@
     { idx: 3, slotName: 'corner-br', rotate: false },
   ];
   // S16: Full Assessment scans all 8 interior/structure images. Order matches
-  // the client's FULL_SLOTS storage order (exterior_staple, top_pages,
-  // outer_edge, bottom_pages, interior_front, interior_spread, interior_staple,
-  // interior_back). Each scans at 1.0s (half the main duration) since there are 8.
+  // the client's FULL_SLOTS storage order. Each scans at 1.0s (half the main
+  // duration) since there are 8. ALL are landscape/wide, so rotate CW for
+  // larger display in the portrait scan cavity.
   const SLOTS_FULL = [
-    { idx: 0, slotName: 'full-0', rotate: false },
-    { idx: 1, slotName: 'full-1', rotate: false },
-    { idx: 2, slotName: 'full-2', rotate: false },
-    { idx: 3, slotName: 'full-3', rotate: false },
-    { idx: 4, slotName: 'full-4', rotate: false },
-    { idx: 5, slotName: 'full-5', rotate: false },
-    { idx: 6, slotName: 'full-6', rotate: false },
-    { idx: 7, slotName: 'full-7', rotate: false },
+    { idx: 0, slotName: 'full-0', rotate: true },
+    { idx: 1, slotName: 'full-1', rotate: true },
+    { idx: 2, slotName: 'full-2', rotate: true },
+    { idx: 3, slotName: 'full-3', rotate: true },
+    { idx: 4, slotName: 'full-4', rotate: true },
+    { idx: 5, slotName: 'full-5', rotate: true },
+    { idx: 6, slotName: 'full-6', rotate: true },
+    { idx: 7, slotName: 'full-7', rotate: true },
   ];
 
   // ── Region coordinates (% of chest image) ───────────────────────────

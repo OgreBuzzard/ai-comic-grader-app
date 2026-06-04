@@ -46,14 +46,26 @@
     //              on the printout-paper bands
     // BG         → panel surround, slightly darker than the body so the body
     //              cells stand out against it
-    const OLIVE      = '#2a4a1e';
-    const CHARTREUSE = '#b8d820';
-    const OLIVE_LT   = '#7aa838';
-    const OLIVE_MID  = '#4a7028';
-    const SECTION_HD = '#1a3818';
-    const LIGHT      = '#9abf60';
-    const RULE       = '#3a5818';
-    const BG         = '#152e10';
+    // S16: Detect restored books (CGC purple label or HIGH-CONFIDENCE restoration check)
+    // and swap to a purple color palette for the entire score box.
+    // Low-confidence restoration indicators don't trigger purple — only high-confidence
+    // findings (clear color touch, clear reinforcement) or official CGC restored labels.
+    const _isRestored = !!(comic && (
+      comic.restorationHighConfidence ||
+      (comic.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(comic.cgcNotes)) ||
+      comic.cgcDesignation === "restored"
+    ));
+    // S16: Purple checkmark for negative restoration result
+    const _restorationNegative = !!(comic && comic.restorationCheckRan && !comic.restorationFlag && !_isRestored);
+
+    const OLIVE      = _isRestored ? '#3a2a4a' : '#2a4a1e';
+    const CHARTREUSE = _isRestored ? '#c8a8e8' : '#b8d820';
+    const OLIVE_LT   = _isRestored ? '#9a7ab8' : '#7aa838';
+    const OLIVE_MID  = _isRestored ? '#5a3a7a' : '#4a7028';
+    const SECTION_HD = _isRestored ? '#2a1a3a' : '#1a3818';
+    const LIGHT      = _isRestored ? '#b898d8' : '#9abf60';
+    const RULE       = _isRestored ? '#4a2a6a' : '#3a5818';
+    const BG         = _isRestored ? '#1a1226' : '#152e10';
 
     // Precision suffix logic (mirrors print-label.js exactly).
     // Score 100      → no suffix (perfect, no uncertainty)
@@ -226,6 +238,7 @@
       <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px">
         <div style="background:${OLIVE};border-radius:16px;width:88px;height:88px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;border:1.5px solid ${OLIVE_MID};position:relative">
           ${precision ? `<span style="font-family:system-ui,-apple-system,sans-serif;font-size:11px;font-weight:700;color:${OLIVE_LT};position:absolute;top:6px;right:7px;white-space:nowrap;letter-spacing:0.2px;line-height:1">${precision.replace('±', '± ')}</span>` : ''}
+          ${_restorationNegative ? `<span style="position:absolute;bottom:4px;right:6px;font-size:14px;color:#9a7ab8;font-weight:900;line-height:1" title="Restoration check: no indicators found">✓</span>` : ''}
           <div style="font-size:8px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:2px">RG</div>
           <div style="position:relative;display:flex;justify-content:center;align-items:flex-end;width:100%">
             <span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:40px;font-weight:900;color:${CHARTREUSE};line-height:1">${scoreRounded}</span>

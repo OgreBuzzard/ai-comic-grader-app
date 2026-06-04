@@ -1265,6 +1265,8 @@ onAuthStateChanged(auth, async user => {
       padding: 20px;
       text-align: center;
     }
+    #orientation-block .rotate-icon { width: 56px; height: 56px; color: #b8d820; }
+    #orientation-block .rotate-icon svg { width: 100%; height: 100%; }
     #orientation-block .orientation-block-title {
       font-family: 'Share Tech Mono', 'Courier New', monospace;
       font-size: 22px;
@@ -1291,13 +1293,8 @@ onAuthStateChanged(auth, async user => {
 <body style="overflow:hidden">
 
 <div id="orientation-block" aria-hidden="true">
-  <svg viewBox="0 0 64 64" width="56" height="56" fill="none" stroke="#b8d820" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <rect x="14" y="6" width="36" height="52" rx="4"/>
-    <circle cx="32" cy="52" r="2" fill="#b8d820"/>
-    <path d="M52 18 q12 0 12 12" stroke-dasharray="3 3"/>
-    <polyline points="60 22 64 30 56 30"/>
-  </svg>
-  <div class="orientation-block-title">Please rotate to portrait</div>
+  <div class="rotate-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true" fill="none"><rect x="40" y="32" width="20" height="36" rx="3.5" stroke="currentColor" stroke-width="5"/><circle cx="50" cy="62" r="1.5" fill="currentColor"/><path d="M84,50C84,68.652 68.652,84 50,84" stroke="currentColor" stroke-width="5"/><polygon points="46,80 50,90 54,80" fill="currentColor" transform="rotate(-45,50,84)"/><path d="M16,50C16,31.348 31.348,16 50,16" stroke="currentColor" stroke-width="5"/><polygon points="46,12 50,22 54,12" fill="currentColor" transform="rotate(135,50,16)"/></svg></div>
+  <div class="orientation-block-title">Rotate to portrait</div>
   <div class="orientation-block-sub">Robograder works best in portrait orientation</div>
 </div>
 
@@ -2503,7 +2500,7 @@ async function migrateComicsToItems() {
   }
 }
 
-const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationCheckRan", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "deepAssessmentRan", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected" ];
+const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "deepAssessmentRan", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected" ];
 
 const COMIC_DROP_FIELDS = [ "press", "uv", "clean" ];
 
@@ -7012,29 +7009,10 @@ function renderForm() {
     if (!_restorationRevealed) {
       return `\n            <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n              <div style="display:flex;justify-content:center">\n                <button onclick="revealRestorationSlots()" style="width:75%;min-height:48px;border-radius:12px;background:#3a2a4a;color:#c8a8e8;border:1px solid #7a4ba8;font-size:13px;font-weight:700;letter-spacing:1.5px;cursor:pointer">\n                  CHECK RESTORATION\n                </button>\n              </div>\n              <div style="font-size:10px;color:#9a8aaa;text-align:center;margin-top:8px;line-height:1.4">Adds 7 photos (UV front, staples, edge, interior) to check for restoration indicators. A UV light is required for the front-cover photo. 6 of 7 images are shared with Full Assessment.</div>\n            </div>\n          `;
     }
-    const fullInterior = formData.interiorImages || [];
     const rImgs = formData.restorationImages || [];
-    const seeded = [ rImgs[0] || fullInterior[fullSlotIndex("interior_front")] || null, rImgs[1] || fullInterior[fullSlotIndex("interior_back")] || null, rImgs[2] || fullInterior[fullSlotIndex("interior_staple")] || null, rImgs[3] || null ];
-    const RSLOTS = [ {
-      label: "Interior Front",
-      hint: "Inside front + first page (shared with Full)"
-    }, {
-      label: "Interior Back",
-      hint: "Last page + inside back (shared with Full)"
-    }, {
-      label: "Interior Staple",
-      hint: "Staples from inside the centerfold (shared)"
-    }, {
-      label: "UV Front",
-      hint: "Front cover under UV light — UV light required"
-    } ];
-    const rFilled = seeded.filter(Boolean).length;
-    const rReady = rFilled === 4 && !assessing;
-    const rSlotsHtml = RSLOTS.map((slot, i) => {
-      const img = seeded[i];
-      return img ? `<div class="drag-slot" style="aspect-ratio:3/2;position:relative;overflow:hidden" onclick="tapRestorationSlot(${i})">\n                <img src="${img}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">\n                <div style="position:absolute;left:0;right:0;bottom:0;background:linear-gradient(transparent,rgba(0,0,0,0.7));color:#fff;font-size:10px;font-weight:700;letter-spacing:0.5px;padding:8px 6px 4px;text-align:center">${slot.label.toUpperCase()}</div>\n                <button class="slot-x" onclick="event.stopPropagation();removeRestorationImg(${i})">×</button>\n               </div>` : `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:3/2;position:relative;overflow:hidden" onclick="tapRestorationSlot(${i})">\n                <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#c8a8e8;font-size:12px;font-weight:700;letter-spacing:0.5px;text-align:center;padding:6px">\n                  <div>${slot.label.toUpperCase()}</div>\n                  <div style="font-size:9px;font-weight:500;opacity:0.7;margin-top:4px;line-height:1.3">${slot.hint}</div>\n                  <div style="font-size:9px;opacity:0.5;margin-top:4px">Tap to add</div>\n                </div>\n               </div>`;
-    }).join("");
-    return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n            <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">RESTORATION CHECK — 4 SLOTS</div>\n            <div style="font-size:11px;color:#9a8aaa;margin-bottom:10px;line-height:1.5">\n              Add the 4 photos below. The first three are shared with Full Assessment. The UV Front requires a UV (blacklight) photo of the front cover — you'll be prompted before that photo.\n            </div>\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\n              ${rSlotsHtml}\n            </div>\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="restoration-check-btn" class="rg-btn rg-btn-assess rg-btn-purple${assessing ? ' assessing' : ''}" onclick="submitRestorationCheck()" ${rReady ? "" : "disabled"}>\n                ${assessing ? "Checking…" : `RESTORATION CHECK ${rFilled < 4 ? `(${rFilled}/4)` : ""}`}\n              </button>\n            </div>\n          </div>\n        `;
+    const rFilled = rImgs.filter(Boolean).length;
+    const rReady = rFilled === RESTORATION_SLOT_COUNT && !assessing;
+    return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n            <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">RESTORATION CHECK — 7 PHOTOS</div>\n            <div style="font-size:11px;color:#9a8aaa;margin-bottom:10px;line-height:1.5">\n              UV Front requires a UV (blacklight) photo in a dark room. 6 of 7 images are shared with Full Assessment.\n            </div>\n            ${renderRestorationSlotGrid(rImgs, {editable: true})}\n            <input id="restoration-photo-input" type="file" accept="image/*" multiple onchange="handleRestorationImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="restoration-check-btn" class="rg-btn rg-btn-assess rg-btn-purple${assessing ? ' assessing' : ''}" onclick="submitRestorationCheck()" ${rReady ? "" : "disabled"}>\n                ${assessing ? "Checking…" : `RESTORATION CHECK ${rFilled < RESTORATION_SLOT_COUNT ? `(${rFilled}/${RESTORATION_SLOT_COUNT})` : ""}`}\n              </button>\n            </div>\n          </div>\n        `;
   })()}\n      <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">\n      <input id="restoration-photo-input" type="file" accept="image/*" onchange="handleRestorationImages(event)" style="display:none">\n\n      \x3c!-- S11: Pre-assessment Grader Notes (Option B for the chicken-and-egg\n           problem). For graded books in slabs, the official grader notes are\n           highly informative inputs to the AI assessment — but we don't\n           know a book is graded until after the AI has assessed it, so the\n           field would normally be unavailable on first-pass. This collapsible\n           section gives users who have a slabbed book a way to enter the\n           grader notes BEFORE running the assessment. Defaults closed so\n           the standard image-first flow stays visually clean for raw books;\n           opens with a single tap. Only renders pre-assessment in the\n           image-first flow (no _assessed, no _addManualMode, no isEdit) —\n           after assessment, the Grader Notes field appears in the normal\n           form section below where it can also be edited. --\x3e\n      \x3c!-- The "Optional: official label info" collapsible was removed in S12.\n           It let users type CGC/PSA grader notes BEFORE assessment to nudge\n           accuracy. Pulled because:\n           - Used by an extreme minority of users (only those entering\n             already-graded books and willing to transcribe slab text)\n           - Cluttered the otherwise-clean image-first Add flow\n           - The same info can still be typed in the post-assessment form\n             where the Grader Notes field still lives.\n           If we want this back later, the JS field (formData.graderNotes)\n           still wires through to assess.js — only the UI was removed. --\x3e\n\n    </div>\n    ${isEdit || _assessed || _addManualMode ? `\n    ${""}\n    <div class="form-grid-2">\n      \x3c!-- Title gets a special handler (not the generic tf) because we need\n           live-toggle the save button as the user types. Using tf would\n           require either a full renderForm on every keystroke (kills focus)\n           or a separate handler — this is cleaner. --\x3e\n      ${formData.roboGrade ? rof("Title", "title") : `<div><label class="field-label">Title<span style="color:#c0392b;margin-left:2px">*</span></label><input id="title-input" value="${esc(formData.title || "")}" oninput="formData.title=this.value;const b=document.getElementById('save-btn');b.disabled=!this.value.trim();b.style.opacity=this.value.trim()?'':'0.5';b.style.cursor=this.value.trim()?'':'not-allowed'" placeholder="Series title"></div>`}\n      ${formData.roboGrade ? rof("Issue", "issue") : tf("Issue", "issue", "Issue number", true)}\n      ${formData.roboGrade ? rof("Pub Date", "issueDate") : tf("Pub Date", "issueDate", "Cover date")}\n      ${formData.roboGrade ? rof("Publisher", "publisher") : tf("Publisher", "publisher", "Publisher")}\n    </div>\n    ${formData.roboGrade && (formData.printing && String(formData.printing).trim()) ? `\n    \x3c!-- S14 (anti-fraud): Printing is shown read-only on a graded book.\n         It is NOT in the editable grid at all (a blank editable Printing\n         would also be a fraud vector — a user could leave a reprint's\n         printing empty). It only appears here when the assessment\n         actually populated it (e.g. "Facsimile Reprint"), so the label\n         and Detail view stay truthful and the user can't strip it. --\x3e\n    <div class="form-grid-2"><div>\n      <label class="field-label">Printing</label>\n      <div class="ro-field" title="Locked — set by the assessment and not editable">${esc(formData.printing)}</div>\n    </div></div>` : ""}\n    \x3c!-- Official Grades fields (S11): the disclosure container "OFFICIAL GRADES"\n         was removed. CGC Grade/Cert and PSA Grade/Cert sit as their own ordinary\n         fields when relevant.\n         Visibility:\n         • Not yet assessed (no roboGrade): show both CGC and PSA grids.\n         • Assessed and AI determined raw (no grades/certs): hide both.\n         • Assessed and CGC info present: show CGC grid only.\n         • Assessed and PSA info present: show PSA grid only.\n         A book can be CGC OR PSA officially, never both. --\x3e\n    ${(() => {
     const hasOfficialCGC = !!(formData.cgcGrade || formData.cgcCert);
     const hasOfficialPSA = !!(formData.psaGrade || formData.psaCert);
@@ -7129,6 +7107,45 @@ function renderForm() {
 }
 
 function renderImgPreview() {}
+
+// S16: Renders the 7-slot Restoration Check grid. Layout follows RESTORATION_DISPLAY.
+function renderRestorationSlotGrid(restoration, opts) {
+  const editable = !!(opts && opts.editable);
+  const cell = d => {
+    const i = restorationSlotIndex(d.key);
+    const slot = RESTORATION_SLOTS[i];
+    const img = (restoration || [])[i];
+    const labelTag = `<div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(122,75,168,0.85);padding:2px 6px;border-radius:3px;letter-spacing:0.04em">${slot.label.toUpperCase()}</div>`;
+    if (editable) {
+      if (img) {
+        return `<div class="drag-slot" style="aspect-ratio:${d.aspect};position:relative;overflow:hidden" onclick="tapRestorationSlot(${i})">
+                <img src="${img}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">
+                ${labelTag}
+                <button class="slot-x" onclick="event.stopPropagation();removeRestorationImg(${i})">×</button>
+               </div>`;
+      }
+      const isWide = d.width === "full" && d.key !== "uv_front";
+      const emptyInner = isWide
+        ? `<div style="display:flex;align-items:baseline;gap:6px;justify-content:center;flex-wrap:wrap"><span>${slot.label.toUpperCase()}</span><span style="font-size:9px;font-weight:500;opacity:0.6">${slot.hint}</span></div>`
+        : `<div>${slot.label.toUpperCase()}</div><div style="font-size:9px;font-weight:500;opacity:0.7;margin-top:3px;line-height:1.25">${slot.hint}</div><div style="font-size:9px;opacity:0.5;margin-top:3px">Tap to add</div>`;
+      return `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:${d.aspect};position:relative;overflow:hidden" onclick="tapRestorationSlot(${i})">
+                <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#c8a8e8;font-size:11px;font-weight:700;letter-spacing:0.4px;text-align:center;padding:4px">${emptyInner}</div>
+               </div>`;
+    }
+    if (!img) return "";
+    return `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:${d.aspect}">
+        <img src="${img}" loading="lazy" decoding="async" onload="window.forceImgReflow(this)" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block">
+        ${labelTag}
+      </div>`;
+  };
+  const fullTop = RESTORATION_DISPLAY.filter(d => d.width === "full" && d.key !== "interior_staple");
+  const halfSlots = RESTORATION_DISPLAY.filter(d => d.width === "half");
+  const stapleSlot = RESTORATION_DISPLAY.find(d => d.key === "interior_staple");
+  let html = `<div style="display:flex;flex-direction:column;gap:6px">${fullTop.map(cell).join("")}</div>`;
+  if (halfSlots.length) html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">${halfSlots.map(cell).join("")}</div>`;
+  if (stapleSlot) html += `<div style="margin-top:6px">${cell(stapleSlot)}</div>`;
+  return html;
+}
 
 // S16: ensure defect-note bullets render one-per-line. The model emits them as
 // a single "• a • b • c" string (no newlines); older assessments had newlines.
@@ -7741,12 +7758,15 @@ async function handleSignatureImages(e) {
 let _tappedRestorationSlot = 0;
 
 function _ensureRestorationArray() {
-  const fullInterior = formData.interiorImages || [];
+  const fullImgs = formData.interiorImages || [];
   const r = [ ...formData.restorationImages || [] ];
-  while (r.length < 4) r.push(null);
-  if (!r[0]) r[0] = fullInterior[0] || null;
-  if (!r[1]) r[1] = fullInterior[1] || null;
-  if (!r[2]) r[2] = fullInterior[3] || null;
+  while (r.length < RESTORATION_SLOT_COUNT) r.push(null);
+  // S16: Auto-populate shared slots from Full Assessment images
+  RESTORATION_TO_FULL.forEach((fullIdx, rIdx) => {
+    if (fullIdx !== null && !r[rIdx] && fullImgs[fullIdx]) {
+      r[rIdx] = fullImgs[fullIdx];
+    }
+  });
   formData.restorationImages = r;
   return r;
 }
@@ -7761,12 +7781,41 @@ function removeRestorationImg(i) {
 
 function tapRestorationSlot(i) {
   _ensureRestorationArray();
-  _tappedRestorationSlot = i;
-  if (i === 3) {
+  // S16: UV Front (slot 0) shows the UV card first, then opens camera
+  if (i === 0 && !formData.restorationImages[0]) {
     showUvFrontCard();
     return;
   }
-  document.getElementById("restoration-photo-input").click();
+  // Use the camera for all restoration slots
+  if (!window._cameraSupported) {
+    _tappedRestorationSlot = i;
+    document.getElementById("restoration-photo-input").click();
+    return;
+  }
+  // Walkthrough: if multiple empty slots, walk through them all
+  const list = formData.restorationImages || [];
+  const captureOrder = [ 0, 1, 2, 3, 4, 5, 6 ];
+  const emptySlotsInOrder = captureOrder.filter(idx => !list[idx]);
+  const isMultiEmpty = emptySlotsInOrder.length > 1;
+  if (isMultiEmpty) {
+    const startIdx = emptySlotsInOrder.indexOf(i);
+    const queue = startIdx >= 0 ? [ ...emptySlotsInOrder.slice(startIdx + 1) ] : [ ...emptySlotsInOrder ];
+    cameraOpen({
+      mode: "walkthrough",
+      kind: "restoration",
+      queue: queue,
+      current: i,
+      captures: []
+    });
+  } else {
+    cameraOpen({
+      mode: "single",
+      kind: "restoration",
+      queue: [],
+      current: i,
+      captures: []
+    });
+  }
 }
 
 function showUvFrontCard() {
@@ -7790,10 +7839,15 @@ function uvCardProceed() {
   const card = document.getElementById("uv-front-card");
   if (card) card.style.display = "none";
   if (window._cameraSupported) {
+    // S16: Start a restoration walkthrough from slot 0 (UV Front)
+    const list = formData.restorationImages || [];
+    const captureOrder = [ 0, 1, 2, 3, 4, 5, 6 ];
+    const emptySlotsInOrder = captureOrder.filter(idx => !list[idx]);
+    const queue = emptySlotsInOrder.length > 1 ? [ ...emptySlotsInOrder.slice(1) ] : [];
     cameraOpen({
-      mode: "single",
-      kind: "uvfront",
-      queue: [],
+      mode: queue.length > 0 ? "walkthrough" : "single",
+      kind: "restoration",
+      queue: queue,
       current: 0,
       captures: []
     });
@@ -7828,8 +7882,8 @@ async function submitRestorationCheck() {
   if (assessing) return;
   const r = _ensureRestorationArray();
   const filled = r.filter(Boolean);
-  if (filled.length !== 4) {
-    alert("Please add all 4 restoration photos first.");
+  if (filled.length !== RESTORATION_SLOT_COUNT) {
+    alert(`Please add all ${RESTORATION_SLOT_COUNT} restoration photos first.`);
     return;
   }
   if (typeof window._userCredits === "number" && window._userCredits < 1) {
@@ -7869,14 +7923,15 @@ async function submitRestorationCheck() {
     }
     const result = await resp.json();
     if (result.uvCheckFailed === true || result.uvLightPresent === false) {
-      alert("The UV Front photo doesn't appear to be taken under UV light. A restoration check needs the front cover photographed under a UV (blacklight) flashlight in a dark room. Please retake the UV Front photo and try again. No credit was charged.");
-      return;
+      alert("The UV Front photo doesn't appear to be taken under UV light. The restoration check examined the other 6 images but color touch could not be evaluated. Please retake the UV Front photo under a UV flashlight in a dark room and try again.");
     }
     if (result.restorationCheckRan === true) {
       formData.restorationCheckTier = true;
       formData.restorationCheckRan = true;
       formData.restorationReport = result.restorationReport || "";
       formData.restorationFlag = result.indicatorsObserved === true;
+      // S16: high-confidence restoration → purple score box
+      formData.restorationHighConfidence = result.highConfidence === true;
       formData._imagesChanged = true;
       onAssessmentSuccess();
       let msg = "Restoration Check complete.";
@@ -7933,7 +7988,8 @@ async function submitFullAssessment() {
       quality: 0.6
     });
     const token = window._currentUser ? await window._currentUser.getIdToken() : null;
-    const resp = await fetch("/api/assess_full", {
+    // S16: Start the API call BEFORE awaiting the scan so they run in parallel
+    const apiPromise = fetch("/api/assess_full", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -7957,6 +8013,15 @@ async function submitFullAssessment() {
         initialAssessment: formData.roboGrade || null
       })
     });
+    // S16: Wait for the scan animation to finish its visual pass
+    try {
+      await fullScanController.promise;
+    } catch (_e) {}
+    // S16: Show progress overlay while waiting for the API (prevents "hang"
+    // appearance — the user sees movement instead of a frozen shell)
+    mountStepTracker();
+    // Now await the API response (may already be done if it returned during the scan)
+    const resp = await apiPromise;
     if (!resp.ok) {
       const text = await resp.text();
       throw new Error(describeAssessmentError(text) || "Full Assessment failed: " + text.slice(0, 200));
@@ -7984,12 +8049,6 @@ async function submitFullAssessment() {
       formData.fullTrimmingSuspected = result.trimmingSuspected === true;
       formData._imagesChanged = true;
       onAssessmentSuccess();
-      // Let the scan animation finish its visual pass, then tear it down and
-      // save. No pop-up — the result shows in Detail (updated grade + text and
-      // the gold "Full" grade box), matching the Deep Assessment flow.
-      try {
-        await fullScanController.promise;
-      } catch (_e) {}
       if (window.RobograderScan && window.RobograderScan.dismiss) {
         window.RobograderScan.dismiss();
       }
@@ -8070,13 +8129,7 @@ function tapSlot(slotIndex, kind) {
   const emptySlotsInOrder = captureOrder.filter(i => !list[i]);
   const isMultiEmpty = kind !== "signature" && emptySlotsInOrder.length > 1 && (emptySlotsInOrder.includes(slotIndex) || kind === "interior");
   console.log("[tapSlot] kind:", kind, "slot:", slotIndex, "emptySlots:", emptySlotsInOrder.length, "isMultiEmpty:", isMultiEmpty, "mode:", isMultiEmpty ? "walkthrough" : "single");
-  // S16 DEBUG: on-screen flash for interior so Matt can see without Mac hookup
   if (kind === "interior") {
-    const _dbg2 = document.createElement("div");
-    _dbg2.style.cssText = "position:fixed;top:10px;left:10px;right:10px;z-index:99999;background:#1a4a2a;color:#6abf6a;padding:10px;font-size:12px;font-weight:bold;border-radius:8px";
-    _dbg2.textContent = `OPEN: slot=${slotIndex} empty=${emptySlotsInOrder.length} mode=${isMultiEmpty ? "walkthrough" : "SINGLE"} queue=${isMultiEmpty ? emptySlotsInOrder.slice(emptySlotsInOrder.indexOf(slotIndex)+1).length : 0}`;
-    document.body.appendChild(_dbg2);
-    setTimeout(() => _dbg2.remove(), 5000);
   }
   if (isMultiEmpty) {
     const startIdx = emptySlotsInOrder.indexOf(slotIndex);
@@ -8112,8 +8165,8 @@ async function cameraOpen(state) {
   document.body.classList.remove("camera-perm-shown");
   modal.classList.add("open");
   document.body.classList.add("camera-modal-open");
-  document.body.classList.remove("camera-kind-main", "camera-kind-corner", "camera-kind-interior");
-  document.body.classList.add(state.kind === "corner" ? "camera-kind-corner" : state.kind === "interior" ? "camera-kind-interior" : "camera-kind-main");
+  document.body.classList.remove("camera-kind-main", "camera-kind-corner", "camera-kind-interior", "camera-kind-restoration");
+  document.body.classList.add(state.kind === "corner" ? "camera-kind-corner" : state.kind === "interior" || state.kind === "restoration" ? "camera-kind-interior" : "camera-kind-main");
   const video = document.getElementById("camera-video");
   if (video) video.style.objectFit = "cover";
   if (!_cameraOrientationListener) {
@@ -8211,7 +8264,8 @@ async function cameraOpen(state) {
       // Outer Edge (4), Interior Front (5), Interior Back (6), Interior Staples (7)
       // stay at wide (1×). Main-kind captures also default wide.
       const _isZoomedInteriorSlot = _cameraState.kind === "interior" && [0, 1, 2, 3].includes(_cameraState.current);
-      const _zoomDefault = (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZoomedInteriorSlot) && lensOptions.length > 1;
+      const _isZoomedRestorationSlot = _cameraState.kind === "restoration" && CAMERA_SLOT_ZOOM_RESTORATION[_cameraState.current];
+      const _zoomDefault = (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZoomedInteriorSlot || _isZoomedRestorationSlot) && lensOptions.length > 1;
       _cameraState.currentLensIdx = _zoomDefault ? 1 : 0;
       if (lensOptions.length > 0) {
         await switchToLens(_cameraState.currentLensIdx);
@@ -8389,7 +8443,7 @@ function applyCameraOrientationState() {
     return true;
   }
   const {kind: kind, current: current} = _cameraState;
-  const preferred = kind === "corner" ? "portrait" : kind === "signature" ? "landscape" : kind === "interior" ? (CAMERA_SLOT_ORIENTATION_INTERIOR[current] || "landscape") : kind === "uvfront" ? "portrait" : CAMERA_SLOT_ORIENTATION_MAIN[current];
+  const preferred = kind === "corner" ? "portrait" : kind === "signature" ? "landscape" : kind === "interior" ? (CAMERA_SLOT_ORIENTATION_INTERIOR[current] || "landscape") : kind === "restoration" ? (CAMERA_SLOT_ORIENTATION_RESTORATION[current] || "portrait") : kind === "uvfront" ? "portrait" : CAMERA_SLOT_ORIENTATION_MAIN[current];
   const actual = getCurrentOrientation();
   const match = preferred === actual;
   const card = document.getElementById("camera-rotate-card");
@@ -8397,6 +8451,11 @@ function applyCameraOrientationState() {
   const guideEl = document.getElementById("camera-guide");
   if (!match) {
     const title = document.getElementById("camera-rotate-title");
+    const iconEl = card.querySelector(".rotate-icon");
+    // S16: CW phone icon (portrait→landscape) vs CCW phone icon (landscape→portrait)
+    const svgCW = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none"><rect x="40" y="32" width="20" height="36" rx="3.5" stroke="currentColor" stroke-width="5"/><circle cx="50" cy="62" r="1.5" fill="currentColor"/><path d="M16,50C16,31.348 31.348,16 50,16" stroke="currentColor" stroke-width="5"/><polygon points="46,12 50,22 54,12" fill="currentColor" transform="rotate(-45,50,16)"/><path d="M84,50C84,68.652 68.652,84 50,84" stroke="currentColor" stroke-width="5"/><polygon points="46,80 50,90 54,80" fill="currentColor" transform="rotate(135,50,84)"/></svg>`;
+    const svgCCW = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none"><rect x="40" y="32" width="20" height="36" rx="3.5" stroke="currentColor" stroke-width="5"/><circle cx="50" cy="62" r="1.5" fill="currentColor"/><path d="M84,50C84,68.652 68.652,84 50,84" stroke="currentColor" stroke-width="5"/><polygon points="46,80 50,90 54,80" fill="currentColor" transform="rotate(-45,50,84)"/><path d="M16,50C16,31.348 31.348,16 50,16" stroke="currentColor" stroke-width="5"/><polygon points="46,12 50,22 54,12" fill="currentColor" transform="rotate(135,50,16)"/></svg>`;
+    if (iconEl) iconEl.innerHTML = preferred === "landscape" ? svgCW : svgCCW;
     if (preferred === "landscape") {
       card.classList.add("to-landscape");
       card.classList.remove("to-portrait");
@@ -8421,8 +8480,8 @@ function cameraOpenSlot(slotIndex) {
   if (_cameraState.current !== slotIndex) _cameraState.rotationSkipped = false;
   _cameraState.current = slotIndex;
   const {kind: kind, mode: mode, queue: queue} = _cameraState;
-  const guideFile = (kind === "corner" ? CAMERA_GUIDE_CORNER : kind === "signature" ? [ null, null ] : kind === "interior" ? [ null, null, null, null, null, null, null, null ] : kind === "uvfront" ? [ CAMERA_GUIDE_MAIN[0] ] : CAMERA_GUIDE_MAIN)[slotIndex];
-  const label = (kind === "corner" ? CAMERA_LABEL_CORNER : kind === "signature" ? [ "Signature 1", "Signature 2" ] : kind === "interior" ? FULL_SLOTS.map(s => s.label) : kind === "uvfront" ? [ "UV FRONT" ] : CAMERA_LABEL_MAIN)[slotIndex];
+  const guideFile = (kind === "corner" ? CAMERA_GUIDE_CORNER : kind === "signature" ? [ null, null ] : kind === "interior" ? [ null, null, null, null, null, null, null, null ] : kind === "restoration" ? [ null, null, null, null, null, null, null ] : kind === "uvfront" ? [ CAMERA_GUIDE_MAIN[0] ] : CAMERA_GUIDE_MAIN)[slotIndex];
+  const label = (kind === "corner" ? CAMERA_LABEL_CORNER : kind === "signature" ? [ "Signature 1", "Signature 2" ] : kind === "interior" ? FULL_SLOTS.map(s => s.label) : kind === "restoration" ? RESTORATION_SLOTS.map(s => s.label) : kind === "uvfront" ? [ "UV FRONT" ] : CAMERA_LABEL_MAIN)[slotIndex];
   const labelEl = document.getElementById("camera-slot-label");
   if (labelEl) labelEl.textContent = (label || "").toUpperCase();
   const skipBtn = document.getElementById("camera-skip");
@@ -8642,14 +8701,6 @@ async function cameraCapture() {
     console.log("[camera] advancing to slot", nextSlot);
     cameraOpenSlot(nextSlot);
   } else {
-    // S16 DEBUG: Flash the reason on screen so Matt can see without Mac hookup
-    if (_cameraState.kind === "interior") {
-      const _dbg = document.createElement("div");
-      _dbg.style.cssText = "position:fixed;top:60px;left:10px;right:10px;z-index:99999;background:red;color:white;padding:12px;font-size:14px;font-weight:bold;border-radius:8px";
-      _dbg.textContent = `EXIT: mode=${_cameraState.mode} queue=${_cameraState.queue?.length} captures=${_cameraState.captures?.length} current=${_cameraState.current}`;
-      document.body.appendChild(_dbg);
-      setTimeout(() => _dbg.remove(), 8000);
-    }
     console.log("[camera] finishing — mode:", _cameraState?.mode, "queueEmpty:", !_cameraState?.queue?.length);
     cameraFinish();
   }
@@ -8682,18 +8733,33 @@ async function runCropperSequence(captures, kind) {
       formData._imagesChanged = true;
       continue;
     }
-    const listKey = kind === "corner" ? "cornerImages" : kind === "signature" ? "signatureImages" : kind === "interior" ? "interiorImages" : "images";
-    const metaKey = kind === "corner" ? "cornerMeta" : kind === "signature" ? "signatureMeta" : kind === "interior" ? "interiorMeta" : "imagesMeta";
+    const listKey = kind === "corner" ? "cornerImages" : kind === "signature" ? "signatureImages" : kind === "interior" ? "interiorImages" : kind === "restoration" ? "restorationImages" : "images";
+    const metaKey = kind === "corner" ? "cornerMeta" : kind === "signature" ? "signatureMeta" : kind === "interior" ? "interiorMeta" : kind === "restoration" ? "restorationMeta" : "imagesMeta";
     const list = [ ...formData[listKey] || [] ];
     while (list.length <= cap.slot) list.push(null);
-    // S16: Interior Staples (slot 7) is captured portrait; auto-rotate 90° CW
-    // so it stores and displays as landscape (matching the 5:1 strip layout)
+    // S16: Interior Staples auto-rotate 90° CW at capture time
+    // Interior kind: slot 7. Restoration kind: slot 6.
     let finalUrl = cap.dataUrl;
-    if (kind === "interior" && cap.slot === 7) {
+    if ((kind === "interior" && cap.slot === 7) || (kind === "restoration" && cap.slot === 6)) {
       try { finalUrl = await _rotateImage90CW(cap.dataUrl); } catch (e) { console.warn("[camera] rotate failed, using original:", e); }
     }
     list[cap.slot] = finalUrl;
     formData[listKey] = list;
+    // S16: Bidirectional sync — Full Assessment ↔ Restoration Check shared images
+    if (kind === "interior" && FULL_TO_RESTORATION[cap.slot] != null) {
+      const rIdx = FULL_TO_RESTORATION[cap.slot];
+      const rImgs = [ ...formData.restorationImages || [] ];
+      while (rImgs.length < RESTORATION_SLOT_COUNT) rImgs.push(null);
+      rImgs[rIdx] = finalUrl;
+      formData.restorationImages = rImgs;
+    }
+    if (kind === "restoration" && RESTORATION_TO_FULL[cap.slot] != null) {
+      const fIdx = RESTORATION_TO_FULL[cap.slot];
+      const fImgs = [ ...formData.interiorImages || [] ];
+      while (fImgs.length < FULL_SLOT_COUNT) fImgs.push(null);
+      fImgs[fIdx] = finalUrl;
+      formData.interiorImages = fImgs;
+    }
     const meta = [ ...formData[metaKey] || [] ];
     while (meta.length <= cap.slot) meta.push(null);
     meta[cap.slot] = {
@@ -8702,7 +8768,7 @@ async function runCropperSequence(captures, kind) {
     };
     formData[metaKey] = meta;
     formData._imagesChanged = true;
-    if (kind === "corner" || kind === "signature" || kind === "interior") {
+    if (kind === "corner" || kind === "signature" || kind === "interior" || kind === "restoration") {
       continue;
     }
     await new Promise(resolve => {
