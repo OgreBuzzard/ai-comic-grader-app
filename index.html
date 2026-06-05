@@ -141,6 +141,9 @@ window._loadingState = true;
 // S16: Handle Apple Sign-In redirect result BEFORE onAuthStateChanged fires.
 // Without this, the auth screen flashes briefly during the redirect callback.
 window._pendingRedirect = true;
+// Safety timeout: if getRedirectResult doesn't resolve in 3s, clear the flag
+// (prevents white screen in Capacitor/WKWebView where redirects don't apply)
+setTimeout(() => { window._pendingRedirect = false; }, 3000);
 getRedirectResult(auth).then(result => {
   window._pendingRedirect = false;
   if (result && result.user) {
