@@ -8059,9 +8059,13 @@ async function submitFullAssessment() {
         initialAssessment: formData.roboGrade || null
       })
     });
-    // S16: Wait for the scan animation to finish its visual pass
+    // S16: Wait for scan animation, but don't hang forever.
+    // Safety timeout: if scan promise doesn't resolve in 25s, proceed anyway.
     try {
-      await fullScanController.promise;
+      await Promise.race([
+        fullScanController.promise,
+        new Promise(r => setTimeout(r, 25000))
+      ]);
     } catch (_e) {}
     // S16: Show a visible processing indicator while the API works.
     // mountStepTracker doesn't work here (it's tied to the SSE flow).
