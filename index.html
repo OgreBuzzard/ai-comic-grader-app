@@ -142,8 +142,20 @@ window._loadingState = true;
 // Without this, the auth screen flashes briefly during the redirect callback.
 window._pendingRedirect = true;
 // Safety timeout: if getRedirectResult doesn't resolve in 3s, clear the flag
-// (prevents white screen in Capacitor/WKWebView where redirects don't apply)
-setTimeout(() => { window._pendingRedirect = false; }, 3000);
+// (prevents white screen in Capacitor/WKWebView and after sign-out)
+setTimeout(() => {
+  window._pendingRedirect = false;
+  // If no user signed in and auth screen isn't showing, reveal it now
+  if (!window._currentUser) {
+    const authScreen = document.getElementById("auth-screen");
+    const appEl = document.getElementById("app");
+    if (authScreen && authScreen.style.display !== "flex") {
+      authScreen.style.display = "flex";
+    }
+    if (appEl) appEl.style.display = "none";
+    if (typeof window.signalAppReady === "function") window.signalAppReady();
+  }
+}, 3000);
 getRedirectResult(auth).then(result => {
   window._pendingRedirect = false;
   if (result && result.user) {
@@ -4579,9 +4591,15 @@ function showEdit(id) {
 }
 
 async function compressImage(dataUrl, maxDim = 1400, quality = 0.65, asBlob = false) {
-  return new Promise(res => {
+  return new Promise((res, rej) => {
     const img = new Image;
+    // S16: Timeout prevents permanent hang if image fails to load
+    const _timeout = setTimeout(() => {
+      console.error("[compress] image load timed out after 15s:", (dataUrl || "").substring(0, 80));
+      rej(new Error("Image compression timed out"));
+    }, 15000);
     img.onload = () => {
+      clearTimeout(_timeout);
       let w = img.width, h = img.height;
       if (w > maxDim || h > maxDim) {
         if (w > h) {
@@ -4602,6 +4620,12 @@ async function compressImage(dataUrl, maxDim = 1400, quality = 0.65, asBlob = fa
         res(c.toDataURL("image/jpeg", quality));
       }
     };
+    img.onerror = (e) => {
+      clearTimeout(_timeout);
+      console.error("[compress] image load failed:", (dataUrl || "").substring(0, 80));
+      rej(new Error("Image failed to load for compression"));
+    };
+    img.crossOrigin = "anonymous";
     img.src = dataUrl;
   });
 }
