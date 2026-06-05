@@ -122,25 +122,16 @@ function isDeepListBook(title, issue) {
   return DEEP_LIST_BOOKS.some(b => b.title === t && b.issue === i);
 }
 
-// S15 May 30 widened gate: eligible if on the Deep list OR meets a basic
-// quality bar (RoboScore >= 30 OR predicted grade >= 3.0). roboScore is the
-// 0-100 RG score; predictedGrade is the 0.5-10.0 CGC-scale grade.
-// S15 May 30 gate (corrected): eligible if it is a Deep-list book AND has a
-// RoboScore >= 30, OR (independently) has a predicted grade >= 3.0. Deep-list
-// membership alone is NOT enough — a low-scoring copy of a key book doesn't
-// warrant Full Assessment. The grade>=3.0 path lets any decent-condition book
-// qualify regardless of list membership.
-// S15 May 30 gate (final): a book qualifies for Full Assessment ONLY if it is
-// on the Deep list AND meets a quality bar — RoboScore >= 30 OR predicted
-// grade >= 3.0. Deep-list membership is required; the score/grade check then
-// filters out low-condition copies of those key books.
+// S16: Widened gate — Full Assessment is available to any book with a
+// RoboScore >= 30 OR predicted grade >= 3.0. The client-side gate already
+// uses the full VALUE_KEYS list; the server doesn't need to duplicate that
+// check. The quality bar (score/grade) is the real gate.
 function isFullEligible({ title, issueNumber, roboScore, predictedGrade }) {
-  if (!isDeepListBook(title, issueNumber)) return { eligible: false, reason: 'not-deep-list' };
   const score = Number(roboScore);
   const grade = parseFloat(predictedGrade);
   const okScore = Number.isFinite(score) && score >= 30;
   const okGrade = Number.isFinite(grade) && grade >= 3.0;
-  if (okScore || okGrade) return { eligible: true, reason: okScore ? 'deep-list+score>=30' : 'deep-list+grade>=3.0' };
+  if (okScore || okGrade) return { eligible: true, reason: okScore ? 'score>=30' : 'grade>=3.0' };
   return { eligible: false, reason: 'below-threshold' };
 }
 
