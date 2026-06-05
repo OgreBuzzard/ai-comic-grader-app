@@ -4624,6 +4624,12 @@ function storageSlotsInterior(n) {
   }, (_, i) => `interior_${String(i + 1).padStart(2, "0")}`);
 }
 
+function storageSlotsRestoration(n) {
+  return Array.from({
+    length: n
+  }, (_, i) => `restoration_${String(i + 1).padStart(2, "0")}`);
+}
+
 async function uploadImageToStorage(blob, itemId, slot) {
   if (!window._currentUser || !window._storage) {
     throw new Error("Storage not initialized");
@@ -8988,7 +8994,7 @@ async function submitForm() {
       }
       if (rawRestorationImages.length > 0 && rawRestorationImages.some(Boolean)) {
         syncMsg(`Uploading restoration photo${newRestorationCount === 1 ? "" : "s"}...`);
-        const restorationResult = await processImagesForSave(rawRestorationImages, id, [ "restoration_01", "restoration_02", "restoration_03", "restoration_04" ], {
+        const restorationResult = await processImagesForSave(rawRestorationImages, id, storageSlotsRestoration(RESTORATION_SLOT_COUNT), {
           generateThumbs: false,
           preserveNulls: true
         });

@@ -139,9 +139,9 @@
     { idx: 2, slotName: 'full-2', rotate: true },
     { idx: 3, slotName: 'full-3', rotate: true },
     { idx: 4, slotName: 'full-4', rotate: true },
-    { idx: 5, slotName: 'full-5', rotate: true },
-    { idx: 6, slotName: 'full-6', rotate: true },
-    { idx: 7, slotName: 'full-7', rotate: true },
+    { idx: 5, slotName: 'full-5', rotate: false },
+    { idx: 6, slotName: 'full-6', rotate: false },
+    { idx: 7, slotName: 'full-7', rotate: true, rotateCCW: true },
   ];
 
   // ── Region coordinates (% of chest image) ───────────────────────────
@@ -420,6 +420,15 @@
       aspect-ratio: 1 / 1;
       object-fit: contain;
       transform: translate(-50%, -50%) rotate(90deg);
+    }
+    .rg-scan-photo-img.rotated-ccw {
+      top: 50%;
+      left: 50%;
+      width: auto;
+      height: 100%;
+      aspect-ratio: 1 / 1;
+      object-fit: contain;
+      transform: translate(-50%, -50%) rotate(-90deg);
     }
 
     .rg-scan-laser {
@@ -749,7 +758,7 @@
       if (slot.rotate) {
         photo.classList.add('is-spine');
         const img = document.createElement('img');
-        img.className = 'rg-scan-photo-img rotated';
+        img.className = 'rg-scan-photo-img ' + (slot.rotateCCW ? 'rotated-ccw' : 'rotated');
         img.src = slot.url;
         img.alt = '';
         photo.appendChild(img);
