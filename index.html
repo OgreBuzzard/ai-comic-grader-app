@@ -373,7 +373,7 @@ onAuthStateChanged(auth, async user => {
        Bronze = Assess Grade, Silver = Deep, Gold = Full, Purple = Restoration.
        All share the same height, radius, shadow, and letter-spacing. */
     .rg-btn-assess {
-      min-height: 52px; border-radius: 10px; font-size: 14px; font-weight: 700;
+      min-height: 60px; border-radius: 10px; font-size: 14px; font-weight: 700;
       letter-spacing: 1.5px; width: 75%;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 2px 4px rgba(0,0,0,0.3);
     }
@@ -574,7 +574,7 @@ onAuthStateChanged(auth, async user => {
     /* Cropper modal: full-screen overlay with image, controls below */
     #cropper-modal { position: fixed; inset: 0; background: #000; z-index: 1000; display: none; flex-direction: column; }
     #cropper-modal.open { display: flex; }
-    #cropper-stage { flex: 1; min-height: 0; position: relative; background: #000; overflow: hidden; }
+    #cropper-stage { flex: 1; min-height: 0; position: relative; background: #000; overflow: hidden; padding: 8px; }
     /* Cropper image is hidden until Cropper.js attaches and lays it out properly.
        Without this, the raw <img> renders top-aligned at natural size, then
        jumps when Cropper finishes initializing. The .ready class is added by
@@ -909,6 +909,16 @@ onAuthStateChanged(auth, async user => {
       z-index: 6;
     }
     #camera-lens-selector.show { display: flex; }
+    /* S16: In landscape, position zoom toggle to the right of the capture
+       button instead of centered above it (avoids blocking the viewfinder) */
+    @media (orientation: landscape) {
+      #camera-lens-selector {
+        left: auto;
+        right: 16%;
+        transform: none;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 36px);
+      }
+    }
     /* S15 May 29: redesigned from per-lens chip list (small 44×44 circles
        with short labels like "1×" / "2×") to a single TOGGLE pill saying
        "ZOOM IN" or "ZOOM OUT". The old 44px circle was crushing the
@@ -3858,7 +3868,7 @@ function showDetail(id) {
       html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a6abf">\n        <div style="font-size:11px;color:#a08fd4;font-weight:700;letter-spacing:2px;margin-bottom:8px">SIGNATURE${sigImgs.length > 1 ? "S" : ""}${signerLabel ? ` — ${esc(signerLabel)}` : ""}</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
       sigImgs.forEach((url, displayIdx) => {
         const storageIdx = (selected.signatureImages || []).findIndex((u, i) => u === url && i >= displayIdx);
-        html += `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:1/1">\n          <img src="${url}" ${imgAttrs} onclick="openSignatureLightbox('${selected.id}',${storageIdx})" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in">\n        </div>`;
+        html += `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a">\n          <img src="${url}" ${imgAttrs} onclick="openSignatureLightbox('${selected.id}',${storageIdx})" style="display:block;width:100%;height:auto;border-radius:inherit;cursor:zoom-in">\n        </div>`;
       });
       html += `</div></div>`;
     }
@@ -4528,6 +4538,7 @@ function showAdd() {
   const ab = document.getElementById("add-btn");
   if (ab) ab.style.visibility = "hidden";
   renderForm();
+  window.scrollTo(0, 0);
 }
 
 function enterManualMode() {
@@ -5321,7 +5332,7 @@ function mountResults(cgc, psa) {
       _pendingAssessResult.cgc._highGradeReason = valueGate ? "key" : "grade";
     }
     if (hgUnlocked) {
-      btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">DEEP ASSESSMENT</div><div style="font-size:10px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
+      btn.innerHTML = `<div style="font-size:14px;font-weight:800;letter-spacing:1.5px;line-height:1.2">DEEP ASSESSMENT</div><div style="font-size:12px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
       btn.style.background = "#2a7a3a";
       btn.style.color = "#fff";
       btn.style.textAlign = "center";
@@ -5337,7 +5348,7 @@ function mountResults(cgc, psa) {
       });
       const _fullAlreadyRun = isFullAssessmentComplete(cgc) || isFullAssessmentComplete(formData);
       if (_fullEligible && !_fullAlreadyRun) {
-        btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">FULL ASSESSMENT</div><div style="font-size:10px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
+        btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">FULL ASSESSMENT</div><div style="font-size:12px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
         btn.style.background = "#b8860b";
         btn.style.color = "#fff";
         btn.style.textAlign = "center";
@@ -5355,12 +5366,12 @@ function mountResults(cgc, psa) {
     } else if (typeof hasIdentifiedSignatures === "function" && hasIdentifiedSignatures(cgc && cgc._roboGrade ? {
       roboGrade: cgc._roboGrade
     } : cgc)) {
-      btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">SIGNATURE</div><div style="font-size:10px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">DETECTED</div>`;
+      btn.innerHTML = `<div style="font-size:14px;font-weight:800;letter-spacing:1.5px;line-height:1.2">SIGNATURE</div><div style="font-size:12px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">DETECTED</div>`;
       btn.style.background = "#6a4ba8";
       btn.style.color = "#fff";
       btn.style.textAlign = "center";
     } else if (typeof isRestorationEligible === "function" && isRestorationEligible(formData) && !isRestorationCheckComplete(formData)) {
-      btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">RESTORATION CHECK</div><div style="font-size:10px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
+      btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">RESTORATION CHECK</div><div style="font-size:12px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
       btn.style.background = "#7a4ba8";
       btn.style.color = "#fff";
       btn.style.textAlign = "center";
@@ -6773,7 +6784,7 @@ function showGateTerminatedPreview(gateResult, reason, lockout, details) {
     lockout: lockout,
     details: details || null
   };
-  const html = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:5% 5%;box-sizing:border-box;gap:5%;">\n      <div style="display:flex;align-items:center;gap:12px">\n        <div style="padding:8px 18px;background:#3a1810;color:#ff8060;border-radius:8px;font-size:16px;font-weight:900;letter-spacing:1.5px;text-align:center;border:1.5px solid #ff8060;box-shadow:0 2px 10px rgba(0,0,0,0.4)">${label}</div>\n        <div style="display:flex;flex-direction:column;align-items:center;gap:2px">\n          <img src="assets/robocoin2.webp" style="width:48px;height:48px">\n          <div style="color:#d4af37;font-size:12px;font-weight:800;letter-spacing:0.5px">+1</div>\n        </div>\n      </div>\n      <button id="assess-complete-btn"\n        style="width:auto;min-width:140px;max-width:280px;padding:0 24px;height:44px;background:#5a3030;color:#fff;border:none;font-size:14px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">\n        CANCEL\n      </button>\n    </div>`;
+  const html = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:5% 5%;box-sizing:border-box;gap:5%;">\n      <div style="padding:8px 18px;background:#3a1810;color:#ff8060;border-radius:8px;font-size:16px;font-weight:900;letter-spacing:1.5px;text-align:center;border:1.5px solid #ff8060;box-shadow:0 2px 10px rgba(0,0,0,0.4)">${label}</div>\n      <div style="display:flex;align-items:center;gap:12px">\n        <button id="assess-complete-btn"\n          style="width:auto;min-width:140px;max-width:280px;padding:0 24px;height:44px;background:#5a3030;color:#fff;border:none;font-size:14px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">\n          CANCEL\n        </button>\n        <div style="display:flex;flex-direction:column;align-items:center;gap:2px">\n          <img src="assets/robocoin2.webp" style="width:48px;height:48px">\n          <div style="color:#d4af37;font-size:12px;font-weight:800;letter-spacing:0.5px">+1</div>\n        </div>\n      </div>\n    </div>`;
   window.RobograderScan.slideResultsIntoPanel(html);
   setTimeout(() => {
     const btn = document.getElementById("assess-complete-btn");
@@ -7141,7 +7152,7 @@ function renderForm() {
       }
     };
     const s = styleByState[own] || styleByState["Owned"];
-    return `<div style="display:flex;justify-content:flex-start;margin-top:14px">\n        <button onclick="cycleOwnership()"\n          style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;\n                 padding:5px 12px;border-radius:14px;cursor:pointer;\n                 background:${s.bg};color:${s.fg};border:1px solid ${s.border}">\n          ${own.toUpperCase()}\n        </button>\n      </div>`;
+    return `<div style="display:flex;justify-content:center;margin-top:14px">\n        <button onclick="cycleOwnership()"\n          style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;\n                 padding:5px 12px;border-radius:14px;cursor:pointer;\n                 background:${s.bg};color:${s.fg};border:1px solid ${s.border}">\n          ${own.toUpperCase()}\n        </button>\n      </div>`;
   })()}\n    <div style="display:flex;justify-content:center;margin-top:8px">\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="enterManualMode()" style="width:75%">Enter Manually</button>\n    </div>\n    `}\n  </div>`;
   document.getElementById("main").innerHTML = html;
 }
@@ -8257,6 +8268,30 @@ async function cameraOpen(state) {
     } catch (_afErr) { /* focusMode not supported on this device */ }
     const video = document.getElementById("camera-video");
     video.srcObject = initialStream;
+    // S16: Tap-to-focus — tap the viewfinder to focus at that point
+    video.onclick = async (e) => {
+      try {
+        const track = initialStream.getVideoTracks()[0];
+        if (!track) return;
+        const rect = video.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / rect.width;
+        const y = (e.clientY - rect.top) / rect.height;
+        // Show focus indicator
+        const dot = document.createElement("div");
+        dot.style.cssText = `position:fixed;left:${e.clientX - 24}px;top:${e.clientY - 24}px;width:48px;height:48px;border:2px solid #b8d820;border-radius:50%;pointer-events:none;z-index:9999;opacity:1;transition:opacity 0.8s`;
+        document.body.appendChild(dot);
+        setTimeout(() => { dot.style.opacity = "0"; }, 200);
+        setTimeout(() => dot.remove(), 1000);
+        // Apply focus at tap point
+        await track.applyConstraints({ advanced: [{ focusMode: "single-shot", pointOfInterest: { x, y } }] });
+      } catch (_e) {
+        // pointOfInterest not supported on this device — try plain single-shot
+        try {
+          const track = initialStream.getVideoTracks()[0];
+          if (track) await track.applyConstraints({ advanced: [{ focusMode: "single-shot" }] });
+        } catch (_e2) {}
+      }
+    };
     try {
       const allDevices = await navigator.mediaDevices.enumerateDevices();
       const videoInputs = allDevices.filter(d => d.kind === "videoinput");

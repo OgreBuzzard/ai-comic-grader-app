@@ -126,8 +126,8 @@
   const SLOTS_CORNER = [
     { idx: 0, slotName: 'corner-tl', rotate: false },
     { idx: 1, slotName: 'corner-tr', rotate: false },
-    { idx: 2, slotName: 'corner-bl', rotate: false },
     { idx: 3, slotName: 'corner-br', rotate: false },
+    { idx: 2, slotName: 'corner-bl', rotate: false },
   ];
   // S16: Full Assessment scans all 8 interior/structure images. Order matches
   // the client's FULL_SLOTS storage order. Each scans at 1.0s (half the main
@@ -361,6 +361,14 @@
       background-repeat: no-repeat;
       transform: translateX(-100%);
       transition: transform 500ms cubic-bezier(0.65, 0, 0.35, 1);
+    }
+    .rg-scan-photo.is-spine {
+      /* S16: Rotated images are visually wider; start further left */
+      transform: translateX(-132%);
+    }
+    .rg-scan-photo.is-spine.reset {
+      transition: none !important;
+      transform: translateX(-132%) !important;
     }
     .rg-scan-photo.in-view  { transform: translateX(0);    }
     .rg-scan-photo.out-view { transform: translateX(100%); }
