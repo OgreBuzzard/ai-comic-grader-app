@@ -3168,19 +3168,25 @@ async function signInGoogle() {
   }
 }
 
-// S16: Apple Sign-In uses signInWithRedirect (not popup) because iOS Safari
-// blocks sessionStorage in popup windows, causing "missing initial state" errors.
-// The redirect flow navigates the whole page to Apple's auth, then back.
-// getRedirectResult() in onAuthStateChanged picks up the result on return.
+// S16: Apple Sign-In — try popup first (works on desktop and most browsers).
+// Fall back to redirect only if popup is blocked (mobile Safari edge case).
 async function signInApple() {
   try {
-    await window._signInWithRedirect(window._auth, window._appleProvider);
-    // Page will navigate away — no code runs after this
+    await window._signInWithPopup(window._auth, window._appleProvider);
+    await loadItems();
   } catch (e) {
-    const benignCodes = new Set([ "auth/popup-closed-by-user", "auth/cancelled-popup-request", "auth/popup-blocked" ]);
-    if (!benignCodes.has(e.code)) {
-      alert("Sign in failed: " + e.message);
+    const benignCodes = new Set([ "auth/popup-closed-by-user", "auth/cancelled-popup-request" ]);
+    if (benignCodes.has(e.code)) return;
+    // If popup was blocked, try redirect as fallback
+    if (e.code === "auth/popup-blocked" || e.code === "auth/operation-not-supported-in-this-environment") {
+      try {
+        await window._signInWithRedirect(window._auth, window._appleProvider);
+      } catch (e2) {
+        alert("Sign in failed: " + e2.message);
+      }
+      return;
     }
+    alert("Sign in failed: " + e.message);
   }
 }
 
@@ -8613,7 +8619,7 @@ function cameraOpenSlot(slotIndex) {
   if (_cameraState.current !== slotIndex) _cameraState.rotationSkipped = false;
   _cameraState.current = slotIndex;
   const {kind: kind, mode: mode, queue: queue} = _cameraState;
-  const guideFile = (kind === "corner" ? CAMERA_GUIDE_CORNER : kind === "signature" ? [ null, null ] : kind === "interior" ? [ null, null, null, null, null, null, null, null ] : kind === "restoration" ? [ null, null, null, null, null, null, null ] : kind === "uvfront" ? [ CAMERA_GUIDE_MAIN[0] ] : CAMERA_GUIDE_MAIN)[slotIndex];
+  const guideFile = (kind === "corner" ? CAMERA_GUIDE_CORNER : kind === "signature" ? [ null, null ] : kind === "interior" ? [ null, null, null, null, null, null, null, null ] : kind === "restoration" ? [ CAMERA_GUIDE_MAIN[0], CAMERA_GUIDE_MAIN[1], null, null, null, null, null, null ] : kind === "uvfront" ? [ CAMERA_GUIDE_MAIN[0] ] : CAMERA_GUIDE_MAIN)[slotIndex];
   const label = (kind === "corner" ? CAMERA_LABEL_CORNER : kind === "signature" ? [ "Signature 1", "Signature 2" ] : kind === "interior" ? FULL_SLOTS.map(s => s.label) : kind === "restoration" ? RESTORATION_SLOTS.map(s => s.label) : kind === "uvfront" ? [ "UV FRONT" ] : CAMERA_LABEL_MAIN)[slotIndex];
   const labelEl = document.getElementById("camera-slot-label");
   if (labelEl) labelEl.textContent = (label || "").toUpperCase();
