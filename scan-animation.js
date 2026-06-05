@@ -138,7 +138,7 @@
     { idx: 1, slotName: 'full-1', rotate: true },
     { idx: 2, slotName: 'full-2', rotate: true },
     { idx: 3, slotName: 'full-3', rotate: true },
-    { idx: 4, slotName: 'full-4', rotate: true },
+    { idx: 4, slotName: 'full-4', rotate: true, rotateCCW: true },
     { idx: 5, slotName: 'full-5', rotate: false },
     { idx: 6, slotName: 'full-6', rotate: false },
     { idx: 7, slotName: 'full-7', rotate: true, rotateCCW: true },

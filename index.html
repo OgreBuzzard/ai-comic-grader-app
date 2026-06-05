@@ -360,8 +360,8 @@ onAuthStateChanged(auth, async user => {
       color: #c8b898;
     }
     .rg-btn-silver {
-      background: linear-gradient(180deg, #7a8a9a 0%, #5a6a7a 50%, #4a5a6a 100%);
-      color: #d0dae8; border: 1px solid rgba(208,218,232,0.2);
+      background: linear-gradient(180deg, #8a9db8 0%, #6a82a0 50%, #556e8a 100%);
+      color: #d8e4f0; border: 1px solid rgba(180,200,225,0.3);
     }
     .rg-btn-silver:disabled { background: #2a2a2a; color: #6a6a6a; border-color: transparent; }
     .rg-btn-gold {
@@ -547,7 +547,7 @@ onAuthStateChanged(auth, async user => {
     /* Cropper modal: full-screen overlay with image, controls below */
     #cropper-modal { position: fixed; inset: 0; background: #000; z-index: 1000; display: none; flex-direction: column; }
     #cropper-modal.open { display: flex; }
-    #cropper-stage { flex: 1; min-height: 0; position: relative; background: #000; overflow: hidden; padding: 8px; }
+    #cropper-stage { flex: 1; min-height: 0; position: relative; background: #000; overflow: hidden; padding: 24px; }
     /* Cropper image is hidden until Cropper.js attaches and lays it out properly.
        Without this, the raw <img> renders top-aligned at natural size, then
        jumps when Cropper finishes initializing. The .ready class is added by
@@ -2219,9 +2219,13 @@ function buildComicId(title, issue) {
   return `comic:${abbr}-${issueStr}-${Date.now()}`;
 }
 
-function buildBadge(gradeVal, type, designation, sm, fullAssessment, deepAssessment) {
+function buildBadge(gradeVal, type, designation, sm, fullAssessment, deepAssessment, restored) {
   const cls = sm ? "ubadge ubadge-sm" : "ubadge";
   const lbl = GRADE_LABELS[gradeVal] || "";
+  // S16: If restoration detected, predicted badge turns purple
+  if (restored && (type === "predicted" || type === "cgc-ai" || type === "psa-ai")) {
+    return `<div class="${cls}" style="border-color:#7c3aed;background:linear-gradient(180deg,#9a6ad8 0%,#6a3ab0 100%)"><div class="ubadge-body" style="background:transparent"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.8)">${lbl}</div></div></div>`;
+  }
   if (fullAssessment && (type === "predicted" || type === "cgc-ai" || type === "psa-ai")) {
     return `<div class="${cls}" style="border-color:#b8860b;background:linear-gradient(180deg,#d4af37 0%,#b8860b 100%)"><div class="ubadge-body" style="background:transparent"><div class="ubadge-num" style="color:#3a2a08">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(58,42,8,0.85)">${lbl}</div></div></div>`;
   }
@@ -2258,12 +2262,20 @@ function buildListBadge(c) {
   if (c.roboGrade && c.roboGrade.score != null) {
     const rgScore = Math.round(c.roboGrade.score);
     const showPlus = rgScore >= 90 && rgScore < 100 && !c.highGradeUnlocked;
-    return `<div style="width:56px;height:56px;background:#e8f0c0;border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid #c8d098">\n      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:#1a2208;line-height:1">${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#5a7030;margin-left:1px">+</span>' : ""}</div>\n      <div style="font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;color:#5a7030;letter-spacing:1px;margin-top:2px">RG</div>\n    </div>`;
+    // S16: Purple for restored books, green for normal
+    const _isRestored = !!(c.restorationHighConfidence || (c.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(c.cgcNotes)));
+    const _restoNeg = !!(c.restorationCheckRan && !c.restorationFlag && !_isRestored);
+    const bgColor = _isRestored ? '#d8c8f0' : '#e8f0c0';
+    const borderColor = _isRestored ? '#b098d0' : '#c8d098';
+    const numColor = _isRestored ? '#1a0a2a' : '#1a2208';
+    const lblColor = _isRestored ? '#6a4a8a' : '#5a7030';
+    return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:${numColor};line-height:1">${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#5a7030;margin-left:1px">+</span>' : ""}</div>\n      <div style="font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;color:${lblColor};letter-spacing:1px;margin-top:2px">RG</div>\n      ${_restoNeg ? `<span style="position:absolute;bottom:2px;right:4px;font-size:10px;color:#7a5a9a;font-weight:900;line-height:1">✓</span>` : ''}\n    </div>`;
   }
   if (c.cgcGrade) return buildBadge(normalizeGrade(c.cgcGrade), "cgc-official", detectDesignation(c), true);
   if (c.psaGrade) return buildBadge(normalizeGrade(c.psaGrade), "psa-official", c.psaDesignation || "universal", true);
   const ac = aiCgcGrade(c);
-  if (ac) return buildBadge(ac, "predicted", "", true, isFullAssessmentComplete(c), isDeepAssessmentComplete(c));
+  const _listRestored = !!(c.restorationHighConfidence || (c.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(c.cgcNotes)));
+  if (ac) return buildBadge(ac, "predicted", "", true, isFullAssessmentComplete(c), isDeepAssessmentComplete(c), _listRestored);
   if (c.grade) return buildBadge(c.grade, "my", "", true);
   return "";
 }
@@ -3832,7 +3844,8 @@ function showDetail(id) {
   const cgcOfficialBadge = selected.cgcGrade ? buildBadge(normalizeGrade(selected.cgcGrade), "cgc-official", detectDesignation(selected), false) : null;
   const psaOfficialBadge = selected.psaGrade ? buildBadge(normalizeGrade(selected.psaGrade), "psa-official", selected.psaDesignation || "universal", false) : null;
   const predictedGradeValue = aiCgcGrade(selected);
-  const predictedBadge = predictedGradeValue ? buildBadge(normalizeGrade(predictedGradeValue), "predicted", "", false, isFullAssessmentComplete(selected), isDeepAssessmentComplete(selected)) : null;
+  const _detailRestored = !!(selected.restorationHighConfidence || (selected.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(selected.cgcNotes)));
+  const predictedBadge = predictedGradeValue ? buildBadge(normalizeGrade(predictedGradeValue), "predicted", "", false, isFullAssessmentComplete(selected), isDeepAssessmentComplete(selected), _detailRestored) : null;
   const predictionBoxes = [ cgcOfficialBadge, psaOfficialBadge, predictedBadge ].filter(Boolean);
   const isGraded = !!(selected.cgcGrade || selected.psaGrade);
   const hasInteriorPhoto = !!(selected.images && selected.images[2]);
@@ -3949,13 +3962,13 @@ function showDetail(id) {
   }
   if (selected.restorationCheckTier || isRestorationCheckComplete(selected)) {
     const report = typeof selected.restorationReport === "string" ? selected.restorationReport.trim() : "";
-    let rHtml = `<div style="margin-top:20px"><div class="section-label" style="color:#c8a8e8">Restoration Assessment</div><div class="notes-box" style="border-color:#3a2a4a;background:#140d1a">`;
+    let rHtml = `<div style="margin-top:20px"><div class="section-label">Restoration Assessment</div><div class="notes-box">`;
     if (report) {
-      rHtml += `<div style="color:#d8c8e8;font-size:12px;line-height:1.55">${esc(report)}</div>`;
+      rHtml += `<div style="font-size:12px;line-height:1.55">${esc(report)}</div>`;
     } else {
-      rHtml += `<div style="color:#9a8aaa;font-size:12px">Restoration Check ran, but no assessment text was recorded.</div>`;
+      rHtml += `<div style="color:#9a8a7a;font-size:12px">Restoration Check ran, but no assessment text was recorded.</div>`;
     }
-    rHtml += `<div style="color:#7a6a8a;font-size:10px;margin-top:8px;font-style:italic">Observations only — not a determination of restoration. Some restoration cannot be detected without professional examination.</div>`;
+    rHtml += `<div style="color:#8a7a6a;font-size:10px;margin-top:8px;font-style:italic">Observations only — not a determination of restoration. Some restoration cannot be detected without professional examination.</div>`;
     rHtml += "</div></div>";
     html += rHtml;
   }
@@ -7052,7 +7065,8 @@ function renderForm() {
     const cgcOff = formData.cgcGrade ? buildBadge(normalizeGrade(formData.cgcGrade), "cgc-official", detectDesignation(formData), false) : "";
     const psaOff = formData.psaGrade ? buildBadge(normalizeGrade(formData.psaGrade), "psa-official", formData.psaDesignation || "universal", false) : "";
     const predVal = formData.predictedGrade || formData.assessedCGCGrade;
-    const predicted = predVal ? buildBadge(normalizeGrade(predVal), "predicted", "", false) : "";
+    const _editRestored = !!(formData.restorationHighConfidence || (formData.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(formData.cgcNotes)));
+    const predicted = predVal ? buildBadge(normalizeGrade(predVal), "predicted", "", false, false, false, _editRestored) : "";
     return [ cgcOff, psaOff, predicted ].filter(Boolean).join("");
   })()}\n      </div>\n      ${formData.pageQuality ? `<div style="display:flex;justify-content:center">${buildPQBox(formData.pageQuality)}</div>` : ""}\n    </div>` : ""}\n\n    \x3c!-- Transaction metadata block (S11): chronology of acquiring → grading.\n         Cost/FMV moved to bottom of analysis section, after Condition\n         Assessment, per user direction. --\x3e\n    ${df("Date Acquired", "dateAcquired")}\n    <div><label class="field-label">Seller</label>\n      <input value="${esc(formData.seller || "")}" list="seller-list" oninput="formData.seller=this.value;updateSellerList(this.value)" placeholder="Name / source" autocomplete="off">\n      <datalist id="seller-list">${getSellerSuggestions().map(s => `<option value="${esc(s)}">`).join("")}</datalist>\n    </div>\n    ${df("Grading Date", "slabbingDate")}\n\n    \x3c!-- Analysis block (S11 reorder per user direction):\n         Defect Notes, Condition Assessment first\n         Then Enhancement Candidate\n         Then Cost Breakdown (now including FMV inside it)\n         Other gated text fields (Label Notes, Key Info, Grader Notes,\n         Past Assessments) live in their previous positions\n         around these. --\x3e\n    ${formData.cgcGrade || formData.psaGrade || formData.cgcNotes ? `<div><label class="field-label">Label Notes</label><textarea rows="3" readonly style="cursor:not-allowed" title="Label Notes is populated by the assessment. Not user-editable.">${esc(formData.cgcNotes || "")}</textarea></div>` : ""}\n    ${(() => {
     const showLabelNotesEdit = (formData.cgcGrade || formData.psaGrade) && formData.cgcNotes && formData.cgcNotes.trim();
@@ -8069,7 +8083,7 @@ async function submitFullAssessment() {
     const resp = await apiPromise;
     if (!resp.ok) {
       const text = await resp.text();
-      throw new Error(describeAssessmentError(text) || "Full Assessment failed: " + text.slice(0, 200));
+      throw new Error("Full Assessment API error: " + text.slice(0, 300));
     }
     const result = await resp.json();
     if (result.fullAssessmentRan === true) {
@@ -8108,7 +8122,9 @@ async function submitFullAssessment() {
     }
     const _fo2 = document.getElementById("full-assess-overlay");
     if (_fo2) _fo2.remove();
-    alert(describeAssessmentError(e.message) || "Error: " + e.message);
+    // S16: Show actual error for debugging, not just the generic message
+    const userMsg = describeAssessmentError(e.message);
+    alert(userMsg + "\n\n[Debug: " + (e.message || "unknown").slice(0, 200) + "]");
   } finally {
     assessing = false;
     renderForm();
@@ -8550,6 +8566,18 @@ function cameraOpenSlot(slotIndex) {
   if (!_cameraState) return;
   if (_cameraState.current !== slotIndex) _cameraState.rotationSkipped = false;
   _cameraState.current = slotIndex;
+  // S16: Re-evaluate zoom default for this slot
+  const _slotLenses = _cameraState.lenses || [];
+  if (_slotLenses.length > 1) {
+    const _isZI = _cameraState.kind === "interior" && [0, 1, 2, 3].includes(slotIndex);
+    const _isZR = _cameraState.kind === "restoration" && CAMERA_SLOT_ZOOM_RESTORATION[slotIndex];
+    const _zd = (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZI || _isZR);
+    const targetIdx = _zd ? 1 : 0;
+    if (_cameraState.currentLensIdx !== targetIdx) {
+      _cameraState.currentLensIdx = targetIdx;
+      switchToLens(targetIdx).then(() => renderLensSelector());
+    }
+  }
   const {kind: kind, mode: mode, queue: queue} = _cameraState;
   const guideFile = (kind === "corner" ? CAMERA_GUIDE_CORNER : kind === "signature" ? [ null, null ] : kind === "interior" ? [ null, null, null, null, null, null, null, null ] : kind === "restoration" ? [ CAMERA_GUIDE_MAIN[0], CAMERA_GUIDE_MAIN[1], null, null, null, null, null, null ] : kind === "uvfront" ? [ CAMERA_GUIDE_MAIN[0] ] : CAMERA_GUIDE_MAIN)[slotIndex];
   const label = (kind === "corner" ? CAMERA_LABEL_CORNER : kind === "signature" ? [ "Signature 1", "Signature 2" ] : kind === "interior" ? FULL_SLOTS.map(s => s.label) : kind === "restoration" ? RESTORATION_SLOTS.map(s => s.label) : kind === "uvfront" ? [ "UV FRONT" ] : CAMERA_LABEL_MAIN)[slotIndex];
