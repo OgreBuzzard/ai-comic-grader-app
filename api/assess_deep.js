@@ -121,8 +121,8 @@ export default async function handler(req, res) {
 
   let imageInputBlocks;   // the blocks sent to Anthropic (macros or restoration images)
   if (isRestoration) {
-    if (!Array.isArray(restorationImages) || restorationImages.length !== 7) {
-      return sseError(400, { error: 'restorationImages must be an array of 7 (UV Front, Ext Top Staple, Ext Bottom Staple, Outer Edge, Interior Front, Interior Back, Interior Staples)' });
+    if (!Array.isArray(restorationImages) || restorationImages.length !== 8) {
+      return sseError(400, { error: 'restorationImages must be an array of 8 (UV Front, UV Back, Ext Top Staple, Ext Bottom Staple, Outer Edge, Interior Front, Interior Back, Interior Staples)' });
     }
     imageInputBlocks = restorationImages.map(toImageBlock);
     if (imageInputBlocks.some(b => !b)) {
@@ -329,33 +329,35 @@ HARD OUTPUT LIMITS:
   // when signs are apparent; Restoration Check states either way).
   const restorationPrompt = `You are performing a RESTORATION CHECK on a vintage comic book. You are NOT grading it. You are examining 7 photos for physical indicators that the book may have been restored, and reporting them with care. No conclusive determination can be made from photos alone, but you should note visible indications that are consistent with restoration, or note the absence of such indications.
 
-You are given exactly 7 images, in this order:
+You are given exactly 8 images, in this order:
 1. UV FRONT — the FRONT COVER photographed under ULTRAVIOLET (blacklight) illumination in a dark room.
-2. EXTERIOR TOP STAPLE — close-up of the top staple from OUTSIDE the spine.
-3. EXTERIOR BOTTOM STAPLE — close-up of the bottom staple from OUTSIDE the spine.
-4. OUTER EDGE — the outer edge of the book (opposite the spine).
-5. INTERIOR FRONT — inside front cover and first page (2-page spread).
-6. INTERIOR BACK — last page and inside back cover (2-page spread).
-7. INTERIOR STAPLES — both staples from INSIDE the centerfold.
+2. UV BACK — the BACK COVER photographed under ULTRAVIOLET (blacklight) illumination in a dark room.
+3. EXTERIOR TOP STAPLE — close-up of the top staple from OUTSIDE the spine.
+4. EXTERIOR BOTTOM STAPLE — close-up of the bottom staple from OUTSIDE the spine.
+5. OUTER EDGE — the outer edge of the book (opposite the spine).
+6. INTERIOR FRONT — inside front cover and first page (2-page spread).
+7. INTERIOR BACK — last page and inside back cover (2-page spread).
+8. INTERIOR STAPLES — both staples from INSIDE the centerfold.
 
 WHAT TO EXAMINE IN EACH IMAGE:
 
-UV FRONT (Image 1):
-CRITICAL — UV VERIFICATION FIRST: Before evaluating for color touch, confirm the image was ACTUALLY taken under UV light in a DARK environment with NO ambient room lighting. Genuine UV photos have ALL of these characteristics: (1) a deep blue-violet cast over the entire image, (2) fluorescing bright spots where optical brighteners glow vivid white-blue (modern paper, CGC/PSA labels, and case plastic fluoresce strongly), (3) dark surroundings with no warm/white ambient light visible, and (4) original period inks showing muted, relatively uniform fluorescence while any added modern materials fluoresce at a distinctly different intensity or color.
-- If the image is NOT under UV light (normal daylight/indoor color, no blue-violet cast, or significant ambient light visible): set "uvLightPresent": false. Continue examining the other 6 images, but note that color touch cannot be evaluated because the UV image is inadequate.
+UV FRONT & UV BACK (Images 1-2):
+CRITICAL — UV VERIFICATION FIRST: Before evaluating for color touch, confirm EACH UV image was ACTUALLY taken under UV light in a DARK environment with NO ambient room lighting. Genuine UV photos have ALL of these characteristics: (1) a deep blue-violet cast over the entire image, (2) fluorescing bright spots where optical brighteners glow vivid white-blue (modern paper, CGC/PSA labels, and case plastic fluoresce strongly), (3) dark surroundings with no warm/white ambient light visible, and (4) original period inks showing muted, relatively uniform fluorescence while any added modern materials fluoresce at a distinctly different intensity or color.
+- If EITHER image is NOT under UV light (normal daylight/indoor color, no blue-violet cast, or significant ambient light visible): set "uvLightPresent": false for that image. Continue examining the other images, but note that color touch cannot be evaluated on the affected cover because the image is inadequate.
 - If it IS under UV light in a dark environment: set "uvLightPresent": true. Under UV, ADDED INK (color touch, over-painting) typically FLUORESCES DIFFERENTLY from the original printing — it appears as patches with distinctly different intensity or color from surrounding original ink. If no signs of color touch are apparent, say so. If there are patches of color touch apparent, indicate where they are.
+- Examine both front AND back covers for color touch. Restoration is sometimes performed on back covers as well as fronts.
 
-EXTERIOR TOP STAPLE & EXTERIOR BOTTOM STAPLE (Images 2-3):
+EXTERIOR TOP STAPLE & EXTERIOR BOTTOM STAPLE (Images 3-4):
 Look specifically for signs that the staples have been REMOVED and REPLACED — this is a common step in professional restoration where the book is disassembled for cleaning, leaf-casting, or pressing, then re-assembled with new staples. Signs include: staples that look too clean/shiny for the book's age, wrong gauge or style for the era, additional staple holes visible near the current ones, bent legs that show tool marks rather than original factory crimping, or staple crowns that sit differently from original placement. State whether there IS or IS NOT indication of staple replacement or removal.
 
-OUTER EDGE (Image 4):
+OUTER EDGE (Image 5):
 Look specifically for signs of TRIMMING — where the edge has been cut to remove wear, fraying, or foxing. Signs include: an unnaturally clean or straight edge, fresh-cut appearance on old paper, reduced page margins compared to what's expected for the title/era, or edges that are suspiciously uniform when the rest of the book shows wear. Trimming is difficult to detect reliably — only mention it with reasonable confidence. State whether there IS or IS NOT indication of trimming.
 
-INTERIOR FRONT & INTERIOR BACK (Images 5-6):
+INTERIOR FRONT & INTERIOR BACK (Images 6-7):
 Look for LEAF-CASTING (added paper pulp filling losses — visible as patches with different paper texture or thickness), REINFORCEMENT (added backing material, glue sheen, visible fibers that don't match the original paper), or COLOR TOUCH bleed-through (ink or pigment visible from the back of the cover paper indicating color was added to the front). State whether there IS or IS NOT indication of these restoration techniques.
 
-INTERIOR STAPLES (Image 7):
-Look for the same staple replacement/removal signs as Images 2-3, but from the inside. Interior views often reveal: re-bent staple legs with tool marks, evidence of staple holes that have been punched through rather than pressed through during original assembly, or staple-crown-to-paper contact patterns inconsistent with factory production. State whether there IS or IS NOT indication of staple replacement or removal.
+INTERIOR STAPLES (Image 8):
+Look for the same staple replacement/removal signs as Images 3-4, but from the inside. Interior views often reveal: re-bent staple legs with tool marks, evidence of staple holes that have been punched through rather than pressed through during original assembly, or staple-crown-to-paper contact patterns inconsistent with factory production. State whether there IS or IS NOT indication of staple replacement or removal.
 
 OVERALL APPROACH:
 - For each area examined, STATE either way whether restoration indicators are or are not apparent.
@@ -376,13 +378,13 @@ JSON shape:
   "highConfidence": true | false,
   "restorationReport": "<carefully-worded observations covering all 7 images — state findings either way per area>",
   "findings": [
-    { "area": "uv_front | exterior_top_staple | exterior_bottom_staple | outer_edge | interior_front | interior_back | interior_staple", "observation": "<concise, ≤25 words>", "indicatorPresent": true | false }
+    { "area": "uv_front | uv_back | exterior_top_staple | exterior_bottom_staple | outer_edge | interior_front | interior_back | interior_staple", "observation": "<concise, ≤25 words>", "indicatorPresent": true | false }
   ]
 }
 
 Rules:
-- If uvLightPresent is false, set uvCheckFailed true. Still examine the other 6 images and report findings.
-- Include a finding entry for EVERY area examined (all 7 if UV is good, 6 if UV failed).
+- If uvLightPresent is false for either UV image, set uvCheckFailed true for that image. Still examine all other images and report findings.
+- Include a finding entry for EVERY area examined (all 8 if both UVs are good, fewer only if UV images are inadequate).
 - NEVER assert a definitive restoration verdict. Report observations and visible indications only.
 - Do not mention internal references or priors. Report only what these images show.
 `;
@@ -413,9 +415,9 @@ Rules:
         role: 'user',
         content: isRestoration
           ? [
-              { type: 'text', text: 'RESTORATION CHECK IMAGES in order: (1) UV Front, (2) Exterior Top Staple, (3) Exterior Bottom Staple, (4) Outer Edge, (5) Interior Front, (6) Interior Back, (7) Interior Staples.' },
+              { type: 'text', text: 'RESTORATION CHECK IMAGES in order: (1) UV Front, (2) UV Back, (3) Exterior Top Staple, (4) Exterior Bottom Staple, (5) Outer Edge, (6) Interior Front, (7) Interior Back, (8) Interior Staples.' },
               ...macroBlocks,
-              { type: 'text', text: 'First verify Image 1 is genuinely under UV light. Then examine all 7 images for restoration indicators. For each area, state whether indicators are or are not present. Return the JSON.' }
+              { type: 'text', text: 'First verify Images 1 and 2 are genuinely under UV light. Then examine all 8 images for restoration indicators. For each area, state whether indicators are or are not present. Return the JSON.' }
             ]
           : [
               { type: 'text', text: 'CORNER MACROS in order: Top-Left, Top-Right, Bottom-Left, Bottom-Right of the front cover.' },
