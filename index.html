@@ -7930,13 +7930,20 @@ async function submitRestorationCheck() {
   }
   assessing = true;
   renderForm();
+  let restoScanController = null;
   try {
+    // S16: Start scan animation for restoration images
+    if (window.RobograderScan && window.RobograderScan.runScanAnimation) {
+      restoScanController = window.RobograderScan.runScanAnimation(r, "restoration");
+    }
     const compressed = await compressImagesSequentially(r, {
       maxDim: 1000,
       quality: 0.6
+    }).catch(e => {
+      throw new Error("Image compression failed: " + e.message);
     });
     const token = window._currentUser ? await window._currentUser.getIdToken() : null;
-    const resp = await fetch("/api/assess_deep", {
+    const apiPromise = fetch("/api/assess_deep", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -7955,6 +7962,22 @@ async function submitRestorationCheck() {
         issueNumber: formData.issue || ""
       })
     });
+    // Wait for scan animation (with safety timeout)
+    if (restoScanController && restoScanController.promise) {
+      try {
+        await Promise.race([restoScanController.promise, new Promise(r => setTimeout(r, 25000))]);
+      } catch (_e) {}
+    }
+    // Show analyzing overlay
+    if (window.RobograderScan && window.RobograderScan.dismiss) {
+      window.RobograderScan.dismiss();
+    }
+    const _restoOverlay = document.createElement("div");
+    _restoOverlay.id = "resto-assess-overlay";
+    _restoOverlay.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px";
+    _restoOverlay.innerHTML = `<div style="color:#c8a8e8;font-size:18px;font-weight:700;letter-spacing:2px;font-family:'Share Tech Mono',monospace">ANALYZING</div><div style="color:#8a7a9a;font-size:13px;letter-spacing:1px;font-family:'Share Tech Mono',monospace">Examining 8 restoration images…</div><div style="margin-top:12px;width:40px;height:40px;border:3px solid #3a2a4a;border-top-color:#c8a8e8;border-radius:50%;animation:fullspin 1s linear infinite"></div>`;
+    document.body.appendChild(_restoOverlay);
+    const resp = await apiPromise;
     if (!resp.ok) {
       const t = await resp.text();
       throw new Error(describeAssessmentError(t) || "Restoration check failed: " + t.slice(0, 200));
@@ -7972,6 +7995,8 @@ async function submitRestorationCheck() {
       formData.restorationHighConfidence = result.highConfidence === true;
       formData._imagesChanged = true;
       onAssessmentSuccess();
+      const _ro = document.getElementById("resto-assess-overlay");
+      if (_ro) _ro.remove();
       let msg = "Restoration Check complete.";
       if (result.restorationReport) msg += "\n\n" + result.restorationReport;
       alert(msg);
@@ -7980,6 +8005,10 @@ async function submitRestorationCheck() {
       throw new Error("Unexpected Restoration Check response shape");
     }
   } catch (e) {
+    if (restoScanController && restoScanController.cancel) restoScanController.cancel();
+    if (window.RobograderScan && window.RobograderScan.dismiss) window.RobograderScan.dismiss();
+    const _ro2 = document.getElementById("resto-assess-overlay");
+    if (_ro2) _ro2.remove();
     alert(describeAssessmentError(e.message) || "Error: " + e.message);
   } finally {
     assessing = false;
@@ -8282,7 +8311,10 @@ async function cameraOpen(state) {
     // S16: Tap-to-focus — tap the viewfinder to focus at that point
     video.onclick = async (e) => {
       try {
-        const track = initialStream.getVideoTracks()[0];
+        // Use _cameraState.stream (always current) — NOT initialStream which goes stale after switchToLens
+        const currentStream = _cameraState && _cameraState.stream;
+        if (!currentStream) return;
+        const track = currentStream.getVideoTracks()[0];
         if (!track) return;
         const rect = video.getBoundingClientRect();
         const x = (e.clientX - rect.left) / rect.width;
@@ -8293,15 +8325,13 @@ async function cameraOpen(state) {
         document.body.appendChild(dot);
         setTimeout(() => { dot.style.opacity = "0"; }, 200);
         setTimeout(() => dot.remove(), 1000);
-        // Apply focus at tap point
-        await track.applyConstraints({ advanced: [{ focusMode: "single-shot", pointOfInterest: { x, y } }] });
-      } catch (_e) {
-        // pointOfInterest not supported on this device — try plain single-shot
+        // Try pointOfInterest first (Chrome), fall back to plain single-shot (Safari)
         try {
-          const track = initialStream.getVideoTracks()[0];
-          if (track) await track.applyConstraints({ advanced: [{ focusMode: "single-shot" }] });
-        } catch (_e2) {}
-      }
+          await track.applyConstraints({ advanced: [{ focusMode: "single-shot", pointOfInterest: { x, y } }] });
+        } catch (_e1) {
+          await track.applyConstraints({ advanced: [{ focusMode: "single-shot" }] }).catch(() => {});
+        }
+      } catch (_e) {}
     };
     try {
       const allDevices = await navigator.mediaDevices.enumerateDevices();
@@ -9068,8 +9098,22 @@ async function submitForm() {
         finalSignatureImages = signatureResult.images;
       }
       if (rawRestorationImages.length > 0 && rawRestorationImages.some(Boolean)) {
-        syncMsg(`Uploading restoration photo${newRestorationCount === 1 ? "" : "s"}...`);
-        const restorationResult = await processImagesForSave(rawRestorationImages, id, storageSlotsRestoration(RESTORATION_SLOT_COUNT), {
+        // S16: Deduplicate — if a restoration image matches an already-uploaded interior image,
+        // reuse the Cloud Storage URL instead of uploading again
+        const dedupedRestoration = rawRestorationImages.map((img, idx) => {
+          if (!img || !isDataUrl(img)) return img;
+          // Check if this same data URL exists in the interior images
+          const matchIdx = rawInteriorImages.findIndex(iImg => iImg === img);
+          if (matchIdx >= 0 && finalInteriorImages && finalInteriorImages[matchIdx]) {
+            return finalInteriorImages[matchIdx]; // Use already-uploaded URL
+          }
+          return img;
+        });
+        const dedupedNewCount = dedupedRestoration.filter(x => x && isDataUrl(x)).length;
+        if (dedupedNewCount > 0) {
+          syncMsg(`Uploading ${dedupedNewCount} restoration photo${dedupedNewCount === 1 ? "" : "s"}...`);
+        }
+        const restorationResult = await processImagesForSave(dedupedRestoration, id, storageSlotsRestoration(RESTORATION_SLOT_COUNT), {
           generateThumbs: false,
           preserveNulls: true
         });

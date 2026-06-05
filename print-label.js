@@ -2350,6 +2350,12 @@ function renderLabelMarkup(comic, opts) {
 
   const rg = comic.roboGrade;
   const score = Math.round(rg.score ?? 0);
+  // S16: Restoration state for purple coloring + check mark
+  const _labelRestored = !!(comic.restorationHighConfidence || (comic.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(comic.cgcNotes)));
+  const _labelRestoNeg = !!(comic.restorationCheckRan && !comic.restorationFlag && !_labelRestored);
+  const _labelScoreColor = _labelRestored ? '#c8a8e8' : '#b8d820';
+  const _labelBgColor = _labelRestored ? '#1a0a2a' : '#1a2208';
+  const _labelCheckHtml = _labelRestoNeg ? '<span style="color:#9a7ab8;font-size:9px;font-weight:900;margin-left:2px">✓</span>' : '';
 
   // Precision suffix logic (same four-tier rule as the popup version):
   //   100 → no suffix
@@ -2455,10 +2461,10 @@ function renderLabelMarkup(comic, opts) {
     <div class="${wrapClass}" data-grade-id="${gradeId}">
       ${smallLWrap}
       ${faceOpen}
-      <div class="score-box">
+      <div class="score-box"${_labelRestored ? ` style="background:${_labelBgColor}"` : ''}>
         <div class="rg-word">ROBOGRADE</div>
-        <div class="rg-num-wrap"><span class="rg-num">${score}</span></div>
-        ${precision ? `<span class="rg-prec">${precision}</span>` : ''}
+        <div class="rg-num-wrap"><span class="rg-num"${_labelRestored ? ` style="color:${_labelScoreColor}"` : ''}>${score}</span>${_labelCheckHtml}</div>
+        ${precision ? `<span class="rg-prec"${_labelRestored ? ` style="color:${_labelScoreColor};opacity:0.9"` : ''}>${precision}</span>` : ''}
         <div class="rg-v">${versionStr}</div>
       </div>
       <div class="info">

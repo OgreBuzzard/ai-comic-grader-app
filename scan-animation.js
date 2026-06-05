@@ -144,6 +144,18 @@
     { idx: 7, slotName: 'full-7', rotate: true, rotateCCW: true },
   ];
 
+  // S16: Restoration Check scans 8 images
+  const SLOTS_RESTORATION = [
+    { idx: 0, slotName: 'resto-0', rotate: false },
+    { idx: 1, slotName: 'resto-1', rotate: false },
+    { idx: 2, slotName: 'resto-2', rotate: true },
+    { idx: 3, slotName: 'resto-3', rotate: true },
+    { idx: 4, slotName: 'resto-4', rotate: true, rotateCCW: true },
+    { idx: 5, slotName: 'resto-5', rotate: false },
+    { idx: 6, slotName: 'resto-6', rotate: false },
+    { idx: 7, slotName: 'resto-7', rotate: true, rotateCCW: true },
+  ];
+
   // ── Region coordinates (% of chest image) ───────────────────────────
   // Measured from the 577×1835 Robograder_Scan_Frame.webp (S16 update:
   // 5px taller than original 1830, coin slot area added at the bottom).
@@ -1259,7 +1271,7 @@
       teardown();
     }
 
-    const slotTable = (kind === 'corner') ? SLOTS_CORNER : (kind === 'full') ? SLOTS_FULL : SLOTS_MAIN;
+    const slotTable = (kind === 'corner') ? SLOTS_CORNER : (kind === 'full') ? SLOTS_FULL : (kind === 'restoration') ? SLOTS_RESTORATION : SLOTS_MAIN;
     // S16: Full Assessment runs 8 scans, so each is 1.0s (half the 2.0s main scan).
     _scanDurationMs = (kind === 'full') ? 1000 : SCAN_DURATION;
 
