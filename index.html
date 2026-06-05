@@ -1316,7 +1316,7 @@ onAuthStateChanged(auth, async user => {
 <body style="overflow:hidden">
 
 <div id="orientation-block" aria-hidden="true">
-  <div class="rotate-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true" fill="none"><rect x="40" y="32" width="20" height="36" rx="3.5" stroke="currentColor" stroke-width="5"/><circle cx="50" cy="62" r="1.5" fill="currentColor"/><path d="M84,50C84,68.652 68.652,84 50,84" stroke="currentColor" stroke-width="5"/><polygon points="46,80 50,90 54,80" fill="currentColor" transform="rotate(-45,50,84)"/><path d="M16,50C16,31.348 31.348,16 50,16" stroke="currentColor" stroke-width="5"/><polygon points="46,12 50,22 54,12" fill="currentColor" transform="rotate(135,50,16)"/></svg></div>
+  <div class="rotate-icon"><img src="assets/rotate-ccw.svg" alt="" style="width:100%;height:100%"></div>
   <div class="orientation-block-title">Rotate to portrait</div>
   <div class="orientation-block-sub">Robograder works best in portrait orientation</div>
 </div>
@@ -8483,10 +8483,10 @@ function applyCameraOrientationState() {
   if (!match) {
     const title = document.getElementById("camera-rotate-title");
     const iconEl = card.querySelector(".rotate-icon");
-    // S16: CW phone icon (portrait→landscape) vs CCW phone icon (landscape→portrait)
-    const svgCW = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none"><rect x="40" y="32" width="20" height="36" rx="3.5" stroke="currentColor" stroke-width="5"/><circle cx="50" cy="62" r="1.5" fill="currentColor"/><path d="M16,50C16,31.348 31.348,16 50,16" stroke="currentColor" stroke-width="5"/><polygon points="46,12 50,22 54,12" fill="currentColor" transform="rotate(-45,50,16)"/><path d="M84,50C84,68.652 68.652,84 50,84" stroke="currentColor" stroke-width="5"/><polygon points="46,80 50,90 54,80" fill="currentColor" transform="rotate(135,50,84)"/></svg>`;
-    const svgCCW = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none"><rect x="40" y="32" width="20" height="36" rx="3.5" stroke="currentColor" stroke-width="5"/><circle cx="50" cy="62" r="1.5" fill="currentColor"/><path d="M84,50C84,68.652 68.652,84 50,84" stroke="currentColor" stroke-width="5"/><polygon points="46,80 50,90 54,80" fill="currentColor" transform="rotate(-45,50,84)"/><path d="M16,50C16,31.348 31.348,16 50,16" stroke="currentColor" stroke-width="5"/><polygon points="46,12 50,22 54,12" fill="currentColor" transform="rotate(135,50,16)"/></svg>`;
-    if (iconEl) iconEl.innerHTML = preferred === "landscape" ? svgCW : svgCCW;
+    // S16: CW and CCW phone icons from repo assets (avoids inline SVG corruption)
+    if (iconEl) iconEl.innerHTML = preferred === "landscape"
+      ? `<img src="assets/rotate-cw.svg" alt="" style="width:100%;height:100%">`
+      : `<img src="assets/rotate-ccw.svg" alt="" style="width:100%;height:100%">`;
     if (preferred === "landscape") {
       card.classList.add("to-landscape");
       card.classList.remove("to-portrait");
