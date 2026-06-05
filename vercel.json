@@ -3,6 +3,12 @@
     "api/assess.js": {
       "maxDuration": 60
     },
+    "api/assess_deep.js": {
+      "maxDuration": 60
+    },
+    "api/assess_full.js": {
+      "maxDuration": 60
+    },
     "api/checkout.js": {
       "maxDuration": 30
     },

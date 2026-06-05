@@ -2104,7 +2104,9 @@ function isGoldenAgeBook(item) {
 function isRestorationEligible(item) {
   if (!item) return false;
   if (item.labelDetected === true) return false;
-  return _isFullDeepListBook(item) || isGoldenAgeBook(item);
+  // S16: Use the full VALUE_KEYS list (matchValueKey), not just the tiny FULL_DEEP_LIST
+  const valueGate = typeof window.matchValueKey === "function" ? !!window.matchValueKey(item.title, item.issue, item.publisher, item.printing) : false;
+  return valueGate || _isFullDeepListBook(item) || isGoldenAgeBook(item);
 }
 
 function isRestorationCheckComplete(item) {
@@ -3847,18 +3849,8 @@ function showDetail(id) {
       html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #b8860b">\n        <div style="font-size:11px;color:#d4af37;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT — INTERIOR &amp; STRUCTURE</div>\n        ${renderFullSlotGrid(interior, {editable: false, comicId: selected.id})}\n      </div>`;
     }
   }
-  if (selected.restorationCheckTier && Array.isArray(selected.restorationImages) && selected.restorationImages.length > 0) {
-    const ri = selected.restorationImages;
-    const imgAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
-    const rLabels = [ "Front UV", "Front Interior", "Back Interior", "Interior Staples" ];
-    html += `<div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
-    rLabels.forEach((label, idx) => {
-      const url = ri[idx];
-      if (url) {
-        html += `<div style="position:relative">\n          <img class="detail-corner" src="${url}" ${imgAttrs} style="width:100%;display:block;border-radius:4px;background:#1a1a1a">\n          <div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(0,0,0,0.55);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${label.toUpperCase()}</div>\n        </div>`;
-      }
-    });
-    html += `</div>`;
+  if (selected.restorationCheckTier && Array.isArray(selected.restorationImages) && selected.restorationImages.some(Boolean)) {
+    html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n        <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">RESTORATION CHECK</div>\n        ${renderRestorationSlotGrid(selected.restorationImages, {editable: false, comicId: selected.id})}\n      </div>`;
   }
   if (hasIdentifiedSignatures(selected)) {
     const sigImgs = (selected.signatureImages || []).filter(u => u);
@@ -8844,7 +8836,7 @@ async function runCropperSequence(captures, kind) {
     };
     formData[metaKey] = meta;
     formData._imagesChanged = true;
-    if (kind === "corner" || kind === "signature" || kind === "interior" || kind === "restoration") {
+    if (kind === "corner" || kind === "signature" || kind === "restoration") {
       continue;
     }
     await new Promise(resolve => {
