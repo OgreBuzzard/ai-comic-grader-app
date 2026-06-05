@@ -376,7 +376,7 @@ JSON shape:
   "uvCheckFailed": true | false,
   "indicatorsObserved": true | false,
   "highConfidence": true | false,
-  "restorationReport": "<carefully-worded observations covering all 7 images — state findings either way per area>",
+  "restorationReport": "<concise summary, ≤120 words — state UV result, then one sentence per area examined (staples, edge, interior, interior staples). End with overall conclusion. Do NOT describe what each image type is for or what you looked for — only state what you found or did not find.>",
   "findings": [
     { "area": "uv_front | uv_back | exterior_top_staple | exterior_bottom_staple | outer_edge | interior_front | interior_back | interior_staple", "observation": "<concise, ≤25 words>", "indicatorPresent": true | false }
   ]
