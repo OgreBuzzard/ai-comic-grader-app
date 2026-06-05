@@ -6350,7 +6350,15 @@ function generateTransferCode() {
 }
 
 async function completeAssessment() {
-  if (!_pendingAssessResult) return;
+  if (!_pendingAssessResult) {
+    console.error("[SAVE BUG] completeAssessment: _pendingAssessResult is null!");
+    const _sf2 = document.createElement("div");
+    _sf2.style.cssText = "position:fixed;top:10px;left:10px;right:10px;z-index:99999;background:#8b1a1a;color:white;padding:12px;font-size:12px;font-weight:bold;border-radius:8px";
+    _sf2.textContent = "SAVE SKIP: _pendingAssessResult is null when COMPLETE tapped";
+    document.body.appendChild(_sf2);
+    setTimeout(() => _sf2.remove(), 10000);
+    return;
+  }
   const {cgc: cgc, psa: psa} = _pendingAssessResult;
   formData.title = normalizeTitle((cgc.title || formData.title || "").trim().replace(/\s+/g, " ").replace(/^The\s+/i, ""), cgc.issueDate || formData.issueDate, cgc.printing || formData.printing);
   formData.issue = cgc.issue != null ? String(cgc.issue) : formData.issue || "";
@@ -6409,6 +6417,7 @@ async function completeAssessment() {
   _assessed = true;
   _pendingAssessResult = null;
   if (!formData.title?.trim()) {
+    console.error("[SAVE BUG] completeAssessment: title empty after setting fields!", JSON.stringify({ cgcTitle: cgc.title, formTitle: formData.title }));
     if (window.RobograderScan && window.RobograderScan.dismiss) {
       window.RobograderScan.dismiss();
     }
@@ -8088,6 +8097,7 @@ async function submitFullAssessment() {
       throw new Error("Unexpected Full Assessment response shape");
     }
   } catch (e) {
+    console.error("[FULL ASSESS] error:", e.message, e.stack);
     if (fullScanController && fullScanController.cancel) fullScanController.cancel();
     if (window.RobograderScan && window.RobograderScan.dismiss) {
       window.RobograderScan.dismiss();
@@ -8926,6 +8936,13 @@ function cancelTreatment(key, e) {
 
 async function submitForm() {
   if (!formData.title?.trim()) {
+    console.error("[SAVE BUG] submitForm: title is empty!", JSON.stringify({ title: formData.title, id: formData.id, hasRoboGrade: !!formData.roboGrade }));
+    // S16: on-screen flash for save bug diagnosis
+    const _sf = document.createElement("div");
+    _sf.style.cssText = "position:fixed;top:10px;left:10px;right:10px;z-index:99999;background:#8b1a1a;color:white;padding:12px;font-size:12px;font-weight:bold;border-radius:8px";
+    _sf.textContent = `SAVE SKIP: title empty. id=${formData.id||'none'} rg=${!!formData.roboGrade} grade=${formData.predictedGrade||'?'}`;
+    document.body.appendChild(_sf);
+    setTimeout(() => _sf.remove(), 10000);
     return;
   }
   formData.title = normalizeTitle(formData.title.trim().replace(/\s+/g, " ").replace(/^The\s+/i, ""), formData.issueDate, formData.printing);
