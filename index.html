@@ -1996,6 +1996,10 @@ const RESTORATION_SLOTS = [ {
   label: "UV Front",
   hint: "Front cover under UV light in a dark room, no ambient light"
 }, {
+  key: "uv_back",
+  label: "UV Back",
+  hint: "Back cover under UV light in a dark room, no ambient light"
+}, {
   key: "exterior_top_staple",
   label: "Exterior Top Staple",
   hint: "Close-up of the top staple from outside the spine"
@@ -2023,7 +2027,11 @@ const RESTORATION_SLOTS = [ {
 
 const RESTORATION_DISPLAY = [ {
   key: "uv_front",
-  width: "full",
+  width: "half",
+  aspect: "3 / 4"
+}, {
+  key: "uv_back",
+  width: "half",
   aspect: "3 / 4"
 }, {
   key: "exterior_top_staple",
@@ -2051,21 +2059,21 @@ const RESTORATION_DISPLAY = [ {
   aspect: "5 / 1"
 } ];
 
-const RESTORATION_SLOT_COUNT = 7;
+const RESTORATION_SLOT_COUNT = 8;
 
 // Mapping: Restoration slot index → Full Assessment slot index (null = unique)
-const RESTORATION_TO_FULL = [ null, 0, 1, 4, 5, 6, 7 ];
+const RESTORATION_TO_FULL = [ null, null, 0, 1, 4, 5, 6, 7 ];
 // Mapping: Full Assessment slot index → Restoration slot index (null = not shared)
-const FULL_TO_RESTORATION = [ 1, 2, null, null, 3, 4, 5, 6 ];
+const FULL_TO_RESTORATION = [ 2, 3, null, null, 4, 5, 6, 7 ];
 
 function restorationSlotIndex(key) {
   return RESTORATION_SLOTS.findIndex(s => s.key === key);
 }
 
-// Camera orientation for restoration slots
-const CAMERA_SLOT_ORIENTATION_RESTORATION = [ "portrait", "landscape", "landscape", "landscape", "landscape", "landscape", "portrait" ];
+// Camera orientation for restoration slots (UV Front+Back portrait, staples+edge+interior landscape, Interior Staples portrait)
+const CAMERA_SLOT_ORIENTATION_RESTORATION = [ "portrait", "portrait", "landscape", "landscape", "landscape", "landscape", "landscape", "portrait" ];
 // Camera zoom for restoration slots (only exterior staples zoom in)
-const CAMERA_SLOT_ZOOM_RESTORATION = [ false, true, true, false, false, false, false ];
+const CAMERA_SLOT_ZOOM_RESTORATION = [ false, false, true, true, false, false, false, false ];
 
 function _normTitleForFull(t) {
   if (!t) return "";
@@ -7077,7 +7085,7 @@ function renderForm() {
     if (!isRestorationEligible(formData)) return "";
     if (isRestorationCheckComplete(formData)) return "";
     if (!_restorationRevealed) {
-      return `\n            <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n              <div style="display:flex;justify-content:center">\n                <button onclick="revealRestorationSlots()" style="width:75%;min-height:48px;border-radius:12px;background:#3a2a4a;color:#c8a8e8;border:1px solid #7a4ba8;font-size:13px;font-weight:700;letter-spacing:1.5px;cursor:pointer">\n                  CHECK RESTORATION\n                </button>\n              </div>\n              <div style="font-size:10px;color:#9a8aaa;text-align:center;margin-top:8px;line-height:1.4">Adds 7 photos (UV front, staples, edge, interior) to check for restoration indicators. A UV light is required for the front-cover photo. 6 of 7 images are shared with Full Assessment.</div>\n            </div>\n          `;
+      return `\n            <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n              <div style="display:flex;justify-content:center">\n                <button onclick="revealRestorationSlots()" style="width:75%;min-height:48px;border-radius:12px;background:#3a2a4a;color:#c8a8e8;border:1px solid #7a4ba8;font-size:13px;font-weight:700;letter-spacing:1.5px;cursor:pointer">\n                  CHECK RESTORATION\n                </button>\n              </div>\n              <div style="font-size:10px;color:#9a8aaa;text-align:center;margin-top:8px;line-height:1.4">Adds 8 photos (UV front + back, staples, edge, interior) to check for restoration indicators. A UV light is required for the UV photos. 6 of 8 images are shared with Full Assessment.</div>\n            </div>\n          `;
     }
     const rImgs = formData.restorationImages || [];
     const rFilled = rImgs.filter(Boolean).length;
@@ -7208,12 +7216,22 @@ function renderRestorationSlotGrid(restoration, opts) {
         ${labelTag}
       </div>`;
   };
-  const fullTop = RESTORATION_DISPLAY.filter(d => d.width === "full" && d.key !== "interior_staple");
-  const halfSlots = RESTORATION_DISPLAY.filter(d => d.width === "half");
-  const stapleSlot = RESTORATION_DISPLAY.find(d => d.key === "interior_staple");
-  let html = `<div style="display:flex;flex-direction:column;gap:6px">${fullTop.map(cell).join("")}</div>`;
-  if (halfSlots.length) html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">${halfSlots.map(cell).join("")}</div>`;
-  if (stapleSlot) html += `<div style="margin-top:6px">${cell(stapleSlot)}</div>`;
+  // S16: Build layout following RESTORATION_DISPLAY order exactly.
+  // UV Front+Back pair → full strips → Interior Front+Back pair → Interior Staples
+  let html = '';
+  let halfBuffer = [];
+  for (const d of RESTORATION_DISPLAY) {
+    if (d.width === "half") {
+      halfBuffer.push(d);
+      if (halfBuffer.length === 2) {
+        html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">${halfBuffer.map(cell).join("")}</div>`;
+        halfBuffer = [];
+      }
+    } else {
+      html += `<div style="margin-top:6px">${cell(d)}</div>`;
+    }
+  }
+  if (halfBuffer.length) html += `<div style="margin-top:6px">${halfBuffer.map(cell).join("")}</div>`;
   return html;
 }
 
@@ -7851,20 +7869,18 @@ function removeRestorationImg(i) {
 
 function tapRestorationSlot(i) {
   _ensureRestorationArray();
-  // S16: UV Front (slot 0) shows the UV card first, then opens camera
-  if (i === 0 && !formData.restorationImages[0]) {
+  // S16: UV Front (slot 0) and UV Back (slot 1) show the UV card first
+  if ((i === 0 || i === 1) && !formData.restorationImages[i]) {
     showUvFrontCard();
     return;
   }
-  // Use the camera for all restoration slots
   if (!window._cameraSupported) {
     _tappedRestorationSlot = i;
     document.getElementById("restoration-photo-input").click();
     return;
   }
-  // Walkthrough: if multiple empty slots, walk through them all
   const list = formData.restorationImages || [];
-  const captureOrder = [ 0, 1, 2, 3, 4, 5, 6 ];
+  const captureOrder = [ 0, 1, 2, 3, 4, 5, 6, 7 ];
   const emptySlotsInOrder = captureOrder.filter(idx => !list[idx]);
   const isMultiEmpty = emptySlotsInOrder.length > 1;
   if (isMultiEmpty) {
@@ -8056,6 +8072,12 @@ async function submitFullAssessment() {
     const compressed = await compressImagesSequentially(interior, {
       maxDim: 1000,
       quality: 0.6
+    }).catch(e => {
+      // S16: Log which image failed compression
+      console.error("[FULL] compression failed:", e.message);
+      const _fo = document.getElementById("full-assess-overlay");
+      if (_fo) _fo.remove();
+      throw new Error("Image compression failed: " + e.message + ". Try retaking the photos.");
     });
     const token = window._currentUser ? await window._currentUser.getIdToken() : null;
     // S16: Start the API call BEFORE awaiting the scan so they run in parallel
@@ -8851,7 +8873,7 @@ async function runCropperSequence(captures, kind) {
     // S16: Interior Staples auto-rotate 90° CW at capture time
     // Interior kind: slot 7. Restoration kind: slot 6.
     let finalUrl = cap.dataUrl;
-    if ((kind === "interior" && cap.slot === 7) || (kind === "restoration" && cap.slot === 6)) {
+    if ((kind === "interior" && cap.slot === 7) || (kind === "restoration" && cap.slot === 7)) {
       try { finalUrl = await _rotateImage90CW(cap.dataUrl); } catch (e) { console.warn("[camera] rotate failed, using original:", e); }
     }
     list[cap.slot] = finalUrl;
