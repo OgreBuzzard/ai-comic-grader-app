@@ -272,11 +272,12 @@
     .rg-scan-shell {
       position: absolute;
       left: 50%;
-      /* S16: Use 100% of container (capped at 480px by .rg-scan-stage max-width)
-         instead of 100vw. Aspect ratio preserves the chest image proportions
-         (577×1835). The shell is taller than viewport — intentional: the head
-         extends above viewport top. */
-      width: 100%;
+      /* S16: Scale to fit both container width AND viewport height.
+         The chest image is 577×1835 (aspect 0.3144). On desktop, the
+         viewport height may be the constraining dimension. Use min()
+         to pick whichever is smaller: full container width, or the
+         width that makes height = viewport height. */
+      width: min(100%, calc(100vh * 577 / 1835));
       aspect-ratio: 577 / 1835;
       /* Anchor to bottom of viewport. */
       bottom: 0;
