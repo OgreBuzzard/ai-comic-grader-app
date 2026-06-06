@@ -131,7 +131,11 @@ export default async function handler(req, res) {
     if (!snap.exists) {
       return res.status(404).json({ error: 'Item not found' });
     }
-    const currentRG = (snap.data().roboGrade) || {};
+    const raw = snap.data();
+    // SchemaVersion 3 nests data inside comicData — write to the correct path
+    const isV3 = raw.schemaVersion === 3;
+    const dataObj = isV3 ? { ...raw, ...(raw.comicData || {}) } : raw;
+    const currentRG = (dataObj.roboGrade) || {};
 
     const updatedRG = {
       ...currentRG,
@@ -147,11 +151,20 @@ export default async function handler(req, res) {
       adminEditedBy: decoded.email
     };
 
-    await itemRef.update({
-      roboGrade: updatedRG,
-      predictedGrade: predictedGrade,
-      assessedCGCGrade: predictedGrade
-    });
+    // Write to the correct location based on schema version
+    if (isV3) {
+      await itemRef.update({
+        'comicData.roboGrade': updatedRG,
+        'comicData.predictedGrade': predictedGrade,
+        'comicData.assessedCGCGrade': predictedGrade
+      });
+    } else {
+      await itemRef.update({
+        roboGrade: updatedRG,
+        predictedGrade: predictedGrade,
+        assessedCGCGrade: predictedGrade
+      });
+    }
 
     return res.status(200).json({
       success: true,
