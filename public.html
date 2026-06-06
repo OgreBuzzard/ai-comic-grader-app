@@ -277,7 +277,7 @@
 <body>
 
 <header>
-  <img src="assets/Robograder_Logo.webp" alt="Robograder" style="width:80px;height:auto;margin:0 auto 8px;display:block">
+  <img src="/assets/Robograder_Logo.webp" alt="Robograder" style="width:80px;height:auto;margin:0 auto 8px;display:block">
   <div style="font-size:11px;letter-spacing:3px;color:#6a5a4a;text-align:center;font-weight:700">COMIC GRADING APP</div>
 </header>
 
@@ -539,7 +539,7 @@
 
   // S16: RG Notes
   const notesBlock = (() => {
-    const notes = data.aiGraderNotes || '';
+    const notes = String(data.aiGraderNotes || '');
     if (!notes.trim()) return '';
     return `<div style="margin:16px 0;padding:14px;background:#f8f6f2;border-radius:10px;border:1px solid #e0dcd6">
       <div style="font-size:11px;font-weight:700;color:#6a5a4a;letter-spacing:1.5px;margin-bottom:8px">RG NOTES</div>
