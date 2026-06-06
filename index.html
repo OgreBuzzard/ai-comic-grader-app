@@ -2262,7 +2262,7 @@ function buildListBadge(c) {
     const borderColor = _isRestored ? '#b098d0' : '#c8d098';
     const numColor = _isRestored ? '#1a0a2a' : '#1a2208';
     const lblColor = _isRestored ? '#6a4a8a' : '#5a7030';
-    return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:${numColor};line-height:1">${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#5a7030;margin-left:1px">+</span>' : ""}</div>\n      <div style="font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;color:${lblColor};letter-spacing:1px;margin-top:2px">RG</div>\n      ${_restoNeg ? `<span style="position:absolute;bottom:2px;right:4px;font-size:10px;color:#7a5a9a;font-weight:900;line-height:1">✓</span>` : ''}\n    </div>`;
+    return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:${numColor};line-height:1">${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#5a7030;margin-left:1px">+</span>' : ""}</div>\n      <div style="font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;color:${lblColor};letter-spacing:1px;margin-top:2px">RG${_restoNeg ? ` <span style="color:#7ab87a;font-size:8px">✓</span>` : ''}</div>\n    </div>`;
   }
   if (c.cgcGrade) return buildBadge(normalizeGrade(c.cgcGrade), "cgc-official", detectDesignation(c), true);
   if (c.psaGrade) return buildBadge(normalizeGrade(c.psaGrade), "psa-official", c.psaDesignation || "universal", true);
@@ -3996,6 +3996,11 @@ function showDetail(id) {
   }
   const _canGive = !isSample && selected.roboGrade;
   html += `<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">\n    ${!isSample && selected.roboGrade ? `<button class="rg-btn rg-btn-primary rg-btn-md" onclick="printLabel('${esc(selected.id)}')">Print Label</button>` : ""}\n    ${_canGive ? `<button class="rg-btn rg-btn-secondary rg-btn-md" onclick="openGiveDialog('${esc(selected.id)}')" style="min-width:120px">Give</button>` : ""}\n    <button class="rg-btn rg-btn-destructive rg-btn-md" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')" style="min-width:172px">Delete</button>\n  </div></div>`;
+  // S16: Complain button — mailto with entry ID in subject
+  if (selected.roboGrade) {
+    const _cId = encodeURIComponent(selected.roboGradeId || selected.id);
+    html += `<div style="text-align:center;margin-top:16px;margin-bottom:8px"><a href="mailto:support@robograder.app?subject=Complaint%20%E2%80%94%20ID%20${_cId}&body=Entry%20ID%3A%20${_cId}%0A%0ADescribe%20the%20issue%3A%0A" style="font-size:12px;font-weight:700;color:#8a6a5a;letter-spacing:1px;text-decoration:none">COMPLAIN</a></div>`;
+  }
   document.getElementById("main").innerHTML = html;
   window.scrollTo(0, 0);
   document.querySelectorAll(".detail-cover, .photo-spine").forEach(img => {
@@ -6339,15 +6344,7 @@ function generateTransferCode() {
 }
 
 async function completeAssessment() {
-  if (!_pendingAssessResult) {
-    console.error("[SAVE BUG] completeAssessment: _pendingAssessResult is null!");
-    const _sf2 = document.createElement("div");
-    _sf2.style.cssText = "position:fixed;top:10px;left:10px;right:10px;z-index:99999;background:#8b1a1a;color:white;padding:12px;font-size:12px;font-weight:bold;border-radius:8px";
-    _sf2.textContent = "SAVE SKIP: _pendingAssessResult is null when COMPLETE tapped";
-    document.body.appendChild(_sf2);
-    setTimeout(() => _sf2.remove(), 10000);
-    return;
-  }
+  if (!_pendingAssessResult) return;
   const {cgc: cgc, psa: psa} = _pendingAssessResult;
   formData.title = normalizeTitle((cgc.title || formData.title || "").trim().replace(/\s+/g, " ").replace(/^The\s+/i, ""), cgc.issueDate || formData.issueDate, cgc.printing || formData.printing);
   formData.issue = cgc.issue != null ? String(cgc.issue) : formData.issue || "";
@@ -6406,7 +6403,6 @@ async function completeAssessment() {
   _assessed = true;
   _pendingAssessResult = null;
   if (!formData.title?.trim()) {
-    console.error("[SAVE BUG] completeAssessment: title empty after setting fields!", JSON.stringify({ cgcTitle: cgc.title, formTitle: formData.title }));
     if (window.RobograderScan && window.RobograderScan.dismiss) {
       window.RobograderScan.dismiss();
     }
@@ -8190,9 +8186,9 @@ async function submitFullAssessment() {
     }
     const _fo2 = document.getElementById("full-assess-overlay");
     if (_fo2) _fo2.remove();
-    // S16: Show actual error for debugging, not just the generic message
+    // S16: Show user-friendly error
     const userMsg = describeAssessmentError(e.message);
-    alert(userMsg + "\n\n[Debug: " + (e.message || "unknown").slice(0, 200) + "]");
+    alert(userMsg || e.message);
   } finally {
     assessing = false;
     renderForm();
@@ -9063,13 +9059,6 @@ function cancelTreatment(key, e) {
 
 async function submitForm() {
   if (!formData.title?.trim()) {
-    console.error("[SAVE BUG] submitForm: title is empty!", JSON.stringify({ title: formData.title, id: formData.id, hasRoboGrade: !!formData.roboGrade }));
-    // S16: on-screen flash for save bug diagnosis
-    const _sf = document.createElement("div");
-    _sf.style.cssText = "position:fixed;top:10px;left:10px;right:10px;z-index:99999;background:#8b1a1a;color:white;padding:12px;font-size:12px;font-weight:bold;border-radius:8px";
-    _sf.textContent = `SAVE SKIP: title empty. id=${formData.id||'none'} rg=${!!formData.roboGrade} grade=${formData.predictedGrade||'?'}`;
-    document.body.appendChild(_sf);
-    setTimeout(() => _sf.remove(), 10000);
     return;
   }
   formData.title = normalizeTitle(formData.title.trim().replace(/\s+/g, " ").replace(/^The\s+/i, ""), formData.issueDate, formData.printing);

@@ -239,8 +239,7 @@
       <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px">
         <div style="background:${OLIVE};border-radius:16px;width:88px;height:88px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;border:1.5px solid ${OLIVE_MID};position:relative">
           ${precision ? `<span style="font-family:system-ui,-apple-system,sans-serif;font-size:11px;font-weight:700;color:${OLIVE_LT};position:absolute;top:6px;right:7px;white-space:nowrap;letter-spacing:0.2px;line-height:1">${precision.replace('±', '± ')}</span>` : ''}
-          ${_restorationNegative ? `<span style="position:absolute;bottom:4px;right:6px;font-size:14px;color:#9a7ab8;font-weight:900;line-height:1" title="Restoration check: no indicators found">✓</span>` : ''}
-          <div style="font-size:8px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:2px">RG</div>
+          <div style="font-size:8px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:2px">RG${_restorationNegative ? ` <span style="color:#7ab87a;font-size:10px">✓</span>` : ''}</div>
           <div style="position:relative;display:flex;justify-content:center;align-items:flex-end;width:100%">
             <span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:40px;font-weight:900;color:${CHARTREUSE};line-height:1">${scoreRounded}</span>
           </div>
