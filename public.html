@@ -483,9 +483,12 @@
     const g = data.predictedGrade;
     if (g == null || g === '' ) return '';
     const gv = String(g).includes('.') ? g : (parseFloat(g).toFixed ? parseFloat(g).toFixed(1) : g);
+    // S16: Purple when restoration detected
+    const _pubRestored = !!(data.restorationHighConfidence || (data.roboGrade && data.roboGrade.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(data.roboGrade.cgcNotes)));
+    const _predBg = _pubRestored ? '#6a3ab0' : '#1a5fa8';
     return `<div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin:22px 0">
       <div style="font-size:11px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase">Predicted Grade</div>
-      <div style="width:104px;height:104px;background:#1a5fa8;border-radius:20px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,0.3)">
+      <div style="width:104px;height:104px;background:${_predBg};border-radius:20px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,0.3)">
         <div style="font-size:38px;font-weight:800;color:#fff;line-height:1">${gv}</div>
       </div>
       <div style="font-size:10px;color:#8a7a6a;text-align:center;max-width:280px;line-height:1.4;font-style:italic">Independent prediction. Robograder is not affiliated with any encapsulation grading service.</div>
@@ -495,10 +498,26 @@
   // S14: reordered per user direction — RoboGrade results first, then the
   // predicted grade, then the images. Identity (title/issue) stays at the
   // very top as the heading.
+  // S16: Assessment tier badges — show which tiers have been completed
+  const tierBadges = (() => {
+    const badges = [];
+    if (data.highGradeUnlocked) badges.push(`<span style="background:#4a5a6a;color:#d8e4f0;padding:4px 10px;border-radius:12px;font-size:10px;font-weight:700;letter-spacing:1px">DEEP ✓</span>`);
+    if (data.fullAssessmentRan) badges.push(`<span style="background:#5a4a1a;color:#d4af37;padding:4px 10px;border-radius:12px;font-size:10px;font-weight:700;letter-spacing:1px">FULL ✓</span>`);
+    if (data.restorationCheckRan) {
+      const restoColor = data.restorationFlag ? '#5a2a2a' : '#2a4a2a';
+      const restoText = data.restorationFlag ? '#ff8080' : '#80d080';
+      const restoLabel = data.restorationFlag ? 'RESTORED' : 'RESTORATION ✓';
+      badges.push(`<span style="background:${restoColor};color:${restoText};padding:4px 10px;border-radius:12px;font-size:10px;font-weight:700;letter-spacing:1px">${restoLabel}</span>`);
+    }
+    if (badges.length === 0) return '';
+    return `<div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:12px 0">${badges.join('')}</div>`;
+  })();
+
   app.innerHTML = `
     ${identityHTML}
     ${robogradePanelHTML}
     ${predictedBlock}
+    ${tierBadges}
     ${photoBlock}
     ${cornerBlock}
   `;
