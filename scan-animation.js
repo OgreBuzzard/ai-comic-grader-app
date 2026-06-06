@@ -248,6 +248,9 @@
     .rg-scan-stage {
       position: fixed;
       inset: 0;
+      /* S16: Match app max-width on desktop — scan should not exceed the content column */
+      max-width: 480px;
+      margin: 0 auto;
       /* TRANSPARENT — do not change this back to an opaque color.
          History: S13 v18 deliberately made this transparent so the chest
          rises up OVER the live Edit view instead of hard-cutting to

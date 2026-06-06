@@ -8003,7 +8003,7 @@ async function submitRestorationCheck() {
     }
     const _restoOverlay = document.createElement("div");
     _restoOverlay.id = "resto-assess-overlay";
-    _restoOverlay.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px";
+    _restoOverlay.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;max-width:480px;margin:0 auto";
     _restoOverlay.innerHTML = `<img src="assets/modal/Progress_Overlay_Restoration.webp" style="max-width:85%;max-height:65vh;object-fit:contain" alt=""><div id="resto-task-label" style="color:#c8a8e8;font-size:14px;font-weight:700;letter-spacing:2px;font-family:'Share Tech Mono',monospace;min-height:20px;text-align:center">UV CHECK</div>`;
     document.body.appendChild(_restoOverlay);
     const _restoTasks = ["UV CHECK", "STAPLE INSPECTION", "TRIMMING CHECK", "LEAF-CASTING SCAN", "RESTORED JUDGMENT"];
@@ -8160,7 +8160,7 @@ async function submitFullAssessment() {
     }
     const _fullOverlay = document.createElement("div");
     _fullOverlay.id = "full-assess-overlay";
-    _fullOverlay.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px";
+    _fullOverlay.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;max-width:480px;margin:0 auto";
     _fullOverlay.innerHTML = `<img src="assets/modal/Progress_Overlay_Full.webp" style="max-width:85%;max-height:65vh;object-fit:contain" alt=""><div id="full-task-label" style="color:#d4af37;font-size:14px;font-weight:700;letter-spacing:2px;font-family:'Share Tech Mono',monospace;min-height:20px;text-align:center">INSPECTING STAPLES</div>`;
     document.body.appendChild(_fullOverlay);
     // Cycle through task names at 1s intervals
