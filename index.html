@@ -8655,6 +8655,34 @@ function applyCameraOrientationState() {
   return match;
 }
 
+// S16: Apply near-field focus for macro/zoomed slots (staples, corners).
+// Sets focusDistance to ~5cm (2 inches) for close-up shots. Falls back
+// gracefully if the device doesn't support focusDistance.
+async function _applyMacroFocus(isMacro) {
+  try {
+    const stream = _cameraState && _cameraState.stream;
+    if (!stream) return;
+    const track = stream.getVideoTracks()[0];
+    if (!track) return;
+    const caps = track.getCapabilities ? track.getCapabilities() : null;
+    if (caps && caps.focusDistance) {
+      if (isMacro) {
+        // Near-field: set focus to minimum supported distance or 5cm
+        const nearDist = Math.max(caps.focusDistance.min || 0.03, 0.05);
+        await track.applyConstraints({ advanced: [{ focusMode: "manual", focusDistance: nearDist }] });
+      } else {
+        // Normal: return to continuous autofocus
+        await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
+      }
+    } else if (isMacro) {
+      // No focusDistance support — try single-shot focus as best effort
+      await track.applyConstraints({ advanced: [{ focusMode: "single-shot" }] });
+    }
+  } catch (_e) {
+    // focusDistance not supported on this device — silent fallback
+  }
+}
+
 function cameraOpenSlot(slotIndex) {
   if (!_cameraState) return;
   if (_cameraState.current !== slotIndex) _cameraState.rotationSkipped = false;
@@ -8668,7 +8696,13 @@ function cameraOpenSlot(slotIndex) {
     const targetIdx = _zd ? 1 : 0;
     if (_cameraState.currentLensIdx !== targetIdx) {
       _cameraState.currentLensIdx = targetIdx;
-      switchToLens(targetIdx).then(() => renderLensSelector());
+      switchToLens(targetIdx).then(() => {
+        renderLensSelector();
+        // S16: Apply near-field focus for macro slots (staples, corners)
+        _applyMacroFocus(_zd);
+      });
+    } else {
+      _applyMacroFocus(_zd);
     }
   }
   const {kind: kind, mode: mode, queue: queue} = _cameraState;
