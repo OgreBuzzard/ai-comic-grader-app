@@ -451,19 +451,20 @@
   }
 
   .images-block {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
   }
   .img-wrap {
     background: var(--panel);
     border: 1px solid var(--rule);
     border-radius: 8px;
     overflow: hidden;
+    cursor: zoom-in;
   }
   .img-wrap .label {
-    padding: 6px 12px;
-    font-size: 11px;
+    padding: 4px 8px;
+    font-size: 9px;
     color: var(--text-dim);
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -472,7 +473,44 @@
   .img-wrap img {
     width: 100%;
     display: block;
+    aspect-ratio: 3 / 4;
+    object-fit: cover;
   }
+  .img-wrap.wide img {
+    aspect-ratio: 5 / 1;
+  }
+  /* S16: Admin lightbox */
+  #admin-lightbox {
+    display: none;
+    position: fixed; inset: 0;
+    z-index: 9999;
+    background: rgba(0,0,0,0.95);
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+  }
+  #admin-lightbox.show { display: flex; }
+  #admin-lightbox img {
+    max-width: 90%;
+    max-height: 75vh;
+    object-fit: contain;
+    border-radius: 4px;
+  }
+  #admin-lightbox .lb-btns {
+    display: flex; gap: 12px;
+  }
+  #admin-lightbox .lb-btn {
+    padding: 10px 20px;
+    background: #333;
+    color: #fff;
+    border: 1px solid #555;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  #admin-lightbox .lb-btn:hover { background: #444; }
 
   .empty {
     text-align: center;
@@ -1621,7 +1659,7 @@ function renderItemDetail(it) {
       <h3 class="section-h">Images (${it.images.length})</h3>
       <div class="images-block">
         ${it.images.map((url, i) => `
-          <div class="img-wrap">
+          <div class="img-wrap" onclick="openAdminLightbox('${escapeAttr(url)}')">
             <div class="label">${imgLabel(i, it.images.length)}</div>
             <img src="${escapeAttr(url)}" alt="" loading="lazy">
           </div>
@@ -1633,7 +1671,7 @@ function renderItemDetail(it) {
       <h3 class="section-h" style="margin-top:20px;">Corner Macros (${it.cornerImages.length})</h3>
       <div class="images-block">
         ${it.cornerImages.map((url, i) => `
-          <div class="img-wrap">
+          <div class="img-wrap" onclick="openAdminLightbox('${escapeAttr(url)}')">
             <div class="label">${['Top Left','Top Right','Bottom Left','Bottom Right'][i] || ('Corner ' + (i+1))}</div>
             <img src="${escapeAttr(url)}" alt="" loading="lazy">
           </div>
@@ -1759,6 +1797,33 @@ function escapeHtml(s) {
 }
 function escapeAttr(s) {
   return escapeHtml(s);
+}
+</script>
+<div id="admin-lightbox">
+  <img id="admin-lb-img" src="" alt="">
+  <div class="lb-btns">
+    <button class="lb-btn" onclick="document.getElementById('admin-lightbox').classList.remove('show')">Exit</button>
+    <button class="lb-btn" onclick="saveAdminLightboxImage()">Save Image</button>
+  </div>
+</div>
+<script>
+function openAdminLightbox(src) {
+  const lb = document.getElementById('admin-lightbox');
+  const img = document.getElementById('admin-lb-img');
+  img.src = src;
+  lb.classList.add('show');
+  lb.onclick = function(e) { if (e.target === lb) lb.classList.remove('show'); };
+}
+function saveAdminLightboxImage() {
+  const img = document.getElementById('admin-lb-img');
+  if (!img.src) return;
+  const a = document.createElement('a');
+  a.href = img.src;
+  a.download = 'robograder-image.jpg';
+  a.target = '_blank';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 </script>
 </body>
