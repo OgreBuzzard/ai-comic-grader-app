@@ -168,6 +168,7 @@ export default async function handler(req, res) {
       restorationCheckRan: !!comic.restorationCheckRan,
       restorationFlag: !!comic.restorationFlag,
       restorationHighConfidence: !!comic.restorationHighConfidence,
+      restorationReport: comic.restorationReport || null,
       // Integrity badge state (S12). 'verified' = all assessed photos were
       // captured in-app; 'unverified' = at least one was uploaded; 'empty' =
       // no images. public.html renders the corresponding pill.
