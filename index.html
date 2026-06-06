@@ -1763,6 +1763,11 @@ function _normalizeKeyIssue(s) {
 
 window.matchValueKey = function matchValueKey(title, issue, publisher, printing) {
   if (!_valueKeys) return null;
+  // S16: Reprint gate restored — facsimile/reprint editions are not value keys
+  if (printing && typeof printing === "string") {
+    const p = printing.toLowerCase();
+    if (p.includes("facsimile") || p.includes("reprint")) return null;
+  }
   const nt = _normalizeKeyTitle(title);
   const ni = _normalizeKeyIssue(issue);
   if (!nt || !ni) return null;

@@ -513,11 +513,22 @@
     return `<div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:12px 0">${badges.join('')}</div>`;
   })();
 
+  // S16: Restoration report on public page
+  const restorationBlock = (() => {
+    if (!data.restorationCheckRan || !data.restorationReport) return '';
+    return `<div style="margin:16px 0;padding:14px;background:#f8f6f2;border-radius:10px;border:1px solid #e0dcd6">
+      <div style="font-size:11px;font-weight:700;color:#6a5a4a;letter-spacing:1.5px;margin-bottom:8px">RESTORATION ASSESSMENT</div>
+      <div style="font-size:12px;color:#3a3028;line-height:1.55">${esc(data.restorationReport)}</div>
+      <div style="font-size:10px;color:#8a7a6a;margin-top:8px;font-style:italic">Observations only — not a determination of restoration.</div>
+    </div>`;
+  })();
+
   app.innerHTML = `
     ${identityHTML}
     ${robogradePanelHTML}
     ${predictedBlock}
     ${tierBadges}
+    ${restorationBlock}
     ${photoBlock}
     ${cornerBlock}
   `;
