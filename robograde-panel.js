@@ -123,7 +123,8 @@
       if (!arr.length) return '';
       return arr.map((d, i) => {
         const detailParts = [];
-        if (d.location && d.location !== 'N/A') detailParts.push(d.location);
+        // S16: Skip "interior" location for Page quality — it's redundant
+        if (d.location && d.location !== 'N/A' && !(d.type === 'Page quality' && d.location === 'interior')) detailParts.push(d.location);
         if (d.measurement && d.measurement !== 'N/A') detailParts.push(d.measurement.replace(/^~\s*/, ''));
         if (d.colorBreaking) detailParts.push('color breaking');
         const detailStr = detailParts.length ? ` - ${detailParts.join(', ')}` : '';

@@ -1450,13 +1450,6 @@ onAuthStateChanged(auth, async user => {
     </div>
 
     <div class="settings-section-label">Notifications</div>
-    <div class="settings-row" style="cursor:default;opacity:0.4">
-      <div>
-        <div class="sr-label">Email notifications</div>
-        <div class="sr-detail">Coming soon</div>
-      </div>
-    </div>
-
     <div class="settings-section-label">Privacy</div>
     <div class="settings-row" style="cursor:default">
       <div style="flex:1">
@@ -1514,7 +1507,7 @@ onAuthStateChanged(auth, async user => {
         <a href="mailto:support@robograder.app" style="font-size:14px;font-weight:700;color:#d4af37;text-decoration:none;letter-spacing:0.3px">support@robograder.app</a>
       </div>
       <div style="font-size:11px;color:#4a3a2a;line-height:1.6;text-align:center">
-        Robograder v4.15 · Assessment credits are non-refundable.
+        Robograder v4.16 · Assessment credits are non-refundable.
         Images are stored securely in your personal account.
       </div>
     </div>
@@ -3337,6 +3330,12 @@ function hideBuyCredits() {
   }
   const inp = document.getElementById("promo-code-input");
   if (inp) inp.value = "";
+  // S16: Return to Settings if Buy was opened from there
+  if (window._buyOpenedFromSettings) {
+    window._buyOpenedFromSettings = false;
+    const overlay = document.getElementById("settings-overlay");
+    if (overlay) overlay.style.display = "flex";
+  }
 }
 
 const PROMOS_CLIENT = [ {
@@ -6114,7 +6113,7 @@ function openSettings() {
     const n = countBooksWithImages();
     const paid = userHasPaidCredits();
     const cap = paid ? IMAGE_PAID_CAP : IMAGE_HARD_CAP;
-    imgEl.textContent = `${n} of ${cap} (${paid ? "paid account" : "free account"})`;
+    imgEl.textContent = `${n} entries`;
   }
   refreshExportRemainingDisplay();
   overlay.style.display = "flex";
@@ -6127,6 +6126,7 @@ function closeSettings() {
 
 function openSettings_buyCredits() {
   closeSettings();
+  window._buyOpenedFromSettings = true;
   showBuyCredits();
 }
 
@@ -7034,7 +7034,10 @@ function renderForm() {
     return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #b8860b">\n            <div style="font-size:11px;color:#d4af37;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT — 8 SLOTS</div>\n            <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">${blurb}</div>\n            ${renderFullSlotGrid(interior, {editable: true})}\n            <input id="interior-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="full-assess-btn" class="rg-btn rg-btn-assess rg-btn-gold${assessing ? ' assessing' : ''}" onclick="submitFullAssessment()" ${ready ? "" : "disabled"}>\n                ${btnLabel}\n              </button>\n            </div>\n          </div>\n        `;
   })()}\n      ${(() => {
     if (!isRestorationEligible(formData)) return "";
-    if (isRestorationCheckComplete(formData)) return "";
+    if (isRestorationCheckComplete(formData)) {
+      const rImgs = formData.restorationImages || [];
+      return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n            <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">RESTORATION CHECK</div>\n            ${renderRestorationSlotGrid(rImgs, {editable: true})}\n            <input id="restoration-photo-input" type="file" accept="image/*" multiple onchange="handleRestorationImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="restoration-check-btn" class="rg-btn rg-btn-assess rg-btn-purple${assessing ? ' assessing' : ''}" onclick="submitRestorationCheck()" ${rImgs.filter(Boolean).length >= RESTORATION_SLOT_COUNT ? "" : "disabled"}>\n                ${assessing ? "Checking…" : "RE-RUN RESTORATION CHECK"}\n              </button>\n            </div>\n          </div>\n        `;
+    }
     if (!_restorationRevealed) {
       return `\n            <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n              <div style="display:flex;justify-content:center">\n                <button onclick="revealRestorationSlots()" style="width:75%;min-height:48px;border-radius:12px;background:#3a2a4a;color:#c8a8e8;border:1px solid #7a4ba8;font-size:13px;font-weight:700;letter-spacing:1.5px;cursor:pointer">\n                  CHECK RESTORATION\n                </button>\n              </div>\n              <div style="font-size:10px;color:#9a8aaa;text-align:center;margin-top:8px;line-height:1.4">Adds 8 photos (UV front + back, staples, edge, interior) to check for restoration indicators. A UV light is required for the UV photos. 6 of 8 images are shared with Full Assessment.</div>\n            </div>\n          `;
     }
@@ -7244,16 +7247,22 @@ function renderFullSlotGrid(interior, opts) {
         ${labelTag}
       </div>`;
   };
-  // Layout: full-width strips → half-width pair → centered half
-  const fullSlots = FULL_DISPLAY.filter(d => d.width === "full");
-  const halfSlots = FULL_DISPLAY.filter(d => d.width === "half" && !d.centered);
-  const centeredSlots = FULL_DISPLAY.filter(d => d.width === "half" && d.centered);
-  const stripsHtml = fullSlots.map(cell).join("");
-  const halvesHtml = halfSlots.map(cell).join("");
-  const centeredHtml = centeredSlots.map(cell).join("");
-  let html = `<div style="display:flex;flex-direction:column;gap:6px">${stripsHtml}</div>`;
-  if (halvesHtml) html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">${halvesHtml}</div>`;
-  if (centeredHtml) html += `<div style="display:flex;justify-content:center;margin-top:6px"><div style="width:calc(50% - 3px)">${centeredHtml}</div></div>`;
+  // S16: Build layout following FULL_DISPLAY order exactly.
+  // Strips first, then Interior Front+Back pair, then Interior Staples below.
+  let html = '';
+  let halfBuffer = [];
+  for (const d of FULL_DISPLAY) {
+    if (d.width === "half") {
+      halfBuffer.push(d);
+      if (halfBuffer.length === 2) {
+        html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">${halfBuffer.map(cell).join("")}</div>`;
+        halfBuffer = [];
+      }
+    } else {
+      html += `<div style="margin-top:6px">${cell(d)}</div>`;
+    }
+  }
+  if (halfBuffer.length) html += `<div style="margin-top:6px">${halfBuffer.map(cell).join("")}</div>`;
   return html;
 }
 
