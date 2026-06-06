@@ -277,10 +277,8 @@
 <body>
 
 <header>
-  <div class="wordmark">
-    Robograder
-    <span>AI Comic Assessment</span>
-  </div>
+  <img src="assets/Robograder_v4_Load.webp" alt="Robograder" style="width:80px;height:auto;margin:0 auto 8px;display:block">
+  <div style="font-size:11px;letter-spacing:3px;color:#6a5a4a;text-align:center;font-weight:700">COMIC GRADING APP</div>
 </header>
 
 <div class="content">
@@ -332,6 +330,7 @@
     return;
   }
 
+  try {
   const rg = data.roboGrade || {};
   const score = rg.score != null ? Math.round(rg.score) : '—';
 
@@ -639,6 +638,18 @@
         <a class="rg-cta-btn" href="/">Open Robograder</a>
       </div>
     `);
+  }
+  } catch (renderErr) {
+    console.error('[public] Render error:', renderErr);
+    const app = document.querySelector('.content #app') || document.getElementById('app');
+    if (app) {
+      app.innerHTML = `<div style="text-align:center;padding:40px;color:#8a6a5a">
+        <div style="font-size:16px;font-weight:700;margin-bottom:8px">Something went wrong</div>
+        <div style="font-size:12px">This listing couldn't be displayed. Try refreshing the page.</div>
+      </div>`;
+    }
+    const lo = document.getElementById('loading-overlay');
+    if (lo) lo.style.display = 'none';
   }
 })();
 
