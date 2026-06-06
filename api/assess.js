@@ -1693,7 +1693,8 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           highGrade: !!highGrade,
           gradeRefRan: gradeRefSucceeded,
           gateResult: parsed.gateResult || 'COMIC',
-          predictedGrade: parsed.grade || null,
+          // S16: Cap predicted grade at 9.8 — 10.0 should never be predicted
+          predictedGrade: parsed.grade ? String(Math.min(parseFloat(parsed.grade), 9.8).toFixed(1)) : null,
           gradeBeforeRefinement: parsed.gradeBeforeRefinement || null,
           // Diagnostic v3.97: token usage and output complexity. These are the
           // missing variables we need to identify what's actually driving the

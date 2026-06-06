@@ -311,7 +311,7 @@ Your entire response must be a JSON object and nothing else. First character an 
 
 JSON shape:
 {
-  "grade": <number, final CGC-scale grade 0.5-10.0 — usually unchanged>,
+  "grade": <number, final CGC-scale grade 0.5-9.8 — this should reflect the PRIOR defects already identified in the main assessment. The Full Assessment examines interior structure but the PREDICTED GRADE should be consistent with the defects found on the covers/spine. A book with ANY defect listed cannot be 9.8. NEVER return 10.0. If the prior predicted grade seems correct given the defects, return it unchanged. Only LOWER the grade if interior examination reveals new problems (trimming, missing pages, detached centerfold). Do NOT raise the grade above the prior prediction unless you can specifically explain why a prior defect was overestimated.>,
   "gradeChanged": "<'same' | 'down' | 'up'>",
   "pageQuality": "<final page quality designation, e.g. 'Off-White to White'>",
   "pageQualityChanged": "<'same' | 'up' | 'down'>",
@@ -524,7 +524,7 @@ Rules:
       if (!Number.isFinite(n)) return dflt;
       return Math.min(hi, Math.max(lo, n));
     };
-    const grade = _num(parsed.grade, 0.5, 10.0, parseFloat(predictedGrade) || null);
+    const grade = Math.min(_num(parsed.grade, 0.5, 10.0, parseFloat(predictedGrade) || null), 9.8);
     const confidenceRange = _num(parsed.confidenceRange, 0, 6, 1);
     const pageQuality = (typeof parsed.pageQuality === 'string' && parsed.pageQuality.trim())
       ? parsed.pageQuality.trim() : (initialPageQuality || '');
@@ -568,7 +568,14 @@ Rules:
       // (which can be 0 for a fully-documented, pristine book). This lets
       // the Full Assessment score exceed the Deep ceiling (97) when the
       // interior confirms a near-perfect book.
-      roboScore: Math.min(Math.round(grade * 10), 100 - confidenceRange),
+      // S16: The Full Assessment can only LOWER the RG score, never raise it.
+      // The original RG comes from sub-scores (Front+Back+Spine+Interior).
+      // Replacing it with grade*10 ignores the sub-scores entirely.
+      roboScore: (() => {
+        const origRG = initialAssessment && initialAssessment.score != null ? initialAssessment.score : null;
+        const fullRG = Math.min(Math.round(grade * 10), 100 - confidenceRange);
+        return origRG != null ? Math.min(origRG, fullRG) : fullRG;
+      })(),
       _diagnostics: { phaseTimings }
     };
 
