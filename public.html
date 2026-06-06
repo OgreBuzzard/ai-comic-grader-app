@@ -523,14 +523,86 @@
     </div>`;
   })();
 
+  // S16: Enhancement badge
+  const enhancementBlock = (() => {
+    const e = data.enhancement || 'No';
+    const color = e === 'No' ? '#5a4a3a' : '#8a3a1a';
+    const bg = e === 'No' ? '#f0ece6' : '#fde8e0';
+    return `<div style="text-align:center;margin:12px 0"><span style="background:${bg};color:${color};padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;letter-spacing:0.5px">Enhancement: ${esc(e)}</span></div>`;
+  })();
+
+  // S16: RG Notes
+  const notesBlock = (() => {
+    const notes = data.aiGraderNotes || '';
+    if (!notes.trim()) return '';
+    return `<div style="margin:16px 0;padding:14px;background:#f8f6f2;border-radius:10px;border:1px solid #e0dcd6">
+      <div style="font-size:11px;font-weight:700;color:#6a5a4a;letter-spacing:1.5px;margin-bottom:8px">RG NOTES</div>
+      <div style="font-size:12px;color:#3a3028;line-height:1.55">${esc(notes)}</div>
+    </div>`;
+  })();
+
+  // S16: Interior images (Full Assessment)
+  const interiorBlock = (() => {
+    if (!data.interiorImages || data.interiorImages.filter(Boolean).length === 0) return '';
+    const iImgs = data.interiorImages;
+    const labels = ['Ext Top Staple', 'Ext Bottom Staple', 'Top Pages', 'Bottom Pages', 'Outer Edge', 'Interior Front', 'Interior Back', 'Interior Staples'];
+    let tiles = '';
+    for (let i = 0; i < iImgs.length; i++) {
+      if (iImgs[i]) {
+        const isWide = i < 5 || i === 7;
+        tiles += `<div style="margin-top:6px${!isWide ? ';display:inline-block;width:calc(50% - 3px);vertical-align:top' : ''}">
+          <div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:${isWide ? '5/1' : '3/2'}">
+            <img src="${esc(iImgs[i])}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" onclick="openLightbox('${esc(iImgs[i])}')">
+            <div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.6);color:#fff;font-size:8px;padding:2px 5px;border-radius:3px;letter-spacing:0.5px">${labels[i] || ''}</div>
+          </div>
+        </div>`;
+      }
+    }
+    return `<div style="margin:16px 0">
+      <div style="font-size:11px;font-weight:700;color:#d4af37;letter-spacing:1.5px;margin-bottom:6px;padding-top:14px;border-top:1px dashed #b8860b">FULL ASSESSMENT — INTERIOR & STRUCTURE</div>
+      ${tiles}
+    </div>`;
+  })();
+
+  // S16: Restoration images
+  const restoImgBlock = (() => {
+    if (!data.restorationImages || data.restorationImages.filter(Boolean).length === 0) return '';
+    const rImgs = data.restorationImages;
+    const labels = ['UV Front', 'UV Back', 'Ext Top Staple', 'Ext Bottom Staple', 'Outer Edge', 'Interior Front', 'Interior Back', 'Interior Staples'];
+    let tiles = '';
+    for (let i = 0; i < rImgs.length; i++) {
+      if (rImgs[i]) {
+        const isHalf = i < 2;
+        const isWide = i >= 2 && i <= 4 || i === 7;
+        const aspect = isHalf ? '3/4' : isWide ? '5/1' : '3/2';
+        const wrap = isHalf ? 'display:inline-block;width:calc(50% - 3px);vertical-align:top;' : '';
+        const inlineWrap = (!isHalf && !isWide) ? 'display:inline-block;width:calc(50% - 3px);vertical-align:top;' : '';
+        tiles += `<div style="margin-top:6px;${wrap || inlineWrap}">
+          <div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:${aspect}">
+            <img src="${esc(rImgs[i])}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" onclick="openLightbox('${esc(rImgs[i])}')">
+            <div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.6);color:#fff;font-size:8px;padding:2px 5px;border-radius:3px;letter-spacing:0.5px">${labels[i] || ''}</div>
+          </div>
+        </div>`;
+      }
+    }
+    return `<div style="margin:16px 0">
+      <div style="font-size:11px;font-weight:700;color:#c8a8e8;letter-spacing:1.5px;margin-bottom:6px;padding-top:14px;border-top:1px dashed #7a4ba8">RESTORATION CHECK</div>
+      ${tiles}
+    </div>`;
+  })();
+
   app.innerHTML = `
     ${identityHTML}
     ${robogradePanelHTML}
     ${predictedBlock}
     ${tierBadges}
+    ${enhancementBlock}
     ${restorationBlock}
+    ${notesBlock}
     ${photoBlock}
     ${cornerBlock}
+    ${interiorBlock}
+    ${restoImgBlock}
   `;
 
   document.querySelector('.content').insertAdjacentHTML('beforeend', `

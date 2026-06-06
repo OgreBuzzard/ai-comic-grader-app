@@ -272,12 +272,9 @@
     .rg-scan-shell {
       position: absolute;
       left: 50%;
-      /* S16: Scale to fit both container width AND viewport height.
-         The chest image is 577×1835 (aspect 0.3144). On desktop, the
-         viewport height may be the constraining dimension. Use min()
-         to pick whichever is smaller: full container width, or the
-         width that makes height = viewport height. */
-      width: min(100%, calc(100vh * 577 / 1835));
+      /* Mobile: full container width (fills screen). On mobile the shell
+         is INTENTIONALLY taller than viewport — head extends above. */
+      width: 100%;
       aspect-ratio: 577 / 1835;
       /* Anchor to bottom of viewport. */
       bottom: 0;
@@ -720,6 +717,13 @@
     }
     .rg-scan-needle-wrap.final-sweep {
       transition: transform 2000ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    /* S16: On desktop (wider than mobile), also constrain height to viewport.
+       On mobile, the shell is intentionally taller than viewport. */
+    @media (min-width: 540px) {
+      .rg-scan-shell {
+        width: min(100%, calc(100vh * 577 / 1835));
+      }
     }
   `;
 
