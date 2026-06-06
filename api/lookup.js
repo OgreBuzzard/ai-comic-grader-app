@@ -155,6 +155,12 @@ export default async function handler(req, res) {
       cornerImages:      flatCornerImages,
       // Page quality is condition info, not personal — include it
       pageQuality:       comic.pageQuality || '',
+      // S16: Additional fields for public page parity with Detail view
+      aiGraderNotes:     comic.aiGraderNotes || (comic.roboGrade && comic.roboGrade.graderNotes) || '',
+      aiAssessment:      comic.aiAssessment || (comic.roboGrade && comic.roboGrade.aiAssessment) || '',
+      enhancement:       comic.enhancement || 'No',
+      interiorImages:    Array.isArray(comic.interiorImages) ? comic.interiorImages : [],
+      restorationImages: Array.isArray(comic.restorationImages) ? comic.restorationImages : [],
       // S14 unification: predictedGrade is now a public field. New items
       // write it directly; legacy items have it synthesized from
       // assessedCGCGrade by the client-side flattener on save. Public
