@@ -1730,12 +1730,12 @@ async function rescoreItem() {
   try {
     const resp = await api('/api/rescore', {
       method: 'POST',
-      body: JSON.stringify({
+      body: {
         userId: it.uid,
         itemId: it.id,
         defects: window._adminDefects,
         pageQuality: it.pageQuality || 'White'
-      })
+      }
     });
     if (resultEl) {
       resultEl.style.color = '#6a6';
