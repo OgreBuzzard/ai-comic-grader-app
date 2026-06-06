@@ -272,12 +272,12 @@
     .rg-scan-shell {
       position: absolute;
       left: 50%;
-      /* Width-fit: chest fills viewport width. Aspect-derived height
-         (100vw / 0.3153) is taller than viewport on phones — that's
-         intentional. The head extends above viewport top; cavity and
-         results panel sit comfortably in the visible area. */
-      width: 100vw;
-      height: calc(100vw / 0.3144);
+      /* S16: Use 100% of container (capped at 480px by .rg-scan-stage max-width)
+         instead of 100vw. Aspect ratio preserves the chest image proportions
+         (577×1835). The shell is taller than viewport — intentional: the head
+         extends above viewport top. */
+      width: 100%;
+      aspect-ratio: 577 / 1835;
       /* Anchor to bottom of viewport. */
       bottom: 0;
       /* S13 v13: switched slide-up from animating bottom to transform

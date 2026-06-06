@@ -2053,20 +2053,21 @@ function _isFullDeepListBook(item) {
 function isFullAssessmentEligible(item) {
   if (!item) return null;
   if (item.labelDetected === true) return null;
-  // Must be a value-key book (same list Deep uses)
-  const valueGate = typeof window.matchValueKey === "function" ? !!window.matchValueKey(item.title, item.issue, item.publisher, item.printing) : false;
-  if (!valueGate) return null;
-  // Floor: exclude very low-grade books
   const score = Number(item.roboGrade && item.roboGrade.score != null ? item.roboGrade.score : item.roboScore);
   const grade = parseFloat(item.predictedGrade || item.assessedCGCGrade);
+  // S16: Any book scoring RG 96+ or Predicted 9.6+ qualifies (mint territory)
+  const mintScore = Number.isFinite(score) && score >= 96;
+  const mintGrade = Number.isFinite(grade) && grade >= 9.6;
+  if (mintScore || mintGrade) {
+    return { slots: FULL_SLOT_COUNT, slotDefs: FULL_SLOTS, reason: "mint-grade" };
+  }
+  // Value-key books qualify with lower threshold (RG 30+ or grade 3.0+)
+  const valueGate = typeof window.matchValueKey === "function" ? !!window.matchValueKey(item.title, item.issue, item.publisher, item.printing) : false;
+  if (!valueGate) return null;
   const okScore = Number.isFinite(score) && score >= 30;
   const okGrade = Number.isFinite(grade) && grade >= 3.0;
   if (!okScore && !okGrade) return null;
-  return {
-    slots: FULL_SLOT_COUNT,
-    slotDefs: FULL_SLOTS,
-    reason: "value-key"
-  };
+  return { slots: FULL_SLOT_COUNT, slotDefs: FULL_SLOTS, reason: "value-key" };
 }
 
 function isFullAssessmentComplete(item) {
