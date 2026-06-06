@@ -119,6 +119,7 @@ export default async function handler(req, res) {
       backScore: rg.backScore ?? null,
       spineScore: rg.spineScore ?? null,
       interiorScore: rg.interiorScore ?? null,
+      defects: Array.isArray(rg.defects) ? rg.defects : [],
       pageQuality: rg.pageQuality || flat.pageQuality || null,
 
       // Notes
