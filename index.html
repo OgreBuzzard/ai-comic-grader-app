@@ -7968,14 +7968,14 @@ async function submitRestorationCheck() {
         await Promise.race([restoScanController.promise, new Promise(r => setTimeout(r, 25000))]);
       } catch (_e) {}
     }
-    // Show analyzing overlay
+    // S16: Show Restoration progress overlay with designed image
     if (window.RobograderScan && window.RobograderScan.dismiss) {
       window.RobograderScan.dismiss();
     }
     const _restoOverlay = document.createElement("div");
     _restoOverlay.id = "resto-assess-overlay";
-    _restoOverlay.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px";
-    _restoOverlay.innerHTML = `<div style="color:#c8a8e8;font-size:18px;font-weight:700;letter-spacing:2px;font-family:'Share Tech Mono',monospace">ANALYZING</div><div style="color:#8a7a9a;font-size:13px;letter-spacing:1px;font-family:'Share Tech Mono',monospace">Examining 8 restoration images…</div><div style="margin-top:12px;width:40px;height:40px;border:3px solid #3a2a4a;border-top-color:#c8a8e8;border-radius:50%;animation:fullspin 1s linear infinite"></div>`;
+    _restoOverlay.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0";
+    _restoOverlay.innerHTML = `<img src="assets/modal/Progress_Overlay_Restoration.webp" style="max-width:85%;max-height:70vh;object-fit:contain" alt="">`;
     document.body.appendChild(_restoOverlay);
     const resp = await apiPromise;
     if (!resp.ok) {
@@ -7996,11 +7996,32 @@ async function submitRestorationCheck() {
       formData._imagesChanged = true;
       onAssessmentSuccess();
       const _ro = document.getElementById("resto-assess-overlay");
-      if (_ro) _ro.remove();
-      let msg = "Restoration Check complete.";
-      if (result.restorationReport) msg += "\n\n" + result.restorationReport;
-      alert(msg);
-      await submitForm();
+      const _restoFound = formData.restorationFlag;
+      // S16: Per-finding results with red (found) / green (clear)
+      const _fLabels = {
+        uv_front: "UV FRONT", uv_back: "UV BACK",
+        exterior_top_staple: "TOP STAPLE", exterior_bottom_staple: "BOTTOM STAPLE",
+        outer_edge: "TRIMMING", interior_front: "INTERIOR FRONT",
+        interior_back: "INTERIOR BACK", interior_staple: "STAPLES (INT)"
+      };
+      const _findings = Array.isArray(result.findings) ? result.findings : [];
+      let _fHtml = '';
+      if (_findings.length > 0) {
+        _fHtml = `<div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;width:100%;max-width:300px">`;
+        for (const f of _findings) {
+          const label = _fLabels[f.area] || f.area;
+          const found = f.indicatorPresent === true;
+          const color = found ? '#ff4040' : '#60c060';
+          const icon = found ? '✗' : '✓';
+          _fHtml += `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:rgba(255,255,255,0.05);border-radius:6px"><span style="color:${color};font-size:16px;font-weight:900;width:20px">${icon}</span><span style="color:#ccc;font-size:12px;font-weight:600;letter-spacing:1px;flex:1">${label}</span></div>`;
+        }
+        _fHtml += `</div>`;
+      }
+      const _judgeColor = _restoFound ? '#ff4040' : '#60c060';
+      const _judgeLabel = _restoFound ? "RESTORATION INDICATED" : "NO RESTORATION FOUND";
+      if (_ro) {
+        _ro.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px">\n          <div style="color:#d4af37;font-size:18px;font-weight:700;letter-spacing:2px;font-family:'Share Tech Mono',monospace">RESTORATION CHECK COMPLETE</div>\n          ${_fHtml}\n          <div style="margin-top:8px;padding:10px 20px;border-radius:10px;border:2px solid ${_judgeColor}40;background:${_restoFound ? '#2a0a0a' : '#0a2a0a'}">\n            <div style="color:${_judgeColor};font-size:15px;font-weight:800;letter-spacing:1.5px;text-align:center">${_judgeLabel}</div>\n          </div>\n          <button onclick="document.getElementById('resto-assess-overlay').remove();submitForm().then(()=>{showDetail(formData.id)})" style="margin-top:12px;min-height:52px;min-width:200px;background:linear-gradient(180deg,${_restoFound ? '#9a6ad8,#6a3ab0' : '#d4af37,#a88a20'});color:${_restoFound ? '#fff' : '#1a1408'};border:none;border-radius:10px;font-size:16px;font-weight:800;letter-spacing:2px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.4)">COMPLETE</button>\n        </div>`;
+      }
     } else {
       throw new Error("Unexpected Restoration Check response shape");
     }
@@ -8094,20 +8115,21 @@ async function submitFullAssessment() {
         new Promise(r => setTimeout(r, 25000))
       ]);
     } catch (_e) {}
-    // S16: Show a visible processing indicator while the API works.
-    // mountStepTracker doesn't work here (it's tied to the SSE flow).
-    // Instead, dismiss the scan shell and show a simple modal overlay.
+    // S16: Show Full Assessment progress overlay with designed image
     if (window.RobograderScan && window.RobograderScan.dismiss) {
       window.RobograderScan.dismiss();
     }
     const _fullOverlay = document.createElement("div");
     _fullOverlay.id = "full-assess-overlay";
-    _fullOverlay.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px";
-    _fullOverlay.innerHTML = `<div style="color:#d4af37;font-size:18px;font-weight:700;letter-spacing:2px;font-family:'Share Tech Mono',monospace">ANALYZING</div><div style="color:#8a8a7a;font-size:13px;letter-spacing:1px;font-family:'Share Tech Mono',monospace">Examining 8 interior images…</div><div style="margin-top:12px;width:40px;height:40px;border:3px solid #3a3a2a;border-top-color:#d4af37;border-radius:50%;animation:fullspin 1s linear infinite"></div>`;
-    const _spinStyle = document.createElement("style");
-    _spinStyle.textContent = "@keyframes fullspin { to { transform: rotate(360deg) } }";
-    document.head.appendChild(_spinStyle);
+    _fullOverlay.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0";
+    _fullOverlay.innerHTML = `<img src="assets/modal/Progress_Overlay_Full.webp" style="max-width:85%;max-height:70vh;object-fit:contain" alt="">`;
     document.body.appendChild(_fullOverlay);
+    if (!document.getElementById("_fullspin_style")) {
+      const _spinStyle = document.createElement("style");
+      _spinStyle.id = "_fullspin_style";
+      _spinStyle.textContent = "@keyframes fullspin { to { transform: rotate(360deg) } }";
+      document.head.appendChild(_spinStyle);
+    }
     // Now await the API response
     const resp = await apiPromise;
     if (!resp.ok) {
@@ -8137,17 +8159,17 @@ async function submitFullAssessment() {
       formData.fullTrimmingSuspected = result.trimmingSuspected === true;
       formData._imagesChanged = true;
       onAssessmentSuccess();
+      // S16: Show results display with COMPLETE button
       const _fo = document.getElementById("full-assess-overlay");
-      if (_fo) _fo.remove();
-      // S16: Show completion message with key results
       const _newScore = formData.roboGrade ? Math.round(formData.roboGrade.score) : null;
       const _newGrade = formData.predictedGrade ? parseFloat(formData.predictedGrade).toFixed(1) : null;
-      let _fullMsg = "Full Assessment complete.";
-      if (_newScore != null) _fullMsg += `\n\nRG Score: ${_newScore}`;
-      if (_newGrade != null) _fullMsg += `\nPredicted Grade: ${_newGrade}`;
-      if (formData.fullTrimmingSuspected) _fullMsg += "\n\n⚠ Trimming suspected based on outer edge examination.";
-      alert(_fullMsg);
-      await submitForm();
+      const _trimWarn = formData.fullTrimmingSuspected ? `<div style="color:#ff8060;font-size:13px;margin-top:8px">⚠ Trimming suspected</div>` : '';
+      if (_fo) {
+        _fo.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px">\n          <div style="color:#d4af37;font-size:20px;font-weight:700;letter-spacing:2px;font-family:'Share Tech Mono',monospace">FULL ASSESSMENT COMPLETE</div>\n          ${_newScore != null ? `<div style="display:flex;gap:16px;align-items:center">\n            <div style="background:#1a2208;border-radius:14px;padding:16px 24px;text-align:center;border:1px solid #3a4a1a">\n              <div style="color:#b8d820;font-size:36px;font-weight:900;font-family:'Noto Sans Display',sans-serif;line-height:1">${_newScore}</div>\n              <div style="color:#7a8a30;font-size:11px;font-weight:700;letter-spacing:1.5px;margin-top:4px">RG</div>\n            </div>\n            ${_newGrade != null ? `<div style="background:#1a3a6a;border-radius:14px;padding:16px 24px;text-align:center;border:1px solid #2a4a7a">\n              <div style="color:#fff;font-size:36px;font-weight:900;font-family:'Noto Sans Display',sans-serif;line-height:1">${_newGrade}</div>\n              <div style="color:#8ab0d0;font-size:11px;font-weight:700;letter-spacing:1.5px;margin-top:4px">GRADE</div>\n            </div>` : ''}\n          </div>` : ''}\n          ${_trimWarn}\n          <button onclick="document.getElementById('full-assess-overlay').remove();submitForm().then(()=>{
+            const _hasRestoUnlocked = typeof isRestorationEligible === 'function' && isRestorationEligible(formData) && !formData.restorationCheckRan;
+            if (_hasRestoUnlocked) { showEdit(formData.id); } else { showDetail(formData.id); }
+          })" style="margin-top:12px;min-height:52px;min-width:200px;background:linear-gradient(180deg,#d4af37 0%,#a88a20 100%);color:#1a1408;border:none;border-radius:10px;font-size:16px;font-weight:800;letter-spacing:2px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.4)">COMPLETE</button>\n        </div>`;
+      }
     } else {
       throw new Error("Unexpected Full Assessment response shape");
     }
