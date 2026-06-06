@@ -1640,7 +1640,115 @@ function renderItemDetail(it) {
         `).join('')}
       </div>
     ` : ''}
+
+    <h3 class="section-h" style="margin-top:24px;color:var(--accent);">⚙ Defect Editor</h3>
+    <div id="defect-editor" style="margin-bottom:20px;">
+      <div id="defect-list"></div>
+      <div style="margin-top:12px;padding:12px;background:#1a1a1a;border-radius:8px;border:1px solid #333;">
+        <div style="font-size:11px;font-weight:700;color:#aaa;letter-spacing:1px;margin-bottom:8px;">ADD DEFECT</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+          <input id="def-type" placeholder="Type (e.g. Corner blunting)" style="padding:6px 8px;background:#222;border:1px solid #444;color:#eee;border-radius:4px;font-size:12px">
+          <input id="def-location" placeholder="Location (e.g. front cover)" style="padding:6px 8px;background:#222;border:1px solid #444;color:#eee;border-radius:4px;font-size:12px">
+          <select id="def-severity" style="padding:6px 8px;background:#222;border:1px solid #444;color:#eee;border-radius:4px;font-size:12px">
+            <option value="Low">Low</option>
+            <option value="Med">Med</option>
+            <option value="High">High</option>
+          </select>
+          <input id="def-measurement" placeholder="Size (e.g. 1/4&quot;)" style="padding:6px 8px;background:#222;border:1px solid #444;color:#eee;border-radius:4px;font-size:12px">
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <label style="font-size:11px;color:#aaa;display:flex;align-items:center;gap:4px;">
+            <input type="checkbox" id="def-cb"> Color breaking
+          </label>
+          <button onclick="addDefectFromForm()" style="margin-left:auto;padding:6px 16px;background:#2a6a2a;color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer">+ Add</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <button onclick="rescoreItem()" style="flex:1;padding:10px;background:var(--accent);color:#000;border:none;border-radius:6px;font-size:13px;font-weight:800;letter-spacing:1px;cursor:pointer">RE-SCORE</button>
+      </div>
+      <div id="rescore-result" style="margin-top:8px;font-size:12px;color:#aaa;"></div>
+    </div>
   `;
+
+  // Store item data for defect editing
+  window._adminItem = it;
+  window._adminDefects = [...(it.defects || [])];
+  renderDefectList();
+}
+
+function renderDefectList() {
+  const el = document.getElementById('defect-list');
+  if (!el) return;
+  const defects = window._adminDefects || [];
+  if (defects.length === 0) {
+    el.innerHTML = '<div style="color:#666;font-size:12px;padding:8px;">No defects recorded.</div>';
+    return;
+  }
+  el.innerHTML = defects.map((d, i) => {
+    const sev = d.severity || '';
+    const sevColor = sev === 'High' ? '#e85050' : sev === 'Med' ? '#e8a040' : sev === 'Low' ? '#888' : '#666';
+    const parts = [d.location, d.measurement].filter(Boolean).join(', ');
+    const cb = d.colorBreaking ? ' <span style="color:#e85050;font-size:9px;">CB</span>' : '';
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:${i % 2 === 0 ? '#111' : '#161616'};border-radius:4px;margin-bottom:2px;">
+      <button onclick="removeDefect(${i})" style="width:22px;height:22px;background:#3a1a1a;color:#e85050;border:1px solid #5a2a2a;border-radius:4px;font-size:14px;line-height:1;cursor:pointer;flex-shrink:0">×</button>
+      <span style="flex:1;font-size:11px;color:#ddd;"><strong>${escapeHtml(d.type || '?')}</strong>${parts ? ' — ' + escapeHtml(parts) : ''}${cb}</span>
+      <span style="font-size:10px;font-weight:700;color:${sevColor};letter-spacing:0.5px;flex-shrink:0">${sev.toUpperCase()}</span>
+    </div>`;
+  }).join('');
+}
+
+function removeDefect(idx) {
+  window._adminDefects.splice(idx, 1);
+  renderDefectList();
+}
+
+function addDefectFromForm() {
+  const type = document.getElementById('def-type')?.value?.trim();
+  const location = document.getElementById('def-location')?.value?.trim();
+  const severity = document.getElementById('def-severity')?.value;
+  const measurement = document.getElementById('def-measurement')?.value?.trim();
+  const colorBreaking = document.getElementById('def-cb')?.checked;
+  if (!type) { alert('Type is required'); return; }
+  window._adminDefects.push({
+    type, location: location || '', severity: severity || 'Low',
+    measurement: measurement || '', colorBreaking: !!colorBreaking
+  });
+  renderDefectList();
+  // Clear form
+  document.getElementById('def-type').value = '';
+  document.getElementById('def-location').value = '';
+  document.getElementById('def-severity').value = 'Low';
+  document.getElementById('def-measurement').value = '';
+  document.getElementById('def-cb').checked = false;
+}
+
+async function rescoreItem() {
+  const it = window._adminItem;
+  if (!it) { alert('No item loaded'); return; }
+  const resultEl = document.getElementById('rescore-result');
+  if (resultEl) resultEl.textContent = 'Re-scoring…';
+  try {
+    const resp = await api('/api/rescore', {
+      method: 'POST',
+      body: JSON.stringify({
+        userId: it.uid,
+        itemId: it.id,
+        defects: window._adminDefects,
+        pageQuality: it.pageQuality || 'White'
+      })
+    });
+    if (resultEl) {
+      resultEl.style.color = '#6a6';
+      resultEl.textContent = resp.message || 'Re-scored successfully.';
+    }
+    // Refresh the item view
+    setTimeout(() => showItem(it.uid, it.id, 'items'), 1500);
+  } catch (e) {
+    if (resultEl) {
+      resultEl.style.color = '#e55';
+      resultEl.textContent = 'Re-score failed: ' + e.message;
+    }
+  }
 }
 
 // ── Utility ────────────────────────────────────────────────────────────────
