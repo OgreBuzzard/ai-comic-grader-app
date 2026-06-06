@@ -568,14 +568,10 @@ Rules:
       // (which can be 0 for a fully-documented, pristine book). This lets
       // the Full Assessment score exceed the Deep ceiling (97) when the
       // interior confirms a near-perfect book.
-      // S16: The Full Assessment can only LOWER the RG score, never raise it.
-      // The original RG comes from sub-scores (Front+Back+Spine+Interior).
-      // Replacing it with grade*10 ignores the sub-scores entirely.
-      roboScore: (() => {
-        const origRG = initialAssessment && initialAssessment.score != null ? initialAssessment.score : null;
-        const fullRG = Math.min(Math.round(grade * 10), 100 - confidenceRange);
-        return origRG != null ? Math.min(origRG, fullRG) : fullRG;
-      })(),
+      // S16: RG score from Full Assessment. The 9.8 grade cap prevents 10.0,
+      // and the prompt instructs consistency with prior defects, but the Full
+      // Assessment CAN adjust the grade in either direction if justified.
+      roboScore: Math.min(Math.round(grade * 10), 100 - confidenceRange),
       _diagnostics: { phaseTimings }
     };
 
