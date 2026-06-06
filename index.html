@@ -199,11 +199,15 @@ onAuthStateChanged(auth, async user => {
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     /* Start black to prevent white flash on iOS app open — the splash lives on a black background */
-    html, body { height: 100%; background: #0a0a0a; color: #1a1614; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; }
-    /* Once the app is visible, the body below the fixed splash should be light */
-    body.app-ready { background: #f5f4f2; }
+    html, body { height: 100%; background: #1a1814; color: #1a1614; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; }
+    /* Once the app is visible, the body below the fixed splash should be light on mobile, dark margins on desktop */
+    body.app-ready { background: #1a1814; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    #app { min-height: 100vh; display: flex; flex-direction: column; background: #f5f4f2; }
+    #app { min-height: 100vh; display: flex; flex-direction: column; background: #f5f4f2; max-width: 480px; margin: 0 auto; }
+    /* S16: Responsive — on wider screens the app is centered with dark margins */
+    @media (min-width: 540px) {
+      #app { box-shadow: 0 0 40px rgba(0,0,0,0.3); border-left: 1px solid #2a2820; border-right: 1px solid #2a2820; }
+    }
     #header { background: #ffffff; border-bottom: 1px solid #d8d0c8; padding: 10px 14px 10px; position: sticky; top: 0; z-index: 100; }
     #header-row-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     #header-row-bottom { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 8px; }
@@ -547,7 +551,8 @@ onAuthStateChanged(auth, async user => {
     /* Cropper modal: full-screen overlay with image, controls below */
     #cropper-modal { position: fixed; inset: 0; background: #000; z-index: 1000; display: none; flex-direction: column; }
     #cropper-modal.open { display: flex; }
-    #cropper-stage { flex: 1; min-height: 0; position: relative; background: #000; overflow: hidden; padding: 24px; }
+    #cropper-stage { flex: 1; min-height: 0; position: relative; background: #000; overflow: hidden; }
+    #cropper-stage .cropper-container { max-width: calc(100% - 48px) !important; max-height: calc(100% - 48px) !important; margin: 24px auto !important; }
     /* Cropper image is hidden until Cropper.js attaches and lays it out properly.
        Without this, the raw <img> renders top-aligned at natural size, then
        jumps when Cropper finishes initializing. The .ready class is added by
