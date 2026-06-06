@@ -162,6 +162,12 @@ export default async function handler(req, res) {
       // motivated the unification in the first place.
       predictedGrade:    comic.predictedGrade || comic.assessedCGCGrade || null,
       highGradeUnlocked: comic.highGradeUnlocked || false,
+      // S16: Deep, Full, and Restoration assessment state
+      deepAssessmentRan: !!(comic.roboGrade && comic.roboGrade.deepAssessmentRan),
+      fullAssessmentRan: !!comic.fullAssessmentRan,
+      restorationCheckRan: !!comic.restorationCheckRan,
+      restorationFlag: !!comic.restorationFlag,
+      restorationHighConfidence: !!comic.restorationHighConfidence,
       // Integrity badge state (S12). 'verified' = all assessed photos were
       // captured in-app; 'unverified' = at least one was uploaded; 'empty' =
       // no images. public.html renders the corresponding pill.
