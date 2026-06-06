@@ -4335,6 +4335,19 @@ function openSignatureLightbox(id, idx) {
   };
 }
 
+function openRestorationLightbox(id, idx) {
+  const c = items.find(x => x.id === id);
+  if (!c || !c.restorationImages?.[idx]) return;
+  const img = document.getElementById("lightbox-img");
+  const box = document.getElementById("lightbox");
+  img.src = c.restorationImages[idx];
+  box.style.display = "flex";
+  _attachPanzoomToLightbox();
+  box.onclick = e => {
+    if (e.target === box || e.target.id === "lightbox-stage") closeLightbox();
+  };
+}
+
 let _lightboxLastTouchFingers = 0;
 
 function _trackTouchStart(e) {
@@ -7162,8 +7175,9 @@ function renderRestorationSlotGrid(restoration, opts) {
                </div>`;
     }
     if (!img) return "";
+    const _cid = opts && opts.comicId ? opts.comicId : '';
     return `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:${d.aspect}">
-        <img src="${img}" loading="lazy" decoding="async" onload="window.forceImgReflow(this)" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block">
+        <img src="${img}" loading="lazy" decoding="async" onload="window.forceImgReflow(this)" onclick="openRestorationLightbox('${_cid}',${i})" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in">
         ${labelTag}
       </div>`;
   };
@@ -7973,15 +7987,23 @@ async function submitRestorationCheck() {
         await Promise.race([restoScanController.promise, new Promise(r => setTimeout(r, 25000))]);
       } catch (_e) {}
     }
-    // S16: Show Restoration progress overlay with designed image
+    // S16: Show Restoration progress overlay with designed image + cycling indicator
     if (window.RobograderScan && window.RobograderScan.dismiss) {
       window.RobograderScan.dismiss();
     }
     const _restoOverlay = document.createElement("div");
     _restoOverlay.id = "resto-assess-overlay";
-    _restoOverlay.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0";
-    _restoOverlay.innerHTML = `<img src="assets/modal/Progress_Overlay_Restoration.webp" style="max-width:85%;max-height:70vh;object-fit:contain" alt="">`;
+    _restoOverlay.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px";
+    _restoOverlay.innerHTML = `<img src="assets/modal/Progress_Overlay_Restoration.webp" style="max-width:85%;max-height:65vh;object-fit:contain" alt=""><div id="resto-task-label" style="color:#c8a8e8;font-size:14px;font-weight:700;letter-spacing:2px;font-family:'Share Tech Mono',monospace;min-height:20px;text-align:center">UV CHECK</div>`;
     document.body.appendChild(_restoOverlay);
+    const _restoTasks = ["UV CHECK", "STAPLE INSPECTION", "TRIMMING CHECK", "LEAF-CASTING SCAN", "RESTORED JUDGMENT"];
+    let _rti = 0;
+    const _rtInterval = setInterval(() => {
+      _rti++;
+      const lbl = document.getElementById("resto-task-label");
+      if (lbl && _rti < _restoTasks.length) lbl.textContent = _restoTasks[_rti];
+      else if (lbl) lbl.textContent = "PROCESSING…";
+    }, 1000);
     const resp = await apiPromise;
     if (!resp.ok) {
       const t = await resp.text();
@@ -7992,6 +8014,7 @@ async function submitRestorationCheck() {
       alert("The UV Front photo doesn't appear to be taken under UV light. The restoration check examined the other 6 images but color touch could not be evaluated. Please retake the UV Front photo under a UV flashlight in a dark room and try again.");
     }
     if (result.restorationCheckRan === true) {
+      clearInterval(_rtInterval);
       formData.restorationCheckTier = true;
       formData.restorationCheckRan = true;
       formData.restorationReport = result.restorationReport || "";
@@ -8031,6 +8054,7 @@ async function submitRestorationCheck() {
       throw new Error("Unexpected Restoration Check response shape");
     }
   } catch (e) {
+    if (typeof _rtInterval !== 'undefined') clearInterval(_rtInterval);
     if (restoScanController && restoScanController.cancel) restoScanController.cancel();
     if (window.RobograderScan && window.RobograderScan.dismiss) window.RobograderScan.dismiss();
     const _ro2 = document.getElementById("resto-assess-overlay");
@@ -8120,21 +8144,24 @@ async function submitFullAssessment() {
         new Promise(r => setTimeout(r, 25000))
       ]);
     } catch (_e) {}
-    // S16: Show Full Assessment progress overlay with designed image
+    // S16: Show Full Assessment progress overlay with designed image + cycling indicator
     if (window.RobograderScan && window.RobograderScan.dismiss) {
       window.RobograderScan.dismiss();
     }
     const _fullOverlay = document.createElement("div");
     _fullOverlay.id = "full-assess-overlay";
-    _fullOverlay.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0";
-    _fullOverlay.innerHTML = `<img src="assets/modal/Progress_Overlay_Full.webp" style="max-width:85%;max-height:70vh;object-fit:contain" alt="">`;
+    _fullOverlay.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px";
+    _fullOverlay.innerHTML = `<img src="assets/modal/Progress_Overlay_Full.webp" style="max-width:85%;max-height:65vh;object-fit:contain" alt=""><div id="full-task-label" style="color:#d4af37;font-size:14px;font-weight:700;letter-spacing:2px;font-family:'Share Tech Mono',monospace;min-height:20px;text-align:center">INSPECTING STAPLES</div>`;
     document.body.appendChild(_fullOverlay);
-    if (!document.getElementById("_fullspin_style")) {
-      const _spinStyle = document.createElement("style");
-      _spinStyle.id = "_fullspin_style";
-      _spinStyle.textContent = "@keyframes fullspin { to { transform: rotate(360deg) } }";
-      document.head.appendChild(_spinStyle);
-    }
+    // Cycle through task names at 1s intervals
+    const _fullTasks = ["INSPECTING STAPLES", "COUNTING PAGES", "EVALUATING EDGES", "INTERIOR CHECK", "CONFIRMING GRADE"];
+    let _fti = 0;
+    const _ftInterval = setInterval(() => {
+      _fti++;
+      const lbl = document.getElementById("full-task-label");
+      if (lbl && _fti < _fullTasks.length) lbl.textContent = _fullTasks[_fti];
+      else if (lbl) lbl.textContent = "PROCESSING…";
+    }, 1000);
     // Now await the API response
     const resp = await apiPromise;
     if (!resp.ok) {
@@ -8143,6 +8170,7 @@ async function submitFullAssessment() {
     }
     const result = await resp.json();
     if (result.fullAssessmentRan === true) {
+      clearInterval(_ftInterval);
       formData.fullAssessmentRan = true;
       if (result.grade != null && Number.isFinite(parseFloat(result.grade))) {
         formData.predictedGrade = parseFloat(result.grade);
