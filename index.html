@@ -2055,8 +2055,8 @@ function isFullAssessmentEligible(item) {
   if (item.labelDetected === true) return null;
   const score = Number(item.roboGrade && item.roboGrade.score != null ? item.roboGrade.score : item.roboScore);
   const grade = parseFloat(item.predictedGrade || item.assessedCGCGrade);
-  // S16: Any book scoring RG 96+ or Predicted 9.6+ qualifies (mint territory)
-  const mintScore = Number.isFinite(score) && score >= 96;
+  // S16: Any book scoring RG 97+ or Predicted 9.6+ qualifies (mint territory)
+  const mintScore = Number.isFinite(score) && score >= 97;
   const mintGrade = Number.isFinite(grade) && grade >= 9.6;
   if (mintScore || mintGrade) {
     return { slots: FULL_SLOT_COUNT, slotDefs: FULL_SLOTS, reason: "mint-grade" };
