@@ -311,7 +311,7 @@ Your entire response must be a JSON object and nothing else. First character an 
 
 JSON shape:
 {
-  "grade": <number, final CGC-scale grade 0.5-9.8 — this should reflect the PRIOR defects already identified in the main assessment. The Full Assessment examines interior structure but the PREDICTED GRADE should be consistent with the defects found on the covers/spine. A book with ANY defect listed cannot be 9.8. NEVER return 10.0. If the prior predicted grade seems correct given the defects, return it unchanged. Only LOWER the grade if interior examination reveals new problems (trimming, missing pages, detached centerfold). Do NOT raise the grade above the prior prediction unless you can specifically explain why a prior defect was overestimated.>,
+  "grade": <number, final CGC-scale grade 0.5-9.9 — this should reflect the PRIOR defects already identified in the main assessment. The Full Assessment examines interior structure but the PREDICTED GRADE should be consistent with the defects found on the covers/spine. A book with ANY defect listed cannot be 9.8 or above. NEVER return 10.0. If the prior predicted grade seems correct given the defects, return it unchanged. Only LOWER the grade if interior examination reveals new problems (trimming, missing pages, detached centerfold). Do NOT raise the grade above the prior prediction unless you can specifically explain why a prior defect was overestimated.>,
   "gradeChanged": "<'same' | 'down' | 'up'>",
   "pageQuality": "<final page quality designation, e.g. 'Off-White to White'>",
   "pageQualityChanged": "<'same' | 'up' | 'down'>",
@@ -524,7 +524,7 @@ Rules:
       if (!Number.isFinite(n)) return dflt;
       return Math.min(hi, Math.max(lo, n));
     };
-    const grade = Math.min(_num(parsed.grade, 0.5, 10.0, parseFloat(predictedGrade) || null), 9.8);
+    const grade = Math.min(_num(parsed.grade, 0.5, 10.0, parseFloat(predictedGrade) || null), 9.9);
     const confidenceRange = _num(parsed.confidenceRange, 0, 6, 1);
     const pageQuality = (typeof parsed.pageQuality === 'string' && parsed.pageQuality.trim())
       ? parsed.pageQuality.trim() : (initialPageQuality || '');

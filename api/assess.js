@@ -530,27 +530,27 @@ CRITICAL — CENSUS USE IS INTERNAL ONLY: the census data above is a calibration
     : images.length >= 3;
   const hasPQReference = pageQualityImageBlock !== null;
   const photoCount     = images.length;
-  // Base confidence range. Tightens as evidence accumulates:
-  //   High-grade run (4 main + 4 corner macros = 8 images): ±3.
-  //     Corner macros directly inspect the most defect-prone areas, narrowing
-  //     uncertainty significantly compared to wide-frame standard photos.
-  //   Standard run with 4+ images: ±6 (was ±8 before May 6).
-  //     Tightened because the v2.2 calibration data is improving and ±8
-  //     was reading as overly conservative even on clean books.
-  //   3 images: ±12 (one main slot missing materially widens uncertainty).
-  //   <3 images: ±16 (very limited input).
-  // S15 May 29: graded-book precision ladder (per Matt's slab spec). A slabbed
-  // book is assessed from front+back only, but with HIGHER confidence than a
-  // 2-photo raw book: the case guarantees the book is complete and flat, the
-  // interior PQ is read off the label, and spine is inferred from the wrap.
-  // Standard graded → modifier 10 (ceiling 90). Deep on a graded book →
-  // modifier 4 (ceiling 96). This deliberately overrides the photo-count
-  // default (which would punish the 2-photo slab with a 16 modifier).
+  // Base confidence range (= precision modifier, PM). RG ceiling = 100 - PM.
+  //   Slabbed standard: PM 10 (ceiling 90)
+  //   Slabbed Deep:     PM 4  (ceiling 96)
+  //   Raw Deep:         PM 3  (ceiling 97)
+  //   Raw 4 images:     PM 8  (ceiling 92)
+  //   Raw 3 images:     PM 12 (ceiling 88)
+  //   Raw 2 images:     PM 15 (ceiling 85)
   const baseConf = labelDetected
     ? (highGrade ? 4 : 10)
     : (highGrade
         ? 3
-        : (photoCount >= 4 ? 6 : photoCount === 3 ? 12 : 16));
+        : (photoCount >= 4 ? 8 : photoCount === 3 ? 12 : 15));
+  const rgCeiling = 100 - baseConf;
+
+  // Predicted grade ceiling depends on assessment tier + image count.
+  // VK status does NOT affect ceilings — it only affects which tiers unlock.
+  const gradeCeiling = labelDetected
+    ? null  // slabbed: label grade is ceiling (handled in prompt)
+    : (highGrade
+        ? 9.6   // Deep Assessment
+        : (photoCount >= 4 ? 9.2 : 8.5)); // Raw Main: 9.2 (4 imgs) / 8.5 (fewer)
 
   // ── High-grade block ────────────────────────────────────────────────────────
   // When highGrade=true, 4 corner macros (TL, TR, BL, BR) are appended after the
@@ -908,6 +908,7 @@ ENHANCEMENT TAGGING — defects removable by pressing/cleaning get a measurement
 Confidence base: ±${baseConf}. Adjust up if glare/poor focus, no raking light photo, staples not visible, restoration suspected.
 
 SCORE CEILING — your precision modifier bounds your maximum score. With a ±${baseConf} precision modifier, your honest maximum score is ${100 - baseConf} (the modifier then allows the true grade to range up to 100). Do NOT assign a score above ${100 - baseConf} on this assessment.${highGrade ? ' This is a Deep Assessment with corner macros, so ±3 is justified and the ceiling is 97.' : ' A standard 4-photo assessment cannot see the fine corner and edge detail that distinguishes a near-perfect copy; the photos simply do not carry that information. A Deep Assessment (corner macros) is required to justify a score above ' + (100 - baseConf) + '. If the book genuinely looks pristine, score it at the ' + (100 - baseConf) + ' ceiling and let the ±' + baseConf + ' modifier express the upside — do not exceed the ceiling.'}
+${gradeCeiling ? `\nGRADE CEILING — your predicted CGC grade must not exceed ${gradeCeiling}. This is the maximum grade that can be assigned at this assessment tier with this evidence level. If the book appears to deserve higher, assign ${gradeCeiling} and note that a higher-tier assessment may revise upward.` : (labelDetected ? '\nGRADE CEILING — for slabbed books, the label grade is the ceiling for your predicted grade. Do not predict higher than the label grade.' : '')}
 
 CRITICAL: final = Front + Back + Spine + Interior exactly. If holistic impression disagrees with the sum by more than 2 points, revisit the components — one is wrong, not the formula.
 
@@ -1693,8 +1694,8 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           highGrade: !!highGrade,
           gradeRefRan: gradeRefSucceeded,
           gateResult: parsed.gateResult || 'COMIC',
-          // S16: Cap predicted grade at 9.8 — 10.0 should never be predicted
-          predictedGrade: parsed.grade ? String(Math.min(parseFloat(parsed.grade), 9.8).toFixed(1)) : null,
+          // S16: Cap predicted grade at the tier-based ceiling (or 9.9 absolute max)
+          predictedGrade: parsed.grade ? String(Math.min(parseFloat(parsed.grade), gradeCeiling || 9.9).toFixed(1)) : null,
           gradeBeforeRefinement: parsed.gradeBeforeRefinement || null,
           // Diagnostic v3.97: token usage and output complexity. These are the
           // missing variables we need to identify what's actually driving the
