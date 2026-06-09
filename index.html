@@ -5939,7 +5939,7 @@ async function giveDialogConfirm() {
   btn.textContent = "Sending…";
   try {
     const token = await window._currentUser.getIdToken();
-    const resp = await fetch("/api/transfer_send", {
+    const resp = await fetch("/api/transfer_recv", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -5947,7 +5947,8 @@ async function giveDialogConfirm() {
       },
       body: JSON.stringify({
         sourceItemId: itemId,
-        toCode: code
+        toCode: code,
+        action: "send"
       })
     });
     const data = await resp.json().catch(() => ({}));
