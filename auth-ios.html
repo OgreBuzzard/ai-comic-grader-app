@@ -69,9 +69,10 @@
       if (!resp.ok) throw new Error('Server error: ' + resp.status);
       const data = await resp.json();
       if (data.customToken || data.success) {
-        status.innerHTML = '<div class="done">✓ Signed in!</div><br>Returning to Robograder...';
-        setTimeout(function() { window.location.href = 'https://robograder.app/auth-complete'; }, 600);
-        setTimeout(function() { status.innerHTML = '<div class="done">✓ Signed in!</div><br>Switch back to the Robograder app now.'; }, 2500);
+        // iOS in-app browser sheet (S17): no redirect. The app is polling
+        // /api/ios-auth underneath this sheet; the instant it gets the token it
+        // closes the sheet automatically. We just confirm success here.
+        status.innerHTML = '<div class="done">✓ Signed in!</div><br>Returning to Robograder…';
       } else {
         throw new Error(data.error || 'Failed');
       }
