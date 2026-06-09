@@ -141,9 +141,12 @@ mustReplace('D6 browser sheet sign-in',
       // to external Safari; the same poll loop resumes when the user returns.
       const session = 'ios_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
       const iosStatus = document.getElementById('splash-signin-status') || document.getElementById('auth-ios-status');
-      if (iosStatus) { iosStatus.style.display = 'block'; iosStatus.textContent = 'Waiting for sign-in to complete...'; }
-      const _plugins = (window.Capacitor && window.Capacitor.Plugins) || {};
-      const BrowserPlugin = _plugins.Browser || null;
+      if (iosStatus) { iosStatus.style.display = 'block'; iosStatus.textContent = 'Opening sign-in…'; }
+      // Acquire the @capacitor/browser plugin. After 'npx cap sync ios' the native
+      // bridge exposes it at window.Capacitor.Plugins.Browser. We DO NOT silently
+      // fall back to window.open (that launches full Safari, which can't return to
+      // the app on its own) — if the plugin is missing we say so out loud.
+      const BrowserPlugin = (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) || null;
       window._iosAuthCancelled = false;
       let finishedListener = null;
       if (BrowserPlugin && BrowserPlugin.addListener) {
@@ -158,9 +161,23 @@ mustReplace('D6 browser sheet sign-in',
       const bridgeUrl = 'https://robograder.app/auth-ios.html?s=' + session;
       let sheetOpened = false;
       if (BrowserPlugin && BrowserPlugin.open) {
-        try { await BrowserPlugin.open({ url: bridgeUrl }); sheetOpened = true; } catch (_) {}
+        try {
+          await BrowserPlugin.open({ url: bridgeUrl, presentationStyle: 'fullscreen' });
+          sheetOpened = true;
+        } catch (e) {
+          if (iosStatus) iosStatus.textContent = 'Browser sheet failed to open: ' + (e && e.message ? e.message : e);
+        }
       }
-      if (!sheetOpened) window.open(bridgeUrl, '_blank');
+      if (!sheetOpened) {
+        // Plugin not registered. Surface it rather than dropping to full Safari,
+        // which would strand the user on a manual app-switch with no auto-return.
+        if (iosStatus) {
+          iosStatus.textContent = !BrowserPlugin
+            ? 'In-app browser unavailable (Browser plugin not registered). Falling back to Safari — switch back manually after signing in.'
+            : 'Could not open in-app browser. Falling back to Safari.';
+        }
+        window.open(bridgeUrl, '_blank');
+      }
       const poll = async () => {
         for (let i = 0; i < 150; i++) {
           if (window._iosAuthCancelled) return false;
@@ -236,8 +253,9 @@ mustReplace('D7b splash CSS',
                        skips the long entrance choreography delays. */
     #splash-subtitle {
       position: absolute;
-      left: 0; right: 0;
-      top: calc(env(safe-area-inset-top, 0px) + 5vh + 17.4vh);
+      left: 50%;
+      top: calc(env(safe-area-inset-top, 0px) + 2vh + 9vh);
+      transform: translate(-50%, -120vh);
       text-align: center;
       font-size: 14px;
       letter-spacing: 1.5px;
@@ -246,11 +264,14 @@ mustReplace('D7b splash CSS',
       opacity: 0;
       pointer-events: none;
       z-index: 2;
+      white-space: nowrap;
     }
     #splash.assets-ready #splash-subtitle {
-      animation: splashSubtitleIn 0.4s ease-out 1.45s forwards;
+      animation: splashSubtitleIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.95s forwards;
     }
-    @keyframes splashSubtitleIn { to { opacity: 0.85; } }
+    @keyframes splashSubtitleIn {
+      to { transform: translate(-50%, 0); opacity: 0.9; }
+    }
     #splash-signin {
       position: absolute;
       left: 0; right: 0; bottom: 0;
@@ -275,19 +296,14 @@ mustReplace('D7b splash CSS',
     @keyframes splashSigninUp {
       to { transform: translateY(0); opacity: 1; }
     }
-    /* Lift the robot slightly so the panel doesn't sit on his feet */
-    #splash.signin-mode #splash-robot {
-      top: 44%;
-      transition: top 0.6s cubic-bezier(0.22, 1, 0.36, 1) 1.2s;
-    }
-    #splash.signin-mode.signin-fast #splash-robot { transition-delay: 0s; }
     .splash-signin-with {
       display: flex; align-items: center; justify-content: center; gap: 8px;
       font-size: 13px; color: #b8b8b8;
     }
     #splash-continue-btn {
       display: flex; align-items: center; justify-content: center;
-      background: #d4af37; color: #0a0a0a;
+      background: #2e7d32; color: #ffffff;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.35);
       border: none; border-radius: 10px;
       padding: 14px 28px; font-size: 16px; font-weight: 700;
       cursor: pointer; width: 280px; max-width: 80vw;
@@ -299,6 +315,17 @@ mustReplace('D7b splash CSS',
     }
     .splash-signin-terms {
       font-size: 11px; color: #8a8a8a; text-align: center; max-width: 280px; line-height: 1.5;
+    }
+    /* iOS splash position overrides (S17). Logo sits higher (clear of the
+       Dynamic Island), robot drops lower so it clears the sign-in panel. */
+    #splash-logo {
+      top: calc(env(safe-area-inset-top, 0px) + 2vh) !important;
+    }
+    #splash-robot {
+      top: 56% !important;
+    }
+    #splash.signin-mode #splash-robot {
+      top: 52% !important;
     }`);
 
 // ── D7c: splash sign-in mode helpers (window.enterSplashSignin / exit) ───────
