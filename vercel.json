@@ -19,7 +19,16 @@
       "maxDuration": 10
     }
   },
+  "headers": [
+    {
+      "source": "/.well-known/apple-app-site-association",
+      "headers": [
+        { "key": "Content-Type", "value": "application/json" }
+      ]
+    }
+  ],
   "rewrites": [
+    { "source": "/.well-known/apple-app-site-association", "destination": "/apple-app-site-association" },
     { "source": "/__/auth/:path*", "destination": "https://ai-comic-grader.firebaseapp.com/__/auth/:path*" },
     { "source": "/id/:id", "destination": "/public.html" }
   ]

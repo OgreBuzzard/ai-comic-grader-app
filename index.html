@@ -3602,7 +3602,7 @@ function renderList() {
     };
   }).filter(Boolean);
   const hasRealBooks = items.some(c => c.id !== SAMPLE_COMIC_ID);
-  let html = `<div style="display:flex;justify-content:flex-end;margin-bottom:16px">\n    <select onchange="sortBy=this.value;renderList()" style="font-family:'Barlow Condensed',sans-serif;font-size:15px;font-weight:600;padding:6px 10px">\n      <option value="title"${sortBy === "title" ? " selected" : ""}>Title A–Z</option>\n      <option value="dateAdded"${sortBy === "dateAdded" ? " selected" : ""}>Date Added</option>\n      <option value="grade"${sortBy === "grade" ? " selected" : ""}>Grade ↓</option>\n    </select>\n  </div>`;
+  let html = ``;
   const anyBooks = sections.some(s => s.titles.length > 0);
   if (!anyBooks) {
     html += ``;

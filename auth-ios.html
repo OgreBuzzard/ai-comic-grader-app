@@ -70,7 +70,7 @@
       const data = await resp.json();
       if (data.customToken || data.success) {
         status.innerHTML = '<div class="done">✓ Signed in!</div><br>Returning to Robograder...';
-        setTimeout(function() { window.location.href = 'robograder://signed-in'; }, 600);
+        setTimeout(function() { window.location.href = 'https://robograder.app/auth-complete'; }, 600);
         setTimeout(function() { status.innerHTML = '<div class="done">✓ Signed in!</div><br>Switch back to the Robograder app now.'; }, 2500);
       } else {
         throw new Error(data.error || 'Failed');

@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "4JM2ZJ5525.app.robograder",
+        "paths": ["/auth-complete"]
+      }
+    ]
+  }
+}
