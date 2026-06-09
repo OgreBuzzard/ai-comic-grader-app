@@ -56,7 +56,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebas
 
 import { getFirestore, initializeFirestore, collection, getDocs, setDoc, deleteDoc, doc, onSnapshot, getDoc, updateDoc, increment, query, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject, listAll } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
 
@@ -122,6 +122,8 @@ window._auth = auth;
 window._googleProvider = googleProvider;
 
 window._signInWithPopup = signInWithPopup;
+window._signInWithRedirect = signInWithRedirect;
+window._getRedirectResult = getRedirectResult;
 
 window._signOut = signOut;
 
@@ -143,6 +145,11 @@ function tryRevealAuthScreen() {
 }
 
 window._authFallbackTimer = setTimeout(tryRevealAuthScreen, 3000);
+
+// Capacitor iOS: check for redirect result on page load
+if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+  getRedirectResult(auth).catch(() => {});
+}
 
 onAuthStateChanged(auth, async user => {
   if (window._authFallbackTimer) {
@@ -3128,7 +3135,12 @@ async function dismissSampleIfNeeded() {
 
 async function signInGoogle() {
   try {
-    await window._signInWithPopup(window._auth, window._googleProvider);
+    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+      // iOS app: redirect (popup opens Safari which breaks the flow)
+      await window._signInWithRedirect(window._auth, window._googleProvider);
+    } else {
+      await window._signInWithPopup(window._auth, window._googleProvider);
+    }
     await loadItems();
   } catch (e) {
     const benignCodes = new Set([ "auth/popup-closed-by-user", "auth/cancelled-popup-request", "auth/popup-blocked" ]);
