@@ -274,6 +274,129 @@ async function handleRegisterCode(req, res) {
   }
 }
 
+// ── handleSend (merged from transfer_send.js, S16 June 8) ──────────────────
+// Create a PENDING transfer. Caller = User A (the giver).
+// Body: { sourceItemId, toCode, action: "send" }
+
+const ID_ALPHABET = '23456789ABCDEFGHIJKLMNPQRSTVWXYZ';
+const SAMPLE_ID = 'sample_unerring_robograder_1';
+const RATE_LIMIT_PER_HOUR = 250;
+
+function normalizeCode(raw) {
+  const code = String(raw || '').trim().toUpperCase();
+  if (code.length !== 4) return null;
+  for (const ch of code) {
+    if (ID_ALPHABET.indexOf(ch) === -1) return null;
+  }
+  return code;
+}
+
+async function handleSend(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+  try {
+    const ctx = await setupAuth(req, res);
+    if (!ctx) return;
+    const { db, uid: fromUid } = ctx;
+
+    const { sourceItemId, toCode } = req.body || {};
+    if (!sourceItemId || typeof sourceItemId !== 'string') {
+      return res.status(400).json({ error: 'Missing sourceItemId' });
+    }
+    if (sourceItemId === SAMPLE_ID) {
+      return res.status(400).json({ error: 'The sample comic cannot be given' });
+    }
+    const code = normalizeCode(toCode);
+    if (!code) {
+      return res.status(400).json({ error: 'Enter a valid 4-character code' });
+    }
+
+    // Resolve code → recipient uid.
+    const codeSnap = await db.collection('transfer_codes').doc(code).get();
+    if (!codeSnap.exists) {
+      return res.status(404).json({ error: `No user with code ${code}` });
+    }
+    const toUid = (codeSnap.data() || {}).uid;
+    if (!toUid) {
+      return res.status(404).json({ error: `No user with code ${code}` });
+    }
+    if (toUid === fromUid) {
+      return res.status(400).json({ error: "That's your own code" });
+    }
+
+    // Load A's item.
+    const itemRef = db.collection('users').doc(fromUid)
+      .collection('items').doc(sourceItemId);
+    const itemSnap = await itemRef.get();
+    if (!itemSnap.exists) {
+      return res.status(404).json({ error: 'That entry no longer exists' });
+    }
+    const item = itemSnap.data() || {};
+
+    // Rate limit: count this sender's sends in the trailing hour.
+    const oneHourAgo = new Date(Date.now() - 3600 * 1000).toISOString();
+    const recentSnap = await db.collection('transfers')
+      .where('fromUid', '==', fromUid)
+      .where('createdAt', '>=', oneHourAgo)
+      .get();
+    if (recentSnap.size >= RATE_LIMIT_PER_HOUR) {
+      return res.status(429).json({
+        error: 'Too many gives in the last hour — please wait a bit and retry',
+      });
+    }
+
+    // Dedupe: existing pending transfer for the same (from,item,to)?
+    const dupeSnap = await db.collection('transfers')
+      .where('fromUid', '==', fromUid)
+      .where('toUid', '==', toUid)
+      .where('sourceItemId', '==', sourceItemId)
+      .where('status', '==', 'pending')
+      .limit(1)
+      .get();
+    if (!dupeSnap.empty) {
+      return res.status(200).json({
+        ok: true,
+        transferId: dupeSnap.docs[0].id,
+        message: `Already sent to ${code} — they just haven't accepted yet`,
+        deduped: true,
+      });
+    }
+
+    // Snapshot item + image manifest at SEND time.
+    const imageManifest = Array.isArray(item.images)
+      ? item.images.filter(Boolean)
+      : [];
+
+    const transferDoc = {
+      fromUid,
+      toUid,
+      toCode: code,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      resolvedAt: null,
+      sourceItemId,
+      itemSnapshot: item,
+      imageManifest,
+      originalRoboGradeId: item.roboGradeId || null,
+    };
+
+    const ref = await db.collection('transfers').add(transferDoc);
+
+    const cd = item.comicData || {};
+    const title = (cd.title || item.title || 'entry').toString();
+    const issueRaw = cd.issue || item.issue;
+    const issue = issueRaw ? ` #${issueRaw}` : '';
+    return res.status(200).json({
+      ok: true,
+      transferId: ref.id,
+      message: `Sent ${title}${issue} to ${code}. They'll see it next time they open the app.`,
+    });
+  } catch (e) {
+    return res.status(500).json({ error: (e && e.message) || 'unknown error' });
+  }
+}
+
 // ── router ──────────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
@@ -282,6 +405,9 @@ export default async function handler(req, res) {
   const bodyAction = req.body && req.body.action;
   const action = (queryAction || bodyAction || '').toString().toLowerCase();
 
+  if (action === 'send') {
+    return handleSend(req, res);
+  }
   if (action === 'pending') {
     return handlePending(req, res);
   }
@@ -289,7 +415,7 @@ export default async function handler(req, res) {
     return handleRegisterCode(req, res);
   }
   return res.status(400).json({
-    error: 'Unknown or missing action. Expected ?action=pending or action=register_code in body.',
+    error: 'Unknown or missing action. Expected ?action=pending, action=register_code, or action=send.',
     receivedAction: action || null
   });
 }
