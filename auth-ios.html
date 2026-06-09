@@ -69,18 +69,16 @@
       if (!resp.ok) throw new Error('Server error: ' + resp.status);
       const data = await resp.json();
       if (data.customToken || data.success) {
-        // iOS auth bridge (S17): the token is now stored. Redirect to the
-        // https Universal Link. When the system browser navigates to a
-        // robograder.app URL and the app holds the Associated Domains
-        // entitlement, iOS hands the navigation back to the app automatically —
-        // this is the SAME mechanism that makes the Stripe purchase flow
-        // auto-return (Stripe's success_url is also a robograder.app page). The
+        // iOS auth bridge: redirect to the custom URL scheme. iOS shows a
+        // one-tap "Open in Robograder?" prompt and foregrounds the app; the
         // app's visibilitychange handler then polls for this token and finishes
-        // sign-in. (The earlier robograder:// custom-scheme redirect only
-        // produced an "Open?" prompt; the Universal Link returns silently.)
+        // sign-in. We tried the https Universal Link (to mimic the Stripe
+        // purchase auto-return) but it was NOT intercepted for the auth
+        // redirect — Safari just rendered the web app in-browser, which is
+        // worse than the prompt. The custom scheme is the better compromise.
         status.innerHTML = '<div class="done">✓ Signed in!</div><br>Returning to Robograder…';
-        setTimeout(function() { window.location.href = 'https://robograder.app/auth-complete'; }, 400);
-        setTimeout(function() { status.innerHTML = '<div class="done">✓ Signed in!</div><br>If Robograder didn\'t reopen, switch back to the app.'; }, 1800);
+        setTimeout(function() { window.location.href = 'robograder://auth-complete'; }, 400);
+        setTimeout(function() { status.innerHTML = '<div class="done">✓ Signed in!</div><br>If Robograder didn\'t reopen, tap below.<br><br><a href="robograder://auth-complete" style="color:#d4af37;font-weight:600;text-decoration:none;font-size:16px">Return to Robograder ›</a>'; }, 1800);
       } else {
         throw new Error(data.error || 'Failed');
       }
