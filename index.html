@@ -2897,7 +2897,7 @@ const SAMPLE_COMIC = {
   issueDate: "April 2026",
   publisher: "Robograder",
   grade: "8.0",
-  pageQuality: "White",
+  pageQuality: "Off-White to White",
   cgcGrade: "",
   cgcCert: "",
   psaGrade: "",
@@ -2913,8 +2913,16 @@ const SAMPLE_COMIC = {
     backScore: 18,
     spineScore: 16,
     interiorScore: 9,
-    pageQuality: "White",
-    defects: [],
+    pageQuality: "Off-White to White",
+    defects: [
+      { category: "Front", type: "Spine stress", location: "top of spine", severity: "Low", colorBreaking: false },
+      { category: "Front", type: "Corner blunting", location: "lower-right corner", severity: "Low", colorBreaking: false },
+      { category: "Front", type: "Surface wear", location: "lower cover", severity: "Med", colorBreaking: false },
+      { category: "Back", type: "Soiling", location: "lower edge", severity: "Low", colorBreaking: false },
+      { category: "Spine", type: "Spine tick", location: "center spine", severity: "Low", colorBreaking: false },
+      { category: "Spine", type: "Color-breaking spine stress", location: "lower spine", severity: "Low", colorBreaking: true },
+      { category: "Interior", type: "Page tanning", location: "edges", severity: "Low", colorBreaking: false }
+    ],
     stapleCondition: "Clean, centered, no rust or migration",
     restorationFlags: []
   },
