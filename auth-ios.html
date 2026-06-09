@@ -69,10 +69,15 @@
       if (!resp.ok) throw new Error('Server error: ' + resp.status);
       const data = await resp.json();
       if (data.customToken || data.success) {
-        // iOS in-app browser sheet (S17): no redirect. The app is polling
-        // /api/ios-auth underneath this sheet; the instant it gets the token it
-        // closes the sheet automatically. We just confirm success here.
+        // iOS auth bridge (S17): the token is now stored. Redirect to the custom
+        // URL scheme, which iOS hands back to the Robograder app — foregrounding
+        // it. The app's visibilitychange handler then polls for this token and
+        // finishes sign-in. (We use the robograder:// scheme, NOT an https
+        // Universal Link — iOS will not bounce a same-domain https link out of
+        // Safari, which is why the old /auth-complete redirect never returned.)
         status.innerHTML = '<div class="done">✓ Signed in!</div><br>Returning to Robograder…';
+        setTimeout(function() { window.location.href = 'robograder://auth-complete'; }, 400);
+        setTimeout(function() { status.innerHTML = '<div class="done">✓ Signed in!</div><br>If Robograder didn\'t reopen, tap below.<br><br><a href="robograder://auth-complete" style="color:#d4af37;font-weight:600;text-decoration:none;font-size:16px">Return to Robograder ›</a>'; }, 1800);
       } else {
         throw new Error(data.error || 'Failed');
       }
