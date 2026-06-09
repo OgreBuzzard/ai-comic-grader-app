@@ -180,6 +180,18 @@ onAuthStateChanged(auth, async user => {
     if (_chestPreload.decode) {
       _chestPreload.decode().catch(() => {});
     }
+    // Preload slot ghost images AFTER the list view renders (no impact on initial load)
+    setTimeout(() => {
+      const _preloadUrls = [
+        "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Front_Cover.jpg",
+        "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Back_Cover.jpg",
+        "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Page_Quality.jpg",
+        "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Raking_Light.jpg",
+        "assets/ghosts/TopLeft_Macro.jpg", "assets/ghosts/TopRight_Macro.jpg",
+        "assets/ghosts/BottomLeft_Macro.jpg", "assets/ghosts/BottomRight_Macro.jpg"
+      ];
+      _preloadUrls.forEach(u => { const _p = new Image(); _p.src = u; });
+    }, 2000);
     setTimeout(() => {
       checkPendingTransfers();
     }, 1500);
@@ -560,7 +572,7 @@ onAuthStateChanged(auth, async user => {
     #cropper-modal { position: fixed; inset: 0; background: #000; z-index: 1000; display: none; flex-direction: column; }
     #cropper-modal.open { display: flex; }
     #cropper-stage { flex: 1; min-height: 0; position: relative; background: #000; overflow: hidden; }
-    #cropper-stage .cropper-container { max-width: calc(100% - 48px) !important; max-height: calc(100% - 48px) !important; margin: 24px auto !important; }
+    #cropper-stage .cropper-container { max-width: calc(100% - 32px) !important; max-height: calc(100% - 32px) !important; margin: 16px auto !important; }
     /* Cropper image is hidden until Cropper.js attaches and lays it out properly.
        Without this, the raw <img> renders top-aligned at natural size, then
        jumps when Cropper finishes initializing. The .ready class is added by
@@ -649,8 +661,8 @@ onAuthStateChanged(auth, async user => {
        behavior. SVG's preserveAspectRatio default is meet (letterbox); we
        set slice on each guide SVG itself to match cover. Guide and video
        align after both are scaled to fill the stage. */
-    #camera-guide { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; display: flex; align-items: center; justify-content: center; }
-    #camera-guide svg { width: 100%; height: 100%; display: block; }
+    #camera-guide { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; display: flex; align-items: center; justify-content: center; padding: calc(env(safe-area-inset-top, 0px) + 8px) 8px calc(env(safe-area-inset-bottom, 0px) + 8px); box-sizing: border-box; }
+    #camera-guide svg { width: 100%; height: 100%; display: block; object-fit: contain; }
     /* S13: Rotate-orientation card. Shown inside the camera-stage when the
        active slot's preferred orientation doesn't match the device's current
        orientation. Replaces the camera viewfinder + guide for as long as the
