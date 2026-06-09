@@ -6,14 +6,13 @@
 <title>Robograder — Sign In</title>
 <style>
   body { margin:0; background:#0a0a0a; color:#fff; font-family:-apple-system,sans-serif; display:flex; align-items:center; justify-content:center; min-height:100vh; flex-direction:column; gap:20px; padding:20px; }
-  .logo { width:80px; }
+  .logo { width:200px; }
   .subtitle { font-size:11px; letter-spacing:3px; color:#6a5a4a; font-weight:700; }
   .status { font-size:14px; color:#aaa; text-align:center; line-height:1.5; }
   .btn { display:flex; align-items:center; justify-content:center; gap:10px; background:#fff; color:#1a1a1a; border:none; border-radius:10px; padding:14px 28px; font-size:15px; font-weight:600; cursor:pointer; width:280px; }
-  .btn-apple { background:#000; color:#fff; }
   .spinner { width:30px; height:30px; border:3px solid #333; border-top-color:#d4af37; border-radius:50%; animation:spin 1s linear infinite; }
   @keyframes spin { to { transform:rotate(360deg) } }
-  .done { color:#b8d820; }
+  .done { color:#b8d820; font-size:18px; }
   .err { color:#e85050; }
 </style>
 </head>
@@ -21,18 +20,18 @@
   <img src="/assets/Robograder_Logo.webp" alt="Robograder" class="logo">
   <div class="subtitle">COMIC GRADING APP</div>
 
-  <div id="buttons">
-    <button class="btn" onclick="signIn('google')">
+  <div id="buttons" style="display:none">
+    <button class="btn" onclick="startSignIn()">
       <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
       Sign in with Google
     </button>
   </div>
 
-  <div id="status" class="status" style="display:none"></div>
+  <div id="status" class="status"><div class="spinner"></div><br>Loading...</div>
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-  import { getAuth, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+  import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyCDfjpnL94J0L09vJpg3I8ANu6zUzrrKxM",
@@ -46,46 +45,54 @@
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const googleProvider = new GoogleAuthProvider();
+  const session = new URLSearchParams(window.location.search).get('s');
+  const status = document.getElementById('status');
+  const buttons = document.getElementById('buttons');
 
-  window.signIn = async function(provider) {
-    const btns = document.getElementById('buttons');
-    const status = document.getElementById('status');
-    btns.style.display = 'none';
-    status.style.display = 'block';
-    status.innerHTML = '<div class="spinner"></div><br>Signing in...';
-
-    try {
-      let result;
-      if (provider === 'google') {
-        result = await signInWithPopup(auth, googleProvider);
-      }
-
-      status.innerHTML = '<div class="spinner"></div><br>Getting auth token...';
-
-      // Get the Firebase ID token
+  // Check if we're returning from a redirect
+  try {
+    const result = await getRedirectResult(auth);
+    if (result && result.user) {
+      // We just came back from Google sign-in — exchange token
+      status.innerHTML = '<div class="spinner"></div><br>Completing sign-in...';
       const idToken = await result.user.getIdToken();
-
-      // Get session ID from URL
-      const session = new URLSearchParams(window.location.search).get('s');
-
-      // Exchange for a custom token via server
       const resp = await fetch('/api/ios-auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idToken, session })
       });
-
       if (!resp.ok) throw new Error('Server error: ' + resp.status);
       const data = await resp.json();
-
       if (data.customToken || data.success) {
         status.innerHTML = '<div class="done">✓ Signed in!</div><br>Switch back to the Robograder app now.';
       } else {
         throw new Error(data.error || 'No token received');
       }
-    } catch (e) {
-      status.innerHTML = `<div class="err">Sign in failed: ${e.message}</div><br><button class="btn" onclick="window.location.reload()">Try Again</button>`;
+    } else {
+      // No redirect result — show the sign-in button
+      status.style.display = 'none';
+      buttons.style.display = 'flex';
     }
+  } catch (e) {
+    if (e.code === 'auth/popup-blocked' || e.code === 'auth/cancelled-popup-request') {
+      // No redirect result — show button
+      status.style.display = 'none';
+      buttons.style.display = 'flex';
+    } else if (e.message && e.message.includes('Server error')) {
+      status.innerHTML = '<div class="err">Sign-in failed: ' + e.message + '</div><br><button class="btn" onclick="window.location.reload()">Try Again</button>';
+    } else {
+      // Likely just no redirect result — show button
+      status.style.display = 'none';
+      buttons.style.display = 'flex';
+    }
+  }
+
+  // Called when user taps the button — redirects to Google
+  window.startSignIn = function() {
+    status.style.display = 'block';
+    status.innerHTML = '<div class="spinner"></div><br>Redirecting to Google...';
+    buttons.style.display = 'none';
+    signInWithRedirect(auth, googleProvider);
   };
 </script>
 </body>
