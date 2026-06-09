@@ -20,6 +20,7 @@
     }
   },
   "rewrites": [
+    { "source": "/__/auth/:path*", "destination": "https://ai-comic-grader.firebaseapp.com/__/auth/:path*" },
     { "source": "/id/:id", "destination": "/public.html" }
   ]
 }
