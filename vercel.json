@@ -29,6 +29,7 @@
   ],
   "rewrites": [
     { "source": "/.well-known/apple-app-site-association", "destination": "/apple-app-site-association" },
+    { "source": "/auth-complete", "destination": "/index.html" },
     { "source": "/__/auth/:path*", "destination": "https://ai-comic-grader.firebaseapp.com/__/auth/:path*" },
     { "source": "/id/:id", "destination": "/public.html" }
   ]
