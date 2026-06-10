@@ -571,15 +571,28 @@ onAuthStateChanged(auth, async user => {
     /* Cropper modal: full-screen overlay with image, controls below */
     #cropper-modal { position: fixed; inset: 0; background: #000; z-index: 1000; display: none; flex-direction: column; }
     #cropper-modal.open { display: flex; }
-    #cropper-stage { flex: 1; min-height: 0; position: relative; background: #000; overflow: hidden; }
-    #cropper-stage .cropper-container { max-width: calc(100% - 32px) !important; max-height: calc(100% - 32px) !important; margin: 16px auto !important; }
+    #cropper-stage {
+      flex: 1; min-height: 0; position: relative; background: #000; overflow: hidden;
+      /* Even gap on all four sides, plus device safe-area insets so the crop
+         frame never sits under the Dynamic Island (top) or the rotation bar
+         (bottom) and isn't flush to the screen edges (right). Cropper.js sizes
+         itself to this padded content box, so padding here = symmetric framing.
+         Applies to both iOS (notch/island) and the PWA (insets resolve to 0). */
+      box-sizing: border-box;
+      padding:
+        calc(env(safe-area-inset-top, 0px) + 16px)
+        calc(env(safe-area-inset-right, 0px) + 16px)
+        16px
+        calc(env(safe-area-inset-left, 0px) + 16px);
+    }
+    #cropper-stage .cropper-container { margin: 0 auto !important; }
     /* Cropper image is hidden until Cropper.js attaches and lays it out properly.
        Without this, the raw <img> renders top-aligned at natural size, then
        jumps when Cropper finishes initializing. The .ready class is added by
        openCropper() right before Cropper attaches. */
     #cropper-stage img { display: block; max-width: 100%; visibility: hidden; }
     #cropper-stage.ready img { visibility: visible; }
-    #cropper-controls { padding: 16px; background: #1a1a1a; display: flex; gap: 10px; justify-content: space-between; align-items: center; border-top: 1px solid #333; }
+    #cropper-controls { padding: 16px 16px calc(env(safe-area-inset-bottom, 0px) + 16px); background: #1a1a1a; display: flex; gap: 10px; justify-content: space-between; align-items: center; border-top: 1px solid #333; }
     /* S13 v6: cropper Cancel and Apply Crop now use the app-wide rg-btn
        system (see .rg-btn classes near top of stylesheet). Removed the
        cropper-specific button rule that previously forced uppercase +
