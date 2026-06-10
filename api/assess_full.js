@@ -141,7 +141,15 @@ export default async function handler(req, res) {
   // OPTIONS preflight. vercel.json sets the CORS headers, but the request still
   // routes here — without this short-circuit it falls to the 405 below and the
   // browser reports "Load failed". Answer OPTIONS with 204 before the method check.
-  if (req.method === 'OPTIONS') return res.status(204).end();
+  if (req.method === 'OPTIONS') {
+    // Explicitly echo allowed headers on the preflight so the iOS app's custom
+    // x-client-secret header is permitted (vercel.json also sets these, but we
+    // set them here too to be certain the preflight carries them).
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-client-secret');
+    return res.status(204).end();
+  }
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'API key not configured' });
