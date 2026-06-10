@@ -23,22 +23,46 @@
     {
       "source": "/.well-known/apple-app-site-association",
       "headers": [
-        { "key": "Content-Type", "value": "application/json" }
+        {
+          "key": "Content-Type",
+          "value": "application/json"
+        }
       ]
     },
     {
       "source": "/api/(.*)",
       "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" },
-        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" }
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, POST, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type, Authorization, x-client-secret"
+        }
       ]
     }
   ],
   "rewrites": [
-    { "source": "/.well-known/apple-app-site-association", "destination": "/apple-app-site-association" },
-    { "source": "/auth-complete", "destination": "/index.html" },
-    { "source": "/__/auth/:path*", "destination": "https://ai-comic-grader.firebaseapp.com/__/auth/:path*" },
-    { "source": "/id/:id", "destination": "/public.html" }
+    {
+      "source": "/.well-known/apple-app-site-association",
+      "destination": "/apple-app-site-association"
+    },
+    {
+      "source": "/auth-complete",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/__/auth/:path*",
+      "destination": "https://ai-comic-grader.firebaseapp.com/__/auth/:path*"
+    },
+    {
+      "source": "/id/:id",
+      "destination": "/public.html"
+    }
   ]
 }
