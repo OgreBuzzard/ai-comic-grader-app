@@ -136,6 +136,12 @@ function isFullEligible({ title, issueNumber, roboScore, predictedGrade }) {
 }
 
 export default async function handler(req, res) {
+  // CORS preflight: the iOS app POSTs cross-origin (https://localhost ->
+  // robograder.app) with a JSON body + Authorization header, which triggers an
+  // OPTIONS preflight. vercel.json sets the CORS headers, but the request still
+  // routes here — without this short-circuit it falls to the 405 below and the
+  // browser reports "Load failed". Answer OPTIONS with 204 before the method check.
+  if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'API key not configured' });
