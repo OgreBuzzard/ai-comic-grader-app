@@ -590,7 +590,7 @@ onAuthStateChanged(auth, async user => {
        Without this, the raw <img> renders top-aligned at natural size, then
        jumps when Cropper finishes initializing. The .ready class is added by
        openCropper() right before Cropper attaches. */
-    #cropper-stage img { display: block; max-width: 100%; visibility: hidden; }
+    #cropper-stage img { display: block; max-width: 100%; max-height: 100%; visibility: hidden; }
     #cropper-stage.ready img { visibility: visible; }
     #cropper-controls { padding: 16px 16px calc(env(safe-area-inset-bottom, 0px) + 16px); background: #1a1a1a; display: flex; gap: 10px; justify-content: space-between; align-items: center; border-top: 1px solid #333; }
     /* S13 v6: cropper Cancel and Apply Crop now use the app-wide rg-btn
@@ -3164,6 +3164,7 @@ async function deleteItem(id) {
       }
     }
     await fsDeleteDoc(userItemDoc(id));
+    items = items.filter(c => c.id !== id);
   } catch (e) {
     alert("Delete failed: " + e.message);
   }
@@ -7449,10 +7450,20 @@ function openCropper(type, index) {
       toggleDragModeOnDblclick: false,
       movable: false,
       responsive: true,
-      checkOrientation: false,
+      checkOrientation: true,
       ready: function() {
         const stage = document.getElementById("cropper-stage");
         if (stage) stage.classList.add("ready");
+        // Re-measure against the settled, safe-area-padded container. Cropper
+        // measures at attach time, before the padded layout fully settles, which
+        // left tall/EXIF-rotated phone photos collapsed to a strip or pushed past
+        // the safe area. A resize() after ready forces a correct fit for any
+        // image aspect ratio or orientation.
+        if (_cropperInstance && typeof _cropperInstance.resize === "function") {
+          requestAnimationFrame(function() {
+            try { _cropperInstance.resize(); } catch (e) {}
+          });
+        }
       }
     });
     let _lastCropTap = 0;
