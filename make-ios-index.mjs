@@ -133,80 +133,49 @@ mustReplace('D6 browser sheet sign-in',
       return;
     }`,
 `    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
-      // iOS app (S17): open the auth bridge in an IN-APP browser sheet
-      // (SFSafariViewController via @capacitor/browser) and poll for the custom
-      // token while the sheet is up. The app's JS keeps running underneath, so
-      // the moment the token lands we close the sheet and finish sign-in — no
-      // manual app switching. If the Browser plugin isn't installed, falls back
-      // to external Safari; the same poll loop resumes when the user returns.
+      // iOS app (S17): open the auth bridge in external Safari. When sign-in
+      // completes, auth-ios.html redirects to the custom scheme robograder://
+      // auth-complete, which iOS hands back to this app — foregrounding it. A
+      // visibilitychange listener then polls /api/ios-auth for the custom token
+      // and finishes sign-in. NO Capacitor plugin required (the @capacitor/browser
+      // SPM package does not register in this no-bundler build). External Safari
+      // also shares the user's existing Google session, so returning users often
+      // skip the Google login entirely.
       const session = 'ios_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
       const iosStatus = document.getElementById('splash-signin-status') || document.getElementById('auth-ios-status');
       if (iosStatus) { iosStatus.style.display = 'block'; iosStatus.textContent = 'Opening sign-in…'; }
-      // Acquire the @capacitor/browser plugin. After 'npx cap sync ios' the native
-      // bridge exposes it at window.Capacitor.Plugins.Browser. We DO NOT silently
-      // fall back to window.open (that launches full Safari, which can't return to
-      // the app on its own) — if the plugin is missing we say so out loud.
-      const BrowserPlugin = (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) || null;
-      window._iosAuthCancelled = false;
-      let finishedListener = null;
-      if (BrowserPlugin && BrowserPlugin.addListener) {
-        try {
-          finishedListener = await BrowserPlugin.addListener('browserFinished', function() {
-            // User closed the sheet manually. Give the poll a short grace window
-            // (they may have closed it right after "Signed in!") before cancelling.
-            setTimeout(function() { window._iosAuthCancelled = true; }, 6000);
-          });
-        } catch (_) {}
-      }
-      const bridgeUrl = 'https://robograder.app/auth-ios.html?s=' + session;
-      let sheetOpened = false;
-      if (BrowserPlugin && BrowserPlugin.open) {
-        try {
-          await BrowserPlugin.open({ url: bridgeUrl, presentationStyle: 'fullscreen' });
-          sheetOpened = true;
-        } catch (e) {
-          if (iosStatus) iosStatus.textContent = 'Browser sheet failed to open: ' + (e && e.message ? e.message : e);
-        }
-      }
-      if (!sheetOpened) {
-        // Plugin not registered. Surface it rather than dropping to full Safari,
-        // which would strand the user on a manual app-switch with no auto-return.
-        if (iosStatus) {
-          iosStatus.textContent = !BrowserPlugin
-            ? 'In-app browser unavailable (Browser plugin not registered). Falling back to Safari — switch back manually after signing in.'
-            : 'Could not open in-app browser. Falling back to Safari.';
-        }
-        window.open(bridgeUrl, '_blank');
-      }
-      const poll = async () => {
-        for (let i = 0; i < 150; i++) {
-          if (window._iosAuthCancelled) return false;
-          await new Promise(r => setTimeout(r, 1600));
-          try {
-            const resp = await fetch('/api/ios-auth?session=' + session);
-            if (resp.ok) {
-              const data = await resp.json();
-              if (data.customToken) {
-                if (BrowserPlugin && BrowserPlugin.close) { try { await BrowserPlugin.close(); } catch (_) {} }
-                if (iosStatus) iosStatus.textContent = 'Signed in! Loading your collection...';
-                await window._signInWithCustomToken(window._auth, data.customToken);
-                if (typeof window.exitSplashSigninAndShowApp === 'function') window.exitSplashSigninAndShowApp();
-                await loadItems();
-                return true;
+      window._iosPendingSession = session;
+      // Hook visibilitychange ONCE. Fires when the app returns to the foreground
+      // (via the robograder:// scheme handback, or a manual switch as a fallback).
+      if (!window._iosVisibilityHooked) {
+        window._iosVisibilityHooked = true;
+        document.addEventListener('visibilitychange', async function() {
+          if (document.visibilityState !== 'visible' || !window._iosPendingSession) return;
+          var s = window._iosPendingSession;
+          var status = document.getElementById('splash-signin-status') || document.getElementById('auth-ios-status');
+          if (status) { status.style.display = 'block'; status.textContent = 'Finishing sign-in…'; }
+          for (var attempt = 0; attempt < 20; attempt++) {
+            if (window._iosPendingSession !== s) return; // a newer attempt superseded this one
+            try {
+              var resp = await fetch('/api/ios-auth?session=' + s);
+              if (resp.ok) {
+                var data = await resp.json();
+                if (data.customToken) {
+                  window._iosPendingSession = null;
+                  if (status) status.textContent = 'Signed in! Loading your collection…';
+                  await window._signInWithCustomToken(window._auth, data.customToken);
+                  if (typeof window.exitSplashSigninAndShowApp === 'function') window.exitSplashSigninAndShowApp();
+                  await loadItems();
+                  return;
+                }
               }
-            }
-          } catch (_) {}
-        }
-        return false;
-      };
-      const ok = await poll();
-      if (finishedListener && finishedListener.remove) { try { finishedListener.remove(); } catch (_) {} }
-      if (!ok && iosStatus) {
-        iosStatus.textContent = window._iosAuthCancelled
-          ? 'Sign-in canceled. Tap Continue to try again.'
-          : 'Sign-in timed out. Tap Continue to try again.';
+            } catch (e) {}
+            await new Promise(function(r) { setTimeout(r, 1000); });
+          }
+          if (status) status.textContent = 'Sign-in not detected. Tap Continue to try again.';
+        });
       }
-      window._iosAuthCancelled = false;
+      window.open('https://robograder.app/auth-ios.html?s=' + session, '_blank');
       return;
     }`);
 
@@ -322,10 +291,10 @@ mustReplace('D7b splash CSS',
       top: calc(env(safe-area-inset-top, 0px) + 2vh) !important;
     }
     #splash-robot {
-      top: 56% !important;
+      top: calc(56% - 25px) !important;
     }
     #splash.signin-mode #splash-robot {
-      top: 52% !important;
+      top: calc(52% - 25px) !important;
     }`);
 
 // ── D7c: splash sign-in mode helpers (window.enterSplashSignin / exit) ───────
@@ -442,6 +411,71 @@ mustReplace('D7f max-dwell guard',
     const elapsed = Date.now() - splashStartTime;
     if (elapsed >= MIN_DWELL_MS) dismiss();
   });`);
+
+// ── D8: Path B in-app purchasing (S17) ───────────────────────────────────────
+// iOS can't navigate its own webview to Stripe (it would replace the app UI with
+// no way back). Open Stripe in the system browser instead, then refresh the
+// credit count when the app returns to the foreground. Crediting itself is
+// already handled server-side by the Stripe webhook — the app just re-reads the
+// balance. (Apple permits external payment links for US apps post-Epic ruling.)
+mustReplace('D8 purchase external browser',
+`    const data = await resp.json();
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      alert("Failed to start checkout: " + (data.error || "Unknown error"));
+    }`,
+`    const data = await resp.json();
+    if (data.url) {
+      if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+        // iOS: open Stripe in the system browser, not the app's webview, and
+        // refresh credits when the user returns. The webhook does the crediting.
+        window._purchaseInFlight = true;
+        if (!window._purchaseVisHooked) {
+          window._purchaseVisHooked = true;
+          document.addEventListener('visibilitychange', async function() {
+            if (document.visibilityState !== 'visible' || !window._purchaseInFlight) return;
+            window._purchaseInFlight = false;
+            // The webhook may lag a moment behind the redirect; poll the balance.
+            for (var i = 0; i < 8; i++) {
+              try { await loadUserCredits(); } catch (e) {}
+              await new Promise(function(r) { setTimeout(r, 1500); });
+            }
+          });
+        }
+        window.open(data.url, '_blank');
+      } else {
+        window.location.href = data.url;
+      }
+    } else {
+      alert("Failed to start checkout: " + (data.error || "Unknown error"));
+    }`);
+
+// ── D9: disable SSE streaming on iOS (S17) ───────────────────────────────────
+// The website grades via a SAME-ORIGIN SSE stream. The iOS app rewrites the
+// assess call to https://robograder.app (cross-origin), and a streamed SSE
+// response over a cross-origin fetch STALLS/FAILS in WKWebView ("Load failed").
+// Forcing supportsResponseStreaming() to false steers iOS to the existing
+// non-streaming fallback path (plain JSON response), which cross-origin fetch
+// handles fine. The scan animation is cosmetic and runs on its own timer, so
+// there is no visible difference. Cost-neutral: same prompt, same single call.
+mustReplace('D9 disable iOS streaming',
+`function supportsResponseStreaming() {
+  try {
+    return typeof ReadableStream !== "undefined" && typeof TextDecoder !== "undefined" && new Response(new ReadableStream).body && typeof new Response(new ReadableStream).body.getReader === "function";
+  } catch (e) {
+    return false;
+  }
+}`,
+`function supportsResponseStreaming() {
+  // iOS: force non-streaming. Cross-origin SSE stalls in WKWebView.
+  if (window.Capacitor && window.Capacitor.isNativePlatform()) return false;
+  try {
+    return typeof ReadableStream !== "undefined" && typeof TextDecoder !== "undefined" && new Response(new ReadableStream).body && typeof new Response(new ReadableStream).body.getReader === "function";
+  } catch (e) {
+    return false;
+  }
+}`);
 
 writeFileSync(outPath, html);
 console.log(`\nAll ${applied} deltas applied. Wrote ${outPath} (${html.length.toLocaleString()} bytes).`);
