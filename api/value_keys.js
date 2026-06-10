@@ -182,10 +182,13 @@ function normalizeIssue(s) {
  *                             a match — facsimiles and reprints never qualify).
  */
 function matchValueKey(title, issue, publisher, printing) {
-  // S15 May 30 (TESTING): printing exclusion DISABLED to allow reprints/
-  // facsimiles of value-key books to qualify for Deep/Full Assessment (Matt's
-  // request, mirrors the client change in index.html). TO REVERT, restore:
-  //   if (printing && String(printing).trim() !== '') return null;
+  // S17: Reprint gate restored (testing relaxation removed). Facsimile/reprint
+  // editions of value-key books are NOT value keys. Mirrors the client gate in
+  // index.html matchValueKey.
+  if (printing && typeof printing === 'string') {
+    const p = printing.toLowerCase();
+    if (p.includes('facsimile') || p.includes('reprint')) return null;
+  }
 
   const nt = normalizeKeyTitle(title);
   const ni = normalizeIssue(issue);
