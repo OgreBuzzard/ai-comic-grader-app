@@ -24,7 +24,7 @@
 //         rubric tied to Spine score deductions, pressing/cleaning candidate
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '4.16';
+const ROBOGRADE_VERSION = '4.2';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -504,10 +504,12 @@ export default async function handler(req, res) {
   // "don't mention the census" guidance with no census attached costs money
   // for no benefit. Only inject when there's actual data to anchor against.
   let censusBlock = '';
+  let _censusMatched = false;
   try {
     const { formatCensusForPrompt } = await import('../lib/census.js');
     const censusContext = formatCensusForPrompt(title, issueNumber) || '';
     if (censusContext) {
+      _censusMatched = true;
       censusBlock = `
 
 CGC CENSUS DATA (Phase 3 calibration anchor for this specific issue):
@@ -791,6 +793,12 @@ Three forms of damage are catastrophic to grade and routinely misidentified as l
 
 If CHECK 1–4 finds anything, name it in the defects array — TAPE / MISSING PIECE / TEAR / RUST as the defect type, with location and severity. Do not let pattern-matching to common defect categories (creases, stress lines, edge wear, soiling) obscure these structural failures. The checks above are your internal observation step; the defects array is where findings show up in the output. There is no separate structuralScan field — your output of structural defects IS the defects array.
 
+PRINTED ELEMENTS ARE NOT DEFECTS (counter-check — apply after the structural scan). A defect is PHYSICAL DAMAGE to the book: a disruption of the paper or ink that was not part of the book as manufactured. Intentional printed features are NOT defects and must NEVER appear in the defects array or reduce a score. Specifically do NOT flag as defects:
+  • The DIRECT SALES / direct edition box in the lower-left of the front cover (a diamond, a Spider-Man head, an "approved by the Comics Code" stamp, a price-and-issue box, a small character portrait). On many Bronze/Copper Age Marvel books this lower-left graphic is part of the printed cover — it is NOT a sticker, label, or applied defect.
+  • The UPC / barcode box, the publisher logo, the issue/price banner, the Comics Code Authority stamp, and any cover-corner trade-dress box.
+  • Intentional art lines, panel borders, background linework, and design elements that are part of the cover illustration. A straight or curved line that is PRINTED (consistent ink, part of the artwork, sharp registered edges) is art — not a crease, not a color-breaking line. A crease/stress line disrupts the paper and breaks across printed color irregularly; printed art does not.
+Before adding any "crease", "color-breaking line", "sticker", or "stain" to the defects array, confirm it is a physical disruption of the paper/ink and not a printed feature of the cover. If you are not confident a mark is physical damage rather than printed art, do NOT call it a defect. Inventing a defect from cover art is as damaging to the assessment as missing a real one — it produces a wrongly low grade the seller cannot understand.
+
 After all four checks, proceed below.
 
 ROUTINE INSPECTION:
@@ -819,6 +827,15 @@ SELF-REVIEW BEFORE FINALIZING: if any defect description contains MAJOR-damage l
 
 EPISTEMIC HUMILITY: photos can't show everything. Tiny missing pieces (<1/16"), faint creases, small back-cover defects can hide in shadow/glare/low resolution. Do NOT claim absences ("no missing pieces observed", "no tears detected"). Omit absent defects from the inventory.
 
+COMMONLY-MISSED DEFECT CHECKLIST (calibration finding: these are under-detected, causing over-grading). Before finalizing, run one targeted pass for each category below, in the location where it typically hides. Report ONLY what is visibly present — this is a prompt to LOOK in the right places, never an instruction to assume a defect exists. A defect you cannot actually see in the photos does not go in the inventory.
+  • TEARS — re-examine each staple (top and bottom, both covers) and every cover edge meeting the spine. Tears initiate at staple holes and edges and read as thin dark splits.
+  • STAINS — scan the spine and the back cover specifically. A stain is a tonal patch (water tide-line, transfer stain, gloss stain) distinct from the surrounding paper. Large stains on the spine are frequently missed; a discolored region with a soft irregular border is a stain, and a LARGE one is grade-limiting.
+  • FOXING — scattered reddish-brown spots/speckles (not from a staple). Look across the whole cover field, not just edges.
+  • EDGE SHADOWS / EDGE TANNING — a darker band running along an outer edge (oxidation from shelf exposure), distinct from the lighter cover interior. Common top/bottom edge.
+  • PENCIL/PRESSURE INDENTS — a line or impression with no ink break (a groove in the paper catching light), often horizontal across the cover.
+  • BUG/SILVERFISH CHEW — small irregular grazed areas, typically along an edge.
+Catching these real defects when present is what corrects over-grading. But the visible-presence rule above is absolute: do not manufacture any of them to "find something."
+
 DEFECT INVENTORY — for every defect:
 • Type (official CGC terminology)
 • Location (corner, edge, area)
@@ -845,6 +862,8 @@ Phone cameras under typical indoor lighting consistently make pages look 1-2 tie
 1. AGE-AWARE DEFAULT. Pre-1985 books (Silver Age and Bronze Age) overwhelmingly grade OW/W or White in the wild. Genuinely cream or tan pages are uncommon and tied to specific storage conditions (damp, sun-bleaching, acidic storage). For pre-1985 books, default is OW/W unless you see SPECIFIC, NAMEABLE evidence: visible foxing dots or rust marks, brown-tinged edges contrasting with a lighter center, obvious brittleness. "Looks a bit yellow under indoor light" is camera/lighting bias, NOT specific evidence.
 
 2. ANCHOR AGAINST THE PSA REFERENCE IMAGE (Grade_Reference/pq_psa.jpg, provided every assessment). Shows real interior photos of PSA-graded Silver Age books labeled with their page quality designations across the upper scale. Ground truth — match the closest reference. If your assessment interior looks comparable to ANY reference photo, the answer is OW/W or White accordingly. Only assign OW or lower if visibly more tanned than EVERY reference example.
+
+   WHITE BOUNDARY RULE (critical — the most common PQ error is calling a White book OW/W). The reference image labels each book as either White or Off-White to White. Do NOT default to Off-White to White. Assign Off-White to White ONLY IF the interior is visibly LESS white — warmer, more cream-toned — than ALL of the White-labeled reference books. If the interior is comparable in tone to the White references (or whiter), assign White. A faint warm cast from indoor lighting is NOT enough to drop from White to OW/W — only a genuine cream tone relative to the White references justifies OW/W. When the interior sits between a White reference and an OW/W reference, judge which it more closely resembles rather than automatically choosing the lower tier.
 
    COMPARE EYE TO EYE, NOT BOOK TO BOOK. Reference photos and your assessment photo have different lighting/white balance/exposure. Compare unprinted page areas (margins between panels, gutters, white speech balloons) — page tone matters, not surrounding photo cast.
 
@@ -1036,7 +1055,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     // NOTE for round 2: Opus 4.6 may reject thinking:{type:'adaptive'} /
     // output_config.effort — if the round-2 deploy errors on the first
     // assessment, strip those two fields for that round.
-    const PRIMARY_MODEL = 'claude-fable-5';
+    const PRIMARY_MODEL = 'claude-opus-4-8';
     // Per-token rates per model (verified June 2026). Cost logging reads from
     // this table so the calibration matrix logs TRUE costs for every round.
     // Cache read = 10% of input rate; cache creation = 1.25x input rate.
@@ -1358,6 +1377,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
         lockout: _lockoutInfo,
         _diagnostics: {
           comicvineRef: referenceImageBlock !== null,
+          censusMatched: _censusMatched,
           pageQualityRef: pageQualityImageBlock !== null,
           pageQualityRefIsPsa: pqIsPsaReference,
           hasInteriorPhoto: hasInteriorPhoto,
