@@ -24,7 +24,7 @@
 //         rubric tied to Spine score deductions, pressing/cleaning candidate
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '4.21';
+const ROBOGRADE_VERSION = '4.211';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -1082,7 +1082,14 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       // field. Per https://platform.claude.com/docs/en/build-with-claude/effort
       // the API silently ignores unknown top-level params, so a wrong shape
       // produces no error but also no behavior change.
-      output_config: { effort: 'medium' },
+      // S17 v4.211 (Opus 4.6 round): dropped medium → low. Opus 4.6 thinks
+      // heavily on these books at effort=medium (primaryCallMs ~47s, near the
+      // ~50s timeout, cost ~$0.15) whereas Opus 4.8 declines to think at all.
+      // 'low' should curb 4.6's thinking, pull latency under control, and get
+      // cost toward the expected <$0.10 — and gives the FAIR comparison to 4.8
+      // (which effectively isn't thinking on these). If accuracy holds at low
+      // effort, 4.6-low is the real cost-competitive option to weigh vs 4.8.
+      output_config: { effort: 'low' },
       // S15 May 29: enable adaptive thinking on Opus 4.8. Model decides when
       // and how much to think; effort=medium scopes the depth. The hope is
       // explicit reasoning helps the calibration step (defects → grade)
