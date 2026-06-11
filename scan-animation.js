@@ -976,36 +976,41 @@
   function lockBodyScroll() {
     if (_scrollLockY !== null) return;  // already locked
     _scrollLockY = window.scrollY || window.pageYOffset || 0;
-    // S17 (corrected): DO NOT set body{position:fixed}. That collapses the
-    // body out of flow and the layout viewport reflows ~50px (browser-chrome
-    // / safe-area band), jumping the fixed .rg-scan-stage up — top clipped,
-    // black gap at bottom. The earlier "pin body height" patch stopped the
-    // reflow but created an OPAQUE full-viewport body box, which destroyed the
-    // stage's intended transparency (chest rising over the live Edit view) and
-    // also affected the splash. Correct approach: lock scrolling WITHOUT taking
-    // the body out of flow — overflow:hidden on <html> and <body> freezes the
-    // scroll position with no reflow, no opaque box, no jump. The body stays in
-    // normal flow at its normal size, so the fixed stage paints against an
-    // unchanged viewport and the transparent see-through is preserved.
-    const html = document.documentElement;
+    // S17 (RE-corrected with on-device diagnostic, June 11): the jump is NOT a
+    // safe-area/viewport reflow. The diagnostic proved innerHeight,
+    // visualViewport.height/offsetTop, and safe-area insets are IDENTICAL
+    // before and after mount. The ONLY value that changed was scrollY (e.g.
+    // 232 -> 0). Cause: plain `overflow:hidden` on body collapses the page
+    // scroll to 0 on iOS, so everything underneath the transparent fixed
+    // stage teleports to the top — which reads as the scan/splash "jumping."
+    // FIX: freeze the page exactly where it was with position:fixed + a
+    // negative top equal to the current scroll. This holds the visual position
+    // (no teleport, no jump) while preventing scroll behind the overlay.
+    // CRITICAL: keep the body background transparent. An earlier patch pinned
+    // body height which created an OPAQUE full-viewport box that killed the
+    // chest's see-through rise — do NOT set body height or a background here.
     const b = document.body;
+    b.style.position = 'fixed';
+    b.style.top = `-${_scrollLockY}px`;
+    b.style.left = '0';
+    b.style.right = '0';
+    b.style.width = '100%';
     b.style.overflow = 'hidden';
-    html.style.overflow = 'hidden';
-    // Belt-and-suspenders: prevent iOS rubber-band scroll of the locked page
-    // behind the overlay without changing layout.
-    b.style.touchAction = 'none';
+    // Do not set body height or background — transparency of the rise depends
+    // on the body NOT painting an opaque box over the Edit view behind it.
   }
 
   function unlockBodyScroll() {
     if (_scrollLockY === null) return;  // not locked
-    const html = document.documentElement;
     const b = document.body;
+    b.style.position = '';
+    b.style.top = '';
+    b.style.left = '';
+    b.style.right = '';
+    b.style.width = '';
     b.style.overflow = '';
-    html.style.overflow = '';
-    b.style.touchAction = '';
-    // Restore the exact pre-lock scroll position. With overflow-based locking
-    // the scroll position is preserved automatically (body never left flow),
-    // but restore explicitly in case anything nudged it.
+    // Restore the exact pre-lock scroll position (the page was held visually
+    // via top:-scrollY while fixed; window.scrollTo puts it back in real flow).
     window.scrollTo(0, _scrollLockY);
     _scrollLockY = null;
   }
