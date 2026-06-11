@@ -1847,7 +1847,7 @@ window.matchValueKey = function matchValueKey(title, issue, publisher, printing)
 
 (async function loadValueKeys() {
   try {
-    const r = await fetch("/api/value_keys", {
+    const r = await fetch("/value-keys.json", {
       cache: "default"
     });
     if (!r.ok) {
