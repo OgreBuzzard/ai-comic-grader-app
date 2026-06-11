@@ -27,20 +27,6 @@
 const ROBOGRADE_VERSION = '4.16';
 
 export default async function handler(req, res) {
-  // CORS preflight: the iOS app POSTs cross-origin (https://localhost ->
-  // robograder.app) with a JSON body + Authorization header, which triggers an
-  // OPTIONS preflight. vercel.json sets the CORS headers, but the request still
-  // routes here — without this short-circuit it falls to the 405 below and the
-  // browser reports "Load failed". Answer OPTIONS with 204 before the method check.
-  if (req.method === 'OPTIONS') {
-    // Explicitly echo allowed headers on the preflight so the iOS app's custom
-    // x-client-secret header is permitted (vercel.json also sets these, but we
-    // set them here too to be certain the preflight carries them).
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-client-secret');
-    return res.status(204).end();
-  }
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'API key not configured' });
@@ -1041,10 +1027,31 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     // client modal-tracker advances on this event. Non-SSE mode: no-op.
     sseEvent('phase', { phase: 0, name: 'populating' });
 
+    // ── MODEL SELECTION (S17 calibration matrix) ─────────────────────────────
+    // One-line switch for the model-comparison rounds. Sequence:
+    //   Round 1: 'claude-fable-5'      ($10/$50 per M — 2x Opus 4.8)
+    //   Round 2: 'claude-opus-4-6'     ($5/$25 — pre-jump baseline, ~$0.10/run)
+    //   Round 3: 'claude-sonnet-4-6'   ($3/$15 — cost floor)
+    //   Revert to 'claude-opus-4-8' (current production) after the matrix.
+    // NOTE for round 2: Opus 4.6 may reject thinking:{type:'adaptive'} /
+    // output_config.effort — if the round-2 deploy errors on the first
+    // assessment, strip those two fields for that round.
+    const PRIMARY_MODEL = 'claude-fable-5';
+    // Per-token rates per model (verified June 2026). Cost logging reads from
+    // this table so the calibration matrix logs TRUE costs for every round.
+    // Cache read = 10% of input rate; cache creation = 1.25x input rate.
+    const MODEL_RATES = {
+      'claude-fable-5':    { in: 10 / 1e6, out: 50 / 1e6 },
+      'claude-opus-4-8':   { in: 5  / 1e6, out: 25 / 1e6 },
+      'claude-opus-4-6':   { in: 5  / 1e6, out: 25 / 1e6 },
+      'claude-sonnet-4-6': { in: 3  / 1e6, out: 15 / 1e6 }
+    };
+    const _RATES = MODEL_RATES[PRIMARY_MODEL] || MODEL_RATES['claude-opus-4-8'];
+
     // Build the messages payload (used by both streaming and non-streaming
     // branches; identical content either way).
     const _antBody = {
-      model: 'claude-opus-4-8',
+      model: PRIMARY_MODEL,
       // S15 May 29: explicitly set effort=medium via output_config. Opus 4.8's
       // default is 'high'; medium is the recommended default for non-coding
       // workloads. NOTE: on a structured-JSON output task with no thinking,
@@ -1703,8 +1710,8 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
-          model: 'claude-opus-4-8',
-          refineModel: 'claude-opus-4-8',
+          model: PRIMARY_MODEL,
+          refineModel: PRIMARY_MODEL,
           highGrade: !!highGrade,
           gradeRefRan: gradeRefSucceeded,
           gateResult: parsed.gateResult || 'COMIC',
@@ -1726,8 +1733,8 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           // change models, this rate block must change with it — keep the
           // constants here next to the model string.
           costUsd: (function(){
-            const RATE_IN  = 5  / 1e6;   // $/token
-            const RATE_OUT = 25 / 1e6;
+            const RATE_IN  = _RATES.in;
+            const RATE_OUT = _RATES.out;
             const RATE_CACHE_READ   = RATE_IN * 0.10;
             const RATE_CACHE_CREATE = RATE_IN * 1.25;
             const inT  = _inputTokens || 0;
@@ -1736,6 +1743,21 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
             const cc   = _cacheCreationInputTokens || 0;
             return +(inT * RATE_IN + outT * RATE_OUT + cr * RATE_CACHE_READ + cc * RATE_CACHE_CREATE).toFixed(6);
           })(),
+          // S17 calibration logging: sub-scores + PQ + PM in the record itself
+          // so a calibration round can be read straight off the Logs list
+          // without opening rawText, plus the reference-attachment flags that
+          // were previously computed and discarded (these answer "was the PQ
+          // reference actually attached?" definitively per assessment).
+          rgScore: (parsed.roboGrade && parsed.roboGrade.score) ?? null,
+          frontScore: (parsed.roboGrade && parsed.roboGrade.frontScore) ?? null,
+          backScore: (parsed.roboGrade && parsed.roboGrade.backScore) ?? null,
+          spineScore: (parsed.roboGrade && parsed.roboGrade.spineScore) ?? null,
+          interiorScore: (parsed.roboGrade && parsed.roboGrade.interiorScore) ?? null,
+          pageQuality: parsed.pageQuality || null,
+          precisionMod: (parsed.roboGrade && parsed.roboGrade.confidenceRange) ?? null,
+          pageQualityRef: pageQualityImageBlock !== null,
+          pageQualityRefIsPsa: pqIsPsaReference,
+          comicvineRef: referenceImageBlock !== null,
           stopReason: _stopReason,
           responseModel: _responseModel,
           rawTextChars: _rawTextChars,
@@ -1775,8 +1797,8 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
-          model: 'claude-opus-4-8',
-          refineModel: 'claude-opus-4-8',
+          model: PRIMARY_MODEL,
+          refineModel: PRIMARY_MODEL,
           // Diagnostic v3.97: imageCount is the only payload-side number we
           // can reliably capture in the error path (API never returned, so
           // no token usage). Helps identify whether timeouts cluster on
