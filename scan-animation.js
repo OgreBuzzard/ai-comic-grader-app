@@ -1382,6 +1382,15 @@
     }, 100);
     setTimeout(() => { debugViewport('@2500ms (settled)'); }, 2500);
     setTimeout(() => {
+      const stage = document.querySelector('.rg-scan-stage');
+      const shell = document.querySelector('.rg-scan-shell');
+      const cav = document.querySelector('.rg-scan-display') || document.querySelector('[class*="cavity"]');
+      const rectStr = (el) => { if(!el) return 'null'; const r = el.getBoundingClientRect(); return `t=${Math.round(r.top)} b=${Math.round(r.bottom)} h=${Math.round(r.height)} l=${Math.round(r.left)} w=${Math.round(r.width)}`; };
+      debugLog(`@2600 stage: ${rectStr(stage)}`);
+      debugLog(`@2600 shell: ${rectStr(shell)}`);
+      debugLog(`@2600 cavity: ${rectStr(cav)}`);
+    }, 2600);
+    setTimeout(() => {
       const shell = document.querySelector('.rg-scan-shell');
       debugLog(`shell transform @1500ms: ${debugTransform(shell).substring(0,40)}`);
     }, 1500);
