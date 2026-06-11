@@ -493,7 +493,7 @@ export default async function handler(req, res) {
 
 
   // ── Census lookup ──────────────────────────────────────────────────────────
-  // Full 2,359-issue CGC census table lives in ./census.js. We import the
+  // Full 2,359-issue CGC census table lives in ../lib/census.js (outside api/ = NOT built as a Vercel function; it is a pure data module, and the 12-function cap is real). We import the
   // formatter function and call it with this book's title+issue. On match,
   // we inject both the census data AND the wrapper instructions about how
   // to use it. On no-match (the majority of calls — we cover ~2,500 issues
@@ -505,7 +505,7 @@ export default async function handler(req, res) {
   // for no benefit. Only inject when there's actual data to anchor against.
   let censusBlock = '';
   try {
-    const { formatCensusForPrompt } = await import('./census.js');
+    const { formatCensusForPrompt } = await import('../lib/census.js');
     const censusContext = formatCensusForPrompt(title, issueNumber) || '';
     if (censusContext) {
       censusBlock = `
