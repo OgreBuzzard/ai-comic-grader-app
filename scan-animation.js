@@ -272,6 +272,10 @@
     .rg-scan-shell {
       position: absolute;
       left: 50%;
+      /* S17: fallback background. If the chest art fails to load/decode on a
+         later assessment, this neutral steel tone shows behind the progress
+         bars instead of the bare page background. */
+      background: #8a8d91;
       /* Mobile: full container width (fills screen). On mobile the shell
          is INTENTIONALLY taller than viewport — head extends above. */
       width: 100%;
@@ -756,6 +760,19 @@
     chest.decoding = 'sync';
     try { chest.fetchPriority = 'high'; } catch (e) {}
     chest.setAttribute('fetchpriority', 'high');
+    // S17: resilience. The chest art was observed to vanish on later
+    // assessments in a long session (browser evicting the decoded bitmap
+    // under memory pressure, or a re-mount racing the decode), leaving bare
+    // progress bars on the page background. There was no onerror fallback.
+    // On error, re-request once with a cache-busting query; if that also
+    // fails, leave the shell's solid background (added in CSS) so the screen
+    // degrades to a clean panel instead of broken art.
+    chest._rgRetried = false;
+    chest.onerror = function () {
+      if (chest._rgRetried) return;
+      chest._rgRetried = true;
+      chest.src = 'assets/Robograder_Scan_Frame.webp?r=' + Date.now();
+    };
     chest.src = 'assets/Robograder_Scan_Frame.webp';
     chest.alt = '';
     shell.appendChild(chest);
@@ -939,6 +956,16 @@
     b.style.left = '0';
     b.style.right = '0';
     b.style.width = '100%';
+    // S17: pin the body to the visual-viewport height while fixed. Without
+    // an explicit height, switching body to position:fixed collapses it out
+    // of flow and the viewport reflows ~50px (the browser-chrome / safe-area
+    // band), so the whole scan screen jumps up — top clipped, black gap at
+    // the bottom. Locking height to the current viewport keeps the fixed
+    // body the same size the page was, so there is no reflow and no jump.
+    // Affects iOS and the PWA equally (shared module), which is why the jump
+    // showed up in the PWA after the iOS layout change.
+    const vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+    b.style.height = vh + 'px';
     b.style.overflow = 'hidden';
   }
 
@@ -950,6 +977,7 @@
     b.style.left = '';
     b.style.right = '';
     b.style.width = '';
+    b.style.height = '';
     b.style.overflow = '';
     // Restore the exact pre-lock scroll position. Without this the page
     // jumps to the top on dismiss, which is its own disorientation bug.
