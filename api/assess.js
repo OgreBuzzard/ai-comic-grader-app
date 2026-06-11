@@ -24,7 +24,7 @@
 //         rubric tied to Spine score deductions, pressing/cleaning candidate
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '4.213';
+const ROBOGRADE_VERSION = '4.214';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -1056,7 +1056,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     // thinking:{type:'adaptive'} and output_config.effort (Anthropic in fact
     // recommends combining them on 4.6) — no payload changes needed vs 4.8.
     // Expect lower input-token cost (~$0.10/run) than 4.8's tokenizer.
-    const PRIMARY_MODEL = 'claude-fable-5';
+    const PRIMARY_MODEL = 'claude-opus-4-8';
     // Per-token rates per model (verified June 2026). Cost logging reads from
     // this table so the calibration matrix logs TRUE costs for every round.
     // Cache read = 10% of input rate; cache creation = 1.25x input rate.
