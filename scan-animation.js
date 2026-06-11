@@ -68,7 +68,7 @@
     _debugStartTime = performance.now();
     _debugPanel = document.createElement('div');
     _debugPanel.id = 'rg-debug-panel';
-    _debugPanel.style.cssText = 'position:fixed;top:env(safe-area-inset-top,0);right:0;width:240px;max-height:50vh;overflow-y:auto;background:rgba(0,0,0,0.85);color:#0f0;font-family:monospace;font-size:9px;line-height:1.3;padding:6px 8px;z-index:9999;pointer-events:none;border-bottom-left-radius:6px;';
+    _debugPanel.style.cssText = 'position:fixed;top:env(safe-area-inset-top,0);right:0;width:260px;max-height:88vh;overflow-y:auto;background:rgba(0,0,0,0.9);color:#0f0;font-family:monospace;font-size:9px;line-height:1.3;padding:6px 8px;z-index:9999;pointer-events:none;border-bottom-left-radius:6px;';
     document.body.appendChild(_debugPanel);
     debugLog('=== DEBUG START ===');
   }
@@ -1385,11 +1385,15 @@
       const stage = document.querySelector('.rg-scan-stage');
       const shell = document.querySelector('.rg-scan-shell');
       const cav = document.querySelector('.rg-scan-display') || document.querySelector('[class*="cavity"]');
-      const rectStr = (el) => { if(!el) return 'null'; const r = el.getBoundingClientRect(); return `t=${Math.round(r.top)} b=${Math.round(r.bottom)} h=${Math.round(r.height)} l=${Math.round(r.left)} w=${Math.round(r.width)}`; };
-      debugLog(`@2600 stage: ${rectStr(stage)}`);
-      debugLog(`@2600 shell: ${rectStr(shell)}`);
-      debugLog(`@2600 cavity: ${rectStr(cav)}`);
-    }, 2600);
+      const rectStr = (el) => { if(!el) return 'null'; const r = el.getBoundingClientRect(); return `t=${Math.round(r.top)} b=${Math.round(r.bottom)} h=${Math.round(r.height)}`; };
+      // Prepend so these stay at the TOP of the panel, above the API-fire spam.
+      if (_debugPanel) {
+        const div = document.createElement('div');
+        div.style.cssText = 'color:#ff0;border-bottom:1px solid #ff0;margin-bottom:3px;padding-bottom:3px;';
+        div.textContent = `RECTS @2.4s (vp h=${window.innerHeight}): STAGE ${rectStr(stage)} | SHELL ${rectStr(shell)} | CAV ${rectStr(cav)}`;
+        _debugPanel.insertBefore(div, _debugPanel.firstChild);
+      }
+    }, 2400);
     setTimeout(() => {
       const shell = document.querySelector('.rg-scan-shell');
       debugLog(`shell transform @1500ms: ${debugTransform(shell).substring(0,40)}`);
