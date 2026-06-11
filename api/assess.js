@@ -24,7 +24,7 @@
 //         rubric tied to Spine score deductions, pressing/cleaning candidate
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '4.2';
+const ROBOGRADE_VERSION = '4.21';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -1052,10 +1052,11 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     //   Round 2: 'claude-opus-4-6'     ($5/$25 — pre-jump baseline, ~$0.10/run)
     //   Round 3: 'claude-sonnet-4-6'   ($3/$15 — cost floor)
     //   Revert to 'claude-opus-4-8' (current production) after the matrix.
-    // NOTE for round 2: Opus 4.6 may reject thinking:{type:'adaptive'} /
-    // output_config.effort — if the round-2 deploy errors on the first
-    // assessment, strip those two fields for that round.
-    const PRIMARY_MODEL = 'claude-opus-4-8';
+    // Round 2 (v4.21): Opus 4.6. VERIFIED: Opus 4.6 supports both
+    // thinking:{type:'adaptive'} and output_config.effort (Anthropic in fact
+    // recommends combining them on 4.6) — no payload changes needed vs 4.8.
+    // Expect lower input-token cost (~$0.10/run) than 4.8's tokenizer.
+    const PRIMARY_MODEL = 'claude-opus-4-6';
     // Per-token rates per model (verified June 2026). Cost logging reads from
     // this table so the calibration matrix logs TRUE costs for every round.
     // Cache read = 10% of input rate; cache creation = 1.25x input rate.
@@ -1732,6 +1733,13 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           version: ROBOGRADE_VERSION,
           model: PRIMARY_MODEL,
           refineModel: PRIMARY_MODEL,
+          // Census diagnostics — written to the record the admin dashboard reads.
+          // censusMatched answers "did census fire?"; the title/issue fields show
+          // exactly what was passed to the lookup, so a silent no-match (wrong
+          // title format, empty issue) is debuggable instead of invisible.
+          censusMatched: _censusMatched,
+          censusTitleSent: title || null,
+          censusIssueSent: issueNumber || null,
           highGrade: !!highGrade,
           gradeRefRan: gradeRefSucceeded,
           gateResult: parsed.gateResult || 'COMIC',
