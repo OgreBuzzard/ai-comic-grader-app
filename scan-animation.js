@@ -272,12 +272,14 @@
     .rg-scan-shell {
       position: absolute;
       left: 50%;
-      /* S17: fallback background. If the chest art fails to load/decode on a
-         later assessment, this neutral steel tone shows behind the progress
-         bars instead of the bare page background. */
-      background: #8a8d91;
-      /* Mobile: full container width (fills screen). On mobile the shell
-         is INTENTIONALLY taller than viewport — head extends above. */
+      /* NOTE: the shell must stay TRANSPARENT. The chest art is a transparent
+         WebP whose surrounding areas intentionally show the live Edit view
+         through them (the "see-through rise"). An earlier S17 fallback set a
+         solid background here (#8a8d91) to cover a rare chest-art load failure
+         — but that filled the transparent areas with grey on EVERY assessment,
+         destroying the intended look. The correct handling for a failed chest
+         load is the per-image onerror retry (see chest.onerror below), NOT an
+         opaque shell. Do not add a background color here. */
       width: 100%;
       aspect-ratio: 577 / 1835;
       /* Anchor to bottom of viewport. */
@@ -950,37 +952,36 @@
   function lockBodyScroll() {
     if (_scrollLockY !== null) return;  // already locked
     _scrollLockY = window.scrollY || window.pageYOffset || 0;
+    // S17 (corrected): DO NOT set body{position:fixed}. That collapses the
+    // body out of flow and the layout viewport reflows ~50px (browser-chrome
+    // / safe-area band), jumping the fixed .rg-scan-stage up — top clipped,
+    // black gap at bottom. The earlier "pin body height" patch stopped the
+    // reflow but created an OPAQUE full-viewport body box, which destroyed the
+    // stage's intended transparency (chest rising over the live Edit view) and
+    // also affected the splash. Correct approach: lock scrolling WITHOUT taking
+    // the body out of flow — overflow:hidden on <html> and <body> freezes the
+    // scroll position with no reflow, no opaque box, no jump. The body stays in
+    // normal flow at its normal size, so the fixed stage paints against an
+    // unchanged viewport and the transparent see-through is preserved.
+    const html = document.documentElement;
     const b = document.body;
-    b.style.position = 'fixed';
-    b.style.top = `-${_scrollLockY}px`;
-    b.style.left = '0';
-    b.style.right = '0';
-    b.style.width = '100%';
-    // S17: pin the body to the visual-viewport height while fixed. Without
-    // an explicit height, switching body to position:fixed collapses it out
-    // of flow and the viewport reflows ~50px (the browser-chrome / safe-area
-    // band), so the whole scan screen jumps up — top clipped, black gap at
-    // the bottom. Locking height to the current viewport keeps the fixed
-    // body the same size the page was, so there is no reflow and no jump.
-    // Affects iOS and the PWA equally (shared module), which is why the jump
-    // showed up in the PWA after the iOS layout change.
-    const vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
-    b.style.height = vh + 'px';
     b.style.overflow = 'hidden';
+    html.style.overflow = 'hidden';
+    // Belt-and-suspenders: prevent iOS rubber-band scroll of the locked page
+    // behind the overlay without changing layout.
+    b.style.touchAction = 'none';
   }
 
   function unlockBodyScroll() {
     if (_scrollLockY === null) return;  // not locked
+    const html = document.documentElement;
     const b = document.body;
-    b.style.position = '';
-    b.style.top = '';
-    b.style.left = '';
-    b.style.right = '';
-    b.style.width = '';
-    b.style.height = '';
     b.style.overflow = '';
-    // Restore the exact pre-lock scroll position. Without this the page
-    // jumps to the top on dismiss, which is its own disorientation bug.
+    html.style.overflow = '';
+    b.style.touchAction = '';
+    // Restore the exact pre-lock scroll position. With overflow-based locking
+    // the scroll position is preserved automatically (body never left flow),
+    // but restore explicitly in case anything nudged it.
     window.scrollTo(0, _scrollLockY);
     _scrollLockY = null;
   }
