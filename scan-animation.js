@@ -95,6 +95,30 @@
     }
   }
 
+  // S17 JUMP DIAGNOSTIC: snapshot every viewport metric that could account
+  // for the ~50px scan/splash jump. Logged across the mount so we can see
+  // WHICH number shifts. innerHeight vs visualViewport.height diverging =
+  // browser-chrome/safe-area reflow; visualViewport.offsetTop != 0 = the
+  // page is scrolled/pinch-shifted under the fixed stage; the safe-area
+  // inset values show whether the Dynamic Island change is the trigger.
+  function debugViewport(label) {
+    if (!_debugEnabled) return;
+    try {
+      const vv = window.visualViewport;
+      const cs = getComputedStyle(document.documentElement);
+      const sat = cs.getPropertyValue('--sat') ||
+        (getComputedStyle(document.body).getPropertyValue('padding-top'));
+      const probe = document.createElement('div');
+      probe.style.cssText = 'position:fixed;top:0;height:env(safe-area-inset-top,0);width:0;';
+      document.body.appendChild(probe);
+      const insetTop = probe.getBoundingClientRect().height;
+      probe.style.cssText = 'position:fixed;bottom:0;height:env(safe-area-inset-bottom,0);width:0;';
+      const insetBot = probe.getBoundingClientRect().height;
+      probe.remove();
+      debugLog(`${label}: innerH=${window.innerHeight} vvH=${vv?Math.round(vv.height):'?'} vvTop=${vv?Math.round(vv.offsetTop):'?'} vvScale=${vv?vv.scale.toFixed(2):'?'} scrollY=${Math.round(window.scrollY)} saTop=${Math.round(insetTop)} saBot=${Math.round(insetBot)}`);
+    } catch (e) { debugLog(`${label}: vp err ${e.message}`); }
+  }
+
   function debugCleanup() {
     // Leave the debug panel onscreen even after dismiss so the user can
     // screenshot it. They'll see it disappear when they navigate away.
@@ -1297,7 +1321,11 @@
   // photoUrls: flat array of up to 4 URLs in slot order.
   // kind:      'main' (default) or 'corner'. Selects which slot table.
   function runScanAnimation(photoUrls, kind) {
+    // S17 JUMP DIAGNOSTIC: force debug on so the viewport panel shows during
+    // the scan. REMOVE setDebug(true) once the jump is fixed.
+    setDebug(true);
     debugInit();
+    debugViewport('PRE-mount');
     debugLog(`runScanAnimation called: kind=${kind||'main'}, photos=${(photoUrls||[]).filter(Boolean).length}`);
     injectStyles();
 
@@ -1338,6 +1366,7 @@
     // so we use the position:fixed + negative-top technique and restore
     // the exact scroll position on teardown.
     lockBodyScroll();
+    debugViewport('POST-lock+mount');
 
     // After mount, log what the shell's transform is. If iOS isn't
     // honoring our keyframe animation we'll see the transform stuck at
@@ -1346,6 +1375,7 @@
       const shell = document.querySelector('.rg-scan-shell');
       debugLog(`shell transform @100ms: ${debugTransform(shell).substring(0,40)}`);
     }, 100);
+    setTimeout(() => { debugViewport('@2500ms (settled)'); }, 2500);
     setTimeout(() => {
       const shell = document.querySelector('.rg-scan-shell');
       debugLog(`shell transform @1500ms: ${debugTransform(shell).substring(0,40)}`);
