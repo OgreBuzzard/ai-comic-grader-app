@@ -24,7 +24,7 @@
 //         rubric tied to Spine score deductions, pressing/cleaning candidate
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '4.211';
+const ROBOGRADE_VERSION = '4.22';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -465,11 +465,19 @@ export default async function handler(req, res) {
             const targetIss = String(issueNumber).replace(/^0+/, '');
             return issNum === targetIss;
           }) || results[0];
-          if (match && match.image && match.image.medium_url) {
-            const imgResp = await fetchWithTimeout(match.image.medium_url, {}, 4000);
+          if (match && match.image) {
+            // Prefer the highest-resolution scan ComicVine offers — a small
+            // missing corner / cut printed element is not resolvable at the
+            // ~600px medium_url. original_url is the full scan (often 1500px+),
+            // super_url ~1000px. Fall back down the chain to medium_url.
+            const img = match.image;
+            const refUrl = img.original_url || img.super_url || img.screen_large_url || img.screen_url || img.medium_url || null;
+            if (refUrl) {
+            const imgResp = await fetchWithTimeout(refUrl, {}, 5000);
             if (imgResp.ok) {
               const imgBuffer = await imgResp.arrayBuffer();
               referenceImageBlock = { type: 'image', source: { type: 'base64', media_type: normalizeMediaType(imgResp.headers.get('content-type')), data: Buffer.from(imgBuffer).toString('base64') } };
+            }
             }
           }
         }
@@ -781,6 +789,12 @@ STRUCTURAL DAMAGE SCAN — DO THIS FIRST, BEFORE ANYTHING ELSE:
 
 Three forms of damage are catastrophic to grade and routinely misidentified as lesser defects. Scan for each BEFORE categorizing any other defect — once your mind has named something "crease" or "edge wear" or "soiling", you will not reconsider it as paper loss/tape/tear. Catch these first.
 
+  CHECK 0 — REFERENCE COVER COMPARISON (do this FIRST, only when a ComicVine REFERENCE IMAGE was provided above; skip if none). The reference is a clean scan of this exact issue showing how the cover looks UNDAMAGED. This is your single best tool for catching missing pieces and for not mistaking printed art for damage — but it only works if you actively compare, so do it deliberately, not by glancing. Walk the reference cover in regions — the four corners, all four edges, the title/logo, the central figure(s), the price/date box, any printed banners or balloons — and for EACH region ask two questions:
+    (1) MISSING / DAMAGED: Is every printed element that appears in the reference also present and intact in the assessment photo? If a printed element (a corner of the art, a letter of the logo, part of a figure, a chunk of a banner) is present in the reference but ABSENT, cut off, or interrupted in the assessment photo — that is paper loss or a tear at that location. The reference tells you exactly what the cover SHOULD contain, so anything missing from the photo that the reference shows is damage. This is how you catch a missing piece you would otherwise read as "soiling" or "edge wear".
+    (2) ART vs DEFECT: Is something you were about to call a defect actually present in the REFERENCE too? A line, mark, smudge, scrawl, smoke wisp, web strand, motion line, or color shape that appears in the clean reference is PRINTED ART, not damage to this copy — do not flag it. The reference is the arbiter: present in reference = art; absent from reference but present on this copy = possible defect.
+  State your comparison conclusion in the referenceComparison output field (one sentence): what the comparison revealed (a specific missing/damaged region, or a specific art element you confirmed is printed), or that the cover matches the reference with no reference-detectable loss. If no reference was provided, set referenceComparison to "".
+  Caution: the reference may be a different printing or have its own minor scan artifacts; use it for PRESENCE/ABSENCE of major printed elements and for art-vs-defect arbitration, not for fine condition grading. Lighting and gloss differences between reference and photo are not defects.
+
   CHECK 1 — TAPE. Scan every photo, especially the spine. THE DECISIVE TEST IS GEOMETRY, NOT TONE: tape has STRAIGHT, PARALLEL, MACHINE-CUT edges. Damage does not. Ask: is there a band or region bounded by a straight line — an edge so straight it looks ruled, running continuously for an inch or more? Paper wear, creasing, and stress lines produce IRREGULAR, organic, wandering edges. They never draw a ruler-straight border down the length of a spine. So a darker or different-textured band running down the spine with a clean straight edge on one or both sides is TAPE — even if it also looks like wear, even if it has cracks across it, even if part of you wants to call it stress lines. The straight parallel border overrides every other interpretation. Multiple parallel straight-edged bands down the spine = multiple strips of reinforcing tape. Aged tape also shows horizontal cracks across its surface (adhesive cracking — a row of small parallel breaks) and is often glossier than surrounding paper, but the STRAIGHT EDGE is the test that settles it. If you find a straight-bordered band, name it "Tape" — do NOT call it stress lines, creases, or soiling. This is the single most-missed defect and miscalling it as stress lines destroys the assessment's integrity.
 
   CHECK 2 — PAPER LOSS / MISSING PIECE. THE DECISIVE TEST IS THE SILHOUETTE AND WHAT SHOWS THROUGH — PLUS BROKEN PRINTED SHAPES. A missing piece means cover paper is GONE. Three tells, any one confirms it: (a) the rectangular silhouette of the cover is broken — a chunk of the outline is simply absent, with a jagged torn edge; (b) within the cover's interior, a region of the PRINTED IMAGE is interrupted by a patch that does not belong — printed artwork cut off mid-figure (a face sheared flat, a background ending at a hard jagged line), and beyond that line a DIFFERENT surface: an interior page (different color, different printing, sometimes text or art that doesn't match the cover ad) or the backdrop the comic rests on; (c) BROKEN PRINTED SHAPES — a known regular shape on the cover is no longer regular, OR a printed letter is incomplete. A circle that should be perfectly round has a jagged bite taken out of its edge. A solid block of color (a logo, a starburst, a speech balloon, a banner) has a ragged irregular cut into it that does not match the original printed boundary. A letter is missing a stroke (the H at the end of a word has lost its right vertical; the O is open on one side; the E has lost its top bar). These are SHAPE-INTEGRITY violations: comics are printed with mechanical precision, so any irregular interruption of a circle, rectangle, banner, or letter shape is paper that has torn off — even when no interior page shows through (the surface beneath may be the next page of the book or the photo backdrop, both of which can blend in tonally with worn cover paper). The test for (c) is mechanical: does the printed shape complete the way it was printed? If a circle's arc breaks, if a letter has a missing stroke, if a solid color field has a ragged organic edge instead of a clean printed one — paper is missing there. This is paper loss, not soiling, not a stain, not edge wear, not a crease, not printing variation. A large missing piece (2"×1.5" or anything of that scale) is catastrophic — CGC 1.5–2.0 territory — and must never be absorbed into "edge wear" or "soiling". Even a small missing piece that interrupts a printed shape is HIGH severity and must be named — it is structural damage, not surface wear. Measure it and name it "Missing piece" / "Piece out" with HIGH severity. Smooth cover edge with intact rectangular silhouette, all printed shapes complete, and no show-through = NOT paper loss (that's blunting/edge wear). Silhouette disruption OR mismatched show-through field OR broken printed shape/letter = paper loss, full stop.
@@ -855,6 +869,8 @@ LEFT AND RIGHT REFER TO THE IMAGE, NOT THE COMIC. "Top left corner of front cove
 GETTING LEFT AND RIGHT RIGHT — this is a common error. Before you commit a location, look once more at the photo and confirm: the damage you're about to describe as "top left" is in the upper-LEFT region of that photo, not the upper-right. Same for bottom corners. Two-second check, prevents the most-flagged mistake users notice.
 
 EYE APPEAL DISCIPLINE: inventory observable defects, not everything that could be wrong. A typical Silver Age book has 4-8 distinct defects worth noting at any grade — not 12-15. Clean-presenting book with three real defects inventories as three, not three plus eight imagined.
+
+ACCUMULATION MUST STILL COUNT (anti-drift rule). The 4-8 guidance above limits how many defects you WRITE OUT individually, not how many you WEIGH. On a worn book the grade is driven by the TOTAL burden of wear, including many small defects no single one of which is grade-defining. When a face carries more distinct small defects than you will list individually, do NOT silently drop the remainder — instead emit ONE severity-banded summary defect that captures the leftover volume, so the accumulation is represented in both the grade and the visible list. Examples: "Pervasive light edge and corner wear across all four sides" (Low/Med); "Multiple scattered spine stress lines, full length" (Med); "Widespread surface soiling and handling marks, front cover" (Med). The banded summary is a real observed-volume statement, not a hedge — use it only when the volume is actually present. Grade against the FULL burden you observed (individually-listed defects PLUS what the banded summaries represent), never against only the individually-listed subset. A book that genuinely shows heavy accumulation should land in the lower tiers its accumulation warrants, even when the written list is short.
 
 PAGE QUALITY:
 Phone cameras under typical indoor lighting consistently make pages look 1-2 tiers more yellowed than they actually are. Calibration data from 10 PSA-graded 2026 books showed prior calibration was systematically under-reading PQ by 2 tiers — books PSA called OW/W were being called C/OW. Rules below correct that.
@@ -991,7 +1007,7 @@ ${censusBlock}${notesBlock}${highGradeBlock}
 RESPONSE FORMAT — STRICT: your entire response must be the JSON object below and nothing else. The first character of your response must be the literal opening curly brace. The last character must be the literal closing curly brace. Do not write any text before the JSON — no phase headers, no reasoning narration, no "let me check", no markdown, no acknowledgements. The phases above are your internal process; they do not appear in the response. Do not write any text after the JSON. If you have reasoning to share, it goes inside the JSON's aiAssessment field, written tersely.
 
 HARD OUTPUT LIMITS (enforce while writing):
-  • defects array: MAX 12 entries. Beyond 12, consolidate by location ("Multiple corner blunting") and drop trace defects in favor of grade-relevant ones.
+  • defects array: MAX 12 entries. Beyond 12, do NOT simply discard the extras — consolidate them into severity-banded summary entries by location ("Pervasive light edge wear, all sides", "Multiple scattered spine stress lines"). The grade must already reflect the FULL defect burden you observed in Phase 1 (every individual defect PLUS everything a banded summary represents), never just the 12 you print. Trimming is a WRITING operation, not a re-grade — never let the act of shortening the list raise the grade.
   • Each defect description (location + measurement combined): MAX 20 words.
   • aiAssessment: MAX 3 sentences. Direct.
   • graderNotes bullets: MAX 8 entries, MAX 15 words each.
@@ -1009,6 +1025,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
   "grade": "CGC grade estimate e.g. 7.0",
   "graderNotes": "• one bullet per defect, official CGC terminology",
   "aiAssessment": "Overall impression, dominant defects, grade rationale. ONLY what you see in this copy's photos. NEVER mention census/submission counts/distribution/external data.",
+  "referenceComparison": "CHECK 0 result: one sentence on what comparing to the ComicVine reference revealed (a specific missing/damaged region, or an art element confirmed printed), or that the cover matches with no reference-detectable loss. Empty string if no reference was provided. This is a diagnostic field — it may surface to the user but must never mention census or external counts.",
   "labelNotes": "key issue notations from label if visible, empty string if none",
   "keyInfo": "Key-issue significance — populate ONLY if (a) the issue appears in injected census data AND (b) the fact is widely documented. Empty string otherwise.",
   "enhance": true,
@@ -1793,6 +1810,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           pageQualityRef: pageQualityImageBlock !== null,
           pageQualityRefIsPsa: pqIsPsaReference,
           comicvineRef: referenceImageBlock !== null,
+          referenceComparison: parsed.referenceComparison || null,
           stopReason: _stopReason,
           responseModel: _responseModel,
           rawTextChars: _rawTextChars,
