@@ -129,6 +129,23 @@ export default async function handler(req, res) {
       labelNotes: flat.labelNotes || '',
       keyInfo: flat.keyInfo || '',
 
+      // ComicVine reference (persisted from assess.js for admin side-by-side
+      // display + diagnosing wrong-volume pulls). Only present on assessments
+      // run after the persistence change; older items will be null.
+      referenceImageUrl: flat.referenceImageUrl || null,
+      referenceVolume: flat.referenceVolume || null,
+      referenceYear: flat.referenceYear ?? null,
+      referenceComparison: flat.referenceComparison || rg.referenceComparison || null,
+
+      // Optional assessment fields — display in admin when present.
+      restorationFlags: Array.isArray(rg.restorationFlags) ? rg.restorationFlags : (Array.isArray(flat.restorationFlags) ? flat.restorationFlags : []),
+      signatures: Array.isArray(rg.signatures) ? rg.signatures : (Array.isArray(flat.signatures) ? flat.signatures : []),
+      officialCGCGrade: flat.officialCGCGrade ?? null,
+      officialCGCCert: flat.officialCGCCert ?? null,
+      officialPSAGrade: flat.officialPSAGrade ?? null,
+      officialPSACert: flat.officialPSACert ?? null,
+      officialPageQuality: flat.officialPageQuality ?? null,
+
       // Images
       images,
       cornerImages,
