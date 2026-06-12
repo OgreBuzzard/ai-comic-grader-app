@@ -174,6 +174,7 @@ export default async function handler(req, res) {
     psaGraderNotes = '',
     title = '',
     issueNumber = '',
+    issueYear = null,
     highGrade = false,
     initialRoboGrade = null,
     initialCgcGrade = '',
@@ -442,6 +443,7 @@ export default async function handler(req, res) {
 
   // Fetch ComicVine cover reference image if title and issue are available
   let referenceImageBlock = null;
+  let referenceYear = null;  // cover-date year of the ComicVine issue we pulled (diagnostic)
   const baseUrl = req.headers['host']
     ? `https://${req.headers['host']}`
     : (process.env.VERCEL_PROJECT_PRODUCTION_URL
@@ -455,16 +457,56 @@ export default async function handler(req, res) {
     const cvFetch = (title && issueNumber && COMICVINE_API_KEY) ? (async () => {
       try {
         const searchTitle = title.replace(/^The\s+/i, '').trim();
-        const cvSearchUrl = `https://comicvine.gamespot.com/api/search/?api_key=${COMICVINE_API_KEY}&format=json&query=${encodeURIComponent(searchTitle + ' ' + issueNumber)}&resources=issue&field_list=image,volume,issue_number&limit=5`;
+        const cvSearchUrl = `https://comicvine.gamespot.com/api/search/?api_key=${COMICVINE_API_KEY}&format=json&query=${encodeURIComponent(searchTitle + ' ' + issueNumber)}&resources=issue&field_list=image,volume,issue_number,cover_date&limit=10`;
         const cvResp = await fetchWithTimeout(cvSearchUrl, { headers: { 'User-Agent': 'ComicGraderApp/1.0' } }, 5000);
         if (cvResp.ok) {
           const cvData = await cvResp.json();
           const results = cvData.results || [];
-          const match = results.find(r => {
+          const targetIss = String(issueNumber).replace(/^0+/, '');
+          // All results whose issue number matches the target.
+          const numMatches = results.filter(r => {
             const issNum = String(r.issue_number || '').replace(/^0+/, '');
-            const targetIss = String(issueNumber).replace(/^0+/, '');
             return issNum === targetIss;
-          }) || results[0];
+          });
+          // Year of a result's cover_date (e.g. "1964-01-01" -> 1964), or null.
+          const yearOf = (r) => {
+            const cd = String(r.cover_date || '');
+            const m = cd.match(/(\d{4})/);
+            return m ? parseInt(m[1], 10) : null;
+          };
+          // WHY: "Amazing Spider-Man 8" exists in MANY volumes (1963 original,
+          // 2018 relaunch, etc.). Matching on issue number alone pulled the
+          // WRONG comic — often a modern relaunch — making the reference
+          // useless on exactly the vintage keys where it matters. Disambiguate:
+          //   - If the client sent issueYear (re-assessment of a known book),
+          //     pick the issue-number match whose cover-date year is CLOSEST.
+          //   - Otherwise default to the EARLIEST cover date = the original
+          //     series, which is what is being graded in the overwhelming
+          //     majority of cases (Silver/Bronze Age keys).
+          let match = null;
+          const pool = numMatches.length ? numMatches : results;
+          const hintYear = (typeof issueYear === 'number' && issueYear > 1930) ? issueYear : null;
+          if (pool.length) {
+            if (hintYear) {
+              match = pool.slice().sort((a, b) => {
+                const ya = yearOf(a), yb = yearOf(b);
+                const da = ya === null ? 9999 : Math.abs(ya - hintYear);
+                const db = yb === null ? 9999 : Math.abs(yb - hintYear);
+                return da - db;
+              })[0];
+            } else {
+              // Earliest cover date wins; results with no date sort last.
+              match = pool.slice().sort((a, b) => {
+                const ya = yearOf(a), yb = yearOf(b);
+                if (ya === null && yb === null) return 0;
+                if (ya === null) return 1;
+                if (yb === null) return -1;
+                return ya - yb;
+              })[0];
+            }
+          }
+          match = match || results[0];
+          referenceYear = match ? yearOf(match) : null;
           if (match && match.image) {
             // Prefer the highest-resolution scan ComicVine offers — a small
             // missing corner / cut printed element is not resolvable at the
@@ -1810,6 +1852,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           pageQualityRef: pageQualityImageBlock !== null,
           pageQualityRefIsPsa: pqIsPsaReference,
           comicvineRef: referenceImageBlock !== null,
+          referenceYear: referenceYear,
           referenceComparison: parsed.referenceComparison || null,
           stopReason: _stopReason,
           responseModel: _responseModel,
