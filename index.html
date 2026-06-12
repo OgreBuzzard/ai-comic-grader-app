@@ -6512,6 +6512,14 @@ async function completeAssessment() {
   formData.pageQuality = cgc.pageQuality ? normPageQuality(cgc.pageQuality) : formData.pageQuality;
   formData.aiGraderNotes = cgc.graderNotes || "";
   formData.aiAssessment = cgc.aiAssessment || "";
+  // ComicVine reference fields — copy from the assess result onto formData so
+  // they persist to the item doc (the whitelist in nestForFirestore only keeps
+  // fields that are actually ON the record; they must be assigned here first).
+  // Powers the admin side-by-side reference display + wrong-volume diagnosis.
+  if (cgc.referenceImageUrl) formData.referenceImageUrl = cgc.referenceImageUrl;
+  if (cgc.referenceVolume) formData.referenceVolume = cgc.referenceVolume;
+  if (cgc.referenceYear != null) formData.referenceYear = cgc.referenceYear;
+  if (cgc.referenceComparison) formData.referenceComparison = cgc.referenceComparison;
   if (cgc.labelNotes && cgc.labelNotes.trim()) formData.cgcNotes = cgc.labelNotes.trim() + (formData.cgcNotes ? "\n" + formData.cgcNotes : "");
   formData.psaNotes = psa.psaNotes || "";
   if (cgc.keyInfo && cgc.keyInfo.trim() && !formData.keyInfo) formData.keyInfo = cgc.keyInfo.trim();
