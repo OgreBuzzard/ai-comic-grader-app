@@ -271,7 +271,19 @@
   const STYLES = `
     .rg-scan-stage {
       position: fixed;
-      inset: 0;
+      /* S17 (FINAL): anchor at top:0 with an explicit dvh height instead of
+         inset:0. inset:0 re-fits the stage to whatever innerHeight becomes,
+         and innerHeight SHRINKS 49px (saTop) during mount when the URL bar /
+         safe-area band collapses — that mid-animation re-fit is the jump.
+         100dvh is the dynamic viewport height: it already accounts for the
+         collapsed-chrome state, so the stage height is stable across the
+         shrink and the shell's slide-up keyframe no longer lurches. Fall back
+         to 100vh for engines without dvh. */
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 100vh;
+      height: 100dvh;
       /* S16: Match app max-width on desktop — scan should not exceed the content column */
       max-width: 480px;
       margin: 0 auto;
@@ -976,28 +988,28 @@
   function lockBodyScroll() {
     if (_scrollLockY !== null) return;  // already locked
     _scrollLockY = window.scrollY || window.pageYOffset || 0;
-    // S17 (RE-corrected with on-device diagnostic, June 11): the jump is NOT a
-    // safe-area/viewport reflow. The diagnostic proved innerHeight,
-    // visualViewport.height/offsetTop, and safe-area insets are IDENTICAL
-    // before and after mount. The ONLY value that changed was scrollY (e.g.
-    // 232 -> 0). Cause: plain `overflow:hidden` on body collapses the page
-    // scroll to 0 on iOS, so everything underneath the transparent fixed
-    // stage teleports to the top — which reads as the scan/splash "jumping."
-    // FIX: freeze the page exactly where it was with position:fixed + a
-    // negative top equal to the current scroll. This holds the visual position
-    // (no teleport, no jump) while preventing scroll behind the overlay.
-    // CRITICAL: keep the body background transparent. An earlier patch pinned
-    // body height which created an OPAQUE full-viewport box that killed the
-    // chest's see-through rise — do NOT set body height or a background here.
+    // S17 (FINAL, with rect diagnostic June 11): the jump is a 49px viewport
+    // SHRINK during mount — innerHeight 693 -> 644, exactly saTop=49. Cause:
+    // setting body{position:fixed} makes iOS Safari recompute the viewport
+    // (URL-bar / top safe-area band collapse), so innerHeight drops 49px
+    // mid-animation. The fixed .rg-scan-stage re-fits to the new height but
+    // the shell's slide-up keyframe was computed against the old height -> the
+    // chest lurches up ~49px (top clipped, black gap at bottom). Both prior
+    // theories (safe-area-reflow guess, then scroll-collapse guess) were
+    // wrong; the rect numbers settle it.
+    // FIX: do NOT set position:fixed on body — that is what triggers the
+    // viewport recompute. Lock scroll with overflow only (no layout change,
+    // no viewport collapse), and restore the scroll offset on unlock. The
+    // stage is separately pinned to 100dvh (see CSS) so it can't depend on a
+    // mid-animation innerHeight change.
     const b = document.body;
-    b.style.position = 'fixed';
-    b.style.top = `-${_scrollLockY}px`;
-    b.style.left = '0';
-    b.style.right = '0';
-    b.style.width = '100%';
+    const html = document.documentElement;
     b.style.overflow = 'hidden';
-    // Do not set body height or background — transparency of the rise depends
-    // on the body NOT painting an opaque box over the Edit view behind it.
+    html.style.overflow = 'hidden';
+    b.style.touchAction = 'none';
+    // Hold visual scroll position WITHOUT position:fixed: scroll the page back
+    // to where it was on the next frame if anything nudged it. No fixed body =
+    // no URL-bar/safe-area collapse = no 49px viewport shrink = no jump.
   }
 
   function unlockBodyScroll() {
