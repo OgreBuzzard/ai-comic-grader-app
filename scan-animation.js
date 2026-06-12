@@ -68,7 +68,7 @@
     _debugStartTime = performance.now();
     _debugPanel = document.createElement('div');
     _debugPanel.id = 'rg-debug-panel';
-    _debugPanel.style.cssText = 'position:fixed;top:env(safe-area-inset-top,0);right:0;width:260px;max-height:88vh;overflow-y:auto;background:rgba(0,0,0,0.9);color:#0f0;font-family:monospace;font-size:9px;line-height:1.3;padding:6px 8px;z-index:9999;pointer-events:none;border-bottom-left-radius:6px;';
+    _debugPanel.style.cssText = 'position:fixed;top:env(safe-area-inset-top,0);right:0;width:240px;max-height:50vh;overflow-y:auto;background:rgba(0,0,0,0.85);color:#0f0;font-family:monospace;font-size:9px;line-height:1.3;padding:6px 8px;z-index:9999;pointer-events:none;border-bottom-left-radius:6px;';
     document.body.appendChild(_debugPanel);
     debugLog('=== DEBUG START ===');
   }
@@ -1015,14 +1015,21 @@
   function unlockBodyScroll() {
     if (_scrollLockY === null) return;  // not locked
     const b = document.body;
+    const html = document.documentElement;
+    // Clear EVERYTHING lockBodyScroll set. The overflow lock now sets overflow
+    // on BOTH html and body plus touchAction — all three must be cleared or
+    // the page stays unscrollable until app restart (the leak bug).
+    b.style.overflow = '';
+    html.style.overflow = '';
+    b.style.touchAction = '';
+    // Legacy clears (harmless if already empty) in case an older lock path set
+    // position:fixed offsets on body.
     b.style.position = '';
     b.style.top = '';
     b.style.left = '';
     b.style.right = '';
     b.style.width = '';
-    b.style.overflow = '';
-    // Restore the exact pre-lock scroll position (the page was held visually
-    // via top:-scrollY while fixed; window.scrollTo puts it back in real flow).
+    // Restore the exact pre-lock scroll position.
     window.scrollTo(0, _scrollLockY);
     _scrollLockY = null;
   }
@@ -1338,11 +1345,7 @@
   // photoUrls: flat array of up to 4 URLs in slot order.
   // kind:      'main' (default) or 'corner'. Selects which slot table.
   function runScanAnimation(photoUrls, kind) {
-    // S17 JUMP DIAGNOSTIC: force debug on so the viewport panel shows during
-    // the scan. REMOVE setDebug(true) once the jump is fixed.
-    setDebug(true);
     debugInit();
-    debugViewport('PRE-mount');
     debugLog(`runScanAnimation called: kind=${kind||'main'}, photos=${(photoUrls||[]).filter(Boolean).length}`);
     injectStyles();
 
@@ -1383,7 +1386,6 @@
     // so we use the position:fixed + negative-top technique and restore
     // the exact scroll position on teardown.
     lockBodyScroll();
-    debugViewport('POST-lock+mount');
 
     // After mount, log what the shell's transform is. If iOS isn't
     // honoring our keyframe animation we'll see the transform stuck at
@@ -1392,20 +1394,6 @@
       const shell = document.querySelector('.rg-scan-shell');
       debugLog(`shell transform @100ms: ${debugTransform(shell).substring(0,40)}`);
     }, 100);
-    setTimeout(() => { debugViewport('@2500ms (settled)'); }, 2500);
-    setTimeout(() => {
-      const stage = document.querySelector('.rg-scan-stage');
-      const shell = document.querySelector('.rg-scan-shell');
-      const cav = document.querySelector('.rg-scan-display') || document.querySelector('[class*="cavity"]');
-      const rectStr = (el) => { if(!el) return 'null'; const r = el.getBoundingClientRect(); return `t=${Math.round(r.top)} b=${Math.round(r.bottom)} h=${Math.round(r.height)}`; };
-      // Prepend so these stay at the TOP of the panel, above the API-fire spam.
-      if (_debugPanel) {
-        const div = document.createElement('div');
-        div.style.cssText = 'color:#ff0;border-bottom:1px solid #ff0;margin-bottom:3px;padding-bottom:3px;';
-        div.textContent = `RECTS @2.4s (vp h=${window.innerHeight}): STAGE ${rectStr(stage)} | SHELL ${rectStr(shell)} | CAV ${rectStr(cav)}`;
-        _debugPanel.insertBefore(div, _debugPanel.firstChild);
-      }
-    }, 2400);
     setTimeout(() => {
       const shell = document.querySelector('.rg-scan-shell');
       debugLog(`shell transform @1500ms: ${debugTransform(shell).substring(0,40)}`);
