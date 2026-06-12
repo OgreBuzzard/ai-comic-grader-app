@@ -476,6 +476,16 @@
     aspect-ratio: 3 / 4;
     object-fit: cover;
   }
+  /* Reference Comparison: show the FULL image, no crop — the ComicVine cover
+     and the assessed photo can be different aspect ratios, and cropping hides
+     exactly the edge/corner damage we're trying to compare. Let height follow
+     the natural image dimensions. */
+  .img-wrap.adaptive img {
+    aspect-ratio: auto;
+    object-fit: contain;
+    height: auto;
+    max-height: 70vh;
+  }
   .img-wrap.wide img {
     aspect-ratio: 5 / 1;
   }
@@ -1664,12 +1674,12 @@ function renderItemDetail(it) {
 
     ${it.referenceImageUrl ? `
       <h3 class="section-h" style="margin-top:24px;">Reference Comparison${it.referenceVolume ? ` — <span style="color:#7fd0ff;font-weight:600;">${escapeHtml(it.referenceVolume)}</span>` : ''}</h3>
-      <div class="images-block" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-        <div class="img-wrap" onclick="openAdminLightbox('${escapeAttr(it.images[0] || '')}')">
+      <div class="images-block" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start;">
+        <div class="img-wrap adaptive" onclick="openAdminLightbox('${escapeAttr(it.images[0] || '')}')">
           <div class="label">Assessed Front Cover</div>
           ${it.images[0] ? `<img src="${escapeAttr(it.images[0])}" alt="" loading="lazy">` : '<div class="empty">No front cover</div>'}
         </div>
-        <div class="img-wrap" onclick="openAdminLightbox('${escapeAttr(it.referenceImageUrl)}')">
+        <div class="img-wrap adaptive" onclick="openAdminLightbox('${escapeAttr(it.referenceImageUrl)}')">
           <div class="label">ComicVine Reference${it.referenceYear ? ' (' + escapeHtml(String(it.referenceYear)) + ')' : ''}</div>
           <img src="${escapeAttr(it.referenceImageUrl)}" alt="" loading="lazy">
         </div>
