@@ -26,6 +26,13 @@
 // =============================================================================
 const ROBOGRADE_VERSION = '4.22';
 
+// ── A/B TEST TOGGLE (TEMPORARY) ──────────────────────────────────────
+// When true, the ComicVine reference is suppressed for ALL assessments so we
+// can compare with-reference vs without-reference grades on ASM 1 / ASM 8.
+// Set false (or delete) after the A/B is done. The per-request suppressReference
+// body flag also works; this constant forces it globally for the test.
+const AB_FORCE_SUPPRESS_REFERENCE = true;
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -175,6 +182,9 @@ export default async function handler(req, res) {
     title = '',
     issueNumber = '',
     issueYear = null,
+    suppressReference = false,  // A/B DIAGNOSTIC: when true, skip the ComicVine
+                                // reference fetch entirely so we can compare
+                                // with-reference vs without-reference grades.
     highGrade = false,
     initialRoboGrade = null,
     initialCgcGrade = '',
@@ -445,6 +455,7 @@ export default async function handler(req, res) {
   let referenceImageBlock = null;
   let referenceYear = null;  // cover-date year of the ComicVine issue we pulled (diagnostic)
   let referenceVolumeName = null;  // which volume/series we chose (diagnostic)
+  let referenceImageUrl = null;  // the actual CV cover URL, persisted for admin side-by-side display
   const baseUrl = req.headers['host']
     ? `https://${req.headers['host']}`
     : (process.env.VERCEL_PROJECT_PRODUCTION_URL
@@ -455,7 +466,7 @@ export default async function handler(req, res) {
   let pageQualityImageBlock = null;
   let pqIsPsaReference = false;  // true once pq_psa.jpg is uploaded; prompt language adapts
   if (isCGC) {
-    const cvFetch = (title && issueNumber && COMICVINE_API_KEY) ? (async () => {
+    const cvFetch = (title && issueNumber && COMICVINE_API_KEY && !suppressReference && !AB_FORCE_SUPPRESS_REFERENCE) ? (async () => {
       try {
         const searchTitle = title.replace(/^The\s+/i, '').trim();
         const targetIss = String(issueNumber).replace(/^0+/, '');
@@ -515,6 +526,7 @@ export default async function handler(req, res) {
           const img = match.image;
           const refUrl = img.original_url || img.super_url || img.screen_large_url || img.screen_url || img.medium_url || null;
           if (refUrl) {
+            referenceImageUrl = refUrl;
             const imgResp = await fetchWithTimeout(refUrl, {}, 5000);
             if (imgResp.ok) {
               const imgBuffer = await imgResp.arrayBuffer();
@@ -1501,12 +1513,21 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
 
     parsed._diagnostics = {
       comicvineRef: referenceImageBlock !== null,
+      referenceImageUrl: referenceImageUrl,
+      referenceVolume: referenceVolumeName,
+      referenceYear: referenceYear,
+      referenceComparison: parsed.referenceComparison || null,
       pageQualityRef: pageQualityImageBlock !== null,
       pageQualityRefIsPsa: pqIsPsaReference,
       hasInteriorPhoto: hasInteriorPhoto,
       gradeRef: gradeRefSucceeded,
       roboGrade: !!(parsed.roboGrade)
     };
+    // Also surface the CV reference URL at top level so the client persists it
+    // on the item document for the admin side-by-side display.
+    parsed.referenceImageUrl = referenceImageUrl;
+    parsed.referenceVolume = referenceVolumeName;
+    parsed.referenceYear = referenceYear;
     // S15 v3.8: strip any psaGrade/psaNotes fields the model may still produce.
     // PSA prediction was removed from the prompt; this defensively drops the
     // fields so they never reach the saved record even on transitional runs
