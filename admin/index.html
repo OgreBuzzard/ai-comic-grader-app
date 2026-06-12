@@ -983,11 +983,17 @@ function renderItemsList() {
         ${thumbSrc ? `<div class="row-thumb"><img src="${escapeAttr(thumbSrc)}" alt="" loading="lazy"></div>` : '<div class="row-thumb empty"></div>'}
         <div class="main">
           <div class="title">${escapeHtml(it.title)}${it.issue ? ' #' + escapeHtml(it.issue) : ''}</div>
-          <div class="sub">${escapeHtml(it.userName)} · ${it.roboGradeDate ? new Date(it.roboGradeDate).toLocaleDateString() : 'no date'}</div>
+          <div class="sub">${escapeHtml(it.userName)} · ${it.roboGradeDate ? new Date(it.roboGradeDate).toLocaleDateString() : 'no date'}${it.roboGradeId ? ' · ID ' + escapeHtml(it.roboGradeId) : ''}</div>
         </div>
-        <div class="meta">
-          <div class="big">${it.score ?? '—'}${it.highGradeAssessed ? '<span style="font-size:14px;color:var(--accent);margin-left:2px;">+</span>' : ''}</div>
-          <div class="label">RG</div>
+        <div class="meta" style="display:flex;gap:14px;align-items:center;">
+          <div style="text-align:center;">
+            <div class="big" style="color:#7fd0ff;">${it.assessedCGCGrade ?? '—'}</div>
+            <div class="label">Pred</div>
+          </div>
+          <div style="text-align:center;">
+            <div class="big">${it.score ?? '—'}${it.highGradeAssessed ? '<span style="font-size:14px;color:var(--accent);margin-left:2px;">+</span>' : ''}</div>
+            <div class="label">RG</div>
+          </div>
         </div>
       </div>
     `;
@@ -1617,7 +1623,6 @@ function renderItemDetail(it) {
       ['Robograde Score', it.score],
       ['Confidence Range', it.confidenceRange != null ? '±' + it.confidenceRange : '—'],
       ['Assessed CGC Grade', it.assessedCGCGrade],
-      ['Assessed PSA Grade', it.assessedPSAGrade],
       ['Page Quality', it.pageQuality],
     ])}
 
@@ -1657,6 +1662,51 @@ function renderItemDetail(it) {
         <p>${escapeHtml(it.psaNotes)}</p>
       </div>` : ''}
 
+    ${it.referenceImageUrl ? `
+      <h3 class="section-h" style="margin-top:24px;">Reference Comparison${it.referenceVolume ? ` — <span style="color:#7fd0ff;font-weight:600;">${escapeHtml(it.referenceVolume)}</span>` : ''}</h3>
+      <div class="images-block" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="img-wrap" onclick="openAdminLightbox('${escapeAttr(it.images[0] || '')}')">
+          <div class="label">Assessed Front Cover</div>
+          ${it.images[0] ? `<img src="${escapeAttr(it.images[0])}" alt="" loading="lazy">` : '<div class="empty">No front cover</div>'}
+        </div>
+        <div class="img-wrap" onclick="openAdminLightbox('${escapeAttr(it.referenceImageUrl)}')">
+          <div class="label">ComicVine Reference${it.referenceYear ? ' (' + escapeHtml(String(it.referenceYear)) + ')' : ''}</div>
+          <img src="${escapeAttr(it.referenceImageUrl)}" alt="" loading="lazy">
+        </div>
+      </div>
+      ${it.referenceComparison ? `
+        <div class="notes-block" style="margin-top:10px;">
+          <h4>Model's Reference Comparison</h4>
+          <p>${escapeHtml(it.referenceComparison)}</p>
+        </div>` : ''}
+    ` : (it.referenceComparison ? `
+      <div class="notes-block" style="margin-top:16px;">
+        <h4>Reference Comparison</h4>
+        <p>${escapeHtml(it.referenceComparison)}</p>
+      </div>` : '')}
+
+    ${(it.restorationFlags && it.restorationFlags.length > 0) ? `
+      <div class="notes-block" style="margin-top:16px;border-left:3px solid #e8a040;">
+        <h4 style="color:#e8a040;">Restoration Assessment</h4>
+        <p>${it.restorationFlags.map(f => escapeHtml(typeof f === 'string' ? f : (f.type || f.note || JSON.stringify(f)))).join(' · ')}</p>
+      </div>` : ''}
+
+    ${(it.signatures && it.signatures.length > 0) ? `
+      <div class="notes-block" style="margin-top:16px;">
+        <h4>Signatures</h4>
+        <p>${it.signatures.map(s => escapeHtml(typeof s === 'string' ? s : (s.name || JSON.stringify(s)))).join(' · ')}</p>
+      </div>` : ''}
+
+    ${(it.officialCGCGrade || it.officialCGCCert || it.officialPSAGrade || it.officialPSACert) ? `
+      <h3 class="section-h" style="margin-top:20px;">Official Grade (from label)</h3>
+      ${fieldGrid([
+        ['Official CGC Grade', it.officialCGCGrade],
+        ['Official CGC Cert', it.officialCGCCert],
+        ['Official PSA Grade', it.officialPSAGrade],
+        ['Official PSA Cert', it.officialPSACert],
+        ['Official Page Quality', it.officialPageQuality],
+      ])}` : ''}
+
     ${it.images.length > 0 ? `
       <h3 class="section-h">Images (${it.images.length})</h3>
       <div class="images-block">
@@ -1687,14 +1737,23 @@ function renderItemDetail(it) {
       <div style="margin-top:12px;padding:12px;background:#1a1a1a;border-radius:8px;border:1px solid #333;">
         <div style="font-size:11px;font-weight:700;color:#aaa;letter-spacing:1px;margin-bottom:8px;">ADD DEFECT</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-          <input id="def-type" placeholder="Type (e.g. Corner blunting)" style="padding:6px 8px;background:#222;border:1px solid #444;color:#eee;border-radius:4px;font-size:12px">
-          <input id="def-location" placeholder="Location (e.g. front cover)" style="padding:6px 8px;background:#222;border:1px solid #444;color:#eee;border-radius:4px;font-size:12px">
+          <select id="def-type" style="padding:6px 8px;background:#222;border:1px solid #444;color:#eee;border-radius:4px;font-size:12px">
+            <option value="">— Type —</option>
+            ${['Corner blunting','Corner crease','Spine stress lines','Spine roll','Spine split','Spine wear','Edge wear','Edge tear','Crease','Color-breaking crease','Non-color-breaking crease','Tear','Tape','Tape residue','Missing piece','Paper loss','Soiling','Foxing','Stain','Water damage','Rust','Rust migration','Staple tear','Staple detachment','Tanning','Cover tanning','Surface abrasion','Surface wear','Surface crazing','Writing','Stamp','Sticker','Sticker residue','Subscription crease','Bindery defect','Production defect','Printing defect','Gloss loss','Dust shadow','Centerfold detachment','Brittleness'].map(t => `<option value="${t}">${t}</option>`).join('')}
+          </select>
+          <select id="def-location" style="padding:6px 8px;background:#222;border:1px solid #444;color:#eee;border-radius:4px;font-size:12px">
+            <option value="">— Location —</option>
+            ${['Front','Top Left Front','Top Right Front','Bottom Left Front','Bottom Right Front','Back','Top Left Back','Top Right Back','Bottom Left Back','Bottom Right Back','Spine','Interior'].map(l => `<option value="${l}">${l}</option>`).join('')}
+          </select>
           <select id="def-severity" style="padding:6px 8px;background:#222;border:1px solid #444;color:#eee;border-radius:4px;font-size:12px">
             <option value="Low">Low</option>
             <option value="Med">Med</option>
             <option value="High">High</option>
           </select>
-          <input id="def-measurement" placeholder="Size (e.g. 1/4&quot;)" style="padding:6px 8px;background:#222;border:1px solid #444;color:#eee;border-radius:4px;font-size:12px">
+          <select id="def-measurement" style="padding:6px 8px;background:#222;border:1px solid #444;color:#eee;border-radius:4px;font-size:12px">
+            <option value="">— Size —</option>
+            ${['~1/16"','~1/8"','~1/4"','~1/2"','~1"','~2"','3"','3"+'].map(s => `<option value="${s}">${s}</option>`).join('')}
+          </select>
         </div>
         <div style="display:flex;gap:8px;margin-top:8px;">
           <label style="font-size:11px;color:#aaa;display:flex;align-items:center;gap:4px;">
