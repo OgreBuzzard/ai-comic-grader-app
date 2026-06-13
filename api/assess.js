@@ -24,7 +24,7 @@
 //         rubric tied to Spine score deductions, pressing/cleaning candidate
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '4.24L';
+const ROBOGRADE_VERSION = '4.25';
 
 // ── A/B TEST TOGGLE (TEMPORARY) ──────────────────────────────────────
 // When true, the ComicVine reference is suppressed for ALL assessments so we
@@ -870,7 +870,7 @@ COMMONLY-MISSED (under-detected → over-grading; LOOK in these spots, report on
 DEFECT INVENTORY — per defect: Type (official CGC term); Location; Measurement (scale by comic size — Silver ~7"×10.25", Bronze ~6.875"×10.25", modern ~6.625"×10.25"); Severity High/Med/Low; colorBreaking flag for creases; Category Front/Back/Spine/Interior (Front=front surface+outer front corners; Back=back surface+outer back corners; Spine=spine surface/roll/inner spine corners/ALL staple condition; Interior=pages/PQ/interior printing only, no staples).
 CORNERS: spell out "top left/top right/bottom left/bottom right" (never TL/TR/BL/BR); group shared defects ("both bottom corners"). LEFT/RIGHT = the IMAGE, not the comic; confirm the side before committing.
 EYE APPEAL: inventory observable defects, not everything possible — a typical Silver Age book has 4–8 worth noting, not 12–15.
-ACCUMULATION STILL COUNTS: the 4–8 limit governs how many you WRITE, not how many you WEIGH. When a face carries more small defects than you list, emit ONE severity-banded summary ("Pervasive light edge/corner wear, all sides"; "Multiple scattered spine stress lines") so the accumulation counts toward the grade. Grade against the full burden (listed + banded), never just the listed subset.
+ACCUMULATION STILL COUNTS: the 4–8 limit governs how many you WRITE, not how many you WEIGH. When a face carries more small defects than you list, emit ONE severity-banded summary ("Pervasive light edge/corner wear, all sides"; "Multiple scattered spine stress lines") so the accumulation counts toward the grade. Grade against the full burden (listed + banded), never just the listed subset. A book that genuinely shows heavy accumulation must land in the lower tiers its accumulation warrants, even when the written list is short — do not let a short list pull the grade up.
 
 PAGE QUALITY: phone cameras under indoor light make pages look 1–2 tiers more yellowed than they are; prior calibration under-read PQ by ~2 tiers.
 1. AGE DEFAULT: pre-1985 books overwhelmingly grade OW/W or White. Default OW/W unless SPECIFIC evidence (foxing, rust, brown-tinged edges vs lighter center, brittleness). "Looks yellow under indoor light" is camera bias, not evidence.
@@ -884,7 +884,8 @@ PQ ↔ INTERIOR SCORE (1:1, Interior MUST equal): White=10 • OW/W=9 • OW=8 �
 ROBOGRADE (primary): four integer components summed to final.
   Front 0–50 (front surface + outer front corners) | Back 0–20 | Spine 0–20 (surface/roll/inner spine corners/staples) | Interior 0–10 (PQ 1:1 map). Final = sum (0–100).
 Score each category only from its own defects. Perfect category = no observed defects there.
-  Front (50): 50 pristine | 47–49 single trace | 43–46 small/trace accumulation | 38–42 minor, strong eye appeal | 30–37 moderate accumulation or one color-breaking | 20–29 substantial wear or significant defect | 10–19 major | 0–9 severe/structural. CUMULATIVE RULE: widespread soiling + multiple defects (corner blunting + edge wear + crease + spine-side stress) → Front ≤30 regardless of individual severities (common at CGC 3.0–4.5).
+  Front (50): 50 pristine | 47–49 single trace | 43–46 small/trace accumulation | 38–42 minor, strong eye appeal | 30–37 moderate accumulation or one color-breaking | 20–29 substantial wear or significant defect | 10–19 major | 0–9 severe/structural.
+    CUMULATIVE-FRONT-DEFECT RULE: widespread soiling/discoloration + multiple additional defects (any combo of corner blunting + edge wear + crease + spine-side stress) → Front MUST be ≤ 30 regardless of individual severities. Mid-grade books (CGC 3.0–4.5) routinely show this. Without this rule, individual defects each rate Med and the sum lands 32–40 (CGC 5.5–7.0 territory) — a systematic over-grade. When in doubt at 30, go to 28.
   Back (20): 20 pristine | 18–19 trace | 15–17 minor/light accumulation | 11–14 moderate | 7–10 substantial | 0–6 major.
   Spine (20): 20 pristine | 18–19 trace, one minor non-CB tick | 15–17 light stress, slight roll | 11–14 multiple stress lines, visible roll, or one color-breaking crease | 7–10 significant stress, split starting, staple pull | 0–6 severe.
   Interior (10): 1:1 from PQ. No deductions. Staple issues → Spine.
@@ -898,7 +899,7 @@ ${gradeCeiling ? `\nGRADE CEILING — predicted CGC grade must not exceed ${grad
 CRITICAL: final = Front+Back+Spine+Interior exactly. If holistic impression disagrees with the sum by >2, a component is wrong, not the formula.
 
 CGC GRADE: apply CGC standards to the inventory.
-BLACKJACK PHILOSOPHY: overshooting is far costlier than undershooting (the user submits to CGC/PSA on your prediction). Between two adjacent grades, prefer the lower; when unsure a defect is grade-affecting, count it. EXCEPTION: clearly minor defects with strong eye appeal — don't grade low just for safety. Applies to RoboGrade and CGC alike.
+BLACKJACK PHILOSOPHY: overshooting is far costlier than undershooting (the user submits to CGC/PSA on your prediction). Between two adjacent grades, prefer the lower; when unsure a defect is grade-affecting, count it. EXCEPTION: clearly minor defects with strong eye appeal — don't grade low just for safety. Applies to RoboGrade and CGC alike. MID-GRADE GUARD: a book showing genuine accumulated wear (multiple defects across faces, soiling, edge/corner wear) belongs in the 4.0–7.0 band, NOT 7.5–8.5 — the most common over-grade error is treating a worn mid-grade book as a clean high-grade one. If the book is not clean-presenting, do not seat it at 8.0+.
 Calibration: assign 9.0–9.6 for minor defects (don't cap at 8.5 from caution); strong eye appeal + flat spine + bright color + sharp corners = high grade; at 8.5+ stress lines/bends/soiling become grade-defining; structural defects have NO hard cap (gradient per Phase 3). ENHANCE: "Y" if pressing/UV/cleaning could improve (spine roll/rippling, color-breaking creases softening, soiling, tanning on white areas); "N" if structural damage dominates; null if unsure.
 
 GRADER NOTES (draft here, finalize Phase 4): concise, official CGC terms.
