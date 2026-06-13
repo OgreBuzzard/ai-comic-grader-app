@@ -20,9 +20,10 @@
 // handleRegisterCode() into their own files with the original names.
 // ============================================================================
 
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
+// firebase-admin is imported DYNAMICALLY inside setupAuth (below), matching
+// the pattern used by api/assess.js / checkout.js. A static top-level import
+// of firebase-admin/* fails on Vercel with "Failed to load the ES module" and
+// 500s the function — the working endpoints all defer the import to runtime.
 
 // ── shared helpers (deduplicated from the two source files) ─────────────────
 
@@ -55,6 +56,9 @@ async function setupAuth(req, res) {
     return null;
   }
   const sa = parseServiceAccount();
+  const { initializeApp, getApps, cert } = await import('firebase-admin/app');
+  const { getAuth } = await import('firebase-admin/auth');
+  const { getFirestore } = await import('firebase-admin/firestore');
   if (!getApps().length) initializeApp({ credential: cert(sa) });
   const auth = getAuth();
   const db = getFirestore();
@@ -278,7 +282,9 @@ async function handleRegisterCode(req, res) {
 // Create a PENDING transfer. Caller = User A (the giver).
 // Body: { sourceItemId, toCode, action: "send" }
 
-const ID_ALPHABET = '23456789ABCDEFGHIJKLMNPQRSTVWXYZ';
+// ID_ALPHABET is already declared above (shared across the merged handlers) —
+// the S15 merge accidentally redeclared it here, which is a parse-time
+// duplicate-const error ("Failed to load the ES module" → 500). Removed.
 const SAMPLE_ID = 'sample_unerring_robograder_1';
 const RATE_LIMIT_PER_HOUR = 250;
 
@@ -401,8 +407,8 @@ async function handleSend(req, res) {
 
 export default async function handler(req, res) {
   // CORS: the iOS Capacitor app calls this cross-origin (local file origin →
-  // robograder.app), which preflights with OPTIONS + Authorization header.
-  // The PWA is same-origin and never preflights. Answer the preflight first.
+  // robograder.app) and preflights with OPTIONS + Authorization header. The
+  // PWA is same-origin and never preflights. Answer the preflight first.
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, x-client-secret');
