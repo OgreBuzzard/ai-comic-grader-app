@@ -58,7 +58,7 @@
   // pass disabled, the freeze should be gone. Re-enable via
   // window.RobograderScan.setDebug(true) in console if anything else
   // needs diagnosis.
-  let _debugEnabled = false;
+  let _debugEnabled = true;  // TEMP S17: skip-to-top diagnostic — set false after capture
   let _debugStartTime = 0;
   let _debugPanel = null;
 
@@ -1010,19 +1010,6 @@
     // Hold visual scroll position WITHOUT position:fixed: scroll the page back
     // to where it was on the next frame if anything nudged it. No fixed body =
     // no URL-bar/safe-area collapse = no 49px viewport shrink = no jump.
-    //
-    // S17 (skip-to-top fix): setting overflow:hidden on a scrolled document
-    // makes some engines (incl. iOS + desktop Safari) collapse scroll to 0.
-    // Because the scan stage is intentionally TRANSPARENT, that collapse is
-    // visible as the Edit view "skipping to top" behind the overlay (happens
-    // on BOTH PWA and iOS — distinct from the PWA-only jump). Re-assert the
-    // saved scroll offset immediately and again next frame so the page stays
-    // visually pinned where the user left it. This does NOT use position:fixed,
-    // so it cannot reintroduce the viewport-shrink jump.
-    if (window.scrollY !== _scrollLockY) window.scrollTo(0, _scrollLockY);
-    requestAnimationFrame(() => {
-      if (window.scrollY !== _scrollLockY) window.scrollTo(0, _scrollLockY);
-    });
   }
 
   function unlockBodyScroll() {
@@ -1382,7 +1369,9 @@
     // Edge case: no photos. Build the shell anyway so the persistent
     // mode works for callers that wanted the shell up regardless. The
     // promise resolves immediately because there's nothing to scan.
+    debugViewport('0 pre-buildDom');
     _activeStage = buildDom(activeSlots);
+    debugViewport('0b post-buildDom');
     debugLog('shell mounted to DOM');
 
     // S14: lock body scroll while the scan stage is up. Two bugs this
@@ -1398,7 +1387,15 @@
     // iOS Safari ignores `overflow:hidden` on body for touch scrolling,
     // so we use the position:fixed + negative-top technique and restore
     // the exact scroll position on teardown.
+    // TEMP S17 skip-to-top diagnostic: capture scroll/viewport at each step
+    // around the lock so we can see WHICH value moves (scrollY collapse vs
+    // viewport shrink vs DOM mount) instead of guessing.
+    debugViewport('A pre-buildDom-already-done/pre-lock');
     lockBodyScroll();
+    debugViewport('B post-lock(sync)');
+    requestAnimationFrame(() => debugViewport('C post-lock(rAF1)'));
+    requestAnimationFrame(() => requestAnimationFrame(() => debugViewport('D post-lock(rAF2)')));
+    setTimeout(() => debugViewport('E post-lock(+250ms)'), 250);
 
     // After mount, log what the shell's transform is. If iOS isn't
     // honoring our keyframe animation we'll see the transform stuck at
