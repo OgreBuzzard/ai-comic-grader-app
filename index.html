@@ -727,12 +727,19 @@ onAuthStateChanged(auth, async user => {
     /* S16: rotation now auto-advances; these are fallbacks, visually demoted
        so the phone-rotation gesture reads as the primary action, not the tap. */
     #camera-rotate-card .rotate-actions {
+      /* S17: pinned to the bottom-right corner so it never overlaps the
+         centered capture button (which sits bottom-center). Was centered
+         below the title with margin-top, which landed it right on top of
+         the untappable capture icon. */
+      position: absolute;
+      right: 16px;
+      bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
       display: flex;
       flex-direction: column;
       gap: 10px;
-      margin-top: 28px;
-      width: 100%;
-      max-width: 280px;
+      width: auto;
+      max-width: 120px;
+      margin-top: 0;
     }
     #camera-rotate-card .rotate-actions button {
       font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
@@ -754,10 +761,14 @@ onAuthStateChanged(auth, async user => {
     }
     #camera-rotate-card #camera-rotate-continue:active { color: #b8d885; }
     #camera-rotate-card #camera-rotate-skip {
-      background: transparent;
-      color: #6a7a55;
-      border-color: transparent;
+      background: rgba(255,255,255,0.08);
+      color: #b8c89a;
+      border: 1px solid rgba(184,200,154,0.3);
+      border-radius: 10px;
       font-size: 13px;
+      line-height: 1.2;
+      text-align: center;
+      padding: 10px 12px;
     }
     #camera-rotate-card #camera-rotate-skip:active { color: #8a9a70; }
     #camera-rotate-card #camera-rotate-bail {
@@ -1309,22 +1320,14 @@ onAuthStateChanged(auth, async user => {
       padding: 20px;
       text-align: center;
     }
-    #orientation-block .rotate-icon { width: 56px; height: 56px; color: #b8d820; }
-    #orientation-block .rotate-icon svg { width: 100%; height: 100%; }
+    #orientation-block .rotate-icon { width: 96px; height: 96px; color: #7aa838; margin-bottom: 24px; }
+    #orientation-block .rotate-icon svg { width: 100%; height: 100%; display: block; }
     #orientation-block .orientation-block-title {
-      font-family: 'Share Tech Mono', 'Courier New', monospace;
-      font-size: 22px;
-      color: #d4e82a;
-      letter-spacing: 0.12em;
-      text-shadow: 0 0 16px rgba(184, 216, 32, 0.4);
-    }
-    #orientation-block .orientation-block-sub {
-      font-family: 'Share Tech Mono', 'Courier New', monospace;
-      font-size: 13px;
-      color: #6a6a6a;
-      letter-spacing: 0.16em;
-      max-width: 280px;
-      line-height: 1.5;
+      color: #c8d8a8;
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-weight: 800;
+      font-size: 26px;
+      letter-spacing: 1.5px;
     }
     /* Show in landscape on phones. We restrict by max-height to avoid
        triggering on landscape tablets/desktops where the app should
@@ -1339,7 +1342,6 @@ onAuthStateChanged(auth, async user => {
 <div id="orientation-block" aria-hidden="true">
   <div class="rotate-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true" fill="none"><path d="M60,35.5L60,64.5C60,66.432 58.432,68 56.5,68L43.5,68C41.568,68 40,66.432 40,64.5L40,35.5C40,33.568 41.568,32 43.5,32L56.5,32C58.432,32 60,33.568 60,35.5Z" style="fill:none;stroke:currentColor;stroke-width:6px;"/> <path d="M16,50C16,31.348 31.348,16 50,16" style="fill:none;fill-rule:nonzero;stroke:currentColor;stroke-width:6px;"/> <g transform="matrix(0.707107,-0.707107,0.707107,0.707107,7.47309,40.0416)"> <path d="M50,6L50,16L40,16" style="fill:none;fill-rule:nonzero;stroke:currentColor;stroke-width:6px;"/> </g> <path d="M84,50C84,68.652 68.652,84 50,84" style="fill:none;fill-rule:nonzero;stroke:currentColor;stroke-width:6px;"/> <g transform="matrix(0.707107,-0.707107,0.707107,0.707107,-44.7523,59.9584)"> <path d="M50,94L50,84L60,84" style="fill:none;fill-rule:nonzero;stroke:currentColor;stroke-width:6px;"/> </g></svg></div>
   <div class="orientation-block-title">Rotate to portrait</div>
-  <div class="orientation-block-sub">Robograder works best in portrait orientation</div>
 </div>
 
 <div id="auth-screen" style="display:none;position:fixed;inset:0;z-index:10001;background:#0a0a0a;align-items:center;justify-content:center;flex-direction:column;gap:24px;padding:calc(env(safe-area-inset-top, 0px) + 20px) 20px 20px">
@@ -1635,10 +1637,8 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
       <div class="rotate-title" id="camera-rotate-title">Rotate to landscape</div>
       
       <div class="rotate-actions">
-        <button type="button" id="camera-rotate-continue"
-          onclick="cameraRotateForceRecheck()">Done</button>
         <button type="button" id="camera-rotate-skip"
-          onclick="cameraSkipRotation()">Skip rotation</button>
+          onclick="cameraSkipRotation()">Skip<br>rotation</button>
       </div>
     </div>
     <div id="camera-controls">
