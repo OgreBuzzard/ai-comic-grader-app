@@ -6,19 +6,11 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 // All three are one-time payments; webhook fulfills credits via metadata.credits
 const PACKAGES = {
   comic_stack: { credits: 10,  priceId: 'price_1TRiZdAJVXkUtIkTabh9WbaK', name: 'Comic Stack' },  // $10  ($1.00 each)
-  comic_wall:  { credits: 40,  priceId: 'price_1TRibUAJVXkUtIkTjFBhmBdJ', name: 'Comic Wall'  },  // $30  ($0.75 each)
-  short_box:   { credits: 150, priceId: 'price_1TRibzAJVXkUtIkTiEgc7QCM', name: 'Short Box'   },  // $100 ($0.67 each)
+  comic_wall:  { credits: 35,  priceId: 'price_1TRibUAJVXkUtIkTjFBhmBdJ', name: 'Comic Wall'  },  // $30  ($0.86 each)
+  short_box:   { credits: 125, priceId: 'price_1TRibzAJVXkUtIkTiEgc7QCM', name: 'Short Box'   },  // $100 ($0.80 each)
 };
 
 export default async function handler(req, res) {
-  // CORS for the iOS app (origin https://localhost calling robograder.app).
-  // The JSON body + Authorization header trigger a preflight; answer OPTIONS
-  // before the method check or the browser reports "Load failed".
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-client-secret');
-  if (req.method === 'OPTIONS') return res.status(204).end();
-
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   // Verify Firebase auth token
