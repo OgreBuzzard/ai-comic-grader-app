@@ -1010,6 +1010,19 @@
     // Hold visual scroll position WITHOUT position:fixed: scroll the page back
     // to where it was on the next frame if anything nudged it. No fixed body =
     // no URL-bar/safe-area collapse = no 49px viewport shrink = no jump.
+    //
+    // S17 (skip-to-top fix): setting overflow:hidden on a scrolled document
+    // makes some engines (incl. iOS + desktop Safari) collapse scroll to 0.
+    // Because the scan stage is intentionally TRANSPARENT, that collapse is
+    // visible as the Edit view "skipping to top" behind the overlay (happens
+    // on BOTH PWA and iOS — distinct from the PWA-only jump). Re-assert the
+    // saved scroll offset immediately and again next frame so the page stays
+    // visually pinned where the user left it. This does NOT use position:fixed,
+    // so it cannot reintroduce the viewport-shrink jump.
+    if (window.scrollY !== _scrollLockY) window.scrollTo(0, _scrollLockY);
+    requestAnimationFrame(() => {
+      if (window.scrollY !== _scrollLockY) window.scrollTo(0, _scrollLockY);
+    });
   }
 
   function unlockBodyScroll() {

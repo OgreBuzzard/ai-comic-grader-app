@@ -1337,7 +1337,7 @@ onAuthStateChanged(auth, async user => {
 <body style="overflow:hidden">
 
 <div id="orientation-block" aria-hidden="true">
-  <div class="rotate-icon"><img src="assets/rotate-ccw.svg" alt="" style="width:100%;height:100%"></div>
+  <div class="rotate-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true" fill="none"><path d="M60,35.5L60,64.5C60,66.432 58.432,68 56.5,68L43.5,68C41.568,68 40,66.432 40,64.5L40,35.5C40,33.568 41.568,32 43.5,32L56.5,32C58.432,32 60,33.568 60,35.5Z" style="fill:none;stroke:currentColor;stroke-width:6px;"/> <path d="M16,50C16,31.348 31.348,16 50,16" style="fill:none;fill-rule:nonzero;stroke:currentColor;stroke-width:6px;"/> <g transform="matrix(0.707107,-0.707107,0.707107,0.707107,7.47309,40.0416)"> <path d="M50,6L50,16L40,16" style="fill:none;fill-rule:nonzero;stroke:currentColor;stroke-width:6px;"/> </g> <path d="M84,50C84,68.652 68.652,84 50,84" style="fill:none;fill-rule:nonzero;stroke:currentColor;stroke-width:6px;"/> <g transform="matrix(0.707107,-0.707107,0.707107,0.707107,-44.7523,59.9584)"> <path d="M50,94L50,84L60,84" style="fill:none;fill-rule:nonzero;stroke:currentColor;stroke-width:6px;"/> </g></svg></div>
   <div class="orientation-block-title">Rotate to portrait</div>
   <div class="orientation-block-sub">Robograder works best in portrait orientation</div>
 </div>
@@ -3630,6 +3630,16 @@ function renderList() {
     html += ``;
   } else {
     sections.forEach(section => {
+      // Ownership section is collapsible. Default state: Owned open, Sold &
+      // Watching closed (keeps the list uncluttered when those are unused).
+      // collapsed convention: === false means OPEN; undefined/true means CLOSED.
+      // We seed the default per-ownership the first time, then respect the
+      // user's explicit toggle thereafter.
+      const ownKey = `__own__${section.ownership}`;
+      if (collapsed[ownKey] === undefined) {
+        collapsed[ownKey] = section.ownership === "Owned" ? false : true;
+      }
+      const ownOpen = collapsed[ownKey] === false;
       if (section.ownership && sections.length > 1) {
         const ownColors = {
           Owned: {
@@ -3647,8 +3657,9 @@ function renderList() {
         };
         const oc = ownColors[section.ownership] || ownColors["Owned"];
         const count = section.titles.reduce((n, t) => n + section.groups[t].length, 0);
-        html += `<div style="display:flex;align-items:center;gap:8px;margin:18px 0 10px;padding:7px 12px;background:${oc.bg};border-radius:8px">\n          <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:${oc.fg}">${section.ownership}</span>\n          <span style="font-size:12px;color:${oc.fg};opacity:0.7;letter-spacing:0.5px">(${count})</span>\n        </div>`;
+        html += `<div onclick="toggleOwnership('${escJsAttr(section.ownership)}')" style="display:flex;align-items:center;gap:8px;margin:18px 0 10px;padding:7px 12px;background:${oc.bg};border-radius:8px;cursor:pointer;user-select:none">\n          <span class="group-chevron${ownOpen ? " open" : ""}" style="color:${oc.fg}">›</span>\n          <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:${oc.fg}">${section.ownership}</span>\n          <span style="font-size:12px;color:${oc.fg};opacity:0.7;letter-spacing:0.5px">(${count})</span>\n        </div>`;
       }
+      if (!ownOpen) return;
       section.titles.forEach(title => {
         const collapseKey = section.ownership ? `${section.ownership}::${title}` : title;
         const isOpen = collapsed[collapseKey] === false;
@@ -3841,6 +3852,12 @@ function wireSwipeRows() {
 
 function toggleGroup(title) {
   collapsed[title] = collapsed[title] === false ? true : false;
+  renderList();
+}
+
+function toggleOwnership(ownership) {
+  const k = `__own__${ownership}`;
+  collapsed[k] = collapsed[k] === false ? true : false;
   renderList();
 }
 
