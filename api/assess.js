@@ -34,6 +34,15 @@ const ROBOGRADE_VERSION = '4.25';
 const AB_FORCE_SUPPRESS_REFERENCE = false;
 
 export default async function handler(req, res) {
+  // CORS: the iOS Capacitor app calls this endpoint cross-origin (local file
+  // origin → robograder.app), which triggers a preflight OPTIONS request with
+  // custom headers (Authorization, Accept: text/event-stream). The PWA is
+  // same-origin and never preflights. Answer the preflight before the POST gate.
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'API key not configured' });
