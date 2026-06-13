@@ -400,6 +400,15 @@ async function handleSend(req, res) {
 // ── router ──────────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
+  // CORS: the iOS Capacitor app calls this cross-origin (local file origin →
+  // robograder.app), which preflights with OPTIONS + Authorization header.
+  // The PWA is same-origin and never preflights. Answer the preflight first.
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, x-client-secret');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+
   // Resolve action from query (GET-friendly) or body (POST).
   const queryAction = req.query && req.query.action;
   const bodyAction = req.body && req.body.action;
