@@ -183,6 +183,7 @@ mustReplace('D6 browser sheet sign-in',
 mustReplace('D7a splash markup',
 `  <img id="splash-logo" src="assets/Robograder_Logo.webp" alt="Robograder"
        onerror="this.style.display='none'">
+  <div id="splash-subtitle">COMIC GRADING APP</div>
 </div>`,
 `  <img id="splash-logo" src="assets/Robograder_Logo.webp" alt="Robograder"
        onerror="this.style.display='none'">
@@ -226,7 +227,7 @@ mustReplace('D7b splash CSS',
       top: calc(env(safe-area-inset-top, 0px) + 2vh + 9vh);
       transform: translate(-50%, -120vh);
       text-align: center;
-      font-size: 14px;
+      font-size: 16px;
       letter-spacing: 1.5px;
       font-weight: 700;
       color: #1a1a1a;

@@ -1295,6 +1295,28 @@ onAuthStateChanged(auth, async user => {
         opacity: 1;
       }
     }
+    #splash-subtitle {
+      position: absolute;
+      left: 50%;
+      top: calc(env(safe-area-inset-top, 0px) + 5vh + 18vh);
+      transform: translate(-50%, -120vh);
+      text-align: center;
+      font-size: 16px;
+      letter-spacing: 1.5px;
+      font-weight: 700;
+      color: #1a1a1a;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 2;
+      white-space: nowrap;
+      animation: none;
+    }
+    #splash.assets-ready #splash-subtitle {
+      animation: splashSubtitleIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.95s forwards;
+    }
+    @keyframes splashSubtitleIn {
+      to { transform: translate(-50%, 0); opacity: 0.9; }
+    }
     /* Exit: splash fades out cleanly. Robot and logo go with the parent
        fade — no separate slide-down. The list view is already rendered
        behind us by the time we dismiss (the gate-on-app-ready logic
@@ -1387,6 +1409,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
   
   <img id="splash-logo" src="assets/Robograder_Logo.webp" alt="Robograder"
        onerror="this.style.display='none'">
+  <div id="splash-subtitle">COMIC GRADING APP</div>
 </div>
 <div id="app" style="display:none">
   <div id="header">
@@ -2176,6 +2199,42 @@ function isDeepAssessmentComplete(item) {
   return !!(item && (item.highGradeTier === true || item.highGradeAssessed === true || item._highGradeTier === true || item.deepAssessmentRan === true));
 }
 
+// S17 (June 14): sticky tier unlocks. Per spec, once an entry qualifies for a
+// tier it stays unlocked FOREVER for that entry — a later re-run that scores
+// below threshold must NOT relock it, and running one tier must not hide
+// another. We latch three flags (deepUnlocked / fullUnlocked / restorationUnlocked)
+// to true the moment the entry qualifies OR has run that tier, and never clear
+// them. Display gates read these flags (see renderForm / showDetail) instead of
+// recomputing live eligibility, which was the cause of tiers vanishing.
+function stickTierUnlocks(item) {
+  if (!item) return item;
+  // Deep: qualifies if highGradeUnlocked was ever set, or deep has run.
+  if (item.highGradeUnlocked === true || isDeepAssessmentComplete(item)) {
+    item.deepUnlocked = true;
+  }
+  // Full: qualifies if currently full-eligible, or full has run. (Per Matt
+  // June 14: Full shows whenever full-eligible regardless of Deep.)
+  if (isFullAssessmentEligible(item) || isFullAssessmentComplete(item)) {
+    item.fullUnlocked = true;
+  }
+  // Restoration: qualifies if restoration-eligible, or restoration has run.
+  if (isRestorationEligible(item) || isRestorationCheckComplete(item)) {
+    item.restorationUnlocked = true;
+  }
+  return item;
+}
+
+// Sticky-aware display predicates. Once latched, true forever.
+function showDeepTier(item) {
+  return !!(item && (item.deepUnlocked === true || item.highGradeUnlocked === true || isDeepAssessmentComplete(item)));
+}
+function showFullTier(item) {
+  return !!(item && (item.fullUnlocked === true || isFullAssessmentEligible(item) || isFullAssessmentComplete(item)));
+}
+function showRestorationTier(item) {
+  return !!(item && (item.restorationUnlocked === true || isRestorationEligible(item) || isRestorationCheckComplete(item)));
+}
+
 function getSignatures(item) {
   if (!item) return [];
   const sigs = item.roboGrade && Array.isArray(item.roboGrade.signatures) ? item.roboGrade.signatures : Array.isArray(item.signatures) ? item.signatures : [];
@@ -2584,7 +2643,7 @@ async function migrateComicsToItems() {
   }
 }
 
-const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "deepAssessmentRan", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison" ];
+const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "deepAssessmentRan", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "deepUnlocked", "fullUnlocked", "restorationUnlocked" ];
 
 const COMIC_DROP_FIELDS = [ "press", "uv", "clean" ];
 
@@ -3886,6 +3945,7 @@ function showDetail(id) {
   _lastDetailId = id;
   selected = items.find(c => c.id === id);
   if (!selected) return;
+  stickTierUnlocks(selected);
   view = "detail";
   const _ab = document.getElementById("add-btn");
   if (_ab) _ab.style.visibility = "hidden";
@@ -3942,7 +4002,7 @@ function showDetail(id) {
     html += `</div>`;
   }
   html += ownershipPillHtml;
-  if (selected.highGradeUnlocked) {
+  if (showDeepTier(selected) || (selected.cornerImages || []).some(u => u)) {
     const ci = selected.cornerImages || [];
     const hasAnyCorner = ci.some(u => u);
     const imgAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
@@ -4749,6 +4809,7 @@ function showEdit(id) {
   formData._savedSignatureImages = [ ...c.signatureImages || [] ];
   formData._savedRestorationImages = [ ...c.restorationImages || [] ];
   formData._imagesChanged = false;
+  stickTierUnlocks(formData);
   _restorationRevealed = isRestorationCheckComplete(c);
   view = "add";
   _assessed = !!(c.assessedCGCGrade || c.aiAssessment);
@@ -6594,6 +6655,7 @@ async function completeAssessment() {
   formData.highGradeUnlocked = !!cgc._highGradeUnlocked;
   formData.highGradeReason = cgc._highGradeReason || "grade";
   formData.restorationCheckTier = !!cgc._restorationCheckTier;
+  stickTierUnlocks(formData);
   if (cgc.restorationReport) formData.restorationReport = cgc.restorationReport;
   formData.restorationFlag = !!cgc.restorationFlag;
   formData.pageQuality = cgc.pageQuality ? normPageQuality(cgc.pageQuality) : formData.pageQuality;
@@ -7206,7 +7268,7 @@ function renderForm() {
       return img ? `<div class="drag-slot" draggable="true"\n                  ondragstart="dragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"\n                  onclick="tapSlot(${i},'main')">\n                  <img src="${img}">\n                  <button class="slot-edit" onclick="event.stopPropagation();openCropper('main',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>\n                  <button class="slot-x" onclick="event.stopPropagation();removeImg(${i})">×</button>\n                 </div>` : `<div class="drag-slot" style="padding:0;background:none;"\n                  ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"\n                  onclick="tapSlot(${i},'main')">\n                  <img src="${SLOT_GHOSTS[i]}" style="width:100%;height:auto;display:block;border-radius:4px;opacity:0.7;">\n                  <div style="position:absolute;inset:0;pointer-events:none;">\n                    <span style="position:absolute;top:8px;left:10px;font-size:11px;font-weight:700;color:#000;letter-spacing:1px;text-transform:uppercase;background:rgba(255,255,255,0.75);padding:2px 6px;border-radius:3px;">${slotLabels[i]}</span>\n                  </div>\n                 </div>`;
     };
     return formData.labelDetected ? `\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">\n              ${renderSlot(0)}\n              ${renderSlot(1)}\n            </div>\n          ` : `\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">\n              ${renderSlot(0)}\n              ${renderSlot(1)}\n            </div>\n            ${renderSlot(3)}\n            ${renderSlot(2)}\n          `;
-  })()}\n      </div>\n      <div style="display:flex;justify-content:center;margin-top:12px"><button id="assess-btn" class="rg-btn rg-btn-assess rg-btn-bronze${_assessed ? ' reassess' : ''}${assessing ? ' assessing' : ''}" onclick="assessGrade()" ${!formData.images || !formData.images[0] || assessing ? "disabled" : ""}>${assessing ? "Assessing…" : _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE"}</button></div>\n      ${formData.highGradeUnlocked ? `\n      <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">DEEP ASSESSMENT CORNER MACROS</div>\n        <div style="font-size:11px;color:#8a9a8a;margin-bottom:10px;line-height:1.5">Close-up photos of all four front-cover corners, one per slot. The Deep Assessment pass uses these to tighten the grade.</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\n          ${[ 0, 1, 2, 3 ].map(i => {
+  })()}\n      </div>\n      <div style="display:flex;justify-content:center;margin-top:12px"><button id="assess-btn" class="rg-btn rg-btn-assess rg-btn-bronze${_assessed ? ' reassess' : ''}${assessing ? ' assessing' : ''}" onclick="assessGrade()" ${!formData.images || !formData.images[0] || assessing ? "disabled" : ""}>${assessing ? "Assessing…" : _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE"}</button></div>\n      ${showDeepTier(formData) ? `\n      <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">DEEP ASSESSMENT CORNER MACROS</div>\n        <div style="font-size:11px;color:#8a9a8a;margin-bottom:10px;line-height:1.5">Close-up photos of all four front-cover corners, one per slot. The Deep Assessment pass uses these to tighten the grade.</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\n          ${[ 0, 1, 2, 3 ].map(i => {
     const cornerLabels = [ "Top Left", "Top Right", "Bottom Left", "Bottom Right" ];
     const cornerGhosts = [ "assets/ghosts/TopLeft_Macro.jpg", "assets/ghosts/TopRight_Macro.jpg", "assets/ghosts/BottomLeft_Macro.jpg", "assets/ghosts/BottomRight_Macro.jpg" ];
     const img = (formData.cornerImages || [])[i];
@@ -7231,10 +7293,8 @@ function renderForm() {
       return img ? `<div class="drag-slot" style="height:auto;position:relative;overflow:visible" onclick="tapSlot(${i},'signature')">\n                      <img src="${img}" style="display:block;width:100%;height:auto;border-radius:inherit">\n                      <button class="slot-edit" onclick="event.stopPropagation();openCropper('signature',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>\n                      <button class="slot-x" onclick="event.stopPropagation();removeSignatureImg(${i})">×</button>\n                     </div>` : `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:2/1;position:relative;overflow:hidden" onclick="tapSlot(${i},'signature')">\n                      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#7a6abf;font-size:12px;font-weight:600;letter-spacing:1px;text-align:center;padding:8px">\n                        <div style="font-size:20px;margin-bottom:4px">✎</div>\n                        <div>SIGNATURE ${i + 1}</div>\n                        <div style="font-size:10px;opacity:0.7;margin-top:4px">Tap to add</div>\n                      </div>\n                     </div>`;
     }).join("")}\n            </div>\n            <input id="signature-photo-input" type="file" accept="image/*" multiple onchange="handleSignatureImages(event)" style="display:none">\n          </div>\n        `;
   })()}\n      ${(() => {
-    const _fullEntry = isFullAssessmentEligible(formData);
     const _fullDone = isFullAssessmentComplete(formData);
-    if (!_fullEntry && !_fullDone) return "";
-    if (!isDeepAssessmentComplete(formData)) return "";
+    if (!showFullTier(formData)) return "";
     const N = FULL_SLOT_COUNT;
     const interior = formData.interiorImages || [];
     const filled = interior.filter(Boolean).length;
@@ -7243,7 +7303,7 @@ function renderForm() {
     const btnLabel = assessing ? "Assessing…" : _fullDone ? `RE-RUN FULL ASSESSMENT${filled < N ? ` (${filled}/${N})` : ""}` : `FULL ASSESSMENT${filled < N ? ` (${filled}/${N})` : ""}`;
     return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #b8860b">\n            <div style="font-size:11px;color:#d4af37;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT — 8 SLOTS</div>\n            <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">${blurb}</div>\n            ${renderFullSlotGrid(interior, {editable: true})}\n            <input id="interior-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="full-assess-btn" class="rg-btn rg-btn-assess rg-btn-gold${assessing ? ' assessing' : ''}" onclick="submitFullAssessment()" ${ready ? "" : "disabled"}>\n                ${btnLabel}\n              </button>\n            </div>\n          </div>\n        `;
   })()}\n      ${(() => {
-    if (!isRestorationEligible(formData)) return "";
+    if (!showRestorationTier(formData)) return "";
     if (isRestorationCheckComplete(formData)) {
       const rImgs = formData.restorationImages || [];
       return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n            <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">RESTORATION CHECK</div>\n            ${renderRestorationSlotGrid(rImgs, {editable: true})}\n            <input id="restoration-photo-input" type="file" accept="image/*" multiple onchange="handleRestorationImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="restoration-check-btn" class="rg-btn rg-btn-assess rg-btn-purple${assessing ? ' assessing' : ''}" onclick="submitRestorationCheck()" ${rImgs.filter(Boolean).length >= RESTORATION_SLOT_COUNT ? "" : "disabled"}>\n                ${assessing ? "Checking…" : "RE-RUN RESTORATION CHECK"}\n              </button>\n            </div>\n          </div>\n        `;
@@ -8212,6 +8272,7 @@ async function submitRestorationCheck() {
       clearInterval(_rtInterval);
       formData.restorationCheckTier = true;
       formData.restorationCheckRan = true;
+      stickTierUnlocks(formData);
       formData.restorationReport = result.restorationReport || "";
       formData.restorationFlag = result.indicatorsObserved === true;
       // S16: high-confidence restoration → purple score box
@@ -8367,6 +8428,7 @@ async function submitFullAssessment() {
     if (result.fullAssessmentRan === true) {
       clearInterval(_ftInterval);
       formData.fullAssessmentRan = true;
+      stickTierUnlocks(formData);
       if (result.grade != null && Number.isFinite(parseFloat(result.grade))) {
         formData.predictedGrade = parseFloat(result.grade);
         formData.assessedCGCGrade = parseFloat(result.grade);
