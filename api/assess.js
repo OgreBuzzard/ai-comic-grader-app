@@ -24,7 +24,7 @@
 //         rubric tied to Spine score deductions, pressing/cleaning candidate
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-const ROBOGRADE_VERSION = '4.25';
+const ROBOGRADE_VERSION = '4.26';
 
 // ── A/B TEST TOGGLE (TEMPORARY) ──────────────────────────────────────
 // When true, the ComicVine reference is suppressed for ALL assessments so we
@@ -857,11 +857,13 @@ CHECK 2 — PAPER LOSS / MISSING PIECE. Decisive tests, any one confirms: (a) th
 
 CHECK 3 — TEARS, especially at staples and edges. A tear is split-but-still-attached paper. Inspect around both staples (both covers — tears start at staple holes), edges meeting the spine, anywhere a piece looks lifted. Reads as a thin dark line, split, or differently-angled section. Name "Tear" with location/length; not edge wear/crease/stress line. Tears >1/2" are HIGH.
 
-CHECK 4 — RUST and FOXING (distinct, both routinely missed):
+CHECK 4 — RUST, FOXING and STAINS (distinct, all routinely missed → the #1 cause of over-grading mid-grade books):
   RUST (always "rust", never "oxidation"): orange-brown staining originating AT a staple and bleeding outward, or a brown (not silver) staple. Check both staples on every spine/interior photo. Spine-category defect; even light rust must be named.
-  FOXING: scattered reddish-brown spots/speckles in the paper, not from a staple. Distinct from soiling (broad, grey, dirt-like) and rust (radiates from metal). Name "Foxing"; factor into page quality.
+  FOXING (dead mold): irregular brown/rust-colored spots, freckling, or blotches IN THE PAPER, often clustered (edges, margins, corners, or scattered across a face). Light tan to dark brown. KEY TEST — it sits on the paper and ignores the printed art: the spots cross over text, white space, and ink alike, following their own organic scattered shape, NOT the print. Not rust (that radiates only from staples/metal), not broad grey soiling (dirt-like), not even overall paper tanning (uniform). Name "Foxing"; factor into page quality and grade.
+  STAINS: discoloration from a foreign substance, following its OWN irregular shape independent of the print. Patterns to recognize: a cloudy/blotchy patch; a TIDELINE (a darker wavy edge where liquid spread and dried — classic water stain); broad tonal dulling across a face; or a dark localized mark. Most common is water/liquid; also tape, glue, food, dirt, stickers. Severity ranges from faint (dulls gloss only, visible under raking light) to severe (large/dark, removes ink or paper, causes rippling/warping). A soft-bordered tonal patch larger than a coin is grade-limiting. Name "Stain" with location and rough size; do not absorb it into "soiling".
+  WHY THIS MATTERS: foxing and stains are easy to overlook at a glance, so books carrying them are habitually over-graded. When a cover shows brown speckling or a cloudy/tonal discoloration that the printed art runs straight through, that is foxing/stain — flag it. Foxing as the LIMITING defect caps roughly: light+concentrated → 9.0–9.4; darker spots → 7.0–8.5; covering most of a face → 4.0–6.0. Stains span 1.0–9.8 by size/darkness/paper damage. These are ceilings for that defect ALONE — other defects compound the grade downward from there.
 
-If CHECK 1–4 finds anything, put it in the defects array (TAPE/MISSING PIECE/TEAR/RUST) with location and severity. There is no separate structuralScan field.
+If CHECK 1–4 finds anything, put it in the defects array (TAPE/MISSING PIECE/TEAR/RUST/FOXING/STAIN) with location and severity. There is no separate structuralScan field.
 
 PRINTED ELEMENTS ARE NOT DEFECTS (counter-check). A defect is physical damage — disruption of paper or ink not present as manufactured. Do NOT flag as defects: the direct-sales/direct-edition box (diamond, character head, price/issue box) in the lower-left front cover; the UPC box, publisher logo, price banner, Comics Code stamp, any trade-dress box; printed art lines, panel borders, background linework. A printed line has consistent ink and sharp registered edges; a crease/stress line disrupts paper and breaks across color irregularly. Before adding any "crease"/"color-breaking line"/"sticker"/"stain", confirm it's physical damage, not a printed feature. If unsure, do not call it a defect — inventing a defect from cover art is as harmful as missing a real one.
 
