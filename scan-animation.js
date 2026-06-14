@@ -58,7 +58,7 @@
   // pass disabled, the freeze should be gone. Re-enable via
   // window.RobograderScan.setDebug(true) in console if anything else
   // needs diagnosis.
-  let _debugEnabled = true;  // TEMP: Candidate A jump test
+  let _debugEnabled = true;  // TEMP: Candidate B jump test
   let _debugStartTime = 0;
   let _debugPanel = null;
 
@@ -338,12 +338,6 @@
          gradually from the bottom. ease-in-out gives a smooth on-ramp.
          Duration extended to 2000ms to match storyboard timing. */
       animation: rgShellSlideUp 2000ms cubic-bezier(0.65, 0, 0.35, 1) 0.2s forwards;
-      /* S17 Candidate A (jump fix): start PAUSED. runScanAnimation un-pauses
-         after the viewport has settled (2 rAFs), so the slide-up keyframe is
-         computed against the post-collapse innerHeight (644) rather than the
-         stale pre-collapse height (693). Without this, the shell keyframes
-         against 693 for the first ~2 frames, leaving the 49px bottom band. */
-      animation-play-state: paused;
       pointer-events: none;
     }
     @keyframes rgShellSlideUp {
@@ -990,6 +984,7 @@
   let _activeCancelToken = null;
   // S14: saved scroll Y for the body-scroll-lock. Null when not locked.
   let _scrollLockY = null;
+  let _vvHandler = null;  // S17 Candidate B: visualViewport resize listener for stage-fit
 
   function lockBodyScroll() {
     if (_scrollLockY !== null) return;  // already locked
@@ -1045,6 +1040,12 @@
     // run against a torn-down tree.
     stopGridCycle();
     stopNeedlePulse();
+    // S17 Candidate B: remove the visualViewport resize listener that keeps
+    // the stage height matched, so it doesn't leak across assessments.
+    if (_vvHandler && window.visualViewport) {
+      window.visualViewport.removeEventListener('resize', _vvHandler);
+    }
+    _vvHandler = null;
     if (_activeStage && _activeStage.parentNode) {
       _activeStage.parentNode.removeChild(_activeStage);
     }
@@ -1393,42 +1394,45 @@
     // the exact scroll position on teardown.
     lockBodyScroll();
 
-    // S17 Candidate A (jump fix): the PWA's innerHeight shrinks ~49px (the top
-    // safe-area band) about 2 frames AFTER this full-screen overlay mounts.
-    // The shell slide-up keyframe, if it starts immediately, computes against
-    // the stale pre-shrink height and leaves a 49px black band at the bottom
-    // (the "jump"). Matt's splash observation — the jump self-corrects the
-    // moment the descending-logo animation forces a reflow — points to the fix:
-    // force the reflow ourselves and let the viewport settle, THEN start the
-    // slide. We hold the shell paused (CSS animation-play-state:paused) and
-    // un-pause it after 2 rAFs + a forced layout read, so it keyframes against
-    // the settled height. iOS app (saTop≈0) has no shrink, so this is a no-op
-    // there. Diagnostic note: if the band persists, the shrink happens later
-    // than 2 frames and the settle delay needs raising.
-    (function settleThenAnimate() {
-      const shell = _activeStage && _activeStage.querySelector
-        ? _activeStage.querySelector('.rg-scan-shell')
-        : document.querySelector('.rg-scan-shell');
-      if (!shell) return;
+    // S17 Candidate B (jump fix): Candidate A proved the slide-up animation
+    // un-pauses at the correct height (644), yet the 49px band PERSISTED — so
+    // the band is NOT the animation keyframing against a stale height. It is
+    // the STAGE OVERLAY itself: `.rg-scan-stage { height: 100dvh }` resolves at
+    // mount against the pre-collapse viewport (693), so when the PWA chrome
+    // collapses to 644 two frames later, the stage is 49px too SHORT at the
+    // bottom — leaving the black band. Fix: after the viewport settles (2 rAFs),
+    // read the REAL viewport height (visualViewport.height) and pin the stage to
+    // it explicitly, overriding the stale 100dvh. iOS app (no collapse) reads
+    // the same height before/after, so this is a no-op there.
+    (function fitStageToSettledViewport() {
+      const stage = _activeStage;
+      if (!stage) return;
+      const applyHeight = () => {
+        const vv = window.visualViewport;
+        const h = vv ? Math.round(vv.height) : window.innerHeight;
+        if (h && h > 0) {
+          stage.style.height = h + 'px';
+          debugLog('Candidate B: pinned stage height=' + h + 'px (vvH=' + (vv?Math.round(vv.height):'?') + ' innerH=' + window.innerHeight + ')');
+          // Also pin top to the visual viewport offset if the page scrolled
+          // under the safe-area band (defensive; usually 0 here).
+          stage.style.top = (vv ? Math.round(vv.offsetTop) : 0) + 'px';
+        }
+      };
       requestAnimationFrame(() => {
-        // Force a layout read so the viewport-collapse reflow is flushed.
         void document.documentElement.offsetHeight;
-        void window.innerHeight;
-        debugViewport('SETTLE rAF1 (pre-unpause)');
         requestAnimationFrame(() => {
-          // Viewport has settled; start the slide against the correct height.
-          debugViewport('SETTLE rAF2 (unpausing now)');
-          shell.style.animationPlayState = 'running';
+          applyHeight();
+          // Re-apply once more after a short delay in case the collapse lands
+          // later than 2 frames on some devices.
+          setTimeout(applyHeight, 200);
         });
       });
-      // Safety: never leave the shell paused. If the rAF chain is throttled
-      // (backgrounded tab, etc.), un-pause after a short hard timeout so the
-      // animation always plays.
-      setTimeout(() => {
-        if (shell && shell.style.animationPlayState !== 'running') {
-          shell.style.animationPlayState = 'running';
-        }
-      }, 120);
+      // Keep the stage matched if the viewport changes again while it's up
+      // (e.g. the chrome re-expands). Cleaned up on teardown via _vvHandler.
+      if (window.visualViewport) {
+        _vvHandler = applyHeight;
+        window.visualViewport.addEventListener('resize', _vvHandler);
+      }
     })();
 
     // After mount, log what the shell's transform is. If iOS isn't
