@@ -1384,14 +1384,14 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
 }
 </script>
 
-<div id="splash">
+<div id="splash" style="display:none">
   <div id="splash-bg" role="presentation" aria-hidden="true"></div>
   <img id="splash-robot" src="assets/Robograder_v4_Load.webp" alt="Robograder mascot">
   
   <img id="splash-logo" src="assets/Robograder_Logo.webp" alt="Robograder"
        onerror="this.style.display='none'">
 </div>
-<div id="app" style="display:none">
+<div id="app">
   <div id="header">
     <div id="header-row-top">
       
@@ -9582,6 +9582,17 @@ if ("serviceWorker" in navigator) {
 }
 
 (function runSplash() {
+  // S17 TEST: splash disabled to isolate the jump bug. Show app immediately.
+  const _sp = document.getElementById("splash");
+  if (_sp) _sp.style.display = "none";
+  document.body.classList.add("app-ready");
+  document.body.style.overflow = "";
+  const _ap = document.getElementById("app");
+  if (_ap) _ap.style.display = "";
+  try { window.dispatchEvent(new Event("app-ready")); } catch (e) {}
+  return;
+})();
+(function runSplashOLD() {
   const returnParams = new URLSearchParams(window.location.search);
   if (returnParams.get("payment")) {
     const splash = document.getElementById("splash");
