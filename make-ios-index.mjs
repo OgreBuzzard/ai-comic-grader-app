@@ -477,5 +477,16 @@ mustReplace('D9 disable iOS streaming',
   }
 }`);
 
+// ── D15: viewport-fit cover for iOS (Dynamic Island) ─────────────────────────
+// The PWA uses viewport-fit=contain to fix a PWA-only ~49px black band on the
+// splash/scan (the band is the body bg showing in the iOS Safari toolbar zone
+// when cover lets content extend edge-to-edge under the bars). The iOS Capacitor
+// app does NOT have that band (no browser toolbar), but it DOES need cover so the
+// header/splash sit correctly under the Dynamic Island. So: PWA = contain,
+// iOS = cover. This delta restores cover for the iOS build only.
+mustReplace('D15 viewport-fit cover (iOS)',
+'<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=contain">',
+'<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">');
+
 writeFileSync(outPath, html);
 console.log(`\nAll ${applied} deltas applied. Wrote ${outPath} (${html.length.toLocaleString()} bytes).`);
