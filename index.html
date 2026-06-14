@@ -479,7 +479,7 @@ onAuthStateChanged(auth, async user => {
        the uppercase styling so the visual taxonomy (uppercase = section
        header, mixed-case = content) is preserved, just made readable. */
     .group-header { font-family: 'Barlow Condensed', sans-serif; font-size: 13px; font-weight: 700; color: #2a1e14; letter-spacing: 1px; text-transform: uppercase; padding: 8px 0 8px; border-bottom: 1px solid #ccc8c0; margin-bottom: 6px; cursor: pointer; display: flex; align-items: center; gap: 8px; user-select: none; }
-    .group-chevron { font-family: 'Barlow Condensed', sans-serif; font-size: 11px; color: #6b5e52; transition: transform 0.2s; display: inline-block; }
+    .group-chevron { font-family: 'Barlow Condensed', sans-serif; font-size: 20px; line-height: 1; color: #6b5e52; transition: transform 0.2s; display: inline-block; }
     .group-chevron.open { transform: rotate(90deg); }
     .comic-row { background: #ffffff; border: 1px solid #ddd8d0; border-radius: 12px; padding: 10px 10px; cursor: pointer; display: flex; align-items: center; gap: 10px; margin-bottom: 5px; transition: background 0.15s; }
     /* S14: swipe-to-delete container. The red Delete action sits behind,
@@ -3669,17 +3669,25 @@ function renderList() {
         html += `<div onclick="toggleOwnership('${escJsAttr(section.ownership)}')" style="display:flex;align-items:center;gap:8px;margin:18px 0 10px;padding:7px 12px;background:${oc.bg};border-radius:8px;cursor:pointer;user-select:none">\n          <span class="group-chevron${ownOpen ? " open" : ""}" style="color:${oc.fg}">›</span>\n          <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:${oc.fg}">${section.ownership}</span>\n          <span style="font-size:12px;color:${oc.fg};opacity:0.7;letter-spacing:0.5px">(${count})</span>${printBtn}\n        </div>`;
       }
       if (!ownOpen) return;
+      const buildRow = c => {
+        const thumbSrc = c.thumbnails?.[0] || c.images?.[0];
+        const thumb = thumbSrc ? `<img class="comic-thumb" data-src="${thumbSrc}" decoding="async" style="background:#221d18">` : "";
+        return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0">\n                  <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>\n                  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">\n                    ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${formatIssue(c.issue, c.title)}</span>` : ""}\n                    ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                  </div>\n                </div>\n                ${buildListCgcPsaStack(c)}\n              </div>\n            </div>`;
+      };
       section.titles.forEach(title => {
+        const group = section.groups[title];
+        // Single-entry title: show the comic row directly, no collapsible
+        // header (a title that holds one book doesn't need to be expanded).
+        if (group.length === 1) {
+          html += `<div style="margin-bottom:16px">${buildRow(group[0])}</div>`;
+          return;
+        }
         const collapseKey = section.ownership ? `${section.ownership}::${title}` : title;
         const isOpen = collapsed[collapseKey] === false;
-        html += `<div style="margin-bottom:16px">\n          <div class="group-header" onclick="toggleGroup('${escJsAttr(collapseKey)}')">\n            <span class="group-chevron${isOpen ? " open" : ""}">›</span>\n            ${esc(title)} <span style="color:#9a8a7a;letter-spacing:1px">(${section.groups[title].length})</span>\n          </div>`;
+        html += `<div style="margin-bottom:16px">\n          <div class="group-header" onclick="toggleGroup('${escJsAttr(collapseKey)}')">\n            <span class="group-chevron${isOpen ? " open" : ""}">›</span>\n            ${esc(title)} <span style="color:#9a8a7a;letter-spacing:1px">(${group.length})</span>\n          </div>`;
         if (isOpen) {
           html += `<div>`;
-          section.groups[title].forEach(c => {
-            const thumbSrc = c.thumbnails?.[0] || c.images?.[0];
-            const thumb = thumbSrc ? `<img class="comic-thumb" data-src="${thumbSrc}" decoding="async" style="background:#221d18">` : "";
-            html += `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0">\n                  <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>\n                  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">\n                    ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${formatIssue(c.issue, c.title)}</span>` : ""}\n                    ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                  </div>\n                </div>\n                ${buildListCgcPsaStack(c)}\n              </div>\n            </div>`;
-          });
+          group.forEach(c => { html += buildRow(c); });
           html += `</div>`;
         }
         html += `</div>`;
