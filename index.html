@@ -478,7 +478,7 @@ onAuthStateChanged(auth, async user => {
        makes them faint). Bumped to 13px with letter-spacing 1px. Keeps
        the uppercase styling so the visual taxonomy (uppercase = section
        header, mixed-case = content) is preserved, just made readable. */
-    .group-header { font-family: 'Barlow Condensed', sans-serif; font-size: 13px; font-weight: 700; color: #2a1e14; letter-spacing: 1px; text-transform: uppercase; padding: 4px 0 4px; border-bottom: 1px solid #ccc8c0; margin-bottom: 4px; cursor: pointer; display: flex; align-items: center; gap: 8px; user-select: none; }
+    .group-header { font-family: 'Barlow Condensed', sans-serif; font-size: 13px; font-weight: 700; color: #2a1e14; letter-spacing: 1px; text-transform: uppercase; padding: 4px 0 4px; margin-bottom: 4px; cursor: pointer; display: flex; align-items: center; gap: 8px; user-select: none; }
     .group-chevron { font-family: 'Barlow Condensed', sans-serif; font-size: 20px; line-height: 1; color: #6b5e52; transition: transform 0.2s; display: inline-block; }
     .group-chevron.open { transform: rotate(90deg); }
     .comic-row { background: #ffffff; border: 1px solid #ddd8d0; border-radius: 12px; padding: 10px 10px; cursor: pointer; display: flex; align-items: center; gap: 10px; margin-bottom: 5px; transition: background 0.15s; }
@@ -3687,7 +3687,7 @@ function renderList() {
           collapsed[collapseKey] = group.length === 1 ? false : true;
         }
         const isOpen = collapsed[collapseKey] === false;
-        html += `<div style="margin-bottom:7px">\n          <div class="group-header" onclick="toggleGroup('${escJsAttr(collapseKey)}')">\n            <span class="group-chevron${isOpen ? " open" : ""}">›</span>\n            ${esc(title)} <span style="color:#9a8a7a;letter-spacing:1px">(${group.length})</span>\n          </div>`;
+        html += `<div style="margin-bottom:7px;padding-bottom:7px;border-bottom:1px solid #ccc8c0">\n          <div class="group-header" onclick="toggleGroup('${escJsAttr(collapseKey)}')">\n            <span class="group-chevron${isOpen ? " open" : ""}">›</span>\n            ${esc(title)} <span style="color:#9a8a7a;letter-spacing:1px">(${group.length})</span>\n          </div>`;
         if (isOpen) {
           html += `<div>`;
           group.forEach(c => { html += buildRow(c); });
