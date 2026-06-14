@@ -223,7 +223,7 @@ onAuthStateChanged(auth, async user => {
     /* Once the app is visible, the body below the fixed splash should be light on mobile, dark margins on desktop */
     body.app-ready { background: #f5f4f2; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    #app { min-height: 100vh; display: flex; flex-direction: column; background: #f5f4f2; max-width: 480px; margin: 0 auto; }
+    #app { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; background: #f5f4f2; max-width: 480px; margin: 0 auto; }
     /* S16: Responsive — on wider screens the app is centered with dark margins */
     @media (min-width: 540px) {
       #app { box-shadow: 0 0 40px rgba(0,0,0,0.3); border-left: 1px solid #2a2820; border-right: 1px solid #2a2820; }
