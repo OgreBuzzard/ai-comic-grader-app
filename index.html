@@ -1200,6 +1200,17 @@ onAuthStateChanged(auth, async user => {
          list view that was the worst part of the prior experience. */
     #splash {
       position: fixed; inset: 0; z-index: 10000;
+      /* S17 jump-bug fix: GEOMETRY PROBE proved the band is NOT a short element.
+         #splash always fills the VISUAL viewport exactly (644 while the iOS URL
+         bar is visible, 693 after it hides ~2s in). The 49px band IS the URL-bar
+         zone: inset:0 covers only the small (URL-bar-visible) viewport, so the
+         strip below it shows through black until the URL bar hides and the
+         viewport grows to 693. Fix: extend the splash to the LARGE viewport
+         height (100lvh = the URL-bar-hidden height) so it paints UNDER the
+         URL-bar zone from frame one. bottom is left at 0 via inset for non-iOS;
+         min-height:100lvh forces coverage of the tall state on iOS. */
+      min-height: 100vh;
+      min-height: 100lvh;
       background: #0a0a0a;
       overflow: hidden;
     }
@@ -1208,15 +1219,12 @@ onAuthStateChanged(auth, async user => {
        black isn't abrupt on the first paint. */
     #splash-bg {
       position: absolute;
-      inset: 0;
-      /* S17 jump-bug fix: was width:100%; height:100%. With viewport-fit=cover
-         + black-translucent status bar, height:100% resolves against the fixed
-         parent's box one frame before the safe-area band collapses, so the
-         background ends up ~49px short and #splash's #0a0a0a shows through as a
-         black band at the bottom (it self-corrected only when a later reflow
-         recomputed the height). inset:0 ties the bg to all four edges of the
-         (already-clipped) #splash box, so it can't be sized against a stale
-         height — it always exactly fills the parent. */
+      left: 0; right: 0; top: 0;
+      /* Match #splash: fill the LARGE viewport so the bg paints under the iOS
+         URL-bar zone (the 49px band) from frame one, not just the small
+         URL-bar-visible viewport. */
+      height: 100vh;
+      height: 100lvh;
       background-image: url('assets/Robograder_Background.jpg');
       background-size: cover;
       background-position: center center;
@@ -9595,54 +9603,6 @@ if ("serviceWorker" in navigator) {
   }
   const splash = document.getElementById("splash");
   if (!splash) return;
-  // S17 jump-bug fix: the black band at the splash bottom is a STALE LAYOUT.
-  // At first paint the splash is laid out against the tall (pre-collapse,
-  // URL-bar-visible) viewport; the iOS safe-area band then collapses ~49px,
-  // but nothing forces a relayout until `.assets-ready` is added ~1.5–2s later
-  // (after both images decode), which is why the band "fixes itself after 2
-  // seconds." Force the relayout at mount instead: read a layout property on
-  // the next two frames so the browser recomputes against the settled (644)
-  // viewport immediately, clearing the band right away.
-  (function clearStaleSplashLayout() {
-    const reflow = () => {
-      // Touching offsetHeight forces a synchronous layout flush.
-      void splash.offsetHeight;
-      void document.documentElement.offsetHeight;
-    };
-    requestAnimationFrame(() => { reflow(); requestAnimationFrame(reflow); });
-    // Belt-and-suspenders: also after the safe-area collapse is fully done.
-    setTimeout(reflow, 120);
-    setTimeout(reflow, 350);
-  })();
-  // S17 jump-bug geometry probe (TEMP): log #splash + #splash-bg rects vs the
-  // visual viewport at first paint and after the band normally clears, so we
-  // can see WHICH element fails to reach the visible bottom (the 49px band).
-  (function splashGeomProbe() {
-    const bg = document.getElementById("splash-bg");
-    const robot = document.getElementById("splash-robot");
-    const snap = (label) => {
-      try {
-        const vv = window.visualViewport;
-        const vvB = vv ? Math.round(vv.offsetTop + vv.height) : window.innerHeight;
-        const sr = splash.getBoundingClientRect();
-        const br = bg ? bg.getBoundingClientRect() : {};
-        const rr = robot ? robot.getBoundingClientRect() : {};
-        const line = `[GEOM ${label}] vvBottom=${vvB} innerH=${window.innerHeight} | splash bot=${Math.round(sr.bottom)} h=${Math.round(sr.height)} | bg bot=${Math.round(br.bottom)} h=${Math.round(br.height)} | robot bot=${Math.round(rr.bottom)}`;
-        let panel = document.getElementById("geom-panel");
-        if (!panel) {
-          panel = document.createElement("div");
-          panel.id = "geom-panel";
-          panel.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:2147483647;background:rgba(0,0,0,0.85);color:#0f0;font:10px/1.3 monospace;padding:4px;white-space:pre-wrap;pointer-events:none";
-          document.body.appendChild(panel);
-        }
-        panel.textContent += line + "\n";
-      } catch (e) {}
-    };
-    snap("mount");
-    requestAnimationFrame(() => { snap("rAF1"); requestAnimationFrame(() => snap("rAF2")); });
-    setTimeout(() => snap("300ms"), 300);
-    setTimeout(() => snap("1800ms-after-band-clears"), 1800);
-  })();
   (function gateSplashEntrance() {
     const robot = document.getElementById("splash-robot");
     const logo = document.getElementById("splash-logo");
