@@ -1298,7 +1298,7 @@ onAuthStateChanged(auth, async user => {
     #splash-subtitle {
       position: absolute;
       left: 50%;
-      top: calc(env(safe-area-inset-top, 0px) + 5vh + 18vh);
+      top: calc(env(safe-area-inset-top, 0px) + 5vh + 11vh);
       transform: translate(-50%, -120vh);
       text-align: center;
       font-size: 16px;
@@ -4028,7 +4028,7 @@ function showDetail(id) {
       html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #b8860b">\n        <div style="font-size:11px;color:#d4af37;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT — INTERIOR &amp; STRUCTURE</div>\n        ${renderFullSlotGrid(interior, {editable: false, comicId: selected.id})}\n      </div>`;
     }
   }
-  if (selected.restorationCheckTier && Array.isArray(selected.restorationImages) && selected.restorationImages.some(Boolean)) {
+  if ((isRestorationCheckComplete(selected) || selected.restorationCheckTier || selected.restorationUnlocked) && Array.isArray(selected.restorationImages) && selected.restorationImages.some(Boolean)) {
     html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n        <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">RESTORATION CHECK</div>\n        ${renderRestorationSlotGrid(selected.restorationImages, {editable: false, comicId: selected.id})}\n      </div>`;
   }
   if (hasIdentifiedSignatures(selected)) {
@@ -8324,15 +8324,14 @@ async function submitRestorationCheck() {
 
 async function submitFullAssessment() {
   if (assessing) return;
-  const entry = isFullAssessmentEligible(formData);
-  if (!entry) {
-    alert("This book is no longer Full Assessment eligible.");
+  // S17: gate on the sticky unlock, not live eligibility — once unlocked the
+  // entry stays Full-eligible forever (a later re-run scoring lower must not
+  // relock it). Deep is NOT a prerequisite (per spec June 14).
+  if (!showFullTier(formData)) {
+    alert("This book is not eligible for Full Assessment.");
     return;
   }
-  if (!isDeepAssessmentComplete(formData)) {
-    alert("Deep Assessment must be completed before Full Assessment.");
-    return;
-  }
+  const entry = isFullAssessmentEligible(formData) || { slots: FULL_SLOT_COUNT, slotDefs: FULL_SLOTS };
   const interior = (formData.interiorImages || []).filter(Boolean);
   if (interior.length !== FULL_SLOT_COUNT) {
     alert(`Please fill all ${FULL_SLOT_COUNT} slots before submitting.`);

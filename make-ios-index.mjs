@@ -224,7 +224,7 @@ mustReplace('D7b splash CSS',
     #splash-subtitle {
       position: absolute;
       left: 50%;
-      top: calc(env(safe-area-inset-top, 0px) + 2vh + 9vh);
+      top: calc(env(safe-area-inset-top, 0px) + 5vh + 11vh);
       transform: translate(-50%, -120vh);
       text-align: center;
       font-size: 16px;
