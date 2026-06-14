@@ -1199,18 +1199,9 @@ onAuthStateChanged(auth, async user => {
          eliminates the gray/white loading-pill gap between splash and
          list view that was the worst part of the prior experience. */
     #splash {
-      position: fixed; inset: 0; z-index: 10000;
-      /* S17 jump-bug fix: GEOMETRY PROBE proved the band is NOT a short element.
-         #splash always fills the VISUAL viewport exactly (644 while the iOS URL
-         bar is visible, 693 after it hides ~2s in). The 49px band IS the URL-bar
-         zone: inset:0 covers only the small (URL-bar-visible) viewport, so the
-         strip below it shows through black until the URL bar hides and the
-         viewport grows to 693. Fix: extend the splash to the LARGE viewport
-         height (100lvh = the URL-bar-hidden height) so it paints UNDER the
-         URL-bar zone from frame one. bottom is left at 0 via inset for non-iOS;
-         min-height:100lvh forces coverage of the tall state on iOS. */
-      min-height: 100vh;
-      min-height: 100lvh;
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 10000;
+      height: 100vh;
+      height: 100dvh;
       background: #0a0a0a;
       overflow: hidden;
     }
@@ -1219,12 +1210,10 @@ onAuthStateChanged(auth, async user => {
        black isn't abrupt on the first paint. */
     #splash-bg {
       position: absolute;
-      left: 0; right: 0; top: 0;
-      /* Match #splash: fill the LARGE viewport so the bg paints under the iOS
-         URL-bar zone (the 49px band) from frame one, not just the small
-         URL-bar-visible viewport. */
+      top: 0; left: 0; right: 0; bottom: 0;
+      width: 100%;
       height: 100vh;
-      height: 100lvh;
+      height: 100dvh;
       background-image: url('assets/Robograder_Background.jpg');
       background-size: cover;
       background-position: center center;
