@@ -58,7 +58,7 @@
   // pass disabled, the freeze should be gone. Re-enable via
   // window.RobograderScan.setDebug(true) in console if anything else
   // needs diagnosis.
-  let _debugEnabled = true;  // TEMP: bottom-band probe
+  let _debugEnabled = true;  // TEMP: shell-position probe
   let _debugStartTime = 0;
   let _debugPanel = null;
 
@@ -117,33 +117,6 @@
       probe.remove();
       debugLog(`${label}: innerH=${window.innerHeight} vvH=${vv?Math.round(vv.height):'?'} vvTop=${vv?Math.round(vv.offsetTop):'?'} vvScale=${vv?vv.scale.toFixed(2):'?'} scrollY=${Math.round(window.scrollY)} saTop=${Math.round(insetTop)} saBot=${Math.round(insetBot)}`);
     } catch (e) { debugLog(`${label}: vp err ${e.message}`); }
-  }
-
-  function probeBottomBand(label) {
-    if (!_debugEnabled) return;
-    try {
-      const vv = window.visualViewport;
-      const vh = vv ? Math.round(vv.height) : window.innerHeight;
-      // Sample a point INSIDE the bottom band (which is ~49px tall when the
-      // jump is present). Sample at vh-8 (just above the very bottom) and at
-      // window.innerHeight-8 too, in case they differ.
-      const cx = Math.round((vv ? vv.width : window.innerWidth) / 2);
-      const yBand = vh - 8;
-      const stack = (document.elementsFromPoint ? document.elementsFromPoint(cx, yBand) : []).slice(0, 5);
-      const desc = el => {
-        if (!el) return 'null';
-        const cs = getComputedStyle(el);
-        const r = el.getBoundingClientRect();
-        return `${el.tagName.toLowerCase()}${el.id?('#'+el.id):''}${el.className&&typeof el.className==='string'?('.'+el.className.trim().split(/\s+/).slice(0,2).join('.')):''}` +
-               ` bg=${cs.backgroundColor} h=${Math.round(r.height)} bottom=${Math.round(r.bottom)} pos=${cs.position}`;
-      };
-      const bodyCs = getComputedStyle(document.body);
-      const htmlCs = getComputedStyle(document.documentElement);
-      debugLog(`${label} BAND@y=${yBand} (vh=${vh} innerH=${window.innerHeight}):`);
-      debugLog(`  body bg=${bodyCs.backgroundColor} minH=${bodyCs.minHeight} h=${Math.round(document.body.getBoundingClientRect().height)}`);
-      debugLog(`  html bg=${htmlCs.backgroundColor} h=${Math.round(document.documentElement.getBoundingClientRect().height)}`);
-      stack.forEach((el, i) => debugLog(`  [${i}] ${desc(el)}`));
-    } catch (e) { debugLog(`${label}: band probe err ${e.message}`); }
   }
 
   function debugCleanup() {
@@ -1011,6 +984,7 @@
   let _activeCancelToken = null;
   // S14: saved scroll Y for the body-scroll-lock. Null when not locked.
   let _scrollLockY = null;
+  let _vvHandler = null;  // S17 Candidate C: visualViewport resize listener for stage-fit
 
   function lockBodyScroll() {
     if (_scrollLockY !== null) return;  // already locked
@@ -1066,6 +1040,10 @@
     // run against a torn-down tree.
     stopGridCycle();
     stopNeedlePulse();
+    if (_vvHandler && window.visualViewport) {
+      window.visualViewport.removeEventListener('resize', _vvHandler);
+    }
+    _vvHandler = null;
     if (_activeStage && _activeStage.parentNode) {
       _activeStage.parentNode.removeChild(_activeStage);
     }
@@ -1414,19 +1392,40 @@
     // the exact scroll position on teardown.
     lockBodyScroll();
 
-    // S17 jump-bug probe: Candidate A (animation) and B (stage height) both
-    // failed — the band is neither. This probe inspects WHAT actually paints
-    // in the bottom ~49px after the viewport collapses (the element stack,
-    // their computed backgrounds, and body/html backgrounds), so we can see
-    // what's showing through instead of guessing.
-    requestAnimationFrame(() => {
-      void document.documentElement.offsetHeight;
-      requestAnimationFrame(() => {
-        debugViewport('PROBE settled');
-        probeBottomBand('PROBE');
-        setTimeout(() => { debugViewport('PROBE +300ms'); probeBottomBand('PROBE+300'); }, 300);
-      });
-    });
+    // S17 Candidate C (jump fix): the stage is height:100dvh, which on iOS PWA
+    // resolves to the TALL (URL-bar-collapsed) viewport and does NOT shrink when
+    // the safe-area band collapses mid-mount. So the stage hangs ~49px below the
+    // visible area, and the shell (anchored to stage bottom:0) sits 49px too low
+    // → body-bg band at the visible bottom. Candidate B pinned the stage height
+    // but applied it 2 FRAMES LATE, after the shell had already anchored to the
+    // stale bottom. THE DIFFERENCE HERE: pin the stage height to the real visual
+    // viewport SYNCHRONOUSLY at mount, before the first paint, so the shell's
+    // bottom:0 anchor references the correct (visible) bottom from frame 1.
+    (function pinStageNow() {
+      const stage = _activeStage;
+      if (!stage) return;
+      const apply = () => {
+        const vv = window.visualViewport;
+        const h = vv ? Math.round(vv.height) : window.innerHeight;
+        if (h > 0) {
+          stage.style.height = h + 'px';
+          stage.style.top = (vv ? Math.round(vv.offsetTop) : 0) + 'px';
+          if (_debugEnabled) {
+            const hr = stage.querySelector('.rg-scan-shell');
+            const hb = hr ? Math.round(hr.getBoundingClientRect().bottom) : -1;
+            debugLog(`Cand C apply: stage h=${h} top=${vv?Math.round(vv.offsetTop):0} | shell bottom=${hb} vvBottom=${vv?Math.round(vv.offsetTop+vv.height):window.innerHeight}`);
+          }
+        }
+      };
+      apply();                       // synchronous, before first paint
+      requestAnimationFrame(apply);  // re-assert after the collapse lands
+      requestAnimationFrame(() => requestAnimationFrame(apply));
+      setTimeout(apply, 250);
+      if (window.visualViewport) {
+        _vvHandler = apply;
+        window.visualViewport.addEventListener('resize', _vvHandler);
+      }
+    })();
 
     // After mount, log what the shell's transform is. If iOS isn't
     // honoring our keyframe animation we'll see the transform stuck at
