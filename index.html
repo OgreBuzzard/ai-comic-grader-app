@@ -690,9 +690,8 @@ onAuthStateChanged(auth, async user => {
       display: none;
       flex-direction: column;
       align-items: center;
-      justify-content: flex-start;
+      justify-content: center;
       padding: 32px;
-      padding-top: calc(env(safe-area-inset-top, 0px) + 18%);
       z-index: 6;
       text-align: center;
     }
@@ -1316,10 +1315,9 @@ onAuthStateChanged(auth, async user => {
       background: #0a0a0a;
       flex-direction: column;
       align-items: center;
-      justify-content: flex-start;
+      justify-content: center;
       gap: 18px;
       padding: 20px;
-      padding-top: calc(env(safe-area-inset-top, 0px) + 18%);
       text-align: center;
     }
     #orientation-block .rotate-icon { width: 96px; height: 96px; color: #7aa838; margin-bottom: 24px; }
@@ -3676,13 +3674,16 @@ function renderList() {
       };
       section.titles.forEach(title => {
         const group = section.groups[title];
-        // Single-entry title: show the comic row directly, no collapsible
-        // header (a title that holds one book doesn't need to be expanded).
-        if (group.length === 1) {
-          html += `<div style="margin-bottom:16px">${buildRow(group[0])}</div>`;
-          return;
-        }
         const collapseKey = section.ownership ? `${section.ownership}::${title}` : title;
+        // Default open state by entry count: a single-entry title defaults to
+        // EXPANDED (so its cover thumbnail shows — keeps the list from being a
+        // wall of collapsed text), a multi-entry title defaults to COLLAPSED
+        // (so big runs don't force endless scrolling). The title header is
+        // always shown so a lone book never looks like it lives inside an
+        // unrelated collapsed title. Respect the user's explicit toggle after.
+        if (collapsed[collapseKey] === undefined) {
+          collapsed[collapseKey] = group.length === 1 ? false : true;
+        }
         const isOpen = collapsed[collapseKey] === false;
         html += `<div style="margin-bottom:16px">\n          <div class="group-header" onclick="toggleGroup('${escJsAttr(collapseKey)}')">\n            <span class="group-chevron${isOpen ? " open" : ""}">›</span>\n            ${esc(title)} <span style="color:#9a8a7a;letter-spacing:1px">(${group.length})</span>\n          </div>`;
         if (isOpen) {
