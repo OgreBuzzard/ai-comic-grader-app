@@ -488,5 +488,16 @@ mustReplace('D15 viewport-fit cover (iOS)',
 '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=contain">',
 '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">');
 
+// ── D16: header clears the Dynamic Island on iOS ─────────────────────────────
+// With viewport-fit=cover (D15), env(safe-area-inset-top) is supposed to push
+// the sticky header below the status bar / Dynamic Island. In the Capacitor
+// app it under-reports (header ends up hidden behind the time/wifi/Island),
+// so guarantee clearance with max(env(...), 59px) — 59px is the iPhone
+// Dynamic Island status-bar height. PWA keeps the plain env() value (it lays
+// out fine in Safari), so this iOS-only delta does not touch the PWA file.
+mustReplace('D16 header Dynamic Island (iOS)',
+'#header { background: #ffffff; border-bottom: 1px solid #d8d0c8; padding: calc(env(safe-area-inset-top, 0px) + 10px) 14px 10px; position: sticky; top: 0; z-index: 100; }',
+'#header { background: #ffffff; border-bottom: 1px solid #d8d0c8; padding: calc(max(env(safe-area-inset-top, 0px), 59px) + 10px) 14px 10px; position: sticky; top: 0; z-index: 100; }');
+
 writeFileSync(outPath, html);
 console.log(`\nAll ${applied} deltas applied. Wrote ${outPath} (${html.length.toLocaleString()} bytes).`);
