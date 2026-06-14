@@ -1214,6 +1214,8 @@ onAuthStateChanged(auth, async user => {
       width: 100%;
       height: 100vh;
       height: 100dvh;
+      transform: translateZ(0);
+      will-change: transform, opacity;
       background-image: url('assets/Robograder_Background.jpg');
       background-size: cover;
       background-position: center center;
