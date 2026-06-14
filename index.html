@@ -9614,6 +9614,35 @@ if ("serviceWorker" in navigator) {
     setTimeout(reflow, 120);
     setTimeout(reflow, 350);
   })();
+  // S17 jump-bug geometry probe (TEMP): log #splash + #splash-bg rects vs the
+  // visual viewport at first paint and after the band normally clears, so we
+  // can see WHICH element fails to reach the visible bottom (the 49px band).
+  (function splashGeomProbe() {
+    const bg = document.getElementById("splash-bg");
+    const robot = document.getElementById("splash-robot");
+    const snap = (label) => {
+      try {
+        const vv = window.visualViewport;
+        const vvB = vv ? Math.round(vv.offsetTop + vv.height) : window.innerHeight;
+        const sr = splash.getBoundingClientRect();
+        const br = bg ? bg.getBoundingClientRect() : {};
+        const rr = robot ? robot.getBoundingClientRect() : {};
+        const line = `[GEOM ${label}] vvBottom=${vvB} innerH=${window.innerHeight} | splash bot=${Math.round(sr.bottom)} h=${Math.round(sr.height)} | bg bot=${Math.round(br.bottom)} h=${Math.round(br.height)} | robot bot=${Math.round(rr.bottom)}`;
+        let panel = document.getElementById("geom-panel");
+        if (!panel) {
+          panel = document.createElement("div");
+          panel.id = "geom-panel";
+          panel.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:2147483647;background:rgba(0,0,0,0.85);color:#0f0;font:10px/1.3 monospace;padding:4px;white-space:pre-wrap;pointer-events:none";
+          document.body.appendChild(panel);
+        }
+        panel.textContent += line + "\n";
+      } catch (e) {}
+    };
+    snap("mount");
+    requestAnimationFrame(() => { snap("rAF1"); requestAnimationFrame(() => snap("rAF2")); });
+    setTimeout(() => snap("300ms"), 300);
+    setTimeout(() => snap("1800ms-after-band-clears"), 1800);
+  })();
   (function gateSplashEntrance() {
     const robot = document.getElementById("splash-robot");
     const logo = document.getElementById("splash-logo");
