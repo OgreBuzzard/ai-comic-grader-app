@@ -1209,11 +1209,11 @@ onAuthStateChanged(auth, async user => {
        one (no slide-up animation). Fades in over 0.2s so the cut from
        black isn't abrupt on the first paint. */
     #splash-bg {
-      position: absolute;
-      top: 0; left: 0; right: 0; bottom: 0;
+      position: fixed;
+      top: 0; left: 0; right: 0;
       width: 100%;
-      height: 100vh;
-      height: 100dvh;
+      height: calc(100vh + 120px);
+      height: calc(100lvh + 120px);
       transform: translateZ(0);
       will-change: transform, opacity;
       background-image: url('assets/Robograder_Background.jpg');
