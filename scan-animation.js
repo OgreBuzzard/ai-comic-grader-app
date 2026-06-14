@@ -58,7 +58,7 @@
   // pass disabled, the freeze should be gone. Re-enable via
   // window.RobograderScan.setDebug(true) in console if anything else
   // needs diagnosis.
-  let _debugEnabled = true;  // TEMP S17: skip-to-top diagnostic — set false after capture
+  let _debugEnabled = false;
   let _debugStartTime = 0;
   let _debugPanel = null;
 
@@ -988,28 +988,32 @@
   function lockBodyScroll() {
     if (_scrollLockY !== null) return;  // already locked
     _scrollLockY = window.scrollY || window.pageYOffset || 0;
-    // S17 (FINAL, with rect diagnostic June 11): the jump is a 49px viewport
-    // SHRINK during mount — innerHeight 693 -> 644, exactly saTop=49. Cause:
-    // setting body{position:fixed} makes iOS Safari recompute the viewport
-    // (URL-bar / top safe-area band collapse), so innerHeight drops 49px
-    // mid-animation. The fixed .rg-scan-stage re-fits to the new height but
-    // the shell's slide-up keyframe was computed against the old height -> the
-    // chest lurches up ~49px (top clipped, black gap at bottom). Both prior
-    // theories (safe-area-reflow guess, then scroll-collapse guess) were
-    // wrong; the rect numbers settle it.
-    // FIX: do NOT set position:fixed on body — that is what triggers the
-    // viewport recompute. Lock scroll with overflow only (no layout change,
-    // no viewport collapse), and restore the scroll offset on unlock. The
-    // stage is separately pinned to 100dvh (see CSS) so it can't depend on a
-    // mid-animation innerHeight change.
+    // S17 (skip-to-top fix, June 13 — diagnostic-proven):
+    // The on-device probe showed scrollY collapses 459 -> 0 the instant
+    // overflow:hidden is set (the page becomes non-scrollable, so the browser
+    // zeroes the offset). Because the scan stage is intentionally TRANSPARENT,
+    // that collapse is VISIBLE as the Edit view skipping to top behind the
+    // overlay — on BOTH PWA and iOS. Re-asserting scrollY via scrollTo() does
+    // nothing while overflow is hidden (nothing to scroll).
+    //
+    // The correct lock that PRESERVES visual position is position:fixed with a
+    // negative top equal to the scroll offset: the body shifts up by scrollY
+    // and is pinned, so the content stays exactly where the user left it.
+    //
+    // IMPORTANT (corrects the old "FINAL" comment): the same probe showed the
+    // 49px innerHeight shrink (the separate PWA-only JUMP bug) happens with the
+    // overflow-only lock too — i.e. position:fixed is NOT what causes that
+    // shrink. So using position:fixed here fixes the skip WITHOUT being
+    // responsible for the jump. The jump remains a separate, open issue.
     const b = document.body;
     const html = document.documentElement;
-    b.style.overflow = 'hidden';
+    b.style.position = 'fixed';
+    b.style.top = `-${_scrollLockY}px`;
+    b.style.left = '0';
+    b.style.right = '0';
+    b.style.width = '100%';
     html.style.overflow = 'hidden';
     b.style.touchAction = 'none';
-    // Hold visual scroll position WITHOUT position:fixed: scroll the page back
-    // to where it was on the next frame if anything nudged it. No fixed body =
-    // no URL-bar/safe-area collapse = no 49px viewport shrink = no jump.
   }
 
   function unlockBodyScroll() {
@@ -1369,9 +1373,7 @@
     // Edge case: no photos. Build the shell anyway so the persistent
     // mode works for callers that wanted the shell up regardless. The
     // promise resolves immediately because there's nothing to scan.
-    debugViewport('0 pre-buildDom');
     _activeStage = buildDom(activeSlots);
-    debugViewport('0b post-buildDom');
     debugLog('shell mounted to DOM');
 
     // S14: lock body scroll while the scan stage is up. Two bugs this
@@ -1387,15 +1389,7 @@
     // iOS Safari ignores `overflow:hidden` on body for touch scrolling,
     // so we use the position:fixed + negative-top technique and restore
     // the exact scroll position on teardown.
-    // TEMP S17 skip-to-top diagnostic: capture scroll/viewport at each step
-    // around the lock so we can see WHICH value moves (scrollY collapse vs
-    // viewport shrink vs DOM mount) instead of guessing.
-    debugViewport('A pre-buildDom-already-done/pre-lock');
     lockBodyScroll();
-    debugViewport('B post-lock(sync)');
-    requestAnimationFrame(() => debugViewport('C post-lock(rAF1)'));
-    requestAnimationFrame(() => requestAnimationFrame(() => debugViewport('D post-lock(rAF2)')));
-    setTimeout(() => debugViewport('E post-lock(+250ms)'), 250);
 
     // After mount, log what the shell's transform is. If iOS isn't
     // honoring our keyframe animation we'll see the transform stuck at

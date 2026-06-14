@@ -690,8 +690,9 @@ onAuthStateChanged(auth, async user => {
       display: none;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-start;
       padding: 32px;
+      padding-top: calc(env(safe-area-inset-top, 0px) + 18%);
       z-index: 6;
       text-align: center;
     }
@@ -1315,9 +1316,10 @@ onAuthStateChanged(auth, async user => {
       background: #0a0a0a;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-start;
       gap: 18px;
       padding: 20px;
+      padding-top: calc(env(safe-area-inset-top, 0px) + 18%);
       text-align: center;
     }
     #orientation-block .rotate-icon { width: 96px; height: 96px; color: #7aa838; margin-bottom: 24px; }
@@ -1340,7 +1342,7 @@ onAuthStateChanged(auth, async user => {
 <body style="overflow:hidden">
 
 <div id="orientation-block" aria-hidden="true">
-  <div class="rotate-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true" fill="none"><path d="M60,35.5L60,64.5C60,66.432 58.432,68 56.5,68L43.5,68C41.568,68 40,66.432 40,64.5L40,35.5C40,33.568 41.568,32 43.5,32L56.5,32C58.432,32 60,33.568 60,35.5Z" style="fill:none;stroke:currentColor;stroke-width:6px;"/> <path d="M16,50C16,31.348 31.348,16 50,16" style="fill:none;fill-rule:nonzero;stroke:currentColor;stroke-width:6px;"/> <g transform="matrix(0.707107,-0.707107,0.707107,0.707107,7.47309,40.0416)"> <path d="M50,6L50,16L40,16" style="fill:none;fill-rule:nonzero;stroke:currentColor;stroke-width:6px;"/> </g> <path d="M84,50C84,68.652 68.652,84 50,84" style="fill:none;fill-rule:nonzero;stroke:currentColor;stroke-width:6px;"/> <g transform="matrix(0.707107,-0.707107,0.707107,0.707107,-44.7523,59.9584)"> <path d="M50,94L50,84L60,84" style="fill:none;fill-rule:nonzero;stroke:currentColor;stroke-width:6px;"/> </g></svg></div>
+  <div class="rotate-icon"><img src="assets/rotate-cw.svg" alt="" style="width:100%;height:100%"></div>
   <div class="orientation-block-title">Rotate to portrait</div>
 </div>
 
@@ -3563,7 +3565,7 @@ function renderList() {
     const q = search.toLowerCase();
     return !q || c.title?.toLowerCase().includes(q) || c.issue?.toLowerCase().includes(q) || c.cgcCert?.includes(q);
   });
-  const OWNERSHIP_ORDER = [ "Owned", "Sold", "Watching" ];
+  const OWNERSHIP_ORDER = [ "Owned", "Sold", "Watching", "Print" ];
   const buildTitleGroups = list => {
     const groups = {};
     list.forEach(c => {
@@ -3653,11 +3655,18 @@ function renderList() {
           Watching: {
             bg: "#fff0d8",
             fg: "#7a5018"
+          },
+          Print: {
+            bg: "#d8e4f0",
+            fg: "#1a4a6a"
           }
         };
         const oc = ownColors[section.ownership] || ownColors["Owned"];
         const count = section.titles.reduce((n, t) => n + section.groups[t].length, 0);
-        html += `<div onclick="toggleOwnership('${escJsAttr(section.ownership)}')" style="display:flex;align-items:center;gap:8px;margin:18px 0 10px;padding:7px 12px;background:${oc.bg};border-radius:8px;cursor:pointer;user-select:none">\n          <span class="group-chevron${ownOpen ? " open" : ""}" style="color:${oc.fg}">›</span>\n          <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:${oc.fg}">${section.ownership}</span>\n          <span style="font-size:12px;color:${oc.fg};opacity:0.7;letter-spacing:0.5px">(${count})</span>\n        </div>`;
+        const printBtn = section.ownership === "Print"
+          ? `<button onclick="event.stopPropagation();printQueueSheet()" style="margin-left:auto;font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#fff;background:#1a4a6a;border:none;border-radius:6px;padding:5px 12px;cursor:pointer">Print Sheet</button>`
+          : "";
+        html += `<div onclick="toggleOwnership('${escJsAttr(section.ownership)}')" style="display:flex;align-items:center;gap:8px;margin:18px 0 10px;padding:7px 12px;background:${oc.bg};border-radius:8px;cursor:pointer;user-select:none">\n          <span class="group-chevron${ownOpen ? " open" : ""}" style="color:${oc.fg}">›</span>\n          <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:${oc.fg}">${section.ownership}</span>\n          <span style="font-size:12px;color:${oc.fg};opacity:0.7;letter-spacing:0.5px">(${count})</span>${printBtn}\n        </div>`;
       }
       if (!ownOpen) return;
       section.titles.forEach(title => {
@@ -3893,6 +3902,11 @@ function showDetail(id) {
         bg: "#e8e8e8",
         fg: "#4a4a4a",
         border: "#a8a8a8"
+      },
+      Print: {
+        bg: "#d8e4f0",
+        fg: "#1a4a6a",
+        border: "#88b0d0"
       }
     };
     const s = styleByState[own] || styleByState["Owned"];
@@ -4329,11 +4343,36 @@ async function togglePublicListing(id, val) {
   }
 }
 
+async function printQueueSheet() {
+  // The "Print" ownership category IS the print queue. Gather every book
+  // tagged Print that has an RG grade (only graded books get a label), then
+  // hand them to the label viewer for batch printing on an Avery sheet.
+  const queue = items.filter(c => (c.ownership || "Owned") === "Print" && c.roboGrade && c.id !== SAMPLE_COMIC_ID);
+  if (queue.length === 0) {
+    alert("No graded books in the Print queue. Move a graded book to the Print category to add it.");
+    return;
+  }
+  try {
+    if (!_labelModulePromise) {
+      _labelModulePromise = import("/print-label.js").catch(e => {
+        _labelModulePromise = null;
+        throw e;
+      });
+    }
+    const mod = await _labelModulePromise;
+    // Seed the viewer on the first queued book; pass the Print-category subset
+    // as the working set so the batch sheet contains exactly the queue.
+    mod.openLabelViewer(queue[0], queue);
+  } catch (e) {
+    alert("Could not open the print sheet: " + (e && e.message || e));
+  }
+}
+
 async function cycleOwnershipFromDetail(id) {
   const comic = items.find(c => c.id === id);
   if (!comic) return;
   const cur = comic.ownership || "Owned";
-  const next = cur === "Owned" ? "Watching" : cur === "Watching" ? "Sold" : "Owned";
+  const next = cur === "Owned" ? "Watching" : cur === "Watching" ? "Sold" : cur === "Sold" ? "Print" : "Owned";
   const update = {
     ownership: next
   };
@@ -4653,7 +4692,7 @@ function enterManualMode() {
 
 function cycleOwnership() {
   const cur = formData.ownership || "Owned";
-  const next = cur === "Owned" ? "Watching" : cur === "Watching" ? "Sold" : "Owned";
+  const next = cur === "Owned" ? "Watching" : cur === "Watching" ? "Sold" : cur === "Sold" ? "Print" : "Owned";
   formData.ownership = next;
   renderForm();
 }
@@ -7250,6 +7289,11 @@ function renderForm() {
         bg: "#e8e8e8",
         fg: "#4a4a4a",
         border: "#a8a8a8"
+      },
+      Print: {
+        bg: "#d8e4f0",
+        fg: "#1a4a6a",
+        border: "#88b0d0"
       }
     };
     const s = styleByState[own] || styleByState["Owned"];
@@ -7271,6 +7315,11 @@ function renderForm() {
         bg: "#e8e8e8",
         fg: "#4a4a4a",
         border: "#a8a8a8"
+      },
+      Print: {
+        bg: "#d8e4f0",
+        fg: "#1a4a6a",
+        border: "#88b0d0"
       }
     };
     const s = styleByState[own] || styleByState["Owned"];
@@ -8775,8 +8824,8 @@ function applyCameraOrientationState() {
     const iconEl = card.querySelector(".rotate-icon");
     // S16: CW and CCW phone icons from repo assets (avoids inline SVG corruption)
     if (iconEl) iconEl.innerHTML = preferred === "landscape"
-      ? `<img src="assets/rotate-cw.svg" alt="" style="width:100%;height:100%">`
-      : `<img src="assets/rotate-ccw.svg" alt="" style="width:100%;height:100%">`;
+      ? `<img src="assets/rotate-ccw.svg" alt="" style="width:100%;height:100%">`
+      : `<img src="assets/rotate-cw.svg" alt="" style="width:100%;height:100%">`;
     if (preferred === "landscape") {
       card.classList.add("to-landscape");
       card.classList.remove("to-portrait");
