@@ -58,7 +58,7 @@
   // pass disabled, the freeze should be gone. Re-enable via
   // window.RobograderScan.setDebug(true) in console if anything else
   // needs diagnosis.
-  let _debugEnabled = false;
+  let _debugEnabled = true;  // TEMP: Candidate A jump test
   let _debugStartTime = 0;
   let _debugPanel = null;
 
@@ -338,6 +338,12 @@
          gradually from the bottom. ease-in-out gives a smooth on-ramp.
          Duration extended to 2000ms to match storyboard timing. */
       animation: rgShellSlideUp 2000ms cubic-bezier(0.65, 0, 0.35, 1) 0.2s forwards;
+      /* S17 Candidate A (jump fix): start PAUSED. runScanAnimation un-pauses
+         after the viewport has settled (2 rAFs), so the slide-up keyframe is
+         computed against the post-collapse innerHeight (644) rather than the
+         stale pre-collapse height (693). Without this, the shell keyframes
+         against 693 for the first ~2 frames, leaving the 49px bottom band. */
+      animation-play-state: paused;
       pointer-events: none;
     }
     @keyframes rgShellSlideUp {
@@ -988,32 +994,28 @@
   function lockBodyScroll() {
     if (_scrollLockY !== null) return;  // already locked
     _scrollLockY = window.scrollY || window.pageYOffset || 0;
-    // S17 (skip-to-top fix, June 13 — diagnostic-proven):
-    // The on-device probe showed scrollY collapses 459 -> 0 the instant
-    // overflow:hidden is set (the page becomes non-scrollable, so the browser
-    // zeroes the offset). Because the scan stage is intentionally TRANSPARENT,
-    // that collapse is VISIBLE as the Edit view skipping to top behind the
-    // overlay — on BOTH PWA and iOS. Re-asserting scrollY via scrollTo() does
-    // nothing while overflow is hidden (nothing to scroll).
-    //
-    // The correct lock that PRESERVES visual position is position:fixed with a
-    // negative top equal to the scroll offset: the body shifts up by scrollY
-    // and is pinned, so the content stays exactly where the user left it.
-    //
-    // IMPORTANT (corrects the old "FINAL" comment): the same probe showed the
-    // 49px innerHeight shrink (the separate PWA-only JUMP bug) happens with the
-    // overflow-only lock too — i.e. position:fixed is NOT what causes that
-    // shrink. So using position:fixed here fixes the skip WITHOUT being
-    // responsible for the jump. The jump remains a separate, open issue.
+    // S17 (FINAL, with rect diagnostic June 11): the jump is a 49px viewport
+    // SHRINK during mount — innerHeight 693 -> 644, exactly saTop=49. Cause:
+    // setting body{position:fixed} makes iOS Safari recompute the viewport
+    // (URL-bar / top safe-area band collapse), so innerHeight drops 49px
+    // mid-animation. The fixed .rg-scan-stage re-fits to the new height but
+    // the shell's slide-up keyframe was computed against the old height -> the
+    // chest lurches up ~49px (top clipped, black gap at bottom). Both prior
+    // theories (safe-area-reflow guess, then scroll-collapse guess) were
+    // wrong; the rect numbers settle it.
+    // FIX: do NOT set position:fixed on body — that is what triggers the
+    // viewport recompute. Lock scroll with overflow only (no layout change,
+    // no viewport collapse), and restore the scroll offset on unlock. The
+    // stage is separately pinned to 100dvh (see CSS) so it can't depend on a
+    // mid-animation innerHeight change.
     const b = document.body;
     const html = document.documentElement;
-    b.style.position = 'fixed';
-    b.style.top = `-${_scrollLockY}px`;
-    b.style.left = '0';
-    b.style.right = '0';
-    b.style.width = '100%';
+    b.style.overflow = 'hidden';
     html.style.overflow = 'hidden';
     b.style.touchAction = 'none';
+    // Hold visual scroll position WITHOUT position:fixed: scroll the page back
+    // to where it was on the next frame if anything nudged it. No fixed body =
+    // no URL-bar/safe-area collapse = no 49px viewport shrink = no jump.
   }
 
   function unlockBodyScroll() {
@@ -1390,6 +1392,44 @@
     // so we use the position:fixed + negative-top technique and restore
     // the exact scroll position on teardown.
     lockBodyScroll();
+
+    // S17 Candidate A (jump fix): the PWA's innerHeight shrinks ~49px (the top
+    // safe-area band) about 2 frames AFTER this full-screen overlay mounts.
+    // The shell slide-up keyframe, if it starts immediately, computes against
+    // the stale pre-shrink height and leaves a 49px black band at the bottom
+    // (the "jump"). Matt's splash observation — the jump self-corrects the
+    // moment the descending-logo animation forces a reflow — points to the fix:
+    // force the reflow ourselves and let the viewport settle, THEN start the
+    // slide. We hold the shell paused (CSS animation-play-state:paused) and
+    // un-pause it after 2 rAFs + a forced layout read, so it keyframes against
+    // the settled height. iOS app (saTop≈0) has no shrink, so this is a no-op
+    // there. Diagnostic note: if the band persists, the shrink happens later
+    // than 2 frames and the settle delay needs raising.
+    (function settleThenAnimate() {
+      const shell = _activeStage && _activeStage.querySelector
+        ? _activeStage.querySelector('.rg-scan-shell')
+        : document.querySelector('.rg-scan-shell');
+      if (!shell) return;
+      requestAnimationFrame(() => {
+        // Force a layout read so the viewport-collapse reflow is flushed.
+        void document.documentElement.offsetHeight;
+        void window.innerHeight;
+        debugViewport('SETTLE rAF1 (pre-unpause)');
+        requestAnimationFrame(() => {
+          // Viewport has settled; start the slide against the correct height.
+          debugViewport('SETTLE rAF2 (unpausing now)');
+          shell.style.animationPlayState = 'running';
+        });
+      });
+      // Safety: never leave the shell paused. If the rAF chain is throttled
+      // (backgrounded tab, etc.), un-pause after a short hard timeout so the
+      // animation always plays.
+      setTimeout(() => {
+        if (shell && shell.style.animationPlayState !== 'running') {
+          shell.style.animationPlayState = 'running';
+        }
+      }, 120);
+    })();
 
     // After mount, log what the shell's transform is. If iOS isn't
     // honoring our keyframe animation we'll see the transform stuck at
