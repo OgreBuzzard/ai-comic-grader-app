@@ -905,7 +905,7 @@
           <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>
         </div>
         <button id="assess-complete-btn" disabled
-          style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:36px;background:#5a5a5a;color:#bbb;border:none;font-size:13px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">
+          style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:13px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">
           ASSESSING…
         </button>
       </div>`;
@@ -1362,7 +1362,7 @@
 
     const slotTable = (kind === 'corner') ? SLOTS_CORNER : (kind === 'full') ? SLOTS_FULL : (kind === 'restoration') ? SLOTS_RESTORATION : SLOTS_MAIN;
     // S16: Full Assessment runs 8 scans, so each is 1.0s (half the 2.0s main scan).
-    _scanDurationMs = (kind === 'full') ? 1000 : SCAN_DURATION;
+    _scanDurationMs = (kind === 'full' || kind === 'restoration') ? 1000 : SCAN_DURATION;
 
     const activeSlots = slotTable
       .filter(s => photoUrls && photoUrls[s.idx])
