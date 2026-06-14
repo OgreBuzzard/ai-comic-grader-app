@@ -58,7 +58,7 @@
   // pass disabled, the freeze should be gone. Re-enable via
   // window.RobograderScan.setDebug(true) in console if anything else
   // needs diagnosis.
-  let _debugEnabled = true;  // TEMP: Candidate B jump test
+  let _debugEnabled = true;  // TEMP: bottom-band probe
   let _debugStartTime = 0;
   let _debugPanel = null;
 
@@ -117,6 +117,33 @@
       probe.remove();
       debugLog(`${label}: innerH=${window.innerHeight} vvH=${vv?Math.round(vv.height):'?'} vvTop=${vv?Math.round(vv.offsetTop):'?'} vvScale=${vv?vv.scale.toFixed(2):'?'} scrollY=${Math.round(window.scrollY)} saTop=${Math.round(insetTop)} saBot=${Math.round(insetBot)}`);
     } catch (e) { debugLog(`${label}: vp err ${e.message}`); }
+  }
+
+  function probeBottomBand(label) {
+    if (!_debugEnabled) return;
+    try {
+      const vv = window.visualViewport;
+      const vh = vv ? Math.round(vv.height) : window.innerHeight;
+      // Sample a point INSIDE the bottom band (which is ~49px tall when the
+      // jump is present). Sample at vh-8 (just above the very bottom) and at
+      // window.innerHeight-8 too, in case they differ.
+      const cx = Math.round((vv ? vv.width : window.innerWidth) / 2);
+      const yBand = vh - 8;
+      const stack = (document.elementsFromPoint ? document.elementsFromPoint(cx, yBand) : []).slice(0, 5);
+      const desc = el => {
+        if (!el) return 'null';
+        const cs = getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        return `${el.tagName.toLowerCase()}${el.id?('#'+el.id):''}${el.className&&typeof el.className==='string'?('.'+el.className.trim().split(/\s+/).slice(0,2).join('.')):''}` +
+               ` bg=${cs.backgroundColor} h=${Math.round(r.height)} bottom=${Math.round(r.bottom)} pos=${cs.position}`;
+      };
+      const bodyCs = getComputedStyle(document.body);
+      const htmlCs = getComputedStyle(document.documentElement);
+      debugLog(`${label} BAND@y=${yBand} (vh=${vh} innerH=${window.innerHeight}):`);
+      debugLog(`  body bg=${bodyCs.backgroundColor} minH=${bodyCs.minHeight} h=${Math.round(document.body.getBoundingClientRect().height)}`);
+      debugLog(`  html bg=${htmlCs.backgroundColor} h=${Math.round(document.documentElement.getBoundingClientRect().height)}`);
+      stack.forEach((el, i) => debugLog(`  [${i}] ${desc(el)}`));
+    } catch (e) { debugLog(`${label}: band probe err ${e.message}`); }
   }
 
   function debugCleanup() {
@@ -984,7 +1011,6 @@
   let _activeCancelToken = null;
   // S14: saved scroll Y for the body-scroll-lock. Null when not locked.
   let _scrollLockY = null;
-  let _vvHandler = null;  // S17 Candidate B: visualViewport resize listener for stage-fit
 
   function lockBodyScroll() {
     if (_scrollLockY !== null) return;  // already locked
@@ -1040,12 +1066,6 @@
     // run against a torn-down tree.
     stopGridCycle();
     stopNeedlePulse();
-    // S17 Candidate B: remove the visualViewport resize listener that keeps
-    // the stage height matched, so it doesn't leak across assessments.
-    if (_vvHandler && window.visualViewport) {
-      window.visualViewport.removeEventListener('resize', _vvHandler);
-    }
-    _vvHandler = null;
     if (_activeStage && _activeStage.parentNode) {
       _activeStage.parentNode.removeChild(_activeStage);
     }
@@ -1394,46 +1414,19 @@
     // the exact scroll position on teardown.
     lockBodyScroll();
 
-    // S17 Candidate B (jump fix): Candidate A proved the slide-up animation
-    // un-pauses at the correct height (644), yet the 49px band PERSISTED — so
-    // the band is NOT the animation keyframing against a stale height. It is
-    // the STAGE OVERLAY itself: `.rg-scan-stage { height: 100dvh }` resolves at
-    // mount against the pre-collapse viewport (693), so when the PWA chrome
-    // collapses to 644 two frames later, the stage is 49px too SHORT at the
-    // bottom — leaving the black band. Fix: after the viewport settles (2 rAFs),
-    // read the REAL viewport height (visualViewport.height) and pin the stage to
-    // it explicitly, overriding the stale 100dvh. iOS app (no collapse) reads
-    // the same height before/after, so this is a no-op there.
-    (function fitStageToSettledViewport() {
-      const stage = _activeStage;
-      if (!stage) return;
-      const applyHeight = () => {
-        const vv = window.visualViewport;
-        const h = vv ? Math.round(vv.height) : window.innerHeight;
-        if (h && h > 0) {
-          stage.style.height = h + 'px';
-          debugLog('Candidate B: pinned stage height=' + h + 'px (vvH=' + (vv?Math.round(vv.height):'?') + ' innerH=' + window.innerHeight + ')');
-          // Also pin top to the visual viewport offset if the page scrolled
-          // under the safe-area band (defensive; usually 0 here).
-          stage.style.top = (vv ? Math.round(vv.offsetTop) : 0) + 'px';
-        }
-      };
+    // S17 jump-bug probe: Candidate A (animation) and B (stage height) both
+    // failed — the band is neither. This probe inspects WHAT actually paints
+    // in the bottom ~49px after the viewport collapses (the element stack,
+    // their computed backgrounds, and body/html backgrounds), so we can see
+    // what's showing through instead of guessing.
+    requestAnimationFrame(() => {
+      void document.documentElement.offsetHeight;
       requestAnimationFrame(() => {
-        void document.documentElement.offsetHeight;
-        requestAnimationFrame(() => {
-          applyHeight();
-          // Re-apply once more after a short delay in case the collapse lands
-          // later than 2 frames on some devices.
-          setTimeout(applyHeight, 200);
-        });
+        debugViewport('PROBE settled');
+        probeBottomBand('PROBE');
+        setTimeout(() => { debugViewport('PROBE +300ms'); probeBottomBand('PROBE+300'); }, 300);
       });
-      // Keep the stage matched if the viewport changes again while it's up
-      // (e.g. the chrome re-expands). Cleaned up on teardown via _vvHandler.
-      if (window.visualViewport) {
-        _vvHandler = applyHeight;
-        window.visualViewport.addEventListener('resize', _vvHandler);
-      }
-    })();
+    });
 
     // After mount, log what the shell's transform is. If iOS isn't
     // honoring our keyframe animation we'll see the transform stuck at
