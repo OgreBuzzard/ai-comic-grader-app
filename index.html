@@ -219,11 +219,11 @@ onAuthStateChanged(auth, async user => {
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     /* Start black to prevent white flash on iOS app open — the splash lives on a black background */
-    html, body { height: 100%; background: #f5f4f2; color: #1a1614; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; }
+    html, body { height: 100%; background: #1a1814; color: #1a1614; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; }
     /* Once the app is visible, the body below the fixed splash should be light on mobile, dark margins on desktop */
-    body.app-ready { background: #f5f4f2; }
+    body.app-ready { background: #1a1814; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    #app { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; background: #f5f4f2; max-width: 480px; margin: 0 auto; }
+    #app { min-height: 100vh; display: flex; flex-direction: column; background: #f5f4f2; max-width: 480px; margin: 0 auto; }
     /* S16: Responsive — on wider screens the app is centered with dark margins */
     @media (min-width: 540px) {
       #app { box-shadow: 0 0 40px rgba(0,0,0,0.3); border-left: 1px solid #2a2820; border-right: 1px solid #2a2820; }
@@ -1185,7 +1185,7 @@ onAuthStateChanged(auth, async user => {
     /* ── Page baseline — match the app background (#f5f4f2) so the strip the
        browser paints before #app lays out (the iOS toolbar/URL-bar zone) blends
        with the list view instead of flashing a dark band. ── */
-    html, body { background: #f5f4f2; }
+    html, body { background: #0a0a0a; }
 
     /* ── Splash Screen (v3, S14) ───────────────────────────────────────
        Redesign goals:
@@ -1201,23 +1201,18 @@ onAuthStateChanged(auth, async user => {
          eliminates the gray/white loading-pill gap between splash and
          list view that was the worst part of the prior experience. */
     #splash {
-      position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 10000;
-      height: 100vh;
-      height: 100dvh;
-      background: #f3a305;
+      position: fixed; inset: 0; z-index: 10000;
+      background: #0a0a0a;
       overflow: hidden;
     }
     /* Splash background — yellow circuit-board texture. Present from frame
        one (no slide-up animation). Fades in over 0.2s so the cut from
        black isn't abrupt on the first paint. */
     #splash-bg {
-      position: fixed;
-      top: 0; left: 0; right: 0;
+      position: absolute;
+      inset: 0;
       width: 100%;
-      height: calc(100vh + 120px);
-      height: calc(100lvh + 120px);
-      transform: translateZ(0);
-      will-change: transform, opacity;
+      height: 100%;
       background-image: url('assets/Robograder_Background.jpg');
       background-size: cover;
       background-position: center center;
