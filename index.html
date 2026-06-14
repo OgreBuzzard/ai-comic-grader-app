@@ -219,9 +219,9 @@ onAuthStateChanged(auth, async user => {
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     /* Start black to prevent white flash on iOS app open — the splash lives on a black background */
-    html, body { height: 100%; background: #1a1814; color: #1a1614; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; }
+    html, body { height: 100%; background: #f5f4f2; color: #1a1614; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; }
     /* Once the app is visible, the body below the fixed splash should be light on mobile, dark margins on desktop */
-    body.app-ready { background: #1a1814; }
+    body.app-ready { background: #f5f4f2; }
     @keyframes spin { to { transform: rotate(360deg); } }
     #app { min-height: 100vh; display: flex; flex-direction: column; background: #f5f4f2; max-width: 480px; margin: 0 auto; }
     /* S16: Responsive — on wider screens the app is centered with dark margins */
@@ -1182,8 +1182,10 @@ onAuthStateChanged(auth, async user => {
        have been removed; the new tracker styles live in scan-animation.js. */
 
   <style>
-    /* ── Page baseline — black to prevent white flash on iOS app open ── */
-    html, body { background: #0a0a0a; }
+    /* ── Page baseline — match the app background (#f5f4f2) so the strip the
+       browser paints before #app lays out (the iOS toolbar/URL-bar zone) blends
+       with the list view instead of flashing a dark band. ── */
+    html, body { background: #f5f4f2; }
 
     /* ── Splash Screen (v3, S14) ───────────────────────────────────────
        Redesign goals:
@@ -1202,7 +1204,7 @@ onAuthStateChanged(auth, async user => {
       position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 10000;
       height: 100vh;
       height: 100dvh;
-      background: #0a0a0a;
+      background: #f5f4f2;
       overflow: hidden;
     }
     /* Splash background — yellow circuit-board texture. Present from frame
@@ -1384,14 +1386,14 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
 }
 </script>
 
-<div id="splash" style="display:none">
+<div id="splash">
   <div id="splash-bg" role="presentation" aria-hidden="true"></div>
   <img id="splash-robot" src="assets/Robograder_v4_Load.webp" alt="Robograder mascot">
   
   <img id="splash-logo" src="assets/Robograder_Logo.webp" alt="Robograder"
        onerror="this.style.display='none'">
 </div>
-<div id="app">
+<div id="app" style="display:none">
   <div id="header">
     <div id="header-row-top">
       
@@ -9582,17 +9584,6 @@ if ("serviceWorker" in navigator) {
 }
 
 (function runSplash() {
-  // S17 TEST: splash disabled to isolate the jump bug. Show app immediately.
-  const _sp = document.getElementById("splash");
-  if (_sp) _sp.style.display = "none";
-  document.body.classList.add("app-ready");
-  document.body.style.overflow = "";
-  const _ap = document.getElementById("app");
-  if (_ap) _ap.style.display = "";
-  try { window.dispatchEvent(new Event("app-ready")); } catch (e) {}
-  return;
-})();
-(function runSplashOLD() {
   const returnParams = new URLSearchParams(window.location.search);
   if (returnParams.get("payment")) {
     const splash = document.getElementById("splash");
