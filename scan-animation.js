@@ -58,7 +58,7 @@
   // pass disabled, the freeze should be gone. Re-enable via
   // window.RobograderScan.setDebug(true) in console if anything else
   // needs diagnosis.
-  let _debugEnabled = true;  // TEMP: shell-position probe
+  let _debugEnabled = false;
   let _debugStartTime = 0;
   let _debugPanel = null;
 
@@ -984,33 +984,36 @@
   let _activeCancelToken = null;
   // S14: saved scroll Y for the body-scroll-lock. Null when not locked.
   let _scrollLockY = null;
-  let _vvHandler = null;  // S17 Candidate C: visualViewport resize listener for stage-fit
 
   function lockBodyScroll() {
     if (_scrollLockY !== null) return;  // already locked
     _scrollLockY = window.scrollY || window.pageYOffset || 0;
-    // S17 (FINAL, with rect diagnostic June 11): the jump is a 49px viewport
-    // SHRINK during mount — innerHeight 693 -> 644, exactly saTop=49. Cause:
-    // setting body{position:fixed} makes iOS Safari recompute the viewport
-    // (URL-bar / top safe-area band collapse), so innerHeight drops 49px
-    // mid-animation. The fixed .rg-scan-stage re-fits to the new height but
-    // the shell's slide-up keyframe was computed against the old height -> the
-    // chest lurches up ~49px (top clipped, black gap at bottom). Both prior
-    // theories (safe-area-reflow guess, then scroll-collapse guess) were
-    // wrong; the rect numbers settle it.
-    // FIX: do NOT set position:fixed on body — that is what triggers the
-    // viewport recompute. Lock scroll with overflow only (no layout change,
-    // no viewport collapse), and restore the scroll offset on unlock. The
-    // stage is separately pinned to 100dvh (see CSS) so it can't depend on a
-    // mid-animation innerHeight change.
+    // S17 (skip-to-top fix, June 13 — diagnostic-proven):
+    // The on-device probe showed scrollY collapses 459 -> 0 the instant
+    // overflow:hidden is set (the page becomes non-scrollable, so the browser
+    // zeroes the offset). Because the scan stage is intentionally TRANSPARENT,
+    // that collapse is VISIBLE as the Edit view skipping to top behind the
+    // overlay — on BOTH PWA and iOS. Re-asserting scrollY via scrollTo() does
+    // nothing while overflow is hidden (nothing to scroll).
+    //
+    // The correct lock that PRESERVES visual position is position:fixed with a
+    // negative top equal to the scroll offset: the body shifts up by scrollY
+    // and is pinned, so the content stays exactly where the user left it.
+    //
+    // IMPORTANT (corrects the old "FINAL" comment): the same probe showed the
+    // 49px innerHeight shrink (the separate PWA-only JUMP bug) happens with the
+    // overflow-only lock too — i.e. position:fixed is NOT what causes that
+    // shrink. So using position:fixed here fixes the skip WITHOUT being
+    // responsible for the jump. The jump remains a separate, open issue.
     const b = document.body;
     const html = document.documentElement;
-    b.style.overflow = 'hidden';
+    b.style.position = 'fixed';
+    b.style.top = `-${_scrollLockY}px`;
+    b.style.left = '0';
+    b.style.right = '0';
+    b.style.width = '100%';
     html.style.overflow = 'hidden';
     b.style.touchAction = 'none';
-    // Hold visual scroll position WITHOUT position:fixed: scroll the page back
-    // to where it was on the next frame if anything nudged it. No fixed body =
-    // no URL-bar/safe-area collapse = no 49px viewport shrink = no jump.
   }
 
   function unlockBodyScroll() {
@@ -1040,10 +1043,6 @@
     // run against a torn-down tree.
     stopGridCycle();
     stopNeedlePulse();
-    if (_vvHandler && window.visualViewport) {
-      window.visualViewport.removeEventListener('resize', _vvHandler);
-    }
-    _vvHandler = null;
     if (_activeStage && _activeStage.parentNode) {
       _activeStage.parentNode.removeChild(_activeStage);
     }
@@ -1391,41 +1390,6 @@
     // so we use the position:fixed + negative-top technique and restore
     // the exact scroll position on teardown.
     lockBodyScroll();
-
-    // S17 Candidate C (jump fix): the stage is height:100dvh, which on iOS PWA
-    // resolves to the TALL (URL-bar-collapsed) viewport and does NOT shrink when
-    // the safe-area band collapses mid-mount. So the stage hangs ~49px below the
-    // visible area, and the shell (anchored to stage bottom:0) sits 49px too low
-    // → body-bg band at the visible bottom. Candidate B pinned the stage height
-    // but applied it 2 FRAMES LATE, after the shell had already anchored to the
-    // stale bottom. THE DIFFERENCE HERE: pin the stage height to the real visual
-    // viewport SYNCHRONOUSLY at mount, before the first paint, so the shell's
-    // bottom:0 anchor references the correct (visible) bottom from frame 1.
-    (function pinStageNow() {
-      const stage = _activeStage;
-      if (!stage) return;
-      const apply = () => {
-        const vv = window.visualViewport;
-        const h = vv ? Math.round(vv.height) : window.innerHeight;
-        if (h > 0) {
-          stage.style.height = h + 'px';
-          stage.style.top = (vv ? Math.round(vv.offsetTop) : 0) + 'px';
-          if (_debugEnabled) {
-            const hr = stage.querySelector('.rg-scan-shell');
-            const hb = hr ? Math.round(hr.getBoundingClientRect().bottom) : -1;
-            debugLog(`Cand C apply: stage h=${h} top=${vv?Math.round(vv.offsetTop):0} | shell bottom=${hb} vvBottom=${vv?Math.round(vv.offsetTop+vv.height):window.innerHeight}`);
-          }
-        }
-      };
-      apply();                       // synchronous, before first paint
-      requestAnimationFrame(apply);  // re-assert after the collapse lands
-      requestAnimationFrame(() => requestAnimationFrame(apply));
-      setTimeout(apply, 250);
-      if (window.visualViewport) {
-        _vvHandler = apply;
-        window.visualViewport.addEventListener('resize', _vvHandler);
-      }
-    })();
 
     // After mount, log what the shell's transform is. If iOS isn't
     // honoring our keyframe animation we'll see the transform stuck at

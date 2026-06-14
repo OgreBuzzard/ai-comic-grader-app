@@ -9595,6 +9595,25 @@ if ("serviceWorker" in navigator) {
   }
   const splash = document.getElementById("splash");
   if (!splash) return;
+  // S17 jump-bug fix: the black band at the splash bottom is a STALE LAYOUT.
+  // At first paint the splash is laid out against the tall (pre-collapse,
+  // URL-bar-visible) viewport; the iOS safe-area band then collapses ~49px,
+  // but nothing forces a relayout until `.assets-ready` is added ~1.5–2s later
+  // (after both images decode), which is why the band "fixes itself after 2
+  // seconds." Force the relayout at mount instead: read a layout property on
+  // the next two frames so the browser recomputes against the settled (644)
+  // viewport immediately, clearing the band right away.
+  (function clearStaleSplashLayout() {
+    const reflow = () => {
+      // Touching offsetHeight forces a synchronous layout flush.
+      void splash.offsetHeight;
+      void document.documentElement.offsetHeight;
+    };
+    requestAnimationFrame(() => { reflow(); requestAnimationFrame(reflow); });
+    // Belt-and-suspenders: also after the safe-area collapse is fully done.
+    setTimeout(reflow, 120);
+    setTimeout(reflow, 350);
+  })();
   (function gateSplashEntrance() {
     const robot = document.getElementById("splash-robot");
     const logo = document.getElementById("splash-logo");
