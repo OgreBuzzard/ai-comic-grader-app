@@ -1298,7 +1298,7 @@ onAuthStateChanged(auth, async user => {
     #splash-subtitle {
       position: absolute;
       left: 50%;
-      top: calc(env(safe-area-inset-top, 0px) + 5vh + 7.5vh);
+      top: calc(env(safe-area-inset-top, 0px) + 5vh + 9vh);
       transform: translate(-50%, -120vh);
       text-align: center;
       font-size: 16px;
@@ -8243,6 +8243,8 @@ async function submitRestorationCheck() {
   renderForm();
   let restoScanController = null;
   try {
+    // S17: warm the Restoration overlay artwork now so it doesn't pop on slide-in.
+    if (typeof TIER_OVERLAY_BG !== "undefined") { const _pi = new Image(); _pi.src = TIER_OVERLAY_BG.restoration; }
     // S16: Start scan animation for restoration images
     if (window.RobograderScan && window.RobograderScan.runScanAnimation) {
       restoScanController = window.RobograderScan.runScanAnimation(r, "restoration");
@@ -8319,33 +8321,31 @@ async function submitRestorationCheck() {
       formData._imagesChanged = true;
       onAssessmentSuccess();
       const _restoFound = formData.restorationFlag;
-      // Light the tracker boxes: all done green, judgment box red if restoration
-      // was indicated.
-      _restoSteps.forEach(s => setStep(s.id, "done"));
-      if (_restoFound) setStep("resto-judge", "failed");
-      // S16: Per-finding results with red (found) / green (clear)
-      const _fLabels = {
-        uv_front: "UV FRONT", uv_back: "UV BACK",
-        exterior_top_staple: "TOP STAPLE", exterior_bottom_staple: "BOTTOM STAPLE",
-        outer_edge: "TRIMMING", interior_front: "INTERIOR FRONT",
-        interior_back: "INTERIOR BACK", interior_staple: "STAPLES (INT)"
-      };
-      const _findings = Array.isArray(result.findings) ? result.findings : [];
-      let _fHtml = '';
-      if (_findings.length > 0) {
-        _fHtml = `<div style="display:flex;flex-direction:column;gap:4px;margin-top:4px;width:100%;max-width:260px">`;
-        for (const f of _findings) {
-          const label = _fLabels[f.area] || f.area;
-          const found = f.indicatorPresent === true;
-          const color = found ? '#ff4040' : '#60c060';
-          const icon = found ? '✗' : '✓';
-          _fHtml += `<div style="display:flex;align-items:center;gap:8px;padding:4px 10px;background:rgba(255,255,255,0.05);border-radius:6px"><span style="color:${color};font-size:15px;font-weight:900;width:18px">${icon}</span><span style="color:#ccc;font-size:11px;font-weight:600;letter-spacing:1px;flex:1">${label}</span></div>`;
-        }
-        _fHtml += `</div>`;
+      // S17: stop the cycling grid + needle pulse. Restoration does NOT change
+      // the grade, so hold the needle at the existing score instead of letting
+      // it drop to 0.
+      if (window.RobograderScan && window.RobograderScan.stopGridCycle) window.RobograderScan.stopGridCycle();
+      if (window.RobograderScan && window.RobograderScan.stopNeedlePulse) window.RobograderScan.stopNeedlePulse();
+      const _heldScore = formData.roboGrade ? Math.round(formData.roboGrade.score) : null;
+      if (window.RobograderScan && window.RobograderScan.sweepNeedleToScore && _heldScore != null) {
+        window.RobograderScan.sweepNeedleToScore(_heldScore);
       }
+      // S17: wire the 5 overlay boxes green (clear) / red (restoration found),
+      // per finding-group. The progress overlay carries the per-item result, so
+      // the redundant text checklist is removed.
+      const _findings = Array.isArray(result.findings) ? result.findings : [];
+      const _foundIn = (areas) => _findings.some(f => areas.includes(f.area) && f.indicatorPresent === true);
+      const _setBox = (id, areas) => setStep(id, _foundIn(areas) ? "failed" : "done");
+      _setBox("resto-uv", ["uv_front", "uv_back"]);
+      _setBox("resto-staples", ["exterior_top_staple", "exterior_bottom_staple", "interior_staple"]);
+      _setBox("resto-trim", ["outer_edge"]);
+      _setBox("resto-leaf", ["interior_front", "interior_back"]);
+      setStep("resto-judge", _restoFound ? "failed" : "done");
+      // S17: results panel — binary determination + COMPLETE only. No score box
+      // or page quality (unchanged by a restoration check), no checklist, no scroll.
       const _judgeColor = _restoFound ? '#ff4040' : '#60c060';
       const _judgeLabel = _restoFound ? "RESTORATION INDICATED" : "NO RESTORATION FOUND";
-      const _restoResultsHtml = `\n        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;overflow:auto">\n          <div style="color:#d4af37;font-size:14px;font-weight:700;letter-spacing:2px;font-family:'Share Tech Mono',monospace;text-align:center">RESTORATION CHECK COMPLETE</div>\n          ${_fHtml}\n          <div style="margin-top:4px;padding:8px 18px;border-radius:10px;border:2px solid ${_judgeColor}40;background:${_restoFound ? '#2a0a0a' : '#0a2a0a'}">\n            <div style="color:${_judgeColor};font-size:14px;font-weight:800;letter-spacing:1.5px;text-align:center">${_judgeLabel}</div>\n          </div>\n          <button id="resto-complete-btn"\n            style="margin-top:4px;align-self:center;width:auto;min-width:200px;padding:0 24px;height:44px;background:linear-gradient(180deg,${_restoFound ? '#9a6ad8,#6a3ab0' : '#d4af37,#a88a20'});color:${_restoFound ? '#fff' : '#1a1408'};border:none;font-size:15px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.4);">COMPLETE</button>\n        </div>`;
+      const _restoResultsHtml = `\n        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:14px;">\n          <div style="padding:12px 22px;border-radius:10px;border:2px solid ${_judgeColor}40;background:${_restoFound ? '#2a0a0a' : '#0a2a0a'}">\n            <div style="color:${_judgeColor};font-size:16px;font-weight:800;letter-spacing:1.5px;text-align:center">${_judgeLabel}</div>\n          </div>\n          <button id="resto-complete-btn"\n            style="align-self:center;width:auto;min-width:200px;padding:0 24px;height:44px;background:linear-gradient(180deg,${_restoFound ? '#9a6ad8,#6a3ab0' : '#d4af37,#a88a20'});color:${_restoFound ? '#fff' : '#1a1408'};border:none;font-size:15px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.4);">COMPLETE</button>\n        </div>`;
       if (window.RobograderScan && window.RobograderScan.slideResultsIntoPanel) {
         window.RobograderScan.slideResultsIntoPanel(_restoResultsHtml);
       }
@@ -8396,6 +8396,9 @@ async function submitFullAssessment() {
     btn.disabled = true;
     btn.innerText = "Assessing…";
   }
+  // S17: warm the Full overlay artwork now (scan runs ~8s) so it doesn't pop
+  // when it slides into the chest at completion.
+  if (typeof TIER_OVERLAY_BG !== "undefined") { const _pi = new Image(); _pi.src = TIER_OVERLAY_BG.full; }
   // S16: run the 8-image Full Assessment scan animation (1.0s per scan) while the
   // API call is in flight — mirrors the standard/Deep flow's scan shell.
   const fullScanController = window.RobograderScan ? window.RobograderScan.runScanAnimation(interior, "full") : {
@@ -8501,12 +8504,20 @@ async function submitFullAssessment() {
       formData.fullTrimmingSuspected = result.trimmingSuspected === true;
       formData._imagesChanged = true;
       onAssessmentSuccess();
-      // S17: show results in the scan results panel (same surface as Main),
-      // then COMPLETE dismisses the stage and routes onward.
+      // S17: stop the cycling 4×4 grid + needle pulse, sweep the needle to the
+      // assessed score (was dropping to 0 because these were never called).
+      if (window.RobograderScan && window.RobograderScan.stopGridCycle) window.RobograderScan.stopGridCycle();
+      if (window.RobograderScan && window.RobograderScan.stopNeedlePulse) window.RobograderScan.stopNeedlePulse();
       const _newScore = formData.roboGrade ? Math.round(formData.roboGrade.score) : null;
+      if (window.RobograderScan && window.RobograderScan.sweepNeedleToScore && _newScore != null) {
+        window.RobograderScan.sweepNeedleToScore(_newScore);
+      }
+      // S17: results in the scan results panel (same surface + layout as Main:
+      // RG box + GRADE box, page-quality line, COMPLETE button — no header).
       const _newGrade = formData.predictedGrade ? parseFloat(formData.predictedGrade).toFixed(1) : null;
-      const _trimWarn = formData.fullTrimmingSuspected ? `<div style="color:#ff8060;font-size:12px;margin-top:4px">⚠ Trimming suspected</div>` : '';
-      const _fullResultsHtml = `\n        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4% 5%;box-sizing:border-box;gap:10px;">\n          <div style="color:#d4af37;font-size:15px;font-weight:700;letter-spacing:2px;font-family:'Share Tech Mono',monospace;text-align:center">FULL ASSESSMENT COMPLETE</div>\n          ${_newScore != null ? `<div style="display:flex;gap:12px;align-items:center;justify-content:center">\n            <div style="background:#1a2208;border-radius:12px;padding:10px 18px;text-align:center;border:1px solid #3a4a1a">\n              <div style="color:#b8d820;font-size:30px;font-weight:900;font-family:'Noto Sans Display',sans-serif;line-height:1">${_newScore}</div>\n              <div style="color:#7a8a30;font-size:10px;font-weight:700;letter-spacing:1.5px;margin-top:3px">RG</div>\n            </div>\n            ${_newGrade != null ? `<div style="background:#1a3a6a;border-radius:12px;padding:10px 18px;text-align:center;border:1px solid #2a4a7a">\n              <div style="color:#fff;font-size:30px;font-weight:900;font-family:'Noto Sans Display',sans-serif;line-height:1">${_newGrade}</div>\n              <div style="color:#8ab0d0;font-size:10px;font-weight:700;letter-spacing:1.5px;margin-top:3px">GRADE</div>\n            </div>` : ''}\n          </div>` : ''}\n          ${_trimWarn}\n          <button id="full-complete-btn"\n            style="align-self:center;width:auto;min-width:200px;padding:0 24px;height:44px;background:linear-gradient(180deg,#d4af37 0%,#a88a20 100%);color:#1a1408;border:none;font-size:15px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.4);">COMPLETE</button>\n        </div>`;
+      const _pqLabel = formData.pageQuality ? String(formData.pageQuality) : "Page Quality";
+      const _trimWarn = formData.fullTrimmingSuspected ? `<div style="color:#ff8060;font-size:12px">⚠ Trimming suspected</div>` : '';
+      const _fullResultsHtml = `\n        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;">\n          ${_newScore != null ? `<div style="display:flex;gap:12px;align-items:center;justify-content:center">\n            <div style="background:#1a2208;border-radius:12px;padding:10px 18px;text-align:center;border:1px solid #3a4a1a">\n              <div style="color:#b8d820;font-size:30px;font-weight:900;font-family:'Noto Sans Display',sans-serif;line-height:1">${_newScore}</div>\n              <div style="color:#7a8a30;font-size:10px;font-weight:700;letter-spacing:1.5px;margin-top:3px">RG</div>\n            </div>\n            ${_newGrade != null ? `<div style="background:#1a3a6a;border-radius:12px;padding:10px 18px;text-align:center;border:1px solid #2a4a7a">\n              <div style="color:#fff;font-size:30px;font-weight:900;font-family:'Noto Sans Display',sans-serif;line-height:1">${_newGrade}</div>\n              <div style="color:#8ab0d0;font-size:10px;font-weight:700;letter-spacing:1.5px;margin-top:3px">GRADE</div>\n            </div>` : ''}\n          </div>` : ''}\n          <div style="display:flex;align-items:center;justify-content:center;min-height:22px;">\n            <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">${_pqLabel}</div>\n          </div>\n          ${_trimWarn}\n          <button id="full-complete-btn"\n            style="align-self:center;width:auto;min-width:200px;padding:0 24px;height:44px;background:linear-gradient(180deg,#d4af37 0%,#a88a20 100%);color:#1a1408;border:none;font-size:15px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.4);">COMPLETE</button>\n        </div>`;
       if (window.RobograderScan && window.RobograderScan.slideResultsIntoPanel) {
         window.RobograderScan.slideResultsIntoPanel(_fullResultsHtml);
       }
