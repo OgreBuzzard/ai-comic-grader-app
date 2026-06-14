@@ -370,8 +370,8 @@ onAuthStateChanged(auth, async user => {
        Bronze = Assess Grade, Silver = Deep, Gold = Full, Purple = Restoration.
        All share the same height, radius, shadow, and letter-spacing. */
     .rg-btn-assess {
-      min-height: 60px; border-radius: 10px; font-size: 14px; font-weight: 700;
-      letter-spacing: 1.5px; width: 75%;
+      min-height: 76px; border-radius: 10px; font-size: 14px; font-weight: 700;
+      letter-spacing: 1.5px; width: 75%; padding: 12px 16px;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 2px 4px rgba(0,0,0,0.3);
     }
     .rg-btn-bronze {
@@ -1209,8 +1209,14 @@ onAuthStateChanged(auth, async user => {
     #splash-bg {
       position: absolute;
       inset: 0;
-      width: 100%;
-      height: 100%;
+      /* S17 jump-bug fix: was width:100%; height:100%. With viewport-fit=cover
+         + black-translucent status bar, height:100% resolves against the fixed
+         parent's box one frame before the safe-area band collapses, so the
+         background ends up ~49px short and #splash's #0a0a0a shows through as a
+         black band at the bottom (it self-corrected only when a later reflow
+         recomputed the height). inset:0 ties the bg to all four edges of the
+         (already-clipped) #splash box, so it can't be sized against a stale
+         height — it always exactly fills the parent. */
       background-image: url('assets/Robograder_Background.jpg');
       background-size: cover;
       background-position: center center;
@@ -3651,7 +3657,7 @@ function renderList() {
             fg: "#8a1a1a"
           },
           Watching: {
-            bg: "#fff0d8",
+            bg: "#ffd97a",
             fg: "#7a5018"
           },
           Print: {
@@ -3903,7 +3909,7 @@ function showDetail(id) {
         border: "#88b0d0"
       },
       Watching: {
-        bg: "#fff0d8",
+        bg: "#ffd97a",
         fg: "#7a5018",
         border: "#d8a868"
       },
@@ -4703,7 +4709,7 @@ function ownershipPillForForm() {
   const own = formData.ownership || "Owned";
   const styleByState = {
     Owned: { bg: "#d8e4f0", fg: "#1a4a6a", border: "#88b0d0" },
-    Watching: { bg: "#fff0d8", fg: "#7a5018", border: "#d8a868" },
+    Watching: { bg: "#ffd97a", fg: "#7a5018", border: "#d8a868" },
     Sold: { bg: "#f5d8d8", fg: "#8a1a1a", border: "#d09090" },
     Print: { bg: "#dcecd0", fg: "#2a5a18", border: "#9cc080" }
   };
@@ -7310,7 +7316,7 @@ function renderForm() {
         border: "#88b0d0"
       },
       Watching: {
-        bg: "#fff0d8",
+        bg: "#ffd97a",
         fg: "#7a5018",
         border: "#d8a868"
       },
