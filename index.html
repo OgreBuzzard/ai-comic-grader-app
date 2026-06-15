@@ -56,7 +56,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebas
 
 import { getFirestore, initializeFirestore, collection, getDocs, setDoc, deleteDoc, doc, onSnapshot, getDoc, updateDoc, increment, query, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signInWithCustomToken, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signInWithCustomToken, signInWithCredential, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject, listAll } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
 
@@ -131,6 +131,9 @@ window._signOut = signOut;
 window._onAuthStateChanged = onAuthStateChanged;
 
 window._GoogleAuthProvider = GoogleAuthProvider;
+
+window._OAuthProvider = OAuthProvider;
+window._signInWithCredential = signInWithCredential;
 
 window._loadingState = true;
 
@@ -3286,34 +3289,8 @@ async function dismissSampleIfNeeded() {
 async function signInGoogle() {
   try {
     if (window.Capacitor && window.Capacitor.isNativePlatform()) {
-      // iOS app: open Safari auth bridge, then poll for the custom token
-      const session = 'ios_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
-      window.open('https://robograder.app/auth-ios.html?s=' + session, '_blank');
-      // Show polling status
-      const iosStatus = document.getElementById('auth-ios-status');
-      if (iosStatus) iosStatus.style.display = 'block';
-      const poll = async () => {
-        for (let i = 0; i < 120; i++) {
-          await new Promise(r => setTimeout(r, 2000));
-          try {
-            const resp = await fetch('/api/ios-auth?session=' + session);
-            if (resp.ok) {
-              const data = await resp.json();
-              if (data.customToken) {
-                if (iosStatus) iosStatus.textContent = 'Signed in! Loading your collection...';
-                await window._signInWithCustomToken(window._auth, data.customToken);
-                await loadItems();
-                return true;
-              }
-            }
-          } catch (_) {}
-        }
-        return false;
-      };
-      const ok = await poll();
-      if (!ok) {
-        if (iosStatus) iosStatus.textContent = 'Sign-in timed out. Tap Continue to try again.';
-      }
+      // iOS app (S18): NATIVE Google sign-in, no browser. See _iosNativeSignIn.
+      await _iosNativeSignIn('google');
       return;
     }
     await window._signInWithPopup(window._auth, window._googleProvider);
@@ -3324,6 +3301,70 @@ async function signInGoogle() {
       alert("Sign in failed: " + e.message);
     }
   }
+}
+
+async function signInApple() {
+  try {
+    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+      // iOS app (S18): NATIVE Apple sign-in, no browser. See _iosNativeSignIn.
+      await _iosNativeSignIn('apple');
+      return;
+    }
+    // PWA has no Apple sign-in (removed for redirect loops); this is iOS-only.
+    alert("Apple sign-in is available in the iOS app.");
+  } catch (e) {
+    alert("Sign in failed: " + e.message);
+  }
+}
+
+// iOS native sign-in (S18). @capacitor-firebase/authentication does a NATIVE
+// Google/Apple sign-in (NO browser — this is the Apple-Guideline-4 fix),
+// returns a credential, and we hand it to the Firebase JS SDK via
+// signInWithCredential. The plugin proxy is reached at
+// window.Capacitor.Plugins.FirebaseAuthentication (this is a no-bundler build —
+// no npm import; the native bridge populates the proxy at runtime).
+//
+// IMPORTANT WKWebView gotcha (firebase-js-sdk #5497): signInWithCredential is
+// known to HANG and never resolve in WKWebView even though the sign-in
+// actually succeeds. So we do NOT await it for the UI. onAuthStateChanged
+// (the handler near the top of the module script) fires on sign-in and drives
+// the signed-in transition (hides auth, shows app, loads credits). We
+// fire-and-forget the credential sign-in and use a setTimeout backstop to load
+// items in case the listener fired before sign-in completed.
+async function _iosNativeSignIn(provider) {
+  const FA = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.FirebaseAuthentication;
+  if (!FA || typeof FA.signInWithGoogle !== 'function') {
+    alert("Sign-in unavailable: native auth plugin not found.");
+    return;
+  }
+  const status = document.getElementById('splash-signin-status') || document.getElementById('auth-ios-status');
+  if (status) { status.style.display = 'block'; status.textContent = 'Signing in\u2026'; }
+  let cred;
+  try {
+    if (provider === 'apple') {
+      const r = await FA.signInWithApple({ skipNativeAuth: true });
+      const c = r && r.credential;
+      if (!c || !c.idToken) throw new Error('No Apple credential returned');
+      cred = new window._OAuthProvider('apple.com').credential({ idToken: c.idToken, rawNonce: c.nonce });
+    } else {
+      const r = await FA.signInWithGoogle({ skipNativeAuth: true });
+      const c = r && r.credential;
+      if (!c || !c.idToken) throw new Error('No Google credential returned');
+      cred = window._GoogleAuthProvider.credential(c.idToken);
+    }
+  } catch (e) {
+    if (status) status.style.display = 'none';
+    // FIRST CUT: surface the full error so we can read the real user-cancel
+    // signature on device, THEN add benign-cancel suppression here.
+    alert("Sign in failed: " + ((e && (e.message || e.code)) || e));
+    return;
+  }
+  // Fire the JS-SDK sign-in WITHOUT awaiting (WKWebView hang). onAuthStateChanged
+  // takes over the UI. try/catch guards the synchronous throw path only.
+  try { window._signInWithCredential(window._auth, cred); } catch (e) {}
+  if (status) status.textContent = 'Signed in! Loading your collection\u2026';
+  // Backstop load in case onAuthStateChanged already fired before sign-in.
+  setTimeout(function() { try { loadItems(); } catch (e) {} }, 800);
 }
 
 async function signOutUser() {

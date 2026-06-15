@@ -68,8 +68,8 @@ mustReplace('D1 fetch interceptor', '<head>', `<head>
 
 // ── D2: firebase-auth import gains initializeAuth + indexedDBLocalPersistence ─
 mustReplace('D2 auth import',
-`import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signInWithCustomToken, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";`,
-`import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signInWithCustomToken, signOut, onAuthStateChanged, initializeAuth, indexedDBLocalPersistence } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";`);
+`import { getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signInWithCustomToken, signInWithCredential, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";`,
+`import { getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signInWithCustomToken, signInWithCredential, signOut, onAuthStateChanged, initializeAuth, indexedDBLocalPersistence } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";`);
 
 // ── D3: initializeAuth instead of getAuth ────────────────────────────────────
 mustReplace('D3 initializeAuth',
@@ -99,93 +99,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
   console.log(`ok  [D5 asset URLs] (${n} rewritten)`);
 }
 
-// ── D6: in-app browser sheet sign-in ─────────────────────────────────────────
-mustReplace('D6 browser sheet sign-in',
-`    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
-      // iOS app: open Safari auth bridge, then poll for the custom token
-      const session = 'ios_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
-      window.open('https://robograder.app/auth-ios.html?s=' + session, '_blank');
-      // Show polling status
-      const iosStatus = document.getElementById('auth-ios-status');
-      if (iosStatus) iosStatus.style.display = 'block';
-      const poll = async () => {
-        for (let i = 0; i < 120; i++) {
-          await new Promise(r => setTimeout(r, 2000));
-          try {
-            const resp = await fetch('/api/ios-auth?session=' + session);
-            if (resp.ok) {
-              const data = await resp.json();
-              if (data.customToken) {
-                if (iosStatus) iosStatus.textContent = 'Signed in! Loading your collection...';
-                await window._signInWithCustomToken(window._auth, data.customToken);
-                await loadItems();
-                return true;
-              }
-            }
-          } catch (_) {}
-        }
-        return false;
-      };
-      const ok = await poll();
-      if (!ok) {
-        if (iosStatus) iosStatus.textContent = 'Sign-in timed out. Tap Continue to try again.';
-      }
-      return;
-    }`,
-`    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
-      // iOS app (S17): open the auth bridge in external Safari. When sign-in
-      // completes, auth-ios.html redirects to the custom scheme robograder://
-      // auth-complete, which iOS hands back to this app — foregrounding it. A
-      // visibilitychange listener then polls /api/ios-auth for the custom token
-      // and finishes sign-in. NO Capacitor plugin required (the @capacitor/browser
-      // SPM package does not register in this no-bundler build). External Safari
-      // also shares the user's existing Google session, so returning users often
-      // skip the Google login entirely.
-      const session = 'ios_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
-      const iosStatus = document.getElementById('splash-signin-status') || document.getElementById('auth-ios-status');
-      if (iosStatus) { iosStatus.style.display = 'block'; iosStatus.textContent = 'Opening sign-in…'; }
-      window._iosPendingSession = session;
-      // Hook visibilitychange ONCE. Fires when the app returns to the foreground
-      // (via the robograder:// scheme handback, or a manual switch as a fallback).
-      if (!window._iosVisibilityHooked) {
-        window._iosVisibilityHooked = true;
-        document.addEventListener('visibilitychange', async function() {
-          if (document.visibilityState !== 'visible' || !window._iosPendingSession) return;
-          var s = window._iosPendingSession;
-          var status = document.getElementById('splash-signin-status') || document.getElementById('auth-ios-status');
-          if (status) { status.style.display = 'block'; status.textContent = 'Finishing sign-in…'; }
-          for (var attempt = 0; attempt < 20; attempt++) {
-            if (window._iosPendingSession !== s) return; // a newer attempt superseded this one
-            try {
-              var resp = await fetch('/api/ios-auth?session=' + s);
-              if (resp.ok) {
-                var data = await resp.json();
-                if (data.customToken) {
-                  window._iosPendingSession = null;
-                  if (status) status.textContent = 'Signed in! Loading your collection…';
-                  await window._signInWithCustomToken(window._auth, data.customToken);
-                  if (typeof window.exitSplashSigninAndShowApp === 'function') window.exitSplashSigninAndShowApp();
-                  await loadItems();
-                  return;
-                }
-              }
-            } catch (e) {}
-            await new Promise(function(r) { setTimeout(r, 1000); });
-          }
-          if (status) status.textContent = 'Sign-in not detected. Tap Continue to try again.';
-        });
-      }
-      // S17: Apple Guideline 4 — use SFSafariViewController (in-app sheet) via
-      // the Capacitor Browser plugin, NOT the full Safari app. Falls back to
-      // window.open only if the plugin isn't registered yet.
-      (function(){
-        var b = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser;
-        var url = 'https://robograder.app/auth-ios.html?s=' + session;
-        if (b && typeof b.open === 'function') { b.open({ url: url, presentationStyle: 'popover' }).catch(function(){ window.open(url, '_blank'); }); }
-        else { window.open(url, '_blank'); }
-      })();
-      return;
-    }`);
+// ── D6: REMOVED (S18) ──────────────────────────────────────────────────────
+// The external-Safari auth bridge is gone. Production index.html now does
+// NATIVE Google/Apple sign-in (window.Capacitor.Plugins.FirebaseAuthentication)
+// inside signInGoogle()/signInApple(), self-guarded by isNativePlatform(), so
+// the iOS file needs no sign-in delta. D2/D3/D4 (initializeAuth, no
+// getRedirectResult) STAY — getAuth still hangs in WKWebView.
 
 // ── D7a: splash markup — subtitle + sign-in panel ────────────────────────────
 mustReplace('D7a splash markup',
@@ -197,14 +116,15 @@ mustReplace('D7a splash markup',
        onerror="this.style.display='none'">
   <div id="splash-subtitle">COMIC GRADING APP</div>
   <div id="splash-signin">
-    <div class="splash-signin-with">
-      Sign in securely with
-      <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#c8c8c8" d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>
-      or
-      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#c8c8c8" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#c8c8c8" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#c8c8c8" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#c8c8c8" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-    </div>
-    <button id="splash-continue-btn" onclick="signInGoogle()">Continue</button>
-    <div id="splash-signin-status">Waiting for sign-in to complete...</div>
+    <button id="splash-apple-btn" onclick="signInApple()">
+      <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#ffffff" d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>
+      Sign in with Apple
+    </button>
+    <button id="splash-google-btn" onclick="signInGoogle()">
+      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      Continue with Google
+    </button>
+    <div id="splash-signin-status">Signing in\u2026</div>
     <div class="splash-signin-terms">By signing in you agree to our terms of service. Your collection data is private to your account.</div>
   </div>
 </div>`);
@@ -278,15 +198,16 @@ mustReplace('D7b splash CSS',
       display: flex; align-items: center; justify-content: center; gap: 8px;
       font-size: 13px; color: #b8b8b8;
     }
-    #splash-continue-btn {
-      display: flex; align-items: center; justify-content: center;
-      background: #2e7d32; color: #ffffff;
+    #splash-signin button {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
       box-shadow: 0 4px 14px rgba(0,0,0,0.35);
       border: none; border-radius: 10px;
-      padding: 14px 28px; font-size: 16px; font-weight: 700;
+      padding: 13px 24px; font-size: 16px; font-weight: 700;
       cursor: pointer; width: 280px; max-width: 80vw;
     }
-    #splash-continue-btn:active { filter: brightness(0.92); }
+    #splash-signin button:active { filter: brightness(0.92); }
+    #splash-apple-btn { background: #000000; color: #ffffff; }
+    #splash-google-btn { background: #ffffff; color: #1a1a1a; border: 1px solid #dadada; }
     #splash-signin-status {
       display: none;
       font-size: 13px; color: #cfcfcf; text-align: center;
