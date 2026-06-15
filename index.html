@@ -1030,7 +1030,7 @@ onAuthStateChanged(auth, async user => {
     .section-label { font-size: 11px; color: #8a7a6a; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 4px; }
     .field-val { font-size: 13px; color: #3a2e24; }
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
-    .notes-box { background: #f8f6f3; border: 1px solid #ddd8d0; border-radius: 4px; padding: 12px 14px; font-size: 13px; color: #3a2e24; line-height: 1.7; font-style: italic; }
+    .notes-box { background: #f8f6f3; border: 1px solid #ddd8d0; border-radius: 4px; padding: 12px 14px; font-size: 13px; color: #1a1614; line-height: 1.7; font-style: italic; }
     .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     .cost-box { background: #f8f6f3; border: 1px solid #ccc8c0; border-radius: 6px; padding: 14px 16px; }
     .treatment-btn { padding: 6px 14px; border-radius: 4px; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid; font-family: inherit; }
@@ -2547,9 +2547,8 @@ async function initFirebase() {
   await migrateComicsToItems();
   await migrateAllItemsToNested();
   await migrateCornerSwap();
-  _preloadLabelModule().then(mod => {
-    if (mod && typeof mod.clearLabelQueue === "function") mod.clearLabelQueue();
-  }).catch(() => {});
+  // S17: the label localStorage queue was removed (the Print ownership category
+  // is now the source of truth), so there's no longer a queue to clear on init.
   // S16 (C): one live listener does BOTH the initial load and live updates.
   // Previously startup ran loadItems() (a full getDocs) AND set up this
   // onSnapshot, fetching the whole collection twice. The first emission now
@@ -4118,7 +4117,7 @@ function showDetail(id) {
     html += `<div style="margin-top:16px"><div style="display:inline-block;padding:5px 12px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:1px;background:transparent;border:1px solid #d8d0c8;color:#5a4e44">Enhanceable?: ${txt}</div></div>`;
   }
   if (selected.notes) {
-    html += `<div style="margin-top:20px"><div class="section-label">My Notes</div><div style="font-size:13px;color:#6a5a4a;line-height:1.7">${esc(selected.notes)}</div></div>`;
+    html += `<div style="margin-top:20px"><div class="section-label">My Notes</div><div style="font-size:13px;color:#1a1614;line-height:1.7">${esc(selected.notes)}</div></div>`;
   }
   const showLabelNotes = isGraded && selected.cgcNotes && selected.cgcNotes.trim();
   if (showLabelNotes) {
@@ -4135,7 +4134,7 @@ function showDetail(id) {
   }
   const _aiText = selected.aiAssessment || selected.myAssessment || "";
   if (_aiText) {
-    html += `<div style="margin-top:20px"><div class="section-label">Condition Assessment</div><div class="notes-box" style="font-style:normal;color:#6a5a4a">${esc(_aiText)}</div></div>`;
+    html += `<div style="margin-top:20px"><div class="section-label">Condition Assessment</div><div class="notes-box" style="font-style:normal">${esc(_aiText)}</div></div>`;
   }
   const history = selected.assessmentHistory || [];
   if (history.length > 0) {

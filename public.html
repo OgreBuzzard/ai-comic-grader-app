@@ -461,7 +461,11 @@
   //   index 0=TL, 1=TR, 2=BL, 3=BR
   // Reconstructs the front cover layout when corners were captured properly.
   const cornerBlock = (() => {
-    if (!data.highGradeUnlocked || !data.cornerImages || data.cornerImages.length === 0) return '';
+    // S17: show Deep corner macros whenever they exist (matches Detail view).
+    // Was gated on data.highGradeUnlocked, which is often false for a Deep-
+    // assessed book (the persisted flag is highGradeTier/deepAssessmentRan), so
+    // the Deep images never displayed on the public page.
+    if (!data.cornerImages || !data.cornerImages.some(u => u)) return '';
     const ci = data.cornerImages;
     const labels = ['Top Left', 'Top Right', 'Bottom Left', 'Bottom Right'];
     let tiles = '';
@@ -625,9 +629,9 @@
     ${restoImgBlock}
     ${robogradePanelHTML}
     ${predictedBlock}
+    ${enhancementBlock}
     ${restorationBlock}
     ${notesBlock}
-    ${enhancementBlock}
   `;
 
   document.querySelector('.content').insertAdjacentHTML('beforeend', `

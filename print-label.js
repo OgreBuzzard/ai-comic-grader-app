@@ -30,13 +30,13 @@
 //
 // Public API:
 //   openLabelViewer(comic, allItems) — opens modal for the given comic.
-//                                       allItems is the items[] array used
-//                                       to look up queued comics at PDF time.
-//   clearLabelQueue()                 — clears the localStorage queue (called
-//                                       by app init for session-only behavior).
-
-const QUEUE_KEY = 'robograder.labelQueue.v1';
-const QUEUE_LIMIT = 20;
+//                                       allItems is the Print-category subset
+//                                       (the print queue); every graded book in
+//                                       it prints. S17: the old localStorage
+//                                       queue was removed — the Print ownership
+//                                       category is now the single source of
+//                                       truth, managed via the List-view LABEL
+//                                       toggle (togglePrintState in index.html).
 
 // ── Format definitions ─────────────────────────────────────────────────────
 // Two label sheet formats supported (S12, May 5):
@@ -223,53 +223,6 @@ function readOptions() {
 function writeOptions(opts) {
   try { localStorage.setItem(OPTIONS_KEY, JSON.stringify(opts)); }
   catch (e) { console.warn('[label options] write failed:', e); }
-}
-
-// ── Queue helpers (localStorage-backed) ────────────────────────────────────
-// Queue stores comic IDs only — labels render fresh from the items[] array
-// at print time, so re-graded books reflect the latest assessment.
-
-function readQueue() {
-  try {
-    const raw = localStorage.getItem(QUEUE_KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? arr : [];
-  } catch { return []; }
-}
-
-function writeQueue(arr) {
-  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(arr)); }
-  catch (e) { console.warn('[label queue] write failed:', e); }
-}
-
-function clearQueue() {
-  try { localStorage.removeItem(QUEUE_KEY); }
-  catch (e) { console.warn('[label queue] clear failed:', e); }
-}
-
-function isQueued(id) {
-  return readQueue().includes(id);
-}
-
-function addToQueue(id) {
-  const q = readQueue();
-  if (q.includes(id)) return q;
-  if (q.length >= QUEUE_LIMIT) return q;
-  q.push(id);
-  writeQueue(q);
-  return q;
-}
-
-function removeFromQueue(id) {
-  const q = readQueue().filter(x => x !== id);
-  writeQueue(q);
-  return q;
-}
-
-// Exposed so index.html can clear the queue on app load (per session-only spec).
-export function clearLabelQueue() {
-  clearQueue();
 }
 
 // ── Public entry point ─────────────────────────────────────────────────────
@@ -1645,10 +1598,11 @@ function ensureStylesInjected() {
 // ── Render the modal contents for a given comic ────────────────────────────
 
 function renderModal(modal, comic, allItems) {
-  const queue = readQueue();
-  const queueCount = queue.length;
-  const inQueue = queue.includes(comic.id);
-  const printDisabled = queueCount === 0 && !inQueue;
+  // S17: the Print ownership category IS the queue. Count every passed-in book
+  // with an RG grade. No localStorage queue, no per-book Add/Remove toggle.
+  const printable = (Array.isArray(allItems) ? allItems : []).filter(c => c && c.roboGrade);
+  const queueCount = printable.length;
+  const printDisabled = queueCount === 0;
 
   // S12: read user's persisted size + price-tag preferences. These drive
   // the label markup, the "X to a sheet" subtitle, and the PDF generation.
@@ -1667,20 +1621,6 @@ function renderModal(modal, comic, allItems) {
   const queueOverflow = queueCount > queueCap;
 
   const queueClass = queueOverflow ? 'lvm-queue-count full' : 'lvm-queue-count';
-
-  const queueBtnLabel = inQueue ? 'Remove from Queue' : `Add to Queue`;
-  // When in queue, use secondary style — "Remove from Queue" is an undo
-  // action, not destructive ("undestructive"). Destructive styling read as
-  // "are you sure you want to do this irreversibly" which overstates the
-  // weight; removing from queue is just reversing the recent add. Primary
-  // for the affirmative add when not in queue.
-  const queueBtnCategory = inQueue ? 'rg-btn-secondary' : 'rg-btn-primary';
-  // The "Remove from Queue" label is long; mark it for the small-font tweak.
-  const queueBtnSizeMod = inQueue ? 'rg-btn-queue-active' : '';
-  // Disable Add to Queue when the absolute QUEUE_LIMIT is reached — not
-  // the format-specific sheet count. Users can keep queuing past 7 in
-  // Large and the PDF will produce multiple pages, but past 20 we cap.
-  const queueBtnDisabled = (!inQueue && queueCount >= QUEUE_LIMIT);
 
   // Pluralize correctly on the subtitle. Tracks the active format's
   // sheetCount: 20 for Small (Avery 8161), 7 for Large (OL5450).
@@ -1771,7 +1711,6 @@ function renderModal(modal, comic, allItems) {
         </div>
       </div>
       <div class="lvm-actions">
-        <button class="rg-btn ${queueBtnCategory} rg-btn-md ${queueBtnSizeMod}" data-action="toggle-queue" ${queueBtnDisabled ? 'disabled' : ''}>${queueBtnLabel}</button>
         <button class="rg-btn rg-btn-primary rg-btn-md" data-action="print" ${printDisabled ? 'disabled' : ''}>Save as PDF</button>
       </div>
       ${buyLinkHTML}
@@ -1833,16 +1772,6 @@ function renderModal(modal, comic, allItems) {
   // as "freeze and step away", which preserves the queue. A "Back" button
   // reads as Cancel — and tapping it after just adding to the queue would
   // feel like erasing what you just added. Tap-outside avoids that conflict.
-  modal.querySelector('[data-action="toggle-queue"]').addEventListener('click', (e) => {
-    if (e.currentTarget.disabled) return;
-    if (isQueued(comic.id)) {
-      removeFromQueue(comic.id);
-    } else {
-      addToQueue(comic.id);
-    }
-    // Re-render to reflect new state
-    renderModal(modal, comic, allItems);
-  });
   modal.querySelector('[data-action="print"]').addEventListener('click', (e) => {
     if (e.currentTarget.disabled) return;
     handleSavePDF(modal, comic, allItems);
@@ -2060,18 +1989,14 @@ function loadScript(src) {
 }
 
 async function handleSavePDF(modal, currentComic, allItems) {
-  const queue = readQueue();
-  if (queue.length === 0) return;
-
-  const itemsById = new Map(allItems.map(c => [c.id, c]));
-  const comicsToprint = queue
-    .map(id => itemsById.get(id))
+  // S17: the Print ownership category IS the queue. Print every passed-in book
+  // that has an RG grade (only graded books get a label) — no separate
+  // localStorage queue. Books are added/removed via the List-view LABEL toggle.
+  const comicsToprint = (Array.isArray(allItems) ? allItems : [])
     .filter(c => c && c.roboGrade);
 
   if (comicsToprint.length === 0) {
-    alert('Queued labels could not be found. Queue cleared.');
-    clearQueue();
-    renderModal(modal, currentComic, allItems);
+    alert('No graded books in the print queue.');
     return;
   }
 
@@ -2087,8 +2012,6 @@ async function handleSavePDF(modal, currentComic, allItems) {
   try {
     await ensurePdfLibsLoaded();
     await generatePDF(comicsToprint, modal);
-    // Success — clear queue and re-render to show empty state
-    clearQueue();
     renderModal(modal, currentComic, allItems);
   } catch (err) {
     console.error('[label] PDF generation failed:', err);
