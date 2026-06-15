@@ -890,7 +890,7 @@
   // ASSESSING button into COMPLETE.
   function buildResultsPlaceholder() {
     return `
-      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;">
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">
         <div style="display:flex;gap:12px;justify-content:center;align-items:center;">
           <div style="width:64px;height:64px;border:1.5px solid #3a5010;background:#0f1a05;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
             <div style="font-size:22px;font-weight:800;color:#aaee30;line-height:1">0</div>
