@@ -445,12 +445,13 @@
       if (imgs[1]) html += `<div style="position:relative;border-radius:6px;overflow:hidden;background:#1a1a1a;aspect-ratio:3/4"><img src="${esc(imgs[1])}" loading="eager" onclick="openLightbox('${esc(imgs[1])}')" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;cursor:zoom-in"><div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.55);color:#fff;font-size:8px;padding:2px 5px;border-radius:3px;letter-spacing:0.5px">BACK</div></div>`;
       html += `</div>`;
     }
-    // Page Quality Interior + Spine side by side
-    if (imgs[2] || imgs[3]) {
-      html += `<div style="display:grid;grid-template-columns:${imgs[2] && imgs[3] ? '3fr 1fr' : '1fr'};gap:6px;margin-top:6px">`;
-      if (imgs[2]) html += `<div style="position:relative;border-radius:6px;overflow:hidden;background:#1a1a1a;aspect-ratio:3/2"><img src="${esc(imgs[2])}" loading="lazy" onclick="openLightbox('${esc(imgs[2])}')" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;cursor:zoom-in"><div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.55);color:#fff;font-size:8px;padding:2px 5px;border-radius:3px;letter-spacing:0.5px">INTERIOR</div></div>`;
-      if (imgs[3]) html += `<div style="position:relative;border-radius:6px;overflow:hidden;background:#1a1a1a;aspect-ratio:1/4"><img src="${esc(imgs[3])}" loading="lazy" onclick="openLightbox('${esc(imgs[3])}')" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;cursor:zoom-in"><div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.55);color:#fff;font-size:8px;padding:2px 5px;border-radius:3px;letter-spacing:0.5px;writing-mode:vertical-rl">SPINE</div></div>`;
-      html += `</div>`;
+    // S17: match Detail view — Spine as a wide horizontal strip on its own row,
+    // then Interior full-width on its own row.
+    if (imgs[3]) {
+      html += `<div style="position:relative;border-radius:6px;overflow:hidden;background:#1a1a1a;aspect-ratio:16/5;margin-top:6px"><img src="${esc(imgs[3])}" loading="lazy" onclick="openLightbox('${esc(imgs[3])}')" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;cursor:zoom-in"><div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.55);color:#fff;font-size:8px;padding:2px 5px;border-radius:3px;letter-spacing:0.5px">SPINE</div></div>`;
+    }
+    if (imgs[2]) {
+      html += `<div style="position:relative;border-radius:6px;overflow:hidden;background:#1a1a1a;aspect-ratio:3/2;margin-top:6px"><img src="${esc(imgs[2])}" loading="lazy" onclick="openLightbox('${esc(imgs[2])}')" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;cursor:zoom-in"><div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.55);color:#fff;font-size:8px;padding:2px 5px;border-radius:3px;letter-spacing:0.5px">INTERIOR</div></div>`;
     }
     html += `</div>`;
     return html;
@@ -489,17 +490,36 @@
   // field is absent so old links don't show an empty box.
   const predictedBlock = (() => {
     const g = data.predictedGrade;
-    if (g == null || g === '' ) return '';
-    const gv = String(g).includes('.') ? g : (parseFloat(g).toFixed ? parseFloat(g).toFixed(1) : g);
-    // S16: Purple when restoration detected
+    const pq = data.pageQuality;
+    if ((g == null || g === '') && !pq) return '';
     const _pubRestored = !!(data.restorationHighConfidence || (data.roboGrade && data.roboGrade.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(data.roboGrade.cgcNotes)));
     const _predBg = _pubRestored ? '#6a3ab0' : '#1a5fa8';
-    return `<div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin:22px 0">
-      <div style="font-size:11px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase">Predicted Grade</div>
-      <div style="width:104px;height:104px;background:${_predBg};border-radius:20px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,0.3)">
-        <div style="font-size:38px;font-weight:800;color:#fff;line-height:1">${gv}</div>
-      </div>
-      <div style="font-size:10px;color:#8a7a6a;text-align:center;max-width:280px;line-height:1.4;font-style:italic">Independent prediction. Robograder is not affiliated with any encapsulation grading service.</div>
+    // Match Detail view: dark container, "Predicted Grade" label, the predicted
+    // box, then page-quality pill, then the disclaimer.
+    let inner = '';
+    if (g != null && g !== '') {
+      const gv = String(g).includes('.') ? g : (parseFloat(g).toFixed ? parseFloat(g).toFixed(1) : g);
+      inner += `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;justify-content:center">
+        <div style="background:${_predBg};border-radius:14px;width:72px;height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,0.3)">
+          <div style="font-size:28px;font-weight:800;color:#fff;line-height:1">${gv}</div>
+          <div style="font-size:9px;color:rgba(255,255,255,0.8);letter-spacing:0.8px;margin-top:2px">CGC</div>
+        </div>
+      </div>`;
+    }
+    if (pq) {
+      const pqColors = {
+        'White': { bg:'#ffffff', text:'#3a3028' }, 'Off-White to White': { bg:'#fbf8f0', text:'#5a4e44' },
+        'Off-White': { bg:'#f4ecd8', text:'#5a4e44' }, 'Cream to Off-White': { bg:'#efe2c4', text:'#5a4e44' },
+        'Cream': { bg:'#ecdcb4', text:'#5a4e44' }, 'Tan to Off-White': { bg:'#e4d2a8', text:'#5a4e44' },
+        'Tan': { bg:'#d8c192', text:'#4a3e34' }, 'Brittle': { bg:'#c8a878', text:'#3a2e24' }
+      };
+      const pc = pqColors[pq] || { bg:'#f0ece6', text:'#5a4e44' };
+      inner += `<div style="display:flex;justify-content:center"><div style="background:${pc.bg};color:${pc.text};padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">${esc(pq)}</div></div>`;
+    }
+    return `<div style="margin:18px 0;padding:14px;background:#0d0d0f;border:1px solid #2a2a3a;border-radius:10px;display:flex;flex-direction:column;align-items:center;gap:12px">
+      <div style="font-size:10px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase;text-align:center;width:100%">Predicted Grade</div>
+      ${inner}
+      <div style="font-size:10px;color:#6a5a4a;text-align:center;width:100%;line-height:1.4;font-style:italic">Independent prediction. Robograder is not affiliated with any encapsulation grading service.</div>
     </div>`;
   })();
 

@@ -780,7 +780,7 @@
   }
 
   // ── DOM construction ────────────────────────────────────────────────
-  function buildDom(activeSlots) {
+  function buildDom(activeSlots, kind) {
     const stage = document.createElement('div');
     stage.className = 'rg-scan-stage';
     stage.id = 'rg-scan-stage';
@@ -872,7 +872,7 @@
     const results = document.createElement('div');
     results.className = 'rg-scan-results';
     results.id = 'rg-scan-results';
-    results.innerHTML = buildResultsPlaceholder();
+    results.innerHTML = buildResultsPlaceholder(kind);
     shell.appendChild(results);
 
     stage.appendChild(shell);
@@ -888,7 +888,21 @@
   // index.html's mountResults replaces this innerHTML at the end of
   // the animation with the real animated values, then transforms the
   // ASSESSING button into COMPLETE.
-  function buildResultsPlaceholder() {
+  function buildResultsPlaceholder(kind) {
+    if (kind === 'restoration') {
+      // Restoration does not produce a score — show an empty conclusion box
+      // (styled like the final RESTORATION-FOUND box) + ASSESSING button.
+      return `
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:14px;transform:translateY(-8px);">
+        <div id="result-resto-conclusion" style="min-width:220px;min-height:48px;display:flex;align-items:center;justify-content:center;padding:12px 22px;border-radius:10px;border:2px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04)">
+          <div style="font-size:16px;font-weight:800;letter-spacing:1.5px;text-align:center">&nbsp;</div>
+        </div>
+        <button id="assess-complete-btn" disabled
+          style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">
+          ASSESSING…
+        </button>
+      </div>`;
+    }
     return `
       <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">
         <div style="display:flex;gap:12px;justify-content:center;align-items:center;">
@@ -905,7 +919,7 @@
           <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>
         </div>
         <button id="assess-complete-btn" disabled
-          style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:13px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">
+          style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">
           ASSESSING…
         </button>
       </div>`;
@@ -1373,7 +1387,7 @@
     // Edge case: no photos. Build the shell anyway so the persistent
     // mode works for callers that wanted the shell up regardless. The
     // promise resolves immediately because there's nothing to scan.
-    _activeStage = buildDom(activeSlots);
+    _activeStage = buildDom(activeSlots, kind);
     debugLog('shell mounted to DOM');
 
     // S14: lock body scroll while the scan stage is up. Two bugs this

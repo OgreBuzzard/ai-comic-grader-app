@@ -365,6 +365,14 @@ onAuthStateChanged(auth, async user => {
       color: #b8d820;
     }
     .rg-btn-primary:active { background: #243010; }
+    /* S17: filled action buttons (View Link / Share / Give / Complain) — colored
+       fill instead of the white rg-btn-secondary, per app button logic. */
+    .rg-btn-action {
+      background: #3a7a20;
+      color: #ffffff;
+      border: 1.5px solid #2e6418;
+    }
+    .rg-btn-action:active { background: #2e6418; }
 
     /* S16: Assessment button tiers — brushed metal gradients.
        Bronze = Assess Grade, Silver = Deep, Gold = Full, Purple = Restoration.
@@ -3702,36 +3710,43 @@ function renderList() {
       }
       const ownOpen = collapsed[ownKey] === false;
       if (section.ownership && sections.length > 1) {
-        const ownColors = {
-          Owned: {
-            bg: "#e2e0dc",
-            fg: "#3a3632"
-          },
-          Sold: {
-            bg: "#e2e0dc",
-            fg: "#3a3632"
-          },
-          Watching: {
-            bg: "#e2e0dc",
-            fg: "#3a3632"
-          },
-          Print: {
-            bg: "#dcecd0",
-            fg: "#2a5a18"
-          }
-        };
-        const oc = ownColors[section.ownership] || ownColors["Owned"];
+        // S17: Owned/Sold/Watching headers are charcoal (white text) when
+        // EXPANDED, light gray (dark text) when COLLAPSED. Print uses the label
+        // green gradient (matches the printed labels).
+        const LABEL_GRADIENT = "linear-gradient(180deg, #58723b 0%, #93ab66 38%, #9ba37e 100%)";
+        let _headerBg, _headerFg;
+        if (section.ownership === "Print") {
+          _headerBg = LABEL_GRADIENT;
+          _headerFg = "#ffffff";
+        } else if (ownOpen) {
+          _headerBg = "#2a2724";
+          _headerFg = "#ffffff";
+        } else {
+          _headerBg = "#e2e0dc";
+          _headerFg = "#3a3632";
+        }
+        const oc = { bg: _headerBg, fg: _headerFg };
         const count = section.titles.reduce((n, t) => n + section.groups[t].length, 0);
         const printBtn = section.ownership === "Print"
-          ? `<button onclick="event.stopPropagation();printQueueSheet()" style="margin-left:auto;font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#fff;background:#2a5a18;border:none;border-radius:6px;padding:5px 12px;cursor:pointer">Print Sheet</button>`
+          ? `<button onclick="event.stopPropagation();printQueueSheet()" style="margin-left:auto;font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#fff;background:rgba(0,0,0,0.35);border:none;border-radius:6px;padding:5px 12px;cursor:pointer">Print Labels</button>`
           : "";
         html += `<div onclick="toggleOwnership('${escJsAttr(section.ownership)}')" style="display:flex;align-items:center;gap:8px;margin:18px 0 10px;padding:7px 12px;background:${oc.bg};border-radius:8px;cursor:pointer;user-select:none">\n          <span class="group-chevron${ownOpen ? " open" : ""}" style="color:${oc.fg}">›</span>\n          <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:${oc.fg}">${section.ownership}</span>\n          <span style="font-size:12px;color:${oc.fg};opacity:0.7;letter-spacing:0.5px">(${count})</span>${printBtn}\n        </div>`;
       }
       if (!ownOpen) return;
+      const LABEL_GRADIENT_ROW = "linear-gradient(180deg, #58723b 0%, #93ab66 38%, #9ba37e 100%)";
+      const GRAY_GRADIENT_ROW = "linear-gradient(180deg, #5a5a5a 0%, #8a8a8a 38%, #9a9a9a 100%)";
       const buildRow = c => {
         const thumbSrc = c.thumbnails?.[0] || c.images?.[0];
         const thumb = thumbSrc ? `<img class="comic-thumb" data-src="${thumbSrc}" decoding="async" style="background:#221d18">` : "";
-        return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0">\n                  <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>\n                  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">\n                    ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${formatIssue(c.issue, c.title)}</span>` : ""}\n                    ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                  </div>\n                </div>\n                ${buildListCgcPsaStack(c)}\n              </div>\n            </div>`;
+        // S17: mini LABEL button (upper-right). Tap to toggle this entry into the
+        // PRINT section (and back to its prior ownership). Label-green gradient
+        // normally; gray gradient when the entry is already in Print.
+        const _inPrint = (c.ownership || "Owned") === "Print";
+        const _canLabel = c.roboGrade && c.id !== SAMPLE_COMIC_ID;
+        const _labelBtn = _canLabel
+          ? `<button onclick="event.stopPropagation();togglePrintState('${esc(c.id)}')" title="${_inPrint ? "Remove from print queue" : "Add to print queue"}"\n              style="position:absolute;top:6px;right:8px;z-index:3;background:${_inPrint ? GRAY_GRADIENT_ROW : LABEL_GRADIENT_ROW};color:#fff;border:1px solid rgba(0,0,0,0.25);border-radius:5px;padding:2px 7px;font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:800;letter-spacing:1px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.3)">LABEL</button>`
+          : "";
+        return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0">\n                  <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>\n                  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">\n                    ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${formatIssue(c.issue, c.title)}</span>` : ""}\n                    ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                  </div>\n                </div>\n                ${buildListCgcPsaStack(c)}\n                ${_labelBtn}\n              </div>\n            </div>`;
       };
       section.titles.forEach(title => {
         const group = section.groups[title];
@@ -4197,17 +4212,29 @@ function showDetail(id) {
     } else {
       html += `<div style="display:flex;align-items:center;gap:12px;margin-top:20px">\n        <div style="flex:1">\n          <div style="font-size:13px;font-weight:700;color:#3a2e24;letter-spacing:0.05em">${isPublic ? "Public Listing" : "Private Listing"}</div>\n          <div style="font-size:11px;color:#8a7a6a;margin-top:3px;line-height:1.5">${isPublic ? "Robograde score and images can be viewed from public ID link" : "Info cannot be seen publicly"}</div>\n        </div>\n        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer;flex-shrink:0">\n          <input type="checkbox" ${isPublic ? "checked" : ""} onchange="togglePublicListing('${esc(selected.id)}', this.checked)"\n            style="opacity:0;width:0;height:0;position:absolute">\n          <span style="position:absolute;inset:0;border-radius:12px;background:${isPublic ? "#3a7a20" : "#bbb6ad"};transition:background 0.2s" id="detail-public-track"></span>\n          <span style="position:absolute;left:${isPublic ? "23px" : "3px"};top:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left 0.2s;box-shadow:0 1px 2px rgba(0,0,0,0.2)" id="detail-public-thumb"></span>\n        </label>\n      </div>`;
       if (isPublic && selected.roboGradeId) {
-        html += `<div style="display:flex;gap:10px;margin-top:10px">\n          <button class="rg-btn rg-btn-secondary rg-btn-md" onclick="openPublicPreview('${esc(selected.roboGradeId)}')">View Link</button>\n          <button class="rg-btn rg-btn-secondary rg-btn-md" onclick="sharePublicListing('${esc(selected.roboGradeId)}', '${esc(selected.title || "").replace(/'/g, "\\'")}', '${esc(selected.issue || "").replace(/'/g, "\\'")}')">Share</button>\n        </div>`;
+        html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">\n          <button class="rg-btn rg-btn-action rg-btn-md" onclick="openPublicPreview('${esc(selected.roboGradeId)}')">View Link</button>\n          <button class="rg-btn rg-btn-action rg-btn-md" onclick="sharePublicListing('${esc(selected.roboGradeId)}', '${esc(selected.title || "").replace(/'/g, "\\'")}', '${esc(selected.issue || "").replace(/'/g, "\\'")}')">Share</button>\n        </div>`;
       }
     }
   }
   const _canGive = !isSample && selected.roboGrade;
-  html += `<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">\n    ${!isSample && selected.roboGrade ? `<button class="rg-btn rg-btn-primary rg-btn-md" onclick="printLabel('${esc(selected.id)}')">Print Label</button>` : ""}\n    ${_canGive ? `<button class="rg-btn rg-btn-secondary rg-btn-md" onclick="openGiveDialog('${esc(selected.id)}')" style="min-width:120px">Give</button>` : ""}\n    <button class="rg-btn rg-btn-destructive rg-btn-md" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')" style="min-width:172px">Delete</button>\n  </div></div>`;
-  // S16: Complain button — mailto with entry ID in subject
+  // S17: bottom button grid — 3 rows.
+  //   Row 1 (public only): View Link | Share   (rendered above)
+  //   Row 2 (always):      Give | Complain
+  //   Row 3 (always):      Delete (centered, half-width)
+  // Print Label removed (batch printing now lives in List view). Complain is a
+  // regular button in the grid (replaces the old text link / Print Label slot).
+  const _giveBtn = _canGive
+    ? `<button class="rg-btn rg-btn-action rg-btn-md" onclick="openGiveDialog('${esc(selected.id)}')">Give</button>`
+    : `<span></span>`;
+  let _complainBtn = `<span></span>`;
   if (selected.roboGrade) {
-    const _cId = encodeURIComponent(selected.roboGradeId || selected.id);
-    html += `<div style="text-align:center;margin-top:16px;margin-bottom:8px"><a href="mailto:support@robograder.app?subject=Complaint%20%E2%80%94%20ID%20${_cId}&body=Entry%20ID%3A%20${_cId}%0A%0ADescribe%20the%20issue%3A%0A" style="font-size:12px;font-weight:700;color:#8a6a5a;letter-spacing:1px;text-decoration:none">COMPLAIN</a></div>`;
+    const _cId = (selected.roboGradeId || selected.id || "").toString().slice(-6).toUpperCase();
+    const _subjBits = [selected.title || "", selected.issue ? "#" + selected.issue : "", selected.issueDate || ""].filter(Boolean).join(" ");
+    const _subject = encodeURIComponent(`Complaint ID ${_cId} — ${_subjBits}`.trim());
+    const _body = encodeURIComponent("Describe the issue:\n");
+    _complainBtn = `<a class="rg-btn rg-btn-action rg-btn-md" href="mailto:support@robograder.app?subject=${_subject}&body=${_body}" style="display:flex;align-items:center;justify-content:center;text-decoration:none">Complain</a>`;
   }
+  html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    ${_giveBtn}\n    ${_complainBtn}\n  </div>\n  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    <button class="rg-btn rg-btn-destructive rg-btn-md" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')" style="grid-column:1 / span 2;justify-self:center;width:calc(50% - 5px)">Delete</button>\n  </div></div>`;
   document.getElementById("main").innerHTML = html;
   window.scrollTo(0, 0);
   document.querySelectorAll(".detail-cover, .photo-spine").forEach(img => {
@@ -4436,6 +4463,35 @@ async function printQueueSheet() {
     mod.openLabelViewer(queue[0], queue);
   } catch (e) {
     alert("Could not open the print sheet: " + (e && e.message || e));
+  }
+}
+
+// S17: toggle an entry into/out of the Print section from the List view's mini
+// LABEL button. Going TO Print stores the prior ownership; coming back restores
+// it. Persists to Firestore and re-renders the list (the book jumps sections).
+async function togglePrintState(id) {
+  const comic = items.find(c => c.id === id);
+  if (!comic) return;
+  const cur = comic.ownership || "Owned";
+  let next, update;
+  if (cur === "Print") {
+    // Restore to the remembered prior ownership (default Owned).
+    next = comic.priorOwnership || "Owned";
+    update = { ownership: next, priorOwnership: null };
+  } else {
+    next = "Print";
+    update = { ownership: "Print", priorOwnership: cur };
+  }
+  try {
+    const ref = fsDoc(window._db, "users", window._currentUser.uid, "items", id);
+    await fsSetDoc(ref, update, { merge: true });
+    comic.ownership = next;
+    comic.priorOwnership = update.priorOwnership;
+    const savedScroll = window.scrollY || document.documentElement.scrollTop || 0;
+    renderList();
+    requestAnimationFrame(() => window.scrollTo(0, savedScroll));
+  } catch (e) {
+    alert("Failed to update: " + e.message);
   }
 }
 
@@ -5593,7 +5649,7 @@ function mountResults(cgc, psa) {
   let badgesHtml = "";
   if (roboScore != null) badgesHtml += makeBadge("robograde", "anim-val-robo");
   if (predictedGrade) badgesHtml += makeBadge("predicted", "anim-val-cgc");
-  const resultsHtml = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n      <div id="result-grades" style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badgesHtml}</div>\n      <div id="result-pq" style="display:flex;align-items:center;justify-content:center;min-height:22px;">\n        <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n      </div>\n      <button id="assess-complete-btn" disabled\n        style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:13px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">\n        ASSESSING…\n      </button>\n    </div>`;
+  const resultsHtml = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n      <div id="result-grades" style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badgesHtml}</div>\n      <div id="result-pq" style="display:flex;align-items:center;justify-content:center;min-height:22px;">\n        <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n      </div>\n      <button id="assess-complete-btn" disabled\n        style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">\n        ASSESSING…\n      </button>\n    </div>`;
   window.RobograderScan.slideResultsIntoPanel(resultsHtml);
   dbg("mountResults: results html replaced");
   const roboEl = document.getElementById("anim-val-robo");
@@ -8312,14 +8368,9 @@ async function submitRestorationCheck() {
       { id: "resto-judge", label: "RESTORED JUDGMENT" }
     ];
     const _restoTracker = mountTierTracker("restoration", _restoSteps, { noAutoLight: true });
-    // S17: immediately replace the default RG/GRADE scan placeholder with the
-    // restoration panel — an empty conclusion box (styled like the final
-    // determination box) + an ASSESSING… button. No score/PQ boxes for
-    // restoration. Filled in at completion.
-    const _restoAssessingHtml = `\n        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:14px;transform:translateY(-8px);">\n          <div id="resto-conclusion" style="min-width:200px;min-height:44px;display:flex;align-items:center;justify-content:center;padding:12px 22px;border-radius:10px;border:2px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04)">\n            <div style="font-size:16px;font-weight:800;letter-spacing:1.5px;text-align:center">&nbsp;</div>\n          </div>\n          <button id="resto-complete-btn" disabled\n            style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:13px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">ASSESSING…</button>\n        </div>`;
-    if (window.RobograderScan && window.RobograderScan.slideResultsIntoPanel) {
-      window.RobograderScan.slideResultsIntoPanel(_restoAssessingHtml);
-    }
+    // The restoration scan placeholder already shows the empty conclusion box +
+    // ASSESSING button (buildResultsPlaceholder('restoration')) during the scan,
+    // so no RG/GRADE score boxes appear. Completion fills it in below.
     const resp = await apiPromise;
     if (!resp.ok) {
       const t = await resp.text();
@@ -8362,9 +8413,10 @@ async function submitRestorationCheck() {
       const _revealMs = _boxPlan.length * 1000; // after the last box lights
       const _judgeColor = _restoFound ? '#ff4040' : '#60c060';
       const _judgeLabel = _restoFound ? "RESTORATION INDICATED" : "NO RESTORATION FOUND";
-      // The empty conclusion box + ASSESSING… button were already injected at
-      // mount; fill them in when the boxes finish, and stop the grid/needle then
-      // (needle holds the existing grade — restoration doesn't change it).
+      // The empty conclusion box + ASSESSING… button are the scan placeholder's
+      // (#result-resto-conclusion / #assess-complete-btn). Fill them in when the
+      // boxes finish, with a smooth CSS transition (no pop), and stop the grid/
+      // needle (needle holds the existing grade — restoration doesn't change it).
       setTimeout(() => {
         if (window.RobograderScan && window.RobograderScan.stopGridCycle) window.RobograderScan.stopGridCycle();
         if (window.RobograderScan && window.RobograderScan.stopNeedlePulse) window.RobograderScan.stopNeedlePulse();
@@ -8372,14 +8424,16 @@ async function submitRestorationCheck() {
         if (window.RobograderScan && window.RobograderScan.sweepNeedleToScore && _heldScore != null) {
           window.RobograderScan.sweepNeedleToScore(_heldScore);
         }
-        const _concl = document.getElementById("resto-conclusion");
+        const _concl = document.getElementById("result-resto-conclusion");
         if (_concl) {
+          _concl.style.transition = "border-color 0.4s ease, background-color 0.4s ease";
           _concl.style.border = `2px solid ${_judgeColor}40`;
           _concl.style.background = _restoFound ? '#2a0a0a' : '#0a2a0a';
-          _concl.innerHTML = `<div style="color:${_judgeColor};font-size:16px;font-weight:800;letter-spacing:1.5px;text-align:center">${_judgeLabel}</div>`;
+          _concl.innerHTML = `<div style="color:${_judgeColor};font-size:16px;font-weight:800;letter-spacing:1.5px;text-align:center;transition:opacity 0.4s ease">${_judgeLabel}</div>`;
         }
-        const _cb = document.getElementById("resto-complete-btn");
+        const _cb = document.getElementById("assess-complete-btn");
         if (_cb) {
+          _cb.style.transition = "background-color 0.4s ease, color 0.4s ease";
           _cb.innerHTML = "COMPLETE";
           _cb.style.background = "#3a9ee0";
           _cb.style.color = "#fff";
@@ -8496,7 +8550,7 @@ async function submitFullAssessment() {
       { id: "full-interior", label: "INTERIOR CHECK" },
       { id: "full-confirm", label: "CONFIRMING GRADE" }
     ];
-    const _fullTracker = mountTierTracker("full", _fullSteps);
+    const _fullTracker = mountTierTracker("full", _fullSteps, { noAutoLight: true });
     // Now await the API response
     const resp = await apiPromise;
     if (!resp.ok) {
@@ -8506,8 +8560,10 @@ async function submitFullAssessment() {
     const result = await resp.json();
     if (result.fullAssessmentRan === true) {
       if (_fullTracker && _fullTracker.clearTimers) _fullTracker.clearTimers();
-      // Light all boxes done (Full has no per-box pass/fail).
-      _fullSteps.forEach(s => setStep(s.id, "done"));
+      // S17: light boxes sequentially 1s apart (the tracker's auto-light may not
+      // have reached them all if the API returned fast). Light each remaining box
+      // one second apart instead of all at once.
+      _fullSteps.forEach((s, i) => setTimeout(() => setStep(s.id, "done"), i * 1000));
       formData.fullAssessmentRan = true;
       stickTierUnlocks(formData);
       if (result.grade != null && Number.isFinite(parseFloat(result.grade))) {
@@ -8548,7 +8604,7 @@ async function submitFullAssessment() {
       let _badges = "";
       if (_newScore != null) _badges += `<div style="width:64px;height:64px;border:1.5px solid #3a5010;background:#0f1a05;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-robo" style="font-size:22px;font-weight:800;color:#aaee30;line-height:1">0</div>\n        <div style="font-size:9px;color:#aaee30;opacity:0.75;margin-top:2px;letter-spacing:0.8px">RG</div>\n      </div>`;
       if (_newGrade != null) _badges += `<div style="width:64px;height:64px;background:#2a5a8a;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-grade" style="font-size:22px;font-weight:800;color:#e0f0ff;line-height:1">0.0</div>\n        <div style="font-size:9px;color:#e0f0ff;opacity:0.75;margin-top:2px;letter-spacing:0.8px">GRADE</div>\n      </div>`;
-      const _fullResultsHtml = `\n        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n          <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${_badges}</div>\n          <div id="full-result-pq" style="display:flex;align-items:center;justify-content:center;min-height:22px;">\n            <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n          </div>\n          <button id="full-complete-btn" disabled\n            style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:52px;background:#5a5a5a;color:#bbb;border:none;font-size:13px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">ASSESSING…</button>\n        </div>`;
+      const _fullResultsHtml = `\n        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n          <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${_badges}</div>\n          <div id="full-result-pq" style="display:flex;align-items:center;justify-content:center;min-height:22px;">\n            <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n          </div>\n          <button id="full-complete-btn" disabled\n            style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">ASSESSING…</button>\n        </div>`;
       if (window.RobograderScan && window.RobograderScan.slideResultsIntoPanel) {
         window.RobograderScan.slideResultsIntoPanel(_fullResultsHtml);
       }
@@ -8566,6 +8622,7 @@ async function submitFullAssessment() {
       setTimeout(() => {
         const _cb = document.getElementById("full-complete-btn");
         if (!_cb) return;
+        _cb.style.transition = "background-color 0.4s ease, color 0.4s ease";
         _cb.innerHTML = "COMPLETE";
         _cb.style.background = "#3a9ee0";
         _cb.style.color = "#fff";
@@ -8588,9 +8645,8 @@ async function submitFullAssessment() {
     if (window.RobograderScan && window.RobograderScan.dismiss) {
       window.RobograderScan.dismiss();
     }
-    // S17 TEMP DIAGNOSTIC: surface the real error so we can see what's throwing
-    // (remove once the Full failure is identified).
-    alert("FULL DEBUG: " + e.message + "\n\n" + (e.stack || "").split("\n").slice(0, 4).join("\n"));
+    const userMsg = describeAssessmentError(e.message);
+    alert(userMsg || e.message);
   } finally {
     assessing = false;
     renderForm();
