@@ -603,6 +603,11 @@ function ensureStylesInjected() {
     font-family: 'Barlow Condensed', sans-serif;
     position: absolute; top: 14px;
   }
+  .rg-label .rg-stars {
+    position: absolute; top: 46px; left: 0; right: 0;
+    text-align: center; font-size: 28px; line-height: 1;
+    letter-spacing: 2px;
+  }
   .rg-label .rg-num-wrap {
     /* Holds ONLY the number. This is the flex child the score-box
        centers → the NUMBER is exactly centered, always. The precision
@@ -936,6 +941,10 @@ function ensureStylesInjected() {
     font-family: 'Barlow Condensed', sans-serif;
     position: absolute; top: 14px;
   }
+  .rg-label-l .rg-stars {
+    position: absolute; top: 46px; left: 0; right: 0;
+    text-align: center; font-size: 28px; line-height: 1; letter-spacing: 2px;
+  }
   .rg-label-l .rg-num-wrap {
     display: inline-flex;
     line-height: 1;
@@ -1200,6 +1209,10 @@ function ensureStylesInjected() {
     font-family: 'Barlow Condensed', sans-serif;
     position: absolute; top: 12px;
   }
+  .rg-label-square .rg-stars {
+    position: absolute; top: 40px; left: 0; right: 0;
+    text-align: center; font-size: 26px; line-height: 1; letter-spacing: 2px;
+  }
   .rg-label-square .rg-num-wrap {
     display: inline-flex;
     line-height: 1;
@@ -1396,6 +1409,10 @@ function ensureStylesInjected() {
     color: #6a8030; letter-spacing: 5px;
     font-family: 'Barlow Condensed', sans-serif;
     position: absolute; top: 22px;
+  }
+  .rg-label-large .rg-stars {
+    position: absolute; top: 72px; left: 0; right: 0;
+    text-align: center; font-size: 44px; line-height: 1; letter-spacing: 3px;
   }
   .rg-label-large .rg-num-wrap {
     display: inline-flex;
@@ -2290,7 +2307,9 @@ function renderLabelMarkup(comic, opts) {
     let _s = '';
     for (let i = 0; i < _t; i++) _s += '<span style="color:#e8c84a">\u2605</span>';
     if (_restoRan) _s += '<span style="color:#b58be0">\u2605</span>';
-    return `<div class="rg-stars" style="font-size:8px;line-height:1;letter-spacing:1px;margin-top:1px">${_s}</div>`;
+    // Absolutely positioned (out of flow) so the centered score number never
+    // moves — sits below the ROBOGRADE wordmark, above the number.
+    return `<div class="rg-stars">${_s}</div>`;
   })();
 
   // Precision suffix logic (same four-tier rule as the popup version):

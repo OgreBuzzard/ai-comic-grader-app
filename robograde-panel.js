@@ -236,12 +236,13 @@
     // styled as 1970s tractor-feed printout paper.
     return `<div style="background:${BG};border:1.5px solid ${OLIVE_MID};border-radius:12px;padding:14px 14px 0;margin-bottom:8px;overflow:hidden">
       <div style="font-size:12px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:10px;text-align:center">ROBOGRADE SCORE</div>
-      <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px">
-        <div style="background:${OLIVE};border-radius:16px;width:88px;height:88px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;border:1.5px solid ${OLIVE_MID};position:relative">
-          ${precision ? `<span style="font-family:system-ui,-apple-system,sans-serif;font-size:11px;font-weight:700;color:${OLIVE_LT};position:absolute;top:6px;right:7px;white-space:nowrap;letter-spacing:0.2px;line-height:1">${precision.replace('±', '± ')}</span>` : ''}
-          <div style="font-size:8px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:2px">RG${(() => {
-            // S17: tier stars — 1 Main / 2 Deep / 3 Full, + purple star if a
-            // Restoration check ran. Big box, so show RG label AND the stars.
+      <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px">
+        <div style="background:${OLIVE};border-radius:18px;width:104px;height:104px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px solid ${OLIVE_MID};position:relative">
+          ${precision ? `<span style="font-family:'Noto Sans Display',sans-serif;font-size:18px;font-weight:700;color:${OLIVE_LT};position:absolute;top:9px;right:9px;white-space:nowrap;line-height:1;display:inline-block;transform:scaleX(0.62);transform-origin:right center">${precision.replace('±', '± ')}</span>` : ''}
+          <div style="position:absolute;top:9px;left:0;right:0;text-align:center;pointer-events:none">${(() => {
+            // S17: tier stars, centered at the top of the box, ABSOLUTE (out of
+            // flow) so they never push the score off dead-center. No "RG" label —
+            // it's redundant with the "ROBOGRADE SCORE" header above the box.
             const _full = !!(comic && comic.fullAssessmentRan);
             const _deep = !!(comic && (comic.deepAssessmentRan || comic.highGradeTier || (comic.roboGrade && comic.roboGrade.deepAssessmentRan)));
             const _restoRan = !!(comic && comic.restorationCheckRan);
@@ -249,12 +250,10 @@
             let _s = '';
             for (let i = 0; i < _t; i++) _s += '<span style="color:#e8c84a">\u2605</span>';
             if (_restoRan) _s += '<span style="color:#b58be0">\u2605</span>';
-            return ` <span style="font-size:9px;letter-spacing:0.5px;vertical-align:middle">${_s}</span>`;
+            return `<span style="font-size:13px;letter-spacing:1px;line-height:1">${_s}</span>`;
           })()}</div>
-          <div style="position:relative;display:flex;justify-content:center;align-items:flex-end;width:100%">
-            <span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:40px;font-weight:900;color:${CHARTREUSE};line-height:1">${scoreRounded}</span>
-          </div>
-          <div style="font-size:8px;font-weight:700;color:#5a7028;letter-spacing:1px;margin-top:3px;opacity:0.85">V${rg.version || '2.0'}</div>
+          <span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:46px;font-weight:900;color:${CHARTREUSE};line-height:1">${scoreRounded}</span>
+          <div style="font-size:8px;font-weight:700;color:#5a7028;letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">V${rg.version || '2.0'}</div>
         </div>
         <div style="flex:1;display:grid;grid-template-columns:2fr 2fr 1fr;grid-template-rows:auto auto;gap:4px">
           <!-- Row 1: Front spans the full width of the sub-score grid. The

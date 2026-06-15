@@ -2412,14 +2412,16 @@ function buildListBadge(c) {
   if (c.roboGrade && c.roboGrade.score != null) {
     const rgScore = Math.round(c.roboGrade.score);
     const showPlus = rgScore >= 90 && rgScore < 100 && !c.highGradeUnlocked;
-    // S16: Purple for restored books, green for normal
+    // S17: match the dark score-box color used in every other view (was a
+    // lighter green tuned to the List background, which made it inconsistent and
+    // hid the stars). Purple for restored books, green otherwise.
     const _isRestored = !!(c.restorationHighConfidence || (c.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(c.cgcNotes)));
-    const _restoNeg = !!(c.restorationCheckRan && !c.restorationFlag && !_isRestored);
-    const bgColor = _isRestored ? '#d8c8f0' : '#e8f0c0';
-    const borderColor = _isRestored ? '#b098d0' : '#c8d098';
-    const numColor = _isRestored ? '#1a0a2a' : '#1a2208';
-    const lblColor = _isRestored ? '#6a4a8a' : '#5a7030';
-    return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:${numColor};line-height:1">${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#5a7030;margin-left:1px">+</span>' : ""}</div>\n      <div style="margin-top:2px">${assessmentTierStars(c, { size: 9 })}</div>\n    </div>`;
+    const bgColor = _isRestored ? '#1a1226' : '#152e10';
+    const borderColor = _isRestored ? '#4a2a6a' : '#3a5818';
+    const numColor = _isRestored ? '#c8a8e8' : '#b8d820';
+    // Score stays DEAD CENTER (cardinal rule). Stars are an absolutely-positioned
+    // overlay near the top so they never displace the number.
+    return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="position:absolute;top:4px;left:0;right:0;text-align:center">${assessmentTierStars(c, { size: 9 })}</div>\n      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:${numColor};line-height:1">${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#7aa838;margin-left:1px">+</span>' : ""}</div>\n    </div>`;
   }
   if (c.cgcGrade) return buildBadge(normalizeGrade(c.cgcGrade), "cgc-official", detectDesignation(c), true);
   if (c.psaGrade) return buildBadge(normalizeGrade(c.psaGrade), "psa-official", c.psaDesignation || "universal", true);
@@ -4309,7 +4311,16 @@ function openPublicPreview(roboGradeId) {
       if (e.target === modal) closePublicPreview();
     });
   }
-  modal.innerHTML = `\n    <div style="background:#fff;border-radius:14px;width:calc(100vw - 24px);max-width:720px;height:calc(100vh - 80px);display:flex;flex-direction:column;overflow:hidden">\n      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#f4f0e8;border-bottom:1px solid #e0d8c8">\n        <div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;color:#3a3028;letter-spacing:1px;text-transform:uppercase">Link Preview</div>\n        <button class="rg-btn rg-btn-ghost" onclick="closePublicPreview()" style="font-size:22px;padding:0 8px;min-height:auto" aria-label="Close">×</button>\n      </div>\n      <iframe src="/id/${roboGradeId}" style="flex:1;width:100%;border:none;background:#f5f3ee" title="Public listing preview"></iframe>\n    </div>\n  `;
+  // S17: the iframe must point at the PRODUCTION origin. On the PWA a relative
+  // "/id/:id" resolves to robograder.app and the Vercel rewrite serves
+  // public.html — fine. But in the iOS Capacitor app the page runs from the
+  // local bundle (capacitor://localhost), where "/id/:id" resolves against the
+  // app bundle and there is no such route, so the preview was blank. Always use
+  // the absolute https origin.
+  const _previewBase = (location.protocol === "https:" && /robograder\.app$/i.test(location.hostname))
+    ? "" // already on the production web origin — relative is fine
+    : "https://robograder.app";
+  modal.innerHTML = `\n    <div style="background:#fff;border-radius:14px;width:calc(100vw - 24px);max-width:720px;height:calc(100vh - 80px);display:flex;flex-direction:column;overflow:hidden">\n      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#f4f0e8;border-bottom:1px solid #e0d8c8">\n        <div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;color:#3a3028;letter-spacing:1px;text-transform:uppercase">Link Preview</div>\n        <button class="rg-btn rg-btn-ghost" onclick="closePublicPreview()" style="font-size:22px;padding:0 8px;min-height:auto" aria-label="Close">×</button>\n      </div>\n      <iframe src="${_previewBase}/id/${roboGradeId}" style="flex:1;width:100%;border:none;background:#f5f3ee" title="Public listing preview"></iframe>\n    </div>\n  `;
   const card = modal.firstElementChild;
   if (card) card.addEventListener("click", e => e.stopPropagation());
   modal.style.display = "flex";
@@ -8624,7 +8635,7 @@ async function submitFullAssessment() {
       // that start at 0 and animate, page-quality pill, ASSESSING… button that
       // becomes COMPLETE. Full is already-run by definition, so no UNLOCKED.
       let _badges = "";
-      if (_newScore != null) _badges += `<div style="width:64px;height:64px;border:1.5px solid #3a5010;background:#0f1a05;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-robo" style="font-size:22px;font-weight:800;color:#aaee30;line-height:1">0</div>\n        <div style="font-size:9px;color:#aaee30;opacity:0.9;margin-top:2px;letter-spacing:0.8px">RG <span style="letter-spacing:0">${(() => { let s='<span style=\"color:#e8c84a\">\u2605\u2605\u2605</span>'; if (formData.restorationCheckRan) s+='<span style=\"color:#b58be0\">\u2605</span>'; return s; })()}</span></div>\n      </div>`;
+      if (_newScore != null) _badges += `<div style="width:64px;height:64px;border:1.5px solid #3a5010;background:#0f1a05;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-robo" style="font-size:22px;font-weight:800;color:#aaee30;line-height:1">0</div>\n        <div style="font-size:9px;color:#aaee30;opacity:0.75;margin-top:2px;letter-spacing:0.8px">RG</div>\n      </div>`;
       if (_newGrade != null) _badges += `<div style="width:64px;height:64px;background:#2a5a8a;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-grade" style="font-size:22px;font-weight:800;color:#e0f0ff;line-height:1">0.0</div>\n        <div style="font-size:9px;color:#e0f0ff;opacity:0.75;margin-top:2px;letter-spacing:0.8px">GRADE</div>\n      </div>`;
       const _fullResultsHtml = `\n        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n          <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${_badges}</div>\n          <div id="full-result-pq" style="display:flex;align-items:center;justify-content:center;min-height:22px;">\n            <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n          </div>\n          <button id="full-complete-btn" disabled\n            style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">ASSESSING…</button>\n        </div>`;
       if (window.RobograderScan && window.RobograderScan.slideResultsIntoPanel) {
