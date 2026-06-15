@@ -604,7 +604,7 @@ function ensureStylesInjected() {
     position: absolute; top: 14px;
   }
   .rg-label .rg-stars {
-    position: absolute; top: 46px; left: 0; right: 0;
+    position: absolute; top: 44px; left: 0; right: 0;
     text-align: center; font-size: 24px; line-height: 1;
     letter-spacing: 2px;
   }
@@ -942,7 +942,7 @@ function ensureStylesInjected() {
     position: absolute; top: 14px;
   }
   .rg-label-l .rg-stars {
-    position: absolute; top: 46px; left: 0; right: 0;
+    position: absolute; top: 44px; left: 0; right: 0;
     text-align: center; font-size: 24px; line-height: 1; letter-spacing: 2px;
   }
   .rg-label-l .rg-num-wrap {
@@ -1210,7 +1210,7 @@ function ensureStylesInjected() {
     position: absolute; top: 12px;
   }
   .rg-label-square .rg-stars {
-    position: absolute; top: 40px; left: 0; right: 0;
+    position: absolute; top: 38px; left: 0; right: 0;
     text-align: center; font-size: 22px; line-height: 1; letter-spacing: 2px;
   }
   .rg-label-square .rg-num-wrap {
@@ -1411,7 +1411,7 @@ function ensureStylesInjected() {
     position: absolute; top: 22px;
   }
   .rg-label-large .rg-stars {
-    position: absolute; top: 72px; left: 0; right: 0;
+    position: absolute; top: 69px; left: 0; right: 0;
     text-align: center; font-size: 37px; line-height: 1; letter-spacing: 3px;
   }
   .rg-label-large .rg-num-wrap {

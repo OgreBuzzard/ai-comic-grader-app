@@ -175,7 +175,15 @@ mustReplace('D6 browser sheet sign-in',
           if (status) status.textContent = 'Sign-in not detected. Tap Continue to try again.';
         });
       }
-      window.open('https://robograder.app/auth-ios.html?s=' + session, '_blank');
+      // S17: Apple Guideline 4 — use SFSafariViewController (in-app sheet) via
+      // the Capacitor Browser plugin, NOT the full Safari app. Falls back to
+      // window.open only if the plugin isn't registered yet.
+      (function(){
+        var b = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser;
+        var url = 'https://robograder.app/auth-ios.html?s=' + session;
+        if (b && typeof b.open === 'function') { b.open({ url: url, presentationStyle: 'popover' }).catch(function(){ window.open(url, '_blank'); }); }
+        else { window.open(url, '_blank'); }
+      })();
       return;
     }`);
 
