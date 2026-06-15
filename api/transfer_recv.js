@@ -1,4 +1,9 @@
 // api/transfer_recv.js  (deploy path → /api/transfer_recv)
+// S17: silence the node:DEP0169 url.parse() deprecation warning. It originates
+// inside a dependency (not our code — this file uses req.query/req.body), fires
+// only on cold starts, and clutters the Vercel logs. process.noDeprecation
+// quiets it without touching the dependency.
+try { process.noDeprecation = true; } catch (_e) {}
 // ============================================================================
 // Merged endpoint (S15 May 27) — consolidates the two receive-side transfer
 // endpoints into one Vercel function to free a slot for api/assess_full.js.
@@ -20,10 +25,9 @@
 // handleRegisterCode() into their own files with the original names.
 // ============================================================================
 
-// firebase-admin is imported DYNAMICALLY inside setupAuth (below), matching
-// the pattern used by api/assess.js / checkout.js. A static top-level import
-// of firebase-admin/* fails on Vercel with "Failed to load the ES module" and
-// 500s the function — the working endpoints all defer the import to runtime.
+import { initializeApp, getApps, cert } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import { getFirestore } from 'firebase-admin/firestore';
 
 // ── shared helpers (deduplicated from the two source files) ─────────────────
 
@@ -56,9 +60,6 @@ async function setupAuth(req, res) {
     return null;
   }
   const sa = parseServiceAccount();
-  const { initializeApp, getApps, cert } = await import('firebase-admin/app');
-  const { getAuth } = await import('firebase-admin/auth');
-  const { getFirestore } = await import('firebase-admin/firestore');
   if (!getApps().length) initializeApp({ credential: cert(sa) });
   const auth = getAuth();
   const db = getFirestore();
@@ -282,9 +283,7 @@ async function handleRegisterCode(req, res) {
 // Create a PENDING transfer. Caller = User A (the giver).
 // Body: { sourceItemId, toCode, action: "send" }
 
-// ID_ALPHABET is already declared above (shared across the merged handlers) —
-// the S15 merge accidentally redeclared it here, which is a parse-time
-// duplicate-const error ("Failed to load the ES module" → 500). Removed.
+const ID_ALPHABET = '23456789ABCDEFGHIJKLMNPQRSTVWXYZ';
 const SAMPLE_ID = 'sample_unerring_robograder_1';
 const RATE_LIMIT_PER_HOUR = 250;
 
@@ -406,15 +405,6 @@ async function handleSend(req, res) {
 // ── router ──────────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
-  // CORS: the iOS Capacitor app calls this cross-origin (local file origin →
-  // robograder.app) and preflights with OPTIONS + Authorization header. The
-  // PWA is same-origin and never preflights. Answer the preflight first.
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, x-client-secret');
-  res.setHeader('Access-Control-Max-Age', '86400');
-  if (req.method === 'OPTIONS') return res.status(204).end();
-
   // Resolve action from query (GET-friendly) or body (POST).
   const queryAction = req.query && req.query.action;
   const bodyAction = req.body && req.body.action;
