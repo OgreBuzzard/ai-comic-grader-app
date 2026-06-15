@@ -1,9 +1,4 @@
 // api/transfer_recv.js  (deploy path → /api/transfer_recv)
-// S17: silence the node:DEP0169 url.parse() deprecation warning. It originates
-// inside a dependency (not our code — this file uses req.query/req.body), fires
-// only on cold starts, and clutters the Vercel logs. process.noDeprecation
-// quiets it without touching the dependency.
-try { process.noDeprecation = true; } catch (_e) {}
 // ============================================================================
 // Merged endpoint (S15 May 27) — consolidates the two receive-side transfer
 // endpoints into one Vercel function to free a slot for api/assess_full.js.
@@ -283,7 +278,7 @@ async function handleRegisterCode(req, res) {
 // Create a PENDING transfer. Caller = User A (the giver).
 // Body: { sourceItemId, toCode, action: "send" }
 
-const ID_ALPHABET = '23456789ABCDEFGHIJKLMNPQRSTVWXYZ';
+// ID_ALPHABET is already declared at module scope above (near randomCode).
 const SAMPLE_ID = 'sample_unerring_robograder_1';
 const RATE_LIMIT_PER_HOUR = 250;
 
