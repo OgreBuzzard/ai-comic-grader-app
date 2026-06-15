@@ -239,20 +239,21 @@
       <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px">
         <div style="background:${OLIVE};border-radius:18px;width:104px;height:104px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px solid ${OLIVE_MID};position:relative">
           ${precision ? `<span style="font-family:'Noto Sans Display',sans-serif;font-size:18px;font-weight:700;color:${OLIVE_LT};position:absolute;top:9px;right:9px;white-space:nowrap;line-height:1;display:inline-block;transform:scaleX(0.62);transform-origin:right center">${precision.replace('±', '± ')}</span>` : ''}
-          <div style="position:absolute;top:9px;left:0;right:0;text-align:center;pointer-events:none">${(() => {
-            // S17: tier stars, centered at the top of the box, ABSOLUTE (out of
-            // flow) so they never push the score off dead-center. No "RG" label —
-            // it's redundant with the "ROBOGRADE SCORE" header above the box.
+          <div style="position:absolute;top:6px;left:0;right:0;text-align:center;pointer-events:none;display:flex;justify-content:center">${(() => {
+            // S17: chunky SVG tier stars in the score-text color, centered at the
+            // top, ABSOLUTE (out of flow) so the score stays dead-center. No "RG"
+            // (redundant with the "ROBOGRADE SCORE" header).
             const _full = !!(comic && comic.fullAssessmentRan);
             const _deep = !!(comic && (comic.deepAssessmentRan || comic.highGradeTier || (comic.roboGrade && comic.roboGrade.deepAssessmentRan)));
             const _restoRan = !!(comic && comic.restorationCheckRan);
             let _t = 1; if (_full) _t = 3; else if (_deep) _t = 2;
+            const _star = (c) => `<svg viewBox="0 0 24 24" width="13" height="13" style="display:inline-block;vertical-align:middle"><path d="M12.00,2.00 15.64,6.98 21.51,8.91 17.90,13.92 17.88,20.09 12.00,18.20 6.12,20.09 6.10,13.92 2.49,8.91 8.36,6.98Z" fill="${c}"/></svg>`;
             let _s = '';
-            for (let i = 0; i < _t; i++) _s += '<span style="color:#e8c84a">\u2605</span>';
-            if (_restoRan) _s += '<span style="color:#b58be0">\u2605</span>';
-            return `<span style="font-size:13px;letter-spacing:1px;line-height:1">${_s}</span>`;
+            for (let i = 0; i < _t; i++) _s += _star(CHARTREUSE);
+            if (_restoRan) _s += _star('#b58be0');
+            return `<span style="display:inline-flex;gap:1px;align-items:center;line-height:1">${_s}</span>`;
           })()}</div>
-          <span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:46px;font-weight:900;color:${CHARTREUSE};line-height:1">${scoreRounded}</span>
+          <span style="font-family:'Noto Sans Display',sans-serif;font-weight:900;color:${CHARTREUSE};line-height:1;font-size:62px;display:inline-block;transform:scaleX(0.62);transform-origin:center">${scoreRounded}</span>
           <div style="font-size:8px;font-weight:700;color:#5a7028;letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">V${rg.version || '2.0'}</div>
         </div>
         <div style="flex:1;display:grid;grid-template-columns:2fr 2fr 1fr;grid-template-rows:auto auto;gap:4px">

@@ -605,7 +605,7 @@ function ensureStylesInjected() {
   }
   .rg-label .rg-stars {
     position: absolute; top: 46px; left: 0; right: 0;
-    text-align: center; font-size: 28px; line-height: 1;
+    text-align: center; font-size: 24px; line-height: 1;
     letter-spacing: 2px;
   }
   .rg-label .rg-num-wrap {
@@ -943,7 +943,7 @@ function ensureStylesInjected() {
   }
   .rg-label-l .rg-stars {
     position: absolute; top: 46px; left: 0; right: 0;
-    text-align: center; font-size: 28px; line-height: 1; letter-spacing: 2px;
+    text-align: center; font-size: 24px; line-height: 1; letter-spacing: 2px;
   }
   .rg-label-l .rg-num-wrap {
     display: inline-flex;
@@ -1211,7 +1211,7 @@ function ensureStylesInjected() {
   }
   .rg-label-square .rg-stars {
     position: absolute; top: 40px; left: 0; right: 0;
-    text-align: center; font-size: 26px; line-height: 1; letter-spacing: 2px;
+    text-align: center; font-size: 22px; line-height: 1; letter-spacing: 2px;
   }
   .rg-label-square .rg-num-wrap {
     display: inline-flex;
@@ -1412,7 +1412,7 @@ function ensureStylesInjected() {
   }
   .rg-label-large .rg-stars {
     position: absolute; top: 72px; left: 0; right: 0;
-    text-align: center; font-size: 44px; line-height: 1; letter-spacing: 3px;
+    text-align: center; font-size: 37px; line-height: 1; letter-spacing: 3px;
   }
   .rg-label-large .rg-num-wrap {
     display: inline-flex;
@@ -2304,11 +2304,14 @@ function renderLabelMarkup(comic, opts) {
     const _deep = !!(comic.deepAssessmentRan || comic.highGradeTier || (comic.roboGrade && comic.roboGrade.deepAssessmentRan));
     const _restoRan = !!comic.restorationCheckRan;
     let _t = 1; if (_full) _t = 3; else if (_deep) _t = 2;
+    // S17: chunky SVG star (short points, thick center) in the score color, not
+    // the pointy Unicode ★. Size comes from the .rg-stars CSS per format (the
+    // SVG fills the line via height:1em). Restoration star is purple.
+    const _green = _labelRestored ? _labelScoreColor : '#b8d820';
+    const _star = (c) => `<svg viewBox="0 0 24 24" style="height:1em;width:1em;display:inline-block;vertical-align:middle"><path d="M12.00,2.00 15.64,6.98 21.51,8.91 17.90,13.92 17.88,20.09 12.00,18.20 6.12,20.09 6.10,13.92 2.49,8.91 8.36,6.98Z" fill="${c}"/></svg>`;
     let _s = '';
-    for (let i = 0; i < _t; i++) _s += '<span style="color:#e8c84a">\u2605</span>';
-    if (_restoRan) _s += '<span style="color:#b58be0">\u2605</span>';
-    // Absolutely positioned (out of flow) so the centered score number never
-    // moves — sits below the ROBOGRADE wordmark, above the number.
+    for (let i = 0; i < _t; i++) _s += _star(_green);
+    if (_restoRan) _s += _star('#b58be0');
     return `<div class="rg-stars">${_s}</div>`;
   })();
 

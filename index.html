@@ -2161,31 +2161,32 @@ function isFullAssessmentComplete(item) {
   return !!(item && item.fullAssessmentRan === true);
 }
 
-// S17: Assessment-tier STAR GRAMMAR. Replaces the old bronze/silver/gold score-
-// box tinting. One gold star = Main assessment done, two = Deep, three = Full
-// (the highest tier reached). A purple star is appended when a Restoration check
-// has been run. Used on every surface that shows a score box (List, Detail, Edit,
-// display results, Link Preview, Labels). Pure presentation — reads tier state
-// from the same completion helpers used everywhere else.
-//   size: pixel font-size for the stars (small boxes ~9px, large ~13px)
-//   gap : letter-spacing between stars
+// S17: Assessment-tier STAR GRAMMAR. One star = Main, two = Deep, three = Full
+// (highest tier reached); a restoration star is appended when a Restoration
+// check has run. Uses a custom chunky 5-point star (inner ratio 0.55 → short
+// points, thick center) that stays legible at small sizes, NOT the pointy
+// Unicode ★. Stars inherit color from the caller (set color on the wrapper to
+// match the score text); the restoration star is purple.
+//   size: pixel box size per star
+//   color: gold/normal star fill (defaults to currentColor so it matches text)
+const TIER_STAR_PATH = "M12.00,2.00 15.64,6.98 21.51,8.91 17.90,13.92 17.88,20.09 12.00,18.20 6.12,20.09 6.10,13.92 2.49,8.91 8.36,6.98Z";
+function tierStarSVG(px, fill) {
+  return `<svg viewBox="0 0 24 24" width="${px}" height="${px}" style="display:inline-block;vertical-align:middle" aria-hidden="true"><path d="${TIER_STAR_PATH}" fill="${fill}"/></svg>`;
+}
 function assessmentTierStars(item, opts) {
   opts = opts || {};
   const size = opts.size || 10;
-  if (!item || !(item.roboGrade && item.roboGrade.score != null) ) {
-    // No Main assessment → no stars (caller decides whether to render anything).
-    if (!item || !item.roboGrade) return "";
-  }
-  let tier = 1; // Main (has a roboGrade)
+  const color = opts.color || "currentColor";
+  if (!item || !item.roboGrade) return "";
+  let tier = 1;
   if (isFullAssessmentComplete(item)) tier = 3;
   else if (isDeepAssessmentComplete(item)) tier = 2;
   const restorationRan = isRestorationCheckComplete(item);
-  const GOLD = "#e8c84a";
   const PURPLE = "#b58be0";
   let stars = "";
-  for (let i = 0; i < tier; i++) stars += `<span style="color:${GOLD}">★</span>`;
-  if (restorationRan) stars += `<span style="color:${PURPLE}">★</span>`;
-  return `<span style="font-size:${size}px;line-height:1;letter-spacing:1px;white-space:nowrap">${stars}</span>`;
+  for (let i = 0; i < tier; i++) stars += tierStarSVG(size, color);
+  if (restorationRan) stars += tierStarSVG(size, PURPLE);
+  return `<span style="line-height:1;white-space:nowrap;display:inline-flex;gap:1px;align-items:center">${stars}</span>`;
 }
 
 function isGoldenAgeBook(item) {
@@ -2421,7 +2422,7 @@ function buildListBadge(c) {
     const numColor = _isRestored ? '#c8a8e8' : '#b8d820';
     // Score stays DEAD CENTER (cardinal rule). Stars are an absolutely-positioned
     // overlay near the top so they never displace the number.
-    return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="position:absolute;top:4px;left:0;right:0;text-align:center">${assessmentTierStars(c, { size: 9 })}</div>\n      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:${numColor};line-height:1">${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#7aa838;margin-left:1px">+</span>' : ""}</div>\n    </div>`;
+    return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="position:absolute;top:2px;left:0;right:0;text-align:center;display:flex;justify-content:center">${assessmentTierStars(c, { size: 9, color: numColor })}</div>\n      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:${numColor};line-height:1">${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#7aa838;margin-left:1px">+</span>' : ""}</div>\n    </div>`;
   }
   if (c.cgcGrade) return buildBadge(normalizeGrade(c.cgcGrade), "cgc-official", detectDesignation(c), true);
   if (c.psaGrade) return buildBadge(normalizeGrade(c.psaGrade), "psa-official", c.psaDesignation || "universal", true);
