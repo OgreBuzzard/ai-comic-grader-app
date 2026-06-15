@@ -65,6 +65,7 @@
     max-width: 720px;
     padding: 18px 20px 12px;
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
   }
@@ -277,8 +278,8 @@
 <body>
 
 <header>
-  <img src="/assets/Robograder_Logo.webp" alt="Robograder" style="width:80px;height:auto;margin:0 auto 8px;display:block">
-  <div style="font-size:11px;letter-spacing:3px;color:#6a5a4a;text-align:center;font-weight:700">COMIC GRADING APP</div>
+  <img src="/assets/Robograder_Logo.webp" alt="Robograder" style="width:160px;height:auto;margin:0 auto 8px;display:block">
+  <div style="font-size:12px;letter-spacing:3px;color:#6a5a4a;text-align:center;font-weight:700">COMIC GRADING APP</div>
 </header>
 
 <div class="content">
@@ -405,6 +406,7 @@
         ${data.issueDate ? `<span class="book-date">${esc(formatIssueDateCompact(data.issueDate))}</span>` : ''}
       </div>` : ''}
       ${data.publisher ? `<div class="book-publisher">${esc(data.publisher)}</div>` : ''}
+      ${data.printing ? `<div class="book-publisher" style="opacity:0.8">${esc(data.printing)}</div>` : ''}
     </div>
   `;
 
@@ -532,9 +534,7 @@
   // S16: Enhancement badge
   const enhancementBlock = (() => {
     const e = data.enhancement || 'No';
-    const color = e === 'No' ? '#5a4a3a' : '#8a3a1a';
-    const bg = e === 'No' ? '#f0ece6' : '#fde8e0';
-    return `<div style="text-align:center;margin:12px 0"><span style="background:${bg};color:${color};padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;letter-spacing:0.5px">Enhancement: ${esc(e)}</span></div>`;
+    return `<div style="text-align:center;margin:12px 0"><span style="background:transparent;color:#5a4e44;border:1px solid #d8d0c8;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;letter-spacing:0.5px">Enhanceable?: ${esc(e)}</span></div>`;
   })();
 
   // S16: RG Notes
@@ -599,16 +599,15 @@
 
   app.innerHTML = `
     ${identityHTML}
-    ${robogradePanelHTML}
-    ${predictedBlock}
-    ${tierBadges}
-    ${enhancementBlock}
-    ${restorationBlock}
-    ${notesBlock}
     ${photoBlock}
     ${cornerBlock}
     ${interiorBlock}
     ${restoImgBlock}
+    ${robogradePanelHTML}
+    ${predictedBlock}
+    ${restorationBlock}
+    ${notesBlock}
+    ${enhancementBlock}
   `;
 
   document.querySelector('.content').insertAdjacentHTML('beforeend', `
