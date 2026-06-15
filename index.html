@@ -8801,31 +8801,12 @@ async function cameraOpen(state) {
     } catch (_afErr) { /* focusMode not supported on this device */ }
     const video = document.getElementById("camera-video");
     video.srcObject = initialStream;
-    // S16: Tap-to-focus — tap the viewfinder to focus at that point
-    video.onclick = async (e) => {
-      try {
-        // Use _cameraState.stream (always current) — NOT initialStream which goes stale after switchToLens
-        const currentStream = _cameraState && _cameraState.stream;
-        if (!currentStream) return;
-        const track = currentStream.getVideoTracks()[0];
-        if (!track) return;
-        const rect = video.getBoundingClientRect();
-        const x = (e.clientX - rect.left) / rect.width;
-        const y = (e.clientY - rect.top) / rect.height;
-        // Show focus indicator
-        const dot = document.createElement("div");
-        dot.style.cssText = `position:fixed;left:${e.clientX - 24}px;top:${e.clientY - 24}px;width:48px;height:48px;border:2px solid #b8d820;border-radius:50%;pointer-events:none;z-index:9999;opacity:1;transition:opacity 0.8s`;
-        document.body.appendChild(dot);
-        setTimeout(() => { dot.style.opacity = "0"; }, 200);
-        setTimeout(() => dot.remove(), 1000);
-        // Try pointOfInterest first (Chrome), fall back to plain single-shot (Safari)
-        try {
-          await track.applyConstraints({ advanced: [{ focusMode: "single-shot", pointOfInterest: { x, y } }] });
-        } catch (_e1) {
-          await track.applyConstraints({ advanced: [{ focusMode: "single-shot" }] }).catch(() => {});
-        }
-      } catch (_e) {}
-    };
+    // S17: tap-to-focus removed. Researched and confirmed unsupported on iOS
+    // Safari/WKWebView — getUserMedia exposes no focusMode/focusDistance/
+    // pointOfInterest constraints there (getCapabilities returns nothing for
+    // focus), so a tap could show a circle but never change focus. Real tap-to-
+    // focus would require a native AVFoundation plugin. Continuous autofocus
+    // (set above) is the best available on the web stack.
     try {
       const allDevices = await navigator.mediaDevices.enumerateDevices();
       const videoInputs = allDevices.filter(d => d.kind === "videoinput");
