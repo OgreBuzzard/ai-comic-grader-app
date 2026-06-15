@@ -2278,7 +2278,20 @@ function renderLabelMarkup(comic, opts) {
   const _labelRestoNeg = !!(comic.restorationCheckRan && !comic.restorationFlag && !_labelRestored);
   const _labelScoreColor = _labelRestored ? '#c8a8e8' : '#b8d820';
   const _labelBgColor = _labelRestored ? '#1a0a2a' : '#1a2208';
-  const _labelCheckHtml = _labelRestoNeg ? '<span style="color:#9a7ab8;font-size:9px;font-weight:900;margin-left:2px">✓</span>' : '';
+  const _labelCheckHtml = _labelRestoNeg ? '<span style="color:#9a7ab8;font-size:9px;font-weight:900;margin-left:2px">\u2713</span>' : '';
+  // S17: assessment-tier stars on the label score box (room here, so ROBOGRADE
+  // word stays and stars sit beneath it). 1 Main / 2 Deep / 3 Full + purple if
+  // a Restoration check ran.
+  const _labelTierStars = (() => {
+    const _full = !!comic.fullAssessmentRan;
+    const _deep = !!(comic.deepAssessmentRan || comic.highGradeTier || (comic.roboGrade && comic.roboGrade.deepAssessmentRan));
+    const _restoRan = !!comic.restorationCheckRan;
+    let _t = 1; if (_full) _t = 3; else if (_deep) _t = 2;
+    let _s = '';
+    for (let i = 0; i < _t; i++) _s += '<span style="color:#e8c84a">\u2605</span>';
+    if (_restoRan) _s += '<span style="color:#b58be0">\u2605</span>';
+    return `<div class="rg-stars" style="font-size:8px;line-height:1;letter-spacing:1px;margin-top:1px">${_s}</div>`;
+  })();
 
   // Precision suffix logic (same four-tier rule as the popup version):
   //   100 → no suffix
@@ -2386,6 +2399,7 @@ function renderLabelMarkup(comic, opts) {
       ${faceOpen}
       <div class="score-box"${_labelRestored ? ` style="background:${_labelBgColor}"` : ''}>
         <div class="rg-word">ROBOGRADE</div>
+        ${_labelTierStars}
         <div class="rg-num-wrap"><span class="rg-num"${_labelRestored ? ` style="color:${_labelScoreColor}"` : ''}>${score}</span>${_labelCheckHtml}</div>
         ${precision ? `<span class="rg-prec"${_labelRestored ? ` style="color:${_labelScoreColor};opacity:0.9"` : ''}>${precision}</span>` : ''}
         <div class="rg-v">${versionStr}</div>

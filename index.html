@@ -2161,6 +2161,33 @@ function isFullAssessmentComplete(item) {
   return !!(item && item.fullAssessmentRan === true);
 }
 
+// S17: Assessment-tier STAR GRAMMAR. Replaces the old bronze/silver/gold score-
+// box tinting. One gold star = Main assessment done, two = Deep, three = Full
+// (the highest tier reached). A purple star is appended when a Restoration check
+// has been run. Used on every surface that shows a score box (List, Detail, Edit,
+// display results, Link Preview, Labels). Pure presentation — reads tier state
+// from the same completion helpers used everywhere else.
+//   size: pixel font-size for the stars (small boxes ~9px, large ~13px)
+//   gap : letter-spacing between stars
+function assessmentTierStars(item, opts) {
+  opts = opts || {};
+  const size = opts.size || 10;
+  if (!item || !(item.roboGrade && item.roboGrade.score != null) ) {
+    // No Main assessment → no stars (caller decides whether to render anything).
+    if (!item || !item.roboGrade) return "";
+  }
+  let tier = 1; // Main (has a roboGrade)
+  if (isFullAssessmentComplete(item)) tier = 3;
+  else if (isDeepAssessmentComplete(item)) tier = 2;
+  const restorationRan = isRestorationCheckComplete(item);
+  const GOLD = "#e8c84a";
+  const PURPLE = "#b58be0";
+  let stars = "";
+  for (let i = 0; i < tier; i++) stars += `<span style="color:${GOLD}">★</span>`;
+  if (restorationRan) stars += `<span style="color:${PURPLE}">★</span>`;
+  return `<span style="font-size:${size}px;line-height:1;letter-spacing:1px;white-space:nowrap">${stars}</span>`;
+}
+
 function isGoldenAgeBook(item) {
   if (!item) return false;
   const d = String(item.issueDate || "");
@@ -2353,14 +2380,10 @@ function buildBadge(gradeVal, type, designation, sm, fullAssessment, deepAssessm
   if (restored && (type === "predicted" || type === "cgc-ai" || type === "psa-ai")) {
     return `<div class="${cls}" style="border-color:#7c3aed;background:linear-gradient(180deg,#9a6ad8 0%,#6a3ab0 100%)"><div class="ubadge-body" style="background:transparent"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.8)">${lbl}</div></div></div>`;
   }
-  if (fullAssessment && (type === "predicted" || type === "cgc-ai" || type === "psa-ai")) {
-    return `<div class="${cls}" style="border-color:#b8860b;background:linear-gradient(180deg,#d4af37 0%,#b8860b 100%)"><div class="ubadge-body" style="background:transparent"><div class="ubadge-num" style="color:#3a2a08">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(58,42,8,0.85)">${lbl}</div></div></div>`;
-  }
-  // S16: Deep Assessment (no Full yet) → silver box, distinct from the gold Full
-  // box and the blue raw-predicted box.
-  if (deepAssessment && (type === "predicted" || type === "cgc-ai" || type === "psa-ai")) {
-    return `<div class="${cls}" style="border-color:#8a8a8a;background:linear-gradient(180deg,#e8e8ec 0%,#a8a8b0 100%)"><div class="ubadge-body" style="background:transparent"><div class="ubadge-num" style="color:#2a2a30">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(42,42,48,0.85)">${lbl}</div></div></div>`;
-  }
+  // S17: Tier is now shown via STARS on the RG score box (assessmentTierStars),
+  // not by tinting the predicted badge gold/silver. The old Full→gold and
+  // Deep→silver branches were removed — predicted badges are neutral blue
+  // regardless of tier (purple still applies for restoration, above).
   if (type === "cgc-official" || type === "psa-official") {
     let sc = "#1a5fa8", sl = type === "psa-official" ? "PSA" : "CGC";
     if (designation === "restored") {
@@ -2396,7 +2419,7 @@ function buildListBadge(c) {
     const borderColor = _isRestored ? '#b098d0' : '#c8d098';
     const numColor = _isRestored ? '#1a0a2a' : '#1a2208';
     const lblColor = _isRestored ? '#6a4a8a' : '#5a7030';
-    return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:${numColor};line-height:1">${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#5a7030;margin-left:1px">+</span>' : ""}</div>\n      <div style="font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;color:${lblColor};letter-spacing:1px;margin-top:2px">RG${_restoNeg ? ` <span style="color:#7ab87a;font-size:8px">✓</span>` : ''}</div>\n    </div>`;
+    return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:${numColor};line-height:1">${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#5a7030;margin-left:1px">+</span>' : ""}</div>\n      <div style="margin-top:2px">${assessmentTierStars(c, { size: 9 })}</div>\n    </div>`;
   }
   if (c.cgcGrade) return buildBadge(normalizeGrade(c.cgcGrade), "cgc-official", detectDesignation(c), true);
   if (c.psaGrade) return buildBadge(normalizeGrade(c.psaGrade), "psa-official", c.psaDesignation || "universal", true);
@@ -8601,7 +8624,7 @@ async function submitFullAssessment() {
       // that start at 0 and animate, page-quality pill, ASSESSING… button that
       // becomes COMPLETE. Full is already-run by definition, so no UNLOCKED.
       let _badges = "";
-      if (_newScore != null) _badges += `<div style="width:64px;height:64px;border:1.5px solid #3a5010;background:#0f1a05;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-robo" style="font-size:22px;font-weight:800;color:#aaee30;line-height:1">0</div>\n        <div style="font-size:9px;color:#aaee30;opacity:0.75;margin-top:2px;letter-spacing:0.8px">RG</div>\n      </div>`;
+      if (_newScore != null) _badges += `<div style="width:64px;height:64px;border:1.5px solid #3a5010;background:#0f1a05;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-robo" style="font-size:22px;font-weight:800;color:#aaee30;line-height:1">0</div>\n        <div style="font-size:9px;color:#aaee30;opacity:0.9;margin-top:2px;letter-spacing:0.8px">RG <span style="letter-spacing:0">${(() => { let s='<span style=\"color:#e8c84a\">\u2605\u2605\u2605</span>'; if (formData.restorationCheckRan) s+='<span style=\"color:#b58be0\">\u2605</span>'; return s; })()}</span></div>\n      </div>`;
       if (_newGrade != null) _badges += `<div style="width:64px;height:64px;background:#2a5a8a;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-grade" style="font-size:22px;font-weight:800;color:#e0f0ff;line-height:1">0.0</div>\n        <div style="font-size:9px;color:#e0f0ff;opacity:0.75;margin-top:2px;letter-spacing:0.8px">GRADE</div>\n      </div>`;
       const _fullResultsHtml = `\n        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n          <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${_badges}</div>\n          <div id="full-result-pq" style="display:flex;align-items:center;justify-content:center;min-height:22px;">\n            <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n          </div>\n          <button id="full-complete-btn" disabled\n            style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">ASSESSING…</button>\n        </div>`;
       if (window.RobograderScan && window.RobograderScan.slideResultsIntoPanel) {

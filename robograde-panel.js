@@ -239,7 +239,18 @@
       <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:12px">
         <div style="background:${OLIVE};border-radius:16px;width:88px;height:88px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;border:1.5px solid ${OLIVE_MID};position:relative">
           ${precision ? `<span style="font-family:system-ui,-apple-system,sans-serif;font-size:11px;font-weight:700;color:${OLIVE_LT};position:absolute;top:6px;right:7px;white-space:nowrap;letter-spacing:0.2px;line-height:1">${precision.replace('±', '± ')}</span>` : ''}
-          <div style="font-size:8px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:2px">RG${_restorationNegative ? ` <span style="color:#7ab87a;font-size:10px">✓</span>` : ''}</div>
+          <div style="font-size:8px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:2px">RG${(() => {
+            // S17: tier stars — 1 Main / 2 Deep / 3 Full, + purple star if a
+            // Restoration check ran. Big box, so show RG label AND the stars.
+            const _full = !!(comic && comic.fullAssessmentRan);
+            const _deep = !!(comic && (comic.deepAssessmentRan || comic.highGradeTier || (comic.roboGrade && comic.roboGrade.deepAssessmentRan)));
+            const _restoRan = !!(comic && comic.restorationCheckRan);
+            let _t = 1; if (_full) _t = 3; else if (_deep) _t = 2;
+            let _s = '';
+            for (let i = 0; i < _t; i++) _s += '<span style="color:#e8c84a">\u2605</span>';
+            if (_restoRan) _s += '<span style="color:#b58be0">\u2605</span>';
+            return ` <span style="font-size:9px;letter-spacing:0.5px;vertical-align:middle">${_s}</span>`;
+          })()}</div>
           <div style="position:relative;display:flex;justify-content:center;align-items:flex-end;width:100%">
             <span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:40px;font-weight:900;color:${CHARTREUSE};line-height:1">${scoreRounded}</span>
           </div>
