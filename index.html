@@ -8306,6 +8306,14 @@ async function submitRestorationCheck() {
       { id: "resto-judge", label: "RESTORED JUDGMENT" }
     ];
     const _restoTracker = mountTierTracker("restoration", _restoSteps, { noAutoLight: true });
+    // S17: immediately replace the default RG/GRADE scan placeholder with the
+    // restoration panel — an empty conclusion box (styled like the final
+    // determination box) + an ASSESSING… button. No score/PQ boxes for
+    // restoration. Filled in at completion.
+    const _restoAssessingHtml = `\n        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:14px;transform:translateY(-8px);">\n          <div id="resto-conclusion" style="min-width:200px;min-height:44px;display:flex;align-items:center;justify-content:center;padding:12px 22px;border-radius:10px;border:2px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04)">\n            <div style="font-size:16px;font-weight:800;letter-spacing:1.5px;text-align:center">&nbsp;</div>\n          </div>\n          <button id="resto-complete-btn" disabled\n            style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:13px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">ASSESSING…</button>\n        </div>`;
+    if (window.RobograderScan && window.RobograderScan.slideResultsIntoPanel) {
+      window.RobograderScan.slideResultsIntoPanel(_restoAssessingHtml);
+    }
     const resp = await apiPromise;
     if (!resp.ok) {
       const t = await resp.text();
@@ -8327,19 +8335,9 @@ async function submitRestorationCheck() {
       formData._imagesChanged = true;
       onAssessmentSuccess();
       const _restoFound = formData.restorationFlag;
-      // S17: stop the cycling grid + needle pulse. Restoration does NOT change
-      // the grade, so hold the needle at the existing score instead of letting
-      // it drop to 0.
-      if (window.RobograderScan && window.RobograderScan.stopGridCycle) window.RobograderScan.stopGridCycle();
-      if (window.RobograderScan && window.RobograderScan.stopNeedlePulse) window.RobograderScan.stopNeedlePulse();
-      const _heldScore = formData.roboGrade ? Math.round(formData.roboGrade.score) : null;
-      if (window.RobograderScan && window.RobograderScan.sweepNeedleToScore && _heldScore != null) {
-        window.RobograderScan.sweepNeedleToScore(_heldScore);
-      }
-      // S17: light the 5 overlay boxes ONE SECOND APART (not instantly), each in
-      // its final colour — green (clear) or red (restoration found) per finding-
-      // group. The progress overlay carries the per-item result, so there is no
-      // text checklist.
+      // S17: light the 5 overlay boxes ONE SECOND APART, each in its final colour
+      // — green (clear) or red (restoration found) per finding-group. The grid +
+      // needle keep animating UNTIL the determination shows, then stop.
       const _findings = Array.isArray(result.findings) ? result.findings : [];
       const _foundIn = (areas) => _findings.some(f => areas.includes(f.area) && f.indicatorPresent === true);
       const _boxPlan = [
@@ -8356,17 +8354,18 @@ async function submitRestorationCheck() {
         }, i * 1000);
       });
       const _revealMs = _boxPlan.length * 1000; // after the last box lights
-      // S17: results panel — an empty conclusion box + an ASSESSING… button while
-      // the boxes light; when done the box shows the determination and the button
-      // becomes COMPLETE. No score box / page quality (unchanged by restoration),
-      // no scroll.
       const _judgeColor = _restoFound ? '#ff4040' : '#60c060';
       const _judgeLabel = _restoFound ? "RESTORATION INDICATED" : "NO RESTORATION FOUND";
-      const _restoResultsHtml = `\n        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:14px;transform:translateY(-8px);">\n          <div id="resto-conclusion" style="min-height:44px;display:flex;align-items:center;justify-content:center;padding:12px 22px;border-radius:10px;border:2px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04)">\n            <div style="color:#8a8a8a;font-size:14px;font-weight:700;letter-spacing:1.5px;text-align:center">&nbsp;</div>\n          </div>\n          <button id="resto-complete-btn" disabled\n            style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:52px;background:#5a5a5a;color:#bbb;border:none;font-size:13px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">ASSESSING…</button>\n        </div>`;
-      if (window.RobograderScan && window.RobograderScan.slideResultsIntoPanel) {
-        window.RobograderScan.slideResultsIntoPanel(_restoResultsHtml);
-      }
+      // The empty conclusion box + ASSESSING… button were already injected at
+      // mount; fill them in when the boxes finish, and stop the grid/needle then
+      // (needle holds the existing grade — restoration doesn't change it).
       setTimeout(() => {
+        if (window.RobograderScan && window.RobograderScan.stopGridCycle) window.RobograderScan.stopGridCycle();
+        if (window.RobograderScan && window.RobograderScan.stopNeedlePulse) window.RobograderScan.stopNeedlePulse();
+        const _heldScore = formData.roboGrade ? Math.round(formData.roboGrade.score) : null;
+        if (window.RobograderScan && window.RobograderScan.sweepNeedleToScore && _heldScore != null) {
+          window.RobograderScan.sweepNeedleToScore(_heldScore);
+        }
         const _concl = document.getElementById("resto-conclusion");
         if (_concl) {
           _concl.style.border = `2px solid ${_judgeColor}40`;
@@ -8583,9 +8582,9 @@ async function submitFullAssessment() {
     if (window.RobograderScan && window.RobograderScan.dismiss) {
       window.RobograderScan.dismiss();
     }
-    // S16: Show user-friendly error
-    const userMsg = describeAssessmentError(e.message);
-    alert(userMsg || e.message);
+    // S17 TEMP DIAGNOSTIC: surface the real error so we can see what's throwing
+    // (remove once the Full failure is identified).
+    alert("FULL DEBUG: " + e.message + "\n\n" + (e.stack || "").split("\n").slice(0, 4).join("\n"));
   } finally {
     assessing = false;
     renderForm();

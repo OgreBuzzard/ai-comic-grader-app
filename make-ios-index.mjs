@@ -224,7 +224,7 @@ mustReplace('D7b splash CSS',
     #splash-subtitle {
       position: absolute;
       left: 50%;
-      top: calc(env(safe-area-inset-top, 0px) + 5vh + 9vh);
+      top: calc(env(safe-area-inset-top, 0px) + 5vh + 7vh);
       transform: translate(-50%, -120vh);
       text-align: center;
       font-size: 16px;
@@ -498,6 +498,15 @@ mustReplace('D15 viewport-fit cover (iOS)',
 // mustReplace('D16 header Dynamic Island (iOS)',
 // '#header { background: #ffffff; border-bottom: 1px solid #d8d0c8; padding: calc(env(safe-area-inset-top, 0px) + 10px) 14px 10px; position: sticky; top: 0; z-index: 100; }',
 // '#header { background: #ffffff; border-bottom: 1px solid #d8d0c8; padding: calc(max(env(safe-area-inset-top, 0px), 59px) + 10px) 14px 10px; position: sticky; top: 0; z-index: 100; }');
+
+// ── D17: raise the splash subtitle on iOS ────────────────────────────────────
+// The PWA base CSS positions #splash-subtitle at 5vh+9vh. On iOS it should sit
+// higher (5vh+7vh). The D7b delta also defines #splash-subtitle, but the base
+// rule appears LATER in the generated file and would win, so rewrite the base
+// value directly here. PWA file keeps 9vh (untouched).
+mustReplace('D17 subtitle 7vh (iOS)',
+'top: calc(env(safe-area-inset-top, 0px) + 5vh + 9vh);',
+'top: calc(env(safe-area-inset-top, 0px) + 5vh + 7vh);');
 
 writeFileSync(outPath, html);
 console.log(`\nAll ${applied} deltas applied. Wrote ${outPath} (${html.length.toLocaleString()} bytes).`);
