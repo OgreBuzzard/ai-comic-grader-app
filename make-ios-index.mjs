@@ -177,8 +177,8 @@ mustReplace('D7b splash CSS',
       flex-direction: column;
       align-items: center;
       gap: 14px;
-      padding: 12vh 24px calc(env(safe-area-inset-bottom, 0px) + 4.5vh);
-      background: linear-gradient(to top, rgba(10,10,10,0.94) 0%, rgba(10,10,10,0.82) 55%, rgba(10,10,10,0) 100%);
+      padding: 8vh 24px calc(env(safe-area-inset-bottom, 0px) + 1vh);
+      background: linear-gradient(to top, rgba(10,10,10,0.68) 0%, rgba(10,10,10,0.4) 42%, rgba(10,10,10,0) 74%);
       transform: translateY(110%);
       opacity: 0;
       pointer-events: none;

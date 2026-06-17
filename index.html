@@ -3005,7 +3005,7 @@ const SAMPLE_COMIC = {
   title: "The Unerring Robograder",
   issue: "1",
   issueDate: "April 2026",
-  publisher: "Robograder",
+  publisher: "Robograder Comics",
   grade: "8.0",
   pageQuality: "Off-White to White",
   cgcGrade: "",
@@ -3018,7 +3018,7 @@ const SAMPLE_COMIC = {
   roboGrade: {
     version: "2.0",
     score: 80,
-    confidenceRange: 0,
+    confidenceRange: 6,
     frontScore: 37,
     backScore: 18,
     spineScore: 16,
@@ -3054,7 +3054,7 @@ const SAMPLE_COMIC = {
   cornerImages: [],
   keyInfo: "",
   aiGraderNotes: "",
-  aiAssessment: "Certified flawless by the Unerring Robograder.",
+  aiAssessment: "This comic shows some wear and tear, but is in relatively good condition for something that doesn't actually exist.",
   psaNotes: "",
   assessmentHistory: [],
   notes: ""
@@ -4034,7 +4034,7 @@ function showDetail(id) {
   const isSample = selected._isSample === true;
   let html = `<div class="sticky-back" style="display:flex;justify-content:space-between;align-items:center;gap:10px">\n    <button class="btn-ghost" onclick="showList()">← Back</button>\n    ${!isSample ? `<button class="btn btn-gold" onclick="showEdit('${esc(selected.id)}')">Edit</button>` : ""}\n  </div>\n  <div class="card" style="margin-top:4px;background:#fff">`;
   if (isSample) {
-    html += `<div style="background:#fff8e0;border:1px solid #c8a040;border-radius:10px;padding:12px 14px;margin-bottom:14px;display:flex;gap:12px;align-items:flex-start">\n      <div style="font-size:20px;flex-shrink:0">✨</div>\n      <div style="flex:1">\n        <div style="font-size:13px;font-weight:700;color:#6a4a08;letter-spacing:0.02em;margin-bottom:3px">Sample Entry</div>\n        <div style="font-size:12px;color:#7a5a1a;line-height:1.5">This is an example of what a graded book looks like. Add your first book to clear it, or tap Delete below to remove it now.</div>\n      </div>\n    </div>`;
+    html += `<div style="background:#fff8e0;border:1px solid #c8a040;border-radius:10px;padding:12px 14px;margin-bottom:14px">\n      <div style="font-size:13px;font-weight:700;color:#6a4a08;letter-spacing:0.02em;margin-bottom:3px">Sample Entry</div>\n      <div style="font-size:12px;color:#7a5a1a;line-height:1.5">This is an example of what a graded book looks like. Add your first book and it'll clear automatically.</div>\n    </div>`;
   }
   html += `<div>\n    <h2 style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:26px;font-weight:900;color:#0d0d0f;line-height:1.1;margin:0">${esc(selected.title)}</h2>\n    ${selected.issue || selected.issueDate ? `<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:6px">\n      ${selected.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:18px;font-weight:600;color:#3a2e24">${formatIssue(selected.issue, selected.title)}</span>` : ""}\n      ${selected.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(selected.issueDate))}</span>` : ""}\n    </div>` : ""}\n    ${selected.printing ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#6a5a4a;margin-top:4px">${esc(selected.printing)}</div>` : ""}\n    ${selected.publisher ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:500;color:#8a7a6a;margin-top:4px">${esc(selected.publisher)}</div>` : ""}\n    ${selected.cgcCert || selected.psaCert ? `<div style="font-family:'IBM Plex Mono','Menlo',monospace;font-size:13px;color:#5a4a3a;margin-top:6px;letter-spacing:0.3px">\n      ${selected.cgcCert ? `<div><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">CGC</span> <span style="margin-left:6px">${esc(selected.cgcCert)}</span></div>` : ""}\n      ${selected.psaCert ? `<div style="margin-top:2px"><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">PSA</span> <span style="margin-left:6px">${esc(selected.psaCert)}</span></div>` : ""}\n    </div>` : ""}\n  </div>`;
   const ownershipPillHtml = isSample ? "" : (() => {
@@ -4300,7 +4300,8 @@ function showDetail(id) {
     const _body = encodeURIComponent("Describe the issue:\n");
     _complainBtn = `<a class="rg-btn rg-btn-action rg-btn-md" href="mailto:support@robograder.app?subject=${_subject}&body=${_body}" style="display:flex;align-items:center;justify-content:center;text-decoration:none">Complain</a>`;
   }
-  html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    ${_giveBtn}\n    ${_complainBtn}\n  </div>\n  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    <button class="rg-btn rg-btn-destructive rg-btn-md" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')" style="grid-column:1 / span 2;justify-self:center;width:calc(50% - 5px)">Delete</button>\n  </div></div>`;
+  const _detailBtnGrids = isSample ? "" : `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    ${_giveBtn}\n    ${_complainBtn}\n  </div>\n  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    <button class="rg-btn rg-btn-destructive rg-btn-md" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')" style="grid-column:1 / span 2;justify-self:center;width:calc(50% - 5px)">Delete</button>\n  </div>`;
+  html += _detailBtnGrids + `</div>`;
   document.getElementById("main").innerHTML = html;
   window.scrollTo(0, 0);
   document.querySelectorAll(".detail-cover, .photo-spine").forEach(img => {
