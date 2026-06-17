@@ -10,6 +10,7 @@
 // Imports MUST stay at the very top (no statement before them) — a top-level
 // statement before ESM imports breaks Vercel's ESM detection (OPT_500, S17).
 import { SignedDataVerifier, Environment } from '@apple/app-store-server-library';
+import { X509Certificate } from 'crypto';
 
 const BUNDLE_ID = 'app.robograder';
 
@@ -25,9 +26,25 @@ const PRODUCT_CREDITS = {
 // binary cert into the serverless function. Set APPLE_ROOT_CA_G3 in Vercel to the
 // base64 of AppleRootCA-G3.cer (from https://www.apple.com/certificateauthority/).
 function loadAppleRootCAs() {
-  const b64 = process.env.APPLE_ROOT_CA_G3;
-  if (!b64) throw new Error('APPLE_ROOT_CA_G3 env var not set');
-  return [Buffer.from(b64, 'base64')];
+  let raw = process.env.APPLE_ROOT_CA_G3;
+  if (!raw) throw new Error('APPLE_ROOT_CA_G3 env var not set');
+  raw = raw.trim();
+  // Accept either PEM text or base64-encoded DER. Strip whitespace/line-wrapping
+  // from base64 — a wrapped/truncated paste was the original failure mode.
+  let der;
+  if (raw.indexOf('BEGIN CERTIFICATE') !== -1) {
+    der = Buffer.from(raw, 'utf8'); // PEM — X509Certificate parses it directly
+  } else {
+    der = Buffer.from(raw.replace(/\s+/g, ''), 'base64');
+  }
+  // Validate now with a clear message; otherwise the library throws an opaque
+  // OpenSSL "PEM routines: no start line" when the bytes aren't a real cert.
+  try {
+    new X509Certificate(der);
+  } catch (e) {
+    throw new Error('APPLE_ROOT_CA_G3 is not a valid certificate (decoded ' + der.length + ' bytes). Re-set it from AppleRootCA-G3.cer. Underlying: ' + e.message);
+  }
+  return [der];
 }
 
 // Peek the environment ("Sandbox"/"Production") from the UNVERIFIED JWS payload
