@@ -204,8 +204,10 @@ mustReplace('D7b splash CSS',
       border: none; border-radius: 10px;
       padding: 13px 24px; font-size: 16px; font-weight: 700;
       cursor: pointer; width: 280px; max-width: 80vw;
+      -webkit-tap-highlight-color: transparent; -webkit-appearance: none;
     }
     #splash-signin button:active { filter: brightness(0.92); }
+    #splash-signin button:disabled { opacity: 0.45; box-shadow: none; cursor: default; filter: none; }
     #splash-apple-btn { background: #000000; color: #ffffff; }
     #splash-google-btn { background: #ffffff; color: #1a1a1a; border: 1px solid #dadada; }
     #splash-signin-status {
@@ -342,44 +344,11 @@ mustReplace('D7f max-dwell guard',
     if (elapsed >= MIN_DWELL_MS) dismiss();
   });`);
 
-// ── D8: Path B in-app purchasing (S17) ───────────────────────────────────────
-// iOS can't navigate its own webview to Stripe (it would replace the app UI with
-// no way back). Open Stripe in the system browser instead, then refresh the
-// credit count when the app returns to the foreground. Crediting itself is
-// already handled server-side by the Stripe webhook — the app just re-reads the
-// balance. (Apple permits external payment links for US apps post-Epic ruling.)
-mustReplace('D8 purchase external browser',
-`    const data = await resp.json();
-    if (data.url) {
-      window.location.href = data.url;
-    } else {
-      alert("Failed to start checkout: " + (data.error || "Unknown error"));
-    }`,
-`    const data = await resp.json();
-    if (data.url) {
-      if (window.Capacitor && window.Capacitor.isNativePlatform()) {
-        // iOS: open Stripe in the system browser, not the app's webview, and
-        // refresh credits when the user returns. The webhook does the crediting.
-        window._purchaseInFlight = true;
-        if (!window._purchaseVisHooked) {
-          window._purchaseVisHooked = true;
-          document.addEventListener('visibilitychange', async function() {
-            if (document.visibilityState !== 'visible' || !window._purchaseInFlight) return;
-            window._purchaseInFlight = false;
-            // The webhook may lag a moment behind the redirect; poll the balance.
-            for (var i = 0; i < 8; i++) {
-              try { await loadUserCredits(); } catch (e) {}
-              await new Promise(function(r) { setTimeout(r, 1500); });
-            }
-          });
-        }
-        window.open(data.url, '_blank');
-      } else {
-        window.location.href = data.url;
-      }
-    } else {
-      alert("Failed to start checkout: " + (data.error || "Unknown error"));
-    }`);
+// ── D8: REMOVED (S18) ──────────────────────────────────────────────────────
+// Was: open Stripe in the system browser for iOS purchases. iOS now uses
+// NATIVE StoreKit IAP — production buyCredits() returns early into
+// _iosBuyCredits() (guarded by isNativePlatform) before any Stripe fetch, so
+// the external-browser path is dead on iOS. PWA still uses Stripe directly.
 
 // ── D9: disable SSE streaming on iOS (S17) ───────────────────────────────────
 // The website grades via a SAME-ORIGIN SSE stream. The iOS app rewrites the
