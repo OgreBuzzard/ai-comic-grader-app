@@ -3536,6 +3536,10 @@ async function buyCredits(pkg) {
     alert("Please sign in to purchase credits.");
     return;
   }
+  // iOS app: native StoreKit IAP (Apple Guideline 2.1b). PWA keeps Stripe.
+  if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+    return _iosBuyCredits(pkg);
+  }
   try {
     const token = await window._currentUser.getIdToken();
     const resp = await fetch("/api/checkout", {
@@ -3556,6 +3560,62 @@ async function buyCredits(pkg) {
     }
   } catch (e) {
     alert("Checkout error: " + e.message);
+  }
+}
+
+// Internal package key → App Store Connect consumable Product ID.
+const IOS_PRODUCT_IDS = {
+  comic_stack: 'app.robograder.credits.stack',
+  comic_wall:  'app.robograder.credits.wall',
+  short_box:   'app.robograder.credits.shortbox',
+};
+
+// iOS native purchase: StoreKit 2 via @capgo/native-purchases (NativePurchases).
+// purchase → get jwsRepresentation → server verifies + credits → refresh UI.
+// Crediting is server-side and idempotent (keyed on Apple transactionId), so a
+// retried POST never double-credits.
+async function _iosBuyCredits(pkg) {
+  const NP = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativePurchases;
+  const productId = IOS_PRODUCT_IDS[pkg];
+  if (!NP || !productId) { alert("Purchases are unavailable right now. Please try again."); return; }
+  let txn;
+  try {
+    txn = await NP.purchaseProduct({
+      productIdentifier: productId,
+      productType: 'inapp',
+      quantity: 1,
+      isConsumable: true,
+      autoAcknowledgePurchases: true
+    });
+  } catch (e) {
+    const msg = ((e && (e.message || e.code)) || '') + '';
+    // FIRST CUT: surface non-cancel errors verbatim so we learn the real
+    // user-cancel signature on device, then suppress it here.
+    if (!/cancel/i.test(msg)) alert("Purchase failed: " + msg);
+    return;
+  }
+  const jws = txn && txn.jwsRepresentation;
+  if (!jws) {
+    alert("Purchase couldn't be verified (no receipt). If you were charged, email support@robograder.app.");
+    return;
+  }
+  try {
+    const idToken = await window._currentUser.getIdToken();
+    const resp = await fetch("/api/verify_iap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + idToken },
+      body: JSON.stringify({ jws })
+    });
+    const data = await resp.json().catch(function(){ return {}; });
+    if (resp.ok && data.ok) {
+      await loadUserCredits();
+      hideBuyCredits();
+      alert("Added " + data.credits + " assessments to your account.");
+    } else {
+      alert("We couldn't credit your purchase: " + (data.error || "unknown error") + "\n\nIf you were charged, your receipt is on file — email support@robograder.app and we'll fix it.");
+    }
+  } catch (e) {
+    alert("Network error verifying your purchase. If you were charged, reopen the app or email support@robograder.app.");
   }
 }
 
