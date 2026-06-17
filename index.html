@@ -3632,35 +3632,56 @@ async function _iosBuyCredits(pkg) {
   }
 }
 
-// iOS: replace the modal's placeholder prices with StoreKit's real localized
-// prices, so what's shown matches what Apple actually charges (App Review
-// requires this). PWA never calls this — it keeps the Stripe prices.
-async function _iosLoadPrices() {
+let _iosPriceCache = null;       // cached StoreKit products
+let _iosPricePrefetched = false; // prefetch fired once
+
+// Apply StoreKit's real localized prices to the modal's price/unit elements.
+function _applyIosPrices(products) {
+  const byId = {};
+  Object.keys(IOS_PRODUCT_IDS).forEach(function(k) { byId[IOS_PRODUCT_IDS[k]] = k; });
+  (products || []).forEach(function(p) {
+    const key = byId[p.identifier];
+    if (!key) return;
+    const priceEl = document.getElementById('price-' + key);
+    if (priceEl && p.priceString) priceEl.textContent = p.priceString;
+    const unitEl = document.getElementById('unit-' + key);
+    const credits = IOS_CREDITS[key];
+    if (unitEl && typeof p.price === 'number' && credits) {
+      try {
+        const per = new Intl.NumberFormat(undefined, { style: 'currency', currency: p.currencyCode || 'USD' }).format(p.price / credits);
+        unitEl.textContent = '(' + per + ' each)';
+      } catch (e) { /* leave placeholder */ }
+    }
+  });
+}
+
+async function _iosFetchPrices() {
   const NP = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativePurchases;
-  if (!NP) return;
+  if (!NP) return null;
+  const res = await NP.getProducts({ productIdentifiers: Object.values(IOS_PRODUCT_IDS), productType: 'inapp' });
+  const products = (res && res.products) || [];
+  if (products.length) _iosPriceCache = products;
+  return products;
+}
+
+// Warm the cache + the (hidden) modal elements during list browsing, so when the
+// buy modal opens it shows the real $9.99/$29.99/$99.99 immediately — no $10 flash.
+function _iosPrefetchPrices() {
+  if (_iosPricePrefetched) return;
+  if (!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) return;
+  _iosPricePrefetched = true;
+  _iosFetchPrices().then(function(p) { if (p) _applyIosPrices(p); }).catch(function() {});
+}
+
+// Called when the buy modal opens (iOS). Uses the cache for an instant render;
+// falls back to a fetch if the prefetch hasn't completed. PWA never calls this.
+// If products aren't fetchable yet, the placeholder prices stay.
+async function _iosLoadPrices() {
+  if (_iosPriceCache) { _applyIosPrices(_iosPriceCache); return; }
   try {
-    const ids = Object.values(IOS_PRODUCT_IDS);
-    const res = await NP.getProducts({ productIdentifiers: ids, productType: 'inapp' });
-    const products = (res && res.products) || [];
-    const byId = {};
-    Object.keys(IOS_PRODUCT_IDS).forEach(function(k) { byId[IOS_PRODUCT_IDS[k]] = k; });
-    products.forEach(function(p) {
-      const key = byId[p.identifier];
-      if (!key) return;
-      const priceEl = document.getElementById('price-' + key);
-      if (priceEl && p.priceString) priceEl.textContent = p.priceString;
-      const unitEl = document.getElementById('unit-' + key);
-      const credits = IOS_CREDITS[key];
-      if (unitEl && typeof p.price === 'number' && credits) {
-        try {
-          const per = new Intl.NumberFormat(undefined, { style: 'currency', currency: p.currencyCode || 'USD' }).format(p.price / credits);
-          unitEl.textContent = '(' + per + ' each)';
-        } catch (e) { /* leave placeholder */ }
-      }
-    });
+    const products = await _iosFetchPrices();
+    if (products) _applyIosPrices(products);
   } catch (e) {
-    // Products not fetchable yet (e.g., Paid Apps Agreement still pending) —
-    // leave placeholder prices; the purchase path still uses the real Product IDs.
     console.log('[iap] getProducts failed:', e && e.message);
   }
 }
@@ -3800,8 +3821,20 @@ function showList() {
   });
 }
 
+// Print-label redesign (S18): the gradient LABEL badge is replaced by a small
+// print icon (rotate-icon green) that only appears once the user opts in. An
+// entry already in the Print section shows the icon with a red X (tap to remove).
+const PRINT_ICON_SVG = '<svg viewBox="0 0 100 100" width="24" height="24" fill="none" style="stroke:#7aa838;stroke-width:6;stroke-linecap:round;stroke-linejoin:round"><path d="M30,36 L30,21 A4,4 0 0 1 34,17 L66,17 A4,4 0 0 1 70,21 L70,36"/><path d="M30,66 L20,66 A8,8 0 0 1 12,58 L12,44 A8,8 0 0 1 20,36 L80,36 A8,8 0 0 1 88,44 L88,58 A8,8 0 0 1 80,66 L70,66"/><path d="M22,47 L33,47"/><rect x="30" y="58" width="40" height="28" rx="3"/><path d="M40,70 L60,70"/><path d="M40,78 L60,78"/></svg>';
+const PRINT_ICON_X_SVG = '<svg viewBox="0 0 100 100" width="24" height="24" fill="none" style="stroke:#7aa838;stroke-width:6;stroke-linecap:round;stroke-linejoin:round"><path d="M30,36 L30,21 A4,4 0 0 1 34,17 L66,17 A4,4 0 0 1 70,21 L70,36"/><path d="M30,66 L20,66 A8,8 0 0 1 12,58 L12,44 A8,8 0 0 1 20,36 L80,36 A8,8 0 0 1 88,44 L88,58 A8,8 0 0 1 80,66 L70,66"/><path d="M22,47 L33,47"/><rect x="30" y="58" width="40" height="28" rx="3"/><g style="stroke:#c0392b;stroke-width:7"><path d="M38,66 L62,82"/><path d="M62,66 L38,82"/></g></svg>';
+// Session opt-in: tapping "WANT TO PRINT LABELS? YES" reveals the icons. Also
+// considered on once any entry is in the Print state (derived from data, so it
+// stays on across reloads once the user has actually marked something).
+let _printOptInSession = false;
+function enablePrintMode() { _printOptInSession = true; renderList(); }
+
 function renderList() {
   const main = document.getElementById("main");
+  _iosPrefetchPrices(); // warm StoreKit prices during browsing (iOS only, once)
   if (window._loadingState) {
     main.innerHTML = `\n      <div style="padding:60px 20px;text-align:center;color:#8a7a6a">\n        <div style="width:32px;height:32px;border:3px solid #ddd8d0;border-top-color:#5a4a3a;border-radius:50%;animation:spin 0.9s linear infinite;margin:0 auto 16px"></div>\n        <div style="font-size:14px;letter-spacing:0.3px">Loading your collection…</div>\n      </div>\n    `;
     return;
@@ -3871,6 +3904,9 @@ function renderList() {
     };
   }).filter(Boolean);
   const hasRealBooks = items.some(c => c.id !== SAMPLE_COMIC_ID);
+  // Print mode: icons appear once opted in (this session) or once any entry is
+  // already in the Print state (so it stays on across reloads after real use).
+  const printModeEnabled = _printOptInSession || items.some(c => (c.ownership || "Owned") === "Print");
   let html = ``;
   const anyBooks = sections.some(s => s.titles.length > 0);
   if (!anyBooks) {
@@ -3916,13 +3952,13 @@ function renderList() {
       const buildRow = c => {
         const thumbSrc = c.thumbnails?.[0] || c.images?.[0];
         const thumb = thumbSrc ? `<img class="comic-thumb" data-src="${thumbSrc}" decoding="async" style="background:#221d18">` : "";
-        // S17: mini LABEL button (upper-right). Tap to toggle this entry into the
-        // PRINT section (and back to its prior ownership). Label-green gradient
-        // normally; gray gradient when the entry is already in Print.
+        // S18: print icon (upper-right) replaces the old LABEL badge. Shown only
+        // once print mode is opted into. Tap toggles the entry into/out of the
+        // Print section. In Print → icon shows a red X (tap to remove).
         const _inPrint = (c.ownership || "Owned") === "Print";
         const _canLabel = c.roboGrade && c.id !== SAMPLE_COMIC_ID;
-        const _labelBtn = _canLabel
-          ? `<button onclick="event.stopPropagation();togglePrintState('${esc(c.id)}')" title="${_inPrint ? "Remove from print queue" : "Add to print queue"}"\n              style="position:absolute;top:6px;right:8px;z-index:3;background:${_inPrint ? GRAY_GRADIENT_ROW : LABEL_GRADIENT_ROW};color:#fff;border:1px solid rgba(0,0,0,0.25);border-radius:5px;padding:2px 7px;font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:800;letter-spacing:1px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.3)">LABEL</button>`
+        const _labelBtn = (printModeEnabled && _canLabel)
+          ? `<button onclick="event.stopPropagation();togglePrintState('${esc(c.id)}')" title="${_inPrint ? "Remove from print queue" : "Add to print queue"}"\n              style="position:absolute;top:4px;right:6px;z-index:3;background:none;border:none;padding:2px;line-height:0;cursor:pointer">${_inPrint ? PRINT_ICON_X_SVG : PRINT_ICON_SVG}</button>`
           : "";
         return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0">\n                  <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>\n                  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">\n                    ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${formatIssue(c.issue, c.title)}</span>` : ""}\n                    ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                  </div>\n                </div>\n                ${buildListCgcPsaStack(c)}\n                ${_labelBtn}\n              </div>\n            </div>`;
       };
@@ -3948,6 +3984,12 @@ function renderList() {
         html += `</div>`;
       });
     });
+  }
+  // S18: print-label opt-in. If the user has a graded book but hasn't turned on
+  // print mode, offer it at the bottom; tapping reveals the per-entry print icons.
+  const _hasGraded = items.some(c => c.roboGrade && c.id !== SAMPLE_COMIC_ID);
+  if (_hasGraded && !printModeEnabled) {
+    html += `<div onclick="enablePrintMode()" style="margin:22px 0 6px;padding:13px;text-align:center;cursor:pointer;border-top:1px solid #ddd8d0;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#7a6a5a">Want to print labels? <span style="color:#7aa838">Yes</span></div>`;
   }
   const _tRender = Date.now();
   main.innerHTML = html;
@@ -9718,12 +9760,42 @@ function cancelTreatment(key, e) {
   renderForm();
 }
 
+// A book's RG score is only valid for the exact images it was graded on. We stamp
+// the roboGrade with a signature of its assessed images at save time, then block
+// re-saving if the images no longer match (unless a new assessment was run, which
+// replaces roboGrade with a fresh, un-stamped one). Query strings (Storage tokens)
+// are stripped so the same file produces a stable signature across saves.
+function _imageSig(images) {
+  return (images || []).filter(Boolean).map(function(u) { return String(u).split('?')[0]; }).join('|');
+}
+
+function showImageSwapBlocked() {
+  if (document.getElementById('img-swap-modal')) return;
+  const ov = document.createElement('div');
+  ov.id = 'img-swap-modal';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.innerHTML = '<div style="background:#fff;border-radius:16px;padding:26px 22px;max-width:360px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,0.3)">'
+    + '<h2 style="margin:0 0 10px;font-size:19px;color:#1a1008">New images need a new assessment</h2>'
+    + '<p style="margin:0 0 20px;font-size:14px;line-height:1.5;color:#5a4a3a">This book already has a Robograde score, and that score only applies to the images it was graded on. You\u2019ve replaced one or more images, so the entry can\u2019t be saved until you run a new assessment on the current images.</p>'
+    + '<button onclick="document.getElementById(\'img-swap-modal\').remove()" style="width:100%;padding:13px 16px;background:#1a1008;color:#c8a96e;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer">OK</button>'
+    + '</div>';
+  document.body.appendChild(ov);
+}
+
 async function submitForm() {
   if (!formData.title?.trim()) {
     return;
   }
   formData.title = normalizeTitle(formData.title.trim().replace(/\s+/g, " ").replace(/^The\s+/i, ""), formData.issueDate, formData.printing);
   if (formData.seller?.trim()) updateSellerList(formData.seller.trim());
+  // Anti-abuse gate: the RG score only applies to the images it was graded on.
+  // Block saving an assessed entry whose images have changed, unless re-assessed
+  // (a fresh assessment replaces roboGrade with one that has no imageSig yet).
+  if (formData.roboGrade && formData.roboGrade.imageSig &&
+      _imageSig(formData.images) !== formData.roboGrade.imageSig) {
+    showImageSwapBlocked();
+    return;
+  }
   const id = formData.id || buildComicId(formData.title, formData.issue);
   const rawImages = (formData.images || []).filter(Boolean);
   const rawCornerImages = (formData.cornerImages || []).filter(Boolean);
@@ -9822,6 +9894,11 @@ async function submitForm() {
     syncMsg(null);
     alert(`Image upload failed: ${e.message}\n\nPlease try again.`);
     return;
+  }
+  // Stamp the score with the signature of the images it's being saved with, so a
+  // later image swap (without re-assessment) is detected and blocked on next save.
+  if (formData.roboGrade) {
+    formData.roboGrade = { ...formData.roboGrade, imageSig: _imageSig(finalImages) };
   }
   const existingComicForMeta = formData.id ? items.find(c => c.id === formData.id) : null;
   const existingImagesMeta = formData.imagesMeta || existingComicForMeta?.imagesMeta || [];
