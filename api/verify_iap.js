@@ -12,7 +12,10 @@
 //
 // Imports MUST stay at the very top (no statement before them) — a top-level
 // statement before ESM imports breaks Vercel's ESM detection (OPT_500, S17).
-import { decodeTransaction } from 'app-store-server-api';
+// NOTE: app-store-server-api is pure ESM and is imported dynamically inside the
+// handler (after CORS headers are set) so a load failure returns a readable JSON
+// error with CORS rather than crashing the function before headers and surfacing
+// as an opaque "network error" on the cross-origin iOS client.
 
 const BUNDLE_ID = 'app.robograder';
 
@@ -54,6 +57,7 @@ export default async function handler(req, res) {
 
     let tx;
     try {
+      const { decodeTransaction } = await import('app-store-server-api');
       tx = await decodeTransaction(jws);
     } catch (e) {
       return res.status(400).json({ error: 'Receipt verification failed: ' + ((e && e.message) || e) });
