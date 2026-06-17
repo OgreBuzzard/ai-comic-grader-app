@@ -3627,6 +3627,15 @@ const IOS_CREDITS = { comic_stack: 10, comic_wall: 35, short_box: 125 };
 // purchase → get jwsRepresentation → server verifies + credits → refresh UI.
 // Crediting is server-side and idempotent (keyed on Apple transactionId), so a
 // retried POST never double-credits.
+// True if a purchase error is a user cancel (silent — no alert). Covers the
+// common StoreKit/@capgo cancel forms by message or code, plus SKError code 2.
+function _isCancelError(e) {
+  if (!e) return false;
+  const msg = ((e.message || '') + '').toLowerCase();
+  const code = ((e.code != null ? e.code : '') + '').toLowerCase();
+  return /cancel/.test(msg) || /cancel/.test(code) || code === '2';
+}
+
 async function _iosBuyCredits(pkg) {
   const NP = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativePurchases;
   const productId = IOS_PRODUCT_IDS[pkg];
@@ -3641,10 +3650,13 @@ async function _iosBuyCredits(pkg) {
       autoAcknowledgePurchases: true
     });
   } catch (e) {
-    const msg = ((e && (e.message || e.code)) || '') + '';
-    // FIRST CUT: surface non-cancel errors verbatim so we learn the real
-    // user-cancel signature on device, then suppress it here.
-    if (!/cancel/i.test(msg)) alert("Purchase failed: " + msg);
+    // A user cancel is silent. StoreKit/@capgo can signal cancel via the message
+    // ("cancel"/"cancelled"/"canceled"/"userCancelled"/"paymentCancelled") or via
+    // SKError code 2 (payment cancelled). Anything else is a real error to surface.
+    if (!_isCancelError(e)) {
+      const msg = ((e && (e.message || e.code)) || 'Unknown error') + '';
+      alert("Purchase failed: " + msg);
+    }
     return;
   }
   const jws = txn && txn.jwsRepresentation;
