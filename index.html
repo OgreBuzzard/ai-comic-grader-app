@@ -177,6 +177,7 @@ onAuthStateChanged(auth, async user => {
       window._publicByDefault = false;
     }
     await loadUserCredits();
+    _recoverPendingIaps(); // iOS: retry any purchase receipts that didn't finish crediting
     await checkTermsAcceptance();
     const _chestPreload = new Image;
     _chestPreload.src = "assets/Robograder_Scan_Frame.webp";
@@ -3627,6 +3628,81 @@ const IOS_CREDITS = { comic_stack: 10, comic_wall: 35, short_box: 125 };
 // purchase → get jwsRepresentation → server verifies + credits → refresh UI.
 // Crediting is server-side and idempotent (keyed on Apple transactionId), so a
 // retried POST never double-credits.
+// IAP recovery: if the server credit call fails after Apple has completed a
+// purchase, the receipt (JWS) is parked in localStorage and re-submitted on the
+// next launch. Crediting is idempotent server-side (keyed on Apple transactionId),
+// so re-submitting never double-credits. localStorage is deliberate here: it
+// survives the very network outage that caused the original failure, which a
+// Firestore write could not.
+const _PENDING_IAP_KEY = 'rg_pending_iap';
+function _getPendingIaps() {
+  try { return JSON.parse(localStorage.getItem(_PENDING_IAP_KEY) || '[]'); }
+  catch (e) { return []; }
+}
+function _savePendingIaps(arr) {
+  try { localStorage.setItem(_PENDING_IAP_KEY, JSON.stringify(arr || [])); } catch (e) {}
+}
+function _addPendingIap(jws) {
+  if (!jws) return;
+  const arr = _getPendingIaps();
+  if (arr.some(function(p) { return p.jws === jws; })) return; // dedupe
+  arr.push({ jws: jws, ts: Date.now(), tries: 0 });
+  _savePendingIaps(arr);
+}
+function _removePendingIap(jws) {
+  _savePendingIaps(_getPendingIaps().filter(function(p) { return p.jws !== jws; }));
+}
+
+// On launch (iOS, signed in), retry any parked receipts. Drops an entry once it
+// is credited, once the server returns a terminal 400 (bad/foreign receipt), or
+// after enough failed tries / too much age — so a bad receipt can't loop forever.
+let _recoveryRunning = false;
+async function _recoverPendingIaps() {
+  if (_recoveryRunning) return;
+  if (!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) return;
+  if (!window._currentUser) return;
+  const pending = _getPendingIaps();
+  if (!pending.length) return;
+  _recoveryRunning = true;
+  let recovered = 0;
+  try {
+    const idToken = await window._currentUser.getIdToken();
+    for (const entry of pending) {
+      let drop = false;
+      try {
+        const resp = await fetch("/api/verify_iap", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer " + idToken },
+          body: JSON.stringify({ jws: entry.jws })
+        });
+        const data = await resp.json().catch(function() { return {}; });
+        if (resp.ok && data.ok) {
+          drop = true;
+          if (!data.alreadyProcessed) recovered += (data.credits || 0);
+        } else if (resp.status === 400) {
+          drop = true; // terminal: receipt won't verify — retrying won't help
+        } else {
+          entry.tries = (entry.tries || 0) + 1; // 401/403/5xx — transient
+        }
+      } catch (e) {
+        entry.tries = (entry.tries || 0) + 1; // network — retry next launch
+      }
+      const ageDays = (Date.now() - (entry.ts || 0)) / 86400000;
+      if (!drop && (entry.tries >= 8 || ageDays > 14)) drop = true;
+      entry._drop = drop;
+    }
+    _savePendingIaps(pending.filter(function(p) { return !p._drop; }));
+    if (recovered > 0) {
+      await loadUserCredits();
+      alert("Added " + recovered + " assessments from a previous purchase that hadn't finished crediting.");
+    }
+  } catch (e) {
+    console.warn("[iap recovery] failed:", e);
+  } finally {
+    _recoveryRunning = false;
+  }
+}
+
 // True if a purchase error is a user cancel (silent — no alert). Covers the
 // common StoreKit/@capgo cancel forms by message or code, plus SKError code 2.
 function _isCancelError(e) {
@@ -3664,6 +3740,9 @@ async function _iosBuyCredits(pkg) {
     alert("Purchase couldn't be verified (no receipt). If you were charged, email support@robograder.app.");
     return;
   }
+  // Park the receipt before the server call so a failure here is recoverable on
+  // the next launch (idempotent server-side). Cleared on confirmed credit.
+  _addPendingIap(jws);
   try {
     const idToken = await window._currentUser.getIdToken();
     const resp = await fetch("/api/verify_iap", {
@@ -3673,6 +3752,7 @@ async function _iosBuyCredits(pkg) {
     });
     const data = await resp.json().catch(function(){ return {}; });
     if (resp.ok && data.ok) {
+      _removePendingIap(jws);
       await loadUserCredits();
       hideBuyCredits();
       alert("Added " + data.credits + " assessments to your account.");
@@ -3680,7 +3760,7 @@ async function _iosBuyCredits(pkg) {
       alert("We couldn't credit your purchase: " + (data.error || "unknown error") + "\n\nIf you were charged, your receipt is on file — email support@robograder.app and we'll fix it.");
     }
   } catch (e) {
-    alert("Network error verifying your purchase. If you were charged, reopen the app or email support@robograder.app.");
+    alert("Network error verifying your purchase. We'll automatically retry the next time you open the app. If it persists, email support@robograder.app.");
   }
 }
 
