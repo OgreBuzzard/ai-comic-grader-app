@@ -12,10 +12,14 @@
 //
 // Imports MUST stay at the very top (no statement before them) — a top-level
 // statement before ESM imports breaks Vercel's ESM detection (OPT_500, S17).
-// NOTE: app-store-server-api is pure ESM and is imported dynamically inside the
-// handler (after CORS headers are set) so a load failure returns a readable JSON
-// error with CORS rather than crashing the function before headers and surfacing
-// as an opaque "network error" on the cross-origin iOS client.
+// A static import is also REQUIRED for Vercel to detect this file as ESM at all;
+// without one it's parsed as CommonJS, `export default` throws at load, and the
+// function dies before setting CORS — surfacing as an opaque "network error" on
+// the cross-origin iOS client. So we keep a zero-risk Node built-in import here
+// and load the pure-ESM app-store-server-api dynamically inside the handler.
+// (Imported `process` is genuinely used below for process.env, so the bundler
+// can't drop it and ESM detection holds.)
+import process from 'node:process';
 
 const BUNDLE_ID = 'app.robograder';
 
