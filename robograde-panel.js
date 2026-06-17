@@ -70,8 +70,8 @@
     // Precision suffix logic (mirrors print-label.js exactly).
     // Score 100      → no suffix (perfect, no uncertainty)
     // High-grade run → ±N (narrower confidence range, default ±3, capped 6)
-    // Score ≥80, no high-grade → "+" (signals high-grade is available)
-    // Score <80, no high-grade → ±N (standard range, default ±8)
+    // Score ≥90, no high-grade → no suffix ('+' teaser removed S18)
+    // Score <90, no high-grade → ±N (standard range, default ±8)
     //
     // S12 May 6: client-side clamping applied here too, defending against
     // legacy records saved before the server-side clamp shipped:
@@ -87,8 +87,8 @@
         const headroom = Math.max(0, 100 - scoreRounded);
         if (n > headroom) n = headroom;
         precision = n > 0 ? `±${n}` : '';
-      } else if (scoreRounded >= 80) {
-        precision = '+';
+      } else if (scoreRounded >= 90) {
+        precision = '';
       } else {
         let n = rg.confidenceRange != null ? Math.round(rg.confidenceRange) : 8;
         n = Math.max(0, Math.min(16, n));

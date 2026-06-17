@@ -2356,8 +2356,8 @@ function renderLabelMarkup(comic, opts) {
       const headroom = Math.max(0, 100 - score);
       if (n > headroom) n = headroom;
       precision = n > 0 ? `±${n}` : '';
-    } else if (score >= 80) {
-      precision = '+';
+    } else if (score >= 90) {
+      precision = '';  // S18: '+' teaser removed
     } else {
       let n = rg.confidenceRange != null ? Math.round(rg.confidenceRange) : 8;
       n = Math.max(0, Math.min(16, n));

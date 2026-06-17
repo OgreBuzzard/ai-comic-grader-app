@@ -2415,7 +2415,6 @@ function aiCgcGrade(c) {
 function buildListBadge(c) {
   if (c.roboGrade && c.roboGrade.score != null) {
     const rgScore = Math.round(c.roboGrade.score);
-    const showPlus = rgScore >= 90 && rgScore < 100 && !c.highGradeUnlocked;
     // S17: match the dark score-box color used in every other view (was a
     // lighter green tuned to the List background, which made it inconsistent and
     // hid the stars). Purple for restored books, green otherwise.
@@ -2425,7 +2424,7 @@ function buildListBadge(c) {
     const numColor = _isRestored ? '#c8a8e8' : '#b8d820';
     // Score stays DEAD CENTER (cardinal rule). Stars are an absolutely-positioned
     // overlay near the top so they never displace the number.
-    return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="position:absolute;top:6px;left:0;right:0;text-align:center;display:flex;justify-content:center">${assessmentTierStars(c, { size: 9, color: numColor })}</div>\n      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:${numColor};line-height:1">${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#7aa838;margin-left:1px">+</span>' : ""}</div>\n    </div>`;
+    return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="position:absolute;top:6px;left:0;right:0;text-align:center;display:flex;justify-content:center;opacity:0.5">${assessmentTierStars(c, { size: 7.2, color: numColor })}</div>\n      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:${numColor};line-height:1">${rgScore}</div>\n    </div>`;
   }
   if (c.cgcGrade) return buildBadge(normalizeGrade(c.cgcGrade), "cgc-official", detectDesignation(c), true);
   if (c.psaGrade) return buildBadge(normalizeGrade(c.psaGrade), "psa-official", c.psaDesignation || "universal", true);
@@ -3039,7 +3038,7 @@ const SAMPLE_COMIC = {
   roboGradeId: "",
   roboGradeDate: "",
   highGradeTier: false,
-  highGradeUnlocked: false,
+  highGradeUnlocked: true,
   restorationCheckTier: false,
   restorationReport: null,
   restorationFlag: false,
@@ -3339,6 +3338,11 @@ async function _iosNativeSignIn(provider) {
   }
   const status = document.getElementById('splash-signin-status') || document.getElementById('auth-ios-status');
   if (status) { status.style.display = 'block'; status.textContent = 'Signing in\u2026'; }
+  // Block the splash sign-in buttons for the rest of the flow: prevents a
+  // double-tap firing two sign-ins, and stops them looking tappable while the
+  // collection loads after sign-in (onAuthStateChanged navigates away).
+  const _signinBtns = ['splash-apple-btn', 'splash-google-btn'].map(function(id){ return document.getElementById(id); }).filter(Boolean);
+  _signinBtns.forEach(function(b){ b.disabled = true; });
   let cred;
   try {
     if (provider === 'apple') {
@@ -3354,6 +3358,7 @@ async function _iosNativeSignIn(provider) {
     }
   } catch (e) {
     if (status) status.style.display = 'none';
+    _signinBtns.forEach(function(b){ b.disabled = false; });
     // FIRST CUT: surface the full error so we can read the real user-cancel
     // signature on device, THEN add benign-cancel suppression here.
     alert("Sign in failed: " + ((e && (e.message || e.code)) || e));
@@ -4215,7 +4220,7 @@ function showDetail(id) {
           if (h.rgHighGradeUnlocked && h.rgConfidenceRange != null) {
             precSuffix = h.rgConfidenceRange > 0 ? ` ±${h.rgConfidenceRange}` : "";
           } else if (h.rgScore >= 90 && !h.rgHighGradeUnlocked) {
-            precSuffix = "+";
+            precSuffix = "";
           } else if (h.rgConfidenceRange != null) {
             precSuffix = h.rgConfidenceRange > 0 ? ` ±${h.rgConfidenceRange}` : "";
           }
@@ -4398,7 +4403,7 @@ function buildListingSummary(roboGradeId, title, issue, prefix) {
       if (it.highGradeUnlocked && rg.confidenceRange != null) {
         prec = rg.confidenceRange > 0 ? ` ±${Math.round(rg.confidenceRange)}` : "";
       } else if (score >= 90 && !it.highGradeUnlocked) {
-        prec = "+";
+        prec = "";
       } else if (rg.confidenceRange != null) {
         prec = rg.confidenceRange > 0 ? ` ±${Math.round(rg.confidenceRange)}` : "";
       }
@@ -7540,7 +7545,7 @@ function renderForm() {
     const parts = [];
     if (h.rgScore != null) {
       const v = h.rgVersion ? ` v${h.rgVersion}` : "";
-      const plus = h.rgScore >= 90 && h.rgScore < 100 ? "+" : "";
+      const plus = "";
       parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;font-weight:700;color:#7aa030;font-size:12px">RG ${h.rgScore}${plus}${v}</span>`);
     }
     if (h.grade) {
