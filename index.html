@@ -3443,6 +3443,7 @@ async function loadUserCredits() {
       window._sampleDismissed = data.sampleDismissed === true;
       if (data.everPurchased) window._userEverPaid = true; else if (window._userCredits > 0) window._userEverPaid = true;
       window._trainingOptIn = data.trainingOptIn !== false;
+      window._printOptIn = data.printOptIn === true; // S18: persisted print-mode opt-in
       if (typeof data.transferCode === "string" && data.transferCode.length === 4) {
         window._transferCode = data.transferCode;
       } else {
@@ -3543,16 +3544,52 @@ function showTermsModal() {
   };
 }
 
+let _purchaseInFlight = false;
+
+// Lock the buy buttons + show a processing indicator while a purchase is in
+// flight. StoreKit's steps can lag (especially in sandbox); without this, users
+// re-tap and can kick off duplicate purchase attempts.
+function _setBuyBusy(busy) {
+  const modal = document.getElementById("buy-credits-modal");
+  if (!modal) return;
+  modal.querySelectorAll("button").forEach(function(b) {
+    const oc = b.getAttribute("onclick") || "";
+    if (oc.indexOf("buyCredits(") !== -1) {
+      b.disabled = busy;
+      b.style.opacity = busy ? "0.5" : "";
+      b.style.pointerEvents = busy ? "none" : "";
+    }
+  });
+  let note = document.getElementById("buy-busy-note");
+  if (busy) {
+    if (!note) {
+      note = document.createElement("div");
+      note.id = "buy-busy-note";
+      note.style.cssText = "margin-top:14px;text-align:center;font-size:13px;color:#5a4a3a;display:flex;align-items:center;justify-content:center;gap:8px";
+      note.innerHTML = '<span style="width:16px;height:16px;border:2px solid #ddd8d0;border-top-color:#5a4a3a;border-radius:50%;display:inline-block;animation:spin 0.9s linear infinite"></span> Processing your purchase\u2026';
+      const card = modal.querySelector("div") || modal;
+      card.appendChild(note);
+    }
+    note.style.display = "flex";
+  } else if (note) {
+    note.style.display = "none";
+  }
+}
+
 async function buyCredits(pkg) {
   if (!window._currentUser) {
     alert("Please sign in to purchase credits.");
     return;
   }
-  // iOS app: native StoreKit IAP (Apple Guideline 2.1b). PWA keeps Stripe.
-  if (window.Capacitor && window.Capacitor.isNativePlatform()) {
-    return _iosBuyCredits(pkg);
-  }
+  if (_purchaseInFlight) return; // ignore re-taps while a purchase is processing
+  _purchaseInFlight = true;
+  _setBuyBusy(true);
   try {
+    // iOS app: native StoreKit IAP (Apple Guideline 2.1b). PWA keeps Stripe.
+    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+      await _iosBuyCredits(pkg);
+      return;
+    }
     const token = await window._currentUser.getIdToken();
     const resp = await fetch("/api/checkout", {
       method: "POST",
@@ -3572,6 +3609,9 @@ async function buyCredits(pkg) {
     }
   } catch (e) {
     alert("Checkout error: " + e.message);
+  } finally {
+    _purchaseInFlight = false;
+    _setBuyBusy(false);
   }
 }
 
@@ -3824,13 +3864,24 @@ function showList() {
 // Print-label redesign (S18): the gradient LABEL badge is replaced by a small
 // print icon (rotate-icon green) that only appears once the user opts in. An
 // entry already in the Print section shows the icon with a red X (tap to remove).
-const PRINT_ICON_SVG = '<svg viewBox="0 0 100 100" width="24" height="24" fill="none" style="stroke:#7aa838;stroke-width:6;stroke-linecap:round;stroke-linejoin:round"><path d="M30,36 L30,21 A4,4 0 0 1 34,17 L66,17 A4,4 0 0 1 70,21 L70,36"/><path d="M30,66 L20,66 A8,8 0 0 1 12,58 L12,44 A8,8 0 0 1 20,36 L80,36 A8,8 0 0 1 88,44 L88,58 A8,8 0 0 1 80,66 L70,66"/><path d="M22,47 L33,47"/><rect x="30" y="58" width="40" height="28" rx="3"/><path d="M40,70 L60,70"/><path d="M40,78 L60,78"/></svg>';
-const PRINT_ICON_X_SVG = '<svg viewBox="0 0 100 100" width="24" height="24" fill="none" style="stroke:#7aa838;stroke-width:6;stroke-linecap:round;stroke-linejoin:round"><path d="M30,36 L30,21 A4,4 0 0 1 34,17 L66,17 A4,4 0 0 1 70,21 L70,36"/><path d="M30,66 L20,66 A8,8 0 0 1 12,58 L12,44 A8,8 0 0 1 20,36 L80,36 A8,8 0 0 1 88,44 L88,58 A8,8 0 0 1 80,66 L70,66"/><path d="M22,47 L33,47"/><rect x="30" y="58" width="40" height="28" rx="3"/><g style="stroke:#c0392b;stroke-width:7"><path d="M38,66 L62,82"/><path d="M62,66 L38,82"/></g></svg>';
+const PRINT_ICON_SVG = '<svg viewBox="0 0 100 100" width="30" height="30" fill="none" style="stroke:#7aa838;stroke-width:6;stroke-linecap:round;stroke-linejoin:round"><path d="M30,36 L30,21 A4,4 0 0 1 34,17 L66,17 A4,4 0 0 1 70,21 L70,36"/><path d="M30,66 L20,66 A8,8 0 0 1 12,58 L12,44 A8,8 0 0 1 20,36 L80,36 A8,8 0 0 1 88,44 L88,58 A8,8 0 0 1 80,66 L70,66"/><path d="M22,47 L33,47"/><rect x="30" y="58" width="40" height="28" rx="3"/><path d="M40,70 L60,70"/><path d="M40,78 L60,78"/></svg>';
+const PRINT_ICON_X_SVG = '<svg viewBox="0 0 100 100" width="30" height="30" fill="none" style="stroke:#7aa838;stroke-width:6;stroke-linecap:round;stroke-linejoin:round"><path d="M30,36 L30,21 A4,4 0 0 1 34,17 L66,17 A4,4 0 0 1 70,21 L70,36"/><path d="M30,66 L20,66 A8,8 0 0 1 12,58 L12,44 A8,8 0 0 1 20,36 L80,36 A8,8 0 0 1 88,44 L88,58 A8,8 0 0 1 80,66 L70,66"/><path d="M22,47 L33,47"/><rect x="30" y="58" width="40" height="28" rx="3"/><g style="stroke:#c0392b;stroke-width:7"><path d="M38,66 L62,82"/><path d="M62,66 L38,82"/></g></svg>';
 // Session opt-in: tapping "WANT TO PRINT LABELS? YES" reveals the icons. Also
 // considered on once any entry is in the Print state (derived from data, so it
 // stays on across reloads once the user has actually marked something).
 let _printOptInSession = false;
-function enablePrintMode() { _printOptInSession = true; renderList(); }
+function enablePrintMode() {
+  _printOptInSession = true;
+  window._printOptIn = true;
+  renderList();
+  // Persist so the Print drop-zone stays on across reloads (best-effort).
+  try {
+    if (window._currentUser && window._db && window._fsSetDoc && window._fsDoc) {
+      window._fsSetDoc(window._fsDoc(window._db, "users", window._currentUser.uid), { printOptIn: true }, { merge: true })
+        .catch(function(e) { console.warn("printOptIn persist failed:", e); });
+    }
+  } catch (e) { console.warn("printOptIn persist error:", e); }
+}
 
 function renderList() {
   const main = document.getElementById("main");
@@ -3893,9 +3944,17 @@ function renderList() {
       groups: groups
     };
   };
+  // Print mode: icons + the persistent Print drop-zone appear once the user has
+  // opted in (persisted via window._printOptIn) or once any entry is in the Print
+  // state. _printOptInSession is the immediate in-memory echo of a fresh opt-in.
+  const printModeEnabled = _printOptInSession || window._printOptIn === true || items.some(c => (c.ownership || "Owned") === "Print");
   const sections = OWNERSHIP_ORDER.map(own => {
     const subset = filt.filter(c => (c.ownership || "Owned") === own);
-    if (subset.length === 0) return null;
+    if (subset.length === 0) {
+      // Keep an empty Print section visible as a persistent drop-zone once on.
+      if (own === "Print" && printModeEnabled) return { ownership: own, titles: [], groups: {} };
+      return null;
+    }
     const {titles: titles, groups: groups} = buildTitleGroups(subset);
     return {
       ownership: own,
@@ -3904,9 +3963,6 @@ function renderList() {
     };
   }).filter(Boolean);
   const hasRealBooks = items.some(c => c.id !== SAMPLE_COMIC_ID);
-  // Print mode: icons appear once opted in (this session) or once any entry is
-  // already in the Print state (so it stays on across reloads after real use).
-  const printModeEnabled = _printOptInSession || items.some(c => (c.ownership || "Owned") === "Print");
   let html = ``;
   const anyBooks = sections.some(s => s.titles.length > 0);
   if (!anyBooks) {
@@ -3989,7 +4045,8 @@ function renderList() {
   // print mode, offer it at the bottom; tapping reveals the per-entry print icons.
   const _hasGraded = items.some(c => c.roboGrade && c.id !== SAMPLE_COMIC_ID);
   if (_hasGraded && !printModeEnabled) {
-    html += `<div onclick="enablePrintMode()" style="margin:22px 0 6px;padding:13px;text-align:center;cursor:pointer;border-top:1px solid #ddd8d0;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#7a6a5a">Want to print labels? <span style="color:#7aa838">Yes</span></div>`;
+    const _LABEL_GRADIENT = "linear-gradient(180deg, #58723b 0%, #93ab66 38%, #9ba37e 100%)";
+    html += `<div onclick="enablePrintMode()" style="display:flex;align-items:center;justify-content:center;gap:8px;margin:18px 0 10px;padding:9px 12px;background:${_LABEL_GRADIENT};border-radius:8px;cursor:pointer;user-select:none">\n      <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#fff">Want to print labels?</span>\n    </div>`;
   }
   const _tRender = Date.now();
   main.innerHTML = html;
