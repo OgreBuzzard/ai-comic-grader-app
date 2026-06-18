@@ -5479,9 +5479,11 @@ const ASSESS_SUCCESS_BOX = "https://raw.githubusercontent.com/OgreBuzzard/ai-com
 const ASSESS_FAILURE_BOX = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/failure_box.PNG";
 
 const ASSESS_OVERLAY_BG = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay.webp";
+// S18: Deep Assessment gets its own overlay artwork (was reusing the Main one).
+const ASSESS_OVERLAY_DEEP = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay_Deep.webp";
 
 (function preloadAssessBoxes() {
-  [ ASSESS_DEFAULT_BOX, ASSESS_SUCCESS_BOX, ASSESS_FAILURE_BOX, ASSESS_OVERLAY_BG, ASSESS_MODAL_BG ].forEach(url => {
+  [ ASSESS_DEFAULT_BOX, ASSESS_SUCCESS_BOX, ASSESS_FAILURE_BOX, ASSESS_OVERLAY_BG, ASSESS_OVERLAY_DEEP, ASSESS_MODAL_BG ].forEach(url => {
     const img = new Image;
     img.src = url;
   });
@@ -5489,7 +5491,7 @@ const ASSESS_OVERLAY_BG = "https://raw.githubusercontent.com/OgreBuzzard/ai-comi
 
 const ASSESS_FRAMES = [ "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_01.PNG", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_02.PNG", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_03.PNG", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_04.PNG", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_05.PNG", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_06.PNG" ];
 
-function mountStepTracker() {
+function mountStepTracker(overlayBg) {
   if (window.RobograderScan && window.RobograderScan.debugLog) {
     window.RobograderScan.debugLog("mountStepTracker called");
   }
@@ -5518,7 +5520,7 @@ function mountStepTracker() {
   const BTN_HEIGHT_PCT = 9.01;
   const BTN_TOPS_PCT = [ 36.42, 46.36, 56.29, 66.23, 76.16 ];
   const boxesHtml = stepDefs.map((s, i) => `<div id="tracker-box-${s.id}"\n      style="position:absolute;left:${BTN_LEFT_PCT}%;top:${BTN_TOPS_PCT[i]}%;\n             width:${BTN_WIDTH_PCT}%;height:${BTN_HEIGHT_PCT}%;\n             background-image:url('${ASSESS_DEFAULT_BOX}');\n             background-size:100% 100%;background-repeat:no-repeat;\n             pointer-events:none;"></div>`).join("");
-  const overlayHtml = `\n    <img src="${ASSESS_OVERLAY_BG}" alt=""\n         style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;" />`;
+  const overlayHtml = `\n    <img src="${overlayBg || ASSESS_OVERLAY_BG}" alt=""\n         style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;" />`;
   window.RobograderScan.slideOverlayIntoChest(overlayHtml, boxesHtml);
   if (window._gridCycleStartTimer) clearTimeout(window._gridCycleStartTimer);
   window._gridCycleStartTimer = setTimeout(() => {
@@ -6242,7 +6244,7 @@ async function assessHighGrade() {
     if (window.RobograderScan && window.RobograderScan.debugLog) {
       window.RobograderScan.debugLog("hg: scanController.promise resolved");
     }
-    mountStepTracker();
+    mountStepTracker(ASSESS_OVERLAY_DEEP);
     if (_usingStreaming) {
       _stepAnimator = makeStepAnimator();
       for (const p of _bufferedPhases) _stepAnimator.setPhase(p.phase);
