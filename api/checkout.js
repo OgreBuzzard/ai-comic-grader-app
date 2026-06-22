@@ -5,9 +5,9 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 // Credit packages — LIVE MODE price IDs from Stripe dashboard (S11)
 // All three are one-time payments; webhook fulfills credits via metadata.credits
 const PACKAGES = {
-  comic_stack: { credits: 10,  priceId: 'price_1TRiZdAJVXkUtIkTabh9WbaK', name: 'Comic Stack' },  // $10  ($1.00 each)
-  comic_wall:  { credits: 35,  priceId: 'price_1TRibUAJVXkUtIkTjFBhmBdJ', name: 'Comic Wall'  },  // $30  ($0.86 each)
-  short_box:   { credits: 125, priceId: 'price_1TRibzAJVXkUtIkTiEgc7QCM', name: 'Short Box'   },  // $100 ($0.80 each)
+  comic_stack: { credits: 5,  priceId: 'price_1TRiZdAJVXkUtIkTabh9WbaK', name: 'Comic Stack' },  // $10  ($2.00 each)
+  comic_wall:  { credits: 20,  priceId: 'price_1TRibUAJVXkUtIkTjFBhmBdJ', name: 'Comic Wall'  },  // $30  ($1.50 each)
+  short_box:   { credits: 100, priceId: 'price_1TRibzAJVXkUtIkTiEgc7QCM', name: 'Short Box'   },  // $100 ($1.00 each)
 };
 
 export default async function handler(req, res) {

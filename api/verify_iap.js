@@ -26,9 +26,9 @@ const BUNDLE_ID = 'app.robograder';
 // Product ID → credits granted. Keep in sync with App Store Connect AND
 // checkout.js (Stripe) so iOS and PWA grant the same.
 const PRODUCT_CREDITS = {
-  'app.robograder.credits.stack': 10,
-  'app.robograder.credits.wall': 35,
-  'app.robograder.credits.shortbox': 125,
+  'app.robograder.credits.stack': 5,
+  'app.robograder.credits.wall': 20,
+  'app.robograder.credits.shortbox': 100,
 };
 
 export default async function handler(req, res) {
