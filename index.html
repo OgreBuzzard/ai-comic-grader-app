@@ -3622,7 +3622,7 @@ const IOS_PRODUCT_IDS = {
   comic_wall:  'app.robograder.credits.wall',
   short_box:   'app.robograder.credits.shortbox',
 };
-const IOS_CREDITS = { comic_stack: 10, comic_wall: 35, short_box: 125 };
+const IOS_CREDITS = { comic_stack: 5, comic_wall: 20, short_box: 100 };
 
 // iOS native purchase: StoreKit 2 via @capgo/native-purchases (NativePurchases).
 // purchase → get jwsRepresentation → server verifies + credits → refresh UI.
@@ -9789,11 +9789,10 @@ async function runCropperSequence(captures, kind) {
     if (kind === "corner" || kind === "signature" || kind === "restoration") {
       continue;
     }
-    await new Promise(resolve => {
-      _cropperSequenceResolve = resolve;
-      openCropper(kind, cap.slot);
-    });
-    _cropperSequenceResolve = null;
+    // S18: crop is no longer forced after capture. The photo lands in the slot
+    // as-is; the overlay guides make in-flow cropping unnecessary friction.
+    // Users can still refine any photo via the crop icon in the Edit view
+    // (the slot-edit button calls openCropper directly).
   }
   renderForm();
   // S16: after corner captures, scroll Edit view to center the Deep Assessment
@@ -10357,8 +10356,8 @@ initFirebase();
         <div style="flex:1;min-width:0">
           <div style="font-size:16px;font-weight:700;color:#1a1008">Comic Stack</div>
           <div id="price-comic_stack" style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$10</div>
-          <div style="font-size:13px;color:#3a2a1a;margin-top:3px">10 assessments</div>
-          <div id="unit-comic_stack" style="font-size:12px;color:#6a5a4a;margin-top:1px">($1 each)</div>
+          <div style="font-size:13px;color:#3a2a1a;margin-top:3px">5 assessments</div>
+          <div id="unit-comic_stack" style="font-size:12px;color:#6a5a4a;margin-top:1px">($2 each)</div>
         </div>
       </button>
       <button onclick="buyCredits('comic_wall')" style="display:flex;align-items:center;gap:14px;background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:12px 16px;cursor:pointer;text-align:left;width:100%">
@@ -10366,8 +10365,8 @@ initFirebase();
         <div style="flex:1;min-width:0">
           <div style="font-size:16px;font-weight:700;color:#1a1008">Comic Wall</div>
           <div id="price-comic_wall" style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$30</div>
-          <div style="font-size:13px;color:#3a2a1a;margin-top:3px">35 assessments</div>
-          <div id="unit-comic_wall" style="font-size:12px;color:#6a5a4a;margin-top:1px">($0.86 each)</div>
+          <div style="font-size:13px;color:#3a2a1a;margin-top:3px">20 assessments</div>
+          <div id="unit-comic_wall" style="font-size:12px;color:#6a5a4a;margin-top:1px">($1.50 each)</div>
         </div>
       </button>
       <button onclick="buyCredits('short_box')" style="display:flex;align-items:center;gap:14px;background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:12px 16px;cursor:pointer;text-align:left;width:100%">
@@ -10375,8 +10374,8 @@ initFirebase();
         <div style="flex:1;min-width:0">
           <div style="font-size:16px;font-weight:700;color:#1a1008">Short Box</div>
           <div id="price-short_box" style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$100</div>
-          <div style="font-size:13px;color:#3a2a1a;margin-top:3px">125 assessments</div>
-          <div id="unit-short_box" style="font-size:12px;color:#6a5a4a;margin-top:1px">($0.80 each)</div>
+          <div style="font-size:13px;color:#3a2a1a;margin-top:3px">100 assessments</div>
+          <div id="unit-short_box" style="font-size:12px;color:#6a5a4a;margin-top:1px">($1 each)</div>
         </div>
       </button>
     </div>
