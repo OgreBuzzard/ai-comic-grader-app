@@ -34,7 +34,7 @@
 //   phase 3 (confirming)   — verdict + reasons captured
 //
 // =============================================================================
-const ROBOGRADE_VERSION = '4.15';
+import { ROBOGRADE_VERSION } from '../lib/version.js';
 
 // ── S15 May 30: Full Assessment REDESIGN (8 fixed named slots) ───────────────
 // The old design required 16/32 two-page-spread photos per book — impractical

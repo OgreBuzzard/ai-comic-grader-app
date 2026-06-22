@@ -30,7 +30,7 @@
 //   phase 4 (confirming)    — model has emitted revised roboGrade
 //
 // =============================================================================
-const ROBOGRADE_VERSION = '4.15';
+import { ROBOGRADE_VERSION } from '../lib/version.js';
 
 export default async function handler(req, res) {
   // CORS: the iOS Capacitor app calls this cross-origin (local file origin →
