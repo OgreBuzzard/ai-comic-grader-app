@@ -98,6 +98,7 @@ export default async function handler(req, res) {
   const {
     initialAssessment = null,
     cornerMacros = [],           // [{type, source} blocks in Anthropic image format] or [data URLs]
+    frontCover = null,           // S19: optional full front-cover image (data URL or block) for grade-reference comparison
     title = '',
     issueNumber = '',
     // S15 May 30: Restoration Check mode. When mode==='restoration', this same
@@ -279,10 +280,14 @@ If the macros CONFIRM the initial assessment — meaning everything visible was 
 
 The confidenceRange for a Deep assessment is the integer 3 (representing ±3 on the 0-100 score scale). Do not narrow below 3; the score ceiling of 97 already encodes the residual uncertainty.
 
-## PHASE 4 — CONFIRM THE REVISED GRADE
-Recompute the RoboGrade score (Front + Back + Spine + Interior). Map to a CGC grade. Verify against the tier definitions below. Read the candidate grade's definition AND one grade above AND one grade below — confirm the candidate is the best fit.
+## PHASE 4 — CONFIRM THE REVISED GRADE AGAINST GRADE-REFERENCE IMAGES
+Recompute the RoboGrade score (Front + Back + Spine + Interior) and map it to a CGC grade. You are also given a set of GRADE-REFERENCE IMAGES — real graded comics bracketing the initial grade, each labeled with its CGC grade and a one-line condition note, in ascending order. Use them as a calibrated yardstick:
+  • Find the reference whose OVERALL cover condition the book being graded most closely matches.
+  • The predicted grade may move UP or DOWN by up to 2 grade positions from the initial, based on that comparison. Downward movement is the more common outcome when the macros surfaced new defects; upward movement requires the cover to clearly match a cleaner reference.
+  • Also read the candidate grade's tier definition plus one grade above and one below to confirm the fit.
+  • NEVER name, number, identify, or describe any specific reference comic in your output. The references are an internal yardstick only. If the grade is revised, graderNotes/aiAssessment may say it was "compared against reference copies at the same grade and revised" — nothing more specific.
 
-CGC TIER REFERENCE (candidate ±1 only, focused on initial grade):
+CGC TIER REFERENCE (candidate ±1, focused on initial grade):
 ${gradeTierContext(initialGrade)}
 
 PAGE QUALITY SEVERITY — HARD RULE: any defect entry whose type is "Page quality" (or which describes page color, tanning designation, or paper tone) gets severity="" (empty string). Page quality is a descriptive observation, NOT a defect. Low/Med/High severity tags apply ONLY to actual defects.
@@ -406,6 +411,51 @@ Rules:
     // SSE phase 0: input validation done, about to call Anthropic.
     sseEvent('phase', { phase: 0, name: 'populating' });
 
+    // ── S19: GRADE-REFERENCE COMPARISON (deep mode only) ──────────────────────
+    // Fetch the reference images bracketing the initial predicted grade (±2
+    // positions on the CGC scale) and pair each with its condition caption, so
+    // the model confirms or revises the grade against real graded examples.
+    // Reference book identities are NEVER named in output. Non-fatal: if refs
+    // can't be built, Deep still runs on the macros alone.
+    let gradeRefBlocks = [];   // ascending-grade [text label, image, text label, image, ...]
+    let frontCoverBlock = null;
+    if (!isRestoration) {
+      try {
+        const { CGC_GRADE_SCALE, GRADE_DEFINITIONS } = await import('../lib/grade_definitions.js');
+        const gNum = parseFloat((String(initialGrade).match(/\d+(\.\d+)?/) || [])[0]);
+        if (Number.isFinite(gNum)) {
+          let idx = 0, best = Infinity;
+          CGC_GRADE_SCALE.forEach((g, i) => {
+            const d = Math.abs(parseFloat(g) - gNum);
+            if (d < best) { best = d; idx = i; }
+          });
+          const lo = Math.max(0, idx - 2), hi = Math.min(CGC_GRADE_SCALE.length - 1, idx + 2);
+          const windowGrades = CGC_GRADE_SCALE.slice(lo, hi + 1);  // up to 5, ascending
+          const baseUrl = process.env.APP_URL || 'https://robograder.app';
+          const fetched = await Promise.all(windowGrades.map(async (g) => {
+            const def = GRADE_DEFINITIONS[g] || {};
+            const file = def.file || (g.replace('.', '_') + '.jpg');
+            try {
+              const r = await fetch(`${baseUrl}/Grade_Reference/${file}`);
+              if (!r.ok) return null;
+              const data = Buffer.from(await r.arrayBuffer()).toString('base64');
+              return { g, def, data };
+            } catch { return null; }
+          }));
+          for (const f of fetched) {
+            if (!f) continue;
+            const label = f.def.caption
+              ? `CGC ${f.g}${f.def.name ? ' (' + f.def.name + ')' : ''} reference — ${f.def.caption}`
+              : `CGC ${f.g} reference.`;
+            gradeRefBlocks.push({ type: 'text', text: label });
+            gradeRefBlocks.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: f.data } });
+          }
+        }
+      } catch { gradeRefBlocks = []; }
+      if (frontCover) { const fb = toImageBlock(frontCover); if (fb) frontCoverBlock = fb; }
+    }
+    const hasGradeRefs = gradeRefBlocks.length > 0;
+
     const _antBody = {
       model: 'claude-opus-4-8',
       // S15 May 29: effort=medium via output_config + adaptive thinking
@@ -430,7 +480,9 @@ Rules:
           : [
               { type: 'text', text: 'CORNER MACROS in order: Top-Left, Top-Right, Bottom-Left, Bottom-Right of the front cover.' },
               ...macroBlocks,
-              { type: 'text', text: 'Perform the deep assessment. If the macros reveal new defects, the grade may go down — tag them deepAddition: true. If the corners are cleaner than expected for the initial grade, the Front sub-score may rise by 1–3 points. If they match expectations, scores stay the same. Return the JSON.' }
+              ...(frontCoverBlock ? [{ type: 'text', text: 'FULL FRONT COVER of the book being graded:' }, frontCoverBlock] : []),
+              ...(hasGradeRefs ? [{ type: 'text', text: 'GRADE-REFERENCE IMAGES follow — real graded comics bracketing the initial grade, each labeled with its CGC grade and condition note, in ascending grade order. Compare the book above against these examples (PHASE 4).' }, ...gradeRefBlocks] : []),
+              { type: 'text', text: 'Perform the deep assessment. If the macros reveal new defects, the grade may go down — tag them deepAddition: true. If the corners are cleaner than expected for the initial grade, the Front sub-score may rise by 1–3 points. Compare the book against the grade-reference images and confirm or revise the predicted grade per PHASE 4. Return the JSON.' }
             ]
       }]
     };
