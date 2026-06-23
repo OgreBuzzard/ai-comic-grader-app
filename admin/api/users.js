@@ -75,6 +75,7 @@ export default async function handler(req, res) {
 
     const limit = Math.min(parseInt(req.query.limit) || 50, 200);
     const offset = Math.max(parseInt(req.query.offset) || 0, 0);
+    const query = (req.query.q || '').toString().trim().toLowerCase();
 
     // ── Fetch ────────────────────────────────────────────────────────────────
     const db = getFirestore();
@@ -136,10 +137,14 @@ export default async function handler(req, res) {
       }
       return dir === 'desc' ? -cmpResult : cmpResult;
     };
-    userRows.sort(cmp);
+    // Search filter (q): substring match against name + email, case-insensitive.
+    const matched = query
+      ? userRows.filter(u => `${u.displayName} ${u.email}`.toLowerCase().includes(query))
+      : userRows;
+    matched.sort(cmp);
 
-    const total = userRows.length;
-    const page = userRows.slice(offset, offset + limit);
+    const total = matched.length;
+    const page = matched.slice(offset, offset + limit);
     const hasMore = offset + limit < total;
 
     return res.status(200).json({ users: page, total, hasMore, offset, limit, sort, dir });
