@@ -756,9 +756,19 @@ async function renderDashboard() {
 
 function renderUsersTab() {
   document.getElementById('tab-content').innerHTML = `
+    <input type="search" id="users-search" placeholder="Search by name or email…" class="search-input" value="${escapeAttr(state.userSearch || '')}">
     <div class="sort-bar" id="sort-bar"></div>
     <div id="users-section"><div class="loading">Loading users…</div></div>
   `;
+  const searchInput = document.getElementById('users-search');
+  let searchTimer = null;
+  searchInput.oninput = (e) => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      state.userSearch = e.target.value;
+      loadUsers(true);
+    }, 300);
+  };
   renderSortBar();
   loadUsers(true);
 }
@@ -872,7 +882,7 @@ async function loadUsers(reset = false) {
     // delay on the items endpoint especially (admin SDK reads + per-item
     // doc lookups). 20 is plenty for an at-a-glance view; Load More is
     // there for deeper digs.
-    const res = await api(`/api/users?sort=${state.sort}&dir=${state.dir}&limit=20&offset=${offset}`);
+    const res = await api(`/api/users?sort=${state.sort}&dir=${state.dir}&limit=20&offset=${offset}&q=${encodeURIComponent(state.userSearch || '')}`);
     state.users = state.users.concat(res.users);
     state.hasMore = res.hasMore;
     renderUsers();
