@@ -239,7 +239,7 @@
       <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px">
         <div style="background:${OLIVE};border-radius:18px;width:104px;height:104px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px solid ${OLIVE_MID};position:relative">
           ${precision ? `<span style="font-family:'Noto Sans Display',sans-serif;font-size:18px;font-weight:700;color:${OLIVE_LT};position:absolute;top:9px;right:9px;white-space:nowrap;line-height:1;display:inline-block;transform:scaleX(0.62);transform-origin:right center">${precision.replace('±', '± ')}</span>` : ''}
-          <div style="position:absolute;top:6px;left:0;right:0;text-align:center;pointer-events:none;display:flex;justify-content:center">${(() => {
+          <div style="position:absolute;top:6px;left:0;right:0;text-align:center;pointer-events:none;display:flex;justify-content:center;opacity:0.5">${(() => {
             // S17: chunky SVG tier stars in the score-text color, centered at the
             // top, ABSOLUTE (out of flow) so the score stays dead-center. No "RG"
             // (redundant with the "ROBOGRADE SCORE" header).
