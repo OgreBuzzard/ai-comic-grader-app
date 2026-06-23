@@ -444,10 +444,10 @@ Rules:
           }));
           for (const f of fetched) {
             if (!f) continue;
-            const label = f.def.caption
-              ? `CGC ${f.g}${f.def.name ? ' (' + f.def.name + ')' : ''} reference — ${f.def.caption}`
-              : `CGC ${f.g} reference.`;
-            gradeRefBlocks.push({ type: 'text', text: label });
+            const parts = [`CGC ${f.g}${f.def.name ? ' — ' + f.def.name : ''}`];
+            if (f.def.definition) parts.push(f.def.definition);
+            if (f.def.caption) parts.push(`Reference example shown: ${f.def.caption}`);
+            gradeRefBlocks.push({ type: 'text', text: parts.join(' ') });
             gradeRefBlocks.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: f.data } });
           }
         }
