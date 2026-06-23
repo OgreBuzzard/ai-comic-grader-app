@@ -618,8 +618,8 @@ const state = {
   // users." itemsSort + itemsDir already default to date/desc which is
   // exactly the right starting sort for that intent.
   tab: 'items',         // 'users' | 'items' | 'timings'
-  sort: 'displayName',
-  dir: 'asc',
+  sort: 'createdAt',
+  dir: 'desc',
   users: [],
   hasMore: false,
   itemsSort: 'date',
@@ -1143,16 +1143,10 @@ function renderTimingsList() {
             ${escapeHtml(t.key)} ${tagHtml}
             ${t.version ? `<span style="color:var(--text-dim);font-size:11px;margin-left:6px;">v${escapeHtml(t.version)}</span>` : ''}
           </div>
-          ${t.title ? `<div style="font-size:13px;font-weight:600;color:var(--text);margin:2px 0;">${escapeHtml(t.title)}${t.issue ? ' #' + escapeHtml(t.issue) : ''}${t.predictedGrade ? `<span style="color:#7fd0ff;font-weight:700;margin-left:8px;">RG ${escapeHtml(t.predictedGrade)}</span>` : ''}${t.pageQuality ? `<span style="color:var(--text-dim);font-weight:400;margin-left:8px;">PQ ${escapeHtml(t.pageQuality)}</span>` : ''}</div>` : ''}
-          ${(t.frontScore != null || t.rgScore != null) ? `<div style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:11px;color:var(--text-dim);">${t.rgScore != null ? `score ${escapeHtml(String(t.rgScore))}` : ''}${t.frontScore != null ? `&nbsp;·&nbsp;F ${escapeHtml(String(t.frontScore))} B ${escapeHtml(String(t.backScore))} S ${escapeHtml(String(t.spineScore))} I ${escapeHtml(String(t.interiorScore))}` : ''}${t.precisionMod != null ? `&nbsp;·&nbsp;PM ${escapeHtml(String(t.precisionMod))}` : ''}${t.model ? `&nbsp;·&nbsp;<span style="color:#b89aff;">${escapeHtml(String(t.model).replace('claude-',''))}</span>` : ''}${t.censusMatched != null ? `&nbsp;·&nbsp;census ${t.censusMatched ? '✓' : '–'}` : ''}</div>` : ''}
+          ${t.title ? `<div style="font-size:13px;font-weight:600;color:var(--text);margin:2px 0;">${escapeHtml(t.title)}${t.issue ? ' #' + escapeHtml(t.issue) : ''}${t.predictedGrade ? `<span style="color:#7fd0ff;font-weight:700;margin-left:8px;">PG ${escapeHtml(t.predictedGrade)}</span>` : ''}${t.pageQuality ? `<span style="color:var(--text-dim);font-weight:400;margin-left:8px;">PQ ${escapeHtml(t.pageQuality)}</span>` : ''}</div>` : ''}
+          ${t.rgScore != null ? `<div style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:11px;color:var(--text-dim);">RG ${escapeHtml(String(t.rgScore))}</div>` : ''}
           <div class="sub" style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:11px;">
             ${dateStr}
-            ${p.refImageFetchMs != null ? `&nbsp;·&nbsp;refImg ${p.refImageFetchMs}` : ''}
-            ${p.primaryCallMs != null ? `&nbsp;·&nbsp;<strong>primary ${p.primaryCallMs}</strong>` : ''}
-            ${p.primaryParseMs != null ? `&nbsp;·&nbsp;parse ${p.primaryParseMs}` : ''}
-            ${p.refineCallMs != null ? `&nbsp;·&nbsp;<strong>refine ${p.refineCallMs}</strong>` : (t.gradeRefRan === false ? '&nbsp;·&nbsp;<span style="color:var(--text-dim);">refine skipped</span>' : '')}
-            ${t.predictedGrade ? `&nbsp;·&nbsp;grade ${escapeHtml(t.predictedGrade)}` : ''}
-            ${t.gradeBeforeRefinement ? ` (was ${escapeHtml(t.gradeBeforeRefinement)})` : ''}
             ${+t.costUsd > 0 ? `&nbsp;·&nbsp;<span style="color:var(--text-dim);">${fmtCost(+t.costUsd)}</span>` : ''}
             ${t.errorMessage ? `<br><span style="color:#ff8080;">${escapeHtml(String(t.errorMessage).slice(0, 200))}</span>` : ''}
           </div>
