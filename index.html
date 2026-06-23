@@ -8089,15 +8089,18 @@ function openCropper(type, index) {
         const stage = document.getElementById("cropper-stage");
         if (stage) stage.classList.add("ready");
         // Re-measure against the settled, safe-area-padded container. Cropper
-        // measures at attach time, before the padded layout fully settles, which
-        // left tall/EXIF-rotated phone photos collapsed to a strip or pushed past
-        // the safe area. A resize() after ready forces a correct fit for any
+        // measures at attach time, before the padded flex layout settles, which
+        // on iOS leaves the canvas sized to a too-large measurement — the crop
+        // box then overflows the viewport and the right/bottom handles render
+        // off-screen. A single rAF fires before the safe-area layout settles, so
+        // re-fit across several settle points to guarantee a correct fit for any
         // image aspect ratio or orientation.
-        if (_cropperInstance && typeof _cropperInstance.resize === "function") {
-          requestAnimationFrame(function() {
-            try { _cropperInstance.resize(); } catch (e) {}
-          });
-        }
+        const refit = function() {
+          try { if (_cropperInstance && typeof _cropperInstance.resize === "function") _cropperInstance.resize(); } catch (e) {}
+        };
+        requestAnimationFrame(function() { requestAnimationFrame(refit); });
+        setTimeout(refit, 120);
+        setTimeout(refit, 350);
       }
     });
     let _lastCropTap = 0;
