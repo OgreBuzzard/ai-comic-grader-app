@@ -580,7 +580,7 @@ function ensureStylesInjected() {
   /* ── Label visual styles (used in both preview AND print sheet) ──────── */
   .rg-label {
     width: 1152px; height: 288px;
-    background: linear-gradient(180deg, #58723b 0%, #93ab66 38%, #9ba37e 100%);
+    background: linear-gradient(180deg, #6a8947 0%, #93ab66 38%, #bac497 100%);
     border: 1px solid #8a9a6a;
     border-radius: 4px;
     position: relative;
@@ -820,7 +820,7 @@ function ensureStylesInjected() {
                        a .face element positioned at top:96px so the
                        children's coordinate space is unchanged. */
     width: 1152px; height: 384px;
-    background: linear-gradient(180deg, #58723b 0%, #93ab66 38%, #9ba37e 100%);
+    background: linear-gradient(180deg, #6a8947 0%, #93ab66 38%, #bac497 100%);
     border: 1px solid #8a9a6a;
     border-radius: 4px;
     position: relative;
@@ -864,7 +864,7 @@ function ensureStylesInjected() {
     display: flex;
     align-items: center;
     gap: 14px;
-    padding: 0 12px;
+    padding: 0 12px 0 48px;
     box-sizing: border-box;
     font-family: 'Barlow Condensed', sans-serif;
     overflow: hidden;
@@ -885,9 +885,9 @@ function ensureStylesInjected() {
   }
   .rg-label-l .wrap-strip .ws-ttl {
     flex: 0 1 auto;
-    font-size: 32px;
+    font-size: 40px;
     font-weight: 700;
-    color: #2a3a18;
+    color: #0d0d0f;
     letter-spacing: 0.2px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -897,9 +897,9 @@ function ensureStylesInjected() {
   .rg-label-l .wrap-strip .ws-date,
   .rg-label-l .wrap-strip .ws-prt {
     flex: 0 0 auto;
-    font-size: 26px;
+    font-size: 34px;
     font-weight: 600;
-    color: #3a4a28;
+    color: #2a3a18;
   }
   .rg-label-l .wrap-strip .ws-id {
     flex: 0 0 auto;
@@ -1004,14 +1004,14 @@ function ensureStylesInjected() {
     border-bottom: 1px solid #b0b89a;
   }
   .rg-label-l .ttl {
-    font-size: 50px; font-weight: 900;
+    font-size: 58px; font-weight: 900;
     color: #0d0d0f; line-height: 1.05;
     font-family: 'Noto Sans Display', sans-serif;
     transform: scaleX(0.625);
     transform-origin: left center;
   }
   .rg-label-l .iss {
-    font-size: 36px; font-weight: 600;
+    font-size: 52px; font-weight: 600;
     color: #333;
     font-family: 'Noto Sans Display', sans-serif;
     transform: scaleX(0.625);
@@ -1033,12 +1033,12 @@ function ensureStylesInjected() {
   /* +2pt vs Small R's already-bumped 24 → 26, per user spec for Small L. */
   .rg-label-l .meta-lbl {
     font-size: 26px; font-weight: 600;
-    color: #7a8a5a;
+    color: #2a3a18;
     font-family: 'Barlow Condensed', sans-serif;
     text-align: right; letter-spacing: 0.5px;
   }
   .rg-label-l .meta-val {
-    font-size: 26px; font-weight: 800;
+    font-size: 34px; font-weight: 800;
     color: #0d0d0f;
     font-family: 'Noto Sans Mono', monospace;
   }
@@ -1188,7 +1188,7 @@ function ensureStylesInjected() {
      so the five stacked fields fit even for 2-line titles. */
   .rg-label-square {
     width: 576px; height: 576px;
-    background: linear-gradient(180deg, #58723b 0%, #93ab66 38%, #9ba37e 100%);
+    background: linear-gradient(180deg, #6a8947 0%, #93ab66 38%, #bac497 100%);
     border: 1px solid #8a9a6a;
     border-radius: 8px;
     position: relative;
@@ -1390,7 +1390,7 @@ function ensureStylesInjected() {
        layout just becomes 360px narrower with everything still 18px
        clear of the new right edge. 1800px = 6.25" at 288 DPI. */
     width: 1800px; height: 432px;
-    background: linear-gradient(180deg, #58723b 0%, #93ab66 38%, #9ba37e 100%);
+    background: linear-gradient(180deg, #6a8947 0%, #93ab66 38%, #bac497 100%);
     border: 1px solid #8a9a6a;
     border-radius: 6px;
     position: relative;
@@ -2083,6 +2083,15 @@ async function generatePDF(comics, modal) {
   const opts = readOptions();
   const fmt = LABEL_FORMATS[opts.size];
 
+  // S18: Small-L only — shift the LEFT column right by this much so its grade
+  // box + top-strip content clear the printer's non-printable left margin
+  // (~3–5mm) and any leftward registration drift. Only the left column has
+  // content against a page edge (the right column's inner content is interior);
+  // the full-width band still fills the widened left margin with green. Tune to
+  // your printer: raise it if the grade box is still clipped, lower it if the
+  // left column drifts too far toward the gap. 0.1in = 2.5mm.
+  const SMALL_L_LEFT_SHIFT_IN = 0.1;
+
   // Reference to the Save button so we can update its label with progress
   // during the loop. Without per-label updates, a 7-label queue on iOS
   // Safari shows "Generating..." for ~20-30s with no feedback — users
@@ -2105,7 +2114,7 @@ async function generatePDF(comics, modal) {
     // can capture each. Each box is sized to the format's pixel dimensions.
     let labelsHTML = '';
     for (let i = 0; i < comics.length; i++) {
-      labelsHTML += `<div class="pdf-label-box" data-idx="${i}" style="width:${fmt.pixelW}px;height:${fmt.pixelH}px;display:block;background:linear-gradient(180deg, #58723b 0%, #93ab66 38%, #9ba37e 100%);">${renderLabelMarkup(comics[i], opts)}</div>`;
+      labelsHTML += `<div class="pdf-label-box" data-idx="${i}" style="width:${fmt.pixelW}px;height:${fmt.pixelH}px;display:block;background:linear-gradient(180deg, #6a8947 0%, #93ab66 38%, #bac497 100%);">${renderLabelMarkup(comics[i], opts)}</div>`;
     }
     offscreen.innerHTML = labelsHTML;
 
@@ -2149,7 +2158,7 @@ async function generatePDF(comics, modal) {
       const PAGE_W_IN = 8.5;
       const dpi = fmt.pixelW / fmt.labelW;          // 288
       const bandEl = document.createElement('div');
-      bandEl.style.cssText = `width:${Math.round(PAGE_W_IN * dpi)}px;height:${fmt.pixelH}px;background:linear-gradient(180deg, #58723b 0%, #93ab66 38%, #9ba37e 100%);`;
+      bandEl.style.cssText = `width:${Math.round(PAGE_W_IN * dpi)}px;height:${fmt.pixelH}px;background:linear-gradient(180deg, #6a8947 0%, #93ab66 38%, #bac497 100%);`;
       offscreen.appendChild(bandEl);
       try {
         const bandCanvas = await window.html2canvas(bandEl, { scale: 1, backgroundColor: '#d4d9be', logging: false });
@@ -2188,8 +2197,13 @@ async function generatePDF(comics, modal) {
 
       const col = cellIdx % fmt.cols;
       const row = Math.floor(cellIdx / fmt.cols);
-      const x = fmt.sheetLeftMargin + col * (fmt.labelW + fmt.colGap);
+      let x = fmt.sheetLeftMargin + col * (fmt.labelW + fmt.colGap);
       const y = fmt.sheetTopMargin + row * (fmt.labelH + fmt.rowGap);
+
+      // S18: nudge the Small-L LEFT column right (see SMALL_L_LEFT_SHIFT_IN).
+      if (opts.size === 'small-l' && col === 0) {
+        x += SMALL_L_LEFT_SHIFT_IN;
+      }
 
       // S20: lay the full-width gradient band for this row (Small L only), once
       // per row at col 0, BEFORE the label image so the label draws on top of it.
