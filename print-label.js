@@ -995,24 +995,24 @@ function ensureStylesInjected() {
      of the price pad / QR column on the right side. */
   .rg-label-l .info {
     position: absolute;
-    left: 290px; top: 14px; right: 322px;
+    left: 290px; top: 8px; right: 322px;
     display: flex; flex-direction: column;
   }
   .rg-label-l.has-price .info { right: 522px; }
   .rg-label-l .info-upper {
-    padding-bottom: 8px;
+    padding-bottom: 4px;
     border-bottom: 1px solid #b0b89a;
   }
   .rg-label-l .ttl {
     font-size: 58px; font-weight: 900;
-    color: #0d0d0f; line-height: 1.05;
+    color: #0d0d0f; line-height: 1.0;
     font-family: 'Noto Sans Display', sans-serif;
     transform: scaleX(0.625);
     transform-origin: left center;
   }
   .rg-label-l .iss {
     font-size: 52px; font-weight: 600;
-    color: #333;
+    color: #333; line-height: 1.0;
     font-family: 'Noto Sans Display', sans-serif;
     transform: scaleX(0.625);
     transform-origin: left center;
@@ -1023,11 +1023,11 @@ function ensureStylesInjected() {
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 500;
   }
-  .rg-label-l .info-lower { padding-top: 10px; }
+  .rg-label-l .info-lower { padding-top: 5px; }
   .rg-label-l .meta-grid {
     display: grid;
     grid-template-columns: max-content max-content;
-    column-gap: 16px; row-gap: 5px;
+    column-gap: 16px; row-gap: 3px;
     align-items: baseline;
   }
   /* +2pt vs Small R's already-bumped 24 → 26, per user spec for Small L. */
