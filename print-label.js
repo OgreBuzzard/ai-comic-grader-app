@@ -2296,6 +2296,25 @@ async function generatePDF(comics, modal) {
                   : '8161';
     const priceTag = opts.priceTag ? '-Price' : '';
     const filename = `Robograder-Labels-${sizeTag}${priceTag}-${new Date().toISOString().slice(0, 10)}.pdf`;
+    // Save / deliver the PDF. In a desktop browser, pdf.save() downloads it.
+    // But in the iOS app (Capacitor WKWebView) jsPDF's download path builds a
+    // blob: URL the WKWebView can't open (LSApplicationWorkspace Code=115), so
+    // hand the file to the OS share sheet instead (Save to Files / Print /
+    // AirDrop). Mirrors the image-share path already used elsewhere in the app:
+    // try canShare({files}) first; fall back to the browser download where
+    // file-sharing isn't offered (desktop). On mobile Safari this also swaps the
+    // silent download for a share sheet, which is the better mobile UX anyway.
+    const pdfBlob = pdf.output('blob');
+    const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
+    if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+      try {
+        await navigator.share({ files: [pdfFile], title: filename });
+        return; // delivered via the share sheet (finally still runs cleanup)
+      } catch (shareErr) {
+        if (shareErr && shareErr.name === 'AbortError') return; // user dismissed
+        console.warn('[label] share failed, falling back to download:', shareErr);
+      }
+    }
     pdf.save(filename);
   } finally {
     // Always clean up the off-screen container
