@@ -2137,6 +2137,26 @@ async function generatePDF(comics, modal) {
     // fonts settle (font swap can reflow text).
     await new Promise(r => requestAnimationFrame(r));
 
+    // S20: full-bleed gradient band for Small L (Avery 5162). Physical printing
+    // clips the page's left/right margins + the inter-column gap, leaving white
+    // strips (worst on the LEFT column). We lay a page-width gradient band behind
+    // each row so the green bleeds edge-to-edge; the label images (same gradient,
+    // same row height) sit on top, so the margins/gap read green instead of white.
+    // Rendered once and reused for every row. Small-L only — other formats are
+    // left untouched (Square's row gaps would fill green and change its look).
+    let bandImgData = null;
+    if (opts.size === 'small-l') {
+      const PAGE_W_IN = 8.5;
+      const dpi = fmt.pixelW / fmt.labelW;          // 288
+      const bandEl = document.createElement('div');
+      bandEl.style.cssText = `width:${Math.round(PAGE_W_IN * dpi)}px;height:${fmt.pixelH}px;background:linear-gradient(180deg, #58723b 0%, #93ab66 38%, #9ba37e 100%);`;
+      offscreen.appendChild(bandEl);
+      try {
+        const bandCanvas = await window.html2canvas(bandEl, { scale: 1, backgroundColor: '#d4d9be', logging: false });
+        bandImgData = bandCanvas.toDataURL('image/jpeg', 0.92);
+      } catch (e) { bandImgData = null; /* fall back to per-label gradients only */ }
+    }
+
     // Capture each label and place in PDF. For multi-page output (Small
     // format with >20 queued items, or Large with >7), we add a new page
     // each time the per-sheet count overflows.
@@ -2170,6 +2190,12 @@ async function generatePDF(comics, modal) {
       const row = Math.floor(cellIdx / fmt.cols);
       const x = fmt.sheetLeftMargin + col * (fmt.labelW + fmt.colGap);
       const y = fmt.sheetTopMargin + row * (fmt.labelH + fmt.rowGap);
+
+      // S20: lay the full-width gradient band for this row (Small L only), once
+      // per row at col 0, BEFORE the label image so the label draws on top of it.
+      if (bandImgData && col === 0) {
+        pdf.addImage(bandImgData, 'JPEG', 0, y, 8.5, fmt.labelH);
+      }
 
       const canvas = await window.html2canvas(boxes[i], {
         scale: 1,
