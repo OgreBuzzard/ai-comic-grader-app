@@ -35,6 +35,7 @@
 //
 // =============================================================================
 import { ROBOGRADE_VERSION } from '../lib/version.js';
+import { anthropicWithRetry } from '../lib/anthropic_retry.js';
 
 // ── S15 May 30: Full Assessment REDESIGN (8 fixed named slots) ───────────────
 // The old design required 16/32 two-page-spread photos per book — impractical
@@ -382,16 +383,19 @@ Rules:
 
       let streamResponse;
       try {
-        streamResponse = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01'
-          },
-          body: JSON.stringify(_antBody),
-          signal: ctrl.signal
-        });
+        streamResponse = await anthropicWithRetry(
+          () => fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': apiKey,
+              'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify(_antBody),
+            signal: ctrl.signal
+          }),
+          { deadlineMs: 58000, maxAttempts: 3, label: 'full-stream' }
+        );
       } catch (e) {
         clearTimeout(_streamTimeout);
         throw e;
@@ -468,16 +472,19 @@ Rules:
       const _to = setTimeout(() => ctrl.abort(), 58000);
       let response;
       try {
-        response = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01'
-          },
-          body: JSON.stringify(_antBody),
-          signal: ctrl.signal
-        });
+        response = await anthropicWithRetry(
+          () => fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': apiKey,
+              'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify(_antBody),
+            signal: ctrl.signal
+          }),
+          { deadlineMs: 58000, maxAttempts: 3, label: 'full' }
+        );
       } finally {
         clearTimeout(_to);
       }

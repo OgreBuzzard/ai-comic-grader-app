@@ -31,6 +31,7 @@
 //
 // =============================================================================
 import { ROBOGRADE_VERSION } from '../lib/version.js';
+import { anthropicWithRetry } from '../lib/anthropic_retry.js';
 
 export default async function handler(req, res) {
   // CORS: the iOS Capacitor app calls this cross-origin (local file origin →
@@ -498,16 +499,19 @@ Rules:
 
       let streamResponse;
       try {
-        streamResponse = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01'
-          },
-          body: JSON.stringify(_antBody),
-          signal: ctrl.signal
-        });
+        streamResponse = await anthropicWithRetry(
+          () => fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': apiKey,
+              'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify(_antBody),
+            signal: ctrl.signal
+          }),
+          { deadlineMs: 55000, maxAttempts: 3, label: 'deep-stream' }
+        );
       } catch (e) {
         clearTimeout(_streamTimeout);
         throw e;
@@ -584,16 +588,19 @@ Rules:
       const _to = setTimeout(() => ctrl.abort(), 55000);
       let response;
       try {
-        response = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01'
-          },
-          body: JSON.stringify(_antBody),
-          signal: ctrl.signal
-        });
+        response = await anthropicWithRetry(
+          () => fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': apiKey,
+              'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify(_antBody),
+            signal: ctrl.signal
+          }),
+          { deadlineMs: 55000, maxAttempts: 3, label: 'deep' }
+        );
       } finally {
         clearTimeout(_to);
       }

@@ -25,6 +25,8 @@
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
 import { ROBOGRADE_VERSION } from '../lib/version.js';
+import { anthropicWithRetry, fetchTimeout } from '../lib/anthropic_retry.js';
+import { getBookNote } from '../lib/book_notes.js';
 
 // ── A/B TEST TOGGLE (TEMPORARY) ──────────────────────────────────────
 // When true, the ComicVine reference is suppressed for ALL assessments so we
@@ -191,6 +193,7 @@ export default async function handler(req, res) {
     title = '',
     issueNumber = '',
     issueYear = null,
+    issueDate = '',  // client sends 'Mon YYYY' (e.g. 'Nov 1988'); used to disambiguate book_notes printings by year
     suppressReference = false,  // A/B DIAGNOSTIC: when true, skip the ComicVine
                                 // reference fetch entirely so we can compare
                                 // with-reference vs without-reference grades.
@@ -249,15 +252,19 @@ export default async function handler(req, res) {
 
     let scText = '', scIn = 0, scOut = 0, scModel = '', scStop = '';
     try {
-      const scResp = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 100,
-          messages: [{ role: 'user', content: [imgBlock, { type: 'text', text: scPrompt }] }]
-        })
+      const _scBody = JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: [imgBlock, { type: 'text', text: scPrompt }] }]
       });
+      const scResp = await anthropicWithRetry(
+        (remainingMs) => fetchTimeout('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+          body: _scBody
+        }, remainingMs),
+        { deadlineMs: 20000, maxAttempts: 3, label: 'slabcheck' }
+      );
       const scJson = await scResp.json();
       scModel = scJson.model || '';
       scStop = scJson.stop_reason || '';
@@ -457,6 +464,19 @@ export default async function handler(req, res) {
   }
   if (psaGraderNotes && psaGraderNotes.trim()) {
     notesContext.push(`OFFICIAL PSA GRADER NOTES FOR THIS BOOK:\n${psaGraderNotes.trim()}\nThese are the official defects documented by PSA graders. Factor these in when forming your assessment.`);
+  }
+  // Per-book artwork/production correction note (lib/book_notes.js), keyed by
+  // title + issue + year so it attaches only to the intended printing. Prevents
+  // the grader from scoring an intrinsic art element as a defect. The year comes
+  // from issueDate ('Mon YYYY'); fall back to issueYear if a numeric year is sent.
+  const _noteYear = (() => {
+    const m = String(issueDate || '').match(/(?:19|20)\d{2}/);
+    if (m) return Number(m[0]);
+    return (typeof issueYear === 'number' && issueYear > 1900) ? issueYear : null;
+  })();
+  const _bookNote = getBookNote(title, issueNumber, _noteYear, 'main');
+  if (_bookNote) {
+    notesContext.push(`BOOK-SPECIFIC NOTE FOR THIS TITLE/ISSUE:\n${_bookNote}`);
   }
   const notesBlock = notesContext.length > 0 ? '\n\n' + notesContext.join('\n\n') : '';
 
@@ -1100,22 +1120,29 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       // Streaming branch: ask Anthropic for SSE, scan deltas for field
       // markers, forward phase events to our SSE client.
       _antBody.stream = true;
+      const _streamBody = JSON.stringify(_antBody);
 
       const ctrl = new AbortController();
       const _streamTimeout = setTimeout(() => ctrl.abort(), 55000);
 
       let streamResponse;
       try {
-        streamResponse = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01'
-          },
-          body: JSON.stringify(_antBody),
-          signal: ctrl.signal
-        });
+        // The shared ctrl's 55s timer caps everything — retries AND the stream
+        // body read. The retry only re-fires on a 429/529, which comes back at
+        // the headers (before any stream body), so it's safe to retry here.
+        streamResponse = await anthropicWithRetry(
+          () => fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': apiKey,
+              'anthropic-version': '2023-06-01'
+            },
+            body: _streamBody,
+            signal: ctrl.signal
+          }),
+          { deadlineMs: 55000, maxAttempts: 3, label: 'primary-stream' }
+        );
       } catch (e) {
         clearTimeout(_streamTimeout);
         throw e;
@@ -1227,15 +1254,14 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       // at 60s; we need our own catch block to fire before then so the
       // timing data can be written to Firestore. Without this, a timed-out
       // assessment leaves no trace.
-      const response = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify(_antBody)
-      }, 55000);
+      const _primaryHeaders = { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' };
+      const _primaryBody = JSON.stringify(_antBody);
+      const response = await anthropicWithRetry(
+        (remainingMs) => fetchWithTimeout('https://api.anthropic.com/v1/messages', {
+          method: 'POST', headers: _primaryHeaders, body: _primaryBody
+        }, remainingMs),
+        { deadlineMs: 55000, maxAttempts: 3, label: 'primary' }
+      );
       phaseDelta('primaryCallMs', _primaryStart);
 
       if (!response.ok) {
