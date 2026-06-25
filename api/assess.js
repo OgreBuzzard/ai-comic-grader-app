@@ -245,7 +245,7 @@ export default async function handler(req, res) {
     } catch (e) { imgBlock = null; }
     if (!imgBlock) return res.status(400).json({ error: 'no front image' });
 
-    const scPrompt = 'You are looking at a photo of a single comic book. Decide ONE thing: is the comic encapsulated in a rigid third-party GRADING SLAB (a sealed hard plastic case with a printed grading label across the top — CGC, PSA, or CBCS), or is it a RAW, un-encased comic with no case and no grading label? A raw comic\'s top edge is its own cover art (publisher banner, price box, barcode) — that is NOT a grading label. Respond with ONLY a JSON object and nothing else: {"slab": true or false, "company": "CGC" | "PSA" | "CBCS" | null}. Set company only when slab is true and you can read which grader; otherwise null.';
+    const scPrompt = 'You are looking at a photo of a single collectible. First decide its TYPE. If it is a TRADING CARD — a small rigid card such as Pokémon, a sports card, or Magic: The Gathering, whether raw or in a card slab — respond ONLY with {"isCard": true, "slab": false, "company": null} and nothing else. Otherwise it is a COMIC BOOK (a magazine-sized paper book); decide whether the comic is encapsulated in a rigid third-party GRADING SLAB (a sealed hard plastic case with a printed grading label across the top — CGC, PSA, or CBCS) or is RAW (no case and no grading label; a raw comic\'s top edge is its own cover art — publisher banner, price box, barcode — which is NOT a grading label). Respond with ONLY a JSON object and nothing else: {"isCard": false, "slab": true or false, "company": "CGC" | "PSA" | "CBCS" | null}. Set company only when slab is true and you can read which grader; otherwise null.';
 
     let scText = '', scIn = 0, scOut = 0, scModel = '', scStop = '';
     try {
@@ -268,13 +268,14 @@ export default async function handler(req, res) {
       return res.status(502).json({ error: 'slabcheck upstream failed' });
     }
 
-    let detected = false, company = null;
+    let detected = false, company = null, isCard = false;
     try {
       const mt = scText.match(/\{[\s\S]*\}/);
       const obj = mt ? JSON.parse(mt[0]) : {};
-      detected = obj.slab === true;
+      isCard = obj.isCard === true;
+      detected = !isCard && obj.slab === true;
       company = detected && ['CGC', 'PSA', 'CBCS'].includes(obj.company) ? obj.company : null;
-    } catch (e) { detected = false; company = null; }
+    } catch (e) { detected = false; company = null; isCard = false; }
 
     const scMs = Date.now() - _sc0;
     // Haiku 4.5 pricing: $1/M input, $5/M output.
@@ -298,12 +299,13 @@ export default async function handler(req, res) {
           stopReason: scStop,
           slabDetected: detected,
           slabCompany: company,
+          isCard: isCard,
           rawText: typeof scText === 'string' ? scText.slice(0, 500) : null
         });
       } catch (e) { console.error('slabcheck timing write failed (non-fatal):', e); }
     })();
 
-    return res.status(200).json({ detected, company, costUsd: scCost, ms: scMs, model: scModel });
+    return res.status(200).json({ detected, company, isCard, costUsd: scCost, ms: scMs, model: scModel });
   }
 
   // ── Front + back cover requirement (server-side gate, pre-API) ─────────────
