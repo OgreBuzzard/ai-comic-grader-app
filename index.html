@@ -7248,10 +7248,35 @@ function dismissAssessModal(err) {
   if (err) alert(describeAssessmentError(err));
 }
 
+// S20: card placeholder modal. Card grading isn't live yet — when the slab-check
+// flags the front image as a trading card, we surface this instead of running
+// (or appearing to run) a comic assessment.
+function showCardComingSoon() {
+  let m = document.getElementById("card-soon-modal");
+  if (!m) {
+    m = document.createElement("div");
+    m.id = "card-soon-modal";
+    m.style.cssText = "position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;padding:24px";
+    m.innerHTML = '<div style="background:#1c1f1c;border:1px solid #3a4a2a;border-radius:14px;max-width:340px;width:100%;padding:26px 24px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,0.5)">'
+      + '<div style="font-size:40px;line-height:1;margin-bottom:12px">🃏</div>'
+      + '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:20px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#9bd06a;margin-bottom:8px">Card grading coming soon</div>'
+      + '<div style="font-size:14px;color:#b8c0b4;line-height:1.5;margin-bottom:18px">That looks like a trading card. Robograder grades comics today — card grading is on the way.</div>'
+      + '<button onclick="document.getElementById(\'card-soon-modal\').style.display=\'none\'" style="background:linear-gradient(180deg,#58723b,#93ab66);color:#fff;border:none;border-radius:8px;padding:10px 28px;font-family:\'Barlow Condensed\',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer">Got it</button>'
+      + '</div>';
+    document.body.appendChild(m);
+  }
+  m.style.display = "flex";
+}
+
 async function assessGrade() {
   const imgs = (formData.images || []).filter(Boolean);
   if (imgs.length === 0) {
     alert("Add at least one photo first.");
+    return;
+  }
+  // S20: card placeholder — never run the comic assessment on a trading card.
+  if (formData._slabDetect && formData._slabDetect.isCard) {
+    showCardComingSoon();
     return;
   }
   if (assessing) return;
@@ -9737,6 +9762,16 @@ async function cameraCapture() {
     }
     if (checkEl) checkEl.classList.remove("show");
     formData._slabCheckedAtCapture = true;
+    if (_slab && _slab.isCard) {
+      // S20: trading card, not a comic — stop the walkthrough and show the
+      // card-grading placeholder instead of shooting the rest of the photos.
+      _cameraState = null;
+      cameraCloseStream();
+      const _cm = document.getElementById("camera-modal");
+      if (_cm) _cm.classList.remove("open");
+      showCardComingSoon();
+      return;
+    }
     if (_slab && _slab.detected && _cameraState) {
       _cameraState.queue = _cameraState.queue.filter(s => s !== 2 && s !== 3);
       _cameraState.labelDetected = true;
