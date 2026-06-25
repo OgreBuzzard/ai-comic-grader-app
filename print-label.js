@@ -2296,14 +2296,51 @@ async function generatePDF(comics, modal) {
                   : '8161';
     const priceTag = opts.priceTag ? '-Price' : '';
     const filename = `Robograder-Labels-${sizeTag}${priceTag}-${new Date().toISOString().slice(0, 10)}.pdf`;
-    // Save / deliver the PDF. In a desktop browser, pdf.save() downloads it.
-    // But in the iOS app (Capacitor WKWebView) jsPDF's download path builds a
-    // blob: URL the WKWebView can't open (LSApplicationWorkspace Code=115), so
-    // hand the file to the OS share sheet instead (Save to Files / Print /
-    // AirDrop). Mirrors the image-share path already used elsewhere in the app:
-    // try canShare({files}) first; fall back to the browser download where
-    // file-sharing isn't offered (desktop). On mobile Safari this also swaps the
-    // silent download for a share sheet, which is the better mobile UX anyway.
+    // Deliver the PDF. Three environments behave differently:
+    //
+    //   1. Native iOS app (Capacitor WKWebView): navigator.share is NOT wired
+    //      into the WKWebView, and jsPDF's pdf.save() builds a blob: URL the
+    //      shell can't open (LSApplicationWorkspace Code=115) — it fails
+    //      silently. So write the PDF to the cache dir with @capacitor/filesystem
+    //      and hand its file:// URI to @capacitor/share, which opens the real
+    //      iOS share sheet (Save to Files / Print / AirDrop). Requires those two
+    //      plugins to be installed + `npx cap sync ios`.
+    //   2. Mobile Safari PWA: navigator.share({files}) works → share sheet.
+    //   3. Desktop browser: canShare is false → pdf.save() download.
+    //
+    const Cap = window.Capacitor;
+    const isNative = !!(Cap && typeof Cap.isNativePlatform === 'function' && Cap.isNativePlatform());
+    if (isNative) {
+      const P = (Cap && Cap.Plugins) || {};
+      const FS = P.Filesystem;
+      const ShareP = P.Share;
+      if (FS && ShareP) {
+        try {
+          // datauristring → strip the "data:application/pdf;base64," prefix so
+          // Filesystem writes the raw base64 as binary (no encoding = base64).
+          const b64 = pdf.output('datauristring').split(',')[1];
+          const written = await FS.writeFile({ path: filename, data: b64, directory: 'CACHE' });
+          let uri = written && written.uri;
+          if (!uri) { uri = (await FS.getUri({ path: filename, directory: 'CACHE' })).uri; }
+          await ShareP.share({ title: filename, url: uri });
+          return; // delivered via the native share sheet (finally still cleans up)
+        } catch (e) {
+          const msg = (e && e.message) || String(e);
+          if (/cancel|abort|dismiss/i.test(msg)) return; // user closed the sheet
+          console.warn('[label] native share failed:', e);
+          alert('Could not save the label PDF: ' + msg);
+          return;
+        }
+      } else {
+        // Plugins not in this build yet — tell us plainly instead of failing silently.
+        alert('Saving labels in the app needs the Filesystem and Share plugins. '
+            + 'Install @capacitor/filesystem and @capacitor/share, then run npx cap sync ios.');
+        return;
+      }
+    }
+
+    // Web (PWA / desktop): try the Web Share API with the file, fall back to the
+    // browser download where file-sharing isn't offered. This path works today.
     const pdfBlob = pdf.output('blob');
     const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
     if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
