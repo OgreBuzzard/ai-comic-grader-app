@@ -676,6 +676,30 @@ async function api(path, opts) {
   return res.json();
 }
 
+// Pull the full data export and save it as a JSON file. Reuses api() so the
+// admin token + refresh path is identical to every other call.
+async function downloadExport() {
+  const btn = document.getElementById('export-btn');
+  const orig = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Exporting…'; }
+  try {
+    const data = await api('/api/export');
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `robograder-export-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert('Export failed: ' + (e && e.message ? e.message : e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = orig; }
+  }
+}
+
 // ── Auth ───────────────────────────────────────────────────────────────────
 auth.onAuthStateChanged(async (user) => {
   if (!user) {
@@ -725,6 +749,7 @@ async function renderDashboard() {
   root.innerHTML = `
     <header>
       <h1>ROBOGRADER ADMIN</h1>
+      <button class="sign-out" id="export-btn" style="margin-right:8px">Export JSON</button>
       <button class="sign-out" id="signout-btn">Sign out</button>
     </header>
     <main>
@@ -738,6 +763,7 @@ async function renderDashboard() {
     </main>
   `;
   document.getElementById('signout-btn').onclick = signOut;
+  document.getElementById('export-btn').onclick = downloadExport;
   document.querySelectorAll('#tabs button').forEach(btn => {
     btn.onclick = () => {
       state.tab = btn.dataset.tab;
