@@ -228,6 +228,14 @@ onAuthStateChanged(auth, async user => {
     @media (min-width: 540px) {
       #app { box-shadow: 0 0 40px rgba(0,0,0,0.3); border-left: 1px solid #2a2820; border-right: 1px solid #2a2820; }
     }
+    /* S18: iPad / tablet — use the full screen instead of the desktop centered
+       column. Targeted at touch devices (pointer: coarse) so desktop keeps its
+       centered-with-dark-margins treatment. Phones (<540px) are already
+       full-width and unaffected. This removes the black side bars on iPad. */
+    @media (min-width: 540px) and (pointer: coarse) {
+      #app  { max-width: none; border-left: none; border-right: none; box-shadow: none; }
+      #main { max-width: none; }
+    }
     #header { background: #ffffff; border-bottom: 1px solid #d8d0c8; padding: calc(env(safe-area-inset-top, 0px) + 10px) 14px 10px; position: sticky; top: 0; z-index: 100; }
     #header-row-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     #header-row-bottom { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 8px; }
