@@ -56,7 +56,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebas
 
 import { getFirestore, initializeFirestore, collection, getDocs, setDoc, deleteDoc, doc, onSnapshot, getDoc, updateDoc, increment, query, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-import { getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signInWithCustomToken, signInWithCredential, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signInWithCustomToken, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject, listAll } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
 
@@ -132,9 +132,6 @@ window._onAuthStateChanged = onAuthStateChanged;
 
 window._GoogleAuthProvider = GoogleAuthProvider;
 
-window._OAuthProvider = OAuthProvider;
-window._signInWithCredential = signInWithCredential;
-
 window._loadingState = true;
 
 function tryRevealAuthScreen() {
@@ -177,7 +174,6 @@ onAuthStateChanged(auth, async user => {
       window._publicByDefault = false;
     }
     await loadUserCredits();
-    _recoverPendingIaps(); // iOS: retry any purchase receipts that didn't finish crediting
     await checkTermsAcceptance();
     const _chestPreload = new Image;
     _chestPreload.src = "assets/Robograder_Scan_Frame.webp";
@@ -1901,6 +1897,56 @@ window.matchValueKey = function matchValueKey(title, issue, publisher, printing)
   }
 })();
 
+// ── FMV index (S18) ────────────────────────────────────────────────────────
+// Index-driven Fair Market Value ranges. The data file /fmv.json is OPTIONAL:
+// when absent (404) the feature stays dormant and nothing renders. When present,
+// a book's grade maps to one of 13 price tiers, shown as a $ range.
+// Schema (single source of truth — tiers live in the file, not hardcoded here):
+//   { "version":"1.0.0",
+//     "tiers": { "1":[1,20], "2":[20,50], ... "13":[100000,null] },   // [low, high]; high=null => "low+"
+//     "books": { "<normTitle>|<normIssue>": [[grade,tier], ...] } }    // ascending grade breakpoints (step fn)
+// Keys use the SAME normalization as value-keys (_normalizeKeyTitle/_normalizeKeyIssue),
+// so the converter that builds fmv.json must mirror those exactly.
+let _fmvIndex = null;
+
+window.matchFMV = function matchFMV(title, issue, grade, printing) {
+  if (!_fmvIndex || !_fmvIndex.books) return null;
+  // Reprints/facsimiles are not the value key (same gate as matchValueKey).
+  if (printing && typeof printing === "string") {
+    const p = printing.toLowerCase();
+    if (p.includes("facsimile") || p.includes("reprint")) return null;
+  }
+  const g = parseFloat(grade);
+  if (!isFinite(g)) return null;
+  const key = _normalizeKeyTitle(title) + "|" + _normalizeKeyIssue(issue);
+  const breaks = _fmvIndex.books[key];
+  if (!Array.isArray(breaks) || !breaks.length) return null;
+  // breaks ascending by grade; tier = the highest breakpoint whose grade <= g
+  let tier = breaks[0][1];
+  for (const b of breaks) { if (g >= b[0]) tier = b[1]; else break; }
+  const range = _fmvIndex.tiers && _fmvIndex.tiers[String(tier)];
+  if (!range) return null;
+  return { tier, low: range[0], high: range[1] };
+};
+
+function formatFMV(m) {
+  if (!m) return "";
+  const n = v => "$" + Number(v).toLocaleString("en-US");
+  return (m.high == null) ? (n(m.low) + "+") : (n(m.low) + "\u2013" + n(m.high));
+}
+
+(async function loadFMV() {
+  try {
+    const r = await fetch("/fmv.json", { cache: "default" });
+    if (!r.ok) { if (r.status !== 404) console.warn("[fmv] fetch failed:", r.status); return; }
+    const data = await r.json();
+    if (data && data.books) {
+      _fmvIndex = data;
+      console.log(`[fmv] loaded ${Object.keys(data.books).length} books (v${data.version || "?"})`);
+    }
+  } catch (e) { console.warn("[fmv] load error:", e?.message || e); }
+})();
+
 function normalizeTitle(s, issueDate, printing) {
   if (!s) return s;
   const trimmed = s.trim().replace(/\s+/g, " ").replace(/^The\s+/i, "");
@@ -2416,6 +2462,7 @@ function aiCgcGrade(c) {
 function buildListBadge(c) {
   if (c.roboGrade && c.roboGrade.score != null) {
     const rgScore = Math.round(c.roboGrade.score);
+    const showPlus = rgScore >= 90 && rgScore < 100 && !c.highGradeUnlocked;
     // S17: match the dark score-box color used in every other view (was a
     // lighter green tuned to the List background, which made it inconsistent and
     // hid the stars). Purple for restored books, green otherwise.
@@ -2425,7 +2472,7 @@ function buildListBadge(c) {
     const numColor = _isRestored ? '#c8a8e8' : '#b8d820';
     // Score stays DEAD CENTER (cardinal rule). Stars are an absolutely-positioned
     // overlay near the top so they never displace the number.
-    return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="position:absolute;top:6px;left:0;right:0;text-align:center;display:flex;justify-content:center;opacity:0.5">${assessmentTierStars(c, { size: 7.2, color: numColor })}</div>\n      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:${numColor};line-height:1">${rgScore}</div>\n    </div>`;
+    return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="position:absolute;top:6px;left:0;right:0;text-align:center;display:flex;justify-content:center">${assessmentTierStars(c, { size: 9, color: numColor })}</div>\n      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:${numColor};line-height:1">${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#7aa838;margin-left:1px">+</span>' : ""}</div>\n    </div>`;
   }
   if (c.cgcGrade) return buildBadge(normalizeGrade(c.cgcGrade), "cgc-official", detectDesignation(c), true);
   if (c.psaGrade) return buildBadge(normalizeGrade(c.psaGrade), "psa-official", c.psaDesignation || "universal", true);
@@ -2607,19 +2654,7 @@ async function initFirebase() {
       updateStats();
       if (typeof window.signalAppReady === "function") window.signalAppReady();
     } else {
-      if (view === "list") {
-        renderList();
-      } else if (view === "detail" && _lastDetailId) {
-        // A background write (e.g. an admin rescore in the dashboard) updated
-        // Firestore. items is now fresh, but an open detail view won't reflect
-        // it until re-rendered. Re-render only if THIS entry actually changed.
-        const fresh = items.find(c => c.id === _lastDetailId);
-        if (fresh && selected && JSON.stringify(fresh) !== JSON.stringify(selected)) {
-          const _savedY = _listScrollY;
-          showDetail(_lastDetailId);
-          _listScrollY = _savedY;
-        }
-      }
+      if (view === "list") renderList();
       updateStats();
     }
   }, err => {
@@ -3017,7 +3052,7 @@ const SAMPLE_COMIC = {
   title: "The Unerring Robograder",
   issue: "1",
   issueDate: "April 2026",
-  publisher: "Robograder Comics",
+  publisher: "Robograder",
   grade: "8.0",
   pageQuality: "Off-White to White",
   cgcGrade: "",
@@ -3030,7 +3065,7 @@ const SAMPLE_COMIC = {
   roboGrade: {
     version: "2.0",
     score: 80,
-    confidenceRange: 6,
+    confidenceRange: 0,
     frontScore: 37,
     backScore: 18,
     spineScore: 16,
@@ -3051,7 +3086,7 @@ const SAMPLE_COMIC = {
   roboGradeId: "",
   roboGradeDate: "",
   highGradeTier: false,
-  highGradeUnlocked: true,
+  highGradeUnlocked: false,
   restorationCheckTier: false,
   restorationReport: null,
   restorationFlag: false,
@@ -3066,7 +3101,7 @@ const SAMPLE_COMIC = {
   cornerImages: [],
   keyInfo: "",
   aiGraderNotes: "",
-  aiAssessment: "This comic shows some wear and tear, but is in relatively good condition for something that doesn't actually exist.",
+  aiAssessment: "Certified flawless by the Unerring Robograder.",
   psaNotes: "",
   assessmentHistory: [],
   notes: ""
@@ -3301,8 +3336,34 @@ async function dismissSampleIfNeeded() {
 async function signInGoogle() {
   try {
     if (window.Capacitor && window.Capacitor.isNativePlatform()) {
-      // iOS app (S18): NATIVE Google sign-in, no browser. See _iosNativeSignIn.
-      await _iosNativeSignIn('google');
+      // iOS app: open Safari auth bridge, then poll for the custom token
+      const session = 'ios_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+      window.open('https://robograder.app/auth-ios.html?s=' + session, '_blank');
+      // Show polling status
+      const iosStatus = document.getElementById('auth-ios-status');
+      if (iosStatus) iosStatus.style.display = 'block';
+      const poll = async () => {
+        for (let i = 0; i < 120; i++) {
+          await new Promise(r => setTimeout(r, 2000));
+          try {
+            const resp = await fetch('/api/ios-auth?session=' + session);
+            if (resp.ok) {
+              const data = await resp.json();
+              if (data.customToken) {
+                if (iosStatus) iosStatus.textContent = 'Signed in! Loading your collection...';
+                await window._signInWithCustomToken(window._auth, data.customToken);
+                await loadItems();
+                return true;
+              }
+            }
+          } catch (_) {}
+        }
+        return false;
+      };
+      const ok = await poll();
+      if (!ok) {
+        if (iosStatus) iosStatus.textContent = 'Sign-in timed out. Tap Continue to try again.';
+      }
       return;
     }
     await window._signInWithPopup(window._auth, window._googleProvider);
@@ -3313,76 +3374,6 @@ async function signInGoogle() {
       alert("Sign in failed: " + e.message);
     }
   }
-}
-
-async function signInApple() {
-  try {
-    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
-      // iOS app (S18): NATIVE Apple sign-in, no browser. See _iosNativeSignIn.
-      await _iosNativeSignIn('apple');
-      return;
-    }
-    // PWA has no Apple sign-in (removed for redirect loops); this is iOS-only.
-    alert("Apple sign-in is available in the iOS app.");
-  } catch (e) {
-    alert("Sign in failed: " + e.message);
-  }
-}
-
-// iOS native sign-in (S18). @capacitor-firebase/authentication does a NATIVE
-// Google/Apple sign-in (NO browser — this is the Apple-Guideline-4 fix),
-// returns a credential, and we hand it to the Firebase JS SDK via
-// signInWithCredential. The plugin proxy is reached at
-// window.Capacitor.Plugins.FirebaseAuthentication (this is a no-bundler build —
-// no npm import; the native bridge populates the proxy at runtime).
-//
-// IMPORTANT WKWebView gotcha (firebase-js-sdk #5497): signInWithCredential is
-// known to HANG and never resolve in WKWebView even though the sign-in
-// actually succeeds. So we do NOT await it for the UI. onAuthStateChanged
-// (the handler near the top of the module script) fires on sign-in and drives
-// the signed-in transition (hides auth, shows app, loads credits). We
-// fire-and-forget the credential sign-in and use a setTimeout backstop to load
-// items in case the listener fired before sign-in completed.
-async function _iosNativeSignIn(provider) {
-  const FA = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.FirebaseAuthentication;
-  if (!FA || typeof FA.signInWithGoogle !== 'function') {
-    alert("Sign-in unavailable: native auth plugin not found.");
-    return;
-  }
-  const status = document.getElementById('splash-signin-status') || document.getElementById('auth-ios-status');
-  if (status) { status.style.display = 'block'; status.textContent = 'Signing in\u2026'; }
-  // Block the splash sign-in buttons for the rest of the flow: prevents a
-  // double-tap firing two sign-ins, and stops them looking tappable while the
-  // collection loads after sign-in (onAuthStateChanged navigates away).
-  const _signinBtns = ['splash-apple-btn', 'splash-google-btn'].map(function(id){ return document.getElementById(id); }).filter(Boolean);
-  _signinBtns.forEach(function(b){ b.disabled = true; });
-  let cred;
-  try {
-    if (provider === 'apple') {
-      const r = await FA.signInWithApple({ skipNativeAuth: true });
-      const c = r && r.credential;
-      if (!c || !c.idToken) throw new Error('No Apple credential returned');
-      cred = new window._OAuthProvider('apple.com').credential({ idToken: c.idToken, rawNonce: c.nonce });
-    } else {
-      const r = await FA.signInWithGoogle({ skipNativeAuth: true });
-      const c = r && r.credential;
-      if (!c || !c.idToken) throw new Error('No Google credential returned');
-      cred = window._GoogleAuthProvider.credential(c.idToken);
-    }
-  } catch (e) {
-    if (status) status.style.display = 'none';
-    _signinBtns.forEach(function(b){ b.disabled = false; });
-    // FIRST CUT: surface the full error so we can read the real user-cancel
-    // signature on device, THEN add benign-cancel suppression here.
-    alert("Sign in failed: " + ((e && (e.message || e.code)) || e));
-    return;
-  }
-  // Fire the JS-SDK sign-in WITHOUT awaiting (WKWebView hang). onAuthStateChanged
-  // takes over the UI. try/catch guards the synchronous throw path only.
-  try { window._signInWithCredential(window._auth, cred); } catch (e) {}
-  if (status) status.textContent = 'Signed in! Loading your collection\u2026';
-  // Backstop load in case onAuthStateChanged already fired before sign-in.
-  setTimeout(function() { try { loadItems(); } catch (e) {} }, 800);
 }
 
 async function signOutUser() {
@@ -3444,7 +3435,6 @@ async function loadUserCredits() {
       window._sampleDismissed = data.sampleDismissed === true;
       if (data.everPurchased) window._userEverPaid = true; else if (window._userCredits > 0) window._userEverPaid = true;
       window._trainingOptIn = data.trainingOptIn !== false;
-      window._printOptIn = data.printOptIn === true; // S18: persisted print-mode opt-in
       if (typeof data.transferCode === "string" && data.transferCode.length === 4) {
         window._transferCode = data.transferCode;
       } else {
@@ -3545,52 +3535,12 @@ function showTermsModal() {
   };
 }
 
-let _purchaseInFlight = false;
-
-// Lock the buy buttons + show a processing indicator while a purchase is in
-// flight. StoreKit's steps can lag (especially in sandbox); without this, users
-// re-tap and can kick off duplicate purchase attempts.
-function _setBuyBusy(busy) {
-  const modal = document.getElementById("buy-credits-modal");
-  if (!modal) return;
-  modal.querySelectorAll("button").forEach(function(b) {
-    const oc = b.getAttribute("onclick") || "";
-    if (oc.indexOf("buyCredits(") !== -1) {
-      b.disabled = busy;
-      b.style.opacity = busy ? "0.5" : "";
-      b.style.pointerEvents = busy ? "none" : "";
-    }
-  });
-  let note = document.getElementById("buy-busy-note");
-  if (busy) {
-    if (!note) {
-      note = document.createElement("div");
-      note.id = "buy-busy-note";
-      note.style.cssText = "margin-top:14px;text-align:center;font-size:13px;color:#5a4a3a;display:flex;align-items:center;justify-content:center;gap:8px";
-      note.innerHTML = '<span style="width:16px;height:16px;border:2px solid #ddd8d0;border-top-color:#5a4a3a;border-radius:50%;display:inline-block;animation:spin 0.9s linear infinite"></span> Processing your purchase\u2026';
-      const card = modal.querySelector("div") || modal;
-      card.appendChild(note);
-    }
-    note.style.display = "flex";
-  } else if (note) {
-    note.style.display = "none";
-  }
-}
-
 async function buyCredits(pkg) {
   if (!window._currentUser) {
     alert("Please sign in to purchase credits.");
     return;
   }
-  if (_purchaseInFlight) return; // ignore re-taps while a purchase is processing
-  _purchaseInFlight = true;
-  _setBuyBusy(true);
   try {
-    // iOS app: native StoreKit IAP (Apple Guideline 2.1b). PWA keeps Stripe.
-    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
-      await _iosBuyCredits(pkg);
-      return;
-    }
     const token = await window._currentUser.getIdToken();
     const resp = await fetch("/api/checkout", {
       method: "POST",
@@ -3610,211 +3560,6 @@ async function buyCredits(pkg) {
     }
   } catch (e) {
     alert("Checkout error: " + e.message);
-  } finally {
-    _purchaseInFlight = false;
-    _setBuyBusy(false);
-  }
-}
-
-// Internal package key → App Store Connect consumable Product ID.
-const IOS_PRODUCT_IDS = {
-  comic_stack: 'app.robograder.credits.stack',
-  comic_wall:  'app.robograder.credits.wall',
-  short_box:   'app.robograder.credits.shortbox',
-};
-const IOS_CREDITS = { comic_stack: 5, comic_wall: 20, short_box: 100 };
-
-// iOS native purchase: StoreKit 2 via @capgo/native-purchases (NativePurchases).
-// purchase → get jwsRepresentation → server verifies + credits → refresh UI.
-// Crediting is server-side and idempotent (keyed on Apple transactionId), so a
-// retried POST never double-credits.
-// IAP recovery: if the server credit call fails after Apple has completed a
-// purchase, the receipt (JWS) is parked in localStorage and re-submitted on the
-// next launch. Crediting is idempotent server-side (keyed on Apple transactionId),
-// so re-submitting never double-credits. localStorage is deliberate here: it
-// survives the very network outage that caused the original failure, which a
-// Firestore write could not.
-const _PENDING_IAP_KEY = 'rg_pending_iap';
-function _getPendingIaps() {
-  try { return JSON.parse(localStorage.getItem(_PENDING_IAP_KEY) || '[]'); }
-  catch (e) { return []; }
-}
-function _savePendingIaps(arr) {
-  try { localStorage.setItem(_PENDING_IAP_KEY, JSON.stringify(arr || [])); } catch (e) {}
-}
-function _addPendingIap(jws) {
-  if (!jws) return;
-  const arr = _getPendingIaps();
-  if (arr.some(function(p) { return p.jws === jws; })) return; // dedupe
-  arr.push({ jws: jws, ts: Date.now(), tries: 0 });
-  _savePendingIaps(arr);
-}
-function _removePendingIap(jws) {
-  _savePendingIaps(_getPendingIaps().filter(function(p) { return p.jws !== jws; }));
-}
-
-// On launch (iOS, signed in), retry any parked receipts. Drops an entry once it
-// is credited, once the server returns a terminal 400 (bad/foreign receipt), or
-// after enough failed tries / too much age — so a bad receipt can't loop forever.
-let _recoveryRunning = false;
-async function _recoverPendingIaps() {
-  if (_recoveryRunning) return;
-  if (!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) return;
-  if (!window._currentUser) return;
-  const pending = _getPendingIaps();
-  if (!pending.length) return;
-  _recoveryRunning = true;
-  let recovered = 0;
-  try {
-    const idToken = await window._currentUser.getIdToken();
-    for (const entry of pending) {
-      let drop = false;
-      try {
-        const resp = await fetch("/api/verify_iap", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: "Bearer " + idToken },
-          body: JSON.stringify({ jws: entry.jws })
-        });
-        const data = await resp.json().catch(function() { return {}; });
-        if (resp.ok && data.ok) {
-          drop = true;
-          if (!data.alreadyProcessed) recovered += (data.credits || 0);
-        } else if (resp.status === 400) {
-          drop = true; // terminal: receipt won't verify — retrying won't help
-        } else {
-          entry.tries = (entry.tries || 0) + 1; // 401/403/5xx — transient
-        }
-      } catch (e) {
-        entry.tries = (entry.tries || 0) + 1; // network — retry next launch
-      }
-      const ageDays = (Date.now() - (entry.ts || 0)) / 86400000;
-      if (!drop && (entry.tries >= 8 || ageDays > 14)) drop = true;
-      entry._drop = drop;
-    }
-    _savePendingIaps(pending.filter(function(p) { return !p._drop; }));
-    if (recovered > 0) {
-      await loadUserCredits();
-      alert("Added " + recovered + " assessments from a previous purchase that hadn't finished crediting.");
-    }
-  } catch (e) {
-    console.warn("[iap recovery] failed:", e);
-  } finally {
-    _recoveryRunning = false;
-  }
-}
-
-// True if a purchase error is a user cancel (silent — no alert). Covers the
-// common StoreKit/@capgo cancel forms by message or code, plus SKError code 2.
-function _isCancelError(e) {
-  if (!e) return false;
-  const msg = ((e.message || '') + '').toLowerCase();
-  const code = ((e.code != null ? e.code : '') + '').toLowerCase();
-  return /cancel/.test(msg) || /cancel/.test(code) || code === '2';
-}
-
-async function _iosBuyCredits(pkg) {
-  const NP = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativePurchases;
-  const productId = IOS_PRODUCT_IDS[pkg];
-  if (!NP || !productId) { alert("Purchases are unavailable right now. Please try again."); return; }
-  let txn;
-  try {
-    txn = await NP.purchaseProduct({
-      productIdentifier: productId,
-      productType: 'inapp',
-      quantity: 1,
-      isConsumable: true,
-      autoAcknowledgePurchases: true
-    });
-  } catch (e) {
-    // A user cancel is silent. StoreKit/@capgo can signal cancel via the message
-    // ("cancel"/"cancelled"/"canceled"/"userCancelled"/"paymentCancelled") or via
-    // SKError code 2 (payment cancelled). Anything else is a real error to surface.
-    if (!_isCancelError(e)) {
-      const msg = ((e && (e.message || e.code)) || 'Unknown error') + '';
-      alert("Purchase failed: " + msg);
-    }
-    return;
-  }
-  const jws = txn && txn.jwsRepresentation;
-  if (!jws) {
-    alert("Purchase couldn't be verified (no receipt). If you were charged, email support@robograder.app.");
-    return;
-  }
-  // Park the receipt before the server call so a failure here is recoverable on
-  // the next launch (idempotent server-side). Cleared on confirmed credit.
-  _addPendingIap(jws);
-  try {
-    const idToken = await window._currentUser.getIdToken();
-    const resp = await fetch("/api/verify_iap", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + idToken },
-      body: JSON.stringify({ jws })
-    });
-    const data = await resp.json().catch(function(){ return {}; });
-    if (resp.ok && data.ok) {
-      _removePendingIap(jws);
-      await loadUserCredits();
-      hideBuyCredits();
-      alert("Added " + data.credits + " assessments to your account.");
-    } else {
-      alert("We couldn't credit your purchase: " + (data.error || "unknown error") + "\n\nIf you were charged, your receipt is on file — email support@robograder.app and we'll fix it.");
-    }
-  } catch (e) {
-    alert("Network error verifying your purchase. We'll automatically retry the next time you open the app. If it persists, email support@robograder.app.");
-  }
-}
-
-let _iosPriceCache = null;       // cached StoreKit products
-let _iosPricePrefetched = false; // prefetch fired once
-
-// Apply StoreKit's real localized prices to the modal's price/unit elements.
-function _applyIosPrices(products) {
-  const byId = {};
-  Object.keys(IOS_PRODUCT_IDS).forEach(function(k) { byId[IOS_PRODUCT_IDS[k]] = k; });
-  (products || []).forEach(function(p) {
-    const key = byId[p.identifier];
-    if (!key) return;
-    const priceEl = document.getElementById('price-' + key);
-    if (priceEl && p.priceString) priceEl.textContent = p.priceString;
-    const unitEl = document.getElementById('unit-' + key);
-    const credits = IOS_CREDITS[key];
-    if (unitEl && typeof p.price === 'number' && credits) {
-      try {
-        const per = new Intl.NumberFormat(undefined, { style: 'currency', currency: p.currencyCode || 'USD' }).format(p.price / credits);
-        unitEl.textContent = '(' + per + ' each)';
-      } catch (e) { /* leave placeholder */ }
-    }
-  });
-}
-
-async function _iosFetchPrices() {
-  const NP = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativePurchases;
-  if (!NP) return null;
-  const res = await NP.getProducts({ productIdentifiers: Object.values(IOS_PRODUCT_IDS), productType: 'inapp' });
-  const products = (res && res.products) || [];
-  if (products.length) _iosPriceCache = products;
-  return products;
-}
-
-// Warm the cache + the (hidden) modal elements during list browsing, so when the
-// buy modal opens it shows the real $9.99/$29.99/$99.99 immediately — no $10 flash.
-function _iosPrefetchPrices() {
-  if (_iosPricePrefetched) return;
-  if (!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) return;
-  _iosPricePrefetched = true;
-  _iosFetchPrices().then(function(p) { if (p) _applyIosPrices(p); }).catch(function() {});
-}
-
-// Called when the buy modal opens (iOS). Uses the cache for an instant render;
-// falls back to a fetch if the prefetch hasn't completed. PWA never calls this.
-// If products aren't fetchable yet, the placeholder prices stay.
-async function _iosLoadPrices() {
-  if (_iosPriceCache) { _applyIosPrices(_iosPriceCache); return; }
-  try {
-    const products = await _iosFetchPrices();
-    if (products) _applyIosPrices(products);
-  } catch (e) {
-    console.log('[iap] getProducts failed:', e && e.message);
   }
 }
 
@@ -3822,7 +3567,6 @@ function showBuyCredits() {
   const modal = document.getElementById("buy-credits-modal");
   if (modal) modal.style.display = "flex";
   refreshPromoRow();
-  if (window.Capacitor && window.Capacitor.isNativePlatform()) _iosLoadPrices();
 }
 
 function hideBuyCredits() {
@@ -3953,43 +3697,8 @@ function showList() {
   });
 }
 
-// Print-label redesign (S18): the gradient LABEL badge is replaced by a small
-// print icon (rotate-icon green) that only appears once the user opts in. An
-// entry already in the Print section shows the icon with a red X (tap to remove).
-const PRINT_ICON_SVG = '<svg viewBox="0 0 100 100" width="30" height="30" fill="none" style="stroke:#7aa838;stroke-width:6;stroke-linecap:round;stroke-linejoin:round"><path d="M30,36 L30,21 A4,4 0 0 1 34,17 L66,17 A4,4 0 0 1 70,21 L70,36"/><path d="M30,66 L20,66 A8,8 0 0 1 12,58 L12,44 A8,8 0 0 1 20,36 L80,36 A8,8 0 0 1 88,44 L88,58 A8,8 0 0 1 80,66 L70,66"/><path d="M22,47 L33,47"/><rect x="30" y="58" width="40" height="28" rx="3"/><path d="M40,70 L60,70"/><path d="M40,78 L60,78"/></svg>';
-const PRINT_ICON_X_SVG = '<svg viewBox="0 0 100 100" width="30" height="30" fill="none" style="stroke:#7aa838;stroke-width:6;stroke-linecap:round;stroke-linejoin:round"><path d="M30,36 L30,21 A4,4 0 0 1 34,17 L66,17 A4,4 0 0 1 70,21 L70,36"/><path d="M30,66 L20,66 A8,8 0 0 1 12,58 L12,44 A8,8 0 0 1 20,36 L80,36 A8,8 0 0 1 88,44 L88,58 A8,8 0 0 1 80,66 L70,66"/><path d="M22,47 L33,47"/><rect x="30" y="58" width="40" height="28" rx="3"/><g style="stroke:#c0392b;stroke-width:7"><path d="M38,66 L62,82"/><path d="M62,66 L38,82"/></g></svg>';
-// Session opt-in: tapping "WANT TO PRINT LABELS? YES" reveals the icons. Also
-// considered on once any entry is in the Print state (derived from data, so it
-// stays on across reloads once the user has actually marked something).
-let _printOptInSession = false;
-function enablePrintMode() {
-  _printOptInSession = true;
-  window._printOptIn = true;
-  renderList();
-  // Persist so the Print drop-zone stays on across reloads (best-effort).
-  try {
-    if (window._currentUser && window._db && window._fsSetDoc && window._fsDoc) {
-      window._fsSetDoc(window._fsDoc(window._db, "users", window._currentUser.uid), { printOptIn: true }, { merge: true })
-        .catch(function(e) { console.warn("printOptIn persist failed:", e); });
-    }
-  } catch (e) { console.warn("printOptIn persist error:", e); }
-}
-function disablePrintMode() {
-  _printOptInSession = false;
-  window._printOptIn = false;
-  renderList();
-  // Persist the off state so print mode stays off across reloads (best-effort).
-  try {
-    if (window._currentUser && window._db && window._fsSetDoc && window._fsDoc) {
-      window._fsSetDoc(window._fsDoc(window._db, "users", window._currentUser.uid), { printOptIn: false }, { merge: true })
-        .catch(function(e) { console.warn("printOptIn persist failed:", e); });
-    }
-  } catch (e) { console.warn("printOptIn persist error:", e); }
-}
-
 function renderList() {
   const main = document.getElementById("main");
-  _iosPrefetchPrices(); // warm StoreKit prices during browsing (iOS only, once)
   if (window._loadingState) {
     main.innerHTML = `\n      <div style="padding:60px 20px;text-align:center;color:#8a7a6a">\n        <div style="width:32px;height:32px;border:3px solid #ddd8d0;border-top-color:#5a4a3a;border-radius:50%;animation:spin 0.9s linear infinite;margin:0 auto 16px"></div>\n        <div style="font-size:14px;letter-spacing:0.3px">Loading your collection…</div>\n      </div>\n    `;
     return;
@@ -4048,17 +3757,9 @@ function renderList() {
       groups: groups
     };
   };
-  // Print mode: icons + the persistent Print drop-zone appear once the user has
-  // opted in (persisted via window._printOptIn) or once any entry is in the Print
-  // state. _printOptInSession is the immediate in-memory echo of a fresh opt-in.
-  const printModeEnabled = _printOptInSession || window._printOptIn === true || items.some(c => (c.ownership || "Owned") === "Print");
   const sections = OWNERSHIP_ORDER.map(own => {
     const subset = filt.filter(c => (c.ownership || "Owned") === own);
-    if (subset.length === 0) {
-      // Keep an empty Print section visible as a persistent drop-zone once on.
-      if (own === "Print" && printModeEnabled) return { ownership: own, titles: [], groups: {} };
-      return null;
-    }
+    if (subset.length === 0) return null;
     const {titles: titles, groups: groups} = buildTitleGroups(subset);
     return {
       ownership: own,
@@ -4112,13 +3813,13 @@ function renderList() {
       const buildRow = c => {
         const thumbSrc = c.thumbnails?.[0] || c.images?.[0];
         const thumb = thumbSrc ? `<img class="comic-thumb" data-src="${thumbSrc}" decoding="async" style="background:#221d18">` : "";
-        // S18: print icon (upper-right) replaces the old LABEL badge. Shown only
-        // once print mode is opted into. Tap toggles the entry into/out of the
-        // Print section. In Print → icon shows a red X (tap to remove).
+        // S17: mini LABEL button (upper-right). Tap to toggle this entry into the
+        // PRINT section (and back to its prior ownership). Label-green gradient
+        // normally; gray gradient when the entry is already in Print.
         const _inPrint = (c.ownership || "Owned") === "Print";
         const _canLabel = c.roboGrade && c.id !== SAMPLE_COMIC_ID;
-        const _labelBtn = (printModeEnabled && _canLabel)
-          ? `<button onclick="event.stopPropagation();togglePrintState('${esc(c.id)}')" title="${_inPrint ? "Remove from print queue" : "Add to print queue"}"\n              style="position:absolute;top:4px;right:6px;z-index:3;background:none;border:none;padding:2px;line-height:0;cursor:pointer">${_inPrint ? PRINT_ICON_X_SVG : PRINT_ICON_SVG}</button>`
+        const _labelBtn = _canLabel
+          ? `<button onclick="event.stopPropagation();togglePrintState('${esc(c.id)}')" title="${_inPrint ? "Remove from print queue" : "Add to print queue"}"\n              style="position:absolute;top:6px;right:8px;z-index:3;background:${_inPrint ? GRAY_GRADIENT_ROW : LABEL_GRADIENT_ROW};color:#fff;border:1px solid rgba(0,0,0,0.25);border-radius:5px;padding:2px 7px;font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:800;letter-spacing:1px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.3)">LABEL</button>`
           : "";
         return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0">\n                  <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>\n                  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">\n                    ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${formatIssue(c.issue, c.title)}</span>` : ""}\n                    ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                  </div>\n                </div>\n                ${buildListCgcPsaStack(c)}\n                ${_labelBtn}\n              </div>\n            </div>`;
       };
@@ -4144,19 +3845,6 @@ function renderList() {
         html += `</div>`;
       });
     });
-  }
-  // S18: print-label opt-in. If the user has a graded book but hasn't turned on
-  // print mode, offer it at the bottom; tapping reveals the per-entry print icons.
-  const _hasGraded = items.some(c => c.roboGrade && c.id !== SAMPLE_COMIC_ID);
-  const _printQueueCount = items.filter(c => (c.ownership || "Owned") === "Print").length;
-  const _LABEL_GRADIENT = "linear-gradient(180deg, #58723b 0%, #93ab66 38%, #9ba37e 100%)";
-  if (_hasGraded && !printModeEnabled) {
-    html += `<div onclick="enablePrintMode()" style="display:flex;align-items:center;justify-content:center;gap:8px;margin:18px 0 10px;padding:9px 12px;background:${_LABEL_GRADIENT};border-radius:8px;cursor:pointer;user-select:none">\n      <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#fff">Want to print labels?</span>\n    </div>`;
-  } else if (_hasGraded && printModeEnabled && _printQueueCount === 0) {
-    // S20: once print mode is on with nothing queued, offer a way back out.
-    // Tapping clears the opt-in, hides the per-row print icons, and the section
-    // reverts to the "Want to print labels?" prompt on the next render.
-    html += `<div onclick="disablePrintMode()" style="display:flex;align-items:center;justify-content:center;gap:8px;margin:18px 0 10px;padding:9px 12px;background:${_LABEL_GRADIENT};border-radius:8px;cursor:pointer;user-select:none">\n      <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#fff">Turn off printing?</span>\n    </div>`;
   }
   const _tRender = Date.now();
   main.innerHTML = html;
@@ -4355,7 +4043,7 @@ function showDetail(id) {
   const isSample = selected._isSample === true;
   let html = `<div class="sticky-back" style="display:flex;justify-content:space-between;align-items:center;gap:10px">\n    <button class="btn-ghost" onclick="showList()">← Back</button>\n    ${!isSample ? `<button class="btn btn-gold" onclick="showEdit('${esc(selected.id)}')">Edit</button>` : ""}\n  </div>\n  <div class="card" style="margin-top:4px;background:#fff">`;
   if (isSample) {
-    html += `<div style="background:#fff8e0;border:1px solid #c8a040;border-radius:10px;padding:12px 14px;margin-bottom:14px">\n      <div style="font-size:13px;font-weight:700;color:#6a4a08;letter-spacing:0.02em;margin-bottom:3px">Sample Entry</div>\n      <div style="font-size:12px;color:#7a5a1a;line-height:1.5">This is an example of what a graded book looks like. Add your first book and it'll clear automatically.</div>\n    </div>`;
+    html += `<div style="background:#fff8e0;border:1px solid #c8a040;border-radius:10px;padding:12px 14px;margin-bottom:14px;display:flex;gap:12px;align-items:flex-start">\n      <div style="font-size:20px;flex-shrink:0">✨</div>\n      <div style="flex:1">\n        <div style="font-size:13px;font-weight:700;color:#6a4a08;letter-spacing:0.02em;margin-bottom:3px">Sample Entry</div>\n        <div style="font-size:12px;color:#7a5a1a;line-height:1.5">This is an example of what a graded book looks like. Add your first book to clear it, or tap Delete below to remove it now.</div>\n      </div>\n    </div>`;
   }
   html += `<div>\n    <h2 style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:26px;font-weight:900;color:#0d0d0f;line-height:1.1;margin:0">${esc(selected.title)}</h2>\n    ${selected.issue || selected.issueDate ? `<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:6px">\n      ${selected.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:18px;font-weight:600;color:#3a2e24">${formatIssue(selected.issue, selected.title)}</span>` : ""}\n      ${selected.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(selected.issueDate))}</span>` : ""}\n    </div>` : ""}\n    ${selected.printing ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#6a5a4a;margin-top:4px">${esc(selected.printing)}</div>` : ""}\n    ${selected.publisher ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:500;color:#8a7a6a;margin-top:4px">${esc(selected.publisher)}</div>` : ""}\n    ${selected.cgcCert || selected.psaCert ? `<div style="font-family:'IBM Plex Mono','Menlo',monospace;font-size:13px;color:#5a4a3a;margin-top:6px;letter-spacing:0.3px">\n      ${selected.cgcCert ? `<div><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">CGC</span> <span style="margin-left:6px">${esc(selected.cgcCert)}</span></div>` : ""}\n      ${selected.psaCert ? `<div style="margin-top:2px"><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">PSA</span> <span style="margin-left:6px">${esc(selected.psaCert)}</span></div>` : ""}\n    </div>` : ""}\n  </div>`;
   const ownershipPillHtml = isSample ? "" : (() => {
@@ -4467,6 +4155,17 @@ function showDetail(id) {
     if (showPQ) {
       html += `<div style="display:flex;justify-content:center">${buildPQBox(selected.pageQuality)}</div>`;
     }
+    // S18: index-driven FMV range. Uses the official grade if the book is graded,
+    // else the predicted grade. Renders only when /fmv.json has this book+grade.
+    const _fmvGrade = selected.cgcGrade || selected.psaGrade || predictedGradeValue;
+    const _fmvMatch = (typeof window.matchFMV === "function" && _fmvGrade)
+      ? window.matchFMV(selected.title, selected.issue, _fmvGrade, selected.printing) : null;
+    if (_fmvMatch) {
+      html += `<div style="display:flex;flex-direction:column;align-items:center;gap:3px;margin-top:2px">
+        <div style="font-size:10px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase">FMV</div>
+        <div style="background:#15122a;color:#b79aef;padding:6px 16px;border-radius:8px;font-size:15px;font-weight:700;letter-spacing:0.02em;border:1px solid #2a2440">${formatFMV(_fmvMatch)}</div>
+      </div>`;
+    }
     if (predictedBadge) {
       html += `<div style="font-size:10px;color:#6a5a4a;text-align:center;width:100%;line-height:1.4;margin-top:2px;font-style:italic">Independent prediction. Robograder is not affiliated with any encapsulation grading service.</div>`;
     }
@@ -4536,7 +4235,7 @@ function showDetail(id) {
           if (h.rgHighGradeUnlocked && h.rgConfidenceRange != null) {
             precSuffix = h.rgConfidenceRange > 0 ? ` ±${h.rgConfidenceRange}` : "";
           } else if (h.rgScore >= 90 && !h.rgHighGradeUnlocked) {
-            precSuffix = "";
+            precSuffix = "+";
           } else if (h.rgConfidenceRange != null) {
             precSuffix = h.rgConfidenceRange > 0 ? ` ±${h.rgConfidenceRange}` : "";
           }
@@ -4580,9 +4279,9 @@ function showDetail(id) {
     rHtml += "</div></div>";
     html += rHtml;
   }
-  const hasAnyDateCost = !!(selected.slabbingDate || selected.dateAcquired || cost > 0 || selected.fmv);
+  const hasAnyDateCost = !!(selected.slabbingDate || selected.dateAcquired || cost > 0);
   if (hasAnyDateCost) {
-    html += `<div class="divider"></div>\n    <div class="grid-2">\n      ${selected.slabbingDate ? `<div><div class="section-label">Date Graded</div><div class="field-val">${esc(selected.slabbingDate)}</div></div>` : ""}\n      ${selected.dateAcquired ? `<div><div class="section-label">Date Acquired</div><div class="field-val">${formatDate(selected.dateAcquired)}</div></div>` : ""}\n      ${cost > 0 ? `<div><div class="section-label">Total Cost</div><div class="field-val" style="color:#8abf8a;font-weight:700">${fmt$(cost)}</div></div>` : ""}\n      ${selected.fmv ? `<div><div class="section-label">FMV${selected.fmvDate ? ` <span style="font-weight:400;color:#9a8a9a;font-size:10px">${esc(selected.fmvDate)}</span>` : ""}</div><div class="field-val" style="color:#a078df;font-weight:700">${fmt$(selected.fmv)}</div></div>` : ""}\n    </div>`;
+    html += `<div class="divider"></div>\n    <div class="grid-2">\n      ${selected.slabbingDate ? `<div><div class="section-label">Date Graded</div><div class="field-val">${esc(selected.slabbingDate)}</div></div>` : ""}\n      ${selected.dateAcquired ? `<div><div class="section-label">Date Acquired</div><div class="field-val">${formatDate(selected.dateAcquired)}</div></div>` : ""}\n      ${cost > 0 ? `<div><div class="section-label">Total Cost</div><div class="field-val" style="color:#8abf8a;font-weight:700">${fmt$(cost)}</div></div>` : ""}\n      ${selected.fmv ? "" : ""}\n    </div>`;
   }
   if (selected.seller) {
     html += `<div style="margin-top:14px"><div style="font-size:12px;color:#8a7a6a">Purchased from: ${esc(selected.seller)}</div></div>`;
@@ -4621,8 +4320,7 @@ function showDetail(id) {
     const _body = encodeURIComponent("Describe the issue:\n");
     _complainBtn = `<a class="rg-btn rg-btn-action rg-btn-md" href="mailto:support@robograder.app?subject=${_subject}&body=${_body}" style="display:flex;align-items:center;justify-content:center;text-decoration:none">Complain</a>`;
   }
-  const _detailBtnGrids = isSample ? "" : `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    ${_giveBtn}\n    ${_complainBtn}\n  </div>\n  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    <button class="rg-btn rg-btn-destructive rg-btn-md" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')" style="grid-column:1 / span 2;justify-self:center;width:calc(50% - 5px)">Delete</button>\n  </div>`;
-  html += _detailBtnGrids + `</div>`;
+  html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    ${_giveBtn}\n    ${_complainBtn}\n  </div>\n  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    <button class="rg-btn rg-btn-destructive rg-btn-md" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')" style="grid-column:1 / span 2;justify-self:center;width:calc(50% - 5px)">Delete</button>\n  </div></div>`;
   document.getElementById("main").innerHTML = html;
   window.scrollTo(0, 0);
   document.querySelectorAll(".detail-cover, .photo-spine").forEach(img => {
@@ -4719,7 +4417,7 @@ function buildListingSummary(roboGradeId, title, issue, prefix) {
       if (it.highGradeUnlocked && rg.confidenceRange != null) {
         prec = rg.confidenceRange > 0 ? ` ±${Math.round(rg.confidenceRange)}` : "";
       } else if (score >= 90 && !it.highGradeUnlocked) {
-        prec = "";
+        prec = "+";
       } else if (rg.confidenceRange != null) {
         prec = rg.confidenceRange > 0 ? ` ±${Math.round(rg.confidenceRange)}` : "";
       }
@@ -5497,11 +5195,9 @@ const ASSESS_SUCCESS_BOX = "https://raw.githubusercontent.com/OgreBuzzard/ai-com
 const ASSESS_FAILURE_BOX = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/failure_box.PNG";
 
 const ASSESS_OVERLAY_BG = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay.webp";
-// S18: Deep Assessment gets its own overlay artwork (was reusing the Main one).
-const ASSESS_OVERLAY_DEEP = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay_Deep.webp";
 
 (function preloadAssessBoxes() {
-  [ ASSESS_DEFAULT_BOX, ASSESS_SUCCESS_BOX, ASSESS_FAILURE_BOX, ASSESS_OVERLAY_BG, ASSESS_OVERLAY_DEEP, ASSESS_MODAL_BG ].forEach(url => {
+  [ ASSESS_DEFAULT_BOX, ASSESS_SUCCESS_BOX, ASSESS_FAILURE_BOX, ASSESS_OVERLAY_BG, ASSESS_MODAL_BG ].forEach(url => {
     const img = new Image;
     img.src = url;
   });
@@ -5509,7 +5205,7 @@ const ASSESS_OVERLAY_DEEP = "https://raw.githubusercontent.com/OgreBuzzard/ai-co
 
 const ASSESS_FRAMES = [ "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_01.PNG", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_02.PNG", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_03.PNG", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_04.PNG", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_05.PNG", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_06.PNG" ];
 
-function mountStepTracker(overlayBg) {
+function mountStepTracker() {
   if (window.RobograderScan && window.RobograderScan.debugLog) {
     window.RobograderScan.debugLog("mountStepTracker called");
   }
@@ -5538,7 +5234,7 @@ function mountStepTracker(overlayBg) {
   const BTN_HEIGHT_PCT = 9.01;
   const BTN_TOPS_PCT = [ 36.42, 46.36, 56.29, 66.23, 76.16 ];
   const boxesHtml = stepDefs.map((s, i) => `<div id="tracker-box-${s.id}"\n      style="position:absolute;left:${BTN_LEFT_PCT}%;top:${BTN_TOPS_PCT[i]}%;\n             width:${BTN_WIDTH_PCT}%;height:${BTN_HEIGHT_PCT}%;\n             background-image:url('${ASSESS_DEFAULT_BOX}');\n             background-size:100% 100%;background-repeat:no-repeat;\n             pointer-events:none;"></div>`).join("");
-  const overlayHtml = `\n    <img src="${overlayBg || ASSESS_OVERLAY_BG}" alt=""\n         style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;" />`;
+  const overlayHtml = `\n    <img src="${ASSESS_OVERLAY_BG}" alt=""\n         style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;" />`;
   window.RobograderScan.slideOverlayIntoChest(overlayHtml, boxesHtml);
   if (window._gridCycleStartTimer) clearTimeout(window._gridCycleStartTimer);
   window._gridCycleStartTimer = setTimeout(() => {
@@ -6262,7 +5958,7 @@ async function assessHighGrade() {
     if (window.RobograderScan && window.RobograderScan.debugLog) {
       window.RobograderScan.debugLog("hg: scanController.promise resolved");
     }
-    mountStepTracker(ASSESS_OVERLAY_DEEP);
+    mountStepTracker();
     if (_usingStreaming) {
       _stepAnimator = makeStepAnimator();
       for (const p of _bufferedPhases) _stepAnimator.setPhase(p.phase);
@@ -7248,35 +6944,10 @@ function dismissAssessModal(err) {
   if (err) alert(describeAssessmentError(err));
 }
 
-// S20: card placeholder modal. Card grading isn't live yet — when the slab-check
-// flags the front image as a trading card, we surface this instead of running
-// (or appearing to run) a comic assessment.
-function showCardComingSoon() {
-  let m = document.getElementById("card-soon-modal");
-  if (!m) {
-    m = document.createElement("div");
-    m.id = "card-soon-modal";
-    m.style.cssText = "position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;padding:24px";
-    m.innerHTML = '<div style="background:#1c1f1c;border:1px solid #3a4a2a;border-radius:14px;max-width:340px;width:100%;padding:26px 24px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,0.5)">'
-      + '<div style="font-size:40px;line-height:1;margin-bottom:12px">🃏</div>'
-      + '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:20px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#9bd06a;margin-bottom:8px">Card grading coming soon</div>'
-      + '<div style="font-size:14px;color:#b8c0b4;line-height:1.5;margin-bottom:18px">That looks like a trading card. Robograder grades comics today — card grading is on the way.</div>'
-      + '<button onclick="document.getElementById(\'card-soon-modal\').style.display=\'none\'" style="background:linear-gradient(180deg,#58723b,#93ab66);color:#fff;border:none;border-radius:8px;padding:10px 28px;font-family:\'Barlow Condensed\',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer">Got it</button>'
-      + '</div>';
-    document.body.appendChild(m);
-  }
-  m.style.display = "flex";
-}
-
 async function assessGrade() {
   const imgs = (formData.images || []).filter(Boolean);
   if (imgs.length === 0) {
     alert("Add at least one photo first.");
-    return;
-  }
-  // S20: card placeholder — never run the comic assessment on a trading card.
-  if (formData._slabDetect && formData._slabDetect.isCard) {
-    showCardComingSoon();
     return;
   }
   if (assessing) return;
@@ -7888,7 +7559,7 @@ function renderForm() {
     const parts = [];
     if (h.rgScore != null) {
       const v = h.rgVersion ? ` v${h.rgVersion}` : "";
-      const plus = "";
+      const plus = h.rgScore >= 90 && h.rgScore < 100 ? "+" : "";
       parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;font-weight:700;color:#7aa030;font-size:12px">RG ${h.rgScore}${plus}${v}</span>`);
     }
     if (h.grade) {
@@ -7901,7 +7572,7 @@ function renderForm() {
       parts.push(`<span style="font-size:11px;color:#8a7a6a">${esc(h.pageQuality)}</span>`);
     }
     return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 8px;background:#181614;border-radius:5px;opacity:0.85">\n            ${parts.join('<span style="color:#4a3a2a">·</span>')}\n            <button onclick="formData.assessmentHistory.splice(${i},1);renderForm()" style="margin-left:auto;flex-shrink:0;background:none;border:none;color:#9a6a6a;font-size:14px;cursor:pointer;padding:2px 4px;line-height:1" title="Remove this entry">×</button>\n          </div>`;
-  }).join("")}\n      </div>\n    </div>` : ""}\n    ${formData.psaNotes ? `<div><label class="field-label" style="color:#e87a7a">PSA Variance</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes || "")}</textarea></div>` : ""}\n\n    \x3c!-- Enhancement Candidate (S11): renamed from "Enhance Candidate"; moved\n         to between Condition Assessment and Cost Breakdown per user direction. --\x3e\n    <div>\n      <label class="field-label">Enhancement Candidate</label>\n      <div style="display:flex;gap:10px">\n        ${treatBtn("enhance", "Enhance")}\n      </div>\n    </div>\n\n    \x3c!-- Cost Breakdown (S11): now includes FMV ($) and FMV Date inside the\n         container, since they're financial fields conceptually grouped with\n         the cost data. --\x3e\n    <div class="cost-box">\n      <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>\n      <div class="form-grid-2">\n        ${mf("Purchase Price ($)", "purchasePrice")}\n        ${mf("Taxes / Fees / Shipping ($)", "taxesFeesShipping")}\n        ${mf("Grading / Pressing ($)", "gradingCost")}\n        ${mf("CGC Return Shipping ($)", "cgcShipping")}\n        ${mf("FMV ($)", "fmv")}\n        ${df("FMV Date", "fmvDate", true)}\n        ${mf("Asking Price ($)", "askingPrice")}\n      </div>\n    </div>\n\n    <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes || "")}</textarea></div>\n    ${""}\n    \n    <div style="display:flex;gap:10px;padding-top:4px">\n      ${isEdit ? "" : `<button id="save-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="submitForm()" ${formData.title?.trim() ? "" : "disabled"}>Add to Collection</button>`}\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cancelForm()">Cancel</button>\n    </div>\n    ` : `\n    \x3c!-- Add-flow collapsed state (S11): show only the Enter Manually button.\n         Steers users toward photos-first by hiding the form fields until\n         either (a) they tap Enter Manually, or (b) an assessment runs and\n         _assessed becomes true. Edit view always shows the full form.\n         S14: ownership cycle pill inserted above Enter Manually. Lets a\n         user mark a book as Owned (default) / Watching / Sold before\n         assessing — so they can assess someone else's book without\n         claiming it, or track a book they're considering buying. Same\n         pill style as detail and edit views (color-coded by state),\n         centered between the two full-width buttons. Public-listing is\n         locked off whenever ownership !== 'Owned'; the cycleOwnership\n         handler clears formData.publicListing on transitions out of\n         Owned so a stale 'true' can't be saved. --\x3e\n    ${(() => {
+  }).join("")}\n      </div>\n    </div>` : ""}\n    ${formData.psaNotes ? `<div><label class="field-label" style="color:#e87a7a">PSA Variance</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes || "")}</textarea></div>` : ""}\n\n    \x3c!-- Enhancement Candidate (S11): renamed from "Enhance Candidate"; moved\n         to between Condition Assessment and Cost Breakdown per user direction. --\x3e\n    <div>\n      <label class="field-label">Enhancement Candidate</label>\n      <div style="display:flex;gap:10px">\n        ${treatBtn("enhance", "Enhance")}\n      </div>\n    </div>\n\n    \x3c!-- Cost Breakdown (S11): now includes FMV ($) and FMV Date inside the\n         container, since they're financial fields conceptually grouped with\n         the cost data. --\x3e\n    <div class="cost-box">\n      <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>\n      <div class="form-grid-2">\n        ${mf("Purchase Price ($)", "purchasePrice")}\n        ${mf("Taxes / Fees / Shipping ($)", "taxesFeesShipping")}\n        ${mf("Grading / Pressing ($)", "gradingCost")}\n        ${mf("CGC Return Shipping ($)", "cgcShipping")}\n        \n        \n        ${mf("Asking Price ($)", "askingPrice")}\n      </div>\n    </div>\n\n    <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes || "")}</textarea></div>\n    ${""}\n    \n    <div style="display:flex;gap:10px;padding-top:4px">\n      ${isEdit ? "" : `<button id="save-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="submitForm()" ${formData.title?.trim() ? "" : "disabled"}>Add to Collection</button>`}\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cancelForm()">Cancel</button>\n    </div>\n    ` : `\n    \x3c!-- Add-flow collapsed state (S11): show only the Enter Manually button.\n         Steers users toward photos-first by hiding the form fields until\n         either (a) they tap Enter Manually, or (b) an assessment runs and\n         _assessed becomes true. Edit view always shows the full form.\n         S14: ownership cycle pill inserted above Enter Manually. Lets a\n         user mark a book as Owned (default) / Watching / Sold before\n         assessing — so they can assess someone else's book without\n         claiming it, or track a book they're considering buying. Same\n         pill style as detail and edit views (color-coded by state),\n         centered between the two full-width buttons. Public-listing is\n         locked off whenever ownership !== 'Owned'; the cycleOwnership\n         handler clears formData.publicListing on transitions out of\n         Owned so a stale 'true' can't be saved. --\x3e\n    ${(() => {
     const own = formData.ownership || "Owned";
     const styleByState = {
       Owned: {
@@ -8131,33 +7802,16 @@ function openCropper(type, index) {
       ready: function() {
         const stage = document.getElementById("cropper-stage");
         if (stage) stage.classList.add("ready");
-        // Force the image to display SMALLER than the container with a margin on
-        // all four sides, so the crop handles never reach the viewport edge and
-        // clip. Cropper's own fit runs the image edge-to-edge in whichever
-        // dimension binds (full-width here), pushing the side handles off screen.
-        // Each pass insets the canvas to ~86% of the container, centers it, and
-        // matches the crop box to it. Run across several settle points because
-        // the safe-area-padded flex layout settles over a few frames on iOS.
-        const fitWithMargin = function() {
-          try {
-            if (!_cropperInstance) return;
-            _cropperInstance.resize();
-            const cd = _cropperInstance.getContainerData();
-            const id = _cropperInstance.getImageData();
-            const ratio = (id.naturalWidth && id.naturalHeight)
-              ? (id.naturalWidth / id.naturalHeight)
-              : (id.width / id.height);
-            const M = 0.86;
-            let w = cd.width * M, h = w / ratio;
-            if (h > cd.height * M) { h = cd.height * M; w = h * ratio; }
-            _cropperInstance.setCanvasData({ width: w, height: h, left: (cd.width - w) / 2, top: (cd.height - h) / 2 });
-            const cv = _cropperInstance.getCanvasData();
-            _cropperInstance.setCropBoxData({ left: cv.left, top: cv.top, width: cv.width, height: cv.height });
-          } catch (e) {}
-        };
-        requestAnimationFrame(function() { requestAnimationFrame(fitWithMargin); });
-        setTimeout(fitWithMargin, 150);
-        setTimeout(fitWithMargin, 400);
+        // Re-measure against the settled, safe-area-padded container. Cropper
+        // measures at attach time, before the padded layout fully settles, which
+        // left tall/EXIF-rotated phone photos collapsed to a strip or pushed past
+        // the safe area. A resize() after ready forces a correct fit for any
+        // image aspect ratio or orientation.
+        if (_cropperInstance && typeof _cropperInstance.resize === "function") {
+          requestAnimationFrame(function() {
+            try { _cropperInstance.resize(); } catch (e) {}
+          });
+        }
       }
     });
     let _lastCropTap = 0;
@@ -9762,16 +9416,6 @@ async function cameraCapture() {
     }
     if (checkEl) checkEl.classList.remove("show");
     formData._slabCheckedAtCapture = true;
-    if (_slab && _slab.isCard) {
-      // S20: trading card, not a comic — stop the walkthrough and show the
-      // card-grading placeholder instead of shooting the rest of the photos.
-      _cameraState = null;
-      cameraCloseStream();
-      const _cm = document.getElementById("camera-modal");
-      if (_cm) _cm.classList.remove("open");
-      showCardComingSoon();
-      return;
-    }
     if (_slab && _slab.detected && _cameraState) {
       _cameraState.queue = _cameraState.queue.filter(s => s !== 2 && s !== 3);
       _cameraState.labelDetected = true;
@@ -9859,10 +9503,11 @@ async function runCropperSequence(captures, kind) {
     if (kind === "corner" || kind === "signature" || kind === "restoration") {
       continue;
     }
-    // S18: crop is no longer forced after capture. The photo lands in the slot
-    // as-is; the overlay guides make in-flow cropping unnecessary friction.
-    // Users can still refine any photo via the crop icon in the Edit view
-    // (the slot-edit button calls openCropper directly).
+    await new Promise(resolve => {
+      _cropperSequenceResolve = resolve;
+      openCropper(kind, cap.slot);
+    });
+    _cropperSequenceResolve = null;
   }
   renderForm();
   // S16: after corner captures, scroll Edit view to center the Deep Assessment
@@ -9980,42 +9625,12 @@ function cancelTreatment(key, e) {
   renderForm();
 }
 
-// A book's RG score is only valid for the exact images it was graded on. We stamp
-// the roboGrade with a signature of its assessed images at save time, then block
-// re-saving if the images no longer match (unless a new assessment was run, which
-// replaces roboGrade with a fresh, un-stamped one). Query strings (Storage tokens)
-// are stripped so the same file produces a stable signature across saves.
-function _imageSig(images) {
-  return (images || []).filter(Boolean).map(function(u) { return String(u).split('?')[0]; }).join('|');
-}
-
-function showImageSwapBlocked() {
-  if (document.getElementById('img-swap-modal')) return;
-  const ov = document.createElement('div');
-  ov.id = 'img-swap-modal';
-  ov.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:20px';
-  ov.innerHTML = '<div style="background:#fff;border-radius:16px;padding:26px 22px;max-width:360px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,0.3)">'
-    + '<h2 style="margin:0 0 10px;font-size:19px;color:#1a1008">New images need a new assessment</h2>'
-    + '<p style="margin:0 0 20px;font-size:14px;line-height:1.5;color:#5a4a3a">This book already has a Robograde score, and that score only applies to the images it was graded on. You\u2019ve replaced one or more images, so the entry can\u2019t be saved until you run a new assessment on the current images.</p>'
-    + '<button onclick="document.getElementById(\'img-swap-modal\').remove()" style="width:100%;padding:13px 16px;background:#1a1008;color:#c8a96e;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer">OK</button>'
-    + '</div>';
-  document.body.appendChild(ov);
-}
-
 async function submitForm() {
   if (!formData.title?.trim()) {
     return;
   }
   formData.title = normalizeTitle(formData.title.trim().replace(/\s+/g, " ").replace(/^The\s+/i, ""), formData.issueDate, formData.printing);
   if (formData.seller?.trim()) updateSellerList(formData.seller.trim());
-  // Anti-abuse gate: the RG score only applies to the images it was graded on.
-  // Block saving an assessed entry whose images have changed, unless re-assessed
-  // (a fresh assessment replaces roboGrade with one that has no imageSig yet).
-  if (formData.roboGrade && formData.roboGrade.imageSig &&
-      _imageSig(formData.images) !== formData.roboGrade.imageSig) {
-    showImageSwapBlocked();
-    return;
-  }
   const id = formData.id || buildComicId(formData.title, formData.issue);
   const rawImages = (formData.images || []).filter(Boolean);
   const rawCornerImages = (formData.cornerImages || []).filter(Boolean);
@@ -10114,11 +9729,6 @@ async function submitForm() {
     syncMsg(null);
     alert(`Image upload failed: ${e.message}\n\nPlease try again.`);
     return;
-  }
-  // Stamp the score with the signature of the images it's being saved with, so a
-  // later image swap (without re-assessment) is detected and blocked on next save.
-  if (formData.roboGrade) {
-    formData.roboGrade = { ...formData.roboGrade, imageSig: _imageSig(finalImages) };
   }
   const existingComicForMeta = formData.id ? items.find(c => c.id === formData.id) : null;
   const existingImagesMeta = formData.imagesMeta || existingComicForMeta?.imagesMeta || [];
@@ -10425,27 +10035,27 @@ initFirebase();
         <img src="/assets/products/Comic_Stack.png" alt="" width="64" height="64" style="flex-shrink:0;object-fit:contain">
         <div style="flex:1;min-width:0">
           <div style="font-size:16px;font-weight:700;color:#1a1008">Comic Stack</div>
-          <div id="price-comic_stack" style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$10</div>
-          <div style="font-size:13px;color:#3a2a1a;margin-top:3px">5 assessments</div>
-          <div id="unit-comic_stack" style="font-size:12px;color:#6a5a4a;margin-top:1px">($2 each)</div>
+          <div style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$10</div>
+          <div style="font-size:13px;color:#3a2a1a;margin-top:3px">10 assessments</div>
+          <div style="font-size:12px;color:#6a5a4a;margin-top:1px">($1 each)</div>
         </div>
       </button>
       <button onclick="buyCredits('comic_wall')" style="display:flex;align-items:center;gap:14px;background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:12px 16px;cursor:pointer;text-align:left;width:100%">
         <img src="/assets/products/Comic_Wall.png" alt="" width="64" height="64" style="flex-shrink:0;object-fit:contain">
         <div style="flex:1;min-width:0">
           <div style="font-size:16px;font-weight:700;color:#1a1008">Comic Wall</div>
-          <div id="price-comic_wall" style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$30</div>
-          <div style="font-size:13px;color:#3a2a1a;margin-top:3px">20 assessments</div>
-          <div id="unit-comic_wall" style="font-size:12px;color:#6a5a4a;margin-top:1px">($1.50 each)</div>
+          <div style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$30</div>
+          <div style="font-size:13px;color:#3a2a1a;margin-top:3px">35 assessments</div>
+          <div style="font-size:12px;color:#6a5a4a;margin-top:1px">($0.86 each)</div>
         </div>
       </button>
       <button onclick="buyCredits('short_box')" style="display:flex;align-items:center;gap:14px;background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:12px 16px;cursor:pointer;text-align:left;width:100%">
         <img src="/assets/products/Short_Box.png" alt="" width="64" height="64" style="flex-shrink:0;object-fit:contain">
         <div style="flex:1;min-width:0">
           <div style="font-size:16px;font-weight:700;color:#1a1008">Short Box</div>
-          <div id="price-short_box" style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$100</div>
-          <div style="font-size:13px;color:#3a2a1a;margin-top:3px">100 assessments</div>
-          <div id="unit-short_box" style="font-size:12px;color:#6a5a4a;margin-top:1px">($1 each)</div>
+          <div style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$100</div>
+          <div style="font-size:13px;color:#3a2a1a;margin-top:3px">125 assessments</div>
+          <div style="font-size:12px;color:#6a5a4a;margin-top:1px">($0.80 each)</div>
         </div>
       </button>
     </div>
