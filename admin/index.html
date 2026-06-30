@@ -644,6 +644,28 @@ const state = {
 
 const root = document.getElementById('root');
 
+// ── Dataset exclusions (S18) ───────────────────────────────────────────────
+// Exclude any account (Matt's own + test accounts) from both the full JSON
+// export and the summary. Persisted in localStorage so it survives reloads.
+try { state.excludedUids = JSON.parse(localStorage.getItem('rg_excluded_uids') || '[]'); }
+catch (_) { state.excludedUids = []; }
+function isExcluded(uid) { return state.excludedUids.indexOf(uid) !== -1; }
+function toggleExclude(uid) {
+  const i = state.excludedUids.indexOf(uid);
+  if (i === -1) state.excludedUids.push(uid); else state.excludedUids.splice(i, 1);
+  try { localStorage.setItem('rg_excluded_uids', JSON.stringify(state.excludedUids)); } catch (_) {}
+  renderUsers();
+  const c = document.getElementById('excl-count');
+  if (c) c.textContent = state.excludedUids.length;
+}
+// Build the ?...excludeUid=... query shared by export + summary.
+function exportQuery(extra) {
+  const parts = [];
+  if (extra) parts.push(extra);
+  if (state.excludedUids.length) parts.push('excludeUid=' + encodeURIComponent(state.excludedUids.join(',')));
+  return parts.length ? '?' + parts.join('&') : '';
+}
+
 // ── API helper ─────────────────────────────────────────────────────────────
 // S14: accepts an opts object so PATCH/POST with a JSON body works through
 // the same auth + token-refresh path as GET. opts.method defaults to GET;
@@ -683,7 +705,7 @@ async function downloadExport() {
   const orig = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = 'Exporting…'; }
   try {
-    const data = await api('/api/export');
+    const data = await api('/api/export' + exportQuery());
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -698,6 +720,65 @@ async function downloadExport() {
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = orig; }
   }
+}
+
+// Aggregate summary (counts only, no item bodies) — tiny payload, shown in a modal.
+async function exportSummary() {
+  const btn = document.getElementById('summary-btn');
+  const orig = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Summarizing…'; }
+  try {
+    const d = await api('/api/export' + exportQuery('aggregate=1'));
+    showSummaryModal(d);
+  } catch (e) {
+    alert('Summary failed: ' + (e && e.message ? e.message : e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = orig; }
+  }
+}
+
+function statCard(label, val) {
+  return `<div style="background:#0e0f12;border:1px solid #23252c;border-radius:8px;padding:10px 12px">
+    <div style="font-size:11px;color:#8a8d96;text-transform:uppercase;letter-spacing:1px">${label}</div>
+    <div style="font-size:20px;font-weight:700;margin-top:2px">${val}</div></div>`;
+}
+
+function showSummaryModal(d) {
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const titles = (d.topTitles || []).map(t =>
+    `<tr><td style="padding:3px 0">${esc(t.title)}</td><td style="text-align:right">${t.count}</td></tr>`).join('');
+  const multi = (d.multiSubmissions || []).map(m => {
+    const p = String(m.key).split('|');
+    return `<tr><td style="padding:3px 0">${esc(p[0] || '')}${p[1] ? ' #' + esc(p[1]) : ''}</td><td style="text-align:right">${m.count}×</td></tr>`;
+  }).join('');
+  const ob = d.optInBreakdown || {};
+  const wrap = document.createElement('div');
+  wrap.id = 'summary-modal';
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px';
+  wrap.innerHTML = `
+    <div style="background:#15161a;border:1px solid #2a2c34;border-radius:12px;max-width:560px;width:100%;max-height:85vh;overflow:auto;padding:22px;color:#e6e6e6;font-size:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="font-size:18px;font-weight:700">Dataset Summary</div>
+        <button id="summary-close" style="background:none;border:none;color:#9aa;font-size:24px;cursor:pointer;line-height:1">×</button>
+      </div>
+      ${state.excludedUids.length ? `<div style="color:#caa;font-size:12px;margin-bottom:12px">Excluding ${state.excludedUids.length} account${state.excludedUids.length === 1 ? '' : 's'} from these numbers.</div>` : ''}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px">
+        ${statCard('Items', d.total != null ? d.total : '—')}
+        ${statCard('Distinct users', d.distinctUsers != null ? d.distinctUsers : '—')}
+        ${statCard('Avg predicted grade', d.avgPG != null ? d.avgPG : '—')}
+        ${statCard('Avg Roboscore', d.avgRG != null ? d.avgRG : '—')}
+        ${statCard('Opted in', ob.optIn != null ? ob.optIn : '—')}
+        ${statCard('Opted out', ob.optOut != null ? ob.optOut : '—')}
+      </div>
+      <div style="font-weight:700;margin:6px 0">Top titles</div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:18px">${titles || '<tr><td>—</td></tr>'}</table>
+      <div style="font-weight:700;margin:6px 0">Multiple submissions (${(d.multiSubmissions || []).length})</div>
+      <table style="width:100%;border-collapse:collapse">${multi || '<tr><td>None</td></tr>'}</table>
+    </div>`;
+  document.body.appendChild(wrap);
+  const close = () => wrap.remove();
+  wrap.querySelector('#summary-close').onclick = close;
+  wrap.onclick = e => { if (e.target === wrap) close(); };
 }
 
 // ── Auth ───────────────────────────────────────────────────────────────────
@@ -749,6 +830,7 @@ async function renderDashboard() {
   root.innerHTML = `
     <header>
       <h1>ROBOGRADER ADMIN</h1>
+      <button class="sign-out" id="summary-btn" style="margin-right:8px">Export Summary</button>
       <button class="sign-out" id="export-btn" style="margin-right:8px">Export JSON</button>
       <button class="sign-out" id="signout-btn">Sign out</button>
     </header>
@@ -764,6 +846,7 @@ async function renderDashboard() {
   `;
   document.getElementById('signout-btn').onclick = signOut;
   document.getElementById('export-btn').onclick = downloadExport;
+  document.getElementById('summary-btn').onclick = exportSummary;
   document.querySelectorAll('#tabs button').forEach(btn => {
     btn.onclick = () => {
       state.tab = btn.dataset.tab;
@@ -949,11 +1032,19 @@ function renderUsers() {
           <div class="big">${escapeHtml(String(r.big))}</div>
           <div class="label">${r.label}</div>
         </div>
+        <label class="excl-wrap" style="display:flex;align-items:center;gap:5px;margin-left:12px;font-size:11px;color:#9aa;white-space:nowrap" title="Exclude this account from export + summary">
+          <input type="checkbox" class="excl-box" data-uid="${u.uid}" ${isExcluded(u.uid) ? 'checked' : ''}>
+          excl
+        </label>
       </div>
     `;
   }).join('') + (state.hasMore ? `<button class="load-more" id="load-more-btn">Load more</button>` : '');
   sec.querySelectorAll('.row').forEach(row => {
     row.onclick = () => showUser(row.dataset.uid);
+  });
+  sec.querySelectorAll('.excl-box').forEach(cb => {
+    cb.onclick = e => e.stopPropagation();
+    cb.onchange = () => toggleExclude(cb.dataset.uid);
   });
   if (state.hasMore) {
     document.getElementById('load-more-btn').onclick = () => loadUsers(false);
