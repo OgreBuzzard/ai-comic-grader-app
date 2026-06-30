@@ -99,6 +99,40 @@ export default async function handler(req, res) {
     const includeBlobs = req.query.includeBlobs === '1';
     const CAP = 25000; // safety ceiling; flagged if exceeded
 
+    // ── Query params (all optional) ────────────────────────────────────────
+    // Filtering and projection happen in memory AFTER the collectionGroup read
+    // (Firestore can't query across the schema-v3 nesting without composite
+    // indexes), but only matching/projected rows are SHIPPED — so the download
+    // stays small even though the read still scans. That's the scaling fix:
+    // post-launch you pull a slice, not the whole DB.
+    //   ?aggregate=1 (or ?count=1)  counts/summary only, NO item bodies (tiny)
+    //   ?fields=a,b,c               project to these fields (+_uid,_itemId)
+    //   ?minRG= ?maxRG=             filter on roboGrade.score
+    //   ?minPG= ?maxPG=             filter on assessedCGCGrade
+    //   ?title=                     case-insensitive substring on title
+    //   ?type=comic|card            filter on item type
+    //   ?since=ISO                  roboGradeDate/dateAdded on or after
+    //   ?excludeUid=uid[,uid]       drop owner(s) (e.g. your own account)
+    //   ?optInOnly=1                only trainingOptIn !== false
+    //   ?limit=N                    cap returned rows (after filtering)
+    const q = req.query;
+    const lc = s => (s == null ? '' : String(s)).toLowerCase();
+    const toNum = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
+    const minRG = toNum(q.minRG), maxRG = toNum(q.maxRG);
+    const minPG = toNum(q.minPG), maxPG = toNum(q.maxPG);
+    const since = q.since ? (Date.parse(q.since) || null) : null;
+    const titleQ = q.title ? lc(q.title) : null;
+    const typeQ = q.type ? lc(q.type) : null;
+    const excludeUids = (q.excludeUid ? String(q.excludeUid).split(',') : [])
+      .map(s => s.trim()).filter(Boolean);
+    const optInOnly = q.optInOnly === '1';
+    const fields = q.fields
+      ? String(q.fields).split(',').map(s => s.trim()).filter(Boolean) : null;
+    const aggregate = q.aggregate === '1' || q.count === '1';
+    const limit = toNum(q.limit);
+    const PII_FIELDS = ['_userName', '_userEmail', 'purchasePrice', 'salePrice',
+      'askingPrice', 'notes', 'seller', 'graderNotes', 'cgcNotes', 'psaNotes'];
+
     const db = getFirestore();
 
     // ── uid → owner context map ────────────────────────────────────────────
@@ -157,13 +191,98 @@ export default async function handler(req, res) {
       };
     });
 
+    // ── Filter (in memory; only matching rows are shipped) ─────────────────
+    const rgOf = it => {
+      const r = it.roboGrade;
+      const v = (r && typeof r === 'object') ? r.score : r;
+      const n = parseFloat(v); return Number.isFinite(n) ? n : null;
+    };
+    const pgOf = it => { const n = parseFloat(it.assessedCGCGrade); return Number.isFinite(n) ? n : null; };
+    const dateOf = it => Date.parse(it.roboGradeDate || it.dateAdded || it.dateAcquired || '') || null;
+
+    let filtered = items.filter(it => {
+      if (excludeUids.includes(it._uid)) return false;
+      if (optInOnly && it._trainingOptIn === false) return false;
+      if (typeQ && lc(it.type) !== typeQ) return false;
+      if (titleQ && !lc(it.title).includes(titleQ)) return false;
+      if (minRG != null || maxRG != null) {
+        const rg = rgOf(it);
+        if (rg == null) return false;
+        if (minRG != null && rg < minRG) return false;
+        if (maxRG != null && rg > maxRG) return false;
+      }
+      if (minPG != null || maxPG != null) {
+        const pg = pgOf(it);
+        if (pg == null) return false;
+        if (minPG != null && pg < minPG) return false;
+        if (maxPG != null && pg > maxPG) return false;
+      }
+      if (since != null) { const d = dateOf(it); if (d == null || d < since) return false; }
+      return true;
+    });
+
+    const filtersApplied = {
+      minRG, maxRG, minPG, maxPG, since: q.since || null, title: q.title || null,
+      type: q.type || null, excludeUid: excludeUids, optInOnly, limit: limit ?? null,
+    };
+
+    // ── Aggregate mode: counts/summary only, NO bodies (tiny payload) ───────
+    if (aggregate) {
+      const normKey = it =>
+        `${lc(it.title).replace(/\s+/g, ' ').trim()}|${lc(String(it.issue || '')).replace(/^#/, '').trim()}`;
+      const titleCounts = {}, issueKeys = {}, users = new Set();
+      let pgSum = 0, pgN = 0, rgSum = 0, rgN = 0, optIn = 0, optOut = 0;
+      for (const it of filtered) {
+        users.add(it._uid);
+        const t = (it.title || '').trim();
+        if (t) titleCounts[t] = (titleCounts[t] || 0) + 1;
+        const k = normKey(it); issueKeys[k] = (issueKeys[k] || 0) + 1;
+        const pg = pgOf(it); if (pg != null) { pgSum += pg; pgN++; }
+        const rg = rgOf(it); if (rg != null) { rgSum += rg; rgN++; }
+        if (it._trainingOptIn === false) optOut++; else optIn++;
+      }
+      const topTitles = Object.entries(titleCounts)
+        .sort((a, b) => b[1] - a[1]).slice(0, 25).map(([title, count]) => ({ title, count }));
+      const multiSubmissions = Object.entries(issueKeys)
+        .filter(([, c]) => c >= 2).sort((a, b) => b[1] - a[1]).map(([key, count]) => ({ key, count }));
+      return res.status(200).json({
+        mode: 'aggregate',
+        total: filtered.length,
+        distinctUsers: users.size,
+        avgPG: pgN ? +(pgSum / pgN).toFixed(2) : null,
+        avgRG: rgN ? +(rgSum / rgN).toFixed(1) : null,
+        pgCount: pgN, rgCount: rgN,
+        optInBreakdown: { optIn, optOut },
+        topTitles,
+        multiSubmissions,
+        filtersApplied,
+        generatedAt: new Date().toISOString(),
+      });
+    }
+
+    // ── Limit + projection ─────────────────────────────────────────────────
+    if (limit != null) filtered = filtered.slice(0, limit);
+
+    let out = filtered;
+    if (fields) {
+      out = filtered.map(it => {
+        const o = { _uid: it._uid, _itemId: it._itemId };
+        for (const f of fields) if (f in it) o[f] = it[f];
+        return o;
+      });
+    }
+
+    const containsPII = fields ? fields.some(f => PII_FIELDS.includes(f)) : true;
+
     return res.status(200).json({
-      items,
-      count: items.length,
+      items: out,
+      count: out.length,
       truncated,
       cap: CAP,
       includeBlobs,
-      containsPII: true,
+      projected: !!fields,
+      containsPII,
+      filtersApplied,
       generatedAt: new Date().toISOString(),
     });
 
