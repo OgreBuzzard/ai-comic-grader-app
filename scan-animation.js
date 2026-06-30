@@ -767,6 +767,17 @@
         width: min(100%, calc(100vh * 577 / 1835));
       }
     }
+    /* S18: iPad / tablet (touch) — the desktop rule above height-fits the whole
+       robot to a small centered column, which looks tiny on an iPad. Give iPad
+       the same IMMERSIVE width-fit the phone gets (head offscreen, cavity +
+       results panel fill the view), scaled up to a 720px stage. Desktop (fine
+       pointer) keeps the height-fit whole-robot treatment. 720 is a deliberate
+       cap so a wide landscape iPad doesn't blow the chest up absurdly — adjust
+       if it should fill more. */
+    @media (min-width: 540px) and (pointer: coarse) {
+      .rg-scan-stage { max-width: 720px; }
+      .rg-scan-shell { width: 100%; }
+    }
   `;
 
   let _stylesInjected = false;
