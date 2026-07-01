@@ -1,0 +1,7 @@
+# Reference image stashes — kept in the repo, not needed on the deployed site.
+# (Grade_Reference/ is deliberately NOT here: assess.js fetches it over HTTP.)
+Amazing_Spider-Man_64_Ref/
+Card_Reference/
+
+# macOS Finder junk
+.DS_Store
