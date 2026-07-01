@@ -77,8 +77,12 @@
         // redirect — Safari just rendered the web app in-browser, which is
         // worse than the prompt. The custom scheme is the better compromise.
         status.innerHTML = '<div class="done">✓ Signed in!</div><br>Returning to Robograder…';
-        setTimeout(function() { window.location.href = 'robograder://auth-complete'; }, 400);
-        setTimeout(function() { status.innerHTML = '<div class="done">✓ Signed in!</div><br>If Robograder didn\'t reopen, tap below.<br><br><a href="robograder://auth-complete" style="color:#d4af37;font-weight:600;text-decoration:none;font-size:16px">Return to Robograder ›</a>'; }, 1800);
+        // The app polls for this token and closes this sheet automatically. We no
+        // longer redirect to robograder://auth-complete — a custom scheme does
+        // nothing inside an in-app sheet and was the 2.1a rejection. If auto-close
+        // is slow, the sheet's Done button returns to the app and the fallback poll
+        // (on visibilitychange) finishes sign-in.
+        setTimeout(function() { status.innerHTML = '<div class="done">✓ Signed in!</div><br>Returning to Robograder…<br><br><span style="color:#888;font-size:13px">If this doesn\'t close on its own, tap Done (top-left) to return.</span>'; }, 2500);
       } else {
         throw new Error(data.error || 'Failed');
       }

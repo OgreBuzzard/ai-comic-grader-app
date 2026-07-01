@@ -136,56 +136,67 @@ mustReplace('D6 browser sheet sign-in',
       return;
     }`,
 `    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
-      // iOS app (S17): open the auth bridge in external Safari. When sign-in
-      // completes, auth-ios.html redirects to the custom scheme robograder://
-      // auth-complete, which iOS hands back to this app — foregrounding it. A
-      // visibilitychange listener then polls /api/ios-auth for the custom token
-      // and finishes sign-in. NO Capacitor plugin required (the @capacitor/browser
-      // SPM package does not register in this no-bundler build). External Safari
-      // also shares the user's existing Google session, so returning users often
-      // skip the Google login entirely.
+      // iOS app: open the auth bridge (auth-ios.html, both Apple + Google) in an
+      // in-app SFSafariViewController sheet via @capacitor/browser (Guideline 4 —
+      // no external Safari). The app keeps running while the sheet is up, so we
+      // POLL /api/ios-auth directly and close the sheet + signInWithCustomToken the
+      // instant the token lands. We do NOT depend on the robograder:// custom-scheme
+      // handback or visibilitychange — NEITHER fires for an in-app sheet, which was
+      // the 2.1a rejection ("Return to Robograder" did nothing after Sign in with
+      // Apple). visibilitychange is kept only as a fallback for the external-Safari
+      // (window.open) path.
       const session = 'ios_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
       const iosStatus = document.getElementById('splash-signin-status') || document.getElementById('auth-ios-status');
       if (iosStatus) { iosStatus.style.display = 'block'; iosStatus.textContent = 'Opening sign-in…'; }
       window._iosPendingSession = session;
-      // Hook visibilitychange ONCE. Fires when the app returns to the foreground
-      // (via the robograder:// scheme handback, or a manual switch as a fallback).
+      // Shared poll: wait for the custom token for this session, finish sign-in, and
+      // close the sheet. Apple's consent flow can be slow on first run, so allow ~120s.
+      window._iosPollAuth = async function(s, browser, maxAttempts) {
+        var status = document.getElementById('splash-signin-status') || document.getElementById('auth-ios-status');
+        if (status) { status.style.display = 'block'; status.textContent = 'Finishing sign-in…'; }
+        for (var attempt = 0; attempt < (maxAttempts || 120); attempt++) {
+          if (window._iosPendingSession !== s) return; // a newer attempt superseded this one
+          try {
+            var resp = await fetch('/api/ios-auth?session=' + s);
+            if (resp.ok) {
+              var data = await resp.json();
+              if (data.customToken) {
+                window._iosPendingSession = null;
+                try { if (browser && typeof browser.close === 'function') await browser.close(); } catch (e) {}
+                if (status) status.textContent = 'Signed in! Loading your collection…';
+                await window._signInWithCustomToken(window._auth, data.customToken);
+                if (typeof window.exitSplashSigninAndShowApp === 'function') window.exitSplashSigninAndShowApp();
+                await loadItems();
+                return;
+              }
+            }
+          } catch (e) {}
+          await new Promise(function(r) { setTimeout(r, 1000); });
+        }
+        if (status) status.textContent = 'Sign-in not detected. Tap Continue to try again.';
+      };
+      // Fallback only: if the bridge had to run in EXTERNAL Safari (no Browser
+      // plugin), the app was backgrounded and JS timers suspended; poll when it
+      // foregrounds again. For the in-app sheet this won't fire — the direct poll
+      // below handles that case.
       if (!window._iosVisibilityHooked) {
         window._iosVisibilityHooked = true;
-        document.addEventListener('visibilitychange', async function() {
+        document.addEventListener('visibilitychange', function() {
           if (document.visibilityState !== 'visible' || !window._iosPendingSession) return;
-          var s = window._iosPendingSession;
-          var status = document.getElementById('splash-signin-status') || document.getElementById('auth-ios-status');
-          if (status) { status.style.display = 'block'; status.textContent = 'Finishing sign-in…'; }
-          for (var attempt = 0; attempt < 20; attempt++) {
-            if (window._iosPendingSession !== s) return; // a newer attempt superseded this one
-            try {
-              var resp = await fetch('/api/ios-auth?session=' + s);
-              if (resp.ok) {
-                var data = await resp.json();
-                if (data.customToken) {
-                  window._iosPendingSession = null;
-                  if (status) status.textContent = 'Signed in! Loading your collection…';
-                  await window._signInWithCustomToken(window._auth, data.customToken);
-                  if (typeof window.exitSplashSigninAndShowApp === 'function') window.exitSplashSigninAndShowApp();
-                  await loadItems();
-                  return;
-                }
-              }
-            } catch (e) {}
-            await new Promise(function(r) { setTimeout(r, 1000); });
-          }
-          if (status) status.textContent = 'Sign-in not detected. Tap Continue to try again.';
+          window._iosPollAuth(window._iosPendingSession, null, 20);
         });
       }
-      // S17: Apple Guideline 4 — use SFSafariViewController (in-app sheet) via
-      // the Capacitor Browser plugin, NOT the full Safari app. Falls back to
-      // window.open only if the plugin isn't registered yet.
+      // Guideline 4: open the bridge in the in-app sheet, then poll right away and
+      // close the sheet ourselves on success — no custom scheme, no user tap needed.
       (function(){
         var b = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser;
         var url = 'https://robograder.app/auth-ios.html?s=' + session;
-        if (b && typeof b.open === 'function') { b.open({ url: url, presentationStyle: 'popover' }).catch(function(){ window.open(url, '_blank'); }); }
-        else { window.open(url, '_blank'); }
+        if (b && typeof b.open === 'function') {
+          b.open({ url: url, presentationStyle: 'popover' }).catch(function(){ window.open(url, '_blank'); });
+          window._iosPollAuth(session, b, 120);
+        } else {
+          window.open(url, '_blank');
+        }
       })();
       return;
     }`);
