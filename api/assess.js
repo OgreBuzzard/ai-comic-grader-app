@@ -1023,7 +1023,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     // thinking:{type:'adaptive'} and output_config.effort (Anthropic in fact
     // recommends combining them on 4.6) — no payload changes needed vs 4.8.
     // Expect lower input-token cost (~$0.10/run) than 4.8's tokenizer.
-    const PRIMARY_MODEL = 'claude-fable-5';
+    const PRIMARY_MODEL = 'claude-sonnet-5';
     // Per-token rates per model (verified June 2026). Cost logging reads from
     // this table so the calibration matrix logs TRUE costs for every round.
     // Cache read = 10% of input rate; cache creation = 1.25x input rate.
@@ -1031,7 +1031,9 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       'claude-fable-5':    { in: 10 / 1e6, out: 50 / 1e6 },
       'claude-opus-4-8':   { in: 5  / 1e6, out: 25 / 1e6 },
       'claude-opus-4-6':   { in: 5  / 1e6, out: 25 / 1e6 },
-      'claude-sonnet-4-6': { in: 3  / 1e6, out: 15 / 1e6 }
+      'claude-sonnet-4-6': { in: 3  / 1e6, out: 15 / 1e6 },
+      // Sonnet 5 INTRO pricing $2/$10 through Aug 31 2026; reverts to $3/$15 after.
+      'claude-sonnet-5':   { in: 2  / 1e6, out: 10 / 1e6 }
     };
     const _RATES = MODEL_RATES[PRIMARY_MODEL] || MODEL_RATES['claude-opus-4-8'];
 
