@@ -27,6 +27,7 @@
 import { ROBOGRADE_VERSION } from '../lib/version.js';
 import { anthropicWithRetry, fetchTimeout } from '../lib/anthropic_retry.js';
 import { getBookNote } from '../lib/book_notes.js';
+import { defectIndexPromptBlock } from '../lib/defect_index.js';
 
 // ── A/B TEST TOGGLE (TEMPORARY) ──────────────────────────────────────
 // When true, the ComicVine reference is suppressed for ALL assessments so we
@@ -901,7 +902,7 @@ EPISTEMIC HUMILITY: photos can't show everything. Do NOT claim absences ("no mis
 COMMONLY-MISSED (under-detected → over-grading; LOOK in these spots, report only what's visibly present, never assume): tears at staples/edges; stains on spine and back cover (a soft-bordered tonal patch; a large one is grade-limiting); foxing across the whole field; edge tanning bands; pencil/pressure indents (a groove with no ink break); bug/silverfish chew along edges.
 
 DEFECT INVENTORY — per defect: Type (official CGC term); Location; Measurement (scale by comic size — Silver ~7"×10.25", Bronze ~6.875"×10.25", modern ~6.625"×10.25"); Severity High/Med/Low; colorBreaking flag for creases; Category Front/Back/Spine/Interior (Front=front surface+outer front corners; Back=back surface+outer back corners; Spine=spine surface/roll/inner spine corners/ALL staple condition; Interior=pages/PQ/interior printing only, no staples).
-CORNERS: spell out "top left/top right/bottom left/bottom right" (never TL/TR/BL/BR); group shared defects ("both bottom corners"). LEFT/RIGHT = the IMAGE, not the comic; confirm the side before committing.
+CORNERS: spell out "top left/top right/bottom left/bottom right" (never TL/TR/BL/BR); group shared defects ("both bottom corners"). LEFT/RIGHT = the IMAGE, not the comic; confirm the side before committing. BACK-COVER MIRROR: on the back-cover photo the spine runs down the RIGHT side (the front cover has the spine on the left), so back-cover left and right are the reverse of the front. Read a defect’s left/right from the back-cover image exactly as it appears there; do NOT translate it to front-cover orientation. Before committing any back-cover left/right call, check it against where the spine sits in that photo.
 EYE APPEAL: inventory observable defects, not everything possible — a typical Silver Age book has 4–8 worth noting, not 12–15.
 ACCUMULATION STILL COUNTS: the 4–8 limit governs how many you WRITE, not how many you WEIGH. When a face carries more small defects than you list, emit ONE severity-banded summary ("Pervasive light edge/corner wear, all sides"; "Multiple scattered spine stress lines") so the accumulation counts toward the grade. Grade against the full burden (listed + banded), never just the listed subset. A book that genuinely shows heavy accumulation must land in the lower tiers its accumulation warrants, even when the written list is short — do not let a short list pull the grade up.
 
@@ -932,6 +933,8 @@ ${gradeCeiling ? `\nGRADE CEILING — predicted CGC grade must not exceed ${grad
 CRITICAL: final = Front+Back+Spine+Interior exactly. If holistic impression disagrees with the sum by >2, a component is wrong, not the formula.
 
 CGC GRADE: apply CGC standards to the inventory.
+DEFECT IMPACT INDEX — apply as a per-defect CEILING when converting the inventory to a grade. For each defect you actually catalogued, a book that would otherwise grade at or above that defect’s red threshold is pulled down toward it; multiple such defects compound downward. It never raises a grade — only caps or confirms. Ignore entries for defects not present.
+${defectIndexPromptBlock()}
 BLACKJACK PHILOSOPHY: overshooting is far costlier than undershooting (the user submits to CGC/PSA on your prediction). Between two adjacent grades, prefer the lower; when unsure a defect is grade-affecting, count it. EXCEPTION: clearly minor defects with strong eye appeal — don't grade low just for safety. Applies to RoboGrade and CGC alike. MID-GRADE GUARD: a book showing genuine accumulated wear (multiple defects across faces, soiling, edge/corner wear) belongs in the 4.0–7.0 band, NOT 7.5–8.5 — the most common over-grade error is treating a worn mid-grade book as a clean high-grade one. If the book is not clean-presenting, do not seat it at 8.0+.
 Calibration: assign 9.0–9.6 for minor defects (don't cap at 8.5 from caution); strong eye appeal + flat spine + bright color + sharp corners = high grade; at 8.5+ stress lines/bends/soiling become grade-defining; structural defects have NO hard cap (gradient per Phase 3). ENHANCE: "Y" if pressing/UV/cleaning could improve (spine roll/rippling, color-breaking creases softening, soiling, tanning on white areas); "N" if structural damage dominates; null if unsure.
 
@@ -1023,7 +1026,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     // thinking:{type:'adaptive'} and output_config.effort (Anthropic in fact
     // recommends combining them on 4.6) — no payload changes needed vs 4.8.
     // Expect lower input-token cost (~$0.10/run) than 4.8's tokenizer.
-    const PRIMARY_MODEL = 'claude-sonnet-5';
+    const PRIMARY_MODEL = 'claude-fable-5';
     // Per-token rates per model (verified June 2026). Cost logging reads from
     // this table so the calibration matrix logs TRUE costs for every round.
     // Cache read = 10% of input rate; cache creation = 1.25x input rate.
@@ -1031,9 +1034,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       'claude-fable-5':    { in: 10 / 1e6, out: 50 / 1e6 },
       'claude-opus-4-8':   { in: 5  / 1e6, out: 25 / 1e6 },
       'claude-opus-4-6':   { in: 5  / 1e6, out: 25 / 1e6 },
-      'claude-sonnet-4-6': { in: 3  / 1e6, out: 15 / 1e6 },
-      // Sonnet 5 INTRO pricing $2/$10 through Aug 31 2026; reverts to $3/$15 after.
-      'claude-sonnet-5':   { in: 2  / 1e6, out: 10 / 1e6 }
+      'claude-sonnet-4-6': { in: 3  / 1e6, out: 15 / 1e6 }
     };
     const _RATES = MODEL_RATES[PRIMARY_MODEL] || MODEL_RATES['claude-opus-4-8'];
 
