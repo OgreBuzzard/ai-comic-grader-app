@@ -40,6 +40,8 @@ export default async function handler(req, res) {
       payment_method_types: ['card'],
       mode: 'payment',
       line_items: [{ price: selected.priceId, quantity: 1 }],
+      // PWA-only 5% promo (GRADEMYGRAILS) — surfaces the promo-code field at checkout.
+      allow_promotion_codes: true,
       // Stripe Tax integration (S11). automatic_tax computes the right rate
       // based on buyer location and our registrations (currently WA only).
       // Requires a billing address to compute against — without it, Stripe
