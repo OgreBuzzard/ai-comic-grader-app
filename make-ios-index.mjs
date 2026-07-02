@@ -436,44 +436,142 @@ mustReplace('D7f max-dwell guard',
     if (elapsed >= MIN_DWELL_MS) dismiss();
   });`);
 
-// ── D8: Path B in-app purchasing (S17) ───────────────────────────────────────
-// iOS can't navigate its own webview to Stripe (it would replace the app UI with
-// no way back). Open Stripe in the system browser instead, then refresh the
-// credit count when the app returns to the foreground. Crediting itself is
-// already handled server-side by the Stripe webhook — the app just re-reads the
-// balance. (Apple permits external payment links for US apps post-Epic ruling.)
-mustReplace('D8 purchase external browser',
-`    const data = await resp.json();
-    if (data.url) {
-      window.location.href = data.url;
-    } else {
-      alert("Failed to start checkout: " + (data.error || "Unknown error"));
-    }`,
-`    const data = await resp.json();
-    if (data.url) {
-      if (window.Capacitor && window.Capacitor.isNativePlatform()) {
-        // iOS: open Stripe in the system browser, not the app's webview, and
-        // refresh credits when the user returns. The webhook does the crediting.
-        window._purchaseInFlight = true;
-        if (!window._purchaseVisHooked) {
-          window._purchaseVisHooked = true;
-          document.addEventListener('visibilitychange', async function() {
-            if (document.visibilityState !== 'visible' || !window._purchaseInFlight) return;
-            window._purchaseInFlight = false;
-            // The webhook may lag a moment behind the redirect; poll the balance.
-            for (var i = 0; i < 8; i++) {
-              try { await loadUserCredits(); } catch (e) {}
-              await new Promise(function(r) { setTimeout(r, 1500); });
-            }
-          });
-        }
-        window.open(data.url, '_blank');
-      } else {
-        window.location.href = data.url;
-      }
-    } else {
-      alert("Failed to start checkout: " + (data.error || "Unknown error"));
-    }`);
+// ── D8: iOS StoreKit 2 in-app purchasing (RESTORED from build 4, S19) ─────────
+// The external-Stripe-browser approach was rejected (3.1.1 + purchase error).
+// Restore the native StoreKit flow: buyCredits routes to _iosBuyCredits on
+// native; helpers verify the StoreKit 2 JWS via /api/verify_iap; the modal shows
+// real StoreKit prices. IOS_CREDITS matches verify_iap.js (5/20/100).
+
+// 8a: buyCredits routes to StoreKit on native (PWA keeps Stripe below).
+mustReplace('D8a buyCredits native branch',
+`  try {
+    const token = await window._currentUser.getIdToken();
+    const resp = await fetch("/api/checkout", {`,
+`  try {
+    if (window.Capacitor && window.Capacitor.isNativePlatform()) { await _iosBuyCredits(pkg); return; }
+    const token = await window._currentUser.getIdToken();
+    const resp = await fetch("/api/checkout", {`);
+
+// 8b: inject StoreKit helpers + hook _iosLoadPrices into showBuyCredits.
+mustReplace('D8b storekit helpers + showBuyCredits hook',
+`function showBuyCredits() {
+  const modal = document.getElementById("buy-credits-modal");
+  if (modal) modal.style.display = "flex";
+  refreshPromoRow();
+}`,
+`__SK__
+function showBuyCredits() {
+  const modal = document.getElementById("buy-credits-modal");
+  if (modal) modal.style.display = "flex";
+  refreshPromoRow();
+  if (window.Capacitor && window.Capacitor.isNativePlatform()) _iosLoadPrices();
+}`.replace('__SK__', `
+// ── iOS StoreKit 2 purchasing via @capgo/native-purchases (NativePurchases) ──
+// purchase -> jwsRepresentation -> /api/verify_iap verifies + credits -> refresh.
+// Crediting is server-side and idempotent (keyed on Apple transactionId).
+const IOS_PRODUCT_IDS = {
+  comic_stack: 'app.robograder.credits.stack',
+  comic_wall:  'app.robograder.credits.wall',
+  short_box:   'app.robograder.credits.shortbox',
+};
+const IOS_CREDITS = { comic_stack: 5, comic_wall: 20, short_box: 100 };
+
+function _isCancelError(e) {
+  if (!e) return false;
+  const msg = ((e.message || '') + '').toLowerCase();
+  const code = ((e.code != null ? e.code : '') + '').toLowerCase();
+  return /cancel/.test(msg) || /cancel/.test(code) || code === '2';
+}
+
+async function _iosBuyCredits(pkg) {
+  const NP = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativePurchases;
+  const productId = IOS_PRODUCT_IDS[pkg];
+  if (!NP || !productId) { alert("Purchases are unavailable right now. Please try again."); return; }
+  let txn;
+  try {
+    txn = await NP.purchaseProduct({
+      productIdentifier: productId, productType: 'inapp', quantity: 1,
+      isConsumable: true, autoAcknowledgePurchases: true
+    });
+  } catch (e) {
+    if (!_isCancelError(e)) {
+      const msg = ((e && (e.message || e.code)) || 'Unknown error') + '';
+      alert("Purchase failed: " + msg);
+    }
+    return;
+  }
+  const jws = txn && txn.jwsRepresentation;
+  if (!jws) { alert("Purchase couldn't be verified (no receipt). If you were charged, email support@robograder.app."); return; }
+  try {
+    const idToken = await window._currentUser.getIdToken();
+    const resp = await fetch("/api/verify_iap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + idToken },
+      body: JSON.stringify({ jws })
+    });
+    const data = await resp.json().catch(function(){ return {}; });
+    if (resp.ok && data.ok) { await loadUserCredits(); hideBuyCredits(); alert("Added " + data.credits + " assessments to your account."); }
+    else { alert("We couldn't credit your purchase: " + (data.error || "unknown error") + "\\n\\nIf you were charged, your receipt is on file — email support@robograder.app and we'll fix it."); }
+  } catch (e) {
+    alert("Network error verifying your purchase. If you were charged, reopen the app or email support@robograder.app.");
+  }
+}
+
+let _iosPriceCache = null;
+function _applyIosPrices(products) {
+  const byId = {};
+  Object.keys(IOS_PRODUCT_IDS).forEach(function(k) { byId[IOS_PRODUCT_IDS[k]] = k; });
+  (products || []).forEach(function(p) {
+    const key = byId[p.identifier];
+    if (!key) return;
+    const priceEl = document.getElementById('price-' + key);
+    if (priceEl && p.priceString) priceEl.textContent = p.priceString;
+    const unitEl = document.getElementById('unit-' + key);
+    const credits = IOS_CREDITS[key];
+    if (unitEl && typeof p.price === 'number' && credits) {
+      try { unitEl.textContent = '(' + new Intl.NumberFormat(undefined, { style: 'currency', currency: p.currencyCode || 'USD' }).format(p.price / credits) + ' each)'; } catch (e) {}
+    }
+  });
+}
+async function _iosFetchPrices() {
+  const NP = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativePurchases;
+  if (!NP) return null;
+  const res = await NP.getProducts({ productIdentifiers: Object.values(IOS_PRODUCT_IDS), productType: 'inapp' });
+  const products = (res && res.products) || [];
+  if (products.length) _iosPriceCache = products;
+  return products;
+}
+async function _iosLoadPrices() {
+  if (_iosPriceCache) { _applyIosPrices(_iosPriceCache); return; }
+  try { const products = await _iosFetchPrices(); if (products) _applyIosPrices(products); }
+  catch (e) { console.log('[iap] getProducts failed:', e && e.message); }
+}
+`));
+
+// 8c: give the modal price/unit divs IDs so StoreKit prices inject.
+mustReplace('D8c modal ids comic_stack',
+`          <div style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$10</div>
+          <div style="font-size:13px;color:#3a2a1a;margin-top:3px">5 assessments</div>
+          <div style="font-size:12px;color:#6a5a4a;margin-top:1px">($2.00 each)</div>`,
+`          <div id="price-comic_stack" style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$10</div>
+          <div style="font-size:13px;color:#3a2a1a;margin-top:3px">5 assessments</div>
+          <div id="unit-comic_stack" style="font-size:12px;color:#6a5a4a;margin-top:1px">($2.00 each)</div>`);
+
+mustReplace('D8d modal ids comic_wall',
+`          <div style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$30</div>
+          <div style="font-size:13px;color:#3a2a1a;margin-top:3px">20 assessments</div>
+          <div style="font-size:12px;color:#6a5a4a;margin-top:1px">($1.50 each)</div>`,
+`          <div id="price-comic_wall" style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$30</div>
+          <div style="font-size:13px;color:#3a2a1a;margin-top:3px">20 assessments</div>
+          <div id="unit-comic_wall" style="font-size:12px;color:#6a5a4a;margin-top:1px">($1.50 each)</div>`);
+
+mustReplace('D8e modal ids short_box',
+`          <div style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$100</div>
+          <div style="font-size:13px;color:#3a2a1a;margin-top:3px">100 assessments</div>
+          <div style="font-size:12px;color:#6a5a4a;margin-top:1px">($1.00 each)</div>`,
+`          <div id="price-short_box" style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$100</div>
+          <div style="font-size:13px;color:#3a2a1a;margin-top:3px">100 assessments</div>
+          <div id="unit-short_box" style="font-size:12px;color:#6a5a4a;margin-top:1px">($1.00 each)</div>`);
 
 // ── D9: disable SSE streaming on iOS (S17) ───────────────────────────────────
 // The website grades via a SAME-ORIGIN SSE stream. The iOS app rewrites the
