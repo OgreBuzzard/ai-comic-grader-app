@@ -1090,7 +1090,7 @@ async function loadItems(reset = false) {
   const offset = state.itemsList.length;
   const q = encodeURIComponent(state.itemSearch || '');
   try {
-    const res = await api(`/api/items?sort=${state.itemsSort}&dir=${state.itemsDir}&limit=20&offset=${offset}&q=${q}`);
+    const res = await api(`/api/items?sort=${state.itemsSort}&dir=${state.itemsDir}&limit=10&offset=${offset}&q=${q}`);
     state.itemsList = state.itemsList.concat(res.items);
     state.itemsHasMore = res.hasMore;
     state.itemsTotal = res.total;
