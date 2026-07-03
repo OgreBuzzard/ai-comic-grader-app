@@ -1785,6 +1785,9 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           responseModel: _responseModel,
           rawTextChars: _rawTextChars,
           defectCount: Array.isArray(parsed.roboGrade && parsed.roboGrade.defects) ? parsed.roboGrade.defects.length : null,
+          // S19: full defect list in the record so a calibration round reads
+          // straight off /api/timings (no per-item fetch, no fuzzy matching).
+          defects: (parsed.roboGrade && parsed.roboGrade.defects) || null,
           imageCount: Array.isArray(imageBlocks) ? imageBlocks.length : null,
           title: parsed.title || null,
           issue: parsed.issue || null,

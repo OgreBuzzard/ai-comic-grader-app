@@ -743,6 +743,9 @@ Rules:
           responseModel: _responseModel,
           rawTextChars: _rawTextChars,
           defectCount: Array.isArray(parsed.roboGrade?.defects) ? parsed.roboGrade.defects.length : null,
+          // S19: full defect list in the record so a calibration round reads
+          // straight off /api/timings (no per-item fetch, no fuzzy matching).
+          defects: (parsed.roboGrade && parsed.roboGrade.defects) || null,
           imageCount: macroBlocks.length,
           title: parsed.title || title || null,
           issue: parsed.issue || issueNumber || null,
