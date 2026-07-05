@@ -226,7 +226,6 @@ ${JSON.stringify({
   printing: initialAssessment.printing,
   pageQuality: initialAssessment.pageQuality,
   grade: initialAssessment.grade,
-  graderNotes: initialAssessment.graderNotes,
   aiAssessment: initialAssessment.aiAssessment,
   roboGrade: {
     score: initialRG.score,
@@ -286,7 +285,7 @@ Recompute the RoboGrade score (Front + Back + Spine + Interior) and map it to a 
   • Find the reference whose OVERALL cover condition the book being graded most closely matches.
   • The predicted grade may move UP or DOWN by up to 2 grade positions from the initial, based on that comparison. Downward movement is the more common outcome when the macros surfaced new defects; upward movement requires the cover to clearly match a cleaner reference.
   • Also read the candidate grade's tier definition plus one grade above and one below to confirm the fit.
-  • NEVER name, number, identify, or describe any specific reference comic in your output. The references are an internal yardstick only. If the grade is revised, graderNotes/aiAssessment may say it was "compared against reference copies at the same grade and revised" — nothing more specific.
+  • NEVER name, number, identify, or describe any specific reference comic in your output. The references are an internal yardstick only. If the grade is revised, aiAssessment may say it was "compared against reference copies at the same grade and revised" — nothing more specific.
 
 CGC TIER REFERENCE (candidate ±1, focused on initial grade):
 ${gradeTierContext(initialGrade)}
@@ -308,7 +307,6 @@ JSON shape (same as initial assessment, with deepAddition tags on new defects):
   "printing": "${initialAssessment.printing || ''}",
   "pageQuality": "${initialAssessment.pageQuality || ''}",
   "grade": "revised CGC grade",
-  "graderNotes": "• retain initial bullets; append any new deep-assessment bullets prefixed with [Deep]",
   "aiAssessment": "PRESERVE the initial Condition Assessment EXACTLY as written below, then append ONE sentence stating whether the Deep Assessment confirmed or altered it. Initial text to preserve verbatim: ${JSON.stringify(initialAssessment.aiAssessment || '')}. Append ' Deep Assessment confirmed the initial findings.' if nothing changed, or ' Deep Assessment revised the grade: <brief reason>.' if the macros changed the grade. Do not rewrite or shorten the preserved text.",
   "labelNotes": "${initialAssessment.labelNotes || ''}",
   "keyInfo": "${initialAssessment.keyInfo || ''}",
@@ -333,7 +331,6 @@ JSON shape (same as initial assessment, with deepAddition tags on new defects):
 HARD OUTPUT LIMITS:
   • defects array: MAX 10 entries (initial + new deep additions combined)
   • aiAssessment: preserved initial text + exactly ONE appended confirm/alter sentence
-  • graderNotes: existing bullets + at most 3 [Deep]-prefixed bullets
 `;
 
   // ── S16: Restoration Check prompt (mode==='restoration') ────────────────────
@@ -743,9 +740,6 @@ Rules:
           responseModel: _responseModel,
           rawTextChars: _rawTextChars,
           defectCount: Array.isArray(parsed.roboGrade?.defects) ? parsed.roboGrade.defects.length : null,
-          // S19: full defect list in the record so a calibration round reads
-          // straight off /api/timings (no per-item fetch, no fuzzy matching).
-          defects: (parsed.roboGrade && parsed.roboGrade.defects) || null,
           imageCount: macroBlocks.length,
           title: parsed.title || title || null,
           issue: parsed.issue || issueNumber || null,
