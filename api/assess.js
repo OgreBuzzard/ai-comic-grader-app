@@ -28,7 +28,6 @@ import { ROBOGRADE_VERSION } from '../lib/version.js';
 import { anthropicWithRetry, fetchTimeout } from '../lib/anthropic_retry.js';
 import { getBookNote } from '../lib/book_notes.js';
 import { defectIndexPromptBlock } from '../lib/defect_index.js';
-import { CGC_GRADE_SCALE, GRADE_DEFINITIONS } from '../lib/grade_definitions.js';
 
 // ── A/B TEST TOGGLE (TEMPORARY) ──────────────────────────────────────
 // When true, the ComicVine reference is suppressed for ALL assessments so we
@@ -922,8 +921,8 @@ PQ ↔ INTERIOR SCORE (1:1, Interior MUST equal): White=10 • OW/W=9 • OW=8 �
 ROBOGRADE (primary): four integer components summed to final.
   Front 0–50 (front surface + outer front corners) | Back 0–20 | Spine 0–20 (surface/roll/inner spine corners/staples) | Interior 0–10 (PQ 1:1 map). Final = sum (0–100).
 Score each category only from its own defects. Perfect category = no observed defects there.
-  Front (50): 50 pristine | 47–49 single trace | 43–46 small/trace accumulation | 38–42 minor, strong eye appeal | 30–37 moderate accumulation or one color-breaking | 20–29 substantial wear or significant defect | 10–19 major | 0–9 severe/structural.
-    CUMULATIVE-FRONT-DEFECT RULE: widespread soiling/discoloration + multiple additional defects (any combo of corner blunting + edge wear + crease + spine-side stress) → Front MUST be ≤ 30 regardless of individual severities. Mid-grade books (CGC 3.0–4.5) routinely show this. Without this rule, individual defects each rate Med and the sum lands 32–40 (CGC 5.5–7.0 territory) — a systematic over-grade. When in doubt at 30, go to 28.
+  Front (50): 50 pristine | 47–49 single trace | 43–46 small/trace accumulation | 38–42 minor accumulation only | 30–37 moderate accumulation or one color-breaking | 20–29 substantial wear or significant defect | 10–19 major | 0–9 severe/structural.
+    CUMULATIVE-FRONT-DEFECT RULE: widespread soiling/discoloration + multiple additional defects (any combo of corner blunting + edge wear + crease + spine-side stress) → Front MUST be ≤ 30 regardless of individual severities. Mid-grade books (CGC 3.0–4.5) routinely show this. Without this rule, individual defects each rate Med and the sum lands 32–40 (CGC 5.5–7.0 territory) — a systematic over-grade. When in doubt at 30, go to 28. MID-GRADE EXTENSION: for CGC 5.0–7.0 books showing several color-breaking defects plus accumulation, Front MUST be ≤ 37 (not 38–46). EYE APPEAL IS NOT A SCORE: gloss, bright color, and a flat/clean look do NOT raise any subscore — score each category ONLY from the defects present in it.
   Back (20): 20 pristine | 18–19 trace | 15–17 minor/light accumulation | 11–14 moderate | 7–10 substantial | 0–6 major.
   Spine (20): 20 pristine | 18–19 trace, one minor non-CB tick | 15–17 light stress, slight roll | 11–14 multiple stress lines, visible roll, or one color-breaking crease | 7–10 significant stress, split starting, staple pull | 0–6 severe.
   Interior (10): 1:1 from PQ. No deductions. Staple issues → Spine.
@@ -947,7 +946,6 @@ JUSTIFICATION: if a category is below max there MUST be a named defect in it —
 PAGE QUALITY SEVERITY (hard rule): any "Page quality"/page-tone entry gets severity="" — it's descriptive, not a defect.
 INTERIOR SCOPE (hard rule): Interior = page condition only; all staple observations go to Spine.
 COLOR-BREAKING CALIBRATION: restrained — a typical Silver Age book has 0–2 color-breaking defects, not 5–10. Default a stress line to non-color-breaking unless you can see the color discontinuity.
-COLOR-BREAK IMPACT (scoring — distinct from the detection restraint above): once a color break is CONFIRMED, weigh it harder than the same defect without one. A color break exposes paper and is a primary grade-limiter in CGC/PSA grading. Within a subscore, a color-breaking crease/edge/corner/stress line pulls the score down further than a non-color-breaking equivalent of the same size and location; two or more confirmed color breaks on the same face compound downward. This is a nudge, not a cliff — one small color break does not crash a grade, but a face carrying several confirmed color breaks belongs at least one tier below the same face with none.
 
 ## PHASE 3 — CONFIRMING THE GRADE
 Read the CGC tier definition for your candidate grade plus one above and one below; if a neighbor fits the defect profile better, switch.
@@ -1810,64 +1808,6 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       try { res.end(); } catch (e) {}
       return;
     }
-
-    // ── S19 EXPERIMENT: Hulk-181 grade-reference refinement (Main) ──────────
-    // After Main grades, show the model reference books at ±1 around its grade
-    // and let it confirm/revise DOWNWARD. SECOND Fable call — roughly DOUBLES
-    // per-assessment cost and is NOT added to the logged costUsd (double the
-    // logged figure for true cost). Temporary; non-fatal — Main's grade stands
-    // if it fails.
-    try {
-      const _gNum = parseFloat((String(parsed.grade).match(/\d+(\.\d+)?/) || [])[0]);
-      if (Number.isFinite(_gNum) && imgBlock) {
-        let _idx = 0, _best = Infinity;
-        CGC_GRADE_SCALE.forEach((g, i) => { const d = Math.abs(parseFloat(g) - _gNum); if (d < _best) { _best = d; _idx = i; } });
-        const _lo = Math.max(0, _idx - 1), _hi = Math.min(CGC_GRADE_SCALE.length - 1, _idx + 1);
-        const _win = CGC_GRADE_SCALE.slice(_lo, _hi + 1);
-        const _baseUrl = process.env.APP_URL || 'https://robograder.app';
-        const _refs = [];
-        for (const g of _win) {
-          const def = GRADE_DEFINITIONS[g] || {};
-          const file = def.file || (g.replace('.', '_') + '.jpg');
-          try {
-            const r = await fetch(`${_baseUrl}/Grade_Reference/${file}`);
-            if (!r.ok) continue;
-            const data = Buffer.from(await r.arrayBuffer()).toString('base64');
-            const parts = [`CGC ${g}${def.name ? ' — ' + def.name : ''}`];
-            if (def.definition) parts.push(def.definition);
-            if (def.caption) parts.push(`Reference example: ${def.caption}`);
-            _refs.push({ type: 'text', text: parts.join(' ') });
-            _refs.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } });
-          } catch (e) {}
-        }
-        if (_refs.length) {
-          const _refSys = `You previously assessed this comic's front cover at CGC ${parsed.grade}. Below is that front cover, then reference photos of known books graded ${_win.join(', ')} (ascending) with their condition notes. Compare the book against these real graded examples. Grading is a DOWNWARD process — defects accumulate a book toward a lower grade. If the references show the book is over-graded, revise DOWN. Do not raise above your original unless the references clearly show it was under-graded. Output ONLY JSON: {"grade":"X.X","reason":"one short sentence"}.`;
-          const _refBody = {
-            model: PRIMARY_MODEL, max_tokens: 1024, system: _refSys,
-            messages: [{ role: 'user', content: [{ type: 'text', text: 'Front cover being graded:' }, imgBlock, { type: 'text', text: 'Reference examples (ascending grade):' }, ..._refs, { type: 'text', text: 'Confirm or revise as JSON.' }] }]
-          };
-          const _rr = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-            body: JSON.stringify(_refBody)
-          });
-          if (_rr.ok) {
-            const _rj = await _rr.json();
-            const _rt = (_rj.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
-            const _m = _rt.replace(/```json|```/g, '').match(/\{[\s\S]*\}/);
-            if (_m) {
-              const _adj = JSON.parse(_m[0]);
-              if (_adj.grade && Number.isFinite(parseFloat(_adj.grade))) {
-                parsed._gradeBeforeRef = parsed.grade;
-                parsed.grade = String(parseFloat(_adj.grade).toFixed(1));
-                parsed._refReason = _adj.reason || '';
-              }
-            }
-          }
-        }
-      }
-    } catch (e) { /* non-fatal: Main grade stands */ }
-
     return res.status(200).json(parsed);
   } catch (err) {
     // Capture timing even on error — these are the diagnostically valuable cases.
