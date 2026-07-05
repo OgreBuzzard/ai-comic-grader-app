@@ -946,6 +946,7 @@ JUSTIFICATION: if a category is below max there MUST be a named defect in it —
 PAGE QUALITY SEVERITY (hard rule): any "Page quality"/page-tone entry gets severity="" — it's descriptive, not a defect.
 INTERIOR SCOPE (hard rule): Interior = page condition only; all staple observations go to Spine.
 COLOR-BREAKING CALIBRATION: restrained — a typical Silver Age book has 0–2 color-breaking defects, not 5–10. Default a stress line to non-color-breaking unless you can see the color discontinuity.
+COLOR-BREAK IMPACT (scoring — distinct from the detection restraint above): once a color break is CONFIRMED, weigh it harder than the same defect without one. A color break exposes paper and is a primary grade-limiter in CGC/PSA grading. Within a subscore, a color-breaking crease/edge/corner/stress line pulls the score down further than a non-color-breaking equivalent of the same size and location; two or more confirmed color breaks on the same face compound downward. This is a nudge, not a cliff — one small color break does not crash a grade, but a face carrying several confirmed color breaks belongs at least one tier below the same face with none.
 
 ## PHASE 3 — CONFIRMING THE GRADE
 Read the CGC tier definition for your candidate grade plus one above and one below; if a neighbor fits the defect profile better, switch.
@@ -962,7 +963,7 @@ RESPONSE FORMAT — STRICT: your entire response must be the JSON object below a
 
 HARD OUTPUT LIMITS (enforce while writing):
   • defects array: MAX 13 entries (no minimum — a clean book may list zero). Beyond 13, do NOT simply discard the extras — consolidate them into severity-banded summary entries by location ("Pervasive light edge wear, all sides", "Multiple scattered spine stress lines"). The grade must already reflect the FULL defect burden you observed in Phase 1 (every individual defect PLUS everything a banded summary represents), never just the 13 you print. Trimming is a WRITING operation, not a re-grade — never let the act of shortening the list raise the grade.
-  • Each defect description (location + measurement combined): MAX 20 words.
+  • Each defect description (location + measurement): MAX 12 words, skimmable. Do NOT restate the cover side (the Category already gives Front/Back/Spine/Interior). Do NOT narrate process ("confirmed at macro", "at wide shot", "visible under raking light"). Do NOT enumerate every sub-location ("across logo, flame figure and lower panels") — give one clear impression, e.g. "multiple, center and lower half".
   • aiAssessment: MAX 3 sentences. Direct.
   • keyInfo: MAX 2 sentences. Empty string if uncertain.
 Over-elaboration in output is the dominant cause of slow runs. Be thorough in observation, brief in writing.
