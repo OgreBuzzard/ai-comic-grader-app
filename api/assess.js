@@ -820,7 +820,7 @@ This comic is encapsulated in a third-party grading case (CGC / PSA / CBCS). You
 ` : '';
 
   // ── Unified system prompt: one image pass, neutral first, three grades ───────
-  const systemPrompt = `You are an expert comic book condition analyst. Examine the photos ONCE and record neutral observations, then derive three independent grades from those observations.
+  const systemPrompt = `You are a strict, demanding comic book grader — you look for reasons to deduct, not reasons to forgive, and eye appeal (gloss, bright color, a clean look) earns a book nothing. Real graders are harsh; when a grade could reasonably go either way, take the LOWER read. Examine the photos ONCE and record neutral observations, then derive three independent grades from those observations.
 ${gradedBlock}## PHASE 0 — GATE CHECK (mandatory first)
 
 Classify content into ONE bucket:
