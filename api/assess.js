@@ -28,6 +28,7 @@ import { ROBOGRADE_VERSION } from '../lib/version.js';
 import { anthropicWithRetry, fetchTimeout } from '../lib/anthropic_retry.js';
 import { getBookNote } from '../lib/book_notes.js';
 import { defectIndexPromptBlock } from '../lib/defect_index.js';
+import { CGC_GRADE_SCALE, GRADE_DEFINITIONS } from '../lib/grade_definitions.js';
 
 // ── A/B TEST TOGGLE (TEMPORARY) ──────────────────────────────────────
 // When true, the ComicVine reference is suppressed for ALL assessments so we
@@ -1809,6 +1810,64 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       try { res.end(); } catch (e) {}
       return;
     }
+
+    // ── S19 EXPERIMENT: Hulk-181 grade-reference refinement (Main) ──────────
+    // After Main grades, show the model reference books at ±1 around its grade
+    // and let it confirm/revise DOWNWARD. SECOND Fable call — roughly DOUBLES
+    // per-assessment cost and is NOT added to the logged costUsd (double the
+    // logged figure for true cost). Temporary; non-fatal — Main's grade stands
+    // if it fails.
+    try {
+      const _gNum = parseFloat((String(parsed.grade).match(/\d+(\.\d+)?/) || [])[0]);
+      if (Number.isFinite(_gNum) && imgBlock) {
+        let _idx = 0, _best = Infinity;
+        CGC_GRADE_SCALE.forEach((g, i) => { const d = Math.abs(parseFloat(g) - _gNum); if (d < _best) { _best = d; _idx = i; } });
+        const _lo = Math.max(0, _idx - 1), _hi = Math.min(CGC_GRADE_SCALE.length - 1, _idx + 1);
+        const _win = CGC_GRADE_SCALE.slice(_lo, _hi + 1);
+        const _baseUrl = process.env.APP_URL || 'https://robograder.app';
+        const _refs = [];
+        for (const g of _win) {
+          const def = GRADE_DEFINITIONS[g] || {};
+          const file = def.file || (g.replace('.', '_') + '.jpg');
+          try {
+            const r = await fetch(`${_baseUrl}/Grade_Reference/${file}`);
+            if (!r.ok) continue;
+            const data = Buffer.from(await r.arrayBuffer()).toString('base64');
+            const parts = [`CGC ${g}${def.name ? ' — ' + def.name : ''}`];
+            if (def.definition) parts.push(def.definition);
+            if (def.caption) parts.push(`Reference example: ${def.caption}`);
+            _refs.push({ type: 'text', text: parts.join(' ') });
+            _refs.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } });
+          } catch (e) {}
+        }
+        if (_refs.length) {
+          const _refSys = `You previously assessed this comic's front cover at CGC ${parsed.grade}. Below is that front cover, then reference photos of known books graded ${_win.join(', ')} (ascending) with their condition notes. Compare the book against these real graded examples. Grading is a DOWNWARD process — defects accumulate a book toward a lower grade. If the references show the book is over-graded, revise DOWN. Do not raise above your original unless the references clearly show it was under-graded. Output ONLY JSON: {"grade":"X.X","reason":"one short sentence"}.`;
+          const _refBody = {
+            model: PRIMARY_MODEL, max_tokens: 1024, system: _refSys,
+            messages: [{ role: 'user', content: [{ type: 'text', text: 'Front cover being graded:' }, imgBlock, { type: 'text', text: 'Reference examples (ascending grade):' }, ..._refs, { type: 'text', text: 'Confirm or revise as JSON.' }] }]
+          };
+          const _rr = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+            body: JSON.stringify(_refBody)
+          });
+          if (_rr.ok) {
+            const _rj = await _rr.json();
+            const _rt = (_rj.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
+            const _m = _rt.replace(/```json|```/g, '').match(/\{[\s\S]*\}/);
+            if (_m) {
+              const _adj = JSON.parse(_m[0]);
+              if (_adj.grade && Number.isFinite(parseFloat(_adj.grade))) {
+                parsed._gradeBeforeRef = parsed.grade;
+                parsed.grade = String(parseFloat(_adj.grade).toFixed(1));
+                parsed._refReason = _adj.reason || '';
+              }
+            }
+          }
+        }
+      }
+    } catch (e) { /* non-fatal: Main grade stands */ }
+
     return res.status(200).json(parsed);
   } catch (err) {
     // Capture timing even on error — these are the diagnostically valuable cases.
