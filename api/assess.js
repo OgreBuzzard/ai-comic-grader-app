@@ -34,7 +34,7 @@ import { defectIndexPromptBlock } from '../lib/defect_index.js';
 // can compare with-reference vs without-reference grades on ASM 1 / ASM 8.
 // Set false (or delete) after the A/B is done. The per-request suppressReference
 // body flag also works; this constant forces it globally for the test.
-const AB_FORCE_SUPPRESS_REFERENCE = false;
+const AB_FORCE_SUPPRESS_REFERENCE = true;  // A/B: ComicVine reference SUPPRESSED for this test round
 
 export default async function handler(req, res) {
   // CORS: the iOS Capacitor app calls this endpoint cross-origin (local file
@@ -185,7 +185,6 @@ export default async function handler(req, res) {
   const COMICVINE_API_KEY = process.env.COMICVINE_API_KEY || '';
   const {
     images,
-    coverQuadrants = [],
     slotsFilled = null,    // S11: explicit slot map (front/back/interior/raking).
                            // Older clients may not send this; we infer from array length when null.
     grader = 'CGC',
@@ -1084,14 +1083,6 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       messages: [{
         role: 'user',
         content: [
-          ...(Array.isArray(coverQuadrants) && coverQuadrants.length === 4 ? [
-            { type: 'text', text: 'QUADRANT CROPS: the next four images are high-resolution crops of the FRONT COVER (top-left, top-right, bottom-left, bottom-right, with slight overlap). Examine each closely for defects hard to see in the full-cover photo — especially MISSING PIECES (paper gone, exposing the lighter interior page beneath, which reads as a pale gap where printed art should be), chips, tears, and foxing. If a reference image is present, compare each quadrant to the same region of the reference: a pale area where the reference shows printed art is very likely a missing piece, not toning.' },
-            ...coverQuadrants.flatMap((q, i) => {
-              const nm = ['top-left','top-right','bottom-left','bottom-right'][i] || ('quadrant ' + (i+1));
-              const data = String(q).includes(',') ? String(q).split(',')[1] : String(q);
-              return [{ type: 'text', text: `Front cover ${nm}:` }, { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } }];
-            })
-          ] : []),
           ...(referenceImageBlock ? [
             { type: 'text', text: 'REFERENCE IMAGE: The following image is a clean cover scan of this exact issue from ComicVine, showing how the book should look without damage. Use it to identify missing pieces, color loss, and damage by comparing against your assessment photos.' },
             referenceImageBlock
