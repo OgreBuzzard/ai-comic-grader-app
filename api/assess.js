@@ -185,6 +185,7 @@ export default async function handler(req, res) {
   const COMICVINE_API_KEY = process.env.COMICVINE_API_KEY || '';
   const {
     images,
+    coverQuadrants = [],
     slotsFilled = null,    // S11: explicit slot map (front/back/interior/raking).
                            // Older clients may not send this; we infer from array length when null.
     grader = 'CGC',
@@ -496,7 +497,6 @@ export default async function handler(req, res) {
 
   // Run ComicVine cover fetch and page quality fetch in parallel
   let pageQualityImageBlock = null;
-  let foxingBlock = null;
   let pqIsPsaReference = false;  // true once pq_psa.jpg is uploaded; prompt language adapts
   if (isCGC) {
     const cvFetch = (title && issueNumber && COMICVINE_API_KEY && !suppressReference && !AB_FORCE_SUPPRESS_REFERENCE) ? (async () => {
@@ -582,14 +582,7 @@ export default async function handler(req, res) {
       }
     }) : Promise.resolve();
     const _refImageStart = Date.now();
-    const foxFetch = (async () => {
-      try {
-        const _u = `${process.env.APP_URL || 'https://robograder.app'}/Grade_Reference/foxing.jpg`;
-        const _r = await fetch(_u);
-        if (_r.ok) foxingBlock = { type:'image', source:{ type:'base64', media_type:'image/jpeg', data: Buffer.from(await _r.arrayBuffer()).toString('base64') } };
-      } catch(e){}
-    })();
-    await Promise.all([cvFetch, pqFetch, foxFetch]);
+    await Promise.all([cvFetch, pqFetch]);
     phaseDelta('refImageFetchMs', _refImageStart);
   }
 
@@ -1091,13 +1084,17 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       messages: [{
         role: 'user',
         content: [
+          ...(Array.isArray(coverQuadrants) && coverQuadrants.length === 4 ? [
+            { type: 'text', text: 'QUADRANT CROPS: the next four images are high-resolution crops of the FRONT COVER (top-left, top-right, bottom-left, bottom-right, with slight overlap). Examine each closely for defects hard to see in the full-cover photo — especially MISSING PIECES (paper gone, exposing the lighter interior page beneath, which reads as a pale gap where printed art should be), chips, tears, and foxing. If a reference image is present, compare each quadrant to the same region of the reference: a pale area where the reference shows printed art is very likely a missing piece, not toning.' },
+            ...coverQuadrants.flatMap((q, i) => {
+              const nm = ['top-left','top-right','bottom-left','bottom-right'][i] || ('quadrant ' + (i+1));
+              const data = String(q).includes(',') ? String(q).split(',')[1] : String(q);
+              return [{ type: 'text', text: `Front cover ${nm}:` }, { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data } }];
+            })
+          ] : []),
           ...(referenceImageBlock ? [
             { type: 'text', text: 'REFERENCE IMAGE: The following image is a clean cover scan of this exact issue from ComicVine, showing how the book should look without damage. Use it to identify missing pieces, color loss, and damage by comparing against your assessment photos.' },
             referenceImageBlock
-          ] : []),
-          ...(foxingBlock ? [
-            { type: 'text', text: 'FOXING REFERENCE: the LEFT half shows foxing (small organic brown/tan speckles and blotches that ignore the printed art, from age/humidity); the RIGHT half is the same area with NO foxing. Foxing is easy to miss, especially on light/white background areas — check for it explicitly.' },
-            foxingBlock
           ] : []),
           ...(pageQualityImageBlock ? [
             { type: 'text', text: pqIsPsaReference
