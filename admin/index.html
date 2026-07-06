@@ -590,6 +590,7 @@
 <!-- Firebase SDK (compat libs match the pattern used in the main app) -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 
 <script>
 // ── Firebase config ────────────────────────────────────────────────────────
@@ -605,6 +606,7 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
+const dbF = firebase.firestore();
 
 // ── State ──────────────────────────────────────────────────────────────────
 const state = {
@@ -782,6 +784,22 @@ function showSummaryModal(d) {
 }
 
 // ── Auth ───────────────────────────────────────────────────────────────────
+async function _loadCacheCfg() {
+  try {
+    const snap = await dbF.collection('config').doc('caching').get();
+    const cfg = snap.exists ? (snap.data() || {}) : { enabled: true, ttl: '1h' };
+    const en = document.getElementById('cache-enabled'), tt = document.getElementById('cache-ttl');
+    if (en) en.checked = cfg.enabled !== false;
+    if (tt) tt.value = cfg.ttl === '5m' ? '5m' : '1h';
+  } catch (e) { console.warn('[cache-cfg] read failed:', e && e.message); }
+}
+async function _saveCacheCfg() {
+  const en = document.getElementById('cache-enabled'), tt = document.getElementById('cache-ttl');
+  if (!en || !tt) return;
+  try { await dbF.collection('config').doc('caching').set({ enabled: en.checked, ttl: tt.value }, { merge: true }); }
+  catch (e) { alert('Failed to save caching config: ' + (e && e.message)); }
+}
+
 auth.onAuthStateChanged(async (user) => {
   if (!user) {
     state.user = null;
@@ -792,6 +810,7 @@ auth.onAuthStateChanged(async (user) => {
   state.user = user;
   state.idToken = await user.getIdToken();
   renderDashboard();
+  _loadCacheCfg();
 });
 
 async function signIn() {
@@ -830,6 +849,10 @@ async function renderDashboard() {
   root.innerHTML = `
     <header>
       <h1>ROBOGRADER ADMIN</h1>
+      <label style="margin-right:12px;font-size:13px;color:#9ab;display:inline-flex;align-items:center;gap:5px">
+        <input type="checkbox" id="cache-enabled" onchange="_saveCacheCfg()"> Cache
+        <select id="cache-ttl" onchange="_saveCacheCfg()" style="background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px;padding:2px 4px;font-size:13px"><option value="1h">1h</option><option value="5m">5m</option></select>
+      </label>
       <button class="sign-out" id="summary-btn" style="margin-right:8px">Export Summary</button>
       <button class="sign-out" id="export-btn" style="margin-right:8px">Export JSON</button>
       <button class="sign-out" id="signout-btn">Sign out</button>
