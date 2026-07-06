@@ -58,7 +58,7 @@ service cloud.firestore {
     match /config/{doc} {
       allow read: if request.auth != null;
       allow write: if request.auth != null
-                   && request.auth.token.email in ['REPLACE_WITH_YOUR_ADMIN_EMAIL@example.com'];
+                   && request.auth.token.email in ['support@robograder.app'];
     }
     // RoboGrade ID registry: public read (cert-ID lookup), owner-only
     // write/update/delete. Fields are only {userId, comicId, claimedAt,
