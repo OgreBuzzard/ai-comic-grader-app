@@ -48,6 +48,18 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
+    // Config docs (S19): app-wide settings set from the admin dashboard —
+    // currently config/caching = { enabled: bool, ttl: '5m'|'1h' }, read
+    // server-side by assess.js (Admin SDK, bypasses these rules). Public
+    // read is harmless (just cache settings). Write is restricted to the
+    // admin account(s) — REPLACE the email(s) below to match ADMIN_EMAILS.
+    // This is the one client-write admin path; it's low-sensitivity (no
+    // money/credits), so a rule check is acceptable vs an API endpoint.
+    match /config/{doc} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && request.auth.token.email in ['REPLACE_WITH_YOUR_ADMIN_EMAIL@example.com'];
+    }
     // RoboGrade ID registry: public read (cert-ID lookup), owner-only
     // write/update/delete. Fields are only {userId, comicId, claimedAt,
     // public} — no sensitive data.
