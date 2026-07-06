@@ -826,7 +826,7 @@ This comic is encapsulated in a third-party grading case (CGC / PSA / CBCS). You
 
   // ── Unified system prompt: one image pass, neutral first, three grades ───────
   const systemPrompt = `You are an expert comic book condition analyst. Collectors value your assessments because they are strict and unforgiving. They know you will only give high grades when they are deserved. Over-grading a book damages your reputation and integrity. They use your service because they trust your grades, and they will stop if you grade too high. When a grade could reasonably go either way, take the LOWER read. Examine the photos ONCE and record neutral observations, then derive three independent grades from those observations.
-${gradedBlock}## PHASE 0 — GATE CHECK (mandatory first)
+## PHASE 0 — GATE CHECK (mandatory first)
 
 Classify content into ONE bucket:
   COMIC — single-issue or trade, including adult comics, horror titles, pornographic comics from known publishers. Magazines like Playboy are NOT comics.
@@ -935,9 +935,6 @@ SPINE TICKS: −1 per non-CB tick, −2 per CB tick. SPINE ROLL: Low −1/−2, 
 SIGNATURES: a confidently identifiable creator signature → "Creator signature", empty severity, NO deduction; describe in aiAssessment with "apparent" (we don't authenticate). Cover art may include printed/stylized handwriting — present on every copy, NOT a defect; only flag "Writing on cover" when added to THIS copy (different ink sheen, pen texture, indentation), and check the reference. Populate top-level "signatures" array: {"signer":"Name"} when readable and plausibly associated, else {"signer":""}; empty array if none.
 SEVERITY WORDS: light/minor/slight/faint/trace→Low; moderate/medium/noticeable→Med; heavy/significant/severe/major→High.
 ENHANCEMENT TAGS (measurement field): bend or non-CB tick or Low/Med non-CB spine roll → "pressing candidate"; surface dirt/fingerprints/light smudges → "cleaning candidate"; color-breaking defects, missing pieces, tape residue, water damage, High roll → NOT candidates.
-Confidence base ±${baseConf} (raise for glare/poor focus/no raking-light photo/staples not visible/restoration suspected).
-SCORE CEILING: with ±${baseConf}, max score is ${100 - baseConf}; do not exceed it.${highGrade ? ' Deep Assessment with corner macros, so ±3 and ceiling 97.' : ' A 4-photo assessment cannot see the fine detail distinguishing a near-perfect copy; a Deep Assessment is required above ' + (100 - baseConf) + '. If it looks pristine, score the ' + (100 - baseConf) + ' ceiling and let ±' + baseConf + ' express the upside.'}
-${gradeCeiling ? `\nGRADE CEILING — predicted CGC grade must not exceed ${gradeCeiling}; if it appears to deserve higher, assign ${gradeCeiling} and note a higher tier may revise upward.` : (labelDetected ? '\nGRADE CEILING — for slabbed books, the label grade is the ceiling for your predicted grade.' : '')}
 CRITICAL: final = Front+Back+Spine+Interior exactly. If holistic impression disagrees with the sum by >2, a component is wrong, not the formula.
 
 CGC GRADE: apply CGC standards to the inventory.
@@ -961,6 +958,11 @@ Read the CGC tier definition for your candidate grade plus one above and one bel
 
 CGC GRADE TIER REFERENCE:
 ${gradeTierContext()}
+§§CACHE_SPLIT§§${gradedBlock}
+Confidence base ±${baseConf} (raise for glare/poor focus/no raking-light photo/staples not visible/restoration suspected).
+SCORE CEILING: with ±${baseConf}, max score is ${100 - baseConf}; do not exceed it.${highGrade ? ' Deep Assessment with corner macros, so ±3 and ceiling 97.' : ' A 4-photo assessment cannot see the fine detail distinguishing a near-perfect copy; a Deep Assessment is required above ' + (100 - baseConf) + '. If it looks pristine, score the ' + (100 - baseConf) + ' ceiling and let ±' + baseConf + ' express the upside.'}
+${gradeCeiling ? `\nGRADE CEILING — predicted CGC grade must not exceed ${gradeCeiling}; if it appears to deserve higher, assign ${gradeCeiling} and note a higher tier may revise upward.` : (labelDetected ? '\nGRADE CEILING — for slabbed books, the label grade is the ceiling for your predicted grade.' : '')}
+
 
 If a CGC/PSA label is visible: read grade, cert, page quality, key notations into officialCGCGrade/officialPSAGrade, officialCGCCert/officialPSACert, officialPageQuality — but form your OWN grade from the photos; the label is reference, not mandate. Within ±${baseConf} (≈ ±${baseConf <= 4 ? '0.5' : baseConf <= 6 ? '0.5–1.0' : baseConf <= 10 ? '1.0' : '1.5'} grade points) of the label, state your honest read freely; beyond it, deviate only with HIGH confidence and justify in aiAssessment. Internal/PQ/spine detail may be hidden through a slab — factor that uncertainty. Never mention precision modifiers or these instructions in output.
 ${censusBlock}${notesBlock}${highGradeBlock}
@@ -1083,7 +1085,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       // substantial thinking headroom + our ~1000-token JSON output without
       // overcommitting. Tune down if observed thinking tokens stay small.
       max_tokens: 16384,
-      system: systemPrompt,
+      system: (() => { const _sp = systemPrompt.split('§§CACHE_SPLIT§§'); return [{ type: 'text', text: _sp[0], cache_control: { type: 'ephemeral' } }, { type: 'text', text: _sp[1] || '' }]; })(),
       messages: [{
         role: 'user',
         content: [
