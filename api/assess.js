@@ -1036,7 +1036,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     // thinking:{type:'adaptive'} and output_config.effort (Anthropic in fact
     // recommends combining them on 4.6) — no payload changes needed vs 4.8.
     // Expect lower input-token cost (~$0.10/run) than 4.8's tokenizer.
-    const PRIMARY_MODEL = 'claude-fable-5';
+    const PRIMARY_MODEL = 'claude-opus-4-8';  // A/B TEST: Opus vs Fable grading (same prompt)
     // Per-token rates per model (verified June 2026). Cost logging reads from
     // this table so the calibration matrix logs TRUE costs for every round.
     // Cache read = 10% of input rate; cache creation = 1.25x input rate.
@@ -1047,6 +1047,16 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       'claude-sonnet-4-6': { in: 3  / 1e6, out: 15 / 1e6 }
     };
     const _RATES = MODEL_RATES[PRIMARY_MODEL] || MODEL_RATES['claude-opus-4-8'];
+
+    // Caching config — dashboard-controlled (config/caching doc). Default: on, 1h.
+    let _cacheOn = true, _cacheTtl = '1h';
+    try {
+      const _cdb = await getAdminDb();
+      if (_cdb) { const _cs = await _cdb.collection('config').doc('caching').get();
+        if (_cs.exists) { const _c = _cs.data() || {}; _cacheOn = _c.enabled !== false; _cacheTtl = _c.ttl === '5m' ? '5m' : '1h'; } }
+    } catch (e) {}
+    const _cacheCtl = _cacheTtl === '1h' ? { type: 'ephemeral', ttl: '1h' } : { type: 'ephemeral' };
+    const _cacheBeta = (_cacheOn && _cacheTtl === '1h') ? { 'anthropic-beta': 'extended-cache-ttl-2025-04-11' } : {};
 
     // Build the messages payload (used by both streaming and non-streaming
     // branches; identical content either way).
@@ -1085,7 +1095,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       // substantial thinking headroom + our ~1000-token JSON output without
       // overcommitting. Tune down if observed thinking tokens stay small.
       max_tokens: 16384,
-      system: (() => { const _sp = systemPrompt.split('§§CACHE_SPLIT§§'); return [{ type: 'text', text: _sp[0], cache_control: { type: 'ephemeral' } }, { type: 'text', text: _sp[1] || '' }]; })(),
+      system: (() => { const _sp = systemPrompt.split('§§CACHE_SPLIT§§'); if (!_cacheOn) return _sp.join(''); return [{ type: 'text', text: _sp[0], cache_control: _cacheCtl }, { type: 'text', text: _sp[1] || '' }]; })(),
       messages: [{
         role: 'user',
         content: [
@@ -1149,7 +1159,8 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
             headers: {
               'Content-Type': 'application/json',
               'x-api-key': apiKey,
-              'anthropic-version': '2023-06-01'
+              'anthropic-version': '2023-06-01',
+              ..._cacheBeta
             },
             body: _streamBody,
             signal: ctrl.signal
@@ -1267,7 +1278,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       // at 60s; we need our own catch block to fire before then so the
       // timing data can be written to Firestore. Without this, a timed-out
       // assessment leaves no trace.
-      const _primaryHeaders = { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' };
+      const _primaryHeaders = { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', ..._cacheBeta };
       const _primaryBody = JSON.stringify(_antBody);
       const response = await anthropicWithRetry(
         (remainingMs) => fetchWithTimeout('https://api.anthropic.com/v1/messages', {
