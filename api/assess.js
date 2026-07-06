@@ -496,6 +496,7 @@ export default async function handler(req, res) {
 
   // Run ComicVine cover fetch and page quality fetch in parallel
   let pageQualityImageBlock = null;
+  let foxingBlock = null;
   let pqIsPsaReference = false;  // true once pq_psa.jpg is uploaded; prompt language adapts
   if (isCGC) {
     const cvFetch = (title && issueNumber && COMICVINE_API_KEY && !suppressReference && !AB_FORCE_SUPPRESS_REFERENCE) ? (async () => {
@@ -519,10 +520,8 @@ export default async function handler(req, res) {
         if (!volResp.ok) return;
         const volData = await volResp.json();
         // Tolerant title match: normalize away punctuation/hyphens/extra spaces
-        // and leading "The", then accept exact or prefix matches. The old exact
-        // === match failed on hyphenation ("Spider-Man" vs "Spider Man") and
-        // subtitle drift, dropping the volume filter to the raw 50-result list
-        // and often picking the wrong series.
+        // and leading "The", accept exact or prefix. Old exact === broke on
+        // hyphenation ("Spider-Man" vs "Spider Man") and subtitle drift.
         const _norm = x => String(x||'').toLowerCase().replace(/^the\s+/,'').replace(/[^a-z0-9]+/g,' ').trim();
         const _st = _norm(searchTitle);
         let volumes = (volData.results || []).filter(v => {
@@ -583,7 +582,14 @@ export default async function handler(req, res) {
       }
     }) : Promise.resolve();
     const _refImageStart = Date.now();
-    await Promise.all([cvFetch, pqFetch]);
+    const foxFetch = (async () => {
+      try {
+        const _u = `${process.env.APP_URL || 'https://robograder.app'}/Grade_Reference/foxing.jpg`;
+        const _r = await fetch(_u);
+        if (_r.ok) foxingBlock = { type:'image', source:{ type:'base64', media_type:'image/jpeg', data: Buffer.from(await _r.arrayBuffer()).toString('base64') } };
+      } catch(e){}
+    })();
+    await Promise.all([cvFetch, pqFetch, foxFetch]);
     phaseDelta('refImageFetchMs', _refImageStart);
   }
 
@@ -614,7 +620,7 @@ export default async function handler(req, res) {
 
 CGC CENSUS DATA (Phase 3 calibration anchor for this specific issue):
 ${censusContext}
-CRITICAL — CENSUS USE IS INTERNAL ONLY: the census data above is a calibration anchor for you, NOT a fact to share with the user. graderNotes, aiAssessment, and labelNotes are all user-visible. NEVER mention the census, submission counts, average grades across submissions, distribution percentages, statistical priors, or population data. NEVER write things like "the census average for this book is X," "most copies grade lower," "statistically this should be a Y," "based on submission data," or "I'm anchoring to the population." The user must read the assessment as if you graded only what you see in their photos. If census data influences your grade, justify the grade using on-the-book observations only. The census is a sanity check, not an override — when in doubt, trust the photos.`;
+CRITICAL — CENSUS USE IS INTERNAL ONLY: the census data above is a calibration anchor for you, NOT a fact to share with the user. aiAssessment and labelNotes are user-visible. NEVER mention the census, submission counts, average grades across submissions, distribution percentages, statistical priors, or population data. NEVER write things like "the census average for this book is X," "most copies grade lower," "statistically this should be a Y," "based on submission data," or "I'm anchoring to the population." The user must read the assessment as if you graded only what you see in their photos. If census data influences your grade, justify the grade using on-the-book observations only. The census is a sanity check, not an override — when in doubt, trust the photos.`;
     }
   } catch (e) {
     console.error('[census] lookup failed, continuing without census context:', e?.message || e);
@@ -679,7 +685,7 @@ RULES FOR HIGH-GRADE ASSESSMENT:
 
 1. FLOOR RULE: The initial grades are a floor, not a guess. The final RG must be ≥ ${initialRGScore != null ? initialRGScore : 80} and the CGC grade must be ≥ ${initialCgcGrade || '8.0'}. Initial assessments on high-grade books tend to run conservative because wide shots don't show corner detail — the macros are here to confirm or raise, not lower.
 
-2. DROP EXCEPTION: You may drop below the floor ONLY if a corner macro reveals a specific, describable defect that was not visible in the original wide shot (for example, a color-breaking stress line hidden by glare, or a tiny corner crease invisible at wide angle). If you drop, you must call out the specific new defect in graderNotes with its exact location, and you must explain in aiAssessment why it wasn't visible before. If you cannot name a specific new defect, do not drop.
+2. DROP EXCEPTION: You may drop below the floor ONLY if a corner macro reveals a specific, describable defect that was not visible in the original wide shot (for example, a color-breaking stress line hidden by glare, or a tiny corner crease invisible at wide angle). If you drop, you must call out the specific new defect in aiAssessment with its exact location, and you must explain in aiAssessment why it wasn't visible before. If you cannot name a specific new defect, do not drop.
 
 3. CATEGORIES YOU CAN CHANGE: Only Front and Spine. The corner macros give you more information about the front cover and the inner corners at the top and bottom of the spine. Back and Interior were not re-examined.
 
@@ -822,12 +828,12 @@ This comic is encapsulated in a third-party grading case (CGC / PSA / CBCS). You
 - INTERIOR / PAGE QUALITY: You cannot see the pages. Read the PAGE QUALITY designation printed on the label at the top of the front-cover photo (e.g. "WHITE PAGES", "OFF-WHITE TO WHITE", "OFF-WHITE") and use that as the page quality. Score the Interior sub-score from that designation, not from any visible page. If the label's page-quality text is unreadable (glare, angle, blur, or absent), DEFAULT to "Off-White to White" and an Interior sub-score of 9 of 10 — do not guess lower or higher.
 - SPINE: There is no dedicated spine photo. Infer spine condition from what is visible at the spine edge in the front and back images. Apply slightly more caution to the spine sub-score given the limited view, but do not invent defects you cannot see.
 - FRONT / BACK: Score normally from the two photos.
-- GRADING COMPANY: State which company graded the book in graderNotes — "Graded by CGC", "Graded by PSA", or "Graded by CBCS" — based on the label you can read. The client's color detector guessed: ${labelKind ? labelKind.toUpperCase() : 'unknown'} (use the actual label text if it disagrees).
+- GRADING COMPANY: State which company graded the book in aiAssessment — "Graded by CGC", "Graded by PSA", or "Graded by CBCS" — based on the label you can read. The client's color detector guessed: ${labelKind ? labelKind.toUpperCase() : 'unknown'} (use the actual label text if it disagrees).
 - GLARE / TILT: Glare on the plastic case, blur, or a tilted label should reduce overall confidence, not invent defects.
 ` : '';
 
   // ── Unified system prompt: one image pass, neutral first, three grades ───────
-  const systemPrompt = `You are an expert comic book condition analyst. Examine the photos ONCE and record neutral observations, then derive three independent grades from those observations.
+  const systemPrompt = `You are an expert comic book condition analyst. Collectors value your assessments because they are strict and unforgiving. They know you will only give high grades when they are deserved. Over-grading a book damages your reputation and integrity. They use your service because they trust your grades, and they will stop if you grade too high. When a grade could reasonably go either way, take the LOWER read. Examine the photos ONCE and record neutral observations, then derive three independent grades from those observations.
 ${gradedBlock}## PHASE 0 — GATE CHECK (mandatory first)
 
 Classify content into ONE bucket:
@@ -898,6 +904,9 @@ If CHECK 1–4 finds anything, put it in the defects array (TAPE/MISSING PIECE/T
 PRINTED ELEMENTS ARE NOT DEFECTS (counter-check). A defect is physical damage — disruption of paper or ink not present as manufactured. Do NOT flag as defects: the direct-sales/direct-edition box (diamond, character head, price/issue box) in the lower-left front cover; the UPC box, publisher logo, price banner, Comics Code stamp, any trade-dress box; printed art lines, panel borders, background linework. A printed line has consistent ink and sharp registered edges; a crease/stress line disrupts paper and breaks across color irregularly. Before adding any "crease"/"color-breaking line"/"sticker"/"stain", confirm it's physical damage, not a printed feature. If unsure, do not call it a defect — inventing a defect from cover art is as harmful as missing a real one.
 
 ROUTINE INSPECTION:
+DEFECT VOCABULARY — inspect for the FULL range below, not just the common few. Name the MOST severe condition at each location (missing piece > tear > color-break > wear > blunting), never the mildest.
+DISTINCTIONS: corner wear is the default term (not "blunting"); reserve "blunting" for a corner that is only rounded/soft with no color loss and no paper gone. wear = surface abrasion, paper intact. tear = paper split with two separable edges. missing piece / chip-out = paper actually gone, the outline interrupted — NEVER call a missing piece a crease. crease = hard fold, usually breaks color; bend = soft fold, no break. stain = a discoloration the printed art runs through (water/transfer/gloss/ink) — distinct from soiling (surface dirt) and tanning (overall age-toning).
+CHECK EACH PASS for these types (many are routinely missed): staple rust and rust migration onto paper; staple tears / holes / detachment; tears (vs edge wear); missing pieces (cover and interior); stains; bug chew / insect grazing (irregular holes or nibbled edges); indents / pressure marks (an impression with no ink break); edge shadows (a darker tonal band along an edge); foxing (organic brown speckling); fingerprints; writing / stamps / stickers; spine roll and spine split; tape and tape stain; fade. Absence is fine — do not invent; only list what you actually see.
 PER-CORNER: examine all four corners individually; consolidate identical kind+severity into one entry afterward, keep differing corners separate.
 EDGES/SURFACES: check all edges and surfaces for creases, soiling, stress lines (tears/loss already caught above).
 COLOR-BREAK DETECTION: a color break is a tiny region (even 2–3px) where ink is absent exposing white/grey paper — diagnostic for spine ticks and color-breaking creases/stress lines. Scan dark saturated areas for small white interruptions. Distinguishes 9.6 from 9.4.
@@ -925,8 +934,8 @@ PQ ↔ INTERIOR SCORE (1:1, Interior MUST equal): White=10 • OW/W=9 • OW=8 �
 ROBOGRADE (primary): four integer components summed to final.
   Front 0–50 (front surface + outer front corners) | Back 0–20 | Spine 0–20 (surface/roll/inner spine corners/staples) | Interior 0–10 (PQ 1:1 map). Final = sum (0–100).
 Score each category only from its own defects. Perfect category = no observed defects there.
-  Front (50): 50 pristine | 47–49 single trace | 43–46 small/trace accumulation | 38–42 minor, strong eye appeal | 30–37 moderate accumulation or one color-breaking | 20–29 substantial wear or significant defect | 10–19 major | 0–9 severe/structural.
-    CUMULATIVE-FRONT-DEFECT RULE: widespread soiling/discoloration + multiple additional defects (any combo of corner blunting + edge wear + crease + spine-side stress) → Front MUST be ≤ 30 regardless of individual severities. Mid-grade books (CGC 3.0–4.5) routinely show this. Without this rule, individual defects each rate Med and the sum lands 32–40 (CGC 5.5–7.0 territory) — a systematic over-grade. When in doubt at 30, go to 28.
+  Front (50): 50 pristine | 47–49 single trace | 43–46 small/trace accumulation | 38–42 minor accumulation only | 30–37 moderate accumulation or one color-breaking | 20–29 substantial wear or significant defect | 10–19 major | 0–9 severe/structural.
+    CUMULATIVE-FRONT-DEFECT RULE: widespread soiling/discoloration + multiple additional defects (any combo of corner blunting + edge wear + crease + spine-side stress) → Front MUST be ≤ 30 regardless of individual severities. Mid-grade books (CGC 3.0–4.5) routinely show this. Without this rule, individual defects each rate Med and the sum lands 32–40 (CGC 5.5–7.0 territory) — a systematic over-grade. When in doubt at 30, go to 28. MID-GRADE EXTENSION: for CGC 5.0–7.0 books showing several color-breaking defects plus accumulation, Front MUST be ≤ 37 (not 38–46). EYE APPEAL IS NOT A SCORE: gloss, bright color, and a flat/clean look do NOT raise any subscore — score each category ONLY from the defects present in it.
   Back (20): 20 pristine | 18–19 trace | 15–17 minor/light accumulation | 11–14 moderate | 7–10 substantial | 0–6 major.
   Spine (20): 20 pristine | 18–19 trace, one minor non-CB tick | 15–17 light stress, slight roll | 11–14 multiple stress lines, visible roll, or one color-breaking crease | 7–10 significant stress, split starting, staple pull | 0–6 severe.
   Interior (10): 1:1 from PQ. No deductions. Staple issues → Spine.
@@ -945,12 +954,10 @@ ${defectIndexPromptBlock()}
 BLACKJACK PHILOSOPHY: overshooting is far costlier than undershooting (the user submits to CGC/PSA on your prediction). Between two adjacent grades, prefer the lower; when unsure a defect is grade-affecting, count it. EXCEPTION: clearly minor defects with strong eye appeal — don't grade low just for safety. Applies to RoboGrade and CGC alike. MID-GRADE GUARD: a book showing genuine accumulated wear (multiple defects across faces, soiling, edge/corner wear) belongs in the 4.0–7.0 band, NOT 7.5–8.5 — the most common over-grade error is treating a worn mid-grade book as a clean high-grade one. If the book is not clean-presenting, do not seat it at 8.0+.
 Calibration: assign 9.0–9.6 for minor defects (don't cap at 8.5 from caution); strong eye appeal + flat spine + bright color + sharp corners = high grade; at 8.5+ stress lines/bends/soiling become grade-defining; structural defects have NO hard cap (gradient per Phase 3). ENHANCE: "Y" if pressing/UV/cleaning could improve (spine roll/rippling, color-breaking creases softening, soiling, tanning on white areas); "N" if structural damage dominates; null if unsure.
 
-GRADER NOTES (draft here, finalize Phase 4): concise, official CGC terms.
 CONSOLIDATION: same type+severity across locations → one entry; never homogenize differing corners; never note absences ("no tape", "no restoration"); manufacturing marks/distributor stamps/pedigree are not defects (mention in aiAssessment if notable); don't describe handling history.
 JUSTIFICATION: if a category is below max there MUST be a named defect in it — no unexplained deductions. Interior: always include one defects entry describing PQ (category Interior), even at full marks.
 PAGE QUALITY SEVERITY (hard rule): any "Page quality"/page-tone entry gets severity="" — it's descriptive, not a defect.
 INTERIOR SCOPE (hard rule): Interior = page condition only; all staple observations go to Spine.
-TARGET NOTE COUNT: high grade 8.5+ → 1–4; mid 5.0–8.0 → 3–7; low 3.0–4.5 → 5–10; heavy <3.0 → 8–15. More = over-enumeration.
 COLOR-BREAKING CALIBRATION: restrained — a typical Silver Age book has 0–2 color-breaking defects, not 5–10. Default a stress line to non-color-breaking unless you can see the color discontinuity.
 
 ## PHASE 3 — CONFIRMING THE GRADE
@@ -967,10 +974,9 @@ ${censusBlock}${notesBlock}${highGradeBlock}
 RESPONSE FORMAT — STRICT: your entire response must be the JSON object below and nothing else. The first character of your response must be the literal opening curly brace. The last character must be the literal closing curly brace. Do not write any text before the JSON — no phase headers, no reasoning narration, no "let me check", no markdown, no acknowledgements. The phases above are your internal process; they do not appear in the response. Do not write any text after the JSON. If you have reasoning to share, it goes inside the JSON's aiAssessment field, written tersely.
 
 HARD OUTPUT LIMITS (enforce while writing):
-  • defects array: MAX 12 entries. Beyond 12, do NOT simply discard the extras — consolidate them into severity-banded summary entries by location ("Pervasive light edge wear, all sides", "Multiple scattered spine stress lines"). The grade must already reflect the FULL defect burden you observed in Phase 1 (every individual defect PLUS everything a banded summary represents), never just the 12 you print. Trimming is a WRITING operation, not a re-grade — never let the act of shortening the list raise the grade.
-  • Each defect description (location + measurement combined): MAX 20 words.
+  • defects array: MAX 13 entries (no minimum — a clean book may list zero). Beyond 13, do NOT simply discard the extras — consolidate them into severity-banded summary entries by location ("Pervasive light edge wear, all sides", "Multiple scattered spine stress lines"). The grade must already reflect the FULL defect burden you observed in Phase 1 (every individual defect PLUS everything a banded summary represents), never just the 13 you print. Trimming is a WRITING operation, not a re-grade — never let the act of shortening the list raise the grade.
+  • Each defect description (location + measurement): MAX 12 words, skimmable. Do NOT restate the cover side (the Category already gives Front/Back/Spine/Interior). Do NOT narrate process ("confirmed at macro", "at wide shot", "visible under raking light"). Do NOT enumerate every sub-location ("across logo, flame figure and lower panels") — give one clear impression, e.g. "multiple, center and lower half".
   • aiAssessment: MAX 3 sentences. Direct.
-  • graderNotes bullets: MAX 8 entries, MAX 15 words each.
   • keyInfo: MAX 2 sentences. Empty string if uncertain.
 Over-elaboration in output is the dominant cause of slow runs. Be thorough in observation, brief in writing.
 
@@ -983,7 +989,6 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
   "printing": "Printing/variant designation. EMPTY STRING for typical original printings (default). Populate ONLY with clear evidence: 'Facsimile Reprint' (append year in parens if visible) for modern facsimile editions of original key issues; '2nd print'/'3rd print' for direct-edition reprints from the original era; 'Newsstand variant' for distinguishable newsstand copies; 'Reprint' for older non-facsimile reprints. When populating 'Facsimile Reprint', note the finding in aiAssessment and use the reprint year for issueDate.",
   "pageQuality": "full designation e.g. Off-White to White",
   "grade": "CGC grade estimate e.g. 7.0",
-  "graderNotes": "• one bullet per defect, official CGC terminology",
   "aiAssessment": "Overall impression, dominant defects, grade rationale. ONLY what you see in this copy's photos. NEVER mention census/submission counts/distribution/external data.",
   "referenceComparison": "CHECK 0 result: one sentence on what comparing to the ComicVine reference revealed (a specific missing/damaged region, or an art element confirmed printed), or that the cover matches with no reference-detectable loss. Empty string if no reference was provided. This is a diagnostic field — it may surface to the user but must never mention census or external counts.",
   "labelNotes": "key issue notations from label if visible, empty string if none",
@@ -1089,6 +1094,10 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           ...(referenceImageBlock ? [
             { type: 'text', text: 'REFERENCE IMAGE: The following image is a clean cover scan of this exact issue from ComicVine, showing how the book should look without damage. Use it to identify missing pieces, color loss, and damage by comparing against your assessment photos.' },
             referenceImageBlock
+          ] : []),
+          ...(foxingBlock ? [
+            { type: 'text', text: 'FOXING REFERENCE: the LEFT half shows foxing (small organic brown/tan speckles and blotches that ignore the printed art, from age/humidity); the RIGHT half is the same area with NO foxing. Foxing is easy to miss, especially on light/white background areas — check for it explicitly.' },
+            foxingBlock
           ] : []),
           ...(pageQualityImageBlock ? [
             { type: 'text', text: pqIsPsaReference
@@ -1609,7 +1618,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       }
 
       // 3. Floor rule for RG: unless the model explicitly flagged new defects in
-      //    graderNotes (which would justify a drop), never go below the initial
+      //    aiAssessment (which would justify a drop), never go below the initial
       //    RG score. We detect a justified drop heuristically: the aiAssessment
       //    mentions "macro" or "corner" AND describes a defect not in the initial.
       const initialScore = typeof initialRoboGrade.score === 'number' ? Math.round(initialRoboGrade.score) : null;
@@ -1792,6 +1801,9 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           responseModel: _responseModel,
           rawTextChars: _rawTextChars,
           defectCount: Array.isArray(parsed.roboGrade && parsed.roboGrade.defects) ? parsed.roboGrade.defects.length : null,
+          // S19: full defect list in the record so a calibration round reads
+          // straight off /api/timings (no per-item fetch, no fuzzy matching).
+          defects: (parsed.roboGrade && parsed.roboGrade.defects) || null,
           imageCount: Array.isArray(imageBlocks) ? imageBlocks.length : null,
           title: parsed.title || null,
           issue: parsed.issue || null,
