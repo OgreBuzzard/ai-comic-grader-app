@@ -7091,6 +7091,28 @@ async function assessGrade() {
     _dbg(`std: dataUrls done (${dataUrls.length}); compressing`);
     const compressed = await compressImagesSequentially(dataUrls);
     _dbg("std: compression done; firing API");
+    // S19 QUADRANT TEST (temporary): crop the front cover into 4 overlapping
+    // quadrants client-side (invisible to the user) so the model sees each
+    // region at higher resolution. Targets missing-piece / small-defect detection.
+    const cropIntoQuadrants = async (srcDataUrl, quality = 0.85, maxQ = 1400) => {
+      try {
+        const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = srcDataUrl; });
+        const W = im.naturalWidth, H = im.naturalHeight;
+        if (!W || !H) return [];
+        const ox = Math.round(W * 0.08), oy = Math.round(H * 0.08);
+        const hw = Math.round(W / 2), hh = Math.round(H / 2);
+        const regions = [[0,0,hw+ox,hh+oy],[hw-ox,0,hw+ox,hh+oy],[0,hh-oy,hw+ox,hh+oy],[hw-ox,hh-oy,hw+ox,hh+oy]];
+        return regions.map(([sx,sy,sw,sh]) => {
+          let dw = sw, dh = sh; const m = Math.max(dw,dh);
+          if (m > maxQ) { const sc = maxQ/m; dw = Math.round(dw*sc); dh = Math.round(dh*sc); }
+          const c = document.createElement("canvas"); c.width = dw; c.height = dh;
+          c.getContext("2d").drawImage(im, sx, sy, sw, sh, 0, 0, dw, dh);
+          return c.toDataURL("image/jpeg", quality);
+        });
+      } catch (e) { return []; }
+    };
+    let coverQuadrants = [];
+    try { coverQuadrants = await cropIntoQuadrants(dataUrls[0]); } catch (e) {}
     const _assessFetchInit = {
       method: "POST",
       headers: {
@@ -7102,6 +7124,7 @@ async function assessGrade() {
       },
       body: JSON.stringify({
         images: compressed,
+        coverQuadrants: coverQuadrants,
         slotsFilled: slotsFilled,
         grader: "CGC",
         title: formData.title || "",
