@@ -34,7 +34,7 @@ import { defectIndexPromptBlock } from '../lib/defect_index.js';
 // can compare with-reference vs without-reference grades on ASM 1 / ASM 8.
 // Set false (or delete) after the A/B is done. The per-request suppressReference
 // body flag also works; this constant forces it globally for the test.
-const AB_FORCE_SUPPRESS_REFERENCE = true;  // A/B: ComicVine reference SUPPRESSED for this test round
+const AB_FORCE_SUPPRESS_REFERENCE = false;
 
 export default async function handler(req, res) {
   // CORS: the iOS Capacitor app calls this endpoint cross-origin (local file
