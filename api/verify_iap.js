@@ -29,6 +29,7 @@ const PRODUCT_CREDITS = {
   'app.robograder.credits.stack': 5,
   'app.robograder.credits.wall': 20,
   'app.robograder.credits.shortbox': 100,
+  'app.robograder.credits.shortbox2': 100,
 };
 
 export default async function handler(req, res) {
