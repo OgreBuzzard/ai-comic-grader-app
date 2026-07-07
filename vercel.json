@@ -61,6 +61,10 @@
       "destination": "https://ai-comic-grader.firebaseapp.com/__/auth/:path*"
     },
     {
+      "source": "/__/firebase/:path*",
+      "destination": "https://ai-comic-grader.firebaseapp.com/__/firebase/:path*"
+    },
+    {
       "source": "/id/:id",
       "destination": "/public.html"
     }
