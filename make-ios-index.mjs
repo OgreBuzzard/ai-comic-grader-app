@@ -472,7 +472,7 @@ function showBuyCredits() {
 const IOS_PRODUCT_IDS = {
   comic_stack: 'app.robograder.credits.stack',
   comic_wall:  'app.robograder.credits.wall',
-  short_box:   'app.robograder.credits.shortbox',
+  short_box:   'app.robograder.credits.shortbox2',
 };
 const IOS_CREDITS = { comic_stack: 5, comic_wall: 20, short_box: 100 };
 
