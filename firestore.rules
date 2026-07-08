@@ -55,10 +55,10 @@ service cloud.firestore {
     // admin account(s) — REPLACE the email(s) below to match ADMIN_EMAILS.
     // This is the one client-write admin path; it's low-sensitivity (no
     // money/credits), so a rule check is acceptable vs an API endpoint.
-    match /config/{doc} {
+  match /config/{doc} {
       allow read: if request.auth != null;
       allow write: if request.auth != null
-                   && request.auth.token.email in ['support@robograder.app'];
+                   && request.auth.token.email in ['wherethehellismatt@gmail.com', 'support@robograder.app'];
     }
     // RoboGrade ID registry: public read (cert-ID lookup), owner-only
     // write/update/delete. Fields are only {userId, comicId, claimedAt,
