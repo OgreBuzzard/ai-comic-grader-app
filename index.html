@@ -3858,7 +3858,10 @@ function renderList() {
       // user's explicit toggle thereafter.
       const ownKey = `__own__${section.ownership}`;
       if (collapsed[ownKey] === undefined) {
-        collapsed[ownKey] = section.ownership === "Owned" ? false : true;
+        // S20: Print defaults OPEN too — it is the active print queue, so a book
+        // just added to it must be visible (previously it vanished into a
+        // collapsed section, which read to users as a lost entry).
+        collapsed[ownKey] = (section.ownership === "Owned" || section.ownership === "Print") ? false : true;
       }
       const ownOpen = collapsed[ownKey] === false;
       if (section.ownership && sections.length > 1) {
@@ -3890,13 +3893,15 @@ function renderList() {
       const buildRow = c => {
         const thumbSrc = c.thumbnails?.[0] || c.images?.[0];
         const thumb = thumbSrc ? `<img class="comic-thumb" data-src="${thumbSrc}" decoding="async" style="background:#221d18">` : "";
-        // S17: mini LABEL button (upper-right). Tap to toggle this entry into the
-        // PRINT section (and back to its prior ownership). Label-green gradient
-        // normally; gray gradient when the entry is already in Print.
+        // Restored (S20): printer-ICON label toggle. This was reverted to a text
+        // "LABEL" button during the compacted S19 session. print.svg = add to the
+        // Print queue; print-x.svg = already queued, tap to remove. Handler is
+        // unchanged (togglePrintState) — the Print ownership category IS the print
+        // queue (single source of truth; see print-label.js header).
         const _inPrint = (c.ownership || "Owned") === "Print";
         const _canLabel = c.roboGrade && c.id !== SAMPLE_COMIC_ID;
         const _labelBtn = _canLabel
-          ? `<button onclick="event.stopPropagation();togglePrintState('${esc(c.id)}')" title="${_inPrint ? "Remove from print queue" : "Add to print queue"}"\n              style="position:absolute;top:6px;right:8px;z-index:3;background:${_inPrint ? GRAY_GRADIENT_ROW : LABEL_GRADIENT_ROW};color:#fff;border:1px solid rgba(0,0,0,0.25);border-radius:5px;padding:2px 7px;font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:800;letter-spacing:1px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,0.3)">LABEL</button>`
+          ? `<button onclick="event.stopPropagation();togglePrintState('${esc(c.id)}')" title="${_inPrint ? "Remove from print queue" : "Add to print queue"}" aria-label="${_inPrint ? "Remove from print queue" : "Add to print queue"}"\n              style="position:absolute;top:6px;right:8px;z-index:3;background:none;border:none;padding:4px;cursor:pointer;line-height:0"><img src="assets/${_inPrint ? "print-x.svg" : "print.svg"}" alt="" style="width:26px;height:26px;display:block;pointer-events:none"></button>`
           : "";
         return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0">\n                  <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>\n                  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">\n                    ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${formatIssue(c.issue, c.title)}</span>` : ""}\n                    ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                  </div>\n                </div>\n                ${buildListCgcPsaStack(c)}\n                ${_labelBtn}\n              </div>\n            </div>`;
       };
