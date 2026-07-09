@@ -3812,8 +3812,20 @@ function disablePrintMode() {
   } catch (e) { console.warn("printOptIn persist error:", e); }
 }
 
+// iOS StoreKit price prefetch (S18, restored S20): warms the Buy Credits prices
+// while browsing so the modal shows real prices instantly. No-op on web (guarded
+// by isNativePlatform); _iosFetchPrices/_applyIosPrices are injected into the iOS
+// build by make-ios-index.mjs.
+let _iosPricePrefetched = false;
+function _iosPrefetchPrices() {
+  if (_iosPricePrefetched) return;
+  if (!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) return;
+  _iosPricePrefetched = true;
+  _iosFetchPrices().then(function(p) { if (p) _applyIosPrices(p); }).catch(function() {});
+}
 function renderList() {
   const main = document.getElementById("main");
+  _iosPrefetchPrices(); // warm StoreKit prices during browsing (iOS only, once)
   if (window._loadingState) {
     main.innerHTML = `\n      <div style="padding:60px 20px;text-align:center;color:#8a7a6a">\n        <div style="width:32px;height:32px;border:3px solid #ddd8d0;border-top-color:#5a4a3a;border-radius:50%;animation:spin 0.9s linear infinite;margin:0 auto 16px"></div>\n        <div style="font-size:14px;letter-spacing:0.3px">Loading your collection…</div>\n      </div>\n    `;
     return;
