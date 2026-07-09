@@ -1935,7 +1935,10 @@ window.matchFMV = function matchFMV(title, issue, grade, printing) {
   const g = parseFloat(grade);
   if (!isFinite(g)) return null;
   const key = _normalizeKeyTitle(title) + "|" + _normalizeKeyIssue(issue);
-  const breaks = _fmvIndex.books[key];
+  let breaks = _fmvIndex.books[key];
+  // Compression (S20): books[key] may be an integer index into a shared `curves`
+  // table (many issues share the same price curve). Deref it. Inline arrays still work.
+  if (typeof breaks === "number" && _fmvIndex.curves) breaks = _fmvIndex.curves[breaks];
   if (!Array.isArray(breaks) || !breaks.length) return null;
   // breaks ascending by grade; tier = the highest breakpoint whose grade <= g
   let tier = breaks[0][1];
@@ -3512,6 +3515,7 @@ async function loadUserCredits() {
       window._sampleDismissed = data.sampleDismissed === true;
       if (data.everPurchased) window._userEverPaid = true; else if (window._userCredits > 0) window._userEverPaid = true;
       window._trainingOptIn = data.trainingOptIn !== false;
+      window._printOptIn = data.printOptIn === true; // S18: persisted print-mode opt-in
       if (typeof data.transferCode === "string" && data.transferCode.length === 4) {
         window._transferCode = data.transferCode;
       } else {
@@ -3774,6 +3778,40 @@ function showList() {
   });
 }
 
+// Print-label redesign (S18): the gradient LABEL badge is replaced by a small
+// print icon (rotate-icon green) that only appears once the user opts in. An
+// entry already in the Print section shows the icon with a red X (tap to remove).
+const PRINT_ICON_SVG = '<svg viewBox="0 0 100 100" width="30" height="30" fill="none" style="stroke:#7aa838;stroke-width:6;stroke-linecap:round;stroke-linejoin:round"><path d="M30,36 L30,21 A4,4 0 0 1 34,17 L66,17 A4,4 0 0 1 70,21 L70,36"/><path d="M30,66 L20,66 A8,8 0 0 1 12,58 L12,44 A8,8 0 0 1 20,36 L80,36 A8,8 0 0 1 88,44 L88,58 A8,8 0 0 1 80,66 L70,66"/><path d="M22,47 L33,47"/><rect x="30" y="58" width="40" height="28" rx="3"/><path d="M40,70 L60,70"/><path d="M40,78 L60,78"/></svg>';
+const PRINT_ICON_X_SVG = '<svg viewBox="0 0 100 100" width="30" height="30" fill="none" style="stroke:#7aa838;stroke-width:6;stroke-linecap:round;stroke-linejoin:round"><path d="M30,36 L30,21 A4,4 0 0 1 34,17 L66,17 A4,4 0 0 1 70,21 L70,36"/><path d="M30,66 L20,66 A8,8 0 0 1 12,58 L12,44 A8,8 0 0 1 20,36 L80,36 A8,8 0 0 1 88,44 L88,58 A8,8 0 0 1 80,66 L70,66"/><path d="M22,47 L33,47"/><rect x="30" y="58" width="40" height="28" rx="3"/><g style="stroke:#c0392b;stroke-width:7"><path d="M38,66 L62,82"/><path d="M62,66 L38,82"/></g></svg>';
+// Session opt-in: tapping "Want to print labels?" reveals the icons. Also
+// considered on once any entry is in the Print state (derived from data, so it
+// stays on across reloads once the user has actually marked something).
+let _printOptInSession = false;
+function enablePrintMode() {
+  _printOptInSession = true;
+  window._printOptIn = true;
+  renderList();
+  // Persist so the Print drop-zone stays on across reloads (best-effort).
+  try {
+    if (window._currentUser && window._db && window._fsSetDoc && window._fsDoc) {
+      window._fsSetDoc(window._fsDoc(window._db, "users", window._currentUser.uid), { printOptIn: true }, { merge: true })
+        .catch(function(e) { console.warn("printOptIn persist failed:", e); });
+    }
+  } catch (e) { console.warn("printOptIn persist error:", e); }
+}
+function disablePrintMode() {
+  _printOptInSession = false;
+  window._printOptIn = false;
+  renderList();
+  // Persist the off state so print mode stays off across reloads (best-effort).
+  try {
+    if (window._currentUser && window._db && window._fsSetDoc && window._fsDoc) {
+      window._fsSetDoc(window._fsDoc(window._db, "users", window._currentUser.uid), { printOptIn: false }, { merge: true })
+        .catch(function(e) { console.warn("printOptIn persist failed:", e); });
+    }
+  } catch (e) { console.warn("printOptIn persist error:", e); }
+}
+
 function renderList() {
   const main = document.getElementById("main");
   if (window._loadingState) {
@@ -3834,9 +3872,17 @@ function renderList() {
       groups: groups
     };
   };
+  // Print mode: icons + the persistent Print drop-zone appear once the user has
+  // opted in (persisted via window._printOptIn) or once any entry is in the Print
+  // state. _printOptInSession is the immediate in-memory echo of a fresh opt-in.
+  const printModeEnabled = _printOptInSession || window._printOptIn === true || items.some(c => (c.ownership || "Owned") === "Print");
   const sections = OWNERSHIP_ORDER.map(own => {
     const subset = filt.filter(c => (c.ownership || "Owned") === own);
-    if (subset.length === 0) return null;
+    if (subset.length === 0) {
+      // Keep an empty Print section visible as a persistent drop-zone once on.
+      if (own === "Print" && printModeEnabled) return { ownership: own, titles: [], groups: {} };
+      return null;
+    }
     const {titles: titles, groups: groups} = buildTitleGroups(subset);
     return {
       ownership: own,
@@ -3858,10 +3904,7 @@ function renderList() {
       // user's explicit toggle thereafter.
       const ownKey = `__own__${section.ownership}`;
       if (collapsed[ownKey] === undefined) {
-        // S20: Print defaults OPEN too — it is the active print queue, so a book
-        // just added to it must be visible (previously it vanished into a
-        // collapsed section, which read to users as a lost entry).
-        collapsed[ownKey] = (section.ownership === "Owned" || section.ownership === "Print") ? false : true;
+        collapsed[ownKey] = section.ownership === "Owned" ? false : true;
       }
       const ownOpen = collapsed[ownKey] === false;
       if (section.ownership && sections.length > 1) {
@@ -3893,15 +3936,13 @@ function renderList() {
       const buildRow = c => {
         const thumbSrc = c.thumbnails?.[0] || c.images?.[0];
         const thumb = thumbSrc ? `<img class="comic-thumb" data-src="${thumbSrc}" decoding="async" style="background:#221d18">` : "";
-        // Restored (S20): printer-ICON label toggle. This was reverted to a text
-        // "LABEL" button during the compacted S19 session. print.svg = add to the
-        // Print queue; print-x.svg = already queued, tap to remove. Handler is
-        // unchanged (togglePrintState) — the Print ownership category IS the print
-        // queue (single source of truth; see print-label.js header).
+        // S18: print icon (upper-right) replaces the old LABEL badge. Shown only
+        // once print mode is opted into. Tap toggles the entry into/out of the
+        // Print section. In Print -> icon shows a red X (tap to remove).
         const _inPrint = (c.ownership || "Owned") === "Print";
         const _canLabel = c.roboGrade && c.id !== SAMPLE_COMIC_ID;
-        const _labelBtn = _canLabel
-          ? `<button onclick="event.stopPropagation();togglePrintState('${esc(c.id)}')" title="${_inPrint ? "Remove from print queue" : "Add to print queue"}" aria-label="${_inPrint ? "Remove from print queue" : "Add to print queue"}"\n              style="position:absolute;top:6px;right:8px;z-index:3;background:none;border:none;padding:4px;cursor:pointer;line-height:0"><img src="assets/${_inPrint ? "print-x.svg" : "print.svg"}" alt="" style="width:26px;height:26px;display:block;pointer-events:none"></button>`
+        const _labelBtn = (printModeEnabled && _canLabel)
+          ? `<button onclick="event.stopPropagation();togglePrintState('${esc(c.id)}')" title="${_inPrint ? "Remove from print queue" : "Add to print queue"}"\n              style="position:absolute;top:4px;right:6px;z-index:3;background:none;border:none;padding:2px;line-height:0;cursor:pointer">${_inPrint ? PRINT_ICON_X_SVG : PRINT_ICON_SVG}</button>`
           : "";
         return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0">\n                  <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>\n                  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">\n                    ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${formatIssue(c.issue, c.title)}</span>` : ""}\n                    ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                  </div>\n                </div>\n                ${buildListCgcPsaStack(c)}\n                ${_labelBtn}\n              </div>\n            </div>`;
       };
@@ -3927,6 +3968,19 @@ function renderList() {
         html += `</div>`;
       });
     });
+  }
+  // S18: print-label opt-in. If the user has a graded book but hasn't turned on
+  // print mode, offer it at the bottom; tapping reveals the per-entry print icons.
+  const _hasGraded = items.some(c => c.roboGrade && c.id !== SAMPLE_COMIC_ID);
+  const _printQueueCount = items.filter(c => (c.ownership || "Owned") === "Print").length;
+  const _LABEL_GRADIENT = "linear-gradient(180deg, #58723b 0%, #93ab66 38%, #9ba37e 100%)";
+  if (_hasGraded && !printModeEnabled) {
+    html += `<div onclick="enablePrintMode()" style="display:flex;align-items:center;justify-content:center;gap:8px;margin:18px 0 10px;padding:9px 12px;background:${_LABEL_GRADIENT};border-radius:8px;cursor:pointer;user-select:none">\n      <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#fff">Want to print labels?</span>\n    </div>`;
+  } else if (_hasGraded && printModeEnabled && _printQueueCount === 0) {
+    // Once print mode is on with nothing queued, offer a way back out. Tapping
+    // clears the opt-in, hides the per-row print icons, and the bar reverts to
+    // the "Want to print labels?" prompt on the next render.
+    html += `<div onclick="disablePrintMode()" style="display:flex;align-items:center;justify-content:center;gap:8px;margin:18px 0 10px;padding:9px 12px;background:${_LABEL_GRADIENT};border-radius:8px;cursor:pointer;user-select:none">\n      <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#fff">Turn off printing?</span>\n    </div>`;
   }
   const _tRender = Date.now();
   main.innerHTML = html;
