@@ -580,7 +580,7 @@ function ensureStylesInjected() {
   /* ── Label visual styles (used in both preview AND print sheet) ──────── */
   .rg-label {
     width: 1152px; height: 288px;
-    background: linear-gradient(180deg, #6a8947 0%, #93ab66 38%, #bac497 100%);
+    background: linear-gradient(180deg, #b58a5f 0%, #d6b391 38%, #eedbc5 100%);
     border: 1px solid #8a9a6a;
     border-radius: 4px;
     position: relative;
@@ -820,7 +820,7 @@ function ensureStylesInjected() {
                        a .face element positioned at top:96px so the
                        children's coordinate space is unchanged. */
     width: 1152px; height: 384px;
-    background: linear-gradient(180deg, #6a8947 0%, #93ab66 38%, #bac497 100%);
+    background: linear-gradient(180deg, #b58a5f 0%, #d6b391 38%, #eedbc5 100%);
     border: 1px solid #8a9a6a;
     border-radius: 4px;
     position: relative;
@@ -1188,7 +1188,7 @@ function ensureStylesInjected() {
      so the five stacked fields fit even for 2-line titles. */
   .rg-label-square {
     width: 576px; height: 576px;
-    background: linear-gradient(180deg, #6a8947 0%, #93ab66 38%, #bac497 100%);
+    background: linear-gradient(180deg, #b58a5f 0%, #d6b391 38%, #eedbc5 100%);
     border: 1px solid #8a9a6a;
     border-radius: 8px;
     position: relative;
@@ -1390,7 +1390,7 @@ function ensureStylesInjected() {
        layout just becomes 360px narrower with everything still 18px
        clear of the new right edge. 1800px = 6.25" at 288 DPI. */
     width: 1800px; height: 432px;
-    background: linear-gradient(180deg, #6a8947 0%, #93ab66 38%, #bac497 100%);
+    background: linear-gradient(180deg, #b58a5f 0%, #d6b391 38%, #eedbc5 100%);
     border: 1px solid #8a9a6a;
     border-radius: 6px;
     position: relative;
@@ -2114,7 +2114,7 @@ async function generatePDF(comics, modal) {
     // can capture each. Each box is sized to the format's pixel dimensions.
     let labelsHTML = '';
     for (let i = 0; i < comics.length; i++) {
-      labelsHTML += `<div class="pdf-label-box" data-idx="${i}" style="width:${fmt.pixelW}px;height:${fmt.pixelH}px;display:block;background:linear-gradient(180deg, #6a8947 0%, #93ab66 38%, #bac497 100%);">${renderLabelMarkup(comics[i], opts)}</div>`;
+      labelsHTML += `<div class="pdf-label-box" data-idx="${i}" style="width:${fmt.pixelW}px;height:${fmt.pixelH}px;display:block;background:linear-gradient(180deg, #b58a5f 0%, #d6b391 38%, #eedbc5 100%);">${renderLabelMarkup(comics[i], opts)}</div>`;
     }
     offscreen.innerHTML = labelsHTML;
 
@@ -2158,7 +2158,7 @@ async function generatePDF(comics, modal) {
       const PAGE_W_IN = 8.5;
       const dpi = fmt.pixelW / fmt.labelW;          // 288
       const bandEl = document.createElement('div');
-      bandEl.style.cssText = `width:${Math.round(PAGE_W_IN * dpi)}px;height:${fmt.pixelH}px;background:linear-gradient(180deg, #6a8947 0%, #93ab66 38%, #bac497 100%);`;
+      bandEl.style.cssText = `width:${Math.round(PAGE_W_IN * dpi)}px;height:${fmt.pixelH}px;background:linear-gradient(180deg, #b58a5f 0%, #d6b391 38%, #eedbc5 100%);`;
       offscreen.appendChild(bandEl);
       try {
         const bandCanvas = await window.html2canvas(bandEl, { scale: 1, backgroundColor: '#d4d9be', logging: false });
