@@ -3923,11 +3923,11 @@ function renderList() {
         // S17: Owned/Sold/Watching headers are charcoal (white text) when
         // EXPANDED, light gray (dark text) when COLLAPSED. Print uses the label
         // green gradient (matches the printed labels).
-        const LABEL_GRADIENT = "linear-gradient(180deg, #58723b 0%, #93ab66 38%, #9ba37e 100%)";
+        const LABEL_GRADIENT = "linear-gradient(180deg, #b58a5f 0%, #d6b391 38%, #eedbc5 100%)";
         let _headerBg, _headerFg;
         if (section.ownership === "Print") {
           _headerBg = LABEL_GRADIENT;
-          _headerFg = "#ffffff";
+          _headerFg = "#3a2a18";
         } else if (ownOpen) {
           _headerBg = "#2a2724";
           _headerFg = "#ffffff";
@@ -3985,14 +3985,14 @@ function renderList() {
   // print mode, offer it at the bottom; tapping reveals the per-entry print icons.
   const _hasGraded = items.some(c => c.roboGrade && c.id !== SAMPLE_COMIC_ID);
   const _printQueueCount = items.filter(c => (c.ownership || "Owned") === "Print").length;
-  const _LABEL_GRADIENT = "linear-gradient(180deg, #58723b 0%, #93ab66 38%, #9ba37e 100%)";
+  const _LABEL_GRADIENT = "linear-gradient(180deg, #b58a5f 0%, #d6b391 38%, #eedbc5 100%)";
   if (_hasGraded && !printModeEnabled) {
-    html += `<div onclick="enablePrintMode()" style="display:flex;align-items:center;justify-content:center;gap:8px;margin:18px 0 10px;padding:9px 12px;background:${_LABEL_GRADIENT};border-radius:8px;cursor:pointer;user-select:none">\n      <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#fff">Want to print labels?</span>\n    </div>`;
+    html += `<div onclick="enablePrintMode()" style="display:flex;align-items:center;justify-content:center;gap:8px;margin:18px 0 10px;padding:9px 12px;background:${_LABEL_GRADIENT};border-radius:8px;cursor:pointer;user-select:none">\n      <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#3a2a18">Want to print labels?</span>\n    </div>`;
   } else if (_hasGraded && printModeEnabled && _printQueueCount === 0) {
     // Once print mode is on with nothing queued, offer a way back out. Tapping
     // clears the opt-in, hides the per-row print icons, and the bar reverts to
     // the "Want to print labels?" prompt on the next render.
-    html += `<div onclick="disablePrintMode()" style="display:flex;align-items:center;justify-content:center;gap:8px;margin:18px 0 10px;padding:9px 12px;background:${_LABEL_GRADIENT};border-radius:8px;cursor:pointer;user-select:none">\n      <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#fff">Turn off printing?</span>\n    </div>`;
+    html += `<div onclick="disablePrintMode()" style="display:flex;align-items:center;justify-content:center;gap:8px;margin:18px 0 10px;padding:9px 12px;background:${_LABEL_GRADIENT};border-radius:8px;cursor:pointer;user-select:none">\n      <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#3a2a18">Turn off printing?</span>\n    </div>`;
   }
   const _tRender = Date.now();
   main.innerHTML = html;

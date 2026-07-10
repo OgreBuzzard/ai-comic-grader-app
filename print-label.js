@@ -835,8 +835,8 @@ function ensureStylesInjected() {
   .rg-label-l .face {
     position: absolute;
     left: 0; right: 0;
-    top: 96px;  /* 0.333" from top — face begins after wrap + fold zone */
-    height: 288px;
+    top: 90px;  /* face top sits at the fold line so its gradient meets it */
+    height: 294px;
     background: linear-gradient(180deg, #b58a5f 0%, #d6b391 38%, #eedbc5 100%);
   }
   /* Fold guide: thin horizontal line at y=84 (1.04" from bottom), 2pt
@@ -861,7 +861,7 @@ function ensureStylesInjected() {
   .rg-label-l .wrap-strip {
     position: absolute;
     left: 0; right: 0;
-    top: 0; height: 72px;
+    top: 0; height: 80px;
     display: flex;
     align-items: center;
     gap: 14px;
@@ -931,15 +931,17 @@ function ensureStylesInjected() {
   }
   .robot-badge { display: none; }
   .rg-label-l .robot-badge {
-    display: block; position: absolute;
-    left: 770px; top: 20px; width: 170px; height: 232px;
+    position: absolute;
+    left: 760px; top: 20px; width: 190px; height: 232px;
+    display: flex; align-items: flex-end; justify-content: center;
   }
   .rg-label-l .robot-badge img {
-    width: 100%; height: 100%;
-    object-fit: contain; object-position: bottom;
+    width: 160px; height: auto;
+    opacity: 0.8;
   }
   .rg-label-l .meta-id-lbl, .rg-label-l .meta-id-val { display: none; }
   .url-id { font-weight: 800; }
+  .rg-label-l .url-id { font-size: 24px; }
   .rg-label-l .score-box {
     width: 252px; height: 252px;
     background: #1a2208;
@@ -1008,10 +1010,10 @@ function ensureStylesInjected() {
      of the price pad / QR column on the right side. */
   .rg-label-l .info {
     position: absolute;
-    left: 290px; top: 8px; right: 392px;
+    left: 290px; top: 8px; right: 400px;
     display: flex; flex-direction: column;
   }
-  .rg-label-l.has-price .info { right: 392px; }
+  .rg-label-l.has-price .info { right: 400px; }
   .rg-label-l .info-upper {
     padding-bottom: 4px;
   }
@@ -1087,7 +1089,7 @@ function ensureStylesInjected() {
        label's 0.5"-from-edge line, matching where the QR's right edge
        sits) and shrink so the whole URL fits within the printed-content
        zone (right edge 3.5" from left). right = 1152 − 1008 = 144. */
-    font-size: 15px; color: #5a6a4a;
+    font-size: 20px; color: #5a6a4a;
     font-family: ui-monospace, "SF Mono", Menlo, "Cascadia Mono", "Roboto Mono", monospace;
     font-weight: 500;
     text-align: right;
@@ -1102,8 +1104,8 @@ function ensureStylesInjected() {
   .rg-label-l.has-price .price-pad {
     display: block;
     position: absolute;
-    left: 770px; top: 18px;
-    width: 170px; height: 234px;
+    left: 760px; top: 18px;
+    width: 190px; height: 234px;
     background: #ffffff;
     border: 1px solid #b8c098;
     border-radius: 14px;
