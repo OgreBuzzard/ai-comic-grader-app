@@ -837,6 +837,7 @@ function ensureStylesInjected() {
     left: 0; right: 0;
     top: 96px;  /* 0.333" from top — face begins after wrap + fold zone */
     height: 288px;
+    background: linear-gradient(180deg, #b58a5f 0%, #d6b391 38%, #eedbc5 100%);
   }
   /* Fold guide: thin horizontal line at y=84 (1.04" from bottom), 2pt
      (=8px at 288 DPI) tall, centered in the 0.083" fold zone. Tells the
@@ -845,10 +846,10 @@ function ensureStylesInjected() {
      folding. */
   .rg-label-l .fold-guide {
     position: absolute;
-    left: 12px; right: 12px;
-    top: 80px; height: 8px;
+    left: 0; right: 0;
+    top: 80px; height: 10px;
     background: #5a7030;
-    opacity: 0.6;
+    opacity: 0.8;
     border-radius: 1px;
   }
   /* Wrap strip: top 0.25" of the label that wraps over the top of the
@@ -869,6 +870,7 @@ function ensureStylesInjected() {
     font-family: 'Barlow Condensed', sans-serif;
     overflow: hidden;
     white-space: nowrap;
+    background: linear-gradient(180deg, #b58a5f 0%, #d6b391 45%, #eedbc5 100%);
   }
   .rg-label-l .wrap-strip .ws-score {
     flex: 0 0 auto;
@@ -910,11 +912,11 @@ function ensureStylesInjected() {
        144px in from the right edge, so add 132px (144 − 12) of right
        margin. After the user trims the label to 3.5", the ID and QR both
        sit flush against the new right edge. */
-    margin-right: 132px;
+    margin-right: 24px;
     font-family: ui-monospace, "SF Mono", Menlo, "Cascadia Mono", "Roboto Mono", monospace;
-    font-size: 24px;
+    font-size: 26px;
     font-weight: 600;
-    color: #4a5a38;
+    color: #2a3a18;
     letter-spacing: 1px;
   }
   /* Separator dot between wrap-strip fields. Pure CSS, no DOM needed.
@@ -927,6 +929,17 @@ function ensureStylesInjected() {
     color: #6a7a48;
     font-weight: 700;
   }
+  .robot-badge { display: none; }
+  .rg-label-l .robot-badge {
+    display: block; position: absolute;
+    left: 770px; top: 20px; width: 170px; height: 232px;
+  }
+  .rg-label-l .robot-badge img {
+    width: 100%; height: 100%;
+    object-fit: contain; object-position: bottom;
+  }
+  .rg-label-l .meta-id-lbl, .rg-label-l .meta-id-val { display: none; }
+  .url-id { font-weight: 800; }
   .rg-label-l .score-box {
     width: 252px; height: 252px;
     background: #1a2208;
@@ -995,13 +1008,12 @@ function ensureStylesInjected() {
      of the price pad / QR column on the right side. */
   .rg-label-l .info {
     position: absolute;
-    left: 290px; top: 8px; right: 322px;
+    left: 290px; top: 8px; right: 392px;
     display: flex; flex-direction: column;
   }
-  .rg-label-l.has-price .info { right: 522px; }
+  .rg-label-l.has-price .info { right: 392px; }
   .rg-label-l .info-upper {
     padding-bottom: 4px;
-    border-bottom: 1px solid #b0b89a;
   }
   .rg-label-l .ttl {
     font-size: 58px; font-weight: 900;
@@ -1009,6 +1021,9 @@ function ensureStylesInjected() {
     font-family: 'Noto Sans Display', sans-serif;
     transform: scaleX(0.625);
     transform-origin: left center;
+    white-space: normal;
+    max-height: 118px;
+    overflow: hidden;
   }
   .rg-label-l .iss {
     font-size: 52px; font-weight: 600;
@@ -1050,21 +1065,18 @@ function ensureStylesInjected() {
        right edge / 3.5" from left). align-items:flex-end so the QR
        canvas's right edge lands exactly on x=1008, matching the URL
        beneath it (which is right-anchored to the same line). */
-    left: 874px; top: 14px;
-    width: 134px;
+    right: 36px; bottom: 48px;
+    width: 160px;
     display: flex; flex-direction: column;
     align-items: flex-end; gap: 4px;
   }
   .rg-label-l .qr-col .qrc canvas,
   .rg-label-l .qr-col .qrc img {
-    width: 118px !important;
-    height: 118px !important;
+    width: 150px !important;
+    height: 150px !important;
   }
   .rg-label-l .verify {
-    font-size: 14px; color: #7a8a5a;
-    letter-spacing: 1px;
-    font-family: 'Barlow Condensed', sans-serif;
-    font-weight: 600; text-align: center;
+    display: none;
   }
   .rg-label-l .url {
     /* S14 fix: the URL was positioned correctly (left:874 width:134, same
@@ -1075,12 +1087,12 @@ function ensureStylesInjected() {
        label's 0.5"-from-edge line, matching where the QR's right edge
        sits) and shrink so the whole URL fits within the printed-content
        zone (right edge 3.5" from left). right = 1152 − 1008 = 144. */
-    font-size: 13px; color: #5a6a4a;
+    font-size: 15px; color: #5a6a4a;
     font-family: ui-monospace, "SF Mono", Menlo, "Cascadia Mono", "Roboto Mono", monospace;
     font-weight: 500;
     text-align: right;
     position: absolute;
-    right: 144px; bottom: 18px;
+    right: 36px; bottom: 14px;
     letter-spacing: 0px;
     white-space: nowrap;
   }
@@ -1090,8 +1102,8 @@ function ensureStylesInjected() {
   .rg-label-l.has-price .price-pad {
     display: block;
     position: absolute;
-    left: 654px; top: 18px;
-    width: 200px; height: 220px;
+    left: 770px; top: 18px;
+    width: 170px; height: 234px;
     background: #ffffff;
     border: 1px solid #b8c098;
     border-radius: 14px;
@@ -2503,7 +2515,7 @@ function renderLabelMarkup(comic, opts) {
         ${issue ? `<div class="ws-iss">${issue}</div>` : ''}
         ${issueDate ? `<div class="ws-date">${issueDate}</div>` : ''}
         ${printing ? `<div class="ws-prt">${printing}</div>` : ''}
-        <div class="ws-id">${gradeId}</div>
+        <div class="ws-id">GRADE ID: <b>${gradeId}</b></div>
       </div>
       <div class="fold-guide"></div>
   ` : '';
@@ -2535,7 +2547,7 @@ function renderLabelMarkup(comic, opts) {
         <div class="info-lower">
           <div class="meta-grid">
             <span class="meta-lbl">GRADED</span><span class="meta-val">${gradeDate}</span>
-            <span class="meta-lbl">ID</span><span class="meta-val">${gradeId}</span>
+            <span class="meta-lbl meta-id-lbl">ID</span><span class="meta-val meta-id-val">${gradeId}</span>
           </div>
         </div>
       </div>
@@ -2554,7 +2566,7 @@ function renderLabelMarkup(comic, opts) {
           return `<div class="price-pad"><div class="price-value">${priceStr}</div></div>`;
         }
         return `<div class="price-pad"><div class="price-placeholder">Price</div></div>`;
-      })() : ''}
+      })() : '<div class="robot-badge"><img src="assets/Robograder_Charging.png" alt=""></div>'}
       <div class="qr-col">
         ${comic.publicListing
           ? `<div class="qrc" data-qr-id="${gradeId}"></div>
@@ -2569,7 +2581,7 @@ function renderLabelMarkup(comic, opts) {
              </div>`}
       </div>
       ${comic.publicListing
-        ? `<div class="url">robograder.app/id/${gradeId}</div>`
+        ? `<div class="url">robograder.app/id/<span class="url-id">${gradeId}</span></div>`
         : `<div class="url" style="color:#b0a494">ID ${gradeId}</div>`}
       ${faceClose}
     </div>
