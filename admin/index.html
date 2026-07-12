@@ -784,20 +784,56 @@ function showSummaryModal(d) {
 }
 
 // ── Auth ───────────────────────────────────────────────────────────────────
+// S20: the toggle used to render unchecked on every re-render (renderDashboard
+// rebuilds the header via innerHTML) and on any read failure, so it displayed
+// "off" while assess.js was actually caching. Hold the config in module state,
+// default it to assess.js's defaults (enabled, 1h), and render FROM that state.
+let _cacheCfg = { enabled: true, ttl: '1h' };
 async function _loadCacheCfg() {
   try {
     const snap = await dbF.collection('config').doc('caching').get();
-    const cfg = snap.exists ? (snap.data() || {}) : { enabled: true, ttl: '1h' };
-    const en = document.getElementById('cache-enabled'), tt = document.getElementById('cache-ttl');
-    if (en) en.checked = cfg.enabled !== false;
-    if (tt) tt.value = cfg.ttl === '5m' ? '5m' : '1h';
-  } catch (e) { console.warn('[cache-cfg] read failed:', e && e.message); }
+    if (snap.exists) {
+      const d = snap.data() || {};
+      _cacheCfg = { enabled: d.enabled !== false, ttl: d.ttl === '5m' ? '5m' : '1h' };
+    } else {
+      _cacheCfg = { enabled: true, ttl: '1h' }; // no doc -> assess.js defaults
+    }
+  } catch (e) {
+    console.warn('[cache-cfg] read failed, keeping defaults (enabled/1h):', e && e.message);
+  }
+  _syncCacheCfgDom();
+}
+function _syncCacheCfgDom() {
+  const en = document.getElementById('cache-enabled'), tt = document.getElementById('cache-ttl');
+  if (en) en.checked = _cacheCfg.enabled;
+  if (tt) tt.value = _cacheCfg.ttl;
 }
 async function _saveCacheCfg() {
   const en = document.getElementById('cache-enabled'), tt = document.getElementById('cache-ttl');
   if (!en || !tt) return;
+  _cacheCfg = { enabled: en.checked, ttl: tt.value };
   try { await dbF.collection('config').doc('caching').set({ enabled: en.checked, ttl: tt.value }, { merge: true }); }
   catch (e) { alert('Failed to save caching config: ' + (e && e.message)); }
+}
+// Compact date + time for the All Items rows.
+function _fmtDateTime(d) {
+  try {
+    return new Date(d).toLocaleString(undefined, { month: 'numeric', day: 'numeric', year: '2-digit', hour: 'numeric', minute: '2-digit' });
+  } catch (e) { return new Date(d).toLocaleDateString(); }
+}
+// S20: refresh the current tab in place (no more Logs-then-back dance).
+async function refreshDashboard() {
+  const btn = document.getElementById('refresh-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '\u2026'; }
+  try {
+    await _loadCacheCfg();
+    loadStats();
+    if (state.tab === 'items') loadItems(true);
+    else if (state.tab === 'timings') loadTimings(true);
+    else loadUsers(true);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '\u27F3'; }
+  }
 }
 
 auth.onAuthStateChanged(async (user) => {
@@ -847,15 +883,16 @@ async function renderDashboard() {
   state.selectedUid = null;
   state.selectedItemId = null;
   root.innerHTML = `
-    <header>
-      <h1>ROBOGRADER ADMIN</h1>
-      <label style="margin-right:12px;font-size:13px;color:#9ab;display:inline-flex;align-items:center;gap:5px">
-        <input type="checkbox" id="cache-enabled" onchange="_saveCacheCfg()"> Cache
-        <select id="cache-ttl" onchange="_saveCacheCfg()" style="background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px;padding:2px 4px;font-size:13px"><option value="1h">1h</option><option value="5m">5m</option></select>
+    <header style="flex-wrap:wrap;gap:6px">
+      <h1 style="font-size:15px;letter-spacing:1px;margin:0 auto 0 0">RG ADMIN</h1>
+      <label style="font-size:10px;color:#9ab;display:inline-flex;flex-direction:column;align-items:center;gap:1px;line-height:1.1">
+        <span style="display:inline-flex;align-items:center;gap:3px"><input type="checkbox" id="cache-enabled" ${_cacheCfg.enabled ? 'checked' : ''} onchange="_saveCacheCfg()">Cache</span>
+        <select id="cache-ttl" onchange="_saveCacheCfg()" style="background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px;padding:0 2px;font-size:10px"><option value="1h" ${_cacheCfg.ttl !== '5m' ? 'selected' : ''}>1h</option><option value="5m" ${_cacheCfg.ttl === '5m' ? 'selected' : ''}>5m</option></select>
       </label>
-      <button class="sign-out" id="summary-btn" style="margin-right:8px">Export Summary</button>
-      <button class="sign-out" id="export-btn" style="margin-right:8px">Export JSON</button>
-      <button class="sign-out" id="signout-btn">Sign out</button>
+      <button class="sign-out" id="refresh-btn" title="Refresh" style="padding:4px 8px;font-size:13px">&#10227;</button>
+      <button class="sign-out" id="summary-btn" style="padding:4px 7px;font-size:11px">Exp. Sum.</button>
+      <button class="sign-out" id="export-btn" style="padding:4px 7px;font-size:11px">Exp. JSON</button>
+      <button class="sign-out" id="signout-btn" style="padding:4px 7px;font-size:11px">Sign Out</button>
     </header>
     <main>
       <div id="stats-section"><div class="loading">Loading stats…</div></div>
@@ -870,6 +907,8 @@ async function renderDashboard() {
   document.getElementById('signout-btn').onclick = signOut;
   document.getElementById('export-btn').onclick = downloadExport;
   document.getElementById('summary-btn').onclick = exportSummary;
+  document.getElementById('refresh-btn').onclick = refreshDashboard;
+  _syncCacheCfgDom(); // header was just rebuilt — restore the toggle from state
   document.querySelectorAll('#tabs button').forEach(btn => {
     btn.onclick = () => {
       state.tab = btn.dataset.tab;
@@ -1143,7 +1182,7 @@ function renderItemsList() {
         ${thumbSrc ? `<div class="row-thumb"><img src="${escapeAttr(thumbSrc)}" alt="" loading="lazy"></div>` : '<div class="row-thumb empty"></div>'}
         <div class="main">
           <div class="title">${escapeHtml(it.title)}${it.issue ? ' #' + escapeHtml(it.issue) : ''}</div>
-          <div class="sub">${escapeHtml(it.userName)} · ${it.roboGradeDate ? new Date(it.roboGradeDate).toLocaleDateString() : 'no date'}${it.roboGradeId ? ' · ID ' + escapeHtml(it.roboGradeId) : ''}</div>
+          <div class="sub">${escapeHtml(it.userName)} · ${it.roboGradeDate ? _fmtDateTime(it.roboGradeDate) : 'no date'}${it.roboGradeId ? ' · ID ' + escapeHtml(it.roboGradeId) : ''}</div>
         </div>
         <div class="meta" style="display:flex;gap:14px;align-items:center;">
           <div style="text-align:center;">
