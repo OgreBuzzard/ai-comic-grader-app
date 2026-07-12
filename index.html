@@ -1524,7 +1524,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
     <div class="settings-row" style="cursor:default">
       <div>
         <div class="sr-label" id="settings-email">—</div>
-        <div class="sr-detail">Signed in with Google</div>
+        <div class="sr-detail" id="settings-provider">Signed in</div>
       </div>
     </div>
     
@@ -6732,6 +6732,18 @@ function openSettings() {
   }
   const emailEl = document.getElementById("settings-email");
   if (emailEl && window._currentUser) emailEl.textContent = window._currentUser.email || "—";
+  // S20 bugfix: this line used to be the hardcoded string "Signed in with Google",
+  // so an Apple sign-in was mislabeled as Google. Derive it from providerData.
+  // (If both are linked to the same email, Firebase reports both — show both.)
+  const provEl = document.getElementById("settings-provider");
+  if (provEl) {
+    const _ids = ((window._currentUser && window._currentUser.providerData) || [])
+      .map(function(p) { return p && p.providerId; }).filter(Boolean);
+    const _names = [];
+    if (_ids.indexOf("apple.com") !== -1) _names.push("Apple");
+    if (_ids.indexOf("google.com") !== -1) _names.push("Google");
+    provEl.textContent = _names.length ? ("Signed in with " + _names.join(" & ")) : "Signed in";
+  }
   const tcEl = document.getElementById("settings-transfer-code");
   if (tcEl) {
     tcEl.textContent = typeof window._transferCode === "string" && window._transferCode.length === 4 ? window._transferCode : "—";
