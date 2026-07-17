@@ -63,10 +63,29 @@ export default function middleware(request) {
   // silently break every unlock. Use a hex-only secret to avoid URL mangling.
   const secret = (process.env.ADMIN_GATE_SECRET || '').trim();
 
+  const url = new URL(request.url);
+
+  // ── TEMPORARY DEBUG — delete this block once the gate is working. ──────────
+  // Visit /?gatedebug=1  and  /?gatedebug=1&k=<yourkey>  to compare.
+  // Returns ONLY lengths and booleans; never echoes the secret or the key.
+  if (url.searchParams.get('gatedebug') === '1') {
+    const p = url.searchParams.get('k');
+    const c = readCookie(request.headers.get('cookie'), COOKIE);
+    return new Response(JSON.stringify({
+      secretConfigured: !!secret,
+      secretLen: secret.length,
+      keyProvided: p != null,
+      keyLen: p == null ? 0 : p.trim().length,
+      keyMatches: p != null && safeEqual(p.trim(), secret),
+      cookiePresent: c != null,
+      cookieLen: c == null ? 0 : c.trim().length,
+      cookieMatches: c != null && safeEqual(c.trim(), secret),
+    }, null, 2), { status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+
   // Gate inactive until the secret is configured — fail open (Firebase gate still applies).
   if (!secret) return undefined;
-
-  const url = new URL(request.url);
 
   // Unlock path: /?k=<secret> sets the cookie and redirects to a clean URL.
   // searchParams.get() URL-decodes; .trim() drops any stray whitespace.
