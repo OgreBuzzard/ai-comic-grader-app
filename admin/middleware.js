@@ -13,13 +13,14 @@
 //
 // SETUP (one time):
 //   1. In the ADMIN Vercel project → Settings → Environment Variables, add:
-//        ADMIN_GATE_SECRET = <a long random string you choose>
-//      (Generate one, e.g. `openssl rand -hex 24`.)
+//        ADMIN_GATE_SECRET = <a HEX-ONLY random string>   (e.g. `openssl rand -hex 24`)
+//      IMPORTANT: use hex/letters+digits only. A key with & # + % / = or spaces
+//      gets mangled in the URL query string and will fail to unlock.
 //   2. Redeploy.
 //   3. Unlock your browser once by visiting:
 //        https://admin.robograder.app/?k=<that same secret>
 //      The middleware sets an HttpOnly cookie and redirects to a clean URL.
-//      The cookie lasts 30 days; repeat on any new device/browser.
+//      The cookie lasts 1 year; repeat on any new device/browser.
 //
 // FAIL-OPEN on missing secret: if ADMIN_GATE_SECRET is not set, the gate is
 // INACTIVE and requests pass through (you are still protected by the Firebase +
@@ -58,7 +59,9 @@ function readCookie(header, name) {
 }
 
 export default function middleware(request) {
-  const secret = process.env.ADMIN_GATE_SECRET;
+  // .trim() so a stray space/newline pasted into the Vercel env value can't
+  // silently break every unlock. Use a hex-only secret to avoid URL mangling.
+  const secret = (process.env.ADMIN_GATE_SECRET || '').trim();
 
   // Gate inactive until the secret is configured — fail open (Firebase gate still applies).
   if (!secret) return undefined;
@@ -66,16 +69,17 @@ export default function middleware(request) {
   const url = new URL(request.url);
 
   // Unlock path: /?k=<secret> sets the cookie and redirects to a clean URL.
+  // searchParams.get() URL-decodes; .trim() drops any stray whitespace.
   const provided = url.searchParams.get('k');
   if (provided != null) {
-    if (safeEqual(provided, secret)) {
+    if (safeEqual(provided.trim(), secret)) {
       const clean = new URL(request.url);
       clean.searchParams.delete('k');
       return new Response(null, {
         status: 302,
         headers: {
           Location: clean.pathname + clean.search,
-          'Set-Cookie': `${COOKIE}=${secret}; Path=/; Max-Age=${60 * 60 * 24 * 30}; HttpOnly; Secure; SameSite=Lax`,
+          'Set-Cookie': `${COOKIE}=${secret}; Path=/; Max-Age=${60 * 60 * 24 * 365}; HttpOnly; Secure; SameSite=Lax`,
           'Cache-Control': 'no-store',
         },
       });
@@ -85,7 +89,7 @@ export default function middleware(request) {
 
   // Already unlocked?
   const cookieVal = readCookie(request.headers.get('cookie'), COOKIE);
-  if (safeEqual(cookieVal, secret)) return undefined;
+  if (cookieVal != null && safeEqual(cookieVal.trim(), secret)) return undefined;
 
   // Blocked. JSON for API calls, a tiny page for navigations.
   const isApi = url.pathname.startsWith('/api/');
