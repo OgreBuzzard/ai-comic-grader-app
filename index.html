@@ -4469,7 +4469,7 @@ function showDetail(id) {
     const _cId = (selected.roboGradeId || selected.id || "").toString().slice(-6).toUpperCase();
     const _subjBits = [selected.title || "", selected.issue ? "#" + selected.issue : "", selected.issueDate || ""].filter(Boolean).join(" ");
     const _subject = encodeURIComponent(`Complaint ID ${_cId} — ${_subjBits}`.trim());
-    const _body = encodeURIComponent("Describe the issue:\n");
+    const _body = encodeURIComponent("User ID: " + (window._transferCode || "?") + "\n\nDescribe the issue:\n");
     _complainBtn = `<a class="rg-btn rg-btn-action rg-btn-md" href="mailto:support@robograder.app?subject=${_subject}&body=${_body}" onclick="try{var q=(this.href.split('?')[1]||'');var pr=new URLSearchParams(q);if(navigator.clipboard&&navigator.clipboard.writeText){var nl=String.fromCharCode(10);navigator.clipboard.writeText('To: support@robograder.app'+nl+'Subject: '+(pr.get('subject')||'')+nl+nl+(pr.get('body')||''));}alert('Complaint details copied to your clipboard (send to support@robograder.app). If your email app did not open, just paste them into a new message.');}catch(e){}" style="display:flex;align-items:center;justify-content:center;text-decoration:none">Complain</a>`;
   }
   html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    ${_giveBtn}\n    ${_complainBtn}\n  </div>\n  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    <button class="rg-btn rg-btn-destructive rg-btn-md" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')" style="grid-column:1 / span 2;justify-self:center;width:calc(50% - 5px)">Delete</button>\n  </div></div>`;
