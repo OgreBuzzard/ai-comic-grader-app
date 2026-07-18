@@ -82,6 +82,21 @@ export default async function handler(req, res) {
     };
     const images = normImages(raw.images);
     const cornerImages = normImages(raw.cornerImages);
+    // S20: Full/Restoration/Signature image sets — were fetched but never
+    // returned, so they never rendered in the admin detail view.
+    const interiorImages = normImages(raw.interiorImages);
+    const restorationImages = normImages(raw.restorationImages);
+    const signatureImages = normImages(raw.signatureImages);
+
+    // S20: assessing user's contact info for the detail view (name / email /
+    // 4-char transferCode used as the short User ID + tap-to-email).
+    let userName = '', userEmail = '', transferCode = '';
+    try {
+      const ud = (await db.collection('users').doc(uid).get()).data() || {};
+      userEmail = ud.email || '';
+      userName = ud.displayName || ud.email || '';
+      transferCode = ud.transferCode || '';
+    } catch (_) { /* user doc optional */ }
 
     // ── Compose response per Matt's spec ─────────────────────────────────────
     // Roughly the union of fields shown in the app's detail view, plus a few
@@ -146,9 +161,17 @@ export default async function handler(req, res) {
       officialPSACert: flat.officialPSACert ?? null,
       officialPageQuality: flat.officialPageQuality ?? null,
 
+      // Assessing user (admin contact)
+      userName,
+      userEmail,
+      transferCode,
+
       // Images
       images,
       cornerImages,
+      interiorImages,
+      restorationImages,
+      signatureImages,
 
       // Ownership / pricing (useful for admin context)
       ownership: flat.ownership || '',
