@@ -62,7 +62,7 @@ export default async function handler(req, res) {
 
     // ── Params ───────────────────────────────────────────────────────────────
     const sort = (req.query.sort || 'date').toString();
-    const validSorts = ['title', 'date', 'uid']; // S20: replaced 'robograde' with 'uid' (4-char transferCode) per support workflow
+    const validSorts = ['title', 'date', 'uid', 'pg']; // S20: 'uid' = 4-char transferCode; 'pg' = predicted (assessedCGC) grade
     if (!validSorts.includes(sort)) {
       return res.status(400).json({ error: `sort must be one of: ${validSorts.join(', ')}` });
     }
@@ -154,6 +154,14 @@ export default async function handler(req, res) {
       } else if (sort === 'uid') {
         // Sort by the 4-char transferCode; users with no code ('~') sort last.
         cmpResult = String(a.transferCode || '~').localeCompare(String(b.transferCode || '~'), undefined, { sensitivity: 'base' });
+      } else if (sort === 'pg') {
+        // Sort by predicted (assessedCGC) grade; ungraded books sort to the bottom.
+        const ag = parseFloat(a.assessedCGCGrade), bg = parseFloat(b.assessedCGCGrade);
+        const aHas = isFinite(ag), bHas = isFinite(bg);
+        if (!aHas && !bHas) cmpResult = 0;
+        else if (!aHas) return dir === 'desc' ? 1 : -1;
+        else if (!bHas) return dir === 'desc' ? -1 : 1;
+        else cmpResult = ag - bg;
       } else { // 'date'
         const am = Date.parse(a.roboGradeDate || '') || 0;
         const bm = Date.parse(b.roboGradeDate || '') || 0;
