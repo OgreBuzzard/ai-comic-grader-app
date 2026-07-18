@@ -1773,16 +1773,18 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           cacheCreationInputTokens: _cacheCreationInputTokens,
           // S15 May 28: per-assessment dollar cost. Computed inline so the
           // admin Logs view can display it without re-deriving from token
-          // counts and a hardcoded rate table. Opus 4.8 = $5/M input,
-          // $25/M output. Cache reads at 10% of input rate, cache creation
-          // at 1.25x input rate (Anthropic pricing as of May 2026). If we
-          // change models, this rate block must change with it — keep the
-          // constants here next to the model string.
+          // counts and a hardcoded rate table. Cache reads bill at 10% of the
+          // input rate. Cache WRITES bill by the TTL we requested (_cacheCtl):
+          // a 1-hour cache writes at 2x input, the default 5-minute at 1.25x.
+          // (S20 fix: this was hardcoded 1.25x, which UNDERbilled every 1-hour
+          // cache write — the log read cheaper than the real Anthropic invoice.
+          // Tying the multiplier to _cacheTtl keeps it honest if the caching
+          // lever is flipped.) If we change models, _RATES changes with it.
           costUsd: (function(){
             const RATE_IN  = _RATES.in;
             const RATE_OUT = _RATES.out;
             const RATE_CACHE_READ   = RATE_IN * 0.10;
-            const RATE_CACHE_CREATE = RATE_IN * 1.25;
+            const RATE_CACHE_CREATE = RATE_IN * (_cacheTtl === '1h' ? 2.0 : 1.25);
             const inT  = _inputTokens || 0;
             const outT = _outputTokens || 0;
             const cr   = _cacheReadInputTokens || 0;
