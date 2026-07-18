@@ -110,7 +110,7 @@
   /* Tabs */
   .tabs {
     display: flex;
-    gap: 4px;
+    gap: 2px;
     margin-bottom: 16px;
     border-bottom: 1px solid var(--rule);
   }
@@ -118,7 +118,7 @@
     background: none;
     border: none;
     color: var(--text-dim);
-    padding: 10px 16px;
+    padding: 10px 8px;
     font-size: 13px;
     font-weight: 600;
     letter-spacing: 0.06em;
@@ -164,8 +164,8 @@
     align-items: center;
   }
   .row-thumb {
-    width: 48px;
-    height: 48px;
+    width: 44px;
+    height: 66px;   /* comic-cover proportions (~2:3), not square */
     flex-shrink: 0;
     margin-right: 12px;
     background: var(--panel-2);
@@ -985,6 +985,7 @@ async function renderSalesTab() {
   const card = (label, tot) => `<div style="flex:1;background:#0e0f12;border:1px solid #23252c;border-radius:8px;padding:10px 12px;min-width:0;text-align:center;">
       <div style="font-size:11px;color:#8a8d96;text-transform:uppercase;letter-spacing:1px">${label}</div>
       <div style="font-size:18px;font-weight:700;color:#7fd0ff">${money(tot && tot.amount)}</div>
+      <div style="font-size:11px;color:#6a9a6a">${money(tot && tot.net)} kept</div>
       <div style="font-size:11px;color:#8a8d96">${(tot && tot.count) || 0} purchases</div>
     </div>`;
   const rows = (data.purchases || []).map(p => {
@@ -994,7 +995,7 @@ async function renderSalesTab() {
       : '<span style="font-size:9px;font-weight:700;color:#a0a0a0;border:1px solid #555;border-radius:3px;padding:0 3px">WEB</span>';
     return `<div class="row" style="align-items:center;">
         <div class="main">
-          <div class="title" style="font-size:13px;">${money(p.amount)} · ${p.credits ?? '?'} credits ${badge}</div>
+          <div class="title" style="font-size:13px;">${money(p.amount)} <span style="color:#6a9a6a">(${money(p.net)} kept)</span> · ${p.credits ?? '?'} cr ${badge}</div>
           <div class="sub">${escapeHtml(p.userName)}${p.transferCode ? ' · <span style="color:#e8c257;font-weight:700;">' + escapeHtml(p.transferCode) + '</span>' : ''} · ${when}</div>
         </div>
         <div class="meta" style="display:flex;flex-direction:column;align-items:flex-end;gap:1px;">
@@ -1091,7 +1092,7 @@ async function loadStats() {
 
 function renderStats() {
   if (!state.stats) return;
-  const { accounts, items, revenue } = state.stats;
+  const { accounts, items, revenue, credits, spend, series } = state.stats;
   const dollars = c => '$' + (c / 100).toFixed(2);
   document.getElementById('stats-section').innerHTML = `
     <div class="stats-grid">
@@ -1117,13 +1118,86 @@ function renderStats() {
         <h3>Revenue</h3>
         <div class="total">${dollars(revenue.totalCents)}</div>
         <div class="breakouts">
-          <span><strong>${dollars(revenue.dayCents)}</strong> 24h</span>
-          <span><strong>${dollars(revenue.weekCents)}</strong> 7d</span>
-          <span><strong>${dollars(revenue.monthCents)}</strong> 30d</span>
+          <span><strong>${dollars(revenue.webCents || 0)}</strong> web</span>
+          <span><strong>${dollars(revenue.iosCents || 0)}</strong> iOS</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <h3>Credits Outstanding</h3>
+        <div class="total">${(credits && credits.outstanding != null ? credits.outstanding : 0).toLocaleString()}</div>
+        <div class="breakouts">
+          <span title="Outstanding credits × avg cost of the last 100 real assessments (${credits && credits.avgAssessmentCost != null ? '$' + credits.avgAssessmentCost.toFixed(3) : '—'} each)"><strong>≈ ${dollars(Math.round(((credits && credits.liability) || 0) * 100))}</strong> if all used</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <h3>API Spend</h3>
+        <div class="total">${dollars((spend && spend.monthCents) || 0)}</div>
+        <div class="breakouts">
+          <span><strong>${dollars((spend && spend.dayCents) || 0)}</strong> 24h</span>
+          <span><strong>${dollars((spend && spend.weekCents) || 0)}</strong> 7d</span>
+          <span><strong>${dollars((spend && spend.monthCents) || 0)}</strong> 30d</span>
         </div>
       </div>
     </div>
+    <div style="margin-top:14px;background:#0e0f12;border:1px solid #23252c;border-radius:8px;padding:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+        <div><span style="font-size:11px;color:#8a8d96;text-transform:uppercase;letter-spacing:1px;">Net revenue vs API spend (30d)</span> <span id="pl-net" style="margin-left:6px;font-size:12px;"></span></div>
+        <div id="chart-gran" style="display:flex;gap:2px;">
+          ${['day', 'week', 'month'].map(g => `<button data-gran="${g}" style="font-size:10px;padding:2px 7px;background:#161821;color:#9ab;border:1px solid #2a2d38;border-radius:4px;cursor:pointer;text-transform:capitalize;">${g}</button>`).join('')}
+        </div>
+      </div>
+      <div id="spend-chart"></div>
+      <div style="display:flex;gap:14px;margin-top:6px;font-size:10px;color:#8a8d96;">
+        <span><span style="display:inline-block;width:8px;height:8px;background:#4caf82;border-radius:2px;"></span> net revenue</span>
+        <span><span style="display:inline-block;width:8px;height:8px;background:#e85d5d;border-radius:2px;"></span> spend</span>
+      </div>
+    </div>
   `;
+  const _series = series || [];
+  const sumRev = _series.reduce((a, b) => a + b.revCents, 0);
+  const sumSpend = _series.reduce((a, b) => a + b.spendCents, 0);
+  const plEl = document.getElementById('pl-net');
+  if (plEl) plEl.innerHTML = `profit <strong style="color:${sumRev - sumSpend >= 0 ? '#4caf82' : '#e85d5d'}">${dollars(sumRev - sumSpend)}</strong> <span style="color:#8a8d96">(${dollars(sumRev)} − ${dollars(sumSpend)})</span>`;
+  window._statSeries = _series;
+  renderSpendChart('day');
+  document.querySelectorAll('#chart-gran button').forEach(b => { b.onclick = () => renderSpendChart(b.dataset.gran); });
+}
+
+// Compact grouped-bar SVG: net revenue (green) vs API spend (red) over the
+// 30-day series, re-bucketed by day / week / month client-side.
+function renderSpendChart(gran) {
+  const el = document.getElementById('spend-chart');
+  if (!el) return;
+  const series = window._statSeries || [];
+  let pts;
+  if (gran === 'day') {
+    pts = series.map(s => ({ label: s.date, rev: s.revCents, spend: s.spendCents }));
+  } else {
+    const size = gran === 'week' ? 7 : 30;
+    pts = [];
+    for (let i = 0; i < series.length; i += size) {
+      const ch = series.slice(i, i + size);
+      pts.push({ label: ch[0].date, rev: ch.reduce((a, b) => a + b.revCents, 0), spend: ch.reduce((a, b) => a + b.spendCents, 0) });
+    }
+  }
+  document.querySelectorAll('#chart-gran button').forEach(b => {
+    const on = b.dataset.gran === gran;
+    b.style.background = on ? '#2a6a4a' : '#161821';
+    b.style.color = on ? '#dfffe9' : '#9ab';
+  });
+  const maxV = Math.max(1, ...pts.map(p => Math.max(p.rev, p.spend)));
+  const W = 100, H = 60, n = pts.length || 1, gw = W / n, bw = Math.max(0.5, gw * 0.34);
+  const y = v => H - (v / maxV) * (H - 6);
+  let bars = '';
+  pts.forEach((p, i) => {
+    const x = i * gw + gw * 0.14;
+    bars += `<rect x="${x.toFixed(2)}" y="${y(p.rev).toFixed(2)}" width="${bw.toFixed(2)}" height="${(H - y(p.rev)).toFixed(2)}" fill="#4caf82"/>`;
+    bars += `<rect x="${(x + bw + gw * 0.06).toFixed(2)}" y="${y(p.spend).toFixed(2)}" width="${bw.toFixed(2)}" height="${(H - y(p.spend)).toFixed(2)}" fill="#e85d5d"/>`;
+  });
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:110px;display:block;">
+      <line x1="0" y1="${H - 0.3}" x2="${W}" y2="${H - 0.3}" stroke="#2a2d38" stroke-width="0.3"/>${bars}
+    </svg>
+    <div style="text-align:right;font-size:9px;color:#8a8d96;margin-top:2px;">peak $${(maxV / 100).toFixed(0)} · ${pts.length} ${gran === 'day' ? 'days' : gran === 'week' ? 'weeks' : 'months'}</div>`;
 }
 
 async function loadUsers(reset = false) {
