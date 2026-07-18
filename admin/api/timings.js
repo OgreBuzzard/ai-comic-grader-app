@@ -73,6 +73,11 @@ export default async function handler(req, res) {
 
     let rows = snap.docs.map(d => ({ key: d.id, ...d.data() }));
 
+    // S20: slab-detection micro-calls (kind:'slabcheck') are sub-penny Haiku
+    // pre-checks that clutter the Logs view and skew sorting. Drop them entirely
+    // so the Logs tab shows only real assessments.
+    rows = rows.filter(r => r.kind !== 'slabcheck');
+
     if (versionFilter) {
       rows = rows.filter(r => r.version === versionFilter);
     }

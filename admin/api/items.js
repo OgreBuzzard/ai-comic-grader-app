@@ -62,7 +62,7 @@ export default async function handler(req, res) {
 
     // ── Params ───────────────────────────────────────────────────────────────
     const sort = (req.query.sort || 'date').toString();
-    const validSorts = ['title', 'date', 'robograde'];
+    const validSorts = ['title', 'date', 'uid']; // S20: replaced 'robograde' with 'uid' (4-char transferCode) per support workflow
     if (!validSorts.includes(sort)) {
       return res.status(400).json({ error: `sort must be one of: ${validSorts.join(', ')}` });
     }
@@ -78,9 +78,11 @@ export default async function handler(req, res) {
     // Done once up-front so we don't do per-item user lookups.
     const usersSnap = await db.collection('users').get();
     const userNames = {};
+    const userCodes = {}; // S20: 4-char transferCode used as the short User ID
     for (const doc of usersSnap.docs) {
       const d = doc.data();
       userNames[doc.id] = d.displayName || d.email || '(no name)';
+      userCodes[doc.id] = d.transferCode || '';
     }
 
     // ── Fetch all items via collection group ─────────────────────────────────
@@ -111,6 +113,7 @@ export default async function handler(req, res) {
         id: d.id,
         uid,
         userName: userNames[uid] || '(unknown user)',
+        transferCode: userCodes[uid] || '',
         title: flat.title || '(untitled)',
         issue: flat.issue || '',
         roboGradeDate: flat.roboGradeDate || null,
@@ -119,6 +122,10 @@ export default async function handler(req, res) {
         assessedCGCGrade: flat.assessedCGCGrade ?? null,
         publicListing: !!flat.publicListing,
         highGradeAssessed,
+        // S20 tier for the 1/2/3-star list badge. Heuristic: Full = 8-slot
+        // interior images present; Deep = high-grade/corner-macro pass; else Main.
+        tier: (Array.isArray(raw.interiorImages) && raw.interiorImages.length) ? 3
+              : ((highGradeAssessed || flat.highGradeTier === true) ? 2 : 1),
         thumbUrl,
         inlineThumb,
       };
@@ -128,7 +135,7 @@ export default async function handler(req, res) {
     // Substring match against title + issue + userName + Grade ID, case-insensitive.
     if (query) {
       allItems = allItems.filter(it => {
-        const hay = `${it.title} ${it.issue} ${it.userName} ${it.roboGradeId}`.toLowerCase();
+        const hay = `${it.title} ${it.issue} ${it.userName} ${it.transferCode} ${it.roboGradeId}`.toLowerCase();
         return hay.includes(query);
       });
     }
@@ -144,18 +151,9 @@ export default async function handler(req, res) {
           const bi = parseInt(b.issue) || 0;
           cmpResult = ai - bi;
         }
-      } else if (sort === 'robograde') {
-        // Items with no score (ungraded) sort to the bottom regardless of
-        // direction — they have no place in either end of a score ranking.
-        const aHas = typeof a.score === 'number';
-        const bHas = typeof b.score === 'number';
-        if (!aHas && !bHas) cmpResult = 0;
-        else if (!aHas) cmpResult = dir === 'desc' ? 1 : -1; // a goes after b on desc
-        else if (!bHas) cmpResult = dir === 'desc' ? -1 : 1;
-        else cmpResult = a.score - b.score;
-        // For the missing-score branches we've already accounted for direction,
-        // so return early to avoid the flip below.
-        if (!aHas || !bHas) return cmpResult;
+      } else if (sort === 'uid') {
+        // Sort by the 4-char transferCode; users with no code ('~') sort last.
+        cmpResult = String(a.transferCode || '~').localeCompare(String(b.transferCode || '~'), undefined, { sensitivity: 'base' });
       } else { // 'date'
         const am = Date.parse(a.roboGradeDate || '') || 0;
         const bm = Date.parse(b.roboGradeDate || '') || 0;
