@@ -941,8 +941,8 @@ async function renderDashboard() {
     <main>
       <div id="stats-section"><div class="loading">Loading stats…</div></div>
       <div class="tabs" id="tabs">
-        <button data-tab="users" class="${state.tab === 'users' ? 'active' : ''}">Users</button>
         <button data-tab="items" class="${state.tab === 'items' ? 'active' : ''}">Items</button>
+        <button data-tab="users" class="${state.tab === 'users' ? 'active' : ''}">Users</button>
         <button data-tab="sales" class="${state.tab === 'sales' ? 'active' : ''}">Sales</button>
         <button data-tab="timings" class="${state.tab === 'timings' ? 'active' : ''}">Logs</button>
       </div>
@@ -956,20 +956,23 @@ async function renderDashboard() {
   _syncCacheCfgDom(); // header was just rebuilt — restore the toggle from state
   document.querySelectorAll('#tabs button').forEach(btn => {
     btn.onclick = () => {
+      if (state.tab === btn.dataset.tab) return;
       state.tab = btn.dataset.tab;
-      renderDashboard();
+      // Switch tabs WITHOUT reloading stats — just restyle the buttons and swap
+      // the tab content. Stats stay cached until you hit the refresh button.
+      document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === state.tab));
+      _renderActiveTab();
     };
   });
   loadStats();
-  if (state.tab === 'timings') {
-    renderTimingsTab();
-  } else if (state.tab === 'items') {
-    renderItemsTab();
-  } else if (state.tab === 'sales') {
-    renderSalesTab();
-  } else {
-    renderUsersTab();
-  }
+  _renderActiveTab();
+}
+
+function _renderActiveTab() {
+  if (state.tab === 'timings') renderTimingsTab();
+  else if (state.tab === 'items') renderItemsTab();
+  else if (state.tab === 'sales') renderSalesTab();
+  else renderUsersTab();
 }
 
 // S20 Sales tab — unified web (Stripe) + iOS (App Store) purchase ledger from
