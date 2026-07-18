@@ -121,6 +121,7 @@ export default async function handler(req, res) {
     const minRG = toNum(q.minRG), maxRG = toNum(q.maxRG);
     const minPG = toNum(q.minPG), maxPG = toNum(q.maxPG);
     const since = q.since ? (Date.parse(q.since) || null) : null;
+    const until = q.until ? (Date.parse(q.until) || null) : null; // upper bound (inclusive) for day/week/month/custom ranges
     const titleQ = q.title ? lc(q.title) : null;
     const typeQ = q.type ? lc(q.type) : null;
     const excludeUids = (q.excludeUid ? String(q.excludeUid).split(',') : [])
@@ -218,11 +219,12 @@ export default async function handler(req, res) {
         if (maxPG != null && pg > maxPG) return false;
       }
       if (since != null) { const d = dateOf(it); if (d == null || d < since) return false; }
+      if (until != null) { const d = dateOf(it); if (d == null || d > until) return false; }
       return true;
     });
 
     const filtersApplied = {
-      minRG, maxRG, minPG, maxPG, since: q.since || null, title: q.title || null,
+      minRG, maxRG, minPG, maxPG, since: q.since || null, until: q.until || null, title: q.title || null,
       type: q.type || null, excludeUid: excludeUids, optInOnly, limit: limit ?? null,
     };
 
