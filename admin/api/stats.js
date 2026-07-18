@@ -49,8 +49,11 @@ export default async function handler(req, res) {
 
     const usersSnap = await db.collection('users').get();
     const accounts = { total: usersSnap.size, day: 0, week: 0, month: 0 };
+    let creditsOutstanding = 0; // total unused credits sitting in all user accounts
     for (const doc of usersSnap.docs) {
-      const ms = Date.parse(doc.data().createdAt || '');
+      const d = doc.data();
+      creditsOutstanding += (d.assessmentCredits || 0);
+      const ms = Date.parse(d.createdAt || '');
       if (Number.isNaN(ms)) continue;
       if (ms >= cutoffs.day) accounts.day++;
       if (ms >= cutoffs.week) accounts.week++;
@@ -68,20 +71,83 @@ export default async function handler(req, res) {
       if (ms >= cutoffs.month) items.month++;
     }
 
+    // iOS purchase docs carry no dollar amount, so map productId → list price.
+    const IOS_PRICE_CENTS = {
+      'app.robograder.credits.stack': 999,
+      'app.robograder.credits.wall': 2999,
+      'app.robograder.credits.shortbox': 9999,
+      'app.robograder.credits.shortbox2': 9999,
+    };
     const purchasesSnap = await db.collection('purchases').get();
-    const revenue = { totalCents: 0, dayCents: 0, weekCents: 0, monthCents: 0 };
+    const revenue = { totalCents: 0, webCents: 0, iosCents: 0, netCents: 0, dayCents: 0, weekCents: 0, monthCents: 0 };
+    const revByDay = {}; // net revenue per day (last 30d) for the chart
     for (const doc of purchasesSnap.docs) {
       const d = doc.data();
-      const amt = d.amountCents || 0;
-      const ms = d.createdAtMs || Date.parse(d.createdAt || '');
+      const isIos = d.source === 'ios_iap';
+      let amt;
+      if (isIos) {
+        // Skip Sandbox/test IAP — not real revenue (was inflating iOS totals).
+        if (d.environment && d.environment !== 'Production') continue;
+        amt = IOS_PRICE_CENTS[d.productId] || 0;
+        revenue.iosCents += amt;
+      } else {
+        amt = d.amountCents || 0;
+        revenue.webCents += amt;
+      }
+      // Net = what you keep: Apple SBP 85%; Stripe amount − 2.9% − $0.30.
+      const netCents = isIos ? Math.round(amt * 0.85) : Math.max(0, Math.round(amt - (amt * 0.029 + 30)));
       revenue.totalCents += amt;
+      revenue.netCents += netCents;
+      const c = d.createdAt;
+      const ms = (c && typeof c.toMillis === 'function') ? c.toMillis() : (d.createdAtMs || Date.parse(c || ''));
       if (Number.isNaN(ms)) continue;
       if (ms >= cutoffs.day) revenue.dayCents += amt;
       if (ms >= cutoffs.week) revenue.weekCents += amt;
-      if (ms >= cutoffs.month) revenue.monthCents += amt;
+      if (ms >= cutoffs.month) { revenue.monthCents += amt; const k = new Date(ms).toISOString().slice(0, 10); revByDay[k] = (revByDay[k] || 0) + netCents; }
     }
 
-    return res.status(200).json({ accounts, items, revenue, generatedAt: new Date().toISOString() });
+    // Avg cost of the last ~100 REAL assessments (excludes slab-checks + errored
+    // rows). One small indexed query (150 most-recent) — does not meaningfully
+    // slow the dashboard. Used to estimate the liability of outstanding credits.
+    // One bounded timings read (recent ~2500 ≈ last ~5 weeks at current volume)
+    // powers three things at once: avg assessment cost, period spend, and the
+    // daily spend series. Bounded so the dashboard stays fast — a true lifetime
+    // spend total would want a daily rollup rather than re-summing every load.
+    let avgAssessmentCost = 0;
+    const spend = { dayCents: 0, weekCents: 0, monthCents: 0 };
+    const spendByDay = {};
+    try {
+      const tSnap = await db.collection('assessment_timings').orderBy('createdAt', 'desc').limit(2500).get();
+      const costs = [];
+      for (const doc of tSnap.docs) {
+        const t = doc.data();
+        const cost = +t.costUsd || 0;
+        const cents = Math.round(cost * 100);
+        const c = t.createdAt;
+        const ms = (c && typeof c.toMillis === 'function') ? c.toMillis() : Date.parse(c || '');
+        if (!Number.isNaN(ms)) {
+          if (ms >= cutoffs.day) spend.dayCents += cents;
+          if (ms >= cutoffs.week) spend.weekCents += cents;
+          if (ms >= cutoffs.month) { spend.monthCents += cents; const k = new Date(ms).toISOString().slice(0, 10); spendByDay[k] = (spendByDay[k] || 0) + cents; }
+        }
+        if (t.kind !== 'slabcheck' && cost > 0 && costs.length < 100) costs.push(cost);
+      }
+      if (costs.length) avgAssessmentCost = costs.reduce((a, b) => a + b, 0) / costs.length;
+    } catch (e) { console.warn('[admin-stats] timings read skipped:', e.message); }
+    const creditLiability = +(creditsOutstanding * avgAssessmentCost).toFixed(2);
+
+    // 30-day daily series (net revenue vs API spend) for the summary chart.
+    const series = [];
+    for (let i = 29; i >= 0; i--) {
+      const k = new Date(now - i * DAY).toISOString().slice(0, 10);
+      series.push({ date: k.slice(5), revCents: revByDay[k] || 0, spendCents: spendByDay[k] || 0 });
+    }
+
+    return res.status(200).json({
+      accounts, items, revenue, spend, series,
+      credits: { outstanding: creditsOutstanding, avgAssessmentCost: +avgAssessmentCost.toFixed(4), liability: creditLiability },
+      generatedAt: new Date().toISOString(),
+    });
 
   } catch (e) {
     console.error('[admin-stats] error:', e);
