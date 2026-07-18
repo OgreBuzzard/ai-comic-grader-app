@@ -79,7 +79,10 @@ export default async function handler(req, res) {
       'app.robograder.credits.shortbox2': 9999,
     };
     const purchasesSnap = await db.collection('purchases').get();
-    const revenue = { totalCents: 0, webCents: 0, iosCents: 0, netCents: 0, dayCents: 0, weekCents: 0, monthCents: 0 };
+    const revenue = {
+      totalCents: 0, webCents: 0, iosCents: 0, netCents: 0, dayCents: 0, weekCents: 0, monthCents: 0,
+      webDayCents: 0, webWeekCents: 0, webMonthCents: 0, iosDayCents: 0, iosWeekCents: 0, iosMonthCents: 0,
+    };
     const revByDay = {}; // net revenue per day (last 30d) for the chart
     for (const doc of purchasesSnap.docs) {
       const d = doc.data();
@@ -101,9 +104,10 @@ export default async function handler(req, res) {
       const c = d.createdAt;
       const ms = (c && typeof c.toMillis === 'function') ? c.toMillis() : (d.createdAtMs || Date.parse(c || ''));
       if (Number.isNaN(ms)) continue;
-      if (ms >= cutoffs.day) revenue.dayCents += amt;
-      if (ms >= cutoffs.week) revenue.weekCents += amt;
-      if (ms >= cutoffs.month) { revenue.monthCents += amt; const k = new Date(ms).toISOString().slice(0, 10); revByDay[k] = (revByDay[k] || 0) + netCents; }
+      const pfx = isIos ? 'ios' : 'web';
+      if (ms >= cutoffs.day) { revenue.dayCents += amt; revenue[pfx + 'DayCents'] += amt; }
+      if (ms >= cutoffs.week) { revenue.weekCents += amt; revenue[pfx + 'WeekCents'] += amt; }
+      if (ms >= cutoffs.month) { revenue.monthCents += amt; revenue[pfx + 'MonthCents'] += amt; const k = new Date(ms).toISOString().slice(0, 10); revByDay[k] = (revByDay[k] || 0) + netCents; }
     }
 
     // Avg cost of the last ~100 REAL assessments (excludes slab-checks + errored

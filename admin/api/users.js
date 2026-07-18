@@ -104,6 +104,7 @@ export default async function handler(req, res) {
           uid: doc.id,
           displayName: u.displayName || u.email || '(no name)',
           email: u.email || '',
+          transferCode: u.transferCode || '',
           assessmentCredits: u.assessmentCredits || 0,
           totalPurchased: u.totalPurchased || 0,
           itemCount,
@@ -139,7 +140,7 @@ export default async function handler(req, res) {
     };
     // Search filter (q): substring match against name + email, case-insensitive.
     const matched = query
-      ? userRows.filter(u => `${u.displayName} ${u.email}`.toLowerCase().includes(query))
+      ? userRows.filter(u => `${u.displayName} ${u.email} ${u.transferCode}`.toLowerCase().includes(query))
       : userRows;
     matched.sort(cmp);
 

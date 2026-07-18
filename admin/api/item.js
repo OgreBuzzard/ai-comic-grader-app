@@ -23,6 +23,40 @@ function parseServiceAccount() {
   return JSON.parse(raw);
 }
 
+// ── FMV (server-side mirror of the app's matchFMV, S20) ─────────────────────
+// Ports index.html's _normalizeKeyTitle / _normalizeKeyIssue / matchFMV verbatim
+// so the admin shows the exact same FMV the app computes. The compressed index
+// (/fmv.json) is fetched from robograder.app and cached in module scope.
+let _fmvCache = null, _fmvAt = 0;
+async function getFmvIndex() {
+  if (_fmvCache && Date.now() - _fmvAt < 10 * 60 * 1000) return _fmvCache; // 10-min cache
+  try {
+    const r = await fetch('https://robograder.app/fmv.json', { cache: 'no-store' });
+    if (r.ok) { const data = await r.json(); if (data && data.books) { _fmvCache = data; _fmvAt = Date.now(); } }
+  } catch (_) { /* keep any stale cache */ }
+  return _fmvCache;
+}
+const _nkTitle = s => !s ? '' : s.toString().trim().replace(/\s+/g, ' ').replace(/^The\s+/i, '').toLowerCase();
+const _nkIssue = s => s == null ? '' : s.toString().trim().replace(/^#/, '').replace(/^0+(\d)/, '$1');
+function matchFmv(idx, title, issue, grade, printing) {
+  if (!idx || !idx.books) return null;
+  if (printing && typeof printing === 'string') {
+    const p = printing.toLowerCase();
+    if (p.includes('facsimile') || p.includes('reprint')) return null;
+  }
+  const g = parseFloat(grade);
+  if (!isFinite(g)) return null;
+  let breaks = idx.books[_nkTitle(title) + '|' + _nkIssue(issue)];
+  if (typeof breaks === 'number' && idx.curves) breaks = idx.curves[breaks];
+  if (!Array.isArray(breaks) || !breaks.length) return null;
+  let tier = breaks[0][1];
+  for (const b of breaks) { if (g >= b[0]) tier = b[1]; else break; }
+  const range = idx.tiers && idx.tiers[String(tier)];
+  return range ? { tier, low: range[0], high: range[1] } : null;
+}
+const _fmvK = v => v == null ? '' : (v >= 1000 ? '$' + (v / 1000) + 'K' : '$' + v);
+const fmtFmv = m => !m ? '' : (m.high == null ? _fmvK(m.low) + '+' : _fmvK(m.low) + '–' + _fmvK(m.high));
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -183,6 +217,14 @@ export default async function handler(req, res) {
       publicListing: !!flat.publicListing,
       enhance: flat.enhance || null,
     };
+
+    // S20: compute FMV live (official grade if graded, else predicted grade).
+    try {
+      const idx = await getFmvIndex();
+      const fmvGrade = item.officialCGCGrade ?? item.assessedCGCGrade;
+      const m = matchFmv(idx, item.title, item.issue, fmvGrade, item.printing);
+      item.fmvRange = m ? fmtFmv(m) : null;
+    } catch (_) { item.fmvRange = null; }
 
     return res.status(200).json({ item });
 
