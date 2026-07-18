@@ -660,11 +660,40 @@ function toggleExclude(uid) {
   const c = document.getElementById('excl-count');
   if (c) c.textContent = state.excludedUids.length;
 }
-// Build the ?...excludeUid=... query shared by export + summary.
+// Show/hide the custom date inputs when the range dropdown changes.
+function _onRangeChange() {
+  const sel = document.getElementById('export-range');
+  const cust = document.getElementById('export-range-custom');
+  if (cust) cust.style.display = (sel && sel.value === 'custom') ? 'inline-flex' : 'none';
+}
+// Translate the selected export range into {since, until} Date bounds (local time).
+// today/7d/30d/month are relative windows; custom reads the two date inputs.
+function _rangeBounds() {
+  const sel = document.getElementById('export-range');
+  const mode = sel ? sel.value : 'all';
+  const now = new Date();
+  const startOfDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+  let since = null, until = null;
+  if (mode === 'today') { since = startOfDay(now); }
+  else if (mode === '7d') { since = startOfDay(now); since.setDate(since.getDate() - 6); }
+  else if (mode === '30d') { since = startOfDay(now); since.setDate(since.getDate() - 29); }
+  else if (mode === 'month') { since = new Date(now.getFullYear(), now.getMonth(), 1); }
+  else if (mode === 'custom') {
+    const f = document.getElementById('export-from');
+    const t = document.getElementById('export-to');
+    if (f && f.value) since = new Date(f.value + 'T00:00:00');
+    if (t && t.value) until = new Date(t.value + 'T23:59:59.999'); // inclusive end-of-day
+  }
+  return { since, until };
+}
+// Build the ?...excludeUid=...&since=...&until=... query shared by export + summary.
 function exportQuery(extra) {
   const parts = [];
   if (extra) parts.push(extra);
   if (state.excludedUids.length) parts.push('excludeUid=' + encodeURIComponent(state.excludedUids.join(',')));
+  const { since, until } = _rangeBounds();
+  if (since) parts.push('since=' + encodeURIComponent(since.toISOString()));
+  if (until) parts.push('until=' + encodeURIComponent(until.toISOString()));
   return parts.length ? '?' + parts.join('&') : '';
 }
 
@@ -890,6 +919,21 @@ async function renderDashboard() {
         <select id="cache-ttl" onchange="_saveCacheCfg()" style="background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px;padding:0 2px;font-size:10px"><option value="1h" ${_cacheCfg.ttl !== '5m' ? 'selected' : ''}>1h</option><option value="5m" ${_cacheCfg.ttl === '5m' ? 'selected' : ''}>5m</option></select>
       </label>
       <button class="sign-out" id="refresh-btn" title="Refresh" style="padding:4px 8px;font-size:13px">&#10227;</button>
+      <label style="font-size:10px;color:#9ab;display:inline-flex;align-items:center;gap:3px" title="Date range applied to Export JSON + Export Summary (by assessment/added date)">
+        <select id="export-range" onchange="_onRangeChange()" style="background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px;padding:1px 2px;font-size:10px">
+          <option value="all">All time</option>
+          <option value="today">Today</option>
+          <option value="7d">Last 7d</option>
+          <option value="30d">Last 30d</option>
+          <option value="month">This month</option>
+          <option value="custom">Custom…</option>
+        </select>
+        <span id="export-range-custom" style="display:none;align-items:center;gap:2px">
+          <input type="date" id="export-from" title="From" style="font-size:10px;padding:1px 2px;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px">
+          <span style="color:#678">–</span>
+          <input type="date" id="export-to" title="To" style="font-size:10px;padding:1px 2px;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px">
+        </span>
+      </label>
       <button class="sign-out" id="summary-btn" style="padding:4px 7px;font-size:11px">Exp. Sum.</button>
       <button class="sign-out" id="export-btn" style="padding:4px 7px;font-size:11px">Exp. JSON</button>
       <button class="sign-out" id="signout-btn" style="padding:4px 7px;font-size:11px">Sign Out</button>
