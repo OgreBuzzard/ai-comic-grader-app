@@ -220,21 +220,21 @@
     background: var(--panel);
     border: 1px solid var(--rule);
     border-radius: 8px;
-    padding: 14px 16px;
+    padding: 9px 12px;
   }
   .stat-card h3 {
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.1em;
     color: var(--text-dim);
-    margin: 0 0 8px;
+    margin: 0 0 4px;
     font-weight: 600;
   }
   .stat-card .total {
-    font-size: 26px;
+    font-size: 22px;
     font-weight: 700;
     color: var(--accent);
-    margin-bottom: 6px;
+    margin-bottom: 3px;
     line-height: 1;
   }
   .stat-card .breakouts {
@@ -977,9 +977,16 @@ async function renderDashboard() {
 async function renderSalesTab() {
   const el = document.getElementById('tab-content');
   el.innerHTML = '<div class="loading">Loading sales…</div>';
-  let data;
-  try { data = await api('/api/purchases'); }
+  try { state.salesData = await api('/api/purchases'); }
   catch (e) { el.innerHTML = `<div class="empty">Sales failed: ${escapeHtml(e.message || String(e))}</div>`; return; }
+  state.salesShown = 20;   // cap to the most recent 20; Load more reveals older
+  _renderSales();
+}
+// Renders the Sales tab from state.salesData, showing state.salesShown rows.
+function _renderSales() {
+  const el = document.getElementById('tab-content');
+  const data = state.salesData;
+  if (!el || !data) return;
   const t = data.totals || {};
   const money = n => '$' + (Number(n) || 0).toFixed(2);
   const card = (label, tot) => `<div style="flex:1;background:#0e0f12;border:1px solid #23252c;border-radius:8px;padding:10px 12px;min-width:0;text-align:center;">
@@ -988,7 +995,9 @@ async function renderSalesTab() {
       <div style="font-size:11px;color:#6a9a6a">${money(tot && tot.net)} kept</div>
       <div style="font-size:11px;color:#8a8d96">${(tot && tot.count) || 0} purchases</div>
     </div>`;
-  const rows = (data.purchases || []).map(p => {
+  const all = data.purchases || [];
+  const shown = state.salesShown || 20;
+  const rows = all.slice(0, shown).map(p => {
     const when = p.ts ? _fmtDateTime(new Date(p.ts).toISOString()) : '—';
     const badge = p.platform === 'ios'
       ? '<span style="font-size:9px;font-weight:700;color:#0a84ff;border:1px solid #0a84ff;border-radius:3px;padding:0 3px">iOS</span>'
@@ -1004,15 +1013,19 @@ async function renderSalesTab() {
         </div>
       </div>`;
   }).join('');
+  const more = all.length > shown ? `<button class="load-more" id="load-more-sales">Load more (${all.length - shown})</button>` : '';
   el.innerHTML = `
     <div style="display:flex;gap:8px;margin-bottom:12px;">${card('Web', t.web)}${card('iOS', t.ios)}${card('Combined', t.combined)}</div>
     ${rows || '<div class="empty">No purchases yet.</div>'}
+    ${more}
   `;
+  const mb = document.getElementById('load-more-sales');
+  if (mb) mb.onclick = () => { state.salesShown = shown + 20; _renderSales(); };
 }
 
 function renderUsersTab() {
   document.getElementById('tab-content').innerHTML = `
-    <input type="search" id="users-search" placeholder="Search by name or email…" class="search-input" value="${escapeAttr(state.userSearch || '')}">
+    <input type="search" id="users-search" placeholder="Search by name, email, or ID…" class="search-input" value="${escapeAttr(state.userSearch || '')}">
     <div class="sort-bar" id="sort-bar"></div>
     <div id="users-section"><div class="loading">Loading users…</div></div>
   `;
@@ -1121,12 +1134,9 @@ function renderStats() {
           <span><strong>${dollars(revenue.webCents || 0)}</strong> web</span>
           <span><strong>${dollars(revenue.iosCents || 0)}</strong> iOS</span>
         </div>
-      </div>
-      <div class="stat-card">
-        <h3>Credits Outstanding</h3>
-        <div class="total">${(credits && credits.outstanding != null ? credits.outstanding : 0).toLocaleString()}</div>
-        <div class="breakouts">
-          <span title="Outstanding credits × avg cost of the last 100 real assessments (${credits && credits.avgAssessmentCost != null ? '$' + credits.avgAssessmentCost.toFixed(3) : '—'} each)"><strong>≈ ${dollars(Math.round(((credits && credits.liability) || 0) * 100))}</strong> if all used</span>
+        <div style="margin-top:5px;font-size:10px;color:#8a8d96;line-height:1.5;">
+          <div>web&nbsp; <strong style="color:#c9c4bd">${dollars(revenue.webDayCents || 0)}</strong> 24h · <strong style="color:#c9c4bd">${dollars(revenue.webWeekCents || 0)}</strong> 7d · <strong style="color:#c9c4bd">${dollars(revenue.webMonthCents || 0)}</strong> 30d</div>
+          <div>iOS&nbsp; <strong style="color:#c9c4bd">${dollars(revenue.iosDayCents || 0)}</strong> 24h · <strong style="color:#c9c4bd">${dollars(revenue.iosWeekCents || 0)}</strong> 7d · <strong style="color:#c9c4bd">${dollars(revenue.iosMonthCents || 0)}</strong> 30d</div>
         </div>
       </div>
       <div class="stat-card">
@@ -1136,6 +1146,13 @@ function renderStats() {
           <span><strong>${dollars((spend && spend.dayCents) || 0)}</strong> 24h</span>
           <span><strong>${dollars((spend && spend.weekCents) || 0)}</strong> 7d</span>
           <span><strong>${dollars((spend && spend.monthCents) || 0)}</strong> 30d</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <h3>Credits Outstanding</h3>
+        <div class="total">${(credits && credits.outstanding != null ? credits.outstanding : 0).toLocaleString()}</div>
+        <div class="breakouts">
+          <span title="Outstanding credits × avg cost of the last 100 real assessments (${credits && credits.avgAssessmentCost != null ? '$' + credits.avgAssessmentCost.toFixed(3) : '—'} each)"><strong>≈ ${dollars(Math.round(((credits && credits.liability) || 0) * 100))}</strong> if all used</span>
         </div>
       </div>
     </div>
@@ -1420,7 +1437,7 @@ async function loadTimings(reset = false) {
   }
   const offset = state.timingsList.length;
   const params = new URLSearchParams({
-    limit: '50',
+    limit: '20',
     offset: String(offset),
     filter: state.timingsFilter || 'all'
   });
@@ -1934,6 +1951,15 @@ async function showItem(uid, id, fromTab) {
   }
 }
 
+// Jump from the item detail view to the Items tab, pre-filtered to one user
+// (by their 4-char transferCode, which the items search matches).
+function jumpToUserItems(code) {
+  if (!code) return;
+  state.tab = 'items';
+  state.itemSearch = code;
+  renderDashboard();
+}
+
 function renderItemDetail(it) {
   const v = (x) => (x === null || x === undefined || x === '') ? '—' : x;
   const fieldGrid = (pairs) => `
@@ -1961,7 +1987,7 @@ function renderItemDetail(it) {
         ${it.cornerImages && it.cornerImages.length > 0 ? `<span class="pill" style="color:var(--accent);"><strong>HG</strong> assessed</span>` : ''}
       </div>
       <div style="margin-top:6px;font-size:12px;color:#9aa;">
-        ${it.userName ? escapeHtml(it.userName) : 'Unknown user'}${it.transferCode ? ` · <span style="color:#e8c257;font-weight:700;">${escapeHtml(it.transferCode)}</span>` : ''}${it.userEmail ? ` · <a href="mailto:${escapeAttr(it.userEmail)}?subject=${encodeURIComponent('Robograder — ' + (it.title || '') + (it.issue ? ' #' + it.issue : ''))}" style="color:#7fd0ff;text-decoration:none;">✉ email user</a>` : ''}${it.fmv ? ` · <span style="color:#7fd0ff;">FMV ${escapeHtml(String(it.fmv))}</span>` : ''}
+        ${it.transferCode ? `<span onclick="jumpToUserItems('${escapeAttr(it.transferCode)}')" style="cursor:pointer;text-decoration:underline dotted;" title="Show all of this user's items">${it.userName ? escapeHtml(it.userName) : 'Unknown user'} · <span style="color:#e8c257;font-weight:700;">${escapeHtml(it.transferCode)}</span></span>` : (it.userName ? escapeHtml(it.userName) : 'Unknown user')}${it.userEmail ? ` · <a href="mailto:${escapeAttr(it.userEmail)}?subject=${encodeURIComponent('Robograder — ' + (it.title || '') + (it.issue ? ' #' + it.issue : ''))}" style="color:#7fd0ff;text-decoration:none;">✉ email user</a>` : ''}${(it.fmvRange || it.fmv) ? ` · <span style="color:#7fd0ff;">FMV ${escapeHtml(String(it.fmvRange || it.fmv))}</span>` : ''}
       </div>
     </div>
 
