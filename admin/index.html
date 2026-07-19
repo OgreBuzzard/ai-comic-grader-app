@@ -1131,15 +1131,14 @@ function renderStats() {
         </div>
       </div>
       <div class="stat-card">
-        <h3>Revenue</h3>
-        <div class="total">${dollars(revenue.totalCents)}</div>
+        <h3>Revenue (net)</h3>
+        <div class="total">${dollars(revenue.netCents || 0)}</div>
         <div class="breakouts">
-          <span><strong>${dollars(revenue.webCents || 0)}</strong> web</span>
-          <span><strong>${dollars(revenue.iosCents || 0)}</strong> iOS</span>
+          <span><strong>${dollars(revenue.webNetCents || 0)}</strong> web</span>
+          <span><strong>${dollars(revenue.iosNetCents || 0)}</strong> iOS</span>
         </div>
-        <div style="margin-top:5px;font-size:10px;color:#8a8d96;line-height:1.5;">
-          <div>web&nbsp; <strong style="color:#c9c4bd">${dollars(revenue.webDayCents || 0)}</strong> 24h · <strong style="color:#c9c4bd">${dollars(revenue.webWeekCents || 0)}</strong> 7d · <strong style="color:#c9c4bd">${dollars(revenue.webMonthCents || 0)}</strong> 30d</div>
-          <div>iOS&nbsp; <strong style="color:#c9c4bd">${dollars(revenue.iosDayCents || 0)}</strong> 24h · <strong style="color:#c9c4bd">${dollars(revenue.iosWeekCents || 0)}</strong> 7d · <strong style="color:#c9c4bd">${dollars(revenue.iosMonthCents || 0)}</strong> 30d</div>
+        <div style="margin-top:5px;font-size:10px;color:#8a8d96;line-height:1.5;" title="Net = what you keep after Stripe (2.9% + $0.30) / Apple (15% SBP) fees">
+          gross ${dollars(revenue.totalCents || 0)} · fees −${dollars((revenue.totalCents || 0) - (revenue.netCents || 0))}
         </div>
       </div>
       <div class="stat-card">
