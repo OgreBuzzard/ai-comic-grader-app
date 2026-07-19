@@ -126,6 +126,14 @@ export default async function handler(req, res) {
   const STRIKE_LOCKOUT_DURATION_MS = 24 * 60 * 60 * 1000;
   const STRIKE_PERMANENT_THRESHOLD = 10;
   const STRIKE_PERMANENT_WINDOW_MS = 96 * 60 * 60 * 1000;
+  // S20: two strike categories. HARD = true non-comic abuse (strict 3/24h + the
+  // 10/96h permanent flag). SOFT = comic-type failures (crop failure, missing
+  // images, etc.) — a more lenient 10/24h gate so an occasional bad photo from a
+  // legit high-volume user doesn't lock them, while someone hammering the same
+  // book with a single cover 40× still gets stopped.
+  const HARD_STRIKE_GATES = ['NOT_COMIC', 'FLAGGED'];
+  const STRIKE_SOFT_THRESHOLD = 10;
+  const STRIKE_SOFT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
   function countStrikesInWindow(strikeHistory, windowMs) {
     if (!Array.isArray(strikeHistory)) return 0;
@@ -1354,24 +1362,30 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           const snap = await _userRef.get();
           const data = snap.exists ? snap.data() : {};
           const strikeHistory = Array.isArray(data.strikeHistory) ? [...data.strikeHistory] : [];
+          const _cat = HARD_STRIKE_GATES.includes(parsed.gateResult) ? 'hard' : 'soft';
           strikeHistory.push({
             timestamp: new Date().toISOString(),
             gateResult: parsed.gateResult,
+            category: _cat,
             reason: parsed.gateReason || ''
           });
-          const totalStrikes = strikeHistory.length;
-          const recent24h = countStrikesInWindow(strikeHistory, STRIKE_LOCKOUT_WINDOW_MS);
-          const recent96h = countStrikesInWindow(strikeHistory, STRIKE_PERMANENT_WINDOW_MS);
+          // Count by category (backfill category for legacy strikes via gateResult).
+          const _catOf = s => s.category || (HARD_STRIKE_GATES.includes(s.gateResult) ? 'hard' : 'soft');
+          const hardHist = strikeHistory.filter(s => _catOf(s) === 'hard');
+          const softHist = strikeHistory.filter(s => _catOf(s) === 'soft');
+          const hard24 = countStrikesInWindow(hardHist, STRIKE_LOCKOUT_WINDOW_MS);
+          const soft24 = countStrikesInWindow(softHist, STRIKE_SOFT_WINDOW_MS);
+          const hard96 = countStrikesInWindow(hardHist, STRIKE_PERMANENT_WINDOW_MS);
           const update = {
-            strikes: totalStrikes,
+            strikes: strikeHistory.length,
             strikeHistory,
             lastStrikeAt: new Date().toISOString()
           };
-          if (recent96h >= STRIKE_PERMANENT_THRESHOLD) {
+          if (hard96 >= STRIKE_PERMANENT_THRESHOLD) {
             update.accountFlagged = true;
             update.flaggedAt = data.flaggedAt || new Date().toISOString();
             _lockoutInfo = { type: 'permanent' };
-          } else if (recent24h >= STRIKE_LOCKOUT_THRESHOLD) {
+          } else if (hard24 >= STRIKE_LOCKOUT_THRESHOLD || soft24 >= STRIKE_SOFT_THRESHOLD) {
             update.assessmentLockedUntil = new Date(Date.now() + STRIKE_LOCKOUT_DURATION_MS).toISOString();
             _lockoutInfo = { type: 'temp', unlockAt: update.assessmentLockedUntil };
           }
