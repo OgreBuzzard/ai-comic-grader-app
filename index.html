@@ -2337,8 +2337,13 @@ function isDeepAssessmentComplete(item) {
 // recomputing live eligibility, which was the cause of tiers vanishing.
 function stickTierUnlocks(item) {
   if (!item) return item;
-  // Deep: qualifies if highGradeUnlocked was ever set, or deep has run.
-  if (item.highGradeUnlocked === true || isDeepAssessmentComplete(item)) {
+  // Deep: qualifies if highGradeUnlocked was ever set, or deep has run, OR the
+  // CURRENT grade is at/above the threshold (RG >= 90). The score condition
+  // covers ADMIN RE-SCORES that cross the threshold; latching is one-way — a
+  // later re-score that drops below threshold never clears it.
+  if (item.highGradeUnlocked === true
+      || isDeepAssessmentComplete(item)
+      || (item.roboGrade && typeof item.roboGrade.score === 'number' && item.roboGrade.score >= 90)) {
     item.deepUnlocked = true;
   }
   // Full: qualifies if currently full-eligible, or full has run. (Per Matt
@@ -2677,13 +2682,19 @@ async function initFirebase() {
   const _tSnap = Date.now();
   fsOnSnapshot(userItemsCollection(), snap => {
     console.log("[load] snapshot", snap.docs.length, "docs in", Date.now() - _tSnap, "ms", _firstSnap ? "(initial)" : "(update)");
-    items = snap.docs.map(d => flattenForApp({
-      id: d.id,
-      ...d.data()
-    })).map(c => ({
-      ...c,
-      pageQuality: normPageQuality(c.pageQuality)
-    }));
+    // S20: guard each doc so a single malformed item can't throw and wipe the
+    // whole list. A user seeing ONLY the sample book is the signature of this
+    // map throwing on one bad entry — now the bad one is skipped (and logged)
+    // and the rest still load.
+    items = snap.docs.map(d => {
+      try {
+        const c = flattenForApp({ id: d.id, ...d.data() });
+        return { ...c, pageQuality: normPageQuality(c.pageQuality) };
+      } catch (e) {
+        console.error("[load] skipped unparseable item", d.id, e);
+        return null;
+      }
+    }).filter(Boolean);
     if (items.length === 0) {
       items = [ {
         ...SAMPLE_COMIC
@@ -3155,13 +3166,15 @@ async function loadItems() {
   try {
     const snap = await fsGetDocs(userItemsCollection());
     console.log("[load] fetch", snap.docs.length, "docs in", Date.now() - _tLoad, "ms");
-    items = snap.docs.map(d => flattenForApp({
-      id: d.id,
-      ...d.data()
-    })).map(c => ({
-      ...c,
-      pageQuality: normPageQuality(c.pageQuality)
-    }));
+    items = snap.docs.map(d => {
+      try {
+        const c = flattenForApp({ id: d.id, ...d.data() });
+        return { ...c, pageQuality: normPageQuality(c.pageQuality) };
+      } catch (e) {
+        console.error("[load] skipped unparseable item", d.id, e);
+        return null;
+      }
+    }).filter(Boolean);
   } catch (e) {
     console.error("Load error:", e);
     items = [];
