@@ -2706,6 +2706,7 @@ async function initFirebase() {
       refreshHeaderControls();
       renderList();
       updateStats();
+      _revertPrintStates();   // S20: Print is a temporary state — revert any persisted Print books on load
       if (typeof window.signalAppReady === "function") window.signalAppReady();
     } else {
       if (view === "list") renderList();
@@ -4729,6 +4730,24 @@ async function printQueueSheet() {
 // S17: toggle an entry into/out of the Print section from the List view's mini
 // LABEL button. Going TO Print stores the prior ownership; coming back restores
 // it. Persists to Firestore and re-renders the list (the book jumps sections).
+// S20: "Print" ownership is a temporary label-printing workflow state — it
+// should not survive across app sessions. On load, revert any persisted Print
+// book to its prior ownership (default Owned). This also permanently clears the
+// earlier issue where books stuck in Print became invisible when print mode was off.
+async function _revertPrintStates() {
+  const stuck = items.filter(c => (c.ownership || "Owned") === "Print" && c.id !== SAMPLE_COMIC_ID);
+  if (!stuck.length) return;
+  for (const c of stuck) {
+    const restore = c.priorOwnership || "Owned";
+    try {
+      const ref = fsDoc(window._db, "users", window._currentUser.uid, "items", c.id);
+      await fsSetDoc(ref, { ownership: restore, priorOwnership: null }, { merge: true });
+      c.ownership = restore; c.priorOwnership = null;
+    } catch (e) { console.warn("[print] revert failed", c.id, e); }
+  }
+  renderList();
+}
+
 async function togglePrintState(id) {
   const comic = items.find(c => c.id === id);
   if (!comic) return;
