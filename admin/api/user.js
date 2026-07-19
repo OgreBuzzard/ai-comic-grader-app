@@ -151,6 +151,16 @@ export default async function handler(req, res) {
           });
           auditWritten = auditRef.id;
 
+          // S20 gift-credit marker: when the admin RAISES credits, stamp a
+          // marker the app reads to show the "bestowed" pop-up. Only fires on
+          // this manual-grant PATCH path — never on purchases (those credit via
+          // the Stripe webhook / verify_iap, which don't touch this endpoint).
+          if (typeof update.assessmentCredits === 'number') {
+            const prevC = typeof before.assessmentCredits === 'number' ? before.assessmentCredits : 0;
+            const delta = update.assessmentCredits - prevC;
+            if (delta > 0) update.giftCredits = { amount: delta, at: new Date(nowMs).toISOString() };
+          }
+
           // The user-doc update goes through the same transaction — both
           // commit together or both are rolled back. update() requires the
           // doc to exist (we verified above via priorSnap.exists).
