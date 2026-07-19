@@ -994,8 +994,7 @@ function _renderSales() {
   const money = n => '$' + (Number(n) || 0).toFixed(2);
   const card = (label, tot) => `<div style="flex:1;background:#0e0f12;border:1px solid #23252c;border-radius:8px;padding:10px 12px;min-width:0;text-align:center;">
       <div style="font-size:11px;color:#8a8d96;text-transform:uppercase;letter-spacing:1px">${label}</div>
-      <div style="font-size:18px;font-weight:700;color:#7fd0ff">${money(tot && tot.amount)}</div>
-      <div style="font-size:11px;color:#6a9a6a">${money(tot && tot.net)} kept</div>
+      <div style="font-size:14px;font-weight:700;color:#7fd0ff">${money(tot && tot.amount)} <span style="color:#6a9a6a">(${money(tot && tot.net)})</span></div>
       <div style="font-size:11px;color:#8a8d96">${(tot && tot.count) || 0} purchases</div>
     </div>`;
   const all = data.purchases || [];
@@ -1007,12 +1006,12 @@ function _renderSales() {
       : '<span style="font-size:9px;font-weight:700;color:#a0a0a0;border:1px solid #555;border-radius:3px;padding:0 3px">WEB</span>';
     return `<div class="row" style="align-items:center;">
         <div class="main">
-          <div class="title" style="font-size:13px;">${money(p.amount)} <span style="color:#6a9a6a">(${money(p.net)} kept)</span> · ${p.credits ?? '?'} cr ${badge}</div>
+          <div class="title" style="font-size:13px;">${money(p.amount)} <span style="color:#6a9a6a">(${money(p.net)})</span> · ${p.credits ?? '?'} cr ${badge}</div>
           <div class="sub">${escapeHtml(p.userName)}${p.transferCode ? ' · <span style="color:#e8c257;font-weight:700;">' + escapeHtml(p.transferCode) + '</span>' : ''} · ${when}</div>
         </div>
         <div class="meta" style="display:flex;flex-direction:column;align-items:flex-end;gap:1px;">
-          <div style="font-size:11px;color:#9aa;">${p.userCredits ?? '—'} cr bal</div>
-          <div style="font-size:11px;color:#9aa;">${p.bookCount ?? 0} books</div>
+          <div style="font-size:11px;color:#9aa;">${p.userCredits ?? '—'} credits</div>
+          <div style="font-size:11px;color:#9aa;">${p.bookCount ?? 0} items</div>
         </div>
       </div>`;
   }).join('');
