@@ -2170,6 +2170,10 @@ function renderItemDetail(it) {
       </div>
       <div id="rescore-result" style="margin-top:8px;font-size:12px;color:#aaa;"></div>
     </div>
+    <div style="margin-top:20px;border-top:1px solid #3a1a1a;padding-top:14px;">
+      <button onclick="deleteItemConfirm()" style="width:100%;padding:10px;background:#2a1414;color:#e85050;border:1px solid #5a2a2a;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🗑 Delete this entry (permanent)</button>
+      <div id="delete-result" style="margin-top:6px;font-size:11px;color:#9aa;"></div>
+    </div>
   `;
 
   // Store item data for defect editing
@@ -2213,7 +2217,7 @@ function renderDefectList() {
     const parts = [d.location, d.measurement].filter(Boolean).join(', ');
     const cb = d.colorBreaking ? ' <span style="color:#e85050;font-size:9px;">CB</span>' : '';
     return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:${i % 2 === 0 ? '#111' : '#161616'};border-radius:4px;margin-bottom:2px;">
-      <button onclick="removeDefect(${i})" style="width:22px;height:22px;background:#3a1a1a;color:#e85050;border:1px solid #5a2a2a;border-radius:4px;font-size:14px;line-height:1;cursor:pointer;flex-shrink:0">×</button>
+      <button onclick="removeDefect(${i})" style="${_armedDefect === i ? 'padding:0 6px;height:22px;background:#e85050;color:#fff;border:1px solid #e85050;border-radius:4px;font-size:10px;font-weight:700;line-height:1;cursor:pointer;flex-shrink:0' : 'width:22px;height:22px;background:#3a1a1a;color:#e85050;border:1px solid #5a2a2a;border-radius:4px;font-size:14px;line-height:1;cursor:pointer;flex-shrink:0'}">${_armedDefect === i ? 'tap to remove' : '×'}</button>
       <span style="flex:1;font-size:11px;color:#ddd;"><strong>${escapeHtml(d.type || '?')}</strong>${parts ? ' — ' + escapeHtml(parts) : ''}${cb}</span>
       <span style="font-size:10px;font-weight:700;color:${sevColor};letter-spacing:0.5px;flex-shrink:0">${sev.toUpperCase()}</span>
     </div>`;
@@ -2232,9 +2236,35 @@ function renderDefectList() {
   `).join('');
 }
 
+// Two-tap delete: first tap ARMS the row (turns it red, "tap to remove"), a
+// second tap within 2.5s removes it. Prevents accidental deletes while scrolling.
+let _armedDefect = -1;
 function removeDefect(idx) {
-  window._adminDefects.splice(idx, 1);
+  if (_armedDefect === idx) {           // second tap = confirm
+    _armedDefect = -1;
+    window._adminDefects.splice(idx, 1);
+    renderDefectList();
+    return;
+  }
+  _armedDefect = idx;                    // first tap = arm
   renderDefectList();
+  setTimeout(() => { if (_armedDefect === idx) { _armedDefect = -1; renderDefectList(); } }, 2500);
+}
+
+// Admin delete of a junk/abuse entry, gated by a confirm dialog.
+async function deleteItemConfirm() {
+  const it = window._adminItem; if (!it) return;
+  const label = (it.title || 'this entry') + (it.issue ? ' #' + it.issue : '');
+  if (!confirm(`Permanently delete "${label}" from Firestore?\n\nThis removes the item record and cannot be undone.`)) return;
+  const el = document.getElementById('delete-result');
+  if (el) el.textContent = 'Deleting…';
+  try {
+    await api(`/api/item?uid=${encodeURIComponent(it.uid)}&id=${encodeURIComponent(it.id)}`, { method: 'DELETE' });
+    if (state.tab !== 'users') state.tab = 'items';
+    renderDashboard();
+  } catch (e) {
+    if (el) { el.style.color = '#e85050'; el.textContent = 'Delete failed: ' + (e.message || e); }
+  }
 }
 
 function addDefectFromForm() {
