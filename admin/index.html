@@ -593,6 +593,12 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 
 <script>
+// Initialize Vercel Web Analytics
+const vaScript = document.createElement('script');
+vaScript.type = 'module';
+vaScript.textContent = 'import { inject } from "https://cdn.jsdelivr.net/npm/@vercel/analytics@2.0.1/dist/index.mjs"; inject();';
+document.head.appendChild(vaScript);
+
 // ── Firebase config ────────────────────────────────────────────────────────
 // Same project as the main app. These are public client keys — security is
 // enforced server-side by the admin email allowlist on each API endpoint.

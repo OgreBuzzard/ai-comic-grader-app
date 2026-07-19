@@ -39,6 +39,10 @@
   <div id="status" class="status"><div class="spinner"></div><br>Loading...</div>
 
 <script type="module">
+  // Initialize Vercel Web Analytics
+  import { inject } from 'https://cdn.jsdelivr.net/npm/@vercel/analytics@2.0.1/dist/index.mjs';
+  inject();
+
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
   import { getAuth, GoogleAuthProvider, OAuthProvider, signInWithRedirect, getRedirectResult } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 

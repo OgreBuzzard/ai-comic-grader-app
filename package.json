@@ -5,6 +5,7 @@
   "dependencies": {
     "stripe": "^16.0.0",
     "firebase-admin": "^12.0.0",
-    "app-store-server-api": "^1.0.0"
+    "app-store-server-api": "^1.0.0",
+    "@vercel/analytics": "^2.0.1"
   }
 }
