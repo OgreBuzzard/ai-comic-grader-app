@@ -24,6 +24,16 @@ const IOS_PRICE = {
   'app.robograder.credits.shortbox2': 99.99,
 };
 
+// "What you keep" after the platform's cut.
+//   Apple: Small Business Program → you keep 85% (15% commission).
+//   Stripe: US standard 2.9% + $0.30 per transaction.
+const APPLE_KEEP = 0.85;
+const STRIPE_PCT = 0.029;
+const STRIPE_FIXED = 0.30;
+const netOf = (amount, isIos) => isIos
+  ? +(amount * APPLE_KEEP).toFixed(2)
+  : +Math.max(0, amount - (amount * STRIPE_PCT + STRIPE_FIXED)).toFixed(2);
+
 // Normalize the mixed createdAt (Firestore Timestamp on iOS, ISO string on web).
 function tsMs(p) {
   const c = p.createdAt;
@@ -74,19 +84,23 @@ export default async function handler(req, res) {
       bookCounts[uid] = (bookCounts[uid] || 0) + 1;
     });
 
-    const totals = { web: { count: 0, amount: 0 }, ios: { count: 0, amount: 0 } };
+    const totals = { web: { count: 0, amount: 0, net: 0 }, ios: { count: 0, amount: 0, net: 0 } };
     let rows = purchSnap.docs.map(doc => {
       const p = doc.data();
       const uid = p.userId || '';
       const isIos = p.source === 'ios_iap';
+      // Skip Sandbox/test IAP buys — not real revenue (was inflating iOS totals).
+      if (isIos && p.environment && p.environment !== 'Production') return null;
       const amount = isIos ? (IOS_PRICE[p.productId] || 0) : ((p.amountCents || 0) / 100);
+      const net = netOf(amount, isIos);   // what you keep after the platform cut
       const u = uinfo[uid] || {};
       const t = isIos ? totals.ios : totals.web;
-      t.count++; t.amount = +(t.amount + amount).toFixed(2);
+      t.count++; t.amount = +(t.amount + amount).toFixed(2); t.net = +(t.net + net).toFixed(2);
       return {
         id: doc.id,
         platform: isIos ? 'ios' : 'web',
         amount,
+        net,
         credits: p.credits ?? null,
         userId: uid,
         userName: u.name || '(unknown user)',
@@ -96,10 +110,15 @@ export default async function handler(req, res) {
         ts: tsMs(p),
       };
     });
+    rows = rows.filter(Boolean);             // drop skipped Sandbox rows
     rows.sort((a, b) => b.ts - a.ts);        // reverse chronological
     rows = rows.slice(0, limit);
 
-    const combined = { count: totals.web.count + totals.ios.count, amount: +(totals.web.amount + totals.ios.amount).toFixed(2) };
+    const combined = {
+      count: totals.web.count + totals.ios.count,
+      amount: +(totals.web.amount + totals.ios.amount).toFixed(2),
+      net: +(totals.web.net + totals.ios.net).toFixed(2),
+    };
 
     return res.status(200).json({
       purchases: rows,
