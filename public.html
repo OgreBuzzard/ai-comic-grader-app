@@ -31,6 +31,12 @@
 <!-- Shared RoboGrade panel renderer (S12). Same module index.html uses for
      the detail view. Edit only at /robograde-panel.js. -->
 <script src="/robograde-panel.js"></script>
+<!-- Vercel Web Analytics -->
+<script type="module">
+import { inject } from 'https://cdn.jsdelivr.net/npm/@vercel/analytics@2.0.1/dist/index.mjs';
+inject();
+</script>
+
 
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
