@@ -80,7 +80,7 @@ export default async function handler(req, res) {
     };
     const purchasesSnap = await db.collection('purchases').get();
     const revenue = {
-      totalCents: 0, webCents: 0, iosCents: 0, netCents: 0, dayCents: 0, weekCents: 0, monthCents: 0,
+      totalCents: 0, webCents: 0, iosCents: 0, netCents: 0, webNetCents: 0, iosNetCents: 0, dayCents: 0, weekCents: 0, monthCents: 0,
       webDayCents: 0, webWeekCents: 0, webMonthCents: 0, iosDayCents: 0, iosWeekCents: 0, iosMonthCents: 0,
     };
     const revByDay = {}; // net revenue per day (last 30d) for the chart
@@ -101,6 +101,7 @@ export default async function handler(req, res) {
       const netCents = isIos ? Math.round(amt * 0.85) : Math.max(0, Math.round(amt - (amt * 0.029 + 30)));
       revenue.totalCents += amt;
       revenue.netCents += netCents;
+      if (isIos) revenue.iosNetCents += netCents; else revenue.webNetCents += netCents;
       const c = d.createdAt;
       const ms = (c && typeof c.toMillis === 'function') ? c.toMillis() : (d.createdAtMs || Date.parse(c || ''));
       if (Number.isNaN(ms)) continue;
@@ -140,11 +141,20 @@ export default async function handler(req, res) {
     } catch (e) { console.warn('[admin-stats] timings read skipped:', e.message); }
     const creditLiability = +(creditsOutstanding * avgAssessmentCost).toFixed(2);
 
-    // 30-day daily series (net revenue vs API spend) for the summary chart.
+    // Infra cost estimates layered on top of the Anthropic API spend so the
+    // dashboard reflects true burn. Tune these two constants as usage changes:
+    // Firebase ~$1/day; Vercel $20/mo amortized to ~$0.66/day.
+    const FIREBASE_DAILY_CENTS = 100, VERCEL_DAILY_CENTS = 66;
+    const INFRA_DAILY = FIREBASE_DAILY_CENTS + VERCEL_DAILY_CENTS;
+    spend.dayCents += INFRA_DAILY;
+    spend.weekCents += INFRA_DAILY * 7;
+    spend.monthCents += INFRA_DAILY * 30;
+
+    // 30-day daily series (net revenue vs total spend incl. infra) for the chart.
     const series = [];
     for (let i = 29; i >= 0; i--) {
       const k = new Date(now - i * DAY).toISOString().slice(0, 10);
-      series.push({ date: k.slice(5), revCents: revByDay[k] || 0, spendCents: spendByDay[k] || 0 });
+      series.push({ date: k.slice(5), revCents: revByDay[k] || 0, spendCents: (spendByDay[k] || 0) + INFRA_DAILY });
     }
 
     return res.status(200).json({
