@@ -1,0 +1,10 @@
+# macOS Finder metadata — never belongs in the repo
+.DS_Store
+**/.DS_Store
+
+# Editor / OS junk
+*.swp
+Thumbs.db
+
+# Dependencies (installed locally, not committed)
+node_modules/
