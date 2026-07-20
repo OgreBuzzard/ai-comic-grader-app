@@ -6013,6 +6013,17 @@ function mountResults(cgc, psa) {
       btn.style.background = "#2a7a3a";
       btn.style.color = "#fff";
       btn.style.textAlign = "center";
+      // S20 (#35): the Main pass caps at RG 92 (9.2). When a book hits that
+      // ceiling the grade may actually be higher — the standard pass just can't
+      // resolve past it. Surface a one-line nudge under the Deep button so the
+      // user knows more images could revise the grade upward.
+      if (roboScore != null && roboScore >= 92 && !document.getElementById("main-ceiling-note")) {
+        const _cap = document.createElement("div");
+        _cap.id = "main-ceiling-note";
+        _cap.textContent = "Additional images could possibly revise the grade higher.";
+        _cap.style.cssText = "margin-top:8px;font-size:11px;color:#9cc76a;text-align:center;line-height:1.4;max-width:260px;padding:0 8px;";
+        if (btn.parentNode) btn.parentNode.appendChild(_cap);
+      }
     } else if (isPostDeepRun) {
       const _fullEligible = isFullAssessmentEligible({
         title: cgc && cgc.title || formData.title,
@@ -7727,7 +7738,13 @@ function renderForm() {
     const ambient = cornerCount === 4 ? "#1a4a2a" : "#2a2a2a";
     const ambientText = cornerCount === 4 ? "#6abf6a" : "#6a6a6a";
     const baseLabel = alreadyRun ? "RE-RUN DEEP ASSESSMENT" : "DEEP ASSESSMENT";
-    const _hgReason = formData.highGradeReason === "key"
+    // S20 (#35): if the Main pass hit its RG-92 ceiling and Deep hasn't run yet,
+    // lead with the clarity nudge — the grade may be higher than the capped 9.2.
+    const _atMainCeiling = formData.roboGrade && typeof formData.roboGrade.score === "number"
+      && Math.round(formData.roboGrade.score) >= 92 && !alreadyRun;
+    const _hgReason = _atMainCeiling
+      ? "This book reached the highest grade the Main assessment can award. Additional images could possibly revise the grade higher."
+      : formData.highGradeReason === "key"
       ? "This high-value key book can be graded more precisely with additional photos."
       : "This high-grade book can be graded more precisely with additional photos.";
     return `<div style="display:flex;justify-content:center;margin-top:12px">\n            <button id="hg-assess-btn" class="rg-btn rg-btn-assess rg-btn-silver${assessing ? ' assessing' : ''}" onclick="assessHighGrade()" ${ready ? "" : "disabled"}>\n              ${assessing ? "Assessing…" : `${baseLabel} ${cornerCount < 4 ? `(${cornerCount}/4)` : ""}`}\n            </button>\n          </div>\n          <div style="text-align:center;margin-top:8px;font-size:11px;color:#8a9a8a;line-height:1.4;padding:0 12px">${_hgReason}</div>`;
