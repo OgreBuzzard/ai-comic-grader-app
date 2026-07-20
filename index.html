@@ -3698,7 +3698,7 @@ async function buyCredits(pkg) {
 
 // S20 gift-credit pop-up. Shown once when an admin grants free credits; the
 // acknowledge button clears the marker so it never repeats. Robot art lives at
-// assets/Robograder_Head.webp (make-ios D5 rewrites the path for iOS).
+// assets/Robograder_Gift.webp (make-ios D5 rewrites the path for iOS).
 function _showGiftModal(amount) {
   if (document.getElementById("gift-credit-modal")) return;
   const overlay = document.createElement("div");
@@ -3706,7 +3706,7 @@ function _showGiftModal(amount) {
   overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px";
   overlay.innerHTML = `
     <div style="background:#141210;border-radius:18px;padding:24px 24px 20px;max-width:340px;width:100%;border:1.5px solid #6a4a10;text-align:center;box-shadow:0 12px 44px rgba(0,0,0,0.55)">
-      <img src="assets/Robograder_Head.webp" alt="" style="width:140px;height:auto;margin:0 auto 14px;display:block">
+      <img src="assets/Robograder_Gift.webp" alt="" style="width:140px;height:auto;margin:0 auto 14px;display:block">
       <div style="font-size:15px;color:#e8d9b8;line-height:1.6;margin-bottom:20px">
         Robograder has seen fit to bestow upon you <strong style="color:#f0c860">${amount}</strong> free assessment credit${amount === 1 ? "" : "s"}. Use them wisely.
       </div>
