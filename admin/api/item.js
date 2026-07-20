@@ -38,7 +38,7 @@ async function getFmvIndex() {
 }
 const _nkTitle = s => !s ? '' : s.toString().trim().replace(/\s+/g, ' ').replace(/^The\s+/i, '').toLowerCase();
 const _nkIssue = s => s == null ? '' : s.toString().trim().replace(/^#/, '').replace(/^0+(\d)/, '$1');
-function matchFmv(idx, title, issue, grade, printing) {
+function matchFmv(idx, title, issue, grade, printing, year) {
   if (!idx || !idx.books) return null;
   if (printing && typeof printing === 'string') {
     const p = printing.toLowerCase();
@@ -48,7 +48,12 @@ function matchFmv(idx, title, issue, grade, printing) {
   if (!isFinite(g)) return null;
   let breaks = idx.books[_nkTitle(title) + '|' + _nkIssue(issue)];
   if (typeof breaks === 'number' && idx.curves) breaks = idx.curves[breaks];
-  if (!Array.isArray(breaks) || !breaks.length) return null;
+  if (!Array.isArray(breaks) || !breaks.length) {
+    // S20 blanket rule (mirrors the app): uncovered 1991+ books default to tier 1.
+    const y = parseInt(year, 10);
+    if (isFinite(y) && y >= 1991 && idx.tiers && idx.tiers['1']) return { tier: 1, low: idx.tiers['1'][0], high: idx.tiers['1'][1] };
+    return null;
+  }
   let tier = breaks[0][1];
   for (const b of breaks) { if (g >= b[0]) tier = b[1]; else break; }
   const range = idx.tiers && idx.tiers[String(tier)];
@@ -231,7 +236,8 @@ export default async function handler(req, res) {
     try {
       const idx = await getFmvIndex();
       const fmvGrade = item.officialCGCGrade ?? item.assessedCGCGrade;
-      const m = matchFmv(idx, item.title, item.issue, fmvGrade, item.printing);
+      const fmvYear = parseInt((String(item.issueDate || '').match(/(19|20)\d\d/) || [])[0], 10);
+      const m = matchFmv(idx, item.title, item.issue, fmvGrade, item.printing, fmvYear);
       item.fmvRange = m ? fmtFmv(m) : null;
     } catch (_) { item.fmvRange = null; }
 
