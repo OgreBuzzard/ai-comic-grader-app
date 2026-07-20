@@ -82,6 +82,7 @@ export default async function handler(req, res) {
     const revenue = {
       totalCents: 0, webCents: 0, iosCents: 0, netCents: 0, webNetCents: 0, iosNetCents: 0, dayCents: 0, weekCents: 0, monthCents: 0,
       webDayCents: 0, webWeekCents: 0, webMonthCents: 0, iosDayCents: 0, iosWeekCents: 0, iosMonthCents: 0,
+      webNetDayCents: 0, webNetWeekCents: 0, webNetMonthCents: 0, iosNetDayCents: 0, iosNetWeekCents: 0, iosNetMonthCents: 0,
     };
     const revByDay = {}; // net revenue per day (last 30d) for the chart
     for (const doc of purchasesSnap.docs) {
@@ -97,8 +98,9 @@ export default async function handler(req, res) {
         amt = d.amountCents || 0;
         revenue.webCents += amt;
       }
-      // Net = what you keep: Apple SBP 85%; Stripe amount − 2.9% − $0.30.
-      const netCents = isIos ? Math.round(amt * 0.85) : Math.max(0, Math.round(amt - (amt * 0.029 + 30)));
+      // Net = what you keep: Apple 30% cut → keep 70% (change to 0.85 after
+      // Small Business Program enrollment); Stripe amount − 2.9% − $0.30.
+      const netCents = isIos ? Math.round(amt * 0.70) : Math.max(0, Math.round(amt - (amt * 0.029 + 30)));
       revenue.totalCents += amt;
       revenue.netCents += netCents;
       if (isIos) revenue.iosNetCents += netCents; else revenue.webNetCents += netCents;
@@ -106,9 +108,9 @@ export default async function handler(req, res) {
       const ms = (c && typeof c.toMillis === 'function') ? c.toMillis() : (d.createdAtMs || Date.parse(c || ''));
       if (Number.isNaN(ms)) continue;
       const pfx = isIos ? 'ios' : 'web';
-      if (ms >= cutoffs.day) { revenue.dayCents += amt; revenue[pfx + 'DayCents'] += amt; }
-      if (ms >= cutoffs.week) { revenue.weekCents += amt; revenue[pfx + 'WeekCents'] += amt; }
-      if (ms >= cutoffs.month) { revenue.monthCents += amt; revenue[pfx + 'MonthCents'] += amt; const k = new Date(ms).toISOString().slice(0, 10); revByDay[k] = (revByDay[k] || 0) + netCents; }
+      if (ms >= cutoffs.day) { revenue.dayCents += amt; revenue[pfx + 'DayCents'] += amt; revenue[pfx + 'NetDayCents'] += netCents; }
+      if (ms >= cutoffs.week) { revenue.weekCents += amt; revenue[pfx + 'WeekCents'] += amt; revenue[pfx + 'NetWeekCents'] += netCents; }
+      if (ms >= cutoffs.month) { revenue.monthCents += amt; revenue[pfx + 'MonthCents'] += amt; revenue[pfx + 'NetMonthCents'] += netCents; const k = new Date(ms).toISOString().slice(0, 10); revByDay[k] = (revByDay[k] || 0) + netCents; }
     }
 
     // Avg cost of the last ~100 REAL assessments (excludes slab-checks + errored

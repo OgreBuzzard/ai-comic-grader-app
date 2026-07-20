@@ -25,9 +25,10 @@ const IOS_PRICE = {
 };
 
 // "What you keep" after the platform's cut.
-//   Apple: Small Business Program → you keep 85% (15% commission).
+//   Apple: standard 30% commission → you keep 70%. CHANGE TO 0.85 once the App
+//   Store Small Business Program enrollment takes effect (drops it to 15%).
 //   Stripe: US standard 2.9% + $0.30 per transaction.
-const APPLE_KEEP = 0.85;
+const APPLE_KEEP = 0.70;
 const STRIPE_PCT = 0.029;
 const STRIPE_FIXED = 0.30;
 const netOf = (amount, isIos) => isIos
