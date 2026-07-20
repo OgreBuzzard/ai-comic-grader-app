@@ -1925,7 +1925,7 @@ window.matchValueKey = function matchValueKey(title, issue, publisher, printing)
 // so the converter that builds fmv.json must mirror those exactly.
 let _fmvIndex = null;
 
-window.matchFMV = function matchFMV(title, issue, grade, printing) {
+window.matchFMV = function matchFMV(title, issue, grade, printing, year) {
   if (!_fmvIndex || !_fmvIndex.books) return null;
   // Reprints/facsimiles are not the value key (same gate as matchValueKey).
   if (printing && typeof printing === "string") {
@@ -1939,7 +1939,16 @@ window.matchFMV = function matchFMV(title, issue, grade, printing) {
   // Compression (S20): books[key] may be an integer index into a shared `curves`
   // table (many issues share the same price curve). Deref it. Inline arrays still work.
   if (typeof breaks === "number" && _fmvIndex.curves) breaks = _fmvIndex.curves[breaks];
-  if (!Array.isArray(breaks) || !breaks.length) return null;
+  if (!Array.isArray(breaks) || !breaks.length) {
+    // S20 blanket rule: uncovered modern books (1991+) default to tier 1 ($1-20)
+    // at ALL grades. Indexed books (matched above) override this — so exceptions
+    // like Walking Dead #1 / Absolute Batman #1 keep their real values.
+    const y = parseInt(year, 10);
+    if (isFinite(y) && y >= 1991 && _fmvIndex.tiers && _fmvIndex.tiers["1"]) {
+      return { tier: 1, low: _fmvIndex.tiers["1"][0], high: _fmvIndex.tiers["1"][1], blanket: true };
+    }
+    return null;
+  }
   // breaks ascending by grade; tier = the highest breakpoint whose grade <= g
   let tier = breaks[0][1];
   for (const b of breaks) { if (g >= b[0]) tier = b[1]; else break; }
@@ -3689,7 +3698,7 @@ async function buyCredits(pkg) {
 
 // S20 gift-credit pop-up. Shown once when an admin grants free credits; the
 // acknowledge button clears the marker so it never repeats. Robot art lives at
-// assets/Robograder_Gift.webp (make-ios D5 rewrites the path for iOS).
+// assets/Robograder_Head.webp (make-ios D5 rewrites the path for iOS).
 function _showGiftModal(amount) {
   if (document.getElementById("gift-credit-modal")) return;
   const overlay = document.createElement("div");
@@ -3697,7 +3706,7 @@ function _showGiftModal(amount) {
   overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px";
   overlay.innerHTML = `
     <div style="background:#141210;border-radius:18px;padding:24px 24px 20px;max-width:340px;width:100%;border:1.5px solid #6a4a10;text-align:center;box-shadow:0 12px 44px rgba(0,0,0,0.55)">
-      <img src="assets/Robograder_Gift.webp" alt="" style="width:140px;height:auto;margin:0 auto 14px;display:block">
+      <img src="assets/Robograder_Head.webp" alt="" style="width:140px;height:auto;margin:0 auto 14px;display:block">
       <div style="font-size:15px;color:#e8d9b8;line-height:1.6;margin-bottom:20px">
         Robograder has seen fit to bestow upon you <strong style="color:#f0c860">${amount}</strong> free assessment credit${amount === 1 ? "" : "s"}. Use them wisely.
       </div>
@@ -4369,7 +4378,7 @@ function showDetail(id) {
     // S18/S20: index-driven FMV. Uses the official grade if graded, else predicted.
     const _fmvGrade = selected.cgcGrade || selected.psaGrade || predictedGradeValue;
     const _fmvMatch = (typeof window.matchFMV === "function" && _fmvGrade)
-      ? window.matchFMV(selected.title, selected.issue, _fmvGrade, selected.printing) : null;
+      ? window.matchFMV(selected.title, selected.issue, _fmvGrade, selected.printing, extractYearFromIssueDate(selected.issueDate)) : null;
     const _pqHtml = showPQ ? `<div style="display:flex;justify-content:center">${buildPQBox(selected.pageQuality)}</div>` : "";
     html += buildPredictedGradeBox(predictionBoxes.join(""), _pqHtml, _fmvMatch, !!predictedBadge);
   }
@@ -7780,7 +7789,7 @@ function renderForm() {
       const predicted = predVal ? buildBadge(normalizeGrade(predVal), "predicted", "", false, false, false, _editRestored) : "";
       const _pqHtml = formData.pageQuality ? `<div style="display:flex;justify-content:center">${buildPQBox(formData.pageQuality)}</div>` : "";
       const _fmvGrade = formData.cgcGrade || formData.psaGrade || aiCgcGrade(formData);
-      const _fmvMatch = (typeof window.matchFMV === "function" && _fmvGrade) ? window.matchFMV(formData.title, formData.issue, _fmvGrade, formData.printing) : null;
+      const _fmvMatch = (typeof window.matchFMV === "function" && _fmvGrade) ? window.matchFMV(formData.title, formData.issue, _fmvGrade, formData.printing, extractYearFromIssueDate(formData.issueDate)) : null;
       return buildPredictedGradeBox([ cgcOff, psaOff, predicted ].filter(Boolean).join(""), _pqHtml, _fmvMatch, !!predicted);
     })() : ""}\n\n    \x3c!-- Transaction metadata block (S11): chronology of acquiring → grading.\n         Cost/FMV moved to bottom of analysis section, after Condition\n         Assessment, per user direction. --\x3e\n    ${df("Date Acquired", "dateAcquired")}\n    <div><label class="field-label">Seller</label>\n      <input value="${esc(formData.seller || "")}" list="seller-list" oninput="formData.seller=this.value;updateSellerList(this.value)" placeholder="Name / source" autocomplete="off">\n      <datalist id="seller-list">${getSellerSuggestions().map(s => `<option value="${esc(s)}">`).join("")}</datalist>\n    </div>\n    ${df("Grading Date", "slabbingDate")}\n\n    \x3c!-- Analysis block (S11 reorder per user direction):\n         Defect Notes, Condition Assessment first\n         Then Enhancement Candidate\n         Then Cost Breakdown (now including FMV inside it)\n         Other gated text fields (Label Notes, Key Info, Grader Notes,\n         Past Assessments) live in their previous positions\n         around these. --\x3e\n    ${formData.cgcGrade || formData.psaGrade || formData.cgcNotes ? `<div><label class="field-label">Label Notes</label><textarea rows="3" readonly style="cursor:not-allowed" title="Label Notes is populated by the assessment. Not user-editable.">${esc(formData.cgcNotes || "")}</textarea></div>` : ""}\n    ${(() => {
     const showLabelNotesEdit = (formData.cgcGrade || formData.psaGrade) && formData.cgcNotes && formData.cgcNotes.trim();
