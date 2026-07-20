@@ -1107,78 +1107,74 @@ async function loadStats() {
 
 function renderStats() {
   if (!state.stats) return;
-  const { accounts, items, revenue, credits, spend, series } = state.stats;
-  const dollars = c => '$' + (c / 100).toFixed(2);
-  document.getElementById('stats-section').innerHTML = `
-    <div class="stats-grid">
-      <div class="stat-card">
-        <h3>Accounts</h3>
-        <div class="total">${accounts.total}</div>
-        <div class="breakouts">
-          <span><strong>${accounts.day}</strong> 24h</span>
-          <span><strong>${accounts.week}</strong> 7d</span>
-          <span><strong>${accounts.month}</strong> 30d</span>
-        </div>
-      </div>
-      <div class="stat-card">
-        <h3>Items</h3>
-        <div class="total">${items.total}</div>
-        <div class="breakouts">
-          <span><strong>${items.day}</strong> 24h</span>
-          <span><strong>${items.week}</strong> 7d</span>
-          <span><strong>${items.month}</strong> 30d</span>
-        </div>
-      </div>
-      <div class="stat-card">
-        <h3>Revenue (net)</h3>
-        <div class="total">${dollars(revenue.netCents || 0)}</div>
-        <div class="breakouts">
-          <span><strong>${dollars(revenue.webNetCents || 0)}</strong> web</span>
-          <span><strong>${dollars(revenue.iosNetCents || 0)}</strong> iOS</span>
-        </div>
-        <div style="margin-top:5px;font-size:10px;color:#8a8d96;line-height:1.5;" title="Net = what you keep after Stripe (2.9% + $0.30) / Apple (15% SBP) fees">
-          gross ${dollars(revenue.totalCents || 0)} · fees −${dollars((revenue.totalCents || 0) - (revenue.netCents || 0))}
-        </div>
-      </div>
-      <div class="stat-card">
-        <h3>API Spend</h3>
-        <div class="total">${dollars((spend && spend.monthCents) || 0)}</div>
-        <div class="breakouts">
-          <span><strong>${dollars((spend && spend.dayCents) || 0)}</strong> 24h</span>
-          <span><strong>${dollars((spend && spend.weekCents) || 0)}</strong> 7d</span>
-          <span><strong>${dollars((spend && spend.monthCents) || 0)}</strong> 30d</span>
-        </div>
-      </div>
-      <div class="stat-card">
-        <h3>Credits Outstanding</h3>
-        <div class="total">${(credits && credits.outstanding != null ? credits.outstanding : 0).toLocaleString()}</div>
-        <div class="breakouts">
-          <span title="Outstanding credits × avg cost of the last 100 real assessments (${credits && credits.avgAssessmentCost != null ? '$' + credits.avgAssessmentCost.toFixed(3) : '—'} each)"><strong>≈ ${dollars(Math.round(((credits && credits.liability) || 0) * 100))}</strong> if all used</span>
-        </div>
-      </div>
-    </div>
-    <div style="margin-top:14px;background:#0e0f12;border:1px solid #23252c;border-radius:8px;padding:12px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
-        <div><span style="font-size:11px;color:#8a8d96;text-transform:uppercase;letter-spacing:1px;">Net revenue vs API spend (30d)</span> <span id="pl-net" style="margin-left:6px;font-size:12px;"></span></div>
-        <div id="chart-gran" style="display:flex;gap:2px;">
-          ${['day', 'week', 'month'].map(g => `<button data-gran="${g}" style="font-size:10px;padding:2px 7px;background:#161821;color:#9ab;border:1px solid #2a2d38;border-radius:4px;cursor:pointer;text-transform:capitalize;">${g}</button>`).join('')}
-        </div>
+  const { accounts, items, revenue, credits, spend } = state.stats;
+  const r = revenue || {}, sp = spend || {};
+  const dollars = c => '$' + ((c || 0) / 100).toFixed(2);
+  const netDay = (r.webNetDayCents || 0) + (r.iosNetDayCents || 0);
+  const netWeek = (r.webNetWeekCents || 0) + (r.iosNetWeekCents || 0);
+  const netMonth = (r.webNetMonthCents || 0) + (r.iosNetMonthCents || 0);
+  const open = (localStorage.getItem('rg_income_open') !== '0'); // default expanded
+  const row = (label, d, w, m, color) => `
+    <div style="display:flex;font-size:11px;padding:2px 0;">
+      <span style="width:52px;color:#9aa;">${label}</span>
+      <span style="flex:1;color:${color}">${dollars(d)} <span style="color:#6a6d76">24h</span></span>
+      <span style="flex:1;color:${color}">${dollars(w)} <span style="color:#6a6d76">7d</span></span>
+      <span style="flex:1;color:${color}">${dollars(m)} <span style="color:#6a6d76">30d</span></span>
+    </div>`;
+  const chartBlock = `
+    <div style="margin-top:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+        <span style="font-size:11px;color:#8a8d96;text-transform:uppercase;letter-spacing:1px;">Net revenue vs spend (30d)</span>
+        <div id="chart-gran" style="display:flex;gap:2px;">${['day', 'week', 'month'].map(g => `<button data-gran="${g}" style="font-size:10px;padding:2px 7px;background:#161821;color:#9ab;border:1px solid #2a2d38;border-radius:4px;cursor:pointer;text-transform:capitalize;">${g}</button>`).join('')}</div>
       </div>
       <div id="spend-chart"></div>
       <div style="display:flex;gap:14px;margin-top:6px;font-size:10px;color:#8a8d96;">
         <span><span style="display:inline-block;width:8px;height:8px;background:#4caf82;border-radius:2px;"></span> net revenue</span>
         <span><span style="display:inline-block;width:8px;height:8px;background:#e85d5d;border-radius:2px;"></span> spend</span>
       </div>
+    </div>`;
+  document.getElementById('stats-section').innerHTML = `
+    <div class="stats-grid">
+      <div class="stat-card"><h3>Accounts</h3><div class="total">${accounts.total}</div><div class="breakouts"><span><strong>${accounts.day}</strong> 24h</span><span><strong>${accounts.week}</strong> 7d</span><span><strong>${accounts.month}</strong> 30d</span></div></div>
+      <div class="stat-card"><h3>Items</h3><div class="total">${items.total}</div><div class="breakouts"><span><strong>${items.day}</strong> 24h</span><span><strong>${items.week}</strong> 7d</span><span><strong>${items.month}</strong> 30d</span></div></div>
+    </div>
+    <div style="margin-top:12px;background:#0e0f12;border:1px solid #23252c;border-radius:8px;">
+      <div onclick="_toggleIncome()" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;cursor:pointer;user-select:none;">
+        <span style="font-size:11px;color:#8a8d96;text-transform:uppercase;letter-spacing:1px;">Income &amp; Spending (net)</span>
+        <span id="income-caret" style="color:#8a8d96;font-size:12px;">${open ? '▾' : '▸'}</span>
+      </div>
+      <div id="income-body" style="padding:0 12px 12px;display:${open ? 'block' : 'none'};">
+        <div style="font-size:10px;color:#6a9a6a;text-transform:uppercase;letter-spacing:1px;margin:4px 0 2px;">Revenue (net)</div>
+        ${row('web', r.webNetDayCents, r.webNetWeekCents, r.webNetMonthCents, '#7fd0ff')}
+        ${row('iOS', r.iosNetDayCents, r.iosNetWeekCents, r.iosNetMonthCents, '#7fd0ff')}
+        <div style="font-size:10px;color:#e08a6a;text-transform:uppercase;letter-spacing:1px;margin:9px 0 2px;">Spending (API + infra)</div>
+        ${row('spend', sp.dayCents, sp.weekCents, sp.monthCents, '#e8a080')}
+        <div style="font-size:10px;color:#c8a96e;text-transform:uppercase;letter-spacing:1px;margin:9px 0 2px;">Profit (net − spend)</div>
+        ${row('profit', netDay - (sp.dayCents || 0), netWeek - (sp.weekCents || 0), netMonth - (sp.monthCents || 0), '#8fd0a0')}
+        ${chartBlock}
+        <div style="margin-top:12px;border-top:1px solid #23252c;padding-top:10px;display:flex;justify-content:space-between;align-items:baseline;">
+          <span style="font-size:11px;color:#8a8d96;text-transform:uppercase;letter-spacing:1px;">Credits Outstanding</span>
+          <span style="font-size:13px;color:#c9c4bd;"><strong>${(credits && credits.outstanding != null ? credits.outstanding : 0).toLocaleString()}</strong> <span style="color:#8a8d96;font-size:11px;" title="Outstanding credits × avg cost of the last 100 assessments (${credits && credits.avgAssessmentCost != null ? '$' + credits.avgAssessmentCost.toFixed(3) : '—'} ea)">≈ ${dollars(Math.round(((credits && credits.liability) || 0) * 100))} liability</span></span>
+        </div>
+      </div>
     </div>
   `;
-  const _series = series || [];
-  const sumRev = _series.reduce((a, b) => a + b.revCents, 0);
-  const sumSpend = _series.reduce((a, b) => a + b.spendCents, 0);
-  const plEl = document.getElementById('pl-net');
-  if (plEl) plEl.innerHTML = `profit <strong style="color:${sumRev - sumSpend >= 0 ? '#4caf82' : '#e85d5d'}">${dollars(sumRev - sumSpend)}</strong> <span style="color:#8a8d96">(${dollars(sumRev)} − ${dollars(sumSpend)})</span>`;
-  window._statSeries = _series;
+  window._statSeries = state.stats.series || [];
+  if (open) _wireChart();
+}
+function _wireChart() {
   renderSpendChart('day');
   document.querySelectorAll('#chart-gran button').forEach(b => { b.onclick = () => renderSpendChart(b.dataset.gran); });
+}
+function _toggleIncome() {
+  const body = document.getElementById('income-body');
+  const caret = document.getElementById('income-caret');
+  if (!body) return;
+  const nowOpen = body.style.display === 'none';
+  body.style.display = nowOpen ? 'block' : 'none';
+  if (caret) caret.textContent = nowOpen ? '▾' : '▸';
+  try { localStorage.setItem('rg_income_open', nowOpen ? '1' : '0'); } catch (_) {}
+  if (nowOpen) _wireChart();
 }
 
 // Compact grouped-bar SVG: net revenue (green) vs API spend (red) over the
