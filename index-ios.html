@@ -3898,9 +3898,9 @@ function _showGiftModal(amount) {
     <div style="background:#141210;border-radius:18px;padding:24px 24px 20px;max-width:340px;width:100%;border:1.5px solid #6a4a10;text-align:center;box-shadow:0 12px 44px rgba(0,0,0,0.55)">
       <img src="assets/Robograder_Gift.webp" alt="" style="width:140px;height:auto;margin:0 auto 14px;display:block">
       <div style="font-size:15px;color:#e8d9b8;line-height:1.6;margin-bottom:20px">
-        Robograder has seen fit to bestow upon you <strong style="color:#f0c860">${amount}</strong> free assessment credit${amount === 1 ? "" : "s"}. Use them wisely.
+        Robograder has bestowed upon you <strong style="color:#f0c860">${amount}</strong> free assessment credit${amount === 1 ? "" : "s"}. Use ${amount === 1 ? "it" : "them"} wisely.
       </div>
-      <button class="rg-btn rg-btn-branded rg-btn-md" onclick="_ackGift()" style="width:100%">Thank you, Robograder</button>
+      <button class="rg-btn rg-btn-branded rg-btn-md" onclick="_ackGift()" style="width:100%">Cool!</button>
     </div>`;
   document.body.appendChild(overlay);
 }
@@ -8845,11 +8845,12 @@ let _tappedInteriorSlot = 0;
 async function handleInteriorImages(e) {
   const files = Array.from(e.target.files);
   if (!files.length) return;
-  const entry = isFullAssessmentEligible(formData);
-  if (!entry) {
-    e.target.value = "";
-    return;
-  }
+  // S20 FIX (D): use FULL_SLOT_COUNT directly. This previously re-gated on
+  // isFullAssessmentEligible() and bailed if it returned null — but the stricter
+  // S20 gate (Deep-complete AND FMV tier 7) can read false mid-edit, which
+  // silently dropped every selected photo (slots stayed empty). If the Full
+  // section is on screen, just fill the slots.
+  const _slotN = FULL_SLOT_COUNT;
   const nonImage = files.find(f => !f.type.startsWith("image/"));
   if (nonImage) {
     alert(`"${nonImage.name}" doesn't look like an image file. Please pick photos only (JPG, PNG, HEIC, etc.).`);
@@ -8862,18 +8863,18 @@ async function handleInteriorImages(e) {
     r.readAsDataURL(f);
   })));
   const imgs = [ ...formData.interiorImages || [] ];
-  while (imgs.length < entry.slots) imgs.push(null);
-  const count = Math.min(newImgs.length, entry.slots);
+  while (imgs.length < _slotN) imgs.push(null);
+  const count = Math.min(newImgs.length, _slotN);
   for (let n = 0; n < count; n++) {
-    const slot = (_tappedInteriorSlot + n) % entry.slots;
+    const slot = (_tappedInteriorSlot + n) % _slotN;
     if (imgs[slot]) {
       let next = slot;
       let probed = 0;
-      while (imgs[next] && probed < entry.slots) {
-        next = (next + 1) % entry.slots;
+      while (imgs[next] && probed < _slotN) {
+        next = (next + 1) % _slotN;
         probed++;
       }
-      if (probed >= entry.slots) break;
+      if (probed >= _slotN) break;
       imgs[next] = newImgs[n];
     } else {
       imgs[slot] = newImgs[n];
@@ -9456,7 +9457,7 @@ function tapSlot(slotIndex, kind) {
     return;
   }
   const list = (kind === "corner" ? formData.cornerImages : kind === "signature" ? formData.signatureImages : kind === "interior" ? formData.interiorImages : formData.images) || [];
-  const captureOrder = kind === "corner" ? CAMERA_CAPTURE_ORDER_CORNER : kind === "signature" ? [ 0, 1 ] : kind === "interior" ? [ 0, 1, 2, 3, 4, 5, 6, 7 ] : CAMERA_CAPTURE_ORDER_MAIN;
+  const captureOrder = kind === "corner" ? CAMERA_CAPTURE_ORDER_CORNER : kind === "signature" ? [ 0, 1 ] : kind === "interior" ? Array.from({ length: FULL_SLOT_COUNT }, (_, i) => i) : CAMERA_CAPTURE_ORDER_MAIN;
   const emptySlotsInOrder = captureOrder.filter(i => !list[i]);
   const isMultiEmpty = kind !== "signature" && emptySlotsInOrder.length > 1 && (emptySlotsInOrder.includes(slotIndex) || kind === "interior");
   console.log("[tapSlot] kind:", kind, "slot:", slotIndex, "emptySlots:", emptySlotsInOrder.length, "isMultiEmpty:", isMultiEmpty, "mode:", isMultiEmpty ? "walkthrough" : "single");

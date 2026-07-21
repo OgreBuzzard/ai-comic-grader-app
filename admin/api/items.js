@@ -170,7 +170,7 @@ export default async function handler(req, res) {
         // else predicted). Null when uncovered and not caught by the 1991+ rule.
         fmvRange: (() => {
           try {
-            const g = (flat.cgcGrade ?? flat.assessedCGCGrade);
+            const g = (flat.cgcGrade || flat.assessedCGCGrade); // || not ?? — cgcGrade is often "" (empty), which ?? would keep
             const y = parseInt((String(flat.issueDate || '').match(/(19|20)\d\d/) || [])[0], 10);
             const mm = matchFmv(fmvIdx, flat.title, flat.issue, g, flat.printing, y);
             return mm ? fmtFmv(mm) : null;

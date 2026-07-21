@@ -237,7 +237,7 @@ export default async function handler(req, res) {
     // S20: compute FMV live (official grade if graded, else predicted grade).
     try {
       const idx = await getFmvIndex();
-      const fmvGrade = item.officialCGCGrade ?? item.assessedCGCGrade;
+      const fmvGrade = item.officialCGCGrade || item.assessedCGCGrade; // || not ?? — official grade can be "" (empty)
       const fmvYear = parseInt((String(item.issueDate || '').match(/(19|20)\d\d/) || [])[0], 10);
       const m = matchFmv(idx, item.title, item.issue, fmvGrade, item.printing, fmvYear);
       item.fmvRange = m ? fmtFmv(m) : null;

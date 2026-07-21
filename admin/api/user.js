@@ -273,7 +273,7 @@ export default async function handler(req, res) {
                  : ((highGradeAssessed || flat.highGradeTier === true) ? 2 : 1);
       let fmvRange = null;
       try {
-        const g = (flat.cgcGrade ?? flat.assessedCGCGrade);
+        const g = (flat.cgcGrade || flat.assessedCGCGrade); // || not ?? — cgcGrade is often "" (empty)
         const y = parseInt((String(flat.issueDate || '').match(/(19|20)\d\d/) || [])[0], 10);
         const mm = matchFmv(fmvIdx, flat.title, flat.issue, g, flat.printing, y);
         fmvRange = mm ? fmtFmv(mm) : null;
