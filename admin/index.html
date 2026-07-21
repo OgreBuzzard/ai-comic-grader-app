@@ -356,12 +356,22 @@
     flex-wrap: wrap;
     gap: 8px;
   }
+  /* S20: the item-detail header pills weren't covered by the .user-detail rule,
+     so a second row of pills clipped. Give all .pills a wrapping flex row with
+     row-gap, and the pills enough line-height not to clip. */
+  .pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
   .pill {
     background: var(--panel-2);
     border: 1px solid var(--rule);
     border-radius: 12px;
-    padding: 3px 10px;
+    padding: 4px 10px;
     font-size: 12px;
+    line-height: 1.5;
     color: var(--text-dim);
   }
   .pill strong { color: var(--text); font-weight: 600; }
@@ -1968,8 +1978,12 @@ function jumpToUserItems(code) {
 // this surfaces the exact item entry — tap it to open the detail view.
 function jumpToItemByGradeId(gradeId) {
   if (!gradeId) return;
+  // S20 fix: a Logs doc key is `t_<timestamp>_<roboGradeId>` (the server prefixes
+  // the item's short roboGradeId). Strip that prefix so we search the items by the
+  // actual roboGradeId, which is what the item record stores.
+  const rgId = String(gradeId).replace(/^t_\d+_/, '');
   state.tab = 'items';
-  state.itemSearch = gradeId;
+  state.itemSearch = rgId;
   renderDashboard();
 }
 
