@@ -2077,8 +2077,20 @@ function renderItemDetail(it) {
 
     ${it.aiAssessment ? `
       <div class="notes-block">
-        <h4>AI Assessment</h4>
+        <h4>Main Assessment</h4>
         <p>${escapeHtml(it.aiAssessment)}</p>
+      </div>` : ''}
+
+    ${it.deepAssessment ? `
+      <div class="notes-block">
+        <h4>Deep Assessment</h4>
+        <p>${escapeHtml(it.deepAssessment)}</p>
+      </div>` : ''}
+
+    ${it.fullAssessment ? `
+      <div class="notes-block">
+        <h4>Full Assessment</h4>
+        <p>${escapeHtml(it.fullAssessment)}</p>
       </div>` : ''}
 
     ${it.psaNotes ? `

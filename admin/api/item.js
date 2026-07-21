@@ -189,6 +189,9 @@ export default async function handler(req, res) {
       // Notes
       aiGraderNotes: flat.aiGraderNotes || rg.graderNotes || '',
       aiAssessment: flat.aiAssessment || rg.aiAssessment || '',
+      // S20 (#53): assessment write-up split by level.
+      deepAssessment: flat.deepAssessment || '',
+      fullAssessment: flat.fullAssessment || '',
       psaNotes: flat.psaNotes || rg.psaNotes || '',
       labelNotes: flat.labelNotes || '',
       keyInfo: flat.keyInfo || '',

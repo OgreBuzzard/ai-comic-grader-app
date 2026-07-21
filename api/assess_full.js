@@ -297,12 +297,11 @@ WHAT TO DO WITH EACH IMAGE GROUP:
 - Outer edge / trimming: from the Outer Edge photo — note frays or clear trimming signs only if present.
 - Page quality: DO NOT change page quality. It is fixed at the initial assessment's call (${initialPageQuality || 'not provided'}) and this pass does not re-judge it. (The interior-cover photos that used to inform page quality are now handled by the Deep pass.)
 
-WRITING THE UPDATED CONDITION ASSESSMENT (aiAssessment):
-- PRESERVE the core information from the prior Condition Assessment — the cover-condition observations, the dominant defects, and the grade rationale already established. Do not drop or rewrite those findings.
-- Then APPEND the new findings from the 6 structure images so the result reads as the original write-up followed by the additional structure/completeness detail.
-- Mention tears or interior defects ONLY if they are actually visible. If the interior is clean, do NOT mention interior defects or page quality at all — say nothing about them rather than stating they are absent.
-- Mention trimming ONLY in the very rare case that there are genuine, clear signs of edge trimming. Do not raise trimming otherwise — not even to say it is absent.
-- Keep it buyer-facing, factual, and concise. Do not pad it.
+WRITING THE FULL-ASSESSMENT WRITE-UP (S20: a SEPARATE field "fullAssessment"):
+- Do NOT touch, repeat, or rewrite the prior Condition Assessment. Return "aiAssessment" exactly as it was given.
+- In the new field "fullAssessment", write ONLY the new findings from these 6 structure images: staple condition, page completeness (missing/married pages), and any outer-edge / trimming observation.
+- Mention tears or defects ONLY if actually visible. If the structure is clean, say the staples, pages, and edges confirmed the grade — do not pad and do not repeat cover findings.
+- Mention trimming ONLY in the very rare case of genuine, clear signs. Keep it buyer-facing, factual, and concise (2-4 sentences).
 
 GRADE — IMPORTANT:
 - It is UNLIKELY the grade changes. Default to keeping the existing grade.
@@ -323,7 +322,8 @@ JSON shape:
   "pageQualityChanged": "same",
   "confidenceRange": <number, precision modifier, 0-6 — go as low as 1 or 0 when warranted>,
   "fullAssessmentRan": true,
-  "aiAssessment": "<the UPDATED Condition Assessment: the prior write-up with the new interior/structure findings integrated, following the rules above>",
+  "aiAssessment": ${JSON.stringify(typeof priorConditionAssessment === 'string' ? priorConditionAssessment : '')},
+  "fullAssessment": "<ONLY the new Full-Assessment findings from the 6 structure images — staples, page completeness, outer edge / trimming. Do NOT repeat the prior Condition Assessment. 2-4 sentences; if the structure is clean, say it confirmed the grade.>",
   "slotFindings": [
     { "slot": "exterior_top_staple", "observations": "<what you saw — concise>" }
   ],
@@ -556,6 +556,9 @@ Rules:
       ? parsed.fullAssessmentNotes.trim() : '';
     const aiAssessment = (typeof parsed.aiAssessment === 'string' && parsed.aiAssessment.trim())
       ? parsed.aiAssessment.trim() : '';
+    // S20 (#53): Full observations live in their own field, not appended to aiAssessment.
+    const fullAssessment = (typeof parsed.fullAssessment === 'string' && parsed.fullAssessment.trim())
+      ? parsed.fullAssessment.trim() : '';
     const gradeChanged = ['same', 'up', 'down'].includes(parsed.gradeChanged) ? parsed.gradeChanged : 'same';
 
     // A Full Assessment always "runs" (it produces a grade); there is no
@@ -569,6 +572,7 @@ Rules:
       pageQualityChanged,
       confidenceRange,
       aiAssessment,
+      fullAssessment,
       slotFindings,
       interiorComplete,
       trimmingSuspected,

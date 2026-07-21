@@ -4771,9 +4771,16 @@ function showDetail(id) {
   if (isGraded && selected.graderNotes) {
     html += `<div style="margin-top:20px"><div class="section-label">Grader Notes</div><div class="notes-box" style="white-space:pre-line">${esc(selected.graderNotes)}</div></div>`;
   }
-  const _aiText = selected.aiAssessment || selected.myAssessment || "";
-  if (_aiText) {
-    html += `<div style="margin-top:20px"><div class="section-label">Condition Assessment</div><div class="notes-box" style="font-style:normal">${esc(_aiText)}</div></div>`;
+  // S20 (#53): the write-up is split by assessment level, not one growing field.
+  const _mainText = selected.aiAssessment || selected.myAssessment || "";
+  if (_mainText) {
+    html += `<div style="margin-top:20px"><div class="section-label">Main Assessment</div><div class="notes-box" style="font-style:normal">${esc(_mainText)}</div></div>`;
+  }
+  if (selected.deepAssessment) {
+    html += `<div style="margin-top:14px"><div class="section-label">Deep Assessment</div><div class="notes-box" style="font-style:normal">${esc(selected.deepAssessment)}</div></div>`;
+  }
+  if (selected.fullAssessment) {
+    html += `<div style="margin-top:14px"><div class="section-label">Full Assessment</div><div class="notes-box" style="font-style:normal">${esc(selected.fullAssessment)}</div></div>`;
   }
   const history = selected.assessmentHistory || [];
   if (history.length > 0) {
@@ -7529,6 +7536,8 @@ async function completeAssessment() {
   formData.pageQuality = cgc.pageQuality ? normPageQuality(cgc.pageQuality) : formData.pageQuality;
   formData.aiGraderNotes = cgc.graderNotes || "";
   formData.aiAssessment = cgc.aiAssessment || "";
+  // S20 (#53): Deep observations go in their own field (aiAssessment stays the Main write-up).
+  if (cgc.deepAssessment) formData.deepAssessment = cgc.deepAssessment;
   // ComicVine reference fields — copy from the assess result onto formData so
   // they persist to the item doc (the whitelist in nestForFirestore only keeps
   // fields that are actually ON the record; they must be assigned here first).
@@ -8229,7 +8238,7 @@ function renderForm() {
     if (showLabelNotesEdit) return "";
     if (!formData.keyInfo) return "";
     return `<div><label class="field-label">Key Info</label><textarea rows="3" readonly style="cursor:not-allowed;background:#ffffff;color:#1a1614" title="Key Info is populated by the assessment when the issue is in the recognized-key list. Not user-editable.">${esc(formData.keyInfo || "")}</textarea></div>`;
-  })()}\n    ${formData.cgcGrade || formData.psaGrade || formData.graderNotes ? `<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes ? 5 : 3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiAssessment ? `<div><label class="field-label">Condition Assessment</label><textarea rows="${Math.max(12, Math.ceil(formData.aiAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Condition Assessment is populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>` : ""}\n    ${(formData.assessmentHistory || []).length > 0 ? `<div style="margin-top:10px;padding:10px 14px;background:#100e0c;border:1px solid #1e1c1a;border-radius:8px;">\n      <div style="font-size:10px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase;margin-bottom:6px">Past Assessments</div>\n      <div style="display:flex;flex-direction:column;gap:6px">\n        ${(formData.assessmentHistory || []).map((h, i) => {
+  })()}\n    ${formData.cgcGrade || formData.psaGrade || formData.graderNotes ? `<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes ? 5 : 3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiAssessment ? `<div><label class="field-label">Main Assessment</label><textarea rows="${Math.max(8, Math.ceil(formData.aiAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>` : ""}\n    ${formData.deepAssessment ? `<div><label class="field-label">Deep Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.deepAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Deep pass.">${esc(formData.deepAssessment)}</textarea></div>` : ""}\n    ${formData.fullAssessment ? `<div><label class="field-label">Full Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.fullAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Full pass.">${esc(formData.fullAssessment)}</textarea></div>` : ""}\n    ${(formData.assessmentHistory || []).length > 0 ? `<div style="margin-top:10px;padding:10px 14px;background:#100e0c;border:1px solid #1e1c1a;border-radius:8px;">\n      <div style="font-size:10px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase;margin-bottom:6px">Past Assessments</div>\n      <div style="display:flex;flex-direction:column;gap:6px">\n        ${(formData.assessmentHistory || []).map((h, i) => {
     const parts = [];
     if (h.rgScore != null) {
       const v = h.rgVersion ? ` v${h.rgVersion}` : "";
@@ -9399,6 +9408,8 @@ async function submitFullAssessment() {
       }
       if (result.fullAssessmentNotes) formData.fullAssessmentNotes = result.fullAssessmentNotes;
       if (result.aiAssessment && result.aiAssessment.trim()) formData.aiAssessment = result.aiAssessment.trim();
+      // S20 (#53): Full observations go in their own field (Main write-up unchanged).
+      if (result.fullAssessment && result.fullAssessment.trim()) formData.fullAssessment = result.fullAssessment.trim();
       formData.fullInteriorComplete = result.interiorComplete !== false;
       formData.fullTrimmingSuspected = result.trimmingSuspected === true;
       formData._imagesChanged = true;
