@@ -2,8 +2,24 @@
 
 <html lang="en">
 <head>
+<script>
+// iOS LOCAL APP: route /api/* AND the server-hosted JSON data files to production.
+// value-keys.json and fmv.json live ONLY at the repo root (served by Vercel); they
+// are NOT bundled into the local iOS web assets. Routing them to the server means
+// they read off the deployed repo and update WITHOUT an App Store rebuild — same as
+// /api/. (manifest.json is deliberately NOT routed: it must stay the local bundle's.)
+(function() {
+  var _origFetch = window.fetch;
+  window.fetch = function(url, opts) {
+    if (typeof url === 'string' && (url.startsWith('/api/') || url === '/value-keys.json' || url === '/fmv.json')) {
+      url = 'https://robograder.app' + url;
+    }
+    return _origFetch.call(this, url, opts);
+  };
+})();
+</script>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=contain">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Robograder">
@@ -56,7 +72,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebas
 
 import { getFirestore, initializeFirestore, collection, getDocs, setDoc, deleteDoc, doc, onSnapshot, getDoc, updateDoc, increment, query, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-import { getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signInWithCredential, signInWithCustomToken, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signInWithCredential, signInWithCustomToken, signOut, onAuthStateChanged, initializeAuth, indexedDBLocalPersistence } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject, listAll } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
 
@@ -113,7 +129,7 @@ window._fsQuery = query;
 
 window._fsWhere = where;
 
-const auth = getAuth(app);
+const auth = initializeAuth(app, { persistence: indexedDBLocalPersistence });
 
 const googleProvider = new GoogleAuthProvider;
 const appleProvider = new OAuthProvider('apple.com');
@@ -145,17 +161,19 @@ function tryRevealAuthScreen() {
     setTimeout(tryRevealAuthScreen, 500);
     return;
   }
-  const authScreen = document.getElementById("auth-screen");
-  if (authScreen) authScreen.style.display = "flex";
-  if (typeof window.signalAppReady === "function") window.signalAppReady();
+  // iOS: sign-in lives on the splash (no separate auth screen, splash stays up)
+  if (typeof window.enterSplashSignin === "function") window.enterSplashSignin();
+  else {
+    const authScreen = document.getElementById("auth-screen");
+    if (authScreen) authScreen.style.display = "flex";
+  }
 }
 
 window._authFallbackTimer = setTimeout(tryRevealAuthScreen, 3000);
 
-// Capacitor iOS: check for redirect result on page load
-if (window.Capacitor && window.Capacitor.isNativePlatform()) {
-  getRedirectResult(auth).catch(() => {});
-}
+// iOS: redirect result check REMOVED — the auth bridge handles sign-in
+// via signInWithCustomToken, not redirect. The getRedirectResult call
+// was triggering SOAuthorizationCoordinator interference on iOS.
 
 onAuthStateChanged(auth, async user => {
   if (window._authFallbackTimer) {
@@ -188,10 +206,10 @@ onAuthStateChanged(auth, async user => {
     // Preload slot ghost images AFTER the list view renders (no impact on initial load)
     setTimeout(() => {
       const _preloadUrls = [
-        "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Front_Cover.jpg",
-        "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Back_Cover.jpg",
-        "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Page_Quality.jpg",
-        "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Raking_Light.jpg",
+        "assets/ghosts/Front_Cover.jpg",
+        "assets/ghosts/Back_Cover.jpg",
+        "assets/ghosts/Page_Quality.jpg",
+        "assets/ghosts/Raking_Light.jpg",
         "assets/ghosts/TopLeft_Macro.jpg", "assets/ghosts/TopRight_Macro.jpg",
         "assets/ghosts/BottomLeft_Macro.jpg", "assets/ghosts/BottomRight_Macro.jpg"
       ];
@@ -210,13 +228,14 @@ onAuthStateChanged(auth, async user => {
     }
   } else {
     window._loadingState = false;
-    if (authScreen) authScreen.style.display = "flex";
+    // iOS: sign-in lives on the splash (no separate auth screen, splash stays up)
     if (appEl) appEl.style.display = "none";
     if (!window._firebaseReady) {
       window._firebaseReady = true;
       window.dispatchEvent(new Event("firebase-ready"));
     }
-    if (typeof window.signalAppReady === "function") window.signalAppReady();
+    if (typeof window.enterSplashSignin === "function") window.enterSplashSignin();
+    else if (authScreen) authScreen.style.display = "flex";
   }
 });
   </script>
@@ -1316,10 +1335,92 @@ onAuthStateChanged(auth, async user => {
         opacity: 1;
       }
     }
+    /* ── iOS combined splash/sign-in (S17) ──────────────────────────────
+       When signed out, sign-in controls slide up into the splash
+       composition instead of cutting to the separate auth screen.
+       .signin-mode  — added by enterSplashSignin() when auth resolves null
+       .signin-fast  — added when re-showing a dismissed splash (sign-out);
+                       skips the long entrance choreography delays. */
     #splash-subtitle {
       position: absolute;
       left: 50%;
-      top: calc(env(safe-area-inset-top, 0px) + 5vh + 9vh);
+      top: calc(env(safe-area-inset-top, 0px) + 5vh + 7vh);
+      transform: translate(-50%, -120vh);
+      text-align: center;
+      font-size: 16px;
+      letter-spacing: 1.5px;
+      font-weight: 700;
+      color: #1a1a1a;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 2;
+      white-space: nowrap;
+    }
+    #splash.assets-ready #splash-subtitle {
+      animation: splashSubtitleIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.95s forwards;
+    }
+    @keyframes splashSubtitleIn {
+      to { transform: translate(-50%, 0); opacity: 0.9; }
+    }
+    #splash-signin {
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      padding: 12vh 24px calc(env(safe-area-inset-bottom, 0px) + 4.5vh);
+      background: linear-gradient(to top, rgba(10,10,10,0.94) 0%, rgba(10,10,10,0.82) 55%, rgba(10,10,10,0) 100%);
+      transform: translateY(110%);
+      opacity: 0;
+      pointer-events: none;
+      z-index: 3;
+    }
+    #splash.signin-mode #splash-signin { pointer-events: auto; }
+    #splash.assets-ready.signin-mode #splash-signin {
+      animation: splashSigninUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) 1.6s forwards;
+    }
+    #splash.assets-ready.signin-mode.signin-fast #splash-signin {
+      animation-delay: 0.15s;
+    }
+    @keyframes splashSigninUp {
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .splash-signin-with {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      font-size: 13px; color: #b8b8b8;
+    }
+    #splash-continue-btn {
+      display: flex; align-items: center; justify-content: center;
+      background: #2e7d32; color: #ffffff;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+      border: none; border-radius: 10px;
+      padding: 14px 28px; font-size: 16px; font-weight: 700;
+      cursor: pointer; width: 280px; max-width: 80vw;
+    }
+    #splash-continue-btn:active { filter: brightness(0.92); }
+    #splash-signin-status {
+      display: none;
+      font-size: 13px; color: #cfcfcf; text-align: center;
+    }
+    .splash-signin-terms {
+      font-size: 11px; color: #8a8a8a; text-align: center; max-width: 280px; line-height: 1.5;
+    }
+    /* iOS splash position overrides (S17). Logo sits higher (clear of the
+       Dynamic Island), robot drops lower so it clears the sign-in panel. */
+    #splash-logo {
+      top: calc(env(safe-area-inset-top, 0px) + 2vh) !important;
+    }
+    #splash-robot {
+      top: calc(56% - 25px) !important;
+    }
+    #splash.signin-mode #splash-robot {
+      top: calc(52% - 25px) !important;
+    }
+    #splash-subtitle {
+      position: absolute;
+      left: 50%;
+      top: calc(env(safe-area-inset-top, 0px) + 5vh + 7vh);
       transform: translate(-50%, -120vh);
       text-align: center;
       font-size: 16px;
@@ -1425,6 +1526,46 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
   if (_pwaBtns) _pwaBtns.style.display = 'none';
   if (_iosBtns) _iosBtns.style.display = 'flex';
 }
+
+// iOS combined splash/sign-in (S17): the signed-out state lives ON the splash.
+// enterSplashSignin() — called when auth resolves to no user. Keeps (or
+// re-shows) the splash and slides the sign-in panel up into it.
+window.enterSplashSignin = function() {
+  var splash = document.getElementById('splash');
+  var authScreen = document.getElementById('auth-screen');
+  var appEl = document.getElementById('app');
+  if (!splash) { if (authScreen) authScreen.style.display = 'flex'; return; }
+  if (appEl) appEl.style.display = 'none';
+  if (authScreen) authScreen.style.display = 'none';
+  if (splash.style.display === 'none' || splash.classList.contains('exit')) {
+    // Re-showing after sign-out (or a dismissed splash): skip entrance choreography.
+    splash.classList.remove('exit');
+    splash.style.display = '';
+    splash.classList.add('assets-ready');
+    splash.classList.add('signin-fast');
+    document.body.style.overflow = 'hidden';
+  }
+  splash.classList.add('signin-mode');
+};
+// exitSplashSigninAndShowApp() — called after a successful sign-in.
+window.exitSplashSigninAndShowApp = function() {
+  var splash = document.getElementById('splash');
+  var authScreen = document.getElementById('auth-screen');
+  var appEl = document.getElementById('app');
+  if (splash) splash.classList.remove('signin-mode', 'signin-fast');
+  if (authScreen) authScreen.style.display = 'none';
+  if (appEl) appEl.style.display = '';
+  if (typeof window.signalAppReady === 'function') window.signalAppReady();
+  // If the splash was previously dismissed (sign-out -> sign-in again), the
+  // app-ready listener inside runSplash is spent (once:true) — dismiss directly.
+  setTimeout(function() {
+    if (splash && splash.style.display !== 'none' && !splash.classList.contains('exit')) {
+      splash.classList.add('exit');
+      document.body.classList.add('app-ready');
+      setTimeout(function() { splash.style.display = 'none'; document.body.style.overflow = ''; }, 460);
+    }
+  }, 60);
+};
 </script>
 
 <div id="splash">
@@ -1434,6 +1575,18 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
   <img id="splash-logo" src="assets/Robograder_Logo.webp" alt="Robograder"
        onerror="this.style.display='none'">
   <div id="splash-subtitle">COMIC GRADING APP</div>
+  <div id="splash-signin">
+    <button id="splash-apple-btn" onclick="iosNativeSignIn('apple')" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#000;color:#fff;border:none;border-radius:10px;padding:14px 24px;font-size:16px;font-weight:600;cursor:pointer;width:280px;max-width:80vw;box-shadow:0 4px 14px rgba(0,0,0,0.35)">
+      <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#fff" d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>
+      Sign in with Apple
+    </button>
+    <button id="splash-google-btn" onclick="iosNativeSignIn('google')" style="display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;color:#1a1a1a;border:none;border-radius:10px;padding:14px 24px;font-size:15px;font-weight:600;cursor:pointer;width:280px;max-width:80vw;box-shadow:0 4px 14px rgba(0,0,0,0.35)">
+      <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      Sign in with Google
+    </button>
+    <div id="splash-signin-status">Waiting for sign-in to complete...</div>
+    <div class="splash-signin-terms">By signing in you agree to our terms of service. Your collection data is private to your account.</div>
+  </div>
 </div>
 <div id="app" style="display:none">
   <div id="header">
@@ -3440,34 +3593,68 @@ window.iosNativeSignIn = iosNativeSignIn;
 async function signInGoogle() {
   try {
     if (window.Capacitor && window.Capacitor.isNativePlatform()) {
-      // iOS app: open Safari auth bridge, then poll for the custom token
+      // iOS app: open the auth bridge (auth-ios.html, both Apple + Google) in an
+      // in-app SFSafariViewController sheet via @capacitor/browser (Guideline 4 —
+      // no external Safari). The app keeps running while the sheet is up, so we
+      // POLL /api/ios-auth directly and close the sheet + signInWithCustomToken the
+      // instant the token lands. We do NOT depend on the robograder:// custom-scheme
+      // handback or visibilitychange — NEITHER fires for an in-app sheet, which was
+      // the 2.1a rejection ("Return to Robograder" did nothing after Sign in with
+      // Apple). visibilitychange is kept only as a fallback for the external-Safari
+      // (window.open) path.
       const session = 'ios_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
-      window.open('https://robograder.app/auth-ios.html?s=' + session, '_blank');
-      // Show polling status
-      const iosStatus = document.getElementById('auth-ios-status');
-      if (iosStatus) iosStatus.style.display = 'block';
-      const poll = async () => {
-        for (let i = 0; i < 120; i++) {
-          await new Promise(r => setTimeout(r, 2000));
+      const iosStatus = document.getElementById('splash-signin-status') || document.getElementById('auth-ios-status');
+      if (iosStatus) { iosStatus.style.display = 'block'; iosStatus.textContent = 'Opening sign-in…'; }
+      window._iosPendingSession = session;
+      // Shared poll: wait for the custom token for this session, finish sign-in, and
+      // close the sheet. Apple's consent flow can be slow on first run, so allow ~120s.
+      window._iosPollAuth = async function(s, browser, maxAttempts) {
+        var status = document.getElementById('splash-signin-status') || document.getElementById('auth-ios-status');
+        if (status) { status.style.display = 'block'; status.textContent = 'Finishing sign-in…'; }
+        for (var attempt = 0; attempt < (maxAttempts || 120); attempt++) {
+          if (window._iosPendingSession !== s) return; // a newer attempt superseded this one
           try {
-            const resp = await fetch('/api/ios-auth?session=' + session);
+            var resp = await fetch('/api/ios-auth?session=' + s);
             if (resp.ok) {
-              const data = await resp.json();
+              var data = await resp.json();
               if (data.customToken) {
-                if (iosStatus) iosStatus.textContent = 'Signed in! Loading your collection...';
+                window._iosPendingSession = null;
+                try { if (browser && typeof browser.close === 'function') await browser.close(); } catch (e) {}
+                if (status) status.textContent = 'Signed in! Loading your collection…';
                 await window._signInWithCustomToken(window._auth, data.customToken);
+                if (typeof window.exitSplashSigninAndShowApp === 'function') window.exitSplashSigninAndShowApp();
                 await loadItems();
-                return true;
+                return;
               }
             }
-          } catch (_) {}
+          } catch (e) {}
+          await new Promise(function(r) { setTimeout(r, 1000); });
         }
-        return false;
+        if (status) status.textContent = 'Sign-in not detected. Tap Continue to try again.';
       };
-      const ok = await poll();
-      if (!ok) {
-        if (iosStatus) iosStatus.textContent = 'Sign-in timed out. Tap Continue to try again.';
+      // Fallback only: if the bridge had to run in EXTERNAL Safari (no Browser
+      // plugin), the app was backgrounded and JS timers suspended; poll when it
+      // foregrounds again. For the in-app sheet this won't fire — the direct poll
+      // below handles that case.
+      if (!window._iosVisibilityHooked) {
+        window._iosVisibilityHooked = true;
+        document.addEventListener('visibilitychange', function() {
+          if (document.visibilityState !== 'visible' || !window._iosPendingSession) return;
+          window._iosPollAuth(window._iosPendingSession, null, 20);
+        });
       }
+      // Guideline 4: open the bridge in the in-app sheet, then poll right away and
+      // close the sheet ourselves on success — no custom scheme, no user tap needed.
+      (function(){
+        var b = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser;
+        var url = 'https://robograder.app/auth-ios.html?s=' + session;
+        if (b && typeof b.open === 'function') {
+          b.open({ url: url, presentationStyle: 'popover' }).catch(function(){ window.open(url, '_blank'); });
+          window._iosPollAuth(session, b, 120);
+        } else {
+          window.open(url, '_blank');
+        }
+      })();
       return;
     }
     await window._signInWithPopup(window._auth, window._googleProvider);
@@ -3668,6 +3855,7 @@ async function buyCredits(pkg) {
     return;
   }
   try {
+    if (window.Capacitor && window.Capacitor.isNativePlatform()) { await _iosBuyCredits(pkg); return; }
     const token = await window._currentUser.getIdToken();
     const resp = await fetch("/api/checkout", {
       method: "POST",
@@ -3718,10 +3906,93 @@ async function _ackGift() {
   } catch (e) { console.warn("[gift] acknowledge clear failed", e); }
 }
 
+
+// ── iOS StoreKit 2 purchasing via @capgo/native-purchases (NativePurchases) ──
+// purchase -> jwsRepresentation -> /api/verify_iap verifies + credits -> refresh.
+// Crediting is server-side and idempotent (keyed on Apple transactionId).
+const IOS_PRODUCT_IDS = {
+  comic_stack: 'app.robograder.credits.stack',
+  comic_wall:  'app.robograder.credits.wall',
+  short_box:   'app.robograder.credits.shortbox2',
+};
+const IOS_CREDITS = { comic_stack: 5, comic_wall: 20, short_box: 100 };
+
+function _isCancelError(e) {
+  if (!e) return false;
+  const msg = ((e.message || '') + '').toLowerCase();
+  const code = ((e.code != null ? e.code : '') + '').toLowerCase();
+  return /cancel/.test(msg) || /cancel/.test(code) || code === '2';
+}
+
+async function _iosBuyCredits(pkg) {
+  const NP = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativePurchases;
+  const productId = IOS_PRODUCT_IDS[pkg];
+  if (!NP || !productId) { alert("Purchases are unavailable right now. Please try again."); return; }
+  let txn;
+  try {
+    txn = await NP.purchaseProduct({
+      productIdentifier: productId, productType: 'inapp', quantity: 1,
+      isConsumable: true, autoAcknowledgePurchases: true
+    });
+  } catch (e) {
+    if (!_isCancelError(e)) {
+      const msg = ((e && (e.message || e.code)) || 'Unknown error') + '';
+      alert("Purchase failed: " + msg);
+    }
+    return;
+  }
+  const jws = txn && txn.jwsRepresentation;
+  if (!jws) { alert("Purchase couldn't be verified (no receipt). If you were charged, email support@robograder.app."); return; }
+  try {
+    const idToken = await window._currentUser.getIdToken();
+    const resp = await fetch("/api/verify_iap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + idToken },
+      body: JSON.stringify({ jws })
+    });
+    const data = await resp.json().catch(function(){ return {}; });
+    if (resp.ok && data.ok) { await loadUserCredits(); hideBuyCredits(); alert("Added " + data.credits + " assessments to your account."); }
+    else { alert("We couldn't credit your purchase: " + (data.error || "unknown error") + "\n\nIf you were charged, your receipt is on file — email support@robograder.app and we'll fix it."); }
+  } catch (e) {
+    alert("Network error verifying your purchase. If you were charged, reopen the app or email support@robograder.app.");
+  }
+}
+
+let _iosPriceCache = null;
+function _applyIosPrices(products) {
+  const byId = {};
+  Object.keys(IOS_PRODUCT_IDS).forEach(function(k) { byId[IOS_PRODUCT_IDS[k]] = k; });
+  (products || []).forEach(function(p) {
+    const key = byId[p.identifier];
+    if (!key) return;
+    const priceEl = document.getElementById('price-' + key);
+    if (priceEl && p.priceString) priceEl.textContent = p.priceString;
+    const unitEl = document.getElementById('unit-' + key);
+    const credits = IOS_CREDITS[key];
+    if (unitEl && typeof p.price === 'number' && credits) {
+      try { unitEl.textContent = '(' + new Intl.NumberFormat(undefined, { style: 'currency', currency: p.currencyCode || 'USD' }).format(p.price / credits) + ' each)'; } catch (e) {}
+    }
+  });
+}
+async function _iosFetchPrices() {
+  const NP = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativePurchases;
+  if (!NP) return null;
+  const res = await NP.getProducts({ productIdentifiers: Object.values(IOS_PRODUCT_IDS), productType: 'inapp' });
+  const products = (res && res.products) || [];
+  if (products.length) _iosPriceCache = products;
+  return products;
+}
+async function _iosLoadPrices() {
+  if (_iosPriceCache) { _applyIosPrices(_iosPriceCache); return; }
+  try { const products = await _iosFetchPrices(); if (products) _applyIosPrices(products); }
+  catch (e) { console.log('[iap] getProducts failed:', e && e.message); }
+}
+
 function showBuyCredits() {
   const modal = document.getElementById("buy-credits-modal");
   if (modal) modal.style.display = "flex";
   refreshPromoRow();
+  if (window.Capacitor && window.Capacitor.isNativePlatform()) _iosLoadPrices();
 }
 
 function hideBuyCredits() {
@@ -5410,15 +5681,15 @@ async function deleteStorageFolder(pathPrefix) {
 
 let _pendingAssessResult = null;
 
-const ASSESS_MODAL_BG = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/progress_modal.PNG";
+const ASSESS_MODAL_BG = "assets/modal/progress_modal.PNG";
 
-const ASSESS_DEFAULT_BOX = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/default_box.PNG";
+const ASSESS_DEFAULT_BOX = "assets/modal/default_box.PNG";
 
-const ASSESS_SUCCESS_BOX = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/success_box.PNG";
+const ASSESS_SUCCESS_BOX = "assets/modal/success_box.PNG";
 
-const ASSESS_FAILURE_BOX = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/failure_box.PNG";
+const ASSESS_FAILURE_BOX = "assets/modal/failure_box.PNG";
 
-const ASSESS_OVERLAY_BG = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay.webp";
+const ASSESS_OVERLAY_BG = "assets/modal/Progress_Overlay.webp";
 
 (function preloadAssessBoxes() {
   [ ASSESS_DEFAULT_BOX, ASSESS_SUCCESS_BOX, ASSESS_FAILURE_BOX, ASSESS_OVERLAY_BG, ASSESS_MODAL_BG ].forEach(url => {
@@ -5427,7 +5698,7 @@ const ASSESS_OVERLAY_BG = "https://raw.githubusercontent.com/OgreBuzzard/ai-comi
   });
 })();
 
-const ASSESS_FRAMES = [ "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_01.PNG", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_02.PNG", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_03.PNG", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_04.PNG", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_05.PNG", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_06.PNG" ];
+const ASSESS_FRAMES = [ "assets/modal/frame_01.PNG", "assets/modal/frame_02.PNG", "assets/modal/frame_03.PNG", "assets/modal/frame_04.PNG", "assets/modal/frame_05.PNG", "assets/modal/frame_06.PNG" ];
 
 function mountStepTracker() {
   if (window.RobograderScan && window.RobograderScan.debugLog) {
@@ -5477,8 +5748,8 @@ function mountStepTracker() {
 // three overlay artworks' button layout the same). Step ids are prefixed so
 // they don't collide with Main's, and setStep works on any tracker-box-* id.
 const TIER_OVERLAY_BG = {
-  full: "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay_Full.webp",
-  restoration: "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay_Restoration.webp"
+  full: "assets/modal/Progress_Overlay_Full.webp",
+  restoration: "assets/modal/Progress_Overlay_Restoration.webp"
 };
 (function preloadTierOverlays() {
   Object.values(TIER_OVERLAY_BG).forEach(url => { const img = new Image; img.src = url; });
@@ -5593,6 +5864,8 @@ async function animateStepsFromDiagnostics(d) {
 }
 
 function supportsResponseStreaming() {
+  // iOS: force non-streaming. Cross-origin SSE stalls in WKWebView.
+  if (window.Capacitor && window.Capacitor.isNativePlatform()) return false;
   try {
     return typeof ReadableStream !== "undefined" && typeof TextDecoder !== "undefined" && new Response(new ReadableStream).body && typeof new Response(new ReadableStream).body.getReader === "function";
   } catch (e) {
@@ -7707,7 +7980,7 @@ function setDateField(field, val, monthOnly) {
   formData[field] = monthOnly ? val : val;
 }
 
-const SLOT_GHOSTS = [ "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Front_Cover.jpg", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Back_Cover.jpg", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Page_Quality.jpg", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Raking_Light.jpg" ];
+const SLOT_GHOSTS = [ "assets/ghosts/Front_Cover.jpg", "assets/ghosts/Back_Cover.jpg", "assets/ghosts/Page_Quality.jpg", "assets/ghosts/Raking_Light.jpg" ];
 
 function renderForm() {
   const isEdit = !!formData.id;
@@ -10315,9 +10588,10 @@ if ("serviceWorker" in navigator) {
   });
   if (window._appReadyToShow) tryDismiss();
   setTimeout(() => {
-    if (!dismissed) dismiss();
+    if (!dismissed && !splash.classList.contains("signin-mode")) dismiss();
   }, MAX_DWELL_MS);
   splash.addEventListener("click", () => {
+    if (splash.classList.contains("signin-mode")) return;
     const elapsed = Date.now() - splashStartTime;
     if (elapsed >= MIN_DWELL_MS) dismiss();
   });
@@ -10382,27 +10656,27 @@ initFirebase();
         <img src="/assets/products/Comic_Stack.png" alt="" width="64" height="64" style="flex-shrink:0;object-fit:contain">
         <div style="flex:1;min-width:0">
           <div style="font-size:16px;font-weight:700;color:#1a1008">Comic Stack</div>
-          <div style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$10</div>
+          <div id="price-comic_stack" style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$10</div>
           <div style="font-size:13px;color:#3a2a1a;margin-top:3px">5 assessments</div>
-          <div style="font-size:12px;color:#6a5a4a;margin-top:1px">($2.00 each)</div>
+          <div id="unit-comic_stack" style="font-size:12px;color:#6a5a4a;margin-top:1px">($2.00 each)</div>
         </div>
       </button>
       <button onclick="buyCredits('comic_wall')" style="display:flex;align-items:center;gap:14px;background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:12px 16px;cursor:pointer;text-align:left;width:100%">
         <img src="/assets/products/Comic_Wall.png" alt="" width="64" height="64" style="flex-shrink:0;object-fit:contain">
         <div style="flex:1;min-width:0">
           <div style="font-size:16px;font-weight:700;color:#1a1008">Comic Wall</div>
-          <div style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$30</div>
+          <div id="price-comic_wall" style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$30</div>
           <div style="font-size:13px;color:#3a2a1a;margin-top:3px">20 assessments</div>
-          <div style="font-size:12px;color:#6a5a4a;margin-top:1px">($1.50 each)</div>
+          <div id="unit-comic_wall" style="font-size:12px;color:#6a5a4a;margin-top:1px">($1.50 each)</div>
         </div>
       </button>
       <button onclick="buyCredits('short_box')" style="display:flex;align-items:center;gap:14px;background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:12px 16px;cursor:pointer;text-align:left;width:100%">
         <img src="/assets/products/Short_Box.png" alt="" width="64" height="64" style="flex-shrink:0;object-fit:contain">
         <div style="flex:1;min-width:0">
           <div style="font-size:16px;font-weight:700;color:#1a1008">Short Box</div>
-          <div style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$100</div>
+          <div id="price-short_box" style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$100</div>
           <div style="font-size:13px;color:#3a2a1a;margin-top:3px">100 assessments</div>
-          <div style="font-size:12px;color:#6a5a4a;margin-top:1px">($1.00 each)</div>
+          <div id="unit-short_box" style="font-size:12px;color:#6a5a4a;margin-top:1px">($1.00 each)</div>
         </div>
       </button>
     </div>

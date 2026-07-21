@@ -1346,6 +1346,7 @@ function renderItemsList() {
         <div class="main">
           <div class="title" style="white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escapeHtml(it.title)}${it.issue ? ' #' + escapeHtml(it.issue) : ''}</div>
           <div class="sub">${escapeHtml(it.userName)}${it.transferCode ? ' · <span style="color:#e8c257;font-weight:700;letter-spacing:0.5px">' + escapeHtml(it.transferCode) + '</span>' : ''} · ${it.roboGradeDate ? _fmtDateTime(it.roboGradeDate) : 'no date'}${it.roboGradeId ? ' · ID ' + escapeHtml(it.roboGradeId) : ''}</div>
+          ${it.fmvRange ? `<div style="font-size:11px;color:#7fd0ff;font-weight:600;margin-top:1px;">FMV ${escapeHtml(it.fmvRange)}</div>` : ''}
         </div>
         <div class="meta" style="display:flex;flex-direction:column;align-items:center;gap:1px;min-width:46px;">
           <div title="${it.tier === 3 ? 'Full' : it.tier === 2 ? 'Deep' : 'Main'} assessment" style="font-size:10px;color:#e8c257;letter-spacing:1px;height:12px;line-height:12px">${'★'.repeat(it.tier || 1)}</div>
@@ -1507,6 +1508,7 @@ function renderTimingsList() {
         <div class="meta">
           <div class="big" style="color:${totalColor};">${t.totalMs ?? '—'}</div>
           <div class="label">ms total</div>
+          <button class="timing-json-btn" data-key="${escapeAttr(t.key)}" style="margin-top:4px;background:var(--panel-2);color:var(--text-dim);border:1px solid var(--rule);border-radius:4px;font-size:10px;padding:2px 6px;cursor:pointer;letter-spacing:0.05em">log</button>
         </div>
       </div>
     `;
@@ -1514,8 +1516,14 @@ function renderTimingsList() {
 
   sec.innerHTML = aggHtml + rows + (state.timingsHasMore ? `<button class="load-more" id="load-more-timings-btn">Load more</button>` : '');
   sec.querySelectorAll('.timing-row').forEach(row => {
-    row.onclick = () => {
-      const t = state.timingsList.find(x => x.key === row.dataset.key);
+    // S20 (#33): tapping a log opens the item entry (Items tab, filtered to this
+    // assessment's Grade ID). The small "log" button still opens the raw timing JSON.
+    row.onclick = () => jumpToItemByGradeId(row.dataset.key);
+  });
+  sec.querySelectorAll('.timing-json-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const t = state.timingsList.find(x => x.key === btn.dataset.key);
       if (t) showTimingDetail(t);
     };
   });
@@ -1619,18 +1627,25 @@ function renderUserDetail(user, items, publicRate) {
     <h3 class="section-h">Items (${items.length})</h3>
     ${items.length === 0
       ? '<div class="empty">No items yet.</div>'
-      : items.map(it => `
-          <div class="row" data-id="${it.id}">
+      : items.map(it => {
+          // S20 (#34): match the Items-tab list style — thumb, 2-line title,
+          // FMV line, and tier stars + PG/RG. Tapping opens the item detail.
+          const thumbSrc = it.inlineThumb || it.thumbUrl;
+          return `
+          <div class="row item-row" style="cursor:pointer" onclick="showItem('${escapeAttr(user.uid)}','${escapeAttr(it.id)}','user')">
+            ${thumbSrc ? `<div class="row-thumb"><img src="${escapeAttr(thumbSrc)}" alt="" loading="lazy"></div>` : '<div class="row-thumb empty"></div>'}
             <div class="main">
-              <div class="title">${escapeHtml(it.title)}${it.issue ? ' #' + escapeHtml(it.issue) : ''}</div>
-              <div class="sub">${it.roboGradeDate ? new Date(it.roboGradeDate).toLocaleDateString() : 'no date'} · ID ${escapeHtml(it.roboGradeId)}</div>
+              <div class="title" style="white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escapeHtml(it.title)}${it.issue ? ' #' + escapeHtml(it.issue) : ''}</div>
+              <div class="sub">${it.roboGradeDate ? new Date(it.roboGradeDate).toLocaleDateString() : 'no date'}${it.roboGradeId ? ' · ID ' + escapeHtml(it.roboGradeId) : ''}</div>
+              ${it.fmvRange ? `<div style="font-size:11px;color:#7fd0ff;font-weight:600;margin-top:1px;">FMV ${escapeHtml(it.fmvRange)}</div>` : ''}
             </div>
-            <div class="meta">
-              <div class="big">${it.score ?? '—'}${it.highGradeAssessed ? '<span style="font-size:14px;color:var(--accent);margin-left:2px;">+</span>' : ''}</div>
-              <div class="label">RG</div>
+            <div class="meta" style="display:flex;flex-direction:column;align-items:center;gap:1px;min-width:46px;">
+              <div title="${it.tier === 3 ? 'Full' : it.tier === 2 ? 'Deep' : 'Main'} assessment" style="font-size:10px;color:#e8c257;letter-spacing:1px;height:12px;line-height:12px">${'★'.repeat(it.tier || 1)}</div>
+              <div style="text-align:center;line-height:1.05;"><div class="big" style="color:#7fd0ff;">${it.assessedCGCGrade ?? '—'}</div><div class="label">PG</div></div>
+              <div style="text-align:center;line-height:1.05;"><div class="big">${it.score ?? '—'}</div><div class="label">RG</div></div>
             </div>
           </div>
-        `).join('')
+        `; }).join('')
     }
     <!-- S14: danger zone. Delete-account button sits well below the items
          list so it's not adjacent to anything you'd casually tap. The
@@ -1948,6 +1963,16 @@ function jumpToUserItems(code) {
   renderDashboard();
 }
 
+// S20 (#33): from a Logs row, jump to the Items tab filtered by the assessment's
+// Grade ID (the log's doc key). The items search already matches roboGradeId, so
+// this surfaces the exact item entry — tap it to open the detail view.
+function jumpToItemByGradeId(gradeId) {
+  if (!gradeId) return;
+  state.tab = 'items';
+  state.itemSearch = gradeId;
+  renderDashboard();
+}
+
 function renderItemDetail(it) {
   const v = (x) => (x === null || x === undefined || x === '') ? '—' : x;
   const fieldGrid = (pairs) => `
@@ -1963,6 +1988,10 @@ function renderItemDetail(it) {
     return `Image ${i+1}`;
   };
 
+  // S20: assessment tier for the RG-box stars (1 Main / 2 Deep / 3 Full).
+  const tier = (it.interiorImages && it.interiorImages.length) ? 3 : ((it.cornerImages && it.cornerImages.length) ? 2 : 1);
+  const pqColors = { 'White':'#f7f7f2','Off-White to White':'#f0ece6','Off-White':'#efe8d8','Cream to Off-White':'#efe4cf','Cream':'#eeddb8','Light Tan to Cream':'#e6d3a8','Tan to Off-White':'#e0cfa8','Brittle':'#d9c090' };
+  const ownColor = { Sold:'#e8c257', Watching:'#7fd0ff', Print:'#c9a0ff', Owned:'var(--accent)' };
   document.querySelector('main').innerHTML = `
     <div class="profile" style="margin-bottom:16px;">
       <h2>${escapeHtml(it.title)}${it.issue ? ' #' + escapeHtml(it.issue) : ''}</h2>
@@ -1973,9 +2002,10 @@ function renderItemDetail(it) {
         ${it.publicListing ? `<span class="pill" style="color:var(--accent);">Public</span>` : `<span class="pill">Private</span>`}
         ${it.version ? `<span class="pill">v${escapeHtml(it.version)}</span>` : ''}
         ${it.cornerImages && it.cornerImages.length > 0 ? `<span class="pill" style="color:var(--accent);"><strong>HG</strong> assessed</span>` : ''}
+        ${it.ownership && it.ownership !== 'None' ? `<span class="pill" style="color:${ownColor[it.ownership] || 'var(--text)'};"><strong>${escapeHtml(it.ownership)}</strong></span>` : ''}
       </div>
       <div style="margin-top:6px;font-size:12px;color:#9aa;">
-        ${it.transferCode ? `<span onclick="jumpToUserItems('${escapeAttr(it.transferCode)}')" style="cursor:pointer;text-decoration:underline dotted;" title="Show all of this user's items">${it.userName ? escapeHtml(it.userName) : 'Unknown user'} · <span style="color:#e8c257;font-weight:700;">${escapeHtml(it.transferCode)}</span></span>` : (it.userName ? escapeHtml(it.userName) : 'Unknown user')}${it.userEmail ? ` · <a href="mailto:${escapeAttr(it.userEmail)}?subject=${encodeURIComponent('Robograder — ' + (it.title || '') + (it.issue ? ' #' + it.issue : ''))}" style="color:#7fd0ff;text-decoration:none;">✉ email user</a>` : ''}${(it.fmvRange || it.fmv) ? ` · <span style="color:#7fd0ff;">FMV ${escapeHtml(String(it.fmvRange || it.fmv))}</span>` : ''}
+        ${it.transferCode ? `<span onclick="jumpToUserItems('${escapeAttr(it.transferCode)}')" style="cursor:pointer;text-decoration:underline dotted;" title="Show all of this user's items">${it.userName ? escapeHtml(it.userName) : 'Unknown user'} · <span style="color:#e8c257;font-weight:700;">${escapeHtml(it.transferCode)}</span></span>` : (it.userName ? escapeHtml(it.userName) : 'Unknown user')}${it.userEmail ? ` · <a href="mailto:${escapeAttr(it.userEmail)}?subject=${encodeURIComponent('Robograder — ' + (it.title || '') + (it.issue ? ' #' + it.issue : ''))}" style="color:#7fd0ff;text-decoration:none;">✉ email user</a>` : ''}
       </div>
     </div>
 
@@ -1988,15 +2018,28 @@ function renderItemDetail(it) {
     </div>
 
     <h3 class="section-h">Grades</h3>
-    ${fieldGrid([
-      ['Robograde Score', it.score],
-      ['Confidence Range', it.confidenceRange != null ? '±' + it.confidenceRange : '—'],
-      ['Assessed CGC Grade', it.assessedCGCGrade],
-      ['Page Quality', it.pageQuality],
-    ])}
+    <div style="display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;margin:2px 0 6px;">
+      <div style="background:#0f1a05;border:1.5px solid #3a5010;border-radius:8px;padding:5px 12px;text-align:center;min-width:56px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">
+        <div style="font-size:10px;color:#e8c257;letter-spacing:1px;height:12px;line-height:12px;">${'★'.repeat(tier)}</div>
+        <div style="font-size:22px;font-weight:800;color:#aaee30;line-height:1.15;">${v(it.score)}</div>
+        <div style="font-size:9px;color:#aaee30;opacity:0.75;letter-spacing:0.8px;">RG</div>
+      </div>
+      <div style="background:#2a5a8a;border-radius:8px;padding:5px 12px;text-align:center;min-width:56px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">
+        <div style="height:12px;"></div>
+        <div style="font-size:22px;font-weight:800;color:#e0f0ff;line-height:1.15;">${v(it.assessedCGCGrade)}</div>
+        <div style="font-size:9px;color:#e0f0ff;opacity:0.75;letter-spacing:0.8px;">PG</div>
+      </div>
+      <div style="display:flex;flex-direction:column;justify-content:center;gap:6px;">
+        <span style="background:var(--panel-2);border:1px solid var(--rule);color:var(--text);border-radius:20px;padding:3px 12px;font-size:12px;font-weight:600;white-space:nowrap;">PM ${it.confidenceRange != null ? '±' + it.confidenceRange : '—'}</span>
+        ${it.pageQuality
+          ? `<span style="background:${pqColors[it.pageQuality] || '#f0ece6'};color:#4a4034;border-radius:20px;padding:3px 12px;font-size:12px;font-weight:600;white-space:nowrap;">${escapeHtml(it.pageQuality)}</span>`
+          : `<span style="background:var(--panel-2);border:1px solid var(--rule);color:var(--text-dim);border-radius:20px;padding:3px 12px;font-size:12px;">PQ —</span>`}
+      </div>
+    </div>
 
     <h3 class="section-h">Assessment Metadata</h3>
     ${fieldGrid([
+      ['FMV', it.fmvRange || it.fmv],
       ['Robograde ID', it.roboGradeId],
       ['Robograde Date', it.roboGradeDate ? new Date(it.roboGradeDate).toLocaleString() : null],
     ])}
@@ -2101,7 +2144,7 @@ function renderItemDetail(it) {
     ` : ''}
 
     ${(() => {
-      const extra = [['Interior', it.interiorImages], ['Restoration', it.restorationImages], ['Signature', it.signatureImages]].filter(([_, a]) => a && a.length);
+      const extra = [['Interior Covers', it.interiorCoverImages], ['Interior', it.interiorImages], ['Restoration', it.restorationImages], ['Signature', it.signatureImages]].filter(([_, a]) => a && a.length);
       return extra.map(([name, arr]) => `
         <h3 class="section-h" style="margin-top:20px;">${name} (${arr.length})</h3>
         <div class="images-block">
@@ -2121,23 +2164,23 @@ function renderItemDetail(it) {
     <h3 class="section-h" style="margin-top:24px;color:var(--accent);">⚙ Defect Editor</h3>
     <div id="defect-editor" style="margin-bottom:20px;">
       <div id="defect-list"></div>
-      <div style="margin-top:12px;padding:12px;background:#1a1a1a;border-radius:8px;border:1px solid #333;">
+      <div style="margin-top:12px;padding:12px;background:#1a1a1a;border-radius:8px;border:1px solid #333;box-sizing:border-box;max-width:100%;">
         <div style="font-size:11px;font-weight:700;color:#aaa;letter-spacing:1px;margin-bottom:8px;">ADD DEFECT</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-          <select id="def-type" style="padding:6px 8px;background:#222;border:1px solid #444;color:#eee;border-radius:4px;font-size:12px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;max-width:100%;">
+          <select id="def-type" style="padding:6px 8px;background:#222;border:1px solid #444;color:#eee;border-radius:4px;font-size:12px;min-width:0;width:100%;box-sizing:border-box">
             <option value="">— Type —</option>
             ${['Corner blunting','Corner crease','Spine stress lines','Spine roll','Spine split','Spine wear','Edge wear','Edge tear','Crease','Color-breaking crease','Non-color-breaking crease','Tear','Tape','Tape residue','Missing piece','Paper loss','Soiling','Foxing','Stain','Water damage','Rust','Rust migration','Staple tear','Staple detachment','Tanning','Cover tanning','Surface abrasion','Surface wear','Surface crazing','Writing','Stamp','Sticker','Sticker residue','Subscription crease','Bindery defect','Production defect','Printing defect','Gloss loss','Dust shadow','Centerfold detachment','Brittleness'].map(t => `<option value="${t}">${t}</option>`).join('')}
           </select>
-          <select id="def-location" style="padding:6px 8px;background:#222;border:1px solid #444;color:#eee;border-radius:4px;font-size:12px">
+          <select id="def-location" style="padding:6px 8px;background:#222;border:1px solid #444;color:#eee;border-radius:4px;font-size:12px;min-width:0;width:100%;box-sizing:border-box">
             <option value="">— Location —</option>
             ${['Front','Top Left Front','Top Right Front','Bottom Left Front','Bottom Right Front','Back','Top Left Back','Top Right Back','Bottom Left Back','Bottom Right Back','Spine','Interior'].map(l => `<option value="${l}">${l}</option>`).join('')}
           </select>
-          <select id="def-severity" style="padding:6px 8px;background:#222;border:1px solid #444;color:#eee;border-radius:4px;font-size:12px">
+          <select id="def-severity" style="padding:6px 8px;background:#222;border:1px solid #444;color:#eee;border-radius:4px;font-size:12px;min-width:0;width:100%;box-sizing:border-box">
             <option value="Low">Low</option>
             <option value="Med">Med</option>
             <option value="High">High</option>
           </select>
-          <select id="def-measurement" style="padding:6px 8px;background:#222;border:1px solid #444;color:#eee;border-radius:4px;font-size:12px">
+          <select id="def-measurement" style="padding:6px 8px;background:#222;border:1px solid #444;color:#eee;border-radius:4px;font-size:12px;min-width:0;width:100%;box-sizing:border-box">
             <option value="">— Size —</option>
             ${['~1/16"','~1/8"','~1/4"','~1/2"','~1"','~2"','3"','3"+'].map(s => `<option value="${s}">${s}</option>`).join('')}
           </select>

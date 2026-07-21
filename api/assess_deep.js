@@ -99,6 +99,7 @@ export default async function handler(req, res) {
   const {
     initialAssessment = null,
     cornerMacros = [],           // [{type, source} blocks in Anthropic image format] or [data URLs]
+    interiorCovers = [],         // S20 (#36): optional 2 images [Interior Front, Interior Back]. Raw books send 2; slabbed books (can't be opened) send 0. When present, Deep judges interior-cover CONDITION and may move the Interior sub-score (page quality stays frozen).
     frontCover = null,           // S19: optional full front-cover image (data URL or block) for grade-reference comparison
     title = '',
     issueNumber = '',
@@ -145,6 +146,21 @@ export default async function handler(req, res) {
     imageInputBlocks = cornerMacros.map(toImageBlock);
     if (imageInputBlocks.some(b => !b)) {
       return sseError(400, { error: 'cornerMacros: each entry must be a base64 data URL or Anthropic image block' });
+    }
+  }
+
+  // S20 (#36): interior-cover photos (raw books only). When exactly 2 are sent,
+  // Deep also judges interior-cover condition. When 0 (slabbed, or older clients),
+  // Deep behaves exactly as before — interior stays frozen.
+  let interiorCoverBlocks = [];
+  const hasInteriorCovers = !isRestoration && Array.isArray(interiorCovers) && interiorCovers.length === 2;
+  if (!isRestoration && Array.isArray(interiorCovers) && interiorCovers.length && interiorCovers.length !== 2) {
+    return sseError(400, { error: 'interiorCovers, when provided, must be exactly 2 (Interior Front, Interior Back)' });
+  }
+  if (hasInteriorCovers) {
+    interiorCoverBlocks = interiorCovers.map(toImageBlock);
+    if (interiorCoverBlocks.some(b => !b)) {
+      return sseError(400, { error: 'interiorCovers: each entry must be a base64 data URL or Anthropic image block' });
     }
   }
   const macroBlocks = imageInputBlocks;  // alias kept for the downstream message assembly
@@ -214,9 +230,9 @@ export default async function handler(req, res) {
   //   - aiAssessment notes the revision if grade changed
   const initialGrade = initialAssessment.grade || initialAssessment?.roboGrade?.predictedGrade || '';
   const initialRG = initialAssessment.roboGrade || {};
-  const systemPrompt = `You are performing a DEEP ASSESSMENT — a focused refinement of an existing comic book grade using 4 high-resolution corner macros of the front cover.
+  const systemPrompt = `You are performing a DEEP ASSESSMENT — a focused refinement of an existing comic book grade using 4 high-resolution corner macros of the front cover${hasInteriorCovers ? ' plus 2 interior-cover photos (inside front cover/first page and last page/inside back cover)' : ''}.
 
-The INITIAL ASSESSMENT is provided below. You are NOT re-grading from scratch. You are answering one question: do the corner macros reveal anything that changes the FRONT or SPINE sub-scores?
+The INITIAL ASSESSMENT is provided below. You are NOT re-grading from scratch. You are answering: do the corner macros reveal anything that changes the FRONT or SPINE sub-scores${hasInteriorCovers ? ', and do the two interior-cover photos reveal any interior-cover CONDITION (tanning, foxing, stains, tears) that changes the INTERIOR sub-score' : ''}?
 
 INITIAL ASSESSMENT (authoritative — preserve all fields unless the macros provide explicit reason to change):
 ${JSON.stringify({
@@ -267,12 +283,19 @@ Color-break detection technique: a color break is a small region — often only 
 ## PHASE 2 — INSPECT BOTTOM CORNER MACROS (BL, BR)
 Same inspection on Bottom-Left and Bottom-Right corner macros. The BL macro also shows the bottom of the spine — examine for spine ticks at the bottom third.
 
-## PHASE 3 — APPLY DELTAS TO FRONT AND SPINE
-For each new defect observed in the macros that was NOT in the initial catalogue, add a defect entry tagged with deepAddition: true. Adjust scores accordingly:
+${hasInteriorCovers ? `## PHASE 2.5 — INSPECT INTERIOR COVERS (Interior Front, Interior Back)
+Two interior-cover photos are provided: the inside front cover + first page, and the last page + inside back cover. Examine them ONLY for interior-cover CONDITION:
+  • Tanning / toning of the inside covers and the first/last pages (browning of the paper)
+  • Foxing (small brown spots), stains, or moisture marks
+  • Tears, chips, or writing on the inside covers / first-last pages
+Report only what is actually visible. If the interior covers are clean, say nothing and leave the Interior sub-score unchanged. Do NOT judge page quality here — page quality is FIXED from the initial assessment and must not change. Staples are NOT interior — any staple observation stays in the Spine category.
+
+` : ''}## PHASE 3 — APPLY DELTAS TO FRONT${hasInteriorCovers ? ', SPINE, AND INTERIOR' : ' AND SPINE'}
+For each new defect observed that was NOT in the initial catalogue, add a defect entry tagged with deepAddition: true. Adjust scores accordingly:
   • Front sub-score: deduct for new front-cover defects (corner damage, color breaks on cover, etc.)
   • Spine sub-score: deduct for new spine ticks (1 point per non-color-breaking, 2 per color-breaking) or inner-corner-at-spine damage
   • BACK sub-score: FROZEN. Do not change. No new back-cover evidence.
-  • INTERIOR sub-score: FROZEN. Do not change. No new interior evidence.
+  • ${hasInteriorCovers ? 'INTERIOR sub-score: adjust ONLY for interior-cover CONDITION actually visible in the two interior-cover photos (tanning, foxing, stains, tears). Deduct for genuine interior defects; if the interior covers are clean, leave it unchanged. Do NOT change page quality — it is fixed from the initial assessment.' : 'INTERIOR sub-score: FROZEN. Do not change. No new interior evidence.'}
 
 If the macros REVEAL a new defect not in the initial catalogue (corner damage, spine ticks, tape, color breaks visible only at macro scale), add defect entries with deepAddition: true and adjust Front and Spine sub-scores downward accordingly. The revised grade may go BELOW the initial when new defects are found.
 
@@ -320,7 +343,7 @@ JSON shape (same as initial assessment, with deepAddition tags on new defects):
     "frontScore": 0,
     "backScore": ${initialRG.backScore == null ? 'null' : initialRG.backScore},
     "spineScore": 0,
-    "interiorScore": ${initialRG.interiorScore == null ? 'null' : initialRG.interiorScore},
+    "interiorScore": ${hasInteriorCovers ? 0 : (initialRG.interiorScore == null ? 'null' : initialRG.interiorScore)},
     "pageQuality": "${initialRG.pageQuality || ''}",
     "defects": [
       {"type":"","location":"","measurement":"","severity":"Med","colorBreaking":false,"category":"Front","deepAddition":false}
@@ -478,6 +501,7 @@ Rules:
           : [
               { type: 'text', text: 'CORNER MACROS in order: Top-Left, Top-Right, Bottom-Left, Bottom-Right of the front cover.' },
               ...macroBlocks,
+              ...(hasInteriorCovers ? [{ type: 'text', text: 'INTERIOR COVER PHOTOS in order: (1) Interior Front — inside front cover + first page; (2) Interior Back — last page + inside back cover. Examine ONLY for interior-cover condition (tanning, foxing, stains, tears) per PHASE 2.5. Do not re-judge page quality.' }, ...interiorCoverBlocks] : []),
               ...(frontCoverBlock ? [{ type: 'text', text: 'FULL FRONT COVER of the book being graded:' }, frontCoverBlock] : []),
               ...(hasGradeRefs ? [{ type: 'text', text: 'GRADE-REFERENCE IMAGES follow — real graded comics bracketing the initial grade, each labeled with its CGC grade and condition note, in ascending grade order. Compare the book above against these examples (PHASE 4).' }, ...gradeRefBlocks] : []),
               { type: 'text', text: 'Perform the deep assessment. If the macros reveal new defects, the grade may go down — tag them deepAddition: true. If the corners are cleaner than expected for the initial grade, the Front sub-score may rise by 1–3 points. Compare the book against the grade-reference images and confirm or revise the predicted grade per PHASE 4. Return the JSON.' }

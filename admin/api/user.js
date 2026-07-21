@@ -26,6 +26,42 @@ function parseServiceAccount() {
   return JSON.parse(raw);
 }
 
+// ── FMV (S20 #34): same port as admin/api/items.js so the user-detail item list
+// shows the same value as the Items tab. Fetched once per request.
+let _fmvCache = null, _fmvAt = 0;
+async function getFmvIndex() {
+  if (_fmvCache && Date.now() - _fmvAt < 10 * 60 * 1000) return _fmvCache;
+  try {
+    const r = await fetch('https://robograder.app/fmv.json', { cache: 'no-store' });
+    if (r.ok) { const data = await r.json(); if (data && data.books) { _fmvCache = data; _fmvAt = Date.now(); } }
+  } catch (_) { /* keep stale cache */ }
+  return _fmvCache;
+}
+const _nkTitle = s => !s ? '' : s.toString().trim().replace(/\s+/g, ' ').replace(/^The\s+/i, '').toLowerCase();
+const _nkIssue = s => s == null ? '' : s.toString().trim().replace(/^#/, '').replace(/\.0$/, '').replace(/^0+(\d)/, '$1');
+function matchFmv(idx, title, issue, grade, printing, year) {
+  if (!idx || !idx.books) return null;
+  if (printing && typeof printing === 'string') {
+    const p = printing.toLowerCase();
+    if (p.includes('facsimile') || p.includes('reprint')) return null;
+  }
+  const g = parseFloat(grade);
+  if (!isFinite(g)) return null;
+  let breaks = idx.books[_nkTitle(title) + '|' + _nkIssue(issue)];
+  if (typeof breaks === 'number' && idx.curves) breaks = idx.curves[breaks];
+  if (!Array.isArray(breaks) || !breaks.length) {
+    const y = parseInt(year, 10);
+    if (isFinite(y) && y >= 1991 && idx.tiers && idx.tiers['1']) return { tier: 1, low: idx.tiers['1'][0], high: idx.tiers['1'][1] };
+    return null;
+  }
+  let tier = breaks[0][1];
+  for (const b of breaks) { if (g >= b[0]) tier = b[1]; else break; }
+  const range = idx.tiers && idx.tiers[String(tier)];
+  return range ? { tier, low: range[0], high: range[1] } : null;
+}
+const _fmvK = v => v == null ? '' : (v >= 1000 ? '$' + (v / 1000) + 'K' : '$' + v);
+const fmtFmv = m => !m ? '' : (m.high == null ? _fmvK(m.low) + '+' : _fmvK(m.low) + '–' + _fmvK(m.high));
+
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'PATCH') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -215,6 +251,7 @@ export default async function handler(req, res) {
     // Compact rows for the list — full per-item detail comes from /item.js.
     // Flatten nested comicData/cardData so the dashboard doesn't have to.
     const itemsSnap = await userRef.collection('items').get();
+    const fmvIdx = await getFmvIndex(); // S20 (#34)
     const items = itemsSnap.docs.map(d => {
       const raw = d.data();
       const flat = (raw.schemaVersion === 3)
@@ -227,6 +264,20 @@ export default async function handler(req, res) {
       const highGradeAssessed = cornerArr.filter(e =>
         typeof e === 'string' ? e : (e && e.url)
       ).length > 0;
+      // S20 (#34): fields for the new list-row style (thumb, stars, FMV).
+      let thumbUrl = null;
+      const imgs0 = Array.isArray(raw.images) ? raw.images : [];
+      if (imgs0.length) { const f = imgs0[0]; thumbUrl = typeof f === 'string' ? f : (f && f.url) || null; }
+      const inlineThumb = flat.thumbnail || raw.thumbnail || null;
+      const tier = (Array.isArray(raw.interiorImages) && raw.interiorImages.length) ? 3
+                 : ((highGradeAssessed || flat.highGradeTier === true) ? 2 : 1);
+      let fmvRange = null;
+      try {
+        const g = (flat.cgcGrade ?? flat.assessedCGCGrade);
+        const y = parseInt((String(flat.issueDate || '').match(/(19|20)\d\d/) || [])[0], 10);
+        const mm = matchFmv(fmvIdx, flat.title, flat.issue, g, flat.printing, y);
+        fmvRange = mm ? fmtFmv(mm) : null;
+      } catch (_) { fmvRange = null; }
       return {
         id: d.id,
         title: flat.title || '(untitled)',
@@ -237,6 +288,10 @@ export default async function handler(req, res) {
         assessedCGCGrade: flat.assessedCGCGrade ?? null,
         publicListing: !!flat.publicListing,
         highGradeAssessed,
+        tier,
+        thumbUrl,
+        inlineThumb,
+        fmvRange,
       };
     });
 

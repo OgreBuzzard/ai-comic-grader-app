@@ -29,6 +29,43 @@ function parseServiceAccount() {
   return JSON.parse(raw);
 }
 
+// ── FMV (S20): same port as admin/api/item.js so the list shows the same value
+// the detail view computes. Index fetched once per request, cached in module
+// scope for 10 min. matchFmv includes the 1991+ blanket rule.
+let _fmvCache = null, _fmvAt = 0;
+async function getFmvIndex() {
+  if (_fmvCache && Date.now() - _fmvAt < 10 * 60 * 1000) return _fmvCache;
+  try {
+    const r = await fetch('https://robograder.app/fmv.json', { cache: 'no-store' });
+    if (r.ok) { const data = await r.json(); if (data && data.books) { _fmvCache = data; _fmvAt = Date.now(); } }
+  } catch (_) { /* keep stale cache */ }
+  return _fmvCache;
+}
+const _nkTitle = s => !s ? '' : s.toString().trim().replace(/\s+/g, ' ').replace(/^The\s+/i, '').toLowerCase();
+const _nkIssue = s => s == null ? '' : s.toString().trim().replace(/^#/, '').replace(/\.0$/, '').replace(/^0+(\d)/, '$1');
+function matchFmv(idx, title, issue, grade, printing, year) {
+  if (!idx || !idx.books) return null;
+  if (printing && typeof printing === 'string') {
+    const p = printing.toLowerCase();
+    if (p.includes('facsimile') || p.includes('reprint')) return null;
+  }
+  const g = parseFloat(grade);
+  if (!isFinite(g)) return null;
+  let breaks = idx.books[_nkTitle(title) + '|' + _nkIssue(issue)];
+  if (typeof breaks === 'number' && idx.curves) breaks = idx.curves[breaks];
+  if (!Array.isArray(breaks) || !breaks.length) {
+    const y = parseInt(year, 10);
+    if (isFinite(y) && y >= 1991 && idx.tiers && idx.tiers['1']) return { tier: 1, low: idx.tiers['1'][0], high: idx.tiers['1'][1] };
+    return null;
+  }
+  let tier = breaks[0][1];
+  for (const b of breaks) { if (g >= b[0]) tier = b[1]; else break; }
+  const range = idx.tiers && idx.tiers[String(tier)];
+  return range ? { tier, low: range[0], high: range[1] } : null;
+}
+const _fmvK = v => v == null ? '' : (v >= 1000 ? '$' + (v / 1000) + 'K' : '$' + v);
+const fmtFmv = m => !m ? '' : (m.high == null ? _fmvK(m.low) + '+' : _fmvK(m.low) + '–' + _fmvK(m.high));
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -87,6 +124,7 @@ export default async function handler(req, res) {
 
     // ── Fetch all items via collection group ─────────────────────────────────
     const itemsSnap = await db.collectionGroup('items').get();
+    const fmvIdx = await getFmvIndex();   // S20: one fetch, reused for every row
     let allItems = itemsSnap.docs.map(d => {
       const raw = d.data();
       const flat = (raw.schemaVersion === 3)
@@ -128,6 +166,16 @@ export default async function handler(req, res) {
               : ((highGradeAssessed || flat.highGradeTier === true) ? 2 : 1),
         thumbUrl,
         inlineThumb,
+        // S20: FMV range at the graded/predicted grade (official CGC if present,
+        // else predicted). Null when uncovered and not caught by the 1991+ rule.
+        fmvRange: (() => {
+          try {
+            const g = (flat.cgcGrade ?? flat.assessedCGCGrade);
+            const y = parseInt((String(flat.issueDate || '').match(/(19|20)\d\d/) || [])[0], 10);
+            const mm = matchFmv(fmvIdx, flat.title, flat.issue, g, flat.printing, y);
+            return mm ? fmtFmv(mm) : null;
+          } catch (_) { return null; }
+        })(),
       };
     });
 

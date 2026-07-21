@@ -46,18 +46,22 @@ import { anthropicWithRetry } from '../lib/anthropic_retry.js';
 // standard (see SLOT_SPECS + the prompt builder below).
 //
 // This endpoint now does a REAL (if lighter-than-initial) assessment, not just
-// presence-verification. It examines the 8 images by their per-slot standards,
-// may adjust the grade, and re-judges page quality up or down. Precision
-// modifier may go as low as 1 (or 0) — the 8 images give a near-complete view.
+// presence-verification. It examines the 6 images (S20 #36) by their per-slot
+// standards and may adjust the grade. Page quality is FROZEN at the initial
+// call (the interior covers that informed PQ moved to Deep). Precision
+// modifier may go as low as 1 (or 0) — the 6 images give a near-complete view.
 //
 // GATE (widened): a book qualifies for Full Assessment if it is on the Deep
 // Assessment list (the historic high-value set) OR it cleared a basic quality
 // bar — RoboScore >= 30 OR predicted grade >= 3.0. The lighter imagery/storage
 // demand makes a wider net practical. Slabbed books are still excluded (can't
 // shoot the interior through a case).
-const FULL_SLOT_COUNT = 8;
+// S20 (#36): Full drops to 6 slots. Interior Front / Interior Back moved to the
+// Deep pass (interior-cover condition is now judged there). Full covers staples,
+// page completeness, outer edge/trimming, and interior staples only.
+const FULL_SLOT_COUNT = 6;
 
-// The 8 slots, in order. `key` is the storage slot name; `label` is the
+// The 6 slots, in order. `key` is the storage slot name; `label` is the
 // user-facing name; `exam` is what the model examines this image for.
 const FULL_SLOTS = [
   { key: 'exterior_top_staple', label: 'Exterior Top Staple',
@@ -70,10 +74,6 @@ const FULL_SLOTS = [
     exam: 'Same as Top Pages but looking UP from the BOTTOM of the book. Together with Top Pages this confirms the interior pages are complete. Examine for tears, frays, missing or married pages.' },
   { key: 'outer_edge', label: 'Outer Edge',
     exam: 'The OUTER edge of the book (opposite the spine) with the back cover shown in raking light. Examine for tears and frays, and for signs of TRIMMING (an unnaturally clean, straight, or fresh-cut edge; reduced page margins). Trimming is very difficult to detect reliably — only flag it when the evidence is clear, and phrase any trimming observation cautiously.' },
-  { key: 'interior_front', label: 'Interior Front',
-    exam: 'A 2-page spread of the inside front cover and first page. Examine for tanning, tears, foxing, stains, and other common interior defects. No cropping — the full spread should be visible.' },
-  { key: 'interior_back', label: 'Interior Back',
-    exam: 'A 2-page spread of the last page and inside back cover. Same examination as Interior Front: tanning, tears, foxing, stains, common interior defects.' },
   { key: 'interior_staple', label: 'Interior Staples',
     exam: 'Same close framing of both staples but from the INSIDE of the book (centerfold). Examine for rust, wear, popped staples, and any sign the staples were replaced or disturbed.' }
 ];
@@ -123,17 +123,13 @@ function isDeepListBook(title, issue) {
   return DEEP_LIST_BOOKS.some(b => b.title === t && b.issue === i);
 }
 
-// S16: Widened gate — Full Assessment is available to any book with a
-// RoboScore >= 30 OR predicted grade >= 3.0. The client-side gate already
-// uses the full VALUE_KEYS list; the server doesn't need to duplicate that
-// check. The quality bar (score/grade) is the real gate.
+// S20 (#37): Full is gated CLIENT-SIDE on a completed Deep assessment AND FMV
+// tier >= 7 ($1000+), and every run costs a credit. The old server score/grade
+// floor is removed: it would wrongly reject legitimately-valuable LOW-grade keys
+// (tier 7+ despite a low grade). The slabbed + prereq checks below still apply,
+// so a book only reaches here after Main + Deep have run.
 function isFullEligible({ title, issueNumber, roboScore, predictedGrade }) {
-  const score = Number(roboScore);
-  const grade = parseFloat(predictedGrade);
-  const okScore = Number.isFinite(score) && score >= 30;
-  const okGrade = Number.isFinite(grade) && grade >= 3.0;
-  if (okScore || okGrade) return { eligible: true, reason: okScore ? 'score>=30' : 'grade>=3.0' };
-  return { eligible: false, reason: 'below-threshold' };
+  return { eligible: true, reason: 'client-fmv-tier' };
 }
 
 export default async function handler(req, res) {
@@ -202,7 +198,7 @@ export default async function handler(req, res) {
   const {
     title = '',
     issueNumber = '',
-    interiorImages = [],          // 8 images, ORDER MATCHES slotKeys (or default FULL_SLOTS)
+    interiorImages = [],          // 6 images (S20 #36), ORDER MATCHES slotKeys (or default FULL_SLOTS)
     slotKeys = null,              // client's slot order for these images
     labelDetected = false,
     initialAssessmentComplete = false,
@@ -240,7 +236,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // Eligibility check 4: exactly 8 images, in slot order.
+  // Eligibility check 4: exactly 6 images, in slot order.
   if (!Array.isArray(interiorImages) || interiorImages.length !== FULL_SLOT_COUNT) {
     return sseError(400, {
       error: 'WRONG_SLOT_COUNT',
@@ -268,19 +264,20 @@ export default async function handler(req, res) {
     });
   }
 
-  // ── S15 May 30: real 8-slot Full Assessment prompt ──────────────────────────
+  // ── S15 May 30 / S20 #36: real 6-slot Full Assessment prompt ────────────────
   // Each image maps to a named slot with its own examination standard. The
-  // model examines all 8, may ADJUST the grade (interior/structural findings
-  // can move it), and re-judges page quality up/down from the Interior Front/Back.
-  // Precision modifier may go as low as 1 or 0 — the 8 images give a near-
-  // complete view of the book's interior and structure.
+  // model examines all 6, may ADJUST the grade (structural findings can move it).
+  // Page quality is FROZEN at the initial Main assessment's call (S20 #36: the
+  // interior-cover photos that used to inform PQ moved to the Deep pass).
+  // Precision modifier may go as low as 1 or 0 — the 6 images give a near-
+  // complete view of the book's structure and page completeness.
   // Align the per-image examination specs to the order the client actually sent
   // (slotKeys). Falls back to the default FULL_SLOTS order. This keeps image i
   // mapped to the right slot guidance even if the client reorders capture/storage.
   const orderedSpecs = Array.isArray(slotKeys) && slotKeys.length === FULL_SLOT_COUNT && slotKeys.every(k => SPEC_BY_KEY[k]) ? slotKeys.map(k => SPEC_BY_KEY[k]) : FULL_SLOTS;
   const slotList = orderedSpecs.map((s, i) => `${i + 1}. ${s.label} (image ${i + 1}): ${s.exam}`).join('\n');
 
-  const initialContext = initialAssessment ? `\nINITIAL ASSESSMENT (for context — do not re-grade the cover from scratch; these 8 images are about the INTERIOR and STRUCTURE):\n${typeof initialAssessment === 'string' ? initialAssessment.slice(0, 4000) : JSON.stringify(initialAssessment).slice(0, 4000)}\n` : '';
+  const initialContext = initialAssessment ? `\nINITIAL ASSESSMENT (for context — do not re-grade the cover from scratch; these 6 images are about the book's STRUCTURE and page completeness):\n${typeof initialAssessment === 'string' ? initialAssessment.slice(0, 4000) : JSON.stringify(initialAssessment).slice(0, 4000)}\n` : '';
 
   const priorBlock = priorConditionAssessment && priorConditionAssessment.trim()
     ? `\nPRIOR CONDITION ASSESSMENT (the existing buyer-facing write-up you are UPDATING — integrate the new findings into this; keep its accurate observations, do not contradict the cover findings without cause):\n"""\n${String(priorConditionAssessment).slice(0, 2500)}\n"""\n`
@@ -289,20 +286,20 @@ export default async function handler(req, res) {
     ? `\nPRIOR DEFECT NOTES (context only):\n${String(priorDefectNotes).slice(0, 1500)}\n`
     : '';
 
-  const systemPrompt = `You are performing a FULL ASSESSMENT of a vintage comic book. The book already has a grade and a written Condition Assessment from the initial (cover + corner) passes. Your job is to examine 8 specific INTERIOR and STRUCTURAL images and INTEGRATE what they reveal into the existing Condition Assessment — not to re-grade the book from scratch.
+  const systemPrompt = `You are performing a FULL ASSESSMENT of a vintage comic book. The book already has a grade and a written Condition Assessment from the initial (cover + corner) passes. Your job is to examine 6 specific STRUCTURAL images and INTEGRATE what they reveal into the existing Condition Assessment — not to re-grade the book from scratch.
 
-You will receive exactly 8 images, in this fixed order, each with its own purpose:
+You will receive exactly 6 images, in this fixed order, each with its own purpose:
 ${slotList}
 ${initialContext}${priorBlock}${priorDefectBlock}
 WHAT TO DO WITH EACH IMAGE GROUP:
 - Staple condition: from the Exterior Top Staple, Exterior Bottom Staple, and Interior Staples photos — note rust, wear, popping, or replacement only if present.
 - Page completeness: from the Top Pages and Bottom Pages photos — confirm the interior pages are complete; flag missing or married pages only if you actually see evidence.
-- Interior cover tanning / defects: from the Interior Front and Interior Back photos — note tanning, tears, foxing, stains only if present.
-- Page quality: compare the Interior Front and Interior Back photos to the prior page-quality call (${initialPageQuality || 'not provided'}). KEEP the prior rating unless the interior pages show page quality that is SUBSTANTIALLY different. Only move it when the difference is clear and material — small differences do not justify a change.
+- Outer edge / trimming: from the Outer Edge photo — note frays or clear trimming signs only if present.
+- Page quality: DO NOT change page quality. It is fixed at the initial assessment's call (${initialPageQuality || 'not provided'}) and this pass does not re-judge it. (The interior-cover photos that used to inform page quality are now handled by the Deep pass.)
 
 WRITING THE UPDATED CONDITION ASSESSMENT (aiAssessment):
 - PRESERVE the core information from the prior Condition Assessment — the cover-condition observations, the dominant defects, and the grade rationale already established. Do not drop or rewrite those findings.
-- Then APPEND the new findings from the 8 interior/structure images so the result reads as the original write-up followed by the additional interior/structure detail.
+- Then APPEND the new findings from the 6 structure images so the result reads as the original write-up followed by the additional structure/completeness detail.
 - Mention tears or interior defects ONLY if they are actually visible. If the interior is clean, do NOT mention interior defects or page quality at all — say nothing about them rather than stating they are absent.
 - Mention trimming ONLY in the very rare case that there are genuine, clear signs of edge trimming. Do not raise trimming otherwise — not even to say it is absent.
 - Keep it buyer-facing, factual, and concise. Do not pad it.
@@ -312,8 +309,8 @@ GRADE — IMPORTANT:
 - If it changes, it is almost always DOWNWARD, from newly discovered defects (staple damage, interior tanning, missing pages, trimming).
 - Only in a very rare case may the grade go UP, and only if the new photos cause you to reconsider a SPECIFIC defect that was previously assigned (e.g. something counted against the cover that the interior shows was not actually a defect). A higher grade must be explainable that way; never inflate from a generally clean interior.
 
-PAGE QUALITY: re-judge only per the rule above (substantial difference required).
-PRECISION MODIFIER: with 8 images covering the interior and structure, your view is near-complete. Set confidenceRange as low as you honestly can — 1 for a clean, fully-documented book; 0 only if certain. Widen only for specific, nameable image-quality problems (glare, blur, hidden angle).
+PAGE QUALITY: do NOT change it — return the initial page-quality call unchanged and set pageQualityChanged to "same".
+PRECISION MODIFIER: with 6 images covering the structure and page completeness, your view is near-complete. Set confidenceRange as low as you honestly can — 1 for a clean, fully-documented book; 0 only if certain. Widen only for specific, nameable image-quality problems (glare, blur, hidden angle).
 
 ## RESPONSE FORMAT — STRICT
 Your entire response must be a JSON object and nothing else. First character an opening curly brace, last character a closing curly brace. No text before or after.
@@ -322,13 +319,13 @@ JSON shape:
 {
   "grade": <number, final CGC-scale grade 0.5-9.9 — this should reflect the PRIOR defects already identified in the main assessment. The Full Assessment examines interior structure but the PREDICTED GRADE should be consistent with the defects found on the covers/spine. A book with ANY defect listed cannot be 9.8 or above. NEVER return 10.0. If the prior predicted grade seems correct given the defects, return it unchanged. Only LOWER the grade if interior examination reveals new problems (trimming, missing pages, detached centerfold). Do NOT raise the grade above the prior prediction unless you can specifically explain why a prior defect was overestimated.>,
   "gradeChanged": "<'same' | 'down' | 'up'>",
-  "pageQuality": "<final page quality designation, e.g. 'Off-White to White'>",
-  "pageQualityChanged": "<'same' | 'up' | 'down'>",
+  "pageQuality": "<the initial page-quality designation, UNCHANGED — do not re-judge it>",
+  "pageQualityChanged": "same",
   "confidenceRange": <number, precision modifier, 0-6 — go as low as 1 or 0 when warranted>,
   "fullAssessmentRan": true,
   "aiAssessment": "<the UPDATED Condition Assessment: the prior write-up with the new interior/structure findings integrated, following the rules above>",
   "slotFindings": [
-    { "slot": "interior_front", "observations": "<what you saw — concise>" }
+    { "slot": "exterior_top_staple", "observations": "<what you saw — concise>" }
   ],
   "interiorComplete": <true | false — false only if Top/Bottom Pages show missing/married pages>,
   "trimmingSuspected": <true | false — only true with clear Outer Edge evidence>,
@@ -336,9 +333,9 @@ JSON shape:
 }
 
 Rules:
-- Include a slotFindings entry for EACH of the 8 slots, in order, with brief observations.
+- Include a slotFindings entry for EACH of the 6 slots, in order, with brief observations.
 - Every "observations" string concise. fullAssessmentNotes ≤ 3 sentences.
-- Never mention internal references, census data, or grade priors. Report only what these 8 images show, integrated with the prior assessment text.
+- Never mention internal references, census data, or grade priors. Report only what these 6 images show, integrated with the prior assessment text.
 `;
 
   try {
@@ -363,7 +360,7 @@ Rules:
       messages: [{
         role: 'user',
         content: [
-          { type: 'text', text: `8 FULL ASSESSMENT IMAGES, in slot order (${FULL_SLOTS.map(s => s.label).join(', ')}):` },
+          { type: 'text', text: `6 FULL ASSESSMENT IMAGES, in slot order (${FULL_SLOTS.map(s => s.label).join(', ')}):` },
           ...imageBlocks,
           { type: 'text', text: 'Verify these images and return the JSON.' }
         ]
@@ -541,10 +538,14 @@ Rules:
     };
     const grade = Math.min(_num(parsed.grade, 0.5, 10.0, parseFloat(predictedGrade) || null), 9.9);
     const confidenceRange = _num(parsed.confidenceRange, 0, 6, 1);
-    const pageQuality = (typeof parsed.pageQuality === 'string' && parsed.pageQuality.trim())
-      ? parsed.pageQuality.trim() : (initialPageQuality || '');
-    const pageQualityChanged = ['same', 'up', 'down'].includes(parsed.pageQualityChanged)
-      ? parsed.pageQualityChanged : 'same';
+    // S20 (#36): page quality is FROZEN at the initial Main call. Full no longer
+    // sees the interior-cover photos (moved to Deep), so it does not re-judge PQ.
+    // Force the initial value when we have one; only fall back to the model's
+    // value if no initial PQ was supplied.
+    const pageQuality = (initialPageQuality && String(initialPageQuality).trim())
+      ? String(initialPageQuality).trim()
+      : ((typeof parsed.pageQuality === 'string' && parsed.pageQuality.trim()) ? parsed.pageQuality.trim() : '');
+    const pageQualityChanged = 'same';
     const slotFindings = Array.isArray(parsed.slotFindings)
       ? parsed.slotFindings.filter(x => x && typeof x === 'object').slice(0, FULL_SLOT_COUNT) : [];
     const imageIssues = Array.isArray(parsed.imageIssues)

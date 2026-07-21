@@ -133,6 +133,7 @@ export default async function handler(req, res) {
     // S20: Full/Restoration/Signature image sets — were fetched but never
     // returned, so they never rendered in the admin detail view.
     const interiorImages = normImages(raw.interiorImages);
+    const interiorCoverImages = normImages(raw.interiorCoverImages); // S20 (#36): Deep interior covers
     const restorationImages = normImages(raw.restorationImages);
     const signatureImages = normImages(raw.signatureImages);
 
@@ -218,6 +219,7 @@ export default async function handler(req, res) {
       images,
       cornerImages,
       interiorImages,
+      interiorCoverImages,
       restorationImages,
       signatureImages,
 
