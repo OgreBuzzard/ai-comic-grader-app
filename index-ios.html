@@ -3463,6 +3463,14 @@ async function saveItem(rec) {
   try {
     const nested = nestForFirestore(rec);
     await fsSetDoc(userItemDoc(rec.id), nested);
+    // S20 (P0 fix): keep the in-memory `items` list in sync with what we just
+    // wrote to Firestore. showDetail/showEdit both do `items.find(...); if(!x) return;`
+    // so if the just-saved book isn't in `items` yet (the Firestore listener may
+    // not have fired), the screen right after a completed assessment finds nothing
+    // and the paid assessment appears lost. Upsert it here so it's always found.
+    const _ix = items.findIndex(c => c && c.id === rec.id);
+    if (_ix >= 0) items[_ix] = { ...items[_ix], ...rec };
+    else items.unshift(rec);
     await dismissSampleIfNeeded();
   } catch (e) {
     alert("Save failed: " + e.message);
@@ -4591,6 +4599,12 @@ function showDetail(id) {
     const imgAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
     const labels = [ "Top Left", "Top Right", "Bottom Left", "Bottom Right" ];
     const cornerGhosts = [ "assets/ghosts/TopLeft_Macro.jpg", "assets/ghosts/TopRight_Macro.jpg", "assets/ghosts/BottomLeft_Macro.jpg", "assets/ghosts/BottomRight_Macro.jpg" ];
+    const icv = selected.interiorCoverImages || [];
+    if (!hasAnyCorner) {
+      // S20: Deep unlocked but not yet run — compact badge instead of 4 empty
+      // slots. Tapping Edit reveals the capture slots.
+      html += `<div style="margin-top:14px;padding:12px 14px;background:#0f1a05;border:1px solid #3a5010;border-radius:10px;display:flex;gap:11px;align-items:center"><div style="font-size:11px;color:#e8c257;letter-spacing:2px;line-height:1;white-space:nowrap">★ ★</div><div style="flex:1;font-size:12px;color:#9cc76a;line-height:1.45"><strong style="color:#aaee30">Deep Assessment available.</strong> Adds 6 close-up images and may adjust the grade up or down. Tap Edit to run it.</div></div>`;
+    } else {
     html += `<div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
     [ 0, 1, 2, 3 ].forEach(srcIdx => {
       const url = ci[srcIdx];
@@ -4601,8 +4615,16 @@ function showDetail(id) {
       }
     });
     html += `</div>`;
-    if (!hasAnyCorner) {
-      html += `<div style="margin-top:10px;font-size:12px;color:#6abf6a;text-align:center;letter-spacing:0.5px">Tap Edit to add corner macros and complete your Deep Assessment.</div>`;
+    // S20: interior covers (half-width row) when a Deep with covers has been run.
+    if (icv.some(u => u)) {
+      const icLabels = [ "Interior Front", "Interior Back" ];
+      html += `<div style="margin-top:6px;display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
+      [ 0, 1 ].forEach(k => {
+        const u = icv[k];
+        if (u) html += `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:3/2"><img src="${u}" ${imgAttrs} onclick="openInteriorCoverLightbox('${selected.id}',${k})" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block"><div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(0,0,0,0.55);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${icLabels[k].toUpperCase()}</div></div>`;
+      });
+      html += `</div>`;
+    }
     }
   }
   if (isFullAssessmentComplete(selected)) {
@@ -5176,6 +5198,19 @@ function openCornerLightbox(id, idx) {
   const img = document.getElementById("lightbox-img");
   const box = document.getElementById("lightbox");
   img.src = c.cornerImages[idx];
+  box.style.display = "flex";
+  _attachPanzoomToLightbox();
+  box.onclick = e => {
+    if (e.target === box || e.target.id === "lightbox-stage") closeLightbox();
+  };
+}
+
+function openInteriorCoverLightbox(id, idx) {
+  const c = items.find(x => x.id === id);
+  if (!c || !c.interiorCoverImages?.[idx]) return;
+  const img = document.getElementById("lightbox-img");
+  const box = document.getElementById("lightbox");
+  img.src = c.interiorCoverImages[idx];
   box.style.display = "flex";
   _attachPanzoomToLightbox();
   box.onclick = e => {
@@ -8712,6 +8747,15 @@ async function handleCornerImages(e) {
     imgs[slot] = newImgs[n];
   }
   formData.cornerImages = imgs;
+  // S20: if the user multi-selected more than 4 in Deep capture order (4 corner
+  // macros, then the 2 interior covers), overflow the extras into the interior-
+  // cover slots so all 6 can be added at once. Raw books only.
+  if (!formData.labelDetected && newImgs.length > 4) {
+    const covers = [ ...formData.interiorCoverImages || [] ];
+    while (covers.length < 2) covers.push(null);
+    for (let k = 0; k < Math.min(newImgs.length - 4, 2); k++) covers[k] = newImgs[4 + k];
+    formData.interiorCoverImages = covers;
+  }
   formData._imagesChanged = true;
   e.target.value = "";
   renderForm();
@@ -10238,6 +10282,7 @@ async function submitForm() {
   formData.title = normalizeTitle(formData.title.trim().replace(/\s+/g, " ").replace(/^The\s+/i, ""), formData.issueDate, formData.printing);
   if (formData.seller?.trim()) updateSellerList(formData.seller.trim());
   const id = formData.id || buildComicId(formData.title, formData.issue);
+  formData.id = id; // S20 (P0 fix): pin the id so Back/cancelForm can return to the saved item
   const rawImages = (formData.images || []).filter(Boolean);
   const rawCornerImages = (formData.cornerImages || []).filter(Boolean);
   const rawInteriorImages = formData.interiorImages || [];
@@ -10482,7 +10527,14 @@ async function submitForm() {
 }
 
 function cancelForm() {
-  if (selected) {
+  // S20 (P0 fix): a completed assessment is already saved on Complete, so Back
+  // must NEVER strand or discard it. If this form has a saved item, Back returns
+  // to that item's detail (unsaved FIELD edits like Notes/Seller are dropped —
+  // that's the intended difference from Save, which persists them).
+  const savedId = formData && formData.id;
+  if (savedId && items.find(c => c.id === savedId)) {
+    showDetail(savedId);
+  } else if (selected) {
     showDetail(selected.id);
   } else {
     showList();
