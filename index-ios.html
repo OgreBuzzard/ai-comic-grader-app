@@ -6220,10 +6220,11 @@ function _showCeilingModal() {
   if (document.getElementById("ceiling-modal")) return;
   const o = document.createElement("div");
   o.id = "ceiling-modal";
-  o.style.cssText = "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:24px";
-  o.innerHTML = `<div style="background:#fff;border-radius:16px;max-width:340px;width:100%;padding:26px 24px;box-shadow:0 8px 40px rgba(0,0,0,0.35);text-align:center">
-    <div style="font-size:15px;line-height:1.55;color:#1a1008;margin-bottom:22px">This book has reached the maximum grade available in an initial assessment. Additional images are needed to grant a higher grade.</div>
-    <button id="ceiling-ok-btn" style="width:100%;padding:12px;background:#2a7a3a;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:800;letter-spacing:1px;cursor:pointer">OKAY</button>
+  o.style.cssText = "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;padding:20px";
+  o.innerHTML = `<div style="background:#141210;border-radius:18px;max-width:340px;width:100%;padding:24px 24px 20px;border:1.5px solid #4a7a20;text-align:center;box-shadow:0 12px 44px rgba(0,0,0,0.55)">
+    <div style="font-size:13px;font-weight:800;letter-spacing:2px;color:#aaee30;margin-bottom:10px">DEEP ASSESSMENT UNLOCKED</div>
+    <div style="font-size:15px;color:#e8d9b8;line-height:1.6;margin-bottom:20px">This is a high-grade comic. Robograder requires additional images to determine whether an even higher grade can be given.</div>
+    <button id="ceiling-ok-btn" class="rg-btn rg-btn-branded rg-btn-md" style="display:inline-block;width:auto;padding:0 44px">OKAY</button>
   </div>`;
   const close = () => o.remove();
   o.onclick = e => { if (e.target === o) close(); };
@@ -9395,10 +9396,9 @@ async function submitFullAssessment() {
         _cb.style.cursor = "pointer";
         _cb.onclick = () => {
           if (window.RobograderScan && window.RobograderScan.dismiss) window.RobograderScan.dismiss();
-          submitForm().then(() => {
-            const _restoLeft = showRestorationTier(formData) && !formData.restorationCheckRan;
-            if (_restoLeft) { showEdit(formData.id); } else { showDetail(formData.id); }
-          });
+          // S20: Full is the deepest pass — after it saves, go straight to Detail
+          // (not Edit, even if a Restoration check is still available).
+          submitForm().then(() => { showDetail(formData.id); });
         };
       }, 4200);
     } else {
