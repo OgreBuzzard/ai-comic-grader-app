@@ -2087,6 +2087,12 @@ function renderItemDetail(it) {
         <p>${escapeHtml(it.psaNotes)}</p>
       </div>` : ''}
 
+    ${it.restorationReport ? `
+      <div class="notes-block" style="border-left:3px solid #7a4ba8;">
+        <h4>Restoration Assessment${it.restorationFlag ? ' — <span style="color:#c8a8e8;">indicators noted</span>' : ''}</h4>
+        <p>${escapeHtml(it.restorationReport)}</p>
+      </div>` : ''}
+
     ${it.referenceImageUrl ? `
       <h3 class="section-h" style="margin-top:24px;">Reference Comparison${it.referenceVolume ? ` — <span style="color:#7fd0ff;font-weight:600;">${escapeHtml(it.referenceVolume)}</span>` : ''}</h3>
       <div class="images-block" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start;">

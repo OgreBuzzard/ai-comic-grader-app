@@ -220,6 +220,9 @@ export default async function handler(req, res) {
       cornerImages,
       interiorImages,
       interiorCoverImages,
+      // S20 (#50): restoration report text + flag for the admin detail view.
+      restorationReport: flat.restorationReport || '',
+      restorationFlag: !!flat.restorationFlag,
       restorationImages,
       signatureImages,
 
