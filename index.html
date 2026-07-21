@@ -1576,6 +1576,14 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
       </div>
     </div>
 
+    <div class="settings-row" style="cursor:pointer" onclick="toggleTitleSeparators()">
+      <div style="flex:1">
+        <div class="sr-label">Title Separators</div>
+        <div class="sr-detail">Group your list by title with collapsible headers. Off shows one flat, alphabetical list. Turns on automatically once a title has more than one issue.</div>
+      </div>
+      <div class="sr-right" id="settings-titlesep-state" style="margin-left:12px;flex-shrink:0;font-size:14px;color:#c8b8a8">—</div>
+    </div>
+
     <div class="settings-row" style="cursor:default">
       <div style="flex:1">
         <div class="sr-label">Help improve Robograder</div>
@@ -3716,7 +3724,7 @@ function _showGiftModal(amount) {
   overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px";
   overlay.innerHTML = `
     <div style="background:#141210;border-radius:18px;padding:24px 24px 20px;max-width:340px;width:100%;border:1.5px solid #6a4a10;text-align:center;box-shadow:0 12px 44px rgba(0,0,0,0.55)">
-      <img src="assets/Robograder_Gift.webp" alt="" style="width:140px;height:auto;margin:0 auto 14px;display:block">
+      <img src="assets/Robograder_Gift.webp" alt="" style="width:112px;height:auto;margin:0 auto 14px;display:block">
       <div style="font-size:15px;color:#e8d9b8;line-height:1.6;margin-bottom:20px">
         Robograder has bestowed upon you <strong style="color:#f0c860">${amount}</strong> free assessment credit${amount === 1 ? "" : "s"}. Use ${amount === 1 ? "it" : "them"} wisely.
       </div>
@@ -3913,6 +3921,40 @@ function _iosPrefetchPrices() {
   _iosPricePrefetched = true;
   _iosFetchPrices().then(function(p) { if (p) _applyIosPrices(p); }).catch(function() {});
 }
+// S20: Title separators. New accounts — and any account where no title has more
+// than one issue — show a FLAT alphabetical list (no collapsible title dividers).
+// The moment any title has 2+ issues, dividers appear across the whole list, and
+// they auto-revert to flat once no multi-issue title remains. A Settings toggle
+// ("Title Separators") overrides: 'on'/'off' force it; unset (default) = auto.
+function _hasMultiTitle() {
+  const counts = {};
+  for (const c of items) {
+    if (!c || c.id === SAMPLE_COMIC_ID) continue;
+    const t = (c.title || "").trim().toLowerCase();
+    if (!t) continue;
+    counts[t] = (counts[t] || 0) + 1;
+    if (counts[t] > 1) return true;
+  }
+  return false;
+}
+function _showTitleSeparators() {
+  let o = null;
+  try { o = localStorage.getItem("rg_title_sep"); } catch (_) {}
+  if (o === "on") return true;
+  if (o === "off") return false;
+  return _hasMultiTitle();
+}
+function toggleTitleSeparators() {
+  const now = _showTitleSeparators();
+  try { localStorage.setItem("rg_title_sep", now ? "off" : "on"); } catch (_) {}
+  _syncTitleSepRow();
+  if (view === "list") renderList();
+}
+function _syncTitleSepRow() {
+  const el = document.getElementById("settings-titlesep-state");
+  if (el) el.textContent = _showTitleSeparators() ? "On" : "Off";
+}
+
 function renderList() {
   const main = document.getElementById("main");
   _iosPrefetchPrices(); // warm StoreKit prices during browsing (iOS only, once)
@@ -4048,8 +4090,15 @@ function renderList() {
           : "";
         return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0">\n                  <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>\n                  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">\n                    ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${formatIssue(c.issue, c.title)}</span>` : ""}\n                    ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                  </div>\n                </div>\n                ${buildListCgcPsaStack(c)}\n                ${_labelBtn}\n              </div>\n            </div>`;
       };
+      const _showSep = _showTitleSeparators();
       section.titles.forEach(title => {
         const group = section.groups[title];
+        if (!_showSep) {
+          // S20: flat mode — no title dividers; render rows directly (the list
+          // is already ordered alphabetically by title, then issue).
+          group.forEach(c => { html += buildRow(c); });
+          return;
+        }
         const collapseKey = section.ownership ? `${section.ownership}::${title}` : title;
         // Default open state by entry count: a single-entry title defaults to
         // EXPANDED (so its cover thumbnail shows — keeps the list from being a
@@ -5949,6 +5998,7 @@ function _showCeilingModal() {
   o.id = "ceiling-modal";
   o.style.cssText = "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;padding:20px";
   o.innerHTML = `<div style="background:#141210;border-radius:18px;max-width:340px;width:100%;padding:24px 24px 20px;border:1.5px solid #4a7a20;text-align:center;box-shadow:0 12px 44px rgba(0,0,0,0.55)">
+    <img src="assets/Robograder_Gift.webp" alt="" style="width:112px;height:auto;margin:0 auto 12px;display:block">
     <div style="font-size:13px;font-weight:800;letter-spacing:2px;color:#aaee30;margin-bottom:10px">DEEP ASSESSMENT UNLOCKED</div>
     <div style="font-size:15px;color:#e8d9b8;line-height:1.6;margin-bottom:20px">This is a high-grade comic. Robograder requires additional images to determine whether an even higher grade can be given.</div>
     <button id="ceiling-ok-btn" class="rg-btn rg-btn-branded rg-btn-md" style="display:inline-block;width:auto;padding:0 44px">OKAY</button>
@@ -6901,6 +6951,7 @@ function openSettings() {
     if (track) track.style.background = optIn ? "#3a7a20" : "#2a2a2a";
     if (thumb) thumb.style.left = optIn ? "23px" : "3px";
   }
+  _syncTitleSepRow(); // S20: reflect current Title Separators state
   const emailEl = document.getElementById("settings-email");
   if (emailEl && window._currentUser) emailEl.textContent = window._currentUser.email || "—";
   // S20 bugfix: this line used to be the hardcoded string "Signed in with Google",
