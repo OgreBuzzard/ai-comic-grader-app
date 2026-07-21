@@ -6071,18 +6071,18 @@ function mountResults(cgc, psa) {
       // S16/S20: track WHY it unlocked so Edit view can show the right explanation
       _pendingAssessResult.cgc._highGradeReason = (fmvGate && !scoreGate && !predictedGate) ? "value" : "grade";
     }
+    // S20 (#45): the "maxed out at initial assessment" modal fires on any MAIN
+    // result (not a post-Deep run) that hits the Deep-unlock GRADE threshold —
+    // RG >= 90 OR predicted >= 9.0 — regardless of value, and again on every
+    // Re-assess. A book that unlocks Deep only by value ($100+ tier) does NOT get it.
+    if (!isPostDeepRun && (scoreGate || predictedGate)) {
+      _showCeilingModal();
+    }
     if (hgUnlocked) {
       btn.innerHTML = `<div style="font-size:14px;font-weight:800;letter-spacing:1.5px;line-height:1.2">DEEP ASSESSMENT</div><div style="font-size:12px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
       btn.style.background = "#2a7a3a";
       btn.style.color = "#fff";
       btn.style.textAlign = "center";
-      // S20 (#35): the Main pass caps at RG 92 (9.2). When a book hits that
-      // ceiling the grade may actually be higher — the standard pass just can't
-      // resolve past it. Surface a one-line nudge under the Deep button so the
-      // user knows more images could revise the grade upward.
-      if (roboScore != null && roboScore >= 92) {
-        _showCeilingModal();
-      }
     } else if (isPostDeepRun) {
       const _fullEligible = isFullAssessmentEligible({
         title: cgc && cgc.title || formData.title,
@@ -9181,7 +9181,11 @@ function tapSlot(slotIndex, kind) {
     document.getElementById("interior-cover-photo-input").click();
     return;
   }
-  if (kind === "interior" && !window._cameraSupported) {
+  if (kind === "interior") {
+    // S20 FIX (D): Full interior slots ALWAYS use the file input (photo library
+    // or camera), like the Deep interior-cover slots that work. The in-app camera
+    // walkthrough path was failing to populate these slots; routing straight to
+    // handleInteriorImages fixes it reliably.
     _tappedInteriorSlot = slotIndex;
     document.getElementById("interior-photo-input").click();
     return;
