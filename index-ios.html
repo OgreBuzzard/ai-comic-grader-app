@@ -3081,11 +3081,20 @@ function nestForFirestore(rec) {
 }
 
 function getVerificationState(item) {
-  const main = item?.imagesMeta || [];
-  const corner = item?.cornerMeta || [];
-  const all = [ ...main, ...corner ];
+  // S20: the Verified badge requires EVERY grade-determining photo to be an
+  // in-app camera capture. Main + corner macros (Deep) + interior covers (Deep) +
+  // interior images (Full) all count — a single library upload among them flips
+  // the entry to unverified. Null entries are unfilled slots and are ignored.
+  // (Optional signature / restoration extras aren't grade inputs, so they don't
+  // gate the badge.)
+  const all = [
+    ...(item?.imagesMeta || []),
+    ...(item?.cornerMeta || []),
+    ...(item?.interiorCoverMeta || []),
+    ...(item?.interiorMeta || [])
+  ].filter(Boolean);
   if (all.length === 0) return "empty";
-  return all.every(m => m?.source === "camera") ? "verified" : "unverified";
+  return all.every(m => m.source === "camera") ? "verified" : "unverified";
 }
 
 function buildIntegrityPill(item, forPublic = false) {
@@ -4633,6 +4642,8 @@ function showDetail(id) {
   // in a keyed row so setOwnershipDetail can update it in place (no re-render →
   // images don't reload).
   const ownershipPillHtml = isSample ? "" : `<div id="detail-ownership-row" style="${_OWNERSHIP_PILL_WRAP};margin-top:10px">${_ownershipPills(selected.ownership || "Owned", "setOwnershipDetail")}</div>`;
+  // S20 (#46): ownership pill sits ABOVE the images, matching the Add/Edit form.
+  html += ownershipPillHtml;
   if (selected.images?.length > 0) {
     const imgs = selected.images;
     const imgAttrs = `loading="eager" decoding="async" onload="window.forceImgReflow(this)"`;
@@ -4651,7 +4662,6 @@ function showDetail(id) {
     if (imgs[2]) html += `<img class="detail-cover" src="${imgs[2]}" ${imgAttrs} onclick="openLightbox('${selected.id}',2)">`;
     html += `</div>`;
   }
-  html += ownershipPillHtml;
   if (showDeepTier(selected) || (selected.cornerImages || []).some(u => u)) {
     const ci = selected.cornerImages || [];
     const hasAnyCorner = ci.some(u => u);
@@ -4662,8 +4672,8 @@ function showDetail(id) {
     if (!hasAnyCorner) {
       // S20: Deep unlocked but not yet run — compact badge instead of 4 empty
       // slots. Tapping Edit reveals the capture slots.
-      html += `<div style="margin-top:14px;padding:14px;background:#1a2208;border:1.5px solid #3a5010;border-radius:10px;text-align:center">
-        <div style="line-height:1;margin-bottom:8px">${tierStarSVG(15, "#b8d820")}${tierStarSVG(15, "#b8d820")}</div>
+      html += `<div style="margin-top:14px;padding:14px;background:#152e10;border:1.5px solid #4a7028;border-radius:12px;text-align:center">
+        <div style="line-height:1;margin-bottom:8px;opacity:0.5">${tierStarSVG(15, "#b8d820")}${tierStarSVG(15, "#b8d820")}</div>
         <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:#b8d820;margin-bottom:5px">DEEP ASSESSMENT AVAILABLE</div>
         <div style="font-size:12px;color:#9cc76a;line-height:1.45">Add 6 more images for a more accurate grade. Tap Edit.</div>
       </div>`;
@@ -4732,6 +4742,10 @@ function showDetail(id) {
     const _pqHtml = showPQ ? `<div style="display:flex;justify-content:center">${buildPQBox(selected.pageQuality)}</div>` : "";
     html += buildPredictedGradeBox(predictionBoxes.join(""), _pqHtml, _fmvMatch, !!predictedBadge);
   }
+  // S20: "Enhanceable?: Yes/No" box hidden per request — it's an odd inclusion,
+  // often inaccurate, and not essential. Left in code (commented) in case it's
+  // brought back later.
+  /*
   let enhanceVal = selected.enhance;
   if (enhanceVal === null || enhanceVal === undefined) {
     const legacyVals = [ selected.press, selected.uv, selected.clean ].filter(v => v === true || v === false);
@@ -4764,6 +4778,7 @@ function showDetail(id) {
     }
     html += `<div style="margin-top:16px"><div style="display:inline-block;padding:5px 12px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:1px;background:transparent;border:1px solid #d8d0c8;color:#5a4e44">Enhanceable?: ${txt}</div></div>`;
   }
+  */
   if (selected.notes) {
     html += `<div style="margin-top:20px"><div class="section-label">My Notes</div><div style="font-size:13px;color:#1a1614;line-height:1.7">${esc(selected.notes)}</div></div>`;
   }
@@ -5551,10 +5566,12 @@ function cycleOwnership() {
 // OWNED | SOLD | WATCHING; the active one is filled in its color, the others
 // sit dim/outline. ("Print" is a transient label-printing workflow state, not a
 // user ownership choice, so it isn't offered — a book in Print reads as Owned.)
+// S20 (#46): all three states share the same Verified-green fill (no per-state
+// colors) — the active segment is simply the filled one.
 const _OWNERSHIP_STATES = [
-  { key: "Owned",    label: "OWNED",    bg: "rgba(40,80,50,0.9)",  fg: "#b8e6c0", bd: "rgba(120,180,130,0.5)" },
-  { key: "Sold",     label: "SOLD",     bg: "rgba(70,55,30,0.9)",  fg: "#e8d4a8", bd: "rgba(160,130,80,0.5)" },
-  { key: "Watching", label: "WATCHING", bg: "rgba(40,60,85,0.9)",  fg: "#b8d0ee", bd: "rgba(110,150,200,0.5)" },
+  { key: "Owned",    label: "OWNED",    bg: "rgba(40,80,50,0.9)", fg: "#b8e6c0" },
+  { key: "Sold",     label: "SOLD",     bg: "rgba(40,80,50,0.9)", fg: "#b8e6c0" },
+  { key: "Watching", label: "WATCHING", bg: "rgba(40,80,50,0.9)", fg: "#b8e6c0" },
 ];
 // Returns the three segment <button>s (no wrapper) for the single wide pill.
 // `handlerJs` is the click handler name ('setOwnership' in the form,
@@ -5576,7 +5593,7 @@ function _ownershipPills(current, handlerJs) {
 
 // The single wide pill wrapper (Verified-pill look): full width, rounded, one
 // soft green-tinted border around all three segments.
-const _OWNERSHIP_PILL_WRAP = "display:flex;width:100%;border-radius:12px;overflow:hidden;border:1px solid rgba(120,180,130,0.4)";
+const _OWNERSHIP_PILL_WRAP = "display:flex;width:100%;border-radius:12px;overflow:hidden;border:2px solid rgba(120,180,130,0.55)";
 
 function ownershipSegmentForForm() {
   return `<div style="${_OWNERSHIP_PILL_WRAP};margin-bottom:14px">${_ownershipPills(formData.ownership || "Owned", "setOwnership")}</div>`;
@@ -8374,24 +8391,37 @@ function renderForm() {
     if (showLabelNotesEdit) return "";
     if (!formData.keyInfo) return "";
     return `<div><label class="field-label">Key Info</label><textarea rows="3" readonly style="cursor:not-allowed;background:#ffffff;color:#1a1614" title="Key Info is populated by the assessment when the issue is in the recognized-key list. Not user-editable.">${esc(formData.keyInfo || "")}</textarea></div>`;
-  })()}\n    ${formData.cgcGrade || formData.psaGrade || formData.graderNotes ? `<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes ? 5 : 3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiAssessment ? `<div><label class="field-label">Main Assessment</label><textarea rows="${Math.max(8, Math.ceil(formData.aiAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>` : ""}\n    ${formData.deepAssessment ? `<div><label class="field-label">Deep Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.deepAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Deep pass.">${esc(formData.deepAssessment)}</textarea></div>` : ""}\n    ${formData.fullAssessment ? `<div><label class="field-label">Full Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.fullAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Full pass.">${esc(formData.fullAssessment)}</textarea></div>` : ""}\n    ${(formData.assessmentHistory || []).length > 0 ? `<div style="margin-top:10px;padding:10px 14px;background:#100e0c;border:1px solid #1e1c1a;border-radius:8px;">\n      <div style="font-size:10px;letter-spacing:2px;color:#6a5a4a;text-transform:uppercase;margin-bottom:6px">Past Assessments</div>\n      <div style="display:flex;flex-direction:column;gap:6px">\n        ${(formData.assessmentHistory || []).map((h, i) => {
+  })()}\n    ${formData.cgcGrade || formData.psaGrade || formData.graderNotes ? `<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes ? 5 : 3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiAssessment ? `<div><label class="field-label">Main Assessment</label><textarea rows="${Math.max(8, Math.ceil(formData.aiAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>` : ""}\n    ${formData.deepAssessment ? `<div><label class="field-label">Deep Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.deepAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Deep pass.">${esc(formData.deepAssessment)}</textarea></div>` : ""}\n    ${formData.fullAssessment ? `<div><label class="field-label">Full Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.fullAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Full pass.">${esc(formData.fullAssessment)}</textarea></div>` : ""}\n    ${(formData.assessmentHistory || []).length > 0 ? `<div style="margin-top:20px"><div class="section-label">Past Assessments</div><div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">\n        ${(formData.assessmentHistory || []).map((h, i) => {
+    // S20 (#54): match the Detail view's Past Assessments styling (light rows,
+    // date, full precision suffix). Edit keeps the × remove button so history
+    // entries can still be pruned before saving.
     const parts = [];
     if (h.rgScore != null) {
       const v = h.rgVersion ? ` v${h.rgVersion}` : "";
-      const plus = h.rgScore >= 90 && h.rgScore < 100 ? "+" : "";
-      parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;font-weight:700;color:#7aa030;font-size:12px">RG ${h.rgScore}${plus}${v}</span>`);
+      let precSuffix = "";
+      if (h.rgScore < 100) {
+        if (h.rgHighGradeUnlocked && h.rgConfidenceRange != null) {
+          precSuffix = h.rgConfidenceRange > 0 ? ` ±${h.rgConfidenceRange}` : "";
+        } else if (h.rgScore >= 90 && !h.rgHighGradeUnlocked) {
+          precSuffix = "+";
+        } else if (h.rgConfidenceRange != null) {
+          precSuffix = h.rgConfidenceRange > 0 ? ` ±${h.rgConfidenceRange}` : "";
+        }
+      }
+      parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;font-weight:700;color:#5a7030">RG ${h.rgScore}${precSuffix}${v}</span>`);
     }
     if (h.grade) {
-      parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;color:#6a8aa8;font-size:12px">Predicted ${normalizeGrade(h.grade)}</span>`);
+      parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;color:#3a5a8a">Predicted ${normalizeGrade(h.grade)}</span>`);
     }
     if (h.psaGrade) {
-      parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;color:#a86a6a;font-size:12px">PSA ${normalizeGrade(h.psaGrade)}</span>`);
+      parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;color:#8a3a3a">PSA ${normalizeGrade(h.psaGrade)}</span>`);
     }
     if (h.pageQuality) {
       parts.push(`<span style="font-size:11px;color:#8a7a6a">${esc(h.pageQuality)}</span>`);
     }
-    return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 8px;background:#181614;border-radius:5px;opacity:0.85">\n            ${parts.join('<span style="color:#4a3a2a">·</span>')}\n            <button onclick="formData.assessmentHistory.splice(${i},1);renderForm()" style="margin-left:auto;flex-shrink:0;background:none;border:none;color:#9a6a6a;font-size:14px;cursor:pointer;padding:2px 4px;line-height:1" title="Remove this entry">×</button>\n          </div>`;
-  }).join("")}\n      </div>\n    </div>` : ""}\n    ${formData.psaNotes ? `<div><label class="field-label" style="color:#e87a7a">PSA Variance</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes || "")}</textarea></div>` : ""}\n\n    \x3c!-- Enhancement Candidate (S11): renamed from "Enhance Candidate"; moved\n         to between Condition Assessment and Cost Breakdown per user direction. --\x3e\n    <div>\n      <label class="field-label">Enhancement Candidate</label>\n      <div style="display:flex;gap:10px">\n        ${treatBtn("enhance", "Enhance")}\n      </div>\n    </div>\n\n    \x3c!-- Cost Breakdown (S11): now includes FMV ($) and FMV Date inside the\n         container, since they're financial fields conceptually grouped with\n         the cost data. --\x3e\n    <div class="cost-box">\n      <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>\n      <div class="form-grid-2">\n        ${mf("Purchase Price ($)", "purchasePrice")}\n        ${mf("Taxes / Fees / Shipping ($)", "taxesFeesShipping")}\n        ${mf("Grading / Pressing ($)", "gradingCost")}\n        ${mf("CGC Return Shipping ($)", "cgcShipping")}\n        \n        \n        ${mf("Asking Price ($)", "askingPrice")}\n      </div>\n    </div>\n\n    <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes || "")}</textarea></div>\n    ${""}\n    \n    <div style="display:flex;gap:10px;padding-top:4px">\n      ${isEdit ? "" : `<button id="save-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="submitForm()" ${formData.title?.trim() ? "" : "disabled"}>Add to Collection</button>`}\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cancelForm()">Cancel</button>\n    </div>\n    ` : `\n    \x3c!-- Add-flow collapsed state (S11): show only the Enter Manually button.\n         Steers users toward photos-first by hiding the form fields until\n         either (a) they tap Enter Manually, or (b) an assessment runs and\n         _assessed becomes true. Edit view always shows the full form.\n         S14: ownership cycle pill inserted above Enter Manually. Lets a\n         user mark a book as Owned (default) / Watching / Sold before\n         assessing — so they can assess someone else's book without\n         claiming it, or track a book they're considering buying. Same\n         pill style as detail and edit views (color-coded by state),\n         centered between the two full-width buttons. Public-listing is\n         locked off whenever ownership !== 'Owned'; the cycleOwnership\n         handler clears formData.publicListing on transitions out of\n         Owned so a stale 'true' can't be saved. --\x3e\n    ${(() => {
+    const dateStr = h.date ? (() => { try { return new Date(h.date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }); } catch (e) { return ""; } })() : "";
+    return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 10px;background:#f4f0e6;border:1px solid #d8d0c0;border-radius:6px;font-size:12px">\n            ${parts.join('<span style="color:#c8b8a8">·</span>')}\n            ${dateStr ? `<span style="margin-left:auto;font-size:11px;color:#9a8a7a">${dateStr}</span>` : ""}\n            <button onclick="formData.assessmentHistory.splice(${i},1);renderForm()" style="${dateStr ? "" : "margin-left:auto;"}flex-shrink:0;background:none;border:none;color:#a05a5a;font-size:16px;cursor:pointer;padding:0 2px;line-height:1" title="Remove this entry">×</button>\n          </div>`;
+  }).join("")}\n      </div></div>` : ""}\n    ${formData.psaNotes ? `<div><label class="field-label" style="color:#e87a7a">PSA Variance</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes || "")}</textarea></div>` : ""}\n\n    \x3c!-- Enhancement Candidate (S11): renamed from "Enhance Candidate"; moved\n         to between Condition Assessment and Cost Breakdown per user direction. --\x3e\n    \x3c!-- S20: Enhancement Candidate control hidden per request (odd inclusion, often inaccurate). Kept for future use: <div><label class="field-label">Enhancement Candidate</label><div style="display:flex;gap:10px">\${treatBtn("enhance", "Enhance")}</div></div> --\x3e\n\n    \x3c!-- Cost Breakdown (S11): now includes FMV ($) and FMV Date inside the\n         container, since they're financial fields conceptually grouped with\n         the cost data. --\x3e\n    <div class="cost-box">\n      <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>\n      <div class="form-grid-2">\n        ${mf("Purchase Price ($)", "purchasePrice")}\n        ${mf("Taxes / Fees / Shipping ($)", "taxesFeesShipping")}\n        ${mf("Grading / Pressing ($)", "gradingCost")}\n        ${mf("CGC Return Shipping ($)", "cgcShipping")}\n        \n        \n        ${mf("Asking Price ($)", "askingPrice")}\n      </div>\n    </div>\n\n    <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes || "")}</textarea></div>\n    ${""}\n    \n    <div style="display:flex;gap:10px;padding-top:4px">\n      ${isEdit ? "" : `<button id="save-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="submitForm()" ${formData.title?.trim() ? "" : "disabled"}>Add to Collection</button>`}\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cancelForm()">Cancel</button>\n    </div>\n    ` : `\n    \x3c!-- Add-flow collapsed state (S11): show only the Enter Manually button.\n         Steers users toward photos-first by hiding the form fields until\n         either (a) they tap Enter Manually, or (b) an assessment runs and\n         _assessed becomes true. Edit view always shows the full form.\n         S14: ownership cycle pill inserted above Enter Manually. Lets a\n         user mark a book as Owned (default) / Watching / Sold before\n         assessing — so they can assess someone else's book without\n         claiming it, or track a book they're considering buying. Same\n         pill style as detail and edit views (color-coded by state),\n         centered between the two full-width buttons. Public-listing is\n         locked off whenever ownership !== 'Owned'; the cycleOwnership\n         handler clears formData.publicListing on transitions out of\n         Owned so a stale 'true' can't be saved. --\x3e\n    ${(() => {
     const own = formData.ownership || "Owned";
     const styleByState = {
       Owned: {
@@ -9647,34 +9677,18 @@ let _cameraOrientationListener = null;
 let _cameraOrientationTimeout = null;
 
 function tapSlot(slotIndex, kind) {
-  if (kind === "interiorCover") {
-    // S20 (#36): interior covers always use the file input (camera or library).
-    _tappedInteriorCoverSlot = slotIndex;
-    document.getElementById("interior-cover-photo-input").click();
-    return;
-  }
-  if (kind === "interior") {
-    // S20 FIX (D): Full interior slots ALWAYS use the file input (photo library
-    // or camera), like the Deep interior-cover slots that work. The in-app camera
-    // walkthrough path was failing to populate these slots; routing straight to
-    // handleInteriorImages fixes it reliably.
-    _tappedInteriorSlot = slotIndex;
-    document.getElementById("interior-photo-input").click();
-    return;
-  }
-  if (kind === "signature" && !window._cameraSupported) {
-    _tappedSignatureSlot = slotIndex;
-    document.getElementById("signature-photo-input").click();
-    return;
-  }
+  // S20 (#52): every slot type is camera-first (the in-app guided camera), with a
+  // photo-library fallback when the camera isn't available. Deep interior covers
+  // and Full interior images now use the same guided-camera path as the main and
+  // corner shots — the #36 D-fix had forced them straight to the library picker,
+  // which dropped the in-app capture experience. (The file-input handlers remain
+  // as the fallback below and for multi-select library uploads.)
   if (!window._cameraSupported) {
-    if (kind === "corner") {
-      _tappedCornerSlot = slotIndex;
-      document.getElementById("corner-photo-input").click();
-    } else {
-      _tappedSlot = slotIndex;
-      document.getElementById("photo-input").click();
-    }
+    if (kind === "corner") { _tappedCornerSlot = slotIndex; document.getElementById("corner-photo-input").click(); }
+    else if (kind === "interiorCover") { _tappedInteriorCoverSlot = slotIndex; document.getElementById("interior-cover-photo-input").click(); }
+    else if (kind === "interior") { _tappedInteriorSlot = slotIndex; document.getElementById("interior-photo-input").click(); }
+    else if (kind === "signature") { _tappedSignatureSlot = slotIndex; document.getElementById("signature-photo-input").click(); }
+    else { _tappedSlot = slotIndex; document.getElementById("photo-input").click(); }
     return;
   }
   if (_cameraState && _cameraState.mode === "walkthrough" && _cameraState.kind === kind) {
@@ -9683,10 +9697,10 @@ function tapSlot(slotIndex, kind) {
     cameraOpenSlot(slotIndex);
     return;
   }
-  const list = (kind === "corner" ? formData.cornerImages : kind === "signature" ? formData.signatureImages : kind === "interior" ? formData.interiorImages : formData.images) || [];
-  const captureOrder = kind === "corner" ? CAMERA_CAPTURE_ORDER_CORNER : kind === "signature" ? [ 0, 1 ] : kind === "interior" ? Array.from({ length: FULL_SLOT_COUNT }, (_, i) => i) : CAMERA_CAPTURE_ORDER_MAIN;
+  const list = (kind === "corner" ? formData.cornerImages : kind === "signature" ? formData.signatureImages : kind === "interiorCover" ? formData.interiorCoverImages : kind === "interior" ? formData.interiorImages : formData.images) || [];
+  const captureOrder = kind === "corner" ? CAMERA_CAPTURE_ORDER_CORNER : kind === "signature" ? [ 0, 1 ] : kind === "interiorCover" ? [ 0, 1 ] : kind === "interior" ? Array.from({ length: FULL_SLOT_COUNT }, (_, i) => i) : CAMERA_CAPTURE_ORDER_MAIN;
   const emptySlotsInOrder = captureOrder.filter(i => !list[i]);
-  const isMultiEmpty = kind !== "signature" && emptySlotsInOrder.length > 1 && (emptySlotsInOrder.includes(slotIndex) || kind === "interior");
+  const isMultiEmpty = kind !== "signature" && emptySlotsInOrder.length > 1 && (emptySlotsInOrder.includes(slotIndex) || kind === "interior" || kind === "interiorCover");
   console.log("[tapSlot] kind:", kind, "slot:", slotIndex, "emptySlots:", emptySlotsInOrder.length, "isMultiEmpty:", isMultiEmpty, "mode:", isMultiEmpty ? "walkthrough" : "single");
   if (kind === "interior") {
   }
@@ -9725,7 +9739,7 @@ async function cameraOpen(state) {
   modal.classList.add("open");
   document.body.classList.add("camera-modal-open");
   document.body.classList.remove("camera-kind-main", "camera-kind-corner", "camera-kind-interior", "camera-kind-restoration");
-  document.body.classList.add(state.kind === "corner" ? "camera-kind-corner" : state.kind === "interior" || state.kind === "restoration" ? "camera-kind-interior" : "camera-kind-main");
+  document.body.classList.add(state.kind === "corner" ? "camera-kind-corner" : state.kind === "interior" || state.kind === "interiorCover" || state.kind === "restoration" ? "camera-kind-interior" : "camera-kind-main");
   const video = document.getElementById("camera-video");
   if (video) video.style.objectFit = "cover";
   if (!_cameraOrientationListener) {
@@ -10007,7 +10021,7 @@ function applyCameraOrientationState() {
     return true;
   }
   const {kind: kind, current: current} = _cameraState;
-  const preferred = kind === "corner" ? "portrait" : kind === "signature" ? "landscape" : kind === "interior" ? (CAMERA_SLOT_ORIENTATION_INTERIOR[current] || "landscape") : kind === "restoration" ? (CAMERA_SLOT_ORIENTATION_RESTORATION[current] || "portrait") : kind === "uvfront" ? "portrait" : CAMERA_SLOT_ORIENTATION_MAIN[current];
+  const preferred = kind === "corner" ? "portrait" : kind === "signature" ? "landscape" : kind === "interiorCover" ? "landscape" : kind === "interior" ? (CAMERA_SLOT_ORIENTATION_INTERIOR[current] || "landscape") : kind === "restoration" ? (CAMERA_SLOT_ORIENTATION_RESTORATION[current] || "portrait") : kind === "uvfront" ? "portrait" : CAMERA_SLOT_ORIENTATION_MAIN[current];
   const actual = getCurrentOrientation();
   const match = preferred === actual;
   const card = document.getElementById("camera-rotate-card");
@@ -10090,8 +10104,8 @@ function cameraOpenSlot(slotIndex) {
     }
   }
   const {kind: kind, mode: mode, queue: queue} = _cameraState;
-  const guideFile = (kind === "corner" ? CAMERA_GUIDE_CORNER : kind === "signature" ? [ null, null ] : kind === "interior" ? [ null, null, null, null, null, null, null, null ] : kind === "restoration" ? [ CAMERA_GUIDE_MAIN[0], CAMERA_GUIDE_MAIN[1], null, null, null, null, null, null ] : kind === "uvfront" ? [ CAMERA_GUIDE_MAIN[0] ] : CAMERA_GUIDE_MAIN)[slotIndex];
-  const label = (kind === "corner" ? CAMERA_LABEL_CORNER : kind === "signature" ? [ "Signature 1", "Signature 2" ] : kind === "interior" ? FULL_SLOTS.map(s => s.label) : kind === "restoration" ? RESTORATION_SLOTS.map(s => s.label) : kind === "uvfront" ? [ "UV FRONT" ] : CAMERA_LABEL_MAIN)[slotIndex];
+  const guideFile = (kind === "corner" ? CAMERA_GUIDE_CORNER : kind === "signature" ? [ null, null ] : kind === "interiorCover" ? [ null, null ] : kind === "interior" ? [ null, null, null, null, null, null, null, null ] : kind === "restoration" ? [ CAMERA_GUIDE_MAIN[0], CAMERA_GUIDE_MAIN[1], null, null, null, null, null, null ] : kind === "uvfront" ? [ CAMERA_GUIDE_MAIN[0] ] : CAMERA_GUIDE_MAIN)[slotIndex];
+  const label = (kind === "corner" ? CAMERA_LABEL_CORNER : kind === "signature" ? [ "Signature 1", "Signature 2" ] : kind === "interiorCover" ? [ "Interior Front", "Interior Back" ] : kind === "interior" ? FULL_SLOTS.map(s => s.label) : kind === "restoration" ? RESTORATION_SLOTS.map(s => s.label) : kind === "uvfront" ? [ "UV FRONT" ] : CAMERA_LABEL_MAIN)[slotIndex];
   const labelEl = document.getElementById("camera-slot-label");
   if (labelEl) labelEl.textContent = (label || "").toUpperCase();
   const skipBtn = document.getElementById("camera-skip");
@@ -10343,8 +10357,8 @@ async function runCropperSequence(captures, kind) {
       formData._imagesChanged = true;
       continue;
     }
-    const listKey = kind === "corner" ? "cornerImages" : kind === "signature" ? "signatureImages" : kind === "interior" ? "interiorImages" : kind === "restoration" ? "restorationImages" : "images";
-    const metaKey = kind === "corner" ? "cornerMeta" : kind === "signature" ? "signatureMeta" : kind === "interior" ? "interiorMeta" : kind === "restoration" ? "restorationMeta" : "imagesMeta";
+    const listKey = kind === "corner" ? "cornerImages" : kind === "signature" ? "signatureImages" : kind === "interiorCover" ? "interiorCoverImages" : kind === "interior" ? "interiorImages" : kind === "restoration" ? "restorationImages" : "images";
+    const metaKey = kind === "corner" ? "cornerMeta" : kind === "signature" ? "signatureMeta" : kind === "interiorCover" ? "interiorCoverMeta" : kind === "interior" ? "interiorMeta" : kind === "restoration" ? "restorationMeta" : "imagesMeta";
     const list = [ ...formData[listKey] || [] ];
     while (list.length <= cap.slot) list.push(null);
     // S16: Interior Staples auto-rotate 90° CW at capture time
@@ -10378,7 +10392,13 @@ async function runCropperSequence(captures, kind) {
     };
     formData[metaKey] = meta;
     formData._imagesChanged = true;
-    if (kind === "corner" || kind === "signature" || kind === "restoration") {
+    if (kind === "corner" || kind === "signature" || kind === "restoration" || kind === "interiorCover" || kind === "main" || kind === "interior") {
+      // S20: the auto-cropper is NO LONGER forced in any capture sequence
+      // (previously Main and Full auto-opened it). The crop tool has an
+      // unresolved bug — the crop handles render off-screen — so cropping stays
+      // OPTIONAL via each slot's manual crop button. Deep never needed it. The
+      // openCropper call below is kept for when the handle bug is fixed and a
+      // forced crop step might be reintroduced (useful mainly for Full).
       continue;
     }
     await new Promise(resolve => {
@@ -10657,6 +10677,18 @@ async function submitForm() {
   finalInteriorImages = _sanitizeSlots(finalInteriorImages);
   finalRestorationImages = _sanitizeSlots(finalRestorationImages);
   finalInteriorCoverImages = _sanitizeSlots(finalInteriorCoverImages);
+  // S20: derive interior-cover / interior meta so a library-uploaded grade photo
+  // is recorded as source:"upload" (camera captures already carry source:"camera"
+  // from runCropperSequence). getVerificationState reads these to gate the
+  // Verified badge — any non-camera grade photo makes the whole entry unverified.
+  const _deriveMeta = (finalArr, existingArr, prevArr) => (finalArr || []).map((url, i) => {
+    if (url == null) return null;
+    const prevUrl = prevArr && prevArr[i];
+    if (url === prevUrl && existingArr[i]) return existingArr[i];
+    return existingArr[i] || { source: "upload", capturedAt: (new Date).toISOString() };
+  });
+  const finalInteriorCoverMeta = _deriveMeta(finalInteriorCoverImages, formData.interiorCoverMeta || existingComicForMeta?.interiorCoverMeta || [], existingComicForMeta?.interiorCoverImages);
+  const finalInteriorMeta = _deriveMeta(finalInteriorImages, formData.interiorMeta || existingComicForMeta?.interiorMeta || [], existingComicForMeta?.interiorImages);
   const rec = {
     ...formData,
     id: id,
@@ -10678,9 +10710,11 @@ async function submitForm() {
     cornerImages: finalCornerImages,
     cornerMeta: finalCornerMeta,
     interiorImages: finalInteriorImages || formData.interiorImages || [],
+    interiorMeta: finalInteriorMeta,
     signatureImages: finalSignatureImages || formData.signatureImages || [],
     restorationImages: finalRestorationImages || [],
     interiorCoverImages: finalInteriorCoverImages || formData.interiorCoverImages || [],
+    interiorCoverMeta: finalInteriorCoverMeta,
     dateAdded: formData.dateAdded || (new Date).toISOString()
   };
   delete rec._savedImages;
