@@ -499,6 +499,16 @@
   .img-wrap.wide img {
     aspect-ratio: 5 / 1;
   }
+  /* S20 (#43): per-type aspect ratios matching the app's capture/display so the
+     admin boxes don't crop the shape (spine strip, corner macros, interior-cover
+     spreads, signature strips). */
+  .img-wrap.tall img   { aspect-ratio: 2 / 3;  }  /* corner macros */
+  .img-wrap.spread img { aspect-ratio: 3 / 2;  }  /* interior-cover spreads */
+  .img-wrap.spine img  { aspect-ratio: 16 / 5; }  /* spine strip */
+  .img-wrap.sig img    { aspect-ratio: 2 / 1;  }  /* signature strips */
+  /* Extreme-wide strips span the full grid width so they aren't squeezed into
+     a half-width column. */
+  .img-wrap.wide, .img-wrap.spine { grid-column: 1 / -1; }
   /* S16: Admin lightbox */
   #admin-lightbox {
     display: none;
@@ -1978,12 +1988,13 @@ function jumpToUserItems(code) {
 // this surfaces the exact item entry — tap it to open the detail view.
 function jumpToItemByGradeId(gradeId) {
   if (!gradeId) return;
-  // S20 fix: a Logs doc key is `t_<timestamp>_<roboGradeId>` (the server prefixes
-  // the item's short roboGradeId). Strip that prefix so we search the items by the
-  // actual roboGradeId, which is what the item record stores.
-  const rgId = String(gradeId).replace(/^t_\d+_/, '');
+  // S20 (#33): a Logs doc key is the assessment_timings doc id (e.g.
+  // `t_<ts>_<rand>`, `deep_…`, `full_…`). The client now persists that exact key
+  // onto the item it saves (assessmentTimingKeys), and the items search matches
+  // it — so search by the FULL key. (Legacy logs keyed by a roboGradeId still
+  // resolve too, since roboGradeId is also in the items search haystack.)
   state.tab = 'items';
-  state.itemSearch = rgId;
+  state.itemSearch = String(gradeId);
   renderDashboard();
 }
 
@@ -2154,7 +2165,7 @@ function renderItemDetail(it) {
       <h3 class="section-h">Images (${it.images.length})</h3>
       <div class="images-block">
         ${it.images.map((url, i) => `
-          <div class="img-wrap" onclick="openAdminLightbox('${escapeAttr(url)}')">
+          <div class="img-wrap ${it.images.length === 4 && i === 3 ? 'spine' : ''}" onclick="openAdminLightbox('${escapeAttr(url)}')">
             <div class="label">${imgLabel(i, it.images.length)}</div>
             <img src="${escapeAttr(url)}" alt="" loading="lazy">
           </div>
@@ -2166,7 +2177,7 @@ function renderItemDetail(it) {
       <h3 class="section-h" style="margin-top:20px;">Corner Macros (${it.cornerImages.length})</h3>
       <div class="images-block">
         ${it.cornerImages.map((url, i) => `
-          <div class="img-wrap" onclick="openAdminLightbox('${escapeAttr(url)}')">
+          <div class="img-wrap tall" onclick="openAdminLightbox('${escapeAttr(url)}')">
             <div class="label">${['Top Left','Top Right','Bottom Left','Bottom Right'][i] || ('Corner ' + (i+1))}</div>
             <img src="${escapeAttr(url)}" alt="" loading="lazy">
           </div>
@@ -2175,12 +2186,17 @@ function renderItemDetail(it) {
     ` : ''}
 
     ${(() => {
+      // S20 (#43): each group carries the app's aspect class so shapes aren't
+      // cropped — interior covers are landscape spreads, Full images are wide
+      // strips, signatures are wide. Restoration images vary, so show them
+      // uncropped (adaptive/contain).
+      const clsByName = { 'Interior Covers': 'spread', 'Interior': 'wide', 'Restoration': 'adaptive', 'Signature': 'sig' };
       const extra = [['Interior Covers', it.interiorCoverImages], ['Interior', it.interiorImages], ['Restoration', it.restorationImages], ['Signature', it.signatureImages]].filter(([_, a]) => a && a.length);
       return extra.map(([name, arr]) => `
         <h3 class="section-h" style="margin-top:20px;">${name} (${arr.length})</h3>
         <div class="images-block">
           ${arr.map((url, i) => `
-            <div class="img-wrap" onclick="openAdminLightbox('${escapeAttr(url)}')">
+            <div class="img-wrap ${clsByName[name] || ''}" onclick="openAdminLightbox('${escapeAttr(url)}')">
               <div class="label">${name} ${i + 1}</div>
               <img src="${escapeAttr(url)}" alt="" loading="lazy">
             </div>`).join('')}
@@ -2242,14 +2258,25 @@ function renderItemDetail(it) {
 
 async function downloadAllImages() {
   const it = window._adminItem; if (!it) return;
-  const urls = [].concat(it.images || [], it.cornerImages || [], it.interiorImages || [], it.restorationImages || [], it.signatureImages || []).filter(Boolean);
+  // S20 (#36): include the Deep interior-cover images in the export set.
+  const urls = [].concat(it.images || [], it.cornerImages || [], it.interiorCoverImages || [], it.interiorImages || [], it.restorationImages || [], it.signatureImages || []).filter(Boolean);
   const status = document.getElementById('dl-all-status');
   if (!urls.length) { if (status) status.textContent = 'No images.'; return; }
   const base = ((it.title || 'item') + (it.issue ? '-' + it.issue : '')).replace(/[^a-z0-9]+/gi, '_');
+  // S20 (#42): Firebase Storage URLs aren't CORS-enabled, so a direct fetch()
+  // fails ("load failed"). Route each image through the same-origin admin proxy
+  // (/api/download), which fetches server-side and streams the bytes back. Data
+  // URLs (inline thumbnails) are fetched directly — no proxy needed.
+  if (!state.idToken) state.idToken = await state.user.getIdToken();
   let n = 0;
   for (const url of urls) {
     try {
-      const r = await fetch(url); const blob = await r.blob();
+      const isData = /^data:/i.test(url);
+      const r = isData
+        ? await fetch(url)
+        : await fetch('/api/download?url=' + encodeURIComponent(url), { headers: { Authorization: 'Bearer ' + state.idToken } });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const blob = await r.blob();
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
       a.download = `${base}_${String(n + 1).padStart(2, '0')}.jpg`;
       document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);

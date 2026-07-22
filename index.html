@@ -4345,33 +4345,10 @@ function showDetail(id) {
     html += `<div style="background:#fff8e0;border:1px solid #c8a040;border-radius:10px;padding:12px 14px;margin-bottom:14px;display:flex;gap:12px;align-items:flex-start">\n      <div style="font-size:20px;flex-shrink:0">✨</div>\n      <div style="flex:1">\n        <div style="font-size:13px;font-weight:700;color:#6a4a08;letter-spacing:0.02em;margin-bottom:3px">Sample Entry</div>\n        <div style="font-size:12px;color:#7a5a1a;line-height:1.5">This is an example of what a graded book looks like. Add your first book to clear it, or tap Delete below to remove it now.</div>\n      </div>\n    </div>`;
   }
   html += `<div>\n    <h2 style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:26px;font-weight:900;color:#0d0d0f;line-height:1.1;margin:0">${esc(selected.title)}</h2>\n    ${selected.issue || selected.issueDate ? `<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:6px">\n      ${selected.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:18px;font-weight:600;color:#3a2e24">${formatIssue(selected.issue, selected.title)}</span>` : ""}\n      ${selected.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(selected.issueDate))}</span>` : ""}\n    </div>` : ""}\n    ${selected.printing ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#6a5a4a;margin-top:4px">${esc(selected.printing)}</div>` : ""}\n    ${selected.publisher ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:500;color:#8a7a6a;margin-top:4px">${esc(selected.publisher)}</div>` : ""}\n    ${selected.cgcCert || selected.psaCert ? `<div style="font-family:'IBM Plex Mono','Menlo',monospace;font-size:13px;color:#5a4a3a;margin-top:6px;letter-spacing:0.3px">\n      ${selected.cgcCert ? `<div><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">CGC</span> <span style="margin-left:6px">${esc(selected.cgcCert)}</span></div>` : ""}\n      ${selected.psaCert ? `<div style="margin-top:2px"><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">PSA</span> <span style="margin-left:6px">${esc(selected.psaCert)}</span></div>` : ""}\n    </div>` : ""}\n  </div>`;
-  const ownershipPillHtml = isSample ? "" : (() => {
-    const own = selected.ownership || "Owned";
-    const styleByState = {
-      Owned: {
-        bg: "#d8e4f0",
-        fg: "#1a4a6a",
-        border: "#88b0d0"
-      },
-      Watching: {
-        bg: "#ffd97a",
-        fg: "#7a5018",
-        border: "#d8a868"
-      },
-      Sold: {
-        bg: "#f5d8d8",
-        fg: "#8a1a1a",
-        border: "#d09090"
-      },
-      Print: {
-        bg: "#dcecd0",
-        fg: "#2a5a18",
-        border: "#9cc080"
-      }
-    };
-    const s = styleByState[own] || styleByState["Owned"];
-    return `<div style="margin-top:10px;display:flex;justify-content:flex-start">\n      <button onclick="cycleOwnershipFromDetail('${esc(selected.id)}')"\n        style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;\n               padding:6px 16px;border-radius:14px;cursor:pointer;\n               background:${s.bg};color:${s.fg};border:1px solid ${s.border}">\n        ${own.toUpperCase()}\n      </button>\n    </div>`;
-  })();
+  // S20 (#46): same badge-pill ownership control as the Add/Edit form, rendered
+  // in a keyed row so setOwnershipDetail can update it in place (no re-render →
+  // images don't reload).
+  const ownershipPillHtml = isSample ? "" : `<div id="detail-ownership-row" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">${_ownershipPills(selected.ownership || "Owned", "setOwnershipDetail")}</div>`;
   if (selected.images?.length > 0) {
     const imgs = selected.images;
     const imgAttrs = `loading="eager" decoding="async" onload="window.forceImgReflow(this)"`;
@@ -5283,26 +5260,35 @@ function cycleOwnership() {
   renderForm();
 }
 
-// S20 (#46): full-width segmented ownership control shown ABOVE the image slots
-// in the Add/Edit form. Replaces the small cycling pill. Three real states —
-// OWNED | SOLD | WATCHING; each segment is directly tappable (no cycling to
-// hunt for). Active = white fill / green text; inactive = green fill / white
-// text. ("Print" is a transient label-printing workflow state, not a user
-// ownership choice, so it isn't offered here — a book in Print reads as Owned.)
-function ownershipSegmentForForm() {
-  const own = formData.ownership || "Owned";
-  const opts = ["Owned", "Sold", "Watching"];
-  const active = opts.includes(own) ? own : "Owned";
-  const GREEN = "#3f6f1e";
-  const segs = opts.map((o, i) => {
-    const on = o === active;
-    const divider = i > 0 ? `border-left:1px solid ${on ? "#cfe3bf" : "#5f9138"};` : "";
-    return `<button type="button" onclick="setOwnership('${o}')" aria-pressed="${on}"
-      style="flex:1;border:none;${divider}background:${on ? "#ffffff" : GREEN};color:${on ? GREEN : "#ffffff"};
-             font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:14px;letter-spacing:1.5px;
-             padding:11px 0;cursor:pointer;-webkit-tap-highlight-color:transparent">${o.toUpperCase()}</button>`;
+// S20 (#46): ownership control — three directly-tappable state badges styled
+// after the "Verified" integrity pill (soft rounded pill, translucent fill,
+// muted-on-color text). The SAME renderer is used in the Add/Edit form and the
+// Detail view so the control is identical everywhere. Three real states —
+// OWNED | SOLD | WATCHING; the active one is filled in its color, the others
+// sit dim/outline. ("Print" is a transient label-printing workflow state, not a
+// user ownership choice, so it isn't offered — a book in Print reads as Owned.)
+const _OWNERSHIP_STATES = [
+  { key: "Owned",    label: "OWNED",    bg: "rgba(40,80,50,0.9)",  fg: "#b8e6c0", bd: "rgba(120,180,130,0.5)" },
+  { key: "Sold",     label: "SOLD",     bg: "rgba(70,55,30,0.9)",  fg: "#e8d4a8", bd: "rgba(160,130,80,0.5)" },
+  { key: "Watching", label: "WATCHING", bg: "rgba(40,60,85,0.9)",  fg: "#b8d0ee", bd: "rgba(110,150,200,0.5)" },
+];
+// Returns the three badge <button>s (no wrapper). `handlerJs` is the name of the
+// click handler ('setOwnership' in the form, 'setOwnershipDetail' in Detail).
+function _ownershipPills(current, handlerJs) {
+  const cur = current || "Owned";
+  const active = _OWNERSHIP_STATES.some(s => s.key === cur) ? cur : "Owned";
+  return _OWNERSHIP_STATES.map(s => {
+    const on = s.key === active;
+    const st = on
+      ? `background:${s.bg};color:${s.fg};border:1px solid ${s.bd}`
+      : `background:rgba(255,255,255,0.04);color:#7a7a7a;border:1px solid rgba(255,255,255,0.1)`;
+    return `<button type="button" onclick="${handlerJs}('${s.key}')" aria-pressed="${on}"
+      style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:12px;font-size:11px;font-weight:700;letter-spacing:0.4px;cursor:pointer;-webkit-tap-highlight-color:transparent;${st}">${on ? `<span style="font-size:8px;line-height:1">●</span>` : ""}${s.label}</button>`;
   }).join("");
-  return `<div style="display:flex;width:100%;border:1.5px solid ${GREEN};border-radius:12px;overflow:hidden;margin-bottom:14px">${segs}</div>`;
+}
+
+function ownershipSegmentForForm() {
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px">${_ownershipPills(formData.ownership || "Owned", "setOwnership")}</div>`;
 }
 
 function setOwnership(next) {
@@ -5310,6 +5296,33 @@ function setOwnership(next) {
   // Ownership other than Owned locks the book out of public listing.
   if (next !== "Owned") formData.publicListing = false;
   renderForm();
+}
+
+// Detail-view ownership change. Persists to Firestore and updates ONLY the pill
+// row in place — a full showDetail() re-render would tear down and re-fetch
+// every image (Deep/interior covers are loading="lazy" and visibly reload).
+async function setOwnershipDetail(next) {
+  const id = selected && selected.id;
+  if (!id) return;
+  const comic = items.find(c => c.id === id);
+  if (!comic) return;
+  if ((comic.ownership || "Owned") === next) return; // no-op if already that state
+  const update = { ownership: next };
+  if (next !== "Owned") update.publicListing = false; // only Owned may be public
+  try {
+    const ref = fsDoc(window._db, "users", window._currentUser.uid, "items", id);
+    await fsSetDoc(ref, update, { merge: true });
+    comic.ownership = next;
+    if (update.publicListing === false) comic.publicListing = false;
+    if (selected && selected.id === id) {
+      selected.ownership = next;
+      if (update.publicListing === false) selected.publicListing = false;
+    }
+    const row = document.getElementById("detail-ownership-row");
+    if (row) row.innerHTML = _ownershipPills(next, "setOwnershipDetail");
+  } catch (e) {
+    alert("Failed to update ownership: " + e.message);
+  }
 }
 
 function showEdit(id) {
@@ -6455,6 +6468,7 @@ async function assessHighGrade() {
       assessing = false;
       return;
     }
+    _recordTimingKey(unified); // S20 (#33): stash the Deep log key on the item
     const cgc = {
       ...unified.cgc || unified
     };
@@ -7290,6 +7304,21 @@ function generateRoboId() {
   return _randomFromAlphabet(6);
 }
 
+// S20 (#33): capture the assessment log's doc key (returned by the endpoints in
+// _diagnostics.timingKey) and stash it on the item's assessmentTimingKeys. The
+// item's roboGradeId is minted client-side AFTER assessment, so it can't be the
+// log key server-side; persisting the log key on the item is the bridge that
+// lets the admin dashboard's "Logs → tap to open item" resolve to this entry.
+function _recordTimingKey(unified) {
+  try {
+    const k = unified && unified._diagnostics && unified._diagnostics.timingKey;
+    if (!k) return;
+    const arr = Array.isArray(formData.assessmentTimingKeys) ? formData.assessmentTimingKeys.slice() : [];
+    if (!arr.includes(k)) arr.push(k);
+    formData.assessmentTimingKeys = arr.slice(-12);
+  } catch (e) {}
+}
+
 function generateTransferCode() {
   return _randomFromAlphabet(4);
 }
@@ -7602,6 +7631,7 @@ async function assessGrade() {
       assessing = false;
       return;
     }
+    _recordTimingKey(unified); // S20 (#33): stash the Main log key on the item
     const cgc = {
       ...unified.cgc || unified
     };
@@ -9204,6 +9234,7 @@ async function submitFullAssessment() {
       // one second apart instead of all at once.
       _fullSteps.forEach((s, i) => setTimeout(() => setStep(s.id, "done"), i * 1000));
       formData.fullAssessmentRan = true;
+      _recordTimingKey(result); // S20 (#33): stash the Full log key on the item
       stickTierUnlocks(formData);
       if (result.grade != null && Number.isFinite(parseFloat(result.grade))) {
         formData.predictedGrade = parseFloat(result.grade);

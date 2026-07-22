@@ -603,6 +603,9 @@ Rules:
       const db = await getAdminDb();
       if (db) {
         const key = `full_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        // S20 (#33): return the log's doc key so the client persists it on the
+        // item (assessmentTimingKeys) — the bridge for admin Logs → open item.
+        result._diagnostics.timingKey = key;
         await db.collection('assessment_timings').doc(key).set({
           createdAt: new Date().toISOString(),
           totalMs: phaseTimings.totalMs,

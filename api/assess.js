@@ -1759,6 +1759,13 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
         const key = (parsed.roboGrade && parsed.roboGrade.roboGradeId)
           || parsed.roboGradeId
           || `t_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        // S20 (#33): hand the log's doc key back to the client so it can store it
+        // on the saved item (assessmentTimingKeys). That's the reliable bridge
+        // for admin "Logs → tap to open item": the item's roboGradeId is minted
+        // client-side AFTER this call, so it can't be the key here — but the
+        // client CAN persist this key onto the item it saves.
+        if (!parsed._diagnostics) parsed._diagnostics = {};
+        parsed._diagnostics.timingKey = key;
         await db.collection('assessment_timings').doc(key).set({
           createdAt: new Date().toISOString(),
           totalMs: phaseTimings.totalMs,

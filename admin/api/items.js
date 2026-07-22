@@ -156,6 +156,9 @@ export default async function handler(req, res) {
         issue: flat.issue || '',
         roboGradeDate: flat.roboGradeDate || null,
         roboGradeId: flat.roboGradeId || '',
+        // S20 (#33): assessment-log doc keys the client stored on this item, so
+        // the admin Logs → tap resolves a log's doc key to the item entry.
+        assessmentTimingKeys: Array.isArray(flat.assessmentTimingKeys) ? flat.assessmentTimingKeys : [],
         score: flat.roboGrade?.score ?? null,
         assessedCGCGrade: flat.assessedCGCGrade ?? null,
         publicListing: !!flat.publicListing,
@@ -183,7 +186,7 @@ export default async function handler(req, res) {
     // Substring match against title + issue + userName + Grade ID, case-insensitive.
     if (query) {
       allItems = allItems.filter(it => {
-        const hay = `${it.title} ${it.issue} ${it.userName} ${it.transferCode} ${it.roboGradeId}`.toLowerCase();
+        const hay = `${it.title} ${it.issue} ${it.userName} ${it.transferCode} ${it.roboGradeId} ${(it.assessmentTimingKeys || []).join(' ')}`.toLowerCase();
         return hay.includes(query);
       });
     }
