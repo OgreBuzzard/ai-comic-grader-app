@@ -2426,16 +2426,35 @@ function openAdminLightbox(src) {
   lb.classList.add('show');
   lb.onclick = function(e) { if (e.target === lb) lb.classList.remove('show'); };
 }
-function saveAdminLightboxImage() {
+// S20: one-tap save. Setting a.href to the cross-origin Firebase URL made the
+// browser IGNORE the download attribute (download only works same-origin), so it
+// opened the image and forced the extra "download → scroll up → save" taps. Pull
+// the bytes through the same-origin proxy and save the blob directly — one tap,
+// same clean flow as the app.
+async function saveAdminLightboxImage() {
   const img = document.getElementById('admin-lb-img');
-  if (!img.src) return;
-  const a = document.createElement('a');
-  a.href = img.src;
-  a.download = 'robograder-image.jpg';
-  a.target = '_blank';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  if (!img || !img.src) return;
+  const url = img.src;
+  const name = ((window._adminItem && ((window._adminItem.title || 'robograder') + (window._adminItem.issue ? '-' + window._adminItem.issue : ''))) || 'robograder').replace(/[^a-z0-9]+/gi, '_') + '.jpg';
+  try {
+    const isData = /^data:/i.test(url);
+    if (!isData && !state.idToken) state.idToken = await state.user.getIdToken();
+    const r = isData
+      ? await fetch(url)
+      : await fetch('/api/download?url=' + encodeURIComponent(url), { headers: { Authorization: 'Bearer ' + state.idToken } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+  } catch (e) {
+    // Fallback: open the image so the user can still save it manually.
+    window.open(url, '_blank');
+  }
 }
 </script>
 </body>

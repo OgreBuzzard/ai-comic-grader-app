@@ -3404,7 +3404,20 @@ async function deleteItem(id) {
     alert("Delete failed: " + e.message);
   }
   syncMsg(null);
+  // S20 (#48): keep the List View where the user was. The deleted row is gone,
+  // so clear _lastDetailId (otherwise showList tries to scroll-to/highlight a
+  // phantom row) and restore the saved list scroll. Re-clamp after layout
+  // settles — the list is now one row shorter and lazy images reflow, so a
+  // single early scroll lands short.
+  const _restoreY = _listScrollY;
+  _lastDetailId = null;
   showList();
+  const _clampAndScroll = () => {
+    const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    window.scrollTo(0, Math.min(_restoreY, maxY));
+  };
+  requestAnimationFrame(() => requestAnimationFrame(_clampAndScroll));
+  setTimeout(_clampAndScroll, 150);
 }
 
 async function dismissSampleIfNeeded() {
@@ -4348,7 +4361,7 @@ function showDetail(id) {
   // S20 (#46): same badge-pill ownership control as the Add/Edit form, rendered
   // in a keyed row so setOwnershipDetail can update it in place (no re-render →
   // images don't reload).
-  const ownershipPillHtml = isSample ? "" : `<div id="detail-ownership-row" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">${_ownershipPills(selected.ownership || "Owned", "setOwnershipDetail")}</div>`;
+  const ownershipPillHtml = isSample ? "" : `<div id="detail-ownership-row" style="${_OWNERSHIP_PILL_WRAP};margin-top:10px">${_ownershipPills(selected.ownership || "Owned", "setOwnershipDetail")}</div>`;
   if (selected.images?.length > 0) {
     const imgs = selected.images;
     const imgAttrs = `loading="eager" decoding="async" onload="window.forceImgReflow(this)"`;
@@ -5272,23 +5285,30 @@ const _OWNERSHIP_STATES = [
   { key: "Sold",     label: "SOLD",     bg: "rgba(70,55,30,0.9)",  fg: "#e8d4a8", bd: "rgba(160,130,80,0.5)" },
   { key: "Watching", label: "WATCHING", bg: "rgba(40,60,85,0.9)",  fg: "#b8d0ee", bd: "rgba(110,150,200,0.5)" },
 ];
-// Returns the three badge <button>s (no wrapper). `handlerJs` is the name of the
-// click handler ('setOwnership' in the form, 'setOwnershipDetail' in Detail).
+// Returns the three segment <button>s (no wrapper) for the single wide pill.
+// `handlerJs` is the click handler name ('setOwnership' in the form,
+// 'setOwnershipDetail' in Detail). Styled after the "Verified" integrity pill:
+// soft translucent fill, muted text, subtle border. The active segment is filled
+// in its state color; inactive segments are transparent with muted text and a
+// hairline divider between them.
 function _ownershipPills(current, handlerJs) {
   const cur = current || "Owned";
   const active = _OWNERSHIP_STATES.some(s => s.key === cur) ? cur : "Owned";
-  return _OWNERSHIP_STATES.map(s => {
+  return _OWNERSHIP_STATES.map((s, i) => {
     const on = s.key === active;
-    const st = on
-      ? `background:${s.bg};color:${s.fg};border:1px solid ${s.bd}`
-      : `background:rgba(255,255,255,0.04);color:#7a7a7a;border:1px solid rgba(255,255,255,0.1)`;
+    const divider = i > 0 ? "border-left:1px solid rgba(120,180,130,0.25);" : "";
+    const st = on ? `background:${s.bg};color:${s.fg};` : "background:transparent;color:#6f8f76;";
     return `<button type="button" onclick="${handlerJs}('${s.key}')" aria-pressed="${on}"
-      style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:12px;font-size:11px;font-weight:700;letter-spacing:0.4px;cursor:pointer;-webkit-tap-highlight-color:transparent;${st}">${on ? `<span style="font-size:8px;line-height:1">●</span>` : ""}${s.label}</button>`;
+      style="flex:1;border:none;${divider}padding:8px 0;font-size:11px;font-weight:700;letter-spacing:1px;text-align:center;cursor:pointer;-webkit-tap-highlight-color:transparent;${st}">${s.label}</button>`;
   }).join("");
 }
 
+// The single wide pill wrapper (Verified-pill look): full width, rounded, one
+// soft green-tinted border around all three segments.
+const _OWNERSHIP_PILL_WRAP = "display:flex;width:100%;border-radius:12px;overflow:hidden;border:1px solid rgba(120,180,130,0.4)";
+
 function ownershipSegmentForForm() {
-  return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px">${_ownershipPills(formData.ownership || "Owned", "setOwnership")}</div>`;
+  return `<div style="${_OWNERSHIP_PILL_WRAP};margin-bottom:14px">${_ownershipPills(formData.ownership || "Owned", "setOwnership")}</div>`;
 }
 
 function setOwnership(next) {
