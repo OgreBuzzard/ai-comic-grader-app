@@ -4922,12 +4922,18 @@ async function cycleOwnershipFromDetail(id) {
   const update = {
     ownership: next
   };
+  // S20 (#46): only an OWNED book may be publicly listed. Moving to Sold or
+  // Watching kills the public link. Print is a transient label state — leave
+  // publicListing intact so the link stays live through a label print and is
+  // restored with the book's prior ownership.
+  if (next !== "Owned" && next !== "Print") update.publicListing = false;
   try {
     const ref = fsDoc(window._db, "users", window._currentUser.uid, "items", id);
     await fsSetDoc(ref, update, {
       merge: true
     });
     comic.ownership = next;
+    if (update.publicListing === false) comic.publicListing = false;
     if (selected && selected.id === id) {
       const savedScroll = window.scrollY || document.documentElement.scrollTop || 0;
       showDetail(id);
