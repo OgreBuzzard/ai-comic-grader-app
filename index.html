@@ -5334,10 +5334,15 @@ function ownershipSegmentForForm() {
 }
 
 function setOwnership(next) {
+  const _wasPublic = !!formData.publicListing;
   formData.ownership = next;
   // Ownership other than Owned locks the book out of public listing.
   if (next !== "Owned") formData.publicListing = false;
   renderForm();
+  // S20: if the book had been public, tell the user it was switched to Private.
+  if (next !== "Owned" && _wasPublic) {
+    _showBrandedModal("SWITCHED TO PRIVATE", `This book was set to Private — only books marked Owned can be listed publicly.`, "OKAY");
+  }
 }
 
 // Detail-view ownership change. Persists to Firestore and updates ONLY the pill
@@ -5349,6 +5354,7 @@ async function setOwnershipDetail(next) {
   const comic = items.find(c => c.id === id);
   if (!comic) return;
   if ((comic.ownership || "Owned") === next) return; // no-op if already that state
+  const _wasPublic = !!comic.publicListing;
   const update = { ownership: next };
   if (next !== "Owned") update.publicListing = false; // only Owned may be public
   try {
@@ -5373,6 +5379,10 @@ async function setOwnershipDetail(next) {
         if (_cb) _cb.checked = false;
       }
       if (_pth) _pth.style.left = "3px";
+    }
+    // S20: if the book had been public, tell the user it was switched to Private.
+    if (next !== "Owned" && _wasPublic) {
+      _showBrandedModal("SWITCHED TO PRIVATE", `This book was set to Private — only books marked Owned can be listed publicly.`, "OKAY");
     }
   } catch (e) {
     alert("Failed to update ownership: " + e.message);
