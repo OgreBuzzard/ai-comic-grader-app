@@ -921,15 +921,22 @@
         </button>
       </div>`;
     }
+    // S20: on a Deep/Full/Re-Assess run, the panel slides in showing the PREVIOUS
+    // grade (set by _capturePrevAssessResult in index.html), then mountResults
+    // animates it to the revised value. On a first assessment there's no prior
+    // grade, so it shows 0 / 0.0 and animates up from zero as before.
+    var _prev = (typeof window !== 'undefined' && window._prevAssessResult) || null;
+    var _rgInit = _prev && _prev.score != null ? String(_prev.score) : '0';
+    var _gradeInit = _prev && _prev.gradeText ? _prev.gradeText : '0.0';
     return `
       <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">
         <div style="display:flex;gap:12px;justify-content:center;align-items:center;">
           <div style="width:64px;height:64px;border:1.5px solid #3a5010;background:#0f1a05;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
-            <div style="font-size:22px;font-weight:800;color:#aaee30;line-height:1">0</div>
+            <div style="font-size:22px;font-weight:800;color:#aaee30;line-height:1">${_rgInit}</div>
             <div style="font-size:9px;color:#aaee30;opacity:0.75;margin-top:2px;letter-spacing:0.8px">RG</div>
           </div>
           <div style="width:64px;height:64px;background:#2a5a8a;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
-            <div style="font-size:22px;font-weight:800;color:#e0f0ff;line-height:1">0.0</div>
+            <div style="font-size:22px;font-weight:800;color:#e0f0ff;line-height:1">${_gradeInit}</div>
             <div style="font-size:9px;color:#e0f0ff;opacity:0.75;margin-top:2px;letter-spacing:0.8px">GRADE</div>
           </div>
         </div>

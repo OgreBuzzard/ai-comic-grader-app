@@ -437,6 +437,14 @@ onAuthStateChanged(auth, async user => {
       background: linear-gradient(180deg, #2a3a5a 0%, #1a2a4a 50%, #1a2540 100%) !important;
       color: #a8d0f0 !important; border-color: rgba(168,208,240,0.15) !important;
     }
+    /* S20: results-panel grade badge pop/glow — fires when a Deep/Full/Re-Assess
+       result settles (whether the grade changed or not) to signal the revision. */
+    @keyframes rgResultPop {
+      0%   { transform: scale(1); }
+      42%  { transform: scale(1.16); box-shadow: 0 0 20px rgba(170,238,48,0.9), 0 0 7px rgba(255,255,255,0.65); }
+      100% { transform: scale(1); box-shadow: 0 2px 6px rgba(0,0,0,0.4); }
+    }
+    .rg-result-pop { animation: rgResultPop 0.68s ease-out; }
 
     /* Category — secondary: white + olive */
     .rg-btn-secondary {
@@ -6327,6 +6335,69 @@ function animateGradeList(el, target, list, duration) {
   });
 }
 
+// S20: previous-grade → new-grade animations for Deep/Full/Re-Assess. The results
+// panel now slides in showing the PREVIOUS grade (see buildResultsPlaceholder),
+// then the number animates up or down to the revised grade. When it's done (or
+// immediately, if unchanged) the badge pops/glows to signal the revision.
+function animateRoboGradeFromTo(el, from, to, duration) {
+  return new Promise(resolve => {
+    from = Math.round(Number(from) || 0);
+    to = Math.round(Number(to) || 0);
+    if (from === to) { el.textContent = String(to); resolve(); return; }
+    const start = performance.now();
+    function tick(now) {
+      const t = Math.min((now - start) / duration, 1);
+      const eased = easeOutCubic(t);
+      el.textContent = String(Math.round(from + (to - from) * eased));
+      if (t < 1) requestAnimationFrame(tick); else { el.textContent = String(to); resolve(); }
+    }
+    requestAnimationFrame(tick);
+  });
+}
+
+function animateGradeListFromTo(el, from, to, list, duration) {
+  return new Promise(resolve => {
+    const fromIdx = list.findIndex(g => Math.abs(g - parseFloat(from)) < 0.01);
+    const toIdx = list.findIndex(g => Math.abs(g - parseFloat(to)) < 0.01);
+    if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) { el.textContent = fmtGrade(to); resolve(); return; }
+    const step = toIdx > fromIdx ? 1 : -1;
+    const path = [];
+    for (let i = fromIdx; i !== toIdx + step; i += step) path.push(list[i]);
+    const start = performance.now();
+    let lastIdx = -1;
+    function tick(now) {
+      const t = Math.min((now - start) / duration, 1);
+      const eased = easeOutCubic(t);
+      const idx = Math.min(Math.floor(eased * path.length), path.length - 1);
+      if (idx !== lastIdx) { el.textContent = fmtGrade(path[idx]); lastIdx = idx; }
+      if (t < 1) requestAnimationFrame(tick); else { el.textContent = fmtGrade(to); resolve(); }
+    }
+    requestAnimationFrame(tick);
+  });
+}
+
+// Pop + glow the badge box that holds `valueEl`. Restarts cleanly if re-applied.
+function popResultBadge(valueEl) {
+  const box = valueEl && valueEl.parentElement;
+  if (!box) return;
+  box.classList.remove("rg-result-pop");
+  void box.offsetWidth;
+  box.classList.add("rg-result-pop");
+  setTimeout(() => box.classList.remove("rg-result-pop"), 750);
+}
+
+// S20: snapshot the current (about-to-be-superseded) grade so the results panel
+// can slide in showing it and then animate to the revised grade. Called at
+// scan-start for Re-Assess / Deep / Full. Null on a first assessment (no prior
+// grade) so the panel shows 0/0.0 and animates up from zero as before.
+function _capturePrevAssessResult() {
+  window._prevAssessResult = (formData.roboGrade && formData.roboGrade.score != null) ? {
+    score: Math.round(formData.roboGrade.score),
+    gradeText: normalizeGrade(formData.predictedGrade || formData.assessedCGCGrade || "") || "0.0",
+    gradeVal: parseFloat(formData.predictedGrade || formData.assessedCGCGrade) || null
+  } : null;
+}
+
 function animatePageQuality(pqEl, target, duration) {
   return new Promise(resolve => {
     if (!target) {
@@ -6407,6 +6478,13 @@ function mountResults(cgc, psa) {
   const pq = cgc.pageQuality ? normPageQuality(cgc.pageQuality) : "";
   const roboGrade = window._pendingRoboGrade;
   const roboScore = roboGrade && roboGrade.score != null ? Math.round(roboGrade.score) : null;
+  // S20: previous grade (set at scan-start for Deep/Full/Re-Assess). The results
+  // panel shows these instead of 0/0.0, then animates to the new values below.
+  const _prev = window._prevAssessResult || null;
+  const _rgFrom = _prev && _prev.score != null ? _prev.score : 0;
+  const _rgInitStr = _prev && _prev.score != null ? String(_prev.score) : "0";
+  const _gradeFrom = _prev && _prev.gradeVal != null ? _prev.gradeVal : null;
+  const _gradeInitStr = _prev && _prev.gradeText ? _prev.gradeText : "0.0";
   setTimeout(() => {
     if (window.RobograderScan && window.RobograderScan.stopGridCycle) {
       window.RobograderScan.stopGridCycle();
@@ -6433,25 +6511,25 @@ function mountResults(cgc, psa) {
         bg: "#2a5a8a",
         text: "#e0f0ff",
         label: "GRADE",
-        initial: "0.0"
+        initial: _gradeInitStr
       },
       "cgc-ai": {
         bg: "#2a5a8a",
         text: "#e0f0ff",
         label: "GRADE",
-        initial: "0.0"
+        initial: _gradeInitStr
       },
       "psa-ai": {
         bg: "#2a5a8a",
         text: "#e0f0ff",
         label: "GRADE",
-        initial: "0.0"
+        initial: _gradeInitStr
       },
       robograde: {
         bg: "#0f1a05",
         text: "#aaee30",
         label: "RG",
-        initial: "0",
+        initial: _rgInitStr,
         border: "1.5px solid #3a5010"
       }
     };
@@ -6469,10 +6547,23 @@ function mountResults(cgc, psa) {
   const cgcEl = document.getElementById("anim-val-cgc");
   const pqEl = document.getElementById("result-pq");
   if (roboEl && roboScore != null) {
-    animateRoboGrade(roboEl, roboScore, 2000);
+    // S20: animate from the PREVIOUS RG (0 on a first assessment) to the new one,
+    // then pop/glow. If unchanged, skip straight to the pop.
+    if (_rgFrom === roboScore) {
+      setTimeout(() => popResultBadge(roboEl), 700);
+    } else {
+      animateRoboGradeFromTo(roboEl, _rgFrom, roboScore, 2000).then(() => popResultBadge(roboEl));
+    }
   }
   if (cgcEl && predictedGrade) {
-    setTimeout(() => animateGradeList(cgcEl, predictedGrade, CGC_GRADE_LIST, 2000), 1000);
+    setTimeout(() => {
+      const _gNew = parseFloat(predictedGrade);
+      if (_gradeFrom != null && Math.abs(_gradeFrom - _gNew) < 0.01) {
+        popResultBadge(cgcEl);
+      } else {
+        animateGradeListFromTo(cgcEl, _gradeFrom != null ? _gradeFrom : CGC_GRADE_LIST[0], predictedGrade, CGC_GRADE_LIST, 2000).then(() => popResultBadge(cgcEl));
+      }
+    }, 1000);
   }
   if (pq && pqEl) {
     setTimeout(() => {
@@ -6629,6 +6720,7 @@ async function assessHighGrade() {
     ...(formData.cornerImages || []).filter(Boolean).slice(0, 4),
     ...(formData.labelDetected ? [] : (formData.interiorCoverImages || []).filter(Boolean).slice(0, 2))
   ];
+  _capturePrevAssessResult(); // S20: Deep revises the Main grade — show it sliding in
   const scanController = window.RobograderScan ? window.RobograderScan.runScanAnimation(_deepScanPhotos, "corner") : {
     promise: Promise.resolve(),
     cancel: () => {}
@@ -7820,6 +7912,7 @@ async function assessGrade() {
     _assessBtn.disabled = true;
     _assessBtn.style.opacity = "0.75";
   }
+  _capturePrevAssessResult(); // S20: Re-Assess shows the prior grade sliding in (null on a first assessment)
   const scanController = window.RobograderScan ? window.RobograderScan.runScanAnimation(formData.images || []) : {
     promise: Promise.resolve(),
     cancel: () => {}
@@ -9479,6 +9572,7 @@ async function submitFullAssessment() {
   if (typeof TIER_OVERLAY_BG !== "undefined") { const _pi = new Image(); _pi.src = TIER_OVERLAY_BG.full; }
   // S16: run the 8-image Full Assessment scan animation (1.0s per scan) while the
   // API call is in flight — mirrors the standard/Deep flow's scan shell.
+  _capturePrevAssessResult(); // S20: Full revises the prior grade — show it sliding in
   const fullScanController = window.RobograderScan ? window.RobograderScan.runScanAnimation(interior, "full") : {
     promise: Promise.resolve(),
     cancel: () => {}
@@ -9593,9 +9687,15 @@ async function submitFullAssessment() {
       // S17: results panel built EXACTLY like Main (mountResults): 64px badges
       // that start at 0 and animate, page-quality pill, ASSESSING… button that
       // becomes COMPLETE. Full is already-run by definition, so no UNLOCKED.
+      // S20: show the PREVIOUS grade sliding in, then animate to the Full result.
+      const _prev = window._prevAssessResult || null;
+      const _rgFrom = _prev && _prev.score != null ? _prev.score : 0;
+      const _rgInit = _prev && _prev.score != null ? String(_prev.score) : "0";
+      const _gradeFrom = _prev && _prev.gradeVal != null ? _prev.gradeVal : null;
+      const _gradeInit = _prev && _prev.gradeText ? _prev.gradeText : "0.0";
       let _badges = "";
-      if (_newScore != null) _badges += `<div style="width:64px;height:64px;border:1.5px solid #3a5010;background:#0f1a05;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-robo" style="font-size:22px;font-weight:800;color:#aaee30;line-height:1">0</div>\n        <div style="font-size:9px;color:#aaee30;opacity:0.75;margin-top:2px;letter-spacing:0.8px">RG</div>\n      </div>`;
-      if (_newGrade != null) _badges += `<div style="width:64px;height:64px;background:#2a5a8a;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-grade" style="font-size:22px;font-weight:800;color:#e0f0ff;line-height:1">0.0</div>\n        <div style="font-size:9px;color:#e0f0ff;opacity:0.75;margin-top:2px;letter-spacing:0.8px">GRADE</div>\n      </div>`;
+      if (_newScore != null) _badges += `<div style="width:64px;height:64px;border:1.5px solid #3a5010;background:#0f1a05;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-robo" style="font-size:22px;font-weight:800;color:#aaee30;line-height:1">${_rgInit}</div>\n        <div style="font-size:9px;color:#aaee30;opacity:0.75;margin-top:2px;letter-spacing:0.8px">RG</div>\n      </div>`;
+      if (_newGrade != null) _badges += `<div style="width:64px;height:64px;background:#2a5a8a;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-grade" style="font-size:22px;font-weight:800;color:#e0f0ff;line-height:1">${_gradeInit}</div>\n        <div style="font-size:9px;color:#e0f0ff;opacity:0.75;margin-top:2px;letter-spacing:0.8px">GRADE</div>\n      </div>`;
       const _fullResultsHtml = `\n        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n          <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${_badges}</div>\n          <div id="full-result-pq" style="display:flex;align-items:center;justify-content:center;min-height:22px;">\n            <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n          </div>\n          <button id="full-complete-btn" disabled\n            style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">ASSESSING…</button>\n        </div>`;
       if (window.RobograderScan && window.RobograderScan.slideResultsIntoPanel) {
         window.RobograderScan.slideResultsIntoPanel(_fullResultsHtml);
@@ -9604,8 +9704,14 @@ async function submitFullAssessment() {
       const _roboEl = document.getElementById("full-anim-robo");
       const _gradeEl = document.getElementById("full-anim-grade");
       const _pqEl = document.getElementById("full-result-pq");
-      if (_roboEl && _newScore != null) animateRoboGrade(_roboEl, _newScore, 2000);
-      if (_gradeEl && _newGradeNum != null) setTimeout(() => animateGradeList(_gradeEl, _newGrade, CGC_GRADE_LIST, 2000), 1000);
+      if (_roboEl && _newScore != null) {
+        if (_rgFrom === _newScore) setTimeout(() => popResultBadge(_roboEl), 700);
+        else animateRoboGradeFromTo(_roboEl, _rgFrom, _newScore, 2000).then(() => popResultBadge(_roboEl));
+      }
+      if (_gradeEl && _newGradeNum != null) setTimeout(() => {
+        if (_gradeFrom != null && Math.abs(_gradeFrom - _newGradeNum) < 0.01) popResultBadge(_gradeEl);
+        else animateGradeListFromTo(_gradeEl, _gradeFrom != null ? _gradeFrom : CGC_GRADE_LIST[0], _newGrade, CGC_GRADE_LIST, 2000).then(() => popResultBadge(_gradeEl));
+      }, 1000);
       if (_pq && _pqEl) setTimeout(() => {
         const colors = PQ_COLORS[_pq] || { bg: "#f0ece6", text: "#5a4e44" };
         _pqEl.innerHTML = `<div style="background:${colors.bg};color:${colors.text};padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">${_pq}</div>`;
