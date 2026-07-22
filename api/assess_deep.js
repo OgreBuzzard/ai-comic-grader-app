@@ -165,6 +165,14 @@ export default async function handler(req, res) {
   }
   const macroBlocks = imageInputBlocks;  // alias kept for the downstream message assembly
 
+  // S20 (#44): when the client sends the Main front-cover image, Deep verifies
+  // the corner macros belong to the SAME physical book before grading. A
+  // high-confidence mismatch returns an IMAGE_MISMATCH gate and no grade — the
+  // client charges no credit for a non-COMIC gate. If the anchor is absent
+  // (older clients / no front cover), verification is skipped and the book is
+  // always graded, so the feature can never block a legitimate assessment.
+  const hasFrontCover = !isRestoration && !!frontCover && !!toImageBlock(frontCover);
+
   // ── canonical CGC tier reference (copied from assess.js v3.99c) ─────────────
   const CGC_GRADE_TIERS = `
 10.0 GEM MINT: Perfect. No stress lines on spine. Razor-sharp corners. Cover flat. Staples clean, tight, centered. Full gloss, vibrant color, no fading. Practically nonexistent before 1975.
@@ -256,7 +264,14 @@ ${JSON.stringify({
 
 ## PHASE 0 — INPUT VALIDATION (already done server-side; do not re-validate)
 
-## PHASE 1 — INSPECT TOP CORNER MACROS (TL, TR)
+${hasFrontCover ? `## PHASE 0.5 — SAME-BOOK VERIFICATION (do this FIRST, before any grading)
+You are given the FULL FRONT COVER of the book that was originally assessed (labeled "FULL FRONT COVER of the book being graded"). The 4 corner macros must be close-ups of THIS SAME physical book's four corners. Before grading, confirm they belong together:
+  • Compare each corner macro against the CORRESPONDING corner region of that front cover — Top-Left macro vs the cover's top-left, Top-Right vs top-right, and so on.
+  • The artwork, colors, border treatment, and any logo/title/text fragments visible in a macro must be reconcilable with that region of the front cover — allowing for the fact that a macro is an extreme close-up crop and shows only a small area.
+  • Set "sameBook": false ONLY if you are HIGHLY CONFIDENT that one or more macros are a DIFFERENT comic — e.g. clearly different cover artwork, a different title logo, or colors that plainly cannot belong to that region of the front cover. When you set it false, write a single buyer-facing sentence in "mismatchReason" and STOP — do not fabricate a grade or defects.
+  • DEFAULT TO "sameBook": true. If a macro is too tight or too plain to identify (e.g. a blank white-border corner), if the macro is merely blurry or low quality, or if you are at all uncertain, treat the book as the SAME and proceed to grade normally. Do NOT flag a mismatch on ambiguity — only on clear, confident evidence of a genuinely different book. A false mismatch wrongly blocks a paying customer, so the bar is high.
+
+` : ''}## PHASE 1 — INSPECT TOP CORNER MACROS (TL, TR)
 Look at the Top-Left and Top-Right corner macros provided. Compare against the initial defect catalogue for those corners. Look specifically for:
   • Color-breaking creases visible at macro resolution that wouldn't appear in the wide shot
   • Small chip-outs, piece losses, or paper losses
@@ -323,6 +338,8 @@ Your entire response must be a JSON object and nothing else. The first character
 JSON shape (same as initial assessment, with deepAddition tags on new defects):
 {
   "gateResult": "COMIC",
+  "sameBook": true,
+  "mismatchReason": "",
   "title": "${initialAssessment.title || ''}",
   "issue": "${initialAssessment.issue || ''}",
   "issueDate": "${initialAssessment.issueDate || ''}",
@@ -666,6 +683,46 @@ Rules:
       return res.status(500).json({ error: 'Failed to parse deep response: ' + text, _diagnostics: { phaseTimings, parseError: true } });
     }
     phaseDelta('primaryParseMs', _primaryParseStart);
+
+    // ── S20 (#44): SAME-BOOK GATE ────────────────────────────────────────────
+    // Only when the client supplied the Main front-cover anchor AND the model is
+    // highly confident the corner macros are a DIFFERENT book. Returns a gate
+    // (not a grade), so assessHighGrade() charges no credit and shows the "+1"
+    // refund preview. Excluded from abuse strikes client-side (innocent mix-up).
+    if (!isRestoration && hasFrontCover && parsed && parsed.sameBook === false) {
+      const mismatch = {
+        gateResult: 'IMAGE_MISMATCH',
+        gateReason: (typeof parsed.mismatchReason === 'string' && parsed.mismatchReason.trim())
+          ? parsed.mismatchReason.trim()
+          : "The Deep Assessment close-ups don't appear to be the same comic as the one you assessed. Re-take the corner and interior photos of that book and try again.",
+        _diagnostics: { deepAssessment: true, imageMismatch: true, initialGrade: initialAssessment.grade || null, phaseTimings }
+      };
+      phaseTimings.totalMs = Date.now() - T0;
+      try {
+        const db = await getAdminDb();
+        if (db) {
+          const key = `deep_mismatch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          await db.collection('assessment_timings').doc(key).set({
+            createdAt: new Date().toISOString(),
+            totalMs: phaseTimings.totalMs,
+            phases: phaseTimings,
+            version: ROBOGRADE_VERSION,
+            model: 'claude-opus-4-8',
+            deepAssessment: true,
+            gateResult: 'IMAGE_MISMATCH',
+            imageMismatch: true,
+            costUsd: 0,
+            inputTokens: _inputTokens,
+            outputTokens: _outputTokens,
+            title: parsed.title || title || null,
+            issue: parsed.issue || issueNumber || null,
+            timedOut: false
+          });
+        }
+      } catch (e) { console.error('deep mismatch timing write failed (non-fatal):', e); }
+      if (wantsSSE) { sseEvent('result', mismatch); try { res.end(); } catch (e) {} return; }
+      return res.status(200).json(mismatch);
+    }
 
     // Normalize grade format
     if (parsed.grade && !String(parsed.grade).includes('.')) {

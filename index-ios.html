@@ -5193,12 +5193,18 @@ async function cycleOwnershipFromDetail(id) {
   const update = {
     ownership: next
   };
+  // S20 (#46): only an OWNED book may be publicly listed. Moving to Sold or
+  // Watching kills the public link. Print is a transient label state — leave
+  // publicListing intact so the link stays live through a label print and is
+  // restored with the book's prior ownership.
+  if (next !== "Owned" && next !== "Print") update.publicListing = false;
   try {
     const ref = fsDoc(window._db, "users", window._currentUser.uid, "items", id);
     await fsSetDoc(ref, update, {
       merge: true
     });
     comic.ownership = next;
+    if (update.publicListing === false) comic.publicListing = false;
     if (selected && selected.id === id) {
       const savedScroll = window.scrollY || document.documentElement.scrollTop || 0;
       showDetail(id);
@@ -6568,7 +6574,15 @@ async function assessHighGrade() {
     _hgBtn.disabled = true;
     _hgBtn.style.opacity = "0.75";
   }
-  const scanController = window.RobograderScan ? window.RobograderScan.runScanAnimation(formData.cornerImages || [], "corner") : {
+  // S20 (#40): Deep now animates 6 images — the 4 corner macros plus the 2
+  // interior covers (raw books). Order [tl, tr, bl, br, interiorFront,
+  // interiorBack] matches SLOTS_CORNER. Slabbed books have no interior covers,
+  // so only the 4 corners scan.
+  const _deepScanPhotos = [
+    ...(formData.cornerImages || []).filter(Boolean).slice(0, 4),
+    ...(formData.labelDetected ? [] : (formData.interiorCoverImages || []).filter(Boolean).slice(0, 2))
+  ];
+  const scanController = window.RobograderScan ? window.RobograderScan.runScanAnimation(_deepScanPhotos, "corner") : {
     promise: Promise.resolve(),
     cancel: () => {}
   };
@@ -6599,6 +6613,24 @@ async function assessHighGrade() {
       }));
       compressedCovers = await compressImagesSequentially(coverDataUrls);
     }
+    // S20 (#44): send the Main front-cover image as the identity anchor so the
+    // Deep endpoint can verify the corner macros are the SAME physical book. A
+    // confident mismatch returns a gate and costs no credit. Non-fatal if it
+    // fails to compress — Deep then simply grades without the same-book check.
+    let compressedFront = null;
+    try {
+      const _frontRaw = (formData.images || [])[0];
+      if (_frontRaw) {
+        let _frontUrl = _frontRaw;
+        if (_frontRaw.startsWith("http")) {
+          const resp = await fetch(_frontRaw);
+          const blob = await resp.blob();
+          _frontUrl = await new Promise(res => { const r = new FileReader; r.onload = ev => res(ev.target.result); r.readAsDataURL(blob); });
+        }
+        const _cf = await compressImagesSequentially([_frontUrl]);
+        compressedFront = (_cf && _cf[0]) || null;
+      }
+    } catch (e) { console.warn("[deep] front-cover anchor compress failed (non-fatal):", e); compressedFront = null; }
     const token = window._currentUser ? await window._currentUser.getIdToken() : null;
     const _initialPayload = {
       title: formData.title || "",
@@ -6629,6 +6661,7 @@ async function assessHighGrade() {
         initialAssessment: _initialPayload,
         cornerMacros: compressedCorners,
         interiorCovers: compressedCovers,
+        frontCover: compressedFront,
         title: formData.title || "",
         issueNumber: formData.issue || ""
       })
@@ -6682,7 +6715,9 @@ async function assessHighGrade() {
     }
     if (unified.error) throw new Error(unified.error);
     if (unified.gateResult && unified.gateResult !== "COMIC") {
-      const isStrikeGate = unified.gateResult !== "MISSING_COVER";
+      // S20 (#44): IMAGE_MISMATCH is an innocent mix-up (Deep photos of the wrong
+      // book), not abuse — never counts as a strike, same as MISSING_COVER.
+      const isStrikeGate = unified.gateResult !== "MISSING_COVER" && unified.gateResult !== "IMAGE_MISMATCH";
       if (isStrikeGate && !("lockout" in unified)) {
         await incrementStrike(unified.gateResult, unified.gateReason || "");
       }
@@ -7944,6 +7979,10 @@ function showGateTerminatedPreview(gateResult, reason, lockout, details) {
 
    case "CROP_FAILURE":
     label = "CROPPED PHOTO";
+    break;
+
+   case "IMAGE_MISMATCH":
+    label = "DIFFERENT COMIC";
     break;
 
    case "NOT_COMIC":

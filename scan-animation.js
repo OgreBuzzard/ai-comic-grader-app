@@ -147,25 +147,32 @@
     { idx: 2, slotName: 'pq',       rotate: false },
     { idx: 3, slotName: 'spine',    rotate: true  },
   ];
+  // S20 (#40): Deep now scans 6 images — the 4 corner macros PLUS the 2 interior
+  // covers (moved here from Full in #36). The caller passes them as
+  // [tl, tr, bl, br, interiorFront, interiorBack]. Slabbed books send only the
+  // 4 corners (no interior); the two cover slots are simply absent then, and the
+  // presence filter in runScanAnimation skips them — so this 6-slot table works
+  // for both raw (6) and slabbed (4) Deep runs. Corners scan un-rotated;
+  // interior covers are landscape spreads shown in natural reading orientation.
   const SLOTS_CORNER = [
     { idx: 0, slotName: 'corner-tl', rotate: false },
     { idx: 1, slotName: 'corner-tr', rotate: false },
     { idx: 3, slotName: 'corner-br', rotate: false },
     { idx: 2, slotName: 'corner-bl', rotate: false },
+    { idx: 4, slotName: 'interior-cover-front', rotate: false },
+    { idx: 5, slotName: 'interior-cover-back',  rotate: false },
   ];
-  // S16: Full Assessment scans all 8 interior/structure images. Order matches
-  // the client's FULL_SLOTS storage order. Each scans at 1.0s (half the main
-  // duration) since there are 8. ALL are landscape/wide, so rotate CW for
-  // larger display in the portrait scan cavity.
+  // S20 (#40): Full Assessment scans its 6 interior/structure images (the 2
+  // interior covers moved to Deep in #36). Order matches the client's FULL_SLOTS
+  // storage order. All 6 are wide 5:1 strips, so each rotates CW to display as a
+  // tall strip filling the portrait scan cavity.
   const SLOTS_FULL = [
     { idx: 0, slotName: 'full-0', rotate: true },
     { idx: 1, slotName: 'full-1', rotate: true },
     { idx: 2, slotName: 'full-2', rotate: true },
     { idx: 3, slotName: 'full-3', rotate: true },
-    { idx: 4, slotName: 'full-4', rotate: true, rotateCCW: true },
-    { idx: 5, slotName: 'full-5', rotate: false },
-    { idx: 6, slotName: 'full-6', rotate: false },
-    { idx: 7, slotName: 'full-7', rotate: true, rotateCCW: true },
+    { idx: 4, slotName: 'full-4', rotate: true },
+    { idx: 5, slotName: 'full-5', rotate: true },
   ];
 
   // S16: Restoration Check scans 8 images
@@ -1386,8 +1393,13 @@
     }
 
     const slotTable = (kind === 'corner') ? SLOTS_CORNER : (kind === 'full') ? SLOTS_FULL : (kind === 'restoration') ? SLOTS_RESTORATION : SLOTS_MAIN;
-    // S16: Full Assessment runs 8 scans, so each is 1.0s (half the 2.0s main scan).
-    _scanDurationMs = (kind === 'full' || kind === 'restoration') ? 1000 : SCAN_DURATION;
+    // S20 (#40): 6-image runs (Deep = 4 corners + 2 covers, Full = 6 strips) use
+    // a brisker 900ms scan so the longer sequence keeps a snappy rhythm. The
+    // 8-image restoration run stays at 1.0s; the 4-image main run keeps the full
+    // 2.0s dwell.
+    _scanDurationMs = (kind === 'corner' || kind === 'full') ? 900
+      : (kind === 'restoration') ? 1000
+      : SCAN_DURATION;
 
     const activeSlots = slotTable
       .filter(s => photoUrls && photoUrls[s.idx])
