@@ -410,29 +410,24 @@ onAuthStateChanged(auth, async user => {
        Bronze = Assess Grade, Silver = Deep, Gold = Full, Purple = Restoration.
        All share the same height, radius, shadow, and letter-spacing. */
     .rg-btn-assess {
-      min-height: 76px; border-radius: 10px; font-size: 14px; font-weight: 700;
+      min-height: 76px; border-radius: 20px; font-size: 14px; font-weight: 700;
       letter-spacing: 1.5px; width: 75%; padding: 12px 16px;
       box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 2px 4px rgba(0,0,0,0.3);
     }
-    .rg-btn-bronze {
-      background: linear-gradient(180deg, #8a6a4a 0%, #6a4a2a 50%, #5a3a1a 100%);
-      color: #f0d8b8; border: 1px solid rgba(240,216,184,0.2);
+    /* S20: the bronze/silver/gold tier metaphor was confusing — all three assess
+       buttons now share one dark-green look matching the RoboGrade Score box
+       (dark-green fill, light-green text), with more rounded corners. The
+       Restoration (purple) button keeps its color but inherits the rounder
+       radius from .rg-btn-assess above. */
+    .rg-btn-bronze, .rg-btn-silver, .rg-btn-gold {
+      background: linear-gradient(180deg, #2a4a1e 0%, #1e3a14 50%, #152e10 100%);
+      color: #b8d820; border: 1px solid rgba(120,180,130,0.35);
     }
-    .rg-btn-bronze:disabled { background: #2a2a2a; color: #6a6a6a; border-color: transparent; }
-    .rg-btn-bronze.reassess {
-      background: linear-gradient(180deg, #5a4a3a 0%, #4a3a2a 50%, #3a2a1a 100%);
-      color: #c8b898;
+    .rg-btn-bronze:disabled, .rg-btn-silver:disabled, .rg-btn-gold:disabled { background: #2a2a2a; color: #6a6a6a; border-color: transparent; }
+    .rg-btn-bronze.reassess, .rg-btn-silver.reassess, .rg-btn-gold.reassess {
+      background: linear-gradient(180deg, #223c18 0%, #182e10 50%, #10240c 100%);
+      color: #9abf60;
     }
-    .rg-btn-silver {
-      background: linear-gradient(180deg, #8a9db8 0%, #6a82a0 50%, #556e8a 100%);
-      color: #d8e4f0; border: 1px solid rgba(180,200,225,0.3);
-    }
-    .rg-btn-silver:disabled { background: #2a2a2a; color: #6a6a6a; border-color: transparent; }
-    .rg-btn-gold {
-      background: linear-gradient(180deg, #b8960b 0%, #8a6a08 50%, #7a5a06 100%);
-      color: #fff8e0; border: 1px solid rgba(255,248,224,0.2);
-    }
-    .rg-btn-gold:disabled { background: #2a2a2a; color: #6a6a6a; border-color: transparent; }
     .rg-btn-purple {
       background: linear-gradient(180deg, #6a4a8a 0%, #4a2a6a 50%, #3a2a5a 100%);
       color: #d8b8f0; border: 1px solid rgba(216,184,240,0.2);
@@ -606,7 +601,9 @@ onAuthStateChanged(auth, async user => {
     .drag-slot img { width: 100%; height: auto; display: block; border-radius: 4px; }
     .drag-slot .slot-label { font-size: 10px; color: #9a8a7a; letter-spacing: 1px; text-transform: uppercase; pointer-events: none; }
     .drag-slot .slot-x { position: absolute; top: 4px; right: 4px; background: #ef4444; border: none; border-radius: 50%; width: 45px; height: 45px; cursor: pointer; color: #fff; font-size: 27px; display: flex; align-items: center; justify-content: center; z-index: 10; line-height: 1; }
-    .drag-slot .slot-edit { position: absolute; top: 4px; left: 4px; background: rgba(20, 20, 20, 0.7); border: none; border-radius: 50%; width: 32px; height: 32px; cursor: pointer; color: #fff; font-size: 16px; display: flex; align-items: center; justify-content: center; z-index: 10; padding: 0; }
+    .drag-slot .slot-edit { position: absolute; top: 4px; left: 4px; background: rgba(20, 20, 20, 0.7); border: none; border-radius: 50%; width: 38px; height: 38px; cursor: pointer; color: #fff; font-size: 16px; display: flex; align-items: center; justify-content: center; z-index: 10; padding: 0; }
+    /* S20: crop icon ~20% larger for an easier tap target. */
+    .drag-slot .slot-edit svg { width: 20px; height: 20px; }
     .drag-slot .slot-edit:hover { background: rgba(20, 20, 20, 0.9); }
     /* Cropper modal: full-screen overlay with image, controls below */
     #cropper-modal { position: fixed; inset: 0; background: #000; z-index: 1000; display: none; flex-direction: column; }
@@ -4703,7 +4700,7 @@ function showDetail(id) {
   if (isFullAssessmentComplete(selected)) {
     const interior = selected.interiorImages || [];
     if (interior.some(u => u)) {
-      html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #b8860b">\n        <div style="font-size:11px;color:#d4af37;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT — INTERIOR &amp; STRUCTURE</div>\n        ${renderFullSlotGrid(interior, {editable: false, comicId: selected.id})}\n      </div>`;
+      html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT — INTERIOR &amp; STRUCTURE</div>\n        ${renderFullSlotGrid(interior, {editable: false, comicId: selected.id})}\n      </div>`;
     }
   }
   if ((isRestorationCheckComplete(selected) || selected.restorationCheckTier || selected.restorationUnlocked) && Array.isArray(selected.restorationImages) && selected.restorationImages.some(Boolean)) {
@@ -8343,7 +8340,7 @@ function renderForm() {
     const ready = filled === N && !assessing;
     const blurb = _fullDone ? `Full Assessment has run on this book. You can replace any photo below and re-run to update the interior/structure findings.` : `This book qualifies for Full Assessment. Add all ${N} named photos below — each documents a specific part of the book's structure and page completeness. Once all ${N} are added, Full Assessment runs a deeper confirmation of the grade.`;
     const btnLabel = assessing ? "Assessing…" : _fullDone ? `RE-RUN FULL ASSESSMENT${filled < N ? ` (${filled}/${N})` : ""}` : `FULL ASSESSMENT${filled < N ? ` (${filled}/${N})` : ""}`;
-    return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #b8860b">\n            <div style="font-size:11px;color:#d4af37;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT — ${N} SLOTS</div>\n            <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">${blurb}</div>\n            ${renderFullSlotGrid(interior, {editable: true})}\n            <input id="interior-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="full-assess-btn" class="rg-btn rg-btn-assess rg-btn-gold${assessing ? ' assessing' : ''}" onclick="submitFullAssessment()" ${ready ? "" : "disabled"}>\n                ${btnLabel}\n              </button>\n            </div>\n          </div>\n        `;
+    return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n            <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT — ${N} SLOTS</div>\n            <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">${blurb}</div>\n            ${renderFullSlotGrid(interior, {editable: true})}\n            <input id="interior-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="full-assess-btn" class="rg-btn rg-btn-assess rg-btn-gold${assessing ? ' assessing' : ''}" onclick="submitFullAssessment()" ${ready ? "" : "disabled"}>\n                ${btnLabel}\n              </button>\n            </div>\n          </div>\n        `;
   })()}\n      ${(() => {
     if (!showRestorationTier(formData)) return "";
     if (isRestorationCheckComplete(formData)) {
@@ -9664,7 +9661,10 @@ const CAMERA_GUIDE_CORNER = [ "guide_corner_tl.svg", "guide_corner_tr.svg", "gui
 const CAMERA_SLOT_ORIENTATION_MAIN = [ "portrait", "portrait", "portrait", "landscape" ];
 // S16: Full Assessment slots — exterior staples + top/bottom pages = landscape;
 // interior_staple (slot 7) = portrait (auto-rotated CW at capture time)
-const CAMERA_SLOT_ORIENTATION_INTERIOR = [ "landscape", "landscape", "landscape", "landscape", "landscape", "landscape", "landscape", "portrait" ];
+// S20: Full is now 6 slots (top_pages, outer_edge, bottom_pages, exterior_top_staple,
+// exterior_bottom_staple, interior_staple). Interior Staples (slot 5) captures
+// better in PORTRAIT; the other five are landscape.
+const CAMERA_SLOT_ORIENTATION_INTERIOR = [ "landscape", "landscape", "landscape", "landscape", "landscape", "portrait" ];
 
 const CAMERA_CAPTURE_ORDER_MAIN = [ 0, 3, 2, 1 ];
 
@@ -9842,7 +9842,7 @@ async function cameraOpen(state) {
       // slots (exterior staples 0,1 + top/bottom pages 2,3 need macro detail).
       // Outer Edge (4), Interior Front (5), Interior Back (6), Interior Staples (7)
       // stay at wide (1×). Main-kind captures also default wide.
-      const _isZoomedInteriorSlot = _cameraState.kind === "interior" && [0, 1, 2, 3].includes(_cameraState.current);
+      const _isZoomedInteriorSlot = _cameraState.kind === "interior" && _cameraState.current !== fullSlotIndex("outer_edge");
       const _isZoomedRestorationSlot = _cameraState.kind === "restoration" && CAMERA_SLOT_ZOOM_RESTORATION[_cameraState.current];
       const _zoomDefault = (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZoomedInteriorSlot || _isZoomedRestorationSlot) && lensOptions.length > 1;
       _cameraState.currentLensIdx = _zoomDefault ? 1 : 0;
@@ -10088,7 +10088,7 @@ function cameraOpenSlot(slotIndex) {
   // S16: Re-evaluate zoom default for this slot
   const _slotLenses = _cameraState.lenses || [];
   if (_slotLenses.length > 1) {
-    const _isZI = _cameraState.kind === "interior" && [0, 1, 2, 3].includes(slotIndex);
+    const _isZI = _cameraState.kind === "interior" && slotIndex !== fullSlotIndex("outer_edge");
     const _isZR = _cameraState.kind === "restoration" && CAMERA_SLOT_ZOOM_RESTORATION[slotIndex];
     const _zd = (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZI || _isZR);
     const targetIdx = _zd ? 1 : 0;
@@ -10369,14 +10369,12 @@ async function runCropperSequence(captures, kind) {
     }
     list[cap.slot] = finalUrl;
     formData[listKey] = list;
-    // S16: Bidirectional sync — Full Assessment ↔ Restoration Check shared images
-    if (kind === "interior" && FULL_TO_RESTORATION[cap.slot] != null) {
-      const rIdx = FULL_TO_RESTORATION[cap.slot];
-      const rImgs = [ ...formData.restorationImages || [] ];
-      while (rImgs.length < RESTORATION_SLOT_COUNT) rImgs.push(null);
-      rImgs[rIdx] = finalUrl;
-      formData.restorationImages = rImgs;
-    }
+    // S20: do NOT auto-populate Restoration slots when capturing Full images.
+    // That made the Restoration Check slots appear pre-filled before the user
+    // ever opened Check Restoration. The shared-image convenience still happens
+    // at REVEAL time in revealRestorationSlots() (when the user actually taps
+    // Check Restoration), so nothing is lost — restoration stays empty/collapsed
+    // until then. (Was: FULL_TO_RESTORATION sync here.)
     if (kind === "restoration" && RESTORATION_TO_FULL[cap.slot] != null) {
       const fIdx = RESTORATION_TO_FULL[cap.slot];
       const fImgs = [ ...formData.interiorImages || [] ];
@@ -10456,14 +10454,19 @@ function cameraUploadInstead() {
   const _gElUp = document.getElementById("camera-guide");
   if (_gElUp) _gElUp.innerHTML = "";
   _cameraState = null;
+  // S20 CRITICAL FIX: route "upload from library instead" to the CORRECT file
+  // input per kind. Previously every non-corner kind fell through to the MAIN
+  // input (_tappedSlot + photo-input), so a library import for a Full interior
+  // or Deep interior-cover slot was written into formData.images — corrupting
+  // the Front/Back photos. This was latent until #52 routed interior/interiorCover
+  // through the camera flow, which made this path reachable for them.
   const openPicker = () => {
-    if (savedKind === "corner") {
-      _tappedCornerSlot = savedCurrent;
-      document.getElementById("corner-photo-input").click();
-    } else {
-      _tappedSlot = savedCurrent;
-      document.getElementById("photo-input").click();
-    }
+    if (savedKind === "corner") { _tappedCornerSlot = savedCurrent; document.getElementById("corner-photo-input").click(); }
+    else if (savedKind === "interiorCover") { _tappedInteriorCoverSlot = savedCurrent; document.getElementById("interior-cover-photo-input").click(); }
+    else if (savedKind === "interior") { _tappedInteriorSlot = savedCurrent; document.getElementById("interior-photo-input").click(); }
+    else if (savedKind === "signature") { _tappedSignatureSlot = savedCurrent; document.getElementById("signature-photo-input").click(); }
+    else if (savedKind === "restoration" || savedKind === "uvfront") { _tappedRestorationSlot = savedCurrent; document.getElementById("restoration-photo-input").click(); }
+    else { _tappedSlot = savedCurrent; document.getElementById("photo-input").click(); }
   };
   if (savedCaptures) {
     if (savedLabelDetected) {
