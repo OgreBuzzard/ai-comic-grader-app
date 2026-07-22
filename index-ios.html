@@ -5059,7 +5059,7 @@ async function togglePublicListing(id, val) {
       return;
     }
     if (comic && comic.ownership && comic.ownership !== "Owned") {
-      alert("Only books marked Owned can be publicly listed.");
+      _showBrandedModal("OWNED BOOKS ONLY", "Only books marked Owned can be listed publicly. Switch this book back to Owned to share it.", "GOT IT");
       try {
         showDetail(id);
       } catch (e) {}
@@ -5633,6 +5633,18 @@ async function setOwnershipDetail(next) {
     }
     const row = document.getElementById("detail-ownership-row");
     if (row) row.innerHTML = _ownershipPills(next, "setOwnershipDetail");
+    // S20: switching to Sold/Watching drops the public listing — flip the Public
+    // toggle off in place so it visibly tracks the ownership change.
+    if (update.publicListing === false) {
+      const _pt = document.getElementById("detail-public-track");
+      const _pth = document.getElementById("detail-public-thumb");
+      if (_pt) {
+        _pt.style.background = "#bbb6ad";
+        const _cb = _pt.parentElement && _pt.parentElement.querySelector('input[type=checkbox]');
+        if (_cb) _cb.checked = false;
+      }
+      if (_pth) _pth.style.left = "3px";
+    }
   } catch (e) {
     alert("Failed to update ownership: " + e.message);
   }
@@ -6458,6 +6470,29 @@ function _showCeilingModal() {
   o.onclick = e => { if (e.target === o) close(); };
   document.body.appendChild(o);
   const b = document.getElementById("ceiling-ok-btn");
+  if (b) b.onclick = close;
+}
+
+// S20: generic branded message modal (Robograder head), styled like the Gift
+// Credit / ceiling modals. Used for the "Different Comic" mismatch message and
+// the "only Owned books can be public" message so they don't fall back to a
+// plain browser alert.
+function _showBrandedModal(title, body, btnLabel) {
+  const existing = document.getElementById("rg-branded-modal");
+  if (existing) existing.remove();
+  const o = document.createElement("div");
+  o.id = "rg-branded-modal";
+  o.style.cssText = "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;padding:20px";
+  o.innerHTML = `<div style="background:#141210;border-radius:18px;max-width:340px;width:100%;padding:24px 24px 20px;border:1.5px solid #4a7a20;text-align:center;box-shadow:0 12px 44px rgba(0,0,0,0.55)">
+    <img src="assets/Robograder_Gift.webp" alt="" style="width:112px;height:auto;margin:0 auto 12px;display:block">
+    <div style="font-size:13px;font-weight:800;letter-spacing:2px;color:#aaee30;margin-bottom:10px">${esc(title)}</div>
+    <div style="font-size:15px;color:#e8d9b8;line-height:1.6;margin-bottom:20px">${esc(body)}</div>
+    <button id="rg-branded-ok-btn" class="rg-btn rg-btn-branded rg-btn-md" style="display:inline-block;width:auto;padding:0 44px">${esc(btnLabel || "OKAY")}</button>
+  </div>`;
+  const close = () => o.remove();
+  o.onclick = e => { if (e.target === o) close(); };
+  document.body.appendChild(o);
+  const b = document.getElementById("rg-branded-ok-btn");
   if (b) b.onclick = close;
 }
 
@@ -8171,6 +8206,12 @@ function showGateExplanationPopup() {
   const data = window._pendingGateExplanation;
   if (!data) return;
   window._pendingGateExplanation = null;
+  // S20 (#44): the Different-Comic mismatch gets the branded Robograder-head
+  // modal instead of the plain white gate popup.
+  if (data.gateResult === "IMAGE_MISMATCH") {
+    _showBrandedModal("DIFFERENT COMIC", data.reason || "These close-ups don't appear to be the same comic as the one you assessed. Re-take the photos of that book and try again.", "OKAY");
+    return;
+  }
   let lockoutHtml = "";
   if (data.lockout && data.lockout.type === "permanent") {
     lockoutHtml = `<div style="margin-top:14px;padding:10px 14px;background:#3a1010;color:#ff8080;border-radius:8px;font-size:13px;font-weight:700;line-height:1.4;text-align:center">⚠ Account flagged for review — repeated invalid uploads</div>`;
@@ -8381,7 +8422,7 @@ function renderForm() {
   }
   const _saveLabelTop = formData.id ? "Save" : "Add";
   const _saveDisabledTop = formData.title && formData.title.trim() ? "" : "disabled";
-  let html = `<div class="sticky-back" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><button class="btn-ghost" onclick="cancelForm()">← Back</button><button class="btn btn-gold" id="save-btn-top" onclick="submitForm()" ${_saveDisabledTop}>${_saveLabelTop}</button></div>\n  <h2 style="font-size:18px;margin:8px 0 20px;color:#c8a96e">${isEdit ? "Edit Book" : "Add Book"}</h2>\n  <div class="card" style="display:flex;flex-direction:column;gap:14px">\n    ${ownershipSegmentForForm()}\n    <div>\n      <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">MAIN ASSESSMENT PHOTOS${formData.labelDetected ? ` <span style="color:#9a8a7a;font-weight:600">(graded slab)</span>` : ""}</div>\n      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px">\n        ${(() => {
+  let html = `<div class="sticky-back" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><button class="btn-ghost" onclick="cancelForm()">← Back</button><button class="btn btn-gold" id="save-btn-top" onclick="submitForm()" ${_saveDisabledTop}>${_saveLabelTop}</button></div>\n  <h2 style="font-size:18px;margin:8px 0 20px;color:#c8a96e">${isEdit ? "Edit Book" : "Add Book"}</h2>\n  <div class="card" style="display:flex;flex-direction:column;gap:14px">\n    ${ownershipSegmentForForm()}\n    ${formData.roboGrade ? (() => { const _ip = buildIntegrityPill(formData, true); return _ip ? `<div style="display:flex;justify-content:flex-end;margin-bottom:2px">${_ip}</div>` : ""; })() : ""}\n    <div>\n      <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">MAIN ASSESSMENT PHOTOS${formData.labelDetected ? ` <span style="color:#9a8a7a;font-weight:600">(graded slab)</span>` : ""}</div>\n      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px">\n        ${(() => {
     const slotLabels = [ "Front Cover", "Back Cover", "Interior", "Spine" ];
     const renderSlot = i => {
       const img = (formData.images || [])[i];
@@ -8433,7 +8474,7 @@ function renderForm() {
     const ready = filled === N && !assessing;
     const blurb = _fullDone ? `Full Assessment has run on this book. You can replace any photo below and re-run to update the interior/structure findings.` : `This book qualifies for Full Assessment. Add all ${N} named photos below — each documents a specific part of the book's structure and page completeness. Once all ${N} are added, Full Assessment runs a deeper confirmation of the grade.`;
     const btnLabel = assessing ? "Assessing…" : _fullDone ? `RE-RUN FULL ASSESSMENT${filled < N ? ` (${filled}/${N})` : ""}` : `FULL ASSESSMENT${filled < N ? ` (${filled}/${N})` : ""}`;
-    return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n            <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT — ${N} SLOTS</div>\n            <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">${blurb}</div>\n            ${renderFullSlotGrid(interior, {editable: true})}\n            <input id="interior-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="full-assess-btn" class="rg-btn rg-btn-assess rg-btn-gold${assessing ? ' assessing' : ''}" onclick="submitFullAssessment()" ${ready ? "" : "disabled"}>\n                ${btnLabel}\n              </button>\n            </div>\n          </div>\n        `;
+    return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n            <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT - EDGES AND STAPLES</div>\n            <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Additional detail to check for missing pages and staple condition.</div>\n            ${renderFullSlotGrid(interior, {editable: true})}\n            <input id="interior-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="full-assess-btn" class="rg-btn rg-btn-assess rg-btn-gold${assessing ? ' assessing' : ''}" onclick="submitFullAssessment()" ${ready ? "" : "disabled"}>\n                ${btnLabel}\n              </button>\n            </div>\n          </div>\n        `;
   })()}\n      ${(() => {
     if (!showRestorationTier(formData)) return "";
     if (isRestorationCheckComplete(formData)) {
@@ -8464,8 +8505,8 @@ function renderForm() {
     }
     return h;
   })()}\n    <div class="form-grid-2">\n      <div><label class="field-label">My Grade</label><select onchange="formData.grade=this.value">\n        <option value="">— select grade —</option>\n        ${GRADES.map(g => `<option value="${g}"${formData.grade === g ? " selected" : ""}>${g} — ${GRADE_LABELS[g]}</option>`).join("")}\n      </select></div>\n    </div>\n\n    \x3c!-- Robograde Score panel (S11): full RG display panel — score, sub-grades,\n         provenance strip, and printout-paper defect listing. Placed here right\n         after My Grade / Page Quality so the user sees the full RG output\n         before the Grader Predictions row below it. Previously rendered at\n         the bottom of the form; moved up to match the detail-view ordering. --\x3e\n    ${formData.roboGrade ? buildRoboGradeDisplay(formData.roboGrade, formData) : ""}\n    \x3c!-- Integrity badge (S12) — Assessment results screen shows BOTH states.\n         This is the moment-of-truth surface: the user just got a grade and\n         needs to know whether the result will display as Verified on a public\n         link before they save. If they wanted Verified and didn't get it,\n         they can retake/recapture in-app before saving. Placed right below\n         the Robograde panel so it associates visually with the grade output. --\x3e\n    ${formData.roboGrade ? (() => {
-    const pill = buildIntegrityPill(formData, true);
-    return pill ? `<div style="display:flex;justify-content:center;margin-top:10px">${pill}</div>` : "";
+    void buildIntegrityPill; // S20: integrity pill moved ABOVE the image slots
+    return "";               // (see the form card top) to match Detail view.
   })() : ""}\n\n    \x3c!-- Grader Predictions (S11): renamed from "Assessment Results". This row\n         shows all of the relevant grade badges side-by-side: CGC Official, CGC\n         AI, PSA Official, PSA AI. A book can only be officially graded by one\n         service (CGC or PSA, not both), so at most 3 badges ever appear at\n         once — three boxes fit comfortably on one row. --\x3e\n    ${_assessed ? (() => {
       const cgcOff = formData.cgcGrade ? buildBadge(normalizeGrade(formData.cgcGrade), "cgc-official", detectDesignation(formData), false) : "";
       const psaOff = formData.psaGrade ? buildBadge(normalizeGrade(formData.psaGrade), "psa-official", formData.psaDesignation || "universal", false) : "";
@@ -8481,7 +8522,7 @@ function renderForm() {
     if (showLabelNotesEdit) return "";
     if (!formData.keyInfo) return "";
     return `<div><label class="field-label">Key Info</label><textarea rows="3" readonly style="cursor:not-allowed;background:#ffffff;color:#1a1614" title="Key Info is populated by the assessment when the issue is in the recognized-key list. Not user-editable.">${esc(formData.keyInfo || "")}</textarea></div>`;
-  })()}\n    ${formData.cgcGrade || formData.psaGrade || formData.graderNotes ? `<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes ? 5 : 3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiAssessment ? `<div><label class="field-label">Main Assessment</label><textarea rows="${Math.max(8, Math.ceil(formData.aiAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>` : ""}\n    ${formData.deepAssessment ? `<div><label class="field-label">Deep Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.deepAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Deep pass.">${esc(formData.deepAssessment)}</textarea></div>` : ""}\n    ${formData.fullAssessment ? `<div><label class="field-label">Full Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.fullAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Full pass.">${esc(formData.fullAssessment)}</textarea></div>` : ""}\n    ${(formData.assessmentHistory || []).length > 0 ? `<div style="margin-top:20px"><div class="section-label">Past Assessments</div><div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">\n        ${(formData.assessmentHistory || []).map((h, i) => {
+  })()}\n    ${formData.cgcGrade || formData.psaGrade || formData.graderNotes ? `<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes ? 5 : 3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiAssessment ? `<div><label class="field-label">Main Assessment</label><textarea rows="${Math.max(8, Math.ceil(formData.aiAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>` : ""}\n    ${formData.deepAssessment ? `<div><label class="field-label">Deep Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.deepAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Deep pass.">${esc(formData.deepAssessment)}</textarea></div>` : ""}\n    ${formData.fullAssessment ? `<div><label class="field-label">Full Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.fullAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Full pass.">${esc(formData.fullAssessment)}</textarea></div>` : ""}\n    ${formData.restorationReport ? `<div><label class="field-label">Restoration Assessment</label><textarea rows="${Math.max(5, Math.ceil((formData.restorationReport || "").length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Restoration Check.">${esc(formData.restorationReport)}</textarea></div>` : ""}\n    ${(formData.assessmentHistory || []).length > 0 ? `<div style="margin-top:20px"><div class="section-label">Past Assessments</div><div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">\n        ${(formData.assessmentHistory || []).map((h, i) => {
     // S20 (#54): match the Detail view's Past Assessments styling (light rows,
     // date, full precision suffix). Edit keeps the × remove button so history
     // entries can still be pruned before saving.
