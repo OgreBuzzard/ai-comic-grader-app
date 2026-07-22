@@ -1576,12 +1576,19 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
       </div>
     </div>
 
-    <div class="settings-row" style="cursor:pointer" onclick="toggleTitleSeparators()">
+    <div class="settings-row" style="cursor:default">
       <div style="flex:1">
         <div class="sr-label">Title Separators</div>
         <div class="sr-detail">Group your list by title with collapsible headers. Off shows one flat, alphabetical list. Turns on automatically once a title has more than one issue.</div>
       </div>
-      <div class="sr-right" id="settings-titlesep-state" style="margin-left:12px;flex-shrink:0;font-size:14px;color:#c8b8a8">—</div>
+      <div style="margin-left:12px;flex-shrink:0">
+        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer">
+          <input type="checkbox" id="settings-titlesep-toggle" onchange="toggleTitleSeparators()"
+            style="opacity:0;width:0;height:0;position:absolute">
+          <span id="settings-titlesep-track" style="position:absolute;inset:0;border-radius:12px;background:#2a2a2a;transition:background 0.2s"></span>
+          <span id="settings-titlesep-thumb" style="position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left 0.2s"></span>
+        </label>
+      </div>
     </div>
 
     <div class="settings-row" style="cursor:default">
@@ -3951,8 +3958,13 @@ function toggleTitleSeparators() {
   if (view === "list") renderList();
 }
 function _syncTitleSepRow() {
-  const el = document.getElementById("settings-titlesep-state");
-  if (el) el.textContent = _showTitleSeparators() ? "On" : "Off";
+  const on = _showTitleSeparators();
+  const cb = document.getElementById("settings-titlesep-toggle");
+  const track = document.getElementById("settings-titlesep-track");
+  const thumb = document.getElementById("settings-titlesep-thumb");
+  if (cb) cb.checked = on;
+  if (track) track.style.background = on ? "#3a7a20" : "#2a2a2a";
+  if (thumb) thumb.style.left = on ? "23px" : "3px";
 }
 
 function renderList() {
@@ -4389,7 +4401,11 @@ function showDetail(id) {
     if (!hasAnyCorner) {
       // S20: Deep unlocked but not yet run — compact badge instead of 4 empty
       // slots. Tapping Edit reveals the capture slots.
-      html += `<div style="margin-top:14px;padding:12px 14px;background:#0f1a05;border:1px solid #3a5010;border-radius:10px;display:flex;gap:11px;align-items:center"><div style="font-size:11px;color:#e8c257;letter-spacing:2px;line-height:1;white-space:nowrap">★ ★</div><div style="flex:1;font-size:12px;color:#9cc76a;line-height:1.45"><strong style="color:#aaee30">Deep Assessment available.</strong> Adds 6 close-up images and may adjust the grade up or down. Tap Edit to run it.</div></div>`;
+      html += `<div style="margin-top:14px;padding:14px;background:#1a2208;border:1.5px solid #3a5010;border-radius:10px;text-align:center">
+        <div style="line-height:1;margin-bottom:8px">${tierStarSVG(15, "#b8d820")}${tierStarSVG(15, "#b8d820")}</div>
+        <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:#b8d820;margin-bottom:5px">DEEP ASSESSMENT AVAILABLE</div>
+        <div style="font-size:12px;color:#9cc76a;line-height:1.45">Add 6 more images for a more accurate grade. Tap Edit.</div>
+      </div>`;
     } else {
     html += `<div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
     [ 0, 1, 2, 3 ].forEach(srcIdx => {
@@ -4511,6 +4527,20 @@ function showDetail(id) {
   if (selected.fullAssessment) {
     html += `<div style="margin-top:14px"><div class="section-label">Full Assessment</div><div class="notes-box" style="font-style:normal">${esc(selected.fullAssessment)}</div></div>`;
   }
+  // S20 (#7): Restoration renders with the other assessments, in order
+  // Main → Deep → Full → Restoration, before the Past Assessments history.
+  if (selected.restorationCheckTier || isRestorationCheckComplete(selected)) {
+    const report = typeof selected.restorationReport === "string" ? selected.restorationReport.trim() : "";
+    let rHtml = `<div style="margin-top:14px"><div class="section-label">Restoration Assessment</div><div class="notes-box">`;
+    if (report) {
+      rHtml += `<div style="font-size:12px;line-height:1.55">${esc(report)}</div>`;
+    } else {
+      rHtml += `<div style="color:#9a8a7a;font-size:12px">Restoration Check ran, but no assessment text was recorded.</div>`;
+    }
+    rHtml += `<div style="color:#8a7a6a;font-size:10px;margin-top:8px;font-style:italic">Observations only — not a determination of restoration. Some restoration cannot be detected without professional examination.</div>`;
+    rHtml += "</div></div>";
+    html += rHtml;
+  }
   const history = selected.assessmentHistory || [];
   if (history.length > 0) {
     let histHtml = `<div style="margin-top:20px"><div class="section-label">Past Assessments</div><div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">`;
@@ -4554,18 +4584,6 @@ function showDetail(id) {
     });
     histHtml += `</div></div>`;
     html += histHtml;
-  }
-  if (selected.restorationCheckTier || isRestorationCheckComplete(selected)) {
-    const report = typeof selected.restorationReport === "string" ? selected.restorationReport.trim() : "";
-    let rHtml = `<div style="margin-top:20px"><div class="section-label">Restoration Assessment</div><div class="notes-box">`;
-    if (report) {
-      rHtml += `<div style="font-size:12px;line-height:1.55">${esc(report)}</div>`;
-    } else {
-      rHtml += `<div style="color:#9a8a7a;font-size:12px">Restoration Check ran, but no assessment text was recorded.</div>`;
-    }
-    rHtml += `<div style="color:#8a7a6a;font-size:10px;margin-top:8px;font-style:italic">Observations only — not a determination of restoration. Some restoration cannot be detected without professional examination.</div>`;
-    rHtml += "</div></div>";
-    html += rHtml;
   }
   const hasAnyDateCost = !!(selected.slabbingDate || selected.dateAcquired || cost > 0);
   if (hasAnyDateCost) {
@@ -5256,6 +5274,35 @@ function cycleOwnership() {
   const cur = formData.ownership || "Owned";
   const next = cur === "Owned" ? "Watching" : cur === "Watching" ? "Sold" : cur === "Sold" ? "Print" : "Owned";
   formData.ownership = next;
+  renderForm();
+}
+
+// S20 (#46): full-width segmented ownership control shown ABOVE the image slots
+// in the Add/Edit form. Replaces the small cycling pill. Three real states —
+// OWNED | SOLD | WATCHING; each segment is directly tappable (no cycling to
+// hunt for). Active = white fill / green text; inactive = green fill / white
+// text. ("Print" is a transient label-printing workflow state, not a user
+// ownership choice, so it isn't offered here — a book in Print reads as Owned.)
+function ownershipSegmentForForm() {
+  const own = formData.ownership || "Owned";
+  const opts = ["Owned", "Sold", "Watching"];
+  const active = opts.includes(own) ? own : "Owned";
+  const GREEN = "#3f6f1e";
+  const segs = opts.map((o, i) => {
+    const on = o === active;
+    const divider = i > 0 ? `border-left:1px solid ${on ? "#cfe3bf" : "#5f9138"};` : "";
+    return `<button type="button" onclick="setOwnership('${o}')" aria-pressed="${on}"
+      style="flex:1;border:none;${divider}background:${on ? "#ffffff" : GREEN};color:${on ? GREEN : "#ffffff"};
+             font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:14px;letter-spacing:1.5px;
+             padding:11px 0;cursor:pointer;-webkit-tap-highlight-color:transparent">${o.toUpperCase()}</button>`;
+  }).join("");
+  return `<div style="display:flex;width:100%;border:1.5px solid ${GREEN};border-radius:12px;overflow:hidden;margin-bottom:14px">${segs}</div>`;
+}
+
+function setOwnership(next) {
+  formData.ownership = next;
+  // Ownership other than Owned locks the book out of public listing.
+  if (next !== "Owned") formData.publicListing = false;
   renderForm();
 }
 
@@ -7865,19 +7912,19 @@ function renderForm() {
   }
   const _saveLabelTop = formData.id ? "Save" : "Add";
   const _saveDisabledTop = formData.title && formData.title.trim() ? "" : "disabled";
-  let html = `<div class="sticky-back" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><button class="btn-ghost" onclick="cancelForm()">← Back</button><button class="btn btn-gold" id="save-btn-top" onclick="submitForm()" ${_saveDisabledTop}>${_saveLabelTop}</button></div>\n  <h2 style="font-size:18px;margin:8px 0 20px;color:#c8a96e">${isEdit ? "Edit Book" : "Add Book"}</h2>\n  <div class="card" style="display:flex;flex-direction:column;gap:14px">\n    <div>\n      <label class="field-label">Photos <span style="color:#9a8a7a;font-size:10px;letter-spacing:1px">— ${formData.labelDetected ? "front &amp; back (graded slab)" : "up to 4, drag to reorder"}</span></label>\n      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px">\n        ${(() => {
+  let html = `<div class="sticky-back" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><button class="btn-ghost" onclick="cancelForm()">← Back</button><button class="btn btn-gold" id="save-btn-top" onclick="submitForm()" ${_saveDisabledTop}>${_saveLabelTop}</button></div>\n  <h2 style="font-size:18px;margin:8px 0 20px;color:#c8a96e">${isEdit ? "Edit Book" : "Add Book"}</h2>\n  <div class="card" style="display:flex;flex-direction:column;gap:14px">\n    ${ownershipSegmentForForm()}\n    <div>\n      <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">MAIN ASSESSMENT PHOTOS${formData.labelDetected ? ` <span style="color:#9a8a7a;font-weight:600">(graded slab)</span>` : ""}</div>\n      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px">\n        ${(() => {
     const slotLabels = [ "Front Cover", "Back Cover", "Interior", "Spine" ];
     const renderSlot = i => {
       const img = (formData.images || [])[i];
       return img ? `<div class="drag-slot" draggable="true"\n                  ondragstart="dragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"\n                  onclick="tapSlot(${i},'main')">\n                  <img src="${img}">\n                  <button class="slot-edit" onclick="event.stopPropagation();openCropper('main',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>\n                  <button class="slot-x" onclick="event.stopPropagation();removeImg(${i})">×</button>\n                 </div>` : `<div class="drag-slot" style="padding:0;background:none;"\n                  ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"\n                  onclick="tapSlot(${i},'main')">\n                  <img src="${SLOT_GHOSTS[i]}" style="width:100%;height:auto;display:block;border-radius:4px;opacity:0.7;">\n                  <div style="position:absolute;inset:0;pointer-events:none;">\n                    <span style="position:absolute;top:8px;left:10px;font-size:11px;font-weight:700;color:#000;letter-spacing:1px;text-transform:uppercase;background:rgba(255,255,255,0.75);padding:2px 6px;border-radius:3px;">${slotLabels[i]}</span>\n                  </div>\n                 </div>`;
     };
     return formData.labelDetected ? `\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">\n              ${renderSlot(0)}\n              ${renderSlot(1)}\n            </div>\n          ` : `\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">\n              ${renderSlot(0)}\n              ${renderSlot(1)}\n            </div>\n            ${renderSlot(3)}\n            ${renderSlot(2)}\n          `;
-  })()}\n      </div>\n      <div style="display:flex;justify-content:center;margin-top:12px"><button id="assess-btn" class="rg-btn rg-btn-assess rg-btn-bronze${_assessed ? ' reassess' : ''}${assessing ? ' assessing' : ''}" onclick="assessGrade()" ${!formData.images || !formData.images[0] || assessing ? "disabled" : ""}>${assessing ? "Assessing…" : _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE"}</button></div>\n      ${showDeepTier(formData) ? `\n      <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">DEEP ASSESSMENT CORNER MACROS</div>\n        <div style="font-size:11px;color:#8a9a8a;margin-bottom:10px;line-height:1.5">Close-up photos of all four front-cover corners, one per slot. The Deep Assessment pass uses these to tighten the grade.</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\n          ${[ 0, 1, 2, 3 ].map(i => {
+  })()}\n      </div>\n      <div style="display:flex;justify-content:center;margin-top:12px"><button id="assess-btn" class="rg-btn rg-btn-assess rg-btn-bronze${_assessed ? ' reassess' : ''}${assessing ? ' assessing' : ''}" onclick="assessGrade()" ${!formData.images || !formData.images[0] || assessing ? "disabled" : ""}>${assessing ? "Assessing…" : _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE"}</button></div>\n      ${showDeepTier(formData) ? `\n      <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">DEEP ASSESSMENT CORNER MACROS</div>\n        <div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Tighten the grade with more detail where small defects are most common.</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\n          ${[ 0, 1, 2, 3 ].map(i => {
     const cornerLabels = [ "Top Left", "Top Right", "Bottom Left", "Bottom Right" ];
     const cornerGhosts = [ "assets/ghosts/TopLeft_Macro.jpg", "assets/ghosts/TopRight_Macro.jpg", "assets/ghosts/BottomLeft_Macro.jpg", "assets/ghosts/BottomRight_Macro.jpg" ];
     const img = (formData.cornerImages || [])[i];
     return img ? `<div class="drag-slot" draggable="true" style="aspect-ratio:2/3"\n                  ondragstart="cornerDragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="cornerDropSlot(event,${i})"\n                  onclick="tapSlot(${i},'corner')">\n                  <img src="${img}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">\n                  <button class="slot-edit" onclick="event.stopPropagation();openCropper('corner',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>\n                  <button class="slot-x" onclick="event.stopPropagation();removeCornerImg(${i})">×</button>\n                 </div>` : `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:2/3;position:relative;overflow:hidden"\n                  ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="cornerDropSlot(event,${i})"\n                  onclick="tapSlot(${i},'corner')">\n                  <img src="${cornerGhosts[i]}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.32;pointer-events:none">\n                  <div style="position:relative;color:#fff;font-size:13px;font-weight:700;letter-spacing:1.5px;padding:30px 10px;text-align:center;text-shadow:0 1px 3px rgba(0,0,0,0.85)">${cornerLabels[i].toUpperCase()}<div style="font-size:10px;opacity:0.85;margin-top:4px;letter-spacing:0.5px;font-weight:500">Tap to add photo</div></div>\n                 </div>`;
-  }).join("")}\n        </div>\n        <input id="corner-photo-input" type="file" accept="image/*" multiple onchange="handleCornerImages(event)" style="display:none">${!formData.labelDetected ? `<div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin:16px 0 8px">INTERIOR COVERS</div><div style="font-size:11px;color:#8a9a8a;margin-bottom:10px;line-height:1.5">Two-page spreads of the inside covers — inside front + first page, and last page + inside back. The Deep pass checks these for interior condition (tanning, foxing, stains).</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">${[0,1].map(i => { const icLabels = ["Interior Front","Interior Back"]; const _icimg = (formData.interiorCoverImages || [])[i]; return _icimg ? `<div class="drag-slot" style="aspect-ratio:3/2" onclick="tapSlot(${i},'interiorCover')"><img src="${_icimg}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"><button class="slot-edit" onclick="event.stopPropagation();openCropper('interiorCover',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button><button class="slot-x" onclick="event.stopPropagation();removeInteriorCoverImg(${i})">×</button></div>` : `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:3/2;position:relative;overflow:hidden" onclick="tapSlot(${i},'interiorCover')"><div style="position:relative;color:#fff;font-size:13px;font-weight:700;letter-spacing:1.5px;padding:26px 10px;text-align:center;text-shadow:0 1px 3px rgba(0,0,0,0.85)">${icLabels[i].toUpperCase()}<div style="font-size:10px;opacity:0.85;margin-top:4px;letter-spacing:0.5px;font-weight:500">Tap to add photo</div></div></div>`; }).join("")}</div><input id="interior-cover-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorCoverImages(event)" style="display:none">` : ""}\n        ${(() => {
+  }).join("")}\n        </div>\n        <input id="corner-photo-input" type="file" accept="image/*" multiple onchange="handleCornerImages(event)" style="display:none">${!formData.labelDetected ? `<div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin:16px 0 8px">INTERIOR COVERS</div><div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Full spreads of the interior front and interior back, where defects can sometimes hide.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">${[0,1].map(i => { const icLabels = ["Interior Front","Interior Back"]; const _icimg = (formData.interiorCoverImages || [])[i]; return _icimg ? `<div class="drag-slot" style="aspect-ratio:3/2" onclick="tapSlot(${i},'interiorCover')"><img src="${_icimg}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"><button class="slot-edit" onclick="event.stopPropagation();openCropper('interiorCover',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button><button class="slot-x" onclick="event.stopPropagation();removeInteriorCoverImg(${i})">×</button></div>` : `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:3/2;position:relative;overflow:hidden" onclick="tapSlot(${i},'interiorCover')"><div style="position:relative;color:#fff;font-size:13px;font-weight:700;letter-spacing:1.5px;padding:26px 10px;text-align:center;text-shadow:0 1px 3px rgba(0,0,0,0.85)">${icLabels[i].toUpperCase()}<div style="font-size:10px;opacity:0.85;margin-top:4px;letter-spacing:0.5px;font-weight:500">Tap to add photo</div></div></div>`; }).join("")}</div><input id="interior-cover-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorCoverImages(event)" style="display:none">` : ""}\n        ${(() => {
     const alreadyRun = !!formData.highGradeTier;
     const cornerCount = (formData.cornerImages || []).filter(Boolean).length;
     // S20 (#36): raw books also capture 2 interior covers (6 total); slabbed books
@@ -7899,7 +7946,7 @@ function renderForm() {
       : formData.highGradeReason === "value"
       ? "This high-value book can be graded more precisely with additional photos."
       : "This high-grade book can be graded more precisely with additional photos.";
-    return `<div style="display:flex;justify-content:center;margin-top:12px">\n            <button id="hg-assess-btn" class="rg-btn rg-btn-assess rg-btn-silver${assessing ? ' assessing' : ''}" onclick="assessHighGrade()" ${ready ? "" : "disabled"}>\n              ${assessing ? "Assessing…" : `${baseLabel} ${haveCount < needCount ? `(${haveCount}/${needCount})` : ""}`}\n            </button>\n          </div>\n          <div style="text-align:center;margin-top:8px;font-size:11px;color:#8a9a8a;line-height:1.4;padding:0 12px">${_hgReason}</div>`;
+    return `<div style="display:flex;justify-content:center;margin-top:12px">\n            <button id="hg-assess-btn" class="rg-btn rg-btn-assess rg-btn-silver${assessing ? ' assessing' : ''}" onclick="assessHighGrade()" ${ready ? "" : "disabled"}>\n              ${assessing ? "Assessing…" : `${baseLabel} ${haveCount < needCount ? `(${haveCount}/${needCount})` : ""}`}\n            </button>\n          </div>`;
   })()}\n      </div>` : ""}\n      ${(() => {
     if (!hasIdentifiedSignatures(formData)) return "";
     const sigImgs = formData.signatureImages || [ null, null ];
@@ -7947,7 +7994,7 @@ function renderForm() {
       h += `<div class="form-grid-2">\n          ${tf("PSA Grade", "psaGrade", "e.g. 9.4", true)}\n          ${tf("PSA Cert #", "psaCert", "Cert number")}\n        </div>`;
     }
     return h;
-  })()}\n    <div class="form-grid-2">\n      <div><label class="field-label">My Grade</label><select onchange="formData.grade=this.value">\n        <option value="">— select grade —</option>\n        ${GRADES.map(g => `<option value="${g}"${formData.grade === g ? " selected" : ""}>${g} — ${GRADE_LABELS[g]}</option>`).join("")}\n      </select></div>\n    </div>\n\n    ${isEdit || _assessed || _addManualMode ? ownershipPillForForm() : ""}\n\n    \x3c!-- Robograde Score panel (S11): full RG display panel — score, sub-grades,\n         provenance strip, and printout-paper defect listing. Placed here right\n         after My Grade / Page Quality so the user sees the full RG output\n         before the Grader Predictions row below it. Previously rendered at\n         the bottom of the form; moved up to match the detail-view ordering. --\x3e\n    ${formData.roboGrade ? buildRoboGradeDisplay(formData.roboGrade, formData) : ""}\n    \x3c!-- Integrity badge (S12) — Assessment results screen shows BOTH states.\n         This is the moment-of-truth surface: the user just got a grade and\n         needs to know whether the result will display as Verified on a public\n         link before they save. If they wanted Verified and didn't get it,\n         they can retake/recapture in-app before saving. Placed right below\n         the Robograde panel so it associates visually with the grade output. --\x3e\n    ${formData.roboGrade ? (() => {
+  })()}\n    <div class="form-grid-2">\n      <div><label class="field-label">My Grade</label><select onchange="formData.grade=this.value">\n        <option value="">— select grade —</option>\n        ${GRADES.map(g => `<option value="${g}"${formData.grade === g ? " selected" : ""}>${g} — ${GRADE_LABELS[g]}</option>`).join("")}\n      </select></div>\n    </div>\n\n    \x3c!-- Robograde Score panel (S11): full RG display panel — score, sub-grades,\n         provenance strip, and printout-paper defect listing. Placed here right\n         after My Grade / Page Quality so the user sees the full RG output\n         before the Grader Predictions row below it. Previously rendered at\n         the bottom of the form; moved up to match the detail-view ordering. --\x3e\n    ${formData.roboGrade ? buildRoboGradeDisplay(formData.roboGrade, formData) : ""}\n    \x3c!-- Integrity badge (S12) — Assessment results screen shows BOTH states.\n         This is the moment-of-truth surface: the user just got a grade and\n         needs to know whether the result will display as Verified on a public\n         link before they save. If they wanted Verified and didn't get it,\n         they can retake/recapture in-app before saving. Placed right below\n         the Robograde panel so it associates visually with the grade output. --\x3e\n    ${formData.roboGrade ? (() => {
     const pill = buildIntegrityPill(formData, true);
     return pill ? `<div style="display:flex;justify-content:center;margin-top:10px">${pill}</div>` : "";
   })() : ""}\n\n    \x3c!-- Grader Predictions (S11): renamed from "Assessment Results". This row\n         shows all of the relevant grade badges side-by-side: CGC Official, CGC\n         AI, PSA Official, PSA AI. A book can only be officially graded by one\n         service (CGC or PSA, not both), so at most 3 badges ever appear at\n         once — three boxes fit comfortably on one row. --\x3e\n    ${_assessed ? (() => {
@@ -8007,7 +8054,7 @@ function renderForm() {
       }
     };
     const s = styleByState[own] || styleByState["Owned"];
-    return `<div style="display:flex;justify-content:center;margin-top:14px">\n        <button onclick="cycleOwnership()"\n          style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;\n                 padding:5px 12px;border-radius:14px;cursor:pointer;\n                 background:${s.bg};color:${s.fg};border:1px solid ${s.border}">\n          ${own.toUpperCase()}\n        </button>\n      </div>`;
+    void s; // S20 (#46): collapsed add-flow pill removed — the segmented ownership\n    // control now renders above the image slots in every form state.\n    return "";
   })()}\n    <div style="display:flex;justify-content:center;margin-top:8px">\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="enterManualMode()" style="width:75%">Enter Manually</button>\n    </div>\n    `}\n  </div>`;
   document.getElementById("main").innerHTML = html;
 }
