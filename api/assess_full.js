@@ -36,6 +36,7 @@
 // =============================================================================
 import { ROBOGRADE_VERSION } from '../lib/version.js';
 import { anthropicWithRetry } from '../lib/anthropic_retry.js';
+import { computePhotograderPM, mergePhotograder, PHOTOGRADER_RUBRIC_CLOSEUP } from '../lib/photograder.js';
 
 // ── S15 May 30: Full Assessment REDESIGN (8 fixed named slots) ───────────────
 // The old design required 16/32 two-page-spread photos per book — impractical
@@ -208,7 +209,8 @@ export default async function handler(req, res) {
     initialPageQuality = '',      // the initial PQ call, so the model can re-judge it
     priorConditionAssessment = '',// the existing Condition Assessment text to integrate into
     priorDefectNotes = '',        // the existing Defect Notes (bullets), for context
-    initialAssessment = null      // optional: the initial assessment JSON for context
+    initialAssessment = null,     // optional: the initial assessment JSON for context
+    photograder = null            // S21: the running Photograder record (prior tiers)
   } = req.body || {};
 
   // Eligibility check 1: widened gate (Deep-list OR score>=30 OR grade>=3.0).
@@ -311,6 +313,8 @@ GRADE — IMPORTANT:
 PAGE QUALITY: do NOT change it — return the initial page-quality call unchanged and set pageQualityChanged to "same".
 PRECISION MODIFIER: with 6 images covering the structure and page completeness, your view is near-complete. Set confidenceRange as low as you honestly can — 1 for a clean, fully-documented book; 0 only if certain. Widen only for specific, nameable image-quality problems (glare, blur, hidden angle).
 
+${PHOTOGRADER_RUBRIC_CLOSEUP}
+
 ## RESPONSE FORMAT — STRICT
 Your entire response must be a JSON object and nothing else. First character an opening curly brace, last character a closing curly brace. No text before or after.
 
@@ -321,6 +325,7 @@ JSON shape:
   "pageQuality": "<the initial page-quality designation, UNCHANGED — do not re-judge it>",
   "pageQualityChanged": "same",
   "confidenceRange": <number, precision modifier, 0-6 — go as low as 1 or 0 when warranted>,
+  "photograder": { "focus": "A", "lighting": "A", "flags": [] },
   "fullAssessmentRan": true,
   "aiAssessment": ${JSON.stringify(typeof priorConditionAssessment === 'string' ? priorConditionAssessment : '')},
   "fullAssessment": "<ONLY the new Full-Assessment findings from the 6 structure images — staples, page completeness, outer edge / trimming. Do NOT repeat the prior Condition Assessment. 2-4 sentences; if the structure is clean, say it confirmed the grade.>",
@@ -537,7 +542,21 @@ Rules:
       return Math.min(hi, Math.max(lo, n));
     };
     const grade = Math.min(_num(parsed.grade, 0.5, 10.0, parseFloat(predictedGrade) || null), 9.9);
-    const confidenceRange = _num(parsed.confidenceRange, 0, 6, 1);
+    // S21 Photograder: Full sees close-up strips → grades Focus/Lighting only;
+    // Cropping/Angle carry forward from Main via the merge. The PM is
+    // monotonically clamped against the prior tier's PM (the Deep result), and
+    // it becomes both the ± and the score ceiling (100 − PM). Full runs only on
+    // raw books, so slabbed is always false here.
+    // The client sends the running Photograder as a top-level `photograder`
+    // param, and `initialAssessment` IS the prior roboGrade (so its
+    // confidenceRange is the prior tier's PM).
+    const _fullPriorPG = photograder || null;
+    const _fullPriorPM = (initialAssessment && typeof initialAssessment === 'object' && typeof initialAssessment.confidenceRange === 'number')
+      ? initialAssessment.confidenceRange : null;
+    const _fullPG = mergePhotograder(_fullPriorPG, parsed.photograder);
+    const confidenceRange = computePhotograderPM(_fullPG, 'full', false, _fullPriorPM);
+    _fullPG.pm = confidenceRange;
+    _fullPG.tier = 'full';
     // S20 (#36): page quality is FROZEN at the initial Main call. Full no longer
     // sees the interior-cover photos (moved to Deep), so it does not re-judge PQ.
     // Force the initial value when we have one; only fall back to the model's
@@ -592,6 +611,7 @@ Rules:
       // and the prompt instructs consistency with prior defects, but the Full
       // Assessment CAN adjust the grade in either direction if justified.
       roboScore: Math.min(Math.round(grade * 10), 100 - confidenceRange),
+      photograder: _fullPG,
       _diagnostics: { phaseTimings }
     };
 

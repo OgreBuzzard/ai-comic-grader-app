@@ -6557,7 +6557,8 @@ async function assessHighGrade() {
       keyInfo: formData.keyInfo || "",
       enhance: formData.enhance,
       labelDetected: !!formData.labelDetected,
-      roboGrade: initialRG
+      roboGrade: initialRG,
+      photograder: formData.photograder || null
     };
     const _deepFetchInit = {
       method: "POST",
@@ -7547,6 +7548,7 @@ async function completeAssessment() {
   formData.aiAssessment = cgc.aiAssessment || "";
   // S20 (#53): Deep observations go in their own field (aiAssessment stays the Main write-up).
   if (cgc.deepAssessment) formData.deepAssessment = cgc.deepAssessment;
+  if (cgc.photograder) formData.photograder = cgc.photograder; // S21: persist photo grades
   // ComicVine reference fields — copy from the assess result onto formData so
   // they persist to the item doc (the whitelist in nestForFirestore only keeps
   // fields that are actually ON the record; they must be assigned here first).
@@ -9388,7 +9390,8 @@ async function submitFullAssessment() {
         initialPageQuality: formData.pageQuality || "",
         priorConditionAssessment: formData.aiAssessment || "",
         priorDefectNotes: formData.aiGraderNotes || "",
-        initialAssessment: formData.roboGrade || null
+        initialAssessment: formData.roboGrade || null,
+        photograder: formData.photograder || null
       })
     });
     // S16: Wait for scan animation, but don't hang forever.
@@ -9442,6 +9445,7 @@ async function submitFullAssessment() {
       if (result.roboScore != null && formData.roboGrade) {
         formData.roboGrade.score = result.roboScore;
       }
+      if (result.photograder) formData.photograder = result.photograder; // S21: persist photo grades
       if (result.fullAssessmentNotes) formData.fullAssessmentNotes = result.fullAssessmentNotes;
       if (result.aiAssessment && result.aiAssessment.trim()) formData.aiAssessment = result.aiAssessment.trim();
       // S20 (#53): Full observations go in their own field (Main write-up unchanged).

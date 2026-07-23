@@ -291,6 +291,48 @@
           ${extrasHTML}
         </div>
       </div>` : ''}
+      ${renderPhotograderPanel((comic && comic.photograder) || (rg && rg.photograder))}
+    </div>`;
+  }
+
+  // ── Photograder bookend ─────────────────────────────────────────────
+  // Renders the photo-quality panel at the bottom of the RoboGrade box: four
+  // streetlight-colored cells (A green / B yellow / C red, '?' neutral) with
+  // neutral letters, and an alternating cream/green guidance list (one terse
+  // line per B/C flag — category bold, no color-coding, like the defect list).
+  function _pgEsc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function _pgCell(label, letter) {
+    const L = String(letter == null ? '' : letter).trim().toUpperCase();
+    const map = {
+      A: { bg: '#4e9e2e', lab: '#143d08', ltr: '#10240c' },
+      B: { bg: '#d6a520', lab: '#4a3806', ltr: '#3a2c04' },
+      C: { bg: '#cc4436', lab: '#4a1410', ltr: '#40100a' },
+    };
+    const s = map[L] || { bg: '#26331c', lab: '#6a8a4a', ltr: '#6a8a4a' };
+    const show = (L === 'A' || L === 'B' || L === 'C') ? L : '?';
+    return `<div style="flex:1;text-align:center;background:${s.bg};border-radius:8px;padding:8px 2px"><div style="font-size:9px;color:${s.lab};letter-spacing:0.5px;margin-bottom:3px">${label}</div><div style="font-size:26px;font-weight:800;color:${s.ltr};line-height:1">${show}</div></div>`;
+  }
+  function renderPhotograderPanel(pg) {
+    if (!pg) return '';
+    const has = k => /^[ABC]$/.test(String(pg[k] == null ? '' : pg[k]).trim().toUpperCase());
+    if (!(has('focus') || has('lighting') || has('cropping') || has('angle'))) return '';
+    const cells = _pgCell('FOCUS', pg.focus) + _pgCell('LIGHTING', pg.lighting) + _pgCell('CROPPING', pg.cropping) + _pgCell('ANGLE', pg.angle);
+    const flags = Array.isArray(pg.flags) ? pg.flags.filter(f => f && (f.image || f.note)) : [];
+    let flagsHTML = '';
+    if (flags.length) {
+      flagsHTML = '<div style="margin-top:10px;border-radius:6px;overflow:hidden">' + flags.map((f, i) => {
+        const bg = i % 2 === 0 ? '#f4f0dc' : '#cce8b8';
+        const cat = f.category ? f.category.charAt(0).toUpperCase() + f.category.slice(1) : '';
+        const body = [f.image, f.note].filter(Boolean).map(_pgEsc).join(' — ');
+        return `<div style="font-size:11px;line-height:1.45;color:#1f2a08;padding:6px 10px;background:${bg}">${cat ? `<b>${_pgEsc(cat)}</b> · ` : ''}${body}</div>`;
+      }).join('') + '</div>';
+    }
+    return `<div style="margin-top:14px;padding:12px 0;border-top:1.5px dashed #4a7028">
+      <div style="font-size:12px;font-weight:700;color:#7aa838;letter-spacing:2px;text-align:center;margin-bottom:10px">PHOTOGRADER</div>
+      <div style="display:flex;gap:6px">${cells}</div>
+      ${flagsHTML}
     </div>`;
   }
 

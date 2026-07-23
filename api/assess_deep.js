@@ -32,6 +32,7 @@
 // =============================================================================
 import { ROBOGRADE_VERSION } from '../lib/version.js';
 import { anthropicWithRetry } from '../lib/anthropic_retry.js';
+import { computePhotograderPM, mergePhotograder, PHOTOGRADER_RUBRIC_CLOSEUP } from '../lib/photograder.js';
 
 export default async function handler(req, res) {
   // CORS: the iOS Capacitor app calls this cross-origin (local file origin →
@@ -318,6 +319,8 @@ If the macros CONFIRM the initial assessment — meaning everything visible was 
 
 The confidenceRange for a Deep assessment is the integer 3 (representing ±3 on the 0-100 score scale). Do not narrow below 3; the score ceiling of 97 already encodes the residual uncertainty.
 
+${PHOTOGRADER_RUBRIC_CLOSEUP}
+
 ## PHASE 4 — CONFIRM THE REVISED GRADE AGAINST GRADE-REFERENCE IMAGES
 Recompute the RoboGrade score (Front + Back + Spine + Interior) and map it to a CGC grade. You are also given a set of GRADE-REFERENCE IMAGES — real graded comics bracketing the initial grade, each labeled with its CGC grade and a one-line condition note, in ascending order. Use them as a calibrated yardstick:
   • Find the reference whose OVERALL cover condition the book being graded most closely matches.
@@ -366,7 +369,8 @@ JSON shape (same as initial assessment, with deepAddition tags on new defects):
     "defects": [
       {"type":"","location":"","measurement":"","severity":"Med","colorBreaking":false,"category":"Front","deepAddition":false}
     ]
-  }
+  },
+  "photograder": { "focus": "A", "lighting": "A", "flags": [] }
 }
 
 HARD OUTPUT LIMITS:
@@ -740,17 +744,8 @@ Rules:
       const i = Number(parsed.roboGrade.interiorScore) || 0;
       parsed.roboGrade.score = f + b + s + i;
       parsed.roboGrade.version = ROBOGRADE_VERSION;
-
-      // S15 May 27 — SCORE CEILING (matches assess.js). A Deep Assessment
-      // carries a ±3 precision modifier, so its honest maximum score is
-      // 100 - 3 = 97, with the ±3 letting the true grade range up to 100.
-      // Even with corner macros, the assessment shouldn't claim a near-
-      // perfect outright score — 97 is the structural ceiling and the
-      // modifier expresses the upside. Clamp after the component recompute
-      // so a model that summed to 98-100 gets pulled back to 97.
-      if (typeof parsed.roboGrade.score === 'number' && parsed.roboGrade.score > 97) {
-        parsed.roboGrade.score = 97;
-      }
+      // S21: the score ceiling is now 100 − PM (applied below after Photograder
+      // is computed), replacing the old fixed 97. Photo quality drives it.
     }
 
     // S15 May 30: the floor rule and grade-stamp logic below are DEEP-only.
@@ -768,6 +763,21 @@ Rules:
           parsed.roboGrade.spineScore = initialRG.spineScore;
           parsed.grade = initialAssessment.grade || parsed.grade;
         }
+      }
+      // S21 Photograder: merge this pass's Focus/Lighting into the running record
+      // (Cropping/Angle carry from Main), compute the PM with the monotonic clamp
+      // against the prior tier's PM, and use it for the ± and the score ceiling.
+      const _priorPG = initialAssessment.photograder || null;
+      const _priorPM = (initialRG && typeof initialRG.confidenceRange === 'number') ? initialRG.confidenceRange : null;
+      const _mergedPG = mergePhotograder(_priorPG, parsed.photograder);
+      const _deepPM = computePhotograderPM(_mergedPG, 'deep', !!initialAssessment.labelDetected, _priorPM);
+      _mergedPG.pm = _deepPM;
+      _mergedPG.tier = 'deep';
+      parsed.photograder = _mergedPG;
+      if (parsed.roboGrade) {
+        const _ceil = 100 - _deepPM;
+        if (typeof parsed.roboGrade.score === 'number' && parsed.roboGrade.score > _ceil) parsed.roboGrade.score = _ceil;
+        parsed.roboGrade.confidenceRange = _deepPM;
       }
       parsed.deepAssessmentRan = true;
     } else {

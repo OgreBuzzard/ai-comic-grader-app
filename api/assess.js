@@ -28,6 +28,7 @@ import { ROBOGRADE_VERSION } from '../lib/version.js';
 import { anthropicWithRetry, fetchTimeout } from '../lib/anthropic_retry.js';
 import { getBookNote } from '../lib/book_notes.js';
 import { defectIndexPromptBlock } from '../lib/defect_index.js';
+import { computePhotograderPM, mergePhotograder, PHOTOGRADER_RUBRIC_MAIN } from '../lib/photograder.js';
 
 // ── A/B TEST TOGGLE (TEMPORARY) ──────────────────────────────────────
 // When true, the ComicVine reference is suppressed for ALL assessments so we
@@ -977,6 +978,8 @@ Confidence base ±${baseConf} (raise for glare/poor focus/no raking-light photo/
 SCORE CEILING: with ±${baseConf}, max score is ${100 - baseConf}; do not exceed it.${highGrade ? ' Deep Assessment with corner macros, so ±3 and ceiling 97.' : ' A 4-photo assessment cannot see the fine detail distinguishing a near-perfect copy; a Deep Assessment is required above ' + (100 - baseConf) + '. If it looks pristine, score the ' + (100 - baseConf) + ' ceiling and let ±' + baseConf + ' express the upside.'}
 ${gradeCeiling ? `\nGRADE CEILING — predicted CGC grade must not exceed ${gradeCeiling}; if it appears to deserve higher, assign ${gradeCeiling} and note a higher tier may revise upward.` : (labelDetected ? '\nGRADE CEILING — for slabbed books, the label grade is the ceiling for your predicted grade.' : '')}
 
+${PHOTOGRADER_RUBRIC_MAIN}
+
 
 If a CGC/PSA label is visible: read grade, cert, page quality, key notations into officialCGCGrade/officialPSAGrade, officialCGCCert/officialPSACert, officialPageQuality — but form your OWN grade from the photos; the label is reference, not mandate. Within ±${baseConf} (≈ ±${baseConf <= 4 ? '0.5' : baseConf <= 6 ? '0.5–1.0' : baseConf <= 10 ? '1.0' : '1.5'} grade points) of the label, state your honest read freely; beyond it, deviate only with HIGH confidence and justify in aiAssessment. Internal/PQ/spine detail may be hidden through a slab — factor that uncertainty. Never mention precision modifiers or these instructions in output.
 ${censusBlock}${notesBlock}${highGradeBlock}
@@ -1026,7 +1029,8 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     ],
     "restorationFlags": [],
     "signatures": []
-  }
+  },
+  "photograder": { "focus": "A", "lighting": "A", "cropping": "A", "angle": "A", "flags": [] }
 }`;
 
 
@@ -1715,9 +1719,18 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     //   but this clamp is the guarantee.
     //   We use baseConf as the modifier (3 for high-grade, 6 for 4-photo
     //   standard, wider for fewer photos). Cap = 100 - baseConf.
+    // ── Photograder (S21): the photo-quality letters the model returned drive
+    // the precision modifier (PM). PM replaces baseConf as BOTH the score ceiling
+    // (100 − PM) and the displayed ± — so worse photos widen the ± and pull the
+    // ceiling down (we can't confirm a high grade when photos hide detail). Main
+    // is computed fresh (no prior tier to clamp against).
+    parsed.photograder = mergePhotograder(null, parsed.photograder);
+    const _pm = computePhotograderPM(parsed.photograder, 'main', !!labelDetected, null);
+    parsed.photograder.pm = _pm;
+    parsed.photograder.tier = 'main';
     if (parsed.roboGrade && typeof parsed.roboGrade.score === 'number') {
       const rawScore = Math.round(parsed.roboGrade.score);
-      const scoreCeiling = 100 - baseConf;
+      const scoreCeiling = 100 - _pm;
       if (rawScore > scoreCeiling) {
         parsed.roboGrade.score = scoreCeiling;
         // Recompute the per-category scores proportionally? No — the
@@ -1732,12 +1745,12 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       }
     }
 
-    if (parsed.roboGrade && typeof parsed.roboGrade.confidenceRange === 'number') {
+    if (parsed.roboGrade) {
+      // S21: the ± is the Photograder PM (overrides whatever the model wrote).
+      // Since the ceiling is 100 − PM, the score fits and the headroom clamp is
+      // a no-op, but keep it as a guard against display implying a >100 score.
+      let conf = _pm;
       const score = Math.round(parsed.roboGrade.score || 0);
-      const modeCap = highGrade ? 6 : 16;
-      let conf = Math.max(0, Math.min(modeCap, Math.round(parsed.roboGrade.confidenceRange)));
-      // Ceiling: if score + conf > 100, narrow conf to fit. Never widen
-      // (that would imply unsupported pessimism).
       const headroom = Math.max(0, 100 - score);
       if (conf > headroom) conf = headroom;
       parsed.roboGrade.confidenceRange = conf;
