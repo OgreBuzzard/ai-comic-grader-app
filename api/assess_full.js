@@ -325,7 +325,7 @@ JSON shape:
   "pageQuality": "<the initial page-quality designation, UNCHANGED — do not re-judge it>",
   "pageQualityChanged": "same",
   "confidenceRange": <number, precision modifier, 0-6 — go as low as 1 or 0 when warranted>,
-  "photograder": { "focus": "A", "lighting": "A", "flags": [] },
+  "photograder": { "focus": "A", "lighting": "A", "flags": [ {"category":"lighting","image":"Interior","note":"shadow across gutter"} ] },
   "fullAssessmentRan": true,
   "aiAssessment": ${JSON.stringify(typeof priorConditionAssessment === 'string' ? priorConditionAssessment : '')},
   "fullAssessment": "<ONLY the new Full-Assessment findings from the 6 structure images — staples, page completeness, outer edge / trimming. Do NOT repeat the prior Condition Assessment. 2-4 sentences; if the structure is clean, say it confirmed the grade.>",

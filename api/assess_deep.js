@@ -370,7 +370,7 @@ JSON shape (same as initial assessment, with deepAddition tags on new defects):
       {"type":"","location":"","measurement":"","severity":"Med","colorBreaking":false,"category":"Front","deepAddition":false}
     ]
   },
-  "photograder": { "focus": "A", "lighting": "A", "flags": [] }
+  "photograder": { "focus": "A", "lighting": "A", "flags": [ {"category":"focus","image":"Top-Left Corner","note":"blurry"} ] }
 }
 
 HARD OUTPUT LIMITS:

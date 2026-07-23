@@ -422,7 +422,7 @@ onAuthStateChanged(auth, async user => {
        result settles (whether the grade changed or not) to signal the revision. */
     @keyframes rgResultPop {
       0%   { transform: scale(1); }
-      42%  { transform: scale(1.16); box-shadow: 0 0 20px rgba(170,238,48,0.9), 0 0 7px rgba(255,255,255,0.65); }
+      42%  { transform: scale(1.16); box-shadow: 0 0 22px rgba(255,255,255,0.95), 0 0 8px rgba(255,255,255,0.8); }
       100% { transform: scale(1); box-shadow: 0 2px 6px rgba(0,0,0,0.4); }
     }
     .rg-result-pop { animation: rgResultPop 0.68s ease-out; }
@@ -8168,7 +8168,7 @@ function renderForm() {
       return img ? `<div class="drag-slot" draggable="true"\n                  ondragstart="dragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"\n                  onclick="tapSlot(${i},'main')">\n                  <img src="${img}">\n                  <button class="slot-edit" onclick="event.stopPropagation();openCropper('main',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>\n                  <button class="slot-x" onclick="event.stopPropagation();removeImg(${i})">×</button>\n                 </div>` : `<div class="drag-slot" style="padding:0;background:none;"\n                  ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"\n                  onclick="tapSlot(${i},'main')">\n                  <img src="${SLOT_GHOSTS[i]}" style="width:100%;height:auto;display:block;border-radius:4px;opacity:0.7;">\n                  <div style="position:absolute;inset:0;pointer-events:none;">\n                    <span style="position:absolute;top:8px;left:10px;font-size:11px;font-weight:700;color:#000;letter-spacing:1px;text-transform:uppercase;background:rgba(255,255,255,0.75);padding:2px 6px;border-radius:3px;">${slotLabels[i]}</span>\n                  </div>\n                 </div>`;
     };
     return formData.labelDetected ? `\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">\n              ${renderSlot(0)}\n              ${renderSlot(1)}\n            </div>\n          ` : `\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">\n              ${renderSlot(0)}\n              ${renderSlot(1)}\n            </div>\n            ${renderSlot(3)}\n            ${renderSlot(2)}\n          `;
-  })()}\n      </div>\n      <div style="display:flex;justify-content:center;margin-top:12px"><button id="assess-btn" class="rg-btn rg-btn-assess rg-btn-bronze${_assessed ? ' reassess' : ''}${assessing ? ' assessing' : ''}" onclick="assessGrade()" ${!formData.images || !formData.images[0] || assessing ? "disabled" : ""}>${assessing ? "Assessing…" : _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE"}</button></div>\n      ${showDeepTier(formData) ? `\n      <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">DEEP ASSESSMENT CORNER MACROS</div>\n        <div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Tighten the grade with more detail where small defects are most common.</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\n          ${[ 0, 1, 2, 3 ].map(i => {
+  })()}\n      </div>\n      ${_preAssessPGPanel() || ""}\n      <div style="display:flex;justify-content:center;margin-top:12px"><button id="assess-btn" class="rg-btn rg-btn-assess rg-btn-bronze${_assessed ? ' reassess' : ''}${assessing ? ' assessing' : ''}" onclick="assessGrade()" ${!formData.images || !formData.images[0] || assessing ? "disabled" : ""}>${assessing ? "Assessing…" : _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE"}</button></div>\n      ${showDeepTier(formData) ? `\n      <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">DEEP ASSESSMENT CORNER MACROS</div>\n        <div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Tighten the grade with more detail where small defects are most common.</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\n          ${[ 0, 1, 2, 3 ].map(i => {
     const cornerLabels = [ "Top Left", "Top Right", "Bottom Left", "Bottom Right" ];
     const cornerGhosts = [ "assets/ghosts/TopLeft_Macro.jpg", "assets/ghosts/TopRight_Macro.jpg", "assets/ghosts/BottomLeft_Macro.jpg", "assets/ghosts/BottomRight_Macro.jpg" ];
     const img = (formData.cornerImages || [])[i];
@@ -8319,6 +8319,7 @@ function renderForm() {
     void s; // S20 (#46): collapsed add-flow pill removed — the segmented ownership\n    // control now renders above the image slots in every form state.\n    return "";
   })()}\n    <div style="display:flex;justify-content:center;margin-top:8px">\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="enterManualMode()" style="width:75%">Enter Manually</button>\n    </div>\n    `}\n  </div>`;
   document.getElementById("main").innerHTML = html;
+  _maybeRefreshLocalPG(); // S21: refresh the on-device Photograder pre-check if images changed
 }
 
 function renderImgPreview() {}
@@ -9563,6 +9564,112 @@ let _cameraState = null;
 let _cameraOrientationListener = null;
 
 let _cameraOrientationTimeout = null;
+
+// ── Photograder: free on-device Focus/Lighting pre-check (S21) ──────────────
+// Runs client-side as photos are added — no model call, no credit. Powers the
+// pre-assessment mini-panel under the image slots (Cropping/Angle stay '?' until
+// an assessment runs). Focus = Laplacian variance (edge sharpness); Lighting =
+// blown-highlight (glare) / clipped-shadow fractions. Thresholds are a starting
+// point and will want calibration on real captures.
+function _pgWorst(a, b) {
+  const r = { A: 0, B: 1, C: 2 };
+  const na = /^[ABC]$/.test(a) ? a : "A", nb = /^[ABC]$/.test(b) ? b : "A";
+  return r[nb] > r[na] ? nb : na;
+}
+async function _analyzePhotoQuality(src) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const N = 256;
+        const scale = Math.min(1, N / Math.max(img.width, img.height));
+        const w = Math.max(2, Math.round(img.width * scale));
+        const h = Math.max(2, Math.round(img.height * scale));
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = h;
+        const ctx = c.getContext("2d", { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0, w, h);
+        const data = ctx.getImageData(0, 0, w, h).data;
+        const n = w * h;
+        const gray = new Float32Array(n);
+        let blown = 0, dark = 0;
+        for (let i = 0; i < n; i++) {
+          const y = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2];
+          gray[i] = y;
+          if (y >= 250) blown++;
+          if (y <= 10) dark++;
+        }
+        // Laplacian variance (Welford) for focus.
+        let mean = 0, m2 = 0, cnt = 0;
+        for (let yy = 1; yy < h - 1; yy++) {
+          for (let xx = 1; xx < w - 1; xx++) {
+            const idx = yy * w + xx;
+            const lap = 4 * gray[idx] - gray[idx - 1] - gray[idx + 1] - gray[idx - w] - gray[idx + w];
+            cnt++;
+            const d = lap - mean;
+            mean += d / cnt;
+            m2 += d * (lap - mean);
+          }
+        }
+        const lapVar = cnt > 1 ? m2 / (cnt - 1) : 0;
+        const blownFrac = blown / n, darkFrac = dark / n;
+        const focus = lapVar >= 120 ? "A" : lapVar >= 45 ? "B" : "C";
+        const lighting = (blownFrac >= 0.06 || darkFrac >= 0.30) ? "C"
+          : (blownFrac >= 0.02 || darkFrac >= 0.15) ? "B" : "A";
+        resolve({ focus, lighting });
+      } catch (e) { resolve(null); } // tainted (cross-origin) or decode fail → no local grade
+    };
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+async function _computeLocalPhotograder() {
+  const imgs = (formData.images || []).filter(Boolean);
+  if (!imgs.length) { formData._pgLocal = null; return; }
+  const results = await Promise.all(imgs.map(_analyzePhotoQuality));
+  const valid = results.filter(Boolean);
+  if (!valid.length) { formData._pgLocal = null; return; }
+  let focus = "A", lighting = "A";
+  for (const r of valid) { focus = _pgWorst(focus, r.focus); lighting = _pgWorst(lighting, r.lighting); }
+  formData._pgLocal = { focus, lighting };
+}
+function _preAssessPGCellsHTML() {
+  const pg = formData._pgLocal || {};
+  const cell = (label, letter) => {
+    const L = String(letter || "").toUpperCase();
+    const map = { A: { bg: "#4e9e2e", lab: "#143d08", ltr: "#10240c" }, B: { bg: "#d8bb1c", lab: "#4a3d06", ltr: "#3a3004" }, C: { bg: "#cc4436", lab: "#4a1410", ltr: "#40100a" } };
+    const s = map[L] || { bg: "#26331c", lab: "#6a8a4a", ltr: "#6a8a4a" };
+    const show = (L === "A" || L === "B" || L === "C") ? L : "?";
+    return `<div style="flex:1;text-align:center;background:${s.bg};border-radius:8px;padding:8px 2px"><div style="font-size:9px;color:${s.lab};letter-spacing:0.5px;margin-bottom:3px">${label}</div><div style="font-size:24px;font-weight:600;color:${s.ltr};line-height:1">${show}</div></div>`;
+  };
+  return cell("FOCUS", pg.focus) + cell("LIGHTING", pg.lighting) + cell("CROPPING", "?") + cell("ANGLE", "?");
+}
+// The pre-assessment mini-panel. Hidden once the book is assessed (the real
+// Photograder then lives in the RoboGrade Score box) and when no photos exist.
+function _preAssessPGPanel() {
+  if (formData.roboGrade) return "";
+  if (!(formData.images || []).filter(Boolean).length) return "";
+  return `<div style="margin-top:12px;background:#152e10;border:1.5px solid #4a7028;border-radius:12px;padding:12px">
+    <div style="font-size:12px;font-weight:700;color:#7aa838;letter-spacing:2px;text-align:center;margin-bottom:9px">PHOTOGRADER</div>
+    <div id="pre-assess-photograder-cells" style="display:flex;gap:6px">${_preAssessPGCellsHTML()}</div>
+    <div style="margin-top:8px;font-size:10px;color:#6a8a4a;text-align:center;line-height:1.4">Cropping and Angle are graded after assessment.</div>
+  </div>`;
+}
+// Called after renderForm: re-run the on-device analysis only when the main
+// image set actually changed, then repaint the cells in place.
+function _maybeRefreshLocalPG() {
+  if (!formData || formData.roboGrade) return;
+  const imgs = (formData.images || []).filter(Boolean);
+  const sig = imgs.length + ":" + imgs.map(u => String(u).slice(-24)).join("|");
+  if (sig === formData._pgLocalSig) return;
+  formData._pgLocalSig = sig;
+  if (!imgs.length) { formData._pgLocal = null; return; }
+  _computeLocalPhotograder().then(() => {
+    const el = document.getElementById("pre-assess-photograder-cells");
+    if (el) el.innerHTML = _preAssessPGCellsHTML();
+  }).catch(() => {});
+}
 
 function tapSlot(slotIndex, kind) {
   // S20 (#52): every slot type is camera-first (the in-app guided camera), with a

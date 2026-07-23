@@ -1030,7 +1030,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     "restorationFlags": [],
     "signatures": []
   },
-  "photograder": { "focus": "A", "lighting": "A", "cropping": "A", "angle": "A", "flags": [] }
+  "photograder": { "focus": "A", "lighting": "A", "cropping": "A", "angle": "A", "flags": [ {"category":"lighting","image":"Back Cover","note":"glare hiding lower half"} ] }
 }`;
 
 

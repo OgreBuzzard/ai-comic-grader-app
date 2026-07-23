@@ -307,12 +307,12 @@
     const L = String(letter == null ? '' : letter).trim().toUpperCase();
     const map = {
       A: { bg: '#4e9e2e', lab: '#143d08', ltr: '#10240c' },
-      B: { bg: '#d6a520', lab: '#4a3806', ltr: '#3a2c04' },
+      B: { bg: '#d8bb1c', lab: '#4a3d06', ltr: '#3a3004' },
       C: { bg: '#cc4436', lab: '#4a1410', ltr: '#40100a' },
     };
     const s = map[L] || { bg: '#26331c', lab: '#6a8a4a', ltr: '#6a8a4a' };
     const show = (L === 'A' || L === 'B' || L === 'C') ? L : '?';
-    return `<div style="flex:1;text-align:center;background:${s.bg};border-radius:8px;padding:8px 2px"><div style="font-size:9px;color:${s.lab};letter-spacing:0.5px;margin-bottom:3px">${label}</div><div style="font-size:26px;font-weight:800;color:${s.ltr};line-height:1">${show}</div></div>`;
+    return `<div style="flex:1;text-align:center;background:${s.bg};border-radius:8px;padding:8px 2px"><div style="font-size:9px;color:${s.lab};letter-spacing:0.5px;margin-bottom:3px">${label}</div><div style="font-size:26px;font-weight:600;color:${s.ltr};line-height:1">${show}</div></div>`;
   }
   function renderPhotograderPanel(pg) {
     if (!pg) return '';
@@ -329,7 +329,7 @@
         return `<div style="font-size:11px;line-height:1.45;color:#1f2a08;padding:6px 10px;background:${bg}">${cat ? `<b>${_pgEsc(cat)}</b> · ` : ''}${body}</div>`;
       }).join('') + '</div>';
     }
-    return `<div style="margin-top:14px;padding:12px 0;border-top:1.5px dashed #4a7028">
+    return `<div style="margin-top:14px;padding:12px 0;border-top:2px solid #4a7028">
       <div style="font-size:12px;font-weight:700;color:#7aa838;letter-spacing:2px;text-align:center;margin-bottom:10px">PHOTOGRADER</div>
       <div style="display:flex;gap:6px">${cells}</div>
       ${flagsHTML}
