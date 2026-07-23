@@ -307,12 +307,13 @@
     const L = String(letter == null ? '' : letter).trim().toUpperCase();
     const map = {
       A: { bg: '#4e9e2e', lab: '#143d08', ltr: '#10240c' },
-      B: { bg: '#d8bb1c', lab: '#4a3d06', ltr: '#3a3004' },
+      B: { bg: '#e8a200', lab: '#4a3406', ltr: '#3a2804' },
       C: { bg: '#cc4436', lab: '#4a1410', ltr: '#40100a' },
     };
     const s = map[L] || { bg: '#26331c', lab: '#6a8a4a', ltr: '#6a8a4a' };
     const show = (L === 'A' || L === 'B' || L === 'C') ? L : '?';
-    return `<div style="flex:1;text-align:center;background:${s.bg};border-radius:8px;padding:8px 2px"><div style="font-size:9px;color:${s.lab};letter-spacing:0.5px;margin-bottom:3px">${label}</div><div style="font-size:26px;font-weight:600;color:${s.ltr};line-height:1">${show}</div></div>`;
+    // Border matches the RoboGrade score box above (1.5px solid OLIVE_MID).
+    return `<div style="flex:1;text-align:center;background:${s.bg};border:1.5px solid #4a7028;border-radius:8px;padding:8px 2px"><div style="font-size:9px;color:${s.lab};letter-spacing:0.5px;margin-bottom:3px">${label}</div><div style="font-size:26px;font-weight:600;color:${s.ltr};line-height:1">${show}</div></div>`;
   }
   function renderPhotograderPanel(pg) {
     if (!pg) return '';
@@ -322,14 +323,24 @@
     const flags = Array.isArray(pg.flags) ? pg.flags.filter(f => f && (f.image || f.note)) : [];
     let flagsHTML = '';
     if (flags.length) {
-      flagsHTML = '<div style="margin-top:10px;border-radius:6px;overflow:hidden">' + flags.map((f, i) => {
+      // Full-container-width tractor-feed printout, matching the defect list:
+      // full-bleed (margin:0 -14px cancels the container's 14px padding), with
+      // dotted printer-paper margin strips on both sides.
+      const rows = flags.map((f, i) => {
         const bg = i % 2 === 0 ? '#f4f0dc' : '#cce8b8';
         const cat = f.category ? f.category.charAt(0).toUpperCase() + f.category.slice(1) : '';
         const body = [f.image, f.note].filter(Boolean).map(_pgEsc).join(' — ');
-        return `<div style="font-size:11px;line-height:1.45;color:#1f2a08;padding:6px 10px;background:${bg}">${cat ? `<b>${_pgEsc(cat)}</b> · ` : ''}${body}</div>`;
-      }).join('') + '</div>';
+        return `<div style="font-size:11px;line-height:1.45;color:#1f2a08;font-family:'IBM Plex Mono','Menlo',monospace;padding:6px 10px;background:${bg}">${cat ? `<b>${_pgEsc(cat)}</b> · ` : ''}${body}</div>`;
+      }).join('');
+      flagsHTML = `<div style="margin:12px -14px 0;border-top:2px solid #4a7028;border-bottom:1.5px solid #4a7028;position:relative">
+        <div style="position:absolute;left:0;top:0;bottom:0;width:8px;background-image:radial-gradient(circle at 4px 8px, #4a7028 1.5px, transparent 1.6px);background-size:8px 14px;background-repeat:repeat-y;background-color:#f4f0dc;z-index:1"></div>
+        <div style="position:absolute;right:0;top:0;bottom:0;width:8px;background-image:radial-gradient(circle at 4px 8px, #4a7028 1.5px, transparent 1.6px);background-size:8px 14px;background-repeat:repeat-y;background-color:#f4f0dc;z-index:1"></div>
+        <div style="margin:0 8px;background:#f4f0dc">${rows}</div>
+      </div>`;
     }
-    return `<div style="margin-top:14px;padding:12px 0;border-top:2px solid #4a7028">
+    // No border-top here — the defect list's border-bottom already separates
+    // this dark-green section from the printout above.
+    return `<div style="margin-top:14px;padding-bottom:${flags.length ? '0' : '12px'}">
       <div style="font-size:12px;font-weight:700;color:#7aa838;letter-spacing:2px;text-align:center;margin-bottom:10px">PHOTOGRADER</div>
       <div style="display:flex;gap:6px">${cells}</div>
       ${flagsHTML}

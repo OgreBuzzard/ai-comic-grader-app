@@ -2061,6 +2061,32 @@ function renderItemDetail(it) {
       </div>
     </div>
 
+    ${(() => {
+      const pg = it.photograder;
+      if (!pg) return '';
+      const isL = k => /^[ABC]$/.test(String(pg[k] == null ? '' : pg[k]).trim().toUpperCase());
+      if (!(isL('focus') || isL('lighting') || isL('cropping') || isL('angle'))) return '';
+      const cmap = { A: { bg: '#4e9e2e', ltr: '#10240c', lab: '#143d08' }, B: { bg: '#e8a200', ltr: '#3a2804', lab: '#4a3406' }, C: { bg: '#cc4436', ltr: '#40100a', lab: '#4a1410' } };
+      const cell = (label, letter) => {
+        const L = String(letter == null ? '' : letter).trim().toUpperCase();
+        const s = cmap[L] || { bg: '#26331c', ltr: '#6a8a4a', lab: '#6a8a4a' };
+        const show = /^[ABC]$/.test(L) ? L : '?';
+        return `<div style="flex:1;text-align:center;background:${s.bg};border:1.5px solid #3a5010;border-radius:8px;padding:6px 2px;"><div style="font-size:9px;color:${s.lab};letter-spacing:0.5px;margin-bottom:2px;">${label}</div><div style="font-size:22px;font-weight:700;color:${s.ltr};line-height:1;">${show}</div></div>`;
+      };
+      const flags = Array.isArray(pg.flags) ? pg.flags.filter(f => f && (f.image || f.note)) : [];
+      const flagHTML = flags.length ? '<div style="margin-top:8px;border-radius:6px;overflow:hidden;">' + flags.map((f, i) => {
+        const bg = i % 2 === 0 ? '#f4f0dc' : '#e6e0c8';
+        const cat = f.category ? f.category.charAt(0).toUpperCase() + f.category.slice(1) : '';
+        const body = [f.image, f.note].filter(Boolean).map(escapeHtml).join(' — ');
+        return `<div style="font-size:11px;line-height:1.4;color:#1f2a08;padding:5px 9px;background:${bg};">${cat ? `<b>${escapeHtml(cat)}</b> · ` : ''}${body}</div>`;
+      }).join('') + '</div>' : '';
+      return `<h3 class="section-h">Photograder</h3>
+        <div style="background:#0f1a05;border:1.5px solid #3a5010;border-radius:8px;padding:10px;margin:2px 0 6px;">
+          <div style="display:flex;gap:6px;">${cell('FOCUS', pg.focus) + cell('LIGHTING', pg.lighting) + cell('CROPPING', pg.cropping) + cell('ANGLE', pg.angle)}</div>
+          ${flagHTML}
+        </div>`;
+    })()}
+
     <h3 class="section-h">Assessment Metadata</h3>
     ${fieldGrid([
       ['FMV', it.fmvRange || it.fmv],
