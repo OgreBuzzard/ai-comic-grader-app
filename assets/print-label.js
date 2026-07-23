@@ -160,7 +160,7 @@ const LABEL_FORMATS = {
 const LABEL_BUY_LINKS = {
   small: {
     label: 'Avery 8161',
-    url: 'https://www.amazon.com/Avery-White-Inkjet-Address-Labels/dp/B01LXUAKOY',
+    url: 'https://www.amazon.com/Avery-White-Inkjet-Address-Labels/dp/B01LXUAKOY?tag=grailstoaston-20',
     vendor: 'Amazon'
   },
   // S15 May 28: Small L migrated to Avery 5162 (1-1/3" × 4", 14/sheet) to
@@ -168,12 +168,12 @@ const LABEL_BUY_LINKS = {
   // case types that have no flat top surface.
   'small-l': {
     label: 'Avery 5162',
-    url: 'https://a.co/d/00ywsNj2',
+    url: 'https://www.amazon.com/dp/B00004Z6IY?tag=grailstoaston-20',
     vendor: 'Amazon'
   },
   square: {
     label: 'Avery 22806',
-    url: 'https://a.co/d/0fMlMbAB',
+    url: 'https://www.amazon.com/dp/B093LZ1KW2?tag=grailstoaston-20',
     vendor: 'Amazon'
   },
   large: {
