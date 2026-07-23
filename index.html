@@ -9639,7 +9639,7 @@ function _preAssessPGCellsHTML() {
   const pg = formData._pgLocal || {};
   const cell = (label, letter) => {
     const L = String(letter || "").toUpperCase();
-    const map = { A: { bg: "#4e9e2e", lab: "#143d08", ltr: "#10240c" }, B: { bg: "#e8a200", lab: "#4a3406", ltr: "#3a2804" }, C: { bg: "#cc4436", lab: "#4a1410", ltr: "#40100a" } };
+    const map = { A: { bg: "#4e9e2e", lab: "#143d08", ltr: "#10240c" }, B: { bg: "#ffd655", lab: "#4a3406", ltr: "#3a2804" }, C: { bg: "#cc4436", lab: "#4a1410", ltr: "#40100a" } };
     const s = map[L] || { bg: "#26331c", lab: "#6a8a4a", ltr: "#6a8a4a" };
     const show = (L === "A" || L === "B" || L === "C") ? L : "?";
     return `<div style="flex:1;text-align:center;background:${s.bg};border:1.5px solid #4a7028;border-radius:8px;padding:8px 2px"><div style="font-size:9px;color:${s.lab};letter-spacing:0.5px;margin-bottom:3px">${label}</div><div style="font-size:24px;font-weight:600;color:${s.ltr};line-height:1">${show}</div></div>`;

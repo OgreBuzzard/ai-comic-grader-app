@@ -307,7 +307,7 @@
     const L = String(letter == null ? '' : letter).trim().toUpperCase();
     const map = {
       A: { bg: '#4e9e2e', lab: '#143d08', ltr: '#10240c' },
-      B: { bg: '#e8a200', lab: '#4a3406', ltr: '#3a2804' },
+      B: { bg: '#ffd655', lab: '#4a3406', ltr: '#3a2804' },
       C: { bg: '#cc4436', lab: '#4a1410', ltr: '#40100a' },
     };
     const s = map[L] || { bg: '#26331c', lab: '#6a8a4a', ltr: '#6a8a4a' };

@@ -2066,7 +2066,7 @@ function renderItemDetail(it) {
       if (!pg) return '';
       const isL = k => /^[ABC]$/.test(String(pg[k] == null ? '' : pg[k]).trim().toUpperCase());
       if (!(isL('focus') || isL('lighting') || isL('cropping') || isL('angle'))) return '';
-      const cmap = { A: { bg: '#4e9e2e', ltr: '#10240c', lab: '#143d08' }, B: { bg: '#e8a200', ltr: '#3a2804', lab: '#4a3406' }, C: { bg: '#cc4436', ltr: '#40100a', lab: '#4a1410' } };
+      const cmap = { A: { bg: '#4e9e2e', ltr: '#10240c', lab: '#143d08' }, B: { bg: '#ffd655', ltr: '#3a2804', lab: '#4a3406' }, C: { bg: '#cc4436', ltr: '#40100a', lab: '#4a1410' } };
       const cell = (label, letter) => {
         const L = String(letter == null ? '' : letter).trim().toUpperCase();
         const s = cmap[L] || { bg: '#26331c', ltr: '#6a8a4a', lab: '#6a8a4a' };

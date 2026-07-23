@@ -738,10 +738,17 @@ Rules:
       if (initialRG.backScore != null) parsed.roboGrade.backScore = initialRG.backScore;
       if (initialRG.interiorScore != null) parsed.roboGrade.interiorScore = initialRG.interiorScore;
       // Recompute total score from components, in case the model didn't.
-      const f = Number(parsed.roboGrade.frontScore) || 0;
-      const b = Number(parsed.roboGrade.backScore) || 0;
-      const s = Number(parsed.roboGrade.spineScore) || 0;
-      const i = Number(parsed.roboGrade.interiorScore) || 0;
+      // Clamp each to its valid range first — the Deep model occasionally emits
+      // an over-range component (e.g. front 51) which would inflate the sum.
+      const _cl = (n, hi) => Math.max(0, Math.min(hi, Math.round(Number(n) || 0)));
+      const f = _cl(parsed.roboGrade.frontScore, 50);
+      const b = _cl(parsed.roboGrade.backScore, 20);
+      const s = _cl(parsed.roboGrade.spineScore, 20);
+      const i = _cl(parsed.roboGrade.interiorScore, 10);
+      parsed.roboGrade.frontScore = f;
+      parsed.roboGrade.backScore = b;
+      parsed.roboGrade.spineScore = s;
+      parsed.roboGrade.interiorScore = i;
       parsed.roboGrade.score = f + b + s + i;
       parsed.roboGrade.version = ROBOGRADE_VERSION;
       // S21: the score ceiling is now 100 − PM (applied below after Photograder

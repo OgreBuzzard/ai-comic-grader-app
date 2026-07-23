@@ -946,6 +946,7 @@ Score each category only from its own defects. Perfect category = no observed de
   Back (20): 20 pristine | 18–19 trace | 15–17 minor/light accumulation | 11–14 moderate | 7–10 substantial | 0–6 major.
   Spine (20): 20 pristine | 18–19 trace, one minor non-CB tick | 15–17 light stress, slight roll | 11–14 multiple stress lines, visible roll, or one color-breaking crease | 7–10 significant stress, split starting, staple pull | 0–6 severe.
   Interior (10): 1:1 from PQ. No deductions. Staple issues → Spine.
+BOTTOM-OF-SCALE (use the FULL range — the lowest bands are chronically under-used, so reach them): a face carrying even ONE high-severity STRUCTURAL defect (tape or tape residue, missing piece / paper loss, spine split, cover detachment, water/moisture damage, or a large tear) belongs in that category's LOWEST band — Front 0–12, Back 0–6, Spine 0–6 — not the 20s. TWO OR MORE such defects on a face → the very bottom: Front 0–6, Back/Spine 0–3. A destroyed or near-destroyed face scores near 0 — never 7–8 "to be safe." Do NOT park a heavily damaged book in the 20–30 range; that is mid-grade territory. 0 is a real, expected score for a wrecked face. NO COVER = 0: if a cover (front or back) is physically absent — coverless book, or a cover torn off and missing — that category is 0, no exceptions.
 SPINE TICKS: −1 per non-CB tick, −2 per CB tick. SPINE ROLL: Low −1/−2, Med −3/−5, High −6/−10. STAPLES (Spine category): Low faint <2mm; Med clear stain 3–8mm migration; High heavy migration/structural; missing/popped → Med/High.
 SIGNATURES: only an ADDED signature — written onto THIS copy, ABSENT from the ComicVine reference cover, with distinct ink sheen / pen texture / indentation — is a "Creator signature" → empty severity, NO deduction; describe in aiAssessment with "apparent" (we don't authenticate). Printed/stylized handwriting that is part of the cover ART (present on every copy and visible in the reference) is NEITHER a defect NOR a Creator signature: do NOT record it as "Writing on cover" AND do NOT record it in the signatures array. When a mark could be either: if a reference IS available, compare — present in the reference = printed art (omit from BOTH); absent from the reference = added (Writing on cover if it defaces, Creator signature if it is a name). If NO reference is available (referenceComparison is ""), do NOT assume a mark is added — a signature-style mark that is integrated into the printing (same ink/tone as the surrounding art, no raised sheen, pen texture, or indentation) is PRINTED ART; only call it added when it clearly sits on top of the art with a distinct pen/marker texture, sheen, or indentation. Printed artist signatures appear on most covers — default to printed art when in doubt. Populate top-level "signatures" array with {"signer":"Name"} ONLY for added signatures (else {"signer":""}); empty array if none.
 SEVERITY WORDS: light/minor/slight/faint/trace→Low; moderate/medium/noticeable→Med; heavy/significant/severe/major→High.
@@ -956,9 +957,11 @@ CGC GRADE: apply CGC standards to the inventory.
 DEFECT IMPACT INDEX — apply as a per-defect CEILING when converting the inventory to a grade. For each defect you actually catalogued, a book that would otherwise grade at or above that defect’s red threshold is pulled down toward it; multiple such defects compound downward. It never raises a grade — only caps or confirms. Ignore entries for defects not present.
 ${defectIndexPromptBlock()}
 BLACKJACK PHILOSOPHY: overshooting is far costlier than undershooting (the user submits to CGC/PSA on your prediction). Between two adjacent grades, prefer the lower; when unsure a defect is grade-affecting, count it. EXCEPTION: clearly minor defects with strong eye appeal — don't grade low just for safety. Applies to RoboGrade and CGC alike. MID-GRADE GUARD: a book showing genuine accumulated wear (multiple defects across faces, soiling, edge/corner wear) belongs in the 4.0–7.0 band, NOT 7.5–8.5 — the most common over-grade error is treating a worn mid-grade book as a clean high-grade one. If the book is not clean-presenting, do not seat it at 8.0+.
+COMPLETENESS IS NOT A FLOOR: a complete, readable book is NOT automatically 1.0 or higher. Never reason "still complete and readable, so 1.0" — that anchors the bottom too high. A complete book carrying multiple high-severity structural defects (tape, missing pieces, spine split, water damage, heavy soiling on both covers) grades 0.5–1.5. 0.5 is a valid and expected grade for the worst COMPLETE books; it has been avoided far too often — assign it when the accumulated damage warrants. (Coverless or incomplete books are No Grade, which is separate from — and below — 0.5.)
 CALIBRATION EXAMPLES (map a defect picture to a grade — reason the same way):
 - 8 individually-minor defects across front/back/spine (light soiling, light toning, edge wear, corner wear, a soft bend), none color-breaking → 6.0. Accumulated minor wear seats a book in the mid band; it is NOT 8.0 just because each defect is light. This is the single most common over-grade.
 - One large missing piece (~2"×1.5") plus heavy accumulated wear across the cover → 1.5. Structural loss sets the ceiling (1.5–2.0); the accumulation pushes to the bottom of that range, not the top.
+- Complete but wrecked — tape / tape residue, two or more missing pieces, a spine split, and heavy soiling across both covers → 0.5. A present cover keeps it out of No Grade, but catastrophic accumulated structural damage seats it at the very bottom of the scale. The subscores follow: Front and Back in the low single digits, Spine near 0.
 - A few minor defects only — one color-breaking spine crease, light corner wear — on an otherwise clean, glossy, flat book → 8.5. Few, light defects on a well-kept copy earn a high grade.
 Calibration: assign 9.0–9.6 for minor defects (don't cap at 8.5 from caution); at 8.5+ stress lines/bends/soiling become grade-defining; structural defects have NO hard cap (gradient per Phase 3). ENHANCE: "Y" if pressing/UV/cleaning could improve (spine roll/rippling, color-breaking creases softening, soiling, tanning on white areas); "N" if structural damage dominates; null if unsure.
 
@@ -1531,6 +1534,17 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
         if (b != null) b = clampInt(b, 0, 20);
         s = clampInt(s, 0, 20);
         i = clampInt(i, 0, 10);
+        // COVERLESS ENFORCEMENT: a physically absent cover scores 0, without
+        // exception. Detect from the model's own words (aiAssessment) and the
+        // defect types, then zero the affected face. Patterns are kept tight to
+        // avoid false positives (e.g. "no cover damage" must NOT match).
+        const _cvTxt = (String(parsed.aiAssessment || '') + ' ' +
+          ((rg.defects || []).map(d => (d && d.type) || '').join(' '))).toLowerCase();
+        const _coverless = /\bcoverless\b|\bmissing cover\b|no front or back cover|no front and back cover/.test(_cvTxt);
+        const _noFront = _coverless || /no front cover|front cover (is )?(missing|absent)|front cover (torn off|detached)( and)? (missing|gone)/.test(_cvTxt);
+        const _noBack  = _coverless || /no back cover|back cover (is )?(missing|absent)|back cover (torn off|detached)( and)? (missing|gone)/.test(_cvTxt);
+        if (_noFront) f = 0;
+        if (_noBack && b != null) b = 0;
         // Write clamped values back
         rg.frontScore    = f;
         if (b != null) rg.backScore = b;
