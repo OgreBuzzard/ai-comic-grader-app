@@ -8316,7 +8316,8 @@ function renderForm() {
       }
     };
     const s = styleByState[own] || styleByState["Owned"];
-    void s; // S20 (#46): collapsed add-flow pill removed — the segmented ownership\n    // control now renders above the image slots in every form state.\n    return "";
+    void s;
+    return ""; // S20 (#46): collapsed add-flow pill removed; the segmented pill renders above the image slots in every form state.
   })()}\n    <div style="display:flex;justify-content:center;margin-top:8px">\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="enterManualMode()" style="width:75%">Enter Manually</button>\n    </div>\n    `}\n  </div>`;
   document.getElementById("main").innerHTML = html;
   _maybeRefreshLocalPG(); // S21: refresh the on-device Photograder pre-check if images changed
