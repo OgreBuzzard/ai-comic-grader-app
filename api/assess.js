@@ -1057,11 +1057,12 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     // thinking:{type:'adaptive'} and output_config.effort (Anthropic in fact
     // recommends combining them on 4.6) — no payload changes needed vs 4.8.
     // Expect lower input-token cost (~$0.10/run) than 4.8's tokenizer.
-    const PRIMARY_MODEL = 'claude-fable-5';
+    const PRIMARY_MODEL = 'claude-opus-5'; // v4.51: Opus 5 ($5/$25 — half of Fable 5), launched 2026-07-24
     // Per-token rates per model (verified June 2026). Cost logging reads from
     // this table so the calibration matrix logs TRUE costs for every round.
     // Cache read = 10% of input rate; cache creation = 1.25x input rate.
     const MODEL_RATES = {
+      'claude-opus-5':     { in: 5  / 1e6, out: 25 / 1e6 },
       'claude-fable-5':    { in: 10 / 1e6, out: 50 / 1e6 },
       'claude-opus-4-8':   { in: 5  / 1e6, out: 25 / 1e6 },
       'claude-opus-4-6':   { in: 5  / 1e6, out: 25 / 1e6 },
