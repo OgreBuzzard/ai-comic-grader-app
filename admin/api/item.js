@@ -51,7 +51,13 @@ function matchFmv(idx, title, issue, grade, printing, year) {
   if (!Array.isArray(breaks) || !breaks.length) {
     // S20 blanket rule (mirrors the app): uncovered 1991+ books default to tier 1.
     const y = parseInt(year, 10);
-    if (isFinite(y) && y >= 1991 && idx.tiers && idx.tiers['1']) return { tier: 1, low: idx.tiers['1'][0], high: idx.tiers['1'][1] };
+    if (isFinite(y) && y >= 1991 && idx.tiers && idx.tiers['1']) {
+      // The app's top grade (9.8) on a blanket book is worth more than the
+      // $1-20 tier-1 floor; seat it at tier 2 ($20-50).
+      const _bt = (g >= 9.8 && idx.tiers['2']) ? '2' : '1';
+      const _bb = idx.tiers[_bt];
+      return { tier: Number(_bt), low: _bb[0], high: _bb[1] };
+    }
     return null;
   }
   let tier = breaks[0][1];

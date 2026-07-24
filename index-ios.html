@@ -2121,7 +2121,11 @@ window.matchFMV = function matchFMV(title, issue, grade, printing, year) {
     // like Walking Dead #1 / Absolute Batman #1 keep their real values.
     const y = parseInt(year, 10);
     if (isFinite(y) && y >= 1991 && _fmvIndex.tiers && _fmvIndex.tiers["1"]) {
-      return { tier: 1, low: _fmvIndex.tiers["1"][0], high: _fmvIndex.tiers["1"][1], blanket: true };
+      // The app's top grade (9.8) on a blanket book is worth more than the
+      // $1-20 tier-1 floor; seat it at tier 2 ($20-50).
+      const _bt = (g >= 9.8 && _fmvIndex.tiers["2"]) ? "2" : "1";
+      const _bb = _fmvIndex.tiers[_bt];
+      return { tier: Number(_bt), low: _bb[0], high: _bb[1], blanket: true };
     }
     return null;
   }
