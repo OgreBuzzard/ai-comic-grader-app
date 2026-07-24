@@ -113,7 +113,7 @@ export default async function handler(req, res) {
       if (ms >= cutoffs.month) { revenue.monthCents += amt; revenue[pfx + 'MonthCents'] += amt; revenue[pfx + 'NetMonthCents'] += netCents; const k = new Date(ms).toISOString().slice(0, 10); revByDay[k] = (revByDay[k] || 0) + netCents; }
     }
 
-    // Avg cost of the last ~30 REAL assessments (excludes slab-checks + errored
+    // Avg cost of the last ~100 REAL assessments (excludes slab-checks + errored
     // rows). One small indexed query (150 most-recent) — does not meaningfully
     // slow the dashboard. Used to estimate the liability of outstanding credits.
     // One bounded timings read (recent ~2500 ≈ last ~5 weeks at current volume)
@@ -137,7 +137,7 @@ export default async function handler(req, res) {
           if (ms >= cutoffs.week) spend.weekCents += cents;
           if (ms >= cutoffs.month) { spend.monthCents += cents; const k = new Date(ms).toISOString().slice(0, 10); spendByDay[k] = (spendByDay[k] || 0) + cents; }
         }
-        if (t.kind !== 'slabcheck' && cost > 0 && costs.length < 30) costs.push(cost);
+        if (t.kind !== 'slabcheck' && cost > 0 && costs.length < 100) costs.push(cost);
       }
       if (costs.length) avgAssessmentCost = costs.reduce((a, b) => a + b, 0) / costs.length;
     } catch (e) { console.warn('[admin-stats] timings read skipped:', e.message); }

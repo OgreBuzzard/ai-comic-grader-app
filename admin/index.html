@@ -1152,7 +1152,7 @@ function renderStats() {
     <div class="stats-grid">
       <div class="stat-card"><h3>Accounts</h3><div class="total">${accounts.total}</div><div class="breakouts"><span><strong>${accounts.day}</strong> 24h</span><span><strong>${accounts.week}</strong> 7d</span><span><strong>${accounts.month}</strong> 30d</span></div></div>
       <div class="stat-card"><h3>Items</h3><div class="total">${items.total}</div><div class="breakouts"><span><strong>${items.day}</strong> 24h</span><span><strong>${items.week}</strong> 7d</span><span><strong>${items.month}</strong> 30d</span></div></div>
-      <div class="stat-card"><h3>Credits Outstanding</h3><div class="total">${(credits && credits.outstanding != null ? credits.outstanding : 0).toLocaleString()}</div><div class="breakouts"><span title="Outstanding credits × avg cost of last 30 assessments (${credits && credits.avgAssessmentCost != null ? '$' + credits.avgAssessmentCost.toFixed(3) : '—'} ea)">≈ ${dollars(Math.round(((credits && credits.liability) || 0) * 100))} if all used</span></div></div>
+      <div class="stat-card"><h3>Credits Outstanding</h3><div class="total">${(credits && credits.outstanding != null ? credits.outstanding : 0).toLocaleString()}</div><div class="breakouts"><span title="Outstanding credits × avg cost of last 100 assessments (${credits && credits.avgAssessmentCost != null ? '$' + credits.avgAssessmentCost.toFixed(3) : '—'} ea)">≈ ${dollars(Math.round(((credits && credits.liability) || 0) * 100))} if all used</span></div></div>
     </div>
     <div style="margin-top:14px;">
       <div onclick="_toggleIncome()" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;margin-bottom:8px;">
@@ -2270,6 +2270,17 @@ function renderItemDetail(it) {
       </div>
       <div id="rescore-result" style="margin-top:8px;font-size:12px;color:#aaa;"></div>
     </div>
+    <div style="margin-top:16px;border-top:1px solid var(--rule);padding-top:12px;">
+      <h3 class="section-h" style="margin-top:0">Item State (admin)</h3>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="font-size:11px;color:#9aa">Current:</span>
+        <span class="pill" style="color:${ownColor[it.ownership] || 'var(--text)'}"><strong>${escapeHtml(it.ownership || 'None')}</strong></span>
+        <button onclick="cycleState()" style="padding:6px 12px;background:var(--panel-2);border:1px solid var(--rule);color:var(--text);border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">Cycle → <span id="state-candidate">${escapeHtml(it.ownership || 'Owned')}</span></button>
+        <button id="state-confirm-btn" onclick="confirmState()" style="display:none;padding:6px 12px;background:#c9a0ff;border:none;color:#1a0a2a;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer">✓ Confirm <span id="state-confirm-label"></span></button>
+        <span id="state-result" style="font-size:12px;color:#9aa"></span>
+      </div>
+      <div style="font-size:10px;color:#9aa;margin-top:6px">Tap Cycle to pick Owned/Sold/Watching/Print, then Confirm. Recovers books stuck in Print. Resets after 5s.</div>
+    </div>
     <div style="margin-top:20px;border-top:1px solid #3a1a1a;padding-top:14px;">
       <button onclick="deleteItemConfirm()" style="width:100%;padding:10px;background:#2a1414;color:#e85050;border:1px solid #5a2a2a;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🗑 Delete this entry (permanent)</button>
       <div id="delete-result" style="margin-top:6px;font-size:11px;color:#9aa;"></div>
@@ -2424,6 +2435,55 @@ async function rescoreItem() {
       resultEl.style.color = '#e55';
       resultEl.textContent = 'Re-score failed: ' + e.message;
     }
+  }
+}
+
+// ── Admin item-state tap-cycle ──────────────────────────────────────────
+// Cycle Owned → Sold → Watching → Print (tap to pick), then a separate
+// Confirm tap commits — mirrors the two-tap "arm" pattern used for defect
+// deletes so a book's state can't be changed by a single accidental tap.
+// Primary use: recover a book stranded in Print (invisible to the user's app)
+// by setting it back to Owned.
+const _STATE_ORDER = ['Owned', 'Sold', 'Watching', 'Print'];
+let _stateCandidate = null;
+let _stateCandidateItemId = null;
+let _stateResetTimer = null;
+function _resetStateCycle() {
+  _stateCandidate = null;
+  const it = window._adminItem;
+  const c = document.getElementById('state-candidate');
+  const cb = document.getElementById('state-confirm-btn');
+  if (c && it) c.textContent = it.ownership || 'Owned';
+  if (cb) cb.style.display = 'none';
+}
+function cycleState() {
+  const it = window._adminItem; if (!it) return;
+  if (_stateCandidateItemId !== it.id) { _stateCandidate = null; _stateCandidateItemId = it.id; }
+  const cur = _STATE_ORDER.includes(it.ownership) ? it.ownership : 'Owned';
+  const base = _stateCandidate || cur;
+  const next = _STATE_ORDER[(_STATE_ORDER.indexOf(base) + 1) % _STATE_ORDER.length];
+  _stateCandidate = next;
+  const c = document.getElementById('state-candidate'); if (c) c.textContent = next;
+  const cb = document.getElementById('state-confirm-btn');
+  const lbl = document.getElementById('state-confirm-label');
+  if (cb) cb.style.display = (next !== cur) ? '' : 'none';
+  if (lbl) lbl.textContent = next;
+  clearTimeout(_stateResetTimer);
+  _stateResetTimer = setTimeout(_resetStateCycle, 5000);
+}
+async function confirmState() {
+  const it = window._adminItem; if (!it || !_stateCandidate) return;
+  clearTimeout(_stateResetTimer);
+  const target = _stateCandidate;
+  const el = document.getElementById('state-result');
+  if (el) { el.style.color = '#9aa'; el.textContent = 'Setting…'; }
+  try {
+    const resp = await api('/api/set_state', { method: 'POST', body: { userId: it.uid, itemId: it.id, ownership: target } });
+    if (el) { el.style.color = '#6a6'; el.textContent = resp.message || ('State set to ' + target); }
+    _stateCandidate = null;
+    setTimeout(() => showItem(it.uid, it.id, state.tab || 'items'), 1200);
+  } catch (e) {
+    if (el) { el.style.color = '#e55'; el.textContent = 'Failed: ' + (e.message || e); }
   }
 }
 
