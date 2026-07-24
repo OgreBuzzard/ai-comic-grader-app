@@ -500,7 +500,7 @@ Rules:
     const hasGradeRefs = gradeRefBlocks.length > 0;
 
     const _antBody = {
-      model: 'claude-opus-4-8',
+      model: 'claude-opus-5',
       // S15 May 29: effort=medium via output_config + adaptive thinking
       // enabled. See assess.js for full rationale comments — same setup here.
       // Thinking helps the calibration step (defects → grade); medium scopes
@@ -711,7 +711,7 @@ Rules:
             totalMs: phaseTimings.totalMs,
             phases: phaseTimings,
             version: ROBOGRADE_VERSION,
-            model: 'claude-opus-4-8',
+            model: 'claude-opus-5',
             deepAssessment: true,
             gateResult: 'IMAGE_MISMATCH',
             imageMismatch: true,
@@ -815,7 +815,7 @@ Rules:
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
-          model: 'claude-opus-4-8',
+          model: 'claude-opus-5',
           deepAssessment: true,
           gateResult: parsed.gateResult || 'COMIC',
           predictedGrade: parsed.grade || null,
@@ -871,7 +871,7 @@ Rules:
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
-          model: 'claude-opus-4-8',
+          model: 'claude-opus-5',
           deepAssessment: true,
           imageCount: macroBlocks.length,
           costUsd: 0,

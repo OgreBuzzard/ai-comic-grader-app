@@ -350,7 +350,7 @@ Rules:
     sseEvent('phase', { phase: 0, name: 'populating' });
 
     const _antBody = {
-      model: 'claude-opus-4-8',
+      model: 'claude-opus-5',
       // S15 May 29: effort=medium via output_config + adaptive thinking
       // enabled. See assess.js for full rationale comments — same setup here.
       // Thinking helps the calibration step (defects → grade); medium scopes
@@ -631,7 +631,7 @@ Rules:
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
-          model: 'claude-opus-4-8',
+          model: 'claude-opus-5',
           fullAssessment: true,
           grade,
           pageQuality,
@@ -690,7 +690,7 @@ Rules:
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
-          model: 'claude-opus-4-8',
+          model: 'claude-opus-5',
           fullAssessment: true,
           imageCount: Array.isArray(imageBlocks) ? imageBlocks.length : 0,
           costUsd: 0,
