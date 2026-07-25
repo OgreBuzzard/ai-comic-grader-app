@@ -223,6 +223,42 @@ export default async function handler(req, res) {
       return true;
     });
 
+    // ── Cost + duration join (assessment_timings) ─────────────────────────────
+    // Each item stores assessmentTimingKeys — the reliable bridge to its timing
+    // records, which carry per-run costUsd + totalMs (duration), plus the grade
+    // and version to correlate. Batch-fetch only the referenced timing docs so
+    // exports record cost + duration for every assessment run.
+    try {
+      const keySet = new Set();
+      for (const it of filtered) (it.assessmentTimingKeys || []).forEach(k => k && keySet.add(k));
+      const keys = [...keySet];
+      const timingMap = {};
+      for (let i = 0; i < keys.length; i += 300) {
+        const refs = keys.slice(i, i + 300).map(k => db.collection('assessment_timings').doc(k));
+        const snaps = refs.length ? await db.getAll(...refs) : [];
+        for (const s of snaps) {
+          if (!s.exists) continue;
+          const t = s.data();
+          timingMap[s.id] = {
+            costUsd: t.costUsd ?? null,
+            durationMs: t.totalMs ?? (t.phases && t.phases.totalMs) ?? null,
+            model: t.model || null,
+            version: t.version || null,
+            rgScore: t.rgScore ?? null,
+            predictedGrade: t.predictedGrade ?? null,
+          };
+        }
+      }
+      for (const it of filtered) {
+        it._timings = (it.assessmentTimingKeys || [])
+          .map(k => (timingMap[k] ? { key: k, ...timingMap[k] } : null))
+          .filter(Boolean);
+      }
+    } catch (e) {
+      // Non-fatal: if the timings read fails, the export still ships without them.
+      console.warn('[admin-export] timings join skipped:', e.message);
+    }
+
     const filtersApplied = {
       minRG, maxRG, minPG, maxPG, since: q.since || null, until: q.until || null, title: q.title || null,
       type: q.type || null, excludeUid: excludeUids, optInOnly, limit: limit ?? null,
