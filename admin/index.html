@@ -1065,8 +1065,14 @@ function renderUsersTab() {
 }
 
 function renderItemsTab() {
+  // State filter chips — isolate books by ownership (e.g. all stuck in Print).
+  const stateChips = ['', 'Owned', 'Sold', 'Watching', 'Print'].map(s => {
+    const on = (state.itemState || '') === s;
+    return `<button data-state="${s}" style="padding:4px 12px;border-radius:14px;font-size:11px;font-weight:700;cursor:pointer;border:1px solid var(--rule);background:${on ? 'var(--accent)' : 'var(--panel-2)'};color:${on ? '#000' : 'var(--text)'}">${s || 'All'}</button>`;
+  }).join('');
   document.getElementById('tab-content').innerHTML = `
     <input type="search" id="items-search" placeholder="Search title, issue, or user…" class="search-input" value="${escapeAttr(state.itemSearch || '')}">
+    <div id="items-state-filter" style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0;">${stateChips}</div>
     <div class="sort-bar" id="items-sort-bar"></div>
     <div id="items-section"><div class="loading">Loading items…</div></div>
   `;
@@ -1080,6 +1086,9 @@ function renderItemsTab() {
       loadItems(true);
     }, 300);
   };
+  document.querySelectorAll('#items-state-filter [data-state]').forEach(btn => {
+    btn.onclick = () => { state.itemState = btn.dataset.state; renderItemsTab(); };
+  });
   renderItemsSortBar();
   loadItems(true);
 }
@@ -1335,7 +1344,7 @@ async function loadItems(reset = false) {
   const offset = state.itemsList.length;
   const q = encodeURIComponent(state.itemSearch || '');
   try {
-    const res = await api(`/api/items?sort=${state.itemsSort}&dir=${state.itemsDir}&limit=10&offset=${offset}&q=${q}`);
+    const res = await api(`/api/items?sort=${state.itemsSort}&dir=${state.itemsDir}&limit=10&offset=${offset}&q=${q}&state=${encodeURIComponent(state.itemState || '')}`);
     state.itemsList = state.itemsList.concat(res.items);
     state.itemsHasMore = res.hasMore;
     state.itemsTotal = res.total;
@@ -1652,7 +1661,7 @@ function renderUserDetail(user, items, publicRate) {
           // FMV line, and tier stars + PG/RG. Tapping opens the item detail.
           const thumbSrc = it.inlineThumb || it.thumbUrl;
           return `
-          <div class="row item-row" style="cursor:pointer" onclick="showItem('${escapeAttr(user.uid)}','${escapeAttr(it.id)}','user')">
+          <div class="row item-row" data-uid="${escapeAttr(user.uid)}" data-id="${escapeAttr(it.id)}" style="cursor:pointer" onclick="showItem('${escapeAttr(user.uid)}','${escapeAttr(it.id)}','user')">
             ${thumbSrc ? `<div class="row-thumb"><img src="${escapeAttr(thumbSrc)}" alt="" loading="lazy"></div>` : '<div class="row-thumb empty"></div>'}
             <div class="main">
               <div class="title" style="white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escapeHtml(it.title)}${it.issue ? ' #' + escapeHtml(it.issue) : ''}</div>

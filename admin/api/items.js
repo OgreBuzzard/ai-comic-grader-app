@@ -197,6 +197,14 @@ export default async function handler(req, res) {
       });
     }
 
+    // ── State filter (ownership) ─────────────────────────────────────────────
+    // Lets the dashboard isolate every book in a given state — e.g. all books
+    // stuck in "Print" after the print-flow bug, to reset them to Owned.
+    const stateFilter = (req.query.state || '').toString().trim();
+    if (stateFilter) {
+      allItems = allItems.filter(it => (it.ownership || 'None') === stateFilter);
+    }
+
     // ── Sort ─────────────────────────────────────────────────────────────────
     const cmp = (a, b) => {
       let cmpResult = 0;
