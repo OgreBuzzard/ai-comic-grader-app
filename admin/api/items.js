@@ -168,6 +168,7 @@ export default async function handler(req, res) {
         score: flat.roboGrade?.score ?? null,
         assessedCGCGrade: flat.assessedCGCGrade ?? null,
         publicListing: !!flat.publicListing,
+        ownership: flat.ownership || '',
         highGradeAssessed,
         // S20 tier for the 1/2/3-star list badge. Heuristic: Full = 8-slot
         // interior images present; Deep = high-grade/corner-macro pass; else Main.
