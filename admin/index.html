@@ -1072,7 +1072,7 @@ function renderItemsTab() {
   }).join('');
   document.getElementById('tab-content').innerHTML = `
     <input type="search" id="items-search" placeholder="Search title, issue, or user…" class="search-input" value="${escapeAttr(state.itemSearch || '')}">
-    <div id="items-state-filter" style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0;">${stateChips}</div>
+    <div id="items-state-filter" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0;">${stateChips}<button onclick="resetPrintAll()" title="Bulk-reset every book stuck in Print back to Owned" style="margin-left:8px;padding:4px 12px;border-radius:14px;font-size:11px;font-weight:700;cursor:pointer;border:1px solid #7a4ba8;background:#2a1a3a;color:#c9a0ff">↺ Reset all Print → Owned</button></div>
     <div class="sort-bar" id="items-sort-bar"></div>
     <div id="items-section"><div class="loading">Loading items…</div></div>
   `;
@@ -2493,6 +2493,19 @@ async function confirmState() {
     setTimeout(() => showItem(it.uid, it.id, state.tab || 'items'), 1200);
   } catch (e) {
     if (el) { el.style.color = '#e55'; el.textContent = 'Failed: ' + (e.message || e); }
+  }
+}
+
+// Bulk-reset every book stuck in Print → Owned (recovers books stranded by the
+// print-flow bug). Gated by a confirm since it writes across all users' items.
+async function resetPrintAll() {
+  if (!confirm('Reset EVERY book currently in Print state back to Owned?\n\nThis affects all users — use it to recover books stranded by the print-flow bug.')) return;
+  try {
+    const resp = await api('/api/reset_print', { method: 'POST' });
+    alert(resp.message || ('Reset ' + resp.reset + ' books from Print to Owned.'));
+    loadItems(true);
+  } catch (e) {
+    alert('Reset failed: ' + (e.message || e));
   }
 }
 
