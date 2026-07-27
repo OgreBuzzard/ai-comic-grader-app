@@ -1065,14 +1065,8 @@ function renderUsersTab() {
 }
 
 function renderItemsTab() {
-  // State filter chips — isolate books by ownership (e.g. all stuck in Print).
-  const stateChips = ['', 'Owned', 'Sold', 'Watching', 'Print'].map(s => {
-    const on = (state.itemState || '') === s;
-    return `<button data-state="${s}" style="padding:4px 12px;border-radius:14px;font-size:11px;font-weight:700;cursor:pointer;border:1px solid var(--rule);background:${on ? 'var(--accent)' : 'var(--panel-2)'};color:${on ? '#000' : 'var(--text)'}">${s || 'All'}</button>`;
-  }).join('');
   document.getElementById('tab-content').innerHTML = `
     <input type="search" id="items-search" placeholder="Search title, issue, or user…" class="search-input" value="${escapeAttr(state.itemSearch || '')}">
-    <div id="items-state-filter" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0;">${stateChips}<button onclick="resetPrintAll()" title="Bulk-reset every book stuck in Print back to Owned" style="margin-left:8px;padding:4px 12px;border-radius:14px;font-size:11px;font-weight:700;cursor:pointer;border:1px solid #7a4ba8;background:#2a1a3a;color:#c9a0ff">↺ Reset all Print → Owned</button></div>
     <div class="sort-bar" id="items-sort-bar"></div>
     <div id="items-section"><div class="loading">Loading items…</div></div>
   `;
@@ -1086,9 +1080,6 @@ function renderItemsTab() {
       loadItems(true);
     }, 300);
   };
-  document.querySelectorAll('#items-state-filter [data-state]').forEach(btn => {
-    btn.onclick = () => { state.itemState = btn.dataset.state; renderItemsTab(); };
-  });
   renderItemsSortBar();
   loadItems(true);
 }
@@ -1344,7 +1335,7 @@ async function loadItems(reset = false) {
   const offset = state.itemsList.length;
   const q = encodeURIComponent(state.itemSearch || '');
   try {
-    const res = await api(`/api/items?sort=${state.itemsSort}&dir=${state.itemsDir}&limit=10&offset=${offset}&q=${q}&state=${encodeURIComponent(state.itemState || '')}`);
+    const res = await api(`/api/items?sort=${state.itemsSort}&dir=${state.itemsDir}&limit=10&offset=${offset}&q=${q}`);
     state.itemsList = state.itemsList.concat(res.items);
     state.itemsHasMore = res.hasMore;
     state.itemsTotal = res.total;
@@ -2493,19 +2484,6 @@ async function confirmState() {
     setTimeout(() => showItem(it.uid, it.id, state.tab || 'items'), 1200);
   } catch (e) {
     if (el) { el.style.color = '#e55'; el.textContent = 'Failed: ' + (e.message || e); }
-  }
-}
-
-// Bulk-reset every book stuck in Print → Owned (recovers books stranded by the
-// print-flow bug). Gated by a confirm since it writes across all users' items.
-async function resetPrintAll() {
-  if (!confirm('Reset EVERY book currently in Print state back to Owned?\n\nThis affects all users — use it to recover books stranded by the print-flow bug.')) return;
-  try {
-    const resp = await api('/api/reset_print', { method: 'POST' });
-    alert(resp.message || ('Reset ' + resp.reset + ' books from Print to Owned.'));
-    loadItems(true);
-  } catch (e) {
-    alert('Reset failed: ' + (e.message || e));
   }
 }
 

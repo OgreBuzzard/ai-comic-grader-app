@@ -2699,6 +2699,7 @@ async function initFirebase() {
   fsDoc = window._fsDoc;
   fsGetDoc = window._fsGetDoc;
   fsOnSnapshot = window._fsOnSnapshot;
+  _initClientMeta();   // S21: resolve platform + native app version for item stamping
   if (!window._currentUser) {
     return;
   }
@@ -3338,6 +3339,27 @@ async function gradeFromHeader() {
   showAdd();
 }
 
+// Client build stamp (S21): record which platform + app build wrote each item,
+// so a corrupted/odd entry can be traced to a specific client (e.g. an old iOS
+// binary vs the current PWA) instead of reconstructed after the fact. Native
+// version comes from @capacitor/app App.getInfo(); resolved once at boot.
+let _clientAppVersionCache = null;
+async function _initClientMeta() {
+  try {
+    const App = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+    if (App && App.getInfo) {
+      const i = await App.getInfo();
+      _clientAppVersionCache = String(i.version || "?") + (i.build ? "+" + i.build : "");
+    }
+  } catch (e) { /* fall through to web */ }
+  if (!_clientAppVersionCache) _clientAppVersionCache = "web";
+}
+function _clientPlatform() {
+  try { return (window.Capacitor && window.Capacitor.getPlatform && window.Capacitor.getPlatform()) || "web"; }
+  catch (e) { return "web"; }
+}
+function _clientAppVersion() { return _clientAppVersionCache || "pending"; }
+
 async function saveItem(rec) {
   if (rec && rec.id === SAMPLE_COMIC_ID) return;
   if (rec) {
@@ -3346,6 +3368,10 @@ async function saveItem(rec) {
     if (rec.dateSold === undefined) rec.dateSold = null;
     if (rec.salePrice === undefined) rec.salePrice = null;
     if (rec.askingPrice === undefined) rec.askingPrice = null;
+    // S21: stamp the writing client on every save.
+    rec.clientPlatform = _clientPlatform();
+    rec.clientAppVersion = _clientAppVersion();
+    rec.clientSavedAt = new Date().toISOString();
   }
   syncMsg("Saving...");
   try {

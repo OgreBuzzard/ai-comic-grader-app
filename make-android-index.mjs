@@ -321,5 +321,21 @@ mustReplace('A7e modal ids short_box',
           <div style="font-size:13px;color:#3a2a1a;margin-top:3px">100 assessments</div>
           <div id="unit-short_box" style="font-size:12px;color:#6a5a4a;margin-top:1px">($1.00 each)</div>`);
 
+// ── A8: force Firestore long-polling on Android ──────────────────────────────
+// The production client uses experimentalAutoDetectLongPolling. Auto-detect
+// works in WKWebView (iOS) but the detection probe STALLS in the Android
+// WebView: the initial onSnapshot handshake never completes, so it fires
+// neither onNext nor onError. The app hangs before the first render — the user
+// sees 0 entries (not even the SAMPLE fallback, since that only shows once a
+// snapshot resolves/errors). Forcing long-polling skips detection and connects
+// reliably. Android-only; iOS/web keep auto-detect.
+mustReplace('A8 force Firestore long-polling',
+`const db = initializeFirestore(app, {
+  experimentalAutoDetectLongPolling: true
+});`,
+`const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true
+});`);
+
 writeFileSync(outPath, html);
 console.log(`\nAll ${applied} deltas applied. Wrote ${outPath} (${html.length.toLocaleString()} bytes).`);
