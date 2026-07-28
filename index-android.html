@@ -4123,7 +4123,7 @@ function _iosPrefetchPrices() {
   if (_iosPricePrefetched) return;
   if (!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) return;
   _iosPricePrefetched = true;
-  _iosFetchPrices().then(function(p) { if (p) _applyIosPrices(p); }).catch(function() {});
+  try { if (typeof _playFetchPrices === 'function') _playFetchPrices().then(function(p) { if (p && typeof _applyPlayPrices === 'function') _applyPlayPrices(p); }).catch(function() {}); } catch (e) {}
 }
 // S20: Title separators. New accounts — and any account where no title has more
 // than one issue — show a FLAT alphabetical list (no collapsible title dividers).

@@ -400,6 +400,17 @@ async function handleSend(req, res) {
 // ── router ──────────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
+  // CORS: the native Capacitor apps call this cross-origin (WebView origin
+  // https://localhost → robograder.app), which triggers a preflight OPTIONS.
+  // The preflight carries the ?action= query, so it would otherwise dispatch
+  // into a handler and hit the auth gate (401), failing the browser's preflight
+  // check. Answer OPTIONS here, before dispatch. (Matches api/assess.js.)
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, x-client-secret');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+
   // Resolve action from query (GET-friendly) or body (POST).
   const queryAction = req.query && req.query.action;
   const bodyAction = req.body && req.body.action;

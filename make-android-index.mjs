@@ -322,13 +322,11 @@ mustReplace('A7e modal ids short_box',
           <div id="unit-short_box" style="font-size:12px;color:#6a5a4a;margin-top:1px">($1.00 each)</div>`);
 
 // ── A8: force Firestore long-polling on Android ──────────────────────────────
-// The production client uses experimentalAutoDetectLongPolling. Auto-detect
-// works in WKWebView (iOS) but the detection probe STALLS in the Android
-// WebView: the initial onSnapshot handshake never completes, so it fires
-// neither onNext nor onError. The app hangs before the first render — the user
-// sees 0 entries (not even the SAMPLE fallback, since that only shows once a
-// snapshot resolves/errors). Forcing long-polling skips detection and connects
-// reliably. Android-only; iOS/web keep auto-detect.
+// The production client uses experimentalAutoDetectLongPolling. Auto-detect's
+// probe is unreliable in the Android WebView (slow/failed initial connect,
+// recurring WebChannel transport errors). Forcing long-polling skips detection
+// and connects reliably — verified delivering the full collection on-device.
+// Android-only; iOS/web keep auto-detect.
 mustReplace('A8 force Firestore long-polling',
 `const db = initializeFirestore(app, {
   experimentalAutoDetectLongPolling: true
@@ -336,6 +334,21 @@ mustReplace('A8 force Firestore long-polling',
 `const db = initializeFirestore(app, {
   experimentalForceLongPolling: true
 });`);
+
+// ── A9: neutralize the iOS StoreKit price prefetch on Android ─────────────────
+// The base app calls _iosPrefetchPrices() at startup, which invokes
+// _iosFetchPrices() — a function INJECTED ONLY by make-ios-index.mjs. It's
+// guarded by isNativePlatform, which is ALSO true on Android, so on Android the
+// call reaches _iosFetchPrices() (undefined) and throws an uncaught
+// ReferenceError right after the first snapshot resolves. That aborts the render
+// and the app hangs on Loading with the data already in memory. Rewire the
+// prefetch to the Play Billing helpers (defined in A7); typeof-guarded + wrapped
+// so it can never throw even if a helper is missing.
+mustReplace('A9 android price prefetch → Play Billing',
+`  _iosPricePrefetched = true;
+  _iosFetchPrices().then(function(p) { if (p) _applyIosPrices(p); }).catch(function() {});`,
+`  _iosPricePrefetched = true;
+  try { if (typeof _playFetchPrices === 'function') _playFetchPrices().then(function(p) { if (p && typeof _applyPlayPrices === 'function') _applyPlayPrices(p); }).catch(function() {}); } catch (e) {}`);
 
 writeFileSync(outPath, html);
 console.log(`\nAll ${applied} deltas applied. Wrote ${outPath} (${html.length.toLocaleString()} bytes).`);
