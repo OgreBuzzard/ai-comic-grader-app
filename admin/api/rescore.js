@@ -207,6 +207,12 @@ export default async function handler(req, res) {
     const predictedGrade = scoreToGrade(scores.score, originalTotal, originalPredicted);
     const confidenceRange = scores.score >= 90 ? 1 : scores.score >= 70 ? 2 : 3;
 
+    // Store the grade as a "8.0"-style string, matching the original assessment
+    // format (api/assess.js writes String(parseFloat(...).toFixed(1))). A whole
+    // grade kept as a raw JS number (8.0 === 8) drops its decimal and renders as
+    // "8" in the dashboard/app, which display the stored value unformatted.
+    const predictedGradeStr = predictedGrade.toFixed(1);
+
     const updatedRG = {
       ...currentRG,
       score: scores.score,
@@ -225,22 +231,22 @@ export default async function handler(req, res) {
     if (isV3) {
       await itemRef.update({
         'comicData.roboGrade': updatedRG,
-        'comicData.predictedGrade': predictedGrade,
-        'comicData.assessedCGCGrade': predictedGrade
+        'comicData.predictedGrade': predictedGradeStr,
+        'comicData.assessedCGCGrade': predictedGradeStr
       });
     } else {
       await itemRef.update({
         roboGrade: updatedRG,
-        predictedGrade: predictedGrade,
-        assessedCGCGrade: predictedGrade
+        predictedGrade: predictedGradeStr,
+        assessedCGCGrade: predictedGradeStr
       });
     }
 
     return res.status(200).json({
       success: true,
       roboGrade: updatedRG,
-      predictedGrade: predictedGrade,
-      message: `Re-scored: RG ${scores.score}, Grade ${predictedGrade.toFixed(1)}`
+      predictedGrade: predictedGradeStr,
+      message: `Re-scored: RG ${scores.score}, Grade ${predictedGradeStr}`
     });
 
   } catch (e) {
