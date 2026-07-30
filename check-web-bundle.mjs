@@ -8,7 +8,7 @@
 //
 // Run this BEFORE every iOS/Android build. Exits non-zero if anything drifted.
 //   node check-web-bundle.mjs [path-to-web-dir]   (default: ../robograder-ios/web)
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, statSync } from 'fs';
 import { createHash } from 'crypto';
 import { join } from 'path';
 
@@ -24,7 +24,21 @@ const refs = [...new Set(
 const md5 = f => createHash('md5').update(readFileSync(f)).digest('hex');
 let drift = 0;
 
-console.log(`Checking ${refs.length} bundled sibling(s) against ${webDir}\n`);
+// index.html is GENERATED (make-*-index.mjs applies platform deltas), so it can't
+// be md5-compared against source. But the common mistake is forgetting to
+// regenerate it before a build — catch that by mtime: if source index.html is
+// newer than the staged web/index.html, the bundle is stale.
+const webIndex = join(webDir, 'index.html');
+if (existsSync('index.html') && existsSync(webIndex)) {
+  if (statSync('index.html').mtimeMs > statSync(webIndex).mtimeMs) {
+    console.log('✗ STALE: web/index.html is OLDER than source index.html — regenerate it (node make-android-index.mjs / make-ios-index.mjs) before building.');
+    drift++;
+  } else {
+    console.log('✓ index.html (web bundle is up to date with source)');
+  }
+}
+
+console.log(`\nChecking ${refs.length} bundled sibling(s) against ${webDir}\n`);
 for (const f of refs) {
   if (!existsSync(f)) { console.log(`skip (not a repo file): ${f}`); continue; }
   const staged = join(webDir, f);
