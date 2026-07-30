@@ -3524,7 +3524,19 @@ async function iosNativeSignIn(provider) {
         rawNonce: ra.credential && ra.credential.nonce,
       });
     } else {
-      var rg = await FA.signInWithGoogle({ skipNativeAuth: true });
+      // Android's Credential Manager (the plugin default) returns "No credentials
+      // available" on many devices even when a Google account IS present and the
+      // config is correct. On any failure, retry with the legacy Intent-based Google
+      // Sign-In (useCredentialManager:false), which reliably shows the account picker
+      // and returns an ID token. (No-op difference on iOS, which ignores the flag.)
+      var rg;
+      try {
+        rg = await FA.signInWithGoogle({ skipNativeAuth: true });
+      } catch (ceErr) {
+        var ceMsg = (ceErr && (ceErr.message || ceErr.errorMessage)) ? (ceErr.message || ceErr.errorMessage) : String(ceErr);
+        console.warn('[native-signin] Credential Manager failed (' + ceMsg + ') — retrying legacy Google Sign-In');
+        rg = await FA.signInWithGoogle({ skipNativeAuth: true, useCredentialManager: false });
+      }
       cred = window._GoogleAuthProvider.credential(
         rg.credential && rg.credential.idToken,
         rg.credential && rg.credential.accessToken
