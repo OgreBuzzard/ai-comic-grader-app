@@ -1962,6 +1962,16 @@ window.matchFMV = function matchFMV(title, issue, grade, printing, year) {
   // Compression (S20): books[key] may be an integer index into a shared `curves`
   // table (many issues share the same price curve). Deref it. Inline arrays still work.
   if (typeof breaks === "number" && _fmvIndex.curves) breaks = _fmvIndex.curves[breaks];
+  // Volume guard (S21): some issue-number keys hold values for ONE volume only.
+  // e.g. "silver surfer|1" is the valuable 1968 series; the 1987 series reused
+  // #1-18. volumeGuards[key] is the max cover year the stored curve is valid for.
+  // If the book's year is later, drop the curve so a reprint/second-volume book
+  // doesn't inherit the first volume's value (falls through to blanket/null).
+  const _vg = _fmvIndex.volumeGuards && _fmvIndex.volumeGuards[key];
+  if (_vg && Array.isArray(breaks)) {
+    const _vy = parseInt(year, 10);
+    if (isFinite(_vy) && _vy > _vg) breaks = null;
+  }
   if (!Array.isArray(breaks) || !breaks.length) {
     // S20 blanket rule: uncovered modern books (1991+) default to tier 1 ($1-20)
     // at ALL grades. Indexed books (matched above) override this — so exceptions
