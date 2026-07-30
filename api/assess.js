@@ -1548,9 +1548,14 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
         // avoid false positives (e.g. "no cover damage" must NOT match).
         const _cvTxt = (String(parsed.aiAssessment || '') + ' ' +
           ((rg.defects || []).map(d => (d && d.type) || '').join(' '))).toLowerCase();
-        const _coverless = /\bcoverless\b|\bmissing cover\b|no front or back cover|no front and back cover/.test(_cvTxt);
-        const _noFront = _coverless || /no front cover|front cover (is )?(missing|absent)|front cover (torn off|detached)( and)? (missing|gone)/.test(_cvTxt);
-        const _noBack  = _coverless || /no back cover|back cover (is )?(missing|absent)|back cover (torn off|detached)( and)? (missing|gone)/.test(_cvTxt);
+        // Require ABSENCE semantics. The bare "no front/back cover" pattern was a
+        // false-positive trap: it also matched "no back cover DAMAGE/WEAR/defects"
+        // (a CLEAN cover), zeroing that face — the ASM 55 back=0 bug. Now the cover
+        // must be described as missing/absent/gone/torn off/removed, or "no X cover
+        // present/remaining/at all".
+        const _coverless = /\bcoverless\b|\bmissing (front|back|front and back) cover\b|no (front|back) cover (present|remaining|at all)\b/.test(_cvTxt);
+        const _noFront = _coverless || /front cover (is |is entirely |completely )?(missing|absent|gone)\b|front cover (has been |was )?(torn off|removed)\b|no front cover (present|remaining|at all)\b/.test(_cvTxt);
+        const _noBack  = _coverless || /back cover (is |is entirely |completely )?(missing|absent|gone)\b|back cover (has been |was )?(torn off|removed)\b|no back cover (present|remaining|at all)\b/.test(_cvTxt);
         if (_noFront) f = 0;
         if (_noBack && b != null) b = 0;
         // Write clamped values back
