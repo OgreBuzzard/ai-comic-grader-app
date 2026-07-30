@@ -48,22 +48,6 @@
     }
   ],
   "rewrites": [
-    { "source": "/api/delete_user", "destination": "/admin/api/delete_user" },
-    { "source": "/api/download", "destination": "/admin/api/download" },
-    { "source": "/api/export", "destination": "/admin/api/export" },
-    { "source": "/api/item", "destination": "/admin/api/item" },
-    { "source": "/api/items", "destination": "/admin/api/items" },
-    { "source": "/api/purchases", "destination": "/admin/api/purchases" },
-    { "source": "/api/rescore", "destination": "/admin/api/rescore" },
-    { "source": "/api/reset_print", "destination": "/admin/api/reset_print" },
-    { "source": "/api/sales", "destination": "/admin/api/sales" },
-    { "source": "/api/set_state", "destination": "/admin/api/set_state" },
-    { "source": "/api/set_transfer_codes", "destination": "/admin/api/set_transfer_codes" },
-    { "source": "/api/stats", "destination": "/admin/api/stats" },
-    { "source": "/api/timings", "destination": "/admin/api/timings" },
-    { "source": "/api/transfer_sweep", "destination": "/admin/api/transfer_sweep" },
-    { "source": "/api/user", "destination": "/admin/api/user" },
-    { "source": "/api/users", "destination": "/admin/api/users" },
     {
       "source": "/.well-known/apple-app-site-association",
       "destination": "/apple-app-site-association"
