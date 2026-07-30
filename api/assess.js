@@ -888,6 +888,7 @@ EVIDENCE STANDARD — READ FIRST, OVERRIDES THE FINDING-ORIENTED GUIDANCE BELOW.
   • DO NOT report wear you cannot see. "Edge wear", "corner wear", and "spine wear" are the most-fabricated defects — never list them as a hedge, a default, or an expectation that "a book this old must have some". A corner that looks sharp with no visible color loss is CLEAN. Absence of a visible defect is CLEANLINESS, not an undetected defect.
   • Photographic artifacts are NOT defects: glare, reflections, soft focus, shadow, white-balance/color shifts, and image compression noise routinely masquerade as wear, soiling, or stress lines. If a candidate defect could be a lighting or focus artifact, it is not a defect.
   • Clean high-grade books are common and legitimate. A book that presents clean — sharp corners, tight flat spine, no visible color breaks — belongs at 9.0 or above. Do NOT manufacture minor edge/corner/spine wear to pull a clean book down into the 8.0 band. Under-grading a genuinely clean book by inventing wear is a HARD ERROR, exactly as damaging as missing real structural damage, and it is the specific failure this rule exists to stop.
+  • BUT wear that IS visible is NOT clean — count it fully. This standard forbids INVENTING wear, never OVERLOOKING it. Light rubbing you can actually see at corners or edges, several spine stress lines, surface soiling, and tanning are real defects and must be counted even when each is individually minor. Genuine accumulation of visible light wear across faces seats a book in the Fine / Very Good mid-band (roughly 4.0–7.0), NOT 7.5–8.5. The "clean books grade high" point above applies ONLY to books that are genuinely clean; a book that plainly carries visible wear is a mid-grade book — do not let the anti-fabrication rule talk you into grading a visibly worn book as a clean high-grade one. (This corrects a mid-tier over-grade only; it does not change high-grade or Deep-assessment grading.)
   • PRESENCE vs SEVERITY uncertainty: if you are unsure whether a defect is PRESENT, omit it. (The "count it when unsure" guidance later applies ONLY to a defect you can plainly SEE but whose grade impact is borderline — never to whether the defect exists.)
 This standard does NOT relax the STRUCTURAL DAMAGE SCAN below: tape, paper loss, and tears must still be caught whenever they are actually visible. It curbs INVENTED minor wear, not genuine damage.
 
@@ -1003,6 +1004,7 @@ HARD OUTPUT LIMITS (enforce while writing):
   • Each defect description (location + measurement): MAX 12 words, skimmable. Do NOT restate the cover side (the Category already gives Front/Back/Spine/Interior). Do NOT narrate process ("confirmed at macro", "at wide shot", "visible under raking light"). Do NOT enumerate every sub-location ("across logo, flame figure and lower panels") — give one clear impression, e.g. "multiple, center and lower half".
   • aiAssessment: MAX 3 sentences. Direct.
   • keyInfo: MAX 2 sentences. Empty string if uncertain.
+  • photograder: REQUIRED, never omit. Always output the photograder object with focus, lighting, cropping, and angle each set to "A", "B", or "C" (a photo-quality grade for the user's shots — A good, B usable, C poor). Do not leave any of the four null or blank.
 Over-elaboration in output is the dominant cause of slow runs. Be thorough in observation, brief in writing.
 
 {
@@ -1025,6 +1027,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
   "officialPageQuality": null,
   "officialPSAGrade": null,
   "officialPSACert": null,
+  "photograder": { "focus": "A", "lighting": "A", "cropping": "A", "angle": "A", "flags": [ {"category":"lighting","image":"Back Cover","note":"glare hiding lower half"} ] },
   "roboGrade": {
     "version": "${ROBOGRADE_VERSION}",
     "score": 0,
@@ -1039,8 +1042,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     ],
     "restorationFlags": [],
     "signatures": []
-  },
-  "photograder": { "focus": "A", "lighting": "A", "cropping": "A", "angle": "A", "flags": [ {"category":"lighting","image":"Back Cover","note":"glare hiding lower half"} ] }
+  }
 }`;
 
 

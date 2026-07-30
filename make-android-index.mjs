@@ -27,7 +27,8 @@
 // The @capacitor-firebase/authentication plugin (iosNativeSignIn) already does
 // NATIVE Google sign-in on Android — no delta needed for the primary sign-in.
 
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, writeFileSync, copyFileSync, existsSync } from 'fs';
+import { dirname, join } from 'path';
 
 const [, , inPath, outPath] = process.argv;
 if (!inPath || !outPath) {
@@ -352,3 +353,20 @@ mustReplace('A9 android price prefetch → Play Billing',
 
 writeFileSync(outPath, html);
 console.log(`\nAll ${applied} deltas applied. Wrote ${outPath} (${html.length.toLocaleString()} bytes).`);
+
+// Re-stage the locally-bundled sibling files (robograde-panel.js, etc.) next to
+// the generated index so they can NEVER go stale in the app bundle — this is how
+// the Photograder render was lost in 1.0.4. Parse the index for /*.js|css refs,
+// copy each from the source dir to the output dir.
+{
+  const srcDir = dirname(inPath), outDir = dirname(outPath);
+  const siblings = [...new Set([...html.matchAll(/(?:src|href)="\/([a-zA-Z0-9_.\-]+\.(?:js|css))"/g)].map(m => m[1]))];
+  let copied = 0;
+  for (const f of siblings) {
+    const from = join(srcDir, f), to = join(outDir, f);
+    if (from === to || !existsSync(from)) continue;
+    try { copyFileSync(from, to); copied++; console.log(`  staged sibling: ${f}`); }
+    catch (e) { console.error(`  WARN could not stage ${f}: ${e.message}`); }
+  }
+  console.log(`Staged ${copied} bundled sibling file(s) alongside the index.`);
+}

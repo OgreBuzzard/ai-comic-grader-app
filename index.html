@@ -40,6 +40,14 @@
   <link rel="preconnect" href="https://firebasestorage.googleapis.com" crossorigin>
   <link rel="dns-prefetch" href="https://firebasestorage.googleapis.com">
 
+  <!-- ⚠️ BUNDLED SIBLING FILES — these are SEPARATE top-level files, not part of
+       index.html. The iOS/Android apps bundle them locally (loaded from the app's
+       own assets, NOT the server), so when you change one you MUST re-stage it into
+       robograder-ios/web/ alongside index.html or the shipped app runs a stale copy.
+       (This is exactly how the Photograder render went missing in 1.0.4.)
+       Before any iOS/Android build run:  node check-web-bundle.mjs
+       to verify the web bundle matches these sources. Bundled siblings:
+         robograde-panel.js, scan-animation.js, slab-detect.js -->
   <script src="/robograde-panel.js"></script>
 
   <script src="/scan-animation.js"></script>
@@ -9677,13 +9685,16 @@ async function _computeLocalPhotograder() {
 }
 function _preAssessPGCellsHTML() {
   const pg = formData._pgLocal || {};
-  const cell = (label, letter) => {
+  // Use the SAME cell renderer as the full results panel (robograde-panel.js →
+  // window.RobograderPanel.pgCell) so the pre-assessment and results panels match
+  // exactly. Fallback kept only in case the panel script hasn't loaded yet.
+  const cell = (window.RobograderPanel && window.RobograderPanel.pgCell) || ((label, letter) => {
     const L = String(letter || "").toUpperCase();
     const map = { A: { bg: "#4e9e2e", lab: "#143d08", ltr: "#10240c" }, B: { bg: "#ffd655", lab: "#4a3406", ltr: "#3a2804" }, C: { bg: "#cc4436", lab: "#4a1410", ltr: "#40100a" } };
     const s = map[L] || { bg: "#26331c", lab: "#6a8a4a", ltr: "#6a8a4a" };
     const show = (L === "A" || L === "B" || L === "C") ? L : "?";
-    return `<div style="flex:1;text-align:center;background:${s.bg};border:1.5px solid #4a7028;border-radius:8px;padding:8px 2px"><div style="font-size:9px;color:${s.lab};letter-spacing:0.5px;margin-bottom:3px">${label}</div><div style="font-size:24px;font-weight:600;color:${s.ltr};line-height:1">${show}</div></div>`;
-  };
+    return `<div style="flex:1;text-align:center;background:${s.bg};border:1.5px solid #4a7028;border-radius:8px;padding:8px 2px"><div style="font-size:9px;color:${s.lab};letter-spacing:0.5px;margin-bottom:3px">${label}</div><div style="font-size:26px;font-weight:600;color:${s.ltr};line-height:1">${show}</div></div>`;
+  });
   return cell("FOCUS", pg.focus) + cell("LIGHTING", pg.lighting) + cell("CROPPING", "?") + cell("ANGLE", "?");
 }
 // The pre-assessment mini-panel. Hidden once the book is assessed (the real
@@ -9692,7 +9703,7 @@ function _preAssessPGPanel() {
   if (formData.roboGrade) return "";
   if (!(formData.images || []).filter(Boolean).length) return "";
   return `<div style="margin-top:12px;background:#152e10;border:1.5px solid #4a7028;border-radius:12px;padding:12px">
-    <div style="font-size:12px;font-weight:700;color:#7aa838;letter-spacing:2px;text-align:center;margin-bottom:9px">PHOTOGRADER</div>
+    <div style="font-size:12px;font-weight:700;color:#7aa838;letter-spacing:2px;text-align:center;margin-bottom:10px">PHOTOGRADER</div>
     <div id="pre-assess-photograder-cells" style="display:flex;gap:6px">${_preAssessPGCellsHTML()}</div>
     <div style="margin-top:8px;font-size:10px;color:#6a8a4a;text-align:center;line-height:1.4">Cropping and Angle are graded after assessment.</div>
   </div>`;

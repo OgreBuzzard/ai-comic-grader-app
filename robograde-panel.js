@@ -349,5 +349,8 @@
 
   // Expose under a namespace so we don't pollute the global scope and so the
   // intent ("this is the shared RoboGrader panel") is clear at every call site.
-  window.RobograderPanel = { buildDisplay: buildRoboGradeDisplay };
+  // pgCell is exposed so the pre-assessment Photograder mini-panel in index.html
+  // renders IDENTICAL cells to the full results panel (single source of truth —
+  // prevents the two from drifting apart visually).
+  window.RobograderPanel = { buildDisplay: buildRoboGradeDisplay, pgCell: _pgCell };
 })();
