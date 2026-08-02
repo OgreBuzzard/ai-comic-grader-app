@@ -1798,31 +1798,35 @@ window.exitSplashSigninAndShowApp = function() {
         <a href="mailto:support@robograder.app" style="font-size:14px;font-weight:700;color:#d4af37;text-decoration:none;letter-spacing:0.3px">support@robograder.app</a>
       </div>
       <div style="font-size:11px;color:#4a3a2a;line-height:1.6;text-align:center">
-        Robograder <span id="rgVersionLine">grading 4.57</span> · Assessment credits are non-refundable.
+        <span id="rgVersionLine">Robograder v4.57</span> · Assessment credits are non-refundable.
         Images are stored securely in your personal account.
       </div>
       <script>
-      /* Version line: native store build version (read from Capacitor at runtime, so it
-         is always correct on iOS + Android without hardcoding) plus the grading version.
-         RG_GRADING_VERSION is the SINGLE client source of truth for the grading number —
-         bump it whenever lib/version.js ROBOGRADE_VERSION changes. (The PWA has no build
-         step, so this constant is where the web build gets it.) */
+      /* Version line. Grading version comes from RG_GRADING_VERSION — the SINGLE client
+         source of truth; bump it whenever lib/version.js ROBOGRADE_VERSION changes (the
+         PWA has no build step to inject it). The native store version + platform label are
+         read LIVE from Capacitor so they always match the installed build (no hardcoding).
+         Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
       window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.57";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var grading = "grading " + (window.RG_GRADING_VERSION || "4.57");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "4.57");
           try{
             var Cap = window.Capacitor;
-            if(Cap && Cap.isNativePlatform && Cap.isNativePlatform() && Cap.Plugins && Cap.Plugins.App && Cap.Plugins.App.getInfo){
-              Cap.Plugins.App.getInfo().then(function(info){
-                el.textContent = (info && info.version ? info.version + " · " : "") + grading;
-              }).catch(function(){ el.textContent = grading; });
-              return;
+            if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
+              var plat = (Cap.getPlatform && Cap.getPlatform()) || "";
+              var label = plat === "ios" ? "iOS" : plat === "android" ? "Android" : "";
+              if(label && Cap.Plugins && Cap.Plugins.App && Cap.Plugins.App.getInfo){
+                Cap.Plugins.App.getInfo().then(function(info){
+                  el.textContent = base + (info && info.version ? " • " + label + " v" + info.version : "");
+                }).catch(function(){ el.textContent = base; });
+                return;
+              }
             }
           }catch(e){}
-          el.textContent = grading;
+          el.textContent = base;
         }
         if(document.readyState !== "loading") setVer();
         else document.addEventListener("DOMContentLoaded", setVer);
@@ -10173,8 +10177,30 @@ async function cameraOpen(state) {
       console.log("[camera] picked device:", wide ? wide.label : "none");
       console.log("[camera] zoom constraint supported:", supportsZoomConstraint());
       const targetZoom = _cameraState.kind === "corner" ? 3 : 2;
+      const isAndroid = !!(window.Capacitor && Capacitor.getPlatform && Capacitor.getPlatform() === "android");
       const lensOptions = [];
-      if (wide && supportsZoomConstraint()) {
+      // ANDROID (S21): Samsung/Android device labels don't match the iOS
+      // "back camera"/"back wide camera" strings, so the device-switch lens path
+      // below never fired — no ZOOM IN/OUT toggle, and captures were stuck at the
+      // widest lens (soft, low-detail). Build zoom-only lenses on the CURRENT back
+      // track and drive zoom with applyConstraints instead of switching deviceId.
+      // Guarded by isAndroid, so iOS behavior is unchanged.
+      let androidZoomLens = false;
+      if (isAndroid) {
+        try {
+          const t0 = _cameraState.stream && _cameraState.stream.getVideoTracks && _cameraState.stream.getVideoTracks()[0];
+          const caps0 = t0 && t0.getCapabilities ? t0.getCapabilities() : null;
+          if (caps0 && caps0.zoom && typeof caps0.zoom.max === "number" && caps0.zoom.max > (caps0.zoom.min || 1)) {
+            const zmin = caps0.zoom.min || 1;
+            const zTarget = Math.min(caps0.zoom.max, Math.max(zmin, targetZoom));
+            lensOptions.push({ zoomOnly: true, zoomValue: zmin, label: "1×" });
+            lensOptions.push({ zoomOnly: true, zoomValue: zTarget, label: targetZoom + "×" });
+            androidZoomLens = true;
+            console.log("[camera] android zoom lenses:", zmin + "→" + zTarget, "of max", caps0.zoom.max);
+          }
+        } catch (e) { console.warn("[camera] android zoom-lens build failed:", e); }
+      }
+      if (!androidZoomLens && wide && supportsZoomConstraint()) {
         lensOptions.push({
           device: wide,
           zoom: 1,
@@ -10187,7 +10213,7 @@ async function cameraOpen(state) {
           digitalZoom: targetZoom,
           label: targetZoom + "×"
         });
-      } else if (wide) {
+      } else if (!androidZoomLens && wide) {
         lensOptions.push({
           device: wide,
           zoom: 1,
@@ -10201,9 +10227,11 @@ async function cameraOpen(state) {
       // slots (exterior staples 0,1 + top/bottom pages 2,3 need macro detail).
       // Outer Edge (4), Interior Front (5), Interior Back (6), Interior Staples (7)
       // stay at wide (1×). Main-kind captures also default wide.
+      // S21 ANDROID: main captures also default to the zoomed (2×) lens — the widest
+      // Android lens was too wide and soft; users can tap ZOOM OUT for 1×.
       const _isZoomedInteriorSlot = _cameraState.kind === "interior" && _cameraState.current !== fullSlotIndex("outer_edge");
       const _isZoomedRestorationSlot = _cameraState.kind === "restoration" && CAMERA_SLOT_ZOOM_RESTORATION[_cameraState.current];
-      const _zoomDefault = (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZoomedInteriorSlot || _isZoomedRestorationSlot) && lensOptions.length > 1;
+      const _zoomDefault = (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZoomedInteriorSlot || _isZoomedRestorationSlot || (isAndroid && androidZoomLens)) && lensOptions.length > 1;
       _cameraState.currentLensIdx = _zoomDefault ? 1 : 0;
       if (lensOptions.length > 0) {
         await switchToLens(_cameraState.currentLensIdx);
@@ -10266,6 +10294,22 @@ function renderLensSelector() {
 async function switchToLens(idx) {
   if (!_cameraState || !_cameraState.lenses[idx]) return;
   const lens = _cameraState.lenses[idx];
+  // ANDROID (S21): zoom-only lens — keep the current stream and just change zoom via
+  // applyConstraints. Reopening by deviceId isn't reliable on Android; this is what
+  // makes the ZOOM IN/OUT toggle work there. iOS lenses carry .device (no .zoomOnly).
+  if (lens.zoomOnly) {
+    try {
+      const track = _cameraState.stream && _cameraState.stream.getVideoTracks && _cameraState.stream.getVideoTracks()[0];
+      if (track && track.applyConstraints) {
+        await track.applyConstraints({ advanced: [ { zoom: lens.zoomValue } ] });
+      }
+      _cameraState.currentLensIdx = idx;
+      renderLensSelector();
+    } catch (err) {
+      console.warn("[camera] zoom-only lens apply failed:", err);
+    }
+    return;
+  }
   if (_cameraState.stream) {
     _cameraState.stream.getTracks().forEach(t => t.stop());
   }

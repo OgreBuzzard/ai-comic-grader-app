@@ -94,6 +94,14 @@
   <link rel="preconnect" href="https://firebasestorage.googleapis.com" crossorigin>
   <link rel="dns-prefetch" href="https://firebasestorage.googleapis.com">
 
+  <!-- ⚠️ BUNDLED SIBLING FILES — these are SEPARATE top-level files, not part of
+       index.html. The iOS/Android apps bundle them locally (loaded from the app's
+       own assets, NOT the server), so when you change one you MUST re-stage it into
+       robograder-ios/web/ alongside index.html or the shipped app runs a stale copy.
+       (This is exactly how the Photograder render went missing in 1.0.4.)
+       Before any iOS/Android build run:  node check-web-bundle.mjs
+       to verify the web bundle matches these sources. Bundled siblings:
+         robograde-panel.js, scan-animation.js, slab-detect.js -->
   <script src="/robograde-panel.js"></script>
 
   <script src="/scan-animation.js"></script>
@@ -1690,9 +1698,40 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         <a href="mailto:support@robograder.app" style="font-size:14px;font-weight:700;color:#d4af37;text-decoration:none;letter-spacing:0.3px">support@robograder.app</a>
       </div>
       <div style="font-size:11px;color:#4a3a2a;line-height:1.6;text-align:center">
-        Robograder v4.16 · Assessment credits are non-refundable.
+        <span id="rgVersionLine">Robograder v4.57</span> · Assessment credits are non-refundable.
         Images are stored securely in your personal account.
       </div>
+      <script>
+      /* Version line. Grading version comes from RG_GRADING_VERSION — the SINGLE client
+         source of truth; bump it whenever lib/version.js ROBOGRADE_VERSION changes (the
+         PWA has no build step to inject it). The native store version + platform label are
+         read LIVE from Capacitor so they always match the installed build (no hardcoding).
+         Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.57";
+      (function(){
+        function setVer(){
+          var el = document.getElementById("rgVersionLine");
+          if(!el) return;
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "4.57");
+          try{
+            var Cap = window.Capacitor;
+            if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
+              var plat = (Cap.getPlatform && Cap.getPlatform()) || "";
+              var label = plat === "ios" ? "iOS" : plat === "android" ? "Android" : "";
+              if(label && Cap.Plugins && Cap.Plugins.App && Cap.Plugins.App.getInfo){
+                Cap.Plugins.App.getInfo().then(function(info){
+                  el.textContent = base + (info && info.version ? " • " + label + " v" + info.version : "");
+                }).catch(function(){ el.textContent = base; });
+                return;
+              }
+            }
+          }catch(e){}
+          el.textContent = base;
+        }
+        if(document.readyState !== "loading") setVer();
+        else document.addEventListener("DOMContentLoaded", setVer);
+      })();
+      </script>
     </div>
   </div>
 </div>
@@ -2015,6 +2054,16 @@ window.matchFMV = function matchFMV(title, issue, grade, printing, year) {
   // Compression (S20): books[key] may be an integer index into a shared `curves`
   // table (many issues share the same price curve). Deref it. Inline arrays still work.
   if (typeof breaks === "number" && _fmvIndex.curves) breaks = _fmvIndex.curves[breaks];
+  // Volume guard (S21): some issue-number keys hold values for ONE volume only.
+  // e.g. "silver surfer|1" is the valuable 1968 series; the 1987 series reused
+  // #1-18. volumeGuards[key] is the max cover year the stored curve is valid for.
+  // If the book's year is later, drop the curve so a reprint/second-volume book
+  // doesn't inherit the first volume's value (falls through to blanket/null).
+  const _vg = _fmvIndex.volumeGuards && _fmvIndex.volumeGuards[key];
+  if (_vg && Array.isArray(breaks)) {
+    const _vy = parseInt(year, 10);
+    if (isFinite(_vy) && _vy > _vg) breaks = null;
+  }
   if (!Array.isArray(breaks) || !breaks.length) {
     // S20 blanket rule: uncovered modern books (1991+) default to tier 1 ($1-20)
     // at ALL grades. Indexed books (matched above) override this — so exceptions
@@ -3559,7 +3608,19 @@ async function iosNativeSignIn(provider) {
         rawNonce: ra.credential && ra.credential.nonce,
       });
     } else {
-      var rg = await FA.signInWithGoogle({ skipNativeAuth: true });
+      // Android's Credential Manager (the plugin default) returns "No credentials
+      // available" on many devices even when a Google account IS present and the
+      // config is correct. On any failure, retry with the legacy Intent-based Google
+      // Sign-In (useCredentialManager:false), which reliably shows the account picker
+      // and returns an ID token. (No-op difference on iOS, which ignores the flag.)
+      var rg;
+      try {
+        rg = await FA.signInWithGoogle({ skipNativeAuth: true });
+      } catch (ceErr) {
+        var ceMsg = (ceErr && (ceErr.message || ceErr.errorMessage)) ? (ceErr.message || ceErr.errorMessage) : String(ceErr);
+        console.warn('[native-signin] Credential Manager failed (' + ceMsg + ') — retrying legacy Google Sign-In');
+        rg = await FA.signInWithGoogle({ skipNativeAuth: true, useCredentialManager: false });
+      }
       cred = window._GoogleAuthProvider.credential(
         rg.credential && rg.credential.idToken,
         rg.credential && rg.credential.accessToken
@@ -7497,7 +7558,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: "4.16",
+      appVersion: (window.RG_GRADING_VERSION || "4.57"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
@@ -9809,13 +9870,16 @@ async function _computeLocalPhotograder() {
 }
 function _preAssessPGCellsHTML() {
   const pg = formData._pgLocal || {};
-  const cell = (label, letter) => {
+  // Use the SAME cell renderer as the full results panel (robograde-panel.js →
+  // window.RobograderPanel.pgCell) so the pre-assessment and results panels match
+  // exactly. Fallback kept only in case the panel script hasn't loaded yet.
+  const cell = (window.RobograderPanel && window.RobograderPanel.pgCell) || ((label, letter) => {
     const L = String(letter || "").toUpperCase();
     const map = { A: { bg: "#4e9e2e", lab: "#143d08", ltr: "#10240c" }, B: { bg: "#ffd655", lab: "#4a3406", ltr: "#3a2804" }, C: { bg: "#cc4436", lab: "#4a1410", ltr: "#40100a" } };
     const s = map[L] || { bg: "#26331c", lab: "#6a8a4a", ltr: "#6a8a4a" };
     const show = (L === "A" || L === "B" || L === "C") ? L : "?";
-    return `<div style="flex:1;text-align:center;background:${s.bg};border:1.5px solid #4a7028;border-radius:8px;padding:8px 2px"><div style="font-size:9px;color:${s.lab};letter-spacing:0.5px;margin-bottom:3px">${label}</div><div style="font-size:24px;font-weight:600;color:${s.ltr};line-height:1">${show}</div></div>`;
-  };
+    return `<div style="flex:1;text-align:center;background:${s.bg};border:1.5px solid #4a7028;border-radius:8px;padding:8px 2px"><div style="font-size:9px;color:${s.lab};letter-spacing:0.5px;margin-bottom:3px">${label}</div><div style="font-size:26px;font-weight:600;color:${s.ltr};line-height:1">${show}</div></div>`;
+  });
   return cell("FOCUS", pg.focus) + cell("LIGHTING", pg.lighting) + cell("CROPPING", "?") + cell("ANGLE", "?");
 }
 // The pre-assessment mini-panel. Hidden once the book is assessed (the real
@@ -9824,7 +9888,7 @@ function _preAssessPGPanel() {
   if (formData.roboGrade) return "";
   if (!(formData.images || []).filter(Boolean).length) return "";
   return `<div style="margin-top:12px;background:#152e10;border:1.5px solid #4a7028;border-radius:12px;padding:12px">
-    <div style="font-size:12px;font-weight:700;color:#7aa838;letter-spacing:2px;text-align:center;margin-bottom:9px">PHOTOGRADER</div>
+    <div style="font-size:12px;font-weight:700;color:#7aa838;letter-spacing:2px;text-align:center;margin-bottom:10px">PHOTOGRADER</div>
     <div id="pre-assess-photograder-cells" style="display:flex;gap:6px">${_preAssessPGCellsHTML()}</div>
     <div style="margin-top:8px;font-size:10px;color:#6a8a4a;text-align:center;line-height:1.4">Cropping and Angle are graded after assessment.</div>
   </div>`;
@@ -9982,8 +10046,30 @@ async function cameraOpen(state) {
       console.log("[camera] picked device:", wide ? wide.label : "none");
       console.log("[camera] zoom constraint supported:", supportsZoomConstraint());
       const targetZoom = _cameraState.kind === "corner" ? 3 : 2;
+      const isAndroid = !!(window.Capacitor && Capacitor.getPlatform && Capacitor.getPlatform() === "android");
       const lensOptions = [];
-      if (wide && supportsZoomConstraint()) {
+      // ANDROID (S21): Samsung/Android device labels don't match the iOS
+      // "back camera"/"back wide camera" strings, so the device-switch lens path
+      // below never fired — no ZOOM IN/OUT toggle, and captures were stuck at the
+      // widest lens (soft, low-detail). Build zoom-only lenses on the CURRENT back
+      // track and drive zoom with applyConstraints instead of switching deviceId.
+      // Guarded by isAndroid, so iOS behavior is unchanged.
+      let androidZoomLens = false;
+      if (isAndroid) {
+        try {
+          const t0 = _cameraState.stream && _cameraState.stream.getVideoTracks && _cameraState.stream.getVideoTracks()[0];
+          const caps0 = t0 && t0.getCapabilities ? t0.getCapabilities() : null;
+          if (caps0 && caps0.zoom && typeof caps0.zoom.max === "number" && caps0.zoom.max > (caps0.zoom.min || 1)) {
+            const zmin = caps0.zoom.min || 1;
+            const zTarget = Math.min(caps0.zoom.max, Math.max(zmin, targetZoom));
+            lensOptions.push({ zoomOnly: true, zoomValue: zmin, label: "1×" });
+            lensOptions.push({ zoomOnly: true, zoomValue: zTarget, label: targetZoom + "×" });
+            androidZoomLens = true;
+            console.log("[camera] android zoom lenses:", zmin + "→" + zTarget, "of max", caps0.zoom.max);
+          }
+        } catch (e) { console.warn("[camera] android zoom-lens build failed:", e); }
+      }
+      if (!androidZoomLens && wide && supportsZoomConstraint()) {
         lensOptions.push({
           device: wide,
           zoom: 1,
@@ -9996,7 +10082,7 @@ async function cameraOpen(state) {
           digitalZoom: targetZoom,
           label: targetZoom + "×"
         });
-      } else if (wide) {
+      } else if (!androidZoomLens && wide) {
         lensOptions.push({
           device: wide,
           zoom: 1,
@@ -10010,9 +10096,11 @@ async function cameraOpen(state) {
       // slots (exterior staples 0,1 + top/bottom pages 2,3 need macro detail).
       // Outer Edge (4), Interior Front (5), Interior Back (6), Interior Staples (7)
       // stay at wide (1×). Main-kind captures also default wide.
+      // S21 ANDROID: main captures also default to the zoomed (2×) lens — the widest
+      // Android lens was too wide and soft; users can tap ZOOM OUT for 1×.
       const _isZoomedInteriorSlot = _cameraState.kind === "interior" && _cameraState.current !== fullSlotIndex("outer_edge");
       const _isZoomedRestorationSlot = _cameraState.kind === "restoration" && CAMERA_SLOT_ZOOM_RESTORATION[_cameraState.current];
-      const _zoomDefault = (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZoomedInteriorSlot || _isZoomedRestorationSlot) && lensOptions.length > 1;
+      const _zoomDefault = (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZoomedInteriorSlot || _isZoomedRestorationSlot || (isAndroid && androidZoomLens)) && lensOptions.length > 1;
       _cameraState.currentLensIdx = _zoomDefault ? 1 : 0;
       if (lensOptions.length > 0) {
         await switchToLens(_cameraState.currentLensIdx);
@@ -10075,6 +10163,22 @@ function renderLensSelector() {
 async function switchToLens(idx) {
   if (!_cameraState || !_cameraState.lenses[idx]) return;
   const lens = _cameraState.lenses[idx];
+  // ANDROID (S21): zoom-only lens — keep the current stream and just change zoom via
+  // applyConstraints. Reopening by deviceId isn't reliable on Android; this is what
+  // makes the ZOOM IN/OUT toggle work there. iOS lenses carry .device (no .zoomOnly).
+  if (lens.zoomOnly) {
+    try {
+      const track = _cameraState.stream && _cameraState.stream.getVideoTracks && _cameraState.stream.getVideoTracks()[0];
+      if (track && track.applyConstraints) {
+        await track.applyConstraints({ advanced: [ { zoom: lens.zoomValue } ] });
+      }
+      _cameraState.currentLensIdx = idx;
+      renderLensSelector();
+    } catch (err) {
+      console.warn("[camera] zoom-only lens apply failed:", err);
+    }
+    return;
+  }
   if (_cameraState.stream) {
     _cameraState.stream.getTracks().forEach(t => t.stop());
   }

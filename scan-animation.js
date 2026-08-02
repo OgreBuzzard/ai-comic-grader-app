@@ -352,6 +352,23 @@
       to   { transform: translate(-50%, 0);    }
     }
 
+    /* ANDROID (S21): the fixed-aspect (577:1835) shell is bottom-anchored, so on
+       Android — where usable height (100dvh minus system bars) is shorter — the
+       machine TOP clips above the viewport while empty room is left at the bottom.
+       Nudge the whole shell DOWN so the machine top comes into view; it also lowers
+       the slide-up start, which is fine. The value is a % of the shell's own height,
+       so it scales per device. Android only (class added at mount); iOS + PWA use
+       rgShellSlideUp unchanged. Tune the single --rg-android-scan-nudge value below
+       after on-device testing on the Samsung. */
+    .rg-scan-stage.rg-android .rg-scan-shell {
+      animation-name: rgShellSlideUpAndroid;
+      transform: translate(-50%, var(--rg-android-scan-nudge, 4.5%));
+    }
+    @keyframes rgShellSlideUpAndroid {
+      from { transform: translate(-50%, 100%); }
+      to   { transform: translate(-50%, var(--rg-android-scan-nudge, 4.5%)); }
+    }
+
     /* The chest image itself fills the shell. */
     .rg-scan-chest {
       position: absolute;
@@ -802,6 +819,9 @@
     const stage = document.createElement('div');
     stage.className = 'rg-scan-stage';
     stage.id = 'rg-scan-stage';
+    // ANDROID (S21): tag the stage so the Android-only downward nudge applies
+    // (see .rg-scan-stage.rg-android in STYLES). iOS/PWA never get this class.
+    try { if (window.Capacitor && Capacitor.getPlatform && Capacitor.getPlatform() === 'android') stage.classList.add('rg-android'); } catch (e) {}
 
     const shell = document.createElement('div');
     shell.className = 'rg-scan-shell';
