@@ -672,6 +672,16 @@ onAuthStateChanged(auth, async user => {
         16px
         calc(env(safe-area-inset-left, 0px) + 16px);
     }
+    /* S21 CROPPER FIX (the long-standing "handles/image outside the frame" bug):
+       Cropper.js sizes .cropper-container to the img's PARENT element's box. That
+       parent used to be #cropper-stage, whose safe-area + 16px padding Cropper
+       IGNORES — it measured the full border-box (≈ screen width), so the container,
+       image and edge handles reached the screen edges and the e/w handles were
+       clipped off-screen. Every past attempt padded #cropper-stage, which Cropper
+       kept ignoring. Fix: the img now lives inside #cropper-inner, which fills the
+       stage's CONTENT box (inside the padding). Cropper measures that, so everything
+       is framed within the padding and the handles sit on-screen and reachable. */
+    #cropper-inner { position: relative; width: 100%; height: 100%; }
     #cropper-stage .cropper-container { margin: 0 auto !important; }
     /* Cropper image is hidden until Cropper.js attaches and lays it out properly.
        Without this, the raw <img> renders top-aligned at natural size, then
@@ -1004,30 +1014,22 @@ onAuthStateChanged(auth, async user => {
        Positioned just above the controls bar, right side, so it doesn't
        compete with the capture button or upload-instead button. */
     #camera-lens-selector {
-      /* S15 May 30: moved from bottom-right to bottom-CENTER (per Matt) so the
-         ZOOM IN / ZOOM OUT toggle sits centered above the capture button
-         rather than off to the side. */
+      /* S21 (per Matt): now lives INSIDE #camera-controls, pinned to the bottom-right
+         corner — level with and to the RIGHT of the capture button, outside the guide
+         frame. Same placement in every orientation. */
       position: absolute;
-      left: 50%;
-      transform: translateX(-50%);
-      bottom: 130px;
+      right: 24px;
+      top: 50%;
+      left: auto;
+      bottom: auto;
+      transform: translateY(-50%);
       display: none;
       flex-direction: column;
       align-items: center;
       gap: 6px;
-      z-index: 6;
+      z-index: 8;
     }
     #camera-lens-selector.show { display: flex; }
-    /* S16: In landscape, position zoom toggle to the right of the capture
-       button instead of centered above it (avoids blocking the viewfinder) */
-    @media (orientation: landscape) {
-      #camera-lens-selector {
-        left: auto;
-        right: 16%;
-        transform: none;
-        bottom: calc(env(safe-area-inset-bottom, 0px) + 36px);
-      }
-    }
     /* S15 May 29: redesigned from per-lens chip list (small 44×44 circles
        with short labels like "1×" / "2×") to a single TOGGLE pill saying
        "ZOOM IN" or "ZOOM OUT". The old 44px circle was crushing the
@@ -1757,7 +1759,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
 
 <div id="cropper-modal">
   <div id="cropper-stage">
-    <img id="cropper-img" src="" alt="">
+    <div id="cropper-inner"><img id="cropper-img" src="" alt=""></div>
   </div>
   <div id="cropper-controls">
     <button id="cropper-cancel" class="rg-btn rg-btn-secondary rg-btn-md" onclick="cancelCrop()">Cancel</button>
@@ -1773,12 +1775,11 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
 
 <div id="camera-modal">
   <div id="camera-stage">
-    <video id="camera-video" autoplay playsinline muted></video>
+    <video id="camera-video" autoplay playsinline muted poster="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></video>
     <div id="camera-guide"></div>
     <div id="camera-flash"></div>
     <div id="camera-focusing">FOCUSING…</div>
     <div id="camera-checking">Checking for slab…</div>
-    <div id="camera-lens-selector"></div>
     <div id="camera-header">
       <div id="camera-header-spacer"></div>
       <div id="camera-progress"></div>
@@ -1805,6 +1806,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
     <div id="camera-controls">
       <button id="camera-upload-link" onclick="cameraUploadInstead()">Photo<br>Library</button>
       <button id="camera-capture" onclick="cameraCapture()" aria-label="Capture photo"></button>
+      <div id="camera-lens-selector"></div>
       
       <button id="camera-skip" onclick="cameraSkipSlot()" style="display:none">Skip</button>
     </div>
@@ -4623,8 +4625,8 @@ function showDetail(id) {
       html += imgs[1] ? `<img class="detail-cover" src="${imgs[1]}" ${imgAttrs} onclick="openLightbox('${selected.id}',1)">` : `<div></div>`;
       html += `</div>`;
     }
-    if (imgs[3]) html += `<img class="photo-spine" src="${imgs[3]}" ${imgAttrs} onclick="openLightbox('${selected.id}',3)">`;
     if (imgs[2]) html += `<img class="detail-cover" src="${imgs[2]}" ${imgAttrs} onclick="openLightbox('${selected.id}',2)">`;
+    if (imgs[3]) html += `<img class="photo-spine" src="${imgs[3]}" ${imgAttrs} onclick="openLightbox('${selected.id}',3)">`;
     html += `</div>`;
   }
   if (showDeepTier(selected) || (selected.cornerImages || []).some(u => u)) {
@@ -8400,7 +8402,7 @@ function renderForm() {
       const img = (formData.images || [])[i];
       return img ? `<div class="drag-slot" draggable="true"\n                  ondragstart="dragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"\n                  onclick="tapSlot(${i},'main')">\n                  <img src="${img}">\n                  <button class="slot-edit" onclick="event.stopPropagation();openCropper('main',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>\n                  <button class="slot-x" onclick="event.stopPropagation();removeImg(${i})">×</button>\n                 </div>` : `<div class="drag-slot" style="padding:0;background:none;"\n                  ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"\n                  onclick="tapSlot(${i},'main')">\n                  <img src="${SLOT_GHOSTS[i]}" style="width:100%;height:auto;display:block;border-radius:4px;opacity:0.7;">\n                  <div style="position:absolute;inset:0;pointer-events:none;">\n                    <span style="position:absolute;top:8px;left:10px;font-size:11px;font-weight:700;color:#000;letter-spacing:1px;text-transform:uppercase;background:rgba(255,255,255,0.75);padding:2px 6px;border-radius:3px;">${slotLabels[i]}</span>\n                  </div>\n                 </div>`;
     };
-    return formData.labelDetected ? `\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">\n              ${renderSlot(0)}\n              ${renderSlot(1)}\n            </div>\n          ` : `\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">\n              ${renderSlot(0)}\n              ${renderSlot(1)}\n            </div>\n            ${renderSlot(3)}\n            ${renderSlot(2)}\n          `;
+    return formData.labelDetected ? `\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">\n              ${renderSlot(0)}\n              ${renderSlot(1)}\n            </div>\n          ` : `\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">\n              ${renderSlot(0)}\n              ${renderSlot(1)}\n            </div>\n            ${renderSlot(2)}\n            ${renderSlot(3)}\n          `;
   })()}\n      </div>\n      ${_preAssessPGPanel() || ""}\n      <div style="display:flex;justify-content:center;margin-top:12px"><button id="assess-btn" class="rg-btn rg-btn-assess rg-btn-bronze${_assessed ? ' reassess' : ''}${assessing ? ' assessing' : ''}" onclick="assessGrade()" ${!formData.images || !formData.images[0] || assessing ? "disabled" : ""}>${assessing ? "Assessing…" : _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE"}</button></div>\n      ${showDeepTier(formData) ? `\n      <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">DEEP ASSESSMENT CORNER MACROS</div>\n        <div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Tighten the grade with more detail where small defects are most common.</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\n          ${[ 0, 1, 2, 3 ].map(i => {
     const cornerLabels = [ "Top Left", "Top Right", "Bottom Left", "Bottom Right" ];
     const cornerGhosts = [ "assets/ghosts/TopLeft_Macro.jpg", "assets/ghosts/TopRight_Macro.jpg", "assets/ghosts/BottomLeft_Macro.jpg", "assets/ghosts/BottomRight_Macro.jpg" ];
@@ -9789,7 +9791,12 @@ const CAMERA_SLOT_ORIENTATION_MAIN = [ "portrait", "portrait", "portrait", "land
 // better in PORTRAIT; the other five are landscape.
 const CAMERA_SLOT_ORIENTATION_INTERIOR = [ "landscape", "landscape", "landscape", "landscape", "landscape", "portrait" ];
 
-const CAMERA_CAPTURE_ORDER_MAIN = [ 0, 3, 2, 1 ];
+// S21 (per Matt): capture order unified to storage order — Front(0), Back(1),
+// Interior(2), Spine(3). Front/Back/Interior are all top-down portrait; Spine (the
+// reposition-and-rotate shot) is isolated LAST. Matches the display order and the
+// multi-select fill order (handleImages fills 0,1,2,3), so capture, display, and the
+// 4-photo library tap sequence are all identical and intuitive. Was [0,3,2,1].
+const CAMERA_CAPTURE_ORDER_MAIN = [ 0, 1, 2, 3 ];
 
 const CAMERA_CAPTURE_ORDER_CORNER = [ 0, 1, 3, 2 ];
 
@@ -10048,28 +10055,29 @@ async function cameraOpen(state) {
       const targetZoom = _cameraState.kind === "corner" ? 3 : 2;
       const isAndroid = !!(window.Capacitor && Capacitor.getPlatform && Capacitor.getPlatform() === "android");
       const lensOptions = [];
-      // ANDROID (S21): Samsung/Android device labels don't match the iOS
-      // "back camera"/"back wide camera" strings, so the device-switch lens path
-      // below never fired — no ZOOM IN/OUT toggle, and captures were stuck at the
-      // widest lens (soft, low-detail). Build zoom-only lenses on the CURRENT back
-      // track and drive zoom with applyConstraints instead of switching deviceId.
-      // Guarded by isAndroid, so iOS behavior is unchanged.
-      let androidZoomLens = false;
+      // ANDROID (S21): Samsung/Android labels are "camera N, facing back", so the iOS
+      // exact-match finder above returns nothing and facingMode:environment grabs an
+      // arbitrary back lens — usually the ULTRA-WIDE, giving the too-wide, soft frame
+      // users hit. getCapabilities() exposes no `zoom` on this hardware, so web zoom is
+      // out. Fix by LENS selection: list the back cameras sorted by index (camera 0 is
+      // the MAIN lens) and default to the main (tighter, sharper). If a second back lens
+      // exists it's the wider one, offered as a ZOOM OUT toggle. isAndroid-guarded; iOS
+      // is untouched. (The lens.zoomOnly branch in switchToLens is now unused/harmless.)
+      let androidLens = false;
       if (isAndroid) {
         try {
-          const t0 = _cameraState.stream && _cameraState.stream.getVideoTracks && _cameraState.stream.getVideoTracks()[0];
-          const caps0 = t0 && t0.getCapabilities ? t0.getCapabilities() : null;
-          if (caps0 && caps0.zoom && typeof caps0.zoom.max === "number" && caps0.zoom.max > (caps0.zoom.min || 1)) {
-            const zmin = caps0.zoom.min || 1;
-            const zTarget = Math.min(caps0.zoom.max, Math.max(zmin, targetZoom));
-            lensOptions.push({ zoomOnly: true, zoomValue: zmin, label: "1×" });
-            lensOptions.push({ zoomOnly: true, zoomValue: zTarget, label: targetZoom + "×" });
-            androidZoomLens = true;
-            console.log("[camera] android zoom lenses:", zmin + "→" + zTarget, "of max", caps0.zoom.max);
+          const camNum = d => { const m = /camera (\d+)/i.exec(d.label || ""); return m ? parseInt(m[1]) : 99; };
+          const backCams = videoInputs
+            .filter(d => /facing back|back camera|rear/i.test(d.label || ""))
+            .sort((a, b) => camNum(a) - camNum(b));
+          if (backCams.length) {
+            backCams.forEach((d, i) => lensOptions.push({ device: d, zoom: 1, digitalZoom: 1, label: i === 0 ? "MAIN" : "WIDE" }));
+            androidLens = true;
+            console.log("[camera] android back lenses (main first):", backCams.map(d => d.label).join(" | "));
           }
-        } catch (e) { console.warn("[camera] android zoom-lens build failed:", e); }
+        } catch (e) { console.warn("[camera] android lens select failed:", e); }
       }
-      if (!androidZoomLens && wide && supportsZoomConstraint()) {
+      if (!androidLens && wide && supportsZoomConstraint()) {
         lensOptions.push({
           device: wide,
           zoom: 1,
@@ -10082,7 +10090,7 @@ async function cameraOpen(state) {
           digitalZoom: targetZoom,
           label: targetZoom + "×"
         });
-      } else if (!androidZoomLens && wide) {
+      } else if (!androidLens && wide) {
         lensOptions.push({
           device: wide,
           zoom: 1,
@@ -10096,11 +10104,13 @@ async function cameraOpen(state) {
       // slots (exterior staples 0,1 + top/bottom pages 2,3 need macro detail).
       // Outer Edge (4), Interior Front (5), Interior Back (6), Interior Staples (7)
       // stay at wide (1×). Main-kind captures also default wide.
-      // S21 ANDROID: main captures also default to the zoomed (2×) lens — the widest
-      // Android lens was too wide and soft; users can tap ZOOM OUT for 1×.
+      // S21 ANDROID: lens idx 0 is the MAIN back lens (tighter/sharper) — always the
+      // Android default; idx 1 (if present) is the wider lens (ZOOM OUT). The iOS
+      // zoom-per-slot defaults below are skipped on Android (no telephoto to zoom into).
+      _cameraState.androidLensMode = androidLens;
       const _isZoomedInteriorSlot = _cameraState.kind === "interior" && _cameraState.current !== fullSlotIndex("outer_edge");
       const _isZoomedRestorationSlot = _cameraState.kind === "restoration" && CAMERA_SLOT_ZOOM_RESTORATION[_cameraState.current];
-      const _zoomDefault = (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZoomedInteriorSlot || _isZoomedRestorationSlot || (isAndroid && androidZoomLens)) && lensOptions.length > 1;
+      const _zoomDefault = !isAndroid && (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZoomedInteriorSlot || _isZoomedRestorationSlot) && lensOptions.length > 1;
       _cameraState.currentLensIdx = _zoomDefault ? 1 : 0;
       if (lensOptions.length > 0) {
         await switchToLens(_cameraState.currentLensIdx);
@@ -10155,7 +10165,11 @@ function renderLensSelector() {
   }
   const atOne = _cameraState.currentLensIdx === 0;
   const targetIdx = atOne ? 1 : 0;
-  const label = atOne ? "ZOOM IN" : "ZOOM OUT";
+  // On Android, lens idx 0 = MAIN (tighter) and idx 1 = the wider lens, so switching to
+  // idx 1 is ZOOM OUT — the reverse of iOS, where idx 1 is the more-zoomed lens.
+  const label = _cameraState.androidLensMode
+    ? (atOne ? "ZOOM OUT" : "ZOOM IN")
+    : (atOne ? "ZOOM IN" : "ZOOM OUT");
   sel.innerHTML = `<button class="lens-btn active" onclick="switchToLens(${targetIdx})">${label}</button>`;
   sel.classList.add("show");
 }

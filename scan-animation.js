@@ -344,7 +344,10 @@
          chest appearing well up the screen rather than emerging
          gradually from the bottom. ease-in-out gives a smooth on-ramp.
          Duration extended to 2000ms to match storyboard timing. */
-      animation: rgShellSlideUp 2000ms cubic-bezier(0.65, 0, 0.35, 1) 0.2s forwards;
+      /* S21: fill-mode `both` (was `forwards`) so the `from` (offscreen) state is
+         applied during the 0.2s start delay and on the very first frame — kills the
+         1-frame flash where the shell painted in its FINAL position before sliding. */
+      animation: rgShellSlideUp 2000ms cubic-bezier(0.65, 0, 0.35, 1) 0.2s both;
       pointer-events: none;
     }
     @keyframes rgShellSlideUp {
@@ -362,11 +365,11 @@
        after on-device testing on the Samsung. */
     .rg-scan-stage.rg-android .rg-scan-shell {
       animation-name: rgShellSlideUpAndroid;
-      transform: translate(-50%, var(--rg-android-scan-nudge, 4.5%));
+      transform: translate(-50%, var(--rg-android-scan-nudge, 2.25%));
     }
     @keyframes rgShellSlideUpAndroid {
       from { transform: translate(-50%, 100%); }
-      to   { transform: translate(-50%, var(--rg-android-scan-nudge, 4.5%)); }
+      to   { transform: translate(-50%, var(--rg-android-scan-nudge, 2.25%)); }
     }
 
     /* The chest image itself fills the shell. */
