@@ -1518,7 +1518,7 @@ function renderTimingsList() {
             ${t.version ? `<span style="color:var(--text-dim);font-size:11px;margin-left:6px;">v${escapeHtml(t.version)}</span>` : ''}
           </div>
           ${t.title ? `<div style="font-size:13px;font-weight:600;color:var(--text);margin:2px 0;">${escapeHtml(t.title)}${t.issue ? ' #' + escapeHtml(t.issue) : ''}${t.predictedGrade ? `<span style="color:#7fd0ff;font-weight:700;margin-left:8px;">PG ${escapeHtml(t.predictedGrade)}</span>` : ''}${t.pageQuality ? `<span style="color:var(--text-dim);font-weight:400;margin-left:8px;">PQ ${escapeHtml(t.pageQuality)}</span>` : ''}</div>` : ''}
-          ${t.rgScore != null ? `<div style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:11px;color:var(--text-dim);">RG ${escapeHtml(String(t.rgScore))}${(t.frontScore != null || t.backScore != null || t.spineScore != null || t.interiorScore != null) ? `<span style="margin-left:10px;">F ${t.frontScore ?? '—'} · B ${t.backScore ?? '—'} · Sp ${t.spineScore ?? '—'} · Int ${t.interiorScore ?? '—'}</span>` : ''}</div>` : ''}
+          ${t.rgScore != null ? `<div style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:11px;color:var(--text-dim);">RG ${escapeHtml(String(t.rgScore))}${(t.frontScore != null || t.backScore != null || t.spineScore != null || t.interiorScore != null) ? `<span style="margin-left:10px;">F ${t.frontScore ?? '—'} · B ${t.backScore ?? '—'} · Int ${t.interiorScore ?? '—'} · Sp ${t.spineScore ?? '—'}</span>` : ''}</div>` : ''}
           <div class="sub" style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:11px;">
             ${dateStr}
             ${+t.costUsd > 0 ? `&nbsp;·&nbsp;<span style="color:var(--text-dim);">${fmtCost(+t.costUsd)}</span>` : ''}
@@ -2037,8 +2037,8 @@ function renderItemDetail(it) {
     <div class="scores">
       <div class="score-cell"><div class="num">${v(it.frontScore)}</div><div class="lbl">Front</div></div>
       <div class="score-cell"><div class="num">${v(it.backScore)}</div><div class="lbl">Back</div></div>
-      <div class="score-cell"><div class="num">${v(it.spineScore)}</div><div class="lbl">Spine</div></div>
       <div class="score-cell"><div class="num">${v(it.interiorScore)}</div><div class="lbl">Interior</div></div>
+      <div class="score-cell"><div class="num">${v(it.spineScore)}</div><div class="lbl">Spine</div></div>
     </div>
 
     <h3 class="section-h">Grades</h3>

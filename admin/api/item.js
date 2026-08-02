@@ -218,6 +218,10 @@ export default async function handler(req, res) {
       officialPSAGrade: flat.officialPSAGrade ?? null,
       officialPSACert: flat.officialPSACert ?? null,
       officialPageQuality: flat.officialPageQuality ?? null,
+      // S21: Photograder photo-quality grades (Focus/Lighting/Cropping/Angle). The
+      // dashboard detail view renders `it.photograder` but this endpoint never
+      // returned the field, so the Photograder section silently never showed.
+      photograder: flat.photograder || rg.photograder || null,
 
       // Assessing user (admin contact)
       userName,
