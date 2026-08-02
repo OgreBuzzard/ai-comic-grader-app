@@ -38,6 +38,28 @@ if (existsSync('index.html') && existsSync(webIndex)) {
   }
 }
 
+// Platform guard: web/index.html must carry the RIGHT platform's viewport-fit.
+// iOS needs cover (Dynamic Island safe-area inset); Android/PWA use contain. Because
+// Capacitor's webDir is a single shared folder, copying the Android bundle into the
+// iOS project shipped a buried, barely-tappable top bar in 1.0.5. This catches that
+// class of wrong-bundle mistake. Pass the target platform as the 2nd arg:
+//   node check-web-bundle.mjs ../robograder-ios/web ios
+//   node check-web-bundle.mjs ../robograder-ios/web android
+const platform = process.argv[3];
+if (platform && existsSync(webIndex)) {
+  const want = platform === 'ios' ? 'viewport-fit=cover'
+             : platform === 'android' ? 'viewport-fit=contain' : null;
+  if (want) {
+    const wi = readFileSync(webIndex, 'utf8');
+    if (wi.includes(want)) {
+      console.log(`✓ viewport-fit correct for ${platform} (${want})`);
+    } else {
+      console.log(`✗ WRONG BUNDLE: ${webIndex} does not contain ${want} — this looks like the other platform's bundle. Regenerate the ${platform} index before building.`);
+      drift++;
+    }
+  }
+}
+
 console.log(`\nChecking ${refs.length} bundled sibling(s) against ${webDir}\n`);
 for (const f of refs) {
   if (!existsSync(f)) { console.log(`skip (not a repo file): ${f}`); continue; }

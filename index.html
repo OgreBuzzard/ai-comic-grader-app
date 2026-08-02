@@ -1645,9 +1645,36 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         <a href="mailto:support@robograder.app" style="font-size:14px;font-weight:700;color:#d4af37;text-decoration:none;letter-spacing:0.3px">support@robograder.app</a>
       </div>
       <div style="font-size:11px;color:#4a3a2a;line-height:1.6;text-align:center">
-        Robograder v4.16 · Assessment credits are non-refundable.
+        Robograder <span id="rgVersionLine">grading 4.57</span> · Assessment credits are non-refundable.
         Images are stored securely in your personal account.
       </div>
+      <script>
+      /* Version line: native store build version (read from Capacitor at runtime, so it
+         is always correct on iOS + Android without hardcoding) plus the grading version.
+         RG_GRADING_VERSION is the SINGLE client source of truth for the grading number —
+         bump it whenever lib/version.js ROBOGRADE_VERSION changes. (The PWA has no build
+         step, so this constant is where the web build gets it.) */
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.57";
+      (function(){
+        function setVer(){
+          var el = document.getElementById("rgVersionLine");
+          if(!el) return;
+          var grading = "grading " + (window.RG_GRADING_VERSION || "4.57");
+          try{
+            var Cap = window.Capacitor;
+            if(Cap && Cap.isNativePlatform && Cap.isNativePlatform() && Cap.Plugins && Cap.Plugins.App && Cap.Plugins.App.getInfo){
+              Cap.Plugins.App.getInfo().then(function(info){
+                el.textContent = (info && info.version ? info.version + " · " : "") + grading;
+              }).catch(function(){ el.textContent = grading; });
+              return;
+            }
+          }catch(e){}
+          el.textContent = grading;
+        }
+        if(document.readyState !== "loading") setVer();
+        else document.addEventListener("DOMContentLoaded", setVer);
+      })();
+      </script>
     </div>
   </div>
 </div>
@@ -7385,7 +7412,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: "4.16",
+      appVersion: (window.RG_GRADING_VERSION || "4.57"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
