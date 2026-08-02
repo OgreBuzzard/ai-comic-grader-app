@@ -619,6 +619,16 @@ onAuthStateChanged(auth, async user => {
         16px
         calc(env(safe-area-inset-left, 0px) + 16px);
     }
+    /* S21 CROPPER FIX (the long-standing "handles/image outside the frame" bug):
+       Cropper.js sizes .cropper-container to the img's PARENT element's box. That
+       parent used to be #cropper-stage, whose safe-area + 16px padding Cropper
+       IGNORES — it measured the full border-box (≈ screen width), so the container,
+       image and edge handles reached the screen edges and the e/w handles were
+       clipped off-screen. Every past attempt padded #cropper-stage, which Cropper
+       kept ignoring. Fix: the img now lives inside #cropper-inner, which fills the
+       stage's CONTENT box (inside the padding). Cropper measures that, so everything
+       is framed within the padding and the handles sit on-screen and reachable. */
+    #cropper-inner { position: relative; width: 100%; height: 100%; }
     #cropper-stage .cropper-container { margin: 0 auto !important; }
     /* Cropper image is hidden until Cropper.js attaches and lays it out properly.
        Without this, the raw <img> renders top-aligned at natural size, then
@@ -1704,7 +1714,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
 
 <div id="cropper-modal">
   <div id="cropper-stage">
-    <img id="cropper-img" src="" alt="">
+    <div id="cropper-inner"><img id="cropper-img" src="" alt=""></div>
   </div>
   <div id="cropper-controls">
     <button id="cropper-cancel" class="rg-btn rg-btn-secondary rg-btn-md" onclick="cancelCrop()">Cancel</button>
