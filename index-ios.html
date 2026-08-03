@@ -1740,6 +1740,13 @@ window.exitSplashSigninAndShowApp = function() {
       <div id="settings-transfer-code"
         style="font-family:'IBM Plex Mono','Menlo',monospace;font-size:20px;font-weight:700;letter-spacing:3px;color:#c8b8a8">—</div>
     </div>
+    <div class="settings-row" id="settings-referral-row" onclick="openReferralPrompt()" style="cursor:pointer;display:none">
+      <div>
+        <div class="sr-label">Referral Bonus</div>
+        <div class="sr-detail">Someone recommend Robograder? Send them a thank-you bonus.</div>
+      </div>
+      <div class="sr-right">›</div>
+    </div>
     <div class="settings-row" onclick="openSettings_buyCredits()">
       <div>
         <div class="sr-label">Credits</div>
@@ -3926,6 +3933,9 @@ async function loadUserCredits() {
       if (data.giftCredits && typeof data.giftCredits.amount === "number" && data.giftCredits.amount > 0) {
         setTimeout(() => _showGiftModal(data.giftCredits.amount), 800);
       }
+      if (Array.isArray(data.referralBonusQueue) && data.referralBonusQueue.length) {
+        setTimeout(() => _processReferralQueue(data.referralBonusQueue), 1200);
+      }
       if (typeof data.assessmentCredits === "number") {
         window._userCredits = data.assessmentCredits;
       } else if (window._userCredits === undefined) {
@@ -4178,6 +4188,7 @@ function showBuyCredits() {
   const modal = document.getElementById("buy-credits-modal");
   if (modal) modal.style.display = "flex";
   refreshPromoRow();
+  refreshReferralEligibility();
   if (window.Capacitor && window.Capacitor.isNativePlatform()) _iosLoadPrices();
 }
 
@@ -7659,12 +7670,130 @@ function openSettings() {
     imgEl.textContent = `${n} entries`;
   }
   refreshExportRemainingDisplay();
+  refreshReferralEligibility();
   overlay.style.display = "flex";
 }
 
 function closeSettings() {
   const overlay = document.getElementById("settings-overlay");
   if (overlay) overlay.style.display = "none";
+}
+
+// ── Referral Bonus (client) ─────────────────────────────────────────────
+async function refreshReferralEligibility() {
+  const row = document.getElementById("settings-referral-row");
+  const note = document.getElementById("buy-referral-note");
+  const setVis = function(el, show, disp) { if (el) el.style.display = show ? disp : "none"; };
+  try {
+    if (!window._currentUser) { setVis(row, false, "flex"); setVis(note, false, "block"); return; }
+    const token = await window._currentUser.getIdToken();
+    const resp = await fetch("/api/referral", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify({ action: "status" })
+    });
+    const data = await resp.json().catch(() => ({}));
+    const eligible = !!(data && data.eligible);
+    setVis(row, eligible, "flex");
+    setVis(note, eligible, "block");
+  } catch (e) { setVis(row, false, "flex"); setVis(note, false, "block"); }
+}
+
+function openReferralPrompt() {
+  if (document.getElementById("referral-modal")) return;
+  const overlay = document.createElement("div");
+  overlay.id = "referral-modal";
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px";
+  overlay.innerHTML = `
+    <div style="background:#141210;border-radius:18px;padding:24px 22px 20px;max-width:340px;width:100%;border:1.5px solid #4a7028;box-shadow:0 12px 44px rgba(0,0,0,0.55)">
+      <div style="font-size:13px;font-weight:700;color:#7aa838;letter-spacing:2px;text-align:center;margin-bottom:10px">REFERRAL BONUS</div>
+      <div style="font-size:14px;color:#c8b8a8;line-height:1.5;text-align:center;margin-bottom:16px">Enter the 4-character code of the user who recommended Robograder.</div>
+      <input id="referral-code-input" type="text" inputmode="text" autocapitalize="characters" autocomplete="off" maxlength="4"
+        style="width:100%;text-align:center;font-family:'IBM Plex Mono','Menlo',monospace;font-size:26px;font-weight:700;letter-spacing:8px;text-transform:uppercase;padding:12px;border-radius:10px;border:1.5px solid #4a7028;background:#0d0f0a;color:#eaf5df;box-sizing:border-box">
+      <div id="referral-feedback" style="min-height:18px;font-size:12.5px;color:#e0a72e;text-align:center;margin-top:8px"></div>
+      <div style="display:flex;gap:10px;margin-top:14px">
+        <button class="rg-btn rg-btn-ghost rg-btn-md" onclick="closeReferralPrompt()" style="flex:1">Cancel</button>
+        <button id="referral-submit-btn" class="rg-btn rg-btn-branded rg-btn-md" onclick="submitReferral()" style="flex:1">Send</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const inp = document.getElementById("referral-code-input");
+  if (inp) {
+    inp.focus();
+    inp.addEventListener("input", () => { inp.value = inp.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4); });
+  }
+}
+function closeReferralPrompt() {
+  const m = document.getElementById("referral-modal");
+  if (m) m.remove();
+}
+async function submitReferral() {
+  const inp = document.getElementById("referral-code-input");
+  const fb = document.getElementById("referral-feedback");
+  const btn = document.getElementById("referral-submit-btn");
+  const code = ((inp && inp.value) || "").trim().toUpperCase();
+  if (code.length !== 4) { if (fb) fb.textContent = "Enter a 4-character code."; return; }
+  if (btn) { btn.disabled = true; btn.textContent = "Sending…"; }
+  try {
+    const token = await window._currentUser.getIdToken();
+    const resp = await fetch("/api/referral", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify({ action: "issue", code })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (resp.ok && data.ok && !data.alreadyDone) {
+      closeReferralPrompt();
+      window.rgPopup("Bonus sent! You earned 3 credits for spreading the word.", { type: "success", title: "Thank you!" });
+      if (typeof loadUserCredits === "function") loadUserCredits();
+      refreshReferralEligibility();
+    } else if (data.alreadyDone) {
+      closeReferralPrompt();
+      refreshReferralEligibility();
+    } else {
+      if (fb) fb.textContent = data.error || "Something went wrong — try again.";
+      if (btn) { btn.disabled = false; btn.textContent = "Send"; }
+    }
+  } catch (e) {
+    if (fb) fb.textContent = "Network error — try again.";
+    if (btn) { btn.disabled = false; btn.textContent = "Send"; }
+  }
+}
+
+// Recipient side: stacked "you received a bonus" popups on app load.
+function _processReferralQueue(queue) {
+  if (!Array.isArray(queue) || !queue.length) return;
+  const items = queue.slice();
+  let i = 0;
+  const showNext = () => {
+    if (i >= items.length) {
+      try {
+        if (window._currentUser) {
+          window._fsSetDoc(window._fsDoc(window._db, "users", window._currentUser.uid), { referralBonusQueue: [] }, { merge: true });
+        }
+      } catch (e) { console.warn("[referral] queue clear failed", e); }
+      return;
+    }
+    const item = items[i++];
+    _showReferralBonusModal((item && item.credits) || 0, showNext);
+  };
+  showNext();
+}
+function _showReferralBonusModal(amount, onClose) {
+  const overlay = document.createElement("div");
+  overlay.className = "referral-bonus-modal";
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px";
+  overlay.innerHTML = `
+    <div style="background:#141210;border-radius:18px;padding:24px 24px 20px;max-width:340px;width:100%;border:1.5px solid #6a4a10;text-align:center;box-shadow:0 12px 44px rgba(0,0,0,0.55)">
+      <img src="assets/Robograder_Gift.webp" alt="" style="width:112px;height:auto;margin:0 auto 14px;display:block">
+      <div style="font-size:15px;color:#e8d9b8;line-height:1.6;margin-bottom:20px">
+        A user has issued you <strong style="color:#f0c860">${amount}</strong> bonus credit${amount === 1 ? "" : "s"} for recommending Robograder. Robograder has detected an unusual response within its circuitry. Is this...gratitude?
+      </div>
+      <button class="rg-btn rg-btn-branded rg-btn-md" style="width:100%">Cool!</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  const btn = overlay.querySelector("button");
+  if (btn) btn.onclick = () => { overlay.remove(); if (typeof onClose === "function") onClose(); };
 }
 
 function openSettings_buyCredits() {
@@ -11452,6 +11581,7 @@ initFirebase();
       <div id="promo-feedback" style="font-size:12px;margin-top:8px;min-height:16px;line-height:1.4"></div>
     </div>
     
+    <div id="buy-referral-note" style="display:none;margin-top:16px;padding-top:14px;border-top:1px solid #e8dec8;font-size:12.5px;line-height:1.5;color:#6a5a4a;text-align:center">Did someone tell you about Robograder? Thank them by sending a Referral Bonus in Settings.</div>
     <button onclick="hideBuyCredits()" style="margin-top:16px;width:100%;padding:12px 16px;background:#fff;color:#3a2a1a;border:1.5px solid #c8a96e;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;letter-spacing:0.5px">Cancel</button>
   </div>
 </div>

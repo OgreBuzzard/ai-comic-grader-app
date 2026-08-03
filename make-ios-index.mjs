@@ -459,12 +459,14 @@ mustReplace('D8b storekit helpers + showBuyCredits hook',
   const modal = document.getElementById("buy-credits-modal");
   if (modal) modal.style.display = "flex";
   refreshPromoRow();
+  refreshReferralEligibility();
 }`,
 `__SK__
 function showBuyCredits() {
   const modal = document.getElementById("buy-credits-modal");
   if (modal) modal.style.display = "flex";
   refreshPromoRow();
+  refreshReferralEligibility();
   if (window.Capacitor && window.Capacitor.isNativePlatform()) _iosLoadPrices();
 }`.replace('__SK__', `
 // ── iOS StoreKit 2 purchasing via @capgo/native-purchases (NativePurchases) ──

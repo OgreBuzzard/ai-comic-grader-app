@@ -14,6 +14,72 @@ async function getRawBody(req) {
   });
 }
 
+// Tier identification by credit count (matches api/referral.js). 5/20/100.
+const REFUND_TIER_BY_CREDITS = { 5: 'comic_stack', 20: 'comic_wall', 100: 'short_box' };
+
+// Referral clawback. Called after a refund reverses base credits. If the
+// refunding account (the referral ISSUER) no longer owns any production,
+// non-refunded purchase of `tier`, the referral that tier seeded is unbacked:
+// reverse both the referrer's tier bonus and the issuer's +3, and mark the
+// audit row reversed. Idempotent via the audit `reversed` flag. Credit
+// decrements clamp at 0 (matches the base-refund philosophy). referralGiven is
+// deliberately left set — per spec a consumed tier does not re-enable on rebuy.
+//
+// NOTE: this only runs for Stripe/web refunds — the only automated refund path
+// that exists. iOS/Android have no refund webhook, so their referral clawback
+// (and even base-credit reversal) is manual until those endpoints are built;
+// this helper is written to be reused by them when they are.
+async function clawbackReferralIfUnbacked(db, FieldValue, issuerUid, tier) {
+  const snap = await db.collection('purchases').where('userId', '==', issuerUid).get();
+  let stillOwns = false;
+  snap.forEach(d => {
+    const pd = d.data() || {};
+    if (pd.refunded) return;
+    if (pd.environment && pd.environment !== 'Production') return;
+    if (REFUND_TIER_BY_CREDITS[pd.credits] === tier) stillOwns = true;
+  });
+  if (stillOwns) return;
+
+  const auditRef = db.collection('referrals').doc(`${issuerUid}_${tier}`);
+  await db.runTransaction(async (tx) => {
+    const a = await tx.get(auditRef);
+    if (!a.exists) return;
+    const audit = a.data() || {};
+    if (audit.reversed) return;
+    const issuerRef = db.collection('users').doc(audit.issuerUid);
+    const recipientRef = db.collection('users').doc(audit.recipientUid);
+    const iSnap = await tx.get(issuerRef);
+    const rSnap = await tx.get(recipientRef);
+    const referrerCredits = audit.referrerCredits || 0;
+    const issuerCredits = audit.issuerCredits || 0;
+    const nowIso = new Date().toISOString();
+    if (iSnap.exists) {
+      const cur = (iSnap.data() || {}).assessmentCredits || 0;
+      tx.set(issuerRef, {
+        assessmentCredits: Math.max(0, cur - issuerCredits),
+        totalReferralIssued: FieldValue.increment(-issuerCredits),
+        referralClawbackCount: FieldValue.increment(1),
+        lastReferralClawbackAt: nowIso,
+      }, { merge: true });
+    }
+    if (rSnap.exists) {
+      const cur = (rSnap.data() || {}).assessmentCredits || 0;
+      tx.set(recipientRef, {
+        assessmentCredits: Math.max(0, cur - referrerCredits),
+        totalReferralReceived: FieldValue.increment(-referrerCredits),
+        referralClawbackCount: FieldValue.increment(1),
+        lastReferralClawbackAt: nowIso,
+      }, { merge: true });
+    }
+    tx.set(auditRef, {
+      reversed: true,
+      reversedAt: nowIso,
+      reversedReason: 'issuer_refund',
+    }, { merge: true });
+  });
+  console.log(`[refund] Referral clawback: tier ${tier}, issuer ${issuerUid} (audit ${issuerUid}_${tier}).`);
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -132,7 +198,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ received: true, skipped: 'no_payment_intent' });
     }
 
-    let userId, credits;
+    let userId, credits, sessionId;
     try {
       // Look up the original checkout session via payment_intent. There
       // should be exactly one session per PI in our flow.
@@ -147,6 +213,7 @@ export default async function handler(req, res) {
       const session = sessions.data[0];
       userId = session.metadata?.userId;
       credits = session.metadata?.credits;
+      sessionId = session.id;
       if (!userId || !credits) {
         console.error(`[refund] Session ${session.id} missing userId/credits metadata.`);
         return res.status(200).json({ received: true, skipped: 'no_metadata' });
@@ -187,6 +254,23 @@ export default async function handler(req, res) {
       });
 
       console.log(`[refund] Reversed ${credits} credits for user ${userId} (charge ${charge.id}).`);
+
+      // Mark the ledger doc refunded so tier-ownership checks exclude it.
+      if (sessionId) {
+        try {
+          await db.collection('purchases').doc(sessionId).set(
+            { refunded: true, refundedAt: new Date().toISOString() }, { merge: true }
+          );
+        } catch (e) { console.error('[refund] Could not mark purchase refunded:', e); }
+      }
+
+      // Referral clawback (see helper). Best-effort; never fail the webhook on it.
+      const refundedTier = REFUND_TIER_BY_CREDITS[parseInt(credits)];
+      if (refundedTier) {
+        try {
+          await clawbackReferralIfUnbacked(db, FieldValue, userId, refundedTier);
+        } catch (e) { console.error('[refund] Referral clawback failed:', e); }
+      }
     } catch (e) {
       console.error('[refund] Failed to reverse credits:', e);
       return res.status(500).json({ error: 'Failed to reverse credits' });

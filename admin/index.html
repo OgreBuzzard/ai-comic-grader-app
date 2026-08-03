@@ -968,6 +968,7 @@ async function renderDashboard() {
         <button data-tab="items" class="${state.tab === 'items' ? 'active' : ''}">Items</button>
         <button data-tab="users" class="${state.tab === 'users' ? 'active' : ''}">Users</button>
         <button data-tab="sales" class="${state.tab === 'sales' ? 'active' : ''}">Sales</button>
+        <button data-tab="referrals" class="${state.tab === 'referrals' ? 'active' : ''}">Referrals</button>
         <button data-tab="timings" class="${state.tab === 'timings' ? 'active' : ''}">Logs</button>
       </div>
       <div id="tab-content"></div>
@@ -996,6 +997,7 @@ function _renderActiveTab() {
   if (state.tab === 'timings') renderTimingsTab();
   else if (state.tab === 'items') renderItemsTab();
   else if (state.tab === 'sales') renderSalesTab();
+  else if (state.tab === 'referrals') renderReferralsTab();
   else renderUsersTab();
 }
 
@@ -1050,6 +1052,54 @@ function _renderSales() {
   `;
   const mb = document.getElementById('load-more-sales');
   if (mb) mb.onclick = () => { state.salesShown = shown + 20; _renderSales(); };
+}
+
+// Referrals tab — referral bonus audit from /api/referrals.
+async function renderReferralsTab() {
+  const el = document.getElementById('tab-content');
+  el.innerHTML = '<div class="loading">Loading referrals…</div>';
+  try { state.referralsData = await api('/api/referrals'); }
+  catch (e) { el.innerHTML = `<div class="empty">Referrals failed: ${escapeHtml(e.message || String(e))}</div>`; return; }
+  state.referralsShown = 20;
+  _renderReferrals();
+}
+function _renderReferrals() {
+  const el = document.getElementById('tab-content');
+  const data = state.referralsData;
+  if (!el || !data) return;
+  const t = data.totals || {};
+  const card = (label, val, sub) => `<div style="flex:1;background:#0e0f12;border:1px solid #23252c;border-radius:8px;padding:10px 12px;min-width:0;text-align:center;">
+      <div style="font-size:11px;color:#8a8d96;text-transform:uppercase;letter-spacing:1px">${label}</div>
+      <div style="font-size:14px;font-weight:700;color:#7fd0ff">${val}</div>
+      <div style="font-size:11px;color:#8a8d96">${sub || ''}</div>
+    </div>`;
+  const all = data.referrals || [];
+  const shown = state.referralsShown || 20;
+  const rows = all.slice(0, shown).map(r => {
+    const when = r.ts ? _fmtDateTime(new Date(r.ts).toISOString()) : '—';
+    const rev = r.reversed
+      ? ' <span style="font-size:9px;font-weight:700;color:#e0655a;border:1px solid #e0655a;border-radius:3px;padding:0 3px">REVERSED</span>'
+      : '';
+    const code = c => c ? '<span style="color:#e8c257;font-weight:700;">' + escapeHtml(c) + '</span>' : '';
+    return `<div class="row" style="align-items:center;${r.reversed ? 'opacity:.55;' : ''}">
+        <div class="main">
+          <div class="title" style="font-size:13px;">${escapeHtml(r.tierLabel)} · +${r.referrerCredits} referrer / +${r.issuerCredits} issuer${rev}</div>
+          <div class="sub">${escapeHtml(r.issuerName)} ${code(r.issuerCode)} → ${escapeHtml(r.recipientName)} ${code(r.recipientCode)} · ${when}</div>
+        </div>
+      </div>`;
+  }).join('');
+  const more = all.length > shown ? `<button class="load-more" id="load-more-referrals">Load more (${all.length - shown})</button>` : '';
+  el.innerHTML = `
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      ${card('Referrals', t.count || 0, `${t.active || 0} active · ${t.reversed || 0} reversed`)}
+      ${card('Referrer credits', t.referrerCredits || 0, 'granted (active)')}
+      ${card('Issuer credits', t.issuerCredits || 0, 'granted (active)')}
+    </div>
+    ${rows || '<div class="empty">No referrals yet.</div>'}
+    ${more}
+  `;
+  const mb = document.getElementById('load-more-referrals');
+  if (mb) mb.onclick = () => { state.referralsShown = shown + 20; _renderReferrals(); };
 }
 
 function renderUsersTab() {
