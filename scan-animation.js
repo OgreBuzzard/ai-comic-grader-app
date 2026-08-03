@@ -363,8 +363,8 @@
     /* S21: Android only swaps the KEYFRAME (rgShellSlideUpAndroid ends at the nudge
        instead of 0). The resting transform stays the base translate(-50%,100%) offscreen
        — do NOT set a resting transform here, or the shell paints its final position for
-       one frame during the 0.2s delay (the flicker). `forwards` holds the keyframe `to`
-       (the nudge) after the slide, so the nudge is preserved without a resting override. */
+       one frame during the 0.2s delay (the flicker). The forwards fill-mode holds the keyframe
+       end (the nudge) after the slide, so it is preserved without a resting override. */
     .rg-scan-stage.rg-android .rg-scan-shell {
       animation-name: rgShellSlideUpAndroid;
     }

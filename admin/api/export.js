@@ -8,7 +8,10 @@
 // the Admin SDK. This endpoint is the bridge — an admin pulls one JSON file
 // from the dashboard and hands it off for analysis/formatting.
 //
-// SCOPE: items only (+ owner context). Does NOT dump purchase/credit ledgers.
+// SCOPE: items (+ owner context), PLUS full accounts + purchases ledgers
+// (top-level `accounts` and `purchases` arrays; disable with ?ledgers=0).
+// The ledgers are the FULL sets, independent of the item filters — bucket by
+// createdAtMs client-side for signups/day and sales/day.
 //
 // PII WARNING: this payload contains emails, purchase prices, seller names,
 // and personal notes. It is for INTERNAL admin analysis only (covered by the
@@ -130,6 +133,7 @@ export default async function handler(req, res) {
     const fields = q.fields
       ? String(q.fields).split(',').map(s => s.trim()).filter(Boolean) : null;
     const aggregate = q.aggregate === '1' || q.count === '1';
+    const includeLedgers = q.ledgers !== '0'; // accounts + purchases ledgers (default ON)
     const limit = toNum(q.limit);
     const PII_FIELDS = ['_userName', '_userEmail', 'purchasePrice', 'salePrice',
       'askingPrice', 'notes', 'seller', 'graderNotes', 'cgcNotes', 'psaNotes'];
@@ -147,6 +151,82 @@ export default async function handler(req, res) {
         trainingOptIn: d.trainingOptIn !== false, // default true (opt-out model)
         accountCreatedAt: d.createdAt || null,
       };
+    }
+
+    // ── Ledgers: ALL accounts + ALL purchases (for signup-rate & sales-by-day
+    //    analysis). Independent of the item filters above — always the full set,
+    //    so you can bucket by day client-side. Skip with ?ledgers=0. Non-fatal:
+    //    a failure here still ships the items export.
+    const isoOf = c => (c && typeof c.toDate === 'function') ? c.toDate().toISOString()
+      : (typeof c === 'string' ? c : null);
+    const msOf = (c, altMs) => (c && typeof c.toMillis === 'function') ? c.toMillis()
+      : (typeof altMs === 'number' ? altMs
+      : (typeof c === 'string' ? (Date.parse(c) || null) : null));
+
+    let accounts = [];
+    let purchases = [];
+    if (includeLedgers) {
+      // Every account (incl. users who never added an item — invisible in the
+      // item rows above). createdAt is what you bucket to get signups/day.
+      accounts = usersSnap.docs.map(doc => {
+        const d = doc.data();
+        return {
+          uid: doc.id,
+          email: d.email || '',
+          name: d.displayName || d.email || '(no name)',
+          createdAt: isoOf(d.createdAt),
+          createdAtMs: msOf(d.createdAt, d.createdAtMs),
+          assessmentCredits: d.assessmentCredits ?? null,
+          totalPurchased: d.totalPurchased ?? null,
+          trainingOptIn: d.trainingOptIn !== false,
+        };
+      });
+
+      // Purchase ledger: web (Stripe), iOS (IAP), Android (Play) all write the
+      // `purchases` collection. Gross `amount` is reliable; `net` (what you keep)
+      // is per-platform APPROXIMATE — Stripe exact; Apple 70%; Google 85% (the
+      // 15% small-business tier — adjust if you're still at 30%). Test/Sandbox
+      // buys are KEPT here (unlike the Sales tab) and flagged via environment /
+      // isProduction so you can include or exclude them in analysis.
+      try {
+        const LIST_PRICE = {
+          'app.robograder.credits.stack': 9.99,
+          'app.robograder.credits.wall': 29.99,
+          'app.robograder.credits.shortbox': 99.99,
+          'app.robograder.credits.shortbox2': 99.99,
+        };
+        const STRIPE_PCT = 0.029, STRIPE_FIXED = 0.30, APPLE_KEEP = 0.70, GOOGLE_KEEP = 0.85;
+        const purchSnap = await db.collection('purchases').get();
+        purchases = purchSnap.docs.map(doc => {
+          const p = doc.data();
+          const src = p.source || (p.amountCents != null ? 'web_stripe' : '');
+          const platform = src === 'ios_iap' ? 'ios' : src === 'android_play' ? 'android' : 'web';
+          const amount = platform === 'web'
+            ? (p.amountCents || 0) / 100
+            : (LIST_PRICE[p.productId] || 0);
+          const net = platform === 'web'
+            ? +Math.max(0, amount - (amount * STRIPE_PCT + STRIPE_FIXED)).toFixed(2)
+            : +(amount * (platform === 'ios' ? APPLE_KEEP : GOOGLE_KEEP)).toFixed(2);
+          const ms = msOf(p.createdAt, p.createdAtMs);
+          return {
+            id: doc.id,
+            platform,
+            source: src || null,
+            amount: +Number(amount).toFixed(2),
+            net,
+            credits: p.credits ?? null,
+            productId: p.productId || null,
+            environment: p.environment || null,          // 'Test' | 'Production' | null
+            isProduction: !(p.environment && p.environment !== 'Production'),
+            userId: p.userId || '',
+            orderId: p.orderId || null,
+            createdAt: isoOf(p.createdAt) || (ms ? new Date(ms).toISOString() : null),
+            createdAtMs: ms,
+          };
+        });
+      } catch (e) {
+        console.warn('[admin-export] purchases ledger skipped:', e.message);
+      }
     }
 
     // ── Every item, full fidelity ──────────────────────────────────────────
@@ -321,6 +401,11 @@ export default async function handler(req, res) {
       projected: !!fields,
       containsPII,
       filtersApplied,
+      ledgersIncluded: includeLedgers,
+      accounts,
+      accountsCount: accounts.length,
+      purchases,
+      purchasesCount: purchases.length,
       generatedAt: new Date().toISOString(),
     });
 
