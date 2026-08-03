@@ -9882,13 +9882,16 @@ function _preAssessPGCellsHTML() {
   // Use the SAME cell renderer as the full results panel (robograde-panel.js →
   // window.RobograderPanel.pgCell) so the pre-assessment and results panels match
   // exactly. Fallback kept only in case the panel script hasn't loaded yet.
-  const cell = (window.RobograderPanel && window.RobograderPanel.pgCell) || ((label, letter) => {
+  // Pre-assessment shows EMOJI, not the A/B/C letters used in the post-assessment
+  // bookend, so when the model returns the real grade a change does not read as
+  // "the grade got revised." Streetlight color still carries the signal; the emoji
+  // sets tone. A good, B minor, C not-recommended, unknown = graded after assess.
+  const cell = (label, letter) => {
     const L = String(letter || "").toUpperCase();
-    const map = { A: { bg: "#4e9e2e", lab: "#143d08", ltr: "#10240c" }, B: { bg: "#ffd655", lab: "#4a3406", ltr: "#3a2804" }, C: { bg: "#cc4436", lab: "#4a1410", ltr: "#40100a" } };
-    const s = map[L] || { bg: "#26331c", lab: "#6a8a4a", ltr: "#6a8a4a" };
-    const show = (L === "A" || L === "B" || L === "C") ? L : "?";
-    return `<div style="flex:1;text-align:center;background:${s.bg};border:1.5px solid #4a7028;border-radius:8px;padding:8px 2px"><div style="font-size:9px;color:${s.lab};letter-spacing:0.5px;margin-bottom:3px">${label}</div><div style="font-size:26px;font-weight:600;color:${s.ltr};line-height:1">${show}</div></div>`;
-  });
+    const map = { A: { bg: "#4e9e2e", lab: "#143d08", emoji: "👌", aria: "good" }, B: { bg: "#ffd655", lab: "#4a3406", emoji: "😕", aria: "minor issue" }, C: { bg: "#cc4436", lab: "#4a1410", emoji: "😬", aria: "not recommended" } };
+    const s = map[L] || { bg: "#26331c", lab: "#6a8a4a", emoji: "🤷", aria: "graded after assessment" };
+    return `<div style="flex:1;text-align:center;background:${s.bg};border:1.5px solid #4a7028;border-radius:8px;padding:8px 2px"><div style="font-size:9px;color:${s.lab};letter-spacing:0.5px;margin-bottom:3px">${label}</div><div style="font-size:23px;line-height:1.15" role="img" aria-label="${s.aria}">${s.emoji}</div></div>`;
+  };
   return cell("FOCUS", pg.focus) + cell("LIGHTING", pg.lighting) + cell("CROPPING", "?") + cell("ANGLE", "?");
 }
 // The pre-assessment mini-panel. Hidden once the book is assessed (the real
