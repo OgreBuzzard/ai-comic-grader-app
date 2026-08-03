@@ -977,6 +977,9 @@ onAuthStateChanged(auth, async user => {
       z-index: 8;
     }
     #camera-lens-selector.show { display: flex; }
+    /* Zoom toggle has no purpose on the rotate-to-orientation screen and was
+       overlapping the rotate card's button — hide it whenever the card is up. */
+    #camera-modal.rotate-needed #camera-lens-selector { display: none !important; }
     /* S15 May 29: redesigned from per-lens chip list (small 44×44 circles
        with short labels like "1×" / "2×") to a single TOGGLE pill saying
        "ZOOM IN" or "ZOOM OUT". The old 44px circle was crushing the
@@ -1017,8 +1020,6 @@ onAuthStateChanged(auth, async user => {
        from the neutral upload control. */
     /* S21: Skip (shown only on the Interior slot) floats centered ABOVE the controls
        bar so it no longer collides with the bottom-right zoom toggle. */
-    #camera-skip { position: absolute; left: 50%; right: auto; top: auto; bottom: 100%; transform: translateX(-50%); margin-bottom: 10px; background: rgba(60,45,10,0.7); border: 1px solid rgba(240,200,90,0.5); color: #f0d99a; padding: 10px 16px; border-radius: 8px; font-size: 12px; font-weight: 700; letter-spacing: 0.3px; cursor: pointer; max-width: 70%; line-height: 1.2; text-align: center; }
-    #camera-skip:active { background: rgba(60,45,10,0.9); }
     #camera-upload-link:active { background: rgba(0,0,0,0.75); }
     /* Permission-denied dialog (sits inside camera-modal area but overlays the video). */
     #camera-perm-dialog { position: absolute; inset: 0; background: rgba(0,0,0,0.85); display: none; flex-direction: column; align-items: center; justify-content: center; padding: 24px; z-index: 10; }
@@ -1757,7 +1758,6 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
       <button id="camera-capture" onclick="cameraCapture()" aria-label="Capture photo"></button>
       <div id="camera-lens-selector"></div>
       
-      <button id="camera-skip" onclick="cameraSkipSlot()" style="display:none">Skip</button>
     </div>
   </div>
 </div>
@@ -10254,10 +10254,6 @@ function cameraOpenSlot(slotIndex) {
   const label = (kind === "corner" ? CAMERA_LABEL_CORNER : kind === "signature" ? [ "Signature 1", "Signature 2" ] : kind === "interiorCover" ? [ "Interior Front", "Interior Back" ] : kind === "interior" ? FULL_SLOTS.map(s => s.label) : kind === "restoration" ? RESTORATION_SLOTS.map(s => s.label) : kind === "uvfront" ? [ "UV FRONT" ] : CAMERA_LABEL_MAIN)[slotIndex];
   const labelEl = document.getElementById("camera-slot-label");
   if (labelEl) labelEl.textContent = (label || "").toUpperCase();
-  const skipBtn = document.getElementById("camera-skip");
-  if (skipBtn) {
-    skipBtn.style.display = kind === "main" && slotIndex === 2 ? "block" : "none";
-  }
   const orientationMatch = applyCameraOrientationState();
   if (!orientationMatch) {
     const progress = document.getElementById("camera-progress");
@@ -10297,16 +10293,6 @@ function cameraOpenSlot(slotIndex) {
   }
 }
 
-function cameraSkipSlot() {
-  if (!_cameraState) return;
-  if (!(_cameraState.kind === "main" && _cameraState.current === 2)) return;
-  if (_cameraState.mode === "walkthrough" && _cameraState.queue.length > 0) {
-    const nextSlot = _cameraState.queue.shift();
-    cameraOpenSlot(nextSlot);
-  } else {
-    cameraFinish();
-  }
-}
 
 function detectSlabLabel(dataUrl) {
   return new Promise(resolve => {
