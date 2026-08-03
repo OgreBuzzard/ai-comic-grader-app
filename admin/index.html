@@ -1027,10 +1027,13 @@ function _renderSales() {
     const when = p.ts ? _fmtDateTime(new Date(p.ts).toISOString()) : '—';
     const badge = p.platform === 'ios'
       ? '<span style="font-size:9px;font-weight:700;color:#0a84ff;border:1px solid #0a84ff;border-radius:3px;padding:0 3px">iOS</span>'
+      : p.platform === 'android'
+      ? '<span style="font-size:9px;font-weight:700;color:#3ddc84;border:1px solid #3ddc84;border-radius:3px;padding:0 3px">AND</span>'
       : '<span style="font-size:9px;font-weight:700;color:#a0a0a0;border:1px solid #555;border-radius:3px;padding:0 3px">WEB</span>';
+    const testTag = p.isTest ? ' <span style="font-size:9px;font-weight:700;color:#e8c257;border:1px solid #e8c257;border-radius:3px;padding:0 3px">TEST</span>' : '';
     return `<div class="row" style="align-items:center;">
         <div class="main">
-          <div class="title" style="font-size:13px;">${money(p.amount)} <span style="color:#6a9a6a">(${money(p.net)})</span> · ${p.credits ?? '?'} cr ${badge}</div>
+          <div class="title" style="font-size:13px;">${money(p.amount)} <span style="color:#6a9a6a">(${money(p.net)})</span> · ${p.credits ?? '?'} cr ${badge}${testTag}</div>
           <div class="sub">${escapeHtml(p.userName)}${p.transferCode ? ' · <span style="color:#e8c257;font-weight:700;">' + escapeHtml(p.transferCode) + '</span>' : ''} · ${when}</div>
         </div>
         <div class="meta" style="display:flex;flex-direction:column;align-items:flex-end;gap:1px;">
@@ -1041,7 +1044,7 @@ function _renderSales() {
   }).join('');
   const more = all.length > shown ? `<button class="load-more" id="load-more-sales">Load more (${all.length - shown})</button>` : '';
   el.innerHTML = `
-    <div style="display:flex;gap:8px;margin-bottom:12px;">${card('Web', t.web)}${card('iOS', t.ios)}${card('Combined', t.combined)}</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;">${card('Web', t.web)}${card('iOS', t.ios)}${card('Android', t.android)}${card('Combined', t.combined)}</div>
     ${rows || '<div class="empty">No purchases yet.</div>'}
     ${more}
   `;

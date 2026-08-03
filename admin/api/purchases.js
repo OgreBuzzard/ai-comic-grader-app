@@ -29,10 +29,12 @@ const IOS_PRICE = {
 //   Store Small Business Program enrollment takes effect (drops it to 15%).
 //   Stripe: US standard 2.9% + $0.30 per transaction.
 const APPLE_KEEP = 0.70;
+const GOOGLE_KEEP = 0.85;   // Play small-business tier (15% cut). Set to 0.70 if still at 30%.
 const STRIPE_PCT = 0.029;
 const STRIPE_FIXED = 0.30;
-const netOf = (amount, isIos) => isIos
-  ? +(amount * APPLE_KEEP).toFixed(2)
+const netOf = (amount, platform) =>
+  platform === 'ios' ? +(amount * APPLE_KEEP).toFixed(2)
+  : platform === 'android' ? +(amount * GOOGLE_KEEP).toFixed(2)
   : +Math.max(0, amount - (amount * STRIPE_PCT + STRIPE_FIXED)).toFixed(2);
 
 // Normalize the mixed createdAt (Firestore Timestamp on iOS, ISO string on web).
@@ -85,21 +87,34 @@ export default async function handler(req, res) {
       bookCounts[uid] = (bookCounts[uid] || 0) + 1;
     });
 
-    const totals = { web: { count: 0, amount: 0, net: 0 }, ios: { count: 0, amount: 0, net: 0 } };
+    const totals = { web: { count: 0, amount: 0, net: 0 }, ios: { count: 0, amount: 0, net: 0 }, android: { count: 0, amount: 0, net: 0 } };
     let rows = purchSnap.docs.map(doc => {
       const p = doc.data();
       const uid = p.userId || '';
-      const isIos = p.source === 'ios_iap';
-      // Skip Sandbox/test IAP buys — not real revenue (was inflating iOS totals).
-      if (isIos && p.environment && p.environment !== 'Production') return null;
-      const amount = isIos ? (IOS_PRICE[p.productId] || 0) : ((p.amountCents || 0) / 100);
-      const net = netOf(amount, isIos);   // what you keep after the platform cut
+      const platform = p.source === 'ios_iap' ? 'ios'
+        : p.source === 'android_play' ? 'android'
+        : 'web';
+      const isTest = !!(p.environment && p.environment !== 'Production');
+      // iOS Sandbox buys are hidden entirely (legacy behavior). Android test buys
+      // are KEPT so they stay visible for verification, but flagged and worth $0 so
+      // they never inflate revenue.
+      if (platform === 'ios' && isTest) return null;
+      const listAmount = (platform === 'ios' || platform === 'android')
+        ? (IOS_PRICE[p.productId] || 0)         // store buys carry productId, not amountCents
+        : ((p.amountCents || 0) / 100);
+      const amount = isTest ? 0 : listAmount;
+      const net = isTest ? 0 : netOf(listAmount, platform);
       const u = uinfo[uid] || {};
-      const t = isIos ? totals.ios : totals.web;
-      t.count++; t.amount = +(t.amount + amount).toFixed(2); t.net = +(t.net + net).toFixed(2);
+      // Only real (non-test) purchases count toward the revenue totals.
+      if (!isTest) {
+        const t = totals[platform];
+        t.count++; t.amount = +(t.amount + amount).toFixed(2); t.net = +(t.net + net).toFixed(2);
+      }
       return {
         id: doc.id,
-        platform: isIos ? 'ios' : 'web',
+        platform,
+        isTest,
+        environment: p.environment || null,
         amount,
         net,
         credits: p.credits ?? null,
@@ -116,14 +131,14 @@ export default async function handler(req, res) {
     rows = rows.slice(0, limit);
 
     const combined = {
-      count: totals.web.count + totals.ios.count,
-      amount: +(totals.web.amount + totals.ios.amount).toFixed(2),
-      net: +(totals.web.net + totals.ios.net).toFixed(2),
+      count: totals.web.count + totals.ios.count + totals.android.count,
+      amount: +(totals.web.amount + totals.ios.amount + totals.android.amount).toFixed(2),
+      net: +(totals.web.net + totals.ios.net + totals.android.net).toFixed(2),
     };
 
     return res.status(200).json({
       purchases: rows,
-      totals: { web: totals.web, ios: totals.ios, combined },
+      totals: { web: totals.web, ios: totals.ios, android: totals.android, combined },
       generatedAt: new Date().toISOString(),
     });
   } catch (e) {

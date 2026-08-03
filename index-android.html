@@ -107,6 +107,39 @@
   <script src="/scan-animation.js"></script>
 
   <script src="/slab-detect.js"></script>
+  <script>
+  /* Shared styled popup — replaces native alert() for purchase (and other) messages.
+     window.rgPopup(message, { type:'success'|'error'|'info', title, okText, onClose }). */
+  window.rgPopup = function(message, opts) {
+    opts = opts || {};
+    var type = opts.type || 'info';
+    var title = opts.title || (type === 'success' ? 'Success' : type === 'error' ? 'Something went wrong' : 'Heads up');
+    var okText = opts.okText || 'OK';
+    var accents = {
+      success: { bar:'#4e9e2e', icon:'\u2713', iconbg:'#2c6e12' },
+      error:   { bar:'#e0a72e', icon:'!',        iconbg:'#7a5610' },
+      info:    { bar:'#4a90c2', icon:'i',        iconbg:'#2a5670' }
+    };
+    var a = accents[type] || accents.info;
+    var prev = document.getElementById('rg-popup-overlay'); if (prev) prev.remove();
+    var ov = document.createElement('div'); ov.id = 'rg-popup-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:24px;padding-top:max(24px,env(safe-area-inset-top));padding-bottom:max(24px,env(safe-area-inset-bottom));opacity:0;transition:opacity .15s ease;';
+    var card = document.createElement('div');
+    card.style.cssText = 'width:100%;max-width:340px;background:#152e10;border:1.5px solid #4a7028;border-radius:16px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.5);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,\"Segoe UI\",sans-serif;';
+    var bar = document.createElement('div'); bar.style.cssText = 'height:5px;background:'+a.bar;
+    var body = document.createElement('div'); body.style.cssText = 'padding:20px 20px 18px;text-align:center;';
+    var icon = document.createElement('div'); icon.style.cssText='width:52px;height:52px;border-radius:50%;background:'+a.iconbg+';color:#fff;font-size:28px;font-weight:700;line-height:52px;margin:0 auto 12px;'; icon.textContent=a.icon;
+    var h = document.createElement('div'); h.style.cssText='font-size:16px;font-weight:700;color:#eaf5df;margin-bottom:6px;'; h.textContent=title;
+    var msg = document.createElement('div'); msg.style.cssText='font-size:13.5px;line-height:1.5;color:#b7cfa6;white-space:pre-line;'; msg.textContent=message||'';
+    var btn = document.createElement('button'); btn.style.cssText='margin-top:18px;width:100%;padding:12px;border:none;border-radius:10px;background:'+a.bar+';color:#0d1f08;font-size:15px;font-weight:800;letter-spacing:.3px;cursor:pointer;'; btn.textContent=okText;
+    body.appendChild(icon); body.appendChild(h); body.appendChild(msg); body.appendChild(btn);
+    card.appendChild(bar); card.appendChild(body); ov.appendChild(card); document.body.appendChild(ov);
+    requestAnimationFrame(function(){ ov.style.opacity='1'; card.style.transform='translateY(0) scale(1)'; });
+    function close(){ ov.style.opacity='0'; setTimeout(function(){ if(ov.parentNode) ov.parentNode.removeChild(ov); },160); if(opts.onClose){try{opts.onClose();}catch(e){}} }
+    btn.onclick=close; ov.addEventListener('click',function(e){ if(e.target===ov) close(); });
+    return close;
+  };
+  </script>
 
   <script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
 
@@ -3948,7 +3981,7 @@ function _isCancelError(e) {
 async function _androidBuyCredits(pkg) {
   const NP = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativePurchases;
   const productId = PLAY_PRODUCT_IDS[pkg];
-  if (!NP || !productId) { alert("Purchases are unavailable right now. Please try again."); return; }
+  if (!NP || !productId) { window.rgPopup("Purchases are unavailable right now. Please try again.", { type: "error" }); return; }
   let txn;
   try {
     txn = await NP.purchaseProduct({
@@ -3958,13 +3991,13 @@ async function _androidBuyCredits(pkg) {
   } catch (e) {
     if (!_isCancelError(e)) {
       const msg = ((e && (e.message || e.code)) || 'Unknown error') + '';
-      alert("Purchase failed: " + msg);
+      window.rgPopup("Purchase failed: " + msg, { type: "error" });
     }
     return;
   }
   // On Android the plugin exposes the Google Play purchaseToken as transactionId.
   const purchaseToken = txn && (txn.transactionId || txn.purchaseToken);
-  if (!purchaseToken) { alert("Purchase couldn't be verified (no token). If you were charged, email support@robograder.app."); return; }
+  if (!purchaseToken) { window.rgPopup("Purchase couldn't be verified (no token). If you were charged, email support@robograder.app.", { type: "error" }); return; }
   try {
     const idToken = await window._currentUser.getIdToken();
     const resp = await fetch("/api/verify_play", {
@@ -3973,10 +4006,10 @@ async function _androidBuyCredits(pkg) {
       body: JSON.stringify({ purchaseToken, productId })
     });
     const data = await resp.json().catch(function(){ return {}; });
-    if (resp.ok && data.ok) { await loadUserCredits(); hideBuyCredits(); alert("Added " + data.credits + " assessments to your account."); }
-    else { alert("We couldn't credit your purchase: " + (data.error || "unknown error") + "\n\nIf you were charged, your receipt is on file — email support@robograder.app and we'll fix it."); }
+    if (resp.ok && data.ok) { await loadUserCredits(); hideBuyCredits(); window.rgPopup("Added " + data.credits + " assessments to your account.", { type: "success", title: "Purchase complete" }); }
+    else { window.rgPopup("We couldn't credit your purchase: " + (data.error || "unknown error") + "\n\nIf you were charged, your receipt is on file — email support@robograder.app and we'll fix it.", { type: "error" }); }
   } catch (e) {
-    alert("Network error verifying your purchase. If you were charged, reopen the app or email support@robograder.app.");
+    window.rgPopup("Network error verifying your purchase. If you were charged, reopen the app or email support@robograder.app.", { type: "error" });
   }
 }
 
