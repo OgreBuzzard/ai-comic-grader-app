@@ -506,6 +506,10 @@
   .img-wrap.spread img { aspect-ratio: 3 / 2;  }  /* interior-cover spreads */
   .img-wrap.spine img  { aspect-ratio: 16 / 5; }  /* spine strip */
   .img-wrap.sig img    { aspect-ratio: 2 / 1;  }  /* signature strips */
+  /* S21: main Interior matches the app — a full-width 3/2 strip on its own row.
+     Front/Back stay the 3/4 portrait pair above; Spine is the 16/5 strip below. */
+  .img-wrap.imain      { grid-column: 1 / -1;  }
+  .img-wrap.imain img  { aspect-ratio: 3 / 2;  }
   /* Extreme-wide strips span the full grid width so they aren't squeezed into
      a half-width column. */
   .img-wrap.wide, .img-wrap.spine { grid-column: 1 / -1; }
@@ -2191,7 +2195,7 @@ function renderItemDetail(it) {
       <h3 class="section-h">Images (${it.images.length})</h3>
       <div class="images-block">
         ${it.images.map((url, i) => `
-          <div class="img-wrap ${it.images.length === 4 && i === 3 ? 'spine' : ''}" onclick="openAdminLightbox('${escapeAttr(url)}')">
+          <div class="img-wrap ${i === 3 ? 'spine' : i === 2 ? 'imain' : ''}" onclick="openAdminLightbox('${escapeAttr(url)}')">
             <div class="label">${imgLabel(i, it.images.length)}</div>
             <img src="${escapeAttr(url)}" alt="" loading="lazy">
           </div>

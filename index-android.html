@@ -1068,7 +1068,9 @@ onAuthStateChanged(auth, async user => {
        same visual weight. Only display:block'd on the Interior slot via
        JS. Amber-ish tint so it reads as "alternate action," distinct
        from the neutral upload control. */
-    #camera-skip { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); background: rgba(60,45,10,0.7); border: 1px solid rgba(240,200,90,0.5); color: #f0d99a; padding: 10px 16px; border-radius: 8px; font-size: 12px; font-weight: 700; letter-spacing: 0.3px; cursor: pointer; max-width: calc(50% - 60px); line-height: 1.2; text-align: center; }
+    /* S21: Skip (shown only on the Interior slot) floats centered ABOVE the controls
+       bar so it no longer collides with the bottom-right zoom toggle. */
+    #camera-skip { position: absolute; left: 50%; right: auto; top: auto; bottom: 100%; transform: translateX(-50%); margin-bottom: 10px; background: rgba(60,45,10,0.7); border: 1px solid rgba(240,200,90,0.5); color: #f0d99a; padding: 10px 16px; border-radius: 8px; font-size: 12px; font-weight: 700; letter-spacing: 0.3px; cursor: pointer; max-width: 70%; line-height: 1.2; text-align: center; }
     #camera-skip:active { background: rgba(60,45,10,0.9); }
     #camera-upload-link:active { background: rgba(0,0,0,0.75); }
     /* Permission-denied dialog (sits inside camera-modal area but overlays the video). */

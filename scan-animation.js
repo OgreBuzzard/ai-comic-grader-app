@@ -344,10 +344,7 @@
          chest appearing well up the screen rather than emerging
          gradually from the bottom. ease-in-out gives a smooth on-ramp.
          Duration extended to 2000ms to match storyboard timing. */
-      /* S21: fill-mode `both` (was `forwards`) so the `from` (offscreen) state is
-         applied during the 0.2s start delay and on the very first frame — kills the
-         1-frame flash where the shell painted in its FINAL position before sliding. */
-      animation: rgShellSlideUp 2000ms cubic-bezier(0.65, 0, 0.35, 1) 0.2s both;
+      animation: rgShellSlideUp 2000ms cubic-bezier(0.65, 0, 0.35, 1) 0.2s forwards;
       pointer-events: none;
     }
     @keyframes rgShellSlideUp {
@@ -363,9 +360,13 @@
        so it scales per device. Android only (class added at mount); iOS + PWA use
        rgShellSlideUp unchanged. Tune the single --rg-android-scan-nudge value below
        after on-device testing on the Samsung. */
+    /* S21: Android only swaps the KEYFRAME (rgShellSlideUpAndroid ends at the nudge
+       instead of 0). The resting transform stays the base translate(-50%,100%) offscreen
+       — do NOT set a resting transform here, or the shell paints its final position for
+       one frame during the 0.2s delay (the flicker). `forwards` holds the keyframe `to`
+       (the nudge) after the slide, so the nudge is preserved without a resting override. */
     .rg-scan-stage.rg-android .rg-scan-shell {
       animation-name: rgShellSlideUpAndroid;
-      transform: translate(-50%, var(--rg-android-scan-nudge, 2.25%));
     }
     @keyframes rgShellSlideUpAndroid {
       from { transform: translate(-50%, 100%); }
