@@ -1137,9 +1137,9 @@ function renderStats() {
   const { accounts, items, revenue, credits, spend } = state.stats;
   const r = revenue || {}, sp = spend || {};
   const dollars = c => '$' + ((c || 0) / 100).toFixed(2);
-  const netDay = (r.webNetDayCents || 0) + (r.iosNetDayCents || 0);
-  const netWeek = (r.webNetWeekCents || 0) + (r.iosNetWeekCents || 0);
-  const netMonth = (r.webNetMonthCents || 0) + (r.iosNetMonthCents || 0);
+  const netDay = (r.webNetDayCents || 0) + (r.iosNetDayCents || 0) + (r.androidNetDayCents || 0);
+  const netWeek = (r.webNetWeekCents || 0) + (r.iosNetWeekCents || 0) + (r.androidNetWeekCents || 0);
+  const netMonth = (r.webNetMonthCents || 0) + (r.iosNetMonthCents || 0) + (r.androidNetMonthCents || 0);
   const open = (localStorage.getItem('rg_income_open') !== '0'); // default expanded
   const bo = (d, w, m) => `<div class="breakouts"><span><strong>${dollars(d)}</strong> 24h</span><span><strong>${dollars(w)}</strong> 7d</span><span><strong>${dollars(m)}</strong> 30d</span></div>`;
   const sub = (label, d, w, m) => `<div style="margin-top:4px;font-size:10px;color:#8a8d96;line-height:1.5;">${label}&nbsp; <strong style="color:#c9c4bd">${dollars(d)}</strong> 24h · <strong style="color:#c9c4bd">${dollars(w)}</strong> 7d · <strong style="color:#c9c4bd">${dollars(m)}</strong> 30d</div>`;
@@ -1168,7 +1168,7 @@ function renderStats() {
       </div>
       <div id="income-body" style="display:${open ? 'block' : 'none'};">
         <div class="stats-grid">
-          <div class="stat-card"><h3>Revenue</h3><div class="total">${dollars(r.netCents || 0)}</div>${bo(netDay, netWeek, netMonth)}${sub('web', r.webNetDayCents, r.webNetWeekCents, r.webNetMonthCents)}${sub('iOS', r.iosNetDayCents, r.iosNetWeekCents, r.iosNetMonthCents)}</div>
+          <div class="stat-card"><h3>Revenue</h3><div class="total">${dollars(r.netCents || 0)}</div>${bo(netDay, netWeek, netMonth)}${sub('web', r.webNetDayCents, r.webNetWeekCents, r.webNetMonthCents)}${sub('iOS', r.iosNetDayCents, r.iosNetWeekCents, r.iosNetMonthCents)}${sub('Android', r.androidNetDayCents, r.androidNetWeekCents, r.androidNetMonthCents)}</div>
           <div class="stat-card"><h3>Spending</h3><div class="total">${dollars(sp.monthCents || 0)}</div>${bo(sp.dayCents, sp.weekCents, sp.monthCents)}</div>
           <div class="stat-card"><h3>Profit</h3><div class="total">${dollars(netMonth - (sp.monthCents || 0))}</div>${bo(netDay - (sp.dayCents || 0), netWeek - (sp.weekCents || 0), netMonth - (sp.monthCents || 0))}</div>
         </div>

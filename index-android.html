@@ -3903,7 +3903,7 @@ function showTermsModal() {
 
 async function buyCredits(pkg) {
   if (!window._currentUser) {
-    alert("Please sign in to purchase credits.");
+    window.rgPopup("Please sign in to purchase credits.", { type: "info" });
     return;
   }
   try {
@@ -3923,10 +3923,10 @@ async function buyCredits(pkg) {
     if (data.url) {
       window.location.href = data.url;
     } else {
-      alert("Failed to start checkout: " + (data.error || "Unknown error"));
+      window.rgPopup("Failed to start checkout: " + (data.error || "Unknown error"), { type: "error" });
     }
   } catch (e) {
-    alert("Checkout error: " + e.message);
+    window.rgPopup("Checkout error: " + e.message, { type: "error" });
   }
 }
 

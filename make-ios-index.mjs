@@ -487,7 +487,7 @@ function _isCancelError(e) {
 async function _iosBuyCredits(pkg) {
   const NP = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativePurchases;
   const productId = IOS_PRODUCT_IDS[pkg];
-  if (!NP || !productId) { alert("Purchases are unavailable right now. Please try again."); return; }
+  if (!NP || !productId) { window.rgPopup("Purchases are unavailable right now. Please try again.", { type: "error" }); return; }
   let txn;
   try {
     txn = await NP.purchaseProduct({
@@ -497,12 +497,12 @@ async function _iosBuyCredits(pkg) {
   } catch (e) {
     if (!_isCancelError(e)) {
       const msg = ((e && (e.message || e.code)) || 'Unknown error') + '';
-      alert("Purchase failed: " + msg);
+      window.rgPopup("Purchase failed: " + msg, { type: "error" });
     }
     return;
   }
   const jws = txn && txn.jwsRepresentation;
-  if (!jws) { alert("Purchase couldn't be verified (no receipt). If you were charged, email support@robograder.app."); return; }
+  if (!jws) { window.rgPopup("Purchase couldn't be verified (no receipt). If you were charged, email support@robograder.app.", { type: "error" }); return; }
   try {
     const idToken = await window._currentUser.getIdToken();
     const resp = await fetch("/api/verify_iap", {
@@ -511,10 +511,10 @@ async function _iosBuyCredits(pkg) {
       body: JSON.stringify({ jws })
     });
     const data = await resp.json().catch(function(){ return {}; });
-    if (resp.ok && data.ok) { await loadUserCredits(); hideBuyCredits(); alert("Added " + data.credits + " assessments to your account."); }
-    else { alert("We couldn't credit your purchase: " + (data.error || "unknown error") + "\\n\\nIf you were charged, your receipt is on file — email support@robograder.app and we'll fix it."); }
+    if (resp.ok && data.ok) { await loadUserCredits(); hideBuyCredits(); window.rgPopup("Added " + data.credits + " assessments to your account.", { type: "success", title: "Purchase complete" }); }
+    else { window.rgPopup("We couldn't credit your purchase: " + (data.error || "unknown error") + "\\n\\nIf you were charged, your receipt is on file — email support@robograder.app and we'll fix it.", { type: "error" }); }
   } catch (e) {
-    alert("Network error verifying your purchase. If you were charged, reopen the app or email support@robograder.app.");
+    window.rgPopup("Network error verifying your purchase. If you were charged, reopen the app or email support@robograder.app.", { type: "error" });
   }
 }
 
