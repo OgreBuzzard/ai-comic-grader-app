@@ -2876,7 +2876,7 @@ function escJsAttr(s) {
   return s ? String(s).replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;") : "";
 }
 
-let items = [], collapsed = {}, view = "list", selected = null, sortBy = "title", search = "", _listScrollY = 0, _lastDetailId = null;
+let items = [], collapsed = {}, view = "list", selected = null, sortBy = "title", search = "", _listScrollY = 0, _lastDetailId = null, _typeFilter = "all";
 
 let db, fsCollection, fsGetDocs, fsSetDoc, fsDeleteDoc, fsDoc, fsOnSnapshot, fsGetDoc;
 
@@ -4361,6 +4361,19 @@ function _syncTitleSepRow() {
   if (thumb) thumb.style.left = on ? "23px" : "3px";
 }
 
+function setTypeFilter(v) {
+  _typeFilter = v;
+  renderList();
+}
+
+function _typeFilterChips() {
+  const chip = (val, label) => {
+    const on = _typeFilter === val;
+    return `<button onclick="setTypeFilter('${val}')" style="flex:1;padding:7px 10px;border:none;border-radius:8px;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:800;letter-spacing:1px;text-transform:uppercase;cursor:pointer;background:${on ? "#2a2724" : "#e2e0dc"};color:${on ? "#ffffff" : "#5a534c"}">${label}</button>`;
+  };
+  return `<div style="display:flex;gap:6px;margin:4px 0 14px">${chip("all", "All")}${chip("comic", "Comics")}${chip("card", "Cards")}</div>`;
+}
+
 function renderList() {
   const main = document.getElementById("main");
   _iosPrefetchPrices(); // warm StoreKit prices during browsing (iOS only, once)
@@ -4372,6 +4385,17 @@ function renderList() {
     const q = search.toLowerCase();
     return !q || c.title?.toLowerCase().includes(q) || c.issue?.toLowerCase().includes(q) || c.cgcCert?.includes(q);
   });
+  // Card MVP: type-aware view. The All/Comics/Cards chips + per-row type badge
+  // appear ONLY for a MIXED collection (has both comics and cards); comic-only
+  // and card-only users never see a card/comic element (SPEC section 9).
+  const _realItems = items.filter(c => c.id !== SAMPLE_COMIC_ID);
+  const _hasCards = _realItems.some(c => c.type === "card");
+  const _hasComics = _realItems.some(c => c.type !== "card");
+  const _mixed = _hasCards && _hasComics;
+  if (_mixed) {
+    if (_typeFilter === "comic") filt = filt.filter(c => c.type !== "card");
+    else if (_typeFilter === "card") filt = filt.filter(c => c.type === "card");
+  }
   const OWNERSHIP_ORDER = [ "Owned", "Sold", "Watching", "Print" ];
   const buildTitleGroups = list => {
     const groups = {};
@@ -4442,6 +4466,7 @@ function renderList() {
   }).filter(Boolean);
   const hasRealBooks = items.some(c => c.id !== SAMPLE_COMIC_ID);
   let html = ``;
+  if (_mixed) html += _typeFilterChips();
   const anyBooks = sections.some(s => s.titles.length > 0);
   if (!anyBooks) {
     html += ``;
@@ -4494,7 +4519,7 @@ function renderList() {
         const _labelBtn = (printModeEnabled && _canLabel)
           ? `<button onclick="event.stopPropagation();togglePrintState('${esc(c.id)}')" title="${_inPrint ? "Remove from print queue" : "Add to print queue"}"\n              style="position:absolute;top:4px;right:6px;z-index:3;background:none;border:none;padding:2px;line-height:0;cursor:pointer">${_inPrint ? PRINT_ICON_X_SVG : PRINT_ICON_SVG}</button>`
           : "";
-        return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0">\n                  <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>\n                  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">\n                    ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${formatIssue(c.issue, c.title)}</span>` : ""}\n                    ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                  </div>\n                </div>\n                ${buildListCgcPsaStack(c)}\n                ${_labelBtn}\n              </div>\n            </div>`;
+        return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0">\n                  <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>\n                  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">\n                    ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${formatIssue(c.issue, c.title)}</span>` : ""}\n                    ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}${_mixed ? (c.type === "card" ? `<span style="font-size:9px;font-weight:800;letter-spacing:0.5px;color:#0a5a2a;background:#d6f0e0;border-radius:4px;padding:1px 5px">CARD</span>` : `<span style="font-size:9px;font-weight:800;letter-spacing:0.5px;color:#5a4a2a;background:#efe6d6;border-radius:4px;padding:1px 5px">COMIC</span>`) : ""}\n                  </div>\n                </div>\n                ${buildListCgcPsaStack(c)}\n                ${_labelBtn}\n              </div>\n            </div>`;
       };
       const _showSep = _showTitleSeparators();
       section.titles.forEach(title => {
