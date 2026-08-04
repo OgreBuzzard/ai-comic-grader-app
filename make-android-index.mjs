@@ -321,7 +321,7 @@ mustReplace('A7d modal ids comic_wall',
 mustReplace('A7e modal ids short_box',
 `          <div style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$100</div>
           <div style="font-size:13px;color:#3a2a1a;margin-top:3px">100 assessments</div>
-          <div style="font-size:12px;color:#6a5a4a;margin-top:1px">($1.00 each)</div>`,
+          <div id="unit-short_box" style="font-size:12px;color:#6a5a4a;margin-top:1px">($1.00 each)</div>`,
 `          <div id="price-short_box" style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$100</div>
           <div style="font-size:13px;color:#3a2a1a;margin-top:3px">100 assessments</div>
           <div id="unit-short_box" style="font-size:12px;color:#6a5a4a;margin-top:1px">($1.00 each)</div>`);

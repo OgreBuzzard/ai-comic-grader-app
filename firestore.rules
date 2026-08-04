@@ -45,8 +45,39 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
     // User document: credits, settings, etc.
+    //
+    // S21 SECURITY FIX: the previous rule (`allow read, write: if uid == userId`)
+    // let a signed-in user write ANY field to their own doc — including
+    // assessmentCredits — so anyone could self-grant credits from the browser
+    // console. Credits are CLIENT-MANAGED for exactly two legit flows: +3 free on
+    // account creation, and -1 per assessment. EVERY credit increase (purchases,
+    // referrals, repeat bonus, admin grants) is written server-side via the Admin
+    // SDK, which bypasses these rules. So: allow reads; allow create with at most
+    // the 3-credit free grant; allow updates ONLY when (a) assessmentCredits does
+    // not INCREASE and (b) the server-authoritative money/referral fields are
+    // unchanged. Settings writes (transferCode, opt-ins, exportLog, gift/referral
+    // popup acks, strike tracking) still pass. NOTE: strike fields
+    // (accountFlagged/assessmentLockedUntil) remain client-writable — a separate
+    // anti-abuse gap to close by moving strike tracking server-side later.
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      function unchanged(f) {
+        return request.resource.data.get(f, null) == resource.data.get(f, null);
+      }
+      function serverFieldsLocked() {
+        return unchanged('totalPurchased') && unchanged('everPurchased')
+            && unchanged('lastPurchaseDate') && unchanged('nextShortBoxBonus')
+            && unchanged('lastShortBoxAt') && unchanged('referralGiven')
+            && unchanged('referralBlocked') && unchanged('totalReferralIssued')
+            && unchanged('totalReferralReceived') && unchanged('freeCreditsGranted');
+      }
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId
+                    && request.resource.data.get('assessmentCredits', 0) <= 3;
+      allow update: if request.auth != null && request.auth.uid == userId
+                    && request.resource.data.get('assessmentCredits', 0)
+                       <= resource.data.get('assessmentCredits', 0)
+                    && serverFieldsLocked();
+      // No delete rule: the client cannot delete its own user doc (admin-only path).
     }
     // Config docs (S19): app-wide settings set from the admin dashboard —
     // currently config/caching = { enabled: bool, ttl: '5m'|'1h' }, read
@@ -147,6 +178,13 @@ service cloud.firestore {
     // deletion trail. Client read access would expose deleted users'
     // emails/UIDs. Deny both.
     match /account_deletions/{deletionId} {
+      allow read, write: if false;
+    }
+    // Referral audit ledger (S21): written by /api/referral + refund clawback
+    // (Admin SDK) and read by the admin dashboard API (Admin SDK). No client
+    // access — client read would expose the issuer→recipient graph; client write
+    // would let a user forge referral grants. Deny both.
+    match /referrals/{referralId} {
       allow read, write: if false;
     }
   }

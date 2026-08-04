@@ -4100,18 +4100,20 @@ function showBuyCredits() {
 // doc); the client only renders, so it always matches what's actually granted.
 function refreshShortBoxCard() {
   const el = document.getElementById("short-box-bonus-line");
-  if (!el) return;
+  const unit = document.getElementById("unit-short_box");
   const bonus = window._nextShortBoxBonus || 0;
   const last = window._lastShortBoxAt ? Date.parse(window._lastShortBoxAt) : 0;
   const YEAR = 365 * 24 * 60 * 60 * 1000;
   const active = bonus > 0 && last && (Date.now() - last <= YEAR);
-  if (active) {
+  if (active && el) {
     const total = 100 + bonus;
     const per = 99.99 / total;
     el.textContent = `+${bonus} repeat bonus ($${per.toFixed(2)} each)`;
     el.style.display = "block";
+    if (unit) unit.style.display = "none";   // avoid two per-unit prices
   } else {
-    el.style.display = "none";
+    if (el) el.style.display = "none";
+    if (unit) unit.style.display = "block";  // first-time buyer still sees a per-unit price
   }
 }
 
