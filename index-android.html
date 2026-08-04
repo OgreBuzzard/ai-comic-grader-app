@@ -8121,6 +8121,148 @@ function dismissAssessModal(err) {
   if (err) alert(describeAssessmentError(err));
 }
 
+let _pendingCardResult = null;
+
+// Card grading path (Pokemon MVP). Fully isolated from the comic assessGrade():
+// uploads photos, calls /api/assess_card, saves a type:"card" item + cardData,
+// spends one credit (same as comics), and shows an RG + predicted-PSA result.
+// Reuses the existing scan animation; card-specific animation/panel is deferred
+// to the v2 type-aware display work (see CARDS_MVP_SPEC).
+async function assessCardGrade() {
+  const imgs = (formData.images || []).filter(Boolean);
+  if (imgs.length === 0) { alert("Add at least one photo first."); return; }
+  if (assessing) return;
+
+  const _cb0 = document.getElementById("assess-btn") || document.getElementById("hg-assess-btn");
+  if (_cb0) { _cb0.textContent = "Preparing…"; _cb0.disabled = true; _cb0.style.opacity = "0.75"; }
+
+  const eligibility = await checkAssessmentEligibility();
+  if (!eligibility.allowed) {
+    alert(eligibility.message);
+    if (_cb0) { _cb0.textContent = _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE"; _cb0.disabled = false; _cb0.style.opacity = ""; }
+    return;
+  }
+  if (window._userCredits !== undefined && window._userCredits <= 0) {
+    if (confirm("You have no assessment credits remaining. Would you like to buy more?")) showBuyCredits();
+    if (_cb0) { _cb0.textContent = _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE"; _cb0.disabled = false; _cb0.style.opacity = ""; }
+    return;
+  }
+
+  assessing = true;
+  const _cb = document.getElementById("assess-btn") || document.getElementById("hg-assess-btn");
+  if (_cb) { _cb.textContent = "ASSESSING…"; _cb.disabled = true; _cb.style.opacity = "0.75"; }
+
+  const scanController = window.RobograderScan
+    ? window.RobograderScan.runScanAnimation(formData.images || [])
+    : { promise: Promise.resolve(), cancel: () => {} };
+
+  try {
+    const dataUrls = await Promise.all(imgs.slice(0, 4).map(async img => {
+      if (img.startsWith("http")) {
+        const resp = await fetch(img);
+        const blob = await resp.blob();
+        return await new Promise(res => { const r = new FileReader; r.onload = ev => res(ev.target.result); r.readAsDataURL(blob); });
+      }
+      return img;
+    }));
+    const compressed = await compressImagesSequentially(dataUrls);
+
+    const _resp = await fetch("/api/assess_card", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(window._currentUser ? { Authorization: "Bearer " + await window._currentUser.getIdToken() } : {})
+      },
+      body: JSON.stringify({ images: compressed })
+    });
+    await scanController.promise;
+    if (!_resp.ok) { const e = await _resp.text(); throw new Error("Assessment error: " + e); }
+    const out = await _resp.json();
+    if (out.error) throw new Error(out.error);
+    const card = out.card || {};
+
+    const ident = card.cardIdentification || {};
+    const cardName = String(ident.name || (out.identification && out.identification.name) || "Card").trim() || "Card";
+    const cardNumber = String(ident.number || (out.identification && out.identification.number) || "").trim();
+    const rgTotal = card.robograde && card.robograde.total != null ? Math.round(card.robograde.total) : null;
+
+    const cardId = (formData.id && String(formData.id)) || ("card_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7));
+    const rawImages = (formData.images || []).filter(Boolean);
+    const proc = await processImagesForSave(rawImages, cardId, STORAGE_SLOTS_MAIN, { generateThumbs: true });
+    const imageMetas = (formData.imagesMeta || []).filter(Boolean);
+
+    const rec = {
+      id: cardId,
+      type: "card",
+      title: cardName,
+      issue: cardNumber,
+      cardData: card,
+      images: proc.images,
+      thumbnails: proc.thumbnails,
+      imagesMeta: imageMetas.length ? imageMetas : rawImages.map(() => ({ source: "camera", capturedAt: new Date().toISOString() })),
+      psaGrade: card.psaGrade != null ? String(card.psaGrade) : "",
+      roboGrade: rgTotal != null ? { score: rgTotal, version: "card-v1", subscores: card.robograde || null } : null,
+      roboGradeId: generateRoboId(),
+      roboGradeDate: new Date().toISOString(),
+      dateAdded: new Date().toISOString(),
+      ownership: "Owned"
+    };
+
+    await saveItem(rec);
+    onAssessmentSuccess();
+
+    _pendingCardResult = rec;
+    mountCardResults(rec);
+  } catch (e) {
+    dismissAssessModal(e.message);
+  }
+  assessing = false;
+  const _stuck = document.getElementById("assess-btn") || document.getElementById("hg-assess-btn");
+  if (_stuck && _stuck.textContent && /ASSESS/i.test(_stuck.textContent)) {
+    _stuck.textContent = _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE";
+    _stuck.disabled = false;
+    _stuck.style.opacity = "";
+  }
+}
+
+function mountCardResults(rec) {
+  if (!window.RobograderScan || !window.RobograderScan.slideResultsIntoPanel) {
+    if (window.RobograderScan && window.RobograderScan.dismiss) window.RobograderScan.dismiss();
+    completeCardAssessment();
+    return;
+  }
+  const roboScore = rec.roboGrade && rec.roboGrade.score != null ? Math.round(rec.roboGrade.score) : null;
+  const psa = rec.psaGrade ? String(rec.psaGrade) : "";
+  setTimeout(() => {
+    if (window.RobograderScan.stopGridCycle) window.RobograderScan.stopGridCycle();
+    if (window.RobograderScan.stopNeedlePulse) window.RobograderScan.stopNeedlePulse();
+    if (window.RobograderScan.sweepNeedleToScore && roboScore != null) window.RobograderScan.sweepNeedleToScore(roboScore);
+  }, 1500);
+  if (window._modalFrameTimer) { clearInterval(window._modalFrameTimer); window._modalFrameTimer = null; }
+  const gridEl = document.getElementById("tracker-grid-frame");
+  if (gridEl) gridEl.style.display = "none";
+  const badge = (bg, txt, val, label, border) => `<div style="width:64px;height:64px;${border ? `border:${border};` : ""}background:${bg};border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)"><div style="font-size:22px;font-weight:800;color:${txt};line-height:1">${val}</div><div style="font-size:9px;color:${txt};opacity:0.75;margin-top:2px;letter-spacing:0.8px">${label}</div></div>`;
+  let badges = "";
+  if (roboScore != null) badges += badge("#0f1a05", "#aaee30", roboScore, "RG", "1.5px solid #3a5010");
+  if (psa) badges += badge("#2a5a8a", "#e0f0ff", psa, "PSA");
+  const line = esc(rec.title || "Card") + (rec.issue ? " · #" + esc(rec.issue) : "");
+  const html = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:10px;">\n      <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badges}</div>\n      <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;max-width:90%;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${line}</div>\n      <button id="assess-complete-btn" style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#3a9ee0;color:#fff;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">COMPLETE</button>\n    </div>`;
+  window.RobograderScan.slideResultsIntoPanel(html);
+  setTimeout(() => {
+    const btn = document.getElementById("assess-complete-btn");
+    if (btn) btn.onclick = completeCardAssessment;
+  }, 600);
+}
+
+async function completeCardAssessment() {
+  const rec = _pendingCardResult;
+  _pendingCardResult = null;
+  _assessed = true;
+  if (window.RobograderScan && window.RobograderScan.dismiss) window.RobograderScan.dismiss();
+  if (rec && rec.id) _lastDetailId = rec.id;
+  showList();
+}
+
 async function assessGrade() {
   const imgs = (formData.images || []).filter(Boolean);
   if (imgs.length === 0) {
@@ -8128,6 +8270,9 @@ async function assessGrade() {
     return;
   }
   if (assessing) return;
+  if (formData._isCard || (formData._slabDetect && formData._slabDetect.isCard)) {
+    return assessCardGrade();
+  }
   const _earlyBtn = document.getElementById("assess-btn") || document.getElementById("hg-assess-btn");
   if (_earlyBtn) {
     _earlyBtn.textContent = "Preparing…";
@@ -10884,6 +11029,10 @@ async function cameraCapture() {
       _cameraState.labelDetected = true;
       _cameraState.labelKind = (_slab.company || "CGC").toLowerCase();
       console.log("[camera] SLAB detected (" + _cameraState.labelKind + ") — skipping interior + raking; remaining queue:", _cameraState.queue);
+    } else if (_slab && _slab.isCard && _cameraState) {
+      _cameraState.queue = _cameraState.queue.filter(s => s !== 2 && s !== 3);
+      _cameraState.isCard = true;
+      console.log("[camera] CARD detected — front + back only; remaining queue:", _cameraState.queue);
     } else {
       console.log("[camera] not a slab (or detect unavailable) — full walkthrough");
     }
@@ -10903,7 +11052,7 @@ async function cameraCapture() {
 
 async function cameraFinish() {
   if (!_cameraState) return;
-  const {kind: kind, captures: captures, labelDetected: labelDetected, labelKind: labelKind} = _cameraState;
+  const {kind: kind, captures: captures, labelDetected: labelDetected, labelKind: labelKind, isCard: _isCardCap} = _cameraState;
   cameraCloseStream();
   document.getElementById("camera-modal").classList.remove("open");
   // S16: clear the guide so stale SVG can't leak into the next camera session
@@ -10914,6 +11063,7 @@ async function cameraFinish() {
     formData.labelDetected = true;
     formData.labelKind = labelKind || "cgc";
   }
+  if (_isCardCap) formData._isCard = true;
   await runCropperSequence(captures, kind);
 }
 

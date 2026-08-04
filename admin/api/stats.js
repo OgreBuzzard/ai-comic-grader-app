@@ -62,6 +62,10 @@ export default async function handler(req, res) {
 
     const itemsSnap = await db.collectionGroup('items').get();
     const items = { total: itemsSnap.size, day: 0, week: 0, month: 0 };
+    // S21: assessment platform mix (iOS / Android / PWA-web) from the client stamp.
+    // Only items saved since the stamp shipped carry clientPlatform; older ones are
+    // simply not counted here (so this is a forward-looking ratio).
+    const platforms = { ios:{day:0,week:0,month:0,total:0}, android:{day:0,week:0,month:0,total:0}, web:{day:0,week:0,month:0,total:0} };
     for (const doc of itemsSnap.docs) {
       const d = doc.data();
       const ms = Date.parse(d.roboGradeDate || d.dateAcquired || '');
@@ -69,6 +73,14 @@ export default async function handler(req, res) {
       if (ms >= cutoffs.day) items.day++;
       if (ms >= cutoffs.week) items.week++;
       if (ms >= cutoffs.month) items.month++;
+      const cp = d.clientPlatform;
+      const plat = (cp === 'ios' || cp === 'android') ? cp : (cp ? 'web' : null);
+      if (plat) {
+        platforms[plat].total++;
+        if (ms >= cutoffs.day) platforms[plat].day++;
+        if (ms >= cutoffs.week) platforms[plat].week++;
+        if (ms >= cutoffs.month) platforms[plat].month++;
+      }
     }
 
     // iOS purchase docs carry no dollar amount, so map productId → list price.
@@ -164,7 +176,7 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({
-      accounts, items, revenue, spend, series,
+      accounts, items, platforms, revenue, spend, series,
       credits: { outstanding: creditsOutstanding, avgAssessmentCost: +avgAssessmentCost.toFixed(4), liability: creditLiability },
       generatedAt: new Date().toISOString(),
     });
