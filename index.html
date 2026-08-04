@@ -5727,10 +5727,21 @@ async function uploadImageToStorage(blob, itemId, slot) {
   const uid = window._currentUser.uid;
   const path = `users/${uid}/items/${itemId}/${slot}.jpg`;
   const storageRef = window._fsRef(window._storage, path);
-  await window._fsUploadBytes(storageRef, blob, {
-    contentType: "image/jpeg"
-  });
-  return await window._fsGetDownloadURL(storageRef);
+  // S21 reliability: retry transient upload failures (flaky mobile connections
+  // were aborting the whole save AFTER the credit was already spent). 3 attempts
+  // with backoff; only throw if all fail.
+  let lastErr;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await window._fsUploadBytes(storageRef, blob, { contentType: "image/jpeg" });
+      return await window._fsGetDownloadURL(storageRef);
+    } catch (e) {
+      lastErr = e;
+      console.warn(`[upload] ${slot} attempt ${attempt + 1} failed:`, e && e.message);
+      if (attempt < 2) await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
+    }
+  }
+  throw lastErr || new Error("upload failed");
 }
 
 function isDataUrl(s) {

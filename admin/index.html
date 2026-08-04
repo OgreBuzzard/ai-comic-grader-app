@@ -2043,6 +2043,7 @@ function renderItemDetail(it) {
         ${it.transferCode ? `<span onclick="showUser('${escapeAttr(it.uid)}')" style="cursor:pointer;text-decoration:underline dotted;" title="Open this user's account">${it.userName ? escapeHtml(it.userName) : 'Unknown user'} · <span style="color:#e8c257;font-weight:700;">${escapeHtml(it.transferCode)}</span></span>` : (it.userName ? escapeHtml(it.userName) : 'Unknown user')}${it.userEmail ? ` · <a href="mailto:${escapeAttr(it.userEmail)}?subject=${encodeURIComponent('Robograder — ' + (it.title || '') + (it.issue ? ' #' + it.issue : ''))}" style="color:#7fd0ff;text-decoration:none;">✉ email user</a>` : ''}
       </div>
     </div>
+    ${(it.clientPlatform || it.clientAppVersion) ? `<div style="margin:-2px 0 12px;font-size:11px;color:#8a8d96;">\uD83D\uDCF1 CLIENT: <b style="color:#c8ccd4;">${escapeHtml(String(it.clientPlatform||'?')).toUpperCase()}</b>${it.clientAppVersion ? ' \u00B7 v' + escapeHtml(String(it.clientAppVersion)) : ''}${it.clientSavedAt ? ' \u00B7 saved ' + _fmtDateTime(it.clientSavedAt) : ''}</div>` : ''}
 
     <h3 class="section-h">Sub-scores</h3>
     <div class="scores">

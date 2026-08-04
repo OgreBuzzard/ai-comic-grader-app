@@ -173,6 +173,10 @@ export default async function handler(req, res) {
       // Assessment metadata
       roboGradeDate: flat.roboGradeDate || null,
       roboGradeId: flat.roboGradeId || '',
+      // S21: client platform/version stamp (which build produced this item)
+      clientPlatform: flat.clientPlatform || null,
+      clientAppVersion: flat.clientAppVersion || null,
+      clientSavedAt: flat.clientSavedAt || null,
       version: rg.version || null,
 
       // Grades.
