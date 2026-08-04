@@ -8,3 +8,5 @@ Thumbs.db
 
 # Dependencies (installed locally, not committed)
 node_modules/
+# Firebase service-account key for one-off local scripts — NEVER commit
+service-account.json
