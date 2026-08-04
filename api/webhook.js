@@ -160,8 +160,15 @@ export default async function handler(req, res) {
       }
       const grant = baseCredits + bonusCredits;   // total granted
 
+      let alreadyCredited = false;
       await db.runTransaction(async (tx) => {
+        // Idempotency guard (S21 fix): Stripe retries the webhook on any non-2xx,
+        // so without this a retry would credit the account a second time. If the
+        // ledger doc for this session already exists, the purchase was fulfilled —
+        // do nothing. (All reads must precede writes in a Firestore txn.)
+        const existing = await tx.get(purchaseRef);
         const userDoc = await tx.get(userRef);
+        if (existing.exists) { alreadyCredited = true; return; }
         const common = {
           everPurchased: true,
           lastPurchaseDate: new Date().toISOString(),
@@ -181,10 +188,9 @@ export default async function handler(req, res) {
             createdAt: new Date().toISOString(),
           });
         }
-        // Per-purchase ledger entry for the admin dashboard. Keyed by
-        // session.id for natural idempotency of the LEDGER (a Stripe retry
-        // overwrites identical data). NOTE: the credit INCREMENT above is not
-        // itself retry-guarded — pre-existing behavior, unchanged here.
+        // Per-purchase ledger entry for the admin dashboard, keyed by
+        // session.id. The exists-check above makes both the credit grant and
+        // this ledger write idempotent across Stripe retries.
         // Refunds reverse credits on the user doc but DO NOT touch this ledger.
         tx.set(purchaseRef, {
           userId,
@@ -199,7 +205,9 @@ export default async function handler(req, res) {
         });
       });
 
-      console.log(`Credited ${grant} assessments (base ${baseCredits}+bonus ${bonusCredits}) to user ${userId}`);
+      console.log(alreadyCredited
+        ? `[webhook] session ${session.id} already credited — skipped (retry).`
+        : `Credited ${grant} assessments (base ${baseCredits}+bonus ${bonusCredits}) to user ${userId}`);
     } catch (e) {
       console.error('Failed to credit user:', e);
       return res.status(500).json({ error: 'Failed to credit user' });

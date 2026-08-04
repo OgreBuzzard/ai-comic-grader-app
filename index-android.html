@@ -2028,6 +2028,36 @@ function _normalizeKeyIssue(s) {
   return s.toString().trim().replace(/^#/, "").replace(/^0+(\d)/, "$1");
 }
 
+// S21: FMV key builder with ANNUAL folding + Iron Man volume-name canonicalization.
+// The app labels annuals with "Annual" in the TITLE ("Amazing Spider-Man Annual",
+// issue "1"), while the index stores them under the BASE title with an "A"-prefixed
+// issue (amazing spider-man|A1). We canonicalize BOTH to base-title + "A<n>" (Matt's
+// A1/A2/A3 convention) so they always match. Also folds "Invincible Iron Man" ->
+// "Iron Man" (ComicVine returns both for the same 1968 vol-1 series). The fmv.json
+// converter MUST mirror this exactly.
+function _fmvKeyOf(title, issue) {
+  let t = (title == null ? "" : title.toString()).trim().replace(/\s+/g, " ");
+  let i = (issue == null ? "" : issue.toString()).trim().replace(/^#/, "");
+  const titleHasAnnual = /\bannual\b/i.test(t);
+  const mAnnualIssue = i.match(/^\s*(?:annual|ann\.?)\s*#?\s*0*(\d+)\s*$/i);
+  const mAIssue = i.match(/^\s*A\s*0*(\d+)\s*$/i);
+  if (titleHasAnnual) {
+    t = t.replace(/\bannual\b/ig, "").replace(/\s+/g, " ").trim();
+    const num = mAnnualIssue ? mAnnualIssue[1] : (mAIssue ? mAIssue[1] : i.replace(/^0+(\d)/, "$1"));
+    i = "A" + num;
+  } else if (mAnnualIssue) {
+    i = "A" + mAnnualIssue[1];
+  } else if (mAIssue) {
+    i = "A" + mAIssue[1];
+  } else {
+    i = i.replace(/^0+(\d)/, "$1");
+  }
+  // Iron Man vol-1 (1968) is catalogued as both "Iron Man" and "Invincible Iron
+  // Man". Canonicalize to "iron man" (volumeGuards separate later volumes by year).
+  t = t.replace(/^invincible\s+iron\s+man\b/i, "Iron Man");
+  return _normalizeKeyTitle(t) + "|" + i;
+}
+
 window.matchValueKey = function matchValueKey(title, issue, publisher, printing) {
   if (!_valueKeys) return null;
   // S16: Reprint gate restored — facsimile/reprint editions are not value keys
@@ -2093,7 +2123,7 @@ window.matchFMV = function matchFMV(title, issue, grade, printing, year) {
   }
   const g = parseFloat(grade);
   if (!isFinite(g)) return null;
-  const key = _normalizeKeyTitle(title) + "|" + _normalizeKeyIssue(issue);
+  const key = _fmvKeyOf(title, issue);
   let breaks = _fmvIndex.books[key];
   // Compression (S20): books[key] may be an integer index into a shared `curves`
   // table (many issues share the same price curve). Deref it. Inline arrays still work.
@@ -9971,6 +10001,37 @@ const CAMERA_GUIDE_MAIN = [ "guide_front.svg", "guide_back.svg", "guide_pq.svg",
 
 const CAMERA_GUIDE_CORNER = [ "guide_corner_tl.svg", "guide_corner_tr.svg", "guide_corner_bl.svg", "guide_corner_br.svg" ];
 
+// S21: overlays for the Full-assessment (kind "interior"), Deep interior-cover
+// (kind "interiorCover"), and Restoration (kind "restoration") slots — previously
+// none. The exterior top/bottom staple SVGs are identical, so both slots point at
+// guide_staple_ext_upper.svg; the interior front/back SVGs are identical, so both
+// point at guide_interior_front.svg. guide_edge_bottom is the mirror of _top.
+// (Matt can delete the unreferenced guide_staple_ext_lower.svg / guide_interior_back.svg.)
+const CAMERA_GUIDE_INTERIOR = [
+  "guide_edge_top.svg",          // top_pages
+  "guide_edge_outer.svg",        // outer_edge
+  "guide_edge_bottom.svg",       // bottom_pages
+  "guide_staple_ext_upper.svg",  // exterior_top_staple
+  "guide_staple_ext_upper.svg",  // exterior_bottom_staple
+  "guide_staple_interior.svg",   // interior_staple
+];
+
+const CAMERA_GUIDE_INTERIOR_COVER = [
+  "guide_interior_front.svg",    // interior_cover_front
+  "guide_interior_front.svg",    // interior_cover_back
+];
+
+const CAMERA_GUIDE_RESTORATION = [
+  CAMERA_GUIDE_MAIN[0],          // uv_front  -> reuse Front-cover guide
+  CAMERA_GUIDE_MAIN[1],          // uv_back   -> reuse Back-cover guide
+  "guide_staple_ext_upper.svg",  // exterior_top_staple
+  "guide_staple_ext_upper.svg",  // exterior_bottom_staple
+  "guide_edge_outer.svg",        // outer_edge
+  "guide_interior_front.svg",    // interior_front
+  "guide_interior_front.svg",    // interior_back
+  "guide_staple_interior.svg",   // interior_staple
+];
+
 const CAMERA_SLOT_ORIENTATION_MAIN = [ "portrait", "portrait", "portrait", "landscape" ];
 // S16: Full Assessment slots — exterior staples + top/bottom pages = landscape;
 // interior_staple (slot 7) = portrait (auto-rotated CW at capture time)
@@ -10581,7 +10642,7 @@ function cameraOpenSlot(slotIndex) {
     }
   }
   const {kind: kind, mode: mode, queue: queue} = _cameraState;
-  const guideFile = (kind === "corner" ? CAMERA_GUIDE_CORNER : kind === "signature" ? [ null, null ] : kind === "interiorCover" ? [ null, null ] : kind === "interior" ? [ null, null, null, null, null, null, null, null ] : kind === "restoration" ? [ CAMERA_GUIDE_MAIN[0], CAMERA_GUIDE_MAIN[1], null, null, null, null, null, null ] : kind === "uvfront" ? [ CAMERA_GUIDE_MAIN[0] ] : CAMERA_GUIDE_MAIN)[slotIndex];
+  const guideFile = (kind === "corner" ? CAMERA_GUIDE_CORNER : kind === "signature" ? [ null, null ] : kind === "interiorCover" ? CAMERA_GUIDE_INTERIOR_COVER : kind === "interior" ? CAMERA_GUIDE_INTERIOR : kind === "restoration" ? CAMERA_GUIDE_RESTORATION : kind === "uvfront" ? [ CAMERA_GUIDE_MAIN[0] ] : CAMERA_GUIDE_MAIN)[slotIndex];
   const label = (kind === "corner" ? CAMERA_LABEL_CORNER : kind === "signature" ? [ "Signature 1", "Signature 2" ] : kind === "interiorCover" ? [ "Interior Front", "Interior Back" ] : kind === "interior" ? FULL_SLOTS.map(s => s.label) : kind === "restoration" ? RESTORATION_SLOTS.map(s => s.label) : kind === "uvfront" ? [ "UV FRONT" ] : CAMERA_LABEL_MAIN)[slotIndex];
   const labelEl = document.getElementById("camera-slot-label");
   if (labelEl) labelEl.textContent = (label || "").toUpperCase();
