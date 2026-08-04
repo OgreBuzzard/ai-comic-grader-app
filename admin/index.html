@@ -2040,7 +2040,7 @@ function renderItemDetail(it) {
         ${it.ownership && it.ownership !== 'None' ? `<span class="pill" style="color:${ownColor[it.ownership] || 'var(--text)'};"><strong>${escapeHtml(it.ownership)}</strong></span>` : ''}
       </div>
       <div style="margin-top:6px;font-size:12px;color:#9aa;">
-        ${it.transferCode ? `<span onclick="showUser('${escapeAttr(uid)}')" style="cursor:pointer;text-decoration:underline dotted;" title="Open this user's account">${it.userName ? escapeHtml(it.userName) : 'Unknown user'} · <span style="color:#e8c257;font-weight:700;">${escapeHtml(it.transferCode)}</span></span>` : (it.userName ? escapeHtml(it.userName) : 'Unknown user')}${it.userEmail ? ` · <a href="mailto:${escapeAttr(it.userEmail)}?subject=${encodeURIComponent('Robograder — ' + (it.title || '') + (it.issue ? ' #' + it.issue : ''))}" style="color:#7fd0ff;text-decoration:none;">✉ email user</a>` : ''}
+        ${it.transferCode ? `<span onclick="showUser('${escapeAttr(it.uid)}')" style="cursor:pointer;text-decoration:underline dotted;" title="Open this user's account">${it.userName ? escapeHtml(it.userName) : 'Unknown user'} · <span style="color:#e8c257;font-weight:700;">${escapeHtml(it.transferCode)}</span></span>` : (it.userName ? escapeHtml(it.userName) : 'Unknown user')}${it.userEmail ? ` · <a href="mailto:${escapeAttr(it.userEmail)}?subject=${encodeURIComponent('Robograder — ' + (it.title || '') + (it.issue ? ' #' + it.issue : ''))}" style="color:#7fd0ff;text-decoration:none;">✉ email user</a>` : ''}
       </div>
     </div>
 

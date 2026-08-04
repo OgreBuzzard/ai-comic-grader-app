@@ -107,6 +107,32 @@
   <script src="/scan-animation.js"></script>
 
   <script src="/slab-detect.js"></script>
+  <!-- Robograde Scoring v2 — display transform (S21). Engine stays 0-100 internally;
+       this converts to the 31-tier (+/-) display. Type-aware (comic|card). DORMANT:
+       not yet wired to live comic surfaces; the card score panel uses it. -->
+  <script>
+  window.RGScoreV2 = (function () {
+    const LADDER = ["0","0+","1-","1","1+","2-","2","2+","3-","3","3+","4-","4","4+","5-","5","5+","6-","6","6+","7-","7","7+","8-","8","8+","9-","9","9+","10-","10"];
+    const CONFIG = {
+      comic: [ {key:"front",label:"Front",max:50}, {key:"back",label:"Back",max:20}, {key:"spine",label:"Spine",max:20}, {key:"interior",label:"Interior",max:10} ],
+      card:  [ {key:"surface",label:"Surface",max:40}, {key:"centering",label:"Centering",max:20}, {key:"corners",label:"Corners",max:20}, {key:"edges",label:"Edges",max:20} ],
+    };
+    const clampTier = t => Math.max(0, Math.min(30, t));
+    const roundHalfUp = x => Math.floor(x + 0.5);
+    const tierFromThirds = th => LADDER[clampTier(th)];
+    const subThirds = (val, max) => Math.max(0, Math.min(roundHalfUp(max*0.3), roundHalfUp((val||0)*0.3)));
+    const gradeFromScore = score => tierFromThirds(clampTier(roundHalfUp((score||0)*0.3)));
+    function fromSubscores(subscores, type) {
+      const cfg = CONFIG[type] || CONFIG.comic;
+      const subs = cfg.map(c => { const th = subThirds(subscores && subscores[c.key], c.max); return { key:c.key, label:c.label, thirds:th, maxThirds: roundHalfUp(c.max*0.3), display: tierFromThirds(th) }; });
+      const totalThirds = clampTier(subs.reduce((a,s)=>a+s.thirds,0));
+      return { grade: tierFromThirds(totalThirds), totalThirds, subs };
+    }
+    function pmBand(gradeLabel, pmNotches) { const i = LADDER.indexOf(gradeLabel); if (i < 0 || !(pmNotches>0)) return gradeLabel; return LADDER[clampTier(i-pmNotches)] + " to " + LADDER[clampTier(i+pmNotches)]; }
+    const PM_BASE = { slabbed:4, main:2, deep:1, full:0 };
+    return { LADDER, CONFIG, gradeFromScore, fromSubscores, tierFromThirds, subThirds, pmBand, PM_BASE, tierIndex: l=>LADDER.indexOf(l) };
+  })();
+  </script>
   <script>
   /* Shared styled popup — replaces native alert() for purchase (and other) messages.
      window.rgPopup(message, { type:'success'|'error'|'info', title, okText, onClose }). */
@@ -806,6 +832,12 @@ onAuthStateChanged(auth, async user => {
        align after both are scaled to fill the stage. */
     #camera-guide { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; display: flex; align-items: center; justify-content: center; padding: calc(env(safe-area-inset-top, 0px) + 8px) 8px calc(env(safe-area-inset-bottom, 0px) + 8px); box-sizing: border-box; }
     #camera-guide svg { width: 100%; height: 100%; display: block; object-fit: contain; }
+    /* S21: Interior Front/Back frame is a wide open-spread that otherwise fills the
+       stage — the header label overlaps its top and the shutter overlaps its bottom.
+       Reserve room top (label) + bottom (shutter) so the frame renders between them.
+       Scoped to the interior-cover guide only (toggled in JS by guide filename), so
+       the staple/edge/main guides are unaffected. */
+    #camera-guide.guide-interior-cover { padding-top: calc(env(safe-area-inset-top, 0px) + 56px); }
     /* S13: Rotate-orientation card. Shown inside the camera-stage when the
        active slot's preferred orientation doesn't match the device's current
        orientation. Replaces the camera viewfinder + guide for as long as the
@@ -10661,6 +10693,8 @@ function cameraOpenSlot(slotIndex) {
     return;
   }
   const guideEl = document.getElementById("camera-guide");
+  // S21: reserve label/shutter room for the Interior Front/Back frame only.
+  if (guideEl) guideEl.classList.toggle("guide-interior-cover", guideFile === "guide_interior_front.svg");
   // S16: clear stale guide immediately so the user never sees the previous
   // slot's overlay while the new one loads. Also bump a sequence counter so
   // a slow fetch from a prior slot can't overwrite a newer slot's guide.
