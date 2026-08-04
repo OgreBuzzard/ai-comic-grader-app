@@ -460,6 +460,7 @@ mustReplace('D8b storekit helpers + showBuyCredits hook',
   if (modal) modal.style.display = "flex";
   refreshPromoRow();
   refreshReferralEligibility();
+  refreshShortBoxCard();
 }`,
 `__SK__
 function showBuyCredits() {
@@ -467,6 +468,7 @@ function showBuyCredits() {
   if (modal) modal.style.display = "flex";
   refreshPromoRow();
   refreshReferralEligibility();
+  refreshShortBoxCard();
   if (window.Capacitor && window.Capacitor.isNativePlatform()) _iosLoadPrices();
 }`.replace('__SK__', `
 // ── iOS StoreKit 2 purchasing via @capgo/native-purchases (NativePurchases) ──

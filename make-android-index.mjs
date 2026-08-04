@@ -204,6 +204,7 @@ mustReplace('A7b play billing helpers + showBuyCredits hook',
   if (modal) modal.style.display = "flex";
   refreshPromoRow();
   refreshReferralEligibility();
+  refreshShortBoxCard();
 }`,
 `__PLAY__
 function showBuyCredits() {
@@ -211,6 +212,7 @@ function showBuyCredits() {
   if (modal) modal.style.display = "flex";
   refreshPromoRow();
   refreshReferralEligibility();
+  refreshShortBoxCard();
   if (window.Capacitor && window.Capacitor.isNativePlatform()) _androidLoadPrices();
 }`.replace('__PLAY__', `
 // ── Android Google Play Billing via @capgo/native-purchases (NativePurchases) ─

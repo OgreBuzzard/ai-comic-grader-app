@@ -12,6 +12,7 @@
 // ESM note (matches verify_play/verify_iap): one static Node built-in import
 // keeps Vercel treating this file as ESM; firebase-admin loads dynamically.
 import process from 'node:process';
+import { tierOf } from '../lib/repeat_bonus.js';
 
 // Bonus to the REFERRER (the code owner), by tier. The issuer always gets +3.
 const REFERRER_BONUS = { comic_stack: 5, comic_wall: 10, short_box: 50 };
@@ -19,7 +20,9 @@ const ISSUER_BONUS = 3;
 
 // A purchase's tier is identified by its credit count — works across web
 // (Stripe carries no productId), iOS, and Android. 5/20/100 are the only sizes.
-const TIER_BY_CREDITS = { 5: 'comic_stack', 20: 'comic_wall', 100: 'short_box' };
+// Legacy credit->tier map (superseded by tierOf from lib/repeat_bonus.js, which
+// handles Short Boxes that grant >100 under the repeat-purchase bonus).
+const TIER_BY_CREDITS = { 5: 'comic_stack', 20: 'comic_wall', 100: 'short_box' };  // eslint-disable-line no-unused-vars
 const TIER_RANK = { short_box: 3, comic_wall: 2, comic_stack: 1 };
 
 function parseServiceAccount() {
@@ -61,31 +64,36 @@ export default async function handler(req, res) {
       const p = d.data() || {};
       if (p.refunded) return;                                        // refunded -> tier no longer owned
       if (p.environment && p.environment !== 'Production') return;    // skip sandbox/test buys
-      const tier = TIER_BY_CREDITS[p.credits];
-      if (tier) purchasedTiers.add(tier);
+      const tier = tierOf(p);   // tier field first; handles 120/140.. Short Boxes (repeat bonus)
+      if (tier && TIER_RANK[tier]) purchasedTiers.add(tier);
     });
 
     // Which tiers has this account already used for a referral?
     const issuerRef = db.collection('users').doc(uid);
     const issuerSnap = await issuerRef.get();
-    const referralGiven = (issuerSnap.data() || {}).referralGiven || {};
+    const issuerData = issuerSnap.data() || {};
+    const issuerBlocked = !!issuerData.referralBlocked;   // flagged by a prior refund-after-spend clawback
+    const referralGiven = issuerData.referralGiven || {};
     const available = [...purchasedTiers]
       .filter(t => !referralGiven[t])
       .sort((a, b) => TIER_RANK[b] - TIER_RANK[a]);                    // highest tier first
 
     if (action === 'status') {
-      return res.status(200).json({ ok: true, eligible: available.length > 0 });
+      return res.status(200).json({ ok: true, eligible: !issuerBlocked && available.length > 0 });
     }
 
     // action: 'issue'
     const code = String(body.code || '').trim().toUpperCase();
     if (code.length !== 4) return res.status(400).json({ error: 'Enter a valid 4-character code', reason: 'format' });
+    if (issuerBlocked) return res.status(403).json({ error: 'Referral bonuses are unavailable on this account.', reason: 'blocked' });
     if (!available.length) return res.status(400).json({ error: 'No referral bonus available', reason: 'none' });
 
     const codeSnap = await db.collection('transfer_codes').doc(code).get();
     const recipientUid = codeSnap.exists ? (codeSnap.data() || {}).uid : null;
     if (!recipientUid) return res.status(404).json({ error: "That code doesn't exist — try again.", reason: 'not_found' });
     if (recipientUid === uid) return res.status(400).json({ error: "That's your own code.", reason: 'self' });
+    const recipientPre = await db.collection('users').doc(recipientUid).get();
+    if ((recipientPre.data() || {}).referralBlocked) return res.status(403).json({ error: "That account can't receive referral bonuses.", reason: 'recipient_blocked' });
 
     const tier = available[0];                    // highest unused tier
     const referrerBonus = REFERRER_BONUS[tier];

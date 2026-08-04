@@ -3749,6 +3749,9 @@ async function loadUserCredits() {
       if (Array.isArray(data.referralBonusQueue) && data.referralBonusQueue.length) {
         setTimeout(() => _processReferralQueue(data.referralBonusQueue), 1200);
       }
+      // Repeat-Purchase Discount (Short Box): server-cached next-purchase bonus.
+      window._nextShortBoxBonus = (typeof data.nextShortBoxBonus === "number") ? data.nextShortBoxBonus : 0;
+      window._lastShortBoxAt = data.lastShortBoxAt || null;
       if (typeof data.assessmentCredits === "number") {
         window._userCredits = data.assessmentCredits;
       } else if (window._userCredits === undefined) {
@@ -3919,6 +3922,27 @@ function showBuyCredits() {
   if (modal) modal.style.display = "flex";
   refreshPromoRow();
   refreshReferralEligibility();
+  refreshShortBoxCard();
+}
+
+// Repeat-Purchase Discount: show the bonus the user's NEXT Short Box would earn.
+// Server computes it (window._nextShortBoxBonus / _lastShortBoxAt via the user
+// doc); the client only renders, so it always matches what's actually granted.
+function refreshShortBoxCard() {
+  const el = document.getElementById("short-box-bonus-line");
+  if (!el) return;
+  const bonus = window._nextShortBoxBonus || 0;
+  const last = window._lastShortBoxAt ? Date.parse(window._lastShortBoxAt) : 0;
+  const YEAR = 365 * 24 * 60 * 60 * 1000;
+  const active = bonus > 0 && last && (Date.now() - last <= YEAR);
+  if (active) {
+    const total = 100 + bonus;
+    const per = 99.99 / total;
+    el.textContent = `+${bonus} repeat bonus ($${per.toFixed(2)} each)`;
+    el.style.display = "block";
+  } else {
+    el.style.display = "none";
+  }
 }
 
 function hideBuyCredits() {
@@ -11290,6 +11314,7 @@ initFirebase();
           <div style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$100</div>
           <div style="font-size:13px;color:#3a2a1a;margin-top:3px">100 assessments</div>
           <div style="font-size:12px;color:#6a5a4a;margin-top:1px">($1.00 each)</div>
+          <div id="short-box-bonus-line" style="display:none;font-size:12px;font-weight:700;color:#2c6e12;margin-top:2px"></div>
         </div>
       </button>
     </div>

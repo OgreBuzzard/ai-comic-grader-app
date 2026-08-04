@@ -20,6 +20,7 @@
 // (Imported `process` is genuinely used below for process.env, so the bundler
 // can't drop it and ESM detection holds.)
 import process from 'node:process';
+import { shortBoxBonusForNext, nextBonusAfter, shortBoxTimes, tierOf } from '../lib/repeat_bonus.js';
 
 const BUNDLE_ID = 'app.robograder';
 
@@ -71,13 +72,29 @@ export default async function handler(req, res) {
     if (tx.bundleId && tx.bundleId !== BUNDLE_ID) {
       return res.status(400).json({ error: 'Bundle mismatch' });
     }
-    const credits = PRODUCT_CREDITS[tx.productId];
-    if (!credits) return res.status(400).json({ error: 'Unknown product: ' + tx.productId });
+    const baseCredits = PRODUCT_CREDITS[tx.productId];
+    if (!baseCredits) return res.status(400).json({ error: 'Unknown product: ' + tx.productId });
     const transactionId = String(tx.transactionId);
     const envName = tx.environment || 'Production';
+    const tier = tierOf({ productId: tx.productId });
 
     // 3. Grant credits idempotently, keyed on the Apple transactionId.
     const db = getFirestore();
+
+    // Repeat-Purchase Discount (Short Box only): compute the escalating bonus from
+    // the account's PRIOR production, non-refunded Short Box purchases, BEFORE the
+    // txn (this purchase isn't written yet, so the query returns only priors).
+    let bonusCredits = 0, nextShortBoxBonus = 0, lastShortBoxAt = null;
+    if (tier === 'short_box' && envName === 'Production') {
+      const nowMs = Date.now();
+      const priorSnap = await db.collection('purchases').where('userId', '==', uid).get();
+      const priorTimes = shortBoxTimes(priorSnap.docs.map(d => d.data()));
+      bonusCredits = shortBoxBonusForNext(priorTimes, nowMs);
+      lastShortBoxAt = new Date(nowMs).toISOString();
+      nextShortBoxBonus = nextBonusAfter([...priorTimes, nowMs], nowMs);
+    }
+    const credits = baseCredits + bonusCredits;   // total granted
+
     const purchaseRef = db.collection('purchases').doc('iap_' + transactionId);
     const userRef = db.collection('users').doc(uid);
     let alreadyProcessed = false;
@@ -85,17 +102,22 @@ export default async function handler(req, res) {
       const existing = await t.get(purchaseRef);
       if (existing.exists) { alreadyProcessed = true; return; }
       const userSnap = await t.get(userRef);
-      if (userSnap.exists) {
-        t.update(userRef, {
-          assessmentCredits: FieldValue.increment(credits),
-          totalPurchased: FieldValue.increment(credits),
-        });
-      } else {
-        t.set(userRef, { assessmentCredits: credits, totalPurchased: credits }, { merge: true });
+      const userUpdate = {
+        assessmentCredits: FieldValue.increment(credits),
+        totalPurchased: FieldValue.increment(credits),
+      };
+      if (tier === 'short_box' && envName === 'Production') {
+        userUpdate.lastShortBoxAt = lastShortBoxAt;
+        userUpdate.nextShortBoxBonus = nextShortBoxBonus;
       }
+      if (userSnap.exists) t.update(userRef, userUpdate);
+      else t.set(userRef, userUpdate, { merge: true });
       t.set(purchaseRef, {
         userId: uid,
         credits,
+        baseCredits,
+        bonusCredits,
+        tier,
         productId: tx.productId,
         transactionId,
         originalTransactionId: tx.originalTransactionId ? String(tx.originalTransactionId) : null,
@@ -105,8 +127,8 @@ export default async function handler(req, res) {
       });
     });
 
-    console.log(`[verify_iap] ${alreadyProcessed ? 'already-processed' : 'credited'} ${credits} to ${uid} (tx ${transactionId}, ${envName})`);
-    return res.status(200).json({ ok: true, credits, alreadyProcessed });
+    console.log(`[verify_iap] ${alreadyProcessed ? 'already-processed' : 'credited'} ${credits} (base ${baseCredits}+bonus ${bonusCredits}) to ${uid} (tx ${transactionId}, ${envName})`);
+    return res.status(200).json({ ok: true, credits, baseCredits, bonusCredits, alreadyProcessed });
   } catch (e) {
     console.error('[verify_iap]', e && (e.stack || e.message || e));
     return res.status(400).json({ error: (e && e.message) || 'Validation failed' });

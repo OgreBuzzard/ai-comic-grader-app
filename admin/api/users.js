@@ -64,7 +64,7 @@ export default async function handler(req, res) {
 
     // ── Params ───────────────────────────────────────────────────────────────
     const sort = (req.query.sort || 'displayName').toString();
-    const validSorts = ['displayName', 'assessmentCredits', 'itemCount', 'lastAssessment', 'createdAt'];
+    const validSorts = ['displayName', 'assessmentCredits', 'itemCount', 'lastAssessment', 'createdAt', 'referralIssued', 'referralReceived'];
     if (!validSorts.includes(sort)) {
       return res.status(400).json({ error: `sort must be one of: ${validSorts.join(', ')}` });
     }
@@ -111,6 +111,9 @@ export default async function handler(req, res) {
           lastAssessment: lastAssessmentMs ? new Date(lastAssessmentMs).toISOString() : null,
           lastAssessmentMs,
           createdAt: u.createdAt || null,
+          referralIssued: u.totalReferralIssued || 0,     // credits given away as issuer (+3 each)
+          referralReceived: u.totalReferralReceived || 0, // credits received as referrer (tier bonus)
+          referralBlocked: !!u.referralBlocked,
         };
       })
     );
@@ -126,6 +129,10 @@ export default async function handler(req, res) {
         cmpResult = (a.itemCount || 0) - (b.itemCount || 0);
       } else if (sort === 'lastAssessment') {
         cmpResult = (a.lastAssessmentMs || 0) - (b.lastAssessmentMs || 0);
+      } else if (sort === 'referralIssued') {
+        cmpResult = (a.referralIssued || 0) - (b.referralIssued || 0);
+      } else if (sort === 'referralReceived') {
+        cmpResult = (a.referralReceived || 0) - (b.referralReceived || 0);
       } else if (sort === 'createdAt') {
         // Users without a createdAt timestamp (legacy accounts) sort to
         // the bottom regardless of direction.

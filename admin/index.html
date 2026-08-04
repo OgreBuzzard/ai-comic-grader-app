@@ -1148,6 +1148,8 @@ function renderSortBar() {
     { key: 'itemCount', label: 'Items' },
     { key: 'lastAssessment', label: 'Last Assessed' },
     { key: 'createdAt', label: 'Last Created' },
+    { key: 'referralIssued', label: 'Ref Out' },
+    { key: 'referralReceived', label: 'Ref In' },
   ];
   const bar = document.getElementById('sort-bar');
   bar.innerHTML = sorts.map(s => `
@@ -1320,14 +1322,16 @@ function renderUsers() {
       big: u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—',
       label: 'joined'
     }),
-  })[state.sort];
+    referralIssued: u => ({ big: u.referralIssued || 0, label: 'ref out (cr)' }),
+    referralReceived: u => ({ big: u.referralReceived || 0, label: 'ref in (cr)' }),
+  })[state.sort] || (u => ({ big: u.assessmentCredits, label: 'credits' }));
   sec.innerHTML = state.users.map(u => {
     const r = rightLabel(u);
     return `
       <div class="row" data-uid="${u.uid}">
         <div class="main">
           <div class="title">${escapeHtml(u.displayName)}</div>
-          <div class="sub">${u.itemCount} item${u.itemCount === 1 ? '' : 's'} · ${escapeHtml(u.email)}</div>
+          <div class="sub">${u.itemCount} item${u.itemCount === 1 ? '' : 's'} · ${escapeHtml(u.email)}${(u.referralIssued || u.referralReceived) ? ` · <span style="color:#7fd0ff">ref ${u.referralIssued||0}/${u.referralReceived||0}</span>` : ''}${u.referralBlocked ? ' · <span style="color:#e0655a;font-weight:700">⚑ ref-blocked</span>' : ''}</div>
         </div>
         <div class="meta">
           <div class="big">${escapeHtml(String(r.big))}</div>

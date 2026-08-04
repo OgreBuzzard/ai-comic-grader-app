@@ -21,6 +21,7 @@
 // process.env so the bundler can't drop it) and load googleapis + firebase-admin
 // dynamically inside the handler.
 import process from 'node:process';
+import { shortBoxBonusForNext, nextBonusAfter, shortBoxTimes, tierOf } from '../lib/repeat_bonus.js';
 
 const PACKAGE_NAME = 'app.robograder';
 
@@ -68,8 +69,9 @@ export default async function handler(req, res) {
     if (!purchaseToken) return res.status(400).json({ error: 'Missing purchaseToken' });
     if (!productId) return res.status(400).json({ error: 'Missing productId' });
 
-    const credits = PRODUCT_CREDITS[productId];
-    if (!credits) return res.status(400).json({ error: 'Unknown product: ' + productId });
+    const baseCredits = PRODUCT_CREDITS[productId];
+    if (!baseCredits) return res.status(400).json({ error: 'Unknown product: ' + productId });
+    const tier = tierOf({ productId });
 
     const { initializeApp, getApps, cert } = await import('firebase-admin/app');
     const { getAuth } = await import('firebase-admin/auth');
@@ -113,6 +115,21 @@ export default async function handler(req, res) {
 
     // 3. Grant credits idempotently, keyed on the Google orderId.
     const db = getFirestore();
+    const envName = purchase.purchaseType === 0 ? 'Test' : 'Production';
+
+    // Repeat-Purchase Discount (Short Box only): escalating bonus from prior
+    // production, non-refunded Short Box purchases, computed before the txn.
+    let bonusCredits = 0, nextShortBoxBonus = 0, lastShortBoxAt = null;
+    if (tier === 'short_box' && envName === 'Production') {
+      const nowMs = Date.now();
+      const priorSnap = await db.collection('purchases').where('userId', '==', uid).get();
+      const priorTimes = shortBoxTimes(priorSnap.docs.map(d => d.data()));
+      bonusCredits = shortBoxBonusForNext(priorTimes, nowMs);
+      lastShortBoxAt = new Date(nowMs).toISOString();
+      nextShortBoxBonus = nextBonusAfter([...priorTimes, nowMs], nowMs);
+    }
+    const credits = baseCredits + bonusCredits;   // total granted
+
     const purchaseRef = db.collection('purchases').doc('play_' + orderId);
     const userRef = db.collection('users').doc(uid);
     let alreadyProcessed = false;
@@ -120,24 +137,29 @@ export default async function handler(req, res) {
       const existing = await t.get(purchaseRef);
       if (existing.exists) { alreadyProcessed = true; return; }
       const userSnap = await t.get(userRef);
-      if (userSnap.exists) {
-        t.update(userRef, {
-          assessmentCredits: FieldValue.increment(credits),
-          totalPurchased: FieldValue.increment(credits),
-        });
-      } else {
-        t.set(userRef, { assessmentCredits: credits, totalPurchased: credits }, { merge: true });
+      const userUpdate = {
+        assessmentCredits: FieldValue.increment(credits),
+        totalPurchased: FieldValue.increment(credits),
+      };
+      if (tier === 'short_box' && envName === 'Production') {
+        userUpdate.lastShortBoxAt = lastShortBoxAt;
+        userUpdate.nextShortBoxBonus = nextShortBoxBonus;
       }
+      if (userSnap.exists) t.update(userRef, userUpdate);
+      else t.set(userRef, userUpdate, { merge: true });
       t.set(purchaseRef, {
         userId: uid,
         credits,
+        baseCredits,
+        bonusCredits,
+        tier,
         productId,
         orderId,
         purchaseToken: String(purchaseToken),
         source: 'android_play',
         // purchaseType is present only for non-production purchases
         // (0 = Test, 1 = Promo, 2 = Rewarded); absent = real purchase.
-        environment: purchase.purchaseType === 0 ? 'Test' : 'Production',
+        environment: envName,
         createdAt: FieldValue.serverTimestamp(),
       });
     });
@@ -166,8 +188,8 @@ export default async function handler(req, res) {
       }
     }
 
-    console.log(`[verify_play] ${alreadyProcessed ? 'already-processed' : 'credited'} ${credits} to ${uid} (order ${orderId})`);
-    return res.status(200).json({ ok: true, credits, alreadyProcessed });
+    console.log(`[verify_play] ${alreadyProcessed ? 'already-processed' : 'credited'} ${credits} (base ${baseCredits}+bonus ${bonusCredits}) to ${uid} (order ${orderId})`);
+    return res.status(200).json({ ok: true, credits, baseCredits, bonusCredits, alreadyProcessed });
   } catch (e) {
     console.error('[verify_play]', e && (e.stack || e.message || e));
     return res.status(400).json({ error: (e && e.message) || 'Validation failed' });

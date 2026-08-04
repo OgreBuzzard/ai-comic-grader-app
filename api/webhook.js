@@ -1,4 +1,5 @@
 import Stripe from 'stripe';
+import { shortBoxBonusForNext, nextBonusAfter, shortBoxTimes, tierOf } from '../lib/repeat_bonus.js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -36,7 +37,7 @@ async function clawbackReferralIfUnbacked(db, FieldValue, issuerUid, tier) {
     const pd = d.data() || {};
     if (pd.refunded) return;
     if (pd.environment && pd.environment !== 'Production') return;
-    if (REFUND_TIER_BY_CREDITS[pd.credits] === tier) stillOwns = true;
+    if (tierOf(pd) === tier) stillOwns = true;
   });
   if (stillOwns) return;
 
@@ -53,28 +54,51 @@ async function clawbackReferralIfUnbacked(db, FieldValue, issuerUid, tier) {
     const referrerCredits = audit.referrerCredits || 0;
     const issuerCredits = audit.issuerCredits || 0;
     const nowIso = new Date().toISOString();
+
+    // If either party already SPENT the bonus (balance can't cover the reversal),
+    // we take the loss on the unrecoverable part. Policy (Matt, Session 21): any
+    // account that leaves us short this way is flagged `referralBlocked` so it can
+    // neither give nor receive future referrals — one-and-done exploit, contained.
+    let shortfall = 0;
+
     if (iSnap.exists) {
       const cur = (iSnap.data() || {}).assessmentCredits || 0;
-      tx.set(issuerRef, {
+      shortfall += Math.max(0, issuerCredits - cur);
+    }
+    if (rSnap.exists) {
+      const cur = (rSnap.data() || {}).assessmentCredits || 0;
+      shortfall += Math.max(0, referrerCredits - cur);
+    }
+    const block = shortfall > 0;
+
+    if (iSnap.exists) {
+      const cur = (iSnap.data() || {}).assessmentCredits || 0;
+      const fields = {
         assessmentCredits: Math.max(0, cur - issuerCredits),
         totalReferralIssued: FieldValue.increment(-issuerCredits),
         referralClawbackCount: FieldValue.increment(1),
         lastReferralClawbackAt: nowIso,
-      }, { merge: true });
+      };
+      if (block) { fields.referralBlocked = true; fields.referralBlockedAt = nowIso; fields.referralBlockedReason = 'refund_after_spend'; }
+      tx.set(issuerRef, fields, { merge: true });
     }
     if (rSnap.exists) {
       const cur = (rSnap.data() || {}).assessmentCredits || 0;
-      tx.set(recipientRef, {
+      const fields = {
         assessmentCredits: Math.max(0, cur - referrerCredits),
         totalReferralReceived: FieldValue.increment(-referrerCredits),
         referralClawbackCount: FieldValue.increment(1),
         lastReferralClawbackAt: nowIso,
-      }, { merge: true });
+      };
+      if (block) { fields.referralBlocked = true; fields.referralBlockedAt = nowIso; fields.referralBlockedReason = 'refund_after_spend'; }
+      tx.set(recipientRef, fields, { merge: true });
     }
     tx.set(auditRef, {
       reversed: true,
       reversedAt: nowIso,
       reversedReason: 'issuer_refund',
+      unrecoveredCredits: shortfall,
+      accountsBlocked: block,
     }, { merge: true });
   });
   console.log(`[refund] Referral clawback: tier ${tier}, issuer ${issuerUid} (audit ${issuerUid}_${tier}).`);
@@ -96,7 +120,7 @@ export default async function handler(req, res) {
 
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object;
-    const { userId, credits } = session.metadata;
+    const { userId, credits, package: pkg } = session.metadata;
 
     if (!userId || !credits) {
       console.error('Missing metadata in checkout session:', session.id);
@@ -119,42 +143,63 @@ export default async function handler(req, res) {
       // fall back to amount_subtotal for older payloads. Both are ints in cents.
       const amountCents = session.amount_total ?? session.amount_subtotal ?? 0;
 
+      const baseCredits = parseInt(credits);
+      const tier = tierOf({ tier: pkg, credits: baseCredits });
+
+      // Repeat-Purchase Discount (Short Box only): escalating bonus from prior
+      // production, non-refunded Short Box purchases. Price is unchanged; only
+      // the granted credit count grows. Computed before the txn.
+      let bonusCredits = 0, nextShortBoxBonus = 0, lastShortBoxAt = null;
+      if (tier === 'short_box') {
+        const nowMs = Date.now();
+        const priorSnap = await db.collection('purchases').where('userId', '==', userId).get();
+        const priorTimes = shortBoxTimes(priorSnap.docs.map(d => d.data()));
+        bonusCredits = shortBoxBonusForNext(priorTimes, nowMs);
+        lastShortBoxAt = new Date(nowMs).toISOString();
+        nextShortBoxBonus = nextBonusAfter([...priorTimes, nowMs], nowMs);
+      }
+      const grant = baseCredits + bonusCredits;   // total granted
+
       await db.runTransaction(async (tx) => {
         const userDoc = await tx.get(userRef);
+        const common = {
+          everPurchased: true,
+          lastPurchaseDate: new Date().toISOString(),
+        };
+        if (tier === 'short_box') { common.lastShortBoxAt = lastShortBoxAt; common.nextShortBoxBonus = nextShortBoxBonus; }
         if (userDoc.exists) {
           tx.update(userRef, {
-            assessmentCredits: FieldValue.increment(parseInt(credits)),
-            everPurchased: true,
-            lastPurchaseDate: new Date().toISOString(),
-            totalPurchased: FieldValue.increment(parseInt(credits)),
+            ...common,
+            assessmentCredits: FieldValue.increment(grant),
+            totalPurchased: FieldValue.increment(grant),
           });
         } else {
           tx.set(userRef, {
-            assessmentCredits: parseInt(credits),
-            everPurchased: true,
-            lastPurchaseDate: new Date().toISOString(),
-            totalPurchased: parseInt(credits),
+            ...common,
+            assessmentCredits: grant,
+            totalPurchased: grant,
             createdAt: new Date().toISOString(),
           });
         }
         // Per-purchase ledger entry for the admin dashboard. Keyed by
-        // session.id for natural idempotency: if Stripe retries the webhook
-        // (which it does on 5xx), the second write is a no-op overwrite of
-        // identical data. Refunds reverse credits on the user doc but DO NOT
-        // touch this ledger — the ledger reflects gross revenue.
+        // session.id for natural idempotency of the LEDGER (a Stripe retry
+        // overwrites identical data). NOTE: the credit INCREMENT above is not
+        // itself retry-guarded — pre-existing behavior, unchanged here.
+        // Refunds reverse credits on the user doc but DO NOT touch this ledger.
         tx.set(purchaseRef, {
           userId,
-          credits: parseInt(credits),
+          credits: grant,
+          baseCredits,
+          bonusCredits,
+          tier,
           amountCents,
           sessionId: session.id,
           createdAt: new Date().toISOString(),
-          // Indexed timestamp for range queries; same value as createdAt but
-          // typed so Firestore can sort/filter without string-comparing ISO.
           createdAtMs: Date.now(),
         });
       });
 
-      console.log(`Credited ${credits} assessments to user ${userId}`);
+      console.log(`Credited ${grant} assessments (base ${baseCredits}+bonus ${bonusCredits}) to user ${userId}`);
     } catch (e) {
       console.error('Failed to credit user:', e);
       return res.status(500).json({ error: 'Failed to credit user' });
