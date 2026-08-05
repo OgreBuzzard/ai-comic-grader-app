@@ -2186,7 +2186,7 @@ function buildPredictedGradeBox(badgesHtml, pqHtml, fmvMatch, showDisclaimer) {
 
 (async function loadFMV() {
   try {
-    const r = await fetch("/fmv.json", { cache: "default" });
+    const r = await fetch("/fmv_comics.json", { cache: "default" });
     if (!r.ok) { if (r.status !== 404) console.warn("[fmv] fetch failed:", r.status); return; }
     const data = await r.json();
     if (data && data.books) {

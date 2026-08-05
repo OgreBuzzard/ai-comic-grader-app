@@ -39,7 +39,7 @@ import sys
 import openpyxl, json, re, sys
 
 IN_XLSX = sys.argv[1] if len(sys.argv)>1 else 'Robograder_Index_Input_11a.xlsx'
-OLD_JSON = sys.argv[2] if len(sys.argv)>2 else 'fmv.json'
+OLD_JSON = sys.argv[2] if len(sys.argv)>2 else 'fmv_comics.json'
 OUT_JSON = sys.argv[3] if len(sys.argv)>3 else 'fmv.new.json'
 OLD=json.load(open(OLD_JSON))
 TIERS=OLD['tiers']

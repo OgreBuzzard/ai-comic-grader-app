@@ -74,7 +74,7 @@ mustReplace('A1 fetch interceptor + android runtime', '<head>', `<head>
 (function() {
   var _origFetch = window.fetch;
   window.fetch = function(url, opts) {
-    if (typeof url === 'string' && (url.startsWith('/api/') || url === '/value-keys.json' || url === '/fmv.json')) {
+    if (typeof url === 'string' && (url.startsWith('/api/') || url === '/value-keys.json' || url === '/fmv.json' || url === '/fmv_comics.json')) {
       url = 'https://robograder.app' + url;
     }
     return _origFetch.call(this, url, opts);

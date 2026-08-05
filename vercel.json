@@ -67,6 +67,10 @@
     {
       "source": "/id/:id",
       "destination": "/public.html"
+    },
+    {
+      "source": "/fmv.json",
+      "destination": "/fmv_comics.json"
     }
   ]
 }
