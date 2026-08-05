@@ -105,7 +105,7 @@ export default async function handler(req, res) {
 
     // ── Params ───────────────────────────────────────────────────────────────
     const sort = (req.query.sort || 'date').toString();
-    const validSorts = ['title', 'date', 'uid', 'pg']; // S20: 'uid' = 4-char transferCode; 'pg' = predicted (assessedCGC) grade
+    const validSorts = ['title', 'date', 'uid', 'pg', 'tier']; // S20: 'uid' = 4-char transferCode; 'pg' = predicted (assessedCGC) grade; 'tier' = Full/Deep/Main
     if (!validSorts.includes(sort)) {
       return res.status(400).json({ error: `sort must be one of: ${validSorts.join(', ')}` });
     }
@@ -220,6 +220,14 @@ export default async function handler(req, res) {
         else if (!aHas) return dir === 'desc' ? 1 : -1;
         else if (!bHas) return dir === 'desc' ? -1 : 1;
         else cmpResult = ag - bg;
+      } else if (sort === 'tier') {
+        // Full(3) > Deep(2) > Main(1); within a tier, sub-sort by date.
+        cmpResult = (a.tier || 0) - (b.tier || 0);
+        if (cmpResult === 0) {
+          const am = Date.parse(a.roboGradeDate || '') || 0;
+          const bm = Date.parse(b.roboGradeDate || '') || 0;
+          cmpResult = am - bm;
+        }
       } else { // 'date'
         const am = Date.parse(a.roboGradeDate || '') || 0;
         const bm = Date.parse(b.roboGradeDate || '') || 0;

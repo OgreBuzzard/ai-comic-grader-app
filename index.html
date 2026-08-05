@@ -2217,8 +2217,10 @@ async function loadFmvOverrides(attempt) {
     const snap = await window._fsGetDoc(window._fsDoc(window._db, "fmv_dashboard", "comics"));
     const data = snap && (typeof snap.exists === "function" ? (snap.exists() ? snap.data() : null) : (snap.exists ? snap.data() : null));
     if (data && typeof data === "object") {
-      _fmvOverrides = data;
-      console.log(`[fmv] merged ${Object.keys(data).length} manual override(s)`);
+      const conv = {};
+      for (const k in data) { const v = data[k]; if (Array.isArray(v)) conv[k] = v.map(o => Array.isArray(o) ? o : [o.g, o.t]); }
+      _fmvOverrides = conv;
+      console.log(`[fmv] merged ${Object.keys(conv).length} manual override(s)`);
     }
   } catch (e) { console.warn("[fmv] overrides load:", e?.message || e); }
 }
@@ -3016,12 +3018,22 @@ async function migrateComicsToItems() {
   if (!db) return;
   const uid = window._currentUser.uid;
   try {
+    // PERF: this used to do a full items getDocs on EVERY load (a second
+    // whole-collection fetch on top of the live listener, blocking it from
+    // starting). Once we've confirmed the user is on the items collection, skip
+    // it and read a tiny marker doc instead — like the other two migrations.
+    try {
+      const _cm = await window._fsGetDoc(userMetaDoc("comics_migrated"));
+      if (_cm.exists() && _cm.data()?.done === true) return;
+    } catch (e) {}
     const itemsSnap = await fsGetDocs(userItemsCollection());
     if (itemsSnap.size > 0) {
+      try { await fsSetDoc(userMetaDoc("comics_migrated"), { done: true, at: (new Date).toISOString() }); } catch (e) {}
       return;
     }
     const comicsSnap = await fsGetDocs(userLegacyComicsCollection());
     if (comicsSnap.size === 0) {
+      try { await fsSetDoc(userMetaDoc("comics_migrated"), { done: true, at: (new Date).toISOString() }); } catch (e) {}
       return;
     }
     console.log(`Migrating ${comicsSnap.size} comics → items for user ${uid}`);

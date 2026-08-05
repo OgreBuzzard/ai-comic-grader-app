@@ -298,7 +298,8 @@ export default async function handler(req, res) {
       if (typeof _sc === 'number' && idx.curves) _sc = idx.curves[_sc];
       item.fmvCurve = Array.isArray(_sc) ? _sc : null;
       const _ov = await getFmvOverrides(db, item.type === 'card' ? 'cards' : 'comics');
-      item.fmvManualCurve = (_ov && Array.isArray(_ov[_fk])) ? _ov[_fk] : null;
+      item.fmvManualCurve = (_ov && Array.isArray(_ov[_fk])) ? _ov[_fk].map(o => Array.isArray(o) ? o : [o.g, o.t]) : null;
+      item.fmvTiers = (idx && idx.tiers) || null;
     } catch (_) { item.fmvRange = item.fmvRange || null; }
 
     return res.status(200).json({ item });

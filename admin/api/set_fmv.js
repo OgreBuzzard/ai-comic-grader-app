@@ -30,7 +30,7 @@ export default async function handler(req, res) {
     if (breaks == null) {
       value = FieldValue.delete();
     } else {
-      const ok = Array.isArray(breaks) && breaks.every(b => Array.isArray(b) && b.length === 2 && isFinite(b[0]) && Number.isInteger(b[1]) && b[1] >= 1 && b[1] <= 13);
+      const ok = Array.isArray(breaks) && breaks.every(b => b && typeof b === 'object' && !Array.isArray(b) && isFinite(b.g) && Number.isInteger(b.t) && b.t >= 1 && b.t <= 13);
       if (!ok) return res.status(400).json({ error: 'Invalid breaks' });
       value = breaks;
     }

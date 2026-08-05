@@ -34,7 +34,7 @@ export default async function handler(req, res) {
     let merged = 0;
     for (const k of Object.keys(ov)) {
       const breaks = ov[k];
-      if (Array.isArray(breaks) && breaks.length) { base.books[k] = breaks; merged++; }
+      if (Array.isArray(breaks) && breaks.length) { base.books[k] = breaks.map(o => Array.isArray(o) ? o : [o.g, o.t]); merged++; }
     }
     base.manualMerged = merged;
     return res.status(200).json({ comics: base, merged });
