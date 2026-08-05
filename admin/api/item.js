@@ -187,6 +187,11 @@ export default async function handler(req, res) {
       // item and confusing rather than informing.
       assessedCGCGrade: flat.assessedCGCGrade ?? null,
       assessedPSAGrade: flat.assessedPSAGrade ?? null,
+      // Card MVP: type + the card's PREDICTED PSA (raw cards are not officially
+      // graded) + the 4-axis card robograde, so the dashboard can render cards.
+      type: raw.type || 'comic',
+      predictedPSA: (flat.psaGrade != null ? flat.psaGrade : (flat.assessedPSAGrade != null ? flat.assessedPSAGrade : null)),
+      cardRobograde: flat.robograde || null,
       score: rg.score ?? null,
       confidenceRange: rg.confidenceRange ?? null,
       frontScore: rg.frontScore ?? null,

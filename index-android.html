@@ -2738,6 +2738,7 @@ function buildBadge(gradeVal, type, designation, sm, fullAssessment, deepAssessm
     }
     return `<div class="${cls}" style="border-color:rgba(0,0,0,0.25)"><div class="ubadge-strip" style="background:${sc}"><span>${sl}</span></div><div class="ubadge-body" style="background:#fff"><div class="ubadge-num" style="color:#000">${gradeVal}</div><div class="ubadge-lbl" style="color:#333">${lbl}</div></div></div>`;
   }
+  if (type === "psa-predicted") return `<div class="${cls}" style="border-color:#7f1d1d;background:#b91c1c"><div class="ubadge-body" style="background:#b91c1c"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.85)">PSA</div></div></div>`;
   if (type === "predicted" || type === "cgc-ai" || type === "psa-ai") return `<div class="${cls}" style="border-color:#1e40af;background:#1a5fa8"><div class="ubadge-body" style="background:#1a5fa8"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.8)">${lbl}</div></div></div>`;
   return `<div class="${cls}" style="border-color:#333;background:#1a1a1a"><div class="ubadge-body" style="background:#1a1a1a"><div class="ubadge-num" style="color:#1a1614">${gradeVal}</div><div class="ubadge-lbl" style="color:#6a5a4a">${lbl}</div></div></div>`;
 }
@@ -2765,7 +2766,7 @@ function buildListBadge(c) {
     return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="position:absolute;top:6px;left:0;right:0;text-align:center;display:flex;justify-content:center">${assessmentTierStars(c, { size: 9, color: numColor })}</div>\n      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:${numColor};line-height:1">${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#7aa838;margin-left:1px">+</span>' : ""}</div>\n    </div>`;
   }
   if (c.cgcGrade) return buildBadge(normalizeGrade(c.cgcGrade), "cgc-official", detectDesignation(c), true);
-  if (c.psaGrade) return buildBadge(normalizeGrade(c.psaGrade), "psa-official", c.psaDesignation || "universal", true);
+  if (c.type !== "card" && c.psaGrade) return buildBadge(normalizeGrade(c.psaGrade), "psa-official", c.psaDesignation || "universal", true);
   const ac = aiCgcGrade(c);
   const _listRestored = !!(c.restorationHighConfidence || (c.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(c.cgcNotes)));
   if (ac) return buildBadge(ac, "predicted", "", true, isFullAssessmentComplete(c), isDeepAssessmentComplete(c), _listRestored);
@@ -4851,18 +4852,22 @@ function showDetail(id) {
   if (selected.roboGrade) {
     html += `<div style="margin-top:16px">${buildRoboGradeDisplay(selected.roboGrade, selected)}</div>`;
   }
-  const cgcOfficialBadge = selected.cgcGrade ? buildBadge(normalizeGrade(selected.cgcGrade), "cgc-official", detectDesignation(selected), false) : null;
-  const psaOfficialBadge = selected.psaGrade ? buildBadge(normalizeGrade(selected.psaGrade), "psa-official", selected.psaDesignation || "universal", false) : null;
-  const predictedGradeValue = aiCgcGrade(selected);
+  const _isCardItem = selected.type === "card";
+  const _cardPsaRaw = _isCardItem ? ((selected.cardData && selected.cardData.psaGrade != null) ? selected.cardData.psaGrade : (selected.assessedPSAGrade || null)) : null;
+  const _cardPsaStr = (_cardPsaRaw == null || _cardPsaRaw === "") ? null : ((typeof _cardPsaRaw === "number" || /^[0-9.]+$/.test(String(_cardPsaRaw))) ? normalizeGrade(String(_cardPsaRaw)) : String(_cardPsaRaw));
+  const cardPsaBadge = _cardPsaStr ? buildBadge(_cardPsaStr, "psa-predicted", "", false) : null;
+  const cgcOfficialBadge = (!_isCardItem && selected.cgcGrade) ? buildBadge(normalizeGrade(selected.cgcGrade), "cgc-official", detectDesignation(selected), false) : null;
+  const psaOfficialBadge = (!_isCardItem && selected.psaGrade) ? buildBadge(normalizeGrade(selected.psaGrade), "psa-official", selected.psaDesignation || "universal", false) : null;
+  const predictedGradeValue = _isCardItem ? null : aiCgcGrade(selected);
   const _detailRestored = !!(selected.restorationHighConfidence || (selected.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(selected.cgcNotes)));
   const predictedBadge = predictedGradeValue ? buildBadge(normalizeGrade(predictedGradeValue), "predicted", "", false, isFullAssessmentComplete(selected), isDeepAssessmentComplete(selected), _detailRestored) : null;
-  const predictionBoxes = [ cgcOfficialBadge, psaOfficialBadge, predictedBadge ].filter(Boolean);
-  const isGraded = !!(selected.cgcGrade || selected.psaGrade);
+  const predictionBoxes = [ cgcOfficialBadge, psaOfficialBadge, cardPsaBadge, predictedBadge ].filter(Boolean);
+  const isGraded = !_isCardItem && !!(selected.cgcGrade || selected.psaGrade);
   const hasInteriorPhoto = !!(selected.images && selected.images[2]);
-  const showPQ = selected.pageQuality && (isGraded || hasInteriorPhoto);
+  const showPQ = !_isCardItem && selected.pageQuality && (isGraded || hasInteriorPhoto);
   if (predictionBoxes.length > 0 || showPQ) {
     // S18/S20: index-driven FMV. Uses the official grade if graded, else predicted.
-    const _fmvGrade = selected.cgcGrade || selected.psaGrade || predictedGradeValue;
+    const _fmvGrade = _isCardItem ? _cardPsaStr : (selected.cgcGrade || selected.psaGrade || predictedGradeValue);
     const _fmvMatch = (typeof window.matchFMV === "function" && _fmvGrade)
       ? window.matchFMV(selected.title, selected.issue, _fmvGrade, selected.printing, extractYearFromIssueDate(selected.issueDate)) : null;
     const _pqHtml = showPQ ? `<div style="display:flex;justify-content:center">${buildPQBox(selected.pageQuality)}</div>` : "";
@@ -8225,7 +8230,7 @@ async function assessCardGrade() {
       images: proc.images,
       thumbnails: proc.thumbnails,
       imagesMeta: imageMetas.length ? imageMetas : rawImages.map(() => ({ source: "camera", capturedAt: new Date().toISOString() })),
-      psaGrade: card.psaGrade != null ? String(card.psaGrade) : "",
+      assessedPSAGrade: card.psaGrade != null ? String(card.psaGrade) : "",
       roboGrade: rgTotal != null ? { score: rgTotal, version: "card-v1", subscores: card.robograde || null } : null,
       roboGradeId: generateRoboId(),
       roboGradeDate: new Date().toISOString(),
@@ -8915,15 +8920,19 @@ function renderForm() {
     void buildIntegrityPill; // S20: integrity pill moved ABOVE the image slots
     return "";               // (see the form card top) to match Detail view.
   })() : ""}\n\n    \x3c!-- Grader Predictions (S11): renamed from "Assessment Results". This row\n         shows all of the relevant grade badges side-by-side: CGC Official, CGC\n         AI, PSA Official, PSA AI. A book can only be officially graded by one\n         service (CGC or PSA, not both), so at most 3 badges ever appear at\n         once — three boxes fit comfortably on one row. --\x3e\n    ${_assessed ? (() => {
-      const cgcOff = formData.cgcGrade ? buildBadge(normalizeGrade(formData.cgcGrade), "cgc-official", detectDesignation(formData), false) : "";
-      const psaOff = formData.psaGrade ? buildBadge(normalizeGrade(formData.psaGrade), "psa-official", formData.psaDesignation || "universal", false) : "";
-      const predVal = formData.predictedGrade || formData.assessedCGCGrade;
+      const _isCardItem = formData.type === "card";
+      const _cardPsaRaw = _isCardItem ? ((formData.cardData && formData.cardData.psaGrade != null) ? formData.cardData.psaGrade : (formData.assessedPSAGrade || null)) : null;
+      const _cardPsaStr = (_cardPsaRaw == null || _cardPsaRaw === "") ? null : ((typeof _cardPsaRaw === "number" || /^[0-9.]+$/.test(String(_cardPsaRaw))) ? normalizeGrade(String(_cardPsaRaw)) : String(_cardPsaRaw));
+      const cardPsa = _cardPsaStr ? buildBadge(_cardPsaStr, "psa-predicted", "", false) : "";
+      const cgcOff = (!_isCardItem && formData.cgcGrade) ? buildBadge(normalizeGrade(formData.cgcGrade), "cgc-official", detectDesignation(formData), false) : "";
+      const psaOff = (!_isCardItem && formData.psaGrade) ? buildBadge(normalizeGrade(formData.psaGrade), "psa-official", formData.psaDesignation || "universal", false) : "";
+      const predVal = _isCardItem ? null : (formData.predictedGrade || formData.assessedCGCGrade);
       const _editRestored = !!(formData.restorationHighConfidence || (formData.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(formData.cgcNotes)));
       const predicted = predVal ? buildBadge(normalizeGrade(predVal), "predicted", "", false, false, false, _editRestored) : "";
-      const _pqHtml = formData.pageQuality ? `<div style="display:flex;justify-content:center">${buildPQBox(formData.pageQuality)}</div>` : "";
-      const _fmvGrade = formData.cgcGrade || formData.psaGrade || aiCgcGrade(formData);
+      const _pqHtml = (!_isCardItem && formData.pageQuality) ? `<div style="display:flex;justify-content:center">${buildPQBox(formData.pageQuality)}</div>` : "";
+      const _fmvGrade = _isCardItem ? _cardPsaStr : (formData.cgcGrade || formData.psaGrade || aiCgcGrade(formData));
       const _fmvMatch = (typeof window.matchFMV === "function" && _fmvGrade) ? window.matchFMV(formData.title, formData.issue, _fmvGrade, formData.printing, extractYearFromIssueDate(formData.issueDate)) : null;
-      return buildPredictedGradeBox([ cgcOff, psaOff, predicted ].filter(Boolean).join(""), _pqHtml, _fmvMatch, !!predicted);
+      return buildPredictedGradeBox([ cgcOff, psaOff, cardPsa, predicted ].filter(Boolean).join(""), _pqHtml, _fmvMatch, !!predicted);
     })() : ""}\n\n    \x3c!-- Transaction metadata block (S11): chronology of acquiring → grading.\n         Cost/FMV moved to bottom of analysis section, after Condition\n         Assessment, per user direction. --\x3e\n    ${df("Date Acquired", "dateAcquired")}\n    <div><label class="field-label">Seller</label>\n      <input value="${esc(formData.seller || "")}" list="seller-list" oninput="formData.seller=this.value;updateSellerList(this.value)" placeholder="Name / source" autocomplete="off">\n      <datalist id="seller-list">${getSellerSuggestions().map(s => `<option value="${esc(s)}">`).join("")}</datalist>\n    </div>\n    ${df("Grading Date", "slabbingDate")}\n\n    \x3c!-- Analysis block (S11 reorder per user direction):\n         Defect Notes, Condition Assessment first\n         Then Enhancement Candidate\n         Then Cost Breakdown (now including FMV inside it)\n         Other gated text fields (Label Notes, Key Info, Grader Notes,\n         Past Assessments) live in their previous positions\n         around these. --\x3e\n    ${formData.cgcGrade || formData.psaGrade || formData.cgcNotes ? `<div><label class="field-label">Label Notes</label><textarea rows="3" readonly style="cursor:not-allowed" title="Label Notes is populated by the assessment. Not user-editable.">${esc(formData.cgcNotes || "")}</textarea></div>` : ""}\n    ${(() => {
     const showLabelNotesEdit = (formData.cgcGrade || formData.psaGrade) && formData.cgcNotes && formData.cgcNotes.trim();
     if (showLabelNotesEdit) return "";
