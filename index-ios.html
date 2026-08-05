@@ -2898,9 +2898,30 @@ function aiCgcGrade(c) {
   return null;
 }
 
+// Scoring v2 display: preview live with ?v2=1 (normal visitors unaffected until rollout).
+const RG_V2_DISPLAY = (function(){ try { const p = new URLSearchParams(location.search); if (p.has("v2")) return p.get("v2") !== "0"; } catch(e){} return false; })();
+// v2 31-tier grade for an item, from its stored 0-100 subscores (type-aware). Null if no data.
+function rgV2Grade(c) {
+  try {
+    if (!c || !window.RGScoreV2) return null;
+    if (c.type === "card") {
+      const cr = (c.cardData && c.cardData.robograde) || (c.roboGrade && c.roboGrade.subscores);
+      if (cr) {
+        const s = { surface: cr.surface && cr.surface.total, centering: cr.centering && cr.centering.total, corners: cr.corners && cr.corners.total, edges: cr.edges && cr.edges.total };
+        if ([s.surface,s.centering,s.corners,s.edges].some(v => v != null)) return window.RGScoreV2.fromSubscores(s, "card").grade;
+      }
+      return (c.roboGrade && c.roboGrade.score != null) ? window.RGScoreV2.gradeFromScore(c.roboGrade.score) : null;
+    }
+    const rg = c.roboGrade; if (!rg) return null;
+    const s = { front: rg.frontScore, back: rg.backScore, spine: rg.spineScore, interior: rg.interiorScore };
+    if ([s.front,s.back,s.spine,s.interior].some(v => v != null)) return window.RGScoreV2.fromSubscores(s, "comic").grade;
+    return rg.score != null ? window.RGScoreV2.gradeFromScore(rg.score) : null;
+  } catch (e) { return null; }
+}
 function buildListBadge(c) {
   if (c.roboGrade && c.roboGrade.score != null) {
     const rgScore = Math.round(c.roboGrade.score);
+    const _v2g = RG_V2_DISPLAY ? rgV2Grade(c) : null;
     const showPlus = rgScore >= 90 && rgScore < 100 && !c.highGradeUnlocked;
     // S17: match the dark score-box color used in every other view (was a
     // lighter green tuned to the List background, which made it inconsistent and
@@ -2911,7 +2932,7 @@ function buildListBadge(c) {
     const numColor = _isRestored ? '#c8a8e8' : '#b8d820';
     // Score stays DEAD CENTER (cardinal rule). Stars are an absolutely-positioned
     // overlay near the top so they never displace the number.
-    return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="position:absolute;top:6px;left:0;right:0;text-align:center;display:flex;justify-content:center">${assessmentTierStars(c, { size: 9, color: numColor })}</div>\n      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:${numColor};line-height:1">${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#7aa838;margin-left:1px">+</span>' : ""}</div>\n    </div>`;
+    return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="position:absolute;top:6px;left:0;right:0;text-align:center;display:flex;justify-content:center">${assessmentTierStars(c, { size: 9, color: numColor })}</div>\n      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:${numColor};line-height:1">${_v2g != null ? _v2g : `${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#7aa838;margin-left:1px">+</span>' : ""}`}</div>\n    </div>`;
   }
   if (c.cgcGrade) return buildBadge(normalizeGrade(c.cgcGrade), "cgc-official", detectDesignation(c), true);
   if (c.type !== "card" && c.psaGrade) return buildBadge(normalizeGrade(c.psaGrade), "psa-official", c.psaDesignation || "universal", true);
