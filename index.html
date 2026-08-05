@@ -2092,6 +2092,7 @@ window.matchValueKey = function matchValueKey(title, issue, publisher, printing)
 // Keys use the SAME normalization as value-keys (_normalizeKeyTitle/_normalizeKeyIssue),
 // so the converter that builds fmv.json must mirror those exactly.
 let _fmvIndex = null;
+let _fmvOverrides = {};  // manual FMV curves keyed by _fmvKeyOf, merged over the static index
 
 window.matchFMV = function matchFMV(title, issue, grade, printing, year) {
   if (!_fmvIndex || !_fmvIndex.books) return null;
@@ -2103,6 +2104,14 @@ window.matchFMV = function matchFMV(title, issue, grade, printing, year) {
   const g = parseFloat(grade);
   if (!isFinite(g)) return null;
   const key = _fmvKeyOf(title, issue);
+  // Manual dashboard FMV wins over the static index for this key.
+  const _ov = _fmvOverrides && _fmvOverrides[key];
+  if (Array.isArray(_ov) && _ov.length) {
+    let _t = _ov[0][1];
+    for (const b of _ov) { if (g >= b[0]) _t = b[1]; else break; }
+    const _r = _fmvIndex.tiers && _fmvIndex.tiers[String(_t)];
+    if (_r) return { tier: _t, low: _r[0], high: _r[1], manual: true };
+  }
   let breaks = _fmvIndex.books[key];
   // Compression (S20): books[key] may be an integer index into a shared `curves`
   // table (many issues share the same price curve). Deref it. Inline arrays still work.
@@ -2195,6 +2204,25 @@ function buildPredictedGradeBox(badgesHtml, pqHtml, fmvMatch, showDisclaimer) {
     }
   } catch (e) { console.warn("[fmv] load error:", e?.message || e); }
 })();
+
+// Manual FMV overrides live in Firestore (fmv_dashboard/comics), written from the
+// admin dashboard. Merge them over the static index; retries until Firestore is ready.
+async function loadFmvOverrides(attempt) {
+  attempt = attempt || 0;
+  try {
+    if (!window._db || !window._fsDoc || !window._fsGetDoc) {
+      if (attempt < 20) setTimeout(() => loadFmvOverrides(attempt + 1), 1500);
+      return;
+    }
+    const snap = await window._fsGetDoc(window._fsDoc(window._db, "fmv_dashboard", "comics"));
+    const data = snap && (typeof snap.exists === "function" ? (snap.exists() ? snap.data() : null) : (snap.exists ? snap.data() : null));
+    if (data && typeof data === "object") {
+      _fmvOverrides = data;
+      console.log(`[fmv] merged ${Object.keys(data).length} manual override(s)`);
+    }
+  } catch (e) { console.warn("[fmv] overrides load:", e?.message || e); }
+}
+loadFmvOverrides();
 
 function normalizeTitle(s, issueDate, printing) {
   if (!s) return s;

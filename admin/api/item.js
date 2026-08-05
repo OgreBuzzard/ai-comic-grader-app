@@ -38,6 +38,31 @@ async function getFmvIndex() {
 }
 const _nkTitle = s => !s ? '' : s.toString().trim().replace(/\s+/g, ' ').replace(/^The\s+/i, '').toLowerCase();
 const _nkIssue = s => s == null ? '' : s.toString().trim().replace(/^#/, '').replace(/^0+(\d)/, '$1');
+// App-identical FMV key (mirror of index.html _fmvKeyOf) so manual overrides written
+// from the dashboard collide with what the app looks up.
+const _appNormTitle = s => !s ? '' : s.toString().trim().replace(/\s+/g,' ').replace(/^The\s+/i,'').toLowerCase();
+function _appFmvKey(title, issue) {
+  let t = (title == null ? '' : title.toString()).trim().replace(/\s+/g,' ');
+  let i = (issue == null ? '' : issue.toString()).trim().replace(/^#/,'');
+  const titleHasAnnual = /\bannual\b/i.test(t);
+  const mA = i.match(/^\s*(?:annual|ann\.?)\s*#?\s*0*(\d+)\s*$/i);
+  const mB = i.match(/^\s*A\s*0*(\d+)\s*$/i);
+  if (titleHasAnnual) { t = t.replace(/\bannual\b/ig,'').replace(/\s+/g,' ').trim(); const num = mA ? mA[1] : (mB ? mB[1] : i.replace(/^0+(\d)/,'$1')); i = 'A'+num; }
+  else if (mA) { i = 'A'+mA[1]; } else if (mB) { i = 'A'+mB[1]; } else { i = i.replace(/^0+(\d)/,'$1'); }
+  t = t.replace(/^invincible\s+iron\s+man\b/i,'Iron Man');
+  return _appNormTitle(t) + '|' + i;
+}
+let _fmvOvCache = {}, _fmvOvAt = 0;
+async function getFmvOverrides(db, docId) {
+  const now = Date.now();
+  if (_fmvOvCache[docId] && (now - _fmvOvAt) < 60000) return _fmvOvCache[docId];
+  try {
+    const snap = await db.doc('fmv_dashboard/' + docId).get();
+    _fmvOvCache[docId] = snap.exists ? (snap.data() || {}) : {};
+    _fmvOvAt = now;
+  } catch (_) { _fmvOvCache[docId] = _fmvOvCache[docId] || {}; }
+  return _fmvOvCache[docId];
+}
 function matchFmv(idx, title, issue, grade, printing, year) {
   if (!idx || !idx.books) return null;
   if (printing && typeof printing === 'string') {
@@ -266,7 +291,15 @@ export default async function handler(req, res) {
       const fmvYear = parseInt((String(item.issueDate || '').match(/(19|20)\d\d/) || [])[0], 10);
       const m = matchFmv(idx, item.title, item.issue, fmvGrade, item.printing, fmvYear);
       item.fmvRange = m ? fmtFmv(m) : null;
-    } catch (_) { item.fmvRange = null; }
+      // Manual-entry support: app-style key + current curve (static + manual override).
+      const _fk = _appFmvKey(item.title, item.issue);
+      item.fmvKey = _fk;
+      let _sc = (idx && idx.books) ? idx.books[_fk] : null;
+      if (typeof _sc === 'number' && idx.curves) _sc = idx.curves[_sc];
+      item.fmvCurve = Array.isArray(_sc) ? _sc : null;
+      const _ov = await getFmvOverrides(db, item.type === 'card' ? 'cards' : 'comics');
+      item.fmvManualCurve = (_ov && Array.isArray(_ov[_fk])) ? _ov[_fk] : null;
+    } catch (_) { item.fmvRange = item.fmvRange || null; }
 
     return res.status(200).json({ item });
 

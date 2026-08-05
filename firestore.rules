@@ -184,6 +184,12 @@ service cloud.firestore {
     // (Admin SDK) and read by the admin dashboard API (Admin SDK). No client
     // access — client read would expose the issuer→recipient graph; client write
     // would let a user forge referral grants. Deny both.
+    // Manual FMV curves written by the admin dashboard (Admin SDK bypasses write).
+    // Public read so the app can merge them over the static price index at load.
+    match /fmv_dashboard/{doc} {
+      allow read: if true;
+      allow write: if false;
+    }
     match /referrals/{referralId} {
       allow read, write: if false;
     }
