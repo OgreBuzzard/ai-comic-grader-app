@@ -2714,6 +2714,26 @@ function buildComicId(title, issue) {
   return `comic:${abbr}-${issueStr}-${Date.now()}`;
 }
 
+function psaCondShort(g) {
+  const s = String(g == null ? "" : g).trim().toUpperCase();
+  if (s === "AA") return "AA";
+  if (s.indexOf("AUTH") === 0) return "AUTH";
+  const n = parseFloat(s);
+  if (!isFinite(n)) return "";
+  if (n >= 10) return "GEM MT";
+  if (n >= 9) return "MINT";
+  if (n >= 8) return "NM-MT";
+  if (n >= 7) return "NM";
+  if (n >= 6) return "EX-MT";
+  if (n >= 5) return "EX";
+  if (n >= 4) return "VG-EX";
+  if (n >= 3) return "VG";
+  if (n >= 2) return "GD";
+  if (n >= 1.5) return "FR";
+  if (n >= 1) return "PR";
+  return "";
+}
+
 function buildBadge(gradeVal, type, designation, sm, fullAssessment, deepAssessment, restored) {
   const cls = sm ? "ubadge ubadge-sm" : "ubadge";
   const lbl = GRADE_LABELS[gradeVal] || "";
@@ -2738,7 +2758,7 @@ function buildBadge(gradeVal, type, designation, sm, fullAssessment, deepAssessm
     }
     return `<div class="${cls}" style="border-color:rgba(0,0,0,0.25)"><div class="ubadge-strip" style="background:${sc}"><span>${sl}</span></div><div class="ubadge-body" style="background:#fff"><div class="ubadge-num" style="color:#000">${gradeVal}</div><div class="ubadge-lbl" style="color:#333">${lbl}</div></div></div>`;
   }
-  if (type === "psa-predicted") return `<div class="${cls}" style="border-color:#7f1d1d;background:#b91c1c"><div class="ubadge-body" style="background:#b91c1c"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.85)">PSA</div></div></div>`;
+  if (type === "psa-predicted") return `<div class="${cls}" style="border-color:#7f1d1d;background:#b91c1c"><div class="ubadge-body" style="background:#b91c1c"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.85)">${psaCondShort(gradeVal) || "PSA"}</div></div></div>`;
   if (type === "predicted" || type === "cgc-ai" || type === "psa-ai") return `<div class="${cls}" style="border-color:#1e40af;background:#1a5fa8"><div class="ubadge-body" style="background:#1a5fa8"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.8)">${lbl}</div></div></div>`;
   return `<div class="${cls}" style="border-color:#333;background:#1a1a1a"><div class="ubadge-body" style="background:#1a1a1a"><div class="ubadge-num" style="color:#1a1614">${gradeVal}</div><div class="ubadge-lbl" style="color:#6a5a4a">${lbl}</div></div></div>`;
 }
