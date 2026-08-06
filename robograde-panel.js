@@ -251,7 +251,14 @@
       <div style="font-size:12px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:10px;text-align:center">ROBOGRADE SCORE</div>
       <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px">
         <div style="background:${OLIVE};border-radius:18px;width:104px;height:104px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px solid ${OLIVE_MID};position:relative">
-          ${precision ? `<span style="font-family:'Noto Sans Display',sans-serif;font-size:18px;font-weight:700;color:${OLIVE_LT};position:absolute;top:9px;right:9px;white-space:nowrap;line-height:1;display:inline-block;transform:scaleX(0.62);transform-origin:right center">${precision.replace('±', '± ')}</span>` : ''}
+          ${(() => {
+            if (_v2on) {
+              if (!precision) return '';
+              const _n = precision.replace(/^↕/, '');
+              return `<span style="position:absolute;top:9px;right:9px;color:${OLIVE_LT};line-height:1;display:inline-flex;align-items:center;gap:1px;font-family:'Noto Sans Display',sans-serif;font-size:15px;font-weight:700"><svg viewBox="0 0 24 24" width="9" height="12" style="display:block" aria-hidden="true"><path d="M12 2.5 L16.5 8.5 L13.6 8.5 L13.6 15.5 L16.5 15.5 L12 21.5 L7.5 15.5 L10.4 15.5 L10.4 8.5 L7.5 8.5 Z" fill="currentColor"/></svg>${_n}</span>`;
+            }
+            return precision ? `<span style="font-family:'Noto Sans Display',sans-serif;font-size:18px;font-weight:700;color:${OLIVE_LT};position:absolute;top:9px;right:9px;white-space:nowrap;line-height:1;display:inline-block;transform:scaleX(0.62);transform-origin:right center">${precision.replace('±', '± ')}</span>` : '';
+          })()}
           <div style="position:absolute;top:6px;left:0;right:0;text-align:center;pointer-events:none;display:flex;justify-content:center;opacity:0.5">${(() => {
             // S17: chunky SVG tier stars in the score-text color, centered at the
             // top, ABSOLUTE (out of flow) so the score stays dead-center. No "RG"
@@ -266,7 +273,7 @@
             if (_restoRan) _s += _star('#b58be0');
             return `<span style="display:inline-flex;gap:1px;align-items:center;line-height:1">${_s}</span>`;
           })()}</div>
-          <span style="font-family:'Noto Sans Display',sans-serif;font-weight:900;color:${CHARTREUSE};line-height:1;font-size:62px;display:inline-block;transform:scaleX(0.80);transform-origin:center">${_v2 ? (() => { const _m = String(_v2.grade).match(/^(\d+)([+-]?)$/); const _b = _m ? _m[1] : _v2.grade; const _md = _m ? _m[2] : ''; return _b + (_md ? `<span style="font-size:38px;font-weight:600">${_md}</span>` : ''); })() : scoreRounded}</span>
+          <span style="position:relative;display:inline-block;line-height:1"><span style="font-family:'Noto Sans Display',sans-serif;font-weight:900;color:${CHARTREUSE};line-height:1;font-size:62px;display:inline-block;transform:scaleX(0.80);transform-origin:center">${_v2 ? String(_v2.grade).replace(/[+-]$/, '') : scoreRounded}</span>${_v2 && /[+-]$/.test(String(_v2.grade)) ? `<span style="position:absolute;left:100%;top:8px;margin-left:-2px;font-family:'Noto Sans Display',sans-serif;font-size:26px;font-weight:500;color:${CHARTREUSE};line-height:1">${String(_v2.grade).slice(-1)}</span>` : ''}</span>
           <div style="font-size:8px;font-weight:700;color:#5a7028;letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">${_v2on ? 'RG' : 'V' + (rg.version || '2.0')}</div>
         </div>
         <div style="flex:1;display:grid;grid-template-columns:2fr 2fr 1fr;grid-template-rows:auto auto;gap:4px">

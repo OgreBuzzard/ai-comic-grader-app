@@ -25,8 +25,9 @@ const GRADE_MODEL = 'claude-opus-5';                  // matches assess.js PRIMA
 const IDENTIFY_PROMPT =
   'You are looking at the FRONT of a single trading card (most likely Pokémon). ' +
   'Identify it. Respond with ONLY a JSON object and nothing else: ' +
-  '{"name": string, "set": string|null, "number": string|null, "year": number|null, "variant": string|null}. ' +
+  '{"name": string, "set": string|null, "number": string|null, "year": number|null, "variant": string|null, "illustrator": string|null}. ' +
   'For "number" use the printed collector number exactly as shown (e.g. "025/094" or "RC24/RC25"). ' +
+  'For "illustrator" use the artist credit usually printed in small text near the bottom of the card. ' +
   'If a field is not legible, use null.';
 
 function normalizeMediaType(mt) {
@@ -175,6 +176,14 @@ export default async function handler(req, res) {
     }, 120000);
     card = extractJson(gradeOut.text);
     if (!card) return res.status(502).json({ error: 'Could not parse grade JSON from model', raw: (gradeOut.text || '').slice(0, 500) });
+    // Backfill identity from the cheap identify pass so the card-detail Details
+    // block (Set / Number / Year / Artist / Variant) is reliably populated even
+    // when the grading model omits a field. Grading values win; identify fills gaps.
+    const _idc = identification || {};
+    const _cc = card.cardIdentification = card.cardIdentification || {};
+    for (const k of ['name', 'set', 'number', 'year', 'variant', 'illustrator']) {
+      if ((_cc[k] == null || _cc[k] === '') && _idc[k] != null && _idc[k] !== '') _cc[k] = _idc[k];
+    }
   } catch (e) {
     console.error('[assess_card] grade failed:', e && (e.stack || e.message));
     return res.status(502).json({ error: (e && e.message) || 'Grade failed' });
