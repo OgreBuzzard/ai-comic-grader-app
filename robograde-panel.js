@@ -255,7 +255,7 @@
             if (_v2on) {
               if (!precision) return '';
               const _n = precision.replace(/^↕/, '');
-              return `<span style="position:absolute;top:9px;right:9px;color:${OLIVE_LT};line-height:1;display:inline-flex;align-items:center;gap:1px;font-family:'Noto Sans Display',sans-serif;font-size:15px;font-weight:700"><svg viewBox="0 0 24 24" width="9" height="12" style="display:block" aria-hidden="true"><path d="M12 2.5 L16.5 8.5 L13.6 8.5 L13.6 15.5 L16.5 15.5 L12 21.5 L7.5 15.5 L10.4 15.5 L10.4 8.5 L7.5 8.5 Z" fill="currentColor"/></svg>${_n}</span>`;
+              return `<span style="position:absolute;top:9px;right:9px;color:${CHARTREUSE};line-height:1;display:inline-flex;align-items:center;gap:2px;font-family:'Noto Sans Display',sans-serif;font-size:15px;font-weight:700"><img src="/assets/pm-notch.svg" width="9" height="12" style="display:block" alt="">${_n}</span>`;
             }
             return precision ? `<span style="font-family:'Noto Sans Display',sans-serif;font-size:18px;font-weight:700;color:${OLIVE_LT};position:absolute;top:9px;right:9px;white-space:nowrap;line-height:1;display:inline-block;transform:scaleX(0.62);transform-origin:right center">${precision.replace('±', '± ')}</span>` : '';
           })()}

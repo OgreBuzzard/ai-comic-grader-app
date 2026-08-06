@@ -16,7 +16,7 @@
 // ESM note: a static Node built-in import keeps Vercel treating this as ESM
 // (matches verify_iap/verify_play); firebase-admin loads dynamically.
 import process from 'node:process';
-import { buildPSACardGradingPrompt } from '../lib/grading_cards.js';
+import { buildPSACardGradingPrompt, buildPSACardDeepPrompt } from '../lib/grading_cards.js';
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const IDENTIFY_MODEL = 'claude-haiku-4-5-20251001';   // cheap identification pass
@@ -139,6 +139,33 @@ export default async function handler(req, res) {
 
   const t0 = Date.now();
   const userBlocks = images.map(toImageBlock);
+
+  // DEEP mode (revise pattern, like Comic Deep): prior assessment + the 4 new
+  // Deep photos only (Front Raking, Back Raking, Back Top Macro, Back Bottom
+  // Macro). No identify/reference pass; identity is carried from the prior grade.
+  if (body.deep && body.initialAssessment && typeof body.initialAssessment === 'object') {
+    const deepPrompt = buildPSACardDeepPrompt({ initialAssessment: body.initialAssessment });
+    const deepContent = [...userBlocks, { type: 'text', text: deepPrompt }];
+    let deepCard;
+    try {
+      const out = await anthropicText(apiKey, {
+        model: GRADE_MODEL, max_tokens: 16384,
+        messages: [{ role: 'user', content: deepContent }],
+      }, 120000);
+      deepCard = extractJson(out.text);
+      if (!deepCard) return res.status(502).json({ error: 'Could not parse deep grade JSON from model', raw: (out.text || '').slice(0, 500) });
+    } catch (e) {
+      console.error('[assess_card] deep grade failed:', e && (e.stack || e.message));
+      return res.status(502).json({ error: (e && e.message) || 'Deep grade failed' });
+    }
+    const _pc = body.initialAssessment.cardIdentification || {};
+    const _dc = deepCard.cardIdentification = deepCard.cardIdentification || {};
+    for (const k of ['name', 'set', 'number', 'year', 'variant', 'illustrator']) {
+      if ((_dc[k] == null || _dc[k] === '') && _pc[k] != null && _pc[k] !== '') _dc[k] = _pc[k];
+    }
+    console.log('[assess_card] DEEP uid=' + uid + ' psa=' + deepCard.psaGrade + ' rg=' + (deepCard.robograde && deepCard.robograde.total) + ' ' + (Date.now() - t0) + 'ms');
+    return res.status(200).json({ card: deepCard, deep: true });
+  }
 
   // 1) Identify (cheap) — best-effort; grading still runs if this fails.
   let identification = {};

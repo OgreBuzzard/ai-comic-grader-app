@@ -5848,6 +5848,7 @@ async function compressImagesSequentially(dataUrls) {
 
 const STORAGE_SLOTS_MAIN = [ "front_cover", "back_cover", "page_quality", "raking_light" ];
 const STORAGE_SLOTS_CARD = [ "card_front", "card_back", "card_top_macro", "card_bottom_macro" ];
+const STORAGE_SLOTS_CARD_DEEP = [ "card_front_raking", "card_back_raking", "card_back_top_macro", "card_back_bottom_macro" ];
 
 const STORAGE_SLOTS_CORNER = [ "corner_tl", "corner_tr", "corner_bl", "corner_br" ];
 // S20 (#36): the two Deep interior-cover photos (raw books only).
@@ -8202,12 +8203,133 @@ function dismissAssessModal(err) {
 }
 
 let _pendingCardResult = null;
+let _cardDeepSlot = 0;
 
 // Card grading path (Pokemon MVP). Fully isolated from the comic assessGrade():
 // uploads photos, calls /api/assess_card, saves a type:"card" item + cardData,
 // spends one credit (same as comics), and shows an RG + predicted-PSA result.
 // Reuses the existing scan animation; card-specific animation/panel is deferred
 // to the v2 type-aware display work (see CARDS_MVP_SPEC).
+function cardDeepEligible(item) {
+  if (!item || (item.type !== "card" && !item._isCard) || !item.roboGrade) return false;
+  const pgRaw = (item.cardData && item.cardData.psaGrade != null) ? item.cardData.psaGrade : item.assessedPSAGrade;
+  const pg = parseFloat(pgRaw);
+  if (isFinite(pg) && pg >= 9.0) return true;
+  // FMV >= $100 gate. Card FMV isn't wired into the app yet, so this only fires
+  // once a numeric card FMV is present on the item (placeholder until then).
+  const fmv = parseFloat(item._cardFmvHigh);
+  if (isFinite(fmv) && fmv >= 100) return true;
+  return false;
+}
+
+function _cardDeepSectionHtml(item) {
+  const isCard = !!(item && (item.type === "card" || item._isCard));
+  if (!isCard || !item.roboGrade || !cardDeepEligible(item)) return "";
+  const labels = ["Front Raking", "Back Raking", "Back Top Macro", "Back Bottom Macro"];
+  const slots = labels.map((lbl, i) => {
+    const im = (item.cardDeepImages || [])[i];
+    return im
+      ? `<div class="drag-slot" style="aspect-ratio:5/7" onclick="tapCardDeepSlot(${i})"><img src="${im}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"><button class="slot-x" onclick="event.stopPropagation();removeCardDeepImg(${i})">\u00d7</button></div>`
+      : `<div class="drag-slot" style="padding:0;background:#161616;aspect-ratio:5/7;position:relative" onclick="tapCardDeepSlot(${i})"><div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700;letter-spacing:1px;text-align:center;padding:8px">${lbl.toUpperCase()}<div style="font-size:10px;opacity:0.8;margin-top:4px;font-weight:500">Tap to add</div></div></div>`;
+  }).join("");
+  const ready = (item.cardDeepImages || []).filter(Boolean).length >= 4;
+  return `
+      <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">
+        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">DEEP ASSESSMENT</div>
+        <div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Higher-value cards: add raking-light and back close-ups to refine surface, back corners, and edges. For the raking shots, tilt the card under a single light so the surface catches the glare.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">${slots}</div>
+        <input id="card-deep-photo-input" type="file" accept="image/*" onchange="handleCardDeepImage(event)" style="display:none">
+        <div style="display:flex;justify-content:center;margin-top:12px"><button id="card-deep-btn" class="rg-btn rg-btn-assess rg-btn-bronze" onclick="assessCardDeep()" ${(!ready || assessing) ? "disabled" : ""}>${assessing ? "Assessing\u2026" : "RUN DEEP ASSESSMENT"}</button></div>
+      </div>`;
+}
+
+function tapCardDeepSlot(i) {
+  _cardDeepSlot = i;
+  const inp = document.getElementById("card-deep-photo-input");
+  if (inp) { inp.value = ""; inp.click(); }
+}
+
+async function handleCardDeepImage(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const dataUrl = await new Promise(res => { const r = new FileReader; r.onload = ev => res(ev.target.result); r.readAsDataURL(file); });
+  const list = [...(formData.cardDeepImages || [])];
+  while (list.length < 4) list.push(null);
+  list[_cardDeepSlot] = dataUrl;
+  formData.cardDeepImages = list;
+  renderForm();
+}
+
+function removeCardDeepImg(i) {
+  const list = [...(formData.cardDeepImages || [])];
+  if (i < list.length) list[i] = null;
+  formData.cardDeepImages = list;
+  renderForm();
+}
+
+// Card Deep = revise the existing grade using the 4 new photos only. Sends the
+// prior card assessment + the 4 Deep images to /api/assess_card (deep:true).
+async function assessCardDeep() {
+  const deep = (formData.cardDeepImages || []).filter(Boolean);
+  if (deep.length < 4) { alert("Add all 4 Deep photos first (Front Raking, Back Raking, Back Top Macro, Back Bottom Macro)."); return; }
+  if (assessing) return;
+  if (!formData.cardData) { alert("Run the Main card assessment first."); return; }
+  const eligibility = await checkAssessmentEligibility();
+  if (!eligibility.allowed) { alert(eligibility.message); return; }
+  if (window._userCredits !== undefined && window._userCredits <= 0) {
+    if (confirm("You have no assessment credits remaining. Would you like to buy more?")) showBuyCredits();
+    return;
+  }
+  assessing = true;
+  const _b = document.getElementById("card-deep-btn"); if (_b) { _b.textContent = "ASSESSING\u2026"; _b.disabled = true; }
+  const scanController = window.RobograderScan
+    ? window.RobograderScan.runScanAnimation(formData.cardDeepImages.filter(Boolean))
+    : { promise: Promise.resolve(), cancel: () => {} };
+  try {
+    const dataUrls = await Promise.all(deep.slice(0, 4).map(async img => {
+      if (typeof img === "string" && img.startsWith("http")) {
+        const resp = await fetch(img); const blob = await resp.blob();
+        return await new Promise(res => { const r = new FileReader; r.onload = ev => res(ev.target.result); r.readAsDataURL(blob); });
+      }
+      return img;
+    }));
+    const compressed = await compressImagesSequentially(dataUrls);
+    const _resp = await fetch("/api/assess_card", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(window._currentUser ? { Authorization: "Bearer " + await window._currentUser.getIdToken() } : {}) },
+      body: JSON.stringify({ deep: true, initialAssessment: formData.cardData, images: compressed })
+    });
+    await scanController.promise;
+    if (!_resp.ok) { const e = await _resp.text(); throw new Error("Assessment error: " + e); }
+    const out = await _resp.json();
+    if (out.error) throw new Error(out.error);
+    const card = out.card || {};
+    const rgTotal = card.robograde && card.robograde.total != null ? Math.round(card.robograde.total) : (formData.roboGrade && formData.roboGrade.score);
+    const cardId = formData.id || ("card_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7));
+    formData.id = cardId;
+    let deepStored = formData.cardDeepImages;
+    try {
+      const proc = await processImagesForSave(formData.cardDeepImages.filter(Boolean), cardId, STORAGE_SLOTS_CARD_DEEP, { generateThumbs: false });
+      deepStored = proc.images;
+    } catch (e) { console.warn("[carddeep] deep image save failed:", e); }
+    formData.cardData = card;
+    formData.assessedPSAGrade = card.psaGrade != null ? String(card.psaGrade) : formData.assessedPSAGrade;
+    formData.roboGrade = rgTotal != null ? { score: rgTotal, version: "card-v1", subscores: card.robograde || null } : formData.roboGrade;
+    formData.deepAssessmentRan = true;
+    formData.cardDeepImages = deepStored;
+    const rec = { ...formData, id: cardId };
+    await saveItem(rec);
+    onAssessmentSuccess();
+    _assessed = true;
+    _pendingCardResult = rec;
+    mountCardResults(rec);
+  } catch (e) {
+    if (typeof dismissAssessModal === "function") dismissAssessModal(e.message); else alert("Deep assessment failed: " + (e.message || e));
+  }
+  assessing = false;
+  const _bb = document.getElementById("card-deep-btn"); if (_bb) { _bb.textContent = "RUN DEEP ASSESSMENT"; _bb.disabled = false; }
+}
+
 async function assessCardGrade() {
   const imgs = (formData.images || []).filter(Boolean);
   if (imgs.length === 0) { alert("Add at least one photo first."); return; }
@@ -8882,6 +9004,7 @@ function renderForm() {
     const cancelBtn = v === true || v === false || isDone || isDontCare ? `<button onclick="cancelTreatment('${key}',event)" style="margin-left:6px;background:none;border:none;color:#9a6a6a;font-size:13px;cursor:pointer;padding:0;line-height:1" title="Reset">×</button>` : "";
     return `<span style="display:inline-flex;align-items:center"><button class="treatment-btn" style="background:${bg};border-color:${bc};color:${col}" onclick="cycleTreatment('${key}')">${txt}</button>${cancelBtn}</span>`;
   }
+  const _isCardForm = formData.type === "card" || !!formData._isCard || !!(formData._slabDetect && formData._slabDetect.isCard);
   const _saveLabelTop = formData.id ? "Save" : "Add";
   const _saveDisabledTop = formData.title && formData.title.trim() ? "" : "disabled";
   let html = `<div class="sticky-back" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><button class="btn-ghost" onclick="cancelForm()">← Back</button><button class="btn btn-gold" id="save-btn-top" onclick="submitForm()" ${_saveDisabledTop}>${_saveLabelTop}</button></div>\n  <h2 style="font-size:18px;margin:8px 0 20px;color:#c8a96e">${isEdit ? "Edit Book" : "Add Book"}</h2>\n  <div class="card" style="display:flex;flex-direction:column;gap:14px">\n    ${ownershipSegmentForForm()}\n    ${formData.roboGrade ? (() => { const _ip = buildIntegrityPill(formData, true); return _ip ? `<div style="display:flex;justify-content:flex-end;margin-bottom:2px">${_ip}</div>` : ""; })() : ""}\n    <div>\n      <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">MAIN ASSESSMENT PHOTOS${formData.labelDetected ? ` <span style="color:#9a8a7a;font-weight:600">(graded slab)</span>` : ""}</div>\n      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px">\n        ${(() => {
@@ -8894,7 +9017,7 @@ function renderForm() {
       return img ? `<div class="drag-slot" draggable="true"\n                  ondragstart="dragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"\n                  onclick="tapSlot(${i},'main')">\n                  <img src="${img}">\n                  <button class="slot-edit" onclick="event.stopPropagation();openCropper('main',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>\n                  <button class="slot-x" onclick="event.stopPropagation();removeImg(${i})">×</button>\n                 </div>` : `<div class="drag-slot" style="padding:0;background:none;"\n                  ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"\n                  onclick="tapSlot(${i},'main')">\n                  ${_isCardForm ? `<div style="width:100%;aspect-ratio:5/7;background:#161616;border-radius:4px"></div>` : `<img src="${SLOT_GHOSTS[i]}" style="width:100%;height:auto;display:block;border-radius:4px;opacity:0.7;">`}\n                  <div style="position:absolute;inset:0;pointer-events:none;">\n                    <span style="position:absolute;top:8px;left:10px;font-size:11px;font-weight:700;color:#000;letter-spacing:1px;text-transform:uppercase;background:rgba(255,255,255,0.75);padding:2px 6px;border-radius:3px;">${slotLabels[i]}</span>\n                  </div>\n                 </div>`;
     };
     return formData.labelDetected ? `\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">\n              ${renderSlot(0)}\n              ${renderSlot(1)}\n            </div>\n          ` : `\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">\n              ${renderSlot(0)}\n              ${renderSlot(1)}\n            </div>\n            ${renderSlot(2)}\n            ${renderSlot(3)}\n          `;
-  })()}\n      </div>\n      ${_preAssessPGPanel() || ""}\n      <div style="display:flex;justify-content:center;margin-top:12px"><button id="assess-btn" class="rg-btn rg-btn-assess rg-btn-bronze${_assessed ? ' reassess' : ''}${assessing ? ' assessing' : ''}" onclick="assessGrade()" ${!formData.images || !formData.images[0] || assessing ? "disabled" : ""}>${assessing ? "Assessing…" : _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE"}</button></div>\n      ${showDeepTier(formData) ? `\n      <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">DEEP ASSESSMENT CORNER MACROS</div>\n        <div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Tighten the grade with more detail where small defects are most common.</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\n          ${[ 0, 1, 2, 3 ].map(i => {
+  })()}\n      </div>\n      ${_preAssessPGPanel() || ""}\n      <div style="display:flex;justify-content:center;margin-top:12px"><button id="assess-btn" class="rg-btn rg-btn-assess rg-btn-bronze${_assessed ? ' reassess' : ''}${assessing ? ' assessing' : ''}" onclick="assessGrade()" ${!formData.images || !formData.images[0] || assessing ? "disabled" : ""}>${assessing ? "Assessing…" : _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE"}</button></div>\n      ${_cardDeepSectionHtml(formData)}${(!_isCardForm && showDeepTier(formData)) ? `\n      <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">DEEP ASSESSMENT CORNER MACROS</div>\n        <div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Tighten the grade with more detail where small defects are most common.</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\n          ${[ 0, 1, 2, 3 ].map(i => {
     const cornerLabels = [ "Top Left", "Top Right", "Bottom Left", "Bottom Right" ];
     const cornerGhosts = [ "assets/ghosts/TopLeft_Macro.jpg", "assets/ghosts/TopRight_Macro.jpg", "assets/ghosts/BottomLeft_Macro.jpg", "assets/ghosts/BottomRight_Macro.jpg" ];
     const img = (formData.cornerImages || [])[i];
