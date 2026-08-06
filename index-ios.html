@@ -5095,10 +5095,10 @@ function showDetail(id) {
       }
     });
     html += `</div>`;
-    // S20: interior covers (half-width row) when a Deep with covers has been run.
+    // S20: interior covers (full-width rows) when a Deep with covers has been run.
     if (icv.some(u => u)) {
       const icLabels = [ "Interior Front", "Interior Back" ];
-      html += `<div style="margin-top:6px;display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
+      html += `<div style="margin-top:6px;display:grid;grid-template-columns:1fr;gap:6px">`;
       [ 0, 1 ].forEach(k => {
         const u = icv[k];
         if (u) html += `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:3/2"><img src="${u}" ${imgAttrs} onclick="openInteriorCoverLightbox('${selected.id}',${k})" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block"><div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(0,0,0,0.55);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${icLabels[k].toUpperCase()}</div></div>`;
@@ -5129,7 +5129,7 @@ function showDetail(id) {
       html += `</div></div>`;
     }
   }
-  if (selected.roboGrade) {
+  if (selected.roboGrade || (selected.type === "card" && selected.cardData && selected.cardData.robograde)) {
     html += `<div style="margin-top:16px">${selected.type === "card" ? buildCardRoboDisplay(selected) : buildRoboGradeDisplay(selected.roboGrade, selected)}</div>`;
   }
   const _isCardItem = selected.type === "card";
@@ -8613,7 +8613,6 @@ async function assessCardDeep() {
   const scanController = window.RobograderScan
     ? window.RobograderScan.runScanAnimation(formData.cardDeepImages.filter(Boolean), "card")
     : { promise: Promise.resolve(), cancel: () => {} };
-  try { mountStepTracker(); } catch (e) {}
   try {
     const dataUrls = await Promise.all(deep.slice(0, 4).map(async img => {
       if (typeof img === "string" && img.startsWith("http")) {
@@ -8623,12 +8622,14 @@ async function assessCardDeep() {
       return img;
     }));
     const compressed = await compressImagesSequentially(dataUrls);
-    const _resp = await fetch("/api/assess_card", {
+    const _respPromise = fetch("/api/assess_card", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...(window._currentUser ? { Authorization: "Bearer " + await window._currentUser.getIdToken() } : {}) },
       body: JSON.stringify({ deep: true, initialAssessment: formData.cardData, images: compressed })
     });
     await scanController.promise;
+    try { mountStepTracker(); } catch (e) {}
+    const _resp = await _respPromise;
     if (!_resp.ok) { const e = await _resp.text(); throw new Error("Assessment error: " + e); }
     const out = await _resp.json();
     if (out.error) throw new Error(out.error);
@@ -8686,7 +8687,6 @@ async function assessCardGrade() {
   const scanController = window.RobograderScan
     ? window.RobograderScan.runScanAnimation(formData.images || [], "card")
     : { promise: Promise.resolve(), cancel: () => {} };
-  try { mountStepTracker(); } catch (e) {}
 
   try {
     const dataUrls = await Promise.all(imgs.slice(0, 4).map(async img => {
@@ -8699,7 +8699,7 @@ async function assessCardGrade() {
     }));
     const compressed = await compressImagesSequentially(dataUrls);
 
-    const _resp = await fetch("/api/assess_card", {
+    const _respPromise = fetch("/api/assess_card", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -8708,6 +8708,8 @@ async function assessCardGrade() {
       body: JSON.stringify({ images: compressed })
     });
     await scanController.promise;
+    try { mountStepTracker(); } catch (e) {}
+    const _resp = await _respPromise;
     if (!_resp.ok) { const e = await _resp.text(); throw new Error("Assessment error: " + e); }
     const out = await _resp.json();
     if (out.error) throw new Error(out.error);
@@ -8765,38 +8767,208 @@ async function assessCardGrade() {
 }
 
 function buildCardRoboDisplay(item) {
+  try { return _buildCardRoboDisplayInner(item); }
+  catch (e) {
+    console.warn("[card panel] render failed:", e);
+    var _s = item && item.roboGrade && item.roboGrade.score;
+    if (_s == null && item && item.cardData && item.cardData.robograde) _s = item.cardData.robograde.total;
+    return _s != null
+      ? `<div style="margin-top:16px;background:#152e10;border:1.5px solid #4a7028;border-radius:12px;padding:16px;text-align:center"><div style="font-size:12px;color:#7aa838;letter-spacing:2px;margin-bottom:8px">ROBOGRADE SCORE</div><div style="font-family:'Noto Sans Display',sans-serif;font-weight:900;font-size:48px;color:#b8d820;line-height:1">${Math.round(_s)}</div></div>`
+      : "";
+  }
+}
+
+function _buildCardRoboDisplayInner(item) {
   const rg = item.roboGrade || {};
   const card = item.cardData || {};
   const cd = card.robograde || rg.subscores || null;
-  const rgScore = rg.score != null ? Math.round(rg.score) : null;
-  const _v2 = (RG_V2_DISPLAY && window.RGScoreV2 && rg.score != null) ? window.RGScoreV2.gradeFromScore(rg.score) : null;
-  const psa = (card.psaGrade != null && card.psaGrade !== "") ? card.psaGrade : (item.assessedPSAGrade || null);
-  const OLIVE = "#2a4a1e", CHARTREUSE = "#b8d820", OLIVE_LT = "#7aa838", OLIVE_MID = "#4a7028";
-  const axes = [ { k: "surface", l: "Surface", max: 40, g: 2 }, { k: "centering", l: "Centering", max: 20, g: 1 }, { k: "corners", l: "Corners", max: 20, g: 1 }, { k: "edges", l: "Edges", max: 20, g: 1 } ];
-  const subCells = cd ? axes.map(a => { const v = cd[a.k] && cd[a.k].total != null ? cd[a.k].total : null; return `<div style="flex:${a.g};min-width:0;background:#0f1a05;border:1px solid ${OLIVE_MID};border-radius:6px;padding:7px 3px;text-align:center"><div style="font-size:8px;letter-spacing:0.5px;color:${OLIVE_LT};text-transform:uppercase;margin-bottom:3px">${a.l}</div><div style="font-size:17px;font-weight:800;color:${CHARTREUSE};line-height:1">${v != null ? v : "\u2014"}<span style="font-size:9px;color:${OLIVE_LT};font-weight:600">/${a.max}</span></div></div>`; }).join("") : "";
+  const score = (rg.score != null) ? rg.score : (cd && cd.total != null ? cd.total : null);
+  const scoreRounded = score != null ? Math.round(score) : null;
+
+  // Mascot-green palette + tractor-feed printout paper — identical to the comic panel.
+  const OLIVE = "#2a4a1e", CHARTREUSE = "#b8d820", OLIVE_LT = "#7aa838", OLIVE_MID = "#4a7028", BG = "#152e10";
+  const PAPER_GREEN = "#cce8b8", PAPER_CREAM = "#f4f0dc", PAPER_HEADER = "#a8c898";
+  const PAPER_INK = "#1f2a08", PAPER_INK_HD = "#0a1404", PAPER_INK_LT = "#5a6a3a";
+
+  // v2 (31-tier) grade + per-axis tiers, gated on ?v2=1 like comics.
+  const cardSubs = cd ? {
+    surface: cd.surface && cd.surface.total,
+    centering: cd.centering && cd.centering.total,
+    corners: cd.corners && cd.corners.total,
+    edges: cd.edges && cd.edges.total
+  } : null;
+  const _hasSubs = !!(cardSubs && [cardSubs.surface, cardSubs.centering, cardSubs.corners, cardSubs.edges].some(v => v != null));
+  const _v2on = !!(RG_V2_DISPLAY && window.RGScoreV2 && _hasSubs);
+  const _v2 = _v2on ? window.RGScoreV2.fromSubscores(cardSubs, "card") : null;
+  const gradeLabel = _v2 ? _v2.grade
+    : (RG_V2_DISPLAY && window.RGScoreV2 && score != null ? window.RGScoreV2.gradeFromScore(score) : null);
+
+  // Precision (PM) notches — base by tier (main 2 / deep 1) + photograder penalty.
+  const _deep = !!item.deepAssessmentRan;
+  const _base = _deep ? 1 : 2;
+  const _pg = card.photograder;
+  const _pen = _pg ? ["focus", "lighting", "cropping", "angle"].reduce((a, k) => {
+    const v = String(_pg[k] || "").trim().toUpperCase(); return a + (v === "B" ? 1 : v === "C" ? 2 : 0);
+  }, 0) : 0;
+  const precision = _v2on ? (_base + _pen) : 0;
+
+  const _stars = _deep ? 2 : 1;
+
+  // Sub-axis display values: v2 tiers when on, else raw totals.
+  const axVals = _v2
+    ? [_v2.subs[0].display, _v2.subs[1].display, _v2.subs[2].display, _v2.subs[3].display]
+    : [
+        cd && cd.surface && cd.surface.total != null ? cd.surface.total : "—",
+        cd && cd.centering && cd.centering.total != null ? cd.centering.total : "—",
+        cd && cd.corners && cd.corners.total != null ? cd.corners.total : "—",
+        cd && cd.edges && cd.edges.total != null ? cd.edges.total : "—"
+      ];
+
+  const _gBase = gradeLabel ? String(gradeLabel).replace(/[+-]$/, "") : (scoreRounded != null ? scoreRounded : "");
+  const _gSuf = gradeLabel && /[+-]$/.test(String(gradeLabel)) ? String(gradeLabel).slice(-1) : "";
+
+  // ---- defects grouped by axis, mirroring the comic printout ----
   const def = card.defects || {};
-  const flat = (...keys) => keys.reduce((acc, k) => acc.concat(Array.isArray(def[k]) ? def[k] : []), []).filter(Boolean);
-  const surfaceDef = flat("creases", "scratches", "printDefects", "stains", "other");
-  const edgeDef = flat("edgeIssues");
-  const cornerDef = [];
+  const arrOf = k => Array.isArray(def[k]) ? def[k].filter(Boolean) : [];
+  const cornerName = k => k.replace(/^front/, "Front ").replace(/^back/, "Back ").replace(/([A-Z])/g, " $1").replace(/\s+/g, " ").trim();
+
+  const surfaceRows = [].concat(
+    arrOf("creases").map(s => ({ type: s })),
+    arrOf("scratches").map(s => ({ type: s })),
+    arrOf("printDefects").map(s => ({ type: s })),
+    arrOf("stains").map(s => ({ type: s })),
+    arrOf("other").map(s => ({ type: s }))
+  );
+
+  const centeringRows = [];
+  if (cd && cd.centering) {
+    const fr = cd.centering.frontRatio, br = cd.centering.backRatio;
+    const okRatio = r => r && !/cannot|n\/a|unknown/i.test(String(r));
+    const centered = r => /^\s*50\s*\/\s*50/.test(String(r));
+    if (okRatio(fr) && !centered(fr)) centeringRows.push({ type: "Front " + fr });
+    if (okRatio(br) && !centered(br)) centeringRows.push({ type: "Back " + br });
+  }
+
+  const cornerRows = [];
   const _pc = cd && cd.corners && cd.corners.perCorner;
-  if (_pc) for (const _k in _pc) { const V = String(_pc[_k] || "").toUpperCase(); if (V && V !== "PRISTINE" && V !== "SHARP") cornerDef.push(_k.replace(/([A-Z])/g, " $1").replace(/^./, c => c.toUpperCase()).trim() + ": " + _pc[_k]); }
+  if (_pc) for (const k in _pc) {
+    const V = String(_pc[k] || "").toUpperCase().trim();
+    if (V && V !== "PRISTINE" && V !== "SHARP") cornerRows.push({ type: cornerName(k), sev: V });
+  }
+
+  const edgeRows = [];
   const _ed = cd && cd.edges;
-  if (_ed) for (const _side of ["top", "bottom", "left", "right"]) { const V = String(_ed[_side] || "").toUpperCase(); if (V && V !== "CLEAN") edgeDef.push(_side.charAt(0).toUpperCase() + _side.slice(1) + " edge: " + _ed[_side]); }
-  const catSection = (label, arr) => (arr && arr.length) ? `<div style="margin-top:8px"><div style="font-size:9px;font-weight:700;letter-spacing:1px;color:${OLIVE_MID}">${label}</div>${arr.map(d => `<div style="font-size:12px;color:#2a2018;line-height:1.4;padding:3px 0;border-bottom:1px dotted #e0d8c8">${esc(String(d))}</div>`).join("")}</div>` : "";
-  const defectsHTML = (surfaceDef.length || cornerDef.length || edgeDef.length) ? `<div style="background:#fff;border-radius:8px;padding:8px 12px;margin-top:12px">${catSection("SURFACE", surfaceDef)}${catSection("CORNERS", cornerDef)}${catSection("EDGES", edgeDef)}</div>` : "";
-  const pg = card.photograder;
-  const pgHTML = (pg && window.RobograderPanel && window.RobograderPanel.pgCell) ? `<div style="margin-top:12px"><div style="font-size:10px;color:${OLIVE_LT};font-weight:700;letter-spacing:1.5px;text-align:center;margin-bottom:6px">PHOTOGRADER</div><div style="display:flex;gap:5px">${["focus", "lighting", "cropping", "angle"].map(k => window.RobograderPanel.pgCell(k.toUpperCase(), pg[k])).join("")}</div></div>` : "";
+  if (_ed) for (const side of ["top", "bottom", "left", "right"]) {
+    const V = String(_ed[side] || "").toUpperCase().trim();
+    if (V && V !== "CLEAN") edgeRows.push({ type: side.charAt(0).toUpperCase() + side.slice(1) + " edge", sev: V });
+  }
+  arrOf("edgeIssues").forEach(s => edgeRows.push({ type: s }));
+
+  function sevColor(s) {
+    if (!s) return PAPER_INK_LT;
+    const u = String(s).toUpperCase();
+    if (/DESTROY|HEAVY|CHIP|ROUGH|TEAR/.test(u)) return "#a8202a";
+    if (/BLUNT|SOFT|NOTCH|CREASE|STAIN|FRAY|WEAR/.test(u)) return "#a86010";
+    return "#3a5018";
+  }
+
+  let runningIdx = 0;
+  function catSection(label, scoreVal, rows) {
+    if (!rows.length) return "";
+    const body = rows.map((d, i) => {
+      const bg = ((runningIdx + i) % 2 === 0) ? PAPER_GREEN : PAPER_CREAM;
+      return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 10px;font-size:11px;gap:8px;background:${bg};font-family:'IBM Plex Mono','Menlo',monospace">
+        <span style="color:${PAPER_INK}">${esc(String(d.type))}</span>
+        ${d.sev ? `<span style="color:${sevColor(d.sev)};font-weight:800;font-size:11px;white-space:nowrap;flex-shrink:0;letter-spacing:0.5px">${esc(String(d.sev))}</span>` : ""}
+      </div>`;
+    }).join("");
+    runningIdx += rows.length;
+    return `<div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:${PAPER_HEADER};border-top:1px solid ${PAPER_INK_LT};border-bottom:1px solid ${PAPER_INK_LT}">
+        <span style="font-size:10px;font-weight:700;color:${PAPER_INK_HD};letter-spacing:1.5px;font-family:'IBM Plex Mono','Menlo',monospace">${label}</span>
+        <span style="font-size:14px;font-weight:800;color:${PAPER_INK_HD};font-family:'IBM Plex Mono','Menlo',monospace">${scoreVal}</span>
+      </div>${body}</div>`;
+  }
+
+  const sectionsHTML = [
+    catSection("SURFACE", axVals[0], surfaceRows),
+    catSection("CENTERING", axVals[1], centeringRows),
+    catSection("CORNERS", axVals[2], cornerRows),
+    catSection("EDGES", axVals[3], edgeRows)
+  ].filter(Boolean).join("");
+
+  // Photograder — same cells as the comic panel (single source: RobograderPanel.pgCell).
+  let pgHTML = "";
+  if (_pg && window.RobograderPanel && window.RobograderPanel.pgCell) {
+    const has = k => /^[ABC]$/.test(String(_pg[k] == null ? "" : _pg[k]).trim().toUpperCase());
+    if (has("focus") || has("lighting") || has("cropping") || has("angle")) {
+      const cells = ["FOCUS", "LIGHTING", "CROPPING", "ANGLE"]
+        .map(L => window.RobograderPanel.pgCell(L, _pg[L.toLowerCase()])).join("");
+      pgHTML = `<div style="margin-top:14px;padding-bottom:12px"><div style="font-size:12px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;text-align:center;margin-bottom:10px">PHOTOGRADER</div><div style="display:flex;gap:6px">${cells}</div></div>`;
+    }
+  }
+
+  // Provenance strip (ID / graded date).
+  let provenanceHTML = "";
+  if (item.roboGradeId || item.roboGradeDate) {
+    let dateStr = "";
+    if (item.roboGradeDate) { try { dateStr = new Date(item.roboGradeDate).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }); } catch (e) { dateStr = ""; } }
+    provenanceHTML = `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:${OLIVE};border-radius:6px;margin-bottom:10px;font-family:'IBM Plex Mono','Menlo',monospace;font-size:11px">
+      ${item.roboGradeId ? `<div><span style="color:${OLIVE_LT};letter-spacing:1px;font-size:9px;font-weight:700">ID</span> <span style="color:${CHARTREUSE};margin-left:6px;letter-spacing:0.5px">${esc(String(item.roboGradeId))}</span></div>` : "<div></div>"}
+      ${dateStr ? `<div><span style="color:${OLIVE_LT};letter-spacing:1px;font-size:9px;font-weight:700">GRADED</span> <span style="color:${CHARTREUSE};margin-left:6px">${dateStr}</span></div>` : ""}
+    </div>`;
+  }
+
+  // Condition Assessment — cream printout box (white-paper look, softer mono font).
   const notes = card.graderNotes || card.reasoning || "";
-  return `<div style="margin-top:16px;background:${OLIVE};border-radius:14px;padding:14px">
-    <div style="display:flex;gap:10px;align-items:stretch;justify-content:center;margin-bottom:10px">
-      ${rgScore != null ? `<div style="background:#0f1a05;border:1.5px solid ${OLIVE_MID};border-radius:12px;min-width:92px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px 12px"><span style="font-family:'Noto Sans Display',sans-serif;font-weight:900;font-size:42px;color:${CHARTREUSE};line-height:1">${_v2 || rgScore}</span><span style="font-size:9px;color:${OLIVE_LT};letter-spacing:1px;margin-top:3px">ROBOGRADE</span></div>` : ""}
-      ${psa ? `<div style="background:#b91c1c;border-radius:12px;min-width:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px 12px"><span style="font-size:26px;font-weight:800;color:#fff;line-height:1">${esc(String(psa))}</span><span style="font-size:9px;color:#fff;opacity:0.9;letter-spacing:0.5px;margin-top:3px">${esc(psaCondShort(psa) || "GRADE")}</span></div>` : ""}
+  const notesHTML = notes
+    ? `<div style="margin:14px 0;background:${PAPER_CREAM};border-radius:8px;padding:12px 14px"><div style="font-size:10px;color:${OLIVE_MID};font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px">Condition Assessment</div><div style="font-size:13px;color:${PAPER_INK};line-height:1.6;white-space:pre-line;font-family:'IBM Plex Mono','Menlo',monospace">${esc(notes)}</div></div>`
+    : "";
+
+  const _starSvg = c => `<svg viewBox="0 0 24 24" width="13" height="13" style="display:inline-block;vertical-align:middle"><path d="M12.00,2.00 15.64,6.98 21.51,8.91 17.90,13.92 17.88,20.09 12.00,18.20 6.12,20.09 6.10,13.92 2.49,8.91 8.36,6.98Z" fill="${c}"/></svg>`;
+  let _starsHTML = "";
+  for (let i = 0; i < _stars; i++) _starsHTML += _starSvg(CHARTREUSE);
+
+  const scoreBox = `<div style="background:${OLIVE};border-radius:18px;width:104px;height:104px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px solid ${OLIVE_MID};position:relative">
+    ${precision > 0 ? `<span style="position:absolute;top:9px;right:9px;color:${CHARTREUSE};line-height:1;display:inline-flex;align-items:center;gap:2px;font-family:'Noto Sans Display',sans-serif;font-size:15px;font-weight:700"><img src="/assets/pm-notch.svg" width="9" height="12" style="display:block" alt="">${precision}</span>` : ""}
+    <div style="position:absolute;top:6px;left:0;right:0;text-align:center;pointer-events:none;display:flex;justify-content:center;opacity:0.5"><span style="display:inline-flex;gap:1px;align-items:center;line-height:1">${_starsHTML}</span></div>
+    <span style="position:relative;display:inline-block;line-height:1"><span style="font-family:'Noto Sans Display',sans-serif;font-weight:900;color:${CHARTREUSE};line-height:1;font-size:62px;display:inline-block;transform:scaleX(0.80);transform-origin:center">${_gBase}</span>${_gSuf ? `<span style="position:absolute;left:100%;top:8px;margin-left:-2px;font-family:'Noto Sans Display',sans-serif;font-size:26px;font-weight:500;color:${CHARTREUSE};line-height:1">${_gSuf}</span>` : ""}</span>
+    <div style="font-size:8px;font-weight:700;color:#5a7028;letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">RG</div>
+  </div>`;
+
+  const subGrid = `<div style="flex:1;display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:auto auto;gap:4px">
+    <div style="grid-column:1/-1;background:${OLIVE};border-radius:6px;padding:10px 6px;text-align:center">
+      <div style="font-size:26px;font-weight:800;color:${CHARTREUSE};line-height:1">${axVals[0]}</div>
+      <div style="font-size:9px;color:${OLIVE_LT};letter-spacing:1.5px;margin-top:3px">SURFACE</div>
     </div>
-    ${subCells ? `<div style="display:flex;gap:5px">${subCells}</div>` : ""}
-    ${defectsHTML}
+    <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
+      <div style="font-size:18px;font-weight:800;color:${CHARTREUSE};line-height:1">${axVals[1]}</div>
+      <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:2px">CENTER</div>
+    </div>
+    <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
+      <div style="font-size:18px;font-weight:800;color:${CHARTREUSE};line-height:1">${axVals[2]}</div>
+      <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:2px">CORNERS</div>
+    </div>
+    <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
+      <div style="font-size:18px;font-weight:800;color:${CHARTREUSE};line-height:1">${axVals[3]}</div>
+      <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:2px">EDGES</div>
+    </div>
+  </div>`;
+
+  return `<div style="background:${BG};border:1.5px solid ${OLIVE_MID};border-radius:12px;padding:14px 14px 0;margin-bottom:8px;overflow:hidden">
+    <div style="font-size:12px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:10px;text-align:center">ROBOGRADE SCORE</div>
+    <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px">
+      ${scoreBox}
+      ${subGrid}
+    </div>
+    ${provenanceHTML}
+    ${sectionsHTML ? `<div style="margin:0 -14px;border-top:2px solid ${OLIVE_MID};border-bottom:1.5px solid ${OLIVE_MID};position:relative">
+      <div style="position:absolute;left:0;top:0;bottom:0;width:8px;background-image:radial-gradient(circle at 4px 8px, ${OLIVE_MID} 1.5px, transparent 1.6px);background-size:8px 14px;background-repeat:repeat-y;background-color:${PAPER_CREAM};z-index:1"></div>
+      <div style="position:absolute;right:0;top:0;bottom:0;width:8px;background-image:radial-gradient(circle at 4px 8px, ${OLIVE_MID} 1.5px, transparent 1.6px);background-size:8px 14px;background-repeat:repeat-y;background-color:${PAPER_CREAM};z-index:1"></div>
+      <div style="margin:0 8px;background:${PAPER_CREAM}">${sectionsHTML}</div>
+    </div>` : ""}
     ${pgHTML}
-    ${notes ? `<div style="background:#fff;border-radius:8px;padding:12px;margin-top:12px"><div style="font-size:10px;color:${OLIVE_MID};font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px">Condition Assessment</div><div style="font-size:13px;color:#2a2018;line-height:1.6;white-space:pre-line">${esc(notes)}</div></div>` : ""}
+    ${notesHTML}
   </div>`;
 }
 
@@ -8833,8 +9005,8 @@ async function completeCardAssessment() {
   _pendingCardResult = null;
   _assessed = true;
   if (window.RobograderScan && window.RobograderScan.dismiss) window.RobograderScan.dismiss();
-  if (rec && rec.id) _lastDetailId = rec.id;
-  showList();
+  if (rec && rec.id) { _lastDetailId = rec.id; showDetail(rec.id); }
+  else showList();
 }
 
 async function assessGrade() {
@@ -9394,7 +9566,7 @@ function renderForm() {
     const cornerGhosts = [ "assets/ghosts/TopLeft_Macro.jpg", "assets/ghosts/TopRight_Macro.jpg", "assets/ghosts/BottomLeft_Macro.jpg", "assets/ghosts/BottomRight_Macro.jpg" ];
     const img = (formData.cornerImages || [])[i];
     return img ? `<div class="drag-slot" draggable="true" style="aspect-ratio:2/3"\n                  ondragstart="cornerDragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="cornerDropSlot(event,${i})"\n                  onclick="tapSlot(${i},'corner')">\n                  <img src="${img}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">\n                  <button class="slot-edit" onclick="event.stopPropagation();openCropper('corner',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>\n                  <button class="slot-x" onclick="event.stopPropagation();removeCornerImg(${i})">×</button>\n                 </div>` : `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:2/3;position:relative;overflow:hidden"\n                  ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="cornerDropSlot(event,${i})"\n                  onclick="tapSlot(${i},'corner')">\n                  <img src="${cornerGhosts[i]}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.32;pointer-events:none">\n                  <div style="position:relative;color:#fff;font-size:13px;font-weight:700;letter-spacing:1.5px;padding:30px 10px;text-align:center;text-shadow:0 1px 3px rgba(0,0,0,0.85)">${cornerLabels[i].toUpperCase()}<div style="font-size:10px;opacity:0.85;margin-top:4px;letter-spacing:0.5px;font-weight:500">Tap to add photo</div></div>\n                 </div>`;
-  }).join("")}\n        </div>\n        <input id="corner-photo-input" type="file" accept="image/*" multiple onchange="handleCornerImages(event)" style="display:none">${!formData.labelDetected ? `<div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin:16px 0 8px">INTERIOR COVERS</div><div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Full spreads of the interior front and interior back, where defects can sometimes hide.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">${[0,1].map(i => { const icLabels = ["Interior Front","Interior Back"]; const _icimg = (formData.interiorCoverImages || [])[i]; return _icimg ? `<div class="drag-slot" style="aspect-ratio:3/2" onclick="tapSlot(${i},'interiorCover')"><img src="${_icimg}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"><button class="slot-edit" onclick="event.stopPropagation();openCropper('interiorCover',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button><button class="slot-x" onclick="event.stopPropagation();removeInteriorCoverImg(${i})">×</button></div>` : `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:3/2;position:relative;overflow:hidden" onclick="tapSlot(${i},'interiorCover')"><div style="position:relative;color:#fff;font-size:13px;font-weight:700;letter-spacing:1.5px;padding:26px 10px;text-align:center;text-shadow:0 1px 3px rgba(0,0,0,0.85)">${icLabels[i].toUpperCase()}<div style="font-size:10px;opacity:0.85;margin-top:4px;letter-spacing:0.5px;font-weight:500">Tap to add photo</div></div></div>`; }).join("")}</div><input id="interior-cover-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorCoverImages(event)" style="display:none">` : ""}\n        ${(() => {
+  }).join("")}\n        </div>\n        <input id="corner-photo-input" type="file" accept="image/*" multiple onchange="handleCornerImages(event)" style="display:none">${!formData.labelDetected ? `<div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin:16px 0 8px">INTERIOR COVERS</div><div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Full spreads of the interior front and interior back, where defects can sometimes hide.</div><div style="display:grid;grid-template-columns:1fr;gap:6px">${[0,1].map(i => { const icLabels = ["Interior Front","Interior Back"]; const _icimg = (formData.interiorCoverImages || [])[i]; return _icimg ? `<div class="drag-slot" style="aspect-ratio:3/2" onclick="tapSlot(${i},'interiorCover')"><img src="${_icimg}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"><button class="slot-edit" onclick="event.stopPropagation();openCropper('interiorCover',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button><button class="slot-x" onclick="event.stopPropagation();removeInteriorCoverImg(${i})">×</button></div>` : `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:3/2;position:relative;overflow:hidden" onclick="tapSlot(${i},'interiorCover')"><img src="assets/ghosts/Interior_${i === 0 ? 'Front' : 'Back'}_Cover.jpg" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.32;pointer-events:none"><div style="position:relative;color:#fff;font-size:13px;font-weight:700;letter-spacing:1.5px;padding:26px 10px;text-align:center;text-shadow:0 1px 3px rgba(0,0,0,0.85)">${icLabels[i].toUpperCase()}<div style="font-size:10px;opacity:0.85;margin-top:4px;letter-spacing:0.5px;font-weight:500">Tap to add photo</div></div></div>`; }).join("")}</div><input id="interior-cover-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorCoverImages(event)" style="display:none">` : ""}\n        ${(() => {
     const alreadyRun = !!formData.highGradeTier;
     const cornerCount = (formData.cornerImages || []).filter(Boolean).length;
     // S20 (#36): raw books also capture 2 interior covers (6 total); slabbed books
@@ -9464,7 +9636,7 @@ function renderForm() {
       h += `<div class="form-grid-2">\n          ${tf("PSA Grade", "psaGrade", "e.g. 9.4", true)}\n          ${tf("PSA Cert #", "psaCert", "Cert number")}\n        </div>`;
     }
     return h;
-  })()}\n    <div class="form-grid-2">\n      <div><label class="field-label">My Grade</label><select onchange="formData.grade=this.value">\n        <option value="">— select grade —</option>\n        ${GRADES.map(g => `<option value="${g}"${formData.grade === g ? " selected" : ""}>${g} — ${GRADE_LABELS[g]}</option>`).join("")}\n      </select></div>\n    </div>\n\n    \x3c!-- Robograde Score panel (S11): full RG display panel — score, sub-grades,\n         provenance strip, and printout-paper defect listing. Placed here right\n         after My Grade / Page Quality so the user sees the full RG output\n         before the Grader Predictions row below it. Previously rendered at\n         the bottom of the form; moved up to match the detail-view ordering. --\x3e\n    ${formData.roboGrade ? (_isCardForm ? buildCardRoboDisplay(formData) : buildRoboGradeDisplay(formData.roboGrade, formData)) : ""}\n    \x3c!-- Integrity badge (S12) — Assessment results screen shows BOTH states.\n         This is the moment-of-truth surface: the user just got a grade and\n         needs to know whether the result will display as Verified on a public\n         link before they save. If they wanted Verified and didn't get it,\n         they can retake/recapture in-app before saving. Placed right below\n         the Robograde panel so it associates visually with the grade output. --\x3e\n    ${formData.roboGrade ? (() => {
+  })()}\n    <div class="form-grid-2">\n      <div><label class="field-label">My Grade</label><select onchange="formData.grade=this.value">\n        <option value="">— select grade —</option>\n        ${GRADES.map(g => `<option value="${g}"${formData.grade === g ? " selected" : ""}>${g} — ${GRADE_LABELS[g]}</option>`).join("")}\n      </select></div>\n    </div>\n\n    \x3c!-- Robograde Score panel (S11): full RG display panel — score, sub-grades,\n         provenance strip, and printout-paper defect listing. Placed here right\n         after My Grade / Page Quality so the user sees the full RG output\n         before the Grader Predictions row below it. Previously rendered at\n         the bottom of the form; moved up to match the detail-view ordering. --\x3e\n    ${(_isCardForm ? (formData.roboGrade || (formData.cardData && formData.cardData.robograde)) : formData.roboGrade) ? (_isCardForm ? buildCardRoboDisplay(formData) : buildRoboGradeDisplay(formData.roboGrade, formData)) : ""}\n    \x3c!-- Integrity badge (S12) — Assessment results screen shows BOTH states.\n         This is the moment-of-truth surface: the user just got a grade and\n         needs to know whether the result will display as Verified on a public\n         link before they save. If they wanted Verified and didn't get it,\n         they can retake/recapture in-app before saving. Placed right below\n         the Robograde panel so it associates visually with the grade output. --\x3e\n    ${formData.roboGrade ? (() => {
     void buildIntegrityPill; // S20: integrity pill moved ABOVE the image slots
     return "";               // (see the form card top) to match Detail view.
   })() : ""}\n\n    \x3c!-- Grader Predictions (S11): renamed from "Assessment Results". This row\n         shows all of the relevant grade badges side-by-side: CGC Official, CGC\n         AI, PSA Official, PSA AI. A book can only be officially graded by one\n         service (CGC or PSA, not both), so at most 3 badges ever appear at\n         once — three boxes fit comfortably on one row. --\x3e\n    ${_assessed ? (() => {
