@@ -1547,7 +1547,7 @@ function renderTimingsList() {
     const timedOut = t.timedOut === true;
     const tagHtml = errored
       ? `<span style="background:#5a1818;color:#ffb0b0;padding:1px 6px;border-radius:3px;font-size:11px;">${timedOut ? 'TIMEOUT' : 'ERROR'}</span>`
-      : `<span style="background:var(--panel-2);color:var(--text-dim);padding:1px 6px;border-radius:3px;font-size:11px;">${t.gateResult || 'COMIC'}</span>`;
+      : `<span style="background:var(--panel-2);color:var(--text-dim);padding:1px 6px;border-radius:3px;font-size:11px;">${(t.itemType === 'card' || (t.kind || '').indexOf('card') === 0) ? (t.kind === 'card_deep' ? 'CARD DEEP' : 'CARD') : (t.gateResult || 'COMIC')}</span>`;
     const dateStr = t.createdAt ? new Date(t.createdAt).toLocaleString() : '?';
     const totalColor = (t.totalMs || 0) > 55000 ? '#ff8080' : (t.totalMs || 0) > 40000 ? '#ffc070' : 'var(--text)';
     return `
@@ -1557,7 +1557,7 @@ function renderTimingsList() {
             ${escapeHtml(t.key)} ${tagHtml}
             ${t.version ? `<span style="color:var(--text-dim);font-size:11px;margin-left:6px;">v${escapeHtml(t.version)}</span>` : ''}
           </div>
-          ${t.title ? `<div style="font-size:13px;font-weight:600;color:var(--text);margin:2px 0;">${escapeHtml(t.title)}${t.issue ? ' #' + escapeHtml(t.issue) : ''}${t.predictedGrade ? `<span style="color:#7fd0ff;font-weight:700;margin-left:8px;">PG ${escapeHtml(t.predictedGrade)}</span>` : ''}${t.pageQuality ? `<span style="color:var(--text-dim);font-weight:400;margin-left:8px;">PQ ${escapeHtml(t.pageQuality)}</span>` : ''}</div>` : ''}
+          ${(t.title || t.cardName) ? `<div style="font-size:13px;font-weight:600;color:var(--text);margin:2px 0;">${escapeHtml(t.title || t.cardName)}${t.issue ? ' #' + escapeHtml(t.issue) : ''}${t.predictedGrade ? `<span style="color:#7fd0ff;font-weight:700;margin-left:8px;">PG ${escapeHtml(t.predictedGrade)}</span>` : ''}${t.pageQuality ? `<span style="color:var(--text-dim);font-weight:400;margin-left:8px;">PQ ${escapeHtml(t.pageQuality)}</span>` : ''}</div>` : ''}
           ${t.rgScore != null ? `<div style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:11px;color:var(--text-dim);">RG ${escapeHtml(String(t.rgScore))}${(t.frontScore != null || t.backScore != null || t.spineScore != null || t.interiorScore != null) ? `<span style="margin-left:10px;">F ${t.frontScore ?? '—'} · B ${t.backScore ?? '—'} · Int ${t.interiorScore ?? '—'} · Sp ${t.spineScore ?? '—'}</span>` : ''}</div>` : ''}
           <div class="sub" style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:11px;">
             ${dateStr}

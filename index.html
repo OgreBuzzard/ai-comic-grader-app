@@ -2109,6 +2109,8 @@ window.matchValueKey = function matchValueKey(title, issue, publisher, printing)
 // so the converter that builds fmv.json must mirror those exactly.
 let _fmvIndex = null;
 let _fmvOverrides = {};  // manual FMV curves keyed by _fmvKeyOf, merged over the static index
+let _fmvCardIndex = null;      // fmv_pokemon.json
+let _fmvCardOverrides = {};    // fmv_dashboard/pokemon manual overrides
 
 window.matchFMV = function matchFMV(title, issue, grade, printing, year) {
   if (!_fmvIndex || !_fmvIndex.books) return null;
@@ -2162,6 +2164,36 @@ window.matchFMV = function matchFMV(title, issue, grade, printing, year) {
   const range = _fmvIndex.tiers && _fmvIndex.tiers[String(tier)];
   if (!range) return null;
   return { tier, low: range[0], high: range[1] };
+};
+
+window.matchCardFMV = function matchCardFMV(ident, grade) {
+  if (!_fmvCardIndex || !_fmvCardIndex.books || !ident) return null;
+  const g = parseFloat(grade);
+  if (!isFinite(g)) return null;
+  const set = (ident.set || "").toString().trim().toLowerCase();
+  const num = (ident.number || "").toString().trim().toLowerCase().replace(/\s+/g, "");
+  if (!set || !num) return null;
+  const rawPr = ((ident.printing || "") + " " + (ident.variant || "")).toLowerCase();
+  let cands;
+  if (rawPr.includes("shadowless")) cands = ["shadowless", "unlimited"];
+  else if (rawPr.includes("1st") || rawPr.includes("first edition")) cands = ["1st edition", "unlimited"];
+  else if (rawPr.includes("unlimited")) cands = ["unlimited"];
+  else cands = ["unlimited", "1st edition", "shadowless", ""];  // printing unknown from a photo → prefer the common (Unlimited) value
+  const deref = k => {
+    const ov = _fmvCardOverrides && _fmvCardOverrides[k];
+    if (Array.isArray(ov) && ov.length) return ov;
+    let b = _fmvCardIndex.books[k];
+    if (typeof b === "number" && _fmvCardIndex.curves) b = _fmvCardIndex.curves[b];
+    return Array.isArray(b) ? b : null;
+  };
+  let breaks = null, usedKey = null;
+  for (const pr of cands) { const k = set + "|" + num + "|" + pr; const b = deref(k); if (b) { breaks = b; usedKey = k; break; } }
+  if (!breaks) return null;
+  let tier = breaks[0][1];
+  for (const b of breaks) { if (g >= b[0]) tier = b[1]; else break; }
+  const range = _fmvCardIndex.tiers && _fmvCardIndex.tiers[String(tier)];
+  if (!range) return null;
+  return { tier: tier, low: range[0], high: range[1], key: usedKey };
 };
 
 function formatFMV(m) {
@@ -2219,6 +2251,11 @@ function buildPredictedGradeBox(badgesHtml, pqHtml, fmvMatch, showDisclaimer) {
       console.log(`[fmv] loaded ${Object.keys(data.books).length} books (v${data.version || "?"})`);
     }
   } catch (e) { console.warn("[fmv] load error:", e?.message || e); }
+  try {
+    const rc = await fetch("/fmv_pokemon.json", { cache: "default" });
+    if (rc.ok) { const dc = await rc.json(); if (dc && dc.books) { _fmvCardIndex = dc; console.log(`[fmv] loaded ${Object.keys(dc.books).length} pokemon cards (v${dc.version || "?"})`); } }
+    else if (rc.status !== 404) console.warn("[fmv] pokemon fetch failed:", rc.status);
+  } catch (e) { console.warn("[fmv] pokemon load error:", e?.message || e); }
 })();
 
 // Manual FMV overrides live in Firestore (fmv_dashboard/comics), written from the
@@ -2238,6 +2275,16 @@ async function loadFmvOverrides(attempt) {
       _fmvOverrides = conv;
       console.log(`[fmv] merged ${Object.keys(conv).length} manual override(s)`);
     }
+    try {
+      const snapC = await window._fsGetDoc(window._fsDoc(window._db, "fmv_dashboard", "pokemon"));
+      const dataC = snapC && (typeof snapC.exists === "function" ? (snapC.exists() ? snapC.data() : null) : (snapC.exists ? snapC.data() : null));
+      if (dataC && typeof dataC === "object") {
+        const convC = {};
+        for (const k in dataC) { const v = dataC[k]; if (Array.isArray(v)) convC[k] = v.map(o => Array.isArray(o) ? o : [o.g, o.t]); }
+        _fmvCardOverrides = convC;
+        console.log(`[fmv] merged ${Object.keys(convC).length} pokemon override(s)`);
+      }
+    } catch (e) { console.warn("[fmv] pokemon overrides:", e?.message || e); }
   } catch (e) { console.warn("[fmv] overrides load:", e?.message || e); }
 }
 loadFmvOverrides();
@@ -4825,8 +4872,9 @@ function showDetail(id) {
   if (predictionBoxes.length > 0 || showPQ) {
     // S18/S20: index-driven FMV. Uses the official grade if graded, else predicted.
     const _fmvGrade = _isCardItem ? _cardPsaStr : (selected.cgcGrade || selected.psaGrade || predictedGradeValue);
-    const _fmvMatch = (typeof window.matchFMV === "function" && _fmvGrade)
-      ? window.matchFMV(selected.title, selected.issue, _fmvGrade, selected.printing, extractYearFromIssueDate(selected.issueDate)) : null;
+    const _fmvMatch = _isCardItem
+      ? ((window.matchCardFMV && _fmvGrade && selected.cardData) ? window.matchCardFMV(selected.cardData.cardIdentification, _fmvGrade) : null)
+      : ((typeof window.matchFMV === "function" && _fmvGrade) ? window.matchFMV(selected.title, selected.issue, _fmvGrade, selected.printing, extractYearFromIssueDate(selected.issueDate)) : null);
     const _pqHtml = showPQ ? `<div style="display:flex;justify-content:center">${buildPQBox(selected.pageQuality)}</div>` : "";
     html += buildPredictedGradeBox(predictionBoxes.join(""), _pqHtml, _fmvMatch, !!predictedBadge);
   }
@@ -8215,10 +8263,10 @@ function cardDeepEligible(item) {
   const pgRaw = (item.cardData && item.cardData.psaGrade != null) ? item.cardData.psaGrade : item.assessedPSAGrade;
   const pg = parseFloat(pgRaw);
   if (isFinite(pg) && pg >= 9.0) return true;
-  // FMV >= $100 gate. Card FMV isn't wired into the app yet, so this only fires
-  // once a numeric card FMV is present on the item (placeholder until then).
-  const fmv = parseFloat(item._cardFmvHigh);
-  if (isFinite(fmv) && fmv >= 100) return true;
+  // FMV >= $100 gate (tier >= 4). Uses the card's predicted PSA grade against
+  // fmv_pokemon.json via matchCardFMV.
+  const m = (window.matchCardFMV && item.cardData) ? window.matchCardFMV(item.cardData.cardIdentification, pg) : null;
+  if (m && isFinite(m.low) && m.low >= 100) return true;
   return false;
 }
 
@@ -9107,7 +9155,7 @@ function renderForm() {
       const predicted = predVal ? buildBadge(normalizeGrade(predVal), "predicted", "", false, false, false, _editRestored) : "";
       const _pqHtml = (!_isCardItem && formData.pageQuality) ? `<div style="display:flex;justify-content:center">${buildPQBox(formData.pageQuality)}</div>` : "";
       const _fmvGrade = _isCardItem ? _cardPsaStr : (formData.cgcGrade || formData.psaGrade || aiCgcGrade(formData));
-      const _fmvMatch = (typeof window.matchFMV === "function" && _fmvGrade) ? window.matchFMV(formData.title, formData.issue, _fmvGrade, formData.printing, extractYearFromIssueDate(formData.issueDate)) : null;
+      const _fmvMatch = _isCardItem ? ((window.matchCardFMV && _fmvGrade && formData.cardData) ? window.matchCardFMV(formData.cardData.cardIdentification, _fmvGrade) : null) : ((typeof window.matchFMV === "function" && _fmvGrade) ? window.matchFMV(formData.title, formData.issue, _fmvGrade, formData.printing, extractYearFromIssueDate(formData.issueDate)) : null);
       return buildPredictedGradeBox([ cgcOff, psaOff, cardPsa, predicted ].filter(Boolean).join(""), _pqHtml, _fmvMatch, !!predicted);
     })() : ""}\n\n    \x3c!-- Transaction metadata block (S11): chronology of acquiring → grading.\n         Cost/FMV moved to bottom of analysis section, after Condition\n         Assessment, per user direction. --\x3e\n    ${df("Date Acquired", "dateAcquired")}\n    <div><label class="field-label">Seller</label>\n      <input value="${esc(formData.seller || "")}" list="seller-list" oninput="formData.seller=this.value;updateSellerList(this.value)" placeholder="Name / source" autocomplete="off">\n      <datalist id="seller-list">${getSellerSuggestions().map(s => `<option value="${esc(s)}">`).join("")}</datalist>\n    </div>\n    ${df("Grading Date", "slabbingDate")}\n\n    \x3c!-- Analysis block (S11 reorder per user direction):\n         Defect Notes, Condition Assessment first\n         Then Enhancement Candidate\n         Then Cost Breakdown (now including FMV inside it)\n         Other gated text fields (Label Notes, Key Info, Grader Notes,\n         Past Assessments) live in their previous positions\n         around these. --\x3e\n    ${formData.cgcGrade || formData.psaGrade || formData.cgcNotes ? `<div><label class="field-label">Label Notes</label><textarea rows="3" readonly style="cursor:not-allowed" title="Label Notes is populated by the assessment. Not user-editable.">${esc(formData.cgcNotes || "")}</textarea></div>` : ""}\n    ${(() => {
     const showLabelNotesEdit = (formData.cgcGrade || formData.psaGrade) && formData.cgcNotes && formData.cgcNotes.trim();
@@ -10980,7 +11028,7 @@ function applyCameraOrientationState() {
     return true;
   }
   const {kind: kind, current: current} = _cameraState;
-  const preferred = kind === "corner" ? "portrait" : kind === "signature" ? "landscape" : kind === "interiorCover" ? "landscape" : kind === "interior" ? (CAMERA_SLOT_ORIENTATION_INTERIOR[current] || "landscape") : kind === "restoration" ? (CAMERA_SLOT_ORIENTATION_RESTORATION[current] || "portrait") : kind === "uvfront" ? "portrait" : CAMERA_SLOT_ORIENTATION_MAIN[current];
+  const preferred = kind === "corner" ? "portrait" : kind === "signature" ? "landscape" : kind === "interiorCover" ? "landscape" : kind === "interior" ? (CAMERA_SLOT_ORIENTATION_INTERIOR[current] || "landscape") : kind === "restoration" ? (CAMERA_SLOT_ORIENTATION_RESTORATION[current] || "portrait") : kind === "uvfront" ? "portrait" : (_cameraState.isCard ? (CAMERA_SLOT_ORIENTATION_CARD[current] || "portrait") : CAMERA_SLOT_ORIENTATION_MAIN[current]);
   const actual = getCurrentOrientation();
   const match = preferred === actual;
   const card = document.getElementById("camera-rotate-card");
@@ -11049,7 +11097,8 @@ function cameraOpenSlot(slotIndex) {
   if (_slotLenses.length > 1) {
     const _isZI = _cameraState.kind === "interior" && slotIndex !== fullSlotIndex("outer_edge");
     const _isZR = _cameraState.kind === "restoration" && CAMERA_SLOT_ZOOM_RESTORATION[slotIndex];
-    const _zd = (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZI || _isZR);
+    const _isCardMacro = _cameraState.isCard && (slotIndex === 2 || slotIndex === 3);
+    const _zd = (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZI || _isZR || _isCardMacro);
     const targetIdx = _zd ? 1 : 0;
     if (_cameraState.currentLensIdx !== targetIdx) {
       _cameraState.currentLensIdx = targetIdx;
@@ -11063,8 +11112,8 @@ function cameraOpenSlot(slotIndex) {
     }
   }
   const {kind: kind, mode: mode, queue: queue} = _cameraState;
-  const guideFile = (kind === "corner" ? CAMERA_GUIDE_CORNER : kind === "signature" ? [ null, null ] : kind === "interiorCover" ? CAMERA_GUIDE_INTERIOR_COVER : kind === "interior" ? CAMERA_GUIDE_INTERIOR : kind === "restoration" ? CAMERA_GUIDE_RESTORATION : kind === "uvfront" ? [ CAMERA_GUIDE_MAIN[0] ] : CAMERA_GUIDE_MAIN)[slotIndex];
-  const label = (kind === "corner" ? CAMERA_LABEL_CORNER : kind === "signature" ? [ "Signature 1", "Signature 2" ] : kind === "interiorCover" ? [ "Interior Front", "Interior Back" ] : kind === "interior" ? FULL_SLOTS.map(s => s.label) : kind === "restoration" ? RESTORATION_SLOTS.map(s => s.label) : kind === "uvfront" ? [ "UV FRONT" ] : CAMERA_LABEL_MAIN)[slotIndex];
+  const guideFile = (kind === "corner" ? CAMERA_GUIDE_CORNER : kind === "signature" ? [ null, null ] : kind === "interiorCover" ? CAMERA_GUIDE_INTERIOR_COVER : kind === "interior" ? CAMERA_GUIDE_INTERIOR : kind === "restoration" ? CAMERA_GUIDE_RESTORATION : kind === "uvfront" ? [ CAMERA_GUIDE_MAIN[0] ] : (_cameraState.isCard ? [ null, null, null, null ] : CAMERA_GUIDE_MAIN))[slotIndex];
+  const label = (kind === "corner" ? CAMERA_LABEL_CORNER : kind === "signature" ? [ "Signature 1", "Signature 2" ] : kind === "interiorCover" ? [ "Interior Front", "Interior Back" ] : kind === "interior" ? FULL_SLOTS.map(s => s.label) : kind === "restoration" ? RESTORATION_SLOTS.map(s => s.label) : kind === "uvfront" ? [ "UV FRONT" ] : (_cameraState.isCard ? CAMERA_LABEL_CARD : CAMERA_LABEL_MAIN))[slotIndex];
   const labelEl = document.getElementById("camera-slot-label");
   if (labelEl) labelEl.textContent = (label || "").toUpperCase();
   const orientationMatch = applyCameraOrientationState();

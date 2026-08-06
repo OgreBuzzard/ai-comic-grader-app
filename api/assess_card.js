@@ -119,6 +119,44 @@ async function verifyUid(req) {
   } catch (e) { console.warn('[assess_card] auth failed:', e && e.message); return null; }
 }
 
+const RATES = {
+  'claude-opus-5':               { in: 5 / 1e6, out: 25 / 1e6 },
+  'claude-opus-4-8':             { in: 5 / 1e6, out: 25 / 1e6 },
+  'claude-haiku-4-5-20251001':   { in: 1 / 1e6, out: 5 / 1e6 },
+};
+const rateFor = m => RATES[m] || { in: 5 / 1e6, out: 25 / 1e6 };
+
+// Fire-and-forget: write a card assessment to assessment_timings so it shows in
+// the admin Logs tab with a real dollar cost (cards have no prompt caching).
+async function logCardTiming(kind, info) {
+  try {
+    const { getFirestore } = await import('firebase-admin/firestore');
+    const db = getFirestore();
+    if (!db) return;
+    let cost = 0, inTok = 0, outTok = 0;
+    for (const c of (info.calls || [])) {
+      const u = c.usage || {}; const r = rateFor(c.model);
+      const i = u.input_tokens || 0, o = u.output_tokens || 0;
+      inTok += i; outTok += o; cost += i * r.in + o * r.out;
+    }
+    const key = kind + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    await db.collection('assessment_timings').doc(key).set({
+      kind: kind,                    // 'card_main' | 'card_deep'
+      itemType: 'card',
+      uid: info.uid || null,
+      createdAt: new Date().toISOString(),
+      totalMs: info.ms || null,
+      inputTokens: inTok,
+      outputTokens: outTok,
+      costUsd: +cost.toFixed(6),
+      model: GRADE_MODEL,
+      predictedGrade: info.psa != null ? String(info.psa) : null,
+      rgScore: info.rg != null ? info.rg : null,
+      cardName: info.name || null,
+    });
+  } catch (e) { console.error('[assess_card] timing write failed (non-fatal):', e); }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -146,13 +184,14 @@ export default async function handler(req, res) {
   if (body.deep && body.initialAssessment && typeof body.initialAssessment === 'object') {
     const deepPrompt = buildPSACardDeepPrompt({ initialAssessment: body.initialAssessment });
     const deepContent = [...userBlocks, { type: 'text', text: deepPrompt }];
-    let deepCard;
+    let deepCard, _deepUsage = null;
     try {
       const out = await anthropicText(apiKey, {
         model: GRADE_MODEL, max_tokens: 16384,
         messages: [{ role: 'user', content: deepContent }],
       }, 120000);
       deepCard = extractJson(out.text);
+      _deepUsage = out.usage || null;
       if (!deepCard) return res.status(502).json({ error: 'Could not parse deep grade JSON from model', raw: (out.text || '').slice(0, 500) });
     } catch (e) {
       console.error('[assess_card] deep grade failed:', e && (e.stack || e.message));
@@ -164,17 +203,20 @@ export default async function handler(req, res) {
       if ((_dc[k] == null || _dc[k] === '') && _pc[k] != null && _pc[k] !== '') _dc[k] = _pc[k];
     }
     console.log('[assess_card] DEEP uid=' + uid + ' psa=' + deepCard.psaGrade + ' rg=' + (deepCard.robograde && deepCard.robograde.total) + ' ' + (Date.now() - t0) + 'ms');
+    logCardTiming('card_deep', { uid, ms: Date.now() - t0, calls: [{ model: GRADE_MODEL, usage: _deepUsage }], psa: deepCard.psaGrade, rg: deepCard.robograde && deepCard.robograde.total, name: deepCard.cardIdentification && deepCard.cardIdentification.name });
     return res.status(200).json({ card: deepCard, deep: true });
   }
 
   // 1) Identify (cheap) — best-effort; grading still runs if this fails.
   let identification = {};
+  let _idUsage = null, _gradeUsage = null;
   try {
     const idOut = await anthropicText(apiKey, {
       model: IDENTIFY_MODEL, max_tokens: 200,
       messages: [{ role: 'user', content: [userBlocks[0], { type: 'text', text: IDENTIFY_PROMPT }] }],
     }, 15000);
     identification = extractJson(idOut.text) || {};
+    _idUsage = idOut.usage || null;
   } catch (e) { console.warn('[assess_card] identify failed:', e && e.message); }
 
   // 2) TCGdex reference scan — best-effort.
@@ -202,6 +244,7 @@ export default async function handler(req, res) {
       messages: [{ role: 'user', content }],
     }, 120000);
     card = extractJson(gradeOut.text);
+    _gradeUsage = gradeOut.usage || null;
     if (!card) return res.status(502).json({ error: 'Could not parse grade JSON from model', raw: (gradeOut.text || '').slice(0, 500) });
     // Backfill identity from the cheap identify pass so the card-detail Details
     // block (Set / Number / Year / Artist / Variant) is reliably populated even
@@ -217,5 +260,6 @@ export default async function handler(req, res) {
   }
 
   console.log('[assess_card] uid=' + uid + ' card="' + (card.cardIdentification && card.cardIdentification.name) + '" psa=' + card.psaGrade + ' rg=' + (card.robograde && card.robograde.total) + ' ref=' + referenceUsed + ' ' + (Date.now() - t0) + 'ms');
+  logCardTiming('card_main', { uid, ms: Date.now() - t0, calls: [{ model: IDENTIFY_MODEL, usage: _idUsage }, { model: GRADE_MODEL, usage: _gradeUsage }], psa: card.psaGrade, rg: card.robograde && card.robograde.total, name: card.cardIdentification && card.cardIdentification.name });
   return res.status(200).json({ ok: true, card, identification, referenceUsed, ms: Date.now() - t0 });
 }
