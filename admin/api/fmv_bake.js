@@ -37,12 +37,29 @@ export default async function handler(req, res) {
     const db = getFirestore();
     const snap = await db.doc('fmv_dashboard/' + cat).get();
     const ov = snap.exists ? (snap.data() || {}) : {};
+
+    // Integrate each override the SAME compressed way the file already stores
+    // curves: dedupe the curve into the shared `curves` table and point
+    // books[key] at its index (reusing an existing identical curve when possible).
+    base.curves = Array.isArray(base.curves) ? base.curves : [];
+    const curveKey = c => JSON.stringify(c);
+    const curveIndex = new Map(base.curves.map((c, i) => [curveKey(c), i]));
     let merged = 0;
     for (const k of Object.keys(ov)) {
-      const breaks = ov[k];
-      if (Array.isArray(breaks) && breaks.length) { base.books[k] = breaks.map(o => Array.isArray(o) ? o : [o.g, o.t]); merged++; }
+      let breaks = ov[k];
+      if (!Array.isArray(breaks) || !breaks.length) continue;
+      breaks = breaks.map(o => Array.isArray(o) ? o : [o.g, o.t]);
+      const ck = curveKey(breaks);
+      let ci = curveIndex.get(ck);
+      if (ci === undefined) { ci = base.curves.length; base.curves.push(breaks); curveIndex.set(ck, ci); }
+      base.books[k] = ci;
+      merged++;
     }
-    base.manualMerged = merged;
+    // Keep the books map organized (sorted keys) so the file stays clean.
+    const sortedBooks = {};
+    for (const bk of Object.keys(base.books).sort()) sortedBooks[bk] = base.books[bk];
+    base.books = sortedBooks;
+
     // `index` is the generic key; `comics` kept as a back-compat alias.
     return res.status(200).json({ index: base, comics: base, merged, category: cat, fileName });
   } catch (e) {

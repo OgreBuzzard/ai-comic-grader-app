@@ -361,7 +361,7 @@ onAuthStateChanged(auth, async user => {
        text read as muted/inactive — it didn't invite a tap. The inverse
        treatment is brighter and more obviously interactive while staying
        distinct from the green primary buttons elsewhere. */
-    .btn-topbar.btn-buy { background: #c8a96e; color: #1a1008; border: 1.5px solid #a88a4e; }
+    .btn-topbar.btn-buy { background: #c8a96e; color: #1a1008; border: 1.5px solid #a88a4e; border-radius: 12px; }
     .btn-topbar.btn-add { background: #c8a96e; color: #0d0d0f; }
     /* S14: compact top-bar Grade button. Same 32px control height as Buy
        so the header does NOT grow taller. Small thumbnail + short
@@ -1698,9 +1698,9 @@ window.exitSplashSigninAndShowApp = function() {
         <button class="btn btn-topbar btn-buy" onclick="showBuyCredits()" id="credits-btn" style="display:none">Buy</button>
       </div>
 
-      <button class="btn btn-topbar btn-grade" onclick="gradeFromHeader()" id="grade-btn" aria-label="Grade a Comic" title="Grade a Comic" style="display:none">
+      <button class="btn btn-topbar btn-grade" onclick="gradeFromHeader()" id="grade-btn" aria-label="Start Grading" title="Start Grading" style="display:none">
         <img src="assets/ghosts/Front_Cover.jpg" alt="" decoding="async" class="grade-btn-thumb">
-        <span>Grade<br>Comic</span>
+        <span>Start<br>Grading</span>
       </button>
       <button class="btn-gear" onclick="openSettings()" title="Settings" id="settings-btn" aria-label="Settings">
         
@@ -1970,7 +1970,7 @@ window.exitSplashSigninAndShowApp = function() {
     <div id="camera-guide"></div>
     <div id="camera-flash"></div>
     <div id="camera-focusing">FOCUSING…</div>
-    <div id="camera-checking">Checking for slab…</div>
+    <div id="camera-checking">Checking…</div>
     <div id="camera-header">
       <div id="camera-header-spacer"></div>
       <div id="camera-progress"></div>
@@ -3057,6 +3057,11 @@ function formatIssue(i, t) {
     return isAnnualTitle ? `#${m[1]}` : `Annual #${m[1]}`;
   }
   return `#${i}`;
+}
+
+function formatCardNumber(n) {
+  if (!n) return "";
+  return String(n).trim().replace(/^#/, "").split("/").map(part => part.replace(/^0+(\d)/, "$1")).join("/");
 }
 
 function formatIssueDateCompact(d) {
@@ -4795,7 +4800,7 @@ function renderList() {
         const _labelBtn = (printModeEnabled && _canLabel)
           ? `<button onclick="event.stopPropagation();togglePrintState('${esc(c.id)}')" title="${_inPrint ? "Remove from print queue" : "Add to print queue"}"\n              style="position:absolute;top:4px;right:6px;z-index:3;background:none;border:none;padding:2px;line-height:0;cursor:pointer">${_inPrint ? PRINT_ICON_X_SVG : PRINT_ICON_SVG}</button>`
           : "";
-        return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0">\n                  <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>\n                  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">\n                    ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${formatIssue(c.issue, c.title)}</span>` : ""}\n                    ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}${_mixed ? (c.type === "card" ? `<span style="font-size:9px;font-weight:800;letter-spacing:0.5px;color:#0a5a2a;background:#d6f0e0;border-radius:4px;padding:1px 5px">CARD</span>` : `<span style="font-size:9px;font-weight:800;letter-spacing:0.5px;color:#5a4a2a;background:#efe6d6;border-radius:4px;padding:1px 5px">COMIC</span>`) : ""}\n                  </div>\n                </div>\n                ${buildListCgcPsaStack(c)}\n                ${_labelBtn}\n              </div>\n            </div>`;
+        return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0">\n                  <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>\n                  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">\n                    ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${c.type === "card" ? esc(formatCardNumber(c.issue)) : formatIssue(c.issue, c.title)}</span>` : ""}\n                    ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                  </div>\n                </div>\n                ${buildListCgcPsaStack(c)}\n                ${_labelBtn}\n              </div>\n            </div>`;
       };
       const _showSep = _showTitleSeparators();
       section.titles.forEach(title => {
@@ -5039,7 +5044,7 @@ function showDetail(id) {
   if (isSample) {
     html += `<div style="background:#fff8e0;border:1px solid #c8a040;border-radius:10px;padding:12px 14px;margin-bottom:14px;display:flex;gap:12px;align-items:flex-start">\n      <div style="font-size:20px;flex-shrink:0">✨</div>\n      <div style="flex:1">\n        <div style="font-size:13px;font-weight:700;color:#6a4a08;letter-spacing:0.02em;margin-bottom:3px">Sample Entry</div>\n        <div style="font-size:12px;color:#7a5a1a;line-height:1.5">This is an example of what a graded book looks like. Add your first book to clear it, or tap Delete below to remove it now.</div>\n      </div>\n    </div>`;
   }
-  html += `<div>\n    <h2 style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:26px;font-weight:900;color:#0d0d0f;line-height:1.1;margin:0">${esc(selected.title)}</h2>\n    ${selected.issue || selected.issueDate ? `<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:6px">\n      ${selected.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:18px;font-weight:600;color:#3a2e24">${formatIssue(selected.issue, selected.title)}</span>` : ""}\n      ${selected.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(selected.issueDate))}</span>` : ""}\n    </div>` : ""}\n    ${selected.printing ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#6a5a4a;margin-top:4px">${esc(selected.printing)}</div>` : ""}\n    ${selected.publisher ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:500;color:#8a7a6a;margin-top:4px">${esc(selected.publisher)}</div>` : ""}\n    ${selected.cgcCert || selected.psaCert ? `<div style="font-family:'IBM Plex Mono','Menlo',monospace;font-size:13px;color:#5a4a3a;margin-top:6px;letter-spacing:0.3px">\n      ${selected.cgcCert ? `<div><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">CGC</span> <span style="margin-left:6px">${esc(selected.cgcCert)}</span></div>` : ""}\n      ${selected.psaCert ? `<div style="margin-top:2px"><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">PSA</span> <span style="margin-left:6px">${esc(selected.psaCert)}</span></div>` : ""}\n    </div>` : ""}\n  </div>`;
+  html += `<div>\n    <h2 style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:26px;font-weight:900;color:#0d0d0f;line-height:1.1;margin:0">${esc(selected.title)}</h2>\n    ${selected.issue || selected.issueDate ? `<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:6px">\n      ${selected.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:18px;font-weight:600;color:#3a2e24">${selected.type === "card" ? esc(formatCardNumber(selected.issue)) : formatIssue(selected.issue, selected.title)}</span>` : ""}\n      ${selected.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(selected.issueDate))}</span>` : ""}\n    </div>` : ""}\n    ${selected.printing ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#6a5a4a;margin-top:4px">${esc(selected.printing)}</div>` : ""}\n    ${selected.publisher ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:500;color:#8a7a6a;margin-top:4px">${esc(selected.publisher)}</div>` : ""}\n    ${selected.cgcCert || selected.psaCert ? `<div style="font-family:'IBM Plex Mono','Menlo',monospace;font-size:13px;color:#5a4a3a;margin-top:6px;letter-spacing:0.3px">\n      ${selected.cgcCert ? `<div><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">CGC</span> <span style="margin-left:6px">${esc(selected.cgcCert)}</span></div>` : ""}\n      ${selected.psaCert ? `<div style="margin-top:2px"><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">PSA</span> <span style="margin-left:6px">${esc(selected.psaCert)}</span></div>` : ""}\n    </div>` : ""}\n  </div>`;
   // S20 (#46): same badge-pill ownership control as the Add/Edit form, rendered
   // in a keyed row so setOwnershipDetail can update it in place (no re-render →
   // images don't reload).
@@ -5229,7 +5234,7 @@ function showDetail(id) {
     const _drows = [
       ["Game", _ci.game || "Pokémon"],
       ["Set", _ci.set],
-      ["Card Number", _ci.number || selected.issue],
+      ["Card Number", formatCardNumber(_ci.number || selected.issue)],
       ["Year", _ci.year],
       ["Artist", _ci.illustrator || _ci.artist],
       ["Variant", _ci.variant]
@@ -5500,6 +5505,8 @@ async function togglePublicListing(id, val) {
     if (comic && comic.roboGradeId) {
       const idRef = fsDoc(window._db, "robograde_ids", comic.roboGradeId);
       await fsSetDoc(idRef, {
+        comicId: comic.id,
+        userId: window._currentUser?.uid,
         public: val
       }, {
         merge: true
@@ -7505,7 +7512,7 @@ async function bulkSetAllPublic(makePublic) {
       try {
         await fsSetDoc(fsDoc(window._db, "users", uid, "items", c.id), { publicListing: makePublic }, { merge: true });
         if (c.roboGradeId) {
-          await fsSetDoc(fsDoc(window._db, "robograde_ids", c.roboGradeId), { public: makePublic }, { merge: true });
+          await fsSetDoc(fsDoc(window._db, "robograde_ids", c.roboGradeId), { comicId: c.id, userId: uid, public: makePublic }, { merge: true });
         }
         c.publicListing = makePublic;
         done++;
@@ -8606,6 +8613,7 @@ async function assessCardDeep() {
   const scanController = window.RobograderScan
     ? window.RobograderScan.runScanAnimation(formData.cardDeepImages.filter(Boolean))
     : { promise: Promise.resolve(), cancel: () => {} };
+  try { mountStepTracker(); } catch (e) {}
   try {
     const dataUrls = await Promise.all(deep.slice(0, 4).map(async img => {
       if (typeof img === "string" && img.startsWith("http")) {
@@ -8678,6 +8686,7 @@ async function assessCardGrade() {
   const scanController = window.RobograderScan
     ? window.RobograderScan.runScanAnimation(formData.images || [])
     : { promise: Promise.resolve(), cancel: () => {} };
+  try { mountStepTracker(); } catch (e) {}
 
   try {
     const dataUrls = await Promise.all(imgs.slice(0, 4).map(async img => {
@@ -8732,6 +8741,13 @@ async function assessCardGrade() {
     };
 
     await saveItem(rec);
+    try {
+      if (rec.roboGradeId && window._db && window._currentUser) {
+        const idRef = fsDoc(window._db, "robograde_ids", rec.roboGradeId);
+        const existing = await fsGetDoc(idRef);
+        if (!existing.exists()) await fsSetDoc(idRef, { comicId: rec.id, userId: window._currentUser.uid, claimedAt: new Date().toISOString(), public: !!window._publicByDefault });
+      }
+    } catch (e) { console.warn("[card] roboId register failed:", e); }
     onAssessmentSuccess();
 
     _pendingCardResult = rec;
@@ -8755,7 +8771,7 @@ function mountCardResults(rec) {
     return;
   }
   const roboScore = rec.roboGrade && rec.roboGrade.score != null ? Math.round(rec.roboGrade.score) : null;
-  const psa = rec.psaGrade ? String(rec.psaGrade) : "";
+  const psa = String(rec.assessedPSAGrade || rec.psaGrade || (rec.cardData && rec.cardData.psaGrade) || "");
   setTimeout(() => {
     if (window.RobograderScan.stopGridCycle) window.RobograderScan.stopGridCycle();
     if (window.RobograderScan.stopNeedlePulse) window.RobograderScan.stopNeedlePulse();
@@ -8768,8 +8784,7 @@ function mountCardResults(rec) {
   let badges = "";
   if (roboScore != null) badges += badge("#0f1a05", "#aaee30", roboScore, "RG", "1.5px solid #3a5010");
   if (psa) badges += badge("#2a5a8a", "#e0f0ff", psa, "PSA");
-  const line = esc(rec.title || "Card") + (rec.issue ? " · #" + esc(rec.issue) : "");
-  const html = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:10px;">\n      <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badges}</div>\n      <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;max-width:90%;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${line}</div>\n      <button id="assess-complete-btn" style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#3a9ee0;color:#fff;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">COMPLETE</button>\n    </div>`;
+  const html = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:10px;">\n      <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badges}</div>\n      <button id="assess-complete-btn" style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#3a9ee0;color:#fff;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">COMPLETE</button>\n    </div>`;
   window.RobograderScan.slideResultsIntoPanel(html);
   setTimeout(() => {
     const btn = document.getElementById("assess-complete-btn");
@@ -10740,6 +10755,8 @@ const CAMERA_LABEL_MAIN = [ "Front", "Back", "Interior", "Spine" ];
 const CAMERA_LABEL_CORNER = [ "Top Left", "Top Right", "Bottom Left", "Bottom Right" ];
 
 const CAMERA_GUIDE_MAIN = [ "guide_front.svg", "guide_back.svg", "guide_pq.svg", "guide_spine_landscape.svg" ];
+const CAMERA_GUIDE_CARD = [ "guide_card.svg", "guide_card.svg", "guide_card_top_macro.svg", "guide_card_bottom_macro.svg" ];
+const CAMERA_GUIDE_CARDDEEP = [ "guide_card.svg", "guide_card.svg", "guide_card_top_macro.svg", "guide_card_bottom_macro.svg" ];
 
 const CAMERA_GUIDE_CORNER = [ "guide_corner_tl.svg", "guide_corner_tr.svg", "guide_corner_bl.svg", "guide_corner_br.svg" ];
 
@@ -10775,7 +10792,7 @@ const CAMERA_GUIDE_RESTORATION = [
 ];
 
 const CAMERA_SLOT_ORIENTATION_MAIN = [ "portrait", "portrait", "portrait", "landscape" ];
-const CAMERA_LABEL_CARD = [ "Full Front", "Full Back", "Top Front Macro", "Bottom Front Macro" ];
+const CAMERA_LABEL_CARD = [ "Front", "Back", "Top Front Macro", "Bottom Front Macro" ];
 const CAMERA_SLOT_ORIENTATION_CARD = [ "portrait", "portrait", "landscape", "landscape" ];
 const CAMERA_LABEL_CARDDEEP = [ "Front Raking", "Back Raking", "Back Top Macro", "Back Bottom Macro" ];
 const CAMERA_SLOT_ORIENTATION_CARDDEEP = [ "portrait", "portrait", "landscape", "landscape" ];
@@ -11052,7 +11069,7 @@ async function cameraOpen(state) {
       const wide = backCamera || standaloneWide;
       console.log("[camera] picked device:", wide ? wide.label : "none");
       console.log("[camera] zoom constraint supported:", supportsZoomConstraint());
-      const targetZoom = _cameraState.kind === "corner" ? 3 : 2;
+      const targetZoom = (_cameraState.kind === "corner" || _cameraState.kind === "carddeep") ? 3 : 2;
       const isAndroid = !!(window.Capacitor && Capacitor.getPlatform && Capacitor.getPlatform() === "android");
       const lensOptions = [];
       // ANDROID (S21): Samsung/Android labels are "camera N, facing back", so the iOS
@@ -11110,7 +11127,7 @@ async function cameraOpen(state) {
       _cameraState.androidLensMode = androidLens;
       const _isZoomedInteriorSlot = _cameraState.kind === "interior" && _cameraState.current !== fullSlotIndex("outer_edge");
       const _isZoomedRestorationSlot = _cameraState.kind === "restoration" && CAMERA_SLOT_ZOOM_RESTORATION[_cameraState.current];
-      const _zoomDefault = !isAndroid && (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZoomedInteriorSlot || _isZoomedRestorationSlot) && lensOptions.length > 1;
+      const _zoomDefault = !isAndroid && (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _cameraState.kind === "carddeep" || _isZoomedInteriorSlot || _isZoomedRestorationSlot) && lensOptions.length > 1;
       _cameraState.currentLensIdx = _zoomDefault ? 1 : 0;
       if (lensOptions.length > 0) {
         await switchToLens(_cameraState.currentLensIdx);
@@ -11126,7 +11143,7 @@ async function cameraOpen(state) {
             // INTENTIONALLY want it; for wide/main captures force the MINIMUM
             // zoom so a full cover fits in frame (was applying 2x here — the bug).
             const _zmin = caps.zoom.min || 1;
-            const _wantsZoom = _cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZoomedInteriorSlot || _isZoomedRestorationSlot;
+            const _wantsZoom = _cameraState.kind === "corner" || _cameraState.kind === "signature" || _cameraState.kind === "carddeep" || _isZoomedInteriorSlot || _isZoomedRestorationSlot;
             const z = _wantsZoom ? Math.min(caps.zoom.max, Math.max(_zmin, targetZoom)) : _zmin;
             await track.applyConstraints({ advanced: [ { zoom: z } ] });
             console.log("[camera] Android no-label fallback: zoom", z, _wantsZoom ? "(intentional)" : "(forced wide)", "of max", caps.zoom.max);
@@ -11376,23 +11393,26 @@ function cameraOpenSlot(slotIndex) {
   if (_slotLenses.length > 1) {
     const _isZI = _cameraState.kind === "interior" && slotIndex !== fullSlotIndex("outer_edge");
     const _isZR = _cameraState.kind === "restoration" && CAMERA_SLOT_ZOOM_RESTORATION[slotIndex];
-    const _isCardMacro = _cameraState.isCard && (slotIndex === 2 || slotIndex === 3);
-    const _isCardDeepMacro = _cameraState.kind === "carddeep" && (slotIndex === 2 || slotIndex === 3);
-    const _zd = (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZI || _isZR || _isCardMacro || _isCardDeepMacro);
+    // All card images (Main after detection + every Deep slot) default to the
+    // zoomed-in (max optical) lens. Near-macro focus is applied only on the two
+    // macro slots (2,3); full-card slots (front/back/raking) keep normal focus.
+    const _isCardAny = _cameraState.isCard || _cameraState.kind === "carddeep";
+    const _isCardMacroSlot = _isCardAny && (slotIndex === 2 || slotIndex === 3);
+    const _zd = (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZI || _isZR || _isCardAny);
+    const _macroFocus = (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZI || _isZR || _isCardMacroSlot);
     const targetIdx = _zd ? 1 : 0;
     if (_cameraState.currentLensIdx !== targetIdx) {
       _cameraState.currentLensIdx = targetIdx;
       switchToLens(targetIdx).then(() => {
         renderLensSelector();
-        // S16: Apply near-field focus for macro slots (staples, corners)
-        _applyMacroFocus(_zd);
+        _applyMacroFocus(_macroFocus);
       });
     } else {
-      _applyMacroFocus(_zd);
+      _applyMacroFocus(_macroFocus);
     }
   }
   const {kind: kind, mode: mode, queue: queue} = _cameraState;
-  const guideFile = (kind === "corner" ? CAMERA_GUIDE_CORNER : kind === "signature" ? [ null, null ] : kind === "interiorCover" ? CAMERA_GUIDE_INTERIOR_COVER : kind === "interior" ? CAMERA_GUIDE_INTERIOR : kind === "restoration" ? CAMERA_GUIDE_RESTORATION : kind === "uvfront" ? [ CAMERA_GUIDE_MAIN[0] ] : kind === "carddeep" ? [ null, null, null, null ] : (_cameraState.isCard ? [ null, null, null, null ] : CAMERA_GUIDE_MAIN))[slotIndex];
+  const guideFile = (kind === "corner" ? CAMERA_GUIDE_CORNER : kind === "signature" ? [ null, null ] : kind === "interiorCover" ? CAMERA_GUIDE_INTERIOR_COVER : kind === "interior" ? CAMERA_GUIDE_INTERIOR : kind === "restoration" ? CAMERA_GUIDE_RESTORATION : kind === "uvfront" ? [ CAMERA_GUIDE_MAIN[0] ] : kind === "carddeep" ? CAMERA_GUIDE_CARDDEEP : (_cameraState.isCard ? CAMERA_GUIDE_CARD : CAMERA_GUIDE_MAIN))[slotIndex];
   const label = (kind === "corner" ? CAMERA_LABEL_CORNER : kind === "signature" ? [ "Signature 1", "Signature 2" ] : kind === "interiorCover" ? [ "Interior Front", "Interior Back" ] : kind === "interior" ? FULL_SLOTS.map(s => s.label) : kind === "restoration" ? RESTORATION_SLOTS.map(s => s.label) : kind === "uvfront" ? [ "UV FRONT" ] : kind === "carddeep" ? CAMERA_LABEL_CARDDEEP : (_cameraState.isCard ? CAMERA_LABEL_CARD : CAMERA_LABEL_MAIN))[slotIndex];
   const labelEl = document.getElementById("camera-slot-label");
   if (labelEl) labelEl.textContent = (label || "").toUpperCase();
