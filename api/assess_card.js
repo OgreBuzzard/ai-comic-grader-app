@@ -25,9 +25,13 @@ const GRADE_MODEL = 'claude-opus-5';                  // matches assess.js PRIMA
 const IDENTIFY_PROMPT =
   'You are looking at the FRONT of a single trading card (most likely Pokémon). ' +
   'Identify it. Respond with ONLY a JSON object and nothing else: ' +
-  '{"name": string, "set": string|null, "number": string|null, "year": number|null, "variant": string|null, "illustrator": string|null}. ' +
+  '{"name": string, "set": string|null, "number": string|null, "year": number|null, "variant": string|null, "illustrator": string|null, "printing": string|null}. ' +
   'For "number" use the printed collector number exactly as shown (e.g. "025/094" or "RC24/RC25"). ' +
   'For "illustrator" use the artist credit usually printed in small text near the bottom of the card. ' +
+  'For "printing" (ONLY for vintage WOTC Pokémon — Base Set, Jungle, Fossil, Base Set 2; else null): ' +
+  'return "1st Edition" if the black circular "Edition 1" stamp is present to the lower-left of the artwork; ' +
+  'otherwise "Shadowless" if the artwork frame has NO drop-shadow along its right and bottom edges (Base Set only, and the set/copyright line usually reads 1999); ' +
+  'otherwise "Unlimited". ' +
   'If a field is not legible, use null.';
 
 function normalizeMediaType(mt) {
@@ -199,7 +203,7 @@ export default async function handler(req, res) {
     }
     const _pc = body.initialAssessment.cardIdentification || {};
     const _dc = deepCard.cardIdentification = deepCard.cardIdentification || {};
-    for (const k of ['name', 'set', 'number', 'year', 'variant', 'illustrator']) {
+    for (const k of ['name', 'set', 'number', 'year', 'variant', 'illustrator', 'printing']) {
       if ((_dc[k] == null || _dc[k] === '') && _pc[k] != null && _pc[k] !== '') _dc[k] = _pc[k];
     }
     console.log('[assess_card] DEEP uid=' + uid + ' psa=' + deepCard.psaGrade + ' rg=' + (deepCard.robograde && deepCard.robograde.total) + ' ' + (Date.now() - t0) + 'ms');
@@ -251,7 +255,7 @@ export default async function handler(req, res) {
     // when the grading model omits a field. Grading values win; identify fills gaps.
     const _idc = identification || {};
     const _cc = card.cardIdentification = card.cardIdentification || {};
-    for (const k of ['name', 'set', 'number', 'year', 'variant', 'illustrator']) {
+    for (const k of ['name', 'set', 'number', 'year', 'variant', 'illustrator', 'printing']) {
       if ((_cc[k] == null || _cc[k] === '') && _idc[k] != null && _idc[k] !== '') _cc[k] = _idc[k];
     }
   } catch (e) {
@@ -260,6 +264,6 @@ export default async function handler(req, res) {
   }
 
   console.log('[assess_card] uid=' + uid + ' card="' + (card.cardIdentification && card.cardIdentification.name) + '" psa=' + card.psaGrade + ' rg=' + (card.robograde && card.robograde.total) + ' ref=' + referenceUsed + ' ' + (Date.now() - t0) + 'ms');
-  logCardTiming('card_main', { uid, ms: Date.now() - t0, calls: [{ model: IDENTIFY_MODEL, usage: _idUsage }, { model: GRADE_MODEL, usage: _gradeUsage }], psa: card.psaGrade, rg: card.robograde && card.robograde.total, name: card.cardIdentification && card.cardIdentification.name });
+  logCardTiming('card_main', { uid, ms: Date.now() - t0, calls: [{ model: GRADE_MODEL, usage: _gradeUsage }], psa: card.psaGrade, rg: card.robograde && card.robograde.total, name: card.cardIdentification && card.cardIdentification.name });
   return res.status(200).json({ ok: true, card, identification, referenceUsed, ms: Date.now() - t0 });
 }

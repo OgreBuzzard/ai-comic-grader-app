@@ -8419,8 +8419,8 @@ function _cardDeepSectionHtml(item) {
   const slots = labels.map((lbl, i) => {
     const im = (item.cardDeepImages || [])[i];
     return im
-      ? `<div class="drag-slot" style="aspect-ratio:5/7" onclick="tapCardDeepSlot(${i})"><img src="${im}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"><button class="slot-x" onclick="event.stopPropagation();removeCardDeepImg(${i})">\u00d7</button></div>`
-      : `<div class="drag-slot" style="padding:0;background:#161616;aspect-ratio:5/7;position:relative" onclick="tapCardDeepSlot(${i})"><div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700;letter-spacing:1px;text-align:center;padding:8px">${lbl.toUpperCase()}<div style="font-size:10px;opacity:0.8;margin-top:4px;font-weight:500">Tap to add</div></div></div>`;
+      ? `<div class="drag-slot" style="aspect-ratio:5/7" onclick="tapSlot(${i}, 'carddeep')"><img src="${im}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"><button class="slot-x" onclick="event.stopPropagation();removeCardDeepImg(${i})">\u00d7</button></div>`
+      : `<div class="drag-slot" style="padding:0;background:#161616;aspect-ratio:5/7;position:relative" onclick="tapSlot(${i}, 'carddeep')"><div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700;letter-spacing:1px;text-align:center;padding:8px">${lbl.toUpperCase()}<div style="font-size:10px;opacity:0.8;margin-top:4px;font-weight:500">Tap to add</div></div></div>`;
   }).join("");
   const ready = (item.cardDeepImages || []).filter(Boolean).length >= 4;
   return `
@@ -10644,6 +10644,11 @@ const CAMERA_GUIDE_RESTORATION = [
 ];
 
 const CAMERA_SLOT_ORIENTATION_MAIN = [ "portrait", "portrait", "portrait", "landscape" ];
+const CAMERA_LABEL_CARD = [ "Full Front", "Full Back", "Top Front Macro", "Bottom Front Macro" ];
+const CAMERA_SLOT_ORIENTATION_CARD = [ "portrait", "portrait", "landscape", "landscape" ];
+const CAMERA_LABEL_CARDDEEP = [ "Front Raking", "Back Raking", "Back Top Macro", "Back Bottom Macro" ];
+const CAMERA_SLOT_ORIENTATION_CARDDEEP = [ "portrait", "portrait", "landscape", "landscape" ];
+const CAMERA_CAPTURE_ORDER_CARDDEEP = [ 0, 1, 2, 3 ];
 // S16: Full Assessment slots — exterior staples + top/bottom pages = landscape;
 // interior_staple (slot 7) = portrait (auto-rotated CW at capture time)
 // S20: Full is now 6 slots (top_pages, outer_edge, bottom_pages, exterior_top_staple,
@@ -10790,6 +10795,7 @@ function tapSlot(slotIndex, kind) {
     else if (kind === "interiorCover") { _tappedInteriorCoverSlot = slotIndex; document.getElementById("interior-cover-photo-input").click(); }
     else if (kind === "interior") { _tappedInteriorSlot = slotIndex; document.getElementById("interior-photo-input").click(); }
     else if (kind === "signature") { _tappedSignatureSlot = slotIndex; document.getElementById("signature-photo-input").click(); }
+    else if (kind === "carddeep") { _cardDeepSlot = slotIndex; document.getElementById("card-deep-photo-input").click(); }
     else { _tappedSlot = slotIndex; document.getElementById("photo-input").click(); }
     return;
   }
@@ -10799,8 +10805,8 @@ function tapSlot(slotIndex, kind) {
     cameraOpenSlot(slotIndex);
     return;
   }
-  const list = (kind === "corner" ? formData.cornerImages : kind === "signature" ? formData.signatureImages : kind === "interiorCover" ? formData.interiorCoverImages : kind === "interior" ? formData.interiorImages : formData.images) || [];
-  const captureOrder = kind === "corner" ? CAMERA_CAPTURE_ORDER_CORNER : kind === "signature" ? [ 0, 1 ] : kind === "interiorCover" ? [ 0, 1 ] : kind === "interior" ? Array.from({ length: FULL_SLOT_COUNT }, (_, i) => i) : CAMERA_CAPTURE_ORDER_MAIN;
+  const list = (kind === "corner" ? formData.cornerImages : kind === "signature" ? formData.signatureImages : kind === "interiorCover" ? formData.interiorCoverImages : kind === "interior" ? formData.interiorImages : kind === "carddeep" ? formData.cardDeepImages : formData.images) || [];
+  const captureOrder = kind === "corner" ? CAMERA_CAPTURE_ORDER_CORNER : kind === "signature" ? [ 0, 1 ] : kind === "interiorCover" ? [ 0, 1 ] : kind === "interior" ? Array.from({ length: FULL_SLOT_COUNT }, (_, i) => i) : kind === "carddeep" ? CAMERA_CAPTURE_ORDER_CARDDEEP : CAMERA_CAPTURE_ORDER_MAIN;
   const emptySlotsInOrder = captureOrder.filter(i => !list[i]);
   const isMultiEmpty = kind !== "signature" && emptySlotsInOrder.length > 1 && (emptySlotsInOrder.includes(slotIndex) || kind === "interior" || kind === "interiorCover");
   console.log("[tapSlot] kind:", kind, "slot:", slotIndex, "emptySlots:", emptySlotsInOrder.length, "isMultiEmpty:", isMultiEmpty, "mode:", isMultiEmpty ? "walkthrough" : "single");
@@ -11170,7 +11176,7 @@ function applyCameraOrientationState() {
     return true;
   }
   const {kind: kind, current: current} = _cameraState;
-  const preferred = kind === "corner" ? "portrait" : kind === "signature" ? "landscape" : kind === "interiorCover" ? "landscape" : kind === "interior" ? (CAMERA_SLOT_ORIENTATION_INTERIOR[current] || "landscape") : kind === "restoration" ? (CAMERA_SLOT_ORIENTATION_RESTORATION[current] || "portrait") : kind === "uvfront" ? "portrait" : (_cameraState.isCard ? (CAMERA_SLOT_ORIENTATION_CARD[current] || "portrait") : CAMERA_SLOT_ORIENTATION_MAIN[current]);
+  const preferred = kind === "corner" ? "portrait" : kind === "signature" ? "landscape" : kind === "interiorCover" ? "landscape" : kind === "interior" ? (CAMERA_SLOT_ORIENTATION_INTERIOR[current] || "landscape") : kind === "restoration" ? (CAMERA_SLOT_ORIENTATION_RESTORATION[current] || "portrait") : kind === "uvfront" ? "portrait" : kind === "carddeep" ? (CAMERA_SLOT_ORIENTATION_CARDDEEP[current] || "portrait") : (_cameraState.isCard ? (CAMERA_SLOT_ORIENTATION_CARD[current] || "portrait") : CAMERA_SLOT_ORIENTATION_MAIN[current]);
   const actual = getCurrentOrientation();
   const match = preferred === actual;
   const card = document.getElementById("camera-rotate-card");
@@ -11240,7 +11246,8 @@ function cameraOpenSlot(slotIndex) {
     const _isZI = _cameraState.kind === "interior" && slotIndex !== fullSlotIndex("outer_edge");
     const _isZR = _cameraState.kind === "restoration" && CAMERA_SLOT_ZOOM_RESTORATION[slotIndex];
     const _isCardMacro = _cameraState.isCard && (slotIndex === 2 || slotIndex === 3);
-    const _zd = (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZI || _isZR || _isCardMacro);
+    const _isCardDeepMacro = _cameraState.kind === "carddeep" && (slotIndex === 2 || slotIndex === 3);
+    const _zd = (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZI || _isZR || _isCardMacro || _isCardDeepMacro);
     const targetIdx = _zd ? 1 : 0;
     if (_cameraState.currentLensIdx !== targetIdx) {
       _cameraState.currentLensIdx = targetIdx;
@@ -11254,8 +11261,8 @@ function cameraOpenSlot(slotIndex) {
     }
   }
   const {kind: kind, mode: mode, queue: queue} = _cameraState;
-  const guideFile = (kind === "corner" ? CAMERA_GUIDE_CORNER : kind === "signature" ? [ null, null ] : kind === "interiorCover" ? CAMERA_GUIDE_INTERIOR_COVER : kind === "interior" ? CAMERA_GUIDE_INTERIOR : kind === "restoration" ? CAMERA_GUIDE_RESTORATION : kind === "uvfront" ? [ CAMERA_GUIDE_MAIN[0] ] : (_cameraState.isCard ? [ null, null, null, null ] : CAMERA_GUIDE_MAIN))[slotIndex];
-  const label = (kind === "corner" ? CAMERA_LABEL_CORNER : kind === "signature" ? [ "Signature 1", "Signature 2" ] : kind === "interiorCover" ? [ "Interior Front", "Interior Back" ] : kind === "interior" ? FULL_SLOTS.map(s => s.label) : kind === "restoration" ? RESTORATION_SLOTS.map(s => s.label) : kind === "uvfront" ? [ "UV FRONT" ] : (_cameraState.isCard ? CAMERA_LABEL_CARD : CAMERA_LABEL_MAIN))[slotIndex];
+  const guideFile = (kind === "corner" ? CAMERA_GUIDE_CORNER : kind === "signature" ? [ null, null ] : kind === "interiorCover" ? CAMERA_GUIDE_INTERIOR_COVER : kind === "interior" ? CAMERA_GUIDE_INTERIOR : kind === "restoration" ? CAMERA_GUIDE_RESTORATION : kind === "uvfront" ? [ CAMERA_GUIDE_MAIN[0] ] : kind === "carddeep" ? [ null, null, null, null ] : (_cameraState.isCard ? [ null, null, null, null ] : CAMERA_GUIDE_MAIN))[slotIndex];
+  const label = (kind === "corner" ? CAMERA_LABEL_CORNER : kind === "signature" ? [ "Signature 1", "Signature 2" ] : kind === "interiorCover" ? [ "Interior Front", "Interior Back" ] : kind === "interior" ? FULL_SLOTS.map(s => s.label) : kind === "restoration" ? RESTORATION_SLOTS.map(s => s.label) : kind === "uvfront" ? [ "UV FRONT" ] : kind === "carddeep" ? CAMERA_LABEL_CARDDEEP : (_cameraState.isCard ? CAMERA_LABEL_CARD : CAMERA_LABEL_MAIN))[slotIndex];
   const labelEl = document.getElementById("camera-slot-label");
   if (labelEl) labelEl.textContent = (label || "").toUpperCase();
   const orientationMatch = applyCameraOrientationState();
@@ -11452,9 +11459,11 @@ async function cameraCapture() {
       _cameraState.labelKind = (_slab.company || "CGC").toLowerCase();
       console.log("[camera] SLAB detected (" + _cameraState.labelKind + ") — skipping interior + raking; remaining queue:", _cameraState.queue);
     } else if (_slab && _slab.isCard && _cameraState) {
-      _cameraState.queue = _cameraState.queue.filter(s => s !== 2 && s !== 3);
+      // Guided card flow: Front (slot 0, already shot) -> Top Front Macro (2) ->
+      // Bottom Front Macro (3) -> Back (1). Slot indices stay grader-aligned.
+      _cameraState.queue = [2, 3, 1];
       _cameraState.isCard = true;
-      console.log("[camera] CARD detected — front + back only; remaining queue:", _cameraState.queue);
+      console.log("[camera] CARD detected — guided card flow; remaining queue:", _cameraState.queue);
     } else {
       console.log("[camera] not a slab (or detect unavailable) — full walkthrough");
     }
@@ -11500,8 +11509,8 @@ async function runCropperSequence(captures, kind) {
       formData._imagesChanged = true;
       continue;
     }
-    const listKey = kind === "corner" ? "cornerImages" : kind === "signature" ? "signatureImages" : kind === "interiorCover" ? "interiorCoverImages" : kind === "interior" ? "interiorImages" : kind === "restoration" ? "restorationImages" : "images";
-    const metaKey = kind === "corner" ? "cornerMeta" : kind === "signature" ? "signatureMeta" : kind === "interiorCover" ? "interiorCoverMeta" : kind === "interior" ? "interiorMeta" : kind === "restoration" ? "restorationMeta" : "imagesMeta";
+    const listKey = kind === "corner" ? "cornerImages" : kind === "signature" ? "signatureImages" : kind === "interiorCover" ? "interiorCoverImages" : kind === "interior" ? "interiorImages" : kind === "restoration" ? "restorationImages" : kind === "carddeep" ? "cardDeepImages" : "images";
+    const metaKey = kind === "corner" ? "cornerMeta" : kind === "signature" ? "signatureMeta" : kind === "interiorCover" ? "interiorCoverMeta" : kind === "interior" ? "interiorMeta" : kind === "restoration" ? "restorationMeta" : kind === "carddeep" ? "cardDeepMeta" : "imagesMeta";
     const list = [ ...formData[listKey] || [] ];
     while (list.length <= cap.slot) list.push(null);
     // S16: Interior Staples auto-rotate 90° CW at capture time
