@@ -147,6 +147,13 @@
     { idx: 2, slotName: 'pq',       rotate: false },
     { idx: 3, slotName: 'spine',    rotate: true  },
   ];
+  // Cards: 4 slots, none rotated (slot 3 is a macro, not a spine).
+  const SLOTS_CARD = [
+    { idx: 0, slotName: 'card-0', rotate: false },
+    { idx: 1, slotName: 'card-1', rotate: false },
+    { idx: 2, slotName: 'card-2', rotate: false },
+    { idx: 3, slotName: 'card-3', rotate: false },
+  ];
   // S20 (#40): Deep now scans 6 images — the 4 corner macros PLUS the 2 interior
   // covers (moved here from Full in #36). The caller passes them as
   // [tl, tr, bl, br, interiorFront, interiorBack]. Slabbed books send only the
@@ -1423,7 +1430,7 @@
       teardown();
     }
 
-    const slotTable = (kind === 'corner') ? SLOTS_CORNER : (kind === 'full') ? SLOTS_FULL : (kind === 'restoration') ? SLOTS_RESTORATION : SLOTS_MAIN;
+    const slotTable = (kind === 'card') ? SLOTS_CARD : (kind === 'corner') ? SLOTS_CORNER : (kind === 'full') ? SLOTS_FULL : (kind === 'restoration') ? SLOTS_RESTORATION : SLOTS_MAIN;
     // S20 (#40): 6-image runs (Deep = 4 corners + 2 covers, Full = 6 strips) use
     // a brisker 900ms scan so the longer sequence keeps a snappy rhythm. The
     // 8-image restoration run stays at 1.0s; the 4-image main run keeps the full

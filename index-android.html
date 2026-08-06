@@ -3250,7 +3250,7 @@ function flattenForApp(doc) {
     return _addPredictedAlias({
       ...root,
       ...comicData,
-      ...cardData,
+      cardData,
       images: main.urls,
       imagesMeta: main.metas,
       cornerImages: corner.urls,
@@ -4999,7 +4999,7 @@ function showDetail(id) {
     }
   }
   if (selected.roboGrade) {
-    html += `<div style="margin-top:16px">${buildRoboGradeDisplay(selected.roboGrade, selected)}</div>`;
+    html += `<div style="margin-top:16px">${selected.type === "card" ? buildCardRoboDisplay(selected) : buildRoboGradeDisplay(selected.roboGrade, selected)}</div>`;
   }
   const _isCardItem = selected.type === "card";
   const _cardPsaRaw = _isCardItem ? ((selected.cardData && selected.cardData.psaGrade != null) ? selected.cardData.psaGrade : (selected.assessedPSAGrade || null)) : null;
@@ -8480,7 +8480,7 @@ async function assessCardDeep() {
   assessing = true;
   const _b = document.getElementById("card-deep-btn"); if (_b) { _b.textContent = "ASSESSING\u2026"; _b.disabled = true; }
   const scanController = window.RobograderScan
-    ? window.RobograderScan.runScanAnimation(formData.cardDeepImages.filter(Boolean))
+    ? window.RobograderScan.runScanAnimation(formData.cardDeepImages.filter(Boolean), "card")
     : { promise: Promise.resolve(), cancel: () => {} };
   try { mountStepTracker(); } catch (e) {}
   try {
@@ -8553,7 +8553,7 @@ async function assessCardGrade() {
   if (_cb) { _cb.textContent = "ASSESSING…"; _cb.disabled = true; _cb.style.opacity = "0.75"; }
 
   const scanController = window.RobograderScan
-    ? window.RobograderScan.runScanAnimation(formData.images || [])
+    ? window.RobograderScan.runScanAnimation(formData.images || [], "card")
     : { promise: Promise.resolve(), cancel: () => {} };
   try { mountStepTracker(); } catch (e) {}
 
@@ -8633,6 +8633,33 @@ async function assessCardGrade() {
   }
 }
 
+function buildCardRoboDisplay(item) {
+  const cd = (item.cardData && item.cardData.robograde) || (item.roboGrade && item.roboGrade.subscores) || null;
+  const rg = item.roboGrade || {};
+  const rgScore = rg.score != null ? Math.round(rg.score) : null;
+  const _v2 = (RG_V2_DISPLAY && window.RGScoreV2 && rg.score != null) ? window.RGScoreV2.gradeFromScore(rg.score) : null;
+  // Card sub-axes are weighted 4/2/2/2 — Surface box is twice as wide.
+  const axes = [
+    { key: "surface",   label: "Surface",   max: 40, grow: 2 },
+    { key: "centering", label: "Centering", max: 20, grow: 1 },
+    { key: "corners",   label: "Corners",   max: 20, grow: 1 },
+    { key: "edges",     label: "Edges",     max: 20, grow: 1 }
+  ];
+  const subHtml = cd ? axes.map(a => {
+    const v = cd[a.key] && cd[a.key].total != null ? cd[a.key].total : null;
+    return `<div style="flex:${a.grow};min-width:0;background:#0f1a05;border:1px solid #3a5010;border-radius:8px;padding:8px 6px;text-align:center">
+      <div style="font-size:9px;letter-spacing:1px;color:#7aa838;text-transform:uppercase;margin-bottom:4px">${a.label}</div>
+      <div style="font-size:18px;font-weight:800;color:#aaee30;line-height:1">${v != null ? v : "\u2014"}<span style="font-size:10px;color:#5a7028;font-weight:600">/${a.max}</span></div>
+    </div>`;
+  }).join("") : "";
+  const notes = (item.cardData && (item.cardData.graderNotes || item.cardData.reasoning)) || "";
+  return `<div style="margin-top:16px;background:#0a1204;border:1.5px solid #2a4010;border-radius:14px;padding:14px">
+    ${rgScore != null ? `<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:12px"><span style="font-family:'Noto Sans Display',sans-serif;font-weight:900;font-size:34px;color:#aaee30;line-height:1">${_v2 || rgScore}</span><span style="font-size:11px;color:#5a7028;font-weight:700;letter-spacing:1px">ROBOGRADE</span></div>` : ""}
+    ${subHtml ? `<div style="display:flex;gap:6px">${subHtml}</div>` : ""}
+    ${notes ? `<div style="margin-top:14px"><div style="font-size:11px;color:#7aa838;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px">Condition Assessment</div><div style="font-size:13px;color:#cfe0c0;line-height:1.6;white-space:pre-line">${esc(notes)}</div></div>` : ""}
+  </div>`;
+}
+
 function mountCardResults(rec) {
   if (!window.RobograderScan || !window.RobograderScan.slideResultsIntoPanel) {
     if (window.RobograderScan && window.RobograderScan.dismiss) window.RobograderScan.dismiss();
@@ -8677,7 +8704,7 @@ async function assessGrade() {
     return;
   }
   if (assessing) return;
-  if (formData._isCard || (formData._slabDetect && formData._slabDetect.isCard)) {
+  if (formData.type === "card" || formData._isCard || (formData._slabDetect && formData._slabDetect.isCard)) {
     return assessCardGrade();
   }
   const _earlyBtn = document.getElementById("assess-btn") || document.getElementById("hg-assess-btn");
@@ -9281,7 +9308,7 @@ function renderForm() {
     const rFilled = rImgs.filter(Boolean).length;
     const rReady = rFilled === RESTORATION_SLOT_COUNT && !assessing;
     return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n            <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">RESTORATION CHECK — 7 PHOTOS</div>\n            <div style="font-size:11px;color:#9a8aaa;margin-bottom:10px;line-height:1.5">\n              UV Front requires a UV (blacklight) photo in a dark room. 6 of 7 images are shared with Full Assessment.\n            </div>\n            ${renderRestorationSlotGrid(rImgs, {editable: true})}\n            <input id="restoration-photo-input" type="file" accept="image/*" multiple onchange="handleRestorationImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="restoration-check-btn" class="rg-btn rg-btn-assess rg-btn-purple${assessing ? ' assessing' : ''}" onclick="submitRestorationCheck()" ${rReady ? "" : "disabled"}>\n                ${assessing ? "Checking…" : `RESTORATION CHECK ${rFilled < RESTORATION_SLOT_COUNT ? `(${rFilled}/${RESTORATION_SLOT_COUNT})` : ""}`}\n              </button>\n            </div>\n          </div>\n        `;
-  })()}\n      <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">\n      <input id="restoration-photo-input" type="file" accept="image/*" onchange="handleRestorationImages(event)" style="display:none">\n\n      \x3c!-- S11: Pre-assessment Grader Notes (Option B for the chicken-and-egg\n           problem). For graded books in slabs, the official grader notes are\n           highly informative inputs to the AI assessment — but we don't\n           know a book is graded until after the AI has assessed it, so the\n           field would normally be unavailable on first-pass. This collapsible\n           section gives users who have a slabbed book a way to enter the\n           grader notes BEFORE running the assessment. Defaults closed so\n           the standard image-first flow stays visually clean for raw books;\n           opens with a single tap. Only renders pre-assessment in the\n           image-first flow (no _assessed, no _addManualMode, no isEdit) —\n           after assessment, the Grader Notes field appears in the normal\n           form section below where it can also be edited. --\x3e\n      \x3c!-- The "Optional: official label info" collapsible was removed in S12.\n           It let users type CGC/PSA grader notes BEFORE assessment to nudge\n           accuracy. Pulled because:\n           - Used by an extreme minority of users (only those entering\n             already-graded books and willing to transcribe slab text)\n           - Cluttered the otherwise-clean image-first Add flow\n           - The same info can still be typed in the post-assessment form\n             where the Grader Notes field still lives.\n           If we want this back later, the JS field (formData.graderNotes)\n           still wires through to assess.js — only the UI was removed. --\x3e\n\n    </div>\n    ${isEdit || _assessed || _addManualMode ? `\n    ${""}\n    <div class="form-grid-2">\n      \x3c!-- Title gets a special handler (not the generic tf) because we need\n           live-toggle the save button as the user types. Using tf would\n           require either a full renderForm on every keystroke (kills focus)\n           or a separate handler — this is cleaner. --\x3e\n      ${formData.roboGrade ? rof("Title", "title") : `<div><label class="field-label">Title<span style="color:#c0392b;margin-left:2px">*</span></label><input id="title-input" value="${esc(formData.title || "")}" oninput="formData.title=this.value;const b=document.getElementById('save-btn');b.disabled=!this.value.trim();b.style.opacity=this.value.trim()?'':'0.5';b.style.cursor=this.value.trim()?'':'not-allowed'" placeholder="Series title"></div>`}\n      ${formData.roboGrade ? rof("Issue", "issue") : tf("Issue", "issue", "Issue number", true)}\n      ${formData.roboGrade ? rof("Pub Date", "issueDate") : tf("Pub Date", "issueDate", "Cover date")}\n      ${formData.roboGrade ? rof("Publisher", "publisher") : tf("Publisher", "publisher", "Publisher")}\n    </div>\n    ${formData.roboGrade && (formData.printing && String(formData.printing).trim()) ? `\n    \x3c!-- S14 (anti-fraud): Printing is shown read-only on a graded book.\n         It is NOT in the editable grid at all (a blank editable Printing\n         would also be a fraud vector — a user could leave a reprint's\n         printing empty). It only appears here when the assessment\n         actually populated it (e.g. "Facsimile Reprint"), so the label\n         and Detail view stay truthful and the user can't strip it. --\x3e\n    <div class="form-grid-2"><div>\n      <label class="field-label">Printing</label>\n      <div class="ro-field" title="Locked — set by the assessment and not editable">${esc(formData.printing)}</div>\n    </div></div>` : ""}\n    \x3c!-- Official Grades fields (S11): the disclosure container "OFFICIAL GRADES"\n         was removed. CGC Grade/Cert and PSA Grade/Cert sit as their own ordinary\n         fields when relevant.\n         Visibility:\n         • Not yet assessed (no roboGrade): show both CGC and PSA grids.\n         • Assessed and AI determined raw (no grades/certs): hide both.\n         • Assessed and CGC info present: show CGC grid only.\n         • Assessed and PSA info present: show PSA grid only.\n         A book can be CGC OR PSA officially, never both. --\x3e\n    ${(() => {
+  })()}\n      <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">\n      <input id="restoration-photo-input" type="file" accept="image/*" onchange="handleRestorationImages(event)" style="display:none">\n\n      \x3c!-- S11: Pre-assessment Grader Notes (Option B for the chicken-and-egg\n           problem). For graded books in slabs, the official grader notes are\n           highly informative inputs to the AI assessment — but we don't\n           know a book is graded until after the AI has assessed it, so the\n           field would normally be unavailable on first-pass. This collapsible\n           section gives users who have a slabbed book a way to enter the\n           grader notes BEFORE running the assessment. Defaults closed so\n           the standard image-first flow stays visually clean for raw books;\n           opens with a single tap. Only renders pre-assessment in the\n           image-first flow (no _assessed, no _addManualMode, no isEdit) —\n           after assessment, the Grader Notes field appears in the normal\n           form section below where it can also be edited. --\x3e\n      \x3c!-- The "Optional: official label info" collapsible was removed in S12.\n           It let users type CGC/PSA grader notes BEFORE assessment to nudge\n           accuracy. Pulled because:\n           - Used by an extreme minority of users (only those entering\n             already-graded books and willing to transcribe slab text)\n           - Cluttered the otherwise-clean image-first Add flow\n           - The same info can still be typed in the post-assessment form\n             where the Grader Notes field still lives.\n           If we want this back later, the JS field (formData.graderNotes)\n           still wires through to assess.js — only the UI was removed. --\x3e\n\n    </div>\n    ${isEdit || _assessed || _addManualMode ? `\n    ${""}\n    <div class="form-grid-2">\n      \x3c!-- Title gets a special handler (not the generic tf) because we need\n           live-toggle the save button as the user types. Using tf would\n           require either a full renderForm on every keystroke (kills focus)\n           or a separate handler — this is cleaner. --\x3e\n      ${formData.roboGrade ? rof(_isCardForm ? "Card Name" : "Title", "title") : `<div><label class="field-label">Title<span style="color:#c0392b;margin-left:2px">*</span></label><input id="title-input" value="${esc(formData.title || "")}" oninput="formData.title=this.value;const b=document.getElementById('save-btn');b.disabled=!this.value.trim();b.style.opacity=this.value.trim()?'':'0.5';b.style.cursor=this.value.trim()?'':'not-allowed'" placeholder="Series title"></div>`}\n      ${formData.roboGrade ? rof(_isCardForm ? "Card No." : "Issue", "issue") : tf("Issue", "issue", "Issue number", true)}\n      ${formData.roboGrade ? rof("Pub Date", "issueDate") : tf("Pub Date", "issueDate", "Cover date")}\n      ${formData.roboGrade ? rof("Publisher", "publisher") : tf("Publisher", "publisher", "Publisher")}\n    </div>\n    ${formData.roboGrade && (formData.printing && String(formData.printing).trim()) ? `\n    \x3c!-- S14 (anti-fraud): Printing is shown read-only on a graded book.\n         It is NOT in the editable grid at all (a blank editable Printing\n         would also be a fraud vector — a user could leave a reprint's\n         printing empty). It only appears here when the assessment\n         actually populated it (e.g. "Facsimile Reprint"), so the label\n         and Detail view stay truthful and the user can't strip it. --\x3e\n    <div class="form-grid-2"><div>\n      <label class="field-label">Printing</label>\n      <div class="ro-field" title="Locked — set by the assessment and not editable">${esc(formData.printing)}</div>\n    </div></div>` : ""}\n    \x3c!-- Official Grades fields (S11): the disclosure container "OFFICIAL GRADES"\n         was removed. CGC Grade/Cert and PSA Grade/Cert sit as their own ordinary\n         fields when relevant.\n         Visibility:\n         • Not yet assessed (no roboGrade): show both CGC and PSA grids.\n         • Assessed and AI determined raw (no grades/certs): hide both.\n         • Assessed and CGC info present: show CGC grid only.\n         • Assessed and PSA info present: show PSA grid only.\n         A book can be CGC OR PSA officially, never both. --\x3e\n    ${(() => {
     const hasOfficialCGC = !!(formData.cgcGrade || formData.cgcCert);
     const hasOfficialPSA = !!(formData.psaGrade || formData.psaCert);
     const everAssessed = !!formData.roboGrade;
@@ -9297,7 +9324,7 @@ function renderForm() {
       h += `<div class="form-grid-2">\n          ${tf("PSA Grade", "psaGrade", "e.g. 9.4", true)}\n          ${tf("PSA Cert #", "psaCert", "Cert number")}\n        </div>`;
     }
     return h;
-  })()}\n    <div class="form-grid-2">\n      <div><label class="field-label">My Grade</label><select onchange="formData.grade=this.value">\n        <option value="">— select grade —</option>\n        ${GRADES.map(g => `<option value="${g}"${formData.grade === g ? " selected" : ""}>${g} — ${GRADE_LABELS[g]}</option>`).join("")}\n      </select></div>\n    </div>\n\n    \x3c!-- Robograde Score panel (S11): full RG display panel — score, sub-grades,\n         provenance strip, and printout-paper defect listing. Placed here right\n         after My Grade / Page Quality so the user sees the full RG output\n         before the Grader Predictions row below it. Previously rendered at\n         the bottom of the form; moved up to match the detail-view ordering. --\x3e\n    ${formData.roboGrade ? buildRoboGradeDisplay(formData.roboGrade, formData) : ""}\n    \x3c!-- Integrity badge (S12) — Assessment results screen shows BOTH states.\n         This is the moment-of-truth surface: the user just got a grade and\n         needs to know whether the result will display as Verified on a public\n         link before they save. If they wanted Verified and didn't get it,\n         they can retake/recapture in-app before saving. Placed right below\n         the Robograde panel so it associates visually with the grade output. --\x3e\n    ${formData.roboGrade ? (() => {
+  })()}\n    <div class="form-grid-2">\n      <div><label class="field-label">My Grade</label><select onchange="formData.grade=this.value">\n        <option value="">— select grade —</option>\n        ${GRADES.map(g => `<option value="${g}"${formData.grade === g ? " selected" : ""}>${g} — ${GRADE_LABELS[g]}</option>`).join("")}\n      </select></div>\n    </div>\n\n    \x3c!-- Robograde Score panel (S11): full RG display panel — score, sub-grades,\n         provenance strip, and printout-paper defect listing. Placed here right\n         after My Grade / Page Quality so the user sees the full RG output\n         before the Grader Predictions row below it. Previously rendered at\n         the bottom of the form; moved up to match the detail-view ordering. --\x3e\n    ${formData.roboGrade ? (_isCardForm ? buildCardRoboDisplay(formData) : buildRoboGradeDisplay(formData.roboGrade, formData)) : ""}\n    \x3c!-- Integrity badge (S12) — Assessment results screen shows BOTH states.\n         This is the moment-of-truth surface: the user just got a grade and\n         needs to know whether the result will display as Verified on a public\n         link before they save. If they wanted Verified and didn't get it,\n         they can retake/recapture in-app before saving. Placed right below\n         the Robograde panel so it associates visually with the grade output. --\x3e\n    ${formData.roboGrade ? (() => {
     void buildIntegrityPill; // S20: integrity pill moved ABOVE the image slots
     return "";               // (see the form card top) to match Detail view.
   })() : ""}\n\n    \x3c!-- Grader Predictions (S11): renamed from "Assessment Results". This row\n         shows all of the relevant grade badges side-by-side: CGC Official, CGC\n         AI, PSA Official, PSA AI. A book can only be officially graded by one\n         service (CGC or PSA, not both), so at most 3 badges ever appear at\n         once — three boxes fit comfortably on one row. --\x3e\n    ${_assessed ? (() => {
@@ -10996,7 +11023,7 @@ async function cameraOpen(state) {
       _cameraState.androidLensMode = androidLens;
       const _isZoomedInteriorSlot = _cameraState.kind === "interior" && _cameraState.current !== fullSlotIndex("outer_edge");
       const _isZoomedRestorationSlot = _cameraState.kind === "restoration" && CAMERA_SLOT_ZOOM_RESTORATION[_cameraState.current];
-      const _zoomDefault = !isAndroid && (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _cameraState.kind === "carddeep" || _isZoomedInteriorSlot || _isZoomedRestorationSlot) && lensOptions.length > 1;
+      const _zoomDefault = !isAndroid && (_cameraState.kind === "main" || _cameraState.kind === "corner" || _cameraState.kind === "signature" || _cameraState.kind === "carddeep" || _isZoomedInteriorSlot || _isZoomedRestorationSlot) && lensOptions.length > 1;
       _cameraState.currentLensIdx = _zoomDefault ? 1 : 0;
       if (lensOptions.length > 0) {
         await switchToLens(_cameraState.currentLensIdx);
@@ -11267,7 +11294,8 @@ function cameraOpenSlot(slotIndex) {
     // macro slots (2,3); full-card slots (front/back/raking) keep normal focus.
     const _isCardAny = _cameraState.isCard || _cameraState.kind === "carddeep";
     const _isCardMacroSlot = _isCardAny && (slotIndex === 2 || slotIndex === 3);
-    const _zd = (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZI || _isZR || _isCardAny);
+    const _isMainZoomSlot = _cameraState.kind === "main" && (slotIndex === 0 || slotIndex === 1 || slotIndex === 2);
+    const _zd = (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZI || _isZR || _isCardAny || _isMainZoomSlot);
     const _macroFocus = (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZI || _isZR || _isCardMacroSlot);
     const targetIdx = _zd ? 1 : 0;
     if (_cameraState.currentLensIdx !== targetIdx) {
