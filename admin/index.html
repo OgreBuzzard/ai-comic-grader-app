@@ -759,15 +759,19 @@ async function bakeFmv() {
   const btn = document.getElementById('bake-btn');
   const orig = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = 'Baking…'; }
+  const catSel = document.getElementById('bake-cat');
+  const cat = (catSel && catSel.value) || 'comics';
+  const fileName = 'fmv_' + cat + '.json';
   try {
-    const data = await api('/api/fmv_bake');
-    const blob = new Blob([JSON.stringify(data.comics)], { type: 'application/json' });
+    const data = await api('/api/fmv_bake?category=' + encodeURIComponent(cat));
+    const baked = data.index || data.comics;
+    const blob = new Blob([JSON.stringify(baked)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'fmv_comics.json';
+    a.href = url; a.download = fileName;
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
-    alert('Baked ' + data.merged + ' manual FMV entr' + (data.merged === 1 ? 'y' : 'ies') + ' into fmv_comics.json.\n\nDrop the downloaded file into the repo root (replacing the old one) and commit + deploy.');
+    alert('Baked ' + data.merged + ' manual FMV entr' + (data.merged === 1 ? 'y' : 'ies') + ' into ' + fileName + '.\n\nDrop the downloaded file into the repo root (replacing the old one) and commit + deploy.');
   } catch (e) {
     alert('Bake failed: ' + (e && e.message ? e.message : e));
   } finally {
@@ -980,7 +984,8 @@ async function renderDashboard() {
       </label>
       <button class="sign-out" id="summary-btn" style="padding:4px 7px;font-size:11px">Exp. Sum.</button>
       <button class="sign-out" id="export-btn" style="padding:4px 7px;font-size:11px">Exp. JSON</button>
-      <button class="sign-out" id="bake-btn" style="padding:4px 7px;font-size:11px" title="Fold manual FMV entries into fmv_comics.json for download">Bake FMV</button>
+      <select id="bake-cat" style="padding:4px 6px;font-size:11px;background:#1c1c22;color:#ccc;border:1px solid #333;border-radius:5px;margin-right:5px" title="Which FMV file to bake"><option value="comics">Comics</option><option value="pokemon">Pokémon</option><option value="magic">Magic</option><option value="baseball">Baseball</option></select>
+      <button class="sign-out" id="bake-btn" style="padding:4px 7px;font-size:11px" title="Fold manual FMV entries into the selected category's fmv_*.json for download">Bake FMV</button>
       <button class="sign-out" id="signout-btn" style="padding:4px 7px;font-size:11px">Sign Out</button>
     </header>
     <main>
@@ -2436,6 +2441,9 @@ async function downloadAllImages() {
 }
 
 const CGC_LADDER = [0.5,1.0,1.5,2.0,2.5,3.0,3.5,4.0,4.5,5.0,5.5,6.0,6.5,7.0,7.5,8.0,8.5,9.0,9.2,9.4,9.6,9.8];
+const PSA_LADDER = [1,1.5,2,3,4,5,6,7,8,9,10];
+function _fmvLadder(it){ return (it && it.type === 'card') ? PSA_LADDER : CGC_LADDER; }
+function _fmvCategory(it){ return (it && it.type === 'card') ? (it.fmvCategory || 'pokemon') : 'comics'; }
 const _fmvNormTitle = s => !s ? '' : s.toString().trim().replace(/\s+/g,' ').replace(/^The\s+/i,'').toLowerCase();
 function _fmvKeyOf(title, issue) {
   let t = (title == null ? '' : title.toString()).trim().replace(/\s+/g,' ');
@@ -2451,13 +2459,14 @@ function _fmvKeyOf(title, issue) {
 let _fmvBounds = [];
 function _fmvInitBounds(it) {
   _fmvBounds = [];
-  if (!it || it.type === 'card') return;
+  if (!it) return;
+  const LAD = _fmvLadder(it);
   const curve = (Array.isArray(it.fmvManualCurve) && it.fmvManualCurve.length) ? it.fmvManualCurve
               : (Array.isArray(it.fmvCurve) ? it.fmvCurve : null);
   if (!curve) return;
   curve.forEach(pair => {
     if (Array.isArray(pair) && pair[1] > 1) {
-      const ci = CGC_LADDER.indexOf(pair[0]);
+      const ci = LAD.indexOf(pair[0]);
       if (ci > 0 && _fmvBounds.indexOf(ci) === -1) _fmvBounds.push(ci);
     }
   });
@@ -2478,14 +2487,12 @@ function tapFmv(cell) {
 function renderFmvEditor(it) {
   const el = document.getElementById('fmv-editor');
   if (!el) return;
-  if (it && it.type === 'card') {
-    el.innerHTML = '<h3 class="section-h" style="margin-top:0;color:var(--accent);">FMV Tiers</h3><div style="color:#888;font-size:12px;">Card FMV entry is coming next — comics first.</div>';
-    return;
-  }
+  const _isCardFmv = !!(it && it.type === 'card');
+  const LAD = _fmvLadder(it);
   const _tiersMap = (it && it.fmvTiers) || null;
   const _fmtK = v => v == null ? '' : (v >= 1000 ? '$' + (v / 1000) + 'K' : '$' + v);
   const _rangeStr = t => { if (!_tiersMap) return ''; const r = _tiersMap[String(t)]; if (!r) return ''; return (r[1] == null) ? _fmtK(r[0]) + '+' : _fmtK(r[0]) + '–' + _fmtK(r[1]); };
-  const rows = CGC_LADDER.map((g, i) => {
+  const rows = LAD.map((g, i) => {
     let tier = 1;
     for (const b of _fmvBounds) { if (i >= b) tier++; else break; }
     const isBase = (i === 0);
@@ -2496,7 +2503,7 @@ function renderFmvEditor(it) {
       <div style="font-size:11px;color:#9ab;white-space:nowrap;margin-left:4px;font-variant-numeric:tabular-nums">${_rangeStr(tier)}</div>
     </div>`;
   }).join('');
-  el.innerHTML = `<h3 class="section-h" style="margin-top:0;color:var(--accent);">FMV Tiers (CGC)</h3>
+  el.innerHTML = `<h3 class="section-h" style="margin-top:0;color:var(--accent);">FMV Tiers (${_isCardFmv ? 'PSA' : 'CGC'})</h3>
     <div style="font-size:11px;color:#888;margin-bottom:8px;line-height:1.45">Top cell = Tier 1. Tap a grade to start the next tier there (2, 3, … to 13). Tapping a cell above a set tier moves that boundary up. Tap a filled cell to clear it. Then Save.</div>
     <div style="display:flex;flex-direction:column">${rows}</div>
     <div style="display:flex;gap:8px;margin-top:10px;max-width:220px">
@@ -2508,12 +2515,14 @@ function renderFmvEditor(it) {
 async function saveFmv() {
   const it = window._fmvItem; if (!it) return;
   const resEl = document.getElementById('fmv-result');
-  const breaks = [{ g: CGC_LADDER[0], t: 1 }];
-  _fmvBounds.forEach((cell, i) => breaks.push({ g: CGC_LADDER[cell], t: i + 2 }));
+  const LAD = _fmvLadder(it);
+  const breaks = [{ g: LAD[0], t: 1 }];
+  _fmvBounds.forEach((cell, i) => breaks.push({ g: LAD[cell], t: i + 2 }));
   const key = _fmvKeyOf(it.title, it.issue);
+  const _cat = _fmvCategory(it);
   try {
     if (resEl) { resEl.style.color = '#aaa'; resEl.textContent = 'Saving…'; }
-    await api('/api/set_fmv', { method: 'POST', body: { type: 'comic', key, breaks } });
+    await api('/api/set_fmv', { method: 'POST', body: { category: _cat, type: it.type === 'card' ? 'card' : 'comic', key, breaks } });
     it.fmvManualCurve = breaks;
     if (resEl) { resEl.style.color = '#5c5'; resEl.textContent = 'Saved ' + key + ' (' + breaks.length + ' breakpoints). Live in the app on next load.'; }
   } catch (e) { if (resEl) { resEl.style.color = '#e85050'; resEl.textContent = 'Save failed: ' + (e.message || e); } }
@@ -2522,9 +2531,10 @@ async function clearFmv() {
   const it = window._fmvItem; if (!it) return;
   const resEl = document.getElementById('fmv-result');
   const key = _fmvKeyOf(it.title, it.issue);
+  const _cat = _fmvCategory(it);
   try {
     if (resEl) { resEl.style.color = '#aaa'; resEl.textContent = 'Clearing…'; }
-    await api('/api/set_fmv', { method: 'POST', body: { type: 'comic', key, breaks: null } });
+    await api('/api/set_fmv', { method: 'POST', body: { category: _cat, type: it.type === 'card' ? 'card' : 'comic', key, breaks: null } });
     _fmvBounds = []; it.fmvManualCurve = null; renderFmvEditor(it);
     const r2 = document.getElementById('fmv-result'); if (r2) { r2.style.color = '#5c5'; r2.textContent = 'Cleared manual FMV for ' + key + '.'; }
   } catch (e) { if (resEl) { resEl.style.color = '#e85050'; resEl.textContent = 'Clear failed: ' + (e.message || e); } }

@@ -2403,7 +2403,7 @@ function renderLabelMarkup(comic, opts) {
   const includePrice = !!opts.includePrice;
 
   const rg = comic.roboGrade;
-  const score = Math.round(rg.score ?? 0);
+  let score = Math.round(rg.score ?? 0);
   // S16: Restoration state for purple coloring + check mark
   const _labelRestored = !!(comic.restorationHighConfidence || (comic.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(comic.cgcNotes)));
   const _labelRestoNeg = !!(comic.restorationCheckRan && !comic.restorationFlag && !_labelRestored);
@@ -2482,7 +2482,17 @@ function renderLabelMarkup(comic, opts) {
     }
   }
 
-  const versionStr = `V${esc(rg.version || '2.0')}`;
+  let versionStr = `V${esc(rg.version || '2.0')}`;
+  // Scoring v2 preview (?v2=1): the score box shows the 31-tier grade instead of
+  // the 0-100 number. Every numeric use of `score` above already ran; this only
+  // changes what prints. Precision (a 0-100-scale ±N) is dropped since it doesn't
+  // apply to the tier grade.
+  if (window.RG_V2_DISPLAY && window.RGScoreV2 && rg) {
+    let _v2g = null;
+    if (rg.frontScore != null) _v2g = window.RGScoreV2.fromSubscores({ front: rg.frontScore, back: rg.backScore, spine: rg.spineScore, interior: rg.interiorScore }, 'comic').grade;
+    else if (rg.score != null) _v2g = window.RGScoreV2.gradeFromScore(rg.score);
+    if (_v2g != null) { score = _v2g; precision = ''; versionStr = 'RG'; }
+  }
   const title = esc(comic.title || '');
   const issue = comic.issue ? `#${esc(comic.issue)}` : '';
   const issueDate = esc(comic.issueDate || '');

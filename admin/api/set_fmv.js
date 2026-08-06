@@ -23,9 +23,12 @@ export default async function handler(req, res) {
     catch { return res.status(401).json({ error: 'Unauthorized' }); }
     const adminEmails = (process.env.ADMIN_EMAILS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
     if (!adminEmails.includes((decoded.email || '').toLowerCase())) return res.status(403).json({ error: 'Not an admin' });
-    const { type, key, breaks } = req.body || {};
+    const { type, category, key, breaks } = req.body || {};
     if (!key || typeof key !== 'string') return res.status(400).json({ error: 'Missing key' });
-    const docId = (type === 'card') ? 'cards' : 'comics';
+    const ALLOWED_CATS = ['comics', 'pokemon', 'magic', 'baseball'];
+    const docId = (category && ALLOWED_CATS.includes(category))
+      ? category
+      : ((type === 'card') ? 'pokemon' : 'comics');
     let value;
     if (breaks == null) {
       value = FieldValue.delete();

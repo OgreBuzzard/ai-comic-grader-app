@@ -1719,6 +1719,22 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
       </div>
     </div>
 
+    <div class="settings-row" style="cursor:pointer" onclick="bulkSetAllPublic(true)">
+      <div style="flex:1">
+        <div class="sr-label">Make all existing books public</div>
+        <div class="sr-detail">One-time action. Applies to every Owned, non-reprint book that has a Robograde. Does not change the setting above.</div>
+      </div>
+      <div class="sr-right">&rsaquo;</div>
+    </div>
+
+    <div class="settings-row" style="cursor:pointer" onclick="bulkSetAllPublic(false)">
+      <div style="flex:1">
+        <div class="sr-label">Make all existing books private</div>
+        <div class="sr-detail">One-time action. Turns off public links for every book in your collection.</div>
+      </div>
+      <div class="sr-right">&rsaquo;</div>
+    </div>
+
     <div class="settings-row" style="cursor:default">
       <div style="flex:1">
         <div class="sr-label">Title Separators</div>
@@ -2801,7 +2817,7 @@ function aiCgcGrade(c) {
 }
 
 // Scoring v2 display: preview live with ?v2=1 (normal visitors unaffected until rollout).
-const RG_V2_DISPLAY = (function(){ try { const p = new URLSearchParams(location.search); if (p.has("v2")) return p.get("v2") !== "0"; } catch(e){} return false; })();
+const RG_V2_DISPLAY = window.RG_V2_DISPLAY = (function(){ try { const p = new URLSearchParams(location.search); if (p.has("v2")) return p.get("v2") !== "0"; } catch(e){} return false; })();
 // v2 31-tier grade for an item, from its stored 0-100 subscores (type-aware). Null if no data.
 function rgV2Grade(c) {
   try {
@@ -6817,6 +6833,17 @@ function mountResults(cgc, psa) {
     } else {
       animateRoboGradeFromTo(roboEl, _rgFrom, roboScore, 2000).then(() => popResultBadge(roboEl));
     }
+    // Scoring v2 preview (?v2=1): let the numeric count-up run for continuity,
+    // then flip the RG badge to the 31-tier grade once it settles.
+    if (window.RG_V2_DISPLAY && window.RGScoreV2 && roboGrade) {
+      let _v2g = null;
+      if (roboGrade.frontScore != null) _v2g = window.RGScoreV2.fromSubscores({ front: roboGrade.frontScore, back: roboGrade.backScore, spine: roboGrade.spineScore, interior: roboGrade.interiorScore }, 'comic').grade;
+      else _v2g = window.RGScoreV2.gradeFromScore(roboScore);
+      if (_v2g != null) {
+        const _swapDelay = (_rgFrom === roboScore) ? 950 : 2150;
+        setTimeout(() => { try { roboEl.textContent = _v2g; roboEl.style.fontSize = '24px'; } catch (e) {} }, _swapDelay);
+      }
+    }
   }
   if (cgcEl && predictedGrade) {
     setTimeout(() => {
@@ -7224,6 +7251,56 @@ function checkImageCap(isExistingBook) {
   if (count >= hardCap) return "hard";
   if (!paid && count >= IMAGE_SOFT_CAP) return "soft";
   return "ok";
+}
+
+async function bulkSetAllPublic(makePublic) {
+  if (!window._db || !window._currentUser || !window._currentUser.uid) {
+    appAlert("You need to be signed in to change listing privacy."); return;
+  }
+  const all = (typeof items !== "undefined" && Array.isArray(items)) ? items : [];
+  // Eligible = real graded books. Making public also requires Owned + non-reprint
+  // (same rules as the per-book toggle). Making private applies to everything.
+  const eligible = all.filter(c => {
+    if (!c || c.id === SAMPLE_COMIC_ID || !c.roboGrade) return false;
+    if (makePublic) {
+      if (c.ownership && c.ownership !== "Owned") return false;
+      if (isFacsimilePrinting(c.printing)) return false;
+    }
+    return true;
+  });
+  const targets = eligible.filter(c => (!!c.publicListing) !== makePublic);
+  if (targets.length === 0) {
+    appAlert(makePublic
+      ? "All eligible books are already public. Only Owned, non-reprint books with a Robograde can be listed."
+      : "All your books are already private.");
+    return;
+  }
+  const verb = makePublic ? "public" : "private";
+  const ok = await appConfirm(
+    `Make ${targets.length} book${targets.length === 1 ? "" : "s"} ${verb}? ` +
+    (makePublic
+      ? "Their Robograde, photos, title and issue will be viewable from a public link."
+      : "Their public links will stop working."),
+    makePublic ? "Make Public" : "Make Private");
+  if (!ok) return;
+  const uid = window._currentUser.uid;
+  let done = 0, failed = 0;
+  const CHUNK = 8; // small batches so large collections don't hammer Firestore
+  for (let i = 0; i < targets.length; i += CHUNK) {
+    await Promise.all(targets.slice(i, i + CHUNK).map(async c => {
+      try {
+        await fsSetDoc(fsDoc(window._db, "users", uid, "items", c.id), { publicListing: makePublic }, { merge: true });
+        if (c.roboGradeId) {
+          await fsSetDoc(fsDoc(window._db, "robograde_ids", c.roboGradeId), { public: makePublic }, { merge: true });
+        }
+        c.publicListing = makePublic;
+        done++;
+      } catch (e) { failed++; console.warn("[bulk-public] failed for", c.id, e); }
+    }));
+  }
+  try { if (typeof renderList === "function") renderList(); } catch (e) {}
+  appAlert(`Updated ${done} book${done === 1 ? "" : "s"} to ${verb}.` +
+    (failed ? ` ${failed} could not be updated \u2014 try again.` : ""));
 }
 
 function savePublicSetting(val) {

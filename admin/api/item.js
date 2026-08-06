@@ -297,9 +297,11 @@ export default async function handler(req, res) {
       let _sc = (idx && idx.books) ? idx.books[_fk] : null;
       if (typeof _sc === 'number' && idx.curves) _sc = idx.curves[_sc];
       item.fmvCurve = Array.isArray(_sc) ? _sc : null;
-      const _ov = await getFmvOverrides(db, item.type === 'card' ? 'cards' : 'comics');
+      item.fmvCategory = (item.type === 'card') ? 'pokemon' : 'comics';
+      const _ov = await getFmvOverrides(db, item.fmvCategory);
       item.fmvManualCurve = (_ov && Array.isArray(_ov[_fk])) ? _ov[_fk].map(o => Array.isArray(o) ? o : [o.g, o.t]) : null;
-      item.fmvTiers = (idx && idx.tiers) || null;
+      // Card static price index (fmv_pokemon.json etc.) isn't wired yet, so no $ ranges for cards.
+      item.fmvTiers = (item.type === 'card') ? null : ((idx && idx.tiers) || null);
     } catch (_) { item.fmvRange = item.fmvRange || null; }
 
     return res.status(200).json({ item });

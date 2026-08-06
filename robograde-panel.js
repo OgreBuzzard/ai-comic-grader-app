@@ -35,6 +35,10 @@
 
     const score = rg.score;
     const scoreRounded = Math.round(score);
+    // Scoring v2 display (preview via ?v2=1): 31-tier grade + subscore tiers,
+    // same layout. Comics only for now (card detail is a separate surface).
+    const _v2on = !!(window.RG_V2_DISPLAY && window.RGScoreV2 && rg.frontScore != null);
+    const _v2 = _v2on ? window.RGScoreV2.fromSubscores({ front: rg.frontScore, back: rg.backScore, spine: rg.spineScore, interior: rg.interiorScore }, 'comic') : null;
 
     // Color palette (mascot-green theme, color-matched to the actual
     // Robograder character):
@@ -80,7 +84,16 @@
     //     above 100 (e.g. score 94 ± 8 → range 102, capped to 94 ± 6 → 100).
     const highGradeRun = !!(comic && comic.highGradeUnlocked);
     let precision = '';
-    if (scoreRounded < 100) {
+    if (_v2on) {
+      const _slab = !!(comic && comic.labelDetected);
+      const _dp = !!(comic && (comic.highGradeTier || comic.deepAssessmentRan));
+      const _fl = !!(comic && (comic.fullAssessmentRan || comic.fullUnlocked));
+      const _base = _fl ? 0 : _dp ? 1 : _slab ? 4 : 2;
+      const _pg = comic && comic.photograder;
+      const _pen = _pg ? ['focus','lighting','cropping','angle'].reduce((a,k)=>{ const v=String(_pg[k]||'').trim().toUpperCase(); return a+(v==='B'?1:v==='C'?2:0); },0) : 0;
+      const _nt = _base + _pen;
+      precision = _nt > 0 ? '↕' + _nt : '';
+    } else if (scoreRounded < 100) {
       if (highGradeRun) {
         let n = rg.confidenceRange != null ? Math.round(rg.confidenceRange) : 3;
         n = Math.max(0, Math.min(6, n));
@@ -146,10 +159,10 @@
 
     // Component scores — integers only. v2.0 additive system:
     // Front 0-50, Back 0-20, Spine 0-20, Interior 0-10. Final = sum.
-    const fs  = rg.frontScore    != null ? Math.round(rg.frontScore)    : '—';
-    const bs  = rg.backScore     != null ? Math.round(rg.backScore)     : '—';
-    const ss  = rg.spineScore    != null ? Math.round(rg.spineScore)    : '—';
-    const ins = rg.interiorScore != null ? Math.round(rg.interiorScore) : '—';
+    const fs  = _v2 ? _v2.subs[0].display : (rg.frontScore    != null ? Math.round(rg.frontScore)    : '—');
+    const bs  = _v2 ? _v2.subs[1].display : (rg.backScore     != null ? Math.round(rg.backScore)     : '—');
+    const ss  = _v2 ? _v2.subs[2].display : (rg.spineScore    != null ? Math.round(rg.spineScore)    : '—');
+    const ins = _v2 ? _v2.subs[3].display : (rg.interiorScore != null ? Math.round(rg.interiorScore) : '—');
 
     // Printout paper palette — vintage tractor-feed continuous-form paper:
     // pale mint-green bars and slightly-off-white cream bars, dark olive ink.
@@ -253,8 +266,8 @@
             if (_restoRan) _s += _star('#b58be0');
             return `<span style="display:inline-flex;gap:1px;align-items:center;line-height:1">${_s}</span>`;
           })()}</div>
-          <span style="font-family:'Noto Sans Display',sans-serif;font-weight:900;color:${CHARTREUSE};line-height:1;font-size:62px;display:inline-block;transform:scaleX(0.80);transform-origin:center">${scoreRounded}</span>
-          <div style="font-size:8px;font-weight:700;color:#5a7028;letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">V${rg.version || '2.0'}</div>
+          <span style="font-family:'Noto Sans Display',sans-serif;font-weight:900;color:${CHARTREUSE};line-height:1;font-size:62px;display:inline-block;transform:scaleX(0.80);transform-origin:center">${_v2 ? (() => { const _m = String(_v2.grade).match(/^(\d+)([+-]?)$/); const _b = _m ? _m[1] : _v2.grade; const _md = _m ? _m[2] : ''; return _b + (_md ? `<span style="font-size:38px;font-weight:600">${_md}</span>` : ''); })() : scoreRounded}</span>
+          <div style="font-size:8px;font-weight:700;color:#5a7028;letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">${_v2on ? 'RG' : 'V' + (rg.version || '2.0')}</div>
         </div>
         <div style="flex:1;display:grid;grid-template-columns:2fr 2fr 1fr;grid-template-rows:auto auto;gap:4px">
           <!-- Row 1: Front spans the full width of the sub-score grid. The
