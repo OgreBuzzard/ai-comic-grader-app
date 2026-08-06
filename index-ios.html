@@ -2157,6 +2157,15 @@ function disambiguateXMen(year, printing) {
   return "Uncanny X-Men";
 }
 
+function disambiguateWolverine(year, printing) {
+  // The 1982 4-issue Claremont/Miller limited series (Sep 1982 - early 1983) is
+  // its own run; everything from the 1988 vol-1 ongoing onward collapses to
+  // "Wolverine" so issues of the same series group together in the list.
+  if (printing && /facsimile|reprint/i.test(printing)) return "Wolverine";
+  if (year && year >= 1982 && year <= 1983) return "Wolverine (Limited Series)";
+  return "Wolverine";
+}
+
 function extractYearFromIssueDate(s) {
   if (!s) return null;
   if (typeof s === "number") return s >= 1900 && s <= 2100 ? s : null;
@@ -2450,6 +2459,13 @@ function normalizeTitle(s, issueDate, printing) {
   if (TITLE_ALIASES_DATED[key]) {
     const year = extractYearFromIssueDate(issueDate);
     return TITLE_ALIASES_DATED[key](year, printing);
+  }
+  // Wolverine: unify the model's inconsistent title strings (e.g. "Wolverine" vs
+  // "Wolverine (Limited Series)") so same-series issues group together. Matches
+  // "wolverine", "wolverine (...", "wolverine limited series", "wolverine vol N"
+  // but NOT distinct series like "Wolverine and the X-Men" or "Wolverine: Origin".
+  if (/^wolverine(\s*\(|\s+limited\s+series|\s+vol\b|\s*$)/.test(key)) {
+    return disambiguateWolverine(extractYearFromIssueDate(issueDate), printing);
   }
   return trimmed;
 }
@@ -4532,6 +4548,29 @@ async function redeemPromoCode() {
   }
 }
 
+// Android hardware-back handler: pop the deepest open surface, else detail/edit
+// -> list. Returns true if it consumed the back press, false to allow app exit.
+// Called by the Android runtime in make-android-index.mjs (no-op on web/iOS).
+window.rgHandleBack = function () {
+  try {
+    if (typeof assessing !== "undefined" && assessing) return true; // swallow mid-assessment
+    var _vis = function (id) {
+      var el = document.getElementById(id);
+      if (!el) return false;
+      var st = window.getComputedStyle(el);
+      return !!st && st.display !== "none" && st.visibility !== "hidden";
+    };
+    if (_vis("camera-modal")) { if (typeof cameraExit === "function") cameraExit(); return true; }
+    if (_vis("cropper-modal")) { if (typeof cancelCrop === "function") cancelCrop(); return true; }
+    if (_vis("lightbox")) { if (typeof closeLightbox === "function") closeLightbox(); return true; }
+    if (_vis("buy-credits-modal")) { if (typeof hideBuyCredits === "function") hideBuyCredits(); return true; }
+    if (typeof view !== "undefined" && (view === "detail" || view === "edit")) {
+      if (typeof showList === "function") { showList(); return true; }
+    }
+  } catch (e) {}
+  return false;
+};
+
 function showList() {
   view = "list";
   selected = null;
@@ -4681,7 +4720,9 @@ function renderList() {
   const buildTitleGroups = list => {
     const groups = {};
     list.forEach(c => {
-      const t = c.title || "Unknown";
+      const t = (c.type === "card")
+        ? (c.title || "Unknown")
+        : (normalizeTitle(c.title, c.issueDate, c.printing) || c.title || "Unknown");
       if (!groups[t]) groups[t] = [];
       groups[t].push(c);
     });

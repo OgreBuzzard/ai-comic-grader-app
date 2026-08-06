@@ -99,19 +99,12 @@ mustReplace('A1 fetch interceptor + android runtime', '<head>', `<head>
       var App = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
       if (App && typeof App.addListener === 'function') {
         App.addListener('backButton', function(ev) {
-          // Any open, visible full-screen overlay/modal? Close the top one.
-          var modals = Array.prototype.slice.call(document.querySelectorAll(
-            '#buy-credits-modal, .modal, [data-modal], #item-detail, #add-book'
-          )).filter(function(m) {
-            var s = window.getComputedStyle(m);
-            return s && s.display !== 'none' && s.visibility !== 'hidden';
-          });
-          if (modals.length) {
-            var top = modals[modals.length - 1];
-            top.style.display = 'none';
-            return;
-          }
-          if (window.history.length > 1 && (ev == null || ev.canGoBack)) { window.history.back(); return; }
+          // Delegate to the app's view-aware handler (closes camera/cropper/
+          // lightbox/buy-modal, then detail/edit -> list). Exit only when it
+          // reports there is nothing left to pop.
+          try {
+            if (typeof window.rgHandleBack === 'function' && window.rgHandleBack()) return;
+          } catch (e) {}
           if (App.exitApp) App.exitApp();
         });
       }

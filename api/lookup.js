@@ -126,6 +126,14 @@ export default async function handler(req, res) {
       .map(e => (typeof e === 'string' ? e : (e && e.url) || null))
       .filter(Boolean);
 
+    // Deep interior covers + signatures — condition/provenance photos, public-safe.
+    const flatInteriorCovers = (Array.isArray(comic.interiorCoverImages) ? comic.interiorCoverImages : [])
+      .map(e => (typeof e === 'string' ? e : (e && e.url) || null))
+      .filter(Boolean);
+    const flatSignatures = (Array.isArray(comic.signatureImages) ? comic.signatureImages : [])
+      .map(e => (typeof e === 'string' ? e : (e && e.url) || null))
+      .filter(Boolean);
+
     // Verification check — combines main + corner. Every assessed photo must
     // be source:'camera'. Any string entry (legacy, pre-metadata) counts as
     // upload. Empty arrays return 'empty' (rendered as nothing on the public
@@ -160,6 +168,8 @@ export default async function handler(req, res) {
       aiAssessment:      comic.aiAssessment || (comic.roboGrade && comic.roboGrade.aiAssessment) || '',
       enhancement:       comic.enhancement || 'No',
       interiorImages:    Array.isArray(comic.interiorImages) ? comic.interiorImages : [],
+      interiorCoverImages: flatInteriorCovers,
+      signatureImages:   flatSignatures,
       restorationImages: Array.isArray(comic.restorationImages) ? comic.restorationImages : [],
       // S14 unification: predictedGrade is now a public field. New items
       // write it directly; legacy items have it synthesized from
