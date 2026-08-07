@@ -207,7 +207,7 @@ export default async function handler(req, res) {
       if ((_dc[k] == null || _dc[k] === '') && _pc[k] != null && _pc[k] !== '') _dc[k] = _pc[k];
     }
     console.log('[assess_card] DEEP uid=' + uid + ' psa=' + deepCard.psaGrade + ' rg=' + (deepCard.robograde && deepCard.robograde.total) + ' ' + (Date.now() - t0) + 'ms');
-    logCardTiming('card_deep', { uid, ms: Date.now() - t0, calls: [{ model: GRADE_MODEL, usage: _deepUsage }], psa: deepCard.psaGrade, rg: deepCard.robograde && deepCard.robograde.total, name: deepCard.cardIdentification && deepCard.cardIdentification.name });
+    await logCardTiming('card_deep', { uid, ms: Date.now() - t0, calls: [{ model: GRADE_MODEL, usage: _deepUsage }], psa: deepCard.psaGrade, rg: deepCard.robograde && deepCard.robograde.total, name: deepCard.cardIdentification && deepCard.cardIdentification.name });
     return res.status(200).json({ card: deepCard, deep: true });
   }
 
@@ -264,6 +264,6 @@ export default async function handler(req, res) {
   }
 
   console.log('[assess_card] uid=' + uid + ' card="' + (card.cardIdentification && card.cardIdentification.name) + '" psa=' + card.psaGrade + ' rg=' + (card.robograde && card.robograde.total) + ' ref=' + referenceUsed + ' ' + (Date.now() - t0) + 'ms');
-  logCardTiming('card_main', { uid, ms: Date.now() - t0, calls: [{ model: GRADE_MODEL, usage: _gradeUsage }], psa: card.psaGrade, rg: card.robograde && card.robograde.total, name: card.cardIdentification && card.cardIdentification.name });
+  await logCardTiming('card_main', { uid, ms: Date.now() - t0, calls: [{ model: GRADE_MODEL, usage: _gradeUsage }], psa: card.psaGrade, rg: card.robograde && card.robograde.total, name: card.cardIdentification && card.cardIdentification.name });
   return res.status(200).json({ ok: true, card, identification, referenceUsed, ms: Date.now() - t0 });
 }

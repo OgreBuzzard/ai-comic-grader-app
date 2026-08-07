@@ -882,15 +882,58 @@ async function _loadCacheCfg() {
 }
 function _syncCacheCfgDom() {
   const en = document.getElementById('cache-enabled'), tt = document.getElementById('cache-ttl');
-  if (en) en.checked = _cacheCfg.enabled;
+  if (en) {
+    en.style.background = _cacheCfg.enabled ? '#1f6feb' : '#1c1c22';
+    en.style.color = _cacheCfg.enabled ? '#fff' : '#9ab';
+    en.style.borderColor = _cacheCfg.enabled ? '#1f6feb' : '#333';
+  }
   if (tt) tt.value = _cacheCfg.ttl;
 }
-async function _saveCacheCfg() {
-  const en = document.getElementById('cache-enabled'), tt = document.getElementById('cache-ttl');
-  if (!en || !tt) return;
-  _cacheCfg = { enabled: en.checked, ttl: tt.value };
-  try { await dbF.collection('config').doc('caching').set({ enabled: en.checked, ttl: tt.value }, { merge: true }); }
+async function _persistCacheCfg() {
+  try { await dbF.collection('config').doc('caching').set({ enabled: _cacheCfg.enabled, ttl: _cacheCfg.ttl }, { merge: true }); }
   catch (e) { alert('Failed to save caching config: ' + (e && e.message)); }
+}
+async function _toggleCache() {
+  _cacheCfg.enabled = !_cacheCfg.enabled;
+  _syncCacheCfgDom();
+  await _persistCacheCfg();
+}
+async function _saveCacheCfg() {
+  const tt = document.getElementById('cache-ttl');
+  if (tt) _cacheCfg.ttl = tt.value;
+  await _persistCacheCfg();
+}
+function _setupPullToRefresh() {
+  let startY = 0, pulling = false, ind = null;
+  const THRESH = 70;
+  const atTop = () => (window.scrollY || document.documentElement.scrollTop || 0) <= 0;
+  const ensureInd = () => {
+    if (ind) return ind;
+    ind = document.createElement('div');
+    ind.style.cssText = 'position:fixed;top:0;left:0;right:0;text-align:center;font-size:12px;color:#9ab;padding:8px;transform:translateY(-44px);transition:transform .15s;z-index:9999;pointer-events:none;background:rgba(10,12,8,0.9)';
+    document.body.appendChild(ind);
+    return ind;
+  };
+  document.addEventListener('touchstart', e => {
+    if (!atTop()) { pulling = false; return; }
+    startY = e.touches[0].clientY; pulling = true;
+  }, { passive: true });
+  document.addEventListener('touchmove', e => {
+    if (!pulling) return;
+    const dy = e.touches[0].clientY - startY;
+    if (dy > 0 && atTop()) {
+      const pull = Math.min(dy, 100), el = ensureInd();
+      el.style.transform = 'translateY(' + (pull - 44) + 'px)';
+      el.textContent = pull > THRESH ? '\u2191 Release to refresh' : '\u2193 Pull to refresh';
+    }
+  }, { passive: true });
+  document.addEventListener('touchend', e => {
+    if (!pulling) return;
+    pulling = false;
+    const dy = e.changedTouches[0].clientY - startY;
+    if (ind) ind.style.transform = 'translateY(-44px)';
+    if (dy > THRESH && atTop()) refreshDashboard();
+  }, { passive: true });
 }
 // Compact date + time for the All Items rows.
 function _fmtDateTime(d) {
@@ -960,33 +1003,34 @@ async function renderDashboard() {
   state.selectedUid = null;
   state.selectedItemId = null;
   root.innerHTML = `
-    <header style="flex-wrap:wrap;gap:6px">
-      <h1 style="font-size:15px;letter-spacing:1px;margin:0 auto 0 0">RG ADMIN</h1>
-      <label style="font-size:10px;color:#9ab;display:inline-flex;flex-direction:column;align-items:center;gap:1px;line-height:1.1">
-        <span style="display:inline-flex;align-items:center;gap:3px"><input type="checkbox" id="cache-enabled" ${_cacheCfg.enabled ? 'checked' : ''} onchange="_saveCacheCfg()">Cache</span>
-        <select id="cache-ttl" onchange="_saveCacheCfg()" style="background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px;padding:0 2px;font-size:10px"><option value="1h" ${_cacheCfg.ttl !== '5m' ? 'selected' : ''}>1h</option><option value="5m" ${_cacheCfg.ttl === '5m' ? 'selected' : ''}>5m</option></select>
-      </label>
-      <button class="sign-out" id="refresh-btn" title="Refresh" style="padding:7px 14px;font-size:24px;line-height:1">&#10227;</button>
-      <label style="font-size:10px;color:#9ab;display:inline-flex;align-items:center;gap:3px" title="Date range applied to Export JSON + Export Summary (by assessment/added date)">
-        <select id="export-range" onchange="_onRangeChange()" style="background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px;padding:1px 2px;font-size:10px">
-          <option value="all">All time</option>
-          <option value="today">Today</option>
-          <option value="7d">Last 7d</option>
-          <option value="30d">Last 30d</option>
-          <option value="month">This month</option>
-          <option value="custom">Custom…</option>
-        </select>
-        <span id="export-range-custom" style="display:none;align-items:center;gap:2px">
-          <input type="date" id="export-from" title="From" style="font-size:10px;padding:1px 2px;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px">
-          <span style="color:#678">–</span>
-          <input type="date" id="export-to" title="To" style="font-size:10px;padding:1px 2px;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px">
-        </span>
-      </label>
-      <button class="sign-out" id="summary-btn" style="padding:4px 7px;font-size:11px">Exp. Sum.</button>
-      <button class="sign-out" id="export-btn" style="padding:4px 7px;font-size:11px">Exp. JSON</button>
-      <select id="bake-cat" style="padding:4px 6px;font-size:11px;background:#1c1c22;color:#ccc;border:1px solid #333;border-radius:5px;margin-right:5px" title="Which FMV file to bake"><option value="comics">Comics</option><option value="pokemon">Pokémon</option><option value="magic">Magic</option><option value="baseball">Baseball</option></select>
-      <button class="sign-out" id="bake-btn" style="padding:4px 7px;font-size:11px" title="Fold manual FMV entries into the selected category's fmv_*.json for download">Bake FMV</button>
-      <button class="sign-out" id="signout-btn" style="padding:4px 7px;font-size:11px">Sign Out</button>
+    <header style="flex-direction:column;align-items:stretch;gap:6px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <h1 style="font-size:15px;letter-spacing:1px;margin:0 auto 0 0">RG ADMIN</h1>
+        <button class="sign-out" id="cache-enabled" onclick="_toggleCache()" style="padding:4px 10px;font-size:11px" title="Assessment prompt caching on/off">Cache</button>
+        <select id="cache-ttl" onchange="_saveCacheCfg()" style="background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px;padding:2px 4px;font-size:11px"><option value="1h" ${_cacheCfg.ttl !== '5m' ? 'selected' : ''}>1h</option><option value="5m" ${_cacheCfg.ttl === '5m' ? 'selected' : ''}>5m</option></select>
+        <button class="sign-out" id="summary-btn" style="padding:4px 10px;font-size:11px">Summary</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <button class="sign-out" id="export-btn" style="padding:4px 10px;font-size:11px">Export</button>
+        <label style="display:inline-flex;align-items:center;gap:3px" title="Date range applied to Export + Summary (by assessment/added date)">
+          <select id="export-range" onchange="_onRangeChange()" style="background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px;padding:2px 4px;font-size:11px">
+            <option value="all">All time</option>
+            <option value="today">Today</option>
+            <option value="7d">Last 7d</option>
+            <option value="30d">Last 30d</option>
+            <option value="month">This month</option>
+            <option value="custom">Custom…</option>
+          </select>
+          <span id="export-range-custom" style="display:none;align-items:center;gap:2px">
+            <input type="date" id="export-from" title="From" style="font-size:10px;padding:1px 2px;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px">
+            <span style="color:#678">–</span>
+            <input type="date" id="export-to" title="To" style="font-size:10px;padding:1px 2px;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px">
+          </span>
+        </label>
+        <button class="sign-out" id="bake-btn" style="padding:4px 10px;font-size:11px" title="Fold manual FMV entries into the selected category's fmv_*.json for download">FMV</button>
+        <select id="bake-cat" style="padding:4px 6px;font-size:11px;background:#1c1c22;color:#ccc;border:1px solid #333;border-radius:5px" title="Which FMV file to bake"><option value="comics">Comics</option><option value="pokemon">Pokémon</option><option value="magic">Magic</option><option value="baseball">Baseball</option></select>
+        <button class="sign-out" id="signout-btn" style="padding:4px 10px;font-size:11px;margin-left:auto">Sign Out</button>
+      </div>
     </header>
     <main>
       <div id="stats-section"><div class="loading">Loading stats…</div></div>
@@ -1003,7 +1047,7 @@ async function renderDashboard() {
   document.getElementById('export-btn').onclick = downloadExport;
   { const _bb = document.getElementById('bake-btn'); if (_bb) _bb.onclick = bakeFmv; }
   document.getElementById('summary-btn').onclick = exportSummary;
-  document.getElementById('refresh-btn').onclick = refreshDashboard;
+  if (!window._ptrSet) { window._ptrSet = true; _setupPullToRefresh(); }
   _syncCacheCfgDom(); // header was just rebuilt — restore the toggle from state
   document.querySelectorAll('#tabs button').forEach(btn => {
     btn.onclick = () => {
@@ -1173,13 +1217,13 @@ function renderStats() {
   const bo = (d, w, m) => `<div class="breakouts"><span><strong>${dollars(d)}</strong> 24h</span><span><strong>${dollars(w)}</strong> 7d</span><span><strong>${dollars(m)}</strong> 30d</span></div>`;
   const sub = (label, d, w, m) => `<div style="margin-top:4px;font-size:10px;color:#8a8d96;line-height:1.5;">${label}&nbsp; <strong style="color:#c9c4bd">${dollars(d)}</strong> 24h · <strong style="color:#c9c4bd">${dollars(w)}</strong> 7d · <strong style="color:#c9c4bd">${dollars(m)}</strong> 30d</div>`;
   const chartBlock = `
-    <div style="margin-top:14px;background:#050506;border:1px solid #23252c;border-radius:8px;padding:12px;">
+    <div style="margin-top:14px;background:#ffffff;border:1px solid #ccc;border-radius:8px;padding:12px;">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
-        <span style="font-size:11px;color:#8a8d96;text-transform:uppercase;letter-spacing:1px;">Revenue vs spend (30d)</span>
+        <span style="font-size:11px;color:#555;text-transform:uppercase;letter-spacing:1px;">Revenue vs spend (30d)</span>
         <div id="chart-gran" style="display:flex;gap:2px;">${['day', 'week', 'month'].map(g => `<button data-gran="${g}" style="font-size:10px;padding:2px 7px;background:#161821;color:#9ab;border:1px solid #2a2d38;border-radius:4px;cursor:pointer;text-transform:capitalize;">${g}</button>`).join('')}</div>
       </div>
       <div id="spend-chart"></div>
-      <div style="display:flex;gap:14px;margin-top:6px;font-size:10px;color:#8a8d96;">
+      <div style="display:flex;gap:14px;margin-top:6px;font-size:10px;color:#555;">
         <span><span style="display:inline-block;width:8px;height:8px;background:#4caf82;border-radius:2px;"></span> revenue</span>
         <span><span style="display:inline-block;width:8px;height:8px;background:#e85d5d;border-radius:2px;"></span> spend</span>
       </div>
@@ -1188,7 +1232,7 @@ function renderStats() {
     <div class="stats-grid">
       <div class="stat-card"><h3>Accounts</h3><div class="total">${accounts.total}</div><div class="breakouts"><span><strong>${accounts.day}</strong> 24h</span><span><strong>${accounts.week}</strong> 7d</span><span><strong>${accounts.month}</strong> 30d</span></div></div>
       <div class="stat-card"><h3>Items</h3><div class="total">${items.total}</div><div class="breakouts"><span><strong>${items.day}</strong> 24h</span><span><strong>${items.week}</strong> 7d</span><span><strong>${items.month}</strong> 30d</span></div></div>
-      <div class="stat-card"><h3>Platform Mix</h3><div style="font-size:10px;color:#8a8d96;margin:2px 0 5px">assessments · iOS / AND / PWA</div>${(function(){var P=platforms||{};var row=function(lbl,col,o){o=o||{};return '<div style="display:flex;align-items:center;font-size:12px;margin:2px 0"><span style="color:'+col+';font-weight:700;width:36px">'+lbl+'</span><span style="flex:1;text-align:right"><strong>'+(o.day||0)+'</strong> 24h</span><span style="flex:1;text-align:right"><strong>'+(o.week||0)+'</strong> 7d</span><span style="flex:1;text-align:right"><strong>'+(o.month||0)+'</strong> 30d</span></div>';};return row('iOS','#0a84ff',P.ios)+row('AND','#3ddc84',P.android)+row('PWA','#a0a0a0',P.web);})()}</div>
+      <div class="stat-card"><h3>Platform</h3>${(function(){var P=platforms||{};var row=function(lbl,col,o){o=o||{};return '<div style="display:flex;align-items:center;font-size:12px;margin:2px 0"><span style="color:'+col+';font-weight:700;width:36px">'+lbl+'</span><span style="flex:1;text-align:right"><strong>'+(o.day||0)+'</strong> 24h</span><span style="flex:1;text-align:right"><strong>'+(o.week||0)+'</strong> 7d</span><span style="flex:1;text-align:right"><strong>'+(o.month||0)+'</strong> 30d</span></div>';};return row('iOS','#0a84ff',P.ios)+row('AND','#3ddc84',P.android)+row('PWA','#a0a0a0',P.web);})()}</div>
       <div class="stat-card"><h3>Credits Outstanding</h3><div class="total">${(credits && credits.outstanding != null ? credits.outstanding : 0).toLocaleString()}</div><div class="breakouts"><span title="Outstanding credits × avg cost of last 100 assessments (${credits && credits.avgAssessmentCost != null ? '$' + credits.avgAssessmentCost.toFixed(3) : '—'} ea)">≈ ${dollars(Math.round(((credits && credits.liability) || 0) * 100))} if all used</span></div></div>
     </div>
     <div style="margin-top:14px;">
