@@ -2575,18 +2575,20 @@ function _fmvInitBounds(it) {
   _fmvBounds.sort((a,b)=>a-b);
 }
 function tapFmv(cell) {
-  if (cell === 0) return;
   // Each tap raises this grade AND every grade below it by one tier (stacking).
-  // When a cell reaches the max tier 13, one more tap CYCLES it back to the
-  // lowest it can be — one tier above the cell directly above it (e.g. cell
+  // The base (cell 0, the lowest grade) is tappable too — raise it when a book is
+  // worth more than tier 1 even at 0.5. When a cell reaches the max tier 13, one
+  // more tap CYCLES it back to the lowest it can be: the base cycles to tier 1;
+  // any other cell cycles to one tier above the cell directly above it (e.g. cell
   // above = 4 → this cell cycles to 5). Use Clear to reset everything.
   const below = i => _fmvBounds.filter(b => b <= i).length; // bounds at/above this row in-list
   const curUncapped = 1 + below(cell);
   if (curUncapped >= 13) {
-    // Cycle: strip the extra bounds stacked AT this cell, leaving exactly one,
-    // so this cell drops to (tier of the cell above) + 1.
+    // Cycle back to minimum. Strip the extra bounds stacked AT this cell; for the
+    // base that means tier 1 (no bound), for any other cell that means one bound
+    // (tier of the cell above + 1).
     _fmvBounds = _fmvBounds.filter(b => b !== cell);
-    _fmvBounds.push(cell);
+    if (cell !== 0) _fmvBounds.push(cell);
   } else {
     if (_fmvBounds.length >= 12) return;
     _fmvBounds.push(cell);
@@ -2608,14 +2610,14 @@ function renderFmvEditor(it) {
     if (tier > 13) tier = 13;
     const isBase = (i === 0);
     const filled = isBase || _fmvBounds.indexOf(i) !== -1;
-    return `<div onclick="tapFmv(${i})" style="display:flex;align-items:center;gap:10px;cursor:${isBase?'default':'pointer'};padding:1px 0">
+    return `<div onclick="tapFmv(${i})" style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:1px 0">
       <div style="width:40px;text-align:right;font-size:12px;color:#bbb;font-variant-numeric:tabular-nums">${g.toFixed(1)}</div>
       <div style="width:42px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;${filled?'background:#2a6a2a;color:#fff':'background:#1c1c22;color:#667;border:1px solid #333'}">${tier}</div>
       <div style="font-size:11px;color:#9ab;white-space:nowrap;margin-left:4px;font-variant-numeric:tabular-nums">${_rangeStr(tier)}</div>
     </div>`;
   }).join('');
   el.innerHTML = `<h3 class="section-h" style="margin-top:0;color:var(--accent);">FMV Tiers (${_isCardFmv ? 'PSA' : 'CGC'})</h3>
-    <div style="font-size:11px;color:#888;margin-bottom:8px;line-height:1.45">Top cell = Tier 1. Tap a grade to raise it and every grade below it one tier (tap again to raise further). Clear to reset. Then Save.</div>
+    <div style="font-size:11px;color:#888;margin-bottom:8px;line-height:1.45">Tap any grade — including the base (top) cell — to raise it and every grade below it one tier (tap again to raise further; at 13 it cycles back). Clear to reset. Then Save.</div>
     <div style="display:flex;flex-direction:column">${rows}</div>
     <div style="display:flex;gap:8px;margin-top:10px;max-width:220px">
       <button onclick="saveFmv()" style="flex:1;padding:9px;background:var(--accent);color:#000;border:none;border-radius:6px;font-size:13px;font-weight:800;letter-spacing:1px;cursor:pointer">SAVE FMV</button>

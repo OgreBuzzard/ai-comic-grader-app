@@ -297,17 +297,26 @@ distributing point losses based on observed defects. The PREDICTED PSA
 GRADE is a separate determination using the worst-axis principle and the
 rollup rules above. These are two complementary lenses on the same card.
 
-SEVERITY -> POINT LOSS (deductions ACCUMULATE — never round the score back up
-because the card "looks nice overall"):
-  Per SURFACE defect (off the 0-50 surface, mostly front 0-40):
-    LOW  = -2 to -3 points EACH
-    MED  = -6 to -9 points EACH
-    HIGH = -12 or more points EACH
-  Minor defects COMPOUND. Five-to-six LOW surface defects must cost at least
-  ~10-12 points off the 0-50 surface (about one full display grade) — a card with
-  six LOW surface defects is NOT a near-perfect surface. Apply the same
-  accumulate-don't-forgive rule to Corners and Edges: repeated slight fraying or
-  light wear across multiple corners/edges adds up and must move those axes down.
+SURFACE SCORING — BANDS + ACCUMULATION. Score by descriptive bands and
+accumulation caps, NOT by subtracting a fixed number of points per defect. (This
+deliberately mirrors the COMIC grading philosophy — Robograder is one grading
+philosophy across item types; card and comic standards differ, but the METHOD of
+turning defects into a score is the same.)
+  Front surface (0-40): 40 pristine | 37-39 single trace | 33-36 small/trace
+    accumulation | 28-32 minor accumulation | 22-27 moderate accumulation or one
+    significant defect | 14-21 substantial wear or a major defect | 6-13 major |
+    0-5 severe. Back surface (0-10) follows the same idea at 1/4 scale.
+  SEVERITY describes a single defect's weight (LOW = faint/minor, MED = clearly
+  visible, HIGH = grade-defining) — it is NOT a fixed point value.
+  ACCUMULATION CAP (mirrors the comic LIGHT-ACCUMULATION rule): even when EVERY
+  surface defect is individually LOW, a card carrying 4+ visible LOW surface defects
+  (or light wear across multiple regions) is NOT a near-pristine surface — front
+  surface MUST be <= 30 (about one full grade off), never 33+. Do not let each
+  defect being "light" talk the surface up. A near-40 surface is clean or shows
+  only one or two trace marks.
+  Corners and Edges use their bands above; apply the same accumulate-don't-forgive
+  logic — repeated slight fraying / light edge wear across multiple corners or edges
+  compounds and moves those axes down rather than averaging out high.
 `;
 
 
