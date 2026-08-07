@@ -524,6 +524,14 @@ ${CARD_PHOTO_FLOW}
   return `You are Robograder, an expert trading card grader applying PSA grading
 standards combined with the proprietary Robograde 0-100 scoring system.
 
+THINKING & OUTPUT DISCIPLINE — READ FIRST
+Be decisive and get to the point. Inspect thoroughly, then write TERSELY. Do not
+ramble, do not narrate your reasoning, do not restate the rubric or hedge.
+Over-elaboration in the output is the dominant cause of slow runs — every field
+must be brief: observations short, condition assessment and grader notes a few
+tight sentences at most. Your entire response is the single JSON object below and
+nothing else — no text before or after it, no "let me...", no markdown.
+
 You are looking at photographs of a single trading card. Your job is to:
   1. Identify the card (name, set, number, year, illustrator, variant)
   2. Assess condition across the four PSA sub-grade axes
@@ -587,7 +595,7 @@ ${PSA_SUBGRADE_RUBRIC}
 ${PSA_ROLLUP_RULES}
 
 ${ROBOGRADE_CARDS_SCHEMA}
-
+§§CACHE_SPLIT§§
 ${photoContextBlock}
 ${referenceContextBlock}
 
@@ -683,8 +691,8 @@ async function fetchTimeout(url, options = {}, timeoutMs = 8000) {
 }
 
 // Anthropic messages call returning the first text block; one retry on failure.
-async function anthropicText(apiKey, body, timeoutMs) {
-  const headers = { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' };
+async function anthropicText(apiKey, body, timeoutMs, extraHeaders) {
+  const headers = { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', ...(extraHeaders || {}) };
   let lastErr;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -837,42 +845,47 @@ export default async function handler(req, res) {
     return res.status(200).json({ card: deepCard, deep: true });
   }
 
-  // 1) Identify (cheap) — best-effort; grading still runs if this fails.
+  // SPEED (S22): the separate Haiku identify pass + the TCGdex reference fetch it fed
+  // were two sequential pre-grade round-trips. The Opus grade call already identifies
+  // the card in its output, so the Haiku pass was redundant; dropping it (and the
+  // reference fetch, which needed the Haiku identity) removes both from the critical
+  // path. Identity now comes straight from the grade call.
   let identification = {};
   let _idUsage = null, _gradeUsage = null;
-  try {
-    const idOut = await anthropicText(apiKey, {
-      model: IDENTIFY_MODEL, max_tokens: 200,
-      messages: [{ role: 'user', content: [userBlocks[0], { type: 'text', text: IDENTIFY_PROMPT }] }],
-    }, 15000);
-    identification = extractJson(idOut.text) || {};
-    _idUsage = idOut.usage || null;
-  } catch (e) { console.warn('[assess_card] identify failed:', e && e.message); }
-
-  // 2) TCGdex reference scan — best-effort.
   let referenceBlock = null, referenceUsed = false, referenceName = null;
-  try {
-    const ref = await fetchPokemonReference(identification);
-    if (ref) { referenceBlock = ref.block; referenceUsed = true; referenceName = ref.name; }
-  } catch (e) { console.warn('[assess_card] reference fetch failed:', e && e.message); }
 
-  // 3) Grade.
+  // Prompt caching — same dashboard lever as comics (config/caching doc; default on/1h).
+  let _cacheOn = true, _cacheTtl = '1h';
+  try {
+    const { getFirestore } = await import('firebase-admin/firestore');
+    const _cs = await getFirestore().collection('config').doc('caching').get();
+    if (_cs.exists) { const _c = _cs.data() || {}; _cacheOn = _c.enabled !== false; _cacheTtl = _c.ttl === '5m' ? '5m' : '1h'; }
+  } catch (e) { console.warn('[assess_card] caching config read failed:', e && e.message); }
+  const _cacheCtl = _cacheTtl === '1h' ? { type: 'ephemeral', ttl: '1h' } : { type: 'ephemeral' };
+  const _cacheBeta = (_cacheOn && _cacheTtl === '1h') ? { 'anthropic-beta': 'extended-cache-ttl-2025-04-11' } : {};
+
+  // 3) Grade. Static rubric goes in the (cacheable) system prompt; only the small
+  // per-request tail (photo count / flow) is uncached. Images ride the user turn.
   const prompt = buildPSACardGradingPrompt({
     referenceImageProvided: referenceUsed,
     referenceCardName: referenceName,
     photoCountProvided: images.length,
     isHighGradeFlow: highGrade,
   });
+  const _pp = prompt.split('§§CACHE_SPLIT§§');
+  const systemBlocks = (!_cacheOn || _pp.length < 2)
+    ? [{ type: 'text', text: _pp.join('') }]
+    : [{ type: 'text', text: _pp[0], cache_control: _cacheCtl }, { type: 'text', text: _pp[1] }];
   const content = [...userBlocks];
   if (referenceBlock) content.push(referenceBlock);
-  content.push({ type: 'text', text: prompt });
 
   let card;
   try {
     const gradeOut = await anthropicText(apiKey, {
       model: GRADE_MODEL, max_tokens: 16384,
+      system: systemBlocks,
       messages: [{ role: 'user', content }],
-    }, 120000);
+    }, 120000, _cacheBeta);
     card = extractJson(gradeOut.text);
     _gradeUsage = gradeOut.usage || null;
     if (!card) return res.status(502).json({ error: 'Could not parse grade JSON from model', raw: (gradeOut.text || '').slice(0, 500) });
