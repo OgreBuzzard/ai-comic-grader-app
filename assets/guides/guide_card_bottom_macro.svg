@@ -1,22 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
-  <rect width="800" height="600" fill="#1a1a1a"/>
-
-  <!--
-    Bottom macro guide for Pokémon cards — TILTED with visibly rounded bottom corners.
-    Mirror of top macro. Open-top trapezoid:
-      Bottom edge: y = 520, full width 640px (x: 80–720)
-      Sides converge inward by ~5% per side going up
-      Card body extends past viewport top (y < 0)
-    Bottom corners use 14px arc radius.
-  -->
-  <path d="M 112 0
-           L 80 500
-           A 20 20 0 0 0 100 520
-           L 700 520
-           A 20 20 0 0 0 720 500
-           L 688 0"
-        fill="none" stroke="#7aa838" stroke-width="2"/>
-
-  <text x="400" y="30" text-anchor="middle" font-family="system-ui, sans-serif"
-        font-size="12" fill="#7aa838" opacity="0.5">BOTTOM MACRO (FRONT &amp; BACK) — TILTED</text>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 800 600" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;">
+    <path d="M112,0L80,500C80,510.972 89.028,520 100,520L700,520C710.972,520 720,510.972 720,500L688,0" style="fill:none;fill-rule:nonzero;stroke:rgb(122,168,56);stroke-width:6px;"/>
 </svg>
