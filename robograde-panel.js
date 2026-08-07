@@ -274,7 +274,7 @@
             return `<span style="display:inline-flex;gap:1px;align-items:center;line-height:1">${_s}</span>`;
           })()}</div>
           <span style="position:relative;display:inline-block;line-height:1"><span style="font-family:'Noto Sans Display',sans-serif;font-weight:900;color:${CHARTREUSE};line-height:1;font-size:62px;display:inline-block;transform:scaleX(0.80);transform-origin:center">${_v2 ? String(_v2.grade).replace(/[+-]$/, '') : scoreRounded}</span>${_v2 && /[+-]$/.test(String(_v2.grade)) ? `<span style="position:absolute;left:100%;top:8px;margin-left:-2px;font-family:'Noto Sans Display',sans-serif;font-size:26px;font-weight:500;color:${CHARTREUSE};line-height:1">${String(_v2.grade).slice(-1)}</span>` : ''}</span>
-          <div style="font-size:8px;font-weight:700;color:#5a7028;letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">V${(window.RG_GRADING_VERSION || '4.60')}</div>
+          <div style="font-size:8px;font-weight:700;color:#5a7028;letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">V${(window.RG_GRADING_VERSION || '4.61')}</div>
         </div>
         <div style="flex:1;display:grid;grid-template-columns:2fr 2fr 1fr;grid-template-rows:auto auto;gap:4px">
           <!-- Row 1: Front spans the full width of the sub-score grid. The
@@ -410,7 +410,7 @@
     }, 0) : 0;
     const precision = (_deep ? 1 : 2) + _pen;
     const _stars = _deep ? 2 : 1;
-    const _verLabel = "V" + (window.RG_GRADING_VERSION || "4.60");
+    const _verLabel = "V" + (window.RG_GRADING_VERSION || "4.61");
 
     // Consistent grade rendering: big base + smaller (same-weight) +/- suffix.
     // Used by the main score AND every subscore so all +/- match.
@@ -534,18 +534,23 @@
     // CORNERS accent: bright L-marks flush at the four outer corners (corners lit,
     // edges normal). EDGES accent: bright bars at the mid-point of each side
     // (edges lit, corners normal) — the visual inverse of CORNERS.
-    const _cornerMarks = ["top:0;left:0;border-top:2.5px solid " + _HL + ";border-left:2.5px solid " + _HL + ";border-top-left-radius:6px", "top:0;right:0;border-top:2.5px solid " + _HL + ";border-right:2.5px solid " + _HL + ";border-top-right-radius:6px", "bottom:0;left:0;border-bottom:2.5px solid " + _HL + ";border-left:2.5px solid " + _HL + ";border-bottom-left-radius:6px", "bottom:0;right:0;border-bottom:2.5px solid " + _HL + ";border-right:2.5px solid " + _HL + ";border-bottom-right-radius:6px"].map(x => `<span style="position:absolute;width:11px;height:11px;${x}"></span>`).join("");
-    const _edgeMarks = ["top:0;left:30%;right:30%;height:2.5px;background:" + _HL, "bottom:0;left:30%;right:30%;height:2.5px;background:" + _HL, "left:0;top:30%;bottom:30%;width:2.5px;background:" + _HL, "right:0;top:30%;bottom:30%;width:2.5px;background:" + _HL].map(x => `<span style="position:absolute;${x}"></span>`).join("");
+    const _cornerMarks = ["top:0;left:0;border-top:1.25px solid " + _HL + ";border-left:1.25px solid " + _HL + ";border-top-left-radius:6px", "top:0;right:0;border-top:1.25px solid " + _HL + ";border-right:1.25px solid " + _HL + ";border-top-right-radius:6px", "bottom:0;left:0;border-bottom:1.25px solid " + _HL + ";border-left:1.25px solid " + _HL + ";border-bottom-left-radius:6px", "bottom:0;right:0;border-bottom:1.25px solid " + _HL + ";border-right:1.25px solid " + _HL + ";border-bottom-right-radius:6px"].map(x => `<span style="position:absolute;width:11px;height:11px;${x}"></span>`).join("");
+    const _edgeMarks = ["top:0;left:30%;right:30%;height:1.25px;background:" + _HL, "bottom:0;left:30%;right:30%;height:1.25px;background:" + _HL, "left:0;top:30%;bottom:30%;width:1.25px;background:" + _HL, "right:0;top:30%;bottom:30%;width:1.25px;background:" + _HL].map(x => `<span style="position:absolute;${x}"></span>`).join("");
     const smCell = (label, val, accent) => {
       const marks = accent === "corners" ? _cornerMarks : accent === "edges" ? _edgeMarks : "";
-      return `<div style="position:relative;background:${OLIVE};border-radius:6px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0;padding:2px">${marks}<div style="line-height:1">${tierHTML(val, 18, CHARTREUSE)}</div><div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:3px">${label}</div></div>`;
+      return `<div style="position:relative;flex:1;height:100%;background:${OLIVE};border-radius:6px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0;padding:2px">${marks}<div style="line-height:1">${tierHTML(val, 18, CHARTREUSE)}</div><div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:3px">${label}</div></div>`;
     };
-    // Centering cell: inner rectangle FIXED at a constant inset (card-margin look),
-    // independent of the number size.
-    const centerCell = `<div style="position:relative;background:${OLIVE};border-radius:6px;box-sizing:border-box;min-width:0"><div style="position:absolute;inset:3px;border:1.5px solid ${OLIVE_LT};border-radius:4px;display:flex;align-items:center;justify-content:center">${tierHTML(vCentering, 16, CHARTREUSE)}</div></div>`;
+    // Centering cell: a fixed 7:5 (portrait) card shape — reinforces that the
+    // rectangle IS the card. Two concentric strokes (outer edge + inner inset 3px,
+    // a card-margin look). Number + "CNT." stacked inside.
+    const centerCell = `<div style="position:relative;height:100%;aspect-ratio:5/7;width:auto;flex-shrink:0;background:${OLIVE};border:1.5px solid ${OLIVE_LT};border-radius:6px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center">
+      <div style="position:absolute;inset:3px;border:1.5px solid ${OLIVE_LT};border-radius:4px"></div>
+      <div style="position:relative;line-height:1">${tierHTML(vCentering, 16, CHARTREUSE)}</div>
+      <div style="position:relative;font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:2px">CNT.</div>
+    </div>`;
     const subGrid = `<div style="flex:1;min-width:0;height:104px;display:flex;flex-direction:column;gap:4px">
       <div style="flex:1;min-height:0;display:flex">${bigCell("SURFACE", vSurface)}</div>
-      <div style="flex:1;min-height:0;display:grid;grid-template-columns:2fr 2fr 1fr;gap:4px">${smCell("COR.", vCorners, "corners")}${smCell("EDGES", vEdges, "edges")}${centerCell}</div>
+      <div style="flex:1;min-height:0;display:flex;gap:4px">${smCell("CRN.", vCorners, "corners")}${smCell("EDG.", vEdges, "edges")}${centerCell}</div>
     </div>`;
 
     return `<div style="background:${BG};border:1.5px solid ${OLIVE_MID};border-radius:12px;padding:14px 14px 14px;margin-bottom:8px;overflow:hidden">

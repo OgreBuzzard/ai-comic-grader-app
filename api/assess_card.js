@@ -296,6 +296,18 @@ The Robograde score reflects cumulative damage and is calculated by
 distributing point losses based on observed defects. The PREDICTED PSA
 GRADE is a separate determination using the worst-axis principle and the
 rollup rules above. These are two complementary lenses on the same card.
+
+SEVERITY -> POINT LOSS (deductions ACCUMULATE — never round the score back up
+because the card "looks nice overall"):
+  Per SURFACE defect (off the 0-50 surface, mostly front 0-40):
+    LOW  = -2 to -3 points EACH
+    MED  = -6 to -9 points EACH
+    HIGH = -12 or more points EACH
+  Minor defects COMPOUND. Five-to-six LOW surface defects must cost at least
+  ~10-12 points off the 0-50 surface (about one full display grade) — a card with
+  six LOW surface defects is NOT a near-perfect surface. Apply the same
+  accumulate-don't-forgive rule to Corners and Edges: repeated slight fraying or
+  light wear across multiple corners/edges adds up and must move those axes down.
 `;
 
 
@@ -511,9 +523,17 @@ You are looking at photographs of a single trading card. Your job is to:
   5. Grade the PHOTO QUALITY separately from the card, in "photograder": for each of
      focus, lighting, cropping, angle give A (good), B (minor issue), or C (poor —
      actively limited the assessment). This grades the PHOTOS, not the card.
-     For EVERY axis you grade B or C, add one entry to "photograder.flags" naming the
-     affected image (Front, Back, Top Macro, or Bottom Macro) and a terse reason +
-     fix. If all four axes are A, "flags" is an empty array.
+     ANGLE — IMPORTANT: the Top Macro and Bottom Macro are SUPPOSED to be shot at an
+     angle; the capture guide frames them tilted so the corners and edges can be read.
+     NEVER dock "angle" for a macro being tilted — judge "angle" ONLY on the Front and
+     Back (which should be square-on). A macro's job is corners/edges, so softness away
+     from the edge is not a "focus" fault either.
+     For EVERY axis graded B or C, add ONE "photograder.flags" entry for the affected
+     image. Keep notes EXTREMELY terse — 6 words MAX, plain and actionable, no jargon.
+     Format: "<Axis> - <Image> - <short fix>".
+       Good: "Lighting - Front - Reduce glare with diffuse light."
+       Bad:  long clinical descriptions of the defect and optics.
+     If all four axes are A, "flags" is an empty array.
 
 DEFECT LIST STYLE (applies to every entry in "defects"):
   - Terse list items, NOT full sentences. No trailing period.
