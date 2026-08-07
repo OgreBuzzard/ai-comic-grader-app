@@ -190,10 +190,12 @@ export default async function handler(req, res) {
     });
 
     // ── Search filter (if q is provided) ─────────────────────────────────────
-    // Substring match against title + issue + userName + Grade ID, case-insensitive.
+    // Substring match against title + issue + Grade ID, case-insensitive.
+    // (User name / ID intentionally excluded — search Users by ID on the Users
+    // tab instead; searching Items by user isn't useful.)
     if (query) {
       allItems = allItems.filter(it => {
-        const hay = `${it.title} ${it.issue} ${it.userName} ${it.transferCode} ${it.roboGradeId} ${(it.assessmentTimingKeys || []).join(' ')}`.toLowerCase();
+        const hay = `${it.title} ${it.issue} ${it.roboGradeId} ${(it.assessmentTimingKeys || []).join(' ')}`.toLowerCase();
         return hay.includes(query);
       });
     }

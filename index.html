@@ -1740,7 +1740,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         <a href="mailto:support@robograder.app" style="font-size:14px;font-weight:700;color:#d4af37;text-decoration:none;letter-spacing:0.3px">support@robograder.app</a>
       </div>
       <div style="font-size:11px;color:#4a3a2a;line-height:1.6;text-align:center">
-        <span id="rgVersionLine">Robograder v4.58</span> · Assessment credits are non-refundable.
+        <span id="rgVersionLine">Robograder v4.59</span> · Assessment credits are non-refundable.
         Images are stored securely in your personal account.
       </div>
       <script>
@@ -1749,7 +1749,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.58";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.59";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
@@ -8554,7 +8554,7 @@ function _cardIdentityHTML(sel) {
 }
 
 function buildCardRoboDisplay(item) {
-  try { return _buildCardRoboDisplayInner(item); }
+  try { return window.RobograderPanel.buildCardDisplay(item); }
   catch (e) {
     console.warn("[card panel] render failed:", e);
     var _s = item && item.roboGrade && item.roboGrade.score;
@@ -8563,186 +8563,6 @@ function buildCardRoboDisplay(item) {
       ? `<div style="margin-top:16px;background:#152e10;border:1.5px solid #4a7028;border-radius:12px;padding:16px;text-align:center"><div style="font-size:12px;color:#7aa838;letter-spacing:2px;margin-bottom:8px">ROBOGRADE SCORE</div><div style="font-family:'Noto Sans Display',sans-serif;font-weight:900;font-size:48px;color:#b8d820;line-height:1">${Math.round(_s)}</div></div>`
       : "";
   }
-}
-
-function _buildCardRoboDisplayInner(item) {
-  const rg = item.roboGrade || {};
-  const card = item.cardData || {};
-  const cd = card.robograde || rg.subscores || null;
-  const score = (rg.score != null) ? rg.score : (cd && cd.total != null ? cd.total : null);
-  const scoreRounded = score != null ? Math.round(score) : null;
-
-  const OLIVE = "#2a4a1e", CHARTREUSE = "#b8d820", OLIVE_LT = "#7aa838", OLIVE_MID = "#4a7028", BG = "#152e10";
-  const PAPER_GREEN = "#cce8b8", PAPER_CREAM = "#f4f0dc", PAPER_HEADER = "#a8c898";
-  const PAPER_INK = "#1f2a08", PAPER_INK_HD = "#0a1404", PAPER_INK_LT = "#5a6a3a";
-
-  // Cards use the shared v2 (31-tier) grade. Weights now mirror comics: 50/20/20/10.
-  const cardSubs = cd ? {
-    surface: cd.surface && cd.surface.total,
-    corners: cd.corners && cd.corners.total,
-    edges: cd.edges && cd.edges.total,
-    centering: cd.centering && cd.centering.total
-  } : null;
-  const _hasSubs = !!(cardSubs && [cardSubs.surface, cardSubs.corners, cardSubs.edges, cardSubs.centering].some(v => v != null));
-  const _v2 = (window.RGScoreV2 && _hasSubs) ? window.RGScoreV2.fromSubscores(cardSubs, "card") : null;
-  const gradeLabel = _v2 ? _v2.grade : (window.RGScoreV2 && score != null ? window.RGScoreV2.gradeFromScore(score) : (scoreRounded != null ? String(scoreRounded) : ""));
-
-  // subs order (from CONFIG.card): surface, corners, edges, centering.
-  const rawT = k => (cd && cd[k] && cd[k].total != null) ? cd[k].total : "—";
-  const vSurface = _v2 ? _v2.subs[0].display : rawT("surface");
-  const vCorners = _v2 ? _v2.subs[1].display : rawT("corners");
-  const vEdges = _v2 ? _v2.subs[2].display : rawT("edges");
-  const vCentering = _v2 ? _v2.subs[3].display : rawT("centering");
-
-  const _deep = !!item.deepAssessmentRan;
-  const _pg = card.photograder;
-  const _pen = _pg ? ["focus", "lighting", "cropping", "angle"].reduce((a, k) => {
-    const v = String(_pg[k] || "").trim().toUpperCase(); return a + (v === "B" ? 1 : v === "C" ? 2 : 0);
-  }, 0) : 0;
-  const precision = (_deep ? 1 : 2) + _pen;
-  const _stars = _deep ? 2 : 1;
-  const _verLabel = "V" + (window.RG_GRADING_VERSION || "4.58");
-
-  // Consistent grade rendering: big base + smaller (same-weight) +/- suffix.
-  // Used by the main score AND every subscore so all +/- match.
-  const tierHTML = (str, baseSize, color) => {
-    const s = String(str == null ? "" : str);
-    const m = s.match(/^(\d+|—|-)([+-])?$/);
-    const base = m ? m[1] : s;
-    const suf = (m && m[2]) ? m[2] : "";
-    const sup = Math.round(baseSize * 0.5);
-    return `<span style="display:inline-flex;align-items:flex-start;line-height:1;font-family:'Noto Sans Display',sans-serif;font-weight:800;color:${color}"><span style="font-size:${baseSize}px;line-height:1">${base}</span>${suf ? `<span style="font-size:${sup}px;line-height:1;margin-left:1px">${suf}</span>` : ""}</span>`;
-  };
-
-  // ---------- defects ----------
-  const sevColor = s => { const u = String(s || "").toUpperCase(); return u === "HIGH" ? "#a8202a" : (u === "MED" || u === "MEDIUM") ? "#a86010" : "#3a5018"; };
-  const sevChip = s => s ? `<span style="color:${sevColor(s)};font-weight:800;font-size:11px;white-space:nowrap;flex-shrink:0;letter-spacing:0.5px">${String(s).toUpperCase() === "MEDIUM" ? "MED" : String(s).toUpperCase()}</span>` : "";
-  const parseDef = str => {
-    let s = String(str == null ? "" : str).trim();
-    if (!s) return null;
-    if (/\bis clean\b/i.test(s) || /\bno\s+[\w\/ ]+?\s+(?:detected|marks|damage|fading|present|issues)\b/i.test(s) || /\bshows no\b/i.test(s)) return null;
-    let sev = null;
-    const m = s.match(/[\s,;.–-]*\b(HIGH|MED|MEDIUM|LOW)\b\.?$/i);
-    if (m) { sev = m[1].toUpperCase(); s = s.slice(0, m.index).trim(); }
-    s = s.replace(/[.\s]+$/, "");
-    return s ? { t: s, sev: sev } : null;
-  };
-  const def = card.defects || {};
-  const arrOf = k => Array.isArray(def[k]) ? def[k] : [];
-  const surfaceRows = [].concat(arrOf("creases"), arrOf("scratches"), arrOf("printDefects"), arrOf("stains"), arrOf("other")).map(parseDef).filter(Boolean);
-
-  const CORNER_MAP = { "SLIGHT FRAY": { t: "Slight fraying", sev: "LOW" }, "MINOR BLUNT": { t: "Minor blunting", sev: "LOW" }, "SOFT": { t: "Soft corner", sev: "LOW" }, "HEAVY BLUNT": { t: "Heavy blunting", sev: "MED" }, "CHIPPED": { t: "Chipped", sev: "MED" }, "DESTROYED": { t: "Destroyed", sev: "HIGH" } };
-  const humanLoc = k => k.replace(/([A-Z])/g, " $1").replace(/\s+/g, " ").trim().toLowerCase();
-  const cornerGroups = {};
-  const _pc = cd && cd.corners && cd.corners.perCorner;
-  if (_pc) for (const k in _pc) { const V = String(_pc[k] || "").toUpperCase().trim(); if (!V || V === "PRISTINE" || V === "SHARP") continue; const map = CORNER_MAP[V] || { t: V.charAt(0) + V.slice(1).toLowerCase(), sev: "MED" }; (cornerGroups[map.t] = cornerGroups[map.t] || { sev: map.sev, locs: [] }).locs.push(humanLoc(k)); }
-  const cornerRows = Object.keys(cornerGroups).map(t => ({ t: t + ", " + cornerGroups[t].locs.join(" and "), sev: cornerGroups[t].sev }));
-
-  const EDGE_MAP = { "LIGHT WEAR": { t: "Light wear", sev: "LOW" }, "NOTCHING": { t: "Notching", sev: "MED" }, "CHIPPING": { t: "Chipping", sev: "MED" }, "ROUGH": { t: "Rough", sev: "MED" }, "TEAR": { t: "Tear", sev: "HIGH" } };
-  const edgeGroups = {};
-  const _ed = cd && cd.edges;
-  if (_ed) for (const side of ["top", "bottom", "left", "right"]) { const V = String(_ed[side] || "").toUpperCase().trim(); if (!V || V === "CLEAN") continue; const map = EDGE_MAP[V] || { t: V.charAt(0) + V.slice(1).toLowerCase(), sev: "MED" }; (edgeGroups[map.t] = edgeGroups[map.t] || { sev: map.sev, sides: [] }).sides.push(side); }
-  const edgeRows = Object.keys(edgeGroups).map(t => ({ t: t + ", " + edgeGroups[t].sides.join(" and ") + " edge", sev: edgeGroups[t].sev }));
-  arrOf("edgeIssues").map(parseDef).filter(Boolean).forEach(r => edgeRows.push(r));
-
-  let runningIdx = 0;
-  const catSection = (label, scoreVal, rows) => {
-    if (!rows.length) return "";
-    const body = rows.map((d, i) => {
-      const bg = ((runningIdx + i) % 2 === 0) ? PAPER_GREEN : PAPER_CREAM;
-      return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 10px;font-size:11px;gap:8px;background:${bg};font-family:'IBM Plex Mono','Menlo',monospace"><span style="color:${PAPER_INK}">${esc(String(d.t))}</span>${sevChip(d.sev)}</div>`;
-    }).join("");
-    runningIdx += rows.length;
-    return `<div><div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:${PAPER_HEADER};border-top:1px solid ${PAPER_INK_LT};border-bottom:1px solid ${PAPER_INK_LT}"><span style="font-size:10px;font-weight:700;color:${PAPER_INK_HD};letter-spacing:1.5px;font-family:'IBM Plex Mono','Menlo',monospace">${label}</span><span style="font-size:14px;font-weight:800;color:${PAPER_INK_HD};font-family:'IBM Plex Mono','Menlo',monospace">${scoreVal}</span></div>${body}</div>`;
-  };
-
-  // ---------- centering (a defect-list category; portrait 5:7 rects with inner rect) ----------
-  const parseRatio = str => {
-    const out = { top: null, bottom: null, left: null, right: null };
-    if (str == null) return out;
-    const s = String(str).replace(/~/g, " ");
-    const lr = s.match(/(\d+)\s*\/\s*(\d+)\s*L\s*\/?\s*R/i);
-    const tb = s.match(/(\d+)\s*\/\s*(\d+)\s*T\s*\/?\s*B/i);
-    if (lr) { out.left = +lr[1]; out.right = +lr[2]; }
-    if (tb) { out.top = +tb[1]; out.bottom = +tb[2]; }
-    if (!lr && !tb) { const g = s.match(/(\d+)\s*\/\s*(\d+)/); if (g) { out.left = +g[1]; out.right = +g[2]; } }
-    return out;
-  };
-  const faceCentering = which => {
-    const c = cd && cd.centering;
-    if (c && c[which] && typeof c[which] === "object" && !Array.isArray(c[which]) && (c[which].left != null || c[which].right != null || c[which].top != null || c[which].bottom != null)) {
-      return { top: c[which].top, bottom: c[which].bottom, left: c[which].left, right: c[which].right };
-    }
-    return parseRatio(c && c[which + "Ratio"]);
-  };
-  const _cf = faceCentering("front"), _cb = faceCentering("back");
-  const _hasCentering = [_cf.top, _cf.bottom, _cf.left, _cf.right, _cb.top, _cb.bottom, _cb.left, _cb.right].some(x => x != null && x !== "" && !isNaN(x));
-  const nrm = x => (x == null || x === "" || isNaN(x)) ? "–" : String(x);
-  const numFont = "font-size:10px;font-weight:700;color:" + PAPER_INK + ";font-family:'IBM Plex Mono','Menlo',monospace";
-  const centerRect = (label, v) => `<div style="text-align:center">
-    <div style="font-size:9px;letter-spacing:1px;color:${PAPER_INK_HD};font-weight:700;margin-bottom:5px;font-family:'IBM Plex Mono','Menlo',monospace">${label}</div>
-    <div style="position:relative;width:64px;height:90px;margin:0 auto;background:#fff;border:2px solid ${PAPER_INK_HD};border-radius:8px">
-      <div style="position:absolute;top:16px;bottom:16px;left:14px;right:14px;border:1.5px solid ${PAPER_INK_LT};border-radius:4px"></div>
-      <div style="position:absolute;top:1px;left:0;right:0;text-align:center;${numFont}">${nrm(v.top)}</div>
-      <div style="position:absolute;bottom:1px;left:0;right:0;text-align:center;${numFont}">${nrm(v.bottom)}</div>
-      <div style="position:absolute;left:1px;top:0;bottom:0;display:flex;align-items:center;justify-content:center;${numFont}">${nrm(v.left)}</div>
-      <div style="position:absolute;right:1px;top:0;bottom:0;display:flex;align-items:center;justify-content:center;${numFont}">${nrm(v.right)}</div>
-    </div>
-  </div>`;
-  const centeringCatHTML = _hasCentering ? `<div><div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:${PAPER_HEADER};border-top:1px solid ${PAPER_INK_LT};border-bottom:1px solid ${PAPER_INK_LT}"><span style="font-size:10px;font-weight:700;color:${PAPER_INK_HD};letter-spacing:1.5px;font-family:'IBM Plex Mono','Menlo',monospace">CENTERING</span><span style="font-size:14px;font-weight:800;color:${PAPER_INK_HD};font-family:'IBM Plex Mono','Menlo',monospace">${vCentering}</span></div><div style="background:${PAPER_CREAM};padding:12px 10px;display:flex;gap:22px;justify-content:center">${centerRect("FRONT", _cf)}${centerRect("BACK", _cb)}</div></div>` : "";
-
-  const sectionsHTML = [catSection("SURFACE", vSurface, surfaceRows), catSection("CORNERS", vCorners, cornerRows), catSection("EDGES", vEdges, edgeRows)].filter(Boolean).join("") + centeringCatHTML;
-
-  // ---------- Photograder ----------
-  let pgHTML = "";
-  if (_pg && window.RobograderPanel && window.RobograderPanel.pgCell) {
-    const has = k => /^[ABC]$/.test(String(_pg[k] == null ? "" : _pg[k]).trim().toUpperCase());
-    if (has("focus") || has("lighting") || has("cropping") || has("angle")) {
-      const cells = ["FOCUS", "LIGHTING", "CROPPING", "ANGLE"].map(L => window.RobograderPanel.pgCell(L, _pg[L.toLowerCase()])).join("");
-      pgHTML = `<div style="margin-top:14px;padding-bottom:2px"><div style="font-size:12px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;text-align:center;margin-bottom:10px">PHOTOGRADER</div><div style="display:flex;gap:6px">${cells}</div></div>`;
-    }
-  }
-
-  // ---------- Provenance ----------
-  let provenanceHTML = "";
-  if (item.roboGradeId || item.roboGradeDate) {
-    let dateStr = "";
-    if (item.roboGradeDate) { try { dateStr = new Date(item.roboGradeDate).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }); } catch (e) { dateStr = ""; } }
-    provenanceHTML = `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:${OLIVE};border-radius:6px;margin-bottom:10px;font-family:'IBM Plex Mono','Menlo',monospace;font-size:11px">${item.roboGradeId ? `<div><span style="color:${OLIVE_LT};letter-spacing:1px;font-size:9px;font-weight:700">ID</span> <span style="color:${CHARTREUSE};margin-left:6px;letter-spacing:0.5px">${esc(String(item.roboGradeId))}</span></div>` : "<div></div>"}${dateStr ? `<div><span style="color:${OLIVE_LT};letter-spacing:1px;font-size:9px;font-weight:700">GRADED</span> <span style="color:${CHARTREUSE};margin-left:6px">${dateStr}</span></div>` : ""}</div>`;
-  }
-
-  // ---------- Score box ----------
-  const _starSvg = c => `<svg viewBox="0 0 24 24" width="13" height="13" style="display:inline-block;vertical-align:middle"><path d="M12.00,2.00 15.64,6.98 21.51,8.91 17.90,13.92 17.88,20.09 12.00,18.20 6.12,20.09 6.10,13.92 2.49,8.91 8.36,6.98Z" fill="${c}"/></svg>`;
-  let _starsHTML = "";
-  for (let i = 0; i < _stars; i++) _starsHTML += _starSvg(CHARTREUSE);
-  const scoreBox = `<div style="background:${OLIVE};border-radius:18px;width:104px;height:104px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px solid ${OLIVE_MID};position:relative">
-    ${precision > 0 ? `<span style="position:absolute;top:8px;right:8px;color:${CHARTREUSE};line-height:1;display:inline-flex;align-items:center;gap:2px;font-family:'Noto Sans Display',sans-serif;font-size:16px;font-weight:800"><img src="/assets/pm-notch.svg" width="16" height="22" style="display:block" alt="">${precision}</span>` : ""}
-    <div style="position:absolute;top:6px;left:0;right:0;text-align:center;pointer-events:none;display:flex;justify-content:center;opacity:0.5"><span style="display:inline-flex;gap:1px;align-items:center;line-height:1">${_starsHTML}</span></div>
-    <div style="line-height:1">${tierHTML(gradeLabel, 60, CHARTREUSE)}</div>
-    <div style="font-size:8px;font-weight:700;color:#5a7028;letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">${_verLabel}</div>
-  </div>`;
-
-  // ---------- Sub-grade grid: comic layout (SURFACE full row; CORN/EDGE/CENTER 2/2/1) ----------
-  const bigCell = (label, val) => `<div style="grid-column:1/-1;background:${OLIVE};border-radius:6px;padding:10px 6px;text-align:center"><div style="height:28px;display:flex;align-items:center;justify-content:center">${tierHTML(val, 26, CHARTREUSE)}</div><div style="font-size:9px;color:${OLIVE_LT};letter-spacing:1.5px;margin-top:3px">${label}</div></div>`;
-  const smCell = (label, val) => `<div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center;min-width:0"><div style="height:20px;display:flex;align-items:center;justify-content:center">${tierHTML(val, 18, CHARTREUSE)}</div><div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:2px">${label}</div></div>`;
-  // Centering cell: inner rectangle holding the score — a mini "card margins" glyph, no label.
-  const centerCell = `<div style="background:${OLIVE};border-radius:6px;padding:6px;display:flex;align-items:center;justify-content:center;min-width:0"><div style="border:1.5px solid ${OLIVE_LT};border-radius:4px;width:74%;min-height:30px;display:flex;align-items:center;justify-content:center;padding:3px 0">${tierHTML(vCentering, 16, CHARTREUSE)}</div></div>`;
-  const subGrid = `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
-    <div style="display:grid;grid-template-columns:1fr">${bigCell("SURFACE", vSurface)}</div>
-    <div style="display:grid;grid-template-columns:2fr 2fr 1fr;gap:4px;align-items:stretch">${smCell("CORN", vCorners)}${smCell("EDGE", vEdges)}${centerCell}</div>
-  </div>`;
-
-  return `<div style="background:${BG};border:1.5px solid ${OLIVE_MID};border-radius:12px;padding:14px 14px 14px;margin-bottom:8px;overflow:hidden">
-    <div style="font-size:12px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:10px;text-align:center">ROBOGRADE SCORE</div>
-    <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px">${scoreBox}${subGrid}</div>
-    ${provenanceHTML}
-    ${sectionsHTML ? `<div style="margin:0 -14px;border-top:2px solid ${OLIVE_MID};border-bottom:1.5px solid ${OLIVE_MID};position:relative">
-      <div style="position:absolute;left:0;top:0;bottom:0;width:8px;background-image:radial-gradient(circle at 4px 8px, ${OLIVE_MID} 1.5px, transparent 1.6px);background-size:8px 14px;background-repeat:repeat-y;background-color:${PAPER_CREAM};z-index:1"></div>
-      <div style="position:absolute;right:0;top:0;bottom:0;width:8px;background-image:radial-gradient(circle at 4px 8px, ${OLIVE_MID} 1.5px, transparent 1.6px);background-size:8px 14px;background-repeat:repeat-y;background-color:${PAPER_CREAM};z-index:1"></div>
-      <div style="margin:0 8px;background:${PAPER_CREAM}">${sectionsHTML}</div>
-    </div>` : ""}
-    ${pgHTML}
-  </div>`;
 }
 
 function mountCardResults(rec) {

@@ -1084,6 +1084,17 @@ async function renderSalesTab() {
   state.salesShown = 20;   // cap to the most recent 20; Load more reveals older
   _renderSales();
 }
+function _salesProduct(p) {
+  const a = Math.round((Number(p.amount) || 0) * 100);
+  if (a === 999) return 'Stack';
+  if (a === 2999) return 'Wall';
+  if (a === 9999) return 'Short Box';
+  const c = Number(p.credits) || 0;      // test buys ($0) + any odd amounts fall back to credits
+  if (c >= 100) return 'Short Box';
+  if (c >= 20) return 'Wall';
+  if (c >= 5) return 'Stack';
+  return 'Other';
+}
 // Renders the Sales tab from state.salesData, showing state.salesShown rows.
 function _renderSales() {
   const el = document.getElementById('tab-content');
@@ -1097,8 +1108,10 @@ function _renderSales() {
       <div style="font-size:11px;color:#8a8d96">${(tot && tot.count) || 0} purchases</div>
     </div>`;
   const all = data.purchases || [];
+  const prodFilter = state.salesProduct || 'all';
+  const filtered = (prodFilter === 'all') ? all : all.filter(p => _salesProduct(p) === prodFilter);
   const shown = state.salesShown || 20;
-  const rows = all.slice(0, shown).map(p => {
+  const rows = filtered.slice(0, shown).map(p => {
     const when = p.ts ? _fmtDateTime(new Date(p.ts).toISOString()) : '—';
     const badge = p.platform === 'ios'
       ? '<span style="font-size:9px;font-weight:700;color:#0a84ff;border:1px solid #0a84ff;border-radius:3px;padding:0 3px">iOS</span>'
@@ -1108,7 +1121,7 @@ function _renderSales() {
     const testTag = p.isTest ? ' <span style="font-size:9px;font-weight:700;color:#e8c257;border:1px solid #e8c257;border-radius:3px;padding:0 3px">TEST</span>' : '';
     return `<div class="row" style="align-items:center;">
         <div class="main">
-          <div class="title" style="font-size:13px;">${money(p.amount)} <span style="color:#6a9a6a">(${money(p.net)})</span> · ${p.credits ?? '?'} cr ${badge}${testTag}</div>
+          <div class="title" style="font-size:13px;">${money(p.amount)} <span style="color:#6a9a6a">(${money(p.net)})</span> · ${p.credits ?? '?'} cr · ${_salesProduct(p)} ${badge}${testTag}</div>
           <div class="sub">${escapeHtml(p.userName)}${p.transferCode ? ' · <span style="color:#e8c257;font-weight:700;">' + escapeHtml(p.transferCode) + '</span>' : ''} · ${when}</div>
         </div>
         <div class="meta" style="display:flex;flex-direction:column;align-items:flex-end;gap:1px;">
@@ -1117,14 +1130,16 @@ function _renderSales() {
         </div>
       </div>`;
   }).join('');
-  const more = all.length > shown ? `<button class="load-more" id="load-more-sales">Load more (${all.length - shown})</button>` : '';
+  const more = filtered.length > shown ? `<button class="load-more" id="load-more-sales">Load more (${filtered.length - shown})</button>` : '';
   el.innerHTML = `
     <div style="display:flex;gap:8px;margin-bottom:12px;">${card('Web', t.web)}${card('iOS', t.ios)}${card('Android', t.android)}${card('Combined', t.combined)}</div>
-    ${rows || '<div class="empty">No purchases yet.</div>'}
+    <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">${['all','Stack','Wall','Short Box'].map(k => `<button class="sales-filter" data-prod="${k}" style="padding:5px 10px;font-size:11px;border-radius:8px;cursor:pointer;border:1px solid ${prodFilter===k?'#7fd0ff':'#3a5a2a'};background:${prodFilter===k?'#12303f':'var(--panel-2)'};color:${prodFilter===k?'#cde':'#9ab'}">${k==='all'?'All':k==='Stack'?'Comic Stack':k==='Wall'?'Comic Wall':'Short Box'}</button>`).join('')}</div>
+    ${rows || '<div class="empty">No purchases in this filter.</div>'}
     ${more}
   `;
   const mb = document.getElementById('load-more-sales');
   if (mb) mb.onclick = () => { state.salesShown = shown + 20; _renderSales(); };
+  el.querySelectorAll('.sales-filter').forEach(b => { b.onclick = () => { state.salesProduct = b.dataset.prod; state.salesShown = 20; _renderSales(); }; });
 }
 
 function renderUsersTab() {
@@ -1148,7 +1163,7 @@ function renderUsersTab() {
 
 function renderItemsTab() {
   document.getElementById('tab-content').innerHTML = `
-    <input type="search" id="items-search" placeholder="Search title, issue, or user…" class="search-input" value="${escapeAttr(state.itemSearch || '')}">
+    <input type="search" id="items-search" placeholder="Search title, issue, or Grade ID…" class="search-input" value="${escapeAttr(state.itemSearch || '')}">
     <div class="sort-bar" id="items-sort-bar"></div>
     <div id="items-section"><div class="loading">Loading items…</div></div>
   `;
@@ -1163,7 +1178,16 @@ function renderItemsTab() {
     }, 300);
   };
   renderItemsSortBar();
-  loadItems(true);
+  // Restore the previously-loaded page (including any "Load more" the user did)
+  // and scroll position when returning from an item, instead of jumping to the
+  // top and forcing them to Load more again. A search/sort/refresh still resets.
+  if (state.itemsList && state.itemsList.length) {
+    renderItemsList();
+    const _y = state.itemsScrollY || 0;
+    if (_y) setTimeout(() => window.scrollTo(0, _y), 0);
+  } else {
+    loadItems(true);
+  }
 }
 
 function renderSortBar() {
@@ -2030,6 +2054,9 @@ async function saveCredits(uid) {
 }
 
 async function showItem(uid, id, fromTab) {
+  if (fromTab === 'items' && state.view !== 'item') {
+    state.itemsScrollY = window.scrollY || document.documentElement.scrollTop || 0;
+  }
   state.view = 'item';
   state.selectedItemId = id;
   // fromTab tells us where the user came from so "Back" goes back to the

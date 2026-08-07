@@ -35,6 +35,7 @@
      canonical copy in index.html; if you edit the ladder/CONFIG there, update here too. -->
 <script>
   window.RG_V2_DISPLAY = true;
+  window.RG_GRADING_VERSION = "4.59";
   window.RGScoreV2 = (function () {
     const LADDER = ["0","0+","1-","1","1+","2-","2","2+","3-","3","3+","4-","4","4+","5-","5","5+","6-","6","6+","7-","7","7+","8-","8","8+","9-","9","9+","10-","10"];
     const CONFIG = {
@@ -359,6 +360,7 @@
 
   try {
   const rg = data.roboGrade || {};
+  const isCard = data.type === 'card';
   const _v2g = (window.RGScoreV2 && rg)
     ? (rg.frontScore != null
         ? window.RGScoreV2.fromSubscores({ front: rg.frontScore, back: rg.backScore, spine: rg.spineScore, interior: rg.interiorScore }, 'comic').grade
@@ -670,7 +672,39 @@
     return sig.map(u => `<div style="margin-top:6px;position:relative;border-radius:6px;overflow:hidden;background:#1a1a1a"><img src="${esc(u)}" loading="lazy" onclick="openLightbox('${esc(u)}')" style="display:block;width:100%;height:auto;cursor:zoom-in"><div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.55);color:#fff;font-size:8px;padding:2px 5px;border-radius:3px;letter-spacing:0.5px">SIGNATURE</div></div>`).join('');
   })();
 
-  app.innerHTML = `
+  // Card identity + card RoboGrade panel (public). Cards render via the shared
+  // buildCardDisplay (same panel as the app Detail view); comics keep the
+  // existing comic panel + blocks below. Enhanceable removed from both (S21).
+  const cardIdentityHTML = (() => {
+    const ci = (data.cardData && data.cardData.cardIdentification) || {};
+    const fmtNum = n => !n ? '' : String(n).trim().replace(/^#/, '').split('/').map(p => p.replace(/^0+(\d)/, '$1')).join('/');
+    const num = fmtNum(ci.number || data.issue || '');
+    const year = (ci.year != null && String(ci.year).trim() !== '') ? String(ci.year).trim() : '';
+    const variant = (ci.variant || '').toString().trim();
+    const artist = (ci.illustrator || ci.artist || '').toString().trim();
+    const set = (ci.set || '').toString().trim();
+    const line2 = [num, year].filter(Boolean).join(', ');
+    const line4 = [artist ? 'Artist: ' + artist : '', set].filter(Boolean).join(', ');
+    return `<div class="identity">
+      <div class="book-title">${esc(data.title || ci.name || 'Card')}</div>
+      ${line2 ? `<div class="issue-row"><span class="book-issue">${esc(line2)}</span></div>` : ''}
+      ${variant ? `<div class="book-publisher">${esc(variant)}</div>` : ''}
+      ${line4 ? `<div class="book-publisher" style="opacity:0.8">${esc(line4)}</div>` : ''}
+    </div>`;
+  })();
+  let cardPanelHTML = '';
+  if (isCard && window.RobograderPanel && window.RobograderPanel.buildCardDisplay) {
+    try { cardPanelHTML = window.RobograderPanel.buildCardDisplay(data); }
+    catch (e) { console.warn('[public] card panel failed:', e); }
+  }
+
+  app.innerHTML = isCard ? `
+    ${cardIdentityHTML}
+    ${photoBlock}
+    ${cornerBlock}
+    ${cardPanelHTML}
+    ${conditionBlock}
+  ` : `
     ${identityHTML}
     ${photoBlock}
     ${cornerBlock}
@@ -680,17 +714,16 @@
     ${signatureBlock}
     ${robogradePanelHTML}
     ${predictedBlock}
-    ${enhancementBlock}
     ${restorationBlock}
     ${conditionBlock}
   `;
 
   document.querySelector('.content').insertAdjacentHTML('beforeend', `
     <footer>
-      Robograde is an AI-generated condition assessment produced by the Unerring Robograder.
+      Robograde is an AI-generated condition assessment.
       It is not affiliated with any encapsulation grading service.
-      Grades reflect the condition of the book at the time of assessment.
-      Books may change condition over time — always verify with current photos.
+      Grades reflect the condition of the ${isCard ? 'card' : 'book'} at the time of assessment.
+      ${isCard ? 'Cards' : 'Books'} may change condition over time — always verify with current photos.
     </footer>
   `);
 

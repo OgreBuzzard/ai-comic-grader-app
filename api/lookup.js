@@ -179,7 +179,21 @@ export default async function handler(req, res) {
       predictedGrade:    comic.predictedGrade || comic.assessedCGCGrade || null,
       highGradeUnlocked: comic.highGradeUnlocked || false,
       // S16: Deep, Full, and Restoration assessment state
-      deepAssessmentRan: !!(comic.roboGrade && comic.roboGrade.deepAssessmentRan),
+      type:              comic.type || 'comic',
+      // Photograder is public-safe condition metadata. Comics store it at root;
+      // cards store it inside cardData. The shared panels read it either way.
+      photograder:       comic.photograder || (comic.cardData && comic.cardData.photograder) || (comic.roboGrade && comic.roboGrade.photograder) || null,
+      // Card grading payload — whitelisted sub-fields only (never dump cardData
+      // wholesale). Powers the card RoboGrade panel on the public page.
+      cardData:          (comic.type === 'card' && comic.cardData) ? {
+        robograde:          comic.cardData.robograde || null,
+        defects:            comic.cardData.defects || null,
+        photograder:        comic.cardData.photograder || null,
+        cardIdentification: comic.cardData.cardIdentification || null,
+      } : undefined,
+      deepAssessmentRan: comic.type === 'card'
+        ? !!comic.deepAssessmentRan
+        : !!(comic.roboGrade && comic.roboGrade.deepAssessmentRan),
       fullAssessmentRan: !!comic.fullAssessmentRan,
       restorationCheckRan: !!comic.restorationCheckRan,
       restorationFlag: !!comic.restorationFlag,
