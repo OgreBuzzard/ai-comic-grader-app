@@ -22,12 +22,14 @@ const PQ_INTERIOR_SCORES = {
 };
 
 function classifyDefectArea(d) {
+  const cat = (d.category || '').toLowerCase();
+  if (cat === 'front' || cat === 'back' || cat === 'spine' || cat === 'interior') return cat;
   const loc = (d.location || '').toLowerCase();
   const type = (d.type || '').toLowerCase();
   if (type.includes('page quality')) return 'interior';
   if (loc.includes('spine') || type.includes('spine')) return 'spine';
-  if (loc.includes('back cover') || loc.includes('back ') || loc === 'back') return 'back';
   if (loc.includes('interior') || loc.includes('centerfold') || loc.includes('staple')) return 'interior';
+  if (loc.includes('back')) return 'back';
   return 'front';
 }
 
@@ -56,10 +58,20 @@ function deductionFor(d) {
 // for added/removed defects. This preserves the AI's nuanced scoring
 // while letting the admin make targeted corrections.
 function computeScoresDelta(originalScores, originalDefects, newDefects, pageQuality) {
-  let front = originalScores.frontScore ?? 50;
-  let back = originalScores.backScore ?? 20;
-  let spine = originalScores.spineScore ?? 20;
-  let interior = originalScores.interiorScore ?? 10;
+  let front = originalScores.frontScore;
+  let back = originalScores.backScore;
+  let spine = originalScores.spineScore;
+  let interior = originalScores.interiorScore;
+  // Some assessments stored only the total (no per-axis sub-scores). Deriving
+  // from the total keeps the recompute honest instead of snapping Front to a
+  // perfect 50 and back-solving the rest.
+  if ([front, back, spine, interior].some(v => typeof v !== 'number')) {
+    const tot = typeof originalScores.score === 'number' ? originalScores.score : 100;
+    front = Math.round(tot * 0.50);
+    back = Math.round(tot * 0.20);
+    spine = Math.round(tot * 0.20);
+    interior = Math.round(tot * 0.10);
+  }
 
   // Build fingerprint sets to find added/removed defects
   const oldFPs = new Map();
@@ -198,7 +210,8 @@ export default async function handler(req, res) {
       frontScore: currentRG.frontScore,
       backScore: currentRG.backScore,
       spineScore: currentRG.spineScore,
-      interiorScore: currentRG.interiorScore
+      interiorScore: currentRG.interiorScore,
+      score: currentRG.score
     };
     const originalDefects = Array.isArray(currentRG.defects) ? currentRG.defects : [];
     const scores = computeScoresDelta(originalScores, originalDefects, defects, pageQuality);

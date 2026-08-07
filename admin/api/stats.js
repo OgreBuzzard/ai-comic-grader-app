@@ -139,13 +139,16 @@ export default async function handler(req, res) {
     let avgAssessmentCost = 0;
     const spend = { dayCents: 0, weekCents: 0, monthCents: 0 };
     const spendByDay = {};
+    let allTimeApiCents = 0, fetchedCount = 0;
     try {
       const tSnap = await db.collection('assessment_timings').orderBy('createdAt', 'desc').limit(2500).get();
+      fetchedCount = tSnap.docs.length;
       const costs = [];
       for (const doc of tSnap.docs) {
         const t = doc.data();
         const cost = +t.costUsd || 0;
         const cents = Math.round(cost * 100);
+        allTimeApiCents += cents;
         const c = t.createdAt;
         const ms = (c && typeof c.toMillis === 'function') ? c.toMillis() : Date.parse(c || '');
         if (!Number.isNaN(ms)) {
@@ -167,6 +170,16 @@ export default async function handler(req, res) {
     spend.dayCents += INFRA_DAILY;
     spend.weekCents += INFRA_DAILY * 7;
     spend.monthCents += INFRA_DAILY * 30;
+
+    // All-time spend: exact sum of the fetched timings, plus an avg-cost estimate
+    // for any assessments older than the fetched window (so it stays right as the
+    // collection grows past the 2500 read), plus infra since launch.
+    let _totalTimings = fetchedCount;
+    try { const _c = await db.collection('assessment_timings').count().get(); _totalTimings = _c.data().count || fetchedCount; } catch (e) {}
+    const _tailCents = Math.round(avgAssessmentCost * 100) * Math.max(0, _totalTimings - fetchedCount);
+    const LAUNCH_MS = Date.parse('2026-03-30');
+    const _daysLive = Math.max(1, Math.round((now - LAUNCH_MS) / DAY));
+    spend.allTimeCents = allTimeApiCents + _tailCents + INFRA_DAILY * _daysLive;
 
     // 30-day daily series (net revenue vs total spend incl. infra) for the chart.
     const series = [];
