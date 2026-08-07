@@ -1,31 +1,8 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!--
-  Front cover guide (S13 v4).
-
-  Sized between v2 (477x738, too small per Matt's feedback) and v3
-  (564x870, cut into the dark bands per Matt's feedback). v4 splits the
-  difference at 520x804.
-
-  Geometry:
-    viewBox 600x1100 (portrait, ~9:16.5 phone aspect)
-    Outline rect x=40, y=148, w=520, h=804 — Silver Age aspect 0.647
-    Corner radius 16 viewBox units (~10 screen pixels)
-    Stroke 4px non-scaling
-
-  On a typical iPhone Pro stage (~390x810), outline renders ~338 px wide
-  by ~523 px tall, with ~144 px of dark padding at top (where the slot
-  label sits) and ~144 px at bottom (above the controls bar gradient).
-
-  Slot label rendered separately as HTML overlay above the outline.
--->
-<svg xmlns="http://www.w3.org/2000/svg"
-     viewBox="0 0 600 1100"
-     width="100%" height="100%"
-     preserveAspectRatio="xMidYMid slice">
-  <rect x="40" y="148" width="520" height="804"
-        rx="16" ry="16"
-        fill="none"
-        stroke="#7aa838"
-        stroke-width="4"
-        vector-effect="non-scaling-stroke"/>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 600 1100" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;">
+    <path d="M560,156L560,944C560,948.415 556.415,952 552,952L48,952C43.585,952 40,948.415 40,944L40,156C40,151.585 43.585,148 48,148L552,148C556.415,148 560,151.585 560,156Z" style="fill:none;stroke:rgb(122,168,56);stroke-width:6px;"/>
+    <g transform="matrix(1,0,0,0.905473,0,51.99)">
+        <path d="M560,174.505L560,925.495C560,940.123 549.246,952 536,952L64,952C50.754,952 40,940.123 40,925.495L40,174.505C40,159.877 50.754,148 64,148L536,148C549.246,148 560,159.877 560,174.505Z" style="fill:none;stroke:rgb(122,168,56);stroke-width:6.29px;stroke-dasharray:18.87,6.29,0,0,0,0;"/>
+    </g>
 </svg>

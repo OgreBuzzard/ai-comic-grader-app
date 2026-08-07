@@ -1032,7 +1032,7 @@ onAuthStateChanged(auth, async user => {
          corner — level with and to the RIGHT of the capture button, outside the guide
          frame. Same placement in every orientation. */
       position: absolute;
-      right: 24px;
+      right: 10px;
       top: 50%;
       left: auto;
       bottom: auto;
@@ -1056,10 +1056,11 @@ onAuthStateChanged(auth, async user => {
        toggle uses the same dark-glass aesthetic as the other floating
        camera controls (upload, skip) for visual consistency. */
     .lens-btn {
-      min-width: 44px;
-      height: 36px;
-      padding: 0 14px;
-      border-radius: 18px;
+      width: 48px;
+      min-width: 48px;
+      min-height: 40px;
+      padding: 5px 6px;
+      border-radius: 14px;
       background: rgba(0,0,0,0.55);
       border: 1px solid rgba(255,255,255,0.25);
       color: #fff;
@@ -1067,7 +1068,9 @@ onAuthStateChanged(auth, async user => {
       letter-spacing: 0.5px;
       cursor: pointer;
       display: inline-flex; align-items: center; justify-content: center;
-      white-space: nowrap;
+      white-space: normal;
+      line-height: 1.12;
+      text-align: center;
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
     }
@@ -1735,7 +1738,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         <a href="mailto:support@robograder.app" style="font-size:14px;font-weight:700;color:#d4af37;text-decoration:none;letter-spacing:0.3px">support@robograder.app</a>
       </div>
       <div style="font-size:11px;color:#4a3a2a;line-height:1.6;text-align:center">
-        <span id="rgVersionLine">Robograder v4.62</span> · Assessment credits are non-refundable.
+        <span id="rgVersionLine">Robograder v4.63</span> · Assessment credits are non-refundable.
         Images are stored securely in your personal account.
       </div>
       <script>
@@ -1744,7 +1747,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.62";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.63";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
@@ -4929,7 +4932,8 @@ function showDetail(id) {
   const _isCardItem = selected.type === "card";
   const _cardPsaRaw = _isCardItem ? ((selected.cardData && selected.cardData.psaGrade != null) ? selected.cardData.psaGrade : (selected.assessedPSAGrade || null)) : null;
   const _cardPsaStr = (_cardPsaRaw == null || _cardPsaRaw === "") ? null : ((typeof _cardPsaRaw === "number" || /^[0-9.]+$/.test(String(_cardPsaRaw))) ? normalizeGrade(String(_cardPsaRaw)) : String(_cardPsaRaw));
-  const cardPsaBadge = _cardPsaStr ? buildBadge(_cardPsaStr, "psa-predicted", "", false) : null;
+  const _cardPsaDisp = _cardPsaStr ? String(_cardPsaStr).replace(/\.0$/, "") : _cardPsaStr;
+  const cardPsaBadge = _cardPsaStr ? buildBadge(_cardPsaDisp, "psa-predicted", "", false) : null;
   const cgcOfficialBadge = (!_isCardItem && selected.cgcGrade) ? buildBadge(normalizeGrade(selected.cgcGrade), "cgc-official", detectDesignation(selected), false) : null;
   const psaOfficialBadge = (!_isCardItem && selected.psaGrade) ? buildBadge(normalizeGrade(selected.psaGrade), "psa-official", selected.psaDesignation || "universal", false) : null;
   const predictedGradeValue = _isCardItem ? null : aiCgcGrade(selected);
@@ -4946,7 +4950,7 @@ function showDetail(id) {
       ? ((window.matchCardFMV && _fmvGrade && selected.cardData) ? window.matchCardFMV(selected.cardData.cardIdentification, _fmvGrade) : null)
       : ((typeof window.matchFMV === "function" && _fmvGrade) ? window.matchFMV(selected.title, selected.issue, _fmvGrade, selected.printing, extractYearFromIssueDate(selected.issueDate)) : null);
     const _pqHtml = showPQ ? `<div style="display:flex;justify-content:center">${buildPQBox(selected.pageQuality)}</div>` : "";
-    html += buildPredictedGradeBox(predictionBoxes.join(""), _pqHtml, _fmvMatch, !!predictedBadge);
+    html += buildPredictedGradeBox(predictionBoxes.join(""), _pqHtml, _fmvMatch, !!(predictedBadge || cardPsaBadge));
   }
   // S20: "Enhanceable?: Yes/No" box hidden per request — it's an odd inclusion,
   // often inaccurate, and not essential. Left in code (commented) in case it's
@@ -8553,6 +8557,7 @@ async function assessCardGrade() {
   const imgs = (formData.images || []).filter(Boolean);
   if (imgs.length === 0) { alert("Add at least one photo first."); return; }
   if (assessing) return;
+  window._rgScanIsCard = true;  // card scan → red PSA box in the scan placeholder
 
   const _cb0 = document.getElementById("assess-btn") || document.getElementById("hg-assess-btn");
   if (_cb0) { _cb0.textContent = "Preparing…"; _cb0.disabled = true; _cb0.style.opacity = "0.75"; }
@@ -8670,8 +8675,8 @@ function _cardIdentityHTML(sel) {
     <h2 style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:26px;font-weight:900;color:#0d0d0f;line-height:1.1;margin:0">${esc(sel.title || "Card")}</h2>
     ${line2 ? `<div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:18px;font-weight:600;color:#3a2e24;margin-top:6px">${esc(line2)}</div>` : ""}
     ${variant ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#6a5a4a;margin-top:4px">${esc(variant)}</div>` : ""}
-    ${setLine ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:500;color:#8a7a6a;margin-top:4px">${esc(setLine)}</div>` : ""}
-    ${artistLine ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:500;color:#8a7a6a;margin-top:4px">${esc(artistLine)}</div>` : ""}
+    ${setLine ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;color:#8a7a6a;margin-top:4px">${esc(setLine)}</div>` : ""}
+    ${artist ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:500;color:#8a7a6a;margin-top:4px">Artist: <strong style="font-weight:700">${esc(artist)}</strong></div>` : ""}
   </div>`;
 }
 
@@ -8694,7 +8699,13 @@ function mountCardResults(rec) {
     return;
   }
   const roboScore = rec.roboGrade && rec.roboGrade.score != null ? Math.round(rec.roboGrade.score) : null;
-  const psa = String(rec.assessedPSAGrade || rec.psaGrade || (rec.cardData && rec.cardData.psaGrade) || "");
+  const _psaRaw = String(rec.assessedPSAGrade || rec.psaGrade || (rec.cardData && rec.cardData.psaGrade) || "");
+  // PSA shows no decimal on whole-number grades (decimals only when fractional).
+  const psa = _psaRaw ? String(normalizeGrade(_psaRaw)).replace(/\.0$/, "") : "";
+  // Previous grade (captured at scan-start on a re-assess) so RG counts up from it.
+  const _prevCard = window._prevAssessResult || null;
+  const _rgFromCard = _prevCard && _prevCard.score != null ? _prevCard.score : 0;
+  const _rgInitCard = _prevCard && _prevCard.score != null ? String(_prevCard.score) : "0";
   setTimeout(() => {
     if (window.RobograderScan.stopGridCycle) window.RobograderScan.stopGridCycle();
     if (window.RobograderScan.stopNeedlePulse) window.RobograderScan.stopNeedlePulse();
@@ -8703,12 +8714,22 @@ function mountCardResults(rec) {
   if (window._modalFrameTimer) { clearInterval(window._modalFrameTimer); window._modalFrameTimer = null; }
   const gridEl = document.getElementById("tracker-grid-frame");
   if (gridEl) gridEl.style.display = "none";
-  const badge = (bg, txt, val, label, border) => `<div style="width:64px;height:64px;${border ? `border:${border};` : ""}background:${bg};border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)"><div style="font-size:22px;font-weight:800;color:${txt};line-height:1">${val}</div><div style="font-size:9px;color:${txt};opacity:0.75;margin-top:2px;letter-spacing:0.8px">${label}</div></div>`;
+  const badge = (bg, txt, val, label, border, valId) => `<div style="width:64px;height:64px;${border ? `border:${border};` : ""}background:${bg};border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)"><div ${valId ? `id="${valId}" ` : ""}style="font-size:22px;font-weight:800;color:${txt};line-height:1">${val}</div><div style="font-size:9px;color:${txt};opacity:0.75;margin-top:2px;letter-spacing:0.8px">${label}</div></div>`;
   let badges = "";
-  if (roboScore != null) badges += badge("#0f1a05", "#aaee30", roboScore, "RG", "1.5px solid #3a5010");
-  if (psa) badges += badge("#b91c1c", "#ffffff", psa, "PSA");
+  if (roboScore != null) badges += badge("#0f1a05", "#aaee30", _rgInitCard, "RG", "1.5px solid #3a5010", "anim-val-robo-card");
+  if (psa) badges += badge("#b91c1c", "#ffffff", psa, "PSA", "", "anim-val-psa-card");
   const html = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:10px;">\n      <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badges}</div>\n      <button id="assess-complete-btn" style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#3a9ee0;color:#fff;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">COMPLETE</button>\n    </div>`;
   window.RobograderScan.slideResultsIntoPanel(html);
+  // Animate the RG count-up, then pop/glow both badges when the final score
+  // lands — mirrors the comic results reveal (mountResults) so cards get the
+  // same little glow on the final score.
+  const _roboElCard = document.getElementById("anim-val-robo-card");
+  const _psaElCard = document.getElementById("anim-val-psa-card");
+  if (_roboElCard && roboScore != null) {
+    if (_rgFromCard === roboScore) { setTimeout(() => popResultBadge(_roboElCard), 700); }
+    else { animateRoboGradeFromTo(_roboElCard, _rgFromCard, roboScore, 1800).then(() => popResultBadge(_roboElCard)); }
+  }
+  if (_psaElCard && psa) setTimeout(() => popResultBadge(_psaElCard), 1100);
   setTimeout(() => {
     const btn = document.getElementById("assess-complete-btn");
     if (btn) btn.onclick = completeCardAssessment;
@@ -8734,6 +8755,7 @@ async function assessGrade() {
   if (formData.type === "card" || formData._isCard || (formData._slabDetect && formData._slabDetect.isCard)) {
     return assessCardGrade();
   }
+  window._rgScanIsCard = false;  // comic scan → blue GRADE box in the scan placeholder
   const _earlyBtn = document.getElementById("assess-btn") || document.getElementById("hg-assess-btn");
   if (_earlyBtn) {
     _earlyBtn.textContent = "Preparing…";
@@ -9269,7 +9291,7 @@ function renderForm() {
   let html = `<div class="sticky-back" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><button class="btn-ghost" onclick="cancelForm()">← Back</button><button class="btn btn-gold" id="save-btn-top" onclick="submitForm()" ${_saveDisabledTop}>${_saveLabelTop}</button></div>\n  <h2 style="font-size:18px;margin:8px 0 20px;color:#c8a96e">${isEdit ? "Edit Book" : "Add Book"}</h2>\n  <div class="card" style="display:flex;flex-direction:column;gap:14px">\n    ${ownershipSegmentForForm()}\n    ${formData.roboGrade ? (() => { const _ip = buildIntegrityPill(formData, true); return _ip ? `<div style="display:flex;justify-content:flex-end;margin-bottom:2px">${_ip}</div>` : ""; })() : ""}\n    <div>\n      <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">MAIN ASSESSMENT PHOTOS${formData.labelDetected ? ` <span style="color:#9a8a7a;font-weight:600">(graded slab)</span>` : ""}</div>\n      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px">\n        ${(() => {
     const _isCardForm = formData.type === "card" || !!formData._isCard || !!(formData._slabDetect && formData._slabDetect.isCard);
     const slotLabels = _isCardForm
-      ? [ "Full Front", "Full Back", "Top Front Macro", "Bottom Front Macro" ]
+      ? [ "Front", "Back", "Top Front", "Bottom Front" ]
       : [ "Front Cover", "Back Cover", "Interior", "Spine" ];
     const renderSlot = i => {
       const img = (formData.images || [])[i];
@@ -9358,7 +9380,8 @@ function renderForm() {
       const _isCardItem = formData.type === "card";
       const _cardPsaRaw = _isCardItem ? ((formData.cardData && formData.cardData.psaGrade != null) ? formData.cardData.psaGrade : (formData.assessedPSAGrade || null)) : null;
       const _cardPsaStr = (_cardPsaRaw == null || _cardPsaRaw === "") ? null : ((typeof _cardPsaRaw === "number" || /^[0-9.]+$/.test(String(_cardPsaRaw))) ? normalizeGrade(String(_cardPsaRaw)) : String(_cardPsaRaw));
-      const cardPsa = _cardPsaStr ? buildBadge(_cardPsaStr, "psa-predicted", "", false) : "";
+      const _cardPsaDisp = _cardPsaStr ? String(_cardPsaStr).replace(/\.0$/, "") : _cardPsaStr;
+      const cardPsa = _cardPsaStr ? buildBadge(_cardPsaDisp, "psa-predicted", "", false) : "";
       const cgcOff = (!_isCardItem && formData.cgcGrade) ? buildBadge(normalizeGrade(formData.cgcGrade), "cgc-official", detectDesignation(formData), false) : "";
       const psaOff = (!_isCardItem && formData.psaGrade) ? buildBadge(normalizeGrade(formData.psaGrade), "psa-official", formData.psaDesignation || "universal", false) : "";
       const predVal = _isCardItem ? null : (formData.predictedGrade || formData.assessedCGCGrade);
@@ -9367,7 +9390,7 @@ function renderForm() {
       const _pqHtml = (!_isCardItem && formData.pageQuality) ? `<div style="display:flex;justify-content:center">${buildPQBox(formData.pageQuality)}</div>` : "";
       const _fmvGrade = _isCardItem ? _cardPsaStr : (formData.cgcGrade || formData.psaGrade || aiCgcGrade(formData));
       const _fmvMatch = _isCardItem ? ((window.matchCardFMV && _fmvGrade && formData.cardData) ? window.matchCardFMV(formData.cardData.cardIdentification, _fmvGrade) : null) : ((typeof window.matchFMV === "function" && _fmvGrade) ? window.matchFMV(formData.title, formData.issue, _fmvGrade, formData.printing, extractYearFromIssueDate(formData.issueDate)) : null);
-      return buildPredictedGradeBox([ cgcOff, psaOff, cardPsa, predicted ].filter(Boolean).join(""), _pqHtml, _fmvMatch, !!predicted);
+      return buildPredictedGradeBox([ cgcOff, psaOff, cardPsa, predicted ].filter(Boolean).join(""), _pqHtml, _fmvMatch, !!(predicted || cardPsa));
     })() : ""}\n\n    \x3c!-- Transaction metadata block (S11): chronology of acquiring → grading.\n         Cost/FMV moved to bottom of analysis section, after Condition\n         Assessment, per user direction. --\x3e\n    ${df("Date Acquired", "dateAcquired")}\n    <div><label class="field-label">Seller</label>\n      <input value="${esc(formData.seller || "")}" list="seller-list" oninput="formData.seller=this.value;updateSellerList(this.value)" placeholder="Name / source" autocomplete="off">\n      <datalist id="seller-list">${getSellerSuggestions().map(s => `<option value="${esc(s)}">`).join("")}</datalist>\n    </div>\n    ${df("Grading Date", "slabbingDate")}\n\n    \x3c!-- Analysis block (S11 reorder per user direction):\n         Defect Notes, Condition Assessment first\n         Then Enhancement Candidate\n         Then Cost Breakdown (now including FMV inside it)\n         Other gated text fields (Label Notes, Key Info, Grader Notes,\n         Past Assessments) live in their previous positions\n         around these. --\x3e\n    ${formData.cgcGrade || formData.psaGrade || formData.cgcNotes ? `<div><label class="field-label">Label Notes</label><textarea rows="3" readonly style="cursor:not-allowed" title="Label Notes is populated by the assessment. Not user-editable.">${esc(formData.cgcNotes || "")}</textarea></div>` : ""}\n    ${(() => {
     const showLabelNotesEdit = (formData.cgcGrade || formData.psaGrade) && formData.cgcNotes && formData.cgcNotes.trim();
     if (showLabelNotesEdit) return "";
@@ -9618,8 +9641,9 @@ function openCropper(type, index) {
       cancelCrop();
       return;
     }
+    const _cropCardFB = (formData.type === "card" || !!formData._isCard) && type === "main" && index < 2;
     _cropperInstance = new Cropper(img, {
-      aspectRatio: NaN,
+      aspectRatio: _cropCardFB ? 5/7 : NaN,
       viewMode: 1,
       autoCropArea: 1.0,
       background: false,
@@ -10715,8 +10739,8 @@ const CAMERA_GUIDE_RESTORATION = [
 ];
 
 const CAMERA_SLOT_ORIENTATION_MAIN = [ "portrait", "portrait", "portrait", "landscape" ];
-const CAMERA_LABEL_CARD = [ "Front", "Back", "Top Front Macro", "Bottom Front Macro" ];
-const CAMERA_SLOT_ORIENTATION_CARD = [ "portrait", "portrait", "landscape", "landscape" ];
+const CAMERA_LABEL_CARD = [ "Front", "Back", "Top Front", "Bottom Front" ];
+const CAMERA_SLOT_ORIENTATION_CARD = [ "portrait", "portrait", "portrait", "portrait" ];
 const CAMERA_LABEL_CARDDEEP = [ "Front Raking", "Back Raking", "Back Top Macro", "Back Bottom Macro" ];
 const CAMERA_SLOT_ORIENTATION_CARDDEEP = [ "portrait", "portrait", "landscape", "landscape" ];
 const CAMERA_CAPTURE_ORDER_CARDDEEP = [ 0, 1, 2, 3 ];
@@ -10911,6 +10935,13 @@ async function cameraOpen(state) {
     lenses: [],
     currentLensIdx: 0
   };
+  // Card entries must capture/crop with card guides, labels, and orientation.
+  // For an existing card being edited (or a card add), formData.type is "card";
+  // derive isCard here so tapping a slot to replace loads the CARD slot, not the
+  // comic one. (A fresh add can still promote to card later via slab-detect.)
+  if (_cameraState.isCard == null && state.kind === "main") {
+    _cameraState.isCard = (formData.type === "card" || !!formData._isCard || !!(formData._slabDetect && formData._slabDetect.isCard));
+  }
   const modal = document.getElementById("camera-modal");
   const permDialog = document.getElementById("camera-perm-dialog");
   permDialog.classList.remove("show");

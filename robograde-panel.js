@@ -274,7 +274,7 @@
             return `<span style="display:inline-flex;gap:1px;align-items:center;line-height:1">${_s}</span>`;
           })()}</div>
           <span style="position:relative;display:inline-block;line-height:1"><span style="font-family:'Noto Sans Display',sans-serif;font-weight:900;color:${CHARTREUSE};line-height:1;font-size:62px;display:inline-block;transform:scaleX(0.80);transform-origin:center">${_v2 ? String(_v2.grade).replace(/[+-]$/, '') : scoreRounded}</span>${_v2 && /[+-]$/.test(String(_v2.grade)) ? `<span style="position:absolute;left:100%;top:8px;margin-left:-2px;font-family:'Noto Sans Display',sans-serif;font-size:26px;font-weight:500;color:${CHARTREUSE};line-height:1">${String(_v2.grade).slice(-1)}</span>` : ''}</span>
-          <div style="font-size:8px;font-weight:700;color:#5a7028;letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">V${(window.RG_GRADING_VERSION || '4.62')}</div>
+          <div style="font-size:8px;font-weight:700;color:#5a7028;letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">V${(window.RG_GRADING_VERSION || '4.63')}</div>
         </div>
         <div style="flex:1;display:grid;grid-template-columns:2fr 2fr 1fr;grid-template-rows:auto auto;gap:4px">
           <!-- Row 1: Front spans the full width of the sub-score grid. The
@@ -349,8 +349,18 @@
       const rows = flags.map((f, i) => {
         const bg = i % 2 === 0 ? '#f4f0dc' : '#cce8b8';
         const cat = f.category ? f.category.charAt(0).toUpperCase() + f.category.slice(1) : '';
-        const body = [f.image, f.note].filter(Boolean).map(_pgEsc).join(' — ');
-        return `<div style="font-size:11px;line-height:1.45;color:#1f2a08;font-family:'IBM Plex Mono','Menlo',monospace;padding:6px 10px;background:${bg}">${cat ? `<b>${_pgEsc(cat)}</b> · ` : ''}${body}</div>`;
+        const img = f.image ? String(f.image).trim() : '';
+        // The note field should be the short fix ONLY. Older data (and occasional
+        // model drift) echo "<axis> - <image> -" into the note; strip those leading
+        // redundancies so we don't render "Focus · Front — Focus - Front - <fix>".
+        let note = String(f.note == null ? '' : f.note).trim();
+        const strip = (pfx) => { if (!pfx) return; const re = new RegExp('^' + pfx.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*[-\u2013\u2014:]\\s*', 'i'); note = note.replace(re, '').trim(); };
+        strip(cat); strip(img); strip(cat);
+        const parts = [];
+        if (img)  parts.push(_pgEsc(img));
+        if (note) parts.push(_pgEsc(note));
+        const body = parts.join(': ');
+        return `<div style="font-size:11px;line-height:1.45;color:#1f2a08;font-family:'IBM Plex Mono','Menlo',monospace;padding:6px 10px;background:${bg}">${cat ? `<b>${_pgEsc(cat)}</b>${body ? ' — ' : ''}` : ''}${body}</div>`;
       }).join('');
       flagsHTML = `<div style="margin:12px -14px 0;border-top:2px solid #4a7028;border-bottom:1.5px solid #4a7028;position:relative">
         <div style="position:absolute;left:0;top:0;bottom:0;width:8px;background-image:radial-gradient(circle at 4px 8px, #4a7028 1.5px, transparent 1.6px);background-size:8px 14px;background-repeat:repeat-y;background-color:#f4f0dc;z-index:1"></div>
@@ -410,7 +420,7 @@
     }, 0) : 0;
     const precision = (_deep ? 1 : 2) + _pen;
     const _stars = _deep ? 2 : 1;
-    const _verLabel = "V" + (window.RG_GRADING_VERSION || "4.62");
+    const _verLabel = "V" + (window.RG_GRADING_VERSION || "4.63");
 
     // Consistent grade rendering: big base + smaller (same-weight) +/- suffix.
     // Used by the main score AND every subscore so all +/- match.
@@ -520,7 +530,7 @@
     let _starsHTML = "";
     for (let i = 0; i < _stars; i++) _starsHTML += _starSvg(CHARTREUSE);
     const scoreBox = `<div style="background:${OLIVE};border-radius:18px;width:104px;height:104px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px solid ${OLIVE_MID};position:relative">
-      ${precision > 0 ? `<span style="position:absolute;top:8px;right:8px;color:${CHARTREUSE};line-height:1;display:inline-flex;align-items:center;gap:2px;font-family:'Noto Sans Display',sans-serif;font-size:16px;font-weight:800"><img src="/assets/pm-notch.svg" width="16" height="22" style="display:block" alt="">${precision}</span>` : ""}
+      ${precision > 0 ? `<span style="position:absolute;top:8px;right:8px;color:${CHARTREUSE};line-height:1;display:inline-flex;align-items:center;gap:0;font-family:'Noto Sans Display',sans-serif;font-size:16px;font-weight:800"><img src="/assets/pm-notch.svg" width="16" height="22" style="display:block" alt=""><span style="margin-left:-1px">${precision}</span></span>` : ""}
       <div style="position:absolute;top:6px;left:0;right:0;text-align:center;pointer-events:none;display:flex;justify-content:center;opacity:0.5"><span style="display:inline-flex;gap:1px;align-items:center;line-height:1">${_starsHTML}</span></div>
       <div style="line-height:1">${tierHTML(gradeLabel, 60, CHARTREUSE)}</div>
       <div style="font-size:8px;font-weight:700;color:#5a7028;letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">${_verLabel}</div>
@@ -544,7 +554,7 @@
     // rectangle IS the card. Two concentric strokes (outer edge + inner inset 3px,
     // a card-margin look). Number + "CNT." stacked inside.
     const centerCell = `<div style="position:relative;height:100%;aspect-ratio:5/7;width:auto;flex-shrink:0;background:${OLIVE};border:1.5px solid ${OLIVE_LT};border-radius:6px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center">
-      <div style="position:absolute;inset:3px;border:1.5px solid ${OLIVE_LT};border-radius:4px"></div>
+      <div style="position:absolute;inset:2px;border:1.5px solid ${OLIVE_LT};border-radius:4px"></div>
       <div style="position:relative;line-height:1">${tierHTML(vCentering, 16, CHARTREUSE)}</div>
       <div style="position:relative;font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:2px">CNT.</div>
     </div>`;

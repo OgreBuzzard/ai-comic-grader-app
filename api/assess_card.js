@@ -394,7 +394,7 @@ DO NOT include any text outside the JSON.
     "lighting": "<A | B | C>",
     "cropping": "<A | B | C>",
     "angle":    "<A | B | C>",
-    "flags": [ { "category": "<focus | lighting | cropping | angle>", "image": "<which photo: Front, Back, Top Macro, or Bottom Macro>", "note": "<one terse reason this photo scored B or C and how to reshoot it>" } ]
+    "flags": [ { "category": "<focus | lighting | cropping | angle>", "image": "<which photo: Front, Back, Top Front, or Bottom Front>", "note": "<ONLY the short fix, 6 words max — do NOT repeat the axis or image name>" } ]
   },
   "_diagnostics": {
     "referenceImageUsed":  <true | false>,
@@ -532,16 +532,24 @@ You are looking at photographs of a single trading card. Your job is to:
   5. Grade the PHOTO QUALITY separately from the card, in "photograder": for each of
      focus, lighting, cropping, angle give A (good), B (minor issue), or C (poor —
      actively limited the assessment). This grades the PHOTOS, not the card.
-     ANGLE — IMPORTANT: the Top Macro and Bottom Macro are SUPPOSED to be shot at an
-     angle; the capture guide frames them tilted so the corners and edges can be read.
-     NEVER dock "angle" for a macro being tilted — judge "angle" ONLY on the Front and
-     Back (which should be square-on). A macro's job is corners/edges, so softness away
-     from the edge is not a "focus" fault either.
-     For EVERY axis graded B or C, add ONE "photograder.flags" entry for the affected
-     image. Keep notes EXTREMELY terse — 6 words MAX, plain and actionable, no jargon.
-     Format: "<Axis> - <Image> - <short fix>".
-       Good: "Lighting - Front - Reduce glare with diffuse light."
-       Bad:  long clinical descriptions of the defect and optics.
+     DEFAULT EVERY AXIS TO A. Cards are small and shot on phone cameras; some softness,
+     minor glints, and imperfect framing are NORMAL and do NOT limit the assessment.
+     Assign B ONLY when a real, visible problem modestly reduced what you could read,
+     and C ONLY when it actively prevented judging an axis. Do NOT dock "focus" or
+     "lighting" for ordinary phone-camera softness, small reflections, or the intended
+     softness/angle of the close-ups. When in doubt, grade A.
+     ANGLE — IMPORTANT: the Top Front and Bottom Front close-ups are SUPPOSED to be shot
+     at an angle; the capture guide frames them tilted so the corners and edges can be
+     read. NEVER dock "angle" for a close-up being tilted — judge "angle" ONLY on the
+     Front and Back (which should be square-on). Those close-ups exist to show
+     corners/edges, so softness away from the edge is not a "focus" fault either.
+     For EVERY axis graded B or C, add ONE "photograder.flags" entry with three fields:
+       "category" = the axis (focus/lighting/cropping/angle),
+       "image"    = which photo (Front, Back, Top Front, or Bottom Front),
+       "note"     = ONLY the short fix — 6 words MAX, plain and actionable, no jargon,
+                    and do NOT repeat the axis or image name in the note.
+       Good note: "Reduce glare with diffuse light."
+       Bad note:  "Lighting - Front - reduce glare"  (never echo axis/image in the note).
      If all four axes are A, "flags" is an empty array.
 
 DEFECT LIST STYLE (applies to every entry in "defects"):
@@ -801,7 +809,7 @@ export default async function handler(req, res) {
   const userBlocks = images.map(toImageBlock);
 
   // DEEP mode (revise pattern, like Comic Deep): prior assessment + the 4 new
-  // Deep photos only (Front Raking, Back Raking, Back Top Macro, Back Bottom
+  // Deep photos only (Front Raking, Back Raking, Back Top Front, Back Bottom
   // Macro). No identify/reference pass; identity is carried from the prior grade.
   if (body.deep && body.initialAssessment && typeof body.initialAssessment === 'object') {
     const deepPrompt = buildPSACardDeepPrompt({ initialAssessment: body.initialAssessment });

@@ -361,7 +361,7 @@ onAuthStateChanged(auth, async user => {
        text read as muted/inactive — it didn't invite a tap. The inverse
        treatment is brighter and more obviously interactive while staying
        distinct from the green primary buttons elsewhere. */
-    .btn-topbar.btn-buy { background: #c8a96e; color: #1a1008; border: 1.5px solid #a88a4e; border-radius: 12px; height: 59px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; }
+    .btn-topbar.btn-buy { background: #c8a96e; color: #1a1008; border: 1.5px solid #a88a4e; border-radius: 8px; }
     .btn-topbar.btn-add { background: #c8a96e; color: #0d0d0f; }
     /* S14: compact top-bar Grade button. Same 32px control height as Buy
        so the header does NOT grow taller. Small thumbnail + short
@@ -1821,20 +1821,15 @@ window.exitSplashSigninAndShowApp = function() {
       </div>
     </div>
 
-    <div class="settings-row" style="cursor:pointer" onclick="bulkSetAllPublic(true)">
+    <div class="settings-row" style="cursor:default">
       <div style="flex:1">
-        <div class="sr-label">Make all existing books public</div>
+        <div class="sr-label">Make all books</div>
         <div class="sr-detail">One-time action. Applies to every Owned, non-reprint book that has a Robograde. Does not change the setting above.</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;max-width:220px">
+          <button id="bulk-public-btn" onclick="_bulkTap(true)">Public</button>
+          <button id="bulk-private-btn" onclick="_bulkTap(false)">Private</button>
+        </div>
       </div>
-      <div class="sr-right">&rsaquo;</div>
-    </div>
-
-    <div class="settings-row" style="cursor:pointer" onclick="bulkSetAllPublic(false)">
-      <div style="flex:1">
-        <div class="sr-label">Make all existing books private</div>
-        <div class="sr-detail">One-time action. Turns off public links for every book in your collection.</div>
-      </div>
-      <div class="sr-right">&rsaquo;</div>
     </div>
 
     <div class="settings-row" style="cursor:default">
@@ -1893,7 +1888,7 @@ window.exitSplashSigninAndShowApp = function() {
         <a href="mailto:support@robograder.app" style="font-size:14px;font-weight:700;color:#d4af37;text-decoration:none;letter-spacing:0.3px">support@robograder.app</a>
       </div>
       <div style="font-size:11px;color:#4a3a2a;line-height:1.6;text-align:center">
-        <span id="rgVersionLine">Robograder v4.59</span> · Assessment credits are non-refundable.
+        <span id="rgVersionLine">Robograder v4.62</span> · Assessment credits are non-refundable.
         Images are stored securely in your personal account.
       </div>
       <script>
@@ -1902,7 +1897,7 @@ window.exitSplashSigninAndShowApp = function() {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.59";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.62";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
@@ -2294,19 +2289,31 @@ window.matchFMV = function matchFMV(title, issue, grade, printing, year) {
     const _r = _fmvIndex.tiers && _fmvIndex.tiers[String(_t)];
     if (_r) return { tier: _t, low: _r[0], high: _r[1], manual: true };
   }
-  let breaks = _fmvIndex.books[key];
-  // Compression (S20): books[key] may be an integer index into a shared `curves`
-  // table (many issues share the same price curve). Deref it. Inline arrays still work.
-  if (typeof breaks === "number" && _fmvIndex.curves) breaks = _fmvIndex.curves[breaks];
-  // Volume guard (S21): some issue-number keys hold values for ONE volume only.
-  // e.g. "silver surfer|1" is the valuable 1968 series; the 1987 series reused
-  // #1-18. volumeGuards[key] is the max cover year the stored curve is valid for.
-  // If the book's year is later, drop the curve so a reprint/second-volume book
-  // doesn't inherit the first volume's value (falls through to blanket/null).
-  const _vg = _fmvIndex.volumeGuards && _fmvIndex.volumeGuards[key];
-  if (_vg && Array.isArray(breaks)) {
+  let breaks;
+  // Volume/year model (S21): `volumes[key]` is an ordered list of
+  // [curveIndex, minYear, maxYear] candidates for a title|issue that was reused
+  // across eras (e.g. Silver Surfer #1 in 1968 vs 1987). Pick the candidate whose
+  // year range contains the book's cover year. No year or no matching volume ->
+  // no curve (fall through to blanket/null) rather than guessing the wrong era's
+  // value. This generalizes the old single-boundary volumeGuards.
+  const _vols = _fmvIndex.volumes && _fmvIndex.volumes[key];
+  if (Array.isArray(_vols) && _vols.length) {
     const _vy = parseInt(year, 10);
-    if (isFinite(_vy) && _vy > _vg) breaks = null;
+    let _ci = null;
+    if (isFinite(_vy)) { for (const _c of _vols) { if (_vy >= _c[1] && _vy <= _c[2]) { _ci = _c[0]; break; } } }
+    breaks = (_ci != null && _fmvIndex.curves) ? _fmvIndex.curves[_ci] : null;
+  } else {
+    // Compression (S20): books[key] may be an integer index into a shared `curves`
+    // table. Deref it. Inline arrays still work.
+    breaks = _fmvIndex.books[key];
+    if (typeof breaks === "number" && _fmvIndex.curves) breaks = _fmvIndex.curves[breaks];
+    // Legacy single-boundary volume guard — kept so older shipped bundles + any
+    // un-migrated data still behave; superseded by `volumes` above.
+    const _vg = _fmvIndex.volumeGuards && _fmvIndex.volumeGuards[key];
+    if (_vg && Array.isArray(breaks)) {
+      const _vy = parseInt(year, 10);
+      if (isFinite(_vy) && _vy > _vg) breaks = null;
+    }
   }
   if (!Array.isArray(breaks) || !breaks.length) {
     // S20 blanket rule: uncovered modern books (1991+) default to tier 1 ($1-20)
@@ -3134,7 +3141,7 @@ function escJsAttr(s) {
   return s ? String(s).replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;") : "";
 }
 
-let items = [], collapsed = {}, view = "list", selected = null, sortBy = "title", search = "", _listScrollY = 0, _lastDetailId = null, _typeFilter = "all";
+let items = [], collapsed = {}, view = "list", selected = null, sortBy = "title", search = "", _listScrollY = 0, _lastDetailId = null, _showComics = true, _showCards = true;
 
 let db, fsCollection, fsGetDocs, fsSetDoc, fsDeleteDoc, fsDoc, fsOnSnapshot, fsGetDoc;
 
@@ -4683,17 +4690,17 @@ function _syncTitleSepRow() {
   if (thumb) thumb.style.left = on ? "23px" : "3px";
 }
 
-function setTypeFilter(v) {
-  _typeFilter = v;
+function toggleTypeFilter(which) {
+  // Two independent on/off toggles. Never allow BOTH off (that would show
+  // nothing) — tapping the last-on box is a no-op.
+  if (which === "comic") { if (_showComics && !_showCards) return; _showComics = !_showComics; }
+  else { if (_showCards && !_showComics) return; _showCards = !_showCards; }
   renderList();
 }
 
 function _typeFilterChips() {
-  const chip = (val, label) => {
-    const on = _typeFilter === val;
-    return `<button onclick="setTypeFilter('${val}')" style="flex:1;padding:7px 10px;border:none;border-radius:8px;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:800;letter-spacing:1px;text-transform:uppercase;cursor:pointer;background:${on ? "#2a2724" : "#e2e0dc"};color:${on ? "#ffffff" : "#5a534c"}">${label}</button>`;
-  };
-  return `<div style="display:flex;gap:6px;margin:4px 0 14px">${chip("all", "All")}${chip("comic", "Comics")}${chip("card", "Cards")}</div>`;
+  const box = (which, label, on) => `<button onclick="toggleTypeFilter('${which}')" style="flex:1;padding:7px 10px;border:2px solid ${on ? "#2a2724" : "#d6d2cc"};border-radius:8px;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:800;letter-spacing:1px;text-transform:uppercase;cursor:pointer;background:${on ? "#2a2724" : "#f0eee9"};color:${on ? "#ffffff" : "#a49c92"}">${label}</button>`;
+  return `<div style="display:flex;gap:6px;margin:4px 0 14px">${box("comic", "Comics", _showComics)}${box("card", "Cards", _showCards)}</div>`;
 }
 
 function renderList() {
@@ -4716,8 +4723,7 @@ function renderList() {
   const _hasComics = _realItems.some(c => c.type !== "card");
   const _mixed = _hasCards && _hasComics;
   if (_mixed) {
-    if (_typeFilter === "comic") filt = filt.filter(c => c.type !== "card");
-    else if (_typeFilter === "card") filt = filt.filter(c => c.type === "card");
+    filt = filt.filter(c => (c.type === "card") ? _showCards : _showComics);
   }
   const OWNERSHIP_ORDER = [ "Owned", "Sold", "Watching", "Print" ];
   const buildTitleGroups = list => {
@@ -6154,7 +6160,7 @@ function showEdit(id) {
   stickTierUnlocks(formData);
   _restorationRevealed = isRestorationCheckComplete(c);
   view = "add";
-  _assessed = !!(c.assessedCGCGrade || c.aiAssessment);
+  _assessed = !!(c.assessedCGCGrade || c.aiAssessment || c.assessedPSAGrade || (c.cardData && c.cardData.robograde) || c.roboGradeId);
   const _ab2 = document.getElementById("add-btn");
   if (_ab2) _ab2.style.visibility = "hidden";
   renderForm();
@@ -6913,10 +6919,12 @@ function popResultBadge(valueEl) {
 // scan-start for Re-Assess / Deep / Full. Null on a first assessment (no prior
 // grade) so the panel shows 0/0.0 and animates up from zero as before.
 function _capturePrevAssessResult() {
+  const _isCard = formData.type === "card";
+  const _gradeSrc = _isCard ? (formData.assessedPSAGrade || "") : (formData.predictedGrade || formData.assessedCGCGrade || "");
   window._prevAssessResult = (formData.roboGrade && formData.roboGrade.score != null) ? {
     score: Math.round(formData.roboGrade.score),
-    gradeText: normalizeGrade(formData.predictedGrade || formData.assessedCGCGrade || "") || "0.0",
-    gradeVal: parseFloat(formData.predictedGrade || formData.assessedCGCGrade) || null
+    gradeText: normalizeGrade(_gradeSrc) || "0.0",
+    gradeVal: parseFloat(_gradeSrc) || null
   } : null;
 }
 
@@ -7517,6 +7525,32 @@ function checkImageCap(isExistingBook) {
   return "ok";
 }
 
+function _bulkState() {
+  const all = (typeof items !== "undefined" && Array.isArray(items) ? items : []).filter(c => c && c.id !== SAMPLE_COMIC_ID && c.roboGrade);
+  if (!all.length) return "none";
+  const anyPublic = all.some(c => !!c.publicListing);
+  if (!anyPublic) return "private";
+  const pubEligible = all.filter(c => (!c.ownership || c.ownership === "Owned") && !isFacsimilePrinting(c.printing));
+  const allEligiblePublic = pubEligible.length > 0 && pubEligible.every(c => !!c.publicListing);
+  return allEligiblePublic ? "public" : "mixed";
+}
+function _syncBulkButtons() {
+  const st = _bulkState();
+  const pb = document.getElementById("bulk-public-btn"), pv = document.getElementById("bulk-private-btn");
+  if (!pb || !pv) return;
+  const base = "padding:11px 12px;border-radius:8px;font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;width:100%;transition:background 0.15s;";
+  const lit = "background:#2a7a2a;color:#fff;border:1.5px solid #2a7a2a;";
+  const off = "background:#e2e0dc;color:#5a534c;border:1.5px solid #d0ccc6;";
+  pb.style.cssText = base + (st === "public" ? lit : off);
+  pv.style.cssText = base + (st === "private" ? lit : off);
+}
+async function _bulkTap(makePublic) {
+  const st = _bulkState();
+  if (makePublic && st === "public") return;   // already all public -> no-op
+  if (!makePublic && st === "private") return;  // already all private -> no-op
+  await bulkSetAllPublic(makePublic);           // shows the styled confirm + applies
+  _syncBulkButtons();
+}
 async function bulkSetAllPublic(makePublic) {
   if (!window._db || !window._currentUser || !window._currentUser.uid) {
     appAlert("You need to be signed in to change listing privacy."); return;
@@ -8059,6 +8093,7 @@ function openSettings() {
     if (thumb) thumb.style.left = optIn ? "23px" : "3px";
   }
   _syncTitleSepRow(); // S20: reflect current Title Separators state
+  _syncBulkButtons();
   const emailEl = document.getElementById("settings-email");
   if (emailEl && window._currentUser) emailEl.textContent = window._currentUser.email || "—";
   // S20 bugfix: this line used to be the hardcoded string "Signed in with Google",
@@ -8445,6 +8480,55 @@ function generateTransferCode() {
   return _randomFromAlphabet(4);
 }
 
+// ── Cover perceptual hash (dHash) — S21 cover-index feature ──────────────────
+// Fingerprints a front cover so a cover we hand-corrected once can teach the
+// right issue number to future identical covers. dHash: 9x8 grayscale, compare
+// each pixel to its right neighbor -> 64 bits -> 16 hex chars. Robust to resize/
+// recompression/light; Hamming distance = # of differing bits (small = same cover).
+const RG_COVER_THRESH = 8; // max Hamming distance (of 64) to treat as the same cover
+function _coverIndexKey(t) {
+  return String(t == null ? "" : t).trim().toLowerCase().replace(/[\/#]/g, " ").replace(/\s+/g, " ").trim();
+}
+window.RGCover = (function () {
+  function _hashFromImage(img) {
+    const W = 9, H = 8;
+    const c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, W, H);
+    const d = ctx.getImageData(0, 0, W, H).data; // throws on a tainted (cross-origin) canvas
+    let bits = "";
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W - 1; x++) {
+        const i = (y * W + x) * 4, j = (y * W + x + 1) * 4;
+        const g1 = (d[i] + d[i + 1] + d[i + 2]) / 3;
+        const g2 = (d[j] + d[j + 1] + d[j + 2]) / 3;
+        bits += g1 > g2 ? "1" : "0";
+      }
+    }
+    let hex = "";
+    for (let k = 0; k < 64; k += 4) hex += parseInt(bits.slice(k, k + 4), 2).toString(16);
+    return hex;
+  }
+  function hashImage(src) {
+    return new Promise((resolve, reject) => {
+      if (!src) return reject(new Error("no src"));
+      const img = new Image();
+      if (/^https?:/i.test(src)) img.crossOrigin = "anonymous";
+      img.onload = () => { try { resolve(_hashFromImage(img)); } catch (e) { reject(e); } };
+      img.onerror = () => reject(new Error("image load failed"));
+      img.src = src;
+    });
+  }
+  function hamming(a, b) {
+    if (!a || !b || a.length !== b.length) return 64;
+    let d = 0;
+    for (let i = 0; i < a.length; i++) { let x = parseInt(a[i], 16) ^ parseInt(b[i], 16); while (x) { d += x & 1; x >>= 1; } }
+    return d;
+  }
+  return { hashImage, hamming };
+})();
+
 async function completeAssessment() {
   if (!_pendingAssessResult) return;
   const {cgc: cgc, psa: psa} = _pendingAssessResult;
@@ -8453,6 +8537,41 @@ async function completeAssessment() {
   formData.issueDate = cgc.issueDate || formData.issueDate || "";
   formData.publisher = cgc.publisher || formData.publisher || "";
   formData.printing = cgc.printing || "";
+  // S21 cover-index: fingerprint the front cover; if a previously hand-corrected
+  // cover matches closely, adopt ITS issue number over the model's guess. Fully
+  // fail-safe — nothing here may break assessment.
+  try {
+    if (formData.type !== "card" && formData.images && formData.images[0] && window.RGCover) {
+      const _ch = await window.RGCover.hashImage(formData.images[0]);
+      if (_ch) {
+        formData.coverHash = _ch;
+        const _nt = _coverIndexKey(formData.title);
+        if (_nt && window._db && window._fsDoc && window._fsGetDoc) {
+          const _snap = await window._fsGetDoc(window._fsDoc(window._db, "cover_index", _nt));
+          if (_snap.exists()) {
+            const _entries = (_snap.data() && _snap.data().entries) || [];
+            let _best = null, _bestD = 999;
+            for (const _e of _entries) {
+              if (!_e || !_e.phash) continue;
+              const _d = window.RGCover.hamming(_ch, _e.phash);
+              if (_d < _bestD) { _bestD = _d; _best = _e; }
+            }
+            if (_best && _bestD <= RG_COVER_THRESH && _best.issue != null && _best.issue !== "") {
+              if (String(_best.issue) !== String(formData.issue)) {
+                console.log("[coverIndex] override issue", { title: _nt, from: formData.issue, to: _best.issue, dist: _bestD });
+                formData.issue = String(_best.issue);
+                formData.issueSource = "coverIndex";
+              } else {
+                console.log("[coverIndex] confirmed", { title: _nt, issue: formData.issue, dist: _bestD });
+              }
+            } else if (_best) {
+              console.log("[coverIndex] no close match", { title: _nt, nearest: _bestD, thresh: RG_COVER_THRESH });
+            }
+          }
+        }
+      }
+    }
+  } catch (_e) { console.warn("[coverIndex] skipped:", _e && _e.message); }
   if (cgc.labelDetected && cgc.officialCGCGrade) {
     formData.cgcGrade = normalizeGrade(cgc.officialCGCGrade);
     if (cgc.officialCGCCert) formData.cgcCert = cgc.officialCGCCert;
@@ -8714,12 +8833,12 @@ async function assessCardGrade() {
   const eligibility = await checkAssessmentEligibility();
   if (!eligibility.allowed) {
     alert(eligibility.message);
-    if (_cb0) { _cb0.textContent = _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE"; _cb0.disabled = false; _cb0.style.opacity = ""; }
+    if (_cb0) { _cb0.textContent = _assessed ? "RE-ASSESS GRADE" : "ASSESS GRADE"; _cb0.disabled = false; _cb0.style.opacity = ""; }
     return;
   }
   if (window._userCredits !== undefined && window._userCredits <= 0) {
     if (confirm("You have no assessment credits remaining. Would you like to buy more?")) showBuyCredits();
-    if (_cb0) { _cb0.textContent = _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE"; _cb0.disabled = false; _cb0.style.opacity = ""; }
+    if (_cb0) { _cb0.textContent = _assessed ? "RE-ASSESS GRADE" : "ASSESS GRADE"; _cb0.disabled = false; _cb0.style.opacity = ""; }
     return;
   }
 
@@ -8727,6 +8846,7 @@ async function assessCardGrade() {
   const _cb = document.getElementById("assess-btn") || document.getElementById("hg-assess-btn");
   if (_cb) { _cb.textContent = "ASSESSING…"; _cb.disabled = true; _cb.style.opacity = "0.75"; }
 
+  _capturePrevAssessResult(); // S21: show the prior grade sliding in during the card scan (matches comics)
   const scanController = window.RobograderScan
     ? window.RobograderScan.runScanAnimation(formData.images || [], "card")
     : { promise: Promise.resolve(), cancel: () => {} };
@@ -8817,12 +8937,14 @@ function _cardIdentityHTML(sel) {
   const artist = (ci.illustrator || ci.artist || "").toString().trim();
   const set = (ci.set || "").toString().trim();
   const line2 = [num, year].filter(Boolean).join(", ");
-  const line4 = [artist ? "Artist: " + artist : "", set].filter(Boolean).join(", ");
+  const setLine = set;
+  const artistLine = artist ? "Artist: " + artist : "";
   return `<div>
     <h2 style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:26px;font-weight:900;color:#0d0d0f;line-height:1.1;margin:0">${esc(sel.title || "Card")}</h2>
     ${line2 ? `<div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:18px;font-weight:600;color:#3a2e24;margin-top:6px">${esc(line2)}</div>` : ""}
     ${variant ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#6a5a4a;margin-top:4px">${esc(variant)}</div>` : ""}
-    ${line4 ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:500;color:#8a7a6a;margin-top:4px">${esc(line4)}</div>` : ""}
+    ${setLine ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:500;color:#8a7a6a;margin-top:4px">${esc(setLine)}</div>` : ""}
+    ${artistLine ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:500;color:#8a7a6a;margin-top:4px">${esc(artistLine)}</div>` : ""}
   </div>`;
 }
 
@@ -9427,7 +9549,7 @@ function renderForm() {
       return img ? `<div class="drag-slot" draggable="true"\n                  ondragstart="dragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"\n                  onclick="tapSlot(${i},'main')">\n                  <img src="${img}"${_isCardForm ? ` style="width:100%;aspect-ratio:${i < 2 ? '5/7' : '5/2'};object-fit:cover;display:block;border-radius:4px"` : ''}>\n                  <button class="slot-edit" onclick="event.stopPropagation();openCropper('main',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>\n                  <button class="slot-x" onclick="event.stopPropagation();removeImg(${i})">×</button>\n                 </div>` : `<div class="drag-slot" style="padding:0;background:none;"\n                  ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"\n                  onclick="tapSlot(${i},'main')">\n                  ${_isCardForm ? `<div style="width:100%;aspect-ratio:${i < 2 ? '5/7' : '5/2'};background:#161616;border-radius:4px"></div>` : `<img src="${SLOT_GHOSTS[i]}" style="width:100%;height:auto;display:block;border-radius:4px;opacity:0.7;">`}\n                  <div style="position:absolute;inset:0;pointer-events:none;">\n                    <span style="position:absolute;top:8px;left:10px;font-size:11px;font-weight:700;color:#000;letter-spacing:1px;text-transform:uppercase;background:rgba(255,255,255,0.75);padding:2px 6px;border-radius:3px;">${slotLabels[i]}</span>\n                  </div>\n                 </div>`;
     };
     return formData.labelDetected ? `\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">\n              ${renderSlot(0)}\n              ${renderSlot(1)}\n            </div>\n          ` : `\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">\n              ${renderSlot(0)}\n              ${renderSlot(1)}\n            </div>\n            ${renderSlot(2)}\n            ${renderSlot(3)}\n          `;
-  })()}\n      </div>\n      ${_preAssessPGPanel() || ""}\n      <div style="display:flex;justify-content:center;margin-top:12px"><button id="assess-btn" class="rg-btn rg-btn-assess rg-btn-bronze${_assessed ? ' reassess' : ''}${assessing ? ' assessing' : ''}" onclick="assessGrade()" ${!formData.images || !formData.images[0] || assessing ? "disabled" : ""}>${assessing ? "Assessing…" : _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE"}</button></div>\n      ${_cardDeepSectionHtml(formData)}${(!_isCardForm && showDeepTier(formData)) ? `\n      <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">DEEP ASSESSMENT CORNER MACROS</div>\n        <div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Tighten the grade with more detail where small defects are most common.</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\n          ${[ 0, 1, 2, 3 ].map(i => {
+  })()}\n      </div>\n      ${_preAssessPGPanel() || ""}\n      <div style="display:flex;justify-content:center;margin-top:12px"><button id="assess-btn" class="rg-btn rg-btn-assess rg-btn-bronze${_assessed ? ' reassess' : ''}${assessing ? ' assessing' : ''}" onclick="assessGrade()" ${!formData.images || !formData.images[0] || assessing ? "disabled" : ""}>${assessing ? "Assessing…" : _assessed ? (_isCardForm ? "RE-ASSESS GRADE" : "RE-RUN MAIN ASSESSMENT") : "ASSESS GRADE"}</button></div>\n      ${_cardDeepSectionHtml(formData)}${(!_isCardForm && showDeepTier(formData)) ? `\n      <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">DEEP ASSESSMENT CORNER MACROS</div>\n        <div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Tighten the grade with more detail where small defects are most common.</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\n          ${[ 0, 1, 2, 3 ].map(i => {
     const cornerLabels = [ "Top Left", "Top Right", "Bottom Left", "Bottom Right" ];
     const cornerGhosts = [ "assets/ghosts/TopLeft_Macro.jpg", "assets/ghosts/TopRight_Macro.jpg", "assets/ghosts/BottomLeft_Macro.jpg", "assets/ghosts/BottomRight_Macro.jpg" ];
     const img = (formData.cornerImages || [])[i];
