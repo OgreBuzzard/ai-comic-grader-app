@@ -80,6 +80,28 @@ export default async function handler(req, res) {
 
     await itemRef.update(upd);
 
+    // S21 cover-index: teach the corrected issue number to this cover's
+    // fingerprint so future identical covers auto-number correctly. Comics only
+    // (cards later); requires a coverHash stamped on the item at assess time.
+    // Best-effort — the identity save above already succeeded regardless.
+    try {
+      const coverHash = data.coverHash;
+      const finalTitle = title != null ? String(title) : prevTitle;
+      const finalIssue = issue != null ? String(issue) : String(prevIssue || '');
+      if (!isCard && coverHash && finalTitle && finalIssue) {
+        const key = finalTitle.trim().toLowerCase().replace(/[\/#]/g, ' ').replace(/\s+/g, ' ').trim();
+        if (key) {
+          const publisher = (data.comicData && data.comicData.publisher) || data.publisher || '';
+          const idxRef = db.doc(`cover_index/${key}`);
+          const idxSnap = await idxRef.get();
+          const prev = (idxSnap.exists && idxSnap.data() && Array.isArray(idxSnap.data().entries)) ? idxSnap.data().entries : [];
+          const entries = prev.filter(e => e && e.phash && e.phash !== coverHash);
+          entries.push({ issue: finalIssue, phash: coverHash, publisher, addedAt: new Date().toISOString() });
+          await idxRef.set({ entries }, { merge: true });
+        }
+      }
+    } catch (e) { /* non-fatal: identity already saved */ }
+
     return res.status(200).json({
       success: true,
       message: `Saved${title != null ? ` · title "${prevTitle}" → "${title}"` : ''}${issue != null ? ` · ${isCard ? 'no.' : 'issue'} "${prevIssue}" → "${issue}"` : ''}`

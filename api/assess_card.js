@@ -372,7 +372,8 @@ DO NOT include any text outside the JSON.
     "focus":    "<A | B | C>",
     "lighting": "<A | B | C>",
     "cropping": "<A | B | C>",
-    "angle":    "<A | B | C>"
+    "angle":    "<A | B | C>",
+    "flags": [ { "category": "<focus | lighting | cropping | angle>", "image": "<which photo: Front, Back, Top Macro, or Bottom Macro>", "note": "<one terse reason this photo scored B or C and how to reshoot it>" } ]
   },
   "_diagnostics": {
     "referenceImageUsed":  <true | false>,
@@ -510,6 +511,9 @@ You are looking at photographs of a single trading card. Your job is to:
   5. Grade the PHOTO QUALITY separately from the card, in "photograder": for each of
      focus, lighting, cropping, angle give A (good), B (minor issue), or C (poor —
      actively limited the assessment). This grades the PHOTOS, not the card.
+     For EVERY axis you grade B or C, add one entry to "photograder.flags" naming the
+     affected image (Front, Back, Top Macro, or Bottom Macro) and a terse reason +
+     fix. If all four axes are A, "flags" is an empty array.
 
 DEFECT LIST STYLE (applies to every entry in "defects"):
   - Terse list items, NOT full sentences. No trailing period.

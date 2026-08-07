@@ -190,6 +190,15 @@ service cloud.firestore {
       allow read: if true;
       allow write: if false;
     }
+    // Cover-index (S21): perceptual-hash -> corrected issue number. Written ONLY
+    // by admin/api/set_ident.js (Admin SDK bypasses write) on a Fix-Identity
+    // correction; the app reads it after identification to adopt a previously-
+    // corrected issue number for a matching cover. Only {issue, phash, publisher,
+    // addedAt} per title doc — no personal data. Client read (auth); no client write.
+    match /cover_index/{title} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
     match /referrals/{referralId} {
       allow read, write: if false;
     }

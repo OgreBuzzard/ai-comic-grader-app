@@ -2576,10 +2576,21 @@ function _fmvInitBounds(it) {
 }
 function tapFmv(cell) {
   if (cell === 0) return;
-  // Each tap raises this grade AND every grade below it by one tier (stacking —
-  // tap again to raise further). Max tier 13 (12 steps). Use Clear to reset.
-  if (_fmvBounds.length >= 12) return;
-  _fmvBounds.push(cell);
+  // Each tap raises this grade AND every grade below it by one tier (stacking).
+  // When a cell reaches the max tier 13, one more tap CYCLES it back to the
+  // lowest it can be — one tier above the cell directly above it (e.g. cell
+  // above = 4 → this cell cycles to 5). Use Clear to reset everything.
+  const below = i => _fmvBounds.filter(b => b <= i).length; // bounds at/above this row in-list
+  const curUncapped = 1 + below(cell);
+  if (curUncapped >= 13) {
+    // Cycle: strip the extra bounds stacked AT this cell, leaving exactly one,
+    // so this cell drops to (tier of the cell above) + 1.
+    _fmvBounds = _fmvBounds.filter(b => b !== cell);
+    _fmvBounds.push(cell);
+  } else {
+    if (_fmvBounds.length >= 12) return;
+    _fmvBounds.push(cell);
+  }
   _fmvBounds.sort((x, y) => x - y);
   renderFmvEditor(window._fmvItem);
 }

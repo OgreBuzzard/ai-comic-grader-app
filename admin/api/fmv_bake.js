@@ -44,6 +44,17 @@ export default async function handler(req, res) {
     base.curves = Array.isArray(base.curves) ? base.curves : [];
     const curveKey = c => JSON.stringify(c);
     const curveIndex = new Map(base.curves.map((c, i) => [curveKey(c), i]));
+    // Self-heal: fold any legacy inline-array books in the BASE file into the
+    // shared curves table too, so a bake always emits a fully compact file.
+    for (const bk of Object.keys(base.books)) {
+      const bv = base.books[bk];
+      if (Array.isArray(bv)) {
+        const bck = curveKey(bv);
+        let bci = curveIndex.get(bck);
+        if (bci === undefined) { bci = base.curves.length; base.curves.push(bv); curveIndex.set(bck, bci); }
+        base.books[bk] = bci;
+      }
+    }
     let merged = 0;
     for (const k of Object.keys(ov)) {
       let breaks = ov[k];

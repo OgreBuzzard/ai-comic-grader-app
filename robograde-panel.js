@@ -274,7 +274,7 @@
             return `<span style="display:inline-flex;gap:1px;align-items:center;line-height:1">${_s}</span>`;
           })()}</div>
           <span style="position:relative;display:inline-block;line-height:1"><span style="font-family:'Noto Sans Display',sans-serif;font-weight:900;color:${CHARTREUSE};line-height:1;font-size:62px;display:inline-block;transform:scaleX(0.80);transform-origin:center">${_v2 ? String(_v2.grade).replace(/[+-]$/, '') : scoreRounded}</span>${_v2 && /[+-]$/.test(String(_v2.grade)) ? `<span style="position:absolute;left:100%;top:8px;margin-left:-2px;font-family:'Noto Sans Display',sans-serif;font-size:26px;font-weight:500;color:${CHARTREUSE};line-height:1">${String(_v2.grade).slice(-1)}</span>` : ''}</span>
-          <div style="font-size:8px;font-weight:700;color:#5a7028;letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">V${(window.RG_GRADING_VERSION || '4.57')}</div>
+          <div style="font-size:8px;font-weight:700;color:#5a7028;letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">V${(window.RG_GRADING_VERSION || '4.60')}</div>
         </div>
         <div style="flex:1;display:grid;grid-template-columns:2fr 2fr 1fr;grid-template-rows:auto auto;gap:4px">
           <!-- Row 1: Front spans the full width of the sub-score grid. The
@@ -410,7 +410,7 @@
     }, 0) : 0;
     const precision = (_deep ? 1 : 2) + _pen;
     const _stars = _deep ? 2 : 1;
-    const _verLabel = "V" + (window.RG_GRADING_VERSION || "4.59");
+    const _verLabel = "V" + (window.RG_GRADING_VERSION || "4.60");
 
     // Consistent grade rendering: big base + smaller (same-weight) +/- suffix.
     // Used by the main score AND every subscore so all +/- match.
@@ -420,7 +420,7 @@
       const base = m ? m[1] : s;
       const suf = (m && m[2]) ? m[2] : "";
       const sup = Math.round(baseSize * 0.5);
-      return `<span style="display:inline-flex;align-items:flex-start;line-height:1;font-family:'Noto Sans Display',sans-serif;font-weight:800;color:${color}"><span style="font-size:${baseSize}px;line-height:1">${base}</span>${suf ? `<span style="font-size:${sup}px;line-height:1;margin-left:1px">${suf}</span>` : ""}</span>`;
+      return `<span style="display:inline-flex;align-items:center;line-height:1;font-family:'Noto Sans Display',sans-serif;font-weight:800;color:${color}"><span style="font-size:${baseSize}px;line-height:1">${base}</span>${suf ? `<span style="font-size:${sup}px;line-height:1;margin-left:1px">${suf}</span>` : ""}</span>`;
     };
 
     // ---------- defects ----------
@@ -487,11 +487,11 @@
     const _cf = faceCentering("front"), _cb = faceCentering("back");
     const _hasCentering = [_cf.top, _cf.bottom, _cf.left, _cf.right, _cb.top, _cb.bottom, _cb.left, _cb.right].some(x => x != null && x !== "" && !isNaN(x));
     const nrm = x => (x == null || x === "" || isNaN(x)) ? "–" : String(x);
-    const numFont = "font-size:10px;font-weight:700;color:" + PAPER_INK + ";font-family:'IBM Plex Mono','Menlo',monospace";
+    const numFont = "font-size:10px;font-weight:700;color:" + CHARTREUSE + ";font-family:'IBM Plex Mono','Menlo',monospace";
     const centerRect = (label, v) => `<div style="text-align:center">
       <div style="font-size:9px;letter-spacing:1px;color:${PAPER_INK_HD};font-weight:700;margin-bottom:5px;font-family:'IBM Plex Mono','Menlo',monospace">${label}</div>
-      <div style="position:relative;width:64px;height:90px;margin:0 auto;background:#fff;border:2px solid ${PAPER_INK_HD};border-radius:8px">
-        <div style="position:absolute;top:16px;bottom:16px;left:14px;right:14px;border:1.5px solid ${PAPER_INK_LT};border-radius:4px"></div>
+      <div style="position:relative;width:64px;height:90px;margin:0 auto;background:${OLIVE};border:2px solid ${OLIVE_LT};border-radius:8px">
+        <div style="position:absolute;top:16px;bottom:16px;left:14px;right:14px;border:1.5px solid ${OLIVE_LT};border-radius:4px"></div>
         <div style="position:absolute;top:1px;left:0;right:0;text-align:center;${numFont}">${nrm(v.top)}</div>
         <div style="position:absolute;bottom:1px;left:0;right:0;text-align:center;${numFont}">${nrm(v.bottom)}</div>
         <div style="position:absolute;left:1px;top:0;bottom:0;display:flex;align-items:center;justify-content:center;${numFont}">${nrm(v.left)}</div>
@@ -503,14 +503,9 @@
     const sectionsHTML = [catSection("SURFACE", vSurface, surfaceRows), catSection("CORNERS", vCorners, cornerRows), catSection("EDGES", vEdges, edgeRows)].filter(Boolean).join("") + centeringCatHTML;
 
     // ---------- Photograder ----------
-    let pgHTML = "";
-    if (_pg && true) {
-      const has = k => /^[ABC]$/.test(String(_pg[k] == null ? "" : _pg[k]).trim().toUpperCase());
-      if (has("focus") || has("lighting") || has("cropping") || has("angle")) {
-        const cells = ["FOCUS", "LIGHTING", "CROPPING", "ANGLE"].map(L => _pgCell(L, _pg[L.toLowerCase()])).join("");
-        pgHTML = `<div style="margin-top:14px;padding-bottom:2px"><div style="font-size:12px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;text-align:center;margin-bottom:10px">PHOTOGRADER</div><div style="display:flex;gap:6px">${cells}</div></div>`;
-      }
-    }
+    // Full Photograder panel (cells + per-image guidance flags) via the shared
+    // renderPhotograderPanel — identical to comics, single source.
+    const pgHTML = (typeof renderPhotograderPanel === "function") ? renderPhotograderPanel(_pg) : "";
 
     // ---------- Provenance ----------
     let provenanceHTML = "";
@@ -532,13 +527,22 @@
     </div>`;
 
     // ---------- Sub-grade grid: comic layout (SURFACE full row; CORN/EDGE/CENTER 2/2/1) ----------
-    const bigCell = (label, val) => `<div style="grid-column:1/-1;background:${OLIVE};border-radius:6px;padding:10px 6px;text-align:center"><div style="height:28px;display:flex;align-items:center;justify-content:center">${tierHTML(val, 26, CHARTREUSE)}</div><div style="font-size:9px;color:${OLIVE_LT};letter-spacing:1.5px;margin-top:3px">${label}</div></div>`;
-    const smCell = (label, val) => `<div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center;min-width:0"><div style="height:20px;display:flex;align-items:center;justify-content:center">${tierHTML(val, 18, CHARTREUSE)}</div><div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:2px">${label}</div></div>`;
-    // Centering cell: inner rectangle holding the score — a mini "card margins" glyph, no label.
-    const centerCell = `<div style="background:${OLIVE};border-radius:6px;padding:6px;display:flex;align-items:center;justify-content:center;min-width:0"><div style="border:1.5px solid ${OLIVE_LT};border-radius:4px;width:74%;min-height:30px;display:flex;align-items:center;justify-content:center;padding:3px 0">${tierHTML(vCentering, 16, CHARTREUSE)}</div></div>`;
-    const subGrid = `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
-      <div style="display:grid;grid-template-columns:1fr">${bigCell("SURFACE", vSurface)}</div>
-      <div style="display:grid;grid-template-columns:2fr 2fr 1fr;gap:4px;align-items:stretch">${smCell("CORN", vCorners)}${smCell("EDGE", vEdges)}${centerCell}</div>
+    // Sub-grade cells fill a fixed 104px column so the two rows exactly match the
+    // score box height. box-sizing:border-box keeps bordered cells aligned.
+    const _HL = "#c8e838"; // bright accent for CORNERS marks / EDGES border
+    const bigCell = (label, val) => `<div style="flex:1;background:${OLIVE};border-radius:6px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2px 6px">${tierHTML(val, 26, CHARTREUSE)}<div style="font-size:9px;color:${OLIVE_LT};letter-spacing:1.5px;margin-top:4px">${label}</div></div>`;
+    const _cornerMarks = ["top:4px;left:4px;border-top:2.5px solid " + _HL + ";border-left:2.5px solid " + _HL + ";border-top-left-radius:3px", "top:4px;right:4px;border-top:2.5px solid " + _HL + ";border-right:2.5px solid " + _HL + ";border-top-right-radius:3px", "bottom:4px;left:4px;border-bottom:2.5px solid " + _HL + ";border-left:2.5px solid " + _HL + ";border-bottom-left-radius:3px", "bottom:4px;right:4px;border-bottom:2.5px solid " + _HL + ";border-right:2.5px solid " + _HL + ";border-bottom-right-radius:3px"].map(x => `<span style="position:absolute;width:10px;height:10px;${x}"></span>`).join("");
+    const smCell = (label, val, accent) => {
+      const edge = accent === "edges" ? `border:2px solid ${_HL};` : "";
+      const marks = accent === "corners" ? _cornerMarks : "";
+      return `<div style="position:relative;background:${OLIVE};border-radius:6px;box-sizing:border-box;${edge}display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0;padding:2px">${marks}<div style="line-height:1">${tierHTML(val, 18, CHARTREUSE)}</div><div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:3px">${label}</div></div>`;
+    };
+    // Centering cell: inner rectangle FIXED at a constant inset (card-margin look),
+    // independent of the number size.
+    const centerCell = `<div style="position:relative;background:${OLIVE};border-radius:6px;box-sizing:border-box;min-width:0"><div style="position:absolute;inset:8px;border:1.5px solid ${OLIVE_LT};border-radius:4px;display:flex;align-items:center;justify-content:center">${tierHTML(vCentering, 16, CHARTREUSE)}</div></div>`;
+    const subGrid = `<div style="flex:1;min-width:0;height:104px;display:flex;flex-direction:column;gap:4px">
+      <div style="flex:1;min-height:0;display:flex">${bigCell("SURFACE", vSurface)}</div>
+      <div style="flex:1;min-height:0;display:grid;grid-template-columns:2fr 2fr 1fr;gap:4px">${smCell("COR.", vCorners, "corners")}${smCell("EDGES", vEdges, "edges")}${centerCell}</div>
     </div>`;
 
     return `<div style="background:${BG};border:1.5px solid ${OLIVE_MID};border-radius:12px;padding:14px 14px 14px;margin-bottom:8px;overflow:hidden">

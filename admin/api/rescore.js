@@ -240,18 +240,41 @@ export default async function handler(req, res) {
       adminEditedBy: decoded.email
     };
 
+    // Rescore = a fresh grade event: stamp the results date to now and move the
+    // pre-rescore grade into Past Assessments (assessmentHistory), matching how
+    // the app records a new assessment.
+    const nowIso = new Date().toISOString();
+    const priorEntry = {
+      grade: String(dataObj.predictedGrade || dataObj.assessedCGCGrade || ''),
+      psaGrade: '',
+      pageQuality: dataObj.pageQuality || '',
+      rgScore: (currentRG.score != null) ? Math.round(currentRG.score) : null,
+      rgVersion: currentRG.version || null,
+      rgConfidenceRange: (currentRG.confidenceRange != null) ? Math.round(currentRG.confidenceRange) : null,
+      rgHighGradeUnlocked: !!dataObj.highGradeUnlocked,
+      roboGradeId: dataObj.roboGradeId || '',
+      date: dataObj.roboGradeDate || '',
+      adminRescored: true
+    };
+    const priorHistory = Array.isArray(dataObj.assessmentHistory) ? dataObj.assessmentHistory : [];
+    const newHistory = [priorEntry, ...priorHistory];
+
     // Write to the correct location based on schema version
     if (isV3) {
       await itemRef.update({
         'comicData.roboGrade': updatedRG,
         'comicData.predictedGrade': predictedGradeStr,
-        'comicData.assessedCGCGrade': predictedGradeStr
+        'comicData.assessedCGCGrade': predictedGradeStr,
+        'comicData.assessmentHistory': newHistory,
+        roboGradeDate: nowIso
       });
     } else {
       await itemRef.update({
         roboGrade: updatedRG,
         predictedGrade: predictedGradeStr,
-        assessedCGCGrade: predictedGradeStr
+        assessedCGCGrade: predictedGradeStr,
+        assessmentHistory: newHistory,
+        roboGradeDate: nowIso
       });
     }
 
