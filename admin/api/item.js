@@ -71,8 +71,21 @@ function matchFmv(idx, title, issue, grade, printing, year) {
   }
   const g = parseFloat(grade);
   if (!isFinite(g)) return null;
-  let breaks = idx.books[_nkTitle(title) + '|' + _nkIssue(issue)];
-  if (typeof breaks === 'number' && idx.curves) breaks = idx.curves[breaks];
+  const _key = _nkTitle(title) + '|' + _nkIssue(issue);
+  let breaks;
+  // Volume/year model (mirrors the app): pick the curve whose [minYear,maxYear]
+  // contains the cover year; no year/no match -> no curve (blanket/null).
+  const _vols = idx.volumes && idx.volumes[_key];
+  if (Array.isArray(_vols) && _vols.length) {
+    const _vy = parseInt(year, 10); let _ci = null;
+    if (isFinite(_vy)) { for (const _c of _vols) { if (_vy >= _c[1] && _vy <= _c[2]) { _ci = _c[0]; break; } } }
+    breaks = (_ci != null && idx.curves) ? idx.curves[_ci] : null;
+  } else {
+    breaks = idx.books[_key];
+    if (typeof breaks === 'number' && idx.curves) breaks = idx.curves[breaks];
+    const _vg = idx.volumeGuards && idx.volumeGuards[_key];
+    if (_vg && Array.isArray(breaks)) { const _vy = parseInt(year, 10); if (isFinite(_vy) && _vy > _vg) breaks = null; }
+  }
   if (!Array.isArray(breaks) || !breaks.length) {
     // S20 blanket rule (mirrors the app): uncovered 1991+ books default to tier 1.
     const y = parseInt(year, 10);

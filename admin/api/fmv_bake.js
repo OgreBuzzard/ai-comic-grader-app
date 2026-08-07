@@ -33,6 +33,7 @@ export default async function handler(req, res) {
     const r = await fetch('https://robograder.app/' + fileName, { cache: 'no-store' });
     const base = r.ok ? await r.json() : { tiers: {}, curves: [], books: {}, volumeGuards: {} };
     base.books = base.books || {};
+    base.volumes = base.volumes || {}; // carry the volume/year model through untouched
 
     const db = getFirestore();
     const snap = await db.doc('fmv_dashboard/' + cat).get();

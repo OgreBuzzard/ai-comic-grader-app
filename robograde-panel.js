@@ -531,15 +531,18 @@
     // score box height. box-sizing:border-box keeps bordered cells aligned.
     const _HL = "#c8e838"; // bright accent for CORNERS marks / EDGES border
     const bigCell = (label, val) => `<div style="flex:1;background:${OLIVE};border-radius:6px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2px 6px">${tierHTML(val, 26, CHARTREUSE)}<div style="font-size:9px;color:${OLIVE_LT};letter-spacing:1.5px;margin-top:4px">${label}</div></div>`;
-    const _cornerMarks = ["top:4px;left:4px;border-top:2.5px solid " + _HL + ";border-left:2.5px solid " + _HL + ";border-top-left-radius:3px", "top:4px;right:4px;border-top:2.5px solid " + _HL + ";border-right:2.5px solid " + _HL + ";border-top-right-radius:3px", "bottom:4px;left:4px;border-bottom:2.5px solid " + _HL + ";border-left:2.5px solid " + _HL + ";border-bottom-left-radius:3px", "bottom:4px;right:4px;border-bottom:2.5px solid " + _HL + ";border-right:2.5px solid " + _HL + ";border-bottom-right-radius:3px"].map(x => `<span style="position:absolute;width:10px;height:10px;${x}"></span>`).join("");
+    // CORNERS accent: bright L-marks flush at the four outer corners (corners lit,
+    // edges normal). EDGES accent: bright bars at the mid-point of each side
+    // (edges lit, corners normal) — the visual inverse of CORNERS.
+    const _cornerMarks = ["top:0;left:0;border-top:2.5px solid " + _HL + ";border-left:2.5px solid " + _HL + ";border-top-left-radius:6px", "top:0;right:0;border-top:2.5px solid " + _HL + ";border-right:2.5px solid " + _HL + ";border-top-right-radius:6px", "bottom:0;left:0;border-bottom:2.5px solid " + _HL + ";border-left:2.5px solid " + _HL + ";border-bottom-left-radius:6px", "bottom:0;right:0;border-bottom:2.5px solid " + _HL + ";border-right:2.5px solid " + _HL + ";border-bottom-right-radius:6px"].map(x => `<span style="position:absolute;width:11px;height:11px;${x}"></span>`).join("");
+    const _edgeMarks = ["top:0;left:30%;right:30%;height:2.5px;background:" + _HL, "bottom:0;left:30%;right:30%;height:2.5px;background:" + _HL, "left:0;top:30%;bottom:30%;width:2.5px;background:" + _HL, "right:0;top:30%;bottom:30%;width:2.5px;background:" + _HL].map(x => `<span style="position:absolute;${x}"></span>`).join("");
     const smCell = (label, val, accent) => {
-      const edge = accent === "edges" ? `border:2px solid ${_HL};` : "";
-      const marks = accent === "corners" ? _cornerMarks : "";
-      return `<div style="position:relative;background:${OLIVE};border-radius:6px;box-sizing:border-box;${edge}display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0;padding:2px">${marks}<div style="line-height:1">${tierHTML(val, 18, CHARTREUSE)}</div><div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:3px">${label}</div></div>`;
+      const marks = accent === "corners" ? _cornerMarks : accent === "edges" ? _edgeMarks : "";
+      return `<div style="position:relative;background:${OLIVE};border-radius:6px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0;padding:2px">${marks}<div style="line-height:1">${tierHTML(val, 18, CHARTREUSE)}</div><div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:3px">${label}</div></div>`;
     };
     // Centering cell: inner rectangle FIXED at a constant inset (card-margin look),
     // independent of the number size.
-    const centerCell = `<div style="position:relative;background:${OLIVE};border-radius:6px;box-sizing:border-box;min-width:0"><div style="position:absolute;inset:8px;border:1.5px solid ${OLIVE_LT};border-radius:4px;display:flex;align-items:center;justify-content:center">${tierHTML(vCentering, 16, CHARTREUSE)}</div></div>`;
+    const centerCell = `<div style="position:relative;background:${OLIVE};border-radius:6px;box-sizing:border-box;min-width:0"><div style="position:absolute;inset:3px;border:1.5px solid ${OLIVE_LT};border-radius:4px;display:flex;align-items:center;justify-content:center">${tierHTML(vCentering, 16, CHARTREUSE)}</div></div>`;
     const subGrid = `<div style="flex:1;min-width:0;height:104px;display:flex;flex-direction:column;gap:4px">
       <div style="flex:1;min-height:0;display:flex">${bigCell("SURFACE", vSurface)}</div>
       <div style="flex:1;min-height:0;display:grid;grid-template-columns:2fr 2fr 1fr;gap:4px">${smCell("COR.", vCorners, "corners")}${smCell("EDGES", vEdges, "edges")}${centerCell}</div>
