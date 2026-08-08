@@ -1003,38 +1003,30 @@ async function renderDashboard() {
   state.selectedUid = null;
   state.selectedItemId = null;
   root.innerHTML = `
-    <header style="flex-direction:column;align-items:stretch;gap:6px">
-      <div style="display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap">
-        <h1 style="font-size:15px;letter-spacing:1px;margin:5px 0 0 0">RG ADMIN</h1>
-        <button class="sign-out" id="summary-btn" style="padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Summary</button>
-        <div style="display:flex;flex-direction:column;gap:4px">
-          <button class="sign-out" id="export-btn" style="padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Export</button>
-          <label style="display:inline-flex;align-items:center;gap:3px" title="Date range applied to Export + Summary (by assessment/added date)">
-            <select id="export-range" onchange="_onRangeChange()" style="background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:8px;padding:3px 6px;font-size:11px">
-              <option value="all">All time</option>
-              <option value="today">Today</option>
-              <option value="7d">Last 7d</option>
-              <option value="30d">Last 30d</option>
-              <option value="month">This month</option>
-              <option value="custom">Custom…</option>
-            </select>
-            <span id="export-range-custom" style="display:none;align-items:center;gap:2px">
-              <input type="date" id="export-from" title="From" style="font-size:10px;padding:1px 2px;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px">
-              <span style="color:#678">–</span>
-              <input type="date" id="export-to" title="To" style="font-size:10px;padding:1px 2px;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px">
-            </span>
-          </label>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:4px">
-          <button class="sign-out" id="bake-btn" style="padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer" title="Fold manual FMV entries into the selected category's fmv_*.json for download">FMV</button>
-          <select id="bake-cat" style="padding:3px 6px;font-size:11px;background:#1c1c22;color:#ccc;border:1px solid #333;border-radius:8px" title="Which FMV file to bake"><option value="comics">Comics</option><option value="pokemon">Pokémon</option><option value="magic">Magic</option><option value="baseball">Baseball</option></select>
-        </div>
-        <button class="sign-out" id="signout-btn" style="padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer;margin-left:auto">Sign Out</button>
-        <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
-          <button class="sign-out" id="cache-enabled" onclick="_toggleCache()" style="padding:5px 12px;font-size:11px;border:1px solid #333;border-radius:8px;cursor:pointer" title="Assessment prompt caching on/off">Cache</button>
-          <select id="cache-ttl" onchange="_saveCacheCfg()" style="background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:8px;padding:3px 6px;font-size:11px"><option value="1h" ${_cacheCfg.ttl !== '5m' ? 'selected' : ''}>1h</option><option value="5m" ${_cacheCfg.ttl === '5m' ? 'selected' : ''}>5m</option></select>
-        </div>
-      </div>
+    <header style="display:grid;grid-template-columns:auto auto auto auto 1fr auto;column-gap:8px;row-gap:5px;align-items:center">
+      <h1 style="grid-column:1;grid-row:1;font-size:15px;letter-spacing:1px;margin:0">RG ADMIN</h1>
+      <button class="sign-out" id="summary-btn" style="grid-column:2;grid-row:1;padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Summary</button>
+      <button class="sign-out" id="export-btn" style="grid-column:3;grid-row:1;padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Export</button>
+      <button class="sign-out" id="bake-btn" style="grid-column:4;grid-row:1;padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer" title="Fold manual FMV entries into the selected category's fmv_*.json for download">FMV</button>
+      <button class="sign-out" id="cache-enabled" onclick="_toggleCache()" style="grid-column:6;grid-row:1;justify-self:end;padding:5px 12px;font-size:11px;border:1px solid #333;border-radius:8px;cursor:pointer" title="Assessment prompt caching on/off">Cache</button>
+      <button class="sign-out" id="signout-btn" style="grid-column:1;grid-row:2;justify-self:start;padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Sign Out</button>
+      <label style="grid-column:3;grid-row:2;display:inline-flex;align-items:center;gap:3px" title="Date range applied to Export + Summary (by assessment/added date)">
+        <select id="export-range" onchange="_onRangeChange()" style="background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:8px;padding:3px 6px;font-size:11px">
+          <option value="all">All time</option>
+          <option value="today">Today</option>
+          <option value="7d">Last 7d</option>
+          <option value="30d">Last 30d</option>
+          <option value="month">This month</option>
+          <option value="custom">Custom…</option>
+        </select>
+        <span id="export-range-custom" style="display:none;align-items:center;gap:2px">
+          <input type="date" id="export-from" title="From" style="font-size:10px;padding:1px 2px;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px">
+          <span style="color:#678">–</span>
+          <input type="date" id="export-to" title="To" style="font-size:10px;padding:1px 2px;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px">
+        </span>
+      </label>
+      <select id="bake-cat" style="grid-column:4;grid-row:2;padding:3px 6px;font-size:11px;background:#1c1c22;color:#ccc;border:1px solid #333;border-radius:8px" title="Which FMV file to bake"><option value="comics">Comics</option><option value="pokemon">Pokémon</option><option value="magic">Magic</option><option value="baseball">Baseball</option></select>
+      <select id="cache-ttl" onchange="_saveCacheCfg()" style="grid-column:6;grid-row:2;justify-self:end;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:8px;padding:3px 6px;font-size:11px"><option value="1h" ${_cacheCfg.ttl !== '5m' ? 'selected' : ''}>1h</option><option value="5m" ${_cacheCfg.ttl === '5m' ? 'selected' : ''}>5m</option></select>
     </header>
     <main>
       <div id="stats-section"><div class="loading">Loading stats…</div></div>
