@@ -274,7 +274,7 @@
             return `<span style="display:inline-flex;gap:1px;align-items:center;line-height:1">${_s}</span>`;
           })()}</div>
           <span style="position:relative;display:inline-block;line-height:1"><span style="font-family:'Noto Sans Display',sans-serif;font-weight:900;color:${CHARTREUSE};line-height:1;font-size:62px;display:inline-block;transform:scaleX(0.80);transform-origin:center">${_v2 ? String(_v2.grade).replace(/[+-]$/, '') : scoreRounded}</span>${_v2 && /[+-]$/.test(String(_v2.grade)) ? `<span style="position:absolute;left:100%;top:8px;margin-left:-2px;font-family:'Noto Sans Display',sans-serif;font-size:26px;font-weight:500;color:${CHARTREUSE};line-height:1">${String(_v2.grade).slice(-1)}</span>` : ''}</span>
-          <div style="font-size:8px;font-weight:700;color:#5a7028;letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">V${(window.RG_GRADING_VERSION || '4.64')}</div>
+          <div style="font-size:8px;font-weight:700;color:#5a7028;letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">V${(window.RG_GRADING_VERSION || '4.65')}</div>
         </div>
         <div style="flex:1;display:grid;grid-template-columns:2fr 2fr 1fr;grid-template-rows:auto auto;gap:4px">
           <!-- Row 1: Front spans the full width of the sub-score grid. The
@@ -420,7 +420,7 @@
     }, 0) : 0;
     const precision = (_deep ? 1 : 2) + _pen;
     const _stars = _deep ? 2 : 1;
-    const _verLabel = "V" + (window.RG_GRADING_VERSION || "4.64");
+    const _verLabel = "V" + (window.RG_GRADING_VERSION || "4.65");
 
     // Consistent grade rendering: big base + smaller (same-weight) +/- suffix.
     // Used by the main score AND every subscore so all +/- match.
@@ -529,7 +529,7 @@
     const _starSvg = c => `<svg viewBox="0 0 24 24" width="13" height="13" style="display:inline-block;vertical-align:middle"><path d="M12.00,2.00 15.64,6.98 21.51,8.91 17.90,13.92 17.88,20.09 12.00,18.20 6.12,20.09 6.10,13.92 2.49,8.91 8.36,6.98Z" fill="${c}"/></svg>`;
     let _starsHTML = "";
     for (let i = 0; i < _stars; i++) _starsHTML += _starSvg(CHARTREUSE);
-    const scoreBox = `<div style="background:${OLIVE};border-radius:18px;width:104px;height:104px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px solid ${OLIVE_MID};position:relative">
+    const scoreBox = `<div style="background:#0f1a05;border-radius:18px;width:104px;height:104px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px solid ${OLIVE_MID};position:relative">
       ${precision > 0 ? `<span style="position:absolute;top:8px;right:8px;color:${CHARTREUSE};line-height:1;display:inline-flex;align-items:center;gap:0;font-family:'Noto Sans Display',sans-serif;font-size:16px;font-weight:800"><img src="/assets/pm-notch.svg" width="16" height="22" style="display:block" alt=""><span style="margin-left:-1px">${precision}</span></span>` : ""}
       <div style="position:absolute;top:6px;left:0;right:0;text-align:center;pointer-events:none;display:flex;justify-content:center;opacity:0.5"><span style="display:inline-flex;gap:1px;align-items:center;line-height:1">${_starsHTML}</span></div>
       <div style="line-height:1">${tierHTML(gradeLabel, 60, CHARTREUSE)}</div>

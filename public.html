@@ -35,7 +35,7 @@
      canonical copy in index.html; if you edit the ladder/CONFIG there, update here too. -->
 <script>
   window.RG_V2_DISPLAY = true;
-  window.RG_GRADING_VERSION = "4.64";
+  window.RG_GRADING_VERSION = "4.65";
   window.RGScoreV2 = (function () {
     const LADDER = ["0","0+","1-","1","1+","2-","2","2+","3-","3","3+","4-","4","4+","5-","5","5+","6-","6","6+","7-","7","7+","8-","8","8+","9-","9","9+","10-","10"];
     const CONFIG = {
@@ -474,16 +474,23 @@
     // Front + Back side by side (half-width) — matches Detail view
     if (imgs[0] || imgs[1]) {
       html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">`;
-      if (imgs[0]) html += `<div style="position:relative;border-radius:6px;overflow:hidden;background:#1a1a1a;aspect-ratio:3/4"><img src="${esc(imgs[0])}" loading="eager" onclick="openLightbox('${esc(imgs[0])}')" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;cursor:zoom-in"><div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.55);color:#fff;font-size:8px;padding:2px 5px;border-radius:3px;letter-spacing:0.5px">FRONT</div></div>`;
-      if (imgs[1]) html += `<div style="position:relative;border-radius:6px;overflow:hidden;background:#1a1a1a;aspect-ratio:3/4"><img src="${esc(imgs[1])}" loading="eager" onclick="openLightbox('${esc(imgs[1])}')" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;cursor:zoom-in"><div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.55);color:#fff;font-size:8px;padding:2px 5px;border-radius:3px;letter-spacing:0.5px">BACK</div></div>`;
+      if (imgs[0]) html += `<div style="position:relative;border-radius:6px;overflow:hidden;background:#1a1a1a;aspect-ratio:${isCard ? '5/7' : '3/4'}"><img src="${esc(imgs[0])}" loading="eager" onclick="openLightbox('${esc(imgs[0])}')" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;cursor:zoom-in"><div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.55);color:#fff;font-size:8px;padding:2px 5px;border-radius:3px;letter-spacing:0.5px">FRONT</div></div>`;
+      if (imgs[1]) html += `<div style="position:relative;border-radius:6px;overflow:hidden;background:#1a1a1a;aspect-ratio:${isCard ? '5/7' : '3/4'}"><img src="${esc(imgs[1])}" loading="eager" onclick="openLightbox('${esc(imgs[1])}')" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;cursor:zoom-in"><div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.55);color:#fff;font-size:8px;padding:2px 5px;border-radius:3px;letter-spacing:0.5px">BACK</div></div>`;
       html += `</div>`;
     }
-    // S21: match Detail view order — Front+Back, then Interior full-width, then Spine.
-    if (imgs[2]) {
-      html += `<div style="position:relative;border-radius:6px;overflow:hidden;background:#1a1a1a;aspect-ratio:3/2;margin-top:6px"><img src="${esc(imgs[2])}" loading="lazy" onclick="openLightbox('${esc(imgs[2])}')" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;cursor:zoom-in"><div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.55);color:#fff;font-size:8px;padding:2px 5px;border-radius:3px;letter-spacing:0.5px">${isCard ? 'TOP MACRO' : 'INTERIOR'}</div></div>`;
-    }
-    if (imgs[3]) {
-      html += `<div style="position:relative;border-radius:6px;overflow:hidden;background:#1a1a1a;aspect-ratio:16/5;margin-top:6px"><img src="${esc(imgs[3])}" loading="lazy" onclick="openLightbox('${esc(imgs[3])}')" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;cursor:zoom-in"><div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.55);color:#fff;font-size:8px;padding:2px 5px;border-radius:3px;letter-spacing:0.5px">${isCard ? 'BOTTOM MACRO' : 'SPINE'}</div></div>`;
+    if (isCard) {
+      // Top Front / Bottom Front macros side by side, square — matches Detail/Edit.
+      if (imgs[2] || imgs[3]) {
+        const _cm = (u, lbl) => u ? `<div style="position:relative;border-radius:6px;overflow:hidden;background:#1a1a1a;aspect-ratio:1/1"><img src="${esc(u)}" loading="lazy" onclick="openLightbox('${esc(u)}')" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;cursor:zoom-in"><div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.55);color:#fff;font-size:8px;padding:2px 5px;border-radius:3px;letter-spacing:0.5px">${lbl}</div></div>` : `<div></div>`;
+        html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">${_cm(imgs[2],'TOP FRONT')}${_cm(imgs[3],'BOTTOM FRONT')}</div>`;
+      }
+    } else {
+      if (imgs[2]) {
+        html += `<div style="position:relative;border-radius:6px;overflow:hidden;background:#1a1a1a;aspect-ratio:3/2;margin-top:6px"><img src="${esc(imgs[2])}" loading="lazy" onclick="openLightbox('${esc(imgs[2])}')" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;cursor:zoom-in"><div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.55);color:#fff;font-size:8px;padding:2px 5px;border-radius:3px;letter-spacing:0.5px">INTERIOR</div></div>`;
+      }
+      if (imgs[3]) {
+        html += `<div style="position:relative;border-radius:6px;overflow:hidden;background:#1a1a1a;aspect-ratio:16/5;margin-top:6px"><img src="${esc(imgs[3])}" loading="lazy" onclick="openLightbox('${esc(imgs[3])}')" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;cursor:zoom-in"><div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.55);color:#fff;font-size:8px;padding:2px 5px;border-radius:3px;letter-spacing:0.5px">SPINE</div></div>`;
+      }
     }
     html += `</div>`;
     return html;
@@ -689,9 +696,9 @@
     return `<div class="identity">
       <div class="book-title">${esc(data.title || ci.name || 'Card')}</div>
       ${line2 ? `<div class="issue-row"><span class="book-issue">${esc(line2)}</span></div>` : ''}
-      ${variant ? `<div class="book-publisher">${esc(variant)}</div>` : ''}
-      ${setLine ? `<div class="book-publisher" style="opacity:0.8">${esc(setLine)}</div>` : ''}
-      ${artistLine ? `<div class="book-publisher" style="opacity:0.8">${esc(artistLine)}</div>` : ''}
+      ${variant ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#6a5a4a;margin-top:4px">${esc(variant)}</div>` : ''}
+      ${setLine ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;color:#8a7a6a;margin-top:4px">${esc(setLine)}</div>` : ''}
+      ${artist ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:500;color:#8a7a6a;margin-top:4px">Artist: <strong style="font-weight:700">${esc(artist)}</strong></div>` : ''}
     </div>`;
   })();
   let cardPanelHTML = '';
