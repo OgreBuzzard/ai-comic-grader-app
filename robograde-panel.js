@@ -277,7 +277,7 @@
             return `<span style="display:inline-flex;gap:1px;align-items:center;line-height:1">${_s}</span>`;
           })()}</div>
           <span style="position:relative;display:inline-block;line-height:1"><span style="font-family:'Noto Sans Display',sans-serif;font-weight:900;color:${CHARTREUSE};line-height:1;font-size:62px;display:inline-block;transform:scaleX(0.80);transform-origin:center">${_v2 ? String(_v2.grade).replace(/[+-]$/, '') : scoreRounded}</span>${_v2 && /[+-]$/.test(String(_v2.grade)) ? `<span style="position:absolute;left:100%;top:8px;margin-left:-2px;font-family:'Noto Sans Display',sans-serif;font-size:26px;font-weight:500;color:${CHARTREUSE};line-height:1">${String(_v2.grade).slice(-1)}</span>` : ''}</span>
-          <div style="font-size:8px;font-weight:700;color:#5a7028;letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">V${(window.RG_GRADING_VERSION || '4.66')}</div>
+          <div style="font-size:8px;font-weight:700;color:#5a7028;letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">V${(window.RG_GRADING_VERSION || '4.67')}</div>
         </div>
         <div style="flex:1;display:grid;grid-template-columns:2fr 2fr 1fr;grid-template-rows:auto auto;gap:4px">
           <!-- Row 1: Front spans the full width of the sub-score grid. The
@@ -423,7 +423,7 @@
     }, 0) : 0;
     const precision = (_deep ? 1 : 2) + _pen;
     const _stars = _deep ? 2 : 1;
-    const _verLabel = "V" + (window.RG_GRADING_VERSION || "4.66");
+    const _verLabel = "V" + (window.RG_GRADING_VERSION || "4.67");
 
     // Consistent grade rendering: big base + smaller (same-weight) +/- suffix.
     // Used by the main score AND every subscore so all +/- match.
@@ -535,7 +535,7 @@
     const scoreBox = `<div style="background:#0f1a05;border-radius:18px;width:104px;height:104px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px solid ${OLIVE_MID};position:relative">
       ${precision > 0 ? `<span style="position:absolute;top:8px;right:8px;color:${CHARTREUSE};line-height:1;display:inline-flex;align-items:center;gap:0;font-family:'Noto Sans Display',sans-serif;font-size:16px;font-weight:800"><img src="/assets/pm-notch.svg" width="16" height="22" style="display:block" alt=""><span style="margin-left:-1px">${precision}</span></span>` : ""}
       <div style="position:absolute;top:6px;left:0;right:0;text-align:center;pointer-events:none;display:flex;justify-content:center;opacity:0.5"><span style="display:inline-flex;gap:1px;align-items:center;line-height:1">${_starsHTML}</span></div>
-      <div style="line-height:1">${tierHTML(gradeLabel, 60, CHARTREUSE)}</div>
+      <div style="line-height:1">${(() => { const _s=String(gradeLabel==null?"":gradeLabel); const _m=_s.match(/^(\d+|—|-)([+-])?$/); const _b=_m?_m[1]:_s; const _f=(_m&&_m[2])?_m[2]:""; return `<span style="position:relative;display:inline-block;line-height:1;font-family:'Noto Sans Display',sans-serif;font-weight:800;color:${CHARTREUSE}"><span style="font-size:60px;line-height:1;display:inline-block">${_b}</span>${_f?`<span style="position:absolute;left:100%;top:6px;font-size:30px;font-weight:600;line-height:1">${_f}</span>`:""}</span>`; })()}</div>
       <div style="font-size:8px;font-weight:700;color:#5a7028;letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">${_verLabel}</div>
     </div>`;
 

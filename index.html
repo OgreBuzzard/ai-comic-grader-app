@@ -922,6 +922,7 @@ onAuthStateChanged(auth, async user => {
     /* S16: Full Assessment (interior) slot labels are longer ("Interior Spread",
        "Exterior Staples") and clipped at 32px. Halve them to fit. */
     body.camera-kind-interior #camera-slot-label { font-size: 16px; letter-spacing: 1px; }
+    body.camera-is-card #camera-slot-label { font-size: 20px; letter-spacing: 1px; white-space: normal; line-height: 1.05; }
     #camera-progress { display: none; }
     /* Header spacer — invisible 40x40 box on the left side that mirrors the
        close button's footprint on the right. Keeps the slot label centered
@@ -1738,7 +1739,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         <a href="mailto:support@robograder.app" style="font-size:14px;font-weight:700;color:#d4af37;text-decoration:none;letter-spacing:0.3px">support@robograder.app</a>
       </div>
       <div style="font-size:11px;color:#4a3a2a;line-height:1.6;text-align:center">
-        <span id="rgVersionLine">Robograder v4.66</span> · Assessment credits are non-refundable.
+        <span id="rgVersionLine">Robograder v4.67</span> · Assessment credits are non-refundable.
         Images are stored securely in your personal account.
       </div>
       <script>
@@ -1747,7 +1748,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.66";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.67";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
@@ -6610,12 +6611,21 @@ function animateRGLadder(el, toGrade, duration) {
     if (toIdx < 0) toIdx = L.length - 1;
     const start = performance.now();
     let lastIdx = -1;
+    // Render the grade with the number locked center and the +/- absolutely
+    // positioned to the side, so cycling suffixes never shift the number.
+    const fmtLadder = (g) => {
+      const gg = String(g);
+      const mm = gg.match(/^(\d+)([+-])?$/);
+      const base = mm ? mm[1] : gg;
+      const suf = (mm && mm[2]) ? mm[2] : "";
+      return `<span style="position:relative;display:inline-block;line-height:1">${base}${suf ? `<span style="position:absolute;left:100%;top:0;font-size:0.55em;font-weight:600;line-height:1">${suf}</span>` : ""}</span>`;
+    };
     function tick(now) {
       const t = Math.min((now - start) / duration, 1);
       const eased = easeOutCubic(t);
       const idx = Math.min(Math.floor(eased * (toIdx + 1)), toIdx);
-      if (idx !== lastIdx) { el.textContent = L[idx]; lastIdx = idx; }
-      if (t < 1) requestAnimationFrame(tick); else { el.textContent = L[toIdx]; resolve(); }
+      if (idx !== lastIdx) { el.innerHTML = fmtLadder(L[idx]); lastIdx = idx; }
+      if (t < 1) requestAnimationFrame(tick); else { el.innerHTML = fmtLadder(L[toIdx]); resolve(); }
     }
     requestAnimationFrame(tick);
   });
@@ -10969,6 +10979,7 @@ async function cameraOpen(state) {
   document.body.classList.add("camera-modal-open");
   document.body.classList.remove("camera-kind-main", "camera-kind-corner", "camera-kind-interior", "camera-kind-restoration");
   document.body.classList.add(state.kind === "corner" ? "camera-kind-corner" : state.kind === "interior" || state.kind === "interiorCover" || state.kind === "restoration" ? "camera-kind-interior" : "camera-kind-main");
+  document.body.classList.toggle("camera-is-card", !!(_cameraState && _cameraState.isCard));
   const video = document.getElementById("camera-video");
   if (video) video.style.objectFit = "cover";
   if (!_cameraOrientationListener) {

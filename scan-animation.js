@@ -1412,8 +1412,16 @@
     const clip = document.createElement('div');
     clip.className = 'rg-coin-clip';
     const coin = document.createElement('img');
-    coin.src = 'assets/robocoin2.webp';
     coin.className = 'rg-coin';
+    // Gate the fade/drop until the coin image is decoded so it can NEVER pop in
+    // half-loaded — the card run sometimes hits the coin webp uncached, which
+    // showed as a pop instead of the comic's smooth fade. Pause the CSS
+    // animation, then start it on load (instant when preloaded).
+    coin.style.animationPlayState = 'paused';
+    const _startCoin = () => { coin.style.animationPlayState = 'running'; };
+    coin.addEventListener('load', _startCoin, { once: true });
+    coin.src = 'assets/robocoin2.webp';
+    if (coin.complete && coin.naturalWidth) _startCoin();
     clip.appendChild(coin);
     shell.appendChild(clip);
     // Auto-cleanup after animation completes (1.5s + 100ms buffer)
@@ -1428,6 +1436,7 @@
     debugInit();
     debugLog(`runScanAnimation called: kind=${kind||'main'}, photos=${(photoUrls||[]).filter(Boolean).length}`);
     injectStyles();
+    if (!window.__rgCoinPreloaded) { try { new Image().src = 'assets/robocoin2.webp'; window.__rgCoinPreloaded = true; } catch (e) {} }
 
     // Defensive: if a previous shell wasn't dismissed (e.g. error path),
     // tear it down before starting a fresh one.
