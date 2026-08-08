@@ -292,6 +292,7 @@ export default async function handler(req, res) {
         roboGradeId: flat.roboGradeId || '',
         score: flat.roboGrade?.score ?? null,
         assessedCGCGrade: flat.assessedCGCGrade ?? null,
+        assessedPSAGrade: flat.assessedPSAGrade ?? null,
         publicListing: !!flat.publicListing,
         highGradeAssessed,
         tier,

@@ -95,6 +95,19 @@ export default async function handler(req, res) {
     const recipientPre = await db.collection('users').doc(recipientUid).get();
     if ((recipientPre.data() || {}).referralBlocked) return res.status(403).json({ error: "That account can't receive referral bonuses.", reason: 'recipient_blocked' });
 
+    // S22: the RECIPIENT must also have purchased at least once (any production,
+    // non-refunded purchase). Both sides must have spent money for a bonus to
+    // move between them — this closes the back-and-forth credit-farming loophole.
+    const recipPurchSnap = await db.collection('purchases').where('userId', '==', recipientUid).get();
+    let recipientHasPurchase = false;
+    recipPurchSnap.forEach(d => {
+      const p = d.data() || {};
+      if (p.refunded) return;
+      if (p.environment && p.environment !== 'Production') return;
+      recipientHasPurchase = true;
+    });
+    if (!recipientHasPurchase) return res.status(400).json({ error: "That account hasn't purchased any assessments yet, so it can't receive a referral bonus.", reason: 'recipient_no_purchase' });
+
     const tier = available[0];                    // highest unused tier
     const referrerBonus = REFERRER_BONUS[tier];
     const auditRef = db.collection('referrals').doc(`${uid}_${tier}`);   // idempotency: one referral per tier

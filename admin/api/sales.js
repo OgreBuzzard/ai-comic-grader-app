@@ -48,7 +48,7 @@ function ascJwt() {
   return signingInput + '.' + sig;
 }
 
-const YMD = (d) => d.toISOString().slice(0, 10);
+const YMD = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d); // day boundary = midnight Pacific
 
 // Fetch + parse one day's SALES SUMMARY report. Returns null on 404 (no data).
 async function fetchDay(jwt, vendor, dateStr) {

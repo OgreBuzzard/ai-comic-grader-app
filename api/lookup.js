@@ -190,6 +190,8 @@ export default async function handler(req, res) {
         defects:            comic.cardData.defects || null,
         photograder:        comic.cardData.photograder || null,
         cardIdentification: comic.cardData.cardIdentification || null,
+        graderNotes:        comic.cardData.graderNotes || null,
+        reasoning:          comic.cardData.reasoning || null,
       } : undefined,
       deepAssessmentRan: comic.type === 'card'
         ? !!comic.deepAssessmentRan

@@ -1266,7 +1266,11 @@ onAuthStateChanged(auth, async user => {
     @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
     .settings-header {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 20px 18px 16px; border-bottom: 1px solid #2a2420;
+      /* Include the top safe-area inset so the close X clears the status-bar /
+         battery / notch on small phones (e.g. iPhone 13 Mini), where it was
+         previously unreachable behind the battery icon. */
+      padding: calc(env(safe-area-inset-top, 0px) + 16px) 18px 16px; border-bottom: 1px solid #2a2420;
+      position: sticky; top: 0; background: #141210; z-index: 2;
     }
     .settings-section-label {
       font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
@@ -1739,7 +1743,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         <a href="mailto:support@robograder.app" style="font-size:14px;font-weight:700;color:#d4af37;text-decoration:none;letter-spacing:0.3px">support@robograder.app</a>
       </div>
       <div style="font-size:11px;color:#4a3a2a;line-height:1.6;text-align:center">
-        <span id="rgVersionLine">Robograder v4.67</span> · Assessment credits are non-refundable.
+        <span id="rgVersionLine">Robograder v4.69</span> · Assessment credits are non-refundable.
         Images are stored securely in your personal account.
       </div>
       <script>
@@ -1748,7 +1752,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.67";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.69";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
@@ -5211,24 +5215,17 @@ function buildListingSummary(roboGradeId, title, issue, prefix) {
   }
   const rg = it.roboGrade || {};
   const lines = [ header ];
-  if (rg.score != null) {
-    const score = Math.round(rg.score);
-    let prec = "";
-    if (score < 100) {
-      if (it.highGradeUnlocked && rg.confidenceRange != null) {
-        prec = rg.confidenceRange > 0 ? ` ±${Math.round(rg.confidenceRange)}` : "";
-      } else if (score >= 90 && !it.highGradeUnlocked) {
-        prec = "+";
-      } else if (rg.confidenceRange != null) {
-        prec = rg.confidenceRange > 0 ? ` ±${Math.round(rg.confidenceRange)}` : "";
-      }
-    }
-    lines.push(`Robograde: ${score}${prec}`);
+  // Robograde only — no precision modifier in the shared text (per request).
+  if (rg.score != null) lines.push(`Robograde: ${Math.round(rg.score)}`);
+  // Predicted grade: comics use predicted/CGC; cards use the PSA prediction.
+  const predicted = (it.type === "card")
+    ? (it.assessedPSAGrade || (it.cardData && it.cardData.psaGrade) || "")
+    : (it.predictedGrade || it.assessedCGCGrade || "");
+  if (predicted) {
+    const _pg = (it.type === "card") ? String(normalizeGrade(predicted)).replace(/\.0$/, "") : normalizeGrade(predicted);
+    lines.push(`Predicted grade: ${_pg}`);
   }
-  const predicted = it.predictedGrade || it.assessedCGCGrade || "";
-  if (predicted) lines.push(`Predicted grade: ${normalizeGrade(predicted)}`);
-  const pq = (it.type === "card") ? "" : (it.pageQuality || rg.pageQuality || "");
-  if (pq) lines.push(`Pages: ${pq}`);
+  // Page Quality intentionally omitted from the shared text (per request).
   lines.push(url);
   return {
     url: url,
@@ -9671,6 +9668,7 @@ function openCropper(type, index) {
       return;
     }
     const _cropCardFB = (formData.type === "card" || !!formData._isCard) && type === "main" && index < 2;
+    const _cropComicFB = !(formData.type === "card" || !!formData._isCard) && type === "main" && index < 2;
     _cropperInstance = new Cropper(img, {
       aspectRatio: _cropCardFB ? 5/7 : NaN,
       viewMode: 1,
@@ -9696,6 +9694,18 @@ function openCropper(type, index) {
         if (_cropperInstance && typeof _cropperInstance.resize === "function") {
           requestAnimationFrame(function() {
             try { _cropperInstance.resize(); } catch (e) {}
+            // Comic Front/Back: default the crop box to ~9:14 (comic proportions),
+            // centered, filling the image to whichever edge it reaches first. Box
+            // stays NON-rigid (aspectRatio NaN) so the user can freely adjust it.
+            if (_cropComicFB && _cropperInstance) {
+              try {
+                const _cc = _cropperInstance.getCanvasData();
+                const _ar = 9 / 14;
+                let _w = _cc.width, _h = _w / _ar;
+                if (_h > _cc.height) { _h = _cc.height; _w = _h * _ar; }
+                _cropperInstance.setCropBoxData({ left: _cc.left + (_cc.width - _w) / 2, top: _cc.top + (_cc.height - _h) / 2, width: _w, height: _h });
+              } catch (e) {}
+            }
           });
         }
       }

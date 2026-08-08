@@ -180,6 +180,7 @@ export default async function handler(req, res) {
         assessmentTimingKeys: Array.isArray(flat.assessmentTimingKeys) ? flat.assessmentTimingKeys : [],
         score: flat.roboGrade?.score ?? null,
         assessedCGCGrade: flat.assessedCGCGrade ?? null,
+        assessedPSAGrade: flat.assessedPSAGrade ?? null,
         publicListing: !!flat.publicListing,
         ownership: flat.ownership || '',
         highGradeAssessed,

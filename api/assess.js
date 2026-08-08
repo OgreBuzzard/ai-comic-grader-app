@@ -484,11 +484,11 @@ export default async function handler(req, res) {
     if (m) return Number(m[0]);
     return (typeof issueYear === 'number' && issueYear > 1900) ? issueYear : null;
   })();
-  const _bookNote = getBookNote(title, issueNumber, _noteYear, 'main');
+  let _bookNote = getBookNote(title, issueNumber, _noteYear, 'main');
   if (_bookNote) {
     notesContext.push(`BOOK-SPECIFIC NOTE FOR THIS TITLE/ISSUE:\n${_bookNote}`);
   }
-  const notesBlock = notesContext.length > 0 ? '\n\n' + notesContext.join('\n\n') : '';
+  let notesBlock = notesContext.length > 0 ? '\n\n' + notesContext.join('\n\n') : '';
 
   const isCGC = true; // Unified prompt — PSA and RoboGrade derived within single pass
 
@@ -592,6 +592,19 @@ export default async function handler(req, res) {
     const _refImageStart = Date.now();
     await Promise.all([cvFetch, pqFetch]);
     phaseDelta('refImageFetchMs', _refImageStart);
+
+    // First-pass fallback: if the client sent no cover year, any year-ranged book
+    // note (lib/book_notes.js) was skipped above. Now that ComicVine has
+    // identified the issue, use its cover year to fire the note — disambiguated
+    // by the volume CV actually matched, so it can't attach to the wrong printing.
+    if (!_bookNote && _noteYear == null && referenceYear) {
+      const _bnCV = getBookNote(title, issueNumber, referenceYear, 'main');
+      if (_bnCV) {
+        _bookNote = _bnCV;
+        notesBlock += `\n\nBOOK-SPECIFIC NOTE FOR THIS TITLE/ISSUE:\n${_bnCV}`;
+        console.log(`[booknote] fired via ComicVine year ${referenceYear} for "${title}" #${issueNumber}`);
+      }
+    }
   }
 
 
@@ -911,6 +924,8 @@ CHECK 4 — RUST, FOXING and STAINS (distinct, all routinely missed → the #1 c
 If CHECK 1–4 finds anything, put it in the defects array (TAPE/MISSING PIECE/TEAR/RUST/FOXING/STAIN) with location and severity. There is no separate structuralScan field.
 
 PRINTED ELEMENTS ARE NOT DEFECTS (counter-check). A defect is physical damage — disruption of paper or ink not present as manufactured. Do NOT flag as defects: the direct-sales/direct-edition box (diamond, character head, price/issue box) in the lower-left front cover; the UPC box, publisher logo, price banner, Comics Code stamp, any trade-dress box; printed art lines, panel borders, background linework. A printed line has consistent ink and sharp registered edges; a crease/stress line disrupts paper and breaks across color irregularly. Before adding any "crease"/"color-breaking line"/"sticker"/"stain", confirm it's physical damage, not a printed feature. If unsure, do not call it a defect — inventing a defect from cover art is as harmful as missing a real one.
+
+LONG-CREASE SKEPTICISM (>= 5"): a crease measured at ROUGHLY 5 INCHES OR LONGER, running across much of the cover, is RARE as genuine handling damage — a real fold that long is catastrophic and almost never seen on a book someone submits for grading. Before recording ANY crease ~5" or longer (color-breaking or not, vertical/horizontal/diagonal), STOP and think twice: the far more likely explanation is that the line is a PRINTED element of the cover art — a motion/speed line, smoke or energy/laser streak, the edge of a depicted object, a panel or border line, or a signature stroke. Compare against the reference image if one was provided. Only record a >=5" crease as a defect when you can clearly see a PHYSICAL fold: a hard line that irregularly breaks the paper and ink and does NOT follow the printed composition. When a long line is at all ambiguous, treat it as printed art, not damage.
 
 PRODUCTION & DISTRIBUTION MARKS ARE NOT DEFECTS (counter-check). These marks are applied during printing or distribution, appear on many copies, and do NOT reduce the grade. Do NOT list them in the defects array, do NOT assign them a severity, and do NOT let them lower any subscore:
 - DATE STAMP / ARRIVAL STAMP: a stamped or inked date (sometimes a store or distributor stamp) on the cover or an interior page. It is a distribution marking, not handwriting added by an owner and not damage. An unobtrusive date/store stamp is compatible with grades all the way up. You may mention it in aiAssessment; never as a defect.
