@@ -17,6 +17,9 @@
     },
     "api/lookup.js": {
       "maxDuration": 10
+    },
+    "api/og.js": {
+      "maxDuration": 10
     }
   },
   "headers": [
@@ -66,7 +69,7 @@
     },
     {
       "source": "/id/:id",
-      "destination": "/public.html"
+      "destination": "/api/og?id=:id"
     },
     {
       "source": "/fmv.json",
