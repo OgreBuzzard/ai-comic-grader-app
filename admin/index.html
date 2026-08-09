@@ -545,6 +545,16 @@
     cursor: pointer;
   }
   #admin-lightbox .lb-btn:hover { background: #444; }
+  #admin-lightbox .alb-nav {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    width: 44px; height: 44px; border-radius: 50%;
+    background: rgba(0,0,0,0.55); color: #fff; border: 1.5px solid #555;
+    font-size: 26px; font-weight: 700; line-height: 1; padding: 0 0 3px;
+    cursor: pointer; display: none; align-items: center; justify-content: center;
+    z-index: 10000;
+  }
+  #admin-lightbox #adminlb-prev { left: 20px; }
+  #admin-lightbox #adminlb-next { right: 20px; }
 
   .empty {
     text-align: center;
@@ -1003,30 +1013,39 @@ async function renderDashboard() {
   state.selectedUid = null;
   state.selectedItemId = null;
   root.innerHTML = `
-    <header style="display:grid;grid-template-columns:auto auto auto;justify-content:start;column-gap:8px;row-gap:5px;align-items:center">
-      <h1 style="grid-column:1;grid-row:1;font-size:15px;letter-spacing:1px;margin:0">RG ADMIN</h1>
+    <header style="display:grid;grid-template-columns:auto auto auto;justify-content:start;column-gap:10px;row-gap:8px;align-items:start">
+      <h1 style="grid-column:1;grid-row:1;align-self:center;font-size:15px;letter-spacing:1px;margin:0">RG ADMIN</h1>
       <button class="sign-out" id="summary-btn" style="grid-column:2;grid-row:1;padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Summary</button>
-      <button class="sign-out" id="export-btn" style="grid-column:1;grid-row:2;padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Export</button>
-      <button class="sign-out" id="bake-btn" style="grid-column:2;grid-row:2;padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer" title="Fold manual FMV entries into the selected category's fmv_*.json for download">FMV</button>
-      <button class="sign-out" id="cache-enabled" onclick="_toggleCache()" style="grid-column:3;grid-row:1;padding:5px 12px;font-size:11px;border:1px solid #333;border-radius:8px;cursor:pointer" title="Assessment prompt caching on/off">Cache</button>
-      <button class="sign-out" id="signout-btn" style="grid-column:3;grid-row:3;padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Sign Out</button>
-      <label style="grid-column:1;grid-row:3;display:inline-flex;align-items:center;gap:3px" title="Date range applied to Export + Summary (by assessment/added date)">
-        <select id="export-range" onchange="_onRangeChange()" style="background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:8px;padding:3px 6px;font-size:11px">
-          <option value="all">All time</option>
-          <option value="today">Today</option>
-          <option value="7d">Last 7d</option>
-          <option value="30d">Last 30d</option>
-          <option value="month">This month</option>
-          <option value="custom">Custom…</option>
-        </select>
-        <span id="export-range-custom" style="display:none;align-items:center;gap:2px">
-          <input type="date" id="export-from" title="From" style="font-size:10px;padding:1px 2px;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px">
-          <span style="color:#678">–</span>
-          <input type="date" id="export-to" title="To" style="font-size:10px;padding:1px 2px;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px">
-        </span>
-      </label>
-      <select id="bake-cat" style="grid-column:2;grid-row:3;padding:3px 6px;font-size:11px;background:#1c1c22;color:#ccc;border:1px solid #333;border-radius:8px" title="Which FMV file to bake"><option value="comics">Comics</option><option value="pokemon">Pokémon</option><option value="magic">Magic</option><option value="baseball">Baseball</option></select>
-      <select id="cache-ttl" onchange="_saveCacheCfg()" style="grid-column:3;grid-row:2;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:8px;padding:3px 6px;font-size:11px"><option value="1h" ${_cacheCfg.ttl !== '5m' ? 'selected' : ''}>1h</option><option value="5m" ${_cacheCfg.ttl === '5m' ? 'selected' : ''}>5m</option></select>
+      <button class="sign-out" id="signout-btn" style="grid-column:3;grid-row:1;padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Sign Out</button>
+
+      <div style="grid-column:1;grid-row:2;display:flex;flex-direction:column;gap:5px;align-items:stretch">
+        <button class="sign-out" id="export-btn" style="padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Export</button>
+        <label style="display:inline-flex;align-items:center;gap:3px" title="Date range applied to Export + Summary (by assessment/added date)">
+          <select id="export-range" onchange="_onRangeChange()" style="flex:1;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:8px;padding:3px 6px;font-size:11px">
+            <option value="all">All time</option>
+            <option value="today">Today</option>
+            <option value="7d">Last 7d</option>
+            <option value="30d">Last 30d</option>
+            <option value="month">This month</option>
+            <option value="custom">Custom…</option>
+          </select>
+          <span id="export-range-custom" style="display:none;align-items:center;gap:2px">
+            <input type="date" id="export-from" title="From" style="font-size:10px;padding:1px 2px;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px">
+            <span style="color:#678">–</span>
+            <input type="date" id="export-to" title="To" style="font-size:10px;padding:1px 2px;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px">
+          </span>
+        </label>
+      </div>
+
+      <div style="grid-column:2;grid-row:2;display:flex;flex-direction:column;gap:5px;align-items:stretch">
+        <button class="sign-out" id="bake-btn" style="padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer" title="Fold manual FMV entries into the selected category's fmv_*.json for download">FMV</button>
+        <select id="bake-cat" style="padding:3px 6px;font-size:11px;background:#1c1c22;color:#ccc;border:1px solid #333;border-radius:8px" title="Which FMV file to bake"><option value="comics">Comics</option><option value="pokemon">Pokémon</option><option value="magic">Magic</option><option value="baseball">Baseball</option></select>
+      </div>
+
+      <div style="grid-column:3;grid-row:2;display:flex;flex-direction:column;gap:5px;align-items:stretch">
+        <button class="sign-out" id="cache-enabled" onclick="_toggleCache()" style="padding:5px 12px;font-size:11px;border:1px solid #333;border-radius:8px;cursor:pointer" title="Assessment prompt caching on/off">Cache</button>
+        <select id="cache-ttl" onchange="_saveCacheCfg()" style="background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:8px;padding:3px 6px;font-size:11px"><option value="1h" ${_cacheCfg.ttl !== '5m' ? 'selected' : ''}>1h</option><option value="5m" ${_cacheCfg.ttl === '5m' ? 'selected' : ''}>5m</option></select>
+      </div>
     </header>
     <main>
       <div id="stats-section"><div class="loading">Loading stats…</div></div>
@@ -2861,19 +2880,49 @@ function escapeAttr(s) {
 }
 </script>
 <div id="admin-lightbox">
+  <button class="alb-nav" id="adminlb-prev" onclick="_albStep(event,-1)" aria-label="Previous">‹</button>
   <img id="admin-lb-img" src="" alt="">
+  <button class="alb-nav" id="adminlb-next" onclick="_albStep(event,1)" aria-label="Next">›</button>
   <div class="lb-btns">
     <button class="lb-btn" onclick="document.getElementById('admin-lightbox').classList.remove('show')">Exit</button>
     <button class="lb-btn" onclick="saveAdminLightboxImage()">Save Image</button>
   </div>
 </div>
 <script>
+let _albList = [], _albIdx = 0;
+function _albArrows() {
+  const show = _albList.length > 1;
+  const p = document.getElementById('adminlb-prev'), n = document.getElementById('adminlb-next');
+  if (p) p.style.display = show ? 'flex' : 'none';
+  if (n) n.style.display = show ? 'flex' : 'none';
+}
+function _albStep(e, dir) {
+  if (e) e.stopPropagation();
+  if (!_albList.length) return;
+  const n = _albList.length;
+  _albIdx = (_albIdx + dir + n) % n;
+  document.getElementById('admin-lb-img').src = _albList[_albIdx];
+}
 function openAdminLightbox(src) {
   const lb = document.getElementById('admin-lightbox');
   const img = document.getElementById('admin-lb-img');
+  const els = Array.from(document.querySelectorAll('[onclick*="openAdminLightbox"]'));
+  _albList = els.map(el => { const m = (el.getAttribute('onclick') || '').match(/openAdminLightbox\('([^']*)'\)/); return m ? m[1] : null; }).filter(Boolean);
+  _albIdx = _albList.indexOf(src);
+  if (_albIdx < 0) { _albList = [src]; _albIdx = 0; }
   img.src = src;
   lb.classList.add('show');
+  _albArrows();
   lb.onclick = function(e) { if (e.target === lb) lb.classList.remove('show'); };
+  if (!window._albKeyed) {
+    window._albKeyed = true;
+    document.addEventListener('keydown', e => {
+      if (!lb.classList.contains('show')) return;
+      if (e.key === 'ArrowLeft') _albStep(null, -1);
+      else if (e.key === 'ArrowRight') _albStep(null, 1);
+      else if (e.key === 'Escape') lb.classList.remove('show');
+    });
+  }
 }
 // S20: one-tap save. Setting a.href to the cross-origin Firebase URL made the
 // browser IGNORE the download attribute (download only works same-origin), so it

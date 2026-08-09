@@ -99,19 +99,22 @@ const LABEL_FORMATS = {
     rowGap: 0,
     pixelW: 1152, pixelH: 384
   },
-  // Card format — Avery 8160 (2.625"x1", 30/sheet, 3 cols x 10 rows). Adapted
-  // from the Small L (Comic) face at the smaller card size. Geometry from the
-  // standard Avery 5160/8160 template (col pitch 2.75", top margin 0.5").
+  // Card format — Avery 94230 (2.75"x1.5" fold-over, 792x432px @288DPI). Folds
+  // horizontally over the top edge of a card case: BOTTOM half = FRONT (score +
+  // identity + optional price), TOP half = BACK (QR + robot, rotated 180deg so
+  // it reads upright from behind). PROVISIONAL sheet geometry — 94230 is a
+  // Presta by-the-sheet label; verify rows/cols/margins against the official
+  // Avery 94230 template PDF before trusting multi-up print alignment.
   card: {
     name: 'card',
-    sheetCount: 30,
-    rows: 10, cols: 3,
-    labelW: 2.625, labelH: 1.0,
+    sheetCount: 12,
+    rows: 6, cols: 2,
+    labelW: 2.75, labelH: 1.5,
     sheetTopMargin: 0.5,
-    sheetLeftMargin: 0.1875,
-    colGap: 0.125,
-    rowGap: 0,
-    pixelW: 756, pixelH: 288
+    sheetLeftMargin: 0.5,
+    colGap: 0.5,
+    rowGap: 0.1,
+    pixelW: 792, pixelH: 432
   },
   // Square format — Avery 22806, 2"×2", 12 per sheet (3 cols × 4 rows).
   // S14: spacing CORRECTED against the user's actual Avery 22806 template
@@ -185,10 +188,10 @@ const LABEL_BUY_LINKS = {
     url: 'https://www.amazon.com/dp/B00004Z6IY?tag=grailstoaston-20',
     vendor: 'Amazon'
   },
-  // Card -> Avery 8160 (2.625"x1", 30/sheet). Amazon affiliate link (Matt).
+  // Card -> Avery 94230 (2.75"x1.5" fold-over). Amazon affiliate link (Matt).
   card: {
-    label: 'Avery 8160',
-    url: 'https://amzn.to/4cnwtLx',
+    label: 'Avery 94230',
+    url: 'https://amzn.to/4xrAnLs',
     vendor: 'Amazon'
   },
   square: {
@@ -1119,62 +1122,71 @@ function ensureStylesInjected() {
     white-space: nowrap;
   }
 
-  /* ── Card label (S22) — Avery 8160, 756x288px @288DPI ─────────────────── */
+  /* Card label (S22) — Avery 94230 fold-over, 792x432px @288DPI. Bottom half =
+     FRONT (score + identity), top half = BACK (QR + robot, rotated 180). */
   .rg-label-card {
-    width: 756px; height: 288px;
-    background: linear-gradient(180deg, #b58a5f 0%, #d6b391 38%, #eedbc5 100%);
+    width: 792px; height: 432px;
+    background: linear-gradient(180deg, #b58a5f 0%, #c9a279 30%, #d6b391 55%, #eedbc5 100%);
     border: 1px solid #8a9a6a; border-radius: 4px;
-    position: relative; overflow: hidden;
-    font-family: 'Barlow Condensed', sans-serif; box-sizing: border-box;
+    position: relative; overflow: hidden; box-sizing: border-box;
+    font-family: 'Barlow Condensed', sans-serif;
   }
-  .rg-label-card .score-box {
-    width: 176px; height: 176px; background: #1a2208;
-    border-radius: 26px; position: absolute; right: 12px; top: 56px;
+  .rg-label-card .rgc-foldtop, .rg-label-card .rgc-foldbot {
+    position: absolute; left: 24px; right: 24px; height: 0;
+    border-top: 1px dashed rgba(60,50,30,0.55); z-index: 3;
+  }
+  .rg-label-card .rgc-foldtop { top: 206px; }
+  .rg-label-card .rgc-foldbot { top: 226px; }
+  .rg-label-card .rgc-back {
+    position: absolute; top: 0; left: 0; right: 0; height: 206px;
+    transform: rotate(180deg);
+    display: flex; align-items: center; justify-content: center; gap: 26px;
+    padding: 10px 24px;
+  }
+  .rg-label-card .rgc-qr { width: 150px; height: 150px; flex-shrink: 0; }
+  .rg-label-card .rgc-qr .qrc canvas, .rg-label-card .rgc-qr .qrc img { width: 150px !important; height: 150px !important; }
+  .rg-label-card .rgc-qr-private { display: flex; align-items: center; justify-content: center; text-align: center; font-size: 13px; letter-spacing: 1.5px; color: #7a6a4a; font-weight: 700; }
+  .rg-label-card .rgc-robot { width: 150px; height: 150px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+  .rg-label-card .rgc-robot img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .rg-label-card .rgc-backurl {
+    position: absolute; bottom: 6px; left: 0; right: 0; text-align: center;
+    font-size: 13px; color: #5a6a4a; font-weight: 500;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  .rg-label-card .rgc-front {
+    position: absolute; top: 226px; left: 0; right: 0; bottom: 0;
+    display: flex; align-items: center; gap: 12px; padding: 8px 16px 10px;
+  }
+  .rg-label-card .rgc-info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+  .rg-label-card .rgc-ttl {
+    font-family: 'Noto Sans Display', sans-serif; font-size: 40px; font-weight: 900;
+    color: #0d0d0f; line-height: 1.02; white-space: nowrap; overflow: hidden;
+    transform: scaleX(0.68); transform-origin: left center;
+  }
+  .rg-label-card .rgc-sub {
+    font-family: 'Noto Sans Display', sans-serif; font-size: 26px; font-weight: 600;
+    color: #333; margin-top: 4px; white-space: nowrap;
+    transform: scaleX(0.72); transform-origin: left center;
+  }
+  .rg-label-card .rgc-var { font-size: 19px; color: #5a5544; font-weight: 600; margin-top: 3px; white-space: nowrap; overflow: hidden; }
+  .rg-label-card .rgc-meta { margin-top: 8px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .rg-label-card .rgc-meta .k { font-size: 13px; font-weight: 600; color: #7a8a5a; letter-spacing: 0.5px; }
+  .rg-label-card .rgc-meta .v { font-size: 16px; font-weight: 800; color: #0d0d0f; font-family: 'Noto Sans Mono', monospace; }
+  .rg-label-card .rgc-price { margin-top: 6px; font-family: 'Noto Sans Display', sans-serif; font-size: 26px; font-weight: 900; color: #0d0d0f; }
+  .rg-label-card .rgc-price-ph { color: #9a8a5a; font-weight: 600; }
+  .rg-label-card .rgc-score {
+    width: 168px; height: 168px; flex-shrink: 0; position: relative;
+    background: #1a2208; border-radius: 24px;
     display: flex; align-items: center; justify-content: center;
   }
-  .rg-label-card .score-box.gold {
-    background: linear-gradient(150deg,#fdeea0 0%,#f0c53a 34%,#d99e12 66%,#b57e0c 100%);
-  }
-  .rg-label-card .rg-word { position: absolute; top: 10px; font-size: 14px; font-weight: 700; color: #6a8030; letter-spacing: 2px; }
-  .rg-label-card .score-box.gold .rg-word { color: #7a5a10; }
-  .rg-label-card .rg-stars { position: absolute; top: 33px; font-size: 15px; line-height: 1; opacity: 0.5; letter-spacing: 1px; }
-  .rg-label-card .rg-num-wrap { display: inline-flex; line-height: 1; }
-  .rg-label-card .rg-num {
-    font-family: 'Noto Sans Display', sans-serif; font-weight: 900;
-    font-size: 104px; line-height: 1; display: inline-block;
-    transform: scaleX(0.78); transform-origin: center; position: relative;
-  }
-  .rg-label-card .rg-suf { font-size: 0.5em; font-weight: 600; position: absolute; left: 100%; top: 6px; }
-  .rg-label-card .rg-v { position: absolute; bottom: 9px; font-size: 12px; color: #5a7030; font-weight: 500; letter-spacing: 1px; }
-  .rg-label-card .score-box.gold .rg-v { color: #7a5a10; }
-  .rg-label-card .qr-col {
-    position: absolute; left: 20px; top: 44px; width: 150px;
-    display: flex; flex-direction: column; align-items: center; gap: 4px;
-  }
-  .rg-label-card .qr-col .qrc canvas, .rg-label-card .qr-col .qrc img { width: 140px !important; height: 140px !important; }
-  .rg-label-card .verify { font-size: 12px; color: #7a8a5a; letter-spacing: 1px; font-weight: 600; text-align: center; }
-  .rg-label-card .qr-private { width: 140px; height: 140px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; letter-spacing: 1.5px; color: #9a8a7a; text-transform: uppercase; line-height: 1.4; }
-  .rg-label-card .info { position: absolute; left: 186px; right: 200px; top: 24px; display: flex; flex-direction: column; }
-  .rg-label-card .ttl {
-    font-family: 'Noto Sans Display', sans-serif; font-size: 44px; font-weight: 900;
-    color: #0d0d0f; line-height: 1.02; white-space: nowrap; overflow: hidden;
-    transform: scaleX(0.625); transform-origin: left center;
-  }
-  .rg-label-card .sub {
-    font-family: 'Noto Sans Display', sans-serif; font-size: 30px; font-weight: 600;
-    color: #333; margin-top: 8px; white-space: nowrap;
-    transform: scaleX(0.7); transform-origin: left center;
-  }
-  .rg-label-card .prt { font-size: 20px; color: #5a5544; font-weight: 600; letter-spacing: 0.3px; margin-top: 6px; }
-  .rg-label-card .meta { margin-top: 12px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
-  .rg-label-card .meta .k { font-size: 15px; font-weight: 600; color: #7a8a5a; letter-spacing: 0.5px; }
-  .rg-label-card .meta .v { font-size: 17px; font-weight: 800; color: #0d0d0f; font-family: 'Noto Sans Mono', monospace; }
-  .rg-label-card .url {
-    position: absolute; left: 186px; bottom: 12px;
-    font-size: 15px; color: #5a6a4a; font-weight: 500;
-    font-family: ui-monospace, "SF Mono", Menlo, "Cascadia Mono", "Roboto Mono", monospace;
-  }
-  .rg-label-card .url-id { font-weight: 800; }
+  .rg-label-card .rgc-score.gold { background: linear-gradient(150deg,#fdeea0 0%,#f0c53a 34%,#d99e12 66%,#b57e0c 100%); }
+  .rg-label-card .rgc-word { position: absolute; top: 10px; font-size: 13px; font-weight: 700; color: #6a8030; letter-spacing: 2px; }
+  .rg-label-card .rgc-score.gold .rgc-word { color: #7a5a10; }
+  .rg-label-card .rgc-stars { position: absolute; top: 32px; font-size: 15px; line-height: 1; opacity: 0.5; }
+  .rg-label-card .rgc-num { font-family: 'Noto Sans Display', sans-serif; font-weight: 900; font-size: 100px; line-height: 1; display: inline-block; transform: scaleX(0.8); transform-origin: center; position: relative; }
+  .rg-label-card .rgc-suf { font-size: 0.5em; font-weight: 600; position: absolute; left: 100%; top: 6px; }
+  .rg-label-card .rgc-v { position: absolute; bottom: 9px; font-size: 12px; color: #5a7030; font-weight: 500; letter-spacing: 1px; }
+  .rg-label-card .rgc-score.gold .rgc-v { color: #7a5a10; }
   /* Price pad — to the LEFT of the QR column. Width 200, right edge at
      x=854 (20px gap to the QR col at x=874) → left x=654. */
   .rg-label-l .price-pad { display: none; }
@@ -2389,6 +2401,7 @@ async function generatePDF(comics, modal) {
     //   Large  → "CGC"   (CGC-slab overlay, OL5450, 7.5×1.5, 7/sheet)
     const sizeTag = opts.size === 'large' ? 'CGC'
                   : opts.size === 'square' ? '22806'
+                  : opts.size === 'card' ? '94230'
                   : opts.size === 'small-l' ? '5162'
                   : '8161';
     const priceTag = opts.priceTag ? '-Price' : '';
@@ -2468,13 +2481,15 @@ async function generatePDF(comics, modal) {
 //   - 1152×288 absolute label dimensions (Avery 8161 at 288 DPI = 4"×1")
 //   - QR + URL point to robograder.app
 
-// ── Card label (S22) ─────────────────────────────────────────────────────
-// Compact card variant of the Small L (Comic) face, sized for Avery 8160
-// (2.625"×1", 756×288px @ 288 DPI). QR left, identity center, RoboGrade v2
-// score box right. Score box turns gold on a clean 10 (matches the panel).
-// Card fields: name (title), Card No. (no leading #), Set, Printing/variant.
+// Card label (S22) — Avery 94230 fold-over. 2.75"x1.5" (792x432px @288DPI).
+// Folds horizontally over the top edge of a raw-card case: BOTTOM half = FRONT
+// (score box + identity + optional price), TOP half = BACK (QR + Robograder
+// robot), rotated 180deg so the back reads upright when viewed from behind.
+// Two thin fold lines flank the midline.
 function renderCardLabelMarkup(comic, opts) {
   opts = opts || { size: 'card' };
+  const showPrice = !!opts.priceTag;
+  const includePrice = !!opts.includePrice;
   const rg = comic.roboGrade || {};
   const card = comic.cardData || {};
   const cd = card.robograde || rg.subscores || null;
@@ -2494,8 +2509,9 @@ function renderCardLabelMarkup(comic, opts) {
   const ident = card.cardIdentification || {};
   const name = esc(comic.title || 'Card');
   const number = esc(String(ident.number || comic.issue || '').replace(/^#/, ''));
-  const set = esc((ident.set || '').toString().trim());
-  const printing = esc((comic.printing || ident.variant || '').toString().trim());
+  const year = esc(String(ident.year || '').trim());
+  const variant = esc((ident.variant || comic.printing || '').toString().trim());
+  const numYear = [number, year].filter(Boolean).join(', ');
   const gradeId = esc(comic.roboGradeId || 'XXXXXX');
   const _dateObj = comic.roboGradeDate ? new Date(comic.roboGradeDate) : new Date();
   const gradeDate = _dateObj.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' });
@@ -2507,30 +2523,46 @@ function renderCardLabelMarkup(comic, opts) {
   const _star = () => `<svg viewBox="0 0 24 24" style="height:1em;width:1em;display:inline-block;vertical-align:middle"><path d="M12.00,2.00 15.64,6.98 21.51,8.91 17.90,13.92 17.88,20.09 12.00,18.20 6.12,20.09 6.10,13.92 2.49,8.91 8.36,6.98Z" fill="${_starFill}"/></svg>`;
   let _stars = ''; for (let i = 0; i < _t; i++) _stars += _star();
 
-  const subLine = [number, set].filter(Boolean).join('  ·  ');
+  let priceHTML = '';
+  if (showPrice) {
+    if (includePrice && comic.askingPrice != null) {
+      const p = Number(comic.askingPrice);
+      const ps = p % 1 === 0 ? `$${Math.round(p)}` : `$${p.toFixed(2)}`;
+      priceHTML = `<div class="rgc-price">${ps}</div>`;
+    } else {
+      priceHTML = `<div class="rgc-price rgc-price-ph">Price</div>`;
+    }
+  }
+
+  const backHTML = `
+    <div class="rgc-back">
+      ${comic.publicListing
+        ? `<div class="rgc-qr"><div class="qrc" data-qr-id="${gradeId}"></div></div>`
+        : `<div class="rgc-qr rgc-qr-private">PRIVATE<br>LISTING</div>`}
+      <div class="rgc-robot"><img src="assets/Robograder_Charging.png" alt=""></div>
+      <div class="rgc-backurl">${comic.publicListing ? `robograder.app/id/${gradeId}` : `ID ${gradeId}`}</div>
+    </div>`;
 
   return `
     <div class="rg-label-card${perfect10 ? ' perfect10' : ''}" data-grade-id="${gradeId}">
-      <div class="score-box${perfect10 ? ' gold' : ''}">
-        <div class="rg-word">ROBOGRADE</div>
-        <div class="rg-stars">${_stars}</div>
-        <div class="rg-num-wrap"><span class="rg-num" style="color:${numColor}">${gBase}${gSuf ? `<span class="rg-suf" style="color:${numColor}">${gSuf}</span>` : ''}</span></div>
-        <div class="rg-v">RG</div>
+      ${backHTML}
+      <div class="rgc-foldtop"></div>
+      <div class="rgc-foldbot"></div>
+      <div class="rgc-front">
+        <div class="rgc-info">
+          <div class="rgc-ttl">${name}</div>
+          ${numYear ? `<div class="rgc-sub">${numYear}</div>` : ''}
+          ${variant ? `<div class="rgc-var">${variant}</div>` : ''}
+          <div class="rgc-meta"><span class="k">ID</span> <span class="v">${gradeId}</span> <span class="k">GRADED</span> <span class="v">${gradeDate}</span></div>
+          ${priceHTML}
+        </div>
+        <div class="rgc-score${perfect10 ? ' gold' : ''}">
+          <div class="rgc-word">ROBOGRADE</div>
+          <div class="rgc-stars">${_stars}</div>
+          <div class="rgc-num" style="color:${numColor}">${gBase}${gSuf ? `<span class="rgc-suf" style="color:${numColor}">${gSuf}</span>` : ''}</div>
+          <div class="rgc-v">RG</div>
+        </div>
       </div>
-      <div class="info">
-        <div class="ttl">${name}</div>
-        ${subLine ? `<div class="sub">${subLine}</div>` : ''}
-        ${printing ? `<div class="prt">${printing}</div>` : ''}
-        <div class="meta"><span class="k">GRADED</span> <span class="v">${gradeDate}</span> <span class="k">ID</span> <span class="v">${gradeId}</span></div>
-      </div>
-      <div class="qr-col">
-        ${comic.publicListing
-          ? `<div class="qrc" data-qr-id="${gradeId}"></div><div class="verify">SCAN TO VERIFY</div>`
-          : `<div class="qr-private">Private<br>Listing</div>`}
-      </div>
-      ${comic.publicListing
-        ? `<div class="url">robograder.app/id/<span class="url-id">${gradeId}</span></div>`
-        : `<div class="url">ID ${gradeId}</div>`}
     </div>
   `;
 }
