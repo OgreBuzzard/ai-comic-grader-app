@@ -1627,8 +1627,8 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
     
     <div class="settings-row" style="cursor:pointer" onclick="copyTransferCode()">
       <div>
-        <div class="sr-label">Your Give code</div>
-        <div class="sr-detail">Tap to copy · share this so others can Give you entries</div>
+        <div class="sr-label">User ID</div>
+        <div class="sr-detail">Tap to copy. Share this ID for referral bonuses and assessment transfers.</div>
       </div>
       <div id="settings-transfer-code"
         style="font-family:'IBM Plex Mono','Menlo',monospace;font-size:20px;font-weight:700;letter-spacing:3px;color:#c8b8a8">—</div>
@@ -1684,9 +1684,9 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
       <div style="flex:1">
         <div class="sr-label">Make all books</div>
         <div class="sr-detail">One-time action. Applies to every Owned, non-reprint book that has a Robograde. Does not change the setting above.</div>
-        <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;max-width:220px">
-          <button id="bulk-public-btn" onclick="_bulkTap(true)">Public</button>
-          <button id="bulk-private-btn" onclick="_bulkTap(false)">Private</button>
+        <div style="display:flex;flex-direction:row;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button id="bulk-public-btn" class="rg-btn rg-btn-action rg-btn-sm" onclick="_bulkTap(true)">Public</button>
+          <button id="bulk-private-btn" class="rg-btn rg-btn-secondary rg-btn-sm" onclick="_bulkTap(false)">Private</button>
         </div>
       </div>
     </div>
@@ -7300,9 +7300,9 @@ function _syncBulkButtons() {
   const st = _bulkState();
   const pb = document.getElementById("bulk-public-btn"), pv = document.getElementById("bulk-private-btn");
   if (!pb || !pv) return;
-  const base = "padding:11px 12px;border-radius:8px;font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;width:100%;transition:background 0.15s;";
-  const lit = "background:#2a7a2a;color:#fff;border:1.5px solid #2a7a2a;";
-  const off = "background:#e2e0dc;color:#5a534c;border:1.5px solid #d0ccc6;";
+  const base = "padding:8px 16px;border-radius:10px;font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;cursor:pointer;min-height:36px;transition:background 0.15s;";
+  const lit = "background:#3a7a20;color:#fff;border:1.5px solid #2e6418;";
+  const off = "background:#ffffff;color:#3a7a20;border:1.5px solid #3a7a20;";
   pb.style.cssText = base + (st === "public" ? lit : off);
   pv.style.cssText = base + (st === "private" ? lit : off);
 }
@@ -7836,7 +7836,7 @@ async function copyTransferCode() {
     await navigator.clipboard.writeText(code);
     flash("Copied");
   } catch (err) {
-    appAlert("Your Give code:\n\n" + code);
+    appAlert("User ID:\n\n" + code);
   }
 }
 

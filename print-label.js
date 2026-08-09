@@ -99,22 +99,24 @@ const LABEL_FORMATS = {
     rowGap: 0,
     pixelW: 1152, pixelH: 384
   },
-  // Card format — Avery 94230 (2.75"x1.5" fold-over, 792x432px @288DPI). Folds
+  // Card format — Avery 94235 (2.625"x2" fold-over, 756x576px @288DPI). Folds
   // horizontally over the top edge of a card case: BOTTOM half = FRONT (score +
-  // identity + optional price), TOP half = BACK (QR + robot, rotated 180deg so
-  // it reads upright from behind). PROVISIONAL sheet geometry — 94230 is a
-  // Presta by-the-sheet label; verify rows/cols/margins against the official
-  // Avery 94230 template PDF before trusting multi-up print alignment.
+  // identity + optional price), TOP half = BACK (QR + robot, rotated 180deg).
+  // Fold zone 0.25" (case thickness) centered -> 0.875" usable front and back.
+  // Geometry extracted directly from the official Avery 94235 template PDF:
+  //   Page 8.5x11; label 2.625x2.0; 3 cols x 5 rows = 15/sheet.
+  //   Top margin 0.5"; left margin 0.1875"; col pitch 2.75" (gap 0.125");
+  //   row pitch 2.0" (gap 0").
   card: {
     name: 'card',
-    sheetCount: 12,
-    rows: 6, cols: 2,
-    labelW: 2.75, labelH: 1.5,
+    sheetCount: 15,
+    rows: 5, cols: 3,
+    labelW: 2.625, labelH: 2.0,
     sheetTopMargin: 0.5,
-    sheetLeftMargin: 0.5,
-    colGap: 0.5,
-    rowGap: 0.1,
-    pixelW: 792, pixelH: 432
+    sheetLeftMargin: 0.1875,
+    colGap: 0.125,
+    rowGap: 0,
+    pixelW: 756, pixelH: 576
   },
   // Square format — Avery 22806, 2"×2", 12 per sheet (3 cols × 4 rows).
   // S14: spacing CORRECTED against the user's actual Avery 22806 template
@@ -188,10 +190,10 @@ const LABEL_BUY_LINKS = {
     url: 'https://www.amazon.com/dp/B00004Z6IY?tag=grailstoaston-20',
     vendor: 'Amazon'
   },
-  // Card -> Avery 94230 (2.75"x1.5" fold-over). Amazon affiliate link (Matt).
+  // Card -> Avery 94235 (2.625"x2" fold-over). Amazon affiliate link (Matt).
   card: {
-    label: 'Avery 94230',
-    url: 'https://amzn.to/4xrAnLs',
+    label: 'Avery 94235',
+    url: 'https://amzn.to/4qf8Zy3',
     vendor: 'Amazon'
   },
   square: {
@@ -1122,10 +1124,10 @@ function ensureStylesInjected() {
     white-space: nowrap;
   }
 
-  /* Card label (S22) — Avery 94230 fold-over, 792x432px @288DPI. Bottom half =
+  /* Card label (S22) — Avery 94235 fold-over, 756x576px @288DPI. Bottom half =
      FRONT (score + identity), top half = BACK (QR + robot, rotated 180). */
   .rg-label-card {
-    width: 792px; height: 432px;
+    width: 756px; height: 576px;
     background: linear-gradient(180deg, #b58a5f 0%, #c9a279 30%, #d6b391 55%, #eedbc5 100%);
     border: 1px solid #8a9a6a; border-radius: 4px;
     position: relative; overflow: hidden; box-sizing: border-box;
@@ -1135,10 +1137,10 @@ function ensureStylesInjected() {
     position: absolute; left: 24px; right: 24px; height: 0;
     border-top: 1px dashed rgba(60,50,30,0.55); z-index: 3;
   }
-  .rg-label-card .rgc-foldtop { top: 206px; }
-  .rg-label-card .rgc-foldbot { top: 226px; }
+  .rg-label-card .rgc-foldtop { top: 252px; }
+  .rg-label-card .rgc-foldbot { top: 324px; }
   .rg-label-card .rgc-back {
-    position: absolute; top: 0; left: 0; right: 0; height: 206px;
+    position: absolute; top: 0; left: 0; right: 0; height: 252px;
     transform: rotate(180deg);
     display: flex; align-items: center; justify-content: center; gap: 26px;
     padding: 10px 24px;
@@ -1154,7 +1156,7 @@ function ensureStylesInjected() {
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
   }
   .rg-label-card .rgc-front {
-    position: absolute; top: 226px; left: 0; right: 0; bottom: 0;
+    position: absolute; top: 324px; left: 0; right: 0; bottom: 0;
     display: flex; align-items: center; gap: 12px; padding: 8px 16px 10px;
   }
   .rg-label-card .rgc-info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
@@ -2401,7 +2403,7 @@ async function generatePDF(comics, modal) {
     //   Large  → "CGC"   (CGC-slab overlay, OL5450, 7.5×1.5, 7/sheet)
     const sizeTag = opts.size === 'large' ? 'CGC'
                   : opts.size === 'square' ? '22806'
-                  : opts.size === 'card' ? '94230'
+                  : opts.size === 'card' ? '94235'
                   : opts.size === 'small-l' ? '5162'
                   : '8161';
     const priceTag = opts.priceTag ? '-Price' : '';
@@ -2481,7 +2483,7 @@ async function generatePDF(comics, modal) {
 //   - 1152×288 absolute label dimensions (Avery 8161 at 288 DPI = 4"×1")
 //   - QR + URL point to robograder.app
 
-// Card label (S22) — Avery 94230 fold-over. 2.75"x1.5" (792x432px @288DPI).
+// Card label (S22) — Avery 94235 fold-over. 2.625"x2" (756x576px @288DPI).
 // Folds horizontally over the top edge of a raw-card case: BOTTOM half = FRONT
 // (score box + identity + optional price), TOP half = BACK (QR + Robograder
 // robot), rotated 180deg so the back reads upright when viewed from behind.
