@@ -99,6 +99,20 @@ const LABEL_FORMATS = {
     rowGap: 0,
     pixelW: 1152, pixelH: 384
   },
+  // Card format — Avery 8160 (2.625"x1", 30/sheet, 3 cols x 10 rows). Adapted
+  // from the Small L (Comic) face at the smaller card size. Geometry from the
+  // standard Avery 5160/8160 template (col pitch 2.75", top margin 0.5").
+  card: {
+    name: 'card',
+    sheetCount: 30,
+    rows: 10, cols: 3,
+    labelW: 2.625, labelH: 1.0,
+    sheetTopMargin: 0.5,
+    sheetLeftMargin: 0.1875,
+    colGap: 0.125,
+    rowGap: 0,
+    pixelW: 756, pixelH: 288
+  },
   // Square format — Avery 22806, 2"×2", 12 per sheet (3 cols × 4 rows).
   // S14: spacing CORRECTED against the user's actual Avery 22806 template
   // PDF (geometry extracted directly from the template's label rects).
@@ -171,6 +185,12 @@ const LABEL_BUY_LINKS = {
     url: 'https://www.amazon.com/dp/B00004Z6IY?tag=grailstoaston-20',
     vendor: 'Amazon'
   },
+  // Card -> Avery 8160 (2.625"x1", 30/sheet). Amazon affiliate link (Matt).
+  card: {
+    label: 'Avery 8160',
+    url: 'https://amzn.to/4cnwtLx',
+    vendor: 'Amazon'
+  },
   square: {
     label: 'Avery 22806',
     url: 'https://www.amazon.com/dp/B093LZ1KW2?tag=grailstoaston-20',
@@ -198,7 +218,7 @@ const OPTIONS_KEY = 'robograder.labelOptions.v1';
 // 3.5"). The original 'small' is now surfaced in the UI as "Small R" but
 // the stored key stays 'small' for backward compatibility with users who
 // already picked it.
-const VALID_SIZES = ['small', 'small-l', 'square', 'large'];
+const VALID_SIZES = ['small-l', 'card', 'square'];
 
 function readOptions() {
   try {
@@ -1098,6 +1118,63 @@ function ensureStylesInjected() {
     letter-spacing: 0px;
     white-space: nowrap;
   }
+
+  /* ── Card label (S22) — Avery 8160, 756x288px @288DPI ─────────────────── */
+  .rg-label-card {
+    width: 756px; height: 288px;
+    background: linear-gradient(180deg, #b58a5f 0%, #d6b391 38%, #eedbc5 100%);
+    border: 1px solid #8a9a6a; border-radius: 4px;
+    position: relative; overflow: hidden;
+    font-family: 'Barlow Condensed', sans-serif; box-sizing: border-box;
+  }
+  .rg-label-card .score-box {
+    width: 176px; height: 176px; background: #1a2208;
+    border-radius: 26px; position: absolute; right: 12px; top: 56px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .rg-label-card .score-box.gold {
+    background: linear-gradient(150deg,#fdeea0 0%,#f0c53a 34%,#d99e12 66%,#b57e0c 100%);
+  }
+  .rg-label-card .rg-word { position: absolute; top: 10px; font-size: 14px; font-weight: 700; color: #6a8030; letter-spacing: 2px; }
+  .rg-label-card .score-box.gold .rg-word { color: #7a5a10; }
+  .rg-label-card .rg-stars { position: absolute; top: 33px; font-size: 15px; line-height: 1; opacity: 0.5; letter-spacing: 1px; }
+  .rg-label-card .rg-num-wrap { display: inline-flex; line-height: 1; }
+  .rg-label-card .rg-num {
+    font-family: 'Noto Sans Display', sans-serif; font-weight: 900;
+    font-size: 104px; line-height: 1; display: inline-block;
+    transform: scaleX(0.78); transform-origin: center; position: relative;
+  }
+  .rg-label-card .rg-suf { font-size: 0.5em; font-weight: 600; position: absolute; left: 100%; top: 6px; }
+  .rg-label-card .rg-v { position: absolute; bottom: 9px; font-size: 12px; color: #5a7030; font-weight: 500; letter-spacing: 1px; }
+  .rg-label-card .score-box.gold .rg-v { color: #7a5a10; }
+  .rg-label-card .qr-col {
+    position: absolute; left: 20px; top: 44px; width: 150px;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  .rg-label-card .qr-col .qrc canvas, .rg-label-card .qr-col .qrc img { width: 140px !important; height: 140px !important; }
+  .rg-label-card .verify { font-size: 12px; color: #7a8a5a; letter-spacing: 1px; font-weight: 600; text-align: center; }
+  .rg-label-card .qr-private { width: 140px; height: 140px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 12px; letter-spacing: 1.5px; color: #9a8a7a; text-transform: uppercase; line-height: 1.4; }
+  .rg-label-card .info { position: absolute; left: 186px; right: 200px; top: 24px; display: flex; flex-direction: column; }
+  .rg-label-card .ttl {
+    font-family: 'Noto Sans Display', sans-serif; font-size: 44px; font-weight: 900;
+    color: #0d0d0f; line-height: 1.02; white-space: nowrap; overflow: hidden;
+    transform: scaleX(0.625); transform-origin: left center;
+  }
+  .rg-label-card .sub {
+    font-family: 'Noto Sans Display', sans-serif; font-size: 30px; font-weight: 600;
+    color: #333; margin-top: 8px; white-space: nowrap;
+    transform: scaleX(0.7); transform-origin: left center;
+  }
+  .rg-label-card .prt { font-size: 20px; color: #5a5544; font-weight: 600; letter-spacing: 0.3px; margin-top: 6px; }
+  .rg-label-card .meta { margin-top: 12px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .rg-label-card .meta .k { font-size: 15px; font-weight: 600; color: #7a8a5a; letter-spacing: 0.5px; }
+  .rg-label-card .meta .v { font-size: 17px; font-weight: 800; color: #0d0d0f; font-family: 'Noto Sans Mono', monospace; }
+  .rg-label-card .url {
+    position: absolute; left: 186px; bottom: 12px;
+    font-size: 15px; color: #5a6a4a; font-weight: 500;
+    font-family: ui-monospace, "SF Mono", Menlo, "Cascadia Mono", "Roboto Mono", monospace;
+  }
+  .rg-label-card .url-id { font-weight: 800; }
   /* Price pad — to the LEFT of the QR column. Width 200, right edge at
      x=854 (20px gap to the QR col at x=874) → left x=654. */
   .rg-label-l .price-pad { display: none; }
@@ -1642,6 +1719,9 @@ function renderModal(modal, comic, allItems) {
   // S12: read user's persisted size + price-tag preferences. These drive
   // the label markup, the "X to a sheet" subtitle, and the PDF generation.
   const opts = readOptions();
+  // S22: a card item always uses the Card format; a comic can't use the Card
+  // label (would render blank card fields) -> fall back to Comic.
+  opts.size = (comic && comic.type === 'card') ? 'card' : (opts.size === 'card' ? 'small-l' : opts.size);
   const fmt = LABEL_FORMATS[opts.size];
 
   // Queue display tracks the active format's per-sheet count, NOT the
@@ -1668,10 +1748,9 @@ function renderModal(modal, comic, allItems) {
     `<button type="button" class="lvm-segment${opts.size === size ? ' active' : ''}" data-action="set-size" data-size="${size}">${label}</button>`;
   const sizeSegments = `
     <div class="lvm-segment-group">
-      ${seg('small',   'Small R')}
-      ${seg('small-l', 'Small L')}
+      ${seg('small-l', 'Comic')}
+      ${seg('card',    'Card')}
       ${seg('square',  'Square')}
-      ${seg('large',   'Large')}
     </div>`;
 
   const pricePillClass = opts.priceTag ? 'lvm-pill on' : 'lvm-pill';
@@ -2095,6 +2174,10 @@ async function generatePDF(comics, modal) {
   // whichever label size and price tag setting is active when the button
   // is tapped."
   const opts = readOptions();
+  // S22: match the render — card queue -> card sheet; stray 'card' on a comic
+  // queue falls back to Comic.
+  const _first = comics && comics[0];
+  opts.size = (_first && _first.type === 'card') ? 'card' : (opts.size === 'card' ? 'small-l' : opts.size);
   const fmt = LABEL_FORMATS[opts.size];
 
   // S18: Small-L only — shift the LEFT column right by this much so its grade
@@ -2385,6 +2468,73 @@ async function generatePDF(comics, modal) {
 //   - 1152×288 absolute label dimensions (Avery 8161 at 288 DPI = 4"×1")
 //   - QR + URL point to robograder.app
 
+// ── Card label (S22) ─────────────────────────────────────────────────────
+// Compact card variant of the Small L (Comic) face, sized for Avery 8160
+// (2.625"×1", 756×288px @ 288 DPI). QR left, identity center, RoboGrade v2
+// score box right. Score box turns gold on a clean 10 (matches the panel).
+// Card fields: name (title), Card No. (no leading #), Set, Printing/variant.
+function renderCardLabelMarkup(comic, opts) {
+  opts = opts || { size: 'card' };
+  const rg = comic.roboGrade || {};
+  const card = comic.cardData || {};
+  const cd = card.robograde || rg.subscores || null;
+  let grade = '';
+  if (window.RGScoreV2 && cd) {
+    const subs = { surface: cd.surface && cd.surface.total, corners: cd.corners && cd.corners.total, edges: cd.edges && cd.edges.total, centering: cd.centering && cd.centering.total };
+    if ([subs.surface, subs.corners, subs.edges, subs.centering].some(v => v != null)) grade = window.RGScoreV2.fromSubscores(subs, 'card').grade;
+  }
+  if ((grade === '' || grade == null) && rg.score != null && window.RGScoreV2) grade = window.RGScoreV2.gradeFromScore(rg.score);
+  const gradeStr = String(grade == null ? '' : grade);
+  const gm = gradeStr.match(/^(\d+)([+-])?$/);
+  const gBase = gm ? gm[1] : gradeStr;
+  const gSuf = (gm && gm[2]) ? gm[2] : '';
+  const perfect10 = gBase === '10' && !gSuf;
+  const numColor = perfect10 ? '#1a1206' : '#b8d820';
+
+  const ident = card.cardIdentification || {};
+  const name = esc(comic.title || 'Card');
+  const number = esc(String(ident.number || comic.issue || '').replace(/^#/, ''));
+  const set = esc((ident.set || '').toString().trim());
+  const printing = esc((comic.printing || ident.variant || '').toString().trim());
+  const gradeId = esc(comic.roboGradeId || 'XXXXXX');
+  const _dateObj = comic.roboGradeDate ? new Date(comic.roboGradeDate) : new Date();
+  const gradeDate = _dateObj.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' });
+
+  const _deep = !!comic.deepAssessmentRan;
+  const _full = !!comic.fullAssessmentRan;
+  let _t = 1; if (_full) _t = 3; else if (_deep) _t = 2;
+  const _starFill = perfect10 ? '#5a3f06' : '#b8d820';
+  const _star = () => `<svg viewBox="0 0 24 24" style="height:1em;width:1em;display:inline-block;vertical-align:middle"><path d="M12.00,2.00 15.64,6.98 21.51,8.91 17.90,13.92 17.88,20.09 12.00,18.20 6.12,20.09 6.10,13.92 2.49,8.91 8.36,6.98Z" fill="${_starFill}"/></svg>`;
+  let _stars = ''; for (let i = 0; i < _t; i++) _stars += _star();
+
+  const subLine = [number, set].filter(Boolean).join('  ·  ');
+
+  return `
+    <div class="rg-label-card${perfect10 ? ' perfect10' : ''}" data-grade-id="${gradeId}">
+      <div class="score-box${perfect10 ? ' gold' : ''}">
+        <div class="rg-word">ROBOGRADE</div>
+        <div class="rg-stars">${_stars}</div>
+        <div class="rg-num-wrap"><span class="rg-num" style="color:${numColor}">${gBase}${gSuf ? `<span class="rg-suf" style="color:${numColor}">${gSuf}</span>` : ''}</span></div>
+        <div class="rg-v">RG</div>
+      </div>
+      <div class="info">
+        <div class="ttl">${name}</div>
+        ${subLine ? `<div class="sub">${subLine}</div>` : ''}
+        ${printing ? `<div class="prt">${printing}</div>` : ''}
+        <div class="meta"><span class="k">GRADED</span> <span class="v">${gradeDate}</span> <span class="k">ID</span> <span class="v">${gradeId}</span></div>
+      </div>
+      <div class="qr-col">
+        ${comic.publicListing
+          ? `<div class="qrc" data-qr-id="${gradeId}"></div><div class="verify">SCAN TO VERIFY</div>`
+          : `<div class="qr-private">Private<br>Listing</div>`}
+      </div>
+      ${comic.publicListing
+        ? `<div class="url">robograder.app/id/<span class="url-id">${gradeId}</span></div>`
+        : `<div class="url">ID ${gradeId}</div>`}
+    </div>
+  `;
+}
+
 function renderLabelMarkup(comic, opts) {
   // S12: opts is { size, priceTag, includePrice }. Defaults to small + no
   // price tag + no included price if not supplied (preserves backward
@@ -2399,6 +2549,7 @@ function renderLabelMarkup(comic, opts) {
   const isLarge  = opts.size === 'large';
   const isSquare = opts.size === 'square';
   const isSmallL = opts.size === 'small-l';
+  if (opts.size === 'card' || (comic && comic.type === 'card')) return renderCardLabelMarkup(comic, opts);
   const showPrice = !!opts.priceTag;
   const includePrice = !!opts.includePrice;
 

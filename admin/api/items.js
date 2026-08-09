@@ -181,6 +181,13 @@ export default async function handler(req, res) {
         score: flat.roboGrade?.score ?? null,
         assessedCGCGrade: flat.assessedCGCGrade ?? null,
         assessedPSAGrade: flat.assessedPSAGrade ?? null,
+        type: flat.type ?? null,
+        cardSubs: (flat.type === 'card' && flat.robograde) ? {
+          surface: flat.robograde.surface && flat.robograde.surface.total,
+          corners: flat.robograde.corners && flat.robograde.corners.total,
+          edges: flat.robograde.edges && flat.robograde.edges.total,
+          centering: flat.robograde.centering && flat.robograde.centering.total,
+        } : null,
         publicListing: !!flat.publicListing,
         ownership: flat.ownership || '',
         highGradeAssessed,

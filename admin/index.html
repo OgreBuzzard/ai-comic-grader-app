@@ -1003,14 +1003,14 @@ async function renderDashboard() {
   state.selectedUid = null;
   state.selectedItemId = null;
   root.innerHTML = `
-    <header style="display:grid;grid-template-columns:auto auto auto auto 1fr auto;column-gap:8px;row-gap:5px;align-items:center">
+    <header style="display:grid;grid-template-columns:auto auto auto;justify-content:start;column-gap:8px;row-gap:5px;align-items:center">
       <h1 style="grid-column:1;grid-row:1;font-size:15px;letter-spacing:1px;margin:0">RG ADMIN</h1>
       <button class="sign-out" id="summary-btn" style="grid-column:2;grid-row:1;padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Summary</button>
-      <button class="sign-out" id="export-btn" style="grid-column:3;grid-row:1;padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Export</button>
-      <button class="sign-out" id="bake-btn" style="grid-column:4;grid-row:1;padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer" title="Fold manual FMV entries into the selected category's fmv_*.json for download">FMV</button>
-      <button class="sign-out" id="cache-enabled" onclick="_toggleCache()" style="grid-column:6;grid-row:1;justify-self:end;padding:5px 12px;font-size:11px;border:1px solid #333;border-radius:8px;cursor:pointer" title="Assessment prompt caching on/off">Cache</button>
-      <button class="sign-out" id="signout-btn" style="grid-column:1;grid-row:2;justify-self:start;padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Sign Out</button>
-      <label style="grid-column:3;grid-row:2;display:inline-flex;align-items:center;gap:3px" title="Date range applied to Export + Summary (by assessment/added date)">
+      <button class="sign-out" id="export-btn" style="grid-column:1;grid-row:2;padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Export</button>
+      <button class="sign-out" id="bake-btn" style="grid-column:2;grid-row:2;padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer" title="Fold manual FMV entries into the selected category's fmv_*.json for download">FMV</button>
+      <button class="sign-out" id="cache-enabled" onclick="_toggleCache()" style="grid-column:3;grid-row:1;padding:5px 12px;font-size:11px;border:1px solid #333;border-radius:8px;cursor:pointer" title="Assessment prompt caching on/off">Cache</button>
+      <button class="sign-out" id="signout-btn" style="grid-column:3;grid-row:3;padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Sign Out</button>
+      <label style="grid-column:1;grid-row:3;display:inline-flex;align-items:center;gap:3px" title="Date range applied to Export + Summary (by assessment/added date)">
         <select id="export-range" onchange="_onRangeChange()" style="background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:8px;padding:3px 6px;font-size:11px">
           <option value="all">All time</option>
           <option value="today">Today</option>
@@ -1025,8 +1025,8 @@ async function renderDashboard() {
           <input type="date" id="export-to" title="To" style="font-size:10px;padding:1px 2px;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px">
         </span>
       </label>
-      <select id="bake-cat" style="grid-column:4;grid-row:2;padding:3px 6px;font-size:11px;background:#1c1c22;color:#ccc;border:1px solid #333;border-radius:8px" title="Which FMV file to bake"><option value="comics">Comics</option><option value="pokemon">Pokémon</option><option value="magic">Magic</option><option value="baseball">Baseball</option></select>
-      <select id="cache-ttl" onchange="_saveCacheCfg()" style="grid-column:6;grid-row:2;justify-self:end;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:8px;padding:3px 6px;font-size:11px"><option value="1h" ${_cacheCfg.ttl !== '5m' ? 'selected' : ''}>1h</option><option value="5m" ${_cacheCfg.ttl === '5m' ? 'selected' : ''}>5m</option></select>
+      <select id="bake-cat" style="grid-column:2;grid-row:3;padding:3px 6px;font-size:11px;background:#1c1c22;color:#ccc;border:1px solid #333;border-radius:8px" title="Which FMV file to bake"><option value="comics">Comics</option><option value="pokemon">Pokémon</option><option value="magic">Magic</option><option value="baseball">Baseball</option></select>
+      <select id="cache-ttl" onchange="_saveCacheCfg()" style="grid-column:3;grid-row:2;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:8px;padding:3px 6px;font-size:11px"><option value="1h" ${_cacheCfg.ttl !== '5m' ? 'selected' : ''}>1h</option><option value="5m" ${_cacheCfg.ttl === '5m' ? 'selected' : ''}>5m</option></select>
     </header>
     <main>
       <div id="stats-section"><div class="loading">Loading stats…</div></div>
@@ -1479,7 +1479,7 @@ function renderItemsList() {
             <div class="label">PG</div>
           </div>
           <div style="text-align:center;line-height:1.05;">
-            <div class="big">${it.score ?? '—'}</div>
+            <div class="big">${_rgCell(it)}</div>
             <div class="label">RG</div>
           </div>
         </div>
@@ -2109,7 +2109,7 @@ const RGV2 = (function () {
   const LADDER = ["0","0+","1-","1","1+","2-","2","2+","3-","3","3+","4-","4","4+","5-","5","5+","6-","6","6+","7-","7","7+","8-","8","8+","9-","9","9+","10-","10"];
   const CONFIG = {
     comic: [ {key:"front",label:"F",max:50}, {key:"back",label:"B",max:20}, {key:"spine",label:"S",max:20}, {key:"interior",label:"I",max:10} ],
-    card:  [ {key:"surface",label:"Surf",max:40}, {key:"centering",label:"Cent",max:20}, {key:"corners",label:"Corn",max:20}, {key:"edges",label:"Edge",max:20} ],
+    card:  [ {key:"surface",label:"Surf",max:50}, {key:"corners",label:"Corn",max:20}, {key:"edges",label:"Edge",max:20}, {key:"centering",label:"Cent",max:10} ],
   };
   const clampTier = t => Math.max(0, Math.min(30, t));
   const roundHalfUp = x => Math.floor(x + 0.5);
@@ -2126,6 +2126,19 @@ const RGV2 = (function () {
   const PM_BASE = { slabbed:4, main:2, deep:1, full:0 };
   return { LADDER, CONFIG, gradeFromScore, fromSubscores, tierFromThirds, subThirds, pmBand, PM_BASE, tierIndex: l=>LADDER.indexOf(l) };
 })();
+
+// Display RG for an item: cards use the v2 (31-tier) grade (from subscores when
+// available, else derived from the score); comics keep the raw 0-100 score.
+function _rgCell(it) {
+  try {
+    if (it && it.type === 'card') {
+      const cs = it.cardSubs;
+      if (cs && [cs.surface, cs.corners, cs.edges, cs.centering].some(v => v != null)) return RGV2.fromSubscores(cs, 'card').grade;
+      if (it.score != null) return RGV2.gradeFromScore(it.score);
+    }
+    return (it && it.score != null) ? it.score : '—';
+  } catch (e) { return (it && it.score != null) ? it.score : '—'; }
+}
 function _pmPenalty(pg) {
   if (!pg) return 0;
   const val = k => { const v = String(pg[k]||'').trim().toUpperCase(); return v==='B'?1:v==='C'?2:0; };

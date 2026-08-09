@@ -1178,6 +1178,10 @@ onAuthStateChanged(auth, async user => {
     #lightbox-img:active { cursor: grabbing; }
     #lightbox-close { position: absolute; top: max(env(safe-area-inset-top, 14px), 14px); left: 14px; width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; border: 1.5px solid rgba(255,255,255,0.3); font-size: 22px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; z-index: 1002; padding: 0; }
     #lightbox-close:hover { background: rgba(0,0,0,0.85); }
+    #lightbox-prev, #lightbox-next { position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; border: 1.5px solid rgba(255,255,255,0.3); font-size: 28px; font-weight: 700; cursor: pointer; align-items: center; justify-content: center; line-height: 1; z-index: 1002; padding: 0 0 4px; }
+    #lightbox-prev { left: 14px; }
+    #lightbox-next { right: 14px; }
+    #lightbox-prev:hover, #lightbox-next:hover { background: rgba(0,0,0,0.85); }
     /* S14: save-to-photos button mirrors the close button on the opposite
        corner. Same size and chrome treatment so the lightbox reads as
        having two equivalent action affordances. The download arrow SVG is
@@ -1743,7 +1747,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         <a href="mailto:support@robograder.app" style="font-size:14px;font-weight:700;color:#d4af37;text-decoration:none;letter-spacing:0.3px">support@robograder.app</a>
       </div>
       <div style="font-size:11px;color:#4a3a2a;line-height:1.6;text-align:center">
-        <span id="rgVersionLine">Robograder v4.69</span> · Assessment credits are non-refundable.
+        <span id="rgVersionLine">Robograder v4.70</span> · Assessment credits are non-refundable.
         Images are stored securely in your personal account.
       </div>
       <script>
@@ -1752,7 +1756,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.69";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.70";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
@@ -1797,6 +1801,8 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
       <line x1="12" y1="15" x2="12" y2="3"/>
     </svg>
   </button>
+  <button id="lightbox-prev" onclick="_lbStep(-1)" aria-label="Previous image" style="display:none">‹</button>
+  <button id="lightbox-next" onclick="_lbStep(1)" aria-label="Next image" style="display:none">›</button>
   <div id="lightbox-hint">PINCH OR DOUBLE-TAP TO ZOOM</div>
 </div>
 
@@ -2866,7 +2872,7 @@ function rgV2Grade(c) {
 function buildListBadge(c) {
   if (c.roboGrade && c.roboGrade.score != null) {
     const rgScore = Math.round(c.roboGrade.score);
-    const _v2g = RG_V2_DISPLAY ? rgV2Grade(c) : null;
+    const _v2g = (RG_V2_DISPLAY || c.type === "card") ? rgV2Grade(c) : null;  // cards always show v2
     const showPlus = rgScore >= 90 && rgScore < 100 && !c.highGradeUnlocked;
     // S17: match the dark score-box color used in every other view (was a
     // lighter green tuned to the List background, which made it inconsistent and
@@ -5203,7 +5209,7 @@ function closePublicPreview() {
 function buildListingSummary(roboGradeId, title, issue, prefix) {
   const url = `https://robograder.app/id/${roboGradeId}`;
   const it = (items || []).find(c => c && c.roboGradeId === roboGradeId);
-  const issueStr = issue ? ` #${issue}` : "";
+  const issueStr = issue ? ((it && it.type === "card") ? ` ${issue}` : ` #${issue}`) : "";
   const header = `${title}${issueStr}`.trim();
   const pfx = prefix ? `${prefix}\n` : "";
   if (!it) {
@@ -5452,6 +5458,46 @@ let _panzoomInstance = null;
 
 let _lightboxLastTap = 0;
 
+let _lbList = null, _lbIdx = 0;
+function _lbNonNull() { return (_lbList || []).filter(Boolean).length; }
+function _lbUpdateArrows() {
+  const show = _lbNonNull() > 1;
+  const p = document.getElementById("lightbox-prev"), nx = document.getElementById("lightbox-next");
+  if (p) p.style.display = show ? "flex" : "none";
+  if (nx) nx.style.display = show ? "flex" : "none";
+}
+function _lbShow() {
+  const img = document.getElementById("lightbox-img");
+  if (!_lbList || !_lbList[_lbIdx]) return;
+  img.src = _lbList[_lbIdx];
+  _attachPanzoomToLightbox();
+  _lbUpdateArrows();
+}
+function _lbStep(dir) {
+  if (!_lbList) return;
+  const n = _lbList.length; let i = _lbIdx, t = 0;
+  do { i = (i + dir + n) % n; t++; } while (!_lbList[i] && t <= n);
+  if (!_lbList[i]) return;
+  _lbIdx = i; _lbShow();
+}
+function _lbOpen(list, idx) {
+  _lbList = list; _lbIdx = idx;
+  const box = document.getElementById("lightbox");
+  box.style.display = "flex";
+  _lbShow();
+  box.onclick = e => { if (e.target === box || e.target.id === "lightbox-stage") closeLightbox(); };
+  if (!window._lbKeyed) {
+    window._lbKeyed = true;
+    document.addEventListener("keydown", e => {
+      const b = document.getElementById("lightbox");
+      if (!b || b.style.display === "none" || b.style.display === "") return;
+      if (e.key === "ArrowLeft") _lbStep(-1);
+      else if (e.key === "ArrowRight") _lbStep(1);
+      else if (e.key === "Escape") closeLightbox();
+    });
+  }
+}
+
 function _attachPanzoomToLightbox() {
   const img = document.getElementById("lightbox-img");
   const wrap = document.getElementById("lightbox-panzoom-wrap");
@@ -5493,79 +5539,37 @@ function _attachPanzoomToLightbox() {
 function openLightbox(id, idx) {
   const c = items.find(x => x.id === id);
   if (!c || !c.images?.[idx]) return;
-  const img = document.getElementById("lightbox-img");
-  const box = document.getElementById("lightbox");
-  img.src = c.images[idx];
-  box.style.display = "flex";
-  _attachPanzoomToLightbox();
-  box.onclick = e => {
-    if (e.target === box || e.target.id === "lightbox-stage") closeLightbox();
-  };
+  _lbOpen(c.images, idx);
 }
 
 function openCornerLightbox(id, idx) {
   const c = items.find(x => x.id === id);
   if (!c || !c.cornerImages?.[idx]) return;
-  const img = document.getElementById("lightbox-img");
-  const box = document.getElementById("lightbox");
-  img.src = c.cornerImages[idx];
-  box.style.display = "flex";
-  _attachPanzoomToLightbox();
-  box.onclick = e => {
-    if (e.target === box || e.target.id === "lightbox-stage") closeLightbox();
-  };
+  _lbOpen(c.cornerImages, idx);
 }
 
 function openInteriorCoverLightbox(id, idx) {
   const c = items.find(x => x.id === id);
   if (!c || !c.interiorCoverImages?.[idx]) return;
-  const img = document.getElementById("lightbox-img");
-  const box = document.getElementById("lightbox");
-  img.src = c.interiorCoverImages[idx];
-  box.style.display = "flex";
-  _attachPanzoomToLightbox();
-  box.onclick = e => {
-    if (e.target === box || e.target.id === "lightbox-stage") closeLightbox();
-  };
+  _lbOpen(c.interiorCoverImages, idx);
 }
 
 function openInteriorLightbox(id, idx) {
   const c = items.find(x => x.id === id);
   if (!c || !c.interiorImages?.[idx]) return;
-  const img = document.getElementById("lightbox-img");
-  const box = document.getElementById("lightbox");
-  img.src = c.interiorImages[idx];
-  box.style.display = "flex";
-  _attachPanzoomToLightbox();
-  box.onclick = e => {
-    if (e.target === box || e.target.id === "lightbox-stage") closeLightbox();
-  };
+  _lbOpen(c.interiorImages, idx);
 }
 
 function openSignatureLightbox(id, idx) {
   const c = items.find(x => x.id === id);
   if (!c || !c.signatureImages?.[idx]) return;
-  const img = document.getElementById("lightbox-img");
-  const box = document.getElementById("lightbox");
-  img.src = c.signatureImages[idx];
-  box.style.display = "flex";
-  _attachPanzoomToLightbox();
-  box.onclick = e => {
-    if (e.target === box || e.target.id === "lightbox-stage") closeLightbox();
-  };
+  _lbOpen(c.signatureImages, idx);
 }
 
 function openRestorationLightbox(id, idx) {
   const c = items.find(x => x.id === id);
   if (!c || !c.restorationImages?.[idx]) return;
-  const img = document.getElementById("lightbox-img");
-  const box = document.getElementById("lightbox");
-  img.src = c.restorationImages[idx];
-  box.style.display = "flex";
-  _attachPanzoomToLightbox();
-  box.onclick = e => {
-    if (e.target === box || e.target.id === "lightbox-stage") closeLightbox();
-  };
+  _lbOpen(c.restorationImages, idx);
 }
 
 let _lightboxLastTouchFingers = 0;
@@ -5602,6 +5606,7 @@ function handleDoubleTap(e) {
 }
 
 function closeLightbox() {
+  _lbList = null;
   const box = document.getElementById("lightbox");
   if (_panzoomInstance) {
     try {
@@ -6659,6 +6664,18 @@ function popResultBadge(valueEl) {
   setTimeout(() => box.classList.remove("rg-result-pop"), 750);
 }
 
+// S22: perfect-10 gold — when the ladder resolves to a clean 10, swap the scan
+// badge to gold with near-black text (mirrors the gold score box in the panel).
+function applyPerfect10Gold(valueEl, grade) {
+  if (String(grade == null ? "" : grade).trim() !== "10") return;
+  const box = valueEl && valueEl.parentElement;
+  if (!box) return;
+  box.style.background = "linear-gradient(150deg,#fdeea0 0%,#f0c53a 34%,#d99e12 66%,#b57e0c 100%)";
+  box.style.borderColor = "#8a6209";
+  box.querySelectorAll("div,span").forEach(n => { n.style.color = "#3a2606"; });
+  valueEl.style.color = "#1a1206";
+}
+
 // S20: snapshot the current (about-to-be-superseded) grade so the results panel
 // can slide in showing it and then animate to the revised grade. Called at
 // scan-start for Re-Assess / Deep / Full. Null on a first assessment (no prior
@@ -6854,7 +6871,7 @@ function mountResults(cgc, psa) {
       : null;
     if (_v2g != null) {
       roboEl.style.fontSize = '26px';
-      animateRGLadder(roboEl, _v2g, 2000).then(() => popResultBadge(roboEl));
+      animateRGLadder(roboEl, _v2g, 2000).then(() => { popResultBadge(roboEl); applyPerfect10Gold(roboEl, _v2g); });
     } else if (_rgFrom === roboScore) {
       // S20: animate from the PREVIOUS RG (0 on a first assessment) to the new one.
       setTimeout(() => popResultBadge(roboEl), 700);
@@ -8749,7 +8766,7 @@ function mountCardResults(rec) {
   if (_roboElCard && roboScore != null) {
     if (typeof animateRGLadder === "function" && window.RGScoreV2) {
       _roboElCard.style.fontSize = "26px";
-      animateRGLadder(_roboElCard, _rgGradeScan, 1800).then(() => popResultBadge(_roboElCard));
+      animateRGLadder(_roboElCard, _rgGradeScan, 1800).then(() => { popResultBadge(_roboElCard); applyPerfect10Gold(_roboElCard, _rgGradeScan); });
     } else {
       _roboElCard.textContent = _rgGradeScan;
       setTimeout(() => popResultBadge(_roboElCard), 700);

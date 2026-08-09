@@ -46,8 +46,9 @@ export default async function handler(req, res) {
         const d = await r.json();
         if (Array.isArray(d.images) && d.images[0]) image = d.images[0];  // front image
         const isCard = d.type === 'card';
-        const name = [d.title, d.issue ? '#' + d.issue : ''].filter(Boolean).join(' ').trim()
-          || (isCard ? 'Card' : 'Comic');
+        const name = isCard
+          ? (d.title || 'Card')  // card number lives in the message text; keep the preview caption to the name only
+          : ([d.title, d.issue ? '#' + d.issue : ''].filter(Boolean).join(' ').trim() || 'Comic');
         title = `Robograder: ${name}`;
         const rgScore = (d.roboGrade && d.roboGrade.score != null)
           ? Math.round(d.roboGrade.score)
