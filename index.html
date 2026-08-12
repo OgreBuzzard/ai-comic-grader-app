@@ -2117,6 +2117,93 @@ window.matchValueKey = function matchValueKey(title, issue, publisher, printing)
   }
 })();
 
+
+// -- Insert / Coupon indexes (S21) --------------------------------------------
+// Static JSON indexes fetched like value-keys. Insert = Mark Jewelers insert
+// confirmed books; Coupon = Marvel Value Stamp / pin-up books. When a book being
+// assessed matches, the assess screen surfaces two optional photo slots (see
+// insertSlotDefs / couponSlotDefs) and the images ride along to the grader.
+// Server mirrors these lists in lib/insert_list.js / lib/coupon_list.js.
+let _insertIndex = null;
+let _couponIndex = null;
+
+function _idxTitleHit(entry, nt) {
+  if (_normalizeKeyTitle(entry.title) === nt) return true;
+  return (entry.aliases || []).some(a => _normalizeKeyTitle(a) === nt);
+}
+
+window.matchInsert = function matchInsert(title, issue, vol) {
+  if (!_insertIndex || !Array.isArray(_insertIndex.books)) return null;
+  const nt = _normalizeKeyTitle(title), ni = _normalizeKeyIssue(issue);
+  if (!nt || !ni) return null;
+  const matches = _insertIndex.books.filter(e => _normalizeKeyIssue(e.issue) === ni && _idxTitleHit(e, nt));
+  if (!matches.length) return null;
+  if (vol != null) {
+    const v = parseInt(vol, 10);
+    const byVol = matches.find(e => e.vol === v);
+    if (byVol) return byVol;
+  }
+  return matches[0];
+};
+
+window.matchCoupon = function matchCoupon(title, issue) {
+  if (!_couponIndex || !Array.isArray(_couponIndex.books)) return null;
+  const nt = _normalizeKeyTitle(title), ni = _normalizeKeyIssue(issue);
+  if (!nt || !ni) return null;
+  return _couponIndex.books.find(e => _normalizeKeyIssue(e.issue) === ni && _idxTitleHit(e, nt)) || null;
+};
+
+function insertSlotDefs() {
+  return [
+    { key: "insert_spread", label: "Insert — the card/spread",
+      hint: "Photograph the Mark Jewelers insert itself (the full ad card/spread) so its condition can be assessed." },
+    { key: "insert_verify", label: "Insert — top edge + cover",
+      hint: "Stand the closed comic up and shoot the top edge so the front cover is readable AND the insert is visible sticking up above the interior pages, proving the insert belongs to this exact book." }
+  ];
+}
+
+function _couponPieceName(e) {
+  if (!e) return "coupon / pin-up";
+  if (e.item) return e.item;
+  return e.kind === "stamp" ? "Marvel Value Stamp" : "coupon / pin-up";
+}
+
+function couponSlotDefs(entry) {
+  const e = entry || {};
+  const piece = _couponPieceName(e);
+  const locator = e.desc ? e.desc : piece;
+  const place = (e.page != null) ? ("page " + e.page) : null;
+  const hint1 = place
+    ? ("Open the comic to " + place + " and take a close-up of the " + locator + ", showing whether it is present or has been cut/torn out.")
+    : ("Find the " + locator + " and take a close-up showing whether it is present or has been cut/torn out.");
+  const hint2 = place
+    ? ("Take a wider shot of the comic opened to " + place + " with the front or back cover also visible in the frame, so the close-up can be tied to this exact book.")
+    : ("Take a wider shot of the comic opened to that page with the front or back cover also visible in the frame, so the close-up can be tied to this exact book.");
+  return [
+    { key: "coupon_page", label: piece + " — close-up", hint: hint1 },
+    { key: "coupon_verify", label: piece + " — page + cover", hint: hint2 }
+  ];
+}
+
+(async function loadInsertIndex() {
+  try {
+    const r = await fetch("/insert_index.json", { cache: "default" });
+    if (!r.ok) { console.warn("[insert_index] fetch failed:", r.status); return; }
+    _insertIndex = await r.json();
+    console.log(`[insert_index] loaded ${(_insertIndex.books || []).length} books (v${_insertIndex.version || "?"})`);
+  } catch (e) { console.warn("[insert_index] load error:", e?.message || e); }
+})();
+
+(async function loadCouponIndex() {
+  try {
+    const r = await fetch("/coupon_index.json", { cache: "default" });
+    if (!r.ok) { console.warn("[coupon_index] fetch failed:", r.status); return; }
+    _couponIndex = await r.json();
+    console.log(`[coupon_index] loaded ${(_couponIndex.books || []).length} books (v${_couponIndex.version || "?"})`);
+  } catch (e) { console.warn("[coupon_index] load error:", e?.message || e); }
+})();
+
+
 // ── FMV index (S18) ────────────────────────────────────────────────────────
 // Index-driven Fair Market Value ranges. The data file /fmv.json is OPTIONAL:
 // when absent (404) the feature stays dormant and nothing renders. When present,
@@ -2813,12 +2900,16 @@ function psaCondShort(g) {
   return "";
 }
 
-function buildBadge(gradeVal, type, designation, sm, fullAssessment, deepAssessment, restored) {
+function buildBadge(gradeVal, type, designation, sm, fullAssessment, deepAssessment, restored, qualified) {
   const cls = sm ? "ubadge ubadge-sm" : "ubadge";
   const lbl = GRADE_LABELS[gradeVal] || "";
   // S16: If restoration detected, predicted badge turns purple
   if (restored && (type === "predicted" || type === "cgc-ai" || type === "psa-ai")) {
     return `<div class="${cls}" style="border-color:#7c3aed;background:linear-gradient(180deg,#9a6ad8 0%,#6a3ab0 100%)"><div class="ubadge-body" style="background:transparent"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.8)">${lbl}</div></div></div>`;
+  }
+  // S21: coupon/stamp/pin-up removed -> CGC "Qualified" -> predicted badge GREEN.
+  if (qualified && (type === "predicted" || type === "cgc-ai" || type === "psa-ai")) {
+    return `<div class="${cls}" style="border-color:#166534;background:linear-gradient(180deg,#2e9a52 0%,#166534 100%)"><div class="ubadge-body" style="background:transparent"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.85)">Qualified</div></div></div>`;
   }
   // S17: Tier is now shown via STARS on the RG score box (assessmentTierStars),
   // not by tinting the predicted badge gold/silver. The old Full→gold and
@@ -2889,7 +2980,7 @@ function buildListBadge(c) {
   if (c.type !== "card" && c.psaGrade) return buildBadge(normalizeGrade(c.psaGrade), "psa-official", c.psaDesignation || "universal", true);
   const ac = aiCgcGrade(c);
   const _listRestored = !!(c.restorationHighConfidence || (c.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(c.cgcNotes)));
-  if (ac) return buildBadge(ac, "predicted", "", true, isFullAssessmentComplete(c), isDeepAssessmentComplete(c), _listRestored);
+  if (ac) return buildBadge(ac, "predicted", "", true, isFullAssessmentComplete(c), isDeepAssessmentComplete(c), _listRestored, !!c.couponQualified);
   if (c.grade) return buildBadge(c.grade, "my", "", true);
   return "";
 }
@@ -3160,7 +3251,7 @@ async function migrateComicsToItems() {
   }
 }
 
-const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "deepAssessmentRan", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "deepUnlocked", "fullUnlocked", "restorationUnlocked" ];
+const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "deepAssessmentRan", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "insertImages", "couponImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified" ];
 
 const COMIC_DROP_FIELDS = [ "press", "uv", "clean" ];
 
@@ -3292,7 +3383,9 @@ function getVerificationState(item) {
     ...(item?.imagesMeta || []),
     ...(item?.cornerMeta || []),
     ...(item?.interiorCoverMeta || []),
-    ...(item?.interiorMeta || [])
+    ...(item?.interiorMeta || []),
+    ...(item?.insertMeta || []),
+    ...(item?.couponMeta || [])
   ].filter(Boolean);
   if (all.length === 0) return "empty";
   return all.every(m => m.source === "camera") ? "verified" : "unverified";
@@ -4465,6 +4558,9 @@ function renderList() {
   const _hasCards = _realItems.some(c => c.type === "card");
   const _hasComics = _realItems.some(c => c.type !== "card");
   const _mixed = _hasCards && _hasComics;
+  const _cardCount = _realItems.filter(c => c.type === "card").length;
+  const _comicCount = _realItems.length - _cardCount;
+  const _majorityType = _cardCount > _comicCount ? "card" : "comic";
   if (_mixed) {
     filt = filt.filter(c => (c.type === "card") ? _showCards : _showComics);
   }
@@ -4514,6 +4610,13 @@ function renderList() {
       });
     } else {
       titles.sort((a, b) => a.localeCompare(b));
+    }
+    // S21: on a MIXED collection, keep comics and cards in separate blocks —
+    // the majority type first (fully alphabetical), then the other type
+    // (alphabetical). Stable sort preserves the per-type ordering above.
+    if (_mixed) {
+      const _typeOf = t => (groups[t][0] && groups[t][0].type === "card") ? "card" : "comic";
+      titles.sort((a, b) => (_typeOf(a) === _majorityType ? 0 : 1) - (_typeOf(b) === _majorityType ? 0 : 1));
     }
     return {
       titles: titles,
@@ -4940,6 +5043,26 @@ function showDetail(id) {
       html += `</div></div>`;
     }
   }
+  if (selected.type !== "card") {
+    const _insD = (selected.insertImages || []).filter(u => u);
+    if (_insD.length) {
+      html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #c8962a">\n        <div style="font-size:11px;color:#c8962a;font-weight:700;letter-spacing:2px;margin-bottom:8px">MARK JEWELERS INSERT</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
+      _insD.forEach((url, di) => {
+        const si = (selected.insertImages || []).findIndex((u, i) => u === url && i >= di);
+        html += `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a"><img src="${url}" loading="lazy" decoding="async" onclick="openInsertLightbox('${selected.id}',${si})" style="display:block;width:100%;height:auto;border-radius:inherit;cursor:zoom-in"></div>`;
+      });
+      html += `</div></div>`;
+    }
+    const _coupD = (selected.couponImages || []).filter(u => u);
+    if (_coupD.length) {
+      html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #3a9a5a">\n        <div style="font-size:11px;color:#3a9a5a;font-weight:700;letter-spacing:2px;margin-bottom:8px">COUPON / PIN-UP PAGE</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
+      _coupD.forEach((url, di) => {
+        const si = (selected.couponImages || []).findIndex((u, i) => u === url && i >= di);
+        html += `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a"><img src="${url}" loading="lazy" decoding="async" onclick="openCouponLightbox('${selected.id}',${si})" style="display:block;width:100%;height:auto;border-radius:inherit;cursor:zoom-in"></div>`;
+      });
+      html += `</div></div>`;
+    }
+  }
   if (selected.roboGrade || (selected.type === "card" && selected.cardData && selected.cardData.robograde)) {
     html += `<div style="margin-top:16px">${selected.type === "card" ? buildCardRoboDisplay(selected) : buildRoboGradeDisplay(selected.roboGrade, selected)}</div>`;
   }
@@ -4956,7 +5079,7 @@ function showDetail(id) {
   const psaOfficialBadge = (!_isCardItem && selected.psaGrade) ? buildBadge(normalizeGrade(selected.psaGrade), "psa-official", selected.psaDesignation || "universal", false) : null;
   const predictedGradeValue = _isCardItem ? null : aiCgcGrade(selected);
   const _detailRestored = !!(selected.restorationHighConfidence || (selected.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(selected.cgcNotes)));
-  const predictedBadge = predictedGradeValue ? buildBadge(normalizeGrade(predictedGradeValue), "predicted", "", false, isFullAssessmentComplete(selected), isDeepAssessmentComplete(selected), _detailRestored) : null;
+  const predictedBadge = predictedGradeValue ? buildBadge(normalizeGrade(predictedGradeValue), "predicted", "", false, isFullAssessmentComplete(selected), isDeepAssessmentComplete(selected), _detailRestored, !!selected.couponQualified) : null;
   const predictionBoxes = [ cgcOfficialBadge, psaOfficialBadge, cardPsaBadge, predictedBadge ].filter(Boolean);
   const isGraded = !_isCardItem && !!(selected.cgcGrade || selected.psaGrade);
   const hasInteriorPhoto = !!(selected.images && selected.images[2]);
@@ -5572,6 +5695,18 @@ function openRestorationLightbox(id, idx) {
   _lbOpen(c.restorationImages, idx);
 }
 
+function openInsertLightbox(id, idx) {
+  const c = items.find(x => x.id === id);
+  if (!c || !c.insertImages?.[idx]) return;
+  _lbOpen(c.insertImages, idx);
+}
+
+function openCouponLightbox(id, idx) {
+  const c = items.find(x => x.id === id);
+  if (!c || !c.couponImages?.[idx]) return;
+  _lbOpen(c.couponImages, idx);
+}
+
 let _lightboxLastTouchFingers = 0;
 
 function _trackTouchStart(e) {
@@ -5899,6 +6034,8 @@ function showEdit(id) {
   formData._savedInteriorCoverImages = [ ...c.interiorCoverImages || [] ];
   formData._savedSignatureImages = [ ...c.signatureImages || [] ];
   formData._savedRestorationImages = [ ...c.restorationImages || [] ];
+  formData._savedInsertImages = [ ...c.insertImages || [] ];
+  formData._savedCouponImages = [ ...c.couponImages || [] ];
   formData._imagesChanged = false;
   stickTierUnlocks(formData);
   _restorationRevealed = isRestorationCheckComplete(c);
@@ -6783,6 +6920,8 @@ function mountResults(cgc, psa) {
     }
   };
   dbg("mountResults called");
+  const _refunded = !!window._creditRefunded;
+  window._creditRefunded = false;
   if (!window.RobograderScan || !window.RobograderScan.slideResultsIntoPanel) {
     console.warn("mountResults: scan-animation module not loaded");
     return;
@@ -6855,7 +6994,7 @@ function mountResults(cgc, psa) {
   let badgesHtml = "";
   if (roboScore != null) badgesHtml += makeBadge("robograde", "anim-val-robo");
   if (predictedGrade) badgesHtml += makeBadge("predicted", "anim-val-cgc");
-  const resultsHtml = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n      <div id="result-grades" style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badgesHtml}</div>\n      <div id="result-pq" style="display:flex;align-items:center;justify-content:center;min-height:22px;">\n        <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n      </div>\n      <button id="assess-complete-btn" disabled\n        style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">\n        ASSESSING…\n      </button>\n    </div>`;
+  const resultsHtml = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n      <div id="result-grades" style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badgesHtml}</div>\n      <div id="result-pq" style="display:flex;align-items:center;justify-content:center;min-height:22px;">\n        <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n      </div>\n      ${_refunded ? `<div style="display:flex;flex-direction:column;align-items:center;gap:1px;margin-top:2px"><img src="assets/robocoin2.webp" style="width:34px;height:34px" alt=""><div style="color:#d4af37;font-size:11px;font-weight:800;letter-spacing:0.5px">+1 CREDIT REFUNDED</div><div style="color:#cfc3a8;font-size:10px;letter-spacing:0.3px">grade not improved</div></div>` : ""}\n      <button id="assess-complete-btn" disabled\n        style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">\n        ASSESSING…\n      </button>\n    </div>`;
   window.RobograderScan.slideResultsIntoPanel(resultsHtml);
   dbg("mountResults: results html replaced");
   const roboEl = document.getElementById("anim-val-robo");
@@ -7241,8 +7380,15 @@ async function assessHighGrade() {
       psa: psa
     };
     window._pendingRoboGrade = cgc._roboGrade || null;
+    // S21: refund the Deep credit if the grade did not improve vs the pre-Deep
+    // RoboGrade. Unknown scores => treat as improved (no refund) to stay safe.
+    const _oldScore = (initialRG && typeof initialRG.score === "number") ? initialRG.score : null;
+    const _newScore = (cgc._roboGrade && typeof cgc._roboGrade.score === "number") ? cgc._roboGrade.score : null;
+    const _deepImproved = (_newScore != null && _oldScore != null) ? (_newScore > _oldScore) : true;
+    window._creditRefunded = !_deepImproved;
     mountResults(cgc, psa);
     onAssessmentSuccess();
+    if (!_deepImproved) refundCredit();
   } catch (e) {
     dismissAssessModal(e.message);
   }
@@ -8207,6 +8353,32 @@ function decrementCredit() {
       } catch (e) {
         console.error("Failed to decrement credits in Firestore:", e);
       }
+    }
+  }
+}
+
+// S21: Deep credit refund. When a Deep assessment does not raise the grade,
+// Matt absorbs the cost and refunds the charged credit (charge-then-refund, so
+// the net balance is unchanged and any onAssessmentSuccess side effects run).
+function refundCredit() {
+  window._userCredits = (window._userCredits || 0) + 1;
+  updateStats();
+  if (window._currentUser && window._db) {
+    try {
+      const userRef = window._fsDoc(window._db, "users", window._currentUser.uid);
+      if (window._fsUpdateDoc && window._fsIncrement) {
+        window._fsUpdateDoc(userRef, {
+          assessmentCredits: window._fsIncrement(1)
+        }).catch(e => console.error("Atomic credit refund failed:", e));
+      } else if (Number.isFinite(window._userCredits) && window._userCredits >= 0) {
+        window._fsSetDoc(userRef, {
+          assessmentCredits: window._userCredits
+        }, {
+          merge: true
+        });
+      }
+    } catch (e) {
+      console.error("Failed to refund credit in Firestore:", e);
     }
   }
 }
@@ -9378,6 +9550,18 @@ function renderForm() {
       return img ? `<div class="drag-slot" style="height:auto;position:relative;overflow:visible" onclick="tapSlot(${i},'signature')">\n                      <img src="${img}" style="display:block;width:100%;height:auto;border-radius:inherit">\n                      <button class="slot-edit" onclick="event.stopPropagation();openCropper('signature',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>\n                      <button class="slot-x" onclick="event.stopPropagation();removeSignatureImg(${i})">×</button>\n                     </div>` : `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:2/1;position:relative;overflow:hidden" onclick="tapSlot(${i},'signature')">\n                      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#7a6abf;font-size:12px;font-weight:600;letter-spacing:1px;text-align:center;padding:8px">\n                        <div style="font-size:20px;margin-bottom:4px">✎</div>\n                        <div>SIGNATURE ${i + 1}</div>\n                        <div style="font-size:10px;opacity:0.7;margin-top:4px">Tap to add</div>\n                      </div>\n                     </div>`;
     }).join("")}\n            </div>\n            <input id="signature-photo-input" type="file" accept="image/*" multiple onchange="handleSignatureImages(event)" style="display:none">\n          </div>\n        `;
   })()}\n      ${(() => {
+    if (_isCardForm || !formData.roboGrade || !formData.title || !formData.issue || typeof window.matchInsert !== "function") return "";
+    const _im = window.matchInsert(formData.title, formData.issue);
+    if (!_im) return "";
+    return _renderExtraPhotoSection({ title: "MARK JEWELERS INSERT", blurb: "This issue can carry a Mark Jewelers insert \u2014 a scarce variant. Add these two optional photos so the insert can be assessed and tied to this book.", accent: "#c8962a", inputId: "insert-photo-input", tapFn: "tapInsertSlot", removeFn: "removeInsertImg", onchange: "handleInsertImages(event)", defs: insertSlotDefs(), imgs: formData.insertImages || [ null, null ], runFn: "runInsertAssessment", runLabel: "RUN INSERT CHECK", finding: formData.insertFinding, foundLabel: "INSERT" });
+  })()}
+      ${(() => {
+    if (_isCardForm || !formData.roboGrade || !formData.title || !formData.issue || typeof window.matchCoupon !== "function") return "";
+    const _cm = window.matchCoupon(formData.title, formData.issue);
+    if (!_cm) return "";
+    return _renderExtraPhotoSection({ title: "COUPON / PIN-UP PAGE", blurb: "This issue is known for a coupon, stamp, or pin-up page that is often cut out. Add these two optional photos to show whether it is present.", accent: "#3a9a5a", inputId: "coupon-photo-input", tapFn: "tapCouponSlot", removeFn: "removeCouponImg", onchange: "handleCouponImages(event)", defs: couponSlotDefs(_cm), imgs: formData.couponImages || [ null, null ], runFn: "runCouponAssessment", runLabel: "RUN COUPON CHECK", finding: formData.couponFinding, foundLabel: "COUPON" });
+  })()}
+      ${(() => {
     const _fullDone = isFullAssessmentComplete(formData);
     if (!showFullTier(formData)) return "";
     const N = FULL_SLOT_COUNT;
@@ -9386,7 +9570,7 @@ function renderForm() {
     const ready = filled === N && !assessing;
     const blurb = _fullDone ? `Full Assessment has run on this book. You can replace any photo below and re-run to update the interior/structure findings.` : `This book qualifies for Full Assessment. Add all ${N} named photos below — each documents a specific part of the book's structure and page completeness. Once all ${N} are added, Full Assessment runs a deeper confirmation of the grade.`;
     const btnLabel = assessing ? "Assessing…" : _fullDone ? `RE-RUN FULL ASSESSMENT${filled < N ? ` (${filled}/${N})` : ""}` : `FULL ASSESSMENT${filled < N ? ` (${filled}/${N})` : ""}`;
-    return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n            <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT - EDGES AND STAPLES</div>\n            <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Additional detail to check for missing pages and staple condition.</div>\n            ${renderFullSlotGrid(interior, {editable: true})}\n            <input id="interior-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="full-assess-btn" class="rg-btn rg-btn-assess rg-btn-gold${assessing ? ' assessing' : ''}" onclick="submitFullAssessment()" ${ready ? "" : "disabled"}>\n                ${btnLabel}\n              </button>\n            </div>\n          </div>\n        `;
+    return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n            <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT - EDGES AND STAPLES</div>\n            <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Additional detail to check for missing pages and staple condition. This assessment is only for high-value books and is unlikely to affect grade unless a defect is exposed that wasn't already identified. The purpose of this check is for a more complete picture of the book.</div>\n            ${renderFullSlotGrid(interior, {editable: true})}\n            <input id="interior-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="full-assess-btn" class="rg-btn rg-btn-assess rg-btn-gold${assessing ? ' assessing' : ''}" onclick="submitFullAssessment()" ${ready ? "" : "disabled"}>\n                ${btnLabel}\n              </button>\n            </div>\n          </div>\n        `;
   })()}\n      ${(() => {
     if (!showRestorationTier(formData)) return "";
     if (isRestorationCheckComplete(formData)) {
@@ -9429,7 +9613,7 @@ function renderForm() {
       const psaOff = (!_isCardItem && formData.psaGrade) ? buildBadge(normalizeGrade(formData.psaGrade), "psa-official", formData.psaDesignation || "universal", false) : "";
       const predVal = _isCardItem ? null : (formData.predictedGrade || formData.assessedCGCGrade);
       const _editRestored = !!(formData.restorationHighConfidence || (formData.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(formData.cgcNotes)));
-      const predicted = predVal ? buildBadge(normalizeGrade(predVal), "predicted", "", false, false, false, _editRestored) : "";
+      const predicted = predVal ? buildBadge(normalizeGrade(predVal), "predicted", "", false, false, false, _editRestored, !!formData.couponQualified) : "";
       const _pqHtml = (!_isCardItem && formData.pageQuality) ? `<div style="display:flex;justify-content:center">${buildPQBox(formData.pageQuality)}</div>` : "";
       const _fmvGrade = _isCardItem ? _cardPsaStr : (formData.cgcGrade || formData.psaGrade || aiCgcGrade(formData));
       const _fmvMatch = _isCardItem ? ((window.matchCardFMV && _fmvGrade && formData.cardData) ? window.matchCardFMV(formData.cardData.cardIdentification, _fmvGrade) : null) : ((typeof window.matchFMV === "function" && _fmvGrade) ? window.matchFMV(formData.title, formData.issue, _fmvGrade, formData.printing, extractYearFromIssueDate(formData.issueDate)) : null);
@@ -9645,7 +9829,7 @@ let _cropperTarget = null;
 let _cropperOriginalSrc = null;
 
 function openCropper(type, index) {
-  const list = type === "corner" ? formData.cornerImages : type === "interiorCover" ? formData.interiorCoverImages : type === "interior" ? formData.interiorImages : type === "signature" ? formData.signatureImages : formData.images;
+  const list = type === "corner" ? formData.cornerImages : type === "interiorCover" ? formData.interiorCoverImages : type === "interior" ? formData.interiorImages : type === "signature" ? formData.signatureImages : type === "insert" ? formData.insertImages : type === "coupon" ? formData.couponImages : formData.images;
   const src = (list || [])[index];
   if (!src) return;
   _cropperTarget = {
@@ -9837,6 +10021,12 @@ function confirmCrop() {
     while (list.length < 2) list.push(null);
     list[index] = dataUrl;
     formData.signatureImages = list;
+  } else if (type === "insert" || type === "coupon") {
+    const _k = type === "insert" ? "insertImages" : "couponImages";
+    const list = [ ...formData[_k] || [ null, null ] ];
+    while (list.length < 2) list.push(null);
+    list[index] = dataUrl;
+    formData[_k] = list;
   } else if (type === "interiorCover") {
     // BUGFIX: interiorCover crops were falling through to the `else` and
     // OVERWRITING formData.images[index] (the Main front/back cover) with the
@@ -10226,6 +10416,148 @@ function removeSignatureImg(i) {
   formData.signatureImages = imgs;
   formData._imagesChanged = true;
   renderForm();
+}
+
+// S21: Insert / Coupon optional photo slots. These attach to a normal grade for
+// books on the Mark Jewelers insert index or the coupon/stamp/pin-up index. They
+// use the file picker (camera-or-library) rather than the guided in-app camera.
+let _tappedInsertSlot = 0;
+let _tappedCouponSlot = 0;
+function tapInsertSlot(i) { tapSlot(i, "insert"); }
+function tapCouponSlot(i) { tapSlot(i, "coupon"); }
+
+async function _handleExtraImages(e, key, tappedIdx) {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  const nonImage = files.find(f => !f.type.startsWith("image/"));
+  if (nonImage) {
+    alert(`"${nonImage.name}" doesn't look like an image file. Please pick photos only (JPG, PNG, HEIC, etc.).`);
+    e.target.value = "";
+    return;
+  }
+  const newImg = await new Promise(res => { const r = new FileReader; r.onload = ev => res(ev.target.result); r.readAsDataURL(files[0]); });
+  const imgs = [ ...formData[key] || [ null, null ] ];
+  while (imgs.length < 2) imgs.push(null);
+  imgs[tappedIdx % 2] = newImg;
+  formData[key] = imgs;
+  const mk = key === "insertImages" ? "insertMeta" : "couponMeta";
+  const meta = [ ...formData[mk] || [] ];
+  while (meta.length < 2) meta.push(null);
+  meta[tappedIdx % 2] = { source: "upload", capturedAt: (new Date).toISOString() };
+  formData[mk] = meta;
+  formData._imagesChanged = true;
+  e.target.value = "";
+  renderForm();
+}
+function handleInsertImages(e) { return _handleExtraImages(e, "insertImages", _tappedInsertSlot); }
+function handleCouponImages(e) { return _handleExtraImages(e, "couponImages", _tappedCouponSlot); }
+function removeInsertImg(i) { const a = [ ...formData.insertImages || [ null, null ] ]; while (a.length < 2) a.push(null); a[i] = null; formData.insertImages = a; const m = [ ...formData.insertMeta || [] ]; if (m.length > i) m[i] = null; formData.insertMeta = m; formData._imagesChanged = true; renderForm(); }
+function removeCouponImg(i) { const a = [ ...formData.couponImages || [ null, null ] ]; while (a.length < 2) a.push(null); a[i] = null; formData.couponImages = a; const m = [ ...formData.couponMeta || [] ]; if (m.length > i) m[i] = null; formData.couponMeta = m; formData._imagesChanged = true; renderForm(); }
+
+// Shared renderer for the two-slot Insert/Coupon sections. cfg = { title, blurb,
+// accent, inputId, tapFn, removeFn, onchange, defs, imgs }.
+function _renderExtraPhotoSection(cfg) {
+  const defs = cfg.defs || [];
+  const imgs = cfg.imgs || [ null, null ];
+  const slots = [ 0, 1 ].map(i => {
+    const img = imgs[i];
+    const d = defs[i] || { label: "Photo " + (i + 1), hint: "" };
+    if (img) {
+      return `<div class="drag-slot" style="height:auto;position:relative;overflow:visible" onclick="${cfg.tapFn}(${i})"><img src="${img}" style="display:block;width:100%;height:auto;border-radius:inherit"><button class="slot-x" onclick="event.stopPropagation();${cfg.removeFn}(${i})">×</button></div>`;
+    }
+    return `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:3/4;position:relative;overflow:hidden" onclick="${cfg.tapFn}(${i})"><div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:${cfg.accent};font-size:11px;font-weight:600;text-align:center;padding:10px"><div style="font-size:20px;margin-bottom:6px">＋</div><div style="font-weight:800;margin-bottom:4px">${esc(d.label)}</div><div style="font-size:10px;opacity:0.9;line-height:1.35;font-weight:500">${esc(d.hint)}</div></div></div>`;
+  }).join("");
+  const bothFilled = !!(imgs[0] && imgs[1]);
+  let footer = "";
+  const f = cfg.finding;
+  if (f) {
+    const col = f.present === false ? "#d46a4a" : (f.sameBook === false ? "#d4a642" : "#3a9a5a");
+    const head = f.present === false ? "NOT PRESENT / REMOVED" : (f.sameBook === false ? "PRESENT — BOOK UNCONFIRMED" : "PRESENT & CONFIRMED");
+    footer += `<div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:#141210;border:1px solid ${col}"><div style="font-size:11px;font-weight:800;letter-spacing:1px;color:${col};margin-bottom:4px">${esc(cfg.foundLabel || "RESULT")}: ${head}</div><div style="font-size:12px;color:#cfc3a8;line-height:1.4">${esc(f.note || "")}</div></div>`;
+  }
+  if (bothFilled && cfg.runFn) {
+    const busy = !!window._extraAssessing;
+    footer += `<div style="display:flex;justify-content:center;margin-top:10px"><button class="rg-btn rg-btn-assess rg-btn-bronze${busy ? " assessing" : ""}" style="min-height:44px" ${busy ? "disabled" : ""} onclick="${cfg.runFn}()">${busy ? "CHECKING…" : (f ? ("RE-RUN " + cfg.runLabel) : (cfg.runLabel + " — FREE"))}</button></div>`;
+  }
+  return `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed ${cfg.accent}"><div style="font-size:11px;color:${cfg.accent};font-weight:700;letter-spacing:2px;margin-bottom:4px">${cfg.title}</div><div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">${cfg.blurb}</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start">${slots}</div>${footer}<input id="${cfg.inputId}" type="file" accept="image/*" onchange="${cfg.onchange}" style="display:none"></div>`;
+}
+
+let _extraAssessing = false;
+async function runInsertAssessment() { return _runExtraAssessment("insert"); }
+async function runCouponAssessment() { return _runExtraAssessment("coupon"); }
+// S21: insert/coupon findings are appended as a comment at the END of the
+// Condition Assessment. Idempotent: a prior line with the same marker is
+// replaced so re-running does not stack duplicates.
+function _upsertConditionNote(marker, line) {
+  let txt = formData.aiAssessment || "";
+  const esc = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  txt = txt.replace(new RegExp("\\n*" + esc + "[^\\n]*", "g"), "").replace(/\s+$/, "");
+  formData.aiAssessment = (txt ? txt + "\n\n" : "") + line;
+}
+
+async function _runExtraAssessment(kind) {
+  if (window._extraAssessing) return;
+  const imgKey = kind === "insert" ? "insertImages" : "couponImages";
+  const imgs = (formData[imgKey] || []).filter(Boolean);
+  if (imgs.length < 2) { alert("Both photos are required to run this check."); return; }
+  const entry = kind === "insert"
+    ? (typeof window.matchInsert === "function" ? window.matchInsert(formData.title, formData.issue) : null)
+    : (typeof window.matchCoupon === "function" ? window.matchCoupon(formData.title, formData.issue) : null);
+  window._extraAssessing = true;
+  renderForm();
+  try {
+    const prep = async u => {
+      if (typeof u === "string" && u.startsWith("http")) {
+        const r = await fetch(u); const b = await r.blob();
+        return await new Promise(res => { const fr = new FileReader; fr.onload = ev => res(ev.target.result); fr.readAsDataURL(b); });
+      }
+      return u;
+    };
+    const prepared = [];
+    for (const im of imgs.slice(0, 2)) prepared.push(await prep(im));
+    const compressed = await compressImagesSequentially(prepared);
+    let front = (formData.images || [])[0] || null;
+    let compFront = null;
+    if (front) { front = await prep(front); compFront = (await compressImagesSequentially([front]))[0] || null; }
+    const token = window._currentUser ? await window._currentUser.getIdToken() : null;
+    const resp = await fetch("/api/assess_" + kind, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-client-secret": "022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d", ...(token ? { Authorization: "Bearer " + token } : {}) },
+      body: JSON.stringify({ images: compressed, frontCover: compFront, title: formData.title || "", issueNumber: formData.issue || "", entry: entry || null })
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    const dataR = await resp.json();
+    if (dataR.error) throw new Error(dataR.error);
+    if (kind === "insert") {
+      formData.insertFinding = dataR;
+      const bookNote = dataR.sameBook === false ? " (image 2 did not confirm the same book)" : "";
+      _upsertConditionNote("Mark Jewelers insert:", "Mark Jewelers insert: " + (dataR.present ? "present in the centerfold" : "not present") + bookNote + (dataR.note ? " — " + dataR.note : ""));
+    } else {
+      formData.couponFinding = dataR;
+      const piece = dataR.piece || "coupon / pin-up";
+      const bookNote = dataR.sameBook === false ? " (image 2 did not confirm the same book)" : "";
+      _upsertConditionNote("Coupon/pin-up check:", "Coupon/pin-up check: " + piece + " " + (dataR.present ? "present/intact" : "appears cut out or removed") + bookNote + (dataR.note ? " — " + dataR.note : ""));
+      // S21: a removed coupon/stamp/pin-up drops the Interior sub-score severely
+      // and flags the book CGC "Qualified" (green predicted badge). Restored if a
+      // later re-run finds it present.
+      const rg = formData.roboGrade;
+      if (dataR.present === false) {
+        if (rg && typeof rg.interiorScore === "number") {
+          if (rg._interiorPreCoupon == null) rg._interiorPreCoupon = rg.interiorScore;
+          rg.interiorScore = Math.min(rg.interiorScore, 10);
+        }
+        formData.couponQualified = true;
+      } else {
+        if (rg && rg._interiorPreCoupon != null) { rg.interiorScore = rg._interiorPreCoupon; delete rg._interiorPreCoupon; }
+        formData.couponQualified = false;
+      }
+    }
+  } catch (e) {
+    alert("Assessment failed: " + (e && e.message ? e.message : e));
+  } finally {
+    window._extraAssessing = false;
+    renderForm();
+  }
 }
 
 async function handleSignatureImages(e) {
@@ -10806,6 +11138,8 @@ const CAMERA_CAPTURE_ORDER_CARDDEEP = [ 0, 1, 2, 3 ];
 // exterior_bottom_staple, interior_staple). Interior Staples (slot 5) captures
 // better in PORTRAIT; the other five are landscape.
 const CAMERA_SLOT_ORIENTATION_INTERIOR = [ "landscape", "landscape", "landscape", "landscape", "landscape", "portrait" ];
+const CAMERA_SLOT_ORIENTATION_INSERT = [ "landscape", "portrait" ];
+const CAMERA_SLOT_ORIENTATION_COUPON = [ "portrait", "landscape" ];
 
 // S21 (per Matt): capture order unified to storage order — Front(0), Back(1),
 // Interior(2), Spine(3). Front/Back/Interior are all top-down portrait; Spine (the
@@ -10946,6 +11280,8 @@ function tapSlot(slotIndex, kind) {
     else if (kind === "interiorCover") { _tappedInteriorCoverSlot = slotIndex; document.getElementById("interior-cover-photo-input").click(); }
     else if (kind === "interior") { _tappedInteriorSlot = slotIndex; document.getElementById("interior-photo-input").click(); }
     else if (kind === "signature") { _tappedSignatureSlot = slotIndex; document.getElementById("signature-photo-input").click(); }
+    else if (kind === "insert") { _tappedInsertSlot = slotIndex; document.getElementById("insert-photo-input").click(); }
+    else if (kind === "coupon") { _tappedCouponSlot = slotIndex; document.getElementById("coupon-photo-input").click(); }
     else if (kind === "carddeep") { _cardDeepSlot = slotIndex; document.getElementById("card-deep-photo-input").click(); }
     else { _tappedSlot = slotIndex; document.getElementById("photo-input").click(); }
     return;
@@ -10956,10 +11292,10 @@ function tapSlot(slotIndex, kind) {
     cameraOpenSlot(slotIndex);
     return;
   }
-  const list = (kind === "corner" ? formData.cornerImages : kind === "signature" ? formData.signatureImages : kind === "interiorCover" ? formData.interiorCoverImages : kind === "interior" ? formData.interiorImages : kind === "carddeep" ? formData.cardDeepImages : formData.images) || [];
-  const captureOrder = kind === "corner" ? CAMERA_CAPTURE_ORDER_CORNER : kind === "signature" ? [ 0, 1 ] : kind === "interiorCover" ? [ 0, 1 ] : kind === "interior" ? Array.from({ length: FULL_SLOT_COUNT }, (_, i) => i) : kind === "carddeep" ? CAMERA_CAPTURE_ORDER_CARDDEEP : CAMERA_CAPTURE_ORDER_MAIN;
+  const list = (kind === "corner" ? formData.cornerImages : kind === "signature" ? formData.signatureImages : kind === "insert" ? formData.insertImages : kind === "coupon" ? formData.couponImages : kind === "interiorCover" ? formData.interiorCoverImages : kind === "interior" ? formData.interiorImages : kind === "carddeep" ? formData.cardDeepImages : formData.images) || [];
+  const captureOrder = kind === "corner" ? CAMERA_CAPTURE_ORDER_CORNER : kind === "signature" ? [ 0, 1 ] : kind === "insert" ? [ 0, 1 ] : kind === "coupon" ? [ 0, 1 ] : kind === "interiorCover" ? [ 0, 1 ] : kind === "interior" ? Array.from({ length: FULL_SLOT_COUNT }, (_, i) => i) : kind === "carddeep" ? CAMERA_CAPTURE_ORDER_CARDDEEP : CAMERA_CAPTURE_ORDER_MAIN;
   const emptySlotsInOrder = captureOrder.filter(i => !list[i]);
-  const isMultiEmpty = kind !== "signature" && emptySlotsInOrder.length > 1 && (emptySlotsInOrder.includes(slotIndex) || kind === "interior" || kind === "interiorCover");
+  const isMultiEmpty = kind !== "signature" && kind !== "insert" && kind !== "coupon" && emptySlotsInOrder.length > 1 && (emptySlotsInOrder.includes(slotIndex) || kind === "interior" || kind === "interiorCover");
   console.log("[tapSlot] kind:", kind, "slot:", slotIndex, "emptySlots:", emptySlotsInOrder.length, "isMultiEmpty:", isMultiEmpty, "mode:", isMultiEmpty ? "walkthrough" : "single");
   if (kind === "interior") {
   }
@@ -11335,7 +11671,7 @@ function applyCameraOrientationState() {
     return true;
   }
   const {kind: kind, current: current} = _cameraState;
-  const preferred = kind === "corner" ? "portrait" : kind === "signature" ? "landscape" : kind === "interiorCover" ? "landscape" : kind === "interior" ? (CAMERA_SLOT_ORIENTATION_INTERIOR[current] || "landscape") : kind === "restoration" ? (CAMERA_SLOT_ORIENTATION_RESTORATION[current] || "portrait") : kind === "uvfront" ? "portrait" : kind === "carddeep" ? (CAMERA_SLOT_ORIENTATION_CARDDEEP[current] || "portrait") : (_cameraState.isCard ? (CAMERA_SLOT_ORIENTATION_CARD[current] || "portrait") : CAMERA_SLOT_ORIENTATION_MAIN[current]);
+  const preferred = kind === "corner" ? "portrait" : kind === "signature" ? "landscape" : kind === "insert" ? (CAMERA_SLOT_ORIENTATION_INSERT[current] || "portrait") : kind === "coupon" ? (CAMERA_SLOT_ORIENTATION_COUPON[current] || "portrait") : kind === "interiorCover" ? "landscape" : kind === "interior" ? (CAMERA_SLOT_ORIENTATION_INTERIOR[current] || "landscape") : kind === "restoration" ? (CAMERA_SLOT_ORIENTATION_RESTORATION[current] || "portrait") : kind === "uvfront" ? "portrait" : kind === "carddeep" ? (CAMERA_SLOT_ORIENTATION_CARDDEEP[current] || "portrait") : (_cameraState.isCard ? (CAMERA_SLOT_ORIENTATION_CARD[current] || "portrait") : CAMERA_SLOT_ORIENTATION_MAIN[current]);
   const actual = getCurrentOrientation();
   const match = preferred === actual;
   const card = document.getElementById("camera-rotate-card");
@@ -11424,8 +11760,8 @@ function cameraOpenSlot(slotIndex) {
     }
   }
   const {kind: kind, mode: mode, queue: queue} = _cameraState;
-  const guideFile = (kind === "corner" ? CAMERA_GUIDE_CORNER : kind === "signature" ? [ null, null ] : kind === "interiorCover" ? CAMERA_GUIDE_INTERIOR_COVER : kind === "interior" ? CAMERA_GUIDE_INTERIOR : kind === "restoration" ? CAMERA_GUIDE_RESTORATION : kind === "uvfront" ? [ CAMERA_GUIDE_MAIN[0] ] : kind === "carddeep" ? CAMERA_GUIDE_CARDDEEP : (_cameraState.isCard ? CAMERA_GUIDE_CARD : CAMERA_GUIDE_MAIN))[slotIndex];
-  const label = (kind === "corner" ? CAMERA_LABEL_CORNER : kind === "signature" ? [ "Signature 1", "Signature 2" ] : kind === "interiorCover" ? [ "Interior Front", "Interior Back" ] : kind === "interior" ? FULL_SLOTS.map(s => s.label) : kind === "restoration" ? RESTORATION_SLOTS.map(s => s.label) : kind === "uvfront" ? [ "UV FRONT" ] : kind === "carddeep" ? CAMERA_LABEL_CARDDEEP : (_cameraState.isCard ? CAMERA_LABEL_CARD : CAMERA_LABEL_MAIN))[slotIndex];
+  const guideFile = (kind === "corner" ? CAMERA_GUIDE_CORNER : kind === "signature" ? [ null, null ] : kind === "insert" ? [ null, null ] : kind === "coupon" ? [ null, null ] : kind === "interiorCover" ? CAMERA_GUIDE_INTERIOR_COVER : kind === "interior" ? CAMERA_GUIDE_INTERIOR : kind === "restoration" ? CAMERA_GUIDE_RESTORATION : kind === "uvfront" ? [ CAMERA_GUIDE_MAIN[0] ] : kind === "carddeep" ? CAMERA_GUIDE_CARDDEEP : (_cameraState.isCard ? CAMERA_GUIDE_CARD : CAMERA_GUIDE_MAIN))[slotIndex];
+  const label = (kind === "corner" ? CAMERA_LABEL_CORNER : kind === "signature" ? [ "Signature 1", "Signature 2" ] : kind === "insert" ? [ "Insert spread", "Top edge + cover" ] : kind === "coupon" ? [ "Coupon / pin-up page", "Page + cover" ] : kind === "interiorCover" ? [ "Interior Front", "Interior Back" ] : kind === "interior" ? FULL_SLOTS.map(s => s.label) : kind === "restoration" ? RESTORATION_SLOTS.map(s => s.label) : kind === "uvfront" ? [ "UV FRONT" ] : kind === "carddeep" ? CAMERA_LABEL_CARDDEEP : (_cameraState.isCard ? CAMERA_LABEL_CARD : CAMERA_LABEL_MAIN))[slotIndex];
   const labelEl = document.getElementById("camera-slot-label");
   if (labelEl) labelEl.textContent = (label || "").toUpperCase();
   const orientationMatch = applyCameraOrientationState();
@@ -11672,8 +12008,8 @@ async function runCropperSequence(captures, kind) {
       formData._imagesChanged = true;
       continue;
     }
-    const listKey = kind === "corner" ? "cornerImages" : kind === "signature" ? "signatureImages" : kind === "interiorCover" ? "interiorCoverImages" : kind === "interior" ? "interiorImages" : kind === "restoration" ? "restorationImages" : kind === "carddeep" ? "cardDeepImages" : "images";
-    const metaKey = kind === "corner" ? "cornerMeta" : kind === "signature" ? "signatureMeta" : kind === "interiorCover" ? "interiorCoverMeta" : kind === "interior" ? "interiorMeta" : kind === "restoration" ? "restorationMeta" : kind === "carddeep" ? "cardDeepMeta" : "imagesMeta";
+    const listKey = kind === "corner" ? "cornerImages" : kind === "signature" ? "signatureImages" : kind === "insert" ? "insertImages" : kind === "coupon" ? "couponImages" : kind === "interiorCover" ? "interiorCoverImages" : kind === "interior" ? "interiorImages" : kind === "restoration" ? "restorationImages" : kind === "carddeep" ? "cardDeepImages" : "images";
+    const metaKey = kind === "corner" ? "cornerMeta" : kind === "signature" ? "signatureMeta" : kind === "insert" ? "insertMeta" : kind === "coupon" ? "couponMeta" : kind === "interiorCover" ? "interiorCoverMeta" : kind === "interior" ? "interiorMeta" : kind === "restoration" ? "restorationMeta" : kind === "carddeep" ? "cardDeepMeta" : "imagesMeta";
     const list = [ ...formData[listKey] || [] ];
     while (list.length <= cap.slot) list.push(null);
     // S16: Interior Staples auto-rotate 90° CW at capture time
@@ -11705,7 +12041,7 @@ async function runCropperSequence(captures, kind) {
     };
     formData[metaKey] = meta;
     formData._imagesChanged = true;
-    if (kind === "corner" || kind === "signature" || kind === "restoration" || kind === "interiorCover" || kind === "main" || kind === "interior") {
+    if (kind === "corner" || kind === "signature" || kind === "insert" || kind === "coupon" || kind === "restoration" || kind === "interiorCover" || kind === "main" || kind === "interior") {
       // S20: the auto-cropper is NO LONGER forced in any capture sequence
       // (previously Main and Full auto-opened it). The crop tool has an
       // unresolved bug — the crop handles render off-screen — so cropping stays
@@ -11780,6 +12116,8 @@ function cameraUploadInstead() {
     else if (savedKind === "interiorCover") { _tappedInteriorCoverSlot = savedCurrent; document.getElementById("interior-cover-photo-input").click(); }
     else if (savedKind === "interior") { _tappedInteriorSlot = savedCurrent; document.getElementById("interior-photo-input").click(); }
     else if (savedKind === "signature") { _tappedSignatureSlot = savedCurrent; document.getElementById("signature-photo-input").click(); }
+    else if (savedKind === "insert") { _tappedInsertSlot = savedCurrent; document.getElementById("insert-photo-input").click(); }
+    else if (savedKind === "coupon") { _tappedCouponSlot = savedCurrent; document.getElementById("coupon-photo-input").click(); }
     else if (savedKind === "restoration" || savedKind === "uvfront") { _tappedRestorationSlot = savedCurrent; document.getElementById("restoration-photo-input").click(); }
     else { _tappedSlot = savedCurrent; document.getElementById("photo-input").click(); }
   };
@@ -11855,13 +12193,17 @@ async function submitForm() {
   const newInteriorCount = rawInteriorImages.filter(x => x && isDataUrl(x)).length;
   const rawSignatureImages = formData.signatureImages || [];
   const newSignatureCount = rawSignatureImages.filter(x => x && isDataUrl(x)).length;
+  const rawInsertImages = formData.insertImages || [];
+  const newInsertCount = rawInsertImages.filter(x => x && isDataUrl(x)).length;
+  const rawCouponImages = formData.couponImages || [];
+  const newCouponCount = rawCouponImages.filter(x => x && isDataUrl(x)).length;
   const rawRestorationImages = formData.restorationImages || [];
   const newRestorationCount = rawRestorationImages.filter(x => x && isDataUrl(x)).length;
   // S20 (#36): Deep interior-cover photos.
   const rawInteriorCoverImages = formData.interiorCoverImages || [];
   const newInteriorCoverCount = rawInteriorCoverImages.filter(x => x && isDataUrl(x)).length;
-  const newImageCount = rawImages.filter(isDataUrl).length + rawCornerImages.filter(isDataUrl).length + newInteriorCount + newSignatureCount + newRestorationCount + newInteriorCoverCount;
-  let finalImages, finalCornerImages, finalThumbnails, finalInteriorImages, finalSignatureImages, finalRestorationImages, finalInteriorCoverImages;
+  const newImageCount = rawImages.filter(isDataUrl).length + rawCornerImages.filter(isDataUrl).length + newInteriorCount + newSignatureCount + newRestorationCount + newInteriorCoverCount + newInsertCount + newCouponCount;
+  let finalImages, finalCornerImages, finalThumbnails, finalInteriorImages, finalSignatureImages, finalRestorationImages, finalInteriorCoverImages, finalInsertImages, finalCouponImages;
   try {
     if (formData._imagesChanged && newImageCount > 0) {
       let preUpload = null;
@@ -11913,6 +12255,22 @@ async function submitForm() {
         });
         finalSignatureImages = signatureResult.images;
       }
+      if (rawInsertImages.length > 0 && rawInsertImages.some(Boolean)) {
+        syncMsg(`Uploading insert photo${newInsertCount === 1 ? "" : "s"}...`);
+        const insertResult = await processImagesForSave(rawInsertImages, id, [ "insert_01", "insert_02" ], {
+          generateThumbs: false,
+          preserveNulls: true
+        });
+        finalInsertImages = insertResult.images;
+      }
+      if (rawCouponImages.length > 0 && rawCouponImages.some(Boolean)) {
+        syncMsg(`Uploading coupon photo${newCouponCount === 1 ? "" : "s"}...`);
+        const couponResult = await processImagesForSave(rawCouponImages, id, [ "coupon_01", "coupon_02" ], {
+          generateThumbs: false,
+          preserveNulls: true
+        });
+        finalCouponImages = couponResult.images;
+      }
       if (rawInteriorCoverImages.length > 0 && rawInteriorCoverImages.some(Boolean)) {
         syncMsg(`Uploading interior-cover photo${newInteriorCoverCount === 1 ? "" : "s"}...`);
         const interiorCoverResult = await processImagesForSave(rawInteriorCoverImages, id, STORAGE_SLOTS_INTERIOR_COVER, {
@@ -11950,6 +12308,8 @@ async function submitForm() {
       finalCornerImages = formData._savedCornerImages || existingComic?.cornerImages || [];
       finalInteriorImages = formData._savedInteriorImages || existingComic?.interiorImages || formData.interiorImages || [];
       finalSignatureImages = formData._savedSignatureImages || existingComic?.signatureImages || formData.signatureImages || [];
+      finalInsertImages = formData._savedInsertImages || existingComic?.insertImages || formData.insertImages || [];
+      finalCouponImages = formData._savedCouponImages || existingComic?.couponImages || formData.couponImages || [];
       finalRestorationImages = formData._savedRestorationImages || existingComic?.restorationImages || formData.restorationImages || [];
       finalInteriorCoverImages = formData._savedInteriorCoverImages || existingComic?.interiorCoverImages || formData.interiorCoverImages || [];
     }
@@ -11995,6 +12355,8 @@ async function submitForm() {
   finalInteriorImages = _sanitizeSlots(finalInteriorImages);
   finalRestorationImages = _sanitizeSlots(finalRestorationImages);
   finalInteriorCoverImages = _sanitizeSlots(finalInteriorCoverImages);
+  finalInsertImages = _sanitizeSlots(finalInsertImages);
+  finalCouponImages = _sanitizeSlots(finalCouponImages);
   // S20: derive interior-cover / interior meta so a library-uploaded grade photo
   // is recorded as source:"upload" (camera captures already carry source:"camera"
   // from runCropperSequence). getVerificationState reads these to gate the
@@ -12007,6 +12369,8 @@ async function submitForm() {
   });
   const finalInteriorCoverMeta = _deriveMeta(finalInteriorCoverImages, formData.interiorCoverMeta || existingComicForMeta?.interiorCoverMeta || [], existingComicForMeta?.interiorCoverImages);
   const finalInteriorMeta = _deriveMeta(finalInteriorImages, formData.interiorMeta || existingComicForMeta?.interiorMeta || [], existingComicForMeta?.interiorImages);
+  const finalInsertMeta = _deriveMeta(finalInsertImages, formData.insertMeta || existingComicForMeta?.insertMeta || [], existingComicForMeta?.insertImages);
+  const finalCouponMeta = _deriveMeta(finalCouponImages, formData.couponMeta || existingComicForMeta?.couponMeta || [], existingComicForMeta?.couponImages);
   const rec = {
     ...formData,
     id: id,
@@ -12030,6 +12394,10 @@ async function submitForm() {
     interiorImages: finalInteriorImages || formData.interiorImages || [],
     interiorMeta: finalInteriorMeta,
     signatureImages: finalSignatureImages || formData.signatureImages || [],
+    insertImages: finalInsertImages || formData.insertImages || [],
+    couponImages: finalCouponImages || formData.couponImages || [],
+    insertMeta: finalInsertMeta || formData.insertMeta || [],
+    couponMeta: finalCouponMeta || formData.couponMeta || [],
     restorationImages: finalRestorationImages || [],
     interiorCoverImages: finalInteriorCoverImages || formData.interiorCoverImages || [],
     interiorCoverMeta: finalInteriorCoverMeta,
@@ -12039,6 +12407,8 @@ async function submitForm() {
   delete rec._savedCornerImages;
   delete rec._savedInteriorImages;
   delete rec._savedSignatureImages;
+  delete rec._savedInsertImages;
+  delete rec._savedCouponImages;
   delete rec._savedRestorationImages;
   delete rec._imagesChanged;
   delete rec.schemaVersion;

@@ -9,6 +9,12 @@
     "api/assess_full.js": {
       "maxDuration": 60
     },
+    "api/assess_insert.js": {
+      "maxDuration": 60
+    },
+    "api/assess_coupon.js": {
+      "maxDuration": 60
+    },
     "api/checkout.js": {
       "maxDuration": 30
     },

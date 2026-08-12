@@ -1128,7 +1128,7 @@ function ensureStylesInjected() {
      FRONT (score + identity), top half = BACK (QR + robot, rotated 180). */
   .rg-label-card {
     width: 756px; height: 576px;
-    background: linear-gradient(180deg, #b58a5f 0%, #c9a279 30%, #d6b391 55%, #eedbc5 100%);
+    background: linear-gradient(180deg, #eedbc5 0%, #b58a5f 43.75%, #b58a5f 56.25%, #eedbc5 100%);
     border: 1px solid #8a9a6a; border-radius: 4px;
     position: relative; overflow: hidden; box-sizing: border-box;
     font-family: 'Barlow Condensed', sans-serif;
@@ -1139,20 +1139,38 @@ function ensureStylesInjected() {
   }
   .rg-label-card .rgc-foldtop { top: 252px; }
   .rg-label-card .rgc-foldbot { top: 324px; }
+  /* S21: Card name written in the 0.25" fold zone (252-324px), upright and
+     horizontal like the Comic label wrap-strip, so cards standing in a box are
+     identifiable from the top edge. */
+  .rg-label-card .rgc-foldname {
+    position: absolute; left: 24px; right: 24px; top: 252px; height: 72px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Noto Sans Display', sans-serif; font-weight: 700;
+    font-size: 34px; color: #0d0d0f; letter-spacing: 0.2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    z-index: 2;
+  }
   .rg-label-card .rgc-back {
     position: absolute; top: 0; left: 0; right: 0; height: 252px;
     transform: rotate(180deg);
-    display: flex; align-items: center; justify-content: center; gap: 26px;
-    padding: 10px 24px;
   }
-  .rg-label-card .rgc-qr { width: 150px; height: 150px; flex-shrink: 0; }
-  .rg-label-card .rgc-qr .qrc canvas, .rg-label-card .rgc-qr .qrc img { width: 150px !important; height: 150px !important; }
-  .rg-label-card .rgc-qr-private { display: flex; align-items: center; justify-content: center; text-align: center; font-size: 13px; letter-spacing: 1.5px; color: #7a6a4a; font-weight: 700; }
-  .rg-label-card .rgc-robot { width: 150px; height: 150px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+  /* element-right -> flat-left after the 180 rotation */
+  .rg-label-card .rgc-robot {
+    position: absolute; right: 28px; top: 50%; transform: translateY(-50%);
+    width: 150px; height: 150px; display: flex; align-items: center; justify-content: center;
+  }
   .rg-label-card .rgc-robot img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  /* element-left -> flat-right; column is URL(top)+QR(bottom) so after the flip
+     the QR sits on top with the URL directly beneath it */
+  .rg-label-card .rgc-qrcol {
+    position: absolute; left: 28px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+  }
+  .rg-label-card .rgc-qr { width: 150px; height: 150px; }
+  .rg-label-card .rgc-qr .qrc canvas, .rg-label-card .rgc-qr .qrc img { width: 150px !important; height: 150px !important; }
+  .rg-label-card .rgc-qr-private { width: 150px; height: 150px; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 13px; letter-spacing: 1.5px; color: #7a6a4a; font-weight: 700; }
   .rg-label-card .rgc-backurl {
-    position: absolute; bottom: 6px; left: 0; right: 0; text-align: center;
-    font-size: 13px; color: #5a6a4a; font-weight: 500;
+    font-size: 13px; color: #5a6a4a; font-weight: 500; text-align: center;
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
   }
   .rg-label-card .rgc-front {
@@ -1186,7 +1204,7 @@ function ensureStylesInjected() {
   .rg-label-card .rgc-score.gold .rgc-word { color: #7a5a10; }
   .rg-label-card .rgc-stars { position: absolute; top: 32px; font-size: 15px; line-height: 1; opacity: 0.5; }
   .rg-label-card .rgc-num { font-family: 'Noto Sans Display', sans-serif; font-weight: 900; font-size: 100px; line-height: 1; display: inline-block; transform: scaleX(0.8); transform-origin: center; position: relative; }
-  .rg-label-card .rgc-suf { font-size: 0.5em; font-weight: 600; position: absolute; left: 100%; top: 6px; }
+  .rg-label-card .rgc-suf { font-size: 0.5em; font-weight: 600; position: absolute; left: 100%; top: 24px; }
   .rg-label-card .rgc-v { position: absolute; bottom: 9px; font-size: 12px; color: #5a7030; font-weight: 500; letter-spacing: 1px; }
   .rg-label-card .rgc-score.gold .rgc-v { color: #7a5a10; }
   /* Price pad — to the LEFT of the QR column. Width 200, right edge at
@@ -1760,12 +1778,13 @@ function renderModal(modal, comic, allItems) {
   // option. Click handlers read the data-size attribute and persist.
   const seg = (size, label) =>
     `<button type="button" class="lvm-segment${opts.size === size ? ' active' : ''}" data-action="set-size" data-size="${size}">${label}</button>`;
-  const sizeSegments = `
-    <div class="lvm-segment-group">
-      ${seg('small-l', 'Comic')}
-      ${seg('card',    'Card')}
-      ${seg('square',  'Square')}
-    </div>`;
+  // S21: card items can only print the Card label; comic items get Comic +
+  // Square (never Card, which would render blank card fields). opts.size is
+  // already coerced above, so exactly one valid choice-set is offered here.
+  const _isCardItem = !!(comic && comic.type === 'card');
+  const sizeSegments = _isCardItem
+    ? `<div class="lvm-segment-group">${seg('card', 'Card')}</div>`
+    : `<div class="lvm-segment-group">${seg('small-l', 'Comic')}${seg('square', 'Square')}</div>`;
 
   const pricePillClass = opts.priceTag ? 'lvm-pill on' : 'lvm-pill';
 
@@ -2538,11 +2557,13 @@ function renderCardLabelMarkup(comic, opts) {
 
   const backHTML = `
     <div class="rgc-back">
-      ${comic.publicListing
-        ? `<div class="rgc-qr"><div class="qrc" data-qr-id="${gradeId}"></div></div>`
-        : `<div class="rgc-qr rgc-qr-private">PRIVATE<br>LISTING</div>`}
       <div class="rgc-robot"><img src="assets/Robograder_Charging.png" alt=""></div>
-      <div class="rgc-backurl">${comic.publicListing ? `robograder.app/id/${gradeId}` : `ID ${gradeId}`}</div>
+      <div class="rgc-qrcol">
+        <div class="rgc-backurl">${comic.publicListing ? `robograder.app/id/${gradeId}` : `ID ${gradeId}`}</div>
+        ${comic.publicListing
+          ? `<div class="rgc-qr"><div class="qrc" data-qr-id="${gradeId}"></div></div>`
+          : `<div class="rgc-qr rgc-qr-private">PRIVATE<br>LISTING</div>`}
+      </div>
     </div>`;
 
   return `
@@ -2550,19 +2571,20 @@ function renderCardLabelMarkup(comic, opts) {
       ${backHTML}
       <div class="rgc-foldtop"></div>
       <div class="rgc-foldbot"></div>
+      <div class="rgc-foldname">${name}</div>
       <div class="rgc-front">
+        <div class="rgc-score${perfect10 ? ' gold' : ''}">
+          <div class="rgc-word">ROBOGRADE</div>
+          <div class="rgc-stars">${_stars}</div>
+          <div class="rgc-num" style="color:${numColor}">${gBase}${gSuf ? `<span class="rgc-suf" style="color:${numColor}">${gSuf}</span>` : ''}</div>
+          <div class="rgc-v">V${window.RG_GRADING_VERSION || '4.70'}</div>
+        </div>
         <div class="rgc-info">
           <div class="rgc-ttl">${name}</div>
           ${numYear ? `<div class="rgc-sub">${numYear}</div>` : ''}
           ${variant ? `<div class="rgc-var">${variant}</div>` : ''}
           <div class="rgc-meta"><span class="k">ID</span> <span class="v">${gradeId}</span> <span class="k">GRADED</span> <span class="v">${gradeDate}</span></div>
           ${priceHTML}
-        </div>
-        <div class="rgc-score${perfect10 ? ' gold' : ''}">
-          <div class="rgc-word">ROBOGRADE</div>
-          <div class="rgc-stars">${_stars}</div>
-          <div class="rgc-num" style="color:${numColor}">${gBase}${gSuf ? `<span class="rgc-suf" style="color:${numColor}">${gSuf}</span>` : ''}</div>
-          <div class="rgc-v">RG</div>
         </div>
       </div>
     </div>
