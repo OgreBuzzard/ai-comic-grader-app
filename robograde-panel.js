@@ -284,7 +284,7 @@
             return `<span style="display:inline-flex;gap:1px;align-items:center;line-height:1">${_s}</span>`;
           })()}</div>
           <span style="position:relative;display:inline-block;line-height:1"><span style="font-family:'Noto Sans Display',sans-serif;font-weight:900;color:${_sbNum};line-height:1;font-size:62px;display:inline-block;transform:scaleX(0.80);transform-origin:center">${_v2 ? String(_v2.grade).replace(/[+-]$/, '') : scoreRounded}</span>${_v2 && /[+-]$/.test(String(_v2.grade)) ? `<span style="position:absolute;left:100%;top:8px;margin-left:-2px;font-family:'Noto Sans Display',sans-serif;font-size:26px;font-weight:500;color:${_sbNum};line-height:1">${String(_v2.grade).slice(-1)}</span>` : ''}</span>
-          <div style="font-size:8px;font-weight:700;color:${_sbVer};letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">V${(window.RG_GRADING_VERSION || '4.70')}</div>
+          <div style="font-size:8px;font-weight:700;color:${_sbVer};letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">V${((rg && rg.version && rg.version !== 'card-v1' && rg.version) || (comic && comic.rgVersion) || window.RG_GRADING_VERSION || '4.71')}</div>
         </div>
         <div style="flex:1;display:grid;grid-template-columns:2fr 2fr 1fr;grid-template-rows:auto auto;gap:4px">
           <!-- Row 1: Front spans the full width of the sub-score grid. The
@@ -430,7 +430,13 @@
     }, 0) : 0;
     const precision = (_deep ? 0 : 1) + _pen;
     const _stars = _deep ? 2 : 1;
-    const _verLabel = "V" + (window.RG_GRADING_VERSION || "4.70");
+    // Show the version that PERFORMED this assessment (stored on the item),
+    // not the current app version. "card-v1" was an old placeholder — skip it.
+    const _storedVer = (rg && rg.version && rg.version !== "card-v1" && rg.version)
+      || (card && card.version)
+      || (card && card.robograde && card.robograde.version)
+      || item.rgVersion;
+    const _verLabel = "V" + (_storedVer || window.RG_GRADING_VERSION || "4.71");
 
     // Consistent grade rendering: big base + smaller (same-weight) +/- suffix.
     // Used by the main score AND every subscore so all +/- match.

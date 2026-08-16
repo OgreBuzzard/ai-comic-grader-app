@@ -1747,7 +1747,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         <a href="mailto:support@robograder.app" style="font-size:14px;font-weight:700;color:#d4af37;text-decoration:none;letter-spacing:0.3px">support@robograder.app</a>
       </div>
       <div style="font-size:11px;color:#4a3a2a;line-height:1.6;text-align:center">
-        <span id="rgVersionLine">Robograder v4.70</span> · Assessment credits are non-refundable.
+        <span id="rgVersionLine">Robograder v4.71</span> · Assessment credits are non-refundable.
         Images are stored securely in your personal account.
       </div>
       <script>
@@ -1756,7 +1756,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.70";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.71";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
@@ -8740,7 +8740,7 @@ async function assessCardDeep() {
     } catch (e) { console.warn("[carddeep] deep image save failed:", e); }
     formData.cardData = card;
     formData.assessedPSAGrade = card.psaGrade != null ? String(card.psaGrade) : formData.assessedPSAGrade;
-    formData.roboGrade = rgTotal != null ? { score: rgTotal, version: "card-v1", subscores: card.robograde || null } : formData.roboGrade;
+    formData.roboGrade = rgTotal != null ? { score: rgTotal, version: card.version || "card-v1", subscores: card.robograde || null } : formData.roboGrade;
     formData.deepAssessmentRan = true;
     formData.cardDeepImages = deepStored;
     const rec = { ...formData, id: cardId };
@@ -8833,7 +8833,7 @@ async function assessCardGrade() {
       thumbnails: proc.thumbnails,
       imagesMeta: imageMetas.length ? imageMetas : rawImages.map(() => ({ source: "camera", capturedAt: new Date().toISOString() })),
       assessedPSAGrade: card.psaGrade != null ? String(card.psaGrade) : "",
-      roboGrade: rgTotal != null ? { score: rgTotal, version: "card-v1", subscores: card.robograde || null } : null,
+      roboGrade: rgTotal != null ? { score: rgTotal, version: card.version || "card-v1", subscores: card.robograde || null } : null,
       roboGradeId: generateRoboId(),
       roboGradeDate: new Date().toISOString(),
       dateAdded: new Date().toISOString(),
@@ -12041,7 +12041,7 @@ async function runCropperSequence(captures, kind) {
     };
     formData[metaKey] = meta;
     formData._imagesChanged = true;
-    if (kind === "corner" || kind === "signature" || kind === "insert" || kind === "coupon" || kind === "restoration" || kind === "interiorCover" || kind === "main" || kind === "interior") {
+    if (kind === "corner" || kind === "signature" || kind === "insert" || kind === "coupon" || kind === "restoration" || kind === "interiorCover" || kind === "interior") {
       // S20: the auto-cropper is NO LONGER forced in any capture sequence
       // (previously Main and Full auto-opened it). The crop tool has an
       // unresolved bug — the crop handles render off-screen — so cropping stays

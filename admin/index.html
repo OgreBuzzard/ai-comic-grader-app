@@ -875,36 +875,61 @@ function showSummaryModal(d) {
 // rebuilds the header via innerHTML) and on any read failure, so it displayed
 // "off" while assess.js was actually caching. Hold the config in module state,
 // default it to assess.js's defaults (enabled, 1h), and render FROM that state.
-let _cacheCfg = { enabled: true, ttl: '1h' };
+// S21: caching is now PER TYPE. Only Main comic (assess.js) and Card-main
+// (assess_card.js) implement cache_control in code; Deep/Full/Card-Deep never
+// cache, so their chips are disabled (no-ops until caching is added there).
+let _cacheCfg = { ttl: '1h', types: { main: true, card: false, deep: false, full: false, cardDeep: false } };
 async function _loadCacheCfg() {
   try {
     const snap = await dbF.collection('config').doc('caching').get();
     if (snap.exists) {
       const d = snap.data() || {};
-      _cacheCfg = { enabled: d.enabled !== false, ttl: d.ttl === '5m' ? '5m' : '1h' };
+      const t = d.types || null;
+      const legacy = d.enabled !== false; // pre-per-type doc had a single global flag
+      _cacheCfg = {
+        ttl: d.ttl === '5m' ? '5m' : '1h',
+        types: {
+          main:     t ? !!t.main : legacy, // legacy global flag -> Main (matches assess.js)
+          card:     t ? !!t.card : false,  // Card off unless explicitly set (matches assess_card.js)
+          deep:     t ? !!t.deep : false,
+          full:     t ? !!t.full : false,
+          cardDeep: t ? !!t.cardDeep : false,
+        },
+      };
     } else {
-      _cacheCfg = { enabled: true, ttl: '1h' }; // no doc -> assess.js defaults
+      _cacheCfg = { ttl: '1h', types: { main: true, card: false, deep: false, full: false, cardDeep: false } };
     }
   } catch (e) {
-    console.warn('[cache-cfg] read failed, keeping defaults (enabled/1h):', e && e.message);
+    console.warn('[cache-cfg] read failed, keeping defaults:', e && e.message);
   }
   _syncCacheCfgDom();
 }
+const _CACHE_LIVE = { main: true, card: true, deep: false, full: false, cardDeep: false };
 function _syncCacheCfgDom() {
-  const en = document.getElementById('cache-enabled'), tt = document.getElementById('cache-ttl');
-  if (en) {
-    en.style.background = _cacheCfg.enabled ? '#1f6feb' : '#1c1c22';
-    en.style.color = _cacheCfg.enabled ? '#fff' : '#9ab';
-    en.style.borderColor = _cacheCfg.enabled ? '#1f6feb' : '#333';
-  }
+  ['main','card','deep','full','cardDeep'].forEach(k => {
+    const el = document.getElementById('ct-' + k);
+    if (!el) return;
+    const on = !!_cacheCfg.types[k];
+    el.style.background  = on ? '#1f6feb' : '#1c1c22';
+    el.style.color       = on ? '#fff' : (_CACHE_LIVE[k] ? '#9ab' : '#666');
+    el.style.borderColor = on ? '#1f6feb' : '#333';
+  });
+  const tt = document.getElementById('cache-ttl');
   if (tt) tt.value = _cacheCfg.ttl;
 }
 async function _persistCacheCfg() {
-  try { await dbF.collection('config').doc('caching').set({ enabled: _cacheCfg.enabled, ttl: _cacheCfg.ttl }, { merge: true }); }
-  catch (e) { alert('Failed to save caching config: ' + (e && e.message)); }
+  const t = _cacheCfg.types;
+  try {
+    await dbF.collection('config').doc('caching').set({
+      enabled: !!t.main, // legacy field kept in sync with the primary (Main) lever
+      ttl: _cacheCfg.ttl,
+      types: { main: !!t.main, card: !!t.card, deep: !!t.deep, full: !!t.full, cardDeep: !!t.cardDeep },
+    }, { merge: true });
+  } catch (e) { alert('Failed to save caching config: ' + (e && e.message)); }
 }
-async function _toggleCache() {
-  _cacheCfg.enabled = !_cacheCfg.enabled;
+async function _toggleCacheType(key) {
+  if (!_CACHE_LIVE[key]) return; // deep/full/cardDeep aren't cached in code
+  _cacheCfg.types[key] = !_cacheCfg.types[key];
   _syncCacheCfgDom();
   await _persistCacheCfg();
 }
@@ -1043,8 +1068,15 @@ async function renderDashboard() {
       </div>
 
       <div style="grid-column:3;grid-row:2;display:flex;flex-direction:column;gap:5px;align-items:stretch">
-        <button class="sign-out" id="cache-enabled" onclick="_toggleCache()" style="padding:5px 12px;font-size:11px;border:1px solid #333;border-radius:8px;cursor:pointer" title="Assessment prompt caching on/off">Cache</button>
-        <select id="cache-ttl" onchange="_saveCacheCfg()" style="background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:8px;padding:3px 6px;font-size:11px"><option value="1h" ${_cacheCfg.ttl !== '5m' ? 'selected' : ''}>1h</option><option value="5m" ${_cacheCfg.ttl === '5m' ? 'selected' : ''}>5m</option></select>
+        <div style="font-size:9px;color:#667;text-transform:uppercase;letter-spacing:.5px">Prompt cache</div>
+        <div id="cache-types" style="display:flex;gap:3px;flex-wrap:wrap;max-width:200px">
+          <button id="ct-main" onclick="_toggleCacheType('main')" style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:pointer;background:#1c1c22;color:#9ab" title="Main comic assessment — cached in code">Main</button>
+          <button id="ct-card" onclick="_toggleCacheType('card')" style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:pointer;background:#1c1c22;color:#9ab" title="Card (main) assessment — cached in code">Card</button>
+          <button id="ct-deep" disabled style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:default;background:#1c1c22;color:#666" title="Deep assessments do not use prompt caching in code — nothing to toggle">Deep</button>
+          <button id="ct-full" disabled style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:default;background:#1c1c22;color:#666" title="Full assessments do not use prompt caching in code — nothing to toggle">Full</button>
+          <button id="ct-cardDeep" disabled style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:default;background:#1c1c22;color:#666" title="Card Deep does not use prompt caching in code — nothing to toggle">C.Deep</button>
+        </div>
+        <select id="cache-ttl" onchange="_saveCacheCfg()" style="background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:8px;padding:3px 6px;font-size:11px" title="Cache TTL"><option value="1h" ${_cacheCfg.ttl !== '5m' ? 'selected' : ''}>1h</option><option value="5m" ${_cacheCfg.ttl === '5m' ? 'selected' : ''}>5m</option></select>
       </div>
     </header>
     <main>
@@ -1246,7 +1278,7 @@ async function loadStats() {
 
 function renderStats() {
   if (!state.stats) return;
-  const { accounts, items, platforms, revenue, credits, spend } = state.stats;
+  const { accounts, items, platforms, revenue, credits, spend, perCredit, assessCost } = state.stats;
   const r = revenue || {}, sp = spend || {};
   const dollars = c => '$' + ((c || 0) / 100).toFixed(2);
   const netDay = (r.webNetDayCents || 0) + (r.iosNetDayCents || 0) + (r.androidNetDayCents || 0);
@@ -1284,6 +1316,9 @@ function renderStats() {
           <div class="stat-card"><h3>Revenue</h3><div class="total">${dollars(r.netCents || 0)}</div>${bo(netDay, netWeek, netMonth)}${sub('iOS', r.iosNetDayCents, r.iosNetWeekCents, r.iosNetMonthCents)}${sub('Android', r.androidNetDayCents, r.androidNetWeekCents, r.androidNetMonthCents)}${sub('Web', r.webNetDayCents, r.webNetWeekCents, r.webNetMonthCents)}</div>
           <div class="stat-card"><h3>Spending</h3><div class="total">${dollars(sp.allTimeCents != null ? sp.allTimeCents : sp.monthCents || 0)}</div>${bo(sp.dayCents, sp.weekCents, sp.monthCents)}</div>
           <div class="stat-card"><h3>Profit</h3><div class="total">${dollars((r.netCents || 0) - (sp.allTimeCents != null ? sp.allTimeCents : sp.monthCents || 0))}</div>${bo(netDay - (sp.dayCents || 0), netWeek - (sp.weekCents || 0), netMonth - (sp.monthCents || 0))}</div>
+          ${(function(){var pc=perCredit||{},ac=assessCost||{};var money=function(v){return v==null?'\u2014':'$'+(v<1?v.toFixed(3):v.toFixed(2));};var trio=function(o){return '<div class="breakouts"><span><strong>'+money(o.day)+'</strong> 24h</span><span><strong>'+money(o.week)+'</strong> 7d</span><span><strong>'+money(o.month)+'</strong> 30d</span></div>';};return ''+
+            '<div class="stat-card"><h3 title="Net paid (after platform commission and promo discount) divided by credits purchased. Includes repeat short-box bonus credits; excludes free signup and referral credits.">Earned / Credit</h3><div class="total">'+money(pc.month)+'</div>'+trio(pc)+'</div>'+
+            '<div class="stat-card"><h3 title="Average Anthropic token cost per assessment (all types combined: comic/card, main/deep/full), from the logs \u2014 i.e. what a used credit costs you.">Cost / Credit Used</h3><div class="total">'+money(ac.month)+'</div>'+trio(ac)+'</div>';})()}
         </div>
         ${chartBlock}
       </div>

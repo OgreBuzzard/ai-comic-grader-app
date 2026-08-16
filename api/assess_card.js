@@ -16,6 +16,7 @@
 // ESM note: a static Node built-in import keeps Vercel treating this as ESM
 // (matches verify_iap/verify_play); firebase-admin loads dynamically.
 import process from 'node:process';
+import { ROBOGRADE_VERSION } from '../lib/version.js';
 // ── PSA CARD GRADING PROMPT (consolidated from lib/grading_cards.js, S21) ──
 // The card prompt + rollup logic live here, in the dedicated assess file —
 // prompts live with their endpoint (Matt's call). No lib/grading_cards.js and
@@ -842,6 +843,7 @@ export default async function handler(req, res) {
     }
     console.log('[assess_card] DEEP uid=' + uid + ' psa=' + deepCard.psaGrade + ' rg=' + (deepCard.robograde && deepCard.robograde.total) + ' ' + (Date.now() - t0) + 'ms');
     await logCardTiming('card_deep', { uid, ms: Date.now() - t0, calls: [{ model: GRADE_MODEL, usage: _deepUsage }], psa: deepCard.psaGrade, rg: deepCard.robograde && deepCard.robograde.total, name: deepCard.cardIdentification && deepCard.cardIdentification.name });
+    if (deepCard) deepCard.version = ROBOGRADE_VERSION; // stamp the version used for THIS assessment
     return res.status(200).json({ card: deepCard, deep: true });
   }
 
@@ -854,12 +856,14 @@ export default async function handler(req, res) {
   let _idUsage = null, _gradeUsage = null;
   let referenceBlock = null, referenceUsed = false, referenceName = null;
 
-  // Prompt caching — same dashboard lever as comics (config/caching doc; default on/1h).
-  let _cacheOn = true, _cacheTtl = '1h';
+  // Prompt caching — per-type dashboard lever (config/caching doc, types.card).
+  // Card caching is OFF by default (S21): the card prompt rarely gets a cache hit,
+  // so a cold write costs ~2x. Only caches when the dashboard explicitly enables it.
+  let _cacheOn = false, _cacheTtl = '1h';
   try {
     const { getFirestore } = await import('firebase-admin/firestore');
     const _cs = await getFirestore().collection('config').doc('caching').get();
-    if (_cs.exists) { const _c = _cs.data() || {}; _cacheOn = _c.enabled !== false; _cacheTtl = _c.ttl === '5m' ? '5m' : '1h'; }
+    if (_cs.exists) { const _c = _cs.data() || {}; const _t = _c.types; _cacheOn = _t ? (_t.card === true) : false; _cacheTtl = _c.ttl === '5m' ? '5m' : '1h'; }
   } catch (e) { console.warn('[assess_card] caching config read failed:', e && e.message); }
   const _cacheCtl = _cacheTtl === '1h' ? { type: 'ephemeral', ttl: '1h' } : { type: 'ephemeral' };
   const _cacheBeta = (_cacheOn && _cacheTtl === '1h') ? { 'anthropic-beta': 'extended-cache-ttl-2025-04-11' } : {};
@@ -904,5 +908,6 @@ export default async function handler(req, res) {
 
   console.log('[assess_card] uid=' + uid + ' card="' + (card.cardIdentification && card.cardIdentification.name) + '" psa=' + card.psaGrade + ' rg=' + (card.robograde && card.robograde.total) + ' ref=' + referenceUsed + ' ' + (Date.now() - t0) + 'ms');
   await logCardTiming('card_main', { uid, ms: Date.now() - t0, calls: [{ model: GRADE_MODEL, usage: _gradeUsage }], psa: card.psaGrade, rg: card.robograde && card.robograde.total, name: card.cardIdentification && card.cardIdentification.name });
+  if (card) card.version = ROBOGRADE_VERSION; // stamp the version used for THIS assessment
   return res.status(200).json({ ok: true, card, identification, referenceUsed, ms: Date.now() - t0 });
 }

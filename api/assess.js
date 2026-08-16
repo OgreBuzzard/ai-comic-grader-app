@@ -929,9 +929,9 @@ LONG-CREASE SKEPTICISM (>= 5"): a crease measured at ROUGHLY 5 INCHES OR LONGER,
 
 PRODUCTION & DISTRIBUTION MARKS ARE NOT DEFECTS (counter-check). These marks are applied during printing or distribution, appear on many copies, and do NOT reduce the grade. Do NOT list them in the defects array, do NOT assign them a severity, and do NOT let them lower any subscore:
 - DATE STAMP / ARRIVAL STAMP: a stamped or inked date (sometimes a store or distributor stamp) on the cover or an interior page. It is a distribution marking, not handwriting added by an owner and not damage. An unobtrusive date/store stamp is compatible with grades all the way up. You may mention it in aiAssessment; never as a defect.
-- DISTRIBUTION INK: the band or rectangle of colored ink — commonly blue, but also PINK, red, green, or other colors — that sometimes appears along the top edge of the page block, or at the top of interior pages. It is applied at distribution. It is NOT a stain, NOT a substance, NOT ink transfer, and NOT damage. Color does not change this: pink distribution ink is treated exactly like blue.
+- DISTRIBUTION INK: the band or rectangle of colored ink — commonly blue, but also PINK, red, green, or other colors — that sometimes appears along the top edge of the page block, or at the top of interior pages. It is applied at distribution. It is NOT a stain, NOT a substance, NOT ink transfer, NOT tape, and NOT damage. A colored rectangle or band at the top of an interior page (or along the page-block edge) is distribution ink, never tape. Color does not change this: pink or red distribution ink is treated exactly like blue.
 - DC COVER CODE (Bronze/Copper Age): DC Comics published from roughly 1970 to 1985 very commonly carry a small printed code on the front cover — a letter, a dash, and a 3-digit number (e.g. "G-869", "C-382", "D-123") — often in pencil-style or colored print near an edge or the price/publisher box. This is a printed production/distribution code, present on many copies. It is NOT owner writing and NOT a signature. Do NOT flag it as "Writing on cover", a defect, or a Creator signature, and do NOT assign a severity.
-Discriminating cues so you do not misread these: distribution ink is a regular, hard-edged band of uniform color at a page edge; a STAIN is irregular, organic, bleeds across paper fibers, and often tidelines; INK TRANSFER is a faint mirrored image offset from facing artwork. A date stamp has crisp typeset/rubber-stamp characters; OWNER WRITING is freehand pen or pencil with variable pressure. If the mark is a clean band at the page edge or a stamped date, it is production/distribution — not a defect.
+Discriminating cues so you do not misread these: distribution ink is a regular, hard-edged band of uniform color at a page edge; a STAIN is irregular, organic, bleeds across paper fibers, and often tidelines; INK TRANSFER is a faint mirrored image offset from facing artwork. A date stamp has crisp typeset/rubber-stamp characters; OWNER WRITING is freehand pen or pencil with variable pressure. If the mark is a clean band at the page edge or a stamped date, it is production/distribution — not a defect. TAPE vs DISTRIBUTION INK: tape is a separate applied strip with physical thickness — look for a glossy or translucent sheen, lifted/darkened edges, adhesive discoloration or ambering, wrinkling, or the strip bridging a tear or running along the spine. Distribution ink is flat printed color sitting flush in the paper: no thickness, no sheen, no adhesive, appearing as a clean colored rectangle or band at the TOP of an interior page or along the page-block edge. A colored (red, pink, blue, or green) rectangle at the top of an interior page with no thickness or sheen is distribution ink — do NOT call it tape (or any other defect).
 
 ROUTINE INSPECTION:
 DEFECT VOCABULARY — inspect for the FULL range below, not just the common few. Name the MOST severe condition at each location (missing piece > tear > color-break > wear > blunting), never the mildest.
@@ -1099,7 +1099,12 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     try {
       const _cdb = await getAdminDb();
       if (_cdb) { const _cs = await _cdb.collection('config').doc('caching').get();
-        if (_cs.exists) { const _c = _cs.data() || {}; _cacheOn = _c.enabled !== false; _cacheTtl = _c.ttl === '5m' ? '5m' : '1h'; } }
+        if (_cs.exists) { const _c = _cs.data() || {};
+          // Per-type caching (S21): gate Main comic on types.main. Fall back to the
+          // legacy global `enabled` flag when a pre-per-type doc is present.
+          const _t = _c.types;
+          _cacheOn = _t ? (_t.main !== false) : (_c.enabled !== false);
+          _cacheTtl = _c.ttl === '5m' ? '5m' : '1h'; } }
     } catch (e) {}
     const _cacheCtl = _cacheTtl === '1h' ? { type: 'ephemeral', ttl: '1h' } : { type: 'ephemeral' };
     const _cacheBeta = (_cacheOn && _cacheTtl === '1h') ? { 'anthropic-beta': 'extended-cache-ttl-2025-04-11' } : {};

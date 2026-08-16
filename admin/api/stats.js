@@ -44,6 +44,9 @@ export default async function handler(req, res) {
     const now = Date.now();
     const DAY = 24 * 60 * 60 * 1000;
     const cutoffs = { day: now - DAY, week: now - 7 * DAY, month: now - 30 * DAY };
+    const APPLE_CUTOFF_MS = Date.UTC(2026, 7, 14); // Aug 14 2026: Apple 30%->15% (small-business)
+    const perCredit = { day: { net: 0, credits: 0 }, week: { net: 0, credits: 0 }, month: { net: 0, credits: 0 } };
+    const assessCost = { day: { cents: 0, n: 0 }, week: { cents: 0, n: 0 }, month: { cents: 0, n: 0 } };
 
     const db = getFirestore();
 
@@ -112,18 +115,29 @@ export default async function handler(req, res) {
         amt = d.amountCents || 0;
         revenue.webCents += amt;
       }
-      // Net = what you keep: Apple keeps you 70%; Google (small-business tier) 85%;
-      // Stripe = amount − 2.9% − $0.30.
-      const netCents = platform === 'ios' ? Math.round(amt * 0.70)
+      const c = d.createdAt;
+      const ms = (c && typeof c.toMillis === 'function') ? c.toMillis() : (d.createdAtMs || Date.parse(c || ''));
+      // Net = what you keep. Apple: 70% before Aug 14 2026, 85% (small-business) on/after.
+      // Google (small-business tier) 85%; Stripe = amount − 2.9% − $0.30.
+      const _iosKeep = (Number.isFinite(ms) && ms >= APPLE_CUTOFF_MS) ? 0.85 : 0.70;
+      const netCents = platform === 'ios' ? Math.round(amt * _iosKeep)
         : platform === 'android' ? Math.round(amt * 0.85)
         : Math.max(0, Math.round(amt - (amt * 0.029 + 30)));
       revenue.totalCents += amt;
       revenue.netCents += netCents;
       revenue[platform + 'NetCents'] += netCents;
-      const c = d.createdAt;
-      const ms = (c && typeof c.toMillis === 'function') ? c.toMillis() : (d.createdAtMs || Date.parse(c || ''));
       if (Number.isNaN(ms)) continue;
       const pfx = platform;
+      // S22: net earned per credit. `credits` already includes the repeat-shortbox
+      // bonus (webhook/verify_iap write grant = base + bonus); web `amount` is
+      // post-promo (Stripe amount_total). Signup + referral free credits aren't
+      // purchases, so they never appear here.
+      const _cr = +d.credits || 0;
+      if (_cr > 0) {
+        if (ms >= cutoffs.day) { perCredit.day.net += netCents; perCredit.day.credits += _cr; }
+        if (ms >= cutoffs.week) { perCredit.week.net += netCents; perCredit.week.credits += _cr; }
+        if (ms >= cutoffs.month) { perCredit.month.net += netCents; perCredit.month.credits += _cr; }
+      }
       if (ms >= cutoffs.day) { revenue.dayCents += amt; revenue[pfx + 'DayCents'] += amt; revenue[pfx + 'NetDayCents'] += netCents; }
       if (ms >= cutoffs.week) { revenue.weekCents += amt; revenue[pfx + 'WeekCents'] += amt; revenue[pfx + 'NetWeekCents'] += netCents; }
       if (ms >= cutoffs.month) { revenue.monthCents += amt; revenue[pfx + 'MonthCents'] += amt; revenue[pfx + 'NetMonthCents'] += netCents; const k = new Date(ms).toISOString().slice(0, 10); revByDay[k] = (revByDay[k] || 0) + netCents; }
@@ -155,6 +169,11 @@ export default async function handler(req, res) {
           if (ms >= cutoffs.day) spend.dayCents += cents;
           if (ms >= cutoffs.week) spend.weekCents += cents;
           if (ms >= cutoffs.month) { spend.monthCents += cents; const k = new Date(ms).toISOString().slice(0, 10); spendByDay[k] = (spendByDay[k] || 0) + cents; }
+        }
+        if (t.kind !== 'slabcheck' && cost > 0 && !Number.isNaN(ms)) {
+          if (ms >= cutoffs.day) { assessCost.day.cents += cents; assessCost.day.n++; }
+          if (ms >= cutoffs.week) { assessCost.week.cents += cents; assessCost.week.n++; }
+          if (ms >= cutoffs.month) { assessCost.month.cents += cents; assessCost.month.n++; }
         }
         if (t.kind !== 'slabcheck' && cost > 0 && costs.length < 100) costs.push(cost);
       }
@@ -191,6 +210,16 @@ export default async function handler(req, res) {
     return res.status(200).json({
       accounts, items, platforms, revenue, spend, series,
       credits: { outstanding: creditsOutstanding, avgAssessmentCost: +avgAssessmentCost.toFixed(4), liability: creditLiability },
+      perCredit: {
+        day: perCredit.day.credits ? +(perCredit.day.net / 100 / perCredit.day.credits).toFixed(4) : null,
+        week: perCredit.week.credits ? +(perCredit.week.net / 100 / perCredit.week.credits).toFixed(4) : null,
+        month: perCredit.month.credits ? +(perCredit.month.net / 100 / perCredit.month.credits).toFixed(4) : null,
+      },
+      assessCost: {
+        day: assessCost.day.n ? +(assessCost.day.cents / 100 / assessCost.day.n).toFixed(4) : null,
+        week: assessCost.week.n ? +(assessCost.week.cents / 100 / assessCost.week.n).toFixed(4) : null,
+        month: assessCost.month.n ? +(assessCost.month.cents / 100 / assessCost.month.n).toFixed(4) : null,
+      },
       generatedAt: new Date().toISOString(),
     });
 

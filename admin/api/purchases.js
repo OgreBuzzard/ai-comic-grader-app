@@ -28,12 +28,15 @@ const IOS_PRICE = {
 //   Apple: standard 30% commission → you keep 70%. CHANGE TO 0.85 once the App
 //   Store Small Business Program enrollment takes effect (drops it to 15%).
 //   Stripe: US standard 2.9% + $0.30 per transaction.
-const APPLE_KEEP = 0.70;
+const APPLE_KEEP = 0.70;    // legacy 30% cut (pre small-business enrollment)
+const APPLE_KEEP_SB = 0.85; // 15% cut once Small Business Program took effect
+const APPLE_CUTOFF_MS = Date.UTC(2026, 7, 14); // Aug 14 2026: Apple 30%->15%
 const GOOGLE_KEEP = 0.85;   // Play small-business tier (15% cut). Set to 0.70 if still at 30%.
 const STRIPE_PCT = 0.029;
 const STRIPE_FIXED = 0.30;
-const netOf = (amount, platform) =>
-  platform === 'ios' ? +(amount * APPLE_KEEP).toFixed(2)
+// ms = purchase time; iOS keep is date-aware (15% only from the cutoff onward).
+const netOf = (amount, platform, ms) =>
+  platform === 'ios' ? +(amount * ((Number.isFinite(ms) && ms >= APPLE_CUTOFF_MS) ? APPLE_KEEP_SB : APPLE_KEEP)).toFixed(2)
   : platform === 'android' ? +(amount * GOOGLE_KEEP).toFixed(2)
   : +Math.max(0, amount - (amount * STRIPE_PCT + STRIPE_FIXED)).toFixed(2);
 
@@ -103,7 +106,7 @@ export default async function handler(req, res) {
         ? (IOS_PRICE[p.productId] || 0)         // store buys carry productId, not amountCents
         : ((p.amountCents || 0) / 100);
       const amount = isTest ? 0 : listAmount;
-      const net = isTest ? 0 : netOf(listAmount, platform);
+      const net = isTest ? 0 : netOf(listAmount, platform, tsMs(p));
       const u = uinfo[uid] || {};
       // Only real (non-test) purchases count toward the revenue totals.
       if (!isTest) {

@@ -139,6 +139,19 @@ for name in SERIES:
             k=fmvKey(name,iss)
             if k in books: GUARDS[k]=cut[vl]
 
+# Curated year guards (workbook-independent). maxYear = last year the VALUABLE
+# volume runs; a submission with cover year > guard falls through to the blanket
+# price instead of inheriting the vintage value. Fixes cross-volume #1 collisions
+# (e.g. Predator #1 2022 inheriting the 1989 Dark Horse price). Applied only to
+# keys present in books. Semantics match matchFMV: year > guard -> excluded.
+CURATED_GUARDS = {
+  "amazing fantasy|15":1963, "avengers|1":1964, "daredevil|1":1965, "fantastic four|1":1962,
+  "house of secrets|92":1972, "incredible hulk|181":1975, "moon knight|1":1981, "nova|1":1977,
+  "predator|1":1990, "thundercats|1":1986, "uncanny x-men|1":1964, "wolverine|8":1990,
+}
+for _k,_y in CURATED_GUARDS.items():
+    if _k in books: GUARDS[_k]=_y
+
 # dedup curves
 curve_index={}; curves=[]
 booksOut={}

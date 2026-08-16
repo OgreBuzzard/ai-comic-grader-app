@@ -195,7 +195,8 @@ export default async function handler(req, res) {
           'app.robograder.credits.shortbox': 99.99,
           'app.robograder.credits.shortbox2': 99.99,
         };
-        const STRIPE_PCT = 0.029, STRIPE_FIXED = 0.30, APPLE_KEEP = 0.70, GOOGLE_KEEP = 0.85;
+        const STRIPE_PCT = 0.029, STRIPE_FIXED = 0.30, APPLE_KEEP = 0.70, APPLE_KEEP_SB = 0.85, GOOGLE_KEEP = 0.85;
+        const APPLE_CUTOFF_MS = Date.UTC(2026, 7, 14); // Aug 14 2026: Apple 30%->15%
         const purchSnap = await db.collection('purchases').get();
         purchases = purchSnap.docs.map(doc => {
           const p = doc.data();
@@ -204,10 +205,11 @@ export default async function handler(req, res) {
           const amount = platform === 'web'
             ? (p.amountCents || 0) / 100
             : (LIST_PRICE[p.productId] || 0);
+          const ms = msOf(p.createdAt, p.createdAtMs);
+          const _iosKeep = (Number.isFinite(ms) && ms >= APPLE_CUTOFF_MS) ? APPLE_KEEP_SB : APPLE_KEEP;
           const net = platform === 'web'
             ? +Math.max(0, amount - (amount * STRIPE_PCT + STRIPE_FIXED)).toFixed(2)
-            : +(amount * (platform === 'ios' ? APPLE_KEEP : GOOGLE_KEEP)).toFixed(2);
-          const ms = msOf(p.createdAt, p.createdAtMs);
+            : +(amount * (platform === 'ios' ? _iosKeep : GOOGLE_KEEP)).toFixed(2);
           return {
             id: doc.id,
             platform,
