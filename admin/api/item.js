@@ -230,6 +230,7 @@ export default async function handler(req, res) {
       type: raw.type || 'comic',
       predictedPSA: (flat.psaGrade != null ? flat.psaGrade : (flat.assessedPSAGrade != null ? flat.assessedPSAGrade : null)),
       cardRobograde: flat.robograde || null,
+      cardDefects: (raw.cardData && raw.cardData.defects && !Array.isArray(raw.cardData.defects)) ? raw.cardData.defects : null, // S21: card free-text defects (creases/scratches/…) for the lightbox defect box
       score: rg.score ?? null,
       confidenceRange: rg.confidenceRange ?? null,
       frontScore: rg.frontScore ?? null,

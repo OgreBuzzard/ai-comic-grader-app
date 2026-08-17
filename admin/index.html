@@ -527,7 +527,7 @@
   #admin-lightbox.show { display: flex; }
   #admin-lightbox img {
     max-width: 90%;
-    max-height: 75vh;
+    max-height: 58vh;
     object-fit: contain;
     border-radius: 4px;
   }
@@ -545,16 +545,27 @@
     cursor: pointer;
   }
   #admin-lightbox .lb-btn:hover { background: #444; }
+  /* S21: nav arrows sit in a row BENEATH the image (were absolute overlays). */
   #admin-lightbox .alb-nav {
-    position: absolute; top: 50%; transform: translateY(-50%);
+    position: static; transform: none;
     width: 44px; height: 44px; border-radius: 50%;
     background: rgba(0,0,0,0.55); color: #fff; border: 1.5px solid #555;
     font-size: 26px; font-weight: 700; line-height: 1; padding: 0 0 3px;
     cursor: pointer; display: none; align-items: center; justify-content: center;
     z-index: 10000;
   }
-  #admin-lightbox #adminlb-prev { left: 20px; }
-  #admin-lightbox #adminlb-next { right: 20px; }
+  #admin-lightbox .alb-navrow { display: flex; gap: 26px; justify-content: center; align-items: center; }
+  #admin-lb-defects {
+    width: 90%; max-width: 560px; max-height: 22vh; overflow-y: auto;
+    background: rgba(20,20,22,0.92); border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 10px; color: #e8e6e2; font-size: 12px; line-height: 1.45;
+    padding: 10px 12px; text-align: left; display: none;
+  }
+  #admin-lb-defects .lbd-head { font-size: 10px; font-weight: 800; letter-spacing: 1.5px; color: #7aa838; text-transform: uppercase; margin-bottom: 6px; }
+  #admin-lb-defects .lbd-row { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; border-top: 1px solid rgba(255,255,255,0.06); }
+  #admin-lb-defects .lbd-row:first-of-type { border-top: none; }
+  #admin-lb-defects .lbd-sev { font-weight: 800; flex-shrink: 0; letter-spacing: 0.5px; }
+  #admin-lb-defects .lbd-none { color: #8a8f86; font-style: italic; }
 
   .empty {
     text-align: center;
@@ -1068,13 +1079,9 @@ async function renderDashboard() {
       </div>
 
       <div style="grid-column:3;grid-row:2;display:flex;flex-direction:column;gap:5px;align-items:stretch">
-        <div style="font-size:9px;color:#667;text-transform:uppercase;letter-spacing:.5px">Prompt cache</div>
         <div id="cache-types" style="display:flex;gap:3px;flex-wrap:wrap;max-width:200px">
-          <button id="ct-main" onclick="_toggleCacheType('main')" style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:pointer;background:#1c1c22;color:#9ab" title="Main comic assessment — cached in code">Main</button>
-          <button id="ct-card" onclick="_toggleCacheType('card')" style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:pointer;background:#1c1c22;color:#9ab" title="Card (main) assessment — cached in code">Card</button>
-          <button id="ct-deep" disabled style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:default;background:#1c1c22;color:#666" title="Deep assessments do not use prompt caching in code — nothing to toggle">Deep</button>
-          <button id="ct-full" disabled style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:default;background:#1c1c22;color:#666" title="Full assessments do not use prompt caching in code — nothing to toggle">Full</button>
-          <button id="ct-cardDeep" disabled style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:default;background:#1c1c22;color:#666" title="Card Deep does not use prompt caching in code — nothing to toggle">C.Deep</button>
+          <button id="ct-main" onclick="_toggleCacheType('main')" style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:pointer;background:#1c1c22;color:#9ab" title="Comic (main) assessment prompt caching">Comic</button>
+          <button id="ct-card" onclick="_toggleCacheType('card')" style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:pointer;background:#1c1c22;color:#9ab" title="Card (main) assessment prompt caching">Card</button>
         </div>
         <select id="cache-ttl" onchange="_saveCacheCfg()" style="background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:8px;padding:3px 6px;font-size:11px" title="Cache TTL"><option value="1h" ${_cacheCfg.ttl !== '5m' ? 'selected' : ''}>1h</option><option value="5m" ${_cacheCfg.ttl === '5m' ? 'selected' : ''}>5m</option></select>
       </div>
@@ -1313,12 +1320,14 @@ function renderStats() {
       </div>
       <div id="income-body" style="display:${open ? 'block' : 'none'};">
         <div class="stats-grid">
-          <div class="stat-card"><h3>Revenue</h3><div class="total">${dollars(r.netCents || 0)}</div>${bo(netDay, netWeek, netMonth)}${sub('iOS', r.iosNetDayCents, r.iosNetWeekCents, r.iosNetMonthCents)}${sub('Android', r.androidNetDayCents, r.androidNetWeekCents, r.androidNetMonthCents)}${sub('Web', r.webNetDayCents, r.webNetWeekCents, r.webNetMonthCents)}</div>
-          <div class="stat-card"><h3>Spending</h3><div class="total">${dollars(sp.allTimeCents != null ? sp.allTimeCents : sp.monthCents || 0)}</div>${bo(sp.dayCents, sp.weekCents, sp.monthCents)}</div>
-          <div class="stat-card"><h3>Profit</h3><div class="total">${dollars((r.netCents || 0) - (sp.allTimeCents != null ? sp.allTimeCents : sp.monthCents || 0))}</div>${bo(netDay - (sp.dayCents || 0), netWeek - (sp.weekCents || 0), netMonth - (sp.monthCents || 0))}</div>
           ${(function(){var pc=perCredit||{},ac=assessCost||{};var money=function(v){return v==null?'\u2014':'$'+(v<1?v.toFixed(3):v.toFixed(2));};var trio=function(o){return '<div class="breakouts"><span><strong>'+money(o.day)+'</strong> 24h</span><span><strong>'+money(o.week)+'</strong> 7d</span><span><strong>'+money(o.month)+'</strong> 30d</span></div>';};return ''+
             '<div class="stat-card"><h3 title="Net paid (after platform commission and promo discount) divided by credits purchased. Includes repeat short-box bonus credits; excludes free signup and referral credits.">Earned / Credit</h3><div class="total">'+money(pc.month)+'</div>'+trio(pc)+'</div>'+
             '<div class="stat-card"><h3 title="Average Anthropic token cost per assessment (all types combined: comic/card, main/deep/full), from the logs \u2014 i.e. what a used credit costs you.">Cost / Credit Used</h3><div class="total">'+money(ac.month)+'</div>'+trio(ac)+'</div>';})()}
+        </div>
+        <div class="stats-grid">
+          <div class="stat-card"><h3>Revenue</h3><div class="total">${dollars(r.netCents || 0)}</div>${bo(netDay, netWeek, netMonth)}${sub('iOS', r.iosNetDayCents, r.iosNetWeekCents, r.iosNetMonthCents)}${sub('Android', r.androidNetDayCents, r.androidNetWeekCents, r.androidNetMonthCents)}${sub('Web', r.webNetDayCents, r.webNetWeekCents, r.webNetMonthCents)}</div>
+          <div class="stat-card"><h3>Spending</h3><div class="total">${dollars(sp.allTimeCents != null ? sp.allTimeCents : sp.monthCents || 0)}</div>${bo(sp.dayCents, sp.weekCents, sp.monthCents)}</div>
+          <div class="stat-card"><h3>Profit</h3><div class="total">${dollars((r.netCents || 0) - (sp.allTimeCents != null ? sp.allTimeCents : sp.monthCents || 0))}</div>${bo(netDay - (sp.dayCents || 0), netWeek - (sp.weekCents || 0), netMonth - (sp.monthCents || 0))}</div>
         </div>
         ${chartBlock}
       </div>
@@ -2915,9 +2924,12 @@ function escapeAttr(s) {
 }
 </script>
 <div id="admin-lightbox">
-  <button class="alb-nav" id="adminlb-prev" onclick="_albStep(event,-1)" aria-label="Previous">‹</button>
   <img id="admin-lb-img" src="" alt="">
-  <button class="alb-nav" id="adminlb-next" onclick="_albStep(event,1)" aria-label="Next">›</button>
+  <div class="alb-navrow">
+    <button class="alb-nav" id="adminlb-prev" onclick="_albStep(event,-1)" aria-label="Previous">‹</button>
+    <button class="alb-nav" id="adminlb-next" onclick="_albStep(event,1)" aria-label="Next">›</button>
+  </div>
+  <div id="admin-lb-defects"></div>
   <div class="lb-btns">
     <button class="lb-btn" onclick="document.getElementById('admin-lightbox').classList.remove('show')">Exit</button>
     <button class="lb-btn" onclick="saveAdminLightboxImage()">Save Image</button>
@@ -2937,6 +2949,70 @@ function _albStep(e, dir) {
   const n = _albList.length;
   _albIdx = (_albIdx + dir + n) % n;
   document.getElementById('admin-lb-img').src = _albList[_albIdx];
+  _albRenderDefects();
+}
+// ── S21: admin per-image defect box (MAIN images only, comic + card) ──────────
+const _ALB_COMIC_CAT = ["Front", "Back", "Interior", "Spine"];
+const _ALB_CARD_HEAD = ["Front defects", "Back defects", "Top defects", "Bottom defects"];
+function _albSevColor(x) { const u = String(x || "").toUpperCase(); return u === "HIGH" ? "#e0555f" : (u === "MED" || u === "MEDIUM") ? "#e0a020" : "#8fbf5a"; }
+function _albRow(text, sev) {
+  const chip = sev ? `<span class="lbd-sev" style="color:${_albSevColor(sev)}">${String(sev).toUpperCase() === "MEDIUM" ? "MED" : String(sev).toUpperCase()}</span>` : "";
+  return `<div class="lbd-row"><span>${escapeHtml(String(text))}</span>${chip}</div>`;
+}
+function _albBox(head, rowsHTML) { return `<div class="lbd-head">${escapeHtml(head)}</div>${rowsHTML || '<div class="lbd-none">No defects noted for this view.</div>'}`; }
+function _albParseSev(str) {
+  let s = String(str == null ? "" : str).trim();
+  if (!s) return null;
+  let sev = null;
+  const m = s.match(/[\s,;.–-]*\b(HIGH|MED|MEDIUM|LOW)\b\.?$/i);
+  if (m) { sev = m[1].toUpperCase(); s = s.slice(0, m.index).trim(); }
+  s = s.replace(/[.\s]+$/, "");
+  return s ? { t: s, sev: sev } : null;
+}
+function _albComicDefectsHTML(it, idx) {
+  const cat = _ALB_COMIC_CAT[idx];
+  if (!cat) return "";
+  const list = Array.isArray(it.defects) ? it.defects.filter(d => String(d.category || "") === cat) : [];
+  const rows = list.map(d => {
+    let t = d.type || "Defect";
+    if (d.location && d.location !== "N/A") t += " — " + d.location;
+    if (d.colorBreaking) t += " (color-breaking)";
+    return _albRow(t, d.severity);
+  }).join("");
+  return _albBox(cat + " defects", rows);
+}
+function _albCardDefectsHTML(it, idx) {
+  const cd = it.cardRobograde || {};
+  const df = it.cardDefects || {};
+  const rows = [];
+  const CH = { frontTopLeft: "top-left", frontTopRight: "top-right", frontBottomLeft: "bottom-left", frontBottomRight: "bottom-right", backTopLeft: "top-left", backTopRight: "top-right", backBottomLeft: "bottom-left", backBottomRight: "bottom-right" };
+  const CS = { "SLIGHT FRAY": "LOW", "MINOR BLUNT": "LOW", "SOFT": "LOW", "HEAVY BLUNT": "MED", "CHIPPED": "MED", "DESTROYED": "HIGH" };
+  const ES = { "LIGHT WEAR": "LOW", "NOTCHING": "MED", "CHIPPING": "MED", "ROUGH": "MED", "TEAR": "HIGH" };
+  const pc = (cd.corners && cd.corners.perCorner) || {};
+  const edges = cd.edges || {};
+  const arr = k => Array.isArray(df[k]) ? df[k] : [];
+  const addCorners = keys => keys.forEach(k => { const v = String(pc[k] || "").toUpperCase().trim(); if (!v || v === "PRISTINE" || v === "SHARP") return; rows.push(_albRow("Corner " + CH[k] + " — " + (v.charAt(0) + v.slice(1).toLowerCase()), CS[v] || "MED")); });
+  const addEdge = side => { const v = String(edges[side] || "").toUpperCase().trim(); if (!v || v === "CLEAN") return; rows.push(_albRow((v.charAt(0) + v.slice(1).toLowerCase()) + " — " + side + " edge", ES[v] || "MED")); };
+  const addFree = () => [].concat(arr("creases"), arr("scratches"), arr("printDefects"), arr("stains"), arr("other"), arr("edgeIssues")).forEach(txt => { const p = _albParseSev(txt); if (p) rows.push(_albRow(p.t, p.sev)); });
+  const centerLine = which => { const c = cd.centering || {}; const r = c[which + "Ratio"]; if (r) rows.push(_albRow("Centering " + r, null)); };
+  if (idx === 0) { addCorners(["frontTopLeft", "frontTopRight", "frontBottomLeft", "frontBottomRight"]); addEdge("left"); addEdge("right"); centerLine("front"); addFree(); }
+  else if (idx === 1) { addCorners(["backTopLeft", "backTopRight", "backBottomLeft", "backBottomRight"]); centerLine("back"); }
+  else if (idx === 2) { addCorners(["frontTopLeft", "frontTopRight"]); addEdge("top"); }
+  else if (idx === 3) { addCorners(["frontBottomLeft", "frontBottomRight"]); addEdge("bottom"); }
+  else return "";
+  return _albBox(_ALB_CARD_HEAD[idx] || "Defects", rows.join(""));
+}
+function _albRenderDefects() {
+  const def = document.getElementById('admin-lb-defects');
+  if (!def) return;
+  const it = window._adminItem;
+  let html = "";
+  if (it && Array.isArray(it.images)) {
+    const idx = it.images.indexOf(_albList[_albIdx]);
+    if (idx >= 0 && idx <= 3) html = (it.type === 'card') ? _albCardDefectsHTML(it, idx) : _albComicDefectsHTML(it, idx);
+  }
+  def.innerHTML = html;
+  def.style.display = html ? "block" : "none";
 }
 function openAdminLightbox(src) {
   const lb = document.getElementById('admin-lightbox');
@@ -2948,6 +3024,7 @@ function openAdminLightbox(src) {
   img.src = src;
   lb.classList.add('show');
   _albArrows();
+  _albRenderDefects();
   lb.onclick = function(e) { if (e.target === lb) lb.classList.remove('show'); };
   if (!window._albKeyed) {
     window._albKeyed = true;

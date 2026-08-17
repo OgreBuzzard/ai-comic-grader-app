@@ -129,8 +129,18 @@ function isDeepListBook(title, issue) {
 // floor is removed: it would wrongly reject legitimately-valuable LOW-grade keys
 // (tier 7+ despite a low grade). The slabbed + prereq checks below still apply,
 // so a book only reaches here after Main + Deep have run.
-function isFullEligible({ title, issueNumber, roboScore, predictedGrade }) {
-  return { eligible: true, reason: 'client-fmv-tier' };
+function isFullEligible({ title, issueNumber, fmvTier }) {
+  // Historic mega-keys always qualify (server-authoritative list, independent
+  // of the client).
+  if (isDeepListBook(title, issueNumber)) return { eligible: true, reason: 'deep-list' };
+  // Everything else must be FMV tier >= 7 ($1000+). The client computes fmvTier
+  // (matchFMV) and sends it. A client from BEFORE the FMV-tier-7 gate (the old
+  // grade/score gate that wrongly unlocked Full on high-grade low-value books)
+  // omits fmvTier -> treated as ineligible here. This is the server backstop the
+  // gate previously lacked (it used to trust the client entirely).
+  const t = Number(fmvTier);
+  if (Number.isFinite(t) && t >= 7) return { eligible: true, reason: 'fmv-tier7' };
+  return { eligible: false, reason: 'fmv-below-tier7' };
 }
 
 export default async function handler(req, res) {
@@ -205,7 +215,8 @@ export default async function handler(req, res) {
     initialAssessmentComplete = false,
     deepAssessmentComplete = false,
     roboScore = null,             // 0-100 RG score (for the widened gate)
-    predictedGrade = null,        // 0.5-10.0 CGC-scale grade (for the widened gate)
+    predictedGrade = null,        // 0.5-10.0 CGC-scale grade (retained for context; no longer gates)
+    fmvTier = null,               // S21: FMV tier (matchFMV) computed by the client; Full needs >= 7 ($1000+)
     initialPageQuality = '',      // the initial PQ call, so the model can re-judge it
     priorConditionAssessment = '',// the existing Condition Assessment text to integrate into
     priorDefectNotes = '',        // the existing Defect Notes (bullets), for context
@@ -213,12 +224,12 @@ export default async function handler(req, res) {
     photograder = null            // S21: the running Photograder record (prior tiers)
   } = req.body || {};
 
-  // Eligibility check 1: widened gate (Deep-list OR score>=30 OR grade>=3.0).
-  const elig = isFullEligible({ title, issueNumber, roboScore, predictedGrade });
+  // Eligibility check 1: FMV gate — Deep-list mega-key OR FMV tier >= 7 ($1000+).
+  const elig = isFullEligible({ title, issueNumber, fmvTier });
   if (!elig.eligible) {
     return sseError(400, {
       error: 'INELIGIBLE_BOOK',
-      message: 'Full Assessment requires a book on the high-value list, or a RoboScore of 30+ / a predicted grade of 3.0+.'
+      message: 'Full Assessment requires an FMV of $1,000+ (tier 7) or a book on the high-value list. If your app is out of date, please update it and try again.'
     });
   }
 

@@ -1155,7 +1155,7 @@ onAuthStateChanged(auth, async user => {
        - The previous 20px padding all around forced the image into a smaller
          box than necessary; with proper viewport sizing we can tighten the
          margins so more of the image is visible. */
-    #lightbox { position: fixed; inset: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.95); display: none; align-items: center; justify-content: center; z-index: 1000; padding: max(env(safe-area-inset-top, 12px), 12px) 8px max(env(safe-area-inset-bottom, 12px), 12px); overflow: hidden; touch-action: none; }
+    #lightbox { position: fixed; inset: 0; width: 100vw; height: 100dvh; background: rgba(0,0,0,0.95); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; padding: max(env(safe-area-inset-top, 12px), 12px) 8px max(env(safe-area-inset-bottom, 12px), 12px); overflow: hidden; touch-action: none; }
     /* lightbox-stage uses CSS grid with `place-items:center` rather than flex
        centering. Flex was conflicting with Panzoom's transform — Panzoom
        applies translate/scale to the <img> element, but the flex parent's
@@ -1172,16 +1172,23 @@ onAuthStateChanged(auth, async user => {
            works correctly against this wrapper since the wrapper isn't being
            laid out by competing flex/grid logic.
          - #lightbox-img inside the wrapper just renders at natural fit. */
-    #lightbox-stage { width: 100%; height: 100%; display: grid; place-items: center; touch-action: none; overflow: hidden; }
+    #lightbox-stage { width: 100%; flex: 1 1 auto; min-height: 0; display: grid; place-items: center; touch-action: none; overflow: hidden; }
     #lightbox-panzoom-wrap { max-width: 100%; max-height: 100%; touch-action: none; }
     #lightbox-img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; pointer-events: auto; touch-action: none; -webkit-touch-callout: none; cursor: grab; display: block; }
     #lightbox-img:active { cursor: grabbing; }
     #lightbox-close { position: absolute; top: max(env(safe-area-inset-top, 14px), 14px); left: 14px; width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; border: 1.5px solid rgba(255,255,255,0.3); font-size: 22px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; z-index: 1002; padding: 0; }
     #lightbox-close:hover { background: rgba(0,0,0,0.85); }
-    #lightbox-prev, #lightbox-next { position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; border: 1.5px solid rgba(255,255,255,0.3); font-size: 28px; font-weight: 700; cursor: pointer; align-items: center; justify-content: center; line-height: 1; z-index: 1002; padding: 0 0 4px; }
-    #lightbox-prev { left: 14px; }
-    #lightbox-next { right: 14px; }
+    #lightbox-prev, #lightbox-next { position: static; transform: none; width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; border: 1.5px solid rgba(255,255,255,0.3); font-size: 28px; font-weight: 700; cursor: pointer; align-items: center; justify-content: center; line-height: 1; z-index: 1002; padding: 0 0 4px; }
     #lightbox-prev:hover, #lightbox-next:hover { background: rgba(0,0,0,0.85); }
+    /* S21: arrows + per-image defect box live in a footer BENEATH the image (were overlaying it). */
+    #lightbox-footer { flex-shrink: 0; width: 100%; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px 12px 4px; z-index: 1002; }
+    #lightbox-nav { display: flex; gap: 28px; justify-content: center; align-items: center; }
+    #lightbox-defects { width: 100%; max-width: 560px; max-height: 24vh; overflow-y: auto; -webkit-overflow-scrolling: touch; background: rgba(20,20,22,0.92); border: 1px solid rgba(255,255,255,0.14); border-radius: 10px; color: #e8e6e2; font-size: 12px; line-height: 1.45; padding: 10px 12px; text-align: left; display: none; }
+    #lightbox-defects .lbd-head { font-size: 10px; font-weight: 800; letter-spacing: 1.5px; color: #7aa838; text-transform: uppercase; margin-bottom: 6px; }
+    #lightbox-defects .lbd-row { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; border-top: 1px solid rgba(255,255,255,0.06); }
+    #lightbox-defects .lbd-row:first-of-type { border-top: none; }
+    #lightbox-defects .lbd-sev { font-weight: 800; flex-shrink: 0; letter-spacing: 0.5px; }
+    #lightbox-defects .lbd-none { color: #8a8f86; font-style: italic; }
     /* S14: save-to-photos button mirrors the close button on the opposite
        corner. Same size and chrome treatment so the lightbox reads as
        having two equivalent action affordances. The download arrow SVG is
@@ -1191,7 +1198,7 @@ onAuthStateChanged(auth, async user => {
     #lightbox-save:hover { background: rgba(0,0,0,0.85); }
     #lightbox-save:disabled { opacity: 0.5; cursor: wait; }
     #lightbox-save svg { width: 20px; height: 20px; pointer-events: none; }
-    #lightbox-hint { position: absolute; bottom: max(env(safe-area-inset-bottom, 18px), 18px); left: 50%; transform: translateX(-50%); font-size: 11px; color: rgba(255,255,255,0.5); letter-spacing: 1.5px; pointer-events: none; z-index: 1001; }
+    #lightbox-hint { position: absolute; top: max(env(safe-area-inset-top, 16px), 16px); bottom: auto; left: 50%; transform: translateX(-50%); font-size: 10px; color: rgba(255,255,255,0.4); letter-spacing: 1.5px; pointer-events: none; z-index: 1001; }
     #sync-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 9998; background: #f0eaff; border-bottom: 2px solid #7a40cf; padding: 10px 16px; display: flex; align-items: center; gap: 10px; }
     /* Settings panel */
     #settings-overlay {
@@ -1801,8 +1808,13 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
       <line x1="12" y1="15" x2="12" y2="3"/>
     </svg>
   </button>
-  <button id="lightbox-prev" onclick="_lbStep(-1)" aria-label="Previous image" style="display:none">‹</button>
-  <button id="lightbox-next" onclick="_lbStep(1)" aria-label="Next image" style="display:none">›</button>
+  <div id="lightbox-footer">
+    <div id="lightbox-nav">
+      <button id="lightbox-prev" onclick="_lbStep(-1)" aria-label="Previous image" style="display:none">‹</button>
+      <button id="lightbox-next" onclick="_lbStep(1)" aria-label="Next image" style="display:none">›</button>
+    </div>
+    <div id="lightbox-defects"></div>
+  </div>
   <div id="lightbox-hint">PINCH OR DOUBLE-TAP TO ZOOM</div>
 </div>
 
@@ -5581,7 +5593,7 @@ let _panzoomInstance = null;
 
 let _lightboxLastTap = 0;
 
-let _lbList = null, _lbIdx = 0;
+let _lbList = null, _lbIdx = 0, _lbDefCtx = null;
 function _lbNonNull() { return (_lbList || []).filter(Boolean).length; }
 function _lbUpdateArrows() {
   const show = _lbNonNull() > 1;
@@ -5595,6 +5607,7 @@ function _lbShow() {
   img.src = _lbList[_lbIdx];
   _attachPanzoomToLightbox();
   _lbUpdateArrows();
+  _lbRenderDefects();
 }
 function _lbStep(dir) {
   if (!_lbList) return;
@@ -5603,8 +5616,8 @@ function _lbStep(dir) {
   if (!_lbList[i]) return;
   _lbIdx = i; _lbShow();
 }
-function _lbOpen(list, idx) {
-  _lbList = list; _lbIdx = idx;
+function _lbOpen(list, idx, defCtx) {
+  _lbList = list; _lbIdx = idx; _lbDefCtx = defCtx || null;
   const box = document.getElementById("lightbox");
   box.style.display = "flex";
   _lbShow();
@@ -5659,10 +5672,89 @@ function _attachPanzoomToLightbox() {
   }
 }
 
+// ── S21: Lightbox per-image defect box (MAIN images only, comic + card) ───────
+// Comic main image index -> defect category. Card main images map to per-side
+// data (corners/centering are front/back-tagged; free-text surface defects are
+// not side-tagged, so they show on the Front view).
+const _LB_COMIC_CAT = ["Front", "Back", "Interior", "Spine"];
+const _LB_CARD_HEAD = ["Front defects", "Back defects", "Top defects", "Bottom defects"];
+function _lbSevColor(x) { const u = String(x || "").toUpperCase(); return u === "HIGH" ? "#e0555f" : (u === "MED" || u === "MEDIUM") ? "#e0a020" : "#8fbf5a"; }
+function _lbRow(text, sev) {
+  const chip = sev ? `<span class="lbd-sev" style="color:${_lbSevColor(sev)}">${String(sev).toUpperCase() === "MEDIUM" ? "MED" : String(sev).toUpperCase()}</span>` : "";
+  return `<div class="lbd-row"><span>${esc(String(text))}</span>${chip}</div>`;
+}
+function _lbBox(head, rowsHTML) {
+  return `<div class="lbd-head">${esc(head)}</div>${rowsHTML || '<div class="lbd-none">No defects noted for this view.</div>'}`;
+}
+function _lbParseSev(str) {
+  let s = String(str == null ? "" : str).trim();
+  if (!s) return null;
+  let sev = null;
+  const m = s.match(/[\s,;.–-]*\b(HIGH|MED|MEDIUM|LOW)\b\.?$/i);
+  if (m) { sev = m[1].toUpperCase(); s = s.slice(0, m.index).trim(); }
+  s = s.replace(/[.\s]+$/, "");
+  return s ? { t: s, sev: sev } : null;
+}
+function _lbComicDefectsHTML(item, idx) {
+  const cat = _LB_COMIC_CAT[idx];
+  if (!cat) return "";
+  const rg = item.roboGrade || {};
+  const list = Array.isArray(rg.defects) ? rg.defects.filter(d => String(d.category || "") === cat) : [];
+  const rows = list.map(d => {
+    let t = d.type || "Defect";
+    if (d.location && d.location !== "N/A") t += " — " + d.location;
+    if (d.colorBreaking) t += " (color-breaking)";
+    return _lbRow(t, d.severity);
+  }).join("");
+  return _lbBox(cat + " defects", rows);
+}
+function _lbCardDefectsHTML(item, idx) {
+  const cd = (item.cardData && item.cardData.robograde) || {};
+  const df = (item.cardData && item.cardData.defects) || {};
+  const rows = [];
+  const CORNER_HUMAN = { frontTopLeft: "top-left", frontTopRight: "top-right", frontBottomLeft: "bottom-left", frontBottomRight: "bottom-right", backTopLeft: "top-left", backTopRight: "top-right", backBottomLeft: "bottom-left", backBottomRight: "bottom-right" };
+  const CORNER_SEV = { "SLIGHT FRAY": "LOW", "MINOR BLUNT": "LOW", "SOFT": "LOW", "HEAVY BLUNT": "MED", "CHIPPED": "MED", "DESTROYED": "HIGH" };
+  const EDGE_SEV = { "LIGHT WEAR": "LOW", "NOTCHING": "MED", "CHIPPING": "MED", "ROUGH": "MED", "TEAR": "HIGH" };
+  const pc = (cd.corners && cd.corners.perCorner) || {};
+  const edges = cd.edges || {};
+  const arr = k => Array.isArray(df[k]) ? df[k] : [];
+  const addCorners = keys => keys.forEach(k => { const v = String(pc[k] || "").toUpperCase().trim(); if (!v || v === "PRISTINE" || v === "SHARP") return; rows.push(_lbRow("Corner " + CORNER_HUMAN[k] + " — " + (v.charAt(0) + v.slice(1).toLowerCase()), CORNER_SEV[v] || "MED")); });
+  const addEdge = side => { const v = String(edges[side] || "").toUpperCase().trim(); if (!v || v === "CLEAN") return; rows.push(_lbRow((v.charAt(0) + v.slice(1).toLowerCase()) + " — " + side + " edge", EDGE_SEV[v] || "MED")); };
+  const addFree = () => [].concat(arr("creases"), arr("scratches"), arr("printDefects"), arr("stains"), arr("other"), arr("edgeIssues")).forEach(txt => { const p = _lbParseSev(txt); if (p) rows.push(_lbRow(p.t, p.sev)); });
+  const centerLine = which => { const c = cd.centering || {}; const r = c[which + "Ratio"]; if (r) rows.push(_lbRow("Centering " + r, null)); };
+  if (idx === 0) { addCorners(["frontTopLeft", "frontTopRight", "frontBottomLeft", "frontBottomRight"]); addEdge("left"); addEdge("right"); centerLine("front"); addFree(); }
+  else if (idx === 1) { addCorners(["backTopLeft", "backTopRight", "backBottomLeft", "backBottomRight"]); centerLine("back"); }
+  else if (idx === 2) { addCorners(["frontTopLeft", "frontTopRight"]); addEdge("top"); }
+  else if (idx === 3) { addCorners(["frontBottomLeft", "frontBottomRight"]); addEdge("bottom"); }
+  else return "";
+  return _lbBox(_LB_CARD_HEAD[idx] || "Defects", rows.join(""));
+}
+function _lbSyncFooter() {
+  const footer = document.getElementById("lightbox-footer");
+  const nav = document.getElementById("lightbox-nav");
+  const def = document.getElementById("lightbox-defects");
+  const navShown = _lbNonNull() > 1;
+  if (nav) nav.style.display = navShown ? "flex" : "none";
+  const defShown = !!(def && def.style.display !== "none" && def.innerHTML.trim() !== "");
+  if (footer) footer.style.display = (navShown || defShown) ? "flex" : "none";
+}
+function _lbRenderDefects() {
+  const def = document.getElementById("lightbox-defects");
+  if (!def) return;
+  let html = "";
+  const ctx = _lbDefCtx;
+  if (ctx && ctx.item && _lbIdx >= 0 && _lbIdx <= 3) {
+    html = (ctx.item.type === "card") ? _lbCardDefectsHTML(ctx.item, _lbIdx) : _lbComicDefectsHTML(ctx.item, _lbIdx);
+  }
+  def.innerHTML = html;
+  def.style.display = html ? "block" : "none";
+  _lbSyncFooter();
+}
+
 function openLightbox(id, idx) {
   const c = items.find(x => x.id === id);
   if (!c || !c.images?.[idx]) return;
-  _lbOpen(c.images, idx);
+  _lbOpen(c.images, idx, { item: c });   // MAIN images get the per-image defect box
 }
 
 function openCornerLightbox(id, idx) {
@@ -10929,6 +11021,7 @@ async function submitFullAssessment() {
         deepAssessmentComplete: true,
         roboScore: formData.roboGrade && formData.roboGrade.score != null ? formData.roboGrade.score : null,
         predictedGrade: formData.predictedGrade || formData.assessedCGCGrade || null,
+        fmvTier: (typeof fmvTierOf === "function" ? fmvTierOf(formData) : null),  // server re-checks Full gate (>= 7)
         initialPageQuality: formData.pageQuality || "",
         priorConditionAssessment: formData.aiAssessment || "",
         priorDefectNotes: formData.aiGraderNotes || "",
