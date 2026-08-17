@@ -148,6 +148,13 @@ CURATED_GUARDS = {
   "amazing fantasy|15":1963, "avengers|1":1964, "daredevil|1":1965, "fantastic four|1":1962,
   "house of secrets|92":1972, "incredible hulk|181":1975, "moon knight|1":1981, "nova|1":1977,
   "predator|1":1990, "thundercats|1":1986, "uncanny x-men|1":1964, "wolverine|8":1990,
+  # Batman: vintage vol-1 issue numbers are reused by New 52 (2011), Rebirth (2016),
+  # and resumed legacy numbering. Guard each priced key to its vintage year so a
+  # modern-year cover falls through to the blanket tier instead of the 1940s price.
+  "batman|1":1941, "batman|2":1941, "batman|3":1941, "batman|4":1941,
+  "batman|5":1942, "batman|6":1942, "batman|7":1942, "batman|8":1942,
+  "batman|9":1943, "batman|10":1943, "batman|121":1960, "batman|181":1967,
+  "batman|189":1968, "batman|227":1971, "batman|251":1974, "batman|423":1989, "batman|457":1991,
 }
 for _k,_y in CURATED_GUARDS.items():
     if _k in books: GUARDS[_k]=_y
@@ -161,7 +168,7 @@ for k,c in books.items():
         curve_index[sig]=len(curves); curves.append(c)
     booksOut[k]=curve_index[sig]
 
-new={'version':'1.8.0','tiers':TIERS,'volumeGuards':GUARDS,'curves':curves,'books':booksOut}
+new={'version':'1.8.1','tiers':TIERS,'volumeGuards':GUARDS,'curves':curves,'books':booksOut}
 json.dump(new, open(OUT_JSON,'w'), separators=(',',':'))
 
 # ---- report ----

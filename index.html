@@ -4115,6 +4115,10 @@ async function loadUserCredits() {
       }
       window._sampleDismissed = data.sampleDismissed === true;
       if (data.everPurchased) window._userEverPaid = true; else if (window._userCredits > 0) window._userEverPaid = true;
+      // Strict purchaser flag (S21): true ONLY if the account has actually bought
+      // credits (web sets everPurchased; mobile increments totalPurchased). Free
+      // signup + referral credits do NOT count. Gates the Give (transfer) feature.
+      window._userHasPurchased = (data.everPurchased === true) || (typeof data.totalPurchased === "number" && data.totalPurchased > 0);
       window._trainingOptIn = data.trainingOptIn !== false;
       window._printOptIn = data.printOptIn === true; // S18: persisted print-mode opt-in
       if (typeof data.transferCode === "string" && data.transferCode.length === 4) {
@@ -5255,8 +5259,12 @@ function showDetail(id) {
   //   Row 3 (always):      Delete (centered, half-width)
   // Print Label removed (batch printing now lives in List view). Complain is a
   // regular button in the grid (replaces the old text link / Print Label slot).
+  // S21: Give is gated to accounts that have PURCHASED credits (abuse prevention).
+  // Non-purchasers see a grayed button that explains why on tap.
   const _giveBtn = _canGive
-    ? `<button class="rg-btn rg-btn-action rg-btn-md" onclick="openGiveDialog('${esc(selected.id)}')">Give</button>`
+    ? (window._userHasPurchased
+        ? `<button class="rg-btn rg-btn-action rg-btn-md" onclick="openGiveDialog('${esc(selected.id)}')">Give</button>`
+        : `<button class="rg-btn rg-btn-action rg-btn-md" style="opacity:0.45" onclick="appAlert('Giving entries is available once you have purchased credits.')">Give</button>`)
     : `<span></span>`;
   let _complainBtn = `<span></span>`;
   if (selected.roboGrade) {
@@ -7785,6 +7793,7 @@ let _giveItemId = null;
 function openGiveDialog(itemId) {
   const it = (items || []).find(c => c.id === itemId);
   if (!it || it._isSample || !it.roboGrade) return;
+  if (!window._userHasPurchased) { appAlert("Giving entries is available once you have purchased credits."); return; }
   _giveItemId = itemId;
   const ov = document.getElementById("give-overlay");
   const step1 = document.getElementById("give-step1");

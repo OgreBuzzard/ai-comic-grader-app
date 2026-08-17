@@ -36,13 +36,25 @@ let _fmvCache = null, _fmvAt = 0;
 async function getFmvIndex() {
   if (_fmvCache && Date.now() - _fmvAt < 10 * 60 * 1000) return _fmvCache;
   try {
-    const r = await fetch('https://robograder.app/fmv.json', { cache: 'no-store' });
+    const r = await fetch('https://robograder.app/fmv_comics.json', { cache: 'no-store' });
     if (r.ok) { const data = await r.json(); if (data && data.books) { _fmvCache = data; _fmvAt = Date.now(); } }
   } catch (_) { /* keep stale cache */ }
   return _fmvCache;
 }
 const _nkTitle = s => !s ? '' : s.toString().trim().replace(/\s+/g, ' ').replace(/^The\s+/i, '').toLowerCase();
 const _nkIssue = s => s == null ? '' : s.toString().trim().replace(/^#/, '').replace(/\.0$/, '').replace(/^0+(\d)/, '$1');
+const _appNormTitle = s => !s ? '' : s.toString().trim().replace(/\s+/g,' ').replace(/^The\s+/i,'').toLowerCase();
+function _appFmvKey(title, issue) {
+  let t = (title == null ? '' : title.toString()).trim().replace(/\s+/g,' ');
+  let i = (issue == null ? '' : issue.toString()).trim().replace(/^#/,'');
+  const titleHasAnnual = /\bannual\b/i.test(t);
+  const mA = i.match(/^\s*(?:annual|ann\.?)\s*#?\s*0*(\d+)\s*$/i);
+  const mB = i.match(/^\s*A\s*0*(\d+)\s*$/i);
+  if (titleHasAnnual) { t = t.replace(/\bannual\b/ig,'').replace(/\s+/g,' ').trim(); const num = mA ? mA[1] : (mB ? mB[1] : i.replace(/^0+(\d)/,'$1')); i = 'A'+num; }
+  else if (mA) { i = 'A'+mA[1]; } else if (mB) { i = 'A'+mB[1]; } else { i = i.replace(/^0+(\d)/,'$1'); }
+  t = t.replace(/^invincible\s+iron\s+man\b/i,'Iron Man');
+  return _appNormTitle(t) + '|' + i;
+}
 function matchFmv(idx, title, issue, grade, printing, year) {
   if (!idx || !idx.books) return null;
   if (printing && typeof printing === 'string') {
@@ -51,7 +63,7 @@ function matchFmv(idx, title, issue, grade, printing, year) {
   }
   const g = parseFloat(grade);
   if (!isFinite(g)) return null;
-  const _key = _nkTitle(title) + '|' + _nkIssue(issue);
+  const _key = _appFmvKey(title, issue);   // app-identical key (folds annuals -> A<n>, Invincible Iron Man -> Iron Man)
   let breaks;
   // Volume/year model (mirrors the app): pick the curve whose [minYear,maxYear]
   // contains the cover year; no year/no match -> no curve (blanket/null).

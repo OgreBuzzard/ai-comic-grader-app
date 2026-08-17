@@ -140,6 +140,7 @@ export default async function handler(req, res) {
       const userUpdate = {
         assessmentCredits: FieldValue.increment(credits),
         totalPurchased: FieldValue.increment(credits),
+        everPurchased: true,   // S21: authoritative purchaser flag (gates the Give feature)
       };
       if (tier === 'short_box' && envName === 'Production') {
         userUpdate.lastShortBoxAt = lastShortBoxAt;

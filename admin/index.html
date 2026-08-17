@@ -1171,10 +1171,11 @@ function _renderSales() {
     const testTag = p.isTest ? ' <span style="font-size:9px;font-weight:700;color:#e8c257;border:1px solid #e8c257;border-radius:3px;padding:0 3px">TEST</span>' : '';
     return `<div class="row" style="align-items:center;">
         <div class="main">
-          <div class="title" style="font-size:13px;">${money(p.amount)} <span style="color:#6a9a6a">(${money(p.net)})</span> · ${p.credits ?? '?'} cr · ${_salesProduct(p)} ${badge}${testTag}</div>
+          <div class="title" style="font-size:13px;">${money(p.amount)} <span style="color:#6a9a6a">(${money(p.net)})</span> · ${p.credits ?? '?'} cr · ${_salesProduct(p)}${testTag}</div>
           <div class="sub">${escapeHtml(p.userName)}${p.transferCode ? ' · <span style="color:#e8c257;font-weight:700;">' + escapeHtml(p.transferCode) + '</span>' : ''} · ${when}</div>
         </div>
-        <div class="meta" style="display:flex;flex-direction:column;align-items:flex-end;gap:1px;">
+        <div class="meta" style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0;">
+          <div>${badge}</div>
           <div style="font-size:11px;color:#9aa;">${p.userCredits ?? '—'} credits</div>
           <div style="font-size:11px;color:#9aa;">${p.bookCount ?? 0} items</div>
         </div>

@@ -312,6 +312,17 @@ async function handleSend(req, res) {
       return res.status(400).json({ error: 'Enter a valid 4-character code' });
     }
 
+    // Abuse prevention (S21): only accounts that have PURCHASED credits may give
+    // entries away. Free signup + referral credits do NOT count — this stops a
+    // burner account from farming free assessments and offloading them.
+    const senderSnap = await db.collection('users').doc(fromUid).get();
+    const senderData = senderSnap.exists ? (senderSnap.data() || {}) : {};
+    const senderPurchased = senderData.everPurchased === true
+      || (typeof senderData.totalPurchased === 'number' && senderData.totalPurchased > 0);
+    if (!senderPurchased) {
+      return res.status(403).json({ error: 'Giving entries is available once you have purchased credits.', reason: 'not_purchaser' });
+    }
+
     // Resolve code → recipient uid.
     const codeSnap = await db.collection('transfer_codes').doc(code).get();
     if (!codeSnap.exists) {

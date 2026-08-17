@@ -26,12 +26,12 @@ function parseServiceAccount() {
 // ── FMV (server-side mirror of the app's matchFMV, S20) ─────────────────────
 // Ports index.html's _normalizeKeyTitle / _normalizeKeyIssue / matchFMV verbatim
 // so the admin shows the exact same FMV the app computes. The compressed index
-// (/fmv.json) is fetched from robograder.app and cached in module scope.
+// (/fmv_comics.json — the SAME file the app reads) is fetched from robograder.app and cached.
 let _fmvCache = null, _fmvAt = 0;
 async function getFmvIndex() {
   if (_fmvCache && Date.now() - _fmvAt < 10 * 60 * 1000) return _fmvCache; // 10-min cache
   try {
-    const r = await fetch('https://robograder.app/fmv.json', { cache: 'no-store' });
+    const r = await fetch('https://robograder.app/fmv_comics.json', { cache: 'no-store' });
     if (r.ok) { const data = await r.json(); if (data && data.books) { _fmvCache = data; _fmvAt = Date.now(); } }
   } catch (_) { /* keep any stale cache */ }
   return _fmvCache;
@@ -71,7 +71,7 @@ function matchFmv(idx, title, issue, grade, printing, year) {
   }
   const g = parseFloat(grade);
   if (!isFinite(g)) return null;
-  const _key = _nkTitle(title) + '|' + _nkIssue(issue);
+  const _key = _appFmvKey(title, issue);   // app-identical key (folds annuals -> A<n>, Invincible Iron Man -> Iron Man)
   let breaks;
   // Volume/year model (mirrors the app): pick the curve whose [minYear,maxYear]
   // contains the cover year; no year/no match -> no curve (blanket/null).
