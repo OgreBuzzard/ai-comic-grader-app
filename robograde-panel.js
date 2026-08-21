@@ -436,7 +436,7 @@
       || (card && card.version)
       || (card && card.robograde && card.robograde.version)
       || item.rgVersion;
-    const _verLabel = "V" + (_storedVer || window.RG_GRADING_VERSION || "4.74");
+    const _verLabel = "V" + (_storedVer || window.RG_GRADING_VERSION || "4.75");
 
     // Consistent grade rendering: big base + smaller (same-weight) +/- suffix.
     // Used by the main score AND every subscore so all +/- match.

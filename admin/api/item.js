@@ -254,6 +254,7 @@ export default async function handler(req, res) {
       // display + diagnosing wrong-volume pulls). Only present on assessments
       // run after the persistence change; older items will be null.
       referenceImageUrl: flat.referenceImageUrl || null,
+      referenceBackImageUrl: flat.referenceBackImageUrl || null,
       referenceVolume: flat.referenceVolume || null,
       referenceYear: flat.referenceYear ?? null,
       referenceComparison: flat.referenceComparison || rg.referenceComparison || null,

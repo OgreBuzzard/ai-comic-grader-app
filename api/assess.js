@@ -498,6 +498,7 @@ export default async function handler(req, res) {
   let referenceYear = null;  // cover-date year of the ComicVine issue we pulled (diagnostic)
   let referenceVolumeName = null;  // which volume/series we chose (diagnostic)
   let referenceImageUrl = null;  // the actual CV cover URL, persisted for admin side-by-side display
+  let referenceBackImageUrl = null;  // local back-cover URL (when a local reference is used)
   const baseUrl = req.headers['host']
     ? `https://${req.headers['host']}`
     : (process.env.VERCEL_PROJECT_PRODUCTION_URL
@@ -513,7 +514,11 @@ export default async function handler(req, res) {
     try {
       const _slug = String(title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
       const _iss = String(issueNumber).replace(/^#/, '').replace(/^0+(\d)/, '$1').trim();
-      const _yr = (typeof issueYear === 'number' && issueYear > 1900) ? issueYear : null;
+      const _yr = (() => {
+        const _m = String(issueDate || '').match(/(?:19|20)\d{2}/);   // client sends year as issueDate 'Mon YYYY'
+        if (_m) return Number(_m[0]);
+        return (typeof issueYear === 'number' && issueYear > 1900) ? issueYear : null;
+      })();
       const _bases = [];
       if (_yr) _bases.push(`${_slug}_${_iss}_${_yr}`);
       _bases.push(`${_slug}_${_iss}`);
@@ -533,6 +538,7 @@ export default async function handler(req, res) {
           if (_br.ok) {
             const _bbuf = await _br.arrayBuffer();
             referenceBackImageBlock = { type: 'image', source: { type: 'base64', media_type: normalizeMediaType(_br.headers.get('content-type')), data: Buffer.from(_bbuf).toString('base64') } };
+            referenceBackImageUrl = _backUrl;
           }
         } catch (e) { /* back optional */ }
         console.log(`[localref] used ${_b} front=yes back=${referenceBackImageBlock ? 'yes' : 'no'} -> skipping ComicVine`);
@@ -1543,6 +1549,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     parsed._diagnostics = {
       comicvineRef: referenceImageBlock !== null,
       referenceImageUrl: referenceImageUrl,
+      referenceBackImageUrl: referenceBackImageUrl,
       referenceVolume: referenceVolumeName,
       referenceYear: referenceYear,
       referenceComparison: parsed.referenceComparison || null,
@@ -1555,6 +1562,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     // Also surface the CV reference URL at top level so the client persists it
     // on the item document for the admin side-by-side display.
     parsed.referenceImageUrl = referenceImageUrl;
+    parsed.referenceBackImageUrl = referenceBackImageUrl;
     parsed.referenceVolume = referenceVolumeName;
     parsed.referenceYear = referenceYear;
     // S15 v3.8: strip any psaGrade/psaNotes fields the model may still produce.
