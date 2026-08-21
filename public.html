@@ -628,19 +628,15 @@
   const interiorBlock = (() => {
     if (!data.interiorImages || data.interiorImages.filter(Boolean).length === 0) return '';
     const iImgs = data.interiorImages;
-    const labels = ['Ext Top Staple', 'Ext Bottom Staple', 'Top Pages', 'Bottom Pages', 'Outer Edge', 'Interior Front', 'Interior Back', 'Interior Staples'];
-    let tiles = '';
-    for (let i = 0; i < iImgs.length; i++) {
-      if (iImgs[i]) {
-        const isWide = i < 5 || i === 7;
-        tiles += `<div style="margin-top:6px${!isWide ? ';display:inline-block;width:calc(50% - 3px);vertical-align:top' : ''}">
-          <div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:${isWide ? '5/1' : '3/2'}">
-            <img src="${esc(iImgs[i])}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" onclick="openLightbox('${esc(iImgs[i])}')">
-            <div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.6);color:#fff;font-size:8px;padding:2px 5px;border-radius:3px;letter-spacing:0.5px">${labels[i] || ''}</div>
-          </div>
-        </div>`;
-      }
-    }
+    // S21 layout. Storage order (index.html FULL_SLOTS): 0 Top Pages, 1 Outer
+    // Edge, 2 Bottom Pages, 3 Ext Top Staple, 4 Ext Bottom Staple, 5 Interior
+    // Staples. Staple SQUARE (two 1:1 ext staples left, interior staples span
+    // right) then Top Pages 5:1 / Outer Edge 4:1 / Bottom Pages 5:1.
+    const tile = (url, aspect, label, extra, fill) => url ? `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;${fill ? 'height:100%' : 'aspect-ratio:' + aspect}${extra ? ';' + extra : ''}"><img src="${esc(url)}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;cursor:zoom-in" onclick="openLightbox('${esc(url)}')"><div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.6);color:#fff;font-size:8px;padding:2px 5px;border-radius:3px;letter-spacing:0.5px">${label}</div></div>` : '';
+    let tiles = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">${tile(iImgs[3], '1/1', 'Ext Top Staple', 'grid-column:1;grid-row:1')}${tile(iImgs[5], null, 'Interior Staples', 'grid-column:2;grid-row:1 / span 2', true)}${tile(iImgs[4], '1/1', 'Ext Bottom Staple', 'grid-column:1;grid-row:2')}</div>`;
+    if (iImgs[0]) tiles += `<div style="margin-top:6px">${tile(iImgs[0], '5/1', 'Top Pages')}</div>`;
+    if (iImgs[1]) tiles += `<div style="margin-top:6px">${tile(iImgs[1], '4/1', 'Outer Edge')}</div>`;
+    if (iImgs[2]) tiles += `<div style="margin-top:6px">${tile(iImgs[2], '5/1', 'Bottom Pages')}</div>`;
     return `<div style="margin:16px 0">
       <div style="font-size:11px;font-weight:700;color:#d4af37;letter-spacing:1.5px;margin-bottom:6px;padding-top:14px;border-top:1px dashed #b8860b">FULL ASSESSMENT — INTERIOR & STRUCTURE</div>
       ${tiles}
@@ -651,23 +647,16 @@
   const restoImgBlock = (() => {
     if (!data.restorationImages || data.restorationImages.filter(Boolean).length === 0) return '';
     const rImgs = data.restorationImages;
-    const labels = ['UV Front', 'UV Back', 'Ext Top Staple', 'Ext Bottom Staple', 'Outer Edge', 'Interior Front', 'Interior Back', 'Interior Staples'];
+    // S21 layout. Restoration order: 0 UV Front, 1 UV Back, 2 Ext Top Staple,
+    // 3 Ext Bottom Staple, 4 Outer Edge, 5 Interior Front, 6 Interior Back,
+    // 7 Interior Staples. Shares Full's staple SQUARE + Outer Edge 4:1; the
+    // UV and interior-cover pairs keep their half-width rows.
+    const tile = (url, aspect, label, extra, fill) => url ? `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;${fill ? 'height:100%' : 'aspect-ratio:' + aspect}${extra ? ';' + extra : ''}"><img src="${esc(url)}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;cursor:zoom-in" onclick="openLightbox('${esc(url)}')"><div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.6);color:#fff;font-size:8px;padding:2px 5px;border-radius:3px;letter-spacing:0.5px">${label}</div></div>` : '';
     let tiles = '';
-    for (let i = 0; i < rImgs.length; i++) {
-      if (rImgs[i]) {
-        const isHalf = i < 2;
-        const isWide = i >= 2 && i <= 4 || i === 7;
-        const aspect = isHalf ? '3/4' : isWide ? '5/1' : '3/2';
-        const wrap = isHalf ? 'display:inline-block;width:calc(50% - 3px);vertical-align:top;' : '';
-        const inlineWrap = (!isHalf && !isWide) ? 'display:inline-block;width:calc(50% - 3px);vertical-align:top;' : '';
-        tiles += `<div style="margin-top:6px;${wrap || inlineWrap}">
-          <div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:${aspect}">
-            <img src="${esc(rImgs[i])}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" onclick="openLightbox('${esc(rImgs[i])}')">
-            <div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.6);color:#fff;font-size:8px;padding:2px 5px;border-radius:3px;letter-spacing:0.5px">${labels[i] || ''}</div>
-          </div>
-        </div>`;
-      }
-    }
+    if (rImgs[0] || rImgs[1]) tiles += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">${tile(rImgs[0], '3/4', 'UV Front')}${tile(rImgs[1], '3/4', 'UV Back')}</div>`;
+    tiles += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">${tile(rImgs[2], '1/1', 'Ext Top Staple', 'grid-column:1;grid-row:1')}${tile(rImgs[7], null, 'Interior Staples', 'grid-column:2;grid-row:1 / span 2', true)}${tile(rImgs[3], '1/1', 'Ext Bottom Staple', 'grid-column:1;grid-row:2')}</div>`;
+    if (rImgs[4]) tiles += `<div style="margin-top:6px">${tile(rImgs[4], '4/1', 'Outer Edge')}</div>`;
+    if (rImgs[5] || rImgs[6]) tiles += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">${tile(rImgs[5], '3/2', 'Interior Front')}${tile(rImgs[6], '3/2', 'Interior Back')}</div>`;
     return `<div style="margin:16px 0">
       <div style="font-size:11px;font-weight:700;color:#c8a8e8;letter-spacing:1.5px;margin-bottom:6px;padding-top:14px;border-top:1px dashed #7a4ba8">RESTORATION CHECK</div>
       ${tiles}

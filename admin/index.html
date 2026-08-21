@@ -2468,21 +2468,43 @@ function renderItemDetail(it) {
     ` : ''}
 
     ${(() => {
-      // S20 (#43): each group carries the app's aspect class so shapes aren't
-      // cropped — interior covers are landscape spreads, Full images are wide
-      // strips, signatures are wide. Restoration images vary, so show them
-      // uncropped (adaptive/contain).
-      const clsByName = { 'Interior Covers': 'spread', 'Interior': 'wide', 'Restoration': 'adaptive', 'Signature': 'sig' };
-      const extra = [['Interior Covers', it.interiorCoverImages], ['Interior', it.interiorImages], ['Restoration', it.restorationImages], ['Signature', it.signatureImages]].filter(([_, a]) => a && a.length);
-      return extra.map(([name, arr]) => `
+      // Interior Covers + Signature: generic grid (unchanged).
+      const clsByName = { 'Interior Covers': 'spread', 'Signature': 'sig' };
+      const esc = escapeAttr;
+      let out = [['Interior Covers', it.interiorCoverImages], ['Signature', it.signatureImages]]
+        .filter(([_, a]) => a && a.length)
+        .map(([name, arr]) => `
         <h3 class="section-h" style="margin-top:20px;">${name} (${arr.length})</h3>
         <div class="images-block">
           ${arr.map((url, i) => `
-            <div class="img-wrap ${clsByName[name] || ''}" onclick="openAdminLightbox('${escapeAttr(url)}')">
+            <div class="img-wrap ${clsByName[name] || ''}" onclick="openAdminLightbox('${esc(url)}')">
               <div class="label">${name} ${i + 1}</div>
-              <img src="${escapeAttr(url)}" alt="" loading="lazy">
+              <img src="${esc(url)}" alt="" loading="lazy">
             </div>`).join('')}
         </div>`).join('');
+      // S21: self-contained tile (does not inherit .img-wrap img rules) so the
+      // staple SQUARE + strip aspects render exactly. Keeps openAdminLightbox for
+      // the lightbox nav + Download-all scraping.
+      const tile = (url, aspect, label, extra, fill) => url ? `<div style="position:relative;border-radius:4px;overflow:hidden;background:#161616;${fill ? 'height:100%' : 'aspect-ratio:' + aspect}${extra ? ';' + extra : ''}" onclick="openAdminLightbox('${esc(url)}')"><img src="${esc(url)}" alt="" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;cursor:zoom-in"><div style="position:absolute;top:4px;left:6px;background:rgba(0,0,0,0.6);color:#fff;font-size:9px;padding:2px 6px;border-radius:3px;letter-spacing:0.4px">${label}</div></div>` : '';
+      // Interior (Full): staple SQUARE then Top Pages 5:1 / Outer Edge 4:1 / Bottom Pages 5:1.
+      const iI = it.interiorImages;
+      if (iI && iI.length) {
+        out += `<h3 class="section-h" style="margin-top:20px;">Interior (${iI.length})</h3>`;
+        out += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">${tile(iI[3], '1/1', 'Ext Top Staple', 'grid-column:1;grid-row:1')}${tile(iI[5], null, 'Interior Staples', 'grid-column:2;grid-row:1 / span 2', true)}${tile(iI[4], '1/1', 'Ext Bottom Staple', 'grid-column:1;grid-row:2')}</div>`;
+        if (iI[0]) out += `<div style="margin-top:6px">${tile(iI[0], '5/1', 'Top Pages')}</div>`;
+        if (iI[1]) out += `<div style="margin-top:6px">${tile(iI[1], '4/1', 'Outer Edge')}</div>`;
+        if (iI[2]) out += `<div style="margin-top:6px">${tile(iI[2], '5/1', 'Bottom Pages')}</div>`;
+      }
+      // Restoration: shares the square + Outer Edge 4:1; UV + interior-cover pairs kept.
+      const rI = it.restorationImages;
+      if (rI && rI.length) {
+        out += `<h3 class="section-h" style="margin-top:20px;">Restoration (${rI.length})</h3>`;
+        if (rI[0] || rI[1]) out += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">${tile(rI[0], '3/4', 'UV Front')}${tile(rI[1], '3/4', 'UV Back')}</div>`;
+        out += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">${tile(rI[2], '1/1', 'Ext Top Staple', 'grid-column:1;grid-row:1')}${tile(rI[7], null, 'Interior Staples', 'grid-column:2;grid-row:1 / span 2', true)}${tile(rI[3], '1/1', 'Ext Bottom Staple', 'grid-column:1;grid-row:2')}</div>`;
+        if (rI[4]) out += `<div style="margin-top:6px">${tile(rI[4], '4/1', 'Outer Edge')}</div>`;
+        if (rI[5] || rI[6]) out += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">${tile(rI[5], '3/2', 'Interior Front')}${tile(rI[6], '3/2', 'Interior Back')}</div>`;
+      }
+      return out;
     })()}
 
     <div style="margin-top:14px;">
@@ -2633,10 +2655,15 @@ function _fmvInitBounds(it) {
     if (ci >= 0 && t >= 1) pts.push([ci, t]);
   });
   pts.sort((a,b)=>a[0]-b[0]);
+  // Emit (t - prevT) bounds at each breakpoint's ladder index, INCLUDING the
+  // base at index 0. A base tier > 1 pushes that many bounds at index 0 so the
+  // whole ladder sits at the right tier. (Bug fix: the base used to be skipped,
+  // so any book with base tier > 1 — every valuable key — rendered with its
+  // lower tiers stripped and everything shifted down, e.g. ASM Annual #1 showed
+  // tier 2 at grade 4.5 instead of tier 6.)
   let prevT = 1;
   for (const pt of pts) {
     const ci = pt[0], t = pt[1];
-    if (ci <= 0) { prevT = Math.max(prevT, t); continue; }
     let delta = t - prevT;
     while (delta-- > 0 && _fmvBounds.length < 12) _fmvBounds.push(ci);
     prevT = t;
@@ -2699,13 +2726,15 @@ async function saveFmv() {
   const resEl = document.getElementById('fmv-result');
   const LAD = _fmvLadder(it);
   const bounds = _fmvBounds.slice().sort((a, b) => a - b);
-  const breaks = [{ g: LAD[0], t: 1 }];
-  let prevT = 1;
-  for (let i = 1; i < LAD.length; i++) {
+  // Start at i=0 so a base tier > 1 is written to the curve (previously the base
+  // grade was hardcoded to tier 1, corrupting valuable books on save).
+  const breaks = [];
+  let prevT = null;
+  for (let i = 0; i < LAD.length; i++) {
     let t = 1;
     for (const b of bounds) { if (b <= i) t++; else break; }
     if (t > 13) t = 13;
-    if (t > prevT) { breaks.push({ g: LAD[i], t: t }); prevT = t; }
+    if (prevT === null || t > prevT) { breaks.push({ g: LAD[i], t: t }); prevT = t; }
   }
   const key = _fmvKeyOf(it.title, it.issue);
   const _cat = _fmvCategory(it);

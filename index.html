@@ -9788,53 +9788,39 @@ function renderForm() {
 
 function renderImgPreview() {}
 
-// S16: Renders the 7-slot Restoration Check grid. Layout follows RESTORATION_DISPLAY.
+// S21: Restoration Check slot grid. Shares the Full staple-SQUARE + Outer Edge
+// (4:1) treatment for the slots it has in common with Full; the restoration-only
+// slots (UV Front/Back, Interior Front/Back) keep their half-width pairs.
 function renderRestorationSlotGrid(restoration, opts) {
   const editable = !!(opts && opts.editable);
-  const cell = d => {
-    const i = restorationSlotIndex(d.key);
+  const _cid = opts && opts.comicId ? opts.comicId : '';
+  const cell = (key, aspect, o) => {
+    o = o || {};
+    const i = restorationSlotIndex(key);
     const slot = RESTORATION_SLOTS[i];
     const img = (restoration || [])[i];
+    const dim = o.fill ? 'height:100%' : ('aspect-ratio:' + aspect);
+    const extra = o.extra ? (';' + o.extra) : '';
     const labelTag = `<div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(122,75,168,0.85);padding:2px 6px;border-radius:3px;letter-spacing:0.04em">${slot.label.toUpperCase()}</div>`;
     if (editable) {
       if (img) {
-        return `<div class="drag-slot" style="aspect-ratio:${d.aspect};position:relative;overflow:hidden" onclick="tapRestorationSlot(${i})">
-                <img src="${img}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">
-                ${labelTag}
-                <button class="slot-x" onclick="event.stopPropagation();removeRestorationImg(${i})">×</button>
-               </div>`;
+        return `<div class="drag-slot" style="${dim};position:relative;overflow:hidden${extra}" onclick="tapRestorationSlot(${i})"><img src="${img}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">${labelTag}<button class="slot-x" onclick="event.stopPropagation();removeRestorationImg(${i})">×</button></div>`;
       }
-      const isWide = d.width === "full" && d.key !== "uv_front";
-      const emptyInner = isWide
-        ? `<div style="display:flex;align-items:baseline;gap:6px;justify-content:center;flex-wrap:wrap"><span>${slot.label.toUpperCase()}</span><span style="font-size:9px;font-weight:500;opacity:0.6">${slot.hint}</span></div>`
-        : `<div>${slot.label.toUpperCase()}</div><div style="font-size:9px;font-weight:500;opacity:0.7;margin-top:3px;line-height:1.25">${slot.hint}</div><div style="font-size:9px;opacity:0.5;margin-top:3px">Tap to add</div>`;
-      return `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:${d.aspect};position:relative;overflow:hidden" onclick="tapRestorationSlot(${i})">
-                <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#c8a8e8;font-size:11px;font-weight:700;letter-spacing:0.4px;text-align:center;padding:4px">${emptyInner}</div>
-               </div>`;
+      const hint = o.strip ? `<div style="font-size:9px;font-weight:500;opacity:0.7;margin-top:3px;line-height:1.25">${slot.hint}</div>` : '';
+      return `<div class="drag-slot" style="padding:0;background:#1a1a1a;${dim};position:relative;overflow:hidden${extra}" onclick="tapRestorationSlot(${i})"><div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#c8a8e8;font-size:11px;font-weight:700;letter-spacing:0.4px;text-align:center;padding:4px"><div>${slot.label.toUpperCase()}</div>${hint}<div style="font-size:9px;opacity:0.5;margin-top:3px">Tap to add</div></div></div>`;
     }
     if (!img) return "";
-    const _cid = opts && opts.comicId ? opts.comicId : '';
-    return `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:${d.aspect}">
-        <img src="${img}" loading="lazy" decoding="async" onload="window.forceImgReflow(this)" onclick="openRestorationLightbox('${_cid}',${i})" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in">
-        ${labelTag}
-      </div>`;
+    return `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;${dim}${extra}"><img src="${img}" loading="lazy" decoding="async" onload="window.forceImgReflow(this)" onclick="openRestorationLightbox('${_cid}',${i})" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in">${labelTag}</div>`;
   };
-  // S16: Build layout following RESTORATION_DISPLAY order exactly.
-  // UV Front+Back pair → full strips → Interior Front+Back pair → Interior Staples
   let html = '';
-  let halfBuffer = [];
-  for (const d of RESTORATION_DISPLAY) {
-    if (d.width === "half") {
-      halfBuffer.push(d);
-      if (halfBuffer.length === 2) {
-        html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">${halfBuffer.map(cell).join("")}</div>`;
-        halfBuffer = [];
-      }
-    } else {
-      html += `<div style="margin-top:6px">${cell(d)}</div>`;
-    }
-  }
-  if (halfBuffer.length) html += `<div style="margin-top:6px">${halfBuffer.map(cell).join("")}</div>`;
+  html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">${cell('uv_front', '3 / 4')}${cell('uv_back', '3 / 4')}</div>`;
+  html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">`
+    + cell('exterior_top_staple', '1 / 1', { extra: 'grid-column:1;grid-row:1' })
+    + cell('interior_staple', null, { fill: true, extra: 'grid-column:2;grid-row:1 / span 2' })
+    + cell('exterior_bottom_staple', '1 / 1', { extra: 'grid-column:1;grid-row:2' })
+    + `</div>`;
+  html += `<div style="margin-top:6px">${cell('outer_edge', '4 / 1', { strip: true })}</div>`;
+  html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">${cell('interior_front', '3 / 2')}${cell('interior_back', '3 / 2')}</div>`;
   return html;
 }
 
@@ -9853,67 +9839,44 @@ function buildRoboGradeDisplay(rg, comic) {
   return window.RobograderPanel.buildDisplay(rg, comic);
 }
 
-// S16: shared Full Assessment slot grid for Edit (editable) and Detail (read-only).
-// Layout per FULL_DISPLAY: three interior-page tiles at 1/3 width 3:2 on one row,
-// then the five strip slots full-width 6:1 stacked. Storage index resolved by key
-// so display order is independent of storage/capture order.
+// S21: Full Assessment slot grid (Edit editable / Detail read-only). Layout:
+// a staple SQUARE — two 1:1 exterior staples stacked on the left, Interior
+// Staples spanning full height on the right (~1:2) — then three full-width
+// strips: Top Pages 5:1, Outer Edge 4:1, Bottom Pages 5:1. Storage index is
+// resolved by key, so display is independent of storage/capture order.
 function renderFullSlotGrid(interior, opts) {
   const editable = !!(opts && opts.editable);
   const comicId = opts && opts.comicId;
-  const cell = d => {
-    const i = fullSlotIndex(d.key);
+  const cell = (key, aspect, o) => {
+    o = o || {};
+    const i = fullSlotIndex(key);
     const slot = FULL_SLOTS[i];
     const img = (interior || [])[i];
+    const dim = o.fill ? 'height:100%' : ('aspect-ratio:' + aspect);
+    const extra = o.extra ? (';' + o.extra) : '';
     const labelTag = `<div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(184,134,11,0.85);padding:2px 6px;border-radius:3px;letter-spacing:0.04em">${slot.label.toUpperCase()}</div>`;
     if (editable) {
       if (img) {
-        return `<div class="drag-slot" draggable="true" style="aspect-ratio:${d.aspect};position:relative;overflow:hidden"
-                ondragstart="interiorDragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="interiorDropSlot(event,${i})"
-                onclick="tapSlot(${i},'interior')">
-                <img src="${img}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">
-                ${labelTag}
-                <button class="slot-edit" onclick="event.stopPropagation();openCropper('interior',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>
-                <button class="slot-x" onclick="event.stopPropagation();removeInteriorImg(${i})">×</button>
-               </div>`;
+        return `<div class="drag-slot" draggable="true" style="${dim};position:relative;overflow:hidden${extra}" ondragstart="interiorDragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="interiorDropSlot(event,${i})" onclick="tapSlot(${i},'interior')"><img src="${img}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">${labelTag}<button class="slot-edit" onclick="event.stopPropagation();openCropper('interior',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button><button class="slot-x" onclick="event.stopPropagation();removeInteriorImg(${i})">×</button></div>`;
       }
-      const isWide = d.width === "full";
-      const emptyInner = isWide
-        ? `<div style="display:flex;align-items:baseline;gap:6px;justify-content:center;flex-wrap:wrap"><span>${slot.label.toUpperCase()}</span><span style="font-size:9px;font-weight:500;opacity:0.6">${slot.hint}</span></div>`
-        : `<div>${slot.label.toUpperCase()}</div>
-                  <div style="font-size:9px;font-weight:500;opacity:0.7;margin-top:3px;line-height:1.25">${slot.hint}</div>
-                  <div style="font-size:9px;opacity:0.5;margin-top:3px">Tap to add</div>`;
-      return `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:${d.aspect};position:relative;overflow:hidden"
-                ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="interiorDropSlot(event,${i})"
-                onclick="tapSlot(${i},'interior')">
-                <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#d4af37;font-size:11px;font-weight:700;letter-spacing:0.4px;text-align:center;padding:4px">${emptyInner}</div>
-               </div>`;
+      const hint = o.strip ? `<div style="font-size:9px;font-weight:500;opacity:0.65;margin-top:3px;line-height:1.25">${slot.hint}</div>` : '';
+      return `<div class="drag-slot" style="padding:0;background:#1a1a1a;${dim};position:relative;overflow:hidden${extra}" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="interiorDropSlot(event,${i})" onclick="tapSlot(${i},'interior')"><div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#d4af37;font-size:11px;font-weight:700;letter-spacing:0.4px;text-align:center;padding:4px"><div>${slot.label.toUpperCase()}</div>${hint}<div style="font-size:9px;opacity:0.5;margin-top:3px">Tap to add</div></div></div>`;
     }
     if (!img) return "";
     const imgAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
-    return `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:${d.aspect}">
-        <img src="${img}" ${imgAttrs} onclick="openInteriorLightbox('${comicId}',${i})" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in">
-        ${labelTag}
-      </div>`;
+    return `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;${dim}${extra}"><img src="${img}" ${imgAttrs} onclick="openInteriorLightbox('${comicId}',${i})" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in">${labelTag}</div>`;
   };
-  // S16: Build layout following FULL_DISPLAY order exactly.
-  // Strips first, then Interior Front+Back pair, then Interior Staples below.
   let html = '';
-  let halfBuffer = [];
-  for (const d of FULL_DISPLAY) {
-    if (d.width === "half") {
-      halfBuffer.push(d);
-      if (halfBuffer.length === 2) {
-        html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">${halfBuffer.map(cell).join("")}</div>`;
-        halfBuffer = [];
-      }
-    } else {
-      html += `<div style="margin-top:6px">${cell(d)}</div>`;
-    }
-  }
-  if (halfBuffer.length) html += `<div style="margin-top:6px">${halfBuffer.map(cell).join("")}</div>`;
+  html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">`
+    + cell('exterior_top_staple', '1 / 1', { extra: 'grid-column:1;grid-row:1' })
+    + cell('interior_staple', null, { fill: true, extra: 'grid-column:2;grid-row:1 / span 2' })
+    + cell('exterior_bottom_staple', '1 / 1', { extra: 'grid-column:1;grid-row:2' })
+    + `</div>`;
+  html += `<div style="margin-top:6px">${cell('top_pages', '5 / 1', { strip: true })}</div>`;
+  html += `<div style="margin-top:6px">${cell('outer_edge', '4 / 1', { strip: true })}</div>`;
+  html += `<div style="margin-top:6px">${cell('bottom_pages', '5 / 1', { strip: true })}</div>`;
   return html;
 }
-
 function removeImg(i) {
   const imgs = [ ...formData.images || [] ];
   imgs[i] = null;
@@ -10296,20 +10259,89 @@ async function handleImages(e) {
     r.onload = ev => res(ev.target.result);
     r.readAsDataURL(f);
   })));
+  e.target.value = "";
+  if (newImgs.length > 1) {
+    // Multi-select: iOS returns the picked files sorted by NAME, not by the order
+    // tapped, and the web platform exposes no selection order — so we can't infer
+    // where each image belongs. Let the user place them (tap a photo, tap its slot).
+    _openAssignOverlay(newImgs);
+    return;
+  }
   const imgs = [ ...formData.images || [] ];
   while (imgs.length < 4) imgs.push(null);
-  const count = Math.min(newImgs.length, 4);
-  for (let n = 0; n < count; n++) {
-    const slot = (_tappedSlot + n) % 4;
-    imgs[slot] = newImgs[n];
-  }
-  formData.images = imgs.filter(Boolean);
+  imgs[_tappedSlot % 4] = newImgs[0];
+  _assignCommit(imgs);
+}
+
+// ── S21: multi-select placement overlay ──────────────────────────────────────
+// iOS can't tell us the order photos were tapped, so instead of guessing, the
+// user places each picked image into its slot. Pre-filled in picked order as a
+// starting guess (so a correctly-ordered pick is just "Done").
+let _assign = null;
+function _mainSlotLabels() {
+  const isCard = formData.type === "card" || !!formData._isCard || !!(formData._slabDetect && formData._slabDetect.isCard);
+  return isCard ? ["Front", "Back", "Top Front", "Bottom Front"] : ["Front Cover", "Back Cover", "Interior", "Spine"];
+}
+function _assignCommit(imgsArr) {
+  formData.images = imgsArr.filter(Boolean);
   formData._imagesChanged = true;
-  e.target.value = "";
   renderForm();
   const btn = document.getElementById("assess-btn");
   if (btn) btn.disabled = formData.images.filter(Boolean).length === 0 || assessing;
 }
+function _openAssignOverlay(picked) {
+  const labels = _mainSlotLabels();
+  const slots = [ ...(formData.images || []) ]; while (slots.length < 4) slots.push(null);
+  const tray = [];
+  const n = Math.min(picked.length, 4);
+  for (let k = 0; k < n; k++) { const sIdx = (_tappedSlot + k) % 4; slots[sIdx] = picked[k]; }   // starting guess
+  for (let k = 4; k < picked.length; k++) tray.push(picked[k]);                                   // overflow beyond 4 slots
+  _assign = { labels, slots, tray, active: null };
+  let ov = document.getElementById("assign-overlay");
+  if (!ov) { ov = document.createElement("div"); ov.id = "assign-overlay"; document.body.appendChild(ov); }
+  ov.style.cssText = "position:fixed;inset:0;z-index:100001;background:rgba(0,0,0,0.94);display:flex;flex-direction:column;padding:max(env(safe-area-inset-top,16px),16px) 14px max(env(safe-area-inset-bottom,16px),16px);overflow:auto";
+  _renderAssign();
+}
+function _closeAssign() { const ov = document.getElementById("assign-overlay"); if (ov) ov.style.display = "none"; _assign = null; }
+function _renderAssign() {
+  const ov = document.getElementById("assign-overlay"); if (!ov || !_assign) return;
+  const A = _assign;
+  const slotCells = A.slots.map((src, i) => {
+    const inner = src
+      ? `<img src="${src}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"><button onclick="event.stopPropagation();_assignClearSlot(${i})" aria-label="Remove" style="position:absolute;top:3px;right:4px;z-index:2;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:14px;line-height:1;cursor:pointer">×</button>`
+      : `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#7a7a7a;font-size:11px">${A.active != null ? "tap to place" : "empty"}</div>`;
+    return `<div onclick="_assignTapSlot(${i})" style="position:relative;aspect-ratio:5/7;background:#161616;border:2px solid ${A.active != null ? '#6abf6a' : '#333'};border-radius:6px;overflow:hidden;cursor:pointer">${inner}<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.6);color:#fff;font-size:10px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:3px 4px;text-align:center">${A.labels[i]}</div></div>`;
+  }).join("");
+  const trayCells = A.tray.length
+    ? A.tray.map((src, i) => `<div onclick="_assignTapTray(${i})" style="position:relative;width:64px;height:88px;flex:0 0 auto;border:2px solid ${A.active === i ? '#6abf6a' : '#333'};border-radius:6px;overflow:hidden;cursor:pointer;${A.active === i ? 'box-shadow:0 0 0 2px rgba(106,191,106,0.45)' : ''}"><img src="${src}" style="width:100%;height:100%;object-fit:cover"></div>`).join("")
+    : `<div style="color:#7a7a7a;font-size:12px;padding:8px">All photos placed.</div>`;
+  ov.innerHTML = `
+    <div style="color:#d8ccc0;font-size:17px;font-weight:700;font-family:'Barlow Condensed',sans-serif;letter-spacing:0.5px;margin-bottom:4px">Place your photos</div>
+    <div style="color:#9a8a7a;font-size:12px;margin-bottom:12px;line-height:1.4">They're pre-filled in the order your phone returned them. Tap a photo, then tap the slot it belongs to, to fix any that are wrong. Tap a slot's × to send it back down.</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;max-width:360px;margin:0 auto 14px;width:100%">${slotCells}</div>
+    <div style="color:#8a8d96;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Photos${A.active != null ? ' — now tap a slot' : ''}</div>
+    <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;min-height:92px;align-items:center">${trayCells}</div>
+    <div style="display:flex;gap:10px;margin-top:auto;padding-top:12px">
+      <button onclick="_assignCancel()" style="flex:1;padding:12px;border-radius:10px;background:transparent;color:#9a8a7a;border:1px solid #3a322c;font-size:14px;font-weight:700;cursor:pointer">Cancel</button>
+      <button onclick="_assignDone()" style="flex:1;padding:12px;border-radius:10px;background:#2a7a3a;color:#fff;border:1px solid #1f5f2c;font-size:14px;font-weight:700;cursor:pointer">Done</button>
+    </div>`;
+}
+function _assignTapTray(i) { if (!_assign) return; _assign.active = (_assign.active === i) ? null : i; _renderAssign(); }
+function _assignTapSlot(i) {
+  if (!_assign) return; const A = _assign;
+  if (A.active != null) {
+    const src = A.tray[A.active];
+    A.tray.splice(A.active, 1);
+    if (A.slots[i]) A.tray.push(A.slots[i]);   // displaced image returns to the tray
+    A.slots[i] = src; A.active = null;
+  } else if (A.slots[i]) {
+    A.tray.push(A.slots[i]); A.slots[i] = null; A.active = A.tray.length - 1;   // pick up for a slot->slot move
+  }
+  _renderAssign();
+}
+function _assignClearSlot(i) { if (!_assign) return; const A = _assign; if (A.slots[i]) { A.tray.push(A.slots[i]); A.slots[i] = null; } A.active = null; _renderAssign(); }
+function _assignCancel() { _closeAssign(); }
+function _assignDone() { if (!_assign) return; const slots = _assign.slots.slice(); _closeAssign(); _assignCommit(slots); }
 
 let _tappedCornerSlot = 0;
 
