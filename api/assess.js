@@ -494,6 +494,7 @@ export default async function handler(req, res) {
 
   // Fetch ComicVine cover reference image if title and issue are available
   let referenceImageBlock = null;
+  let referenceBackImageBlock = null;  // local back-cover reference (ComicVine has covers only)
   let referenceYear = null;  // cover-date year of the ComicVine issue we pulled (diagnostic)
   let referenceVolumeName = null;  // which volume/series we chose (diagnostic)
   let referenceImageUrl = null;  // the actual CV cover URL, persisted for admin side-by-side display
@@ -503,11 +504,48 @@ export default async function handler(req, res) {
     ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
     : '');
 
+  // LOCAL REFERENCE COVERS (served from /reference_covers/). If clean front/back
+  // scans exist for this exact book, use them and SKIP ComicVine — higher quality,
+  // no rate limit, and we also get the BACK cover (ComicVine gives covers only).
+  // Filenames mirror the reference-library sheet: <title-slug>_<issue>[_<year>]_front.jpg / _back.jpg.
+  let usedLocalRef = false;
+  if (baseUrl && title && issueNumber && !suppressReference && !AB_FORCE_SUPPRESS_REFERENCE) {
+    try {
+      const _slug = String(title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      const _iss = String(issueNumber).replace(/^#/, '').replace(/^0+(\d)/, '$1').trim();
+      const _yr = (typeof issueYear === 'number' && issueYear > 1900) ? issueYear : null;
+      const _bases = [];
+      if (_yr) _bases.push(`${_slug}_${_iss}_${_yr}`);
+      _bases.push(`${_slug}_${_iss}`);
+      for (const _b of _bases) {
+        const _frontUrl = `${baseUrl}/reference_covers/${_b}_front.jpg`;
+        const _fr = await fetchWithTimeout(_frontUrl, {}, 5000);
+        if (!_fr.ok) continue;
+        const _fbuf = await _fr.arrayBuffer();
+        referenceImageBlock = { type: 'image', source: { type: 'base64', media_type: normalizeMediaType(_fr.headers.get('content-type')), data: Buffer.from(_fbuf).toString('base64') } };
+        referenceImageUrl = _frontUrl;
+        referenceVolumeName = 'Local reference';
+        referenceYear = _yr;
+        usedLocalRef = true;
+        try {
+          const _backUrl = `${baseUrl}/reference_covers/${_b}_back.jpg`;
+          const _br = await fetchWithTimeout(_backUrl, {}, 5000);
+          if (_br.ok) {
+            const _bbuf = await _br.arrayBuffer();
+            referenceBackImageBlock = { type: 'image', source: { type: 'base64', media_type: normalizeMediaType(_br.headers.get('content-type')), data: Buffer.from(_bbuf).toString('base64') } };
+          }
+        } catch (e) { /* back optional */ }
+        console.log(`[localref] used ${_b} front=yes back=${referenceBackImageBlock ? 'yes' : 'no'} -> skipping ComicVine`);
+        break;
+      }
+    } catch (e) { /* no local reference -> fall through to ComicVine */ }
+  }
+
   // Run ComicVine cover fetch and page quality fetch in parallel
   let pageQualityImageBlock = null;
   let pqIsPsaReference = false;  // true once pq_psa.jpg is uploaded; prompt language adapts
   if (isCGC) {
-    const cvFetch = (title && issueNumber && COMICVINE_API_KEY && !suppressReference && !AB_FORCE_SUPPRESS_REFERENCE) ? (async () => {
+    const cvFetch = (title && issueNumber && COMICVINE_API_KEY && !suppressReference && !AB_FORCE_SUPPRESS_REFERENCE && !usedLocalRef) ? (async () => {
       try {
         const searchTitle = title.replace(/^The\s+/i, '').trim();
         const targetIss = String(issueNumber).replace(/^0+/, '');
@@ -908,7 +946,7 @@ This standard does NOT relax the STRUCTURAL DAMAGE SCAN below: tape, paper loss,
 
 STRUCTURAL DAMAGE SCAN — DO THIS FIRST. Tape, paper loss, and tears are catastrophic to grade and routinely mis-filed as "crease", "edge wear", or "soiling". Once you name something a lesser defect you stop reconsidering it, so catch these first.
 
-CHECK 0 — REFERENCE COMPARISON (only if a ComicVine reference image was provided; else set referenceComparison to ""). The reference shows this exact issue's printed cover. Walk it by region (corners, edges, logo, figures, price box, banners). For each: (1) Is every printed element in the reference also present and intact in the photo? A printed element present in the reference but absent/cut/interrupted in the photo = paper loss or tear there. (2) Is something you'd call a defect also in the reference? If so it's printed art, not damage. DISCREPANCY DEFAULT: when photo differs from reference, default to STRUCTURAL DAMAGE, not wear. Wear/soiling change color/tone/gloss only — they never remove printed line-art or create straight machine-cut edges. So a printed line or shape-boundary continuous in the reference but broken in the photo = PAPER LOSS or TEAR, never "wear". A straight ruled-edge band an inch+ long = TAPE, even alongside stress lines. Do not require certainty — a suspected loss/tape beside an intact reference must be named (asymmetric cost: undershoot, never overshoot). State the result in referenceComparison; do not write "wear and soiling account for all differences" unless you truly found no broken line-art and no straight-edged band. Caution: the reference may be a different printing or imperfect scan — use it for presence/absence and art-vs-defect, not fine condition; ignore lighting/gloss differences.
+CHECK 0 — REFERENCE COMPARISON (only if a reference image was provided; else set referenceComparison to ""). The reference shows this exact issue's printed cover(s) — the FRONT, and sometimes the BACK cover too; when a back reference is present, walk BOTH covers. Walk it by region (corners, edges, logo, figures, price box, banners). For each: (1) Is every printed element in the reference also present and intact in the photo? A printed element present in the reference but absent/cut/interrupted in the photo = paper loss or tear there. (2) Is something you'd call a defect also in the reference? If so it's printed art, not damage. DISCREPANCY DEFAULT: when photo differs from reference, default to STRUCTURAL DAMAGE, not wear. Wear/soiling change color/tone/gloss only — they never remove printed line-art or create straight machine-cut edges. So a printed line or shape-boundary continuous in the reference but broken in the photo = PAPER LOSS or TEAR, never "wear". A straight ruled-edge band an inch+ long = TAPE, even alongside stress lines. Do not require certainty — a suspected loss/tape beside an intact reference must be named (asymmetric cost: undershoot, never overshoot). State the result in referenceComparison; do not write "wear and soiling account for all differences" unless you truly found no broken line-art and no straight-edged band. Caution: the reference may be a different printing or imperfect scan — use it for presence/absence and art-vs-defect, not fine condition; ignore lighting/gloss differences.
 
 CHECK 1 — TAPE. Decisive test is GEOMETRY: tape has straight, parallel, machine-cut edges; wear/creasing/stress lines have irregular wandering edges. A band down the spine with a clean straight edge = TAPE, even if it also reads as wear or has surface cracks. Multiple parallel straight bands = multiple strips. Name it "Tape", not stress lines/creases/soiling.
 
@@ -1154,8 +1192,12 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
         role: 'user',
         content: [
           ...(referenceImageBlock ? [
-            { type: 'text', text: 'REFERENCE IMAGE: The following image is a clean cover scan of this exact issue from ComicVine, showing how the book should look without damage. Use it to identify missing pieces, color loss, and damage by comparing against your assessment photos.' },
-            referenceImageBlock
+            { type: 'text', text: 'REFERENCE IMAGE(S): The following ' + (referenceBackImageBlock ? 'images are clean scans of the FRONT and BACK covers' : 'image is a clean cover scan') + ' of this exact issue, showing how the book should look without damage. Use them to identify missing pieces, color loss, and damage by comparing against your assessment photos.' },
+            referenceImageBlock,
+            ...(referenceBackImageBlock ? [
+              { type: 'text', text: 'REFERENCE BACK COVER (clean scan of this issue\'s back cover):' },
+              referenceBackImageBlock
+            ] : [])
           ] : []),
           ...(pageQualityImageBlock ? [
             { type: 'text', text: pqIsPsaReference
