@@ -521,13 +521,20 @@
     background: rgba(0,0,0,0.95);
     flex-direction: column;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 12px;
+    /* S21: flow from the top with a reserved safe-area (Dynamic Island) so a tall
+       defect box never pushes the image up under the island; image flexes instead. */
+    padding: max(env(safe-area-inset-top, 0px), 48px) 12px max(env(safe-area-inset-bottom, 0px), 16px);
+    box-sizing: border-box;
+    overflow: hidden;
   }
   #admin-lightbox.show { display: flex; }
   #admin-lightbox img {
     max-width: 90%;
-    max-height: 58vh;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: 100%;
     object-fit: contain;
     border-radius: 4px;
   }
@@ -554,9 +561,9 @@
     cursor: pointer; display: none; align-items: center; justify-content: center;
     z-index: 10000;
   }
-  #admin-lightbox .alb-navrow { display: flex; gap: 26px; justify-content: center; align-items: center; }
+  #admin-lightbox .alb-navrow { display: flex; gap: 26px; justify-content: center; align-items: center; flex-shrink: 0; }
   #admin-lb-defects {
-    width: 90%; max-width: 560px; max-height: 22vh; overflow-y: auto;
+    width: 90%; max-width: 560px; max-height: 22vh; overflow-y: auto; flex-shrink: 0;
     background: rgba(20,20,22,0.92); border: 1px solid rgba(255,255,255,0.14);
     border-radius: 10px; color: #e8e6e2; font-size: 12px; line-height: 1.45;
     padding: 10px 12px; text-align: left; display: none;

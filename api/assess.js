@@ -499,6 +499,7 @@ export default async function handler(req, res) {
   let referenceVolumeName = null;  // which volume/series we chose (diagnostic)
   let referenceImageUrl = null;  // the actual CV cover URL, persisted for admin side-by-side display
   let referenceBackImageUrl = null;  // local back-cover URL (when a local reference is used)
+  let refDebug = 'localref: not run';  // persisted diagnostic: why local reference did/didn't apply
   const baseUrl = req.headers['host']
     ? `https://${req.headers['host']}`
     : (process.env.VERCEL_PROJECT_PRODUCTION_URL
@@ -512,6 +513,7 @@ export default async function handler(req, res) {
   let usedLocalRef = false;
   if (baseUrl && title && issueNumber && !suppressReference && !AB_FORCE_SUPPRESS_REFERENCE) {
     try {
+      const _dbg = [];
       const _slug = String(title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
       const _iss = String(issueNumber).replace(/^#/, '').replace(/^0+(\d)/, '$1').trim();
       const _yr = (() => {
@@ -525,6 +527,7 @@ export default async function handler(req, res) {
       for (const _b of _bases) {
         const _frontUrl = `${baseUrl}/reference_covers/${_b}_front.jpg`;
         const _fr = await fetchWithTimeout(_frontUrl, {}, 5000);
+        _dbg.push(_b + '->' + _fr.status);
         if (!_fr.ok) continue;
         const _fbuf = await _fr.arrayBuffer();
         referenceImageBlock = { type: 'image', source: { type: 'base64', media_type: normalizeMediaType(_fr.headers.get('content-type')), data: Buffer.from(_fbuf).toString('base64') } };
@@ -544,7 +547,8 @@ export default async function handler(req, res) {
         console.log(`[localref] used ${_b} front=yes back=${referenceBackImageBlock ? 'yes' : 'no'} -> skipping ComicVine`);
         break;
       }
-    } catch (e) { /* no local reference -> fall through to ComicVine */ }
+      refDebug = 'base=' + baseUrl + ' | ' + (usedLocalRef ? 'HIT ' : 'MISS ') + (_dbg.length ? _dbg.join(', ') : 'no candidates tried');
+    } catch (e) { refDebug = 'localref ERROR: ' + String((e && e.message) || e); }
   }
 
   // Run ComicVine cover fetch and page quality fetch in parallel
@@ -1561,6 +1565,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       comicvineRef: referenceImageBlock !== null,
       referenceImageUrl: referenceImageUrl,
       referenceBackImageUrl: referenceBackImageUrl,
+      refDebug: refDebug,
       referenceVolume: referenceVolumeName,
       referenceYear: referenceYear,
       referenceComparison: parsed.referenceComparison || null,
@@ -1574,6 +1579,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     // on the item document for the admin side-by-side display.
     parsed.referenceImageUrl = referenceImageUrl;
     parsed.referenceBackImageUrl = referenceBackImageUrl;
+    parsed.refDebug = refDebug;
     parsed.referenceVolume = referenceVolumeName;
     parsed.referenceYear = referenceYear;
     // S15 v3.8: strip any psaGrade/psaNotes fields the model may still produce.
