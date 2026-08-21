@@ -567,21 +567,26 @@ export default async function handler(req, res) {
         // client year hint when provided), (3) fetch THAT volume's specific
         // issue number directly. This asks ComicVine for "issue N of the 1963
         // volume" explicitly rather than hoping the original ranks high enough.
-        const volUrl = `https://comicvine.gamespot.com/api/volumes/?api_key=${COMICVINE_API_KEY}&format=json&filter=name:${encodeURIComponent(searchTitle)}&field_list=id,name,start_year,count_of_issues&limit=50`;
-        const volResp = await fetchWithTimeout(volUrl, { headers: { 'User-Agent': 'ComicGraderApp/1.0' } }, 5000);
-        if (!volResp.ok) return;
-        const volData = await volResp.json();
-        // Tolerant title match: normalize away punctuation/hyphens/extra spaces
-        // and leading "The", accept exact or prefix. Old exact === broke on
-        // hyphenation ("Spider-Man" vs "Spider Man") and subtitle drift.
+        // VOLUME CACHE (Firestore): the /volumes endpoint is what ComicVine rate-limits,
+        // so caching the volume list once per title is the main fix for the ~90% no-volume
+        // failures. A cached hit skips the endpoint entirely.
+        const _cvDb = await getAdminDb();
         const _norm = x => String(x||'').toLowerCase().replace(/^the\s+/,'').replace(/[^a-z0-9]+/g,' ').trim();
-        const _st = _norm(searchTitle);
-        let volumes = (volData.results || []).filter(v => {
-          const vn = _norm(v.name);
-          return vn === _st || vn.startsWith(_st) || _st.startsWith(vn);
-        });
-        if (!volumes.length) volumes = volData.results || [];
-        if (!volumes.length) return;
+        const _volKey = (_norm(searchTitle).replace(/\s+/g,'-') || 'x');
+        let volumes = null;
+        if (_cvDb) { try { const _vc = await _cvDb.collection('cv_volume_cache').doc(_volKey).get(); if (_vc.exists) { volumes = (_vc.data()||{}).volumes || null; if (volumes) console.log(`[cvcache] volume HIT ${_volKey} (${volumes.length})`); } } catch(e){} }
+        if (!volumes) {
+          const volUrl = `https://comicvine.gamespot.com/api/volumes/?api_key=${COMICVINE_API_KEY}&format=json&filter=name:${encodeURIComponent(searchTitle)}&field_list=id,name,start_year,count_of_issues&limit=50`;
+          const volResp = await fetchWithTimeout(volUrl, { headers: { 'User-Agent': 'ComicGraderApp/1.0' } }, 5000);
+          if (!volResp.ok) return;
+          const volData = await volResp.json();
+          if (volData.status_code && volData.status_code !== 1) { console.log(`[cvcache] volume lookup rate-limited/err status=${volData.status_code} title="${searchTitle}"`); return; }
+          const _st = _norm(searchTitle);
+          volumes = (volData.results || []).filter(v => { const vn = _norm(v.name); return vn === _st || vn.startsWith(_st) || _st.startsWith(vn); });
+          if (!volumes.length) volumes = volData.results || [];
+          if (volumes.length && _cvDb) { try { await _cvDb.collection('cv_volume_cache').doc(_volKey).set({ volumes: volumes.map(v => ({ id: v.id, name: v.name, start_year: v.start_year })), title: searchTitle, cachedAt: Date.now() }); console.log(`[cvcache] volume STORE ${_volKey} (${volumes.length})`); } catch(e){} }
+        }
+        if (!volumes || !volumes.length) return;
         // Choose the volume.
         let vol;
         if (hintYear) {
@@ -602,26 +607,32 @@ export default async function handler(req, res) {
         }
         if (!vol || !vol.id) return;
         referenceVolumeName = `${vol.name||''} (${vol.start_year||'?'})`;
-        // Fetch the specific issue of THIS volume.
-        const issUrl = `https://comicvine.gamespot.com/api/issues/?api_key=${COMICVINE_API_KEY}&format=json&filter=volume:${vol.id},issue_number:${encodeURIComponent(targetIss)}&field_list=image,cover_date,issue_number&limit=1`;
-        const issResp = await fetchWithTimeout(issUrl, { headers: { 'User-Agent': 'ComicGraderApp/1.0' } }, 5000);
-        if (!issResp.ok) return;
-        const issData = await issResp.json();
-        const match = (issData.results || [])[0];
-        referenceYear = match ? yearFrom(match.cover_date) : null;
-        console.log(`[comicvine] title="${searchTitle}" iss=${targetIss} results=${(volData.results||[]).length} matched=${volumes.length} chosen=${vol?`${vol.name} (${vol.start_year})`:'NONE'} issue=${match?'found':'none'} image=${match&&match.image?'yes':'no'}`);
-        if (match && match.image) {
-          // Highest-res scan available — a small missing piece is not resolvable
-          // at the ~600px medium_url. original_url is the full scan.
-          const img = match.image;
-          const refUrl = img.original_url || img.super_url || img.screen_large_url || img.screen_url || img.medium_url || null;
-          if (refUrl) {
-            referenceImageUrl = refUrl;
-            const imgResp = await fetchWithTimeout(refUrl, {}, 5000);
-            if (imgResp.ok) {
-              const imgBuffer = await imgResp.arrayBuffer();
-              referenceImageBlock = { type: 'image', source: { type: 'base64', media_type: normalizeMediaType(imgResp.headers.get('content-type')), data: Buffer.from(imgBuffer).toString('base64') } };
-            }
+        // COVER CACHE (Firestore): cache the resolved cover URL by volume+issue so a
+        // repeat book skips the /issues endpoint too.
+        const _coverKey = `${vol.id}_${targetIss}`;
+        let refUrl = null;
+        if (_cvDb) { try { const _cc = await _cvDb.collection('cv_cover_cache').doc(_coverKey).get(); if (_cc.exists) { const _d = _cc.data()||{}; refUrl = _d.url || null; referenceYear = (_d.year ?? null); if (refUrl) console.log(`[cvcache] cover HIT ${_coverKey}`); } } catch(e){} }
+        if (!refUrl) {
+          const issUrl = `https://comicvine.gamespot.com/api/issues/?api_key=${COMICVINE_API_KEY}&format=json&filter=volume:${vol.id},issue_number:${encodeURIComponent(targetIss)}&field_list=image,cover_date,issue_number&limit=1`;
+          const issResp = await fetchWithTimeout(issUrl, { headers: { 'User-Agent': 'ComicGraderApp/1.0' } }, 5000);
+          if (!issResp.ok) return;
+          const issData = await issResp.json();
+          if (issData.status_code && issData.status_code !== 1) { console.log(`[cvcache] issue lookup rate-limited/err status=${issData.status_code}`); return; }
+          const match = (issData.results || [])[0];
+          referenceYear = match ? yearFrom(match.cover_date) : null;
+          console.log(`[comicvine] title="${searchTitle}" iss=${targetIss} matched=${volumes.length} chosen=${vol?`${vol.name} (${vol.start_year})`:'NONE'} issue=${match?'found':'none'} image=${match&&match.image?'yes':'no'}`);
+          if (match && match.image) {
+            const img = match.image;
+            refUrl = img.original_url || img.super_url || img.screen_large_url || img.screen_url || img.medium_url || null;
+          }
+          if (refUrl && _cvDb) { try { await _cvDb.collection('cv_cover_cache').doc(_coverKey).set({ url: refUrl, year: referenceYear, volumeId: vol.id, issue: targetIss, cachedAt: Date.now() }); console.log(`[cvcache] cover STORE ${_coverKey}`); } catch(e){} }
+        }
+        if (refUrl) {
+          referenceImageUrl = refUrl;
+          const imgResp = await fetchWithTimeout(refUrl, {}, 5000);
+          if (imgResp.ok) {
+            const imgBuffer = await imgResp.arrayBuffer();
+            referenceImageBlock = { type: 'image', source: { type: 'base64', media_type: normalizeMediaType(imgResp.headers.get('content-type')), data: Buffer.from(imgBuffer).toString('base64') } };
           }
         }
       } catch (e) { /* CV fetch failed — proceed without reference */ }
