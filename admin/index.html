@@ -2412,7 +2412,7 @@ function renderItemDetail(it) {
           <div class="label">Assessed Front Cover</div>
           ${it.images[0] ? `<img src="${escapeAttr(it.images[0])}" alt="" loading="lazy">` : '<div class="empty">No front cover</div>'}
         </div>
-        <div class="img-wrap adaptive" onclick="openAdminLightbox('${escapeAttr(it.referenceImageUrl)}')">
+        <div class="img-wrap adaptive" style="border:2px solid #2f9e44;border-radius:6px" onclick="openAdminLightbox('${escapeAttr(it.referenceImageUrl)}')">
           <div class="label">${it.referenceVolume === 'Local reference' ? ('Local Reference' + (it.referenceBackImageUrl ? ' (Front)' : '')) : 'ComicVine Reference'}${(it.referenceVolume !== 'Local reference' && it.referenceYear) ? ' (' + escapeHtml(String(it.referenceYear)) + ')' : ''}</div>
           <img src="${escapeAttr(it.referenceImageUrl)}" alt="" loading="lazy">
         </div>
@@ -2421,7 +2421,7 @@ function renderItemDetail(it) {
           <div class="label">Assessed Back Cover</div>
           ${it.images[1] ? `<img src="${escapeAttr(it.images[1])}" alt="" loading="lazy">` : '<div class="empty">No back cover</div>'}
         </div>
-        <div class="img-wrap adaptive" onclick="openAdminLightbox('${escapeAttr(it.referenceBackImageUrl)}')">
+        <div class="img-wrap adaptive" style="border:2px solid #2f9e44;border-radius:6px" onclick="openAdminLightbox('${escapeAttr(it.referenceBackImageUrl)}')">
           <div class="label">${it.referenceVolume === 'Local reference' ? 'Local Reference (Back)' : 'Reference Back'}</div>
           <img src="${escapeAttr(it.referenceBackImageUrl)}" alt="" loading="lazy">
         </div>` : ''}

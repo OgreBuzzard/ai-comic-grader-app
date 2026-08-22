@@ -2546,6 +2546,14 @@ const FULL_DISPLAY = [ {
   aspect: "5 / 1"
 } ];
 
+const FULL_GHOSTS = {
+  top_pages: 'assets/ghosts/Top_Edge.jpg',
+  outer_edge: 'assets/ghosts/Outer_Edge.jpg',
+  bottom_pages: 'assets/ghosts/Bottom_Edge.jpg',
+  exterior_top_staple: 'assets/ghosts/Exterior_Top_Staple.jpg',
+  exterior_bottom_staple: 'assets/ghosts/Exterior_Bottom_Staple.jpg',
+  interior_staple: 'assets/ghosts/Interior_Staple.jpg'
+};
 function fullSlotIndex(key) {
   return FULL_SLOTS.findIndex(s => s.key === key);
 }
@@ -4988,7 +4996,19 @@ function showDetail(id) {
       if (imgs[0] || imgs[1]) html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">${_cimg(imgs[0],0,'FRONT','5/7')}${_cimg(imgs[1],1,'BACK','5/7')}</div>`;
       if (imgs[2] || imgs[3]) html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">${_cimg(imgs[2],2,'TOP FRONT','1/1')}${_cimg(imgs[3],3,'BOTTOM FRONT','1/1')}</div>`;
     } else {
-      if (imgs[0] || imgs[1]) {
+      const _refF = selected.referenceImageUrl, _refB = selected.referenceBackImageUrl;
+      const _refCell = (u, lbl) => `<div style="position:relative;border-radius:6px;overflow:hidden;border:2px solid #2f9e44;background:#eaf3ea;cursor:zoom-in" onclick="openRefLightbox('${u}')"><img src="${u}" ${imgAttrs} style="width:100%;min-height:200px;object-fit:cover;display:block"><div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(38,132,58,0.92);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${lbl}</div></div>`;
+      if (_refF && _refB) {
+        // Reference-cover layout: Front | Front Reference, then Back | Back Reference (references in a green border).
+        html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
+        html += imgs[0] ? `<img class="detail-cover" src="${imgs[0]}" ${imgAttrs} onclick="openLightbox('${selected.id}',0)">` : `<div></div>`;
+        html += _refCell(_refF, "FRONT REFERENCE");
+        html += `</div>`;
+        html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
+        html += imgs[1] ? `<img class="detail-cover" src="${imgs[1]}" ${imgAttrs} onclick="openLightbox('${selected.id}',1)">` : `<div></div>`;
+        html += _refCell(_refB, "BACK REFERENCE");
+        html += `</div>`;
+      } else if (imgs[0] || imgs[1]) {
         html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
         html += imgs[0] ? `<img class="detail-cover" src="${imgs[0]}" ${imgAttrs} onclick="openLightbox('${selected.id}',0)">` : `<div></div>`;
         html += imgs[1] ? `<img class="detail-cover" src="${imgs[1]}" ${imgAttrs} onclick="openLightbox('${selected.id}',1)">` : `<div></div>`;
@@ -5759,6 +5779,7 @@ function _lbRenderDefects() {
   _lbSyncFooter();
 }
 
+function openRefLightbox(u) { if (u && typeof _lbOpen === 'function') _lbOpen([u], 0); }
 function openLightbox(id, idx) {
   const c = items.find(x => x.id === id);
   if (!c || !c.images?.[idx]) return;
@@ -9859,8 +9880,9 @@ function renderFullSlotGrid(interior, opts) {
       if (img) {
         return `<div class="drag-slot" draggable="true" style="${dim};position:relative;overflow:hidden${extra}" ondragstart="interiorDragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="interiorDropSlot(event,${i})" onclick="tapSlot(${i},'interior')"><img src="${img}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">${labelTag}<button class="slot-edit" onclick="event.stopPropagation();openCropper('interior',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button><button class="slot-x" onclick="event.stopPropagation();removeInteriorImg(${i})">×</button></div>`;
       }
-      const hint = o.strip ? `<div style="font-size:9px;font-weight:500;opacity:0.65;margin-top:3px;line-height:1.25">${slot.hint}</div>` : '';
-      return `<div class="drag-slot" style="padding:0;background:#1a1a1a;${dim};position:relative;overflow:hidden${extra}" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="interiorDropSlot(event,${i})" onclick="tapSlot(${i},'interior')"><div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#d4af37;font-size:11px;font-weight:700;letter-spacing:0.4px;text-align:center;padding:4px"><div>${slot.label.toUpperCase()}</div>${hint}<div style="font-size:9px;opacity:0.5;margin-top:3px">Tap to add</div></div></div>`;
+      const hint = o.strip ? `<div style="font-size:9px;font-weight:500;opacity:0.8;margin-top:3px;line-height:1.25">${slot.hint}</div>` : '';
+      const ghost = FULL_GHOSTS[key] ? `<img src="${FULL_GHOSTS[key]}" alt="" loading="lazy" decoding="async" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.30">` : '';
+      return `<div class="drag-slot" style="padding:0;background:#1a1a1a;${dim};position:relative;overflow:hidden${extra}" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="interiorDropSlot(event,${i})" onclick="tapSlot(${i},'interior')">${ghost}<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#f0d67a;font-size:11px;font-weight:700;letter-spacing:0.4px;text-align:center;padding:4px;background:rgba(0,0,0,0.42);text-shadow:0 1px 2px rgba(0,0,0,0.8)"><div>${slot.label.toUpperCase()}</div>${hint}<div style="font-size:9px;opacity:0.75;margin-top:3px">Tap to add</div></div></div>`;
     }
     if (!img) return "";
     const imgAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
