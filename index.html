@@ -230,18 +230,22 @@
     var border = o.border || ("1.5px solid " + (o.borderColor || "#3a5010"));
     var stars = o.stars || 0;
     var starPx = o.starPx || Math.max(8, Math.round(size * 0.11));
-    var numSize = o.numSize || Math.round(size * 0.52);
+    var numSize = o.numSize || Math.round(size * 0.54);
     var p = gradeParts(o.grade);
-    var numHtml = '<span style="font-family:\'Noto Sans Display\',system-ui,sans-serif;font-weight:900;color:' + numColor + ';line-height:1;font-size:' + numSize + 'px;letter-spacing:-0.02em;display:inline-block;transform:scaleX(0.86);transform-origin:center">' + p.whole + p.frac + '</span>';
-    var starsHtml = (stars > 0 || o.restoStar) ? '<div style="position:absolute;top:' + Math.round(size*0.055) + 'px;left:0;right:0;display:flex;justify-content:center;pointer-events:none">' + _starRow(stars, starPx, starColor, o.restoStar, o.restoColor) + '</div>' : "";
-    // bottom stack: PM (optional) above footer (optional), both centered
-    var bottom = "";
-    var pmHtml = (o.pmLabel) ? '<div style="font-family:\'Noto Sans Display\',system-ui,sans-serif;font-size:' + Math.max(10, Math.round(size*0.12)) + 'px;font-weight:700;color:' + pmColor + ';line-height:1;white-space:nowrap">' + o.pmLabel + '</div>' : "";
+    // Number: ABSOLUTELY centered in the full box so PM/stars/footer never shift
+    // it off-center. font-stretch 62.5% uses Noto Sans Display's real condensed
+    // width axis (narrow glyphs, prints correctly) so decimals like 5.5 stay tight.
+    var numHtml = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">'
+      + '<span style="font-family:\'Noto Sans Display\',system-ui,sans-serif;font-stretch:62.5%;font-weight:900;color:' + numColor + ';line-height:1;font-size:' + numSize + 'px">' + p.whole + p.frac + '</span></div>';
+    // Stars: top-center.
+    var starsHtml = (stars > 0 || o.restoStar) ? '<div style="position:absolute;top:' + Math.round(size*0.05) + 'px;left:0;right:0;display:flex;justify-content:center;pointer-events:none">' + _starRow(stars, starPx, starColor, o.restoStar, o.restoColor) + '</div>' : "";
+    // PM: UPPER-RIGHT (never below the score).
+    var pmHtml = (o.pmLabel) ? '<div style="position:absolute;top:' + Math.round(size*0.06) + 'px;right:' + Math.round(size*0.07) + 'px;font-family:\'Noto Sans Display\',system-ui,sans-serif;font-stretch:62.5%;font-size:' + Math.max(10, Math.round(size*0.135)) + 'px;font-weight:700;color:' + pmColor + ';line-height:1;white-space:nowrap;pointer-events:none">' + o.pmLabel + '</div>' : "";
+    // Footer (version / RG): bottom-center.
     var footHtml = "";
-    if (o.footer === "RG") footHtml = '<div style="font-size:' + Math.max(8, Math.round(size*0.086)) + 'px;font-weight:700;color:' + footerColor + ';opacity:0.85;letter-spacing:1px;line-height:1">RG</div>';
-    else if (o.footer === "version" && o.footerText) footHtml = '<div style="font-size:' + Math.max(7, Math.round(size*0.077)) + 'px;font-weight:700;color:' + footerColor + ';opacity:0.8;letter-spacing:0.8px;line-height:1">' + o.footerText + '</div>';
-    if (pmHtml || footHtml) bottom = '<div style="position:absolute;bottom:' + Math.round(size*0.06) + 'px;left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none">' + pmHtml + footHtml + '</div>';
-    return '<div style="position:relative;width:' + size + 'px;height:' + size + 'px;background:' + bg + ';border:' + border + ';border-radius:' + Math.round(size*0.14) + 'px;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">' + starsHtml + '<div style="display:flex;align-items:center;justify-content:center">' + numHtml + '</div>' + bottom + '</div>';
+    if (o.footer === "RG") footHtml = '<div style="position:absolute;bottom:' + Math.round(size*0.05) + 'px;left:0;right:0;text-align:center;font-size:' + Math.max(8, Math.round(size*0.086)) + 'px;font-weight:700;color:' + footerColor + ';opacity:0.85;letter-spacing:1px;line-height:1;pointer-events:none">RG</div>';
+    else if (o.footer === "version" && o.footerText) footHtml = '<div style="position:absolute;bottom:' + Math.round(size*0.05) + 'px;left:0;right:0;text-align:center;font-size:' + Math.max(7, Math.round(size*0.077)) + 'px;font-weight:700;color:' + footerColor + ';opacity:0.8;letter-spacing:0.8px;line-height:1;pointer-events:none">' + o.footerText + '</div>';
+    return '<div style="position:relative;width:' + size + 'px;height:' + size + 'px;background:' + bg + ';border:' + border + ';border-radius:' + Math.round(size*0.14) + 'px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">' + numHtml + starsHtml + pmHtml + footHtml + '</div>';
   }
 
   // ---- CARD scoring (v3) ----------------------------------------------------
@@ -889,7 +893,7 @@ onAuthStateChanged(auth, async user => {
     .ubadge-strip { height: 22px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .ubadge-strip span { font-size: 10px; font-weight: 800; letter-spacing: 1.5px; color: #fff; }
     .ubadge-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0px; }
-    .ubadge-num { font-size: 30px; font-weight: 800; line-height: 1; }
+    .ubadge-num { font-family: 'Noto Sans Display', sans-serif; font-stretch: 62.5%; font-size: 32px; font-weight: 800; line-height: 1; }
     .ubadge-lbl { font-size: 9.5px; letter-spacing: 0.3px; text-align: center; line-height: 1.2; margin-top: 2px; }
     /* List row variant — corner radius scales proportionally (~21% of side) */
     .ubadge-sm { width: 56px; height: 56px; flex-shrink: 0; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.2); border: 1.5px solid rgba(0,0,0,0.15); display: flex; flex-direction: column; }
@@ -7479,7 +7483,7 @@ function mountResults(cgc, psa) {
     };
     const c = configs[type];
     const border = c.border ? `border:${c.border};` : "";
-    return `<div style="width:64px;height:64px;${border}background:${c.bg};border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n      <div id="${valueId}" style="font-size:22px;font-weight:800;color:${c.text};line-height:1">${c.initial}</div>\n      <div style="font-size:9px;color:${c.text};opacity:0.75;margin-top:2px;letter-spacing:0.8px">${c.label}</div>\n    </div>`;
+    return `<div style="width:64px;height:64px;${border}background:${c.bg};border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n      <div id="${valueId}" style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:24px;font-weight:800;color:${c.text};line-height:1">${c.initial}</div>\n      <div style="font-size:9px;color:${c.text};opacity:0.75;margin-top:2px;letter-spacing:0.8px">${c.label}</div>\n    </div>`;
   };
   let badgesHtml = "";
   if (roboScore != null) badgesHtml += makeBadge("robograde", "anim-val-robo");
@@ -9432,7 +9436,7 @@ function mountCardResults(rec) {
   if (window._modalFrameTimer) { clearInterval(window._modalFrameTimer); window._modalFrameTimer = null; }
   const gridEl = document.getElementById("tracker-grid-frame");
   if (gridEl) gridEl.style.display = "none";
-  const badge = (bg, txt, val, label, border, valId) => `<div style="width:64px;height:64px;${border ? `border:${border};` : ""}background:${bg};border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)"><div ${valId ? `id="${valId}" ` : ""}style="font-size:22px;font-weight:800;color:${txt};line-height:1">${val}</div><div style="font-size:9px;color:${txt};opacity:0.75;margin-top:2px;letter-spacing:0.8px">${label}</div></div>`;
+  const badge = (bg, txt, val, label, border, valId) => `<div style="width:64px;height:64px;${border ? `border:${border};` : ""}background:${bg};border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)"><div ${valId ? `id="${valId}" ` : ""}style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:24px;font-weight:800;color:${txt};line-height:1">${val}</div><div style="font-size:9px;color:${txt};opacity:0.75;margin-top:2px;letter-spacing:0.8px">${label}</div></div>`;
   let badges = "";
   const _rgColCard = (window.RG_V3_DISPLAY && window.RoboScoreV3) ? "#b8d820" : "#aaee30";
   if (roboScore != null) badges += badge("#0f1a05", _rgColCard, "0", "RG", "1.5px solid #3a5010", "anim-val-robo-card");

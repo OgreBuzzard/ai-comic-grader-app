@@ -283,20 +283,20 @@
                size 2x2 grid that preceded this misrepresented Front as just
                1/4 of the score when it's actually 1/2. -->
           <div style="grid-column:1/-1;background:${OLIVE};border-radius:6px;padding:10px 6px;text-align:center">
-            <div style="font-size:26px;font-weight:800;color:${CHARTREUSE};line-height:1">${fs}</div>
+            <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:29px;font-weight:800;color:${CHARTREUSE};line-height:1">${fs}</div>
             <div style="font-size:9px;color:${OLIVE_LT};letter-spacing:1.5px;margin-top:3px">FRONT</div>
           </div>
           <!-- Row 2: Back and Spine at 2/5 each, Interior at 1/5 ("INT"). -->
           <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
-            <div style="font-size:18px;font-weight:800;color:${CHARTREUSE};line-height:1">${bs}</div>
+            <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:20px;font-weight:800;color:${CHARTREUSE};line-height:1">${bs}</div>
             <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:2px">BACK</div>
           </div>
           <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
-            <div style="font-size:18px;font-weight:800;color:${CHARTREUSE};line-height:1">${ss}</div>
+            <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:20px;font-weight:800;color:${CHARTREUSE};line-height:1">${ss}</div>
             <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:2px">SPINE</div>
           </div>
           <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
-            <div style="font-size:18px;font-weight:800;color:${CHARTREUSE};line-height:1">${ins}</div>
+            <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:20px;font-weight:800;color:${CHARTREUSE};line-height:1">${ins}</div>
             <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:2px">INT</div>
           </div>
         </div>
@@ -438,7 +438,7 @@
       const base = m ? m[1] : s;
       const suf = (m && m[2]) ? m[2] : "";
       const sup = Math.round(baseSize * 0.5);
-      return `<span style="display:inline-flex;align-items:center;line-height:1;font-family:'Noto Sans Display',sans-serif;font-weight:800;color:${color}"><span style="font-size:${baseSize}px;line-height:1">${base}</span>${suf ? `<span style="font-size:${sup}px;line-height:1;margin-left:1px">${suf}</span>` : ""}</span>`;
+      return `<span style="display:inline-flex;align-items:center;line-height:1;font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-weight:800;color:${color}"><span style="font-size:${baseSize}px;line-height:1">${base}</span>${suf ? `<span style="font-size:${sup}px;line-height:1;margin-left:1px">${suf}</span>` : ""}</span>`;
     };
 
     // ---------- defects ----------
