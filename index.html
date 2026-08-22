@@ -1763,7 +1763,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.79";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.80";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
@@ -3186,7 +3186,7 @@ async function initFirebase() {
       refreshHeaderControls();
       renderList();
       updateStats();
-      _revertPrintStates();   // S20: Print is a temporary state — revert any persisted Print books on load
+      _migratePrintState();   // S22: migrate legacy Print ownership -> inPrintQueue flag
       if (typeof window.signalAppReady === "function") window.signalAppReady();
     } else {
       if (view === "list") renderList();
@@ -3271,7 +3271,7 @@ async function migrateComicsToItems() {
   }
 }
 
-const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "deepAssessmentRan", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "insertImages", "couponImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified" ];
+const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "deepAssessmentRan", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "insertImages", "couponImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue" ];
 
 const COMIC_DROP_FIELDS = [ "press", "uv", "clean" ];
 
@@ -4588,7 +4588,7 @@ function renderList() {
   if (_mixed) {
     filt = filt.filter(c => (c.type === "card") ? _showCards : _showComics);
   }
-  const OWNERSHIP_ORDER = [ "Owned", "Sold", "Watching", "Print" ];
+  const OWNERSHIP_ORDER = [ "Owned", "Sold", "Watching" ];
   const buildTitleGroups = list => {
     const groups = {};
     list.forEach(c => {
@@ -4650,14 +4650,10 @@ function renderList() {
   // Print mode: icons + the persistent Print drop-zone appear once the user has
   // opted in (persisted via window._printOptIn) or once any entry is in the Print
   // state. _printOptInSession is the immediate in-memory echo of a fresh opt-in.
-  const printModeEnabled = _printOptInSession || window._printOptIn === true || items.some(c => (c.ownership || "Owned") === "Print");
+  const printModeEnabled = _printOptInSession || window._printOptIn === true || items.some(c => c.inPrintQueue === true);
   const sections = OWNERSHIP_ORDER.map(own => {
     const subset = filt.filter(c => (c.ownership || "Owned") === own);
-    if (subset.length === 0) {
-      // Keep an empty Print section visible as a persistent drop-zone once on.
-      if (own === "Print" && printModeEnabled) return { ownership: own, titles: [], groups: {} };
-      return null;
-    }
+    if (subset.length === 0) return null;
     const {titles: titles, groups: groups} = buildTitleGroups(subset);
     return {
       ownership: own,
@@ -4665,6 +4661,15 @@ function renderList() {
       groups: groups
     };
   }).filter(Boolean);
+  // S22: Print is an independent QUEUE (inPrintQueue flag), not an ownership — a
+  // book keeps its real ownership AND may appear here. Append it as its own section.
+  {
+    const _printSubset = filt.filter(c => c.inPrintQueue === true);
+    if (_printSubset.length || printModeEnabled) {
+      const { titles: _pt, groups: _pg } = buildTitleGroups(_printSubset);
+      sections.push({ ownership: "Print", titles: _pt, groups: _pg });
+    }
+  }
   const hasRealBooks = items.some(c => c.id !== SAMPLE_COMIC_ID);
   let html = ``;
   if (_mixed) html += _typeFilterChips();
@@ -4715,7 +4720,7 @@ function renderList() {
         // S18: print icon (upper-right) replaces the old LABEL badge. Shown only
         // once print mode is opted into. Tap toggles the entry into/out of the
         // Print section. In Print -> icon shows a red X (tap to remove).
-        const _inPrint = (c.ownership || "Owned") === "Print";
+        const _inPrint = c.inPrintQueue === true;
         const _canLabel = c.roboGrade && c.id !== SAMPLE_COMIC_ID;
         const _labelBtn = (printModeEnabled && _canLabel)
           ? `<button onclick="event.stopPropagation();togglePrintState('${esc(c.id)}')" title="${_inPrint ? "Remove from print queue" : "Add to print queue"}"\n              style="position:absolute;top:4px;right:6px;z-index:3;background:none;border:none;padding:2px;line-height:0;cursor:pointer">${_inPrint ? PRINT_ICON_X_SVG : PRINT_ICON_SVG}</button>`
@@ -4755,7 +4760,7 @@ function renderList() {
   // S18: print-label opt-in. If the user has a graded book but hasn't turned on
   // print mode, offer it at the bottom; tapping reveals the per-entry print icons.
   const _hasGraded = items.some(c => c.roboGrade && c.id !== SAMPLE_COMIC_ID);
-  const _printQueueCount = items.filter(c => (c.ownership || "Owned") === "Print").length;
+  const _printQueueCount = items.filter(c => c.inPrintQueue === true).length;
   const _LABEL_GRADIENT = "linear-gradient(180deg, #b58a5f 0%, #d6b391 38%, #eedbc5 100%)";
   if (_hasGraded && !printModeEnabled) {
     html += `<div onclick="enablePrintMode()" style="display:flex;align-items:center;justify-content:center;gap:8px;margin:18px 0 10px;padding:9px 12px;background:${_LABEL_GRADIENT};border-radius:8px;cursor:pointer;user-select:none">\n      <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#3a2a18">Want to print labels?</span>\n    </div>`;
@@ -4997,16 +5002,16 @@ function showDetail(id) {
       if (imgs[2] || imgs[3]) html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">${_cimg(imgs[2],2,'TOP FRONT','1/1')}${_cimg(imgs[3],3,'BOTTOM FRONT','1/1')}</div>`;
     } else {
       const _refF = selected.referenceImageUrl, _refB = selected.referenceBackImageUrl;
-      const _refCell = (u, lbl) => `<div style="position:relative;border-radius:6px;overflow:hidden;border:2px solid #2f9e44;background:#eaf3ea;cursor:zoom-in" onclick="openRefLightbox('${u}')"><img src="${u}" ${imgAttrs} style="width:100%;min-height:200px;object-fit:cover;display:block"><div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(38,132,58,0.92);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${lbl}</div></div>`;
+      const _refCell = (u, lbl, which) => `<div style="position:relative;border-radius:6px;overflow:hidden;border:2px solid #2f9e44;background:#eaf3ea;cursor:zoom-in" onclick="openLightboxRef('${selected.id}','${which}')"><img src="${u}" ${imgAttrs} style="width:100%;min-height:200px;object-fit:cover;display:block"><div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(38,132,58,0.92);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${lbl}</div></div>`;
       if (_refF && _refB) {
         // Reference-cover layout: Front | Front Reference, then Back | Back Reference (references in a green border).
         html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
         html += imgs[0] ? `<img class="detail-cover" src="${imgs[0]}" ${imgAttrs} onclick="openLightbox('${selected.id}',0)">` : `<div></div>`;
-        html += _refCell(_refF, "FRONT REFERENCE");
+        html += _refCell(_refF, "FRONT REFERENCE", "front");
         html += `</div>`;
         html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
         html += imgs[1] ? `<img class="detail-cover" src="${imgs[1]}" ${imgAttrs} onclick="openLightbox('${selected.id}',1)">` : `<div></div>`;
-        html += _refCell(_refB, "BACK REFERENCE");
+        html += _refCell(_refB, "BACK REFERENCE", "back");
         html += `</div>`;
       } else if (imgs[0] || imgs[1]) {
         html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
@@ -5509,7 +5514,7 @@ async function printQueueSheet() {
   // The "Print" ownership category IS the print queue. Gather every book
   // tagged Print that has an RG grade (only graded books get a label), then
   // hand them to the label viewer for batch printing on an Avery sheet.
-  const queue = items.filter(c => (c.ownership || "Owned") === "Print" && c.roboGrade && c.id !== SAMPLE_COMIC_ID);
+  const queue = items.filter(c => c.inPrintQueue === true && c.roboGrade && c.id !== SAMPLE_COMIC_ID);
   if (queue.length === 0) {
     alert("No graded books in the Print queue. Move a graded book to the Print category to add it.");
     return;
@@ -5537,16 +5542,20 @@ async function printQueueSheet() {
 // should not survive across app sessions. On load, revert any persisted Print
 // book to its prior ownership (default Owned). This also permanently clears the
 // earlier issue where books stuck in Print became invisible when print mode was off.
-async function _revertPrintStates() {
-  const stuck = items.filter(c => (c.ownership || "Owned") === "Print" && c.id !== SAMPLE_COMIC_ID);
-  if (!stuck.length) return;
-  for (const c of stuck) {
+async function _migratePrintState() {
+  // S22 MIGRATION: Print used to be an `ownership` value; it is now the independent
+  // `inPrintQueue` flag. Convert any legacy Print item to its real prior ownership +
+  // inPrintQueue:true. One-time, lazy, per-item, best-effort — safe because
+  // priorOwnership already preserved the real status.
+  const legacy = items.filter(c => c.ownership === "Print" && c.id !== SAMPLE_COMIC_ID);
+  if (!legacy.length) return;
+  for (const c of legacy) {
     const restore = c.priorOwnership || "Owned";
     try {
       const ref = fsDoc(window._db, "users", window._currentUser.uid, "items", c.id);
-      await fsSetDoc(ref, { ownership: restore, priorOwnership: null }, { merge: true });
-      c.ownership = restore; c.priorOwnership = null;
-    } catch (e) { console.warn("[print] revert failed", c.id, e); }
+      await fsSetDoc(ref, { ownership: restore, priorOwnership: null, inPrintQueue: true }, { merge: true });
+      c.ownership = restore; c.priorOwnership = null; c.inPrintQueue = true;
+    } catch (e) { console.warn("[print] migrate failed", c.id, e); }
   }
   renderList();
 }
@@ -5554,21 +5563,11 @@ async function _revertPrintStates() {
 async function togglePrintState(id) {
   const comic = items.find(c => c.id === id);
   if (!comic) return;
-  const cur = comic.ownership || "Owned";
-  let next, update;
-  if (cur === "Print") {
-    // Restore to the remembered prior ownership (default Owned).
-    next = comic.priorOwnership || "Owned";
-    update = { ownership: next, priorOwnership: null };
-  } else {
-    next = "Print";
-    update = { ownership: "Print", priorOwnership: cur };
-  }
+  const next = !(comic.inPrintQueue === true);   // S22: print queue is an independent flag
   try {
     const ref = fsDoc(window._db, "users", window._currentUser.uid, "items", id);
-    await fsSetDoc(ref, update, { merge: true });
-    comic.ownership = next;
-    comic.priorOwnership = update.priorOwnership;
+    await fsSetDoc(ref, { inPrintQueue: next }, { merge: true });
+    comic.inPrintQueue = next;
     const savedScroll = window.scrollY || document.documentElement.scrollTop || 0;
     renderList();
     requestAnimationFrame(() => window.scrollTo(0, savedScroll));
@@ -5581,7 +5580,7 @@ async function cycleOwnershipFromDetail(id) {
   const comic = items.find(c => c.id === id);
   if (!comic) return;
   const cur = comic.ownership || "Owned";
-  const next = cur === "Owned" ? "Watching" : cur === "Watching" ? "Sold" : cur === "Sold" ? "Print" : "Owned";
+  const next = cur === "Owned" ? "Watching" : cur === "Watching" ? "Sold" : "Owned";
   const update = {
     ownership: next
   };
@@ -5589,7 +5588,7 @@ async function cycleOwnershipFromDetail(id) {
   // Watching kills the public link. Print is a transient label state — leave
   // publicListing intact so the link stays live through a label print and is
   // restored with the book's prior ownership.
-  if (next !== "Owned" && next !== "Print") update.publicListing = false;
+  if (next !== "Owned") update.publicListing = false;
   try {
     const ref = fsDoc(window._db, "users", window._currentUser.uid, "items", id);
     await fsSetDoc(ref, update, {
@@ -5632,7 +5631,8 @@ function _lbUpdateArrows() {
 function _lbShow() {
   const img = document.getElementById("lightbox-img");
   if (!_lbList || !_lbList[_lbIdx]) return;
-  img.src = _lbList[_lbIdx];
+  const _el = _lbList[_lbIdx];
+  img.src = (_el && _el.u) ? _el.u : _el;
   _attachPanzoomToLightbox();
   _lbUpdateArrows();
   _lbRenderDefects();
@@ -5771,8 +5771,10 @@ function _lbRenderDefects() {
   if (!def) return;
   let html = "";
   const ctx = _lbDefCtx;
-  if (ctx && ctx.item && _lbIdx >= 0 && _lbIdx <= 3) {
-    html = (ctx.item.type === "card") ? _lbCardDefectsHTML(ctx.item, _lbIdx) : _lbComicDefectsHTML(ctx.item, _lbIdx);
+  const _el = _lbList && _lbList[_lbIdx];
+  const _di = (_el && typeof _el === "object") ? _el.d : _lbIdx;
+  if (ctx && ctx.item && _di != null && _di >= 0 && _di <= 3) {
+    html = (ctx.item.type === "card") ? _lbCardDefectsHTML(ctx.item, _di) : _lbComicDefectsHTML(ctx.item, _di);
   }
   def.innerHTML = html;
   def.style.display = html ? "block" : "none";
@@ -5780,10 +5782,41 @@ function _lbRenderDefects() {
 }
 
 function openRefLightbox(u) { if (u && typeof _lbOpen === 'function') _lbOpen([u], 0); }
+function _comicLbEntries(c) {
+  // S22 cycle order: front, front-ref, back, back-ref, interior, spine, then Deep, then Full.
+  const img = c.images || [];
+  const e = [];
+  const push = (u, d, ref) => { if (u) e.push({ u: u, d: (d == null ? null : d), ref: ref || null }); };
+  if (c.type === "card") {
+    push(img[0], 0); push(img[1], 1); push(img[2], 2); push(img[3], 3);
+    (c.cardDeepImages || []).forEach(u => push(u, null));
+    return e;
+  }
+  push(img[0], 0);
+  push(c.referenceImageUrl, null, "front");
+  push(img[1], 1);
+  push(c.referenceBackImageUrl, null, "back");
+  push(img[2], 2);
+  push(img[3], 3);
+  (c.cornerImages || []).forEach(u => push(u, null));    // Deep macros
+  (c.interiorImages || []).forEach(u => push(u, null));  // Full
+  return e;
+}
 function openLightbox(id, idx) {
   const c = items.find(x => x.id === id);
   if (!c || !c.images?.[idx]) return;
-  _lbOpen(c.images, idx, { item: c });   // MAIN images get the per-image defect box
+  const list = _comicLbEntries(c);
+  let start = list.findIndex(e => e.d === idx);
+  if (start < 0) start = 0;
+  _lbOpen(list, start, { item: c });   // MAIN images get the per-image defect box
+}
+function openLightboxRef(id, which) {
+  const c = items.find(x => x.id === id);
+  if (!c) return;
+  const list = _comicLbEntries(c);
+  let start = list.findIndex(e => e.ref === which);
+  if (start < 0) start = 0;
+  _lbOpen(list, start, { item: c });
 }
 
 function openCornerLightbox(id, idx) {
@@ -6033,7 +6066,7 @@ function ownershipPillForForm() {
 
 function cycleOwnership() {
   const cur = formData.ownership || "Owned";
-  const next = cur === "Owned" ? "Watching" : cur === "Watching" ? "Sold" : cur === "Sold" ? "Print" : "Owned";
+  const next = cur === "Owned" ? "Watching" : cur === "Watching" ? "Sold" : "Owned";
   formData.ownership = next;
   renderForm();
 }
