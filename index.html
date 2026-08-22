@@ -248,7 +248,7 @@
   // Card axes: Surface 0-5, Corners 0-2, Edges 0-2, Centering 0-1. Cards have no
   // "Full" (no interior/spine to open), so a Deep (raking-light, all angles) is
   // the deepest pass and CAN confirm a 10. Caps: Main 9.0, Deep 10; slab <= 9.5.
-  var DEPTH_CAP_CARD = { main: 9.0, deep: 10.0 };
+  var DEPTH_CAP_CARD = { main: 9.5, deep: 10.0 };  // cards have no interior surfaces — confident to 9.5 on the first pass
   function shaveToCapCard(sub, cap) {
     var s = { surface: sub.surface, corners: sub.corners, edges: sub.edges, centering: sub.centering };
     var order = ["surface", "corners", "edges"];  // centering never shaved (mirrors interior)
