@@ -310,11 +310,20 @@ turning defects into a score is the same.)
   SEVERITY describes a single defect's weight (LOW = faint/minor, MED = clearly
   visible, HIGH = grade-defining) — it is NOT a fixed point value.
   ACCUMULATION CAP (mirrors the comic LIGHT-ACCUMULATION rule): even when EVERY
-  surface defect is individually LOW, a card carrying 4+ visible LOW surface defects
-  (or light wear across multiple regions) is NOT a near-pristine surface — front
-  surface MUST be <= 30 (about one full grade off), never 33+. Do not let each
-  defect being "light" talk the surface up. A near-40 surface is clean or shows
-  only one or two trace marks.
+  surface defect is individually LOW, low defects COMPOUND — more of them means a
+  worse surface, and the cap scales with the count. Count the visible LOW (or
+  worse) surface defects and cap the FRONT surface (0-40) accordingly:
+    - 1-2 low defects  -> up to 36 (small/trace accumulation)
+    - 3-5 low defects  -> <= 30 (about one full grade off; never 33+)
+    - 6-9 low defects  -> <= 25 (MODERATE accumulation — a mid-grade surface)
+    - 10+ low defects  -> <= 20 (SUBSTANTIAL accumulation)
+  MED/HIGH defects cap harder via the bands above; the count cap is a CEILING, not
+  a floor — go lower when severity warrants. A card carrying 8 low surface defects
+  is NOT a 4-out-of-5 surface. Do not let each defect being "light" talk the
+  surface up. A near-40 surface is clean or shows only one or two trace marks.
+  Back surface (0-10) applies the SAME count scaling at 1/4 scale (e.g. 6+ low
+  back-side defects -> back <= 6), so many light defects can't be laundered by
+  splitting them across front and back.
   Corners and Edges use their bands above; apply the same accumulate-don't-forgive
   logic — repeated slight fraying / light edge wear across multiple corners or edges
   compounds and moves those axes down rather than averaging out high.

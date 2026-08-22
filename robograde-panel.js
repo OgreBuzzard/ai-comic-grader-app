@@ -272,7 +272,7 @@
           grade: _v3.grade, pmLabel: _v3.pmLabel,
           stars: (comic && comic.fullAssessmentRan) ? 3 : (comic && (comic.deepAssessmentRan || comic.highGradeTier || (comic.roboGrade && comic.roboGrade.deepAssessmentRan))) ? 2 : 1,
           restoStar: !!(comic && comic.restorationCheckRan), restoColor: '#b58be0',
-          footer: 'version', footerText: 'V' + ((rg && rg.version && rg.version !== 'card-v1' && rg.version) || (comic && comic.rgVersion) || window.RG_GRADING_VERSION || '4.81'),
+          footer: 'version', footerText: 'V' + (window.RG_GRADING_VERSION || '4.81'),  // APP version (bumps to 5.0), not the engine schema version
           size: 104, numColor: _sbNum, starColor: _sbStar, footerColor: _sbVer, pmColor: OLIVE_LT, bg: _sbBg, border: '1.5px solid ' + _sbBorder
         }) : `<div style="background:${_sbBg};border-radius:18px;width:104px;height:104px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px solid ${_sbBorder};position:relative"><span style="font-family:'Noto Sans Display',sans-serif;font-weight:900;color:${_sbNum};font-size:56px;transform:scaleX(0.82);display:inline-block">${scoreRounded}</span></div>`}
         <div style="flex:1;display:grid;grid-template-columns:2fr 2fr 1fr;grid-template-rows:auto auto;gap:4px">
@@ -404,13 +404,16 @@
     const _hasSubs = !!(cardSubs && [cardSubs.surface, cardSubs.corners, cardSubs.edges, cardSubs.centering].some(v => v != null));
     const _v2 = (window.RGScoreV2 && _hasSubs) ? window.RGScoreV2.fromSubscores(cardSubs, "card") : null;
     const gradeLabel = _v2 ? _v2.grade : (window.RGScoreV2 && score != null ? window.RGScoreV2.gradeFromScore(score) : (scoreRounded != null ? String(scoreRounded) : ""));
+    // Card v3 (half-point). forCard reads cardData.robograde; caps Main 9.0 / Deep 10 / slab 9.5.
+    const _cv3 = (window.RG_V3_DISPLAY && window.RoboScoreV3) ? window.RoboScoreV3.forCard(item) : null;
+    const _cSub = n => (n == null ? "—" : Number.isInteger(n) ? String(n) : Number(n).toFixed(1));
 
     // subs order (from CONFIG.card): surface, corners, edges, centering.
     const rawT = k => (cd && cd[k] && cd[k].total != null) ? cd[k].total : "—";
-    const vSurface = _v2 ? _v2.subs[0].display : rawT("surface");
-    const vCorners = _v2 ? _v2.subs[1].display : rawT("corners");
-    const vEdges = _v2 ? _v2.subs[2].display : rawT("edges");
-    const vCentering = _v2 ? _v2.subs[3].display : rawT("centering");
+    const vSurface = _cv3 ? _cSub(_cv3.subscores.surface) : _v2 ? _v2.subs[0].display : rawT("surface");
+    const vCorners = _cv3 ? _cSub(_cv3.subscores.corners) : _v2 ? _v2.subs[1].display : rawT("corners");
+    const vEdges = _cv3 ? _cSub(_cv3.subscores.edges) : _v2 ? _v2.subs[2].display : rawT("edges");
+    const vCentering = _cv3 ? _cSub(_cv3.subscores.centering) : _v2 ? _v2.subs[3].display : rawT("centering");
 
     const _deep = !!item.deepAssessmentRan;
     const _pg = card.photograder;
@@ -541,7 +544,7 @@
     const _sbStar = _perfect10 ? '#5a3f06' : CHARTREUSE;
     const _sbVer = _perfect10 ? '#7a5a10' : '#5a7028';
     for (let i = 0; i < _stars; i++) _starsHTML += _starSvg(_sbStar);
-    const scoreBox = `<div style="background:${_sbBg};border-radius:18px;width:104px;height:104px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px solid ${_sbBorder};position:relative">
+    const scoreBox = _cv3 ? window.RoboScoreV3.scoreBox({ grade: _cv3.grade, pmLabel: _cv3.pmLabel, stars: _stars, footer: 'version', footerText: 'V' + (window.RG_GRADING_VERSION || '4.81'), size: 104, numColor: _sbNum, starColor: _sbStar, footerColor: CHARTREUSE, pmColor: OLIVE_LT, bg: _sbBg, border: '1.5px solid ' + _sbBorder }) : `<div style="background:${_sbBg};border-radius:18px;width:104px;height:104px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px solid ${_sbBorder};position:relative">
       ${precision > 0 ? `<span style="position:absolute;top:8px;right:8px;color:${_sbNum};line-height:1;display:inline-flex;align-items:center;gap:0;font-family:'Noto Sans Display',sans-serif;font-size:16px;font-weight:800"><img src="/assets/pm-notch.svg" width="16" height="22" style="display:block" alt=""><span style="margin-left:-1px">${precision}</span></span>` : ""}
       <div style="position:absolute;top:6px;left:0;right:0;text-align:center;pointer-events:none;display:flex;justify-content:center;opacity:0.5"><span style="display:inline-flex;gap:1px;align-items:center;line-height:1">${_starsHTML}</span></div>
       <div style="line-height:1">${(() => { const _s=String(gradeLabel==null?"":gradeLabel); const _m=_s.match(/^(\d+|—|-)([+-])?$/); const _b=_m?_m[1]:_s; const _f=(_m&&_m[2])?_m[2]:""; return `<span style="position:relative;display:inline-block;line-height:1;font-family:'Noto Sans Display',sans-serif;font-weight:800;color:${_sbNum}"><span style="font-size:60px;line-height:1;display:inline-block">${_b}</span>${_f?`<span style="position:absolute;left:100%;top:6px;font-size:30px;font-weight:600;line-height:1">${_f}</span>`:""}</span>`; })()}</div>

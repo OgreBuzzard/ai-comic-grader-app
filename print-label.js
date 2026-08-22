@@ -2520,8 +2520,9 @@ function renderCardLabelMarkup(comic, opts) {
     if ([subs.surface, subs.corners, subs.edges, subs.centering].some(v => v != null)) grade = window.RGScoreV2.fromSubscores(subs, 'card').grade;
   }
   if ((grade === '' || grade == null) && rg.score != null && window.RGScoreV2) grade = window.RGScoreV2.gradeFromScore(rg.score);
+  if (window.RG_V3_DISPLAY && window.RoboScoreV3) { const _rc = window.RoboScoreV3.forCard(comic); if (_rc) grade = window.RoboScoreV3.formatGrade(_rc.grade); }  // card v3 wins
   const gradeStr = String(grade == null ? '' : grade);
-  const gm = gradeStr.match(/^(\d+)([+-])?$/);
+  const gm = gradeStr.match(/^(\d+)([+\-]|\.\d)?$/);
   const gBase = gm ? gm[1] : gradeStr;
   const gSuf = (gm && gm[2]) ? gm[2] : '';
   const perfect10 = gBase === '10' && !gSuf;
@@ -2689,7 +2690,7 @@ function renderLabelMarkup(comic, opts) {
     }
   }
 
-  let versionStr = `V${esc(rg.version || '2.0')}`;
+  let versionStr = `V${esc((typeof window!=='undefined' && window.RG_GRADING_VERSION) || '4.81')}`;  // APP version, not engine schema
   // Scoring v2 preview (?v2=1): the score box shows the 31-tier grade instead of
   // the 0-100 number. Every numeric use of `score` above already ran; this only
   // changes what prints. Precision (a 0-100-scale ±N) is dropped since it doesn't

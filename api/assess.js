@@ -567,7 +567,11 @@ export default async function handler(req, res) {
       try {
         const searchTitle = title.replace(/^The\s+/i, '').trim();
         const targetIss = String(issueNumber).replace(/^0+/, '');
-        const hintYear = (typeof issueYear === 'number' && issueYear > 1930) ? issueYear : null;
+        const hintYear = (() => {
+          const _m = String(issueDate || '').match(/(?:19|20)\d{2}/);   // client sends year in issueDate 'Mon YYYY'
+          if (_m) return Number(_m[0]);
+          return (typeof issueYear === 'number' && issueYear > 1930) ? issueYear : null;
+        })();  // disambiguates same-title volumes (e.g. Daredevil 1964 Marvel vs golden-age)
         const yearFrom = (s) => { const m = String(s||'').match(/(\d{4})/); return m ? parseInt(m[1],10) : null; };
 
         // VOLUME-FIRST LOOKUP. The fuzzy /search endpoint relevance-ranks modern

@@ -244,6 +244,59 @@
     return '<div style="position:relative;width:' + size + 'px;height:' + size + 'px;background:' + bg + ';border:' + border + ';border-radius:' + Math.round(size*0.14) + 'px;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">' + starsHtml + '<div style="display:flex;align-items:center;justify-content:center">' + numHtml + '</div>' + bottom + '</div>';
   }
 
+  // ---- CARD scoring (v3) ----------------------------------------------------
+  // Card axes: Surface 0-5, Corners 0-2, Edges 0-2, Centering 0-1. Cards have no
+  // "Full" (no interior/spine to open), so a Deep (raking-light, all angles) is
+  // the deepest pass and CAN confirm a 10. Caps: Main 9.0, Deep 10; slab <= 9.5.
+  var DEPTH_CAP_CARD = { main: 9.0, deep: 10.0 };
+  function shaveToCapCard(sub, cap) {
+    var s = { surface: sub.surface, corners: sub.corners, edges: sub.edges, centering: sub.centering };
+    var order = ["surface", "corners", "edges"];  // centering never shaved (mirrors interior)
+    var i = 0, guard = 0;
+    function total() { return s.surface + s.corners + s.edges + s.centering; }
+    while (total() > cap + 1e-9 && guard < 200) {
+      var k = order[i % order.length];
+      if (s[k] >= 0.5) s[k] = roundHalf(s[k] - 0.5);
+      i++; guard++;
+      if (s.surface <= 0 && s.corners <= 0 && s.edges <= 0) break;
+    }
+    return s;
+  }
+  function computeCardV3(input) {
+    input = input || {};
+    var depth = (input.depth || "main").toLowerCase();
+    var slabbed = !!input.slabbed;
+    var raw = {
+      surface: clamp(roundHalf((input.surface50 || 0) / 10), 0, 5),
+      corners: clamp(roundHalf((input.corners20 || 0) / 10), 0, 2),
+      edges: clamp(roundHalf((input.edges20 || 0) / 10), 0, 2),
+      centering: clamp(roundHalf((input.centering10 || 0) / 10), 0, 1)
+    };
+    var uncapped = raw.surface + raw.corners + raw.edges + raw.centering;
+    var cap = DEPTH_CAP_CARD[depth] != null ? DEPTH_CAP_CARD[depth] : 9.0;
+    if (slabbed) cap = Math.min(cap, 9.5);
+    var sub = (uncapped > cap + 1e-9) ? shaveToCapCard(raw, cap) : raw;
+    var grade = sub.surface + sub.corners + sub.edges + sub.centering;
+    var ceilingHit = uncapped > cap + 1e-9;
+    var upsell = (depth === "main" && ceilingHit && !slabbed) ? "deep" : null;   // cards: Main -> Deep only
+    var pm = computePM({ depth: depth, slabbed: slabbed, photograder: input.photograder });  // reuse comic PM table
+    return { grade: grade, uncappedGrade: uncapped, subscores: sub, rawSubscores: raw, pm: pm, pmLabel: formatPM(pm), ceilingHit: ceilingHit, upsell: upsell, kind: "card" };
+  }
+  function forCard(card) {
+    if (!card) return null;
+    var cd = (card.cardData && card.cardData.robograde) || (card.roboGrade && card.roboGrade.subscores);
+    if (!cd) return null;
+    var g = function (k) { return cd[k] && cd[k].total; };
+    var surf = g("surface"), corn = g("corners"), edg = g("edges"), cent = g("centering");
+    if (surf == null && corn == null && edg == null && cent == null) return null;
+    var depth = (card.fullAssessmentRan || card.deepAssessmentRan || card.highGradeTier) ? "deep" : "main";
+    return computeCardV3({
+      surface50: surf, corners20: corn, edges20: edg, centering10: cent,
+      depth: depth, slabbed: !!(card.officialPSAGrade || card.officialCGCGrade || card.labelDetected),
+      photograder: card.photograder || (card.roboGrade && card.roboGrade.photograder) || null
+    });
+  }
+
   // ---- Comic-record adapter (shared by all render surfaces) -----------------
   // Interior PHYSICAL-flaw keywords, distinct from page COLOR (pageQuality
   // already scores color). Presence drops the interior tier one step (§3 step 2).
@@ -280,7 +333,7 @@
     });
   }
 
-  var api = { compute: computeRoboScoreV3, forComic: forComic, depthOf: depthOf, computePM: computePM, formatPM: formatPM,
+  var api = { compute: computeRoboScoreV3, forComic: forComic, computeCard: computeCardV3, forCard: forCard, depthOf: depthOf, computePM: computePM, formatPM: formatPM,
               formatGrade: formatGrade, gradeParts: gradeParts, scoreBox: scoreBox,
               interiorTier: interiorTier, interiorBase: interiorBase, roundHalf: roundHalf,
               shaveToCap: shaveToCap, DEPTH_CAP: DEPTH_CAP };
@@ -3221,6 +3274,10 @@ function buildListBadge(c) {
     if (_v3g != null) {
       const _r3 = rgV3ForComic(c);
       return window.RoboScoreV3.scoreBox({ grade: _r3.grade, stars: isFullAssessmentComplete(c) ? 3 : isDeepAssessmentComplete(c) ? 2 : 1, restoStar: isRestorationCheckComplete(c), restoColor: '#b58be0', footer: '', size: 56, numColor: numColor, starColor: numColor, bg: bgColor, borderColor: borderColor });
+    }
+    if (RG_V3_DISPLAY && c.type === "card" && window.RoboScoreV3) {
+      const _rc = window.RoboScoreV3.forCard(c);
+      if (_rc) return window.RoboScoreV3.scoreBox({ grade: _rc.grade, stars: (c.deepAssessmentRan || c.fullAssessmentRan || c.highGradeTier) ? 2 : 1, footer: '', size: 56, numColor: numColor, starColor: numColor, bg: bgColor, borderColor: borderColor });
     }
     // Score stays DEAD CENTER (cardinal rule). Stars are an absolutely-positioned
     // overlay near the top so they never displace the number.
@@ -9377,7 +9434,8 @@ function mountCardResults(rec) {
   if (gridEl) gridEl.style.display = "none";
   const badge = (bg, txt, val, label, border, valId) => `<div style="width:64px;height:64px;${border ? `border:${border};` : ""}background:${bg};border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)"><div ${valId ? `id="${valId}" ` : ""}style="font-size:22px;font-weight:800;color:${txt};line-height:1">${val}</div><div style="font-size:9px;color:${txt};opacity:0.75;margin-top:2px;letter-spacing:0.8px">${label}</div></div>`;
   let badges = "";
-  if (roboScore != null) badges += badge("#0f1a05", "#aaee30", "0", "RG", "1.5px solid #3a5010", "anim-val-robo-card");
+  const _rgColCard = (window.RG_V3_DISPLAY && window.RoboScoreV3) ? "#b8d820" : "#aaee30";
+  if (roboScore != null) badges += badge("#0f1a05", _rgColCard, "0", "RG", "1.5px solid #3a5010", "anim-val-robo-card");
   if (psa) badges += badge("#b91c1c", "#ffffff", psa, "PSA", "", "anim-val-psa-card");
   const html = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:10px;">\n      <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badges}</div>\n      <button id="assess-complete-btn" style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#3a9ee0;color:#fff;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">COMPLETE</button>\n    </div>`;
   window.RobograderScan.slideResultsIntoPanel(html);
@@ -9387,7 +9445,11 @@ function mountCardResults(rec) {
   const _roboElCard = document.getElementById("anim-val-robo-card");
   const _psaElCard = document.getElementById("anim-val-psa-card");
   if (_roboElCard && roboScore != null) {
-    if (typeof animateRGLadder === "function" && window.RGScoreV2) {
+    const _cv3Scan = (window.RG_V3_DISPLAY && window.RoboScoreV3) ? window.RoboScoreV3.forCard(rec) : null;
+    if (_cv3Scan && typeof animateV3Ladder === "function") {
+      _roboElCard.style.fontSize = "26px";
+      animateV3Ladder(_roboElCard, _cv3Scan.grade, 1800).then(() => { popResultBadge(_roboElCard); if (_cv3Scan.grade === 10) applyPerfect10Gold(_roboElCard, "10"); });
+    } else if (typeof animateRGLadder === "function" && window.RGScoreV2) {
       _roboElCard.style.fontSize = "26px";
       animateRGLadder(_roboElCard, _rgGradeScan, 1800).then(() => { popResultBadge(_roboElCard); applyPerfect10Gold(_roboElCard, _rgGradeScan); });
     } else {
