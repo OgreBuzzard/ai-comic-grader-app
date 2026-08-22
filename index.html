@@ -79,6 +79,177 @@
     return { LADDER, CONFIG, gradeFromScore, fromSubscores, tierFromThirds, subThirds, pmBand, PM_BASE, tierIndex: l=>LADDER.indexOf(l) };
   })();
   </script>
+
+  <!-- Robograde Scoring v3 half-point 0-10 display transform. Inlined from
+       lib/roboscore_v3.js (tested source of truth; unit tests). Engine stays
+       0-100 internally; this quantizes to the 21-value half-point grade + PM.
+       Comics only (cards keep v2). Keep in sync with lib/roboscore_v3.js. -->
+  <script>
+// lib/roboscore_v3.js — Robograder Scoring v3 (half-point 0–10).
+// Pure display/quantization transform over the stored 0–100 subscores.
+// See claude/SCORING_V3_SPEC.md. Classic-script + CommonJS dual export.
+(function (root) {
+  "use strict";
+
+  function roundHalf(x) { return Math.round(Number(x) * 2) / 2; }
+  function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
+
+  function interiorBase(pageQuality) {
+    var pq = String(pageQuality || "").toLowerCase().trim();
+    if (!pq) return 0.5;
+    if (pq === "white") return 1;
+    if (pq === "off-white to white" || pq === "off-white" || pq === "cream to off-white") return 0.5;
+    if (pq.indexOf("cream") === 0 || pq.indexOf("tan") !== -1 || pq.indexOf("brittle") !== -1) return 0;
+    if (pq.indexOf("off-white") !== -1) return 0.5;
+    return 0;
+  }
+  function interiorTier(pageQuality, interiorDefect) {
+    var base = interiorBase(pageQuality);
+    if (interiorDefect) base = Math.max(0, base - 0.5);
+    return base;
+  }
+
+  var DEPTH_CAP = { main: 9.0, deep: 9.5, full: 10.0 };
+
+  // Confidence-hold cap: shave 0.5 at a time, round-robin front -> back -> spine,
+  // until the subscores sum to the ceiling. Front is shaved first each cycle, so
+  // it is restored LAST (Main holds front+back at 9.0; Deep holds front at 9.5;
+  // Full restores all). Interior (page-quality) is never shaved. Subscores always
+  // reconcile to the displayed grade.
+  function shaveToCap(sub, cap) {
+    var s = { front: sub.front, back: sub.back, spine: sub.spine, interior: sub.interior };
+    var order = ["front", "back", "spine"];
+    var i = 0, guard = 0;
+    function total() { return s.front + s.back + s.spine + s.interior; }
+    while (total() > cap + 1e-9 && guard < 200) {
+      var k = order[i % order.length];
+      if (s[k] >= 0.5) s[k] = roundHalf(s[k] - 0.5);
+      i++; guard++;
+      if (s.front <= 0 && s.back <= 0 && s.spine <= 0) break;
+    }
+    return s;
+  }
+
+  function photoSeverity(pg) {
+    if (!pg) return 0;
+    var c = 0, b = 0;
+    ["focus", "lighting", "cropping", "angle"].forEach(function (k) {
+      var v = String(pg[k] || "").toUpperCase();
+      if (v === "C") c++; else if (v === "B") b++;
+    });
+    return c * 2 + b;   // C counts double
+  }
+
+  // PM (Precision Modifier). Returns one of 0, 0.5, 1, 1.5, 2.
+  function computePM(input) {
+    var depth = (input.depth || "main").toLowerCase();
+    var slab = !!input.slabbed;
+    var sev = photoSeverity(input.photograder);
+    var pm;
+    if (slab) {
+      pm = (depth === "deep") ? (sev <= 1 ? 1.0 : sev === 2 ? 1.5 : 2.0)
+                              : (sev <= 1 ? 1.5 : 2.0);          // slabbed main (2 imgs, through plastic)
+    } else if (depth === "full") {
+      pm = (input.all16Present && sev === 0) ? 0
+                                             : (sev <= 1 ? 0.5 : sev === 2 ? 1.0 : 1.5);
+    } else if (depth === "deep") {
+      pm = (sev <= 1 ? 0.5 : sev === 2 ? 1.0 : 1.5);
+    } else { // main (raw, 4 imgs)
+      pm = (sev <= 1 ? 1.0 : sev === 2 ? 1.5 : 2.0);
+      pm = pm + 0.5 * (input.missingCore || 0);                 // missing spine/interior widens
+    }
+    return Math.min(2.0, pm);
+  }
+  function formatPM(pm) { return (!pm || pm <= 0) ? "" : "±" + pm; }   // ±1 not ±1.0; ±0.5 keeps decimal
+
+  function computeRoboScoreV3(input) {
+    input = input || {};
+    var depth = (input.depth || "main").toLowerCase();
+    var slabbed = !!input.slabbed;
+
+    var raw = {
+      front: clamp(roundHalf((input.front50 || 0) / 10), 0, 5),
+      back: clamp(roundHalf((input.back20 || 0) / 10), 0, 2),
+      spine: clamp(roundHalf((input.spine20 || 0) / 10), 0, 2),
+      interior: interiorTier(input.pageQuality, !!input.interiorDefect)
+    };
+    var uncapped = raw.front + raw.back + raw.spine + raw.interior;
+
+    var cap = DEPTH_CAP[depth] != null ? DEPTH_CAP[depth] : 9.0;
+    if (slabbed) cap = Math.min(cap, 9.5);   // slab can never reach RG 10 (no Full)
+
+    var sub = (uncapped > cap + 1e-9) ? shaveToCap(raw, cap) : raw;
+    var grade = sub.front + sub.back + sub.spine + sub.interior;
+    var ceilingHit = uncapped > cap + 1e-9;
+
+    var upsell = null;
+    if (depth === "main" && ceilingHit) upsell = "deep";
+    else if (depth === "deep" && ceilingHit && !slabbed) upsell = "full";
+
+    var pm = computePM(input);
+
+    return {
+      grade: grade,
+      uncappedGrade: uncapped,
+      subscores: sub,
+      rawSubscores: raw,
+      pm: pm,
+      pmLabel: formatPM(pm),
+      ceilingHit: ceilingHit,
+      upsell: upsell
+    };
+  }
+
+  // Display formatting: integers show bare ("9","10"); halves keep one decimal
+  // ("9.5","8.5"). Same on EVERY surface (screens + labels) — no ".0".
+  function formatGrade(g){ g = Number(g); return (g % 1 === 0) ? String(g) : g.toFixed(1); }
+  function gradeParts(g){ g = Number(g); var w = Math.trunc(g); return { whole: String(w), frac: (g % 1 === 0) ? "" : ("." + Math.round((g - w) * 10)) }; }
+
+  // ---- Comic-record adapter (shared by all render surfaces) -----------------
+  // Interior PHYSICAL-flaw keywords, distinct from page COLOR (pageQuality
+  // already scores color). Presence drops the interior tier one step (§3 step 2).
+  var INT_FLAW = /(tear|split|tape|stain|spill|water|damp|mold|mildew|chip|piece|missing|detach|loose page|writing|ink stain|stamp|marker|crayon|glue|residue|hole|punch|clip|rust stain|brittle|crack)/i;
+
+  function depthOf(comic) {
+    if (comic && comic.fullAssessmentRan === true) return "full";
+    if (comic && (comic.highGradeTier === true || comic.highGradeAssessed === true ||
+                  comic._highGradeTier === true || comic.deepAssessmentRan === true)) return "deep";
+    return "main";
+  }
+
+  // Compute the v3 result straight from a stored COMIC record. Returns null for
+  // cards, missing roboGrade, or records with no comic subscores.
+  function forComic(comic) {
+    if (!comic || comic.type === "card") return null;
+    var rg = comic.roboGrade; if (!rg) return null;
+    if (rg.frontScore == null && rg.backScore == null && rg.spineScore == null) return null;
+    var defects = Array.isArray(rg.defects) ? rg.defects : [];
+    var interiorDefect = defects.some(function (d) {
+      return String(d && d.category || "").toLowerCase() === "interior" &&
+             INT_FLAW.test(String(d && d.type || ""));
+    });
+    var depth = depthOf(comic);
+    return computeRoboScoreV3({
+      front50: rg.frontScore, back20: rg.backScore, spine20: rg.spineScore,
+      pageQuality: rg.pageQuality || comic.pageQuality,
+      interiorDefect: interiorDefect,
+      depth: depth,
+      slabbed: comic.labelDetected === true,
+      photograder: comic.photograder || rg.photograder || null,
+      all16Present: depth === "full" && comic.fullInteriorComplete === true,
+      missingCore: 0
+    });
+  }
+
+  var api = { compute: computeRoboScoreV3, forComic: forComic, depthOf: depthOf, computePM: computePM, formatPM: formatPM,
+              formatGrade: formatGrade, gradeParts: gradeParts,
+              interiorTier: interiorTier, interiorBase: interiorBase, roundHalf: roundHalf,
+              shaveToCap: shaveToCap, DEPTH_CAP: DEPTH_CAP };
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  if (typeof window !== "undefined") window.RoboScoreV3 = api;
+})(typeof globalThis !== "undefined" ? globalThis : this);
+
+  </script>
   <script>
   /* Shared styled popup — replaces native alert() for purchase (and other) messages.
      window.rgPopup(message, { type:'success'|'error'|'info', title, okText, onClose }). */
@@ -1763,7 +1934,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.80";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.81";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
@@ -2980,10 +3151,25 @@ function rgV2Grade(c) {
     return rg.score != null ? window.RGScoreV2.gradeFromScore(rg.score) : null;
   } catch (e) { return null; }
 }
+
+// Scoring v3 display: half-point 0-10. Preview live with ?v3=1 (normal visitors
+// unaffected until rollout). When RG_V3_DISPLAY is on, COMICS render the v3
+// grade + PM; cards keep v2. Flip the default to true at launch (one constant).
+const RG_V3_DISPLAY = window.RG_V3_DISPLAY = (function(){ try { const p = new URLSearchParams(location.search); if (p.has("v3")) return p.get("v3") !== "0"; } catch(e){} return false; })();
+// Full v3 result object for a COMIC (grade, pmLabel, upsell, ceilingHit, ...), or null.
+// Delegates to the shared RoboScoreV3.forComic derivation (single source of truth).
+function rgV3ForComic(c) { try { return (RG_V3_DISPLAY && window.RoboScoreV3) ? window.RoboScoreV3.forComic(c) : null; } catch (e) { return null; } }
+// "9.5"/"10.0" grade string (always one decimal, spec v3 s2), or null.
+function rgV3GradeStr(c) { const r = rgV3ForComic(c); return r ? window.RoboScoreV3.formatGrade(r.grade) : null; }
+// "±0.5" PM string, or "" when PM hidden. Null if no v3.
+function rgV3PMStr(c) { const r = rgV3ForComic(c); return r ? r.pmLabel : null; }
+
 function buildListBadge(c) {
   if (c.roboGrade && c.roboGrade.score != null) {
     const rgScore = Math.round(c.roboGrade.score);
-    const _v2g = (RG_V2_DISPLAY || c.type === "card") ? rgV2Grade(c) : null;  // cards always show v2
+    const _v3g = (RG_V3_DISPLAY && c.type !== "card") ? rgV3GradeStr(c) : null;  // comics: v3 half-point
+    const _v2g = (_v3g == null && (RG_V2_DISPLAY || c.type === "card")) ? rgV2Grade(c) : null;  // cards always show v2
+    const _dispG = _v3g != null ? _v3g : _v2g;  // unified display grade (v3 for comics, v2 for cards)
     const showPlus = rgScore >= 90 && rgScore < 100 && !c.highGradeUnlocked;
     // S17: match the dark score-box color used in every other view (was a
     // lighter green tuned to the List background, which made it inconsistent and
@@ -2994,7 +3180,7 @@ function buildListBadge(c) {
     const numColor = _isRestored ? '#c8a8e8' : '#b8d820';
     // Score stays DEAD CENTER (cardinal rule). Stars are an absolutely-positioned
     // overlay near the top so they never displace the number.
-    return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="position:absolute;top:6px;left:0;right:0;text-align:center;display:flex;justify-content:center">${assessmentTierStars(c, { size: 9, color: numColor })}</div>\n      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:${numColor};line-height:1">${_v2g != null ? (() => { const _s=String(_v2g); const _m=_s.match(/^(\d+|—|-)([+-])?$/); const _b=_m?_m[1]:_s; const _f=(_m&&_m[2])?_m[2]:""; return `<span style="position:relative;display:inline-block;line-height:1">${_b}${_f?`<span style="position:absolute;left:100%;top:3px;font-size:15px;font-weight:600;line-height:1">${_f}</span>`:""}</span>`; })() : `${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#7aa838;margin-left:1px">+</span>' : ""}`}</div>\n    </div>`;
+    return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="position:absolute;top:6px;left:0;right:0;text-align:center;display:flex;justify-content:center">${assessmentTierStars(c, { size: 9, color: numColor })}</div>\n      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:${numColor};line-height:1">${_dispG != null ? (() => { const _s=String(_dispG); const _m=_s.match(/^(\d+|—|-)([+\-]|\.\d)?$/); const _b=_m?_m[1]:_s; const _f=(_m&&_m[2])?_m[2]:""; return `<span style="position:relative;display:inline-block;line-height:1">${_b}${_f?`<span style="position:absolute;left:100%;top:3px;font-size:15px;font-weight:600;line-height:1">${_f}</span>`:""}</span>`; })() : `${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#7aa838;margin-left:1px">+</span>' : ""}`}</div>\n    </div>`;
   }
   if (c.cgcGrade) return buildBadge(normalizeGrade(c.cgcGrade), "cgc-official", detectDesignation(c), true);
   if (c.type !== "card" && c.psaGrade) return buildBadge(normalizeGrade(c.psaGrade), "psa-official", c.psaDesignation || "universal", true);
@@ -6924,6 +7110,21 @@ function animateRGLadder(el, toGrade, duration) {
   });
 }
 
+function animateV3Ladder(el, toGrade, duration) {
+  return new Promise(resolve => {
+    const to = Math.max(0, Math.min(10, Number(toGrade)));
+    const steps = Math.round(to / 0.5);
+    const fmt = (v) => { const p = window.RoboScoreV3.gradeParts(v);
+      return `<span style="position:relative;display:inline-block;line-height:1">${p.whole}${p.frac ? `<span style="position:absolute;left:100%;top:0;font-size:0.55em;font-weight:600;line-height:1">${p.frac}</span>` : ''}</span>`; };
+    const start = performance.now(); let lastIdx = -1;
+    function tick(now){ const t=Math.min((now-start)/duration,1); const eased=easeOutCubic(t);
+      const idx=Math.min(Math.floor(eased*(steps+1)),steps);
+      if(idx!==lastIdx){ el.innerHTML=fmt(idx*0.5); lastIdx=idx; }
+      if(t<1) requestAnimationFrame(tick); else { el.innerHTML=fmt(to); resolve(); } }
+    requestAnimationFrame(tick);
+  });
+}
+
 function animateGradeListFromTo(el, from, to, list, duration) {
   return new Promise(resolve => {
     const fromIdx = list.findIndex(g => Math.abs(g - parseFloat(from)) < 0.01);
@@ -7162,7 +7363,11 @@ function mountResults(cgc, psa) {
           ? window.RGScoreV2.fromSubscores({ front: roboGrade.frontScore, back: roboGrade.backScore, spine: roboGrade.spineScore, interior: roboGrade.interiorScore }, 'comic').grade
           : window.RGScoreV2.gradeFromScore(roboScore))
       : null;
-    if (_v2g != null) {
+    const _v3res = (window.RG_V3_DISPLAY && window.RoboScoreV3 && formData.type !== 'card' && roboGrade && roboGrade.frontScore != null) ? window.RoboScoreV3.forComic({ ...formData, roboGrade: roboGrade }) : null;
+    if (_v3res != null) {
+      roboEl.style.fontSize = '26px';
+      animateV3Ladder(roboEl, _v3res.grade, 2000).then(() => { popResultBadge(roboEl); if (_v3res.grade === 10) applyPerfect10Gold(roboEl, '10'); });
+    } else if (_v2g != null) {
       roboEl.style.fontSize = '26px';
       animateRGLadder(roboEl, _v2g, 2000).then(() => { popResultBadge(roboEl); applyPerfect10Gold(roboEl, _v2g); });
     } else if (_rgFrom === roboScore) {
@@ -7536,9 +7741,20 @@ async function assessHighGrade() {
     window._pendingRoboGrade = cgc._roboGrade || null;
     // S21: refund the Deep credit if the grade did not improve vs the pre-Deep
     // RoboGrade. Unknown scores => treat as improved (no refund) to stay safe.
-    const _oldScore = (initialRG && typeof initialRG.score === "number") ? initialRG.score : null;
-    const _newScore = (cgc._roboGrade && typeof cgc._roboGrade.score === "number") ? cgc._roboGrade.score : null;
-    const _deepImproved = (_newScore != null && _oldScore != null) ? (_newScore > _oldScore) : true;
+    let _deepImproved;
+    if (window.RG_V3_DISPLAY && window.RoboScoreV3 && formData.type !== 'card' && initialRG && cgc._roboGrade) {
+      // v3: refund is judged on the DISPLAYED (capped) grade, not the raw 0-100
+      // score. A Deep lifts the ceiling 9.0->9.5, so a clean book improves even
+      // when the raw score is unchanged; only a Deep that doesn't move the shown
+      // grade is refunded.
+      const _oldV3 = window.RoboScoreV3.forComic({ roboGrade: initialRG, photograder: formData.photograder, labelDetected: !!formData.labelDetected });
+      const _newV3 = window.RoboScoreV3.forComic({ roboGrade: cgc._roboGrade, photograder: formData.photograder, labelDetected: !!formData.labelDetected, deepAssessmentRan: true });
+      _deepImproved = (_oldV3 && _newV3) ? (_newV3.grade > _oldV3.grade) : true;
+    } else {
+      const _oldScore = (initialRG && typeof initialRG.score === "number") ? initialRG.score : null;
+      const _newScore = (cgc._roboGrade && typeof cgc._roboGrade.score === "number") ? cgc._roboGrade.score : null;
+      _deepImproved = (_newScore != null && _oldScore != null) ? (_newScore > _oldScore) : true;
+    }
     window._creditRefunded = !_deepImproved;
     mountResults(cgc, psa);
     onAssessmentSuccess();

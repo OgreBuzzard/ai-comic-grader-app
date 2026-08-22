@@ -39,6 +39,12 @@
     // same layout. Comics only for now (card detail is a separate surface).
     const _v2on = !!(window.RG_V2_DISPLAY && window.RGScoreV2 && rg.frontScore != null);
     const _v2 = _v2on ? window.RGScoreV2.fromSubscores({ front: rg.frontScore, back: rg.backScore, spine: rg.spineScore, interior: rg.interiorScore }, 'comic') : null;
+    // Scoring v3 (preview via ?v3=1): half-point 0-10 grade + PM. Comics only.
+    const _v3 = (window.RG_V3_DISPLAY && window.RoboScoreV3 && comic && comic.type !== 'card' && rg.frontScore != null) ? window.RoboScoreV3.forComic(comic) : null;
+    const _v3parts = _v3 ? window.RoboScoreV3.gradeParts(_v3.grade) : null;
+    const _v3whole = _v3parts ? _v3parts.whole : null;
+    const _v3frac  = _v3parts ? _v3parts.frac : null;
+    const _subDisp = (n) => (n == null ? '—' : Number.isInteger(n) ? String(n) : Number(n).toFixed(1));
 
     // Color palette (mascot-green theme, color-matched to the actual
     // Robograder character):
@@ -73,7 +79,7 @@
     // Score box sits near-black (matches List view + the scan display); keeps a
     // purple-black variant for restored books so the restoration theming survives.
     const SCOREBOX_BG = _isRestored ? '#100a1a' : '#0f1a05';
-    const _perfect10 = !!(_v2 && String(_v2.grade) === '10');
+    const _perfect10 = !!((_v3 && _v3.grade === 10) || (_v2 && String(_v2.grade) === '10'));
     const _sbBg = _perfect10 ? GOLD_BG : SCOREBOX_BG;
     const GOLD_BG = 'linear-gradient(150deg,#fdeea0 0%,#f0c53a 34%,#d99e12 66%,#b57e0c 100%)';
     const _sbNum = _perfect10 ? '#1a1206' : CHARTREUSE;
@@ -94,7 +100,9 @@
     //     above 100 (e.g. score 94 ± 8 → range 102, capped to 94 ± 6 → 100).
     const highGradeRun = !!(comic && comic.highGradeUnlocked);
     let precision = '';
-    if (_v2on) {
+    if (_v3) {
+      precision = _v3.pmLabel || '';
+    } else if (_v2on) {
       const _slab = !!(comic && comic.labelDetected);
       const _dp = !!(comic && (comic.highGradeTier || comic.deepAssessmentRan));
       const _fl = !!(comic && (comic.fullAssessmentRan || comic.fullUnlocked));
@@ -169,10 +177,10 @@
 
     // Component scores — integers only. v2.0 additive system:
     // Front 0-50, Back 0-20, Spine 0-20, Interior 0-10. Final = sum.
-    const fs  = _v2 ? _v2.subs[0].display : (rg.frontScore    != null ? Math.round(rg.frontScore)    : '—');
-    const bs  = _v2 ? _v2.subs[1].display : (rg.backScore     != null ? Math.round(rg.backScore)     : '—');
-    const ss  = _v2 ? _v2.subs[2].display : (rg.spineScore    != null ? Math.round(rg.spineScore)    : '—');
-    const ins = _v2 ? _v2.subs[3].display : (rg.interiorScore != null ? Math.round(rg.interiorScore) : '—');
+    const fs  = _v3 ? _subDisp(_v3.subscores.front)    : _v2 ? _v2.subs[0].display : (rg.frontScore    != null ? Math.round(rg.frontScore)    : '—');
+    const bs  = _v3 ? _subDisp(_v3.subscores.back)     : _v2 ? _v2.subs[1].display : (rg.backScore     != null ? Math.round(rg.backScore)     : '—');
+    const ss  = _v3 ? _subDisp(_v3.subscores.spine)    : _v2 ? _v2.subs[2].display : (rg.spineScore    != null ? Math.round(rg.spineScore)    : '—');
+    const ins = _v3 ? _subDisp(_v3.subscores.interior) : _v2 ? _v2.subs[3].display : (rg.interiorScore != null ? Math.round(rg.interiorScore) : '—');
 
     // Printout paper palette — vintage tractor-feed continuous-form paper:
     // pale mint-green bars and slightly-off-white cream bars, dark olive ink.
@@ -262,6 +270,9 @@
       <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px">
         <div style="background:${_sbBg};border-radius:18px;width:104px;height:104px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px solid ${_sbBorder};position:relative">
           ${(() => {
+            if (_v3) {
+              return precision ? `<span style="font-family:'Noto Sans Display',sans-serif;font-size:18px;font-weight:700;color:${OLIVE_LT};position:absolute;top:9px;right:9px;white-space:nowrap;line-height:1;display:inline-block;transform:scaleX(0.62);transform-origin:right center">${precision.replace('±', '± ')}</span>` : '';
+            }
             if (_v2on) {
               if (!precision) return '';
               const _n = precision.replace(/^↕/, '');
@@ -283,7 +294,7 @@
             if (_restoRan) _s += _star('#b58be0');
             return `<span style="display:inline-flex;gap:1px;align-items:center;line-height:1">${_s}</span>`;
           })()}</div>
-          <span style="position:relative;display:inline-block;line-height:1"><span style="font-family:'Noto Sans Display',sans-serif;font-weight:900;color:${_sbNum};line-height:1;font-size:62px;display:inline-block;transform:scaleX(0.80);transform-origin:center">${_v2 ? String(_v2.grade).replace(/[+-]$/, '') : scoreRounded}</span>${_v2 && /[+-]$/.test(String(_v2.grade)) ? `<span style="position:absolute;left:100%;top:8px;margin-left:-2px;font-family:'Noto Sans Display',sans-serif;font-size:26px;font-weight:500;color:${_sbNum};line-height:1">${String(_v2.grade).slice(-1)}</span>` : ''}</span>
+          <span style="position:relative;display:inline-block;line-height:1"><span style="font-family:'Noto Sans Display',sans-serif;font-weight:900;color:${_sbNum};line-height:1;font-size:62px;display:inline-block;transform:scaleX(0.80);transform-origin:center">${_v3 ? _v3whole : _v2 ? String(_v2.grade).replace(/[+-]$/, '') : scoreRounded}</span>${(_v3 && _v3frac) ? `<span style="position:absolute;left:100%;top:8px;margin-left:-2px;font-family:'Noto Sans Display',sans-serif;font-size:26px;font-weight:500;color:${_sbNum};line-height:1">${_v3frac}</span>` : (_v2 && /[+-]$/.test(String(_v2.grade)) ? `<span style="position:absolute;left:100%;top:8px;margin-left:-2px;font-family:'Noto Sans Display',sans-serif;font-size:26px;font-weight:500;color:${_sbNum};line-height:1">${String(_v2.grade).slice(-1)}</span>` : '')}</span>
           <div style="font-size:8px;font-weight:700;color:${_sbVer};letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">V${((rg && rg.version && rg.version !== 'card-v1' && rg.version) || (comic && comic.rgVersion) || window.RG_GRADING_VERSION || '4.72')}</div>
         </div>
         <div style="flex:1;display:grid;grid-template-columns:2fr 2fr 1fr;grid-template-rows:auto auto;gap:4px">
@@ -436,7 +447,7 @@
       || (card && card.version)
       || (card && card.robograde && card.robograde.version)
       || item.rgVersion;
-    const _verLabel = "V" + (_storedVer || window.RG_GRADING_VERSION || "4.80");
+    const _verLabel = "V" + (_storedVer || window.RG_GRADING_VERSION || "4.81");
 
     // Consistent grade rendering: big base + smaller (same-weight) +/- suffix.
     // Used by the main score AND every subscore so all +/- match.

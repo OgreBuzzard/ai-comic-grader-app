@@ -2694,7 +2694,11 @@ function renderLabelMarkup(comic, opts) {
   // the 0-100 number. Every numeric use of `score` above already ran; this only
   // changes what prints. Precision (a 0-100-scale ±N) is dropped since it doesn't
   // apply to the tier grade.
-  if (window.RG_V2_DISPLAY && window.RGScoreV2 && rg) {
+  if (window.RG_V3_DISPLAY && window.RoboScoreV3 && comic && comic.type !== 'card' && rg && rg.frontScore != null) {
+    // Scoring v3 (?v3=1): half-point grade + PM on the printed label.
+    const _v3 = window.RoboScoreV3.forComic(comic);
+    if (_v3) { score = window.RoboScoreV3.formatGrade(_v3.grade); precision = _v3.pmLabel || ''; versionStr = 'RG'; }  // '9'/'9.5'/'10' — same on every surface
+  } else if (window.RG_V2_DISPLAY && window.RGScoreV2 && rg) {
     let _v2g = null;
     if (rg.frontScore != null) _v2g = window.RGScoreV2.fromSubscores({ front: rg.frontScore, back: rg.backScore, spine: rg.spineScore, interior: rg.interiorScore }, 'comic').grade;
     else if (rg.score != null) _v2g = window.RGScoreV2.gradeFromScore(rg.score);

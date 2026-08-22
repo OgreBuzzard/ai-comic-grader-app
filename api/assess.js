@@ -933,7 +933,7 @@ FAIL (any one triggers CROP_FAILURE): a comic corner outside frame, an edge blee
 
 A tight crop where the comic almost fills the frame is FINE as long as the full comic is visible — the check fails only when the comic extends past a photo edge.
 
-This check is STRICT because comic margins are where facsimile markers, modern Marvel/DC logos, UPCs, and restoration evidence live. Cropped photos are also a common way users (deliberately or not) hide defects — corner damage, edge tears, staple problems. Treat any cropped edge as a possible defect-hiding photo.
+This check is STRICT because comic margins are where facsimile markers, modern Marvel/DC logos, UPCs, and restoration evidence live. Cropped photos are also a common way users (deliberately or not) hide defects — corner damage, edge tears, staple problems. Treat any cropped edge as a possible defect-hiding photo. CRITICAL — this is a HARD GATE, not a photo-quality score: cover content cut off by (or bleeding past) any photo edge on the FRONT or BACK must return gateResult CROP_FAILURE in PHASE 0 and STOP. Do NOT instead just lower the Photograder "cropping" letter and grade the book anyway — a cut-off front/back edge FAILS the assessment. Run this on BOTH the front and back photos. When you are not certain every edge of a cover is fully within the frame corner-to-corner, FAIL (CROP_FAILURE).
 
 If CROP_FAILURE: return ONLY this JSON and STOP.
 {
