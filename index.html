@@ -205,6 +205,45 @@
   function formatGrade(g){ g = Number(g); return (g % 1 === 0) ? String(g) : g.toFixed(1); }
   function gradeParts(g){ g = Number(g); var w = Math.trunc(g); return { whole: String(w), frac: (g % 1 === 0) ? "" : ("." + Math.round((g - w) * 10)) }; }
 
+  // ---- Shared score-box renderer (identical look on every surface) ----------
+  // Structural anti-clip layout: stars pinned top-center; the number is
+  // flex-centered so it is ALWAYS dead-center regardless of PM width; PM and the
+  // footer (version / "RG") are stacked at the bottom, so PM can never touch the
+  // stars or the number. One uniform-size decimal — no fragile superscript.
+  // opts: {grade, pmLabel, stars(0-3), restoStar, footer('version'|'RG'|''),
+  //   footerText, size, numColor, starColor, footerColor, pmColor, bg, border}
+  var _STAR_PATH = "M12,2 15.64,6.98 21.51,8.91 17.9,13.92 17.88,20.09 12,18.2 6.12,20.09 6.1,13.92 2.49,8.91 8.36,6.98Z";
+  function _starRow(n, px, color, resto, restoColor) {
+    var s = "";
+    for (var i = 0; i < n; i++) s += '<svg viewBox="0 0 24 24" width="' + px + '" height="' + px + '" style="display:inline-block"><path d="' + _STAR_PATH + '" fill="' + color + '"/></svg>';
+    if (resto) s += '<svg viewBox="0 0 24 24" width="' + px + '" height="' + px + '" style="display:inline-block"><path d="' + _STAR_PATH + '" fill="' + (restoColor || "#b58be0") + '"/></svg>';
+    return s ? '<span style="display:inline-flex;gap:1px;align-items:center;line-height:1">' + s + '</span>' : "";
+  }
+  function scoreBox(o) {
+    o = o || {};
+    var size = o.size || 104;
+    var numColor = o.numColor || "#b8d820";
+    var starColor = o.starColor || numColor;
+    var footerColor = o.footerColor || numColor;
+    var pmColor = o.pmColor || footerColor;
+    var bg = o.bg || "#0f1a05";
+    var border = o.border || ("1.5px solid " + (o.borderColor || "#3a5010"));
+    var stars = o.stars || 0;
+    var starPx = o.starPx || Math.max(8, Math.round(size * 0.11));
+    var numSize = o.numSize || Math.round(size * 0.52);
+    var p = gradeParts(o.grade);
+    var numHtml = '<span style="font-family:\'Noto Sans Display\',system-ui,sans-serif;font-weight:900;color:' + numColor + ';line-height:1;font-size:' + numSize + 'px;letter-spacing:-0.02em;display:inline-block;transform:scaleX(0.86);transform-origin:center">' + p.whole + p.frac + '</span>';
+    var starsHtml = (stars > 0 || o.restoStar) ? '<div style="position:absolute;top:' + Math.round(size*0.055) + 'px;left:0;right:0;display:flex;justify-content:center;pointer-events:none">' + _starRow(stars, starPx, starColor, o.restoStar, o.restoColor) + '</div>' : "";
+    // bottom stack: PM (optional) above footer (optional), both centered
+    var bottom = "";
+    var pmHtml = (o.pmLabel) ? '<div style="font-family:\'Noto Sans Display\',system-ui,sans-serif;font-size:' + Math.max(10, Math.round(size*0.12)) + 'px;font-weight:700;color:' + pmColor + ';line-height:1;white-space:nowrap">' + o.pmLabel + '</div>' : "";
+    var footHtml = "";
+    if (o.footer === "RG") footHtml = '<div style="font-size:' + Math.max(8, Math.round(size*0.086)) + 'px;font-weight:700;color:' + footerColor + ';opacity:0.85;letter-spacing:1px;line-height:1">RG</div>';
+    else if (o.footer === "version" && o.footerText) footHtml = '<div style="font-size:' + Math.max(7, Math.round(size*0.077)) + 'px;font-weight:700;color:' + footerColor + ';opacity:0.8;letter-spacing:0.8px;line-height:1">' + o.footerText + '</div>';
+    if (pmHtml || footHtml) bottom = '<div style="position:absolute;bottom:' + Math.round(size*0.06) + 'px;left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none">' + pmHtml + footHtml + '</div>';
+    return '<div style="position:relative;width:' + size + 'px;height:' + size + 'px;background:' + bg + ';border:' + border + ';border-radius:' + Math.round(size*0.14) + 'px;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">' + starsHtml + '<div style="display:flex;align-items:center;justify-content:center">' + numHtml + '</div>' + bottom + '</div>';
+  }
+
   // ---- Comic-record adapter (shared by all render surfaces) -----------------
   // Interior PHYSICAL-flaw keywords, distinct from page COLOR (pageQuality
   // already scores color). Presence drops the interior tier one step (§3 step 2).
@@ -242,7 +281,7 @@
   }
 
   var api = { compute: computeRoboScoreV3, forComic: forComic, depthOf: depthOf, computePM: computePM, formatPM: formatPM,
-              formatGrade: formatGrade, gradeParts: gradeParts,
+              formatGrade: formatGrade, gradeParts: gradeParts, scoreBox: scoreBox,
               interiorTier: interiorTier, interiorBase: interiorBase, roundHalf: roundHalf,
               shaveToCap: shaveToCap, DEPTH_CAP: DEPTH_CAP };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
@@ -1925,7 +1964,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         <a href="mailto:support@robograder.app" style="font-size:14px;font-weight:700;color:#d4af37;text-decoration:none;letter-spacing:0.3px">support@robograder.app</a>
       </div>
       <div style="font-size:11px;color:#4a3a2a;line-height:1.6;text-align:center">
-        <span id="rgVersionLine">Robograder v4.72</span> · Assessment credits are non-refundable.
+        <span id="rgVersionLine">Robograder v4.72</span>
         Images are stored securely in your personal account.
       </div>
       <script>
@@ -3155,7 +3194,7 @@ function rgV2Grade(c) {
 // Scoring v3 display: half-point 0-10. Preview live with ?v3=1 (normal visitors
 // unaffected until rollout). When RG_V3_DISPLAY is on, COMICS render the v3
 // grade + PM; cards keep v2. Flip the default to true at launch (one constant).
-const RG_V3_DISPLAY = window.RG_V3_DISPLAY = (function(){ try { const p = new URLSearchParams(location.search); if (p.has("v3")) return p.get("v3") !== "0"; } catch(e){} return false; })();
+const RG_V3_DISPLAY = window.RG_V3_DISPLAY = (function(){ try { const p = new URLSearchParams(location.search); if (p.has("v3")) return p.get("v3") !== "0"; } catch(e){} return true; })();  // v3 LIVE (S22); ?v3=0 to disable
 // Full v3 result object for a COMIC (grade, pmLabel, upsell, ceilingHit, ...), or null.
 // Delegates to the shared RoboScoreV3.forComic derivation (single source of truth).
 function rgV3ForComic(c) { try { return (RG_V3_DISPLAY && window.RoboScoreV3) ? window.RoboScoreV3.forComic(c) : null; } catch (e) { return null; } }
@@ -3178,6 +3217,11 @@ function buildListBadge(c) {
     const bgColor = _isRestored ? '#1a1226' : '#152e10';
     const borderColor = _isRestored ? '#4a2a6a' : '#3a5818';
     const numColor = _isRestored ? '#c8a8e8' : '#b8d820';
+    // v3 comics: shared score box (stars + number only; no PM/version in List — too small).
+    if (_v3g != null) {
+      const _r3 = rgV3ForComic(c);
+      return window.RoboScoreV3.scoreBox({ grade: _r3.grade, stars: isFullAssessmentComplete(c) ? 3 : isDeepAssessmentComplete(c) ? 2 : 1, restoStar: isRestorationCheckComplete(c), restoColor: '#b58be0', footer: '', size: 56, numColor: numColor, starColor: numColor, bg: bgColor, borderColor: borderColor });
+    }
     // Score stays DEAD CENTER (cardinal rule). Stars are an absolutely-positioned
     // overlay near the top so they never displace the number.
     return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="position:absolute;top:6px;left:0;right:0;text-align:center;display:flex;justify-content:center">${assessmentTierStars(c, { size: 9, color: numColor })}</div>\n      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:${numColor};line-height:1">${_dispG != null ? (() => { const _s=String(_dispG); const _m=_s.match(/^(\d+|—|-)([+\-]|\.\d)?$/); const _b=_m?_m[1]:_s; const _f=(_m&&_m[2])?_m[2]:""; return `<span style="position:relative;display:inline-block;line-height:1">${_b}${_f?`<span style="position:absolute;left:100%;top:3px;font-size:15px;font-weight:600;line-height:1">${_f}</span>`:""}</span>`; })() : `${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#7aa838;margin-left:1px">+</span>' : ""}`}</div>\n    </div>`;
@@ -7268,6 +7312,40 @@ function _showBrandedModal(title, body, btnLabel) {
   if (b) b.onclick = close;
 }
 
+// Depth-ceiling upsell pop-up (v3). Auto-shown after an assessment whose grade
+// hit the Main (9.0) or Deep (9.5) ceiling. Styled like rgPopup with the
+// Robograder head; star + coin symbols inline; single OKAY button.
+function showCeilingUpsell(upsell) {
+  if (upsell !== 'deep' && upsell !== 'full') return;
+  var GOLD = '#d4af37';
+  var star = function(n){ var s=''; for(var i=0;i<n;i++) s+=tierStarSVG(15, GOLD); return '<span style="display:inline-flex;gap:1px;vertical-align:-3px">'+s+'</span>'; };
+  var coin = '<img src="assets/robocoin2.webp" style="width:18px;height:18px;vertical-align:-4px;display:inline-block" alt="credit">';
+  var title, msg;
+  if (upsell === 'deep') {
+    title = 'Push it higher?';
+    msg = 'This book has hit the 9.0 ceiling for a '+star(1)+' assessment. A '+star(2)+' with 6 new images can push it to 9.5. The '+coin+' will be refunded if the score doesn’t go up.';
+  } else {
+    title = 'Confirm a 10?';
+    msg = 'This book has hit the 9.5 ceiling for a '+star(2)+' assessment. A '+star(3)+' with 6 new images can push it to 10 if no defects are found. '+coin+' will not be refunded.';
+  }
+  var prev = document.getElementById('rg-upsell-overlay'); if (prev) prev.remove();
+  var ov = document.createElement('div'); ov.id = 'rg-upsell-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:24px;padding-top:max(24px,env(safe-area-inset-top));padding-bottom:max(24px,env(safe-area-inset-bottom));opacity:0;transition:opacity .15s ease;';
+  var card = document.createElement('div');
+  card.style.cssText = 'width:100%;max-width:340px;background:#152e10;border:1.5px solid #4a7028;border-radius:16px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.5);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,\"Segoe UI\",sans-serif;';
+  card.innerHTML = '<div style="height:5px;background:'+GOLD+'"></div>'
+    + '<div style="padding:18px 20px 18px;text-align:center;">'
+    + '<img src="assets/Robograder_Logo.webp" alt="Robograder" style="width:66px;height:66px;object-fit:contain;margin:0 auto 10px;display:block">'
+    + '<div style="font-size:16px;font-weight:800;color:#eaf5df;margin-bottom:8px">'+title+'</div>'
+    + '<div style="font-size:13.5px;line-height:1.55;color:#c3d9b2;text-align:left">'+msg+'</div>'
+    + '<button id="rg-upsell-ok" style="margin-top:18px;width:100%;padding:12px;border:none;border-radius:10px;background:'+GOLD+';color:#231a02;font-size:15px;font-weight:800;letter-spacing:.5px;cursor:pointer">OKAY</button>'
+    + '</div>';
+  ov.appendChild(card); document.body.appendChild(ov);
+  requestAnimationFrame(function(){ ov.style.opacity='1'; card.style.transform='translateY(0) scale(1)'; });
+  function close(){ ov.style.opacity='0'; setTimeout(function(){ if(ov.parentNode) ov.parentNode.removeChild(ov); },160); }
+  card.querySelector('#rg-upsell-ok').onclick = close;
+  ov.addEventListener('click', function(e){ if(e.target===ov) close(); });
+}
 function mountResults(cgc, psa) {
   const dbg = msg => {
     if (window.RobograderScan && window.RobograderScan.debugLog) {
@@ -7336,7 +7414,7 @@ function mountResults(cgc, psa) {
       },
       robograde: {
         bg: "#0f1a05",
-        text: "#aaee30",
+        text: "#b8d820",
         label: "RG",
         initial: _rgInitStr,
         border: "1.5px solid #3a5010"
@@ -7349,7 +7427,7 @@ function mountResults(cgc, psa) {
   let badgesHtml = "";
   if (roboScore != null) badgesHtml += makeBadge("robograde", "anim-val-robo");
   if (predictedGrade) badgesHtml += makeBadge("predicted", "anim-val-cgc");
-  const resultsHtml = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n      <div id="result-grades" style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badgesHtml}</div>\n      <div id="result-pq" style="display:flex;align-items:center;justify-content:center;min-height:22px;">\n        <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n      </div>\n      ${_refunded ? `<div style="display:flex;flex-direction:column;align-items:center;gap:1px;margin-top:2px"><img src="assets/robocoin2.webp" style="width:34px;height:34px" alt=""><div style="color:#d4af37;font-size:11px;font-weight:800;letter-spacing:0.5px">+1 CREDIT REFUNDED</div><div style="color:#cfc3a8;font-size:10px;letter-spacing:0.3px">grade not improved</div></div>` : ""}\n      <button id="assess-complete-btn" disabled\n        style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">\n        ASSESSING…\n      </button>\n    </div>`;
+  const resultsHtml = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n      <div id="result-grades" style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badgesHtml}</div>\n      <div id="result-pq" style="display:flex;align-items:center;justify-content:center;min-height:22px;">\n        <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n      </div>\n      ${_refunded ? `<div style="display:flex;flex-direction:column;align-items:center;gap:1px;margin-top:2px"><img src="assets/robocoin2.webp" style="width:34px;height:34px" alt=""><div style="color:#d4af37;font-size:11px;font-weight:800;letter-spacing:0.5px">+1 REFUNDED</div><div style="color:#cfc3a8;font-size:10px;letter-spacing:0.3px">Grade did not go up</div></div>` : ""}\n      <button id="assess-complete-btn" disabled\n        style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">\n        ASSESSING…\n      </button>\n    </div>`;
   window.RobograderScan.slideResultsIntoPanel(resultsHtml);
   dbg("mountResults: results html replaced");
   const roboEl = document.getElementById("anim-val-robo");
@@ -7366,7 +7444,7 @@ function mountResults(cgc, psa) {
     const _v3res = (window.RG_V3_DISPLAY && window.RoboScoreV3 && formData.type !== 'card' && roboGrade && roboGrade.frontScore != null) ? window.RoboScoreV3.forComic({ ...formData, roboGrade: roboGrade }) : null;
     if (_v3res != null) {
       roboEl.style.fontSize = '26px';
-      animateV3Ladder(roboEl, _v3res.grade, 2000).then(() => { popResultBadge(roboEl); if (_v3res.grade === 10) applyPerfect10Gold(roboEl, '10'); });
+      animateV3Ladder(roboEl, _v3res.grade, 2000).then(() => { popResultBadge(roboEl); if (_v3res.grade === 10) applyPerfect10Gold(roboEl, '10'); if (_v3res.upsell) setTimeout(() => showCeilingUpsell(_v3res.upsell), 700); });
     } else if (_v2g != null) {
       roboEl.style.fontSize = '26px';
       animateRGLadder(roboEl, _v2g, 2000).then(() => { popResultBadge(roboEl); applyPerfect10Gold(roboEl, _v2g); });
@@ -10572,7 +10650,7 @@ function _openAssignOverlay(picked) {
   _assign = { labels, slots, tray, active: null };
   let ov = document.getElementById("assign-overlay");
   if (!ov) { ov = document.createElement("div"); ov.id = "assign-overlay"; document.body.appendChild(ov); }
-  ov.style.cssText = "position:fixed;inset:0;z-index:100001;background:rgba(0,0,0,0.94);display:flex;flex-direction:column;padding:max(env(safe-area-inset-top,16px),16px) 14px max(env(safe-area-inset-bottom,16px),16px);overflow:auto";
+  ov.style.cssText = "position:fixed;inset:0;z-index:100001;background:radial-gradient(circle at 50% 0%, #16300f 0%, #0a1705 72%);display:flex;flex-direction:column;padding:max(env(safe-area-inset-top,16px),16px) 14px max(env(safe-area-inset-bottom,16px),16px);overflow:auto";
   _renderAssign();
 }
 function _closeAssign() { const ov = document.getElementById("assign-overlay"); if (ov) ov.style.display = "none"; _assign = null; }
@@ -10580,23 +10658,27 @@ function _renderAssign() {
   const ov = document.getElementById("assign-overlay"); if (!ov || !_assign) return;
   const A = _assign;
   const slotCells = A.slots.map((src, i) => {
+    const _act = A.active != null;
     const inner = src
-      ? `<img src="${src}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"><button onclick="event.stopPropagation();_assignClearSlot(${i})" aria-label="Remove" style="position:absolute;top:3px;right:4px;z-index:2;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:14px;line-height:1;cursor:pointer">×</button>`
-      : `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#7a7a7a;font-size:11px">${A.active != null ? "tap to place" : "empty"}</div>`;
-    return `<div onclick="_assignTapSlot(${i})" style="position:relative;aspect-ratio:5/7;background:#161616;border:2px solid ${A.active != null ? '#6abf6a' : '#333'};border-radius:6px;overflow:hidden;cursor:pointer">${inner}<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.6);color:#fff;font-size:10px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:3px 4px;text-align:center">${A.labels[i]}</div></div>`;
+      ? `<img src="${src}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"><button onclick="event.stopPropagation();_assignClearSlot(${i})" aria-label="Remove" style="position:absolute;top:4px;right:4px;z-index:2;background:rgba(0,0,0,0.55);color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:14px;line-height:1;cursor:pointer">×</button>`
+      : `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:${_act ? '#b8d820' : '#5a7040'};font-size:11px;font-weight:600;letter-spacing:0.3px">${_act ? "tap to place" : "empty"}</div>`;
+    return `<div onclick="_assignTapSlot(${i})" style="position:relative;aspect-ratio:5/7;background:#12200a;border:2px solid ${_act ? '#b8d820' : '#3a5818'};border-radius:10px;overflow:hidden;cursor:pointer;box-shadow:${_act ? '0 0 0 3px rgba(184,216,32,0.18)' : '0 1px 4px rgba(0,0,0,0.4)'};transition:border-color .12s,box-shadow .12s">${inner}<div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(10,23,5,0.92));color:#d7e8c2;font-size:10px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;padding:10px 4px 4px;text-align:center;font-family:'Barlow Condensed',sans-serif">${A.labels[i]}</div></div>`;
   }).join("");
   const trayCells = A.tray.length
-    ? A.tray.map((src, i) => `<div onclick="_assignTapTray(${i})" style="position:relative;width:64px;height:88px;flex:0 0 auto;border:2px solid ${A.active === i ? '#6abf6a' : '#333'};border-radius:6px;overflow:hidden;cursor:pointer;${A.active === i ? 'box-shadow:0 0 0 2px rgba(106,191,106,0.45)' : ''}"><img src="${src}" style="width:100%;height:100%;object-fit:cover"></div>`).join("")
-    : `<div style="color:#7a7a7a;font-size:12px;padding:8px">All photos placed.</div>`;
+    ? A.tray.map((src, i) => `<div onclick="_assignTapTray(${i})" style="position:relative;width:64px;height:88px;flex:0 0 auto;border:2px solid ${A.active === i ? '#b8d820' : '#3a5818'};border-radius:8px;overflow:hidden;cursor:pointer;${A.active === i ? 'box-shadow:0 0 0 3px rgba(184,216,32,0.28)' : 'box-shadow:0 1px 4px rgba(0,0,0,0.4)'}"><img src="${src}" style="width:100%;height:100%;object-fit:cover"></div>`).join("")
+    : `<div style="color:#5a7040;font-size:12px;padding:8px">All photos placed.</div>`;
   ov.innerHTML = `
-    <div style="color:#d8ccc0;font-size:17px;font-weight:700;font-family:'Barlow Condensed',sans-serif;letter-spacing:0.5px;margin-bottom:4px">Place your photos</div>
-    <div style="color:#9a8a7a;font-size:12px;margin-bottom:12px;line-height:1.4">They're pre-filled in the order your phone returned them. Tap a photo, then tap the slot it belongs to, to fix any that are wrong. Tap a slot's × to send it back down.</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;max-width:360px;margin:0 auto 14px;width:100%">${slotCells}</div>
-    <div style="color:#8a8d96;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Photos${A.active != null ? ' — now tap a slot' : ''}</div>
-    <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;min-height:92px;align-items:center">${trayCells}</div>
-    <div style="display:flex;gap:10px;margin-top:auto;padding-top:12px">
-      <button onclick="_assignCancel()" style="flex:1;padding:12px;border-radius:10px;background:transparent;color:#9a8a7a;border:1px solid #3a322c;font-size:14px;font-weight:700;cursor:pointer">Cancel</button>
-      <button onclick="_assignDone()" style="flex:1;padding:12px;border-radius:10px;background:#2a7a3a;color:#fff;border:1px solid #1f5f2c;font-size:14px;font-weight:700;cursor:pointer">Done</button>
+    <div style="max-width:384px;margin:0 auto;width:100%;display:flex;flex-direction:column;flex:1">
+      <img src="assets/Robograder_Logo.webp" alt="" style="width:48px;height:48px;object-fit:contain;margin:0 auto 6px;display:block">
+      <div style="color:#eaf5df;font-size:23px;font-weight:700;font-family:'Barlow Condensed',sans-serif;letter-spacing:0.5px;margin-bottom:4px;text-align:center">Place your photos</div>
+      <div style="color:#9abf60;font-size:12.5px;margin-bottom:16px;line-height:1.5;text-align:center">Pre-filled in the order your phone returned them. Tap a photo, then the slot it belongs in, to fix any that are wrong. Tap a slot's × to send it back down.</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 auto 16px;width:100%">${slotCells}</div>
+      <div style="color:#7aa838;font-size:11px;text-transform:uppercase;letter-spacing:1.2px;font-weight:700;margin-bottom:8px">Photos${A.active != null ? ' — now tap a slot' : ''}</div>
+      <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;min-height:96px;align-items:center">${trayCells}</div>
+      <div style="display:flex;gap:10px;margin-top:auto;padding-top:14px">
+        <button onclick="_assignCancel()" style="flex:1;padding:13px;border-radius:12px;background:transparent;color:#9abf60;border:1.5px solid #3a5818;font-size:14px;font-weight:800;letter-spacing:0.5px;cursor:pointer;font-family:system-ui,sans-serif">CANCEL</button>
+        <button onclick="_assignDone()" style="flex:2;padding:13px;border-radius:12px;background:#4e9e2e;color:#0d1f08;border:none;font-size:15px;font-weight:800;letter-spacing:1px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.4);font-family:system-ui,sans-serif">DONE</button>
+      </div>
     </div>`;
 }
 function _assignTapTray(i) { if (!_assign) return; _assign.active = (_assign.active === i) ? null : i; _renderAssign(); }

@@ -514,7 +514,13 @@ export default async function handler(req, res) {
   if (baseUrl && title && issueNumber && !suppressReference && !AB_FORCE_SUPPRESS_REFERENCE) {
     try {
       const _dbg = [];
-      const _slug = String(title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      const _slugify = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      // Try BOTH the raw title and a de-"The" variant — reference files are named
+      // without a leading article (amazing-spider-man_...), but books are often
+      // stored as "The Amazing Spider-Man". (The ComicVine path strips "The" too.)
+      const _slugRaw = _slugify(title);
+      const _slugDeThe = _slugify(String(title).replace(/^the\s+/i, ''));
+      const _slugs = [...new Set([_slugDeThe, _slugRaw])].filter(Boolean);
       const _iss = String(issueNumber).replace(/^#/, '').replace(/^0+(\d)/, '$1').trim();
       const _yr = (() => {
         const _m = String(issueDate || '').match(/(?:19|20)\d{2}/);   // client sends year as issueDate 'Mon YYYY'
@@ -522,8 +528,10 @@ export default async function handler(req, res) {
         return (typeof issueYear === 'number' && issueYear > 1900) ? issueYear : null;
       })();
       const _bases = [];
-      if (_yr) _bases.push(`${_slug}_${_iss}_${_yr}`);
-      _bases.push(`${_slug}_${_iss}`);
+      for (const _s of _slugs) {
+        if (_yr) _bases.push(`${_s}_${_iss}_${_yr}`);
+        _bases.push(`${_s}_${_iss}`);
+      }
       for (const _b of _bases) {
         const _frontUrl = `${baseUrl}/reference_covers/${_b}_front.jpg`;
         const _fr = await fetchWithTimeout(_frontUrl, {}, 5000);

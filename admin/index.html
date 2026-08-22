@@ -2319,6 +2319,45 @@ const RGV2 = (function () {
   function formatGrade(g){ g = Number(g); return (g % 1 === 0) ? String(g) : g.toFixed(1); }
   function gradeParts(g){ g = Number(g); var w = Math.trunc(g); return { whole: String(w), frac: (g % 1 === 0) ? "" : ("." + Math.round((g - w) * 10)) }; }
 
+  // ---- Shared score-box renderer (identical look on every surface) ----------
+  // Structural anti-clip layout: stars pinned top-center; the number is
+  // flex-centered so it is ALWAYS dead-center regardless of PM width; PM and the
+  // footer (version / "RG") are stacked at the bottom, so PM can never touch the
+  // stars or the number. One uniform-size decimal — no fragile superscript.
+  // opts: {grade, pmLabel, stars(0-3), restoStar, footer('version'|'RG'|''),
+  //   footerText, size, numColor, starColor, footerColor, pmColor, bg, border}
+  var _STAR_PATH = "M12,2 15.64,6.98 21.51,8.91 17.9,13.92 17.88,20.09 12,18.2 6.12,20.09 6.1,13.92 2.49,8.91 8.36,6.98Z";
+  function _starRow(n, px, color, resto, restoColor) {
+    var s = "";
+    for (var i = 0; i < n; i++) s += '<svg viewBox="0 0 24 24" width="' + px + '" height="' + px + '" style="display:inline-block"><path d="' + _STAR_PATH + '" fill="' + color + '"/></svg>';
+    if (resto) s += '<svg viewBox="0 0 24 24" width="' + px + '" height="' + px + '" style="display:inline-block"><path d="' + _STAR_PATH + '" fill="' + (restoColor || "#b58be0") + '"/></svg>';
+    return s ? '<span style="display:inline-flex;gap:1px;align-items:center;line-height:1">' + s + '</span>' : "";
+  }
+  function scoreBox(o) {
+    o = o || {};
+    var size = o.size || 104;
+    var numColor = o.numColor || "#b8d820";
+    var starColor = o.starColor || numColor;
+    var footerColor = o.footerColor || numColor;
+    var pmColor = o.pmColor || footerColor;
+    var bg = o.bg || "#0f1a05";
+    var border = o.border || ("1.5px solid " + (o.borderColor || "#3a5010"));
+    var stars = o.stars || 0;
+    var starPx = o.starPx || Math.max(8, Math.round(size * 0.11));
+    var numSize = o.numSize || Math.round(size * 0.52);
+    var p = gradeParts(o.grade);
+    var numHtml = '<span style="font-family:\'Noto Sans Display\',system-ui,sans-serif;font-weight:900;color:' + numColor + ';line-height:1;font-size:' + numSize + 'px;letter-spacing:-0.02em;display:inline-block;transform:scaleX(0.86);transform-origin:center">' + p.whole + p.frac + '</span>';
+    var starsHtml = (stars > 0 || o.restoStar) ? '<div style="position:absolute;top:' + Math.round(size*0.055) + 'px;left:0;right:0;display:flex;justify-content:center;pointer-events:none">' + _starRow(stars, starPx, starColor, o.restoStar, o.restoColor) + '</div>' : "";
+    // bottom stack: PM (optional) above footer (optional), both centered
+    var bottom = "";
+    var pmHtml = (o.pmLabel) ? '<div style="font-family:\'Noto Sans Display\',system-ui,sans-serif;font-size:' + Math.max(10, Math.round(size*0.12)) + 'px;font-weight:700;color:' + pmColor + ';line-height:1;white-space:nowrap">' + o.pmLabel + '</div>' : "";
+    var footHtml = "";
+    if (o.footer === "RG") footHtml = '<div style="font-size:' + Math.max(8, Math.round(size*0.086)) + 'px;font-weight:700;color:' + footerColor + ';opacity:0.85;letter-spacing:1px;line-height:1">RG</div>';
+    else if (o.footer === "version" && o.footerText) footHtml = '<div style="font-size:' + Math.max(7, Math.round(size*0.077)) + 'px;font-weight:700;color:' + footerColor + ';opacity:0.8;letter-spacing:0.8px;line-height:1">' + o.footerText + '</div>';
+    if (pmHtml || footHtml) bottom = '<div style="position:absolute;bottom:' + Math.round(size*0.06) + 'px;left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none">' + pmHtml + footHtml + '</div>';
+    return '<div style="position:relative;width:' + size + 'px;height:' + size + 'px;background:' + bg + ';border:' + border + ';border-radius:' + Math.round(size*0.14) + 'px;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">' + starsHtml + '<div style="display:flex;align-items:center;justify-content:center">' + numHtml + '</div>' + bottom + '</div>';
+  }
+
   // ---- Comic-record adapter (shared by all render surfaces) -----------------
   // Interior PHYSICAL-flaw keywords, distinct from page COLOR (pageQuality
   // already scores color). Presence drops the interior tier one step (§3 step 2).
@@ -2356,7 +2395,7 @@ const RGV2 = (function () {
   }
 
   var api = { compute: computeRoboScoreV3, forComic: forComic, depthOf: depthOf, computePM: computePM, formatPM: formatPM,
-              formatGrade: formatGrade, gradeParts: gradeParts,
+              formatGrade: formatGrade, gradeParts: gradeParts, scoreBox: scoreBox,
               interiorTier: interiorTier, interiorBase: interiorBase, roundHalf: roundHalf,
               shaveToCap: shaveToCap, DEPTH_CAP: DEPTH_CAP };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
@@ -2432,11 +2471,12 @@ function renderItemDetail(it) {
 
     <h3 class="section-h">Grades</h3>
     <div style="display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;margin:2px 0 6px;">
-      <div style="background:#0f1a05;border:1.5px solid #3a5010;border-radius:8px;padding:5px 12px;text-align:center;min-width:56px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">
-        <div style="font-size:10px;color:#7aa838;letter-spacing:1px;height:12px;line-height:12px;">${'★'.repeat(tier)}</div>
-        <div style="font-size:22px;font-weight:800;color:#aaee30;line-height:1.15;">${v(it.score)}</div>
-        <div style="font-size:9px;color:#aaee30;opacity:0.75;letter-spacing:0.8px;">RG</div>
-      </div>
+      ${(it.type !== 'card' && window.RoboScoreV3 && (it.frontScore != null || it.backScore != null || it.spineScore != null)) ? (() => {
+        const _t3 = !!(it.interiorImages && it.interiorImages.length);
+        const _t2 = !_t3 && !!(it.cornerImages && it.cornerImages.length);
+        const _r = window.RoboScoreV3.forComic({ roboGrade: { frontScore: it.frontScore, backScore: it.backScore, spineScore: it.spineScore, pageQuality: it.pageQuality, defects: it.defects || (it.roboGrade && it.roboGrade.defects) || [] }, photograder: it.photograder, labelDetected: !!(it.officialCGCGrade || it.officialPSAGrade), fullAssessmentRan: _t3, deepAssessmentRan: _t2, fullInteriorComplete: _t3 });
+        return _r ? window.RoboScoreV3.scoreBox({ grade: _r.grade, pmLabel: _r.pmLabel, stars: _t3?3:_t2?2:1, footer: 'RG', size: 76, numColor: '#b8d820', starColor: '#b8d820', footerColor: '#b8d820', pmColor: '#b8d820', bg: '#0f1a05', borderColor: '#3a5010' }) : '';
+      })() : `<div style="background:#0f1a05;border:1.5px solid #3a5010;border-radius:8px;padding:5px 12px;text-align:center;min-width:56px;box-shadow:0 2px 6px rgba(0,0,0,0.4);"><div style="font-size:10px;color:#7aa838;letter-spacing:1px;height:12px;line-height:12px;">${'★'.repeat(tier)}</div><div style="font-size:22px;font-weight:800;color:#aaee30;line-height:1.15;">${v(it.score)}</div><div style="font-size:9px;color:#aaee30;opacity:0.75;letter-spacing:0.8px;">RG</div></div>`}
       ${it.type === 'card'
         ? `<div style="background:#b91c1c;border-radius:8px;padding:5px 12px;text-align:center;min-width:56px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">
         <div style="height:12px;"></div>
@@ -2458,68 +2498,23 @@ function renderItemDetail(it) {
 
     ${(() => {
       try {
-        const isCard = it.type === 'card';
-        let subs, ok = false;
-        if (isCard && it.cardRobograde) {
-          const cr = it.cardRobograde;
-          subs = { surface: cr.surface && cr.surface.total, centering: cr.centering && cr.centering.total, corners: cr.corners && cr.corners.total, edges: cr.edges && cr.edges.total };
-          ok = [subs.surface,subs.centering,subs.corners,subs.edges].some(v => v != null);
-        } else if (!isCard) {
-          subs = { front: it.frontScore, back: it.backScore, spine: it.spineScore, interior: it.interiorScore };
-          ok = [subs.front,subs.back,subs.spine,subs.interior].some(v => v != null);
-        }
-        if (!ok) return '';
-        const v2 = RGV2.fromSubscores(subs, isCard ? 'card' : 'comic');
-        const slabbed = !!(it.officialCGCGrade || it.officialPSAGrade);
-        const pmBase = slabbed ? RGV2.PM_BASE.slabbed : RGV2.PM_BASE.main;
-        const pm = pmBase + _pmPenalty(it.photograder);
-        const band = RGV2.pmBand(v2.grade, pm);
-        const chips = v2.subs.map(s => `<span style="background:#12200a;border:1px solid #2c4414;border-radius:6px;padding:3px 9px;font-size:12px;color:#bfe08a"><b style="color:#eaffc9">${s.display}</b> <span style="opacity:0.7">${s.label}</span></span>`).join('');
-        return `<h3 class="section-h" style="margin-top:20px;color:var(--accent);">Robograde v2 (preview)</h3>
-          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:2px 0 10px;">
-            <div style="position:relative;background:#0f1a05;border:1.5px solid #3a5010;border-radius:10px;width:74px;height:74px;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.4);">
-              <div title="${tier === 3 ? 'Full' : tier === 2 ? 'Deep' : 'Main'} assessment" style="font-size:10px;color:#7aa838;letter-spacing:1.5px;height:12px;line-height:12px;">${'★'.repeat(tier)}</div>
-              ${pm > 0 ? `<div title="Precision: ${pm} notch${pm === 1 ? '' : 'es'}" style="position:absolute;top:5px;right:6px;display:inline-flex;align-items:center;gap:1px;color:#aaee30;font-size:11px;font-weight:700;line-height:1"><svg viewBox="0 0 12 16" width="8" height="11" style="display:block" aria-hidden="true"><g transform="matrix(0.5,0,0,0.5,0,2)"><path d="M12,2.5L16.5,8.5L13.6,8.5L13.6,15.5L16.5,15.5L12,21.5L7.5,15.5L10.4,15.5L10.4,8.5L7.5,8.5L12,2.5Z" fill="currentColor" stroke="currentColor" stroke-width="1"/></g></svg>${pm}</div>` : ''}
-              <div style="line-height:1;margin:2px 0;position:relative;display:inline-block;">${(() => { const _m = String(v2.grade).match(/^(\d+)([+-]?)$/); const _b = _m ? _m[1] : v2.grade; const _md = _m ? _m[2] : ''; return `<span style="font-size:25px;font-weight:800;color:#aaee30;display:inline-block">${_b}</span>${_md ? `<span style="position:absolute;left:100%;top:1px;margin-left:1px;font-size:13px;font-weight:400;color:#aaee30;line-height:1">${_md}</span>` : ''}`; })()}</div>
-              <div style="font-size:9px;color:#aaee30;opacity:0.8;letter-spacing:0.5px;">RG</div>
-            </div>
-            <div style="display:flex;flex-direction:column;gap:6px;min-width:0;">
-              <div style="display:flex;gap:6px;flex-wrap:wrap;">${chips}</div>
-              <div style="font-size:11px;color:#9ab;line-height:1.4;">from 0–100: <b style="color:#cde">${it.score == null ? '—' : it.score}</b> · subscores sum to the grade · likely <b style="color:#cde">${band}</b>${slabbed ? ' · slabbed' : ''}</div>
-            </div>
-          </div>`;
-      } catch (e) { return '<div style="color:#a55;font-size:11px">v2 preview error: ' + (e && e.message || e) + '</div>'; }
-    })()}
-    ${(() => {
-      try {
         if (it.type === 'card' || !window.RoboScoreV3) return '';
         if (it.frontScore == null && it.backScore == null && it.spineScore == null) return '';
-        const tier3 = !!(it.interiorImages && it.interiorImages.length);
-        const tier2 = !tier3 && !!(it.cornerImages && it.cornerImages.length);
-        const _c = { roboGrade: { frontScore: it.frontScore, backScore: it.backScore, spineScore: it.spineScore, pageQuality: it.pageQuality, defects: it.defects || (it.roboGrade && it.roboGrade.defects) || [] }, photograder: it.photograder, labelDetected: !!(it.officialCGCGrade || it.officialPSAGrade), fullAssessmentRan: tier3, deepAssessmentRan: tier2, fullInteriorComplete: tier3 };
-        const r = window.RoboScoreV3.forComic(_c);
+        const _t3 = !!(it.interiorImages && it.interiorImages.length);
+        const _t2 = !_t3 && !!(it.cornerImages && it.cornerImages.length);
+        const r = window.RoboScoreV3.forComic({ roboGrade: { frontScore: it.frontScore, backScore: it.backScore, spineScore: it.spineScore, pageQuality: it.pageQuality, defects: it.defects || (it.roboGrade && it.roboGrade.defects) || [] }, photograder: it.photograder, labelDetected: !!(it.officialCGCGrade || it.officialPSAGrade), fullAssessmentRan: _t3, deepAssessmentRan: _t2, fullInteriorComplete: _t3 });
         if (!r) return '';
-        const gp = window.RoboScoreV3.gradeParts(r.grade), gb = gp.whole, gf = gp.frac;
         const sd = n => Number.isInteger(n) ? String(n) : Number(n).toFixed(1);
         const s = r.subscores;
-        const chips = [[sd(s.front),'Front'],[sd(s.back),'Back'],[sd(s.spine),'Spine'],[sd(s.interior),'Int']]
-          .map(([val,lbl]) => `<span style="background:#1a0a20;border:1px solid #4a2060;border-radius:6px;padding:3px 9px;font-size:12px;color:#e0b0ff"><b style="color:#f4d9ff">${val}</b> <span style="opacity:0.7">${lbl}</span></span>`).join('');
-        const depth = tier3 ? 'Full' : tier2 ? 'Deep' : 'Main';
+        const chips = [[sd(s.front),'Front'],[sd(s.back),'Back'],[sd(s.spine),'Spine'],[sd(s.interior),'Int']].map(([val,lbl]) => `<span style="background:#12200a;border:1px solid #2c4414;border-radius:6px;padding:3px 9px;font-size:12px;color:#bfe08a"><b style="color:#eaffc9">${val}</b> <span style="opacity:0.7">${lbl}</span></span>`).join('');
+        const depth = _t3 ? 'Full' : _t2 ? 'Deep' : 'Main';
         const note = r.ceilingHit ? ` &middot; capped at ${depth} ceiling${r.upsell ? ` (${r.upsell} can raise)` : ''}` : '';
-        return `<h3 class="section-h" style="margin-top:20px;color:#d070ff;">Robograde v3 (preview)</h3>
-          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:2px 0 10px;">
-            <div style="position:relative;background:#160a1e;border:1.5px solid #4a2060;border-radius:10px;width:74px;height:74px;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.4);">
-              <div title="${depth} assessment" style="font-size:10px;color:#b070d0;letter-spacing:1.5px;height:12px;line-height:12px;">${'★'.repeat(tier3?3:tier2?2:1)}</div>
-              ${r.pmLabel ? `<div title="Precision Modifier" style="position:absolute;top:5px;right:6px;color:#e0b0ff;font-size:11px;font-weight:700;line-height:1">${r.pmLabel}</div>` : ''}
-              <div style="line-height:1;margin:2px 0;position:relative;display:inline-block;"><span style="font-size:25px;font-weight:800;color:#e0b0ff;display:inline-block">${gb}</span>${gf ? `<span style="position:absolute;left:100%;top:1px;margin-left:1px;font-size:13px;font-weight:500;color:#e0b0ff;line-height:1">${gf}</span>` : ''}</div>
-              <div style="font-size:9px;color:#e0b0ff;opacity:0.8;letter-spacing:0.5px;">RG</div>
-            </div>
-            <div style="display:flex;flex-direction:column;gap:6px;min-width:0;">
-              <div style="display:flex;gap:6px;flex-wrap:wrap;">${chips}</div>
-              <div style="font-size:11px;color:#b9a;line-height:1.4;">from 0&ndash;100: <b style="color:#edc">${it.score == null ? '—' : it.score}</b> &middot; subscores sum to the grade${note}</div>
-            </div>
+        return `<h3 class="section-h" style="margin-top:20px;color:var(--accent);">Robograde v3 subscores</h3>
+          <div style="display:flex;flex-direction:column;gap:6px;margin:2px 0 10px;">
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">${chips}</div>
+            <div style="font-size:11px;color:#9ab;line-height:1.4;">from 0&ndash;100: <b style="color:#cde">${it.score == null ? '—' : it.score}</b> &middot; subscores sum to the grade${note}</div>
           </div>`;
-      } catch (e) { return '<div style="color:#a55;font-size:11px">v3 preview error: ' + (e && e.message || e) + '</div>'; }
+      } catch (e) { return '<div style="color:#a55;font-size:11px">v3 breakdown error: ' + (e && e.message || e) + '</div>'; }
     })()}
     ${(() => {
       const pg = it.photograder;

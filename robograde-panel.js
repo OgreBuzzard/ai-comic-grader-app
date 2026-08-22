@@ -268,35 +268,13 @@
     return `<div style="background:${BG};border:1.5px solid ${OLIVE_MID};border-radius:12px;padding:14px 14px 0;margin-bottom:8px;overflow:hidden">
       <div style="font-size:12px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:10px;text-align:center">ROBOGRADE SCORE</div>
       <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px">
-        <div style="background:${_sbBg};border-radius:18px;width:104px;height:104px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px solid ${_sbBorder};position:relative">
-          ${(() => {
-            if (_v3) {
-              return precision ? `<span style="font-family:'Noto Sans Display',sans-serif;font-size:18px;font-weight:700;color:${OLIVE_LT};position:absolute;top:9px;right:9px;white-space:nowrap;line-height:1;display:inline-block;transform:scaleX(0.62);transform-origin:right center">${precision.replace('±', '± ')}</span>` : '';
-            }
-            if (_v2on) {
-              if (!precision) return '';
-              const _n = precision.replace(/^↕/, '');
-              return `<span style="position:absolute;top:9px;right:9px;color:${_sbNum};line-height:1;display:inline-flex;align-items:center;gap:2px;font-family:'Noto Sans Display',sans-serif;font-size:15px;font-weight:700"><img src="/assets/pm-notch.svg" width="9" height="12" style="display:block" alt="">${_n}</span>`;
-            }
-            return precision ? `<span style="font-family:'Noto Sans Display',sans-serif;font-size:18px;font-weight:700;color:${OLIVE_LT};position:absolute;top:9px;right:9px;white-space:nowrap;line-height:1;display:inline-block;transform:scaleX(0.62);transform-origin:right center">${precision.replace('±', '± ')}</span>` : '';
-          })()}
-          <div style="position:absolute;top:6px;left:0;right:0;text-align:center;pointer-events:none;display:flex;justify-content:center;opacity:0.5">${(() => {
-            // S17: chunky SVG tier stars in the score-text color, centered at the
-            // top, ABSOLUTE (out of flow) so the score stays dead-center. No "RG"
-            // (redundant with the "ROBOGRADE SCORE" header).
-            const _full = !!(comic && comic.fullAssessmentRan);
-            const _deep = !!(comic && (comic.deepAssessmentRan || comic.highGradeTier || (comic.roboGrade && comic.roboGrade.deepAssessmentRan)));
-            const _restoRan = !!(comic && comic.restorationCheckRan);
-            let _t = 1; if (_full) _t = 3; else if (_deep) _t = 2;
-            const _star = (c) => `<svg viewBox="0 0 24 24" width="13" height="13" style="display:inline-block;vertical-align:middle"><path d="M12.00,2.00 15.64,6.98 21.51,8.91 17.90,13.92 17.88,20.09 12.00,18.20 6.12,20.09 6.10,13.92 2.49,8.91 8.36,6.98Z" fill="${c}"/></svg>`;
-            let _s = '';
-            for (let i = 0; i < _t; i++) _s += _star(_sbStar);
-            if (_restoRan) _s += _star('#b58be0');
-            return `<span style="display:inline-flex;gap:1px;align-items:center;line-height:1">${_s}</span>`;
-          })()}</div>
-          <span style="position:relative;display:inline-block;line-height:1"><span style="font-family:'Noto Sans Display',sans-serif;font-weight:900;color:${_sbNum};line-height:1;font-size:62px;display:inline-block;transform:scaleX(0.80);transform-origin:center">${_v3 ? _v3whole : _v2 ? String(_v2.grade).replace(/[+-]$/, '') : scoreRounded}</span>${(_v3 && _v3frac) ? `<span style="position:absolute;left:100%;top:8px;margin-left:-2px;font-family:'Noto Sans Display',sans-serif;font-size:26px;font-weight:500;color:${_sbNum};line-height:1">${_v3frac}</span>` : (_v2 && /[+-]$/.test(String(_v2.grade)) ? `<span style="position:absolute;left:100%;top:8px;margin-left:-2px;font-family:'Noto Sans Display',sans-serif;font-size:26px;font-weight:500;color:${_sbNum};line-height:1">${String(_v2.grade).slice(-1)}</span>` : '')}</span>
-          <div style="font-size:8px;font-weight:700;color:${_sbVer};letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">V${((rg && rg.version && rg.version !== 'card-v1' && rg.version) || (comic && comic.rgVersion) || window.RG_GRADING_VERSION || '4.72')}</div>
-        </div>
+        ${_v3 ? window.RoboScoreV3.scoreBox({
+          grade: _v3.grade, pmLabel: _v3.pmLabel,
+          stars: (comic && comic.fullAssessmentRan) ? 3 : (comic && (comic.deepAssessmentRan || comic.highGradeTier || (comic.roboGrade && comic.roboGrade.deepAssessmentRan))) ? 2 : 1,
+          restoStar: !!(comic && comic.restorationCheckRan), restoColor: '#b58be0',
+          footer: 'version', footerText: 'V' + ((rg && rg.version && rg.version !== 'card-v1' && rg.version) || (comic && comic.rgVersion) || window.RG_GRADING_VERSION || '4.81'),
+          size: 104, numColor: _sbNum, starColor: _sbStar, footerColor: _sbVer, pmColor: OLIVE_LT, bg: _sbBg, border: '1.5px solid ' + _sbBorder
+        }) : `<div style="background:${_sbBg};border-radius:18px;width:104px;height:104px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px solid ${_sbBorder};position:relative"><span style="font-family:'Noto Sans Display',sans-serif;font-weight:900;color:${_sbNum};font-size:56px;transform:scaleX(0.82);display:inline-block">${scoreRounded}</span></div>`}
         <div style="flex:1;display:grid;grid-template-columns:2fr 2fr 1fr;grid-template-rows:auto auto;gap:4px">
           <!-- Row 1: Front spans the full width of the sub-score grid. The
                proportional layout (Front full row; Back+Spine+Int below at
