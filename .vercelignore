@@ -5,3 +5,6 @@ Card_Reference/
 
 # macOS Finder junk
 .DS_Store
+
+# editor backups (also gitignored; belt-and-suspenders)
+*~

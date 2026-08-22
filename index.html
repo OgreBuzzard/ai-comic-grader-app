@@ -7373,6 +7373,40 @@ function _showBrandedModal(title, body, btnLabel) {
   if (b) b.onclick = close;
 }
 
+// Signature-detected pop-up. Shown after an assessment that identified creator
+// signature(s), so the user doesn't miss the close-up photo slots we add for them.
+// Styled like rgPopup with the Robograder head + OKAY. onDone runs after close.
+function showSignatureDetected(item, onDone) {
+  var sigs = (typeof getSignatures === 'function') ? getSignatures(item) : [];
+  if (!sigs.length) { if (onDone) onDone(); return; }
+  var GOLD = '#d4af37';
+  var names = (typeof formatSignerList === 'function') ? formatSignerList(item) : '';
+  var plural = sigs.length > 1;
+  var title = plural ? 'Signatures detected' : 'Signature detected';
+  var who = names ? ('by <strong style="color:#eaf5df">' + names + '</strong> ') : '';
+  var slotWord = plural ? 'two close-up photo slots have' : 'a close-up photo slot has';
+  var msg = 'A creator signature ' + who + (plural ? '' : '') + 'has been detected on this book, and ' + slotWord
+    + ' been added below your photos. Add a close-up' + (plural ? 's' : '') + ' of the signature'
+    + (plural ? 's' : '') + ' so buyers can inspect ' + (plural ? 'them' : 'it') + ' — optional, but recommended for signed books.';
+  var prev = document.getElementById('rg-sig-overlay'); if (prev) prev.remove();
+  var ov = document.createElement('div'); ov.id = 'rg-sig-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:24px;padding-top:max(24px,env(safe-area-inset-top));padding-bottom:max(24px,env(safe-area-inset-bottom));opacity:0;transition:opacity .15s ease;';
+  var card = document.createElement('div');
+  card.style.cssText = 'width:100%;max-width:340px;background:#152e10;border:1.5px solid #4a7028;border-radius:16px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.5);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,\'Segoe UI\',sans-serif;';
+  card.innerHTML = '<div style="height:5px;background:' + GOLD + '"></div>'
+    + '<div style="padding:18px 20px 18px;text-align:center;">'
+    + '<img src="assets/Robograder_Logo.webp" alt="Robograder" style="width:66px;height:66px;object-fit:contain;margin:0 auto 10px;display:block">'
+    + '<div style="font-size:16px;font-weight:800;color:#eaf5df;margin-bottom:8px">' + title + '</div>'
+    + '<div style="font-size:13.5px;line-height:1.55;color:#c3d9b2;text-align:left">' + msg + '</div>'
+    + '<button id="rg-sig-ok" style="margin-top:18px;width:100%;padding:12px;border:none;border-radius:10px;background:' + GOLD + ';color:#231a02;font-size:15px;font-weight:800;letter-spacing:.5px;cursor:pointer">OKAY</button>'
+    + '</div>';
+  ov.appendChild(card); document.body.appendChild(ov);
+  requestAnimationFrame(function(){ ov.style.opacity='1'; card.style.transform='translateY(0) scale(1)'; });
+  function close(){ ov.style.opacity='0'; setTimeout(function(){ if(ov.parentNode) ov.parentNode.removeChild(ov); if (onDone) onDone(); },160); }
+  card.querySelector('#rg-sig-ok').onclick = close;
+  ov.addEventListener('click', function(e){ if(e.target===ov) close(); });
+}
+
 // Depth-ceiling upsell pop-up (v3). Auto-shown after an assessment whose grade
 // hit the Main (9.0) or Deep (9.5) ceiling. Styled like rgPopup with the
 // Robograder head; star + coin symbols inline; single OKAY button.
@@ -7505,7 +7539,13 @@ function mountResults(cgc, psa) {
     const _v3res = (window.RG_V3_DISPLAY && window.RoboScoreV3 && formData.type !== 'card' && roboGrade && roboGrade.frontScore != null) ? window.RoboScoreV3.forComic({ ...formData, roboGrade: roboGrade }) : null;
     if (_v3res != null) {
       roboEl.style.fontSize = '26px';
-      animateV3Ladder(roboEl, _v3res.grade, 2000).then(() => { popResultBadge(roboEl); if (_v3res.grade === 10) applyPerfect10Gold(roboEl, '10'); if (_v3res.upsell) setTimeout(() => showCeilingUpsell(_v3res.upsell), 700); });
+      animateV3Ladder(roboEl, _v3res.grade, 2000).then(() => { popResultBadge(roboEl); if (_v3res.grade === 10) applyPerfect10Gold(roboEl, '10');
+        setTimeout(() => {
+          var _sigNew = (typeof getSignatures === 'function') && getSignatures(formData).length > 0 && !((formData.signatureImages || []).some(Boolean));
+          var _ceiling = _v3res.upsell ? (() => showCeilingUpsell(_v3res.upsell)) : null;
+          if (_sigNew) showSignatureDetected(formData, _ceiling); else if (_ceiling) _ceiling();
+        }, 700);
+      });
     } else if (_v2g != null) {
       roboEl.style.fontSize = '26px';
       animateRGLadder(roboEl, _v2g, 2000).then(() => { popResultBadge(roboEl); applyPerfect10Gold(roboEl, _v2g); });
