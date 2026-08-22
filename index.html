@@ -1763,7 +1763,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.78";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.79";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
@@ -3271,7 +3271,7 @@ async function migrateComicsToItems() {
   }
 }
 
-const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "deepAssessmentRan", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "insertImages", "couponImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified" ];
+const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "deepAssessmentRan", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "insertImages", "couponImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified" ];
 
 const COMIC_DROP_FIELDS = [ "press", "uv", "clean" ];
 
@@ -8682,6 +8682,8 @@ async function completeAssessment() {
   if (cgc.referenceVolume) formData.referenceVolume = cgc.referenceVolume;
   if (cgc.referenceYear != null) formData.referenceYear = cgc.referenceYear;
   if (cgc.referenceComparison) formData.referenceComparison = cgc.referenceComparison;
+  if (cgc.referenceBackImageUrl) formData.referenceBackImageUrl = cgc.referenceBackImageUrl;
+  if (cgc.refDebug) formData.refDebug = cgc.refDebug;
   if (cgc.labelNotes && cgc.labelNotes.trim()) formData.cgcNotes = cgc.labelNotes.trim() + (formData.cgcNotes ? "\n" + formData.cgcNotes : "");
   formData.psaNotes = psa.psaNotes || "";
   if (cgc.keyInfo && cgc.keyInfo.trim() && !formData.keyInfo) formData.keyInfo = cgc.keyInfo.trim();
