@@ -2351,7 +2351,7 @@ const RGV2 = (function () {
     // Number: ABSOLUTELY centered in the full box so PM/stars/footer never shift
     // it off-center. font-stretch 62.5% uses Noto Sans Display's real condensed
     // width axis (narrow glyphs, prints correctly) so decimals like 5.5 stay tight.
-    var _numInner = p.frac ? (p.whole + '<span style="font-size:0.5em">.</span>' + p.frac.slice(1)) : p.whole;
+    var _numInner = p.frac ? (p.whole + '<span style="font-size:0.8em">.</span>' + p.frac.slice(1)) : p.whole;
     var numHtml = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">'
       + '<span style="font-family:\'League Spartan\',system-ui,sans-serif;font-weight:900;transform:scaleX(0.66) translateY(' + _nudge + 'px);transform-origin:center;display:inline-block;color:' + numColor + ';line-height:1;font-size:' + numSize + 'px">' + _numInner + '</span></div>';
     // Stars: top-center.
@@ -2363,10 +2363,10 @@ const RGV2 = (function () {
       var _pmSym = _pmM ? _pmM[1] : '';
       var _pmNum = _pmM ? _pmM[2] : String(o.pmLabel);
       var _pmSize = Math.max(11, Math.round(size * 0.17));
-      var _pmTop = Math.round(size * 0.5 + _nudge - numSize * 0.365 - _pmSize * 0.5);
+      var _pmTop = Math.round(size * 0.5 + _nudge - numSize * 0.365 - _pmSize);
       pmHtml = '<div style="position:absolute;top:' + _pmTop + 'px;right:' + Math.round(size*0.07) + 'px;line-height:1;white-space:nowrap;pointer-events:none;color:' + pmColor + ';font-weight:700">'
         + '<span style="font-family:\'Saira\',system-ui,sans-serif;font-size:' + _pmSize + 'px">' + _pmSym + '</span>'
-        + '<span style="font-family:\'Saira Extra Condensed\',system-ui,sans-serif;font-size:' + _pmSize + 'px">' + _pmNum + '</span></div>';
+        + '<span style="font-family:\'Saira Extra Condensed\',system-ui,sans-serif;font-size:' + _pmSize + 'px;transform:scaleX(0.72);display:inline-block">' + _pmNum + '</span></div>';
     }
     // Footer (version / RG): bottom-center.
     var footHtml = "";

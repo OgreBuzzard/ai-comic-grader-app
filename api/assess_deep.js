@@ -465,6 +465,7 @@ Rules:
     // can't be built, Deep still runs on the macros alone.
     let gradeRefBlocks = [];   // ascending-grade [text label, image, text label, image, ...]
     let frontCoverBlock = null;
+    let refCoverBlocks = [];   // local pristine reference_covers (front[+back]) of this exact issue, for defect ID
     if (!isRestoration) {
       try {
         const { CGC_GRADE_SCALE, GRADE_DEFINITIONS } = await import('../lib/grade_definitions.js');
@@ -499,6 +500,32 @@ Rules:
         }
       } catch { gradeRefBlocks = []; }
       if (frontCover) { const fb = toImageBlock(frontCover); if (fb) frontCoverBlock = fb; }
+      // Local pristine reference covers (front[+back]) of THIS exact issue, for
+      // defect identification (printed art vs damage). Free here: the book is
+      // already identified from the initial assessment, so no extra model call is
+      // needed — just the two images. Local reference_covers only; ComicVine stays
+      // in the Main assessment path.
+      try {
+        const _rt = initialAssessment.title || title || '';
+        const _ri = initialAssessment.issue != null ? String(initialAssessment.issue) : (issueNumber || '');
+        if (_rt && String(_ri).trim()) {
+          const _bu = process.env.APP_URL || 'https://robograder.app';
+          const _slug = x => String(x).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+          const _sl = [...new Set([_slug(String(_rt).replace(/^the\s+/i, '')), _slug(_rt)])].filter(Boolean);
+          const _is = String(_ri).replace(/^#/, '').replace(/^0+(\d)/, '$1').trim();
+          const _yr = (() => { const _m = String(initialAssessment.issueDate || '').match(/(?:19|20)\d{2}/); return _m ? _m[0] : null; })();
+          const _cands = []; for (const _s of _sl) { if (_yr) _cands.push(`${_s}_${_is}_${_yr}`); _cands.push(`${_s}_${_is}`); }
+          for (const _b of _cands) {
+            const _fr = await fetch(`${_bu}/reference_covers/${_b}_front.jpg`);
+            if (!_fr.ok) continue;
+            const _fd = Buffer.from(await _fr.arrayBuffer()).toString('base64');
+            const _blocks = [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: _fd } }];
+            try { const _br = await fetch(`${_bu}/reference_covers/${_b}_back.jpg`); if (_br.ok) { const _bd = Buffer.from(await _br.arrayBuffer()).toString('base64'); _blocks.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: _bd } }); } } catch (e) {}
+            refCoverBlocks = _blocks;
+            break;
+          }
+        }
+      } catch (e) { refCoverBlocks = []; }
     }
     const hasGradeRefs = gradeRefBlocks.length > 0;
 
@@ -528,6 +555,7 @@ Rules:
               ...macroBlocks,
               ...(hasInteriorCovers ? [{ type: 'text', text: 'INTERIOR COVER PHOTOS in order: (1) Interior Front — inside front cover + first page; (2) Interior Back — last page + inside back cover. Examine ONLY for interior-cover condition (tanning, foxing, stains, tears) per PHASE 2.5. Do not re-judge page quality.' }, ...interiorCoverBlocks] : []),
               ...(frontCoverBlock ? [{ type: 'text', text: 'FULL FRONT COVER of the book being graded:' }, frontCoverBlock] : []),
+              ...(refCoverBlocks.length ? [{ type: 'text', text: 'PRISTINE REFERENCE COVERS of this exact issue follow (near-mint FRONT' + (refCoverBlocks.length > 1 ? ' and BACK' : '') + '). Use them FIRST to separate printed art from damage: any mark that ALSO appears on the reference is PRINTED ART and is NOT a defect; only marks ABSENT from the reference are real defects. Apply this while re-examining the macros for corner/edge/spine defects, BEFORE the grade-reference comparison below.' }, ...refCoverBlocks] : []),
               ...(hasGradeRefs ? [{ type: 'text', text: 'GRADE-REFERENCE IMAGES follow — real graded comics bracketing the initial grade, each labeled with its CGC grade and condition note, in ascending grade order. Compare the book above against these examples (PHASE 4).' }, ...gradeRefBlocks] : []),
               { type: 'text', text: 'Perform the deep assessment. If the macros reveal new defects, the grade may go down — tag them deepAddition: true. If the corners are cleaner than expected for the initial grade, the Front sub-score may rise by 1–3 points. Compare the book against the grade-reference images and confirm or revise the predicted grade per PHASE 4. Return the JSON.' }
             ]
