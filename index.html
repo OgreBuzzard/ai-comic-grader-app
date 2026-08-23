@@ -249,7 +249,7 @@
       var _pmSym = _pmM ? _pmM[1] : '';
       var _pmNum = _pmM ? _pmM[2] : String(o.pmLabel);
       var _pmSize = Math.max(11, Math.round(size * 0.17));
-      var _pmTop = Math.round(size * 0.5 + _nudge - numSize * 0.365 - _pmSize);
+      var _pmTop = Math.round(size * 0.5 + _nudge - numSize * 0.365 - _pmSize - size * 0.10);
       pmHtml = '<div style="position:absolute;top:' + _pmTop + 'px;right:' + Math.round(size*0.07) + 'px;line-height:1;white-space:nowrap;pointer-events:none;color:' + pmColor + ';font-weight:700">'
         + '<span style="font-family:\'Saira\',system-ui,sans-serif;font-size:' + _pmSize + 'px">' + _pmSym + '</span>'
         + '<span style="font-family:\'Saira Extra Condensed\',system-ui,sans-serif;font-size:' + _pmSize + 'px;transform:scaleX(0.72);display:inline-block">' + _pmNum + '</span></div>';
@@ -657,8 +657,8 @@ onAuthStateChanged(auth, async user => {
       box-shadow: 0 1px 4px rgba(40,30,10,0.25);
     }
     .btn-topbar.btn-grade span {
-      font-family: 'League Spartan', sans-serif;
-      transform: scaleX(0.7); display: inline-block;
+      font-family: 'Noto Sans Display', sans-serif;
+      font-stretch: 62.5%;
       font-size: 15px; font-weight: 900;
       letter-spacing: 0.3px;
       /* S14 fix: was white-space:nowrap, which forced "Grade a Comic"
@@ -10768,14 +10768,18 @@ function _assignCommit(imgsArr) {
   const btn = document.getElementById("assess-btn");
   if (btn) btn.disabled = formData.images.filter(Boolean).length === 0 || assessing;
 }
-function _openAssignOverlay(picked) {
-  const labels = _mainSlotLabels();
-  const slots = [ ...(formData.images || []) ]; while (slots.length < 4) slots.push(null);
+function _openAssignOverlay(picked, cfg) {
+  cfg = cfg || {};
+  const slotN = cfg.slotN || 4;
+  const labels = cfg.labels || _mainSlotLabels();
+  const startSlot = (((cfg.startSlot != null ? cfg.startSlot : _tappedSlot) % slotN) + slotN) % slotN;
+  const slots = [ ...(cfg.current || formData.images || []) ]; while (slots.length < slotN) slots.push(null);
+  slots.length = slotN;                                          // positional array, exactly slotN long
   const tray = [];
-  const n = Math.min(picked.length, 4);
-  for (let k = 0; k < n; k++) { const sIdx = (_tappedSlot + k) % 4; slots[sIdx] = picked[k]; }   // starting guess
-  for (let k = 4; k < picked.length; k++) tray.push(picked[k]);                                   // overflow beyond 4 slots
-  _assign = { labels, slots, tray, active: null };
+  const n = Math.min(picked.length, slotN);
+  for (let k = 0; k < n; k++) { const sIdx = (startSlot + k) % slotN; slots[sIdx] = picked[k]; }   // starting guess
+  for (let k = slotN; k < picked.length; k++) tray.push(picked[k]);                                 // overflow beyond slots
+  _assign = { labels, slots, tray, active: null, slotN, commit: cfg.commit || _assignCommit, title: cfg.title || "Place your photos" };
   let ov = document.getElementById("assign-overlay");
   if (!ov) { ov = document.createElement("div"); ov.id = "assign-overlay"; document.body.appendChild(ov); }
   ov.style.cssText = "position:fixed;inset:0;z-index:100001;background:radial-gradient(circle at 50% 0%, #16300f 0%, #0a1705 72%);display:flex;flex-direction:column;padding:max(env(safe-area-inset-top,16px),16px) 14px max(env(safe-area-inset-bottom,16px),16px);overflow:auto";
@@ -10797,12 +10801,12 @@ function _renderAssign() {
     : '';
   ov.innerHTML = `
     <div style="max-width:384px;margin:0 auto;width:100%;display:flex;flex-direction:column;flex:1">
-      <div style="color:#eaf5df;font-size:23px;font-weight:700;font-family:'Barlow Condensed',sans-serif;letter-spacing:0.5px;margin-bottom:6px;text-align:center">Place your photos</div>
+      <div style="color:#eaf5df;font-size:23px;font-weight:700;font-family:'Barlow Condensed',sans-serif;letter-spacing:0.5px;margin-bottom:6px;text-align:center">${A.title || 'Place your photos'}</div>
       <div style="color:#9abf60;font-size:12.5px;margin-bottom:16px;line-height:1.5;text-align:center">If any of these photos are in the wrong slot, tap the X to remove it, then tap the photo again down below and tap the slot it belongs in.</div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:0 auto 16px;width:100%">${slotCells}</div>
+      <div style="display:grid;grid-template-columns:repeat(${A.slotN > 4 ? 3 : A.slotN},1fr);gap:6px;margin:0 auto 16px;width:100%">${slotCells}</div>
       <div style="color:#7aa838;font-size:11px;text-transform:uppercase;letter-spacing:1.2px;font-weight:700;margin-bottom:8px">Photos${A.active != null ? ' — now tap a slot' : ''}</div>
-      <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;min-height:96px;align-items:center">${trayCells}</div>
-      <div style="display:flex;gap:10px;margin-top:auto;padding-top:14px">
+      <div style="display:flex;gap:8px;overflow-x:auto;padding:8px;min-height:104px;align-items:center;justify-content:${A.tray.length ? 'flex-start' : 'center'};border:1.5px dashed #3a5818;border-radius:10px;background:#0e1806">${A.tray.length ? trayCells : '<span style="color:#5a7040;font-size:11px;font-weight:700;letter-spacing:0.7px;text-transform:uppercase">No photos left to place</span>'}</div>
+      <div style="display:flex;gap:10px;margin-top:14px">
         <button onclick="_assignCancel()" style="flex:1;padding:13px;border-radius:12px;background:transparent;color:#9abf60;border:1.5px solid #3a5818;font-size:14px;font-weight:800;letter-spacing:0.5px;cursor:pointer;font-family:system-ui,sans-serif">CANCEL</button>
         <button onclick="_assignDone()" style="flex:2;padding:13px;border-radius:12px;background:#4e9e2e;color:#0d1f08;border:none;font-size:15px;font-weight:800;letter-spacing:1px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.4);font-family:system-ui,sans-serif">DONE</button>
       </div>
@@ -10823,7 +10827,26 @@ function _assignTapSlot(i) {
 }
 function _assignClearSlot(i) { if (!_assign) return; const A = _assign; if (A.slots[i]) { A.tray.push(A.slots[i]); A.slots[i] = null; } A.active = null; _renderAssign(); }
 function _assignCancel() { _closeAssign(); }
-function _assignDone() { if (!_assign) return; const slots = _assign.slots.slice(); _closeAssign(); _assignCommit(slots); }
+function _assignDone() { if (!_assign) return; const slots = _assign.slots.slice(); const commit = _assign.commit || _assignCommit; _closeAssign(); commit(slots); }
+
+// Positional commit helpers for the generalized placement overlay (Deep / Full).
+function _assignCommitCorners(slotsArr) {
+  const imgs = slotsArr.slice(0, 4); while (imgs.length < 4) imgs.push(null);
+  formData.cornerImages = imgs; formData._imagesChanged = true; renderForm();
+}
+function _assignCommitDeep(slotsArr) {
+  const imgs = slotsArr.slice(0, 4); while (imgs.length < 4) imgs.push(null);
+  const cov = slotsArr.slice(4, 6); while (cov.length < 2) cov.push(null);
+  formData.cornerImages = imgs; formData.interiorCoverImages = cov; formData._imagesChanged = true; renderForm();
+}
+function _assignCommitInteriorCovers(slotsArr) {
+  const cov = slotsArr.slice(0, 2); while (cov.length < 2) cov.push(null);
+  formData.interiorCoverImages = cov; formData._imagesChanged = true; renderForm();
+}
+function _assignCommitInterior(slotsArr) {
+  const imgs = slotsArr.slice(0, FULL_SLOT_COUNT); while (imgs.length < FULL_SLOT_COUNT) imgs.push(null);
+  formData.interiorImages = imgs; formData._imagesChanged = true; renderForm();
+}
 
 let _tappedCornerSlot = 0;
 
@@ -10875,6 +10898,19 @@ async function handleCornerImages(e) {
     r.onload = ev => res(ev.target.result);
     r.readAsDataURL(f);
   })));
+  if (newImgs.length > 1) {
+    // Multi-select: user places each photo (order can't be inferred from the picker).
+    e.target.value = "";
+    if (!formData.labelDetected) {
+      const cur = [ ...(formData.cornerImages || []) ]; while (cur.length < 4) cur.push(null); cur.length = 4;
+      const cov = [ ...(formData.interiorCoverImages || []) ]; while (cov.length < 2) cov.push(null); cov.length = 2;
+      _openAssignOverlay(newImgs, { slotN: 6, labels: [ "Top Left", "Top Right", "Bottom Left", "Bottom Right", "Interior Front", "Interior Back" ], current: [ ...cur, ...cov ], startSlot: _tappedCornerSlot, commit: _assignCommitDeep, title: "Place your Deep photos" });
+    } else {
+      const cur = [ ...(formData.cornerImages || []) ]; while (cur.length < 4) cur.push(null); cur.length = 4;
+      _openAssignOverlay(newImgs, { slotN: 4, labels: [ "Top Left", "Top Right", "Bottom Left", "Bottom Right" ], current: cur, startSlot: _tappedCornerSlot, commit: _assignCommitCorners, title: "Place your corner macros" });
+    }
+    return;
+  }
   const imgs = [ ...formData.cornerImages || [] ];
   while (imgs.length < 4) imgs.push(null);
   const count = Math.min(newImgs.length, 4);
@@ -10922,6 +10958,12 @@ async function handleInteriorCoverImages(e) {
     r.onload = ev => res(ev.target.result);
     r.readAsDataURL(f);
   })));
+  if (newImgs.length > 1) {
+    e.target.value = "";
+    const cur = [ ...(formData.interiorCoverImages || []) ]; while (cur.length < 2) cur.push(null); cur.length = 2;
+    _openAssignOverlay(newImgs, { slotN: 2, labels: [ "Interior Front", "Interior Back" ], current: cur, startSlot: _tappedInteriorCoverSlot, commit: _assignCommitInteriorCovers, title: "Place your interior covers" });
+    return;
+  }
   const imgs = [ ...formData.interiorCoverImages || [] ];
   while (imgs.length < 2) imgs.push(null);
   const count = Math.min(newImgs.length, 2);
@@ -10998,6 +11040,12 @@ async function handleInteriorImages(e) {
     r.onload = ev => res(ev.target.result);
     r.readAsDataURL(f);
   })));
+  if (newImgs.length > 1) {
+    e.target.value = "";
+    const cur = [ ...(formData.interiorImages || []) ]; while (cur.length < _slotN) cur.push(null); cur.length = _slotN;
+    _openAssignOverlay(newImgs, { slotN: _slotN, labels: FULL_SLOTS.map(s => s.label), current: cur, startSlot: _tappedInteriorSlot, commit: _assignCommitInterior, title: "Place your Full photos" });
+    return;
+  }
   const imgs = [ ...formData.interiorImages || [] ];
   while (imgs.length < _slotN) imgs.push(null);
   const count = Math.min(newImgs.length, _slotN);

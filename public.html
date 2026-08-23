@@ -227,7 +227,7 @@
       var _pmSym = _pmM ? _pmM[1] : '';
       var _pmNum = _pmM ? _pmM[2] : String(o.pmLabel);
       var _pmSize = Math.max(11, Math.round(size * 0.17));
-      var _pmTop = Math.round(size * 0.5 + _nudge - numSize * 0.365 - _pmSize);
+      var _pmTop = Math.round(size * 0.5 + _nudge - numSize * 0.365 - _pmSize - size * 0.10);
       pmHtml = '<div style="position:absolute;top:' + _pmTop + 'px;right:' + Math.round(size*0.07) + 'px;line-height:1;white-space:nowrap;pointer-events:none;color:' + pmColor + ';font-weight:700">'
         + '<span style="font-family:\'Saira\',system-ui,sans-serif;font-size:' + _pmSize + 'px">' + _pmSym + '</span>'
         + '<span style="font-family:\'Saira Extra Condensed\',system-ui,sans-serif;font-size:' + _pmSize + 'px;transform:scaleX(0.72);display:inline-block">' + _pmNum + '</span></div>';
