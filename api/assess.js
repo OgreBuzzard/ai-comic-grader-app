@@ -506,6 +506,54 @@ export default async function handler(req, res) {
     ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
     : 'https://robograder.app');   // never empty — local reference fetch needs a base
 
+  // IDENTIFY-FIRST (v4.82): on a fresh capture the client sends no title/issue —
+  // it only learns them from the main model reply below — so the reference fetch
+  // would skip and no reference cover is compared on the first pass. Do a cheap
+  // Haiku identify on the FRONT cover to resolve title/issue/year for the
+  // reference lookup ONLY (the main grading model still does its own identify for
+  // the record). Client-supplied values always win; this only fills the blanks.
+  let refTitle = title, refIssue = issueNumber, refYear = issueYear;
+  let refIdDebug = (title && issueNumber) ? 'id=client' : 'id=pending';
+  if ((!refTitle || !refIssue) && Array.isArray(images) && images[0] && apiKey && !suppressReference && !AB_FORCE_SUPPRESS_REFERENCE) {
+    try {
+      let _idBlock = null;
+      const _f = images[0];
+      if (typeof _f === 'string' && _f.startsWith('data:')) {
+        const _c = _f.indexOf(',');
+        _idBlock = { type: 'image', source: { type: 'base64', media_type: normalizeMediaType((_f.slice(0, _c).match(/data:(.*);base64/) || [])[1]), data: _f.slice(_c + 1) } };
+      } else if (_f && _f.data) {
+        _idBlock = { type: 'image', source: { type: 'base64', media_type: normalizeMediaType(_f.mediaType || _f.media_type), data: _f.data } };
+      }
+      if (_idBlock) {
+        const _idPrompt = 'Identify this comic book from its front cover for a reference-image lookup. Respond with ONLY a JSON object and nothing else: {"title": "series title, no leading The", "issue": "issue number exactly as printed, digits only", "year": four-digit cover year or null}. If the issue number is not clearly printed, set "issue" to null rather than guessing.';
+        const _idResp = await anthropicWithRetry(
+          (remainingMs) => fetchTimeout('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+            body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 120, messages: [{ role: 'user', content: [_idBlock, { type: 'text', text: _idPrompt }] }] })
+          }, remainingMs),
+          { deadlineMs: 15000, maxAttempts: 2, label: 'refident' }
+        );
+        const _idJson = await _idResp.json();
+        const _tb = Array.isArray(_idJson.content) ? _idJson.content.find(b => b.type === 'text') : null;
+        const _mt = _tb && _tb.text ? _tb.text.match(/\{[\s\S]*\}/) : null;
+        if (_mt) {
+          const _o = JSON.parse(_mt[0]);
+          if (!refTitle && _o.title) refTitle = String(_o.title).trim();
+          if (!refIssue && _o.issue != null && String(_o.issue).trim() !== '') refIssue = String(_o.issue).trim();
+          if (!refYear && _o.year) refYear = Number(_o.year);
+          refIdDebug = 'id=haiku(t=' + JSON.stringify(refTitle) + ' i=' + JSON.stringify(refIssue) + ' y=' + (refYear || 'null') + ')';
+        } else {
+          refIdDebug = 'id=haiku:nojson';
+        }
+      } else {
+        refIdDebug = 'id=haiku:noimg';
+      }
+    } catch (e) {
+      refIdDebug = 'id=haiku:ERR ' + String((e && e.message) || e);
+    }
+  }
+
   // LOCAL REFERENCE COVERS (served from /reference_covers/). If clean front/back
   // scans exist for this exact book, use them and SKIP ComicVine — higher quality,
   // no rate limit, and we also get the BACK cover (ComicVine gives covers only).
@@ -513,24 +561,25 @@ export default async function handler(req, res) {
   let usedLocalRef = false;
   // Diagnostic: if the local-reference block is skipped, record WHY (so refDebug
   // is never a silent 'not run'). The block below overwrites refDebug on run.
-  const _refSkip = !baseUrl ? 'no baseUrl' : !title ? 'no title' : !issueNumber ? 'no issueNumber'
+  const _refSkip = !baseUrl ? 'no baseUrl' : !refTitle ? 'no title' : !refIssue ? 'no issueNumber'
     : suppressReference ? 'suppressReference=true' : AB_FORCE_SUPPRESS_REFERENCE ? 'AB_FORCE_SUPPRESS_REFERENCE=true' : null;
-  if (_refSkip) refDebug = 'localref skip: ' + _refSkip + ' (title=' + JSON.stringify(title) + ' iss=' + JSON.stringify(issueNumber) + ')';
-  if (baseUrl && title && issueNumber && !suppressReference && !AB_FORCE_SUPPRESS_REFERENCE) {
+  if (_refSkip) refDebug = refIdDebug + ' | localref skip: ' + _refSkip + ' (title=' + JSON.stringify(refTitle) + ' iss=' + JSON.stringify(refIssue) + ')';
+  if (baseUrl && refTitle && refIssue && !suppressReference && !AB_FORCE_SUPPRESS_REFERENCE) {
     try {
       const _dbg = [];
       const _slugify = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
       // Try BOTH the raw title and a de-"The" variant — reference files are named
       // without a leading article (amazing-spider-man_...), but books are often
       // stored as "The Amazing Spider-Man". (The ComicVine path strips "The" too.)
-      const _slugRaw = _slugify(title);
-      const _slugDeThe = _slugify(String(title).replace(/^the\s+/i, ''));
+      const _slugRaw = _slugify(refTitle);
+      const _slugDeThe = _slugify(String(refTitle).replace(/^the\s+/i, ''));
       const _slugs = [...new Set([_slugDeThe, _slugRaw])].filter(Boolean);
-      const _iss = String(issueNumber).replace(/^#/, '').replace(/^0+(\d)/, '$1').trim();
+      const _iss = String(refIssue).replace(/^#/, '').replace(/^0+(\d)/, '$1').trim();
       const _yr = (() => {
+        if (typeof refYear === 'number' && refYear > 1900) return refYear;
         const _m = String(issueDate || '').match(/(?:19|20)\d{2}/);   // client sends year as issueDate 'Mon YYYY'
         if (_m) return Number(_m[0]);
-        return (typeof issueYear === 'number' && issueYear > 1900) ? issueYear : null;
+        return null;
       })();
       const _bases = [];
       for (const _s of _slugs) {
@@ -560,7 +609,7 @@ export default async function handler(req, res) {
         console.log(`[localref] used ${_b} front=yes back=${referenceBackImageBlock ? 'yes' : 'no'} -> skipping ComicVine`);
         break;
       }
-      refDebug = 'base=' + baseUrl + ' | ' + (usedLocalRef ? 'HIT ' : 'MISS ') + (_dbg.length ? _dbg.join(', ') : 'no candidates tried');
+      refDebug = refIdDebug + ' | base=' + baseUrl + ' | ' + (usedLocalRef ? 'HIT ' : 'MISS ') + (_dbg.length ? _dbg.join(', ') : 'no candidates tried');
     } catch (e) { refDebug = 'localref ERROR: ' + String((e && e.message) || e); }
   }
 
@@ -568,14 +617,15 @@ export default async function handler(req, res) {
   let pageQualityImageBlock = null;
   let pqIsPsaReference = false;  // true once pq_psa.jpg is uploaded; prompt language adapts
   if (isCGC) {
-    const cvFetch = (title && issueNumber && COMICVINE_API_KEY && !suppressReference && !AB_FORCE_SUPPRESS_REFERENCE && !usedLocalRef) ? (async () => {
+    const cvFetch = (refTitle && refIssue && COMICVINE_API_KEY && !suppressReference && !AB_FORCE_SUPPRESS_REFERENCE && !usedLocalRef) ? (async () => {
       try {
-        const searchTitle = title.replace(/^The\s+/i, '').trim();
-        const targetIss = String(issueNumber).replace(/^0+/, '');
+        const searchTitle = refTitle.replace(/^The\s+/i, '').trim();
+        const targetIss = String(refIssue).replace(/^0+/, '');
         const hintYear = (() => {
+          if (typeof refYear === 'number' && refYear > 1930) return refYear;
           const _m = String(issueDate || '').match(/(?:19|20)\d{2}/);   // client sends year in issueDate 'Mon YYYY'
           if (_m) return Number(_m[0]);
-          return (typeof issueYear === 'number' && issueYear > 1930) ? issueYear : null;
+          return null;
         })();  // disambiguates same-title volumes (e.g. Daredevil 1964 Marvel vs golden-age)
         const yearFrom = (s) => { const m = String(s||'').match(/(\d{4})/); return m ? parseInt(m[1],10) : null; };
 

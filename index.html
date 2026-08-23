@@ -31,7 +31,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Noto+Sans+Display:wdth,wght@62.5..100,500;700;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@700&family=Share+Tech+Mono&family=Noto+Sans+Display:wdth,wght@62.5..100,500;700;900&display=swap" rel="stylesheet">
   <link rel="preload" href="assets/Robograder_Background.jpg" as="image">
   <link rel="preload" href="assets/Robograder_v4_Load.webp" as="image">
   <link rel="preload" href="assets/Robograder_Logo.webp" as="image">
@@ -236,11 +236,11 @@
     // it off-center. font-stretch 62.5% uses Noto Sans Display's real condensed
     // width axis (narrow glyphs, prints correctly) so decimals like 5.5 stay tight.
     var numHtml = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">'
-      + '<span style="font-family:\'Noto Sans Display\',system-ui,sans-serif;font-stretch:62.5%;font-weight:900;color:' + numColor + ';line-height:1;font-size:' + numSize + 'px">' + p.whole + p.frac + '</span></div>';
+      + '<span style="font-family:\'Saira Condensed\',system-ui,sans-serif;font-stretch:62.5%;font-weight:900;color:' + numColor + ';line-height:1;font-size:' + numSize + 'px">' + p.whole + p.frac + '</span></div>';
     // Stars: top-center.
     var starsHtml = (stars > 0 || o.restoStar) ? '<div style="position:absolute;top:' + Math.round(size*0.05) + 'px;left:0;right:0;display:flex;justify-content:center;pointer-events:none">' + _starRow(stars, starPx, starColor, o.restoStar, o.restoColor) + '</div>' : "";
     // PM: UPPER-RIGHT (never below the score).
-    var pmHtml = (o.pmLabel) ? '<div style="position:absolute;top:' + Math.round(size*0.06) + 'px;right:' + Math.round(size*0.07) + 'px;font-family:\'Noto Sans Display\',system-ui,sans-serif;font-stretch:62.5%;font-size:' + Math.max(10, Math.round(size*0.135)) + 'px;font-weight:700;color:' + pmColor + ';line-height:1;white-space:nowrap;pointer-events:none">' + o.pmLabel + '</div>' : "";
+    var pmHtml = (o.pmLabel) ? '<div style="position:absolute;top:' + Math.round(size*0.06) + 'px;right:' + Math.round(size*0.07) + 'px;font-family:\'Saira Condensed\',system-ui,sans-serif;font-stretch:62.5%;font-size:' + Math.max(10, Math.round(size*0.135)) + 'px;font-weight:700;color:' + pmColor + ';line-height:1;white-space:nowrap;pointer-events:none">' + o.pmLabel + '</div>' : "";
     // Footer (version / RG): bottom-center.
     var footHtml = "";
     if (o.footer === "RG") footHtml = '<div style="position:absolute;bottom:' + Math.round(size*0.05) + 'px;left:0;right:0;text-align:center;font-size:' + Math.max(8, Math.round(size*0.086)) + 'px;font-weight:700;color:' + footerColor + ';opacity:0.85;letter-spacing:1px;line-height:1;pointer-events:none">RG</div>';
