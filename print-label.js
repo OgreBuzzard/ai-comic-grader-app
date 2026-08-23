@@ -955,6 +955,9 @@ function ensureStylesInjected() {
     font-weight: 700;
   }
   .robot-badge { display: none; }
+  /* Square: fill the empty bottom-right with the Robograder mascot when no price tag. */
+  .rg-label-square .robot-badge { display: block; position: absolute; right: 20px; bottom: 22px; width: 316px; }
+  .rg-label-square .robot-badge img { width: 100%; height: auto; display: block; }
   .rg-label-l .robot-badge {
     position: absolute;
     left: 760px; top: 20px; width: 190px; height: 232px;
@@ -1320,9 +1323,9 @@ function ensureStylesInjected() {
     box-sizing: border-box;
   }
   .rg-label-square .score-box {
-    width: 220px; height: 220px;
+    width: 256px; height: 256px;
     background: #1a2208;
-    border-radius: 32px;
+    border-radius: 36px;
     position: absolute;
     right: 14px; top: 14px;
     display: flex; flex-direction: column;
@@ -1346,7 +1349,7 @@ function ensureStylesInjected() {
   .rg-label-square .rg-num {
     /* S14: 122 → 130, matching the score-prominence pass on the other
        labels (proportionally smaller bump to suit the 220px box). */
-    font-size: 130px; font-weight: 900;
+    font-size: 156px; font-weight: 900;
     color: #b8d820; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
@@ -1382,7 +1385,7 @@ function ensureStylesInjected() {
   /* Info column — TOP-LEFT corner, beside the score box. */
   .rg-label-square .info {
     position: absolute;
-    left: 18px; top: 14px; right: 248px;
+    left: 18px; top: 14px; right: 292px;
     display: flex; flex-direction: column;
   }
   .rg-label-square .info-upper {
@@ -1415,6 +1418,8 @@ function ensureStylesInjected() {
     margin-top: 3px;
   }
   .rg-label-square .info-lower { padding-top: 10px; }
+  /* ID is already printed under the QR — drop the redundant row here. */
+  .rg-label-square .meta-id-lbl, .rg-label-square .meta-id-val { display: none; }
   .rg-label-square .meta-grid {
     display: grid;
     grid-template-columns: max-content max-content;
@@ -2698,12 +2703,12 @@ function renderLabelMarkup(comic, opts) {
   if (window.RG_V3_DISPLAY && window.RoboScoreV3 && comic && comic.type !== 'card' && rg && rg.frontScore != null) {
     // Scoring v3 (?v3=1): half-point grade + PM on the printed label.
     const _v3 = window.RoboScoreV3.forComic(comic);
-    if (_v3) { score = window.RoboScoreV3.formatGrade(_v3.grade); precision = _v3.pmLabel || ''; versionStr = 'RG'; }  // '9'/'9.5'/'10' — same on every surface
+    if (_v3) { score = window.RoboScoreV3.formatGrade(_v3.grade); precision = _v3.pmLabel || ''; }  // keep versionStr = app version (shown at bottom)
   } else if (window.RG_V2_DISPLAY && window.RGScoreV2 && rg) {
     let _v2g = null;
     if (rg.frontScore != null) _v2g = window.RGScoreV2.fromSubscores({ front: rg.frontScore, back: rg.backScore, spine: rg.spineScore, interior: rg.interiorScore }, 'comic').grade;
     else if (rg.score != null) _v2g = window.RGScoreV2.gradeFromScore(rg.score);
-    if (_v2g != null) { score = _v2g; precision = ''; versionStr = 'RG'; }
+    if (_v2g != null) { score = _v2g; precision = ''; }  // keep versionStr = app version
   }
   const title = esc(comic.title || '');
   const issue = comic.issue ? `#${esc(comic.issue)}` : '';

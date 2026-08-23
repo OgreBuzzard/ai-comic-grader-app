@@ -1060,7 +1060,7 @@ function _lbRenderDefects() {
   const cat = _lbCats[_lbIdx];
   let html = '';
   if (cat && rec.type !== 'card' && rec.roboGrade && Array.isArray(rec.roboGrade.defects)) {
-    const defs = rec.roboGrade.defects.filter(d => String(d.category || '') === cat);
+    const defs = rec.roboGrade.defects.filter(d => String(d.category || '') === cat && !/^page\s*quality$/i.test(String(d.type || '')));  // exclude page-quality designation
     const rows = defs.map(d => {
       let t = d.type || 'Defect';
       if (d.location && d.location !== 'N/A') t += ' — ' + d.location;

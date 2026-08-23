@@ -504,13 +504,18 @@ export default async function handler(req, res) {
     ? `https://${req.headers['host']}`
     : (process.env.VERCEL_PROJECT_PRODUCTION_URL
     ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-    : '');
+    : 'https://robograder.app');   // never empty — local reference fetch needs a base
 
   // LOCAL REFERENCE COVERS (served from /reference_covers/). If clean front/back
   // scans exist for this exact book, use them and SKIP ComicVine — higher quality,
   // no rate limit, and we also get the BACK cover (ComicVine gives covers only).
   // Filenames mirror the reference-library sheet: <title-slug>_<issue>[_<year>]_front.jpg / _back.jpg.
   let usedLocalRef = false;
+  // Diagnostic: if the local-reference block is skipped, record WHY (so refDebug
+  // is never a silent 'not run'). The block below overwrites refDebug on run.
+  const _refSkip = !baseUrl ? 'no baseUrl' : !title ? 'no title' : !issueNumber ? 'no issueNumber'
+    : suppressReference ? 'suppressReference=true' : AB_FORCE_SUPPRESS_REFERENCE ? 'AB_FORCE_SUPPRESS_REFERENCE=true' : null;
+  if (_refSkip) refDebug = 'localref skip: ' + _refSkip + ' (title=' + JSON.stringify(title) + ' iss=' + JSON.stringify(issueNumber) + ')';
   if (baseUrl && title && issueNumber && !suppressReference && !AB_FORCE_SUPPRESS_REFERENCE) {
     try {
       const _dbg = [];
