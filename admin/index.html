@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Robograder Admin</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@700;800;900&display=swap" rel="stylesheet">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23152e10'/%3E%3Ctext x='50' y='65' text-anchor='middle' font-size='50' font-family='Helvetica' font-weight='bold' fill='%237aa838'%3ERG%3C/text%3E%3C/svg%3E">
 <style>
   :root {
@@ -2351,11 +2351,11 @@ const RGV2 = (function () {
     // it off-center. font-stretch 62.5% uses Noto Sans Display's real condensed
     // width axis (narrow glyphs, prints correctly) so decimals like 5.5 stay tight.
     var numHtml = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">'
-      + '<span style="font-family:\'Saira Condensed\',system-ui,sans-serif;font-stretch:62.5%;font-weight:900;color:' + numColor + ';line-height:1;font-size:' + numSize + 'px">' + p.whole + p.frac + '</span></div>';
+      + '<span style="font-family:\'League Spartan\',system-ui,sans-serif;font-weight:900;transform:scaleX(0.66);transform-origin:center;display:inline-block;color:' + numColor + ';line-height:1;font-size:' + numSize + 'px">' + p.whole + p.frac + '</span></div>';
     // Stars: top-center.
     var starsHtml = (stars > 0 || o.restoStar) ? '<div style="position:absolute;top:' + Math.round(size*0.05) + 'px;left:0;right:0;display:flex;justify-content:center;pointer-events:none">' + _starRow(stars, starPx, starColor, o.restoStar, o.restoColor) + '</div>' : "";
     // PM: UPPER-RIGHT (never below the score).
-    var pmHtml = (o.pmLabel) ? '<div style="position:absolute;top:' + Math.round(size*0.06) + 'px;right:' + Math.round(size*0.07) + 'px;font-family:\'Saira Condensed\',system-ui,sans-serif;font-stretch:62.5%;font-size:' + Math.max(10, Math.round(size*0.135)) + 'px;font-weight:700;color:' + pmColor + ';line-height:1;white-space:nowrap;pointer-events:none">' + o.pmLabel + '</div>' : "";
+    var pmHtml = (o.pmLabel) ? '<div style="position:absolute;top:' + Math.round(size*0.06) + 'px;right:' + Math.round(size*0.07) + 'px;font-family:\'League Spartan\',system-ui,sans-serif;transform:scaleX(0.62);transform-origin:top right;font-size:' + Math.max(10, Math.round(size*0.135)) + 'px;font-weight:700;color:' + pmColor + ';line-height:1;white-space:nowrap;pointer-events:none">' + o.pmLabel + '</div>' : "";
     // Footer (version / RG): bottom-center.
     var footHtml = "";
     if (o.footer === "RG") footHtml = '<div style="position:absolute;bottom:' + Math.round(size*0.05) + 'px;left:0;right:0;text-align:center;font-size:' + Math.max(8, Math.round(size*0.086)) + 'px;font-weight:700;color:' + footerColor + ';opacity:0.85;letter-spacing:1px;line-height:1;pointer-events:none">RG</div>';
