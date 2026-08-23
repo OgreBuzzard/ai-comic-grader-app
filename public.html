@@ -27,7 +27,7 @@
     - IBM Plex Mono falls back to Menlo via system stack (matches index.html)
 -->
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Display:wdth,wght@62.5..100,500;700;900&family=Barlow+Condensed:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@700;800;900&family=Saira:wght@700&family=Saira+Extra+Condensed:wght@700&display=swap" rel="stylesheet">
 
 <script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
 <!-- Shared RoboGrade panel renderer (S12). Same module index.html uses for
@@ -209,17 +209,29 @@
     var border = o.border || ("1.5px solid " + (o.borderColor || "#3a5010"));
     var stars = o.stars || 0;
     var starPx = o.starPx || Math.max(8, Math.round(size * 0.11));
-    var numSize = o.numSize || Math.round(size * 0.54);
+    var numSize = o.numSize || Math.round(size * 0.66);
+    var _nudge = Math.round(numSize * 0.09);
     var p = gradeParts(o.grade);
     // Number: ABSOLUTELY centered in the full box so PM/stars/footer never shift
     // it off-center. font-stretch 62.5% uses Noto Sans Display's real condensed
     // width axis (narrow glyphs, prints correctly) so decimals like 5.5 stay tight.
+    var _numInner = p.frac ? (p.whole + '<span style="font-size:0.5em">.</span>' + p.frac.slice(1)) : p.whole;
     var numHtml = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">'
-      + '<span style="font-family:\'League Spartan\',system-ui,sans-serif;font-weight:900;transform:scaleX(0.66);transform-origin:center;display:inline-block;color:' + numColor + ';line-height:1;font-size:' + numSize + 'px">' + p.whole + p.frac + '</span></div>';
+      + '<span style="font-family:\'League Spartan\',system-ui,sans-serif;font-weight:900;transform:scaleX(0.66) translateY(' + _nudge + 'px);transform-origin:center;display:inline-block;color:' + numColor + ';line-height:1;font-size:' + numSize + 'px">' + _numInner + '</span></div>';
     // Stars: top-center.
     var starsHtml = (stars > 0 || o.restoStar) ? '<div style="position:absolute;top:' + Math.round(size*0.05) + 'px;left:0;right:0;display:flex;justify-content:center;pointer-events:none">' + _starRow(stars, starPx, starColor, o.restoStar, o.restoColor) + '</div>' : "";
     // PM: UPPER-RIGHT (never below the score).
-    var pmHtml = (o.pmLabel) ? '<div style="position:absolute;top:' + Math.round(size*0.06) + 'px;right:' + Math.round(size*0.07) + 'px;font-family:\'League Spartan\',system-ui,sans-serif;font-size:' + Math.max(10, Math.round(size*0.135)) + 'px;font-weight:700;color:' + pmColor + ';line-height:1;white-space:nowrap;pointer-events:none">' + o.pmLabel + '</div>' : "";
+    var pmHtml = "";
+    if (o.pmLabel) {
+      var _pmM = String(o.pmLabel).match(/^([^0-9.]*)(.*)$/);
+      var _pmSym = _pmM ? _pmM[1] : '';
+      var _pmNum = _pmM ? _pmM[2] : String(o.pmLabel);
+      var _pmSize = Math.max(11, Math.round(size * 0.17));
+      var _pmTop = Math.round(size * 0.5 + _nudge - numSize * 0.365 - _pmSize * 0.5);
+      pmHtml = '<div style="position:absolute;top:' + _pmTop + 'px;right:' + Math.round(size*0.07) + 'px;line-height:1;white-space:nowrap;pointer-events:none;color:' + pmColor + ';font-weight:700">'
+        + '<span style="font-family:\'Saira\',system-ui,sans-serif;font-size:' + _pmSize + 'px">' + _pmSym + '</span>'
+        + '<span style="font-family:\'Saira Extra Condensed\',system-ui,sans-serif;font-size:' + _pmSize + 'px">' + _pmNum + '</span></div>';
+    }
     // Footer (version / RG): bottom-center.
     var footHtml = "";
     if (o.footer === "RG") footHtml = '<div style="position:absolute;bottom:' + Math.round(size*0.05) + 'px;left:0;right:0;text-align:center;font-size:' + Math.max(8, Math.round(size*0.086)) + 'px;font-weight:700;color:' + footerColor + ';opacity:0.85;letter-spacing:1px;line-height:1;pointer-events:none">RG</div>';
@@ -819,7 +831,7 @@
       const gv = String(g).includes('.') ? g : (parseFloat(g).toFixed ? parseFloat(g).toFixed(1) : g);
       inner += `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;justify-content:center">
         <div style="background:${_predBg};border-radius:14px;width:72px;height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,0.3)">
-          <div style="font-size:28px;font-weight:800;color:#fff;line-height:1">${gv}</div>
+          <div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:28px;font-weight:800;color:#fff;line-height:1">${gv}</div>
           <div style="font-size:9px;color:rgba(255,255,255,0.8);letter-spacing:0.8px;margin-top:2px">CGC</div>
         </div>
       </div>`;

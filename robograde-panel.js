@@ -274,7 +274,7 @@
           restoStar: !!(comic && comic.restorationCheckRan), restoColor: '#b58be0',
           footer: 'version', footerText: 'V' + (window.RG_GRADING_VERSION || '4.81'),  // APP version (bumps to 5.0), not the engine schema version
           size: 104, numColor: _sbNum, starColor: _sbStar, footerColor: _sbVer, pmColor: OLIVE_LT, bg: _sbBg, border: '1.5px solid ' + _sbBorder
-        }) : `<div style="background:${_sbBg};border-radius:18px;width:104px;height:104px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px solid ${_sbBorder};position:relative"><span style="font-family:'Noto Sans Display',sans-serif;font-weight:900;color:${_sbNum};font-size:56px;transform:scaleX(0.82);display:inline-block">${scoreRounded}</span></div>`}
+        }) : `<div style="background:${_sbBg};border-radius:18px;width:104px;height:104px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px solid ${_sbBorder};position:relative"><span style="font-family:'League Spartan',sans-serif;font-weight:900;color:${_sbNum};font-size:56px;transform:scaleX(0.82);display:inline-block">${scoreRounded}</span></div>`}
         <div style="flex:1;display:grid;grid-template-columns:2fr 2fr 1fr;grid-template-rows:auto auto;gap:4px">
           <!-- Row 1: Front spans the full width of the sub-score grid. The
                proportional layout (Front full row; Back+Spine+Int below at
@@ -283,20 +283,20 @@
                size 2x2 grid that preceded this misrepresented Front as just
                1/4 of the score when it's actually 1/2. -->
           <div style="grid-column:1/-1;background:${OLIVE};border-radius:6px;padding:10px 6px;text-align:center">
-            <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:29px;font-weight:800;color:${CHARTREUSE};line-height:1">${fs}</div>
+            <div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:29px;font-weight:800;color:${CHARTREUSE};line-height:1">${fs}</div>
             <div style="font-size:9px;color:${OLIVE_LT};letter-spacing:1.5px;margin-top:3px">FRONT</div>
           </div>
           <!-- Row 2: Back and Spine at 2/5 each, Interior at 1/5 ("INT"). -->
           <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
-            <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:20px;font-weight:800;color:${CHARTREUSE};line-height:1">${bs}</div>
+            <div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:20px;font-weight:800;color:${CHARTREUSE};line-height:1">${bs}</div>
             <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:2px">BACK</div>
           </div>
           <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
-            <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:20px;font-weight:800;color:${CHARTREUSE};line-height:1">${ss}</div>
+            <div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:20px;font-weight:800;color:${CHARTREUSE};line-height:1">${ss}</div>
             <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:2px">SPINE</div>
           </div>
           <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
-            <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:20px;font-weight:800;color:${CHARTREUSE};line-height:1">${ins}</div>
+            <div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:20px;font-weight:800;color:${CHARTREUSE};line-height:1">${ins}</div>
             <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:2px">INT</div>
           </div>
         </div>
@@ -438,7 +438,7 @@
       const base = m ? m[1] : s;
       const suf = (m && m[2]) ? m[2] : "";
       const sup = Math.round(baseSize * 0.5);
-      return `<span style="display:inline-flex;align-items:center;line-height:1;font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-weight:800;color:${color}"><span style="font-size:${baseSize}px;line-height:1">${base}</span>${suf ? `<span style="font-size:${sup}px;line-height:1;margin-left:1px">${suf}</span>` : ""}</span>`;
+      return `<span style="display:inline-flex;align-items:center;line-height:1;font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-weight:800;color:${color}"><span style="font-size:${baseSize}px;line-height:1">${base}</span>${suf ? `<span style="font-size:${sup}px;line-height:1;margin-left:1px">${suf}</span>` : ""}</span>`;
     };
 
     // ---------- defects ----------
@@ -545,9 +545,9 @@
     const _sbVer = _perfect10 ? '#7a5a10' : '#5a7028';
     for (let i = 0; i < _stars; i++) _starsHTML += _starSvg(_sbStar);
     const scoreBox = _cv3 ? window.RoboScoreV3.scoreBox({ grade: _cv3.grade, pmLabel: _cv3.pmLabel, stars: _stars, footer: 'version', footerText: 'V' + (window.RG_GRADING_VERSION || '4.81'), size: 104, numColor: _sbNum, starColor: _sbStar, footerColor: CHARTREUSE, pmColor: OLIVE_LT, bg: _sbBg, border: '1.5px solid ' + _sbBorder }) : `<div style="background:${_sbBg};border-radius:18px;width:104px;height:104px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px solid ${_sbBorder};position:relative">
-      ${precision > 0 ? `<span style="position:absolute;top:8px;right:8px;color:${_sbNum};line-height:1;display:inline-flex;align-items:center;gap:0;font-family:'Noto Sans Display',sans-serif;font-size:16px;font-weight:800"><img src="/assets/pm-notch.svg" width="16" height="22" style="display:block" alt=""><span style="margin-left:-1px">${precision}</span></span>` : ""}
+      ${precision > 0 ? `<span style="position:absolute;top:8px;right:8px;color:${_sbNum};line-height:1;display:inline-flex;align-items:center;gap:0;font-family:'League Spartan',sans-serif;font-size:16px;font-weight:800"><img src="/assets/pm-notch.svg" width="16" height="22" style="display:block" alt=""><span style="margin-left:-1px">${precision}</span></span>` : ""}
       <div style="position:absolute;top:6px;left:0;right:0;text-align:center;pointer-events:none;display:flex;justify-content:center;opacity:0.5"><span style="display:inline-flex;gap:1px;align-items:center;line-height:1">${_starsHTML}</span></div>
-      <div style="line-height:1">${(() => { const _s=String(gradeLabel==null?"":gradeLabel); const _m=_s.match(/^(\d+|—|-)([+-])?$/); const _b=_m?_m[1]:_s; const _f=(_m&&_m[2])?_m[2]:""; return `<span style="position:relative;display:inline-block;line-height:1;font-family:'Noto Sans Display',sans-serif;font-weight:800;color:${_sbNum}"><span style="font-size:60px;line-height:1;display:inline-block">${_b}</span>${_f?`<span style="position:absolute;left:100%;top:6px;font-size:30px;font-weight:600;line-height:1">${_f}</span>`:""}</span>`; })()}</div>
+      <div style="line-height:1">${(() => { const _s=String(gradeLabel==null?"":gradeLabel); const _m=_s.match(/^(\d+|—|-)([+-])?$/); const _b=_m?_m[1]:_s; const _f=(_m&&_m[2])?_m[2]:""; return `<span style="position:relative;display:inline-block;line-height:1;font-family:'League Spartan',sans-serif;font-weight:800;color:${_sbNum}"><span style="font-size:60px;line-height:1;display:inline-block">${_b}</span>${_f?`<span style="position:absolute;left:100%;top:6px;font-size:30px;font-weight:600;line-height:1">${_f}</span>`:""}</span>`; })()}</div>
       <div style="font-size:8px;font-weight:700;color:${_sbVer};letter-spacing:1px;opacity:0.85;position:absolute;bottom:8px;left:0;right:0;text-align:center">${_verLabel}</div>
     </div>`;
 

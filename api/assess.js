@@ -1643,6 +1643,34 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     // (refinement block intentionally removed; see history comment above)
     // ─────────────────────────────────────────────────────────────────────
 
+    // POST-MODEL REFERENCE (v4.82): the cheap pre-model Haiku identify can misread
+    // the issue number (e.g. 316 -> 315), so the pre-model reference fetch misses.
+    // The MAIN grading model reads the issue accurately. If the pre-model fetch
+    // produced no reference, retry the LOCAL reference_covers lookup here with the
+    // model's own title/issue and use it for the stored/displayed reference. (The
+    // grading pass already ran; this only fixes what is shown, never the grade.)
+    if (!referenceImageUrl && parsed && parsed.title && (parsed.issue != null && parsed.issue !== '') && baseUrl && !suppressReference && !AB_FORCE_SUPPRESS_REFERENCE) {
+      try {
+        const _slg = x => String(x).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+        const _sl = [...new Set([_slg(String(parsed.title).replace(/^the\s+/i, '')), _slg(parsed.title)])].filter(Boolean);
+        const _is = String(parsed.issue).replace(/^#/, '').replace(/^0+(\d)/, '$1').trim();
+        const _yr = (() => { const _m = String(parsed.issueDate || issueDate || '').match(/(?:19|20)\d{2}/); if (_m) return Number(_m[0]); return (typeof refYear === 'number' && refYear > 1900) ? refYear : null; })();
+        const _cands = []; for (const _s of _sl) { if (_yr) _cands.push(`${_s}_${_is}_${_yr}`); _cands.push(`${_s}_${_is}`); }
+        const _pmDbg = [];
+        for (const _b of _cands) {
+          const _u = `${baseUrl}/reference_covers/${_b}_front.jpg`;
+          const _r = await fetchWithTimeout(_u, {}, 5000);
+          _pmDbg.push(_b + '->' + _r.status);
+          if (!_r.ok) continue;
+          referenceImageUrl = _u; referenceVolumeName = 'Local reference';
+          const _bu = `${baseUrl}/reference_covers/${_b}_back.jpg`;
+          try { const _br = await fetchWithTimeout(_bu, {}, 5000); if (_br.ok) referenceBackImageUrl = _bu; } catch (e) {}
+          break;
+        }
+        refDebug = (refDebug || '') + ' | postmodel(' + (referenceImageUrl ? 'HIT ' : 'MISS ') + 'iss=' + JSON.stringify(_is) + ' ' + _pmDbg.join(',') + ')';
+      } catch (e) { refDebug = (refDebug || '') + ' | postmodel ERR ' + String((e && e.message) || e); }
+    }
+
     parsed._diagnostics = {
       comicvineRef: referenceImageBlock !== null,
       referenceImageUrl: referenceImageUrl,

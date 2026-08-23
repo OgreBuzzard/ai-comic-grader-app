@@ -32,7 +32,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Noto+Sans+Display:wdth,wght@62.5..100,500;700;900&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@700;800;900&family=Saira:wght@700&family=Saira+Extra+Condensed:wght@700&display=swap" rel="stylesheet">
   <link rel="preload" href="assets/Robograder_Background.jpg" as="image">
   <link rel="preload" href="assets/Robograder_v4_Load.webp" as="image">
   <link rel="preload" href="assets/Robograder_Logo.webp" as="image">
@@ -231,17 +231,29 @@
     var border = o.border || ("1.5px solid " + (o.borderColor || "#3a5010"));
     var stars = o.stars || 0;
     var starPx = o.starPx || Math.max(8, Math.round(size * 0.11));
-    var numSize = o.numSize || Math.round(size * 0.54);
+    var numSize = o.numSize || Math.round(size * 0.66);
+    var _nudge = Math.round(numSize * 0.09);
     var p = gradeParts(o.grade);
     // Number: ABSOLUTELY centered in the full box so PM/stars/footer never shift
     // it off-center. font-stretch 62.5% uses Noto Sans Display's real condensed
     // width axis (narrow glyphs, prints correctly) so decimals like 5.5 stay tight.
+    var _numInner = p.frac ? (p.whole + '<span style="font-size:0.5em">.</span>' + p.frac.slice(1)) : p.whole;
     var numHtml = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">'
-      + '<span style="font-family:\'League Spartan\',system-ui,sans-serif;font-weight:900;transform:scaleX(0.66);transform-origin:center;display:inline-block;color:' + numColor + ';line-height:1;font-size:' + numSize + 'px">' + p.whole + p.frac + '</span></div>';
+      + '<span style="font-family:\'League Spartan\',system-ui,sans-serif;font-weight:900;transform:scaleX(0.66) translateY(' + _nudge + 'px);transform-origin:center;display:inline-block;color:' + numColor + ';line-height:1;font-size:' + numSize + 'px">' + _numInner + '</span></div>';
     // Stars: top-center.
     var starsHtml = (stars > 0 || o.restoStar) ? '<div style="position:absolute;top:' + Math.round(size*0.05) + 'px;left:0;right:0;display:flex;justify-content:center;pointer-events:none">' + _starRow(stars, starPx, starColor, o.restoStar, o.restoColor) + '</div>' : "";
     // PM: UPPER-RIGHT (never below the score).
-    var pmHtml = (o.pmLabel) ? '<div style="position:absolute;top:' + Math.round(size*0.06) + 'px;right:' + Math.round(size*0.07) + 'px;font-family:\'League Spartan\',system-ui,sans-serif;font-size:' + Math.max(10, Math.round(size*0.135)) + 'px;font-weight:700;color:' + pmColor + ';line-height:1;white-space:nowrap;pointer-events:none">' + o.pmLabel + '</div>' : "";
+    var pmHtml = "";
+    if (o.pmLabel) {
+      var _pmM = String(o.pmLabel).match(/^([^0-9.]*)(.*)$/);
+      var _pmSym = _pmM ? _pmM[1] : '';
+      var _pmNum = _pmM ? _pmM[2] : String(o.pmLabel);
+      var _pmSize = Math.max(11, Math.round(size * 0.17));
+      var _pmTop = Math.round(size * 0.5 + _nudge - numSize * 0.365 - _pmSize * 0.5);
+      pmHtml = '<div style="position:absolute;top:' + _pmTop + 'px;right:' + Math.round(size*0.07) + 'px;line-height:1;white-space:nowrap;pointer-events:none;color:' + pmColor + ';font-weight:700">'
+        + '<span style="font-family:\'Saira\',system-ui,sans-serif;font-size:' + _pmSize + 'px">' + _pmSym + '</span>'
+        + '<span style="font-family:\'Saira Extra Condensed\',system-ui,sans-serif;font-size:' + _pmSize + 'px">' + _pmNum + '</span></div>';
+    }
     // Footer (version / RG): bottom-center.
     var footHtml = "";
     if (o.footer === "RG") footHtml = '<div style="position:absolute;bottom:' + Math.round(size*0.05) + 'px;left:0;right:0;text-align:center;font-size:' + Math.max(8, Math.round(size*0.086)) + 'px;font-weight:700;color:' + footerColor + ';opacity:0.85;letter-spacing:1px;line-height:1;pointer-events:none">RG</div>';
@@ -645,8 +657,8 @@ onAuthStateChanged(auth, async user => {
       box-shadow: 0 1px 4px rgba(40,30,10,0.25);
     }
     .btn-topbar.btn-grade span {
-      font-family: 'Noto Sans Display', sans-serif;
-      font-stretch: 62.5%;
+      font-family: 'League Spartan', sans-serif;
+      transform: scaleX(0.7); display: inline-block;
       font-size: 15px; font-weight: 900;
       letter-spacing: 0.3px;
       /* S14 fix: was white-space:nowrap, which forced "Grade a Comic"
@@ -894,7 +906,7 @@ onAuthStateChanged(auth, async user => {
     .ubadge-strip { height: 22px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .ubadge-strip span { font-size: 10px; font-weight: 800; letter-spacing: 1.5px; color: #fff; }
     .ubadge-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0px; }
-    .ubadge-num { font-family: 'Noto Sans Display', sans-serif; font-stretch: 62.5%; font-size: 32px; font-weight: 800; line-height: 1; }
+    .ubadge-num { font-family: 'League Spartan', sans-serif; transform: scaleX(0.7); display: inline-block; font-size: 32px; font-weight: 800; line-height: 1; }
     .ubadge-lbl { font-size: 9.5px; letter-spacing: 0.3px; text-align: center; line-height: 1.2; margin-top: 2px; }
     /* List row variant — corner radius scales proportionally (~21% of side) */
     .ubadge-sm { width: 56px; height: 56px; flex-shrink: 0; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.2); border: 1.5px solid rgba(0,0,0,0.15); display: flex; flex-direction: column; }
@@ -3286,7 +3298,7 @@ function buildListBadge(c) {
     }
     // Score stays DEAD CENTER (cardinal rule). Stars are an absolutely-positioned
     // overlay near the top so they never displace the number.
-    return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="position:absolute;top:6px;left:0;right:0;text-align:center;display:flex;justify-content:center">${assessmentTierStars(c, { size: 9, color: numColor })}</div>\n      <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:30px;font-weight:900;color:${numColor};line-height:1">${_dispG != null ? (() => { const _s=String(_dispG); const _m=_s.match(/^(\d+|—|-)([+\-]|\.\d)?$/); const _b=_m?_m[1]:_s; const _f=(_m&&_m[2])?_m[2]:""; return `<span style="position:relative;display:inline-block;line-height:1">${_b}${_f?`<span style="position:absolute;left:100%;top:3px;font-size:15px;font-weight:600;line-height:1">${_f}</span>`:""}</span>`; })() : `${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#7aa838;margin-left:1px">+</span>' : ""}`}</div>\n    </div>`;
+    return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="position:absolute;top:6px;left:0;right:0;text-align:center;display:flex;justify-content:center">${assessmentTierStars(c, { size: 9, color: numColor })}</div>\n      <div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:30px;font-weight:900;color:${numColor};line-height:1">${_dispG != null ? (() => { const _s=String(_dispG); const _m=_s.match(/^(\d+|—|-)([+\-]|\.\d)?$/); const _b=_m?_m[1]:_s; const _f=(_m&&_m[2])?_m[2]:""; return `<span style="position:relative;display:inline-block;line-height:1">${_b}${_f?`<span style="position:absolute;left:100%;top:3px;font-size:15px;font-weight:600;line-height:1">${_f}</span>`:""}</span>`; })() : `${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#7aa838;margin-left:1px">+</span>' : ""}`}</div>\n    </div>`;
   }
   if (c.cgcGrade) return buildBadge(normalizeGrade(c.cgcGrade), "cgc-official", detectDesignation(c), true);
   if (c.type !== "card" && c.psaGrade) return buildBadge(normalizeGrade(c.psaGrade), "psa-official", c.psaDesignation || "universal", true);
@@ -5294,7 +5306,7 @@ function showDetail(id) {
       if (imgs[2] || imgs[3]) html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">${_cimg(imgs[2],2,'TOP FRONT','1/1')}${_cimg(imgs[3],3,'BOTTOM FRONT','1/1')}</div>`;
     } else {
       const _refF = selected.referenceImageUrl, _refB = selected.referenceBackImageUrl;
-      const _refCell = (u, lbl, which) => `<div style="position:relative;border-radius:6px;overflow:hidden;border:2px solid #2f9e44;background:#eaf3ea;cursor:zoom-in" onclick="openLightboxRef('${selected.id}','${which}')"><img src="${u}" ${imgAttrs} style="width:100%;min-height:200px;object-fit:cover;display:block"><div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(38,132,58,0.92);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${lbl}</div></div>`;
+      const _refCell = (u, lbl, which) => `<div style="position:relative;border-radius:6px;overflow:hidden;border:2px solid #2f9e44;background:#eaf3ea;cursor:zoom-in;display:flex;align-items:center;justify-content:center;min-height:200px" onclick="openLightboxRef('${selected.id}','${which}')"><img src="${u}" ${imgAttrs} style="width:100%;max-height:100%;object-fit:contain;display:block"><div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(38,132,58,0.92);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${lbl}</div></div>`;
       if (_refF && _refB) {
         // Reference-cover layout: Front | Front Reference, then Back | Back Reference (references in a green border).
         html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
@@ -7222,16 +7234,19 @@ function animateRGLadder(el, toGrade, duration) {
 }
 
 function animateV3Ladder(el, toGrade, duration) {
-  // Clean count-up like the PG animation: plain uniform-size text, no superscript
-  // (the absolute-positioned .5 was flickering). formatGrade drops the .0.
+  // Count up in WHOLE integers only (0,1,2,...,floor(to)), then reveal the final
+  // value (with its .5 if any) once at the end. Animating half-steps made the
+  // width alternate between whole ("7") and decimal ("7.5") every tick, which
+  // flickered because the number is center-anchored. Integers-only keeps a
+  // stable width during the count and changes width just once, at the finish.
   return new Promise(resolve => {
     const to = Math.max(0, Math.min(10, Number(toGrade)));
-    const steps = Math.round(to / 0.5);
+    const topInt = Math.floor(to);
     const fmt = (v) => window.RoboScoreV3.formatGrade(v);
     const start = performance.now(); let lastIdx = -1;
     function tick(now){ const t=Math.min((now-start)/duration,1); const eased=easeOutCubic(t);
-      const idx=Math.min(Math.floor(eased*(steps+1)),steps);
-      if(idx!==lastIdx){ el.textContent=fmt(idx*0.5); lastIdx=idx; }
+      const idx=Math.min(Math.floor(eased*(topInt+1)),topInt);
+      if(idx!==lastIdx){ el.textContent=String(idx); lastIdx=idx; }
       if(t<1) requestAnimationFrame(tick); else { el.textContent=fmt(to); resolve(); } }
     requestAnimationFrame(tick);
   });
@@ -7524,7 +7539,7 @@ function mountResults(cgc, psa) {
     };
     const c = configs[type];
     const border = c.border ? `border:${c.border};` : "";
-    return `<div style="width:64px;height:64px;${border}background:${c.bg};border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n      <div id="${valueId}" style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:24px;font-weight:800;color:${c.text};line-height:1">${c.initial}</div>\n      <div style="font-size:9px;color:${c.text};opacity:0.75;margin-top:2px;letter-spacing:0.8px">${c.label}</div>\n    </div>`;
+    return `<div style="width:64px;height:64px;${border}background:${c.bg};border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n      <div id="${valueId}" style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:24px;font-weight:800;color:${c.text};line-height:1">${c.initial}</div>\n      <div style="font-size:9px;color:${c.text};opacity:0.75;margin-top:2px;letter-spacing:0.8px">${c.label}</div>\n    </div>`;
   };
   let badgesHtml = "";
   if (roboScore != null) badgesHtml += makeBadge("robograde", "anim-val-robo");
@@ -9449,7 +9464,7 @@ function buildCardRoboDisplay(item) {
     var _s = item && item.roboGrade && item.roboGrade.score;
     if (_s == null && item && item.cardData && item.cardData.robograde) _s = item.cardData.robograde.total;
     return _s != null
-      ? `<div style="margin-top:16px;background:#152e10;border:1.5px solid #4a7028;border-radius:12px;padding:16px;text-align:center"><div style="font-size:12px;color:#7aa838;letter-spacing:2px;margin-bottom:8px">ROBOGRADE SCORE</div><div style="font-family:'Noto Sans Display',sans-serif;font-weight:900;font-size:48px;color:#b8d820;line-height:1">${Math.round(_s)}</div></div>`
+      ? `<div style="margin-top:16px;background:#152e10;border:1.5px solid #4a7028;border-radius:12px;padding:16px;text-align:center"><div style="font-size:12px;color:#7aa838;letter-spacing:2px;margin-bottom:8px">ROBOGRADE SCORE</div><div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-weight:900;font-size:48px;color:#b8d820;line-height:1">${Math.round(_s)}</div></div>`
       : "";
   }
 }
@@ -9483,7 +9498,7 @@ function mountCardResults(rec) {
   if (window._modalFrameTimer) { clearInterval(window._modalFrameTimer); window._modalFrameTimer = null; }
   const gridEl = document.getElementById("tracker-grid-frame");
   if (gridEl) gridEl.style.display = "none";
-  const badge = (bg, txt, val, label, border, valId) => `<div style="width:64px;height:64px;${border ? `border:${border};` : ""}background:${bg};border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)"><div ${valId ? `id="${valId}" ` : ""}style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:24px;font-weight:800;color:${txt};line-height:1">${val}</div><div style="font-size:9px;color:${txt};opacity:0.75;margin-top:2px;letter-spacing:0.8px">${label}</div></div>`;
+  const badge = (bg, txt, val, label, border, valId) => `<div style="width:64px;height:64px;${border ? `border:${border};` : ""}background:${bg};border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)"><div ${valId ? `id="${valId}" ` : ""}style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:24px;font-weight:800;color:${txt};line-height:1">${val}</div><div style="font-size:9px;color:${txt};opacity:0.75;margin-top:2px;letter-spacing:0.8px">${label}</div></div>`;
   let badges = "";
   const _rgColCard = (window.RG_V3_DISPLAY && window.RoboScoreV3) ? "#b8d820" : "#aaee30";
   if (roboScore != null) badges += badge("#0f1a05", _rgColCard, "0", "RG", "1.5px solid #3a5010", "anim-val-robo-card");
@@ -10784,7 +10799,7 @@ function _renderAssign() {
     <div style="max-width:384px;margin:0 auto;width:100%;display:flex;flex-direction:column;flex:1">
       <div style="color:#eaf5df;font-size:23px;font-weight:700;font-family:'Barlow Condensed',sans-serif;letter-spacing:0.5px;margin-bottom:6px;text-align:center">Place your photos</div>
       <div style="color:#9abf60;font-size:12.5px;margin-bottom:16px;line-height:1.5;text-align:center">If any of these photos are in the wrong slot, tap the X to remove it, then tap the photo again down below and tap the slot it belongs in.</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 auto 16px;width:100%">${slotCells}</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:0 auto 16px;width:100%">${slotCells}</div>
       <div style="color:#7aa838;font-size:11px;text-transform:uppercase;letter-spacing:1.2px;font-weight:700;margin-bottom:8px">Photos${A.active != null ? ' — now tap a slot' : ''}</div>
       <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;min-height:96px;align-items:center">${trayCells}</div>
       <div style="display:flex;gap:10px;margin-top:auto;padding-top:14px">
