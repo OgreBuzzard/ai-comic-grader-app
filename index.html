@@ -6018,8 +6018,13 @@ function _lbComicDefectsHTML(item, idx) {
   const cat = _LB_COMIC_CAT[idx];
   if (!cat) return "";
   const rg = item.roboGrade || {};
-  const list = Array.isArray(rg.defects) ? rg.defects.filter(d => String(d.category || "") === cat && !/^page\s*quality$/i.test(String(d.type || ""))) : [];  // exclude the page-quality designation (not a defect)
+  const _pqWhite = /^white$/i.test(String(rg.pageQuality || "").trim());
+  const _isPQ = d => /^page\s*quality$/i.test(String(d.type || ""));
+  // Show the page-quality designation as an interior line UNLESS it is White
+  // (White = perfect, not worth noting). Below White, it IS worth showing.
+  const list = Array.isArray(rg.defects) ? rg.defects.filter(d => String(d.category || "") === cat && !(_isPQ(d) && _pqWhite)) : [];
   const rows = list.map(d => {
+    if (_isPQ(d)) return _lbRow((rg.pageQuality || "Page quality") + " pages", null);
     let t = d.type || "Defect";
     if (d.location && d.location !== "N/A") t += " — " + d.location;
     if (d.colorBreaking) t += " (color-breaking)";
@@ -7216,16 +7221,17 @@ function animateRGLadder(el, toGrade, duration) {
 }
 
 function animateV3Ladder(el, toGrade, duration) {
+  // Clean count-up like the PG animation: plain uniform-size text, no superscript
+  // (the absolute-positioned .5 was flickering). formatGrade drops the .0.
   return new Promise(resolve => {
     const to = Math.max(0, Math.min(10, Number(toGrade)));
     const steps = Math.round(to / 0.5);
-    const fmt = (v) => { const p = window.RoboScoreV3.gradeParts(v);
-      return `<span style="position:relative;display:inline-block;line-height:1">${p.whole}${p.frac ? `<span style="position:absolute;left:100%;top:0;font-size:0.55em;font-weight:600;line-height:1">${p.frac}</span>` : ''}</span>`; };
+    const fmt = (v) => window.RoboScoreV3.formatGrade(v);
     const start = performance.now(); let lastIdx = -1;
     function tick(now){ const t=Math.min((now-start)/duration,1); const eased=easeOutCubic(t);
       const idx=Math.min(Math.floor(eased*(steps+1)),steps);
-      if(idx!==lastIdx){ el.innerHTML=fmt(idx*0.5); lastIdx=idx; }
-      if(t<1) requestAnimationFrame(tick); else { el.innerHTML=fmt(to); resolve(); } }
+      if(idx!==lastIdx){ el.textContent=fmt(idx*0.5); lastIdx=idx; }
+      if(t<1) requestAnimationFrame(tick); else { el.textContent=fmt(to); resolve(); } }
     requestAnimationFrame(tick);
   });
 }
@@ -10764,20 +10770,19 @@ function _renderAssign() {
   const ov = document.getElementById("assign-overlay"); if (!ov || !_assign) return;
   const A = _assign;
   const slotCells = A.slots.map((src, i) => {
-    const _act = A.active != null;
+    const _hl = A.active != null && !src;   // only EMPTY slots highlight while a photo is picked
     const inner = src
       ? `<img src="${src}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"><button onclick="event.stopPropagation();_assignClearSlot(${i})" aria-label="Remove" style="position:absolute;top:4px;right:4px;z-index:2;background:rgba(0,0,0,0.55);color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:14px;line-height:1;cursor:pointer">×</button>`
-      : `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:${_act ? '#b8d820' : '#5a7040'};font-size:11px;font-weight:600;letter-spacing:0.3px">${_act ? "tap to place" : "empty"}</div>`;
-    return `<div onclick="_assignTapSlot(${i})" style="position:relative;aspect-ratio:5/7;background:#12200a;border:2px solid ${_act ? '#b8d820' : '#3a5818'};border-radius:10px;overflow:hidden;cursor:pointer;box-shadow:${_act ? '0 0 0 3px rgba(184,216,32,0.18)' : '0 1px 4px rgba(0,0,0,0.4)'};transition:border-color .12s,box-shadow .12s">${inner}<div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(10,23,5,0.92));color:#d7e8c2;font-size:10px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;padding:10px 4px 4px;text-align:center;font-family:'Barlow Condensed',sans-serif">${A.labels[i]}</div></div>`;
+      : `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:${_hl ? '#b8d820' : '#5a7040'};font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase">${_hl ? "TAP TO PLACE" : "EMPTY"}</div>`;
+    return `<div onclick="_assignTapSlot(${i})" style="position:relative;aspect-ratio:5/7;background:#12200a;border:2px solid ${_hl ? '#b8d820' : '#3a5818'};border-radius:10px;overflow:hidden;cursor:pointer;box-shadow:${_hl ? '0 0 0 3px rgba(184,216,32,0.18)' : '0 1px 4px rgba(0,0,0,0.4)'};transition:border-color .12s,box-shadow .12s">${inner}<div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(10,23,5,0.92));color:#d7e8c2;font-size:10px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;padding:10px 4px 4px;text-align:center;font-family:'Barlow Condensed',sans-serif">${A.labels[i]}</div></div>`;
   }).join("");
   const trayCells = A.tray.length
     ? A.tray.map((src, i) => `<div onclick="_assignTapTray(${i})" style="position:relative;width:64px;height:88px;flex:0 0 auto;border:2px solid ${A.active === i ? '#b8d820' : '#3a5818'};border-radius:8px;overflow:hidden;cursor:pointer;${A.active === i ? 'box-shadow:0 0 0 3px rgba(184,216,32,0.28)' : 'box-shadow:0 1px 4px rgba(0,0,0,0.4)'}"><img src="${src}" style="width:100%;height:100%;object-fit:cover"></div>`).join("")
-    : `<div style="color:#5a7040;font-size:12px;padding:8px">All photos placed.</div>`;
+    : '';
   ov.innerHTML = `
     <div style="max-width:384px;margin:0 auto;width:100%;display:flex;flex-direction:column;flex:1">
-      <img src="assets/Robograder_Logo.webp" alt="" style="width:48px;height:48px;object-fit:contain;margin:0 auto 6px;display:block">
-      <div style="color:#eaf5df;font-size:23px;font-weight:700;font-family:'Barlow Condensed',sans-serif;letter-spacing:0.5px;margin-bottom:4px;text-align:center">Place your photos</div>
-      <div style="color:#9abf60;font-size:12.5px;margin-bottom:16px;line-height:1.5;text-align:center">Pre-filled in the order your phone returned them. Tap a photo, then the slot it belongs in, to fix any that are wrong. Tap a slot's × to send it back down.</div>
+      <div style="color:#eaf5df;font-size:23px;font-weight:700;font-family:'Barlow Condensed',sans-serif;letter-spacing:0.5px;margin-bottom:6px;text-align:center">Place your photos</div>
+      <div style="color:#9abf60;font-size:12.5px;margin-bottom:16px;line-height:1.5;text-align:center">If any of these photos are in the wrong slot, tap the X to remove it, then tap the photo again down below and tap the slot it belongs in.</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 auto 16px;width:100%">${slotCells}</div>
       <div style="color:#7aa838;font-size:11px;text-transform:uppercase;letter-spacing:1.2px;font-weight:700;margin-bottom:8px">Photos${A.active != null ? ' — now tap a slot' : ''}</div>
       <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;min-height:96px;align-items:center">${trayCells}</div>

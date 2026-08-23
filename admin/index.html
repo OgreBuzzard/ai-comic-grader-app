@@ -2510,21 +2510,42 @@ function renderItemDetail(it) {
       <div style="margin-top:6px;font-size:12px;color:#9aa;">
         ${it.transferCode ? `<span onclick="showUser('${escapeAttr(it.uid)}')" style="cursor:pointer;text-decoration:underline dotted;" title="Open this user's account">${it.userName ? escapeHtml(it.userName) : 'Unknown user'} · <span style="color:#e8c257;font-weight:700;">${escapeHtml(it.transferCode)}</span></span>` : (it.userName ? escapeHtml(it.userName) : 'Unknown user')}${it.userEmail ? ` · <a href="mailto:${escapeAttr(it.userEmail)}?subject=${encodeURIComponent('Robograder — ' + (it.title || '') + (it.issue ? ' #' + it.issue : ''))}" style="color:#7fd0ff;text-decoration:none;">✉ email user</a>` : ''}
       </div>
+      <div style="margin-top:5px;font-size:13px;font-weight:700;line-height:1.3;">${(it.fmvRange || it.fmv) ? `<span style="color:#7fd0ff;">${escapeHtml(it.fmvRange || String(it.fmv))}</span>` : ''}${it.roboGradeId ? `<span style="color:#c9a0ff;margin-left:12px;">RG-ID ${escapeHtml(it.roboGradeId)}</span>` : ''}</div>
     </div>
     ${(it.clientPlatform || it.clientAppVersion) ? `<div style="margin:-2px 0 12px;font-size:11px;color:#8a8d96;">\uD83D\uDCF1 CLIENT: <b style="color:#c8ccd4;">${escapeHtml(String(it.clientPlatform||'?')).toUpperCase()}</b>${it.clientAppVersion ? ' \u00B7 v' + escapeHtml(String(it.clientAppVersion)) : ''}${it.clientSavedAt ? ' \u00B7 saved ' + _fmtDateTime(it.clientSavedAt) : ''}</div>` : ''}
 
     <h3 class="section-h">Sub-scores</h3>
-    ${it.type === 'card' && it.cardRobograde ? `<div class="scores">
-      <div class="score-cell"><div class="num">${v(it.cardRobograde.surface ? it.cardRobograde.surface.total : null)}</div><div class="lbl">Surface</div></div>
-      <div class="score-cell"><div class="num">${v(it.cardRobograde.centering ? it.cardRobograde.centering.total : null)}</div><div class="lbl">Centering</div></div>
-      <div class="score-cell"><div class="num">${v(it.cardRobograde.corners ? it.cardRobograde.corners.total : null)}</div><div class="lbl">Corners</div></div>
-      <div class="score-cell"><div class="num">${v(it.cardRobograde.edges ? it.cardRobograde.edges.total : null)}</div><div class="lbl">Edges</div></div>
-    </div>` : `<div class="scores">
-      <div class="score-cell"><div class="num">${v(it.frontScore)}</div><div class="lbl">Front</div></div>
-      <div class="score-cell"><div class="num">${v(it.backScore)}</div><div class="lbl">Back</div></div>
-      <div class="score-cell"><div class="num">${v(it.interiorScore)}</div><div class="lbl">Interior</div></div>
-      <div class="score-cell"><div class="num">${v(it.spineScore)}</div><div class="lbl">Spine</div></div>
-    </div>`}
+    ${(() => {
+      const sd = n => (n == null || n === '') ? '—' : (Number.isInteger(+n) ? String(+n) : Number(n).toFixed(1));
+      const CH='background:#12200a;border:1px solid #2c4414;border-radius:6px;padding:2px 8px;font-size:11px;color:#bfe08a;white-space:nowrap';
+      const TAG='display:inline-block;min-width:20px;font-size:10px;font-weight:700;color:#8aa;opacity:.85;letter-spacing:.5px';
+      const ROW='display:flex;gap:5px;align-items:center;flex-wrap:wrap';
+      const EQ='font-size:12px;color:#eaffc9;font-weight:800;margin-left:3px';
+      const NOTE='font-size:10px;color:#c9a06a';
+      const WRAP='display:flex;flex-direction:column;gap:5px;margin:2px 0 12px';
+      const chip=(val,lbl)=>`<span style="${CH}"><b style="color:#eaffc9">${sd(val)}</b> <span style="opacity:.7">${lbl}</span></span>`;
+      if (it.type === 'card' && it.cardRobograde) {
+        const c = it.cardRobograde;
+        let v3row='';
+        try{ if(window.RoboScoreV3 && window.RoboScoreV3.forCard){ const r=window.RoboScoreV3.forCard(it); if(r){ const s2=r.subscores; v3row=`<div style="${ROW}"><span style="${TAG}">v3</span>${chip(s2.surface,'Surf')}${chip(s2.corners,'Corn')}${chip(s2.edges,'Edge')}${chip(s2.centering,'Ctr')}<span style="${EQ}">= ${sd(r.grade)}</span></div>`; } } }catch(e){}
+        return `<div style="${WRAP}">
+          <div style="${ROW}"><span style="${TAG}">raw</span>${chip(c.surface&&c.surface.total,'Surf')}${chip(c.centering&&c.centering.total,'Ctr')}${chip(c.corners&&c.corners.total,'Corn')}${chip(c.edges&&c.edges.total,'Edge')}</div>
+          ${v3row}
+        </div>`;
+      }
+      const v1row=`<div style="${ROW}"><span style="${TAG}">v1</span>${chip(it.frontScore,'Front')}${chip(it.backScore,'Back')}${chip(it.spineScore,'Spine')}${chip(it.interiorScore,'Int')}<span style="${EQ}">= ${it.score==null?'—':it.score}</span></div>`;
+      let v3row='';
+      try{
+        if(window.RoboScoreV3 && (it.frontScore!=null||it.backScore!=null||it.spineScore!=null)){
+          const _t3=!!(it.interiorImages&&it.interiorImages.length), _t2=!_t3&&!!(it.cornerImages&&it.cornerImages.length);
+          const r=window.RoboScoreV3.forComic({ roboGrade:{ frontScore:it.frontScore, backScore:it.backScore, spineScore:it.spineScore, pageQuality:it.pageQuality, defects: it.defects||(it.roboGrade&&it.roboGrade.defects)||[] }, photograder:it.photograder, labelDetected:!!(it.officialCGCGrade||it.officialPSAGrade), fullAssessmentRan:_t3, deepAssessmentRan:_t2, fullInteriorComplete:_t3 });
+          if(r){ const s2=r.subscores; const depth=_t3?'Full':_t2?'Deep':'Main'; const note=r.ceilingHit?`capped @ ${depth}${r.upsell?` (${r.upsell} can raise)`:''}`:'';
+            v3row=`<div style="${ROW}"><span style="${TAG}">v3</span>${chip(s2.front,'Front')}${chip(s2.back,'Back')}${chip(s2.spine,'Spine')}${chip(s2.interior,'Int')}<span style="${EQ}">= ${sd(r.grade)}</span>${note?`<span style="${NOTE}">${note}</span>`:''}</div>`;
+          }
+        }
+      }catch(e){ v3row=`<div style="color:#a55;font-size:11px">v3 err: ${e&&e.message||e}</div>`; }
+      return `<div style="${WRAP}">${v1row}${v3row}</div>`;
+    })()}
 
     <h3 class="section-h">Grades</h3>
     <div style="display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;margin:2px 0 6px;">
@@ -2534,45 +2555,26 @@ function renderItemDetail(it) {
         const _r = window.RoboScoreV3.forComic({ roboGrade: { frontScore: it.frontScore, backScore: it.backScore, spineScore: it.spineScore, pageQuality: it.pageQuality, defects: it.defects || (it.roboGrade && it.roboGrade.defects) || [] }, photograder: it.photograder, labelDetected: !!(it.officialCGCGrade || it.officialPSAGrade), fullAssessmentRan: _t3, deepAssessmentRan: _t2, fullInteriorComplete: _t3 });
         return _r ? window.RoboScoreV3.scoreBox({ grade: _r.grade, pmLabel: _r.pmLabel, stars: _t3?3:_t2?2:1, footer: 'RG', size: 76, numColor: '#b8d820', starColor: '#b8d820', footerColor: '#b8d820', pmColor: '#b8d820', bg: '#0f1a05', borderColor: '#3a5010' }) : '';
       })() : `<div style="background:#0f1a05;border:1.5px solid #3a5010;border-radius:8px;padding:5px 12px;text-align:center;min-width:56px;box-shadow:0 2px 6px rgba(0,0,0,0.4);"><div style="font-size:10px;color:#7aa838;letter-spacing:1px;height:12px;line-height:12px;">${'★'.repeat(tier)}</div><div style="font-size:22px;font-weight:800;color:#aaee30;line-height:1.15;">${v(it.score)}</div><div style="font-size:9px;color:#aaee30;opacity:0.75;letter-spacing:0.8px;">RG</div></div>`}
-      ${it.type === 'card'
-        ? `<div style="background:#b91c1c;border-radius:8px;padding:5px 12px;text-align:center;min-width:56px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">
-        <div style="height:12px;"></div>
-        <div style="font-size:22px;font-weight:800;color:#fff;line-height:1.15;">${v(it.predictedPSA)}</div>
-        <div style="font-size:9px;color:#fff;opacity:0.85;letter-spacing:0.8px;">${(function(g){g=parseFloat(g);return g>=10?'GEM MT':g>=9?'MINT':g>=8?'NM-MT':g>=7?'NM':g>=6?'EX-MT':g>=5?'EX':g>=4?'VG-EX':g>=3?'VG':g>=2?'GD':g>=1.5?'FR':g>=1?'PR':'PSA';})(it.predictedPSA)}</div>
-      </div>`
-        : `<div style="background:#2a5a8a;border-radius:8px;padding:5px 12px;text-align:center;min-width:56px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">
-        <div style="height:12px;"></div>
-        <div style="font-size:22px;font-weight:800;color:#e0f0ff;line-height:1.15;">${v(it.assessedCGCGrade)}</div>
-        <div style="font-size:9px;color:#e0f0ff;opacity:0.75;letter-spacing:0.8px;">PG</div>
-      </div>`}
-      <div style="display:flex;flex-direction:column;justify-content:center;gap:6px;">
-        <span style="background:var(--panel-2);border:1px solid var(--rule);color:var(--text);border-radius:20px;padding:3px 12px;font-size:12px;font-weight:600;white-space:nowrap;">PM ${it.confidenceRange != null ? '±' + it.confidenceRange : '—'}</span>
+      ${(() => {
+        const isCard = it.type === 'card';
+        const num = isCard ? it.predictedPSA : it.assessedCGCGrade;
+        const valid = num != null && num !== '' && isFinite(Number(num));
+        const bg = isCard ? '#7a1414' : '#163049';
+        const bd = isCard ? '#b91c1c' : '#2a5a8a';
+        const ink = isCard ? '#fff' : '#e0f0ff';
+        const foot = isCard ? (function(g){g=parseFloat(g);return g>=10?'GEM MT':g>=9?'MINT':g>=8?'NM-MT':g>=7?'NM':g>=6?'EX-MT':g>=5?'EX':g>=4?'VG-EX':g>=3?'VG':g>=2?'GD':g>=1.5?'FR':g>=1?'PR':'PSA';})(num) : 'PG';
+        if (valid && window.RoboScoreV3 && window.RoboScoreV3.scoreBox) {
+          return window.RoboScoreV3.scoreBox({ grade: Number(num), stars: 0, footer: 'version', footerText: foot, size: 76, numColor: ink, footerColor: ink, pmColor: ink, bg: bg, borderColor: bd });
+        }
+        return `<div style="width:76px;height:76px;background:${bg};border:1.5px solid ${bd};border-radius:11px;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.4);"><div style="font-size:30px;font-weight:800;color:${ink};line-height:1;">${valid?num:'—'}</div><div style="font-size:8px;color:${ink};opacity:0.8;letter-spacing:0.8px;margin-top:3px;">${foot}</div></div>`;
+      })()}
+      <div style="display:flex;flex-direction:column;justify-content:center;">
         ${it.pageQuality
           ? `<span style="background:${pqColors[it.pageQuality] || '#f0ece6'};color:#4a4034;border-radius:20px;padding:3px 12px;font-size:12px;font-weight:600;white-space:nowrap;">${escapeHtml(it.pageQuality)}</span>`
           : `<span style="background:var(--panel-2);border:1px solid var(--rule);color:var(--text-dim);border-radius:20px;padding:3px 12px;font-size:12px;">PQ —</span>`}
       </div>
     </div>
 
-    ${(() => {
-      try {
-        if (it.type === 'card' || !window.RoboScoreV3) return '';
-        if (it.frontScore == null && it.backScore == null && it.spineScore == null) return '';
-        const _t3 = !!(it.interiorImages && it.interiorImages.length);
-        const _t2 = !_t3 && !!(it.cornerImages && it.cornerImages.length);
-        const r = window.RoboScoreV3.forComic({ roboGrade: { frontScore: it.frontScore, backScore: it.backScore, spineScore: it.spineScore, pageQuality: it.pageQuality, defects: it.defects || (it.roboGrade && it.roboGrade.defects) || [] }, photograder: it.photograder, labelDetected: !!(it.officialCGCGrade || it.officialPSAGrade), fullAssessmentRan: _t3, deepAssessmentRan: _t2, fullInteriorComplete: _t3 });
-        if (!r) return '';
-        const sd = n => Number.isInteger(n) ? String(n) : Number(n).toFixed(1);
-        const s = r.subscores;
-        const chips = [[sd(s.front),'Front'],[sd(s.back),'Back'],[sd(s.spine),'Spine'],[sd(s.interior),'Int']].map(([val,lbl]) => `<span style="background:#12200a;border:1px solid #2c4414;border-radius:6px;padding:3px 9px;font-size:12px;color:#bfe08a"><b style="color:#eaffc9">${val}</b> <span style="opacity:0.7">${lbl}</span></span>`).join('');
-        const depth = _t3 ? 'Full' : _t2 ? 'Deep' : 'Main';
-        const note = r.ceilingHit ? ` &middot; capped at ${depth} ceiling${r.upsell ? ` (${r.upsell} can raise)` : ''}` : '';
-        return `<h3 class="section-h" style="margin-top:20px;color:var(--accent);">Robograde v3 subscores</h3>
-          <div style="display:flex;flex-direction:column;gap:6px;margin:2px 0 10px;">
-            <div style="display:flex;gap:6px;flex-wrap:wrap;">${chips}</div>
-            <div style="font-size:11px;color:#9ab;line-height:1.4;">from 0&ndash;100: <b style="color:#cde">${it.score == null ? '—' : it.score}</b> &middot; subscores sum to the grade${note}</div>
-          </div>`;
-      } catch (e) { return '<div style="color:#a55;font-size:11px">v3 breakdown error: ' + (e && e.message || e) + '</div>'; }
-    })()}
     ${(() => {
       const pg = it.photograder;
       if (!pg) return '';
@@ -2598,13 +2600,6 @@ function renderItemDetail(it) {
           ${flagHTML}
         </div>`;
     })()}
-
-    <h3 class="section-h">Assessment Metadata</h3>
-    ${fieldGrid([
-      ['FMV', it.fmvRange || it.fmv],
-      ['Robograde ID', it.roboGradeId],
-      ['Robograde Date', it.roboGradeDate ? new Date(it.roboGradeDate).toLocaleString() : null],
-    ])}
 
     ${it.keyInfo ? `
       <div class="notes-block">

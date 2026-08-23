@@ -1060,8 +1060,11 @@ function _lbRenderDefects() {
   const cat = _lbCats[_lbIdx];
   let html = '';
   if (cat && rec.type !== 'card' && rec.roboGrade && Array.isArray(rec.roboGrade.defects)) {
-    const defs = rec.roboGrade.defects.filter(d => String(d.category || '') === cat && !/^page\s*quality$/i.test(String(d.type || '')));  // exclude page-quality designation
+    const _pqWhite = /^white$/i.test(String(rec.roboGrade.pageQuality || '').trim());
+    const _isPQ = d => /^page\s*quality$/i.test(String(d.type || ''));
+    const defs = rec.roboGrade.defects.filter(d => String(d.category || '') === cat && !(_isPQ(d) && _pqWhite));
     const rows = defs.map(d => {
+      if (_isPQ(d)) return _lbRow((rec.roboGrade.pageQuality || 'Page quality') + ' pages', null);
       let t = d.type || 'Defect';
       if (d.location && d.location !== 'N/A') t += ' — ' + d.location;
       if (d.colorBreaking) t += ' (color-breaking)';
