@@ -512,7 +512,50 @@ export default async function handler(req, res) {
   // accurate title/issue. When the client DOES supply them (slabs, manual entry),
   // the reference is also resolved pre-model here so it can inform grading too.
   let refTitle = title, refIssue = issueNumber, refYear = issueYear;
-  let refIdDebug = (title && issueNumber) ? 'id=client' : 'id=post-model';
+  let refIdDebug = (title && issueNumber) ? 'id=client' : 'id=none';
+
+  // IDENTIFY-FIRST (two-phase, v4.83). The app is image-first: on a fresh capture
+  // the client sends no title/issue. To let the GRADER compare against a reference
+  // cover (so it can tell printed art from real defects), we must know the book
+  // BEFORE the grading call. So identify it from the FRONT cover here, using the
+  // accurate primary model (the cheap model misread issue numbers). The reference
+  // lookup below (local reference_covers first, ComicVine only if local is absent)
+  // then runs with this identity and feeds the grader. Client-supplied title wins
+  // (slabs / re-assessments skip this identify call entirely).
+  // COST: one extra front-cover vision call (~$0.01/assessment) + ~2-3s.
+  if ((!refTitle || !refIssue) && Array.isArray(images) && images[0] && apiKey && !suppressReference && !AB_FORCE_SUPPRESS_REFERENCE) {
+    try {
+      let _idBlock = null;
+      const _f = images[0];
+      if (typeof _f === 'string' && _f.startsWith('data:')) {
+        const _c = _f.indexOf(',');
+        _idBlock = { type: 'image', source: { type: 'base64', media_type: normalizeMediaType((_f.slice(0, _c).match(/data:(.*);base64/) || [])[1]), data: _f.slice(_c + 1) } };
+      } else if (_f && _f.data) {
+        _idBlock = { type: 'image', source: { type: 'base64', media_type: normalizeMediaType(_f.mediaType || _f.media_type), data: _f.data } };
+      }
+      if (_idBlock) {
+        const _idPrompt = 'Identify this comic book from its front cover, for a reference-image lookup. Read the issue number CAREFULLY \u2014 it is usually in a small corner box or beneath the title, and a misread wrong number is worse than none. Respond with ONLY a JSON object and nothing else: {"title":"series title, no leading The","issue":"issue number exactly as printed, digits only","year":four-digit cover year or null}. If the issue number is not clearly legible, set "issue" to null rather than guessing.';
+        const _idResp = await anthropicWithRetry(
+          (remainingMs) => fetchTimeout('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+            body: JSON.stringify({ model: 'claude-opus-5', max_tokens: 150, messages: [{ role: 'user', content: [_idBlock, { type: 'text', text: _idPrompt }] }] })
+          }, remainingMs),
+          { deadlineMs: 22000, maxAttempts: 2, label: 'refident' }
+        );
+        const _idJson = await _idResp.json();
+        const _tb = Array.isArray(_idJson.content) ? _idJson.content.find(b => b.type === 'text') : null;
+        const _mt = _tb && _tb.text ? _tb.text.match(/\{[\s\S]*\}/) : null;
+        if (_mt) {
+          const _o = JSON.parse(_mt[0]);
+          if (!refTitle && _o.title) refTitle = String(_o.title).trim();
+          if (!refIssue && _o.issue != null && String(_o.issue).trim() !== '') refIssue = String(_o.issue).trim();
+          if (!refYear && _o.year) refYear = Number(_o.year);
+          refIdDebug = 'id=model(t=' + JSON.stringify(refTitle) + ' i=' + JSON.stringify(refIssue) + ' y=' + (refYear || 'null') + ')';
+        } else { refIdDebug = 'id=model:nojson'; }
+      }
+    } catch (e) { refIdDebug = 'id=model:ERR ' + String((e && e.message) || e); }
+  }
 
   // LOCAL REFERENCE COVERS (served from /reference_covers/). If clean front/back
   // scans exist for this exact book, use them and SKIP ComicVine — higher quality,
