@@ -318,9 +318,10 @@ function ensureStylesInjected() {
     // Correct form: pair the width RANGE with each weight as full
     // tuples for Display; request Mono with only its valid wght axis.
     fonts.href = 'https://fonts.googleapis.com/css2'
-      + '?family=Noto+Sans+Display:wdth,wght@62.5..100,500;62.5..100,700;62.5..100,900'
+      + '?family=Barlow+Condensed:wght@400;500;600;700;800'
+      + '&family=League+Spartan:wght@700;800;900'
+      + '&family=Noto+Sans+Display:wdth,wght@62.5..100,500;62.5..100,700;62.5..100,900'
       + '&family=Noto+Sans+Mono:wght@800'
-      + '&family=Barlow+Condensed:wght@400;500;600;700;800'
       + '&display=swap';
     fonts.setAttribute('data-label-fonts', 'true');
     document.head.appendChild(fonts);
@@ -634,6 +635,9 @@ function ensureStylesInjected() {
     text-align: center; font-size: 24px; line-height: 1;
     letter-spacing: 2px;
   }
+  /* League Spartan for every label score number + precision (all variants),
+     matching the app score box. Override kept together so it is easy to find. */
+  .rg-num, .rgc-num, .rg-prec { font-family: 'League Spartan', sans-serif !important; }
   .rg-label .rg-num-wrap {
     /* Holds ONLY the number. This is the flex child the score-box
        centers → the NUMBER is exactly centered, always. The precision
