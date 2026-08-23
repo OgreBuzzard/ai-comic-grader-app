@@ -26,7 +26,8 @@
     - Barlow Condensed                 → labels, body, identity text
     - IBM Plex Mono falls back to Menlo via system stack (matches index.html)
 -->
-<link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@700;800;900&family=Noto+Sans+Display:wdth,wght@62.5..100,500;700;900&family=Barlow+Condensed:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Display:wdth,wght@62.5..100,500;700;900&family=Barlow+Condensed:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@700;800;900&display=swap" rel="stylesheet">
 
 <script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
 <!-- Shared RoboGrade panel renderer (S12). Same module index.html uses for
@@ -964,6 +965,45 @@
       ${artist ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:500;color:#8a7a6a;margin-top:4px">Artist: <strong style="font-weight:700">${esc(artist)}</strong></div>` : ''}
     </div>`;
   })();
+  // Deep / Full assessment prose (mirror app Detail: Main -> Deep -> Full -> Restoration)
+  const deepBlock = (() => {
+    const t = String(data.deepAssessment || '');
+    if (!t.trim()) return '';
+    return `<div style="margin:16px 0;padding:14px;background:#f8f6f2;border-radius:10px;border:1px solid #e0dcd6">
+      <div style="font-size:11px;font-weight:700;color:#6a5a4a;letter-spacing:1.5px;margin-bottom:8px">DEEP ASSESSMENT</div>
+      <div style="font-size:12px;color:#3a3028;line-height:1.55">${esc(t)}</div>
+    </div>`;
+  })();
+  const fullBlock = (() => {
+    const t = String(data.fullAssessment || '');
+    if (!t.trim()) return '';
+    return `<div style="margin:16px 0;padding:14px;background:#f8f6f2;border-radius:10px;border:1px solid #e0dcd6">
+      <div style="font-size:11px;font-weight:700;color:#6a5a4a;letter-spacing:1.5px;margin-bottom:8px">FULL ASSESSMENT</div>
+      <div style="font-size:12px;color:#3a3028;line-height:1.55">${esc(t)}</div>
+    </div>`;
+  })();
+  const insertBlock = (() => {
+    const imgs = (data.insertImages || []).filter(Boolean);
+    const finding = String(data.insertFinding || '');
+    if (!imgs.length && !finding.trim()) return '';
+    const tiles = imgs.map(u => `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a"><img src="${esc(u)}" loading="lazy" onclick="openLightbox('${esc(u)}')" style="display:block;width:100%;height:auto;cursor:zoom-in"></div>`).join('');
+    return `<div style="margin:16px 0;padding-top:14px;border-top:1px dashed #c8962a">
+      <div style="font-size:11px;font-weight:700;color:#c8962a;letter-spacing:1.5px;margin-bottom:8px">MARK JEWELERS INSERT</div>
+      ${finding.trim() ? `<div style="font-size:12px;color:#3a3028;line-height:1.55;margin-bottom:8px">${esc(finding)}</div>` : ''}
+      ${tiles ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">${tiles}</div>` : ''}
+    </div>`;
+  })();
+  const couponBlock = (() => {
+    const imgs = (data.couponImages || []).filter(Boolean);
+    const finding = String(data.couponFinding || '');
+    if (!imgs.length && !finding.trim()) return '';
+    const tiles = imgs.map(u => `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a"><img src="${esc(u)}" loading="lazy" onclick="openLightbox('${esc(u)}')" style="display:block;width:100%;height:auto;cursor:zoom-in"></div>`).join('');
+    return `<div style="margin:16px 0;padding-top:14px;border-top:1px dashed #3a9a5a">
+      <div style="font-size:11px;font-weight:700;color:#3a9a5a;letter-spacing:1.5px;margin-bottom:8px">COUPON / PIN-UP PAGE</div>
+      ${finding.trim() ? `<div style="font-size:12px;color:#3a3028;line-height:1.55;margin-bottom:8px">${esc(finding)}</div>` : ''}
+      ${tiles ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">${tiles}</div>` : ''}
+    </div>`;
+  })();
   let cardPanelHTML = '';
   if (isCard && window.RobograderPanel && window.RobograderPanel.buildCardDisplay) {
     try { cardPanelHTML = window.RobograderPanel.buildCardDisplay(data); }
@@ -984,10 +1024,14 @@
     ${interiorBlock}
     ${restoImgBlock}
     ${signatureBlock}
+    ${insertBlock}
+    ${couponBlock}
     ${robogradePanelHTML}
     ${predictedBlock}
-    ${restorationBlock}
     ${conditionBlock}
+    ${deepBlock}
+    ${fullBlock}
+    ${restorationBlock}
   `;
 
   document.querySelector('.content').insertAdjacentHTML('beforeend', `

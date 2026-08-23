@@ -2652,7 +2652,7 @@ function renderItemDetail(it) {
 
     ${it.referenceImageUrl ? `
       <h3 class="section-h" style="margin-top:24px;">Reference Comparison${it.referenceVolume ? ` — <span style="color:#7fd0ff;font-weight:600;">${escapeHtml(it.referenceVolume)}</span>` : ''}</h3>
-      <div class="images-block" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start;">
+      <div class="images-block" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:center;">
         <div class="img-wrap adaptive" onclick="openAdminLightbox('${escapeAttr(it.images[0] || '')}')">
           <div class="label">Assessed Front Cover</div>
           ${it.images[0] ? `<img src="${escapeAttr(it.images[0])}" alt="" loading="lazy">` : '<div class="empty">No front cover</div>'}
