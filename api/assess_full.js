@@ -129,7 +129,7 @@ function isDeepListBook(title, issue) {
 // floor is removed: it would wrongly reject legitimately-valuable LOW-grade keys
 // (tier 7+ despite a low grade). The slabbed + prereq checks below still apply,
 // so a book only reaches here after Main + Deep have run.
-function isFullEligible({ title, issueNumber, fmvTier }) {
+function isFullEligible({ title, issueNumber, fmvTier, rgGrade, predictedGrade }) {
   // Historic mega-keys always qualify (server-authoritative list, independent
   // of the client).
   if (isDeepListBook(title, issueNumber)) return { eligible: true, reason: 'deep-list' };
@@ -140,7 +140,11 @@ function isFullEligible({ title, issueNumber, fmvTier }) {
   // gate previously lacked (it used to trust the client entirely).
   const t = Number(fmvTier);
   if (Number.isFinite(t) && t >= 7) return { eligible: true, reason: 'fmv-tier7' };
-  return { eligible: false, reason: 'fmv-below-tier7' };
+  // S22: near-perfect books unlock Full regardless of value (the perfect-10 path):
+  // RG hit the 9.5 Deep ceiling, or the predicted grade is 9.6+.
+  const _rg = Number(rgGrade), _pg = Number(predictedGrade);
+  if ((Number.isFinite(_rg) && _rg >= 9.5) || (Number.isFinite(_pg) && _pg >= 9.6)) return { eligible: true, reason: 'near-perfect' };
+  return { eligible: false, reason: 'ineligible' };
 }
 
 export default async function handler(req, res) {
@@ -217,6 +221,8 @@ export default async function handler(req, res) {
     roboScore = null,             // 0-100 RG score (for the widened gate)
     predictedGrade = null,        // 0.5-10.0 CGC-scale grade (retained for context; no longer gates)
     fmvTier = null,               // S21: FMV tier (matchFMV) computed by the client; Full needs >= 7 ($1000+)
+    rgGrade = null,               // S22: v3 RG grade from the Deep pass (near-perfect Full gate)
+    fullUnlockReason = null,      // S22: 'near-perfect' | 'fmv-tier7' — how the client unlocked Full
     initialPageQuality = '',      // the initial PQ call, so the model can re-judge it
     priorConditionAssessment = '',// the existing Condition Assessment text to integrate into
     priorDefectNotes = '',        // the existing Defect Notes (bullets), for context
@@ -225,11 +231,11 @@ export default async function handler(req, res) {
   } = req.body || {};
 
   // Eligibility check 1: FMV gate — Deep-list mega-key OR FMV tier >= 7 ($1000+).
-  const elig = isFullEligible({ title, issueNumber, fmvTier });
+  const elig = isFullEligible({ title, issueNumber, fmvTier, rgGrade, predictedGrade });
   if (!elig.eligible) {
     return sseError(400, {
       error: 'INELIGIBLE_BOOK',
-      message: 'Full Assessment requires an FMV of $1,000+ (tier 7) or a book on the high-value list. If your app is out of date, please update it and try again.'
+      message: 'Full Assessment requires a near-perfect grade (RG 9.5 / predicted 9.6+), an FMV of $1,000+ (tier 7), or a book on the high-value list. If your app is out of date, please update it and try again.'
     });
   }
 
@@ -317,10 +323,10 @@ WRITING THE FULL-ASSESSMENT WRITE-UP (S20: a SEPARATE field "fullAssessment"):
 - Mention trimming ONLY in the very rare case of genuine, clear signs. Keep it buyer-facing, factual, and concise (2-4 sentences).
 
 GRADE — IMPORTANT:
-- The PRIOR predicted grade, from the Main + Deep passes, is ${predictedGrade != null && predictedGrade !== '' ? predictedGrade : 'not provided'} on the CGC 0.5-10 scale. This is the grade to KEEP. Return it unchanged unless the 6 structural images reveal a NEW, specific defect that LOWERS it. Do NOT return a grade higher than this prior grade.
-- It is UNLIKELY the grade changes. Default to keeping the existing grade.
-- If it changes, it is almost always DOWNWARD, from newly discovered defects (staple damage, interior tanning, missing pages, trimming).
-- Only in a very rare case may the grade go UP, and only if the new photos cause you to reconsider a SPECIFIC defect that was previously assigned (e.g. something counted against the cover that the interior shows was not actually a defect). A higher grade must be explainable that way; never inflate from a generally clean interior.
+- The PRIOR predicted grade, from the Main + Deep passes, is ${predictedGrade != null && predictedGrade !== '' ? predictedGrade : 'not provided'} on the CGC 0.5-10 scale.
+- If the prior grade is 9.6 or higher, this book is a PERFECT-10 CANDIDATE. The Full pass exists to give the confidence to confirm perfection. If the 6 structural images show a clean, complete, defect-free interior — staples sound, pages complete and unmarried, no trimming, no interior tanning — you MAY raise the grade up to a maximum of 9.8 to reflect that confirmed perfection. If ANY defect is visible, keep the grade or lower it.
+- If the prior grade is BELOW 9.6, KEEP it. Return it unchanged unless the 6 structural images reveal a NEW, specific defect that LOWERS it. NEVER return a grade higher than the prior grade for these books — the extra detail confirms or lowers, it does not inflate.
+- In all cases the grade change should be small and explainable; default to keeping the existing grade.
 
 PAGE QUALITY: do NOT change it — return the initial page-quality call unchanged and set pageQualityChanged to "same".
 PRECISION MODIFIER: with 6 images covering the structure and page completeness, your view is near-complete. Set confidenceRange as low as you honestly can — 1 for a clean, fully-documented book; 0 only if certain. Widen only for specific, nameable image-quality problems (glare, blur, hidden angle).
@@ -332,7 +338,7 @@ Your entire response must be a JSON object and nothing else. First character an 
 
 JSON shape:
 {
-  "grade": <number, final CGC-scale grade 0.5-9.9 — this should reflect the PRIOR defects already identified in the main assessment. The Full Assessment examines interior structure but the PREDICTED GRADE should be consistent with the defects found on the covers/spine. A book with ANY defect listed cannot be 9.8 or above. NEVER return 10.0. If the prior predicted grade seems correct given the defects, return it unchanged. Only LOWER the grade if interior examination reveals new problems (trimming, missing pages, detached centerfold). Do NOT raise the grade above the prior prediction unless you can specifically explain why a prior defect was overestimated.>,
+  "grade": <number, final CGC-scale grade 0.5-9.8. MAX 9.8; NEVER return 9.9 or 10.0. A book with ANY visible defect cannot be 9.8. If the prior grade was 9.6+ AND the interior/structure is clean and complete, you MAY confirm up to 9.8; otherwise keep the prior grade, lowering only if the interior reveals a NEW problem (trimming, missing/married pages, detached centerfold, staple damage). For a book graded below 9.6, do NOT raise the grade.>,
   "gradeChanged": "<'same' | 'down' | 'up'>",
   "pageQuality": "<the initial page-quality designation, UNCHANGED — do not re-judge it>",
   "pageQualityChanged": "same",

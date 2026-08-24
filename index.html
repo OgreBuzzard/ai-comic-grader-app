@@ -2034,7 +2034,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         <a href="mailto:support@robograder.app" style="font-size:14px;font-weight:700;color:#d4af37;text-decoration:none;letter-spacing:0.3px">support@robograder.app</a>
       </div>
       <div style="font-size:11px;color:#4a3a2a;line-height:1.6;text-align:center">
-        <span id="rgVersionLine">Robograder v4.72</span>
+        <span id="rgVersionLine">Robograder v5.0</span>
         Images are stored securely in your personal account.
       </div>
       <script>
@@ -2043,12 +2043,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "4.81";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.0";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "4.57");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.0");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -2783,15 +2783,15 @@ const FULL_SLOTS = [ {
   hint: "Looking up at the bottom, close to the spine, back cover showing"
 }, {
   key: "exterior_top_staple",
-  label: "Exterior Top Staple",
+  label: "Ext Top Staple",
   hint: "Close-up of the top staple from outside the spine"
 }, {
   key: "exterior_bottom_staple",
-  label: "Exterior Bottom Staple",
+  label: "Ext Bottom Staple",
   hint: "Close-up of the bottom staple from outside the spine"
 }, {
   key: "interior_staple",
-  label: "Interior Staples",
+  label: "Int Staples",
   hint: "Both staples, from inside the centerfold (macro)"
 } ];
 // S20 (#36): Interior Front / Interior Back moved OUT of Full and into the Deep
@@ -2946,16 +2946,26 @@ function _isFullDeepListBook(item) {
   return FULL_DEEP_LIST.some(b => b.title === t && b.issue === i);
 }
 
+function isNearPerfectForFull(item) {
+  // S22: a near-perfect book unlocks Full (the perfect-10 path) regardless of
+  // value — the Deep RG hit the 9.5 ceiling OR the predicted grade is 9.6+.
+  if (!item || item.labelDetected === true) return false;
+  if (!isDeepAssessmentComplete(item)) return false;
+  var _pg = parseFloat(item.predictedGrade != null && item.predictedGrade !== "" ? item.predictedGrade : item.assessedCGCGrade);
+  if (Number.isFinite(_pg) && _pg >= 9.6) return true;
+  var _v3 = (typeof rgV3ForComic === "function" && item.type !== "card") ? rgV3ForComic(item) : null;
+  if (_v3 && _v3.grade >= 9.5) return true;
+  return false;
+}
 function isFullAssessmentEligible(item) {
   if (!item) return null;
   if (item.labelDetected === true) return null;
-  // S20 (#37): Full now gates on a COMPLETED Deep assessment AND FMV tier >= 7
-  // ($1000+) — real market value, not the old value_keys list or a raw grade
-  // floor. A low-grade mega-key can still qualify (it's tier 7+ despite grade);
-  // a mint but low-value book no longer qualifies.
   if (!isDeepAssessmentComplete(item)) return null;
-  if (fmvTierOf(item) < 7) return null;
-  return { slots: FULL_SLOT_COUNT, slotDefs: FULL_SLOTS, reason: "fmv-tier7" };
+  // S20 (#37): $1000+ FMV books qualify — a completeness pass, never refunded.
+  if (fmvTierOf(item) >= 7) return { slots: FULL_SLOT_COUNT, slotDefs: FULL_SLOTS, reason: "fmv-tier7" };
+  // S22: near-perfect books qualify too — the perfect-10 path, refunded if it stays 9.5.
+  if (isNearPerfectForFull(item)) return { slots: FULL_SLOT_COUNT, slotDefs: FULL_SLOTS, reason: "near-perfect" };
+  return null;
 }
 
 function isFullAssessmentComplete(item) {
@@ -3056,8 +3066,10 @@ function stickTierUnlocks(item) {
   }
   // Full: qualifies if currently full-eligible, or full has run. (Per Matt
   // June 14: Full shows whenever full-eligible regardless of Deep.)
-  if (isFullAssessmentEligible(item) || isFullAssessmentComplete(item)) {
+  var _fe = isFullAssessmentEligible(item);
+  if (_fe || isFullAssessmentComplete(item)) {
     item.fullUnlocked = true;
+    if (_fe && _fe.reason && !item.fullUnlockReason) item.fullUnlockReason = _fe.reason;
   }
   // Restoration: qualifies if restoration-eligible, or restoration has run.
   if (isRestorationEligible(item) || isRestorationCheckComplete(item)) {
@@ -3575,7 +3587,7 @@ async function migrateComicsToItems() {
   }
 }
 
-const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "deepAssessmentRan", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "insertImages", "couponImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue" ];
+const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "fullUnlockReason", "deepAssessmentRan", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "insertImages", "couponImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue" ];
 
 const COMIC_DROP_FIELDS = [ "press", "uv", "clean" ];
 
@@ -7438,7 +7450,7 @@ function showSignatureDetected(item, onDone) {
   card.style.cssText = 'width:100%;max-width:340px;background:#152e10;border:1.5px solid #4a7028;border-radius:16px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.5);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,\'Segoe UI\',sans-serif;';
   card.innerHTML = '<div style="height:5px;background:' + GOLD + '"></div>'
     + '<div style="padding:18px 20px 18px;text-align:center;">'
-    + '<img src="assets/Robograder_Logo.webp" alt="Robograder" style="width:66px;height:66px;object-fit:contain;margin:0 auto 10px;display:block">'
+    + '<img src="assets/Robograder_Gift.webp" alt="Robograder" style="width:88px;height:auto;object-fit:contain;margin:0 auto 10px;display:block">'
     + '<div style="font-size:16px;font-weight:800;color:#eaf5df;margin-bottom:8px">' + title + '</div>'
     + '<div style="font-size:13.5px;line-height:1.55;color:#c3d9b2;text-align:left">' + msg + '</div>'
     + '<button id="rg-sig-ok" style="margin-top:18px;width:100%;padding:12px;border:none;border-radius:10px;background:' + GOLD + ';color:#231a02;font-size:15px;font-weight:800;letter-spacing:.5px;cursor:pointer">OKAY</button>'
@@ -7464,7 +7476,7 @@ function showCeilingUpsell(upsell) {
     msg = 'This book has hit the 9.0 ceiling for a '+star(1)+' assessment. A '+star(2)+' with 6 new images can push it to 9.5. The '+coin+' will be refunded if the score doesn’t go up.';
   } else {
     title = 'Confirm a 10?';
-    msg = 'This book has hit the 9.5 ceiling for a '+star(2)+' assessment. A '+star(3)+' with 6 new images can push it to 10 if no defects are found. '+coin+' will not be refunded.';
+    msg = 'This book is near-perfect. A '+star(3)+' Full assessment with 6 new images can confirm a perfect 10. Your '+coin+' is refunded if the grade stays at 9.5.';
   }
   var prev = document.getElementById('rg-upsell-overlay'); if (prev) prev.remove();
   var ov = document.createElement('div'); ov.id = 'rg-upsell-overlay';
@@ -7473,7 +7485,7 @@ function showCeilingUpsell(upsell) {
   card.style.cssText = 'width:100%;max-width:340px;background:#152e10;border:1.5px solid #4a7028;border-radius:16px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.5);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,\"Segoe UI\",sans-serif;';
   card.innerHTML = '<div style="height:5px;background:'+GOLD+'"></div>'
     + '<div style="padding:18px 20px 18px;text-align:center;">'
-    + '<img src="assets/Robograder_Logo.webp" alt="Robograder" style="width:66px;height:66px;object-fit:contain;margin:0 auto 10px;display:block">'
+    + '<img src="assets/Robograder_Gift.webp" alt="Robograder" style="width:88px;height:auto;object-fit:contain;margin:0 auto 10px;display:block">'
     + '<div style="font-size:16px;font-weight:800;color:#eaf5df;margin-bottom:8px">'+title+'</div>'
     + '<div style="font-size:13.5px;line-height:1.55;color:#c3d9b2;text-align:left">'+msg+'</div>'
     + '<button id="rg-upsell-ok" style="margin-top:18px;width:100%;padding:12px;border:none;border-radius:10px;background:'+GOLD+';color:#231a02;font-size:15px;font-weight:800;letter-spacing:.5px;cursor:pointer">OKAY</button>'
@@ -7507,7 +7519,7 @@ function mountResults(cgc, psa) {
   // panel shows these instead of 0/0.0, then animates to the new values below.
   const _prev = window._prevAssessResult || null;
   const _rgFrom = _prev && _prev.score != null ? _prev.score : 0;
-  const _rgInitStr = _prev && _prev.rgV3 ? _prev.rgV3 : (_prev && _prev.score != null ? String(_prev.score) : "0");
+  const _rgInitStr = _prev && _prev.rgV3 ? _prev.rgV3 : "0"; // S22: never show the v1 0-100 score
   const _gradeFrom = _prev && _prev.gradeVal != null ? _prev.gradeVal : null;
   const _gradeInitStr = _prev && _prev.gradeText ? _prev.gradeText : "0.0";
   setTimeout(() => {
@@ -7586,7 +7598,18 @@ function mountResults(cgc, psa) {
       animateV3Ladder(roboEl, _v3res.grade, 2000).then(() => { popResultBadge(roboEl); if (_v3res.grade === 10) applyPerfect10Gold(roboEl, '10');
         setTimeout(() => {
           var _sigNew = (typeof getSignatures === 'function') && getSignatures(formData).length > 0 && !((formData.signatureImages || []).some(Boolean));
-          var _ceiling = _v3res.upsell ? (() => showCeilingUpsell(_v3res.upsell)) : null;
+          // S22: the DEEP upsell ("Push it higher?") may only appear after a 1-star MAIN.
+    // The FULL upsell ("Confirm a 10?") appears after a 2-star Deep. _deepPassResults
+    // is true on a Deep/Full pass, so suppress the deep upsell there.
+    var _upsellKind = _v3res.upsell;
+    if (_upsellKind === 'deep' && _deepPassResults) _upsellKind = null;
+    // S22: a near-perfect PG (>=9.6) on a Deep also offers Full (perfect-10 path),
+    // even when the RG didn't hit the 9.5 ceiling.
+    if (!_upsellKind && _deepPassResults && !formData.fullAssessmentRan) {
+      var _pgUp = parseFloat(predictedGrade);
+      if (Number.isFinite(_pgUp) && _pgUp >= 9.6) _upsellKind = 'full';
+    }
+    var _ceiling = _upsellKind ? (() => showCeilingUpsell(_upsellKind)) : null;
           if (_sigNew) showSignatureDetected(formData, _ceiling); else if (_ceiling) _ceiling();
         }, 700);
       });
@@ -10190,7 +10213,7 @@ function renderForm() {
     const ready = filled === N && !assessing;
     const blurb = _fullDone ? `Full Assessment has run on this book. You can replace any photo below and re-run to update the interior/structure findings.` : `This book qualifies for Full Assessment. Add all ${N} named photos below — each documents a specific part of the book's structure and page completeness. Once all ${N} are added, Full Assessment runs a deeper confirmation of the grade.`;
     const btnLabel = assessing ? "Assessing…" : _fullDone ? `RE-RUN FULL ASSESSMENT${filled < N ? ` (${filled}/${N})` : ""}` : `FULL ASSESSMENT${filled < N ? ` (${filled}/${N})` : ""}`;
-    return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n            <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT - EDGES AND STAPLES</div>\n            <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Additional detail to check for missing pages and staple condition. This assessment is only for high-value books and is unlikely to affect grade unless a defect is exposed that wasn't already identified. The purpose of this check is for a more complete picture of the book.</div>\n            ${renderFullSlotGrid(interior, {editable: true})}\n            <input id="interior-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="full-assess-btn" class="rg-btn rg-btn-assess rg-btn-gold${assessing ? ' assessing' : ''}" onclick="submitFullAssessment()" ${ready ? "" : "disabled"}>\n                ${btnLabel}\n              </button>\n            </div>\n          </div>\n        `;
+    return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n            <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT - EDGES AND STAPLES</div>\n            <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Checks for staple wear and missing pages. For a near-perfect book, this is the pass that can confirm a perfect 10. For any other book it confirms the grade and can only lower it if a previously-unseen defect is revealed.</div>\n            ${renderFullSlotGrid(interior, {editable: true})}\n            <input id="interior-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="full-assess-btn" class="rg-btn rg-btn-assess rg-btn-gold${assessing ? ' assessing' : ''}" onclick="submitFullAssessment()" ${ready ? "" : "disabled"}>\n                ${btnLabel}\n              </button>\n            </div>\n          </div>\n        `;
   })()}\n      ${(() => {
     if (!showRestorationTier(formData)) return "";
     if (isRestorationCheckComplete(formData)) {
@@ -10397,9 +10420,9 @@ function renderFullSlotGrid(interior, opts) {
     + cell('interior_staple', null, { fill: true, extra: 'grid-column:2;grid-row:1 / span 2' })
     + cell('exterior_bottom_staple', '1 / 1', { extra: 'grid-column:1;grid-row:2' })
     + `</div>`;
-  html += `<div style="margin-top:6px">${cell('top_pages', '5 / 1', { strip: true })}</div>`;
-  html += `<div style="margin-top:6px">${cell('outer_edge', '4 / 1', { strip: true })}</div>`;
-  html += `<div style="margin-top:6px">${cell('bottom_pages', '5 / 1', { strip: true })}</div>`;
+  html += `<div style="margin-top:6px">${cell('top_pages', '4 / 1', { strip: true })}</div>`;
+  html += `<div style="margin-top:6px">${cell('outer_edge', '3 / 1', { strip: true })}</div>`;
+  html += `<div style="margin-top:6px">${cell('bottom_pages', '4 / 1', { strip: true })}</div>`;
   return html;
 }
 function removeImg(i) {
@@ -11639,6 +11662,8 @@ async function submitFullAssessment() {
         roboScore: formData.roboGrade && formData.roboGrade.score != null ? formData.roboGrade.score : null,
         predictedGrade: formData.predictedGrade || formData.assessedCGCGrade || null,
         fmvTier: (typeof fmvTierOf === "function" ? fmvTierOf(formData) : null),  // server re-checks Full gate (>= 7)
+        rgGrade: (typeof rgV3ForComic === "function" ? ((rgV3ForComic(formData) || {}).grade != null ? (rgV3ForComic(formData) || {}).grade : null) : null),  // S22: v3 RG for the near-perfect Full gate
+        fullUnlockReason: formData.fullUnlockReason || null,
         initialPageQuality: formData.pageQuality || "",
         priorConditionAssessment: formData.aiAssessment || "",
         priorDefectNotes: formData.aiGraderNotes || "",
@@ -11666,7 +11691,8 @@ async function submitFullAssessment() {
       { id: "full-interior", label: "INTERIOR CHECK" },
       { id: "full-confirm", label: "CONFIRMING GRADE" }
     ];
-    const _fullTracker = mountTierTracker("full", _fullSteps, { noAutoLight: true });
+    const _fullTracker = mountTierTracker("full", _fullSteps); // S22: auto-light boxes 0..n-2 during the API call
+    const _fullTrackerMountAt = Date.now();
     // Now await the API response
     const resp = await apiPromise;
     if (!resp.ok) {
@@ -11675,24 +11701,27 @@ async function submitFullAssessment() {
     }
     const result = await resp.json();
     if (result.fullAssessmentRan === true) {
-      if (_fullTracker && _fullTracker.clearTimers) _fullTracker.clearTimers();
-      // S17: light boxes sequentially 1s apart (the tracker's auto-light may not
-      // have reached them all if the API returned fast). Light each remaining box
-      // one second apart instead of all at once.
-      _fullSteps.forEach((s, i) => setTimeout(() => setStep(s.id, "done"), i * 1000));
+      // S22: boxes 0..(n-2) auto-light during the API call (mountTierTracker's
+      // default timeline). The LAST box is held until the API returns AND that
+      // sequence reaches it; when it greens, the score animation begins (see
+      // _startFullScoreAnim below). Do NOT clear the auto-light timers here.
       formData.fullAssessmentRan = true;
       _recordTimingKey(result); // S20 (#33): stash the Full log key on the item
       stickTierUnlocks(formData);
       if (result.grade != null && Number.isFinite(parseFloat(result.grade))) {
-        // S22: Full confirms or lowers — it must NEVER raise the predicted grade
-        // above the prior (Main/Deep) grade. The prompt discourages upward moves,
-        // but the model has been observed jumping it up (e.g. 4.0 -> 6.0), which
-        // "shouldn't be possible" on a Full. Clamp it as a hard guardrail.
+        // S22: Full may raise the predicted grade ONLY for an otherwise-perfect
+        // book (prior PG >= 9.6), and only up to 9.8. For any other book it can
+        // confirm or lower but NEVER raise — this keeps the 4.0 -> 6.0 jump
+        // impossible while letting a near-perfect book earn its 9.8.
         const _priorPredFull = parseFloat(formData.predictedGrade != null && formData.predictedGrade !== "" ? formData.predictedGrade : formData.assessedCGCGrade);
         let _fullGrade = parseFloat(result.grade);
-        if (Number.isFinite(_priorPredFull) && _fullGrade > _priorPredFull) {
-          console.warn("[FULL] server grade " + _fullGrade + " > prior " + _priorPredFull + " — clamping (Full cannot raise grade)");
-          _fullGrade = _priorPredFull;
+        if (Number.isFinite(_priorPredFull)) {
+          if (_priorPredFull >= 9.6) {
+            if (_fullGrade > 9.8) _fullGrade = 9.8; // perfect-book ceiling for PG
+          } else if (_fullGrade > _priorPredFull) {
+            console.warn("[FULL] server grade " + _fullGrade + " > prior " + _priorPredFull + " — clamping (Full cannot raise a non-perfect book)");
+            _fullGrade = _priorPredFull;
+          }
         }
         formData.predictedGrade = _fullGrade;
         formData.assessedCGCGrade = _fullGrade;
@@ -11716,6 +11745,17 @@ async function submitFullAssessment() {
       formData.fullTrimmingSuspected = result.trimmingSuspected === true;
       formData._imagesChanged = true;
       onAssessmentSuccess();
+      // S22: perfect-10 refund — a book that unlocked Full via the near-perfect
+      // GRADE path (not the $1000+ FMV path) gets its credit back if the Full did
+      // not confirm a perfect 10 (RG stayed below 10). FMV-value books, which run
+      // Full purely for completeness, are never refunded.
+      (function(){
+        var _gradeUnlock = formData.fullUnlockReason === "near-perfect";
+        var _fv3 = (typeof rgV3ForComic === "function") ? rgV3ForComic(formData) : null;
+        var _reached10 = !!(_fv3 && _fv3.grade >= 10);
+        window._creditRefunded = _gradeUnlock && !_reached10;
+        if (window._creditRefunded && typeof refundCredit === "function") refundCredit();
+      })();
       // S17: grid + needle stop, sweep needle to the assessed score (2s, like Main).
       const _newScore = formData.roboGrade ? Math.round(formData.roboGrade.score) : null;
       const _newGradeNum = formData.predictedGrade ? parseFloat(formData.predictedGrade) : null;
@@ -11734,53 +11774,63 @@ async function submitFullAssessment() {
       // S20: show the PREVIOUS grade sliding in, then animate to the Full result.
       const _prev = window._prevAssessResult || null;
       const _rgFrom = _prev && _prev.score != null ? _prev.score : 0;
-      const _rgInit = _prev && _prev.rgV3 ? _prev.rgV3 : (_prev && _prev.score != null ? String(_prev.score) : "0");
+      const _rgInit = _prev && _prev.rgV3 ? _prev.rgV3 : "0"; // S22: never show the v1 0-100 score
       const _gradeFrom = _prev && _prev.gradeVal != null ? _prev.gradeVal : null;
       const _gradeInit = _prev && _prev.gradeText ? _prev.gradeText : "0.0";
+      const _fullRefunded = !!window._creditRefunded; // S22: perfect-10 refund coin (same as Deep)
       let _badges = "";
       if (_newScore != null) _badges += `<div style="width:64px;height:64px;border:1.5px solid #3a5010;background:#0f1a05;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-robo" style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:22px;font-weight:800;color:#aaee30;line-height:1">${_rgInit}</div>\n        <div style="font-size:9px;color:#aaee30;opacity:0.75;margin-top:2px;letter-spacing:0.8px">RG</div>\n      </div>`;
-      if (_newGrade != null) _badges += `<div style="width:64px;height:64px;background:#2a5a8a;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-grade" style="font-size:22px;font-weight:800;color:#e0f0ff;line-height:1">${_gradeInit}</div>\n        <div style="font-size:9px;color:#e0f0ff;opacity:0.75;margin-top:2px;letter-spacing:0.8px">GRADE</div>\n      </div>`;
-      const _fullResultsHtml = `\n        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n          <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${_badges}</div>\n          <div id="full-result-pq" style="display:flex;align-items:center;justify-content:center;min-height:22px;">\n            <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n          </div>\n          <button id="full-complete-btn" disabled\n            style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">ASSESSING…</button>\n        </div>`;
+      if (_newGrade != null) _badges += `<div style="width:64px;height:64px;background:#2a5a8a;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-grade" style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:22px;font-weight:800;color:#e0f0ff;line-height:1">${_gradeInit}</div>\n        <div style="font-size:9px;color:#e0f0ff;opacity:0.75;margin-top:2px;letter-spacing:0.8px">GRADE</div>\n      </div>`;
+      const _fullResultsHtml = `\n        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n          <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${_badges}</div>\n          <div id="full-result-pq" style="position:relative;width:100%;display:flex;align-items:center;justify-content:center;min-height:22px;">\n            <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n            ${_fullRefunded ? `<div style="position:absolute;right:6px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:0;line-height:1.05;pointer-events:none"><img src="assets/robocoin2.webp" style="width:28px;height:28px" alt="Credit refunded"><div style="color:#d4af37;font-size:10px;font-weight:800;letter-spacing:0.3px;margin-top:1px">+1</div><div style="color:#cfc3a8;font-size:7px;font-weight:800;letter-spacing:0.4px">REFUNDED</div></div>` : ""}\n          </div>\n          <button id="full-complete-btn" disabled\n            style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">ASSESSING…</button>\n        </div>`;
       if (window.RobograderScan && window.RobograderScan.slideResultsIntoPanel) {
         window.RobograderScan.slideResultsIntoPanel(_fullResultsHtml);
       }
       // Animate the badges exactly like Main.
-      const _roboEl = document.getElementById("full-anim-robo");
-      const _gradeEl = document.getElementById("full-anim-grade");
-      const _pqEl = document.getElementById("full-result-pq");
-      const _fullV3 = (typeof rgV3ForComic === "function") ? rgV3ForComic(formData) : null;
-      if (_roboEl && _fullV3 != null) {
-        _roboEl.style.fontSize = "26px";
-        animateV3Ladder(_roboEl, _fullV3.grade, 2000).then(() => popResultBadge(_roboEl));
-      } else if (_roboEl && _newScore != null) {
-        if (_rgFrom === _newScore) setTimeout(() => popResultBadge(_roboEl), 700);
-        else animateRoboGradeFromTo(_roboEl, _rgFrom, _newScore, 2000).then(() => popResultBadge(_roboEl));
-      }
-      if (_gradeEl && _newGradeNum != null) setTimeout(() => {
-        if (_gradeFrom != null && Math.abs(_gradeFrom - _newGradeNum) < 0.01) popResultBadge(_gradeEl);
-        else animateGradeListFromTo(_gradeEl, _gradeFrom != null ? _gradeFrom : CGC_GRADE_LIST[0], _newGrade, CGC_GRADE_LIST, 2000).then(() => popResultBadge(_gradeEl));
-      }, 1000);
-      if (_pq && _pqEl) setTimeout(() => {
-        const colors = PQ_COLORS[_pq] || { bg: "#f0ece6", text: "#5a4e44" };
-        _pqEl.innerHTML = `<div style="background:${colors.bg};color:${colors.text};padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">${_pq}</div>`;
-      }, 4000);
-      // Reveal COMPLETE the same way Main does (after the animations, ~4.2s).
-      setTimeout(() => {
-        const _cb = document.getElementById("full-complete-btn");
-        if (!_cb) return;
-        _cb.style.transition = "background-color 0.4s ease, color 0.4s ease";
-        _cb.innerHTML = "COMPLETE";
-        _cb.style.background = "#3a9ee0";
-        _cb.style.color = "#fff";
-        _cb.disabled = false;
-        _cb.style.cursor = "pointer";
-        _cb.onclick = () => {
-          if (window.RobograderScan && window.RobograderScan.dismiss) window.RobograderScan.dismiss();
-          // S20: Full is the deepest pass — after it saves, go straight to Detail
-          // (not Edit, even if a Restoration check is still available).
-          submitForm().then(() => { showDetail(formData.id); });
-        };
-      }, 4200);
+      // S22: hold the final box + score animation until the API has returned AND
+      // the auto-lit boxes (0..n-2) have finished. When the LAST box greens, the
+      // score animation begins — never before the tier boxes are all green.
+      const _lastFullStepId = _fullSteps[_fullSteps.length - 1].id;
+      const _lastBoxDelay = Math.max(0, (1200 + (_fullSteps.length - 1) * 1000) - (Date.now() - _fullTrackerMountAt));
+      const _startFullScoreAnim = () => {
+        setStep(_lastFullStepId, "done"); // final box greens now
+        if (window.RobograderScan && window.RobograderScan.stopGridCycle) window.RobograderScan.stopGridCycle();
+        if (window.RobograderScan && window.RobograderScan.stopNeedlePulse) window.RobograderScan.stopNeedlePulse();
+        if (window.RobograderScan && window.RobograderScan.sweepNeedleToScore && _newScore != null) window.RobograderScan.sweepNeedleToScore(_newScore);
+        const _roboEl = document.getElementById("full-anim-robo");
+        const _gradeEl = document.getElementById("full-anim-grade");
+        const _pqEl = document.getElementById("full-result-pq");
+        const _fullV3 = (typeof rgV3ForComic === "function") ? rgV3ForComic(formData) : null;
+        if (_roboEl && _fullV3 != null) {
+          _roboEl.style.fontSize = "26px";
+          animateV3Ladder(_roboEl, _fullV3.grade, 2000).then(() => popResultBadge(_roboEl));
+        } else if (_roboEl && _newScore != null) {
+          if (_rgFrom === _newScore) setTimeout(() => popResultBadge(_roboEl), 700);
+          else animateRoboGradeFromTo(_roboEl, _rgFrom, _newScore, 2000).then(() => popResultBadge(_roboEl));
+        }
+        if (_gradeEl && _newGradeNum != null) setTimeout(() => {
+          if (_gradeFrom != null && Math.abs(_gradeFrom - _newGradeNum) < 0.01) popResultBadge(_gradeEl);
+          else animateGradeListFromTo(_gradeEl, _gradeFrom != null ? _gradeFrom : CGC_GRADE_LIST[0], _newGrade, CGC_GRADE_LIST, 2000).then(() => popResultBadge(_gradeEl));
+        }, 1000);
+        if (_pq && _pqEl) setTimeout(() => {
+          const colors = PQ_COLORS[_pq] || { bg: "#f0ece6", text: "#5a4e44" };
+          _pqEl.innerHTML = `<div style="background:${colors.bg};color:${colors.text};padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">${_pq}</div>`;
+        }, 2500);
+        setTimeout(() => {
+          const _cb = document.getElementById("full-complete-btn");
+          if (!_cb) return;
+          _cb.style.transition = "background-color 0.4s ease, color 0.4s ease";
+          _cb.innerHTML = "COMPLETE";
+          _cb.style.background = "#3a9ee0";
+          _cb.style.color = "#fff";
+          _cb.disabled = false;
+          _cb.style.cursor = "pointer";
+          _cb.onclick = () => {
+            if (window.RobograderScan && window.RobograderScan.dismiss) window.RobograderScan.dismiss();
+            submitForm().then(() => { showDetail(formData.id); });
+          };
+        }, 3000);
+      };
+      setTimeout(_startFullScoreAnim, _lastBoxDelay);
     } else {
       throw new Error("Unexpected Full Assessment response shape");
     }
@@ -13338,7 +13388,7 @@ function showRepeatBuyerDiscount() {
   card.style.cssText = "width:100%;max-width:340px;background:#152e10;border:1.5px solid #4a7028;border-radius:16px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.5);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,sans-serif;";
   card.innerHTML = '<div style="height:5px;background:' + GOLD + '"></div>'
     + '<div style="padding:18px 20px 18px;text-align:center;">'
-    + '<img src="assets/Robograder_Logo.webp" alt="Robograder" style="width:66px;height:66px;object-fit:contain;margin:0 auto 10px;display:block">'
+    + '<img src="assets/Robograder_Gift.webp" alt="Robograder" style="width:88px;height:auto;object-fit:contain;margin:0 auto 10px;display:block">'
     + '<div style="font-size:16px;font-weight:800;color:' + GOLD + ';letter-spacing:.5px;margin-bottom:8px">REPEAT BUYER DISCOUNT</div>'
     + '<div style="font-size:13.5px;line-height:1.55;color:#c3d9b2">20% bonus credits unlocked on future purchases made within 1 year.</div>'
     + '<button id="rg-repeat-ok" style="margin-top:18px;width:100%;padding:12px;border:none;border-radius:10px;background:' + GOLD + ';color:#231a02;font-size:15px;font-weight:800;letter-spacing:.5px;cursor:pointer">OKAY</button>'
