@@ -1,0 +1,13 @@
+#!/bin/sh
+# Auto-shrink oversized reference covers (and skip already-small ones) before
+# they land in a commit, so new covers are always within the 1400px cap without
+# anyone remembering to run the optimizer. Requires python3 + Pillow.
+root=$(git rev-parse --show-toplevel) || exit 0
+cd "$root" || exit 0
+staged=$(git diff --cached --name-only --diff-filter=ACM -- 'reference_covers/*.jpg' 'reference_covers/*.jpeg')
+[ -z "$staged" ] && exit 0
+command -v python3 >/dev/null 2>&1 || { echo "pre-commit: python3 not found, skipping cover optimize"; exit 0; }
+python3 optimize_images.py reference_covers || exit 0
+# re-stage exactly the cover files that were already staged (now shrunk)
+echo "$staged" | while IFS= read -r f; do [ -f "$f" ] && git add "$f"; done
+exit 0
