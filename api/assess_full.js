@@ -317,6 +317,7 @@ WRITING THE FULL-ASSESSMENT WRITE-UP (S20: a SEPARATE field "fullAssessment"):
 - Mention trimming ONLY in the very rare case of genuine, clear signs. Keep it buyer-facing, factual, and concise (2-4 sentences).
 
 GRADE — IMPORTANT:
+- The PRIOR predicted grade, from the Main + Deep passes, is ${predictedGrade != null && predictedGrade !== '' ? predictedGrade : 'not provided'} on the CGC 0.5-10 scale. This is the grade to KEEP. Return it unchanged unless the 6 structural images reveal a NEW, specific defect that LOWERS it. Do NOT return a grade higher than this prior grade.
 - It is UNLIKELY the grade changes. Default to keeping the existing grade.
 - If it changes, it is almost always DOWNWARD, from newly discovered defects (staple damage, interior tanning, missing pages, trimming).
 - Only in a very rare case may the grade go UP, and only if the new photos cause you to reconsider a SPECIFIC defect that was previously assigned (e.g. something counted against the cover that the interior shows was not actually a defect). A higher grade must be explainable that way; never inflate from a generally clean interior.
