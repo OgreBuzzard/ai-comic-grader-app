@@ -255,7 +255,7 @@ async function _androidBuyCredits(pkg) {
       body: JSON.stringify({ purchaseToken, productId })
     });
     const data = await resp.json().catch(function(){ return {}; });
-    if (resp.ok && data.ok) { await loadUserCredits(); hideBuyCredits(); window.rgPopup("Added " + data.credits + " assessments to your account.", { type: "success", title: "Purchase complete" }); }
+    if (resp.ok && data.ok) { await loadUserCredits(); hideBuyCredits(); window.rgPopup("Added " + data.credits + " assessments to your account.", { type: "success", title: "Purchase complete", onClose: function(){ if (typeof maybeShowRepeatBuyerDiscount === "function") maybeShowRepeatBuyerDiscount(); } }); }
     else { window.rgPopup("We couldn't credit your purchase: " + (data.error || "unknown error") + "\\n\\nIf you were charged, your receipt is on file — email support@robograder.app and we'll fix it.", { type: "error" }); }
   } catch (e) {
     window.rgPopup("Network error verifying your purchase. If you were charged, reopen the app or email support@robograder.app.", { type: "error" });

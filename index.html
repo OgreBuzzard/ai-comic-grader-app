@@ -4416,9 +4416,11 @@ async function loadUserCredits() {
       if (Array.isArray(data.referralBonusQueue) && data.referralBonusQueue.length) {
         setTimeout(() => _processReferralQueue(data.referralBonusQueue), 1200);
       }
-      // Repeat-Purchase Discount (Short Box): server-cached next-purchase bonus.
-      window._nextShortBoxBonus = (typeof data.nextShortBoxBonus === "number") ? data.nextShortBoxBonus : 0;
-      window._lastShortBoxAt = data.lastShortBoxAt || null;
+      // Repeat-Purchase Discount (all tiers): server-cached next-purchase bonuses.
+      window._nextBonuses = (data.nextBonuses && typeof data.nextBonuses === "object") ? data.nextBonuses : null;
+      window._lastPurchaseAt = data.lastPurchaseAt || data.lastShortBoxAt || null;
+      window._nextShortBoxBonus = (typeof data.nextShortBoxBonus === "number") ? data.nextShortBoxBonus : (window._nextBonuses ? (window._nextBonuses.short_box || 0) : 0);
+      window._lastShortBoxAt = data.lastShortBoxAt || data.lastPurchaseAt || null;
       if (typeof data.assessmentCredits === "number") {
         window._userCredits = data.assessmentCredits;
       } else if (window._userCredits === undefined) {
@@ -4600,22 +4602,35 @@ function showBuyCredits() {
 // Server computes it (window._nextShortBoxBonus / _lastShortBoxAt via the user
 // doc); the client only renders, so it always matches what's actually granted.
 function refreshShortBoxCard() {
-  const el = document.getElementById("short-box-bonus-line");
-  const unit = document.getElementById("unit-short_box");
-  const bonus = window._nextShortBoxBonus || 0;
-  const last = window._lastShortBoxAt ? Date.parse(window._lastShortBoxAt) : 0;
+  // Repeat-Purchase Discount (all tiers). Name kept so the iOS showBuyCredits
+  // hook still matches; body now refreshes all three cards. Server computes the
+  // per-tier next-purchase bonus (window._nextBonuses); the client only renders.
   const YEAR = 365 * 24 * 60 * 60 * 1000;
-  const active = bonus > 0 && last && (Date.now() - last <= YEAR);
-  if (active && el) {
-    const total = 100 + bonus;
-    const per = 99.99 / total;
-    el.textContent = `+${bonus} repeat bonus ($${per.toFixed(2)} each)`;
-    el.style.display = "block";
-    if (unit) unit.style.display = "none";   // avoid two per-unit prices
-  } else {
-    if (el) el.style.display = "none";
-    if (unit) unit.style.display = "block";  // first-time buyer still sees a per-unit price
-  }
+  const last = window._lastPurchaseAt ? Date.parse(window._lastPurchaseAt)
+             : (window._lastShortBoxAt ? Date.parse(window._lastShortBoxAt) : 0);
+  const chainAlive = !!last && (Date.now() - last <= YEAR);
+  const nb = window._nextBonuses
+    || (typeof window._nextShortBoxBonus === "number" ? { short_box: window._nextShortBoxBonus } : null);
+  const TIERS = [
+    { key: "comic_stack", base: 5,   price: 10,  line: "stack-bonus-line" },
+    { key: "comic_wall",  base: 20,  price: 30,  line: "wall-bonus-line" },
+    { key: "short_box",   base: 100, price: 100, line: "short-box-bonus-line" },
+  ];
+  TIERS.forEach(t => {
+    const el = document.getElementById(t.line);
+    if (!el) return;
+    const unit = el.previousElementSibling;   // the "($X.XX each)" line
+    const bonus = (nb && typeof nb[t.key] === "number") ? nb[t.key] : 0;
+    if (chainAlive && bonus > 0) {
+      const per = t.price / (t.base + bonus);
+      el.textContent = `+${bonus} repeat bonus ($${per.toFixed(2)} each)`;
+      el.style.display = "block";
+      if (unit) unit.style.display = "none";
+    } else {
+      el.style.display = "none";
+      if (unit) unit.style.display = "block";
+    }
+  });
 }
 
 function hideBuyCredits() {
@@ -7543,7 +7558,7 @@ function mountResults(cgc, psa) {
   let badgesHtml = "";
   if (roboScore != null) badgesHtml += makeBadge("robograde", "anim-val-robo");
   if (predictedGrade) badgesHtml += makeBadge("predicted", "anim-val-cgc");
-  const resultsHtml = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n      <div id="result-grades" style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badgesHtml}</div>\n      <div id="result-pq" style="position:relative;width:100%;display:flex;align-items:center;justify-content:center;min-height:22px;">\n        <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n        ${_refunded ? `<div title="Deep credit refunded \u2014 grade did not go up" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:0;line-height:1;pointer-events:none"><img src="assets/robocoin2.webp" style="width:30px;height:30px" alt="Credit refunded"><div style="color:#d4af37;font-size:10px;font-weight:800;letter-spacing:0.3px;margin-top:1px">+1</div></div>` : ""}\n      </div>\n      <button id="assess-complete-btn" disabled\n        style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">\n        ASSESSING…\n      </button>\n    </div>`;
+  const resultsHtml = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n      <div id="result-grades" style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badgesHtml}</div>\n      <div id="result-pq" style="position:relative;width:100%;display:flex;align-items:center;justify-content:center;min-height:22px;">\n        <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n        ${_refunded ? `<div style="position:absolute;right:6px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:0;line-height:1.05;pointer-events:none"><img src="assets/robocoin2.webp" style="width:28px;height:28px" alt="Credit refunded"><div style="color:#d4af37;font-size:10px;font-weight:800;letter-spacing:0.3px;margin-top:1px">+1</div><div style="color:#cfc3a8;font-size:7px;font-weight:800;letter-spacing:0.4px">REFUNDED</div></div>` : ""}\n      </div>\n      <button id="assess-complete-btn" disabled\n        style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">\n        ASSESSING…\n      </button>\n    </div>`;
   window.RobograderScan.slideResultsIntoPanel(resultsHtml);
   dbg("mountResults: results html replaced");
   const roboEl = document.getElementById("anim-val-robo");
@@ -9119,7 +9134,7 @@ async function completeAssessment() {
   formData.restorationFlag = !!cgc.restorationFlag;
   formData.pageQuality = cgc.pageQuality ? normPageQuality(cgc.pageQuality) : formData.pageQuality;
   formData.aiGraderNotes = cgc.graderNotes || "";
-  formData.aiAssessment = cgc.aiAssessment || "";
+  formData.aiAssessment = cgc.aiAssessment || formData.aiAssessment || "";
   // S20 (#53): Deep observations go in their own field (aiAssessment stays the Main write-up).
   if (cgc.deepAssessment) formData.deepAssessment = cgc.deepAssessment;
   if (cgc.photograder) formData.photograder = cgc.photograder; // S21: persist photo grades
@@ -13267,6 +13282,36 @@ window.signalAppReady = function signalAppReady() {
   window.dispatchEvent(new Event("app-ready"));
 };
 
+// Repeat-Purchase Discount: Robograder-head popup shown after a completed purchase.
+function showRepeatBuyerDiscount() {
+  var GOLD = '#d4af37';
+  var prev = document.getElementById('rg-repeat-overlay'); if (prev) prev.remove();
+  var ov = document.createElement('div'); ov.id = 'rg-repeat-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:24px;padding-top:max(24px,env(safe-area-inset-top));padding-bottom:max(24px,env(safe-area-inset-bottom));opacity:0;transition:opacity .15s ease;';
+  var card = document.createElement('div');
+  card.style.cssText = "width:100%;max-width:340px;background:#152e10;border:1.5px solid #4a7028;border-radius:16px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.5);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,sans-serif;";
+  card.innerHTML = '<div style="height:5px;background:' + GOLD + '"></div>'
+    + '<div style="padding:18px 20px 18px;text-align:center;">'
+    + '<img src="assets/Robograder_Logo.webp" alt="Robograder" style="width:66px;height:66px;object-fit:contain;margin:0 auto 10px;display:block">'
+    + '<div style="font-size:16px;font-weight:800;color:' + GOLD + ';letter-spacing:.5px;margin-bottom:8px">REPEAT BUYER DISCOUNT</div>'
+    + '<div style="font-size:13.5px;line-height:1.55;color:#c3d9b2">20% bonus credits unlocked on future purchases made within 1 year.</div>'
+    + '<button id="rg-repeat-ok" style="margin-top:18px;width:100%;padding:12px;border:none;border-radius:10px;background:' + GOLD + ';color:#231a02;font-size:15px;font-weight:800;letter-spacing:.5px;cursor:pointer">OKAY</button>'
+    + '</div>';
+  ov.appendChild(card); document.body.appendChild(ov);
+  requestAnimationFrame(function(){ ov.style.opacity='1'; card.style.transform='translateY(0) scale(1)'; });
+  function close(){ ov.style.opacity='0'; setTimeout(function(){ if(ov.parentNode) ov.parentNode.removeChild(ov); },160); }
+  card.querySelector('#rg-repeat-ok').onclick = close;
+  ov.addEventListener('click', function(e){ if(e.target===ov) close(); });
+}
+// Show it only when the program actually granted a future bonus (suppressed after
+// REPEAT_BONUS_UNTIL, when the server returns all-zero bonuses).
+function maybeShowRepeatBuyerDiscount() {
+  var nb = window._nextBonuses;
+  var any = nb && ((nb.comic_stack > 0) || (nb.comic_wall > 0) || (nb.short_box > 0));
+  if (!any && !(window._nextShortBoxBonus > 0)) return;
+  showRepeatBuyerDiscount();
+}
+
 function showPaymentSuccess(credits) {
   const m = document.getElementById("payment-success-modal");
   const n = document.getElementById("payment-success-credits");
@@ -13277,6 +13322,7 @@ function showPaymentSuccess(credits) {
 function hidePaymentSuccess() {
   const m = document.getElementById("payment-success-modal");
   if (m) m.style.display = "none";
+  if (typeof maybeShowRepeatBuyerDiscount === "function") maybeShowRepeatBuyerDiscount();
 }
 
 function showPaymentCancelled() {
@@ -13323,6 +13369,7 @@ initFirebase();
           <div style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$10</div>
           <div style="font-size:13px;color:#3a2a1a;margin-top:3px">5 assessments</div>
           <div style="font-size:12px;color:#6a5a4a;margin-top:1px">($2.00 each)</div>
+          <div id="stack-bonus-line" style="display:none;font-size:12px;font-weight:700;color:#2c6e12;margin-top:2px"></div>
         </div>
       </button>
       <button onclick="buyCredits('comic_wall')" style="display:flex;align-items:center;gap:14px;background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:12px 16px;cursor:pointer;text-align:left;width:100%">
@@ -13332,6 +13379,7 @@ initFirebase();
           <div style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$30</div>
           <div style="font-size:13px;color:#3a2a1a;margin-top:3px">20 assessments</div>
           <div style="font-size:12px;color:#6a5a4a;margin-top:1px">($1.50 each)</div>
+          <div id="wall-bonus-line" style="display:none;font-size:12px;font-weight:700;color:#2c6e12;margin-top:2px"></div>
         </div>
       </button>
       <button onclick="buyCredits('short_box')" style="display:flex;align-items:center;gap:14px;background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:12px 16px;cursor:pointer;text-align:left;width:100%">

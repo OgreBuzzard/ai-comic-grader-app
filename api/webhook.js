@@ -1,5 +1,5 @@
 import Stripe from 'stripe';
-import { shortBoxBonusForNext, nextBonusAfter, shortBoxTimes, tierOf } from '../lib/repeat_bonus.js';
+import { bonusForNextPurchase, nextBonuses, TIER_CONFIG, tierOf } from '../lib/repeat_bonus.js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -149,14 +149,14 @@ export default async function handler(req, res) {
       // Repeat-Purchase Discount (Short Box only): escalating bonus from prior
       // production, non-refunded Short Box purchases. Price is unchanged; only
       // the granted credit count grows. Computed before the txn.
-      let bonusCredits = 0, nextShortBoxBonus = 0, lastShortBoxAt = null;
-      if (tier === 'short_box') {
+      let bonusCredits = 0, nextBonusesCache = null, lastPurchaseAt = null;
+      if (TIER_CONFIG[tier]) {
         const nowMs = Date.now();
         const priorSnap = await db.collection('purchases').where('userId', '==', userId).get();
-        const priorTimes = shortBoxTimes(priorSnap.docs.map(d => d.data()));
-        bonusCredits = shortBoxBonusForNext(priorTimes, nowMs);
-        lastShortBoxAt = new Date(nowMs).toISOString();
-        nextShortBoxBonus = nextBonusAfter([...priorTimes, nowMs], nowMs);
+        const priorDatas = priorSnap.docs.map(d => d.data());
+        bonusCredits = bonusForNextPurchase(priorDatas, tier, nowMs);
+        lastPurchaseAt = new Date(nowMs).toISOString();
+        nextBonusesCache = nextBonuses([...priorDatas, { tier, environment: 'Production', createdAtMs: nowMs }], nowMs);
       }
       const grant = baseCredits + bonusCredits;   // total granted
 
@@ -173,7 +173,7 @@ export default async function handler(req, res) {
           everPurchased: true,
           lastPurchaseDate: new Date().toISOString(),
         };
-        if (tier === 'short_box') { common.lastShortBoxAt = lastShortBoxAt; common.nextShortBoxBonus = nextShortBoxBonus; }
+        if (nextBonusesCache) { common.nextBonuses = nextBonusesCache; common.lastPurchaseAt = lastPurchaseAt; common.nextShortBoxBonus = nextBonusesCache.short_box; common.lastShortBoxAt = lastPurchaseAt; }
         if (userDoc.exists) {
           tx.update(userRef, {
             ...common,

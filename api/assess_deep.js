@@ -353,8 +353,7 @@ JSON shape (same as initial assessment, with deepAddition tags on new defects):
   "printing": "${initialAssessment.printing || ''}",
   "pageQuality": "${initialAssessment.pageQuality || ''}",
   "grade": "revised CGC grade",
-  "aiAssessment": ${JSON.stringify(initialAssessment.aiAssessment || '')},
-  "deepAssessment": "<S20: a SEPARATE, concise buyer-facing write-up of ONLY what THIS Deep Assessment observed — from the corner macros, the interior-cover photos (if provided), and the grade-reference comparison. Cover: any new corner/edge/spine defects found at macro scale; interior-cover condition (tanning/foxing/stains) if covers were provided; and whether the grade was confirmed or revised and why. 2-4 tight sentences. Do NOT repeat the initial Condition Assessment text above — only the new Deep observations. WRITE ONLY WHAT YOU OBSERVED AND WHAT CHANGED: never enumerate what is absent or clean (no "no chips, tears or tape", no "with no color break or staple rust", no "no foxing, stains or tears"). Never describe point deductions or score math in words (no "costing a single interior point", no "minus half a point") — the numbers show in the score boxes. State a removed defect plainly (e.g. "the trace corner wear noted initially is not supported by the close-ups and has been removed"). If the close-ups simply confirmed the initial grade, say that plainly.>",
+  "deepAssessment": "<S20: a SEPARATE, concise buyer-facing write-up of ONLY what THIS Deep Assessment observed — from the corner macros, the interior-cover photos (if provided), and the grade-reference comparison. Cover: any new corner/edge/spine defects found at macro scale; interior-cover condition (tanning/foxing/stains) if covers were provided; and whether the grade was confirmed or revised and why. MAX 3 sentences and about 40 words (50 hard cap) — be terse. Do NOT repeat the initial Condition Assessment text above — only the new Deep observations. WRITE ONLY WHAT YOU OBSERVED AND WHAT CHANGED: never enumerate what is absent or clean (no "no chips, tears or tape", no "with no color break or staple rust", no "no foxing, stains or tears"). Never describe point deductions or score math in words (no "costing a single interior point", no "minus half a point") — the numbers show in the score boxes. State a removed defect plainly (e.g. "the trace corner wear noted initially is not supported by the close-ups and has been removed"). If the close-ups simply confirmed the initial grade, say that plainly.>",
   "labelNotes": "${initialAssessment.labelNotes || ''}",
   "keyInfo": "${initialAssessment.keyInfo || ''}",
   "enhance": ${initialAssessment.enhance == null ? 'null' : JSON.stringify(initialAssessment.enhance)},
@@ -378,7 +377,7 @@ JSON shape (same as initial assessment, with deepAddition tags on new defects):
 
 HARD OUTPUT LIMITS:
   • defects array: MAX 10 entries (initial + new deep additions combined)
-  • aiAssessment: FROZEN. Return the initial text above EXACTLY as provided — do NOT append, edit, shorten, or add a confirm/revise sentence. It is the permanent first-pass record. ALL Deep observations and the confirm/revise note go in deepAssessment ONLY.
+  • aiAssessment: OMIT this field entirely — do NOT output it. The first-pass write-up is preserved unchanged by the client; regenerating it wastes tokens and risks altering the frozen record. ALL Deep observations and the confirm/revise note go in deepAssessment ONLY.
 `;
 
   // ── S16: Restoration Check prompt (mode==='restoration') ────────────────────

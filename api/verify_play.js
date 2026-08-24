@@ -21,7 +21,7 @@
 // process.env so the bundler can't drop it) and load googleapis + firebase-admin
 // dynamically inside the handler.
 import process from 'node:process';
-import { shortBoxBonusForNext, nextBonusAfter, shortBoxTimes, tierOf } from '../lib/repeat_bonus.js';
+import { bonusForNextPurchase, nextBonuses, TIER_CONFIG, tierOf } from '../lib/repeat_bonus.js';
 
 const PACKAGE_NAME = 'app.robograder';
 
@@ -117,16 +117,17 @@ export default async function handler(req, res) {
     const db = getFirestore();
     const envName = purchase.purchaseType === 0 ? 'Test' : 'Production';
 
-    // Repeat-Purchase Discount (Short Box only): escalating bonus from prior
-    // production, non-refunded Short Box purchases, computed before the txn.
-    let bonusCredits = 0, nextShortBoxBonus = 0, lastShortBoxAt = null;
-    if (tier === 'short_box' && envName === 'Production') {
+    // Repeat-Purchase Discount (all tiers, shared 1-year clock): escalating bonus
+    // from the account's PRIOR production, non-refunded purchases at this tier or
+    // higher, computed BEFORE the txn (this purchase isn't written yet).
+    let bonusCredits = 0, nextBonusesCache = null, lastPurchaseAt = null;
+    if (TIER_CONFIG[tier] && envName === 'Production') {
       const nowMs = Date.now();
       const priorSnap = await db.collection('purchases').where('userId', '==', uid).get();
-      const priorTimes = shortBoxTimes(priorSnap.docs.map(d => d.data()));
-      bonusCredits = shortBoxBonusForNext(priorTimes, nowMs);
-      lastShortBoxAt = new Date(nowMs).toISOString();
-      nextShortBoxBonus = nextBonusAfter([...priorTimes, nowMs], nowMs);
+      const priorDatas = priorSnap.docs.map(d => d.data());
+      bonusCredits = bonusForNextPurchase(priorDatas, tier, nowMs);
+      lastPurchaseAt = new Date(nowMs).toISOString();
+      nextBonusesCache = nextBonuses([...priorDatas, { tier, environment: envName, createdAtMs: nowMs }], nowMs);
     }
     const credits = baseCredits + bonusCredits;   // total granted
 
@@ -142,9 +143,11 @@ export default async function handler(req, res) {
         totalPurchased: FieldValue.increment(credits),
         everPurchased: true,   // S21: authoritative purchaser flag (gates the Give feature)
       };
-      if (tier === 'short_box' && envName === 'Production') {
-        userUpdate.lastShortBoxAt = lastShortBoxAt;
-        userUpdate.nextShortBoxBonus = nextShortBoxBonus;
+      if (nextBonusesCache) {
+        userUpdate.nextBonuses = nextBonusesCache;
+        userUpdate.lastPurchaseAt = lastPurchaseAt;
+        userUpdate.nextShortBoxBonus = nextBonusesCache.short_box;   // legacy (older clients)
+        userUpdate.lastShortBoxAt = lastPurchaseAt;                  // legacy
       }
       if (userSnap.exists) t.update(userRef, userUpdate);
       else t.set(userRef, userUpdate, { merge: true });
