@@ -31,6 +31,13 @@ export default async function handler(req, res) {
     // A category that has never been baked yet has no static file — start from an
     // empty skeleton so the first bake of pokemon/magic/baseball still works.
     const r = await fetch('https://robograder.app/' + fileName, { cache: 'no-store' });
+    // SAFETY: comics MUST bake onto its existing file. If that fetch fails, abort
+    // rather than fall back to an empty skeleton (which would silently drop every
+    // volumeGuard, tier, and book). The empty skeleton is only for a category
+    // that has never been baked (pokemon/magic/baseball).
+    if (!r.ok && cat === 'comics') {
+      return res.status(502).json({ error: 'Could not fetch the live ' + fileName + ' to bake onto (HTTP ' + r.status + '). Aborting so the file is not rebuilt from an empty base — try again in a moment.' });
+    }
     const base = r.ok ? await r.json() : { tiers: {}, curves: [], books: {}, volumeGuards: {} };
     base.books = base.books || {};
     base.volumes = base.volumes || {}; // carry the volume/year model through untouched
@@ -67,6 +74,26 @@ export default async function handler(req, res) {
       base.books[k] = ci;
       merged++;
     }
+    // Garbage-collect orphaned curves: keep only curves a book still points at,
+    // and reindex. Without this, re-pricing a book leaves its old curve behind
+    // forever, so the curves table grows every bake even when no book was added.
+    {
+      const remap = new Map();   // oldIndex -> newIndex
+      const liveCurves = [];
+      for (const bk of Object.keys(base.books)) {
+        const oi = base.books[bk];
+        if (typeof oi !== 'number' || oi < 0 || oi >= base.curves.length) continue;
+        if (!remap.has(oi)) { remap.set(oi, liveCurves.length); liveCurves.push(base.curves[oi]); }
+        base.books[bk] = remap.get(oi);
+      }
+      base.curves = liveCurves;
+    }
+
+    // SAFETY: never emit a gutted comics file (base must carry its guards + tiers).
+    if (cat === 'comics' && (!base.volumeGuards || !Object.keys(base.volumeGuards).length || !base.tiers || !Object.keys(base.tiers).length)) {
+      return res.status(500).json({ error: 'Bake aborted: base file is missing volumeGuards/tiers — refusing to emit a gutted comics file.' });
+    }
+
     // Keep the books map organized (sorted keys) so the file stays clean.
     const sortedBooks = {};
     for (const bk of Object.keys(base.books).sort()) sortedBooks[bk] = base.books[bk];
