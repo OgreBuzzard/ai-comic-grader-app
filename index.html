@@ -3913,26 +3913,25 @@ const SAMPLE_COMIC = {
   issue: "1",
   issueDate: "April 2026",
   publisher: "Robograder",
-  grade: "8.0",
-  pageQuality: "Off-White to White",
+  grade: "5.5",
+  pageQuality: "Off-White",
   cgcGrade: "",
   cgcCert: "",
   psaGrade: "",
   psaCert: "",
-  assessedCGCGrade: "8.0",
-  assessedPSAGrade: "8.0",
-  predictedGrade: "8.0",
+  assessedCGCGrade: "5.5",
+  assessedPSAGrade: "5.5",
+  predictedGrade: "5.5",
   roboGrade: {
     version: "2.0",
-    score: 80,
+    score: 60,
     confidenceRange: 0,
-    frontScore: 37,
-    backScore: 18,
-    spineScore: 16,
-    interiorScore: 9,
-    pageQuality: "Off-White to White",
+    frontScore: 25,
+    backScore: 15,
+    spineScore: 15,
+    interiorScore: 5,
+    pageQuality: "Off-White",
     defects: [
-      { category: "Front", type: "Spine stress", location: "top of spine", severity: "Low", colorBreaking: false },
       { category: "Front", type: "Corner blunting", location: "lower-right corner", severity: "Low", colorBreaking: false },
       { category: "Front", type: "Surface wear", location: "lower cover", severity: "Med", colorBreaking: false },
       { category: "Back", type: "Soiling", location: "lower edge", severity: "Low", colorBreaking: false },
@@ -3962,7 +3961,7 @@ const SAMPLE_COMIC = {
   interiorCoverImages: [],
   keyInfo: "",
   aiGraderNotes: "",
-  aiAssessment: "Certified flawless by the Unerring Robograder.",
+  aiAssessment: "Cover shows moderate surface wear across the lower front and a lightly blunted lower-right corner. A color-breaking stress line and a short tick run along the spine, with light soiling at the back lower edge. Interior pages carry light edge tanning, seating this as a solid mid-grade copy.",
   psaNotes: "",
   assessmentHistory: [],
   notes: ""
@@ -5280,7 +5279,7 @@ function showDetail(id) {
   const isSample = selected._isSample === true;
   let html = `<div class="sticky-back" style="display:flex;justify-content:space-between;align-items:center;gap:10px">\n    <button class="btn-ghost" onclick="showList()">← Back</button>\n    ${!isSample ? `<button class="btn btn-gold" onclick="showEdit('${esc(selected.id)}')">Edit</button>` : ""}\n  </div>\n  <div class="card" style="margin-top:4px;background:#fff">`;
   if (isSample) {
-    html += `<div style="background:#fff8e0;border:1px solid #c8a040;border-radius:10px;padding:12px 14px;margin-bottom:14px;display:flex;gap:12px;align-items:flex-start">\n      <div style="font-size:20px;flex-shrink:0">✨</div>\n      <div style="flex:1">\n        <div style="font-size:13px;font-weight:700;color:#6a4a08;letter-spacing:0.02em;margin-bottom:3px">Sample Entry</div>\n        <div style="font-size:12px;color:#7a5a1a;line-height:1.5">This is an example of what a graded book looks like. Add your first book to clear it, or tap Delete below to remove it now.</div>\n      </div>\n    </div>`;
+    html += `<div style="background:#12200a;border:1px solid #3a5818;border-radius:10px;padding:12px 14px;margin-bottom:14px">\n        <div style="font-size:12px;font-weight:800;color:#9abf60;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:4px">Sample Entry</div>\n        <div style="font-size:12px;color:#cfe0b8;line-height:1.5">This is an example of what a graded book looks like. Add your first book to clear it, or tap Delete below to remove it now.</div>\n      </div>`;
   }
   if (selected.type === "card") { html += _cardIdentityHTML(selected); } else {
   html += `<div>\n    <h2 style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:26px;font-weight:900;color:#0d0d0f;line-height:1.1;margin:0">${esc(selected.title)}</h2>\n    ${selected.issue || selected.issueDate ? `<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:6px">\n      ${selected.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:18px;font-weight:600;color:#3a2e24">${selected.type === "card" ? esc(formatCardNumber(selected.issue)) : formatIssue(selected.issue, selected.title)}</span>` : ""}\n      ${selected.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(selected.issueDate))}</span>` : ""}\n    </div>` : ""}\n    ${selected.printing ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#6a5a4a;margin-top:4px">${esc(selected.printing)}</div>` : ""}\n    ${selected.publisher ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:500;color:#8a7a6a;margin-top:4px">${esc(selected.publisher)}</div>` : ""}\n    ${selected.cgcCert || selected.psaCert ? `<div style="font-family:'IBM Plex Mono','Menlo',monospace;font-size:13px;color:#5a4a3a;margin-top:6px;letter-spacing:0.3px">\n      ${selected.cgcCert ? `<div><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">CGC</span> <span style="margin-left:6px">${esc(selected.cgcCert)}</span></div>` : ""}\n      ${selected.psaCert ? `<div style="margin-top:2px"><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">PSA</span> <span style="margin-left:6px">${esc(selected.psaCert)}</span></div>` : ""}\n    </div>` : ""}\n  </div>`;
@@ -7544,7 +7543,7 @@ function mountResults(cgc, psa) {
   let badgesHtml = "";
   if (roboScore != null) badgesHtml += makeBadge("robograde", "anim-val-robo");
   if (predictedGrade) badgesHtml += makeBadge("predicted", "anim-val-cgc");
-  const resultsHtml = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n      <div id="result-grades" style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badgesHtml}</div>\n      <div id="result-pq" style="display:flex;align-items:center;justify-content:center;min-height:22px;">\n        <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n      </div>\n      ${_refunded ? `<div style="display:flex;flex-direction:column;align-items:center;gap:1px;margin-top:2px"><img src="assets/robocoin2.webp" style="width:34px;height:34px" alt=""><div style="color:#d4af37;font-size:11px;font-weight:800;letter-spacing:0.5px">+1 REFUNDED</div><div style="color:#cfc3a8;font-size:10px;letter-spacing:0.3px">Grade did not go up</div></div>` : ""}\n      <button id="assess-complete-btn" disabled\n        style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">\n        ASSESSING…\n      </button>\n    </div>`;
+  const resultsHtml = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n      <div id="result-grades" style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badgesHtml}</div>\n      <div id="result-pq" style="position:relative;width:100%;display:flex;align-items:center;justify-content:center;min-height:22px;">\n        <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n        ${_refunded ? `<div title="Deep credit refunded \u2014 grade did not go up" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:0;line-height:1;pointer-events:none"><img src="assets/robocoin2.webp" style="width:30px;height:30px" alt="Credit refunded"><div style="color:#d4af37;font-size:10px;font-weight:800;letter-spacing:0.3px;margin-top:1px">+1</div></div>` : ""}\n      </div>\n      <button id="assess-complete-btn" disabled\n        style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">\n        ASSESSING…\n      </button>\n    </div>`;
   window.RobograderScan.slideResultsIntoPanel(resultsHtml);
   dbg("mountResults: results html replaced");
   const roboEl = document.getElementById("anim-val-robo");
