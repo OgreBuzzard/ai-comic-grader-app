@@ -387,6 +387,8 @@ HARD OUTPUT LIMITS:
   // when signs are apparent; Restoration Check states either way).
   const restorationPrompt = `You are performing a RESTORATION CHECK on a vintage comic book. You are NOT grading it. You are examining 7 photos for physical indicators that the book may have been restored, and reporting them with care. No conclusive determination can be made from photos alone, but you should note visible indications that are consistent with restoration, or note the absence of such indications.
 
+THIS BOOK: ${initialAssessment.title || 'Unknown'} ${initialAssessment.issue || ''}. If this is a rare, high-value, or historically significant KEY issue (early Golden/Silver-Age keys, first or early appearances of major characters, etc.), apply HEIGHTENED SKEPTICISM. Such books are frequent restoration and "married"/"Frankenbook" candidates precisely because their value justifies the work, and the restoration can be very clean — clean enough to look original. Do NOT default to "no indications" on a major key: weight any ambiguous indicator toward flagging, and state plainly when restoration cannot be ruled out.
+
 You are given exactly 8 images, in this order:
 1. UV FRONT — the FRONT COVER photographed under ULTRAVIOLET (blacklight) illumination in a dark room.
 2. UV BACK — the BACK COVER photographed under ULTRAVIOLET (blacklight) illumination in a dark room.
@@ -417,12 +419,19 @@ Look for LEAF-CASTING (added paper pulp filling losses — visible as patches wi
 INTERIOR STAPLES (Image 8):
 Look for the same staple replacement/removal signs as Images 3-4, but from the inside. Interior views often reveal: re-bent staple legs with tool marks, evidence of staple holes that have been punched through rather than pressed through during original assembly, or staple-crown-to-paper contact patterns inconsistent with factory production. State whether there IS or IS NOT indication of staple replacement or removal.
 
+COVER REINFORCEMENT, MARRIED COVERS & INCONSISTENT CONDITION (examine the covers in every image, UV included):
+- ADHESIVE / GLUE as restoration, not soiling: amber or brown adhesive or glue staining running along a cover edge or the spine-side of a cover, a glued-down or laminated feel, or backing material behind the cover, is a classic sign of REINFORCEMENT (backing paper/tape added) or a re-attached / MARRIED cover. Treat it as a restoration indicator — do NOT dismiss it as ordinary "soiling," "staining," or "edge wear." If the grading notes already flag glue/adhesive on a cover, treat that as a reinforcement lead to confirm here.
+- UNNATURAL CLEANLINESS / INCONSISTENCY: an area — the SPINE especially — that reads notably cleaner, whiter, glossier, or more intact than the rest of a book that shows genuine age and wear elsewhere is a red flag for REPLACED or REINFORCED material. Original 60-90-year-old newsprint wears fairly uniformly; a pristine spine or a spotless cover on an otherwise worn vintage book points to non-original material (re-spining, a married cover, or reinforcement), not exceptional preservation.
+- MARRIED / "FRANKENBOOK" cover: a cover mounted onto another copy's interior, or assembled from several copies. Tells: cover tone/gloss/wear that does not match the interior or the opposite cover; one cover markedly better than the other; a suspiciously complete or clean cover inconsistent with the rest of the book.
+- State whether these indicators ARE or ARE NOT present, and where.
+
 OVERALL APPROACH:
 - For each area examined, STATE either way whether restoration indicators are or are not apparent.
 - Tread carefully — no conclusive determination. Phrase findings as observations: "Visible indications consistent with..." or "No visible indications suggesting..."
 - If indicators are observed with HIGH CONFIDENCE (clear color touch under UV, clear reinforcement, clear staple replacement), set "indicatorsObserved": true and "highConfidence": true.
 - If indicators are observed but with lower confidence, set "indicatorsObserved": true and "highConfidence": false.
 - If no indicators are observed in any area, set "indicatorsObserved": false.
+- ON A RARE / HIGH-VALUE KEY: if ANY indicator above is present — adhesive/reinforcement, inconsistent cleanliness, a married-cover tell, or covers/spine that simply look too clean for the book's age and overall wear — set "indicatorsObserved": true and describe it. Do not conclude "no indications" on such a book unless the images genuinely show none.
 
 ## RESPONSE FORMAT — STRICT
 Your entire response must be a JSON object and nothing else.
