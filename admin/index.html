@@ -1849,8 +1849,8 @@ function renderUserDetail(user, items, publicRate) {
             </div>
             <div class="meta" style="display:flex;flex-direction:column;align-items:center;gap:1px;min-width:46px;">
               <div title="${it.tier === 3 ? 'Full' : it.tier === 2 ? 'Deep' : 'Main'} assessment" style="font-size:10px;color:#7aa838;letter-spacing:1px;height:12px;line-height:12px">${'★'.repeat(it.tier || 1)}</div>
+              <div style="text-align:center;line-height:1.05;"><div class="big" style="color:#b8d820;">${_rgCell(it)}</div><div class="label">RG</div></div>
               <div style="text-align:center;line-height:1.05;"><div class="big" style="color:#7fd0ff;">${(it.assessedCGCGrade ?? it.assessedPSAGrade) ?? '—'}</div><div class="label">PG</div></div>
-              <div style="text-align:center;line-height:1.05;"><div class="big">${it.score ?? '—'}</div><div class="label">RG</div></div>
             </div>
           </div>
         `; }).join('')
@@ -2546,11 +2546,19 @@ function _rgCell(it) {
     if (!it) return '—';
     // S22: show the v3 half-point grade (was the v1 0-100 score).
     if (it.type === 'card') {
+      const cs = it.cardSubs;
+      // Admin card items carry cardSubs (per-axis 0-50/0-20/0-10), not the shape
+      // forCard() expects, so compute v3 directly from them when present.
+      if (cs && window.RoboScoreV3 && window.RoboScoreV3.computeCard && [cs.surface, cs.corners, cs.edges, cs.centering].some(v => v != null)) {
+        try {
+          const r = window.RoboScoreV3.computeCard({ surface50: cs.surface, corners20: cs.corners, edges20: cs.edges, centering10: cs.centering, depth: ((it.tier || 1) >= 2 ? 'deep' : 'main'), slabbed: !!(it.officialPSAGrade || it.officialCGCGrade) });
+          if (r) return window.RoboScoreV3.formatGrade(r.grade);
+        } catch (e) {}
+      }
       if (window.RoboScoreV3 && window.RoboScoreV3.forCard) {
         const r = window.RoboScoreV3.forCard(it);
         if (r) return window.RoboScoreV3.formatGrade(r.grade);
       }
-      const cs = it.cardSubs;
       if (cs && [cs.surface, cs.corners, cs.edges, cs.centering].some(v => v != null)) return RGV2.fromSubscores(cs, 'card').grade;
       if (it.score != null) return RGV2.gradeFromScore(it.score);
       return '—';

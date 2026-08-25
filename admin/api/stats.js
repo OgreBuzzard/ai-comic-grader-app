@@ -96,12 +96,22 @@ export default async function handler(req, res) {
     const purchasesSnap = await db.collection('purchases').get();
     const revenue = {
       totalCents: 0, webCents: 0, iosCents: 0, androidCents: 0, netCents: 0, webNetCents: 0, iosNetCents: 0, androidNetCents: 0, dayCents: 0, weekCents: 0, monthCents: 0,
+      refundedCents: 0, refundedCount: 0,
       webDayCents: 0, webWeekCents: 0, webMonthCents: 0, iosDayCents: 0, iosWeekCents: 0, iosMonthCents: 0, androidDayCents: 0, androidWeekCents: 0, androidMonthCents: 0,
       webNetDayCents: 0, webNetWeekCents: 0, webNetMonthCents: 0, iosNetDayCents: 0, iosNetWeekCents: 0, iosNetMonthCents: 0, androidNetDayCents: 0, androidNetWeekCents: 0, androidNetMonthCents: 0,
     };
     const revByDay = {}; // net revenue per day (last 30d) for the chart
     for (const doc of purchasesSnap.docs) {
       const d = doc.data();
+      // Refunded purchases earned $0 — exclude from every revenue total, tally
+      // separately for visibility. (Stripe/web refunds flip this via webhook;
+      // store refunds are marked manually in Firestore.)
+      if (d.refunded) {
+        const _rstore = d.source === 'ios_iap' || d.source === 'android_play';
+        revenue.refundedCents += _rstore ? (IOS_PRICE_CENTS[d.productId] || 0) : (d.amountCents || 0);
+        revenue.refundedCount++;
+        continue;
+      }
       const platform = d.source === 'ios_iap' ? 'ios'
         : d.source === 'android_play' ? 'android'
         : 'web';
