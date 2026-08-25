@@ -2736,6 +2736,18 @@ function renderItemDetail(it) {
         <p>${escapeHtml(it.fullAssessment)}</p>
       </div>` : ''}
 
+    ${it.insertFinding ? `
+      <div class="notes-block" style="border-left:3px solid #c8962a;">
+        <h4>Mark Jewelers Insert — ${it.insertFinding.present ? 'PRESENT' : 'NOT PRESENT'}${it.insertFinding.sameBook === false ? ' <span style="color:#d4a642;">(book unconfirmed)</span>' : ''}</h4>
+        <p>${escapeHtml(it.insertFinding.note || '')}</p>
+      </div>` : ''}
+
+    ${it.couponFinding ? `
+      <div class="notes-block" style="border-left:3px solid ${it.couponFinding.present === false ? '#d46a4a' : '#3a9a5a'};">
+        <h4>${escapeHtml(it.couponFinding.piece || 'Coupon / Pin-up')} — ${it.couponFinding.present ? 'PRESENT' : 'CUT OUT / REMOVED'}${it.couponFinding.sameBook === false ? ' <span style="color:#d4a642;">(book unconfirmed)</span>' : ''}</h4>
+        <p>${escapeHtml(it.couponFinding.note || '')}</p>
+      </div>` : ''}
+
     ${it.psaNotes ? `
       <div class="notes-block">
         <h4>PSA Variance</h4>

@@ -2499,6 +2499,21 @@ window.matchCoupon = function matchCoupon(title, issue) {
   return _couponIndex.books.find(e => _normalizeKeyIssue(e.issue) === ni && _idxTitleHit(e, nt)) || null;
 };
 
+// S23: broad candidate check — is this a title/era that SOMETIMES carried a Mark
+// Jewelers insert? Uses the served candidate list (mirrors lib INSERT_TITLES).
+// Use matchInsert() first for a confirmed hit; this is the softer "might have one".
+window.matchInsertCandidate = function matchInsertCandidate(title, year) {
+  if (!_insertIndex || !Array.isArray(_insertIndex.candidates)) return null;
+  const nt = _normalizeKeyTitle(title), y = parseInt(year, 10);
+  if (!nt || !isFinite(y)) return null;
+  const era = _insertIndex.era || [0, 9999];
+  const hit = _insertIndex.candidates.find(e => _normalizeKeyTitle(e.title) === nt);
+  if (!hit) return null;
+  const lo = (hit.yearRange && hit.yearRange[0]) || era[0];
+  const hi = (hit.yearRange && hit.yearRange[1]) || era[1];
+  return (y >= lo && y <= hi) ? hit : null;
+};
+
 function insertSlotDefs() {
   return [
     { key: "insert_spread", label: "Insert — the card/spread",
@@ -3273,9 +3288,12 @@ function buildBadge(gradeVal, type, designation, sm, fullAssessment, deepAssessm
   if (restored && (type === "predicted" || type === "cgc-ai" || type === "psa-ai")) {
     return `<div class="${cls}" style="border-color:#7c3aed;background:linear-gradient(180deg,#9a6ad8 0%,#6a3ab0 100%)"><div class="ubadge-body" style="background:transparent"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.8)">${lbl}</div></div></div>`;
   }
-  // S21: coupon/stamp/pin-up removed -> CGC "Qualified" -> predicted badge GREEN.
+  // S23: a flagged missing coupon/stamp/pin-up turns the PREDICTED (PG) badge
+  // GREEN — but we no longer relabel it "Qualified" (Robograder drops that
+  // distinction; the missing element is spelled out in the assessment). RG is
+  // left unchanged. Keep the normal grade label under the green badge.
   if (qualified && (type === "predicted" || type === "cgc-ai" || type === "psa-ai")) {
-    return `<div class="${cls}" style="border-color:#166534;background:linear-gradient(180deg,#2e9a52 0%,#166534 100%)"><div class="ubadge-body" style="background:transparent"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.85)">Qualified</div></div></div>`;
+    return `<div class="${cls}" style="border-color:#166534;background:linear-gradient(180deg,#2e9a52 0%,#166534 100%)"><div class="ubadge-body" style="background:transparent"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.85)">${lbl}</div></div></div>`;
   }
   // S17: Tier is now shown via STARS on the RG score box (assessmentTierStars),
   // not by tinting the predicted badge gold/silver. The old Full→gold and
@@ -3376,16 +3394,27 @@ function buildListBadge(c) {
 }
 
 function buildListCgcPsaStack(c) {
-  const cgcVal = c.cgcGrade || c.predictedGrade || c.assessedCGCGrade || ((c.myAssessment || c.aiAssessment) && c.grade ? c.grade : null);
-  if (!cgcVal) return "";
-  const isOfficial = !!c.cgcGrade;
-  const v = String(cgcVal).includes(".") ? cgcVal : parseFloat(cgcVal).toFixed(1);
+  // S23: value + kind. Official CGC or PSA slabs show their real grade under a
+  // CGC/PSA strip; otherwise show the predicted grade (PG).
+  const officialCgc = !!c.cgcGrade;
+  const officialPsa = !c.cgcGrade && !!c.psaGrade;
+  let val, isOfficial, stripLabel, stripBg;
+  if (officialCgc) { val = c.cgcGrade; isOfficial = true; stripLabel = "CGC"; stripBg = "#1a5fa8"; }
+  else if (officialPsa) { val = c.psaGrade; isOfficial = true; stripLabel = "PSA"; stripBg = "#b91c1c"; }
+  else { val = c.predictedGrade || c.assessedCGCGrade || ((c.myAssessment || c.aiAssessment) && c.grade ? c.grade : null); isOfficial = false; }
+  if (!val) return "";
+  const v = String(val).includes(".") ? val : parseFloat(val).toFixed(1);
+  // S23: number in League Spartan (matches the main score box), sized just under
+  // the main list number and condensed with scaleX so slab grades read clearly.
+  const numStyle = "font-family:'League Spartan',sans-serif;transform:scaleX(0.66);display:inline-block;font-weight:800;font-size:30px;line-height:1";
   const wrapStart = `<div style="height:56px;display:flex;flex-direction:column;justify-content:flex-end;align-self:center;flex-shrink:0">`;
   const wrapEnd = `</div>`;
   if (isOfficial) {
-    return `${wrapStart}<div style="width:36px;height:36px;border-radius:8px;overflow:hidden;background:#fff;border:1px solid rgba(0,0,0,0.25);display:flex;flex-direction:column">\n      <div style="background:#1a5fa8;color:#fff;font-size:8px;font-weight:800;letter-spacing:0.5px;text-align:center;line-height:1.5;height:11px">CGC</div>\n      <div style="flex:1;display:flex;align-items:center;justify-content:center"><span style="font-size:12px;font-weight:800;color:#000;line-height:1">${v}</span></div>\n    </div>${wrapEnd}`;
+    return `${wrapStart}<div style="width:50px;height:52px;border-radius:9px;overflow:hidden;background:#fff;border:1px solid rgba(0,0,0,0.25);display:flex;flex-direction:column">\n      <div style="background:${stripBg};color:#fff;font-size:8px;font-weight:800;letter-spacing:0.5px;text-align:center;line-height:1.7;height:14px">${stripLabel}</div>\n      <div style="flex:1;display:flex;align-items:center;justify-content:center"><span style="${numStyle};color:#000">${v}</span></div>\n    </div>${wrapEnd}`;
   }
-  return `${wrapStart}<div style="background:#1a5fa8;border-radius:8px;width:36px;height:36px;display:flex;align-items:center;justify-content:center">\n    <div style="font-size:13px;font-weight:800;color:#fff;line-height:1">${v}</div>\n  </div>${wrapEnd}`;
+  // S23: PG turns GREEN when a coupon/stamp/pin-up is flagged missing.
+  const pgBg = c.couponQualified ? "#2e7d46" : "#1a5fa8";
+  return `${wrapStart}<div style="background:${pgBg};border-radius:9px;width:50px;height:52px;display:flex;align-items:center;justify-content:center">\n    <div style="${numStyle};color:#fff">${v}</div>\n  </div>${wrapEnd}`;
 }
 
 function buildStackedGradePair(officialBadge, aiBadge) {
@@ -4972,6 +5001,14 @@ function renderList() {
   if (_mixed) {
     filt = filt.filter(c => (c.type === "card") ? _showCards : _showComics);
   }
+  // S23: count copies of each title+issue in the visible list so a row shows its
+  // assessment date ONLY when there is more than one copy to tell apart.
+  const _dupKey = c => {
+    const t = (c.type === "card") ? (c.title || "Unknown") : (normalizeTitle(c.title, c.issueDate, c.printing) || c.title || "Unknown");
+    return t + "||" + String(c.issue == null ? "" : c.issue).trim().replace(/^#/, "").toLowerCase();
+  };
+  const _dupCounts = {};
+  filt.forEach(c => { const k = _dupKey(c); _dupCounts[k] = (_dupCounts[k] || 0) + 1; });
   const OWNERSHIP_ORDER = [ "Owned", "Sold", "Watching" ];
   const buildTitleGroups = list => {
     const groups = {};
@@ -4995,6 +5032,9 @@ function renderList() {
       if (na !== nb) return na - nb;
       const is = a.issue || "", ibs = b.issue || "";
       if (is !== ibs) return is.localeCompare(ibs);
+      // S23: duplicate copies (same title+issue) sort chronologically, oldest first.
+      const _aad = a.roboGradeDate || a.dateAdded || "", _bad = b.roboGradeDate || b.dateAdded || "";
+      if (_aad !== _bad) return (new Date(_aad)) - (new Date(_bad));
       const ga = parseFloat(a.cgcGrade || a.psaGrade || a.predictedGrade || a.assessedCGCGrade || a.grade || 0);
       const gb = parseFloat(b.cgcGrade || b.psaGrade || b.predictedGrade || b.assessedCGCGrade || b.grade || 0);
       if (gb !== ga) return gb - ga;
@@ -5099,6 +5139,9 @@ function renderList() {
       const LABEL_GRADIENT_ROW = "linear-gradient(180deg, #58723b 0%, #93ab66 38%, #9ba37e 100%)";
       const GRAY_GRADIENT_ROW = "linear-gradient(180deg, #5a5a5a 0%, #8a8a8a 38%, #9a9a9a 100%)";
       const buildRow = c => {
+        const _dupN = _dupCounts[_dupKey(c)] || 0;
+        const _adRaw = c.roboGradeDate || c.dateAdded;
+        const _adStr = (_dupN > 1 && _adRaw) ? (() => { try { return new Date(_adRaw).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }); } catch (e) { return ""; } })() : "";
         const thumbSrc = c.thumbnails?.[0] || c.images?.[0];
         const thumb = thumbSrc ? `<img class="comic-thumb" data-src="${thumbSrc}" decoding="async" style="background:#221d18">` : "";
         // S18: print icon (upper-right) replaces the old LABEL badge. Shown only
@@ -5109,7 +5152,7 @@ function renderList() {
         const _labelBtn = (printModeEnabled && _canLabel)
           ? `<button onclick="event.stopPropagation();togglePrintState('${esc(c.id)}')" title="${_inPrint ? "Remove from print queue" : "Add to print queue"}"\n              style="position:absolute;top:4px;right:6px;z-index:3;background:none;border:none;padding:2px;line-height:0;cursor:pointer">${_inPrint ? PRINT_ICON_X_SVG : PRINT_ICON_SVG}</button>`
           : "";
-        return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0">\n                  <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>\n                  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">\n                    ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${c.type === "card" ? esc(formatCardNumber(c.issue)) : formatIssue(c.issue, c.title)}</span>` : ""}\n                    ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                  </div>\n                </div>\n                ${buildListCgcPsaStack(c)}\n                ${_labelBtn}\n              </div>\n            </div>`;
+        return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0">\n                  <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>\n                  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">\n                    ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${c.type === "card" ? esc(formatCardNumber(c.issue)) : formatIssue(c.issue, c.title)}</span>` : ""}\n                    ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                  </div>\n                  ${_adStr ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:600;color:#9a8a7a;margin-top:1px;letter-spacing:0.2px">Assessed ${_adStr}</div>` : ""}\n                </div>\n                ${buildListCgcPsaStack(c)}\n                ${_labelBtn}\n              </div>\n            </div>`;
       };
       const _showSep = _showTitleSeparators();
       section.titles.forEach(title => {
@@ -5158,7 +5201,9 @@ function renderList() {
   main.innerHTML = html;
   console.log("[load] renderList innerHTML set in", Date.now() - _tRender, "ms (rows:", items.length + ")");
   wireSwipeRows();
-  hydrateThumbs();
+  // S23: defer hydration one frame so the browser commits the new list layout
+  // (making it scrollable) before we spend a burst assigning image srcs.
+  requestAnimationFrame(hydrateThumbs);
 }
 
 function hydrateThumbs() {
@@ -5281,9 +5326,13 @@ function wireSwipeRows() {
       if (dx > 0) dx = 0;
       if (dx < OPEN_X - 20) dx = OPEN_X - 20;
       fg.style.transform = `translateX(${dx}px)`;
-      if (e.cancelable) e.preventDefault();
+      // S23: no preventDefault here. touch-action:pan-y (on .swipe-fg) already
+      // hands vertical scrolling to the browser's compositor and reserves only
+      // horizontal for us, so a passive listener keeps the first scroll after a
+      // list re-render from being gated on the main thread (the "tap-to-scroll
+      // hangs the first few times" bug).
     }, {
-      passive: false
+      passive: true
     });
     const endDrag = () => {
       if (!dragging && !decided) return;
@@ -6601,6 +6650,7 @@ function showEdit(id) {
   _assessed = !!(c.assessedCGCGrade || c.aiAssessment || c.assessedPSAGrade || (c.cardData && c.cardData.robograde) || c.roboGradeId);
   const _ab2 = document.getElementById("add-btn");
   if (_ab2) _ab2.style.visibility = "hidden";
+  _prewarmCropCache([].concat(formData.images || [], formData.cornerImages || [], formData.interiorImages || [], formData.interiorCoverImages || [], formData.signatureImages || [], formData.insertImages || [], formData.couponImages || []));
   renderForm();
   window.scrollTo(0, 0);
 }
@@ -7654,7 +7704,7 @@ function mountResults(cgc, psa) {
     };
     const c = configs[type];
     const border = c.border ? `border:${c.border};` : "";
-    return `<div style="width:64px;height:64px;${border}background:${c.bg};border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n      <div id="${valueId}" style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:24px;font-weight:800;color:${c.text};line-height:1">${c.initial}</div>\n      <div style="font-size:9px;color:${c.text};opacity:0.75;margin-top:2px;letter-spacing:0.8px">${c.label}</div>\n    </div>`;
+    return `<div style="position:relative;width:64px;height:64px;${border}background:${c.bg};border-radius:8px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n      <div id="${valueId}" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'League Spartan',sans-serif;transform:scaleX(0.7);font-size:38px;font-weight:800;color:${c.text};line-height:1">${c.initial}</div>\n      <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:${c.text};opacity:0.75;letter-spacing:0.8px">${c.label}</div>\n    </div>`;
   };
   let badgesHtml = "";
   if (roboScore != null) badgesHtml += makeBadge("robograde", "anim-val-robo");
@@ -10280,8 +10330,16 @@ function renderForm() {
   })()}\n      ${(() => {
     if (_isCardForm || !formData.roboGrade || !formData.title || !formData.issue || typeof window.matchInsert !== "function") return "";
     const _im = window.matchInsert(formData.title, formData.issue);
-    if (!_im) return "";
-    return _renderExtraPhotoSection({ title: "MARK JEWELERS INSERT", blurb: "This issue can carry a Mark Jewelers insert \u2014 a scarce variant. Add these two optional photos so the insert can be assessed and tied to this book.", accent: "#c8962a", inputId: "insert-photo-input", tapFn: "tapInsertSlot", removeFn: "removeInsertImg", onchange: "handleInsertImages(event)", defs: insertSlotDefs(), imgs: formData.insertImages || [ null, null ], runFn: "runInsertAssessment", runLabel: "RUN INSERT CHECK", finding: formData.insertFinding, foundLabel: "INSERT" });
+    if (_im) {
+      return _renderExtraPhotoSection({ title: "MARK JEWELERS INSERT", blurb: "This issue can carry a Mark Jewelers insert \u2014 a scarce variant. Add these two optional photos so the insert can be assessed and tied to this book.", accent: "#c8962a", inputId: "insert-photo-input", tapFn: "tapInsertSlot", removeFn: "removeInsertImg", onchange: "handleInsertImages(event)", defs: insertSlotDefs(), imgs: formData.insertImages || [ null, null ], runFn: "runInsertAssessment", runLabel: "RUN INSERT CHECK", finding: formData.insertFinding, foundLabel: "INSERT" });
+    }
+    // S23: no confirmed hit -> if the title/era is a candidate (broad index),
+    // show a softer "might have one" prompt. Reuses the same slots + check.
+    const _yr = parseInt((String(formData.issueDate || "").match(/\b(19|20)\d{2}\b/) || [])[0], 10);
+    const _ic = (typeof window.matchInsertCandidate === "function") ? window.matchInsertCandidate(formData.title, _yr) : null;
+    // keep showing if it's a candidate, or the user already has insert photos/finding.
+    if (!_ic && !((formData.insertImages || []).some(Boolean) || formData.insertFinding)) return "";
+    return _renderExtraPhotoSection({ title: "POSSIBLE MARK JEWELERS INSERT", blurb: "Some copies of this title from this era carried a Mark Jewelers insert (a scarce PX/commissary variant). If your copy has one bound into the centerfold, add these two optional photos to verify it.", accent: "#8a7a4a", inputId: "insert-photo-input", tapFn: "tapInsertSlot", removeFn: "removeInsertImg", onchange: "handleInsertImages(event)", defs: insertSlotDefs(), imgs: formData.insertImages || [ null, null ], runFn: "runInsertAssessment", runLabel: "RUN INSERT CHECK", finding: formData.insertFinding, foundLabel: "INSERT" });
   })()}
       ${(() => {
     if (_isCardForm || !formData.roboGrade || !formData.title || !formData.issue || typeof window.matchCoupon !== "function") return "";
@@ -10524,6 +10582,22 @@ let _cropperInstance = null;
 let _cropperTarget = null;
 
 let _cropperOriginalSrc = null;
+
+// S23: The cropper sets img.crossOrigin='anonymous' (required so getCroppedCanvas
+// isn't tainted), which forces a SEPARATE CORS-flavored cache entry. The list /
+// detail / lightbox load the same image WITHOUT crossOrigin, so the CORS copy is
+// a cache MISS on first crop -> a full re-download (the 2-3s delay). Warming the
+// CORS-cached copy in the background when the edit view opens makes the crop
+// instant. Failures (older images without CORS headers) are silent; display is
+// unaffected because it never uses crossOrigin.
+function _prewarmCropCache(urls) {
+  if (!window._cropWarmed) window._cropWarmed = new Set();
+  (urls || []).forEach(u => {
+    if (typeof u !== "string" || !u.startsWith("http") || window._cropWarmed.has(u)) return;
+    window._cropWarmed.add(u);
+    try { const im = new Image(); im.crossOrigin = "anonymous"; im.decoding = "async"; im.src = u; } catch (e) {}
+  });
+}
 
 function openCropper(type, index) {
   const list = type === "corner" ? formData.cornerImages : type === "interiorCover" ? formData.interiorCoverImages : type === "interior" ? formData.interiorImages : type === "signature" ? formData.signatureImages : type === "insert" ? formData.insertImages : type === "coupon" ? formData.couponImages : formData.images;
@@ -11864,8 +11938,8 @@ async function submitFullAssessment() {
       const _gradeInit = _prev && _prev.gradeText ? _prev.gradeText : "0.0";
       const _fullRefunded = !!window._creditRefunded; // S22: perfect-10 refund coin (same as Deep)
       let _badges = "";
-      if (_newScore != null) _badges += `<div style="width:64px;height:64px;border:1.5px solid #3a5010;background:#0f1a05;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-robo" style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:22px;font-weight:800;color:#aaee30;line-height:1">${_rgInit}</div>\n        <div style="font-size:9px;color:#aaee30;opacity:0.75;margin-top:2px;letter-spacing:0.8px">RG</div>\n      </div>`;
-      if (_newGrade != null) _badges += `<div style="width:64px;height:64px;background:#2a5a8a;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-grade" style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:22px;font-weight:800;color:#e0f0ff;line-height:1">${_gradeInit}</div>\n        <div style="font-size:9px;color:#e0f0ff;opacity:0.75;margin-top:2px;letter-spacing:0.8px">GRADE</div>\n      </div>`;
+      if (_newScore != null) _badges += `<div style="position:relative;width:64px;height:64px;border:1.5px solid #3a5010;background:#0f1a05;border-radius:8px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-robo" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'League Spartan',sans-serif;transform:scaleX(0.7);font-size:38px;font-weight:800;color:#aaee30;line-height:1">${_rgInit}</div>\n        <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:#aaee30;opacity:0.75;letter-spacing:0.8px">RG</div>\n      </div>`;
+      if (_newGrade != null) _badges += `<div style="position:relative;width:64px;height:64px;background:#2a5a8a;border-radius:8px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-grade" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'League Spartan',sans-serif;transform:scaleX(0.7);font-size:38px;font-weight:800;color:#e0f0ff;line-height:1">${_gradeInit}</div>\n        <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:#e0f0ff;opacity:0.75;letter-spacing:0.8px">GRADE</div>\n      </div>`;
       const _fullResultsHtml = `\n        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n          <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${_badges}</div>\n          <div id="full-result-pq" style="position:relative;width:100%;display:flex;align-items:center;justify-content:center;min-height:22px;">\n            <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n          </div>\n          <button id="full-complete-btn" disabled\n            style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">ASSESSING…</button>\n        </div>`;
       if (window.RobograderScan && window.RobograderScan.slideResultsIntoPanel) {
         window.RobograderScan.slideResultsIntoPanel(_fullResultsHtml);

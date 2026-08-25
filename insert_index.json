@@ -1,1 +1,311 @@
-{"version":"1.0.0","era":[1971,1991],"books":[{"title":"Amazing Spider-Man","vol":1,"issue":"154"},{"title":"Amazing Spider-Man","vol":1,"issue":"191"},{"title":"Amazing Spider-Man","vol":1,"issue":"258"},{"title":"Amazing Spider-Man","vol":1,"issue":"322"},{"title":"Amazing Spider-Man","vol":1,"issue":"326"},{"title":"Daredevil","vol":1,"issue":"124"},{"title":"Daredevil","vol":1,"issue":"148"},{"title":"Doctor Strange","vol":1,"issue":"41"},{"title":"Doctor Strange","vol":1,"issue":"50"},{"title":"Doctor Strange","vol":1,"issue":"51"},{"title":"Fantastic Four","vol":1,"issue":"302"},{"title":"Fury of Firestorm","vol":2,"issue":"22","aliases":["The Fury of Firestorm","The Fury of Firestorm: The Nuclear Man"]},{"title":"Green Lantern","vol":2,"issue":"112"},{"title":"Green Lantern","vol":2,"issue":"117"},{"title":"Marvel's Greatest Comics","vol":null,"issue":"89","aliases":["Marvels Greatest Comics"]},{"title":"Peter Parker: The Spectacular Spider-Man","vol":1,"issue":"46","aliases":["Peter Parker, The Spectacular Spider-Man","The Spectacular Spider-Man","Spectacular Spider-Man"]},{"title":"Peter Parker: The Spectacular Spider-Man","vol":1,"issue":"47","aliases":["Peter Parker, The Spectacular Spider-Man","The Spectacular Spider-Man","Spectacular Spider-Man"]},{"title":"Saga of the Swamp Thing","vol":2,"issue":"6","aliases":["The Saga of the Swamp Thing","Saga of Swamp Thing","Swamp Thing"]},{"title":"Tomb of Dracula","vol":1,"issue":"55"},{"title":"Web of Spider-Man","vol":1,"issue":"55"},{"title":"Werewolf by Night","vol":1,"issue":"12"},{"title":"Werewolf by Night","vol":1,"issue":"19"}],"candidates":[{"title":"Amazing Spider-Man","yearRange":[1971,1991]},{"title":"New Mutants","yearRange":[1983,1991]},{"title":"Uncanny X-Men","yearRange":[1971,1991]},{"title":"Fantastic Four","yearRange":[1971,1991]},{"title":"Avengers","yearRange":[1971,1991]},{"title":"Incredible Hulk","yearRange":[1971,1991]},{"title":"Iron Man","yearRange":[1971,1991]},{"title":"Thor","yearRange":[1971,1991]},{"title":"Captain America","yearRange":[1971,1991]},{"title":"Daredevil","yearRange":[1971,1991]},{"title":"Marvel Team-Up","yearRange":[1972,1985]},{"title":"Marvels Greatest Comics","yearRange":[1971,1981]},{"title":"Batman","yearRange":[1971,1991]},{"title":"Detective Comics","yearRange":[1971,1991]},{"title":"Superman","yearRange":[1971,1991]},{"title":"Action Comics","yearRange":[1971,1991]},{"title":"Justice League of America","yearRange":[1971,1987]},{"title":"The Flash","yearRange":[1971,1985]},{"title":"Adventure Comics","yearRange":[1971,1983]},{"title":"Wonder Woman","yearRange":[1971,1986]},{"title":"Kamandi","yearRange":[1972,1978]},{"title":"Superboy","yearRange":[1971,1984]},{"title":"Ghosts","yearRange":[1971,1982]},{"title":"The Shadow","yearRange":[1973,1975]}]}
+{
+  "version": "1.0.0",
+  "era": [
+    1971,
+    1991
+  ],
+  "books": [
+    {
+      "title": "Amazing Spider-Man",
+      "vol": 1,
+      "issue": "154"
+    },
+    {
+      "title": "Amazing Spider-Man",
+      "vol": 1,
+      "issue": "191"
+    },
+    {
+      "title": "Amazing Spider-Man",
+      "vol": 1,
+      "issue": "258"
+    },
+    {
+      "title": "Amazing Spider-Man",
+      "vol": 1,
+      "issue": "322"
+    },
+    {
+      "title": "Amazing Spider-Man",
+      "vol": 1,
+      "issue": "326"
+    },
+    {
+      "title": "Daredevil",
+      "vol": 1,
+      "issue": "124"
+    },
+    {
+      "title": "Daredevil",
+      "vol": 1,
+      "issue": "148"
+    },
+    {
+      "title": "Doctor Strange",
+      "vol": 1,
+      "issue": "41"
+    },
+    {
+      "title": "Doctor Strange",
+      "vol": 1,
+      "issue": "50"
+    },
+    {
+      "title": "Doctor Strange",
+      "vol": 1,
+      "issue": "51"
+    },
+    {
+      "title": "Fantastic Four",
+      "vol": 1,
+      "issue": "302"
+    },
+    {
+      "title": "Fury of Firestorm",
+      "vol": 2,
+      "issue": "22",
+      "aliases": [
+        "The Fury of Firestorm",
+        "The Fury of Firestorm: The Nuclear Man"
+      ]
+    },
+    {
+      "title": "Green Lantern",
+      "vol": 2,
+      "issue": "112"
+    },
+    {
+      "title": "Green Lantern",
+      "vol": 2,
+      "issue": "117"
+    },
+    {
+      "title": "Marvel's Greatest Comics",
+      "vol": null,
+      "issue": "89",
+      "aliases": [
+        "Marvels Greatest Comics"
+      ]
+    },
+    {
+      "title": "Peter Parker: The Spectacular Spider-Man",
+      "vol": 1,
+      "issue": "46",
+      "aliases": [
+        "Peter Parker, The Spectacular Spider-Man",
+        "The Spectacular Spider-Man",
+        "Spectacular Spider-Man"
+      ]
+    },
+    {
+      "title": "Peter Parker: The Spectacular Spider-Man",
+      "vol": 1,
+      "issue": "47",
+      "aliases": [
+        "Peter Parker, The Spectacular Spider-Man",
+        "The Spectacular Spider-Man",
+        "Spectacular Spider-Man"
+      ]
+    },
+    {
+      "title": "Saga of the Swamp Thing",
+      "vol": 2,
+      "issue": "6",
+      "aliases": [
+        "The Saga of the Swamp Thing",
+        "Saga of Swamp Thing",
+        "Swamp Thing"
+      ]
+    },
+    {
+      "title": "Tomb of Dracula",
+      "vol": 1,
+      "issue": "55"
+    },
+    {
+      "title": "Web of Spider-Man",
+      "vol": 1,
+      "issue": "55"
+    },
+    {
+      "title": "Werewolf by Night",
+      "vol": 1,
+      "issue": "12"
+    },
+    {
+      "title": "Werewolf by Night",
+      "vol": 1,
+      "issue": "19"
+    }
+  ],
+  "candidates": [
+    {
+      "title": "Amazing Spider-Man",
+      "yearRange": [
+        1971,
+        1991
+      ]
+    },
+    {
+      "title": "New Mutants",
+      "yearRange": [
+        1983,
+        1991
+      ]
+    },
+    {
+      "title": "Uncanny X-Men",
+      "yearRange": [
+        1971,
+        1991
+      ]
+    },
+    {
+      "title": "Fantastic Four",
+      "yearRange": [
+        1971,
+        1991
+      ]
+    },
+    {
+      "title": "Avengers",
+      "yearRange": [
+        1971,
+        1991
+      ]
+    },
+    {
+      "title": "Incredible Hulk",
+      "yearRange": [
+        1971,
+        1991
+      ]
+    },
+    {
+      "title": "Iron Man",
+      "yearRange": [
+        1971,
+        1991
+      ]
+    },
+    {
+      "title": "Thor",
+      "yearRange": [
+        1971,
+        1991
+      ]
+    },
+    {
+      "title": "Captain America",
+      "yearRange": [
+        1971,
+        1991
+      ]
+    },
+    {
+      "title": "Daredevil",
+      "yearRange": [
+        1971,
+        1991
+      ]
+    },
+    {
+      "title": "Marvel Team-Up",
+      "yearRange": [
+        1972,
+        1985
+      ]
+    },
+    {
+      "title": "Marvels Greatest Comics",
+      "yearRange": [
+        1971,
+        1981
+      ]
+    },
+    {
+      "title": "Batman",
+      "yearRange": [
+        1971,
+        1991
+      ]
+    },
+    {
+      "title": "Detective Comics",
+      "yearRange": [
+        1971,
+        1991
+      ]
+    },
+    {
+      "title": "Superman",
+      "yearRange": [
+        1971,
+        1991
+      ]
+    },
+    {
+      "title": "Action Comics",
+      "yearRange": [
+        1971,
+        1991
+      ]
+    },
+    {
+      "title": "Justice League of America",
+      "yearRange": [
+        1971,
+        1987
+      ]
+    },
+    {
+      "title": "The Flash",
+      "yearRange": [
+        1971,
+        1985
+      ]
+    },
+    {
+      "title": "Adventure Comics",
+      "yearRange": [
+        1971,
+        1983
+      ]
+    },
+    {
+      "title": "Wonder Woman",
+      "yearRange": [
+        1971,
+        1986
+      ]
+    },
+    {
+      "title": "Kamandi",
+      "yearRange": [
+        1972,
+        1978
+      ]
+    },
+    {
+      "title": "Superboy",
+      "yearRange": [
+        1971,
+        1984
+      ]
+    },
+    {
+      "title": "Ghosts",
+      "yearRange": [
+        1971,
+        1982
+      ]
+    },
+    {
+      "title": "The Shadow",
+      "yearRange": [
+        1973,
+        1975
+      ]
+    }
+  ]
+}

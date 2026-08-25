@@ -968,13 +968,13 @@
     return `
       <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">
         <div style="display:flex;gap:12px;justify-content:center;align-items:center;">
-          <div style="width:64px;height:64px;border:1.5px solid #3a5010;background:#0f1a05;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
-            <div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:24px;font-weight:800;color:#b8d820;line-height:1">${_rgInit}</div>
-            <div style="font-size:9px;color:#aaee30;opacity:0.75;margin-top:2px;letter-spacing:0.8px">RG</div>
+          <div style="position:relative;width:64px;height:64px;border:1.5px solid #3a5010;background:#0f1a05;border-radius:8px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
+            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'League Spartan',sans-serif;transform:scaleX(0.7);font-size:38px;font-weight:800;color:#b8d820;line-height:1">${_rgInit}</div>
+            <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:#aaee30;opacity:0.75;letter-spacing:0.8px">RG</div>
           </div>
-          <div style="width:64px;height:64px;background:${_gradeBg};border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
-            <div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:24px;font-weight:800;color:#e0f0ff;line-height:1">${_gradeInit}</div>
-            <div style="font-size:9px;color:#e0f0ff;opacity:0.75;margin-top:2px;letter-spacing:0.8px">${_gradeLabel}</div>
+          <div style="position:relative;width:64px;height:64px;background:${_gradeBg};border-radius:8px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">
+            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'League Spartan',sans-serif;transform:scaleX(0.7);font-size:38px;font-weight:800;color:#e0f0ff;line-height:1">${_gradeInit}</div>
+            <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:#e0f0ff;opacity:0.75;letter-spacing:0.8px">${_gradeLabel}</div>
           </div>
         </div>
         <div id="result-pq" style="display:${_isCardScan ? 'none' : 'flex'};align-items:center;justify-content:center;min-height:22px;">

@@ -15,6 +15,7 @@
 // penalty) is intentionally left to the Deep/Full refinement pass.
 // =============================================================================
 import { anthropicWithRetry } from '../lib/anthropic_retry.js';
+import { couponEntry } from '../lib/coupon_list.js';
 
 function normalizeMediaType(t) {
   const s = (t || '').toLowerCase();
@@ -49,6 +50,11 @@ export default async function handler(req, res) {
   const { images = [], frontCover = null, title = '', issueNumber = '', entry = null } = req.body || {};
   const imgBlocks = (images || []).map(toImageBlock).filter(Boolean);
   if (imgBlocks.length < 2) return res.status(400).json({ error: 'Two coupon photos are required' });
+  // S23: server-side read of the SAME curated coupon list the client matches
+  // against (kept in sync by make-indexes.mjs). Non-blocking; logs a mismatch so
+  // drift/abuse is visible, and echoes it back for the client/admin.
+  const _onIndex = !!couponEntry(title, issueNumber);
+  if (title && issueNumber && !_onIndex) console.warn(`[assess_coupon] not on coupon index: ${title} #${issueNumber}`);
   const frontBlock = toImageBlock(frontCover);
 
   const piece = (entry && entry.item) ? entry.item : (entry && entry.kind === 'stamp' ? 'Marvel Value Stamp' : 'coupon / pin-up');
@@ -121,6 +127,7 @@ Respond with STRICT JSON only, no prose:
     present: parsed.present === true,
     sameBook: (parsed.sameBook === true || parsed.sameBook === false) ? parsed.sameBook : null,
     note: typeof parsed.note === 'string' ? parsed.note : '',
+    onIndex: _onIndex,
     ranAt: null
   });
 }

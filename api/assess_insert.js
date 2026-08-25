@@ -13,6 +13,7 @@
 // stores in `insertFinding` and displays.
 // =============================================================================
 import { anthropicWithRetry } from '../lib/anthropic_retry.js';
+import { insertEntry } from '../lib/insert_list.js';
 
 function normalizeMediaType(t) {
   const s = (t || '').toLowerCase();
@@ -47,6 +48,12 @@ export default async function handler(req, res) {
   const { images = [], frontCover = null, title = '', issueNumber = '', entry = null } = req.body || {};
   const imgBlocks = (images || []).map(toImageBlock).filter(Boolean);
   if (imgBlocks.length < 2) return res.status(400).json({ error: 'Two insert photos are required' });
+  // S23: server-side read of the SAME curated list the client matches against
+  // (kept in sync by make-indexes.mjs). Non-blocking — a candidate-era book is a
+  // legitimate check even without a confirmed hit — but we log a mismatch so
+  // drift/abuse is visible, and echo it back for the client/admin.
+  const _onIndex = !!insertEntry(title, issueNumber, entry && entry.vol);
+  if (title && issueNumber && !_onIndex) console.warn(`[assess_insert] not on confirmed insert index: ${title} #${issueNumber}`);
   const frontBlock = toImageBlock(frontCover);
 
   const content = [];
@@ -114,6 +121,7 @@ Respond with STRICT JSON only, no prose:
     present: parsed.present === true,
     sameBook: (parsed.sameBook === true || parsed.sameBook === false) ? parsed.sameBook : null,
     note: typeof parsed.note === 'string' ? parsed.note : '',
+    onIndex: _onIndex,
     ranAt: null
   });
 }
