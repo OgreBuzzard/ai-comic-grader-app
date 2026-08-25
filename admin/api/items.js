@@ -191,6 +191,16 @@ export default async function handler(req, res) {
         // the admin Logs → tap resolves a log's doc key to the item entry.
         assessmentTimingKeys: Array.isArray(flat.assessmentTimingKeys) ? flat.assessmentTimingKeys : [],
         score: flat.roboGrade?.score ?? null,
+        // S23: v3 inputs so the Items LIST computes the same half-point RG as the
+        // detail view (_rgCell falls back to the v1 score without these).
+        frontScore: flat.roboGrade?.frontScore ?? null,
+        backScore: flat.roboGrade?.backScore ?? null,
+        spineScore: flat.roboGrade?.spineScore ?? null,
+        pageQuality: flat.roboGrade?.pageQuality || flat.pageQuality || null,
+        defects: Array.isArray(flat.roboGrade?.defects) ? flat.roboGrade.defects : [],
+        photograder: flat.photograder || flat.roboGrade?.photograder || null,
+        officialCGCGrade: flat.officialCGCGrade ?? null,
+        officialPSAGrade: flat.officialPSAGrade ?? null,
         assessedCGCGrade: flat.assessedCGCGrade ?? null,
         assessedPSAGrade: flat.assessedPSAGrade ?? null,
         type: flat.type ?? null,
