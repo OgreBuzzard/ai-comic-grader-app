@@ -2438,21 +2438,46 @@ const RGV2 = (function () {
     input = input || {};
     var depth = (input.depth || "main").toLowerCase();
     var slabbed = !!input.slabbed;
-    var raw = {
-      surface: clamp(roundHalf((input.surface50 || 0) / 10), 0, 5),
-      corners: clamp(roundHalf((input.corners20 || 0) / 10), 0, 2),
-      edges: clamp(roundHalf((input.edges20 || 0) / 10), 0, 2),
+    // S22: full-precision subscores; grade = sum rounded ONCE to 0.5; then the
+    // subscores are decomposed to sum to it (round-robin, surface shaved first).
+    // Centering is the fixed 4th axis (mirrors comic interior).
+    var precise = {
+      surface: clamp((input.surface50 || 0) / 10, 0, 5),
+      corners: clamp((input.corners20 || 0) / 10, 0, 2),
+      edges: clamp((input.edges20 || 0) / 10, 0, 2),
       centering: clamp(roundHalf((input.centering10 || 0) / 10), 0, 1)
     };
-    var uncapped = raw.surface + raw.corners + raw.edges + raw.centering;
+    var uncapped = roundHalf(precise.surface + precise.corners + precise.edges + precise.centering);
     var cap = DEPTH_CAP_CARD[depth] != null ? DEPTH_CAP_CARD[depth] : 9.0;
     if (slabbed) cap = Math.min(cap, 9.5);
-    var sub = (uncapped > cap + 1e-9) ? shaveToCapCard(raw, cap) : raw;
-    var grade = sub.surface + sub.corners + sub.edges + sub.centering;
+    var grade = Math.min(uncapped, cap);
+    function decomposeCard(p, g) {
+      var centering = p.centering;
+      var target = roundHalf(g - centering);
+      var s2 = { surface: clamp(roundHalf(p.surface), 0, 5), corners: clamp(roundHalf(p.corners), 0, 2), edges: clamp(roundHalf(p.edges), 0, 2) };
+      var MAX = { surface: 5, corners: 2, edges: 2 };
+      var shaveOrder = ["surface", "corners", "edges"], addOrder = ["corners", "edges", "surface"];
+      function sum2() { return s2.surface + s2.corners + s2.edges; }
+      var guard = 0, i = 0, j = 0;
+      while (sum2() < target - 1e-9 && guard < 600) {
+        var k = addOrder[j % addOrder.length];
+        if (s2[k] + 0.5 <= MAX[k] + 1e-9) s2[k] = roundHalf(s2[k] + 0.5);
+        j++; guard++;
+        if (s2.surface >= MAX.surface && s2.corners >= MAX.corners && s2.edges >= MAX.edges) break;
+      }
+      while (sum2() > target + 1e-9 && guard < 600) {
+        var kk = shaveOrder[i % shaveOrder.length];
+        if (s2[kk] >= 0.5) s2[kk] = roundHalf(s2[kk] - 0.5);
+        i++; guard++;
+        if (s2.surface <= 0 && s2.corners <= 0 && s2.edges <= 0) break;
+      }
+      return { surface: s2.surface, corners: s2.corners, edges: s2.edges, centering: centering };
+    }
+    var sub = decomposeCard(precise, grade);
     var ceilingHit = uncapped > cap + 1e-9;
     var upsell = (depth === "main" && ceilingHit && !slabbed) ? "deep" : null;   // cards: Main -> Deep only
     var pm = computePM({ depth: depth, slabbed: slabbed, photograder: input.photograder });  // reuse comic PM table
-    return { grade: grade, uncappedGrade: uncapped, subscores: sub, rawSubscores: raw, pm: pm, pmLabel: formatPM(pm), ceilingHit: ceilingHit, upsell: upsell, kind: "card" };
+    return { grade: grade, uncappedGrade: uncapped, subscores: sub, rawSubscores: { surface: precise.surface, corners: precise.corners, edges: precise.edges, centering: precise.centering }, pm: pm, pmLabel: formatPM(pm), ceilingHit: ceilingHit, upsell: upsell, kind: "card" };
   }
   function forCard(card) {
     if (!card) return null;
