@@ -168,19 +168,48 @@
     var depth = (input.depth || "main").toLowerCase();
     var slabbed = !!input.slabbed;
 
-    var raw = {
-      front: clamp(roundHalf((input.front50 || 0) / 10), 0, 5),
-      back: clamp(roundHalf((input.back20 || 0) / 10), 0, 2),
-      spine: clamp(roundHalf((input.spine20 || 0) / 10), 0, 2),
+    // S22: FULL-PRECISION (0.1) subscores from the v1 0-100 subscores. The grade
+    // is their sum ROUNDED ONCE to the nearest 0.5 — NOT each subscore rounded
+    // then summed — so it tracks the v1 grade with no rounding inflation (a 92 in
+    // v1 no longer jumps to a perfect 10). Interior stays the tier value (0/0.5/1).
+    var precise = {
+      front: clamp((input.front50 || 0) / 10, 0, 5),
+      back: clamp((input.back20 || 0) / 10, 0, 2),
+      spine: clamp((input.spine20 || 0) / 10, 0, 2),
       interior: interiorTier(input.pageQuality, !!input.interiorDefect)
     };
-    var uncapped = raw.front + raw.back + raw.spine + raw.interior;
+    var uncapped = roundHalf(precise.front + precise.back + precise.spine + precise.interior);
 
     var cap = DEPTH_CAP[depth] != null ? DEPTH_CAP[depth] : 9.0;
     if (slabbed) cap = Math.min(cap, 9.5);   // slab can never reach RG 10 (no Full)
 
-    var sub = (uncapped > cap + 1e-9) ? shaveToCap(raw, cap) : raw;
-    var grade = sub.front + sub.back + sub.spine + sub.interior;
+    var grade = Math.min(uncapped, cap);
+    // Decompose the final 0.5 grade into 0.5 subscores that SUM to it exactly, so
+    // the shown subscores always add up. Interior is fixed; front/back/spine
+    // reconcile round-robin — front is shaved first (restored last), matching caps.
+    function decomposeToGrade(p, g) {
+      var interior = p.interior;
+      var target = roundHalf(g - interior);
+      var s2 = { front: clamp(roundHalf(p.front), 0, 5), back: clamp(roundHalf(p.back), 0, 2), spine: clamp(roundHalf(p.spine), 0, 2) };
+      var MAX = { front: 5, back: 2, spine: 2 };
+      var shaveOrder = ["front", "back", "spine"], addOrder = ["back", "spine", "front"];
+      function sum2() { return s2.front + s2.back + s2.spine; }
+      var guard = 0, i = 0, j = 0;
+      while (sum2() < target - 1e-9 && guard < 600) {
+        var k = addOrder[j % addOrder.length];
+        if (s2[k] + 0.5 <= MAX[k] + 1e-9) s2[k] = roundHalf(s2[k] + 0.5);
+        j++; guard++;
+        if (s2.front >= MAX.front && s2.back >= MAX.back && s2.spine >= MAX.spine) break;
+      }
+      while (sum2() > target + 1e-9 && guard < 600) {
+        var kk = shaveOrder[i % shaveOrder.length];
+        if (s2[kk] >= 0.5) s2[kk] = roundHalf(s2[kk] - 0.5);
+        i++; guard++;
+        if (s2.front <= 0 && s2.back <= 0 && s2.spine <= 0) break;
+      }
+      return { front: s2.front, back: s2.back, spine: s2.spine, interior: interior };
+    }
+    var sub = decomposeToGrade(precise, grade);
     var ceilingHit = uncapped > cap + 1e-9;
 
     var upsell = null;
@@ -193,7 +222,7 @@
       grade: grade,
       uncappedGrade: uncapped,
       subscores: sub,
-      rawSubscores: raw,
+      rawSubscores: { front: precise.front, back: precise.back, spine: precise.spine, interior: precise.interior },
       pm: pm,
       pmLabel: formatPM(pm),
       ceilingHit: ceilingHit,
@@ -5364,10 +5393,11 @@ function showDetail(id) {
     if (!hasAnyCorner) {
       // S20: Deep unlocked but not yet run — compact badge instead of 4 empty
       // slots. Tapping Edit reveals the capture slots.
-      html += `<div style="margin-top:14px;padding:14px;background:#152e10;border:1.5px solid #4a7028;border-radius:12px;text-align:center">
+      html += `<div onclick="showEdit('${esc(selected.id)}')" style="margin-top:14px;padding:14px;background:#152e10;border:1.5px solid #4a7028;border-radius:12px;text-align:center;cursor:pointer">
         <div style="line-height:1;margin-bottom:8px;opacity:0.5">${tierStarSVG(15, "#b8d820")}${tierStarSVG(15, "#b8d820")}</div>
         <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:#b8d820;margin-bottom:5px">DEEP ASSESSMENT AVAILABLE</div>
-        <div style="font-size:12px;color:#9cc76a;line-height:1.45">Add 6 more images for a more accurate grade. Tap Edit.</div>
+        <div style="font-size:12px;color:#9cc76a;line-height:1.45;margin-bottom:10px">Add 6 more images for a more accurate grade — free if it doesn't go up.</div>
+        <button class="rg-btn rg-btn-assess rg-btn-silver" style="pointer-events:none;display:inline-block">RUN DEEP ASSESSMENT</button>
       </div>`;
     } else {
     html += `<div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
@@ -5391,6 +5421,15 @@ function showDetail(id) {
       html += `</div>`;
     }
     }
+  }
+  if (!isFullAssessmentComplete(selected) && isDeepAssessmentComplete(selected) && showFullTier(selected)) {
+    const _np = (typeof isNearPerfectForFull === "function") && isNearPerfectForFull(selected);
+    html += `<div onclick="showEdit('${esc(selected.id)}')" style="margin-top:14px;padding:14px;background:#1c1608;border:1.5px solid #7a5e1e;border-radius:12px;text-align:center;cursor:pointer">
+        <div style="line-height:1;margin-bottom:8px;opacity:0.6">${tierStarSVG(15, "#f0c53a")}${tierStarSVG(15, "#f0c53a")}${tierStarSVG(15, "#f0c53a")}</div>
+        <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:#f0c53a;margin-bottom:5px">FULL ASSESSMENT AVAILABLE</div>
+        <div style="font-size:12px;color:#d8c58a;line-height:1.45;margin-bottom:10px">${_np ? "This book is near-perfect — a Full can confirm a perfect 10." : "Add 6 interior &amp; structure photos to confirm the grade."}</div>
+        <button class="rg-btn rg-btn-assess rg-btn-gold" style="pointer-events:none;display:inline-block">RUN FULL ASSESSMENT</button>
+      </div>`;
   }
   if (isFullAssessmentComplete(selected)) {
     const interior = selected.interiorImages || [];
@@ -7336,7 +7375,7 @@ function _capturePrevAssessResult() {
   const _gradeSrc = _isCard ? (formData.assessedPSAGrade || "") : (formData.predictedGrade || formData.assessedCGCGrade || "");
   window._prevAssessResult = (formData.roboGrade && formData.roboGrade.score != null) ? {
     score: Math.round(formData.roboGrade.score),
-    rgV3: (typeof rgV3GradeStr === "function" && !_isCard) ? rgV3GradeStr(formData) : null,
+    rgV3: (typeof rgV3GradeStr === "function" && !_isCard) ? rgV3GradeStr(formData) : (_isCard && window.RoboScoreV3 ? (function(){ try { const _r = window.RoboScoreV3.forCard(formData); return _r ? window.RoboScoreV3.formatGrade(_r.grade) : null; } catch(e){ return null; } })() : null), // S22: cards get a v3 grade too, so the scan placeholder never shows the v1 score
     gradeText: normalizeGrade(_gradeSrc) || "0.0",
     gradeVal: parseFloat(_gradeSrc) || null
   } : null;
@@ -7496,6 +7535,24 @@ function showCeilingUpsell(upsell) {
   card.querySelector('#rg-upsell-ok').onclick = close;
   ov.addEventListener('click', function(e){ if(e.target===ov) close(); });
 }
+function _showAssessRefundCoin() {
+  // S22: the +1 refund coin appears only AFTER the score animation lands, as a
+  // persistent absolutely-positioned element (sibling of the PQ row, so the PQ
+  // pill render can't wipe it). It stays until the scan panel is dismissed on
+  // Complete (returning to Detail/Edit).
+  try {
+    var panel = document.querySelector(".rg-scan-results");
+    if (!panel) return;
+    var host = panel.querySelector(":scope > div") || panel;
+    if (host.querySelector("#rg-refund-coin")) return;
+    var c = document.createElement("div");
+    c.id = "rg-refund-coin";
+    c.style.cssText = "position:absolute;right:8px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:0;line-height:1.05;pointer-events:none;z-index:6";
+    c.innerHTML = '<img src="assets/robocoin2.webp" style="width:28px;height:28px" alt="Credit refunded"><div style="color:#d4af37;font-size:10px;font-weight:800;letter-spacing:0.3px;margin-top:1px">+1</div><div style="color:#cfc3a8;font-size:7px;font-weight:800;letter-spacing:0.4px">REFUNDED</div>';
+    host.appendChild(c);
+  } catch (e) {}
+}
+
 function mountResults(cgc, psa) {
   const dbg = msg => {
     if (window.RobograderScan && window.RobograderScan.debugLog) {
@@ -7577,7 +7634,7 @@ function mountResults(cgc, psa) {
   let badgesHtml = "";
   if (roboScore != null) badgesHtml += makeBadge("robograde", "anim-val-robo");
   if (predictedGrade) badgesHtml += makeBadge("predicted", "anim-val-cgc");
-  const resultsHtml = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n      <div id="result-grades" style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badgesHtml}</div>\n      <div id="result-pq" style="position:relative;width:100%;display:flex;align-items:center;justify-content:center;min-height:22px;">\n        <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n        ${_refunded ? `<div style="position:absolute;right:6px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:0;line-height:1.05;pointer-events:none"><img src="assets/robocoin2.webp" style="width:28px;height:28px" alt="Credit refunded"><div style="color:#d4af37;font-size:10px;font-weight:800;letter-spacing:0.3px;margin-top:1px">+1</div><div style="color:#cfc3a8;font-size:7px;font-weight:800;letter-spacing:0.4px">REFUNDED</div></div>` : ""}\n      </div>\n      <button id="assess-complete-btn" disabled\n        style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">\n        ASSESSING…\n      </button>\n    </div>`;
+  const resultsHtml = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n      <div id="result-grades" style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badgesHtml}</div>\n      <div id="result-pq" style="position:relative;width:100%;display:flex;align-items:center;justify-content:center;min-height:22px;">\n        <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n      </div>\n      <button id="assess-complete-btn" disabled\n        style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">\n        ASSESSING…\n      </button>\n    </div>`;
   window.RobograderScan.slideResultsIntoPanel(resultsHtml);
   dbg("mountResults: results html replaced");
   const roboEl = document.getElementById("anim-val-robo");
@@ -7595,7 +7652,7 @@ function mountResults(cgc, psa) {
     const _v3res = (window.RG_V3_DISPLAY && window.RoboScoreV3 && formData.type !== 'card' && roboGrade && roboGrade.frontScore != null) ? window.RoboScoreV3.forComic({ ...formData, roboGrade: roboGrade, deepAssessmentRan: _deepPassResults }) : null;
     if (_v3res != null) {
       roboEl.style.fontSize = '26px';
-      animateV3Ladder(roboEl, _v3res.grade, 2000).then(() => { popResultBadge(roboEl); if (_v3res.grade === 10) applyPerfect10Gold(roboEl, '10');
+      animateV3Ladder(roboEl, _v3res.grade, 2000).then(() => { popResultBadge(roboEl); if (_refunded) _showAssessRefundCoin(); if (_v3res.grade === 10) applyPerfect10Gold(roboEl, '10');
         setTimeout(() => {
           var _sigNew = (typeof getSignatures === 'function') && getSignatures(formData).length > 0 && !((formData.signatureImages || []).some(Boolean));
           // S22: the DEEP upsell ("Push it higher?") may only appear after a 1-star MAIN.
@@ -9215,7 +9272,10 @@ async function completeAssessment() {
     return;
   }
   const _sigDetected = typeof hasIdentifiedSignatures === "function" ? hasIdentifiedSignatures(formData) : false;
-  _routeToEditAfterSave = !!((formData.highGradeUnlocked && !isDeepAssessmentComplete(formData)) || formData.restorationCheckTier || typeof isRestorationEligible === "function" && isRestorationEligible(formData) && !isRestorationCheckComplete(formData) || _sigDetected || isFullAssessmentEligible(formData) && isDeepAssessmentComplete(formData) && !isFullAssessmentComplete(formData));
+  // S22: always return to Detail after an assessment completes (see it finished),
+  // never auto-jump to Edit. Deep/Full/Restoration are launched from the Detail
+  // CTAs instead. (_sigDetected retained for the signature pop-up above.)
+  _routeToEditAfterSave = false;
   const _tComplete = Date.now();
   console.log("[complete] tapped → submitForm start");
   await submitForm();
@@ -11781,7 +11841,7 @@ async function submitFullAssessment() {
       let _badges = "";
       if (_newScore != null) _badges += `<div style="width:64px;height:64px;border:1.5px solid #3a5010;background:#0f1a05;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-robo" style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:22px;font-weight:800;color:#aaee30;line-height:1">${_rgInit}</div>\n        <div style="font-size:9px;color:#aaee30;opacity:0.75;margin-top:2px;letter-spacing:0.8px">RG</div>\n      </div>`;
       if (_newGrade != null) _badges += `<div style="width:64px;height:64px;background:#2a5a8a;border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-grade" style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:22px;font-weight:800;color:#e0f0ff;line-height:1">${_gradeInit}</div>\n        <div style="font-size:9px;color:#e0f0ff;opacity:0.75;margin-top:2px;letter-spacing:0.8px">GRADE</div>\n      </div>`;
-      const _fullResultsHtml = `\n        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n          <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${_badges}</div>\n          <div id="full-result-pq" style="position:relative;width:100%;display:flex;align-items:center;justify-content:center;min-height:22px;">\n            <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n            ${_fullRefunded ? `<div style="position:absolute;right:6px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:0;line-height:1.05;pointer-events:none"><img src="assets/robocoin2.webp" style="width:28px;height:28px" alt="Credit refunded"><div style="color:#d4af37;font-size:10px;font-weight:800;letter-spacing:0.3px;margin-top:1px">+1</div><div style="color:#cfc3a8;font-size:7px;font-weight:800;letter-spacing:0.4px">REFUNDED</div></div>` : ""}\n          </div>\n          <button id="full-complete-btn" disabled\n            style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">ASSESSING…</button>\n        </div>`;
+      const _fullResultsHtml = `\n        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n          <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${_badges}</div>\n          <div id="full-result-pq" style="position:relative;width:100%;display:flex;align-items:center;justify-content:center;min-height:22px;">\n            <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n          </div>\n          <button id="full-complete-btn" disabled\n            style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">ASSESSING…</button>\n        </div>`;
       if (window.RobograderScan && window.RobograderScan.slideResultsIntoPanel) {
         window.RobograderScan.slideResultsIntoPanel(_fullResultsHtml);
       }
@@ -11802,7 +11862,7 @@ async function submitFullAssessment() {
         const _fullV3 = (typeof rgV3ForComic === "function") ? rgV3ForComic(formData) : null;
         if (_roboEl && _fullV3 != null) {
           _roboEl.style.fontSize = "26px";
-          animateV3Ladder(_roboEl, _fullV3.grade, 2000).then(() => popResultBadge(_roboEl));
+          animateV3Ladder(_roboEl, _fullV3.grade, 2000).then(() => { popResultBadge(_roboEl); if (_fullRefunded) _showAssessRefundCoin(); });
         } else if (_roboEl && _newScore != null) {
           if (_rgFrom === _newScore) setTimeout(() => popResultBadge(_roboEl), 700);
           else animateRoboGradeFromTo(_roboEl, _rgFrom, _newScore, 2000).then(() => popResultBadge(_roboEl));

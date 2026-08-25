@@ -190,15 +190,68 @@ export default async function handler(req, res) {
     spend.weekCents += INFRA_DAILY * 7;
     spend.monthCents += INFRA_DAILY * 30;
 
-    // All-time spend: exact sum of the fetched timings, plus an avg-cost estimate
-    // for any assessments older than the fetched window (so it stays right as the
-    // collection grows past the 2500 read), plus infra since launch.
-    let _totalTimings = fetchedCount;
-    try { const _c = await db.collection('assessment_timings').count().get(); _totalTimings = _c.data().count || fetchedCount; } catch (e) {}
-    const _tailCents = Math.round(avgAssessmentCost * 100) * Math.max(0, _totalTimings - fetchedCount);
+    // S22: EXACT all-time API cost via an append-only rollup. Timings are
+    // immutable, so each load only sums the NEW timings since the last watermark
+    // (count-delta, newest-first) and folds them into a persisted total. This
+    // replaces the old avg×count tail ESTIMATE — the estimate re-priced ALL older
+    // assessments whenever the recent-100 average moved (e.g. a post-deploy
+    // cache-write at ~$0.29), which is what made all-time spend (and Profit) lurch
+    // ~$80-100 on quiet days. `?rebuild=1` forces a full recompute.
     const LAUNCH_MS = Date.parse('2026-03-30');
     const _daysLive = Math.max(1, Math.round((now - LAUNCH_MS) / DAY));
-    spend.allTimeCents = allTimeApiCents + _tailCents + INFRA_DAILY * _daysLive;
+    let allTimeApiCentsExact = allTimeApiCents; // fallback = the fetched-window sum
+    try {
+      const rollupRef = db.collection('admin_rollup').doc('apicost');
+      const forceRebuild = !!(req.query && (req.query.rebuild === '1' || req.query.rebuild === 'true'));
+      let _roll = null; try { const _rs = await rollupRef.get(); if (_rs.exists) _roll = _rs.data(); } catch (e) {}
+      let totalTimings = 0; try { const _c = await db.collection('assessment_timings').count().get(); totalTimings = _c.data().count || 0; } catch (e) {}
+      if (_roll && !forceRebuild && typeof _roll.apiCostCents === 'number' && typeof _roll.count === 'number' && _roll.count <= totalTimings) {
+        allTimeApiCentsExact = _roll.apiCostCents;
+        const newN = totalTimings - _roll.count;
+        if (newN > 0) {
+          const _ns = await db.collection('assessment_timings').orderBy('createdAt', 'desc').limit(newN).get();
+          let add = 0; _ns.docs.forEach(d => { add += Math.round((+(d.data().costUsd) || 0) * 100); });
+          allTimeApiCentsExact += add;
+          try { await rollupRef.set({ apiCostCents: allTimeApiCentsExact, count: totalTimings, updatedAt: new Date().toISOString() }, { merge: true }); } catch (e) {}
+        }
+      } else {
+        // Initialize / rebuild: paginate the whole collection ONCE and persist.
+        let sum = 0, processed = 0, last = null;
+        while (true) {
+          let q = db.collection('assessment_timings').orderBy('createdAt', 'desc').limit(1000);
+          if (last) q = q.startAfter(last);
+          const snap = await q.get();
+          if (snap.empty) break;
+          snap.docs.forEach(d => { sum += Math.round((+(d.data().costUsd) || 0) * 100); });
+          processed += snap.docs.length; last = snap.docs[snap.docs.length - 1];
+          if (snap.docs.length < 1000) break;
+        }
+        allTimeApiCentsExact = sum;
+        try { await rollupRef.set({ apiCostCents: sum, count: processed, updatedAt: new Date().toISOString() }, { merge: true }); } catch (e) {}
+      }
+    } catch (e) { console.warn('[admin-stats] apicost rollup failed; using window sum:', e.message); }
+    spend.allTimeCents = allTimeApiCentsExact + INFRA_DAILY * _daysLive;
+
+    // ── Claude Max (development) cost — factored into PROFIT ONLY, never into
+    // Spending (Spending stays a pure reflection of per-assessment API cost).
+    // Past charges are listed exactly; going forward a recurring $221.10 (Max 20x)
+    // accrues on the 15th. Matt plans to drop to Max 5x after the Sep 15 charge —
+    // when that happens, change CLAUDE_MAX_MONTHLY_CENTS (or add a rate-change row).
+    const CLAUDE_MAX_PAST = [
+      13.56, 11.30, 5.53, 11.06, 11.90, 11.31, 49.75, 31.01, // Mar–Apr dev ramp
+      221.10, 221.10, 221.10, 221.10                          // May 15 – Aug 15 (20x)
+    ];
+    const CLAUDE_MAX_MONTHLY_CENTS = 22110;      // $221.10 (Max 20x)
+    const CLAUDE_MAX_RECUR_START = '2026-09-15'; // first future recurring charge
+    let devAllTimeCents = CLAUDE_MAX_PAST.reduce((a, v) => a + Math.round(v * 100), 0);
+    try {
+      let _d = new Date(CLAUDE_MAX_RECUR_START + 'T00:00:00Z');
+      while (_d.getTime() <= now) { devAllTimeCents += CLAUDE_MAX_MONTHLY_CENTS; _d.setUTCMonth(_d.getUTCMonth() + 1); }
+    } catch (e) {}
+    // Amortize the CURRENT monthly rate across the period trios (so the day/week/
+    // month Profit figures carry their share of the subscription).
+    const _devDay = Math.round(CLAUDE_MAX_MONTHLY_CENTS / 30);
+    const devCost = { allTimeCents: devAllTimeCents, dayCents: _devDay, weekCents: _devDay * 7, monthCents: CLAUDE_MAX_MONTHLY_CENTS };
 
     // 30-day daily series (net revenue vs total spend incl. infra) for the chart.
     const series = [];
@@ -208,7 +261,7 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({
-      accounts, items, platforms, revenue, spend, series,
+      accounts, items, platforms, revenue, spend, series, devCost,
       credits: { outstanding: creditsOutstanding, avgAssessmentCost: +avgAssessmentCost.toFixed(4), liability: creditLiability },
       perCredit: {
         day: perCredit.day.credits ? +(perCredit.day.net / 100 / perCredit.day.credits).toFixed(4) : null,

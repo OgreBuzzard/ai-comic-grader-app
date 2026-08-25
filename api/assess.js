@@ -892,6 +892,7 @@ SEVERITY CALIBRATION — what makes a defect High, Med, or Low:
     • Single corner blunt with no color loss
     • Very light tanning visible only in raking light
   Page quality is NEVER assigned a severity — it is a descriptive observation, not a defect.
+  INTERIOR PAGE QUALITY vs GRADE: interior page color (White, Off-White to White, Off-White, Cream, Tan, etc.) is graded and LABELED SEPARATELY by CGC and does NOT lower, cap, or "seat" the predicted CGC grade. A book with off-white or cream pages can still earn a 9.x if its covers, spine, and structure warrant it. NEVER cite interior page color or interior paper aging as a reason for the grade in aiAssessment (do NOT write things like "pages have aged to off-white, seating this at 8.5"). Interior page color feeds the page-quality designation and the RG Interior sub-score ONLY — never the predicted grade. (This is distinct from COVER tanning, an exterior defect that DOES affect grade.)
 
 DEFECT NAMING DISCIPLINE — when a corner has multiple problems, name the most severe one. Do NOT say "corner blunting" if a corner has a piece-out (name it "piece out"), or a color break (name it "color break" or "color-breaking crease"), or a chip-out (name it "chip out"). "Blunting" specifically means a rounded, slightly worn corner with no color loss and no missing material. Reserve it for that specific case.
 `;

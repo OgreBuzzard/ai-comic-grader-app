@@ -146,19 +146,48 @@
     var depth = (input.depth || "main").toLowerCase();
     var slabbed = !!input.slabbed;
 
-    var raw = {
-      front: clamp(roundHalf((input.front50 || 0) / 10), 0, 5),
-      back: clamp(roundHalf((input.back20 || 0) / 10), 0, 2),
-      spine: clamp(roundHalf((input.spine20 || 0) / 10), 0, 2),
+    // S22: FULL-PRECISION (0.1) subscores from the v1 0-100 subscores. The grade
+    // is their sum ROUNDED ONCE to the nearest 0.5 — NOT each subscore rounded
+    // then summed — so it tracks the v1 grade with no rounding inflation (a 92 in
+    // v1 no longer jumps to a perfect 10). Interior stays the tier value (0/0.5/1).
+    var precise = {
+      front: clamp((input.front50 || 0) / 10, 0, 5),
+      back: clamp((input.back20 || 0) / 10, 0, 2),
+      spine: clamp((input.spine20 || 0) / 10, 0, 2),
       interior: interiorTier(input.pageQuality, !!input.interiorDefect)
     };
-    var uncapped = raw.front + raw.back + raw.spine + raw.interior;
+    var uncapped = roundHalf(precise.front + precise.back + precise.spine + precise.interior);
 
     var cap = DEPTH_CAP[depth] != null ? DEPTH_CAP[depth] : 9.0;
     if (slabbed) cap = Math.min(cap, 9.5);   // slab can never reach RG 10 (no Full)
 
-    var sub = (uncapped > cap + 1e-9) ? shaveToCap(raw, cap) : raw;
-    var grade = sub.front + sub.back + sub.spine + sub.interior;
+    var grade = Math.min(uncapped, cap);
+    // Decompose the final 0.5 grade into 0.5 subscores that SUM to it exactly, so
+    // the shown subscores always add up. Interior is fixed; front/back/spine
+    // reconcile round-robin — front is shaved first (restored last), matching caps.
+    function decomposeToGrade(p, g) {
+      var interior = p.interior;
+      var target = roundHalf(g - interior);
+      var s2 = { front: clamp(roundHalf(p.front), 0, 5), back: clamp(roundHalf(p.back), 0, 2), spine: clamp(roundHalf(p.spine), 0, 2) };
+      var MAX = { front: 5, back: 2, spine: 2 };
+      var shaveOrder = ["front", "back", "spine"], addOrder = ["back", "spine", "front"];
+      function sum2() { return s2.front + s2.back + s2.spine; }
+      var guard = 0, i = 0, j = 0;
+      while (sum2() < target - 1e-9 && guard < 600) {
+        var k = addOrder[j % addOrder.length];
+        if (s2[k] + 0.5 <= MAX[k] + 1e-9) s2[k] = roundHalf(s2[k] + 0.5);
+        j++; guard++;
+        if (s2.front >= MAX.front && s2.back >= MAX.back && s2.spine >= MAX.spine) break;
+      }
+      while (sum2() > target + 1e-9 && guard < 600) {
+        var kk = shaveOrder[i % shaveOrder.length];
+        if (s2[kk] >= 0.5) s2[kk] = roundHalf(s2[kk] - 0.5);
+        i++; guard++;
+        if (s2.front <= 0 && s2.back <= 0 && s2.spine <= 0) break;
+      }
+      return { front: s2.front, back: s2.back, spine: s2.spine, interior: interior };
+    }
+    var sub = decomposeToGrade(precise, grade);
     var ceilingHit = uncapped > cap + 1e-9;
 
     var upsell = null;
@@ -171,7 +200,7 @@
       grade: grade,
       uncappedGrade: uncapped,
       subscores: sub,
-      rawSubscores: raw,
+      rawSubscores: { front: precise.front, back: precise.back, spine: precise.spine, interior: precise.interior },
       pm: pm,
       pmLabel: formatPM(pm),
       ceilingHit: ceilingHit,
