@@ -99,9 +99,13 @@
     var pq = String(pageQuality || "").toLowerCase().trim();
     if (!pq) return 0.5;
     if (pq === "white") return 1;
-    if (pq === "off-white to white" || pq === "off-white" || pq === "cream to off-white") return 0.5;
+    // S23: Off-White or better rounds up to a full 1 (a book with Off-White pages
+    // can now reach a perfect interior). Cream-tinged tiers stay 0.5; cream/tan/
+    // brittle score 0.
+    if (pq === "off-white to white" || pq === "off-white") return 1;
+    if (pq === "cream to off-white") return 0.5;
     if (pq.indexOf("cream") === 0 || pq.indexOf("tan") !== -1 || pq.indexOf("brittle") !== -1) return 0;
-    if (pq.indexOf("off-white") !== -1) return 0.5;
+    if (pq.indexOf("off-white") !== -1) return 1;
     return 0;
   }
   function interiorTier(pageQuality, interiorDefect) {
@@ -127,6 +131,22 @@
       if (s[k] >= 0.5) s[k] = roundHalf(s[k] - 0.5);
       i++; guard++;
       if (s.front <= 0 && s.back <= 0 && s.spine <= 0) break;
+    }
+    return s;
+  }
+
+  // S23: card analogue of shaveToCap — shave 0.5 round-robin surface -> corners ->
+  // edges (centering fixed) until the subscores sum to the ceiling.
+  function shaveCardToCap(sub, cap) {
+    var s = { surface: sub.surface, corners: sub.corners, edges: sub.edges, centering: sub.centering };
+    var order = ["surface", "corners", "edges"];
+    var i = 0, guard = 0;
+    function total() { return s.surface + s.corners + s.edges + s.centering; }
+    while (total() > cap + 1e-9 && guard < 200) {
+      var k = order[i % order.length];
+      if (s[k] >= 0.5) s[k] = roundHalf(s[k] - 0.5);
+      i++; guard++;
+      if (s.surface <= 0 && s.corners <= 0 && s.edges <= 0) break;
     }
     return s;
   }
@@ -178,38 +198,27 @@
       spine: clamp((input.spine20 || 0) / 10, 0, 2),
       interior: interiorTier(input.pageQuality, !!input.interiorDefect)
     };
-    var uncapped = roundHalf(precise.front + precise.back + precise.spine + precise.interior);
+    // S23: round EACH subscore to the nearest 0.5, THEN sum for the grade (was
+    // sum-then-round-once + decompose, which shaved legit subscores down — e.g. a
+    // 46 front decomposed back to 4, a 30 front to 2.5). Interior is a 0/0.5/1 tier.
+    var rounded = {
+      front: clamp(roundHalf(precise.front), 0, 5),
+      back: clamp(roundHalf(precise.back), 0, 2),
+      spine: clamp(roundHalf(precise.spine), 0, 2),
+      interior: precise.interior
+    };
+    var uncapped = roundHalf(rounded.front + rounded.back + rounded.spine + rounded.interior);
 
     var cap = DEPTH_CAP[depth] != null ? DEPTH_CAP[depth] : 9.0;
     if (slabbed) cap = Math.min(cap, 9.5);   // slab can never reach RG 10 (no Full)
 
     var grade = Math.min(uncapped, cap);
-    // Decompose the final 0.5 grade into 0.5 subscores that SUM to it exactly, so
-    // the shown subscores always add up. Interior is fixed; front/back/spine
-    // reconcile round-robin — front is shaved first (restored last), matching caps.
-    function decomposeToGrade(p, g) {
-      var interior = p.interior;
-      var target = roundHalf(g - interior);
-      var s2 = { front: clamp(roundHalf(p.front), 0, 5), back: clamp(roundHalf(p.back), 0, 2), spine: clamp(roundHalf(p.spine), 0, 2) };
-      var MAX = { front: 5, back: 2, spine: 2 };
-      var shaveOrder = ["front", "back", "spine"], addOrder = ["back", "spine", "front"];
-      function sum2() { return s2.front + s2.back + s2.spine; }
-      var guard = 0, i = 0, j = 0;
-      while (sum2() < target - 1e-9 && guard < 600) {
-        var k = addOrder[j % addOrder.length];
-        if (s2[k] + 0.5 <= MAX[k] + 1e-9) s2[k] = roundHalf(s2[k] + 0.5);
-        j++; guard++;
-        if (s2.front >= MAX.front && s2.back >= MAX.back && s2.spine >= MAX.spine) break;
-      }
-      while (sum2() > target + 1e-9 && guard < 600) {
-        var kk = shaveOrder[i % shaveOrder.length];
-        if (s2[kk] >= 0.5) s2[kk] = roundHalf(s2[kk] - 0.5);
-        i++; guard++;
-        if (s2.front <= 0 && s2.back <= 0 && s2.spine <= 0) break;
-      }
-      return { front: s2.front, back: s2.back, spine: s2.spine, interior: interior };
-    }
-    var sub = decomposeToGrade(precise, grade);
+    // Subscores always sum to the grade. When the cap bites, shave 0.5 at a time
+    // (front -> back -> spine, interior fixed) to reach the ceiling; otherwise the
+    // rounded subscores already sum to the grade with no adjustment.
+    var sub = (uncapped > cap + 1e-9)
+      ? shaveToCap(rounded, cap)
+      : { front: rounded.front, back: rounded.back, spine: rounded.spine, interior: rounded.interior };
     var ceilingHit = uncapped > cap + 1e-9;
 
     var upsell = null;
@@ -321,33 +330,20 @@
       edges: clamp((input.edges20 || 0) / 10, 0, 2),
       centering: clamp(roundHalf((input.centering10 || 0) / 10), 0, 1)
     };
-    var uncapped = roundHalf(precise.surface + precise.corners + precise.edges + precise.centering);
+    // S23: round each axis to 0.5 then sum (was sum-then-round + decompose).
+    var rounded = {
+      surface: clamp(roundHalf(precise.surface), 0, 5),
+      corners: clamp(roundHalf(precise.corners), 0, 2),
+      edges: clamp(roundHalf(precise.edges), 0, 2),
+      centering: precise.centering
+    };
+    var uncapped = roundHalf(rounded.surface + rounded.corners + rounded.edges + rounded.centering);
     var cap = DEPTH_CAP_CARD[depth] != null ? DEPTH_CAP_CARD[depth] : 9.0;
     if (slabbed) cap = Math.min(cap, 9.5);
     var grade = Math.min(uncapped, cap);
-    function decomposeCard(p, g) {
-      var centering = p.centering;
-      var target = roundHalf(g - centering);
-      var s2 = { surface: clamp(roundHalf(p.surface), 0, 5), corners: clamp(roundHalf(p.corners), 0, 2), edges: clamp(roundHalf(p.edges), 0, 2) };
-      var MAX = { surface: 5, corners: 2, edges: 2 };
-      var shaveOrder = ["surface", "corners", "edges"], addOrder = ["corners", "edges", "surface"];
-      function sum2() { return s2.surface + s2.corners + s2.edges; }
-      var guard = 0, i = 0, j = 0;
-      while (sum2() < target - 1e-9 && guard < 600) {
-        var k = addOrder[j % addOrder.length];
-        if (s2[k] + 0.5 <= MAX[k] + 1e-9) s2[k] = roundHalf(s2[k] + 0.5);
-        j++; guard++;
-        if (s2.surface >= MAX.surface && s2.corners >= MAX.corners && s2.edges >= MAX.edges) break;
-      }
-      while (sum2() > target + 1e-9 && guard < 600) {
-        var kk = shaveOrder[i % shaveOrder.length];
-        if (s2[kk] >= 0.5) s2[kk] = roundHalf(s2[kk] - 0.5);
-        i++; guard++;
-        if (s2.surface <= 0 && s2.corners <= 0 && s2.edges <= 0) break;
-      }
-      return { surface: s2.surface, corners: s2.corners, edges: s2.edges, centering: centering };
-    }
-    var sub = decomposeCard(precise, grade);
+    var sub = (uncapped > cap + 1e-9)
+      ? shaveCardToCap(rounded, cap)
+      : { surface: rounded.surface, corners: rounded.corners, edges: rounded.edges, centering: rounded.centering };
     var ceilingHit = uncapped > cap + 1e-9;
     var upsell = (depth === "main" && ceilingHit && !slabbed) ? "deep" : null;   // cards: Main -> Deep only
     var pm = computePM({ depth: depth, slabbed: slabbed, photograder: input.photograder });  // reuse comic PM table
@@ -2516,10 +2512,10 @@ window.matchInsertCandidate = function matchInsertCandidate(title, year) {
 
 function insertSlotDefs() {
   return [
-    { key: "insert_spread", label: "Insert — the card/spread",
-      hint: "Photograph the Mark Jewelers insert itself (the full ad card/spread) so its condition can be assessed." },
-    { key: "insert_verify", label: "Insert — top edge + cover",
-      hint: "Stand the closed comic up and shoot the top edge so the front cover is readable AND the insert is visible sticking up above the interior pages, proving the insert belongs to this exact book." }
+    { key: "insert_spread", label: "Insert 1 - Interior Spread",
+      hint: "Take a photo of the full insert." },
+    { key: "insert_verify", label: "Insert 2 - Top Edge/Cover",
+      hint: "Show the top edge of the book with the cover visible and the insert sticking out to verify." }
   ];
 }
 
@@ -3384,8 +3380,8 @@ function buildListBadge(c) {
     // overlay near the top so they never displace the number.
     return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="position:absolute;top:6px;left:0;right:0;text-align:center;display:flex;justify-content:center">${assessmentTierStars(c, { size: 9, color: numColor })}</div>\n      <div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:30px;font-weight:900;color:${numColor};line-height:1">${_dispG != null ? (() => { const _s=String(_dispG); const _m=_s.match(/^(\d+|—|-)([+\-]|\.\d)?$/); const _b=_m?_m[1]:_s; const _f=(_m&&_m[2])?_m[2]:""; return `<span style="position:relative;display:inline-block;line-height:1">${_b}${_f?`<span style="position:absolute;left:100%;top:3px;font-size:15px;font-weight:600;line-height:1">${_f}</span>`:""}</span>`; })() : `${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#7aa838;margin-left:1px">+</span>' : ""}`}</div>\n    </div>`;
   }
-  if (c.cgcGrade) return buildBadge(normalizeGrade(c.cgcGrade), "cgc-official", detectDesignation(c), true);
-  if (c.type !== "card" && c.psaGrade) return buildBadge(normalizeGrade(c.psaGrade), "psa-official", c.psaDesignation || "universal", true);
+  // S23: the list left box is ALWAYS RG (above) or, if never robograded, the
+  // predicted grade — never the official CGC/PSA slab grade.
   const ac = aiCgcGrade(c);
   const _listRestored = !!(c.restorationHighConfidence || (c.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(c.cgcNotes)));
   if (ac) return buildBadge(ac, "predicted", "", true, isFullAssessmentComplete(c), isDeepAssessmentComplete(c), _listRestored, !!c.couponQualified);
@@ -3394,26 +3390,15 @@ function buildListBadge(c) {
 }
 
 function buildListCgcPsaStack(c) {
-  // S23: value + kind. Official CGC or PSA slabs show their real grade under a
-  // CGC/PSA strip; otherwise show the predicted grade (PG).
-  const officialCgc = !!c.cgcGrade;
-  const officialPsa = !c.cgcGrade && !!c.psaGrade;
-  let val, isOfficial, stripLabel, stripBg;
-  if (officialCgc) { val = c.cgcGrade; isOfficial = true; stripLabel = "CGC"; stripBg = "#1a5fa8"; }
-  else if (officialPsa) { val = c.psaGrade; isOfficial = true; stripLabel = "PSA"; stripBg = "#b91c1c"; }
-  else { val = c.predictedGrade || c.assessedCGCGrade || ((c.myAssessment || c.aiAssessment) && c.grade ? c.grade : null); isOfficial = false; }
+  // S23: the right box is ALWAYS the predicted grade (PG) — never the official
+  // CGC/PSA slab grade. Every row reads RG (left) + PG (right).
+  const val = c.predictedGrade || c.assessedCGCGrade || c.assessedPSAGrade || ((c.myAssessment || c.aiAssessment) && c.grade ? c.grade : null);
   if (!val) return "";
   const v = String(val).includes(".") ? val : parseFloat(val).toFixed(1);
-  // S23: number in League Spartan (matches the main score box), sized just under
-  // the main list number and condensed with scaleX so slab grades read clearly.
   const numStyle = "font-family:'League Spartan',sans-serif;transform:scaleX(0.66);display:inline-block;font-weight:800;font-size:30px;line-height:1";
   const wrapStart = `<div style="height:56px;display:flex;flex-direction:column;justify-content:flex-end;align-self:center;flex-shrink:0">`;
   const wrapEnd = `</div>`;
-  if (isOfficial) {
-    return `${wrapStart}<div style="width:50px;height:52px;border-radius:9px;overflow:hidden;background:#fff;border:1px solid rgba(0,0,0,0.25);display:flex;flex-direction:column">\n      <div style="background:${stripBg};color:#fff;font-size:8px;font-weight:800;letter-spacing:0.5px;text-align:center;line-height:1.7;height:14px">${stripLabel}</div>\n      <div style="flex:1;display:flex;align-items:center;justify-content:center"><span style="${numStyle};color:#000">${v}</span></div>\n    </div>${wrapEnd}`;
-  }
-  // S23: PG turns GREEN when a coupon/stamp/pin-up is flagged missing.
-  const pgBg = c.couponQualified ? "#2e7d46" : "#1a5fa8";
+  const pgBg = c.couponQualified ? "#2e7d46" : "#1a5fa8";   // green when a coupon/pin-up is flagged missing
   return `${wrapStart}<div style="background:${pgBg};border-radius:9px;width:50px;height:52px;display:flex;align-items:center;justify-content:center">\n    <div style="${numStyle};color:#fff">${v}</div>\n  </div>${wrapEnd}`;
 }
 
@@ -4255,7 +4240,8 @@ async function swipeDeleteItem(id) {
     syncMsg("Delete failed. Try again.");
     return;
   }
-  if (view === "list") renderList();
+  // deleteItem() already re-rendered via showList() and restored scroll; a second
+  // renderList() here would wipe that scroll restore (S23 jump fix).
 }
 
 async function deleteItem(id) {
@@ -4308,7 +4294,12 @@ async function deleteItem(id) {
   // phantom row) and restore the saved list scroll. Re-clamp after layout
   // settles — the list is now one row shorter and lazy images reflow, so a
   // single early scroll lands short.
-  const _restoreY = _listScrollY;
+  // S23: when deleting from the list, the live scroll position is the truth —
+  // _listScrollY is only refreshed when entering Detail, so it is stale here and
+  // was causing the jump. Capture the current scroll and seed _listScrollY so
+  // showList restores to exactly where the user was.
+  const _restoreY = (view === "list") ? (window.scrollY || document.documentElement.scrollTop || 0) : _listScrollY;
+  _listScrollY = _restoreY;
   _lastDetailId = null;
   showList();
   const _clampAndScroll = () => {
@@ -5005,7 +4996,10 @@ function renderList() {
   // assessment date ONLY when there is more than one copy to tell apart.
   const _dupKey = c => {
     const t = (c.type === "card") ? (c.title || "Unknown") : (normalizeTitle(c.title, c.issueDate, c.printing) || c.title || "Unknown");
-    return t + "||" + String(c.issue == null ? "" : c.issue).trim().replace(/^#/, "").toLowerCase();
+    // S23: scope duplicates to the same ownership section — copies split across
+    // Owned/Sold/Watching are already told apart by their section, so only 2+
+    // copies sitting TOGETHER need the graded date to distinguish them.
+    return (c.ownership || "Owned") + "||" + t + "||" + String(c.issue == null ? "" : c.issue).trim().replace(/^#/, "").toLowerCase();
   };
   const _dupCounts = {};
   filt.forEach(c => { const k = _dupKey(c); _dupCounts[k] = (_dupCounts[k] || 0) + 1; });
@@ -5141,7 +5135,7 @@ function renderList() {
       const buildRow = c => {
         const _dupN = _dupCounts[_dupKey(c)] || 0;
         const _adRaw = c.roboGradeDate || c.dateAdded;
-        const _adStr = (_dupN > 1 && _adRaw) ? (() => { try { return new Date(_adRaw).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }); } catch (e) { return ""; } })() : "";
+        const _adStr = (_dupN > 1 && _adRaw) ? (() => { try { const _d = new Date(_adRaw); return "Graded " + String(_d.getMonth() + 1).padStart(2, "0") + "/" + String(_d.getDate()).padStart(2, "0") + "/" + String(_d.getFullYear()).slice(-2); } catch (e) { return ""; } })() : "";
         const thumbSrc = c.thumbnails?.[0] || c.images?.[0];
         const thumb = thumbSrc ? `<img class="comic-thumb" data-src="${thumbSrc}" decoding="async" style="background:#221d18">` : "";
         // S18: print icon (upper-right) replaces the old LABEL badge. Shown only
@@ -5152,7 +5146,7 @@ function renderList() {
         const _labelBtn = (printModeEnabled && _canLabel)
           ? `<button onclick="event.stopPropagation();togglePrintState('${esc(c.id)}')" title="${_inPrint ? "Remove from print queue" : "Add to print queue"}"\n              style="position:absolute;top:4px;right:6px;z-index:3;background:none;border:none;padding:2px;line-height:0;cursor:pointer">${_inPrint ? PRINT_ICON_X_SVG : PRINT_ICON_SVG}</button>`
           : "";
-        return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0">\n                  <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>\n                  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">\n                    ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${c.type === "card" ? esc(formatCardNumber(c.issue)) : formatIssue(c.issue, c.title)}</span>` : ""}\n                    ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                  </div>\n                  ${_adStr ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:600;color:#9a8a7a;margin-top:1px;letter-spacing:0.2px">Assessed ${_adStr}</div>` : ""}\n                </div>\n                ${buildListCgcPsaStack(c)}\n                ${_labelBtn}\n              </div>\n            </div>`;
+        return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0">\n                  <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>\n                  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">\n                    ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${c.type === "card" ? esc(formatCardNumber(c.issue)) : formatIssue(c.issue, c.title)}</span>` : ""}\n                    ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                  </div>\n                  ${_adStr ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:600;color:#9a8a7a;margin-top:1px;letter-spacing:0.2px">${_adStr}</div>` : ""}\n                </div>\n                ${buildListCgcPsaStack(c)}\n                ${_labelBtn}\n              </div>\n            </div>`;
       };
       const _showSep = _showTitleSeparators();
       section.titles.forEach(title => {
@@ -5759,10 +5753,17 @@ function showDetail(id) {
 
 window.forceImgReflow = function(imgEl) {
   if (!imgEl) return;
-  void imgEl.offsetHeight;
-  if (imgEl.style.height && imgEl.style.height !== "auto") {
-    imgEl.style.height = "";
-  }
+  // S23: defer the forced layout to the next frame. Running a synchronous
+  // offsetHeight read inside every image's onload (Detail can have ~14) bursts
+  // forced reflows right after render and blocks the compositor's first scroll
+  // (the "swipe does nothing, then it scrolls" lock in Detail view). rAF batches
+  // them off the load critical path.
+  requestAnimationFrame(function() {
+    void imgEl.offsetHeight;
+    if (imgEl.style.height && imgEl.style.height !== "auto") {
+      imgEl.style.height = "";
+    }
+  });
 };
 
 let _labelModulePromise = null;
@@ -7398,6 +7399,33 @@ function animateV3Ladder(el, toGrade, duration) {
   });
 }
 
+// S23: count from the PREVIOUS grade to the new one (up or down) — Deep/Full
+// re-assessments were resetting to 0 and counting up. Integers-only for a stable
+// width; reveals the final .5 once at the end.
+function animateV3LadderFromTo(el, fromGrade, toGrade, duration) {
+  return new Promise(resolve => {
+    const to = Math.max(0, Math.min(10, Number(toGrade)));
+    const from = Math.max(0, Math.min(10, Number(fromGrade) || 0));
+    const fmt = (v) => window.RoboScoreV3.formatGrade(v);
+    const fromInt = Math.floor(from), toInt = Math.floor(to);
+    if (fromInt === toInt) {
+      el.textContent = fmt(from);
+      const s0 = performance.now();
+      (function hold(now){ if (now - s0 < duration) requestAnimationFrame(hold); else { el.textContent = fmt(to); resolve(); } })(performance.now());
+      return;
+    }
+    const step = toInt > fromInt ? 1 : -1;
+    const seq = [];
+    for (let v = fromInt; v !== toInt + step; v += step) seq.push(v);
+    const start = performance.now(); let lastIdx = -1;
+    function tick(now){ const t=Math.min((now-start)/duration,1); const eased=easeOutCubic(t);
+      const idx=Math.min(Math.floor(eased*seq.length), seq.length-1);
+      if(idx!==lastIdx){ el.textContent=String(seq[idx]); lastIdx=idx; }
+      if(t<1) requestAnimationFrame(tick); else { el.textContent=fmt(to); resolve(); } }
+    requestAnimationFrame(tick);
+  });
+}
+
 function animateGradeListFromTo(el, from, to, list, duration) {
   return new Promise(resolve => {
     const fromIdx = list.findIndex(g => Math.abs(g - parseFloat(from)) < 0.01);
@@ -7679,19 +7707,19 @@ function mountResults(cgc, psa) {
       predicted: {
         bg: "#2a5a8a",
         text: "#e0f0ff",
-        label: "GRADE",
+        label: "CGC",
         initial: _gradeInitStr
       },
       "cgc-ai": {
         bg: "#2a5a8a",
         text: "#e0f0ff",
-        label: "GRADE",
+        label: "CGC",
         initial: _gradeInitStr
       },
       "psa-ai": {
         bg: "#2a5a8a",
         text: "#e0f0ff",
-        label: "GRADE",
+        label: "CGC",
         initial: _gradeInitStr
       },
       robograde: {
@@ -7726,8 +7754,8 @@ function mountResults(cgc, psa) {
     const _deepPassResults = !!(cgc && cgc._highGradeTier === true) || formData.deepAssessmentRan === true || formData.highGradeTier === true;
     const _v3res = (window.RG_V3_DISPLAY && window.RoboScoreV3 && formData.type !== 'card' && roboGrade && roboGrade.frontScore != null) ? window.RoboScoreV3.forComic({ ...formData, roboGrade: roboGrade, deepAssessmentRan: _deepPassResults }) : null;
     if (_v3res != null) {
-      roboEl.style.fontSize = '26px';
-      animateV3Ladder(roboEl, _v3res.grade, 2000).then(() => { popResultBadge(roboEl); if (_refunded) _showAssessRefundCoin(); if (_v3res.grade === 10) applyPerfect10Gold(roboEl, '10');
+      roboEl.style.fontSize = '38px';
+      animateV3LadderFromTo(roboEl, (_prev && _prev.rgV3 != null ? Number(_prev.rgV3) : 0), _v3res.grade, 2000).then(() => { popResultBadge(roboEl); if (_refunded) _showAssessRefundCoin(); if (_v3res.grade === 10) applyPerfect10Gold(roboEl, '10');
         setTimeout(() => {
           var _sigNew = (typeof getSignatures === 'function') && getSignatures(formData).length > 0 && !((formData.signatureImages || []).some(Boolean));
           // S22: the DEEP upsell ("Push it higher?") may only appear after a 1-star MAIN.
@@ -7746,7 +7774,7 @@ function mountResults(cgc, psa) {
         }, 700);
       });
     } else if (_v2g != null) {
-      roboEl.style.fontSize = '26px';
+      roboEl.style.fontSize = '38px';
       animateRGLadder(roboEl, _v2g, 2000).then(() => { popResultBadge(roboEl); applyPerfect10Gold(roboEl, _v2g); });
     } else if (_rgFrom === roboScore) {
       // S20: animate from the PREVIOUS RG (0 on a first assessment) to the new one.
@@ -9712,10 +9740,10 @@ function mountCardResults(rec) {
   if (_roboElCard && roboScore != null) {
     const _cv3Scan = (window.RG_V3_DISPLAY && window.RoboScoreV3) ? window.RoboScoreV3.forCard(rec) : null;
     if (_cv3Scan && typeof animateV3Ladder === "function") {
-      _roboElCard.style.fontSize = "26px";
-      animateV3Ladder(_roboElCard, _cv3Scan.grade, 1800).then(() => { popResultBadge(_roboElCard); if (_cv3Scan.grade === 10) applyPerfect10Gold(_roboElCard, "10"); });
+      _roboElCard.style.fontSize = "38px";
+      animateV3LadderFromTo(_roboElCard, (_prevCard && _prevCard.rgV3 != null ? Number(_prevCard.rgV3) : 0), _cv3Scan.grade, 1800).then(() => { popResultBadge(_roboElCard); if (_cv3Scan.grade === 10) applyPerfect10Gold(_roboElCard, "10"); });
     } else if (typeof animateRGLadder === "function" && window.RGScoreV2) {
-      _roboElCard.style.fontSize = "26px";
+      _roboElCard.style.fontSize = "38px";
       animateRGLadder(_roboElCard, _rgGradeScan, 1800).then(() => { popResultBadge(_roboElCard); applyPerfect10Gold(_roboElCard, _rgGradeScan); });
     } else {
       _roboElCard.textContent = _rgGradeScan;
@@ -10331,7 +10359,7 @@ function renderForm() {
     if (_isCardForm || !formData.roboGrade || !formData.title || !formData.issue || typeof window.matchInsert !== "function") return "";
     const _im = window.matchInsert(formData.title, formData.issue);
     if (_im) {
-      return _renderExtraPhotoSection({ title: "MARK JEWELERS INSERT", blurb: "This issue can carry a Mark Jewelers insert \u2014 a scarce variant. Add these two optional photos so the insert can be assessed and tied to this book.", accent: "#c8962a", inputId: "insert-photo-input", tapFn: "tapInsertSlot", removeFn: "removeInsertImg", onchange: "handleInsertImages(event)", defs: insertSlotDefs(), imgs: formData.insertImages || [ null, null ], runFn: "runInsertAssessment", runLabel: "RUN INSERT CHECK", finding: formData.insertFinding, foundLabel: "INSERT" });
+      return _renderExtraPhotoSection({ title: "MARK JEWELERS INSERT", blurb: "Some copies of this issue carried a Mark Jewelers or other insert card (a rare variant that adds value). If your copy has an insert bound in the centerfold, add these two optional photos to verify.", accent: "#c8962a", inputId: "insert-photo-input", tapFn: "tapInsertSlot", removeFn: "removeInsertImg", onchange: "handleInsertImages(event)", defs: insertSlotDefs(), imgs: formData.insertImages || [ null, null ], runFn: "runInsertAssessment", runLabel: "RUN INSERT CHECK", finding: formData.insertFinding, foundLabel: "INSERT" });
     }
     // S23: no confirmed hit -> if the title/era is a candidate (broad index),
     // show a softer "might have one" prompt. Reuses the same slots + check.
@@ -10339,7 +10367,7 @@ function renderForm() {
     const _ic = (typeof window.matchInsertCandidate === "function") ? window.matchInsertCandidate(formData.title, _yr) : null;
     // keep showing if it's a candidate, or the user already has insert photos/finding.
     if (!_ic && !((formData.insertImages || []).some(Boolean) || formData.insertFinding)) return "";
-    return _renderExtraPhotoSection({ title: "POSSIBLE MARK JEWELERS INSERT", blurb: "Some copies of this title from this era carried a Mark Jewelers insert (a scarce PX/commissary variant). If your copy has one bound into the centerfold, add these two optional photos to verify it.", accent: "#8a7a4a", inputId: "insert-photo-input", tapFn: "tapInsertSlot", removeFn: "removeInsertImg", onchange: "handleInsertImages(event)", defs: insertSlotDefs(), imgs: formData.insertImages || [ null, null ], runFn: "runInsertAssessment", runLabel: "RUN INSERT CHECK", finding: formData.insertFinding, foundLabel: "INSERT" });
+    return _renderExtraPhotoSection({ title: "POSSIBLE MARK JEWELERS INSERT", blurb: "Some copies of this issue carried a Mark Jewelers or other insert card (a rare variant that adds value). If your copy has an insert bound in the centerfold, add these two optional photos to verify.", accent: "#8a7a4a", inputId: "insert-photo-input", tapFn: "tapInsertSlot", removeFn: "removeInsertImg", onchange: "handleInsertImages(event)", defs: insertSlotDefs(), imgs: formData.insertImages || [ null, null ], runFn: "runInsertAssessment", runLabel: "RUN INSERT CHECK", finding: formData.insertFinding, foundLabel: "INSERT" });
   })()}
       ${(() => {
     if (_isCardForm || !formData.roboGrade || !formData.title || !formData.issue || typeof window.matchCoupon !== "function") return "";
@@ -11939,7 +11967,7 @@ async function submitFullAssessment() {
       const _fullRefunded = !!window._creditRefunded; // S22: perfect-10 refund coin (same as Deep)
       let _badges = "";
       if (_newScore != null) _badges += `<div style="position:relative;width:64px;height:64px;border:1.5px solid #3a5010;background:#0f1a05;border-radius:8px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-robo" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'League Spartan',sans-serif;transform:scaleX(0.7);font-size:38px;font-weight:800;color:#aaee30;line-height:1">${_rgInit}</div>\n        <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:#aaee30;opacity:0.75;letter-spacing:0.8px">RG</div>\n      </div>`;
-      if (_newGrade != null) _badges += `<div style="position:relative;width:64px;height:64px;background:#2a5a8a;border-radius:8px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-grade" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'League Spartan',sans-serif;transform:scaleX(0.7);font-size:38px;font-weight:800;color:#e0f0ff;line-height:1">${_gradeInit}</div>\n        <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:#e0f0ff;opacity:0.75;letter-spacing:0.8px">GRADE</div>\n      </div>`;
+      if (_newGrade != null) _badges += `<div style="position:relative;width:64px;height:64px;background:#2a5a8a;border-radius:8px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-grade" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'League Spartan',sans-serif;transform:scaleX(0.7);font-size:38px;font-weight:800;color:#e0f0ff;line-height:1">${_gradeInit}</div>\n        <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:#e0f0ff;opacity:0.75;letter-spacing:0.8px">CGC</div>\n      </div>`;
       const _fullResultsHtml = `\n        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n          <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${_badges}</div>\n          <div id="full-result-pq" style="position:relative;width:100%;display:flex;align-items:center;justify-content:center;min-height:22px;">\n            <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n          </div>\n          <button id="full-complete-btn" disabled\n            style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">ASSESSING…</button>\n        </div>`;
       if (window.RobograderScan && window.RobograderScan.slideResultsIntoPanel) {
         window.RobograderScan.slideResultsIntoPanel(_fullResultsHtml);
@@ -11960,8 +11988,8 @@ async function submitFullAssessment() {
         const _pqEl = document.getElementById("full-result-pq");
         const _fullV3 = (typeof rgV3ForComic === "function") ? rgV3ForComic(formData) : null;
         if (_roboEl && _fullV3 != null) {
-          _roboEl.style.fontSize = "26px";
-          animateV3Ladder(_roboEl, _fullV3.grade, 2000).then(() => { popResultBadge(_roboEl); if (_fullRefunded) _showAssessRefundCoin(); });
+          _roboEl.style.fontSize = "38px";
+          animateV3LadderFromTo(_roboEl, (_prev && _prev.rgV3 != null ? Number(_prev.rgV3) : 0), _fullV3.grade, 2000).then(() => { popResultBadge(_roboEl); if (_fullRefunded) _showAssessRefundCoin(); });
         } else if (_roboEl && _newScore != null) {
           if (_rgFrom === _newScore) setTimeout(() => popResultBadge(_roboEl), 700);
           else animateRoboGradeFromTo(_roboEl, _rgFrom, _newScore, 2000).then(() => popResultBadge(_roboEl));
@@ -12117,17 +12145,29 @@ async function _analyzePhotoQuality(src) {
         const data = ctx.getImageData(0, 0, w, h).data;
         const n = w * h;
         const gray = new Float32Array(n);
-        let blown = 0, dark = 0;
         for (let i = 0; i < n; i++) {
-          const y = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2];
-          gray[i] = y;
-          if (y >= 250) blown++;
-          if (y <= 10) dark++;
+          gray[i] = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2];
         }
-        // Laplacian variance (Welford) for focus.
+        // S23: analyze only the CENTRAL region. The comic usually fills the middle
+        // of the frame; a bright white surface behind it (common on desk shots)
+        // otherwise reads as blown glare (false "C" lighting) and its detail-free
+        // expanse drags the focus variance down. Insetting ~16% each side keeps
+        // the background from dominating.
+        const mx = Math.max(1, Math.round(w * 0.16)), my = Math.max(1, Math.round(h * 0.16));
+        const x0 = mx, x1 = w - mx, y0 = my, y1 = h - my;
+        let blown = 0, dark = 0, region = 0;
+        for (let yy = y0; yy < y1; yy++) {
+          for (let xx = x0; xx < x1; xx++) {
+            const y = gray[yy * w + xx];
+            region++;
+            if (y >= 250) blown++;
+            if (y <= 10) dark++;
+          }
+        }
+        // Laplacian variance (Welford) for focus — central region only.
         let mean = 0, m2 = 0, cnt = 0;
-        for (let yy = 1; yy < h - 1; yy++) {
-          for (let xx = 1; xx < w - 1; xx++) {
+        for (let yy = Math.max(1, y0); yy < Math.min(h - 1, y1); yy++) {
+          for (let xx = Math.max(1, x0); xx < Math.min(w - 1, x1); xx++) {
             const idx = yy * w + xx;
             const lap = 4 * gray[idx] - gray[idx - 1] - gray[idx + 1] - gray[idx - w] - gray[idx + w];
             cnt++;
@@ -12137,7 +12177,8 @@ async function _analyzePhotoQuality(src) {
           }
         }
         const lapVar = cnt > 1 ? m2 / (cnt - 1) : 0;
-        const blownFrac = blown / n, darkFrac = dark / n;
+        const _den = region || n;
+        const blownFrac = blown / _den, darkFrac = dark / _den;
         const focus = lapVar >= 120 ? "A" : lapVar >= 45 ? "B" : "C";
         const lighting = (blownFrac >= 0.06 || darkFrac >= 0.30) ? "C"
           : (blownFrac >= 0.02 || darkFrac >= 0.15) ? "B" : "A";

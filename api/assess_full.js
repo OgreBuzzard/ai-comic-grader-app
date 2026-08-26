@@ -346,7 +346,7 @@ JSON shape:
   "photograder": { "focus": "A", "lighting": "A", "flags": [ {"category":"lighting","image":"Interior","note":"shadow across gutter"} ] },
   "fullAssessmentRan": true,
   "aiAssessment": ${JSON.stringify(typeof priorConditionAssessment === 'string' ? priorConditionAssessment : '')},
-  "fullAssessment": "<ONLY the new Full-Assessment findings from the 6 structure images — staples, page completeness, outer edge / trimming. Do NOT repeat the prior Condition Assessment. 2-4 sentences; if the structure is clean, say it confirmed the grade.>",
+  "fullAssessment": "<ONLY the new Full-Assessment findings from the 6 structure images — staples, page completeness, outer edge / trimming. Do NOT repeat the prior Condition Assessment. 2-4 sentences; if the structure is clean, say it confirmed the grade. If you cite a grade, make it the concrete PREDICTED CGC number (e.g. "confirms a predicted CGC 9.5") — never a bare number that could read as the 0-10 RoboGrade, and never a vague band without the CGC number.>",
   "slotFindings": [
     { "slot": "exterior_top_staple", "observations": "<what you saw — concise>" }
   ],

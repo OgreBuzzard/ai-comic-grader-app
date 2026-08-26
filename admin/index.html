@@ -1160,10 +1160,10 @@ function _renderSales() {
   if (!el || !data) return;
   const t = data.totals || {};
   const money = n => '$' + (Number(n) || 0).toFixed(2);
-  const card = (label, tot) => `<div style="flex:1;background:#0e0f12;border:1px solid #23252c;border-radius:8px;padding:10px 12px;min-width:0;text-align:center;">
-      <div style="font-size:11px;color:#8a8d96;text-transform:uppercase;letter-spacing:1px">${label}</div>
-      <div style="font-size:14px;font-weight:700;color:#7fd0ff">${money(tot && tot.amount)} <span style="color:#6a9a6a">(${money(tot && tot.net)})</span></div>
-      <div style="font-size:11px;color:#8a8d96">${(tot && tot.count) || 0} purchases</div>
+  const card = (label, tot) => `<div style="flex:1;background:#0e0f12;border:1px solid #23252c;border-radius:8px;padding:8px 6px;min-width:0;text-align:center;">
+      <div style="font-size:10px;color:#8a8d96;text-transform:uppercase;letter-spacing:0.4px;white-space:nowrap">${label}</div>
+      <div style="font-size:12px;font-weight:700;color:#7fd0ff;white-space:nowrap">${money(tot && tot.amount)} <span style="color:#6a9a6a;font-size:10px">(${money(tot && tot.net)})</span></div>
+      <div style="font-size:10px;color:#8a8d96">${(tot && tot.count) || 0} purch.</div>
     </div>`;
   const all = data.purchases || [];
   const prodFilter = state.salesProduct || 'all';
@@ -1191,7 +1191,7 @@ function _renderSales() {
   }).join('');
   const more = filtered.length > shown ? `<button class="load-more" id="load-more-sales">Load more (${filtered.length - shown})</button>` : '';
   el.innerHTML = `
-    <div style="display:flex;gap:8px;margin-bottom:12px;">${card('Web', t.web)}${card('iOS', t.ios)}${card('Android', t.android)}${card('Combined', t.combined)}</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;">${card('Web', t.web)}${card('iOS', t.ios)}${card('And.', t.android)}${card('Comb.', t.combined)}</div>
     <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">${['all','Stack','Wall','Short Box'].map(k => `<button class="sales-filter" data-prod="${k}" style="padding:5px 10px;font-size:11px;border-radius:8px;cursor:pointer;border:1px solid ${prodFilter===k?'#7fd0ff':'#3a5a2a'};background:${prodFilter===k?'#12303f':'var(--panel-2)'};color:${prodFilter===k?'#cde':'#9ab'}">${k==='all'?'All':k==='Stack'?'Comic Stack':k==='Wall'?'Comic Wall':'Short Box'}</button>`).join('')}</div>
     ${rows || '<div class="empty">No purchases in this filter.</div>'}
     ${more}
@@ -2225,9 +2225,13 @@ const RGV2 = (function () {
     var pq = String(pageQuality || "").toLowerCase().trim();
     if (!pq) return 0.5;
     if (pq === "white") return 1;
-    if (pq === "off-white to white" || pq === "off-white" || pq === "cream to off-white") return 0.5;
+    // S23: Off-White or better rounds up to a full 1 (a book with Off-White pages
+    // can now reach a perfect interior). Cream-tinged tiers stay 0.5; cream/tan/
+    // brittle score 0.
+    if (pq === "off-white to white" || pq === "off-white") return 1;
+    if (pq === "cream to off-white") return 0.5;
     if (pq.indexOf("cream") === 0 || pq.indexOf("tan") !== -1 || pq.indexOf("brittle") !== -1) return 0;
-    if (pq.indexOf("off-white") !== -1) return 0.5;
+    if (pq.indexOf("off-white") !== -1) return 1;
     return 0;
   }
   function interiorTier(pageQuality, interiorDefect) {
@@ -2253,6 +2257,22 @@ const RGV2 = (function () {
       if (s[k] >= 0.5) s[k] = roundHalf(s[k] - 0.5);
       i++; guard++;
       if (s.front <= 0 && s.back <= 0 && s.spine <= 0) break;
+    }
+    return s;
+  }
+
+  // S23: card analogue of shaveToCap — shave 0.5 round-robin surface -> corners ->
+  // edges (centering fixed) until the subscores sum to the ceiling.
+  function shaveCardToCap(sub, cap) {
+    var s = { surface: sub.surface, corners: sub.corners, edges: sub.edges, centering: sub.centering };
+    var order = ["surface", "corners", "edges"];
+    var i = 0, guard = 0;
+    function total() { return s.surface + s.corners + s.edges + s.centering; }
+    while (total() > cap + 1e-9 && guard < 200) {
+      var k = order[i % order.length];
+      if (s[k] >= 0.5) s[k] = roundHalf(s[k] - 0.5);
+      i++; guard++;
+      if (s.surface <= 0 && s.corners <= 0 && s.edges <= 0) break;
     }
     return s;
   }
@@ -2304,38 +2324,27 @@ const RGV2 = (function () {
       spine: clamp((input.spine20 || 0) / 10, 0, 2),
       interior: interiorTier(input.pageQuality, !!input.interiorDefect)
     };
-    var uncapped = roundHalf(precise.front + precise.back + precise.spine + precise.interior);
+    // S23: round EACH subscore to the nearest 0.5, THEN sum for the grade (was
+    // sum-then-round-once + decompose, which shaved legit subscores down — e.g. a
+    // 46 front decomposed back to 4, a 30 front to 2.5). Interior is a 0/0.5/1 tier.
+    var rounded = {
+      front: clamp(roundHalf(precise.front), 0, 5),
+      back: clamp(roundHalf(precise.back), 0, 2),
+      spine: clamp(roundHalf(precise.spine), 0, 2),
+      interior: precise.interior
+    };
+    var uncapped = roundHalf(rounded.front + rounded.back + rounded.spine + rounded.interior);
 
     var cap = DEPTH_CAP[depth] != null ? DEPTH_CAP[depth] : 9.0;
     if (slabbed) cap = Math.min(cap, 9.5);   // slab can never reach RG 10 (no Full)
 
     var grade = Math.min(uncapped, cap);
-    // Decompose the final 0.5 grade into 0.5 subscores that SUM to it exactly, so
-    // the shown subscores always add up. Interior is fixed; front/back/spine
-    // reconcile round-robin — front is shaved first (restored last), matching caps.
-    function decomposeToGrade(p, g) {
-      var interior = p.interior;
-      var target = roundHalf(g - interior);
-      var s2 = { front: clamp(roundHalf(p.front), 0, 5), back: clamp(roundHalf(p.back), 0, 2), spine: clamp(roundHalf(p.spine), 0, 2) };
-      var MAX = { front: 5, back: 2, spine: 2 };
-      var shaveOrder = ["front", "back", "spine"], addOrder = ["back", "spine", "front"];
-      function sum2() { return s2.front + s2.back + s2.spine; }
-      var guard = 0, i = 0, j = 0;
-      while (sum2() < target - 1e-9 && guard < 600) {
-        var k = addOrder[j % addOrder.length];
-        if (s2[k] + 0.5 <= MAX[k] + 1e-9) s2[k] = roundHalf(s2[k] + 0.5);
-        j++; guard++;
-        if (s2.front >= MAX.front && s2.back >= MAX.back && s2.spine >= MAX.spine) break;
-      }
-      while (sum2() > target + 1e-9 && guard < 600) {
-        var kk = shaveOrder[i % shaveOrder.length];
-        if (s2[kk] >= 0.5) s2[kk] = roundHalf(s2[kk] - 0.5);
-        i++; guard++;
-        if (s2.front <= 0 && s2.back <= 0 && s2.spine <= 0) break;
-      }
-      return { front: s2.front, back: s2.back, spine: s2.spine, interior: interior };
-    }
-    var sub = decomposeToGrade(precise, grade);
+    // Subscores always sum to the grade. When the cap bites, shave 0.5 at a time
+    // (front -> back -> spine, interior fixed) to reach the ceiling; otherwise the
+    // rounded subscores already sum to the grade with no adjustment.
+    var sub = (uncapped > cap + 1e-9)
+      ? shaveToCap(rounded, cap)
+      : { front: rounded.front, back: rounded.back, spine: rounded.spine, interior: rounded.interior };
     var ceilingHit = uncapped > cap + 1e-9;
 
     var upsell = null;
@@ -2447,33 +2456,20 @@ const RGV2 = (function () {
       edges: clamp((input.edges20 || 0) / 10, 0, 2),
       centering: clamp(roundHalf((input.centering10 || 0) / 10), 0, 1)
     };
-    var uncapped = roundHalf(precise.surface + precise.corners + precise.edges + precise.centering);
+    // S23: round each axis to 0.5 then sum (was sum-then-round + decompose).
+    var rounded = {
+      surface: clamp(roundHalf(precise.surface), 0, 5),
+      corners: clamp(roundHalf(precise.corners), 0, 2),
+      edges: clamp(roundHalf(precise.edges), 0, 2),
+      centering: precise.centering
+    };
+    var uncapped = roundHalf(rounded.surface + rounded.corners + rounded.edges + rounded.centering);
     var cap = DEPTH_CAP_CARD[depth] != null ? DEPTH_CAP_CARD[depth] : 9.0;
     if (slabbed) cap = Math.min(cap, 9.5);
     var grade = Math.min(uncapped, cap);
-    function decomposeCard(p, g) {
-      var centering = p.centering;
-      var target = roundHalf(g - centering);
-      var s2 = { surface: clamp(roundHalf(p.surface), 0, 5), corners: clamp(roundHalf(p.corners), 0, 2), edges: clamp(roundHalf(p.edges), 0, 2) };
-      var MAX = { surface: 5, corners: 2, edges: 2 };
-      var shaveOrder = ["surface", "corners", "edges"], addOrder = ["corners", "edges", "surface"];
-      function sum2() { return s2.surface + s2.corners + s2.edges; }
-      var guard = 0, i = 0, j = 0;
-      while (sum2() < target - 1e-9 && guard < 600) {
-        var k = addOrder[j % addOrder.length];
-        if (s2[k] + 0.5 <= MAX[k] + 1e-9) s2[k] = roundHalf(s2[k] + 0.5);
-        j++; guard++;
-        if (s2.surface >= MAX.surface && s2.corners >= MAX.corners && s2.edges >= MAX.edges) break;
-      }
-      while (sum2() > target + 1e-9 && guard < 600) {
-        var kk = shaveOrder[i % shaveOrder.length];
-        if (s2[kk] >= 0.5) s2[kk] = roundHalf(s2[kk] - 0.5);
-        i++; guard++;
-        if (s2.surface <= 0 && s2.corners <= 0 && s2.edges <= 0) break;
-      }
-      return { surface: s2.surface, corners: s2.corners, edges: s2.edges, centering: centering };
-    }
-    var sub = decomposeCard(precise, grade);
+    var sub = (uncapped > cap + 1e-9)
+      ? shaveCardToCap(rounded, cap)
+      : { surface: rounded.surface, corners: rounded.corners, edges: rounded.edges, centering: rounded.centering };
     var ceilingHit = uncapped > cap + 1e-9;
     var upsell = (depth === "main" && ceilingHit && !slabbed) ? "deep" : null;   // cards: Main -> Deep only
     var pm = computePM({ depth: depth, slabbed: slabbed, photograder: input.photograder });  // reuse comic PM table
