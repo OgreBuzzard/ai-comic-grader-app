@@ -967,7 +967,7 @@ onAuthStateChanged(auth, async user => {
       touch-action: pan-y;   /* allow vertical scroll; we manage horizontal */
     }
     .comic-row:hover { background: #f0ece6; }
-    .comic-thumb { align-self: stretch; object-fit: cover; border-radius: 0; flex-shrink: 0; width: 52px; }
+    .comic-thumb { align-self: center; object-fit: cover; border-radius: 0; flex-shrink: 0; height: 60px; aspect-ratio: 13 / 20; }
     .grade-badge { min-width: 48px; text-align: center; background: #f0ece6; border-radius: 4px; padding: 6px 3px; flex-shrink: 0; border: 1px solid; }
     .grade-num { font-size: 16px; font-weight: 700; line-height: 1; }
     .grade-lbl { font-size: 7px; opacity: 0.7; margin-top: 2px; }
@@ -2118,12 +2118,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.0";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.01";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.0");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.01");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -3395,11 +3395,11 @@ function buildListBadge(c) {
     // v3 comics: shared score box (stars + number only; no PM/version in List — too small).
     if (_v3g != null) {
       const _r3 = rgV3ForComic(c);
-      return window.RoboScoreV3.scoreBox({ grade: _r3.grade, stars: isFullAssessmentComplete(c) ? 3 : isDeepAssessmentComplete(c) ? 2 : 1, restoStar: isRestorationCheckComplete(c), restoColor: '#b58be0', footer: '', size: 56, numColor: numColor, starColor: numColor, bg: bgColor, borderColor: borderColor });
+      return window.RoboScoreV3.scoreBox({ grade: _r3.grade, stars: isFullAssessmentComplete(c) ? 3 : isDeepAssessmentComplete(c) ? 2 : 1, restoStar: isRestorationCheckComplete(c), restoColor: '#b58be0', footer: '', size: 56, numSize: 36, numColor: numColor, starColor: numColor, bg: bgColor, borderColor: borderColor });
     }
     if (RG_V3_DISPLAY && c.type === "card" && window.RoboScoreV3) {
       const _rc = window.RoboScoreV3.forCard(c);
-      if (_rc) return window.RoboScoreV3.scoreBox({ grade: _rc.grade, stars: (c.deepAssessmentRan || c.fullAssessmentRan || c.highGradeTier) ? 2 : 1, footer: '', size: 56, numColor: numColor, starColor: numColor, bg: bgColor, borderColor: borderColor });
+      if (_rc) return window.RoboScoreV3.scoreBox({ grade: _rc.grade, stars: (c.deepAssessmentRan || c.fullAssessmentRan || c.highGradeTier) ? 2 : 1, footer: '', size: 56, numSize: 36, numColor: numColor, starColor: numColor, bg: bgColor, borderColor: borderColor });
     }
     // Score stays DEAD CENTER (cardinal rule). Stars are an absolutely-positioned
     // overlay near the top so they never displace the number.
@@ -3414,17 +3414,15 @@ function buildListBadge(c) {
   return "";
 }
 
-function buildListCgcPsaStack(c) {
-  // S23: the right box is ALWAYS the predicted grade (PG) — never the official
-  // CGC/PSA slab grade. Every row reads RG (left) + PG (right).
+function buildListPG(c) {
+  // S23: predicted grade (PG) — smaller and less prominent than RG, anchored to
+  // the TOP of the row (aligned with the title). Green when a coupon/pin-up is
+  // flagged missing. Never the official slab grade.
   const val = c.predictedGrade || c.assessedCGCGrade || c.assessedPSAGrade || ((c.myAssessment || c.aiAssessment) && c.grade ? c.grade : null);
   if (!val) return "";
   const v = String(val).includes(".") ? val : parseFloat(val).toFixed(1);
-  const numStyle = "font-family:'League Spartan',sans-serif;transform:scaleX(0.66);display:inline-block;font-weight:800;font-size:30px;line-height:1";
-  const wrapStart = `<div style="height:56px;display:flex;flex-direction:column;justify-content:flex-end;align-self:center;flex-shrink:0">`;
-  const wrapEnd = `</div>`;
-  const pgBg = c.couponQualified ? "#2e7d46" : "#1a5fa8";   // green when a coupon/pin-up is flagged missing
-  return `${wrapStart}<div style="background:${pgBg};border-radius:9px;width:50px;height:52px;display:flex;align-items:center;justify-content:center">\n    <div style="${numStyle};color:#fff">${v}</div>\n  </div>${wrapEnd}`;
+  const pgBg = c.couponQualified ? "#2e7d46" : "#1a5fa8";
+  return `<div style="flex-shrink:0;align-self:flex-start;background:${pgBg};border-radius:7px;width:40px;height:32px;display:flex;align-items:center;justify-content:center"><div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.66);display:inline-block;font-weight:800;font-size:24px;line-height:1;color:#fff">${v}</div></div>`;
 }
 
 function buildStackedGradePair(officialBadge, aiBadge) {
@@ -5171,7 +5169,7 @@ function renderList() {
         const _labelBtn = (printModeEnabled && _canLabel)
           ? `<button onclick="event.stopPropagation();togglePrintState('${esc(c.id)}')" title="${_inPrint ? "Remove from print queue" : "Add to print queue"}"\n              style="position:absolute;top:4px;right:6px;z-index:3;background:none;border:none;padding:2px;line-height:0;cursor:pointer">${_inPrint ? PRINT_ICON_X_SVG : PRINT_ICON_SVG}</button>`
           : "";
-        return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0">\n                  <div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>\n                  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:3px">\n                    ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24">${c.type === "card" ? esc(formatCardNumber(c.issue)) : formatIssue(c.issue, c.title)}</span>` : ""}\n                    ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                  </div>\n                  ${_adStr ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:600;color:#9a8a7a;margin-top:1px;letter-spacing:0.2px">${_adStr}</div>` : ""}\n                </div>\n                ${buildListCgcPsaStack(c)}\n                ${_labelBtn}\n              </div>\n            </div>`;
+        return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0;align-self:stretch;display:flex;flex-direction:column;justify-content:center;gap:2px">\n                  <div style="display:flex;align-items:flex-start;gap:8px">\n                    <div style="flex:1;min-width:0;font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>\n                    ${buildListPG(c)}\n                  </div>\n                  <div style="display:flex;align-items:baseline;gap:8px">\n                    <div style="flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;overflow:hidden">\n                      ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24;white-space:nowrap">${c.type === "card" ? esc(formatCardNumber(c.issue)) : formatIssue(c.issue, c.title)}</span>` : ""}\n                      ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a;white-space:nowrap">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                    </div>\n                    ${_adStr ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:600;color:#9a8a7a;flex-shrink:0;white-space:nowrap;letter-spacing:0.2px">${_adStr}</span>` : ""}\n                  </div>\n                </div>\n                ${_labelBtn}\n              </div>\n            </div>`;
       };
       const _showSep = _showTitleSeparators();
       section.titles.forEach(title => {
@@ -5385,11 +5383,19 @@ function wireSwipeRows() {
     });
     if (delBtn && !delBtn._wired) {
       delBtn._wired = true;
-      delBtn.addEventListener("click", e => {
+      // S23: route list swipe-delete through the same confirm POPUP the Detail
+      // delete uses — the swipe alone was deleting with no confirmation/feedback.
+      delBtn.addEventListener("click", async e => {
         e.preventDefault();
         e.stopPropagation();
         const id = delBtn.getAttribute("data-del-id");
-        swipeDeleteItem(id);
+        const _it = items.find(c => c.id === id);
+        const _nm = _it ? ((_it.title || "this book") + (_it.issue ? " #" + _it.issue : "")) : "this book";
+        const ok = await appConfirm(`Delete ${_nm}? This can\'t be undone.`, "Delete");
+        if (ok) { swipeDeleteItem(id); return; }
+        const _fg = rowEl.querySelector(".swipe-fg");
+        if (_fg) { _fg.classList.remove("swiped-open"); _fg.style.transform = ""; }
+        rowEl.classList.remove("swipe-active");
       });
     }
   });
