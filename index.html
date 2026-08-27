@@ -452,7 +452,7 @@
     var ov = document.createElement('div'); ov.id = 'rg-popup-overlay';
     ov.style.cssText = 'position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:24px;padding-top:max(24px,env(safe-area-inset-top));padding-bottom:max(24px,env(safe-area-inset-bottom));opacity:0;transition:opacity .15s ease;';
     var card = document.createElement('div');
-    card.style.cssText = 'width:100%;max-width:340px;background:#152e10;border:1.5px solid #4a7028;border-radius:16px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.5);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,\"Segoe UI\",sans-serif;';
+    card.style.cssText = 'width:100%;max-width:340px;background:#141210;border:1.5px solid #6a4a10;border-radius:18px;overflow:hidden;box-shadow:0 12px 44px rgba(0,0,0,0.55);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,\"Segoe UI\",sans-serif;';
     var bar = document.createElement('div'); bar.style.cssText = 'height:5px;background:'+a.bar;
     var body = document.createElement('div'); body.style.cssText = 'padding:20px 20px 18px;text-align:center;';
     var icon = document.createElement('div'); icon.style.cssText='width:52px;height:52px;border-radius:50%;background:'+a.iconbg+';color:#fff;font-size:28px;font-weight:700;line-height:52px;margin:0 auto 12px;'; icon.textContent=a.icon;
@@ -6774,8 +6774,9 @@ async function uploadImageToStorage(blob, itemId, slot) {
   let lastErr;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      await window._fsUploadBytes(storageRef, blob, { contentType: "image/jpeg" });
-      return await window._fsGetDownloadURL(storageRef);
+      const _timeout = ms => new Promise((_, rej) => setTimeout(() => rej(new Error("upload timeout")), ms));
+      await Promise.race([ window._fsUploadBytes(storageRef, blob, { contentType: "image/jpeg" }), _timeout(25000) ]);
+      return await Promise.race([ window._fsGetDownloadURL(storageRef), _timeout(15000) ]);
     } catch (e) {
       lastErr = e;
       console.warn(`[upload] ${slot} attempt ${attempt + 1} failed:`, e && e.message);
@@ -6870,31 +6871,28 @@ async function startPreUpload(rawImages, rawCornerImages, comicId) {
 
 async function processImagesForSave(images, comicId, slotNames, options = {}) {
   const {generateThumbs: generateThumbs = false, existingThumbs: existingThumbs = [], preserveNulls: preserveNulls = false} = options;
-  const fullResult = [];
-  const thumbResult = [];
-  for (let i = 0; i < images.length; i++) {
-    const img = images[i];
-    if (!img) {
-      if (preserveNulls) {
-        fullResult.push(null);
-        thumbResult.push(null);
-      }
-      continue;
-    }
+  // S23: compress + upload ALL images CONCURRENTLY. Previously each image was
+  // awaited one-at-a-time, so a 6-image Deep save was 6 serial round-trips — a
+  // long delay, and if one upload stalled the whole save appeared to freeze.
+  const perImage = await Promise.all((images || []).map(async (img, i) => {
+    if (!img) return { skip: !preserveNulls, image: null, thumb: null };
     const wantThumb = generateThumbs && i === 0;
     if (isDataUrl(img)) {
       const slot = slotNames[i] || `image_${i + 1}`;
-      const tasks = [ compressImage(img, 1400, 0.65, true).then(blob => uploadImageToStorage(blob, comicId, slot)) ];
-      if (wantThumb) {
-        tasks.push(compressImage(img, 120, 0.9, false));
-      }
-      const results = await Promise.all(tasks);
-      fullResult.push(results[0]);
-      thumbResult.push(wantThumb ? results[1] : null);
-    } else {
-      fullResult.push(img);
-      thumbResult.push(wantThumb ? existingThumbs[i] || null : null);
+      const [fullUrl, thumb] = await Promise.all([
+        compressImage(img, 1400, 0.65, true).then(blob => uploadImageToStorage(blob, comicId, slot)),
+        wantThumb ? compressImage(img, 120, 0.9, false) : Promise.resolve(null)
+      ]);
+      return { skip: false, image: fullUrl, thumb: wantThumb ? thumb : null };
     }
+    return { skip: false, image: img, thumb: wantThumb ? (existingThumbs[i] || null) : null };
+  }));
+  const fullResult = [];
+  const thumbResult = [];
+  for (const r of perImage) {
+    if (r.skip) continue;
+    fullResult.push(r.image);
+    thumbResult.push(r.thumb);
   }
   return {
     images: fullResult,
@@ -7620,12 +7618,12 @@ function showSignatureDetected(item, onDone) {
   var ov = document.createElement('div'); ov.id = 'rg-sig-overlay';
   ov.style.cssText = 'position:fixed;inset:0;z-index:100001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:24px;padding-top:max(24px,env(safe-area-inset-top));padding-bottom:max(24px,env(safe-area-inset-bottom));opacity:0;transition:opacity .15s ease;';
   var card = document.createElement('div');
-  card.style.cssText = 'width:100%;max-width:340px;background:#152e10;border:1.5px solid #4a7028;border-radius:16px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.5);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,\'Segoe UI\',sans-serif;';
+  card.style.cssText = 'width:100%;max-width:340px;background:#141210;border:1.5px solid #6a4a10;border-radius:18px;overflow:hidden;box-shadow:0 12px 44px rgba(0,0,0,0.55);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,\'Segoe UI\',sans-serif;';
   card.innerHTML = '<div style="height:5px;background:' + GOLD + '"></div>'
     + '<div style="padding:18px 20px 18px;text-align:center;">'
     + '<img src="assets/Robograder_Gift.webp" alt="Robograder" style="width:88px;height:auto;object-fit:contain;margin:0 auto 10px;display:block">'
-    + '<div style="font-size:16px;font-weight:800;color:#eaf5df;margin-bottom:8px">' + title + '</div>'
-    + '<div style="font-size:13.5px;line-height:1.55;color:#c3d9b2;text-align:left">' + msg + '</div>'
+    + '<div style="font-size:16px;font-weight:800;color:#f0c860;margin-bottom:8px">' + title + '</div>'
+    + '<div style="font-size:13.5px;line-height:1.6;color:#e8d9b8;text-align:left">' + msg + '</div>'
     + '<button id="rg-sig-ok" style="margin-top:18px;width:100%;padding:12px;border:none;border-radius:10px;background:' + GOLD + ';color:#231a02;font-size:15px;font-weight:800;letter-spacing:.5px;cursor:pointer">OKAY</button>'
     + '</div>';
   ov.appendChild(card); document.body.appendChild(ov);
@@ -7655,13 +7653,12 @@ function showCeilingUpsell(upsell) {
   var ov = document.createElement('div'); ov.id = 'rg-upsell-overlay';
   ov.style.cssText = 'position:fixed;inset:0;z-index:100001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:24px;padding-top:max(24px,env(safe-area-inset-top));padding-bottom:max(24px,env(safe-area-inset-bottom));opacity:0;transition:opacity .15s ease;';
   var card = document.createElement('div');
-  card.style.cssText = 'width:100%;max-width:340px;background:#152e10;border:1.5px solid #4a7028;border-radius:16px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.5);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,\"Segoe UI\",sans-serif;';
-  card.innerHTML = '<div style="height:5px;background:'+GOLD+'"></div>'
-    + '<div style="padding:18px 20px 18px;text-align:center;">'
+  card.style.cssText = 'width:100%;max-width:340px;background:#141210;border:1.5px solid #6a4a10;border-radius:18px;overflow:hidden;box-shadow:0 12px 44px rgba(0,0,0,0.55);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,\"Segoe UI\",sans-serif;';
+  card.innerHTML = '<div style="padding:24px 24px 20px;text-align:center;">'
     + '<img src="assets/Robograder_Gift.webp" alt="Robograder" style="width:88px;height:auto;object-fit:contain;margin:0 auto 10px;display:block">'
-    + '<div style="font-size:16px;font-weight:800;color:#eaf5df;margin-bottom:8px">'+title+'</div>'
-    + '<div style="font-size:13.5px;line-height:1.55;color:#c3d9b2;text-align:left">'+msg+'</div>'
-    + '<button id="rg-upsell-ok" style="margin-top:18px;width:100%;padding:12px;border:none;border-radius:10px;background:'+GOLD+';color:#231a02;font-size:15px;font-weight:800;letter-spacing:.5px;cursor:pointer">OKAY</button>'
+    + '<div style="font-size:16px;font-weight:800;color:#f0c860;margin-bottom:8px">'+title+'</div>'
+    + '<div style="font-size:13.5px;line-height:1.6;color:#e8d9b8;text-align:left;margin-bottom:20px">'+msg+'</div>'
+    + '<button id="rg-upsell-ok" class="rg-btn rg-btn-branded rg-btn-md" style="width:100%">OKAY</button>'
     + '</div>';
   ov.appendChild(card); document.body.appendChild(ov);
   requestAnimationFrame(function(){ ov.style.opacity='1'; card.style.transform='translateY(0) scale(1)'; });
@@ -7861,7 +7858,7 @@ function mountResults(cgc, psa) {
     }
     if (hgUnlocked) {
       btn.innerHTML = `<div style="font-size:14px;font-weight:800;letter-spacing:1.5px;line-height:1.2">DEEP ASSESSMENT</div><div style="font-size:12px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
-      btn.style.background = "#2a7a3a";
+      btn.style.background = "#3a9ee0";
       btn.style.color = "#fff";
       btn.style.textAlign = "center";
     } else if (isPostDeepRun) {
@@ -7881,7 +7878,7 @@ function mountResults(cgc, psa) {
       const _fullAlreadyRun = isFullAssessmentComplete(cgc) || isFullAssessmentComplete(formData) || !!(formData && formData.fullUnlocked);
       if (_fullEligible && !_fullAlreadyRun) {
         btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">FULL ASSESSMENT</div><div style="font-size:12px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
-        btn.style.background = "#b8860b";
+        btn.style.background = "#3a9ee0";
         btn.style.color = "#fff";
         btn.style.textAlign = "center";
       } else {
@@ -10355,7 +10352,7 @@ function renderForm() {
     const cornerGhosts = [ "assets/ghosts/TopLeft_Macro.jpg", "assets/ghosts/TopRight_Macro.jpg", "assets/ghosts/BottomLeft_Macro.jpg", "assets/ghosts/BottomRight_Macro.jpg" ];
     const img = (formData.cornerImages || [])[i];
     return img ? `<div class="drag-slot" draggable="true" style="aspect-ratio:2/3"\n                  ondragstart="cornerDragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="cornerDropSlot(event,${i})"\n                  onclick="tapSlot(${i},'corner')">\n                  <img src="${img}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">\n                  <button class="slot-edit" onclick="event.stopPropagation();openCropper('corner',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>\n                  <button class="slot-x" onclick="event.stopPropagation();removeCornerImg(${i})">×</button>\n                 </div>` : `<div class="drag-slot" style="padding:0;background:none;aspect-ratio:2/3;position:relative;overflow:hidden"\n                  ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="cornerDropSlot(event,${i})"\n                  onclick="tapSlot(${i},'corner')">\n                  <img src="${cornerGhosts[i]}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.7;pointer-events:none">\n                  <div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:8px;left:10px;background:rgba(255,255,255,0.82);color:#1a1a1a;padding:3px 8px;border-radius:4px;text-align:left"><span style="display:block;font-size:11px;font-weight:800;letter-spacing:0.4px;text-transform:uppercase">${cornerLabels[i]}</span><span style="display:block;font-size:9px;font-weight:600;opacity:0.7;margin-top:1px">Tap to add</span></span></div>\n                 </div>`;
-  }).join("")}\n        </div>\n        <input id="corner-photo-input" type="file" accept="image/*" multiple onchange="handleCornerImages(event)" style="display:none">${!formData.labelDetected ? `<div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin:16px 0 8px">INTERIOR COVERS</div><div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Full spreads of the interior front and interior back, where defects can sometimes hide.</div><div style="display:grid;grid-template-columns:1fr;gap:6px">${[0,1].map(i => { const icLabels = ["Interior Front","Interior Back"]; const _icimg = (formData.interiorCoverImages || [])[i]; return _icimg ? `<div class="drag-slot" style="aspect-ratio:3/2" onclick="tapSlot(${i},'interiorCover')"><img src="${_icimg}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"><button class="slot-edit" onclick="event.stopPropagation();openCropper('interiorCover',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button><button class="slot-x" onclick="event.stopPropagation();removeInteriorCoverImg(${i})">×</button></div>` : `<div class="drag-slot" style="padding:0;background:none;aspect-ratio:3/2;position:relative;overflow:hidden" onclick="tapSlot(${i},'interiorCover')"><img src="assets/ghosts/Interior_${i === 0 ? 'Front' : 'Back'}_Cover.jpg" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.7;pointer-events:none"><div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:8px;left:10px;background:rgba(255,255,255,0.82);color:#1a1a1a;padding:3px 8px;border-radius:4px;text-align:left"><span style="display:block;font-size:11px;font-weight:800;letter-spacing:0.4px;text-transform:uppercase">${icLabels[i]}</span><span style="display:block;font-size:9px;font-weight:600;opacity:0.7;margin-top:1px">Tap to add</span></span></div></div>`; }).join("")}</div><input id="interior-cover-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorCoverImages(event)" style="display:none">` : ""}\n        ${(() => {
+  }).join("")}\n        </div>\n        <input id="corner-photo-input" type="file" accept="image/*" multiple onchange="handleCornerImages(event)" style="display:none">${!formData.labelDetected ? `<div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin:16px 0 8px">INTERIOR COVERS</div><div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Full spreads of the interior front and interior back, where defects can sometimes hide.</div><div style="display:grid;grid-template-columns:1fr;gap:6px">${[0,1].map(i => { const icLabels = ["Interior Front","Interior Back"]; const _icimg = (formData.interiorCoverImages || [])[i]; return _icimg ? `<div class="drag-slot" style="aspect-ratio:3/2" onclick="tapSlot(${i},'interiorCover')"><img src="${_icimg}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"><button class="slot-edit" onclick="event.stopPropagation();openCropper('interiorCover',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button><button class="slot-x" onclick="event.stopPropagation();removeInteriorCoverImg(${i})">×</button></div>` : `<div class="drag-slot" style="padding:0;background:none;aspect-ratio:3/2;position:relative;overflow:hidden" onclick="tapSlot(${i},'interiorCover')"><img src="assets/ghosts/Interior_${i === 0 ? 'Front' : 'Back'}_Cover.jpg" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.7;pointer-events:none"><div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:8px;${i === 0 ? "left:10px" : "right:10px"};background:rgba(255,255,255,0.82);color:#1a1a1a;padding:3px 8px;border-radius:4px;text-align:${i === 0 ? "left" : "right"}"><span style="display:block;font-size:11px;font-weight:800;letter-spacing:0.4px;text-transform:uppercase">${icLabels[i]}</span><span style="display:block;font-size:9px;font-weight:600;opacity:0.7;margin-top:1px">Tap to add</span></span></div></div>`; }).join("")}</div><input id="interior-cover-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorCoverImages(event)" style="display:none">` : ""}\n        ${(() => {
     const alreadyRun = !!formData.highGradeTier;
     const cornerCount = (formData.cornerImages || []).filter(Boolean).length;
     // S20 (#36): raw books also capture 2 interior covers (6 total); slabbed books
@@ -10610,7 +10607,7 @@ function renderFullSlotGrid(interior, opts) {
       }
       const hint = (o.strip && slot.hint) ? `<div style="font-size:9px;font-weight:500;margin-top:1px;line-height:1.2;color:#2a2a2a">${slot.hint}</div>` : '';
       const ghost = FULL_GHOSTS[key] ? `<img src="${FULL_GHOSTS[key]}" alt="" loading="lazy" decoding="async" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.7">` : '';
-      return `<div class="drag-slot" style="padding:0;background:none;${dim};position:relative;overflow:hidden${extra}" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="interiorDropSlot(event,${i})" onclick="tapSlot(${i},'interior')">${ghost}<div style="position:absolute;top:6px;left:6px;max-width:calc(100% - 12px);background:rgba(255,255,255,0.82);color:#1a1a1a;padding:3px 8px;border-radius:4px;text-align:left"><div style="font-size:11px;font-weight:800;letter-spacing:0.4px">${slot.label.toUpperCase()}</div>${hint}<div style="font-size:9px;font-weight:600;opacity:0.7;margin-top:1px">Tap to add</div></div></div>`;
+      return `<div class="drag-slot" style="padding:0;background:none;${dim};position:relative;overflow:hidden${extra}" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="interiorDropSlot(event,${i})" onclick="tapSlot(${i},'interior')">${ghost}<div style="position:absolute;top:6px;left:6px;max-width:58%;background:rgba(255,255,255,0.85);color:#1a1a1a;padding:3px 8px;border-radius:4px;text-align:left"><div style="font-size:11px;font-weight:800;letter-spacing:0.4px">${slot.label.toUpperCase()}</div>${hint}<div style="font-size:9px;font-weight:600;opacity:0.7;margin-top:1px">Tap to add</div></div></div>`;
     }
     if (!img) return "";
     const imgAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
@@ -10623,7 +10620,7 @@ function renderFullSlotGrid(interior, opts) {
     + cell('exterior_bottom_staple', '1 / 1', { extra: 'grid-column:1;grid-row:2' })
     + `</div>`;
   html += `<div style="margin-top:6px">${cell('top_pages', '4 / 1', { strip: true })}</div>`;
-  html += `<div style="margin-top:6px">${cell('outer_edge', '3 / 1', { strip: true })}</div>`;
+  html += `<div style="margin-top:6px">${cell('outer_edge', '2.4 / 1', { strip: true })}</div>`;
   html += `<div style="margin-top:6px">${cell('bottom_pages', '4 / 1', { strip: true })}</div>`;
   return html;
 }
@@ -10702,7 +10699,12 @@ function openCropper(type, index) {
     const _cropComicFB = !(formData.type === "card" || !!formData._isCard) && type === "main" && index < 2;
     _cropperInstance = new Cropper(img, {
       aspectRatio: _cropCardFB ? 5/7 : NaN,
-      viewMode: 1,
+      // S23: viewMode 2 (whole image fits WITHIN the frame) instead of 1 (image
+      // COVERS the frame). With movable:false, viewMode 1 scaled a landscape
+      // photo — e.g. a re-shot Spine — up to fill the portrait crop frame, so its
+      // width overflowed off-screen and the right side was unreachable. viewMode 2
+      // always shows the entire image regardless of orientation.
+      viewMode: 2,
       autoCropArea: 1.0,
       background: false,
       modal: true,
@@ -12479,7 +12481,11 @@ async function cameraOpen(state) {
       _cameraState.androidLensMode = androidLens;
       const _isZoomedInteriorSlot = _cameraState.kind === "interior" && _cameraState.current !== fullSlotIndex("outer_edge");
       const _isZoomedRestorationSlot = _cameraState.kind === "restoration" && CAMERA_SLOT_ZOOM_RESTORATION[_cameraState.current];
-      const _zoomDefault = !isAndroid && (_cameraState.kind === "main" || _cameraState.kind === "corner" || _cameraState.kind === "signature" || _cameraState.kind === "carddeep" || _isZoomedInteriorSlot || _isZoomedRestorationSlot) && lensOptions.length > 1;
+      // S23: Main Front (0) and Back (1) are full covers — default to the WIDE
+      // lens so the whole cover fits, not the zoomed lens (Matt: default to Zoom
+      // Out). Other Main slots (PQ, Spine) keep the zoomed default.
+      const _mainWideSlot = _cameraState.kind === "main" && (_cameraState.current === 0 || _cameraState.current === 1);
+      const _zoomDefault = !isAndroid && !_mainWideSlot && (_cameraState.kind === "main" || _cameraState.kind === "corner" || _cameraState.kind === "signature" || _cameraState.kind === "carddeep" || _isZoomedInteriorSlot || _isZoomedRestorationSlot) && lensOptions.length > 1;
       _cameraState.currentLensIdx = _zoomDefault ? 1 : 0;
       if (lensOptions.length > 0) {
         await switchToLens(_cameraState.currentLensIdx);
@@ -13616,7 +13622,7 @@ function showRepeatBuyerDiscount() {
   var ov = document.createElement('div'); ov.id = 'rg-repeat-overlay';
   ov.style.cssText = 'position:fixed;inset:0;z-index:100001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:24px;padding-top:max(24px,env(safe-area-inset-top));padding-bottom:max(24px,env(safe-area-inset-bottom));opacity:0;transition:opacity .15s ease;';
   var card = document.createElement('div');
-  card.style.cssText = "width:100%;max-width:340px;background:#152e10;border:1.5px solid #4a7028;border-radius:16px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.5);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,sans-serif;";
+  card.style.cssText = "width:100%;max-width:340px;background:#141210;border:1.5px solid #6a4a10;border-radius:18px;overflow:hidden;box-shadow:0 12px 44px rgba(0,0,0,0.55);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,sans-serif;";
   card.innerHTML = '<div style="height:5px;background:' + GOLD + '"></div>'
     + '<div style="padding:18px 20px 18px;text-align:center;">'
     + '<img src="assets/Robograder_Gift.webp" alt="Robograder" style="width:88px;height:auto;object-fit:contain;margin:0 auto 10px;display:block">'

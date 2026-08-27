@@ -173,13 +173,18 @@
   // interior covers moved to Deep in #36). Order matches the client's FULL_SLOTS
   // storage order. All 6 are wide 5:1 strips, so each rotates CW to display as a
   // tall strip filling the portrait scan cavity.
+  // S23: scan order matches Detail/Edit display: Ext Top Staple, Ext Bottom
+  // Staple, Int Staples, Top Pages, Outer Edge, Bottom Pages. idx still points
+  // at the STORAGE slot (0=top,1=outer,2=bottom,3=extTop,4=extBottom,5=interior).
+  // Edges are captured landscape (rotate CW to fill the tall cavity); the
+  // interior staple is captured PORTRAIT, so it displays upright without rotation.
   const SLOTS_FULL = [
-    { idx: 0, slotName: 'full-0', rotate: true },
-    { idx: 1, slotName: 'full-1', rotate: true },
-    { idx: 2, slotName: 'full-2', rotate: true },
-    { idx: 3, slotName: 'full-3', rotate: true },
-    { idx: 4, slotName: 'full-4', rotate: true },
-    { idx: 5, slotName: 'full-5', rotate: true },
+    { idx: 3, slotName: 'full-3', rotate: true  },  // Ext Top Staple
+    { idx: 4, slotName: 'full-4', rotate: true  },  // Ext Bottom Staple
+    { idx: 5, slotName: 'full-5', rotate: false },  // Int Staples (portrait capture -> upright)
+    { idx: 0, slotName: 'full-0', rotate: true  },  // Top Pages
+    { idx: 1, slotName: 'full-1', rotate: true  },  // Outer Edge
+    { idx: 2, slotName: 'full-2', rotate: true  },  // Bottom Pages
   ];
 
   // S16: Restoration Check scans 8 images
