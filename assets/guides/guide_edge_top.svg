@@ -25,6 +25,12 @@
     <g transform="matrix(1.25,-1.7763e-17,-1.7763e-17,1,-74.9833,144.999)">
         <path d="M860,220L59.987,220" style="fill:none;stroke:rgb(122,168,56);stroke-width:5px;stroke-linejoin:round;"/>
     </g>
+    <g transform="matrix(1.25,-1.7763e-17,-1.7763e-17,1,-74.9833,154.999)">
+        <path d="M860,220L59.987,220" style="fill:none;stroke:rgb(122,168,56);stroke-width:2.65px;stroke-linejoin:round;"/>
+    </g>
+    <g transform="matrix(1.25,-1.7763e-17,-1.7763e-17,1,-74.9833,164.999)">
+        <path d="M860,220L59.987,220" style="fill:none;stroke:rgb(122,168,56);stroke-width:2.65px;stroke-linejoin:round;"/>
+    </g>
     <g transform="matrix(1.25,-1.7763e-17,-1.7763e-17,1,-74.9965,174.999)">
         <path d="M860,220L59.987,220" style="fill:none;stroke:rgb(122,168,56);stroke-width:5px;stroke-linejoin:round;"/>
     </g>
