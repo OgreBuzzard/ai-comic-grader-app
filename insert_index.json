@@ -1,10 +1,15 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "era": [
     1971,
     1991
   ],
   "books": [
+    {
+      "title": "Amazing Spider-Man",
+      "vol": 1,
+      "issue": "115"
+    },
     {
       "title": "Amazing Spider-Man",
       "vol": 1,
@@ -23,12 +28,22 @@
     {
       "title": "Amazing Spider-Man",
       "vol": 1,
+      "issue": "259"
+    },
+    {
+      "title": "Amazing Spider-Man",
+      "vol": 1,
       "issue": "322"
     },
     {
       "title": "Amazing Spider-Man",
       "vol": 1,
       "issue": "326"
+    },
+    {
+      "title": "Amazing Spider-Man",
+      "vol": 1,
+      "issue": "346"
     },
     {
       "title": "Daredevil",
@@ -80,6 +95,11 @@
       "issue": "117"
     },
     {
+      "title": "Marvel Team-Up",
+      "vol": 1,
+      "issue": "96"
+    },
+    {
       "title": "Marvel's Greatest Comics",
       "vol": null,
       "issue": "89",
@@ -121,6 +141,11 @@
       "title": "Tomb of Dracula",
       "vol": 1,
       "issue": "55"
+    },
+    {
+      "title": "Web of Spider-Man",
+      "vol": 1,
+      "issue": "51"
     },
     {
       "title": "Web of Spider-Man",
