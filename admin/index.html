@@ -2354,6 +2354,16 @@ const RGV2 = (function () {
       && (input.spine20 || 0) >= TEN_GATE.spine;
     if (!_perfect10) cap = Math.min(cap, 9.5);
 
+    // S25 (#5): photo quality gates the TOP grades. Severity > 1 (more than one B,
+    // OR any C) steps the top rungs down — a 10 needs clean photos (->9.5), a 9.5
+    // needs clean photos (->9.0); one B leaves both intact. This is the ONE place
+    // photo quality moves the grade (elsewhere it only sets PM).
+    var _pgSev = photoSeverity(input.photograder);
+    if (_pgSev > 1) {
+      if (cap >= 10) cap = 9.5;
+      else if (cap >= 9.5) cap = 9.0;
+    }
+
     var grade = Math.min(uncapped, cap);
     // Subscores always sum to the grade. When the cap bites, shave 0.5 at a time
     // (front -> back -> spine, interior fixed) to reach the ceiling; otherwise the
@@ -2368,6 +2378,8 @@ const RGV2 = (function () {
     else if (depth === "deep" && ceilingHit && !slabbed) upsell = "full";
 
     var pm = computePM(input);
+    // S25 (#6): grade + PM can never exceed 10 -> 8.5<=1.5, 9<=1, 9.5<=0.5, 10->0.
+    pm = Math.max(0, Math.min(pm, 10 - grade));
 
     return {
       grade: grade,
@@ -2497,6 +2509,7 @@ const RGV2 = (function () {
     var ceilingHit = uncapped > cap + 1e-9;
     var upsell = (depth === "main" && ceilingHit && !slabbed) ? "deep" : null;   // cards: Main -> Deep only
     var pm = computePM({ depth: depth, slabbed: slabbed, photograder: input.photograder });  // reuse comic PM table
+    pm = Math.max(0, Math.min(pm, 10 - grade));   // S25 (#6): grade + PM can't exceed 10
     return { grade: grade, uncappedGrade: uncapped, subscores: sub, rawSubscores: { surface: precise.surface, corners: precise.corners, edges: precise.edges, centering: precise.centering }, pm: pm, pmLabel: formatPM(pm), ceilingHit: ceilingHit, upsell: upsell, kind: "card" };
   }
   function forCard(card) {

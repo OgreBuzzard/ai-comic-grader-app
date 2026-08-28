@@ -125,21 +125,21 @@ function isDeepListBook(title, issue) {
 }
 
 // S20 (#37): Full is gated CLIENT-SIDE on a completed Deep assessment AND FMV
-// tier >= 7 ($1000+), and every run costs a credit. The old server score/grade
+// tier >= 6 ($500+), and every run costs a credit. The old server score/grade
 // floor is removed: it would wrongly reject legitimately-valuable LOW-grade keys
-// (tier 7+ despite a low grade). The slabbed + prereq checks below still apply,
+// (tier 6+ despite a low grade). The slabbed + prereq checks below still apply,
 // so a book only reaches here after Main + Deep have run.
 function isFullEligible({ title, issueNumber, fmvTier, rgGrade, predictedGrade }) {
   // Historic mega-keys always qualify (server-authoritative list, independent
   // of the client).
   if (isDeepListBook(title, issueNumber)) return { eligible: true, reason: 'deep-list' };
-  // Everything else must be FMV tier >= 7 ($1000+). The client computes fmvTier
-  // (matchFMV) and sends it. A client from BEFORE the FMV-tier-7 gate (the old
+  // Everything else must be FMV tier >= 6 ($500+). The client computes fmvTier
+  // (matchFMV) and sends it. A client from BEFORE the FMV-tier gate (the old
   // grade/score gate that wrongly unlocked Full on high-grade low-value books)
   // omits fmvTier -> treated as ineligible here. This is the server backstop the
   // gate previously lacked (it used to trust the client entirely).
   const t = Number(fmvTier);
-  if (Number.isFinite(t) && t >= 7) return { eligible: true, reason: 'fmv-tier7' };
+  if (Number.isFinite(t) && t >= 6) return { eligible: true, reason: 'fmv-tier6' };
   // S22: near-perfect books unlock Full regardless of value (the perfect-10 path):
   // RG hit the 9.5 Deep ceiling, or the predicted grade is 9.6+.
   const _rg = Number(rgGrade), _pg = Number(predictedGrade);
@@ -220,9 +220,9 @@ export default async function handler(req, res) {
     deepAssessmentComplete = false,
     roboScore = null,             // 0-100 RG score (for the widened gate)
     predictedGrade = null,        // 0.5-10.0 CGC-scale grade (retained for context; no longer gates)
-    fmvTier = null,               // S21: FMV tier (matchFMV) computed by the client; Full needs >= 7 ($1000+)
+    fmvTier = null,               // S21: FMV tier (matchFMV) computed by the client; Full needs >= 6 ($500+)
     rgGrade = null,               // S22: v3 RG grade from the Deep pass (near-perfect Full gate)
-    fullUnlockReason = null,      // S22: 'near-perfect' | 'fmv-tier7' — how the client unlocked Full
+    fullUnlockReason = null,      // S22: 'near-perfect' | 'fmv-tier6' — how the client unlocked Full
     initialPageQuality = '',      // the initial PQ call, so the model can re-judge it
     priorConditionAssessment = '',// the existing Condition Assessment text to integrate into
     priorDefectNotes = '',        // the existing Defect Notes (bullets), for context
@@ -230,12 +230,12 @@ export default async function handler(req, res) {
     photograder = null            // S21: the running Photograder record (prior tiers)
   } = req.body || {};
 
-  // Eligibility check 1: FMV gate — Deep-list mega-key OR FMV tier >= 7 ($1000+).
+  // Eligibility check 1: FMV gate — Deep-list mega-key OR FMV tier >= 6 ($500+).
   const elig = isFullEligible({ title, issueNumber, fmvTier, rgGrade, predictedGrade });
   if (!elig.eligible) {
     return sseError(400, {
       error: 'INELIGIBLE_BOOK',
-      message: 'Full Assessment requires a near-perfect grade (RG 9.5 / predicted 9.6+), an FMV of $1,000+ (tier 7), or a book on the high-value list. If your app is out of date, please update it and try again.'
+      message: 'Full Assessment requires a near-perfect grade (RG 9.5 / predicted 9.6+), an FMV of $500+ (tier 6), or a book on the high-value list. If your app is out of date, please update it and try again.'
     });
   }
 

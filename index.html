@@ -228,6 +228,16 @@
       && (input.spine20 || 0) >= TEN_GATE.spine;
     if (!_perfect10) cap = Math.min(cap, 9.5);
 
+    // S25 (#5): photo quality gates the TOP grades. Severity > 1 (more than one B,
+    // OR any C) steps the top rungs down — a 10 needs clean photos (->9.5), a 9.5
+    // needs clean photos (->9.0); one B leaves both intact. This is the ONE place
+    // photo quality moves the grade (elsewhere it only sets PM).
+    var _pgSev = photoSeverity(input.photograder);
+    if (_pgSev > 1) {
+      if (cap >= 10) cap = 9.5;
+      else if (cap >= 9.5) cap = 9.0;
+    }
+
     var grade = Math.min(uncapped, cap);
     // Subscores always sum to the grade. When the cap bites, shave 0.5 at a time
     // (front -> back -> spine, interior fixed) to reach the ceiling; otherwise the
@@ -242,6 +252,8 @@
     else if (depth === "deep" && ceilingHit && !slabbed) upsell = "full";
 
     var pm = computePM(input);
+    // S25 (#6): grade + PM can never exceed 10 -> 8.5<=1.5, 9<=1, 9.5<=0.5, 10->0.
+    pm = Math.max(0, Math.min(pm, 10 - grade));
 
     return {
       grade: grade,
@@ -371,6 +383,7 @@
     var ceilingHit = uncapped > cap + 1e-9;
     var upsell = (depth === "main" && ceilingHit && !slabbed) ? "deep" : null;   // cards: Main -> Deep only
     var pm = computePM({ depth: depth, slabbed: slabbed, photograder: input.photograder });  // reuse comic PM table
+    pm = Math.max(0, Math.min(pm, 10 - grade));   // S25 (#6): grade + PM can't exceed 10
     return { grade: grade, uncappedGrade: uncapped, subscores: sub, rawSubscores: { surface: precise.surface, corners: precise.corners, edges: precise.edges, centering: precise.centering }, pm: pm, pmLabel: formatPM(pm), ceilingHit: ceilingHit, upsell: upsell, kind: "card" };
   }
   function forCard(card) {
@@ -685,6 +698,15 @@ onAuthStateChanged(auth, async user => {
       text-shadow: 0 0.5px 0 rgba(255,250,220,0.6);
       pointer-events: none;
     }
+    /* S24: credit count-up pulse — coin pops when the balance increases */
+    @keyframes rgCoinPulse {
+      0%   { transform: scale(1); }
+      45%  { transform: scale(1.4); }
+      100% { transform: scale(1); }
+    }
+    #credit-coin-btn.rg-coin-pop { animation: rgCoinPulse 0.5s ease-out; }
+    #credit-coin-btn.rg-coin-pop svg { filter: drop-shadow(0 0 7px rgba(240,200,90,0.95)) drop-shadow(0 1px 2px rgba(120,85,20,0.35)); }
+    @media (prefers-reduced-motion: reduce) { #credit-coin-btn.rg-coin-pop { animation: none; } }
     /* Top-bar action buttons — short and compact */
     .btn-topbar {
       font-size: 13px; font-weight: 700; padding: 7px 12px; border-radius: 8px;
@@ -3051,8 +3073,8 @@ function isFullAssessmentEligible(item) {
   if (!item) return null;
   if (item.labelDetected === true) return null;
   if (!isDeepAssessmentComplete(item)) return null;
-  // S20 (#37): $1000+ FMV books qualify — a completeness pass, never refunded.
-  if (fmvTierOf(item) >= 7) return { slots: FULL_SLOT_COUNT, slotDefs: FULL_SLOTS, reason: "fmv-tier7" };
+  // S20 (#37): $500+ FMV books qualify (tier 6) — a completeness pass, never refunded. (Was tier 7 / $1000+.)
+  if (fmvTierOf(item) >= 6) return { slots: FULL_SLOT_COUNT, slotDefs: FULL_SLOTS, reason: "fmv-tier6" };
   // S22: near-perfect books qualify too — the perfect-10 path, refunded if it stays 9.5.
   if (isNearPerfectForFull(item)) return { slots: FULL_SLOT_COUNT, slotDefs: FULL_SLOTS, reason: "near-perfect" };
   return null;
@@ -3151,7 +3173,8 @@ function stickTierUnlocks(item) {
   // later re-score that drops below threshold never clears it.
   if (item.highGradeUnlocked === true
       || isDeepAssessmentComplete(item)
-      || (item.roboGrade && typeof item.roboGrade.score === 'number' && item.roboGrade.score >= 90)) {
+      || (item.roboGrade && typeof item.roboGrade.score === 'number' && item.roboGrade.score >= 90)
+      || (typeof fmvTierOf === "function" && fmvTierOf(item) >= 4)) {   // S25 (#5): FMV Deep gate ($100+) latches too
     item.deepUnlocked = true;
   }
   // Full: qualifies if currently full-eligible, or full has run. (Per Matt
@@ -4235,6 +4258,10 @@ async function saveItem(rec) {
     rec.clientPlatform = _clientPlatform();
     rec.clientAppVersion = _clientAppVersion();
     rec.clientSavedAt = new Date().toISOString();
+    // S25 (#5): latch tier unlocks on every persisted save, so a threshold crossing
+    // (grade/FMV) during ANY re-assessment sticks FOREVER — Deep/Full never relock
+    // once unlocked. stickTierUnlocks only ever sets flags true, never clears them.
+    if (typeof stickTierUnlocks === "function") stickTierUnlocks(rec);
   }
   syncMsg("Saving...");
   try {
@@ -4472,19 +4499,65 @@ async function signOutUser() {
   window.location.reload();
 }
 
+// S24: credit count-up + coin pulse. When the balance INCREASES (purchase, admin
+// gift, referral, promo, refund) the header coin counts up to the new total and
+// pops — mirrors the score-reveal. Baseline is the last shown value in-session, or
+// (on a fresh page-load, e.g. returning from Stripe checkout) the last value this
+// browser persisted for this account, so web purchases + admin gifts animate on
+// the next load too. Decreases and first-ever render set the number directly.
+function _coinBaselineKey() {
+  try { return "rg_lastCredit_" + ((window._currentUser && window._currentUser.uid) || "anon"); } catch (e) { return "rg_lastCredit_anon"; }
+}
+function _readCoinBaseline() {
+  try { const v = localStorage.getItem(_coinBaselineKey()); return v == null ? null : parseInt(v, 10); } catch (e) { return null; }
+}
+function _writeCoinBaseline(n) {
+  try { localStorage.setItem(_coinBaselineKey(), String(n)); } catch (e) {}
+}
+function _pulseCoin() {
+  const b = document.getElementById("credit-coin-btn");
+  if (!b) return;
+  b.classList.remove("rg-coin-pop");
+  void b.offsetWidth;
+  b.classList.add("rg-coin-pop");
+  setTimeout(() => b.classList.remove("rg-coin-pop"), 550);
+}
+function _animateCreditCountUp(el, from, to) {
+  from = Math.round(Number(from) || 0);
+  to = Math.round(Number(to) || 0);
+  const fmt = (v) => (v > 999 ? "999+" : String(v));
+  if (from === to) { el.textContent = fmt(to); _pulseCoin(); return; }
+  const dur = Math.min(1100, 350 + Math.abs(to - from) * 45);
+  const start = performance.now();
+  function tick(now) {
+    const t = Math.min((now - start) / dur, 1);
+    const v = Math.round(from + (to - from) * easeOutCubic(t));
+    el.textContent = fmt(v);
+    if (t < 1) requestAnimationFrame(tick);
+    else { el.textContent = fmt(to); _pulseCoin(); }
+  }
+  requestAnimationFrame(tick);
+}
 function updateStats() {
   const coinCount = document.getElementById("credit-coin-count");
-  if (coinCount) {
-    if (window._userCredits === undefined || window._userCredits === null) {
-      coinCount.textContent = "·";
-      coinCount.style.fontSize = "12px";
-    } else {
-      const credits = window._userCredits;
-      coinCount.textContent = credits > 999 ? "999+" : credits;
-      if (credits >= 100) coinCount.style.fontSize = "9px"; else if (credits >= 10) coinCount.style.fontSize = "11px"; else coinCount.style.fontSize = "12px";
-    }
+  if (!coinCount) return;
+  if (window._userCredits === undefined || window._userCredits === null) {
+    coinCount.textContent = "·";
+    coinCount.style.fontSize = "12px";
     return;
   }
+  const credits = window._userCredits;
+  // size for the FINAL value first so a count-up never resizes mid-animation
+  if (credits >= 100) coinCount.style.fontSize = "9px"; else if (credits >= 10) coinCount.style.fontSize = "11px"; else coinCount.style.fontSize = "12px";
+  const prev = (typeof window._creditDisplayShown === "number") ? window._creditDisplayShown : _readCoinBaseline();
+  const reduce = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  if (typeof prev === "number" && credits > prev && !reduce && document.getElementById("credit-coin-btn")) {
+    _animateCreditCountUp(coinCount, prev, credits);
+  } else {
+    coinCount.textContent = credits > 999 ? "999+" : String(credits);
+  }
+  window._creditDisplayShown = credits;
+  _writeCoinBaseline(credits);
 }
 
 async function _fsReadWithRetry(doReadFn, attempts = 5, delayMs = 600) {
@@ -4714,10 +4787,10 @@ function refreshShortBoxCard() {
   // Repeat-Purchase Discount (all tiers). Name kept so the iOS showBuyCredits
   // hook still matches; body now refreshes all three cards. Server computes the
   // per-tier next-purchase bonus (window._nextBonuses); the client only renders.
-  const YEAR = 365 * 24 * 60 * 60 * 1000;
+  const WINDOW = 183 * 24 * 60 * 60 * 1000;   // ~6 months (repeat-bonus window; was 1 year)
   const last = window._lastPurchaseAt ? Date.parse(window._lastPurchaseAt)
              : (window._lastShortBoxAt ? Date.parse(window._lastShortBoxAt) : 0);
-  const chainAlive = !!last && (Date.now() - last <= YEAR);
+  const chainAlive = !!last && (Date.now() - last <= WINDOW);
   const nb = window._nextBonuses
     || (typeof window._nextShortBoxBonus === "number" ? { short_box: window._nextShortBoxBonus } : null);
   const TIERS = [
@@ -4828,6 +4901,7 @@ async function redeemPromoCode() {
       window._userCredits = (window._userCredits || 0) + data.creditsGranted;
     }
     if (typeof refreshHeaderControls === "function") refreshHeaderControls();
+    updateStats();
     const credEl = document.getElementById("settings-credits");
     if (credEl) credEl.textContent = String(window._userCredits || 0);
     const granted = data.creditsGranted || 0;
@@ -5492,7 +5566,7 @@ function showDetail(id) {
     if (!hasAnyCorner) {
       // S20: Deep unlocked but not yet run — compact badge instead of 4 empty
       // slots. Tapping Edit reveals the capture slots.
-      html += `<div onclick="showEdit('${esc(selected.id)}')" style="margin-top:14px;padding:14px;background:#152e10;border:1.5px solid #4a7028;border-radius:12px;text-align:center;cursor:pointer">
+      html += `<div onclick="showEditToSection('${esc(selected.id)}','deep')" style="margin-top:14px;padding:14px;background:#152e10;border:1.5px solid #4a7028;border-radius:12px;text-align:center;cursor:pointer">
         <div style="line-height:1;margin-bottom:8px;opacity:0.5">${tierStarSVG(15, "#b8d820")}${tierStarSVG(15, "#b8d820")}</div>
         <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:#b8d820;margin-bottom:5px">DEEP ASSESSMENT AVAILABLE</div>
         <div style="font-size:12px;color:#9cc76a;line-height:1.45;margin-bottom:10px">Add 6 more images for a more accurate grade — free if it doesn't go up.</div>
@@ -5523,7 +5597,7 @@ function showDetail(id) {
   }
   if (!isFullAssessmentComplete(selected) && isDeepAssessmentComplete(selected) && showFullTier(selected)) {
     const _np = (typeof isNearPerfectForFull === "function") && isNearPerfectForFull(selected);
-    html += `<div onclick="showEdit('${esc(selected.id)}')" style="margin-top:14px;padding:14px;background:#1c1608;border:1.5px solid #7a5e1e;border-radius:12px;text-align:center;cursor:pointer">
+    html += `<div onclick="showEditToSection('${esc(selected.id)}','full')" style="margin-top:14px;padding:14px;background:#1c1608;border:1.5px solid #7a5e1e;border-radius:12px;text-align:center;cursor:pointer">
         <div style="line-height:1;margin-bottom:8px;opacity:0.6">${tierStarSVG(15, "#f0c53a")}${tierStarSVG(15, "#f0c53a")}${tierStarSVG(15, "#f0c53a")}</div>
         <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:#f0c53a;margin-bottom:5px">FULL ASSESSMENT AVAILABLE</div>
         <div style="font-size:12px;color:#d8c58a;line-height:1.45;margin-bottom:10px">${_np ? "This book is near-perfect — a Full can confirm a perfect 10." : "Add 6 interior &amp; structure photos to confirm the grade."}</div>
@@ -6685,6 +6759,21 @@ function showEdit(id) {
   _prewarmCropCache([].concat(formData.images || [], formData.cornerImages || [], formData.interiorImages || [], formData.interiorCoverImages || [], formData.signatureImages || [], formData.insertImages || [], formData.couponImages || []));
   renderForm();
   window.scrollTo(0, 0);
+}
+
+// S25 (#1): open Edit and scroll straight to a tier's capture section instead of
+// landing at the top (Main slots). Used by the Detail-view Deep/Full upsell cards.
+function showEditToSection(id, section) {
+  showEdit(id);
+  requestAnimationFrame(function () {
+    requestAnimationFrame(function () {
+      var _id = section === "full" ? "full-staple-section" : "deep-corner-section";
+      var el = document.getElementById(_id);
+      if (!el) return;
+      var y = el.getBoundingClientRect().top + window.pageYOffset - 70; // clear the sticky top bar
+      window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+    });
+  });
 }
 
 async function compressImage(dataUrl, maxDim = 1400, quality = 0.65, asBlob = false) {
@@ -7951,9 +8040,7 @@ async function assessHighGrade() {
     return;
   }
   if (window._userCredits !== undefined && window._userCredits <= 0) {
-    if (confirm("You have no assessment credits remaining. Would you like to buy more?")) {
-      showBuyCredits();
-    }
+    showBuyCredits();
     return;
   }
   const initialRG = formData.roboGrade;
@@ -9530,7 +9617,7 @@ async function assessCardDeep() {
   const eligibility = await checkAssessmentEligibility();
   if (!eligibility.allowed) { alert(eligibility.message); return; }
   if (window._userCredits !== undefined && window._userCredits <= 0) {
-    if (confirm("You have no assessment credits remaining. Would you like to buy more?")) showBuyCredits();
+    showBuyCredits();
     return;
   }
   assessing = true;
@@ -9601,7 +9688,7 @@ async function assessCardGrade() {
     return;
   }
   if (window._userCredits !== undefined && window._userCredits <= 0) {
-    if (confirm("You have no assessment credits remaining. Would you like to buy more?")) showBuyCredits();
+    showBuyCredits();
     if (_cb0) { _cb0.textContent = _assessed ? "RE-ASSESS GRADE" : "ASSESS GRADE"; _cb0.disabled = false; _cb0.style.opacity = ""; }
     return;
   }
@@ -9822,9 +9909,7 @@ async function assessGrade() {
     return;
   }
   if (window._userCredits !== undefined && window._userCredits <= 0) {
-    if (confirm("You have no assessment credits remaining. Would you like to buy more?")) {
-      showBuyCredits();
-    }
+    showBuyCredits();
     if (_earlyBtn) {
       _earlyBtn.textContent = _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE";
       _earlyBtn.disabled = false;
@@ -10347,7 +10432,7 @@ function renderForm() {
       return img ? `<div class="drag-slot" draggable="true"\n                  ondragstart="dragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"\n                  onclick="tapSlot(${i},'main')">\n                  <img src="${img}"${_isCardForm ? ` style="width:100%;aspect-ratio:${i < 2 ? '5/7' : '1/1'};object-fit:cover;display:block;border-radius:4px"` : ''}>\n                  <button class="slot-edit" onclick="event.stopPropagation();openCropper('main',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>\n                  <button class="slot-x" onclick="event.stopPropagation();removeImg(${i})">×</button>\n                 </div>` : `<div class="drag-slot" style="padding:0;background:none;"\n                  ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"\n                  onclick="tapSlot(${i},'main')">\n                  ${_isCardForm ? `<div style="width:100%;aspect-ratio:${i < 2 ? '5/7' : '1/1'};background:#161616;border-radius:4px"></div>` : `<img src="${SLOT_GHOSTS[i]}" style="width:100%;height:auto;display:block;border-radius:4px;opacity:0.7;">`}\n                  <div style="position:absolute;inset:0;pointer-events:none;">\n                    <span style="position:absolute;top:8px;left:10px;font-size:11px;font-weight:700;color:#000;letter-spacing:1px;text-transform:uppercase;background:rgba(255,255,255,0.75);padding:2px 6px;border-radius:3px;">${slotLabels[i]}</span>\n                  </div>\n                 </div>`;
     };
     return formData.labelDetected ? `\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">\n              ${renderSlot(0)}\n              ${renderSlot(1)}\n            </div>\n          ` : `\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">\n              ${renderSlot(0)}\n              ${renderSlot(1)}\n            </div>\n            ${_isCardForm ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${renderSlot(2)}${renderSlot(3)}</div>` : `${renderSlot(2)}\n            ${renderSlot(3)}`}\n          `;
-  })()}\n      </div>\n      ${_preAssessPGPanel() || ""}\n      <div style="display:flex;justify-content:center;margin-top:12px"><button id="assess-btn" class="rg-btn rg-btn-assess rg-btn-bronze${_assessed ? ' reassess' : ''}${assessing ? ' assessing' : ''}" onclick="assessGrade()" ${!formData.images || !formData.images[0] || assessing ? "disabled" : ""}>${assessing ? "Assessing…" : _assessed ? (_isCardForm ? "RE-ASSESS GRADE" : "RE-RUN MAIN ASSESSMENT") : "ASSESS GRADE"}</button></div>\n      ${_cardDeepSectionHtml(formData)}${(!_isCardForm && showDeepTier(formData)) ? `\n      <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">DEEP ASSESSMENT CORNER MACROS</div>\n        <div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Tighten the grade with more detail where small defects are most common.</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\n          ${[ 0, 1, 2, 3 ].map(i => {
+  })()}\n      </div>\n      ${_preAssessPGPanel() || ""}\n      <div style="display:flex;justify-content:center;margin-top:12px"><button id="assess-btn" class="rg-btn rg-btn-assess rg-btn-bronze${_assessed ? ' reassess' : ''}${assessing ? ' assessing' : ''}" onclick="assessGrade()" ${!formData.images || !formData.images[0] || assessing ? "disabled" : ""}>${assessing ? "Assessing…" : _assessed ? (_isCardForm ? "RE-ASSESS GRADE" : "RE-RUN MAIN ASSESSMENT") : "ASSESS GRADE"}</button></div>\n      ${_cardDeepSectionHtml(formData)}${(!_isCardForm && showDeepTier(formData)) ? `\n      <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n        <div id="deep-corner-section" style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">DEEP ASSESSMENT CORNER MACROS</div>\n        <div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Tighten the grade with more detail where small defects are most common.</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\n          ${[ 0, 1, 2, 3 ].map(i => {
     const cornerLabels = [ "Top Left", "Top Right", "Bottom Left", "Bottom Right" ];
     const cornerGhosts = [ "assets/ghosts/TopLeft_Macro.jpg", "assets/ghosts/TopRight_Macro.jpg", "assets/ghosts/BottomLeft_Macro.jpg", "assets/ghosts/BottomRight_Macro.jpg" ];
     const img = (formData.cornerImages || [])[i];
@@ -10412,7 +10497,7 @@ function renderForm() {
     const ready = filled === N && !assessing;
     const blurb = _fullDone ? `Full Assessment has run on this book. You can replace any photo below and re-run to update the interior/structure findings.` : `This book qualifies for Full Assessment. Add all ${N} named photos below — each documents a specific part of the book's structure and page completeness. Once all ${N} are added, Full Assessment runs a deeper confirmation of the grade.`;
     const btnLabel = assessing ? "Assessing…" : _fullDone ? `RE-RUN FULL ASSESSMENT${filled < N ? ` (${filled}/${N})` : ""}` : `FULL ASSESSMENT${filled < N ? ` (${filled}/${N})` : ""}`;
-    return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n            <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT - EDGES AND STAPLES</div>\n            <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Checks for staple wear and missing pages. For a near-perfect book, this is the pass that can confirm a perfect 10. For any other book it confirms the grade and can only lower it if a previously-unseen defect is revealed.</div>\n            ${renderFullSlotGrid(interior, {editable: true})}\n            <input id="interior-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="full-assess-btn" class="rg-btn rg-btn-assess rg-btn-gold${assessing ? ' assessing' : ''}" onclick="submitFullAssessment()" ${ready ? "" : "disabled"}>\n                ${btnLabel}\n              </button>\n            </div>\n          </div>\n        `;
+    return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n            <div id="full-staple-section" style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT - EDGES AND STAPLES</div>\n            <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Checks for staple wear and missing pages. For a near-perfect book, this is the pass that can confirm a perfect 10. For any other book it confirms the grade and can only lower it if a previously-unseen defect is revealed.</div>\n            ${renderFullSlotGrid(interior, {editable: true})}\n            <input id="interior-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="full-assess-btn" class="rg-btn rg-btn-assess rg-btn-gold${assessing ? ' assessing' : ''}" onclick="submitFullAssessment()" ${ready ? "" : "disabled"}>\n                ${btnLabel}\n              </button>\n            </div>\n          </div>\n        `;
   })()}\n      ${(() => {
     if (!showRestorationTier(formData)) return "";
     if (isRestorationCheckComplete(formData)) {
@@ -10731,13 +10816,22 @@ function openCropper(type, index) {
             // centered, filling the image to whichever edge it reaches first. Box
             // stays NON-rigid (aspectRatio NaN) so the user can freely adjust it.
             if (_cropComicFB && _cropperInstance) {
-              try {
-                const _cc = _cropperInstance.getCanvasData();
-                const _ar = 9 / 14;
-                let _w = _cc.width, _h = _w / _ar;
-                if (_h > _cc.height) { _h = _cc.height; _w = _h * _ar; }
-                _cropperInstance.setCropBoxData({ left: _cc.left + (_cc.width - _w) / 2, top: _cc.top + (_cc.height - _h) / 2, width: _w, height: _h });
-              } catch (e) {}
+              // S25 FIX: run the Front/Back default-box centering in a SECOND rAF so
+              // getCanvasData() reads the POST-resize canvas. In the auto-open
+              // sequence (cropper opens the instant the camera closes) the canvas
+              // was still at its pre-resize size when measured in the same frame, so
+              // the crop box landed ~half a screen to the right and clipped off. One
+              // extra frame + a degenerate-canvas guard fixes the offset.
+              requestAnimationFrame(function() {
+                try {
+                  const _cc = _cropperInstance.getCanvasData();
+                  if (!_cc || !(_cc.width > 0) || !(_cc.height > 0)) return;
+                  const _ar = 9 / 14;
+                  let _w = _cc.width, _h = _w / _ar;
+                  if (_h > _cc.height) { _h = _cc.height; _w = _h * _ar; }
+                  _cropperInstance.setCropBoxData({ left: _cc.left + (_cc.width - _w) / 2, top: _cc.top + (_cc.height - _h) / 2, width: _w, height: _h });
+                } catch (e) {}
+              });
             }
           });
         }
@@ -11669,7 +11763,7 @@ async function submitRestorationCheck() {
     return;
   }
   if (typeof window._userCredits === "number" && window._userCredits < 1) {
-    alert("You need at least 1 assessment credit to run a Restoration Check.");
+    showBuyCredits();
     return;
   }
   assessing = true;
@@ -11831,7 +11925,7 @@ async function submitFullAssessment() {
     return;
   }
   if (typeof window._userCredits === "number" && window._userCredits < 1) {
-    alert("You need at least 1 assessment credit to run a Full Assessment.");
+    showBuyCredits();
     return;
   }
   assessing = true;
@@ -11881,7 +11975,7 @@ async function submitFullAssessment() {
         deepAssessmentComplete: true,
         roboScore: formData.roboGrade && formData.roboGrade.score != null ? formData.roboGrade.score : null,
         predictedGrade: formData.predictedGrade || formData.assessedCGCGrade || null,
-        fmvTier: (typeof fmvTierOf === "function" ? fmvTierOf(formData) : null),  // server re-checks Full gate (>= 7)
+        fmvTier: (typeof fmvTierOf === "function" ? fmvTierOf(formData) : null),  // server re-checks Full gate (>= 6)
         rgGrade: (typeof rgV3ForComic === "function" ? ((rgV3ForComic(formData) || {}).grade != null ? (rgV3ForComic(formData) || {}).grade : null) : null),  // S22: v3 RG for the near-perfect Full gate
         fullUnlockReason: formData.fullUnlockReason || null,
         initialPageQuality: formData.pageQuality || "",
@@ -12212,9 +12306,12 @@ async function _analyzePhotoQuality(src) {
         const lapVar = cnt > 1 ? m2 / (cnt - 1) : 0;
         const _den = region || n;
         const blownFrac = blown / _den, darkFrac = dark / _den;
-        const focus = lapVar >= 120 ? "A" : lapVar >= 45 ? "B" : "C";
-        const lighting = (blownFrac >= 0.06 || darkFrac >= 0.30) ? "C"
-          : (blownFrac >= 0.02 || darkFrac >= 0.15) ? "B" : "A";
+        // S25 (#4): loosened so good captures reliably hit A and B is actually
+        // reachable (was 120/45, which left most real photos in an A-or-C split and
+        // tripped C on glossy-cover glare). Still a heuristic — fine-tune to samples.
+        const focus = lapVar >= 70 ? "A" : lapVar >= 25 ? "B" : "C";
+        const lighting = (blownFrac >= 0.12 || darkFrac >= 0.40) ? "C"
+          : (blownFrac >= 0.05 || darkFrac >= 0.22) ? "B" : "A";
         resolve({ focus, lighting });
       } catch (e) { resolve(null); } // tainted (cross-origin) or decode fail → no local grade
     };
@@ -12481,10 +12578,10 @@ async function cameraOpen(state) {
       _cameraState.androidLensMode = androidLens;
       const _isZoomedInteriorSlot = _cameraState.kind === "interior" && _cameraState.current !== fullSlotIndex("outer_edge");
       const _isZoomedRestorationSlot = _cameraState.kind === "restoration" && CAMERA_SLOT_ZOOM_RESTORATION[_cameraState.current];
-      // S23: Main Front (0) and Back (1) are full covers — default to the WIDE
-      // lens so the whole cover fits, not the zoomed lens (Matt: default to Zoom
-      // Out). Other Main slots (PQ, Spine) keep the zoomed default.
-      const _mainWideSlot = _cameraState.kind === "main" && (_cameraState.current === 0 || _cameraState.current === 1);
+      // S23/S25: Main Front (0), Back (1), and Interior (2) are full-page/full-cover
+      // shots — default to the WIDE lens so the whole thing fits, not the zoomed lens
+      // (Matt: default to Zoom Out). Only Spine (3) keeps the zoomed default.
+      const _mainWideSlot = _cameraState.kind === "main" && (_cameraState.current === 0 || _cameraState.current === 1 || _cameraState.current === 2);
       const _zoomDefault = !isAndroid && !_mainWideSlot && (_cameraState.kind === "main" || _cameraState.kind === "corner" || _cameraState.kind === "signature" || _cameraState.kind === "carddeep" || _isZoomedInteriorSlot || _isZoomedRestorationSlot) && lensOptions.length > 1;
       _cameraState.currentLensIdx = _zoomDefault ? 1 : 0;
       if (lensOptions.length > 0) {
@@ -13627,7 +13724,7 @@ function showRepeatBuyerDiscount() {
     + '<div style="padding:18px 20px 18px;text-align:center;">'
     + '<img src="assets/Robograder_Gift.webp" alt="Robograder" style="width:88px;height:auto;object-fit:contain;margin:0 auto 10px;display:block">'
     + '<div style="font-size:16px;font-weight:800;color:' + GOLD + ';letter-spacing:.5px;margin-bottom:8px">REPEAT BUYER DISCOUNT</div>'
-    + '<div style="font-size:13.5px;line-height:1.55;color:#c3d9b2">20% bonus credits unlocked on future purchases made within 1 year.</div>'
+    + '<div style="font-size:13.5px;line-height:1.55;color:#c3d9b2">20% bonus credits unlocked on future purchases made within 6 months.</div>'
     + '<button id="rg-repeat-ok" style="margin-top:18px;width:100%;padding:12px;border:none;border-radius:10px;background:' + GOLD + ';color:#231a02;font-size:15px;font-weight:800;letter-spacing:.5px;cursor:pointer">OKAY</button>'
     + '</div>';
   ov.appendChild(card); document.body.appendChild(ov);
