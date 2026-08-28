@@ -3854,7 +3854,7 @@ async function migrateComicsToItems() {
   }
 }
 
-const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "fullUnlockReason", "deepAssessmentRan", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "insertImages", "couponImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue" ];
+const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "fullUnlockReason", "deepAssessmentRan", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "deepRefundUsed", "fullRefundUsed", "insertImages", "couponImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue" ];
 
 const COMIC_DROP_FIELDS = [ "press", "uv", "clean" ];
 
@@ -8006,10 +8006,10 @@ function showCeilingUpsell(upsell) {
   var title, msg;
   if (upsell === 'deep') {
     title = 'Push it higher?';
-    msg = 'This book has hit the 9.0 ceiling for a '+star(1)+' assessment. A '+star(2)+' with 6 new images can push it to 9.5. The '+coin+' will be refunded if the score doesn’t go up.';
+    msg = 'This book has hit the 9.0 ceiling for a '+star(1)+' assessment. A '+star(2)+' with 6 new images can push it to 9.5.' + (formData.deepRefundUsed ? '' : ' The '+coin+' will be refunded if the score doesn’t go up.');
   } else {
     title = 'Confirm a 10?';
-    msg = 'This book is near-perfect. A '+star(3)+' Full assessment with 6 new images can confirm a perfect 10. Your '+coin+' is refunded if the grade stays at 9.5.';
+    msg = 'This book is near-perfect. A '+star(3)+' Full assessment with 6 new images can confirm a perfect 10.' + (formData.fullRefundUsed ? '' : ' Your '+coin+' is refunded if the grade stays at 9.5.');
   }
   var prev = document.getElementById('rg-upsell-overlay'); if (prev) prev.remove();
   var ov = document.createElement('div'); ov.id = 'rg-upsell-overlay';
@@ -8549,10 +8549,15 @@ async function assessHighGrade() {
       const _newScore = (cgc._roboGrade && typeof cgc._roboGrade.score === "number") ? cgc._roboGrade.score : null;
       _deepImproved = (_newScore != null && _oldScore != null) ? (_newScore > _oldScore) : true;
     }
-    window._creditRefunded = !_deepImproved;
+    // S25: refund the Deep credit only the FIRST time a re-run fails to improve.
+    // deepRefundUsed then latches (persisted via onAssessmentSuccess->submitForm),
+    // so all later re-runs are charged — no endless refunded re-rolls.
+    var _deepRefundEligible = !_deepImproved && !formData.deepRefundUsed;
+    window._creditRefunded = _deepRefundEligible;
+    if (_deepRefundEligible) formData.deepRefundUsed = true;
     mountResults(cgc, psa);
     onAssessmentSuccess();
-    if (!_deepImproved) refundCredit();
+    if (_deepRefundEligible) refundCredit();
   } catch (e) {
     dismissAssessModal(e.message);
   }
@@ -12346,8 +12351,15 @@ async function submitFullAssessment() {
         var _gradeUnlock = formData.fullUnlockReason === "near-perfect";
         var _fv3 = (typeof rgV3ForComic === "function") ? rgV3ForComic(formData) : null;
         var _reached10 = !!(_fv3 && _fv3.grade >= 10);
-        window._creditRefunded = _gradeUnlock && !_reached10;
-        if (window._creditRefunded && typeof refundCredit === "function") refundCredit();
+        // S25: refund the Full credit only the FIRST time a near-perfect book stays
+        // below 10. fullRefundUsed then latches and later Full re-runs are charged.
+        var _fullRefundEligible = _gradeUnlock && !_reached10 && !formData.fullRefundUsed;
+        window._creditRefunded = _fullRefundEligible;
+        if (_fullRefundEligible) {
+          formData.fullRefundUsed = true;
+          if (typeof refundCredit === "function") refundCredit();
+          if (typeof saveItem === "function" && formData.id) saveItem({ ...formData }).catch(function(){});
+        }
       })();
       // S17: grid + needle stop, sweep needle to the assessed score (2s, like Main).
       const _newScore = formData.roboGrade ? Math.round(formData.roboGrade.score) : null;
