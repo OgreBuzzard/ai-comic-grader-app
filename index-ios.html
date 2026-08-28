@@ -11073,7 +11073,13 @@ function openCropper(type, index) {
       toggleDragModeOnDblclick: false,
       movable: false,
       responsive: true,
-      checkOrientation: true,
+      // S25 FIX (spine landscape → portrait bug): modern iOS/Android WebViews already
+      // auto-orient the <img> from its EXIF tag. checkOrientation:true made Cropper
+      // apply that SAME EXIF rotation a SECOND time, so a wide landscape photo (kept
+      // its EXIF because it was imported from the library, not canvas-processed) was
+      // measured as portrait and scaled to fit height — overflowing off the right.
+      // Trust the browser's orientation; do not re-apply it.
+      checkOrientation: false,
       ready: function() {
         const stage = document.getElementById("cropper-stage");
         if (stage) stage.classList.add("ready");
