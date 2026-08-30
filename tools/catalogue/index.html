@@ -1,0 +1,97 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Robograder Assessment Catalogue</title>
+<style>
+:root{--bg:#0e1512;--panel:#152420;--line:#294a3d;--ink:#e8efe9;--dim:#8fae9c;--gold:#f0c860;--green:#66d17a;--pill:#1c332a}
+*{box-sizing:border-box}body{margin:0;font:14px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);height:100vh;display:flex;flex-direction:column}
+header{padding:10px 16px;border-bottom:1px solid var(--line);display:flex;gap:16px;align-items:baseline;flex-wrap:wrap}
+header b{color:var(--green);letter-spacing:.5px}header .stat{color:var(--dim);font-size:12px}
+.wrap{flex:1;display:flex;min-height:0}
+#side{width:320px;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+#q{margin:10px;padding:8px 10px;background:#0b120f;border:1px solid var(--line);border-radius:8px;color:var(--ink)}
+#books{overflow:auto;flex:1}
+.bk{padding:8px 12px;border-bottom:1px solid #1b2b24;cursor:pointer;display:flex;justify-content:space-between;gap:8px}
+.bk:hover{background:var(--panel)}.bk.sel{background:#1d3a2e;border-left:3px solid var(--green)}
+.bk .t{font-weight:600}.bk .m{color:var(--dim);font-size:12px;white-space:nowrap}
+#main{flex:1;overflow:auto;padding:16px}
+.bhead{display:flex;gap:14px;align-items:baseline;flex-wrap:wrap;margin-bottom:14px}
+.bhead h2{margin:0;font-size:20px}.bhead .s{color:var(--dim);font-size:13px}
+.controls{margin:0 0 14px;display:flex;gap:12px;flex-wrap:wrap;color:var(--dim);font-size:12px;align-items:center}
+.controls select,.controls input{background:#0b120f;border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:4px 6px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+.card.slab{border-color:#6a5a1e}
+.thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.thumbs img{width:66px;height:92px;object-fit:cover;border-radius:5px;border:1px solid #333;cursor:zoom-in;background:#0b120f}
+.badges{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--pill);color:var(--green)}
+.pill.gold{background:#2a2410;color:var(--gold)}.pill.grey{background:#22302a;color:var(--dim)}
+.gline{font-size:13px;margin-bottom:8px}.gline b{color:#fff}.gline .g{font-size:18px;font-weight:800;color:var(--gold)}
+.notes{font-size:12px;color:#cfe0d5;white-space:pre-wrap;max-height:6.5em;overflow:hidden;position:relative;cursor:pointer}
+.notes.open{max-height:none}.notes.trunc::after{content:'▾ more';position:absolute;right:0;bottom:0;background:var(--panel);color:var(--green);padding-left:8px}
+#lb{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;align-items:center;justify-content:center;z-index:9;cursor:zoom-out}
+#lb img{max-width:96vw;max-height:96vh}
+.empty{color:var(--dim);padding:40px;text-align:center}
+</style></head><body>
+<header><b>ROBOGRADER CATALOGUE</b><span class="stat" id="stat">loading…</span>
+<span class="stat">Internal QA tool · opt-in submissions · PII stripped</span></header>
+<div class="wrap">
+  <div id="side"><input id="q" placeholder="Filter books (title or issue)…"><div id="books"></div></div>
+  <div id="main"><div class="empty">Pick a book on the left to see every assessment of it.</div></div>
+</div>
+<div id="lb"><img></div>
+<script>
+const norm=s=>String(s||'').trim().toLowerCase().replace(/^the\s+/,'').replace(/\s+/g,' ');
+let DATA=[], GROUPS=[], SEL=null;
+const gradeNum=r=>{const v=parseFloat(r.predicted??r.cgc);return Number.isFinite(v)?v:null;};
+fetch('catalogue_data.json').then(r=>r.json()).then(rows=>{
+  DATA=rows;
+  const m=new Map();
+  for(const r of rows){const k=norm(r.title)+' #'+r.issue;(m.get(k)||m.set(k,{key:k,title:r.title,issue:r.issue,items:[]}).get(k)).items.push(r);}
+  GROUPS=[...m.values()].map(g=>{const gs=g.items.map(gradeNum).filter(x=>x!=null);g.n=g.items.length;g.avg=gs.length?(gs.reduce((a,b)=>a+b,0)/gs.length):null;g.slabs=g.items.filter(x=>x.slabbed).length;return g;}).sort((a,b)=>b.n-a.n||a.title.localeCompare(b.title));
+  document.getElementById('stat').textContent=`${GROUPS.length.toLocaleString()} distinct books · ${rows.length.toLocaleString()} assessments`;
+  renderBooks('');
+});
+function renderBooks(f){
+  f=norm(f);const el=document.getElementById('books');
+  const list=GROUPS.filter(g=>!f||norm(g.title+' #'+g.issue).includes(f));
+  el.innerHTML=list.slice(0,600).map((g,i)=>`<div class="bk" data-k="${encodeURIComponent(g.key)}"><span class="t">${esc(g.title)} <span style="color:#8fae9c">#${esc(g.issue)}</span></span><span class="m">${g.n}× ${g.avg!=null?'· avg '+g.avg.toFixed(1):''}${g.slabs?' · '+g.slabs+'🔒':''}</span></div>`).join('')||'<div class="empty">no match</div>';
+  [...el.children].forEach(c=>c.onclick&&0);el.onclick=e=>{const b=e.target.closest('.bk');if(b)selectBook(decodeURIComponent(b.dataset.k));};
+}
+document.getElementById('q').oninput=e=>renderBooks(e.target.value);
+let sortMode='grade',slabOnly=false;
+function selectBook(k){
+  SEL=GROUPS.find(g=>g.key===k);if(!SEL)return;
+  [...document.querySelectorAll('.bk')].forEach(x=>x.classList.toggle('sel',decodeURIComponent(x.dataset.k)===k));
+  renderMain();
+}
+function renderMain(){
+  const g=SEL;if(!g)return;const main=document.getElementById('main');
+  let items=g.items.slice();
+  if(slabOnly)items=items.filter(x=>x.slabbed);
+  items.sort((a,b)=> sortMode==='grade' ? ((gradeNum(b)??-1)-(gradeNum(a)??-1)) : String(b.date).localeCompare(String(a.date)) );
+  const spread=g.items.map(gradeNum).filter(x=>x!=null);
+  main.innerHTML=`<div class="bhead"><h2>${esc(g.title)} #${esc(g.issue)}</h2>
+    <span class="s">${g.items.length} assessments${spread.length?` · grades ${Math.min(...spread).toFixed(1)}–${Math.max(...spread).toFixed(1)} · avg ${g.avg.toFixed(1)}`:''}${g.slabs?` · ${g.slabs} slabbed`:''}</span></div>
+    <div class="controls">Sort: <select id="sort"><option value="grade">grade ↓</option><option value="date">newest</option></select>
+    <label><input type="checkbox" id="slabonly"> slabbed only (ground truth)</label></div>
+    <div class="grid">${items.map(card).join('')}</div>`;
+  document.getElementById('sort').value=sortMode;
+  document.getElementById('sort').onchange=e=>{sortMode=e.target.value;renderMain();};
+  const so=document.getElementById('slabonly');so.checked=slabOnly;so.onchange=e=>{slabOnly=e.target.checked;renderMain();};
+  main.querySelectorAll('.notes').forEach(n=>{if(n.scrollHeight>n.clientHeight+4)n.classList.add('trunc');n.onclick=()=>{n.classList.toggle('open');n.classList.remove('trunc');};});
+  main.querySelectorAll('.thumbs img').forEach(img=>img.onclick=()=>{const l=document.getElementById('lb');l.querySelector('img').src=img.dataset.full;l.style.display='flex';});
+}
+function card(r){
+  const imgs=[...(r.images||[]),...(r.corners||[]),...(r.interior||[])];
+  const t=imgs.slice(0,8).map(u=>`<img loading="lazy" src="${u}" data-full="${u}">`).join('');
+  const g=gradeNum(r);
+  const badges=[r.slabbed?`<span class="pill gold">SLAB ${r.cgc??''}</span>`:'',r.deep?'<span class="pill">DEEP</span>':'',r.full?'<span class="pill">FULL</span>':'',r.pq?`<span class="pill grey">${esc(r.pq)}</span>`:''].join('');
+  const subs=r.subs?Object.entries(r.subs).map(([k,v])=>`${k[0].toUpperCase()}:${(v&&v.total!=null?v.total:v)}`).join('  '):'';
+  return `<div class="card${r.slabbed?' slab':''}"><div class="thumbs">${t||'<span class="s">no images</span>'}</div>
+    <div class="badges">${badges}</div>
+    <div class="gline"><span class="g">${g!=null?g.toFixed(1):'—'}</span> predicted${r.slabbed&&r.cgc?` · label <b>${esc(r.cgc)}</b>`:''}${r.rg!=null?` · RG ${(r.rg/10).toFixed(1)}`:''}${subs?`<div style="color:#8fae9c;font-size:11px;margin-top:2px">${esc(subs)}</div>`:''}</div>
+    <div class="notes">${esc(r.notes||'(no write-up)')}</div></div>`;
+}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+document.getElementById('lb').onclick=()=>document.getElementById('lb').style.display='none';
+</script></body></html>

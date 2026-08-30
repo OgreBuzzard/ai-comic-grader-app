@@ -2186,12 +2186,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.02";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.03";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.02");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.03");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -6909,7 +6909,7 @@ function showEditToSection(id, section) {
   });
 }
 
-async function compressImage(dataUrl, maxDim = 1400, quality = 0.65, asBlob = false) {
+async function compressImage(dataUrl, maxDim = 1200, quality = 0.65, asBlob = false) {   // S25: 1400->1200 (A/B eval: grade delta within model self-noise). Governs all grading images.
   return new Promise((res, rej) => {
     const img = new Image;
     // S16: Timeout prevents permanent hang if image fails to load
@@ -7102,7 +7102,7 @@ async function processImagesForSave(images, comicId, slotNames, options = {}) {
     if (isDataUrl(img)) {
       const slot = slotNames[i] || `image_${i + 1}`;
       const [fullUrl, thumb] = await Promise.all([
-        compressImage(img, 1400, 0.65, true).then(blob => uploadImageToStorage(blob, comicId, slot)),
+        compressImage(img, 1200, 0.65, true).then(blob => uploadImageToStorage(blob, comicId, slot)),
         wantThumb ? compressImage(img, 120, 0.9, false) : Promise.resolve(null)
       ]);
       return { skip: false, image: fullUrl, thumb: wantThumb ? thumb : null };

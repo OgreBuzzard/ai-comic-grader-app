@@ -1,0 +1,99 @@
+id,tier,title,issue,robograde,ground_truth,slabbed,main_imgs,corner_imgs,interior_imgs,page_quality
+comic:2001-a-space-odyssey-001-1785758015266,raw-drift,2001: A Space Odyssey,1,5.0,,,4,0,0,Off-White
+comic:ac-242-1787116275610,raw-drift,Action Comics,242,2.0,,,4,4,0,Off-White
+comic:ac-251-1787867440710,raw-drift,Action Comics,251,3.5,,,4,0,0,Off-White
+comic:adventure-comics-283-1778529835222,raw-drift,Adventure Comics,283,4.0,,,4,0,0,Cream to Off-White
+comic:adventure-comics-284-1783728737180,raw-drift,Adventure Comics,284,4.5,,,4,0,0,Off-White
+comic:adventures-into-the-unknown-023-1783622530887,raw-drift,Adventures Into the Unknown,23,4.5,,,4,0,0,Cream
+comic:all-humor-comics-009-1783623085181,raw-drift,All Humor Comics,9,3.0,,,4,0,0,Tan
+comic:all-american-men-of-war-006-1785953045994,raw-drift,All-American Men of War,6,3.5,,,4,0,0,Cream to Off-White
+comic:amazing-fantasy-015-1787157730390,raw-drift,Amazing Fantasy,15,5.0,,,4,4,0,Off-White to White
+comic:asm-001-1779773349551,raw-drift,Amazing Spider-Man,1,2.0,,,4,4,0,Cream to Off-White
+comic:asm-001-1779661099439,raw-drift,Amazing Spider-Man,1,3.0,,,4,4,0,Cream to Off-White
+comic:amazing-spider-man-annual-001-1786402590900,raw-drift,Amazing Spider-Man Annual,1,2.5,,,4,4,0,Off-White
+comic:1st-issue-special-010-1783732559446,raw-drift,1st Issue Special,10,6.0,,,4,0,0,Off-White to White
+comic:2001-a-space-odyssey-008-1785757872423,raw-drift,2001: A Space Odyssey,8,6.5,,,4,0,0,Off-White
+comic:ac-001-1787026571356,raw-drift,Action Comics,1,7.0,,,4,0,0,Cream to Off-White
+comic:ac-271-1784162333474,raw-drift,Action Comics,271,5.5,,,4,0,0,Off-White
+comic:adventure-comics-359-1783616447069,raw-drift,Adventure Comics,359,7.0,,,4,0,0,Off-White to White
+comic:adventure-comics-398-1783811210780,raw-drift,Adventure Comics,398,6.5,,,4,0,0,Off-White to White
+comic:adventure-into-fear-010-1785551739035,raw-drift,Adventure into Fear,10,7.0,,,4,0,0,Off-White
+comic:adventure-into-fear-024-1780791788801,raw-drift,Adventure into Fear,24,5.5,,,4,0,0,Off-White to White
+comic:all-star-comics-058-1786345091019,raw-drift,All Star Comics,58,6.5,,,4,0,0,Off-White
+comic:alpha-flight-011-1778793146482,raw-drift,Alpha Flight,11,6.5,,,4,0,0,Off-White to White
+comic:ac-340-1784890221147,raw-drift,Action Comics,340,7.5,,,4,0,0,Off-White to White
+comic:ac-425-1784643257604,raw-drift,Action Comics,425,8.5,,,4,0,0,Off-White to White
+comic:adventure-comics-420-1784855181706,raw-drift,Adventure Comics,420,8.0,,,4,0,0,Off-White to White
+comic:adventures-of-superman-505-1784513332360,raw-drift,Adventures of Superman,505,8.0,,,4,0,0,White
+comic:alien-worlds-004-1783889693688,raw-drift,Alien Worlds,4,7.5,,,4,0,0,Off-White to White
+comic:all-star-comics-058-1783782312755,raw-drift,All Star Comics,58,7.5,,,4,0,0,Off-White to White
+comic:ass-004-1784326096816,raw-drift,All-Star Squadron,4,8.5,,,4,0,0,Off-White to White
+comic:alpha-flight-001-1787111991700,raw-drift,Alpha Flight,1,8.5,,,4,0,0,Off-White to White
+comic:alpha-flight-001-1784927882930,raw-drift,Alpha Flight,1,8.0,,,4,0,0,Off-White to White
+comic:amazing-adventures-001-1783446747527,raw-drift,Amazing Adventures,1,8.5,,,4,0,0,Off-White to White
+comic:3-d-zone-space-vixens-016-1783532244233,raw-drift,3-D Zone (Space Vixens),16,9.0,,,4,0,0,White
+comic:a-x-e-judgment-day-004-1785028553067,raw-drift,A.X.E.: Judgment Day,4,9.4,,,4,4,0,White
+comic:absolute-batman-001-1783791539860,raw-drift,Absolute Batman,1,9.2,,,4,0,0,White
+comic:absolute-batman-001-1783800189706,raw-drift,Absolute Batman,1,9.2,,,4,0,0,White
+comic:absolute-batman-ark-m-001-1783824361280,raw-drift,Absolute Batman: Ark M,1,9.2,,,4,0,0,White
+comic:absolute-catwoman-001-1783818514888,raw-drift,Absolute Catwoman,1,9.2,,,4,0,0,White
+comic:absolute-batman-001-1786061680683,raw-drift,Absolute Batman,1,9.6,,,4,4,0,White
+comic:absolute-batman-001-1778717564032,raw-drift,Absolute Batman,1,9.8,,,4,4,0,White
+comic:captain-america-iron-man-001-1784344362661,slab-anchor,Captain America/Iron Man,1,9.8,9.8,Y,2,0,0,White
+comic:sup-001-1786137031572,slab-anchor,Superman,1,0.5,0.5,Y,2,0,0,Off-White to White
+comic:ff-012-1780874182855,slab-anchor,Fantastic Four,12,4.0,4.0,Y,2,0,0,Cream to Off-White
+comic:0017,slab-anchor,Amazing Spider-Man,54,6.0,6.0,Y,2,0,0,Off-White to White
+comic:0049,slab-anchor,Avengers,8,7.0,7.0,Y,2,0,0,Off-White to White
+comic:0089,slab-anchor,Tales of Suspense,39,6.0,6.0,Y,2,0,0,Off-White to White
+comic:0102,slab-anchor,Weird Science,15,2.0,2.0,Y,2,0,0,Off-White
+comic:asm-064-1781762804922,slab-anchor,Amazing Spider-Man,64,6.5,8.5,Y,2,0,0,Off-White to White
+comic:asm-064-1784702252507,slab-anchor,Amazing Spider-Man,64,7.0,7.0,Y,2,4,0,White
+comic:asm-066-1781763195061,slab-anchor,Amazing Spider-Man,66,9.4,9.6,Y,2,4,0,Off-White to White
+comic:asm-066-1781798922228,slab-anchor,Amazing Spider-Man,66,7.5,7.5,Y,2,0,0,Off-White to White
+comic:aveng-004-1780610334009,slab-anchor,Avengers,4,7.0,7.0,Y,2,4,0,Off-White
+comic:bat-073-1781762562583,slab-anchor,Batman,73,4.0,5.5,Y,2,0,0,Off-White to White
+comic:ff-048-1781762230783,slab-anchor,Fantastic Four,48,4.5,3.0,Y,2,0,0,Off-White to White
+comic:ff-050-1781762738674,slab-anchor,Fantastic Four,50,6.5,7.5,Y,2,0,0,Off-White to White
+comic:four-color-456-1780282784592,slab-anchor,Four Color,456,6.0,6.0,Y,2,0,0,Cream to Off-White
+comic:hulk-001-1784701530863,slab-anchor,Incredible Hulk,1,4.5,5.0,Y,2,4,0,Off-White
+comic:hulk-001-1784702743948,slab-anchor,Incredible Hulk,1,5.0,5.0,Y,2,0,0,Off-White
+comic:incredible-hulk-annual-001-1780277998054,slab-anchor,Incredible Hulk Annual,1,9.6,9.6,Y,2,4,0,White
+comic:tta-035-1781762654079,slab-anchor,Tales to Astonish,35,3.5,6.0,Y,2,0,0,Off-White
+comic:uxm-137-1781762891653,slab-anchor,Uncanny X-Men,137,8.5,9.2,Y,2,4,0,Off-White to White
+comic:uxm-141-1781763070339,slab-anchor,Uncanny X-Men,141,9.0,9.4,Y,2,4,0,Off-White to White
+comic:weird-science-015-1780282921765,slab-anchor,Weird Science,15,2.0,2.0,Y,2,0,0,Off-White
+comic:thor-129-1787223707764,slab-anchor,Thor,129,7.0,7.0,Y,2,0,0,Off-White to White
+comic:amazing-spider-man-annual-003-1785372873277,slab-anchor,Amazing Spider-Man Annual,3,3.5,3.5,Y,4,0,0,Cream
+comic:asm-129-1783649844836,slab-anchor,Amazing Spider-Man,129,4.5,4.5,Y,2,0,0,White
+comic:marvel-super-heroes-secret-wars-008-1783649608195,slab-anchor,Marvel Super Heroes Secret Wars,8,8.0,8.0,Y,2,0,0,White
+comic:evil-ernie-001-1783690408061,slab-anchor,Evil Ernie,1,9.0,9.0,Y,2,0,0,Off-White to White
+comic:giant-size-x-men-001-1783689880079,slab-anchor,Giant-Size X-Men,1,5.0,5.0,Y,4,0,0,Off-White to White
+comic:predator-001-1783481437961,slab-anchor,Predator,1,9.6,9.6,Y,2,4,0,White
+comic:asm-020-1783890783716,slab-anchor,Amazing Spider-Man,20,2.5,2.5,Y,2,0,0,Off-White to White
+comic:asm-064-1785803665982,slab-anchor,Amazing Spider-Man,64,7.0,7.0,Y,2,0,0,White
+comic:star-spangled-war-stories-132-1787773800458,slab-anchor,Star Spangled War Stories,132,3.5,3.5,Y,2,0,0,Off-White
+comic:star-spangled-war-stories-134-1787774091260,slab-anchor,Star Spangled War Stories,134,3.5,3.5,Y,2,0,0,Off-White
+comic:hulk-180-1785968879030,slab-anchor,Incredible Hulk,180,4.5,4.5,Y,2,0,0,Off-White
+comic:hulk-181-1785968677442,slab-anchor,Incredible Hulk,181,5.0,5.0,Y,2,0,0,Off-White to White
+comic:aveng-004-1787166168457,slab-anchor,Avengers,4,4.0,4.0,Y,2,0,0,Off-White to White
+comic:adventures-of-superman-505-1784513037764,slab-anchor,Adventures of Superman,505,8.5,8.5,Y,2,0,0,Off-White to White
+comic:uxm-050-1782465117597,slab-anchor,Uncanny X-Men,50,5.5,5.5,Y,2,0,0,Off-White to White
+comic:uxm-025-1783515973435,slab-anchor,Uncanny X-Men,25,6.0,6.0,Y,2,0,0,Off-White to White
+comic:avengers-log-001-1787019812456,slab-anchor,Avengers Log,1,8.5,8.5,Y,2,0,0,Off-White to White
+comic:uxm-003-1786733773438,slab-anchor,Uncanny X-Men,3,8.0,8.5,Y,2,0,0,Off-White
+comic:uxm-003-1786734430594,slab-anchor,Uncanny X-Men,3,6.0,6.0,Y,2,0,0,Off-White
+comic:uxm-020-1786734555207,slab-anchor,Uncanny X-Men,20,9.2,9.2,Y,2,4,0,Off-White to White
+comic:asm-014-1784305503320,slab-anchor,Amazing Spider-Man,14,3.5,3.5,Y,2,0,0,Off-White
+comic:dc-359-1787448962406,slab-anchor,Detective Comics,359,3.5,3.5,Y,2,0,0,Off-White to White
+comic:dd-131-1784345566408,slab-anchor,Daredevil,131,8.0,8.0,Y,2,0,0,Off-White to White
+comic:eternals-013-1786039759587,slab-anchor,Eternals,13,9.6,9.6,Y,2,4,0,White
+comic:adventures-of-superman-500-1787513286972,slab-anchor,Adventures of Superman,500,9.2,9.2,Y,2,4,0,White
+comic:miles-morales-spider-man-022-1786475224147,slab-anchor,Miles Morales: Spider-Man,22,9.4,9.4,Y,2,4,0,White
+comic:marvel-super-heroes-secret-wars-008-1787534819185,slab-anchor,Marvel Super Heroes Secret Wars,8,7.5,7.5,Y,2,4,0,Off-White to White
+comic:0068,raw-gt-anchor,Fantastic Four,47,6.5,6.5,,4,0,0,Off-White to White
+comic:asm-014-1778914715709,raw-gt-anchor,Amazing Spider-Man,14,5.0,5.0,,4,4,0,Off-White
+comic:four-color-386-1779041679992,raw-gt-anchor,Four Color,386,7.5,7.5,,4,4,0,Off-White to White
+comic:four-color-456-1778914068164,raw-gt-anchor,Four Color,456,6.0,6.0,,4,0,0,Cream to Off-White
+comic:uxm-101-1778913090540,raw-gt-anchor,Uncanny X-Men,101,9.0,9.0,,4,4,0,Off-White to White
+comic:uxm-129-1778913522193,raw-gt-anchor,Uncanny X-Men,129,9.6,9.6,,4,4,0,White
+comic:uxm-142-1778914998259,raw-gt-anchor,Uncanny X-Men,142,9.4,9.4,,4,4,0,White
