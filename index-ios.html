@@ -633,6 +633,11 @@ onAuthStateChanged(auth, async user => {
     }
     await loadUserCredits();
     await checkTermsAcceptance();
+    // PWA welcome credit (web/PWA only; native is guarded out). Server
+    // decides: nothing on the first session, +1 one-time on a return visit.
+    if (!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) {
+      setTimeout(() => { try { _maybeGrantPwaWelcome(); } catch (e) {} }, 1700);
+    }
     const _chestPreload = new Image;
     _chestPreload.src = "assets/Robograder_Scan_Frame.webp";
     if (_chestPreload.decode) {
@@ -9312,6 +9317,56 @@ function _processReferralQueue(queue) {
   };
   showNext();
 }
+async function _maybeGrantPwaWelcome() {
+  // Web / PWA only — never native.
+  if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) return;
+  if (!window._currentUser || typeof window._currentUser.getIdToken !== "function") return;
+  // Ping at most once per browser session, so the server's call #2 is a real
+  // return visit. The flag is set up-front; a failed call simply retries next session.
+  try { if (sessionStorage.getItem("rg_pwa_welcome_pinged") === "1") return; } catch (e) {}
+  try { sessionStorage.setItem("rg_pwa_welcome_pinged", "1"); } catch (e) {}
+  try {
+    const token = await window._currentUser.getIdToken();
+    const resp = await fetch("/api/pwa_welcome", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: "{}"
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data || !data.grantedNow) return;
+    if (typeof data.newBalance === "number") {
+      window._userCredits = data.newBalance;
+    } else {
+      window._userCredits = (window._userCredits || 0) + (data.creditsGranted || 1);
+    }
+    if (typeof refreshHeaderControls === "function") refreshHeaderControls();
+    updateStats(); // count-up + coin pulse fire off the balance change
+    const credEl = document.getElementById("settings-credits");
+    if (credEl) credEl.textContent = String(window._userCredits || 0);
+    _showPwaWelcomeModal(data.creditsGranted || 1);
+  } catch (e) {
+    console.warn("[pwa_welcome] grant check failed:", e);
+  }
+}
+
+function _showPwaWelcomeModal(amount) {
+  const overlay = document.createElement("div");
+  overlay.className = "pwa-welcome-modal";
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px";
+  overlay.innerHTML = `
+    <div style="background:#141210;border-radius:18px;padding:24px 24px 20px;max-width:340px;width:100%;border:1.5px solid #2f6a3a;text-align:center;box-shadow:0 12px 44px rgba(0,0,0,0.55)">
+      <img src="assets/Robograder_Gift.webp" alt="" style="width:112px;height:auto;margin:0 auto 14px;display:block">
+      <div style="font-size:16px;font-weight:700;color:#8fe0a0;margin-bottom:8px">Welcome back!</div>
+      <div style="font-size:15px;color:#dfe8e2;line-height:1.6;margin-bottom:20px">
+        Here${"’"}s <strong style="color:#7ee08c">${amount}</strong> free credit${amount === 1 ? "" : "s"} for grading on the web. Robograder logs your return with quiet, circuit-deep approval.
+      </div>
+      <button class="rg-btn rg-btn-branded rg-btn-md" style="width:100%">Let${"’"}s grade</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  const btn = overlay.querySelector("button");
+  if (btn) btn.onclick = () => { overlay.remove(); };
+}
+
 function _showReferralBonusModal(amount, onClose) {
   const overlay = document.createElement("div");
   overlay.className = "referral-bonus-modal";

@@ -361,10 +361,12 @@ export default async function handler(req, res) {
         const rg = rgOf(it); if (rg != null) { rgSum += rg; rgN++; }
         if (it._trainingOptIn === false) optOut++; else optIn++;
       }
+      // S25: hide series with fewer than 20 copies (perf + signal). Was slice(0,25).
       const topTitles = Object.entries(titleCounts)
-        .sort((a, b) => b[1] - a[1]).slice(0, 25).map(([title, count]) => ({ title, count }));
+        .filter(([, c]) => c >= 20).sort((a, b) => b[1] - a[1]).map(([title, count]) => ({ title, count }));
+      // S25: hide issues with fewer than 10 submissions (perf + signal). Was >= 2.
       const multiSubmissions = Object.entries(issueKeys)
-        .filter(([, c]) => c >= 2).sort((a, b) => b[1] - a[1]).map(([key, count]) => ({ key, count }));
+        .filter(([, c]) => c >= 10).sort((a, b) => b[1] - a[1]).map(([key, count]) => ({ key, count }));
       return res.status(200).json({
         mode: 'aggregate',
         total: filtered.length,

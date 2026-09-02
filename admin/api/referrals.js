@@ -46,9 +46,10 @@ export default async function handler(req, res) {
     const db = getFirestore();
     const limit = Math.min(parseInt(req.query.limit, 10) || 200, 1000);
 
-    const [usersSnap, refSnap] = await Promise.all([
+    const [usersSnap, refSnap, adjSnap] = await Promise.all([
       db.collection('users').get(),
       db.collection('referrals').get(),
+      db.collection('credit_adjustments').get(),
     ]);
     const uinfo = {};
     usersSnap.forEach(doc => {
@@ -95,7 +96,38 @@ export default async function handler(req, res) {
     rows.sort((a, b) => b.ts - a.ts);
     rows = rows.slice(0, limit);
 
-    return res.status(200).json({ referrals: rows, totals, generatedAt: new Date().toISOString() });
+    // ── Gifts: admin credit grants (positive assessmentCredits deltas) from the
+    // credit_adjustments audit collection. A gift is any adjustment that raised
+    // a user's assessmentCredits — captured via the primaryDelta mirror, with a
+    // fallback scan of the changes[] array for multi-field adjustments.
+    const giftDelta = (a) => {
+      if (a.primaryField === 'assessmentCredits' && typeof a.primaryDelta === 'number') return a.primaryDelta;
+      const ch = Array.isArray(a.changes) ? a.changes.find(c => c.field === 'assessmentCredits') : null;
+      return ch && typeof ch.delta === 'number' ? ch.delta : null;
+    };
+    const giftTotals = { count: 0, credits: 0 };
+    let gifts = adjSnap.docs.map(doc => {
+      const a = doc.data() || {};
+      const delta = giftDelta(a);
+      if (delta == null || delta <= 0) return null;
+      const u = uinfo[a.userId] || {};
+      const ts = (typeof a.atMs === 'number' ? a.atMs : (a.at ? Date.parse(a.at) : 0)) || 0;
+      giftTotals.count++; giftTotals.credits += delta;
+      return {
+        id: doc.id,
+        userId: a.userId || '',
+        userName: u.name || '(unknown)',
+        credits: delta,
+        adminEmail: a.adminEmail || '',
+        reason: a.reason || '',
+        at: typeof a.at === 'string' ? a.at : null,
+        ts,
+      };
+    }).filter(Boolean);
+    gifts.sort((a, b) => b.ts - a.ts);
+    gifts = gifts.slice(0, limit);
+
+    return res.status(200).json({ referrals: rows, totals, gifts, giftTotals, generatedAt: new Date().toISOString() });
   } catch (e) {
     console.error('[admin-referrals] error:', e);
     return res.status(500).json({ error: e.message || 'referrals fetch failed' });

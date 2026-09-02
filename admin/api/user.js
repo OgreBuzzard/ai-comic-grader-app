@@ -316,6 +316,18 @@ export default async function handler(req, res) {
         roboGradeDate: flat.roboGradeDate || null,
         roboGradeId: flat.roboGradeId || '',
         score: flat.roboGrade?.score ?? null,
+        // S25: subscore fields so the admin _rgCell() can compute the v3
+        // half-point grade for this list (was falling back to the raw v1
+        // 0-100 score because these weren't projected).
+        frontScore: flat.roboGrade?.frontScore ?? null,
+        backScore: flat.roboGrade?.backScore ?? null,
+        spineScore: flat.roboGrade?.spineScore ?? null,
+        interiorScore: flat.roboGrade?.interiorScore ?? null,
+        pageQuality: flat.pageQuality || flat.roboGrade?.pageQuality || null,
+        defects: flat.roboGrade?.defects || [],
+        photograder: flat.photograder || flat.roboGrade?.photograder || null,
+        officialCGCGrade: flat.cgcGrade || null,
+        officialPSAGrade: flat.psaGrade || null,
         assessedCGCGrade: flat.assessedCGCGrade ?? null,
         assessedPSAGrade: flat.assessedPSAGrade ?? null,
         publicListing: !!flat.publicListing,

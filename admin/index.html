@@ -111,7 +111,7 @@
   /* Tabs */
   .tabs {
     display: flex;
-    gap: 2px;
+    gap: 1px;
     margin-bottom: 16px;
     border-bottom: 1px solid var(--rule);
   }
@@ -119,10 +119,10 @@
     background: none;
     border: none;
     color: var(--text-dim);
-    padding: 10px 8px;
-    font-size: 13px;
+    padding: 9px 5px;
+    font-size: 12.5px;
     font-weight: 600;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.03em;
     text-transform: uppercase;
     cursor: pointer;
     border-bottom: 2px solid transparent;
@@ -878,9 +878,9 @@ function showSummaryModal(d) {
         ${statCard('Opted in', ob.optIn != null ? ob.optIn : '—')}
         ${statCard('Opted out', ob.optOut != null ? ob.optOut : '—')}
       </div>
-      <div style="font-weight:700;margin:6px 0">Top titles</div>
+      <div style="font-weight:700;margin:6px 0">Top titles (series ≥20 copies)</div>
       <table style="width:100%;border-collapse:collapse;margin-bottom:18px">${titles || '<tr><td>—</td></tr>'}</table>
-      <div style="font-weight:700;margin:6px 0">Multiple submissions (${(d.multiSubmissions || []).length})</div>
+      <div style="font-weight:700;margin:6px 0">Issues with ≥10 submissions (${(d.multiSubmissions || []).length})</div>
       <table style="width:100%;border-collapse:collapse">${multi || '<tr><td>None</td></tr>'}</table>
     </div>`;
   document.body.appendChild(wrap);
@@ -1100,6 +1100,7 @@ async function renderDashboard() {
         <button data-tab="items" class="${state.tab === 'items' ? 'active' : ''}">Items</button>
         <button data-tab="users" class="${state.tab === 'users' ? 'active' : ''}">Users</button>
         <button data-tab="sales" class="${state.tab === 'sales' ? 'active' : ''}">Sales</button>
+        <button data-tab="refs" class="${state.tab === 'refs' ? 'active' : ''}">Refs</button>
         <button data-tab="timings" class="${state.tab === 'timings' ? 'active' : ''}">Logs</button>
       </div>
       <div id="tab-content"></div>
@@ -1125,10 +1126,70 @@ async function renderDashboard() {
   _renderActiveTab();
 }
 
+// ── Refs tab — Referral Bonuses (from /referrals collection) + Gifts (admin
+// credit grants from credit_adjustments). One tab, two sections.
+// Semantics: the ISSUER entered the RECIPIENT's 4-char code. The RECIPIENT
+// (code owner) earns the tier bonus (referrerCredits); the ISSUER earns +3.
+async function renderRefsTab() {
+  const el = document.getElementById('tab-content');
+  el.innerHTML = '<div class="loading">Loading referrals & gifts…</div>';
+  try { state.refsData = await api('/api/referrals'); }
+  catch (e) { el.innerHTML = `<div class="empty">Refs failed: ${escapeHtml(e.message || String(e))}</div>`; return; }
+  _renderRefs();
+}
+function _renderRefs() {
+  const el = document.getElementById('tab-content');
+  const d = state.refsData; if (!el || !d) return;
+  const esc = escapeHtml;
+  const t = d.totals || {}; const gt = d.giftTotals || {};
+  const when = x => x ? (typeof _fmtDateTime === 'function' ? _fmtDateTime(x) : new Date(x).toLocaleString()) : '—';
+  const who = (name, uid) => `<div style="min-width:0;flex:1;">
+      <div style="font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(name)}</div>
+      <div style="font-family:ui-monospace,Menlo,monospace;font-size:10px;color:var(--text-dim);word-break:break-all;line-height:1.25">${esc(uid)}</div>
+    </div>`;
+  const stat = (label, val, color) => `<div style="flex:1;background:#0e0f12;border:1px solid #23252c;border-radius:8px;padding:8px 6px;min-width:0;text-align:center;">
+      <div style="font-size:10px;color:#8a8d96;text-transform:uppercase;letter-spacing:0.4px;white-space:nowrap">${label}</div>
+      <div style="font-size:15px;font-weight:800;color:${color||'#7fd0ff'}">${val}</div></div>`;
+  const refs = d.referrals || [], gifts = d.gifts || [];
+  const refRows = refs.map(r => `
+    <div class="row" style="display:block;padding:9px 10px;">
+      <div style="font-size:10.5px;color:var(--text-dim)">${when(r.createdAt)} &nbsp;·&nbsp; ${esc(r.tierLabel || r.tier || '')}${r.reversed ? ' &nbsp;·&nbsp; <span style="color:#e0655a;font-weight:700">REVERSED</span>' : ''}</div>
+      <div style="display:flex;gap:8px;align-items:flex-start;margin-top:5px;">
+        ${who(r.issuerName, r.issuerUid)}
+        <span style="color:var(--text-dim);align-self:center;flex:0 0 auto">→</span>
+        ${who(r.recipientName, r.recipientUid)}
+      </div>
+      <div style="font-size:11px;margin-top:5px;color:var(--text)">issued <b style="color:#b8d820">${r.referrerCredits}</b> to recipient &nbsp;·&nbsp; issuer got <b style="color:#7fd0ff">+${r.issuerCredits}</b></div>
+    </div>`).join('') || '<div class="empty">No referrals yet.</div>';
+  const giftRows = gifts.map(g => `
+    <div class="row" style="display:flex;align-items:center;gap:8px;padding:9px 10px;">
+      ${who(g.userName, g.userId)}
+      <div style="flex:0 0 auto;text-align:right;">
+        <div style="font-weight:800;color:#b8d820;font-size:15px;white-space:nowrap">+${g.credits}</div>
+        <div style="font-size:10px;color:var(--text-dim)">${when(g.at)}</div>
+      </div>
+    </div>${g.reason ? `<div style="font-size:10.5px;color:var(--text-dim);padding:0 10px 8px;margin-top:-4px">${esc(g.reason)}</div>` : ''}`).join('') || '<div class="empty">No gifted credits yet.</div>';
+  el.innerHTML = `
+    <div style="display:flex;gap:6px;margin-bottom:12px;">
+      ${stat('Referrals', t.active || 0, '#7fd0ff')}
+      ${stat('To recipients', t.referrerCredits || 0, '#b8d820')}
+      ${stat('To issuers', t.issuerCredits || 0, '#b8d820')}
+      ${stat('Gifts', (gt.count || 0), '#f0c860')}
+      ${stat('Gifted cr.', (gt.credits || 0), '#f0c860')}
+    </div>
+    <div style="font-size:10.5px;color:var(--text-dim);margin:0 2px 10px;line-height:1.4">Issuer entered the recipient's 4-char code. Recipient (code owner) earns the tier bonus; issuer earns +3.</div>
+    <div style="font-weight:700;margin:4px 2px 6px;font-size:13px;">Referral Bonuses (${refs.length})</div>
+    ${refRows}
+    <div style="font-weight:700;margin:18px 2px 6px;font-size:13px;">Gifted Credits (${gifts.length})</div>
+    ${giftRows}
+  `;
+}
+
 function _renderActiveTab() {
   if (state.tab === 'timings') renderTimingsTab();
   else if (state.tab === 'items') renderItemsTab();
   else if (state.tab === 'sales') renderSalesTab();
+  else if (state.tab === 'refs') renderRefsTab();
   else renderUsersTab();
 }
 
