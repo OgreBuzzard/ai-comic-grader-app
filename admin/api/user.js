@@ -276,6 +276,8 @@ export default async function handler(req, res) {
       termsAccepted: !!u.termsAccepted,
       termsVersion: u.termsVersion || null,
       trainingOptIn: u.trainingOptIn !== false, // default true
+      transferCode: u.transferCode || null,       // the 4-char user code (a.k.a. User ID)
+      exportLimitOverride: (typeof u.exportLimitOverride === 'number' ? u.exportLimitOverride : null),
     };
 
     // ── Fetch items ──────────────────────────────────────────────────────────

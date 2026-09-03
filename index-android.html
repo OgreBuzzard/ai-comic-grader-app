@@ -9265,17 +9265,31 @@ async function exportCollection() {
       userRef = window._fsDoc(window._db, "users", window._currentUser.uid);
       userSnap = await window._fsGetDoc(userRef);
       const data = userSnap.exists() ? userSnap.data() : {};
+      // Purchaser gate (abuse guard): collection download requires ANY credit
+      // purchase. Free signup/referral credits do NOT count (mirror _userHasPurchased).
+      const hasPurchased = data.everPurchased === true
+        || (typeof data.totalPurchased === "number" && data.totalPurchased > 0);
+      if (!hasPurchased) {
+        alert("Downloading your collection is a purchaser feature. Buy any credit package to unlock collection downloads.");
+        return;
+      }
+      // Rolling 30-day limit (3 by default). A per-user numeric override
+      // (exportLimitOverride on the user doc) raises it for special cases.
+      let limit = EXPORT_LIMIT;
+      if (typeof data.exportLimitOverride === "number" && data.exportLimitOverride > limit) {
+        limit = data.exportLimitOverride;
+      }
       const raw = Array.isArray(data.exportLog) ? data.exportLog : [];
       const cutoff = Date.now() - EXPORT_WINDOW_MS;
       exportLog = raw.filter(iso => {
         const t = Date.parse(iso);
         return Number.isFinite(t) && t >= cutoff;
       });
-      if (exportLog.length >= EXPORT_LIMIT) {
+      if (exportLog.length >= limit) {
         const oldest = exportLog.slice().sort()[0];
         const nextAvail = new Date(Date.parse(oldest) + EXPORT_WINDOW_MS);
         const dateStr = nextAvail.toLocaleDateString();
-        alert(`You've reached the export limit. Next export available ${dateStr}.`);
+        alert(`You've reached the export limit (${limit} per 30 days). Next export available ${dateStr}.`);
         return;
       }
     } catch (e) {
