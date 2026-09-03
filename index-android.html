@@ -513,14 +513,14 @@
     ov.style.cssText = 'position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:24px;padding-top:max(24px,env(safe-area-inset-top));padding-bottom:max(24px,env(safe-area-inset-bottom));opacity:0;transition:opacity .15s ease;';
     var card = document.createElement('div');
     card.style.cssText = 'width:100%;max-width:340px;background:#141210;border:1.5px solid #6a4a10;border-radius:18px;overflow:hidden;box-shadow:0 12px 44px rgba(0,0,0,0.55);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,\"Segoe UI\",sans-serif;';
-    var bar = document.createElement('div'); bar.style.cssText = 'height:5px;background:'+a.bar;
+    // (Top accent strip removed — all message pop-ups now read as one house style.)
     var body = document.createElement('div'); body.style.cssText = 'padding:20px 20px 18px;text-align:center;';
     var icon = document.createElement('div'); icon.style.cssText='width:52px;height:52px;border-radius:50%;background:'+a.iconbg+';color:#fff;font-size:28px;font-weight:700;line-height:52px;margin:0 auto 12px;'; icon.textContent=a.icon;
     var h = document.createElement('div'); h.style.cssText='font-size:16px;font-weight:700;color:#eaf5df;margin-bottom:6px;'; h.textContent=title;
     var msg = document.createElement('div'); msg.style.cssText='font-size:13.5px;line-height:1.5;color:#b7cfa6;white-space:pre-line;'; msg.textContent=message||'';
-    var btn = document.createElement('button'); btn.style.cssText='margin-top:18px;width:100%;padding:12px;border:none;border-radius:10px;background:'+a.bar+';color:#0d1f08;font-size:15px;font-weight:800;letter-spacing:.3px;cursor:pointer;'; btn.textContent=okText;
+    var btn = document.createElement('button'); btn.style.cssText='margin-top:18px;width:100%;padding:12px;border:none;border-radius:10px;background:#4e9e2e;color:#0d1f08;font-size:15px;font-weight:800;letter-spacing:.3px;cursor:pointer;'; btn.textContent=okText;
     body.appendChild(icon); body.appendChild(h); body.appendChild(msg); body.appendChild(btn);
-    card.appendChild(bar); card.appendChild(body); ov.appendChild(card); document.body.appendChild(ov);
+    card.appendChild(body); ov.appendChild(card); document.body.appendChild(ov);
     requestAnimationFrame(function(){ ov.style.opacity='1'; card.style.transform='translateY(0) scale(1)'; });
     function close(){ ov.style.opacity='0'; setTimeout(function(){ if(ov.parentNode) ov.parentNode.removeChild(ov); },160); if(opts.onClose){try{opts.onClose();}catch(e){}} }
     btn.onclick=close; ov.addEventListener('click',function(e){ if(e.target===ov) close(); });
@@ -953,11 +953,11 @@ onAuthStateChanged(auth, async user => {
 
     /* Category — branded: dark warm + gold */
     .rg-btn-branded {
-      background: #2a1a08;
-      color: #c8a96e;
-      border: 1.5px solid #c8a96e;
+      background: #4e9e2e;
+      color: #0d1f08;
+      border: 1.5px solid #4e9e2e;
     }
-    .rg-btn-branded:active { background: #3a240e; }
+    .rg-btn-branded:active { background: #3a7a22; }
     /* ── End canonical button system ──────────────────────────────────── */
 
     .btn { border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer; font-size: 13px; font-weight: 600; font-family: inherit; }
@@ -2774,7 +2774,7 @@ function formatFMV(m) {
 
 // S20 (#37): FMV tier for Deep/Full gating. Uses the item's best available grade
 // (official CGC, then predicted/assessed, then the RoboGrade prediction). Returns
-// 0 when there's no FMV match. Deep unlocks at tier >= 4 ($100+); Full at tier
+// 0 when there's no FMV match. Deep unlocks at tier >= 3 ($50+); Full at tier
 // >= 7 ($1000+). Year is only needed for the 1991+ blanket (which is tier 1, so
 // it never affects these thresholds) \u2014 safe to be null.
 function fmvTierOf(item) {
@@ -3221,7 +3221,7 @@ function stickTierUnlocks(item) {
   if (item.highGradeUnlocked === true
       || isDeepAssessmentComplete(item)
       || (item.roboGrade && typeof item.roboGrade.score === 'number' && item.roboGrade.score >= 90)
-      || (typeof fmvTierOf === "function" && fmvTierOf(item) >= 4)) {   // S25 (#5): FMV Deep gate ($100+) latches too
+      || (typeof fmvTierOf === "function" && fmvTierOf(item) >= 3)) {   // FMV Deep gate ($50+, tier 3) latches too
     item.deepUnlocked = true;
   }
   // Full: qualifies if currently full-eligible, or full has run. (Per Matt
@@ -7844,12 +7844,12 @@ function showSignatureDetected(item, onDone) {
   ov.style.cssText = 'position:fixed;inset:0;z-index:100001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:24px;padding-top:max(24px,env(safe-area-inset-top));padding-bottom:max(24px,env(safe-area-inset-bottom));opacity:0;transition:opacity .15s ease;';
   var card = document.createElement('div');
   card.style.cssText = 'width:100%;max-width:340px;background:#141210;border:1.5px solid #6a4a10;border-radius:18px;overflow:hidden;box-shadow:0 12px 44px rgba(0,0,0,0.55);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,\'Segoe UI\',sans-serif;';
-  card.innerHTML = '<div style="height:5px;background:' + GOLD + '"></div>'
+  card.innerHTML = ''
     + '<div style="padding:18px 20px 18px;text-align:center;">'
     + '<img src="assets/Robograder_Gift.webp" alt="Robograder" style="width:88px;height:auto;object-fit:contain;margin:0 auto 10px;display:block">'
     + '<div style="font-size:16px;font-weight:800;color:#f0c860;margin-bottom:8px">' + title + '</div>'
     + '<div style="font-size:13.5px;line-height:1.6;color:#e8d9b8;text-align:left">' + msg + '</div>'
-    + '<button id="rg-sig-ok" style="margin-top:18px;width:100%;padding:12px;border:none;border-radius:10px;background:' + GOLD + ';color:#231a02;font-size:15px;font-weight:800;letter-spacing:.5px;cursor:pointer">OKAY</button>'
+    + '<button id="rg-sig-ok" style="margin-top:18px;width:100%;padding:12px;border:none;border-radius:10px;background:#4e9e2e;color:#0d1f08;font-size:15px;font-weight:800;letter-spacing:.5px;cursor:pointer">OKAY</button>'
     + '</div>';
   ov.appendChild(card); document.body.appendChild(ov);
   requestAnimationFrame(function(){ ov.style.opacity='1'; card.style.transform='translateY(0) scale(1)'; });
@@ -8064,9 +8064,9 @@ function mountResults(cgc, psa) {
     const predictedNum = parseFloat(cgc && cgc.grade);
     const scoreGate = roboScore != null && roboScore >= 90;
     const predictedGate = Number.isFinite(predictedNum) && predictedNum >= 9.0;
-    // S20 (#37): Deep unlocks on RG>=90, predicted>=9.0, OR FMV tier >= 4 ($100+)
+    // Deep unlocks on RG>=90, predicted>=9.0, OR FMV tier >= 3 ($50+)
     // — replacing the old value_keys list with real market value.
-    const fmvGate = fmvTierOf(cgc) >= 4;
+    const fmvGate = fmvTierOf(cgc) >= 3;
     const qualifies = scoreGate || predictedGate || fmvGate;
     const hgUnlocked = qualifies && !hgAlreadyRun;
     if (_pendingAssessResult && _pendingAssessResult.cgc) {
@@ -8083,7 +8083,7 @@ function mountResults(cgc, psa) {
     }
     if (hgUnlocked) {
       btn.innerHTML = `<div style="font-size:14px;font-weight:800;letter-spacing:1.5px;line-height:1.2">DEEP ASSESSMENT</div><div style="font-size:12px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
-      btn.style.background = "#3a9ee0";
+      btn.style.background = "#2f9e52";
       btn.style.color = "#fff";
       btn.style.textAlign = "center";
     } else if (isPostDeepRun) {
@@ -8103,18 +8103,18 @@ function mountResults(cgc, psa) {
       const _fullAlreadyRun = isFullAssessmentComplete(cgc) || isFullAssessmentComplete(formData) || !!(formData && formData.fullUnlocked);
       if (_fullEligible && !_fullAlreadyRun) {
         btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">FULL ASSESSMENT</div><div style="font-size:12px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
-        btn.style.background = "#3a9ee0";
+        btn.style.background = "#2f9e52";
         btn.style.color = "#fff";
         btn.style.textAlign = "center";
       } else {
         btn.innerHTML = "Complete";
-        btn.style.background = "#3a9ee0";
+        btn.style.background = "#2f9e52";
         btn.style.color = "#fff";
         btn.style.textAlign = "center";
       }
     } else if (hgAlreadyRun) {
       btn.innerHTML = `<div style="font-size:13px;font-weight:800;letter-spacing:2px;line-height:1.2">COMPLETE</div>`;
-      btn.style.background = "#3a9ee0";
+      btn.style.background = "#2f9e52";
       btn.style.color = "#fff";
       btn.style.textAlign = "center";
     } else if (typeof hasIdentifiedSignatures === "function" && hasIdentifiedSignatures(cgc && cgc._roboGrade ? {
@@ -8131,7 +8131,7 @@ function mountResults(cgc, psa) {
       btn.style.textAlign = "center";
     } else {
       btn.innerHTML = "COMPLETE";
-      btn.style.background = "#3a9ee0";
+      btn.style.background = "#2f9e52";
       btn.style.color = "#fff";
     }
     btn.disabled = false;
@@ -8359,8 +8359,8 @@ async function assessHighGrade() {
     if (unified.psaGrade) cgc._psaGrade = unified.psaGrade;
     cgc._highGradeTier = true;
     const _predictedNum = parseFloat(cgc.grade);
-    // S20 (#37): Deep unlock on RG>=90, predicted>=9.0, OR FMV tier >= 4 ($100+).
-    const _fmvGate = fmvTierOf(cgc) >= 4;
+    // Deep unlock on RG>=90, predicted>=9.0, OR FMV tier >= 3 ($50+).
+    const _fmvGate = fmvTierOf(cgc) >= 3;
     const _scoreOrGrade = (unified.roboGrade && unified.roboGrade.score >= 90) || (Number.isFinite(_predictedNum) && _predictedNum >= 9.0);
     cgc._highGradeUnlocked = _scoreOrGrade || _fmvGate;
     cgc._highGradeReason = (_fmvGate && !_scoreOrGrade) ? "value" : "grade";
@@ -10036,7 +10036,7 @@ function mountCardResults(rec) {
   const _rgColCard = (window.RG_V3_DISPLAY && window.RoboScoreV3) ? "#b8d820" : "#aaee30";
   if (roboScore != null) badges += badge("#0f1a05", _rgColCard, "0", "RG", "1.5px solid #3a5010", "anim-val-robo-card");
   if (psa) badges += badge("#b91c1c", "#ffffff", psa, "PSA", "", "anim-val-psa-card");
-  const html = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:10px;">\n      <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badges}</div>\n      <button id="assess-complete-btn" style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#3a9ee0;color:#fff;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">COMPLETE</button>\n    </div>`;
+  const html = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:10px;">\n      <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badges}</div>\n      <button id="assess-complete-btn" style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#2f9e52;color:#fff;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">COMPLETE</button>\n    </div>`;
   window.RobograderScan.slideResultsIntoPanel(html);
   // Animate the RG count-up, then pop/glow both badges when the final score
   // lands — mirrors the comic results reveal (mountResults) so cards get the
@@ -10445,7 +10445,7 @@ function showGateExplanationPopup() {
   const popup = document.createElement("div");
   popup.id = "gate-explanation-popup";
   popup.style.cssText = "position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:20px;";
-  popup.innerHTML = `\n    <div style="background:#fff;border-radius:14px;padding:24px 22px;max-width:380px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,0.3)">\n      <div style="font-size:18px;font-weight:900;color:#1a1008;letter-spacing:1px;text-align:center;margin-bottom:10px">${data.label}</div>\n      ${bodyHtml}\n      ${lockoutHtml}\n      <button id="gate-explanation-okay" style="margin-top:18px;width:100%;height:46px;background:#3a9ee0;color:#fff;border:none;font-size:15px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px">OKAY</button>\n    </div>`;
+  popup.innerHTML = `\n    <div style="background:#fff;border-radius:14px;padding:24px 22px;max-width:380px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,0.3)">\n      <div style="font-size:18px;font-weight:900;color:#1a1008;letter-spacing:1px;text-align:center;margin-bottom:10px">${data.label}</div>\n      ${bodyHtml}\n      ${lockoutHtml}\n      <button id="gate-explanation-okay" style="margin-top:18px;width:100%;height:46px;background:#2f9e52;color:#fff;border:none;font-size:15px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px">OKAY</button>\n    </div>`;
   document.body.appendChild(popup);
   document.getElementById("gate-explanation-okay").onclick = () => {
     popup.remove();
@@ -12081,7 +12081,7 @@ async function submitRestorationCheck() {
         if (_cb) {
           _cb.style.transition = "background-color 0.4s ease, color 0.4s ease";
           _cb.innerHTML = "COMPLETE";
-          _cb.style.background = "#3a9ee0";
+          _cb.style.background = "#2f9e52";
           _cb.style.color = "#fff";
           _cb.disabled = false;
           _cb.style.cursor = "pointer";
@@ -12337,7 +12337,7 @@ async function submitFullAssessment() {
           if (!_cb) return;
           _cb.style.transition = "background-color 0.4s ease, color 0.4s ease";
           _cb.innerHTML = "COMPLETE";
-          _cb.style.background = "#3a9ee0";
+          _cb.style.background = "#2f9e52";
           _cb.style.color = "#fff";
           _cb.disabled = false;
           _cb.style.cursor = "pointer";
@@ -13928,12 +13928,12 @@ function showRepeatBuyerDiscount() {
   ov.style.cssText = 'position:fixed;inset:0;z-index:100001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:24px;padding-top:max(24px,env(safe-area-inset-top));padding-bottom:max(24px,env(safe-area-inset-bottom));opacity:0;transition:opacity .15s ease;';
   var card = document.createElement('div');
   card.style.cssText = "width:100%;max-width:340px;background:#141210;border:1.5px solid #6a4a10;border-radius:18px;overflow:hidden;box-shadow:0 12px 44px rgba(0,0,0,0.55);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,sans-serif;";
-  card.innerHTML = '<div style="height:5px;background:' + GOLD + '"></div>'
+  card.innerHTML = ''
     + '<div style="padding:18px 20px 18px;text-align:center;">'
     + '<img src="assets/Robograder_Gift.webp" alt="Robograder" style="width:88px;height:auto;object-fit:contain;margin:0 auto 10px;display:block">'
     + '<div style="font-size:16px;font-weight:800;color:' + GOLD + ';letter-spacing:.5px;margin-bottom:8px">REPEAT BUYER DISCOUNT</div>'
     + '<div style="font-size:13.5px;line-height:1.55;color:#c3d9b2">20% bonus credits unlocked on future purchases made within 6 months.</div>'
-    + '<button id="rg-repeat-ok" style="margin-top:18px;width:100%;padding:12px;border:none;border-radius:10px;background:' + GOLD + ';color:#231a02;font-size:15px;font-weight:800;letter-spacing:.5px;cursor:pointer">OKAY</button>'
+    + '<button id="rg-repeat-ok" style="margin-top:18px;width:100%;padding:12px;border:none;border-radius:10px;background:#4e9e2e;color:#0d1f08;font-size:15px;font-weight:800;letter-spacing:.5px;cursor:pointer">OKAY</button>'
     + '</div>';
   ov.appendChild(card); document.body.appendChild(ov);
   requestAnimationFrame(function(){ ov.style.opacity='1'; card.style.transform='translateY(0) scale(1)'; });
@@ -14051,25 +14051,24 @@ initFirebase();
 </div>
 
 <div id="payment-success-modal" style="display:none;position:fixed;inset:0;z-index:8000;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;padding:20px">
-  <div style="background:#fff;border-radius:16px;padding:28px 24px;max-width:360px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,0.3);text-align:center">
-    
-    <div style="width:64px;height:64px;border-radius:50%;background:#1a1008;margin:0 auto 16px;display:flex;align-items:center;justify-content:center">
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#c8a96e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+  <div style="background:#141210;border:1.5px solid #6a4a10;border-radius:18px;padding:28px 24px;max-width:360px;width:100%;box-shadow:0 12px 44px rgba(0,0,0,0.55);text-align:center">
+    <div style="width:64px;height:64px;border-radius:50%;background:#2c6e12;margin:0 auto 16px;display:flex;align-items:center;justify-content:center">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="20 6 9 17 4 12"/>
       </svg>
     </div>
-    <h2 style="margin:0 0 8px;font-size:20px;color:#1a1008">Payment successful</h2>
-    <p style="margin:0 0 4px;font-size:15px;color:#3a2a1a"><span id="payment-success-credits" style="font-weight:700">0</span> assessment credits added to your account.</p>
-    <p style="margin:0 0 22px;font-size:13px;color:#8a7a6a">Receipt sent to your email by Stripe.</p>
+    <h2 style="margin:0 0 8px;font-size:20px;color:#eaf5df">Payment successful</h2>
+    <p style="margin:0 0 4px;font-size:15px;color:#c3d9b2"><span id="payment-success-credits" style="font-weight:700;color:#fff">0</span> assessment credits added to your account.</p>
+    <p style="margin:0 0 22px;font-size:13px;color:#8fae9c">Receipt sent to your email by Stripe.</p>
     <button class="rg-btn rg-btn-branded rg-btn-lg" onclick="hidePaymentSuccess()" style="width:100%">Continue</button>
   </div>
 </div>
 
 <div id="payment-cancelled-modal" style="display:none;position:fixed;inset:0;z-index:8000;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;padding:20px">
-  <div style="background:#fff;border-radius:16px;padding:28px 24px;max-width:360px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,0.3);text-align:center">
-    <h2 style="margin:0 0 8px;font-size:20px;color:#1a1008">Payment cancelled</h2>
-    <p style="margin:0 0 22px;font-size:14px;color:#6a5a4a">No charges were made to your card.</p>
-    <button onclick="hidePaymentCancelled()" style="background:#1a1008;color:#c8a96e;border:none;border-radius:10px;padding:14px 24px;font-size:15px;font-weight:700;cursor:pointer;width:100%">OK</button>
+  <div style="background:#141210;border:1.5px solid #6a4a10;border-radius:18px;padding:28px 24px;max-width:360px;width:100%;box-shadow:0 12px 44px rgba(0,0,0,0.55);text-align:center">
+    <h2 style="margin:0 0 8px;font-size:20px;color:#eaf5df">Payment cancelled</h2>
+    <p style="margin:0 0 22px;font-size:14px;color:#b7cfa6">No charges were made to your card.</p>
+    <button class="rg-btn rg-btn-branded rg-btn-lg" onclick="hidePaymentCancelled()" style="width:100%">OK</button>
   </div>
 </div>
 

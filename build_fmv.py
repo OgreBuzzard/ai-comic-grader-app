@@ -33,6 +33,12 @@ CURATED_GUARDS = {
   "batman|9":1943, "batman|10":1943, "batman|121":1960, "batman|181":1967,
   "batman|189":1968, "batman|227":1971, "batman|251":1974, "batman|423":1989, "batman|457":1991,
 }
+# ASM vol-1 ran issues 1-441 (1963-1998). Modern volumes (2014/2018/2022) restarted at
+# low numbers that COLLIDE with these vintage keys, so a post-1998 ASM #1-441 is a
+# different book -> guard to the modern blanket. #601 (2009) and annuals (A#) are NOT
+# vol-1 renumber collisions, so they are left unguarded.
+for _asm in range(1, 442):
+    CURATED_GUARDS[f"amazing spider-man|{_asm}"] = 1998
 
 def normTitle(s):
     if not s: return ''

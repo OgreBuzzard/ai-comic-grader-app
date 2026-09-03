@@ -125,9 +125,22 @@ export default async function handler(req, res) {
       };
     }).filter(Boolean);
     gifts.sort((a, b) => b.ts - a.ts);
-    gifts = gifts.slice(0, limit);
 
-    return res.status(200).json({ referrals: rows, totals, gifts, giftTotals, generatedAt: new Date().toISOString() });
+    // Split self-gifts (credits the admin granted to their OWN account) from gifts
+    // given to OTHER users. The caller is the admin, so their own uid is decoded.uid.
+    const _selfUid = decoded.uid || null;
+    const selfGifts = gifts.filter(g => _selfUid && g.userId === _selfUid);
+    const otherGifts = gifts.filter(g => !_selfUid || g.userId !== _selfUid);
+    const sum = (arr) => arr.reduce((t, g) => t + (g.credits || 0), 0);
+    const selfGiftTotals = { count: selfGifts.length, credits: sum(selfGifts) };
+    const otherGiftTotals = { count: otherGifts.length, credits: sum(otherGifts) };
+
+    return res.status(200).json({
+      referrals: rows, totals,
+      gifts: otherGifts.slice(0, limit), giftTotals: otherGiftTotals,
+      selfGifts: selfGifts.slice(0, limit), selfGiftTotals,
+      generatedAt: new Date().toISOString(),
+    });
   } catch (e) {
     console.error('[admin-referrals] error:', e);
     return res.status(500).json({ error: e.message || 'referrals fetch failed' });
