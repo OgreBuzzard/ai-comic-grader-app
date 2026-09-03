@@ -304,14 +304,16 @@ Two interior-cover photos are provided: the inside front cover + first page, and
   • Tanning / toning of the inside covers and the first/last pages (browning of the paper)
   • Foxing (small brown spots), stains, or moisture marks
   • Tears, chips, or writing on the inside covers / first-last pages
-Report only what is actually visible. If the interior covers are clean, say nothing and leave the Interior sub-score unchanged. Do NOT judge page quality here — page quality is FIXED from the initial assessment and must not change. Staples are NOT interior — any staple observation stays in the Spine category.
+Report only what is actually visible. If the interior covers are clean, say nothing and leave the Interior sub-score unchanged.
+  PAGE-QUALITY REFINEMENT (rare): the interior-cover photos also expose the FIRST interior page (by the inside front cover) and the LAST interior page (by the inside back cover) — real interior paper. You MAY use them to refine the page-quality call, which the initial pass judged from a single interior shot. Rules: (1) judge ONLY the matte interior story/text PAGES; IGNORE any GLOSSY advertising/insert pages — glossy ad stock photographs differently and is NOT the page-quality substrate. (2) These first/last pages should read almost identical in tone to the centerfold the initial pass saw; leave page quality UNCHANGED unless a visible page is DISTINCTLY whiter or more tanned/foxed than the initial call. (3) Anchor page quality to the WORST (most-affected) visible interior page, not the average — if one page is clearly more tanned or foxed, PQ follows that worst page. (4) A change should be RARE and at most ONE tier in either direction; when the pages look consistent with the initial call, do not move it.
+  Staples are NOT interior — any staple observation stays in the Spine category.
 
 ` : ''}## PHASE 3 — APPLY DELTAS TO FRONT${hasInteriorCovers ? ', SPINE, AND INTERIOR' : ' AND SPINE'}
 For each new defect observed that was NOT in the initial catalogue, add a defect entry tagged with deepAddition: true. Adjust scores accordingly:
   • Front sub-score: deduct for new front-cover defects (corner damage, color breaks on cover, etc.)
   • Spine sub-score: deduct for new spine ticks (1 point per non-color-breaking, 2 per color-breaking) or inner-corner-at-spine damage
   • BACK sub-score: FROZEN. Do not change. No new back-cover evidence.
-  • ${hasInteriorCovers ? 'INTERIOR sub-score: adjust ONLY for interior-cover CONDITION actually visible in the two interior-cover photos (tanning, foxing, stains, tears). Deduct for genuine interior defects; if the interior covers are clean, leave it unchanged. Do NOT change page quality — it is fixed from the initial assessment.' : 'INTERIOR sub-score: FROZEN. Do not change. No new interior evidence.'}
+  • ${hasInteriorCovers ? 'INTERIOR sub-score + PAGE QUALITY move together, 1:1. Per PHASE 2.5 you MAY refine page quality (RARELY, at most one tier) from the WORST visible first/last interior-wrap page, ignoring glossy ad pages. If page quality changes, set the new pageQuality (White=10 / OW/W=9 / OW=8 / C/OW=7 / Cream=6 / LT/C=5 / LT=4 / Tan=3 / Brown=2 / Brown/Brittle=1 / Brittle=0) AND set the Interior sub-score to match it. If the interior covers/pages look consistent with the initial call, leave BOTH page quality and the Interior sub-score unchanged.' : 'INTERIOR sub-score: FROZEN. Do not change. No new interior evidence.'}
 
 If the macros REVEAL a new defect not in the initial catalogue (corner damage, spine ticks, tape, color breaks visible only at macro scale), add defect entries with deepAddition: true and adjust Front and Spine sub-scores downward accordingly. The revised grade may go BELOW the initial when new defects are found.
 
@@ -775,7 +777,30 @@ Rules:
     // Carry-forward enforcement: Back and Interior sub-scores must equal initial values.
     if (parsed.roboGrade) {
       if (initialRG.backScore != null) parsed.roboGrade.backScore = initialRG.backScore;
-      if (initialRG.interiorScore != null) parsed.roboGrade.interiorScore = initialRG.interiorScore;
+      // S25: Interior/PQ. No interior covers -> Interior frozen (no new interior
+      // evidence). WITH interior covers, Deep may RARELY refine page quality from
+      // the first/last interior-wrap pages (PHASE 2.5); keep PQ and Interior 1:1.
+      const _pqToInterior = (pq) => {
+        const M = { 'white':10,'off-white to white':9,'ow/w':9,'off-white':8,'ow':8,'cream to off-white':7,'c/ow':7,'cream':6,'light tan to cream':5,'lt/c':5,'light tan':4,'lt':4,'tan':3,'brown':2,'brown/brittle':1,'brittle':0 };
+        const k = String(pq || '').trim().toLowerCase();
+        return (k in M) ? M[k] : null;
+      };
+      if (!hasInteriorCovers) {
+        if (initialRG.interiorScore != null) parsed.roboGrade.interiorScore = initialRG.interiorScore;
+      } else {
+        const _newPQ = String((parsed.roboGrade && parsed.roboGrade.pageQuality) || parsed.pageQuality || '').trim();
+        const _initPQ = String(initialRG.pageQuality || '').trim();
+        const _mappedI = _pqToInterior(_newPQ);
+        if (_newPQ && _newPQ.toLowerCase() !== _initPQ.toLowerCase() && _mappedI != null) {
+          parsed.roboGrade.pageQuality = _newPQ;
+          parsed.pageQuality = _newPQ;
+          parsed.roboGrade.interiorScore = _mappedI;   // keep Interior 1:1 with PQ
+        } else {
+          if (initialRG.interiorScore != null) parsed.roboGrade.interiorScore = initialRG.interiorScore;
+          parsed.roboGrade.pageQuality = initialRG.pageQuality || parsed.roboGrade.pageQuality;
+          if (initialAssessment.pageQuality) parsed.pageQuality = initialAssessment.pageQuality;
+        }
+      }
       // Recompute total score from components, in case the model didn't.
       // Clamp each to its valid range first — the Deep model occasionally emits
       // an over-range component (e.g. front 51) which would inflate the sum.
@@ -802,7 +827,13 @@ Rules:
       // and the revised grade is lower, restore the initial grade and sub-scores.
       const hasDeepAddition = Array.isArray(parsed.roboGrade?.defects)
         && parsed.roboGrade.defects.some(d => d && d.deepAddition === true);
-      if (!hasDeepAddition && initialRG && initialRG.score != null && parsed.roboGrade) {
+      // S25: a genuine page-quality refinement (interior covers) may move the grade
+      // in either direction — treat it like a deepAddition so the floor rule below
+      // doesn't undo a legitimate PQ-driven decrease.
+      const _pqRefined = hasInteriorCovers
+        && String((parsed.roboGrade && parsed.roboGrade.pageQuality) || '').trim().toLowerCase()
+           !== String(initialRG.pageQuality || '').trim().toLowerCase();
+      if (!hasDeepAddition && !_pqRefined && initialRG && initialRG.score != null && parsed.roboGrade) {
         if ((Number(parsed.roboGrade.score) || 0) < Number(initialRG.score)) {
           parsed.roboGrade.score = initialRG.score;
           parsed.roboGrade.frontScore = initialRG.frontScore;

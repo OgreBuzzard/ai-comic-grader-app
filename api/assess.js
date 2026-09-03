@@ -626,6 +626,25 @@ export default async function handler(req, res) {
         }
         if (!volumes || !volumes.length) return;
         // Choose the volume.
+        // S25 disambiguation fix: an Annual/Special/King-Size/Giant-Size sub-series
+        // is a SEPARATE volume whose start_year can beat the main series on a year
+        // hint (e.g. "Fantastic Four Annual" start 1963 vs "Fantastic Four" 1961 for
+        // a 1963-hinted FF #27 -> wrongly pulled Annual #27/1994). So: if the book
+        // is NOT an annual, drop annual/special variants from the pool; if it IS,
+        // keep only those. Then prefer an exact title match before the year sort.
+        const _variantRe = /\b(annual|special|king size|giant size|giant sized)\b/;
+        const _isAnnualQ = _variantRe.test(_norm(searchTitle));
+        let _pool = volumes.slice();
+        if (_isAnnualQ) {
+          const _ann = _pool.filter(v => _variantRe.test(_norm(v.name)));
+          if (_ann.length) _pool = _ann;
+        } else {
+          const _clean = _pool.filter(v => !_variantRe.test(_norm(v.name)));
+          if (_clean.length) _pool = _clean;
+        }
+        const _exact = _pool.filter(v => _norm(v.name) === _norm(searchTitle));
+        if (_exact.length) _pool = _exact;
+        volumes = _pool;
         let vol;
         if (hintYear) {
           vol = volumes.slice().sort((a,b) => {
@@ -663,7 +682,7 @@ export default async function handler(req, res) {
             const img = match.image;
             refUrl = img.original_url || img.super_url || img.screen_large_url || img.screen_url || img.medium_url || null;
           }
-          if (refUrl && _cvDb) { try { await _cvDb.collection('cv_cover_cache').doc(_coverKey).set({ url: refUrl, year: referenceYear, volumeId: vol.id, issue: targetIss, cachedAt: Date.now() }); console.log(`[cvcache] cover STORE ${_coverKey}`); } catch(e){} }
+          if (refUrl && _cvDb) { try { await _cvDb.collection('cv_cover_cache').doc(_coverKey).set({ url: refUrl, title: searchTitle, volumeName: vol.name || '', year: referenceYear, volumeId: vol.id, issue: targetIss, cachedAt: Date.now() }); console.log(`[cvcache] cover STORE ${_coverKey}`); } catch(e){} }
         }
         if (refUrl) {
           referenceImageUrl = refUrl;
@@ -1003,7 +1022,7 @@ This standard does NOT relax the STRUCTURAL DAMAGE SCAN below: tape, paper loss,
 
 STRUCTURAL DAMAGE SCAN — DO THIS FIRST. Tape, paper loss, and tears are catastrophic to grade and routinely mis-filed as "crease", "edge wear", or "soiling". Once you name something a lesser defect you stop reconsidering it, so catch these first.
 
-CHECK 0 — REFERENCE COMPARISON (only if a reference image was provided; else set referenceComparison to ""). The reference shows this exact issue's printed cover(s) — the FRONT, and sometimes the BACK cover too; when a back reference is present, walk BOTH covers. Walk it by region (corners, edges, logo, figures, price box, banners). For each: (1) Is every printed element in the reference also present and intact in the photo? A printed element present in the reference but absent/cut/interrupted in the photo = paper loss or tear there. (2) Is something you'd call a defect also in the reference? If so it's printed art, not damage. DISCREPANCY DEFAULT: when photo differs from reference, default to STRUCTURAL DAMAGE, not wear. Wear/soiling change color/tone/gloss only — they never remove printed line-art or create straight machine-cut edges. So a printed line or shape-boundary continuous in the reference but broken in the photo = PAPER LOSS or TEAR, never "wear". A straight ruled-edge band an inch+ long = TAPE, even alongside stress lines. Do not require certainty — a suspected loss/tape beside an intact reference must be named (asymmetric cost: undershoot, never overshoot). State the result in referenceComparison; do not write "wear and soiling account for all differences" unless you truly found no broken line-art and no straight-edged band. Caution: the reference may be a different printing or imperfect scan — use it for presence/absence and art-vs-defect, not fine condition; ignore lighting/gloss differences. MENTIONING THE REFERENCE IN THE WRITE-UP: you MAY note the reference comparison briefly in aiAssessment ONLY when it actually revealed or ruled out a defect (e.g., "against a clean reference copy, the lower-left interruption reads as paper loss, not wear") — one short clause, covering front and/or back. If the comparison surfaced nothing useful, do not mention it. (Unlike the census/statistical anchors, which must NEVER appear in user-visible text, the reference-cover comparison is fine to mention when useful.)
+CHECK 0 — REFERENCE COMPARISON (only if a reference image was provided; else set referenceComparison to ""). REFERENCE SANITY CHECK FIRST — the reference is auto-fetched and is occasionally the WRONG book: before comparing anything, confirm the reference actually depicts the SAME comic as the photos (same title logo, same cover artwork/composition, same trade-dress era). If it clearly shows a DIFFERENT comic — different art, a different era (e.g. a modern cover against a Silver/Bronze-Age book), or an obviously different issue — then either the wrong reference was pulled (usually a wrong volume/series, or a mis-identified issue number) or the submitted book is too worn/damaged to recognize. When that happens: DO NOT walk regions, DO NOT claim the cover matches, and DO NOT infer any paper loss/tape from the mismatch. Set referenceComparison to state plainly that the reference does NOT match this book and therefore was not used (noting the likely cause: wrong volume/issue reference, or an unrecognizable book), and grade from the photos alone. Only proceed with the region-by-region walk below when the reference genuinely depicts the SAME cover. When it does match, the reference shows this exact issue's printed cover(s) — the FRONT, and sometimes the BACK cover too; when a back reference is present, walk BOTH covers. Walk it by region (corners, edges, logo, figures, price box, banners). For each: (1) Is every printed element in the reference also present and intact in the photo? A printed element present in the reference but absent/cut/interrupted in the photo = paper loss or tear there. (2) Is something you'd call a defect also in the reference? If so it's printed art, not damage. DISCREPANCY DEFAULT: when photo differs from reference, default to STRUCTURAL DAMAGE, not wear. Wear/soiling change color/tone/gloss only — they never remove printed line-art or create straight machine-cut edges. So a printed line or shape-boundary continuous in the reference but broken in the photo = PAPER LOSS or TEAR, never "wear". A straight ruled-edge band an inch+ long = TAPE, even alongside stress lines. Do not require certainty — a suspected loss/tape beside an intact reference must be named (asymmetric cost: undershoot, never overshoot). State the result in referenceComparison; do not write "wear and soiling account for all differences" unless you truly found no broken line-art and no straight-edged band. Caution: the reference may be a different printing or imperfect scan — use it for presence/absence and art-vs-defect, not fine condition; ignore lighting/gloss differences. MENTIONING THE REFERENCE IN THE WRITE-UP: you MAY note the reference comparison briefly in aiAssessment ONLY when it actually revealed or ruled out a defect (e.g., "against a clean reference copy, the lower-left interruption reads as paper loss, not wear") — one short clause, covering front and/or back. If the comparison surfaced nothing useful, do not mention it. (Unlike the census/statistical anchors, which must NEVER appear in user-visible text, the reference-cover comparison is fine to mention when useful.)
 
 CHECK 1 — TAPE. Decisive test is GEOMETRY: tape has straight, parallel, machine-cut edges; wear/creasing/stress lines have irregular wandering edges. A band down the spine with a clean straight edge = TAPE, even if it also reads as wear or has surface cracks. Multiple parallel straight bands = multiple strips. Name it "Tape", not stress lines/creases/soiling.
 
@@ -1070,6 +1089,7 @@ PAGE QUALITY: phone cameras under indoor light make pages look 1–2 tiers more 
 2. ANCHOR to the PSA reference image (provided every assessment): if your interior looks comparable to ANY reference photo, assign OW/W or White accordingly; assign OW or lower only if visibly more tanned than EVERY reference. WHITE BOUNDARY RULE: don't default to OW/W — assign OW/W only if the interior is visibly warmer/creamier than ALL White references; if comparable to the White references, assign White. Compare unprinted areas eye-to-eye (different lighting between photos); if a white backing board is visible, use it to correct white balance. Stepwise: if warmer than every reference, next step is OW, not C/OW.
 3. WHEN AMBIGUOUS, favor the whiter tier.
 4. C/OW or lower requires BOTH: (a) margins noticeably warmer than the warmest reference, AND (b) specific evidence (foxing/rust/brown edges/brittleness). (a) alone = camera bias → OW/W or OW.
+5. WORST-PAGE ANCHOR: page quality reflects the MOST-AFFECTED visible interior page, NOT the average whiteness. If any visible interior page or the centerfold is distinctly more tanned, foxed, or stained than the rest, PQ follows that WORST page — do not average a bad page away against cleaner ones. (Judge the matte interior PAGES; a glossy advertising page photographs differently and is not the page-quality substrate.)
 PQ ↔ INTERIOR SCORE (1:1, Interior MUST equal): White=10 • OW/W=9 • OW=8 • C/OW=7 • Cream=6 • LT/C=5 • LT=4 • Tan=3 • Brown=2 • Brown/Brittle=1 • Brittle=0.
 
 ## PHASE 2 — THREE GRADES
@@ -1147,7 +1167,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
   "pageQuality": "full designation e.g. Off-White to White",
   "grade": "CGC grade estimate e.g. 7.0",
   "aiAssessment": "Overall impression, dominant defects, grade rationale. ONLY what you see in this copy's photos. NEVER mention census/submission counts/distribution/external data.",
-  "referenceComparison": "CHECK 0 result: one sentence on what comparing to the ComicVine reference revealed (a specific missing/damaged region, or an art element confirmed printed), or that the cover matches with no reference-detectable loss. Empty string if no reference was provided. This is a diagnostic field — it may surface to the user but must never mention census or external counts.",
+  "referenceComparison": "CHECK 0 result: one sentence on what comparing to the ComicVine reference revealed (a specific missing/damaged region, or an art element confirmed printed), or that the cover matches with no reference-detectable loss, OR that the reference did NOT match this book and was not used (wrong volume/issue reference, or an unrecognizable book). Empty string if no reference was provided. This is a diagnostic field — it may surface to the user but must never mention census or external counts.",
   "labelNotes": "key issue notations from label if visible, empty string if none",
   "keyInfo": "Key-issue significance — populate ONLY if (a) the issue appears in injected census data AND (b) the fact is widely documented. Empty string otherwise.",
   "enhance": true,

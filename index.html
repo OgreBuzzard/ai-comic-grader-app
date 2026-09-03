@@ -2017,17 +2017,13 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
     <div class="settings-row" style="cursor:pointer" onclick="copyTransferCode()">
       <div>
         <div class="sr-label">User ID</div>
-        <div class="sr-detail">Tap to copy. Share this ID for referral bonuses and assessment transfers.</div>
+        <div class="sr-detail">Tap to copy.</div>
       </div>
       <div id="settings-transfer-code"
         style="font-family:'IBM Plex Mono','Menlo',monospace;font-size:20px;font-weight:700;letter-spacing:3px;color:#c8b8a8">—</div>
     </div>
-    <div class="settings-row" id="settings-referral-row" onclick="openReferralPrompt()" style="cursor:pointer;display:none">
-      <div>
-        <div class="sr-label">Referral Bonus</div>
-        <div class="sr-detail">Someone recommend Robograder? Send them a thank-you bonus.</div>
-      </div>
-      <div class="sr-right">›</div>
+    <div class="settings-row" id="settings-referral-row" onclick="openReferralPrompt()" style="cursor:pointer;display:none;background:#7ac043;border-radius:12px;justify-content:center;text-align:center;padding:14px;margin:8px 0">
+      <div class="sr-label" style="color:#0d2a0d;font-weight:800;font-size:15px;letter-spacing:0.3px">Referral Bonus</div>
     </div>
     <div class="settings-row" onclick="openSettings_buyCredits()">
       <div>
@@ -2145,12 +2141,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.03";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.04";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.03");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.04");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -5237,7 +5233,7 @@ function renderList() {
       const buildRow = c => {
         const _dupN = _dupCounts[_dupKey(c)] || 0;
         const _adRaw = c.roboGradeDate || c.dateAdded;
-        const _adStr = (_dupN > 1 && _adRaw) ? (() => { try { const _d = new Date(_adRaw); return "Graded " + String(_d.getMonth() + 1).padStart(2, "0") + "/" + String(_d.getDate()).padStart(2, "0") + "/" + String(_d.getFullYear()).slice(-2); } catch (e) { return ""; } })() : "";
+        const _adStr = (_dupN > 1 && _adRaw) ? (() => { try { const _d = new Date(_adRaw); return String(_d.getMonth() + 1).padStart(2, "0") + "/" + String(_d.getDate()).padStart(2, "0") + "/" + String(_d.getFullYear()).slice(-2); } catch (e) { return ""; } })() : "";
         const thumbSrc = c.thumbnails?.[0] || c.images?.[0];
         const thumb = thumbSrc ? `<img class="comic-thumb" data-src="${thumbSrc}" decoding="async" style="background:#221d18">` : "";
         // S18: print icon (upper-right) replaces the old LABEL badge. Shown only
@@ -5248,7 +5244,7 @@ function renderList() {
         const _labelBtn = (printModeEnabled && _canLabel)
           ? `<button onclick="event.stopPropagation();togglePrintState('${esc(c.id)}')" title="${_inPrint ? "Remove from print queue" : "Add to print queue"}"\n              style="position:absolute;top:4px;right:6px;z-index:3;background:none;border:none;padding:2px;line-height:0;cursor:pointer">${_inPrint ? PRINT_ICON_X_SVG : PRINT_ICON_SVG}</button>`
           : "";
-        return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0;align-self:stretch;display:flex;flex-direction:column;justify-content:center;gap:2px">\n                  <div style="display:flex;align-items:flex-start;gap:8px">\n                    <div style="flex:1;min-width:0;font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>\n                    ${buildListPG(c)}\n                  </div>\n                  <div style="display:flex;align-items:baseline;gap:8px">\n                    <div style="flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;overflow:hidden">\n                      ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24;white-space:nowrap">${c.type === "card" ? esc(formatCardNumber(c.issue)) : formatIssue(c.issue, c.title)}</span>` : ""}\n                      ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a;white-space:nowrap">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                    </div>\n                    ${_adStr ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:600;color:#9a8a7a;flex-shrink:0;white-space:nowrap;letter-spacing:0.2px">${_adStr}</span>` : ""}\n                  </div>\n                </div>\n                ${_labelBtn}\n              </div>\n            </div>`;
+        return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0;align-self:stretch;display:flex;flex-direction:column;justify-content:center;gap:2px">\n                  <div style="display:flex;align-items:flex-start;gap:8px">\n                    <div style="flex:1;min-width:0;font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1">${esc(c.title)}</div>\n                  </div>\n                  <div style="display:flex;align-items:center;gap:8px">\n                    <div style="flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;overflow:hidden">\n                      ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24;white-space:nowrap;flex-shrink:0">${c.type === "card" ? esc(formatCardNumber(c.issue)) : formatIssue(c.issue, c.title)}</span>` : ""}\n                      ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                    </div>\n                    ${_adStr ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:600;color:#9a8a7a;flex-shrink:0;white-space:nowrap;letter-spacing:0.2px">${_adStr}</span>` : ""}\n                    ${buildListPG(c)}\n                  </div>\n                </div>\n                ${_labelBtn}\n              </div>\n            </div>`;
       };
       const _showSep = _showTitleSeparators();
       section.titles.forEach(title => {
@@ -9009,7 +9005,7 @@ async function submitReferral() {
     const data = await resp.json().catch(() => ({}));
     if (resp.ok && data.ok && !data.alreadyDone) {
       closeReferralPrompt();
-      window.rgPopup("Bonus sent! You earned 3 credits for spreading the word.", { type: "success", title: "Thank you!" });
+      window.rgPopup("You earned 3 credits for spreading the word.", { type: "success", title: "Bonus sent!" });
       if (typeof loadUserCredits === "function") loadUserCredits();
       refreshReferralEligibility();
     } else if (data.alreadyDone) {
@@ -10875,32 +10871,31 @@ function openCropper(type, index) {
         // left tall/EXIF-rotated phone photos collapsed to a strip or pushed past
         // the safe area. A resize() after ready forces a correct fit for any
         // image aspect ratio or orientation.
-        if (_cropperInstance && typeof _cropperInstance.resize === "function") {
-          requestAnimationFrame(function() {
-            try { _cropperInstance.resize(); } catch (e) {}
-            // Comic Front/Back: default the crop box to ~9:14 (comic proportions),
-            // centered, filling the image to whichever edge it reaches first. Box
-            // stays NON-rigid (aspectRatio NaN) so the user can freely adjust it.
-            if (_cropComicFB && _cropperInstance) {
-              // S25 FIX: run the Front/Back default-box centering in a SECOND rAF so
-              // getCanvasData() reads the POST-resize canvas. In the auto-open
-              // sequence (cropper opens the instant the camera closes) the canvas
-              // was still at its pre-resize size when measured in the same frame, so
-              // the crop box landed ~half a screen to the right and clipped off. One
-              // extra frame + a degenerate-canvas guard fixes the offset.
-              requestAnimationFrame(function() {
-                try {
-                  const _cc = _cropperInstance.getCanvasData();
-                  if (!_cc || !(_cc.width > 0) || !(_cc.height > 0)) return;
-                  const _ar = 9 / 14;
-                  let _w = _cc.width, _h = _w / _ar;
-                  if (_h > _cc.height) { _h = _cc.height; _w = _h * _ar; }
-                  _cropperInstance.setCropBoxData({ left: _cc.left + (_cc.width - _w) / 2, top: _cc.top + (_cc.height - _h) / 2, width: _w, height: _h });
-                } catch (e) {}
-              });
-            }
-          });
-        }
+        // S25: fit the image to the (safe-area-padded) container, then default the
+        // Front/Back crop box to ~9:14 centered. Wrapped in a reusable _fitCrop and
+        // run TWICE — once next frame, once after 180ms. The FIRST auto-opened crop
+        // (camera modal closes as the cropper opens) measures its container mid open-
+        // transition, so image #1 was scaled up with its right half pushed off-screen
+        // while #2-4 (modal already settled) were fine. The delayed re-fit corrects
+        // #1 and is idempotent for the rest.
+        const _fitCrop = function() {
+          if (!_cropperInstance || typeof _cropperInstance.resize !== "function") return;
+          try { _cropperInstance.resize(); } catch (e) {}
+          if (_cropComicFB && _cropperInstance) {
+            requestAnimationFrame(function() {
+              try {
+                const _cc = _cropperInstance.getCanvasData();
+                if (!_cc || !(_cc.width > 0) || !(_cc.height > 0)) return;
+                const _ar = 9 / 14;
+                let _w = _cc.width, _h = _w / _ar;
+                if (_h > _cc.height) { _h = _cc.height; _w = _h * _ar; }
+                _cropperInstance.setCropBoxData({ left: _cc.left + (_cc.width - _w) / 2, top: _cc.top + (_cc.height - _h) / 2, width: _w, height: _h });
+              } catch (e) {}
+            });
+          }
+        };
+        requestAnimationFrame(_fitCrop);
+        setTimeout(_fitCrop, 180);
       }
     });
     let _lastCropTap = 0;
@@ -12649,13 +12644,18 @@ async function cameraOpen(state) {
       // Android default; idx 1 (if present) is the wider lens (ZOOM OUT). The iOS
       // zoom-per-slot defaults below are skipped on Android (no telephoto to zoom into).
       _cameraState.androidLensMode = androidLens;
-      const _isZoomedInteriorSlot = _cameraState.kind === "interior" && _cameraState.current !== fullSlotIndex("outer_edge");
+      // S25 per-slot lens defaults (Matt's spec):
+      //   Main (all 4: Front/Back/Interior/Spine) -> WIDE (Zoom Out).
+      //   Corner macros -> zoom. Interior Front/Back (kind "interiorCover") -> WIDE (not in list).
+      //   Full/"interior" slots: Top Edge (top_pages), Bottom Edge (bottom_pages) and BOTH
+      //   exterior staples -> zoom; Outer Edge and Interior Staple -> WIDE.
+      const _interiorZoomSlot = _cameraState.kind === "interior" && (
+        _cameraState.current === fullSlotIndex("top_pages") ||
+        _cameraState.current === fullSlotIndex("bottom_pages") ||
+        _cameraState.current === fullSlotIndex("exterior_top_staple") ||
+        _cameraState.current === fullSlotIndex("exterior_bottom_staple"));
       const _isZoomedRestorationSlot = _cameraState.kind === "restoration" && CAMERA_SLOT_ZOOM_RESTORATION[_cameraState.current];
-      // S23/S25: Main Front (0), Back (1), and Interior (2) are full-page/full-cover
-      // shots — default to the WIDE lens so the whole thing fits, not the zoomed lens
-      // (Matt: default to Zoom Out). Only Spine (3) keeps the zoomed default.
-      const _mainWideSlot = _cameraState.kind === "main" && (_cameraState.current === 0 || _cameraState.current === 1 || _cameraState.current === 2);
-      const _zoomDefault = !isAndroid && !_mainWideSlot && (_cameraState.kind === "main" || _cameraState.kind === "corner" || _cameraState.kind === "signature" || _cameraState.kind === "carddeep" || _isZoomedInteriorSlot || _isZoomedRestorationSlot) && lensOptions.length > 1;
+      const _zoomDefault = !isAndroid && (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _cameraState.kind === "carddeep" || _interiorZoomSlot || _isZoomedRestorationSlot) && lensOptions.length > 1;
       _cameraState.currentLensIdx = _zoomDefault ? 1 : 0;
       if (lensOptions.length > 0) {
         await switchToLens(_cameraState.currentLensIdx);
@@ -12671,7 +12671,7 @@ async function cameraOpen(state) {
             // INTENTIONALLY want it; for wide/main captures force the MINIMUM
             // zoom so a full cover fits in frame (was applying 2x here — the bug).
             const _zmin = caps.zoom.min || 1;
-            const _wantsZoom = _cameraState.kind === "corner" || _cameraState.kind === "signature" || _cameraState.kind === "carddeep" || _isZoomedInteriorSlot || _isZoomedRestorationSlot;
+            const _wantsZoom = _cameraState.kind === "corner" || _cameraState.kind === "signature" || _cameraState.kind === "carddeep" || _interiorZoomSlot || _isZoomedRestorationSlot;
             const z = _wantsZoom ? Math.min(caps.zoom.max, Math.max(_zmin, targetZoom)) : _zmin;
             await track.applyConstraints({ advanced: [ { zoom: z } ] });
             console.log("[camera] Android no-label fallback: zoom", z, _wantsZoom ? "(intentional)" : "(forced wide)", "of max", caps.zoom.max);
@@ -13222,15 +13222,15 @@ async function runCropperSequence(captures, kind) {
     };
     formData[metaKey] = meta;
     formData._imagesChanged = true;
-    if (kind === "corner" || kind === "signature" || kind === "insert" || kind === "coupon" || kind === "restoration" || kind === "interiorCover" || kind === "interior") {
-      // S20: the auto-cropper is NO LONGER forced in any capture sequence
-      // (previously Main and Full auto-opened it). The crop tool has an
-      // unresolved bug — the crop handles render off-screen — so cropping stays
-      // OPTIONAL via each slot's manual crop button. Deep never needed it. The
-      // openCropper call below is kept for when the handle bug is fixed and a
-      // forced crop step might be reintroduced (useful mainly for Full).
-      continue;
-    }
+    // S25: auto-cropper runs for Main (all 4), plus — now the first-image measure
+    // bug is fixed — Deep's Interior Front/Back (interiorCover) and Full's three
+    // EDGE shots (Top/Outer/Bottom). Corner macros and the three staple shots
+    // don't benefit from cropping, so they skip it.
+    const _edgeCropSlots = [ fullSlotIndex("top_pages"), fullSlotIndex("outer_edge"), fullSlotIndex("bottom_pages") ];
+    const _wantsAutoCrop = kind === "main"
+      || kind === "interiorCover"
+      || (kind === "interior" && _edgeCropSlots.includes(cap.slot));
+    if (!_wantsAutoCrop) continue;
     await new Promise(resolve => {
       _cropperSequenceResolve = resolve;
       openCropper(kind, cap.slot);
@@ -13910,7 +13910,7 @@ initFirebase();
       <div id="promo-feedback" style="font-size:12px;margin-top:8px;min-height:16px;line-height:1.4"></div>
     </div>
     
-    <div id="buy-referral-note" style="display:none;margin-top:16px;padding-top:14px;border-top:1px solid #e8dec8;font-size:12.5px;line-height:1.5;color:#6a5a4a;text-align:center">Did someone tell you about Robograder? Thank them by sending a Referral Bonus in Settings.</div>
+    <div id="buy-referral-note" style="display:none;margin-top:16px;padding-top:14px;border-top:1px solid #e8dec8;font-size:12.5px;line-height:1.5;color:#6a5a4a;text-align:center">You can now give out free credits with a Referral Bonus in Settings.</div>
     <button onclick="hideBuyCredits()" style="margin-top:16px;width:100%;padding:12px 16px;background:#fff;color:#3a2a1a;border:1.5px solid #c8a96e;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;letter-spacing:0.5px">Cancel</button>
   </div>
 </div>
