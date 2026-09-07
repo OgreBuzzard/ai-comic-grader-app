@@ -9181,6 +9181,9 @@ async function _maybeGrantPwaWelcome() {
   if (!window._currentUser || typeof window._currentUser.getIdToken !== "function") return;
   // Ping at most once per browser session, so the server's call #2 is a real
   // return visit. The flag is set up-front; a failed call simply retries next session.
+  // Hard backstop: if this browser has already seen a grant, never ask again.
+  try { if (localStorage.getItem("rg_pwa_welcome_done") === "1") return; } catch (e) {}
+  // Ping at most once per browser session (server is the real one-time authority).
   try { if (sessionStorage.getItem("rg_pwa_welcome_pinged") === "1") return; } catch (e) {}
   try { sessionStorage.setItem("rg_pwa_welcome_pinged", "1"); } catch (e) {}
   try {
@@ -9191,6 +9194,11 @@ async function _maybeGrantPwaWelcome() {
       body: "{}"
     });
     const data = await resp.json().catch(() => ({}));
+    // Any definitive server answer (granted now, or already granted before) means
+    // this account is done — remember it so this browser never calls again.
+    if (data && (data.grantedNow || data.status === "already")) {
+      try { localStorage.setItem("rg_pwa_welcome_done", "1"); } catch (e) {}
+    }
     if (!resp.ok || !data || !data.grantedNow) return;
     if (typeof data.newBalance === "number") {
       window._userCredits = data.newBalance;
@@ -9214,11 +9222,11 @@ function _showPwaWelcomeModal(amount) {
   overlay.innerHTML = `
     <div style="background:#141210;border-radius:18px;padding:24px 24px 20px;max-width:340px;width:100%;border:1.5px solid #2f6a3a;text-align:center;box-shadow:0 12px 44px rgba(0,0,0,0.55)">
       <img src="assets/Robograder_Gift.webp" alt="" style="width:112px;height:auto;margin:0 auto 14px;display:block">
-      <div style="font-size:16px;font-weight:700;color:#8fe0a0;margin-bottom:8px">Welcome back!</div>
+      <div style="font-size:16px;font-weight:700;color:#8fe0a0;margin-bottom:8px">Welcome</div>
       <div style="font-size:15px;color:#dfe8e2;line-height:1.6;margin-bottom:20px">
-        Here${"’"}s <strong style="color:#7ee08c">${amount}</strong> free credit${amount === 1 ? "" : "s"} for grading on the web. Robograder logs your return with quiet, circuit-deep approval.
+        Here${"’"}s <strong style="color:#7ee08c">1</strong> free credit for logging in on the web. This is the best place to buy credits. And you can still use them in the apps.
       </div>
-      <button class="rg-btn rg-btn-branded rg-btn-md" style="width:100%">Let${"’"}s grade</button>
+      <button class="rg-btn rg-btn-branded rg-btn-md" style="width:100%">Thanks!</button>
     </div>`;
   document.body.appendChild(overlay);
   const btn = overlay.querySelector("button");
