@@ -1797,7 +1797,7 @@ onAuthStateChanged(auth, async user => {
     #splash-logo {
       position: absolute;
       left: 50%;
-      top: calc(env(safe-area-inset-top, 0px) + 5vh);
+      top: calc(env(safe-area-inset-top, 0px) + 3vh);
       transform: translate(-50%, -120vh);
       max-width: 86.4vw;
       max-height: 16.8vh;
@@ -1906,7 +1906,7 @@ onAuthStateChanged(auth, async user => {
     #splash-subtitle {
       position: absolute;
       left: 50%;
-      top: calc(env(safe-area-inset-top, 0px) + 5vh + 7vh);
+      top: calc(env(safe-area-inset-top, 0px) + 21vh);
       transform: translate(-50%, -120vh);
       text-align: center;
       font-size: 16px;
@@ -1978,7 +1978,7 @@ onAuthStateChanged(auth, async user => {
 
 <div id="auth-screen" style="display:none;position:fixed;inset:0;z-index:10001;background:#0a0a0a;align-items:center;justify-content:center;flex-direction:column;gap:24px;padding:calc(env(safe-area-inset-top, 0px) + 20px) 20px 20px">
   <div style="text-align:center">
-    <img src="/assets/Robograder_Launch_Logo.webp" alt="Robograder" style="width:200px;margin-bottom:10px" onerror="this.outerHTML='<div style=\'font-family:Share Tech Mono,Courier New,monospace;font-size:32px;color:#d4e82a;letter-spacing:0.16em;margin-bottom:10px\'>ROBOGRADER</div>'">
+    <img src="/assets/Robograder_Launch_Logo.webp" alt="Robograder" style="width:240px;margin-bottom:10px" onerror="this.outerHTML='<div style=\'font-family:Share Tech Mono,Courier New,monospace;font-size:32px;color:#d4e82a;letter-spacing:0.16em;margin-bottom:10px\'>ROBOGRADER</div>'">
     <div style="font-size:14px;color:#6a5a4a;letter-spacing:1.5px;font-weight:600">COMIC GRADING APP</div>
   </div>
   <div id="auth-pwa-buttons" style="display:flex;flex-direction:column;gap:12px;width:280px">
@@ -2175,8 +2175,8 @@ window.exitSplashSigninAndShowApp = function() {
       <div id="settings-transfer-code"
         style="font-family:'IBM Plex Mono','Menlo',monospace;font-size:20px;font-weight:700;letter-spacing:3px;color:#c8b8a8">—</div>
     </div>
-    <div class="settings-row" id="settings-referral-row" onclick="openReferralPrompt()" style="cursor:pointer;display:none;background:#7ac043;border-radius:12px;justify-content:center;text-align:center;padding:14px;margin:8px 0">
-      <div class="sr-label" style="color:#0d2a0d;font-weight:800;font-size:15px;letter-spacing:0.3px">Referral Bonus</div>
+    <div class="settings-row" id="settings-referral-row" onclick="openReferralPrompt()" style="cursor:pointer;display:none;justify-content:center;background:none;border:none;padding:0;margin:10px 0">
+      <div class="sr-label" style="background:#7ac043;color:#0d2a0d;font-weight:800;font-size:15px;letter-spacing:0.3px;border-radius:10px;padding:7px 20px;text-align:center">Referral Bonus</div>
     </div>
     <div class="settings-row" onclick="openSettings_buyCredits()">
       <div>

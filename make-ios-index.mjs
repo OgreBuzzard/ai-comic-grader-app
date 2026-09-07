@@ -626,13 +626,14 @@ mustReplace('D15 viewport-fit cover (iOS)',
 // '#header { background: #ffffff; border-bottom: 1px solid #d8d0c8; padding: calc(max(env(safe-area-inset-top, 0px), 59px) + 10px) 14px 10px; position: sticky; top: 0; z-index: 100; }');
 
 // ── D17: raise the splash subtitle on iOS ────────────────────────────────────
-// The PWA base CSS positions #splash-subtitle at 5vh+9vh. On iOS it should sit
-// higher (5vh+7vh). The D7b delta also defines #splash-subtitle, but the base
+// The PWA base CSS positions #splash-subtitle at 22vh (below the new taller
+// launch logo). On iOS the logo sits higher (2vh), so the subtitle can sit
+// slightly higher too (21vh) to keep the same gap. The D7b delta also defines #splash-subtitle, but the base
 // rule appears LATER in the generated file and would win, so rewrite the base
 // value directly here. PWA file keeps 9vh (untouched).
-mustReplace('D17 subtitle 7vh (iOS)',
-'top: calc(env(safe-area-inset-top, 0px) + 5vh + 9vh);',
-'top: calc(env(safe-area-inset-top, 0px) + 5vh + 7vh);');
+mustReplace('D17 subtitle iOS position',
+'top: calc(env(safe-area-inset-top, 0px) + 22vh);',
+'top: calc(env(safe-area-inset-top, 0px) + 21vh);');
 
 writeFileSync(outPath, html);
 console.log(`\nAll ${applied} deltas applied. Wrote ${outPath} (${html.length.toLocaleString()} bytes).`);
