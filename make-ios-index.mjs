@@ -204,11 +204,11 @@ mustReplace('D6 browser sheet sign-in',
 
 // ── D7a: splash markup — subtitle + sign-in panel ────────────────────────────
 mustReplace('D7a splash markup',
-`  <img id="splash-logo" src="assets/Robograder_Logo.webp" alt="Robograder"
+`  <img id="splash-logo" src="assets/Robograder_Launch_Logo.webp" alt="Robograder"
        onerror="this.style.display='none'">
   <div id="splash-subtitle">COMIC GRADING APP</div>
 </div>`,
-`  <img id="splash-logo" src="assets/Robograder_Logo.webp" alt="Robograder"
+`  <img id="splash-logo" src="assets/Robograder_Launch_Logo.webp" alt="Robograder"
        onerror="this.style.display='none'">
   <div id="splash-subtitle">COMIC GRADING APP</div>
   <div id="splash-signin">

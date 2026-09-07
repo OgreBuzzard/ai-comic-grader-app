@@ -51,7 +51,7 @@
   <link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@700;800;900&family=Saira:wght@700&family=Saira+Extra+Condensed:wght@700&display=swap" rel="stylesheet">
   <link rel="preload" href="assets/Robograder_Background.jpg" as="image">
   <link rel="preload" href="assets/Robograder_v4_Load.webp" as="image">
-  <link rel="preload" href="assets/Robograder_Logo.webp" as="image">
+  <link rel="preload" href="assets/Robograder_Launch_Logo.webp" as="image">
   <link rel="apple-touch-icon" href="icon-192.png">
 
   <link rel="preconnect" href="https://firebasestorage.googleapis.com" crossorigin>
@@ -1978,7 +1978,7 @@ onAuthStateChanged(auth, async user => {
 
 <div id="auth-screen" style="display:none;position:fixed;inset:0;z-index:10001;background:#0a0a0a;align-items:center;justify-content:center;flex-direction:column;gap:24px;padding:calc(env(safe-area-inset-top, 0px) + 20px) 20px 20px">
   <div style="text-align:center">
-    <img src="/assets/Robograder_Logo.webp" alt="Robograder" style="width:200px;margin-bottom:10px" onerror="this.outerHTML='<div style=\'font-family:Share Tech Mono,Courier New,monospace;font-size:32px;color:#d4e82a;letter-spacing:0.16em;margin-bottom:10px\'>ROBOGRADER</div>'">
+    <img src="/assets/Robograder_Launch_Logo.webp" alt="Robograder" style="width:200px;margin-bottom:10px" onerror="this.outerHTML='<div style=\'font-family:Share Tech Mono,Courier New,monospace;font-size:32px;color:#d4e82a;letter-spacing:0.16em;margin-bottom:10px\'>ROBOGRADER</div>'">
     <div style="font-size:14px;color:#6a5a4a;letter-spacing:1.5px;font-weight:600">COMIC GRADING APP</div>
   </div>
   <div id="auth-pwa-buttons" style="display:flex;flex-direction:column;gap:12px;width:280px">
@@ -2058,7 +2058,7 @@ window.exitSplashSigninAndShowApp = function() {
   <div id="splash-bg" role="presentation" aria-hidden="true"></div>
   <img id="splash-robot" src="assets/Robograder_v4_Load.webp" alt="Robograder mascot">
   
-  <img id="splash-logo" src="assets/Robograder_Logo.webp" alt="Robograder"
+  <img id="splash-logo" src="assets/Robograder_Launch_Logo.webp" alt="Robograder"
        onerror="this.style.display='none'">
   <div id="splash-subtitle">COMIC GRADING APP</div>
   <div id="splash-signin">
@@ -3599,7 +3599,7 @@ function buildListPG(c) {
   if (!val) return "";
   const v = String(val).includes(".") ? val : parseFloat(val).toFixed(1);
   const pgBg = c.couponQualified ? "#2e7d46" : "#1a5fa8";
-  return `<div style="flex-shrink:0;align-self:flex-start;background:${pgBg};border-radius:7px;width:40px;height:32px;display:flex;align-items:center;justify-content:center"><div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.66);display:inline-block;font-weight:800;font-size:24px;line-height:1;color:#fff">${v}</div></div>`;
+  return `<div style="flex-shrink:0;align-self:center;background:${pgBg};border-radius:7px;width:40px;height:32px;display:flex;align-items:center;justify-content:center"><div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.66);display:inline-block;font-weight:800;font-size:24px;line-height:1;color:#fff">${v}</div></div>`;
 }
 
 function buildStackedGradePair(officialBadge, aiBadge) {
@@ -5515,7 +5515,7 @@ function renderList() {
         const _labelBtn = (printModeEnabled && _canLabel)
           ? `<button onclick="event.stopPropagation();togglePrintState('${esc(c.id)}')" title="${_inPrint ? "Remove from print queue" : "Add to print queue"}"\n              style="position:absolute;top:4px;right:6px;z-index:3;background:none;border:none;padding:2px;line-height:0;cursor:pointer">${_inPrint ? PRINT_ICON_X_SVG : PRINT_ICON_SVG}</button>`
           : "";
-        return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0;align-self:stretch;display:flex;flex-direction:column;justify-content:center;gap:2px">\n                  <div style="display:flex;align-items:flex-start;gap:8px${_labelBtn ? ';padding-right:34px' : ''}">\n                    <div style="flex:1;min-width:0;font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1;overflow-wrap:anywhere">${esc(c.title)}</div>\n                  </div>\n                  <div style="display:flex;align-items:center;gap:8px">\n                    <div style="flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;overflow:hidden">\n                      ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24;white-space:nowrap;flex-shrink:0">${c.type === "card" ? esc(formatCardNumber(c.issue)) : formatIssue(c.issue, c.title)}</span>` : ""}\n                      ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                    </div>\n                    ${_adStr ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:600;color:#9a8a7a;flex-shrink:0;white-space:nowrap;letter-spacing:0.2px">${_adStr}</span>` : ""}\n                    ${buildListPG(c)}\n                  </div>\n                </div>\n                ${_labelBtn}\n              </div>\n            </div>`;
+        return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0;align-self:stretch;display:flex;flex-direction:column;justify-content:center;gap:2px">\n                  <div style="display:flex;align-items:flex-start;gap:8px">\n                    <div style="flex:1;min-width:0;font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1;overflow-wrap:anywhere">${esc(c.title)}</div>\n                  </div>\n                  <div style="display:flex;align-items:center;gap:8px">\n                    <div style="flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;overflow:hidden">\n                      ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24;white-space:nowrap;flex-shrink:0">${c.type === "card" ? esc(formatCardNumber(c.issue)) : formatIssue(c.issue, c.title)}</span>` : ""}\n                      ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                    </div>\n                    ${_adStr ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:600;color:#9a8a7a;flex-shrink:0;white-space:nowrap;letter-spacing:0.2px">${_adStr}</span>` : ""}\n                  </div>\n                </div>\n                ${buildListPG(c)}\n                ${_labelBtn}\n              </div>\n            </div>`;
       };
       const _showSep = _showTitleSeparators();
       section.titles.forEach(title => {
