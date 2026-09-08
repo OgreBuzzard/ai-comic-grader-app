@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Robograder</title>
+<meta name="description" content="Robograder — AI comic grading. Use it on the web, or get the app on iOS or Android.">
+
+<!-- Open Graph (link previews) -->
+<meta property="og:title" content="Robograder">
+<meta property="og:description" content="AI comic grading — web, iOS, or Android.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://robograder.app/get">
+<!-- TODO: 1200x630 share image -->
+<meta property="og:image" content="https://robograder.app/assets/og-share.jpg">
+
+<!-- ============================================================= -->
+<!-- TRACKING TAGS — fill in your IDs, then uncomment.              -->
+<!-- (They run once this is hosted on your own domain, not in a     -->
+<!--  preview sandbox.)                                             -->
+<!-- ============================================================= -->
+<!-- ▼ META PIXEL — replace YOUR_PIXEL_ID
+<script>
+!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+document,'script','https://connect.facebook.net/en_US/fbevents.js');
+fbq('init','YOUR_PIXEL_ID'); fbq('track','PageView');
+</script>
+-->
+<!-- ▼ GOOGLE TAG — replace G-XXXXXXX / AW-XXXXXXX
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXX"></script>
+<script>
+window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
+gtag('js',new Date()); gtag('config','G-XXXXXXX'); gtag('config','AW-XXXXXXX');
+</script>
+-->
+
+<style>
+:root{ --bg:#0e1512; --ink:#eaf5df; --green:#4e9e2e; --green-d:#3a7a22; --store:#141210; --line:#294a3d; }
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:radial-gradient(120% 80% at 50% 0%,#1c2b1f 0%,#0e1512 62%);
+  color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  display:flex; align-items:center; justify-content:center; padding:32px 22px;
+  padding-top:max(32px,env(safe-area-inset-top)); padding-bottom:max(32px,env(safe-area-inset-bottom));
+}
+.card{width:100%; max-width:380px; text-align:center}
+/* logo */
+.logo{width:230px; height:auto; margin:0 auto 6px; display:block}
+/* character art */
+.character{width:210px; height:auto; margin:6px auto 26px; display:block;
+  filter:drop-shadow(0 12px 26px rgba(0,0,0,.5))}
+.character-fallback{width:150px; height:150px; margin:10px auto 26px; border-radius:26px;
+  background:radial-gradient(circle at 50% 35%,#2e6e3a,#12240f); display:flex; align-items:center;
+  justify-content:center; font-size:66px; box-shadow:0 12px 30px rgba(0,0,0,.5)}
+/* the three equal, stacked buttons */
+.btns{display:flex; flex-direction:column; gap:14px}
+.btn{
+  display:flex; align-items:center; justify-content:center; gap:11px;
+  width:100%; height:62px; border-radius:14px; text-decoration:none;
+  font-size:18px; font-weight:800; letter-spacing:.2px; border:1px solid transparent; cursor:pointer;
+}
+.btn:active{transform:scale(.98)}
+.btn.web{background:var(--green); color:#0d1f08; box-shadow:0 6px 18px rgba(78,158,46,.35)}
+.btn.store{background:var(--store); color:#fff; border-color:#33463b}
+.btn svg{flex:0 0 auto}
+.btn .lbls{display:flex; flex-direction:column; align-items:flex-start; line-height:1.1}
+.btn .lbls .sm{font-size:11px; font-weight:600; opacity:.75; letter-spacing:.3px}
+.btn .lbls .lg{font-size:18px; font-weight:800}
+@media (prefers-reduced-motion:no-preference){ .btn{transition:transform .12s} }
+</style>
+</head>
+<body>
+  <main class="card">
+    <img class="logo" src="/assets/Robograder_Launch_Logo.webp" alt="Robograder">
+    <img class="character" src="/assets/Robograder_Charging.webp" alt="Robograder character"
+         onerror="this.outerHTML='<div class=&quot;character-fallback&quot;>🤖</div>'">
+
+    <nav class="btns">
+      <!-- 1 · Web -->
+      <a class="btn web" id="cta-web" href="#" data-dest="web">Go to the Web Version</a>
+
+      <!-- 2 · Apple -->
+      <a class="btn store" id="cta-ios" href="#" data-dest="ios" aria-label="Download on the App Store">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M16.365 1.43c0 1.14-.42 2.2-1.13 3.02-.86.98-2.27 1.74-3.4 1.65-.14-1.11.45-2.28 1.1-3.02.79-.9 2.2-1.6 3.43-1.65zM20.9 17.13c-.6 1.38-.88 1.99-1.65 3.21-1.07 1.7-2.58 3.82-4.45 3.83-1.66.02-2.09-1.08-4.34-1.07-2.25.01-2.72 1.09-4.38 1.07-1.87-.01-3.3-1.92-4.37-3.62C-.63 17.5-.9 12.13 1.4 9.28c1.11-1.4 2.86-2.29 4.5-2.29 1.67 0 2.72 1.09 4.1 1.09 1.34 0 2.16-1.09 4.1-1.09 1.46 0 3.01.8 4.11 2.17-3.61 1.98-3.02 7.14 1.09 8.96z"/></svg>
+        <span class="lbls"><span class="sm">Download on the</span><span class="lg">App Store</span></span>
+      </a>
+
+      <!-- 3 · Google -->
+      <a class="btn store" id="cta-android" href="#" data-dest="android" aria-label="Get it on Google Play">
+        <svg width="24" height="24" viewBox="0 0 512 512" aria-hidden="true"><path fill="#00d2ff" d="M47 20 285 258 47 496a30 30 0 0 1-15-26V46a30 30 0 0 1 15-26z"/><path fill="#00e676" d="M47 20a30 30 0 0 1 30 2l205 118-73 73L47 20z"/><path fill="#ffce00" d="M414 210l-72 42-73-73 73-73 72 42a34 34 0 0 1 0 62z"/><path fill="#ff3d47" d="M47 496l162-193 73 73L77 494a30 30 0 0 1-30 2z"/></svg>
+        <span class="lbls"><span class="sm">Get it on</span><span class="lg">Google Play</span></span>
+      </a>
+    </nav>
+  </main>
+
+<script>
+/* Tracked-link engine: reads the campaign params off this page's URL and
+   carries them to each destination (Play referrer / App Store ct / web utm),
+   and fires a conversion event on each tap. Fill in the store URLs below. */
+var STORE = {
+  ios:     "https://apps.apple.com/app/id6778625739",
+  android: "https://play.google.com/store/apps/details?id=app.robograder",
+  web:     "https://robograder.app"
+};
+(function(){
+  var qs=new URLSearchParams(location.search);
+  var KEYS=["utm_source","utm_medium","utm_campaign","utm_content","utm_term"];
+  var utm={}; KEYS.forEach(function(k){ if(qs.get(k)) utm[k]=qs.get(k); });
+  if(!utm.utm_source){ var r=(document.referrer||"").toLowerCase();
+    if(r.indexOf("instagram")>-1)utm.utm_source="instagram";
+    else if(r.indexOf("facebook")>-1||r.indexOf("fb.")>-1)utm.utm_source="facebook";
+    else if(r.indexOf("youtu")>-1)utm.utm_source="youtube"; }
+  var utmStr=KEYS.filter(function(k){return utm[k];}).map(function(k){return k+"="+encodeURIComponent(utm[k]);}).join("&");
+  var source=utm.utm_source||"direct";
+  var campaign=(utm.utm_campaign||"launch")+(utm.utm_content?("_"+utm.utm_content):"");
+  function link(dest){
+    if(dest==="android"){ var ref=encodeURIComponent(utmStr||("utm_source="+source));
+      return STORE.android+(STORE.android.indexOf("?")>-1?"&":"?")+"referrer="+ref; }
+    if(dest==="ios"){ return STORE.ios+"?ct="+encodeURIComponent((source+"_"+campaign).slice(0,39))+"&mt=8"; }
+    return STORE.web+(utmStr?((STORE.web.indexOf("?")>-1?"&":"?")+utmStr):"");
+  }
+  function fire(dest){
+    try{ if(window.fbq) fbq('track', dest==='web'?'Lead':'InitiateCheckout', {content_name:'get_'+dest,source:source,campaign:campaign}); }catch(e){}
+    try{ if(window.gtag) gtag('event','cta_click',{destination:dest,source:source,campaign:campaign}); }catch(e){}
+  }
+  ["cta-web","cta-ios","cta-android"].forEach(function(id){
+    var el=document.getElementById(id); if(!el)return;
+    var d=el.getAttribute("data-dest");
+    el.setAttribute("href",link(d));
+    el.addEventListener("click",function(){ fire(d); });
+  });
+})();
+</script>
+</body>
+</html>
