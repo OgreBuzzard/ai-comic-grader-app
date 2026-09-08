@@ -833,15 +833,17 @@ async function downloadExport() {
 // Aggregate summary (counts only, no item bodies) — tiny payload, shown in a modal.
 async function exportSummary() {
   const btn = document.getElementById('summary-btn');
-  const orig = btn ? btn.textContent : '';
-  if (btn) { btn.disabled = true; btn.textContent = 'Summarizing…'; }
+  // Show "thinking" WITHOUT changing the label width (which reflowed the header).
+  let anim = null;
+  if (btn) { btn.disabled = true; try { anim = btn.animate([{opacity:1},{opacity:0.4},{opacity:1}], {duration:1000, iterations:Infinity}); } catch (e) {} }
   try {
     const d = await api('/api/export' + exportQuery('aggregate=1'));
     showSummaryModal(d);
   } catch (e) {
     alert('Summary failed: ' + (e && e.message ? e.message : e));
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = orig; }
+    if (btn) { btn.disabled = false; }
+    if (anim) { try { anim.cancel(); } catch (e) {} }
   }
 }
 
@@ -857,7 +859,7 @@ function showSummaryModal(d) {
     `<tr><td style="padding:3px 0">${esc(t.title)}</td><td style="text-align:right">${t.count}</td></tr>`).join('');
   const multi = (d.multiSubmissions || []).map(m => {
     const p = String(m.key).split('|');
-    return `<tr><td style="padding:3px 0">${esc(p[0] || '')}${p[1] ? ' #' + esc(p[1]) : ''}</td><td style="text-align:right">${m.count}×</td></tr>`;
+    return `<tr><td style="padding:3px 0">${esc(p[0] || '')}${p[1] ? ' #' + esc(p[1]) : ''}</td><td style="text-align:right">${m.count}</td></tr>`;
   }).join('');
   const ob = d.optInBreakdown || {};
   const wrap = document.createElement('div');
@@ -878,15 +880,45 @@ function showSummaryModal(d) {
         ${statCard('Opted in', ob.optIn != null ? ob.optIn : '—')}
         ${statCard('Opted out', ob.optOut != null ? ob.optOut : '—')}
       </div>
-      <div style="font-weight:700;margin:6px 0">Top titles (series ≥20 copies)</div>
+      <div style="font-weight:700;margin:6px 0">Top titles (series owned by ≥20 unique users)</div>
       <table style="width:100%;border-collapse:collapse;margin-bottom:18px">${titles || '<tr><td>—</td></tr>'}</table>
-      <div style="font-weight:700;margin:6px 0">Issues with ≥10 submissions (${(d.multiSubmissions || []).length})</div>
+      <div style="font-weight:700;margin:6px 0">Issues owned by ≥10 unique users (${(d.multiSubmissions || []).length})</div>
       <table style="width:100%;border-collapse:collapse">${multi || '<tr><td>None</td></tr>'}</table>
     </div>`;
   document.body.appendChild(wrap);
   const close = () => wrap.remove();
   wrap.querySelector('#summary-close').onclick = close;
   wrap.onclick = e => { if (e.target === wrap) close(); };
+}
+
+// ── GROWTH (ad funnel) ──────────────────────────────────────────────────────
+// Lazy: fetches only when tapped, so it never adds to the dashboard's open time.
+// Per-source attribution lights up once signup-source (utm) capture ships; until
+// then it shows current totals across all sources.
+async function openGrowth() {
+  const host = document.getElementById('tab-content');
+  if (!host) return;
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.remove('active'));
+  state.tab = 'growth';
+  host.innerHTML = '<div class="loading">Loading growth…</div>';
+  try {
+    const d = await api('/api/export' + exportQuery('aggregate=1'));
+    const stage = (label, val, sub) => `<div style="background:#0e0f12;border:1px solid #23252c;border-radius:8px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <div><div style="font-size:12px;color:#8a8d96;text-transform:uppercase;letter-spacing:1px">${label}</div>${sub ? `<div style="font-size:11px;color:#678">${sub}</div>` : ''}</div>
+      <div style="font-size:20px;font-weight:700">${val}</div></div>`;
+    host.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:8px;max-width:520px">
+        <div style="font-size:16px;font-weight:700;margin:4px 0">Ad Funnel</div>
+        <div style="font-size:12px;color:#d8b56a;background:#1a1508;border:1px solid #3a2f14;border-radius:8px;padding:8px 10px;line-height:1.5">
+          Per-source attribution (which ad sent each account) activates once signup-source capture is deployed. These are current totals across all sources.
+        </div>
+        ${stage('Accounts', d.distinctUsers != null ? d.distinctUsers : '—', 'distinct users')}
+        ${stage('Assessments', d.total != null ? d.total : '—', 'total graded')}
+        ${stage('Avg predicted grade', d.avgPG != null ? d.avgPG : '—')}
+      </div>`;
+  } catch (e) {
+    host.innerHTML = '<div style="color:#c88;padding:12px">Growth load failed: ' + (e && e.message ? e.message : e) + '</div>';
+  }
 }
 
 // ── Auth ───────────────────────────────────────────────────────────────────
@@ -1082,8 +1114,8 @@ async function renderDashboard() {
       </div>
 
       <div style="grid-column:2;grid-row:2;display:flex;flex-direction:column;gap:5px;align-items:stretch">
-        <button class="sign-out" id="bake-btn" style="padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer" title="Fold manual FMV entries into the selected category's fmv_*.json for download">FMV</button>
-        <select id="bake-cat" style="padding:3px 6px;font-size:11px;background:#1c1c22;color:#ccc;border:1px solid #333;border-radius:8px" title="Which FMV file to bake"><option value="comics">Comics</option><option value="pokemon">Pokémon</option><option value="magic">Magic</option><option value="baseball">Baseball</option></select>
+        <button class="sign-out" id="bake-btn" style="padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer" title="Bake manual FMV entries into fmv_comics.json for download">FMV</button>
+        <button class="sign-out" id="growth-btn" style="padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer" title="Ad funnel: sources to installs, accounts, assessments, purchases, revenue">GROWTH</button>
       </div>
 
       <div style="grid-column:3;grid-row:2;display:flex;flex-direction:column;gap:5px;align-items:stretch">
@@ -1110,6 +1142,7 @@ async function renderDashboard() {
   document.getElementById('export-btn').onclick = downloadExport;
   { const _bb = document.getElementById('bake-btn'); if (_bb) _bb.onclick = bakeFmv; }
   document.getElementById('summary-btn').onclick = exportSummary;
+  { const _gb = document.getElementById('growth-btn'); if (_gb) _gb.onclick = openGrowth; }
   if (!window._ptrSet) { window._ptrSet = true; _setupPullToRefresh(); }
   _syncCacheCfgDom(); // header was just rebuilt — restore the toggle from state
   document.querySelectorAll('#tabs button').forEach(btn => {

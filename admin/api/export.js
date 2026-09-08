@@ -350,22 +350,27 @@ export default async function handler(req, res) {
     if (aggregate) {
       const normKey = it =>
         `${lc(it.title).replace(/\s+/g, ' ').trim()}|${lc(String(it.issue || '')).replace(/^#/, '').trim()}`;
-      const titleCounts = {}, issueKeys = {}, users = new Set();
+      // Most-submitted counts are by DISTINCT USER: dedupe same-account
+      // resubmissions of one book (assume one physical copy per owner), so a
+      // book re-run 5× by the same person counts once, not five times.
+      const titleUsers = {}, issueUsers = {}, users = new Set();
       let pgSum = 0, pgN = 0, rgSum = 0, rgN = 0, optIn = 0, optOut = 0;
       for (const it of filtered) {
         users.add(it._uid);
         const t = (it.title || '').trim();
-        if (t) titleCounts[t] = (titleCounts[t] || 0) + 1;
-        const k = normKey(it); issueKeys[k] = (issueKeys[k] || 0) + 1;
+        if (t) (titleUsers[t] || (titleUsers[t] = new Set())).add(it._uid);
+        const k = normKey(it); (issueUsers[k] || (issueUsers[k] = new Set())).add(it._uid);
         const pg = pgOf(it); if (pg != null) { pgSum += pg; pgN++; }
         const rg = rgOf(it); if (rg != null) { rgSum += rg; rgN++; }
         if (it._trainingOptIn === false) optOut++; else optIn++;
       }
-      // S25: hide series with fewer than 20 copies (perf + signal). Was slice(0,25).
-      const topTitles = Object.entries(titleCounts)
+      // Series owned by >= 20 distinct users (was: total copies incl. dupes).
+      const topTitles = Object.entries(titleUsers)
+        .map(([title, set]) => [title, set.size])
         .filter(([, c]) => c >= 20).sort((a, b) => b[1] - a[1]).map(([title, count]) => ({ title, count }));
-      // S25: hide issues with fewer than 10 submissions (perf + signal). Was >= 2.
-      const multiSubmissions = Object.entries(issueKeys)
+      // Issues owned by >= 10 distinct users (was: total submissions incl. dupes).
+      const multiSubmissions = Object.entries(issueUsers)
+        .map(([key, set]) => [key, set.size])
         .filter(([, c]) => c >= 10).sort((a, b) => b[1] - a[1]).map(([key, count]) => ({ key, count }));
       return res.status(200).json({
         mode: 'aggregate',
