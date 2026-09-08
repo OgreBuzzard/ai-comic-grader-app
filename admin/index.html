@@ -902,19 +902,50 @@ async function openGrowth() {
   state.tab = 'growth';
   host.innerHTML = '<div class="loading">Loading growth…</div>';
   try {
-    const d = await api('/api/export' + exportQuery('aggregate=1'));
-    const stage = (label, val, sub) => `<div style="background:#0e0f12;border:1px solid #23252c;border-radius:8px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;gap:10px">
-      <div><div style="font-size:12px;color:#8a8d96;text-transform:uppercase;letter-spacing:1px">${label}</div>${sub ? `<div style="font-size:11px;color:#678">${sub}</div>` : ''}</div>
-      <div style="font-size:20px;font-weight:700">${val}</div></div>`;
+    const d = await api('/api/growth');
+    const rows = d.rows || [];
+    const t = d.totals || {};
+    const esc = x => String(x == null ? '' : x).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const money = n => '$' + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const pct = (a, b) => b ? Math.round(a / b * 100) + '%' : '—';
+    const body = rows.map(r => `<tr>
+      <td style="padding:6px 8px">${esc(r.source)}</td>
+      <td style="text-align:right;padding:6px 8px">${r.accounts}</td>
+      <td style="text-align:right;padding:6px 8px">${r.activated} <span style="color:#678;font-size:11px">${pct(r.activated, r.accounts)}</span></td>
+      <td style="text-align:right;padding:6px 8px">${r.buyers} <span style="color:#678;font-size:11px">${pct(r.buyers, r.accounts)}</span></td>
+      <td style="text-align:right;padding:6px 8px">${money(r.netRevenue)}</td>
+      <td style="text-align:right;padding:6px 8px">${money(r.revPerAccount)}</td>
+    </tr>`).join('');
     host.innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:8px;max-width:520px">
-        <div style="font-size:16px;font-weight:700;margin:4px 0">Ad Funnel</div>
-        <div style="font-size:12px;color:#d8b56a;background:#1a1508;border:1px solid #3a2f14;border-radius:8px;padding:8px 10px;line-height:1.5">
-          Per-source attribution (which ad sent each account) activates once signup-source capture is deployed. These are current totals across all sources.
+      <div style="max-width:640px">
+        <div style="font-size:16px;font-weight:700;margin:4px 0 8px">Ad Funnel — by source</div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead><tr style="color:#8a8d96;border-bottom:1px solid #2a2c34">
+              <th style="text-align:left;padding:4px 8px">Source</th>
+              <th style="text-align:right;padding:4px 8px">Accts</th>
+              <th style="text-align:right;padding:4px 8px">Graded</th>
+              <th style="text-align:right;padding:4px 8px">Buyers</th>
+              <th style="text-align:right;padding:4px 8px">Net $</th>
+              <th style="text-align:right;padding:4px 8px">$/acct</th>
+            </tr></thead>
+            <tbody>${body || '<tr><td colspan="6" style="padding:8px;color:#889">No data yet.</td></tr>'}</tbody>
+            <tfoot><tr style="border-top:1px solid #2a2c34;font-weight:700">
+              <td style="text-align:left;padding:6px 8px">All</td>
+              <td style="text-align:right;padding:6px 8px">${t.accounts || 0}</td>
+              <td style="text-align:right;padding:6px 8px">${t.activated || 0}</td>
+              <td style="text-align:right;padding:6px 8px">${t.buyers || 0}</td>
+              <td style="text-align:right;padding:6px 8px">${money(t.netRevenue)}</td>
+              <td></td>
+            </tr></tfoot>
+          </table>
         </div>
-        ${stage('Accounts', d.distinctUsers != null ? d.distinctUsers : '—', 'distinct users')}
-        ${stage('Assessments', d.total != null ? d.total : '—', 'total graded')}
-        ${stage('Avg predicted grade', d.avgPG != null ? d.avgPG : '—')}
+        <div style="font-size:12px;color:#8a8d96;margin-top:10px;line-height:1.5">
+          "Graded" = accounts with &ge;1 assessment. "Net $" = revenue kept after platform fees.
+          Ad-driven web signups show their source; existing users, direct visits, and native store
+          installs bucket under <b>direct / none</b>. Give me each source's ad spend from Meta/Google
+          and I'll add cost-per-buyer here.
+        </div>
       </div>`;
   } catch (e) {
     host.innerHTML = '<div style="color:#c88;padding:12px">Growth load failed: ' + (e && e.message ? e.message : e) + '</div>';
