@@ -4578,6 +4578,24 @@ async function _fsReadWithRetry(doReadFn, attempts = 5, delayMs = 600) {
   throw lastErr;
 }
 
+// ── Ad-source (UTM) capture ─────────────────────────────────────────────────
+// The /get landing page passes utm_* through to robograder.app on web/PWA. Stash
+// them so they survive until the account doc is created, then stamp them on the
+// user doc (new-user branch in loadUserCredits). Last-touch: most recent ad wins.
+// Harmless on native (no utm in the URL there) — the fields just stay null.
+function _rgGetStoredUTM() {
+  try { return JSON.parse(localStorage.getItem("rg_utm") || "null"); } catch (e) { return null; }
+}
+(function _rgCaptureUTM() {
+  try {
+    var qs = new URLSearchParams(location.search || "");
+    var keys = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"];
+    var got = {}, any = false;
+    keys.forEach(function (k) { var v = qs.get(k); if (v) { got[k] = String(v).slice(0, 120); any = true; } });
+    if (any) { got.capturedAt = new Date().toISOString(); localStorage.setItem("rg_utm", JSON.stringify(got)); }
+  } catch (e) {}
+})();
+
 async function loadUserCredits() {
   if (!window._currentUser) return;
   try {
@@ -4644,12 +4662,19 @@ async function loadUserCredits() {
     } else {
       const userRef = window._fsDoc(db, "users", window._currentUser.uid);
       const newCode = generateTransferCode();
+      const _utm = _rgGetStoredUTM() || {};
       await window._fsSetDoc(userRef, {
         ...profile,
         assessmentCredits: 3,
         createdAt: (new Date).toISOString(),
         freeCreditsGranted: true,
-        transferCode: newCode
+        transferCode: newCode,
+        utmSource: _utm.utm_source || null,
+        utmMedium: _utm.utm_medium || null,
+        utmCampaign: _utm.utm_campaign || null,
+        utmContent: _utm.utm_content || null,
+        utmTerm: _utm.utm_term || null,
+        acqReferrer: (document.referrer || "").slice(0, 200) || null
       });
       window._userCredits = 3;
       window._sampleDismissed = false;
