@@ -53,28 +53,26 @@ body{
 .hero{width:100%; max-width:360px; height:auto; margin:0 auto 24px; display:block;
   filter:drop-shadow(0 16px 34px rgba(0,0,0,.55))}
 
-/* stacked action list */
-.btns{display:flex; flex-direction:column; align-items:center; gap:13px}
-
-/* web button — the fee-free path, styled to sit as a peer of the store badges */
+/* stacked action list — every row is the SAME size (equal-width tap target),
+   badges centered inside at their own undistorted proportions. */
+.btns{display:flex; flex-direction:column; align-items:center; gap:12px}
+.row{
+  display:flex; align-items:center; justify-content:center;
+  width:300px; max-width:82vw; height:58px; border-radius:13px; text-decoration:none;
+}
+.row:active{transform:scale(.98)}
+/* web button — the fee-free path */
 .web{
-  display:flex; align-items:center; justify-content:center; gap:9px;
-  width:100%; max-width:300px; height:58px; border-radius:13px; text-decoration:none;
   background:linear-gradient(180deg,var(--green),var(--green-d)); color:var(--green-ink);
   font-size:18px; font-weight:800; letter-spacing:.2px;
   box-shadow:0 8px 22px rgba(87,176,50,.34); border:1px solid rgba(255,255,255,.16);
 }
-.web:active{transform:scale(.98)}
-.web .arrow{font-size:20px; font-weight:900; transform:translateY(-1px)}
-
-/* official store badges — real artwork, never imitations. Height-matched. */
-.badge{display:inline-flex; text-decoration:none; line-height:0}
+/* official store badges — real artwork, never imitations. Centered in the row. */
 .badge img{display:block; width:auto}
-.badge.apple img{height:54px}
-.badge.play  img{height:60px} /* Google's badge carries built-in padding; a touch taller matches Apple visually */
+.badge.apple img{height:44px}
+.badge.play  img{height:56px} /* Google's official badge has a built-in frame; sized so its pill matches Apple's height */
 .badge-txt{ /* graceful fallback only if an official badge fails to load — plain text, not a fake badge */
-  display:inline-flex; align-items:center; height:54px; padding:0 22px; border-radius:12px;
-  background:#111; color:#fff; border:1px solid #34463b; font-size:16px; font-weight:700; text-decoration:none}
+  color:#fff; font-size:16px; font-weight:700; text-decoration:none}
 
 /* 1s slide-in intro */
 @keyframes riseIn{ from{opacity:0; transform:translateY(18px)} to{opacity:1; transform:none} }
@@ -92,18 +90,18 @@ body{
 
     <nav class="btns">
       <!-- 1 · Web (fee-free path) -->
-      <a class="web" id="cta-web" href="#" data-dest="web">Open the Web App <span class="arrow">›</span></a>
+      <a class="row web" id="cta-web" href="#" data-dest="web">Open the Web App</a>
 
       <!-- 2 · Apple — official badge -->
-      <a class="badge apple" id="cta-ios" href="#" data-dest="ios" aria-label="Download on the App Store">
+      <a class="row badge apple" id="cta-ios" href="#" data-dest="ios" aria-label="Download on the App Store">
         <img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg"
              alt="Download on the App Store"
              onerror="this.outerHTML='<span class=&quot;badge-txt&quot;>Download on the App Store</span>'">
       </a>
 
       <!-- 3 · Google — official badge -->
-      <a class="badge play" id="cta-android" href="#" data-dest="android" aria-label="Get it on Google Play">
-        <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_us_badge_web_generic.png"
+      <a class="row badge play" id="cta-android" href="#" data-dest="android" aria-label="Get it on Google Play">
+        <img src="https://play.google.com/intl/en_us/badges/images/generic/en_badge_web_generic.png"
              alt="Get it on Google Play"
              onerror="this.outerHTML='<span class=&quot;badge-txt&quot;>Get it on Google Play</span>'">
       </a>
