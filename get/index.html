@@ -11,14 +11,8 @@
 <meta property="og:description" content="AI comic grading — web, iOS, or Android.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://robograder.app/get">
-<!-- TODO: 1200x630 share image -->
-<meta property="og:image" content="https://robograder.app/assets/og-share.jpg">
+<meta property="og:image" content="https://robograder.app/og-card.jpg">
 
-<!-- ============================================================= -->
-<!-- TRACKING TAGS — fill in your IDs, then uncomment.              -->
-<!-- (They run once this is hosted on your own domain, not in a     -->
-<!--  preview sandbox.)                                             -->
-<!-- ============================================================= -->
 <!-- Meta Pixel -->
 <script>
 !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
@@ -36,61 +30,82 @@ gtag('js',new Date()); gtag('config','G-LW4DM2DHTJ');
 </script>
 
 <style>
-:root{ --bg:#0e1512; --ink:#eaf5df; --green:#4e9e2e; --green-d:#3a7a22; --store:#141210; --line:#294a3d; }
+:root{
+  --ink:#eef6e6; --green:#57b032; --green-d:#3c821f; --green-ink:#08210a;
+}
 *{box-sizing:border-box}
 html,body{height:100%}
 body{
-  margin:0; background:radial-gradient(120% 80% at 50% 0%,#1c2b1f 0%,#0e1512 62%);
-  color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  display:flex; align-items:center; justify-content:center; padding:32px 22px;
-  padding-top:max(32px,env(safe-area-inset-top)); padding-bottom:max(32px,env(safe-area-inset-bottom));
+  margin:0;
+  background:
+    radial-gradient(115% 70% at 50% -6%, rgba(96,178,58,.20) 0%, rgba(96,178,58,0) 46%),
+    radial-gradient(140% 100% at 50% 4%, #163024 0%, #0c1712 52%, #070d0b 100%);
+  color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  display:flex; align-items:center; justify-content:center;
+  padding:28px 22px;
+  padding-top:max(28px,env(safe-area-inset-top)); padding-bottom:max(28px,env(safe-area-inset-bottom));
+  overflow-x:hidden;
 }
-.card{width:100%; max-width:380px; text-align:center}
-/* logo */
-.logo{width:230px; height:auto; margin:0 auto 6px; display:block}
-/* character art */
-.character{width:210px; height:auto; margin:6px auto 26px; display:block;
-  filter:drop-shadow(0 12px 26px rgba(0,0,0,.5))}
-.character-fallback{width:150px; height:150px; margin:10px auto 26px; border-radius:26px;
-  background:radial-gradient(circle at 50% 35%,#2e6e3a,#12240f); display:flex; align-items:center;
-  justify-content:center; font-size:66px; box-shadow:0 12px 30px rgba(0,0,0,.5)}
-/* the three equal, stacked buttons */
-.btns{display:flex; flex-direction:column; gap:14px}
-.btn{
-  display:flex; align-items:center; justify-content:center; gap:11px;
-  width:100%; height:62px; border-radius:14px; text-decoration:none;
-  font-size:18px; font-weight:800; letter-spacing:.2px; border:1px solid transparent; cursor:pointer;
+.card{width:100%; max-width:400px; text-align:center}
+
+/* combined logo + character hero */
+.hero{width:100%; max-width:360px; height:auto; margin:0 auto 24px; display:block;
+  filter:drop-shadow(0 16px 34px rgba(0,0,0,.55))}
+
+/* stacked action list */
+.btns{display:flex; flex-direction:column; align-items:center; gap:13px}
+
+/* web button — the fee-free path, styled to sit as a peer of the store badges */
+.web{
+  display:flex; align-items:center; justify-content:center; gap:9px;
+  width:100%; max-width:300px; height:58px; border-radius:13px; text-decoration:none;
+  background:linear-gradient(180deg,var(--green),var(--green-d)); color:var(--green-ink);
+  font-size:18px; font-weight:800; letter-spacing:.2px;
+  box-shadow:0 8px 22px rgba(87,176,50,.34); border:1px solid rgba(255,255,255,.16);
 }
-.btn:active{transform:scale(.98)}
-.btn.web{background:var(--green); color:#0d1f08; box-shadow:0 6px 18px rgba(78,158,46,.35)}
-.btn.store{background:var(--store); color:#fff; border-color:#33463b}
-.btn svg{flex:0 0 auto}
-.btn .lbls{display:flex; flex-direction:column; align-items:flex-start; line-height:1.1}
-.btn .lbls .sm{font-size:11px; font-weight:600; opacity:.75; letter-spacing:.3px}
-.btn .lbls .lg{font-size:18px; font-weight:800}
-@media (prefers-reduced-motion:no-preference){ .btn{transition:transform .12s} }
+.web:active{transform:scale(.98)}
+.web .arrow{font-size:20px; font-weight:900; transform:translateY(-1px)}
+
+/* official store badges — real artwork, never imitations. Height-matched. */
+.badge{display:inline-flex; text-decoration:none; line-height:0}
+.badge img{display:block; width:auto}
+.badge.apple img{height:54px}
+.badge.play  img{height:60px} /* Google's badge carries built-in padding; a touch taller matches Apple visually */
+.badge-txt{ /* graceful fallback only if an official badge fails to load — plain text, not a fake badge */
+  display:inline-flex; align-items:center; height:54px; padding:0 22px; border-radius:12px;
+  background:#111; color:#fff; border:1px solid #34463b; font-size:16px; font-weight:700; text-decoration:none}
+
+/* 1s slide-in intro */
+@keyframes riseIn{ from{opacity:0; transform:translateY(18px)} to{opacity:1; transform:none} }
+@media (prefers-reduced-motion:no-preference){
+  .hero{opacity:0; animation:riseIn .6s cubic-bezier(.22,1,.36,1) .05s forwards}
+  .web{opacity:0; animation:riseIn .55s cubic-bezier(.22,1,.36,1) .38s forwards; transition:transform .12s}
+  #cta-ios{opacity:0; animation:riseIn .55s cubic-bezier(.22,1,.36,1) .53s forwards}
+  #cta-android{opacity:0; animation:riseIn .55s cubic-bezier(.22,1,.36,1) .68s forwards}
+}
 </style>
 </head>
 <body>
   <main class="card">
-    <img class="logo" src="/assets/Robograder_Launch_Logo.webp" alt="Robograder">
-    <img class="character" src="/assets/Robograder_Charging.webp" alt="Robograder character"
-         onerror="this.outerHTML='<div class=&quot;character-fallback&quot;>🤖</div>'">
+    <img class="hero" src="/assets/Ad_Landing_Screen.webp" alt="Robograder — comic grading app">
 
     <nav class="btns">
-      <!-- 1 · Web -->
-      <a class="btn web" id="cta-web" href="#" data-dest="web">Go to the Web Version</a>
+      <!-- 1 · Web (fee-free path) -->
+      <a class="web" id="cta-web" href="#" data-dest="web">Open the Web App <span class="arrow">›</span></a>
 
-      <!-- 2 · Apple -->
-      <a class="btn store" id="cta-ios" href="#" data-dest="ios" aria-label="Download on the App Store">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M16.365 1.43c0 1.14-.42 2.2-1.13 3.02-.86.98-2.27 1.74-3.4 1.65-.14-1.11.45-2.28 1.1-3.02.79-.9 2.2-1.6 3.43-1.65zM20.9 17.13c-.6 1.38-.88 1.99-1.65 3.21-1.07 1.7-2.58 3.82-4.45 3.83-1.66.02-2.09-1.08-4.34-1.07-2.25.01-2.72 1.09-4.38 1.07-1.87-.01-3.3-1.92-4.37-3.62C-.63 17.5-.9 12.13 1.4 9.28c1.11-1.4 2.86-2.29 4.5-2.29 1.67 0 2.72 1.09 4.1 1.09 1.34 0 2.16-1.09 4.1-1.09 1.46 0 3.01.8 4.11 2.17-3.61 1.98-3.02 7.14 1.09 8.96z"/></svg>
-        <span class="lbls"><span class="sm">Download on the</span><span class="lg">App Store</span></span>
+      <!-- 2 · Apple — official badge -->
+      <a class="badge apple" id="cta-ios" href="#" data-dest="ios" aria-label="Download on the App Store">
+        <img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg"
+             alt="Download on the App Store"
+             onerror="this.outerHTML='<span class=&quot;badge-txt&quot;>Download on the App Store</span>'">
       </a>
 
-      <!-- 3 · Google -->
-      <a class="btn store" id="cta-android" href="#" data-dest="android" aria-label="Get it on Google Play">
-        <svg width="24" height="24" viewBox="0 0 512 512" aria-hidden="true"><path fill="#00d2ff" d="M47 20 285 258 47 496a30 30 0 0 1-15-26V46a30 30 0 0 1 15-26z"/><path fill="#00e676" d="M47 20a30 30 0 0 1 30 2l205 118-73 73L47 20z"/><path fill="#ffce00" d="M414 210l-72 42-73-73 73-73 72 42a34 34 0 0 1 0 62z"/><path fill="#ff3d47" d="M47 496l162-193 73 73L77 494a30 30 0 0 1-30 2z"/></svg>
-        <span class="lbls"><span class="sm">Get it on</span><span class="lg">Google Play</span></span>
+      <!-- 3 · Google — official badge -->
+      <a class="badge play" id="cta-android" href="#" data-dest="android" aria-label="Get it on Google Play">
+        <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_us_badge_web_generic.png"
+             alt="Get it on Google Play"
+             onerror="this.outerHTML='<span class=&quot;badge-txt&quot;>Get it on Google Play</span>'">
       </a>
     </nav>
   </main>
@@ -98,7 +113,7 @@ body{
 <script>
 /* Tracked-link engine: reads the campaign params off this page's URL and
    carries them to each destination (Play referrer / App Store ct / web utm),
-   and fires a conversion event on each tap. Fill in the store URLs below. */
+   and fires a conversion event on each tap. */
 var STORE = {
   ios:     "https://apps.apple.com/app/id6778625739",
   android: "https://play.google.com/store/apps/details?id=app.robograder",
