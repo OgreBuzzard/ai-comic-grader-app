@@ -1,7 +1,7 @@
 {
   "name": "Robograder",
   "short_name": "Robograder",
-  "description": "AI-powered comic book condition assessment",
+  "description": "Comic book grading in minutes — defects, condition & value",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
