@@ -206,11 +206,20 @@ export default async function handler(req, res) {
     spend.weekCents += INFRA_DAILY * 7;
     spend.monthCents += INFRA_DAILY * 30;
 
-    // "Ads" — planned flat paid-ad spend (Meta $16/day + Google $16/day = $32/day).
-    // Forward projection for the Spending box; NOT folded into all-time Profit
-    // (ads started Sep 2026, so a retroactive subtraction would misstate history).
-    const ADS_DAILY_CENTS = 3200;
-    const spendAds = { dayCents: ADS_DAILY_CENTS, weekCents: ADS_DAILY_CENTS * 7, monthCents: ADS_DAILY_CENTS * 30 };
+    // "Ads" — ACTUAL paid-ad spend from Meta + Google (admin/lib/ad_spend.js),
+    // with a flat $16/day-each estimate as the per-platform fallback until each API
+    // token is set. Folded into Profit below using REAL dated spend, so pre-launch
+    // history is not misstated. spendAds carries all-time too.
+    let adInfo = null;
+    try { const { getAdSpend } = await import('../lib/ad_spend.js'); adInfo = await getAdSpend(); }
+    catch (e) { console.warn('[admin-stats] ad spend fetch failed:', e.message); }
+    const spendAds = (adInfo && adInfo.ads) || { dayCents: 3200, weekCents: 22400, monthCents: 96000, allTimeCents: 0 };
+    const adByDay = (adInfo && adInfo.byDayCombined) || {};
+    // Fold Ads into the `spend` object (drives ONLY the Profit card + windows; the
+    // Spending box reads spendBreakdown). Profit now nets out ad spend.
+    spend.dayCents += spendAds.dayCents;
+    spend.weekCents += spendAds.weekCents;
+    spend.monthCents += spendAds.monthCents;
 
     // S22: EXACT all-time API cost via an append-only rollup. Timings are
     // immutable, so each load only sums the NEW timings since the last watermark
@@ -252,7 +261,7 @@ export default async function handler(req, res) {
         try { await rollupRef.set({ apiCostCents: sum, count: processed, updatedAt: new Date().toISOString() }, { merge: true }); } catch (e) {}
       }
     } catch (e) { console.warn('[admin-stats] apicost rollup failed; using window sum:', e.message); }
-    spend.allTimeCents = allTimeApiCentsExact + INFRA_DAILY * _daysLive;
+    spend.allTimeCents = allTimeApiCentsExact + INFRA_DAILY * _daysLive + (spendAds.allTimeCents || 0);
 
     // ── Claude Max (development) cost — factored into PROFIT ONLY, never into
     // Spending (Spending stays a pure reflection of per-assessment API cost).
@@ -289,7 +298,7 @@ export default async function handler(req, res) {
     const series = [];
     for (let i = 29; i >= 0; i--) {
       const k = new Date(now - i * DAY).toISOString().slice(0, 10);
-      series.push({ date: k.slice(5), revCents: revByDay[k] || 0, spendCents: (spendByDay[k] || 0) + INFRA_DAILY });
+      series.push({ date: k.slice(5), revCents: revByDay[k] || 0, spendCents: (spendByDay[k] || 0) + INFRA_DAILY + (adByDay[k] || 0) });
     }
 
     return res.status(200).json({
