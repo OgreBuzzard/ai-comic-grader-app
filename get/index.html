@@ -61,9 +61,9 @@ body{
   width:300px; max-width:82vw; height:58px; border-radius:13px; text-decoration:none;
 }
 .row:active{transform:scale(.98)}
-/* web button — the fee-free path; hugs its text, white label to match the badges */
+/* web button — the fee-free path; same 300px width as the badge rows, white label */
 .web{
-  width:auto; padding:0 30px; color:#fff;
+  color:#fff;
   background:linear-gradient(180deg,var(--green),var(--green-d));
   font-size:18px; font-weight:800; letter-spacing:.2px;
   box-shadow:0 8px 22px rgba(87,176,50,.34); border:1px solid rgba(255,255,255,.16);
@@ -91,7 +91,7 @@ body{
 
     <nav class="btns">
       <!-- 1 · Web (fee-free path) -->
-      <a class="row web" id="cta-web" href="#" data-dest="web">Open the Web App</a>
+      <a class="row web" id="cta-web" href="#" data-dest="web">Web App</a>
 
       <!-- 2 · Apple — official badge -->
       <a class="row badge apple" id="cta-ios" href="#" data-dest="ios" aria-label="Download on the App Store">

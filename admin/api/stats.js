@@ -194,11 +194,23 @@ export default async function handler(req, res) {
     // Infra cost estimates layered on top of the Anthropic API spend so the
     // dashboard reflects true burn. Tune these two constants as usage changes:
     // Firebase ~$1/day; Vercel $20/mo amortized to ~$0.66/day.
-    const FIREBASE_DAILY_CENTS = 100, VERCEL_DAILY_CENTS = 66;
-    const INFRA_DAILY = FIREBASE_DAILY_CENTS + VERCEL_DAILY_CENTS;
+    // Pure Anthropic API window sums, captured BEFORE infra is layered on, so the
+    // Spending breakdown can show API on its own line.
+    const apiDayCents = spend.dayCents, apiWeekCents = spend.weekCents, apiMonthCents = spend.monthCents;
+
+    // "Site" (infra) estimates. Firebase ~$1/day; Vercel $20/mo (~$0.66/day);
+    // robograder.app domain ~$18/yr (~$0.05/day). Tune as usage changes.
+    const FIREBASE_DAILY_CENTS = 100, VERCEL_DAILY_CENTS = 66, DOMAIN_DAILY_CENTS = 5;
+    const INFRA_DAILY = FIREBASE_DAILY_CENTS + VERCEL_DAILY_CENTS + DOMAIN_DAILY_CENTS;
     spend.dayCents += INFRA_DAILY;
     spend.weekCents += INFRA_DAILY * 7;
     spend.monthCents += INFRA_DAILY * 30;
+
+    // "Ads" — planned flat paid-ad spend (Meta $16/day + Google $16/day = $32/day).
+    // Forward projection for the Spending box; NOT folded into all-time Profit
+    // (ads started Sep 2026, so a retroactive subtraction would misstate history).
+    const ADS_DAILY_CENTS = 3200;
+    const spendAds = { dayCents: ADS_DAILY_CENTS, weekCents: ADS_DAILY_CENTS * 7, monthCents: ADS_DAILY_CENTS * 30 };
 
     // S22: EXACT all-time API cost via an append-only rollup. Timings are
     // immutable, so each load only sums the NEW timings since the last watermark
@@ -263,6 +275,16 @@ export default async function handler(req, res) {
     const _devDay = Math.round(CLAUDE_MAX_MONTHLY_CENTS / 30);
     const devCost = { allTimeCents: devAllTimeCents, dayCents: _devDay, weekCents: _devDay * 7, monthCents: CLAUDE_MAX_MONTHLY_CENTS };
 
+    // Spending breakdown for the dashboard's Spending box — four buckets, each
+    // 24h / 7d / 30d. API = Anthropic assessment cost; Ads = paid-ad plan;
+    // Sub = Claude Max subscription; Site = Firebase + Vercel + domain.
+    const spendBreakdown = {
+      api:  { dayCents: apiDayCents, weekCents: apiWeekCents, monthCents: apiMonthCents },
+      ads:  spendAds,
+      sub:  { dayCents: devCost.dayCents, weekCents: devCost.weekCents, monthCents: devCost.monthCents },
+      site: { dayCents: INFRA_DAILY, weekCents: INFRA_DAILY * 7, monthCents: INFRA_DAILY * 30 },
+    };
+
     // 30-day daily series (net revenue vs total spend incl. infra) for the chart.
     const series = [];
     for (let i = 29; i >= 0; i--) {
@@ -271,7 +293,7 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({
-      accounts, items, platforms, revenue, spend, series, devCost,
+      accounts, items, platforms, revenue, spend, spendBreakdown, series, devCost,
       credits: { outstanding: creditsOutstanding, avgAssessmentCost: +avgAssessmentCost.toFixed(4), liability: creditLiability },
       perCredit: {
         day: perCredit.day.credits ? +(perCredit.day.net / 100 / perCredit.day.credits).toFixed(4) : null,
