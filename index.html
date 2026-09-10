@@ -10565,7 +10565,7 @@ function renderForm() {
   })()}\n      </div>` : ""}\n      ${(() => {
     if (!hasIdentifiedSignatures(formData)) return "";
     const sigImgs = formData.signatureImages || [ null, null ];
-    const sigGhosts = ["assets/ghosts/Signature_1.webp", null];
+    const sigGhosts = ["assets/ghosts/Signature_1.webp", "assets/ghosts/Signature_2.webp"];
     const signerLabel = formatSignerList(formData);
     return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a6abf">\n            <div style="font-size:11px;color:#a08fd4;font-weight:700;letter-spacing:2px;margin-bottom:4px">SIGNATURE MACROS</div>\n            <div style="font-size:11px;color:#9a8aaa;margin-bottom:10px;line-height:1.5">\n              ${signerLabel ? `Identified: <strong style="color:#c8b4ff">${esc(signerLabel)}</strong>. Add close-up photos for buyer inspection — optional, two slots available.` : `Signature${getSignatures(formData).length > 1 ? "s" : ""} identified on this book. Add close-up photos for buyer inspection — optional, two slots available.`}\n            </div>\n            <div style="display:flex;flex-direction:column;gap:8px">\n              ${[ 0, 1 ].map(i => {
       const img = sigImgs[i];
