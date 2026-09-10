@@ -63,14 +63,18 @@ body{
 .row:active{transform:scale(.98)}
 /* web button — the fee-free path; same 300px width as the badge rows, white label */
 .web{
+  flex-direction:column; gap:1px;
   height:58px;
   color:#fff;
-  background:linear-gradient(180deg,var(--green),var(--green-d));
-  font-size:18px; font-weight:800; letter-spacing:.2px;
-  box-shadow:0 8px 22px rgba(87,176,50,.34); border:1px solid rgba(255,255,255,.16);
+  background:#000;
+  box-shadow:0 6px 18px rgba(0,0,0,.45); border:1px solid rgba(255,255,255,.85);
 }
+.web .web-sm{font-size:11px; font-weight:500; letter-spacing:.4px; opacity:.92; line-height:1}
+.web .web-lg{font-size:20px; font-weight:800; letter-spacing:.2px; line-height:1.05}
 /* official store badges — real artwork, never imitations. Centered in the row. */
 .badge img{display:block; width:100%; height:auto} /* Google's official badge has a built-in frame; sized so its pill matches Apple's height */
+/* Google's official badge bakes in ~13% transparent side-padding, so at equal row width its visible pill renders narrower than Apple's. Widen the Play row to compensate so the two visible pills match. */
+.play{width:194px; max-width:93vw}
 .badge-txt{ /* graceful fallback only if an official badge fails to load — plain text, not a fake badge */
   color:#fff; font-size:16px; font-weight:700; text-decoration:none}
 
@@ -90,7 +94,7 @@ body{
 
     <nav class="btns">
       <!-- 1 · Web (fee-free path) -->
-      <a class="row web" id="cta-web" href="#" data-dest="web">Web App</a>
+      <a class="row web" id="cta-web" href="#" data-dest="web"><span class="web-sm">Use the</span><span class="web-lg">Web App</span></a>
 
       <!-- 2 · Apple — official badge -->
       <a class="row badge apple" id="cta-ios" href="#" data-dest="ios" aria-label="Download on the App Store">

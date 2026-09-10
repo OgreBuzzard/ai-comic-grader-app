@@ -9553,6 +9553,18 @@ async function completeAssessment() {
     formData.roboGradeDate = (new Date).toISOString();
   }
   formData.highGradeTier = !!cgc._highGradeTier;
+  // Star-badge integrity (S23): completeAssessment runs only for Main and Deep.
+  // A Full assessment is therefore no longer the most-recent depth, so drop its
+  // badge; on a Main re-run (no high-grade pass) clear the Deep flags too so the
+  // score box shows the shallow grade just produced. Higher-tier IMAGES stay on
+  // the entry (untouched here) so the user can re-run those depths; restoration
+  // is intentionally NOT reset (it persists as a property).
+  formData.fullAssessmentRan = false;
+  if (!cgc._highGradeTier) {
+    formData.deepAssessmentRan = false;
+    formData.highGradeAssessed = false;
+    formData._highGradeTier = false;
+  }
   formData.highGradeUnlocked = !!cgc._highGradeUnlocked;
   formData.highGradeReason = cgc._highGradeReason || "grade";
   formData.restorationCheckTier = !!cgc._restorationCheckTier;
@@ -9850,6 +9862,12 @@ async function assessCardGrade() {
       images: proc.images,
       thumbnails: proc.thumbnails,
       imagesMeta: imageMetas.length ? imageMetas : rawImages.map(() => ({ source: "camera", capturedAt: new Date().toISOString() })),
+      // Preserve stored higher-tier (Deep) card photos across a Main re-run so the
+      // user isn't forced to re-shoot them. saveItem does a full setDoc REPLACE, so
+      // anything omitted from this record is wiped. deepAssessmentRan is intentionally
+      // NOT carried, so the badge drops to 1 star (Main) while the Deep photos remain
+      // and Deep can be re-run from them.
+      ...((formData.cardDeepImages || []).filter(Boolean).length ? { cardDeepImages: formData.cardDeepImages } : {}),
       assessedPSAGrade: card.psaGrade != null ? String(card.psaGrade) : "",
       roboGrade: rgTotal != null ? { score: rgTotal, version: card.version || "card-v1", subscores: card.robograde || null } : null,
       roboGradeId: generateRoboId(),
