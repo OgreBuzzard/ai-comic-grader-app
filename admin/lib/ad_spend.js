@@ -19,7 +19,7 @@
 //   GOOGLE_ADS_API_VERSION    default v18 — bump if Google sunsets it (404 => bump)
 
 const DAY = 86400000;
-const ADS_LAUNCH_MS = Date.parse('2026-09-08T00:00:00Z'); // first day ads ran
+const ADS_LAUNCH_MS = Date.parse('2026-09-10T00:00:00Z'); // clean-ad relaunch; stopgap estimate anchor (real spend comes from the Meta/Google APIs)
 const EST_DAILY_CENTS = { meta: 1600, google: 1600 };      // fallback $16/day each
 const CACHE_MS = 10 * 60 * 1000;
 const LOOKBACK_DAYS = 35;

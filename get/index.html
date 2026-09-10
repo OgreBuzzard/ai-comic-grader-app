@@ -58,20 +58,19 @@ body{
 .btns{display:flex; flex-direction:column; align-items:center; gap:12px}
 .row{
   display:flex; align-items:center; justify-content:center;
-  width:300px; max-width:82vw; height:58px; border-radius:13px; text-decoration:none;
+  width:170px; max-width:82vw; border-radius:13px; text-decoration:none;
 }
 .row:active{transform:scale(.98)}
 /* web button — the fee-free path; same 300px width as the badge rows, white label */
 .web{
+  height:58px;
   color:#fff;
   background:linear-gradient(180deg,var(--green),var(--green-d));
   font-size:18px; font-weight:800; letter-spacing:.2px;
   box-shadow:0 8px 22px rgba(87,176,50,.34); border:1px solid rgba(255,255,255,.16);
 }
 /* official store badges — real artwork, never imitations. Centered in the row. */
-.badge img{display:block; width:auto}
-.badge.apple img{height:44px}
-.badge.play  img{height:56px} /* Google's official badge has a built-in frame; sized so its pill matches Apple's height */
+.badge img{display:block; width:100%; height:auto} /* Google's official badge has a built-in frame; sized so its pill matches Apple's height */
 .badge-txt{ /* graceful fallback only if an official badge fails to load — plain text, not a fake badge */
   color:#fff; font-size:16px; font-weight:700; text-decoration:none}
 

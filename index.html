@@ -4586,14 +4586,27 @@ async function _fsReadWithRetry(doReadFn, attempts = 5, delayMs = 600) {
 function _rgGetStoredUTM() {
   try { return JSON.parse(localStorage.getItem("rg_utm") || "null"); } catch (e) { return null; }
 }
-(function _rgCaptureUTM() {
+// Parse a utm query string ("utm_source=youtube&utm_medium=paid_video&...") into
+// rg_utm. First touch wins (won't overwrite an existing capture). Shared by the
+// web/PWA URL path and the Android Play Install Referrer path.
+function _rgStoreUTMFromQuery(qsStr) {
   try {
-    var qs = new URLSearchParams(location.search || "");
+    if (_rgGetStoredUTM()) return false;
+    var qs = new URLSearchParams(qsStr || "");
     var keys = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"];
     var got = {}, any = false;
     keys.forEach(function (k) { var v = qs.get(k); if (v) { got[k] = String(v).slice(0, 120); any = true; } });
-    if (any) { got.capturedAt = new Date().toISOString(); localStorage.setItem("rg_utm", JSON.stringify(got)); }
+    if (any) { got.capturedAt = new Date().toISOString(); localStorage.setItem("rg_utm", JSON.stringify(got)); return true; }
   } catch (e) {}
+  return false;
+}
+// Android native: MainActivity fetches the Play Install Referrer, sets it on
+// window.__RG_ANDROID_REFERRER__ (a utm query string) and calls this callback.
+// Also checked on load in case it was injected before this script ran.
+window.__rgOnAndroidReferrer = function () { try { _rgStoreUTMFromQuery(window.__RG_ANDROID_REFERRER__ || ""); } catch (e) {} };
+(function _rgCaptureUTM() {
+  _rgStoreUTMFromQuery(location.search || "");
+  try { if (window.__RG_ANDROID_REFERRER__) window.__rgOnAndroidReferrer(); } catch (e) {}
 })();
 
 async function loadUserCredits() {
