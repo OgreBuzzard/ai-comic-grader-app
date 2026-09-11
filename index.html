@@ -9,6 +9,19 @@
   <meta name="apple-mobile-web-app-title" content="Robograder">
   <meta name="theme-color" content="#0d0d0f">
 
+  <!-- Meta Pixel (S24) — web/PWA only (gated out of native builds). Fires PageView
+       on load; CompleteRegistration fires on new-account creation in loadUserCredits(). -->
+  <script>
+  if (location.hostname === "robograder.app") {
+    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+    n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+    document,'script','https://connect.facebook.net/en_US/fbevents.js');
+    fbq('init','2154744801750730'); fbq('track','PageView');
+  }
+  </script>
+
   <meta name="description" content="Instant comic book grading. Photograph your comic, get a grade in seconds, share a verifiable certification.">
 
   <meta property="og:type" content="website">
@@ -4689,6 +4702,10 @@ async function loadUserCredits() {
         utmTerm: _utm.utm_term || null,
         acqReferrer: (document.referrer || "").slice(0, 200) || null
       });
+      // Meta Pixel (S24): a brand-new account was just created — fire
+      // CompleteRegistration so Meta accrues signup-conversion volume for a
+      // future signup-optimized campaign. Only fires on web/PWA (pixel gated).
+      try { if (window.fbq) window.fbq("track", "CompleteRegistration"); } catch (e) {}
       window._userCredits = 3;
       window._sampleDismissed = false;
       window._transferCode = newCode;
