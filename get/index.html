@@ -63,11 +63,11 @@ body{
 .row:active{transform:scale(.98)}
 /* web button — the fee-free path; same 300px width as the badge rows, white label */
 .web{
-  flex-direction:column; gap:1px;
-  height:58px;
+  flex-direction:column; align-items:flex-start; gap:1px;
+  height:58px; padding-left:22px; border-radius:10px;
   color:#fff;
-  background:#000;
-  box-shadow:0 6px 18px rgba(0,0,0,.45); border:1px solid rgba(255,255,255,.85);
+  background:linear-gradient(180deg,var(--green),var(--green-d));
+  box-shadow:0 8px 22px rgba(87,176,50,.34); border:1px solid rgba(255,255,255,.85);
 }
 .web .web-sm{font-size:11px; font-weight:500; letter-spacing:.4px; opacity:.92; line-height:1}
 .web .web-lg{font-size:20px; font-weight:800; letter-spacing:.2px; line-height:1.05}
