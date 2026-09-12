@@ -2381,14 +2381,18 @@ const RGV2 = (function () {
   // Bump these to 50/20/20 (and centering10 stays 10) to make 10 near-unreachable.
   var TEN_GATE = { front: 49, back: 19, spine: 19, centering10: 10 };
 
-  // Confidence-hold cap: shave 0.5 at a time, round-robin front -> back -> spine,
-  // until the subscores sum to the ceiling. Front is shaved first each cycle, so
-  // it is restored LAST (Main holds front+back at 9.0; Deep holds front at 9.5;
-  // Full restores all). Interior (page-quality) is never shaved. Subscores always
-  // reconcile to the displayed grade.
-  function shaveToCap(sub, cap) {
+  // Confidence-hold cap: shave 0.5 at a time until the subscores sum to the
+  // ceiling. v5.05: shave DEFECT-BEARING faces FIRST (a spine-only defect no longer
+  // leaves Spine at a perfect 2.0 while Front/Back get docked), then fall back to
+  // the safe filler order front -> back -> spine (Front is safest to hold, restored
+  // first as depth increases). Interior (page-quality) is never shaved. Subscores
+  // always reconcile to the displayed grade.
+  function shaveToCap(sub, cap, defectFaces) {
     var s = { front: sub.front, back: sub.back, spine: sub.spine, interior: sub.interior };
-    var order = ["front", "back", "spine"];
+    var df = defectFaces || {};
+    var order = [];
+    ["front", "back", "spine"].forEach(function (k) { if (df[k]) order.push(k); });
+    ["front", "back", "spine"].forEach(function (k) { order.push(k); });
     var i = 0, guard = 0;
     function total() { return s.front + s.back + s.spine + s.interior; }
     while (total() > cap + 1e-9 && guard < 200) {
@@ -2501,7 +2505,7 @@ const RGV2 = (function () {
     // (front -> back -> spine, interior fixed) to reach the ceiling; otherwise the
     // rounded subscores already sum to the grade with no adjustment.
     var sub = (uncapped > cap + 1e-9)
-      ? shaveToCap(rounded, cap)
+      ? shaveToCap(rounded, cap, input.defectFaces)
       : { front: rounded.front, back: rounded.back, spine: rounded.spine, interior: rounded.interior };
     var ceilingHit = uncapped > cap + 1e-9;
 
@@ -2682,11 +2686,21 @@ const RGV2 = (function () {
       return String(d && d.category || "").toLowerCase() === "interior" &&
              INT_FLAW.test(String(d && d.type || ""));
     });
+    // v5.05: which exterior faces carry a real (severity-bearing) defect, so the
+    // cap-shave pulls its held-back points from the damaged face first. Empty-
+    // severity entries (miswrap, page-quality note, apparent signature) don't count.
+    var defectFaces = { front: false, back: false, spine: false };
+    defects.forEach(function (d) {
+      var fc = String(d && d.category || "").toLowerCase();
+      var sev = String(d && d.severity || "").trim();
+      if (sev && (fc === "front" || fc === "back" || fc === "spine")) defectFaces[fc] = true;
+    });
     var depth = depthOf(comic);
     return computeRoboScoreV3({
       front50: rg.frontScore, back20: rg.backScore, spine20: rg.spineScore,
       pageQuality: rg.pageQuality || comic.pageQuality,
       interiorDefect: interiorDefect,
+      defectFaces: defectFaces,
       hasDefects: defects.length > 0,
       depth: depth,
       slabbed: comic.labelDetected === true,
