@@ -632,8 +632,8 @@ mustReplace('D15 viewport-fit cover (iOS)',
 // rule appears LATER in the generated file and would win, so rewrite the base
 // value directly here. PWA file keeps 9vh (untouched).
 mustReplace('D17 subtitle iOS position',
-'top: calc(env(safe-area-inset-top, 0px) + 22vh);',
-'top: calc(env(safe-area-inset-top, 0px) + 21vh);');
+'top: calc(env(safe-area-inset-top, 0px) + 22vh - 30px);',
+'top: calc(env(safe-area-inset-top, 0px) + 21vh - 30px);');
 
 writeFileSync(outPath, html);
 console.log(`\nAll ${applied} deltas applied. Wrote ${outPath} (${html.length.toLocaleString()} bytes).`);
