@@ -9827,7 +9827,7 @@ async function completeAssessment() {
     const _nisH = i => String(i == null ? "" : i).trim().replace(/^#/, "");
     const _sameBookH = _nrmH(_priorTitleH) === _nrmH(formData.title) && _nisH(_priorIssueH) === _nisH(formData.issue);
     if (_sameBookH) {
-      if (!formData.assessmentHistory) formData.assessmentHistory = [];
+      if (!Array.isArray(formData.assessmentHistory)) formData.assessmentHistory = [];
       // v3 grade of the prior pass: formData.roboGrade still holds it here (it is
       // overwritten a few lines below). Stored so Past Assessments renders v3 RG
       // in League Spartan instead of the legacy 0-100 v1 score.
@@ -9845,7 +9845,15 @@ async function completeAssessment() {
         roboGradeId: formData.roboGradeId || "",
         date: formData.roboGradeDate || ""
       };
-      formData.assessmentHistory.unshift(prior);
+      // v5.06: only file a GENUINE, DISTINCT prior. Require a real prior roboGradeId,
+      // and never duplicate the newest existing entry — kills the "byte-identical
+      // past-assessment line on every same-day book" report. (A record with no
+      // roboGradeId is a placeholder/unsaved grade and must never be filed.)
+      const _h0H = formData.assessmentHistory[0];
+      const _dupH = _h0H && ((prior.roboGradeId && _h0H.roboGradeId === prior.roboGradeId) ||
+        (_h0H.rgScore === prior.rgScore && _h0H.grade === prior.grade &&
+         _h0H.date === prior.date && _h0H.pageQuality === prior.pageQuality));
+      if (prior.roboGradeId && !_dupH) formData.assessmentHistory.unshift(prior);
     }
   }
   formData.assessedCGCGrade = cgc.grade || "";
