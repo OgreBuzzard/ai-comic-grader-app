@@ -57,7 +57,7 @@ export default async function handler(req, res) {
         credits: selected.credits,
         package: pkg,
       },
-      success_url: `${process.env.APP_URL || 'https://robograder.app'}/?payment=success&credits=${selected.credits}`,
+      success_url: `${process.env.APP_URL || 'https://robograder.app'}/?payment=success&credits=${selected.credits}&sid={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.APP_URL || 'https://robograder.app'}/?payment=cancelled`,
     });
 
