@@ -39,7 +39,7 @@
       var _pp = new URLSearchParams(location.search);
       if (_pp.get("payment") === "success") {
         var _cr = parseInt(_pp.get("credits") || "0", 10);
-        var _pv = ({ 5: 9.99, 20: 29.99, 100: 99.99 })[_cr] || 0;
+        var _pv = ({ 5: 10, 20: 30, 100: 100 })[_cr] || 0;
         var _sid = _pp.get("sid") || ("web-" + Date.now());
         gtag("event", "purchase", { transaction_id: _sid, value: _pv, currency: "USD",
           items: [{ item_name: "Robograder Credits", item_variant: _cr + " credits", quantity: 1, price: _pv }] });

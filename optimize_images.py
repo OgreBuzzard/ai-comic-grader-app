@@ -19,7 +19,7 @@ from PIL import Image
 # (glob, longest-side cap, jpeg quality, size trigger KB, png?) — a file is
 # rewritten only if longest_side > cap OR size > trigger.
 RULES = [
-    ("reference_covers/*.jpg",       1400, 85, 450, False),
+    ("reference_covers/*.jpg",       1200, 85, 450, False),
     ("assets/ghosts/*.jpg",          1400, 82, 220, False),
     ("assets/products/*.png",         320,  0, 120, True),
     ("assets/*.jpg",                 1600, 82, 160, False),
