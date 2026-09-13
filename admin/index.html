@@ -3022,7 +3022,7 @@ function renderItemDetail(it) {
       // Interior Covers + Signature: generic grid (unchanged).
       const clsByName = { 'Interior Covers': 'spread', 'Signature': 'sig' };
       const esc = escapeAttr;
-      let out = [['Interior Covers', it.interiorCoverImages], ['Signature', it.signatureImages]]
+      let out = [['Interior Covers', it.interiorCoverImages], ['Signature', it.signatureImages], ['User Defect Photos', it.userDefectImages]]
         .filter(([_, a]) => a && a.length)
         .map(([name, arr]) => `
         <h3 class="section-h" style="margin-top:20px;">${name} (${arr.length})</h3>
@@ -3143,7 +3143,7 @@ function renderItemDetail(it) {
 async function downloadAllImages() {
   const it = window._adminItem; if (!it) return;
   // S20 (#36): include the Deep interior-cover images in the export set.
-  const urls = [].concat(it.images || [], it.cornerImages || [], it.interiorCoverImages || [], it.interiorImages || [], it.restorationImages || [], it.signatureImages || []).filter(Boolean);
+  const urls = [].concat(it.images || [], it.cornerImages || [], it.interiorCoverImages || [], it.interiorImages || [], it.restorationImages || [], it.signatureImages || [], it.userDefectImages || []).filter(Boolean);
   const status = document.getElementById('dl-all-status');
   if (!urls.length) { if (status) status.textContent = 'No images.'; return; }
   const base = ((it.title || 'item') + (it.issue ? '-' + it.issue : '')).replace(/[^a-z0-9]+/gi, '_');

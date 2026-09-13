@@ -133,6 +133,13 @@ export default async function handler(req, res) {
     const flatSignatures = (Array.isArray(comic.signatureImages) ? comic.signatureImages : [])
       .map(e => (typeof e === 'string' ? e : (e && e.url) || null))
       .filter(Boolean);
+    // User-submitted uncaught-defect photos — informational condition photos,
+    // public-safe. NOT part of the verification set below (they are not assessed
+    // photos and must never affect the Verified badge).
+    const flatUserDefects = (Array.isArray(comic.userDefectImages) ? comic.userDefectImages : [])
+      .map(e => (typeof e === 'string' ? e : (e && e.url) || null))
+      .filter(Boolean)
+      .slice(0, 2);
 
     // Verification check — combines main + corner. Every assessed photo must
     // be source:'camera'. Any string entry (legacy, pre-metadata) counts as
@@ -170,6 +177,7 @@ export default async function handler(req, res) {
       interiorImages:    Array.isArray(comic.interiorImages) ? comic.interiorImages : [],
       interiorCoverImages: flatInteriorCovers,
       signatureImages:   flatSignatures,
+      userDefectImages:  flatUserDefects,
       restorationImages: Array.isArray(comic.restorationImages) ? comic.restorationImages : [],
       // S14 unification: predictedGrade is now a public field. New items
       // write it directly; legacy items have it synthesized from

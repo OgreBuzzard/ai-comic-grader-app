@@ -3729,7 +3729,7 @@ async function migrateComicsToItems() {
   }
 }
 
-const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "fullUnlockReason", "deepAssessmentRan", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "deepRefundUsed", "fullRefundUsed", "insertImages", "couponImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue" ];
+const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "fullUnlockReason", "deepAssessmentRan", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "deepRefundUsed", "fullRefundUsed", "insertImages", "couponImages", "userDefectImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue" ];
 
 const COMIC_DROP_FIELDS = [ "press", "uv", "clean" ];
 
@@ -5716,6 +5716,20 @@ function showDetail(id) {
       html += `</div></div>`;
     }
   }
+  // User-submitted uncaught-defect photos (informational; NOT graded/annotated).
+  // Rendered below every other assessment image block, above the RoboGrade panel.
+  {
+    const _udD = (selected.userDefectImages || []).filter(u => u);
+    if (_udD.length) {
+      const _udAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
+      html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #8a6a4a">\n        <div style="font-size:11px;color:#b08a5a;font-weight:700;letter-spacing:2px;margin-bottom:8px">DEFECTS ROBOGRADER MISSED</div>\n        <div style="display:grid;grid-template-columns:1fr;gap:6px">`;
+      _udD.forEach((url, di) => {
+        const si = (selected.userDefectImages || []).findIndex((u, i) => u === url && i >= di);
+        html += `<img class="photo-spine" src="${url}" ${_udAttrs} onclick="openUserDefectLightbox('${selected.id}',${si})">`;
+      });
+      html += `</div></div>`;
+    }
+  }
   if (selected.roboGrade || (selected.type === "card" && selected.cardData && selected.cardData.robograde)) {
     html += `<div style="margin-top:16px">${selected.type === "card" ? buildCardRoboDisplay(selected) : buildRoboGradeDisplay(selected.roboGrade, selected)}</div>`;
   }
@@ -6460,6 +6474,12 @@ function openInteriorCoverLightbox(id, idx) {
   _lbOpen(c.interiorCoverImages, idx);
 }
 
+function openUserDefectLightbox(id, idx) {
+  const c = items.find(x => x.id === id);
+  if (!c || !c.userDefectImages?.[idx]) return;
+  _lbOpen(c.userDefectImages, idx);
+}
+
 function openInteriorLightbox(id, idx) {
   const c = items.find(x => x.id === id);
   if (!c || !c.interiorImages?.[idx]) return;
@@ -6633,6 +6653,7 @@ const EMPTY = {
   images: [],
   cornerImages: [],
   interiorCoverImages: [],
+  userDefectImages: [],
   cgcNotes: "",
   keyInfo: "",
   graderNotes: "",
@@ -10671,7 +10692,7 @@ function renderForm() {
     const rFilled = rImgs.filter(Boolean).length;
     const rReady = rFilled === RESTORATION_SLOT_COUNT && !assessing;
     return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n            <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">RESTORATION CHECK — 7 PHOTOS</div>\n            <div style="font-size:11px;color:#9a8aaa;margin-bottom:10px;line-height:1.5">\n              UV Front requires a UV (blacklight) photo in a dark room. 6 of 7 images are shared with Full Assessment.\n            </div>\n            ${renderRestorationSlotGrid(rImgs, {editable: true})}\n            <input id="restoration-photo-input" type="file" accept="image/*" multiple onchange="handleRestorationImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="restoration-check-btn" class="rg-btn rg-btn-assess rg-btn-purple${assessing ? ' assessing' : ''}" onclick="submitRestorationCheck()" ${rReady ? "" : "disabled"}>\n                ${assessing ? "Checking…" : `RESTORATION CHECK ${rFilled < RESTORATION_SLOT_COUNT ? `(${rFilled}/${RESTORATION_SLOT_COUNT})` : ""}`}\n              </button>\n            </div>\n          </div>\n        `;
-  })()}\n      <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">\n      <input id="restoration-photo-input" type="file" accept="image/*" onchange="handleRestorationImages(event)" style="display:none">\n\n      \x3c!-- S11: Pre-assessment Grader Notes (Option B for the chicken-and-egg\n           problem). For graded books in slabs, the official grader notes are\n           highly informative inputs to the AI assessment — but we don't\n           know a book is graded until after the AI has assessed it, so the\n           field would normally be unavailable on first-pass. This collapsible\n           section gives users who have a slabbed book a way to enter the\n           grader notes BEFORE running the assessment. Defaults closed so\n           the standard image-first flow stays visually clean for raw books;\n           opens with a single tap. Only renders pre-assessment in the\n           image-first flow (no _assessed, no _addManualMode, no isEdit) —\n           after assessment, the Grader Notes field appears in the normal\n           form section below where it can also be edited. --\x3e\n      \x3c!-- The "Optional: official label info" collapsible was removed in S12.\n           It let users type CGC/PSA grader notes BEFORE assessment to nudge\n           accuracy. Pulled because:\n           - Used by an extreme minority of users (only those entering\n             already-graded books and willing to transcribe slab text)\n           - Cluttered the otherwise-clean image-first Add flow\n           - The same info can still be typed in the post-assessment form\n             where the Grader Notes field still lives.\n           If we want this back later, the JS field (formData.graderNotes)\n           still wires through to assess.js — only the UI was removed. --\x3e\n\n    </div>\n    ${isEdit || _assessed || _addManualMode ? `\n    ${""}\n    <div class="form-grid-2">\n      \x3c!-- Title gets a special handler (not the generic tf) because we need\n           live-toggle the save button as the user types. Using tf would\n           require either a full renderForm on every keystroke (kills focus)\n           or a separate handler — this is cleaner. --\x3e\n      ${formData.roboGrade ? rof(_isCardForm ? "Card Name" : "Title", "title") : `<div><label class="field-label">Title<span style="color:#c0392b;margin-left:2px">*</span></label><input id="title-input" value="${esc(formData.title || "")}" oninput="formData.title=this.value;const b=document.getElementById('save-btn');b.disabled=!this.value.trim();b.style.opacity=this.value.trim()?'':'0.5';b.style.cursor=this.value.trim()?'':'not-allowed'" placeholder="Series title"></div>`}\n      ${formData.roboGrade ? rof(_isCardForm ? "Card No." : "Issue", "issue") : tf("Issue", "issue", "Issue number", true)}\n      ${formData.roboGrade ? rof("Pub Date", "issueDate") : tf("Pub Date", "issueDate", "Cover date")}\n      ${formData.roboGrade ? rof("Publisher", "publisher") : tf("Publisher", "publisher", "Publisher")}\n    </div>\n    ${formData.roboGrade && (formData.printing && String(formData.printing).trim()) ? `\n    \x3c!-- S14 (anti-fraud): Printing is shown read-only on a graded book.\n         It is NOT in the editable grid at all (a blank editable Printing\n         would also be a fraud vector — a user could leave a reprint's\n         printing empty). It only appears here when the assessment\n         actually populated it (e.g. "Facsimile Reprint"), so the label\n         and Detail view stay truthful and the user can't strip it. --\x3e\n    <div class="form-grid-2"><div>\n      <label class="field-label">Printing</label>\n      <div class="ro-field" title="Locked — set by the assessment and not editable">${esc(formData.printing)}</div>\n    </div></div>` : ""}\n    \x3c!-- Official Grades fields (S11): the disclosure container "OFFICIAL GRADES"\n         was removed. CGC Grade/Cert and PSA Grade/Cert sit as their own ordinary\n         fields when relevant.\n         Visibility:\n         • Not yet assessed (no roboGrade): show both CGC and PSA grids.\n         • Assessed and AI determined raw (no grades/certs): hide both.\n         • Assessed and CGC info present: show CGC grid only.\n         • Assessed and PSA info present: show PSA grid only.\n         A book can be CGC OR PSA officially, never both. --\x3e\n    ${(() => {
+  })()}${renderUserDefectSlots()}\n      <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">\n      <input id="userdefect-photo-input" type="file" accept="image/*" onchange="handleUserDefectImages(event)" style="display:none">\n      <input id="restoration-photo-input" type="file" accept="image/*" onchange="handleRestorationImages(event)" style="display:none">\n\n      \x3c!-- S11: Pre-assessment Grader Notes (Option B for the chicken-and-egg\n           problem). For graded books in slabs, the official grader notes are\n           highly informative inputs to the AI assessment — but we don't\n           know a book is graded until after the AI has assessed it, so the\n           field would normally be unavailable on first-pass. This collapsible\n           section gives users who have a slabbed book a way to enter the\n           grader notes BEFORE running the assessment. Defaults closed so\n           the standard image-first flow stays visually clean for raw books;\n           opens with a single tap. Only renders pre-assessment in the\n           image-first flow (no _assessed, no _addManualMode, no isEdit) —\n           after assessment, the Grader Notes field appears in the normal\n           form section below where it can also be edited. --\x3e\n      \x3c!-- The "Optional: official label info" collapsible was removed in S12.\n           It let users type CGC/PSA grader notes BEFORE assessment to nudge\n           accuracy. Pulled because:\n           - Used by an extreme minority of users (only those entering\n             already-graded books and willing to transcribe slab text)\n           - Cluttered the otherwise-clean image-first Add flow\n           - The same info can still be typed in the post-assessment form\n             where the Grader Notes field still lives.\n           If we want this back later, the JS field (formData.graderNotes)\n           still wires through to assess.js — only the UI was removed. --\x3e\n\n    </div>\n    ${isEdit || _assessed || _addManualMode ? `\n    ${""}\n    <div class="form-grid-2">\n      \x3c!-- Title gets a special handler (not the generic tf) because we need\n           live-toggle the save button as the user types. Using tf would\n           require either a full renderForm on every keystroke (kills focus)\n           or a separate handler — this is cleaner. --\x3e\n      ${formData.roboGrade ? rof(_isCardForm ? "Card Name" : "Title", "title") : `<div><label class="field-label">Title<span style="color:#c0392b;margin-left:2px">*</span></label><input id="title-input" value="${esc(formData.title || "")}" oninput="formData.title=this.value;const b=document.getElementById('save-btn');b.disabled=!this.value.trim();b.style.opacity=this.value.trim()?'':'0.5';b.style.cursor=this.value.trim()?'':'not-allowed'" placeholder="Series title"></div>`}\n      ${formData.roboGrade ? rof(_isCardForm ? "Card No." : "Issue", "issue") : tf("Issue", "issue", "Issue number", true)}\n      ${formData.roboGrade ? rof("Pub Date", "issueDate") : tf("Pub Date", "issueDate", "Cover date")}\n      ${formData.roboGrade ? rof("Publisher", "publisher") : tf("Publisher", "publisher", "Publisher")}\n    </div>\n    ${formData.roboGrade && (formData.printing && String(formData.printing).trim()) ? `\n    \x3c!-- S14 (anti-fraud): Printing is shown read-only on a graded book.\n         It is NOT in the editable grid at all (a blank editable Printing\n         would also be a fraud vector — a user could leave a reprint's\n         printing empty). It only appears here when the assessment\n         actually populated it (e.g. "Facsimile Reprint"), so the label\n         and Detail view stay truthful and the user can't strip it. --\x3e\n    <div class="form-grid-2"><div>\n      <label class="field-label">Printing</label>\n      <div class="ro-field" title="Locked — set by the assessment and not editable">${esc(formData.printing)}</div>\n    </div></div>` : ""}\n    \x3c!-- Official Grades fields (S11): the disclosure container "OFFICIAL GRADES"\n         was removed. CGC Grade/Cert and PSA Grade/Cert sit as their own ordinary\n         fields when relevant.\n         Visibility:\n         • Not yet assessed (no roboGrade): show both CGC and PSA grids.\n         • Assessed and AI determined raw (no grades/certs): hide both.\n         • Assessed and CGC info present: show CGC grid only.\n         • Assessed and PSA info present: show PSA grid only.\n         A book can be CGC OR PSA officially, never both. --\x3e\n    ${(() => {
     const hasOfficialCGC = !!(formData.cgcGrade || formData.cgcCert);
     const hasOfficialPSA = !!(formData.psaGrade || formData.psaCert);
     const everAssessed = !!formData.roboGrade;
@@ -11522,6 +11543,67 @@ async function handleInteriorCoverImages(e) {
   formData.interiorCoverImages = imgs;
   formData._imagesChanged = true;
   e.target.value = "";
+  renderForm();
+}
+
+// ── User-submitted uncaught-defect photos ───────────────────────────────────
+// Informational only: NOT graded, NOT annotated. Edit-only blank slot; once a
+// slot is filled the image shows in all views (Detail/Public/Admin). Max 2.
+// Persist through re-assessment (userDefectImages is a saved field, never
+// cleared by an assess run). Uses a plain library/camera picker (no guided
+// camera / cropper) since these are voluntary reference photos.
+let _tappedUserDefectSlot = 0;
+function renderUserDefectSlots() {
+  // Only offered on a Robograder-assessed book (a "defect Robograder missed"
+  // has no meaning before an assessment or on a manual entry).
+  if (!formData.roboGrade) return "";
+  const list = (formData.userDefectImages || []).filter(Boolean).slice(0, 2);
+  const label = "Add a defect photo Robograder missed";
+  let slots = "";
+  list.forEach((url, i) => {
+    slots += `<div class="drag-slot" style="aspect-ratio:16/5" onclick="pickUserDefect(${i})"><img src="${url}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"><button class="slot-x" onclick="event.stopPropagation();removeUserDefectImg(${i})">×</button></div>`;
+  });
+  if (list.length < 2) {
+    const blankIdx = list.length;
+    // TODO(Matt): swap this placeholder for the user-defect ghost asset when
+    // ready, e.g. an <img src="assets/ghosts/User_Defect.jpg"> fill like the
+    // interior-cover blank slots use.
+    slots += `<div class="drag-slot" style="aspect-ratio:16/5;background:#161410;border:1px dashed #6a5a3a" onclick="pickUserDefect(${blankIdx})"><div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;pointer-events:none;color:#b8a06a"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg><span style="font-size:11px;font-weight:700;letter-spacing:0.4px;text-align:center;padding:0 12px">${label}</span></div></div>`;
+  }
+  return `\n        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin:16px 0 8px">DEFECTS ROBOGRADER MISSED</div><div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Optional. Add a photo of a defect Robograder didn't capture — informational only, it does not change your grade.</div><div style="display:grid;grid-template-columns:1fr;gap:6px">${slots}</div>`;
+}
+function pickUserDefect(slotIndex) {
+  _tappedUserDefectSlot = slotIndex;
+  const el = document.getElementById("userdefect-photo-input");
+  if (el) el.click();
+}
+async function handleUserDefectImages(e) {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  const f = files[0];
+  if (!f.type.startsWith("image/")) {
+    alert(`"${f.name}" doesn't look like an image file. Please pick a photo (JPG, PNG, HEIC, etc.).`);
+    e.target.value = "";
+    return;
+  }
+  const dataUrl = await new Promise(res => {
+    const r = new FileReader;
+    r.onload = ev => res(ev.target.result);
+    r.readAsDataURL(f);
+  });
+  const imgs = (formData.userDefectImages || []).filter(Boolean).slice(0, 2);
+  const idx = Math.min(_tappedUserDefectSlot, imgs.length, 1);
+  imgs[idx] = dataUrl;
+  formData.userDefectImages = imgs.filter(Boolean).slice(0, 2);
+  formData._imagesChanged = true;
+  e.target.value = "";
+  renderForm();
+}
+function removeUserDefectImg(i) {
+  const imgs = (formData.userDefectImages || []).filter(Boolean);
+  imgs.splice(i, 1);
+  formData.userDefectImages = imgs;
+  formData._imagesChanged = true;
   renderForm();
 }
 
@@ -13487,8 +13569,11 @@ async function submitForm() {
   // S20 (#36): Deep interior-cover photos.
   const rawInteriorCoverImages = formData.interiorCoverImages || [];
   const newInteriorCoverCount = rawInteriorCoverImages.filter(x => x && isDataUrl(x)).length;
-  const newImageCount = rawImages.filter(isDataUrl).length + rawCornerImages.filter(isDataUrl).length + newInteriorCount + newSignatureCount + newRestorationCount + newInteriorCoverCount + newInsertCount + newCouponCount;
-  let finalImages, finalCornerImages, finalThumbnails, finalInteriorImages, finalSignatureImages, finalRestorationImages, finalInteriorCoverImages, finalInsertImages, finalCouponImages;
+  // User-defect photos (informational). Persist through re-assessment.
+  const rawUserDefectImages = (formData.userDefectImages || []).filter(Boolean).slice(0, 2);
+  const newUserDefectCount = rawUserDefectImages.filter(x => x && isDataUrl(x)).length;
+  const newImageCount = rawImages.filter(isDataUrl).length + rawCornerImages.filter(isDataUrl).length + newInteriorCount + newSignatureCount + newRestorationCount + newInteriorCoverCount + newInsertCount + newCouponCount + newUserDefectCount;
+  let finalImages, finalCornerImages, finalThumbnails, finalInteriorImages, finalSignatureImages, finalRestorationImages, finalInteriorCoverImages, finalInsertImages, finalCouponImages, finalUserDefectImages;
   try {
     if (formData._imagesChanged && newImageCount > 0) {
       let preUpload = null;
@@ -13564,6 +13649,14 @@ async function submitForm() {
         });
         finalInteriorCoverImages = interiorCoverResult.images;
       }
+      if (rawUserDefectImages.length > 0 && rawUserDefectImages.some(Boolean)) {
+        syncMsg(`Uploading defect photo${newUserDefectCount === 1 ? "" : "s"}...`);
+        const userDefectResult = await processImagesForSave(rawUserDefectImages, id, [ "userdefect_01", "userdefect_02" ], {
+          generateThumbs: false,
+          preserveNulls: true
+        });
+        finalUserDefectImages = (userDefectResult.images || []).filter(Boolean).slice(0, 2);
+      }
       if (rawRestorationImages.length > 0 && rawRestorationImages.some(Boolean)) {
         // S16: Deduplicate — if a restoration image matches an already-uploaded interior image,
         // reuse the Cloud Storage URL instead of uploading again
@@ -13597,6 +13690,7 @@ async function submitForm() {
       finalCouponImages = formData._savedCouponImages || existingComic?.couponImages || formData.couponImages || [];
       finalRestorationImages = formData._savedRestorationImages || existingComic?.restorationImages || formData.restorationImages || [];
       finalInteriorCoverImages = formData._savedInteriorCoverImages || existingComic?.interiorCoverImages || formData.interiorCoverImages || [];
+      finalUserDefectImages = (existingComic?.userDefectImages || formData.userDefectImages || []).filter(Boolean).slice(0, 2);
     }
     syncMsg(null);
   } catch (e) {
@@ -13686,6 +13780,7 @@ async function submitForm() {
     restorationImages: finalRestorationImages || [],
     interiorCoverImages: finalInteriorCoverImages || formData.interiorCoverImages || [],
     interiorCoverMeta: finalInteriorCoverMeta,
+    userDefectImages: (finalUserDefectImages || formData.userDefectImages || []).filter(Boolean).slice(0, 2),
     dateAdded: formData.dateAdded || (new Date).toISOString()
   };
   delete rec._savedImages;
