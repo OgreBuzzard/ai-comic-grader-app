@@ -5865,56 +5865,9 @@ function showDetail(id) {
     html += rHtml;
   }
   // Card details moved to the top-of-entry identity block (_cardIdentityHTML).
-  const history = selected.assessmentHistory || [];
-  if (history.length > 0) {
-    let histHtml = `<div style="margin-top:20px"><div class="section-label">Assessment History</div><div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">`;
-    history.forEach(h => {
-      if (h._batch) { histHtml += _renderBatchHistoryRow(h, false); return; }
-      const parts = [];
-      if (h.rgScore != null) {
-        const v = h.rgVersion ? ` v${h.rgVersion}` : "";
-        let precSuffix = "";
-        if (h.rgScore < 100) {
-          if (h.rgHighGradeUnlocked && h.rgConfidenceRange != null) {
-            precSuffix = h.rgConfidenceRange > 0 ? ` ±${h.rgConfidenceRange}` : "";
-          } else if (h.rgScore >= 90 && !h.rgHighGradeUnlocked) {
-            precSuffix = "+";
-          } else if (h.rgConfidenceRange != null) {
-            precSuffix = h.rgConfidenceRange > 0 ? ` ±${h.rgConfidenceRange}` : "";
-          }
-        }
-        if (h.rgV3Grade != null) {
-          const _pmH = h.rgV3PM ? ` <span style="color:#6a7a4a;font-weight:600">${h.rgV3PM}</span>` : "";
-          parts.push(`<span style="color:#5a7030;font-weight:700">RG <span style="font-family:'League Spartan',sans-serif;font-weight:800;letter-spacing:0.5px;font-size:13px">${h.rgV3Grade}</span>${_pmH}</span>`);
-        } else {
-          parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;font-weight:700;color:#5a7030">RG ${h.rgScore}${precSuffix}${v}</span>`);
-        }
-      }
-      if (h.grade) {
-        parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;color:#3a5a8a">Predicted ${normalizeGrade(h.grade)}</span>`);
-      }
-      if (h.psaGrade) {
-        parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;color:#8a3a3a">PSA ${normalizeGrade(h.psaGrade)}</span>`);
-      }
-      if (h.pageQuality) {
-        parts.push(`<span style="font-size:11px;color:#8a7a6a">${esc(h.pageQuality)}</span>`);
-      }
-      const dateStr = h.date ? (() => {
-        try {
-          return new Date(h.date).toLocaleDateString("en-US", {
-            year: "numeric",
-            month: "short",
-            day: "numeric"
-          });
-        } catch (e) {
-          return "";
-        }
-      })() : "";
-      histHtml += `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 10px;background:#f4f0e6;border:1px solid #d8d0c0;border-radius:6px;font-size:12px">\n        ${parts.join('<span style="color:#c8b8a8">·</span>')}\n        ${dateStr ? `<span style="margin-left:auto;font-size:11px;color:#9a8a7a">${dateStr}</span>` : ""}\n      </div>`;
-    });
-    histHtml += `</div></div>`;
-    html += histHtml;
-  }
+  // Assessment History (Detail view) — shared renderer: RANGE SUMMARY bars +
+  // per-record rows (subscores + tier stars) + Batch shown as its N runs.
+  html += renderAssessmentHistorySection(selected.assessmentHistory, false);
   const hasAnyDateCost = !!(selected.slabbingDate || selected.dateAcquired || cost > 0);
   if (hasAnyDateCost) {
     html += `<div class="divider"></div>\n    <div class="grid-2">\n      ${selected.slabbingDate ? `<div><div class="section-label">Date Graded</div><div class="field-val">${esc(selected.slabbingDate)}</div></div>` : ""}\n      ${selected.dateAcquired ? `<div><div class="section-label">Date Acquired</div><div class="field-val">${formatDate(selected.dateAcquired)}</div></div>` : ""}\n      ${cost > 0 ? `<div><div class="section-label">Total Cost</div><div class="field-val" style="color:#8abf8a;font-weight:700">${fmt$(cost)}</div></div>` : ""}\n      ${selected.fmv ? "" : ""}\n    </div>`;
@@ -8437,6 +8390,11 @@ const IMAGE_PAID_CAP = 1000;
 // suppressed via formData._batchMode; one batch record (with all N runs) is
 // filed in assessmentHistory. The app keeps the LAST run's grade (spec §9).
 const BATCH_N = 5;
+// Advertised flat batch price (placeholder — Matt is guessing; tune after
+// measuring the real cached cost per ASSESS_BATCH_SPEC §8). NOTE: the 10
+// underlying calls still charge per-call today; capping the actual charge to
+// this flat price is a billing task pending that measurement + Matt's call.
+const BATCH_CREDIT_COST = 3;
 function _batchBanner(n, total, phase) {
   let el = document.getElementById("batch-banner");
   if (!el) {
@@ -8466,27 +8424,25 @@ function _batchRoundHalf(x) { return Math.round(x * 2) / 2; }
 function _batchMedian(a) { const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; }
 async function submitBatchAssessment() {
   if (assessing || formData._batchMode) return;
-  if (formData.type === "card") { alert("Batch assessment is for comics."); return; }
+  if (formData.type === "card") { await appAlert("Batch assessment is for comics."); return; }
   if (!(typeof isDeepAssessmentComplete === "function" && isDeepAssessmentComplete(formData))) {
-    alert("Run Deep Assessment first — Batch re-runs the full Main -> Deep pipeline on this book's photos.");
+    await appAlert("Run Deep Assessment first — Batch re-runs the Main → Deep pipeline on this book's photos.");
     return;
   }
-  const need = BATCH_N * 2; // Main + Deep per run
-  if (window._userCredits !== undefined && window._userCredits < need) {
-    alert(`Batch runs ${BATCH_N} full Main -> Deep passes (~${need} credits). You have ${window._userCredits}. Add credits and try again.`);
+  if (window._userCredits !== undefined && window._userCredits < BATCH_CREDIT_COST) {
+    await appAlert(`Batch costs ${BATCH_CREDIT_COST} credits. You have ${window._userCredits}. Add credits and try again.`);
     if (typeof showBuyCredits === "function") showBuyCredits();
     return;
   }
-  if (!confirm(`Run Batch: ${BATCH_N} full Main -> Deep passes on this book to reveal the grade range.\n\nThis uses about ${need} credits and takes a few minutes. Continue?`)) return;
+  if (!(await appConfirm(`Run Batch: ${BATCH_N} Main → Deep passes to reveal the High/Low grade range and a cumulative average.\n\nCost: ${BATCH_CREDIT_COST} credits (${BATCH_N * 2} assessments). Takes a few minutes.`, "Run Batch"))) return;
   formData._batchMode = true;
   const runs = [];
   try {
     for (let i = 1; i <= BATCH_N; i++) {
       formData._bypassDuplicateCheck = true;
-      _batchBanner(i, BATCH_N, "Main");
+      window._batchPass = i; // reserved hook for a future per-pass variance nudge; NOT yet consumed by the assess path (see report: batch runs still come back near-identical)
       await assessGrade();
       if (window._userCredits !== undefined && window._userCredits <= 0) break;
-      _batchBanner(i, BATCH_N, "Deep");
       await assessHighGrade();
       const r = _batchReadRun();
       if (r.rgV3Raw != null) runs.push(r);
@@ -8494,12 +8450,12 @@ async function submitBatchAssessment() {
     }
   } catch (e) {
     console.error("[batch] run failed:", e);
-    alert("Batch stopped early: " + (e && e.message ? e.message : "unknown error") + "\n\nGrades collected so far are kept.");
+    await appAlert("Batch stopped early: " + (e && e.message ? e.message : "unknown error") + "\n\nGrades collected so far are kept.");
   }
   formData._batchMode = false;
-  _batchBannerHide();
+  window._batchPass = 0;
   const valid = runs.filter(r => r && r.rgV3Raw != null);
-  if (!valid.length) { alert("Batch produced no grades. No credits recorded to a batch."); renderForm(); return; }
+  if (!valid.length) { await appAlert("Batch produced no grades."); renderForm(); return; }
   const raws = valid.map(r => r.rgV3Raw);
   const med = _batchMedian(raws);
   const kept = raws.filter(x => Math.abs(x - med) <= 1.5);
@@ -8525,18 +8481,160 @@ async function submitBatchAssessment() {
   ["_batchMode", "_bypassDuplicateCheck", "_imagesChanged", "_savedImages", "_savedCornerImages", "_savedInteriorImages", "_savedSignatureImages", "_savedInsertImages", "_savedCouponImages", "_savedRestorationImages", "_savedInteriorCoverImages", "_preUploadPromise", "_preUploadId", "_slabDetect"].forEach(k => delete _saveRec[k]);
   try { await saveItem(_saveRec); } catch (e) { console.warn("[batch] save failed:", e); }
   renderForm();
-  alert(`Batch complete — ${valid.length} pass${valid.length === 1 ? "" : "es"}.\n\nRoboGrade range ${fmt(lo)} to ${fmt(hi)}, average ${fmt(avg)}.\nHighest this batch: ${fmt(hi)}.\n\nAll ${valid.length} grades are recorded under Assessment History.`);
+  await appAlert(`Batch complete — ${valid.length} pass${valid.length === 1 ? "" : "es"}.\n\nRoboGrade range ${fmt(lo)} to ${fmt(hi)}, average ${fmt(avg)}. Highest this batch: ${fmt(hi)}.\n\nAll ${valid.length} grades are recorded under Assessment History.`);
 }
 function renderBatchSection() {
   if (formData.type === "card") return "";
   if (!(typeof isDeepAssessmentComplete === "function" && isDeepAssessmentComplete(formData))) return "";
-  return `\n        <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n          <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">BATCH ASSESSMENT (×${BATCH_N})</div>\n          <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Re-runs the full Main → Deep pipeline ${BATCH_N} times on this book's photos to reveal the realistic grade RANGE — most useful on a book near a grade boundary. Uses ~${BATCH_N * 2} credits. All ${BATCH_N} grades are recorded under Assessment History.</div>\n          <div style="display:flex;justify-content:center">\n            <button class="rg-btn rg-btn-assess rg-btn-gold${assessing ? ' assessing' : ''}" onclick="submitBatchAssessment()" ${assessing ? "disabled" : ""}>RUN BATCH ×${BATCH_N}</button>\n          </div>\n        </div>`;
+  return `\n        <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n          <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">BATCH ASSESSMENT (×${BATCH_N})</div>\n          <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Re-runs the Main → Deep pipeline ${BATCH_N} times to give a better idea of the High/Low grade range for this book, as well as a cumulative average. All ${BATCH_N} grades are recorded in the Assessment History. The cost is ${BATCH_CREDIT_COST} credits for a total of ${BATCH_N * 2} assessments.</div>\n          <div style="display:flex;justify-content:center">\n            <button class="rg-btn rg-btn-assess rg-btn-gold${assessing ? ' assessing' : ''}" onclick="submitBatchAssessment()" ${assessing ? "disabled" : ""} style="line-height:1.2;text-align:center">RUN BATCH ×${BATCH_N}<br><span style="font-size:0.8em;font-weight:600;opacity:0.85">(${BATCH_CREDIT_COST} CREDITS)</span></button>\n          </div>\n        </div>`;
+}
+// ── Assessment History: shared render helpers (v5.07) ──────────────────────
+// One place that renders the history for BOTH the Detail and Edit views: a
+// visual RANGE SUMMARY (RG + PG bars marked Low/High/Average, plus average PQ)
+// over a record list. Each record shows its subscores and assessment-tier
+// stars; a Batch record renders as its N individual runs (each a Deep-tier
+// assessment), so 5 runs read as 5 assessments — not one collapsed row.
+function _histNum(g) { if (g == null) return null; const n = parseFloat(String(g).replace(/[^0-9.]/g, "")); return isNaN(n) ? null : n; }
+function _histRoundHalf(x) { return Math.round(x * 2) / 2; }
+function _histFmt(x) { return (window.RoboScoreV3 ? window.RoboScoreV3.formatGrade(x) : Number(x).toFixed(1)); }
+function _histDateStr(d) { if (!d) return ""; try { return new Date(d).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }); } catch (e) { return ""; } }
+// Collect RG and PG numeric data points across all records. A Batch contributes
+// its N run grades as N separate points (matching how it displays).
+function _histPoints(history) {
+  const rg = [], pg = [], pq = {};
+  (history || []).forEach(h => {
+    if (h._batch && Array.isArray(h.runs)) {
+      h.runs.forEach(r => {
+        const a = _histNum(r.rgV3Grade); if (a != null) rg.push(a);
+        const b = _histNum(r.predictedGrade); if (b != null) pg.push(b);
+        if (r.pageQuality) pq[r.pageQuality] = (pq[r.pageQuality] || 0) + 1;
+      });
+    } else {
+      const a = _histNum(h.rgV3Grade); if (a != null) rg.push(a);
+      const b = _histNum(h.grade != null ? h.grade : h.predictedGrade); if (b != null) pg.push(b);
+      if (h.pageQuality) pq[h.pageQuality] = (pq[h.pageQuality] || 0) + 1;
+    }
+  });
+  return { rg, pg, pq };
+}
+// One horizontal range bar: Low dot at the left end, High dot at the right end,
+// Average dot positioned proportionally along the bar.
+function _histRangeBar(label, arr, color) {
+  if (!arr || !arr.length) return "";
+  const lo = Math.min(...arr), hi = Math.max(...arr);
+  const avg = _histRoundHalf(arr.reduce((a, b) => a + b, 0) / arr.length);
+  const span = hi - lo;
+  const single = span <= 0;
+  const pct = single ? 50 : Math.max(0, Math.min(100, ((avg - lo) / span) * 100));
+  return `
+    <div style="margin:8px 0 2px">
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
+        <span style="font-size:10px;letter-spacing:1.5px;color:#8a9a7a;font-weight:700">${label}</span>
+        <span style="font-size:11px;color:#5a7030">avg <span style="font-family:'League Spartan',sans-serif;font-weight:800;color:${color};font-size:13px">${_histFmt(avg)}</span></span>
+      </div>
+      <div style="position:relative;height:20px;margin:0 6px">
+        <div style="position:absolute;top:9px;left:0;right:0;height:3px;border-radius:2px;background:linear-gradient(90deg,#cdd8be,${color})"></div>
+        <div style="position:absolute;top:5px;left:0;width:11px;height:11px;border-radius:50%;background:#fff;border:2px solid ${color};transform:translateX(-3px)"></div>
+        <div style="position:absolute;top:5px;right:0;width:11px;height:11px;border-radius:50%;background:${color};border:2px solid ${color};transform:translateX(3px)"></div>
+        ${single ? "" : `<div style="position:absolute;top:2px;left:${pct}%;width:8px;height:8px;border-radius:50%;background:#1a2e10;border:2px solid #fff;transform:translateX(-50%);box-shadow:0 0 0 1px ${color}"></div>`}
+      </div>
+      <div style="position:relative;height:14px;margin:0 6px;font-size:10px;color:#7a8a6a">
+        <span style="position:absolute;left:0;transform:translateX(-3px)">${_histFmt(lo)}</span>
+        <span style="position:absolute;right:0;transform:translateX(3px)">${_histFmt(hi)}</span>
+      </div>
+    </div>`;
+}
+function renderAHSummary(history) {
+  const p = _histPoints(history);
+  if (!p.rg.length && !p.pg.length) return "";
+  const modePQ = Object.keys(p.pq).sort((a, b) => p.pq[b] - p.pq[a])[0] || "";
+  const n = p.rg.length || p.pg.length;
+  return `<div style="background:#eef3e6;border:1px solid #cdd8be;border-radius:10px;padding:12px 14px;margin-top:8px">
+      <div style="font-size:10px;letter-spacing:2px;color:#6abf6a;font-weight:700;margin-bottom:2px">RANGE SUMMARY${n ? ` · ${n} data point${n === 1 ? "" : "s"}` : ""}</div>
+      ${_histRangeBar("ROBOGRADE", p.rg, "#4a7a20")}
+      ${_histRangeBar("PREDICTED", p.pg, "#3a5a8a")}
+      ${modePQ ? `<div style="margin-top:8px;font-size:11px;color:#8a7a6a">Page quality: <span style="color:#5a4a3a;font-weight:700">${esc(modePQ)}</span></div>` : ""}
+    </div>`;
+}
+// Assessment-tier stars for a stored record, by its depth: main=1, deep=2,
+// full=3. Batch runs are Deep-tier (2) — each grade is essentially a Deep.
+function _histStars(depth, size, color) {
+  let tier = 1;
+  if (depth === "full") tier = 3;
+  else if (depth === "deep" || depth === "batch") tier = 2;
+  let s = ""; for (let i = 0; i < tier; i++) s += tierStarSVG(size || 11, color || "#5a7030");
+  return `<span style="line-height:1;white-space:nowrap;display:inline-flex;gap:1px;align-items:center">${s}</span>`;
+}
+// Component subscores line (raw RG v2 points: Front/50 Back/20 Spine/20 Interior/10).
+function _histSubscores(sub) {
+  if (!sub) return "";
+  const cells = [];
+  const add = (l, v, max) => { if (v != null && v !== "") cells.push(`<span>${l} <span style="color:#5a7030;font-weight:700">${v}</span><span style="color:#b0b8a4">/${max}</span></span>`); };
+  add("F", sub.front, 50); add("B", sub.back, 20); add("S", sub.spine, 20); add("I", sub.interior, 10);
+  if (!cells.length) return "";
+  return `<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:10px;color:#8a9a7a;margin-top:5px;padding-top:5px;border-top:1px dashed #d8d0c0">${cells.join("")}</div>`;
+}
+// One standard (non-batch) record row: RG (+PM) · Predicted · PSA · PQ, with
+// tier stars over the date on the right, and a subscores line beneath.
+function renderAHRow(h, editable, i) {
+  const parts = [];
+  if (h.rgV3Grade != null) {
+    const pm = h.rgV3PM ? ` <span style="color:#6a7a4a;font-weight:600">${h.rgV3PM}</span>` : "";
+    parts.push(`<span style="color:#5a7030;font-weight:700">RG <span style="font-family:'League Spartan',sans-serif;font-weight:800;letter-spacing:0.5px;font-size:13px">${h.rgV3Grade}</span>${pm}</span>`);
+  } else if (h.rgScore != null) {
+    parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;font-weight:700;color:#5a7030">RG ${h.rgScore}</span>`);
+  }
+  if (h.grade) parts.push(`<span style="color:#3a5a8a">Predicted <span style="font-family:'League Spartan',sans-serif;font-weight:800">${normalizeGrade(h.grade)}</span></span>`);
+  if (h.psaGrade) parts.push(`<span style="color:#8a3a3a">PSA ${normalizeGrade(h.psaGrade)}</span>`);
+  if (h.pageQuality) parts.push(`<span style="font-size:11px;color:#8a7a6a">${esc(h.pageQuality)}</span>`);
+  const stars = _histStars(h.depth, 11, "#5a7030");
+  const date = _histDateStr(h.date);
+  const rm = editable ? `<button onclick="formData.assessmentHistory.splice(${i},1);renderForm()" style="background:none;border:none;color:#a05a5a;font-size:16px;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0" title="Remove this entry">×</button>` : "";
+  return `<div style="padding:8px 10px;background:#f4f0e6;border:1px solid #d8d0c0;border-radius:6px">
+      <div style="display:flex;align-items:flex-start;gap:10px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;flex:1">${parts.join('<span style="color:#c8b8a8">·</span>')}</div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0">${stars}${date ? `<span style="font-size:10px;color:#9a8a7a">${date}</span>` : ""}</div>
+        ${rm}
+      </div>
+      ${_histSubscores(h.subscores)}
+    </div>`;
+}
+// A single run inside a Batch, rendered as its own Deep-tier assessment row.
+function _histBatchRunRow(r, idx) {
+  const parts = [];
+  parts.push(`<span style="color:#5a7030;font-weight:700">RG <span style="font-family:'League Spartan',sans-serif;font-weight:800;font-size:13px">${r.rgV3Grade || "—"}</span>${r.rgV3PM ? ` <span style="color:#6a7a4a;font-weight:600">${r.rgV3PM}</span>` : ""}</span>`);
+  if (r.predictedGrade) parts.push(`<span style="color:#3a5a8a">Predicted <span style="font-family:'League Spartan',sans-serif;font-weight:800">${normalizeGrade(r.predictedGrade)}</span></span>`);
+  if (r.pageQuality) parts.push(`<span style="font-size:11px;color:#8a7a6a">${esc(r.pageQuality)}</span>`);
+  return `<div style="padding:7px 9px;background:#f4f0e6;border:1px solid #d8d0c0;border-radius:6px">
+      <div style="display:flex;align-items:flex-start;gap:10px">
+        <span style="width:24px;font-size:11px;color:#8a9a7a;font-weight:700;flex-shrink:0">#${idx + 1}</span>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;flex:1">${parts.join('<span style="color:#c8b8a8">·</span>')}</div>
+        <div style="flex-shrink:0">${_histStars("deep", 10, "#5a7030")}</div>
+      </div>
+      ${_histSubscores(r.subscores)}
+    </div>`;
 }
 function _renderBatchHistoryRow(h, editable, i) {
   const runs = h.runs || [];
-  const runsHtml = runs.map((r, idx) => `<div style="display:flex;gap:10px;font-size:11px;color:#4a5a44;padding:2px 0;align-items:center"><span style="width:30px;color:#8a9a7a">#${idx + 1}</span><span style="font-weight:700;color:#5a7030">RG <span style="font-family:'League Spartan',sans-serif;font-weight:800;font-size:12px">${r.rgV3Grade || "—"}</span></span>${r.predictedGrade ? `<span style="color:#3a5a8a">PG ${normalizeGrade(r.predictedGrade)}</span>` : ""}${r.pageQuality ? `<span style="color:#8a7a6a">${esc(r.pageQuality)}</span>` : ""}</div>`).join("");
   const rm = editable ? `<button onclick="formData.assessmentHistory.splice(${i},1);renderForm()" style="margin-left:auto;background:none;border:none;color:#a05a5a;font-size:16px;cursor:pointer;padding:0 2px;line-height:1" title="Remove this batch">×</button>` : "";
-  return `<div style="padding:8px 10px;background:#eef3e6;border:1px solid #cdd8be;border-radius:8px">\n      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px">\n        <span style="font-weight:800;color:#4a7a20;letter-spacing:1px">BATCH ×${h.runCount || runs.length}</span>\n        <span style="color:#5a7030;font-weight:700">RG ${h.rgV3Low} – ${h.rgV3High} · avg <span style="font-family:'League Spartan',sans-serif;font-weight:800">${h.rgV3Grade}</span></span>\n        ${h.grade ? `<span style="color:#3a5a8a">avg PG ${normalizeGrade(h.grade)}</span>` : ""}\n        ${h.pageQuality ? `<span style="font-size:11px;color:#8a7a6a">${esc(h.pageQuality)}</span>` : ""}\n        ${rm}\n      </div>\n      <div style="margin-top:6px;border-top:1px dashed #cdd8be;padding-top:6px">${runsHtml}</div>\n    </div>`;
+  const date = _histDateStr(h.date);
+  return `<div style="padding:8px 10px;background:#e7eede;border:1px solid #cdd8be;border-radius:8px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px">
+        <span style="font-weight:800;color:#4a7a20;letter-spacing:1px">BATCH ×${h.runCount || runs.length}</span>
+        <span style="color:#5a7030;font-weight:700">RG ${h.rgV3Low} – ${h.rgV3High} · avg <span style="font-family:'League Spartan',sans-serif;font-weight:800">${h.rgV3Grade}</span></span>
+        ${h.grade ? `<span style="color:#3a5a8a">avg Predicted ${normalizeGrade(h.grade)}</span>` : ""}
+        ${date ? `<span style="font-size:10px;color:#9a8a7a">${date}</span>` : ""}
+        ${rm}
+      </div>
+      <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px">${runs.map((r, idx) => _histBatchRunRow(r, idx)).join("")}</div>
+    </div>`;
+}
+// Full section (label + summary + list) — used by both Detail and Edit views.
+function renderAssessmentHistorySection(history, editable) {
+  history = history || [];
+  if (!history.length) return "";
+  const rows = history.map((h, i) => h._batch ? _renderBatchHistoryRow(h, editable, i) : renderAHRow(h, editable, i)).join("");
+  return `<div style="margin-top:20px"><div class="section-label">Assessment History</div>${renderAHSummary(history)}<div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">${rows}</div></div>`;
 }
 
 function countBooksWithImages() {
@@ -9729,6 +9827,11 @@ async function completeAssessment() {
         rgV3PM: _priorV3H ? (_priorV3H.pmLabel || "") : null,
         rgConfidenceRange: formData.roboGrade && formData.roboGrade.confidenceRange != null ? Math.round(formData.roboGrade.confidenceRange) : null,
         rgHighGradeUnlocked: !!formData.highGradeUnlocked,
+        // v5.07: store depth + subscores so Assessment History can show the
+        // assessment-tier stars (main=1, deep=2, full=3) and the F/B/S/I
+        // component subscores per record.
+        depth: (formData.fullAssessmentRan ? "full" : ((typeof isDeepAssessmentComplete === "function" && isDeepAssessmentComplete(formData)) ? "deep" : "main")),
+        subscores: (formData.roboGrade ? { front: formData.roboGrade.frontScore, back: formData.roboGrade.backScore, spine: formData.roboGrade.spineScore, interior: formData.roboGrade.interiorScore } : null),
         roboGradeId: formData.roboGradeId || "",
         date: formData.roboGradeDate || ""
       };
@@ -10870,43 +10973,7 @@ function renderForm() {
     if (showLabelNotesEdit) return "";
     if (!formData.keyInfo) return "";
     return `<div><label class="field-label">Key Info</label><textarea rows="3" readonly style="cursor:not-allowed;background:#ffffff;color:#1a1614" title="Key Info is populated by the assessment when the issue is in the recognized-key list. Not user-editable.">${esc(formData.keyInfo || "")}</textarea></div>`;
-  })()}\n    ${formData.cgcGrade || formData.psaGrade || formData.graderNotes ? `<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes ? 5 : 3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiAssessment ? `<div><label class="field-label">Main Assessment</label><textarea rows="${Math.max(8, Math.ceil(formData.aiAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>` : ""}\n    ${formData.deepAssessment ? `<div><label class="field-label">Deep Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.deepAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Deep pass.">${esc(formData.deepAssessment)}</textarea></div>` : ""}\n    ${formData.fullAssessment ? `<div><label class="field-label">Full Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.fullAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Full pass.">${esc(formData.fullAssessment)}</textarea></div>` : ""}\n    ${formData.restorationReport ? `<div><label class="field-label">Restoration Assessment</label><textarea rows="${Math.max(5, Math.ceil((formData.restorationReport || "").length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Restoration Check.">${esc(formData.restorationReport)}</textarea></div>` : ""}\n    ${(formData.assessmentHistory || []).length > 0 ? `<div style="margin-top:20px"><div class="section-label">Assessment History</div><div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">\n        ${(formData.assessmentHistory || []).map((h, i) => {
-    if (h._batch) return _renderBatchHistoryRow(h, true, i);
-    // S20 (#54): match the Detail view's Past Assessments styling (light rows,
-    // date, full precision suffix). Edit keeps the × remove button so history
-    // entries can still be pruned before saving.
-    const parts = [];
-    if (h.rgScore != null) {
-      const v = h.rgVersion ? ` v${h.rgVersion}` : "";
-      let precSuffix = "";
-      if (h.rgScore < 100) {
-        if (h.rgHighGradeUnlocked && h.rgConfidenceRange != null) {
-          precSuffix = h.rgConfidenceRange > 0 ? ` ±${h.rgConfidenceRange}` : "";
-        } else if (h.rgScore >= 90 && !h.rgHighGradeUnlocked) {
-          precSuffix = "+";
-        } else if (h.rgConfidenceRange != null) {
-          precSuffix = h.rgConfidenceRange > 0 ? ` ±${h.rgConfidenceRange}` : "";
-        }
-      }
-      if (h.rgV3Grade != null) {
-          const _pmH = h.rgV3PM ? ` <span style="color:#6a7a4a;font-weight:600">${h.rgV3PM}</span>` : "";
-          parts.push(`<span style="color:#5a7030;font-weight:700">RG <span style="font-family:'League Spartan',sans-serif;font-weight:800;letter-spacing:0.5px;font-size:13px">${h.rgV3Grade}</span>${_pmH}</span>`);
-        } else {
-          parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;font-weight:700;color:#5a7030">RG ${h.rgScore}${precSuffix}${v}</span>`);
-        }
-    }
-    if (h.grade) {
-      parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;color:#3a5a8a">Predicted ${normalizeGrade(h.grade)}</span>`);
-    }
-    if (h.psaGrade) {
-      parts.push(`<span style="font-family:'IBM Plex Mono','Menlo',monospace;color:#8a3a3a">PSA ${normalizeGrade(h.psaGrade)}</span>`);
-    }
-    if (h.pageQuality) {
-      parts.push(`<span style="font-size:11px;color:#8a7a6a">${esc(h.pageQuality)}</span>`);
-    }
-    const dateStr = h.date ? (() => { try { return new Date(h.date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }); } catch (e) { return ""; } })() : "";
-    return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 10px;background:#f4f0e6;border:1px solid #d8d0c0;border-radius:6px;font-size:12px">\n            ${parts.join('<span style="color:#c8b8a8">·</span>')}\n            ${dateStr ? `<span style="margin-left:auto;font-size:11px;color:#9a8a7a">${dateStr}</span>` : ""}\n            <button onclick="formData.assessmentHistory.splice(${i},1);renderForm()" style="${dateStr ? "" : "margin-left:auto;"}flex-shrink:0;background:none;border:none;color:#a05a5a;font-size:16px;cursor:pointer;padding:0 2px;line-height:1" title="Remove this entry">×</button>\n          </div>`;
-  }).join("")}\n      </div></div>` : ""}\n    ${formData.psaNotes ? `<div><label class="field-label" style="color:#e87a7a">PSA Variance</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes || "")}</textarea></div>` : ""}\n\n    \x3c!-- Enhancement Candidate (S11): renamed from "Enhance Candidate"; moved\n         to between Condition Assessment and Cost Breakdown per user direction. --\x3e\n    \x3c!-- S20: Enhancement Candidate control hidden per request (odd inclusion, often inaccurate). Kept for future use: <div><label class="field-label">Enhancement Candidate</label><div style="display:flex;gap:10px">\${treatBtn("enhance", "Enhance")}</div></div> --\x3e\n\n    \x3c!-- Cost Breakdown (S11): now includes FMV ($) and FMV Date inside the\n         container, since they're financial fields conceptually grouped with\n         the cost data. --\x3e\n    <div class="cost-box">\n      <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>\n      <div class="form-grid-2">\n        ${mf("Purchase Price ($)", "purchasePrice")}\n        ${mf("Taxes / Fees / Shipping ($)", "taxesFeesShipping")}\n        ${mf("Grading / Pressing ($)", "gradingCost")}\n        ${mf("CGC Return Shipping ($)", "cgcShipping")}\n        \n        \n        ${mf("Asking Price ($)", "askingPrice")}\n      </div>\n    </div>\n\n    <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes || "")}</textarea></div>\n    ${""}\n    \n    <div style="display:flex;gap:10px;padding-top:4px">\n      ${isEdit ? "" : `<button id="save-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="submitForm()" ${formData.title?.trim() ? "" : "disabled"}>Add to Collection</button>`}\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cancelForm()">Cancel</button>\n    </div>\n    ` : `\n    \x3c!-- Add-flow collapsed state (S11): show only the Enter Manually button.\n         Steers users toward photos-first by hiding the form fields until\n         either (a) they tap Enter Manually, or (b) an assessment runs and\n         _assessed becomes true. Edit view always shows the full form.\n         S14: ownership cycle pill inserted above Enter Manually. Lets a\n         user mark a book as Owned (default) / Watching / Sold before\n         assessing — so they can assess someone else's book without\n         claiming it, or track a book they're considering buying. Same\n         pill style as detail and edit views (color-coded by state),\n         centered between the two full-width buttons. Public-listing is\n         locked off whenever ownership !== 'Owned'; the cycleOwnership\n         handler clears formData.publicListing on transitions out of\n         Owned so a stale 'true' can't be saved. --\x3e\n    ${(() => {
+  })()}\n    ${formData.cgcGrade || formData.psaGrade || formData.graderNotes ? `<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes ? 5 : 3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiAssessment ? `<div><label class="field-label">Main Assessment</label><textarea rows="${Math.max(8, Math.ceil(formData.aiAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>` : ""}\n    ${formData.deepAssessment ? `<div><label class="field-label">Deep Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.deepAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Deep pass.">${esc(formData.deepAssessment)}</textarea></div>` : ""}\n    ${formData.fullAssessment ? `<div><label class="field-label">Full Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.fullAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Full pass.">${esc(formData.fullAssessment)}</textarea></div>` : ""}\n    ${formData.restorationReport ? `<div><label class="field-label">Restoration Assessment</label><textarea rows="${Math.max(5, Math.ceil((formData.restorationReport || "").length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Restoration Check.">${esc(formData.restorationReport)}</textarea></div>` : ""}\n    ${renderAssessmentHistorySection(formData.assessmentHistory, true)}\n    ${formData.psaNotes ? `<div><label class="field-label" style="color:#e87a7a">PSA Variance</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes || "")}</textarea></div>` : ""}\n\n    \x3c!-- Enhancement Candidate (S11): renamed from "Enhance Candidate"; moved\n         to between Condition Assessment and Cost Breakdown per user direction. --\x3e\n    \x3c!-- S20: Enhancement Candidate control hidden per request (odd inclusion, often inaccurate). Kept for future use: <div><label class="field-label">Enhancement Candidate</label><div style="display:flex;gap:10px">\${treatBtn("enhance", "Enhance")}</div></div> --\x3e\n\n    \x3c!-- Cost Breakdown (S11): now includes FMV ($) and FMV Date inside the\n         container, since they're financial fields conceptually grouped with\n         the cost data. --\x3e\n    <div class="cost-box">\n      <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>\n      <div class="form-grid-2">\n        ${mf("Purchase Price ($)", "purchasePrice")}\n        ${mf("Taxes / Fees / Shipping ($)", "taxesFeesShipping")}\n        ${mf("Grading / Pressing ($)", "gradingCost")}\n        ${mf("CGC Return Shipping ($)", "cgcShipping")}\n        \n        \n        ${mf("Asking Price ($)", "askingPrice")}\n      </div>\n    </div>\n\n    <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes || "")}</textarea></div>\n    ${""}\n    \n    <div style="display:flex;gap:10px;padding-top:4px">\n      ${isEdit ? "" : `<button id="save-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="submitForm()" ${formData.title?.trim() ? "" : "disabled"}>Add to Collection</button>`}\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cancelForm()">Cancel</button>\n    </div>\n    ` : `\n    \x3c!-- Add-flow collapsed state (S11): show only the Enter Manually button.\n         Steers users toward photos-first by hiding the form fields until\n         either (a) they tap Enter Manually, or (b) an assessment runs and\n         _assessed becomes true. Edit view always shows the full form.\n         S14: ownership cycle pill inserted above Enter Manually. Lets a\n         user mark a book as Owned (default) / Watching / Sold before\n         assessing — so they can assess someone else's book without\n         claiming it, or track a book they're considering buying. Same\n         pill style as detail and edit views (color-coded by state),\n         centered between the two full-width buttons. Public-listing is\n         locked off whenever ownership !== 'Owned'; the cycleOwnership\n         handler clears formData.publicListing on transitions out of\n         Owned so a stale 'true' can't be saved. --\x3e\n    ${(() => {
     const own = formData.ownership || "Owned";
     const styleByState = {
       Owned: {
@@ -11701,16 +11768,16 @@ function renderUserDefectSlots() {
   const label = "Add a defect photo Robograder missed";
   let slots = "";
   list.forEach((url, i) => {
-    slots += `<div class="drag-slot" style="aspect-ratio:16/5" onclick="pickUserDefect(${i})"><img src="${url}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"><button class="slot-x" onclick="event.stopPropagation();removeUserDefectImg(${i})">×</button></div>`;
+    slots += `<div class="drag-slot" style="aspect-ratio:3/1" onclick="pickUserDefect(${i})"><img src="${url}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"><button class="slot-x" onclick="event.stopPropagation();removeUserDefectImg(${i})">×</button></div>`;
   });
   if (list.length < 2) {
     const blankIdx = list.length;
     // TODO(Matt): swap this placeholder for the user-defect ghost asset when
     // ready, e.g. an <img src="assets/ghosts/User_Defect.jpg"> fill like the
     // interior-cover blank slots use.
-    slots += `<div class="drag-slot" style="aspect-ratio:16/5;background:#161410;border:1px dashed #6a5a3a" onclick="pickUserDefect(${blankIdx})"><div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;pointer-events:none;color:#b8a06a"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg><span style="font-size:11px;font-weight:700;letter-spacing:0.4px;text-align:center;padding:0 12px">${label}</span></div></div>`;
+    slots += `<div class="drag-slot" style="aspect-ratio:3/1;background:#161410;border:1px dashed #6a5a3a" onclick="pickUserDefect(${blankIdx})"><div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;pointer-events:none;color:#b8a06a"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg><span style="font-size:11px;font-weight:700;letter-spacing:0.4px;text-align:center;padding:0 12px">${label}</span></div></div>`;
   }
-  return `\n        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin:16px 0 8px">DEFECTS ROBOGRADER MISSED</div><div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Optional. Add a photo of a defect Robograder didn't capture — informational only, it does not change your grade.</div><div style="display:grid;grid-template-columns:1fr;gap:6px">${slots}</div>`;
+  return `\n        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin:16px 0 8px">DEFECTS ROBOGRADER MISSED</div><div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Optional. Add a photo of a defect Robograder didn't capture. This will not change the grade, but it will represent the condition more accurately and help to improve Robograder.</div><div style="display:grid;grid-template-columns:1fr;gap:6px">${slots}</div>`;
 }
 function pickUserDefect(slotIndex) {
   _tappedUserDefectSlot = slotIndex;

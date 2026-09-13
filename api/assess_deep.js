@@ -551,7 +551,14 @@ Rules:
       // max_tokens. Deep's JSON output is smaller than initial (it's a
       // refinement, not a full assessment), so 8k headroom is appropriate.
       max_tokens: 8192,
-      system: activePrompt,
+      // Deep cost fix: cache the (large) system prompt with a 1h TTL. Deep had
+      // NO caching, so a Batch re-billed the full system prompt on every one of
+      // its 5 Deep passes. Cached as a prefix block; a second breakpoint is
+      // placed on the corner-macro images just below (after _antBody is built)
+      // so the stable image prefix is cached too. Requires the
+      // extended-cache-ttl beta header (added to the fetch calls below).
+      // Additive: affects only billing/caching, never model output.
+      system: [{ type: 'text', text: activePrompt, cache_control: { type: 'ephemeral', ttl: '1h' } }],
       messages: [{
         role: 'user',
         content: isRestoration
@@ -572,6 +579,17 @@ Rules:
       }]
     };
 
+    // Deep cost fix (cont.): second cache breakpoint on the corner-macro images
+    // — the stable, always-present image group (identical photos on every Batch
+    // pass) — so system + macros are read from cache on passes 2..N within the
+    // TTL instead of re-billed at full price. macroBlocks objects are shared by
+    // reference with the content array, so mutating the last one here applies.
+    try {
+      if (Array.isArray(macroBlocks) && macroBlocks.length) {
+        macroBlocks[macroBlocks.length - 1].cache_control = { type: 'ephemeral', ttl: '1h' };
+      }
+    } catch (e) {}
+
     let text;
     let _inputTokens = null, _outputTokens = null, _cacheReadInputTokens = null;
     let _cacheCreationInputTokens = null, _stopReason = null, _responseModel = null;
@@ -589,7 +607,8 @@ Rules:
             headers: {
               'Content-Type': 'application/json',
               'x-api-key': apiKey,
-              'anthropic-version': '2023-06-01'
+              'anthropic-version': '2023-06-01',
+              'anthropic-beta': 'extended-cache-ttl-2025-04-11'
             },
             body: JSON.stringify(_antBody),
             signal: ctrl.signal
@@ -678,7 +697,8 @@ Rules:
             headers: {
               'Content-Type': 'application/json',
               'x-api-key': apiKey,
-              'anthropic-version': '2023-06-01'
+              'anthropic-version': '2023-06-01',
+              'anthropic-beta': 'extended-cache-ttl-2025-04-11'
             },
             body: JSON.stringify(_antBody),
             signal: ctrl.signal
