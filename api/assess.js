@@ -225,7 +225,14 @@ export default async function handler(req, res) {
     // S16: when mode === 'slabcheck', assess.js does NOT run an assessment —
     // it makes a tiny Haiku vision call to decide if the front photo shows a
     // graded slab, logs cost/latency, and returns { detected, company }.
-    mode = null
+    mode = null,
+    // S22 (Batch): the book's identity is already settled from its original
+    // assessment and has not changed — same stored images, same book. When this
+    // is present, PHASE 0 skips re-deriving title/issue/date/publisher/printing
+    // and echoes these back instead. The GATE half of PHASE 0 (COMIC /
+    // NOT_COMIC / FLAGGED / CROP_FAILURE) still runs in full; only the
+    // identification work is skipped.
+    knownIdentity = null
   } = req.body;
   if (!images || images.length === 0) return res.status(400).json({ error: 'No images provided' });
 
@@ -961,9 +968,23 @@ This comic is encapsulated in a third-party grading case (CGC / PSA / CBCS). You
 ` : '';
 
   // ── Unified system prompt: one image pass, neutral first, three grades ───────
+  // S22 (Batch): pre-settled identity block, injected into PHASE 0.
+  const _ki = (knownIdentity && typeof knownIdentity === 'object' && (knownIdentity.title || knownIdentity.issue)) ? knownIdentity : null;
+  const knownIdentityBlock = _ki ? `
+IDENTITY ALREADY ESTABLISHED — DO NOT RE-DERIVE IT.
+This book was identified on a previous assessment of these same photos. Its identity is settled:
+  title: ${_ki.title || ''}
+  issue: ${_ki.issue || ''}
+  issueDate: ${_ki.issueDate || ''}
+  publisher: ${_ki.publisher || ''}
+  printing: ${_ki.printing || ''}
+Echo these values back VERBATIM in your output. Do NOT spend any effort reading the logo, cover date, indicia, price box or UPC to work out what the book is, and do NOT second-guess the values above — they are correct.
+You MUST still run the GATE CHECK below in full (COMIC / NOT_COMIC / FLAGGED / CROP_FAILURE). Skipping identification does not mean skipping the gate.
+` : '';
+
   const systemPrompt = `You are an expert comic book condition analyst. Collectors value your assessments because they are strict and unforgiving. They know you will only give high grades when they are deserved. Over-grading a book damages your reputation and integrity. They use your service because they trust your grades, and they will stop if you grade too high. When a grade could reasonably go either way, take the LOWER read. Examine the photos ONCE and record neutral observations, then derive three independent grades from those observations.
 ## PHASE 0 — GATE CHECK (mandatory first)
-
+${knownIdentityBlock}
 Classify content into ONE bucket:
   COMIC — single-issue or trade, including adult comics, horror titles, pornographic comics from known publishers. Magazines like Playboy are NOT comics.
   NOT_COMIC — magazines, trades (unless clearly graphic novels), random objects, screenshots, people, animals, blank paper, trading cards, prose books, tests/abuse.

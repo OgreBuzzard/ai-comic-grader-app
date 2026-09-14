@@ -137,7 +137,21 @@ export default async function handler(req, res) {
       issueNumber: String(ident.issue || ''),
       issueDate: ident.issueDate || '',
       labelDetected: !!ident.labelDetected,
-      labelKind: ident.labelKind || ''
+      labelKind: ident.labelKind || '',
+      // S22: Batch runs on a book that was identified on its ORIGINAL assessment
+      // and has not changed since — same stored images, same book. Re-deriving
+      // title / issue / date / publisher / printing five more times is pure
+      // repeated work. knownIdentity hands assess.js the settled answer so
+      // PHASE 0 skips identification. The GATE half of Phase 0 (COMIC /
+      // NOT_COMIC / CROP_FAILURE) still runs — we are skipping identification,
+      // not the safety check.
+      knownIdentity: {
+        title: ident.title || '',
+        issue: String(ident.issue || ''),
+        issueDate: ident.issueDate || '',
+        publisher: ident.publisher || '',
+        printing: ident.printing || ''
+      }
     };
     const { parsed: M, ms: mainMs } = await callGrader(`${base}/api/assess`, mainBody, authHeader, 'assess');
     const mainRG = rgOf(M);
@@ -185,7 +199,8 @@ export default async function handler(req, res) {
       interiorCovers: covers.length === 2 ? covers : [],
       frontCover: main[0] || null,
       title: ident.title || '',
-      issueNumber: String(ident.issue || '')
+      issueNumber: String(ident.issue || ''),
+      cacheProfile: 'batch'
     };
     const { parsed: D, ms: deepMs } = await callGrader(`${base}/api/assess_deep`, deepBody, authHeader, 'assess_deep');
 

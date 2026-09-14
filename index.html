@@ -2197,12 +2197,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.09";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.10";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.09");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.10");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -7192,6 +7192,142 @@ function mountTierTracker(kind, stepDefs, opts) {
   };
 }
 
+// ── BATCH progress tracker (S22) ────────────────────────────────────────────
+// Lives here, beside mountStepTracker/mountTierTracker, because the house style
+// (default_box / success_box assets, the overlay coordinates, the results-panel
+// badge layout, the COMPLETE button) is all defined in this file. The first cut
+// drew its own boxes inside scan-animation.js and landed out of alignment.
+//
+// Geometry: the grade boxes keep Main/Deep/Full's EXACT left edge, tops and
+// height, so their upper-left corners are pixel-identical across all four
+// assessment types. ONLY the width is reduced, pulling the right edge left to
+// open up room for the two result boxes per row. Result-box columns measured
+// off Matt's placement mockup (474x747 = the overlay region at 1:1).
+const BATCH_OVERLAY_BG = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay_Batch.webp";
+(function preloadBatchOverlay() { const i = new Image; i.src = BATCH_OVERLAY_BG; })();
+
+const BATCH_BTN_LEFT_PCT   = 11.81;   // identical to Main/Deep/Full
+const BATCH_BTN_TOPS_PCT   = [36.42, 46.36, 56.29, 66.23, 76.16];  // identical
+const BATCH_BTN_HEIGHT_PCT = 9.01;    // identical
+const BATCH_BTN_WIDTH_PCT  = 43.25;   // NARROWED (Main/Deep/Full use 75.95)
+const BATCH_RES_W_PCT      = 14.80;
+const BATCH_RES_LEFTS_PCT  = [57.80, 72.96];  // RG, PG — right edge lines up with the house boxes
+
+function mountBatchTracker(n) {
+  if (!window.RobograderScan || !window.RobograderScan.slideOverlayIntoChest) {
+    console.warn("mountBatchTracker: scan-animation module not loaded");
+    return;
+  }
+  n = n || 5;
+  let boxesHtml = "";
+  for (let i = 0; i < n; i++) {
+    const top = BATCH_BTN_TOPS_PCT[i];
+    if (top == null) break;
+    // The label box: same asset, same corner, narrower.
+    boxesHtml += `<div id="batch-box-${i + 1}"
+      style="position:absolute;left:${BATCH_BTN_LEFT_PCT}%;top:${top}%;
+             width:${BATCH_BTN_WIDTH_PCT}%;height:${BATCH_BTN_HEIGHT_PCT}%;
+             background-image:url('${ASSESS_DEFAULT_BOX}');
+             background-size:100% 100%;background-repeat:no-repeat;
+             display:flex;align-items:center;justify-content:center;
+             pointer-events:none;">
+        <span style="font-family:'League Spartan',sans-serif;font-weight:800;
+                     font-size:min(3.4vw,17px);letter-spacing:0.04em;color:#1a1a1a;
+                     line-height:1;transform:translateY(-1px)">GRADE ${i + 1}</span>
+      </div>`;
+    // Two result boxes per row: RG then PG.
+    ["rg", "pg"].forEach((kind, k) => {
+      boxesHtml += `<div id="batch-${kind}-${i + 1}"
+        style="position:absolute;left:${BATCH_RES_LEFTS_PCT[k]}%;top:${top}%;
+               width:${BATCH_RES_W_PCT}%;height:${BATCH_BTN_HEIGHT_PCT}%;
+               background:#1d4a7a;border:1px solid #3f7fb5;border-radius:6px;
+               display:flex;align-items:center;justify-content:center;
+               box-shadow:inset 0 1px 3px rgba(0,0,0,0.45);
+               pointer-events:none;">
+          <span style="font-family:'League Spartan',sans-serif;font-weight:800;
+                       transform:scaleX(0.72);font-size:min(4.6vw,23px);color:#dcefff;
+                       line-height:1;opacity:0;transition:opacity .3s ease"></span>
+        </div>`;
+    });
+  }
+  const overlayHtml = `\n    <img src="${BATCH_OVERLAY_BG}" alt=""\n         style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;" />`;
+  window.RobograderScan.slideOverlayIntoChest(overlayHtml, boxesHtml);
+  if (window._batchGridTimer) clearTimeout(window._batchGridTimer);
+  window._batchGridTimer = setTimeout(() => {
+    window._batchGridTimer = null;
+    if (window.RobograderScan && window.RobograderScan.startGridCycle) window.RobograderScan.startGridCycle();
+    if (window.RobograderScan && window.RobograderScan.startNeedlePulse) window.RobograderScan.startNeedlePulse();
+  }, 1200);
+}
+
+// Light one row. Passes land OUT OF ORDER — that is correct, not a glitch.
+function setBatchRow(pass, data) {
+  const box = document.getElementById("batch-box-" + pass);
+  if (!box) return;
+  const put = (kind, txt) => {
+    const el = document.getElementById(`batch-${kind}-${pass}`);
+    if (!el) return;
+    const sp = el.firstElementChild;
+    if (!sp) return;
+    sp.textContent = txt == null ? "" : String(txt);
+    sp.style.opacity = txt ? "1" : "0";
+  };
+  if (data && data.stage === "error") {
+    box.style.backgroundImage = "url('" + ASSESS_FAILURE_BOX + "')";
+    return;
+  }
+  if (data && data.stage === "done") {
+    box.style.backgroundImage = "url('" + ASSESS_SUCCESS_BOX + "')";
+    put("rg", data.rg || "");
+    put("pg", data.pg || "");
+  }
+}
+
+// Results panel — matches Main/Deep/Full exactly: RG + CGC badges, a Page
+// Quality pill, and the COMPLETE button. No bespoke "BATCH · N PASSES" header.
+function mountBatchResults(summary) {
+  if (!window.RobograderScan || !window.RobograderScan.slideResultsIntoPanel) return;
+  const s = summary || {};
+  setTimeout(() => {
+    if (window.RobograderScan.stopGridCycle) window.RobograderScan.stopGridCycle();
+    if (window.RobograderScan.stopNeedlePulse) window.RobograderScan.stopNeedlePulse();
+    if (window.RobograderScan.sweepNeedleToScore && s.rawAvg != null) {
+      window.RobograderScan.sweepNeedleToScore(Math.round(s.rawAvg));
+    }
+  }, 600);
+  const gridEl = document.getElementById("tracker-grid-frame");
+  if (gridEl) gridEl.style.display = "none";
+  const badge = (bg, txt, val, label, border, valId) =>
+    `<div style="width:64px;height:64px;${border ? `border:${border};` : ""}background:${bg};border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)"><div ${valId ? `id="${valId}" ` : ""}style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:38px;font-weight:800;color:${txt};line-height:1">${val}</div><div style="font-size:9px;color:${txt};opacity:0.75;margin-top:2px;letter-spacing:0.8px">${label}</div></div>`;
+  let badges = "";
+  if (s.average != null) badges += badge("#0f1a05", "#b8d820", s.average, "RG", "1.5px solid #3a5010", "batch-val-rg");
+  if (s.pg) badges += badge("#2a5a8a", "#e0f0ff", s.pg, "CGC", "", "batch-val-pg");
+  const pqHtml = s.pq
+    ? `<div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">${s.pq}</div>`
+    : "";
+  const html = `
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;">
+      <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badges}</div>
+      <div style="position:relative;width:100%;display:flex;align-items:center;justify-content:center;min-height:22px;">${pqHtml}</div>
+      <button id="assess-complete-btn" style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#2f9e52;color:#fff;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">COMPLETE</button>
+    </div>`;
+  window.RobograderScan.slideResultsIntoPanel(html);
+  const rgEl = document.getElementById("batch-val-rg");
+  if (rgEl) setTimeout(() => { if (typeof popResultBadge === "function") popResultBadge(rgEl); }, 700);
+  setTimeout(() => {
+    const btn = document.getElementById("assess-complete-btn");
+    if (btn) btn.onclick = completeBatchAssessment;
+  }, 400);
+}
+
+// The batch equivalent of completeCardAssessment — without this the panel had
+// no COMPLETE button at all and the app was stranded behind the overlay.
+function completeBatchAssessment() {
+  if (window.RobograderScan && window.RobograderScan.dismiss) window.RobograderScan.dismiss();
+  formData._batchMode = false;
+  try { renderForm(); } catch (e) { console.warn("[batch] renderForm after complete:", e); }
+}
+
 function setStep(id, state, detail = "") {
   if (window.RobograderScan && window.RobograderScan.debugLog) {
     window.RobograderScan.debugLog(`setStep: ${id} → ${state}`);
@@ -8581,9 +8717,13 @@ async function submitBatchAssessment() {
       ...(formData.cornerImages || []).map(_u).slice(0, 4),
       ...(formData.interiorCoverImages || []).map(_u).slice(0, 2)
     ];
-    if (window.RobograderScan && window.RobograderScan.startBatch) {
-      try { anim = window.RobograderScan.startBatch(_batchPhotos, { n: started.n || BATCH_N, credits: BATCH_CREDIT_COST }); }
-      catch (e) { console.warn("[batch] animation failed to start (non-fatal):", e); anim = null; }
+    if (window.RobograderScan && window.RobograderScan.runScanAnimation) {
+      try {
+        const _run = window.RobograderScan.runScanAnimation(_batchPhotos, "batch");
+        const _mount = () => { try { mountBatchTracker(started.n || BATCH_N); } catch (e) { console.warn("[batch] tracker mount:", e); } };
+        _run.promise.then(_mount).catch(_mount);
+        anim = { run: _run, mounted: true };
+      } catch (e) { console.warn("[batch] animation failed to start (non-fatal):", e); anim = null; }
     }
 
     // ── staggered fan-out + poll ────────────────────────────────────────────
@@ -8597,13 +8737,38 @@ async function submitBatchAssessment() {
       for (let i = 2; i <= (started.n || BATCH_N); i++) _batchFireWorker(batchId, i);
     };
 
+    const fmtGrade = g => window.RoboScoreV3 ? window.RoboScoreV3.formatGrade(g) : String(g);
+    const _v3ForPass = (p) => {
+      if (!window.RoboScoreV3 || !p || typeof p.rg !== "number" || !p.subscores) return null;
+      try {
+        return window.RoboScoreV3.forComic({
+          roboGrade: {
+            score: p.rg,
+            frontScore: p.subscores.front, backScore: p.subscores.back,
+            spineScore: p.subscores.spine, interiorScore: p.subscores.interior,
+            pageQuality: p.pq, confidenceRange: p.pm, defects: []
+          },
+          pageQuality: p.pq, deepAssessmentRan: true
+        });
+      } catch (e) { return null; }
+    };
+    const _rowsDrawn = {};
+
     let status = null;
     while (true) {
       await new Promise(r => setTimeout(r, BATCH_POLL_MS));
       try { status = await _batchApi(`/api/assess_batch_status?batchId=${encodeURIComponent(batchId)}`); }
       catch (e) { console.warn("[batch] poll failed (retrying):", e && e.message); continue; }
 
-      if (anim && anim.update) { try { anim.update(status); } catch (e) {} }
+      if (anim) {
+        (status.passes || []).forEach(p => {
+          if (p.stage !== "done" && p.stage !== "error") return;
+          if (_rowsDrawn[p.pass]) return;
+          _rowsDrawn[p.pass] = true;
+          const v = _v3ForPass(p);
+          try { setBatchRow(p.pass, { stage: p.stage, rg: v ? fmtGrade(v.grade) : "", pg: p.grade || "" }); } catch (e) {}
+        });
+      }
 
       if (!fannedOut) {
         const p1 = (status.passes || [])[0];
@@ -8618,7 +8783,7 @@ async function submitBatchAssessment() {
     // ── results ─────────────────────────────────────────────────────────────
     const done = (status.passes || []).filter(p => p.stage === "done" && typeof p.rg === "number");
     if (!done.length) {
-      if (anim && anim.fail) { try { anim.fail(); } catch (e) {} }
+      if (window.RobograderScan && window.RobograderScan.dismiss) { try { window.RobograderScan.dismiss(); } catch (e) {} }
       formData._batchMode = false;
       const firstErr = (status.passes || []).map(p => p.error).filter(Boolean)[0];
       await appAlert("Batch produced no grades." + (firstErr ? "\n\n" + firstErr : ""));
@@ -8637,21 +8802,8 @@ async function submitBatchAssessment() {
     const avgRaw = raws.reduce((a, b) => a + b, 0) / raws.length;
     const loRaw = Math.min(...raws), hiRaw = Math.max(...raws);
 
-    const v3of = (rawScore, p) => {
-      if (!window.RoboScoreV3 || !p || !p.subscores) return null;
-      try {
-        return window.RoboScoreV3.forComic({
-          roboGrade: {
-            score: rawScore,
-            frontScore: p.subscores.front, backScore: p.subscores.back,
-            spineScore: p.subscores.spine, interiorScore: p.subscores.interior,
-            pageQuality: p.pq, confidenceRange: p.pm, defects: []
-          },
-          pageQuality: p.pq, deepAssessmentRan: true
-        });
-      } catch (e) { return null; }
-    };
-    const fmt = g => window.RoboScoreV3 ? window.RoboScoreV3.formatGrade(g) : String(g);
+    const v3of = (rawScore, p) => _v3ForPass({ ...p, rg: rawScore });
+    const fmt = fmtGrade;
 
     // Quantize the averaged/extreme RAW scores through the production v3 path,
     // using a representative pass for the non-score inputs.
@@ -8696,21 +8848,26 @@ async function submitBatchAssessment() {
     ["_batchMode", "_bypassDuplicateCheck", "_imagesChanged", "_savedImages", "_savedCornerImages", "_savedInteriorImages", "_savedSignatureImages", "_savedInsertImages", "_savedCouponImages", "_savedRestorationImages", "_savedInteriorCoverImages", "_preUploadPromise", "_preUploadId", "_slabDetect"].forEach(k => delete _saveRec[k]);
     try { await saveItem(_saveRec); } catch (e) { console.warn("[batch] save failed:", e); }
 
-    if (anim && anim.complete) {
-      try { await anim.complete({ average: fmt(gAvg), low: fmt(gLo), high: fmt(gHi), pg: avgPG, n: done.length }); }
-      catch (e) { console.warn("[batch] animation complete failed:", e); }
-    }
-
-    formData._batchMode = false;
-    renderForm();
-
-    if (!anim) {
-      await appAlert(`Batch complete — ${done.length} pass${done.length === 1 ? "" : "es"}.\n\nRoboGrade range ${fmt(gLo)} to ${fmt(gHi)}, average ${fmt(gAvg)}.\n\nAll ${done.length} grades are recorded under Assessment History.`);
+    if (anim) {
+      // The COMPLETE button in this panel is what dismisses the overlay and
+      // returns to the form (completeBatchAssessment). Without it the app is
+      // stranded behind the scan shell with no way out.
+      try { mountBatchResults({ average: fmt(gAvg), pg: avgPG, pq: modePQ, rawAvg: avgRaw, n: done.length }); }
+      catch (e) {
+        console.warn("[batch] results panel failed:", e);
+        if (window.RobograderScan && window.RobograderScan.dismiss) window.RobograderScan.dismiss();
+        formData._batchMode = false;
+        renderForm();
+      }
+    } else {
+      formData._batchMode = false;
+      renderForm();
+      await appAlert(`Batch complete — ${done.length} pass${done.length === 1 ? "" : "es"}.\n\nRoboGrade range ${fmt(gLo)} to ${fmt(gHi)}, average ${fmt(gAvg)}.`);
     }
   } catch (e) {
     console.error("[batch] failed:", e);
     formData._batchMode = false;
-    if (anim && anim.fail) { try { anim.fail(); } catch (e2) {} }
+    if (window.RobograderScan && window.RobograderScan.dismiss) { try { window.RobograderScan.dismiss(); } catch (e2) {} }
     await appAlert("Batch stopped: " + (e && e.message ? e.message : "unknown error"));
     renderForm();
   }
@@ -8779,7 +8936,7 @@ function renderAHSummary(history) {
   const modePQ = Object.keys(p.pq).sort((a, b) => p.pq[b] - p.pq[a])[0] || "";
   const n = p.rg.length || p.pg.length;
   return `<div style="background:#eef3e6;border:1px solid #cdd8be;border-radius:10px;padding:12px 14px 14px;margin-top:8px">
-      <div style="font-size:10px;letter-spacing:2px;color:#6abf6a;font-weight:700">RANGE SUMMARY${n ? ` · ${n} data point${n === 1 ? "" : "s"}` : ""}</div>
+      <div style="font-size:11px;letter-spacing:1px;color:#4a7a20;font-weight:800">SUMMARY${n ? ` · ${n} grade${n === 1 ? "" : "s"}` : ""}</div>
       ${_histRangeBar("ROBOGRADE", p.rg, "#4a7a20")}
       ${_histRangeBar("PREDICTED", p.pg, "#3a5a8a")}
       ${modePQ ? `<div style="margin-top:12px;font-size:11px;color:#8a7a6a">${esc(modePQ)}</div>` : ""}
@@ -8807,9 +8964,11 @@ function renderAHRow(h, editable, i) {
   const rg = h.rgV3Grade != null
     ? `<span style="color:#5a7030;font-weight:700">RG <span style="${_AHF};font-size:14px">${h.rgV3Grade}</span></span>`
     : (h.rgScore != null ? `<span style="font-family:'IBM Plex Mono',monospace;font-weight:700;color:#5a7030">RG ${h.rgScore}</span>` : "");
-  const pm = h.rgV3PM ? `<span style="color:#6a7a4a;font-weight:600;font-size:11px">${h.rgV3PM}</span>` : "";
+  // S22: PM removed from Assessment History (Matt). It is worth showing for the
+  // CURRENT grade, but on a past record it is low-value and it was pushing the
+  // subscores onto a second line. The value is still stored on the record.
   const subs = _histSubscores(h.subscores);
-  const line1 = [rg, pm, subs].filter(Boolean).join('<span style="color:#c8b8a8;margin:0 3px">·</span>');
+  const line1 = [rg, subs].filter(Boolean).join('<span style="color:#c8b8a8;margin:0 3px">·</span>');
   const pg = h.grade ? `<span style="color:#3a5a8a">PG <span style="${_AHF}">${normalizeGrade(h.grade)}</span></span>` : "";
   const psa = h.psaGrade ? `<span style="color:#8a3a3a">PSA ${normalizeGrade(h.psaGrade)}</span>` : "";
   const pq = h.pageQuality ? `<span style="font-size:11px;color:#8a7a6a">${esc(h.pageQuality)}</span>` : "";
@@ -8831,9 +8990,8 @@ function renderAHRow(h, editable, i) {
 // A single Batch run — same two-line format, Deep-tier (2 stars), no date/remove.
 function _histBatchRunRow(r, idx) {
   const rg = `<span style="color:#5a7030;font-weight:700">RG <span style="${_AHF};font-size:14px">${r.rgV3Grade || "—"}</span></span>`;
-  const pm = r.rgV3PM ? `<span style="color:#6a7a4a;font-weight:600;font-size:11px">${r.rgV3PM}</span>` : "";
   const subs = _histSubscores(r.subscores);
-  const line1 = [rg, pm, subs].filter(Boolean).join('<span style="color:#c8b8a8;margin:0 3px">·</span>');
+  const line1 = [rg, subs].filter(Boolean).join('<span style="color:#c8b8a8;margin:0 3px">·</span>');
   const pg = r.predictedGrade ? `<span style="color:#3a5a8a">PG <span style="${_AHF}">${normalizeGrade(r.predictedGrade)}</span></span>` : "";
   const pq = r.pageQuality ? `<span style="font-size:11px;color:#8a7a6a">${esc(r.pageQuality)}</span>` : "";
   const line2 = [pg, pq].filter(Boolean).join('<span style="color:#c8b8a8;margin:0 4px">·</span>');

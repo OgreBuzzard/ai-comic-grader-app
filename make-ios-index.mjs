@@ -248,7 +248,13 @@ mustReplace('D7b splash CSS',
     #splash-subtitle {
       position: absolute;
       left: 50%;
-      top: calc(env(safe-area-inset-top, 0px) + 5vh + 7vh);
+      /* S22: kept in step with the base rule that D17 rewrites below. This copy
+         is overridden (the base rule appears later in the generated file and
+         wins), but they used to disagree — this one still said 5vh+7vh=12vh from
+         before the launch-logo change — which is a trap for anyone who edits the
+         first #splash-subtitle they find. Both now say the same thing, so the
+         result no longer depends on CSS source order. */
+      top: calc(env(safe-area-inset-top, 0px) + 21vh - 40px);
       transform: translate(-50%, -120vh);
       text-align: center;
       font-size: 16px;

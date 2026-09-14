@@ -543,7 +543,13 @@ Rules:
     // volume isn't high enough to warrant it yet; flip this to true to enable
     // caching on all Deep assessments. (Batch will get its caching from the
     // dedicated batch flow, not from this per-call path.)
-    const DEEP_CACHE_ENABLED = false;
+    // S22: opt-in per request. Individual Deeps stay uncached (Matt's call — the
+    // volume doesn't justify it). A batch worker sends cacheProfile:'batch' to
+    // turn it on for that call. NOTE: caching only pays when the prefix repeats,
+    // so with per-pass grade brackets (BATCH_FIXED_BRACKET=false) the system
+    // prompt differs per pass and this will NOT hit. Kept wired so the
+    // cost-vs-variance trade can be measured both ways rather than argued.
+    const DEEP_CACHE_ENABLED = ((req.body && req.body.cacheProfile) === 'batch');
     const _deepCacheCtl = { type: 'ephemeral', ttl: '1h' };
 
     const _antBody = {
@@ -761,7 +767,17 @@ Rules:
         gateReason: (typeof parsed.mismatchReason === 'string' && parsed.mismatchReason.trim())
           ? parsed.mismatchReason.trim()
           : "The Deep Assessment close-ups don't appear to be the same comic as the one you assessed. Re-take the corner and interior photos of that book and try again.",
-        _diagnostics: { deepAssessment: true, imageMismatch: true, initialGrade: initialAssessment.grade || null, phaseTimings }
+        _diagnostics: { deepAssessment: true, imageMismatch: true, initialGrade: initialAssessment.grade || null,
+          // S22: log the Deep's own RG, subscores and PQ on EVERY run, not just
+          // when they move. Matt reads the admin LOGS tab to compare passes, and
+          // a Deep that left them unchanged previously logged nothing at all —
+          // indistinguishable from a Deep that never produced them.
+          roboScore: (parsed && parsed.roboGrade && parsed.roboGrade.score != null) ? parsed.roboGrade.score : null,
+          frontScore: (parsed && parsed.roboGrade) ? parsed.roboGrade.frontScore ?? null : null,
+          backScore: (parsed && parsed.roboGrade) ? parsed.roboGrade.backScore ?? null : null,
+          spineScore: (parsed && parsed.roboGrade) ? parsed.roboGrade.spineScore ?? null : null,
+          interiorScore: (parsed && parsed.roboGrade) ? parsed.roboGrade.interiorScore ?? null : null,
+          pageQuality: (parsed && parsed.roboGrade && parsed.roboGrade.pageQuality) || (parsed && parsed.pageQuality) || null, phaseTimings }
       };
       phaseTimings.totalMs = Date.now() - T0;
       try {
@@ -885,6 +901,16 @@ Rules:
       deepAssessment: !isRestoration,
       restorationCheck: isRestoration,
       initialGrade: initialAssessment.grade || null,
+          // S22: log the Deep's own RG, subscores and PQ on EVERY run, not just
+          // when they move. Matt reads the admin LOGS tab to compare passes, and
+          // a Deep that left them unchanged previously logged nothing at all —
+          // indistinguishable from a Deep that never produced them.
+          roboScore: (parsed && parsed.roboGrade && parsed.roboGrade.score != null) ? parsed.roboGrade.score : null,
+          frontScore: (parsed && parsed.roboGrade) ? parsed.roboGrade.frontScore ?? null : null,
+          backScore: (parsed && parsed.roboGrade) ? parsed.roboGrade.backScore ?? null : null,
+          spineScore: (parsed && parsed.roboGrade) ? parsed.roboGrade.spineScore ?? null : null,
+          interiorScore: (parsed && parsed.roboGrade) ? parsed.roboGrade.interiorScore ?? null : null,
+          pageQuality: (parsed && parsed.roboGrade && parsed.roboGrade.pageQuality) || (parsed && parsed.pageQuality) || null,
       revisedGrade: parsed.grade || null,
       gradeChanged: (initialAssessment.grade || null) !== (parsed.grade || null),
       phaseTimings: phaseTimings
@@ -911,6 +937,16 @@ Rules:
           gateResult: parsed.gateResult || 'COMIC',
           predictedGrade: parsed.grade || null,
           initialGrade: initialAssessment.grade || null,
+          // S22: log the Deep's own RG, subscores and PQ on EVERY run, not just
+          // when they move. Matt reads the admin LOGS tab to compare passes, and
+          // a Deep that left them unchanged previously logged nothing at all —
+          // indistinguishable from a Deep that never produced them.
+          roboScore: (parsed && parsed.roboGrade && parsed.roboGrade.score != null) ? parsed.roboGrade.score : null,
+          frontScore: (parsed && parsed.roboGrade) ? parsed.roboGrade.frontScore ?? null : null,
+          backScore: (parsed && parsed.roboGrade) ? parsed.roboGrade.backScore ?? null : null,
+          spineScore: (parsed && parsed.roboGrade) ? parsed.roboGrade.spineScore ?? null : null,
+          interiorScore: (parsed && parsed.roboGrade) ? parsed.roboGrade.interiorScore ?? null : null,
+          pageQuality: (parsed && parsed.roboGrade && parsed.roboGrade.pageQuality) || (parsed && parsed.pageQuality) || null,
           gradeChanged: (initialAssessment.grade || null) !== (parsed.grade || null),
           inputTokens: _inputTokens,
           outputTokens: _outputTokens,
