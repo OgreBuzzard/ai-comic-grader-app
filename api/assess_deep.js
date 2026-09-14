@@ -333,7 +333,7 @@ Recompute the RoboGrade score (Front + Back + Spine + Interior) and map it to a 
   • Also read the candidate grade's tier definition plus one grade above and one below to confirm the fit.
   • NEVER name, number, identify, or describe any specific reference comic in your output. The references are an internal yardstick only. If the grade is revised, deepAssessment may say it was "compared against reference copies at the same grade and revised" — nothing more specific. Never write this into aiAssessment, which is frozen.
 
-CGC TIER REFERENCE (candidate ±1, focused on initial grade):
+§§CACHE_SPLIT§§CGC TIER REFERENCE (candidate ±1, focused on initial grade):
 ${gradeTierContext(initialGrade)}
 
 PAGE QUALITY SEVERITY — HARD RULE: any defect entry whose type is "Page quality" (or which describes page color, tanning designation, or paper tone) gets severity="" (empty string). Page quality is a descriptive observation, NOT a defect. Low/Med/High severity tags apply ONLY to actual defects.
@@ -566,7 +566,23 @@ Rules:
       max_tokens: 8192,
       // System prompt: cached (1h TTL) only when DEEP_CACHE_ENABLED; otherwise a
       // plain string exactly as before (no caching, current default).
-      system: DEEP_CACHE_ENABLED ? [{ type: 'text', text: activePrompt, cache_control: _deepCacheCtl }] : activePrompt,
+      // S22: cache the STATIC PREFIX ONLY, exactly as api/assess.js does.
+      // Previously this cached `activePrompt` WHOLE — and that prompt has the
+      // book's title, issue and gradeTierContext(initialGrade) interpolated into
+      // it. So the cache key changed with every book AND every grade, and the
+      // cache could essentially never hit — not across passes, not even across
+      // users. That was an implementation gap, not a limit of caching: Main has
+      // split static-from-variable at §§CACHE_SPLIT§§ for months, which is why a
+      // Main on one book gets a cache hit from a Main on a completely different
+      // book. Deep now does the same, so per-pass grades no longer matter.
+      system: (() => {
+        const _sp = activePrompt.split('\u00a7\u00a7CACHE_SPLIT\u00a7\u00a7');
+        if (!DEEP_CACHE_ENABLED || _sp.length < 2) return _sp.join('');
+        return [
+          { type: 'text', text: _sp[0], cache_control: _deepCacheCtl },
+          { type: 'text', text: _sp[1] || '' }
+        ];
+      })(),
       messages: [{
         role: 'user',
         content: isRestoration

@@ -979,7 +979,7 @@ This book was identified on a previous assessment of these same photos. Its iden
   publisher: ${_ki.publisher || ''}
   printing: ${_ki.printing || ''}
 Echo these values back VERBATIM in your output. Do NOT spend any effort reading the logo, cover date, indicia, price box or UPC to work out what the book is, and do NOT second-guess the values above — they are correct.
-You MUST still run the GATE CHECK below in full (COMIC / NOT_COMIC / FLAGGED / CROP_FAILURE). Skipping identification does not mean skipping the gate.
+GATE CHECK: this exact image set already passed the gate on the earlier assessment, and the images have not changed since. Return gateResult "COMIC" and move straight to PHASE 1. Do not re-run the content classification or the crop check.
 ` : '';
 
   const systemPrompt = `You are an expert comic book condition analyst. Collectors value your assessments because they are strict and unforgiving. They know you will only give high grades when they are deserved. Over-grading a book damages your reputation and integrity. They use your service because they trust your grades, and they will stop if you grade too high. When a grade could reasonably go either way, take the LOWER read. Examine the photos ONCE and record neutral observations, then derive three independent grades from those observations.

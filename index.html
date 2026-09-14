@@ -7204,12 +7204,18 @@ function mountTierTracker(kind, stepDefs, opts) {
 // open up room for the two result boxes per row. Result-box columns measured
 // off Matt's placement mockup (474x747 = the overlay region at 1:1).
 const BATCH_OVERLAY_BG = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay_Batch.webp";
-(function preloadBatchOverlay() { const i = new Image; i.src = BATCH_OVERLAY_BG; })();
+// The NARROW box art Matt added for Batch: 206x68 against the full-size 360x68,
+// same height, right edge pulled in to make room for the two result boxes.
+const BATCH_DEFAULT_BOX = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/default_box_small.webp";
+const BATCH_SUCCESS_BOX = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/success_box_small.webp";
+(function preloadBatchArt() {
+  [BATCH_OVERLAY_BG, BATCH_DEFAULT_BOX, BATCH_SUCCESS_BOX].forEach(u => { const i = new Image; i.src = u; });
+})();
 
 const BATCH_BTN_LEFT_PCT   = 11.81;   // identical to Main/Deep/Full
 const BATCH_BTN_TOPS_PCT   = [36.42, 46.36, 56.29, 66.23, 76.16];  // identical
 const BATCH_BTN_HEIGHT_PCT = 9.01;    // identical
-const BATCH_BTN_WIDTH_PCT  = 43.25;   // NARROWED (Main/Deep/Full use 75.95)
+const BATCH_BTN_WIDTH_PCT  = 43.46;   // 206/474 — the small asset at 1:1, like the house boxes (360/474 = 75.95)
 const BATCH_RES_W_PCT      = 14.80;
 const BATCH_RES_LEFTS_PCT  = [57.80, 72.96];  // RG, PG — right edge lines up with the house boxes
 
@@ -7227,7 +7233,7 @@ function mountBatchTracker(n) {
     boxesHtml += `<div id="batch-box-${i + 1}"
       style="position:absolute;left:${BATCH_BTN_LEFT_PCT}%;top:${top}%;
              width:${BATCH_BTN_WIDTH_PCT}%;height:${BATCH_BTN_HEIGHT_PCT}%;
-             background-image:url('${ASSESS_DEFAULT_BOX}');
+             background-image:url('${BATCH_DEFAULT_BOX}');
              background-size:100% 100%;background-repeat:no-repeat;
              display:flex;align-items:center;justify-content:center;
              pointer-events:none;">
@@ -7273,11 +7279,13 @@ function setBatchRow(pass, data) {
     sp.style.opacity = txt ? "1" : "0";
   };
   if (data && data.stage === "error") {
-    box.style.backgroundImage = "url('" + ASSESS_FAILURE_BOX + "')";
+    // No failure_box_small exists yet — dim the default rather than drop in the
+    // full-width failure art, which would break the row alignment.
+    box.style.opacity = "0.45";
     return;
   }
   if (data && data.stage === "done") {
-    box.style.backgroundImage = "url('" + ASSESS_SUCCESS_BOX + "')";
+    box.style.backgroundImage = "url('" + BATCH_SUCCESS_BOX + "')";
     put("rg", data.rg || "");
     put("pg", data.pg || "");
   }
@@ -8936,7 +8944,7 @@ function renderAHSummary(history) {
   const modePQ = Object.keys(p.pq).sort((a, b) => p.pq[b] - p.pq[a])[0] || "";
   const n = p.rg.length || p.pg.length;
   return `<div style="background:#eef3e6;border:1px solid #cdd8be;border-radius:10px;padding:12px 14px 14px;margin-top:8px">
-      <div style="font-size:11px;letter-spacing:1px;color:#4a7a20;font-weight:800">SUMMARY${n ? ` · ${n} grade${n === 1 ? "" : "s"}` : ""}</div>
+      <div style="font-size:11px;letter-spacing:1px;color:#4a7a20;font-weight:800">SUMMARY${n ? `: ${n} grade${n === 1 ? "" : "s"}` : ""}</div>
       ${_histRangeBar("ROBOGRADE", p.rg, "#4a7a20")}
       ${_histRangeBar("PREDICTED", p.pg, "#3a5a8a")}
       ${modePQ ? `<div style="margin-top:12px;font-size:11px;color:#8a7a6a">${esc(modePQ)}</div>` : ""}
