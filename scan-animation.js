@@ -187,6 +187,24 @@
     { idx: 2, slotName: 'full-2', rotate: true  },  // Bottom Pages
   ];
 
+  // S22: BATCH scans all 10 images in ONE continuous sweep at Deep speed —
+  // 4 main + 4 corner macros + 2 interior covers. It is NOT ten separate
+  // assessment animations (that was the v2 mistake); it is one pass over every
+  // photo the batch will grade, while the five workers run behind it.
+  // Caller passes [front, back, pq, spine, tl, tr, bl, br, icFront, icBack].
+  const SLOTS_BATCH = [
+    { idx: 0, slotName: 'front',    rotate: false },
+    { idx: 1, slotName: 'back',     rotate: false },
+    { idx: 2, slotName: 'pq',       rotate: false },
+    { idx: 3, slotName: 'spine',    rotate: true  },
+    { idx: 4, slotName: 'corner-tl', rotate: false },
+    { idx: 5, slotName: 'corner-tr', rotate: false },
+    { idx: 7, slotName: 'corner-br', rotate: false },
+    { idx: 6, slotName: 'corner-bl', rotate: false },
+    { idx: 8, slotName: 'interior-cover-front', rotate: false },
+    { idx: 9, slotName: 'interior-cover-back',  rotate: false },
+  ];
+
   // S16: Restoration Check scans 8 images
   const SLOTS_RESTORATION = [
     { idx: 0, slotName: 'resto-0', rotate: false },
@@ -1450,13 +1468,14 @@
       teardown();
     }
 
-    const slotTable = (kind === 'card') ? SLOTS_CARD : (kind === 'corner') ? SLOTS_CORNER : (kind === 'full') ? SLOTS_FULL : (kind === 'restoration') ? SLOTS_RESTORATION : SLOTS_MAIN;
+    const slotTable = (kind === 'card') ? SLOTS_CARD : (kind === 'corner') ? SLOTS_CORNER : (kind === 'full') ? SLOTS_FULL : (kind === 'restoration') ? SLOTS_RESTORATION : (kind === 'batch') ? SLOTS_BATCH : SLOTS_MAIN;
     // S20 (#40): 6-image runs (Deep = 4 corners + 2 covers, Full = 6 strips) use
     // a brisker 900ms scan so the longer sequence keeps a snappy rhythm. The
     // 8-image restoration run stays at 1.0s; the 4-image main run keeps the full
     // 2.0s dwell.
     _scanDurationMs = (kind === 'corner' || kind === 'full') ? 900
       : (kind === 'restoration') ? 1000
+      : (kind === 'batch') ? 900          // S22: Deep speed, 10 images, one sweep
       : SCAN_DURATION;
 
     const activeSlots = slotTable
@@ -1512,11 +1531,18 @@
     // The coin animation runs for COIN_DROP_TIME (1500ms) = POST_CHEST_PAUSE,
     // so it finishes right when FIRST_PHOTO_DELAY expires and the first
     // photo scan begins. The coin CSS animation handles all timing internally.
-    const coinTimer = setTimeout(() => {
-      if (cancelToken.cancelled) return;
-      playCoinDrop(cancelToken);
-    }, CHEST_SLIDE_DELAY + CHEST_SLIDE_TIME);
-    cancelToken._timers.add(coinTimer);
+    // S22: a Batch costs 3 credits, so three coins drop. They are staggered by
+    // COIN_STAGGER so they read as three distinct coins rather than one thick
+    // one; the scan start is pushed back by the extra coins' duration below.
+    const coinCount = (kind === 'batch') ? 3 : 1;
+    const COIN_STAGGER = 420;
+    for (let ci = 0; ci < coinCount; ci++) {
+      const coinTimer = setTimeout(() => {
+        if (cancelToken.cancelled) return;
+        playCoinDrop(cancelToken);
+      }, CHEST_SLIDE_DELAY + CHEST_SLIDE_TIME + ci * COIN_STAGGER);
+      cancelToken._timers.add(coinTimer);
+    }
 
     // The scan sequence (when there are photos to scan).
     let promise;
@@ -1550,9 +1576,159 @@
     };
   }
 
+  // ── S22: BATCH progress overlay + controller ─────────────────────────────
+  // Spec: claude/ASSESS_BATCH_SPEC.md v3.1 §7. Layout reference:
+  // shared/_LIBRARY/Progress_Overlay_Batch_placement.jpg — indicator-light grid
+  // top-left, VU meter top-right, five GRADE 1..5 pills down the left, each with
+  // two boxes to its right (RG and PG).
+  //
+  // Hard requirements from the spec, all enforced here: no header, no white
+  // pop-ups, no native confirm/alert, and NO per-pass assessment animations.
+  // Rows light OUT OF ORDER — passes finish when they finish — and that is
+  // correct, not a bug to smooth over.
+  const BATCH_OVERLAY_SRC = 'assets/modal/Progress_Overlay_Batch.webp';
+
+  function batchOverlayHtml(n) {
+    let rows = '';
+    for (let i = 1; i <= n; i++) {
+      rows += `
+        <div class="rg-bx-row" data-pass="${i}">
+          <div class="rg-bx-pill">GRADE ${i}</div>
+          <div class="rg-bx-box rg-bx-rg"  data-kind="rg"><span></span></div>
+          <div class="rg-bx-box rg-bx-pg"  data-kind="pg"><span></span></div>
+        </div>`;
+    }
+    return `<div class="rg-bx-wrap">${rows}</div>`;
+  }
+
+  function injectBatchStyles() {
+    if (document.getElementById('rg-batch-anim-styles')) return;
+    const st = document.createElement('style');
+    st.id = 'rg-batch-anim-styles';
+    st.textContent = `
+      .rg-bx-wrap{position:absolute;left:8%;right:8%;top:34%;display:flex;
+        flex-direction:column;gap:2.1%;}
+      .rg-bx-row{display:flex;align-items:center;gap:3.5%;opacity:.35;
+        transition:opacity .35s ease;}
+      .rg-bx-row.rg-bx-live{opacity:.72;}
+      .rg-bx-row.rg-bx-done{opacity:1;}
+      .rg-bx-pill{flex:0 0 38%;font-family:'League Spartan',system-ui,sans-serif;
+        font-weight:800;letter-spacing:.06em;color:#cfe8a8;
+        font-size:clamp(9px,2.9vw,15px);line-height:1;text-align:left;
+        white-space:nowrap;}
+      .rg-bx-box{flex:1 1 0;min-width:0;aspect-ratio:2.05/1;border-radius:4px;
+        background:#0d2036;border:1px solid #2b5c86;display:flex;
+        align-items:center;justify-content:center;overflow:hidden;
+        box-shadow:inset 0 0 6px rgba(0,0,0,.6);}
+      .rg-bx-box span{font-family:'League Spartan',system-ui,sans-serif;
+        font-weight:800;color:#7fd4ff;font-size:clamp(10px,3.4vw,18px);
+        line-height:1;opacity:0;transform:translateY(3px);
+        transition:opacity .3s ease,transform .3s ease;}
+      .rg-bx-box.rg-bx-filled{background:#12365c;border-color:#5aa9e6;
+        box-shadow:0 0 7px rgba(90,169,230,.45),inset 0 0 6px rgba(0,0,0,.5);}
+      .rg-bx-box.rg-bx-filled span{opacity:1;transform:translateY(0);}
+      .rg-bx-row.rg-bx-err .rg-bx-pill{color:#e89a9a;}
+      .rg-bx-row.rg-bx-err .rg-bx-box{border-color:#7a3b3b;}
+      @media (prefers-reduced-motion:reduce){
+        .rg-bx-row,.rg-bx-box span{transition:none;}
+      }`;
+    document.head.appendChild(st);
+  }
+
+  // photoUrls: [front, back, pq, spine, tl, tr, bl, br, icFront, icBack]
+  // opts: { n, credits }
+  // Returns { update(status), complete(summary), fail(), cancel() }.
+  function startBatch(photoUrls, opts) {
+    opts = opts || {};
+    const n = opts.n || 5;
+    injectBatchStyles();
+
+    const run = runScanAnimation(photoUrls || [], 'batch');
+
+    // Mount the batch overlay once the scan sweep finishes, the same way Main /
+    // Deep / Full do. Guarded so a slow/failed sweep can't strand the batch.
+    let overlayUp = false;
+    const mountOverlay = () => {
+      if (overlayUp) return;
+      overlayUp = true;
+      try {
+        slideOverlayIntoChest(
+          `<img src="${BATCH_OVERLAY_SRC}" alt="" style="width:100%;display:block">`,
+          batchOverlayHtml(n)
+        );
+        startGridCycle();
+        startNeedlePulse();
+      } catch (e) { debugLog('batch overlay mount failed: ' + (e && e.message)); }
+    };
+    run.promise.then(mountOverlay).catch(mountOverlay);
+
+    const rowEl = i => document.querySelector(`.rg-bx-row[data-pass="${i}"]`);
+    const fillBox = (row, kind, text) => {
+      const box = row && row.querySelector(`.rg-bx-box[data-kind="${kind}"]`);
+      if (!box) return;
+      const sp = box.querySelector('span');
+      if (sp) sp.textContent = text == null ? '' : String(text);
+      box.classList.add('rg-bx-filled');
+    };
+
+    return {
+      // Called on every status poll. Idempotent — safe to call with the same
+      // status repeatedly, and tolerant of passes landing out of order.
+      update(status) {
+        if (!overlayUp || !status) return;
+        (status.passes || []).forEach(p => {
+          const row = rowEl(p.pass);
+          if (!row) return;
+          if (p.stage === 'error') { row.classList.add('rg-bx-err', 'rg-bx-done'); return; }
+          if (p.stage === 'main' || p.stage === 'deep' || p.stage === 'loading') row.classList.add('rg-bx-live');
+          if (p.stage === 'done') {
+            row.classList.add('rg-bx-done');
+            row.classList.remove('rg-bx-live');
+            const g = (window.RoboScoreV3 && typeof p.rg === 'number' && p.subscores)
+              ? (function () {
+                  try {
+                    const v = window.RoboScoreV3.forComic({
+                      roboGrade: { score: p.rg, frontScore: p.subscores.front, backScore: p.subscores.back,
+                                   spineScore: p.subscores.spine, interiorScore: p.subscores.interior,
+                                   pageQuality: p.pq, confidenceRange: p.pm, defects: [] },
+                      pageQuality: p.pq, deepAssessmentRan: true });
+                    return v ? window.RoboScoreV3.formatGrade(v.grade) : '';
+                  } catch (e) { return ''; }
+                })()
+              : '';
+            fillBox(row, 'rg', g);
+            fillBox(row, 'pg', p.grade || '');
+          }
+        });
+      },
+      // summary: { average, low, high, pg, n }
+      complete(summary) {
+        stopGridCycle();
+        stopNeedlePulse();
+        const s = summary || {};
+        const body = `
+          <div style="font-family:'League Spartan',system-ui,sans-serif;text-align:center">
+            <div style="font-size:11px;letter-spacing:.18em;color:#9ec46a;font-weight:800">BATCH · ${s.n || n} PASSES</div>
+            <div style="font-size:34px;font-weight:800;color:#cfe8a8;line-height:1.1;margin:6px 0 2px">${s.average != null ? s.average : '—'}</div>
+            <div style="font-size:12px;color:#9a9a8a;font-weight:700">RANGE ${s.low != null ? s.low : '—'} – ${s.high != null ? s.high : '—'}</div>
+          </div>`;
+        try { return slideResultsIntoPanel(body); } catch (e) { debugLog('batch results failed: ' + (e && e.message)); return null; }
+      },
+      fail() {
+        stopGridCycle();
+        stopNeedlePulse();
+        try { dismiss(); } catch (e) {}
+      },
+      cancel() {
+        try { run.cancel(); } catch (e) {}
+      }
+    };
+  }
+
   // Expose
   window.RobograderScan = {
     runScanAnimation,
+    startBatch,          // S22 batch controller
     slideTrackerIntoCavity,
     slideOverlayIntoChest,
     slideResultsIntoPanel,

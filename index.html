@@ -2197,12 +2197,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.05";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.09";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.05");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.09");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -8472,6 +8472,55 @@ function _batchConfirm(message) {
     ov.addEventListener('click', function (e) { if (e.target === ov) done(false); });
   });
 }
+// ── BATCH ASSESSMENT (client) ──────────────────────────────────────────────
+// Spec: claude/ASSESS_BATCH_SPEC.md v3.1. Rewritten S22.
+//
+// The v2 implementation looped assessGrade()/assessHighGrade() 5x here. Each of
+// those re-uploaded every image, played the full scan animation and decremented
+// a credit — 10 full-price assessments and 10 animations. This does none of
+// that: the book is already saved, so its images are already in Storage, and
+// the server works from itemId alone.
+//
+// The CLIENT owns the staggered fan-out (spec §3.3 option C). It has to: a
+// Vercel function cannot outlive its own response, so assess_batch_start cannot
+// hold a timer waiting for pass 1. The browser can, it is already polling, and
+// the worker requests are tiny now that images are not in the payload.
+//   pass 1 at t=0  ->  passes 2..5 the moment pass 1's Main lands (its slot
+//   flips to stage 'deep'), so they read the cache pass 1 just wrote  ->  35s
+//   safety fallback fires them anyway if pass 1's Main is slow.
+const BATCH_POLL_MS = 1000;
+const BATCH_FANOUT_FALLBACK_MS = 35000;
+const BATCH_MAX_WALL_MS = 240000;
+
+async function _batchApi(path, opts) {
+  const token = window._currentUser ? await window._currentUser.getIdToken() : null;
+  const r = await fetch(path, {
+    method: opts && opts.method || "GET",
+    headers: {
+      "Content-Type": "application/json",
+      "x-client-secret": "022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",
+      ...token ? { Authorization: "Bearer " + token } : {}
+    },
+    ...opts && opts.body ? { body: JSON.stringify(opts.body) } : {}
+  });
+  const text = await r.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch (e) {}
+  if (!r.ok) {
+    const err = new Error((data && (data.message || data.error)) || `${path} ${r.status}`);
+    err.status = r.status; err.data = data;
+    throw err;
+  }
+  return data;
+}
+
+// Fire a worker. Deliberately NOT awaited by the caller: a pass takes ~50s and
+// we only need the request to have been dispatched.
+function _batchFireWorker(batchId, pass) {
+  _batchApi("/api/assess_batch_run", { method: "POST", body: { batchId, pass } })
+    .catch(e => console.warn(`[batch] worker ${pass} dispatch:`, e && e.message));
+}
+
 async function submitBatchAssessment() {
   if (assessing || formData._batchMode) return;
   if (formData.type === "card") { await appAlert("Batch assessment is for comics."); return; }
@@ -8483,59 +8532,188 @@ async function submitBatchAssessment() {
     await appAlert("Batch needs clean photos — the Photograder must return at most one B, with the rest A. Retake the flagged photo(s) and re-run Deep, then Batch will be available.");
     return;
   }
+  if (!formData.id) {
+    await appAlert("Save this book before running a Batch.");
+    return;
+  }
   if (window._userCredits !== undefined && window._userCredits < BATCH_CREDIT_COST) {
     await appAlert(`Batch costs ${BATCH_CREDIT_COST} credits. You have ${window._userCredits}. Add credits and try again.`);
     if (typeof showBuyCredits === "function") showBuyCredits();
     return;
   }
   if (!(await _batchConfirm(`${BATCH_N} Main and ${BATCH_N} Deep passes to produce an average grade. ${BATCH_N * 2} total assessments. Cost: ${BATCH_CREDIT_COST} credits.`))) return;
+
   formData._batchMode = true;
-  const runs = [];
+  let anim = null;
   try {
-    for (let i = 1; i <= BATCH_N; i++) {
-      formData._bypassDuplicateCheck = true;
-      window._batchPass = i; // reserved hook for a future per-pass variance nudge; NOT yet consumed by the assess path (see report: batch runs still come back near-identical)
-      await assessGrade();
-      if (window._userCredits !== undefined && window._userCredits <= 0) break;
-      await assessHighGrade();
-      const r = _batchReadRun();
-      if (r.rgV3Raw != null) runs.push(r);
-      if (window._userCredits !== undefined && window._userCredits <= 0) break;
+    // ── start: one call, 3 credits deducted server-side, batch doc created ──
+    let started;
+    try {
+      started = await _batchApi("/api/assess_batch_start", { method: "POST", body: { itemId: formData.id } });
+    } catch (e) {
+      formData._batchMode = false;
+      if (e.status === 402) {
+        await appAlert(e.message || "Not enough credits for a Batch.");
+        if (typeof showBuyCredits === "function") showBuyCredits();
+      } else {
+        await appAlert("Batch could not start: " + (e.message || "unknown error") + "\n\nNo credits were charged.");
+      }
+      return;
+    }
+    const batchId = started.batchId;
+    if (typeof started.creditsRemaining === "number") {
+      // Server-side deduction, so mirror the balance the same way the redeem /
+      // welcome-grant paths do. (There is no updateCreditDisplay() in this app —
+      // the header is refreshed by refreshHeaderControls + updateStats.)
+      window._userCredits = started.creditsRemaining;
+      if (typeof refreshHeaderControls === "function") refreshHeaderControls();
+      if (typeof updateStats === "function") updateStats();
+      const _credEl = document.getElementById("settings-credits");
+      if (_credEl) _credEl.textContent = String(window._userCredits || 0);
+    }
+
+    // ── animation: one continuous sequence, started before any grading ──────
+    // All 10 photos in one sweep, in the order SLOTS_BATCH expects:
+    // [front, back, pq, spine, tl, tr, bl, br, icFront, icBack].
+    const _u = x => (x && (x.url || (typeof x === "string" ? x : null))) || null;
+    const _batchPhotos = [
+      ...(formData.images || []).map(_u).slice(0, 4),
+      ...(formData.cornerImages || []).map(_u).slice(0, 4),
+      ...(formData.interiorCoverImages || []).map(_u).slice(0, 2)
+    ];
+    if (window.RobograderScan && window.RobograderScan.startBatch) {
+      try { anim = window.RobograderScan.startBatch(_batchPhotos, { n: started.n || BATCH_N, credits: BATCH_CREDIT_COST }); }
+      catch (e) { console.warn("[batch] animation failed to start (non-fatal):", e); anim = null; }
+    }
+
+    // ── staggered fan-out + poll ────────────────────────────────────────────
+    _batchFireWorker(batchId, 1);
+    let fannedOut = false;
+    const t0 = Date.now();
+    const fanOut = (why) => {
+      if (fannedOut) return;
+      fannedOut = true;
+      console.log(`[batch] fan-out passes 2..${started.n || BATCH_N} (${why}) at +${Date.now() - t0}ms`);
+      for (let i = 2; i <= (started.n || BATCH_N); i++) _batchFireWorker(batchId, i);
+    };
+
+    let status = null;
+    while (true) {
+      await new Promise(r => setTimeout(r, BATCH_POLL_MS));
+      try { status = await _batchApi(`/api/assess_batch_status?batchId=${encodeURIComponent(batchId)}`); }
+      catch (e) { console.warn("[batch] poll failed (retrying):", e && e.message); continue; }
+
+      if (anim && anim.update) { try { anim.update(status); } catch (e) {} }
+
+      if (!fannedOut) {
+        const p1 = (status.passes || [])[0];
+        // 'deep' means pass 1's Main response came back and its prefix is written.
+        if (p1 && (p1.stage === "deep" || p1.stage === "done" || p1.stage === "error")) fanOut("pass 1 main landed");
+        else if (Date.now() - t0 > BATCH_FANOUT_FALLBACK_MS) fanOut("35s fallback");
+      }
+      if (status.status === "complete" || status.status === "failed") break;
+      if (Date.now() - t0 > BATCH_MAX_WALL_MS) { console.warn("[batch] wall-clock limit hit; using what landed"); break; }
+    }
+
+    // ── results ─────────────────────────────────────────────────────────────
+    const done = (status.passes || []).filter(p => p.stage === "done" && typeof p.rg === "number");
+    if (!done.length) {
+      if (anim && anim.fail) { try { anim.fail(); } catch (e) {} }
+      formData._batchMode = false;
+      const firstErr = (status.passes || []).map(p => p.error).filter(Boolean)[0];
+      await appAlert("Batch produced no grades." + (firstErr ? "\n\n" + firstErr : ""));
+      renderForm();
+      return;
+    }
+
+    // NO OUTLIER TRIMMING — every completed pass counts (spec §6.1). The v2 code
+    // here filtered to |x - median| <= 1.5, which contradicted that decision.
+    //
+    // Average the RAW 0-100 engine scores and quantize ONCE, rather than
+    // averaging five already-quantized half-point grades. Averaging rounded
+    // inputs throws away the precision that makes the average worth computing —
+    // and it is what flattens the Assessment History range bar.
+    const raws = done.map(p => p.rg);
+    const avgRaw = raws.reduce((a, b) => a + b, 0) / raws.length;
+    const loRaw = Math.min(...raws), hiRaw = Math.max(...raws);
+
+    const v3of = (rawScore, p) => {
+      if (!window.RoboScoreV3 || !p || !p.subscores) return null;
+      try {
+        return window.RoboScoreV3.forComic({
+          roboGrade: {
+            score: rawScore,
+            frontScore: p.subscores.front, backScore: p.subscores.back,
+            spineScore: p.subscores.spine, interiorScore: p.subscores.interior,
+            pageQuality: p.pq, confidenceRange: p.pm, defects: []
+          },
+          pageQuality: p.pq, deepAssessmentRan: true
+        });
+      } catch (e) { return null; }
+    };
+    const fmt = g => window.RoboScoreV3 ? window.RoboScoreV3.formatGrade(g) : String(g);
+
+    // Quantize the averaged/extreme RAW scores through the production v3 path,
+    // using a representative pass for the non-score inputs.
+    const rep = done[0];
+    const vAvg = v3of(avgRaw, rep), vLo = v3of(loRaw, rep), vHi = v3of(hiRaw, rep);
+    const gAvg = vAvg ? vAvg.grade : Math.round(avgRaw / 10 * 2) / 2;
+    const gLo = vLo ? vLo.grade : Math.round(loRaw / 10 * 2) / 2;
+    const gHi = vHi ? vHi.grade : Math.round(hiRaw / 10 * 2) / 2;
+
+    const pgs = done.map(p => parseFloat(p.grade)).filter(x => !isNaN(x));
+    const avgPG = pgs.length ? (Math.round(pgs.reduce((a, b) => a + b, 0) / pgs.length * 2) / 2).toFixed(1) : "";
+    const pqCount = {}; done.forEach(p => { if (p.pq) pqCount[p.pq] = (pqCount[p.pq] || 0) + 1; });
+    const modePQ = Object.keys(pqCount).sort((a, b) => pqCount[b] - pqCount[a])[0] || "";
+
+    const rec = {
+      _batch: true, depth: "batch", runCount: done.length,
+      roboGradeId: "BATCH-" + (typeof generateRoboId === "function" ? generateRoboId() : String(Date.now())),
+      batchId,
+      date: (new Date).toISOString(),
+      version: status.version || (window.RG_GRADING_VERSION || ""),
+      rgV3Grade: fmt(gAvg), rgV3Low: fmt(gLo), rgV3High: fmt(gHi),
+      grade: avgPG, predictedGrade: avgPG, pageQuality: modePQ,
+      // Raw 0-100 kept for range/averaging maths only. NOT displayed anywhere —
+      // ASSESSMENT_HISTORY_SPEC.md forbids surfacing a 0-100 Roboscore.
+      _rawAvg: avgRaw, _rawLow: loRaw, _rawHigh: hiRaw,
+      runs: done.map(p => {
+        const v = v3of(p.rg, p);
+        return {
+          rgV3Grade: v ? fmt(v.grade) : "",
+          rgV3PM: v ? (v.pmLabel || "") : "",
+          predictedGrade: p.grade || "",
+          pageQuality: p.pq || "",
+          subscores: v && v.subscores ? v.subscores : null,
+          _raw: p.rg
+        };
+      })
+    };
+    if (!Array.isArray(formData.assessmentHistory)) formData.assessmentHistory = [];
+    formData.assessmentHistory.unshift(rec);
+
+    const _saveRec = { ...formData };
+    ["_batchMode", "_bypassDuplicateCheck", "_imagesChanged", "_savedImages", "_savedCornerImages", "_savedInteriorImages", "_savedSignatureImages", "_savedInsertImages", "_savedCouponImages", "_savedRestorationImages", "_savedInteriorCoverImages", "_preUploadPromise", "_preUploadId", "_slabDetect"].forEach(k => delete _saveRec[k]);
+    try { await saveItem(_saveRec); } catch (e) { console.warn("[batch] save failed:", e); }
+
+    if (anim && anim.complete) {
+      try { await anim.complete({ average: fmt(gAvg), low: fmt(gLo), high: fmt(gHi), pg: avgPG, n: done.length }); }
+      catch (e) { console.warn("[batch] animation complete failed:", e); }
+    }
+
+    formData._batchMode = false;
+    renderForm();
+
+    if (!anim) {
+      await appAlert(`Batch complete — ${done.length} pass${done.length === 1 ? "" : "es"}.\n\nRoboGrade range ${fmt(gLo)} to ${fmt(gHi)}, average ${fmt(gAvg)}.\n\nAll ${done.length} grades are recorded under Assessment History.`);
     }
   } catch (e) {
-    console.error("[batch] run failed:", e);
-    await appAlert("Batch stopped early: " + (e && e.message ? e.message : "unknown error") + "\n\nGrades collected so far are kept.");
+    console.error("[batch] failed:", e);
+    formData._batchMode = false;
+    if (anim && anim.fail) { try { anim.fail(); } catch (e2) {} }
+    await appAlert("Batch stopped: " + (e && e.message ? e.message : "unknown error"));
+    renderForm();
   }
-  formData._batchMode = false;
-  window._batchPass = 0;
-  const valid = runs.filter(r => r && r.rgV3Raw != null);
-  if (!valid.length) { await appAlert("Batch produced no grades."); renderForm(); return; }
-  const raws = valid.map(r => r.rgV3Raw);
-  const med = _batchMedian(raws);
-  const kept = raws.filter(x => Math.abs(x - med) <= 1.5);
-  const use = kept.length ? kept : raws;
-  const avg = _batchRoundHalf(use.reduce((a, b) => a + b, 0) / use.length);
-  const lo = Math.min(...raws), hi = Math.max(...raws);
-  const pgs = valid.map(r => parseFloat(r.predictedGrade)).filter(x => !isNaN(x));
-  const avgPG = pgs.length ? _batchRoundHalf(pgs.reduce((a, b) => a + b, 0) / pgs.length).toFixed(1) : "";
-  const pqCount = {}; valid.forEach(r => { if (r.pageQuality) pqCount[r.pageQuality] = (pqCount[r.pageQuality] || 0) + 1; });
-  const modePQ = Object.keys(pqCount).sort((a, b) => pqCount[b] - pqCount[a])[0] || "";
-  const fmt = g => window.RoboScoreV3 ? window.RoboScoreV3.formatGrade(g) : String(g);
-  const rec = {
-    _batch: true, depth: "batch", runCount: valid.length,
-    roboGradeId: "BATCH-" + (typeof generateRoboId === "function" ? generateRoboId() : String(Date.now())),
-    date: (new Date).toISOString(),
-    rgV3Grade: fmt(avg), rgV3Low: fmt(lo), rgV3High: fmt(hi),
-    grade: avgPG, pageQuality: modePQ,
-    runs: valid.map(r => ({ rgV3Grade: r.rgV3Grade, rgV3PM: r.rgV3PM, predictedGrade: r.predictedGrade, pageQuality: r.pageQuality, subscores: r.subscores }))
-  };
-  if (!Array.isArray(formData.assessmentHistory)) formData.assessmentHistory = [];
-  formData.assessmentHistory.unshift(rec);
-  const _saveRec = { ...formData };
-  ["_batchMode", "_bypassDuplicateCheck", "_imagesChanged", "_savedImages", "_savedCornerImages", "_savedInteriorImages", "_savedSignatureImages", "_savedInsertImages", "_savedCouponImages", "_savedRestorationImages", "_savedInteriorCoverImages", "_preUploadPromise", "_preUploadId", "_slabDetect"].forEach(k => delete _saveRec[k]);
-  try { await saveItem(_saveRec); } catch (e) { console.warn("[batch] save failed:", e); }
-  renderForm();
-  await appAlert(`Batch complete — ${valid.length} pass${valid.length === 1 ? "" : "es"}.\n\nRoboGrade range ${fmt(lo)} to ${fmt(hi)}, average ${fmt(avg)}. Highest this batch: ${fmt(hi)}.\n\nAll ${valid.length} grades are recorded under Assessment History.`);
 }
 function renderBatchSection() {
   if (!isBatchEligible(formData)) return "";

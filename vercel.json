@@ -26,6 +26,15 @@
     },
     "api/og.js": {
       "maxDuration": 10
+    },
+    "api/assess_batch_start.js": {
+      "maxDuration": 30
+    },
+    "api/assess_batch_run.js": {
+      "maxDuration": 180
+    },
+    "api/assess_batch_status.js": {
+      "maxDuration": 10
     }
   },
   "headers": [
