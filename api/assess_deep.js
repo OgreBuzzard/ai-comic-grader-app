@@ -243,25 +243,7 @@ export default async function handler(req, res) {
 
 The INITIAL ASSESSMENT is provided below. You are NOT re-grading from scratch. You are answering: do the corner macros reveal anything that changes the FRONT or SPINE sub-scores${hasInteriorCovers ? ', and do the two interior-cover photos reveal any interior-cover CONDITION (tanning, foxing, stains, tears) that changes the INTERIOR sub-score' : ''}?
 
-INITIAL ASSESSMENT (authoritative — preserve all fields unless the macros provide explicit reason to change):
-${JSON.stringify({
-  title: initialAssessment.title,
-  issue: initialAssessment.issue,
-  publisher: initialAssessment.publisher,
-  printing: initialAssessment.printing,
-  pageQuality: initialAssessment.pageQuality,
-  grade: initialAssessment.grade,
-  aiAssessment: initialAssessment.aiAssessment,
-  roboGrade: {
-    score: initialRG.score,
-    frontScore: initialRG.frontScore,
-    backScore: initialRG.backScore,
-    spineScore: initialRG.spineScore,
-    interiorScore: initialRG.interiorScore,
-    pageQuality: initialRG.pageQuality,
-    defects: initialRG.defects
-  }
-}, null, 2)}
+The INITIAL ASSESSMENT itself is supplied further down, after the CGC tier reference. Treat it as authoritative and preserve all its fields unless the macros give explicit reason to change them.
 
 ## PHASE 0 — INPUT VALIDATION (already done server-side; do not re-validate)
 
@@ -333,7 +315,27 @@ Recompute the RoboGrade score (Front + Back + Spine + Interior) and map it to a 
   • Also read the candidate grade's tier definition plus one grade above and one below to confirm the fit.
   • NEVER name, number, identify, or describe any specific reference comic in your output. The references are an internal yardstick only. If the grade is revised, deepAssessment may say it was "compared against reference copies at the same grade and revised" — nothing more specific. Never write this into aiAssessment, which is frozen.
 
-§§CACHE_SPLIT§§CGC TIER REFERENCE (candidate ±1, focused on initial grade):
+§§CACHE_SPLIT§§INITIAL ASSESSMENT (authoritative — preserve all fields unless the macros provide explicit reason to change):
+${JSON.stringify({
+  title: initialAssessment.title,
+  issue: initialAssessment.issue,
+  publisher: initialAssessment.publisher,
+  printing: initialAssessment.printing,
+  pageQuality: initialAssessment.pageQuality,
+  grade: initialAssessment.grade,
+  aiAssessment: initialAssessment.aiAssessment,
+  roboGrade: {
+    score: initialRG.score,
+    frontScore: initialRG.frontScore,
+    backScore: initialRG.backScore,
+    spineScore: initialRG.spineScore,
+    interiorScore: initialRG.interiorScore,
+    pageQuality: initialRG.pageQuality,
+    defects: initialRG.defects
+  }
+}, null, 2)}
+
+CGC TIER REFERENCE (candidate ±1, focused on initial grade):
 ${gradeTierContext(initialGrade)}
 
 PAGE QUALITY SEVERITY — HARD RULE: any defect entry whose type is "Page quality" (or which describes page color, tanning designation, or paper tone) gets severity="" (empty string). Page quality is a descriptive observation, NOT a defect. Low/Med/High severity tags apply ONLY to actual defects.
