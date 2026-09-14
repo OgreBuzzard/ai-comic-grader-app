@@ -8,7 +8,7 @@
 // never reads batches/{batchId} directly, this endpoint reads it with the Admin
 // SDK and returns only that user's own batch.
 
-import { applyCors, getAdminDb, verifyUidFromAuthHeader, batchRef } from '../lib/batch_common.js';
+import { applyCors, getAdminDb, verifyUidFromAuthHeader, batchRef, passList } from '../lib/batch_common.js';
 
 export default async function handler(req, res) {
   if (applyCors(req, res)) return;
@@ -43,7 +43,8 @@ export default async function handler(req, res) {
     fixedBracket: b.fixedBracket !== false,
     version: b.version || null,
     fanoutAt: b.fanoutAt || null,
-    passes: (b.passes || []).map(p => ({
+    // Stored as a map (race-free concurrent writes); emitted as an ordered array.
+    passes: passList(b).map(p => ({
       pass: p.pass,
       stage: p.stage,
       mainRG: p.mainRG ?? null,

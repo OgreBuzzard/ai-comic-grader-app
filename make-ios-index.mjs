@@ -631,9 +631,12 @@ mustReplace('D15 viewport-fit cover (iOS)',
 // slightly higher too (21vh) to keep the same gap. The D7b delta also defines #splash-subtitle, but the base
 // rule appears LATER in the generated file and would win, so rewrite the base
 // value directly here. PWA file keeps 9vh (untouched).
+// S22: index.html moved the subtitle a further 10px up on 2026-09-13
+// (22vh - 30px -> 22vh - 40px) and this delta was not mirrored, so the anchor
+// no longer matched and the iOS generator would have failed loudly here.
 mustReplace('D17 subtitle iOS position',
-'top: calc(env(safe-area-inset-top, 0px) + 22vh - 30px);',
-'top: calc(env(safe-area-inset-top, 0px) + 21vh - 30px);');
+'top: calc(env(safe-area-inset-top, 0px) + 22vh - 40px);',
+'top: calc(env(safe-area-inset-top, 0px) + 21vh - 40px);');
 
 writeFileSync(outPath, html);
 console.log(`\nAll ${applied} deltas applied. Wrote ${outPath} (${html.length.toLocaleString()} bytes).`);

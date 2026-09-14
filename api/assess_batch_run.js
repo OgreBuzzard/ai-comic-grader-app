@@ -23,7 +23,7 @@
 import { ROBOGRADE_VERSION } from '../lib/version.js';
 import {
   CLIENT_SECRET, BATCH_FIXED_BRACKET, applyCors, getAdminDb, verifyUidFromAuthHeader,
-  batchRef, fetchAll
+  batchRef, fetchAll, passList
 } from '../lib/batch_common.js';
 
 // Our own 55s aborts live inside assess.js / assess_deep.js. This is the
@@ -88,19 +88,22 @@ export default async function handler(req, res) {
   if (batch.uid !== uid) return res.status(403).json({ error: 'not_your_batch' });
   if (n > (batch.n || 0)) return res.status(400).json({ error: 'pass_out_of_range' });
 
-  const idx = n - 1;
+  const key = String(n);
   // Idempotency: a retried or duplicated worker call must not double-run a pass.
-  const existing = (batch.passes || [])[idx];
+  const existing = (batch.passes || {})[key];
   if (existing && existing.stage && existing.stage !== 'queued' && existing.stage !== 'error') {
     return res.status(200).json({ ok: true, alreadyRunning: true, stage: existing.stage });
   }
 
+  // Writes ONLY this worker's own pass, as its own Firestore field path
+  // (`passes.<n>.<field>`). Two workers therefore never touch the same field
+  // and cannot clobber each other. Patches are accumulated locally so a partial
+  // update never has to re-read the shared doc.
+  let _slot = { ...(existing || {}), pass: n };
   const setPass = async (patch) => {
+    _slot = { ..._slot, ...patch };
     try {
-      const snap = await bRef.get();
-      const passes = (snap.data().passes || []).slice();
-      passes[idx] = { ...passes[idx], ...patch };
-      await bRef.update({ passes });
+      await bRef.update({ [`passes.${key}`]: _slot });
     } catch (e) { console.warn('[batch_run] slot write failed:', e && e.message); }
   };
 
@@ -228,7 +231,7 @@ async function maybeComplete(bRef) {
     const snap = await bRef.get();
     const b = snap.data();
     if (!b || b.status === 'complete') return;
-    const passes = b.passes || [];
+    const passes = passList(b);
     const outstanding = passes.filter(p => p.stage !== 'done' && p.stage !== 'error');
     if (outstanding.length) return;
 
