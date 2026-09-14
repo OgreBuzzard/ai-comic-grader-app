@@ -539,6 +539,13 @@ Rules:
     }
     const hasGradeRefs = gradeRefBlocks.length > 0;
 
+    // Deep prompt caching — AVAILABLE BUT OFF (Matt, S22g). Individual Deep
+    // volume isn't high enough to warrant it yet; flip this to true to enable
+    // caching on all Deep assessments. (Batch will get its caching from the
+    // dedicated batch flow, not from this per-call path.)
+    const DEEP_CACHE_ENABLED = false;
+    const _deepCacheCtl = { type: 'ephemeral', ttl: '1h' };
+
     const _antBody = {
       model: 'claude-opus-5',
       // S15 May 29: effort=medium via output_config + adaptive thinking
@@ -551,14 +558,9 @@ Rules:
       // max_tokens. Deep's JSON output is smaller than initial (it's a
       // refinement, not a full assessment), so 8k headroom is appropriate.
       max_tokens: 8192,
-      // Deep cost fix: cache the (large) system prompt with a 1h TTL. Deep had
-      // NO caching, so a Batch re-billed the full system prompt on every one of
-      // its 5 Deep passes. Cached as a prefix block; a second breakpoint is
-      // placed on the corner-macro images just below (after _antBody is built)
-      // so the stable image prefix is cached too. Requires the
-      // extended-cache-ttl beta header (added to the fetch calls below).
-      // Additive: affects only billing/caching, never model output.
-      system: [{ type: 'text', text: activePrompt, cache_control: { type: 'ephemeral', ttl: '1h' } }],
+      // System prompt: cached (1h TTL) only when DEEP_CACHE_ENABLED; otherwise a
+      // plain string exactly as before (no caching, current default).
+      system: DEEP_CACHE_ENABLED ? [{ type: 'text', text: activePrompt, cache_control: _deepCacheCtl }] : activePrompt,
       messages: [{
         role: 'user',
         content: isRestoration
@@ -579,16 +581,15 @@ Rules:
       }]
     };
 
-    // Deep cost fix (cont.): second cache breakpoint on the corner-macro images
-    // — the stable, always-present image group (identical photos on every Batch
-    // pass) — so system + macros are read from cache on passes 2..N within the
-    // TTL instead of re-billed at full price. macroBlocks objects are shared by
-    // reference with the content array, so mutating the last one here applies.
-    try {
-      if (Array.isArray(macroBlocks) && macroBlocks.length) {
-        macroBlocks[macroBlocks.length - 1].cache_control = { type: 'ephemeral', ttl: '1h' };
-      }
-    } catch (e) {}
+    // Second cache breakpoint on the corner-macro images (only when caching is
+    // enabled), so system + macros read from cache within the TTL.
+    if (DEEP_CACHE_ENABLED) {
+      try {
+        if (Array.isArray(macroBlocks) && macroBlocks.length) {
+          macroBlocks[macroBlocks.length - 1].cache_control = _deepCacheCtl;
+        }
+      } catch (e) {}
+    }
 
     let text;
     let _inputTokens = null, _outputTokens = null, _cacheReadInputTokens = null;
@@ -608,7 +609,7 @@ Rules:
               'Content-Type': 'application/json',
               'x-api-key': apiKey,
               'anthropic-version': '2023-06-01',
-              'anthropic-beta': 'extended-cache-ttl-2025-04-11'
+              ...(DEEP_CACHE_ENABLED ? { 'anthropic-beta': 'extended-cache-ttl-2025-04-11' } : {})
             },
             body: JSON.stringify(_antBody),
             signal: ctrl.signal
@@ -698,7 +699,7 @@ Rules:
               'Content-Type': 'application/json',
               'x-api-key': apiKey,
               'anthropic-version': '2023-06-01',
-              'anthropic-beta': 'extended-cache-ttl-2025-04-11'
+              ...(DEEP_CACHE_ENABLED ? { 'anthropic-beta': 'extended-cache-ttl-2025-04-11' } : {})
             },
             body: JSON.stringify(_antBody),
             signal: ctrl.signal

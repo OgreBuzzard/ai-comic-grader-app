@@ -1313,26 +1313,6 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       }]
     };
 
-    // ── Batch / repeat-run cost fix ────────────────────────────────────────
-    // The system prompt is cached above (via §§CACHE_SPLIT§§), but the IMAGES —
-    // which dominate the input token cost — were NOT inside any cache
-    // breakpoint, so every repeated run (a Batch fires the same book's images
-    // 5×) re-billed all image tokens at full price. Add a second cache
-    // breakpoint on the last static block before the final instruction, so the
-    // whole system + reference + page-quality + assessment-image prefix is read
-    // from cache on runs 2..N of a Batch (and on any re-assessment of the same
-    // book within the cache TTL). This is additive: cache_control changes only
-    // billing/caching, never the model's output. Max 4 breakpoints allowed; we
-    // use 2 (system + images).
-    if (_cacheOn) {
-      try {
-        const _mc = _antBody.messages[0].content;
-        for (let _i = _mc.length - 2; _i >= 0; _i--) {
-          if (_mc[_i] && !_mc[_i].cache_control) { _mc[_i].cache_control = _cacheCtl; break; }
-        }
-      } catch (e) {}
-    }
-
     // ── v3.99c STREAMING BRANCH ────────────────────────────────────────────
     // Variables we need to produce regardless of branch:
     //   text                  : the model's raw output text
