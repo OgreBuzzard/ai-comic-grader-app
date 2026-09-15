@@ -289,7 +289,12 @@ export default async function handler(req, res) {
     // Sub = Claude Max subscription; Site = Firebase + Vercel + domain.
     const spendBreakdown = {
       api:  { dayCents: apiDayCents, weekCents: apiWeekCents, monthCents: apiMonthCents },
-      ads:  spendAds,
+      // S22: carry the per-platform provenance through to the UI. getAdSpend()
+      // has always computed source:{meta,google} = 'api' | 'estimate', but it was
+      // dropped here — so the Ads line looked authoritative whether it was real
+      // spend or the $16/day/platform fallback, and there was no way to tell.
+      ads:  { ...spendAds, source: (adInfo && adInfo.source) || { meta: 'estimate', google: 'estimate' },
+              meta: (adInfo && adInfo.meta) || null, google: (adInfo && adInfo.google) || null },
       sub:  { dayCents: devCost.dayCents, weekCents: devCost.weekCents, monthCents: devCost.monthCents },
       site: { dayCents: INFRA_DAILY, weekCents: INFRA_DAILY * 7, monthCents: INFRA_DAILY * 30 },
     };
