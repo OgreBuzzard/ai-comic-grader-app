@@ -52,12 +52,20 @@ export default async function handler(req, res) {
 
     const usersSnap = await db.collection('users').get();
     const accounts = { total: usersSnap.size, day: 0, week: 0, month: 0 };
+    // S22: per-day tallies for the signups + assessments charts. Gathered in the
+    // loops that already walk every doc, so they cost nothing extra.
+    const signupsByDay = {};
+    const itemsByDay = {};
     let creditsOutstanding = 0; // total unused credits sitting in all user accounts
     for (const doc of usersSnap.docs) {
       const d = doc.data();
       creditsOutstanding += (d.assessmentCredits || 0);
       const ms = Date.parse(d.createdAt || '');
       if (Number.isNaN(ms)) continue;
+      if (ms >= cutoffs.month) {
+        const k = new Date(ms).toISOString().slice(0, 10);
+        signupsByDay[k] = (signupsByDay[k] || 0) + 1;
+      }
       if (ms >= cutoffs.day) accounts.day++;
       if (ms >= cutoffs.week) accounts.week++;
       if (ms >= cutoffs.month) accounts.month++;
@@ -73,6 +81,10 @@ export default async function handler(req, res) {
       const d = doc.data();
       const ms = Date.parse(d.roboGradeDate || d.dateAcquired || '');
       if (Number.isNaN(ms)) continue;
+      if (ms >= cutoffs.month) {
+        const k = new Date(ms).toISOString().slice(0, 10);
+        itemsByDay[k] = (itemsByDay[k] || 0) + 1;
+      }
       if (ms >= cutoffs.day) items.day++;
       if (ms >= cutoffs.week) items.week++;
       if (ms >= cutoffs.month) items.month++;
@@ -303,7 +315,13 @@ export default async function handler(req, res) {
     const series = [];
     for (let i = 29; i >= 0; i--) {
       const k = new Date(now - i * DAY).toISOString().slice(0, 10);
-      series.push({ date: k.slice(5), revCents: revByDay[k] || 0, spendCents: (spendByDay[k] || 0) + INFRA_DAILY + (adByDay[k] || 0) });
+      series.push({
+        date: k.slice(5),
+        revCents: revByDay[k] || 0,
+        spendCents: (spendByDay[k] || 0) + INFRA_DAILY + (adByDay[k] || 0),
+        signups: signupsByDay[k] || 0,
+        assessments: itemsByDay[k] || 0,
+      });
     }
 
     return res.status(200).json({

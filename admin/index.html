@@ -1308,7 +1308,8 @@ function _renderSales() {
       ? '<span style="font-size:9px;font-weight:700;color:#3ddc84;border:1px solid #3ddc84;border-radius:3px;padding:0 3px">AND</span>'
       : '<span style="font-size:9px;font-weight:700;color:#a0a0a0;border:1px solid #555;border-radius:3px;padding:0 3px">WEB</span>';
     const testTag = p.isTest ? ' <span style="font-size:9px;font-weight:700;color:#e8c257;border:1px solid #e8c257;border-radius:3px;padding:0 3px">TEST</span>' : '';
-    return `<div class="row" style="align-items:center;">
+    const _uid = p.userId || '';
+    return `<div class="row sales-row" ${_uid ? `data-uid="${escapeAttr(_uid)}" style="align-items:center;cursor:pointer;" title="Open ${escapeAttr(p.userName || 'this buyer')}'s account"` : 'style="align-items:center;"'}>
         <div class="main">
           <div class="title" style="font-size:13px;">${money(p.amount)} <span style="color:#6a9a6a">(${money(p.net)})</span> · ${p.credits ?? '?'} cr · ${_salesProduct(p)}${testTag}</div>
           <div class="sub">${escapeHtml(p.userName)}${p.transferCode ? ' · <span style="color:#e8c257;font-weight:700;">' + escapeHtml(p.transferCode) + '</span>' : ''} · ${when}</div>
@@ -1327,6 +1328,11 @@ function _renderSales() {
     ${rows || '<div class="empty">No purchases in this filter.</div>'}
     ${more}
   `;
+  // A sale with no userId (shouldn't happen, but old rows exist) stays inert
+  // rather than navigating to a blank user page.
+  el.querySelectorAll('.sales-row[data-uid]').forEach(r => {
+    r.onclick = () => showUser(r.dataset.uid);
+  });
   const mb = document.getElementById('load-more-sales');
   if (mb) mb.onclick = () => { state.salesShown = shown + 20; _renderSales(); };
   el.querySelectorAll('.sales-filter').forEach(b => { b.onclick = () => { state.salesProduct = b.dataset.prod; state.salesShown = 20; _renderSales(); }; });
@@ -1446,18 +1452,32 @@ function renderStats() {
   const open = (localStorage.getItem('rg_income_open') !== '0'); // default expanded
   const bo = (d, w, m) => `<div class="breakouts"><span><strong>${dollars(d)}</strong> 24h</span><span><strong>${dollars(w)}</strong> 7d</span><span><strong>${dollars(m)}</strong> 30d</span></div>`;
   const sub = (label, d, w, m) => `<div style="margin-top:4px;font-size:10px;color:#8a8d96;line-height:1.5;">${label}&nbsp; <strong style="color:#c9c4bd">${dollars(d)}</strong> 24h · <strong style="color:#c9c4bd">${dollars(w)}</strong> 7d · <strong style="color:#c9c4bd">${dollars(m)}</strong> 30d</div>`;
-  const chartBlock = `
+  // S22: one collapsible shell for all three charts. `key` is both the DOM id
+  // stem and the localStorage key, so each chart remembers its own open/closed
+  // state independently across reloads.
+  const chartCard = (key, title, legend, granId) => `
     <div style="margin-top:14px;background:#ffffff;border:1px solid #ccc;border-radius:8px;padding:12px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
-        <span style="font-size:11px;color:#555;text-transform:uppercase;letter-spacing:1px;">Revenue vs spend (30d)</span>
-        <div id="chart-gran" style="display:flex;gap:2px;">${['day', 'week', 'month'].map(g => `<button data-gran="${g}" style="font-size:10px;padding:2px 7px;background:#161821;color:#9ab;border:1px solid #2a2d38;border-radius:4px;cursor:pointer;text-transform:capitalize;">${g}</button>`).join('')}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+        <span onclick="_toggleChart('${key}')" style="font-size:11px;color:#555;text-transform:uppercase;letter-spacing:1px;cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px;">
+          <span id="${key}-caret" style="font-size:12px;color:#888;">${_chartOpen(key) ? '▾' : '▸'}</span>${title}
+        </span>
+        ${granId ? `<div id="${granId}" style="display:flex;gap:2px;${_chartOpen(key) ? '' : 'display:none;'}">${['day', 'week', 'month'].map(g => `<button data-gran="${g}" style="font-size:10px;padding:2px 7px;background:#161821;color:#9ab;border:1px solid #2a2d38;border-radius:4px;cursor:pointer;text-transform:capitalize;">${g}</button>`).join('')}</div>` : ''}
       </div>
-      <div id="spend-chart"></div>
-      <div style="display:flex;gap:14px;margin-top:6px;font-size:10px;color:#555;">
-        <span><span style="display:inline-block;width:8px;height:8px;background:#4caf82;border-radius:2px;"></span> revenue</span>
-        <span><span style="display:inline-block;width:8px;height:8px;background:#e85d5d;border-radius:2px;"></span> spend</span>
+      <div id="${key}-body" style="${_chartOpen(key) ? '' : 'display:none;'}margin-top:6px;">
+        <div id="${key}-chart"></div>
+        <div style="display:flex;gap:14px;margin-top:6px;font-size:10px;color:#555;">${legend}</div>
       </div>
     </div>`;
+
+  const chartBlock = chartCard('spend', 'Revenue vs spend (30d)',
+      '<span><span style="display:inline-block;width:8px;height:8px;background:#4caf82;border-radius:2px;"></span> revenue</span>' +
+      '<span><span style="display:inline-block;width:8px;height:8px;background:#e85d5d;border-radius:2px;"></span> spend</span>',
+      'chart-gran')
+    + chartCard('signups', 'New signups per day (30d)',
+      '<span><span style="display:inline-block;width:8px;height:8px;background:#4a90d9;border-radius:2px;"></span> accounts created</span>', null)
+    + chartCard('assess', 'Assessments created per day (30d)',
+      '<span><span style="display:inline-block;width:8px;height:8px;background:#c08bd8;border-radius:2px;"></span> assessments</span>', null)
+    ;
   document.getElementById('stats-section').innerHTML = `
     <div class="stats-grid">
       <div class="stat-card"><h3>Accounts</h3><div class="total">${accounts.total}</div><div class="breakouts"><span><strong>${accounts.day}</strong> 24h</span><span><strong>${accounts.week}</strong> 7d</span><span><strong>${accounts.month}</strong> 30d</span></div></div>
@@ -1489,9 +1509,58 @@ function renderStats() {
   if (open) _wireChart();
 }
 function _wireChart() {
-  renderSpendChart('day');
+  // Only draw a chart that is actually open — a collapsed one redraws when it
+  // is expanded (see _toggleChart).
+  if (_chartOpen('spend')) renderSpendChart(window._chartGran || 'day');
   document.querySelectorAll('#chart-gran button').forEach(b => { b.onclick = () => renderSpendChart(b.dataset.gran); });
+  if (_chartOpen('signups')) renderCountChart('signups');
+  if (_chartOpen('assess')) renderCountChart('assess');
 }
+// S22: per-chart collapse state, persisted independently in localStorage so
+// each chart reopens the way you left it. Default is open.
+function _chartOpen(key) {
+  try { return localStorage.getItem('rg_chart_' + key) !== '0'; } catch (_) { return true; }
+}
+function _toggleChart(key) {
+  const body = document.getElementById(key + '-body');
+  const caret = document.getElementById(key + '-caret');
+  if (!body) return;
+  const nowOpen = body.style.display === 'none';
+  body.style.display = nowOpen ? 'block' : 'none';
+  if (caret) caret.textContent = nowOpen ? '▾' : '▸';
+  // The granularity buttons belong to the chart, so they hide with it.
+  const gran = document.getElementById('chart-gran');
+  if (gran && key === 'spend') gran.style.display = nowOpen ? 'flex' : 'none';
+  try { localStorage.setItem('rg_chart_' + key, nowOpen ? '1' : '0'); } catch (_) {}
+  if (nowOpen) {
+    if (key === 'spend') renderSpendChart(window._chartGran || 'day');
+    else renderCountChart(key);
+  }
+}
+
+// Single-series daily bar chart — used for signups and for assessments.
+function renderCountChart(key) {
+  const el = document.getElementById(key + '-chart');
+  if (!el) return;
+  const series = window._statSeries || [];
+  const field = key === 'signups' ? 'signups' : 'assessments';
+  const color = key === 'signups' ? '#4a90d9' : '#c08bd8';
+  const pts = series.map(s => ({ label: s.date, v: Number(s[field] || 0) }));
+  const total = pts.reduce((a, b) => a + b.v, 0);
+  const maxV = Math.max(1, ...pts.map(p => p.v));
+  const W = 100, H = 60, n = pts.length || 1, gw = W / n, bw = Math.max(0.6, gw * 0.72);
+  const y = v => H - (v / maxV) * (H - 6);
+  let bars = '';
+  pts.forEach((p, i) => {
+    const x = i * gw + (gw - bw) / 2;
+    bars += `<rect x="${x.toFixed(2)}" y="${y(p.v).toFixed(2)}" width="${bw.toFixed(2)}" height="${(H - y(p.v)).toFixed(2)}" fill="${color}"><title>${p.label}: ${p.v}</title></rect>`;
+  });
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:110px;display:block;">
+      <line x1="0" y1="${H - 0.3}" x2="${W}" y2="${H - 0.3}" stroke="#ccc" stroke-width="0.3"/>${bars}
+    </svg>
+    <div style="text-align:right;font-size:9px;color:#8a8d96;margin-top:2px;">peak ${maxV} · ${total} over ${pts.length} days</div>`;
+}
+
 function _toggleIncome() {
   const body = document.getElementById('income-body');
   const caret = document.getElementById('income-caret');
@@ -1520,6 +1589,7 @@ function renderSpendChart(gran) {
       pts.push({ label: ch[0].date, rev: ch.reduce((a, b) => a + b.revCents, 0), spend: ch.reduce((a, b) => a + b.spendCents, 0) });
     }
   }
+  window._chartGran = gran;
   document.querySelectorAll('#chart-gran button').forEach(b => {
     const on = b.dataset.gran === gran;
     b.style.background = on ? '#2a6a4a' : '#161821';
