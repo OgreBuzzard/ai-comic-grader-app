@@ -2197,12 +2197,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.11";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.13";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.11");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.13");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -7230,17 +7230,19 @@ function mountBatchTracker(n) {
     const top = BATCH_BTN_TOPS_PCT[i];
     if (top == null) break;
     // The label box: same asset, same corner, narrower.
+    //
+    // NO TEXT IS DRAWN HERE. Progress_Overlay_Batch.webp already carries the
+    // GRADE 1..5 labels, printed dark-on-black in the recesses so they are
+    // invisible on the bare artwork and only resolve once a light box sits over
+    // them — which is why default_box_small / success_box_small are translucent
+    // (max alpha 251, never fully opaque). Drawing our own label on top produced
+    // the doubled "GRADE 1 / ADE 1" text in the first test.
     boxesHtml += `<div id="batch-box-${i + 1}"
       style="position:absolute;left:${BATCH_BTN_LEFT_PCT}%;top:${top}%;
              width:${BATCH_BTN_WIDTH_PCT}%;height:${BATCH_BTN_HEIGHT_PCT}%;
              background-image:url('${BATCH_DEFAULT_BOX}');
              background-size:100% 100%;background-repeat:no-repeat;
-             display:flex;align-items:center;justify-content:center;
-             pointer-events:none;">
-        <span style="font-family:'League Spartan',sans-serif;font-weight:800;
-                     font-size:min(3.4vw,17px);letter-spacing:0.04em;color:#1a1a1a;
-                     line-height:1;transform:translateY(-1px)">GRADE ${i + 1}</span>
-      </div>`;
+             pointer-events:none;"></div>`;
     // Two result boxes per row: RG then PG.
     ["rg", "pg"].forEach((kind, k) => {
       boxesHtml += `<div id="batch-${kind}-${i + 1}"
@@ -7250,8 +7252,9 @@ function mountBatchTracker(n) {
                display:flex;align-items:center;justify-content:center;
                box-shadow:inset 0 1px 3px rgba(0,0,0,0.45);
                pointer-events:none;">
-          <span style="font-family:'League Spartan',sans-serif;font-weight:800;
-                       transform:scaleX(0.72);font-size:min(4.6vw,23px);color:#dcefff;
+          <span style="font-family:'League Spartan',system-ui,sans-serif;font-weight:900;
+                       transform:scaleX(0.66);transform-origin:center;display:inline-block;
+                       font-size:clamp(13px,7.4vw,30px);color:#dcefff;
                        line-height:1;opacity:0;transition:opacity .3s ease"></span>
         </div>`;
     });
@@ -7275,8 +7278,20 @@ function setBatchRow(pass, data) {
     if (!el) return;
     const sp = el.firstElementChild;
     if (!sp) return;
-    sp.textContent = txt == null ? "" : String(txt);
-    sp.style.opacity = txt ? "1" : "0";
+    const v = txt == null ? "" : String(txt);
+    // Same decimal treatment as RoboScoreV3.scoreBox(): the point renders at
+    // 0.8em so "6.5" stays tight under the 0.66 horizontal scale.
+    if (v && window.RoboScoreV3 && window.RoboScoreV3.gradeParts) {
+      try {
+        const p = window.RoboScoreV3.gradeParts(v);
+        sp.innerHTML = p.frac
+          ? `${p.whole}<span style="font-size:0.8em">.</span>${String(p.frac).slice(1)}`
+          : String(p.whole);
+      } catch (e) { sp.textContent = v; }
+    } else {
+      sp.textContent = v;
+    }
+    sp.style.opacity = v ? "1" : "0";
   };
   if (data && data.stage === "error") {
     // No failure_box_small exists yet — dim the default rather than drop in the
@@ -8364,7 +8379,11 @@ async function assessHighGrade() {
         interiorCovers: compressedCovers,
         frontCover: compressedFront,
         title: formData.title || "",
-        issueNumber: formData.issue || ""
+        issueNumber: formData.issue || "",
+        // S22: the ComicVine cover the Main pass stored on this item. Deep falls
+        // back to it for STRUCTURAL comparison only when there is no curated
+        // reference_covers/ scan for the issue.
+        referenceImageUrl: formData.referenceImageUrl || ""
       })
     };
     let _bufferedPhases = [];

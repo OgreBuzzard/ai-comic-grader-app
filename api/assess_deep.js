@@ -111,7 +111,11 @@ export default async function handler(req, res) {
     //   [Interior Front, Interior Back, Interior Staple, UV Front]
     // and returns a carefully-worded restorationReport (never a verdict).
     mode = 'deep',
-    restorationImages = []       // 4 images for restoration mode
+    restorationImages = [],      // 4 images for restoration mode
+    // S22: the ComicVine cover URL already stored on the item by the Main pass.
+    // Used ONLY as a fallback when this issue has no curated reference_covers/
+    // entry (<10% of books have one). Costs no lookup — Main already resolved it.
+    referenceImageUrl = null
   } = req.body || {};
 
   const isRestoration = mode === 'restoration';
@@ -478,6 +482,7 @@ Rules:
     let gradeRefBlocks = [];   // ascending-grade [text label, image, text label, image, ...]
     let frontCoverBlock = null;
     let refCoverBlocks = [];   // local pristine reference_covers (front[+back]) of this exact issue, for defect ID
+    let cvCoverBlock = null;   // ComicVine cover — weaker fallback, only when there is no curated cover
     if (!isRestoration) {
       try {
         const { CGC_GRADE_SCALE, GRADE_DEFINITIONS } = await import('../lib/grade_definitions.js');
@@ -538,6 +543,23 @@ Rules:
           }
         }
       } catch (e) { refCoverBlocks = []; }
+
+      // FALLBACK: no curated cover for this issue. Use the ComicVine cover the
+      // Main pass already resolved. It is a WEAKER reference and gets its own,
+      // much more cautious instruction block (see cvCoverNote below) — it is a
+      // digital reproduction, it may itself be a mid-grade copy, and it is
+      // sometimes the wrong book entirely.
+      if (!refCoverBlocks.length && referenceImageUrl) {
+        try {
+          const _cv = await fetch(referenceImageUrl);
+          if (_cv.ok) {
+            const _ct = (_cv.headers.get('content-type') || 'image/jpeg').split(';')[0].trim();
+            const _mt = /^image\/(jpeg|png|gif|webp)$/.test(_ct) ? _ct : 'image/jpeg';
+            const _cd = Buffer.from(await _cv.arrayBuffer()).toString('base64');
+            cvCoverBlock = { type: 'image', source: { type: 'base64', media_type: _mt, data: _cd } };
+          }
+        } catch (e) { cvCoverBlock = null; }
+      }
     }
     const hasGradeRefs = gradeRefBlocks.length > 0;
 
@@ -553,6 +575,22 @@ Rules:
     // cost-vs-variance trade can be measured both ways rather than argued.
     const DEEP_CACHE_ENABLED = ((req.body && req.body.cacheProfile) === 'batch');
     const _deepCacheCtl = { type: 'ephemeral', ttl: '1h' };
+
+    // Split the prompt once: static half stays in `system` (cacheable), per-pass
+    // half is injected into the user turn after the invariant images.
+    // Instruction text for the ComicVine fallback cover. Deliberately far more
+    // guarded than the curated-cover wording: Matt's own reference_covers/ scans
+    // are near-mint 9.8 ink-on-paper images of the verified correct book, and
+    // can be trusted. A ComicVine cover cannot.
+    const cvCoverNote = 'STOCK COVER IMAGE of this issue follows. It is a WEAK reference — read these limits before using it:\n'
+      + '  (a) It is usually a DIGITAL REPRODUCTION, not a photograph of ink on paper. Its colours are cleaner and more saturated than any physical copy. NEVER treat a colour or tone difference against it as a defect.\n'
+      + '  (b) It is NOT guaranteed to be a high-grade copy. It is often a mid-grade scan carrying its own wear, so a mark present on it does NOT prove the mark is printed art.\n'
+      + '  (c) It is sometimes THE WRONG BOOK — a different volume, or a different series sharing the title (e.g. the Golden Age Daredevil vs the Marvel one). Before using it at all, confirm the cover artwork, logo and trade dress match the book being graded. If they do not match, DISCARD it entirely, ignore it for the rest of this assessment, and grade from the photos alone.\n'
+      + 'Given those limits, use it ONLY for STRUCTURAL comparison — to spot a MISSING PIECE, a tear, tape, or an area of the design that is absent or interrupted on the graded copy. Do NOT use it to judge colour, gloss, tone, foxing or general wear, and do NOT conclude a mark is printed art because it appears here. When this image and the photos disagree, the photos win.';
+
+    const _deepParts = activePrompt.split('\u00a7\u00a7CACHE_SPLIT\u00a7\u00a7');
+    const _deepStatic = _deepParts[0];
+    const _deepPerPass = (_deepParts.length > 1) ? (_deepParts[1] || '') : '';
 
     const _antBody = {
       model: 'claude-opus-5',
@@ -577,14 +615,17 @@ Rules:
       // split static-from-variable at §§CACHE_SPLIT§§ for months, which is why a
       // Main on one book gets a cache hit from a Main on a completely different
       // book. Deep now does the same, so per-pass grades no longer matter.
-      system: (() => {
-        const _sp = activePrompt.split('\u00a7\u00a7CACHE_SPLIT\u00a7\u00a7');
-        if (!DEEP_CACHE_ENABLED || _sp.length < 2) return _sp.join('');
-        return [
-          { type: 'text', text: _sp[0], cache_control: _deepCacheCtl },
-          { type: 'text', text: _sp[1] || '' }
-        ];
-      })(),
+      // S22 IMAGE-CACHE REORDER. The system prompt now carries ONLY the static
+      // half. Everything per-book/per-pass (the INITIAL ASSESSMENT, the ±1 tier
+      // reference, the JSON schema) is emitted as a user block AFTER the
+      // invariant images, so the cache breakpoint below can cover system + all
+      // 9 invariant images. Previously the per-pass text sat between the static
+      // system and the images, which poisoned the prefix and made the
+      // image breakpoint miss on every pass — the images billed at full price
+      // five times over.
+      system: DEEP_CACHE_ENABLED
+        ? [{ type: 'text', text: _deepStatic, cache_control: _deepCacheCtl }]
+        : activePrompt.split('\u00a7\u00a7CACHE_SPLIT\u00a7\u00a7').join(''),
       messages: [{
         role: 'user',
         content: isRestoration
@@ -599,19 +640,38 @@ Rules:
               ...(hasInteriorCovers ? [{ type: 'text', text: 'INTERIOR COVER PHOTOS in order: (1) Interior Front — inside front cover + first page; (2) Interior Back — last page + inside back cover. Examine ONLY for interior-cover condition (tanning, foxing, stains, tears) per PHASE 2.5. Do not re-judge page quality.' }, ...interiorCoverBlocks] : []),
               ...(frontCoverBlock ? [{ type: 'text', text: 'FULL FRONT COVER of the book being graded:' }, frontCoverBlock] : []),
               ...(refCoverBlocks.length ? [{ type: 'text', text: 'PRISTINE REFERENCE COVERS of this exact issue follow (near-mint FRONT' + (refCoverBlocks.length > 1 ? ' and BACK' : '') + '). Use them FIRST to separate printed art from damage: any mark that ALSO appears on the reference is PRINTED ART and is NOT a defect; only marks ABSENT from the reference are real defects. Apply this while re-examining the macros for corner/edge/spine defects, BEFORE the grade-reference comparison below.' }, ...refCoverBlocks] : []),
+              // Fallback reference, used only when no curated cover exists.
+              ...(!refCoverBlocks.length && cvCoverBlock ? [{ type: 'text', text: cvCoverNote }, cvCoverBlock] : []),
+              // ── everything ABOVE this line is identical on every pass of a
+              // batch and is what the cache breakpoint covers. Everything BELOW
+              // varies per pass and must stay outside the cached prefix. ──
+              ...(_deepPerPass ? [{ type: 'text', text: _deepPerPass }] : []),
               ...(hasGradeRefs ? [{ type: 'text', text: 'GRADE-REFERENCE IMAGES follow — real graded comics bracketing the initial grade, each labeled with its CGC grade and condition note, in ascending grade order. Compare the book above against these examples (PHASE 4).' }, ...gradeRefBlocks] : []),
               { type: 'text', text: 'Perform the deep assessment. If the macros reveal new defects, the grade may go down — tag them deepAddition: true. If the corners are cleaner than expected for the initial grade, the Front sub-score may rise by 1–3 points. Compare the book against the grade-reference images and confirm or revise the predicted grade per PHASE 4. Return the JSON.' }
             ]
       }]
     };
 
-    // Second cache breakpoint on the corner-macro images (only when caching is
-    // enabled), so system + macros read from cache within the TTL.
+    // Second cache breakpoint on the LAST INVARIANT IMAGE, so the cached prefix
+    // is system + corner macros + interior covers + front cover + reference
+    // covers — 9 images that are byte-identical on every pass of a batch.
+    // It used to sit on the last corner macro, which left the interior covers,
+    // the front cover and the reference covers outside the prefix (billed in
+    // full every pass) — and it missed anyway, because the per-pass text was
+    // still upstream of it in the system prompt.
+    // NOT included, deliberately: the grade-reference bracket images. Those are
+    // chosen from each pass's OWN Main grade, which is what produces the
+    // pass-to-pass variance Batch exists to show. They stay after the
+    // breakpoint and bill in full.
     if (DEEP_CACHE_ENABLED) {
       try {
-        if (Array.isArray(macroBlocks) && macroBlocks.length) {
-          macroBlocks[macroBlocks.length - 1].cache_control = _deepCacheCtl;
-        }
+        const _lastInvariant =
+          (refCoverBlocks.length ? refCoverBlocks[refCoverBlocks.length - 1] : null) ||
+          cvCoverBlock ||
+          frontCoverBlock ||
+          (interiorCoverBlocks.length ? interiorCoverBlocks[interiorCoverBlocks.length - 1] : null) ||
+          (macroBlocks.length ? macroBlocks[macroBlocks.length - 1] : null);
+        if (_lastInvariant) _lastInvariant.cache_control = _deepCacheCtl;
       } catch (e) {}
     }
 

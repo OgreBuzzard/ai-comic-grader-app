@@ -200,7 +200,11 @@ export default async function handler(req, res) {
       frontCover: main[0] || null,
       title: ident.title || '',
       issueNumber: String(ident.issue || ''),
-      cacheProfile: 'batch'
+      cacheProfile: 'batch',
+      // ComicVine cover the original Main already resolved. Deep uses it only if
+      // this issue has no curated reference_covers/ entry, and treats it as a
+      // weak structural reference (see cvCoverNote in assess_deep.js).
+      referenceImageUrl: (batch.refs && batch.refs.front) || null
     };
     const { parsed: D, ms: deepMs } = await callGrader(`${base}/api/assess_deep`, deepBody, authHeader, 'assess_deep');
 
