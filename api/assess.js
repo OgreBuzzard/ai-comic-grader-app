@@ -232,7 +232,11 @@ export default async function handler(req, res) {
     // and echoes these back instead. The GATE half of PHASE 0 (COMIC /
     // NOT_COMIC / FLAGGED / CROP_FAILURE) still runs in full; only the
     // identification work is skipped.
-    knownIdentity = null
+    knownIdentity = null,
+    // S22: 'batch' adds a second cache breakpoint after the user images so the
+    // 4 photos bill at ~10% on passes 2-5 instead of full price five times.
+    // Absent (every ordinary assessment) => behaviour is exactly as before.
+    cacheProfile = null
   } = req.body;
   if (!images || images.length === 0) return res.status(400).json({ error: 'No images provided' });
 
@@ -984,7 +988,7 @@ GATE CHECK: this exact image set already passed the gate on the earlier assessme
 
   const systemPrompt = `You are an expert comic book condition analyst. Collectors value your assessments because they are strict and unforgiving. They know you will only give high grades when they are deserved. Over-grading a book damages your reputation and integrity. They use your service because they trust your grades, and they will stop if you grade too high. When a grade could reasonably go either way, take the LOWER read. Examine the photos ONCE and record neutral observations, then derive three independent grades from those observations.
 ## PHASE 0 — GATE CHECK (mandatory first)
-${knownIdentityBlock}
+${_ki ? 'NOTE: this book\'s identity is already settled and the gate is already satisfied — see "IDENTITY ALREADY ESTABLISHED" near the end of these instructions before doing anything in this phase.\n' : ''}
 Classify content into ONE bucket:
   COMIC — single-issue or trade, including adult comics, horror titles, pornographic comics from known publishers. Magazines like Playboy are NOT comics.
   NOT_COMIC — magazines, trades (unless clearly graphic novels), random objects, screenshots, people, animals, blank paper, trading cards, prose books, tests/abuse.
@@ -1155,7 +1159,7 @@ Read the CGC tier definition for your candidate grade plus one above and one bel
 
 CGC GRADE TIER REFERENCE:
 ${gradeTierContext()}
-§§CACHE_SPLIT§§${gradedBlock}
+§§CACHE_SPLIT§§${knownIdentityBlock}${gradedBlock}
 Confidence base ±${baseConf} (raise for glare/poor focus/no raking-light photo/staples not visible/restoration suspected).
 SCORE CEILING: with ±${baseConf}, max score is ${100 - baseConf}; do not exceed it.${highGrade ? ' Deep Assessment with corner macros, so ±3 and ceiling 97.' : ' A 4-photo assessment cannot see the fine detail distinguishing a near-perfect copy; a Deep Assessment is required above ' + (100 - baseConf) + '. If it looks pristine, score the ' + (100 - baseConf) + ' ceiling and let ±' + baseConf + ' express the upside.'}
 ${gradeCeiling ? `\nGRADE CEILING — predicted CGC grade must not exceed ${gradeCeiling}; if it appears to deserve higher, assign ${gradeCeiling} and note a higher tier may revise upward.` : (labelDetected ? '\nGRADE CEILING — for slabbed books, the label grade is the ceiling for your predicted grade.' : '')}
@@ -1333,6 +1337,25 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
         ]
       }]
     };
+
+    // ── S22: BATCH-ONLY second cache breakpoint, on the last user image ─────
+    // Every ordinary assessment is untouched: this runs only when the batch
+    // worker sends cacheProfile:'batch'. In a batch all five Main passes send
+    // the SAME stored photos, the same known identity and the same flags, so
+    // everything up to and including the images is byte-identical across passes
+    // and can be read from cache at ~10% instead of paid for in full five times.
+    // The reference/page-quality reference images sit ahead of the book photos
+    // in the same content array, so they fall inside the prefix too.
+    // Cache breakpoints change billing and latency only — never the model's
+    // output — so the grades this produces are identical either way.
+    if (cacheProfile === 'batch' && _cacheOn) {
+      try {
+        const _content = _antBody.messages[0].content;
+        for (let i = _content.length - 1; i >= 0; i--) {
+          if (_content[i] && _content[i].type === 'image') { _content[i].cache_control = _cacheCtl; break; }
+        }
+      } catch (e) { console.warn('[assess] batch image breakpoint skipped:', e.message); }
+    }
 
     // ── v3.99c STREAMING BRANCH ────────────────────────────────────────────
     // Variables we need to produce regardless of branch:

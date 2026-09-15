@@ -115,10 +115,16 @@ export async function getAdSpend() {
     fetchMetaDaily().catch(e => { console.warn('[ad_spend] meta:', e.message); return null; }),
     fetchGoogleDaily().catch(e => { console.warn('[ad_spend] google:', e.message); return null; }),
   ]);
-  const metaSrc = metaByDay ? 'api' : 'estimate';
-  const googleSrc = googleByDay ? 'api' : 'estimate';
-  const mDay = metaByDay || estByDay(EST_DAILY_CENTS.meta);
-  const gDay = googleByDay || estByDay(EST_DAILY_CENTS.google);
+  // S22 (Matt): a platform that is NOT reporting contributes ZERO, not a guess.
+  // The old behaviour substituted $16/day, which silently replaced Google's real
+  // ~$169 with a ~$96 invention and made the dashboard confidently wrong. A
+  // number that is missing is honest; a number that is fabricated is not.
+  // `source` tells the UI which platforms are absent so the total can be
+  // labelled as partial rather than read as fact.
+  const metaSrc = metaByDay ? 'api' : 'missing';
+  const googleSrc = googleByDay ? 'api' : 'missing';
+  const mDay = metaByDay || {};
+  const gDay = googleByDay || {};
   const meta = windowsFromByDay(mDay);
   const google = windowsFromByDay(gDay);
   const byDayCombined = {};

@@ -645,6 +645,12 @@
       opacity: 0;
       animation: rgCoinFadeIn 0.5s ease forwards,
                  rgCoinDrop 0.5s ease-in 1.0s forwards;
+    }
+    /* S22: the batch stack drives fade + drop from JS instead, so the single-coin
+       keyframes must not also run on these. */
+    .rg-coin.rg-coin-stacked {
+      animation: none;
+      transform: translate(-50%, 0);
       pointer-events: none;
     }
     @keyframes rgCoinFadeIn {
@@ -1456,6 +1462,50 @@
     debugLog('coin drop started');
   }
 
+  // S22 batch coin stack: fade in N coins on top of each other (each sitting a
+  // little higher than the one below, so the pile reads as N distinct coins),
+  // hold, then drop them from the BOTTOM of the pile upward.
+  const COIN_FADE_MS = 450, COIN_FADE_GAP = 220, COIN_HOLD_MS = 420;
+  const COIN_DROP_MS = 500, COIN_DROP_GAP = 380;
+  const COIN_STACK_TOTAL =
+    COIN_FADE_MS + 2 * COIN_FADE_GAP + COIN_HOLD_MS + 2 * COIN_DROP_GAP + COIN_DROP_MS + 150;
+
+  function playCoinStack(cancelToken, count) {
+    const shell = document.querySelector('.rg-scan-shell');
+    if (!shell) return;
+    const clip = document.createElement('div');
+    clip.className = 'rg-coin-clip';
+    const coins = [];
+    for (let i = 0; i < count; i++) {
+      const coin = document.createElement('img');
+      coin.className = 'rg-coin rg-coin-stacked';
+      // Each coin sits slightly higher than the one beneath it.
+      coin.style.top = (88.8 - i * 3.1) + '%';
+      coin.style.opacity = '0';
+      coin.style.zIndex = String(10 + (count - i));
+      coin.src = 'assets/robocoin2.webp';
+      clip.appendChild(coin);
+      coins.push(coin);
+    }
+    shell.appendChild(clip);
+
+    const at = (ms, fn) => { const t = setTimeout(() => { if (!cancelToken.cancelled) fn(); }, ms); cancelToken._timers.add(t); };
+    // 1. fade them in, bottom of the pile first
+    coins.forEach((c, i) => at(i * COIN_FADE_GAP, () => {
+      c.style.transition = `opacity ${COIN_FADE_MS}ms ease`;
+      c.style.opacity = '1';
+    }));
+    // 2. after they are all visible and held, drop them bottom-up
+    const dropStart = (count - 1) * COIN_FADE_GAP + COIN_FADE_MS + COIN_HOLD_MS;
+    coins.forEach((c, i) => at(dropStart + i * COIN_DROP_GAP, () => {
+      c.style.transition = `transform ${COIN_DROP_MS}ms ease-in, opacity ${COIN_DROP_MS}ms ease-in`;
+      c.style.transform = 'translate(-50%, 260%) rotate(220deg)';
+      c.style.opacity = '0';
+    }));
+    at(COIN_STACK_TOTAL, () => { if (clip.parentNode) clip.remove(); });
+    debugLog(`coin stack: ${count} coins`);
+  }
+
   // photoUrls: flat array of up to 4 URLs in slot order.
   // kind:      'main' (default) or 'corner'. Selects which slot table.
   function runScanAnimation(photoUrls, kind) {
@@ -1483,7 +1533,7 @@
 
     // Batch drops 3 coins back-to-back, so the first photo waits for all of them.
     _firstPhotoDelayMs = (kind === 'batch')
-      ? CHEST_SLIDE_DELAY + CHEST_SLIDE_TIME + POST_CHEST_PAUSE + 2 * (COIN_DROP_TIME + 150)
+      ? CHEST_SLIDE_DELAY + CHEST_SLIDE_TIME + COIN_STACK_TOTAL
       : FIRST_PHOTO_DELAY;
 
     const activeSlots = slotTable
@@ -1539,20 +1589,21 @@
     // The coin animation runs for COIN_DROP_TIME (1500ms) = POST_CHEST_PAUSE,
     // so it finishes right when FIRST_PHOTO_DELAY expires and the first
     // photo scan begins. The coin CSS animation handles all timing internally.
-    // S22: a Batch costs 3 credits, so three coins drop. They are staggered by
-    // COIN_STAGGER so they read as three distinct coins rather than one thick
-    // one; the scan start is pushed back by the extra coins' duration below.
-    const coinCount = (kind === 'batch') ? 3 : 1;
-    // Each coin's CSS runs fade 0.5s -> hold 0.5s -> drop 0.5s = COIN_DROP_TIME.
-    // Stagger by the FULL cycle (+ a beat) so coin 2 starts fading only after
-    // coin 1 has dropped. Overlapping them read as one thick coin and wasted the
-    // distraction time we actually want while the API works.
-    const COIN_STAGGER = COIN_DROP_TIME + 150;
-    for (let ci = 0; ci < coinCount; ci++) {
+    // S22: a Batch costs 3 credits. All THREE coins fade in first, stacked and
+    // visible together, and only then do they drop one at a time — so the user
+    // sees "three credits" at a glance instead of having to count three separate
+    // drops. Single-credit runs are unchanged.
+    if (kind === 'batch') {
+      const t = setTimeout(() => {
+        if (cancelToken.cancelled) return;
+        playCoinStack(cancelToken, 3);
+      }, CHEST_SLIDE_DELAY + CHEST_SLIDE_TIME);
+      cancelToken._timers.add(t);
+    } else {
       const coinTimer = setTimeout(() => {
         if (cancelToken.cancelled) return;
         playCoinDrop(cancelToken);
-      }, CHEST_SLIDE_DELAY + CHEST_SLIDE_TIME + ci * COIN_STAGGER);
+      }, CHEST_SLIDE_DELAY + CHEST_SLIDE_TIME);
       cancelToken._timers.add(coinTimer);
     }
 

@@ -213,7 +213,7 @@ export default async function handler(req, res) {
     let adInfo = null;
     try { const { getAdSpend } = await import('../lib/ad_spend.js'); adInfo = await getAdSpend(); }
     catch (e) { console.warn('[admin-stats] ad spend fetch failed:', e.message); }
-    const spendAds = (adInfo && adInfo.ads) || { dayCents: 3200, weekCents: 22400, monthCents: 96000, allTimeCents: 0 };
+    const spendAds = (adInfo && adInfo.ads) || { dayCents: 0, weekCents: 0, monthCents: 0, allTimeCents: 0 };
     const adByDay = (adInfo && adInfo.byDayCombined) || {};
     // Fold Ads into the `spend` object (drives ONLY the Profit card + windows; the
     // Spending box reads spendBreakdown). Profit now nets out ad spend.
@@ -293,7 +293,7 @@ export default async function handler(req, res) {
       // has always computed source:{meta,google} = 'api' | 'estimate', but it was
       // dropped here — so the Ads line looked authoritative whether it was real
       // spend or the $16/day/platform fallback, and there was no way to tell.
-      ads:  { ...spendAds, source: (adInfo && adInfo.source) || { meta: 'estimate', google: 'estimate' },
+      ads:  { ...spendAds, source: (adInfo && adInfo.source) || { meta: 'missing', google: 'missing' },
               meta: (adInfo && adInfo.meta) || null, google: (adInfo && adInfo.google) || null },
       sub:  { dayCents: devCost.dayCents, weekCents: devCost.weekCents, monthCents: devCost.monthCents },
       site: { dayCents: INFRA_DAILY, weekCents: INFRA_DAILY * 7, monthCents: INFRA_DAILY * 30 },

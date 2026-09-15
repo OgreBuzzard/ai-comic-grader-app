@@ -2197,12 +2197,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.13";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.14";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.13");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.14");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -7226,6 +7226,11 @@ function mountBatchTracker(n) {
   }
   n = n || 5;
   let boxesHtml = "";
+  // Separate layer for the score boxes. .rg-scan-boxes sits at z-index 13 and
+  // the artwork at 14, so anything in boxesHtml that isn't under one of the five
+  // recess cut-outs is hidden behind the plate. The score boxes sit ON the grey
+  // plate, so they must be appended into the overlay layer instead.
+  let resultsHtml = "";
   for (let i = 0; i < n; i++) {
     const top = BATCH_BTN_TOPS_PCT[i];
     if (top == null) break;
@@ -7243,9 +7248,14 @@ function mountBatchTracker(n) {
              background-image:url('${BATCH_DEFAULT_BOX}');
              background-size:100% 100%;background-repeat:no-repeat;
              pointer-events:none;"></div>`;
-    // Two result boxes per row: RG then PG.
+    // default_box_small / success_box_small are ~2% translucent across their
+    // whole surface (peak alpha 251 of 255), and the artwork layer sits ABOVE
+    // them at z-index 14, so the recess tint dims them further. The full-size
+    // Main/Deep/Full art doesn't have that problem. Nothing here sets opacity.
+    // Two result boxes per row: RG then PG. These go in the OVERLAY layer, not
+    // the boxes layer — see the resultsHtml note below.
     ["rg", "pg"].forEach((kind, k) => {
-      boxesHtml += `<div id="batch-${kind}-${i + 1}"
+      resultsHtml += `<div id="batch-${kind}-${i + 1}"
         style="position:absolute;left:${BATCH_RES_LEFTS_PCT[k]}%;top:${top}%;
                width:${BATCH_RES_W_PCT}%;height:${BATCH_BTN_HEIGHT_PCT}%;
                background:#1d4a7a;border:1px solid #3f7fb5;border-radius:6px;
@@ -7259,7 +7269,7 @@ function mountBatchTracker(n) {
         </div>`;
     });
   }
-  const overlayHtml = `\n    <img src="${BATCH_OVERLAY_BG}" alt=""\n         style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;" />`;
+  const overlayHtml = `\n    <img src="${BATCH_OVERLAY_BG}" alt=""\n         style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;" />${resultsHtml}`;
   window.RobograderScan.slideOverlayIntoChest(overlayHtml, boxesHtml);
   if (window._batchGridTimer) clearTimeout(window._batchGridTimer);
   window._batchGridTimer = setTimeout(() => {
@@ -7320,8 +7330,13 @@ function mountBatchResults(summary) {
   }, 600);
   const gridEl = document.getElementById("tracker-grid-frame");
   if (gridEl) gridEl.style.display = "none";
+  // Identical structure to mountResults() makeBadge: the number is absolutely
+  // centred across the whole 64px box and the label is pinned to the bottom, so
+  // the digit gets the full height. The flex-column card variant squeezed it.
   const badge = (bg, txt, val, label, border, valId) =>
-    `<div style="width:64px;height:64px;${border ? `border:${border};` : ""}background:${bg};border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)"><div ${valId ? `id="${valId}" ` : ""}style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:38px;font-weight:800;color:${txt};line-height:1">${val}</div><div style="font-size:9px;color:${txt};opacity:0.75;margin-top:2px;letter-spacing:0.8px">${label}</div></div>`;
+    `<div style="position:relative;width:64px;height:64px;${border ? `border:${border};` : ""}background:${bg};border-radius:8px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">` +
+    `<div ${valId ? `id="${valId}" ` : ""}style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'League Spartan',sans-serif;transform:scaleX(0.7);font-size:38px;font-weight:800;color:${txt};line-height:1">${val}</div>` +
+    `<div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:${txt};opacity:0.75;letter-spacing:0.8px">${label}</div></div>`;
   let badges = "";
   if (s.average != null) badges += badge("#0f1a05", "#b8d820", s.average, "RG", "1.5px solid #3a5010", "batch-val-rg");
   if (s.pg) badges += badge("#2a5a8a", "#e0f0ff", s.pg, "CGC", "", "batch-val-pg");
@@ -7349,6 +7364,40 @@ function completeBatchAssessment() {
   if (window.RobograderScan && window.RobograderScan.dismiss) window.RobograderScan.dismiss();
   formData._batchMode = false;
   try { renderForm(); } catch (e) { console.warn("[batch] renderForm after complete:", e); }
+}
+
+// Deleting an Assessment History entry is destructive and the × sits right at
+// the edge of a small row — far too easy to hit by accident. Confirm first, with
+// the destructive action in red.
+function confirmDeleteHistoryEntry(i) {
+  const h = (formData.assessmentHistory || [])[i];
+  if (!h) return;
+  const label = h._batch
+    ? `the BATCH record (${h.runCount || 5} grades)`
+    : `the ${String(h.depth || "main").toUpperCase()} record${h.rgV3Grade ? " — RG " + h.rgV3Grade : ""}`;
+  const prev = document.getElementById("rg-hist-del-overlay");
+  if (prev) prev.remove();
+  const ov = document.createElement("div");
+  ov.id = "rg-hist-del-overlay";
+  ov.style.cssText = "position:fixed;inset:0;z-index:2147483600;background:rgba(0,0,0,.66);display:flex;align-items:center;justify-content:center;padding:24px";
+  ov.innerHTML = `
+    <div style="background:#1e2414;border:1.5px solid #4a7a20;border-radius:14px;max-width:340px;width:100%;padding:20px 18px;box-shadow:0 10px 40px rgba(0,0,0,.6);text-align:center">
+      <div style="font-family:'League Spartan',sans-serif;font-weight:800;font-size:15px;letter-spacing:1px;color:#cfe8a8;margin-bottom:8px">DELETE THIS ENTRY?</div>
+      <div style="font-size:13px;color:#9a9a8a;line-height:1.5;margin-bottom:18px">This permanently removes ${label} from this book's Assessment History. It cannot be undone, and the grades it contributed to the summary will be gone.</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button id="rg-hist-del-go" style="width:100%;height:42px;background:#a02c2c;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:800;letter-spacing:1.5px;cursor:pointer">DELETE</button>
+        <button id="rg-hist-del-cancel" style="width:100%;height:42px;background:#2a3320;color:#cfe8a8;border:1px solid #4a7a20;border-radius:8px;font-size:14px;font-weight:700;letter-spacing:1px;cursor:pointer">CANCEL</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  const close = () => { if (ov.parentNode) ov.remove(); };
+  ov.querySelector("#rg-hist-del-go").onclick = () => {
+    close();
+    formData.assessmentHistory.splice(i, 1);
+    renderForm();
+  };
+  ov.querySelector("#rg-hist-del-cancel").onclick = close;
+  ov.addEventListener("click", e => { if (e.target === ov) close(); });
 }
 
 function setStep(id, state, detail = "") {
@@ -9002,7 +9051,7 @@ function renderAHRow(h, editable, i) {
   const line2 = [pg, psa, pq].filter(Boolean).join('<span style="color:#c8b8a8;margin:0 4px">·</span>');
   const stars = _histStars(h.depth, 11, "#5a7030");
   const date = _histDateMMDD(h.date);
-  const rm = editable ? `<button onclick="formData.assessmentHistory.splice(${i},1);renderForm()" style="background:none;border:none;color:#a05a5a;font-size:16px;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0" title="Remove this entry">×</button>` : "";
+  const rm = editable ? `<button onclick="confirmDeleteHistoryEntry(${i})" style="background:none;border:none;color:#a05a5a;font-size:16px;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0" title="Remove this entry">×</button>` : "";
   return `<div style="padding:8px 10px;background:#f4f0e6;border:1px solid #d8d0c0;border-radius:6px">
       <div style="display:flex;align-items:flex-start;gap:10px">
         <div style="flex:1;min-width:0">

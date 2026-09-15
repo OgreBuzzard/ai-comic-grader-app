@@ -145,6 +145,9 @@ export default async function handler(req, res) {
       // PHASE 0 skips identification. The GATE half of Phase 0 (COMIC /
       // NOT_COMIC / CROP_FAILURE) still runs — we are skipping identification,
       // not the safety check.
+      // Adds a cache breakpoint after the images for this call only (see
+      // assess.js). Ordinary user assessments never send this.
+      cacheProfile: 'batch',
       knownIdentity: {
         title: ident.title || '',
         issue: String(ident.issue || ''),
