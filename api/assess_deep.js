@@ -956,6 +956,27 @@ Rules:
           parsed.grade = initialAssessment.grade || parsed.grade;
         }
       }
+
+      // S22 (Matt): PAGE QUALITY MUST NOT MOVE THE PREDICTED GRADE.
+      // CGC assigns page quality independently of overall condition, so a PQ
+      // revision is not a reason for the predicted CGC grade to move. Robograder
+      // is different by design — our Interior sub-score IS driven by PQ, so a PQ
+      // change legitimately moves RG. The two must not be conflated.
+      // Observed on Uncanny X-Men #35: all five Deeps read the interior covers a
+      // notch more cream than Main and every one of them dropped PG 4.5 -> 4.0.
+      // That drop was page quality leaking into the predicted grade.
+      // So: when the ONLY thing Deep changed is page quality — no new defect
+      // flagged, nothing disproven — restore the initial predicted grade and let
+      // the PQ change express itself through Interior/RG alone.
+      const _initDefN = Array.isArray(initialRG.defects) ? initialRG.defects.length : null;
+      const _newDefN = Array.isArray(parsed.roboGrade && parsed.roboGrade.defects) ? parsed.roboGrade.defects.length : null;
+      const _defectsUnchanged = (_initDefN != null && _newDefN != null && _newDefN >= _initDefN);
+      if (_pqRefined && !hasDeepAddition && _defectsUnchanged && initialAssessment.grade) {
+        if (String(parsed.grade || '') !== String(initialAssessment.grade)) {
+          console.log(`[deep] PQ-only change — holding PG at ${initialAssessment.grade} (model said ${parsed.grade})`);
+          parsed.grade = initialAssessment.grade;
+        }
+      }
       // S21 Photograder: merge this pass's Focus/Lighting into the running record
       // (Cropping/Angle carry from Main), compute the PM with the monotonic clamp
       // against the prior tier's PM, and use it for the ± and the score ceiling.
