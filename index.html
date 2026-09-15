@@ -2197,12 +2197,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.14";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.15";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.14");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.15");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -7206,10 +7206,18 @@ function mountTierTracker(kind, stepDefs, opts) {
 const BATCH_OVERLAY_BG = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay_Batch.webp";
 // The NARROW box art Matt added for Batch: 206x68 against the full-size 360x68,
 // same height, right edge pulled in to make room for the two result boxes.
-const BATCH_DEFAULT_BOX = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/default_box_small.webp";
-const BATCH_SUCCESS_BOX = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/success_box_small.webp";
+const _BATCH_ASSET = n => "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/" + n;
+const BATCH_DEFAULT_BOX = _BATCH_ASSET("default_box_small.webp");
+const BATCH_SUCCESS_BOX = _BATCH_ASSET("success_box_small.webp");
+const BATCH_FAILURE_BOX = _BATCH_ASSET("failure_box_small.webp");
+// Split-flap word strip that sits ON TOP of the box art, in the same 206x68
+// footprint. Frame 1 reads MAIN, frame 10 reads DEEP; 2-9 are the flip.
+const BATCH_WORD_FRAMES = Array.from({ length: 10 }, (_, i) => _BATCH_ASSET(`Main_Deep${i + 1}.webp`));
+const BATCH_FLIP_MS = 400;   // total MAIN -> DEEP flip
 (function preloadBatchArt() {
-  [BATCH_OVERLAY_BG, BATCH_DEFAULT_BOX, BATCH_SUCCESS_BOX].forEach(u => { const i = new Image; i.src = u; });
+  [BATCH_OVERLAY_BG, BATCH_DEFAULT_BOX, BATCH_SUCCESS_BOX, BATCH_FAILURE_BOX]
+    .concat(BATCH_WORD_FRAMES)
+    .forEach(u => { const i = new Image; i.src = u; });
 })();
 
 const BATCH_BTN_LEFT_PCT   = 11.81;   // identical to Main/Deep/Full
@@ -7247,7 +7255,14 @@ function mountBatchTracker(n) {
              width:${BATCH_BTN_WIDTH_PCT}%;height:${BATCH_BTN_HEIGHT_PCT}%;
              background-image:url('${BATCH_DEFAULT_BOX}');
              background-size:100% 100%;background-repeat:no-repeat;
-             pointer-events:none;"></div>`;
+             pointer-events:none;"></div>` +
+      // The MAIN/DEEP word, same footprint, sitting on top of the box art. It
+      // starts on frame 1 (MAIN) and flips to frame 10 (DEEP) when that pass's
+      // Main lands. The 1-5 numerals live in the overlay artwork.
+      `<img id="batch-word-${i + 1}" src="${BATCH_WORD_FRAMES[0]}" alt=""
+        style="position:absolute;left:${BATCH_BTN_LEFT_PCT}%;top:${top}%;
+               width:${BATCH_BTN_WIDTH_PCT}%;height:${BATCH_BTN_HEIGHT_PCT}%;
+               pointer-events:none;" />`;
     // default_box_small / success_box_small are ~2% translucent across their
     // whole surface (peak alpha 251 of 255), and the artwork layer sits ABOVE
     // them at z-index 14, so the recess tint dims them further. The full-size
@@ -7279,40 +7294,125 @@ function mountBatchTracker(n) {
   }, 1200);
 }
 
-// Light one row. Passes land OUT OF ORDER — that is correct, not a glitch.
-function setBatchRow(pass, data) {
-  const box = document.getElementById("batch-box-" + pass);
-  if (!box) return;
-  const put = (kind, txt) => {
-    const el = document.getElementById(`batch-${kind}-${pass}`);
-    if (!el) return;
-    const sp = el.firstElementChild;
-    if (!sp) return;
-    const v = txt == null ? "" : String(txt);
-    // Same decimal treatment as RoboScoreV3.scoreBox(): the point renders at
-    // 0.8em so "6.5" stays tight under the 0.66 horizontal scale.
-    if (v && window.RoboScoreV3 && window.RoboScoreV3.gradeParts) {
-      try {
-        const p = window.RoboScoreV3.gradeParts(v);
-        sp.innerHTML = p.frac
-          ? `${p.whole}<span style="font-size:0.8em">.</span>${String(p.frac).slice(1)}`
-          : String(p.whole);
-      } catch (e) { sp.textContent = v; }
-    } else {
-      sp.textContent = v;
-    }
-    sp.style.opacity = v ? "1" : "0";
-  };
-  if (data && data.stage === "error") {
-    // No failure_box_small exists yet — dim the default rather than drop in the
-    // full-width failure art, which would break the row alignment.
-    box.style.opacity = "0.45";
+// ── Per-row sequence: MAIN -> score -> flip to DEEP -> score ────────────────
+// Each row runs its OWN independent sequence the moment that pass's data
+// arrives, so rows land out of order. That is deliberate (Matt): it reads as
+// five separate judgements rather than one scripted reveal.
+//
+//   grey + MAIN   -> pass starts
+//   green + MAIN  -> its Main lands; RG and PG count up, then white-flash
+//   flip 1..10    -> MAIN becomes DEEP, split-flap, 400ms
+//   grey + DEEP   -> its Deep runs; the score boxes HOLD the Main values
+//   green + DEEP  -> its Deep lands; the scores revise to the final grade
+const _batchRowState = {};   // pass -> 'main' | 'mainDone' | 'deep' | 'done' | 'error'
+
+function _batchBoxEl(pass) { return document.getElementById("batch-box-" + pass); }
+function _batchWordEl(pass) { return document.getElementById("batch-word-" + pass); }
+
+function _batchSetBox(pass, which) {
+  const el = _batchBoxEl(pass);
+  if (!el) return;
+  const url = which === "success" ? BATCH_SUCCESS_BOX : which === "failure" ? BATCH_FAILURE_BOX : BATCH_DEFAULT_BOX;
+  el.style.backgroundImage = "url('" + url + "')";
+}
+
+// Split-flap MAIN -> DEEP. Ten frames across BATCH_FLIP_MS.
+function _batchFlipWord(pass) {
+  return new Promise(resolve => {
+    const el = _batchWordEl(pass);
+    if (!el) return resolve();
+    const step = Math.max(20, Math.round(BATCH_FLIP_MS / BATCH_WORD_FRAMES.length));
+    let i = 1;
+    const tick = () => {
+      if (i >= BATCH_WORD_FRAMES.length) { el.src = BATCH_WORD_FRAMES[BATCH_WORD_FRAMES.length - 1]; return resolve(); }
+      el.src = BATCH_WORD_FRAMES[i++];
+      setTimeout(tick, step);
+    };
+    setTimeout(tick, step);
+  });
+}
+
+// Count a result box up/down to a value and flash it white, matching the
+// reveal the other assessment types use.
+function _batchAnimateVal(pass, kind, text) {
+  const box = document.getElementById(`batch-${kind}-${pass}`);
+  if (!box) return Promise.resolve();
+  const sp = box.firstElementChild;
+  if (!sp) return Promise.resolve();
+  if (text && window.RoboScoreV3 && window.RoboScoreV3.gradeParts) {
+    try {
+      const p = window.RoboScoreV3.gradeParts(String(text));
+      sp.innerHTML = p.frac ? `${p.whole}<span style="font-size:0.8em">.</span>${String(p.frac).slice(1)}` : String(p.whole);
+    } catch (e) { sp.textContent = String(text); }
+  } else {
+    sp.textContent = text == null ? "" : String(text);
+  }
+  sp.style.opacity = text ? "1" : "0";
+  return new Promise(resolve => {
+    // White flash, same as popResultBadge's landing beat.
+    const prevColor = sp.style.color;
+    sp.style.transition = "color .12s ease, text-shadow .12s ease";
+    sp.style.color = "#ffffff";
+    sp.style.textShadow = "0 0 10px rgba(255,255,255,.95)";
+    setTimeout(() => {
+      sp.style.color = prevColor || "#dcefff";
+      sp.style.textShadow = "none";
+      resolve();
+    }, 260);
+  });
+}
+
+function _batchV3Label(p, rawScore) {
+  if (!window.RoboScoreV3 || !p || !p.subscores || typeof rawScore !== "number") return "";
+  try {
+    const v = window.RoboScoreV3.forComic({
+      roboGrade: {
+        score: rawScore,
+        frontScore: p.subscores.front, backScore: p.subscores.back,
+        spineScore: p.subscores.spine, interiorScore: p.subscores.interior,
+        pageQuality: p.pq, confidenceRange: p.pm, defects: []
+      },
+      pageQuality: p.pq, deepAssessmentRan: true
+    });
+    return v ? window.RoboScoreV3.formatGrade(v.grade) : "";
+  } catch (e) { return ""; }
+}
+
+// Called on every status poll with that pass's current slot. Drives the row
+// forward through the states above; safe to call repeatedly with the same data.
+async function advanceBatchRow(pass, p) {
+  if (!p) return;
+  const st = _batchRowState[pass] || "main";
+
+  if (p.stage === "error" && st !== "error") {
+    _batchRowState[pass] = "error";
+    _batchSetBox(pass, "failure");
     return;
   }
-  if (data && data.stage === "done") {
-    box.style.backgroundImage = "url('" + BATCH_SUCCESS_BOX + "')";
-    put("rg", data.rg || "");
-    put("pg", data.pg || "");
+
+  // Main has landed (the worker flips the slot to 'deep' once its Main returns).
+  if (st === "main" && (p.stage === "deep" || p.stage === "done") && typeof p.mainRG === "number") {
+    _batchRowState[pass] = "mainDone";
+    _batchSetBox(pass, "success");
+    // Quantize from MAIN's own subscores, not Deep's (which don't exist yet).
+    const _mainShape = { subscores: p.mainSubscores, pq: p.mainPq, pm: p.mainPm };
+    await Promise.all([
+      _batchAnimateVal(pass, "rg", _batchV3Label(_mainShape, p.mainRG) || ""),
+      _batchAnimateVal(pass, "pg", p.mainGrade || "")
+    ]);
+    await _batchFlipWord(pass);          // MAIN -> DEEP
+    _batchSetBox(pass, "default");       // grey while Deep runs; scores HOLD
+    _batchRowState[pass] = "deep";
+  }
+
+  // Deep has landed.
+  if ((_batchRowState[pass] === "deep" || _batchRowState[pass] === "mainDone") && p.stage === "done" && typeof p.rg === "number") {
+    _batchRowState[pass] = "done";
+    _batchSetBox(pass, "success");       // green, and it stays green
+    await Promise.all([
+      _batchAnimateVal(pass, "rg", _batchV3Label(p, p.rg) || ""),
+      _batchAnimateVal(pass, "pg", p.grade || "")
+    ]);
   }
 }
 
@@ -8803,6 +8903,7 @@ async function submitBatchAssessment() {
     }
 
     // ── staggered fan-out + poll ────────────────────────────────────────────
+    Object.keys(_batchRowState).forEach(k => delete _batchRowState[k]);
     _batchFireWorker(batchId, 1);
     let fannedOut = false;
     const t0 = Date.now();
@@ -8828,8 +8929,6 @@ async function submitBatchAssessment() {
         });
       } catch (e) { return null; }
     };
-    const _rowsDrawn = {};
-
     let status = null;
     while (true) {
       await new Promise(r => setTimeout(r, BATCH_POLL_MS));
@@ -8837,12 +8936,10 @@ async function submitBatchAssessment() {
       catch (e) { console.warn("[batch] poll failed (retrying):", e && e.message); continue; }
 
       if (anim) {
+        // Each row advances independently and asynchronously — a row mid-flip
+        // doesn't hold up any other row, and they finish out of order.
         (status.passes || []).forEach(p => {
-          if (p.stage !== "done" && p.stage !== "error") return;
-          if (_rowsDrawn[p.pass]) return;
-          _rowsDrawn[p.pass] = true;
-          const v = _v3ForPass(p);
-          try { setBatchRow(p.pass, { stage: p.stage, rg: v ? fmtGrade(v.grade) : "", pg: p.grade || "" }); } catch (e) {}
+          try { advanceBatchRow(p.pass, p); } catch (e) { console.warn("[batch] row " + p.pass + ":", e); }
         });
       }
 
@@ -8925,6 +9022,9 @@ async function submitBatchAssessment() {
     try { await saveItem(_saveRec); } catch (e) { console.warn("[batch] save failed:", e); }
 
     if (anim) {
+      // Give the last row's flip/score reveal a beat to finish before the
+      // results panel slides up over it.
+      await new Promise(r => setTimeout(r, 900));
       // The COMPLETE button in this panel is what dismisses the overlay and
       // returns to the form (completeBatchAssessment). Without it the app is
       // stranded behind the scan shell with no way out.

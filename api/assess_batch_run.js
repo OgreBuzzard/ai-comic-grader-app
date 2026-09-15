@@ -163,6 +163,15 @@ export default async function handler(req, res) {
     // question answerable later: Main spread vs Deep spread, from real batches.
     await setPass({
       stage: 'deep', mainRG, mainGrade: M.grade || null, mainMs,
+      // Main's own subscores + PQ, so the client can quantize a v3 grade for the
+      // MAIN half of the row animation. Without these the RG box sits blank
+      // until Deep lands.
+      mainSubscores: M.roboGrade ? {
+        front: M.roboGrade.frontScore ?? null, back: M.roboGrade.backScore ?? null,
+        spine: M.roboGrade.spineScore ?? null, interior: M.roboGrade.interiorScore ?? null
+      } : null,
+      mainPq: (M.roboGrade && M.roboGrade.pageQuality) || M.pageQuality || null,
+      mainPm: (M.roboGrade && typeof M.roboGrade.confidenceRange === 'number') ? M.roboGrade.confidenceRange : null,
       mainTimingKey: (M._diagnostics && M._diagnostics.timingKey) || null
     });
 
