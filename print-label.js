@@ -651,6 +651,9 @@ function ensureStylesInjected() {
      matching the app score box. Override kept together so it is easy to find. */
   .rg-num, .rgc-num, .rg-prec { font-family: 'League Spartan', sans-serif !important; }
   .rg-label .rg-num-wrap {
+    /* S22: Wide (Small R) — same score-number drop applied to Case and Large,
+       so all three variants read identically. */
+    transform: translateY(16px);
     /* Holds ONLY the number. This is the flex child the score-box
        centers → the NUMBER is exactly centered, always. The precision
        is a SEPARATE absolutely-positioned child of .score-box (out of
@@ -667,11 +670,14 @@ function ensureStylesInjected() {
        PDF FIX: scaleX(0.625) replaces font-stretch (html2canvas 1.4.1
        ignores the wdth axis when rasterizing); transform-origin:center
        keeps it centered; inline-block so the transform applies. */
-    font-size: 150px; font-weight: 900;
+    /* S22: matched to Case — 150 -> 160 at scaleX(0.75) instead of 0.625. The
+       S15 note said the other variants were held "pending verification" on
+       Case; Case has shipped that way since and reads well, so Wide follows. */
+    font-size: 160px; font-weight: 900;
     color: #b8d820; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
-    transform: scaleX(0.625);
+    transform: scaleX(0.75);
     transform-origin: center;
   }
   .rg-label .rg-prec {
@@ -734,15 +740,25 @@ function ensureStylesInjected() {
        the transform, which is fine — the title was already constrained
        by the fixed-width .info column; visually it now reads condensed
        and fits more characters per line, matching the on-screen look. */
-    font-size: 50px; font-weight: 900;
-    color: #0d0d0f; line-height: 1.05;
+    /* S22: brought up to Case's scale (50 -> 58, line-height 1.05 -> 1.0)
+       plus Case's 2-line clamp. Wide's info column is 700px wide (vs Case's
+       462), so at 58px scaleX(0.625) it takes ~31 chars on a line — most
+       titles still fit on one. The clamp only bites on the rare long one. */
+    font-size: 58px; font-weight: 900;
+    color: #0d0d0f; line-height: 1.0;
+    white-space: normal;
+    max-height: 118px;
+    overflow: hidden;
     font-family: 'Noto Sans Display', sans-serif;
     transform: scaleX(0.625);
     transform-origin: left center;
   }
   .rg-label .iss {
-    font-size: 36px; font-weight: 600;
-    color: #333;
+    /* S22: 36 -> 46 toward Case's 52. Held 6pt under Case because Wide still
+       carries the info-upper divider AND the ID row in the meta grid, so it
+       has less vertical budget than Case (which moved ID into the URL). */
+    font-size: 46px; font-weight: 600;
+    color: #333; line-height: 1.0;
     font-family: 'Noto Sans Display', sans-serif;
     /* S14 PDF FIX: scaleX(0.625) replaces font-stretch. The flex row
        (issue + date) compresses as a unit incl. its gap — proportional
@@ -765,14 +781,19 @@ function ensureStylesInjected() {
   }
   .rg-label .meta-lbl {
     /* S14: +2pt (22→24) per user — Grade/Date and ID/Value were a touch
-       small to read at arm's length on the printed Small label. */
-    font-size: 24px; font-weight: 600;
-    color: #7a8a5a;
+       small to read at arm's length on the printed Small label.
+       S22: 24 -> 26 and the washed olive #7a8a5a -> Case's #2a3a18. The
+       pale olive on the orange gradient is the thing that reads worst in
+       print; Case fixed it and Wide had been left behind. */
+    font-size: 26px; font-weight: 600;
+    color: #2a3a18;
     font-family: 'Barlow Condensed', sans-serif;
     text-align: right; letter-spacing: 0.5px;
   }
   .rg-label .meta-val {
-    font-size: 24px; font-weight: 800;
+    /* S22: 24 -> 28 toward Case's 34. Held under Case for the same reason
+       as .iss — Wide keeps the ID row, so it pays for two meta rows. */
+    font-size: 28px; font-weight: 800;
     color: #0d0d0f;
     font-family: 'Noto Sans Mono', monospace;
   }
@@ -972,7 +993,9 @@ function ensureStylesInjected() {
   }
   .robot-badge { display: none; }
   /* Square: fill the empty bottom-right with the Robograder mascot when no price tag. */
-  .rg-label-square .robot-badge { display: block; position: absolute; right: 20px; bottom: 22px; width: 316px; }
+  /* S22: 316 -> 269 (-15%). Its head was clipping over the score box. The
+     bottom/right anchor is unchanged, so it simply shrinks in place. */
+  .rg-label-square .robot-badge { display: block; position: absolute; right: 20px; bottom: 22px; width: 269px; }
   .rg-label-square .robot-badge img { width: 100%; height: auto; display: block; }
   .rg-label-l .robot-badge {
     position: absolute;
@@ -1007,6 +1030,10 @@ function ensureStylesInjected() {
     text-align: center; font-size: 24px; line-height: 1; letter-spacing: 2px;
   }
   .rg-label-l .rg-num-wrap {
+    /* S22: nudged DOWN. ROBOGRADE + stars sit at the top of the box and the ±PM
+       is pinned at top:34px, so the flex-centred number crowded it. translateY
+       (not margin) leaves the centring maths untouched. */
+    transform: translateY(16px);
     display: inline-flex;
     line-height: 1;
   }
@@ -1365,7 +1392,11 @@ function ensureStylesInjected() {
   .rg-label-square .rg-num {
     /* S14: 122 → 130, matching the score-prominence pass on the other
        labels (proportionally smaller bump to suit the 220px box). */
-    font-size: 156px; font-weight: 900;
+    /* S22: 156 -> 172 (~10% up) and pushed down off the ±PM — it was sitting
+       high in the 256px box rather than optically centred. */
+    font-size: 172px; font-weight: 900;
+    transform: translateY(14px) scaleX(0.625);
+    transform-origin: center;
     color: #b8d820; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
@@ -1380,7 +1411,7 @@ function ensureStylesInjected() {
   .rg-label-square .rg-prec {
     position: absolute;
     top: 30px; right: 16px;
-    font-size: 34px; font-weight: 700;
+    font-size: 40px; font-weight: 700;   /* S22: +2pt-ish, was 34 — too small to read in print */
     color: #b8d820; opacity: 0.9;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
@@ -1409,9 +1440,9 @@ function ensureStylesInjected() {
     border-bottom: 1px solid #b0b89a;
   }
   .rg-label-square .ttl {
-    /* Narrower column now (~310px beside the score box), so 34px keeps
-       a typical title to 1-2 lines. */
-    font-size: 34px; font-weight: 900;
+    /* S22: 34 -> 46. Sized for legibility first; there is ample vertical room
+       below, so a long title wrapping to 2-3 lines is fine and expected. */
+    font-size: 46px; font-weight: 900;
     color: #0d0d0f; line-height: 1.05;
     font-family: 'Noto Sans Display', sans-serif;
     transform: scaleX(0.625);
@@ -1419,7 +1450,7 @@ function ensureStylesInjected() {
     word-wrap: break-word;
   }
   .rg-label-square .iss {
-    font-size: 24px; font-weight: 600;
+    font-size: 32px; font-weight: 600;   /* S22: was 24 */
     color: #333;
     font-family: 'Noto Sans Display', sans-serif;
     transform: scaleX(0.625);
@@ -1428,7 +1459,7 @@ function ensureStylesInjected() {
     margin-top: 4px;
   }
   .rg-label-square .prt {
-    font-size: 19px; color: #555544;
+    font-size: 25px; color: #555544;   /* S22: was 19 */
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 500;
     margin-top: 3px;
@@ -1443,13 +1474,13 @@ function ensureStylesInjected() {
     align-items: baseline;
   }
   .rg-label-square .meta-lbl {
-    font-size: 22px; font-weight: 600;
+    font-size: 27px; font-weight: 600;   /* S22: GRADED label, was 22 */
     color: #7a8a5a;
     font-family: 'Barlow Condensed', sans-serif;
     text-align: right; letter-spacing: 0.5px;
   }
   .rg-label-square .meta-val {
-    font-size: 22px; font-weight: 800;
+    font-size: 28px; font-weight: 800;   /* S22: grade date, was 22 */
     color: #0d0d0f;
     font-family: 'Noto Sans Mono', monospace;
   }
@@ -1563,6 +1594,8 @@ function ensureStylesInjected() {
     text-align: center; font-size: 37px; line-height: 1; letter-spacing: 3px;
   }
   .rg-label-large .rg-num-wrap {
+    /* S22: same drop as Case — the ±PM sits at top:56px here. */
+    transform: translateY(20px);
     display: inline-flex;
     line-height: 1;
   }
@@ -1627,15 +1660,25 @@ function ensureStylesInjected() {
     border-bottom: 1px solid #b0b89a;
   }
   .rg-label-large .ttl {
-    font-size: 64px; font-weight: 900;
-    color: #0d0d0f; line-height: 1.1;
+    /* S22: Large had fallen behind Case's readability pass — it is 1.5x
+       Case's height but its title was only 1.1x Case's size, so it read
+       SMALLER than the 4x1 label. 64 -> 80, line-height 1.1 -> 1.0, plus
+       Case's clamp (2 lines at 80 = 160px). Width check: info is 1064px
+       (704 with a price pad); at 80px scaleX(0.625) that is ~34 chars per
+       line (~22 with price), so two clamped lines hold any real title. */
+    font-size: 80px; font-weight: 900;
+    color: #0d0d0f; line-height: 1.0;
     font-family: 'Noto Sans Display', sans-serif;
     transform: scaleX(0.625);
     transform-origin: left center;
+    white-space: normal;
+    max-height: 160px;
+    overflow: hidden;
   }
   .rg-label-large .iss {
-    font-size: 42px; font-weight: 600;
-    color: #333;
+    /* S22: 42 -> 60, proportional to Case's 52 on a 1.5x-taller label. */
+    font-size: 60px; font-weight: 600;
+    color: #333; line-height: 1.0;
     font-family: 'Noto Sans Display', sans-serif;
     transform: scaleX(0.625);
     transform-origin: left center;
@@ -1654,13 +1697,16 @@ function ensureStylesInjected() {
     align-items: baseline;
   }
   .rg-label-large .meta-lbl {
-    font-size: 36px; font-weight: 600;
-    color: #7a8a5a;
+    /* S22: 36 -> 40 and #7a8a5a -> Case's #2a3a18, same print-legibility
+       fix applied to Wide. */
+    font-size: 40px; font-weight: 600;
+    color: #2a3a18;
     font-family: 'Barlow Condensed', sans-serif;
     text-align: right; letter-spacing: 0.7px;
   }
   .rg-label-large .meta-val {
-    font-size: 36px; font-weight: 800;
+    /* S22: 36 -> 44, proportional to Case's 34. */
+    font-size: 44px; font-weight: 800;
     color: #0d0d0f;
     font-family: 'Noto Sans Mono', monospace;
   }

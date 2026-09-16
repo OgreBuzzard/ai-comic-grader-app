@@ -3097,6 +3097,55 @@ const CAMERA_SLOT_ORIENTATION_RESTORATION = [ "portrait", "portrait", "landscape
 // Camera zoom for restoration slots (only exterior staples zoom in)
 const CAMERA_SLOT_ZOOM_RESTORATION = [ false, false, true, true, false, false, false, false ];
 
+// ── S22: SINGLE SOURCE OF TRUTH FOR THE PER-SLOT LENS DEFAULT ──────────────
+// Matt reported (3rd time) that Main's Back Cover and Interior still opened on
+// ZOOM IN. Root cause: TWO places decided the default lens and they disagreed.
+//   • camera init (_zoomDefault) followed the S25 spec — Main = WIDE.
+//   • cameraOpenSlot() carried a stale copy that forced idx 1 for
+//     kind "main" slots 0/1/2 AND for every "interior" slot but outer_edge.
+// The first slot of a session goes through init (correct), every slot AFTER it
+// goes through cameraOpenSlot (wrong) — which is exactly the symptom: Front was
+// fine, Back and Interior were zoomed. Previous fixes patched init only.
+// Both call sites now call this function. Do not re-derive the rule inline.
+//
+// S25 spec:
+//   Main (Front/Back/Interior/Spine)          -> WIDE
+//   Corner macros / Signature / Card (any)    -> ZOOM
+//   Full "interior": top_pages, bottom_pages,
+//     exterior_top_staple, exterior_bottom_staple -> ZOOM; all others WIDE
+//   Restoration: CAMERA_SLOT_ZOOM_RESTORATION
+// Android has no telephoto — idx 1 there is the WIDER lens — so Android never
+// takes the zoom default.
+function _slotWantsZoom(kind, slotIndex, isCard) {
+  const _android = !!(window.Capacitor && Capacitor.getPlatform && Capacitor.getPlatform() === "android");
+  if (_android) return false;
+  if (kind === "corner" || kind === "signature" || kind === "carddeep") return true;
+  if (isCard) return true;
+  if (kind === "main") return false;
+  if (kind === "interior") {
+    return slotIndex === fullSlotIndex("top_pages")
+        || slotIndex === fullSlotIndex("bottom_pages")
+        || slotIndex === fullSlotIndex("exterior_top_staple")
+        || slotIndex === fullSlotIndex("exterior_bottom_staple");
+  }
+  if (kind === "restoration") return !!CAMERA_SLOT_ZOOM_RESTORATION[slotIndex];
+  return false;
+}
+// Near-field focus is a SEPARATE question from lens choice: only true macro
+// slots get it. Card front/back/raking are zoomed but not macro.
+function _slotWantsMacroFocus(kind, slotIndex, isCard) {
+  if (kind === "corner" || kind === "signature") return true;
+  if (kind === "carddeep" || isCard) return slotIndex === 2 || slotIndex === 3;
+  if (kind === "interior") {
+    return slotIndex === fullSlotIndex("top_pages")
+        || slotIndex === fullSlotIndex("bottom_pages")
+        || slotIndex === fullSlotIndex("exterior_top_staple")
+        || slotIndex === fullSlotIndex("exterior_bottom_staple");
+  }
+  if (kind === "restoration") return !!CAMERA_SLOT_ZOOM_RESTORATION[slotIndex];
+  return false;
+}
+
 function _normTitleForFull(t) {
   if (!t) return "";
   return String(t).trim().toLowerCase().replace(/^the\s+/i, "").replace(/\s+/g, " ");
@@ -11769,9 +11818,31 @@ function openCropper(type, index) {
         // transition, so image #1 was scaled up with its right half pushed off-screen
         // while #2-4 (modal already settled) were fine. The delayed re-fit corrects
         // #1 and is idempotent for the rest.
+        // S22 (3rd attempt at the first-image bug — the previous two used
+        // resize(), which CANNOT fix this case):
+        //   Cropper.resize() bails out early when
+        //     containerData.width <= 200 || containerData.height <= 100
+        //   and it only re-renders at all when the container's measured size has
+        //   CHANGED since init. cameraFinish() removes .open from #camera-modal
+        //   and calls runCropperSequence() in the same task, so for capture #1 the
+        //   cropper modal is measured before the browser has laid it out — the
+        //   stage comes back at ~0px. Cropper stores that as containerData, scales
+        //   the image to it (hence "zoomed far in"), and then every resize() we
+        //   called afterwards hit the min-size guard and returned without doing
+        //   anything. Captures #2-4 were fine because the modal was already laid
+        //   out by then.
+        //   Fix is two-part: (1) render() instead of resize() — render() re-runs
+        //   initContainer() against the live DOM with no guard and no change
+        //   detection; (2) runCropperSequence() now yields real layout frames
+        //   before the first openCropper() so the measurement is right the first
+        //   time. resize() is kept only as a fallback for a Cropper build without
+        //   render() on the prototype.
         const _fitCrop = function() {
-          if (!_cropperInstance || typeof _cropperInstance.resize !== "function") return;
-          try { _cropperInstance.resize(); } catch (e) {}
+          if (!_cropperInstance) return;
+          try {
+            if (typeof _cropperInstance.render === "function") _cropperInstance.render();
+            else if (typeof _cropperInstance.resize === "function") _cropperInstance.resize();
+          } catch (e) {}
           if (_cropComicFB && _cropperInstance) {
             requestAnimationFrame(function() {
               try {
@@ -11787,6 +11858,10 @@ function openCropper(type, index) {
         };
         requestAnimationFrame(_fitCrop);
         setTimeout(_fitCrop, 180);
+        // S22: a third pass past the iOS safe-area settle. env(safe-area-inset-*)
+        // resolves late in a native WebView when a fullscreen modal closes, which
+        // changes #cropper-stage's padding after the 180ms pass. Idempotent.
+        setTimeout(_fitCrop, 450);
       }
     });
     let _lastCropTap = 0;
@@ -13601,13 +13676,10 @@ async function cameraOpen(state) {
       //   Corner macros -> zoom. Interior Front/Back (kind "interiorCover") -> WIDE (not in list).
       //   Full/"interior" slots: Top Edge (top_pages), Bottom Edge (bottom_pages) and BOTH
       //   exterior staples -> zoom; Outer Edge and Interior Staple -> WIDE.
-      const _interiorZoomSlot = _cameraState.kind === "interior" && (
-        _cameraState.current === fullSlotIndex("top_pages") ||
-        _cameraState.current === fullSlotIndex("bottom_pages") ||
-        _cameraState.current === fullSlotIndex("exterior_top_staple") ||
-        _cameraState.current === fullSlotIndex("exterior_bottom_staple"));
-      const _isZoomedRestorationSlot = _cameraState.kind === "restoration" && CAMERA_SLOT_ZOOM_RESTORATION[_cameraState.current];
-      const _zoomDefault = !isAndroid && (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _cameraState.kind === "carddeep" || _interiorZoomSlot || _isZoomedRestorationSlot) && lensOptions.length > 1;
+      // S22: rule lives in _slotWantsZoom() — see its comment. Do not inline it
+      // here again; the duplicate copy in cameraOpenSlot() is what kept Main's
+      // Back/Interior opening zoomed after two "fixes".
+      const _zoomDefault = _slotWantsZoom(_cameraState.kind, _cameraState.current, _cameraState.isCard) && lensOptions.length > 1;
       _cameraState.currentLensIdx = _zoomDefault ? 1 : 0;
       if (lensOptions.length > 0) {
         await switchToLens(_cameraState.currentLensIdx);
@@ -13871,16 +13943,13 @@ function cameraOpenSlot(slotIndex) {
   // S16: Re-evaluate zoom default for this slot
   const _slotLenses = _cameraState.lenses || [];
   if (_slotLenses.length > 1) {
-    const _isZI = _cameraState.kind === "interior" && slotIndex !== fullSlotIndex("outer_edge");
-    const _isZR = _cameraState.kind === "restoration" && CAMERA_SLOT_ZOOM_RESTORATION[slotIndex];
-    // All card images (Main after detection + every Deep slot) default to the
-    // zoomed-in (max optical) lens. Near-macro focus is applied only on the two
-    // macro slots (2,3); full-card slots (front/back/raking) keep normal focus.
-    const _isCardAny = _cameraState.isCard || _cameraState.kind === "carddeep";
-    const _isCardMacroSlot = _isCardAny && (slotIndex === 2 || slotIndex === 3);
-    const _isMainZoomSlot = _cameraState.kind === "main" && (slotIndex === 0 || slotIndex === 1 || slotIndex === 2);
-    const _zd = (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZI || _isZR || _isCardAny || _isMainZoomSlot);
-    const _macroFocus = (_cameraState.kind === "corner" || _cameraState.kind === "signature" || _isZI || _isZR || _isCardMacroSlot);
+    // S22: was a stale hand-rolled copy of the lens rule that forced ZOOM IN on
+    // kind "main" slots 0/1/2 (Front/Back/Interior) and on every "interior" slot
+    // except outer_edge. Both contradicted the S25 spec that camera init already
+    // followed, and because init only runs for the FIRST slot, this copy is what
+    // the user actually saw from the second photo onward. Now shares the rule.
+    const _zd = _slotWantsZoom(_cameraState.kind, slotIndex, _cameraState.isCard);
+    const _macroFocus = _slotWantsMacroFocus(_cameraState.kind, slotIndex, _cameraState.isCard);
     const targetIdx = _zd ? 1 : 0;
     if (_cameraState.currentLensIdx !== targetIdx) {
       _cameraState.currentLensIdx = targetIdx;
@@ -14130,8 +14199,20 @@ async function cameraFinish() {
   await runCropperSequence(captures, kind);
 }
 
+// S22: yield until the browser has actually laid out and painted. cameraFinish()
+// closes the camera modal and calls this synchronously, so without this the first
+// cropper open measures a stage that has no box yet (see the _fitCrop note in
+// openCropper). Two rAFs = one committed layout+paint; the 60ms timeout covers
+// WebViews that coalesce rAFs while a fullscreen view is tearing down.
+function _afterLayout() {
+  return new Promise(resolve => {
+    requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 60)));
+  });
+}
+
 async function runCropperSequence(captures, kind) {
   const ordered = [ ...captures ];
+  let _firstCrop = true;
   for (const cap of ordered) {
     if (kind === "uvfront") {
       const r = [ ...formData.restorationImages || [] ];
@@ -14183,6 +14264,7 @@ async function runCropperSequence(captures, kind) {
       || kind === "interiorCover"
       || (kind === "interior" && _edgeCropSlots.includes(cap.slot));
     if (!_wantsAutoCrop) continue;
+    if (_firstCrop) { await _afterLayout(); _firstCrop = false; }
     await new Promise(resolve => {
       _cropperSequenceResolve = resolve;
       openCropper(kind, cap.slot);
