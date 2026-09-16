@@ -223,18 +223,25 @@ const OPTIONS_KEY = 'robograder.labelOptions.v1';
 // 3.5"). The original 'small' is now surfaced in the UI as "Small R" but
 // the stored key stays 'small' for backward compatibility with users who
 // already picked it.
-const VALID_SIZES = ['small-l', 'card', 'square'];
+// S22: Large ('large') and Wide ('small') brought back for the Baltimore show.
+// Both formats were still fully defined in LABEL_FORMATS — only the UI and this
+// allow-list had them switched off.
+//   Case  ('small-l') — graded books in hard cases; has the fold-over wrap strip
+//   Large ('large')   — goes over a CGC label
+//   Wide  ('small')   — regular bagged-and-boarded comics
+//   Square('square')  — corner placement, leaves the cover visible
+const VALID_SIZES = ['small-l', 'small', 'large', 'card', 'square'];
 
 function readOptions() {
   try {
     const raw = localStorage.getItem(OPTIONS_KEY);
-    if (!raw) return { size: 'square', priceTag: false, includePrice: false };
+    if (!raw) return { size: 'small-l', priceTag: false, includePrice: false };
     const o = JSON.parse(raw);
     return {
       // Validated against the known set; unknown values fall back to square
       // (the new default). Pre-S12-May-6 stored values of 'small' or 'large'
       // are preserved as-is for users who'd already chosen one.
-      size: VALID_SIZES.includes(o.size) ? o.size : 'square',
+      size: VALID_SIZES.includes(o.size) ? o.size : 'small-l',
       priceTag: !!o.priceTag,
       // S12: includePrice controls whether the comic's askingPrice is rendered
       // INSIDE the price pad. Only meaningful when priceTag is also true and
@@ -242,7 +249,7 @@ function readOptions() {
       // shown — see renderModal.
       includePrice: !!o.includePrice
     };
-  } catch { return { size: 'square', priceTag: false, includePrice: false }; }
+  } catch { return { size: 'small-l', priceTag: false, includePrice: false }; }
 }
 
 function writeOptions(opts) {
@@ -557,6 +564,11 @@ function ensureStylesInjected() {
     padding: 2px;
     gap: 0;
   }
+  /* S22: with four size options (Case / Large / Wide / Square) the group gets
+     its own row and the price toggle moves to the line below. */
+  .lvm-toggle-row-sizes { justify-content: center; }
+  .lvm-toggle-row-sizes .lvm-segment-group { width: 100%; justify-content: stretch; }
+  .lvm-toggle-row-sizes .lvm-segment { flex: 1 1 0; text-align: center; }
   .lvm-segment {
     font-family: 'Barlow Condensed', sans-serif;
     font-size: 13px; font-weight: 600;
@@ -606,7 +618,7 @@ function ensureStylesInjected() {
   /* ── Label visual styles (used in both preview AND print sheet) ──────── */
   .rg-label {
     width: 1152px; height: 288px;
-    background: linear-gradient(180deg, #b58a5f 0%, #d6b391 38%, #eedbc5 100%);
+    background: linear-gradient(180deg, #e07e00 0%, #f79a10 38%, #ffc255 100%);
     border: 1px solid #8a9a6a;
     border-radius: 4px;
     position: relative;
@@ -849,7 +861,7 @@ function ensureStylesInjected() {
                        a .face element positioned at top:96px so the
                        children's coordinate space is unchanged. */
     width: 1152px; height: 384px;
-    background: linear-gradient(180deg, #b58a5f 0%, #d6b391 38%, #eedbc5 100%);
+    background: linear-gradient(180deg, #e07e00 0%, #f79a10 38%, #ffc255 100%);
     border: 1px solid #8a9a6a;
     border-radius: 4px;
     position: relative;
@@ -866,7 +878,7 @@ function ensureStylesInjected() {
     left: 0; right: 0;
     top: 90px;  /* face top sits at the fold line so its gradient meets it */
     height: 294px;
-    background: linear-gradient(180deg, #b58a5f 0%, #d6b391 38%, #eedbc5 100%);
+    background: linear-gradient(180deg, #e07e00 0%, #f79a10 38%, #ffc255 100%);
   }
   /* Fold guide: thin horizontal line at y=84 (1.04" from bottom), 2pt
      (=8px at 288 DPI) tall, centered in the 0.083" fold zone. Tells the
@@ -899,7 +911,7 @@ function ensureStylesInjected() {
     font-family: 'Barlow Condensed', sans-serif;
     overflow: hidden;
     white-space: nowrap;
-    background: linear-gradient(180deg, #b58a5f 0%, #d6b391 45%, #eedbc5 100%);
+    background: linear-gradient(180deg, #e07e00 0%, #f79a10 45%, #ffc255 100%);
   }
   .rg-label-l .wrap-strip .ws-score {
     flex: 0 0 auto;
@@ -1135,7 +1147,7 @@ function ensureStylesInjected() {
      FRONT (score + identity), top half = BACK (QR + robot, rotated 180). */
   .rg-label-card {
     width: 756px; height: 576px;
-    background: linear-gradient(180deg, #eedbc5 0%, #b58a5f 43.75%, #b58a5f 56.25%, #eedbc5 100%);
+    background: linear-gradient(180deg, #ffc255 0%, #e07e00 43.75%, #e07e00 56.25%, #ffc255 100%);
     border: 1px solid #8a9a6a; border-radius: 4px;
     position: relative; overflow: hidden; box-sizing: border-box;
     font-family: 'Barlow Condensed', sans-serif;
@@ -1318,7 +1330,7 @@ function ensureStylesInjected() {
      so the five stacked fields fit even for 2-line titles. */
   .rg-label-square {
     width: 576px; height: 576px;
-    background: linear-gradient(180deg, #b58a5f 0%, #d6b391 38%, #eedbc5 100%);
+    background: linear-gradient(180deg, #e07e00 0%, #f79a10 38%, #ffc255 100%);
     border: 1px solid #8a9a6a;
     border-radius: 8px;
     position: relative;
@@ -1522,7 +1534,7 @@ function ensureStylesInjected() {
        layout just becomes 360px narrower with everything still 18px
        clear of the new right edge. 1800px = 6.25" at 288 DPI. */
     width: 1800px; height: 432px;
-    background: linear-gradient(180deg, #b58a5f 0%, #d6b391 38%, #eedbc5 100%);
+    background: linear-gradient(180deg, #e07e00 0%, #f79a10 38%, #ffc255 100%);
     border: 1px solid #8a9a6a;
     border-radius: 6px;
     position: relative;
@@ -1793,7 +1805,7 @@ function renderModal(modal, comic, allItems) {
   const _isCardItem = !!(comic && comic.type === 'card');
   const sizeSegments = _isCardItem
     ? `<div class="lvm-segment-group">${seg('card', 'Card')}</div>`
-    : `<div class="lvm-segment-group">${seg('small-l', 'Comic')}${seg('square', 'Square')}</div>`;
+    : `<div class="lvm-segment-group">${seg('small-l', 'Case')}${seg('large', 'Large')}${seg('small', 'Wide')}${seg('square', 'Square')}</div>`;
 
   const pricePillClass = opts.priceTag ? 'lvm-pill on' : 'lvm-pill';
 
@@ -1844,8 +1856,11 @@ function renderModal(modal, comic, allItems) {
           <div class="lvm-subtitle">${subtitleText}</div>
         </div>
       </div>
-      <div class="lvm-toggle-row">
+      <div class="lvm-toggle-row lvm-toggle-row-sizes">
         ${sizeSegments}
+      </div>
+      <div class="lvm-toggle-row lvm-toggle-row-secondary">
+        <div></div>
         <div class="lvm-toggle" data-action="toggle-price" role="button" tabindex="0">
           <span class="lvm-toggle-label">Include price tag</span>
           <span class="${pricePillClass}"></span>
@@ -2253,7 +2268,7 @@ async function generatePDF(comics, modal) {
     // can capture each. Each box is sized to the format's pixel dimensions.
     let labelsHTML = '';
     for (let i = 0; i < comics.length; i++) {
-      labelsHTML += `<div class="pdf-label-box" data-idx="${i}" style="width:${fmt.pixelW}px;height:${fmt.pixelH}px;display:block;background:linear-gradient(180deg, #b58a5f 0%, #d6b391 38%, #eedbc5 100%);">${renderLabelMarkup(comics[i], opts)}</div>`;
+      labelsHTML += `<div class="pdf-label-box" data-idx="${i}" style="width:${fmt.pixelW}px;height:${fmt.pixelH}px;display:block;background:linear-gradient(180deg, #e07e00 0%, #f79a10 38%, #ffc255 100%);">${renderLabelMarkup(comics[i], opts)}</div>`;
     }
     offscreen.innerHTML = labelsHTML;
 
@@ -2297,7 +2312,7 @@ async function generatePDF(comics, modal) {
       const PAGE_W_IN = 8.5;
       const dpi = fmt.pixelW / fmt.labelW;          // 288
       const bandEl = document.createElement('div');
-      bandEl.style.cssText = `width:${Math.round(PAGE_W_IN * dpi)}px;height:${fmt.pixelH}px;background:linear-gradient(180deg, #b58a5f 0%, #d6b391 38%, #eedbc5 100%);`;
+      bandEl.style.cssText = `width:${Math.round(PAGE_W_IN * dpi)}px;height:${fmt.pixelH}px;background:linear-gradient(180deg, #e07e00 0%, #f79a10 38%, #ffc255 100%);`;
       offscreen.appendChild(bandEl);
       try {
         const bandCanvas = await window.html2canvas(bandEl, { scale: 1, backgroundColor: '#d4d9be', logging: false });
@@ -2611,7 +2626,7 @@ function renderLabelMarkup(comic, opts) {
   // includePrice (S12 May 6): when true AND comic has an askingPrice, the
   // value renders inside the price pad. Otherwise the pad shows the faint
   // "Price" placeholder for handwriting.
-  opts = opts || { size: 'square', priceTag: false, includePrice: false };
+  opts = opts || { size: 'small-l', priceTag: false, includePrice: false };
   const isLarge  = opts.size === 'large';
   const isSquare = opts.size === 'square';
   const isSmallL = opts.size === 'small-l';

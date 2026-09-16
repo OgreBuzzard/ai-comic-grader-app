@@ -854,7 +854,8 @@ Rules:
           // when they move. Matt reads the admin LOGS tab to compare passes, and
           // a Deep that left them unchanged previously logged nothing at all —
           // indistinguishable from a Deep that never produced them.
-          roboScore: (parsed && parsed.roboGrade && parsed.roboGrade.score != null) ? parsed.roboGrade.score : null,
+          rgScore: (parsed && parsed.roboGrade && parsed.roboGrade.score != null) ? parsed.roboGrade.score : null,
+          precisionMod: (parsed && parsed.roboGrade && parsed.roboGrade.confidenceRange) ?? null,
           frontScore: (parsed && parsed.roboGrade) ? parsed.roboGrade.frontScore ?? null : null,
           backScore: (parsed && parsed.roboGrade) ? parsed.roboGrade.backScore ?? null : null,
           spineScore: (parsed && parsed.roboGrade) ? parsed.roboGrade.spineScore ?? null : null,
@@ -1008,7 +1009,8 @@ Rules:
           // when they move. Matt reads the admin LOGS tab to compare passes, and
           // a Deep that left them unchanged previously logged nothing at all —
           // indistinguishable from a Deep that never produced them.
-          roboScore: (parsed && parsed.roboGrade && parsed.roboGrade.score != null) ? parsed.roboGrade.score : null,
+          rgScore: (parsed && parsed.roboGrade && parsed.roboGrade.score != null) ? parsed.roboGrade.score : null,
+          precisionMod: (parsed && parsed.roboGrade && parsed.roboGrade.confidenceRange) ?? null,
           frontScore: (parsed && parsed.roboGrade) ? parsed.roboGrade.frontScore ?? null : null,
           backScore: (parsed && parsed.roboGrade) ? parsed.roboGrade.backScore ?? null : null,
           spineScore: (parsed && parsed.roboGrade) ? parsed.roboGrade.spineScore ?? null : null,
@@ -1044,7 +1046,8 @@ Rules:
           // when they move. Matt reads the admin LOGS tab to compare passes, and
           // a Deep that left them unchanged previously logged nothing at all —
           // indistinguishable from a Deep that never produced them.
-          roboScore: (parsed && parsed.roboGrade && parsed.roboGrade.score != null) ? parsed.roboGrade.score : null,
+          rgScore: (parsed && parsed.roboGrade && parsed.roboGrade.score != null) ? parsed.roboGrade.score : null,
+          precisionMod: (parsed && parsed.roboGrade && parsed.roboGrade.confidenceRange) ?? null,
           frontScore: (parsed && parsed.roboGrade) ? parsed.roboGrade.frontScore ?? null : null,
           backScore: (parsed && parsed.roboGrade) ? parsed.roboGrade.backScore ?? null : null,
           spineScore: (parsed && parsed.roboGrade) ? parsed.roboGrade.spineScore ?? null : null,

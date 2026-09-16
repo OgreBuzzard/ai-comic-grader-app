@@ -2197,12 +2197,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.15";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.16";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.15");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.16");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -3502,7 +3502,10 @@ function buildListPG(c) {
   if (!val) return "";
   const v = String(val).includes(".") ? val : parseFloat(val).toFixed(1);
   const pgBg = c.couponQualified ? "#2e7d46" : "#1a5fa8";
-  return `<div style="flex-shrink:0;align-self:center;background:${pgBg};border-radius:7px;width:40px;height:32px;display:flex;align-items:center;justify-content:center"><div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.66);display:inline-block;font-weight:800;font-size:24px;line-height:1;color:#fff">${v}</div></div>`;
+  // S22: was align-self:center, which put the box mid-row and straight under the
+  // print icon in the top-right corner. Anchored to the BOTTOM instead, so its
+  // base lines up with the bottom of the cover thumbnail and the icon is clear.
+  return `<div style="flex-shrink:0;align-self:flex-end;background:${pgBg};border-radius:7px;width:40px;height:32px;display:flex;align-items:center;justify-content:center"><div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.66);display:inline-block;font-weight:800;font-size:24px;line-height:1;color:#fff">${v}</div></div>`;
 }
 
 function buildStackedGradePair(officialBadge, aiBadge) {
@@ -7210,13 +7213,12 @@ const _BATCH_ASSET = n => "https://raw.githubusercontent.com/OgreBuzzard/ai-comi
 const BATCH_DEFAULT_BOX = _BATCH_ASSET("default_box_small.webp");
 const BATCH_SUCCESS_BOX = _BATCH_ASSET("success_box_small.webp");
 const BATCH_FAILURE_BOX = _BATCH_ASSET("failure_box_small.webp");
-// Split-flap word strip that sits ON TOP of the box art, in the same 206x68
-// footprint. Frame 1 reads MAIN, frame 10 reads DEEP; 2-9 are the flip.
-const BATCH_WORD_FRAMES = Array.from({ length: 10 }, (_, i) => _BATCH_ASSET(`Main_Deep${i + 1}.webp`));
-const BATCH_FLIP_MS = 400;   // total MAIN -> DEEP flip
+// S22: the MAIN -> DEEP split-flap (Main_Deep1..10) was tried and REMOVED.
+// Matt: it read as incoherent chaos — a row going green, then grey, then green
+// again made five independent judgements look like a malfunction. The artwork's
+// labels are back to GRADE 1-5 and a row is simply grey until its Deep lands.
 (function preloadBatchArt() {
   [BATCH_OVERLAY_BG, BATCH_DEFAULT_BOX, BATCH_SUCCESS_BOX, BATCH_FAILURE_BOX]
-    .concat(BATCH_WORD_FRAMES)
     .forEach(u => { const i = new Image; i.src = u; });
 })();
 
@@ -7255,37 +7257,39 @@ function mountBatchTracker(n) {
              width:${BATCH_BTN_WIDTH_PCT}%;height:${BATCH_BTN_HEIGHT_PCT}%;
              background-image:url('${BATCH_DEFAULT_BOX}');
              background-size:100% 100%;background-repeat:no-repeat;
-             pointer-events:none;"></div>` +
-      // The MAIN/DEEP word, same footprint, sitting on top of the box art. It
-      // starts on frame 1 (MAIN) and flips to frame 10 (DEEP) when that pass's
-      // Main lands. The 1-5 numerals live in the overlay artwork.
-      `<img id="batch-word-${i + 1}" src="${BATCH_WORD_FRAMES[0]}" alt=""
-        style="position:absolute;left:${BATCH_BTN_LEFT_PCT}%;top:${top}%;
-               width:${BATCH_BTN_WIDTH_PCT}%;height:${BATCH_BTN_HEIGHT_PCT}%;
-               pointer-events:none;" />`;
+             pointer-events:none;"></div>`;
     // default_box_small / success_box_small are ~2% translucent across their
     // whole surface (peak alpha 251 of 255), and the artwork layer sits ABOVE
     // them at z-index 14, so the recess tint dims them further. The full-size
     // Main/Deep/Full art doesn't have that problem. Nothing here sets opacity.
     // Two result boxes per row: RG then PG. These go in the OVERLAY layer, not
     // the boxes layer — see the resultsHtml note below.
-    ["rg", "pg"].forEach((kind, k) => {
-      resultsHtml += `<div id="batch-${kind}-${i + 1}"
+    // Left column = RG, styled like the RG score box: near-black ground,
+    // chartreuse numerals. Right column = PG, styled like the CGC box: blue
+    // ground, white numerals. (The mockup had both blue — that was placement
+    // only, not styling.)
+    [
+      { kind: "rg", bg: "#0f1a05", border: "#3a5010", ink: "#b8d820" },
+      { kind: "pg", bg: "#2a5a8a", border: "#4a7fb5", ink: "#ffffff" }
+    ].forEach((c, k) => {
+      resultsHtml += `<div id="batch-${c.kind}-${i + 1}"
         style="position:absolute;left:${BATCH_RES_LEFTS_PCT[k]}%;top:${top}%;
                width:${BATCH_RES_W_PCT}%;height:${BATCH_BTN_HEIGHT_PCT}%;
-               background:#1d4a7a;border:1px solid #3f7fb5;border-radius:6px;
+               background:${c.bg};border:1.5px solid ${c.border};border-radius:7px;
                display:flex;align-items:center;justify-content:center;
-               box-shadow:inset 0 1px 3px rgba(0,0,0,0.45);
+               box-shadow:0 1px 4px rgba(0,0,0,0.45);
+               transition:box-shadow .2s ease;
                pointer-events:none;">
           <span style="font-family:'League Spartan',system-ui,sans-serif;font-weight:900;
                        transform:scaleX(0.66);transform-origin:center;display:inline-block;
-                       font-size:clamp(13px,7.4vw,30px);color:#dcefff;
-                       line-height:1;opacity:0;transition:opacity .3s ease"></span>
+                       font-size:clamp(13px,7.4vw,30px);color:${c.ink};
+                       line-height:1;"></span>
         </div>`;
     });
   }
   const overlayHtml = `\n    <img src="${BATCH_OVERLAY_BG}" alt=""\n         style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;" />${resultsHtml}`;
   window.RobograderScan.slideOverlayIntoChest(overlayHtml, boxesHtml);
+  seedBatchRows(n);
   if (window._batchGridTimer) clearTimeout(window._batchGridTimer);
   window._batchGridTimer = setTimeout(() => {
     window._batchGridTimer = null;
@@ -7294,20 +7298,18 @@ function mountBatchTracker(n) {
   }, 1200);
 }
 
-// ── Per-row sequence: MAIN -> score -> flip to DEEP -> score ────────────────
-// Each row runs its OWN independent sequence the moment that pass's data
-// arrives, so rows land out of order. That is deliberate (Matt): it reads as
-// five separate judgements rather than one scripted reveal.
+// ── Per-row sequence ────────────────────────────────────────────────────────
+// Rows start grey with their score boxes seeded at 0 / 0.0. When a pass's DEEP
+// lands, that row turns green and its two scores count up to the final values,
+// then pulse with a white outline — the same landing beat the score boxes at
+// the bottom use. Rows advance independently, so they finish out of order; that
+// is the point, not a glitch.
 //
-//   grey + MAIN   -> pass starts
-//   green + MAIN  -> its Main lands; RG and PG count up, then white-flash
-//   flip 1..10    -> MAIN becomes DEEP, split-flap, 400ms
-//   grey + DEEP   -> its Deep runs; the score boxes HOLD the Main values
-//   green + DEEP  -> its Deep lands; the scores revise to the final grade
-const _batchRowState = {};   // pass -> 'main' | 'mainDone' | 'deep' | 'done' | 'error'
+// The MAIN->DEEP split-flap that briefly lived here is GONE (Matt): a row going
+// green, grey, then green again made the panel read as malfunctioning.
+const _batchRowState = {};   // pass -> 'pending' | 'done' | 'error'
 
 function _batchBoxEl(pass) { return document.getElementById("batch-box-" + pass); }
-function _batchWordEl(pass) { return document.getElementById("batch-word-" + pass); }
 
 function _batchSetBox(pass, which) {
   const el = _batchBoxEl(pass);
@@ -7316,49 +7318,57 @@ function _batchSetBox(pass, which) {
   el.style.backgroundImage = "url('" + url + "')";
 }
 
-// Split-flap MAIN -> DEEP. Ten frames across BATCH_FLIP_MS.
-function _batchFlipWord(pass) {
-  return new Promise(resolve => {
-    const el = _batchWordEl(pass);
-    if (!el) return resolve();
-    const step = Math.max(20, Math.round(BATCH_FLIP_MS / BATCH_WORD_FRAMES.length));
-    let i = 1;
-    const tick = () => {
-      if (i >= BATCH_WORD_FRAMES.length) { el.src = BATCH_WORD_FRAMES[BATCH_WORD_FRAMES.length - 1]; return resolve(); }
-      el.src = BATCH_WORD_FRAMES[i++];
-      setTimeout(tick, step);
-    };
-    setTimeout(tick, step);
-  });
+// PG follows CGC's convention: whole grades carry the .0 (4 -> 4.0).
+function _batchPgText(v) {
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n.toFixed(1) : "";
 }
 
-// Count a result box up/down to a value and flash it white, matching the
-// reveal the other assessment types use.
-function _batchAnimateVal(pass, kind, text) {
+function _batchPaint(pass, kind, text) {
   const box = document.getElementById(`batch-${kind}-${pass}`);
-  if (!box) return Promise.resolve();
-  const sp = box.firstElementChild;
-  if (!sp) return Promise.resolve();
-  if (text && window.RoboScoreV3 && window.RoboScoreV3.gradeParts) {
+  const sp = box && box.firstElementChild;
+  if (!sp) return;
+  const v = text == null ? "" : String(text);
+  if (v && window.RoboScoreV3 && window.RoboScoreV3.gradeParts && kind === "rg") {
     try {
-      const p = window.RoboScoreV3.gradeParts(String(text));
+      const p = window.RoboScoreV3.gradeParts(v);
       sp.innerHTML = p.frac ? `${p.whole}<span style="font-size:0.8em">.</span>${String(p.frac).slice(1)}` : String(p.whole);
-    } catch (e) { sp.textContent = String(text); }
-  } else {
-    sp.textContent = text == null ? "" : String(text);
+      return;
+    } catch (e) {}
   }
-  sp.style.opacity = text ? "1" : "0";
+  // PG keeps its decimal point at the same reduced size as every other score box.
+  const m = /^(\d+)\.(\d)$/.exec(v);
+  sp.innerHTML = m ? `${m[1]}<span style="font-size:0.8em">.</span>${m[2]}` : v;
+}
+
+// Seed every box at 0 / 0.0 as the tracker mounts.
+function seedBatchRows(n) {
+  for (let i = 1; i <= (n || 5); i++) {
+    _batchPaint(i, "rg", "0");
+    _batchPaint(i, "pg", "0.0");
+  }
+}
+
+// Count from 0 to the final value, then flash a white outline.
+function _batchCountUp(pass, kind, finalText) {
   return new Promise(resolve => {
-    // White flash, same as popResultBadge's landing beat.
-    const prevColor = sp.style.color;
-    sp.style.transition = "color .12s ease, text-shadow .12s ease";
-    sp.style.color = "#ffffff";
-    sp.style.textShadow = "0 0 10px rgba(255,255,255,.95)";
-    setTimeout(() => {
-      sp.style.color = prevColor || "#dcefff";
-      sp.style.textShadow = "none";
-      resolve();
-    }, 260);
+    const box = document.getElementById(`batch-${kind}-${pass}`);
+    if (!box) return resolve();
+    const target = parseFloat(finalText);
+    if (!Number.isFinite(target)) { _batchPaint(pass, kind, finalText); return resolve(); }
+    const DUR = 900, t0 = performance.now();
+    const fmt = v => kind === "pg" ? v.toFixed(1) : (Math.round(v * 2) / 2).toString();
+    const step = now => {
+      const k = Math.min(1, (now - t0) / DUR);
+      const eased = 1 - Math.pow(1 - k, 3);
+      _batchPaint(pass, kind, fmt(Math.round(target * eased * 2) / 2));
+      if (k < 1) return requestAnimationFrame(step);
+      _batchPaint(pass, kind, kind === "pg" ? _batchPgText(finalText) : String(finalText));
+      // White-outline pulse, matching the bottom score boxes' landing.
+      box.style.boxShadow = "0 0 0 2.5px #ffffff, 0 0 12px rgba(255,255,255,.85)";
+      setTimeout(() => { box.style.boxShadow = "0 1px 4px rgba(0,0,0,0.45)"; resolve(); }, 420);
+    };
+    requestAnimationFrame(step);
   });
 }
 
@@ -7378,40 +7388,23 @@ function _batchV3Label(p, rawScore) {
   } catch (e) { return ""; }
 }
 
-// Called on every status poll with that pass's current slot. Drives the row
-// forward through the states above; safe to call repeatedly with the same data.
+// Called on every poll with that pass's slot. Idempotent.
 async function advanceBatchRow(pass, p) {
   if (!p) return;
-  const st = _batchRowState[pass] || "main";
+  const st = _batchRowState[pass] || "pending";
+  if (st !== "pending") return;
 
-  if (p.stage === "error" && st !== "error") {
+  if (p.stage === "error") {
     _batchRowState[pass] = "error";
     _batchSetBox(pass, "failure");
     return;
   }
-
-  // Main has landed (the worker flips the slot to 'deep' once its Main returns).
-  if (st === "main" && (p.stage === "deep" || p.stage === "done") && typeof p.mainRG === "number") {
-    _batchRowState[pass] = "mainDone";
-    _batchSetBox(pass, "success");
-    // Quantize from MAIN's own subscores, not Deep's (which don't exist yet).
-    const _mainShape = { subscores: p.mainSubscores, pq: p.mainPq, pm: p.mainPm };
-    await Promise.all([
-      _batchAnimateVal(pass, "rg", _batchV3Label(_mainShape, p.mainRG) || ""),
-      _batchAnimateVal(pass, "pg", p.mainGrade || "")
-    ]);
-    await _batchFlipWord(pass);          // MAIN -> DEEP
-    _batchSetBox(pass, "default");       // grey while Deep runs; scores HOLD
-    _batchRowState[pass] = "deep";
-  }
-
-  // Deep has landed.
-  if ((_batchRowState[pass] === "deep" || _batchRowState[pass] === "mainDone") && p.stage === "done" && typeof p.rg === "number") {
+  if (p.stage === "done" && typeof p.rg === "number") {
     _batchRowState[pass] = "done";
-    _batchSetBox(pass, "success");       // green, and it stays green
+    _batchSetBox(pass, "success");
     await Promise.all([
-      _batchAnimateVal(pass, "rg", _batchV3Label(p, p.rg) || ""),
-      _batchAnimateVal(pass, "pg", p.grade || "")
+      _batchCountUp(pass, "rg", _batchV3Label(p, p.rg) || "0"),
+      _batchCountUp(pass, "pg", _batchPgText(p.grade) || "0.0")
     ]);
   }
 }
@@ -7447,7 +7440,7 @@ function mountBatchResults(summary) {
     <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;">
       <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badges}</div>
       <div style="position:relative;width:100%;display:flex;align-items:center;justify-content:center;min-height:22px;">${pqHtml}</div>
-      <button id="assess-complete-btn" style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#2f9e52;color:#fff;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">COMPLETE</button>
+      <button id="assess-complete-btn" style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#3a9ee0;color:#fff;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">COMPLETE</button>
     </div>`;
   window.RobograderScan.slideResultsIntoPanel(html);
   const rgEl = document.getElementById("batch-val-rg");
@@ -8329,7 +8322,7 @@ function mountResults(cgc, psa) {
     }
     if (hgUnlocked) {
       btn.innerHTML = `<div style="font-size:14px;font-weight:800;letter-spacing:1.5px;line-height:1.2">DEEP ASSESSMENT</div><div style="font-size:12px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
-      btn.style.background = "#2f9e52";
+      btn.style.background = "#3a9ee0";
       btn.style.color = "#fff";
       btn.style.textAlign = "center";
     } else if (isPostDeepRun) {
@@ -8349,18 +8342,18 @@ function mountResults(cgc, psa) {
       const _fullAlreadyRun = isFullAssessmentComplete(cgc) || isFullAssessmentComplete(formData) || !!(formData && formData.fullUnlocked);
       if (_fullEligible && !_fullAlreadyRun) {
         btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">FULL ASSESSMENT</div><div style="font-size:12px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
-        btn.style.background = "#2f9e52";
+        btn.style.background = "#3a9ee0";
         btn.style.color = "#fff";
         btn.style.textAlign = "center";
       } else {
         btn.innerHTML = "Complete";
-        btn.style.background = "#2f9e52";
+        btn.style.background = "#3a9ee0";
         btn.style.color = "#fff";
         btn.style.textAlign = "center";
       }
     } else if (hgAlreadyRun) {
       btn.innerHTML = `<div style="font-size:13px;font-weight:800;letter-spacing:2px;line-height:1.2">COMPLETE</div>`;
-      btn.style.background = "#2f9e52";
+      btn.style.background = "#3a9ee0";
       btn.style.color = "#fff";
       btn.style.textAlign = "center";
     } else if (typeof hasIdentifiedSignatures === "function" && hasIdentifiedSignatures(cgc && cgc._roboGrade ? {
@@ -8377,7 +8370,7 @@ function mountResults(cgc, psa) {
       btn.style.textAlign = "center";
     } else {
       btn.innerHTML = "COMPLETE";
-      btn.style.background = "#2f9e52";
+      btn.style.background = "#3a9ee0";
       btn.style.color = "#fff";
     }
     btn.disabled = false;
@@ -10833,7 +10826,7 @@ function mountCardResults(rec) {
   const _rgColCard = (window.RG_V3_DISPLAY && window.RoboScoreV3) ? "#b8d820" : "#aaee30";
   if (roboScore != null) badges += badge("#0f1a05", _rgColCard, "0", "RG", "1.5px solid #3a5010", "anim-val-robo-card");
   if (psa) badges += badge("#b91c1c", "#ffffff", psa, "PSA", "", "anim-val-psa-card");
-  const html = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:10px;">\n      <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badges}</div>\n      <button id="assess-complete-btn" style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#2f9e52;color:#fff;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">COMPLETE</button>\n    </div>`;
+  const html = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:10px;">\n      <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badges}</div>\n      <button id="assess-complete-btn" style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#3a9ee0;color:#fff;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">COMPLETE</button>\n    </div>`;
   window.RobograderScan.slideResultsIntoPanel(html);
   // Animate the RG count-up, then pop/glow both badges when the final score
   // lands — mirrors the comic results reveal (mountResults) so cards get the
@@ -11242,7 +11235,7 @@ function showGateExplanationPopup() {
   const popup = document.createElement("div");
   popup.id = "gate-explanation-popup";
   popup.style.cssText = "position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:20px;";
-  popup.innerHTML = `\n    <div style="background:#fff;border-radius:14px;padding:24px 22px;max-width:380px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,0.3)">\n      <div style="font-size:18px;font-weight:900;color:#1a1008;letter-spacing:1px;text-align:center;margin-bottom:10px">${data.label}</div>\n      ${bodyHtml}\n      ${lockoutHtml}\n      <button id="gate-explanation-okay" style="margin-top:18px;width:100%;height:46px;background:#2f9e52;color:#fff;border:none;font-size:15px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px">OKAY</button>\n    </div>`;
+  popup.innerHTML = `\n    <div style="background:#fff;border-radius:14px;padding:24px 22px;max-width:380px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,0.3)">\n      <div style="font-size:18px;font-weight:900;color:#1a1008;letter-spacing:1px;text-align:center;margin-bottom:10px">${data.label}</div>\n      ${bodyHtml}\n      ${lockoutHtml}\n      <button id="gate-explanation-okay" style="margin-top:18px;width:100%;height:46px;background:#3a9ee0;color:#fff;border:none;font-size:15px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px">OKAY</button>\n    </div>`;
   document.body.appendChild(popup);
   document.getElementById("gate-explanation-okay").onclick = () => {
     popup.remove();
@@ -12905,7 +12898,7 @@ async function submitRestorationCheck() {
         if (_cb) {
           _cb.style.transition = "background-color 0.4s ease, color 0.4s ease";
           _cb.innerHTML = "COMPLETE";
-          _cb.style.background = "#2f9e52";
+          _cb.style.background = "#3a9ee0";
           _cb.style.color = "#fff";
           _cb.disabled = false;
           _cb.style.cursor = "pointer";
@@ -13161,7 +13154,7 @@ async function submitFullAssessment() {
           if (!_cb) return;
           _cb.style.transition = "background-color 0.4s ease, color 0.4s ease";
           _cb.innerHTML = "COMPLETE";
-          _cb.style.background = "#2f9e52";
+          _cb.style.background = "#3a9ee0";
           _cb.style.color = "#fff";
           _cb.disabled = false;
           _cb.style.cursor = "pointer";

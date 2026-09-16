@@ -1480,7 +1480,9 @@
       const coin = document.createElement('img');
       coin.className = 'rg-coin rg-coin-stacked';
       // Each coin sits slightly higher than the one beneath it.
-      coin.style.top = (88.8 - i * 3.1) + '%';
+      // Lowest coin stays where a single coin sits; the two above it clear the
+      // coin diameter entirely so all three read as separate coins.
+      coin.style.top = (88.8 - i * 8.4) + '%';
       coin.style.opacity = '0';
       coin.style.zIndex = String(10 + (count - i));
       coin.src = 'assets/robocoin2.webp';
