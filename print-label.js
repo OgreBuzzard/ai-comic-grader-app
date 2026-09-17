@@ -721,7 +721,11 @@ function ensureStylesInjected() {
     display: flex; flex-direction: column;
   }
   .rg-label .info-upper {
-    padding-bottom: 8px;
+    /* S22: 8 -> 6. With a price pad the info column narrows to 462px, which wraps
+       a longer title to two lines; measured, the block then ran 2px past the
+       288px label and .rg-label's overflow:hidden shaved the bottom of the
+       GRADE ID row. 4px comes off here and 4px off .info-lower below. */
+    padding-bottom: 6px;
     border-bottom: 1px solid #b0b89a;
     margin-bottom: 0;
   }
@@ -773,7 +777,7 @@ function ensureStylesInjected() {
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 500;
   }
-  .rg-label .info-lower { padding-top: 10px; }
+  .rg-label .info-lower { padding-top: 6px; }   /* S22: see .info-upper note */
   .rg-label .meta-grid {
     display: grid;
     grid-template-columns: max-content max-content;
@@ -1023,23 +1027,25 @@ function ensureStylesInjected() {
   .rg-label .robot-badge {
     display: block;
     position: absolute;
-    left: 32px; top: 14px;
-    /* The art is square (470x467), so width == height. The relocated QR column's
-       top edge lands at 288 - 44(bottom) - 139(QR+gap+verify) = 105, so the badge
-       has to finish above that: 14 + 84 = 98, a 7px gap. 122px (the QR column's
-       width) would have run 32px INTO the QR. */
-    width: 84px;
+    left: 32px; top: 12px;
+    /* MEASURED, not estimated. Rendered headless: the relocated QR column is 158px
+       tall (SCAN TO VERIFY wraps to two lines in a 122px column), so its top edge
+       lands at y=85, not the 105 I calculated. 84px ran 13px into it. 60px at
+       top:12 finishes at y=72 — a 13px gap. Small, but Matt's call: "It's fine if
+       the robot is small." The left rail above the QR is the only space on a 4x1
+       that doesn't cost the title column width. */
+    width: 60px;
   }
   .rg-label .robot-badge img { width: 100%; height: auto; display: block; opacity: 0.85; }
   .rg-label-large .robot-badge {
     display: block;
     position: absolute;
-    right: 90px; top: 18px;  /* same right rail as the QR column and the URL */
-    /* Square art again. The relocated QR column's top edge is
-       432 - 62(bottom) - 220(QR+gap+verify) = 150, so 18 + 118 = 136 leaves a
-       14px gap. Clear of .info too, which ends at x=1508 against the badge's
-       x=1592. */
-    width: 118px;
+    right: 90px; top: 14px;  /* same right rail as the QR column and the URL */
+    /* MEASURED: the relocated QR column is 256px tall (its 30px SCAN TO VERIFY
+       also wraps), putting its top edge at y=113, not the 150 I calculated. 118px
+       overlapped by 23. 88px at top:14 finishes at y=102 — an 11px gap. Clear of
+       .info, which ends at x=1507 against the badge's x=1621. */
+    width: 88px;
   }
   .rg-label-large .robot-badge img { width: 100%; height: auto; display: block; opacity: 0.85; }
 
