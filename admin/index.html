@@ -847,6 +847,19 @@ async function exportSummary() {
   }
 }
 
+// Human-readable version of whatever the header's range dropdown is set to.
+// Used on the Summary modal so a filtered count is always self-identifying.
+function _summaryRangeLabel() {
+  const sel = document.getElementById('export-range');
+  const mode = sel ? sel.value : 'all';
+  if (mode === 'all') return 'All time';
+  const { since, until } = _rangeBounds();
+  const d = x => x ? x.toISOString().slice(0, 10) : '';
+  const names = { today: 'Today', '7d': 'Last 7 days', '30d': 'Last 30 days', month: 'This month', custom: 'Custom' };
+  const span = since ? (d(since) + ' → ' + (until ? d(until) : 'now')) : '';
+  return (names[mode] || mode) + (span ? ' (' + span + ')' : '');
+}
+
 function statCard(label, val) {
   return `<div style="background:#0e0f12;border:1px solid #23252c;border-radius:8px;padding:10px 12px">
     <div style="font-size:11px;color:#8a8d96;text-transform:uppercase;letter-spacing:1px">${label}</div>
@@ -868,7 +881,18 @@ function showSummaryModal(d) {
   wrap.innerHTML = `
     <div style="background:#15161a;border:1px solid #2a2c34;border-radius:12px;max-width:560px;width:100%;max-height:85vh;overflow:auto;padding:22px;color:#e6e6e6;font-size:14px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-        <div style="font-size:18px;font-weight:700">Dataset Summary</div>
+        <div>
+          <div style="font-size:18px;font-weight:700">Dataset Summary</div>
+          <!-- S22: the Summary and the Export both honour the date-range dropdown in
+               the header, and nothing used to say so. Matt exported with the range
+               left on "Last 30d" and read the smaller number as the Summary having
+               broken. The active range is now stated on the modal, in amber when it
+               is anything other than All time, so a filtered total can never be
+               mistaken for the whole dataset again. -->
+          <div style="font-size:11px;margin-top:2px;color:${_summaryRangeLabel() === 'All time' ? '#8a8d96' : '#e0b050'}">
+            Range: ${esc(_summaryRangeLabel())}${_summaryRangeLabel() === 'All time' ? '' : ' — not the full dataset'}
+          </div>
+        </div>
         <button id="summary-close" style="background:none;border:none;color:#9aa;font-size:24px;cursor:pointer;line-height:1">×</button>
       </div>
       ${state.excludedUids.length ? `<div style="color:#caa;font-size:12px;margin-bottom:12px">Excluding ${state.excludedUids.length} account${state.excludedUids.length === 1 ? '' : 's'} from these numbers.</div>` : ''}
@@ -1066,6 +1090,7 @@ async function refreshDashboard() {
     await _loadCacheCfg();
     loadStats();
     if (state.tab === 'items') loadItems(true);
+    else if (state.tab === 'catalogue') loadCatalogue(true);
     else if (state.tab === 'timings') loadTimings(true);
     else loadUsers(true);
   } finally {
@@ -1165,6 +1190,7 @@ async function renderDashboard() {
         <button data-tab="sales" class="${state.tab === 'sales' ? 'active' : ''}">Sales</button>
         <button data-tab="refs" class="${state.tab === 'refs' ? 'active' : ''}">Refs</button>
         <button data-tab="timings" class="${state.tab === 'timings' ? 'active' : ''}">Logs</button>
+        <button data-tab="catalogue" class="${state.tab === 'catalogue' ? 'active' : ''}">Catalogue</button>
       </div>
       <div id="tab-content"></div>
     </main>
@@ -1256,7 +1282,8 @@ function _renderRefs() {
 }
 
 function _renderActiveTab() {
-  if (state.tab === 'timings') renderTimingsTab();
+  if (state.tab === 'catalogue') renderCatalogueTab();
+  else if (state.tab === 'timings') renderTimingsTab();
   else if (state.tab === 'items') renderItemsTab();
   else if (state.tab === 'sales') renderSalesTab();
   else if (state.tab === 'refs') renderRefsTab();
@@ -2340,9 +2367,13 @@ async function showItem(uid, id, fromTab) {
   // fromTab tells us where the user came from so "Back" goes back to the
   // right place. 'items' = all-items list; otherwise = a user's profile.
   const fromItemsList = fromTab === 'items';
+  // S22: the catalogue is a third origin for this view. Without it, "open item"
+  // from a catalogue card dropped you on the owner's profile with no way back to
+  // the book you were comparing.
+  const fromCatalogue = fromTab === 'catalogue';
   root.innerHTML = `
     <header>
-      <button class="back" id="back-btn">← ${fromItemsList ? 'All Items' : 'User'}</button>
+      <button class="back" id="back-btn">← ${fromCatalogue ? 'Catalogue' : fromItemsList ? 'All Items' : 'User'}</button>
       <h1>ITEM</h1>
       <button class="sign-out" id="signout-btn">Sign out</button>
     </header>
@@ -2351,7 +2382,12 @@ async function showItem(uid, id, fromTab) {
     </main>
   `;
   document.getElementById('back-btn').onclick = () => {
-    if (fromItemsList) {
+    if (fromCatalogue) {
+      // _catRows / _catSel survive, so this lands back on the same book with no
+      // second export call.
+      state.tab = 'catalogue';
+      renderDashboard();
+    } else if (fromItemsList) {
       renderDashboard();
     } else {
       showUser(uid);
@@ -3313,6 +3349,297 @@ function tapFmv(cell) {
   _fmvBounds.sort((x, y) => x - y);
   renderFmvEditor(window._fmvItem);
 }
+
+// ══ CATALOGUE TAB (S22) ═════════════════════════════════════════════════════
+// Every assessment of a given book, side by side. Moved here from the standalone
+// shared/_WORKING/catalogue/ page (Matt: "it should be in admin anyway"), which
+// solves the thing that page could not do: it is same-origin and authed, so the
+// FMV tier editor writes straight to /api/set_fmv and the existing FMV bake
+// button is the only button in the loop. No export file, no import step.
+//
+// Data: ONE projected /api/export call. `fields=` ships only the columns the
+// catalogue reads (roboGrade comes whole, so defects ride along), and ledgers=0
+// drops the accounts/purchases arrays — roughly 4KB a row instead of 12KB.
+// It honours the header's date-range dropdown like Export and Summary do, and
+// says so, so a filtered catalogue can never be mistaken for the whole library.
+const CAT_FIELDS = [
+  'title','issue','publisher','issueDate','printing','roboGradeId','roboGrade',
+  'predictedGrade','assessedCGCGrade','cgcGrade','labelDetected','pageQuality',
+  'deepAssessmentRan','fullAssessmentRan','highGradeTier','highGradeAssessed',
+  'restorationCheckRan','restorationHighConfidence','fullInteriorComplete',
+  'photograder','type','aiAssessment','deepAssessment','fullAssessment',
+  'fullAssessmentNotes','restorationReport','keyInfo','cgcNotes','askingPrice',
+  'roboGradeDate','dateAdded','images','cornerImages','interiorCoverImages',
+  'interiorImages','restorationImages','_userName','_userEmail'
+].join(',');
+
+let _catRows = null, _catGroups = null, _catSel = null, _catLoading = false, _catFmvKey = null;
+let _catSort = 'rg', _catLevel = 'all', _catSlabOnly = false, _catQ = '';
+
+const _catNorm = s => String(s || '').trim().toLowerCase().replace(/^the\s+/, '').replace(/\s+/g, ' ');
+const _catNum = v => { const x = parseFloat(v); return Number.isFinite(x) ? x : null; };
+const _catMean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+const _catG = g => g == null ? '—' : (g % 1 === 0 ? String(g) : g.toFixed(1));
+
+async function loadCatalogue(force) {
+  if (_catLoading) return;
+  if (_catRows && !force) return;
+  _catLoading = true;
+  const el = document.getElementById('tab-content');
+  if (el) el.innerHTML = '<div class="loading">Loading catalogue… (one projected export; this can take a few seconds)</div>';
+  try {
+    const d = await api('/api/export' + exportQuery('fields=' + encodeURIComponent(CAT_FIELDS) + '&ledgers=0'));
+    _catRows = (d.items || []).filter(x => x.type !== 'card').map(_catRow);
+    _catGroups = _catGroup(_catRows);
+    _catSel = null;
+  } catch (e) {
+    _catRows = null;
+    if (el) el.innerHTML = `<div class="err-banner">Catalogue load failed: ${escapeHtml(e.message || String(e))}</div>`;
+    _catLoading = false;
+    return;
+  }
+  _catLoading = false;
+  renderCatalogueTab();
+}
+
+// One row per assessment. RG is computed through the SAME RoboScoreV3 the app
+// uses (already inlined in this file), never roboGrade.score/10 — that is the
+// v1 0-100 number and is not what any screen shows.
+function _catRow(x) {
+  const rg = x.roboGrade || {};
+  let v3 = null;
+  try { v3 = window.RoboScoreV3 ? window.RoboScoreV3.forComic(x) : null; } catch (_) {}
+  const isFull = !!x.fullAssessmentRan;
+  const isDeep = !!(x.deepAssessmentRan || x.highGradeTier || x.highGradeAssessed);
+  const clean = v => (typeof v === 'string' && v.trim()) ? v.trim() : '';
+  const urls = a => (a || []).map(i => (i && i.url) ? i.url : i).filter(u => typeof u === 'string');
+  const pg = x.predictedGrade ?? x.assessedCGCGrade ?? null;
+  return {
+    uid: x._uid, itemId: x._itemId,
+    gradeId: x.roboGradeId || '',
+    userName: x._userName || '', userEmail: x._userEmail || '',
+    title: x.title || '', issue: String(x.issue || ''), publisher: x.publisher || '',
+    issueDate: x.issueDate || '', printing: x.printing || '',
+    pg, label: x.cgcGrade ?? null, slabbed: !!x.labelDetected,
+    rgV3: v3 ? v3.grade : null,
+    rgV3Label: v3 ? window.RoboScoreV3.formatGrade(v3.grade) : '',
+    subs: v3 ? v3.subscores : null,
+    pm: v3 ? (v3.pmLabel || '') : '',
+    rgRaw: rg.score ?? null,
+    pq: x.pageQuality || rg.pageQuality || '',
+    stars: isFull ? 3 : (isDeep ? 2 : 1),
+    restored: !!(x.restorationHighConfidence || (x.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(x.cgcNotes))),
+    restoRan: !!x.restorationCheckRan,
+    askingPrice: x.askingPrice ?? null,
+    date: x.roboGradeDate || x.dateAdded || '',
+    defects: Array.isArray(rg.defects) ? rg.defects : [],
+    main: clean(x.aiAssessment), deep: clean(x.deepAssessment),
+    full: clean(x.fullAssessment) || clean(x.fullAssessmentNotes),
+    resto: clean(x.restorationReport), keyInfo: clean(x.keyInfo), cgcNotes: clean(x.cgcNotes),
+    version: rg.version || '',
+    imgs: [].concat(urls(x.images), urls(x.cornerImages), urls(x.interiorCoverImages),
+                    urls(x.interiorImages), urls(x.restorationImages))
+  };
+}
+
+function _catGroup(rows) {
+  const m = new Map();
+  for (const r of rows) {
+    const k = _catNorm(r.title) + ' #' + r.issue;
+    if (!m.has(k)) m.set(k, { key: k, title: r.title, issue: r.issue, items: [] });
+    m.get(k).items.push(r);
+  }
+  return [...m.values()].map(g => {
+    g.n = g.items.length;
+    g.avgRG = _catMean(g.items.map(x => _catNum(x.rgV3)).filter(x => x != null));
+    g.avgPG = _catMean(g.items.map(x => _catNum(x.pg)).filter(x => x != null));
+    g.slabs = g.items.filter(x => x.slabbed).length;
+    return g;
+  }).sort((a, b) => b.n - a.n || a.title.localeCompare(b.title));
+}
+
+function renderCatalogueTab() {
+  const el = document.getElementById('tab-content');
+  if (!el) return;
+  if (!_catRows) { loadCatalogue(); return; }
+  const rangeLbl = _summaryRangeLabel();
+  el.innerHTML = `
+    <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;margin:4px 0 10px">
+      <div style="font-size:12px;color:#8a8d96">
+        ${_catGroups.length.toLocaleString()} distinct books · ${_catRows.length.toLocaleString()} assessments</div>
+      <div style="font-size:11px;color:${rangeLbl === 'All time' ? '#8a8d96' : '#e0b050'}">
+        Range: ${escapeHtml(rangeLbl)}${rangeLbl === 'All time' ? '' : ' — not the full library'}</div>
+      <button id="cat-reload" style="padding:3px 10px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Reload</button>
+    </div>
+    <div style="display:flex;gap:14px;align-items:flex-start">
+      <div style="width:300px;flex-shrink:0">
+        <input id="cat-q" placeholder="Filter books…" value="${escapeHtml(_catQ)}"
+          style="width:100%;padding:7px 9px;background:#0e0f12;border:1px solid #23252c;border-radius:8px;color:#e6e6e6;font-size:12px;margin-bottom:6px">
+        <div id="cat-books" style="max-height:70vh;overflow:auto;border:1px solid #23252c;border-radius:8px"></div>
+      </div>
+      <div id="cat-main" style="flex:1;min-width:0"></div>
+    </div>`;
+  document.getElementById('cat-reload').onclick = () => loadCatalogue(true);
+  const q = document.getElementById('cat-q');
+  q.oninput = e => { _catQ = e.target.value; _catRenderBooks(); };
+  _catRenderBooks();
+  if (_catSel) _catRenderMain();
+}
+
+function _catRenderBooks() {
+  const el = document.getElementById('cat-books');
+  if (!el) return;
+  const f = _catNorm(_catQ);
+  const list = _catGroups.filter(g => !f || _catNorm(g.title + ' #' + g.issue).includes(f));
+  el.innerHTML = list.slice(0, 800).map(g => `
+    <div class="cat-bk" data-k="${encodeURIComponent(g.key)}"
+      style="padding:6px 10px;border-bottom:1px solid #1b1d23;cursor:pointer;${_catSel && _catSel.key === g.key ? 'background:#1d2a20;border-left:3px solid #5c5' : ''}">
+      <div style="font-size:12px;font-weight:600;color:#e6e6e6">${escapeHtml(g.title)} <span style="color:#8a8d96">#${escapeHtml(g.issue)}</span></div>
+      <div style="font-size:10px;color:#8a8d96;margin-top:1px">${g.n}× · avg
+        <span style="color:#9ada7a">RG ${g.avgRG != null ? _catG(Math.round(g.avgRG * 2) / 2) : '—'}</span> ·
+        <span style="color:#7ab8e8">PG ${g.avgPG != null ? g.avgPG.toFixed(1) : '—'}</span>${g.slabs ? ' · ' + g.slabs + ' slab' : ''}</div>
+    </div>`).join('') || '<div style="padding:16px;color:#666;font-size:12px">no match</div>';
+  el.onclick = e => {
+    const b = e.target.closest('.cat-bk');
+    if (!b) return;
+    _catSel = _catGroups.find(g => g.key === decodeURIComponent(b.dataset.k));
+    _catRenderBooks(); _catRenderMain();
+  };
+}
+
+// The FMV editor is the EXISTING one (renderFmvEditor / tapFmv / saveFmv /
+// clearFmv). It is driven by window._fmvItem, so the catalogue just loads one
+// representative copy through /api/item — which is what enriches an item with
+// fmvCurve / fmvManualCurve / fmvTiers — and hands it over. One editor, one set
+// of tap semantics, one write path. Do not fork a second FMV UI in here.
+async function _catLoadFmv(g) {
+  const box = document.getElementById('fmv-editor');
+  if (!box) return;
+  const rep = g.items.find(x => x.uid && x.itemId);
+  if (!rep) { box.innerHTML = '<div style="color:#666;font-size:12px">no item to key FMV from</div>'; return; }
+  box.innerHTML = '<div class="loading" style="padding:8px">Loading FMV curve…</div>';
+  try {
+    const { item } = await api(`/api/item?uid=${encodeURIComponent(rep.uid)}&id=${encodeURIComponent(rep.itemId)}`);
+    window._fmvItem = item;
+    _fmvInitBounds(item);
+    renderFmvEditor(item);
+  } catch (e) {
+    box.innerHTML = `<div style="color:#e85050;font-size:12px">FMV load failed: ${escapeHtml(e.message || String(e))}</div>`;
+  }
+}
+
+function _catRenderMain() {
+  const g = _catSel, main = document.getElementById('cat-main');
+  if (!g || !main) return;
+  let items = g.items.slice();
+  if (_catSlabOnly) items = items.filter(x => x.slabbed);
+  if (_catLevel !== 'all') items = items.filter(x => String(x.stars) === _catLevel);
+  items.sort((a, b) => {
+    if (_catSort === 'rg') return (_catNum(b.rgV3) ?? -1) - (_catNum(a.rgV3) ?? -1);
+    if (_catSort === 'pg') return (_catNum(b.pg) ?? -1) - (_catNum(a.pg) ?? -1);
+    return String(b.date).localeCompare(String(a.date));
+  });
+  const rgs = g.items.map(x => _catNum(x.rgV3)).filter(x => x != null);
+  const pgs = g.items.map(x => _catNum(x.pg)).filter(x => x != null);
+  const sel = (id, val, opts) => `<select id="${id}" style="background:#0e0f12;border:1px solid #23252c;color:#e6e6e6;border-radius:6px;padding:3px 6px;font-size:11px">${opts.map(([v, l]) => `<option value="${v}"${v === val ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
+  main.innerHTML = `
+    <div style="font-size:16px;font-weight:700;margin-bottom:2px">${escapeHtml(g.title)} #${escapeHtml(g.issue)}</div>
+    <div style="font-size:12px;color:#8a8d96;margin-bottom:10px">
+      ${g.items.length} assessments${g.slabs ? ` · ${g.slabs} slabbed` : ''} &nbsp;·&nbsp;
+      <b style="color:#9ada7a">RG</b> ${rgs.length ? `${_catG(Math.min(...rgs))}–${_catG(Math.max(...rgs))} · avg ${_catG(Math.round(_catMean(rgs) * 2) / 2)}` : '—'} &nbsp;
+      <b style="color:#7ab8e8">PG</b> ${pgs.length ? `${Math.min(...pgs).toFixed(1)}–${Math.max(...pgs).toFixed(1)} · avg ${_catMean(pgs).toFixed(1)}` : '—'}
+    </div>
+    <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+      <div id="fmv-editor" style="width:250px;flex-shrink:0;background:#0e0f12;border:1px solid #23252c;border-radius:10px;padding:12px"></div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;font-size:11px;color:#8a8d96;flex-wrap:wrap">
+          Sort ${sel('cat-sort', _catSort, [['rg', 'RG ↓'], ['pg', 'PG ↓'], ['date', 'newest']])}
+          Level ${sel('cat-level', _catLevel, [['all', 'all'], ['1', 'Main ★'], ['2', 'Deep ★★'], ['3', 'Full ★★★']])}
+          <label style="cursor:pointer"><input type="checkbox" id="cat-slab"${_catSlabOnly ? ' checked' : ''}> slabbed only</label>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));gap:12px">
+          ${items.map(_catCard).join('') || '<div style="color:#666;font-size:12px">nothing matches those filters</div>'}
+        </div>
+      </div>
+    </div>`;
+  document.getElementById('cat-sort').onchange = e => { _catSort = e.target.value; _catRenderMain(); };
+  document.getElementById('cat-level').onchange = e => { _catLevel = e.target.value; _catRenderMain(); };
+  document.getElementById('cat-slab').onchange = e => { _catSlabOnly = e.target.checked; _catRenderMain(); };
+  main.querySelectorAll('[data-cat-item]').forEach(n => n.onclick = () => {
+    const [u, i] = n.dataset.catItem.split('|'); showItem(u, i, 'catalogue');
+  });
+  // Only hit /api/item when the SELECTED BOOK changes. _catRenderMain also runs on
+  // every sort / level / slab-filter change, and re-fetching there cost a request
+  // per keystroke-equivalent and — worse — blew away any half-finished tier edit,
+  // because _fmvInitBounds resets _fmvBounds from the saved curve. Re-rendering
+  // from the cached _fmvItem keeps _fmvBounds intact across filter changes.
+  if (_catFmvKey === g.key && window._fmvItem) {
+    try { renderFmvEditor(window._fmvItem); } catch (_) {}
+  } else {
+    _catFmvKey = g.key;
+    _catLoadFmv(g);
+  }
+}
+
+function _catDefects(ds) {
+  if (!ds || !ds.length) return '<div style="color:#666;font-size:11px">no defects listed</div>';
+  const col = s => s === 'High' ? '#e85050' : s === 'Med' ? '#e8a040' : s === 'Low' ? '#888' : '#666';
+  return `<table style="width:100%;border-collapse:collapse;font-size:11px">${ds.map(d => `<tr>
+    <td style="color:#8a8d96;white-space:nowrap;width:1%;padding:1px 6px 1px 0;vertical-align:top">${escapeHtml(d.category || '')}</td>
+    <td style="color:#cfd6cf;padding:1px 0;vertical-align:top"><b>${escapeHtml(d.type || '')}</b>${d.location ? ' — ' + escapeHtml(d.location) : ''}${d.measurement ? ` <span style="color:#8a8d96">(${escapeHtml(d.measurement)})</span>` : ''}${d.colorBreaking ? ' <span style="color:#e85050;font-weight:700">CB</span>' : ''}${d.deepAddition ? ' <span style="color:#7ab8e8">deep</span>' : ''}</td>
+    <td style="color:${col(d.severity)};white-space:nowrap;width:1%;padding:1px 0 1px 6px;vertical-align:top">${escapeHtml(d.severity || '')}</td>
+  </tr>`).join('')}</table>`;
+}
+function _catWriteup(label, txt) {
+  return txt ? `<div style="margin-top:8px;border-top:1px solid #1e2027;padding-top:6px">
+    <div style="font-size:9px;letter-spacing:1.3px;color:#8a8d96;font-weight:700;text-transform:uppercase;margin-bottom:3px">${label}</div>
+    <div style="font-size:11.5px;color:#cfd6cf;white-space:pre-wrap">${escapeHtml(txt)}</div></div>` : '';
+}
+function _catCard(r) {
+  const s = r.subs || {};
+  const subs = r.subs ? `F <b style="color:#cfd6cf">${s.front}</b> · B <b style="color:#cfd6cf">${s.back}</b> · Sp <b style="color:#cfd6cf">${s.spine}</b> · Int <b style="color:#cfd6cf">${s.interior}</b>` : '';
+  const pill = (bg, c, t) => `<span style="font-size:10px;font-weight:700;padding:1px 7px;border-radius:20px;background:${bg};color:${c}">${t}</span>`;
+  const badges = [
+    `<span style="color:#e8c860;letter-spacing:1px;font-size:12px" title="${r.stars === 3 ? 'Full' : r.stars === 2 ? 'Deep' : 'Main'} assessment">${'★'.repeat(r.stars)}${'☆'.repeat(3 - r.stars)}</span>`,
+    r.slabbed ? pill('#2a2410', '#e8c860', 'SLAB ' + escapeHtml(r.label ?? '')) : '',
+    r.restored ? pill('#331c1c', '#e07a7a', 'RESTORED') : '',
+    r.restoRan ? pill('#22262a', '#8a8d96', 'resto check') : '',
+    r.pq ? pill('#22262a', '#8a8d96', escapeHtml(r.pq)) : '',
+    r.printing ? pill('#22262a', '#8a8d96', escapeHtml(r.printing)) : ''
+  ].filter(Boolean).join(' ');
+  const thumbs = r.imgs.slice(0, 8).map(u =>
+    `<img loading="lazy" src="${escapeHtml(u)}" style="width:52px;height:72px;object-fit:cover;border-radius:4px;border:1px solid #2a2c34;background:#0e0f12">`).join('');
+  return `<div style="background:#111318;border:1px solid ${r.slabbed ? '#5a4c1c' : '#23252c'};border-radius:10px;padding:10px">
+    <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">${thumbs || '<span style="color:#666;font-size:11px">no images</span>'}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">${badges}</div>
+    <div style="display:flex;gap:9px;align-items:center;margin-bottom:7px">
+      <div style="background:#0f1a05;border:1px solid #3a5010;border-radius:8px;padding:4px 9px;text-align:center;min-width:58px">
+        <div style="font-size:20px;font-weight:800;color:#b8d820;line-height:1.1">${r.rgV3Label || '—'}</div>
+        <div style="font-size:8px;letter-spacing:1px;color:#b8d820;opacity:.75">RG${r.pm ? ' ' + escapeHtml(r.pm) : ''}</div></div>
+      <div style="background:#16283a;border:1px solid #2f527a;border-radius:8px;padding:4px 9px;text-align:center;min-width:58px">
+        <div style="font-size:20px;font-weight:800;color:#dff0ff;line-height:1.1">${r.pg != null ? Number(r.pg).toFixed(1) : '—'}</div>
+        <div style="font-size:8px;letter-spacing:1px;color:#dff0ff;opacity:.75">PG</div></div>
+      <div style="font-size:11px;color:#8a8d96">${subs}${r.askingPrice != null ? `<div style="margin-top:2px">ask $${escapeHtml(r.askingPrice)}</div>` : ''}</div>
+    </div>
+    <div style="font-size:10.5px;color:#8a8d96;line-height:1.7;margin-bottom:6px">
+      Grade ID <code style="color:#cfd6cf">${escapeHtml(r.gradeId || '—')}</code> ·
+      ${escapeHtml(String(r.date || '').slice(0, 10))} ·
+      <a href="#" data-cat-item="${escapeHtml(r.uid)}|${escapeHtml(r.itemId)}" style="color:#7ab8e8;text-decoration:none">open item →</a><br>
+      ${escapeHtml(r.userName || '(no name)')} · <code style="color:#cfd6cf">${escapeHtml(r.userEmail || '—')}</code><br>
+      UID <code style="color:#cfd6cf">${escapeHtml(r.uid || '—')}</code> · v${escapeHtml(r.version || '?')}${r.rgRaw != null ? ` · <span title="v1 0-100, cross-check only">raw ${escapeHtml(r.rgRaw)}</span>` : ''}
+    </div>
+    <div style="border-top:1px solid #1e2027;padding-top:6px">
+      <div style="font-size:9px;letter-spacing:1.3px;color:#8a8d96;font-weight:700;margin-bottom:3px">DEFECTS (${r.defects.length})</div>
+      ${_catDefects(r.defects)}</div>
+    ${_catWriteup('Main assessment', r.main)}
+    ${_catWriteup('Deep assessment', r.deep)}
+    ${_catWriteup('Full assessment', r.full)}
+    ${_catWriteup('Restoration check', r.resto)}
+    ${_catWriteup('Key info', r.keyInfo)}
+    ${_catWriteup('CGC label notes', r.cgcNotes)}
+  </div>`;
+}
+
 function renderFmvEditor(it) {
   const el = document.getElementById('fmv-editor');
   if (!el) return;
