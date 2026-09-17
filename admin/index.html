@@ -1090,7 +1090,6 @@ async function refreshDashboard() {
     await _loadCacheCfg();
     loadStats();
     if (state.tab === 'items') loadItems(true);
-    else if (state.tab === 'catalogue') loadCatalogue(true);
     else if (state.tab === 'timings') loadTimings(true);
     else loadUsers(true);
   } finally {
@@ -1145,44 +1144,53 @@ async function renderDashboard() {
   state.selectedUid = null;
   state.selectedItemId = null;
   root.innerHTML = `
-    <header style="display:grid;grid-template-columns:auto auto auto;justify-content:start;column-gap:10px;row-gap:8px;align-items:start">
-      <h1 style="grid-column:1;grid-row:1;align-self:center;font-size:15px;letter-spacing:1px;margin:0">RG ADMIN</h1>
-      <button class="sign-out" id="summary-btn" style="grid-column:2;grid-row:1;padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Summary</button>
-      <button class="sign-out" id="signout-btn" style="grid-column:3;grid-row:1;padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Sign Out</button>
-
-      <div style="grid-column:1;grid-row:2;display:flex;flex-direction:column;gap:5px;align-items:stretch">
-        <button class="sign-out" id="export-btn" style="padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Export</button>
-        <label style="display:inline-flex;align-items:center;gap:3px" title="Date range applied to Export + Summary (by assessment/added date)">
-          <select id="export-range" onchange="_onRangeChange()" style="flex:1;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:8px;padding:3px 6px;font-size:11px">
-            <option value="all">All time</option>
-            <option value="today">Today</option>
-            <option value="7d">Last 7d</option>
-            <option value="30d">Last 30d</option>
-            <option value="month">This month</option>
-            <option value="custom">Custom…</option>
-          </select>
-          <span id="export-range-custom" style="display:none;align-items:center;gap:2px">
-            <input type="date" id="export-from" title="From" style="font-size:10px;padding:1px 2px;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px">
-            <span style="color:#678">–</span>
-            <input type="date" id="export-to" title="To" style="font-size:10px;padding:1px 2px;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px">
-          </span>
-        </label>
-      </div>
-
-      <div style="grid-column:2;grid-row:2;display:flex;flex-direction:column;gap:5px;align-items:stretch">
-        <button class="sign-out" id="bake-btn" style="padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer" title="Bake manual FMV entries into fmv_comics.json for download">FMV</button>
-        <button class="sign-out" id="growth-btn" style="padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer" title="Ad funnel: sources to installs, accounts, assessments, purchases, revenue">Growth</button>
-      </div>
-
-      <div style="grid-column:3;grid-row:2;display:flex;flex-direction:column;gap:5px;align-items:stretch">
-        <div id="cache-types" style="display:flex;gap:3px;flex-wrap:wrap;max-width:200px">
-          <button id="ct-main" onclick="_toggleCacheType('main')" style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:pointer;background:#1c1c22;color:#9ab" title="Comic (main) assessment prompt caching">Comic</button>
-          <button id="ct-card" onclick="_toggleCacheType('card')" style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:pointer;background:#1c1c22;color:#9ab" title="Card (main) assessment prompt caching">Card</button>
-        </div>
-        <select id="cache-ttl" onchange="_saveCacheCfg()" style="background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:8px;padding:3px 6px;font-size:11px" title="Cache TTL"><option value="1h" ${_cacheCfg.ttl !== '5m' ? 'selected' : ''}>1h</option><option value="5m" ${_cacheCfg.ttl === '5m' ? 'selected' : ''}>5m</option></select>
-      </div>
+    <!-- S22 header slim-down (Matt): the fixed bar was carrying eight controls
+         that are needed occasionally but looked at constantly. Only the identity
+         and the way out stay pinned; everything else moved into #toolbar, which
+         sits above the stats and scrolls away with them. -->
+    <header style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <h1 style="font-size:15px;letter-spacing:1px;margin:0">RG ADMIN</h1>
+      <button class="sign-out" id="signout-btn" style="padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Sign Out</button>
     </header>
     <main>
+      <!-- Three columns, in Matt's order: Export/Summary/range · FMV/Growth/Catalogue ·
+           Comic/Card/TTL. Scrolls out of view with the stats above the tabs. -->
+      <div id="toolbar" style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;margin:0 0 12px">
+        <div style="display:flex;flex-direction:column;gap:5px;align-items:stretch">
+          <button class="sign-out" id="export-btn" style="padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Export</button>
+          <button class="sign-out" id="summary-btn" style="padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Summary</button>
+          <label style="display:inline-flex;align-items:center;gap:3px" title="Date range applied to Export, Summary and the Catalogue (by assessment/added date)">
+            <select id="export-range" onchange="_onRangeChange()" style="flex:1;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:8px;padding:3px 6px;font-size:11px">
+              <option value="all">All time</option>
+              <option value="today">Today</option>
+              <option value="7d">Last 7d</option>
+              <option value="30d">Last 30d</option>
+              <option value="month">This month</option>
+              <option value="custom">Custom…</option>
+            </select>
+            <span id="export-range-custom" style="display:none;align-items:center;gap:2px">
+              <input type="date" id="export-from" title="From" style="font-size:10px;padding:1px 2px;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px">
+              <span style="color:#678">–</span>
+              <input type="date" id="export-to" title="To" style="font-size:10px;padding:1px 2px;background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:4px">
+            </span>
+          </label>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:5px;align-items:stretch">
+          <button class="sign-out" id="bake-btn" style="padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer" title="Bake manual FMV entries into fmv_comics.json for download">FMV</button>
+          <button class="sign-out" id="growth-btn" style="padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer" title="Ad funnel: sources to installs, accounts, assessments, purchases, revenue">Growth</button>
+          <button class="sign-out" id="catalogue-btn" style="padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer" title="Every assessment of a book, side by side, with FMV tier entry">Catalogue</button>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:5px;align-items:stretch">
+          <div id="cache-types" style="display:flex;gap:3px;flex-wrap:wrap;max-width:200px">
+            <button id="ct-main" onclick="_toggleCacheType('main')" style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:pointer;background:#1c1c22;color:#9ab" title="Comic (main) assessment prompt caching">Comic</button>
+            <button id="ct-card" onclick="_toggleCacheType('card')" style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:pointer;background:#1c1c22;color:#9ab" title="Card (main) assessment prompt caching">Card</button>
+          </div>
+          <select id="cache-ttl" onchange="_saveCacheCfg()" style="background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:8px;padding:3px 6px;font-size:11px" title="Cache TTL"><option value="1h" ${_cacheCfg.ttl !== '5m' ? 'selected' : ''}>1h</option><option value="5m" ${_cacheCfg.ttl === '5m' ? 'selected' : ''}>5m</option></select>
+        </div>
+      </div>
+
       <div id="stats-section"><div class="loading">Loading stats…</div></div>
       <div class="tabs" id="tabs">
         <button data-tab="items" class="${state.tab === 'items' ? 'active' : ''}">Items</button>
@@ -1190,7 +1198,6 @@ async function renderDashboard() {
         <button data-tab="sales" class="${state.tab === 'sales' ? 'active' : ''}">Sales</button>
         <button data-tab="refs" class="${state.tab === 'refs' ? 'active' : ''}">Refs</button>
         <button data-tab="timings" class="${state.tab === 'timings' ? 'active' : ''}">Logs</button>
-        <button data-tab="catalogue" class="${state.tab === 'catalogue' ? 'active' : ''}">Catalogue</button>
       </div>
       <div id="tab-content"></div>
     </main>
@@ -1200,6 +1207,7 @@ async function renderDashboard() {
   { const _bb = document.getElementById('bake-btn'); if (_bb) _bb.onclick = bakeFmv; }
   document.getElementById('summary-btn').onclick = exportSummary;
   { const _gb = document.getElementById('growth-btn'); if (_gb) _gb.onclick = openGrowth; }
+  { const _cb = document.getElementById('catalogue-btn'); if (_cb) _cb.onclick = openCatalogue; }
   if (!window._ptrSet) { window._ptrSet = true; _setupPullToRefresh(); }
   _syncCacheCfgDom(); // header was just rebuilt — restore the toggle from state
   document.querySelectorAll('#tabs button').forEach(btn => {
@@ -1282,8 +1290,7 @@ function _renderRefs() {
 }
 
 function _renderActiveTab() {
-  if (state.tab === 'catalogue') renderCatalogueTab();
-  else if (state.tab === 'timings') renderTimingsTab();
+  if (state.tab === 'timings') renderTimingsTab();
   else if (state.tab === 'items') renderItemsTab();
   else if (state.tab === 'sales') renderSalesTab();
   else if (state.tab === 'refs') renderRefsTab();
@@ -2385,8 +2392,7 @@ async function showItem(uid, id, fromTab) {
     if (fromCatalogue) {
       // _catRows / _catSel survive, so this lands back on the same book with no
       // second export call.
-      state.tab = 'catalogue';
-      renderDashboard();
+      openCatalogue();
     } else if (fromItemsList) {
       renderDashboard();
     } else {
@@ -3350,18 +3356,20 @@ function tapFmv(cell) {
   renderFmvEditor(window._fmvItem);
 }
 
-// ══ CATALOGUE TAB (S22) ═════════════════════════════════════════════════════
-// Every assessment of a given book, side by side. Moved here from the standalone
-// shared/_WORKING/catalogue/ page (Matt: "it should be in admin anyway"), which
-// solves the thing that page could not do: it is same-origin and authed, so the
-// FMV tier editor writes straight to /api/set_fmv and the existing FMV bake
-// button is the only button in the loop. No export file, no import step.
+
+// ══ CATALOGUE (S22) ═════════════════════════════════════════════════════════
+// Every assessment of a book, side by side, with FMV tier entry.
+//
+// It is a VIEW, not a tab (Matt): opening the catalogue means leaving the
+// live-vitals dashboard for a different mode you stay in, so it gets the whole
+// screen and a Back button rather than a tab that keeps the stats block pinned
+// above it. Entry point is the Catalogue button in #toolbar.
 //
 // Data: ONE projected /api/export call. `fields=` ships only the columns the
-// catalogue reads (roboGrade comes whole, so defects ride along), and ledgers=0
-// drops the accounts/purchases arrays — roughly 4KB a row instead of 12KB.
-// It honours the header's date-range dropdown like Export and Summary do, and
-// says so, so a filtered catalogue can never be mistaken for the whole library.
+// catalogue reads (roboGrade comes whole, so the defect list rides along).
+// Ledgers stay ON — accounts is ~1,700 tiny records and carries the 4-char
+// transferCode the User sort groups by. Measured ~4.8KB a row.
+// It honours the header's date-range dropdown, and says which range is active.
 const CAT_FIELDS = [
   'title','issue','publisher','issueDate','printing','roboGradeId','roboGrade',
   'predictedGrade','assessedCGCGrade','cgcGrade','labelDetected','pageQuality',
@@ -3373,38 +3381,182 @@ const CAT_FIELDS = [
   'interiorImages','restorationImages','_userName','_userEmail'
 ].join(',');
 
+// The six orderings, in Matt's order. 'title' is the default.
+const CAT_SORTS = [
+  ['title',  'Title'],
+  ['ranked', 'Ranked'],
+  ['date',   'Date'],
+  ['user',   'User'],
+  ['fmvaz',  'FMV A-Z'],
+  ['fmvrank','FMV Ranked'],
+];
+
 let _catRows = null, _catGroups = null, _catSel = null, _catLoading = false, _catFmvKey = null;
+let _catAccounts = null;      // uid -> { name, email, code }
+let _catFmvKeys = null;       // Set of fmv keys that HAVE a curve
+let _catOrder = 'title';
 let _catSort = 'rg', _catLevel = 'all', _catSlabOnly = false, _catQ = '';
 
 const _catNorm = s => String(s || '').trim().toLowerCase().replace(/^the\s+/, '').replace(/\s+/g, ' ');
 const _catNum = v => { const x = parseFloat(v); return Number.isFinite(x) ? x : null; };
 const _catMean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
 const _catG = g => g == null ? '—' : (g % 1 === 0 ? String(g) : g.toFixed(1));
+// S22: both averages now show a tenth. RG used to be snapped to the half point
+// (Math.round(x*2)/2) because a single RG *is* a half-point grade — but an
+// average of several is not a grade, it is a statistic, and rounding it to 0.5
+// threw away exactly the resolution that makes comparing books useful.
+const _catAvg = a => a == null ? '—' : a.toFixed(1);
+
+// ── Volume + annual aware title ordering ───────────────────────────────────
+// Matt's rule: A-Z by title; inside a title, volumes in date order; inside a
+// volume, issues ascending; a volume's annuals directly after its regular runs.
+// So ASM #300 (1963 vol) -> ASM Annual #1 -> ASM #1 (1999 vol).
+//
+// There is no volume field in the data, so volumes are INFERRED: walk a title's
+// regular issues in (year, issue) order and start a new volume wherever the
+// issue number resets downward. That is what a relaunch looks like in the data,
+// and it needs no external catalogue. Books with no cover year sort into the
+// first volume, which is right far more often than it is wrong for a library
+// that is mostly single-volume Silver/Bronze Age.
+const _catAnnualRe = /\bannuals?\b/i;
+function _catIsAnnual(g) {
+  return _catAnnualRe.test(g.title || '') || /^\s*(?:a|annual)\s*\d+\s*$/i.test(String(g.issue || ''));
+}
+function _catBaseTitle(g) {
+  return _catNorm(String(g.title || '').replace(_catAnnualRe, ' '));
+}
+function _catIssueNum(g) {
+  const m = String(g.issue || '').match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : Number.MAX_SAFE_INTEGER;
+}
+function _catYear(g) {
+  // Most common cover year across the copies — one mistyped date shouldn't move
+  // a whole issue into the wrong volume.
+  const c = {};
+  for (const it of g.items) {
+    const m = String(it.issueDate || '').match(/(\d{4})/);
+    if (m) c[m[1]] = (c[m[1]] || 0) + 1;
+  }
+  const ks = Object.keys(c);
+  if (!ks.length) return null;
+  ks.sort((a, b) => c[b] - c[a] || Number(a) - Number(b));
+  return Number(ks[0]);
+}
+function _catAssignVolumes(groups) {
+  const byTitle = new Map();
+  for (const g of groups) {
+    g._base = _catBaseTitle(g);
+    g._annual = _catIsAnnual(g);
+    g._iss = _catIssueNum(g);
+    g._year = _catYear(g);
+    if (!byTitle.has(g._base)) byTitle.set(g._base, []);
+    byTitle.get(g._base).push(g);
+  }
+  for (const list of byTitle.values()) {
+    const regs = list.filter(g => !g._annual);
+    // Volumes are detected ONLY from issues that carry a cover year. An earlier
+    // version sorted with (year ?? 0), which shoved every undated issue to the
+    // front and then read the jump back down as a relaunch — Absolute Batman came
+    // out #19, #1, #2, #22 because undated #19 claimed volume 0 and pushed #1 into
+    // volume 1. Undated issues now infer their volume from issue range instead of
+    // driving the split.
+    const dated = regs.filter(g => g._year != null).sort((a, b) => a._year - b._year || a._iss - b._iss);
+    let vol = 0, maxIssue = -Infinity, yearAtMax = -Infinity;
+    const volYears = [], volIssues = [];
+    for (const g of dated) {
+      // A reset needs BOTH a lower issue number and a later year, so an
+      // out-of-order cover date inside one run can't split a volume.
+      if (g._iss < maxIssue && g._year > yearAtMax) { vol++; maxIssue = g._iss; yearAtMax = g._year; }
+      else if (g._iss >= maxIssue) { maxIssue = g._iss; yearAtMax = g._year; }
+      g._vol = vol;
+      const v = volYears[vol] || (volYears[vol] = [Infinity, -Infinity]);
+      v[0] = Math.min(v[0], g._year); v[1] = Math.max(v[1], g._year);
+      const iv = volIssues[vol] || (volIssues[vol] = [Infinity, -Infinity]);
+      iv[0] = Math.min(iv[0], g._iss); iv[1] = Math.max(iv[1], g._iss);
+    }
+    // Undated regulars join the volume whose issue range covers them; failing
+    // that, volume 0 — which is correct for the single-volume case that dominates.
+    for (const g of regs.filter(x => x._year == null)) {
+      g._vol = 0;
+      for (let v = 0; v < volIssues.length; v++) {
+        const iv = volIssues[v];
+        if (iv && g._iss >= iv[0] && g._iss <= iv[1]) { g._vol = v; break; }
+      }
+    }
+    // An annual joins the volume whose cover years bracket it (±1 for the usual
+    // off-by-one between an annual and the monthly run it shipped alongside).
+    for (const g of list.filter(x => x._annual)) {
+      g._vol = 0;
+      if (g._year != null) {
+        for (let v = 0; v < volYears.length; v++) {
+          const r = volYears[v];
+          if (r && g._year >= r[0] - 1 && g._year <= r[1] + 1) { g._vol = v; break; }
+          if (r && g._year > r[1]) g._vol = v;   // after this volume; keep walking
+        }
+      }
+    }
+  }
+  return groups;
+}
+function _catTitleSorted(groups) {
+  _catAssignVolumes(groups);
+  return groups.slice().sort((a, b) =>
+    a._base.localeCompare(b._base) ||
+    (a._vol - b._vol) ||
+    ((a._annual ? 1 : 0) - (b._annual ? 1 : 0)) ||
+    (a._iss - b._iss) ||
+    String(a.issue).localeCompare(String(b.issue)));
+}
+
+// ── FMV key + "has a curve?" ───────────────────────────────────────────────
+// _fmvKeyOf is the admin-wide key builder (annual folding, Iron Man alias) — the
+// same one saveFmv() writes with, so the worklist and the editor always agree.
+function _catFmvKeyOf(g) { return _fmvKeyOf(g.title, g.issue); }
+function _catHasFmv(g) { return !!(_catFmvKeys && _catFmvKeys.has(_catFmvKeyOf(g))); }
+
+// ── load ───────────────────────────────────────────────────────────────────
+async function openCatalogue() {
+  state.view = 'catalogue';
+  root.innerHTML = `
+    <header style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <button class="back" id="cat-back">← Dashboard</button>
+      <h1 style="font-size:15px;letter-spacing:1px;margin:0">CATALOGUE</h1>
+      <button class="sign-out" id="signout-btn" style="padding:5px 12px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Sign Out</button>
+    </header>
+    <main id="cat-root"><div class="loading">Loading catalogue…</div></main>`;
+  document.getElementById('cat-back').onclick = () => renderDashboard();
+  document.getElementById('signout-btn').onclick = signOut;
+  if (_catRows) renderCatalogue(); else loadCatalogue();
+}
 
 async function loadCatalogue(force) {
   if (_catLoading) return;
-  if (_catRows && !force) return;
+  if (_catRows && !force) { renderCatalogue(); return; }
   _catLoading = true;
-  const el = document.getElementById('tab-content');
+  const el = document.getElementById('cat-root');
   if (el) el.innerHTML = '<div class="loading">Loading catalogue… (one projected export; this can take a few seconds)</div>';
   try {
-    const d = await api('/api/export' + exportQuery('fields=' + encodeURIComponent(CAT_FIELDS) + '&ledgers=0'));
+    const d = await api('/api/export' + exportQuery('fields=' + encodeURIComponent(CAT_FIELDS)));
+    _catAccounts = {};
+    for (const a of (d.accounts || [])) _catAccounts[a.uid] = { name: a.name || '', email: a.email || '', code: a.transferCode || '' };
     _catRows = (d.items || []).filter(x => x.type !== 'card').map(_catRow);
     _catGroups = _catGroup(_catRows);
-    _catSel = null;
+    _catSel = null; _catFmvKey = null;
   } catch (e) {
-    _catRows = null;
+    _catRows = null; _catLoading = false;
     if (el) el.innerHTML = `<div class="err-banner">Catalogue load failed: ${escapeHtml(e.message || String(e))}</div>`;
-    _catLoading = false;
     return;
   }
+  // Which books already have an FMV curve — powers the two FMV worklists. Not
+  // fatal if it fails; those two orderings just show everything instead.
+  try {
+    const k = await api('/api/fmv_bake?keys=1&category=comics');
+    _catFmvKeys = new Set(k.keys || []);
+  } catch (e) { _catFmvKeys = null; console.warn('[catalogue] fmv keys unavailable:', e && e.message); }
   _catLoading = false;
-  renderCatalogueTab();
+  renderCatalogue();
 }
 
-// One row per assessment. RG is computed through the SAME RoboScoreV3 the app
-// uses (already inlined in this file), never roboGrade.score/10 — that is the
-// v1 0-100 number and is not what any screen shows.
 function _catRow(x) {
   const rg = x.roboGrade || {};
   let v3 = null;
@@ -3414,10 +3566,13 @@ function _catRow(x) {
   const clean = v => (typeof v === 'string' && v.trim()) ? v.trim() : '';
   const urls = a => (a || []).map(i => (i && i.url) ? i.url : i).filter(u => typeof u === 'string');
   const pg = x.predictedGrade ?? x.assessedCGCGrade ?? null;
+  const acct = (_catAccounts && _catAccounts[x._uid]) || null;
   return {
     uid: x._uid, itemId: x._itemId,
     gradeId: x.roboGradeId || '',
-    userName: x._userName || '', userEmail: x._userEmail || '',
+    userName: x._userName || (acct && acct.name) || '',
+    userEmail: x._userEmail || (acct && acct.email) || '',
+    userCode: (acct && acct.code) || '',
     title: x.title || '', issue: String(x.issue || ''), publisher: x.publisher || '',
     issueDate: x.issueDate || '', printing: x.printing || '',
     pg, label: x.cgcGrade ?? null, slabbed: !!x.labelDetected,
@@ -3454,34 +3609,84 @@ function _catGroup(rows) {
     g.avgRG = _catMean(g.items.map(x => _catNum(x.rgV3)).filter(x => x != null));
     g.avgPG = _catMean(g.items.map(x => _catNum(x.pg)).filter(x => x != null));
     g.slabs = g.items.filter(x => x.slabbed).length;
+    g.lastAt = g.items.reduce((a, x) => (String(x.date) > a ? String(x.date) : a), '');
     return g;
-  }).sort((a, b) => b.n - a.n || a.title.localeCompare(b.title));
+  });
 }
 
-function renderCatalogueTab() {
-  const el = document.getElementById('tab-content');
+// ── the six orderings ──────────────────────────────────────────────────────
+// Returns a flat list of {type:'head',label,sub} | {type:'book',g} so the User
+// ordering can interleave its per-user headings with the same renderer.
+function _catOrdered() {
+  const f = _catNorm(_catQ);
+  let gs = _catGroups.filter(g => !f || _catNorm(g.title + ' #' + g.issue).includes(f));
+  const ranked = list => list.slice().sort((a, b) => b.n - a.n || a.title.localeCompare(b.title));
+
+  if (_catOrder === 'ranked') return ranked(gs).map(g => ({ type: 'book', g }));
+  if (_catOrder === 'date') {
+    return gs.slice().sort((a, b) => String(b.lastAt).localeCompare(String(a.lastAt)))
+             .map(g => ({ type: 'book', g }));
+  }
+  if (_catOrder === 'fmvaz')   return _catTitleSorted(gs.filter(g => !_catHasFmv(g))).map(g => ({ type: 'book', g }));
+  if (_catOrder === 'fmvrank') return ranked(gs.filter(g => !_catHasFmv(g))).map(g => ({ type: 'book', g }));
+
+  if (_catOrder === 'user') {
+    // Grouped by the 4-char short User ID, alphanumeric, name underneath. A book
+    // assessed by more than one user appears under each of them — the grouping is
+    // "what this user submitted", which is the question the ordering answers.
+    const byUser = new Map();
+    for (const g of gs) {
+      const codes = new Set(g.items.map(i => i.userCode || '~~~~'));
+      for (const c of codes) {
+        if (!byUser.has(c)) byUser.set(c, { code: c, name: '', books: [] });
+        const u = byUser.get(c);
+        if (!u.name) { const it = g.items.find(i => (i.userCode || '~~~~') === c); u.name = (it && it.userName) || ''; }
+        u.books.push(g);
+      }
+    }
+    const out = [];
+    [...byUser.values()]
+      .sort((a, b) => String(a.code).localeCompare(String(b.code), undefined, { sensitivity: 'base', numeric: true }))
+      .forEach(u => {
+        out.push({ type: 'head', label: u.code === '~~~~' ? '(no code)' : u.code, sub: u.name || '(no name)', n: u.books.length });
+        _catTitleSorted(u.books).forEach(g => out.push({ type: 'book', g, user: u.code }));
+      });
+    return out;
+  }
+  return _catTitleSorted(gs).map(g => ({ type: 'book', g }));   // 'title' (default)
+}
+
+function renderCatalogue() {
+  const el = document.getElementById('cat-root');
   if (!el) return;
   if (!_catRows) { loadCatalogue(); return; }
   const rangeLbl = _summaryRangeLabel();
+  const noFmvCount = _catFmvKeys ? _catGroups.filter(g => !_catHasFmv(g)).length : null;
   el.innerHTML = `
-    <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;margin:4px 0 10px">
+    <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;margin:0 0 10px">
       <div style="font-size:12px;color:#8a8d96">
-        ${_catGroups.length.toLocaleString()} distinct books · ${_catRows.length.toLocaleString()} assessments</div>
+        ${_catGroups.length.toLocaleString()} distinct books · ${_catRows.length.toLocaleString()} assessments${noFmvCount != null ? ` · ${noFmvCount.toLocaleString()} with no FMV curve` : ''}</div>
       <div style="font-size:11px;color:${rangeLbl === 'All time' ? '#8a8d96' : '#e0b050'}">
         Range: ${escapeHtml(rangeLbl)}${rangeLbl === 'All time' ? '' : ' — not the full library'}</div>
       <button id="cat-reload" style="padding:3px 10px;font-size:11px;background:var(--panel-2);border:1px solid #3a5a2a;border-radius:8px;color:#cde;cursor:pointer">Reload</button>
     </div>
     <div style="display:flex;gap:14px;align-items:flex-start">
-      <div style="width:300px;flex-shrink:0">
+      <div style="width:310px;flex-shrink:0">
         <input id="cat-q" placeholder="Filter books…" value="${escapeHtml(_catQ)}"
-          style="width:100%;padding:7px 9px;background:#0e0f12;border:1px solid #23252c;border-radius:8px;color:#e6e6e6;font-size:12px;margin-bottom:6px">
-        <div id="cat-books" style="max-height:70vh;overflow:auto;border:1px solid #23252c;border-radius:8px"></div>
+          style="width:100%;padding:7px 9px;background:#0e0f12;border:1px solid #23252c;border-radius:8px;color:#e6e6e6;font-size:12px">
+        <div id="cat-orders" style="display:flex;gap:3px;flex-wrap:wrap;margin:6px 0">
+          ${CAT_SORTS.map(([v, l]) => `<button data-ord="${v}" style="padding:3px 8px;font-size:10px;border-radius:7px;cursor:pointer;border:1px solid ${_catOrder === v ? '#5c5' : '#2a2d38'};background:${_catOrder === v ? '#1d2a20' : '#161821'};color:${_catOrder === v ? '#bfe8bf' : '#9ab'}">${l}</button>`).join('')}
+        </div>
+        <div id="cat-books" style="max-height:74vh;overflow:auto;border:1px solid #23252c;border-radius:8px"></div>
       </div>
       <div id="cat-main" style="flex:1;min-width:0"></div>
     </div>`;
   document.getElementById('cat-reload').onclick = () => loadCatalogue(true);
-  const q = document.getElementById('cat-q');
-  q.oninput = e => { _catQ = e.target.value; _catRenderBooks(); };
+  document.getElementById('cat-q').oninput = e => { _catQ = e.target.value; _catRenderBooks(); };
+  document.getElementById('cat-orders').onclick = e => {
+    const b = e.target.closest('[data-ord]'); if (!b) return;
+    _catOrder = b.dataset.ord; renderCatalogue();
+  };
   _catRenderBooks();
   if (_catSel) _catRenderMain();
 }
@@ -3489,19 +3694,24 @@ function renderCatalogueTab() {
 function _catRenderBooks() {
   const el = document.getElementById('cat-books');
   if (!el) return;
-  const f = _catNorm(_catQ);
-  const list = _catGroups.filter(g => !f || _catNorm(g.title + ' #' + g.issue).includes(f));
-  el.innerHTML = list.slice(0, 800).map(g => `
-    <div class="cat-bk" data-k="${encodeURIComponent(g.key)}"
+  const rows = _catOrdered();
+  el.innerHTML = rows.slice(0, 1200).map(r => {
+    if (r.type === 'head') {
+      return `<div style="padding:6px 10px;background:#12141a;border-bottom:1px solid #23252c;position:sticky;top:0">
+        <div style="font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:800;letter-spacing:2px;color:#e8c257">${escapeHtml(r.label)}</div>
+        <div style="font-size:10px;color:#8a8d96">${escapeHtml(r.sub)} · ${r.n} book${r.n === 1 ? '' : 's'}</div></div>`;
+    }
+    const g = r.g;
+    return `<div class="cat-bk" data-k="${encodeURIComponent(g.key)}"
       style="padding:6px 10px;border-bottom:1px solid #1b1d23;cursor:pointer;${_catSel && _catSel.key === g.key ? 'background:#1d2a20;border-left:3px solid #5c5' : ''}">
       <div style="font-size:12px;font-weight:600;color:#e6e6e6">${escapeHtml(g.title)} <span style="color:#8a8d96">#${escapeHtml(g.issue)}</span></div>
       <div style="font-size:10px;color:#8a8d96;margin-top:1px">${g.n}× · avg
-        <span style="color:#9ada7a">RG ${g.avgRG != null ? _catG(Math.round(g.avgRG * 2) / 2) : '—'}</span> ·
-        <span style="color:#7ab8e8">PG ${g.avgPG != null ? g.avgPG.toFixed(1) : '—'}</span>${g.slabs ? ' · ' + g.slabs + ' slab' : ''}</div>
-    </div>`).join('') || '<div style="padding:16px;color:#666;font-size:12px">no match</div>';
+        <span style="color:#9ada7a">RG ${_catAvg(g.avgRG)}</span> ·
+        <span style="color:#7ab8e8">PG ${_catAvg(g.avgPG)}</span>${g.slabs ? ' · ' + g.slabs + ' slab' : ''}</div>
+    </div>`;
+  }).join('') || '<div style="padding:16px;color:#666;font-size:12px">no match</div>';
   el.onclick = e => {
-    const b = e.target.closest('.cat-bk');
-    if (!b) return;
+    const b = e.target.closest('.cat-bk'); if (!b) return;
     _catSel = _catGroups.find(g => g.key === decodeURIComponent(b.dataset.k));
     _catRenderBooks(); _catRenderMain();
   };
@@ -3546,8 +3756,8 @@ function _catRenderMain() {
     <div style="font-size:16px;font-weight:700;margin-bottom:2px">${escapeHtml(g.title)} #${escapeHtml(g.issue)}</div>
     <div style="font-size:12px;color:#8a8d96;margin-bottom:10px">
       ${g.items.length} assessments${g.slabs ? ` · ${g.slabs} slabbed` : ''} &nbsp;·&nbsp;
-      <b style="color:#9ada7a">RG</b> ${rgs.length ? `${_catG(Math.min(...rgs))}–${_catG(Math.max(...rgs))} · avg ${_catG(Math.round(_catMean(rgs) * 2) / 2)}` : '—'} &nbsp;
-      <b style="color:#7ab8e8">PG</b> ${pgs.length ? `${Math.min(...pgs).toFixed(1)}–${Math.max(...pgs).toFixed(1)} · avg ${_catMean(pgs).toFixed(1)}` : '—'}
+      <b style="color:#9ada7a">RG</b> ${rgs.length ? `${_catG(Math.min(...rgs))}–${_catG(Math.max(...rgs))} · avg ${_catAvg(_catMean(rgs))}` : '—'} &nbsp;
+      <b style="color:#7ab8e8">PG</b> ${pgs.length ? `${Math.min(...pgs).toFixed(1)}–${Math.max(...pgs).toFixed(1)} · avg ${_catAvg(_catMean(pgs))}` : '—'}
     </div>
     <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
       <div id="fmv-editor" style="width:250px;flex-shrink:0;background:#0e0f12;border:1px solid #23252c;border-radius:10px;padding:12px"></div>

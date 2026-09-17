@@ -174,6 +174,10 @@ export default async function handler(req, res) {
           uid: doc.id,
           email: d.email || '',
           name: d.displayName || d.email || '(no name)',
+          // S22: the 4-char short User ID the rest of admin displays. The
+          // catalogue's User sort groups on it, and it was the one field that
+          // forced a second lookup.
+          transferCode: d.transferCode || '',
           createdAt: isoOf(d.createdAt),
           createdAtMs: msOf(d.createdAt, d.createdAtMs),
           assessmentCredits: d.assessmentCredits ?? null,

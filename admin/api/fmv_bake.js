@@ -28,6 +28,31 @@ export default async function handler(req, res) {
     const cat = ALLOWED_CATS.includes(reqCat) ? reqCat : 'comics';
     const fileName = 'fmv_' + cat + '.json';
 
+    // S22: ?keys=1 returns ONLY the set of keys that have a curve — the static
+    // index's books + volumes, unioned with the manual fmv_dashboard overrides.
+    // The catalogue's "FMV A-Z" / "FMV Ranked" sorts are worklists of books with
+    // NO curve, and this is the cheapest way to answer that (a few thousand short
+    // strings) without a per-item lookup or a new serverless function — the admin
+    // project is near its function cap, so this rides on the existing FMV endpoint.
+    //
+    // NOTE: a key being absent is what "no FMV set" means. fmv_comics.json also has
+    // a blanket rule (1991+ books fall back to tier 1/2 at every grade), but that is
+    // a default, not a set value — those books still need a real curve, so they must
+    // stay in the worklist.
+    if ((req.query && req.query.keys === '1') || (req.body && req.body.keys === 1)) {
+      const kr = await fetch('https://robograder.app/' + fileName, { cache: 'no-store' });
+      const kbase = kr.ok ? await kr.json() : {};
+      const kdb = getFirestore();
+      const ksnap = await kdb.doc('fmv_dashboard/' + cat).get();
+      const kov = ksnap.exists ? (ksnap.data() || {}) : {};
+      const keys = new Set([
+        ...Object.keys(kbase.books || {}),
+        ...Object.keys(kbase.volumes || {}),
+        ...Object.keys(kov),
+      ]);
+      return res.status(200).json({ category: cat, keys: [...keys], manual: Object.keys(kov).length });
+    }
+
     // A category that has never been baked yet has no static file — start from an
     // empty skeleton so the first bake of pokemon/magic/baseball still works.
     const r = await fetch('https://robograder.app/' + fileName, { cache: 'no-store' });
