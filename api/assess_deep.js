@@ -468,7 +468,44 @@ Rules:
 - Do not mention internal references or priors. Report only what these images show.
 `;
 
-  const activePrompt = isRestoration ? restorationPrompt : systemPrompt;
+  // ── S22: BATCH TERSE OUTPUT (passes 2-N only) ───────────────────────────────
+  // In a Batch the client keeps NOTHING a Deep writes except the numbers:
+  // roboGrade subscores, grade, pageQuality and confidenceRange. deepAssessment
+  // and the defect list from passes 2-N are read for a count and thrown away —
+  // the book keeps the write-up and defect list from its own real Deep (see the
+  // "APPLY THE BATCH" block in index.html). So we stop paying to write them.
+  //
+  // Pass 1 is deliberately NOT terse: its defect list still feeds the deepAdded
+  // telemetry and it is the pass whose output most resembles a real Deep, which
+  // is what makes the batch comparable to a normal run.
+  //
+  // CACHE SAFETY: this text is appended AFTER the §§CACHE_SPLIT§§ marker, so it
+  // lands in the per-pass half and the cached prefix is byte-identical to a
+  // non-terse pass. Putting it before the marker would invalidate the cache on
+  // every batch and cost far more than it saves.
+  //
+  // EXPECTED SAVING IS SMALL. Working back from Matt's own per-call costs
+  // (pass 1 $0.183 vs passes 2-5 ~$0.101 at Opus 5 $5/$25 per M), a non-first
+  // Deep is roughly 85-90% input — the per-pass grade-reference images that sit
+  // outside the cached prefix on purpose, because they are what produces the
+  // variance. Output is only ~450-500 tokens (~$0.012). Expect ~$0.01 a pass,
+  // ~$0.04 a batch. This is not a big lever; the big lever would be caching the
+  // grade-reference images, which requires a fixed bracket, which flattened
+  // every Deep to the same PG and was rejected.
+  const BATCH_TERSE = !isRestoration
+                   && ((req.body && req.body.cacheProfile) === 'batch')
+                   && (req.body && req.body.batchTerse === true);
+  const terseBlock = BATCH_TERSE ? `
+
+## BATCH PASS — NUMBERS ONLY (overrides the RESPONSE FORMAT above)
+This is a repeat scoring pass. Only the numbers are read; every prose field is discarded unread.
+  • "deepAssessment": output an EMPTY STRING. Write no prose at all.
+  • "roboGrade.defects": output an EMPTY ARRAY []. Do not list defects.
+  • Still do the full observation work in Phase 1 and 2 — the defects you SEE must be fully reflected in frontScore / backScore / spineScore / interiorScore and in the grade. You are skipping the WRITING, not the looking. A shorter list must never mean a higher score.
+  • Everything else (grade, pageQuality, roboGrade scores, confidenceRange, photograder, gateResult, sameBook) is REQUIRED exactly as specified above.
+` : '';
+
+  const activePrompt = (isRestoration ? restorationPrompt : systemPrompt) + terseBlock;
 
   try {
     markPhase('promptAssemblyAtMs');

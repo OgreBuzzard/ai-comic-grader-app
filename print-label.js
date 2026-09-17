@@ -618,7 +618,7 @@ function ensureStylesInjected() {
   /* ── Label visual styles (used in both preview AND print sheet) ──────── */
   .rg-label {
     width: 1152px; height: 288px;
-    background: linear-gradient(180deg, #e07e00 0%, #f79a10 38%, #ffc255 100%);
+    background: linear-gradient(180deg, #c97a14 0%, #dd9430 38%, #e8b571 100%);
     border: 1px solid #8a9a6a;
     border-radius: 4px;
     position: relative;
@@ -670,14 +670,15 @@ function ensureStylesInjected() {
        PDF FIX: scaleX(0.625) replaces font-stretch (html2canvas 1.4.1
        ignores the wdth axis when rasterizing); transform-origin:center
        keeps it centered; inline-block so the transform applies. */
-    /* S22: matched to Case — 150 -> 160 at scaleX(0.75) instead of 0.625. The
-       S15 note said the other variants were held "pending verification" on
-       Case; Case has shipped that way since and reads well, so Wide follows. */
-    font-size: 160px; font-weight: 900;
+    /* S22 (2nd pass): back to 150px at scaleX(0.625). The S15 "Option A" test
+       (160 @ 0.75) made the numeral noticeably WIDER than Large and Square, and
+       Matt reads the narrower condense as the better one. Wide and Case now
+       match the other two variants exactly. */
+    font-size: 150px; font-weight: 900;
     color: #b8d820; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
-    transform: scaleX(0.75);
+    transform: scaleX(0.625);
     transform-origin: center;
   }
   .rg-label .rg-prec {
@@ -807,7 +808,12 @@ function ensureStylesInjected() {
      module) is now ~34px. */
   .rg-label .qr-col {
     position: absolute;
-    left: 32px; top: 14px;
+    /* S22: anchored to the BOTTOM instead of the top so the QR sits directly
+       above the URL it encodes — the arrangement Case and Square already use.
+       Top-anchored, it floated at the top of the label with the URL stranded
+       two inches below it. bottom:44 clears the URL (bottom:18, ~16px tall)
+       with a 10px gap. */
+    left: 32px; bottom: 44px;
     width: 122px;
     display: flex; flex-direction: column;
     align-items: center; gap: 4px;
@@ -882,7 +888,7 @@ function ensureStylesInjected() {
                        a .face element positioned at top:96px so the
                        children's coordinate space is unchanged. */
     width: 1152px; height: 384px;
-    background: linear-gradient(180deg, #e07e00 0%, #f79a10 38%, #ffc255 100%);
+    background: linear-gradient(180deg, #c97a14 0%, #dd9430 38%, #e8b571 100%);
     border: 1px solid #8a9a6a;
     border-radius: 4px;
     position: relative;
@@ -899,7 +905,7 @@ function ensureStylesInjected() {
     left: 0; right: 0;
     top: 90px;  /* face top sits at the fold line so its gradient meets it */
     height: 294px;
-    background: linear-gradient(180deg, #e07e00 0%, #f79a10 38%, #ffc255 100%);
+    background: linear-gradient(180deg, #c97a14 0%, #dd9430 38%, #e8b571 100%);
   }
   /* Fold guide: thin horizontal line at y=84 (1.04" from bottom), 2pt
      (=8px at 288 DPI) tall, centered in the 0.083" fold zone. Tells the
@@ -932,7 +938,7 @@ function ensureStylesInjected() {
     font-family: 'Barlow Condensed', sans-serif;
     overflow: hidden;
     white-space: nowrap;
-    background: linear-gradient(180deg, #e07e00 0%, #f79a10 45%, #ffc255 100%);
+    background: linear-gradient(180deg, #c97a14 0%, #dd9430 45%, #e8b571 100%);
   }
   .rg-label-l .wrap-strip .ws-score {
     flex: 0 0 auto;
@@ -1006,6 +1012,37 @@ function ensureStylesInjected() {
     width: 160px; height: auto;
     opacity: 0.8;
   }
+  /* S22: Wide and Large showed nothing at all where the price pad would be —
+     Case and Square both show the mascot, so they now match.
+     Placement note: on BOTH variants .info expands to the score box when there
+     is no price pad, so there is no free room where the pad sits. The space that
+     DID open up is the corner the QR column vacated when it moved down to sit
+     above its URL (see .qr-col above), so the badge goes there. That makes it a
+     small mark rather than a large one — deliberate on a 4x1 and a 6.25x1.5
+     strip, where anything bigger competes with the title. */
+  .rg-label .robot-badge {
+    display: block;
+    position: absolute;
+    left: 32px; top: 14px;
+    /* The art is square (470x467), so width == height. The relocated QR column's
+       top edge lands at 288 - 44(bottom) - 139(QR+gap+verify) = 105, so the badge
+       has to finish above that: 14 + 84 = 98, a 7px gap. 122px (the QR column's
+       width) would have run 32px INTO the QR. */
+    width: 84px;
+  }
+  .rg-label .robot-badge img { width: 100%; height: auto; display: block; opacity: 0.85; }
+  .rg-label-large .robot-badge {
+    display: block;
+    position: absolute;
+    right: 90px; top: 18px;  /* same right rail as the QR column and the URL */
+    /* Square art again. The relocated QR column's top edge is
+       432 - 62(bottom) - 220(QR+gap+verify) = 150, so 18 + 118 = 136 leaves a
+       14px gap. Clear of .info too, which ends at x=1508 against the badge's
+       x=1592. */
+    width: 118px;
+  }
+  .rg-label-large .robot-badge img { width: 100%; height: auto; display: block; opacity: 0.85; }
+
   .rg-label-l .meta-id-lbl, .rg-label-l .meta-id-val { display: none; }
   .url-id { font-weight: 800; }
   .rg-label-l .url-id { font-size: 24px; }
@@ -1038,19 +1075,16 @@ function ensureStylesInjected() {
     line-height: 1;
   }
   .rg-label-l .rg-num {
-    /* S15 May 29 (Option A test on Small L only): 150px → 160px font,
-       scaleX(0.625) → scaleX(0.75). Makes the score number larger and
-       less horizontally squished. Risk: ~22% width growth eats the
-       ~10px clearance to .rg-prec at the old size. If real-print test
-       shows the number colliding with the precision modifier, revert
-       to: font-size: 150px; transform: scaleX(0.625).
-       Other label variants (Small R / Square / Large) intentionally
-       unchanged pending verification on this one. */
-    font-size: 160px; font-weight: 900;
+    /* S15's Option A (150 -> 160 at scaleX(0.75)) is REVERTED here in S22.
+       Matt, comparing all four variants side by side: the Case/Wide numeral is
+       too wide and Large/Square's narrower condense reads better. Back to the
+       original 150px at scaleX(0.625), which also restores the ~10px clearance
+       to .rg-prec that Option A was eating into. */
+    font-size: 150px; font-weight: 900;
     color: #b8d820; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
-    transform: scaleX(0.75);
+    transform: scaleX(0.625);
     transform-origin: center;
   }
   .rg-label-l .rg-prec {
@@ -1174,7 +1208,7 @@ function ensureStylesInjected() {
      FRONT (score + identity), top half = BACK (QR + robot, rotated 180). */
   .rg-label-card {
     width: 756px; height: 576px;
-    background: linear-gradient(180deg, #ffc255 0%, #e07e00 43.75%, #e07e00 56.25%, #ffc255 100%);
+    background: linear-gradient(180deg, #e8b571 0%, #c97a14 43.75%, #c97a14 56.25%, #e8b571 100%);
     border: 1px solid #8a9a6a; border-radius: 4px;
     position: relative; overflow: hidden; box-sizing: border-box;
     font-family: 'Barlow Condensed', sans-serif;
@@ -1259,8 +1293,12 @@ function ensureStylesInjected() {
   .rg-label-l.has-price .price-pad {
     display: block;
     position: absolute;
-    left: 760px; top: 18px;
-    width: 190px; height: 234px;
+    /* S22: was 190x234 — noticeably taller than the pad on Wide (220x220),
+       Large (340x336) and Square (210x190), which all read as square-ish.
+       Squared off at 190x190 and re-centred against the 252px score box
+       (top = 18 + (252-190)/2 = 49) so it doesn't ride high in the cell. */
+    left: 760px; top: 49px;
+    width: 190px; height: 190px;
     background: #ffffff;
     border: 1px solid #b8c098;
     border-radius: 14px;
@@ -1357,7 +1395,7 @@ function ensureStylesInjected() {
      so the five stacked fields fit even for 2-line titles. */
   .rg-label-square {
     width: 576px; height: 576px;
-    background: linear-gradient(180deg, #e07e00 0%, #f79a10 38%, #ffc255 100%);
+    background: linear-gradient(180deg, #c97a14 0%, #dd9430 38%, #e8b571 100%);
     border: 1px solid #8a9a6a;
     border-radius: 8px;
     position: relative;
@@ -1393,14 +1431,16 @@ function ensureStylesInjected() {
     /* S14: 122 → 130, matching the score-prominence pass on the other
        labels (proportionally smaller bump to suit the 220px box). */
     /* S22: 156 -> 172 (~10% up) and pushed down off the ±PM — it was sitting
-       high in the 256px box rather than optically centred. */
+       high in the 256px box rather than optically centred.
+       S22 (2nd pass) BUG: the translateY was written in a `transform` that a
+       SECOND `transform: scaleX(0.625)` two lines below immediately overrode, so
+       the drop never rendered. One declaration now — the order matters, scaleX
+       first then translateY, so the shift is in unscaled pixels. */
     font-size: 172px; font-weight: 900;
-    transform: translateY(14px) scaleX(0.625);
-    transform-origin: center;
     color: #b8d820; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
-    transform: scaleX(0.625);
+    transform: scaleX(0.625) translateY(14px);
     transform-origin: center;
   }
   /* Precision absolute to the score-box corner, out of flow — never
@@ -1465,8 +1505,10 @@ function ensureStylesInjected() {
     margin-top: 3px;
   }
   .rg-label-square .info-lower { padding-top: 10px; }
-  /* ID is already printed under the QR — drop the redundant row here. */
-  .rg-label-square .meta-id-lbl, .rg-label-square .meta-id-val { display: none; }
+  /* S22: the ID row is BACK on Square. It was hidden on the argument that the ID
+     is already under the QR, but Square's .url is 150px wide at 13px mono and
+     "robograder.app/id/XXXXXX" does not fit in it, so in practice the grade ID
+     was not readable anywhere on the label. The meta row shows it plainly. */
   .rg-label-square .meta-grid {
     display: grid;
     grid-template-columns: max-content max-content;
@@ -1565,7 +1607,7 @@ function ensureStylesInjected() {
        layout just becomes 360px narrower with everything still 18px
        clear of the new right edge. 1800px = 6.25" at 288 DPI. */
     width: 1800px; height: 432px;
-    background: linear-gradient(180deg, #e07e00 0%, #f79a10 38%, #ffc255 100%);
+    background: linear-gradient(180deg, #c97a14 0%, #dd9430 38%, #e8b571 100%);
     border: 1px solid #8a9a6a;
     border-radius: 6px;
     position: relative;
@@ -1716,7 +1758,10 @@ function ensureStylesInjected() {
        edge. The price pad and .info right boundary shift by the same
        72px to keep the column relationships intact. */
     position: absolute;
-    right: 90px; top: 22px;
+    /* S22: bottom-anchored for the same reason as Wide — QR directly above its
+       URL. bottom:62 clears the URL (bottom:26, ~24px tall) with a 12px gap,
+       and frees the top-right corner for the robot badge below. */
+    right: 90px; bottom: 62px;
     width: 184px;
     display: flex; flex-direction: column;
     align-items: center; gap: 6px;
@@ -2314,7 +2359,7 @@ async function generatePDF(comics, modal) {
     // can capture each. Each box is sized to the format's pixel dimensions.
     let labelsHTML = '';
     for (let i = 0; i < comics.length; i++) {
-      labelsHTML += `<div class="pdf-label-box" data-idx="${i}" style="width:${fmt.pixelW}px;height:${fmt.pixelH}px;display:block;background:linear-gradient(180deg, #e07e00 0%, #f79a10 38%, #ffc255 100%);">${renderLabelMarkup(comics[i], opts)}</div>`;
+      labelsHTML += `<div class="pdf-label-box" data-idx="${i}" style="width:${fmt.pixelW}px;height:${fmt.pixelH}px;display:block;background:linear-gradient(180deg, #c97a14 0%, #dd9430 38%, #e8b571 100%);">${renderLabelMarkup(comics[i], opts)}</div>`;
     }
     offscreen.innerHTML = labelsHTML;
 
@@ -2358,7 +2403,7 @@ async function generatePDF(comics, modal) {
       const PAGE_W_IN = 8.5;
       const dpi = fmt.pixelW / fmt.labelW;          // 288
       const bandEl = document.createElement('div');
-      bandEl.style.cssText = `width:${Math.round(PAGE_W_IN * dpi)}px;height:${fmt.pixelH}px;background:linear-gradient(180deg, #e07e00 0%, #f79a10 38%, #ffc255 100%);`;
+      bandEl.style.cssText = `width:${Math.round(PAGE_W_IN * dpi)}px;height:${fmt.pixelH}px;background:linear-gradient(180deg, #c97a14 0%, #dd9430 38%, #e8b571 100%);`;
       offscreen.appendChild(bandEl);
       try {
         const bandCanvas = await window.html2canvas(bandEl, { scale: 1, backgroundColor: '#d4d9be', logging: false });
@@ -2841,7 +2886,7 @@ function renderLabelMarkup(comic, opts) {
         <div class="info-lower">
           <div class="meta-grid">
             <span class="meta-lbl">GRADED</span><span class="meta-val">${gradeDate}</span>
-            <span class="meta-lbl meta-id-lbl">ID</span><span class="meta-val meta-id-val">${gradeId}</span>
+            <span class="meta-lbl meta-id-lbl">GRADE ID</span><span class="meta-val meta-id-val">${gradeId}</span>
           </div>
         </div>
       </div>

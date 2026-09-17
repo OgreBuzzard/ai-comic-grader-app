@@ -213,6 +213,14 @@ export default async function handler(req, res) {
       title: ident.title || '',
       issueNumber: String(ident.issue || ''),
       cacheProfile: 'batch',
+      // S22: passes 2..N write no deepAssessment and no defect list. The client
+      // discards both — the book keeps the write-up and defects from its own
+      // real Deep and the batch updates only RG / PG / PQ / subscores. Pass 1
+      // stays full so deepAdded telemetry survives and one pass still looks like
+      // a normal Deep. The directive is appended after §§CACHE_SPLIT§§ in
+      // assess_deep.js, so the cached prefix is unchanged. Saving is modest
+      // (~$0.01/pass) — see the note there.
+      batchTerse: n >= 2,
       // ComicVine cover the original Main already resolved. Deep uses it only if
       // this issue has no curated reference_covers/ entry, and treats it as a
       // weak structural reference (see cvCoverNote in assess_deep.js).

@@ -3554,7 +3554,7 @@ function buildListPG(c) {
   // S22: was align-self:center, which put the box mid-row and straight under the
   // print icon in the top-right corner. Anchored to the BOTTOM instead, so its
   // base lines up with the bottom of the cover thumbnail and the icon is clear.
-  return `<div style="flex-shrink:0;align-self:flex-end;background:${pgBg};border-radius:7px;width:40px;height:32px;display:flex;align-items:center;justify-content:center"><div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.66);display:inline-block;font-weight:800;font-size:24px;line-height:1;color:#fff">${v}</div></div>`;
+  return `<div style="flex-shrink:0;align-self:flex-end;background:${pgBg};border-radius:7px;width:40px;height:32px;display:flex;align-items:center;justify-content:center"><div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.66) translateY(0.11em);display:inline-block;font-weight:800;font-size:24px;line-height:1;color:#fff">${v}</div></div>`;
 }
 
 function buildStackedGradePair(officialBadge, aiBadge) {
@@ -7275,8 +7275,23 @@ const BATCH_BTN_LEFT_PCT   = 11.81;   // identical to Main/Deep/Full
 const BATCH_BTN_TOPS_PCT   = [36.42, 46.36, 56.29, 66.23, 76.16];  // identical
 const BATCH_BTN_HEIGHT_PCT = 9.01;    // identical
 const BATCH_BTN_WIDTH_PCT  = 43.46;   // 206/474 — the small asset at 1:1, like the house boxes (360/474 = 75.95)
-const BATCH_RES_W_PCT      = 14.80;
-const BATCH_RES_LEFTS_PCT  = [57.80, 72.96];  // RG, PG — right edge lines up with the house boxes
+// S22 sizing pass. Measured on Matt's 960px-wide screenshot the boxes rendered
+// 109 x 104 px with only ~2.6px between RG and PG. He asked for 4px smaller and
+// more breathing room, so:
+//   width  14.80% -> 14.26%  (-4px at that render width)
+//   height  9.01% ->  8.69%  (-4px; own constant now, see below)
+//   gap      0.36% ->  1.20% (~2.6px -> ~8.8px)
+// Outer edges are unchanged: RG's left and PG's right still line up with the
+// label boxes and the plate. Everything is a percentage of the overlay, so it
+// scales with the device — the px figures are that one screenshot's scale.
+const BATCH_RES_W_PCT      = 14.26;
+const BATCH_RES_LEFTS_PCT  = [57.92, 73.38];  // RG, PG
+// The result boxes no longer borrow BATCH_BTN_HEIGHT_PCT. That constant has to
+// keep matching the artwork's recess cut-outs for the GRADE 1-5 label boxes;
+// shrinking it would have pulled those off their recesses too.
+const BATCH_RES_H_PCT      = 8.69;
+// ...and are re-centred on the row so losing 4px of height doesn't ride them up.
+const BATCH_RES_TOP_NUDGE  = 0.16;
 
 function mountBatchTracker(n) {
   if (!window.RobograderScan || !window.RobograderScan.slideOverlayIntoChest) {
@@ -7322,15 +7337,15 @@ function mountBatchTracker(n) {
       { kind: "pg", bg: "#2a5a8a", border: "#4a7fb5", ink: "#ffffff" }
     ].forEach((c, k) => {
       resultsHtml += `<div id="batch-${c.kind}-${i + 1}"
-        style="position:absolute;left:${BATCH_RES_LEFTS_PCT[k]}%;top:${top}%;
-               width:${BATCH_RES_W_PCT}%;height:${BATCH_BTN_HEIGHT_PCT}%;
+        style="position:absolute;left:${BATCH_RES_LEFTS_PCT[k]}%;top:${(top + BATCH_RES_TOP_NUDGE).toFixed(2)}%;
+               width:${BATCH_RES_W_PCT}%;height:${BATCH_RES_H_PCT}%;
                background:${c.bg};border:1.5px solid ${c.border};border-radius:7px;
                display:flex;align-items:center;justify-content:center;
                box-shadow:0 1px 4px rgba(0,0,0,0.45);
                transition:box-shadow .2s ease;
                pointer-events:none;">
           <span style="font-family:'League Spartan',system-ui,sans-serif;font-weight:900;
-                       transform:scaleX(0.66);transform-origin:center;display:inline-block;
+                       transform:scaleX(0.66) translateY(0.11em);transform-origin:center;display:inline-block;
                        font-size:clamp(13px,7.4vw,30px);color:${c.ink};
                        line-height:1;"></span>
         </div>`;
@@ -7405,7 +7420,8 @@ function _batchCountUp(pass, kind, finalText) {
     if (!box) return resolve();
     const target = parseFloat(finalText);
     if (!Number.isFinite(target)) { _batchPaint(pass, kind, finalText); return resolve(); }
-    const DUR = 900, t0 = performance.now();
+    // S22: 900 -> 1800. Matt: the in-line scores flicked past too fast to read.
+    const DUR = 1800, t0 = performance.now();
     const fmt = v => kind === "pg" ? v.toFixed(1) : (Math.round(v * 2) / 2).toString();
     const step = now => {
       const k = Math.min(1, (now - t0) / DUR);
@@ -7421,20 +7437,44 @@ function _batchCountUp(pass, kind, finalText) {
   });
 }
 
-function _batchV3Label(p, rawScore) {
-  if (!window.RoboScoreV3 || !p || !p.subscores || typeof rawScore !== "number") return "";
+// S22: ONE v3 path for every batch number — each row, the average, and the grade
+// the item ends up displaying. Built by cloning the ITEM and swapping in the
+// subscores, so defects, page quality, photograder, slab state and depth are all
+// the real ones.
+//
+// The previous version hand-built a bare object with `defects: []`, which:
+//   • skipped the interior-defect penalty (interior tier never lost its 0.5),
+//   • skipped the cap shave (defectFaces all false, hasDefects false),
+//   • hard-coded depth "deep" even on a Full book.
+// A batch row could therefore read half a point above the same subscores on the
+// Detail screen. Do not re-introduce a bespoke v3 call here.
+//
+// NOTE: forComic IGNORES roboGrade.score entirely — the grade is derived from
+// frontScore/backScore/spineScore + pageQuality. That is the bug that made the
+// batch average read 7.0: the old code passed the averaged 0-100 score but pass
+// 1's subscores, so it just re-reported pass 1's grade.
+function _batchV3(sub, pq) {
+  if (!window.RoboScoreV3 || !sub) return null;
   try {
-    const v = window.RoboScoreV3.forComic({
+    const n = v => (typeof v === "number" && isFinite(v)) ? v : 0;
+    return window.RoboScoreV3.forComic({
+      ...formData,
+      type: "comic",
+      pageQuality: pq || formData.pageQuality,
       roboGrade: {
-        score: rawScore,
-        frontScore: p.subscores.front, backScore: p.subscores.back,
-        spineScore: p.subscores.spine, interiorScore: p.subscores.interior,
-        pageQuality: p.pq, confidenceRange: p.pm, defects: []
-      },
-      pageQuality: p.pq, deepAssessmentRan: true
+        ...(formData.roboGrade || {}),
+        score: n(sub.front) + n(sub.back) + n(sub.spine) + n(sub.interior),
+        frontScore: sub.front, backScore: sub.back,
+        spineScore: sub.spine, interiorScore: sub.interior,
+        pageQuality: pq || (formData.roboGrade && formData.roboGrade.pageQuality) || formData.pageQuality
+      }
     });
-    return v ? window.RoboScoreV3.formatGrade(v.grade) : "";
-  } catch (e) { return ""; }
+  } catch (e) { return null; }
+}
+
+function _batchV3Label(p) {
+  const v = p ? _batchV3(p.subscores, p.pq) : null;
+  return v ? window.RoboScoreV3.formatGrade(v.grade) : "";
 }
 
 // Called on every poll with that pass's slot. Idempotent.
@@ -7452,7 +7492,7 @@ async function advanceBatchRow(pass, p) {
     _batchRowState[pass] = "done";
     _batchSetBox(pass, "success");
     await Promise.all([
-      _batchCountUp(pass, "rg", _batchV3Label(p, p.rg) || "0"),
+      _batchCountUp(pass, "rg", _batchV3Label(p) || "0"),
       _batchCountUp(pass, "pg", _batchPgText(p.grade) || "0.0")
     ]);
   }
@@ -7502,10 +7542,24 @@ function mountBatchResults(summary) {
 
 // The batch equivalent of completeCardAssessment — without this the panel had
 // no COMPLETE button at all and the app was stranded behind the overlay.
-function completeBatchAssessment() {
-  if (window.RobograderScan && window.RobograderScan.dismiss) window.RobograderScan.dismiss();
+async function completeBatchAssessment() {
   formData._batchMode = false;
-  try { renderForm(); } catch (e) { console.warn("[batch] renderForm after complete:", e); }
+  // S22: was renderForm(), which drops the user on EDIT. Every other assessment
+  // finishes on DETAIL via submitForm() with _routeToEditAfterSave cleared (see
+  // completeAssessment) — Batch now does the same, so the averaged grade is the
+  // first thing shown. submitForm also persists the batch write-back above; the
+  // earlier saveItem call stays as the safety net for a user who never taps
+  // COMPLETE.
+  try {
+    _routeToEditAfterSave = false;
+    await submitForm();
+  } catch (e) {
+    console.warn("[batch] submitForm after complete:", e);
+    try { renderForm(); } catch (e2) {}
+  }
+  if (window.RobograderScan && window.RobograderScan.dismiss) {
+    try { window.RobograderScan.dismiss(); } catch (e) {}
+  }
 }
 
 // Deleting an Assessment History entry is destructive and the × sits right at
@@ -8900,11 +8954,42 @@ async function submitBatchAssessment() {
   formData._batchMode = true;
   let anim = null;
   try {
+    // ── animation FIRST, then the start call ────────────────────────────────
+    // S22: this order used to be reversed — /api/assess_batch_start was awaited
+    // (a full round-trip: auth, eligibility, a Firestore credit transaction and
+    // the batch-doc write) before a single pixel moved, so Batch sat dead for
+    // about a second after the tap while Main/Deep/Full appeared to start
+    // instantly. Those paths open their overlay before their network call; Batch
+    // now does the same. The two run concurrently, so the start latency is spent
+    // behind the shell sliding up instead of in front of it.
+    //
+    // All 10 photos in one sweep, in the order SLOTS_BATCH expects:
+    // [front, back, pq, spine, tl, tr, bl, br, icFront, icBack].
+    const _u = x => (x && (x.url || (typeof x === "string" ? x : null))) || null;
+    const _batchPhotos = [
+      ...(formData.images || []).map(_u).slice(0, 4),
+      ...(formData.cornerImages || []).map(_u).slice(0, 4),
+      ...(formData.interiorCoverImages || []).map(_u).slice(0, 2)
+    ];
+    if (window.RobograderScan && window.RobograderScan.runScanAnimation) {
+      try {
+        const _run = window.RobograderScan.runScanAnimation(_batchPhotos, "batch");
+        // BATCH_N rather than started.n — the tracker mounts on the animation's
+        // own timeline now and must not wait on the start response. The server
+        // has never returned anything but BATCH_N here.
+        const _mount = () => { try { mountBatchTracker(BATCH_N); } catch (e) { console.warn("[batch] tracker mount:", e); } };
+        _run.promise.then(_mount).catch(_mount);
+        anim = { run: _run, mounted: true };
+      } catch (e) { console.warn("[batch] animation failed to start (non-fatal):", e); anim = null; }
+    }
+
     // ── start: one call, 3 credits deducted server-side, batch doc created ──
     let started;
     try {
       started = await _batchApi("/api/assess_batch_start", { method: "POST", body: { itemId: formData.id } });
     } catch (e) {
+      // The overlay is already up, so tear it down before the alert.
+      if (window.RobograderScan && window.RobograderScan.dismiss) { try { window.RobograderScan.dismiss(); } catch (e2) {} }
       formData._batchMode = false;
       if (e.status === 402) {
         await appAlert(e.message || "Not enough credits for a Batch.");
@@ -8912,6 +8997,7 @@ async function submitBatchAssessment() {
       } else {
         await appAlert("Batch could not start: " + (e.message || "unknown error") + "\n\nNo credits were charged.");
       }
+      renderForm();
       return;
     }
     const batchId = started.batchId;
@@ -8924,24 +9010,6 @@ async function submitBatchAssessment() {
       if (typeof updateStats === "function") updateStats();
       const _credEl = document.getElementById("settings-credits");
       if (_credEl) _credEl.textContent = String(window._userCredits || 0);
-    }
-
-    // ── animation: one continuous sequence, started before any grading ──────
-    // All 10 photos in one sweep, in the order SLOTS_BATCH expects:
-    // [front, back, pq, spine, tl, tr, bl, br, icFront, icBack].
-    const _u = x => (x && (x.url || (typeof x === "string" ? x : null))) || null;
-    const _batchPhotos = [
-      ...(formData.images || []).map(_u).slice(0, 4),
-      ...(formData.cornerImages || []).map(_u).slice(0, 4),
-      ...(formData.interiorCoverImages || []).map(_u).slice(0, 2)
-    ];
-    if (window.RobograderScan && window.RobograderScan.runScanAnimation) {
-      try {
-        const _run = window.RobograderScan.runScanAnimation(_batchPhotos, "batch");
-        const _mount = () => { try { mountBatchTracker(started.n || BATCH_N); } catch (e) { console.warn("[batch] tracker mount:", e); } };
-        _run.promise.then(_mount).catch(_mount);
-        anim = { run: _run, mounted: true };
-      } catch (e) { console.warn("[batch] animation failed to start (non-fatal):", e); anim = null; }
     }
 
     // ── staggered fan-out + poll ────────────────────────────────────────────
@@ -8957,20 +9025,6 @@ async function submitBatchAssessment() {
     };
 
     const fmtGrade = g => window.RoboScoreV3 ? window.RoboScoreV3.formatGrade(g) : String(g);
-    const _v3ForPass = (p) => {
-      if (!window.RoboScoreV3 || !p || typeof p.rg !== "number" || !p.subscores) return null;
-      try {
-        return window.RoboScoreV3.forComic({
-          roboGrade: {
-            score: p.rg,
-            frontScore: p.subscores.front, backScore: p.subscores.back,
-            spineScore: p.subscores.spine, interiorScore: p.subscores.interior,
-            pageQuality: p.pq, confidenceRange: p.pm, defects: []
-          },
-          pageQuality: p.pq, deepAssessmentRan: true
-        });
-      } catch (e) { return null; }
-    };
     let status = null;
     while (true) {
       await new Promise(r => setTimeout(r, BATCH_POLL_MS));
@@ -9008,30 +9062,46 @@ async function submitBatchAssessment() {
 
     // NO OUTLIER TRIMMING — every completed pass counts (spec §6.1). The v2 code
     // here filtered to |x - median| <= 1.5, which contradicted that decision.
-    //
-    // Average the RAW 0-100 engine scores and quantize ONCE, rather than
-    // averaging five already-quantized half-point grades. Averaging rounded
-    // inputs throws away the precision that makes the average worth computing —
-    // and it is what flattens the Assessment History range bar.
+    const fmt = fmtGrade;
     const raws = done.map(p => p.rg);
     const avgRaw = raws.reduce((a, b) => a + b, 0) / raws.length;
     const loRaw = Math.min(...raws), hiRaw = Math.max(...raws);
-
-    const v3of = (rawScore, p) => _v3ForPass({ ...p, rg: rawScore });
-    const fmt = fmtGrade;
-
-    // Quantize the averaged/extreme RAW scores through the production v3 path,
-    // using a representative pass for the non-score inputs.
-    const rep = done[0];
-    const vAvg = v3of(avgRaw, rep), vLo = v3of(loRaw, rep), vHi = v3of(hiRaw, rep);
-    const gAvg = vAvg ? vAvg.grade : Math.round(avgRaw / 10 * 2) / 2;
-    const gLo = vLo ? vLo.grade : Math.round(loRaw / 10 * 2) / 2;
-    const gHi = vHi ? vHi.grade : Math.round(hiRaw / 10 * 2) / 2;
 
     const pgs = done.map(p => parseFloat(p.grade)).filter(x => !isNaN(x));
     const avgPG = pgs.length ? (Math.round(pgs.reduce((a, b) => a + b, 0) / pgs.length * 2) / 2).toFixed(1) : "";
     const pqCount = {}; done.forEach(p => { if (p.pq) pqCount[p.pq] = (pqCount[p.pq] || 0) + 1; });
     const modePQ = Object.keys(pqCount).sort((a, b) => pqCount[b] - pqCount[a])[0] || "";
+
+    // ── THE AVERAGE ────────────────────────────────────────────────────────
+    // S22 BUG FIX. This used to average the raw 0-100 scores and then hand the
+    // average to v3 together with PASS 1's subscores. RoboScoreV3.forComic
+    // IGNORES roboGrade.score — it grades from frontScore/backScore/spineScore
+    // plus page quality — so the averaged number was thrown away and the panel
+    // reported pass 1's grade as the "average". On Matt's Uncanny X-Men #35 run
+    // (7 / 5 / 5.5 / 5 / 5.5) it printed 7. Low and High were computed the same
+    // way, so all three were identical and the history range bar was flat.
+    //
+    // The average is now taken on the SUBSCORES, which is what v3 actually reads.
+    // The four averages are still full-precision; v3 does the one rounding, so
+    // this keeps the "average raw, quantize once" intent that was the point.
+    const _subKeys = ["front", "back", "spine", "interior"];
+    const avgSub = {};
+    _subKeys.forEach(k => {
+      const xs = done.map(p => p.subscores && p.subscores[k]).filter(v => typeof v === "number" && isFinite(v));
+      avgSub[k] = xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+    });
+    const _haveSub = _subKeys.every(k => typeof avgSub[k] === "number");
+
+    const vAvg = _haveSub ? _batchV3(avgSub, modePQ) : null;
+    const gAvg = vAvg ? vAvg.grade : Math.round(avgRaw / 10 * 2) / 2;
+
+    // Low/High are the min and max of the five ROW grades, not v3 re-run on the
+    // min/max raw score. The five numbers on screen are what the range describes,
+    // so the bar ends must be two of them.
+    const perGrades = done.map(p => { const v = _batchV3(p.subscores, p.pq); return v ? v.grade : null; })
+                          .filter(g => typeof g === "number");
+    const gLo = perGrades.length ? Math.min(...perGrades) : gAvg;
+    const gHi = perGrades.length ? Math.max(...perGrades) : gAvg;
 
     const rec = {
       _batch: true, depth: "batch", runCount: done.length,
@@ -9045,7 +9115,7 @@ async function submitBatchAssessment() {
       // ASSESSMENT_HISTORY_SPEC.md forbids surfacing a 0-100 Roboscore.
       _rawAvg: avgRaw, _rawLow: loRaw, _rawHigh: hiRaw,
       runs: done.map(p => {
-        const v = v3of(p.rg, p);
+        const v = _batchV3(p.subscores, p.pq);
         return {
           rgV3Grade: v ? fmt(v.grade) : "",
           rgV3PM: v ? (v.pmLabel || "") : "",
@@ -9058,6 +9128,43 @@ async function submitBatchAssessment() {
     };
     if (!Array.isArray(formData.assessmentHistory)) formData.assessmentHistory = [];
     formData.assessmentHistory.unshift(rec);
+
+    // ── APPLY THE BATCH TO THE BOOK ─────────────────────────────────────────
+    // S22: the batch used to write nothing but a history record, so Detail and
+    // Edit still showed the pre-batch grade and Matt (correctly) read that as
+    // "Batch doesn't update the displayed grade." The whole point of paying for
+    // five passes is that their average becomes the book's grade.
+    //
+    // Numbers only. aiAssessment, deepAssessment and the defect list are left
+    // exactly as the book's last real Deep wrote them — per Matt, the batch does
+    // not need (or pay for) five more write-ups, and the existing prose is the
+    // one that was written with full reasoning. Keeping the defect list also
+    // keeps v3's interior-defect penalty and cap-shave working on the new
+    // subscores, which is why _batchV3 grades through the item rather than a
+    // bare object.
+    if (_haveSub) {
+      const r1 = x => Math.round(x * 10) / 10;
+      if (!formData.roboGrade) formData.roboGrade = {};
+      formData.roboGrade.frontScore    = r1(avgSub.front);
+      formData.roboGrade.backScore     = r1(avgSub.back);
+      formData.roboGrade.spineScore    = r1(avgSub.spine);
+      formData.roboGrade.interiorScore = r1(avgSub.interior);
+      // v1 0-100 score = the four subscores summed. Admin LOGS and the Full path
+      // both read roboGrade.score, so it has to stay consistent with them.
+      formData.roboGrade.score = r1(avgSub.front + avgSub.back + avgSub.spine + avgSub.interior);
+      if (modePQ) formData.roboGrade.pageQuality = modePQ;
+      const _pms = done.map(p => p.pm).filter(x => typeof x === "number" && isFinite(x));
+      if (_pms.length) formData.roboGrade.confidenceRange = Math.round(_pms.reduce((a, b) => a + b, 0) / _pms.length);
+      formData.roboGrade.batchAveraged = true;
+      formData.roboGrade.batchRunCount = done.length;
+    }
+    if (modePQ) formData.pageQuality = modePQ;
+    if (avgPG) {
+      // PG is averaged and rounded to the half point, same as RG. The slab's
+      // official grade (formData.cgcGrade) is untouched — only our prediction.
+      formData.predictedGrade = avgPG;
+      formData.assessedCGCGrade = avgPG;
+    }
 
     const _saveRec = { ...formData };
     ["_batchMode", "_bypassDuplicateCheck", "_imagesChanged", "_savedImages", "_savedCornerImages", "_savedInteriorImages", "_savedSignatureImages", "_savedInsertImages", "_savedCouponImages", "_savedRestorationImages", "_savedInteriorCoverImages", "_preUploadPromise", "_preUploadId", "_slabDetect"].forEach(k => delete _saveRec[k]);
