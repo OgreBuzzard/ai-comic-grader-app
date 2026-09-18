@@ -3216,13 +3216,15 @@ function isRestorationCheckComplete(item) {
 // and the meter resets to zero whenever a PAID assessment lands on that book
 // (Main, Deep, Full or Batch).
 //
-// The reset is not an arbitrary refill. Re-shooting the same cover under the
-// same blacklight cannot produce a different answer — a second and third look
-// only make sense if something about the BOOK changed, and the realistic reason
-// a collector re-checks is that they had color touch removed or had the book
-// worked on. That means a fresh grade, which means a paid pass. So "paid a
-// credit" and "the book may genuinely read differently now" are the same event,
-// and that event is what buys the next three.
+// The reset is not an arbitrary refill. A re-check is worth running when the
+// BOOK has changed — and it genuinely can: a collector who has color touch cut
+// out to remove the restoration WILL get a different UV result afterwards, and
+// confirming the touch is gone is exactly what they want the check for. Work
+// like that is followed by a re-grade, which is a paid pass. So "paid a credit"
+// and "this book may now read differently under UV" are the same event, and
+// that event is what buys the next three. What the limit stops is re-shooting
+// an UNCHANGED book over and over — the only case where repeat runs cost money
+// and tell the user nothing new.
 //
 // uvCheckRuns counts runs SINCE the last paid assessment, not lifetime runs.
 const UV_CHECK_LIMIT = 3;
@@ -5062,7 +5064,7 @@ async function redeemPromoCode() {
     if (typeof refreshHeaderControls === "function") refreshHeaderControls();
     updateStats();
     const credEl = document.getElementById("settings-credits");
-    if (credEl) credEl.textContent = String(window._userCredits || 0);
+    if (credEl) credEl.textContent = String(Math.max(0, window._userCredits || 0));
     const granted = data.creditsGranted || 0;
     fb.textContent = `+${granted} ${granted === 1 ? "credit" : "credits"} added. New balance: ${window._userCredits}.`;
     fb.style.color = "#2a7a3a";
@@ -9092,7 +9094,7 @@ async function submitBatchAssessment() {
       if (typeof refreshHeaderControls === "function") refreshHeaderControls();
       if (typeof updateStats === "function") updateStats();
       const _credEl = document.getElementById("settings-credits");
-      if (_credEl) _credEl.textContent = String(window._userCredits || 0);
+      if (_credEl) _credEl.textContent = String(Math.max(0, window._userCredits || 0));
     }
 
     // ── staggered fan-out + poll ────────────────────────────────────────────
@@ -10254,7 +10256,7 @@ async function _maybeGrantPwaWelcome() {
     if (typeof refreshHeaderControls === "function") refreshHeaderControls();
     updateStats(); // count-up + coin pulse fire off the balance change
     const credEl = document.getElementById("settings-credits");
-    if (credEl) credEl.textContent = String(window._userCredits || 0);
+    if (credEl) credEl.textContent = String(Math.max(0, window._userCredits || 0));
     _showPwaWelcomeModal(data.creditsGranted || 1);
   } catch (e) {
     console.warn("[pwa_welcome] grant check failed:", e);
@@ -10467,6 +10469,14 @@ function updateExportRemainingDisplay(remaining) {
   }
 }
 
+// S22: this fires an UNCONDITIONAL FieldValue.increment(-1) on Firestore while
+// checking only the LOCAL copy of the balance. A local copy that is stale-high
+// — spent on another device, a refund that never landed, a tab left open — drove
+// the STORED balance below zero, which is where a "-1 credits" reading comes
+// from. Two things stop it now: the server-side floor (note 9646) refuses the
+// assessment before this can run at zero, and applyServerCredits() returns early
+// so a client whose debit the SERVER performed never reaches this at all. The
+// local guard below remains the last line of defence for older clients.
 function decrementCredit() {
   if (window._userCredits !== undefined && window._userCredits > 0) {
     window._userCredits--;
@@ -10801,7 +10811,7 @@ function describeAssessmentError(rawErr) {
   }
   // S22: the free UV Check is metered at 3 per book (see UV_CHECK_LIMIT).
   if (/uv_check_limit/i.test(text)) {
-    return "You've used all 3 free UV Checks on this book. Running another assessment on it resets them.";
+    return "You've used all 3 free UV Checks on this book. If it has been worked on since, run a new assessment and you'll get 3 more.";
   }
   if (/overloaded_error|Overloaded|529/i.test(text)) {
     return "Robograder is busy right now. Please wait a moment and try again. (No credit was used.)";
@@ -11814,7 +11824,7 @@ function renderForm() {
       // and say plainly what brings it back.
       const _uvFooter = _uvLeft > 0
         ? `\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="restoration-check-btn" class="rg-btn rg-btn-assess rg-btn-purple${assessing ? ' assessing' : ''}" onclick="submitRestorationCheck()" ${rImgs.slice(0, RESTORATION_SLOT_COUNT).filter(Boolean).length >= RESTORATION_SLOT_COUNT ? "" : "disabled"}>\n                ${assessing ? "Checking…" : `RE-RUN UV CHECK (${_uvLeft} LEFT)`}\n              </button>\n            </div>`
-        : `\n            <div style="margin-top:12px;padding:10px 12px;border:1px solid #5a3a7a;border-radius:10px;background:#1a1226;color:#b8a8cc;font-size:11px;line-height:1.5;text-align:center">\n              You have used all ${UV_CHECK_LIMIT} free UV Checks on this book. Re-shooting the same cover under the same light will not change the answer — running another assessment resets it to ${UV_CHECK_LIMIT}.\n            </div>`;
+        : `\n            <div style="margin-top:12px;padding:10px 12px;border:1px solid #5a3a7a;border-radius:10px;background:#1a1226;color:#b8a8cc;font-size:11px;line-height:1.5;text-align:center">\n              You have used all ${UV_CHECK_LIMIT} free UV Checks on this book. If it has been worked on since — color touch cut out, for instance — run a new assessment and you will get ${UV_CHECK_LIMIT} more.\n            </div>`;
       return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n            <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">UV CHECK</div>\n            ${renderRestorationSlotGrid(rImgs, {editable: true})}\n            <input id="restoration-photo-input" type="file" accept="image/*" multiple onchange="handleRestorationImages(event)" style="display:none">${_uvFooter}\n          </div>\n        `;
     }
     if (uvChecksLeft(formData) <= 0 && !isRestorationCheckComplete(formData)) return "";
@@ -13184,7 +13194,7 @@ async function submitRestorationCheck() {
   // Allowance guard. The UI already hides the button at zero, so reaching this
   // means a stale render or a hand-rolled call — either way, stop here.
   if (uvChecksLeft(formData) <= 0) {
-    alert(`You have used all ${UV_CHECK_LIMIT} free UV Checks on this book. Running another assessment on it resets them.`);
+    alert(`You have used all ${UV_CHECK_LIMIT} free UV Checks on this book. If it has been worked on since, run a new assessment and you will get ${UV_CHECK_LIMIT} more.`);
     return;
   }
   // NO CREDIT GATE AND NO decrementCredit() BELOW. S22: the UV Check is free.
