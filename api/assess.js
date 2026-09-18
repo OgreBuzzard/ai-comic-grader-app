@@ -29,6 +29,7 @@ import { anthropicWithRetry, fetchTimeout } from '../lib/anthropic_retry.js';
 import { getBookNote } from '../lib/book_notes.js';
 import { defectIndexPromptBlock } from '../lib/defect_index.js';
 import { computePhotograderPM, mergePhotograder, PHOTOGRADER_RUBRIC_MAIN } from '../lib/photograder.js';
+import { reserveCredit, refundCredit, insufficientCreditsPayload } from '../lib/credits.js';
 
 // ── A/B TEST TOGGLE (TEMPORARY) ──────────────────────────────────────
 // When true, the ComicVine reference is suppressed for ALL assessments so we
@@ -374,6 +375,7 @@ export default async function handler(req, res) {
   let _authedUid = null;
   let _userRef = null;
   let _userData = null;
+  let _creditsRemaining = null;   // S22: echoed to the client so it can sync
   try {
     const uid = await verifyUidFromAuthHeader(req);
     if (uid) {
@@ -405,6 +407,46 @@ export default async function handler(req, res) {
     }
   } catch(e) {
     console.error('Abuse check failed (continuing):', e);
+  }
+
+  // ── SERVER-SIDE CREDIT FLOOR (S22, note 9646) ────────────────────────────
+  // Everything above this line is free: the slabcheck micro-call returns before
+  // it, and MISSING_COVER is answered before it. From here on we are about to
+  // spend an Opus call, so the balance is checked FIRST and the request is
+  // refused with 402 if the user cannot pay. See lib/credits.js for why this
+  // debits only for clients that opt in with `serverCredits`.
+  let _creditDebited = false;
+  // A Batch pass is PRE-PAID: assess_batch_start.js already took 3 credits in a
+  // transaction before any pass ran, and assess_batch_run.js forwards the user's
+  // token to this endpoint five times. Charging here would bill the batch a
+  // second time — and would 402 the user out of a batch they already paid for.
+  // cacheProfile 'batch' is set only by assess_batch_run.js; a normal client
+  // never sends it.
+  const _isBatchPass = (req.body && req.body.cacheProfile) === 'batch';
+  const _CREDIT_COST = _isBatchPass ? 0 : 1;
+  try {
+    const _db = await getAdminDb();
+    const _r = await reserveCredit(_db, _authedUid, {
+      cost: _CREDIT_COST,
+      debit: req.body && req.body.serverCredits === true,
+      label: _isBatchPass ? 'batchpass' : 'main'
+    });
+    _creditDebited = _r.debited;
+    _creditsRemaining = _r.remaining;
+  } catch (e) {
+    if (e && e.code === 'insufficient_credits') {
+      return sseError(402, insufficientCreditsPayload(e, _CREDIT_COST));
+    }
+    console.error('[credits:main] unexpected reserve failure (continuing):', e);
+  }
+  // Hand the debited credit back. Safe to call on any exit path: it no-ops
+  // unless THIS request actually took the credit.
+  async function _refundIfDebited(why) {
+    if (!_creditDebited) return;
+    _creditDebited = false;
+    console.log('[credits:main] refunding —', why);
+    try { await refundCredit(await getAdminDb(), _authedUid, _CREDIT_COST, 'main'); }
+    catch (e) { console.error('[credits:main] refund threw:', e && e.message); }
   }
 
   const imageBlocks = images.map(img => {
@@ -1653,6 +1695,10 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
         }
       }
       phaseTimings.totalMs = Date.now() - T0;
+      // A gate termination is not a graded book, so it must not cost a credit.
+      // The client has always treated gate failures as free; now the server does
+      // too, for the clients whose credit it actually took.
+      await _refundIfDebited('gate ' + (parsed.gateResult || 'terminated'));
       const _gatePayload = {
         gateResult: parsed.gateResult,
         gateReason: parsed.gateReason || '',
@@ -2174,6 +2220,12 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       console.error('assessment_timings write failed (non-fatal):', e);
     }
 
+    // S22: when THIS request took the credit, the client must not take it
+    // again — it reads creditsRemaining and syncs instead of decrementing.
+    if (_creditDebited && Number.isFinite(_creditsRemaining)) {
+      parsed.creditsCharged = _CREDIT_COST;
+      parsed.creditsRemaining = _creditsRemaining;
+    }
     if (wantsSSE) {
       sseEvent('result', parsed);
       try { res.end(); } catch (e) {}
@@ -2181,6 +2233,8 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     }
     return res.status(200).json(parsed);
   } catch (err) {
+    // The assessment failed, so the user keeps their credit.
+    await _refundIfDebited('assessment error: ' + String((err && err.message) || err).slice(0, 120));
     // Capture timing even on error — these are the diagnostically valuable cases.
     phaseTimings.totalMs = Date.now() - T0;
     phaseTimings.errorAtMs = phaseTimings.totalMs;

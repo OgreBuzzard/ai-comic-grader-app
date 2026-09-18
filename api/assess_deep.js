@@ -33,6 +33,8 @@
 import { ROBOGRADE_VERSION } from '../lib/version.js';
 import { anthropicWithRetry } from '../lib/anthropic_retry.js';
 import { computePhotograderPM, mergePhotograder, PHOTOGRADER_RUBRIC_CLOSEUP } from '../lib/photograder.js';
+import { getAdminDb as getCreditDb, verifyUidFromAuthHeader } from '../lib/batch_common.js';
+import { reserveCredit, refundCredit, insufficientCreditsPayload } from '../lib/credits.js';
 
 export default async function handler(req, res) {
   // CORS: the iOS Capacitor app calls this cross-origin (local file origin →
@@ -108,16 +110,19 @@ export default async function handler(req, res) {
     // old clients keep working). Folded into this endpoint rather than a 13th
     // Vercel function — we are at the 12/12 cap.
     //
-    // It now takes exactly TWO images: [UV Front, UV Back], both shot under a
-    // blacklight, and answers ONE question: is there ink on these covers that
-    // fluoresces differently from the rest of the ink? That is color touch, and
-    // it is the only restoration indicator no other pass can see. The other six
-    // images the old 8-image Restoration Check took are already examined by
-    // Main / Deep / Full, which flag restoration on their own at no charge.
+    // It now takes exactly TWO images: [UV Front, UV Back] — the two the old
+    // Restoration Check already required a blacklight for — and answers ONE
+    // question: is there ink on these covers that fluoresces differently from
+    // the rest of the ink? That is color touch, and it is the only restoration
+    // indicator no other pass can see. The other SIX images that check took
+    // were ordinary-light shots (exterior staples x2, outer edge, interior
+    // front/back, interior staples), all already examined by Main / Deep /
+    // Full, which flag restoration on their own at no charge.
     //
     // The UV Check is FREE to the user, so this prompt is deliberately short.
     mode = 'deep',
     restorationImages = [],      // 2 images for UV Check mode: UV Front, UV Back
+    itemId = '',                 // S22: the book, so the UV allowance can be checked server-side
     // S22: the ComicVine cover URL already stored on the item by the Main pass.
     // Used ONLY as a fallback when this issue has no curated reference_covers/
     // entry (<10% of books have one). Costs no lookup — Main already resolved it.
@@ -128,6 +133,78 @@ export default async function handler(req, res) {
 
   if (!initialAssessment || typeof initialAssessment !== 'object') {
     return sseError(400, { error: 'initialAssessment required' });
+  }
+
+  // ── AUTH + SERVER-SIDE CREDIT FLOOR (S22, note 9646) ─────────────────────
+  // Until S22 this endpoint did not verify the caller AT ALL. It accepted
+  // Authorization in the CORS header list and then never read it, so anyone who
+  // could POST here got a paid Opus Deep with no account and no balance. Both
+  // halves are fixed now: identify the caller, then check they can pay.
+  //
+  // The UV Check (mode 'restoration') is FREE, so it still requires a signed-in
+  // user but costs nothing. Batch passes are pre-paid by assess_batch_start.js,
+  // which already took 3 credits in a transaction — charging again here would
+  // bill a batch twice, so they are exempt.
+  const _isBatchPass = (req.body && req.body.cacheProfile) === 'batch';
+  const _CREDIT_COST = (isRestoration || _isBatchPass) ? 0 : 1;
+  const _deepUid = await verifyUidFromAuthHeader(req);
+  if (!_deepUid) return sseError(401, { error: 'auth required' });
+  // ── S22: UV CHECK ALLOWANCE, SERVER-SIDE ────────────────────────────────
+  // Three free UV Checks per book, reset by any paid assessment on it. The
+  // client hides the button at zero, but the whole reason this tier is free is
+  // that it costs the user nothing to call — so a client-only limit is not a
+  // limit. Counted from the STORED item, never from the number the client sends.
+  //
+  // Fails OPEN when the item cannot be read: a book assessed but not yet saved
+  // has no doc to count against, and refusing there would block the first
+  // legitimate UV Check on a brand-new book. The window is small and the call is
+  // the cheapest in the app (2 images, short prompt).
+  if (isRestoration) {
+    const UV_CHECK_LIMIT = 3;
+    try {
+      const _db = await getCreditDb();
+      if (_db && itemId) {
+        const _snap = await _db.collection('users').doc(_deepUid)
+                               .collection('items').doc(String(itemId)).get();
+        if (_snap.exists) {
+          const _used = Number((_snap.data() || {}).uvCheckRuns);
+          if (Number.isFinite(_used) && _used >= UV_CHECK_LIMIT) {
+            return sseError(429, {
+              error: 'uv_check_limit',
+              limit: UV_CHECK_LIMIT,
+              used: _used,
+              message: `You have used all ${UV_CHECK_LIMIT} free UV Checks on this book. Running another assessment on it resets them.`
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[uvcheck] FAIL-OPEN: allowance lookup failed —', (e && e.message) || e);
+    }
+  }
+
+  let _creditDebited = false;
+  let _creditsRemaining = null;
+  try {
+    const _r = await reserveCredit(await getCreditDb(), _deepUid, {
+      cost: _CREDIT_COST,
+      debit: req.body && req.body.serverCredits === true,
+      label: isRestoration ? 'uvcheck' : (_isBatchPass ? 'batchpass' : 'deep')
+    });
+    _creditDebited = _r.debited;
+    _creditsRemaining = _r.remaining;
+  } catch (e) {
+    if (e && e.code === 'insufficient_credits') {
+      return sseError(402, insufficientCreditsPayload(e, _CREDIT_COST));
+    }
+    console.error('[credits:deep] unexpected reserve failure (continuing):', e);
+  }
+  async function _refundIfDebited(why) {
+    if (!_creditDebited) return;
+    _creditDebited = false;
+    console.log('[credits:deep] refunding —', why);
+    try { await refundCredit(await getCreditDb(), _deepUid, _CREDIT_COST, 'deep'); }
+    catch (e) { console.error('[credits:deep] refund threw:', e && e.message); }
   }
 
   // Mode-specific image validation.
@@ -400,11 +477,12 @@ HARD OUTPUT LIMITS:
 `;
 
   // ── S22: UV CHECK prompt (mode==='restoration') ─────────────────────
-  // Was an 8-image Restoration Check covering staples, trimming, leaf-casting
-  // and married covers. Those are all visible in ordinary light, and Main /
-  // Deep / Full now report them on their own. What survives here is the one
-  // thing a normal photo cannot show: COLOR TOUCH — ink added to a cover, which
-  // fluoresces differently from the original printing under a blacklight.
+  // Was an 8-image Restoration Check: 2 UV shots plus 6 ordinary-light ones
+  // covering staples, trimming, leaf-casting and married covers. Those six are
+  // all visible in ordinary light, and Main / Deep / Full now report them on
+  // their own. What survives is the pair that always needed the blacklight,
+  // for the one thing a normal photo cannot show: COLOR TOUCH — ink added to a
+  // cover, which fluoresces differently from the original printing under UV.
   //
   // Two images, one question, free to the user. Keep this prompt short: it is
   // the whole reason the tier can be given away.
@@ -915,6 +993,8 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
           });
         }
       } catch (e) { console.error('deep mismatch timing write failed (non-fatal):', e); }
+      // Not a graded book — the user keeps their credit.
+      await _refundIfDebited('IMAGE_MISMATCH');
       if (wantsSSE) { sseEvent('result', mismatch); try { res.end(); } catch (e) {} return; }
       return res.status(200).json(mismatch);
     }
@@ -1117,12 +1197,18 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
     }
 
     if (wantsSSE) {
+      if (_creditDebited && Number.isFinite(_creditsRemaining)) {
+        parsed.creditsCharged = _CREDIT_COST;
+        parsed.creditsRemaining = _creditsRemaining;
+      }
       sseEvent('result', parsed);
       try { res.end(); } catch (e) {}
       return;
     }
     return res.status(200).json(parsed);
   } catch (err) {
+    // The Deep failed, so the user keeps their credit.
+    await _refundIfDebited('deep error: ' + String((err && err.message) || err).slice(0, 120));
     phaseTimings.totalMs = Date.now() - T0;
     phaseTimings.errorAtMs = phaseTimings.totalMs;
     try {

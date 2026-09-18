@@ -1,22 +1,6 @@
 <!doctype html>
 <html lang="en">
 <head>
-<!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=AW-16873230529"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-
-  gtag('config', 'AW-16873230529');
-</script>
-<!-- Google Tag Manager -->
-<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
-})(window,document,'script','dataLayer','GTM-K9QZPD7H');</script>
-<!-- End Google Tag Manager -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Robograder</title>
@@ -43,6 +27,11 @@ fbq('init','2154744801750730'); fbq('track','PageView');
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('js',new Date()); gtag('config','G-VMNJ3B1LQ5');
+/* S22: Google Ads destination on the SAME gtag.js load (multi-destination).
+   The three button conversions below send to AW-16873230529; this config is
+   what makes them deliverable. Do NOT re-add Google's stock "Google tag"
+   snippet above — it loads gtag.js a second time and redeclares gtag(). */
+gtag('config','AW-16873230529');
 </script>
 
 <style>
@@ -105,10 +94,6 @@ body{
 </style>
 </head>
 <body>
-<!-- Google Tag Manager (noscript) -->
-<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-K9QZPD7H"
-height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
-<!-- End Google Tag Manager (noscript) -->
   <main class="card">
     <img class="hero" src="/assets/Ad_Landing_Screen.webp" alt="Robograder comic grading app">
 
@@ -158,9 +143,28 @@ var STORE = {
     if(dest==="ios"){ return STORE.ios+"?ct="+encodeURIComponent((source+"_"+campaign).slice(0,39))+"&mt=8"; }
     return STORE.web+(utmStr?((STORE.web.indexOf("?")>-1?"&":"?")+utmStr):"");
   }
+  /* S22: Google Ads conversion labels, one per button.
+     WHY EXPLICIT AND NOT "OUTBOUND CLICKS": the three conversion actions were
+     first set up to be fed by the Google tag's automatic outbound-link
+     detection. That can never work for the Web app button — this page is
+     robograder.app/get and the button points at robograder.app, the same host,
+     so the click is internal navigation and is not an outbound click. Firing
+     each conversion by name here covers all three, does not depend on Google
+     classifying a link correctly, and does not depend on Tag Manager. */
+  var ADS_CONVERSION = {
+    web:     'AW-16873230529/t-atCJqqyvwcEMGh5O0-',
+    ios:     'AW-16873230529/AP_QCKiEy_wcEMGh5O0-',
+    android: 'AW-16873230529/db_1CKGuyvwcEMGh5O0-'
+  };
   function fire(dest){
     try{ if(window.fbq) fbq('track', dest==='web'?'Lead':'InitiateCheckout', {content_name:'get_'+dest,source:source,campaign:campaign}); }catch(e){}
     try{ if(window.gtag) gtag('event','cta_click',{destination:dest,source:source,campaign:campaign}); }catch(e){}
+    /* The page navigates immediately after this, so the request has to survive
+       unload. gtag sends conversions via navigator.sendBeacon where it exists,
+       which does. We deliberately do NOT preventDefault + event_callback: that
+       pattern breaks the App Store / Play handoff on iOS, where the navigation
+       has to happen inside the user gesture. */
+    try{ if(window.gtag && ADS_CONVERSION[dest]) gtag('event','conversion',{send_to:ADS_CONVERSION[dest]}); }catch(e){}
   }
   ["cta-web","cta-ios","cta-android"].forEach(function(id){
     var el=document.getElementById(id); if(!el)return;

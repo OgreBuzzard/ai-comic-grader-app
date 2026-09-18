@@ -2,24 +2,6 @@
 
 <html lang="en">
 <head>
-<!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=AW-16873230529"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-
-  gtag('config', 'AW-16873230529');
-</script>
-<!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=AW-16873230529"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-
-  gtag('config', 'AW-16873230529');
-</script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=contain">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -53,6 +35,14 @@
     window.gtag = function(){ dataLayer.push(arguments); };
     gtag("js", new Date());
     gtag("config", "G-LW4DM2DHTJ");
+    // S22: Google Ads destination rides the SAME gtag.js load. One library, two
+    // destinations — this is what gtag multi-destination is for, and it keeps
+    // the Ads tag inside the hostname guard above so it is stripped from the
+    // iOS/Android builds exactly like the Meta Pixel and GA4.
+    // DO NOT paste Google's stock "Google tag" snippet at the top of this file:
+    // it is ungated, so it ships the Ads tag inside the native apps, and it
+    // redeclares gtag() which fights with the shim above.
+    gtag("config", "AW-16873230529");
     try {
       var _pp = new URLSearchParams(location.search);
       if (_pp.get("payment") === "success") {
@@ -1947,10 +1937,6 @@ onAuthStateChanged(auth, async user => {
   </style>
 </head>
 <body style="overflow:hidden">
-<!-- Google Tag Manager (noscript) -->
-<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-K9QZPD7H"
-height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
-<!-- End Google Tag Manager (noscript) -->
 <div id="orientation-block" aria-hidden="true">
   <div class="rotate-icon"><img src="assets/rotate-cw.svg" alt="" style="width:100%;height:100%"></div>
   <div class="orientation-block-title">Rotate to portrait</div>
@@ -3036,11 +3022,14 @@ const FULL_SLOT_COUNT = 6;
 
 // ── UV Check Slots (S22 restructure) ────────────────────────
 // S22: the old 8-image "Restoration Check" is now a 2-image UV CHECK.
-// WHY: seven of those eight images were already being examined by Main / Deep /
-// Full, which now call restoration out themselves (purple grade) at no extra
-// charge. The one thing NO other pass can see is COLOR TOUCH — added ink that
-// only fluoresces differently under a blacklight. That is the entire remaining
-// job of this tier, so it is 2 images, a lean prompt, and FREE.
+// WHY: SIX of those eight were ordinary-light shots — exterior staples x2,
+// outer edge, interior front, interior back, interior staples — already
+// examined by Main / Deep / Full, which call restoration out themselves
+// (purple grade) at no extra charge. The other TWO, UV Front and UV Back, are
+// the only ones that ever needed a blacklight, and they are the two that stay.
+// The one thing NO other pass can see is COLOR TOUCH: added ink that
+// fluoresces differently under UV. That is the entire remaining job of this
+// tier, so it is those 2 images, a lean prompt, and FREE.
 // Nothing here is shared with Full any more: both images must be shot under UV,
 // so neither can be inherited.
 const RESTORATION_SLOTS = [ {
@@ -3221,6 +3210,36 @@ function isRestorationCheckComplete(item) {
   return !!(item && item.restorationCheckRan === true);
 }
 
+// ── S22: UV CHECK ALLOWANCE ────────────────────────────────────────────────
+// The UV Check is free, which makes it the one tier a user can run forever at
+// Matt's expense. So it is metered rather than charged: THREE runs per book,
+// and the meter resets to zero whenever a PAID assessment lands on that book
+// (Main, Deep, Full or Batch).
+//
+// The reset is not an arbitrary refill. Re-shooting the same cover under the
+// same blacklight cannot produce a different answer — a second and third look
+// only make sense if something about the BOOK changed, and the realistic reason
+// a collector re-checks is that they had color touch removed or had the book
+// worked on. That means a fresh grade, which means a paid pass. So "paid a
+// credit" and "the book may genuinely read differently now" are the same event,
+// and that event is what buys the next three.
+//
+// uvCheckRuns counts runs SINCE the last paid assessment, not lifetime runs.
+const UV_CHECK_LIMIT = 3;
+
+function uvChecksUsed(item) {
+  const n = item && Number(item.uvCheckRuns);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+function uvChecksLeft(item) {
+  return Math.max(0, UV_CHECK_LIMIT - uvChecksUsed(item));
+}
+// Clears the meter. Called from every paid assessment's success path.
+function resetUvCheckAllowance(target) {
+  const t = target || formData;
+  if (t && uvChecksUsed(t) > 0) t.uvCheckRuns = 0;
+}
+
 let _restorationRevealed = false;
 
 function revealRestorationSlots() {
@@ -3289,6 +3308,12 @@ function showFullTier(item) {
 }
 function showRestorationTier(item) {
   return !!(item && (item.restorationUnlocked === true || isRestorationEligible(item) || isRestorationCheckComplete(item)));
+}
+// S22: whether the RUN button is offered. The tier itself keeps showing once a
+// check has run — the report stays readable — but the button goes away at the
+// limit until a paid assessment refills it.
+function canRunUvCheck(item) {
+  return showRestorationTier(item) && uvChecksLeft(item) > 0;
 }
 
 function getSignatures(item) {
@@ -3793,7 +3818,7 @@ async function migrateComicsToItems() {
   }
 }
 
-const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "fullUnlockReason", "deepAssessmentRan", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "deepRefundUsed", "fullRefundUsed", "insertImages", "couponImages", "userDefectImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue" ];
+const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "uvCheckRuns", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "fullUnlockReason", "deepAssessmentRan", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "deepRefundUsed", "fullRefundUsed", "insertImages", "couponImages", "userDefectImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue" ];
 
 const COMIC_DROP_FIELDS = [ "press", "uv", "clean" ];
 
@@ -7047,6 +7072,51 @@ async function findDuplicateAssessment(currentImages, currentItemId) {
   return null;
 }
 
+// ── S22 (test note 9651): SAVE IS LOCKED WHILE PHOTOS ARE UPLOADING ────────
+// The pre-upload starts as soon as an assessment kicks off and runs in the
+// background while the model works. Until it settles, formData.images still
+// holds data: URLs, not Storage URLs. Tapping "Add to Collection" in that window
+// raced the upload and could write an item whose image fields were half data
+// URLs and half nothing — a record there is no honest way to repair afterwards,
+// because the originals only ever existed in that page's memory.
+//
+// So the button is disabled for exactly as long as an upload is in flight, and
+// says so. _uploadsInFlight is a COUNT, not a boolean: the Deep and Main paths
+// can each have started one, and a boolean would let the first to finish
+// unlock the button while the second was still going.
+let _uploadsInFlight = 0;
+
+function isUploadInFlight() { return _uploadsInFlight > 0; }
+
+// Repaint the live button without a full renderForm() — this is called from
+// promise callbacks, and re-rendering the whole form under the user mid-typing
+// would throw away anything they had in an unsaved field.
+function refreshSaveButtonLock() {
+  const btn = document.getElementById("save-btn");
+  if (!btn) return;
+  const busy = isUploadInFlight();
+  const titled = !!(formData && formData.title && formData.title.trim());
+  btn.disabled = busy || !titled;
+  btn.textContent = busy ? "Uploading photos\u2026" : "Add to Collection";
+  // Two different disabled reasons, two different affordances: an upload in
+  // flight is a wait (progress cursor), a missing title is the user's move
+  // (not-allowed). The title field's oninput calls straight back into here, so
+  // typing a title can never unlock the button while an upload is still going.
+  btn.style.opacity = (busy || !titled) ? "0.55" : "";
+  btn.style.cursor = busy ? "progress" : (titled ? "" : "not-allowed");
+}
+
+// Wrap a pre-upload promise so the counter is always balanced, including on
+// failure. Returns the same promise so callers are unchanged.
+function trackUpload(promise) {
+  _uploadsInFlight++;
+  refreshSaveButtonLock();
+  return promise.finally(() => {
+    _uploadsInFlight = Math.max(0, _uploadsInFlight - 1);
+    refreshSaveButtonLock();
+  });
+}
+
 async function startPreUpload(rawImages, rawCornerImages, comicId) {
   if (window.RobograderScan && window.RobograderScan.debugLog) {
     window.RobograderScan.debugLog(`startPreUpload: id=${comicId}, images=${rawImages.filter(Boolean).length}, corners=${rawCornerImages.filter(Boolean).length}`);
@@ -8466,7 +8536,7 @@ function mountResults(cgc, psa) {
       btn.style.background = "#6a4ba8";
       btn.style.color = "#fff";
       btn.style.textAlign = "center";
-    } else if (typeof isRestorationEligible === "function" && isRestorationEligible(formData) && !isRestorationCheckComplete(formData) && !(formData && formData.restorationUnlocked)) {
+    } else if (typeof isRestorationEligible === "function" && isRestorationEligible(formData) && !isRestorationCheckComplete(formData) && !(formData && formData.restorationUnlocked) && uvChecksLeft(formData) > 0) {
       btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">UV CHECK</div><div style="font-size:12px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">FREE</div>`;
       btn.style.background = "#7a4ba8";
       btn.style.color = "#fff";
@@ -8619,6 +8689,10 @@ async function assessHighGrade() {
         } : {}
       },
       body: JSON.stringify({
+        // S22 (9646): tells the server to enforce AND debit the credit itself.
+        // Clients that do not send this get the floor only, and keep doing their
+        // own decrement — which is how old native builds avoid a double charge.
+        serverCredits: true,
         initialAssessment: _initialPayload,
         cornerMacros: compressedCorners,
         interiorCovers: compressedCovers,
@@ -8720,7 +8794,7 @@ async function assessHighGrade() {
       if (hasNewImages && formData._imagesChanged !== false) {
         if (!formData.id) formData.id = preUploadId;
         formData._preUploadId = preUploadId;
-        formData._preUploadPromise = startPreUpload(rawImages, rawCornerImages, preUploadId).catch(err => {
+        formData._preUploadPromise = trackUpload(startPreUpload(rawImages, rawCornerImages, preUploadId)).catch(err => {
           if (window.RobograderScan && window.RobograderScan.debugLog) {
             window.RobograderScan.debugLog(`hg pre-upload failed: ${err.message}`);
           }
@@ -8764,8 +8838,10 @@ async function assessHighGrade() {
     var _deepRefundEligible = !_deepImproved && !formData.deepRefundUsed;
     window._creditRefunded = _deepRefundEligible;
     if (_deepRefundEligible) formData.deepRefundUsed = true;
+    // S22: a paid assessment on this book refills the 3 free UV Checks.
+    resetUvCheckAllowance();
     mountResults(cgc, psa);
-    onAssessmentSuccess();
+    onAssessmentSuccess(unified);
     if (_deepRefundEligible) refundCredit();
   } catch (e) {
     dismissAssessModal(e.message);
@@ -9200,6 +9276,11 @@ async function submitBatchAssessment() {
       formData.roboGrade.batchRunCount = done.length;
     }
     if (modePQ) formData.pageQuality = modePQ;
+    // S22: a Batch is 3 credits and re-grades the book, so it refills the UV
+    // Check allowance exactly like a single paid pass. (Matt named Main/Deep/
+    // Full; a Batch is five Deeps and costs more than any of them, so excluding
+    // it would have been the odd choice.)
+    resetUvCheckAllowance();
     if (avgPG) {
       // PG is averaged and rounded to the half point, same as RG. The slab's
       // official grade (formData.cgcGrade) is untouched — only our prediction.
@@ -10692,12 +10773,36 @@ async function completeAssessment() {
   }
 }
 
-function onAssessmentSuccess() {
+// S22 (9646): the server now enforces the credit floor and, for clients that
+// send `serverCredits: true`, performs the debit itself inside a transaction.
+// When a response carries creditsRemaining, that number IS the balance — the
+// client must sync to it and must NOT decrement again. When it does not (server
+// in check-only mode, or an older deployment), we fall back to the local
+// decrement that has always been here. Returns true when the server owned it.
+function applyServerCredits(result) {
+  if (!result || typeof result !== "object") return false;
+  if (!Number.isFinite(result.creditsRemaining)) return false;
+  window._userCredits = result.creditsRemaining;
+  updateStats();
+  return true;
+}
+
+function onAssessmentSuccess(result) {
+  if (applyServerCredits(result)) return;
   decrementCredit();
 }
 
 function describeAssessmentError(rawErr) {
   const text = String(rawErr || "");
+  // S22 (9646): the server now refuses an assessment it can't charge for. This
+  // arrives either as a 402 body (non-streaming) or as an SSE error payload.
+  if (/insufficient_credits/i.test(text)) {
+    return "You're out of credits, so the assessment didn't run. Nothing was charged. Tap Buy Credits to top up.";
+  }
+  // S22: the free UV Check is metered at 3 per book (see UV_CHECK_LIMIT).
+  if (/uv_check_limit/i.test(text)) {
+    return "You've used all 3 free UV Checks on this book. Running another assessment on it resets them.";
+  }
   if (/overloaded_error|Overloaded|529/i.test(text)) {
     return "Robograder is busy right now. Please wait a moment and try again. (No credit was used.)";
   }
@@ -10826,7 +10931,7 @@ async function assessCardDeep() {
     const _respPromise = fetch("/api/assess_card", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...(window._currentUser ? { Authorization: "Bearer " + await window._currentUser.getIdToken() } : {}) },
-      body: JSON.stringify({ deep: true, initialAssessment: formData.cardData, images: compressed })
+      body: JSON.stringify({ serverCredits: true, deep: true, initialAssessment: formData.cardData, images: compressed })
     });
     await scanController.promise;
     try { mountStepTracker('deep'); } catch (e) {}
@@ -10850,7 +10955,7 @@ async function assessCardDeep() {
     formData.cardDeepImages = deepStored;
     const rec = { ...formData, id: cardId };
     await saveItem(rec);
-    onAssessmentSuccess();
+    onAssessmentSuccess(out);
     _assessed = true;
     _pendingCardResult = rec;
     mountCardResults(rec);
@@ -10908,7 +11013,7 @@ async function assessCardGrade() {
         "Content-Type": "application/json",
         ...(window._currentUser ? { Authorization: "Bearer " + await window._currentUser.getIdToken() } : {})
       },
-      body: JSON.stringify({ images: compressed })
+      body: JSON.stringify({ serverCredits: true, images: compressed })
     });
     await scanController.promise;
     try { mountStepTracker(); } catch (e) {}
@@ -10959,7 +11064,7 @@ async function assessCardGrade() {
         if (!existing.exists()) await fsSetDoc(idRef, { comicId: rec.id, userId: window._currentUser.uid, claimedAt: new Date().toISOString(), public: !!window._publicByDefault });
       }
     } catch (e) { console.warn("[card] roboId register failed:", e); }
-    onAssessmentSuccess();
+    onAssessmentSuccess(out);
 
     _pendingCardResult = rec;
     mountCardResults(rec);
@@ -11186,6 +11291,10 @@ async function assessGrade() {
         } : {}
       },
       body: JSON.stringify({
+        // S22 (9646): tells the server to enforce AND debit the credit itself.
+        // Clients that do not send this get the floor only, and keep doing their
+        // own decrement — which is how old native builds avoid a double charge.
+        serverCredits: true,
         images: compressed,
         slotsFilled: slotsFilled,
         grader: "CGC",
@@ -11282,7 +11391,7 @@ async function assessGrade() {
       if (hasNewImages && formData._imagesChanged !== false) {
         if (!formData.id) formData.id = preUploadId;
         formData._preUploadId = preUploadId;
-        formData._preUploadPromise = startPreUpload(rawImages, rawCornerImages, preUploadId).catch(err => {
+        formData._preUploadPromise = trackUpload(startPreUpload(rawImages, rawCornerImages, preUploadId)).catch(err => {
           if (window.RobograderScan && window.RobograderScan.debugLog) {
             window.RobograderScan.debugLog(`pre-upload failed: ${err.message}`);
           }
@@ -11304,8 +11413,10 @@ async function assessGrade() {
       psa: psa
     };
     window._pendingRoboGrade = cgc._roboGrade || null;
+    // S22: a paid assessment on this book refills the 3 free UV Checks.
+    resetUvCheckAllowance();
     mountResults(cgc, psa);
-    onAssessmentSuccess();
+    onAssessmentSuccess(unified);
   } catch (e) {
     dismissAssessModal(e.message);
   }
@@ -11698,16 +11809,25 @@ function renderForm() {
     if (!showRestorationTier(formData)) return "";
     if (isRestorationCheckComplete(formData)) {
       const rImgs = formData.restorationImages || [];
-      return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n            <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">UV CHECK</div>\n            ${renderRestorationSlotGrid(rImgs, {editable: true})}\n            <input id="restoration-photo-input" type="file" accept="image/*" multiple onchange="handleRestorationImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="restoration-check-btn" class="rg-btn rg-btn-assess rg-btn-purple${assessing ? ' assessing' : ''}" onclick="submitRestorationCheck()" ${rImgs.slice(0, RESTORATION_SLOT_COUNT).filter(Boolean).length >= RESTORATION_SLOT_COUNT ? "" : "disabled"}>\n                ${assessing ? "Checking…" : "RE-RUN UV CHECK"}\n              </button>\n            </div>\n          </div>\n        `;
+      const _uvLeft = uvChecksLeft(formData);
+      // Out of runs: keep the photos and the report on screen, drop the button
+      // and say plainly what brings it back.
+      const _uvFooter = _uvLeft > 0
+        ? `\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="restoration-check-btn" class="rg-btn rg-btn-assess rg-btn-purple${assessing ? ' assessing' : ''}" onclick="submitRestorationCheck()" ${rImgs.slice(0, RESTORATION_SLOT_COUNT).filter(Boolean).length >= RESTORATION_SLOT_COUNT ? "" : "disabled"}>\n                ${assessing ? "Checking…" : `RE-RUN UV CHECK (${_uvLeft} LEFT)`}\n              </button>\n            </div>`
+        : `\n            <div style="margin-top:12px;padding:10px 12px;border:1px solid #5a3a7a;border-radius:10px;background:#1a1226;color:#b8a8cc;font-size:11px;line-height:1.5;text-align:center">\n              You have used all ${UV_CHECK_LIMIT} free UV Checks on this book. Re-shooting the same cover under the same light will not change the answer — running another assessment resets it to ${UV_CHECK_LIMIT}.\n            </div>`;
+      return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n            <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">UV CHECK</div>\n            ${renderRestorationSlotGrid(rImgs, {editable: true})}\n            <input id="restoration-photo-input" type="file" accept="image/*" multiple onchange="handleRestorationImages(event)" style="display:none">${_uvFooter}\n          </div>\n        `;
     }
+    if (uvChecksLeft(formData) <= 0 && !isRestorationCheckComplete(formData)) return "";
     if (!_restorationRevealed) {
       return `\n            <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n              <div style="display:flex;justify-content:center">\n                <button onclick="revealRestorationSlots()" style="width:75%;min-height:48px;border-radius:12px;background:#3a2a4a;color:#c8a8e8;border:1px solid #7a4ba8;font-size:13px;font-weight:700;letter-spacing:1.5px;cursor:pointer">\n                  CHECK RESTORATION\n                </button>\n              </div>\n              <div style="font-size:10px;color:#9a8aaa;text-align:center;margin-top:8px;line-height:1.4">Adds 8 photos (UV front + back, staples, edge, interior) to check for restoration indicators. A UV light is required for the UV photos. 6 of 8 images are shared with Full Assessment.</div>\n            </div>\n          `;
     }
     const rImgs = formData.restorationImages || [];
     const rFilled = rImgs.slice(0, RESTORATION_SLOT_COUNT).filter(Boolean).length;
     const rReady = rFilled === RESTORATION_SLOT_COUNT && !assessing;
-    return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n            <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">UV CHECK — FREE</div>\n            <div style="font-size:11px;color:#9a8aaa;margin-bottom:10px;line-height:1.5">\n              Color touch — ink added to hide a defect — is the one kind of restoration that can only be seen under a blacklight. Photograph the front and back covers under a UV flashlight in a dark room and Robograder will report any ink that does not match the rest. No credit is used.\n            </div>\n            ${renderRestorationSlotGrid(rImgs, {editable: true})}\n            <input id="restoration-photo-input" type="file" accept="image/*" multiple onchange="handleRestorationImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="restoration-check-btn" class="rg-btn rg-btn-assess rg-btn-purple${assessing ? ' assessing' : ''}" onclick="submitRestorationCheck()" ${rReady ? "" : "disabled"}>\n                ${assessing ? "Checking…" : `UV CHECK ${rFilled < RESTORATION_SLOT_COUNT ? `(${rFilled}/${RESTORATION_SLOT_COUNT})` : ""}`}\n              </button>\n            </div>\n          </div>\n        `;
-  })()}${renderBatchSection()}${renderUserDefectSlots()}\n      <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">\n      <input id="userdefect-photo-input" type="file" accept="image/*" onchange="handleUserDefectImages(event)" style="display:none">\n      <input id="restoration-photo-input" type="file" accept="image/*" onchange="handleRestorationImages(event)" style="display:none">\n\n      \x3c!-- S11: Pre-assessment Grader Notes (Option B for the chicken-and-egg\n           problem). For graded books in slabs, the official grader notes are\n           highly informative inputs to the AI assessment — but we don't\n           know a book is graded until after the AI has assessed it, so the\n           field would normally be unavailable on first-pass. This collapsible\n           section gives users who have a slabbed book a way to enter the\n           grader notes BEFORE running the assessment. Defaults closed so\n           the standard image-first flow stays visually clean for raw books;\n           opens with a single tap. Only renders pre-assessment in the\n           image-first flow (no _assessed, no _addManualMode, no isEdit) —\n           after assessment, the Grader Notes field appears in the normal\n           form section below where it can also be edited. --\x3e\n      \x3c!-- The "Optional: official label info" collapsible was removed in S12.\n           It let users type CGC/PSA grader notes BEFORE assessment to nudge\n           accuracy. Pulled because:\n           - Used by an extreme minority of users (only those entering\n             already-graded books and willing to transcribe slab text)\n           - Cluttered the otherwise-clean image-first Add flow\n           - The same info can still be typed in the post-assessment form\n             where the Grader Notes field still lives.\n           If we want this back later, the JS field (formData.graderNotes)\n           still wires through to assess.js — only the UI was removed. --\x3e\n\n    </div>\n    ${isEdit || _assessed || _addManualMode ? `\n    ${""}\n    <div class="form-grid-2">\n      \x3c!-- Title gets a special handler (not the generic tf) because we need\n           live-toggle the save button as the user types. Using tf would\n           require either a full renderForm on every keystroke (kills focus)\n           or a separate handler — this is cleaner. --\x3e\n      ${formData.roboGrade ? rof(_isCardForm ? "Card Name" : "Title", "title") : `<div><label class="field-label">Title<span style="color:#c0392b;margin-left:2px">*</span></label><input id="title-input" value="${esc(formData.title || "")}" oninput="formData.title=this.value;const b=document.getElementById('save-btn');b.disabled=!this.value.trim();b.style.opacity=this.value.trim()?'':'0.5';b.style.cursor=this.value.trim()?'':'not-allowed'" placeholder="Series title"></div>`}\n      ${formData.roboGrade ? rof(_isCardForm ? "Card No." : "Issue", "issue") : tf("Issue", "issue", "Issue number", true)}\n      ${formData.roboGrade ? rof("Pub Date", "issueDate") : tf("Pub Date", "issueDate", "Cover date")}\n      ${formData.roboGrade ? rof("Publisher", "publisher") : tf("Publisher", "publisher", "Publisher")}\n    </div>\n    ${formData.roboGrade && (formData.printing && String(formData.printing).trim()) ? `\n    \x3c!-- S14 (anti-fraud): Printing is shown read-only on a graded book.\n         It is NOT in the editable grid at all (a blank editable Printing\n         would also be a fraud vector — a user could leave a reprint's\n         printing empty). It only appears here when the assessment\n         actually populated it (e.g. "Facsimile Reprint"), so the label\n         and Detail view stay truthful and the user can't strip it. --\x3e\n    <div class="form-grid-2"><div>\n      <label class="field-label">Printing</label>\n      <div class="ro-field" title="Locked — set by the assessment and not editable">${esc(formData.printing)}</div>\n    </div></div>` : ""}\n    \x3c!-- Official Grades fields (S11): the disclosure container "OFFICIAL GRADES"\n         was removed. CGC Grade/Cert and PSA Grade/Cert sit as their own ordinary\n         fields when relevant.\n         Visibility:\n         • Not yet assessed (no roboGrade): show both CGC and PSA grids.\n         • Assessed and AI determined raw (no grades/certs): hide both.\n         • Assessed and CGC info present: show CGC grid only.\n         • Assessed and PSA info present: show PSA grid only.\n         A book can be CGC OR PSA officially, never both. --\x3e\n    ${(() => {
+    const _uvLeft = uvChecksLeft(formData);
+    if (_uvLeft <= 0) return "";
+    return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n            <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">UV CHECK — FREE</div>\n            <div style="font-size:11px;color:#9a8aaa;margin-bottom:10px;line-height:1.5">\n              Color touch — ink added to hide a defect — is the one kind of restoration that can only be seen under a blacklight. Photograph the front and back covers under a UV flashlight in a dark room and Robograder will report any ink that does not match the rest. No credit is used.\n            </div>\n            ${renderRestorationSlotGrid(rImgs, {editable: true})}\n            <input id="restoration-photo-input" type="file" accept="image/*" multiple onchange="handleRestorationImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="restoration-check-btn" class="rg-btn rg-btn-assess rg-btn-purple${assessing ? ' assessing' : ''}" onclick="submitRestorationCheck()" ${rReady ? "" : "disabled"}>\n                ${assessing ? "Checking…" : `UV CHECK ${rFilled < RESTORATION_SLOT_COUNT ? `(${rFilled}/${RESTORATION_SLOT_COUNT})` : `(${_uvLeft} LEFT)`}`}\n              </button>\n            </div>\n          </div>\n        `;
+  })()}${renderBatchSection()}${renderUserDefectSlots()}\n      <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">\n      <input id="userdefect-photo-input" type="file" accept="image/*" onchange="handleUserDefectImages(event)" style="display:none">\n      <input id="restoration-photo-input" type="file" accept="image/*" onchange="handleRestorationImages(event)" style="display:none">\n\n      \x3c!-- S11: Pre-assessment Grader Notes (Option B for the chicken-and-egg\n           problem). For graded books in slabs, the official grader notes are\n           highly informative inputs to the AI assessment — but we don't\n           know a book is graded until after the AI has assessed it, so the\n           field would normally be unavailable on first-pass. This collapsible\n           section gives users who have a slabbed book a way to enter the\n           grader notes BEFORE running the assessment. Defaults closed so\n           the standard image-first flow stays visually clean for raw books;\n           opens with a single tap. Only renders pre-assessment in the\n           image-first flow (no _assessed, no _addManualMode, no isEdit) —\n           after assessment, the Grader Notes field appears in the normal\n           form section below where it can also be edited. --\x3e\n      \x3c!-- The "Optional: official label info" collapsible was removed in S12.\n           It let users type CGC/PSA grader notes BEFORE assessment to nudge\n           accuracy. Pulled because:\n           - Used by an extreme minority of users (only those entering\n             already-graded books and willing to transcribe slab text)\n           - Cluttered the otherwise-clean image-first Add flow\n           - The same info can still be typed in the post-assessment form\n             where the Grader Notes field still lives.\n           If we want this back later, the JS field (formData.graderNotes)\n           still wires through to assess.js — only the UI was removed. --\x3e\n\n    </div>\n    ${isEdit || _assessed || _addManualMode ? `\n    ${""}\n    <div class="form-grid-2">\n      \x3c!-- Title gets a special handler (not the generic tf) because we need\n           live-toggle the save button as the user types. Using tf would\n           require either a full renderForm on every keystroke (kills focus)\n           or a separate handler — this is cleaner. --\x3e\n      ${formData.roboGrade ? rof(_isCardForm ? "Card Name" : "Title", "title") : `<div><label class="field-label">Title<span style="color:#c0392b;margin-left:2px">*</span></label><input id="title-input" value="${esc(formData.title || "")}" oninput="formData.title=this.value;refreshSaveButtonLock()" placeholder="Series title"></div>`}\n      ${formData.roboGrade ? rof(_isCardForm ? "Card No." : "Issue", "issue") : tf("Issue", "issue", "Issue number", true)}\n      ${formData.roboGrade ? rof("Pub Date", "issueDate") : tf("Pub Date", "issueDate", "Cover date")}\n      ${formData.roboGrade ? rof("Publisher", "publisher") : tf("Publisher", "publisher", "Publisher")}\n    </div>\n    ${formData.roboGrade && (formData.printing && String(formData.printing).trim()) ? `\n    \x3c!-- S14 (anti-fraud): Printing is shown read-only on a graded book.\n         It is NOT in the editable grid at all (a blank editable Printing\n         would also be a fraud vector — a user could leave a reprint's\n         printing empty). It only appears here when the assessment\n         actually populated it (e.g. "Facsimile Reprint"), so the label\n         and Detail view stay truthful and the user can't strip it. --\x3e\n    <div class="form-grid-2"><div>\n      <label class="field-label">Printing</label>\n      <div class="ro-field" title="Locked — set by the assessment and not editable">${esc(formData.printing)}</div>\n    </div></div>` : ""}\n    \x3c!-- Official Grades fields (S11): the disclosure container "OFFICIAL GRADES"\n         was removed. CGC Grade/Cert and PSA Grade/Cert sit as their own ordinary\n         fields when relevant.\n         Visibility:\n         • Not yet assessed (no roboGrade): show both CGC and PSA grids.\n         • Assessed and AI determined raw (no grades/certs): hide both.\n         • Assessed and CGC info present: show CGC grid only.\n         • Assessed and PSA info present: show PSA grid only.\n         A book can be CGC OR PSA officially, never both. --\x3e\n    ${(() => {
     const hasOfficialCGC = !!(formData.cgcGrade || formData.cgcCert);
     const hasOfficialPSA = !!(formData.psaGrade || formData.psaCert);
     const everAssessed = !!formData.roboGrade;
@@ -11746,7 +11866,7 @@ function renderForm() {
     if (showLabelNotesEdit) return "";
     if (!formData.keyInfo) return "";
     return `<div><label class="field-label">Key Info</label><textarea rows="3" readonly style="cursor:not-allowed;background:#ffffff;color:#1a1614" title="Key Info is populated by the assessment when the issue is in the recognized-key list. Not user-editable.">${esc(formData.keyInfo || "")}</textarea></div>`;
-  })()}\n    ${formData.cgcGrade || formData.psaGrade || formData.graderNotes ? `<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes ? 5 : 3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiAssessment ? `<div><label class="field-label">Main Assessment</label><textarea rows="${Math.max(8, Math.ceil(formData.aiAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>` : ""}\n    ${formData.deepAssessment ? `<div><label class="field-label">Deep Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.deepAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Deep pass.">${esc(formData.deepAssessment)}</textarea></div>` : ""}\n    ${formData.fullAssessment ? `<div><label class="field-label">Full Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.fullAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Full pass.">${esc(formData.fullAssessment)}</textarea></div>` : ""}\n    ${formData.restorationReport ? `<div><label class="field-label">UV Check</label><textarea rows="${Math.max(5, Math.ceil((formData.restorationReport || "").length / 80))}" readonly style="cursor:not-allowed" title="Populated by the UV Check.">${esc(formData.restorationReport)}</textarea></div>` : ""}\n    ${renderAssessmentHistorySection(formData.assessmentHistory, true)}\n    ${formData.psaNotes ? `<div><label class="field-label" style="color:#e87a7a">PSA Variance</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes || "")}</textarea></div>` : ""}\n\n    \x3c!-- Enhancement Candidate (S11): renamed from "Enhance Candidate"; moved\n         to between Condition Assessment and Cost Breakdown per user direction. --\x3e\n    \x3c!-- S20: Enhancement Candidate control hidden per request (odd inclusion, often inaccurate). Kept for future use: <div><label class="field-label">Enhancement Candidate</label><div style="display:flex;gap:10px">\${treatBtn("enhance", "Enhance")}</div></div> --\x3e\n\n    \x3c!-- Cost Breakdown (S11): now includes FMV ($) and FMV Date inside the\n         container, since they're financial fields conceptually grouped with\n         the cost data. --\x3e\n    <div class="cost-box">\n      <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>\n      <div class="form-grid-2">\n        ${mf("Purchase Price ($)", "purchasePrice")}\n        ${mf("Taxes / Fees / Shipping ($)", "taxesFeesShipping")}\n        ${mf("Grading / Pressing ($)", "gradingCost")}\n        ${mf("CGC Return Shipping ($)", "cgcShipping")}\n        \n        \n        ${mf("Asking Price ($)", "askingPrice")}\n      </div>\n    </div>\n\n    <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes || "")}</textarea></div>\n    ${""}\n    \n    <div style="display:flex;gap:10px;padding-top:4px">\n      ${isEdit ? "" : `<button id="save-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="submitForm()" ${formData.title?.trim() ? "" : "disabled"}>Add to Collection</button>`}\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cancelForm()">Cancel</button>\n    </div>\n    ` : `\n    \x3c!-- Add-flow collapsed state (S11): show only the Enter Manually button.\n         Steers users toward photos-first by hiding the form fields until\n         either (a) they tap Enter Manually, or (b) an assessment runs and\n         _assessed becomes true. Edit view always shows the full form.\n         S14: ownership cycle pill inserted above Enter Manually. Lets a\n         user mark a book as Owned (default) / Watching / Sold before\n         assessing — so they can assess someone else's book without\n         claiming it, or track a book they're considering buying. Same\n         pill style as detail and edit views (color-coded by state),\n         centered between the two full-width buttons. Public-listing is\n         locked off whenever ownership !== 'Owned'; the cycleOwnership\n         handler clears formData.publicListing on transitions out of\n         Owned so a stale 'true' can't be saved. --\x3e\n    ${(() => {
+  })()}\n    ${formData.cgcGrade || formData.psaGrade || formData.graderNotes ? `<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes ? 5 : 3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiAssessment ? `<div><label class="field-label">Main Assessment</label><textarea rows="${Math.max(8, Math.ceil(formData.aiAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>` : ""}\n    ${formData.deepAssessment ? `<div><label class="field-label">Deep Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.deepAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Deep pass.">${esc(formData.deepAssessment)}</textarea></div>` : ""}\n    ${formData.fullAssessment ? `<div><label class="field-label">Full Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.fullAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Full pass.">${esc(formData.fullAssessment)}</textarea></div>` : ""}\n    ${formData.restorationReport ? `<div><label class="field-label">UV Check</label><textarea rows="${Math.max(5, Math.ceil((formData.restorationReport || "").length / 80))}" readonly style="cursor:not-allowed" title="Populated by the UV Check.">${esc(formData.restorationReport)}</textarea></div>` : ""}\n    ${renderAssessmentHistorySection(formData.assessmentHistory, true)}\n    ${formData.psaNotes ? `<div><label class="field-label" style="color:#e87a7a">PSA Variance</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes || "")}</textarea></div>` : ""}\n\n    \x3c!-- Enhancement Candidate (S11): renamed from "Enhance Candidate"; moved\n         to between Condition Assessment and Cost Breakdown per user direction. --\x3e\n    \x3c!-- S20: Enhancement Candidate control hidden per request (odd inclusion, often inaccurate). Kept for future use: <div><label class="field-label">Enhancement Candidate</label><div style="display:flex;gap:10px">\${treatBtn("enhance", "Enhance")}</div></div> --\x3e\n\n    \x3c!-- Cost Breakdown (S11): now includes FMV ($) and FMV Date inside the\n         container, since they're financial fields conceptually grouped with\n         the cost data. --\x3e\n    <div class="cost-box">\n      <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>\n      <div class="form-grid-2">\n        ${mf("Purchase Price ($)", "purchasePrice")}\n        ${mf("Taxes / Fees / Shipping ($)", "taxesFeesShipping")}\n        ${mf("Grading / Pressing ($)", "gradingCost")}\n        ${mf("CGC Return Shipping ($)", "cgcShipping")}\n        \n        \n        ${mf("Asking Price ($)", "askingPrice")}\n      </div>\n    </div>\n\n    <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes || "")}</textarea></div>\n    ${""}\n    \n    <div style="display:flex;gap:10px;padding-top:4px">\n      ${isEdit ? "" : `<button id="save-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="submitForm()" ${(formData.title?.trim() && !isUploadInFlight()) ? "" : "disabled"} style="${isUploadInFlight() ? "opacity:0.55;cursor:progress" : ""}">${isUploadInFlight() ? "Uploading photos\u2026" : "Add to Collection"}</button>`}\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cancelForm()">Cancel</button>\n    </div>\n    ` : `\n    \x3c!-- Add-flow collapsed state (S11): show only the Enter Manually button.\n         Steers users toward photos-first by hiding the form fields until\n         either (a) they tap Enter Manually, or (b) an assessment runs and\n         _assessed becomes true. Edit view always shows the full form.\n         S14: ownership cycle pill inserted above Enter Manually. Lets a\n         user mark a book as Owned (default) / Watching / Sold before\n         assessing — so they can assess someone else's book without\n         claiming it, or track a book they're considering buying. Same\n         pill style as detail and edit views (color-coded by state),\n         centered between the two full-width buttons. Public-listing is\n         locked off whenever ownership !== 'Owned'; the cycleOwnership\n         handler clears formData.publicListing on transitions out of\n         Owned so a stale 'true' can't be saved. --\x3e\n    ${(() => {
     const own = formData.ownership || "Owned";
     const styleByState = {
       Owned: {
@@ -11781,8 +11901,9 @@ function renderForm() {
 function renderImgPreview() {}
 
 // S22: UV Check slot grid — one row, two half-width 3:4 cells (UV Front, UV
-// Back). The staple / outer-edge / interior rows went away with the 8-image
-// Restoration Check; Main, Deep and Full cover that ground for free now.
+// Back), the two shots that always required a blacklight. The six normal-light
+// rows (staples x2, outer edge, interiors x2, interior staples) went away with
+// the 8-image Restoration Check; Main, Deep and Full cover that ground free.
 function renderRestorationSlotGrid(restoration, opts) {
   const editable = !!(opts && opts.editable);
   const _cid = opts && opts.comicId ? opts.comicId : '';
@@ -13060,6 +13181,12 @@ async function submitRestorationCheck() {
     alert("Please add both UV photos first — front cover and back cover, under a blacklight in a dark room.");
     return;
   }
+  // Allowance guard. The UI already hides the button at zero, so reaching this
+  // means a stale render or a hand-rolled call — either way, stop here.
+  if (uvChecksLeft(formData) <= 0) {
+    alert(`You have used all ${UV_CHECK_LIMIT} free UV Checks on this book. Running another assessment on it resets them.`);
+    return;
+  }
   // NO CREDIT GATE AND NO decrementCredit() BELOW. S22: the UV Check is free.
   // It is a 2-image, short-prompt call, and it is the only way a user can get
   // color touch looked at — charging for it discouraged exactly the check we
@@ -13092,6 +13219,10 @@ async function submitRestorationCheck() {
       },
       body: JSON.stringify({
         mode: "restoration",
+        // S22: lets the server check the allowance against the stored item
+        // rather than trusting the client's count (see assess_deep.js).
+        itemId: formData.id || "",
+        uvCheckRuns: uvChecksUsed(formData),
         restorationImages: compressed,
         initialAssessment: formData.roboGrade || {
           title: formData.title,
@@ -13143,6 +13274,8 @@ async function submitRestorationCheck() {
       formData.restorationFlag = result.indicatorsObserved === true;
       // S16: high-confidence restoration → purple score box
       formData.restorationHighConfidence = result.highConfidence === true;
+      // Spend one of the three. Persisted by the save that COMPLETE triggers.
+      formData.uvCheckRuns = uvChecksUsed(formData) + 1;
       formData._imagesChanged = true;
       // S22: deliberately NOT calling onAssessmentSuccess() — that decrements a
       // credit. The UV Check is free.
@@ -13276,6 +13409,7 @@ async function submitFullAssessment() {
         } : {}
       },
       body: JSON.stringify({
+        serverCredits: true,
         title: formData.title || "",
         issueNumber: formData.issue || "",
         interiorImages: compressed,
@@ -13371,7 +13505,9 @@ async function submitFullAssessment() {
       _routeToEditAfterSave = false;
       formData.fullTrimmingSuspected = result.trimmingSuspected === true;
       formData._imagesChanged = true;
-      onAssessmentSuccess();
+      // S22: a paid assessment on this book refills the 3 free UV Checks.
+      resetUvCheckAllowance();
+      onAssessmentSuccess(result);
       // S22: perfect-10 refund — a book that unlocked Full via the near-perfect
       // GRADE path (not the $1000+ FMV path) gets its credit back if the Full did
       // not confirm a perfect 10 (RG stayed below 10). FMV-value books, which run

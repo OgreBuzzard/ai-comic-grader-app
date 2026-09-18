@@ -205,8 +205,9 @@
     { idx: 9, slotName: 'interior-cover-back',  rotate: false },
   ];
 
-  // S22: the UV Check scans 2 images (UV Front, UV Back). Was 8 under the old
-  // Restoration Check; the other six are covered by Main/Deep/Full for free now.
+  // S22: the UV Check scans 2 images (UV Front, UV Back) — the two that always
+  // needed a blacklight. Was 8 under the old Restoration Check; the other six
+  // were ordinary-light shots, now covered by Main/Deep/Full for free.
   const SLOTS_RESTORATION = [
     { idx: 0, slotName: 'resto-0', rotate: false },
     { idx: 1, slotName: 'resto-1', rotate: false },

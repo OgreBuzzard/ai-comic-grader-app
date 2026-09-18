@@ -17,6 +17,8 @@
 // (matches verify_iap/verify_play); firebase-admin loads dynamically.
 import process from 'node:process';
 import { ROBOGRADE_VERSION } from '../lib/version.js';
+import { getAdminDb as getCreditDb } from '../lib/batch_common.js';
+import { reserveCredit, refundCredit, insufficientCreditsPayload } from '../lib/credits.js';
 // ── PSA CARD GRADING PROMPT (consolidated from lib/grading_cards.js, S21) ──
 // The card prompt + rollup logic live here, in the dedicated assess file —
 // prompts live with their endpoint (Matt's call). No lib/grading_cards.js and
@@ -823,6 +825,41 @@ export default async function handler(req, res) {
   if (!images.length) return res.status(400).json({ error: 'At least a front photo is required' });
   const highGrade = !!body.highGrade;
 
+  // ── SERVER-SIDE CREDIT FLOOR (S22, note 9646) ────────────────────────────
+  // This endpoint already verified the caller; it just never checked whether
+  // they could pay. Both the main and deep card paths below cost one credit.
+  const _CREDIT_COST = 1;
+  let _creditDebited = false;
+  let _creditsRemaining = null;
+  try {
+    const _r = await reserveCredit(await getCreditDb(), uid, {
+      cost: _CREDIT_COST,
+      debit: body.serverCredits === true,
+      label: body.deep ? 'card_deep' : 'card'
+    });
+    _creditDebited = _r.debited;
+    _creditsRemaining = _r.remaining;
+  } catch (e) {
+    if (e && e.code === 'insufficient_credits') {
+      return res.status(402).json(insufficientCreditsPayload(e, _CREDIT_COST));
+    }
+    console.error('[credits:card] unexpected reserve failure (continuing):', e);
+  }
+  async function _refundIfDebited(why) {
+    if (!_creditDebited) return;
+    _creditDebited = false;
+    console.log('[credits:card] refunding —', why);
+    try { await refundCredit(await getCreditDb(), uid, _CREDIT_COST, 'card'); }
+    catch (e) { console.error('[credits:card] refund threw:', e && e.message); }
+  }
+  const _withCredits = payload => {
+    if (_creditDebited && Number.isFinite(_creditsRemaining)) {
+      payload.creditsCharged = _CREDIT_COST;
+      payload.creditsRemaining = _creditsRemaining;
+    }
+    return payload;
+  };
+
   const t0 = Date.now();
   const userBlocks = images.map(toImageBlock);
 
@@ -840,9 +877,13 @@ export default async function handler(req, res) {
       }, 120000);
       deepCard = extractJson(out.text);
       _deepUsage = out.usage || null;
-      if (!deepCard) return res.status(502).json({ error: 'Could not parse deep grade JSON from model', raw: (out.text || '').slice(0, 500) });
+      if (!deepCard) {
+        await _refundIfDebited('deep card JSON unparseable');
+        return res.status(502).json({ error: 'Could not parse deep grade JSON from model', raw: (out.text || '').slice(0, 500) });
+      }
     } catch (e) {
       console.error('[assess_card] deep grade failed:', e && (e.stack || e.message));
+      await _refundIfDebited('deep card model error');
       return res.status(502).json({ error: (e && e.message) || 'Deep grade failed' });
     }
     const _pc = body.initialAssessment.cardIdentification || {};
@@ -853,7 +894,7 @@ export default async function handler(req, res) {
     console.log('[assess_card] DEEP uid=' + uid + ' psa=' + deepCard.psaGrade + ' rg=' + (deepCard.robograde && deepCard.robograde.total) + ' ' + (Date.now() - t0) + 'ms');
     await logCardTiming('card_deep', { uid, ms: Date.now() - t0, calls: [{ model: GRADE_MODEL, usage: _deepUsage }], psa: deepCard.psaGrade, rg: deepCard.robograde && deepCard.robograde.total, name: deepCard.cardIdentification && deepCard.cardIdentification.name });
     if (deepCard) deepCard.version = ROBOGRADE_VERSION; // stamp the version used for THIS assessment
-    return res.status(200).json({ card: deepCard, deep: true });
+    return res.status(200).json(_withCredits({ card: deepCard, deep: true }));
   }
 
   // SPEED (S22): the separate Haiku identify pass + the TCGdex reference fetch it fed
@@ -901,7 +942,10 @@ export default async function handler(req, res) {
     }, 120000, _cacheBeta);
     card = extractJson(gradeOut.text);
     _gradeUsage = gradeOut.usage || null;
-    if (!card) return res.status(502).json({ error: 'Could not parse grade JSON from model', raw: (gradeOut.text || '').slice(0, 500) });
+    if (!card) {
+      await _refundIfDebited('card JSON unparseable');
+      return res.status(502).json({ error: 'Could not parse grade JSON from model', raw: (gradeOut.text || '').slice(0, 500) });
+    }
     // Backfill identity from the cheap identify pass so the card-detail Details
     // block (Set / Number / Year / Artist / Variant) is reliably populated even
     // when the grading model omits a field. Grading values win; identify fills gaps.
@@ -912,11 +956,12 @@ export default async function handler(req, res) {
     }
   } catch (e) {
     console.error('[assess_card] grade failed:', e && (e.stack || e.message));
+    await _refundIfDebited('card model error');
     return res.status(502).json({ error: (e && e.message) || 'Grade failed' });
   }
 
   console.log('[assess_card] uid=' + uid + ' card="' + (card.cardIdentification && card.cardIdentification.name) + '" psa=' + card.psaGrade + ' rg=' + (card.robograde && card.robograde.total) + ' ref=' + referenceUsed + ' ' + (Date.now() - t0) + 'ms');
   await logCardTiming('card_main', { uid, ms: Date.now() - t0, calls: [{ model: GRADE_MODEL, usage: _gradeUsage }], psa: card.psaGrade, rg: card.robograde && card.robograde.total, name: card.cardIdentification && card.cardIdentification.name });
   if (card) card.version = ROBOGRADE_VERSION; // stamp the version used for THIS assessment
-  return res.status(200).json({ ok: true, card, identification, referenceUsed, ms: Date.now() - t0 });
+  return res.status(200).json(_withCredits({ ok: true, card, identification, referenceUsed, ms: Date.now() - t0 }));
 }

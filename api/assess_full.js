@@ -37,6 +37,8 @@
 import { ROBOGRADE_VERSION } from '../lib/version.js';
 import { anthropicWithRetry } from '../lib/anthropic_retry.js';
 import { computePhotograderPM, mergePhotograder, PHOTOGRADER_RUBRIC_CLOSEUP } from '../lib/photograder.js';
+import { getAdminDb as getCreditDb, verifyUidFromAuthHeader } from '../lib/batch_common.js';
+import { reserveCredit, refundCredit, insufficientCreditsPayload } from '../lib/credits.js';
 
 // ── S15 May 30: Full Assessment REDESIGN (8 fixed named slots) ───────────────
 // The old design required 16/32 two-page-spread photos per book — impractical
@@ -281,6 +283,39 @@ export default async function handler(req, res) {
       error: 'BAD_IMAGE_FORMAT',
       message: 'Each interior image must be a base64 data URL or Anthropic image block.'
     });
+  }
+
+  // ── AUTH + SERVER-SIDE CREDIT FLOOR (S22, note 9646) ─────────────────────
+  // Like assess_deep.js, this endpoint listed Authorization in its CORS header
+  // allowance and then never read it — no caller identity, no balance check, a
+  // paid Opus Full for anyone who could POST. Both are fixed here. It sits AFTER
+  // the eligibility and image-format rejections above, which cost nothing and
+  // must stay free, and BEFORE the model call below, which does not.
+  const _CREDIT_COST = 1;
+  const _fullUid = await verifyUidFromAuthHeader(req);
+  if (!_fullUid) return sseError(401, { error: 'auth required' });
+  let _creditDebited = false;
+  let _creditsRemaining = null;
+  try {
+    const _r = await reserveCredit(await getCreditDb(), _fullUid, {
+      cost: _CREDIT_COST,
+      debit: req.body && req.body.serverCredits === true,
+      label: 'full'
+    });
+    _creditDebited = _r.debited;
+    _creditsRemaining = _r.remaining;
+  } catch (e) {
+    if (e && e.code === 'insufficient_credits') {
+      return sseError(402, insufficientCreditsPayload(e, _CREDIT_COST));
+    }
+    console.error('[credits:full] unexpected reserve failure (continuing):', e);
+  }
+  async function _refundIfDebited(why) {
+    if (!_creditDebited) return;
+    _creditDebited = false;
+    console.log('[credits:full] refunding —', why);
+    try { await refundCredit(await getCreditDb(), _fullUid, _CREDIT_COST, 'full'); }
+    catch (e) { console.error('[credits:full] refund threw:', e && e.message); }
   }
 
   // ── S15 May 30 / S20 #36: real 6-slot Full Assessment prompt ────────────────
@@ -690,6 +725,10 @@ Rules:
       console.error('full timing write failed (non-fatal):', e);
     }
 
+    if (_creditDebited && Number.isFinite(_creditsRemaining)) {
+      result.creditsCharged = _CREDIT_COST;
+      result.creditsRemaining = _creditsRemaining;
+    }
     if (wantsSSE) {
       sseEvent('result', result);
       try { res.end(); } catch (e) {}
@@ -697,6 +736,8 @@ Rules:
     }
     return res.status(200).json(result);
   } catch (err) {
+    // The Full failed, so the user keeps their credit.
+    await _refundIfDebited('full error: ' + String((err && err.message) || err).slice(0, 120));
     phaseTimings.totalMs = Date.now() - T0;
     phaseTimings.errorAtMs = phaseTimings.totalMs;
     try {

@@ -1016,38 +1016,36 @@ function ensureStylesInjected() {
     width: 160px; height: auto;
     opacity: 0.8;
   }
-  /* S22: Wide and Large showed nothing at all where the price pad would be —
-     Case and Square both show the mascot, so they now match.
-     Placement note: on BOTH variants .info expands to the score box when there
-     is no price pad, so there is no free room where the pad sits. The space that
-     DID open up is the corner the QR column vacated when it moved down to sit
-     above its URL (see .qr-col above), so the badge goes there. That makes it a
-     small mark rather than a large one — deliberate on a 4x1 and a 6.25x1.5
-     strip, where anything bigger competes with the title. */
+  /* S22 (2nd pass): Wide and Large now put the mascot exactly where the price
+     pad sits, at the pad's size — the same rule Case and Square already follow.
+     The first pass tucked a 60px / 88px badge into the rail the QR column
+     vacated, which Matt read (correctly) as too small and in the wrong place.
+     The pad's slot is free precisely BECAUSE there is no price tag, so it is the
+     right home: same box, same visual weight, and the two states swap cleanly.
+     The badge only exists in the no-price branch of the template, so turning the
+     price tag on removes it — the behaviour Case and Square already had.
+
+     Boxes mirror the .has-price .price-pad rules verbatim:
+       Wide  — top:18  right:282  220x220
+       Large — top:28  right:322  340x336
+     The image is bottom-anchored and centred inside that box (same treatment as
+     Case), inset so the mascot reads as art rather than filling a panel. */
   .rg-label .robot-badge {
     display: block;
     position: absolute;
-    left: 32px; top: 12px;
-    /* MEASURED, not estimated. Rendered headless: the relocated QR column is 158px
-       tall (SCAN TO VERIFY wraps to two lines in a 122px column), so its top edge
-       lands at y=85, not the 105 I calculated. 84px ran 13px into it. 60px at
-       top:12 finishes at y=72 — a 13px gap. Small, but Matt's call: "It's fine if
-       the robot is small." The left rail above the QR is the only space on a 4x1
-       that doesn't cost the title column width. */
-    width: 60px;
+    top: 18px; right: 282px;
+    width: 220px; height: 220px;
+    display: flex; align-items: flex-end; justify-content: center;
   }
-  .rg-label .robot-badge img { width: 100%; height: auto; display: block; opacity: 0.85; }
+  .rg-label .robot-badge img { width: 186px; height: auto; display: block; opacity: 0.85; }
   .rg-label-large .robot-badge {
     display: block;
     position: absolute;
-    right: 90px; top: 14px;  /* same right rail as the QR column and the URL */
-    /* MEASURED: the relocated QR column is 256px tall (its 30px SCAN TO VERIFY
-       also wraps), putting its top edge at y=113, not the 150 I calculated. 118px
-       overlapped by 23. 88px at top:14 finishes at y=102 — an 11px gap. Clear of
-       .info, which ends at x=1507 against the badge's x=1621. */
-    width: 88px;
+    top: 28px; right: 322px;
+    width: 340px; height: 336px;
+    display: flex; align-items: flex-end; justify-content: center;
   }
-  .rg-label-large .robot-badge img { width: 100%; height: auto; display: block; opacity: 0.85; }
+  .rg-label-large .robot-badge img { width: 288px; height: auto; display: block; opacity: 0.85; }
 
   .rg-label-l .meta-id-lbl, .rg-label-l .meta-id-val { display: none; }
   .url-id { font-weight: 800; }
@@ -1353,6 +1351,14 @@ function ensureStylesInjected() {
   .rg-label.has-price .info {
     right: 518px;
   }
+  /* S22: the mascot now fills the price pad's footprint, so .info has to yield
+     the same column whether the box holds a price or the robot — otherwise the
+     GRADED / GRADE ID rules run out behind the robot's feet. There is no third
+     state: the template emits the price pad when priceTag is on and the badge
+     when it is off, so "not .has-price" IS "robot showing". */
+  .rg-label:not(.has-price) .info {
+    right: 518px;
+  }
   .rg-label .price-pad {
     display: none;
   }
@@ -1622,28 +1628,39 @@ function ensureStylesInjected() {
     box-sizing: border-box;
   }
   .rg-label-large .score-box {
-    width: 396px; height: 396px;
+    /* S22: was 396x396 at left/top 18, which left 18px on every side — the same
+       PIXEL gap as Wide and Case, but those labels are 288px tall and this one is
+       432px, so the identical margin read as noticeably tighter against a box
+       half again as large. Matched on PROPORTION instead: Wide's gap is
+       18/288 = 6.25% of the label height, and 6.25% of 432 is 27.
+       27 top + 378 box + 27 bottom = 432 exactly, and left is 27 to match.
+       The box shrank 396 -> 378 (x0.9545), so every hand-tuned child metric
+       below is scaled by the same factor rather than left where it was — an
+       unscaled interior in a smaller box is how the number ends up riding the
+       edge it was just moved away from. */
+    width: 378px; height: 378px;
     background: #1a2208;
-    border-radius: 60px;
+    border-radius: 57px;
     position: absolute;
-    left: 18px; top: 18px;
+    left: 27px; top: 27px;
     display: flex; flex-direction: column;
     align-items: center; justify-content: center;
   }
   .rg-label-large .rg-word {
-    font-size: 38px; font-weight: 700;
+    /* S22: x0.9545 with the box (38 -> 36, top 22 -> 21). */
+    font-size: 36px; font-weight: 700;
     color: #6a8030; letter-spacing: 5px;
     font-family: 'Barlow Condensed', sans-serif;
-    position: absolute; top: 22px;
+    position: absolute; top: 21px;
   }
   .rg-label-large .rg-stars {
     opacity: 0.5;
-    position: absolute; top: 69px; left: 0; right: 0;
-    text-align: center; font-size: 37px; line-height: 1; letter-spacing: 3px;
+    position: absolute; top: 66px; left: 0; right: 0;
+    text-align: center; font-size: 35px; line-height: 1; letter-spacing: 3px;
   }
   .rg-label-large .rg-num-wrap {
-    /* S22: same drop as Case — the ±PM sits at top:56px here. */
-    transform: translateY(20px);
+    /* S22: same drop as Case — the ±PM sits at top:53px here. */
+    transform: translateY(19px);
     display: inline-flex;
     line-height: 1;
   }
@@ -1655,7 +1672,8 @@ function ensureStylesInjected() {
        larger number cannot collide with it (verified: 2-digit number at
        240px scaleX(0.625) ≈ x123–273; precision right-anchored ≈ x290+,
        ~17px clearance). */
-    font-size: 240px; font-weight: 900;
+    /* S22: 240 -> 229 with the box (x0.9545). */
+    font-size: 229px; font-weight: 900;
     color: #b8d820; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
@@ -1669,8 +1687,8 @@ function ensureStylesInjected() {
        transform-origin:right it grows leftward from the right:36 inset,
        staying clear of the centered number (see .rg-num note). */
     position: absolute;
-    top: 56px; right: 34px;
-    font-size: 64px; font-weight: 700;
+    top: 53px; right: 32px;
+    font-size: 61px; font-weight: 700;
     color: #b8d820; opacity: 0.9;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
@@ -1695,6 +1713,11 @@ function ensureStylesInjected() {
        Width = 1800 − 444 − 292 = 1064px. */
     left: 444px; top: 28px; right: 292px;
     display: flex; flex-direction: column;
+  }
+  /* S22: same as Wide — the robot occupies the pad's box, so the text column
+     stops at the same boundary in both states. */
+  .rg-label-large:not(.has-price) .info {
+    right: 652px;
   }
   .rg-label-large.has-price .info {
     /* S14: with price tag, the info must clear the relocated price pad
