@@ -531,6 +531,42 @@ export default async function handler(req, res) {
   // See the post-model reference block further down. ComicVine's own pre-model
   // path (from a client-supplied title, e.g. re-assessments/slabs) is unchanged.
 
+  // ── Reference-cover title aliases ────────────────────────────────────────
+  // S22 BUG (Matt, Uncanny X-Men #1): the file uncanny-x-men_1_1963_front.jpg was
+  // sitting in reference_covers/ and never used. refDebug said why:
+  //   postmodel(HIT iss="1" x-men_1_1963->404, x-men_1->404 cv=HIT)
+  // The 1963 book is literally titled "The X-Men", so the model returns that, the
+  // slugifier strips the article, and we look for x-men_1_1963. The app only shows
+  // "Uncanny X-Men" because normalizeTitle() canonicalises it CLIENT-side, long
+  // after this lookup has already fallen through to ComicVine.
+  //
+  // So the lookup gets the same folding the FMV key has: a small table of titles
+  // the trade knows by more than one name. Every alias is tried, so a file named
+  // either way is found. Add a pair here when a reference file exists but refDebug
+  // shows a 404 on a near-miss slug.
+  const REF_TITLE_ALIASES = [
+    ['x-men', 'uncanny-x-men'],
+    ['incredible-hulk', 'hulk'],
+    ['invincible-iron-man', 'iron-man'],
+    ['mighty-thor', 'thor'],
+    ['journey-into-mystery', 'thor'],
+    ['amazing-spider-man', 'spider-man'],
+  ];
+  function refSlugCandidates(title) {
+    const slug = x => String(x).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const out = new Set();
+    // Raw and de-"The" — reference files are named without a leading article.
+    const seeds = [slug(String(title).replace(/^the\s+/i, '')), slug(title)].filter(Boolean);
+    seeds.forEach(sd => {
+      out.add(sd);
+      for (const [a, b] of REF_TITLE_ALIASES) {
+        if (sd === a) out.add(b);
+        else if (sd === b) out.add(a);
+      }
+    });
+    return [...out];
+  }
+
   // LOCAL REFERENCE COVERS (served from /reference_covers/). If clean front/back
   // scans exist for this exact book, use them and SKIP ComicVine — higher quality,
   // no rate limit, and we also get the BACK cover (ComicVine gives covers only).
@@ -545,13 +581,8 @@ export default async function handler(req, res) {
   if (baseUrl && refTitle && refIssue && !suppressReference && !AB_FORCE_SUPPRESS_REFERENCE) {
     try {
       const _dbg = [];
-      const _slugify = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-      // Try BOTH the raw title and a de-"The" variant — reference files are named
-      // without a leading article (amazing-spider-man_...), but books are often
-      // stored as "The Amazing Spider-Man". (The ComicVine path strips "The" too.)
-      const _slugRaw = _slugify(refTitle);
-      const _slugDeThe = _slugify(String(refTitle).replace(/^the\s+/i, ''));
-      const _slugs = [...new Set([_slugDeThe, _slugRaw])].filter(Boolean);
+      // Raw, de-"The", and any aliased title (see REF_TITLE_ALIASES).
+      const _slugs = refSlugCandidates(refTitle);
       const _iss = String(refIssue).replace(/^#/, '').replace(/^0+(\d)/, '$1').trim();
       const _yr = (() => {
         if (typeof refYear === 'number' && refYear > 1900) return refYear;
@@ -1004,6 +1035,13 @@ Key distinctions:
 • Playboy/Penthouse/Hustler/similar → NOT_COMIC (magazines)
 
 Questionable comic-art content: if you can identify a likely title and issue from the cover, treat as COMIC. If unidentifiable AND imagery is pornographic or disturbing, treat as FLAGGED.
+
+DUPLICATE-COVER CHECK (only if otherwise COMIC) — run this BEFORE the crop check:
+If the front-cover photo and the back-cover photo show THE SAME SIDE of the book, return gateResult "CROP_FAILURE" and say so in aiAssessment: the back cover was not photographed. The usual form is a second, pulled-back or re-angled shot of the FRONT cover submitted in the back-cover slot. Judge it on the printed artwork, logo and trade dress — the same cover at a different distance, angle, crop or lighting is still the same cover.
+  • Front and back showing the same artwork -> CROP_FAILURE. A comic's back cover is never identical to its front; if they match, one photo is a duplicate.
+  • A genuinely DIFFERENT image in the back slot is fine even if it is not a back cover — an interior page, a splash, or bare newsprint. Coverless and partially coverless books are real and must still be gradeable. Do NOT fail those.
+  • A wraparound cover whose art continues across the spine is NOT a duplicate: the two halves differ. Only fail on the SAME region of art.
+Grading a back cover you cannot see is the failure this prevents — it silently marks an unseen face as clean.
 
 CROP CHECK (only if otherwise COMIC):
 Examine front cover photo AND back cover photo (if submitted). For each, ALL FOUR CORNERS AND ALL FOUR EDGES of the COMIC (not the photo) must be inside the image frame.
@@ -1687,8 +1725,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     // already run; this only sets the stored/displayed reference, never the grade.)
     if (!referenceImageUrl && parsed && parsed.title && (parsed.issue != null && parsed.issue !== '') && baseUrl && !suppressReference && !AB_FORCE_SUPPRESS_REFERENCE) {
       try {
-        const _slg = x => String(x).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-        const _sl = [...new Set([_slg(String(parsed.title).replace(/^the\s+/i, '')), _slg(parsed.title)])].filter(Boolean);
+        const _sl = refSlugCandidates(parsed.title);
         const _is = String(parsed.issue).replace(/^#/, '').replace(/^0+(\d)/, '$1').trim();
         const _yr = (() => { const _m = String(parsed.issueDate || issueDate || '').match(/(?:19|20)\d{2}/); if (_m) return Number(_m[0]); return (typeof refYear === 'number' && refYear > 1900) ? refYear : null; })();
         const _cands = []; for (const _s of _sl) { if (_yr) _cands.push(`${_s}_${_is}_${_yr}`); _cands.push(`${_s}_${_is}`); }

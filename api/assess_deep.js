@@ -321,7 +321,8 @@ Recompute the RoboGrade score (Front + Back + Spine + Interior) and map it to a 
   • The predicted grade may move UP or DOWN by up to 2 grade positions from the initial, based on that comparison. Downward movement is the more common outcome when the macros surfaced new defects; upward movement requires the cover to clearly match a cleaner reference.
   • If, after removing any disproven defects, the book has NO remaining grade-limiting defect — all four corners crisp with intact ink, spine tight with no ticks or color breaks, and (when provided) interior covers clean — do NOT hold it at the initial grade out of caution. Grade the now-clean book on its merits against the references, up to 9.8; a book with zero confirmed defects is not a 9.4 by default. Reserve grades below 9.6 for a book with an actual remaining defect you can name and point to.
   • Also read the candidate grade's tier definition plus one grade above and one below to confirm the fit.
-  • NEVER name, number, identify, or describe any specific reference comic in your output. The references are an internal yardstick only. If the grade is revised, deepAssessment may say it was "compared against reference copies at the same grade and revised" — nothing more specific. Never write this into aiAssessment, which is frozen.
+  • NEVER name, number, identify, or describe any specific reference comic in your output. The references are an internal yardstick only. If the grade is revised you may say the reference comparison supported it, WITHOUT naming any comic. Never write this into aiAssessment, which is frozen.
+  • S22 ANTI-BOILERPLATE (measured across 276 shipped Deep write-ups): 87% contained "compared against reference", 49% "has been removed", 34% "not supported by the close-ups", and 28% opened with the identical clause "All four corner macros show crisp/sharp, square corners". Users read several of these and the tool starts to look like it is filling in a form rather than looking at their book. Any example wording in these instructions shows you WHAT to convey, never the sentence to copy. Do not reuse the phrases above. Describe what THIS copy's macros actually showed, in your own words, and vary how you open.
 
 §§CACHE_SPLIT§§INITIAL ASSESSMENT (authoritative — preserve all fields unless the macros provide explicit reason to change):
 ${JSON.stringify({
@@ -365,7 +366,7 @@ JSON shape (same as initial assessment, with deepAddition tags on new defects):
   "printing": "${initialAssessment.printing || ''}",
   "pageQuality": "${initialAssessment.pageQuality || ''}",
   "grade": "revised CGC grade",
-  "deepAssessment": "<S20: a SEPARATE, concise buyer-facing write-up of ONLY what THIS Deep Assessment observed — from the corner macros, the interior-cover photos (if provided), and the grade-reference comparison. Cover: any new corner/edge/spine defects found at macro scale; interior-cover condition (tanning/foxing/stains) if covers were provided; and whether the grade was confirmed or revised and why. MAX 3 sentences (≤60 words) — be terse. Do NOT repeat the initial Condition Assessment text above — only the new Deep observations. WRITE ONLY WHAT YOU OBSERVED AND WHAT CHANGED: never enumerate what is absent or clean (no "no chips, tears or tape", no "with no color break or staple rust", no "no foxing, stains or tears"). Never describe point deductions or score math in words (no "costing a single interior point", no "minus half a point") — the numbers show in the score boxes. State a removed defect plainly (e.g. "the trace corner wear noted initially is not supported by the close-ups and has been removed"). If the close-ups simply confirmed the initial grade, say that plainly. If you cite a grade, make it the concrete PREDICTED CGC number (e.g. "revised to a predicted CGC 9.0") — never a bare number that could read as the 0-10 RoboGrade, and never a vague band like "VF/NM" without the CGC number.>",
+  "deepAssessment": "<S20: a SEPARATE, concise buyer-facing write-up of ONLY what THIS Deep Assessment observed — from the corner macros, the interior-cover photos (if provided), and the grade-reference comparison. Cover: any new corner/edge/spine defects found at macro scale; interior-cover condition (tanning/foxing/stains) if covers were provided; and whether the grade was confirmed or revised and why. MAX 3 sentences (≤60 words) — be terse. Do NOT repeat the initial Condition Assessment text above — only the new Deep observations. WRITE ONLY WHAT YOU OBSERVED AND WHAT CHANGED: never enumerate what is absent or clean (no "no chips, tears or tape", no "with no color break or staple rust", no "no foxing, stains or tears"). Never describe point deductions or score math in words (no "costing a single interior point", no "minus half a point") — the numbers show in the score boxes. State a removed defect plainly, naming the defect and where the close-ups contradicted it — in your own words, not a stock clause. If the close-ups simply confirmed the initial grade, say that plainly. If you cite a grade, make it the concrete PREDICTED CGC number (e.g. a predicted CGC 9.0) — never a bare number that could read as the 0-10 RoboGrade, and never a vague band like "VF/NM" without the CGC number.>",
   "labelNotes": "${initialAssessment.labelNotes || ''}",
   "keyInfo": "${initialAssessment.keyInfo || ''}",
   "enhance": ${initialAssessment.enhance == null ? 'null' : JSON.stringify(initialAssessment.enhance)},
@@ -568,8 +569,20 @@ This is a repeat scoring pass. Only the numbers are read; every prose field is d
         const _ri = initialAssessment.issue != null ? String(initialAssessment.issue) : (issueNumber || '');
         if (_rt && String(_ri).trim()) {
           const _bu = process.env.APP_URL || 'https://robograder.app';
+          // S22: same alias folding as assess.js (see REF_TITLE_ALIASES there).
+          // Without it Deep missed uncanny-x-men_1_1963 for exactly the same reason
+          // Main did — the 1963 book identifies as "The X-Men" -> x-men.
           const _slug = x => String(x).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-          const _sl = [...new Set([_slug(String(_rt).replace(/^the\s+/i, '')), _slug(_rt)])].filter(Boolean);
+          const _ALI = [['x-men','uncanny-x-men'],['incredible-hulk','hulk'],['invincible-iron-man','iron-man'],
+                        ['mighty-thor','thor'],['journey-into-mystery','thor'],['amazing-spider-man','spider-man']];
+          const _sl = (() => {
+            const out = new Set();
+            [_slug(String(_rt).replace(/^the\s+/i, '')), _slug(_rt)].filter(Boolean).forEach(sd => {
+              out.add(sd);
+              for (const [a, b] of _ALI) { if (sd === a) out.add(b); else if (sd === b) out.add(a); }
+            });
+            return [...out];
+          })();
           const _is = String(_ri).replace(/^#/, '').replace(/^0+(\d)/, '$1').trim();
           const _yr = (() => { const _m = String(initialAssessment.issueDate || '').match(/(?:19|20)\d{2}/); return _m ? _m[0] : null; })();
           const _cands = []; for (const _s of _sl) { if (_yr) _cands.push(`${_s}_${_is}_${_yr}`); _cands.push(`${_s}_${_is}`); }

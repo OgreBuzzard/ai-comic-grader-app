@@ -1438,8 +1438,8 @@ function ensureStylesInjected() {
        labels (proportionally smaller bump to suit the 220px box). */
     /* S22: 156 -> 172 (~10% up) and pushed down off the ±PM — it was sitting
        high in the 256px box rather than optically centred.
-       S22 (2nd pass) BUG: the translateY was written in a `transform` that a
-       SECOND `transform: scaleX(0.625)` two lines below immediately overrode, so
+       S22 (2nd pass) BUG: the translateY was written in a transform property
+       that a SECOND transform: scaleX(0.625) two lines below overrode, so
        the drop never rendered. One declaration now — the order matters, scaleX
        first then translateY, so the shift is in unscaled pixels. */
     font-size: 172px; font-weight: 900;

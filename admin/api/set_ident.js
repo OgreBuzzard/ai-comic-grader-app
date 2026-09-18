@@ -43,11 +43,18 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: 'Not an admin' });
     }
 
-    const { userId, itemId, title, issue, cardNumber } = req.body || {};
+    // S22: this endpoint also carries the GROUND-TRUTH fields the catalogue sets.
+    // A raw book whose real CGC/PSA grade is known — graded before or after we
+    // robograded it — is the high-value training case, and it cannot be inferred
+    // from labelDetected, so Matt sets it by hand. Folded in here rather than as a
+    // new function; the admin project is near its serverless cap.
+    const { userId, itemId, title, issue, cardNumber,
+            truthGraded, truthGrade, truthService } = req.body || {};
     if (!userId || !itemId) {
       return res.status(400).json({ error: 'Missing userId or itemId' });
     }
-    if (title == null && issue == null && cardNumber == null) {
+    const _hasTruth = (truthGraded != null || truthGrade != null || truthService != null);
+    if (title == null && issue == null && cardNumber == null && !_hasTruth) {
       return res.status(400).json({ error: 'Nothing to update' });
     }
 
@@ -66,6 +73,19 @@ export default async function handler(req, res) {
       identAdminSetAt: new Date().toISOString(),
       identAdminSetBy: decoded.email
     };
+    // Truth fields live at the TOP level (not comicData) on both schema versions,
+    // so one read path works for comics and cards alike.
+    if (truthGraded != null) upd.truthGraded = !!truthGraded;
+    if (truthGrade != null) {
+      const _g = String(truthGrade).trim();
+      if (_g && !/^\d{1,2}(\.\d)?$/.test(_g)) return res.status(400).json({ error: 'Invalid truthGrade' });
+      upd.truthGrade = _g;
+    }
+    if (truthService != null) {
+      const _s = String(truthService).toUpperCase();
+      if (_s !== 'CGC' && _s !== 'PSA') return res.status(400).json({ error: 'truthService must be CGC or PSA' });
+      upd.truthService = _s;
+    }
     if (title != null) {
       if (isV3) upd['comicData.title'] = String(title); else upd.title = String(title);
       if (isCard) upd['cardData.cardIdentification.name'] = String(title);
