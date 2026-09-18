@@ -1566,7 +1566,11 @@ onAuthStateChanged(auth, async user => {
     }
     .cropper-line { background-color: #4a9eff !important; opacity: 0.6 !important; }
     .cropper-view-box { outline: 2px solid #4a9eff !important; outline-color: #4a9eff !important; }
-    input[type="date"] { background: #ffffff; border: 1px solid #ccc8c0; border-radius: 4px; color: #1a1614; padding: 8px 10px; font-size: 13px; font-family: inherit; outline: none; width: 100%; color-scheme: light; }
+    /* S22 (Matt): Date Acquired / Grading Date were clipping their own value. iOS
+       gives a date input a taller intrinsic control than a text input, and the 8px
+       padding left no room for it. min-height + line-height fixes both platforms
+       without moving any other field. */
+    input[type="date"] { background: #ffffff; border: 1px solid #ccc8c0; border-radius: 4px; color: #1a1614; padding: 10px 10px; font-size: 13px; line-height: 1.35; min-height: 42px; font-family: inherit; outline: none; width: 100%; color-scheme: light; box-sizing: border-box; }
     .section-label { font-size: 11px; color: #8a7a6a; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 4px; }
     .field-val { font-size: 13px; color: #3a2e24; }
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
@@ -2960,7 +2964,7 @@ const FULL_SLOTS = [ {
   hint: "Close-up of the bottom staple from outside the spine"
 }, {
   key: "interior_staple",
-  label: "Int Staples",
+  label: "Interior Staples",   // S22: was "Int Staples" — users read INT as an error
   hint: "Both staples, from inside the centerfold (macro)"
 } ];
 // S20 (#36): Interior Front / Interior Back moved OUT of Full and into the Deep
@@ -3009,10 +3013,15 @@ function fullSlotIndex(key) {
 
 const FULL_SLOT_COUNT = 6;
 
-// ── Restoration Check Slots (S16 redesign) ──────────────────────────
-// 7 images: UV Front (unique) + 6 shared with Full Assessment.
-// Capture order = display order. Interior Staples (slot 6) is portrait,
-// auto-rotated CW at capture time.
+// ── UV Check Slots (S22 restructure) ────────────────────────
+// S22: the old 8-image "Restoration Check" is now a 2-image UV CHECK.
+// WHY: seven of those eight images were already being examined by Main / Deep /
+// Full, which now call restoration out themselves (purple grade) at no extra
+// charge. The one thing NO other pass can see is COLOR TOUCH — added ink that
+// only fluoresces differently under a blacklight. That is the entire remaining
+// job of this tier, so it is 2 images, a lean prompt, and FREE.
+// Nothing here is shared with Full any more: both images must be shot under UV,
+// so neither can be inherited.
 const RESTORATION_SLOTS = [ {
   key: "uv_front",
   label: "UV Front",
@@ -3021,30 +3030,6 @@ const RESTORATION_SLOTS = [ {
   key: "uv_back",
   label: "UV Back",
   hint: "Back cover under UV light in a dark room, no ambient light"
-}, {
-  key: "exterior_top_staple",
-  label: "Exterior Top Staple",
-  hint: "Close-up of the top staple from outside the spine"
-}, {
-  key: "exterior_bottom_staple",
-  label: "Exterior Bottom Staple",
-  hint: "Close-up of the bottom staple from outside the spine"
-}, {
-  key: "outer_edge",
-  label: "Outer Edge",
-  hint: "Outer edge in raking light (trimming check)"
-}, {
-  key: "interior_front",
-  label: "Interior Front",
-  hint: "Inside front cover + first page (leaf-casting, reinforcement)"
-}, {
-  key: "interior_back",
-  label: "Interior Back",
-  hint: "Last page + inside back cover (leaf-casting, reinforcement)"
-}, {
-  key: "interior_staple",
-  label: "Interior Staples",
-  hint: "Both staples from inside the centerfold (replacement check)"
 } ];
 
 const RESTORATION_DISPLAY = [ {
@@ -3055,47 +3040,24 @@ const RESTORATION_DISPLAY = [ {
   key: "uv_back",
   width: "half",
   aspect: "3 / 4"
-}, {
-  key: "exterior_top_staple",
-  width: "full",
-  aspect: "5 / 1"
-}, {
-  key: "exterior_bottom_staple",
-  width: "full",
-  aspect: "5 / 1"
-}, {
-  key: "outer_edge",
-  width: "full",
-  aspect: "5 / 1"
-}, {
-  key: "interior_front",
-  width: "half",
-  aspect: "3 / 2"
-}, {
-  key: "interior_back",
-  width: "half",
-  aspect: "3 / 2"
-}, {
-  key: "interior_staple",
-  width: "full",
-  aspect: "5 / 1"
 } ];
 
-const RESTORATION_SLOT_COUNT = 8;
+const RESTORATION_SLOT_COUNT = 2;
 
-// Mapping: Restoration slot index → Full Assessment slot index (null = unique)
-const RESTORATION_TO_FULL = [ null, null, 0, 1, 4, 5, 6, 7 ];
-// Mapping: Full Assessment slot index → Restoration slot index (null = not shared)
-const FULL_TO_RESTORATION = [ 2, 3, null, null, 4, 5, 6, 7 ];
+// Mapping: UV slot index → Full Assessment slot index (null = unique).
+// Both are null now — a UV photo can never be inherited from a normal-light pass.
+const RESTORATION_TO_FULL = [ null, null ];
+// Mapping: Full Assessment slot index → UV slot index (null = not shared)
+const FULL_TO_RESTORATION = [ null, null, null, null, null, null, null, null ];
 
 function restorationSlotIndex(key) {
   return RESTORATION_SLOTS.findIndex(s => s.key === key);
 }
 
-// Camera orientation for restoration slots (UV Front+Back portrait, staples+edge+interior landscape, Interior Staples portrait)
-const CAMERA_SLOT_ORIENTATION_RESTORATION = [ "portrait", "portrait", "landscape", "landscape", "landscape", "landscape", "landscape", "portrait" ];
-// Camera zoom for restoration slots (only exterior staples zoom in)
-const CAMERA_SLOT_ZOOM_RESTORATION = [ false, false, true, true, false, false, false, false ];
+// Camera orientation for UV slots (both are full covers, portrait)
+const CAMERA_SLOT_ORIENTATION_RESTORATION = [ "portrait", "portrait" ];
+// Camera zoom for UV slots — never zoom, the whole cover must be in frame
+const CAMERA_SLOT_ZOOM_RESTORATION = [ false, false ];
 
 // ── S22: SINGLE SOURCE OF TRUTH FOR THE PER-SLOT LENS DEFAULT ──────────────
 // Matt reported (3rd time) that Main's Back Cover and Interior still opened on
@@ -5762,7 +5724,7 @@ function showDetail(id) {
     }
   }
   if ((isRestorationCheckComplete(selected) || selected.restorationCheckTier || selected.restorationUnlocked) && Array.isArray(selected.restorationImages) && selected.restorationImages.some(Boolean)) {
-    html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n        <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">RESTORATION CHECK</div>\n        ${renderRestorationSlotGrid(selected.restorationImages, {editable: false, comicId: selected.id})}\n      </div>`;
+    html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n        <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">UV CHECK</div>\n        ${renderRestorationSlotGrid(selected.restorationImages, {editable: false, comicId: selected.id})}\n      </div>`;
   }
   if (hasIdentifiedSignatures(selected)) {
     const sigImgs = (selected.signatureImages || []).filter(u => u);
@@ -5910,7 +5872,7 @@ function showDetail(id) {
     if (report) {
       rHtml += `<div style="font-size:12px;line-height:1.55">${esc(report)}</div>`;
     } else {
-      rHtml += `<div style="color:#9a8a7a;font-size:12px">Restoration Check ran, but no assessment text was recorded.</div>`;
+      rHtml += `<div style="color:#9a8a7a;font-size:12px">UV Check ran, but no report text was recorded.</div>`;
     }
     rHtml += `<div style="color:#8a7a6a;font-size:10px;margin-top:8px;font-style:italic">Observations only — not a determination of restoration. Some restoration cannot be detected without professional examination.</div>`;
     rHtml += "</div></div>";
@@ -7340,7 +7302,7 @@ function mountBatchTracker(n) {
         style="position:absolute;left:${BATCH_RES_LEFTS_PCT[k]}%;top:${(top + BATCH_RES_TOP_NUDGE).toFixed(2)}%;
                width:${BATCH_RES_W_PCT}%;height:${BATCH_RES_H_PCT}%;
                background:${c.bg};border:1.5px solid ${c.border};border-radius:7px;
-               display:flex;align-items:center;justify-content:center;
+               display:flex;align-items:center;justify-content:flex-start;padding:0 6%;box-sizing:border-box;
                box-shadow:0 1px 4px rgba(0,0,0,0.45);
                transition:box-shadow .2s ease;
                pointer-events:none;">
@@ -7393,6 +7355,14 @@ function _batchPaint(pass, kind, text) {
   const sp = box && box.firstElementChild;
   if (!sp) return;
   const v = text == null ? "" : String(text);
+  // S22 (Matt): during the count-up the number flicked between centred and
+  // left-shifted on every frame that had a decimal, because "8" and "8.5" are
+  // different widths and the flex box re-centred each time. The span is now
+  // pinned to the LEFT of a fixed-width area while counting, so the digits never
+  // move; _batchPaint's caller re-centres once the final value lands, and only if
+  // that value is a whole number (a decimal stays left so the WHOLE string reads
+  // centred in the box).
+  if (box.dataset.settled !== "1") box.style.justifyContent = "flex-start";
   if (v && window.RoboScoreV3 && window.RoboScoreV3.gradeParts && kind === "rg") {
     try {
       const p = window.RoboScoreV3.gradeParts(v);
@@ -7408,6 +7378,10 @@ function _batchPaint(pass, kind, text) {
 // Seed every box at 0 / 0.0 as the tracker mounts.
 function seedBatchRows(n) {
   for (let i = 1; i <= (n || 5); i++) {
+    ["rg", "pg"].forEach(k => {
+      const b = document.getElementById(`batch-${k}-${i}`);
+      if (b) { delete b.dataset.settled; b.style.justifyContent = "flex-start"; }
+    });
     _batchPaint(i, "rg", "0");
     _batchPaint(i, "pg", "0.0");
   }
@@ -7428,7 +7402,12 @@ function _batchCountUp(pass, kind, finalText) {
       const eased = 1 - Math.pow(1 - k, 3);
       _batchPaint(pass, kind, fmt(Math.round(target * eased * 2) / 2));
       if (k < 1) return requestAnimationFrame(step);
-      _batchPaint(pass, kind, kind === "pg" ? _batchPgText(finalText) : String(finalText));
+      const _final = kind === "pg" ? _batchPgText(finalText) : String(finalText);
+      // Settle: a whole number goes back to dead-centre; a decimal stays
+      // left-anchored so the full "8.5" is what reads centred, not the "8".
+      box.dataset.settled = "1";
+      box.style.justifyContent = /\./.test(_final) ? "flex-start" : "center";
+      _batchPaint(pass, kind, _final);
       // White-outline pulse, matching the bottom score boxes' landing.
       box.style.boxShadow = "0 0 0 2.5px #ffffff, 0 0 12px rgba(255,255,255,.85)";
       setTimeout(() => { box.style.boxShadow = "0 1px 4px rgba(0,0,0,0.45)"; resolve(); }, 420);
@@ -8467,7 +8446,7 @@ function mountResults(cgc, psa) {
       btn.style.color = "#fff";
       btn.style.textAlign = "center";
     } else if (typeof isRestorationEligible === "function" && isRestorationEligible(formData) && !isRestorationCheckComplete(formData) && !(formData && formData.restorationUnlocked)) {
-      btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">RESTORATION CHECK</div><div style="font-size:12px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
+      btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">UV CHECK</div><div style="font-size:12px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">FREE</div>`;
       btn.style.background = "#7a4ba8";
       btn.style.color = "#fff";
       btn.style.textAlign = "center";
@@ -8810,10 +8789,17 @@ const BATCH_CREDIT_COST = 3;
 // until Deep was re-run. This checks PERSISTENT evidence that Deep ran instead.
 function _batchDeepRan(item) {
   if (!item) return false;
+  // S22 (Matt): Batch was offered after a Main alone. Two of the old tests were
+  // about Deep being AVAILABLE, not about Deep having RUN —
+  //   highGradeUnlocked / deepUnlocked mean "the Deep button is offered",
+  //   4 corner images mean "the photos exist", which they do as soon as the
+  //   camera walkthrough finishes, before anything is graded.
+  // A near-perfect Main unlocks Deep and the corner shots are already on the
+  // item, so Batch appeared immediately. Only evidence that a Deep RESULT exists
+  // counts now.
+  if (item.deepAssessmentRan === true) return true;
   if (typeof isDeepAssessmentComplete === "function" && isDeepAssessmentComplete(item)) return true;
-  if (item.highGradeUnlocked === true || item.deepUnlocked === true) return true;
   if (item.deepAssessment && String(item.deepAssessment).trim()) return true;
-  if (Array.isArray(item.cornerImages) && item.cornerImages.filter(Boolean).length >= 4) return true;
   return false;
 }
 function _batchPhotoOK(item) {
@@ -9103,6 +9089,33 @@ async function submitBatchAssessment() {
     const gLo = perGrades.length ? Math.min(...perGrades) : gAvg;
     const gHi = perGrades.length ? Math.max(...perGrades) : gAvg;
 
+    // ── S22: WHICH DEFECT LIST DOES THE BOOK KEEP? ────────────────────
+    // The batch writes an AVERAGED grade, so keeping the pre-batch Deep's defect
+    // list left the book showing a list that argued for a different number — a
+    // 5.5 book carrying the defects that justified a 7. There is no such thing
+    // as an "average defect list" (you cannot average prose), so the book adopts
+    // the list from the pass that landed CLOSEST TO THE AVERAGE: a real list,
+    // written by a real pass, for the grade the book is actually showing.
+    // Ties break toward the lower grade (the more conservative list) and then
+    // toward the earlier pass, so the choice is deterministic.
+    let _pickDefects = null, _pickPass = null;
+    (function () {
+      let best = null;
+      done.forEach((p, i) => {
+        if (!Array.isArray(p.defects) || !p.defects.length) return;
+        const v = _batchV3(p.subscores, p.pq);
+        const g = v ? v.grade : null;
+        if (typeof g !== "number") return;
+        const d = Math.abs(g - gAvg);
+        // Strict improvement only, so an exact tie on BOTH distance and grade
+        // keeps the pass we saw first (lowest pass number).
+        if (!best || d < best.d - 1e-9 || (Math.abs(d - best.d) < 1e-9 && g < best.g)) {
+          best = { d, g, i, p };
+        }
+      });
+      if (best) { _pickDefects = best.p.defects; _pickPass = best.p.pass ?? best.i + 1; }
+    })();
+
     const rec = {
       _batch: true, depth: "batch", runCount: done.length,
       roboGradeId: "BATCH-" + (typeof generateRoboId === "function" ? generateRoboId() : String(Date.now())),
@@ -9110,6 +9123,7 @@ async function submitBatchAssessment() {
       date: (new Date).toISOString(),
       version: status.version || (window.RG_GRADING_VERSION || ""),
       rgV3Grade: fmt(gAvg), rgV3Low: fmt(gLo), rgV3High: fmt(gHi),
+      defectsFromPass: _pickPass,
       grade: avgPG, predictedGrade: avgPG, pageQuality: modePQ,
       // Raw 0-100 kept for range/averaging maths only. NOT displayed anywhere —
       // ASSESSMENT_HISTORY_SPEC.md forbids surfacing a 0-100 Roboscore.
@@ -9135,16 +9149,22 @@ async function submitBatchAssessment() {
     // "Batch doesn't update the displayed grade." The whole point of paying for
     // five passes is that their average becomes the book's grade.
     //
-    // Numbers only. aiAssessment, deepAssessment and the defect list are left
-    // exactly as the book's last real Deep wrote them — per Matt, the batch does
-    // not need (or pay for) five more write-ups, and the existing prose is the
-    // one that was written with full reasoning. Keeping the defect list also
-    // keeps v3's interior-defect penalty and cap-shave working on the new
-    // subscores, which is why _batchV3 grades through the item rather than a
-    // bare object.
+    // aiAssessment and deepAssessment are left exactly as the book's last real
+    // Deep wrote them — per Matt, the batch does not need (or pay for) five more
+    // write-ups, and the existing prose was written with full reasoning.
+    //
+    // S22: the DEFECT LIST is no longer left alone. It is replaced with the list
+    // from the pass closest to the average (chosen above), so the list the user
+    // reads justifies the grade the batch just wrote. v3's interior-defect
+    // penalty and cap-shave read roboGrade.defects, so the swap happens BEFORE
+    // anything re-grades through the item.
     if (_haveSub) {
       const r1 = x => Math.round(x * 10) / 10;
       if (!formData.roboGrade) formData.roboGrade = {};
+      if (_pickDefects) {
+        formData.roboGrade.defects = _pickDefects;
+        formData.roboGrade.defectsFromBatchPass = _pickPass;
+      }
       formData.roboGrade.frontScore    = r1(avgSub.front);
       formData.roboGrade.backScore     = r1(avgSub.back);
       formData.roboGrade.spineScore    = r1(avgSub.spine);
@@ -9198,6 +9218,15 @@ async function submitBatchAssessment() {
   }
 }
 function renderBatchSection() {
+  // S22: once a Deep has run the section is ALWAYS shown. If the Photograder says
+  // the photos aren't clean enough, the button is greyed with the reason, instead
+  // of the section silently not existing — Matt couldn't tell "not eligible yet"
+  // apart from "feature missing".
+  if (formData.type === "card" || !_batchDeepRan(formData)) return "";
+  const _photoOK = _batchPhotoOK(formData);
+  if (!_photoOK) {
+    return `\n        <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n          <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">BATCH ASSESSMENT (×${BATCH_N})</div>\n          <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Batch needs clean photos so the ${BATCH_N} passes differ on the book, not on the pictures. The Photograder must return at most one B, with the rest A. Retake the flagged photo(s) and re-run Deep to unlock it.</div>\n          <div style="display:flex;justify-content:center">\n            <button class="rg-btn rg-btn-assess rg-btn-gold" disabled style="flex-direction:column;line-height:1.15;text-align:center;opacity:0.45;cursor:not-allowed">\n              <span style="display:block">RUN BATCH ×${BATCH_N}</span>\n              <span style="display:block;font-size:0.8em;font-weight:600;opacity:0.85">PHOTOS NEED WORK</span>\n            </button>\n          </div>\n        </div>`;
+  }
   if (!isBatchEligible(formData)) return "";
   return `\n        <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n          <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">BATCH ASSESSMENT (×${BATCH_N})</div>\n          <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Re-runs the Main → Deep pipeline ${BATCH_N} times to give a better idea of the High/Low grade range for this book, as well as a cumulative average. All ${BATCH_N} grades are recorded in the Assessment History. The cost is ${BATCH_CREDIT_COST} credits for a total of ${BATCH_N * 2} assessments.</div>\n          <div style="display:flex;justify-content:center">\n            <button class="rg-btn rg-btn-assess rg-btn-gold${assessing ? ' assessing' : ''}" onclick="submitBatchAssessment()" ${assessing ? "disabled" : ""} style="flex-direction:column;line-height:1.15;text-align:center">\n              <span style="display:block">RUN BATCH ×${BATCH_N}</span>\n              <span style="display:block;font-size:0.8em;font-weight:600;opacity:0.85">(${BATCH_CREDIT_COST} CREDITS)</span>\n            </button>\n          </div>\n        </div>`;
 }
@@ -9241,23 +9270,31 @@ function _histRangeBar(label, arr, color) {
   const pct = span <= 0 ? 50 : Math.max(0, Math.min(100, ((avg - lo) / span) * 100));
   return `
     <div style="margin:12px 0 4px">
-      <div style="font-size:10px;letter-spacing:1.5px;color:#8a9a7a;font-weight:700;margin-bottom:24px">${label}</div>
+      <div style="font-size:10px;letter-spacing:1.5px;color:#8a9a7a;font-weight:700;margin-bottom:38px">${label}</div>
       <div style="position:relative;margin:0 8px">
         <div style="position:absolute;left:${pct}%;bottom:100%;transform:translateX(-50%);text-align:center;white-space:nowrap;margin-bottom:2px">
-          <div style="${_AHF};font-size:14px;color:${color};line-height:1">${_histFmt(avg)}</div>
+          <div style="font-size:9px;letter-spacing:1px;color:#8a9a7a;font-weight:700;line-height:1;margin-bottom:1px">AVE.</div>
+          <div style="${_AHF};font-size:20px;color:${color};line-height:1">${_histFmt(avg)}</div>
           <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid ${color};margin:1px auto 0"></div>
         </div>
         <div style="height:12px;border-radius:6px;background:${color}"></div>
       </div>
       <div style="display:flex;justify-content:space-between;margin:5px 8px 0">
-        <span style="${_AHF};font-size:13px;color:#5a7030">${_histFmt(lo)}</span>
-        <span style="${_AHF};font-size:13px;color:#5a7030">${_histFmt(hi)}</span>
+        <span style="text-align:left">
+          <span style="display:block;font-size:9px;letter-spacing:1px;color:#8a9a7a;font-weight:700;line-height:1">LOW</span>
+          <span style="${_AHF};font-size:19px;color:#5a7030">${_histFmt(lo)}</span></span>
+        <span style="text-align:right">
+          <span style="display:block;font-size:9px;letter-spacing:1px;color:#8a9a7a;font-weight:700;line-height:1">HIGH</span>
+          <span style="${_AHF};font-size:19px;color:#5a7030">${_histFmt(hi)}</span></span>
       </div>
     </div>`;
 }
 function renderAHSummary(history) {
   const p = _histPoints(history);
   if (!p.rg.length && !p.pg.length) return "";
+  // S22 (Matt): a range/average across ONE grade is not a summary — it is the same
+  // number printed three times with a bar under it. Wait for a second grade.
+  if (Math.max(p.rg.length, p.pg.length) < 2) return "";
   const modePQ = Object.keys(p.pq).sort((a, b) => p.pq[b] - p.pq[a])[0] || "";
   const n = p.rg.length || p.pg.length;
   return `<div style="background:#eef3e6;border:1px solid #cdd8be;border-radius:10px;padding:12px 14px 14px;margin-top:8px">
@@ -11640,15 +11677,15 @@ function renderForm() {
     if (!showRestorationTier(formData)) return "";
     if (isRestorationCheckComplete(formData)) {
       const rImgs = formData.restorationImages || [];
-      return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n            <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">RESTORATION CHECK</div>\n            ${renderRestorationSlotGrid(rImgs, {editable: true})}\n            <input id="restoration-photo-input" type="file" accept="image/*" multiple onchange="handleRestorationImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="restoration-check-btn" class="rg-btn rg-btn-assess rg-btn-purple${assessing ? ' assessing' : ''}" onclick="submitRestorationCheck()" ${rImgs.filter(Boolean).length >= RESTORATION_SLOT_COUNT ? "" : "disabled"}>\n                ${assessing ? "Checking…" : "RE-RUN RESTORATION CHECK"}\n              </button>\n            </div>\n          </div>\n        `;
+      return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n            <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">UV CHECK</div>\n            ${renderRestorationSlotGrid(rImgs, {editable: true})}\n            <input id="restoration-photo-input" type="file" accept="image/*" multiple onchange="handleRestorationImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="restoration-check-btn" class="rg-btn rg-btn-assess rg-btn-purple${assessing ? ' assessing' : ''}" onclick="submitRestorationCheck()" ${rImgs.slice(0, RESTORATION_SLOT_COUNT).filter(Boolean).length >= RESTORATION_SLOT_COUNT ? "" : "disabled"}>\n                ${assessing ? "Checking…" : "RE-RUN UV CHECK"}\n              </button>\n            </div>\n          </div>\n        `;
     }
     if (!_restorationRevealed) {
       return `\n            <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n              <div style="display:flex;justify-content:center">\n                <button onclick="revealRestorationSlots()" style="width:75%;min-height:48px;border-radius:12px;background:#3a2a4a;color:#c8a8e8;border:1px solid #7a4ba8;font-size:13px;font-weight:700;letter-spacing:1.5px;cursor:pointer">\n                  CHECK RESTORATION\n                </button>\n              </div>\n              <div style="font-size:10px;color:#9a8aaa;text-align:center;margin-top:8px;line-height:1.4">Adds 8 photos (UV front + back, staples, edge, interior) to check for restoration indicators. A UV light is required for the UV photos. 6 of 8 images are shared with Full Assessment.</div>\n            </div>\n          `;
     }
     const rImgs = formData.restorationImages || [];
-    const rFilled = rImgs.filter(Boolean).length;
+    const rFilled = rImgs.slice(0, RESTORATION_SLOT_COUNT).filter(Boolean).length;
     const rReady = rFilled === RESTORATION_SLOT_COUNT && !assessing;
-    return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n            <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">RESTORATION CHECK — 7 PHOTOS</div>\n            <div style="font-size:11px;color:#9a8aaa;margin-bottom:10px;line-height:1.5">\n              UV Front requires a UV (blacklight) photo in a dark room. 6 of 7 images are shared with Full Assessment.\n            </div>\n            ${renderRestorationSlotGrid(rImgs, {editable: true})}\n            <input id="restoration-photo-input" type="file" accept="image/*" multiple onchange="handleRestorationImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="restoration-check-btn" class="rg-btn rg-btn-assess rg-btn-purple${assessing ? ' assessing' : ''}" onclick="submitRestorationCheck()" ${rReady ? "" : "disabled"}>\n                ${assessing ? "Checking…" : `RESTORATION CHECK ${rFilled < RESTORATION_SLOT_COUNT ? `(${rFilled}/${RESTORATION_SLOT_COUNT})` : ""}`}\n              </button>\n            </div>\n          </div>\n        `;
+    return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n            <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">UV CHECK — FREE</div>\n            <div style="font-size:11px;color:#9a8aaa;margin-bottom:10px;line-height:1.5">\n              Color touch — ink added to hide a defect — is the one kind of restoration that can only be seen under a blacklight. Photograph the front and back covers under a UV flashlight in a dark room and Robograder will report any ink that does not match the rest. No credit is used.\n            </div>\n            ${renderRestorationSlotGrid(rImgs, {editable: true})}\n            <input id="restoration-photo-input" type="file" accept="image/*" multiple onchange="handleRestorationImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="restoration-check-btn" class="rg-btn rg-btn-assess rg-btn-purple${assessing ? ' assessing' : ''}" onclick="submitRestorationCheck()" ${rReady ? "" : "disabled"}>\n                ${assessing ? "Checking…" : `UV CHECK ${rFilled < RESTORATION_SLOT_COUNT ? `(${rFilled}/${RESTORATION_SLOT_COUNT})` : ""}`}\n              </button>\n            </div>\n          </div>\n        `;
   })()}${renderBatchSection()}${renderUserDefectSlots()}\n      <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">\n      <input id="userdefect-photo-input" type="file" accept="image/*" onchange="handleUserDefectImages(event)" style="display:none">\n      <input id="restoration-photo-input" type="file" accept="image/*" onchange="handleRestorationImages(event)" style="display:none">\n\n      \x3c!-- S11: Pre-assessment Grader Notes (Option B for the chicken-and-egg\n           problem). For graded books in slabs, the official grader notes are\n           highly informative inputs to the AI assessment — but we don't\n           know a book is graded until after the AI has assessed it, so the\n           field would normally be unavailable on first-pass. This collapsible\n           section gives users who have a slabbed book a way to enter the\n           grader notes BEFORE running the assessment. Defaults closed so\n           the standard image-first flow stays visually clean for raw books;\n           opens with a single tap. Only renders pre-assessment in the\n           image-first flow (no _assessed, no _addManualMode, no isEdit) —\n           after assessment, the Grader Notes field appears in the normal\n           form section below where it can also be edited. --\x3e\n      \x3c!-- The "Optional: official label info" collapsible was removed in S12.\n           It let users type CGC/PSA grader notes BEFORE assessment to nudge\n           accuracy. Pulled because:\n           - Used by an extreme minority of users (only those entering\n             already-graded books and willing to transcribe slab text)\n           - Cluttered the otherwise-clean image-first Add flow\n           - The same info can still be typed in the post-assessment form\n             where the Grader Notes field still lives.\n           If we want this back later, the JS field (formData.graderNotes)\n           still wires through to assess.js — only the UI was removed. --\x3e\n\n    </div>\n    ${isEdit || _assessed || _addManualMode ? `\n    ${""}\n    <div class="form-grid-2">\n      \x3c!-- Title gets a special handler (not the generic tf) because we need\n           live-toggle the save button as the user types. Using tf would\n           require either a full renderForm on every keystroke (kills focus)\n           or a separate handler — this is cleaner. --\x3e\n      ${formData.roboGrade ? rof(_isCardForm ? "Card Name" : "Title", "title") : `<div><label class="field-label">Title<span style="color:#c0392b;margin-left:2px">*</span></label><input id="title-input" value="${esc(formData.title || "")}" oninput="formData.title=this.value;const b=document.getElementById('save-btn');b.disabled=!this.value.trim();b.style.opacity=this.value.trim()?'':'0.5';b.style.cursor=this.value.trim()?'':'not-allowed'" placeholder="Series title"></div>`}\n      ${formData.roboGrade ? rof(_isCardForm ? "Card No." : "Issue", "issue") : tf("Issue", "issue", "Issue number", true)}\n      ${formData.roboGrade ? rof("Pub Date", "issueDate") : tf("Pub Date", "issueDate", "Cover date")}\n      ${formData.roboGrade ? rof("Publisher", "publisher") : tf("Publisher", "publisher", "Publisher")}\n    </div>\n    ${formData.roboGrade && (formData.printing && String(formData.printing).trim()) ? `\n    \x3c!-- S14 (anti-fraud): Printing is shown read-only on a graded book.\n         It is NOT in the editable grid at all (a blank editable Printing\n         would also be a fraud vector — a user could leave a reprint's\n         printing empty). It only appears here when the assessment\n         actually populated it (e.g. "Facsimile Reprint"), so the label\n         and Detail view stay truthful and the user can't strip it. --\x3e\n    <div class="form-grid-2"><div>\n      <label class="field-label">Printing</label>\n      <div class="ro-field" title="Locked — set by the assessment and not editable">${esc(formData.printing)}</div>\n    </div></div>` : ""}\n    \x3c!-- Official Grades fields (S11): the disclosure container "OFFICIAL GRADES"\n         was removed. CGC Grade/Cert and PSA Grade/Cert sit as their own ordinary\n         fields when relevant.\n         Visibility:\n         • Not yet assessed (no roboGrade): show both CGC and PSA grids.\n         • Assessed and AI determined raw (no grades/certs): hide both.\n         • Assessed and CGC info present: show CGC grid only.\n         • Assessed and PSA info present: show PSA grid only.\n         A book can be CGC OR PSA officially, never both. --\x3e\n    ${(() => {
     const hasOfficialCGC = !!(formData.cgcGrade || formData.cgcCert);
     const hasOfficialPSA = !!(formData.psaGrade || formData.psaCert);
@@ -11688,7 +11725,7 @@ function renderForm() {
     if (showLabelNotesEdit) return "";
     if (!formData.keyInfo) return "";
     return `<div><label class="field-label">Key Info</label><textarea rows="3" readonly style="cursor:not-allowed;background:#ffffff;color:#1a1614" title="Key Info is populated by the assessment when the issue is in the recognized-key list. Not user-editable.">${esc(formData.keyInfo || "")}</textarea></div>`;
-  })()}\n    ${formData.cgcGrade || formData.psaGrade || formData.graderNotes ? `<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes ? 5 : 3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiAssessment ? `<div><label class="field-label">Main Assessment</label><textarea rows="${Math.max(8, Math.ceil(formData.aiAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>` : ""}\n    ${formData.deepAssessment ? `<div><label class="field-label">Deep Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.deepAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Deep pass.">${esc(formData.deepAssessment)}</textarea></div>` : ""}\n    ${formData.fullAssessment ? `<div><label class="field-label">Full Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.fullAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Full pass.">${esc(formData.fullAssessment)}</textarea></div>` : ""}\n    ${formData.restorationReport ? `<div><label class="field-label">Restoration Assessment</label><textarea rows="${Math.max(5, Math.ceil((formData.restorationReport || "").length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Restoration Check.">${esc(formData.restorationReport)}</textarea></div>` : ""}\n    ${renderAssessmentHistorySection(formData.assessmentHistory, true)}\n    ${formData.psaNotes ? `<div><label class="field-label" style="color:#e87a7a">PSA Variance</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes || "")}</textarea></div>` : ""}\n\n    \x3c!-- Enhancement Candidate (S11): renamed from "Enhance Candidate"; moved\n         to between Condition Assessment and Cost Breakdown per user direction. --\x3e\n    \x3c!-- S20: Enhancement Candidate control hidden per request (odd inclusion, often inaccurate). Kept for future use: <div><label class="field-label">Enhancement Candidate</label><div style="display:flex;gap:10px">\${treatBtn("enhance", "Enhance")}</div></div> --\x3e\n\n    \x3c!-- Cost Breakdown (S11): now includes FMV ($) and FMV Date inside the\n         container, since they're financial fields conceptually grouped with\n         the cost data. --\x3e\n    <div class="cost-box">\n      <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>\n      <div class="form-grid-2">\n        ${mf("Purchase Price ($)", "purchasePrice")}\n        ${mf("Taxes / Fees / Shipping ($)", "taxesFeesShipping")}\n        ${mf("Grading / Pressing ($)", "gradingCost")}\n        ${mf("CGC Return Shipping ($)", "cgcShipping")}\n        \n        \n        ${mf("Asking Price ($)", "askingPrice")}\n      </div>\n    </div>\n\n    <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes || "")}</textarea></div>\n    ${""}\n    \n    <div style="display:flex;gap:10px;padding-top:4px">\n      ${isEdit ? "" : `<button id="save-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="submitForm()" ${formData.title?.trim() ? "" : "disabled"}>Add to Collection</button>`}\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cancelForm()">Cancel</button>\n    </div>\n    ` : `\n    \x3c!-- Add-flow collapsed state (S11): show only the Enter Manually button.\n         Steers users toward photos-first by hiding the form fields until\n         either (a) they tap Enter Manually, or (b) an assessment runs and\n         _assessed becomes true. Edit view always shows the full form.\n         S14: ownership cycle pill inserted above Enter Manually. Lets a\n         user mark a book as Owned (default) / Watching / Sold before\n         assessing — so they can assess someone else's book without\n         claiming it, or track a book they're considering buying. Same\n         pill style as detail and edit views (color-coded by state),\n         centered between the two full-width buttons. Public-listing is\n         locked off whenever ownership !== 'Owned'; the cycleOwnership\n         handler clears formData.publicListing on transitions out of\n         Owned so a stale 'true' can't be saved. --\x3e\n    ${(() => {
+  })()}\n    ${formData.cgcGrade || formData.psaGrade || formData.graderNotes ? `<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes ? 5 : 3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiAssessment ? `<div><label class="field-label">Main Assessment</label><textarea rows="${Math.max(8, Math.ceil(formData.aiAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>` : ""}\n    ${formData.deepAssessment ? `<div><label class="field-label">Deep Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.deepAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Deep pass.">${esc(formData.deepAssessment)}</textarea></div>` : ""}\n    ${formData.fullAssessment ? `<div><label class="field-label">Full Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.fullAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Full pass.">${esc(formData.fullAssessment)}</textarea></div>` : ""}\n    ${formData.restorationReport ? `<div><label class="field-label">UV Check</label><textarea rows="${Math.max(5, Math.ceil((formData.restorationReport || "").length / 80))}" readonly style="cursor:not-allowed" title="Populated by the UV Check.">${esc(formData.restorationReport)}</textarea></div>` : ""}\n    ${renderAssessmentHistorySection(formData.assessmentHistory, true)}\n    ${formData.psaNotes ? `<div><label class="field-label" style="color:#e87a7a">PSA Variance</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes || "")}</textarea></div>` : ""}\n\n    \x3c!-- Enhancement Candidate (S11): renamed from "Enhance Candidate"; moved\n         to between Condition Assessment and Cost Breakdown per user direction. --\x3e\n    \x3c!-- S20: Enhancement Candidate control hidden per request (odd inclusion, often inaccurate). Kept for future use: <div><label class="field-label">Enhancement Candidate</label><div style="display:flex;gap:10px">\${treatBtn("enhance", "Enhance")}</div></div> --\x3e\n\n    \x3c!-- Cost Breakdown (S11): now includes FMV ($) and FMV Date inside the\n         container, since they're financial fields conceptually grouped with\n         the cost data. --\x3e\n    <div class="cost-box">\n      <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>\n      <div class="form-grid-2">\n        ${mf("Purchase Price ($)", "purchasePrice")}\n        ${mf("Taxes / Fees / Shipping ($)", "taxesFeesShipping")}\n        ${mf("Grading / Pressing ($)", "gradingCost")}\n        ${mf("CGC Return Shipping ($)", "cgcShipping")}\n        \n        \n        ${mf("Asking Price ($)", "askingPrice")}\n      </div>\n    </div>\n\n    <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes || "")}</textarea></div>\n    ${""}\n    \n    <div style="display:flex;gap:10px;padding-top:4px">\n      ${isEdit ? "" : `<button id="save-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="submitForm()" ${formData.title?.trim() ? "" : "disabled"}>Add to Collection</button>`}\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cancelForm()">Cancel</button>\n    </div>\n    ` : `\n    \x3c!-- Add-flow collapsed state (S11): show only the Enter Manually button.\n         Steers users toward photos-first by hiding the form fields until\n         either (a) they tap Enter Manually, or (b) an assessment runs and\n         _assessed becomes true. Edit view always shows the full form.\n         S14: ownership cycle pill inserted above Enter Manually. Lets a\n         user mark a book as Owned (default) / Watching / Sold before\n         assessing — so they can assess someone else's book without\n         claiming it, or track a book they're considering buying. Same\n         pill style as detail and edit views (color-coded by state),\n         centered between the two full-width buttons. Public-listing is\n         locked off whenever ownership !== 'Owned'; the cycleOwnership\n         handler clears formData.publicListing on transitions out of\n         Owned so a stale 'true' can't be saved. --\x3e\n    ${(() => {
     const own = formData.ownership || "Owned";
     const styleByState = {
       Owned: {
@@ -11722,9 +11759,9 @@ function renderForm() {
 
 function renderImgPreview() {}
 
-// S21: Restoration Check slot grid. Shares the Full staple-SQUARE + Outer Edge
-// (4:1) treatment for the slots it has in common with Full; the restoration-only
-// slots (UV Front/Back, Interior Front/Back) keep their half-width pairs.
+// S22: UV Check slot grid — one row, two half-width 3:4 cells (UV Front, UV
+// Back). The staple / outer-edge / interior rows went away with the 8-image
+// Restoration Check; Main, Deep and Full cover that ground for free now.
 function renderRestorationSlotGrid(restoration, opts) {
   const editable = !!(opts && opts.editable);
   const _cid = opts && opts.comicId ? opts.comicId : '';
@@ -11748,13 +11785,6 @@ function renderRestorationSlotGrid(restoration, opts) {
   };
   let html = '';
   html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">${cell('uv_front', '3 / 4')}${cell('uv_back', '3 / 4')}</div>`;
-  html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">`
-    + cell('exterior_top_staple', '1 / 1', { extra: 'grid-column:1;grid-row:1' })
-    + cell('interior_staple', null, { fill: true, extra: 'grid-column:2;grid-row:1 / span 2' })
-    + cell('exterior_bottom_staple', '1 / 1', { extra: 'grid-column:1;grid-row:2' })
-    + `</div>`;
-  html += `<div style="margin-top:6px">${cell('outer_edge', '4 / 1', { strip: true })}</div>`;
-  html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">${cell('interior_front', '3 / 2')}${cell('interior_back', '3 / 2')}</div>`;
   return html;
 }
 
@@ -11823,6 +11853,8 @@ function removeImg(i) {
 
 let _cropperInstance = null;
 
+let _cropResizeObs = null;   // S22: watches #cropper-inner while a crop is open
+
 let _cropperTarget = null;
 
 let _cropperOriginalSrc = null;
@@ -11876,8 +11908,34 @@ function openCropper(type, index) {
   });
   img.src = src;
   modal.classList.add("open");
-  const attach = () => {
+  // S22 (4th attempt at the first-image bug). The previous three all guessed at
+  // WHEN the stage would have a box — a resize(), then a render(), then rAF +
+  // 180ms + 450ms. Matt's new clue kills the timing theory: escaping the cropper
+  // and re-entering fixes it, i.e. the layout is fine by then; only the very
+  // first open measures too early. Rather than guess a fourth delay, we now
+  // OBSERVE the box: don't build Cropper until the stage actually has one, and
+  // re-fit on every later size change. That is correct whatever the cause —
+  // first open, a late safe-area resolve, rotation, keyboard, anything.
+  const _stageBox = () => {
+    const inner = document.getElementById("cropper-inner");
+    if (!inner) return null;
+    const r = inner.getBoundingClientRect();
+    return (r.width > 40 && r.height > 40) ? r : null;
+  };
+  const _whenSized = () => new Promise(resolve => {
+    if (_stageBox()) return resolve(true);
+    let tries = 0;
+    const tick = () => {
+      if (_stageBox()) return resolve(true);
+      if (++tries > 60) return resolve(false);   // ~1s, then build anyway
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+
+  const attach = async () => {
     img.removeEventListener("error", onErrorOnce);
+    await _whenSized();
     if (typeof Cropper !== "function") {
       alert("Cropper library failed to load. Try refreshing the page.");
       cancelCrop();
@@ -11964,11 +12022,31 @@ function openCropper(type, index) {
           }
         };
         requestAnimationFrame(_fitCrop);
+        // The observer is the actual fix; these two keep the old behaviour for a
+        // WebView without ResizeObserver (none we ship to, but it costs nothing).
         setTimeout(_fitCrop, 180);
-        // S22: a third pass past the iOS safe-area settle. env(safe-area-inset-*)
-        // resolves late in a native WebView when a fullscreen modal closes, which
-        // changes #cropper-stage's padding after the 180ms pass. Idempotent.
         setTimeout(_fitCrop, 450);
+        // Re-fit whenever the stage's box changes, for as long as the cropper is
+        // open. env(safe-area-inset-*) resolving late, the camera modal finishing
+        // its teardown, an orientation change — all of them land here instead of
+        // needing their own timeout. Torn down in cancelCrop/confirmCrop.
+        try {
+          if (window.ResizeObserver) {
+            const _inner = document.getElementById("cropper-inner");
+            if (_inner) {
+              let _lastW = 0, _lastH = 0;
+              _cropResizeObs = new ResizeObserver(entries => {
+                for (const e of entries) {
+                  const w = Math.round(e.contentRect.width), h = Math.round(e.contentRect.height);
+                  if (w === _lastW && h === _lastH) continue;   // ignore no-op notifications
+                  _lastW = w; _lastH = h;
+                  if (w > 40 && h > 40) _fitCrop();
+                }
+              });
+              _cropResizeObs.observe(_inner);
+            }
+          }
+        } catch (e) { console.warn("[cropper] ResizeObserver unavailable:", e); }
       }
     });
     let _lastCropTap = 0;
@@ -12006,6 +12084,7 @@ function openCropper(type, index) {
 function cancelCrop() {
   const modal = document.getElementById("cropper-modal");
   const stage = document.getElementById("cropper-stage");
+  if (_cropResizeObs) { try { _cropResizeObs.disconnect(); } catch (e) {} _cropResizeObs = null; }
   if (_cropperInstance) {
     try {
       _cropperInstance.destroy();
@@ -12895,7 +12974,7 @@ function showUvFrontCard() {
     card = document.createElement("div");
     card.id = "uv-front-card";
     card.style.cssText = "position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.78);display:flex;align-items:center;justify-content:center;padding:24px";
-    card.innerHTML = `\n      <div style="background:#1a1226;border:1px solid #7a4ba8;border-radius:16px;max-width:340px;width:100%;padding:26px 22px;text-align:center">\n        <svg viewBox="0 0 64 64" width="64" height="64" style="margin:0 auto 14px;display:block" fill="none" stroke="#b06bff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">\n          <rect x="24" y="6" width="16" height="14" rx="2"/>\n          <path d="M22 20 H42 L38 30 H26 Z"/>\n          <rect x="27" y="30" width="10" height="26" rx="2"/>\n          <path d="M32 2 V-2 M44 8 L48 4 M20 8 L16 4" stroke="#b06bff" stroke-width="2.5"/>\n        </svg>\n        <div style="color:#e8d8ff;font-size:15px;font-weight:700;letter-spacing:0.5px;margin-bottom:8px">UV Front Photo</div>\n        <div style="color:#b8a8cc;font-size:12px;line-height:1.5;margin-bottom:20px">The next photo must be the front cover under a UV (blacklight) flashlight, in a dark room. UV light reveals added ink that wouldn't show otherwise. A restoration check can't be completed without it.</div>\n        <button onclick="uvCardProceed()" style="width:100%;min-height:48px;border-radius:10px;background:#7a4ba8;color:#fff;border:none;font-size:14px;font-weight:700;letter-spacing:1px;cursor:pointer;margin-bottom:10px">Okay</button>\n        <button onclick="uvCardCancel()" style="width:100%;min-height:44px;border-radius:10px;background:transparent;color:#a890c0;border:1px solid #5a3a7a;font-size:13px;font-weight:600;cursor:pointer">I don't have a UV light</button>\n      </div>`;
+    card.innerHTML = `\n      <div style="background:#1a1226;border:1px solid #7a4ba8;border-radius:16px;max-width:340px;width:100%;padding:26px 22px;text-align:center">\n        <svg viewBox="0 0 64 64" width="64" height="64" style="margin:0 auto 14px;display:block" fill="none" stroke="#b06bff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">\n          <rect x="24" y="6" width="16" height="14" rx="2"/>\n          <path d="M22 20 H42 L38 30 H26 Z"/>\n          <rect x="27" y="30" width="10" height="26" rx="2"/>\n          <path d="M32 2 V-2 M44 8 L48 4 M20 8 L16 4" stroke="#b06bff" stroke-width="2.5"/>\n        </svg>\n        <div style="color:#e8d8ff;font-size:15px;font-weight:700;letter-spacing:0.5px;margin-bottom:8px">UV Photos</div>\n        <div style="color:#b8a8cc;font-size:12px;line-height:1.5;margin-bottom:20px">The next two photos must be the front and back covers under a UV (blacklight) flashlight, in a dark room. UV light is the only way to see color touch — ink added to cover a defect. The UV Check needs both.</div>\n        <button onclick="uvCardProceed()" style="width:100%;min-height:48px;border-radius:10px;background:#7a4ba8;color:#fff;border:none;font-size:14px;font-weight:700;letter-spacing:1px;cursor:pointer;margin-bottom:10px">Okay</button>\n        <button onclick="uvCardCancel()" style="width:100%;min-height:44px;border-radius:10px;background:transparent;color:#a890c0;border:1px solid #5a3a7a;font-size:13px;font-weight:600;cursor:pointer">I don't have a UV light</button>\n      </div>`;
     document.body.appendChild(card);
   }
   card.style.display = "flex";
@@ -12910,9 +12989,9 @@ function uvCardProceed() {
   const card = document.getElementById("uv-front-card");
   if (card) card.style.display = "none";
   if (window._cameraSupported) {
-    // S16: Start a restoration walkthrough from slot 0 (UV Front)
+    // S22: UV walkthrough is two shots — UV Front then UV Back.
     const list = formData.restorationImages || [];
-    const captureOrder = [ 0, 1, 2, 3, 4, 5, 6 ];
+    const captureOrder = [ 0, 1 ];
     const emptySlotsInOrder = captureOrder.filter(idx => !list[idx]);
     const queue = emptySlotsInOrder.length > 1 ? [ ...emptySlotsInOrder.slice(1) ] : [];
     cameraOpen({
@@ -12951,16 +13030,19 @@ async function handleRestorationImages(e) {
 
 async function submitRestorationCheck() {
   if (assessing) return;
-  const r = _ensureRestorationArray();
+  // S22: only the two UV slots matter. Legacy books still carry an 8-long
+  // restorationImages array from the old Restoration Check — slice so those
+  // stale entries neither count toward the gate nor get sent to the model.
+  const r = _ensureRestorationArray().slice(0, RESTORATION_SLOT_COUNT);
   const filled = r.filter(Boolean);
   if (filled.length !== RESTORATION_SLOT_COUNT) {
-    alert(`Please add all ${RESTORATION_SLOT_COUNT} restoration photos first.`);
+    alert("Please add both UV photos first — front cover and back cover, under a blacklight in a dark room.");
     return;
   }
-  if (typeof window._userCredits === "number" && window._userCredits < 1) {
-    showBuyCredits();
-    return;
-  }
+  // NO CREDIT GATE AND NO decrementCredit() BELOW. S22: the UV Check is free.
+  // It is a 2-image, short-prompt call, and it is the only way a user can get
+  // color touch looked at — charging for it discouraged exactly the check we
+  // most want run. Main/Deep/Full flag restoration on their own, also free.
   assessing = true;
   renderForm();
   let restoScanController = null;
@@ -12977,6 +13059,7 @@ async function submitRestorationCheck() {
     }).catch(e => {
       throw new Error("Image compression failed: " + e.message);
     });
+    // r is already sliced to the 2 UV slots above; compressed is 2 long.
     const token = window._currentUser ? await window._currentUser.getIdToken() : null;
     const apiPromise = fetch("/api/assess_deep", {
       method: "POST",
@@ -13005,12 +13088,17 @@ async function submitRestorationCheck() {
     }
     // S17: do NOT dismiss the scan stage — the tracker overlay slides into the
     // live chest (same as Main/Full). Dismiss happens at COMPLETE.
+    // FIVE steps, not three. Progress_Overlay_Restoration.webp has five fixed
+    // cut-out rows; mounting three leaves two empty holes in the artwork. These
+    // five are real stages of a UV read, not padding — verify the light, read
+    // each cover, compare, judge. If the overlay is ever redrawn with three
+    // rows, drop "resto-compare" and "resto-back"/"resto-front" can merge.
     const _restoSteps = [
-      { id: "resto-uv", label: "UV CHECK" },
-      { id: "resto-staples", label: "STAPLE INSPECTION" },
-      { id: "resto-trim", label: "TRIMMING CHECK" },
-      { id: "resto-leaf", label: "LEAF-CASTING SCAN" },
-      { id: "resto-judge", label: "RESTORED JUDGMENT" }
+      { id: "resto-uvlight", label: "UV LIGHT CHECK" },
+      { id: "resto-front", label: "FRONT COVER SCAN" },
+      { id: "resto-back", label: "BACK COVER SCAN" },
+      { id: "resto-compare", label: "INK COMPARISON" },
+      { id: "resto-judge", label: "COLOR TOUCH JUDGMENT" }
     ];
     const _restoTracker = mountTierTracker("restoration", _restoSteps, { noAutoLight: true });
     // The restoration scan placeholder already shows the empty conclusion box +
@@ -13019,11 +13107,11 @@ async function submitRestorationCheck() {
     const resp = await apiPromise;
     if (!resp.ok) {
       const t = await resp.text();
-      throw new Error(describeAssessmentError(t) || "Restoration check failed: " + t.slice(0, 200));
+      throw new Error(describeAssessmentError(t) || "UV Check failed: " + t.slice(0, 200));
     }
     const result = await resp.json();
     if (result.uvCheckFailed === true || result.uvLightPresent === false) {
-      alert("The UV Front photo doesn't appear to be taken under UV light. The restoration check examined the other 6 images but color touch could not be evaluated. Please retake the UV Front photo under a UV flashlight in a dark room and try again.");
+      alert("These photos do not appear to have been taken under UV light, so color touch could not be evaluated. Retake the front and back covers under a UV (blacklight) flashlight in a dark room, with the room lights off, and run the UV Check again. No credit was used.");
     }
     if (result.restorationCheckRan === true) {
       if (_restoTracker && _restoTracker.clearTimers) _restoTracker.clearTimers();
@@ -13035,29 +13123,35 @@ async function submitRestorationCheck() {
       // S16: high-confidence restoration → purple score box
       formData.restorationHighConfidence = result.highConfidence === true;
       formData._imagesChanged = true;
-      onAssessmentSuccess();
+      // S22: deliberately NOT calling onAssessmentSuccess() — that decrements a
+      // credit. The UV Check is free.
       const _restoFound = formData.restorationFlag;
       // S17: light the 5 overlay boxes ONE SECOND APART, each in its final colour
       // — green (clear) or red (restoration found) per finding-group. The grid +
       // needle keep animating UNTIL the determination shows, then stop.
       const _findings = Array.isArray(result.findings) ? result.findings : [];
       const _foundIn = (areas) => _findings.some(f => areas.includes(f.area) && f.indicatorPresent === true);
+      // null areas = judged on the overall result. "resto-uvlight" is the one
+      // box that fails on a BAD PHOTO rather than on a finding.
+      const _uvBad = (result.uvCheckFailed === true || result.uvLightPresent === false);
       const _boxPlan = [
-        ["resto-uv", ["uv_front", "uv_back"]],
-        ["resto-staples", ["exterior_top_staple", "exterior_bottom_staple", "interior_staple"]],
-        ["resto-trim", ["outer_edge"]],
-        ["resto-leaf", ["interior_front", "interior_back"]],
-        ["resto-judge", null] // overall
+        ["resto-uvlight", "uvlight"],
+        ["resto-front", ["uv_front"]],
+        ["resto-back", ["uv_back"]],
+        ["resto-compare", null],
+        ["resto-judge", null]
       ];
       _boxPlan.forEach(([id, areas], i) => {
         setTimeout(() => {
-          const isFail = areas === null ? _restoFound : _foundIn(areas);
+          const isFail = areas === "uvlight" ? _uvBad
+                       : areas === null ? _restoFound
+                       : _foundIn(areas);
           setStep(id, isFail ? "failed" : "done");
         }, i * 1000);
       });
       const _revealMs = _boxPlan.length * 1000; // after the last box lights
       const _judgeColor = _restoFound ? '#ff4040' : '#60c060';
-      const _judgeLabel = _restoFound ? "RESTORATION INDICATED" : "NO RESTORATION FOUND";
+      const _judgeLabel = _restoFound ? "COLOR TOUCH INDICATED" : "NO COLOR TOUCH FOUND";
       // The empty conclusion box + ASSESSING… button are the scan placeholder's
       // (#result-resto-conclusion / #assess-complete-btn). Fill them in when the
       // boxes finish, with a smooth CSS transition (no pop), and stop the grid/
@@ -13091,7 +13185,7 @@ async function submitRestorationCheck() {
         }
       }, _revealMs);
     } else {
-      throw new Error("Unexpected Restoration Check response shape");
+      throw new Error("Unexpected UV Check response shape");
     }
   } catch (e) {
     if (window._tierStepTimers) window._tierStepTimers.forEach(t => clearTimeout(t));
@@ -13251,6 +13345,9 @@ async function submitFullAssessment() {
       // S20 (#53): Full observations go in their own field (Main write-up unchanged).
       if (result.fullAssessment && result.fullAssessment.trim()) formData.fullAssessment = result.fullAssessment.trim();
       formData.fullInteriorComplete = result.interiorComplete !== false;
+      // S22: Full finished on EDIT. Every other assessment clears this before its
+      // save so submitForm() routes to Detail (see completeAssessment).
+      _routeToEditAfterSave = false;
       formData.fullTrimmingSuspected = result.trimmingSuspected === true;
       formData._imagesChanged = true;
       onAssessmentSuccess();
@@ -13258,20 +13355,12 @@ async function submitFullAssessment() {
       // GRADE path (not the $1000+ FMV path) gets its credit back if the Full did
       // not confirm a perfect 10 (RG stayed below 10). FMV-value books, which run
       // Full purely for completeness, are never refunded.
-      (function(){
-        var _gradeUnlock = formData.fullUnlockReason === "near-perfect";
-        var _fv3 = (typeof rgV3ForComic === "function") ? rgV3ForComic(formData) : null;
-        var _reached10 = !!(_fv3 && _fv3.grade >= 10);
-        // S25: refund the Full credit only the FIRST time a near-perfect book stays
-        // below 10. fullRefundUsed then latches and later Full re-runs are charged.
-        var _fullRefundEligible = _gradeUnlock && !_reached10 && !formData.fullRefundUsed;
-        window._creditRefunded = _fullRefundEligible;
-        if (_fullRefundEligible) {
-          formData.fullRefundUsed = true;
-          if (typeof refundCredit === "function") refundCredit();
-          if (typeof saveItem === "function" && formData.id) saveItem({ ...formData }).catch(function(){});
-        }
-      })();
+      // S22 (Matt): FULL NEVER REFUNDS. The near-perfect refund was wrong on its own
+      // terms — we tell the user up front that Full cannot RAISE a grade, only
+      // confirm or lower it, so "it didn't go up" is the advertised outcome, not a
+      // failure to deliver. Deep refunds when it fails to raise; Full charges
+      // regardless. fullRefundUsed stays in the schema so old records still read.
+      window._creditRefunded = false;
       // S17: grid + needle stop, sweep needle to the assessed score (2s, like Main).
       const _newScore = formData.roboGrade ? Math.round(formData.roboGrade.score) : null;
       const _newGradeNum = formData.predictedGrade ? parseFloat(formData.predictedGrade) : null;
@@ -13408,12 +13497,6 @@ const CAMERA_GUIDE_INTERIOR_COVER = [
 const CAMERA_GUIDE_RESTORATION = [
   CAMERA_GUIDE_MAIN[0],          // uv_front  -> reuse Front-cover guide
   CAMERA_GUIDE_MAIN[1],          // uv_back   -> reuse Back-cover guide
-  "guide_staple_ext_upper.svg",  // exterior_top_staple
-  "guide_staple_ext_upper.svg",  // exterior_bottom_staple
-  "guide_edge_outer.svg",        // outer_edge
-  "guide_interior_front.svg",    // interior_front
-  "guide_interior_front.svg",    // interior_back
-  "guide_staple_interior.svg",   // interior_staple
 ];
 
 const CAMERA_SLOT_ORIENTATION_MAIN = [ "portrait", "portrait", "portrait", "landscape" ];
@@ -14628,7 +14711,10 @@ async function submitForm() {
         if (dedupedNewCount > 0) {
           syncMsg(`Uploading ${dedupedNewCount} restoration photo${dedupedNewCount === 1 ? "" : "s"}...`);
         }
-        const restorationResult = await processImagesForSave(dedupedRestoration, id, storageSlotsRestoration(RESTORATION_SLOT_COUNT), {
+        // S22: slot names must cover the array we were handed, not just the two
+        // live UV slots — books graded before the UV Check restructure still
+        // carry an 8-long restorationImages array and must not lose it on save.
+        const restorationResult = await processImagesForSave(dedupedRestoration, id, storageSlotsRestoration(Math.max(RESTORATION_SLOT_COUNT, dedupedRestoration.length)), {
           generateThumbs: false,
           preserveNulls: true
         });

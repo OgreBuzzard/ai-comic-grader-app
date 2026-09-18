@@ -104,14 +104,20 @@ export default async function handler(req, res) {
     frontCover = null,           // S19: optional full front-cover image (data URL or block) for grade-reference comparison
     title = '',
     issueNumber = '',
-    // S15 May 30: Restoration Check mode. When mode==='restoration', this same
-    // endpoint runs a restoration examination instead of a deep grade
-    // refinement (folded in here rather than a 13th Vercel function — we're at
-    // the 12/12 cap). It takes 4 restoration images in this order:
-    //   [Interior Front, Interior Back, Interior Staple, UV Front]
-    // and returns a carefully-worded restorationReport (never a verdict).
+    // S22: UV CHECK mode (mode==='restoration', name kept so stored fields and
+    // old clients keep working). Folded into this endpoint rather than a 13th
+    // Vercel function — we are at the 12/12 cap.
+    //
+    // It now takes exactly TWO images: [UV Front, UV Back], both shot under a
+    // blacklight, and answers ONE question: is there ink on these covers that
+    // fluoresces differently from the rest of the ink? That is color touch, and
+    // it is the only restoration indicator no other pass can see. The other six
+    // images the old 8-image Restoration Check took are already examined by
+    // Main / Deep / Full, which flag restoration on their own at no charge.
+    //
+    // The UV Check is FREE to the user, so this prompt is deliberately short.
     mode = 'deep',
-    restorationImages = [],      // 4 images for restoration mode
+    restorationImages = [],      // 2 images for UV Check mode: UV Front, UV Back
     // S22: the ComicVine cover URL already stored on the item by the Main pass.
     // Used ONLY as a fallback when this issue has no curated reference_covers/
     // entry (<10% of books have one). Costs no lookup — Main already resolved it.
@@ -137,8 +143,8 @@ export default async function handler(req, res) {
 
   let imageInputBlocks;   // the blocks sent to Anthropic (macros or restoration images)
   if (isRestoration) {
-    if (!Array.isArray(restorationImages) || restorationImages.length !== 8) {
-      return sseError(400, { error: 'restorationImages must be an array of 8 (UV Front, UV Back, Ext Top Staple, Ext Bottom Staple, Outer Edge, Interior Front, Interior Back, Interior Staples)' });
+    if (!Array.isArray(restorationImages) || restorationImages.length !== 2) {
+      return sseError(400, { error: 'restorationImages must be an array of 2 (UV Front, UV Back)' });
     }
     imageInputBlocks = restorationImages.map(toImageBlock);
     if (imageInputBlocks.some(b => !b)) {
@@ -393,80 +399,55 @@ HARD OUTPUT LIMITS:
   • aiAssessment: OMIT this field entirely — do NOT output it. The first-pass write-up is preserved unchanged by the client; regenerating it wastes tokens and risks altering the frozen record. ALL Deep observations and the confirm/revise note go in deepAssessment ONLY.
 `;
 
-  // ── S16: Restoration Check prompt (mode==='restoration') ────────────────────
-  // Examines 7 images for restoration indicators. 6 are shared with Full
-  // Assessment; UV Front is unique. Each image has specific examination focus
-  // distinct from the Full Assessment prompt (which mentions restoration only
-  // when signs are apparent; Restoration Check states either way).
-  const restorationPrompt = `You are performing a RESTORATION CHECK on a vintage comic book. You are NOT grading it. You are examining 7 photos for physical indicators that the book may have been restored, and reporting them with care. No conclusive determination can be made from photos alone, but you should note visible indications that are consistent with restoration, or note the absence of such indications.
+  // ── S22: UV CHECK prompt (mode==='restoration') ─────────────────────
+  // Was an 8-image Restoration Check covering staples, trimming, leaf-casting
+  // and married covers. Those are all visible in ordinary light, and Main /
+  // Deep / Full now report them on their own. What survives here is the one
+  // thing a normal photo cannot show: COLOR TOUCH — ink added to a cover, which
+  // fluoresces differently from the original printing under a blacklight.
+  //
+  // Two images, one question, free to the user. Keep this prompt short: it is
+  // the whole reason the tier can be given away.
+  const restorationPrompt = `You are performing a UV CHECK on a comic book. You are NOT grading it. You are looking at two photographs — the front cover and the back cover, each shot under an ultraviolet (blacklight) flashlight in a dark room — and answering one question: is there ink on this cover that does not match the rest of the ink?
 
-THIS BOOK: ${initialAssessment.title || 'Unknown'} ${initialAssessment.issue || ''}. If this is a rare, high-value, or historically significant KEY issue (early Golden/Silver-Age keys, first or early appearances of major characters, etc.), apply HEIGHTENED SKEPTICISM. Such books are frequent restoration and "married"/"Frankenbook" candidates precisely because their value justifies the work, and the restoration can be very clean — clean enough to look original. Do NOT default to "no indications" on a major key: weight any ambiguous indicator toward flagging, and state plainly when restoration cannot be ruled out.
+THIS BOOK: ${initialAssessment.title || 'Unknown'} ${initialAssessment.issue || ''}.
 
-You are given exactly 8 images, in this order:
-1. UV FRONT — the FRONT COVER photographed under ULTRAVIOLET (blacklight) illumination in a dark room.
-2. UV BACK — the BACK COVER photographed under ULTRAVIOLET (blacklight) illumination in a dark room.
-3. EXTERIOR TOP STAPLE — close-up of the top staple from OUTSIDE the spine.
-4. EXTERIOR BOTTOM STAPLE — close-up of the bottom staple from OUTSIDE the spine.
-5. OUTER EDGE — the outer edge of the book (opposite the spine).
-6. INTERIOR FRONT — inside front cover and first page (2-page spread).
-7. INTERIOR BACK — last page and inside back cover (2-page spread).
-8. INTERIOR STAPLES — both staples from INSIDE the centerfold.
+STEP 1 — IS THIS ACTUALLY A UV PHOTO?
+A genuine UV photo has a deep blue-violet cast across the whole frame, dark surroundings with no warm room light, and bright blue-white fluorescence wherever optical brighteners are present (modern paper, CGC/PSA labels, case plastic). A normal indoor or daylight photo has none of that.
+• Image under UV in a dark room → "uvLightPresent": true for that image.
+• Not under UV, or heavy ambient light → "uvLightPresent": false for that image, and do not judge color touch on that cover. Say so plainly.
+• If EITHER image fails, set "uvCheckFailed": true.
 
-WHAT TO EXAMINE IN EACH IMAGE:
+STEP 2 — DOES ANY INK NOT MATCH?
+Original period printing fluoresces fairly uniformly across a cover. ADDED ink — color touch, over-painting, a filled-in spine tick, a re-blackened logo — fluoresces at a DIFFERENT intensity or a different hue from the ink around it, and it usually sits exactly where wear would be expected: spine edges, corners, fold lines, chip edges, the outer border.
+• If you see a patch, line or spot whose fluorescence differs from the surrounding ink, say WHERE it is and WHAT it looks like.
+• If everything fluoresces consistently, say so.
+• Do NOT report ordinary wear, soiling, tape, stains, glue, staples, trimming, edge damage or anything else you can see in normal light. Those are graded elsewhere. This check reports ink mismatch under UV and nothing else.
+• Do NOT guess. Uneven glare, a fingerprint, a gloss difference and a fold shadow are not color touch. If you are unsure, report it as uncertain rather than asserting it.
 
-UV FRONT & UV BACK (Images 1-2):
-CRITICAL — UV VERIFICATION FIRST: Before evaluating for color touch, confirm EACH UV image was ACTUALLY taken under UV light in a DARK environment with NO ambient room lighting. Genuine UV photos have ALL of these characteristics: (1) a deep blue-violet cast over the entire image, (2) fluorescing bright spots where optical brighteners glow vivid white-blue (modern paper, CGC/PSA labels, and case plastic fluoresce strongly), (3) dark surroundings with no warm/white ambient light visible, and (4) original period inks showing muted, relatively uniform fluorescence while any added modern materials fluoresce at a distinctly different intensity or color.
-- If EITHER image is NOT under UV light (normal daylight/indoor color, no blue-violet cast, or significant ambient light visible): set "uvLightPresent": false for that image. Continue examining the other images, but note that color touch cannot be evaluated on the affected cover because the image is inadequate.
-- If it IS under UV light in a dark environment: set "uvLightPresent": true. Under UV, ADDED INK (color touch, over-painting) typically FLUORESCES DIFFERENTLY from the original printing — it appears as patches with distinctly different intensity or color from surrounding original ink. If no signs of color touch are apparent, say so. If there are patches of color touch apparent, indicate where they are.
-- Examine both front AND back covers for color touch. Restoration is sometimes performed on back covers as well as fronts.
+CONFIDENCE
+• Clear, localized, obviously-different fluorescence → "indicatorsObserved": true, "highConfidence": true.
+• Something that may be added ink but could be glare or surface texture → "indicatorsObserved": true, "highConfidence": false.
+• Nothing that differs → "indicatorsObserved": false, "highConfidence": false.
 
-EXTERIOR TOP STAPLE & EXTERIOR BOTTOM STAPLE (Images 3-4):
-Look specifically for signs that the staples have been REMOVED and REPLACED — this is a common step in professional restoration where the book is disassembled for cleaning, leaf-casting, or pressing, then re-assembled with new staples. Signs include: staples that look too clean/shiny for the book's age, wrong gauge or style for the era, additional staple holes visible near the current ones, bent legs that show tool marks rather than original factory crimping, or staple crowns that sit differently from original placement. State whether there IS or IS NOT indication of staple replacement or removal.
-
-OUTER EDGE (Image 5):
-Look specifically for signs of TRIMMING — where the edge has been cut to remove wear, fraying, or foxing. Signs include: an unnaturally clean or straight edge, fresh-cut appearance on old paper, reduced page margins compared to what's expected for the title/era, or edges that are suspiciously uniform when the rest of the book shows wear. Trimming is difficult to detect reliably — only mention it with reasonable confidence. State whether there IS or IS NOT indication of trimming.
-
-INTERIOR FRONT & INTERIOR BACK (Images 6-7):
-Look for LEAF-CASTING (added paper pulp filling losses — visible as patches with different paper texture or thickness), REINFORCEMENT (added backing material, glue sheen, visible fibers that don't match the original paper), or COLOR TOUCH bleed-through (ink or pigment visible from the back of the cover paper indicating color was added to the front). State whether there IS or IS NOT indication of these restoration techniques.
-
-INTERIOR STAPLES (Image 8):
-Look for the same staple replacement/removal signs as Images 3-4, but from the inside. Interior views often reveal: re-bent staple legs with tool marks, evidence of staple holes that have been punched through rather than pressed through during original assembly, or staple-crown-to-paper contact patterns inconsistent with factory production. State whether there IS or IS NOT indication of staple replacement or removal.
-
-COVER REINFORCEMENT, MARRIED COVERS & INCONSISTENT CONDITION (examine the covers in every image, UV included):
-- ADHESIVE / GLUE as restoration, not soiling: amber or brown adhesive or glue staining running along a cover edge or the spine-side of a cover, a glued-down or laminated feel, or backing material behind the cover, is a classic sign of REINFORCEMENT (backing paper/tape added) or a re-attached / MARRIED cover. Treat it as a restoration indicator — do NOT dismiss it as ordinary "soiling," "staining," or "edge wear." If the grading notes already flag glue/adhesive on a cover, treat that as a reinforcement lead to confirm here.
-- UNNATURAL CLEANLINESS / INCONSISTENCY: an area — the SPINE especially — that reads notably cleaner, whiter, glossier, or more intact than the rest of a book that shows genuine age and wear elsewhere is a red flag for REPLACED or REINFORCED material. Original 60-90-year-old newsprint wears fairly uniformly; a pristine spine or a spotless cover on an otherwise worn vintage book points to non-original material (re-spining, a married cover, or reinforcement), not exceptional preservation.
-- MARRIED / "FRANKENBOOK" cover: a cover mounted onto another copy's interior, or assembled from several copies. Tells: cover tone/gloss/wear that does not match the interior or the opposite cover; one cover markedly better than the other; a suspiciously complete or clean cover inconsistent with the rest of the book.
-- State whether these indicators ARE or ARE NOT present, and where.
-
-OVERALL APPROACH:
-- For each area examined, STATE either way whether restoration indicators are or are not apparent.
-- Tread carefully — no conclusive determination. Phrase findings as observations: "Visible indications consistent with..." or "No visible indications suggesting..."
-- If indicators are observed with HIGH CONFIDENCE (clear color touch under UV, clear reinforcement, clear staple replacement), set "indicatorsObserved": true and "highConfidence": true.
-- If indicators are observed but with lower confidence, set "indicatorsObserved": true and "highConfidence": false.
-- If no indicators are observed in any area, set "indicatorsObserved": false.
-- ON A RARE / HIGH-VALUE KEY: if ANY indicator above is present — adhesive/reinforcement, inconsistent cleanliness, a married-cover tell, or covers/spine that simply look too clean for the book's age and overall wear — set "indicatorsObserved": true and describe it. Do not conclude "no indications" on such a book unless the images genuinely show none.
+NEVER assert a verdict. This is an observation, not a determination: only a physical examination can confirm restoration.
 
 ## RESPONSE FORMAT — STRICT
 Your entire response must be a JSON object and nothing else.
 
-JSON shape:
 {
   "restorationCheckRan": true,
   "uvLightPresent": true | false,
   "uvCheckFailed": true | false,
   "indicatorsObserved": true | false,
   "highConfidence": true | false,
-  "restorationReport": "<concise summary, ≤120 words — state UV result, then one sentence per area examined (staples, edge, interior, interior staples). End with overall conclusion. Do NOT describe what each image type is for or what you looked for — only state what you found or did not find.>",
+  "restorationReport": "<≤60 words. One sentence on whether the photos were usable UV photos, then one sentence per cover on what the ink looked like, then the conclusion. State only what you saw. Do not explain what UV light does or what you were looking for.>",
   "findings": [
-    { "area": "uv_front | uv_back | exterior_top_staple | exterior_bottom_staple | outer_edge | interior_front | interior_back | interior_staple", "observation": "<concise, ≤25 words>", "indicatorPresent": true | false }
+    { "area": "uv_front | uv_back", "observation": "<≤25 words>", "indicatorPresent": true | false }
   ]
 }
 
-Rules:
-- If uvLightPresent is false for either UV image, set uvCheckFailed true for that image. Still examine all other images and report findings.
-- Include a finding entry for EVERY area examined (all 8 if both UVs are good, fewer only if UV images are inadequate).
-- NEVER assert a definitive restoration verdict. Report observations and visible indications only.
-- Do not mention internal references or priors. Report only what these images show.
+Include exactly one findings entry for uv_front and one for uv_back. An image that was not under UV still gets an entry, with indicatorPresent false and an observation saying it was not a UV photo.
 `;
 
   // ── S22: BATCH TERSE OUTPUT (passes 2-N only) ───────────────────────────────
@@ -498,11 +479,10 @@ Rules:
                    && (req.body && req.body.batchTerse === true);
   const terseBlock = BATCH_TERSE ? `
 
-## BATCH PASS — NUMBERS ONLY (overrides the RESPONSE FORMAT above)
-This is a repeat scoring pass. Only the numbers are read; every prose field is discarded unread.
+## BATCH PASS — NO WRITE-UP (overrides the RESPONSE FORMAT above)
+This is a repeat scoring pass. The narrative is discarded unread, so do not write one.
   • "deepAssessment": output an EMPTY STRING. Write no prose at all.
-  • "roboGrade.defects": output an EMPTY ARRAY []. Do not list defects.
-  • Still do the full observation work in Phase 1 and 2 — the defects you SEE must be fully reflected in frontScore / backScore / spineScore / interiorScore and in the grade. You are skipping the WRITING, not the looking. A shorter list must never mean a higher score.
+  • "roboGrade.defects": STILL REQUIRED, in full, exactly as specified above. S22: the batch adopts the defect list from whichever pass lands closest to the batch average, so the list must match the grade THIS pass gave. A list that does not justify this pass's subscores is worse than no list at all.
   • Everything else (grade, pageQuality, roboGrade scores, confidenceRange, photograder, gateResult, sameBook) is REQUIRED exactly as specified above.
 ` : '';
 
@@ -684,9 +664,9 @@ This is a repeat scoring pass. Only the numbers are read; every prose field is d
         role: 'user',
         content: isRestoration
           ? [
-              { type: 'text', text: 'RESTORATION CHECK IMAGES in order: (1) UV Front, (2) UV Back, (3) Exterior Top Staple, (4) Exterior Bottom Staple, (5) Outer Edge, (6) Interior Front, (7) Interior Back, (8) Interior Staples.' },
+              { type: 'text', text: 'UV CHECK IMAGES in order: (1) UV Front cover, (2) UV Back cover.' },
               ...macroBlocks,
-              { type: 'text', text: 'First verify Images 1 and 2 are genuinely under UV light. Then examine all 8 images for restoration indicators. For each area, state whether indicators are or are not present. Return the JSON.' }
+              { type: 'text', text: 'First verify each image is genuinely under UV light. Then look for ink that fluoresces differently from the surrounding ink. Return the JSON.' }
             ]
           : [
               { type: 'text', text: 'CORNER MACROS in order: Top-Left, Top-Right, Bottom-Left, Bottom-Right of the front cover.' },

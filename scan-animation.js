@@ -205,16 +205,11 @@
     { idx: 9, slotName: 'interior-cover-back',  rotate: false },
   ];
 
-  // S16: Restoration Check scans 8 images
+  // S22: the UV Check scans 2 images (UV Front, UV Back). Was 8 under the old
+  // Restoration Check; the other six are covered by Main/Deep/Full for free now.
   const SLOTS_RESTORATION = [
     { idx: 0, slotName: 'resto-0', rotate: false },
     { idx: 1, slotName: 'resto-1', rotate: false },
-    { idx: 2, slotName: 'resto-2', rotate: true },
-    { idx: 3, slotName: 'resto-3', rotate: true },
-    { idx: 4, slotName: 'resto-4', rotate: true, rotateCCW: true },
-    { idx: 5, slotName: 'resto-5', rotate: false },
-    { idx: 6, slotName: 'resto-6', rotate: false },
-    { idx: 7, slotName: 'resto-7', rotate: true, rotateCCW: true },
   ];
 
   // ── Region coordinates (% of chest image) ───────────────────────────
@@ -970,8 +965,8 @@
   // ASSESSING button into COMPLETE.
   function buildResultsPlaceholder(kind) {
     if (kind === 'restoration') {
-      // Restoration does not produce a score — show an empty conclusion box
-      // (styled like the final RESTORATION-FOUND box) + ASSESSING button.
+      // The UV Check does not produce a score — show an empty conclusion box
+      // (styled like the final COLOR-TOUCH box) + ASSESSING button.
       return `
       <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:14px;transform:translateY(-8px);">
         <div id="result-resto-conclusion" style="min-width:220px;min-height:48px;display:flex;align-items:center;justify-content:center;padding:12px 22px;border-radius:10px;border:2px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04)">
@@ -1526,10 +1521,10 @@
     const slotTable = (kind === 'card') ? SLOTS_CARD : (kind === 'corner') ? SLOTS_CORNER : (kind === 'full') ? SLOTS_FULL : (kind === 'restoration') ? SLOTS_RESTORATION : (kind === 'batch') ? SLOTS_BATCH : SLOTS_MAIN;
     // S20 (#40): 6-image runs (Deep = 4 corners + 2 covers, Full = 6 strips) use
     // a brisker 900ms scan so the longer sequence keeps a snappy rhythm. The
-    // 8-image restoration run stays at 1.0s; the 4-image main run keeps the full
-    // 2.0s dwell.
+    // 2-image UV run gets the full 2.0s dwell (S22: was 1.0s for 8 images — at
+    // two images that made the whole scan flash by in two seconds).
     _scanDurationMs = (kind === 'corner' || kind === 'full') ? 900
-      : (kind === 'restoration') ? 1000
+      : (kind === 'restoration') ? 2000
       : (kind === 'batch') ? 900          // S22: Deep speed, 10 images, one sweep
       : SCAN_DURATION;
 

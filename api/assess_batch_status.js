@@ -58,6 +58,7 @@ export default async function handler(req, res) {
       pm: p.pm ?? null,
       subscores: p.subscores ?? null,
       defectCount: p.defectCount ?? null,
+      defects: Array.isArray(p.defects) ? p.defects : null,
       deepAdded: p.deepAdded ?? null,
       mainMs: p.mainMs ?? null,
       deepMs: p.deepMs ?? null,

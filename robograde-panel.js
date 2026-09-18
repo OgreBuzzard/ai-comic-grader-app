@@ -140,10 +140,13 @@
     }
 
     // Group defects by category
-    const defects = rg.defects || [];
+    let defects = rg.defects || [];
     const cats = ['Front', 'Back', 'Spine', 'Interior'];
     const byCat = {};
     cats.forEach(c => byCat[c] = []);
+    // White pages are the perfect case; a "Page Quality - White" row is noise.
+    const _pqIsWhite = /^white$/i.test(String(rg.pageQuality || '').trim());
+    defects = defects.filter(d => !(_pqIsWhite && /^page\s*quality$/i.test(String(d.type || ''))));
     defects.forEach(d => {
       const cat = d.category || 'Front';
       if (byCat[cat]) byCat[cat].push(d);
@@ -154,8 +157,17 @@
       if (!arr.length) return '';
       return arr.map((d, i) => {
         const detailParts = [];
-        // S16: Skip "interior" location for Page quality — it's redundant
-        if (d.location && d.location !== 'N/A' && !(d.type === 'Page quality' && d.location === 'interior')) detailParts.push(d.location);
+        // S22 (Matt, 2nd report): a page-quality row was reading "Page quality -
+        // interior", which says nothing, with the one useful token — the actual
+        // designation — pushed off the end of the line. The S16 attempt only
+        // dropped the word when location was EXACTLY 'interior' and type was
+        // EXACTLY 'Page quality'; across 791 shipped entries the model also writes
+        // 'interior pages' and varies the casing, so it mostly didn't fire.
+        // Now: any page-quality entry drops its location outright and shows the
+        // designation alone — "Page Quality - Off-White" — which is the same thing
+        // the lightbox already does.
+        const _isPQ = /^page\s*quality$/i.test(String(d.type || ''));
+        if (d.location && d.location !== 'N/A' && !_isPQ) detailParts.push(d.location);
         if (d.measurement && d.measurement !== 'N/A') detailParts.push(d.measurement.replace(/^~\s*/, ''));
         if (d.colorBreaking) detailParts.push('color breaking');
         const detailStr = detailParts.length ? ` - ${detailParts.join(', ')}` : '';
@@ -168,8 +180,10 @@
         const sev = (d.severity == null) ? 'Low' : d.severity;
         const rowIdx = (startIdx || 0) + i;
         const rowBg = (rowIdx % 2 === 0) ? PAPER_GREEN : PAPER_CREAM;
+        // Let a long designation wrap instead of being clipped by the severity
+        // column — the text IS the information on these rows.
         return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 10px;font-size:11px;gap:8px;background:${rowBg};font-family:'IBM Plex Mono','Menlo',monospace">
-          <span style="color:${PAPER_INK}"><strong>${d.type}</strong>${detailStr}</span>
+          <span style="color:${PAPER_INK};min-width:0;overflow-wrap:anywhere"><strong>${_isPQ ? 'Page Quality' : d.type}</strong>${detailStr}</span>
           ${sev ? `<span style="color:${sevColor(sev)};font-weight:800;font-size:11px;white-space:nowrap;flex-shrink:0;letter-spacing:0.5px">${sev.toUpperCase()}</span>` : ''}
         </div>`;
       }).join('');

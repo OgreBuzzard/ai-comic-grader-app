@@ -242,6 +242,19 @@ export default async function handler(req, res) {
       } : null,
       pm: (D.roboGrade && typeof D.roboGrade.confidenceRange === 'number') ? D.roboGrade.confidenceRange : null,
       defectCount: defects.length,
+      // S22: the actual list, not just the count. The client adopts the list
+      // from whichever pass grades closest to the batch average, so the book's
+      // defects match the grade it ends up showing. Capped at 12 entries and
+      // the five fields the panel renders — a batch doc is one Firestore
+      // document (1 MiB), and five unbounded lists is how you find that ceiling.
+      defects: defects.slice(0, 12).map(d => ({
+        category: d && d.category || null,
+        type: d && d.type || null,
+        location: d && d.location || null,
+        severity: d && d.severity || null,
+        measurement: d && d.measurement || null,
+        deepAddition: !!(d && d.deepAddition)
+      })),
       deepAdded: defects.filter(d => d && d.deepAddition === true).length,
       deepMs,
       deepTimingKey: (D._diagnostics && D._diagnostics.timingKey) || null,
