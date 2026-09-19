@@ -112,6 +112,78 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
+    // ── S22: action='backfill_missing' — repair accounts with no User ID ─────
+    //
+    // WHY THIS EXISTS. Every account is supposed to get a 4-char code, from one
+    // of two places: the sign-in path in index.html writes one on account
+    // creation (and backfills on later sign-ins), and ensureTransferCodeRegistered()
+    // calls /api/transfer_recv?action=register_code, which is the authoritative
+    // allocator — it handles "has a code but no reverse index", "code collides
+    // with someone else's" (reassign), and "no code at all" (allocate).
+    //
+    // Both of those run ONLY at sign-in, and both are fire-and-forget. If the
+    // client write and the register_code call both fail — offline, a permissions
+    // blip, a tab closed mid-handshake — nothing retries until the user signs in
+    // again. Someone who stays signed in indefinitely never retries, which is how
+    // an account ends up with no code long after the feature shipped.
+    //
+    // Note this is NOT the collision case. A collision leaves the user with the
+    // WRONG code, not none; register_code detects that (earliest claimant wins)
+    // and reassigns. An EMPTY code means the allocator never successfully ran.
+    //
+    // This sweep does the same work server-side, for everyone, without waiting
+    // for a sign-in. Idempotent: accounts that already have a valid, correctly
+    // indexed code are left untouched.
+    if ((req.body || {}).action === 'backfill_missing') {
+      const dryRun = (req.body || {}).dryRun === true;
+      const usersSnap = await db.collection('users').get();
+      const out = { scanned: usersSnap.size, missing: [], fixed: [], reindexed: [], failed: [], dryRun };
+
+      for (const doc of usersSnap.docs) {
+        const uid = doc.id;
+        const code = (doc.data() || {}).transferCode;
+
+        if (validateCode(code)) {
+          // Has a code. Make sure the reverse index actually points at them —
+          // a code nobody can resolve is only half a User ID.
+          const idxRef = db.collection('transfer_codes').doc(code);
+          const idxSnap = await idxRef.get();
+          if (!idxSnap.exists) {
+            if (!dryRun) {
+              await idxRef.set({ uid, vanity: false, claimedAt: new Date().toISOString() });
+            }
+            out.reindexed.push({ uid, code });
+          }
+          continue;
+        }
+
+        out.missing.push({ uid, had: code == null ? null : String(code) });
+        if (dryRun) continue;
+
+        // Allocate one nobody holds. Same bounded-retry shape as
+        // api/transfer_recv.js allocateFreshCode(); the space is ~1.05M so a
+        // collision is vanishingly unlikely, but the loop is the guarantee.
+        let assigned = null;
+        for (let attempt = 0; attempt < 20 && !assigned; attempt++) {
+          let candidate = '';
+          for (let i = 0; i < 4; i++) {
+            candidate += ID_ALPHABET[Math.floor(Math.random() * ID_ALPHABET.length)];
+          }
+          const ref = db.collection('transfer_codes').doc(candidate);
+          const snap = await ref.get();
+          if (snap.exists && (snap.data() || {}).uid !== uid) continue;
+          await ref.set({ uid, vanity: false, claimedAt: new Date().toISOString() });
+          await db.collection('users').doc(uid).set({ transferCode: candidate }, { merge: true });
+          assigned = candidate;
+        }
+
+        if (assigned) out.fixed.push({ uid, code: assigned });
+        else out.failed.push({ uid, reason: 'could not allocate a unique code in 20 attempts' });
+      }
+
+      return res.status(200).json({ ok: true, mode: 'backfill_missing', ...out });
+    }
+
     // --- Validate all codes BEFORE writing anything ---
     for (const a of ASSIGNMENTS) {
       if (!validateCode(a.code)) {

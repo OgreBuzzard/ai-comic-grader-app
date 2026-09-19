@@ -145,7 +145,12 @@ export default async function handler(req, res) {
       }
       return dir === 'desc' ? -cmpResult : cmpResult;
     };
-    // Search filter (q): substring match against name + email, case-insensitive.
+    // Search filter (q): substring match against name, email and the 4-char
+    // User ID (stored as transferCode), case-insensitive.
+    //
+    // S22: deliberately NOT the Firebase uid. It was added here briefly and
+    // taken back out — Matt looks people up by the short code, and a 28-char
+    // uid in the haystack only creates accidental substring hits.
     const matched = query
       ? userRows.filter(u => `${u.displayName} ${u.email} ${u.transferCode}`.toLowerCase().includes(query))
       : userRows;

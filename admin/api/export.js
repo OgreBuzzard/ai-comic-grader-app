@@ -17,9 +17,12 @@
 // and personal notes. It is for INTERNAL admin analysis only (covered by the
 // "debugging and product-improvement" clause of the privacy policy). If you
 // derive a TRAINING set from it, you must separately: filter to _trainingOptIn
-// !== false, strip name/email/uid/prices/notes, and de-identify (no account
-// linkage) — per the privacy policy. _trainingOptIn is included on every row
-// precisely so that filter is possible.
+// !== false, strip name/email/uid/TRANSFER CODE/prices/notes, and de-identify
+// (no account linkage) — per the privacy policy. _trainingOptIn is included on
+// every row precisely so that filter is possible. NOTE the transfer code is in
+// that strip list on purpose: it is short and pseudonymous, but it is still a
+// stable per-account handle, so leaving it in a training set would re-create
+// exactly the account linkage the de-identification step exists to remove.
 //
 // Base64 blobs (inline thumbnails / data: URIs) are stripped by default to
 // keep the file lean — pass ?includeBlobs=1 to keep them. Image/Storage URLs
@@ -148,6 +151,11 @@ export default async function handler(req, res) {
       owners[doc.id] = {
         userName: d.displayName || d.email || '(no name)',
         userEmail: d.email || '',
+        // S22: the 4-char User ID. It matters more than it sounds: plenty of
+        // accounts have no usable name and a throwaway email, and this is the
+        // only short handle that identifies them across items, purchases, the
+        // catalogue and support email.
+        transferCode: d.transferCode || '',
         trainingOptIn: d.trainingOptIn !== false, // default true (opt-out model)
         accountCreatedAt: d.createdAt || null,
       };
@@ -225,6 +233,9 @@ export default async function handler(req, res) {
             environment: p.environment || null,          // 'Test' | 'Production' | null
             isProduction: !(p.environment && p.environment !== 'Production'),
             userId: p.userId || '',
+            // S22: same short id as the accounts + item rows, joined here so a
+            // purchase can be tied to a person without a second lookup.
+            transferCode: (owners[p.userId] && owners[p.userId].transferCode) || '',
             orderId: p.orderId || null,
             createdAt: isoOf(p.createdAt) || (ms ? new Date(ms).toISOString() : null),
             createdAtMs: ms,
@@ -271,6 +282,7 @@ export default async function handler(req, res) {
         _itemId: d.id,
         _userName: owner.userName,
         _userEmail: owner.userEmail,
+        _transferCode: owner.transferCode,
         _trainingOptIn: owner.trainingOptIn,
         _accountCreatedAt: owner.accountCreatedAt,
         _imagePresence: presence,
