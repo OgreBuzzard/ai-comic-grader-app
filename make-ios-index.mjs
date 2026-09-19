@@ -254,7 +254,7 @@ mustReplace('D7b splash CSS',
          before the launch-logo change — which is a trap for anyone who edits the
          first #splash-subtitle they find. Both now say the same thing, so the
          result no longer depends on CSS source order. */
-      top: calc(env(safe-area-inset-top, 0px) + 21vh - 40px);
+      top: calc(env(safe-area-inset-top, 0px) + 18vh - 50px);
       transform: translate(-50%, -120vh);
       text-align: center;
       font-size: 16px;
@@ -640,9 +640,13 @@ mustReplace('D15 viewport-fit cover (iOS)',
 // S22: index.html moved the subtitle a further 10px up on 2026-09-13
 // (22vh - 30px -> 22vh - 40px) and this delta was not mirrored, so the anchor
 // no longer matched and the iOS generator would have failed loudly here.
+// S22 (2026-09-19): splash raised again — logo up 3vh, subtitle up 3vh + 10px.
+// Base is now 19vh - 50px, iOS 18vh - 50px. The 1vh iOS/base gap is preserved.
+// If you move the subtitle in index.html, move BOTH strings below AND the copy
+// in the D7b block, or this delta stops matching.
 mustReplace('D17 subtitle iOS position',
-'top: calc(env(safe-area-inset-top, 0px) + 22vh - 40px);',
-'top: calc(env(safe-area-inset-top, 0px) + 21vh - 40px);');
+'top: calc(env(safe-area-inset-top, 0px) + 19vh - 50px);',
+'top: calc(env(safe-area-inset-top, 0px) + 18vh - 50px);');
 
 writeFileSync(outPath, html);
 console.log(`\nAll ${applied} deltas applied. Wrote ${outPath} (${html.length.toLocaleString()} bytes).`);

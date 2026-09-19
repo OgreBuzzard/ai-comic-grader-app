@@ -1846,7 +1846,14 @@ onAuthStateChanged(auth, async user => {
     #splash-logo {
       position: absolute;
       left: 50%;
-      top: calc(env(safe-area-inset-top, 0px) + 3vh);
+      /* S22: raised 3vh (was +3vh, now flush to the safe-area inset). 3vh is
+         ~50% of the VISIBLE wordmark's height: Robograder_Launch_Logo.webp is
+         1536x672 but the blue wordmark only occupies the middle 36.2% of that
+         (32.7% transparent above, 31.1% below), so the 16.8vh element renders a
+         mark just 6.1vh tall sitting 5.5vh below its own top edge. That padding
+         is why the composition reads low. Trimming it out of the asset would be
+         the cleaner fix and would let this go back to a positive offset. */
+      top: calc(env(safe-area-inset-top, 0px) + 0vh);
       transform: translate(-50%, -120vh);
       max-width: 86.4vw;
       max-height: 16.8vh;
@@ -1873,7 +1880,7 @@ onAuthStateChanged(auth, async user => {
     #splash-subtitle {
       position: absolute;
       left: 50%;
-      top: calc(env(safe-area-inset-top, 0px) + 22vh - 40px);
+      top: calc(env(safe-area-inset-top, 0px) + 19vh - 50px);
       transform: translate(-50%, -120vh);
       text-align: center;
       font-size: 16px;
