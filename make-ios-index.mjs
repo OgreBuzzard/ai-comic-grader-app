@@ -257,7 +257,10 @@ mustReplace('D7b splash CSS',
       top: calc(env(safe-area-inset-top, 0px) + 18vh - 50px);
       transform: translate(-50%, -120vh);
       text-align: center;
-      font-size: 16px;
+      /* S22 (2026-09-19): Matt asked for italic and +4pt. Anchored by its top, so
+         the extra height grows DOWNWARD and the gap to the logo is unchanged. */
+      font-size: 20px;
+      font-style: italic;
       letter-spacing: 1.5px;
       font-weight: 700;
       color: #1a1a1a;
@@ -319,7 +322,14 @@ mustReplace('D7b splash CSS',
     /* iOS splash position overrides (S17). Logo sits higher (clear of the
        Dynamic Island), robot drops lower so it clears the sign-in panel. */
     #splash-logo {
-      top: calc(env(safe-area-inset-top, 0px) + 2vh) !important;
+      /* S22 (2026-09-19): 2vh -> -1vh, the 3vh raise Matt asked for. THIS RULE,
+         not the base one, is what positions the logo on iOS — it is !important
+         and it comes last. Editing only index.html's #splash-logo does nothing
+         here; that is exactly what happened on the first attempt and the
+         subtitle ended up on top of the wordmark. Negative is safe: the asset
+         carries 32.7% transparent padding above the mark, so the visible
+         wordmark still sits ~4.5vh below the safe-area inset. */
+      top: calc(env(safe-area-inset-top, 0px) - 1vh) !important;
     }
     #splash-robot {
       top: calc(56% - 25px) !important;

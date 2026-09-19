@@ -1883,7 +1883,10 @@ onAuthStateChanged(auth, async user => {
       top: calc(env(safe-area-inset-top, 0px) + 19vh - 50px);
       transform: translate(-50%, -120vh);
       text-align: center;
-      font-size: 16px;
+      /* S22 (2026-09-19): Matt asked for italic and +4pt. Anchored by its top, so
+         the extra height grows DOWNWARD and the gap to the logo is unchanged. */
+      font-size: 20px;
+      font-style: italic;
       letter-spacing: 1.5px;
       font-weight: 700;
       color: #1a1a1a;
@@ -5353,6 +5356,15 @@ function renderList() {
       sections.push({ ownership: "Print", titles: _pt, groups: _pg });
     }
   }
+  // S22: matched to the printed label's own gradient (print-label.js .rg-label
+  // et al). The bar is an invitation to print a label, so it should look like
+  // one; the muted tan it used was the PRE-S22 label colour and had drifted.
+  const _LABEL_GRADIENT = "linear-gradient(180deg, #c97a14 0%, #dd9430 38%, #e8b571 100%)";
+  // Ink matched to the label's title colour too. The old #3a2a18 scored only
+  // 4.12:1 against the new gradient's darkest stop — under the 4.5:1 floor for
+  // 14px bold text. #0d0d0f is what the label prints its title in and lifts the
+  // worst case to 5.80:1.
+  const _LABEL_INK = "#0d0d0f";
   const hasRealBooks = items.some(c => c.id !== SAMPLE_COMIC_ID);
   let html = ``;
   if (_mixed) html += _typeFilterChips();
@@ -5373,13 +5385,17 @@ function renderList() {
       const ownOpen = collapsed[ownKey] === false;
       if (section.ownership && sections.length > 1) {
         // S17: Owned/Sold/Watching headers are charcoal (white text) when
-        // EXPANDED, light gray (dark text) when COLLAPSED. Print uses the label
-        // green gradient (matches the printed labels).
-        const LABEL_GRADIENT = "linear-gradient(180deg, #b58a5f 0%, #d6b391 38%, #eedbc5 100%)";
+        // EXPANDED, light gray (dark text) when COLLAPSED.
+        // S22 (2026-09-19): the PRINT header now uses the SAME _LABEL_GRADIENT /
+        // _LABEL_INK as the "Want to print labels?" bar above it. It had its own
+        // hardcoded tan (#b58a5f/#d6b391/#eedbc5) left over from the pre-S22
+        // label palette, so the two bars in the same view disagreed. Declared
+        // above the forEach on purpose — a const referenced from inside this
+        // callback but declared below it would be in the temporal dead zone.
         let _headerBg, _headerFg;
         if (section.ownership === "Print") {
-          _headerBg = LABEL_GRADIENT;
-          _headerFg = "#3a2a18";
+          _headerBg = _LABEL_GRADIENT;
+          _headerFg = _LABEL_INK;
         } else if (ownOpen) {
           _headerBg = "#2a2724";
           _headerFg = "#ffffff";
@@ -5447,15 +5463,6 @@ function renderList() {
   // print mode, offer it at the bottom; tapping reveals the per-entry print icons.
   const _hasGraded = items.some(c => c.roboGrade && c.id !== SAMPLE_COMIC_ID);
   const _printQueueCount = items.filter(c => c.inPrintQueue === true).length;
-  // S22: matched to the printed label's own gradient (print-label.js .rg-label
-  // et al). The bar is an invitation to print a label, so it should look like
-  // one; the muted tan it used was the PRE-S22 label colour and had drifted.
-  const _LABEL_GRADIENT = "linear-gradient(180deg, #c97a14 0%, #dd9430 38%, #e8b571 100%)";
-  // Ink matched to the label's title colour too. The old #3a2a18 scored only
-  // 4.12:1 against the new gradient's darkest stop — under the 4.5:1 floor for
-  // 14px bold text. #0d0d0f is what the label prints its title in and lifts the
-  // worst case to 5.80:1.
-  const _LABEL_INK = "#0d0d0f";
   if (_hasGraded && !printModeEnabled) {
     html += `<div onclick="enablePrintMode()" style="display:flex;align-items:center;justify-content:center;gap:8px;margin:18px 0 10px;padding:9px 12px;background:${_LABEL_GRADIENT};border-radius:8px;cursor:pointer;user-select:none">\n      <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:${_LABEL_INK}">Want to print labels?</span>\n    </div>`;
   } else if (_hasGraded && printModeEnabled && _printQueueCount === 0) {
