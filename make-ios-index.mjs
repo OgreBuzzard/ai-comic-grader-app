@@ -655,7 +655,7 @@ mustReplace('D15 viewport-fit cover (iOS)',
 // If you move the subtitle in index.html, move BOTH strings below AND the copy
 // in the D7b block, or this delta stops matching.
 mustReplace('D17 subtitle iOS position',
-'top: calc(env(safe-area-inset-top, 0px) + 19vh - 50px);',
+'top: calc(env(safe-area-inset-top, 0px) + 22vh - 50px);',
 'top: calc(env(safe-area-inset-top, 0px) + 18vh - 50px);');
 
 writeFileSync(outPath, html);
