@@ -180,6 +180,14 @@ export default async function handler(req, res) {
     const interiorCoverImages = normImages(raw.interiorCoverImages); // S20 (#36): Deep interior covers
     const restorationImages = normImages(raw.restorationImages);
     const signatureImages = normImages(raw.signatureImages);
+    // S23: Coupon / Insert / "missed" (user defect) sets. These were stored by
+    // the app and rendered on the PUBLIC listing, but this endpoint never
+    // returned them, so admin's detail view had nothing to draw — including the
+    // 'User Defect Photos' section, which had been referencing it.userDefectImages
+    // against a field that was never sent. Same failure mode as the S20 note above.
+    const couponImages = normImages(raw.couponImages);
+    const insertImages = normImages(raw.insertImages);
+    const userDefectImages = normImages(raw.userDefectImages);
 
     // S20: assessing user's contact info for the detail view (name / email /
     // 4-char transferCode used as the short User ID + tap-to-email).
@@ -288,6 +296,14 @@ export default async function handler(req, res) {
       restorationFlag: !!flat.restorationFlag,
       restorationImages,
       signatureImages,
+      // S23: coupon / insert / missed-defect sets + their finding text.
+      couponImages,
+      insertImages,
+      userDefectImages,
+      couponFinding: flat.couponFinding || '',
+      insertFinding: flat.insertFinding || '',
+      couponQualified: flat.couponQualified ?? null,
+      userDefectResult: flat.userDefectResult || null,
 
       // Ownership / pricing (useful for admin context)
       ownership: flat.ownership || '',

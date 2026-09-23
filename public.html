@@ -37,7 +37,7 @@
      canonical copy in index.html; if you edit the ladder/CONFIG there, update here too. -->
 <script>
   window.RG_V2_DISPLAY = true;
-  window.RG_GRADING_VERSION = "5.21";
+  window.RG_GRADING_VERSION = "5.22";
   window.RGScoreV2 = (function () {
     const LADDER = ["0","0+","1-","1","1+","2-","2","2+","3-","3","3+","4-","4","4+","5-","5","5+","6-","6","6+","7-","7","7+","8-","8","8+","9-","9","9+","10-","10"];
     const CONFIG = {
@@ -501,7 +501,18 @@
   .content {
     width: 100%;
     max-width: 720px;
-    padding: 0 16px;
+    padding: 16px 16px 0;   /* S23: top padding replaces the removed header's */
+  }
+
+  /* S23: the whole assessment sits in one container, matching the app's
+     Detail view (.card in index.html: #fff / 1px #ddd8d0 / 8px radius).
+     #app holds only the assessment — the CTA and the footer disclaimer are
+     appended to .content AFTER it, so they stay outside the box. */
+  #app {
+    background: #ffffff;
+    border: 1px solid #ddd8d0;
+    border-radius: 8px;
+    padding: 16px 14px;
   }
 
   /* Identity block — title, issue + date, publisher. Mirrors detail view's
@@ -682,10 +693,8 @@
 </head>
 <body>
 
-<header>
-  <img src="/assets/Robograder_Launch_Logo.webp" alt="Robograder" style="width:192px;height:auto;margin:0 auto 8px;display:block">
-  <div style="font-size:12px;letter-spacing:3px;color:#6a5a4a;text-align:center;font-weight:700">COMIC GRADING APP</div>
-</header>
+<!-- S23: logo + "COMIC GRADING APP" header removed. The listing leads with
+     the book now; branding lives in the CTA at the bottom instead. -->
 
 <div class="content">
   <div id="app">
@@ -1183,11 +1192,19 @@
   // no path forward into the app. The CTA gives them one. The iframe
   // gate (window.self !== window.top) means it never appears inside the
   // in-app modal where the original concerns apply.
-  if (window.self === window.top) {
+  // S23 (Matt): the button had gone missing in practice because of the
+  // standalone-only gate above — viewed from inside the app (the common path)
+  // the listing renders in an iframe, so it never appeared. It now renders
+  // ALWAYS. The original reason for the gate was a reload loop: href="/"
+  // inside the in-app iframe reloads the app into the frame. Opening in a new
+  // tab when framed avoids that without hiding the button.
+  {
+    const framed = window.self !== window.top;
+    const tgt = framed ? ' target="_blank" rel="noopener"' : '';
     document.querySelector('footer').insertAdjacentHTML('beforebegin', `
       <div class="rg-cta">
         <div class="rg-cta-line">Want to grade your own comics?</div>
-        <a class="rg-cta-btn" href="/">Open Robograder</a>
+        <a class="rg-cta-btn" href="/"${tgt}>Open Robograder</a>
       </div>
     `);
   }

@@ -37,7 +37,22 @@
 // enforced; nothing stops a person creating multiple Gmail accounts).
 // Acceptable risk for a convention promo — code will be physically present
 // at the booth, expiry is short, blast radius is low.
+//
+// BCC26: Baltimore Comic-Con 2026 booth promo. Active from 2026-09-23 through
+// midnight Pacific ENDING 2026-09-30 — i.e. the last redeemable instant is
+// 23:59:59 on the 30th, which is why expiresAt is Oct 1 00:00 (the comparison
+// is `now >= end` -> expired). Grants 3 credits. Same accepted risk as
+// FENCON26: one redemption per account is enforced, nothing stops someone
+// making several Google accounts. The code is printed at the booth and the
+// window is short.
 const PROMOS = [
+  {
+    code:        'BCC26',
+    credits:     3,
+    activeFrom:  '2026-09-23T00:00:00-07:00',  // Pacific midnight, start of Sep 23 (PDT)
+    expiresAt:   '2026-10-01T00:00:00-07:00',  // Pacific midnight ending Sep 30 (PDT)
+    description: 'Baltimore Comic-Con 2026 attendee promo',
+  },
   {
     code:        'FENCON26',
     credits:     5,
