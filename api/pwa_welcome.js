@@ -8,14 +8,23 @@
 //   users/{uid}.pwaWelcomeGranted === true   -> never grant again, period.
 //   (also honors the legacy nested flag pwaWelcome.granted === true so accounts
 //    granted under the previous build are not granted a second time.)
-// Flow:
-//   call #1 (first sighting): record pwaFirstSeenMs, grant NOTHING.
-//   later call, >= RETURN_GAP_MS after first sighting: grant +1, set the flag.
+//
+// Flow (S23): grant on the FIRST call, full stop.
+//
+//   Previously this was a RETURN-visit reward: call #1 only recorded
+//   pwaFirstSeenMs and granted nothing, and the credit landed on a later call
+//   at least 15 minutes afterwards. Matt is announcing "sign in through the
+//   PWA and you get a free credit" in a video, so the behaviour now has to
+//   match the promise: sign in once, get the credit. The two-visit gate and
+//   RETURN_GAP_MS are gone.
+//
+//   The one-time flag is doing ALL the work now, which is fine — it always
+//   was the real guard. pwaFirstSeenMs is no longer read or written; existing
+//   values on user docs are simply ignored (harmless, left in place).
 //
 // Auth: Firebase ID token in Authorization: Bearer <token>. Body: none.
 
 const CREDITS = 1;
-const RETURN_GAP_MS = 15 * 60 * 1000; // anti-burst floor; set 0 for "any 2nd session"
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -53,25 +62,15 @@ export default async function handler(req, res) {
         const nowMs = Date.now();
         const nowIso = new Date(nowMs).toISOString();
 
-        // First sighting can come from the new flat field or the legacy nested one.
-        const firstSeenMs = (typeof d.pwaFirstSeenMs === 'number') ? d.pwaFirstSeenMs
-          : (d.pwaWelcome && typeof d.pwaWelcome.firstSeenMs === 'number') ? d.pwaWelcome.firstSeenMs
-          : null;
-
-        if (firstSeenMs === null) {
-          tx.update(userRef, { pwaFirstSeenMs: nowMs, pwaFirstSeenAt: nowIso });
-          outcome = 'first';
-          return;
-        }
-        if (nowMs - firstSeenMs < RETURN_GAP_MS) { outcome = 'too_soon'; return; }
-
+        // S23: no waiting period, no first-sighting bookkeeping. Not granted
+        // yet -> grant now. The flag set in this same transaction is what makes
+        // it one-time, and a transaction means two tabs racing cannot double it.
         const prev = (typeof d.assessmentCredits === 'number') ? d.assessmentCredits : 0;
         newBalance = prev + CREDITS;
         tx.update(userRef, {
           assessmentCredits: newBalance,
           pwaWelcomeGranted: true,               // <-- the one-time flag
           pwaWelcomeGrantedAt: nowIso,
-          pwaFirstSeenMs: firstSeenMs,
         });
         tx.set(auditRef, {
           userId: uid, userEmail: decoded.email || '', credits: CREDITS,

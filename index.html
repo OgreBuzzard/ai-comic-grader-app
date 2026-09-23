@@ -2234,12 +2234,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.22";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.23";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.22");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.23");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -10284,9 +10284,12 @@ async function _maybeGrantPwaWelcome() {
   // Web / PWA only — never native.
   if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) return;
   if (!window._currentUser || typeof window._currentUser.getIdToken !== "function") return;
-  // Ping at most once per browser session, so the server's call #2 is a real
-  // return visit. The flag is set up-front; a failed call simply retries next session.
-  // Hard backstop: if this browser has already seen a grant, never ask again.
+  // S23: the server grants on the FIRST call now (no return-visit gate), so this
+  // is purely call-volume hygiene, not part of the grant rule.
+  // Hard backstop: if this browser has already seen a definitive answer, never
+  // ask again. NOTE when testing: clearing the Firestore flag is not enough —
+  // localStorage rg_pwa_welcome_done will still short-circuit the call in that
+  // browser. Clear it (or use a private window) as well.
   try { if (localStorage.getItem("rg_pwa_welcome_done") === "1") return; } catch (e) {}
   // Ping at most once per browser session (server is the real one-time authority).
   try { if (sessionStorage.getItem("rg_pwa_welcome_pinged") === "1") return; } catch (e) {}
