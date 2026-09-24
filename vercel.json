@@ -90,5 +90,12 @@
       "source": "/fmv.json",
       "destination": "/fmv_comics.json"
     }
+  ],
+  "redirects": [
+    {
+      "source": "/yt",
+      "destination": "/get?utm_source=youtube&utm_medium=video&utm_campaign=release",
+      "permanent": false
+    }
   ]
 }
