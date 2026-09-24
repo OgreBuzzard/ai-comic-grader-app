@@ -17,6 +17,7 @@
 // (matches verify_iap/verify_play); firebase-admin loads dynamically.
 import process from 'node:process';
 import { ROBOGRADE_VERSION } from '../lib/version.js';
+import { PRIMARY_MODEL, IDENTIFY_MODEL as _IDENT } from '../lib/model.js';
 import { getAdminDb as getCreditDb } from '../lib/batch_common.js';
 import { reserveCredit, refundCredit, insufficientCreditsPayload } from '../lib/credits.js';
 // ── PSA CARD GRADING PROMPT (consolidated from lib/grading_cards.js, S21) ──
@@ -665,8 +666,8 @@ ${PSA_OUTPUT_SCHEMA}`;
 
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-const IDENTIFY_MODEL = 'claude-haiku-4-5-20251001';   // cheap identification pass
-const GRADE_MODEL = 'claude-opus-5';                  // matches assess.js PRIMARY_MODEL
+const IDENTIFY_MODEL = _IDENT;                        // cheap identification pass
+const GRADE_MODEL = PRIMARY_MODEL;                    // lib/model.js — one source of truth
 
 const IDENTIFY_PROMPT =
   'You are looking at the FRONT of a single trading card (most likely Pokémon). ' +
@@ -770,6 +771,7 @@ async function verifyUid(req) {
 }
 
 const RATES = {
+  'claude-opus-5-5':             { in: 4 / 1e6, out: 20 / 1e6 },
   'claude-opus-5':               { in: 5 / 1e6, out: 25 / 1e6 },
   'claude-opus-4-8':             { in: 5 / 1e6, out: 25 / 1e6 },
   'claude-haiku-4-5-20251001':   { in: 1 / 1e6, out: 5 / 1e6 },

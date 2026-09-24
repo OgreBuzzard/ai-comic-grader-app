@@ -2110,21 +2110,6 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
       <div class="sr-right">›</div>
     </div>
 
-    <!-- S23: promo redemption in Settings. Hidden unless a promo is live right
-         now (refreshPromoRow / PROMOS_CLIENT). Same ids as the Buy-modal copy
-         but suffixed "-settings"; redeemPromoCode() takes that suffix. -->
-    <div class="settings-row" id="promo-code-row-settings" style="display:none;cursor:default;flex-direction:column;align-items:stretch">
-      <div class="sr-label" style="margin-bottom:8px">Promo Code</div>
-      <div style="display:flex;gap:8px;align-items:stretch">
-        <input id="promo-code-input-settings" type="text" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false"
-               placeholder="Enter code"
-               oninput="this.value=this.value.toUpperCase()"
-               style="flex:1;min-width:0;padding:10px 12px;border:1.5px solid #c8a96e;border-radius:8px;font-size:14px;font-family:'IBM Plex Mono','Menlo',monospace;letter-spacing:1px;color:#1a1008;background:#fff">
-        <button id="promo-redeem-btn-settings" onclick="redeemPromoCode('-settings')"
-                style="flex-shrink:0;padding:10px 16px;background:#1a1008;color:#c8a96e;border:none;border-radius:8px;font-size:13px;font-weight:700;letter-spacing:1px;cursor:pointer">REDEEM</button>
-      </div>
-      <div id="promo-feedback-settings" style="font-size:12px;margin-top:8px;min-height:16px;line-height:1.4"></div>
-    </div>
 
     <div class="settings-section-label">Collection</div>
     <div class="settings-row" style="cursor:default">
@@ -2234,12 +2219,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.23";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.24";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.23");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.24");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -5039,10 +5024,11 @@ function isAnyPromoActiveNow() {
   return false;
 }
 
-// S23: the promo field lives in two surfaces now — the Buy modal (ids with no
-// suffix, the original) and Settings (ids suffixed "-settings"). Everything is
-// keyed off that suffix so there is one implementation, not two.
-const PROMO_SCOPES = ["", "-settings"];
+// S23: the promo field lives on the Buy / Purchase screen only — that is where
+// someone is already thinking about credits. It was briefly added to Settings
+// too; Matt removed it as the wrong home. The scope-suffix plumbing below is
+// kept because it costs nothing and makes a second surface a one-line change.
+const PROMO_SCOPES = [""];
 
 function refreshPromoRow() {
   const on = isAnyPromoActiveNow();
@@ -10161,8 +10147,7 @@ function openSettings() {
     const c = window._userCredits || 0;
     credEl.textContent = `${c} credit${c !== 1 ? "s" : ""} remaining`;
   }
-  refreshPromoRow();          // S23: shows the Settings promo field iff a promo is live
-  clearPromoFields("-settings");
+
   const imgEl = document.getElementById("settings-img-count");
   if (imgEl) {
     const n = countBooksWithImages();

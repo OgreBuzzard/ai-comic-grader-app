@@ -35,6 +35,7 @@
 //
 // =============================================================================
 import { ROBOGRADE_VERSION } from '../lib/version.js';
+import { PRIMARY_MODEL } from '../lib/model.js';
 import { anthropicWithRetry } from '../lib/anthropic_retry.js';
 import { computePhotograderPM, mergePhotograder, PHOTOGRADER_RUBRIC_CLOSEUP } from '../lib/photograder.js';
 import { getAdminDb as getCreditDb, verifyUidFromAuthHeader } from '../lib/batch_common.js';
@@ -403,7 +404,7 @@ Rules:
     sseEvent('phase', { phase: 0, name: 'populating' });
 
     const _antBody = {
-      model: 'claude-opus-5',
+      model: PRIMARY_MODEL,
       // S15 May 29: effort=medium via output_config + adaptive thinking
       // enabled. See assess.js for full rationale comments — same setup here.
       // Thinking helps the calibration step (defects → grade); medium scopes
@@ -684,7 +685,7 @@ Rules:
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
-          model: 'claude-opus-5',
+          model: PRIMARY_MODEL,
           fullAssessment: true,
           grade,
           pageQuality,
@@ -749,7 +750,7 @@ Rules:
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
-          model: 'claude-opus-5',
+          model: PRIMARY_MODEL,
           fullAssessment: true,
           imageCount: Array.isArray(imageBlocks) ? imageBlocks.length : 0,
           costUsd: 0,

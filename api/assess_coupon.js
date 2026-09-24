@@ -15,6 +15,7 @@
 // penalty) is intentionally left to the Deep/Full refinement pass.
 // =============================================================================
 import { anthropicWithRetry } from '../lib/anthropic_retry.js';
+import { PRIMARY_MODEL } from '../lib/model.js';
 import { couponEntry } from '../lib/coupon_list.js';
 
 function normalizeMediaType(t) {
@@ -84,7 +85,7 @@ Respond with STRICT JSON only, no prose:
   content.push({ type: 'text', text: prompt });
 
   const antBody = {
-    model: 'claude-opus-5',
+    model: PRIMARY_MODEL,
     max_tokens: 1024,
     messages: [{ role: 'user', content }]
   };

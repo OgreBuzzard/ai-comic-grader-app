@@ -31,6 +31,7 @@
 //
 // =============================================================================
 import { ROBOGRADE_VERSION } from '../lib/version.js';
+import { PRIMARY_MODEL } from '../lib/model.js';
 import { anthropicWithRetry } from '../lib/anthropic_retry.js';
 import { computePhotograderPM, mergePhotograder, PHOTOGRADER_RUBRIC_CLOSEUP } from '../lib/photograder.js';
 import { getAdminDb as getCreditDb, verifyUidFromAuthHeader } from '../lib/batch_common.js';
@@ -705,7 +706,7 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
     const _deepPerPass = (_deepParts.length > 1) ? (_deepParts[1] || '') : '';
 
     const _antBody = {
-      model: 'claude-opus-5',
+      model: PRIMARY_MODEL,
       // S15 May 29: effort=medium via output_config + adaptive thinking
       // enabled. See assess.js for full rationale comments — same setup here.
       // Thinking helps the calibration step (defects → grade); medium scopes
@@ -980,7 +981,7 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
             totalMs: phaseTimings.totalMs,
             phases: phaseTimings,
             version: ROBOGRADE_VERSION,
-            model: 'claude-opus-5',
+            model: PRIMARY_MODEL,
             deepAssessment: true,
             gateResult: 'IMAGE_MISMATCH',
             imageMismatch: true,
@@ -1147,7 +1148,7 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
-          model: 'claude-opus-5',
+          model: PRIMARY_MODEL,
           deepAssessment: true,
           gateResult: parsed.gateResult || 'COMIC',
           predictedGrade: parsed.grade || null,
@@ -1220,7 +1221,7 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
-          model: 'claude-opus-5',
+          model: PRIMARY_MODEL,
           deepAssessment: true,
           imageCount: macroBlocks.length,
           costUsd: 0,
