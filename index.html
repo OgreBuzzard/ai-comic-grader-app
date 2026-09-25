@@ -10230,7 +10230,7 @@ async function submitReferral() {
     const data = await resp.json().catch(() => ({}));
     if (resp.ok && data.ok && !data.alreadyDone) {
       closeReferralPrompt();
-      window.rgPopup("You earned 3 credits for spreading the word.", { type: "success", title: "Bonus sent!" });
+      window.rgPopup("You earned 3 credits for your generosity.", { type: "success", title: "Bonus sent!" });
       if (typeof loadUserCredits === "function") loadUserCredits();
       refreshReferralEligibility();
     } else if (data.alreadyDone) {
@@ -13361,6 +13361,13 @@ async function submitRestorationCheck() {
       const _revealMs = _boxPlan.length * 1000; // after the last box lights
       const _judgeColor = _restoFound ? '#ff4040' : '#60c060';
       const _judgeLabel = _restoFound ? "COLOR TOUCH INDICATED" : "NO COLOR TOUCH FOUND";
+      // S23: the verdict line alone overstates what two UV photos can settle.
+      // "NO COLOR TOUCH FOUND" in green reads as a clean bill of health, and a
+      // false negative is the expensive direction — someone buys on it. This
+      // check finds OBVIOUS color touch; it is not a restoration certification.
+      const _judgeSub = _restoFound
+        ? "Have this confirmed by a professional before buying or selling."
+        : "Screening only. This does not rule out restoration.";
       // The empty conclusion box + ASSESSING… button are the scan placeholder's
       // (#result-resto-conclusion / #assess-complete-btn). Fill them in when the
       // boxes finish, with a smooth CSS transition (no pop), and stop the grid/
@@ -13377,7 +13384,8 @@ async function submitRestorationCheck() {
           _concl.style.transition = "border-color 0.4s ease, background-color 0.4s ease";
           _concl.style.border = `2px solid ${_judgeColor}40`;
           _concl.style.background = _restoFound ? '#2a0a0a' : '#0a2a0a';
-          _concl.innerHTML = `<div style="color:${_judgeColor};font-size:16px;font-weight:800;letter-spacing:1.5px;text-align:center;transition:opacity 0.4s ease">${_judgeLabel}</div>`;
+          _concl.innerHTML = `<div style="color:${_judgeColor};font-size:16px;font-weight:800;letter-spacing:1.5px;text-align:center;transition:opacity 0.4s ease">${_judgeLabel}</div>`
+            + `<div style="color:#9aa89a;font-size:11px;font-weight:600;letter-spacing:0.3px;text-align:center;margin-top:5px;line-height:1.35;transition:opacity 0.4s ease">${_judgeSub}</div>`;
         }
         const _cb = document.getElementById("assess-complete-btn");
         if (_cb) {
