@@ -7436,13 +7436,14 @@ function mountBatchTracker(n) {
         style="position:absolute;left:${BATCH_RES_LEFTS_PCT[k]}%;top:${(top + BATCH_RES_TOP_NUDGE).toFixed(2)}%;
                width:${BATCH_RES_W_PCT}%;height:${BATCH_RES_H_PCT}%;
                background:${c.bg};border:1.5px solid ${c.border};border-radius:7px;
-               display:flex;align-items:center;justify-content:flex-start;padding:0 6%;box-sizing:border-box;
+               display:flex;align-items:center;justify-content:center;padding:0 4%;box-sizing:border-box;
                box-shadow:0 1px 4px rgba(0,0,0,0.45);
                transition:box-shadow .2s ease;
                pointer-events:none;">
           <span style="font-family:'League Spartan',system-ui,sans-serif;font-weight:900;
                        transform:scaleX(0.66) translateY(0.11em);transform-origin:center;display:inline-block;
                        font-size:clamp(13px,7.4vw,30px);color:${c.ink};
+                       font-variant-numeric:tabular-nums;white-space:nowrap;
                        line-height:1;"></span>
         </div>`;
     });
@@ -7489,14 +7490,19 @@ function _batchPaint(pass, kind, text) {
   const sp = box && box.firstElementChild;
   if (!sp) return;
   const v = text == null ? "" : String(text);
-  // S22 (Matt): during the count-up the number flicked between centred and
-  // left-shifted on every frame that had a decimal, because "8" and "8.5" are
-  // different widths and the flex box re-centred each time. The span is now
-  // pinned to the LEFT of a fixed-width area while counting, so the digits never
-  // move; _batchPaint's caller re-centres once the final value lands, and only if
-  // that value is a whole number (a decimal stays left so the WHOLE string reads
-  // centred in the box).
-  if (box.dataset.settled !== "1") box.style.justifyContent = "flex-start";
+  // S24 (Matt): these are now ALWAYS centred.
+  //
+  // The previous fix pinned the span to the left while counting and re-centred
+  // only if the final value was a whole number, on the theory that a decimal
+  // reads better left-anchored. On device it did not: "6.5" sat off-centre and
+  // clipped against the left edge of its box while "7" in the row above was
+  // centred, so the column looked broken. The span is also scaleX(0.66) about
+  // its own centre, which pulls a wider string further left of where the flex
+  // box put it - the wider the value, the worse the offset.
+  //
+  // The jitter that justified left-pinning is handled at the source instead:
+  // tabular-nums fixes digit width, and _batchCountUp now counts in the same
+  // shape as the final value, so the string never changes length mid-count.
   if (v && window.RoboScoreV3 && window.RoboScoreV3.gradeParts && kind === "rg") {
     try {
       const p = window.RoboScoreV3.gradeParts(v);
@@ -7514,7 +7520,7 @@ function seedBatchRows(n) {
   for (let i = 1; i <= (n || 5); i++) {
     ["rg", "pg"].forEach(k => {
       const b = document.getElementById(`batch-${k}-${i}`);
-      if (b) { delete b.dataset.settled; b.style.justifyContent = "flex-start"; }
+      if (b) { delete b.dataset.settled; b.style.justifyContent = "center"; }
     });
     _batchPaint(i, "rg", "0");
     _batchPaint(i, "pg", "0.0");
@@ -7530,17 +7536,24 @@ function _batchCountUp(pass, kind, finalText) {
     if (!Number.isFinite(target)) { _batchPaint(pass, kind, finalText); return resolve(); }
     // S22: 900 -> 1800. Matt: the in-line scores flicked past too fast to read.
     const DUR = 1800, t0 = performance.now();
-    const fmt = v => kind === "pg" ? v.toFixed(1) : (Math.round(v * 2) / 2).toString();
+    // Count in the SAME SHAPE as the final value so the string length never
+    // changes mid-count: an RG landing on 7.5 counts 0.0/0.5/1.0..., an RG
+    // landing on 7 counts 0/1/2... PG always had a decimal, so it was already
+    // stable. Combined with tabular-nums this removes the width jitter the old
+    // left-pinning was working around.
+    const _finalHasFrac = /\./.test(kind === "pg" ? _batchPgText(finalText) : String(finalText));
+    const fmt = v => kind === "pg"
+      ? v.toFixed(1)                                   // unchanged: always N.N
+      : _finalHasFrac
+        ? (Math.round(v * 2) / 2).toFixed(1)           // RG landing on a half
+        : String(Math.round(v));                      // RG landing whole
     const step = now => {
       const k = Math.min(1, (now - t0) / DUR);
       const eased = 1 - Math.pow(1 - k, 3);
       _batchPaint(pass, kind, fmt(Math.round(target * eased * 2) / 2));
       if (k < 1) return requestAnimationFrame(step);
       const _final = kind === "pg" ? _batchPgText(finalText) : String(finalText);
-      // Settle: a whole number goes back to dead-centre; a decimal stays
-      // left-anchored so the full "8.5" is what reads centred, not the "8".
       box.dataset.settled = "1";
-      box.style.justifyContent = /\./.test(_final) ? "flex-start" : "center";
       _batchPaint(pass, kind, _final);
       // White-outline pulse, matching the bottom score boxes' landing.
       box.style.boxShadow = "0 0 0 2.5px #ffffff, 0 0 12px rgba(255,255,255,.85)";
