@@ -10695,7 +10695,46 @@ window.RGCover = (function () {
   return { hashImage, hamming };
 })();
 
+// S24 — DOUBLE-TAP ON COMPLETE FILED THE SAME ASSESSMENT TWICE.
+//
+// The `!_pendingAssessResult` check below looks like a re-entry guard, and it is
+// not one. `_pendingAssessResult` is not cleared until ~150 lines further down,
+// and the body awaits before it gets there: RGCover.hashImage, then a Firestore
+// read of `cover_index`. A second tap during that await sails past the check,
+// because the flag it tests has not been cleared yet. Both calls then mint their
+// own roboGradeId + roboGradeDate and both unshift a prior record.
+//
+// Observed on ASM 48 (2026-09-25): records JCX7AI and 3HQ45J, 12 MILLISECONDS
+// apart, identical grade / RoboGrade / page quality - one real Main (20:55:33 in
+// the timings log) filed twice. The existing duplicate guard cannot catch it
+// either: it compares roboGradeId and date, both freshly generated per call.
+//
+// The window opens exactly when the network is slow, which is exactly when a
+// user taps again because nothing appears to be happening. Matt hit it at a
+// convention.
+//
+// Fix: a synchronous latch set before the first await and cleared in a finally,
+// plus disabling the button so the UI stops inviting the second tap. The body is
+// untouched - it moved into _completeAssessmentInner verbatim.
+let _completingAssessment = false;
 async function completeAssessment() {
+  if (_completingAssessment) return;
+  if (!_pendingAssessResult) return;
+  _completingAssessment = true;
+  const _cbtn = document.getElementById("assess-complete-btn");
+  if (_cbtn) { _cbtn.disabled = true; _cbtn.style.cursor = "progress"; _cbtn.style.opacity = "0.7"; }
+  try {
+    await _completeAssessmentInner();
+  } finally {
+    _completingAssessment = false;
+    // Only re-enable if the panel is still up (an error path left it mounted).
+    // On the success path the overlay is dismissed and this element is gone.
+    const _b2 = document.getElementById("assess-complete-btn");
+    if (_b2) { _b2.disabled = false; _b2.style.cursor = "pointer"; _b2.style.opacity = "1"; }
+  }
+}
+
+async function _completeAssessmentInner() {
   if (!_pendingAssessResult) return;
   const {cgc: cgc, psa: psa} = _pendingAssessResult;
   // S22: capture the book identity BEFORE it is overwritten from the new scan —
