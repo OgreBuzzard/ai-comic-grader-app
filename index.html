@@ -6750,9 +6750,31 @@ const EMPTY = {
   notes: ""
 };
 
-let formData = {
-  ...EMPTY
-};
+// S24 — CROSS-BOOK HISTORY BLEED. `{ ...EMPTY }` is a SHALLOW spread, so every
+// array value in EMPTY (assessmentHistory, images, cornerImages, ...) came out
+// of it as a REFERENCE to the one array literal declared up in EMPTY - not a
+// copy. `formData.assessmentHistory.unshift(rec)` therefore mutated EMPTY
+// itself, and the next book to start from EMPTY inherited every record filed
+// under every previous book in that session.
+//
+// Confirmed on ASM 48 (2026-09-25): its Assessment History contained XWBG69,
+// 3MPNBQ, AZZFQ7, 7JJKVY and BATCH-WPYX7P, all of which are ASM 78's genuine
+// records, plus ASM 79's. The admin timings log has NO assess calls for issue 48
+// at those timestamps - the records were never that book's. The summary block
+// then computed a range and an average across three different comics.
+//
+// The S22 `_sameBookH` guard does not help: it stops a NEW prior from being
+// filed under the wrong book, and says nothing about an array that arrived
+// already polluted.
+//
+// Every formData reset goes through this, so the arrays are always fresh.
+function blankForm() {
+  const f = { ...EMPTY };
+  for (const k of Object.keys(f)) if (Array.isArray(f[k])) f[k] = f[k].slice();
+  return f;
+}
+
+let formData = blankForm();
 
 let assessing = false;
 
@@ -6763,9 +6785,7 @@ let _routeToEditAfterSave = false;
 let _addManualMode = false;
 
 function showAdd() {
-  formData = {
-    ...EMPTY
-  };
+  formData = blankForm();
   view = "add";
   _assessed = false;
   _addManualMode = false;
@@ -6907,7 +6927,7 @@ function showEdit(id) {
   const c = items.find(x => x.id === id);
   if (!c) return;
   formData = {
-    ...EMPTY,
+    ...blankForm(),
     ...c,
     pageQuality: normPageQuality(c.pageQuality),
     purchasePrice: c.purchasePrice != null ? String(c.purchasePrice) : "",
@@ -6918,6 +6938,13 @@ function showEdit(id) {
     fmvDate: c.fmvDate || "",
     askingPrice: c.askingPrice != null ? String(c.askingPrice) : ""
   };
+  // S24: `...c` hands over references to the ITEM's own arrays, so filing a
+  // record would mutate items[] in place. Detach the one array that gets
+  // mutated, and give a book with no history its own empty array rather than
+  // letting it fall through to EMPTY's.
+  formData.assessmentHistory = Array.isArray(c.assessmentHistory)
+    ? c.assessmentHistory.map(r => ({ ...r }))
+    : [];
   formData._savedImages = [ ...c.images || [] ];
   formData._savedCornerImages = [ ...c.cornerImages || [] ];
   formData._savedInteriorImages = [ ...c.interiorImages || [] ];
