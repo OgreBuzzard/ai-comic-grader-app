@@ -79,12 +79,11 @@ export default async function handler(req, res) {
 
     // ── Fetch ────────────────────────────────────────────────────────────────
     const db = getFirestore();
-    const usersSnap = await db.collection('users').get();
 
-    // For each user, also fetch their items subcollection to compute itemCount
-    // and lastAssessment. Done in parallel for speed.
-    const userRows = await Promise.all(
-      usersSnap.docs.map(async (doc) => {
+    // Build one user row. Fetches that user's items subcollection for itemCount
+    // and lastAssessment. Hoisted out of the full scan so the User ID fast path
+    // below can build the same row shape for one account.
+    const buildRow = async (doc) => {
         const u = doc.data();
         let itemCount = 0;
         let lastAssessmentMs = 0;
@@ -115,8 +114,62 @@ export default async function handler(req, res) {
           referralReceived: u.totalReferralReceived || 0, // credits received as referrer (tier bonus)
           referralBlocked: !!u.referralBlocked,
         };
-      })
-    );
+    };
+
+    // ── User ID fast path (S24) ──────────────────────────────────────────────
+    // WHY. The generic search below loads EVERY user doc and then every one of
+    // their items subcollections just to filter on a substring. At the booth,
+    // with someone standing there reading a 4-character code off their phone,
+    // that scan is the whole latency budget and it grows with signups - the
+    // exact moment it is worst is a convention, when signups spike.
+    //
+    // A code is exact and unique, so it never needed the scan. This is one
+    // indexed equality query plus one items read. It also fixes the real
+    // failure mode: when the full scan exceeds the function's time limit the
+    // request dies and the account "doesn't come up", which reads as the search
+    // being broken rather than slow.
+    //
+    // Codes are stored uppercase in the system alphabet (0/1/O/U excluded), and
+    // the search box lowercases, so match on the uppercased query. Anything not
+    // shaped like a code falls through to the normal search untouched.
+    if (/^[A-Za-z0-9]{4}$/.test(query)) {
+      const code = query.toUpperCase();
+      let hitDocs = [];
+      try {
+        const exact = await db.collection('users').where('transferCode', '==', code).limit(10).get();
+        hitDocs = exact.docs;
+      } catch (e) {
+        console.warn('[admin-users] code lookup failed, falling back to scan:', e?.message);
+      }
+      // Reverse index fallback: transfer_codes/{CODE} -> { uid }. Covers an
+      // account whose users doc somehow lacks the field but claimed the code.
+      if (!hitDocs.length) {
+        try {
+          const idx = await db.collection('transfer_codes').doc(code).get();
+          const uid = idx.exists ? (idx.data() || {}).uid : null;
+          if (uid) {
+            const uDoc = await db.collection('users').doc(uid).get();
+            if (uDoc.exists) hitDocs = [uDoc];
+          }
+        } catch (e) {
+          console.warn('[admin-users] transfer_codes lookup failed:', e?.message);
+        }
+      }
+      if (hitDocs.length) {
+        const rows = await Promise.all(hitDocs.map(buildRow));
+        return res.status(200).json({
+          users: rows, total: rows.length, hasMore: false,
+          offset: 0, limit: rows.length, sort, dir, matchedBy: 'transferCode',
+        });
+      }
+      // No code match - fall through. A 4-character string can also be part of
+      // a name or email ("Rick", "Matt"), and that search should still work.
+    }
+
+    const usersSnap = await db.collection('users').get();
+    // For each user, also fetch their items subcollection to compute itemCount
+    // and lastAssessment. Done in parallel for speed.
+    const userRows = await Promise.all(usersSnap.docs.map(buildRow));
 
     // ── Sort ─────────────────────────────────────────────────────────────────
     const cmp = (a, b) => {

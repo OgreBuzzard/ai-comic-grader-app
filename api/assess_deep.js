@@ -31,7 +31,7 @@
 //
 // =============================================================================
 import { ROBOGRADE_VERSION } from '../lib/version.js';
-import { PRIMARY_MODEL } from '../lib/model.js';
+import { PRIMARY_MODEL, ratesFor } from '../lib/model.js';
 import { anthropicWithRetry } from '../lib/anthropic_retry.js';
 import { computePhotograderPM, mergePhotograder, PHOTOGRADER_RUBRIC_CLOSEUP } from '../lib/photograder.js';
 import { getAdminDb as getCreditDb, verifyUidFromAuthHeader } from '../lib/batch_common.js';
@@ -1172,9 +1172,12 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
           // S15 May 28: per-assessment dollar cost (Opus 4.8). Same rate
           // block as assess.js — if model changes, update both.
           costUsd: (function(){
-            const RATE_IN  = 5  / 1e6;
-            const RATE_OUT = 25 / 1e6;
-            const RATE_CACHE_READ   = RATE_IN * 0.10;
+            // S23: was hardcoded $5/$25. See the note in assess_full.js — the
+            // same stale block, the same 20% overstatement on Opus 5.5.
+            const _R = ratesFor(PRIMARY_MODEL);
+            const RATE_IN  = _R.in;
+            const RATE_OUT = _R.out;
+            const RATE_CACHE_READ   = RATE_IN * 0.05;
             const RATE_CACHE_CREATE = RATE_IN * 1.25;
             const inT  = _inputTokens || 0;
             const outT = _outputTokens || 0;

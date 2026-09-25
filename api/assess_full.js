@@ -35,7 +35,7 @@
 //
 // =============================================================================
 import { ROBOGRADE_VERSION } from '../lib/version.js';
-import { PRIMARY_MODEL } from '../lib/model.js';
+import { PRIMARY_MODEL, ratesFor } from '../lib/model.js';
 import { anthropicWithRetry } from '../lib/anthropic_retry.js';
 import { computePhotograderPM, mergePhotograder, PHOTOGRADER_RUBRIC_CLOSEUP } from '../lib/photograder.js';
 import { getAdminDb as getCreditDb, verifyUidFromAuthHeader } from '../lib/batch_common.js';
@@ -688,6 +688,17 @@ Rules:
           model: PRIMARY_MODEL,
           fullAssessment: true,
           grade,
+          // S23: the admin LOGS tab reads `predictedGrade` / `precisionMod`, not
+          // `grade` / `confidenceRange`. Full has been writing the latter names
+          // since it shipped, so every Full row rendered with a blank grade —
+          // 0 of 10 Full rows in the current log window carry a readable grade.
+          // Written under BOTH names: `grade` stays for anything already reading
+          // it, `predictedGrade` is what the dashboard renders.
+          // Full does not recompute RG subscores (it refines the CGC-scale grade
+          // only), so rgScore/front/back/spine/interior are deliberately absent
+          // rather than logged as nulls that would read as "it produced zero".
+          predictedGrade: (grade != null) ? String(grade) : null,
+          precisionMod: (confidenceRange != null) ? confidenceRange : null,
           pageQuality,
           pageQualityChanged,
           confidenceRange,
@@ -701,12 +712,16 @@ Rules:
           outputTokens: _outputTokens,
           cacheReadInputTokens: _cacheReadInputTokens,
           cacheCreationInputTokens: _cacheCreationInputTokens,
-          // S15 May 28: per-assessment dollar cost (Opus 4.8). Same rate
-          // block as assess.js — if model changes, update both.
+          // S23: was a hardcoded $5/$25 block with a comment telling the next
+          // person to keep it in step with assess.js by hand. It was NOT kept in
+          // step — when grading moved to Opus 5.5 ($4/$20, cache read 5%) this
+          // kept billing the log at Opus 5 rates, overstating every Full by ~20%.
+          // Now reads lib/model.js like assess.js does. Nothing to remember.
           costUsd: (function(){
-            const RATE_IN  = 5  / 1e6;
-            const RATE_OUT = 25 / 1e6;
-            const RATE_CACHE_READ   = RATE_IN * 0.10;
+            const _R = ratesFor(PRIMARY_MODEL);
+            const RATE_IN  = _R.in;
+            const RATE_OUT = _R.out;
+            const RATE_CACHE_READ   = RATE_IN * 0.05;
             const RATE_CACHE_CREATE = RATE_IN * 1.25;
             const inT  = _inputTokens || 0;
             const outT = _outputTokens || 0;

@@ -1325,9 +1325,16 @@ function _renderSales() {
   if (!el || !data) return;
   const t = data.totals || {};
   const money = n => '$' + (Number(n) || 0).toFixed(2);
-  const card = (label, tot) => `<div style="flex:1;background:#0e0f12;border:1px solid #23252c;border-radius:8px;padding:8px 6px;min-width:0;text-align:center;">
-      <div style="font-size:10px;color:#8a8d96;text-transform:uppercase;letter-spacing:0.4px;white-space:nowrap">${label}</div>
-      <div style="font-size:12px;font-weight:700;color:#7fd0ff;white-space:nowrap">${money(tot && tot.amount)} <span style="color:#6a9a6a;font-size:10px">(${money(tot && tot.net)})</span></div>
+  // S24: gross and net each get their own line. They used to share one line
+  // under white-space:nowrap, so once revenue reached five characters the pair
+  // ("$1,234.56 ($1,108.21)") could not break, the card refused to shrink past
+  // its widest word, and the four cards pushed the whole admin page wider than
+  // the phone - every tab scrolled sideways, not just Sales. Only the short
+  // uppercase label keeps nowrap; the numbers wrap.
+  const card = (label, tot) => `<div style="flex:1 1 0;background:#0e0f12;border:1px solid #23252c;border-radius:8px;padding:8px 6px;min-width:0;text-align:center;overflow:hidden;">
+      <div style="font-size:10px;color:#8a8d96;text-transform:uppercase;letter-spacing:0.4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>
+      <div style="font-size:12px;font-weight:700;color:#7fd0ff;overflow-wrap:anywhere;line-height:1.25">${money(tot && tot.amount)}</div>
+      <div style="font-size:10px;color:#6a9a6a;overflow-wrap:anywhere;line-height:1.25">(${money(tot && tot.net)})</div>
       <div style="font-size:10px;color:#8a8d96">${(tot && tot.count) || 0} purch.</div>
     </div>`;
   const all = data.purchases || [];
@@ -1357,7 +1364,7 @@ function _renderSales() {
   }).join('');
   const more = filtered.length > shown ? `<button class="load-more" id="load-more-sales">Load more (${filtered.length - shown})</button>` : '';
   el.innerHTML = `
-    <div style="display:flex;gap:8px;margin-bottom:12px;">${card('Web', t.web)}${card('iOS', t.ios)}${card('And.', t.android)}${card('Comb.', t.combined)}</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;max-width:100%;">${card('Web', t.web)}${card('iOS', t.ios)}${card('And.', t.android)}${card('Comb.', t.combined)}</div>
     <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">${['all','Stack','Wall','Short Box'].map(k => `<button class="sales-filter" data-prod="${k}" style="padding:5px 10px;font-size:11px;border-radius:8px;cursor:pointer;border:1px solid ${prodFilter===k?'#7fd0ff':'#3a5a2a'};background:${prodFilter===k?'#12303f':'var(--panel-2)'};color:${prodFilter===k?'#cde':'#9ab'}">${k==='all'?'All':k==='Stack'?'Comic Stack':k==='Wall'?'Comic Wall':'Short Box'}</button>`).join('')}</div>
     ${rows || '<div class="empty">No purchases in this filter.</div>'}
     ${more}
