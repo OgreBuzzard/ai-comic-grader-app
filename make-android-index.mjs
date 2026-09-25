@@ -348,6 +348,35 @@ mustReplace('A9 android price prefetch → Play Billing',
 `  _iosPricePrefetched = true;
   try { if (typeof _playFetchPrices === 'function') _playFetchPrices().then(function(p) { if (p && typeof _applyPlayPrices === 'function') _applyPlayPrices(p); }).catch(function() {}); } catch (e) {}`);
 
+
+// ── Version stamp (S23) ──────────────────────────────────────────────────────
+// The client version constant in index.html is a hand-maintained MIRROR of
+// lib/version.js, and it has silently drifted twice: stranded at 5.16 against a
+// 5.21 lib, and again at 5.21 inside the shipped 1.12 builds, where it labelled
+// a calibration round with the wrong version. A build must never be able to
+// misreport the code it was built from, so the generator now stamps it from
+// lib/version.js instead of trusting the mirror. Injection, not a check —
+// there is nothing for a human to remember.
+{
+  const { ROBOGRADE_VERSION } = await import('./lib/version.js');
+  const re = /window\.RG_GRADING_VERSION = window\.RG_GRADING_VERSION \|\| "[0-9.]+";/;
+  const found = html.match(re);
+  if (!found) {
+    console.error('\n\u2717 VERSION STAMP: could not find the RG_GRADING_VERSION line in index.html.');
+    console.error('  The anchor moved. Fix this before shipping — a build that cannot be');
+    console.error('  stamped will report the wrong version.');
+    process.exit(1);
+  }
+  const mirror = (found[0].match(/"([0-9.]+)"/) || [])[1];
+  html = html.replace(re, `window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "${ROBOGRADE_VERSION}";`);
+  if (mirror !== ROBOGRADE_VERSION) {
+    console.log(`  \u26a0 version stamp: index.html mirror said ${mirror}, lib/version.js says ${ROBOGRADE_VERSION} \u2014 stamped ${ROBOGRADE_VERSION}.`);
+    console.log(`    (the source mirror is stale; bump it in index.html so the PWA agrees)`);
+  } else {
+    console.log(`  \u2713 version stamp: ${ROBOGRADE_VERSION}`);
+  }
+}
+
 writeFileSync(outPath, html);
 console.log(`\nAll ${applied} deltas applied. Wrote ${outPath} (${html.length.toLocaleString()} bytes).`);
 
