@@ -25,7 +25,7 @@
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
 import { ROBOGRADE_VERSION } from '../lib/version.js';
-import { PRIMARY_MODEL, ratesFor } from '../lib/model.js';
+import { PRIMARY_MODEL, MAIN_EFFORT, ratesFor } from '../lib/model.js';
 import { anthropicWithRetry, fetchTimeout } from '../lib/anthropic_retry.js';
 import { getBookNote } from '../lib/book_notes.js';
 import { defectIndexPromptBlock } from '../lib/defect_index.js';
@@ -1210,7 +1210,7 @@ Score each category only from its own defects. Perfect category = no observed de
   Interior (10): 1:1 from PQ. No deductions. Staple issues → Spine.
 BOTTOM-OF-SCALE (use the FULL range — the lowest bands are chronically under-used, so reach them): a face carrying even ONE high-severity STRUCTURAL defect (tape or tape residue, missing piece / paper loss, spine split, cover detachment, water/moisture damage, a large/dark stain, heavy staple-rust migration onto paper, or a large tear) belongs in that category's LOWEST band — Front 0–12, Back 0–6, Spine 0–6 — not the 20s. TWO OR MORE such defects on a face → the very bottom: Front 0–6, Back/Spine 0–3. A destroyed or near-destroyed face scores near 0 — never 7–8 "to be safe." Do NOT park a heavily damaged book in the 20–30 range; that is mid-grade territory. 0 is a real, expected score for a wrecked face. HIGH NON-STRUCTURAL WEAR ALSO FLOORS (v5.05): a HIGH-severity wear defect that is not in the structural list above — full-length spine wear with color loss, pervasive heavy soiling/tanning across a whole face, or heavy edge chipping short of an actual missing piece — still drops that face at least ONE full band below where its description alone would seat it. A single HIGH wear defect on the Spine seats Spine ≤ 10/20 (1.0) or lower; a HIGH color-breaking wear/crease defect on the Front or Back drops that face a full band. TWO OR MORE HIGH defects on one face (structural OR wear) drive it to the very bottom. Do not let 'it is only wear, not a hole' talk a HIGH wear defect back up — HIGH means grade-defining. NO COVER = 0: if a cover (front or back) is physically absent — coverless book, or a cover torn off and missing — that category is 0, no exceptions.
 SPINE TICKS: −1 per non-CB tick, −2 per CB tick. SPINE ROLL: Low −1/−2, Med −3/−5, High −6/−10. STAPLES (Spine category): Low faint rust <2mm confined to the staple with NO paper migration; Med rust just beginning to bleed <3mm; HIGH once rust has MIGRATED onto the cover or interior paper — 3–8mm migration caps Spine ≤ 10/20 (1.0), heavy/structural migration caps Spine ≤ 6/20 (0.5) per BOTTOM-OF-SCALE; missing/popped → Med/High.
-SIGNATURES: only an ADDED signature — written onto THIS copy, ABSENT from the ComicVine reference cover, with distinct ink sheen / pen texture / indentation — is a "Creator signature" → empty severity, NO deduction; describe in aiAssessment with "apparent" (we don't authenticate). Printed/stylized handwriting that is part of the cover ART (present on every copy and visible in the reference) is NEITHER a defect NOR a Creator signature: do NOT record it as "Writing on cover" AND do NOT record it in the signatures array. When a mark could be either: if a reference IS available, compare — present in the reference = printed art (omit from BOTH); absent from the reference = added (Writing on cover if it defaces, Creator signature if it is a name). If NO reference is available (referenceComparison is ""), do NOT assume a mark is added — a signature-style mark that is integrated into the printing (same ink/tone as the surrounding art, no raised sheen, pen texture, or indentation) is PRINTED ART; only call it added when it clearly sits on top of the art with a distinct pen/marker texture, sheen, or indentation. Printed artist signatures appear on most covers — default to printed art when in doubt. Populate top-level "signatures" array with {"signer":"Name"} ONLY for added signatures (else {"signer":""}); empty array if none.
+SIGNATURES: only an ADDED signature — written onto THIS copy, ABSENT from the ComicVine reference cover, with distinct ink sheen / pen texture / indentation — is a "Creator signature" → empty severity, NO deduction; describe in aiAssessment with "apparent" (we don't authenticate). Printed/stylized handwriting that is part of the cover ART (present on every copy and visible in the reference) is NEITHER a defect NOR a Creator signature: do NOT record it as "Writing on cover" AND do NOT record it in the signatures array. When a mark could be either: if a reference IS available, compare — present in the reference = printed art (omit from BOTH); absent from the reference = added (Writing on cover if it defaces, Creator signature if it is a name). If NO reference is available (referenceComparison is ""), do NOT assume a mark is added — a signature-style mark that is integrated into the printing (same ink/tone as the surrounding art, no raised sheen, pen texture, or indentation) is PRINTED ART; only call it added when it clearly sits on top of the art with a distinct pen/marker texture, sheen, or indentation. Printed artist signatures appear on most covers — default to printed art when in doubt. Populate the TOP-LEVEL "signatures" array (a sibling of "roboGrade", NOT inside it) with {"signer":"Name"} ONLY for added signatures (else {"signer":""}); empty array if none. Only give a name when the signature is plainly legible AND you are confident of the reading; otherwise use {"signer":""} - an unnamed detection is correct, a guessed name is a visible error.
 SEVERITY WORDS: light/minor/slight/faint/trace→Low; moderate/medium/noticeable→Med; heavy/significant/severe/major→High.
 RESTORATION INFERENCE: do not stop at the symptom — infer restoration when the evidence supports it. AMBER/BROWN ADHESIVE or GLUE staining along a cover edge or the spine-side of a cover, backing/reinforcement material, or paper-pulp fill (leaf casting) is RESTORATION, not mere "soiling" or "staining" — name the likely technique (reinforcement, married/re-attached cover, leaf casting) in aiAssessment and add it to restorationFlags. INCONSISTENT CONDITION is also a flag: an area, the SPINE especially, that looks unnaturally clean, white, glossy, or intact on a book that shows genuine age and wear elsewhere points to non-original/replaced material. HIGH-VALUE KEYS (early Golden/Silver-Age keys, first or early appearances of major characters) are prime restoration and "married-book" candidates — view them skeptically: when such a book shows adhesive/reinforcement or a too-clean spine, say so and flag it rather than assuming an unusually clean key is simply well-preserved. 
 
@@ -1296,9 +1296,9 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     "defects": [
       {"type":"","location":"","measurement":"","severity":"Med","colorBreaking":false,"category":"Front"}
     ],
-    "restorationFlags": [],
-    "signatures": []
-  }
+    "restorationFlags": []
+  },
+  "signatures": []
 }`;
 
 
@@ -1364,7 +1364,9 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       // cost toward the expected <$0.10 — and gives the FAIR comparison to 4.8
       // (which effectively isn't thinking on these). If accuracy holds at low
       // effort, 4.6-low is the real cost-competitive option to weigh vs 4.8.
-      output_config: { effort: 'low' },
+      // S24: effort now comes from lib/model.js (MAIN_EFFORT) so a calibration
+      // round can change it in one place, next to the model id it is paired with.
+      output_config: { effort: MAIN_EFFORT },
       // S15 May 29: enable adaptive thinking on Opus 4.8. Model decides when
       // and how much to think; effort=medium scopes the depth. The hope is
       // explicit reasoning helps the calibration step (defects → grade)

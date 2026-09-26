@@ -3831,7 +3831,7 @@ async function migrateComicsToItems() {
   }
 }
 
-const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "uvCheckRuns", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "fullUnlockReason", "deepAssessmentRan", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "deepRefundUsed", "fullRefundUsed", "insertImages", "couponImages", "userDefectImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue" ];
+const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "uvCheckRuns", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "fullUnlockReason", "deepAssessmentRan", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "deepRefundUsed", "fullRefundUsed", "insertImages", "couponImages", "userDefectImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue", "signatures" ];
 
 const COMIC_DROP_FIELDS = [ "press", "uv", "clean" ];
 
@@ -5820,7 +5820,7 @@ function showDetail(id) {
     if (sigImgs.length > 0) {
       const imgAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
       const signerLabel = formatSignerList(selected);
-      html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a6abf">\n        <div style="font-size:11px;color:#a08fd4;font-weight:700;letter-spacing:2px;margin-bottom:8px">SIGNATURE${sigImgs.length > 1 ? "S" : ""}${signerLabel ? ` — ${esc(signerLabel)}` : ""}</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
+      html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a6abf">\n        <div style="font-size:11px;color:#a08fd4;font-weight:700;letter-spacing:2px;margin-bottom:8px">SIGNATURE${sigImgs.length > 1 ? "S" : ""}</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
       sigImgs.forEach((url, displayIdx) => {
         const storageIdx = (selected.signatureImages || []).findIndex((u, i) => u === url && i >= displayIdx);
         html += `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a">\n          <img src="${url}" ${imgAttrs} onclick="openSignatureLightbox('${selected.id}',${storageIdx})" style="display:block;width:100%;height:auto;border-radius:inherit;cursor:zoom-in">\n        </div>`;
@@ -10837,6 +10837,29 @@ async function _completeAssessmentInner() {
   formData.assessedCGCGrade = cgc.grade || "";
   formData.assessedPSAGrade = psa.grade ? String(psa.grade).includes(".") ? String(psa.grade) : parseFloat(psa.grade).toFixed(1) : "";
   formData.predictedGrade = cgc.grade || "";
+  // S24 — SIGNATURES WERE ANNOUNCED AND THEN LOST.
+  //
+  // The model returns `signatures` at the TOP LEVEL of the response. Nothing here
+  // ever copied it onto formData, and "signatures" was missing from
+  // COMIC_DATA_FIELDS, so the array lived only as long as the in-memory assess
+  // result: long enough to light up the SIGNATURE DETECTED button, gone by the
+  // time Edit re-read the saved book. getSignatures() then found neither
+  // roboGrade.signatures nor item.signatures, so the macro section rendered as an
+  // empty string - slots promised, slots absent.
+  //
+  // Confirmed on the affected book: {topLevel: 0, inRoboGrade: 0, sigImages: 0}.
+  //
+  // assess.js's schema and its prose also disagreed about WHERE the array goes
+  // (schema said inside roboGrade, prose said top level), so which one the model
+  // filled varied per call. The schema now matches the prose. Both locations are
+  // still accepted here, because books assessed before this fix may carry it in
+  // whichever place their own call happened to choose.
+  {
+    const _sigs = Array.isArray(cgc.signatures) ? cgc.signatures
+      : (cgc._roboGrade && Array.isArray(cgc._roboGrade.signatures)) ? cgc._roboGrade.signatures
+      : null;
+    if (_sigs) formData.signatures = _sigs.filter(x => x && typeof x === "object");
+  }
   if (cgc._roboGrade) {
     formData.roboGrade = cgc._roboGrade;
     formData.roboGradeId = generateRoboId();
@@ -11905,7 +11928,7 @@ function renderForm() {
     const sigImgs = formData.signatureImages || [ null, null ];
     const sigGhosts = ["assets/ghosts/Signature_1.webp", "assets/ghosts/Signature_2.webp"];
     const signerLabel = formatSignerList(formData);
-    return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a6abf">\n            <div style="font-size:11px;color:#a08fd4;font-weight:700;letter-spacing:2px;margin-bottom:4px">SIGNATURE MACROS</div>\n            <div style="font-size:11px;color:#9a8aaa;margin-bottom:10px;line-height:1.5">\n              ${signerLabel ? `Identified: <strong style="color:#c8b4ff">${esc(signerLabel)}</strong>. Add close-up photos for buyer inspection — optional, two slots available.` : `Signature${getSignatures(formData).length > 1 ? "s" : ""} identified on this book. Add close-up photos for buyer inspection — optional, two slots available.`}\n            </div>\n            <div style="display:flex;flex-direction:column;gap:8px">\n              ${[ 0, 1 ].map(i => {
+    return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a6abf">\n            <div style="font-size:11px;color:#a08fd4;font-weight:700;letter-spacing:2px;margin-bottom:4px">SIGNATURE MACROS</div>\n            <div style="font-size:11px;color:#9a8aaa;margin-bottom:10px;line-height:1.5">\n              ${`Signature${getSignatures(formData).length > 1 ? "s" : ""} detected on this book. Add close-up photos for buyer inspection — optional, two slots available.`}\n            </div>\n            <div style="display:flex;flex-direction:column;gap:8px">\n              ${[ 0, 1 ].map(i => {
       const img = sigImgs[i];
       return img ? `<div class="drag-slot" style="height:auto;position:relative;overflow:visible" onclick="tapSlot(${i},'signature')">\n                      <img src="${img}" style="display:block;width:100%;height:auto;border-radius:inherit">\n                      <button class="slot-edit" onclick="event.stopPropagation();openCropper('signature',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>\n                      <button class="slot-x" onclick="event.stopPropagation();removeSignatureImg(${i})">×</button>\n                     </div>` : `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:2/1;position:relative;overflow:hidden" onclick="tapSlot(${i},'signature')">\n                      ${sigGhosts[i] ? `<img src="${sigGhosts[i]}" alt="" loading="lazy" decoding="async" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.7;pointer-events:none">` : ""}\n                      <div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:8px;left:10px;background:rgba(255,255,255,0.82);color:#1a1a1a;padding:3px 8px;border-radius:4px;text-align:left"><span style="display:block;font-size:11px;font-weight:800;letter-spacing:0.4px;text-transform:uppercase">SIGNATURE ${i + 1}</span><span style="display:block;font-size:9px;font-weight:600;opacity:0.7;margin-top:1px">Tap to add</span></span></div>\n                     </div>`;
     }).join("")}\n            </div>\n            <input id="signature-photo-input" type="file" accept="image/*" multiple onchange="handleSignatureImages(event)" style="display:none">\n          </div>\n        `;
