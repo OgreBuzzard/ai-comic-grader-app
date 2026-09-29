@@ -62,21 +62,53 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).json({ error: 'GET (whoami) or POST only' });
 
   // Admin only. This spends model budget and is not a product feature.
+  //
+  // WHY THE FAILURES ARE SPELLED OUT. The first run of this endpoint died on a
+  // bare 401 and there was no way to tell a truncated token from an expired one
+  // from an empty ADMIN_EMAILS on this Vercel project — three different fixes
+  // behind one status code. Every branch below names itself.
+  let whoami;
   try {
     const m = (req.headers.authorization || '').match(/^Bearer\s+(.+)$/);
-    if (!m) return res.status(401).json({ error: 'auth required' });
+    if (!m) return res.status(401).json({ error: 'auth required', reason: 'no_bearer', detail: 'No Authorization: Bearer header on the request.' });
+    const tok = m[1].trim();
+    // A Firebase ID token is a 3-part JWT and runs ~900 characters. A short or
+    // 2-part value is a copy that got truncated out of the console, which is
+    // otherwise indistinguishable from an expired one.
+    const parts = tok.split('.');
+    if (parts.length !== 3) return res.status(401).json({ error: 'auth failed', reason: 'malformed_token', detail: 'Token has ' + parts.length + ' dot-separated parts, expected 3. This is a truncated or partial copy, not an expired token.' });
+    if (tok.length < 400) return res.status(401).json({ error: 'auth failed', reason: 'truncated_token', detail: 'Token is ' + tok.length + ' characters; a Firebase ID token is ~900. Partial copy.' });
+    if (!process.env.FIREBASE_SERVICE_ACCOUNT) return res.status(500).json({ error: 'server misconfigured', reason: 'no_service_account', detail: 'FIREBASE_SERVICE_ACCOUNT is not set on this deployment.' });
+
     const { initializeApp, getApps, cert } = await import('firebase-admin/app');
     const { getAuth } = await import('firebase-admin/auth');
     if (!getApps().length) initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
-    const decoded = await getAuth().verifyIdToken(m[1]);
+
+    let decoded;
+    try { decoded = await getAuth().verifyIdToken(tok); }
+    catch (e) {
+      const msg = String(e && e.message || e);
+      const expired = /expired/i.test(msg);
+      return res.status(401).json({
+        error: 'auth failed',
+        reason: expired ? 'expired_token' : 'verify_failed',
+        detail: expired ? 'Token expired — they last about an hour. Get a fresh one.' : msg
+      });
+    }
     const email = String(decoded.email || '').toLowerCase();
-    if (!ADMINS.length || !ADMINS.includes(email)) return res.status(403).json({ error: 'admin only' });
+    whoami = { email, uid: decoded.uid, isAdmin: ADMINS.includes(email), adminsConfigured: ADMINS.length };
+    if (!ADMINS.length) return res.status(403).json({ error: 'admin only', reason: 'no_admin_list', detail: 'ADMIN_EMAILS is not set on THIS Vercel project. The token is fine. Note every other use of that variable is under admin/, which is a different deployment.', ...whoami });
+    if (!whoami.isAdmin) return res.status(403).json({ error: 'admin only', reason: 'not_in_admin_list', detail: 'Signed in as ' + email + ', which is not in ADMIN_EMAILS on this project.', ...whoami });
   } catch (e) {
-    return res.status(401).json({ error: 'auth failed', detail: String(e && e.message || e) });
+    return res.status(500).json({ error: 'auth check crashed', detail: String(e && e.message || e) });
   }
+
+  // GET = whoami. Costs nothing and calls no model: use it to prove the token
+  // and the admin gate before spending a round on them.
+  if (req.method === 'GET') return res.status(200).json({ ok: true, ...whoami, version: ROBOGRADE_VERSION });
 
   const { question = 'tape', images = [], perImage = false, label = '', model = null } = req.body || {};
   const prompt = QUESTIONS[question];

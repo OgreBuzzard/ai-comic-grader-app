@@ -1,5 +1,8 @@
 {
   "functions": {
+    "api/probe.js": {
+      "maxDuration": 120
+    },
     "api/assess.js": {
       "maxDuration": 60
     },
