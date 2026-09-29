@@ -487,10 +487,15 @@
       transition: none !important;
       transform: translateX(-100%) !important;
     }
-    /* v5.29: the END-OF-SCAN reveal. The cover must ALREADY be in place when the
-       progress modal slides away — no movement of its own. `.in-view` animates
-       from translateX(-100%), which made the cover slide in underneath the
-       departing modal; this puts it there instantly instead. */
+    /* v5.30: the END-OF-SCAN reveal. The cover must ALREADY be in place when the
+       progress modal slides away — no movement of its own. The "in-view" class
+       animates from translateX(-100%), which made the cover slide in underneath
+       the departing modal; this puts it there instantly instead.
+       NOTE: this whole CSS block is a JS TEMPLATE LITERAL. Never use a backtick
+       here, not even to quote a class name in a comment — it terminates the
+       literal, the rest of the CSS becomes executable expressions, and the module
+       throws at LOAD time while still passing "node --check". That is exactly how
+       5.29 shipped with scan-animation.js dead. */
     .rg-scan-photo.reveal-now {
       transition: none !important;
       transform: translateX(0) !important;
