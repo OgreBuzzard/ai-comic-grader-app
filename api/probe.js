@@ -110,7 +110,12 @@ export default async function handler(req, res) {
   // and the admin gate before spending a round on them.
   if (req.method === 'GET') return res.status(200).json({ ok: true, ...whoami, version: ROBOGRADE_VERSION });
 
-  const { question = 'tape', images = [], perImage = false, label = '', model = null } = req.body || {};
+  // `effort` is a knob, not a constant, because of Fable. Claude Fable 5.1 has
+  // adaptive thinking always on and a DEFAULT EFFORT OF HIGH; pinning it to the
+  // 'low' that grading ships would be measuring a configuration Fable has never
+  // run in, which is the opposite of reproducing what it saw. Pass
+  // effort: null to send no override and let each model use its own default.
+  const { question = 'tape', images = [], perImage = false, label = '', model = null, effort = 'low', maxTokens = 4096 } = req.body || {};
   const prompt = QUESTIONS[question];
   if (!prompt) return res.status(400).json({ error: 'unknown question', known: Object.keys(QUESTIONS) });
   if (!Array.isArray(images) || !images.length) return res.status(400).json({ error: 'no images' });
@@ -125,12 +130,17 @@ export default async function handler(req, res) {
   });
 
   async function ask(imgs, tag) {
+    // max_tokens is 4096, not the 1024 this started at. On a thinking model the
+    // reasoning is drawn from the same budget, so a tight cap can burn the whole
+    // allowance before a single character of the JSON is emitted — which arrives
+    // here as an empty/unparsed result and reads like a refusal. The answer is
+    // ~80 tokens; the headroom costs nothing unless it is used.
     const body = {
       model: useModel,
-      max_tokens: 1024,
-      output_config: { effort: 'low' },
+      max_tokens: maxTokens,
       messages: [ { role: 'user', content: [ ...imgs.map(block), { type: 'text', text: prompt } ] } ]
     };
+    if (effort) body.output_config = { effort };
     const t0 = Date.now();
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -146,6 +156,7 @@ export default async function handler(req, res) {
     return {
       tag,
       ms: Date.now() - t0,
+      stopReason: j.stop_reason || null,
       inputTokens: j.usage ? j.usage.input_tokens : null,
       outputTokens: j.usage ? j.usage.output_tokens : null,
       parsed,
@@ -157,7 +168,7 @@ export default async function handler(req, res) {
     const results = perImage
       ? await Promise.all(images.map((img, i) => ask([ img ], 'image' + (i + 1))))
       : [ await ask(images, 'all' + images.length) ];
-    return res.status(200).json({ question, label, model: useModel, version: ROBOGRADE_VERSION, perImage, results });
+    return res.status(200).json({ question, label, model: useModel, effort: effort || null, version: ROBOGRADE_VERSION, perImage, results });
   } catch (e) {
     return res.status(500).json({ error: 'probe failed', detail: String(e && e.message || e) });
   }
