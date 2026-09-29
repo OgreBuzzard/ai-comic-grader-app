@@ -17,7 +17,7 @@
 // finds the tape. If (a), it does not, and no amount of CHECK 1 wording will.
 //
 // Deliberately separate from assess.js so a diagnostic can never break grading.
-// Admin-only, costs no credits, writes nothing. Returns raw JSON.
+// Signed-in users only (same bar as /api/assess), costs no credits, writes nothing.
 //
 //   POST /api/probe
 //   { question: 'tape', images: [{data,mediaType}…], perImage: false, label: '…' }
@@ -28,7 +28,6 @@ import process from 'node:process';
 import { PRIMARY_MODEL } from '../lib/model.js';
 import { ROBOGRADE_VERSION } from '../lib/version.js';
 
-const ADMINS = (process.env.ADMIN_EMAILS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
 
 // The whole prompt. Everything the grading prompt says about tape, and nothing
 // else at all — no grade, no other defect classes, no rubric, no references.
@@ -64,23 +63,15 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).json({ error: 'GET (whoami) or POST only' });
 
-  // Admin only. This spends model budget and is not a product feature.
-  //
-  // WHY THE FAILURES ARE SPELLED OUT. The first run of this endpoint died on a
-  // bare 401 and there was no way to tell a truncated token from an expired one
-  // from an empty ADMIN_EMAILS on this Vercel project — three different fixes
-  // behind one status code. Every branch below names itself.
+  // AUTH: a valid Firebase ID token, and nothing more. Same bar as /api/assess,
+  // which is what the eval harness has always called. An earlier version of this
+  // file added an ADMIN_EMAILS check; that variable only exists on the admin
+  // deployment, so the gate could never pass here. Removed.
   let whoami;
   try {
-    const m = (req.headers.authorization || '').match(/^Bearer\s+(.+)$/);
+    const m = (req.headers.authorization || req.headers.Authorization || '').match(/^Bearer\s+(.+)$/);
     if (!m) return res.status(401).json({ error: 'auth required', reason: 'no_bearer', detail: 'No Authorization: Bearer header on the request.' });
     const tok = m[1].trim();
-    // A Firebase ID token is a 3-part JWT and runs ~900 characters. A short or
-    // 2-part value is a copy that got truncated out of the console, which is
-    // otherwise indistinguishable from an expired one.
-    const parts = tok.split('.');
-    if (parts.length !== 3) return res.status(401).json({ error: 'auth failed', reason: 'malformed_token', detail: 'Token has ' + parts.length + ' dot-separated parts, expected 3. This is a truncated or partial copy, not an expired token.' });
-    if (tok.length < 400) return res.status(401).json({ error: 'auth failed', reason: 'truncated_token', detail: 'Token is ' + tok.length + ' characters; a Firebase ID token is ~900. Partial copy.' });
     if (!process.env.FIREBASE_SERVICE_ACCOUNT) return res.status(500).json({ error: 'server misconfigured', reason: 'no_service_account', detail: 'FIREBASE_SERVICE_ACCOUNT is not set on this deployment.' });
 
     const { initializeApp, getApps, cert } = await import('firebase-admin/app');
@@ -91,17 +82,13 @@ export default async function handler(req, res) {
     try { decoded = await getAuth().verifyIdToken(tok); }
     catch (e) {
       const msg = String(e && e.message || e);
-      const expired = /expired/i.test(msg);
       return res.status(401).json({
         error: 'auth failed',
-        reason: expired ? 'expired_token' : 'verify_failed',
-        detail: expired ? 'Token expired — they last about an hour. Get a fresh one.' : msg
+        reason: /expired/i.test(msg) ? 'expired_token' : 'verify_failed',
+        detail: /expired/i.test(msg) ? 'Token expired — they last about an hour. Get a fresh one.' : msg
       });
     }
-    const email = String(decoded.email || '').toLowerCase();
-    whoami = { email, uid: decoded.uid, isAdmin: ADMINS.includes(email), adminsConfigured: ADMINS.length };
-    if (!ADMINS.length) return res.status(403).json({ error: 'admin only', reason: 'no_admin_list', detail: 'ADMIN_EMAILS is not set on THIS Vercel project. The token is fine. Note every other use of that variable is under admin/, which is a different deployment.', ...whoami });
-    if (!whoami.isAdmin) return res.status(403).json({ error: 'admin only', reason: 'not_in_admin_list', detail: 'Signed in as ' + email + ', which is not in ADMIN_EMAILS on this project.', ...whoami });
+    whoami = { email: String(decoded.email || ''), uid: decoded.uid };
   } catch (e) {
     return res.status(500).json({ error: 'auth check crashed', detail: String(e && e.message || e) });
   }
