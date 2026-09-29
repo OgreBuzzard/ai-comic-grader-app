@@ -3071,7 +3071,12 @@ function renderItemDetail(it) {
           <div class="label">Assessed Front Cover</div>
           ${it.images[0] ? `<img src="${escapeAttr(it.images[0])}" alt="" loading="lazy">` : '<div class="empty">No front cover</div>'}
         </div>
-        <div class="img-wrap adaptive" data-albref="1" style="border:2px solid #2f9e44;border-radius:6px" onclick="openAdminLightbox('${escapeAttr(it.referenceImageUrl)}')">
+        <!-- v5.27: reference covers do NOT open the lightbox. Nobody inspects a
+             reference scan up close; it is here to show the book WAS compared.
+             (The assessed-cover cells beside them still open the reel: they are
+             excluded from _albList by data-albref, but their URL is found in the
+             main image grid, so the lightbox lands on the right frame.) -->
+        <div class="img-wrap adaptive" data-albref="1" style="border:2px solid #2f9e44;border-radius:6px;cursor:default">
           <div class="label">${it.referenceVolume === 'Local reference' ? ('Local Reference' + (it.referenceBackImageUrl ? ' (Front)' : '')) : 'ComicVine Reference'}${(it.referenceVolume !== 'Local reference' && it.referenceYear) ? ' (' + escapeHtml(String(it.referenceYear)) + ')' : ''}</div>
           <img src="${escapeAttr(it.referenceImageUrl)}" alt="" loading="lazy">
         </div>
@@ -3080,7 +3085,7 @@ function renderItemDetail(it) {
           <div class="label">Assessed Back Cover</div>
           ${it.images[1] ? `<img src="${escapeAttr(it.images[1])}" alt="" loading="lazy">` : '<div class="empty">No back cover</div>'}
         </div>
-        <div class="img-wrap adaptive" data-albref="1" style="border:2px solid #2f9e44;border-radius:6px" onclick="openAdminLightbox('${escapeAttr(it.referenceBackImageUrl)}')">
+        <div class="img-wrap adaptive" data-albref="1" style="border:2px solid #2f9e44;border-radius:6px;cursor:default">
           <div class="label">${it.referenceVolume === 'Local reference' ? 'Local Reference (Back)' : 'Reference Back'}</div>
           <img src="${escapeAttr(it.referenceBackImageUrl)}" alt="" loading="lazy">
         </div>` : ''}

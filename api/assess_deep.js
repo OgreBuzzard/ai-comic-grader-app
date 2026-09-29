@@ -355,6 +355,10 @@ The corner macros are the highest-resolution view you have; structural
 defects that escaped the wide shots are most likely to appear here.
 
   CHECK 1 — TAPE. THE DECISIVE TEST IS GEOMETRY: tape has STRAIGHT, PARALLEL, MACHINE-CUT edges; damage does not. In the macros, look at the inner edge (spine side) and any portion of the spine visible at the corner. A band bounded by a ruler-straight line, running continuously, with a smoother surface than surrounding paper — TAPE, not stress lines, not creases, not soiling. Aged tape may also show regular horizontal cracks. Straight edge overrides every other interpretation.
+  ONE EDGE, NOT TWO: spine tape usually shows only ONE straight edge. The strip runs along the very edge of the cover, so its outer edge coincides with the book's edge and never appears as a separate line — you get the INNER edge alone, a single ruled line parallel to the spine. In a corner macro that reads as a band of different tone and surface occupying the inner (spine-side) portion of the frame, bounded by one straight line. Do not dismiss it as the margin.
+  MIRRORED ACROSS THE COVERS: one strip over the spine wraps the fold and lands on both covers. The top-left and bottom-left macros, and the top-right and bottom-right macros, are taken from opposite faces of the same book, so THE SPINE SIDE APPEARS ON OPPOSITE SIDES IN MACROS OF DIFFERENT COVERS. Locate the spine side by the FOLD — a creased, rounded edge — not by assuming a side. A band at the spine side of macros from both covers confirms tape.
+  CRACKING MEANS LOOK DEEPER: regular horizontal cracks across a spine-side band are usually the paper splitting UNDERNEATH the tape — the reason the tape was applied. Where you see that, inspect for a spine split or detaching cover and record it separately as a deepAddition; the tape is often repairing structural damage that must also be graded.
+  TANNING IS NOT TAPE: a soft-edged discolouration at the OUTER edge is light exposure from sitting in a stack. Tape is at the spine, and its boundary is ruled. Never upgrade tanning to tape.
 
   CHECK 2 — PAPER LOSS / MISSING PIECE. Three tells, any one confirms it: (a) the cover silhouette is broken — a chunk of the corner outline is absent, with a jagged torn edge; (b) within the cover, printed artwork ends at a hard ragged line and beyond it a mismatched field is visible (interior page showing through a hole); (c) BROKEN PRINTED SHAPES — a known regular shape on the cover is no longer regular, OR a printed letter is incomplete (a circle with a jagged bite, a logo with a ragged interruption, an H missing its right vertical). Comics are printed mechanically; any irregular interruption of a regular printed shape is paper that has torn off. Not blunting, not edge wear, not soiling.
 
@@ -375,6 +379,13 @@ Two interior-cover photos are provided: the inside front cover + first page, and
   • Foxing (small brown spots), stains, or moisture marks
   • Tears, chips, or writing on the inside covers / first-last pages
 Report only what is actually visible. If the interior covers are clean, say nothing and leave the Interior sub-score unchanged.
+
+  CROSS-REFERENCE TO THE EXTERIOR — THE SECOND JOB OF THESE PHOTOS. An interior-cover photo is the REVERSE SIDE of an exterior cover you already catalogued. That makes it evidence about the OUTSIDE of the book, not only about the inside, and it is the only pass that can settle three calls the initial assessment has to guess at. Findings here MAY revise an initial-catalogue defect - that is not overreach, it is the added information you were given these photos for.
+    (a) TEAR vs PIECE OUT. A tear is split paper still attached; a piece out is paper GONE. Material missing from the cover is missing from BOTH of its sides. So: if the interior photo shows a chunk absent from the edge of the inside cover, the same chunk is absent from the exterior cover, and any defect the initial pass logged there as a "Tear" must be RE-NAMED "Piece out" / "Missing piece" with the same or higher severity - a piece out is the more serious defect because material is gone. Do not merely mention the chunk in prose while leaving the exterior defect filed as a tear; correct the entry. (Observed failure: a Deep wrote "the interior photos reveal chunks torn from the outer edges of the first and last pages" and left a 1" HIGH Tear on the back cover unchanged. The chunks WERE the piece out.)
+    (b) APPLIED INK / COLOUR TOUCH. Ink applied to a cover edge to hide chipping frequently runs past the cover onto the first or last page beneath it. A band or patch of ink on an interior page that (i) does not belong to any printed element on that page, (ii) sits at an edge, and (iii) matches the colour of the adjacent exterior cover area, is APPLIED INK - amateur colour touch. Because it is on the page rather than the cover, it is unambiguous: printed interior pages do not carry solid ink bands along their trimmed edges. Log it and treat it per the RESTORATION INFERENCE rules.
+    (c) INKED-OVER DEFECTS ON THE COVER. The inside front cover is the reverse of the FRONT cover. Blotches of ink on the inside front cover that have no printed source there correspond POSITION-FOR-POSITION to places on the front cover where colour-breaking defects may have been inked over. Where an interior blotch lines up with a dark printed field on the front, treat that front-cover area as suspect colour touch rather than intact art. This determination CANNOT be made from the front cover alone, which is why it belongs here.
+  ORIENTATION WARNING: an interior cover is the MIRROR of its exterior. A feature at one side of the interior photo is at the OTHER side of the exterior photo. Locate positions by the FOLD (the spine, a creased edge) and by the distance from the top or bottom edge - never by assuming a side matches between the two images.
+  WHEN THIS FIRES, THE GRADE MOVES. A tear re-named as a piece out, or applied ink found, is new structural or restoration information: tag the corrected or added defect deepAddition: true and let the score fall accordingly.
   PAGE-QUALITY REFINEMENT — THE DEFAULT IS **NO CHANGE**. Start from the position that the initial page-quality call is CORRECT and that you will not move it. Paper stock is uniform through a comic: it was printed on one roll, so the first and last pages are made of the SAME paper as the centerfold the initial pass judged. Consistent page quality throughout a book is the normal, expected finding — agreeing with the initial call is the right answer on the large majority of books, not a failure to add value.
   BEWARE THE FIRST/LAST-PAGE TRAP: the pages nearest the covers sit against the cover stock and are the most exposed to light and handling, so they very often photograph a shade warmer than the interior WITHOUT the book's actual page quality being lower. Edge-of-block warming at the wrap pages is NOT a page-quality downgrade. Do not read it as one.
   You may move page quality ONLY when ALL of the following hold: (1) you are judging a matte interior story/text PAGE — IGNORE every GLOSSY advertising/insert page, which photographs differently and is not the page-quality substrate; (2) the difference is UNMISTAKABLE at a glance, not a judgement call between neighbouring tiers; (3) it is not explained by the edge-warming described above, by lighting, or by the photo's white balance; and (4) it would still be obvious to a grader holding the book. If you find yourself reasoning your way toward a lower tier, that is the signal to LEAVE IT UNCHANGED.
@@ -402,7 +413,9 @@ ${PHOTOGRADER_RUBRIC_CLOSEUP}
 ## PHASE 4 — CONFIRM THE REVISED GRADE AGAINST GRADE-REFERENCE IMAGES
 Recompute the RoboGrade score (Front + Back + Spine + Interior) and map it to a CGC grade. You are also given a set of GRADE-REFERENCE IMAGES — real graded comics bracketing the initial grade, each labeled with its CGC grade and a one-line condition note, in ascending order. Use them as a calibrated yardstick:
   • Find the reference whose OVERALL cover condition the book being graded most closely matches.
-  • The predicted grade may move UP or DOWN by up to 2 grade positions from the initial, based on that comparison. Downward movement is the more common outcome when the macros surfaced new defects; upward movement requires the cover to clearly match a cleaner reference.
+  • The predicted grade may move UP or DOWN by up to 2 grade positions from the initial, based on that comparison.
+  • IF YOU LOWER THE GRADE, SAY WHY IN "gradeRevisionReason" — one plain sentence naming what drove it (e.g. "the cover matches the 2.0 reference rather than the 3.0: the spine and lower edge are in comparable condition"). A downward revision with no stated reason is DISCARDED by the server and the initial grade is restored, so an unexplained drop is wasted work. An UPWARD revision needs no entry. This is not a licence to lower grades: you are expected to raise them as often as you lower them, and a Deep pass that always grades down is a broken pass. Move the grade only where the evidence in front of you actually warrants it.
+  • IF YOU RE-CLASSIFY AN EXISTING DEFECT rather than finding a new one — most often a "Tear" that the interior photos show is really a "Piece out" — set "revisionReason" on that defect entry saying what changed it. A re-classified defect is not a deepAddition (it is not new), but it MUST be able to move the grade, so this field is what lets it. Downward movement is the more common outcome when the macros surfaced new defects; upward movement requires the cover to clearly match a cleaner reference.
   • If, after removing any disproven defects, the book has NO remaining grade-limiting defect — all four corners crisp with intact ink, spine tight with no ticks or color breaks, and (when provided) interior covers clean — do NOT hold it at the initial grade out of caution. Grade the now-clean book on its merits against the references, up to 9.8; a book with zero confirmed defects is not a 9.4 by default. Reserve grades below 9.6 for a book with an actual remaining defect you can name and point to.
   • Also read the candidate grade's tier definition plus one grade above and one below to confirm the fit.
   • NEVER name, number, identify, or describe any specific reference comic in your output. The references are an internal yardstick only. If the grade is revised you may say the reference comparison supported it, WITHOUT naming any comic. Never write this into aiAssessment, which is frozen.
@@ -443,6 +456,7 @@ JSON shape (same as initial assessment, with deepAddition tags on new defects):
   "gateResult": "COMIC",
   "sameBook": true,
   "mismatchReason": "",
+  "gradeRevisionReason": "",
   "title": "${initialAssessment.title || ''}",
   "issue": "${initialAssessment.issue || ''}",
   "issueDate": "${initialAssessment.issueDate || ''}",
@@ -466,14 +480,18 @@ JSON shape (same as initial assessment, with deepAddition tags on new defects):
     "interiorScore": ${hasInteriorCovers ? 0 : (initialRG.interiorScore == null ? 'null' : initialRG.interiorScore)},
     "pageQuality": "${initialRG.pageQuality || ''}",
     "defects": [
-      {"type":"","location":"","measurement":"","severity":"Med","colorBreaking":false,"category":"Front","deepAddition":false}
-    ]
+      {"type":"","location":"","measurement":"","severity":"Med","colorBreaking":false,"category":"Front","deepAddition":false,"revisionReason":""}
+    ],
+    "restorationFlags": ${JSON.stringify(Array.isArray(initialRG.restorationFlags) ? initialRG.restorationFlags : [])}
   },
   "photograder": { "focus": "A", "lighting": "A", "flags": [ {"category":"focus","image":"Top-Left Corner","note":"blurry"} ] }
 }
 
+RESTORATION (v5.27): restoration is a property of the BOOK, not of any one pass, and the Deep photos see things the cover shots cannot. Carry forward every entry already in restorationFlags above — never drop one — and APPEND anything this pass supports. What a Deep is placed to catch: LEAF CASTING or paper-pulp fill and ADDED/REPLACED PIECES visible from the interior cover (a filled area reads as a patch of paper whose tone, fibre or thickness differs from the sheet around it, often with a visible boundary the printing does not explain); reinforcement or backing material; amber/brown adhesive; an interior cover implausibly clean or bright against genuine age elsewhere. Name the technique when the evidence supports one ("leaf casting, lower front corner", "piece added, back cover spine-side"). Flag ONLY when you are confident — and NEVER state or imply that a book is UNrestored. Absence of visible restoration in these photos is not evidence of absence: much restoration is invisible in ordinary light, and a clean Deep says nothing either way. An empty array means "nothing seen here", never "nothing there".
+
 HARD OUTPUT LIMITS:
   • defects array: MAX 10 entries (initial + new deep additions combined)
+  • restorationFlags: MAX 8 entries, each a short phrase naming what and where
   • aiAssessment: OMIT this field entirely — do NOT output it. The first-pass write-up is preserved unchanged by the client; regenerating it wastes tokens and risks altering the frozen record. ALL Deep observations and the confirm/revise note go in deepAssessment ONLY.
 `;
 
@@ -1053,24 +1071,62 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
     // S15 May 30: the floor rule and grade-stamp logic below are DEEP-only.
     // Restoration mode produces a restorationReport, not a grade, so skip them.
     if (!isRestoration) {
-      // FLOOR RULE: revised grade may not go BELOW the initial unless the model
-      // explicitly flagged a new defect. If no defect entry has deepAddition: true
-      // and the revised grade is lower, restore the initial grade and sub-scores.
-      const hasDeepAddition = Array.isArray(parsed.roboGrade?.defects)
-        && parsed.roboGrade.defects.some(d => d && d.deepAddition === true);
+      // FLOOR RULE — WIDENED. A revised grade may not go BELOW the initial
+      // unless Deep can NAME A REASON. It used to accept exactly one reason: a
+      // defect tagged deepAddition: true.
+      //
+      // That was too narrow, and it fought the prompt. PHASE 4 explicitly invites
+      // Deep to move the grade up to two positions in either direction based on
+      // the grade-reference comparison — and this rule then deleted every
+      // downward move of that kind, because "this cover matches the 2.0
+      // reference, not the 3.0" is not a defect entry. A page-quality exemption
+      // had already been bolted on for the same reason. Two exemptions to a rule
+      // is the rule being wrong.
+      //
+      // It is now: an EXPLAINED drop stands, an UNEXPLAINED drop is reverted.
+      // Four things count as an explanation:
+      //   1. a new defect (deepAddition: true)          - as before
+      //   2. a page-quality refinement                   - as before
+      //   3. a CORRECTED defect (revisionReason)         - new
+      //   4. a stated grade-reference comparison         - new
+      //
+      // (3) matters because of the interior cross-reference added to PHASE 2.5:
+      // re-naming a "Tear" as a "Piece out" is not a NEW defect, it is the same
+      // defect correctly identified as the more serious one, and it must be able
+      // to lower the grade.
+      //
+      // The rule is kept, not removed, and the reason is behavioural rather than
+      // technical: Deep has to be as likely to raise a grade as to lower it. A
+      // second look always finds something, so without a floor Deep would ratchet
+      // downward on every book, and a revision pass users learn to distrust is
+      // worse than no revision pass. The floor is what keeps it a genuine
+      // correction rather than a penalty.
+      const _defs = Array.isArray(parsed.roboGrade?.defects) ? parsed.roboGrade.defects : [];
+      const hasDeepAddition = _defs.some(d => d && d.deepAddition === true);
+      // A defect the model re-classified rather than newly found.
+      const hasRevision = _defs.some(d => d && typeof d.revisionReason === 'string' && d.revisionReason.trim().length > 3);
+      // A stated reference comparison. Requires actual prose - an empty string or
+      // a bare "confirmed" is not a reason to move a grade.
+      const _revText = String(parsed.gradeRevisionReason || '').trim();
+      const hasStatedComparison = _revText.length >= 12;
       // S25: a genuine page-quality refinement (interior covers) may move the grade
       // in either direction — treat it like a deepAddition so the floor rule below
       // doesn't undo a legitimate PQ-driven decrease.
       const _pqRefined = hasInteriorCovers
         && String((parsed.roboGrade && parsed.roboGrade.pageQuality) || '').trim().toLowerCase()
            !== String(initialRG.pageQuality || '').trim().toLowerCase();
-      if (!hasDeepAddition && !_pqRefined && initialRG && initialRG.score != null && parsed.roboGrade) {
+      const _explained = hasDeepAddition || _pqRefined || hasRevision || hasStatedComparison;
+      if (!_explained && initialRG && initialRG.score != null && parsed.roboGrade) {
         if ((Number(parsed.roboGrade.score) || 0) < Number(initialRG.score)) {
           parsed.roboGrade.score = initialRG.score;
           parsed.roboGrade.frontScore = initialRG.frontScore;
           parsed.roboGrade.spineScore = initialRG.spineScore;
           parsed.grade = initialAssessment.grade || parsed.grade;
+          parsed.roboGrade._floorReverted = true;   // logged so the rate is measurable
+          console.log('[deep-floor] unexplained drop reverted');
         }
+      } else if (!hasDeepAddition && !_pqRefined && (hasRevision || hasStatedComparison)) {
+        console.log('[deep-floor] drop allowed: ' + (hasRevision ? 'corrected defect' : 'reference comparison'));
       }
 
       // S22 (Matt): PAGE QUALITY MUST NOT MOVE THE PREDICTED GRADE.
@@ -1165,6 +1221,68 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
           interiorScore: (parsed && parsed.roboGrade) ? parsed.roboGrade.interiorScore ?? null : null,
           pageQuality: (parsed && parsed.roboGrade && parsed.roboGrade.pageQuality) || (parsed && parsed.pageQuality) || null,
           gradeChanged: (initialAssessment.grade || null) !== (parsed.grade || null),
+          // ── REVISION TRACKING (v5.26) ───────────────────────────────────
+          // Deep must be as likely to RAISE a grade as to lower it. If users work
+          // out that it almost always moves one way, the pass stops being a
+          // correction and becomes a tax (or a giveaway), so the up/down/unchanged
+          // ratio AND the size of each move are what say whether it is working.
+          // Logged on every run from 5.26. Do NOT pool with earlier versions —
+          // the floor rule changed in 5.26.
+          //
+          // WHY NO RG NUMBER IS LOGGED HERE. The displayed RoboGrade is v3:
+          // half-points 0-10, the sum of Front 0-5 / Back 0-2 / Spine 0-2 /
+          // Interior 0/0.5/1, produced by lib/roboscore_v3.js from these raw
+          // 0-100 subscores. v1's 0-100 is the internal engine and is never
+          // surfaced. Two reasons not to log a delta on it:
+          //   1. A raw delta is in the wrong unit. -8 raw is about -0.5 to -1.0
+          //      in v3, and anyone reading the field would have to know that.
+          //   2. It would MISS the revisions that matter most. v3 caps the
+          //      displayed grade by depth - Main 9.0, Deep 9.5, Full 10 - so a
+          //      Deep on a clean book raises the SHOWN grade 9.0 -> 9.5 with the
+          //      raw score completely flat. A raw delta reads that as "no
+          //      change", which is exactly the high-grade population being
+          //      tracked. (Same trap the v3 refund check had to fix; see
+          //      SCORING_V3_SPEC.md 14.)
+          // So: log the raw subscores on BOTH sides plus the depth, and derive v3
+          // for each side offline with the real module. That stays exact, keeps
+          // the ceilings correct, and avoids a fifth inlined copy of the
+          // transform drifting from lib/roboscore_v3.js.
+          //
+          // PG needs no transform - it is already on the CGC scale - so its
+          // signed delta is logged directly and is the field to reach for first.
+          ...(function revisionStats() {
+            const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
+            const rd = (a, b) => (a == null || b == null) ? null : Math.round((b - a) * 100) / 100;
+            const pgFrom = num(initialAssessment.grade), pgTo = num(parsed.grade);
+            const _rg = parsed.roboGrade || {};
+            const _defs = Array.isArray(_rg.defects) ? _rg.defects : [];
+            return {
+              // PG, CGC scale. Signed: positive = revised UP.
+              pgFrom, pgTo, pgDelta: rd(pgFrom, pgTo),
+              // RAW v1 0-100 engine numbers, named so they cannot be mistaken for
+              // the v3 grade. Derive v3 from the subscores + depth, not from these.
+              rgRaw100From: num(initialRG && initialRG.score),
+              rgRaw100To:   num(_rg.score),
+              rawSubscoresFrom: initialRG ? {
+                front: num(initialRG.frontScore), back: num(initialRG.backScore),
+                spine: num(initialRG.spineScore), interior: num(initialRG.interiorScore),
+                pageQuality: initialRG.pageQuality || null,
+              } : null,
+              // The depth on each side is what sets the v3 ceiling (9.0 -> 9.5).
+              depthFrom: 'main',
+              depthTo: 'deep',
+              slabbed: !!initialAssessment.labelDetected,
+              gradeRevisionReason: String(parsed.gradeRevisionReason || '').slice(0, 300) || null,
+              revisedDefectCount: _defs.filter(d => d && typeof d.revisionReason === 'string' && d.revisionReason.trim().length > 3).length,
+              deepAdditionCount: _defs.filter(d => d && d.deepAddition === true).length,
+              floorReverted: !!_rg._floorReverted,
+              // The high-grade population, which is governed by the depth ceilings
+              // rather than by defect evidence and must be analysed separately.
+              // PG >= 9.0 is the reliable test here; the RG v3 >= 9.0 equivalent
+              // is derived offline from rawSubscoresFrom + depthFrom.
+              highGradeTrack: (pgFrom != null && pgFrom >= 9.0),
+            };
+          })(),
           inputTokens: _inputTokens,
           outputTokens: _outputTokens,
           cacheReadInputTokens: _cacheReadInputTokens,

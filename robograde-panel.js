@@ -166,9 +166,22 @@
         // Now: any page-quality entry drops its location outright and shows the
         // designation alone — "Page Quality - Off-White" — which is the same thing
         // the lightbox already does.
+        // v5.27 (Matt): dropping the location left the row reading a bare
+        // "Page Quality", which is worse than what it replaced — it now says
+        // nothing at all. The useful token was never in d.location; it is
+        // rg.pageQuality, the canonical call. Put THAT on the row:
+        // "Page Quality - Off-White to White". Fall back to the entry's own
+        // fields only if the canonical call is missing, so an older record
+        // still reads.
         const _isPQ = /^page\s*quality$/i.test(String(d.type || ''));
+        if (_isPQ) {
+          const _pq = String(rg.pageQuality || '').trim()
+            || String(d.measurement || '').trim()
+            || String(d.location || '').replace(/\bpages?\b/ig, '').trim();
+          if (_pq && !/^n\/a$/i.test(_pq)) detailParts.push(_pq);
+        }
         if (d.location && d.location !== 'N/A' && !_isPQ) detailParts.push(d.location);
-        if (d.measurement && d.measurement !== 'N/A') detailParts.push(d.measurement.replace(/^~\s*/, ''));
+        if (d.measurement && d.measurement !== 'N/A' && !_isPQ) detailParts.push(d.measurement.replace(/^~\s*/, ''));
         if (d.colorBreaking) detailParts.push('color breaking');
         const detailStr = detailParts.length ? ` - ${detailParts.join(', ')}` : '';
         // S15 May 28: do not fall through to 'Low' on empty severity.

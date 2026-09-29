@@ -388,8 +388,11 @@ JSON shape:
   ],
   "interiorComplete": <true | false — false only if Top/Bottom Pages show missing/married pages>,
   "trimmingSuspected": <true | false — only true with clear Outer Edge evidence>,
-  "fullAssessmentNotes": "<1-3 sentence internal summary of what the interior/structure pass found and any grade/PQ effect>"
+  "fullAssessmentNotes": "<1-3 sentence internal summary of what the interior/structure pass found and any grade/PQ effect>",
+  "restorationFlags": []
 }
+
+RESTORATION (v5.27): these 6 structural images are the only pass that can see two specific kinds of restoration, so say so when you see them. REPLACED OR RESET STAPLES — staples that are bright, unrusted, differently shaped, or sitting in torn/doubled holes on a book whose wear says otherwise; and TRIMMING — a cut outer edge, squarer and cleaner than the other edges, with no natural fray. Also flag reinforcement or backing material and married/added pages if the page photos show them. Put each as a short phrase in "restorationFlags" ("staples replaced", "outer edge trimmed"), naming what and where. Flag ONLY when confident — and NEVER state or imply the book is UNrestored: much restoration cannot be seen in ordinary light, so a clean structural pass says nothing either way. An empty array means "nothing seen here", never "nothing there". Keep trimmingSuspected as it is defined above; restorationFlags is in addition to it, not instead of it. MAX 8 entries.
 
 Rules:
 - Include a slotFindings entry for EACH of the 6 slots, in order, with brief observations.

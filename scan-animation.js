@@ -747,6 +747,24 @@
       to   { transform: translateX(0);    }
     }
 
+    /* S24 — THE REVEAL. At the end of a grading run the progress panel slides
+       back out to the RIGHT, the same direction it came in from, uncovering the
+       front-cover photo sitting in the cavity behind it. Matt watched this at
+       the Baltimore booth: people track their own book into the chest, lose the
+       thread during the progress panel, then get the grade with no picture
+       attached to it. Showing the cover and the grade in the same frame is what
+       closes the loop.
+       Same easing and duration as the slide-in so it reads as one gesture
+       reversing, not a second effect. */
+    .rg-scan-overlay.slide-out,
+    .rg-scan-boxes.slide-out {
+      animation: rgOverlaySlideOut ${OVERLAY_SLIDE_TIME}ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+    @keyframes rgOverlaySlideOut {
+      from { transform: translateX(0);    }
+      to   { transform: translateX(110%); }
+    }
+
     /* S13 v18: cycling light grid (8 frames at 250ms each). Positioned
        inside the overlay at viewport-pixel X=57, Y=91 with size 160×160
        within the overlay's 474×755 bounding box.
@@ -1508,6 +1526,7 @@
   // kind:      'main' (default) or 'corner'. Selects which slot table.
   function runScanAnimation(photoUrls, kind) {
     debugInit();
+    _revealed = false;   // S24: new run, arm the end-of-run reveal again
     debugLog(`runScanAnimation called: kind=${kind||'main'}, photos=${(photoUrls||[]).filter(Boolean).length}`);
     injectStyles();
     if (!window.__rgCoinPreloaded) { try { new Image().src = 'assets/robocoin2.webp'; window.__rgCoinPreloaded = true; } catch (e) {} }
@@ -1638,8 +1657,76 @@
   }
 
   // Expose
+  // S24 — reveal the scanned photo behind the progress panel.
+  //
+  // Slides the overlay + boxes layers back out to the right and brings the named
+  // photo back into the cavity. The laser is a SEPARATE element that is
+  // deactivated at the end of every scanPhoto() pass, so the cover comes back
+  // clean - no scan line - which is what Matt mocked up.
+  //
+  // `slotName` is the slot to bring back: 'front' for comics and batch, 'card-0'
+  // for cards. Safe to call when the element is missing (a run that was
+  // cancelled, or a caller passing a slot this sequence never had) - it still
+  // slides the panel away, because the panel going is the important half.
+  //
+  // Idempotent: a second call is ignored, so a caller that both times out and
+  // completes cannot slide the panel twice.
+  // Build a fresh, unrotated photo slot holding the stored front cover, in the
+  // same slit-to-slit wrap the scanned photos use. Deliberately NOT a reuse of
+  // an existing scanned slot: Full's first slot is a rotated capture that paints
+  // through a child <img> with its own transform, and re-pointing that at a
+  // portrait cover would show it sideways.
+  function buildRevealPhoto(url) {
+    const display = document.getElementById('rg-scan-display');
+    if (!display) return null;
+    const wrap = document.createElement('div');
+    wrap.className = 'rg-scan-slot-wrap';
+    const photo = document.createElement('div');
+    photo.className = 'rg-scan-photo';
+    photo.id = 'rg-scan-photo-reveal';
+    photo.style.backgroundImage = 'url("' + String(url).replace(/"/g, '\\"') + '")';
+    wrap.appendChild(photo);
+    display.appendChild(wrap);
+    photo.offsetHeight;   // force layout so the transition runs from -100%
+    return photo;
+  }
+
+  let _revealed = false;
+  function revealScannedPhoto(slotName, delayMs, coverUrl) {
+    if (_revealed) return;
+    _revealed = true;
+    const go = () => {
+      const overlay = document.querySelector('.rg-scan-overlay');
+      const boxes   = document.querySelector('.rg-scan-boxes');
+      [overlay, boxes].forEach(el => {
+        if (!el) return;
+        el.classList.remove('slide-in');   // both are `forwards`; leaving slide-in
+        el.classList.add('slide-out');     // on would fight the out animation
+      });
+      if (overlay) overlay.style.pointerEvents = 'none';
+      // Deep and Full never SCAN a front cover - their sequences are the four
+      // corner macros and the interior covers (SLOTS_DEEP / SLOTS_FULL above).
+      // But they can't run at all unless the book already has a stored front
+      // cover, so the caller passes that URL and we build a slot for it here.
+      // Every sequence therefore ends on the same image: the book's cover.
+      let photoEl = slotName ? document.getElementById('rg-scan-photo-' + slotName) : null;
+      if (!photoEl && coverUrl) photoEl = buildRevealPhoto(coverUrl);
+      if (!photoEl) photoEl = document.querySelector('.rg-scan-photo');
+      if (photoEl) {
+        photoEl.classList.remove('out-view', 'reset');
+        photoEl.classList.add('in-view');
+      } else {
+        debugLog('revealScannedPhoto: no photo element at all (slot ' + slotName + ')');
+      }
+      debugLog('revealScannedPhoto: panel out, slot=' + slotName);
+    };
+    if (delayMs > 0) setTimeout(go, delayMs); else go();
+  }
+
   window.RobograderScan = {
     runScanAnimation,
+    revealScannedPhoto,
+    _resetReveal: () => { _revealed = false; },
     slideTrackerIntoCavity,
     slideOverlayIntoChest,
     slideResultsIntoPanel,
