@@ -218,6 +218,7 @@ export default async function handler(req, res) {
     issueNumber = '',
     interiorImages = [],          // 6 images (S20 #36), ORDER MATCHES slotKeys (or default FULL_SLOTS)
     slotKeys = null,              // client's slot order for these images
+    binding = 'saddle',           // v5.28: 'saddle' | 'square' | 'none' — decided by the Main pass
     labelDetected = false,
     initialAssessmentComplete = false,
     deepAssessmentComplete = false,
@@ -258,12 +259,33 @@ export default async function handler(req, res) {
     });
   }
 
-  // Eligibility check 4: exactly 6 images, in slot order.
-  if (!Array.isArray(interiorImages) || interiorImages.length !== FULL_SLOT_COUNT) {
+  // Eligibility check 4: one image per NAMED slot. v5.28: the count is no longer
+  // fixed at 6 — a square-bound book drops the interior staple macro (its staples
+  // are folded inside the block and cannot be photographed without forcing the
+  // covers open) and a glue-bound book drops all three staple slots. The client
+  // sends the slot keys it actually shot, so validate against THOSE rather than a
+  // constant: every key known, no duplicates, count matching, and at least the
+  // three structural slots that every binding requires.
+  const REQUIRED_ALWAYS = [ 'top_pages', 'outer_edge', 'bottom_pages' ];
+  const _keys = Array.isArray(slotKeys) && slotKeys.length ? slotKeys : FULL_SLOTS.map(s => s.key);
+  const _badKey = _keys.find(k => !SPEC_BY_KEY[k]);
+  const _dupe = _keys.length !== new Set(_keys).size;
+  const _missing = REQUIRED_ALWAYS.filter(k => !_keys.includes(k));
+  if (_badKey || _dupe || _missing.length || _keys.length > FULL_SLOT_COUNT) {
+    return sseError(400, {
+      error: 'WRONG_SLOT_KEYS',
+      message: _badKey ? `Unknown Full Assessment slot "${_badKey}".`
+             : _dupe ? 'Duplicate Full Assessment slot keys.'
+             : _missing.length ? `Full Assessment always requires ${_missing.join(', ')}.`
+             : `Too many Full Assessment slots (${_keys.length}).`,
+      requiredSlots: _keys.length
+    });
+  }
+  if (!Array.isArray(interiorImages) || interiorImages.length !== _keys.length) {
     return sseError(400, {
       error: 'WRONG_SLOT_COUNT',
-      message: `Full Assessment requires exactly ${FULL_SLOT_COUNT} images (one per named slot). Received ${Array.isArray(interiorImages) ? interiorImages.length : 0}.`,
-      requiredSlots: FULL_SLOT_COUNT
+      message: `Full Assessment requires exactly ${_keys.length} images (one per named slot). Received ${Array.isArray(interiorImages) ? interiorImages.length : 0}.`,
+      requiredSlots: _keys.length
     });
   }
 
@@ -329,8 +351,27 @@ export default async function handler(req, res) {
   // Align the per-image examination specs to the order the client actually sent
   // (slotKeys). Falls back to the default FULL_SLOTS order. This keeps image i
   // mapped to the right slot guidance even if the client reorders capture/storage.
-  const orderedSpecs = Array.isArray(slotKeys) && slotKeys.length === FULL_SLOT_COUNT && slotKeys.every(k => SPEC_BY_KEY[k]) ? slotKeys.map(k => SPEC_BY_KEY[k]) : FULL_SLOTS;
+  const _binding = [ 'saddle', 'square', 'none' ].includes(String(binding)) ? String(binding) : 'saddle';
+  // v5.28: SQUARE-BOUND re-aims the two exterior staple slots. The staples are
+  // driven up through the last interior page and folded on the first, so nothing
+  // in these photos shows a staple — what they show is whether a hidden staple is
+  // pressing THROUGH the front cover. Asking the model to look for a staple here
+  // would guarantee a false "missing staple" finding on every square-bound book.
+  const SQUARE_EXAM = {
+    exterior_top_staple: 'The front cover where the TOP hidden staple sits, a short way in from the spine. THIS BOOK IS SQUARE-BOUND: its staples are folded inside the interior block and are NOT visible from outside — do NOT report a missing, popped or absent staple. Examine only for a raised BUMP, a split, or exposed metal where the staple presses through the cover, and for rust staining around that point.',
+    exterior_bottom_staple: 'Same as above for the BOTTOM hidden staple. Square-bound: no staple is visible from outside and none should be reported as missing. Look for a bump, split, exposed metal or rust staining at the cover.'
+  };
+  const orderedSpecs = _keys.map(k => {
+    const spec = SPEC_BY_KEY[k];
+    return (_binding === 'square' && SQUARE_EXAM[k]) ? Object.assign({}, spec, { exam: SQUARE_EXAM[k] }) : spec;
+  });
   const slotList = orderedSpecs.map((s, i) => `${i + 1}. ${s.label} (image ${i + 1}): ${s.exam}`).join('\n');
+  // What is NOT here, and why — so the model never treats an absent slot as an
+  // absent finding, and so the write-up can tell the user why they were not asked.
+  const _omitted = FULL_SLOTS.filter(s => !_keys.includes(s.key)).map(s => s.label);
+  const bindingBlock = _binding === 'saddle' ? '' : (_binding === 'square'
+    ? `\nBINDING: this book is SQUARE-BOUND. It HAS staples, but they are driven up through the last interior page and folded down on the first, with glue holding the cover wrap — so no staple is visible from the spine or the centerfold, and the owner was deliberately NOT asked to photograph them (doing so means forcing the covers wide open and risking the spine). You are receiving ${_keys.length} images, not 6. Omitted: ${_omitted.join(', ')}. NEVER report a staple as missing, popped or absent on this book, and never say the staples could not be assessed as though it were a fault. In fullAssessment, state in one clause that the book is square-bound and its staples are internal, so staple close-ups were not required.\n`
+    : `\nBINDING: this book has NO STAPLES — it is glue-bound or sewn. The owner was deliberately not asked for any staple close-up. You are receiving ${_keys.length} images, not 6. Omitted: ${_omitted.join(', ')}. NEVER report a staple as missing, popped, rusted or absent, and never treat the absent photos as missing evidence. In fullAssessment, state in one clause that the book has no staples, so staple close-ups were not required.\n`);
 
   const initialContext = initialAssessment ? `\nINITIAL ASSESSMENT (for context — do not re-grade the cover from scratch; these 6 images are about the book's STRUCTURE and page completeness):\n${typeof initialAssessment === 'string' ? initialAssessment.slice(0, 4000) : JSON.stringify(initialAssessment).slice(0, 4000)}\n` : '';
 
@@ -343,9 +384,9 @@ export default async function handler(req, res) {
 
   const systemPrompt = `You are performing a FULL ASSESSMENT of a vintage comic book. The book already has a grade and a written Condition Assessment from the initial (cover + corner) passes. Your job is to examine 6 specific STRUCTURAL images and INTEGRATE what they reveal into the existing Condition Assessment — not to re-grade the book from scratch.
 
-You will receive exactly 6 images, in this fixed order, each with its own purpose:
+You will receive exactly ${_keys.length} images, in this order, each with its own purpose:
 ${slotList}
-${initialContext}${priorBlock}${priorDefectBlock}
+${bindingBlock}${initialContext}${priorBlock}${priorDefectBlock}
 WHAT TO DO WITH EACH IMAGE GROUP:
 - Staple condition: from the Exterior Top Staple, Exterior Bottom Staple, and Interior Staples photos — note rust, wear, popping, or replacement only if present.
 - Page completeness: from the Top Pages and Bottom Pages photos — confirm the interior pages are complete; flag missing or married pages only if you actually see evidence.
@@ -395,7 +436,7 @@ JSON shape:
 RESTORATION (v5.27): these 6 structural images are the only pass that can see two specific kinds of restoration, so say so when you see them. REPLACED OR RESET STAPLES — staples that are bright, unrusted, differently shaped, or sitting in torn/doubled holes on a book whose wear says otherwise; and TRIMMING — a cut outer edge, squarer and cleaner than the other edges, with no natural fray. Also flag reinforcement or backing material and married/added pages if the page photos show them. Put each as a short phrase in "restorationFlags" ("staples replaced", "outer edge trimmed"), naming what and where. Flag ONLY when confident — and NEVER state or imply the book is UNrestored: much restoration cannot be seen in ordinary light, so a clean structural pass says nothing either way. An empty array means "nothing seen here", never "nothing there". Keep trimmingSuspected as it is defined above; restorationFlags is in addition to it, not instead of it. MAX 8 entries.
 
 Rules:
-- Include a slotFindings entry for EACH of the 6 slots, in order, with brief observations.
+- Include a slotFindings entry for EACH of the ${_keys.length} slots you were given, in order, with brief observations. Do not invent entries for slots that were not sent.
 - Every "observations" string concise. fullAssessmentNotes ≤ 3 sentences.
 - Never mention internal references, census data, or grade priors. Report only what these 6 images show, integrated with the prior assessment text.
 `;
@@ -422,7 +463,7 @@ Rules:
       messages: [{
         role: 'user',
         content: [
-          { type: 'text', text: `6 FULL ASSESSMENT IMAGES, in slot order (${FULL_SLOTS.map(s => s.label).join(', ')}):` },
+          { type: 'text', text: `${orderedSpecs.length} FULL ASSESSMENT IMAGES, in slot order (${orderedSpecs.map(s => s.label).join(', ')}):` },
           ...imageBlocks,
           { type: 'text', text: 'Verify these images and return the JSON.' }
         ]

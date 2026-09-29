@@ -2219,12 +2219,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.27";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.28";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.27");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.28");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -3030,6 +3030,64 @@ function fullSlotIndex(key) {
 }
 
 const FULL_SLOT_COUNT = 6;
+
+// ── v5.28: BINDING DECIDES WHICH FULL SLOTS ARE ASKED FOR ──────────────────
+// Three constructions, decided by the Main pass from the 4 Main images (see the
+// BINDING rule in api/assess.js) and stored on the item as `binding`:
+//
+//   saddle  stapled through the fold — the normal comic. All 6 slots.
+//   square  SQUARE-BOUND WITH HIDDEN STAPLES (1960s–early-80s annuals, giants,
+//           100-page specials). The staples are driven up through the last
+//           interior page and folded on the first, so they CANNOT be photographed
+//           without forcing the covers wide open and risking the spine — on
+//           exactly the books least able to take it. The interior staple shot is
+//           therefore DROPPED; the two exterior slots stay and are re-aimed at
+//           where a hidden staple presses THROUGH THE FRONT COVER (a bump, or a
+//           spot of exposed metal). Back-cover penetration matters less and is
+//           not worth a slot. 5 slots.
+//   none    glued or sewn, no staples anywhere. All three staple slots dropped.
+//           3 slots — which puts a whole book at 4 Main + 6 Deep + 3 Full = 13
+//           images, with the single centerfold interior shot the only one that
+//           requires opening it.
+//
+// Storage does NOT change: interiorImages stays a fixed 6-long array indexed by
+// FULL_SLOTS order, with nulls in the dropped positions. Only which slots are
+// SHOWN, required, captured and submitted changes. That keeps every existing
+// item readable and every index stable.
+//
+// Unknown or missing binding => saddle. Old items have no `binding` field, and
+// "assume stapled" is the safe default: it asks for one photo that may be
+// unnecessary rather than skipping evidence that was there.
+const BINDING_SLOT_KEYS = {
+  saddle: [ "top_pages", "outer_edge", "bottom_pages", "exterior_top_staple", "exterior_bottom_staple", "interior_staple" ],
+  square: [ "top_pages", "outer_edge", "bottom_pages", "exterior_top_staple", "exterior_bottom_staple" ],
+  none:   [ "top_pages", "outer_edge", "bottom_pages" ]
+};
+// Square-bound re-aims the two exterior staple slots — same slot, different job.
+const SQUARE_STAPLE_HINTS = {
+  exterior_top_staple: "Where the TOP hidden staple presses through the front cover \u2014 look for a bump or exposed metal",
+  exterior_bottom_staple: "Where the BOTTOM hidden staple presses through the front cover \u2014 look for a bump or exposed metal"
+};
+function bindingOf(item) {
+  const b = String((item && item.binding) || "").toLowerCase().trim();
+  return BINDING_SLOT_KEYS[b] ? b : "saddle";
+}
+function fullRequiredKeys(item) { return BINDING_SLOT_KEYS[bindingOf(item)]; }
+function fullRequiredIdx(item) { return fullRequiredKeys(item).map(k => fullSlotIndex(k)).filter(i => i >= 0); }
+function fullRequiredCount(item) { return fullRequiredKeys(item).length; }
+// The slot defs the user sees, with square-bound hints swapped in.
+function fullSlotsFor(item) {
+  const sq = bindingOf(item) === "square";
+  return fullRequiredIdx(item).map(i => {
+    const s = FULL_SLOTS[i];
+    return (sq && SQUARE_STAPLE_HINTS[s.key]) ? Object.assign({}, s, { hint: SQUARE_STAPLE_HINTS[s.key] }) : s;
+  });
+}
+// Filled-required count, for the gate and the button label.
+function fullFilledCount(item) {
+  const imgs = (item && item.interiorImages) || [];
+  return fullRequiredIdx(item).filter(i => imgs[i]).length;
+}
 
 // ── UV Check Slots (S22 restructure) ────────────────────────
 // S22: the old 8-image "Restoration Check" is now a 2-image UV CHECK.
@@ -3899,7 +3957,7 @@ async function migrateComicsToItems() {
   }
 }
 
-const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "uvCheckRuns", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "fullUnlockReason", "deepAssessmentRan", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "deepRefundUsed", "fullRefundUsed", "insertImages", "couponImages", "userDefectImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue", "signatures", "gradeRevisionReason" ];
+const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "uvCheckRuns", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "fullUnlockReason", "deepAssessmentRan", "binding", "bindingBasis", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "deepRefundUsed", "fullRefundUsed", "insertImages", "couponImages", "userDefectImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue", "signatures", "gradeRevisionReason" ];
 
 const COMIC_DROP_FIELDS = [ "press", "uv", "clean" ];
 
@@ -5933,7 +5991,7 @@ function showDetail(id) {
   if (isFullAssessmentComplete(selected)) {
     const interior = selected.interiorImages || [];
     if (interior.some(u => u)) {
-      html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT — INTERIOR &amp; STRUCTURE</div>\n        ${renderFullSlotGrid(interior, {editable: false, comicId: selected.id})}\n      </div>`;
+      html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT — INTERIOR &amp; STRUCTURE</div>\n        ${renderFullSlotGrid(interior, {editable: false, comicId: selected.id, item: selected})}\n      </div>`;
     }
   }
   if ((isRestorationCheckComplete(selected) || selected.restorationCheckTier || selected.restorationUnlocked) && Array.isArray(selected.restorationImages) && selected.restorationImages.some(Boolean)) {
@@ -10634,7 +10692,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "5.27"),
+      appVersion: (window.RG_GRADING_VERSION || "5.28"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
@@ -11076,6 +11134,19 @@ async function _completeAssessmentInner() {
   }
   formData.highGradeUnlocked = !!cgc._highGradeUnlocked;
   formData.highGradeReason = cgc._highGradeReason || "grade";
+  // v5.28: binding, from the Main pass. Only ever written when the response
+  // actually carries a recognised value AND says it is confident — a low-
+  // confidence call is treated as no call, which leaves the saddle default in
+  // place. Deep and Full do not re-judge binding, so their responses (which
+  // carry no `binding` key) leave the stored value alone.
+  if (typeof cgc.binding === "string") {
+    const _b = cgc.binding.toLowerCase().trim();
+    const _conf = String(cgc.bindingConfidence || "").toLowerCase().trim();
+    if (BINDING_SLOT_KEYS[_b] && _conf !== "low") {
+      formData.binding = _b;
+      formData.bindingBasis = String(cgc.bindingBasis || "").trim().slice(0, 160);
+    }
+  }
   formData.restorationCheckTier = !!cgc._restorationCheckTier;
   stickTierUnlocks(formData);
   if (cgc.restorationReport) formData.restorationReport = cgc.restorationReport;
@@ -12171,9 +12242,10 @@ function renderForm() {
       ${(() => {
     const _fullDone = isFullAssessmentComplete(formData);
     if (!showFullTier(formData)) return "";
-    const N = FULL_SLOT_COUNT;
+    // v5.28: N is the REQUIRED slot count for this book's binding, not a constant.
+    const N = fullRequiredCount(formData);
     const interior = formData.interiorImages || [];
-    const filled = interior.filter(Boolean).length;
+    const filled = fullFilledCount(formData);
     const ready = filled === N && !assessing;
     const blurb = _fullDone ? `Full Assessment has run on this book. You can replace any photo below and re-run to update the interior/structure findings.` : `This book qualifies for Full Assessment. Add all ${N} named photos below — each documents a specific part of the book's structure and page completeness. Once all ${N} are added, Full Assessment runs a deeper confirmation of the grade.`;
     const btnLabel = assessing ? "Assessing…" : _fullDone ? `RE-RUN FULL ASSESSMENT${filled < N ? ` (${filled}/${N})` : ""}` : `FULL ASSESSMENT${filled < N ? ` (${filled}/${N})` : ""}`;
@@ -12329,7 +12401,10 @@ function renderFullSlotGrid(interior, opts) {
   const cell = (key, aspect, o) => {
     o = o || {};
     const i = fullSlotIndex(key);
-    const slot = FULL_SLOTS[i];
+    // v5.28: on a square-bound book the two exterior slots keep their position
+    // but change their job, so take the def from fullSlotsFor() when it has one.
+    const _sq = fullSlotsFor((opts && opts.item) || formData).find(x => x.key === key);
+    const slot = _sq || FULL_SLOTS[i];
     const img = (interior || [])[i];
     const dim = o.fill ? 'height:100%' : ('aspect-ratio:' + aspect);
     const extra = o.extra ? (';' + o.extra) : '';
@@ -12346,12 +12421,26 @@ function renderFullSlotGrid(interior, opts) {
     const imgAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
     return `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;${dim}${extra}"><img src="${img}" ${imgAttrs} onclick="openInteriorLightbox('${comicId}',${i})" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in">${labelTag}</div>`;
   };
+  // v5.28: the staple block depends on the binding (see BINDING_SLOT_KEYS).
+  //   saddle  two exterior macros left, the tall interior macro right
+  //   square  the interior macro is gone, so the two exterior shots sit side by
+  //           side and are aimed at cover penetration, not at the staple itself
+  //   none    no staple block at all
+  const _item = (opts && opts.item) || formData;
+  const _need = new Set(fullRequiredKeys(_item));
   let html = '';
-  html += `<div style="display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:6px;margin-top:6px;aspect-ratio:1 / 1">`
-    + cell('exterior_top_staple', null, { fill: true, extra: 'grid-column:1;grid-row:1' })
-    + cell('interior_staple', null, { fill: true, extra: 'grid-column:2;grid-row:1 / span 2' })
-    + cell('exterior_bottom_staple', null, { fill: true, extra: 'grid-column:1;grid-row:2' })
-    + `</div>`;
+  if (_need.has('interior_staple')) {
+    html += `<div style="display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:6px;margin-top:6px;aspect-ratio:1 / 1">`
+      + cell('exterior_top_staple', null, { fill: true, extra: 'grid-column:1;grid-row:1' })
+      + cell('interior_staple', null, { fill: true, extra: 'grid-column:2;grid-row:1 / span 2' })
+      + cell('exterior_bottom_staple', null, { fill: true, extra: 'grid-column:1;grid-row:2' })
+      + `</div>`;
+  } else if (_need.has('exterior_top_staple')) {
+    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;aspect-ratio:2 / 1">`
+      + cell('exterior_top_staple', null, { fill: true })
+      + cell('exterior_bottom_staple', null, { fill: true })
+      + `</div>`;
+  }
   html += `<div style="margin-top:6px">${cell('top_pages', '4 / 1', { strip: true })}</div>`;
   html += `<div style="margin-top:6px">${cell('outer_edge', '2.4 / 1', { strip: true })}</div>`;
   html += `<div style="margin-top:6px">${cell('bottom_pages', '4 / 1', { strip: true })}</div>`;
@@ -12954,8 +13043,15 @@ function _assignCommitInteriorCovers(slotsArr) {
   const cov = slotsArr.slice(0, 2); while (cov.length < 2) cov.push(null);
   formData.interiorCoverImages = cov; formData._imagesChanged = true; renderForm();
 }
+// v5.28: the overlay shows only the slots this book's binding asks for, so its
+// array is COMPACT (3 / 5 / 6) while storage stays a fixed 6 indexed by
+// FULL_SLOTS order. Scatter back through the index map; never write positionally,
+// or a 3-slot glue-bound book would drop its Outer Edge into the staple slot.
 function _assignCommitInterior(slotsArr) {
-  const imgs = slotsArr.slice(0, FULL_SLOT_COUNT); while (imgs.length < FULL_SLOT_COUNT) imgs.push(null);
+  const imgs = [ ...(formData.interiorImages || []) ];
+  while (imgs.length < FULL_SLOT_COUNT) imgs.push(null);
+  imgs.length = FULL_SLOT_COUNT;
+  fullRequiredIdx(formData).forEach((storeIdx, k) => { imgs[storeIdx] = slotsArr[k] || null; });
   formData.interiorImages = imgs; formData._imagesChanged = true; renderForm();
 }
 
@@ -13200,7 +13296,7 @@ async function handleInteriorImages(e) {
   // S20 gate (Deep-complete AND FMV tier 7) can read false mid-edit, which
   // silently dropped every selected photo (slots stayed empty). If the Full
   // section is on screen, just fill the slots.
-  const _slotN = FULL_SLOT_COUNT;
+  const _slotN = fullRequiredCount(formData);   // v5.28: binding decides how many
   const nonImage = files.find(f => !f.type.startsWith("image/"));
   if (nonImage) {
     alert(`"${nonImage.name}" doesn't look like an image file. Please pick photos only (JPG, PNG, HEIC, etc.).`);
@@ -13214,8 +13310,13 @@ async function handleInteriorImages(e) {
   })));
   if (newImgs.length > 1) {
     e.target.value = "";
-    const cur = [ ...(formData.interiorImages || []) ]; while (cur.length < _slotN) cur.push(null); cur.length = _slotN;
-    _openAssignOverlay(newImgs, { slotN: _slotN, labels: FULL_SLOTS.map(s => s.label), current: cur, startSlot: _tappedInteriorSlot, commit: _assignCommitInterior, title: "Place your Full photos" });
+    // Compact the stored 6 down to just the required slots, in required order.
+    const _allCur = formData.interiorImages || [];
+    const _reqI = fullRequiredIdx(formData);
+    const cur = _reqI.map(i => _allCur[i] || null);
+    // _tappedInteriorSlot is a STORAGE index; translate it to this overlay's.
+    const _start = Math.max(0, _reqI.indexOf(_tappedInteriorSlot));
+    _openAssignOverlay(newImgs, { slotN: _slotN, labels: fullSlotsFor(formData).map(s => s.label), current: cur, startSlot: _start, commit: _assignCommitInterior, title: "Place your Full photos" });
     return;
   }
   const imgs = [ ...formData.interiorImages || [] ];
@@ -13743,9 +13844,15 @@ async function submitFullAssessment() {
     return;
   }
   const entry = isFullAssessmentEligible(formData) || { slots: FULL_SLOT_COUNT, slotDefs: FULL_SLOTS };
-  const interior = (formData.interiorImages || []).filter(Boolean);
-  if (interior.length !== FULL_SLOT_COUNT) {
-    alert(`Please fill all ${FULL_SLOT_COUNT} slots before submitting.`);
+  // v5.28: only the slots this book's binding actually asks for. A square-bound
+  // or glue-bound book has nulls sitting in the dropped positions, so filtering
+  // the whole array for truthy values would under-count and block submission.
+  const _reqIdx = fullRequiredIdx(formData);
+  const _reqKeys = fullRequiredKeys(formData);
+  const _allImgs = formData.interiorImages || [];
+  const interior = _reqIdx.map(i => _allImgs[i]);
+  if (interior.some(x => !x)) {
+    alert(`Please fill all ${_reqIdx.length} slots before submitting.`);
     return;
   }
   if (typeof window._userCredits === "number" && window._userCredits < 1) {
@@ -13794,7 +13901,8 @@ async function submitFullAssessment() {
         title: formData.title || "",
         issueNumber: formData.issue || "",
         interiorImages: compressed,
-        slotKeys: FULL_SLOTS.map(s => s.key),
+        slotKeys: _reqKeys,            // v5.28: matches `interiorImages` above, 3 / 5 / 6 long
+        binding: bindingOf(formData),  // so the server can word the prompt for this construction
         labelDetected: !!formData.labelDetected,
         initialAssessmentComplete: true,
         deepAssessmentComplete: true,
@@ -14225,7 +14333,7 @@ function tapSlot(slotIndex, kind) {
     return;
   }
   const list = (kind === "corner" ? formData.cornerImages : kind === "signature" ? formData.signatureImages : kind === "insert" ? formData.insertImages : kind === "coupon" ? formData.couponImages : kind === "interiorCover" ? formData.interiorCoverImages : kind === "interior" ? formData.interiorImages : kind === "carddeep" ? formData.cardDeepImages : formData.images) || [];
-  const captureOrder = kind === "corner" ? CAMERA_CAPTURE_ORDER_CORNER : kind === "signature" ? [ 0, 1 ] : kind === "insert" ? [ 0, 1 ] : kind === "coupon" ? [ 0, 1 ] : kind === "interiorCover" ? [ 0, 1 ] : kind === "interior" ? Array.from({ length: FULL_SLOT_COUNT }, (_, i) => i) : kind === "carddeep" ? CAMERA_CAPTURE_ORDER_CARDDEEP : CAMERA_CAPTURE_ORDER_MAIN;
+  const captureOrder = kind === "corner" ? CAMERA_CAPTURE_ORDER_CORNER : kind === "signature" ? [ 0, 1 ] : kind === "insert" ? [ 0, 1 ] : kind === "coupon" ? [ 0, 1 ] : kind === "interiorCover" ? [ 0, 1 ] : kind === "interior" ? fullRequiredIdx(formData)   /* v5.28: skip the slots this binding drops */ : kind === "carddeep" ? CAMERA_CAPTURE_ORDER_CARDDEEP : CAMERA_CAPTURE_ORDER_MAIN;
   const emptySlotsInOrder = captureOrder.filter(i => !list[i]);
   const isMultiEmpty = kind !== "signature" && kind !== "insert" && kind !== "coupon" && emptySlotsInOrder.length > 1 && (emptySlotsInOrder.includes(slotIndex) || kind === "interior" || kind === "interiorCover");
   console.log("[tapSlot] kind:", kind, "slot:", slotIndex, "emptySlots:", emptySlotsInOrder.length, "isMultiEmpty:", isMultiEmpty, "mode:", isMultiEmpty ? "walkthrough" : "single");

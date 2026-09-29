@@ -3421,6 +3421,14 @@ const CAT_SORTS = [
 // hierarchy is Dashboard > Catalogue > Issue, each full width, each with a Back
 // button that goes up exactly one level.
 let _catView = 'list';        // 'list' | 'issue'
+// v5.27 (Matt): the book list was rendered with a hard `.slice(0, 1200)` and no
+// button, so with 3,372 assessments grouped into books the list simply STOPPED
+// around the letter K and nothing said so. Now it pages, matching the Sales tab.
+const CAT_PAGE = 600;
+let _catShown = CAT_PAGE;
+// Key of the book last opened, so Back lands on it instead of at the top of a
+// list that is thousands of rows long.
+let _catReturnKey = null;
 let _catRows = null, _catGroups = null, _catSel = null, _catLoading = false, _catFmvKey = null;
 
 // The same star the score boxes draw (RoboScoreV3._STAR_PATH). The catalogue used
@@ -3747,23 +3755,96 @@ function _catRenderList() {
       <div id="cat-orders" style="display:flex;gap:4px;flex-wrap:wrap;margin:8px 0">
         ${CAT_SORTS.map(([v, l]) => `<button data-ord="${v}" style="padding:5px 10px;font-size:11px;border-radius:7px;cursor:pointer;border:1px solid ${_catOrder === v ? '#5c5' : '#2a2d38'};background:${_catOrder === v ? '#1d2a20' : '#161821'};color:${_catOrder === v ? '#bfe8bf' : '#9ab'}">${l}</button>`).join('')}
       </div>
+      <div id="cat-alpha-wrap"></div>
       <div id="cat-books" style="border:1px solid #23252c;border-radius:8px;overflow:hidden"></div>
     </main>`;
   document.getElementById('cat-back').onclick = () => renderDashboard();
   document.getElementById('signout-btn').onclick = signOut;
   document.getElementById('cat-reload').onclick = () => loadCatalogue(true);
-  document.getElementById('cat-q').oninput = e => { _catQ = e.target.value; _catRenderBooks(); };
+  document.getElementById('cat-q').oninput = e => {
+    _catQ = e.target.value;
+    _catShown = CAT_PAGE;              // a new filter starts at page one
+    _catRenderAlpha();
+    _catRenderBooks();
+  };
   document.getElementById('cat-orders').onclick = e => {
     const b = e.target.closest('[data-ord]'); if (!b) return;
-    _catOrder = b.dataset.ord; _catRenderList();
+    _catOrder = b.dataset.ord;
+    _catShown = CAT_PAGE;
+    _catReturnKey = null;              // a different ordering has no "back here"
+    _catRenderList();
   };
+  _catRenderAlpha();
   _catRenderBooks();
+  // v5.27: returning from a book lands on that book rather than at the top of a
+  // list thousands of rows long. If it fell outside the current page (Back after
+  // a jump), page out until it is in.
+  if (_catReturnKey) {
+    const all = _catOrdered();
+    const idx = all.findIndex(r => r.type === 'book' && r.g.key === _catReturnKey);
+    if (idx >= _catShown) { _catShown = Math.ceil((idx + 1) / CAT_PAGE) * CAT_PAGE; _catRenderBooks(); }
+    if (idx >= 0) _catScrollToBook(_catReturnKey, 'center');
+    _catReturnKey = null;
+  }
+}
+
+function _catRenderAlpha() {
+  const w = document.getElementById('cat-alpha-wrap');
+  if (!w) return;
+  w.innerHTML = _catAlphaBarHTML();
+  const bar = document.getElementById('cat-alpha');
+  if (bar) bar.onclick = e => {
+    const b = e.target.closest('[data-alpha]');
+    if (b && !b.disabled) _catJumpToLetter(b.dataset.alpha);
+  };
+}
+
+// v5.27: alphabet jump bar. Only meaningful on the two alphabetical orderings —
+// on Ranked / Date / User a letter means nothing. Tapping a letter pages the list
+// out far enough to contain that letter's first book and then scrolls to it, so
+// the jump works even when the letter sits past the current page.
+const CAT_ALPHA = ['#'].concat('ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''));
+function _catAlphaOn() { return _catOrder === 'title' || _catOrder === 'fmvaz'; }
+function _catFirstLetter(g) {
+  const t = _catNorm(g && g.title || '');
+  const c = (t[0] || '').toUpperCase();
+  return (c >= 'A' && c <= 'Z') ? c : '#';
+}
+function _catAlphaBarHTML() {
+  if (!_catAlphaOn()) return '';
+  const rows = _catOrdered();
+  const present = new Set();
+  for (const r of rows) if (r.type === 'book') present.add(_catFirstLetter(r.g));
+  return `<div id="cat-alpha" style="display:flex;flex-wrap:wrap;gap:2px;margin:0 0 8px">` +
+    CAT_ALPHA.map(L => {
+      const on = present.has(L);
+      return `<button data-alpha="${L}"${on ? '' : ' disabled'} style="flex:1 0 auto;min-width:22px;padding:4px 0;font-size:11px;font-weight:700;border-radius:5px;cursor:${on ? 'pointer' : 'default'};border:1px solid ${on ? '#2a3d2a' : '#1b1d23'};background:${on ? '#161821' : '#101118'};color:${on ? '#9ada7a' : '#3a3d45'}">${L}</button>`;
+    }).join('') + `</div>`;
+}
+// Page far enough to include the first book under `letter`, then scroll to it.
+function _catJumpToLetter(letter) {
+  const rows = _catOrdered();
+  const idx = rows.findIndex(r => r.type === 'book' && _catFirstLetter(r.g) === letter);
+  if (idx < 0) return;
+  if (idx >= _catShown) _catShown = Math.ceil((idx + 1) / CAT_PAGE) * CAT_PAGE;
+  const key = rows[idx].g.key;
+  _catRenderBooks();
+  _catScrollToBook(key, 'start');
+}
+function _catScrollToBook(key, block) {
+  if (!key) return;
+  requestAnimationFrame(() => {
+    const n = document.querySelector('.cat-bk[data-k="' + CSS.escape(encodeURIComponent(key)) + '"]');
+    if (n && n.scrollIntoView) n.scrollIntoView({ block: block || 'center' });
+  });
 }
 
 function _catRenderBooks() {
   const el = document.getElementById('cat-books');
   if (!el) return;
-  el.innerHTML = _catOrdered().slice(0, 1200).map(r => {
+  const all = _catOrdered();
+  const shown = Math.min(_catShown, all.length);
+  el.innerHTML = all.slice(0, shown).map(r => {
     if (r.type === 'head') {
       return `<div style="padding:7px 11px;background:#12141a;border-bottom:1px solid #23252c">
         <div style="font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:800;letter-spacing:2px;color:#e8c257">${escapeHtml(r.label)}</div>
@@ -3781,9 +3862,26 @@ function _catRenderBooks() {
       <div style="color:#5a6a5a;font-size:16px;flex-shrink:0">›</div>
     </div>`;
   }).join('') || '<div style="padding:16px;color:#666;font-size:12px">no match</div>';
+  // Books, not rows: the User ordering interleaves header rows, and "142 more"
+  // should mean 142 more BOOKS.
+  const remaining = all.slice(shown).filter(r => r.type === 'book').length;
+  if (remaining) {
+    el.insertAdjacentHTML('beforeend',
+      `<button class="load-more" id="cat-load-more" style="display:block;width:100%;padding:10px;font-size:12px;background:#161821;border:0;border-top:1px solid #23252c;color:#9ada7a;cursor:pointer">Load more (${remaining.toLocaleString()})</button>`);
+    const lm = document.getElementById('cat-load-more');
+    if (lm) lm.onclick = () => {
+      const last = el.querySelector('.cat-bk:last-of-type');
+      const anchor = last ? decodeURIComponent(last.dataset.k) : null;
+      _catShown += CAT_PAGE;
+      _catRenderBooks();
+      _catScrollToBook(anchor, 'end');   // hold the reading position, don't jump
+    };
+  }
   el.onclick = e => {
     const b = e.target.closest('.cat-bk'); if (!b) return;
-    _catSel = _catGroups.find(g => g.key === decodeURIComponent(b.dataset.k));
+    const key = decodeURIComponent(b.dataset.k);
+    _catSel = _catGroups.find(g => g.key === key);
+    _catReturnKey = key;                 // v5.27: Back comes back HERE
     _catView = 'issue'; _catFmvKey = null;
     window.scrollTo(0, 0);
     _catRenderIssue();
@@ -3823,7 +3921,7 @@ function _catRenderIssue() {
            copies, so the tool belongs at the end of the reading, not before it. -->
       <div id="fmv-editor" style="margin-top:22px;background:#0e0f12;border:1px solid #23252c;border-radius:10px;padding:14px;max-width:320px"></div>
     </main>`;
-  document.getElementById('cat-back').onclick = () => { _catView = 'list'; window.scrollTo(0, 0); _catRenderList(); };
+  document.getElementById('cat-back').onclick = () => { _catView = 'list'; _catRenderList(); };   // v5.27: _catRenderList scrolls to _catReturnKey
   document.getElementById('signout-btn').onclick = signOut;
   document.getElementById('cat-sort').onchange = e => { _catSort = e.target.value; _catRenderIssue(); };
   document.getElementById('cat-level').onchange = e => { _catLevel = e.target.value; _catRenderIssue(); };
