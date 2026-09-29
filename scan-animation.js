@@ -487,6 +487,14 @@
       transition: none !important;
       transform: translateX(-100%) !important;
     }
+    /* v5.29: the END-OF-SCAN reveal. The cover must ALREADY be in place when the
+       progress modal slides away — no movement of its own. `.in-view` animates
+       from translateX(-100%), which made the cover slide in underneath the
+       departing modal; this puts it there instantly instead. */
+    .rg-scan-photo.reveal-now {
+      transition: none !important;
+      transform: translateX(0) !important;
+    }
 
     /* Spine photo rotation — captured spine photos are landscape (the
        spine runs along the long edge of the captured image). To display
@@ -1685,10 +1693,28 @@
     photo.className = 'rg-scan-photo';
     photo.id = 'rg-scan-photo-reveal';
     photo.style.backgroundImage = 'url("' + String(url).replace(/"/g, '\\"') + '")';
+    // v5.29: born in place, not off-screen left. This element exists only for the
+    // end-of-scan reveal, and the reveal is not a movement.
+    photo.classList.add('reveal-now');
     wrap.appendChild(photo);
     display.appendChild(wrap);
-    photo.offsetHeight;   // force layout so the transition runs from -100%
+    photo.offsetHeight;   // commit the styles before the modal starts moving
     return photo;
+  }
+
+  // v5.29: put the cover where it belongs with NO animation of its own, whether
+  // it is a slot the scan already drew (Main) or one built for the reveal
+  // (Deep/Full, which never scan a front cover). `.in-view` is the ANIMATED
+  // arrival used mid-scan and is deliberately not used here.
+  function _seatRevealPhoto(slotName, coverUrl) {
+    let photoEl = slotName ? document.getElementById('rg-scan-photo-' + slotName) : null;
+    if (!photoEl && coverUrl) photoEl = buildRevealPhoto(coverUrl);
+    if (!photoEl) photoEl = document.querySelector('.rg-scan-photo');
+    if (!photoEl) { debugLog('revealScannedPhoto: no photo element at all (slot ' + slotName + ')'); return null; }
+    photoEl.classList.remove('out-view', 'reset', 'in-view');
+    photoEl.classList.add('reveal-now');
+    photoEl.offsetHeight;   // commit before the modal moves
+    return photoEl;
   }
 
   let _revealed = false;
@@ -1698,6 +1724,10 @@
     const go = () => {
       const overlay = document.querySelector('.rg-scan-overlay');
       const boxes   = document.querySelector('.rg-scan-boxes');
+      // v5.29: seat the cover BEFORE the modal starts moving. Order matters —
+      // the placement is instant, so doing it second left one frame in which the
+      // modal had begun to travel and the cover had not yet arrived.
+      _seatRevealPhoto(slotName, coverUrl);
       [overlay, boxes].forEach(el => {
         if (!el) return;
         el.classList.remove('slide-in');   // both are `forwards`; leaving slide-in
@@ -1709,15 +1739,6 @@
       // But they can't run at all unless the book already has a stored front
       // cover, so the caller passes that URL and we build a slot for it here.
       // Every sequence therefore ends on the same image: the book's cover.
-      let photoEl = slotName ? document.getElementById('rg-scan-photo-' + slotName) : null;
-      if (!photoEl && coverUrl) photoEl = buildRevealPhoto(coverUrl);
-      if (!photoEl) photoEl = document.querySelector('.rg-scan-photo');
-      if (photoEl) {
-        photoEl.classList.remove('out-view', 'reset');
-        photoEl.classList.add('in-view');
-      } else {
-        debugLog('revealScannedPhoto: no photo element at all (slot ' + slotName + ')');
-      }
       debugLog('revealScannedPhoto: panel out, slot=' + slotName);
     };
     if (delayMs > 0) setTimeout(go, delayMs); else go();

@@ -414,7 +414,7 @@ ${PHOTOGRADER_RUBRIC_CLOSEUP}
 Recompute the RoboGrade score (Front + Back + Spine + Interior) and map it to a CGC grade. You are also given a set of GRADE-REFERENCE IMAGES — real graded comics bracketing the initial grade, each labeled with its CGC grade and a one-line condition note, in ascending order. Use them as a calibrated yardstick:
   • Find the reference whose OVERALL cover condition the book being graded most closely matches.
   • The predicted grade may move UP or DOWN by up to 2 grade positions from the initial, based on that comparison.
-  • IF YOU LOWER THE GRADE, SAY WHY IN "gradeRevisionReason" — one plain sentence naming what drove it (e.g. "the cover matches the 2.0 reference rather than the 3.0: the spine and lower edge are in comparable condition"). A downward revision with no stated reason is DISCARDED by the server and the initial grade is restored, so an unexplained drop is wasted work. An UPWARD revision needs no entry. This is not a licence to lower grades: you are expected to raise them as often as you lower them, and a Deep pass that always grades down is a broken pass. Move the grade only where the evidence in front of you actually warrants it.
+  • IF YOU LOWER THE GRADE, SAY WHY IN "gradeRevisionReason" — ONE plain sentence, two at the very most, and never more than 35 words \u2014 it is a note, not a second write-up (e.g. "the cover matches the 2.0 reference rather than the 3.0: the spine and lower edge are comparable"). A downward revision with no stated reason is DISCARDED by the server and the initial grade is restored, so an unexplained drop is wasted work. An UPWARD revision needs no entry. This is not a licence to lower grades: you are expected to raise them as often as you lower them, and a Deep pass that always grades down is a broken pass. Move the grade only where the evidence in front of you actually warrants it.
   • IF YOU RE-CLASSIFY AN EXISTING DEFECT rather than finding a new one — most often a "Tear" that the interior photos show is really a "Piece out" — set "revisionReason" on that defect entry saying what changed it. A re-classified defect is not a deepAddition (it is not new), but it MUST be able to move the grade, so this field is what lets it. Downward movement is the more common outcome when the macros surfaced new defects; upward movement requires the cover to clearly match a cleaner reference.
   • If, after removing any disproven defects, the book has NO remaining grade-limiting defect — all four corners crisp with intact ink, spine tight with no ticks or color breaks, and (when provided) interior covers clean — do NOT hold it at the initial grade out of caution. Grade the now-clean book on its merits against the references, up to 9.8; a book with zero confirmed defects is not a 9.4 by default. Reserve grades below 9.6 for a book with an actual remaining defect you can name and point to.
   • Also read the candidate grade's tier definition plus one grade above and one below to confirm the fit.
@@ -456,7 +456,7 @@ JSON shape (same as initial assessment, with deepAddition tags on new defects):
   "gateResult": "COMIC",
   "sameBook": true,
   "mismatchReason": "",
-  "gradeRevisionReason": "",
+  "gradeRevisionReason": "<v5.29: a NOTE, not a write-up. MAX 2 SENTENCES and MAX 35 WORDS. Name what moved the grade and which way, nothing else \u2014 no re-listing the defects, no grade arithmetic, no preamble. The user already sees the defect list and the score boxes; this answers only 'why did the number change'. Empty string if it did not move.>",
   "title": "${initialAssessment.title || ''}",
   "issue": "${initialAssessment.issue || ''}",
   "issueDate": "${initialAssessment.issueDate || ''}",
@@ -490,7 +490,14 @@ JSON shape (same as initial assessment, with deepAddition tags on new defects):
 RESTORATION (v5.27): restoration is a property of the BOOK, not of any one pass, and the Deep photos see things the cover shots cannot. Carry forward every entry already in restorationFlags above — never drop one — and APPEND anything this pass supports. What a Deep is placed to catch: LEAF CASTING or paper-pulp fill and ADDED/REPLACED PIECES visible from the interior cover (a filled area reads as a patch of paper whose tone, fibre or thickness differs from the sheet around it, often with a visible boundary the printing does not explain); reinforcement or backing material; amber/brown adhesive; an interior cover implausibly clean or bright against genuine age elsewhere. Name the technique when the evidence supports one ("leaf casting, lower front corner", "piece added, back cover spine-side"). Flag ONLY when you are confident — and NEVER state or imply that a book is UNrestored. Absence of visible restoration in these photos is not evidence of absence: much restoration is invisible in ordinary light, and a clean Deep says nothing either way. An empty array means "nothing seen here", never "nothing there".
 
 HARD OUTPUT LIMITS:
-  • defects array: MAX 10 entries (initial + new deep additions combined)
+  • defects array: MAX 13 entries (initial + new deep additions combined). v5.29: this
+    was 10 while the Main pass allows 13, so on a heavily-defected book Deep had to
+    silently DROP three findings the Main pass had already made — which is how a
+    real defect disappears between passes. Matched to Main. Beyond 13, do NOT discard
+    the extras: consolidate them into severity-bearing summary entries, exactly as the
+    Main prompt instructs. NEVER drop a structural defect (tape, missing piece, tear,
+    spine split, water damage, rust migration) to make room — consolidate cosmetic
+    wear instead.
   • restorationFlags: MAX 8 entries, each a short phrase naming what and where
   • aiAssessment: OMIT this field entirely — do NOT output it. The first-pass write-up is preserved unchanged by the client; regenerating it wastes tokens and risks altering the frozen record. ALL Deep observations and the confirm/revise note go in deepAssessment ONLY.
 `;

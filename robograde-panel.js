@@ -190,7 +190,11 @@
         // reserves Low/Med/High for actual defects. Previously this was
         // `d.severity || 'Low'` which clobbered empty severity into LOW on
         // display, even though the model was emitting it correctly.
-        const sev = (d.severity == null) ? 'Low' : d.severity;
+        // v5.29: a page-quality row is an observation, not a defect, and must
+        // never wear a severity chip. It was showing LOW in the app (and nothing
+        // in admin) whenever the model omitted `severity` entirely rather than
+        // sending "" — the null-fallback below then invented one.
+        const sev = _isPQ ? '' : ((d.severity == null) ? 'Low' : d.severity);
         const rowIdx = (startIdx || 0) + i;
         const rowBg = (rowIdx % 2 === 0) ? PAPER_GREEN : PAPER_CREAM;
         // Let a long designation wrap instead of being clipped by the severity

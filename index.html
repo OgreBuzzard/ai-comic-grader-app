@@ -2219,12 +2219,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.28";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.29";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.28");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.29");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -10692,7 +10692,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "5.28"),
+      appVersion: (window.RG_GRADING_VERSION || "5.29"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
@@ -11167,7 +11167,21 @@ async function _completeAssessmentInner() {
   // to ask about. Stored on the item so it survives a reload, and cleared when
   // a pass does NOT revise so a stale reason can never sit under a new grade.
   if (typeof cgc.gradeRevisionReason === "string") {
-    const _grr = cgc.gradeRevisionReason.trim();
+    let _grr = cgc.gradeRevisionReason.trim();
+    // v5.29: a note, not a write-up (Matt: 7 lines is too long, 4 is plenty). The
+    // prompt asks for <=2 sentences / 35 words; this is the backstop for when it
+    // does not comply. Trim at a SENTENCE boundary — a mid-sentence ellipsis in a
+    // box whose whole job is to explain something reads worse than no box.
+    const _words = _grr.split(/\s+/);
+    if (_words.length > 45) {
+      const _sent = _grr.match(/[^.!?]+[.!?]+/g) || [];
+      let _keep = "";
+      for (const _s of _sent) {
+        if ((_keep + _s).split(/\s+/).length > 45) break;
+        _keep += _s;
+      }
+      _grr = (_keep.trim() || _words.slice(0, 45).join(" ")).trim();
+    }
     formData.gradeRevisionReason = _grr.length >= 12 ? _grr : "";
   }
   if (cgc.deepAssessment) formData.deepAssessment = cgc.deepAssessment;
