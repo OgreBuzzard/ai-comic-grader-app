@@ -2072,18 +2072,39 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
             // Subtract the gap from Front; if not enough, distribute remainder
             // across all categories proportionally.
             const gap = computed - chosen;
-            if (f - gap >= 0) {
+            // v5.33 — WHY THERE IS A CEILING ON WHAT FRONT ABSORBS.
+            //
+            // "Front absorbs the whole correction" is right for the small
+            // over-allocations this rule was written for. It is badly wrong for a
+            // large divergence. Observed 2026-10-02, ASM 41 rep 2 on Opus 5: the
+            // model declared score 29 while its own sub-scores summed to ~58, so
+            // gap was 29, Front was 28, 28-29 < 0, and Front was floored to ZERO.
+            // Front 0 on a 0-50 scale means a destroyed front cover, on a PSA 4.5
+            // book whose front is visibly fine, and the user reads that on Detail
+            // view. The other two reps of the same book returned Front 28.
+            //
+            // So Front absorbs at most HALF its own value; past that the entire
+            // gap is spread proportionally across all four. That keeps the
+            // original intent (over-allocation originates in Front) for ordinary
+            // corrections and stops the pathological case.
+            //
+            // NOTE: this changes only how the gap is DISTRIBUTED. rg.score is
+            // identical either way, so no grade moves. Whether "prefer lower" is
+            // even right at a 29-point divergence — each sub-score is pinned to a
+            // listed defect by the SUBSCORE-DEFECT CONSISTENCY rule while `score`
+            // is one unanchored number — is a grading-policy question and is
+            // deliberately NOT touched here. See TASKLIST.
+            const frontCanAbsorb = Math.floor(f / 2);
+            if (gap <= frontCanAbsorb) {
               rg.frontScore = f - gap;
             } else {
-              // Front absorbs what it can, rest goes proportionally to others
-              const fGap = f;
-              rg.frontScore = 0;
-              const remainGap = gap - fGap;
-              const pool = (b || 0) + s + i;
+              // Spread the WHOLE gap proportionally, Front included.
+              const pool = f + (b || 0) + s + i;
               if (pool > 0) {
-                if (b != null) rg.backScore     = Math.max(0, Math.round(b - remainGap * (b / pool)));
-                rg.spineScore    = Math.max(0, Math.round(s - remainGap * (s / pool)));
-                rg.interiorScore = Math.max(0, Math.round(i - remainGap * (i / pool)));
+                rg.frontScore    = Math.max(0, Math.round(f - gap * (f / pool)));
+                if (b != null) rg.backScore = Math.max(0, Math.round(b - gap * (b / pool)));
+                rg.spineScore    = Math.max(0, Math.round(s - gap * (s / pool)));
+                rg.interiorScore = Math.max(0, Math.round(i - gap * (i / pool)));
               }
             }
           }
@@ -2091,7 +2112,8 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
             declared: original,
             computed: computed,
             chosen: chosen,
-            rule: 'divergence>8, prefer lower; sub-scores rebalanced'
+            rule: 'divergence>8, prefer lower; sub-scores rebalanced',
+            distribution: (computed - chosen) <= Math.floor(f / 2) ? 'front-absorbs' : 'proportional-all'
           };
         } else {
           rg.score = computed;
