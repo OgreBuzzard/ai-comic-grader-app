@@ -1357,9 +1357,14 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     _ablApplied = r.applied;
     console.log('[ablation] applied ' + r.applied.join(',') + ' (-' + r.removedChars + ' chars), model ' + _activeModel);
   }
-  const _diag = (_ablApplied.length || _activeModel !== PRIMARY_MODEL)
-    ? { ablated: _ablApplied, unknownAblate: _abl.unknown, model: _activeModel }
-    : null;
+  // ALWAYS echoed, even on a completely normal assessment. The first version only
+  // emitted this when something had been overridden, which broke the harness in a
+  // way that looked exactly like a stale deploy: asking for --model claude-opus-5
+  // (which IS the default) overrode nothing, so nothing came back, and the round
+  // aborted reporting "the deploy does not have the override yet". It also left
+  // every baseline row recording "(server default)" instead of the model that
+  // actually graded it — the one fact a calibration CSV must not be vague about.
+  const _diag = { model: _activeModel, ablated: _ablApplied, unknownAblate: _abl.unknown };
 
 
   try {
@@ -2252,10 +2257,8 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       // outage cannot drop it — the harness needs to record what ACTUALLY ran,
       // and an arm that silently failed to apply must never be written down as
       // a result for that arm.
-      if (_diag) {
-        if (!parsed._diagnostics) parsed._diagnostics = {};
-        parsed._diagnostics.diag = _diag;
-      }
+      if (!parsed._diagnostics) parsed._diagnostics = {};
+      parsed._diagnostics.diag = _diag;
       const db = await getAdminDb();
       if (db) {
         const key = (parsed.roboGrade && parsed.roboGrade.roboGradeId)
