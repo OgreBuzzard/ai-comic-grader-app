@@ -26,6 +26,7 @@
 // =============================================================================
 import { ROBOGRADE_VERSION } from '../lib/version.js';
 import { PRIMARY_MODEL, MAIN_EFFORT, ratesFor } from '../lib/model.js';
+import { parseAblation, applyAblation } from '../lib/ablation.js';
 import { anthropicWithRetry, fetchTimeout } from '../lib/anthropic_retry.js';
 import { getBookNote } from '../lib/book_notes.js';
 import { defectIndexPromptBlock } from '../lib/defect_index.js';
@@ -1322,6 +1323,44 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
   "signatures": []
 }`;
 
+  // ── DIAGNOSTIC OVERRIDES — OFF BY DEFAULT ─────────────────────────────────
+  // Two request fields exist so a calibration round can vary the model and drop
+  // one named prompt clause WITHOUT a deploy per arm. Absent, nothing below
+  // changes: _activePrompt === systemPrompt and _activeModel === PRIMARY_MODEL.
+  //
+  // Auth: these are read from an ALREADY-AUTHENTICATED request. /api/assess
+  // verifies a Firebase ID token before it reaches here, which is the same bar
+  // every other field in the body is held to. There is deliberately no second,
+  // stricter gate — an ADMIN_EMAILS check was tried on api/probe.js and that
+  // variable only exists on the admin deployment, so the gate could never pass.
+  //
+  // Worst case if a client sent them: it grades itself with a slightly different
+  // prompt. No credit, data or privacy consequence. An unknown clause id is
+  // reported back rather than ignored, and a clause whose marker cannot be found
+  // THROWS (see lib/ablation.js) rather than silently running a baseline that
+  // would be written down as "the clause had no effect".
+  //
+  // CACHING: an ablated prompt is a different cached prefix, so an ablation arm
+  // takes a cache MISS on its first call and costs more than a baseline arm.
+  // That is expected; it does not affect the grade.
+  //
+  // See shared/_LIBRARY/OPUS_55_ABLATION_PLAN.md.
+  const _abl = parseAblation(req.body && req.body.ablate);
+  const _activeModel = (req.body && typeof req.body.model === 'string' && req.body.model.trim())
+    ? req.body.model.trim()
+    : PRIMARY_MODEL;
+  let _activePrompt = systemPrompt;
+  let _ablApplied = [];
+  if (_abl.ids.length) {
+    const r = applyAblation(systemPrompt, _abl.ids);
+    _activePrompt = r.prompt;
+    _ablApplied = r.applied;
+    console.log('[ablation] applied ' + r.applied.join(',') + ' (-' + r.removedChars + ' chars), model ' + _activeModel);
+  }
+  const _diag = (_ablApplied.length || _activeModel !== PRIMARY_MODEL)
+    ? { ablated: _ablApplied, unknownAblate: _abl.unknown, model: _activeModel }
+    : null;
+
 
   try {
     markPhase('promptAssemblyAtMs');
@@ -1347,7 +1386,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     // Per-token rates per model (verified June 2026). Cost logging reads from
     // this table so the calibration matrix logs TRUE costs for every round.
     // Cache read = 10% of input rate; cache creation = 1.25x input rate.
-    const _RATES = ratesFor(PRIMARY_MODEL);
+    const _RATES = ratesFor(_activeModel);   // _activeModel is PRIMARY_MODEL unless a diagnostic override asked otherwise
 
     // Caching config — dashboard-controlled (config/caching doc). Default: on, 1h.
     let _cacheOn = true, _cacheTtl = '1h';
@@ -1367,7 +1406,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     // Build the messages payload (used by both streaming and non-streaming
     // branches; identical content either way).
     const _antBody = {
-      model: PRIMARY_MODEL,
+      model: _activeModel,
       // S15 May 29: explicitly set effort=medium via output_config. Opus 4.8's
       // default is 'high'; medium is the recommended default for non-coding
       // workloads. NOTE: on a structured-JSON output task with no thinking,
@@ -1403,7 +1442,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       // substantial thinking headroom + our ~1000-token JSON output without
       // overcommitting. Tune down if observed thinking tokens stay small.
       max_tokens: 16384,
-      system: (() => { const _sp = systemPrompt.split('§§CACHE_SPLIT§§'); if (!_cacheOn) return _sp.join(''); return [{ type: 'text', text: _sp[0], cache_control: _cacheCtl }, { type: 'text', text: _sp[1] || '' }]; })(),
+      system: (() => { const _sp = _activePrompt.split('§§CACHE_SPLIT§§'); if (!_cacheOn) return _sp.join(''); return [{ type: 'text', text: _sp[0], cache_control: _cacheCtl }, { type: 'text', text: _sp[1] || '' }]; })(),
       messages: [{
         role: 'user',
         content: [
@@ -1722,6 +1761,10 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
         cropFailure: parsed.cropFailure || null,
         lockout: _lockoutInfo,
         _diagnostics: {
+          // Echoed so the harness writes down what ACTUALLY ran. null on a
+          // normal assessment. Without this, an arm that silently failed to
+          // apply would be recorded as a result for that arm.
+          diag: _diag,
           comicvineRef: referenceImageBlock !== null,
           censusMatched: _censusMatched,
           pageQualityRef: pageQualityImageBlock !== null,
@@ -2204,6 +2247,15 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     // this whole feature useful for diagnosing timeouts, so we pay the
     // (small, <200ms typically) write latency to ensure it persists.
     try {
+      // Echo the diagnostic overrides on the main success path too (the gate
+      // path has its own copy). Outside the `if (db)` below so a Firestore
+      // outage cannot drop it — the harness needs to record what ACTUALLY ran,
+      // and an arm that silently failed to apply must never be written down as
+      // a result for that arm.
+      if (_diag) {
+        if (!parsed._diagnostics) parsed._diagnostics = {};
+        parsed._diagnostics.diag = _diag;
+      }
       const db = await getAdminDb();
       if (db) {
         const key = (parsed.roboGrade && parsed.roboGrade.roboGradeId)
@@ -2221,8 +2273,13 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
-          model: PRIMARY_MODEL,
-          refineModel: PRIMARY_MODEL,
+          // _activeModel, not PRIMARY_MODEL: an ablation round overrides the
+          // model per request, and a timings record that names the wrong model
+          // is worse than none — the admin dashboard reads these, and a round
+          // mislabelled as Opus 5 would silently poison every later comparison.
+          model: _activeModel,
+          refineModel: _activeModel,
+          ablated: _ablApplied.length ? _ablApplied.join(',') : null,
           // Census diagnostics — written to the record the admin dashboard reads.
           // censusMatched answers "did census fire?"; the title/issue fields show
           // exactly what was passed to the lookup, so a silent no-match (wrong
@@ -2331,8 +2388,13 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
-          model: PRIMARY_MODEL,
-          refineModel: PRIMARY_MODEL,
+          // _activeModel, not PRIMARY_MODEL: an ablation round overrides the
+          // model per request, and a timings record that names the wrong model
+          // is worse than none — the admin dashboard reads these, and a round
+          // mislabelled as Opus 5 would silently poison every later comparison.
+          model: _activeModel,
+          refineModel: _activeModel,
+          ablated: _ablApplied.length ? _ablApplied.join(',') : null,
           // Diagnostic v3.97: imageCount is the only payload-side number we
           // can reliably capture in the error path (API never returned, so
           // no token usage). Helps identify whether timeouts cluster on
