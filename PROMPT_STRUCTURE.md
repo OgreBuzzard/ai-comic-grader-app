@@ -55,8 +55,9 @@ The model produces a grade by working through a logical sequence: figure out wha
 
 **Owns:**
 - The RoboGrade scoring system (Front/Back/Spine/Interior components, point allocation per component).
-- Severity word mapping to deductions (light/moderate/heavy → Low/Med/High → point ranges).
-- Per-defect-type scoring rules (e.g., spine tick = -1/-2 per tick depending on color-breaking).
+- Severity word mapping (light/moderate/heavy → Low/Med/High). **This maps words to severity LABELS only.** There is deliberately no general severity-to-points table — a Low does not cost a fixed number of points. Severity feeds the per-face band ladders below, together with the defect's type and the face it sits on.
+- Per-face band ladders: each of Front (0–50), Back (0–20) and Spine (0–20) has a named band per condition level, and the catalogued defects select the band. This is the main severity-to-score path and it is qualitative by design.
+- Per-defect-type point rules, for the few defect types where a count maps cleanly to points: spine ticks (−1 non-colour-breaking, −2 colour-breaking), spine roll (Low −1/−2, Med −3/−5, High −6/−10), and staple rust by migration distance.
 - Interior = 1:1 PQ map (no deductions to interior; staple/centerfold defects route to Spine).
 - Score sum to RoboGrade.
 - RoboGrade to predicted CGC grade mapping (initial determination).
@@ -142,4 +143,5 @@ Deep Assessment has its own minimal phase structure:
 Deep Assessment as a separate code path is pending the Vercel function-count consolidation (currently at 12/12 Hobby ceiling).
 
 ## Changelog
+- 2026-10-03, Session 22: Corrected the Phase 2 ownership list. It claimed a "severity word mapping to deductions → point ranges" that has never existed in the prompt in that form — there is no general severity-to-points table, and an audit was briefly misled into looking for one that was missing rather than one that was never built. Replaced with what Phase 2 actually owns: severity words map to LABELS; the per-face band ladders are the main severity-to-score path and are qualitative by design; and point rules exist only for the few types where a count maps cleanly (spine ticks, spine roll, staple rust). No prompt change — the document was wrong, not the prompt. See `shared/_LIBRARY/PROMPT_AUDIT_2026-10-03.md` for the full audit, including six blocks currently sitting in the wrong phase.
 - 2026-05-25: Initial document, Session 15. Author: foundation restoration pass after recognition that S13 inadvertently removed grade tier definitions during refinement-pass removal. Added progress modal mapping. Removed transitional "existing rules conformance" section, which described work in progress at the time of authoring. Added per-phase "External integrations" subsections after a code audit surfaced existing integrations (census, ComicVine, PQ reference) that had been missed when drafting the phase ownership lists from memory alone.
