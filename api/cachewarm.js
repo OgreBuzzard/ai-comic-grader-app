@@ -70,7 +70,7 @@
 //   { nonce: 'run1-call1', tokens: 2100, model: 'claude-opus-5', ttl: '1h' }
 //   GET  /api/cachewarm   -> whoami, no model call, no spend
 import process from 'node:process';
-import { PRIMARY_MODEL } from '../lib/model.js';
+import { PRIMARY_MODEL, costOf } from '../lib/model.js';
 import { ROBOGRADE_VERSION } from '../lib/version.js';
 import { buildMainPrefix } from '../lib/main_prompt.js';
 import { getAdminDb } from '../lib/batch_common.js';
@@ -169,26 +169,56 @@ export default async function handler(req, res) {
     const apiKeyW = process.env.ANTHROPIC_API_KEY;
     if (!apiKeyW) return res.status(500).json({ error: 'no ANTHROPIC_API_KEY' });
 
-    // Traffic gate. A read failure must NOT block the ping — the ping is cheap
-    // and a missed one is the expensive outcome, so we fail OPEN and warm.
-    let lastMainMs = null, gateNote = '';
-    if (!force) {
+    // ── THE GATE ───────────────────────────────────────────────────────────
+    // The entry dies one hour after it was last TOUCHED, and both a real
+    // assessment and a ping count as a touch. So the gate asks one question:
+    // how long since ANYTHING touched it? If that is under quietMinutes the
+    // entry is still comfortably alive and this call returns free.
+    //
+    // THE BUG THIS FIXES (caught before it ever ran): gating on real traffic
+    // alone meant that on a quiet night EVERY cron fire would see "no traffic
+    // in 50 minutes" and pay, because a ping does not write to
+    // assessment_timings. At a 15-minute cron that is four paid pings an hour
+    // instead of one. The ping now records its own timestamp and the gate takes
+    // the LATER of the two, which is what makes the cron frequency harmless:
+    // fire every 15 minutes, pay roughly once an hour, and if one fire fails
+    // the next one is 15 minutes away instead of an hour.
+    //
+    // A read failure must NOT block the ping — a missed ping costs ~$0.22 on
+    // the next cold assessment and a wasted one costs $0.01 — so it fails OPEN.
+    let lastMainMs = null, lastPingMs = null, gateNote = '';
+    const WARM_DOC = 'cache_warm/main';
+    let db = null;
+    try { db = await getAdminDb(); }
+    catch (e) { gateNote = 'no db, warming anyway: ' + String(e && e.message || e); }
+
+    if (!force && db) {
       try {
-        const db = await getAdminDb();
         const snap = await db.collection('assessment_timings')
           .orderBy('createdAt', 'desc').limit(1).get();
         if (!snap.empty) {
-          const d = snap.docs[0].data() || {};
-          const t = Date.parse(d.createdAt || '');
+          const t = Date.parse((snap.docs[0].data() || {}).createdAt || '');
           if (!isNaN(t)) lastMainMs = Date.now() - t;
         }
+        const w = await db.doc(WARM_DOC).get();
+        if (w.exists) {
+          const t = Date.parse((w.data() || {}).lastWarmAt || '');
+          if (!isNaN(t)) lastPingMs = Date.now() - t;
+        }
       } catch (e) { gateNote = 'gate read failed, warming anyway: ' + String(e && e.message || e); }
-      if (lastMainMs != null && lastMainMs < quietMinutes * 60 * 1000) {
+
+      // The most recent touch of either kind.
+      const sinceTouch = Math.min(
+        lastMainMs == null ? Infinity : lastMainMs,
+        lastPingMs == null ? Infinity : lastPingMs
+      );
+      if (sinceTouch < quietMinutes * 60 * 1000) {
         return res.status(200).json({
           ok: true, mode: 'warm', skipped: true, version: ROBOGRADE_VERSION,
-          reason: 'recent traffic — cache already warm',
-          minutesSinceLastAssessment: Math.round(lastMainMs / 60000), quietMinutes,
-          costUsd: 0
+          reason: 'cache touched recently — still warm',
+          minutesSinceLastAssessment: lastMainMs == null ? null : Math.round(lastMainMs / 60000),
+          minutesSinceLastPing: lastPingMs == null ? null : Math.round(lastPingMs / 60000),
+          quietMinutes, costUsd: 0
         });
       }
     }
@@ -213,8 +243,22 @@ export default async function handler(req, res) {
       const u = j.usage || {};
       const created = u.cache_creation_input_tokens || 0;
       const read    = u.cache_read_input_tokens || 0;
-      const RATE_IN = 4 / 1e6;           // Opus 5.5 input; see lib/model.js
-      const costUsd = (u.input_tokens || 0) * RATE_IN + created * RATE_IN * 2 + read * RATE_IN * 0.1;
+      // One helper, one rate table. The cache-read multiplier is per-model
+      // (0.05 on Opus 5.5, 0.10 on Opus 5) and this used to hardcode 0.10.
+      const costUsd = costOf(u, modelW, '1h');
+      // Record the touch so the next cron fire sees it and returns free.
+      // Best-effort: a failed write makes the next fire pay again, which is a
+      // cent, not an outage.
+      if (db) {
+        try {
+          await db.doc(WARM_DOC).set({
+            lastWarmAt: new Date().toISOString(),
+            version: ROBOGRADE_VERSION, model: modelW,
+            cacheReadInputTokens: read, cacheCreationInputTokens: created,
+            costUsd: Number(costUsd.toFixed(5))
+          }, { merge: true });
+        } catch (e) { /* non-fatal */ }
+      }
       return res.status(200).json({
         ok: true, mode: 'warm', skipped: false, version: ROBOGRADE_VERSION,
         model: modelW, prefixChars: prefix.length, ms: Date.now() - t0w,

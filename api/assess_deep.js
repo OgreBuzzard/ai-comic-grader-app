@@ -31,7 +31,7 @@
 //
 // =============================================================================
 import { ROBOGRADE_VERSION } from '../lib/version.js';
-import { PRIMARY_MODEL, ratesFor } from '../lib/model.js';
+import { PRIMARY_MODEL, ratesFor, costOf } from '../lib/model.js';
 import { anthropicWithRetry } from '../lib/anthropic_retry.js';
 import { computePhotograderPM, mergePhotograder, PHOTOGRADER_RUBRIC_CLOSEUP } from '../lib/photograder.js';
 import { getAdminDb as getCreditDb, verifyUidFromAuthHeader } from '../lib/batch_common.js';
@@ -1296,20 +1296,19 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
           cacheCreationInputTokens: _cacheCreationInputTokens,
           // S15 May 28: per-assessment dollar cost (Opus 4.8). Same rate
           // block as assess.js — if model changes, update both.
-          costUsd: (function(){
-            // S23: was hardcoded $5/$25. See the note in assess_full.js — the
-            // same stale block, the same 20% overstatement on Opus 5.5.
-            const _R = ratesFor(PRIMARY_MODEL);
-            const RATE_IN  = _R.in;
-            const RATE_OUT = _R.out;
-            const RATE_CACHE_READ   = RATE_IN * 0.05;
-            const RATE_CACHE_CREATE = RATE_IN * 1.25;
-            const inT  = _inputTokens || 0;
-            const outT = _outputTokens || 0;
-            const cr   = _cacheReadInputTokens || 0;
-            const cc   = _cacheCreationInputTokens || 0;
-            return +(inT * RATE_IN + outT * RATE_OUT + cr * RATE_CACHE_READ + cc * RATE_CACHE_CREATE).toFixed(6);
-          })(),
+          // S23 2026-10-11: this block used to hardcode the cache-read
+          // multiplier at 0.05, while api/assess.js hardcoded 0.10. Exactly one
+          // of them was right at any moment, and the Opus 5.5 cut-over flipped
+          // which. Both now call the one helper in lib/model.js, which carries
+          // the multiplier PER MODEL. Deep does not currently send
+          // cache_control at all, so the cache terms are zero here — but they
+          // will stop being zero the day Deep caching ships.
+          costUsd: costOf({
+            input_tokens: _inputTokens || 0,
+            output_tokens: _outputTokens || 0,
+            cache_read_input_tokens: _cacheReadInputTokens || 0,
+            cache_creation_input_tokens: _cacheCreationInputTokens || 0
+          }, PRIMARY_MODEL, '1h'),
           stopReason: _stopReason,
           responseModel: _responseModel,
           rawTextChars: _rawTextChars,

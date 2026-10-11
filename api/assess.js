@@ -25,7 +25,7 @@
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
 import { ROBOGRADE_VERSION } from '../lib/version.js';
-import { PRIMARY_MODEL, MAIN_EFFORT, ratesFor } from '../lib/model.js';
+import { PRIMARY_MODEL, MAIN_EFFORT, ratesFor, costOf } from '../lib/model.js';
 import { parseAblation, applyAblation } from '../lib/ablation.js';
 import { anthropicWithRetry, fetchTimeout } from '../lib/anthropic_retry.js';
 import { getBookNote } from '../lib/book_notes.js';
@@ -2036,17 +2036,12 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           // cache write — the log read cheaper than the real Anthropic invoice.
           // Tying the multiplier to _cacheTtl keeps it honest if the caching
           // lever is flipped.) If we change models, _RATES changes with it.
-          costUsd: (function(){
-            const RATE_IN  = _RATES.in;
-            const RATE_OUT = _RATES.out;
-            const RATE_CACHE_READ   = RATE_IN * 0.10;
-            const RATE_CACHE_CREATE = RATE_IN * (_cacheTtl === '1h' ? 2.0 : 1.25);
-            const inT  = _inputTokens || 0;
-            const outT = _outputTokens || 0;
-            const cr   = _cacheReadInputTokens || 0;
-            const cc   = _cacheCreationInputTokens || 0;
-            return +(inT * RATE_IN + outT * RATE_OUT + cr * RATE_CACHE_READ + cc * RATE_CACHE_CREATE).toFixed(6);
-          })(),
+          costUsd: costOf({
+            input_tokens: _inputTokens || 0,
+            output_tokens: _outputTokens || 0,
+            cache_read_input_tokens: _cacheReadInputTokens || 0,
+            cache_creation_input_tokens: _cacheCreationInputTokens || 0
+          }, _activeModel, _cacheTtl),
           // S17 calibration logging: sub-scores + PQ + PM in the record itself
           // so a calibration round can be read straight off the Logs list
           // without opening rawText, plus the reference-attachment flags that
