@@ -176,8 +176,42 @@ export default async function handler(req, res) {
     const spend = { dayCents: 0, weekCents: 0, monthCents: 0 };
     const spendByDay = {};
     let allTimeApiCents = 0, fetchedCount = 0;
+    // Diagnostics for the spend figures themselves, so a wrong number announces
+    // itself instead of looking authoritative. See the Spending box.
+    let spendTruncated = false;      // true = the 30d window did not reach 30 days
+    let zeroCostRows = { day: 0, week: 0, month: 0 };   // billed by Anthropic, logged as $0
     try {
-      const tSnap = await db.collection('assessment_timings').orderBy('createdAt', 'desc').limit(2500).get();
+      // S23 2026-10-11 — THIS WAS A SINGLE .limit(2500) AND IT SILENTLY
+      // TRUNCATED THE 30-DAY FIGURE.
+      // The comment used to read "recent ~2500 - last ~5 weeks at current
+      // volume". Volume outgrew it. Every assessment writes a row, and so does
+      // every slab-check, every errored run, every one of the five passes in a
+      // Batch, and every pass of a calibration round (84 rows each). Once more
+      // than 2500 rows land inside 30 days, the month window stops partway
+      // through the month and the dashboard under-reports spend with no sign
+      // that anything is missing. Matt's Anthropic invoices for Sep 13 - Oct 11
+      // total $526 against a dashboard reading of $254.
+      // Now it pages back until it has genuinely crossed the 30-day cutoff, and
+      // if it ever hits the hard page cap it SAYS SO (spendTruncated) rather
+      // than quietly reporting a smaller number.
+      const PAGE = 1000, MAX_PAGES = 30;   // hard ceiling: 30,000 rows
+      let _pages = 0, _last = null, _oldestMs = null, _crossedCutoff = false;
+      const _docs = [];
+      while (_pages < MAX_PAGES) {
+        let q = db.collection('assessment_timings').orderBy('createdAt', 'desc').limit(PAGE);
+        if (_last) q = q.startAfter(_last);
+        const pg = await q.get();
+        if (pg.empty) { _crossedCutoff = true; break; }
+        _docs.push(...pg.docs);
+        _last = pg.docs[pg.docs.length - 1];
+        _pages++;
+        const lc = _last.data().createdAt;
+        _oldestMs = (lc && typeof lc.toMillis === 'function') ? lc.toMillis() : Date.parse(lc || '');
+        if (pg.docs.length < PAGE) { _crossedCutoff = true; break; }
+        if (!Number.isNaN(_oldestMs) && _oldestMs < cutoffs.month) { _crossedCutoff = true; break; }
+      }
+      spendTruncated = !_crossedCutoff;
+      const tSnap = { docs: _docs };
       fetchedCount = tSnap.docs.length;
       const costs = [];
       for (const doc of tSnap.docs) {
@@ -198,6 +232,15 @@ export default async function handler(req, res) {
           if (ms >= cutoffs.month) { assessCost.month.cents += cents; assessCost.month.n++; }
         }
         if (t.kind !== 'slabcheck' && cost > 0 && costs.length < 100) costs.push(cost);
+        // A row with no cost is NOT a free call. An errored or timed-out run
+        // writes costUsd: 0, but Anthropic still billed every input token it
+        // had already received. These are real money recorded as zero, and
+        // counting them is the cheapest way to see how much spend is invisible.
+        if (cost === 0 && !Number.isNaN(ms)) {
+          if (ms >= cutoffs.day) zeroCostRows.day++;
+          if (ms >= cutoffs.week) zeroCostRows.week++;
+          if (ms >= cutoffs.month) zeroCostRows.month++;
+        }
       }
       if (costs.length) avgAssessmentCost = costs.reduce((a, b) => a + b, 0) / costs.length;
     } catch (e) { console.warn('[admin-stats] timings read skipped:', e.message); }
@@ -300,7 +343,11 @@ export default async function handler(req, res) {
     // 24h / 7d / 30d. API = Anthropic assessment cost; Ads = paid-ad plan;
     // Sub = Claude Max subscription; Site = Firebase + Vercel + domain.
     const spendBreakdown = {
-      api:  { dayCents: apiDayCents, weekCents: apiWeekCents, monthCents: apiMonthCents },
+      api:  { dayCents: apiDayCents, weekCents: apiWeekCents, monthCents: apiMonthCents,
+              // Honesty flags. truncated = the 30d sum did not reach back a full
+              // 30 days, so it is a FLOOR, not a total. zeroCost = rows that
+              // cost real money and were logged as $0.
+              truncated: spendTruncated, rowsScanned: fetchedCount, zeroCost: zeroCostRows },
       // S22: carry the per-platform provenance through to the UI. getAdSpend()
       // has always computed source:{meta,google} = 'api' | 'estimate', but it was
       // dropped here — so the Ads line looked authoritative whether it was real
