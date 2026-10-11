@@ -100,5 +100,11 @@
       "destination": "/get?utm_source=youtube&utm_medium=video&utm_campaign=release",
       "permanent": false
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/cachewarm?mode=warm",
+      "schedule": "*/15 * * * *"
+    }
   ]
 }

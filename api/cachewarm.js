@@ -72,6 +72,8 @@
 import process from 'node:process';
 import { PRIMARY_MODEL } from '../lib/model.js';
 import { ROBOGRADE_VERSION } from '../lib/version.js';
+import { buildMainPrefix } from '../lib/main_prompt.js';
+import { getAdminDb } from '../lib/batch_common.js';
 
 // Deterministic filler. Must be IDENTICAL across the three calls of a run or the
 // cache key changes and the test silently measures nothing — which is exactly
@@ -103,6 +105,21 @@ export default async function handler(req, res) {
   // Deliberately NOT an ADMIN_EMAILS check: that variable exists only on the
   // admin deployment, so such a gate can never pass here. (Learned 2026-09-29.)
   let whoami;
+  // CRON PATH (v5.48). Vercel Cron cannot hold a Firebase ID token, so the
+  // scheduled keep-warm ping authenticates with a shared secret instead. It is
+  // accepted ONLY for mode:'warm', which spends about a cent, writes nothing,
+  // and returns no user data — so the blast radius of a leaked secret is a
+  // stranger keeping our prompt cache warm for us. Everything else still needs
+  // a real signed-in user.
+  // Vercel Cron issues a GET and sets Authorization: Bearer $CRON_SECRET itself,
+  // so the mode arrives as a query parameter, not a body field. Accept both.
+  const _cronSecret = process.env.CRON_SECRET || '';
+  const _bearer = (req.headers.authorization || req.headers.Authorization || '').replace(/^Bearer\s+/, '').trim();
+  const _wantMode = ((req.body || {}).mode) || ((req.query || {}).mode) || null;
+  const _isCron = !!_cronSecret && _bearer === _cronSecret && _wantMode === 'warm';
+  if (_isCron) {
+    whoami = { email: 'vercel-cron', uid: 'cron' };
+  } else
   try {
     const m = (req.headers.authorization || req.headers.Authorization || '').match(/^Bearer\s+(.+)$/);
     if (!m) return res.status(401).json({ error: 'auth required', reason: 'no_bearer', detail: 'No Authorization: Bearer header on the request.' });
@@ -122,9 +139,102 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'auth check crashed', detail: String(e && e.message || e) });
   }
 
-  if (req.method === 'GET') return res.status(200).json({ ok: true, ...whoami, version: ROBOGRADE_VERSION });
+  // whoami. A GET asking for mode=warm is the cron and falls through to it.
+  if (req.method === 'GET' && _wantMode !== 'warm') return res.status(200).json({ ok: true, ...whoami, version: ROBOGRADE_VERSION });
 
-  const { nonce = '', tokens = 2100, model = null, ttl = '1h', label = '' } = req.body || {};
+  const _src = (req.body && Object.keys(req.body).length) ? req.body : (req.query || {});
+  const { nonce = '', tokens = 2100, model = null, ttl = '1h', label = '' } = _src;
+  const mode = _wantMode;
+  const quietMinutes = Number(_src.quietMinutes) > 0 ? Number(_src.quietMinutes) : 50;
+  const force = _src.force === true || _src.force === 'true';
+
+  // ── mode:'warm' — THE PRODUCTION KEEP-WARM PING (v5.48) ────────────────────
+  // Sends the REAL Main cached prefix (lib/main_prompt.js, the _ki === null
+  // variant that every ordinary Main produces) so the live cache entry's TTL is
+  // refreshed before it expires. Reads refresh the TTL — verified 2026-10-05 by
+  // the three-call probe below, with call 3 landing 8 minutes into a 5-minute
+  // TTL and still reading.
+  //
+  // TRAFFIC-GATED. If a Main ran in the last `quietMinutes`, the entry is
+  // already warm and this returns without calling the model at all. Only an
+  // actually-quiet hour costs anything. Modelled on 60 days of timestamps this
+  // is worth ~$27/month, and it is worth MOST overnight: 03:00-05:00 ET run
+  // 47-52% cold against 9-11% at the 19:00 peak. DO NOT make it sleep at night.
+  //
+  // ACCEPTANCE TEST, and it is not optional after any prompt edit:
+  //   a warm ping must report cacheReadInputTokens around 19,800 and cost ~$0.01.
+  //   If it reports cacheCreation instead, the prefix no longer matches what
+  //   /api/assess sends and the ping is burning money for nothing.
+  if (mode === 'warm') {
+    const apiKeyW = process.env.ANTHROPIC_API_KEY;
+    if (!apiKeyW) return res.status(500).json({ error: 'no ANTHROPIC_API_KEY' });
+
+    // Traffic gate. A read failure must NOT block the ping — the ping is cheap
+    // and a missed one is the expensive outcome, so we fail OPEN and warm.
+    let lastMainMs = null, gateNote = '';
+    if (!force) {
+      try {
+        const db = await getAdminDb();
+        const snap = await db.collection('assessment_timings')
+          .orderBy('createdAt', 'desc').limit(1).get();
+        if (!snap.empty) {
+          const d = snap.docs[0].data() || {};
+          const t = Date.parse(d.createdAt || '');
+          if (!isNaN(t)) lastMainMs = Date.now() - t;
+        }
+      } catch (e) { gateNote = 'gate read failed, warming anyway: ' + String(e && e.message || e); }
+      if (lastMainMs != null && lastMainMs < quietMinutes * 60 * 1000) {
+        return res.status(200).json({
+          ok: true, mode: 'warm', skipped: true, version: ROBOGRADE_VERSION,
+          reason: 'recent traffic — cache already warm',
+          minutesSinceLastAssessment: Math.round(lastMainMs / 60000), quietMinutes,
+          costUsd: 0
+        });
+      }
+    }
+
+    const prefix = buildMainPrefix(null);
+    const modelW = model || PRIMARY_MODEL;
+    const t0w = Date.now();
+    try {
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKeyW, 'anthropic-version': '2023-06-01',
+                   'anthropic-beta': 'extended-cache-ttl-2025-04-11' },
+        body: JSON.stringify({
+          model: modelW,
+          max_tokens: 1,                 // output spend is zero; we want the cache touch, not an answer
+          system: [{ type: 'text', text: prefix, cache_control: { type: 'ephemeral', ttl: '1h' } }],
+          messages: [{ role: 'user', content: [{ type: 'text', text: 'ok' }] }]
+        })
+      });
+      const j = await r.json();
+      if (!r.ok) return res.status(502).json({ error: 'anthropic error', detail: j.error ? j.error.message : ('HTTP ' + r.status) });
+      const u = j.usage || {};
+      const created = u.cache_creation_input_tokens || 0;
+      const read    = u.cache_read_input_tokens || 0;
+      const RATE_IN = 4 / 1e6;           // Opus 5.5 input; see lib/model.js
+      const costUsd = (u.input_tokens || 0) * RATE_IN + created * RATE_IN * 2 + read * RATE_IN * 0.1;
+      return res.status(200).json({
+        ok: true, mode: 'warm', skipped: false, version: ROBOGRADE_VERSION,
+        model: modelW, prefixChars: prefix.length, ms: Date.now() - t0w,
+        minutesSinceLastAssessment: lastMainMs == null ? null : Math.round(lastMainMs / 60000),
+        cacheCreationInputTokens: created,
+        cacheReadInputTokens: read,
+        costUsd: Number(costUsd.toFixed(5)),
+        // READ is the healthy answer. WRITE on every ping means the prefix this
+        // endpoint sends no longer matches what /api/assess sends — stop the
+        // cron and diff lib/main_prompt.js against the prompt assess.js builds.
+        verdict: read > 0 ? 'READ — cache refreshed, ping is working'
+               : created > 0 ? 'WRITE — prefix did NOT match the live cache entry. Investigate before leaving the cron on.'
+               : 'NEITHER — unexpected; prefix may be under the minimum cacheable length',
+        gateNote: gateNote || undefined
+      });
+    } catch (e) {
+      return res.status(500).json({ error: 'warm ping failed', detail: String(e && e.message || e) });
+    }
+  }
+
   if (!nonce || typeof nonce !== 'string' || nonce.length < 4) {
     return res.status(400).json({ error: 'nonce required', detail: 'Pass a stable per-run string, e.g. "2026-10-03-run1". It goes inside the cached prefix and is what isolates this run from production traffic.' });
   }
