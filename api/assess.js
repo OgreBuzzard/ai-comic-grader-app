@@ -1209,6 +1209,11 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     // Both branches set these and then converge on the existing parse logic.
     let text;
     let _usage = {};
+    // S23: filled in place by anthropicWithRetry so both the success and the
+    // error record can say how many attempts it took and what the upstream
+    // said. Without it a 50-second failure looks the same whether it was one
+    // slow call or three 429s and two backoffs.
+    const _retryStats = { attempts: 0, lastStatus: null, retried: false, waitedMs: 0 };
     let _inputTokens = null;
     let _outputTokens = null;
     let _cacheReadInputTokens = null;
@@ -1242,7 +1247,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
             body: _streamBody,
             signal: ctrl.signal
           }),
-          { deadlineMs: 55000, maxAttempts: 3, label: 'primary-stream' }
+          { deadlineMs: 55000, maxAttempts: 3, label: 'primary-stream', stats: _retryStats }
         );
       } catch (e) {
         clearTimeout(_streamTimeout);
@@ -2060,6 +2065,9 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           referenceYear: referenceYear,
           referenceVolume: referenceVolumeName,
           referenceComparison: parsed.referenceComparison || null,
+          attempts: _retryStats.attempts || null,
+          upstreamStatus: _retryStats.lastStatus ?? null,
+          retryWaitedMs: _retryStats.waitedMs || 0,
           stopReason: _stopReason,
           responseModel: _responseModel,
           rawTextChars: _rawTextChars,
@@ -2158,6 +2166,12 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
               };
             } catch (e) { return { costUsd: 0 }; }
           })(),
+          // How it got here: one slow attempt, or several upstream rejections
+          // and backoff? attempts/upstreamStatus answer that, and phases says
+          // where in the pipeline the clock ran out.
+          attempts: _retryStats.attempts || null,
+          upstreamStatus: _retryStats.lastStatus ?? null,
+          retryWaitedMs: _retryStats.waitedMs || 0,
           errorMessage: String(err.message || err).slice(0, 500),
           timedOut: /timeout|abort/i.test(String(err.message || err))
         });
