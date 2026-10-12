@@ -3467,6 +3467,11 @@ let _catOrder = 'title';
 // training — a RAW book whose real grade is known is. That is the truthGraded
 // flag, set by hand per entry, so this filter reads it instead.
 let _catSort = 'rg', _catLevel = 'all', _catTruthOnly = false, _catQ = '';
+// S23: how an issue's copies are drawn. 'lines' is a one-row-per-assessment
+// summary and is the DEFAULT, because a popular book now carries 30+ copies
+// (ASM 129 has 31) and the full cards made finding a specific one a scroll.
+// 'cards' is the old view, kept for reading a single copy in detail.
+let _catRowView = 'lines';
 
 const _catNorm = s => String(s || '').trim().toLowerCase().replace(/^the\s+/, '').replace(/\s+/g, ' ');
 const _catNum = v => { const x = parseFloat(v); return Number.isFinite(x) ? x : null; };
@@ -3905,8 +3910,17 @@ function _catRenderIssue() {
   if (_catLevel !== 'all') items = items.filter(x => String(x.stars) === _catLevel);
   if (_catTruthOnly) items = items.filter(x => x.truthGraded);
   items.sort((a, b) => {
-    if (_catSort === 'rg') return (_catNum(b.rgV3) ?? -1) - (_catNum(a.rgV3) ?? -1);
-    if (_catSort === 'pg') return (_catNum(b.pg) ?? -1) - (_catNum(a.pg) ?? -1);
+    // RG descending, and within an identical RG, PG descending. Copies of a
+    // popular book bunch up on the same RG, so without the tie-break the order
+    // inside a bunch was arbitrary and shuffled between renders.
+    if (_catSort === 'rg') {
+      const d = (_catNum(b.rgV3) ?? -1) - (_catNum(a.rgV3) ?? -1);
+      return d !== 0 ? d : (_catNum(b.pg) ?? -1) - (_catNum(a.pg) ?? -1);
+    }
+    if (_catSort === 'pg') {
+      const d = (_catNum(b.pg) ?? -1) - (_catNum(a.pg) ?? -1);
+      return d !== 0 ? d : (_catNum(b.rgV3) ?? -1) - (_catNum(a.rgV3) ?? -1);
+    }
     return String(b.date).localeCompare(String(a.date));
   });
   const rgs = g.items.map(x => _catNum(x.rgV3)).filter(x => x != null);
@@ -3922,10 +3936,24 @@ function _catRenderIssue() {
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;font-size:11px;color:#8a8d96;flex-wrap:wrap">
         Sort ${sel('cat-sort', _catSort, [['rg', 'RG ↓'], ['pg', 'PG ↓'], ['date', 'newest']])}
         Level ${sel('cat-level', _catLevel, [['all', 'all'], ['1', 'Main'], ['2', 'Deep'], ['3', 'Full']])}
+        View ${sel('cat-rowview', _catRowView, [['lines', 'lines'], ['cards', 'cards']])}
         <label style="cursor:pointer;display:inline-flex;align-items:center;gap:4px"><input type="checkbox" id="cat-truth"${_catTruthOnly ? ' checked' : ''}> verified only</label>
       </div>
       <div id="cat-entries" style="display:flex;flex-direction:column;gap:12px">
-        ${items.map(_catCard).join('') || '<div style="color:#666;font-size:12px">nothing matches those filters</div>'}
+        ${items.length ? (_catRowView === 'lines'
+            ? '<div style="border-top:1px solid #1b1d23">'
+              + '<div style="display:flex;gap:10px;padding:5px 9px;font-size:10px;color:#6d7078;letter-spacing:.5px;border-bottom:1px solid #23252c">'
+              + '<span style="min-width:46px;text-align:right">RG</span>'
+              + '<span style="min-width:34px;text-align:right">PG</span>'
+              + '<span style="min-width:30px"></span>'
+              + '<span style="min-width:78px">GRADE ID</span>'
+              + '<span style="min-width:72px">DATE</span>'
+              + '<span style="flex:1">USER</span>'
+              + '<span>ID</span>'
+              + '<span style="min-width:74px"></span></div>'
+              + items.map(_catLine).join('') + '</div>'
+            : items.map(_catCard).join(''))
+          : '<div style="color:#666;font-size:12px">nothing matches those filters</div>'}
       </div>
       <!-- FMV sits AFTER the entries (Matt): you decide the tier by reading the
            copies, so the tool belongs at the end of the reading, not before it. -->
@@ -3935,6 +3963,7 @@ function _catRenderIssue() {
   document.getElementById('signout-btn').onclick = signOut;
   document.getElementById('cat-sort').onchange = e => { _catSort = e.target.value; _catRenderIssue(); };
   document.getElementById('cat-level').onchange = e => { _catLevel = e.target.value; _catRenderIssue(); };
+  { const _rv = document.getElementById('cat-rowview'); if (_rv) _rv.onchange = e => { _catRowView = e.target.value; _catRenderIssue(); }; }
   document.getElementById('cat-truth').onchange = e => { _catTruthOnly = e.target.checked; _catRenderIssue(); };
   document.querySelectorAll('[data-cat-item]').forEach(n => n.onclick = () => {
     const [u, i] = n.dataset.catItem.split('|'); showItem(u, i, 'catalogue');
@@ -3988,6 +4017,36 @@ async function _catSaveTruth(ref) {
 }
 
 const CGC_GRADE_OPTS = ['', '0.5','1.0','1.5','1.8','2.0','2.5','3.0','3.5','4.0','4.5','5.0','5.5','6.0','6.5','7.0','7.5','8.0','8.5','9.0','9.2','9.4','9.6','9.8','10.0'];
+
+// ── ONE ASSESSMENT, ONE LINE ─────────────────────────────────────────────────
+// S23 (Matt): the issue screen is for finding a particular copy among many, and
+// the card view buried that under detail. This is the scanning view: grade on
+// the left where the eye lands, then the four things that identify a copy -
+// Grade ID, date, who made it, and their 4-character user code. Click opens the
+// item exactly as the card does.
+function _catLine(r) {
+  const ref = escapeAttr(r.uid) + '|' + escapeAttr(r.itemId);
+  const rg = (r.rgV3 != null) ? (r.rgV3Label || _catG(r.rgV3)) : '—';
+  const pg = (r.pg != null) ? Number(r.pg).toFixed(1) : '—';
+  const d = String(r.date || '').slice(0, 10);
+  const lvl = r.stars === 3 ? 'Full' : r.stars === 2 ? 'Deep' : 'Main';
+  const tags = [
+    r.slabbed ? '<span style="color:#e8c860">SLAB</span>' : '',
+    r.restored ? '<span style="color:#e07a7a">REST</span>' : '',
+    r.truthGraded ? '<span style="color:#7ab8e8">' + escapeHtml(r.truthService || 'CGC') + ' ' + escapeHtml(r.truthGrade || '?') + '</span>' : ''
+  ].filter(Boolean).join(' ');
+  return `<div data-cat-item="${ref}" style="display:flex;align-items:center;gap:10px;padding:7px 9px;border-bottom:1px solid #1b1d23;cursor:pointer;font-size:12px"
+       onmouseover="this.style.background='#15171c'" onmouseout="this.style.background=''">
+    <span style="min-width:46px;text-align:right;color:#9ada7a;font-weight:700">${escapeHtml(rg)}</span>
+    <span style="min-width:34px;text-align:right;color:#7ab8e8">${escapeHtml(pg)}</span>
+    <span style="min-width:30px;color:#6d7078;font-size:10px">${lvl}</span>
+    <span style="min-width:78px;color:#8a8d96;font-family:ui-monospace,Menlo,monospace;font-size:11px">${escapeHtml(r.gradeId || '—')}</span>
+    <span style="min-width:72px;color:#8a8d96">${escapeHtml(d || '—')}</span>
+    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#cfd6cf">${escapeHtml(r.userName || r.userEmail || '(no name)')}</span>
+    <span style="color:#e8c257;font-weight:700;font-family:ui-monospace,Menlo,monospace">${escapeHtml(r.userCode || '----')}</span>
+    <span style="font-size:10px;min-width:74px;text-align:right">${tags}</span>
+  </div>`;
+}
 
 function _catCard(r) {
   const s = r.subs || {};

@@ -2124,10 +2124,40 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           // standard 4).
           imageCount: (typeof imageBlocks !== 'undefined' && Array.isArray(imageBlocks)) ? imageBlocks.length : null,
           highGrade: (typeof highGrade !== 'undefined') ? !!highGrade : null,
-          // S15 May 28: errored assessments cost $0 because the API never
-          // returned (no tokens billed). Setting to 0 (not null) so the
-          // admin Logs view can sum/avg cleanly without null-handling.
-          costUsd: 0,
+          // ── S23 2026-10-11: THE $0 WAS WRONG, AND IT HID REAL MONEY ──────
+          // The old comment here read "errored assessments cost $0 because the
+          // API never returned (no tokens billed)". That is true for a failure
+          // BEFORE the request goes out. It is false for the case that actually
+          // dominates: a TIMEOUT. By then Anthropic has received the full
+          // prompt and all four images, processed them, written or read the
+          // cache, and started streaming. We abort the connection at 55s; the
+          // billing already happened. A timed-out Main costs about what a cold
+          // successful one costs -- roughly $0.30 -- and it was being recorded
+          // as free.
+          //
+          // We have no usage object (that arrives with the response we never
+          // got), so this is an ESTIMATE and it is deliberately a FLOOR:
+          // the prefix is priced as a cache READ even though a cold one is 20x
+          // that, and output tokens are ignored entirely. Flagged with
+          // costEstimated so nothing downstream mistakes it for a measurement.
+          // A pre-flight failure (no prompt assembled yet) still records 0.
+          ...(function(){
+            try {
+              if (typeof _activePrompt !== 'string' || !_activePrompt) return { costUsd: 0 };
+              const R = ratesFor(_activeModel);
+              const sp = _activePrompt.split('\u00a7\u00a7CACHE_SPLIT\u00a7\u00a7');
+              const prefixTok = Math.round((sp[0] || '').length / 3.8);
+              const tailTok   = Math.round((sp[1] || '').length / 3.8);
+              const imgTok    = ((typeof imageBlocks !== 'undefined' && Array.isArray(imageBlocks)) ? imageBlocks.length : 0) * 2600;
+              const cacheOn   = (typeof _cacheOn !== 'undefined') ? !!_cacheOn : true;
+              const prefixCost = cacheOn ? prefixTok * R.in * R.cacheRead : prefixTok * R.in;
+              return {
+                costUsd: +(prefixCost + (tailTok + imgTok) * R.in).toFixed(6),
+                costEstimated: true,
+                costEstimateNote: 'floor: prefix priced as a cache read, output ignored'
+              };
+            } catch (e) { return { costUsd: 0 }; }
+          })(),
           errorMessage: String(err.message || err).slice(0, 500),
           timedOut: /timeout|abort/i.test(String(err.message || err))
         });

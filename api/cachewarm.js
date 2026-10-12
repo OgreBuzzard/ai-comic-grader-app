@@ -111,12 +111,30 @@ export default async function handler(req, res) {
   // and returns no user data — so the blast radius of a leaked secret is a
   // stranger keeping our prompt cache warm for us. Everything else still needs
   // a real signed-in user.
-  // Vercel Cron issues a GET and sets Authorization: Bearer $CRON_SECRET itself,
-  // so the mode arrives as a query parameter, not a body field. Accept both.
-  const _cronSecret = process.env.CRON_SECRET || '';
-  const _bearer = (req.headers.authorization || req.headers.Authorization || '').replace(/^Bearer\s+/, '').trim();
+  // Vercel Cron issues a GET, so the mode arrives as a query parameter rather
+  // than a body field. Accept both.
   const _wantMode = ((req.body || {}).mode) || ((req.query || {}).mode) || null;
-  const _isCron = !!_cronSecret && _bearer === _cronSecret && _wantMode === 'warm';
+
+  // ── HOW THE CRON AUTHENTICATES, AND WHY IT IS DELIBERATELY WEAK ───────────
+  // CRON_SECRET is OPTIONAL and you do not need to set it. Vercel rejects an
+  // environment variable with leading or trailing whitespace at BUILD time, and
+  // an invisible newline from a copy-paste failed three deploys in a row for a
+  // variable guarding an endpoint that spends one cent and writes nothing. That
+  // is a bad trade, so the secret is no longer required and both sides of the
+  // comparison are trimmed if you do set one.
+  //
+  // The fallback is Vercel's own cron user-agent. That is spoofable, and it
+  // does not matter: the worst a stranger can do with this endpoint is keep our
+  // prompt cache warm at our expense, roughly a cent a go, rate-limited by the
+  // 50-minute traffic gate below. It returns no user data, writes nothing but
+  // its own timestamp, and debits no credits. Everything else on this endpoint
+  // still requires a real signed-in Firebase user.
+  const _cronSecret = (process.env.CRON_SECRET || '').trim();
+  const _bearer = (req.headers.authorization || req.headers.Authorization || '').replace(/^Bearer\s+/, '').trim();
+  const _ua = String(req.headers['user-agent'] || '');
+  const _looksLikeVercelCron = /vercel-cron/i.test(_ua);
+  const _isCron = _wantMode === 'warm' &&
+    ((_cronSecret && _bearer === _cronSecret) || _looksLikeVercelCron);
   if (_isCron) {
     whoami = { email: 'vercel-cron', uid: 'cron' };
   } else
