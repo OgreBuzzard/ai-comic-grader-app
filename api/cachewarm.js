@@ -163,7 +163,17 @@ export default async function handler(req, res) {
   const _src = (req.body && Object.keys(req.body).length) ? req.body : (req.query || {});
   const { nonce = '', tokens = 2100, model = null, ttl = '1h', label = '' } = _src;
   const mode = _wantMode;
-  const quietMinutes = Number(_src.quietMinutes) > 0 ? Number(_src.quietMinutes) : 50;
+  // 40, NOT 50, AND THE NUMBER MATTERS. The cron fires every 15 minutes, so the
+  // only achievable ping intervals are multiples of 15. With the gate at 50 the
+  // T+45 fire is turned away (45 < 50) and the first one that passes is T+60 --
+  // which is exactly the cache TTL, so every ping was racing the expiry and
+  // losing about half the time. Measured 2026-10-12: minutesSinceLastPing came
+  // back at 56, and a real assessment 1h25m after the previous one still paid
+  // the full cold price of $0.296.
+  // At 40 the T+45 fire passes, giving a 45-minute ping interval and 15 minutes
+  // of headroom inside the hour. If the cron interval ever changes, re-derive
+  // this: it must sit strictly between one cron tick and the TTL minus a tick.
+  const quietMinutes = Number(_src.quietMinutes) > 0 ? Number(_src.quietMinutes) : 40;
   const force = _src.force === true || _src.force === 'true';
 
   // ── mode:'warm' — THE PRODUCTION KEEP-WARM PING (v5.48) ────────────────────
