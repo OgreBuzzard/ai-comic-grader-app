@@ -222,11 +222,27 @@ export default async function handler(req, res) {
 
     if (!force && db) {
       try {
+        // ONLY A MAIN THAT CACHED COUNTS AS A TOUCH. This read used to take the
+        // single most recent row of any kind, which was wrong: a Deep, a Card
+        // assessment, a slab-check or a Batch pass all write rows here and none
+        // of them warms the MAIN prefix. Measured 2026-10-16 — three Card
+        // assessments at 08:37 suppressed the ping, and the Main entry died;
+        // the next Main at 10:03 paid a full cold $0.301, and another at 13:17
+        // paid $0.285.
+        // Scanned client-side over a small window so no composite index is
+        // needed. `warmedPrefix` is stamped by api/assess.js; rows written
+        // before 2026-10-16 do not have it, so fall back to the cache-token
+        // counts, which only a cached Main carries at this size.
         const snap = await db.collection('assessment_timings')
-          .orderBy('createdAt', 'desc').limit(1).get();
-        if (!snap.empty) {
-          const t = Date.parse((snap.docs[0].data() || {}).createdAt || '');
+          .orderBy('createdAt', 'desc').limit(40).get();
+        for (const doc of snap.docs) {
+          const d = doc.data() || {};
+          const isMainWarm = d.warmedPrefix === 'main'
+            || ((d.cacheReadInputTokens || 0) > 20000 || (d.cacheCreationInputTokens || 0) > 20000);
+          if (!isMainWarm) continue;
+          const t = Date.parse(d.createdAt || '');
           if (!isNaN(t)) lastMainMs = Date.now() - t;
+          break;
         }
         const w = await db.doc(WARM_DOC).get();
         if (w.exists) {
@@ -243,8 +259,8 @@ export default async function handler(req, res) {
       if (sinceTouch < quietMinutes * 60 * 1000) {
         return res.status(200).json({
           ok: true, mode: 'warm', skipped: true, version: ROBOGRADE_VERSION,
-          reason: 'cache touched recently — still warm',
-          minutesSinceLastAssessment: lastMainMs == null ? null : Math.round(lastMainMs / 60000),
+          reason: 'Main prefix touched recently — still warm',
+          minutesSinceLastMainCacheTouch: lastMainMs == null ? null : Math.round(lastMainMs / 60000),
           minutesSinceLastPing: lastPingMs == null ? null : Math.round(lastPingMs / 60000),
           quietMinutes, costUsd: 0
         });

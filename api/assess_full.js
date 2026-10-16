@@ -766,8 +766,15 @@ Rules:
           // of them was right at any moment, and the Opus 5.5 cut-over flipped
           // which. Both now call the one helper in lib/model.js, which carries
           // the multiplier PER MODEL. Deep does not currently send
-          // cache_control at all, so the cache terms are zero here — but they
-          // will stop being zero the day Deep caching ships.
+          // CORRECTION 2026-10-12: an earlier version of this comment claimed
+          // Deep "does not currently send cache_control at all". Wrong. Deep
+          // splits its prompt at §§CACHE_SPLIT§§ and puts a 1h ephemeral
+          // cache_control on the static half, and the breakpoint covers the
+          // system text plus all 9 invariant images. What is true is that it is
+          // GATED: DEEP_CACHE_ENABLED is (cacheProfile === 'batch'), so only
+          // Batch passes cache and an ordinary user Deep never does. The cache
+          // terms below are therefore zero on a standalone Deep and non-zero
+          // inside a Batch.
           costUsd: costOf({
             input_tokens: _inputTokens || 0,
             output_tokens: _outputTokens || 0,

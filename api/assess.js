@@ -2065,6 +2065,14 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           referenceYear: referenceYear,
           referenceVolume: referenceVolumeName,
           referenceComparison: parsed.referenceComparison || null,
+          // S23 2026-10-16: marks this row as one that actually TOUCHED THE MAIN
+          // PREFIX. api/cachewarm's traffic gate reads it. Before this existed
+          // the gate treated ANY assessment_timings row as proof the Main cache
+          // was warm — but Deeps, Card assessments, slab-checks and Batch passes
+          // all write rows and none of them warm the Main prefix. A Card at
+          // 08:37 would suppress the Main ping, and the Main entry would quietly
+          // die an hour later.
+          warmedPrefix: _cacheOn ? 'main' : null,
           attempts: _retryStats.attempts || null,
           upstreamStatus: _retryStats.lastStatus ?? null,
           retryWaitedMs: _retryStats.waitedMs || 0,

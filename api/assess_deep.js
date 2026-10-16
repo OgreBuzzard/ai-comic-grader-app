@@ -711,6 +711,33 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
     // so with per-pass grade brackets (BATCH_FIXED_BRACKET=false) the system
     // prompt differs per pass and this will NOT hit. Kept wired so the
     // cost-vs-variance trade can be measured both ways rather than argued.
+    // ── DEEP CACHING: ON FOR EVERY DEEP SINCE 2026-10-12 ────────────────────
+    // This was gated to Batch passes only, and the reasoning was sound at the
+    // time: caching pays when the prefix REPEATS, which it does across the five
+    // passes of a Batch and does not on a standalone Deep. A lone Deep would
+    // have paid a 2x cache WRITE and never read it back. Pure loss.
+    // What changed: /api/cachewarm now keeps the prefix alive between calls, so
+    // a standalone Deep arrives to a WARM entry instead of writing a cold one.
+    // The prefix is warmable because it varies on exactly two booleans,
+    // hasInteriorCovers and hasFrontCover — no grade-dependent text, the
+    // per-pass bracket lives after §§CACHE_SPLIT§§ — and 98.4% of 572 Deeps
+    // over 60 days took the single hasInteriorCovers && hasFrontCover branch.
+    // One warm entry covers nearly all of them; the 1.6% minority pays cold,
+    // exactly as before.
+    // IF THE PING IS EVER TURNED OFF, PUT THIS BACK TO BATCH-ONLY. Without a
+    // ping, caching a standalone Deep costs more than it saves.
+    // STILL BATCH-ONLY, AND THE ORDER MATTERS. Turning this on before the ping
+    // can warm the Deep prefix makes things WORSE, not better: a standalone Deep
+    // would pay a 2x cache WRITE on ~5,300 tokens of system text plus the nine
+    // invariant images behind the second breakpoint, and never read any of it
+    // back. At ~446 Deeps a month that is roughly -$27/month, which is more than
+    // the whole feature is worth. Claude flipped this to `true` on 2026-10-12
+    // and reverted it within the minute on working the arithmetic out.
+    // THE CORRECT ORDER: (1) hoist this prompt's cached prefix into its own
+    // module the way lib/main_prompt.js was hoisted, with a byte-identity check;
+    // (2) teach /api/cachewarm to ping the hasInteriorCovers && hasFrontCover
+    // variant, which covers 98.4% of 572 Deeps over 60 days; (3) confirm the
+    // ping reports a cache READ; (4) only then set this to true.
     const DEEP_CACHE_ENABLED = ((req.body && req.body.cacheProfile) === 'batch');
     const _deepCacheCtl = { type: 'ephemeral', ttl: '1h' };
 
@@ -1301,8 +1328,15 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
           // of them was right at any moment, and the Opus 5.5 cut-over flipped
           // which. Both now call the one helper in lib/model.js, which carries
           // the multiplier PER MODEL. Deep does not currently send
-          // cache_control at all, so the cache terms are zero here — but they
-          // will stop being zero the day Deep caching ships.
+          // CORRECTION 2026-10-12: an earlier version of this comment claimed
+          // Deep "does not currently send cache_control at all". Wrong. Deep
+          // splits its prompt at §§CACHE_SPLIT§§ and puts a 1h ephemeral
+          // cache_control on the static half, and the breakpoint covers the
+          // system text plus all 9 invariant images. What is true is that it is
+          // GATED: DEEP_CACHE_ENABLED is (cacheProfile === 'batch'), so only
+          // Batch passes cache and an ordinary user Deep never does. The cache
+          // terms below are therefore zero on a standalone Deep and non-zero
+          // inside a Batch.
           costUsd: costOf({
             input_tokens: _inputTokens || 0,
             output_tokens: _outputTokens || 0,
