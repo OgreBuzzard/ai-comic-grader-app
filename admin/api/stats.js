@@ -342,7 +342,43 @@ export default async function handler(req, res) {
     // Spending breakdown for the dashboard's Spending box — four buckets, each
     // 24h / 7d / 30d. API = Anthropic assessment cost; Ads = paid-ad plan;
     // Sub = Claude Max subscription; Site = Firebase + Vercel + domain.
+    // ── KEEP-WARM PING SPEND (S23 2026-10-16, Matt's ask) ───────────────────
+    // The ping spends real money and writes NO assessment_timings row, so it is
+    // invisible to every other figure on this page. api/cachewarm.js keeps a
+    // running total and a 30-day log at config/cache_warm/main; this reads it
+    // and surfaces it as its own line under API. Shown separately rather than
+    // folded in, because the whole point of the ping is that it should cost far
+    // less than it saves — and that is only checkable if both numbers are on
+    // screen at once.
+    let warmSpend = null;
+    try {
+      const _ws = await db.collection('config').doc('cache_warm').collection('main').doc('main').get().catch(() => null);
+      const _wd = await db.doc('cache_warm/main').get();
+      const w = (_wd.exists ? _wd.data() : null) || (_ws && _ws.exists ? _ws.data() : null);
+      if (w) {
+        const rec = Array.isArray(w.recent) ? w.recent : [];
+        const sum = (sinceMs) => rec.filter(x => Date.parse(x.at || '') >= sinceMs)
+          .reduce((a, x) => a + (+x.costUsd || 0), 0);
+        warmSpend = {
+          allTimeCents: Math.round((+w.totalCostUsd || 0) * 100),
+          dayCents:   Math.round(sum(cutoffs.day) * 100),
+          weekCents:  Math.round(sum(cutoffs.week) * 100),
+          monthCents: Math.round(sum(cutoffs.month) * 100),
+          totalPings: +w.totalPings || 0,
+          reads: +w.totalReads || 0,
+          writes: +w.totalWrites || 0,
+          lastWarmAt: w.lastWarmAt || null,
+          // WRITES ARE THE ALARM. A healthy ping READS an existing entry. If
+          // writes are a meaningful share of pings, the prefix it sends no
+          // longer matches what /api/assess sends and it is paying 2x input to
+          // warm an entry nobody uses.
+          healthy: (+w.totalPings || 0) === 0 ? null : (+w.totalWrites || 0) / (+w.totalPings || 1) < 0.25
+        };
+      }
+    } catch (e) { console.warn('[admin-stats] cache-warm read failed:', e.message); }
+
     const spendBreakdown = {
+      warm: warmSpend,
       api:  { dayCents: apiDayCents, weekCents: apiWeekCents, monthCents: apiMonthCents,
               // Honesty flags. truncated = the 30d sum did not reach back a full
               // 30 days, so it is a FLOOR, not a total. zeroCost = rows that

@@ -293,14 +293,36 @@ export default async function handler(req, res) {
       // Record the touch so the next cron fire sees it and returns free.
       // Best-effort: a failed write makes the next fire pay again, which is a
       // cent, not an outage.
+      // Record the touch AND accumulate what the ping has cost. The ping spends
+      // real money and writes no assessment_timings row, so without this running
+      // total it is invisible to every cost figure in the admin — a cent at a
+      // time, forever, with nothing to show for it on the dashboard. Matt asked
+      // for it as its own line under API spend, which is right: the saving is
+      // only worth claiming if the cost of claiming it is visible beside it.
       if (db) {
         try {
+          const { FieldValue } = await import('firebase-admin/firestore');
           await db.doc(WARM_DOC).set({
             lastWarmAt: new Date().toISOString(),
             version: ROBOGRADE_VERSION, model: modelW,
             cacheReadInputTokens: read, cacheCreationInputTokens: created,
-            costUsd: Number(costUsd.toFixed(5))
+            costUsd: Number(costUsd.toFixed(5)),
+            // running totals, all time
+            totalCostUsd: FieldValue.increment(Number(costUsd.toFixed(6))),
+            totalPings: FieldValue.increment(1),
+            totalReads: FieldValue.increment(read > 0 ? 1 : 0),
+            totalWrites: FieldValue.increment(created > 0 ? 1 : 0),
+            // a 30-day rolling log, one entry per paid ping, trimmed below
+            recent: FieldValue.arrayUnion({ at: new Date().toISOString(), costUsd: Number(costUsd.toFixed(5)), read, created })
           }, { merge: true });
+          // Trim `recent` to the last 30 days so the doc cannot grow without
+          // bound. Best-effort; a failed trim costs a slightly larger document.
+          try {
+            const cur = (await db.doc(WARM_DOC).get()).data() || {};
+            const cutoff = Date.now() - 30 * 86400000;
+            const keep = (cur.recent || []).filter(x => Date.parse(x.at || '') >= cutoff);
+            if (keep.length !== (cur.recent || []).length) await db.doc(WARM_DOC).set({ recent: keep }, { merge: true });
+          } catch (e) { /* non-fatal */ }
         } catch (e) { /* non-fatal */ }
       }
       return res.status(200).json({
