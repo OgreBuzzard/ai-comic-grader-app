@@ -304,6 +304,12 @@
           stars: (comic && comic.fullAssessmentRan) ? 3 : (comic && (comic.deepAssessmentRan || comic.highGradeTier || (comic.roboGrade && comic.roboGrade.deepAssessmentRan))) ? 2 : 1,
           restoStar: !!(comic && comic.restorationCheckRan), restoColor: '#b58be0',
           footer: 'version', footerText: 'V' + (window.RG_GRADING_VERSION || '4.81'),  // APP version (bumps to 5.0), not the engine schema version
+          // "(+)": the subscores summed ABOVE this depth's cap and a deeper
+          // pass is allowed to return the higher number. Purely arithmetic --
+          // unlike the PG mark it needs no defect test, because exceeding the
+          // cap is already direct evidence the book scored higher than this
+          // tier may award.
+          plus: !!(_v3.ceilingHit && _v3.upsell),
           size: 104, numColor: _sbNum, starColor: _sbStar, footerColor: _sbVer, pmColor: OLIVE_LT, bg: _sbBg, border: '1.5px solid ' + _sbBorder
         }) : `<div style="background:${_sbBg};border-radius:18px;width:104px;height:104px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px solid ${_sbBorder};position:relative"><span style="font-family:'League Spartan',sans-serif;font-weight:900;color:${_sbNum};font-size:56px;transform:scaleX(0.82);display:inline-block">${scoreRounded}</span></div>`}
         <div style="flex:1;display:grid;grid-template-columns:2fr 2fr 1fr;grid-template-rows:auto auto;gap:4px">

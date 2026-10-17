@@ -378,7 +378,19 @@
     var footHtml = "";
     if (o.footer === "RG") footHtml = '<div style="position:absolute;bottom:' + Math.round(size*0.05) + 'px;left:0;right:0;text-align:center;font-size:' + Math.max(8, Math.round(size*0.086)) + 'px;font-weight:700;color:' + footerColor + ';opacity:0.85;letter-spacing:1px;line-height:1;pointer-events:none">RG</div>';
     else if (o.footer === "version" && o.footerText) footHtml = '<div style="position:absolute;bottom:' + Math.round(size*0.05) + 'px;left:0;right:0;text-align:center;font-size:' + Math.max(7, Math.round(size*0.077)) + 'px;font-weight:700;color:' + footerColor + ';opacity:0.8;letter-spacing:0.8px;line-height:1;pointer-events:none">' + o.footerText + '</div>';
-    return '<div style="position:relative;width:' + size + 'px;height:' + size + 'px;background:' + bg + ';border:' + border + ';border-radius:' + Math.round(size*0.14) + 'px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">' + numHtml + starsHtml + pmHtml + footHtml + '</div>';
+    // "(+)" — the v3 score hit its depth cap and a deeper pass can raise it
+    // (o.plus is ceilingHit && upsell, which this engine already computes).
+    // Placed absolutely on the RIGHT-MIDDLE so it cannot disturb the number:
+    // the whole point of this layout is that the number stays dead-centre
+    // whatever else is drawn, so appending to it was never an option. PM owns
+    // the upper-right and the footer the bottom, leaving the midline free.
+    // Offset by _nudge to sit on the NUMBER's midline rather than the box's.
+    var plusHtml = "";
+    if (o.plus) {
+      var _plusSize = Math.max(9, Math.round(numSize / 3));
+      plusHtml = '<div style="position:absolute;top:50%;right:' + Math.round(size*0.06) + 'px;transform:translateY(calc(-50% + ' + _nudge + 'px));line-height:1;pointer-events:none;font-weight:700;opacity:0.85;color:' + numColor + ';font-family:\'Saira\',system-ui,sans-serif;font-size:' + _plusSize + 'px">(+)</div>';
+    }
+    return '<div style="position:relative;width:' + size + 'px;height:' + size + 'px;background:' + bg + ';border:' + border + ';border-radius:' + Math.round(size*0.14) + 'px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">' + numHtml + starsHtml + pmHtml + footHtml + plusHtml + '</div>';
   }
 
   // ---- CARD scoring (v3) ----------------------------------------------------
@@ -2219,12 +2231,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.59";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.60";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.59");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.60");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -3586,7 +3598,7 @@ function buildBadge(gradeVal, type, designation, sm, fullAssessment, deepAssessm
   // server decides (gradeAtCeiling on the Main and Deep results); this only
   // draws it. Suppressed on the small list badge, where a third of an already
   // small numeral is not readable — the detail and edit views carry it.
-  const plus = (atCeiling && !sm) ? '<span class="ubadge-plus" style="font-size:0.33em;line-height:1;vertical-align:0.9em;margin-left:0.08em;opacity:0.85;font-weight:600;letter-spacing:0">(+)</span>' : "";
+  const plus = (atCeiling && !sm) ? '<span class="ubadge-plus" style="font-size:0.33em;line-height:1;vertical-align:0.65em;margin-left:0.08em;opacity:0.85;font-weight:600;letter-spacing:0">(+)</span>' : "";
   // S16: If restoration detected, predicted badge turns purple
   if (restored && (type === "predicted" || type === "cgc-ai" || type === "psa-ai")) {
     return `<div class="${cls}" style="border-color:#7c3aed;background:linear-gradient(180deg,#9a6ad8 0%,#6a3ab0 100%)"><div class="ubadge-body" style="background:transparent"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.8)">${lbl}</div></div></div>`;
@@ -10698,7 +10710,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "5.59"),
+      appVersion: (window.RG_GRADING_VERSION || "5.60"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
