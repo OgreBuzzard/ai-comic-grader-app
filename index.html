@@ -2158,7 +2158,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
     <div class="settings-row" style="cursor:default">
       <div style="flex:1">
         <div class="sr-label">Make all books</div>
-        <div class="sr-detail">One-time action. Applies to every Owned, non-reprint book that has a Robograde. Does not change the setting above.</div>
+        <div class="sr-detail">One-time action. Applies to every Owned or Watching, non-reprint book that has a Robograde. Does not change the setting above.</div>
         <div style="display:flex;flex-direction:row;gap:8px;margin-top:10px;flex-wrap:wrap">
           <button id="bulk-public-btn" class="rg-btn rg-btn-action rg-btn-sm" onclick="_bulkTap(true)">Public</button>
           <button id="bulk-private-btn" class="rg-btn rg-btn-secondary rg-btn-sm" onclick="_bulkTap(false)">Private</button>
@@ -2231,12 +2231,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.60";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.62";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.60");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.62");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -2530,7 +2530,10 @@ function _normalizeKeyIssue(s) {
 // A1/A2/A3 convention) so they always match. Also folds "Invincible Iron Man" ->
 // "Iron Man" (ComicVine returns both for the same 1968 vol-1 series). The fmv.json
 // converter MUST mirror this exactly.
-function _fmvKeyOf(title, issue) {
+// title|issue, plus |<printing slug> for a variant or later printing. The
+// third argument is optional and empty for base/channel printings, so every
+// existing caller keeps the key it has always produced.
+function _fmvKeyOf(title, issue, printing) {
   let t = (title == null ? "" : title.toString()).trim().replace(/\s+/g, " ");
   let i = (issue == null ? "" : issue.toString()).trim().replace(/^#/, "");
   const titleHasAnnual = /\bannual\b/i.test(t);
@@ -2550,7 +2553,10 @@ function _fmvKeyOf(title, issue) {
   // Iron Man vol-1 (1968) is catalogued as both "Iron Man" and "Invincible Iron
   // Man". Canonicalize to "iron man" (volumeGuards separate later volumes by year).
   t = t.replace(/^invincible\s+iron\s+man\b/i, "Iron Man");
-  return _normalizeKeyTitle(t) + "|" + i;
+  const _base = _normalizeKeyTitle(t) + "|" + i;
+  const _slug = (printing && typeof window.fmvPrintingSlug === "function")
+    ? window.fmvPrintingSlug(printing) : "";
+  return _slug ? (_base + "|" + _slug) : _base;
 }
 
 window.matchValueKey = function matchValueKey(title, issue, publisher, printing) {
@@ -2716,10 +2722,30 @@ let _fmvCardOverrides = {};    // fmv_dashboard/pokemon manual overrides
 
 window.matchFMV = function matchFMV(title, issue, grade, printing, year) {
   if (!_fmvIndex || !_fmvIndex.books) return null;
-  // Reprints/facsimiles are not the value key (same gate as matchValueKey).
-  if (printing && typeof printing === "string") {
-    const p = printing.toLowerCase();
-    if (p.includes("facsimile") || p.includes("reprint")) return null;
+  // The index is keyed title|issue and its values are for the ORIGINAL printing
+  // with the standard cover. A later printing or a variant cover is a different
+  // book that happens to share that key, so handing it the base value overstates
+  // it badly — reported on TMNT #1, where a third printing was showing
+  // first-printing money. The old gate caught only the literal words "facsimile"
+  // and "reprint", so "3rd print", "Virgin variant" and "Gold edition" all sailed
+  // through and took the first printing's value.
+  const _pclass = window.fmvPrintingClass(printing);
+  if (_pclass === "other") {
+    // A variant, a later printing or a price variant is its own book. It gets
+    // its own key — title|issue|<printing slug> — and its own curve, entered by
+    // hand in the admin catalogue. It NEVER falls back to the original
+    // printing's curve: that was the TMNT #1 bug.
+    // Until that curve exists the answer is simply nothing. Blank beats a wrong
+    // number, and blank also beats an explanation nobody asked for.
+    const _vkey = _fmvKeyOf(title, issue, printing);
+    const _vov = _fmvOverrides && _fmvOverrides[_vkey];
+    if (Array.isArray(_vov) && _vov.length) {
+      let _vt = _vov[0][1];
+      for (const b of _vov) { if (g >= b[0]) _vt = b[1]; else break; }
+      const _vr = _fmvIndex.tiers && _fmvIndex.tiers[String(_vt)];
+      if (_vr) return { tier: _vt, low: _vr[0], high: _vr[1], manual: true, variant: true };
+    }
+    return null;
   }
   const g = parseFloat(grade);
   if (!isFinite(g)) return null;
@@ -2828,7 +2854,11 @@ function fmvTierOf(item) {
   const m = (typeof window.matchFMV === "function")
     ? window.matchFMV(item.title, item.issue, grade, item.printing, extractYearFromIssueDate(item.issueDate))
     : null;
-  return m ? m.tier : 0;
+  // A suppressed match has no tier — treat it as unknown value (0), which is
+  // what it is. This closes the FMV routes into Deep ($50+) and Full ($500+)
+  // for a variant we cannot price; the near-perfect route into Full is
+  // unaffected, and a manual FMV entry restores both.
+  return (m && m.tier) ? m.tier : 0;
 }
 // Compact FMV: $2,000 -> $2K, $100,000 -> $100K (tier boundaries are round).
 function formatFMVK(v) {
@@ -2836,9 +2866,60 @@ function formatFMVK(v) {
   return v >= 1000 ? "$" + (v / 1000) + "K" : "$" + v;
 }
 function formatFMVCompact(m) {
-  if (!m) return "";
+  if (!m || m.suppressed) return "";
   return (m.high == null) ? (formatFMVK(m.low) + "+") : (formatFMVK(m.low) + "\u2013" + formatFMVK(m.high));
 }
+
+// Printing/variant classification for FMV. Three answers:
+//   'base'    — empty, or an explicit first printing. Carries the index value.
+//   'channel' — newsstand or direct edition. A distribution channel, not a
+//               different book: same issue, same cover, same value. This matters
+//               — "Newsstand variant" is by far the commonest populated value
+//               (566 of 4,527 items), and treating it as a variant would strip
+//               the FMV off an eighth of every collection for no reason.
+//   'other'   — a later printing, a variant cover, a facsimile, a price variant,
+//               a special edition. A different book. No base value.
+// Exported on window so the three bundles share one definition of the rule.
+window.fmvPrintingClass = function fmvPrintingClass(printing) {
+  const p = String(printing || "").trim().toLowerCase();
+  if (!p) return "base";
+  // Order matters: "Newsstand variant" contains the word "variant", so the
+  // channel test has to run first — but only when nothing ELSE in the string
+  // names a later printing or a different cover.
+  // "direct edition" IS the channel, so neutralise it before testing for the
+  // word "edition" — otherwise "Direct Edition" reads as a special edition.
+  const _p2 = p.replace(/\bdirect edition\b/g, "direct");
+  // Deliberately NOT the bare word "variant": "Newsstand variant" is the app's
+  // own wording for a plain newsstand copy and must stay a channel. This list
+  // is only here to catch strings that name a channel AND something else, like
+  // "Silver Edition (Newsstand)".
+  const _looksVariant = /(\d+\s*(st|nd|rd|th)\s*print|reprint|facsimile|virgin|foil|sketch|lenticular|exclusive|incentive|1:\s*\d+|pence|price variant|edition\b)/.test(_p2);
+  if (/^(newsstand|direct)\b/.test(p) || /\b(newsstand|direct edition)\b/.test(p)) {
+    if (!_looksVariant) return "channel";
+  }
+  // An explicit first printing, and nothing else in the string.
+  if (/^(1st|first)(\s+(print|printing|edition))?$/.test(p)) return "base";
+  return "other";
+};
+
+// A stable slug for an 'other' printing, so a variant can carry its OWN FMV
+// curve instead of borrowing the original printing's. Empty for base/channel —
+// those keep the plain title|issue key and the static index value.
+// Light normalisation folds the spellings people actually type: "3rd Printing",
+// "Third Printing" and "3rd print" are one book and must be one key. Anything
+// in parentheses is KEPT — "Facsimile Reprint (2019)" and "(1992)" are
+// genuinely different books with different values.
+window.fmvPrintingSlug = function fmvPrintingSlug(printing) {
+  if (window.fmvPrintingClass(printing) !== "other") return "";
+  return String(printing || "").trim().toLowerCase()
+    .replace(/\bfirst\b/g, "1st").replace(/\bsecond\b/g, "2nd")
+    .replace(/\bthird\b/g, "3rd").replace(/\bfourth\b/g, "4th")
+    .replace(/\bfifth\b/g, "5th").replace(/\bsixth\b/g, "6th")
+    .replace(/\bprinting\b/g, "print")
+    .replace(/[.,]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+};
 // Two-column PREDICTED GRADE box: grade badge(s) + page quality on the left,
 // FMV on the right. White bold headers; FMV value white and 26px (the grade
 // badge number is 30px, so it stays dominant). Single column when no FMV.
@@ -6196,9 +6277,14 @@ function showDetail(id) {
   // Assessment History (Detail view) — shared renderer: RANGE SUMMARY bars +
   // per-record rows (subscores + tier stars) + Batch shown as its N runs.
   html += renderAssessmentHistorySection(selected.assessmentHistory, false);
-  const hasAnyDateCost = !!(selected.slabbingDate || selected.dateAcquired || cost > 0);
+  // "Date Graded" (slabbingDate) was removed from the UI 2026-10-17. It meant
+  // the date CGC slabbed the book, which nobody was filling in and which the
+  // Robograde date already covers for anything this app graded. The stored
+  // field is deliberately left in COMIC_DATA_FIELDS so existing values are not
+  // destroyed — it is simply no longer shown or editable.
+  const hasAnyDateCost = !!(selected.dateAcquired || cost > 0);
   if (hasAnyDateCost) {
-    html += `<div class="divider"></div>\n    <div class="grid-2">\n      ${selected.slabbingDate ? `<div><div class="section-label">Date Graded</div><div class="field-val">${esc(selected.slabbingDate)}</div></div>` : ""}\n      ${selected.dateAcquired ? `<div><div class="section-label">Date Acquired</div><div class="field-val">${formatDate(selected.dateAcquired)}</div></div>` : ""}\n      ${cost > 0 ? `<div><div class="section-label">Total Cost</div><div class="field-val" style="color:#8abf8a;font-weight:700">${fmt$(cost)}</div></div>` : ""}\n      ${selected.fmv ? "" : ""}\n    </div>`;
+    html += `<div class="divider"></div>\n    <div class="grid-2">\n      ${selected.dateAcquired ? `<div><div class="section-label">Date Acquired</div><div class="field-val">${formatDate(selected.dateAcquired)}</div></div>` : ""}\n      ${cost > 0 ? `<div><div class="section-label">Total Cost</div><div class="field-val" style="color:#8abf8a;font-weight:700">${fmt$(cost)}</div></div>` : ""}\n      ${selected.fmv ? "" : ""}\n    </div>`;
   }
   if (selected.seller) {
     html += `<div style="margin-top:14px"><div style="font-size:12px;color:#8a7a6a">Purchased from: ${esc(selected.seller)}</div></div>`;
@@ -6339,7 +6425,21 @@ function buildListingSummary(roboGradeId, title, issue, prefix) {
   const rg = it.roboGrade || {};
   const lines = [ header ];
   // Robograde only — no precision modifier in the shared text (per request).
-  if (rg.score != null) lines.push(`Robograde: ${Math.round(rg.score)}`);
+  // THE v3 DISPLAY GRADE, not the v1 0-100 score. This was still emitting
+  // Math.round(rg.score), so a shared assessment read "Robograde: 95" while
+  // every surface in the app had shown 9.5 since v3 landed. Both share paths
+  // (public listing, and the give-a-book notify text) run through here.
+  const _v3share = (() => {
+    try {
+      if (!window.RoboScoreV3) return null;
+      const r = (it.type === "card")
+        ? window.RoboScoreV3.forCard(it)
+        : window.RoboScoreV3.forComic(it);
+      return r ? window.RoboScoreV3.formatGrade(r.grade) : null;
+    } catch (e) { return null; }
+  })();
+  if (_v3share) lines.push(`Robograde: ${_v3share}`);
+  else if (rg.score != null) lines.push(`Robograde: ${Math.round(rg.score)}`);
   // Predicted grade: comics use predicted/CGC; cards use the PSA prediction.
   const predicted = (it.type === "card")
     ? (it.assessedPSAGrade || (it.cardData && it.cardData.psaGrade) || "")
@@ -6392,8 +6492,8 @@ async function togglePublicListing(id, val) {
       } catch (e) {}
       return;
     }
-    if (comic && comic.ownership && comic.ownership !== "Owned") {
-      _showBrandedModal("OWNED BOOKS ONLY", "Only books marked Owned can be listed publicly. Switch this book back to Owned to share it.", "GOT IT");
+    if (comic && !_publicEligibleOwnership(comic.ownership)) {
+      _showBrandedModal("NOT WHILE SOLD", "A book marked Sold can't be listed publicly. Switch it to Owned or Watching to share it.", "GOT IT");
       try {
         showDetail(id);
       } catch (e) {}
@@ -6533,11 +6633,10 @@ async function cycleOwnershipFromDetail(id) {
   const update = {
     ownership: next
   };
-  // S20 (#46): only an OWNED book may be publicly listed. Moving to Sold or
-  // Watching kills the public link. Print is a transient label state — leave
-  // publicListing intact so the link stays live through a label print and is
-  // restored with the book's prior ownership.
-  if (next !== "Owned") update.publicListing = false;
+  // Moving to Sold kills the public link; Owned and Watching both keep it.
+  // Print is a transient label state — leave publicListing intact so the link
+  // stays live through a label print and is restored with the prior ownership.
+  if (!_publicEligibleOwnership(next)) update.publicListing = false;
   try {
     const ref = fsDoc(window._db, "users", window._currentUser.uid, "items", id);
     await fsSetDoc(ref, update, {
@@ -6910,6 +7009,41 @@ async function saveLightboxImage() {
         console.warn("share failed, falling back to download:", shareErr);
       }
     }
+    // ── NATIVE SAVE (Capacitor) ─────────────────────────────────────────
+    // WHY ANDROID COULD NOT SAVE IMAGES (reported 2026-10-17): this function had
+    // exactly two paths, and on Android BOTH are no-ops.
+    //   1. navigator.share({files}) — Web Share Level 2. WKWebView implements it,
+    //      so iOS works. A plain Android WebView does not: canShare({files})
+    //      returns false and the branch is skipped.
+    //   2. <a download> + blob: URL — Android WebView ignores the download
+    //      attribute entirely unless the host app installs a DownloadListener on
+    //      the WebView. MainActivity does not install one. The click does nothing,
+    //      throws nothing, and logs nothing. Silent failure, Android only.
+    // @capacitor/filesystem and @capacitor/share are both already registered in
+    // the Android project (capacitor.settings.gradle) and file_paths.xml already
+    // exposes cache-path, so writing to Cache and handing the URI to the system
+    // share sheet needs no new plugin, no new permission and no native code. The
+    // sheet is where "Save to Photos" lives.
+    const _cap = window.Capacitor;
+    if (_cap && typeof _cap.isNativePlatform === "function" && _cap.isNativePlatform()
+        && _cap.Plugins && _cap.Plugins.Filesystem && _cap.Plugins.Share) {
+      try {
+        const _b64 = await new Promise((res, rej) => {
+          const fr = new FileReader();
+          fr.onload = () => res(String(fr.result || "").split(",")[1] || "");
+          fr.onerror = () => rej(fr.error);
+          fr.readAsDataURL(blob);
+        });
+        await _cap.Plugins.Filesystem.writeFile({ path: filename, data: _b64, directory: "CACHE" });
+        const _u = await _cap.Plugins.Filesystem.getUri({ path: filename, directory: "CACHE" });
+        await _cap.Plugins.Share.share({ title: filename, url: _u && _u.uri, dialogTitle: "Save image" });
+        return;
+      } catch (capErr) {
+        const _m = String((capErr && capErr.message) || capErr || "").toLowerCase();
+        if (_m.includes("cancel") || _m.includes("abort")) return;  // user dismissed the sheet
+        console.warn("[save] native save failed, falling back to download:", capErr);
+      }
+    }
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -7106,12 +7240,12 @@ function ownershipSegmentForForm() {
 function setOwnership(next) {
   const _wasPublic = !!formData.publicListing;
   formData.ownership = next;
-  // Ownership other than Owned locks the book out of public listing.
-  if (next !== "Owned") formData.publicListing = false;
+  // Sold locks the book out of public listing; Owned and Watching do not.
+  if (!_publicEligibleOwnership(next)) formData.publicListing = false;
   renderForm();
   // S20: if the book had been public, tell the user it was switched to Private.
-  if (next !== "Owned" && _wasPublic) {
-    _showBrandedModal("SWITCHED TO PRIVATE", `This book was set to Private — only books marked Owned can be listed publicly.`, "OKAY");
+  if (!_publicEligibleOwnership(next) && _wasPublic) {
+    _showBrandedModal("SWITCHED TO PRIVATE", `This book was set to Private — a book marked Sold can't be listed publicly.`, "OKAY");
   }
 }
 
@@ -7126,7 +7260,7 @@ async function setOwnershipDetail(next) {
   if ((comic.ownership || "Owned") === next) return; // no-op if already that state
   const _wasPublic = !!comic.publicListing;
   const update = { ownership: next };
-  if (next !== "Owned") update.publicListing = false; // only Owned may be public
+  if (!_publicEligibleOwnership(next)) update.publicListing = false; // Sold may not be public
   try {
     const ref = fsDoc(window._db, "users", window._currentUser.uid, "items", id);
     await fsSetDoc(ref, update, { merge: true });
@@ -7138,8 +7272,8 @@ async function setOwnershipDetail(next) {
     }
     const row = document.getElementById("detail-ownership-row");
     if (row) row.innerHTML = _ownershipPills(next, "setOwnershipDetail");
-    // S20: switching to Sold/Watching drops the public listing — flip the Public
-    // toggle off in place so it visibly tracks the ownership change.
+    // Switching to Sold drops the public listing — flip the Public toggle off
+    // in place so it visibly tracks the ownership change.
     if (update.publicListing === false) {
       const _pt = document.getElementById("detail-public-track");
       const _pth = document.getElementById("detail-public-thumb");
@@ -8545,6 +8679,18 @@ function _showCeilingModal() {
   if (b) b.onclick = close;
 }
 
+// WHICH OWNERSHIP STATES MAY BE PUBLICLY LISTED (changed 2026-10-17).
+// Was Owned only. Watching is now allowed too: a book you are tracking before
+// buying is exactly the kind of thing people want to send someone a link to,
+// and disabling that was a mistake. Sold stays excluded — the listing outlives
+// the book and the link would misrepresent what you have.
+// One definition, used by the per-book toggle, both ownership-change paths and
+// the bulk make-public action, so they cannot drift apart.
+function _publicEligibleOwnership(own) {
+  const o = own || "Owned";
+  return o === "Owned" || o === "Watching";
+}
+
 // S20: generic branded message modal (Robograder head), styled like the Gift
 // Credit / ceiling modals. Used for the "Different Comic" mismatch message and
 // the "only Owned books can be public" message so they don't fall back to a
@@ -9385,6 +9531,13 @@ async function submitBatchAssessment() {
   }
   if (!(await _batchConfirm(`${BATCH_N} Main and ${BATCH_N} Deep passes to produce an average grade. ${BATCH_N * 2} total assessments. Cost: ${BATCH_CREDIT_COST} credits.`))) return;
 
+  // Snapshot the grade the item is ON RIGHT NOW, so the results panel slides in
+  // showing it and animates to the batch average. Batch was the only pass that
+  // never did this, so it inherited whatever _prevAssessResult a previous action
+  // happened to leave behind — and the Deep captures ITS snapshot BEFORE it
+  // runs, which is the Main grade. Run Main, then Deep, then Batch, and Batch
+  // opened on the Main grade: the symptom reported 2026-10-17.
+  _capturePrevAssessResult();
   formData._batchMode = true;
   let anim = null;
   try {
@@ -9867,7 +10020,7 @@ function _bulkState() {
   if (!all.length) return "none";
   const anyPublic = all.some(c => !!c.publicListing);
   if (!anyPublic) return "private";
-  const pubEligible = all.filter(c => (!c.ownership || c.ownership === "Owned") && !isFacsimilePrinting(c.printing));
+  const pubEligible = all.filter(c => _publicEligibleOwnership(c.ownership) && !isFacsimilePrinting(c.printing));
   const allEligiblePublic = pubEligible.length > 0 && pubEligible.every(c => !!c.publicListing);
   return allEligiblePublic ? "public" : "mixed";
 }
@@ -9893,12 +10046,13 @@ async function bulkSetAllPublic(makePublic) {
     appAlert("You need to be signed in to change listing privacy."); return;
   }
   const all = (typeof items !== "undefined" && Array.isArray(items)) ? items : [];
-  // Eligible = real graded books. Making public also requires Owned + non-reprint
-  // (same rules as the per-book toggle). Making private applies to everything.
+  // Eligible = real graded books. Making public also requires a publicly
+  // listable ownership (Owned or Watching) and a non-reprint printing — the same
+  // rules as the per-book toggle. Making private applies to everything.
   const eligible = all.filter(c => {
     if (!c || c.id === SAMPLE_COMIC_ID || !c.roboGrade) return false;
     if (makePublic) {
-      if (c.ownership && c.ownership !== "Owned") return false;
+      if (!_publicEligibleOwnership(c.ownership)) return false;
       if (isFacsimilePrinting(c.printing)) return false;
     }
     return true;
@@ -9906,7 +10060,7 @@ async function bulkSetAllPublic(makePublic) {
   const targets = eligible.filter(c => (!!c.publicListing) !== makePublic);
   if (targets.length === 0) {
     appAlert(makePublic
-      ? "All eligible books are already public. Only Owned, non-reprint books with a Robograde can be listed."
+      ? "All eligible books are already public. Only Owned or Watching, non-reprint books with a Robograde can be listed."
       : "All your books are already private.");
     return;
   }
@@ -10710,7 +10864,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "5.60"),
+      appVersion: (window.RG_GRADING_VERSION || "5.62"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
@@ -12341,12 +12495,12 @@ function renderForm() {
       const _fmvGrade = _isCardItem ? _cardPsaStr : (formData.cgcGrade || formData.psaGrade || aiCgcGrade(formData));
       const _fmvMatch = _isCardItem ? ((window.matchCardFMV && _fmvGrade && formData.cardData) ? window.matchCardFMV(formData.cardData.cardIdentification, _fmvGrade) : null) : ((typeof window.matchFMV === "function" && _fmvGrade) ? window.matchFMV(formData.title, formData.issue, _fmvGrade, formData.printing, extractYearFromIssueDate(formData.issueDate)) : null);
       return buildPredictedGradeBox([ cgcOff, psaOff, cardPsa, predicted ].filter(Boolean).join(""), _pqHtml, _fmvMatch, !!(predicted || cardPsa));
-    })() : ""}\n\n    \x3c!-- Transaction metadata block (S11): chronology of acquiring → grading.\n         Cost/FMV moved to bottom of analysis section, after Condition\n         Assessment, per user direction. --\x3e\n    ${df("Date Acquired", "dateAcquired")}\n    <div><label class="field-label">Seller</label>\n      <input value="${esc(formData.seller || "")}" list="seller-list" oninput="formData.seller=this.value;updateSellerList(this.value)" placeholder="Name / source" autocomplete="off">\n      <datalist id="seller-list">${getSellerSuggestions().map(s => `<option value="${esc(s)}">`).join("")}</datalist>\n    </div>\n    ${df("Grading Date", "slabbingDate")}\n\n    \x3c!-- Analysis block (S11 reorder per user direction):\n         Defect Notes, Condition Assessment first\n         Then Enhancement Candidate\n         Then Cost Breakdown (now including FMV inside it)\n         Other gated text fields (Label Notes, Key Info, Grader Notes,\n         Past Assessments) live in their previous positions\n         around these. --\x3e\n    ${formData.cgcGrade || formData.psaGrade || formData.cgcNotes ? `<div><label class="field-label">Label Notes</label><textarea rows="3" readonly style="cursor:not-allowed" title="Label Notes is populated by the assessment. Not user-editable.">${esc(formData.cgcNotes || "")}</textarea></div>` : ""}\n    ${(() => {
+    })() : ""}\n\n    \x3c!-- The S11 "transaction metadata" block that sat here is gone: Date\n         Acquired and Seller moved down above Cost Breakdown (2026-10-17), and\n         Grading Date (slabbingDate) was removed from the UI in the same pass. --\x3e\n    \x3c!-- Analysis block (S11 reorder per user direction):\n         Defect Notes, Condition Assessment first\n         Then Enhancement Candidate\n         Then Cost Breakdown (now including FMV inside it)\n         Other gated text fields (Label Notes, Key Info, Grader Notes,\n         Past Assessments) live in their previous positions\n         around these. --\x3e\n    ${formData.cgcGrade || formData.psaGrade || formData.cgcNotes ? `<div><label class="field-label">Label Notes</label><textarea rows="3" readonly style="cursor:not-allowed" title="Label Notes is populated by the assessment. Not user-editable.">${esc(formData.cgcNotes || "")}</textarea></div>` : ""}\n    ${(() => {
     const showLabelNotesEdit = (formData.cgcGrade || formData.psaGrade) && formData.cgcNotes && formData.cgcNotes.trim();
     if (showLabelNotesEdit) return "";
     if (!formData.keyInfo) return "";
     return `<div><label class="field-label">Key Info</label><textarea rows="3" readonly style="cursor:not-allowed;background:#ffffff;color:#1a1614" title="Key Info is populated by the assessment when the issue is in the recognized-key list. Not user-editable.">${esc(formData.keyInfo || "")}</textarea></div>`;
-  })()}\n    ${formData.cgcGrade || formData.psaGrade || formData.graderNotes ? `<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes ? 5 : 3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiAssessment ? `<div><label class="field-label">Main Assessment</label><textarea rows="${Math.max(8, Math.ceil(formData.aiAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>` : ""}\n    ${formData.deepAssessment ? `<div><label class="field-label">Deep Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.deepAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Deep pass.">${esc(formData.deepAssessment)}</textarea></div>` : ""}\n    ${formData.fullAssessment ? `<div><label class="field-label">Full Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.fullAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Full pass.">${esc(formData.fullAssessment)}</textarea></div>` : ""}\n    ${formData.gradeRevisionReason ? `<div><label class="field-label">Grade Revision</label><textarea rows="${Math.max(3, Math.ceil(formData.gradeRevisionReason.length / 80))}" readonly style="cursor:not-allowed" title="Why a Deep or Full pass moved the grade.">${esc(formData.gradeRevisionReason)}</textarea></div>` : ""}\n    ${(() => { const _rf = restorationFlagList(formData); return _rf.length ? `<div><label class="field-label">Restoration Noted During Grading</label><textarea rows="${Math.max(2, _rf.length)}" readonly style="cursor:not-allowed" title="Raised by the grading pass from ordinary-light photos. Not a UV finding.">${esc(_rf.join("\n"))}</textarea></div>` : ""; })()}\n    ${formData.restorationReport ? `<div><label class="field-label">UV Check</label><textarea rows="${Math.max(5, Math.ceil((formData.restorationReport || "").length / 80))}" readonly style="cursor:not-allowed" title="Populated by the UV Check.">${esc(formData.restorationReport)}</textarea></div>` : ""}\n    ${renderAssessmentHistorySection(formData.assessmentHistory, true)}\n    ${formData.psaNotes ? `<div><label class="field-label" style="color:#e87a7a">PSA Variance</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes || "")}</textarea></div>` : ""}\n\n    \x3c!-- Enhancement Candidate (S11): renamed from "Enhance Candidate"; moved\n         to between Condition Assessment and Cost Breakdown per user direction. --\x3e\n    \x3c!-- S20: Enhancement Candidate control hidden per request (odd inclusion, often inaccurate). Kept for future use: <div><label class="field-label">Enhancement Candidate</label><div style="display:flex;gap:10px">\${treatBtn("enhance", "Enhance")}</div></div> --\x3e\n\n    \x3c!-- Cost Breakdown (S11): now includes FMV ($) and FMV Date inside the\n         container, since they're financial fields conceptually grouped with\n         the cost data. --\x3e\n    <div class="cost-box">\n      <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>\n      <div class="form-grid-2">\n        ${mf("Purchase Price ($)", "purchasePrice")}\n        ${mf("Taxes / Fees / Shipping ($)", "taxesFeesShipping")}\n        ${mf("Grading / Pressing ($)", "gradingCost")}\n        ${mf("CGC Return Shipping ($)", "cgcShipping")}\n        \n        \n        ${mf("Asking Price ($)", "askingPrice")}\n      </div>\n    </div>\n\n    <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes || "")}</textarea></div>\n    ${""}\n    \n    <div style="display:flex;gap:10px;padding-top:4px">\n      ${isEdit ? "" : `<button id="save-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="submitForm()" ${(formData.title?.trim() && !isUploadInFlight()) ? "" : "disabled"} style="${isUploadInFlight() ? "opacity:0.55;cursor:progress" : ""}">${isUploadInFlight() ? "Uploading photos\u2026" : "Add to Collection"}</button>`}\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cancelForm()">Cancel</button>\n    </div>\n    ` : `\n    \x3c!-- Add-flow collapsed state (S11): show only the Enter Manually button.\n         Steers users toward photos-first by hiding the form fields until\n         either (a) they tap Enter Manually, or (b) an assessment runs and\n         _assessed becomes true. Edit view always shows the full form.\n         S14: ownership cycle pill inserted above Enter Manually. Lets a\n         user mark a book as Owned (default) / Watching / Sold before\n         assessing — so they can assess someone else's book without\n         claiming it, or track a book they're considering buying. Same\n         pill style as detail and edit views (color-coded by state),\n         centered between the two full-width buttons. Public-listing is\n         locked off whenever ownership !== 'Owned'; the cycleOwnership\n         handler clears formData.publicListing on transitions out of\n         Owned so a stale 'true' can't be saved. --\x3e\n    ${(() => {
+  })()}\n    ${formData.cgcGrade || formData.psaGrade || formData.graderNotes ? `<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes ? 5 : 3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiAssessment ? `<div><label class="field-label">Main Assessment</label><textarea rows="${Math.max(8, Math.ceil(formData.aiAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>` : ""}\n    ${formData.deepAssessment ? `<div><label class="field-label">Deep Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.deepAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Deep pass.">${esc(formData.deepAssessment)}</textarea></div>` : ""}\n    ${formData.fullAssessment ? `<div><label class="field-label">Full Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.fullAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Full pass.">${esc(formData.fullAssessment)}</textarea></div>` : ""}\n    ${formData.gradeRevisionReason ? `<div><label class="field-label">Grade Revision</label><textarea rows="${Math.max(3, Math.ceil(formData.gradeRevisionReason.length / 80))}" readonly style="cursor:not-allowed" title="Why a Deep or Full pass moved the grade.">${esc(formData.gradeRevisionReason)}</textarea></div>` : ""}\n    ${(() => { const _rf = restorationFlagList(formData); return _rf.length ? `<div><label class="field-label">Restoration Noted During Grading</label><textarea rows="${Math.max(2, _rf.length)}" readonly style="cursor:not-allowed" title="Raised by the grading pass from ordinary-light photos. Not a UV finding.">${esc(_rf.join("\n"))}</textarea></div>` : ""; })()}\n    ${formData.restorationReport ? `<div><label class="field-label">UV Check</label><textarea rows="${Math.max(5, Math.ceil((formData.restorationReport || "").length / 80))}" readonly style="cursor:not-allowed" title="Populated by the UV Check.">${esc(formData.restorationReport)}</textarea></div>` : ""}\n    ${renderAssessmentHistorySection(formData.assessmentHistory, true)}\n    ${formData.psaNotes ? `<div><label class="field-label" style="color:#e87a7a">PSA Variance</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes || "")}</textarea></div>` : ""}\n\n    \x3c!-- Acquisition metadata (moved 2026-10-17 per Matt): Date Acquired and\n         Seller now sit BELOW the write-ups and the Assessment History and\n         ABOVE Cost Breakdown. Grading Date (slabbingDate) was removed outright in\n         the same pass — it meant the date CGC slabbed the book, nobody filled\n         it in, and the Robograde date already covers anything we graded. --\x3e\n    ${df("Date Acquired", "dateAcquired")}\n    <div><label class="field-label">Seller</label>\n      <input value="${esc(formData.seller || "")}" list="seller-list" oninput="formData.seller=this.value;updateSellerList(this.value)" placeholder="Name / source" autocomplete="off">\n      <datalist id="seller-list">${getSellerSuggestions().map(s => `<option value="${esc(s)}">`).join("")}</datalist>\n    </div>\n    \n    \x3c!-- Enhancement Candidate (S11): renamed from "Enhance Candidate"; moved\n         to between Condition Assessment and Cost Breakdown per user direction. --\x3e\n    \x3c!-- S20: Enhancement Candidate control hidden per request (odd inclusion, often inaccurate). Kept for future use: <div><label class="field-label">Enhancement Candidate</label><div style="display:flex;gap:10px">\${treatBtn("enhance", "Enhance")}</div></div> --\x3e\n\n    \x3c!-- Cost Breakdown (S11): now includes FMV ($) and FMV Date inside the\n         container, since they're financial fields conceptually grouped with\n         the cost data. --\x3e\n    <div class="cost-box">\n      <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>\n      <div class="form-grid-2">\n        ${mf("Purchase Price ($)", "purchasePrice")}\n        ${mf("Taxes / Fees / Shipping ($)", "taxesFeesShipping")}\n        ${mf("Grading / Pressing ($)", "gradingCost")}\n        ${mf("CGC Return Shipping ($)", "cgcShipping")}\n        \n        \n        ${mf("Asking Price ($)", "askingPrice")}\n      </div>\n    </div>\n\n    <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes || "")}</textarea></div>\n    ${""}\n    \n    <div style="display:flex;gap:10px;padding-top:4px">\n      ${isEdit ? "" : `<button id="save-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="submitForm()" ${(formData.title?.trim() && !isUploadInFlight()) ? "" : "disabled"} style="${isUploadInFlight() ? "opacity:0.55;cursor:progress" : ""}">${isUploadInFlight() ? "Uploading photos\u2026" : "Add to Collection"}</button>`}\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cancelForm()">Cancel</button>\n    </div>\n    ` : `\n    \x3c!-- Add-flow collapsed state (S11): show only the Enter Manually button.\n         Steers users toward photos-first by hiding the form fields until\n         either (a) they tap Enter Manually, or (b) an assessment runs and\n         _assessed becomes true. Edit view always shows the full form.\n         S14: ownership cycle pill inserted above Enter Manually. Lets a\n         user mark a book as Owned (default) / Watching / Sold before\n         assessing — so they can assess someone else's book without\n         claiming it, or track a book they're considering buying. Same\n         pill style as detail and edit views (color-coded by state),\n         centered between the two full-width buttons. Public-listing is\n         locked off whenever ownership !== 'Owned'; the cycleOwnership\n         handler clears formData.publicListing on transitions out of\n         Owned so a stale 'true' can't be saved. --\x3e\n    ${(() => {
     const own = formData.ownership || "Owned";
     const styleByState = {
       Owned: {

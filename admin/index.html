@@ -3323,7 +3323,41 @@ const PSA_LADDER = [1,1.5,2,3,4,5,6,7,8,9,10];
 function _fmvLadder(it){ return (it && it.type === 'card') ? PSA_LADDER : CGC_LADDER; }
 function _fmvCategory(it){ return (it && it.type === 'card') ? (it.fmvCategory || 'pokemon') : 'comics'; }
 const _fmvNormTitle = s => !s ? '' : s.toString().trim().replace(/\s+/g,' ').replace(/^The\s+/i,'').toLowerCase();
-function _fmvKeyOf(title, issue) {
+// ── PRINTING / VARIANT CLASSIFICATION ──────────────────────────────────────
+// Mirrors window.fmvPrintingClass / fmvPrintingSlug in the app bundle. The two
+// MUST agree: the app reads the key this dashboard writes, and a disagreement
+// means an FMV entered here never shows up there.
+//   base    empty, or an explicit first printing. Index value applies.
+//   channel newsstand / direct edition. A distribution channel, not a different
+//           book — same value. ("Newsstand variant" is the commonest populated
+//           value in the data; it is not a variant cover.)
+//   other   later printing, variant cover, facsimile, price variant, special
+//           edition. Its own book, its own key, its own hand-entered curve.
+function fmvPrintingClass(printing) {
+  const p = String(printing || '').trim().toLowerCase();
+  if (!p) return 'base';
+  const _p2 = p.replace(/\bdirect edition\b/g, 'direct');
+  const _looksVariant = /(\d+\s*(st|nd|rd|th)\s*print|reprint|facsimile|virgin|foil|sketch|lenticular|exclusive|incentive|1:\s*\d+|pence|price variant|edition\b)/.test(_p2);
+  if (/^(newsstand|direct)\b/.test(p) || /\b(newsstand|direct edition)\b/.test(p)) {
+    if (!_looksVariant) return 'channel';
+  }
+  if (/^(1st|first)(\s+(print|printing|edition))?$/.test(p)) return 'base';
+  return 'other';
+}
+function fmvPrintingSlug(printing) {
+  if (fmvPrintingClass(printing) !== 'other') return '';
+  return String(printing || '').trim().toLowerCase()
+    .replace(/\bfirst\b/g, '1st').replace(/\bsecond\b/g, '2nd')
+    .replace(/\bthird\b/g, '3rd').replace(/\bfourth\b/g, '4th')
+    .replace(/\bfifth\b/g, '5th').replace(/\bsixth\b/g, '6th')
+    .replace(/\bprinting\b/g, 'print')
+    .replace(/[.,]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// title|issue, plus |<printing slug> for a variant or later printing.
+function _fmvKeyOf(title, issue, printing) {
   let t = (title == null ? '' : title.toString()).trim().replace(/\s+/g,' ');
   let i = (issue == null ? '' : issue.toString()).trim().replace(/^#/,'');
   const titleHasAnnual = /\bannual\b/i.test(t);
@@ -3332,7 +3366,9 @@ function _fmvKeyOf(title, issue) {
   if (titleHasAnnual) { t = t.replace(/\bannual\b/ig,'').replace(/\s+/g,' ').trim(); const num = mA ? mA[1] : (mB ? mB[1] : i.replace(/^0+(\d)/,'$1')); i = 'A'+num; }
   else if (mA) { i = 'A'+mA[1]; } else if (mB) { i = 'A'+mB[1]; } else { i = i.replace(/^0+(\d)/,'$1'); }
   t = t.replace(/^invincible\s+iron\s+man\b/i,'Iron Man');
-  return _fmvNormTitle(t) + '|' + i;
+  const _base = _fmvNormTitle(t) + '|' + i;
+  const _slug = printing ? fmvPrintingSlug(printing) : '';
+  return _slug ? (_base + '|' + _slug) : _base;
 }
 let _fmvBounds = [];
 function _fmvInitBounds(it) {
@@ -3587,7 +3623,7 @@ function _catTitleSorted(groups) {
 // ── FMV key + "has a curve?" ───────────────────────────────────────────────
 // _fmvKeyOf is the admin-wide key builder (annual folding, Iron Man alias) — the
 // same one saveFmv() writes with, so the worklist and the editor always agree.
-function _catFmvKeyOf(g) { return _fmvKeyOf(g.title, g.issue); }
+function _catFmvKeyOf(g) { return _fmvKeyOf(g.title, g.issue, g.printing || ''); }
 function _catHasFmv(g) { return !!(_catFmvKeys && _catFmvKeys.has(_catFmvKeyOf(g))); }
 
 // ── load ───────────────────────────────────────────────────────────────────
@@ -3670,6 +3706,11 @@ function _catRow(x) {
     version: rg.version || '',
     // Kept as separate groups so the issue screen can label them the way the item
     // detail does, instead of one undifferentiated strip of thumbnails.
+    // Front cover for the per-entry thumbnail in the lines view. The stored
+    // `thumbnails` are inline blobs and /api/export omits blobs, so they are not
+    // available here — the full-res Storage URL is. The issue screen only ever
+    // lists one issue's copies, so this is a handful of images, not 4,500.
+    thumb: urls(x.images)[0] || '',
     imgMain: urls(x.images), imgCorner: urls(x.cornerImages),
     imgIC: urls(x.interiorCoverImages), imgInt: urls(x.interiorImages),
     imgResto: urls(x.restorationImages),
@@ -3683,8 +3724,15 @@ function _catRow(x) {
 function _catGroup(rows) {
   const m = new Map();
   for (const r of rows) {
-    const k = _catNorm(r.title) + ' #' + r.issue;
-    if (!m.has(k)) m.set(k, { key: k, title: r.title, issue: r.issue, items: [] });
+    // A variant, a later printing or a price variant is its OWN book: its own
+    // catalogue entry, its own FMV key, its own curve. Grouping it with the
+    // original printing is what let TMNT #1's third printing show first-printing
+    // money, and it also hid it from the "books with no FMV" worklists — the
+    // issue had a curve, so the issue looked done.
+    // base and channel printings stay in the plain title|issue group.
+    const slug = fmvPrintingSlug(r.printing);
+    const k = _catNorm(r.title) + ' #' + r.issue + (slug ? ' [' + slug + ']' : '');
+    if (!m.has(k)) m.set(k, { key: k, title: r.title, issue: r.issue, printing: slug ? r.printing : '', printingSlug: slug, items: [] });
     m.get(k).items.push(r);
   }
   return [...m.values()].map(g => {
@@ -3869,7 +3917,7 @@ function _catRenderBooks() {
     return `<div class="cat-bk" data-k="${encodeURIComponent(g.key)}"
       style="padding:9px 11px;border-bottom:1px solid #1b1d23;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px">
       <div style="min-width:0">
-        <div style="font-size:13px;font-weight:600;color:#e6e6e6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(g.title)} <span style="color:#8a8d96">#${escapeHtml(g.issue)}</span></div>
+        <div style="font-size:13px;font-weight:600;color:#e6e6e6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(g.title)} <span style="color:#8a8d96">#${escapeHtml(g.issue)}</span>${g.printing ? ` <span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:20px;background:#2a2410;color:#e8c860;vertical-align:1px">${escapeHtml(g.printing)}</span>` : ''}</div>
         <div style="font-size:10px;color:#8a8d96;margin-top:1px">${g.n}× · avg
           <span style="color:#9ada7a">RG ${_catAvg(g.avgRG)}</span> ·
           <span style="color:#7ab8e8">PG ${_catAvg(g.avgPG)}</span>${g.slabs ? ' · ' + g.slabs + ' slab' : ''}</div>
@@ -3943,6 +3991,7 @@ function _catRenderIssue() {
         ${items.length ? (_catRowView === 'lines'
             ? '<div style="border-top:1px solid #1b1d23">'
               + '<div style="display:flex;gap:10px;padding:5px 9px;font-size:10px;color:#6d7078;letter-spacing:.5px;border-bottom:1px solid #23252c">'
+              + '<span style="min-width:26px"></span>'
               + '<span style="min-width:46px;text-align:right">RG</span>'
               + '<span style="min-width:34px;text-align:right">PG</span>'
               + '<span style="min-width:30px"></span>'
@@ -4037,6 +4086,9 @@ function _catLine(r) {
   ].filter(Boolean).join(' ');
   return `<div data-cat-item="${ref}" style="display:flex;align-items:center;gap:10px;padding:7px 9px;border-bottom:1px solid #1b1d23;cursor:pointer;font-size:12px"
        onmouseover="this.style.background='#15171c'" onmouseout="this.style.background=''">
+    ${r.thumb
+      ? `<img src="${escapeAttr(r.thumb)}" alt="" loading="lazy" style="width:26px;height:39px;object-fit:cover;border-radius:3px;background:#1b1d23;flex-shrink:0;display:block">`
+      : `<span style="width:26px;height:39px;border-radius:3px;background:#1b1d23;flex-shrink:0;display:block"></span>`}
     <span style="min-width:46px;text-align:right;color:#9ada7a;font-weight:700">${escapeHtml(rg)}</span>
     <span style="min-width:34px;text-align:right;color:#7ab8e8">${escapeHtml(pg)}</span>
     <span style="min-width:30px;color:#6d7078;font-size:10px">${lvl}</span>
@@ -4210,7 +4262,9 @@ async function saveFmv() {
     if (t > 13) t = 13;
     if (prevT === null || t > prevT) { breaks.push({ g: LAD[i], t: t }); prevT = t; }
   }
-  const key = _fmvKeyOf(it.title, it.issue);
+  // Include the printing so a variant writes its OWN curve rather than
+  // overwriting the original printing's.
+  const key = _fmvKeyOf(it.title, it.issue, it.printing || '');
   const _cat = _fmvCategory(it);
   try {
     if (resEl) { resEl.style.color = '#aaa'; resEl.textContent = 'Saving…'; }
@@ -4222,7 +4276,7 @@ async function saveFmv() {
 async function clearFmv() {
   const it = window._fmvItem; if (!it) return;
   const resEl = document.getElementById('fmv-result');
-  const key = _fmvKeyOf(it.title, it.issue);
+  const key = _fmvKeyOf(it.title, it.issue, it.printing || '');
   const _cat = _fmvCategory(it);
   try {
     if (resEl) { resEl.style.color = '#aaa'; resEl.textContent = 'Clearing…'; }
