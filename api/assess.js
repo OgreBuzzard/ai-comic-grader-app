@@ -1504,10 +1504,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       const _g = enforceCgcGrade(parsed.grade, 'main');
       if (_g) parsed.grade = _g;
     }
-    // Did this pass land exactly on its tier ceiling? If so a deeper pass can
-    // go higher, and the app shows "(+)" beside the grade to say so. Slabbed
-    // books have no ceiling (the label grade governs), so no "(+)" there.
-    parsed.gradeAtCeiling = (gradeCeiling != null && parseFloat(parsed.grade) === gradeCeiling);
+
 
     // ─────────────────────────────────────────────────────────────────────
     // Grade reference refinement pass — DISABLED May 24, 2026 (S15, v3.6).
@@ -2117,6 +2114,28 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     } catch (e) {
       console.error('assessment_timings write failed (non-fatal):', e);
     }
+
+    // ── "(+)" — THIS GRADE COULD GO HIGHER ───────────────────────────────
+    // Two conditions, and BOTH must hold:
+    //   1. the pass landed exactly on its tier ceiling, so a deeper pass is
+    //      allowed to return a higher number, and
+    //   2. nothing worse than a LOW-severity defect was found.
+    // Condition 2 is what stops this meaning "you ran a Main". The Main
+    // ceiling is a hard tier cap, not a judgement -- a 4-image Main cannot
+    // exceed 9.2 however clean the book is -- so at-ceiling ALONE would mark
+    // every decent-looking book, including ones the Deep will drop to 8.5.
+    // Requiring a clean defect list makes the mark mean what it says: we found
+    // no reason this book should not go higher, and the next tier can confirm.
+    const _ceilDefects = Array.isArray(parsed.defects) ? parsed.defects : [];
+    const _hasRealDefect = _ceilDefects.some(d => {
+      const sev = String((d && d.severity) || '').trim().toLowerCase();
+      return sev === 'high' || sev === 'med' || sev === 'medium';
+    });
+    // Slabbed books have no ceiling (the label grade governs), so never "(+)".
+    parsed.gradeAtCeiling =
+      gradeCeiling != null &&
+      parseFloat(parsed.grade) === gradeCeiling &&
+      !_hasRealDefect;
 
     // S22: when THIS request took the credit, the client must not take it
     // again — it reads creditsRemaining and syncs instead of decrementing.

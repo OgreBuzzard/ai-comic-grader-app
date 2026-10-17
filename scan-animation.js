@@ -1494,8 +1494,16 @@
   // hold, then drop them from the BOTTOM of the pile upward.
   const COIN_FADE_MS = 450, COIN_FADE_GAP = 220, COIN_HOLD_MS = 420;
   const COIN_DROP_MS = 500, COIN_DROP_GAP = 380;
+  // The top coin of a 3-stack has roughly twice the distance to travel as the
+  // bottom one (it starts 16.8 percentage-points higher and still has to clear
+  // the same slot). Holding every drop to COIN_DROP_MS would make it fall at
+  // twice the speed, which reads as the coin being yanked down. The drop
+  // duration is scaled by distance instead, so all three fall at one speed —
+  // and the slowest drop therefore runs longer than COIN_DROP_MS. This bound
+  // covers it, and it is what the first photo waits on.
+  const COIN_DROP_MS_MAX = 1100;
   const COIN_STACK_TOTAL =
-    COIN_FADE_MS + 2 * COIN_FADE_GAP + COIN_HOLD_MS + 2 * COIN_DROP_GAP + COIN_DROP_MS + 150;
+    COIN_FADE_MS + 2 * COIN_FADE_GAP + COIN_HOLD_MS + 2 * COIN_DROP_GAP + COIN_DROP_MS_MAX + 150;
 
   function playCoinStack(cancelToken, count) {
     const shell = document.querySelector('.rg-scan-shell');
@@ -1524,13 +1532,51 @@
       c.style.transition = `opacity ${COIN_FADE_MS}ms ease`;
       c.style.opacity = '1';
     }));
-    // 2. after they are all visible and held, drop them bottom-up
+    // 2. after they are all visible and held, drop them bottom-up.
+    //
+    // EACH COIN STAYS FULLY OPAQUE AND IS CLIPPED BY THE SLOT, exactly like the
+    // single coin — which never touches opacity at all. Its disappearance is
+    // .rg-coin-clip's overflow:hidden, whose bottom edge sits on the coin-slot
+    // Y-line.
+    //
+    // This used to fade them out, and it had to: the coins sit at different
+    // heights in the pile (top: 88.8 - i*8.4%), and the single coin's fixed
+    // drop is only enough travel from the LOWEST position. Measured against the
+    // production layout, the fixed 260% drop left coins 1 and 2 parked inside
+    // the clip, still visible — so a fade was the only way to hide them, which
+    // is what reads as the coins vanishing before they reach the slot.
+    //
+    // So measure instead. All three start positions are static, so one pass at
+    // drop time gets every distance: from each coin's own top edge to the clip's
+    // bottom edge, plus half its height to cover the corners the rotation throws
+    // out. The shortest of those drops takes COIN_DROP_MS and the rest are
+    // scaled to match, so all three fall at ONE speed rather than the top coin
+    // being yanked down twice as fast over twice the distance.
     const dropStart = (count - 1) * COIN_FADE_GAP + COIN_FADE_MS + COIN_HOLD_MS;
-    coins.forEach((c, i) => at(dropStart + i * COIN_DROP_GAP, () => {
-      c.style.transition = `transform ${COIN_DROP_MS}ms ease-in, opacity ${COIN_DROP_MS}ms ease-in`;
-      c.style.transform = 'translate(-50%, 260%) rotate(220deg)';
-      c.style.opacity = '0';
-    }));
+    at(dropStart, () => {
+      const clipBottom = clip.getBoundingClientRect().bottom;
+      const plan = coins.map(c => {
+        const cr = c.getBoundingClientRect();
+        return { c, h: cr.height, px: Math.ceil(clipBottom - cr.top + cr.height * 0.5) + 8 };
+      });
+      const laidOut = plan.every(p => p.h > 0 && p.px > 0);
+      const basePx = laidOut ? Math.min(...plan.map(p => p.px)) : 0;
+      plan.forEach((p, i) => {
+        const fire = () => {
+          if (!laidOut) {
+            // Shell not laid out — fall back to a percentage big enough for the
+            // highest coin rather than leaving any of them stranded on screen.
+            p.c.style.transition = `transform ${COIN_DROP_MS}ms ease-in`;
+            p.c.style.transform = 'translate(-50%, 460%) rotate(220deg)';
+            return;
+          }
+          const dur = Math.min(COIN_DROP_MS_MAX, Math.round(COIN_DROP_MS * (p.px / basePx)));
+          p.c.style.transition = `transform ${dur}ms ease-in`;
+          p.c.style.transform = `translate(-50%, ${p.px}px) rotate(220deg)`;
+        };
+        if (i === 0) fire(); else at(i * COIN_DROP_GAP, fire);
+      });
+    });
     at(COIN_STACK_TOTAL, () => { if (clip.parentNode) clip.remove(); });
     debugLog(`coin stack: ${count} coins`);
   }

@@ -1235,9 +1235,17 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
         parsed.grade = enforceCgcGrade(_cap, 'deep-ceiling');
       }
       // gradeAtCeiling drives the "(+)" the app shows beside the grade: this
-      // pass went as high as it is allowed to go, and the next tier can go
-      // higher. Only meaningful when a higher tier actually exists.
-      parsed.gradeAtCeiling = (parseFloat(parsed.grade) === DEEP_PG_CEILING);
+      // pass went as high as it is allowed to go, the next tier can go higher,
+      // and nothing worse than a LOW-severity defect remains. Same two-part
+      // test as the Main -- see the comment in api/assess.js. A 9.6 with a Med
+      // defect still on it is not a book we are telling the user could be 9.8.
+      const _deepDefects = Array.isArray(parsed.defects) ? parsed.defects : [];
+      const _deepHasRealDefect = _deepDefects.some(d => {
+        const sev = String((d && d.severity) || '').trim().toLowerCase();
+        return sev === 'high' || sev === 'med' || sev === 'medium';
+      });
+      parsed.gradeAtCeiling =
+        parseFloat(parsed.grade) === DEEP_PG_CEILING && !_deepHasRealDefect;
     }
     parsed._diagnostics = {
       deepAssessment: !isRestoration,

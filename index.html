@@ -2219,12 +2219,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.58";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.59";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.58");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.59");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -3578,9 +3578,15 @@ function psaCondShort(g) {
   return "";
 }
 
-function buildBadge(gradeVal, type, designation, sm, fullAssessment, deepAssessment, restored, qualified) {
+function buildBadge(gradeVal, type, designation, sm, fullAssessment, deepAssessment, restored, qualified, atCeiling) {
   const cls = sm ? "ubadge ubadge-sm" : "ubadge";
   const lbl = GRADE_LABELS[gradeVal] || "";
+  // "(+)" — this pass landed on its tier ceiling AND found nothing worse than a
+  // LOW-severity defect, so a deeper pass could legitimately go higher. The
+  // server decides (gradeAtCeiling on the Main and Deep results); this only
+  // draws it. Suppressed on the small list badge, where a third of an already
+  // small numeral is not readable — the detail and edit views carry it.
+  const plus = (atCeiling && !sm) ? '<span class="ubadge-plus" style="font-size:0.33em;line-height:1;vertical-align:0.9em;margin-left:0.08em;opacity:0.85;font-weight:600;letter-spacing:0">(+)</span>' : "";
   // S16: If restoration detected, predicted badge turns purple
   if (restored && (type === "predicted" || type === "cgc-ai" || type === "psa-ai")) {
     return `<div class="${cls}" style="border-color:#7c3aed;background:linear-gradient(180deg,#9a6ad8 0%,#6a3ab0 100%)"><div class="ubadge-body" style="background:transparent"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.8)">${lbl}</div></div></div>`;
@@ -3610,7 +3616,7 @@ function buildBadge(gradeVal, type, designation, sm, fullAssessment, deepAssessm
     return `<div class="${cls}" style="border-color:rgba(0,0,0,0.25)"><div class="ubadge-strip" style="background:${sc}"><span>${sl}</span></div><div class="ubadge-body" style="background:#fff"><div class="ubadge-num" style="color:#000">${gradeVal}</div><div class="ubadge-lbl" style="color:#333">${sm ? "" : lbl}</div></div></div>`;
   }
   if (type === "psa-predicted") return `<div class="${cls}" style="border-color:#7f1d1d;background:#b91c1c"><div class="ubadge-body" style="background:#b91c1c"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.85)">${psaCondShort(gradeVal) || "PSA"}</div></div></div>`;
-  if (type === "predicted" || type === "cgc-ai" || type === "psa-ai") return `<div class="${cls}" style="border-color:#1e40af;background:#1a5fa8"><div class="ubadge-body" style="background:#1a5fa8"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.8)">${lbl}</div></div></div>`;
+  if (type === "predicted" || type === "cgc-ai" || type === "psa-ai") return `<div class="${cls}" style="border-color:#1e40af;background:#1a5fa8"><div class="ubadge-body" style="background:#1a5fa8"><div class="ubadge-num" style="color:#fff">${gradeVal}${plus}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.8)">${lbl}</div></div></div>`;
   return `<div class="${cls}" style="border-color:#333;background:#1a1a1a"><div class="ubadge-body" style="background:#1a1a1a"><div class="ubadge-num" style="color:#1a1614">${gradeVal}</div><div class="ubadge-lbl" style="color:#6a5a4a">${lbl}</div></div></div>`;
 }
 
@@ -3957,7 +3963,7 @@ async function migrateComicsToItems() {
   }
 }
 
-const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "uvCheckRuns", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "fullUnlockReason", "deepAssessmentRan", "binding", "bindingBasis", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "deepRefundUsed", "fullRefundUsed", "insertImages", "couponImages", "userDefectImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue", "signatures", "gradeRevisionReason" ];
+const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "gradeAtCeiling", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "uvCheckRuns", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "fullUnlockReason", "deepAssessmentRan", "binding", "bindingBasis", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "deepRefundUsed", "fullRefundUsed", "insertImages", "couponImages", "userDefectImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue", "signatures", "gradeRevisionReason" ];
 
 const COMIC_DROP_FIELDS = [ "press", "uv", "clean" ];
 
@@ -6060,7 +6066,7 @@ function showDetail(id) {
   const psaOfficialBadge = (!_isCardItem && selected.psaGrade) ? buildBadge(normalizeGrade(selected.psaGrade), "psa-official", selected.psaDesignation || "universal", false) : null;
   const predictedGradeValue = _isCardItem ? null : aiCgcGrade(selected);
   const _detailRestored = !!(selected.restorationHighConfidence || (selected.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(selected.cgcNotes)));
-  const predictedBadge = predictedGradeValue ? buildBadge(normalizeGrade(predictedGradeValue), "predicted", "", false, isFullAssessmentComplete(selected), isDeepAssessmentComplete(selected), _detailRestored, !!selected.couponQualified) : null;
+  const predictedBadge = predictedGradeValue ? buildBadge(normalizeGrade(predictedGradeValue), "predicted", "", false, isFullAssessmentComplete(selected), isDeepAssessmentComplete(selected), _detailRestored, !!selected.couponQualified, !!selected.gradeAtCeiling) : null;
   const predictionBoxes = [ cgcOfficialBadge, psaOfficialBadge, cardPsaBadge, predictedBadge ].filter(Boolean);
   const isGraded = !_isCardItem && !!(selected.cgcGrade || selected.psaGrade);
   const hasInteriorPhoto = !!(selected.images && selected.images[2]);
@@ -10692,7 +10698,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "5.58"),
+      appVersion: (window.RG_GRADING_VERSION || "5.59"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
@@ -11087,6 +11093,9 @@ async function _completeAssessmentInner() {
   formData.assessedCGCGrade = cgc.grade || "";
   formData.assessedPSAGrade = psa.grade ? String(psa.grade).includes(".") ? String(psa.grade) : parseFloat(psa.grade).toFixed(1) : "";
   formData.predictedGrade = cgc.grade || "";
+  // The server sets gradeAtCeiling on both the Main and the Deep result, so a
+  // Deep overwrites the Main's answer here rather than inheriting it.
+  formData.gradeAtCeiling = !!cgc.gradeAtCeiling;
   // S24 — SIGNATURES WERE ANNOUNCED AND THEN LOST.
   //
   // The model returns `signatures` at the TOP LEVEL of the response. Nothing here
@@ -12315,7 +12324,7 @@ function renderForm() {
       const psaOff = (!_isCardItem && formData.psaGrade) ? buildBadge(normalizeGrade(formData.psaGrade), "psa-official", formData.psaDesignation || "universal", false) : "";
       const predVal = _isCardItem ? null : (formData.predictedGrade || formData.assessedCGCGrade);
       const _editRestored = !!(formData.restorationHighConfidence || (formData.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(formData.cgcNotes)));
-      const predicted = predVal ? buildBadge(normalizeGrade(predVal), "predicted", "", false, false, false, _editRestored, !!formData.couponQualified) : "";
+      const predicted = predVal ? buildBadge(normalizeGrade(predVal), "predicted", "", false, false, false, _editRestored, !!formData.couponQualified, !!formData.gradeAtCeiling) : "";
       const _pqHtml = (!_isCardItem && formData.pageQuality) ? `<div style="display:flex;justify-content:center">${buildPQBox(formData.pageQuality)}</div>` : "";
       const _fmvGrade = _isCardItem ? _cardPsaStr : (formData.cgcGrade || formData.psaGrade || aiCgcGrade(formData));
       const _fmvMatch = _isCardItem ? ((window.matchCardFMV && _fmvGrade && formData.cardData) ? window.matchCardFMV(formData.cardData.cardIdentification, _fmvGrade) : null) : ((typeof window.matchFMV === "function" && _fmvGrade) ? window.matchFMV(formData.title, formData.issue, _fmvGrade, formData.printing, extractYearFromIssueDate(formData.issueDate)) : null);
@@ -13986,6 +13995,9 @@ async function submitFullAssessment() {
         }
         formData.predictedGrade = _fullGrade;
         formData.assessedCGCGrade = _fullGrade;
+        // Full is the last pass; there is no deeper tier to promise. Clear the
+        // "(+)" so a 9.6(+) that a Full confirmed does not keep implying more.
+        formData.gradeAtCeiling = false;
       }
       if (result.pageQuality) formData.pageQuality = result.pageQuality;
       if (result.confidenceRange != null && formData.roboGrade) {
