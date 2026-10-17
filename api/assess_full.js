@@ -38,6 +38,7 @@ import { ROBOGRADE_VERSION } from '../lib/version.js';
 import { PRIMARY_MODEL, ratesFor, costOf } from '../lib/model.js';
 import { anthropicWithRetry } from '../lib/anthropic_retry.js';
 import { computePhotograderPM, mergePhotograder, PHOTOGRADER_RUBRIC_CLOSEUP } from '../lib/photograder.js';
+import { enforceCgcGrade } from '../lib/grade_definitions.js';
 import { getAdminDb as getCreditDb, verifyUidFromAuthHeader } from '../lib/batch_common.js';
 import { reserveCredit, refundCredit, insufficientCreditsPayload } from '../lib/credits.js';
 
@@ -415,7 +416,7 @@ Your entire response must be a JSON object and nothing else. First character an 
 
 JSON shape:
 {
-  "grade": <number, final CGC-scale grade 0.5-9.8. MAX 9.8; NEVER return 9.9 or 10.0. A book with ANY visible defect cannot be 9.8. If the prior grade was 9.6+ AND the interior/structure is clean and complete, you MAY confirm up to 9.8; otherwise keep the prior grade, lowering only if the interior reveals a NEW problem (trimming, missing/married pages, detached centerfold, staple damage). For a book graded below 9.6, do NOT raise the grade.>,
+  "grade": <number, final CGC-scale grade. ONE OF THESE EXACT VALUES AND NOTHING ELSE: 0.5, 1.0, 1.5, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.2, 9.4, 9.6, 9.8. This is the complete CGC/PSA scale; there are no values between them. 9.1, 9.3, 9.5 and 9.7 ARE NOT GRADES and no service issues them — above 9.0 the scale steps 9.0, 9.2, 9.4, 9.6, 9.8. If the book sits between two positions, you must choose one; choose the lower unless the evidence clearly supports the higher. DO NOT COPY THE v3 RoboGrade VALUE INTO THIS FIELD. v3 is a different scale — half-points from 0 to 10, where 9.5 is legal. This field is not that scale. Derive it from the defects you observed by grading down from a perfect copy, then state the ladder position that result lands on. MAX 9.8 on this pass. MAX 9.8; NEVER return 9.9 or 10.0. A book with ANY visible defect cannot be 9.8. If the prior grade was 9.6+ AND the interior/structure is clean and complete, you MAY confirm up to 9.8; otherwise keep the prior grade, lowering only if the interior reveals a NEW problem (trimming, missing/married pages, detached centerfold, staple damage). For a book graded below 9.6, do NOT raise the grade.>,
   "gradeChanged": "<'same' | 'down' | 'up'>",
   "pageQuality": "<the initial page-quality designation, UNCHANGED — do not re-judge it>",
   "pageQualityChanged": "same",
@@ -639,7 +640,17 @@ Rules:
       if (!Number.isFinite(n)) return dflt;
       return Math.min(hi, Math.max(lo, n));
     };
-    const grade = Math.min(_num(parsed.grade, 0.5, 10.0, parseFloat(predictedGrade) || null), 9.9);
+    // Range-clamp, then snap onto the CGC/PSA ladder. This is the path that
+    // produced the PG 9.5 on RG-ID TKRHZY: the clamp bounded the range but
+    // never checked that the value was a grade any service issues.
+    // Guard the null default as well — Math.min(null, 9.9) is 0, which would
+    // have published a 0.0 grade and a roboScore of 0 had the model ever
+    // returned an unparseable grade with no prior predictedGrade to fall back
+    // on. Stays a Number: roboScore below multiplies it.
+    const _gradeRaw = _num(parsed.grade, 0.5, 10.0, parseFloat(predictedGrade) || null);
+    const grade = Number.isFinite(_gradeRaw)
+      ? parseFloat(enforceCgcGrade(Math.min(_gradeRaw, 9.9), 'full'))
+      : null;
     // S21 Photograder: Full sees close-up strips → grades Focus/Lighting only;
     // Cropping/Angle carry forward from Main via the merge. The PM is
     // monotonically clamped against the prior tier's PM (the Deep result), and

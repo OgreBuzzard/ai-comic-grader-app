@@ -31,6 +31,7 @@ import { anthropicWithRetry, fetchTimeout } from '../lib/anthropic_retry.js';
 import { getBookNote } from '../lib/book_notes.js';
 import { defectIndexPromptBlock } from '../lib/defect_index.js';
 import { buildMainPrefix } from '../lib/main_prompt.js';
+import { enforceCgcGrade } from '../lib/grade_definitions.js';
 import { computePhotograderPM, mergePhotograder, PHOTOGRADER_RUBRIC_MAIN } from '../lib/photograder.js';
 import { reserveCredit, refundCredit, insufficientCreditsPayload } from '../lib/credits.js';
 
@@ -992,7 +993,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
   "publisher": "publisher name",
   "printing": "Printing/variant designation. EMPTY STRING for typical original printings (default). Populate ONLY with clear evidence: 'Facsimile Reprint' (append year in parens if visible) for modern facsimile editions of original key issues; '2nd print'/'3rd print' for direct-edition reprints from the original era; 'Newsstand variant' for distinguishable newsstand copies; 'Reprint' for older non-facsimile reprints. When populating 'Facsimile Reprint', note the finding in aiAssessment and use the reprint year for issueDate.",
   "pageQuality": "full designation e.g. Off-White to White",
-  "grade": "CGC grade estimate e.g. 7.0",
+  "grade": "CGC grade estimate. ONE OF THESE EXACT VALUES AND NOTHING ELSE: 0.5, 1.0, 1.5, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.2, 9.4, 9.6, 9.8, 9.9, 10.0. This is the complete CGC/PSA scale; there are no values between them. 9.1, 9.3, 9.5 and 9.7 ARE NOT GRADES and no service issues them — above 9.0 the scale steps 9.0, 9.2, 9.4, 9.6, 9.8. If the book sits between two positions, you must choose one; choose the lower unless the evidence clearly supports the higher. DO NOT COPY THE v3 RoboGrade VALUE INTO THIS FIELD. v3 is a different scale — half-points from 0 to 10, where 9.5 is legal. This field is not that scale. Derive it from the defects you observed by grading down from a perfect copy, then state the ladder position that result lands on. Example: 7.0",
   "aiAssessment": "Overall impression, dominant defects, grade rationale. ONLY what you see in this copy's photos. NEVER mention census/submission counts/distribution/external data.",
   "referenceComparison": "CHECK 0 result: one sentence on what comparing to the ComicVine reference revealed (a specific missing/damaged region, or an art element confirmed printed), or that the cover matches with no reference-detectable loss, OR that the reference did NOT match this book and was not used (wrong volume/issue reference, or an unrecognizable book). Empty string if no reference was provided. This is a diagnostic field — it may surface to the user but must never mention census or external counts.",
   "labelNotes": "key issue notations from label if visible, empty string if none",
@@ -1495,8 +1496,13 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     }
 
     // Normalize grade to always include decimal (e.g. "10" → "10.0", "9" → "9.0")
-    if (parsed.grade && !String(parsed.grade).includes('.')) {
-      parsed.grade = parseFloat(parsed.grade).toFixed(1);
+    // and hold it to the CGC/PSA ladder. The REAL fix for the off-ladder grade
+    // is in the output schema above, which now names the legal positions and
+    // tells the model not to mirror the v3 RoboGrade value into this field;
+    // this is the net under it. See enforceCgcGrade in lib/grade_definitions.js.
+    if (parsed.grade != null && String(parsed.grade).trim() !== '') {
+      const _g = enforceCgcGrade(parsed.grade, 'main');
+      if (_g) parsed.grade = _g;
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -1893,7 +1899,8 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
         const mentionsMacro = notes.includes('macro') || notes.includes('corner');
         if (!mentionsMacro) {
           enforcement.push(`CGC grade floored ${parsed.grade} → ${initialCgcGrade}`);
-          parsed.grade = String(cgcFloor.toFixed(1));
+          // The floor too: initialCgcGrade arrives from the client.
+          parsed.grade = enforceCgcGrade(cgcFloor, 'main-floor') || String(cgcFloor.toFixed(1));
         }
       }
 
@@ -2072,7 +2079,15 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           // all write rows and none of them warm the Main prefix. A Card at
           // 08:37 would suppress the Main ping, and the Main entry would quietly
           // die an hour later.
-          warmedPrefix: _cacheOn ? 'main' : null,
+          // WHICH prefix this run touched, not merely "a Main ran". There are
+          // two Main prefixes: the ordinary one (_ki === null, what every
+          // app-initiated Main sends and what /api/cachewarm pings) and the
+          // _ki variant that assess_batch_run.js sends with a settled identity.
+          // They are different cache entries. Stamping both 'main' let a Batch
+          // Main suppress the keep-warm ping for an entry it never warmed —
+          // the same defect that Card assessments caused on 2026-10-16, one
+          // layer down. The gate counts 'main' only.
+          warmedPrefix: _cacheOn ? (_ki ? 'main_ki' : 'main') : null,
           attempts: _retryStats.attempts || null,
           upstreamStatus: _retryStats.lastStatus ?? null,
           retryWaitedMs: _retryStats.waitedMs || 0,

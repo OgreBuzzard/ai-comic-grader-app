@@ -113,7 +113,20 @@ export default async function handler(req, res) {
   // a real signed-in user.
   // Vercel Cron issues a GET, so the mode arrives as a query parameter rather
   // than a body field. Accept both.
-  const _wantMode = ((req.body || {}).mode) || ((req.query || {}).mode) || null;
+  // Declared below, used here: see the cron-credential block. A credentialed
+  // cron hit with NO mode at all is the keep-warm ping. The cron path used to
+  // carry `?mode=warm`, which made the entire feature depend on a query string
+  // surviving the trip from vercel.json into the function — and if it ever did
+  // not, the request fell through to the Firebase branch and 401'd silently,
+  // with nothing in the admin to show the ping had stopped. The path is now
+  // bare and the mode is inferred.
+  const _cronSecretEarly = (process.env.CRON_SECRET || '').trim();
+  const _bearerEarly = (req.headers.authorization || req.headers.Authorization || '').replace(/^Bearer\s+/, '').trim();
+  const _cronCredentialed =
+    (_cronSecretEarly && _bearerEarly === _cronSecretEarly) ||
+    /vercel-cron/i.test(String(req.headers['user-agent'] || ''));
+  const _wantMode = ((req.body || {}).mode) || ((req.query || {}).mode) ||
+    (_cronCredentialed ? 'warm' : null);
 
   // ── HOW THE CRON AUTHENTICATES, AND WHY IT IS DELIBERATELY WEAK ───────────
   // CRON_SECRET is OPTIONAL and you do not need to set it. Vercel rejects an
@@ -129,12 +142,7 @@ export default async function handler(req, res) {
   // 50-minute traffic gate below. It returns no user data, writes nothing but
   // its own timestamp, and debits no credits. Everything else on this endpoint
   // still requires a real signed-in Firebase user.
-  const _cronSecret = (process.env.CRON_SECRET || '').trim();
-  const _bearer = (req.headers.authorization || req.headers.Authorization || '').replace(/^Bearer\s+/, '').trim();
-  const _ua = String(req.headers['user-agent'] || '');
-  const _looksLikeVercelCron = /vercel-cron/i.test(_ua);
-  const _isCron = _wantMode === 'warm' &&
-    ((_cronSecret && _bearer === _cronSecret) || _looksLikeVercelCron);
+  const _isCron = _wantMode === 'warm' && _cronCredentialed;
   if (_isCron) {
     whoami = { email: 'vercel-cron', uid: 'cron' };
   } else
@@ -175,6 +183,48 @@ export default async function handler(req, res) {
   // this: it must sit strictly between one cron tick and the TTL minus a tick.
   const quietMinutes = Number(_src.quietMinutes) > 0 ? Number(_src.quietMinutes) : 40;
   const force = _src.force === true || _src.force === 'true';
+
+  // ── mode:'status' — READ-ONLY PING HISTORY ────────────────────────────────
+  // There was no way to see whether the keep-warm ping was actually running.
+  // The only signal was `minutesSinceLastPing` on a gate skip, which is a
+  // single number and says nothing about cadence — so "cache warming isn't
+  // working" could not be told apart from "cache warming is working and a
+  // different prefix is going cold". This returns the cache_warm/main doc:
+  // all-time totals plus the 30-day per-ping log the warm path writes.
+  // Spends nothing and calls no model.
+  if (mode === 'status') {
+    let sdb = null;
+    try { sdb = await getAdminDb(); } catch (e) {
+      return res.status(500).json({ error: 'no db', detail: String(e && e.message || e) });
+    }
+    if (!sdb) return res.status(500).json({ error: 'no db' });
+    try {
+      const d = (await sdb.doc('cache_warm/main').get()).data() || {};
+      const recent = (d.recent || []).slice().sort((a, b) => String(b.at).localeCompare(String(a.at)));
+      // Gaps between consecutive paid pings, newest first. A healthy cron at
+      // */15 with quietMinutes 40 produces 45-minute gaps on a quiet stretch
+      // and longer ones when real Mains were keeping the entry alive anyway.
+      const gapsMin = [];
+      for (let i = 0; i + 1 < recent.length && i < 48; i++) {
+        const a = Date.parse(recent[i].at), b = Date.parse(recent[i + 1].at);
+        if (!isNaN(a) && !isNaN(b)) gapsMin.push(Math.round((a - b) / 60000));
+      }
+      return res.status(200).json({
+        ok: true, mode: 'status', version: ROBOGRADE_VERSION,
+        lastWarmAt: d.lastWarmAt || null,
+        minutesSinceLastPing: d.lastWarmAt ? Math.round((Date.now() - Date.parse(d.lastWarmAt)) / 60000) : null,
+        totalPings: d.totalPings || 0,
+        totalReads: d.totalReads || 0,
+        totalWrites: d.totalWrites || 0,
+        totalCostUsd: Number((d.totalCostUsd || 0).toFixed(4)),
+        recentCount: recent.length,
+        gapsMin,
+        recent: recent.slice(0, 60)
+      });
+    } catch (e) {
+      return res.status(500).json({ error: 'status read failed', detail: String(e && e.message || e) });
+    }
+  }
 
   // ── mode:'warm' — THE PRODUCTION KEEP-WARM PING (v5.48) ────────────────────
   // Sends the REAL Main cached prefix (lib/main_prompt.js, the _ki === null
@@ -237,8 +287,15 @@ export default async function handler(req, res) {
           .orderBy('createdAt', 'desc').limit(40).get();
         for (const doc of snap.docs) {
           const d = doc.data() || {};
+          // Exactly the ordinary Main prefix. 'main_ki' is the Batch variant
+          // and is a DIFFERENT cache entry — counting it here would suppress
+          // the ping for an entry that nothing warmed.
+          // The token-count fallback exists only for rows written before
+          // 2026-10-16, which carry no warmedPrefix at all; it must not apply
+          // to a row that HAS the field, or it would re-admit 'main_ki'.
           const isMainWarm = d.warmedPrefix === 'main'
-            || ((d.cacheReadInputTokens || 0) > 20000 || (d.cacheCreationInputTokens || 0) > 20000);
+            || (d.warmedPrefix == null
+                && ((d.cacheReadInputTokens || 0) > 20000 || (d.cacheCreationInputTokens || 0) > 20000));
           if (!isMainWarm) continue;
           const t = Date.parse(d.createdAt || '');
           if (!isNaN(t)) lastMainMs = Date.now() - t;

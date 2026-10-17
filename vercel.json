@@ -103,7 +103,7 @@
   ],
   "crons": [
     {
-      "path": "/api/cachewarm?mode=warm",
+      "path": "/api/cachewarm",
       "schedule": "*/15 * * * *"
     }
   ]

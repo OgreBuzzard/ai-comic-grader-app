@@ -34,6 +34,7 @@ import { ROBOGRADE_VERSION } from '../lib/version.js';
 import { PRIMARY_MODEL, ratesFor, costOf } from '../lib/model.js';
 import { anthropicWithRetry } from '../lib/anthropic_retry.js';
 import { computePhotograderPM, mergePhotograder, PHOTOGRADER_RUBRIC_CLOSEUP } from '../lib/photograder.js';
+import { enforceCgcGrade } from '../lib/grade_definitions.js';
 import { getAdminDb as getCreditDb, verifyUidFromAuthHeader } from '../lib/batch_common.js';
 import { reserveCredit, refundCredit, insufficientCreditsPayload } from '../lib/credits.js';
 
@@ -463,7 +464,7 @@ JSON shape (same as initial assessment, with deepAddition tags on new defects):
   "publisher": "${initialAssessment.publisher || ''}",
   "printing": "${initialAssessment.printing || ''}",
   "pageQuality": "${initialAssessment.pageQuality || ''}",
-  "grade": "revised CGC grade",
+  "grade": "revised CGC grade. ONE OF THESE EXACT VALUES AND NOTHING ELSE: 0.5, 1.0, 1.5, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.2, 9.4, 9.6, 9.8, 9.9, 10.0. This is the complete CGC/PSA scale; there are no values between them. 9.1, 9.3, 9.5 and 9.7 ARE NOT GRADES and no service issues them — above 9.0 the scale steps 9.0, 9.2, 9.4, 9.6, 9.8. If the book sits between two positions, you must choose one; choose the lower unless the evidence clearly supports the higher. DO NOT COPY THE v3 RoboGrade VALUE INTO THIS FIELD. v3 is a different scale — half-points from 0 to 10, where 9.5 is legal. This field is not that scale. Derive it from the defects you observed by grading down from a perfect copy, then state the ladder position that result lands on.",
   "deepAssessment": "<S20: a SEPARATE, concise buyer-facing write-up of ONLY what THIS Deep Assessment observed — from the corner macros, the interior-cover photos (if provided), and the grade-reference comparison. Cover: any new corner/edge/spine defects found at macro scale; interior-cover condition (tanning/foxing/stains) if covers were provided; and whether the grade was confirmed or revised and why. MAX 3 sentences (≤60 words) — be terse. Do NOT repeat the initial Condition Assessment text above — only the new Deep observations. WRITE ONLY WHAT YOU OBSERVED AND WHAT CHANGED: never enumerate what is absent or clean (no "no chips, tears or tape", no "with no color break or staple rust", no "no foxing, stains or tears"). Never describe point deductions or score math in words (no "costing a single interior point", no "minus half a point") — the numbers show in the score boxes. State a removed defect plainly, naming the defect and where the close-ups contradicted it — in your own words, not a stock clause. If the close-ups simply confirmed the initial grade, say that plainly. If you cite a grade, make it the concrete PREDICTED CGC number (e.g. a predicted CGC 9.0) — never a bare number that could read as the 0-10 RoboGrade, and never a vague band like "VF/NM" without the CGC number.>",
   "labelNotes": "${initialAssessment.labelNotes || ''}",
   "keyInfo": "${initialAssessment.keyInfo || ''}",
@@ -1052,9 +1053,12 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
       return res.status(200).json(mismatch);
     }
 
-    // Normalize grade format
-    if (parsed.grade && !String(parsed.grade).includes('.')) {
-      parsed.grade = parseFloat(parsed.grade).toFixed(1);
+    // Normalize grade format, then snap onto the CGC/PSA ladder — see the
+    // matching block in assess.js. Deep can revise the PG, so it needs the
+    // same membership check the Main pass gets.
+    if (parsed.grade != null && String(parsed.grade).trim() !== '') {
+      const _g = enforceCgcGrade(parsed.grade, 'deep');
+      if (_g) parsed.grade = _g;
     }
 
     // Carry-forward enforcement: Back and Interior sub-scores must equal initial values.
@@ -1201,6 +1205,15 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
       parsed.deepAssessmentRan = true;
     } else {
       parsed.restorationCheckRan = true;
+    }
+    // Final ladder guard. Between the normalize above and here, parsed.grade
+    // can be overwritten with initialAssessment.grade (the PQ-only hold and the
+    // revision-reason rollback), which is client-supplied and therefore not
+    // guaranteed to be a real grade. Snap once more so nothing off-ladder can
+    // leave this endpoint by that route.
+    if (parsed.grade != null && String(parsed.grade).trim() !== '') {
+      const _g2 = enforceCgcGrade(parsed.grade, 'deep-final');
+      if (_g2) parsed.grade = _g2;
     }
     parsed._diagnostics = {
       deepAssessment: !isRestoration,
