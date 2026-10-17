@@ -417,7 +417,8 @@ Recompute the RoboGrade score (Front + Back + Spine + Interior) and map it to a 
   • The predicted grade may move UP or DOWN by up to 2 grade positions from the initial, based on that comparison.
   • IF YOU LOWER THE GRADE, SAY WHY IN "gradeRevisionReason" — ONE plain sentence, two at the very most, and never more than 35 words \u2014 it is a note, not a second write-up (e.g. "the cover matches the 2.0 reference rather than the 3.0: the spine and lower edge are comparable"). A downward revision with no stated reason is DISCARDED by the server and the initial grade is restored, so an unexplained drop is wasted work. An UPWARD revision needs no entry. This is not a licence to lower grades: you are expected to raise them as often as you lower them, and a Deep pass that always grades down is a broken pass. Move the grade only where the evidence in front of you actually warrants it.
   • IF YOU RE-CLASSIFY AN EXISTING DEFECT rather than finding a new one — most often a "Tear" that the interior photos show is really a "Piece out" — set "revisionReason" on that defect entry saying what changed it. A re-classified defect is not a deepAddition (it is not new), but it MUST be able to move the grade, so this field is what lets it. Downward movement is the more common outcome when the macros surfaced new defects; upward movement requires the cover to clearly match a cleaner reference.
-  • If, after removing any disproven defects, the book has NO remaining grade-limiting defect — all four corners crisp with intact ink, spine tight with no ticks or color breaks, and (when provided) interior covers clean — do NOT hold it at the initial grade out of caution. Grade the now-clean book on its merits against the references, up to 9.8; a book with zero confirmed defects is not a 9.4 by default. Reserve grades below 9.6 for a book with an actual remaining defect you can name and point to.
+  • If, after removing any disproven defects, the book has NO remaining grade-limiting defect — all four corners crisp with intact ink, spine tight with no ticks or color breaks, and (when provided) interior covers clean — do NOT hold it at the initial grade out of caution. Grade the now-clean book on its merits against the references; a book with zero confirmed defects is not a 9.4 by default. Reserve grades below 9.6 for a book with an actual remaining defect you can name and point to.
+  • **9.6 IS THE CEILING FOR THIS PASS. NEVER RETURN 9.8, 9.9 OR 10.0.** A Deep sees four corner macros and the interior covers; it does not see the staples, the page edges or the structural images. 9.8 and above require a Full Assessment, which does. If this book has no remaining defect and you believe it could go higher, the correct answer is 9.6 — the app shows the user "9.6(+)" to mean exactly that, and offers them the Full that can confirm it. Returning 9.8 here does not give the user a better grade; it skips the evidence that would justify one.
   • Also read the candidate grade's tier definition plus one grade above and one below to confirm the fit.
   • NEVER name, number, identify, or describe any specific reference comic in your output. The references are an internal yardstick only. If the grade is revised you may say the reference comparison supported it, WITHOUT naming any comic. Never write this into aiAssessment, which is frozen.
   • S22 ANTI-BOILERPLATE (measured across 276 shipped Deep write-ups): 87% contained "compared against reference", 49% "has been removed", 34% "not supported by the close-ups", and 28% opened with the identical clause "All four corner macros show crisp/sharp, square corners". Users read several of these and the tool starts to look like it is filling in a form rather than looking at their book. Any example wording in these instructions shows you WHAT to convey, never the sentence to copy. Do not reuse the phrases above. Describe what THIS copy's macros actually showed, in your own words, and vary how you open.
@@ -1214,6 +1215,29 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
     if (parsed.grade != null && String(parsed.grade).trim() !== '') {
       const _g2 = enforceCgcGrade(parsed.grade, 'deep-final');
       if (_g2) parsed.grade = _g2;
+    }
+    // ── DEEP CEILING: 9.6 ────────────────────────────────────────────────
+    // A Deep sees the corner macros and interior covers; it does not see the
+    // staples, page edges or structure. 9.8+ is earned by a Full, which does.
+    // api/assess.js has advertised a 9.6 Deep ceiling since S21, but this
+    // endpoint had no server ceiling at all and its PHASE 4 text invited 9.8 --
+    // which is how RG-ID 77H9H6 took a 9.8 off a Deep with no Full.
+    // NEVER LOWER A GRADE THAT ARRIVED ABOVE THE CEILING: a Deep re-run on a
+    // book whose Full already awarded 9.8 must not claw it back, so the cap is
+    // the HIGHER of 9.6 and the incoming grade.
+    {
+      const DEEP_PG_CEILING = 9.6;
+      const _in  = parseFloat(initialAssessment && initialAssessment.grade);
+      const _out = parseFloat(parsed.grade);
+      const _cap = Math.max(DEEP_PG_CEILING, Number.isFinite(_in) ? _in : DEEP_PG_CEILING);
+      if (Number.isFinite(_out) && _out > _cap) {
+        console.log(`[deep-ceiling] model returned ${parsed.grade}; Deep caps at ${_cap.toFixed(1)} (Full is required above 9.6)`);
+        parsed.grade = enforceCgcGrade(_cap, 'deep-ceiling');
+      }
+      // gradeAtCeiling drives the "(+)" the app shows beside the grade: this
+      // pass went as high as it is allowed to go, and the next tier can go
+      // higher. Only meaningful when a higher tier actually exists.
+      parsed.gradeAtCeiling = (parseFloat(parsed.grade) === DEEP_PG_CEILING);
     }
     parsed._diagnostics = {
       deepAssessment: !isRestoration,

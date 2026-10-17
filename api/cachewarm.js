@@ -166,7 +166,13 @@ export default async function handler(req, res) {
   }
 
   // whoami. A GET asking for mode=warm is the cron and falls through to it.
-  if (req.method === 'GET' && _wantMode !== 'warm') return res.status(200).json({ ok: true, ...whoami, version: ROBOGRADE_VERSION });
+  // A GET asking for mode=warm is the cron; mode=status is the read-only ping
+  // log. Anything else is a whoami. (5.57 shipped without 'status' in this
+  // list, so mode=status returned the whoami payload and the status block was
+  // unreachable.)
+  if (req.method === 'GET' && _wantMode !== 'warm' && _wantMode !== 'status') {
+    return res.status(200).json({ ok: true, ...whoami, version: ROBOGRADE_VERSION });
+  }
 
   const _src = (req.body && Object.keys(req.body).length) ? req.body : (req.query || {});
   const { nonce = '', tokens = 2100, model = null, ttl = '1h', label = '' } = _src;

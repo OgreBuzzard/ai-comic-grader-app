@@ -1504,6 +1504,10 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       const _g = enforceCgcGrade(parsed.grade, 'main');
       if (_g) parsed.grade = _g;
     }
+    // Did this pass land exactly on its tier ceiling? If so a deeper pass can
+    // go higher, and the app shows "(+)" beside the grade to say so. Slabbed
+    // books have no ceiling (the label grade governs), so no "(+)" there.
+    parsed.gradeAtCeiling = (gradeCeiling != null && parseFloat(parsed.grade) === gradeCeiling);
 
     // ─────────────────────────────────────────────────────────────────────
     // Grade reference refinement pass — DISABLED May 24, 2026 (S15, v3.6).
