@@ -2231,12 +2231,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.62";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.63";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.62");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.63");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -5985,7 +5985,9 @@ function showDetail(id) {
       const _refB = _refDeep ? selected.referenceBackImageUrl : null;
       const _refYr = selected.referenceYear ? ` (${esc(String(selected.referenceYear))})` : "";
       // A reference cell: green border, label tag, no click target, no zoom cursor.
-      const _refCell = (u, lbl) => `<div style="position:relative;border-radius:6px;overflow:hidden;border:2px solid #2f9e44;background:#eaf3ea;display:flex;align-items:center;justify-content:center;min-height:200px"><img src="${u}" ${imgAttrs} style="width:100%;max-height:100%;object-fit:contain;display:block"><div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(38,132,58,0.92);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${lbl}</div></div>`;
+      // Tapping a reference opens it alone (openReferenceLightbox), not in the
+      // user's photo reel. zoom-in cursor so it reads as enlargeable.
+      const _refCell = (u, lbl) => `<div style="position:relative;border-radius:6px;overflow:hidden;border:2px solid #2f9e44;background:#eaf3ea;display:flex;align-items:center;justify-content:center;min-height:200px;cursor:zoom-in" onclick="openReferenceLightbox('${u}')"><img src="${u}" ${imgAttrs} style="width:100%;max-height:100%;object-fit:contain;display:block"><div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(38,132,58,0.92);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${lbl}</div></div>`;
       const _mainCell = i => imgs[i] ? `<img class="detail-cover" src="${imgs[i]}" ${imgAttrs} onclick="openLightbox('${selected.id}',${i})">` : `<div></div>`;
       // Half-width Interior that matches the height of the cover beside it. The
       // grid row is sized by the cover (a normal auto-height <img>); this cell
@@ -6930,6 +6932,23 @@ function openRestorationLightbox(id, idx)   { _lbOpenGroup(id, "uv", idx); }
 function openCouponLightbox(id, idx)        { _lbOpenGroup(id, "coupon", idx); }
 function openInsertLightbox(id, idx)        { _lbOpenGroup(id, "insert", idx); }
 function openUserDefectLightbox(id, idx)    { _lbOpenGroup(id, "missing", idx); }
+
+// ── REFERENCE COVERS OPEN ON THEIR OWN (S23, 2026-10-18) ────────────────────
+// A ComicVine or locally-hosted reference scan could not be enlarged at all:
+// `_refCell` rendered it with no click target, so the one image you most want
+// to look at closely — the clean copy you are comparing damage against — was
+// the one image stuck at thumbnail size.
+//
+// It is deliberately NOT added to _comicLbEntries(). That reel is the user's
+// OWN photos, and swiping from "my front cover" into "a stock scan of someone
+// else's copy" would misrepresent what the reel is. A one-entry list gets the
+// same Panzoom pinch and double-tap, and _lbUpdateArrows()/_lbSyncFooter()
+// already hide the prev/next chrome and the defect box when the list holds a
+// single frame — no new lightbox mode needed.
+function openReferenceLightbox(url) {
+  if (!url) return;
+  _lbOpen([ { u: url } ], 0, null);
+}
 
 let _lightboxLastTouchFingers = 0;
 
@@ -10864,7 +10883,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "5.62"),
+      appVersion: (window.RG_GRADING_VERSION || "5.63"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
@@ -15003,8 +15022,9 @@ function cameraOpenSlot(slotIndex) {
   if (!orientationMatch) {
     const progress = document.getElementById("camera-progress");
     if (mode === "walkthrough") {
-      const total = queue.length + 1 + _cameraState.captures.length;
-      const done = _cameraState.captures.length + 1;
+      const _off = _cameraState.progressDone || 0;
+      const total = queue.length + 1 + _cameraState.captures.length + _off;
+      const done = _cameraState.captures.length + 1 + _off;
       progress.textContent = `${done} of ${total} — ${label}`;
     } else {
       progress.textContent = label;
@@ -15032,8 +15052,9 @@ function cameraOpenSlot(slotIndex) {
   }
   const progress = document.getElementById("camera-progress");
   if (mode === "walkthrough") {
-    const total = queue.length + 1 + _cameraState.captures.length;
-    const done = _cameraState.captures.length + 1;
+    const _off2 = _cameraState.progressDone || 0;
+    const total = queue.length + 1 + _cameraState.captures.length + _off2;
+    const done = _cameraState.captures.length + 1 + _off2;
     progress.textContent = `${done} of ${total} — ${label}`;
   } else {
     progress.textContent = label;
@@ -15209,15 +15230,63 @@ async function cameraCapture() {
     const nextSlot = _cameraState.queue.shift();
     console.log("[camera] advancing to slot", nextSlot);
     cameraOpenSlot(nextSlot);
+  } else if (_cameraChainNext()) {
+    // Deep's interior covers continue in this same session — see _cameraChainNext.
   } else {
     console.log("[camera] finishing — mode:", _cameraState?.mode, "queueEmpty:", !_cameraState?.queue?.length);
     cameraFinish();
   }
 }
 
+// ── S23 BUGFIX: A DEEP CAPTURE IS ONE SESSION, NOT TWO ─────────────────────
+// Reported repeatedly: after the four corner macros the camera closed, the user
+// was dropped back into the Edit form, and had to find and tap the Interior
+// Front slot to shoot the remaining two photos. Nothing told them more photos
+// were needed. A Deep needs six images and the walkthrough only ever walked
+// four of them, because `corner` and `interiorCover` were separate kinds with
+// separate camera sessions and nothing joined them.
+//
+// This joins them. When the corner queue empties, the session CONTINUES into
+// Interior Front/Back instead of calling cameraFinish().
+//
+// WHY THE CAPTURES ARE BATCHED RATHER THAN APPENDED: runCropperSequence() picks
+// its destination list from the KIND (`cornerImages` vs `interiorCoverImages`),
+// so one flat captures array carrying both kinds would write the interior covers
+// into the corner slots. Each kind's captures are parked as their own batch and
+// replayed in order at finish.
+//
+// NOT chained: a slabbed book (labelDetected) has no interior-cover slots at
+// all, and a single-slot re-shoot stays a single-slot re-shoot.
+function _cameraChainNext() {
+  if (!_cameraState) return false;
+  if (_cameraState.mode !== "walkthrough") return false;
+  if (_cameraState.kind !== "corner") return false;
+  if (formData.labelDetected) return false;
+  const cov = formData.interiorCoverImages || [];
+  const nextSlots = [ 0, 1 ].filter(i => !cov[i]);
+  if (!nextSlots.length) return false;
+  (_cameraState.batches = _cameraState.batches || []).push({ kind: "corner", captures: [ ..._cameraState.captures ] });
+  // Keeps the on-screen counter continuous: "5 of 6", not a restart at "1 of 2".
+  _cameraState.progressDone = (_cameraState.progressDone || 0) + _cameraState.captures.length;
+  _cameraState.kind = "interiorCover";
+  _cameraState.captures = [];
+  _cameraState.current = nextSlots[0];
+  _cameraState.queue = nextSlots.slice(1);
+  // The interior-cover frame uses the interior chrome, not the corner chrome.
+  document.body.classList.remove("camera-kind-corner", "camera-kind-main", "camera-kind-restoration");
+  document.body.classList.add("camera-kind-interior");
+  console.log("[camera] chaining corner -> interiorCover, slots:", nextSlots);
+  cameraOpenSlot(_cameraState.current);
+  return true;
+}
+
 async function cameraFinish() {
   if (!_cameraState) return;
   const {kind: kind, captures: captures, labelDetected: labelDetected, labelKind: labelKind, isCard: _isCardCap} = _cameraState;
+  // A chained session (corner -> interiorCover) carries earlier kinds as parked
+  // batches. Each must be replayed against its OWN kind or it lands in the wrong
+  // image list. The current kind is always the last batch.
+  const _batches = (_cameraState.batches || []).concat([ { kind: kind, captures: captures } ]);
   cameraCloseStream();
   document.getElementById("camera-modal").classList.remove("open");
   // S16: clear the guide so stale SVG can't leak into the next camera session
@@ -15229,7 +15298,7 @@ async function cameraFinish() {
     formData.labelKind = labelKind || "cgc";
   }
   if (_isCardCap) formData._isCard = true;
-  await runCropperSequence(captures, kind);
+  for (const b of _batches) await runCropperSequence(b.captures, b.kind);
 }
 
 // S22: yield until the browser has actually laid out and painted. cameraFinish()
@@ -15346,6 +15415,9 @@ function cameraUploadInstead() {
   const {kind: kind, current: current, mode: mode, captures: captures} = _cameraState;
   const hadCaptures = mode === "walkthrough" && Array.isArray(captures) && captures.length > 0;
   const savedKind = kind, savedCurrent = current, savedCaptures = hadCaptures ? [ ...captures ] : null;
+  // S23: if the session had already chained (corner -> interiorCover), the corner
+  // photos are parked in `batches` and would be silently thrown away here.
+  const savedBatches = (_cameraState.batches || []).map(b => ({ kind: b.kind, captures: [ ...b.captures ] }));
   const savedLabelDetected = _cameraState.labelDetected, savedLabelKind = _cameraState.labelKind;
   cameraCloseStream();
   document.getElementById("camera-modal").classList.remove("open");
@@ -15369,12 +15441,14 @@ function cameraUploadInstead() {
     else if (savedKind === "restoration" || savedKind === "uvfront") { _tappedRestorationSlot = savedCurrent; document.getElementById("restoration-photo-input").click(); }
     else { _tappedSlot = savedCurrent; document.getElementById("photo-input").click(); }
   };
-  if (savedCaptures) {
+  if (savedCaptures || savedBatches.length) {
     if (savedLabelDetected) {
       formData.labelDetected = true;
       formData.labelKind = savedLabelKind || "cgc";
     }
-    runCropperSequence(savedCaptures, savedKind).then(openPicker).catch(openPicker);
+    const _all = savedBatches.concat(savedCaptures ? [ { kind: savedKind, captures: savedCaptures } ] : []);
+    (async () => { for (const b of _all) await runCropperSequence(b.captures, b.kind); })()
+      .then(openPicker).catch(openPicker);
   } else {
     openPicker();
   }

@@ -94,6 +94,50 @@ function buildBlock(nonce, approxTokens) {
   return s;
 }
 
+// ── THE LIVE CACHING CONFIG (S23, 2026-10-18) ──────────────────────────────
+// api/assess.js decides at request time whether to send cache_control AT ALL,
+// and with which TTL, by reading config/caching from the admin dashboard. The
+// ping did neither: it always sent a 1h ephemeral block with the extended-TTL
+// beta header, no matter what production was doing. That made two silent
+// failures possible, and BOTH of them look identical from the outside —
+// "cache warming still isn't working":
+//
+//   1. MAIN CACHING SWITCHED OFF. The chip that does this sits in the admin
+//      header and has been hit by a mis-tap before (the admin's own comment
+//      records Mains going from ~$0.09 to ~$0.21 for a day). With it off,
+//      assess.js sends the system prompt as a PLAIN STRING with no
+//      cache_control, so there is no entry to warm and no assessment will ever
+//      read one. The ping kept firing anyway, paying to create an entry that
+//      nothing on earth would read — and the first ping after each expiry pays
+//      the WRITE price, $0.2331. That is the shape of a bill that is larger
+//      than the model predicted while the feature does nothing.
+//
+//   2. TTL SET TO 5m. Then assessments write FIVE-MINUTE entries while the ping
+//      writes sixty-minute ones. The cron fires every 15 minutes, so a
+//      5-minute entry is already dead at every single fire: every ping is a
+//      WRITE, every assessment is cold, and the cost is ~40x the modelled one.
+//      A 15-minute cron cannot hold a 5-minute entry open. Nothing can.
+//
+// Mirrors assess.js's resolution exactly, including the legacy `enabled` flag
+// for docs written before the per-type chips existed. Fails OPEN (assume on,
+// 1h) so a Firestore blip never stops the ping.
+async function readCachingCfg(db) {
+  const out = { mainOn: true, ttl: '1h', source: 'default' };
+  if (!db) return out;
+  try {
+    const snap = await db.collection('config').doc('caching').get();
+    if (!snap.exists) return { ...out, source: 'no-doc' };
+    const d = snap.data() || {};
+    const t = d.types;
+    out.mainOn = t ? (t.main !== false) : (d.enabled !== false);
+    out.ttl = d.ttl === '5m' ? '5m' : '1h';
+    out.source = 'config/caching';
+  } catch (e) {
+    out.source = 'read-failed: ' + String(e && e.message || e);
+  }
+  return out;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -206,6 +250,43 @@ export default async function handler(req, res) {
     if (!sdb) return res.status(500).json({ error: 'no db' });
     try {
       const d = (await sdb.doc('cache_warm/main').get()).data() || {};
+      // THE THREE THINGS THAT WERE NOT VISIBLE, and without which "is cache
+      // warming working" could not be answered from outside the Firestore
+      // console. Each is free.
+      //   caching    — is Main caching even switched on, and at which TTL
+      //   prefixSha  — what the ping is sending, so drift shows without the repo
+      //   recentMains— what the last real Mains BILLED. This is the answer:
+      //                read  => warming is working
+      //                write => every Main is paying to create the entry
+      //                neither => caching is off; there is no entry at all
+      const caching = await readCachingCfg(sdb);
+      let prefixSha = null;
+      try {
+        const { createHash } = await import('node:crypto');
+        prefixSha = createHash('sha256').update(buildMainPrefix(null)).digest('hex').slice(0, 16);
+      } catch (e) { /* non-fatal */ }
+      let recentMains = [], mainTally = { read: 0, write: 0, uncached: 0 };
+      try {
+        const snap = await sdb.collection('assessment_timings')
+          .orderBy('createdAt', 'desc').limit(60).get();
+        for (const doc of snap.docs) {
+          const r = doc.data() || {};
+          if (r.kind && r.kind !== 'main' && r.kind !== 'assessment') {
+            if (r.warmedPrefix !== 'main') continue;
+          }
+          const rd = r.cacheReadInputTokens || 0, cr = r.cacheCreationInputTokens || 0;
+          const isBigPrefix = rd > 20000 || cr > 20000;
+          if (r.warmedPrefix !== 'main' && !isBigPrefix && r.kind !== 'main') continue;
+          const verdict = rd > 0 ? 'read' : cr > 0 ? 'write' : 'uncached';
+          mainTally[verdict]++;
+          if (recentMains.length < 25) {
+            recentMains.push({ at: r.createdAt || null, verdict,
+              cacheRead: rd, cacheCreate: cr,
+              costUsd: r.costUsd != null ? Number(r.costUsd) : null,
+              warmedPrefix: r.warmedPrefix || null, version: r.version || null });
+          }
+        }
+      } catch (e) { recentMains = [{ error: String(e && e.message || e) }]; }
       const recent = (d.recent || []).slice().sort((a, b) => String(b.at).localeCompare(String(a.at)));
       // Gaps between consecutive paid pings, newest first. A healthy cron at
       // */15 with quietMinutes 40 produces 45-minute gaps on a quiet stretch
@@ -225,6 +306,20 @@ export default async function handler(req, res) {
         totalCostUsd: Number((d.totalCostUsd || 0).toFixed(4)),
         recentCount: recent.length,
         gapsMin,
+        // THE DIAGNOSIS, in three fields. Read them in this order.
+        caching,          // mainOn:false => nothing is cached; the ping is pointless
+        prefixSha,        // must match what api/assess.js sends
+        mainTally,        // read / write / uncached across the last 60 rows
+        recentMains,
+        verdict: !caching.mainOn
+          ? 'MAIN CACHING IS OFF in config/caching. No assessment is caching anything, so there is no entry to keep warm. Switch the Comic chip back on in the admin header; the ping now refuses to spend while it is off.'
+          : caching.ttl === '5m'
+            ? 'TTL IS 5m. The cron fires every 15 minutes, so a 5-minute entry is always dead by the next fire: every ping pays the WRITE price and every assessment runs cold. Set the TTL to 1h in the admin header.'
+            : mainTally.write > mainTally.read
+              ? 'Mains are mostly WRITES. The prefix the ping sends and the one assess.js sends have come apart, or deploys are frequent enough to reset the key. Compare prefixSha against lib/main_prompt_check.mjs.'
+              : mainTally.read > 0
+                ? 'Mains are reading the cache. Warming is working.'
+                : 'No Main rows in the last 60 timings — nothing to judge yet.',
         recent: recent.slice(0, 60)
       });
     } catch (e) {
@@ -275,6 +370,23 @@ export default async function handler(req, res) {
     let db = null;
     try { db = await getAdminDb(); }
     catch (e) { gateNote = 'no db, warming anyway: ' + String(e && e.message || e); }
+
+    // ── DO NOT SPEND WHEN SPENDING CANNOT HELP ──────────────────────────────
+    // Read the same config/caching doc api/assess.js reads. See readCachingCfg
+    // above for why each of these two states produces a bill with nothing to
+    // show for it. This check comes BEFORE the traffic gate because it is
+    // cheaper and more decisive: if Main caching is off there is no entry in
+    // the world to keep warm, and the correct number of dollars to spend is
+    // zero.
+    const _cfg = await readCachingCfg(db);
+    if (!force && !_cfg.mainOn) {
+      return res.status(200).json({
+        ok: true, mode: 'warm', skipped: true, version: ROBOGRADE_VERSION, costUsd: 0,
+        reason: 'Main prompt caching is OFF in config/caching — api/assess.js is sending no cache_control, so there is no cache entry to keep warm. Not spending.',
+        action: 'Switch the Comic chip back on in the admin header, or leave it off and accept full-price Mains.',
+        caching: _cfg
+      });
+    }
 
     if (!force && db) {
       try {
@@ -332,16 +444,23 @@ export default async function handler(req, res) {
 
     const prefix = buildMainPrefix(null);
     const modelW = model || PRIMARY_MODEL;
+    // MATCH PRODUCTION'S TTL. This used to be hardcoded to 1h while
+    // api/assess.js took its TTL from config/caching, so with the dashboard set
+    // to 5m the ping wrote hour-long entries that five-minute assessments then
+    // shortened, and every ping after that paid the write price. The beta
+    // header is only valid for the 1h variant, exactly as in assess.js.
+    const _ttlW = (ttl === '5m' || _cfg.ttl === '5m') ? '5m' : '1h';
+    const _ctlW = _ttlW === '1h' ? { type: 'ephemeral', ttl: '1h' } : { type: 'ephemeral' };
+    const _betaW = _ttlW === '1h' ? { 'anthropic-beta': 'extended-cache-ttl-2025-04-11' } : {};
     const t0w = Date.now();
     try {
       const r = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKeyW, 'anthropic-version': '2023-06-01',
-                   'anthropic-beta': 'extended-cache-ttl-2025-04-11' },
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKeyW, 'anthropic-version': '2023-06-01', ..._betaW },
         body: JSON.stringify({
           model: modelW,
           max_tokens: 1,                 // output spend is zero; we want the cache touch, not an answer
-          system: [{ type: 'text', text: prefix, cache_control: { type: 'ephemeral', ttl: '1h' } }],
+          system: [{ type: 'text', text: prefix, cache_control: _ctlW }],
           messages: [{ role: 'user', content: [{ type: 'text', text: 'ok' }] }]
         })
       });
@@ -352,7 +471,7 @@ export default async function handler(req, res) {
       const read    = u.cache_read_input_tokens || 0;
       // One helper, one rate table. The cache-read multiplier is per-model
       // (0.05 on Opus 5.5, 0.10 on Opus 5) and this used to hardcode 0.10.
-      const costUsd = costOf(u, modelW, '1h');
+      const costUsd = costOf(u, modelW, _ttlW);
       // Record the touch so the next cron fire sees it and returns free.
       // Best-effort: a failed write makes the next fire pay again, which is a
       // cent, not an outage.
@@ -398,8 +517,12 @@ export default async function handler(req, res) {
         // READ is the healthy answer. WRITE on every ping means the prefix this
         // endpoint sends no longer matches what /api/assess sends — stop the
         // cron and diff lib/main_prompt.js against the prompt assess.js builds.
+        ttl: _ttlW,
+        caching: _cfg,
         verdict: read > 0 ? 'READ — cache refreshed, ping is working'
-               : created > 0 ? 'WRITE — prefix did NOT match the live cache entry. Investigate before leaving the cron on.'
+               : created > 0 ? (_ttlW === '5m'
+                   ? 'WRITE — and it will be a write EVERY TIME. The TTL is 5m and the cron fires every 15 minutes, so the entry is always dead before the next ping. Set the TTL to 1h in the admin header or turn the cron off.'
+                   : 'WRITE — prefix did NOT match the live cache entry. Investigate before leaving the cron on.')
                : 'NEITHER — unexpected; prefix may be under the minimum cacheable length',
         gateNote: gateNote || undefined
       });

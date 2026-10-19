@@ -12,11 +12,11 @@
 // ENV (all optional; absent => that platform uses the estimate):
 //   META_ADS_TOKEN            long-lived System User token with ads_read
 //   META_AD_ACCOUNT_ID        e.g. act_1789385462515396 (defaulted below)
-//   GOOGLE_ADS_DEVELOPER_TOKEN
+//   GOOGLE_ADS_DEVELOPER_TOKEN   NO LONGER REQUIRED - sunset 2026-09-09, see fetchGoogleDaily
 //   GOOGLE_ADS_CLIENT_ID / GOOGLE_ADS_CLIENT_SECRET / GOOGLE_ADS_REFRESH_TOKEN
 //   GOOGLE_ADS_CUSTOMER_ID    digits only, defaulted below (605-372-0191)
 //   GOOGLE_ADS_LOGIN_CUSTOMER_ID  (only if the account is under an MCC)
-//   GOOGLE_ADS_API_VERSION    default v18 — bump if Google sunsets it (404 => bump)
+//   GOOGLE_ADS_API_VERSION    default v25 (v18 was long dead; monthly releases since Jan 2026) — 404 => bump
 
 const DAY = 86400000;
 const ADS_LAUNCH_MS = Date.parse('2026-09-10T00:00:00Z'); // clean-ad relaunch; stopgap estimate anchor (real spend comes from the Meta/Google APIs)
@@ -71,14 +71,47 @@ async function fetchMetaDaily() {
   return byDay;
 }
 
+// ── GOOGLE ADS ACCESS CHANGED UNDER US (checked 2026-10-19) ────────────────
+// Two things in here were written against a world that no longer exists, and
+// between them they guarantee this function can never return a number:
+//
+//   1. DEVELOPER TOKENS WERE SUNSET ON 2026-09-09. API access levels now
+//      attach to a GOOGLE CLOUD PROJECT, not to a token. The API ignores a
+//      developer-token header today and a future major version will reject it.
+//      This function REQUIRED one to be set before it would even try, so it
+//      returned null forever and the admin showed Google as `missing` — which
+//      the Spending line then rendered as part of a partial total.
+//      Requirement dropped: the header is sent only if the variable happens to
+//      still be set.
+//   2. THE VERSION DEFAULT WAS `v18`. v19 was sunset on 2026-02-11 and the API
+//      moved to monthly releases in January 2026, so v18 is long dead and every
+//      call 404s. Defaulted to v25, the oldest version there is current
+//      evidence for — SET `GOOGLE_ADS_API_VERSION` to whatever is actually
+//      current; a 404 here means bump it.
+//
+// WHAT MATT HAS TO DO (no manager account needed):
+//   a. In the Google Cloud Console, open the Google Ads API page for the
+//      project and make sure BILLING IS ACTIVE — a free-trial or suspended
+//      billing account is rejected outright.
+//   b. Apply for an access level there (NOT from the Ads API Center, which is
+//      no longer processed). Explorer is automated and enough for reading our
+//      own account's spend; Basic needs brand verification first and is
+//      reviewed in minutes. A Test-level project calling a production account
+//      returns CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION.
+//   c. Create an OAuth client and a refresh token for that project, then set
+//      GOOGLE_ADS_CLIENT_ID / _CLIENT_SECRET / _REFRESH_TOKEN in the ADMIN
+//      Vercel project (admin is its own project — the main app's env vars are
+//      not visible here).
+//   d. GOOGLE_ADS_CUSTOMER_ID defaults to 6053720191; set it if that is wrong.
+//      GOOGLE_ADS_LOGIN_CUSTOMER_ID only if the account sits under an MCC.
 async function fetchGoogleDaily() {
-  const devToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
+  const devToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;   // optional, ignored by the API since 2026-09-09
   const clientId = process.env.GOOGLE_ADS_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET;
   const refreshToken = process.env.GOOGLE_ADS_REFRESH_TOKEN;
-  if (!devToken || !clientId || !clientSecret || !refreshToken) return null;
+  if (!clientId || !clientSecret || !refreshToken) return null;
   const customerId = (process.env.GOOGLE_ADS_CUSTOMER_ID || '6053720191').replace(/[^0-9]/g, '');
-  const ver = process.env.GOOGLE_ADS_API_VERSION || 'v18';
+  const ver = process.env.GOOGLE_ADS_API_VERSION || 'v25';
   // 1) refresh -> access token
   const tokRes = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -88,7 +121,8 @@ async function fetchGoogleDaily() {
   if (!tokRes.ok) throw new Error('google oauth ' + tokRes.status);
   const accessToken = (await tokRes.json()).access_token;
   // 2) GAQL: daily cost, last 30 days
-  const headers = { Authorization: 'Bearer ' + accessToken, 'developer-token': devToken, 'Content-Type': 'application/json' };
+  const headers = { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' };
+  if (devToken) headers['developer-token'] = devToken;   // harmless while it is still accepted; not required
   const login = process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID;
   if (login) headers['login-customer-id'] = login.replace(/[^0-9]/g, '');
   const query = 'SELECT segments.date, metrics.cost_micros FROM customer WHERE segments.date DURING LAST_30_DAYS';

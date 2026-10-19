@@ -25,8 +25,9 @@
 // perImage:true sends each image as its OWN call, so nothing competes spatially
 // either — the strongest form of the question. That is arm C in the plan.
 import process from 'node:process';
-import { PRIMARY_MODEL } from '../lib/model.js';
+import { PRIMARY_MODEL, costOf } from '../lib/model.js';
 import { ROBOGRADE_VERSION } from '../lib/version.js';
+import { getAdminDb } from '../lib/batch_common.js';
 
 
 // The whole prompt. Everything the grading prompt says about tape, and nothing
@@ -193,12 +194,49 @@ export default async function handler(req, res) {
     let parsed = null;
     try { parsed = JSON.parse(text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim()); }
     catch (_) { /* keep raw */ }
+    // ── LOG WHAT THIS COST (S23, 2026-10-18) ──────────────────────────────
+    // This endpoint used to spend real money and write NOTHING. It is the
+    // leading explanation for the ~$134 gap between the Anthropic invoices and
+    // the logged total over Sep 13 – Oct 11: during Session 22 this was hit
+    // hard, and every one of those calls was invisible to every cost figure in
+    // the admin. A diagnostic that cannot be seen in the spend is how a round
+    // of probing turns into a surprise on the invoice a month later.
+    //
+    // kind:'probe' so it is filterable in the admin Logs and can be excluded
+    // from assessment averages. Fire-and-forget: a failed write must never
+    // fail a probe.
+    const _ms = Date.now() - t0;
+    const _cost = costOf(j.usage || {}, useModel, null);
+    (async () => {
+      try {
+        const db = await getAdminDb();
+        if (!db) return;
+        const key = `probe_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        await db.collection('assessment_timings').doc(key).set({
+          kind: 'probe',
+          createdAt: new Date().toISOString(),
+          totalMs: _ms,
+          label: label || null,
+          question: question || null,
+          tag,
+          imageCount: imgs.length,
+          inputTokens: j.usage ? (j.usage.input_tokens || 0) : 0,
+          outputTokens: j.usage ? (j.usage.output_tokens || 0) : 0,
+          costUsd: Number(_cost.toFixed(6)),
+          responseModel: j.model || useModel,
+          stopReason: j.stop_reason || null,
+          version: ROBOGRADE_VERSION
+        });
+      } catch (e) { console.warn('[probe] timing write failed (non-fatal):', e && e.message); }
+    })();
+
     return {
       tag,
-      ms: Date.now() - t0,
+      ms: _ms,
       stopReason: j.stop_reason || null,
       inputTokens: j.usage ? j.usage.input_tokens : null,
       outputTokens: j.usage ? j.usage.output_tokens : null,
+      costUsd: Number(_cost.toFixed(6)),
       parsed,
       raw: parsed ? undefined : text.slice(0, 1200)
     };

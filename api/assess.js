@@ -2115,6 +2115,42 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       console.error('assessment_timings write failed (non-fatal):', e);
     }
 
+    // ── TIER GRADE CEILING — ENFORCED ON THE SERVER (S23, 2026-10-18) ────
+    // `gradeCeiling` has existed since S16 and was enforced in exactly two
+    // places, neither of which is the number anyone sees:
+    //   - the PROMPT ("predicted CGC grade must not exceed X"), which is a
+    //     request, not a constraint; and
+    //   - `_diagnostics.predictedGrade`, a clamped COPY written to the log.
+    // `parsed.grade` itself was never clamped. So a 4-photo Main whose stated
+    // ceiling is 9.2 could return and display 9.4 or 9.6 whenever the model
+    // declined to obey the instruction — the same class of failure as the Deep
+    // returning 9.8 on RG-ID 77H9H6, which was fixed in api/assess_deep.js by
+    // adding a real server cap. This is that cap for this endpoint.
+    //
+    // The ceilings (raw books; a slabbed book has none, its label governs):
+    //   Deep / high-grade pass  9.6      Main, 4 photos  9.2      fewer  8.5
+    // 9.6, 9.2 and 8.5 are all legal CGC rungs, but the value goes through
+    // enforceCgcGrade anyway so this can never be the thing that invents an
+    // off-ladder grade.
+    //
+    // The floor rule above can only raise a high-grade pass to the Main's own
+    // grade, which is already at or under this ceiling, so the two cannot
+    // disagree. If that ever changes, the log line below is the tell.
+    if (gradeCeiling != null) {
+      const _gc = parseFloat(parsed.grade);
+      if (Number.isFinite(_gc) && _gc > gradeCeiling) {
+        const _capped = enforceCgcGrade(gradeCeiling, 'main-ceiling') || String(gradeCeiling.toFixed(1));
+        console.log(`[grade-ceiling] ${highGrade ? 'high-grade pass' : 'main'} returned ${parsed.grade}; tier ceiling is ${gradeCeiling} (${photoCount} photos) — forced to ${_capped}`);
+        // NOT `enforcement.push(...)`: that array is block-scoped to the
+        // high-grade branch above (declared at the `if (highGrade ...)`), so
+        // referencing it here throws on an ordinary Main. Caught by running the
+        // module rather than by `node --check`, which cannot see it.
+        parsed._diagnostics = parsed._diagnostics || {};
+        parsed._diagnostics.gradeCeilingApplied = { from: parsed.grade, to: _capped, ceiling: gradeCeiling, photoCount: photoCount };
+        parsed.grade = _capped;
+      }
+    }
+
     // ── "(+)" — THIS GRADE COULD GO HIGHER ───────────────────────────────
     // Two conditions, and BOTH must hold:
     //   1. the pass landed exactly on its tier ceiling, so a deeper pass is
