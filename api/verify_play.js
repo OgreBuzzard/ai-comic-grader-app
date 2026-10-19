@@ -21,7 +21,7 @@
 // process.env so the bundler can't drop it) and load googleapis + firebase-admin
 // dynamically inside the handler.
 import process from 'node:process';
-import { bonusForNextPurchase, nextBonuses, TIER_CONFIG, tierOf } from '../lib/repeat_bonus.js';
+import { effectiveBonusForNextPurchase, nextBonuses, TIER_CONFIG, tierOf } from '../lib/repeat_bonus.js';
 
 const PACKAGE_NAME = 'app.robograder';
 
@@ -125,7 +125,11 @@ export default async function handler(req, res) {
       const nowMs = Date.now();
       const priorSnap = await db.collection('purchases').where('userId', '==', uid).get();
       const priorDatas = priorSnap.docs.map(d => d.data());
-      bonusCredits = bonusForNextPurchase(priorDatas, tier, nowMs);
+      // S24: EFFECTIVE, not earned. A customer whose repeat Comic Stack bonus has
+        // made the Stack cheaper per credit than an unbonused Comic Wall gets the
+        // Wall unlocked to parity, so moving up a tier is never a worse deal.
+        // See the CROSS-TIER PARITY UNLOCK block in lib/repeat_bonus.js.
+        bonusCredits = effectiveBonusForNextPurchase(priorDatas, tier, nowMs);
       lastPurchaseAt = new Date(nowMs).toISOString();
       nextBonusesCache = nextBonuses([...priorDatas, { tier, environment: envName, createdAtMs: nowMs }], nowMs);
     }

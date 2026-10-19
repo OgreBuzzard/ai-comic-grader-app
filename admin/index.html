@@ -1499,7 +1499,7 @@ async function loadStats() {
 
 function renderStats() {
   if (!state.stats) return;
-  const { accounts, items, platforms, revenue, credits, spend, spendBreakdown, perCredit, assessCost, devCost } = state.stats;
+  const { accounts, items, platforms, revenue, credits, spend, spendBreakdown, perCredit, assessCost, costPerCredit, devCost } = state.stats;
   const r = revenue || {}, sp = spend || {};
   const dollars = c => '$' + ((c || 0) / 100).toFixed(2);
   const netDay = (r.webNetDayCents || 0) + (r.iosNetDayCents || 0) + (r.androidNetDayCents || 0);
@@ -1548,9 +1548,20 @@ function renderStats() {
       </div>
       <div id="income-body" style="display:${open ? 'block' : 'none'};">
         <div class="stats-grid">
-          ${(function(){var pc=perCredit||{},ac=assessCost||{};var money=function(v){return v==null?'\u2014':'$'+(v<1?v.toFixed(3):v.toFixed(2));};var trio=function(o){return '<div class="breakouts"><span><strong>'+money(o.day)+'</strong> 24h</span><span><strong>'+money(o.week)+'</strong> 7d</span><span><strong>'+money(o.month)+'</strong> 30d</span></div>';};return ''+
+          ${(function(){var pc=perCredit||{},ac=assessCost||{},cpc=costPerCredit||{};var money=function(v){return v==null?'\u2014':'$'+(v<1?v.toFixed(3):v.toFixed(2));};var trio=function(o){return '<div class="breakouts"><span><strong>'+money(o.day)+'</strong> 24h</span><span><strong>'+money(o.week)+'</strong> 7d</span><span><strong>'+money(o.month)+'</strong> 30d</span></div>';};return ''+
             '<div class="stat-card"><h3>Earned / Credit</h3><div class="total">'+money(pc.month)+'</div>'+trio(pc)+'</div>'+
-            '<div class="stat-card"><h3>Cost / Credit Used</h3><div class="total">'+money(ac.month)+'</div>'+trio(ac)+'</div>';})()}
+            // S24: this card used to be labelled "Cost / Credit Used" while
+            // showing cost per ASSESSMENT. They are different numbers and the
+            // second is the lower one — it ignores refunded Deeps, Batch (3
+            // credits for 10 assessments), uncharged slab-checks and probes,
+            // and the keep-warm ping entirely. The headline is now the real
+            // cost of a charged credit; per-assessment keeps its own line
+            // underneath, because it is still the right number for judging a
+            // prompt or model change.
+            '<div class="stat-card"><h3>Cost / Credit</h3><div class="total">'+money(cpc.month)+'</div>'+trio(cpc)+
+              '<div style="opacity:.7;font-size:11px;margin-top:4px">per assessment '+money(ac.month)+
+              (cpc.month==null?' \u00b7 credit figure needs more data':'')+'</div>'+
+            '</div>';})()}
         </div>
         <div class="stats-grid">
           <div class="stat-card"><h3>Revenue</h3><div class="total">${dollars(r.netCents || 0)}</div>${bo(netDay, netWeek, netMonth)}${sub('iOS', r.iosNetDayCents, r.iosNetWeekCents, r.iosNetMonthCents)}${sub('Android', r.androidNetDayCents, r.androidNetWeekCents, r.androidNetMonthCents)}${sub('Web', r.webNetDayCents, r.webNetWeekCents, r.webNetMonthCents)}</div>

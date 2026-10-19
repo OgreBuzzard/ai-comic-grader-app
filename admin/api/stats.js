@@ -47,6 +47,42 @@ export default async function handler(req, res) {
     const APPLE_CUTOFF_MS = Date.UTC(2026, 7, 14); // Aug 14 2026: Apple 30%->15% (small-business)
     const perCredit = { day: { net: 0, credits: 0 }, week: { net: 0, credits: 0 }, month: { net: 0, credits: 0 } };
     const assessCost = { day: { cents: 0, n: 0 }, week: { cents: 0, n: 0 }, month: { cents: 0, n: 0 } };
+    // ── TRUE COST PER CREDIT (S24, 2026-10-19, Matt's ask) ──────────────────
+    // `assessCost` above is cost per ASSESSMENT and has always been labelled
+    // "Cost / Credit Used", which is a different number and a lower one. Matt:
+    // "we're refunding credits on Deep runs that don't raise the grade, so a
+    // good portion of our assessments don't actually charge a credit and that
+    // is pure cost with 0 credits decremented."
+    //
+    // He is right, and there are four separate leaks between the two figures:
+    //   1. REFUNDS — a Deep that does not raise the grade costs full price and
+    //      charges nothing.
+    //   2. BATCH — 3 credits buys 10 assessments.
+    //   3. UNCHARGED WORK — slab-checks, probes, the comparison pass.
+    //   4. CACHE WARMING — real money, no assessment row at all, invisible to
+    //      every figure on this page except its own line.
+    // Each pushes the real cost of a credit ABOVE the cost of an assessment.
+    //
+    // numerator   = every dollar Anthropic billed in the window (all kinds) + the
+    //               keep-warm ping's spend in the window
+    // denominator = credits actually charged, net of refunds
+    //
+    // The denominator is new data: `creditsCharged` on each timing row, minus
+    // server refunds from `credit_events` and client Deep refunds from the
+    // item's `deepRefundAt`. None of it existed before 5.65, so `coverage`
+    // reports the share of cost-bearing rows that carry the field — a window
+    // with low coverage gets null rather than a confidently wrong number.
+    const creditUse = {
+      day:   { charged: 0, refunded: 0, costCents: 0, rows: 0, stamped: 0 },
+      week:  { charged: 0, refunded: 0, costCents: 0, rows: 0, stamped: 0 },
+      month: { charged: 0, refunded: 0, costCents: 0, rows: 0, stamped: 0 },
+    };
+    const _eachWindow = (ms, fn) => {
+      if (Number.isNaN(ms)) return;
+      if (ms >= cutoffs.day) fn(creditUse.day);
+      if (ms >= cutoffs.week) fn(creditUse.week);
+      if (ms >= cutoffs.month) fn(creditUse.month);
+    };
 
     const db = getFirestore();
 
@@ -84,6 +120,14 @@ export default async function handler(req, res) {
       if (ms >= cutoffs.month) {
         const k = new Date(ms).toISOString().slice(0, 10);
         itemsByDay[k] = (itemsByDay[k] || 0) + 1;
+      }
+      // A Deep that did not raise the grade is refunded on the CLIENT after the
+      // result lands, so the server's timing row says a credit was charged and
+      // nothing contradicts it. `deepRefundAt` is that contradiction, dated so
+      // it lands in the right window.
+      if (d.deepRefundAt) {
+        const rms = Date.parse(d.deepRefundAt);
+        _eachWindow(rms, w => { w.refunded += 1; });
       }
       if (ms >= cutoffs.day) items.day++;
       if (ms >= cutoffs.week) items.week++;
@@ -232,6 +276,15 @@ export default async function handler(req, res) {
           if (ms >= cutoffs.month) { assessCost.month.cents += cents; assessCost.month.n++; }
         }
         if (t.kind !== 'slabcheck' && cost > 0 && costs.length < 100) costs.push(cost);
+        // EVERY row's cost, including slab-checks, probes and comparison passes.
+        // The point of this figure is that nothing is left out of the numerator.
+        _eachWindow(ms, w => {
+          w.costCents += cents;
+          if (cost > 0) {
+            w.rows++;
+            if (typeof t.creditsCharged === 'number') { w.stamped++; w.charged += t.creditsCharged; }
+          }
+        });
         // A row with no cost is NOT a free call. An errored or timed-out run
         // writes costUsd: 0, but Anthropic still billed every input token it
         // had already received. These are real money recorded as zero, and
@@ -350,6 +403,24 @@ export default async function handler(req, res) {
     // folded in, because the whole point of the ping is that it should cost far
     // less than it saves — and that is only checkable if both numbers are on
     // screen at once.
+    // Server-side refunds (a run that failed outright). The client's Deep
+    // no-raise refund is counted from the item instead — see deepRefundAt above.
+    // Capped and best-effort: a missing ledger must not break the dashboard, it
+    // just lowers `coverage`.
+    let ledgerRead = false;
+    try {
+      const ceSnap = await db.collection('credit_events')
+        .where('createdAt', '>=', new Date(cutoffs.month).toISOString())
+        .limit(5000).get();
+      ledgerRead = true;
+      for (const doc of ceSnap.docs) {
+        const e = doc.data() || {};
+        const dlt = +e.delta || 0;
+        if (dlt <= 0) continue;                       // charges already come from the timing rows
+        _eachWindow(Date.parse(e.createdAt || ''), w => { w.refunded += dlt; });
+      }
+    } catch (e) { console.warn('[admin-stats] credit_events read skipped:', e.message); }
+
     let warmSpend = null;
     try {
       const _ws = await db.collection('config').doc('cache_warm').collection('main').doc('main').get().catch(() => null);
@@ -415,6 +486,28 @@ export default async function handler(req, res) {
         week: perCredit.week.credits ? +(perCredit.week.net / 100 / perCredit.week.credits).toFixed(4) : null,
         month: perCredit.month.credits ? +(perCredit.month.net / 100 / perCredit.month.credits).toFixed(4) : null,
       },
+      // TRUE cost per credit charged. Numerator includes the keep-warm ping,
+      // which is the point: the ping is supposed to pay for itself by making
+      // assessments cheaper, and that is only checkable if its cost sits in the
+      // same fraction as the saving it produces. `coverage` is the share of
+      // cost-bearing rows carrying creditsCharged — below 0.8 the window
+      // predates the instrumentation and the figure is withheld rather than
+      // published wrong.
+      costPerCredit: (() => {
+        const out = { day: null, week: null, month: null, coverage: {}, detail: {}, ledgerRead };
+        for (const k of ['day', 'week', 'month']) {
+          const w = creditUse[k];
+          const warmCents = warmSpend ? (+warmSpend[k + 'Cents'] || 0) : 0;
+          const net = w.charged - w.refunded;
+          const cov = w.rows ? +(w.stamped / w.rows).toFixed(3) : 0;
+          out.coverage[k] = cov;
+          out.detail[k] = { creditsCharged: w.charged, creditsRefunded: w.refunded,
+                            creditsNet: net, apiCents: w.costCents, warmCents,
+                            rows: w.rows, rowsStamped: w.stamped };
+          if (net > 0 && cov >= 0.8) out[k] = +((w.costCents + warmCents) / 100 / net).toFixed(4);
+        }
+        return out;
+      })(),
       assessCost: {
         day: assessCost.day.n ? +(assessCost.day.cents / 100 / assessCost.day.n).toFixed(4) : null,
         week: assessCost.week.n ? +(assessCost.week.cents / 100 / assessCost.week.n).toFixed(4) : null,

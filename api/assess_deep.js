@@ -1423,6 +1423,11 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
       if (db) {
         const key = `deep_err_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         await db.collection('assessment_timings').doc(key).set({
+          // S24: what this assessment COST THE USER in credits. Nothing recorded
+          // this before, so the admin's "cost per credit" was really cost per
+          // ASSESSMENT — a lower, different number. Gross: a later refund is
+          // subtracted from the ledger / the item's refund stamp, not from here.
+          creditsCharged: (typeof _CREDIT_COST === 'number') ? _CREDIT_COST : null,
           createdAt: new Date().toISOString(),
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
