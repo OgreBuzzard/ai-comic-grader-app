@@ -304,6 +304,13 @@ export default async function handler(req, res) {
         totalReads: d.totalReads || 0,
         totalWrites: d.totalWrites || 0,
         totalCostUsd: Number((d.totalCostUsd || 0).toFixed(4)),
+        // Failures. A long gap in gapsMin means EITHER the cron did not fire OR
+        // the ping fired and failed; these three fields are what tell them
+        // apart without opening the Vercel dashboard.
+        totalFailures: d.totalFailures || 0,
+        lastErrorAt: d.lastErrorAt || null,
+        lastError: d.lastError || null,
+        lastErrorMs: d.lastErrorMs || null,
         recentCount: recent.length,
         gapsMin,
         // THE DIAGNOSIS, in three fields. Read them in this order.
@@ -527,7 +534,25 @@ export default async function handler(req, res) {
         gateNote: gateNote || undefined
       });
     } catch (e) {
-      return res.status(500).json({ error: 'warm ping failed', detail: String(e && e.message || e) });
+      // ── RECORD THE FAILURE (S24, 2026-10-19) ─────────────────────────────
+      // Until now a failed ping returned 500 and wrote NOTHING. `lastWarmAt`
+      // only moves on success, so a run of failures and a cron that never fired
+      // produce an identical trace: a long gap in `gapsMin` and nothing else.
+      // That ambiguity is why four rounds of this investigation needed the
+      // Vercel dashboard to get any further. Now the doc says which it was.
+      const _msg = String(e && e.message || e);
+      if (db) {
+        try {
+          const { FieldValue } = await import('firebase-admin/firestore');
+          await db.doc(WARM_DOC).set({
+            lastErrorAt: new Date().toISOString(),
+            lastError: _msg.slice(0, 300),
+            lastErrorMs: Date.now() - t0w,
+            totalFailures: FieldValue.increment(1)
+          }, { merge: true });
+        } catch (e2) { /* non-fatal */ }
+      }
+      return res.status(500).json({ error: 'warm ping failed', detail: _msg, ms: Date.now() - t0w });
     }
   }
 
