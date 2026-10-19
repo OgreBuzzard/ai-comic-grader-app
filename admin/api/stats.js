@@ -280,9 +280,18 @@ export default async function handler(req, res) {
         // The point of this figure is that nothing is left out of the numerator.
         _eachWindow(ms, w => {
           w.costCents += cents;
+          // Credits count from ANY row that carries them, cost or no cost. The
+          // batch_credits row is the case this exists for: it holds the 3
+          // credits a Batch charges and costs nothing itself, because the money
+          // is already on the ten pass rows. Counting credits only on
+          // cost-bearing rows put ten assessments in the numerator with nothing
+          // in the denominator.
+          if (typeof t.creditsCharged === 'number') w.charged += t.creditsCharged;
+          // Coverage is about the COST rows: what share of the spend in this
+          // window comes from rows new enough to carry the field at all.
           if (cost > 0) {
             w.rows++;
-            if (typeof t.creditsCharged === 'number') { w.stamped++; w.charged += t.creditsCharged; }
+            if (typeof t.creditsCharged === 'number') w.stamped++;
           }
         });
         // A row with no cost is NOT a free call. An errored or timed-out run

@@ -25,6 +25,7 @@ import {
   itemRef, comicOf, imageUrlsOf, checkEligibility, bracketAnchorGrade,
   newBatchDoc, batchRef, makeBatchId
 } from '../lib/batch_common.js';
+import { logCreditEvent } from '../lib/credits.js';
 
 export default async function handler(req, res) {
   if (applyCors(req, res)) return;
@@ -119,6 +120,33 @@ export default async function handler(req, res) {
     } catch (e2) { console.error('[batch_start] REFUND FAILED — manual correction needed for uid', uid, e2); }
     return res.status(500).json({ error: 'batch_create_failed', message: 'Could not start the batch. Your credits were not charged.' });
   }
+
+  // ── RECORD THE 3 CREDITS (S24, 2026-10-19, Matt) ─────────────────────────
+  // Batch debits in its own transaction above, bypassing lib/credits.js, and
+  // its ten passes each write a timing row stamped creditsCharged: 0 — because
+  // the passes genuinely cost nothing extra, the batch paid up front. The net
+  // effect on the admin's cost-per-credit figure was that ten assessments' worth
+  // of Anthropic spend landed in the numerator with ZERO credits under it,
+  // which inflates the cost of every other credit.
+  //
+  // Matt put it exactly right: "the Batch calculation should look at the cost of
+  // all 10 of those assessments, some of which are very small, then divide that
+  // total by 3." This row is the 3. costUsd is 0 because the money is already
+  // counted on the pass rows — double-counting it here would be the opposite
+  // error.
+  (async () => {
+    try {
+      const key = `batchcr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      await db.collection('assessment_timings').doc(key).set({
+        kind: 'batch_credits', uid, itemId: itemId || null, batchId,
+        createdAt: new Date().toISOString(),
+        costUsd: 0,                       // the spend is on the ten pass rows
+        creditsCharged: BATCH_CREDIT_COST,
+        version: ROBOGRADE_VERSION
+      });
+      await logCreditEvent(db, uid, -BATCH_CREDIT_COST, 'batch', { batchId });
+    } catch (e) { console.warn('[batch_start] credit record failed (non-fatal):', e && e.message); }
+  })();
 
   return res.status(200).json({
     batchId, n: BATCH_N, creditsCharged: BATCH_CREDIT_COST,

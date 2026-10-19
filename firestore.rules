@@ -139,6 +139,27 @@ service cloud.firestore {
     match /credit_adjustments/{adjustmentId} {
       allow read, write: if false;
     }
+    // Credit events ledger (S24, 2026-10-19): one row per credit movement —
+    // negative for a charge, positive for a refund — written by lib/credits.js
+    // and api/assess_batch_start.js (Admin SDK, which bypasses these rules).
+    //
+    // It exists because nothing recorded how many credits were actually
+    // CONSUMED: the user doc carries a running balance and a refund was an
+    // increment and a log line, so the admin's "cost per credit" was really
+    // cost per assessment. This is the audit trail that makes the real figure
+    // computable.
+    //
+    // Same access model as the other ledgers: Admin SDK only, no client access
+    // at all. Client write would let a user forge credit movements and so
+    // falsify the cost and margin figures the dashboard is built on; client
+    // read would expose other users' usage patterns. Deny both.
+    //
+    // NOTE: the balance in the user doc remains the source of truth for
+    // spending. This ledger is for accounting, so a failed write here is
+    // logged and swallowed rather than failing an assessment.
+    match /credit_events/{eventId} {
+      allow read, write: if false;
+    }
     // Promo redemptions ledger (S14): per-redemption audit log written
     // by /api/redeem_promo (Admin SDK) when a user successfully redeems
     // a promo code. Same access model as the other ledgers — Admin SDK
