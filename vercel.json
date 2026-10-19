@@ -44,6 +44,9 @@
     },
     "api/cachewarm.js": {
       "maxDuration": 60
+    },
+    "api/assess_clean_run.js": {
+      "maxDuration": 180
     }
   },
   "headers": [

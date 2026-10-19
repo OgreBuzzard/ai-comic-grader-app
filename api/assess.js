@@ -2009,6 +2009,13 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
         if (!parsed._diagnostics) parsed._diagnostics = {};
         parsed._diagnostics.timingKey = key;
         await db.collection('assessment_timings').doc(key).set({
+          // S24 (2026-10-19): WHOSE assessment this was. The row carried the
+          // book's title and its grades but nothing identifying the account, so
+          // a logged assessment with no matching item — which happens whenever
+          // the client never saved, or the user deleted the book afterwards —
+          // could not be traced to anyone. Matt hit exactly that: two
+          // assessments in Logs with no row in Items and no way to ask who.
+          uid: (typeof _authedUid !== 'undefined' && _authedUid) ? _authedUid : null,
           createdAt: new Date().toISOString(),
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
