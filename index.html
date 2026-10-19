@@ -2231,12 +2231,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.63";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.64";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.63");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.64");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -4056,7 +4056,7 @@ async function migrateComicsToItems() {
   }
 }
 
-const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "gradeAtCeiling", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "uvCheckRuns", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "fullUnlockReason", "deepAssessmentRan", "binding", "bindingBasis", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "deepRefundUsed", "fullRefundUsed", "insertImages", "couponImages", "userDefectImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue", "signatures", "gradeRevisionReason" ];
+const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "gradeAtCeiling", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "uvCheckRuns", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "fullUnlockReason", "deepAssessmentRan", "binding", "bindingBasis", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "deepRefundUsed", "fullRefundUsed", "insertImages", "couponImages", "userDefectImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue", "signatures", "gradeRevisionReason", "cleanUnlocked", "cleanAssessmentRan", "cleanRuns", "cleanBeforeImages", "cleanBeforeMeta", "cleanBeforeResult", "cleanAfterImages", "cleanAfterMeta", "cleanAfterResult", "cleanComparison" ];
 
 const COMIC_DROP_FIELDS = [ "press", "uv", "clean" ];
 
@@ -10883,7 +10883,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "5.63"),
+      appVersion: (window.RG_GRADING_VERSION || "5.64"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,

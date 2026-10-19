@@ -38,6 +38,9 @@
     },
     "api/assess_batch_status.js": {
       "maxDuration": 10
+    },
+    "api/assess_clean.js": {
+      "maxDuration": 60
     }
   },
   "headers": [

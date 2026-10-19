@@ -276,6 +276,7 @@
   // `kind` and applied as an inline animation-duration so it overrides the CSS
   // keyframe duration (which stays 2.0s for the main/corner default).
   let _scanDurationMs = SCAN_DURATION;
+  let _lastKind = null;          // S24: which sequence is running; Batch keeps its panel
   // Per-run first-photo delay (batch waits out a 3-coin drop). Set in runScanAnimation.
   let _firstPhotoDelayMs = null;
   // CSS @keyframes durations below changed in lockstep.
@@ -1602,6 +1603,9 @@
     // a brisker 900ms scan so the longer sequence keeps a snappy rhythm. The
     // 2-image UV run gets the full 2.0s dwell (S22: was 1.0s for 8 images — at
     // two images that made the whole scan flash by in two seconds).
+    // S24: remembered so revealScannedPhoto() can tell a Batch run from every
+    // other one without the caller having to say so. Both callers pass 'front'.
+    _lastKind = kind;
     _scanDurationMs = (kind === 'corner' || kind === 'full') ? 900
       : (kind === 'restoration') ? 2000
       : (kind === 'batch') ? 900          // S22: Deep speed, 10 images, one sweep
@@ -1772,6 +1776,24 @@
   function revealScannedPhoto(slotName, delayMs, coverUrl) {
     if (_revealed) return;
     _revealed = true;
+    // ── BATCH KEEPS ITS PANEL (S24, Matt, 2026-10-19) ──────────────────────
+    // Every other sequence ends on the book's cover, which is the point: the
+    // user tracks their own book into the chest and gets the grade with a
+    // picture attached to it.
+    //
+    // Batch is the exception. Its overlay carries FIVE grade results — the
+    // whole output of the run, and the thing the user is there to read — and
+    // the boxes layer slides out with the overlay. Revealing the cover would
+    // take the results off screen a beat after they arrived, to show a photo
+    // the user has already seen. So Batch keeps the panel up and the cover
+    // stays behind it.
+    //
+    // Gated on the kind recorded at run time rather than on the caller,
+    // because both call sites pass slotName 'front'.
+    if (_lastKind === 'batch') {
+      debugLog('revealScannedPhoto: batch — keeping the panel and the five results on screen');
+      return;
+    }
     const go = () => {
       const overlay = document.querySelector('.rg-scan-overlay');
       const boxes   = document.querySelector('.rg-scan-boxes');
