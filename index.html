@@ -2231,12 +2231,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.70";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.71";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.70");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.71");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -11172,7 +11172,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "5.70"),
+      appVersion: (window.RG_GRADING_VERSION || "5.71"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
@@ -13407,6 +13407,8 @@ async function detectSlabFromDataUrl(dataUrl) {
 }
 
 async function handleImages(e) {
+  // Cleaning Compare: never let the library picker touch the Before photos.
+  if (await _cleanHandleLibraryFiles(e, "main", _tappedSlot)) return;
   const files = Array.from(e.target.files);
   if (!files.length) return;
   const nonImage = files.find(f => !f.type.startsWith("image/"));
@@ -13589,6 +13591,8 @@ function removeCornerImg(i) {
 }
 
 async function handleCornerImages(e) {
+  // Cleaning Compare: never let the library picker touch the Before photos.
+  if (await _cleanHandleLibraryFiles(e, "corner", _tappedCornerSlot)) return;
   const files = Array.from(e.target.files);
   if (!files.length) return;
   const nonImage = files.find(f => !f.type.startsWith("image/"));
@@ -13649,6 +13653,8 @@ function removeInteriorCoverImg(i) {
   renderForm();
 }
 async function handleInteriorCoverImages(e) {
+  // Cleaning Compare: never let the library picker touch the Before photos.
+  if (await _cleanHandleLibraryFiles(e, "interiorCover", _tappedInteriorCoverSlot)) return;
   const files = Array.from(e.target.files);
   if (!files.length) return;
   const nonImage = files.find(f => !f.type.startsWith("image/"));
@@ -15593,6 +15599,64 @@ function startCleanCapture() {
 }
 
 function cancelCleanCapture() { _cleanCapture = false; }
+
+// CLEANING COMPARE AND THE LIBRARY PICKER.
+//
+// The redirect in runCropperSequence() only covers the CAMERA path. When
+// window._cameraSupported is false - a desktop PWA, which is exactly how a test
+// run from a prepared "after" image set gets done - tapSlot() falls through to
+// the hidden file inputs instead, and handleImages / handleCornerImages /
+// handleInteriorCoverImages write into formData.images, .cornerImages and
+// .interiorCoverImages: THE BOOK'S OWN BEFORE PHOTOS. Before is immutable
+// (decision 2 of the spec) and overwriting it is the one thing this feature must
+// never do, so those three handlers call this FIRST and return if it took the
+// files.
+//
+// Disarming at the end is deliberate and is the camera path's opposite. The
+// camera keeps _cleanCapture set across the whole chained walkthrough and clears
+// it when the chain ends. There is no chain here: one picker fills one group, so
+// leaving the flag set would silently redirect the NEXT ordinary slot tap too.
+// retakeCleanSlot() re-arms it on each tap, which is all the library path needs.
+async function _cleanHandleLibraryFiles(e, kind, startSlot) {
+  if (!_cleanCapture) return false;
+  const off = CLEAN_CAPTURE_OFFSET[kind], cnt = CLEAN_CAPTURE_COUNT[kind];
+  if (off == null) return false;
+
+  const files = Array.from(e.target.files || []);
+  e.target.value = "";
+  if (!files.length) { _cleanCapture = false; return true; }   // handled: picker cancelled
+
+  const nonImage = files.find(f => !f.type.startsWith("image/"));
+  if (nonImage) {
+    alert(`"${nonImage.name}" doesn't look like an image file. Please pick photos only (JPG, PNG, HEIC, etc.).`);
+    _cleanCapture = false;
+    return true;
+  }
+
+  const urls = await Promise.all(files.map(f => new Promise(res => {
+    const r = new FileReader;
+    r.onload = ev => res(ev.target.result);
+    r.readAsDataURL(f);
+  })));
+
+  const arr = [ ...(formData.cleanAfterImages || []) ];  while (arr.length < 10) arr.push(null);
+  const meta = [ ...(formData.cleanAfterMeta || []) ];   while (meta.length < 10) meta.push(null);
+
+  // Multi-select fills forward from the tapped slot and stops at the group's
+  // edge rather than wrapping into the next group's photos.
+  const base = Math.max(0, Math.min(cnt - 1, startSlot | 0));
+  for (let n = 0; n < urls.length && base + n < cnt; n++) {
+    arr[off + base + n] = urls[n];
+    meta[off + base + n] = { source: "library", capturedAt: (new Date).toISOString() };
+  }
+
+  formData.cleanAfterImages = arr.slice(0, 10);
+  formData.cleanAfterMeta = meta.slice(0, 10);
+  formData._imagesChanged = true;
+  _cleanCapture = false;
+  renderForm();
+  return true;
+}
 
 function _cameraChainNext() {
   if (!_cameraState) return false;

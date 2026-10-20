@@ -37,18 +37,37 @@ function estByDay(centsPerDay) {
 
 function windowsFromByDay(byDay) {
   const now = Date.now();
-  let week = 0, month = 0, all = 0, latestDay = null, latestVal = 0;
+  let week = 0, month = 0, all = 0;
   for (const k of Object.keys(byDay)) {
     const cents = byDay[k] || 0;
     all += cents;
     const age = (now - Date.parse(k + 'T00:00:00Z')) / DAY;
     if (age < 7) week += cents;
     if (age < 30) month += cents;
-    if (!latestDay || k > latestDay) { latestDay = k; latestVal = cents; }
   }
-  // dayCents = latest reported day = the current daily rate (best signal while
-  // throttling). Today's figure may be intraday-partial on the ad platforms.
-  return { dayCents: latestVal, weekCents: week, monthCents: month, allTimeCents: all };
+
+  // dayCents = TODAY's spend, falling back to YESTERDAY's ONLY while today has
+  // not been reported yet. A day the platform omits means it spent NOTHING that
+  // day.
+  //
+  // BUG FOUND 2026-10-20, and it was alarming rather than cosmetic. This used to
+  // be "the value of the latest row present", described as the current daily
+  // rate. But a paused account stops producing daily rows altogether, so the
+  // latest row stays forever on the last day that actually spent money. Both the
+  // Meta and the Google accounts had been paused for days - Google's own UI said
+  // "None of your ads are running" and both read $0.00 for today - and the admin
+  // still reported Ads $34.73/24h. Matt reasonably read that as $34.73 a day
+  // still going out of the door.
+  //
+  // weekCents/monthCents were never affected: they are real rolling windows, so
+  // they legitimately still carry the pre-pause spend and will decay on their own.
+  const dayKey  = new Date(now).toISOString().slice(0, 10);
+  const prevKey = new Date(now - DAY).toISOString().slice(0, 10);
+  const dayCents = (dayKey in byDay)  ? (byDay[dayKey]  || 0)
+                 : (prevKey in byDay) ? (byDay[prevKey] || 0)
+                 : 0;
+
+  return { dayCents, weekCents: week, monthCents: month, allTimeCents: all };
 }
 
 async function fetchMetaDaily() {
