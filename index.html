@@ -1083,7 +1083,7 @@ onAuthStateChanged(auth, async user => {
     .ubadge { width: 88px; height: 88px; flex-shrink: 0; border-radius: 18px; overflow: hidden; box-shadow: 0 3px 9px rgba(0,0,0,0.28); border: 1.5px solid rgba(0,0,0,0.15); display: flex; flex-direction: column; }
     .ubadge-strip { height: 22px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .ubadge-strip span { font-size: 10px; font-weight: 800; letter-spacing: 1.5px; color: #fff; }
-    .ubadge-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0px; }
+    .ubadge-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0px; position: relative; }
     .ubadge-num { font-family: 'League Spartan', sans-serif; transform: scaleX(0.7); display: inline-block; font-size: 40px; font-weight: 800; line-height: 1; }
     .ubadge-lbl { font-size: 9.5px; letter-spacing: 0.3px; text-align: center; line-height: 1.2; margin-top: 2px; }
     /* List row variant — corner radius scales proportionally (~21% of side) */
@@ -2231,12 +2231,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.71";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.73";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.71");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.73");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -3679,7 +3679,14 @@ function buildBadge(gradeVal, type, designation, sm, fullAssessment, deepAssessm
   // server decides (gradeAtCeiling on the Main and Deep results); this only
   // draws it. Suppressed on the small list badge, where a third of an already
   // small numeral is not readable — the detail and edit views carry it.
-  const plus = (atCeiling && !sm) ? '<span class="ubadge-plus" style="font-size:0.33em;line-height:1;vertical-align:0.65em;margin-left:0.08em;opacity:0.85;font-weight:600;letter-spacing:0">(+)</span>' : "";
+  // v5.72: it used to sit INLINE inside .ubadge-num, which is a centred flex
+  // child - so adding it widened the content and shoved the grade number off
+  // centre, which is exactly what it looked like. It is now absolutely
+  // positioned in the badge's upper right, so the number is dead centre whether
+  // the mark is there or not, and it is 2pt larger (13.2px -> 15px) because at
+  // a third of the numeral it was barely readable. The big RG score box has
+  // always done it this way and Matt confirmed that one reads correctly.
+  const plus = (atCeiling && !sm) ? '<span class="ubadge-plus" style="position:absolute;top:13px;right:6px;font-size:15px;line-height:1;opacity:0.85;font-weight:600;letter-spacing:0;color:#fff;pointer-events:none">(+)</span>' : "";
   // S16: If restoration detected, predicted badge turns purple
   if (restored && (type === "predicted" || type === "cgc-ai" || type === "psa-ai")) {
     return `<div class="${cls}" style="border-color:#7c3aed;background:linear-gradient(180deg,#9a6ad8 0%,#6a3ab0 100%)"><div class="ubadge-body" style="background:transparent"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.8)">${lbl}</div></div></div>`;
@@ -3709,7 +3716,7 @@ function buildBadge(gradeVal, type, designation, sm, fullAssessment, deepAssessm
     return `<div class="${cls}" style="border-color:rgba(0,0,0,0.25)"><div class="ubadge-strip" style="background:${sc}"><span>${sl}</span></div><div class="ubadge-body" style="background:#fff"><div class="ubadge-num" style="color:#000">${gradeVal}</div><div class="ubadge-lbl" style="color:#333">${sm ? "" : lbl}</div></div></div>`;
   }
   if (type === "psa-predicted") return `<div class="${cls}" style="border-color:#7f1d1d;background:#b91c1c"><div class="ubadge-body" style="background:#b91c1c"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.85)">${psaCondShort(gradeVal) || "PSA"}</div></div></div>`;
-  if (type === "predicted" || type === "cgc-ai" || type === "psa-ai") return `<div class="${cls}" style="border-color:#1e40af;background:#1a5fa8"><div class="ubadge-body" style="background:#1a5fa8"><div class="ubadge-num" style="color:#fff">${gradeVal}${plus}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.8)">${lbl}</div></div></div>`;
+  if (type === "predicted" || type === "cgc-ai" || type === "psa-ai") return `<div class="${cls}" style="border-color:#1e40af;background:#1a5fa8"><div class="ubadge-body" style="background:#1a5fa8"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.8)">${lbl}</div>${plus}</div></div>`;
   return `<div class="${cls}" style="border-color:#333;background:#1a1a1a"><div class="ubadge-body" style="background:#1a1a1a"><div class="ubadge-num" style="color:#1a1614">${gradeVal}</div><div class="ubadge-lbl" style="color:#6a5a4a">${lbl}</div></div></div>`;
 }
 
@@ -5671,7 +5678,7 @@ function renderList() {
         const _labelBtn = (printModeEnabled && _canLabel)
           ? `<button onclick="event.stopPropagation();togglePrintState('${esc(c.id)}')" title="${_inPrint ? "Remove from print queue" : "Add to print queue"}"\n              style="position:absolute;top:4px;right:6px;z-index:3;background:none;border:none;padding:2px;line-height:0;cursor:pointer">${_inPrint ? PRINT_ICON_X_SVG : PRINT_ICON_SVG}</button>`
           : "";
-        return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0;align-self:stretch;display:flex;flex-direction:column;justify-content:center;gap:2px">\n                  <div style="display:flex;align-items:flex-start;gap:8px">\n                    <div style="flex:1;min-width:0;font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1;overflow-wrap:anywhere">${esc(c.title)}</div>\n                  </div>\n                  <div style="display:flex;align-items:center;gap:8px">\n                    <div style="flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;overflow:hidden">\n                      ${c.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:14px;font-weight:600;color:#3a2e24;white-space:nowrap;flex-shrink:0">${c.type === "card" ? esc(formatCardNumber(c.issue)) : formatIssue(c.issue, c.title)}</span>` : ""}\n                      ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                    </div>\n                    ${_adStr ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:600;color:#9a8a7a;flex-shrink:0;white-space:nowrap;letter-spacing:0.2px">${_adStr}</span>` : ""}\n                  </div>\n                </div>\n                ${buildListPG(c)}\n                ${_labelBtn}\n              </div>\n            </div>`;
+        return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0;align-self:stretch;display:flex;flex-direction:column;justify-content:center;gap:2px">\n                  <div style="display:flex;align-items:flex-start;gap:8px">\n                    <div style="flex:1;min-width:0;font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1;overflow-wrap:anywhere">${esc(c.title)}${c.issue ? `<span style="font-weight:600;color:#3a2e24;margin-left:0.28em">${c.type === "card" ? esc(formatCardNumber(c.issue)) : formatIssue(c.issue, c.title)}</span>` : ""}</div>\n                  </div>\n                  <div style="display:flex;align-items:center;gap:8px">\n                    <div style="flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;overflow:hidden">\n                      ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                    </div>\n                    ${_adStr ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:600;color:#9a8a7a;flex-shrink:0;white-space:nowrap;letter-spacing:0.2px">${_adStr}</span>` : ""}\n                  </div>\n                </div>\n                ${buildListPG(c)}\n                ${_labelBtn}\n              </div>\n            </div>`;
       };
       const _showSep = _showTitleSeparators();
       section.titles.forEach(title => {
@@ -5938,7 +5945,7 @@ function showDetail(id) {
     html += `<div style="background:#12200a;border:1px solid #3a5818;border-radius:10px;padding:12px 14px;margin-bottom:14px">\n        <div style="font-size:12px;font-weight:800;color:#9abf60;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:4px">Sample Entry</div>\n        <div style="font-size:12px;color:#cfe0b8;line-height:1.5">This is an example of what a graded book looks like. Add your first book to clear it, or tap Delete below to remove it now.</div>\n      </div>`;
   }
   if (selected.type === "card") { html += _cardIdentityHTML(selected); } else {
-  html += `<div>\n    <h2 style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:26px;font-weight:900;color:#0d0d0f;line-height:1.1;margin:0">${esc(selected.title)}</h2>\n    ${selected.issue || selected.issueDate ? `<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:6px">\n      ${selected.issue ? `<span style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:18px;font-weight:600;color:#3a2e24">${selected.type === "card" ? esc(formatCardNumber(selected.issue)) : formatIssue(selected.issue, selected.title)}</span>` : ""}\n      ${selected.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:600;color:#7a6a5a">${esc(formatIssueDateCompact(selected.issueDate))}</span>` : ""}\n    </div>` : ""}\n    ${selected.printing ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#6a5a4a;margin-top:4px">${esc(selected.printing)}</div>` : ""}\n    ${selected.publisher ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:500;color:#8a7a6a;margin-top:4px">${esc(selected.publisher)}</div>` : ""}\n    ${selected.cgcCert || selected.psaCert ? `<div style="font-family:'IBM Plex Mono','Menlo',monospace;font-size:13px;color:#5a4a3a;margin-top:6px;letter-spacing:0.3px">\n      ${selected.cgcCert ? `<div><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">CGC</span> <span style="margin-left:6px">${esc(selected.cgcCert)}</span></div>` : ""}\n      ${selected.psaCert ? `<div style="margin-top:2px"><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">PSA</span> <span style="margin-left:6px">${esc(selected.psaCert)}</span></div>` : ""}\n    </div>` : ""}\n  </div>`;
+  html += `<div>\n    <h2 style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:26px;font-weight:900;color:#0d0d0f;line-height:1.1;margin:0">${esc(selected.title)}${selected.issue ? `<span style="font-weight:600;color:#3a2e24;margin-left:0.28em">${selected.type === "card" ? esc(formatCardNumber(selected.issue)) : formatIssue(selected.issue, selected.title)}</span>` : ""}</h2>\n    ${selected.issueDate ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:600;color:#7a6a5a;margin-top:6px">${esc(formatIssueDateCompact(selected.issueDate))}</div>` : ""}\n    ${selected.printing ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#6a5a4a;margin-top:4px">${esc(selected.printing)}</div>` : ""}\n    ${selected.publisher ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:500;color:#8a7a6a;margin-top:4px">${esc(selected.publisher)}</div>` : ""}\n    ${selected.cgcCert || selected.psaCert ? `<div style="font-family:'IBM Plex Mono','Menlo',monospace;font-size:13px;color:#5a4a3a;margin-top:6px;letter-spacing:0.3px">\n      ${selected.cgcCert ? `<div><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">CGC</span> <span style="margin-left:6px">${esc(selected.cgcCert)}</span></div>` : ""}\n      ${selected.psaCert ? `<div style="margin-top:2px"><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">PSA</span> <span style="margin-left:6px">${esc(selected.psaCert)}</span></div>` : ""}\n    </div>` : ""}\n  </div>`;
   }
   // S20 (#46): same badge-pill ownership control as the Add/Edit form, rendered
   // in a keyed row so setOwnershipDetail can update it in place (no re-render →
@@ -6078,6 +6085,20 @@ function showDetail(id) {
         <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:#b8d820;margin-bottom:5px">BATCH ASSESSMENT AVAILABLE</div>
         <div style="font-size:12px;color:#9cc76a;line-height:1.45;margin-bottom:10px">Re-runs both Main and Deep ${BATCH_N} times each to provide a range and cumulative average grade. A total of ${BATCH_N * 2} assessments for ${BATCH_CREDIT_COST} credits.</div>
         <button class="rg-btn rg-btn-assess rg-btn-silver" style="pointer-events:none;display:inline-block">RUN BATCH &times;${BATCH_N}</button>
+      </div>`;
+  }
+  // CLEANING COMPARE (v5.72). It had NO Detail-view presence at all: the only
+  // way in was to open Edit and scroll, and on a graded book with every photo
+  // slot filled that put it ~9,200px down an 10,800px page. Matt ran a Deep,
+  // looked in both views and reported the feature missing - it was rendering
+  // correctly the whole time, just unreachable. Same card shape as Batch and
+  // Full above, so it is found the same way they are.
+  if (!isSample && _cleanUnlocked(selected)) {
+    const _cr = selected.cleanRuns || 0;
+    html += `<div onclick="showEditToSection('${esc(selected.id)}','clean')" style="margin-top:14px;padding:14px;background:#0e2420;border:1.5px solid #2e7a6a;border-radius:12px;text-align:center;cursor:pointer">
+        <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:#6ad0b8;margin-bottom:5px">BOOK HAS BEEN CLEANED${_cr ? ` &middot; RUN ${_cr + 1}` : ""}</div>
+        <div style="font-size:12px;color:#8fc4b8;line-height:1.45;margin-bottom:10px">Had this book cleaned or pressed? Re-shoot the ten photos and get an objective before/after comparison. The grade you have now is kept as the Before and never changes.</div>
+        <button class="rg-btn rg-btn-assess rg-btn-silver" style="pointer-events:none;display:inline-block">POST-CLEANING ASSESS</button>
       </div>`;
   }
   if (!isFullAssessmentComplete(selected) && isDeepAssessmentComplete(selected) && showFullTier(selected)) {
@@ -7116,39 +7137,70 @@ async function _saveImageBlob(blob, filename) {
 // variable-height element and the app caps a list at 13, so the worst case is
 // known and sized for.
 // ═══════════════════════════════════════════════════════════════════════════
+// EXPORT IMAGES — Summary and Defect List        (spec: SUMMARY_IMAGE_SPEC v2)
+//
+// Two shareable JPEGs rendered on an OFFSCREEN CANVAS and handed to the app's
+// existing save path. Not a DOM screenshot: a DOM capture inherits the detail
+// view's scroll position, its chrome and whatever is half-loaded.
+//
+// STYLE (v5.72, after Matt: "your sample images have none of the established
+// Robograder formatting"). The first attempt invented a dark poster layout.
+// These now draw the app's OWN surfaces, with the constants lifted from where
+// they already live rather than re-picked by eye:
+//   - the title block copies showDetail()'s header (Noto Sans Display at the
+//     62.5% width axis, then Barlow Condensed for the imprint lines)
+//   - the defect table is robograde-panel.js's tractor-feed continuous-form
+//     paper: pale mint-green and cream bands alternating CONTINUOUSLY across
+//     section breaks, sprocket margins down both edges, dark olive ink,
+//     IBM Plex Mono, with the four category headers carrying their subscore
+//   - the conclusion is buildPredictedGradeBox(): black card, the blue PG
+//     badge, the page-quality pill in its own PQ_COLORS tint, FMV, disclaimer
+//
+// HEIGHT IS VARIABLE, which is a deliberate break from the spec's fixed
+// 1080x1920. Matt: leave room for the defect list to get long "without
+// creating an image that's too vertically long to be readable on a phone".
+// A fixed canvas can only do one of those. So the paper grows to its content
+// and the conclusion is laid out in two columns - grade left, page quality and
+// FMV right - which is what buys the vertical room.
+// ═══════════════════════════════════════════════════════════════════════════
 
-const EXPORT_W = 1080, EXPORT_H = 1920;
-const EXPORT_MAX_DEFECTS = 13;          // the app's own cap; the band is sized for it
+const EX_S = 3;                          // canvas px per CSS px (1080 / 360)
+const EX_CSSW = 360;                     // the app's own narrow-phone width
+const EX_W = EX_CSSW * EX_S;
+const EX_MAX_DEFECTS = 13;               // the app's own cap on a defect list
+const P = v => Math.round(v * EX_S);
 
-const EXC = {
-  bg:      "#16140f",
-  panel:   "#1e1b15",
-  rule:    "#3a3528",
-  text:    "#efe9d2",
-  muted:   "#9a9a8a",
-  dim:     "#6f6a58",
-  gold:    "#c8b06a",
-  green:   "#6abf6a",
-  rgBox:   "#152410", rgNum: "#8f9c7a", rgEdge: "#3f5a35",
-  cgcBox:  "#3d618f", cgcNum: "#e8f0fa", cgcEdge: "#5a7fae"
+// Lifted from robograde-panel.js and index.html. Not re-picked by eye.
+const EXP = {
+  page:    "#1a1814",                    // the app's own body background
+  green:   "#cce8b8", cream: "#f4f0dc", header: "#a8c898",
+  ink:     "#1f2a08", inkHd: "#0a1404",  inkLt:  "#5a6a3a",
+  oliveMid:"#4a7028",
+  titleInk:"#0d0d0f", issueInk:"#3a2e24", dateInk:"#7a6a5a",
+  printInk:"#6a5a4a", pubInk:"#8a7a6a",
+  cardBg:  "#0d0d0f", cardEdge:"#2a2a3a",
+  badgeBg: "#1a5fa8", badgeEdge:"#1e40af",
+  discInk: "#6a5a4a", footInk:"#7aa838"
 };
+const EX_PQ_FALLBACK = { bg: "#f0ece6", text: "#5a4e44" };
 
-const EX_SANS = "-apple-system, 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif";
-const EX_NUM  = "'League Spartan', " + EX_SANS;   // already loaded by the app's CSS
+const F_TITLE = "'Noto Sans Display', system-ui, sans-serif";
+const F_MONO  = "'IBM Plex Mono', Menlo, monospace";
+const F_COND  = "'Barlow Condensed', system-ui, sans-serif";
+const F_NUM   = "'League Spartan', system-ui, sans-serif";
 
-// Shrink-then-ellipsise. Returns the string actually drawn. The caller has
-// already set everything about the font except its size.
-function _exFit(ctx, text, maxW, startPx, minPx, weight, family) {
-  const f = family || EX_SANS, w = weight || "700";
-  let px = startPx;
-  const set = p => { ctx.font = `${w} ${p}px ${f}`; };
-  set(px);
-  while (ctx.measureText(text).width > maxW && px > minPx) { px -= 2; set(px); }
-  if (ctx.measureText(text).width <= maxW) return text;
-  let s = text;
-  while (s.length > 1 && ctx.measureText(s + "…").width > maxW) s = s.slice(0, -1);
-  return s + "…";
+function _exSevColor(s) {
+  const u = String(s || "").toUpperCase();
+  if (!u) return EXP.inkLt;
+  if (u === "HIGH") return "#a8202a";
+  if (u === "MED" || u === "MEDIUM") return "#a86010";
+  return "#3a5018";
 }
+
+// font-stretch in canvas. Chrome and Safari support ctx.fontStretch; where they
+// do not, the title simply draws at normal width and _exFit shrinks it to fit,
+// so this degrades to "slightly wider title", never to a broken layout.
+function _exStretch(ctx, v) { try { ctx.fontStretch = v; } catch (e) {} }
 
 function _exRoundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -7160,15 +7212,37 @@ function _exRoundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-// THE TAINTED-CANVAS TRAP, and the single most likely way this feature breaks.
-// Drawing a remote image and then calling toBlob() throws SecurityError unless
-// the image was loaded with crossOrigin="anonymous" AND the host sends CORS
-// headers. Firebase Storage's CORS config is already correct - the cropper
-// proves it. But the detail view and the lightbox load these same URLs WITHOUT
-// crossOrigin, so the browser keeps two separate cached copies, and crossOrigin
-// set AFTER src silently does nothing. Hence: fresh Image, flag first, src last.
-// The cost is one extra fetch of the two covers. That is the price of a clean
-// canvas and it is worth paying.
+function _exFit(ctx, text, maxW, startPx, minPx, weight, family) {
+  let px = startPx;
+  const set = p => { ctx.font = `${weight} ${p}px ${family}`; };
+  set(px);
+  while (ctx.measureText(text).width > maxW && px > minPx) { px -= 1; set(px); }
+  if (ctx.measureText(text).width <= maxW) return text;
+  let s = text;
+  while (s.length > 1 && ctx.measureText(s + "…").width > maxW) s = s.slice(0, -1);
+  return s + "…";
+}
+
+function _exWrap(ctx, text, maxW) {
+  const words = String(text).split(/\s+/).filter(Boolean);
+  const out = []; let cur = "";
+  for (const w of words) {
+    const t = cur ? cur + " " + w : w;
+    if (!cur || ctx.measureText(t).width <= maxW) cur = t;
+    else { out.push(cur); cur = w; }
+  }
+  if (cur) out.push(cur);
+  return out.length ? out : [""];
+}
+
+// THE TAINTED-CANVAS TRAP (Summary only; the Defect List draws no photographs).
+// toBlob() throws SecurityError unless the image was loaded with
+// crossOrigin="anonymous" AND the host sends CORS headers. Firebase Storage's
+// config is already right - the cropper proves it - but the detail view and the
+// lightbox load these same URLs WITHOUT crossOrigin, so the browser keeps two
+// separate cached copies, and the flag set AFTER src silently does nothing.
+// Hence: fresh Image, flag first, src last. One extra fetch of the covers is
+// the price of a clean canvas.
 function _exLoadImage(url) {
   return new Promise(resolve => {
     if (!url) return resolve(null);
@@ -7179,336 +7253,718 @@ function _exLoadImage(url) {
     im.src = url;
   });
 }
+function _exImgUrl(x) { return (x && (x.url || (typeof x === "string" ? x : null))) || null; }
 
-// Draw `im` CONTAINED in the box (never cropped, never stretched) on a neutral
-// ground, so a tall Golden Age book and a squarer modern one both sit correctly.
-function _exDrawContained(ctx, im, x, y, w, h) {
-  ctx.fillStyle = "#0f0e0a";
-  _exRoundRect(ctx, x, y, w, h, 10); ctx.fill();
-  if (!im) return;
-  const s = Math.min(w / im.naturalWidth, h / im.naturalHeight);
-  const dw = im.naturalWidth * s, dh = im.naturalHeight * s;
-  ctx.save();
-  _exRoundRect(ctx, x, y, w, h, 10); ctx.clip();
-  ctx.drawImage(im, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
-  ctx.restore();
-  ctx.strokeStyle = EXC.rule; ctx.lineWidth = 2;
-  _exRoundRect(ctx, x, y, w, h, 10); ctx.stroke();
-}
-
-// ── The data both images read ──────────────────────────────────────────────
+// ── The facts both images read ─────────────────────────────────────────────
 // RoboGrade and subscores come from RoboScoreV3.forComic - the v3 half-point
 // display and ITS subscores, never the raw v1 0-100 roboGrade object. The share
-// text had exactly that bug and it was fixed in 5.62; this does not reintroduce
-// it.
+// text carried exactly that bug and it was fixed in 5.62.
 function _exFacts(item) {
   const rg = item.roboGrade || {};
   const v3 = (window.RoboScoreV3 && item.type !== "card") ? window.RoboScoreV3.forComic(item) : null;
   const predicted = item.grade != null ? item.grade
-                  : (item.predictedGrade != null ? item.predictedGrade : (rg.predictedGrade != null ? rg.predictedGrade : null));
+                  : (item.predictedGrade != null ? item.predictedGrade
+                  : (rg.predictedGrade != null ? rg.predictedGrade : null));
   let fmv = null;
   try {
     if (typeof window.matchFMV === "function" && predicted != null) {
       fmv = window.matchFMV(item.title, item.issue, predicted, item.printing,
-                            (typeof extractYearFromIssueDate === "function") ? extractYearFromIssueDate(item.issueDate) : null);
+        (typeof extractYearFromIssueDate === "function") ? extractYearFromIssueDate(item.issueDate) : null);
     }
   } catch (e) { fmv = null; }
   // A null or suppressed match drops the FMV line ENTIRELY. Blank beats a wrong
   // number, which is already the rule everywhere else.
   const fmvStr = (fmv && !fmv.suppressed && typeof formatFMVCompact === "function") ? formatFMVCompact(fmv) : "";
+  const fmt = v => (v == null) ? "—"
+    : ((window.RoboScoreV3 && window.RoboScoreV3.formatGrade) ? window.RoboScoreV3.formatGrade(v) : String(v));
   return {
-    v3: v3,
-    rgGrade: v3 ? ((window.RoboScoreV3 && window.RoboScoreV3.formatGrade) ? window.RoboScoreV3.formatGrade(v3.grade) : String(v3.grade)) : null,
-    sub: v3 ? v3.subscores : null,
+    v3, sub: v3 ? v3.subscores : null,
+    rgGrade: v3 ? fmt(v3.grade) : null,
     predicted: predicted == null ? null : String(predicted),
+    gradeLabel: (typeof GRADE_LABELS !== "undefined" && predicted != null) ? (GRADE_LABELS[predicted] || "") : "",
     atCeiling: !!item.gradeAtCeiling,
     pageQuality: item.pageQuality || rg.pageQuality || "",
     fmv: fmvStr,
-    defects: Array.isArray(rg.defects) ? rg.defects : [],
-    rgid: (item.roboGradeId || item.id || "").toString().slice(-6).toUpperCase()
+    rgid: (item.roboGradeId || item.id || "").toString().slice(-6).toUpperCase(),
+    fmtSub: fmt
   };
 }
 
-// ── Shared bands ───────────────────────────────────────────────────────────
-function _exHeader(ctx, item) {
-  const M = 60, maxW = EXPORT_W - M * 2;
-  ctx.textBaseline = "alphabetic";
-  ctx.textAlign = "left";
-
-  const title = String(item.title || "Untitled");
-  ctx.fillStyle = EXC.text;
-  const t = _exFit(ctx, title, maxW, 78, 40, "800");
-  ctx.fillText(t, M, 128);
-
-  const issue = item.issue ? "#" + item.issue : "";
-  if (issue) {
-    ctx.fillStyle = EXC.gold;
-    ctx.font = `800 62px ${EX_SANS}`;
-    ctx.fillText(_exFit(ctx, issue, maxW, 62, 34, "800"), M, 204);
-  }
-
-  // The printing line is omitted when the printing is base - an empty label
-  // reads as missing data rather than as "nothing unusual here".
-  const bits = [item.issueDate || "", item.publisher || "", item.printing || ""].filter(Boolean);
-  if (bits.length) {
-    ctx.fillStyle = EXC.muted;
-    ctx.fillText(_exFit(ctx, bits.join("  ·  "), maxW, 34, 20, "600"), M, issue ? 262 : 196);
-  }
-
-  ctx.strokeStyle = EXC.rule; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(M, 310); ctx.lineTo(EXPORT_W - M, 310); ctx.stroke();
+// Grouped exactly as robograde-panel.js groups them, including its page-quality
+// special case: a PQ entry drops its location and shows the canonical
+// designation instead, because "Page quality - interior" says nothing.
+function _exSections(item, f) {
+  const rg = item.roboGrade || {};
+  const defects = Array.isArray(rg.defects) ? rg.defects : [];
+  const byCat = { Front: [], Back: [], Spine: [], Interior: [] };
+  let taken = 0;
+  defects.forEach(d => {
+    const cat = String(d.category || "").trim();
+    if (!byCat[cat] || taken >= EX_MAX_DEFECTS) return;
+    taken++;
+    const isPQ = /^page\s*quality$/i.test(String(d.type || ""));
+    const parts = [];
+    if (isPQ) {
+      const p = String(f.pageQuality || "").trim() || String(d.measurement || "").trim();
+      if (p && !/^n\/a$/i.test(p)) parts.push(p);
+    }
+    if (d.location && d.location !== "N/A" && !isPQ) parts.push(d.location);
+    if (d.measurement && d.measurement !== "N/A" && !isPQ) parts.push(String(d.measurement).replace(/^~\s*/, ""));
+    if (d.colorBreaking) parts.push("color breaking");
+    byCat[cat].push({
+      type: isPQ ? "Page Quality" : (d.type || "Defect"),
+      detail: parts.length ? " — " + parts.join(", ") : "",
+      // Page-quality rows never wear a severity chip - they are an observation,
+      // not a defect. Empty severity is deliberate upstream and must not fall
+      // through to "Low".
+      sev: isPQ ? "" : (d.severity == null ? "Low" : d.severity)
+    });
+  });
+  const s = f.sub;
+  // ALL FOUR sections always render, unlike the in-app panel which hides empty
+  // ones. On a shareable image the four subscores are part of the claim: a
+  // missing SPINE row reads as withheld rather than as clean.
+  return [
+    { label: "FRONT",    score: s ? f.fmtSub(s.front)    : "—", rows: byCat.Front },
+    { label: "BACK",     score: s ? f.fmtSub(s.back)     : "—", rows: byCat.Back },
+    { label: "SPINE",    score: s ? f.fmtSub(s.spine)    : "—", rows: byCat.Spine },
+    { label: "INTERIOR", score: s ? f.fmtSub(s.interior) : "—", rows: byCat.Interior }
+  ];
 }
 
-function _exFooter(ctx, rgid) {
-  const M = 60;
-  ctx.strokeStyle = EXC.rule; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(M, 1858); ctx.lineTo(EXPORT_W - M, 1858); ctx.stroke();
-  ctx.fillStyle = EXC.green;
-  ctx.font = `800 30px ${EX_SANS}`;
-  ctx.textAlign = "left";
-  ctx.fillText("robograder.app", M, 1902);
-  if (rgid) {
-    // The RG-ID is what makes the image traceable back to a real assessment,
-    // and it is already the public share key.
-    ctx.fillStyle = EXC.dim;
+// ── Measured pieces ────────────────────────────────────────────────────────
+const EX_PAD   = P(16);     // box inner padding
+const EX_INSET = P(14);     // page margin around the box
+
+// ── Header: TITLE AND ISSUE ON ONE LINE ────────────────────────────────────
+// Matt, 2026-10-20: "I don't know why we have a line break between Title and
+// Issue. They should appear together unless a line-break happens to be
+// required." Same change was made to List, Detail and the public listing. The
+// issue inherits the title's family, width axis and SIZE; only weight and
+// colour still separate them. The cover date drops to its own line with the
+// publisher and printing.
+function _exTitleParts(item) {
+  const iss = item.issue
+    ? ((item.type === "card" && typeof formatCardNumber === "function") ? formatCardNumber(item.issue)
+      : (typeof formatIssue === "function" ? formatIssue(item.issue, item.title) : "#" + item.issue))
+    : "";
+  return { title: String(item.title || "Untitled"), issue: iss };
+}
+
+function _exHeaderH(ctx, item) {
+  let h = P(18) + P(29);
+  if (item.issueDate) h += P(6) + P(18);
+  if (item.publisher) h += P(5) + P(17);
+  if (item.printing)  h += P(4) + P(17);
+  return h + P(14);
+}
+
+function _exDrawHeader(ctx, item, x, y, innerW) {
+  const top = y;
+  const tp = _exTitleParts(item);
+  y += P(18);
+  ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  _exStretch(ctx, "extra-condensed");
+
+  // One line, shrunk together so the pair always fits rather than the issue
+  // being pushed off the end.
+  let px = P(26);
+  const widthAt = p => {
+    ctx.font = `900 ${p}px ${F_TITLE}`;
+    let w = ctx.measureText(tp.title).width;
+    if (tp.issue) { ctx.font = `600 ${p}px ${F_TITLE}`; w += p * 0.28 + ctx.measureText(tp.issue).width; }
+    return w;
+  };
+  while (px > P(14) && widthAt(px) > innerW) px -= 1;
+  let cx = x;
+  ctx.fillStyle = EXP.titleInk;
+  ctx.font = `900 ${px}px ${F_TITLE}`;
+  let t = tp.title;
+  if (widthAt(px) > innerW) {
+    // Still over at the floor: ellipsise the TITLE, never the issue - the
+    // issue is the half that identifies the book.
+    ctx.font = `600 ${px}px ${F_TITLE}`;
+    const issW = tp.issue ? px * 0.28 + ctx.measureText(tp.issue).width : 0;
+    ctx.font = `900 ${px}px ${F_TITLE}`;
+    while (t.length > 1 && ctx.measureText(t + "…").width + issW > innerW) t = t.slice(0, -1);
+    t += "…";
+  }
+  ctx.fillText(t, cx, y + P(23));
+  cx += ctx.measureText(t).width + px * 0.28;
+  if (tp.issue) {
+    ctx.fillStyle = EXP.issueInk;
+    ctx.font = `600 ${px}px ${F_TITLE}`;
+    ctx.fillText(tp.issue, cx, y + P(23));
+  }
+  y += P(29);
+  _exStretch(ctx, "normal");
+
+  const line = (txt, size, weight, color, gap) => {
+    y += P(gap);
+    ctx.fillStyle = color;
+    ctx.font = `${weight} ${P(size)}px ${F_COND}`;
+    ctx.fillText(_exFit(ctx, String(txt), innerW, P(size), P(10), weight, F_COND), x, y + P(size - 1));
+    y += P(size + 3);
+  };
+  if (item.issueDate) {
+    line((typeof formatIssueDateCompact === "function") ? formatIssueDateCompact(item.issueDate) : String(item.issueDate),
+         16, "600", EXP.dateInk, 6);
+  }
+  if (item.publisher) line(item.publisher, 14, "500", EXP.pubInk, 5);
+  if (item.printing)  line(item.printing, 14, "600", EXP.printInk, 4);
+  return top + _exHeaderH(ctx, item);
+}
+
+// ── Provenance: ID and graded date ─────────────────────────────────────────
+// Lifted verbatim from robograde-panel.js's provenance bar - olive strip, IBM
+// Plex Mono, small olive-light labels against chartreuse values, ID left and
+// GRADED right - so it reads as the same object it is in Detail view.
+const EX_PROV_H = P(34);
+function _exProvText(item) {
+  let dateStr = "";
+  if (item.roboGradeDate) {
+    try {
+      dateStr = new Date(item.roboGradeDate).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+    } catch (e) { dateStr = ""; }
+  }
+  return { id: item.roboGradeId ? String(item.roboGradeId) : "", date: dateStr };
+}
+function _exHasProv(item) { const p = _exProvText(item); return !!(p.id || p.date); }
+function _exDrawProv(ctx, item, x, y, w) {
+  const p = _exProvText(item);
+  if (!p.id && !p.date) return y;
+  ctx.fillStyle = "#2a4a1e";
+  _exRoundRect(ctx, x, y, w, EX_PROV_H, P(6)); ctx.fill();
+  const mid = y + P(22);
+  if (p.id) {
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#7aa838";
+    ctx.font = `700 ${P(9)}px ${F_MONO}`;
+    ctx.fillText("ID", x + P(12), mid);
+    const lw = ctx.measureText("ID").width;
+    ctx.fillStyle = "#b8d820";
+    ctx.font = `${P(11)}px ${F_MONO}`;
+    ctx.fillText(p.id, x + P(12) + lw + P(6), mid);
+  }
+  if (p.date) {
     ctx.textAlign = "right";
-    ctx.fillText("ID " + rgid, EXPORT_W - M, 1902);
+    ctx.fillStyle = "#b8d820";
+    ctx.font = `${P(11)}px ${F_MONO}`;
+    ctx.fillText(p.date, x + w - P(12), mid);
+    const vw = ctx.measureText(p.date).width;
+    ctx.fillStyle = "#7aa838";
+    ctx.font = `700 ${P(9)}px ${F_MONO}`;
+    ctx.fillText("GRADED", x + w - P(12) - vw - P(6), mid);
+    ctx.textAlign = "left";
+  }
+  return y + EX_PROV_H;
+}
+
+// ── The "(+)" mark ─────────────────────────────────────────────────────────
+// Matt: back on the MIDLINE of the score value, with the number still dead
+// centre, condensed horizontally if there is not enough width. So: the number
+// is drawn centred and the mark is placed against its right edge and squeezed
+// to whatever room is left, rather than either pushing the number or sitting
+// in a corner where it read as unrelated to the score.
+function _exPlus(ctx, numRightX, midY, limitX, color, sizePx) {
+  ctx.font = `700 ${sizePx}px ${F_COND}`;
+  const w = ctx.measureText("(+)").width;
+  const gap = sizePx * 0.18;
+  const room = limitX - (numRightX + gap);
+  if (room <= 0) return;
+  const sx = Math.min(1, room / w);
+  ctx.save();
+  ctx.translate(numRightX + gap, midY);
+  ctx.scale(sx, 1);
+  ctx.textAlign = "left";
+  ctx.fillStyle = color;
+  ctx.fillText("(+)", 0, 0);
+  ctx.restore();
+  ctx.textAlign = "left";
+}
+
+// ── RoboScoreV3.scoreBox, ported to canvas ─────────────────────────────────
+// Same furniture as the Detail view's box: number dead centre, stars pinned
+// top-centre for assessment depth, PM in the upper right, grading version at
+// the bottom, and the ceiling mark on the number's midline.
+const EX_STAR = "M12,2 15.64,6.98 21.51,8.91 17.9,13.92 17.88,20.09 12,18.2 6.12,20.09 6.1,13.92 2.49,8.91 8.36,6.98Z";
+function _exDrawStar(ctx, x, y, px, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(px / 24, px / 24);
+  ctx.fillStyle = color;
+  ctx.fill(new Path2D(EX_STAR));
+  ctx.restore();
+}
+function _exScoreBox(ctx, x, y, size, o) {
+  const perfect = String(o.grade) === "10";
+  const numColor = perfect ? "#1a1206" : "#b8d820";
+  const starColor = numColor;
+  const verColor = perfect ? "#7a5a10" : "#5a7028";
+  if (perfect) {
+    const g = ctx.createLinearGradient(x, y, x + size, y + size);
+    g.addColorStop(0, "#fdeea0"); g.addColorStop(0.34, "#f0c53a");
+    g.addColorStop(0.66, "#d99e12"); g.addColorStop(1, "#b57e0c");
+    ctx.fillStyle = g;
+  } else ctx.fillStyle = "#0f1a05";
+  _exRoundRect(ctx, x, y, size, size, size * 0.14); ctx.fill();
+  ctx.strokeStyle = perfect ? "#8a6209" : "#4a7028";
+  ctx.lineWidth = Math.max(1, size * 0.014);
+  _exRoundRect(ctx, x, y, size, size, size * 0.14); ctx.stroke();
+
+  const numSize = size * 0.66;
+  const nudge = numSize * 0.09;
+  const midY = y + size / 2 + nudge;
+  const shown = o.grade == null ? "—" : String(o.grade);
+  ctx.font = `900 ${numSize}px ${F_NUM}`;
+  const halfW = ctx.measureText(shown).width * 0.66 / 2;
+  ctx.save();
+  ctx.translate(x + size / 2, midY);
+  ctx.scale(0.66, 1);
+  ctx.textAlign = "center"; ctx.fillStyle = numColor;
+  ctx.font = `900 ${numSize}px ${F_NUM}`;
+  ctx.fillText(shown, 0, numSize * 0.35);
+  ctx.restore();
+  ctx.textAlign = "left";
+
+  const stars = o.stars || 0;
+  if (stars > 0 || o.restoStar) {
+    const px = Math.max(8, size * 0.11);
+    const n = stars + (o.restoStar ? 1 : 0);
+    let sx = x + size / 2 - (n * (px + 1) - 1) / 2;
+    for (let i = 0; i < stars; i++) { _exDrawStar(ctx, sx, y + size * 0.05, px, starColor); sx += px + 1; }
+    if (o.restoStar) _exDrawStar(ctx, sx, y + size * 0.05, px, "#b58be0");
+  }
+
+  if (o.pmLabel) {
+    const pmSize = Math.max(11, size * 0.17);
+    ctx.textAlign = "right";
+    ctx.fillStyle = perfect ? "#7a5a10" : "#7aa838";
+    ctx.font = `700 ${pmSize}px ${F_COND}`;
+    ctx.fillText(String(o.pmLabel), x + size - size * 0.07, y + size * 0.5 + nudge - numSize * 0.365 - size * 0.10 + pmSize);
+    ctx.textAlign = "left";
+  }
+  if (o.footerText) {
+    ctx.textAlign = "center";
+    ctx.fillStyle = verColor;
+    ctx.font = `700 ${Math.max(7, size * 0.077)}px ${F_COND}`;
+    ctx.fillText(o.footerText, x + size / 2, y + size - size * 0.05);
+    ctx.textAlign = "left";
+  }
+  // The RG box keeps the APP's placement - absolute right-middle, full size,
+  // never squeezed. Matt: "The (+) looks fine in the larger RG score box that
+  // displays in Detail and Edit view and that can stay as it is." The
+  // squeeze-against-the-numeral treatment is for the small PG badge, where the
+  // box is 88px and there is genuinely no room.
+  if (o.plus) {
+    const ps = Math.max(9, numSize / 3);
+    ctx.textAlign = "right";
+    ctx.fillStyle = numColor;
+    ctx.globalAlpha = 0.85;
+    ctx.font = `700 ${ps}px ${F_COND}`;
+    ctx.fillText("(+)", x + size - size * 0.06, midY + ps * 0.36);
+    ctx.globalAlpha = 1;
     ctx.textAlign = "left";
   }
 }
 
-function _exBase() {
+// Grouped as robograde-panel.js groups them, with two changes Matt asked for:
+//   - NO SUBSCORE on the category headers. The four subscores sum to the
+//     RoboGrade, and this image shows the PREDICTED grade, so they were
+//     answering a question the image does not ask.
+//   - INTERIOR only appears when there is a real interior defect. Page quality
+//     is already stated in the conclusion, so an Interior section carrying
+//     nothing but a page-quality row was pure duplication.
+function _exSections(item, f) {
+  const rg = item.roboGrade || {};
+  const defects = Array.isArray(rg.defects) ? rg.defects : [];
+  const byCat = { Front: [], Back: [], Spine: [], Interior: [] };
+  let taken = 0;
+  defects.forEach(d => {
+    const cat = String(d.category || "").trim();
+    if (!byCat[cat] || taken >= EX_MAX_DEFECTS) return;
+    if (/^page\s*quality$/i.test(String(d.type || ""))) return;   // never a row here
+    taken++;
+    const parts = [];
+    if (d.location && d.location !== "N/A") parts.push(d.location);
+    if (d.measurement && d.measurement !== "N/A") parts.push(String(d.measurement).replace(/^~\s*/, ""));
+    if (d.colorBreaking) parts.push("color breaking");
+    byCat[cat].push({
+      type: d.type || "Defect",
+      detail: parts.length ? " — " + parts.join(", ") : "",
+      // Empty severity is deliberate upstream for descriptive observations and
+      // must not fall through to "Low".
+      sev: (d.severity == null) ? "Low" : d.severity
+    });
+  });
+  const out = [
+    { label: "FRONT", rows: byCat.Front },
+    { label: "BACK",  rows: byCat.Back },
+    { label: "SPINE", rows: byCat.Spine }
+  ];
+  if (byCat.Interior.length) out.push({ label: "INTERIOR", rows: byCat.Interior });
+  return out;
+}
+
+const EX_SPR = P(8);
+function _exPaperMeasure(ctx, sections, paperW) {
+  const textW = paperW - EX_SPR * 2 - P(20);
+  let h = 0;
+  sections.forEach(sec => {
+    h += P(26);
+    if (!sec.rows.length) { h += P(28); return; }
+    sec.rows.forEach(r => {
+      ctx.font = `800 ${P(11)}px ${F_MONO}`;
+      const sevW = r.sev ? ctx.measureText(String(r.sev).toUpperCase()).width + P(8) : 0;
+      ctx.font = `${P(11)}px ${F_MONO}`;
+      h += P(12) + _exWrap(ctx, r.type + r.detail, textW - sevW).length * P(16);
+    });
+  });
+  return h;
+}
+
+function _exDrawPaper(ctx, sections, x, y, paperW) {
+  const top = y;
+  const textX = x + EX_SPR + P(10);
+  const textW = paperW - EX_SPR * 2 - P(20);
+  let idx = 0;                      // banding runs CONTINUOUSLY across sections
+
+  sections.forEach(sec => {
+    ctx.fillStyle = EXP.header;
+    ctx.fillRect(x, y, paperW, P(26));
+    ctx.fillStyle = EXP.inkLt;
+    ctx.fillRect(x, y, paperW, Math.max(1, P(1) / 2));
+    ctx.fillRect(x, y + P(26) - Math.max(1, P(1) / 2), paperW, Math.max(1, P(1) / 2));
+    ctx.fillStyle = EXP.inkHd;
+    ctx.textAlign = "left";
+    ctx.font = `700 ${P(10)}px ${F_MONO}`;
+    let lx = textX;
+    for (const ch of sec.label) { ctx.fillText(ch, lx, y + P(17)); lx += ctx.measureText(ch).width + P(1.5); }
+    y += P(26);
+
+    if (!sec.rows.length) {
+      ctx.fillStyle = (idx % 2 === 0) ? EXP.green : EXP.cream; idx++;
+      ctx.fillRect(x, y, paperW, P(28));
+      ctx.fillStyle = EXP.inkLt;
+      ctx.font = `italic ${P(11)}px ${F_MONO}`;
+      ctx.fillText("No defects noted.", textX, y + P(18));
+      y += P(28);
+      return;
+    }
+
+    sec.rows.forEach(r => {
+      const sevTxt = r.sev ? (String(r.sev).toUpperCase() === "MEDIUM" ? "MED" : String(r.sev).toUpperCase()) : "";
+      ctx.font = `800 ${P(11)}px ${F_MONO}`;
+      const sevW = sevTxt ? ctx.measureText(sevTxt).width + P(8) : 0;
+      ctx.font = `${P(11)}px ${F_MONO}`;
+      const lines = _exWrap(ctx, r.type + r.detail, textW - sevW);
+      const rowH = P(12) + lines.length * P(16);
+
+      ctx.fillStyle = (idx % 2 === 0) ? EXP.green : EXP.cream; idx++;
+      ctx.fillRect(x, y, paperW, rowH);
+
+      // The defect TYPE is bold and the detail is not, matching the panel's
+      // <strong>. Two runs, so the boldness survives wrapping.
+      let ly = y + P(18);
+      lines.forEach((ln, li) => {
+        let cx2 = textX, rest = ln;
+        if (li === 0 && ln.startsWith(r.type)) {
+          ctx.font = `700 ${P(11)}px ${F_MONO}`;
+          ctx.fillStyle = EXP.ink;
+          ctx.fillText(r.type, cx2, ly);
+          cx2 += ctx.measureText(r.type).width;
+          rest = ln.slice(r.type.length);
+        }
+        ctx.font = `${P(11)}px ${F_MONO}`;
+        ctx.fillStyle = EXP.ink;
+        ctx.fillText(rest, cx2, ly);
+        ly += P(16);
+      });
+
+      if (sevTxt) {
+        ctx.textAlign = "right";
+        ctx.font = `800 ${P(11)}px ${F_MONO}`;
+        ctx.fillStyle = _exSevColor(r.sev);
+        ctx.fillText(sevTxt, x + paperW - EX_SPR - P(10), y + P(18));
+        ctx.textAlign = "left";
+      }
+      y += rowH;
+    });
+  });
+
+  // The last band is often cream, the box's own colour, so without hairlines
+  // the paper appears to bleed into what follows it.
+  ctx.fillStyle = EXP.inkLt;
+  ctx.fillRect(x, top, paperW, Math.max(1, P(1) / 2));
+  ctx.fillRect(x, y - Math.max(1, P(1) / 2), paperW, Math.max(1, P(1) / 2));
+
+  const h = y - top;
+  [x, x + paperW - EX_SPR].forEach(sx => {
+    ctx.fillStyle = EXP.cream;
+    ctx.fillRect(sx, top, EX_SPR, h);
+    ctx.fillStyle = EXP.oliveMid;
+    for (let dy = top + P(8); dy < top + h - P(2); dy += P(14)) {
+      ctx.beginPath(); ctx.arc(sx + EX_SPR / 2, dy, P(1.5), 0, Math.PI * 2); ctx.fill();
+    }
+  });
+  return y;
+}
+
+// ── The conclusion: buildPredictedGradeBox, two columns ────────────────────
+// Two columns rather than the app's stacked one, which is what keeps the image
+// short enough to read on a phone when the defect list is long. The affiliation
+// disclaimer is gone - Matt: extraneous on a summary.
+function _exColsH(f) {
+  const right = (f.pageQuality ? P(16) + P(30) + P(12) : 0) + (f.fmv ? P(16) + P(24) : 0);
+  return Math.max(P(88), right);
+}
+function _exCardH(f) { return P(14) + P(14) + P(12) + _exColsH(f) + P(16); }
+
+function _exDrawCard(ctx, f, x, y, w) {
+  const top = y, h = _exCardH(f);
+  ctx.fillStyle = EXP.cardBg;
+  _exRoundRect(ctx, x, y, w, h, P(10)); ctx.fill();
+  ctx.strokeStyle = EXP.cardEdge; ctx.lineWidth = Math.max(1, P(1));
+  _exRoundRect(ctx, x, y, w, h, P(10)); ctx.stroke();
+
+  ctx.fillStyle = "#fff";
+  ctx.font = `800 ${P(12)}px ${F_COND}`;
+  const hdr = "PREDICTED GRADE";
+  const hw = ctx.measureText(hdr).width + (hdr.length - 1) * P(1.5);
+  let cx = x + w / 2 - hw / 2;
+  ctx.textAlign = "left";
+  for (const ch of hdr) { ctx.fillText(ch, cx, y + P(25)); cx += ctx.measureText(ch).width + P(1.5); }
+
+  const rowY = y + P(40);
+
+  // LEFT: the blue predicted-grade badge, .ubadge geometry.
+  const bx = x + P(20), bw = P(88);
+  ctx.fillStyle = EXP.badgeBg;
+  _exRoundRect(ctx, bx, rowY, bw, bw, P(18)); ctx.fill();
+  ctx.strokeStyle = EXP.badgeEdge; ctx.lineWidth = Math.max(1, P(1.5));
+  _exRoundRect(ctx, bx, rowY, bw, bw, P(18)); ctx.stroke();
+
+  const gnum = f.predicted == null ? "—" : String(f.predicted);
+  const numPx = P(gnum.length > 2 ? 36 : 40);
+  const numMid = rowY + bw * 0.46;
+  ctx.font = `800 ${numPx}px ${F_NUM}`;
+  const halfW = ctx.measureText(gnum).width * 0.7 / 2;
+  ctx.save();
+  ctx.translate(bx + bw / 2, numMid);
+  ctx.scale(0.7, 1);
+  ctx.textAlign = "center"; ctx.fillStyle = "#fff";
+  ctx.font = `800 ${numPx}px ${F_NUM}`;
+  ctx.fillText(gnum, 0, P(13));
+  ctx.restore();
+  ctx.textAlign = "center";
+  if (f.gradeLabel) {
+    ctx.fillStyle = "rgba(255,255,255,0.8)";
+    ctx.font = `600 ${P(9.5)}px ${F_COND}`;
+    ctx.fillText(f.gradeLabel, bx + bw / 2, rowY + bw - P(12));
+  }
+  ctx.textAlign = "left";
+  if (f.atCeiling) _exPlus(ctx, bx + bw / 2 + halfW, numMid + P(5), bx + bw - P(4), "rgba(255,255,255,0.9)", P(15));
+
+  // RIGHT: page quality pill over FMV.
+  const rx = bx + bw + P(18);
+  const rw = x + w - P(20) - rx;
+  let ry = rowY + P(4);
+  if (f.pageQuality) {
+    const pq = (typeof PQ_COLORS !== "undefined" && PQ_COLORS[f.pageQuality]) || EX_PQ_FALLBACK;
+    ctx.fillStyle = "#fff";
+    ctx.font = `800 ${P(10)}px ${F_COND}`;
+    ctx.fillText("PAGE QUALITY", rx, ry + P(9));
+    ry += P(16);
+    ctx.font = `600 ${P(13)}px ${F_COND}`;
+    const label = _exFit(ctx, f.pageQuality, rw - P(24), P(13), P(9), "600", F_COND);
+    const pw = Math.min(rw, ctx.measureText(label).width + P(24));
+    ctx.fillStyle = pq.bg;
+    _exRoundRect(ctx, rx, ry, pw, P(30), P(8)); ctx.fill();
+    ctx.fillStyle = pq.text;
+    ctx.fillText(label, rx + P(12), ry + P(20));
+    ry += P(30) + P(12);
+  }
+  if (f.fmv) {
+    ctx.fillStyle = "#fff";
+    ctx.font = `800 ${P(10)}px ${F_COND}`;
+    ctx.fillText("FMV", rx, ry + P(9));
+    ry += P(16);
+    ctx.font = `800 ${P(20)}px ${F_COND}`;
+    ctx.fillText(_exFit(ctx, f.fmv, rw, P(20), P(12), "800", F_COND), rx, ry + P(17));
+  }
+  return top + h;
+}
+
+// robograder.app, centred. The RG-ID used to live out here; it is now in the
+// provenance bar at the top, where Detail view keeps it.
+function _exDrawFoot(ctx, y, x, w) {
+  ctx.textAlign = "center";
+  ctx.fillStyle = EXP.footInk;
+  ctx.font = `800 ${P(11)}px ${F_COND}`;
+  ctx.fillText("robograder.app", x + w / 2, y + P(11));
+  ctx.textAlign = "left";
+}
+
+function _exCanvas(h) {
   const c = document.createElement("canvas");
-  c.width = EXPORT_W; c.height = EXPORT_H;
+  c.width = EX_W; c.height = Math.round(h);
   const ctx = c.getContext("2d");
-  ctx.fillStyle = EXC.bg;
-  ctx.fillRect(0, 0, EXPORT_W, EXPORT_H);
+  ctx.fillStyle = EXP.page;
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.textBaseline = "alphabetic";
   return { c, ctx };
 }
-
-// A score box, drawn rather than reusing RoboScoreV3.scoreBox() - that returns
-// HTML and there is no HTML on a canvas. Colours match the ones on screen.
-function _exScoreBox(ctx, x, y, w, h, label, value, box, edge, num, suffix) {
-  ctx.fillStyle = box;
-  _exRoundRect(ctx, x, y, w, h, 20); ctx.fill();
-  ctx.strokeStyle = edge; ctx.lineWidth = 3;
-  _exRoundRect(ctx, x, y, w, h, 20); ctx.stroke();
-  ctx.textAlign = "center";
-  ctx.fillStyle = num;
-  const shown = (value == null || value === "") ? "—" : String(value);
-  ctx.font = `900 ${shown.length > 3 ? 150 : 190}px ${EX_NUM}`;
-  ctx.fillText(shown, x + w / 2, y + h * 0.70);
-  if (suffix) {
-    // Sits to the upper right of the number like a superscript. It used to be
-    // drawn BELOW the number, where it landed on top of the box's own label.
-    ctx.textAlign = "right";
-    ctx.font = `700 44px ${EX_SANS}`;
-    ctx.fillText(suffix, x + w - 22, y + h * 0.70 - 96);
-    ctx.textAlign = "center";
-  }
-  ctx.fillStyle = num;
-  ctx.globalAlpha = 0.75;
-  ctx.font = `800 30px ${EX_SANS}`;
-  ctx.fillText(label, x + w / 2, y + h - 30);
-  ctx.globalAlpha = 1;
-  ctx.textAlign = "left";
-}
-
-// ── SUMMARY ────────────────────────────────────────────────────────────────
-async function _exRenderSummary(item) {
-  const f = _exFacts(item);
-  const { c, ctx } = _exBase();
-  const M = 60;
-
-  const [front, back] = await Promise.all([
-    _exLoadImage(_imgUrlOf((item.images || [])[0])),
-    _exLoadImage(_imgUrlOf((item.images || [])[1]))
-  ]);
-
-  _exHeader(ctx, item);
-
-  // Covers band, 330-1180. With no back cover the front takes the full width at
-  // the same height rather than leaving a grey hole beside it.
-  const bandY = 350, bandH = 820;
-  if (back) {
-    _exDrawContained(ctx, front, M, bandY, 460, bandH);
-    _exDrawContained(ctx, back, EXPORT_W - M - 460, bandY, 460, bandH);
-  } else {
-    _exDrawContained(ctx, front, M, bandY, EXPORT_W - M * 2, bandH);
-  }
-
-  // Grades band, 1180-1500.
-  const gy = 1200, gh = 290, gw = 460;
-  _exScoreBox(ctx, M, gy, gw, gh, "ROBOGRADE", f.rgGrade, EXC.rgBox, EXC.rgEdge, EXC.rgNum, "");
-  _exScoreBox(ctx, EXPORT_W - M - gw, gy, gw, gh, "PREDICTED GRADE", f.predicted,
-              EXC.cgcBox, EXC.cgcEdge, EXC.cgcNum, f.atCeiling ? "(+)" : "");
-
-  // Subscores band, 1500-1700.
-  if (f.sub) {
-    const cols = [
-      ["FRONT", f.sub.front], ["BACK", f.sub.back],
-      ["SPINE", f.sub.spine], ["INTERIOR", f.sub.interior]
-    ];
-    const cw = (EXPORT_W - M * 2) / 4;
-    cols.forEach(([lbl, val], i) => {
-      const cx = M + cw * i + cw / 2;
-      ctx.textAlign = "center";
-      ctx.fillStyle = EXC.text;
-      ctx.font = `900 76px ${EX_NUM}`;
-      ctx.fillText(val == null ? "—" : String(val), cx, 1620);
-      ctx.fillStyle = EXC.dim;
-      ctx.font = `800 26px ${EX_SANS}`;
-      ctx.fillText(lbl, cx, 1668);
-    });
-    ctx.textAlign = "left";
-  }
-
-  // Facts band, 1700-1860.
-  _exFactsBand(ctx, 1740, [["PAGE QUALITY", f.pageQuality], ["FAIR MARKET VALUE", f.fmv]]);
-
-  _exFooter(ctx, f.rgid);
-  return c;
-}
-
-// Two columns, each dropped entirely when its value is empty.
-function _exFactsBand(ctx, y, pairs) {
-  const M = 60;
-  const live = pairs.filter(p => p[1]);
-  if (!live.length) return;
-  const cw = (EXPORT_W - M * 2) / live.length;
-  live.forEach(([lbl, val], i) => {
-    const cx = M + cw * i + cw / 2;
-    ctx.textAlign = "center";
-    ctx.fillStyle = EXC.dim;
-    ctx.font = `800 26px ${EX_SANS}`;
-    ctx.fillText(lbl, cx, y);
-    ctx.fillStyle = EXC.gold;
-    ctx.fillText(_exFit(ctx, String(val), cw - 30, 52, 26, "800"), cx, y + 58);
-  });
-  ctx.textAlign = "left";
+function _exMeasureCtx() {
+  const c = document.createElement("canvas");
+  c.width = EX_W; c.height = 10;
+  return c.getContext("2d");
 }
 
 // ── DEFECT LIST ────────────────────────────────────────────────────────────
-// The grade sits AFTER the list here, not before it: the list is the argument
-// and the grade is the conclusion.
 async function _exRenderDefects(item) {
   const f = _exFacts(item);
-  const { c, ctx } = _exBase();
-  const M = 60;
+  const sections = _exSections(item, f);
 
-  _exHeader(ctx, item);
+  const boxW = EX_W - EX_INSET * 2;
+  const innerW = boxW - EX_PAD * 2;
+  const m = _exMeasureCtx();
+  const headH  = _exHeaderH(m, item);
+  const provH  = _exHasProv(item) ? EX_PROV_H + P(14) : 0;
+  const paperH = _exPaperMeasure(m, sections, boxW);
+  const cardH  = _exCardH(f);
+  const boxH   = headH + provH + paperH + P(14) + cardH + EX_PAD;
+  const total  = EX_INSET + boxH + P(16) + P(14) + EX_INSET;
 
-  const pqWhite = /^white$/i.test(String(f.pageQuality || "").trim());
-  const rows = f.defects
-    .filter(d => !(/^page\s*quality$/i.test(String(d.type || "")) && pqWhite))
-    .slice(0, EXPORT_MAX_DEFECTS)
-    .map(d => {
-      let t = d.type || "Defect";
-      if (d.location && d.location !== "N/A") t += " — " + d.location;
-      if (d.measurement) t += " (" + d.measurement + ")";
-      if (d.colorBreaking) t += "  ◆ colour-breaking";
-      return { t: t, sev: d.severity || "" };
-    });
+  const { c, ctx } = _exCanvas(total);
+  const bx = EX_INSET, by = EX_INSET;
+  ctx.fillStyle = EXP.cream;
+  _exRoundRect(ctx, bx, by, boxW, boxH, P(14)); ctx.fill();
 
-  ctx.fillStyle = EXC.dim;
-  ctx.font = `800 28px ${EX_SANS}`;
-  ctx.fillText("DEFECTS", M, 378);
-
-  if (!rows.length) {
-    // An empty list is a real and good result, not an error.
-    ctx.fillStyle = EXC.green;
-    ctx.font = `800 48px ${EX_SANS}`;
-    ctx.fillText("No defects noted.", M, 480);
-  } else {
-    // The band is sized for the app's cap of 13. A SHORT list grows its rows to
-    // fill it rather than top-aligning and leaving several hundred pixels of
-    // void above the grade, which is what it did first and it looked broken.
-    const bandTop = 420, avail = 1480 - bandTop;
-    const rh = Math.max(70, Math.min(132, Math.floor(avail / rows.length)));
-    // TOP-ALIGNED, deliberately. Centring a short list was tried and is worse:
-    // two defects floated in the middle of the page with void above AND below,
-    // which reads as a rendering fault. Top-aligned, the gap sits between the
-    // list and the conclusion, which just reads as the list having ended.
-    const top = bandTop;
-
-    // ONE type size for the whole list, chosen so the LONGEST row fits. Sizing
-    // each row independently gave a list where one defect was 20px and its
-    // neighbour 34px, which reads as a mistake rather than as emphasis.
-    let bodyPx = 34;
-    const overflowAt = () => {
-      let maxOver = 0;
-      rows.forEach(r => {
-        const sev = String(r.sev || "").toUpperCase();
-        const chip = sev === "MEDIUM" ? "MED" : sev;
-        let room = EXPORT_W - M * 2 - 48;
-        if (chip) {
-          ctx.font = `900 24px ${EX_SANS}`;
-          room = EXPORT_W - M - (M + 18 + ctx.measureText(chip).width + 32 + 20) - 24;
-        }
-        ctx.font = `600 ${bodyPx}px ${EX_SANS}`;
-        maxOver = Math.max(maxOver, ctx.measureText(r.t).width - room);
-      });
-      return maxOver;
-    };
-    while (bodyPx > 20 && overflowAt() > 0) bodyPx -= 1;
-
-    rows.forEach((r, i) => {
-      const y = top + rh * i;
-      ctx.fillStyle = EXC.panel;
-      _exRoundRect(ctx, M, y, EXPORT_W - M * 2, rh - 10, 10); ctx.fill();
-
-      const sev = String(r.sev || "").toUpperCase();
-      const chip = sev === "MEDIUM" ? "MED" : sev;
-      let textX = M + 24, textW = EXPORT_W - M * 2 - 48;
-      if (chip) {
-        const col = _lbSevColor(sev);
-        ctx.font = `900 24px ${EX_SANS}`;
-        const cwid = ctx.measureText(chip).width + 32;
-        ctx.fillStyle = col;
-        ctx.globalAlpha = 0.18;
-        _exRoundRect(ctx, M + 18, y + (rh - 10) / 2 - 20, cwid, 40, 8); ctx.fill();
-        ctx.globalAlpha = 1;
-        ctx.fillStyle = col;
-        ctx.textAlign = "center";
-        ctx.fillText(chip, M + 18 + cwid / 2, y + (rh - 10) / 2 + 9);
-        ctx.textAlign = "left";
-        textX = M + 18 + cwid + 20;
-        textW = EXPORT_W - M - textX - 24;
-      }
-      ctx.fillStyle = EXC.text;
-      ctx.fillText(_exFit(ctx, r.t, textW, bodyPx, 20, "600"), textX, y + (rh - 10) / 2 + Math.round(bodyPx / 3));
-    });
-
-    if (f.defects.length > rows.length) {
-      ctx.fillStyle = EXC.dim;
-      ctx.font = `600 26px ${EX_SANS}`;
-      ctx.fillText("+ " + (f.defects.length - rows.length) + " more", M, 1512);
-    }
-  }
-
-  // Facts band, 1560-1860: the conclusion.
-  ctx.strokeStyle = EXC.rule; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(M, 1540); ctx.lineTo(EXPORT_W - M, 1540); ctx.stroke();
-
-  ctx.textAlign = "center";
-  ctx.fillStyle = EXC.dim;
-  ctx.font = `800 28px ${EX_SANS}`;
-  ctx.fillText("PREDICTED GRADE", EXPORT_W / 2, 1596);
-  ctx.fillStyle = EXC.cgcNum;
-  ctx.font = `900 120px ${EX_NUM}`;
-  ctx.fillText((f.predicted == null ? "—" : f.predicted) + (f.atCeiling ? " (+)" : ""), EXPORT_W / 2, 1700);
-  ctx.textAlign = "left";
-
-  // Was 1808, which drew its VALUES at 1866 - below the footer rule at 1858 and
-  // straight through "robograder.app".
-  _exFactsBand(ctx, 1762, [["PAGE QUALITY", f.pageQuality], ["FAIR MARKET VALUE", f.fmv]]);
-
-  _exFooter(ctx, f.rgid);
+  let y = _exDrawHeader(ctx, item, bx + EX_PAD, by, innerW);
+  if (provH) { y = _exDrawProv(ctx, item, bx + EX_PAD, y, innerW) + P(14); }
+  ctx.save();
+  _exRoundRect(ctx, bx, by, boxW, boxH, P(14)); ctx.clip();
+  y = _exDrawPaper(ctx, sections, bx, y, boxW);
+  ctx.restore();
+  y += P(14);
+  _exDrawCard(ctx, f, bx + EX_PAD, y, innerW);
+  _exDrawFoot(ctx, by + boxH + P(14), bx + EX_PAD, innerW);
   return c;
 }
 
-// Stored images are either a string URL or {url}. Both shapes exist in the wild.
-function _imgUrlOf(x) { return (x && (x.url || (typeof x === "string" ? x : null))) || null; }
+// ── SUMMARY ────────────────────────────────────────────────────────────────
+// Fixed-shape, unlike the Defect List: Matt wants its height "fairly
+// consistent". Every band is a constant, so two books differ only by the
+// length of their title block.
+async function _exRenderSummary(item) {
+  const f = _exFacts(item);
+  const [front, back] = await Promise.all([
+    _exLoadImage(_exImgUrl((item.images || [])[0])),
+    _exLoadImage(_exImgUrl((item.images || [])[1]))
+  ]);
+
+  const boxW = EX_W - EX_INSET * 2;
+  const innerW = boxW - EX_PAD * 2;
+  const m = _exMeasureCtx();
+  const headH = _exHeaderH(m, item);
+  const coverH = P(230);
+  const provH = _exHasProv(item) ? EX_PROV_H + P(12) : 0;
+  const panelH = P(14) + P(22) + P(104) + P(12) + provH + P(2);
+  const cardH = _exCardH(f);
+  const boxH = headH + coverH + P(14) + panelH + P(14) + cardH + EX_PAD;
+  const total = EX_INSET + boxH + P(16) + P(14) + EX_INSET;
+
+  const { c, ctx } = _exCanvas(total);
+  const bx = EX_INSET, by = EX_INSET;
+  ctx.fillStyle = EXP.cream;
+  _exRoundRect(ctx, bx, by, boxW, boxH, P(14)); ctx.fill();
+
+  let y = _exDrawHeader(ctx, item, bx + EX_PAD, by, innerW);
+
+  // Covers, CONTAINED (never cropped). With no back cover the front takes the
+  // full width at the same height rather than leaving a hole beside it.
+  const gap = P(10);
+  const draw = (im, dx, dw) => {
+    ctx.fillStyle = "#1a1a1a";
+    _exRoundRect(ctx, dx, y, dw, coverH, P(6)); ctx.fill();
+    if (!im) return;
+    const s = Math.min(dw / im.naturalWidth, coverH / im.naturalHeight);
+    ctx.save(); _exRoundRect(ctx, dx, y, dw, coverH, P(6)); ctx.clip();
+    ctx.drawImage(im, dx + (dw - im.naturalWidth * s) / 2, y + (coverH - im.naturalHeight * s) / 2,
+                  im.naturalWidth * s, im.naturalHeight * s);
+    ctx.restore();
+  };
+  if (back) { const cw = (innerW - gap) / 2; draw(front, bx + EX_PAD, cw); draw(back, bx + EX_PAD + cw + gap, cw); }
+  else draw(front, bx + EX_PAD, innerW);
+  y += coverH + P(14);
+
+  // ── The ROBOGRADE SCORE panel, as Detail view builds it ─────────────────
+  ctx.fillStyle = EXP.bg;
+  _exRoundRect(ctx, bx + EX_PAD, y, innerW, panelH, P(12)); ctx.fill();
+  ctx.strokeStyle = EXP.oliveMid; ctx.lineWidth = Math.max(1, P(1.5));
+  _exRoundRect(ctx, bx + EX_PAD, y, innerW, panelH, P(12)); ctx.stroke();
+
+  let py = y + P(14);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#7aa838";
+  ctx.font = `700 ${P(12)}px ${F_COND}`;
+  const sh = "ROBOGRADE SCORE";
+  const shw = ctx.measureText(sh).width + (sh.length - 1) * P(2);
+  let scx = bx + EX_PAD + innerW / 2 - shw / 2;
+  ctx.textAlign = "left";
+  for (const ch of sh) { ctx.fillText(ch, scx, py + P(10)); scx += ctx.measureText(ch).width + P(2); }
+  py += P(22);
+
+  const boxSize = P(104);
+  const px0 = bx + EX_PAD + P(12);
+  const depth = (typeof RoboScoreV3 !== "undefined" || window.RoboScoreV3) && window.RoboScoreV3.depthOf
+    ? window.RoboScoreV3.depthOf(item) : "main";
+  _exScoreBox(ctx, px0, py, boxSize, {
+    grade: f.rgGrade,
+    pmLabel: f.v3 ? f.v3.pmLabel : "",
+    stars: depth === "full" ? 3 : depth === "deep" ? 2 : 1,
+    restoStar: !!item.restorationCheckRan,
+    footerText: "V" + (window.RG_GRADING_VERSION || ""),
+    plus: !!(f.v3 && f.v3.ceilingHit && f.v3.upsell)
+  });
+
+  // Subscore grid at Detail view's proportions: FRONT across the full width,
+  // then BACK / SPINE / INT at 2:2:1 - the box sizes encode the 50/20/20/10
+  // weights, which an equal 2x2 grid misrepresented.
+  const gx = px0 + boxSize + P(8);
+  const gw = bx + EX_PAD + innerW - P(12) - gx;
+  const g2 = P(4);
+  const cell = (cx, cy, cw, ch, val, lbl, numPx, lblPx) => {
+    ctx.fillStyle = "#2a4a1e";
+    _exRoundRect(ctx, cx, cy, cw, ch, P(6)); ctx.fill();
+    ctx.save();
+    ctx.translate(cx + cw / 2, cy + ch * 0.52);
+    ctx.scale(0.7, 1);
+    ctx.textAlign = "center"; ctx.fillStyle = "#b8d820";
+    ctx.font = `800 ${P(numPx)}px ${F_NUM}`;
+    ctx.fillText(val == null ? "—" : String(val), 0, P(numPx) * 0.34);
+    ctx.restore();
+    ctx.textAlign = "center"; ctx.fillStyle = "#7aa838";
+    ctx.font = `600 ${P(lblPx)}px ${F_COND}`;
+    ctx.fillText(lbl, cx + cw / 2, cy + ch - P(6));
+    ctx.textAlign = "left";
+  };
+  const s = f.sub;
+  const topH = P(56), botH = boxSize - topH - g2;
+  cell(gx, py, gw, topH, s ? f.fmtSub(s.front) : null, "FRONT", 29, 9);
+  const unit = (gw - g2 * 2) / 5;
+  cell(gx, py + topH + g2, unit * 2, botH, s ? f.fmtSub(s.back) : null, "BACK", 20, 8);
+  cell(gx + unit * 2 + g2, py + topH + g2, unit * 2, botH, s ? f.fmtSub(s.spine) : null, "SPINE", 20, 8);
+  cell(gx + unit * 4 + g2 * 2, py + topH + g2, unit, botH, s ? f.fmtSub(s.interior) : null, "INT", 20, 8);
+  py += boxSize + P(12);
+
+  if (provH) _exDrawProv(ctx, item, px0, py, innerW - P(24));
+  y += panelH + P(14);
+
+  _exDrawCard(ctx, f, bx + EX_PAD, y, innerW);
+  _exDrawFoot(ctx, by + boxH + P(14), bx + EX_PAD, innerW);
+  return c;
+}
 
 // ── The two button handlers ────────────────────────────────────────────────
 async function _exRun(btnId, item, renderer, slug) {
@@ -7530,8 +7986,7 @@ async function _exRun(btnId, item, renderer, slug) {
     await _saveImageBlob(blob, `robograder-${slug}-${stamp}.jpg`);
   } catch (e) {
     console.warn("[export] render failed:", e);
-    const taint = String((e && e.name) || "") === "SecurityError";
-    alert(taint
+    alert(String((e && e.name) || "") === "SecurityError"
       ? "Couldn't build the image because one of the cover photos wouldn't load for export. Please try again in a moment."
       : "Couldn't build the image. Please try again.");
   } finally {
@@ -7539,9 +7994,7 @@ async function _exRun(btnId, item, renderer, slug) {
   }
 }
 
-function _exItem(id) {
-  return (items || []).find(c => c.id === id) || selected || null;
-}
+function _exItem(id) { return (items || []).find(c => c.id === id) || selected || null; }
 function exportSummaryImage(id) {
   const item = _exItem(id);
   if (item) _exRun("export-summary-btn", item, _exRenderSummary, "summary");
@@ -7550,6 +8003,7 @@ function exportDefectListImage(id) {
   const item = _exItem(id);
   if (item) _exRun("export-defects-btn", item, _exRenderDefects, "defects");
 }
+
 
 
 const EMPTY = {
@@ -7826,11 +8280,16 @@ function showEdit(id) {
 // S25 (#1): open Edit and scroll straight to a tier's capture section instead of
 // landing at the top (Main slots). Used by the Detail-view Deep/Full upsell cards.
 function showEditToSection(id, section) {
+  // Arriving from Detail's "BOOK HAS BEEN CLEANED" card means the user has
+  // already said what they want, so the section opens expanded rather than
+  // making them tap a second time. Keyed by id so it cannot leak to another book.
+  if (section === "clean") _cleanExpandedFor = id;
   showEdit(id);
   requestAnimationFrame(function () {
     requestAnimationFrame(function () {
       var _id = section === "full" ? "full-staple-section"
               : section === "batch" ? "batch-section"          // v5.27
+              : section === "clean" ? "clean-section"          // v5.72
               : "deep-corner-section";
       var el = document.getElementById(_id);
       if (!el) return;
@@ -10560,6 +11019,30 @@ function renderCleanSection() {
   const ready = have >= 10;
   const runs = formData.cleanRuns || 0;
 
+  const _headHTML = `<div style="font-size:11px;color:#6ad0b8;font-weight:700;letter-spacing:2px;margin-bottom:8px">BOOK HAS BEEN CLEANED${runs ? ` &middot; RUN ${runs + 1}` : ""}</div>`;
+  const _blurbHTML = `<div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Re-shoot all ten photos of the cleaned or pressed book and get an objective before/after comparison. The grade you have now is kept as the Before and never changes. <strong style="color:#c8b06a">There is no refund if the grade does not improve</strong> &mdash; you are paying for the measurement, not for a better number.</div>`;
+
+  // COLLAPSED BY DEFAULT (v5.72). The ten Before/After pairs are a 3,300px
+  // block, and rendering it unconditionally put the rest of the section - and
+  // the button that starts a run - at the far bottom of an already 10,800px
+  // Edit page. Matt ran a Deep, went looking in Detail and Edit, and reported
+  // the feature missing; it was rendering the whole time and simply could not
+  // be found. It now presents as a compact offer, the same as Batch and Full do,
+  // and opens on a tap. Already having After photos counts as opened, so a run
+  // in progress is never hidden behind a tap.
+  if (!((_cleanExpandedFor === formData.id) || have > 0)) {
+    return `
+        <div id="clean-section" style="margin-top:14px;padding-top:14px;border-top:1px dashed #2e7a6a">
+          ${_headHTML}${_blurbHTML}
+          <div style="display:flex;justify-content:center">
+            <button class="rg-btn rg-btn-assess rg-btn-bronze" onclick="expandCleanSection()" style="flex-direction:column;line-height:1.15;text-align:center">
+              <span style="display:block">TAKE AFTER PHOTOS</span>
+              <span style="display:block;font-size:0.8em;font-weight:600;opacity:0.85">${CLEAN_CREDIT_COST} CREDITS &middot; NO REFUND</span>
+            </button>
+          </div>
+        </div>`;
+  }
+
   const rows = CLEAN_PAIR_LABELS.map((lbl, i) => {
     const b = before[i], a = after[i];
     const bCell = b
@@ -10585,9 +11068,8 @@ function renderCleanSection() {
        </button>`;
 
   return `
-        <div id="clean-section" style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">
-          <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">BOOK HAS BEEN CLEANED${runs ? ` &middot; RUN ${runs + 1}` : ""}</div>
-          <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Re-shoot all ten photos of the cleaned or pressed book and get an objective before/after comparison. The grade you have now is kept as the Before and never changes. <strong style="color:#c8b06a">There is no refund if the grade does not improve</strong> &mdash; you are paying for the measurement, not for a better number.</div>
+        <div id="clean-section" style="margin-top:14px;padding-top:14px;border-top:1px dashed #2e7a6a">
+          ${_headHTML}${_blurbHTML}
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:9px;color:#6abf6a;font-weight:700;letter-spacing:.12em;margin-bottom:6px"><div>BEFORE</div><div>AFTER</div></div>
           ${rows}
           <div style="display:flex;justify-content:center;gap:10px;margin-top:4px;flex-wrap:wrap">
@@ -11641,7 +12123,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "5.71"),
+      appVersion: (window.RG_GRADING_VERSION || "5.73"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
@@ -16068,6 +16550,20 @@ function startCleanCapture() {
 }
 
 function cancelCleanCapture() { _cleanCapture = false; }
+
+// Which entry has its Cleaning Compare section open. Keyed by ITEM ID rather
+// than a bare boolean so the open state cannot leak from one book to the next.
+let _cleanExpandedFor = null;
+function expandCleanSection() {
+  if (!formData || !formData.id) return;
+  _cleanExpandedFor = formData.id;
+  renderForm();
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const el = document.getElementById("clean-section");
+    if (!el) return;
+    window.scrollTo({ top: Math.max(0, el.getBoundingClientRect().top + window.pageYOffset - 70), behavior: "smooth" });
+  }));
+}
 
 // CLEANING COMPARE AND THE LIBRARY PICKER.
 //
