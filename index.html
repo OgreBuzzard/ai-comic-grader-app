@@ -2231,12 +2231,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.68";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.69";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.68");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.69");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -7714,7 +7714,11 @@ function mountStepTracker(kind) {
 const TIER_OVERLAY_BG = {
   deep: "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay_Deep.webp",
   full: "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay_Full.webp",
-  restoration: "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay_Restoration.webp"
+  restoration: "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay_Restoration.webp",
+  // Matt's artwork, 2026-10-19. NOTE: these resolve against raw.githubusercontent.com,
+  // so assets/modal/Progress_Overlay_Cleaned.webp has to be in a PUSHED commit
+  // before this overlay will load — being on disk is not enough.
+  cleaned: "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay_Cleaned.webp"
 };
 (function preloadTierOverlays() {
   Object.values(TIER_OVERLAY_BG).forEach(url => { const img = new Image; img.src = url; });
@@ -9536,6 +9540,207 @@ function _batchFireWorker(batchId, pass) {
     .catch(e => console.warn(`[batch] worker ${pass} dispatch:`, e && e.message));
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// CLEANING COMPARE — the client half (v5.69, 2026-10-19)
+// Spec: claude/POST_CLEANING_ASSESSMENT_SPEC.md v5.
+//
+// The RUN itself is server-orchestrated (api/assess_clean_run.js): Main → Deep →
+// compare, on the api/assess_batch_run.js pattern. This file does four things —
+// decide whether to offer it, freeze the Before, hand the After photos over, and
+// light the modal from the server's own progress.
+// ════════════════════════════════════════════════════════════════════════════
+
+// The five boxes in Matt's Progress_Overlay_Cleaned.webp, in order. The labels
+// live in the ARTWORK; these ids only have to be unique and ordered.
+const CLEAN_STEPS = [
+  { id: "clean-scan",    label: "PRE-CLEANING SCAN" },
+  { id: "clean-main",    label: "RUNNING MAIN" },
+  { id: "clean-deep",    label: "RUNNING DEEP" },
+  { id: "clean-compare", label: "COMPARING DEFECTS" },
+  { id: "clean-regrade", label: "RE-GRADING" }
+];
+
+// Where the ten After photos are stored. Distinct slot names so an After set can
+// never overwrite the book's original images — Before is immutable and that is
+// the entire value of the feature (decision 2 of the spec).
+const STORAGE_SLOTS_CLEAN_AFTER = [
+  "clean_front_cover", "clean_back_cover", "clean_page_quality", "clean_raking_light",
+  "clean_corner_tl", "clean_corner_tr", "clean_corner_bl", "clean_corner_br",
+  "clean_interior_cover_front", "clean_interior_cover_back"
+];
+
+const CLEAN_CREDIT_COST = 2;
+
+// Offered only on a book with a COMPLETED Deep — the same bar Batch uses, and
+// for the same reason: `deepUnlocked` means the button is showing and four
+// corner photos mean the camera finished, neither of which means a Deep RESULT
+// exists. Reuses _batchDeepRan rather than restating the test, so the two
+// cannot drift apart.
+function _cleanUnlocked(item) {
+  if (!item || item.type === "card") return false;
+  return _batchDeepRan(item);
+}
+
+// The frozen Before. Written ONCE, on the first run, and never again however
+// many times the book is re-run (decision 2). Taken from the item's CURRENT
+// result, which at first-run time is its pre-cleaning state.
+function _cleanBeforeSnapshot(item) {
+  const rg = (item && item.roboGrade) || {};
+  return {
+    grade: item.grade || null,
+    roboGrade: rg,
+    pageQuality: item.pageQuality || rg.pageQuality || "",
+    defects: Array.isArray(rg.defects) ? rg.defects : [],
+    restorationFlag: !!item.restorationFlag,
+    restorationHighConfidence: !!item.restorationHighConfidence,
+    aiAssessment: item.aiAssessment || "",
+    frozenAt: (new Date()).toISOString()
+  };
+}
+
+// Light the modal from the SERVER'S OWN progress rather than a timer.
+// api/assess_clean_run.js writes its stage to users/{uid}/meta/clean_run after
+// each step, and that path is already owner-readable under the existing
+// Firestore rules — so this needs no endpoint and no rules change.
+//
+// Returns an unsubscribe function, or null when onSnapshot is unavailable, in
+// which case the caller falls back to timed lights. Matt said timed lights would
+// be acceptable; they are the fallback, not the plan.
+function _cleanWatchStage(onStage) {
+  try {
+    if (!window._fsOnSnapshot || !window._db || !window._currentUser) return null;
+    const ref = window._fsDoc(window._db, "users", window._currentUser.uid, "meta", "clean_run");
+    return window._fsOnSnapshot(ref, snap => {
+      const d = snap && snap.data ? snap.data() : null;
+      if (d && d.stage) onStage(d.stage, d);
+    }, err => console.warn("[clean] stage watch failed:", err && err.message));
+  } catch (e) {
+    console.warn("[clean] stage watch unavailable:", e && e.message);
+    return null;
+  }
+}
+
+async function submitCleanAssessment() {
+  if (assessing || formData._batchMode || formData._cleanMode) return;
+  if (!_cleanUnlocked(formData)) {
+    await appAlert("Run a Deep assessment first — Cleaning Compare measures the change against a Deep result.");
+    return;
+  }
+  if (!formData.id) { await appAlert("Save this book before running a Cleaning Compare."); return; }
+
+  const after = (formData.cleanAfterImages || []).filter(Boolean);
+  if (after.length < 10) {
+    await appAlert("All ten after-cleaning photos are needed before this can run. " + after.length + " of 10 so far.");
+    return;
+  }
+  if (window._userCredits !== undefined && window._userCredits < CLEAN_CREDIT_COST) {
+    await appAlert("Cleaning Compare costs " + CLEAN_CREDIT_COST + " credits. You have " + window._userCredits + ".");
+    if (typeof showBuyCredits === "function") showBuyCredits();
+    return;
+  }
+  // NO REFUND, and the charge is made unambiguous BEFORE the tap, not after
+  // (decision 1). The user is buying a verdict, not hoping for a bump.
+  if (!(await _batchConfirm(
+    "Re-grades the book from your ten after-cleaning photos and compares it to the Deep result. Cost: " +
+    CLEAN_CREDIT_COST + " credits. There is no refund if the grade does not improve — you are paying for the measurement."
+  ))) return;
+
+  _capturePrevAssessResult();
+  formData._cleanMode = true;
+  let unwatch = null, tracker = null;
+  try {
+    // Freeze Before on the FIRST run only.
+    if (!formData.cleanBeforeResult) formData.cleanBeforeResult = _cleanBeforeSnapshot(formData);
+
+    // Animation first, network second — same ordering Batch uses, so the shell
+    // is already moving while the upload and the run start.
+    const _u = x => (x && (x.url || (typeof x === "string" ? x : null))) || null;
+    if (window.RobograderScan && window.RobograderScan.runScanAnimation) {
+      try {
+        window.RobograderScan.runScanAnimation(after.map(_u), "batch");
+        tracker = mountTierTracker("cleaned", CLEAN_STEPS, { noAutoLight: true });
+      } catch (e) { console.warn("[clean] animation:", e); }
+    }
+    setStep("clean-scan", "done");
+
+    // The ten After photos go to Storage under their own slots; the runner is
+    // handed URLs and fetches them itself, so a phone never holds ten base64
+    // blobs in memory and the request body stays small.
+    const up = await processImagesForSave(after, formData.id, STORAGE_SLOTS_CLEAN_AFTER, { preserveNulls: true });
+    const urls = (up && up.images ? up.images : after).map(_u);
+    formData.cleanAfterImages = urls;
+
+    unwatch = _cleanWatchStage(stage => {
+      if (stage === "main") setStep("clean-main", "running");
+      else if (stage === "deep") { setStep("clean-main", "done"); setStep("clean-deep", "running"); }
+      else if (stage === "comparing") { setStep("clean-deep", "done"); setStep("clean-compare", "running"); }
+      else if (stage === "error") setStep("clean-deep", "failed");
+    });
+    // Fallback only: if onSnapshot is unavailable the lights still move, on the
+    // measured shape of a run (Main ~12s, then Deep).
+    if (!unwatch) {
+      setTimeout(() => setStep("clean-main", "running"), 800);
+      setTimeout(() => { setStep("clean-main", "done"); setStep("clean-deep", "running"); }, 13000);
+    }
+
+    const res = await _batchApi("/api/assess_clean_run", {
+      method: "POST",
+      body: {
+        itemId: formData.id,
+        runNumber: (formData.cleanRuns || 0) + 1,
+        afterUrls: {
+          main: urls.slice(0, 4),
+          corner: urls.slice(4, 8),
+          interiorCover: urls.slice(8, 10)
+        },
+        before: formData.cleanBeforeResult,
+        identity: {
+          title: formData.title || "",
+          issue: String(formData.issue || ""),
+          issueDate: formData.issueDate || "",
+          publisher: formData.publisher || "",
+          printing: formData.printing || "",
+          referenceImageUrl: formData.referenceImageUrl || null
+        }
+      }
+    });
+    if (!res || !res.ok) throw new Error((res && res.detail) || "cleaning compare failed");
+
+    setStep("clean-compare", "done");
+    setStep("clean-regrade", "done");
+
+    // AFTER IS THE ITEM'S GRADE from here on (decision 3) — Catalogue, FMV and
+    // history all read the normal fields, so the After result is written into
+    // them and the Before stays beside it, labelled.
+    const A = res.after || {};
+    formData.cleanAfterResult = A;
+    formData.cleanComparison = res.comparison || null;
+    formData.cleanRuns = (formData.cleanRuns || 0) + 1;
+    formData.cleanAssessmentRan = true;
+    if (A.grade) formData.grade = A.grade;
+    if (A.roboGrade) formData.roboGrade = A.roboGrade;
+    if (A.pageQuality) formData.pageQuality = A.pageQuality;
+    if (A.restorationFlag) formData.restorationFlag = true;
+    if (A.restorationHighConfidence) formData.restorationHighConfidence = true;
+    formData._imagesChanged = true;
+
+    if (typeof res.creditsRemaining === "number") {
+      window._userCredits = res.creditsRemaining;
+      if (typeof updateStats === "function") updateStats();
+    }
+    onAssessmentSuccess(formData);
+  } catch (e) {
+    console.error("[clean] run failed:", e);
+    setStep("clean-regrade", "failed");
+    await appAlert("The cleaning comparison did not finish. " + ((e && e.message) || "") +
+      " Any credits already spent on a completed pass are not returned — the grading was done.");
+  } finally {
+    if (unwatch) { try { unwatch(); } catch (e) {} }
+    if (tracker && tracker.clearTimers) { try { tracker.clearTimers(); } catch (e) {} }
+    formData._cleanMode = false;
+  }
+}
+
 async function submitBatchAssessment() {
   if (assessing || formData._batchMode) return;
   if (formData.type === "card") { await appAlert("Batch assessment is for comics."); return; }
@@ -10891,7 +11096,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "5.68"),
+      appVersion: (window.RG_GRADING_VERSION || "5.69"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
