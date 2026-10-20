@@ -2231,12 +2231,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.69";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "5.70";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.69");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "5.70");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -10055,6 +10055,82 @@ async function submitBatchAssessment() {
     renderForm();
   }
 }
+// ── CLEANING COMPARE — the capture screen (v5.70) ──────────────────────────
+// Ten Before photos down the left, ten After slots down the right, paired. The
+// assess button stays greyed until all ten After photos exist, and the 2-credit
+// charge with no refund is stated BEFORE the tap (decision 1 of the spec).
+const CLEAN_PAIR_LABELS = [
+  "Front Cover", "Back Cover", "Interior / Page Quality", "Raking Light",
+  "Top Left", "Top Right", "Bottom Left", "Bottom Right",
+  "Interior Front", "Interior Back"
+];
+
+// The book's own ten, in the same order the After set uses.
+function _cleanBeforePhotos(item) {
+  const u = x => (x && (x.url || (typeof x === "string" ? x : null))) || null;
+  return [
+    ...[0, 1, 2, 3].map(i => u((item.images || [])[i])),
+    ...[0, 1, 2, 3].map(i => u((item.cornerImages || [])[i])),
+    ...[0, 1].map(i => u((item.interiorCoverImages || [])[i]))
+  ];
+}
+
+// Re-shoot ONE After slot. Maps the 0-9 index back to the camera kind that owns
+// it, so the retake uses the same guide and orientation as the original.
+function retakeCleanSlot(idx) {
+  const kind = idx < 4 ? "main" : idx < 8 ? "corner" : "interiorCover";
+  _cleanCapture = true;
+  tapSlot(idx - CLEAN_CAPTURE_OFFSET[kind], kind);
+}
+
+function renderCleanSection() {
+  if (!_cleanUnlocked(formData) || !formData.id) return "";
+  const before = _cleanBeforePhotos(formData);
+  const after = formData.cleanAfterImages || [];
+  const have = after.filter(Boolean).length;
+  const ready = have >= 10;
+  const runs = formData.cleanRuns || 0;
+
+  const rows = CLEAN_PAIR_LABELS.map((lbl, i) => {
+    const b = before[i], a = after[i];
+    const bCell = b
+      ? `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:3/4"><img src="${b}" loading="lazy" decoding="async" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"></div>`
+      : `<div style="border-radius:4px;background:#161c12;aspect-ratio:3/4"></div>`;
+    const aCell = a
+      ? `<div class="drag-slot" style="aspect-ratio:3/4" onclick="retakeCleanSlot(${i})"><img src="${a}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"></div>`
+      : `<div class="drag-slot" style="aspect-ratio:3/4;display:flex;align-items:center;justify-content:center" onclick="retakeCleanSlot(${i})"><span style="font-size:20px;color:#3f5a35">+</span></div>`;
+    return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:center;margin-bottom:6px">
+        ${bCell}${aCell}
+      </div>
+      <div style="font-size:9px;color:#5f7a52;letter-spacing:.06em;text-transform:uppercase;margin:-2px 0 8px">${lbl}</div>`;
+  }).join("");
+
+  const btn = ready
+    ? `<button class="rg-btn rg-btn-assess rg-btn-silver${assessing ? " assessing" : ""}" onclick="submitCleanAssessment()" ${assessing ? "disabled" : ""} style="flex-direction:column;line-height:1.15;text-align:center">
+         <span style="display:block">POST-CLEANING ASSESS</span>
+         <span style="display:block;font-size:0.8em;font-weight:600;opacity:0.85">(${CLEAN_CREDIT_COST} CREDITS &middot; NO REFUND)</span>
+       </button>`
+    : `<button class="rg-btn rg-btn-assess rg-btn-silver" disabled style="flex-direction:column;line-height:1.15;text-align:center;opacity:0.45;cursor:not-allowed">
+         <span style="display:block">POST-CLEANING ASSESS</span>
+         <span style="display:block;font-size:0.8em;font-weight:600;opacity:0.85">${have} OF 10 PHOTOS</span>
+       </button>`;
+
+  return `
+        <div id="clean-section" style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">
+          <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">BOOK HAS BEEN CLEANED${runs ? ` &middot; RUN ${runs + 1}` : ""}</div>
+          <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Re-shoot all ten photos of the cleaned or pressed book and get an objective before/after comparison. The grade you have now is kept as the Before and never changes. <strong style="color:#c8b06a">There is no refund if the grade does not improve</strong> &mdash; you are paying for the measurement, not for a better number.</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:9px;color:#6abf6a;font-weight:700;letter-spacing:.12em;margin-bottom:6px"><div>BEFORE</div><div>AFTER</div></div>
+          ${rows}
+          <div style="display:flex;justify-content:center;gap:10px;margin-top:4px;flex-wrap:wrap">
+            <button class="rg-btn rg-btn-assess rg-btn-bronze" onclick="startCleanCapture()" style="flex-direction:column;line-height:1.15;text-align:center">
+              <span style="display:block">${have ? "RETAKE ALL TEN" : "TAKE AFTER PHOTOS"}</span>
+              <span style="display:block;font-size:0.8em;font-weight:600;opacity:0.85">ONE CONTINUOUS FLOW</span>
+            </button>
+            ${btn}
+          </div>
+        </div>`;
+}
+
 function renderBatchSection() {
   // S22: once a Deep has run the section is ALWAYS shown. If the Photograder says
   // the photos aren't clean enough, the button is greyed with the reason, instead
@@ -11096,7 +11172,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "5.69"),
+      appVersion: (window.RG_GRADING_VERSION || "5.70"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
@@ -12693,7 +12769,7 @@ function renderForm() {
     const _uvLeft = uvChecksLeft(formData);
     if (_uvLeft <= 0) return "";
     return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n            <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">UV CHECK — FREE</div>\n            <div style="font-size:11px;color:#9a8aaa;margin-bottom:10px;line-height:1.5">\n              Color touch — ink added to hide a defect — is the one kind of restoration that can only be seen under a blacklight. Photograph the front and back covers under a UV flashlight in a dark room and Robograder will report any ink that does not match the rest. No credit is used.\n            </div>\n            ${renderRestorationSlotGrid(rImgs, {editable: true})}\n            <input id="restoration-photo-input" type="file" accept="image/*" multiple onchange="handleRestorationImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="restoration-check-btn" class="rg-btn rg-btn-assess rg-btn-purple${assessing ? ' assessing' : ''}" onclick="submitRestorationCheck()" ${rReady ? "" : "disabled"}>\n                ${assessing ? "Checking…" : `UV CHECK ${rFilled < RESTORATION_SLOT_COUNT ? `(${rFilled}/${RESTORATION_SLOT_COUNT})` : `(${_uvLeft} LEFT)`}`}\n              </button>\n            </div>\n          </div>\n        `;
-  })()}${renderBatchSection()}${renderUserDefectSlots()}\n      <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">\n      <input id="userdefect-photo-input" type="file" accept="image/*" onchange="handleUserDefectImages(event)" style="display:none">\n      <input id="restoration-photo-input" type="file" accept="image/*" onchange="handleRestorationImages(event)" style="display:none">\n\n      \x3c!-- S11: Pre-assessment Grader Notes (Option B for the chicken-and-egg\n           problem). For graded books in slabs, the official grader notes are\n           highly informative inputs to the AI assessment — but we don't\n           know a book is graded until after the AI has assessed it, so the\n           field would normally be unavailable on first-pass. This collapsible\n           section gives users who have a slabbed book a way to enter the\n           grader notes BEFORE running the assessment. Defaults closed so\n           the standard image-first flow stays visually clean for raw books;\n           opens with a single tap. Only renders pre-assessment in the\n           image-first flow (no _assessed, no _addManualMode, no isEdit) —\n           after assessment, the Grader Notes field appears in the normal\n           form section below where it can also be edited. --\x3e\n      \x3c!-- The "Optional: official label info" collapsible was removed in S12.\n           It let users type CGC/PSA grader notes BEFORE assessment to nudge\n           accuracy. Pulled because:\n           - Used by an extreme minority of users (only those entering\n             already-graded books and willing to transcribe slab text)\n           - Cluttered the otherwise-clean image-first Add flow\n           - The same info can still be typed in the post-assessment form\n             where the Grader Notes field still lives.\n           If we want this back later, the JS field (formData.graderNotes)\n           still wires through to assess.js — only the UI was removed. --\x3e\n\n    </div>\n    ${isEdit || _assessed || _addManualMode ? `\n    ${""}\n    <div class="form-grid-2">\n      \x3c!-- Title gets a special handler (not the generic tf) because we need\n           live-toggle the save button as the user types. Using tf would\n           require either a full renderForm on every keystroke (kills focus)\n           or a separate handler — this is cleaner. --\x3e\n      ${formData.roboGrade ? rof(_isCardForm ? "Card Name" : "Title", "title") : `<div><label class="field-label">Title<span style="color:#c0392b;margin-left:2px">*</span></label><input id="title-input" value="${esc(formData.title || "")}" oninput="formData.title=this.value;refreshSaveButtonLock()" placeholder="Series title"></div>`}\n      ${formData.roboGrade ? rof(_isCardForm ? "Card No." : "Issue", "issue") : tf("Issue", "issue", "Issue number", true)}\n      ${formData.roboGrade ? rof("Pub Date", "issueDate") : tf("Pub Date", "issueDate", "Cover date")}\n      ${formData.roboGrade ? rof("Publisher", "publisher") : tf("Publisher", "publisher", "Publisher")}\n    </div>\n    ${formData.roboGrade && (formData.printing && String(formData.printing).trim()) ? `\n    \x3c!-- S14 (anti-fraud): Printing is shown read-only on a graded book.\n         It is NOT in the editable grid at all (a blank editable Printing\n         would also be a fraud vector — a user could leave a reprint's\n         printing empty). It only appears here when the assessment\n         actually populated it (e.g. "Facsimile Reprint"), so the label\n         and Detail view stay truthful and the user can't strip it. --\x3e\n    <div class="form-grid-2"><div>\n      <label class="field-label">Printing</label>\n      <div class="ro-field" title="Locked — set by the assessment and not editable">${esc(formData.printing)}</div>\n    </div></div>` : ""}\n    \x3c!-- Official Grades fields (S11): the disclosure container "OFFICIAL GRADES"\n         was removed. CGC Grade/Cert and PSA Grade/Cert sit as their own ordinary\n         fields when relevant.\n         Visibility:\n         • Not yet assessed (no roboGrade): show both CGC and PSA grids.\n         • Assessed and AI determined raw (no grades/certs): hide both.\n         • Assessed and CGC info present: show CGC grid only.\n         • Assessed and PSA info present: show PSA grid only.\n         A book can be CGC OR PSA officially, never both. --\x3e\n    ${(() => {
+  })()}${renderBatchSection()}${renderCleanSection()}${renderUserDefectSlots()}\n      <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">\n      <input id="userdefect-photo-input" type="file" accept="image/*" onchange="handleUserDefectImages(event)" style="display:none">\n      <input id="restoration-photo-input" type="file" accept="image/*" onchange="handleRestorationImages(event)" style="display:none">\n\n      \x3c!-- S11: Pre-assessment Grader Notes (Option B for the chicken-and-egg\n           problem). For graded books in slabs, the official grader notes are\n           highly informative inputs to the AI assessment — but we don't\n           know a book is graded until after the AI has assessed it, so the\n           field would normally be unavailable on first-pass. This collapsible\n           section gives users who have a slabbed book a way to enter the\n           grader notes BEFORE running the assessment. Defaults closed so\n           the standard image-first flow stays visually clean for raw books;\n           opens with a single tap. Only renders pre-assessment in the\n           image-first flow (no _assessed, no _addManualMode, no isEdit) —\n           after assessment, the Grader Notes field appears in the normal\n           form section below where it can also be edited. --\x3e\n      \x3c!-- The "Optional: official label info" collapsible was removed in S12.\n           It let users type CGC/PSA grader notes BEFORE assessment to nudge\n           accuracy. Pulled because:\n           - Used by an extreme minority of users (only those entering\n             already-graded books and willing to transcribe slab text)\n           - Cluttered the otherwise-clean image-first Add flow\n           - The same info can still be typed in the post-assessment form\n             where the Grader Notes field still lives.\n           If we want this back later, the JS field (formData.graderNotes)\n           still wires through to assess.js — only the UI was removed. --\x3e\n\n    </div>\n    ${isEdit || _assessed || _addManualMode ? `\n    ${""}\n    <div class="form-grid-2">\n      \x3c!-- Title gets a special handler (not the generic tf) because we need\n           live-toggle the save button as the user types. Using tf would\n           require either a full renderForm on every keystroke (kills focus)\n           or a separate handler — this is cleaner. --\x3e\n      ${formData.roboGrade ? rof(_isCardForm ? "Card Name" : "Title", "title") : `<div><label class="field-label">Title<span style="color:#c0392b;margin-left:2px">*</span></label><input id="title-input" value="${esc(formData.title || "")}" oninput="formData.title=this.value;refreshSaveButtonLock()" placeholder="Series title"></div>`}\n      ${formData.roboGrade ? rof(_isCardForm ? "Card No." : "Issue", "issue") : tf("Issue", "issue", "Issue number", true)}\n      ${formData.roboGrade ? rof("Pub Date", "issueDate") : tf("Pub Date", "issueDate", "Cover date")}\n      ${formData.roboGrade ? rof("Publisher", "publisher") : tf("Publisher", "publisher", "Publisher")}\n    </div>\n    ${formData.roboGrade && (formData.printing && String(formData.printing).trim()) ? `\n    \x3c!-- S14 (anti-fraud): Printing is shown read-only on a graded book.\n         It is NOT in the editable grid at all (a blank editable Printing\n         would also be a fraud vector — a user could leave a reprint's\n         printing empty). It only appears here when the assessment\n         actually populated it (e.g. "Facsimile Reprint"), so the label\n         and Detail view stay truthful and the user can't strip it. --\x3e\n    <div class="form-grid-2"><div>\n      <label class="field-label">Printing</label>\n      <div class="ro-field" title="Locked — set by the assessment and not editable">${esc(formData.printing)}</div>\n    </div></div>` : ""}\n    \x3c!-- Official Grades fields (S11): the disclosure container "OFFICIAL GRADES"\n         was removed. CGC Grade/Cert and PSA Grade/Cert sit as their own ordinary\n         fields when relevant.\n         Visibility:\n         • Not yet assessed (no roboGrade): show both CGC and PSA grids.\n         • Assessed and AI determined raw (no grades/certs): hide both.\n         • Assessed and CGC info present: show CGC grid only.\n         • Assessed and PSA info present: show PSA grid only.\n         A book can be CGC OR PSA officially, never both. --\x3e\n    ${(() => {
     const hasOfficialCGC = !!(formData.cgcGrade || formData.cgcCert);
     const hasOfficialPSA = !!(formData.psaGrade || formData.psaCert);
     const everAssessed = !!formData.roboGrade;
@@ -15470,25 +15546,84 @@ async function cameraCapture() {
 //
 // NOT chained: a slabbed book (labelDetected) has no interior-cover slots at
 // all, and a single-slot re-shoot stays a single-slot re-shoot.
+// ── CLEANING COMPARE CAPTURE MODE (v5.70, 2026-10-19) ──────────────────────
+// The ten After photos must be shot EXACTLY the way the Before ten were, or the
+// comparison is measuring the photography rather than the cleaning. So this does
+// NOT introduce a tenth camera `kind` with its own labels, guides, orientations
+// and zoom rules to drift out of step with the real ones. It reuses `main`,
+// `corner` and `interiorCover` unchanged — same guides, same macro focus, same
+// orientation gates — and only REDIRECTS WHERE THE RESULT IS STORED.
+//
+// One flag, three small hooks: the chain (main -> corner -> interiorCover), the
+// storage redirect in runCropperSequence(), and the opener below.
+//
+// Index map, which is also the order api/assess_clean_run.js slices:
+//   main 0-3          -> cleanAfterImages 0-3   (front, back, pq, raking)
+//   corner 0-3        -> cleanAfterImages 4-7   (tl, tr, bl, br)
+//   interiorCover 0-1 -> cleanAfterImages 8-9   (interior front, interior back)
+let _cleanCapture = false;
+const CLEAN_CAPTURE_OFFSET = { main: 0, corner: 4, interiorCover: 8 };
+const CLEAN_CAPTURE_COUNT = { main: 4, corner: 4, interiorCover: 2 };
+
+function _cleanSlotIndex(kind, slot) {
+  const off = CLEAN_CAPTURE_OFFSET[kind];
+  return (off == null) ? null : off + slot;
+}
+
+// Which slots of `kind` are still empty in the After set.
+function _cleanEmptySlots(kind) {
+  const arr = formData.cleanAfterImages || [];
+  const off = CLEAN_CAPTURE_OFFSET[kind], cnt = CLEAN_CAPTURE_COUNT[kind];
+  if (off == null) return [];
+  const out = [];
+  for (let i = 0; i < cnt; i++) if (!arr[off + i]) out.push(i);
+  return out;
+}
+
+// Start the ten-photo After capture. One continuous flow — the spec's hard
+// requirement, and the reason the Deep drop-out bug had to be fixed first.
+function startCleanCapture() {
+  if (!formData.id) return;
+  _cleanCapture = true;
+  const arr = [ ...(formData.cleanAfterImages || []) ];
+  while (arr.length < 10) arr.push(null);
+  formData.cleanAfterImages = arr.slice(0, 10);
+  // Enter through the ordinary main walkthrough; _cameraChainNext carries it on.
+  tapSlot(0, "main");
+}
+
+function cancelCleanCapture() { _cleanCapture = false; }
+
 function _cameraChainNext() {
   if (!_cameraState) return false;
   if (_cameraState.mode !== "walkthrough") return false;
-  if (_cameraState.kind !== "corner") return false;
-  if (formData.labelDetected) return false;
-  const cov = formData.interiorCoverImages || [];
-  const nextSlots = [ 0, 1 ].filter(i => !cov[i]);
-  if (!nextSlots.length) return false;
-  (_cameraState.batches = _cameraState.batches || []).push({ kind: "corner", captures: [ ..._cameraState.captures ] });
+
+  // CLEANING COMPARE runs the whole ten in one session: main -> corner ->
+  // interiorCover. Emptiness is judged against cleanAfterImages, not against the
+  // book's own photos, which are all already present.
+  let _k = _cameraState.kind, _nextKind = null, nextSlots = [];
+  if (_cleanCapture) {
+    if (_k === "main") { _nextKind = "corner"; nextSlots = _cleanEmptySlots("corner"); }
+    else if (_k === "corner" && !formData.labelDetected) { _nextKind = "interiorCover"; nextSlots = _cleanEmptySlots("interiorCover"); }
+    if (!_nextKind || !nextSlots.length) return false;
+  } else {
+    if (_k !== "corner") return false;
+    if (formData.labelDetected) return false;
+    const cov = formData.interiorCoverImages || [];
+    _nextKind = "interiorCover";
+    nextSlots = [ 0, 1 ].filter(i => !cov[i]);
+    if (!nextSlots.length) return false;
+  }
+  (_cameraState.batches = _cameraState.batches || []).push({ kind: _k, captures: [ ..._cameraState.captures ] });
   // Keeps the on-screen counter continuous: "5 of 6", not a restart at "1 of 2".
   _cameraState.progressDone = (_cameraState.progressDone || 0) + _cameraState.captures.length;
-  _cameraState.kind = "interiorCover";
+  _cameraState.kind = _nextKind;
   _cameraState.captures = [];
   _cameraState.current = nextSlots[0];
   _cameraState.queue = nextSlots.slice(1);
-  // The interior-cover frame uses the interior chrome, not the corner chrome.
-  document.body.classList.remove("camera-kind-corner", "camera-kind-main", "camera-kind-restoration");
-  document.body.classList.add("camera-kind-interior");
-  console.log("[camera] chaining corner -> interiorCover, slots:", nextSlots);
+  document.body.classList.remove("camera-kind-corner", "camera-kind-main", "camera-kind-restoration", "camera-kind-interior");
+  document.body.classList.add(_nextKind === "corner" ? "camera-kind-corner" : "camera-kind-interior");
+  console.log("[camera] chaining " + _k + " -> " + _nextKind + ", slots:", nextSlots);
   cameraOpenSlot(_cameraState.current);
   return true;
 }
@@ -15512,6 +15647,14 @@ async function cameraFinish() {
   }
   if (_isCardCap) formData._isCard = true;
   for (const b of _batches) await runCropperSequence(b.captures, b.kind);
+  // Clear the Cleaning Compare redirect only AFTER every batch has been
+  // replayed — runCropperSequence reads the flag, so resetting it earlier would
+  // send the last batch into the book's own image lists and overwrite the
+  // Before set, which is the one thing this feature must never do.
+  if (_cleanCapture) {
+    _cleanCapture = false;
+    try { renderForm(); } catch (e) {}
+  }
 }
 
 // S22: yield until the browser has actually laid out and painted. cameraFinish()
@@ -15534,6 +15677,24 @@ async function runCropperSequence(captures, kind) {
       while (r.length < 4) r.push(null);
       r[3] = cap.dataUrl;
       formData.restorationImages = r;
+      formData._imagesChanged = true;
+      continue;
+    }
+    // CLEANING COMPARE: the capture reused main/corner/interiorCover so the
+    // photography is identical to the Before set, which means the ordinary
+    // listKey below would overwrite the BOOK'S OWN photos with the after-cleaning
+    // ones. Before is immutable (decision 2) and that would destroy it. Redirect
+    // into cleanAfterImages at the mapped index and skip the normal path.
+    if (_cleanCapture && CLEAN_CAPTURE_OFFSET[kind] != null) {
+      const _ci = _cleanSlotIndex(kind, cap.slot);
+      const _ca = [ ...(formData.cleanAfterImages || []) ];
+      while (_ca.length < 10) _ca.push(null);
+      _ca[_ci] = cap.dataUrl;
+      formData.cleanAfterImages = _ca;
+      const _cm = [ ...(formData.cleanAfterMeta || []) ];
+      while (_cm.length < 10) _cm.push(null);
+      _cm[_ci] = { source: "camera", capturedAt: (new Date).toISOString() };
+      formData.cleanAfterMeta = _cm;
       formData._imagesChanged = true;
       continue;
     }
