@@ -6329,6 +6329,13 @@ function showDetail(id) {
     const _body = encodeURIComponent("User ID: " + (window._transferCode || "?") + "\n\nDescribe the issue:\n");
     _complainBtn = `<a class="rg-btn rg-btn-action rg-btn-md" href="mailto:support@robograder.app?subject=${_subject}&body=${_body}" onclick="try{var q=(this.href.split('?')[1]||'');var pr=new URLSearchParams(q);if(navigator.clipboard&&navigator.clipboard.writeText){var nl=String.fromCharCode(10);navigator.clipboard.writeText('To: support@robograder.app'+nl+'Subject: '+(pr.get('subject')||'')+nl+nl+(pr.get('body')||''));}alert('Complaint details copied to your clipboard (send to support@robograder.app). If your email app did not open, just paste them into a new message.');}catch(e){}" style="display:flex;align-items:center;justify-content:center;text-decoration:none">Complain</a>`;
   }
+  // EXPORT IMAGES (v5.71). Comics only - Cards is shelved and has no layout, so
+  // there is nothing to decide there and both buttons are simply absent. A
+  // sample book is excluded too: these images carry an RG-ID and read as a real
+  // assessment, which a demo entry is not.
+  if (selected.roboGrade && selected.type !== "card" && !isSample) {
+    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n      <button class="rg-btn rg-btn-action rg-btn-md" id="export-summary-btn" onclick="exportSummaryImage('${esc(selected.id)}')">Summary</button>\n      <button class="rg-btn rg-btn-action rg-btn-md" id="export-defects-btn" onclick="exportDefectListImage('${esc(selected.id)}')">Defect List</button>\n    </div>`;
+  }
   html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    ${_giveBtn}\n    ${_complainBtn}\n  </div>\n  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    <button class="rg-btn rg-btn-destructive rg-btn-md" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')" style="grid-column:1 / span 2;justify-self:center;width:calc(50% - 5px)">Delete</button>\n  </div></div>`;
   document.getElementById("main").innerHTML = html;
   window.scrollTo(0, 0);
@@ -7011,7 +7018,25 @@ async function saveLightboxImage() {
     let ext = "jpg";
     if (blob.type === "image/png") ext = "png"; else if (blob.type === "image/webp") ext = "webp"; else if (blob.type === "image/gif") ext = "gif";
     const stamp = (new Date).toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    const filename = `robograder-${stamp}.${ext}`;
+    await _saveImageBlob(blob, `robograder-${stamp}.${ext}`);
+  } catch (e) {
+    console.warn("Save image failed:", e);
+    try {
+      window.open(img.src, "_blank", "noopener");
+    } catch (openErr) {
+      alert("Unable to save image. Try long-pressing the image to save it manually.");
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// EXTRACTED FROM saveLightboxImage (v5.71) so the export images reuse it rather
+// than growing a second save path. This is the one that is verified on hardware
+// - it is what fixed Android's silent save failure in 1.13 - and a second
+// implementation would drift from it. Behaviour is unchanged; only the blob now
+// comes from either a fetched photo or a rendered canvas.
+async function _saveImageBlob(blob, filename) {
     const file = new File([ blob ], filename, {
       type: blob.type
     });
@@ -7071,17 +7096,461 @@ async function saveLightboxImage() {
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  } catch (e) {
-    console.warn("Save image failed:", e);
-    try {
-      window.open(img.src, "_blank", "noopener");
-    } catch (openErr) {
-      alert("Unable to save image. Try long-pressing the image to save it manually.");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EXPORT IMAGES — Summary and Defect List        (spec: SUMMARY_IMAGE_SPEC v2)
+//
+// Two shareable 1080x1920 JPEGs rendered on an OFFSCREEN CANVAS. Not a DOM
+// screenshot: a DOM capture inherits the detail view's scroll position, its
+// chrome and whatever is half-loaded.
+//
+// Matt wanted both rather than a choice between them - "two different versions
+// of the same idea, and I'm not sure which will be more useful to sellers".
+// SUMMARY shows the book (covers + grade, no defect detail). DEFECT LIST shows
+// the condition in full (every defect, no covers). Same header, same footer,
+// same save path; they differ only in the body.
+//
+// FIXED BANDS, NO REFLOW. Long titles shrink to fit their band and then
+// ellipsise; nothing ever pushes anything else down. The defect list is the one
+// variable-height element and the app caps a list at 13, so the worst case is
+// known and sized for.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const EXPORT_W = 1080, EXPORT_H = 1920;
+const EXPORT_MAX_DEFECTS = 13;          // the app's own cap; the band is sized for it
+
+const EXC = {
+  bg:      "#16140f",
+  panel:   "#1e1b15",
+  rule:    "#3a3528",
+  text:    "#efe9d2",
+  muted:   "#9a9a8a",
+  dim:     "#6f6a58",
+  gold:    "#c8b06a",
+  green:   "#6abf6a",
+  rgBox:   "#152410", rgNum: "#8f9c7a", rgEdge: "#3f5a35",
+  cgcBox:  "#3d618f", cgcNum: "#e8f0fa", cgcEdge: "#5a7fae"
+};
+
+const EX_SANS = "-apple-system, 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif";
+const EX_NUM  = "'League Spartan', " + EX_SANS;   // already loaded by the app's CSS
+
+// Shrink-then-ellipsise. Returns the string actually drawn. The caller has
+// already set everything about the font except its size.
+function _exFit(ctx, text, maxW, startPx, minPx, weight, family) {
+  const f = family || EX_SANS, w = weight || "700";
+  let px = startPx;
+  const set = p => { ctx.font = `${w} ${p}px ${f}`; };
+  set(px);
+  while (ctx.measureText(text).width > maxW && px > minPx) { px -= 2; set(px); }
+  if (ctx.measureText(text).width <= maxW) return text;
+  let s = text;
+  while (s.length > 1 && ctx.measureText(s + "…").width > maxW) s = s.slice(0, -1);
+  return s + "…";
+}
+
+function _exRoundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// THE TAINTED-CANVAS TRAP, and the single most likely way this feature breaks.
+// Drawing a remote image and then calling toBlob() throws SecurityError unless
+// the image was loaded with crossOrigin="anonymous" AND the host sends CORS
+// headers. Firebase Storage's CORS config is already correct - the cropper
+// proves it. But the detail view and the lightbox load these same URLs WITHOUT
+// crossOrigin, so the browser keeps two separate cached copies, and crossOrigin
+// set AFTER src silently does nothing. Hence: fresh Image, flag first, src last.
+// The cost is one extra fetch of the two covers. That is the price of a clean
+// canvas and it is worth paying.
+function _exLoadImage(url) {
+  return new Promise(resolve => {
+    if (!url) return resolve(null);
+    const im = new Image();
+    im.crossOrigin = "anonymous";
+    im.onload = () => resolve(im);
+    im.onerror = () => resolve(null);
+    im.src = url;
+  });
+}
+
+// Draw `im` CONTAINED in the box (never cropped, never stretched) on a neutral
+// ground, so a tall Golden Age book and a squarer modern one both sit correctly.
+function _exDrawContained(ctx, im, x, y, w, h) {
+  ctx.fillStyle = "#0f0e0a";
+  _exRoundRect(ctx, x, y, w, h, 10); ctx.fill();
+  if (!im) return;
+  const s = Math.min(w / im.naturalWidth, h / im.naturalHeight);
+  const dw = im.naturalWidth * s, dh = im.naturalHeight * s;
+  ctx.save();
+  _exRoundRect(ctx, x, y, w, h, 10); ctx.clip();
+  ctx.drawImage(im, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+  ctx.restore();
+  ctx.strokeStyle = EXC.rule; ctx.lineWidth = 2;
+  _exRoundRect(ctx, x, y, w, h, 10); ctx.stroke();
+}
+
+// ── The data both images read ──────────────────────────────────────────────
+// RoboGrade and subscores come from RoboScoreV3.forComic - the v3 half-point
+// display and ITS subscores, never the raw v1 0-100 roboGrade object. The share
+// text had exactly that bug and it was fixed in 5.62; this does not reintroduce
+// it.
+function _exFacts(item) {
+  const rg = item.roboGrade || {};
+  const v3 = (window.RoboScoreV3 && item.type !== "card") ? window.RoboScoreV3.forComic(item) : null;
+  const predicted = item.grade != null ? item.grade
+                  : (item.predictedGrade != null ? item.predictedGrade : (rg.predictedGrade != null ? rg.predictedGrade : null));
+  let fmv = null;
+  try {
+    if (typeof window.matchFMV === "function" && predicted != null) {
+      fmv = window.matchFMV(item.title, item.issue, predicted, item.printing,
+                            (typeof extractYearFromIssueDate === "function") ? extractYearFromIssueDate(item.issueDate) : null);
     }
-  } finally {
-    if (btn) btn.disabled = false;
+  } catch (e) { fmv = null; }
+  // A null or suppressed match drops the FMV line ENTIRELY. Blank beats a wrong
+  // number, which is already the rule everywhere else.
+  const fmvStr = (fmv && !fmv.suppressed && typeof formatFMVCompact === "function") ? formatFMVCompact(fmv) : "";
+  return {
+    v3: v3,
+    rgGrade: v3 ? ((window.RoboScoreV3 && window.RoboScoreV3.formatGrade) ? window.RoboScoreV3.formatGrade(v3.grade) : String(v3.grade)) : null,
+    sub: v3 ? v3.subscores : null,
+    predicted: predicted == null ? null : String(predicted),
+    atCeiling: !!item.gradeAtCeiling,
+    pageQuality: item.pageQuality || rg.pageQuality || "",
+    fmv: fmvStr,
+    defects: Array.isArray(rg.defects) ? rg.defects : [],
+    rgid: (item.roboGradeId || item.id || "").toString().slice(-6).toUpperCase()
+  };
+}
+
+// ── Shared bands ───────────────────────────────────────────────────────────
+function _exHeader(ctx, item) {
+  const M = 60, maxW = EXPORT_W - M * 2;
+  ctx.textBaseline = "alphabetic";
+  ctx.textAlign = "left";
+
+  const title = String(item.title || "Untitled");
+  ctx.fillStyle = EXC.text;
+  const t = _exFit(ctx, title, maxW, 78, 40, "800");
+  ctx.fillText(t, M, 128);
+
+  const issue = item.issue ? "#" + item.issue : "";
+  if (issue) {
+    ctx.fillStyle = EXC.gold;
+    ctx.font = `800 62px ${EX_SANS}`;
+    ctx.fillText(_exFit(ctx, issue, maxW, 62, 34, "800"), M, 204);
+  }
+
+  // The printing line is omitted when the printing is base - an empty label
+  // reads as missing data rather than as "nothing unusual here".
+  const bits = [item.issueDate || "", item.publisher || "", item.printing || ""].filter(Boolean);
+  if (bits.length) {
+    ctx.fillStyle = EXC.muted;
+    ctx.fillText(_exFit(ctx, bits.join("  ·  "), maxW, 34, 20, "600"), M, issue ? 262 : 196);
+  }
+
+  ctx.strokeStyle = EXC.rule; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(M, 310); ctx.lineTo(EXPORT_W - M, 310); ctx.stroke();
+}
+
+function _exFooter(ctx, rgid) {
+  const M = 60;
+  ctx.strokeStyle = EXC.rule; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(M, 1858); ctx.lineTo(EXPORT_W - M, 1858); ctx.stroke();
+  ctx.fillStyle = EXC.green;
+  ctx.font = `800 30px ${EX_SANS}`;
+  ctx.textAlign = "left";
+  ctx.fillText("robograder.app", M, 1902);
+  if (rgid) {
+    // The RG-ID is what makes the image traceable back to a real assessment,
+    // and it is already the public share key.
+    ctx.fillStyle = EXC.dim;
+    ctx.textAlign = "right";
+    ctx.fillText("ID " + rgid, EXPORT_W - M, 1902);
+    ctx.textAlign = "left";
   }
 }
+
+function _exBase() {
+  const c = document.createElement("canvas");
+  c.width = EXPORT_W; c.height = EXPORT_H;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = EXC.bg;
+  ctx.fillRect(0, 0, EXPORT_W, EXPORT_H);
+  return { c, ctx };
+}
+
+// A score box, drawn rather than reusing RoboScoreV3.scoreBox() - that returns
+// HTML and there is no HTML on a canvas. Colours match the ones on screen.
+function _exScoreBox(ctx, x, y, w, h, label, value, box, edge, num, suffix) {
+  ctx.fillStyle = box;
+  _exRoundRect(ctx, x, y, w, h, 20); ctx.fill();
+  ctx.strokeStyle = edge; ctx.lineWidth = 3;
+  _exRoundRect(ctx, x, y, w, h, 20); ctx.stroke();
+  ctx.textAlign = "center";
+  ctx.fillStyle = num;
+  const shown = (value == null || value === "") ? "—" : String(value);
+  ctx.font = `900 ${shown.length > 3 ? 150 : 190}px ${EX_NUM}`;
+  ctx.fillText(shown, x + w / 2, y + h * 0.70);
+  if (suffix) {
+    // Sits to the upper right of the number like a superscript. It used to be
+    // drawn BELOW the number, where it landed on top of the box's own label.
+    ctx.textAlign = "right";
+    ctx.font = `700 44px ${EX_SANS}`;
+    ctx.fillText(suffix, x + w - 22, y + h * 0.70 - 96);
+    ctx.textAlign = "center";
+  }
+  ctx.fillStyle = num;
+  ctx.globalAlpha = 0.75;
+  ctx.font = `800 30px ${EX_SANS}`;
+  ctx.fillText(label, x + w / 2, y + h - 30);
+  ctx.globalAlpha = 1;
+  ctx.textAlign = "left";
+}
+
+// ── SUMMARY ────────────────────────────────────────────────────────────────
+async function _exRenderSummary(item) {
+  const f = _exFacts(item);
+  const { c, ctx } = _exBase();
+  const M = 60;
+
+  const [front, back] = await Promise.all([
+    _exLoadImage(_imgUrlOf((item.images || [])[0])),
+    _exLoadImage(_imgUrlOf((item.images || [])[1]))
+  ]);
+
+  _exHeader(ctx, item);
+
+  // Covers band, 330-1180. With no back cover the front takes the full width at
+  // the same height rather than leaving a grey hole beside it.
+  const bandY = 350, bandH = 820;
+  if (back) {
+    _exDrawContained(ctx, front, M, bandY, 460, bandH);
+    _exDrawContained(ctx, back, EXPORT_W - M - 460, bandY, 460, bandH);
+  } else {
+    _exDrawContained(ctx, front, M, bandY, EXPORT_W - M * 2, bandH);
+  }
+
+  // Grades band, 1180-1500.
+  const gy = 1200, gh = 290, gw = 460;
+  _exScoreBox(ctx, M, gy, gw, gh, "ROBOGRADE", f.rgGrade, EXC.rgBox, EXC.rgEdge, EXC.rgNum, "");
+  _exScoreBox(ctx, EXPORT_W - M - gw, gy, gw, gh, "PREDICTED GRADE", f.predicted,
+              EXC.cgcBox, EXC.cgcEdge, EXC.cgcNum, f.atCeiling ? "(+)" : "");
+
+  // Subscores band, 1500-1700.
+  if (f.sub) {
+    const cols = [
+      ["FRONT", f.sub.front], ["BACK", f.sub.back],
+      ["SPINE", f.sub.spine], ["INTERIOR", f.sub.interior]
+    ];
+    const cw = (EXPORT_W - M * 2) / 4;
+    cols.forEach(([lbl, val], i) => {
+      const cx = M + cw * i + cw / 2;
+      ctx.textAlign = "center";
+      ctx.fillStyle = EXC.text;
+      ctx.font = `900 76px ${EX_NUM}`;
+      ctx.fillText(val == null ? "—" : String(val), cx, 1620);
+      ctx.fillStyle = EXC.dim;
+      ctx.font = `800 26px ${EX_SANS}`;
+      ctx.fillText(lbl, cx, 1668);
+    });
+    ctx.textAlign = "left";
+  }
+
+  // Facts band, 1700-1860.
+  _exFactsBand(ctx, 1740, [["PAGE QUALITY", f.pageQuality], ["FAIR MARKET VALUE", f.fmv]]);
+
+  _exFooter(ctx, f.rgid);
+  return c;
+}
+
+// Two columns, each dropped entirely when its value is empty.
+function _exFactsBand(ctx, y, pairs) {
+  const M = 60;
+  const live = pairs.filter(p => p[1]);
+  if (!live.length) return;
+  const cw = (EXPORT_W - M * 2) / live.length;
+  live.forEach(([lbl, val], i) => {
+    const cx = M + cw * i + cw / 2;
+    ctx.textAlign = "center";
+    ctx.fillStyle = EXC.dim;
+    ctx.font = `800 26px ${EX_SANS}`;
+    ctx.fillText(lbl, cx, y);
+    ctx.fillStyle = EXC.gold;
+    ctx.fillText(_exFit(ctx, String(val), cw - 30, 52, 26, "800"), cx, y + 58);
+  });
+  ctx.textAlign = "left";
+}
+
+// ── DEFECT LIST ────────────────────────────────────────────────────────────
+// The grade sits AFTER the list here, not before it: the list is the argument
+// and the grade is the conclusion.
+async function _exRenderDefects(item) {
+  const f = _exFacts(item);
+  const { c, ctx } = _exBase();
+  const M = 60;
+
+  _exHeader(ctx, item);
+
+  const pqWhite = /^white$/i.test(String(f.pageQuality || "").trim());
+  const rows = f.defects
+    .filter(d => !(/^page\s*quality$/i.test(String(d.type || "")) && pqWhite))
+    .slice(0, EXPORT_MAX_DEFECTS)
+    .map(d => {
+      let t = d.type || "Defect";
+      if (d.location && d.location !== "N/A") t += " — " + d.location;
+      if (d.measurement) t += " (" + d.measurement + ")";
+      if (d.colorBreaking) t += "  ◆ colour-breaking";
+      return { t: t, sev: d.severity || "" };
+    });
+
+  ctx.fillStyle = EXC.dim;
+  ctx.font = `800 28px ${EX_SANS}`;
+  ctx.fillText("DEFECTS", M, 378);
+
+  if (!rows.length) {
+    // An empty list is a real and good result, not an error.
+    ctx.fillStyle = EXC.green;
+    ctx.font = `800 48px ${EX_SANS}`;
+    ctx.fillText("No defects noted.", M, 480);
+  } else {
+    // The band is sized for the app's cap of 13. A SHORT list grows its rows to
+    // fill it rather than top-aligning and leaving several hundred pixels of
+    // void above the grade, which is what it did first and it looked broken.
+    const bandTop = 420, avail = 1480 - bandTop;
+    const rh = Math.max(70, Math.min(132, Math.floor(avail / rows.length)));
+    // TOP-ALIGNED, deliberately. Centring a short list was tried and is worse:
+    // two defects floated in the middle of the page with void above AND below,
+    // which reads as a rendering fault. Top-aligned, the gap sits between the
+    // list and the conclusion, which just reads as the list having ended.
+    const top = bandTop;
+
+    // ONE type size for the whole list, chosen so the LONGEST row fits. Sizing
+    // each row independently gave a list where one defect was 20px and its
+    // neighbour 34px, which reads as a mistake rather than as emphasis.
+    let bodyPx = 34;
+    const overflowAt = () => {
+      let maxOver = 0;
+      rows.forEach(r => {
+        const sev = String(r.sev || "").toUpperCase();
+        const chip = sev === "MEDIUM" ? "MED" : sev;
+        let room = EXPORT_W - M * 2 - 48;
+        if (chip) {
+          ctx.font = `900 24px ${EX_SANS}`;
+          room = EXPORT_W - M - (M + 18 + ctx.measureText(chip).width + 32 + 20) - 24;
+        }
+        ctx.font = `600 ${bodyPx}px ${EX_SANS}`;
+        maxOver = Math.max(maxOver, ctx.measureText(r.t).width - room);
+      });
+      return maxOver;
+    };
+    while (bodyPx > 20 && overflowAt() > 0) bodyPx -= 1;
+
+    rows.forEach((r, i) => {
+      const y = top + rh * i;
+      ctx.fillStyle = EXC.panel;
+      _exRoundRect(ctx, M, y, EXPORT_W - M * 2, rh - 10, 10); ctx.fill();
+
+      const sev = String(r.sev || "").toUpperCase();
+      const chip = sev === "MEDIUM" ? "MED" : sev;
+      let textX = M + 24, textW = EXPORT_W - M * 2 - 48;
+      if (chip) {
+        const col = _lbSevColor(sev);
+        ctx.font = `900 24px ${EX_SANS}`;
+        const cwid = ctx.measureText(chip).width + 32;
+        ctx.fillStyle = col;
+        ctx.globalAlpha = 0.18;
+        _exRoundRect(ctx, M + 18, y + (rh - 10) / 2 - 20, cwid, 40, 8); ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = col;
+        ctx.textAlign = "center";
+        ctx.fillText(chip, M + 18 + cwid / 2, y + (rh - 10) / 2 + 9);
+        ctx.textAlign = "left";
+        textX = M + 18 + cwid + 20;
+        textW = EXPORT_W - M - textX - 24;
+      }
+      ctx.fillStyle = EXC.text;
+      ctx.fillText(_exFit(ctx, r.t, textW, bodyPx, 20, "600"), textX, y + (rh - 10) / 2 + Math.round(bodyPx / 3));
+    });
+
+    if (f.defects.length > rows.length) {
+      ctx.fillStyle = EXC.dim;
+      ctx.font = `600 26px ${EX_SANS}`;
+      ctx.fillText("+ " + (f.defects.length - rows.length) + " more", M, 1512);
+    }
+  }
+
+  // Facts band, 1560-1860: the conclusion.
+  ctx.strokeStyle = EXC.rule; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(M, 1540); ctx.lineTo(EXPORT_W - M, 1540); ctx.stroke();
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = EXC.dim;
+  ctx.font = `800 28px ${EX_SANS}`;
+  ctx.fillText("PREDICTED GRADE", EXPORT_W / 2, 1596);
+  ctx.fillStyle = EXC.cgcNum;
+  ctx.font = `900 120px ${EX_NUM}`;
+  ctx.fillText((f.predicted == null ? "—" : f.predicted) + (f.atCeiling ? " (+)" : ""), EXPORT_W / 2, 1700);
+  ctx.textAlign = "left";
+
+  // Was 1808, which drew its VALUES at 1866 - below the footer rule at 1858 and
+  // straight through "robograder.app".
+  _exFactsBand(ctx, 1762, [["PAGE QUALITY", f.pageQuality], ["FAIR MARKET VALUE", f.fmv]]);
+
+  _exFooter(ctx, f.rgid);
+  return c;
+}
+
+// Stored images are either a string URL or {url}. Both shapes exist in the wild.
+function _imgUrlOf(x) { return (x && (x.url || (typeof x === "string" ? x : null))) || null; }
+
+// ── The two button handlers ────────────────────────────────────────────────
+async function _exRun(btnId, item, renderer, slug) {
+  const btn = document.getElementById(btnId);
+  const label = btn ? btn.textContent : "";
+  if (btn) { btn.disabled = true; btn.textContent = "Rendering…"; }
+  try {
+    // The fonts are already loaded by the app's CSS - this waits for that, it
+    // does NOT fetch a webfont. A face that has not finished loading when
+    // fillText runs falls back silently and the image ships in the wrong
+    // typeface with no error anywhere.
+    if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) {} }
+    const canvas = await renderer(item);
+    const blob = await new Promise((res, rej) => {
+      try { canvas.toBlob(b => b ? res(b) : rej(new Error("toBlob returned null")), "image/jpeg", 0.92); }
+      catch (e) { rej(e); }
+    });
+    const stamp = (new Date).toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    await _saveImageBlob(blob, `robograder-${slug}-${stamp}.jpg`);
+  } catch (e) {
+    console.warn("[export] render failed:", e);
+    const taint = String((e && e.name) || "") === "SecurityError";
+    alert(taint
+      ? "Couldn't build the image because one of the cover photos wouldn't load for export. Please try again in a moment."
+      : "Couldn't build the image. Please try again.");
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+  }
+}
+
+function _exItem(id) {
+  return (items || []).find(c => c.id === id) || selected || null;
+}
+function exportSummaryImage(id) {
+  const item = _exItem(id);
+  if (item) _exRun("export-summary-btn", item, _exRenderSummary, "summary");
+}
+function exportDefectListImage(id) {
+  const item = _exItem(id);
+  if (item) _exRun("export-defects-btn", item, _exRenderDefects, "defects");
+}
+
 
 const EMPTY = {
   type: "comic",
