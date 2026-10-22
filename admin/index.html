@@ -2677,17 +2677,6 @@ const RGV2 = (function () {
   // Display formatting: integers show bare ("9","10"); halves keep one decimal
   // ("9.5","8.5"). Same on EVERY surface (screens + labels) — no ".0".
   function formatGrade(g){ g = Number(g); return (g % 1 === 0) ? String(g) : g.toFixed(1); }
-  // PG IS NOT RG. RoboGrade (above) is the 0-10 half-point score and drops a
-  // trailing .0 on purpose. The PREDICTED GRADE is a CGC/PSA ladder position and
-  // those are always written with one decimal - 7.0, 9.0, 10.0 - which is how the
-  // app renders them. The admin Item views were printing the stored value raw, so
-  // a whole number came out "7" and disagreed with the app for the same book.
-  // Non-numeric values (blank, '-', a label) pass through untouched.
-  function _pgCell(v){
-    if (v == null || v === '') return '\u2014';
-    const n = Number(v);
-    return Number.isFinite(n) ? n.toFixed(1) : String(v);
-  }
   function gradeParts(g){ g = Number(g); var w = Math.trunc(g); return { whole: String(w), frac: (g % 1 === 0) ? "" : ("." + Math.round((g - w) * 10)) }; }
 
   // ---- Shared score-box renderer (identical look on every surface) ----------
@@ -4534,6 +4523,24 @@ async function confirmState() {
 }
 
 // ── Utility ────────────────────────────────────────────────────────────────
+// PG IS NOT RG. RoboGrade is the 0-10 half-point score and drops a trailing .0
+// on purpose. The PREDICTED GRADE is a CGC/PSA ladder position, always written
+// with one decimal - 7.0, 9.0, 10.0 - which is how the app renders it. The admin
+// Item views printed the stored value raw, so a whole number came out "7" and
+// disagreed with the app for the same book.
+//
+// v5.81 FIX: this was first declared INSIDE the RoboScoreV3 IIFE, next to
+// formatGrade. The three call sites are top-level render functions outside that
+// closure, so every one of them threw "Can't find variable: _pgCell" and the
+// Items list failed to render at all. A function declaration here hoists across
+// the whole script, so it is visible everywhere regardless of source order.
+// Non-numeric values (blank, a dash, a label) pass through untouched.
+function _pgCell(v) {
+  if (v == null || v === '') return '\u2014';
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toFixed(1) : String(v);
+}
+
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
