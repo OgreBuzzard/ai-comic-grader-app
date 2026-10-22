@@ -14931,23 +14931,41 @@ async function handleInteriorImages(e) {
     _openAssignOverlay(newImgs, { slotN: _slotN, labels: fullSlotsFor(formData).map(s => s.label), current: cur, startSlot: _start, commit: _assignCommitInterior, title: "Place your Full photos" });
     return;
   }
+  // v5.80 BUGFIX — THE WBN 32 CASE. This loop used to compute
+  //     const slot = (_tappedInteriorSlot + n) % _slotN;
+  // which mixes two different numbering systems. _tappedInteriorSlot is a
+  // STORAGE index into the fixed 6-long interiorImages array (FULL_SLOTS order:
+  // 0 exterior_top_staple, 1 exterior_bottom_staple, 2 top_pages, 3 bottom_pages,
+  // 4 outer_edge, 5 interior_staple). _slotN is how many slots THIS BINDING asks
+  // for, which is 3 on a glue-bound book and 5 on a square-bound one. Taking a
+  // storage index modulo the required COUNT produces a number that means nothing.
+  //
+  // On a 3-slot book it is actively destructive. Tapping Outer Edge (storage 4)
+  // gives 4 % 3 = 1, writing the photo into exterior_bottom_staple — a slot that
+  // binding dropped, so it is not rendered and the user never sees it land.
+  // Tapping Bottom Pages (storage 3) gives 3 % 3 = 0, the other dropped staple
+  // slot. Only Top Pages (2 % 3 = 2) happened to be correct. submitFullAssessment
+  // then reads the REQUIRED indices [2,4,3], finds them empty, and the photos the
+  // user actually took are silently discarded — which is how a Full ran on three
+  // staple close-ups sitting in the page/edge slots.
+  //
+  // The multi-image path never had this bug: _assignCommitInterior maps overlay
+  // position -> storage index through fullRequiredIdx(). This now does the same.
+  // Walk REQUIRED POSITIONS, not raw storage indices, and translate at the end.
+  const _reqI = fullRequiredIdx(formData);
   const imgs = [ ...formData.interiorImages || [] ];
-  while (imgs.length < _slotN) imgs.push(null);
-  const count = Math.min(newImgs.length, _slotN);
+  while (imgs.length < FULL_SLOT_COUNT) imgs.push(null);
+  imgs.length = FULL_SLOT_COUNT;
+  // Where the tapped slot sits among the REQUIRED ones. -1 (a slot this binding
+  // does not use) falls back to the first required position.
+  const _startPos = Math.max(0, _reqI.indexOf(_tappedInteriorSlot));
+  const count = Math.min(newImgs.length, _reqI.length);
   for (let n = 0; n < count; n++) {
-    const slot = (_tappedInteriorSlot + n) % _slotN;
-    if (imgs[slot]) {
-      let next = slot;
-      let probed = 0;
-      while (imgs[next] && probed < _slotN) {
-        next = (next + 1) % _slotN;
-        probed++;
-      }
-      if (probed >= _slotN) break;
-      imgs[next] = newImgs[n];
-    } else {
-      imgs[slot] = newImgs[n];
-    }
+    let pos = (_startPos + n) % _reqI.length;
+    let probed = 0;
+    while (imgs[_reqI[pos]] && probed < _reqI.length) { pos = (pos + 1) % _reqI.length; probed++; }
+    if (probed >= _reqI.length) break;   // every required slot is full
+    imgs[_reqI[pos]] = newImgs[n];
   }
   formData.interiorImages = imgs;
   formData._imagesChanged = true;

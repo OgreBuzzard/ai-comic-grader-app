@@ -3072,6 +3072,46 @@ function renderItemDetail(it) {
         <p>${escapeHtml(it.fullAssessment)}</p>
       </div>` : ''}
 
+    <!-- v5.80: fullAssessmentNotes is the Full pass's internal summary. It is
+         shown ONLY when the user-facing fullAssessment is empty, because on a
+         normal pass the two say the same thing and two near-identical
+         paragraphs is noise. When the write-up is missing — which is what sent
+         us looking — this is the only prose the pass produced, and a blank
+         panel under a three-star book tells you nothing. -->
+    ${(!it.fullAssessment && it.fullAssessmentNotes) ? `
+      <div class="notes-block" style="border-left:3px solid #8a7a3a;">
+        <h4>Full Assessment <span style="color:#c8b878;font-weight:600;">— internal notes (no user-facing write-up was returned)</span></h4>
+        <p>${escapeHtml(it.fullAssessmentNotes)}</p>
+      </div>` : ''}
+
+    <!-- Why a Deep or Full moved the number. The app has always shown this to
+         the user; the admin, which is where grade movement actually gets
+         audited, did not. -->
+    ${it.gradeRevisionReason ? `
+      <div class="notes-block" style="border-left:3px solid #c8962a;">
+        <h4>Grade Revision</h4>
+        <p>${escapeHtml(it.gradeRevisionReason)}</p>
+      </div>` : ''}
+
+    <!-- Cleaning Compare. Stored on the item since the feature shipped and never
+         surfaced server-side, so a paid comparison could not be reviewed here at
+         all. counts/resolved/introduced are the before-vs-after defect movement;
+         writeUp is the prose the user is shown. -->
+    ${it.cleanComparison ? `
+      <div class="notes-block" style="border-left:3px solid #4a9ac8;">
+        <h4>Cleaning Compare${it.cleanComparison.runNumber ? ` — run ${escapeHtml(String(it.cleanComparison.runNumber))}` : ''}${it.cleanComparison.gradeDelta != null ? ` · grade ${it.cleanComparison.gradeDelta > 0 ? '+' : ''}${escapeHtml(String(it.cleanComparison.gradeDelta))}` : ''}${it.cleanComparison.restorationAppeared ? ' <span style="color:#e0a0a0;">· restoration appeared after cleaning</span>' : ''}</h4>
+        ${it.cleanComparison.writeUp ? `<p>${escapeHtml(it.cleanComparison.writeUp)}</p>` : ''}
+        ${(() => {
+          const c = it.cleanComparison;
+          const bits = [];
+          if (Array.isArray(c.resolved) && c.resolved.length) bits.push(`${c.resolved.length} resolved`);
+          if (Array.isArray(c.survived) && c.survived.length) bits.push(`${c.survived.length} survived`);
+          if (Array.isArray(c.introduced) && c.introduced.length) bits.push(`${c.introduced.length} introduced`);
+          if (c.pageQualityMove) bits.push('PQ ' + escapeHtml(String(c.pageQualityMove)));
+          return bits.length ? `<div style="font-size:11px;color:#8a8d96;margin-top:6px">${bits.join(' \u00b7 ')}</div>` : '';
+        })()}
+      </div>` : ''}
+
     ${it.insertFinding ? `
       <div class="notes-block" style="border-left:3px solid #c8962a;">
         <h4>Mark Jewelers Insert — ${it.insertFinding.present ? 'PRESENT' : 'NOT PRESENT'}${it.insertFinding.sameBook === false ? ' <span style="color:#d4a642;">(book unconfirmed)</span>' : ''}</h4>
@@ -3188,7 +3228,7 @@ function renderItemDetail(it) {
       // userDefectImages ("Add a defect photo Robograder missed").
       const clsByName = { 'Interior Covers': 'spread', 'Signature': 'sig' };
       const esc = escapeAttr;
-      let out = [['Interior Covers', it.interiorCoverImages], ['Signature', it.signatureImages], ['Coupon', it.couponImages], ['Insert', it.insertImages], ['User Defect Photos', it.userDefectImages]]
+      let out = [['Interior Covers', it.interiorCoverImages], ['Signature', it.signatureImages], ['Coupon', it.couponImages], ['Insert', it.insertImages], ['User Defect Photos', it.userDefectImages], ['Cleaning \u2014 Before', it.cleanBeforeImages], ['Cleaning \u2014 After', it.cleanAfterImages]]
         .filter(([_, a]) => a && a.length)
         .map(([name, arr]) => `
         <h3 class="section-h" style="margin-top:20px;">${name} (${arr.length})</h3>

@@ -172,22 +172,40 @@ export default async function handler(req, res) {
         .map(e => (typeof e === 'string' ? e : (e && e.url) || null))
         .filter(Boolean);
     };
-    const images = normImages(raw.images);
-    const cornerImages = normImages(raw.cornerImages);
-    // S20: Full/Restoration/Signature image sets — were fetched but never
-    // returned, so they never rendered in the admin detail view.
-    const interiorImages = normImages(raw.interiorImages);
-    const interiorCoverImages = normImages(raw.interiorCoverImages); // S20 (#36): Deep interior covers
-    const restorationImages = normImages(raw.restorationImages);
-    const signatureImages = normImages(raw.signatureImages);
-    // S23: Coupon / Insert / "missed" (user defect) sets. These were stored by
-    // the app and rendered on the PUBLIC listing, but this endpoint never
-    // returned them, so admin's detail view had nothing to draw — including the
-    // 'User Defect Photos' section, which had been referencing it.userDefectImages
-    // against a field that was never sent. Same failure mode as the S20 note above.
-    const couponImages = normImages(raw.couponImages);
-    const insertImages = normImages(raw.insertImages);
-    const userDefectImages = normImages(raw.userDefectImages);
+    // v5.81: READ IMAGE ARRAYS FROM `flat`, NOT `raw`. This is the whole bug.
+    //
+    // nestForFirestore() in the app splits a saved item in two: anything named
+    // in COMIC_DATA_FIELDS goes INSIDE comicData, everything else stays at the
+    // top level. `images` and `cornerImages` are explicitly excluded from that
+    // split and so sit at the top; interiorImages, interiorCoverImages,
+    // restorationImages and signatureImages are simply absent from the list and
+    // also sit at the top. Those six read fine from raw, which is why they have
+    // always rendered.
+    //
+    // couponImages, insertImages and userDefectImages ARE in COMIC_DATA_FIELDS.
+    // They are written to comicData.couponImages, so raw.couponImages is
+    // undefined and normImages() returned [] every time. S23 added the admin
+    // rendering for Coupon and Insert and it has never drawn anything, because
+    // the data was being read from the wrong half of the document. Matt spotted
+    // the coupon case and correctly predicted inserts were missing too; user
+    // defect photos were the third.
+    //
+    // `flat` is {...raw, ...comicData, ...cardData}, so it finds a field
+    // wherever it lives and keeps working if a field ever moves between the two
+    // halves. Every array below now reads from it.
+    const images = normImages(flat.images);
+    const cornerImages = normImages(flat.cornerImages);
+    const interiorImages = normImages(flat.interiorImages);
+    const interiorCoverImages = normImages(flat.interiorCoverImages); // S20 (#36): Deep interior covers
+    const restorationImages = normImages(flat.restorationImages);
+    const signatureImages = normImages(flat.signatureImages);
+    const couponImages = normImages(flat.couponImages);
+    const insertImages = normImages(flat.insertImages);
+    const userDefectImages = normImages(flat.userDefectImages);
+    // Cleaning Compare before/after sets live in comicData too, and have never
+    // been returned at all.
+    const cleanBeforeImages = normImages(flat.cleanBeforeImages);
+    const cleanAfterImages = normImages(flat.cleanAfterImages);
 
     // S20: assessing user's contact info for the detail view (name / email /
     // 4-char transferCode used as the short User ID + tap-to-email).
@@ -254,6 +272,24 @@ export default async function handler(req, res) {
       // S20 (#53): assessment write-up split by level.
       deepAssessment: flat.deepAssessment || '',
       fullAssessment: flat.fullAssessment || '',
+      // v5.80: three write-ups the app has always stored and the admin has never
+      // shown. Found while chasing a Werewolf by Night 32 whose Full write-up
+      // looked like a display bug — it was genuinely empty, but checking turned
+      // these up alongside it.
+      //   fullAssessmentNotes  the Full pass's internal summary. It is written
+      //                        whenever the Full runs, and on a pass where the
+      //                        model returns no fullAssessment it is the ONLY
+      //                        prose evidence that the pass found anything.
+      //   gradeRevisionReason  why a Deep or Full moved the number. The app
+      //                        shows this; the admin, where you are actually
+      //                        auditing grade movement, did not.
+      //   cleanComparison      the whole Cleaning Compare result, write-up
+      //                        included. Users pay for this and it was
+      //                        invisible server-side.
+      fullAssessmentNotes: flat.fullAssessmentNotes || '',
+      gradeRevisionReason: flat.gradeRevisionReason || '',
+      cleanComparison: flat.cleanComparison || null,
+      cleanRuns: flat.cleanRuns ?? null,
       psaNotes: flat.psaNotes || rg.psaNotes || '',
       labelNotes: flat.labelNotes || '',
       keyInfo: flat.keyInfo || '',
@@ -300,6 +336,8 @@ export default async function handler(req, res) {
       couponImages,
       insertImages,
       userDefectImages,
+      cleanBeforeImages,
+      cleanAfterImages,
       couponFinding: flat.couponFinding || '',
       insertFinding: flat.insertFinding || '',
       couponQualified: flat.couponQualified ?? null,
