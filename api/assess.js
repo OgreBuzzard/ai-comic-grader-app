@@ -138,8 +138,18 @@ export default async function handler(req, res) {
   // legit high-volume user doesn't lock them, while someone hammering the same
   // book with a single cover 40× still gets stopped.
   const HARD_STRIKE_GATES = ['NOT_COMIC', 'FLAGGED'];
-  const STRIKE_SOFT_THRESHOLD = 10;
+  // v5.80 (Matt): SOFT THRESHOLD 10 -> 8. Briefly set to 3 and reverted the same
+  // day: 3 is strict enough to stop a legitimate user mid-run and generate
+  // support mail, which costs more than the API spend it saves. 8 keeps the
+  // original intent — a real user with an occasional bad photo is never touched
+  // — while still cutting off the case this exists for, someone re-submitting
+  // the same badly-cropped book over and over, every attempt of which runs the
+  // full model call before the gate fires.
+  // STRIKE_SOFT_LOCKOUT_DURATION_MS below is a separate knob so a soft cool-off
+  // can be made shorter than the hard (abuse) one without touching that path.
+  const STRIKE_SOFT_THRESHOLD = 8;
   const STRIKE_SOFT_WINDOW_MS = 24 * 60 * 60 * 1000;
+  const STRIKE_SOFT_LOCKOUT_DURATION_MS = 24 * 60 * 60 * 1000;
 
   function countStrikesInWindow(strikeHistory, windowMs) {
     if (!Array.isArray(strikeHistory)) return 0;
@@ -552,6 +562,10 @@ export default async function handler(req, res) {
   const isCGC = true; // Unified prompt — PSA and RoboGrade derived within single pass
 
   // Fetch ComicVine cover reference image if title and issue are available
+  // Anthropic rejects a single image over 10MB of BASE64 (~7.5MB raw) with an
+  // invalid_request_error that kills the whole call. 3.5MB raw is a comfortable
+  // margin and still far more resolution than a cover comparison needs.
+  const REF_IMAGE_MAX_BYTES = 3_500_000;
   let referenceImageBlock = null;
   let referenceBackImageBlock = null;  // local back-cover reference (ComicVine has covers only)
   let referenceYear = null;  // cover-date year of the ComicVine issue we pulled (diagnostic)
@@ -649,6 +663,7 @@ export default async function handler(req, res) {
         _dbg.push(_b + '->' + _fr.status);
         if (!_fr.ok) continue;
         const _fbuf = await _fr.arrayBuffer();
+        if (_fbuf.byteLength > REF_IMAGE_MAX_BYTES) { console.log(`[localref] ${_frontUrl} dropped — ${_fbuf.byteLength} bytes exceeds ${REF_IMAGE_MAX_BYTES}`); continue; }
         referenceImageBlock = { type: 'image', source: { type: 'base64', media_type: normalizeMediaType(_fr.headers.get('content-type')), data: Buffer.from(_fbuf).toString('base64') } };
         referenceImageUrl = _frontUrl;
         referenceVolumeName = 'Local reference';
@@ -770,7 +785,18 @@ export default async function handler(req, res) {
           console.log(`[comicvine] title="${searchTitle}" iss=${targetIss} matched=${volumes.length} chosen=${vol?`${vol.name} (${vol.start_year})`:'NONE'} issue=${match?'found':'none'} image=${match&&match.image?'yes':'no'}`);
           if (match && match.image) {
             const img = match.image;
-            refUrl = img.original_url || img.super_url || img.screen_large_url || img.screen_url || img.medium_url || null;
+            // v5.80: super_url FIRST, original_url LAST. ComicVine's original_url is
+            // whatever the uploader scanned — sometimes 8MB+ of raw scan. Anthropic
+            // rejects any single image over 10MB of base64 with an
+            // invalid_request_error, which this endpoint surfaces as a 500 and the
+            // WHOLE assessment dies. Venom: Lethal Protector 1 did exactly that:
+            // "messages.0.content.1.image.source.base64: image exceeds 10 MB maximum:
+            // 11002612 bytes". content.1 is the reference cover.
+            // super_url is ~1000px — more than enough for the cover comparison, which
+            // only needs to tell printed art from damage, and a fraction of the
+            // input-token cost. original_url stays as a last resort for the rare
+            // issue that has nothing else.
+            refUrl = img.super_url || img.screen_large_url || img.screen_url || img.medium_url || img.original_url || null;
           }
           if (refUrl && _cvDb) { try { await _cvDb.collection('cv_cover_cache').doc(_coverKey).set({ url: refUrl, title: searchTitle, volumeName: vol.name || '', year: referenceYear, volumeId: vol.id, issue: targetIss, cachedAt: Date.now() }); console.log(`[cvcache] cover STORE ${_coverKey}`); } catch(e){} }
         }
@@ -779,7 +805,18 @@ export default async function handler(req, res) {
           const imgResp = await fetchWithTimeout(refUrl, {}, 5000);
           if (imgResp.ok) {
             const imgBuffer = await imgResp.arrayBuffer();
-            referenceImageBlock = { type: 'image', source: { type: 'base64', media_type: normalizeMediaType(imgResp.headers.get('content-type')), data: Buffer.from(imgBuffer).toString('base64') } };
+            // HARD SIZE GUARD. The URL preference above makes an oversized image
+            // unlikely, not impossible — base64 inflates by 4/3, and Anthropic's
+            // per-image limit is 10MB of base64, so anything over ~7.5MB raw is
+            // fatal to the whole call. A reference cover is a NICE-TO-HAVE: it
+            // helps separate printed art from damage. It is never worth failing
+            // the assessment for, so an oversized one is dropped and the book is
+            // graded without it.
+            if (imgBuffer.byteLength > REF_IMAGE_MAX_BYTES) {
+              console.log(`[comicvine] reference cover dropped — ${imgBuffer.byteLength} bytes exceeds ${REF_IMAGE_MAX_BYTES}; grading without it. url=${refUrl}`);
+            } else {
+              referenceImageBlock = { type: 'image', source: { type: 'base64', media_type: normalizeMediaType(imgResp.headers.get('content-type')), data: Buffer.from(imgBuffer).toString('base64') } };
+            }
           }
         }
       } catch (e) { /* CV fetch failed — proceed without reference */ }
@@ -1455,7 +1492,13 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
             update.flaggedAt = data.flaggedAt || new Date().toISOString();
             _lockoutInfo = { type: 'permanent' };
           } else if (hard24 >= STRIKE_LOCKOUT_THRESHOLD || soft24 >= STRIKE_SOFT_THRESHOLD) {
-            update.assessmentLockedUntil = new Date(Date.now() + STRIKE_LOCKOUT_DURATION_MS).toISOString();
+            // A soft lockout (bad photos) gets its own duration so it can be made
+            // gentler than a hard one (non-comic / flagged content) without
+            // touching the abuse path. They are the same 24h today.
+            const _dur = (hard24 >= STRIKE_LOCKOUT_THRESHOLD)
+              ? STRIKE_LOCKOUT_DURATION_MS
+              : STRIKE_SOFT_LOCKOUT_DURATION_MS;
+            update.assessmentLockedUntil = new Date(Date.now() + _dur).toISOString();
             _lockoutInfo = { type: 'temp', unlockAt: update.assessmentLockedUntil };
           }
           await _userRef.set(update, { merge: true });
@@ -2037,6 +2080,25 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           highGrade: !!highGrade,
           gradeRefRan: gradeRefSucceeded,
           gateResult: parsed.gateResult || 'COMIC',
+          // ── CHARGED, NOT YET CONFIRMED (v5.80) ───────────────────────────
+          // The credit was taken before the Anthropic call. Every failure this
+          // function can SEE already refunds it. What it cannot see is the
+          // client dying after a good result — the server succeeded, the user
+          // paid, and the book never reached their library. That is exactly
+          // what happened to Punisher 1 on 2026-10-21: clean 9.0, 12.9s,
+          // stopReason end_turn, app froze during the save, credit kept.
+          // So a successful charged assessment is written PENDING. The client
+          // calls /api/credit_settle when saveItem() succeeds; whatever is
+          // still pending after the grace period is refunded by the cron in
+          // /api/credit_sweep. Absent field = nothing was charged, so an
+          // uncharged or batch pass can never be swept.
+          ...(_creditDebited ? {
+            creditSettled: false,
+            creditPendingUid: _authedUid || null,
+            creditPendingCost: _CREDIT_COST,
+            creditPendingLabel: 'main',
+            creditPendingAt: Date.now()
+          } : {}),
           // S16: Cap predicted grade at the tier-based ceiling (or 9.9 absolute max)
           predictedGrade: parsed.grade ? String(Math.min(parseFloat(parsed.grade), gradeCeiling || 9.9).toFixed(1)) : null,
           gradeBeforeRefinement: parsed.gradeBeforeRefinement || null,

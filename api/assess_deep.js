@@ -415,6 +415,9 @@ ${PHOTOGRADER_RUBRIC_CLOSEUP}
 Recompute the RoboGrade score (Front + Back + Spine + Interior) and map it to a CGC grade. You are also given a set of GRADE-REFERENCE IMAGES — real graded comics bracketing the initial grade, each labeled with its CGC grade and a one-line condition note, in ascending order. Use them as a calibrated yardstick:
   • Find the reference whose OVERALL cover condition the book being graded most closely matches.
   • The predicted grade may move UP or DOWN by up to 2 grade positions from the initial, based on that comparison.
+  • EXCEPTION — STRUCTURAL DISCOVERY IS NOT CAPPED. The 2-position limit above governs the ordinary case: you are re-reading the SAME defects at better resolution, so the grade should only drift. It does NOT apply when this pass discovers a STRUCTURAL defect that the initial four photos could not show. Those are: a SPINE SPLIT (the interior covers are where a split first becomes unmistakable — look along the fold on both of them), a COVER DETACHING OR DETACHED at one or both staples, a MISSING PIECE / PAPER LOSS visible from the interior that the exterior shot hid, a TEAR running from an edge into the book, or STAPLE TEAR-THROUGH. When you find one of these and it is genuinely NEW — absent from the initial defect list, not a restatement of something already there — grade the book where that defect actually puts it against the tier definitions, however many positions down that is. A 1" spine split does not belong two positions below a 7.0; it belongs where the tier text says it belongs. Do not pull the grade back toward the initial to respect a limit that does not apply here.
+    Three things are REQUIRED when you take this exception, and the server reverts the drop without them: (1) the defect must be in the defects array tagged "deepAddition": true; (2) its severity must be HIGH; (3) "gradeRevisionReason" must state that this pass DISCOVERED A NEW defect, name it, and say it was not visible in the initial photos — e.g. "the interior front cover shows a 1.5" spine split not visible in the cover shots; that is a 4.0 defect, not a 7.0 one". A reader seeing a grade fall three positions is owed the reason it fell that far, and "the cover matched a lower reference" is not that reason. The 35-word limit still applies.
+    This is NOT an invitation to go hunting. The structural defects above are unambiguous when present — you either see the split or you do not. Ambiguous evidence is not a structural discovery and stays inside the 2-position limit.
   • IF YOU LOWER THE GRADE, SAY WHY IN "gradeRevisionReason" — ONE plain sentence, two at the very most, and never more than 35 words \u2014 it is a note, not a second write-up (e.g. "the cover matches the 2.0 reference rather than the 3.0: the spine and lower edge are comparable"). A downward revision with no stated reason is DISCARDED by the server and the initial grade is restored, so an unexplained drop is wasted work. An UPWARD revision needs no entry. This is not a licence to lower grades: you are expected to raise them as often as you lower them, and a Deep pass that always grades down is a broken pass. Move the grade only where the evidence in front of you actually warrants it.
   • IF YOU RE-CLASSIFY AN EXISTING DEFECT rather than finding a new one — most often a "Tear" that the interior photos show is really a "Piece out" — set "revisionReason" on that defect entry saying what changed it. A re-classified defect is not a deepAddition (it is not new), but it MUST be able to move the grade, so this field is what lets it. Downward movement is the more common outcome when the macros surfaced new defects; upward movement requires the cover to clearly match a cleaner reference.
   • If, after removing any disproven defects, the book has NO remaining grade-limiting defect — all four corners crisp with intact ink, spine tight with no ticks or color breaks, and (when provided) interior covers clean — do NOT hold it at the initial grade out of caution. Grade the now-clean book on its merits against the references; a book with zero confirmed defects is not a 9.4 by default. Reserve grades below 9.6 for a book with an actual remaining defect you can name and point to.
@@ -607,6 +610,7 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
     // the model confirms or revises the grade against real graded examples.
     // Reference book identities are NEVER named in output. Non-fatal: if refs
     // can't be built, Deep still runs on the macros alone.
+    const GRADE_REF_SPAN = 1;   // ±1 position → 3 reference images. See note at the slice below.
     let gradeRefBlocks = [];   // ascending-grade [text label, image, text label, image, ...]
     let frontCoverBlock = null;
     let refCoverBlocks = [];   // local pristine reference_covers (front[+back]) of this exact issue, for defect ID
@@ -621,8 +625,22 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
             const d = Math.abs(parseFloat(g) - gNum);
             if (d < best) { best = d; idx = i; }
           });
-          const lo = Math.max(0, idx - 2), hi = Math.min(CGC_GRADE_SCALE.length - 1, idx + 2);
-          const windowGrades = CGC_GRADE_SCALE.slice(lo, hi + 1);  // up to 5, ascending
+          // BRACKET WIDTH (v5.80, Matt). Was hardcoded at ±2 — five images, ~1,475
+          // input tokens each, ~7,375 per Deep. They sit AFTER the cache breakpoint
+          // by design (see the note at the second breakpoint below), so they bill
+          // in FULL on every pass including all five passes of a Batch — roughly
+          // 30% of a Deep's input and the single largest never-reused cost in the
+          // call. Narrowed to ±1 (three images).
+          // The references are a yardstick, not a permission slip: PHASE 4 lets the
+          // grade move outside the range they span, and the structural exception
+          // above removes the cap entirely. Fewer of them should cost calibration,
+          // not reach.
+          // Override per request to A/B it: span 2 = 5 images, 1 = 3, 0 = 1 (the
+          // initial grade alone, no context above or below).
+          const _spanRaw = (req.body && req.body.gradeRefSpan);
+          const _span = Number.isFinite(Number(_spanRaw)) ? Math.max(0, Math.min(2, Number(_spanRaw))) : GRADE_REF_SPAN;
+          const lo = Math.max(0, idx - _span), hi = Math.min(CGC_GRADE_SCALE.length - 1, idx + _span);
+          const windowGrades = CGC_GRADE_SCALE.slice(lo, hi + 1);  // 2*_span+1, ascending
           const baseUrl = process.env.APP_URL || 'https://robograder.app';
           const fetched = await Promise.all(windowGrades.map(async (g) => {
             const def = GRADE_DEFINITIONS[g] || {};

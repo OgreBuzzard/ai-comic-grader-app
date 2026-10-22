@@ -1831,7 +1831,7 @@ function renderItemsList() {
             <div class="label">RG</div>
           </div>
           <div style="text-align:center;line-height:1.05;">
-            <div class="big" style="color:#7fd0ff;">${(it.assessedCGCGrade ?? it.assessedPSAGrade) ?? '—'}</div>
+            <div class="big" style="color:#7fd0ff;">${_pgCell(it.assessedCGCGrade ?? it.assessedPSAGrade)}</div>
             <div class="label">PG</div>
           </div>
         </div>
@@ -1973,7 +1973,7 @@ function renderTimingsList() {
             ${escapeHtml(t.key)} ${tagHtml}
             ${t.version ? `<span style="color:var(--text-dim);font-size:11px;margin-left:6px;">v${escapeHtml(t.version)}</span>` : ''}
           </div>
-          ${(t.title || t.cardName) ? `<div style="font-size:13px;font-weight:600;color:var(--text);margin:2px 0;">${escapeHtml(t.title || t.cardName)}${t.issue ? ' #' + escapeHtml(t.issue) : ''}${t.predictedGrade ? `<span style="color:#7fd0ff;font-weight:700;margin-left:8px;">PG ${escapeHtml(t.predictedGrade)}</span>` : ''}${t.pageQuality ? `<span style="color:var(--text-dim);font-weight:400;margin-left:8px;">PQ ${escapeHtml(t.pageQuality)}</span>` : ''}</div>` : ''}
+          ${(t.title || t.cardName) ? `<div style="font-size:13px;font-weight:600;color:var(--text);margin:2px 0;">${escapeHtml(t.title || t.cardName)}${t.issue ? ' #' + escapeHtml(t.issue) : ''}${t.predictedGrade ? `<span style="color:#7fd0ff;font-weight:700;margin-left:8px;">PG ${escapeHtml(_pgCell(t.predictedGrade))}</span>` : ''}${t.pageQuality ? `<span style="color:var(--text-dim);font-weight:400;margin-left:8px;">PQ ${escapeHtml(t.pageQuality)}</span>` : ''}</div>` : ''}
           ${t.rgScore != null ? `<div style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:11px;color:var(--text-dim);">RG ${escapeHtml(String(t.rgScore))}${(t.frontScore != null || t.backScore != null || t.spineScore != null || t.interiorScore != null) ? `<span style="margin-left:10px;">F ${t.frontScore ?? '—'} · B ${t.backScore ?? '—'} · Int ${t.interiorScore ?? '—'} · Sp ${t.spineScore ?? '—'}</span>` : ''}</div>` : ''}
           <div class="sub" style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:11px;">
             ${dateStr}
@@ -2119,7 +2119,7 @@ function renderUserDetail(user, items, publicRate) {
             <div class="meta" style="display:flex;flex-direction:column;align-items:center;gap:1px;min-width:46px;">
               <div title="${it.tier === 3 ? 'Full' : it.tier === 2 ? 'Deep' : 'Main'} assessment" style="font-size:10px;color:#7aa838;letter-spacing:1px;height:12px;line-height:12px">${'★'.repeat(it.tier || 1)}</div>
               <div style="text-align:center;line-height:1.05;"><div class="big" style="color:#b8d820;">${_rgCell(it)}</div><div class="label">RG</div></div>
-              <div style="text-align:center;line-height:1.05;"><div class="big" style="color:#7fd0ff;">${(it.assessedCGCGrade ?? it.assessedPSAGrade) ?? '—'}</div><div class="label">PG</div></div>
+              <div style="text-align:center;line-height:1.05;"><div class="big" style="color:#7fd0ff;">${_pgCell(it.assessedCGCGrade ?? it.assessedPSAGrade)}</div><div class="label">PG</div></div>
             </div>
           </div>
         `; }).join('')
@@ -2677,6 +2677,17 @@ const RGV2 = (function () {
   // Display formatting: integers show bare ("9","10"); halves keep one decimal
   // ("9.5","8.5"). Same on EVERY surface (screens + labels) — no ".0".
   function formatGrade(g){ g = Number(g); return (g % 1 === 0) ? String(g) : g.toFixed(1); }
+  // PG IS NOT RG. RoboGrade (above) is the 0-10 half-point score and drops a
+  // trailing .0 on purpose. The PREDICTED GRADE is a CGC/PSA ladder position and
+  // those are always written with one decimal - 7.0, 9.0, 10.0 - which is how the
+  // app renders them. The admin Item views were printing the stored value raw, so
+  // a whole number came out "7" and disagreed with the app for the same book.
+  // Non-numeric values (blank, '-', a label) pass through untouched.
+  function _pgCell(v){
+    if (v == null || v === '') return '\u2014';
+    const n = Number(v);
+    return Number.isFinite(n) ? n.toFixed(1) : String(v);
+  }
   function gradeParts(g){ g = Number(g); var w = Math.trunc(g); return { whole: String(w), frac: (g % 1 === 0) ? "" : ("." + Math.round((g - w) * 10)) }; }
 
   // ---- Shared score-box renderer (identical look on every surface) ----------

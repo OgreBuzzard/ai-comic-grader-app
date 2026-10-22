@@ -21,6 +21,12 @@
     "api/checkout.js": {
       "maxDuration": 30
     },
+    "api/credit_sweep.js": {
+      "maxDuration": 60
+    },
+    "api/credit_settle.js": {
+      "maxDuration": 15
+    },
     "api/webhook.js": {
       "maxDuration": 30
     },
@@ -114,6 +120,10 @@
     {
       "path": "/api/cachewarm",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/credit_sweep",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

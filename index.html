@@ -4608,6 +4608,23 @@ function _clientPlatform() {
 }
 function _clientAppVersion() { return _clientAppVersionCache || "pending"; }
 
+function _settleCredits(rec) {
+  try {
+    const keys = (rec && Array.isArray(rec.assessmentTimingKeys)) ? rec.assessmentTimingKeys.slice(-12) : [];
+    if (!keys.length) return;
+    if (!window._currentUser || typeof window._currentUser.getIdToken !== "function") return;
+    window._currentUser.getIdToken().then(token => {
+      if (!token) return;
+      return fetch("/api/credit_settle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+        body: JSON.stringify({ timingKeys: keys }),
+        keepalive: true   // survives the page going away right after the save
+      });
+    }).catch(() => {});
+  } catch (e) {}
+}
+
 async function saveItem(rec) {
   if (rec && rec.id === SAMPLE_COMIC_ID) return;
   if (rec) {
@@ -4637,6 +4654,18 @@ async function saveItem(rec) {
     const _ix = items.findIndex(c => c && c.id === rec.id);
     if (_ix >= 0) items[_ix] = { ...items[_ix], ...rec };
     else items.unshift(rec);
+    // v5.80: the book is now safely in Firestore, so tell the server to keep the
+    // credit. /api/assess writes every charged assessment as PENDING and a cron
+    // refunds anything still pending after 15 minutes — that is what gives a
+    // user their credit back when the app dies mid-save (Punisher 1, 2026-10-21:
+    // clean 9.0, app froze during the save, book gone, credit kept, user had to
+    // email). This call is what stops that safety net refunding the assessments
+    // that DID land.
+    // Deliberately fire-and-forget with no retry and nothing surfaced to the
+    // user: if it fails, the sweep hands back a credit the user arguably owes,
+    // which is the correct direction to be wrong in. Never let it block or fail
+    // the save — the save is the thing that matters.
+    _settleCredits(rec);
     await dismissSampleIfNeeded();
   } catch (e) {
     alert("Save failed: " + e.message);
@@ -17033,6 +17062,63 @@ function cancelTreatment(key, e) {
   renderForm();
 }
 
+// ── v5.80: PROVISIONAL SAVE — the grade lands before the photos do ──────────
+//
+// WHAT WENT WRONG (Punisher 1, 2026-10-21). submitForm() uploads every photo to
+// Cloud Storage and only then writes the item to Firestore. That ordering means
+// the ENTIRE assessment — grade, page quality, defect list, write-up, the credit
+// the user just spent — exists nowhere but this browser tab for the whole length
+// of the upload, which on a phone on cell data is the slowest part of the flow.
+// A user's app froze in that window. The server had graded the book cleanly
+// (9.0, 12.9s, stopReason end_turn); he reopened the app and it was simply gone.
+// Nothing could be recovered because the photos had never left his phone and the
+// grade had never left the tab.
+//
+// THE FIX IS ORDERING, NOT RETRYING. A grade with no pictures is recoverable —
+// the user sees the book in their library and can add photos. A grade with
+// nowhere to live is not. So the text half of the record is written FIRST, as
+// its own Firestore document, before a single byte of image is uploaded. If the
+// app dies at any point after this line, the book is in the library with its
+// grade intact.
+//
+// WHAT IS DELIBERATELY NOT WRITTEN: data: URLs. Image arrays at this point hold
+// base64 of the raw photos — megabytes each, against a 1MB Firestore document
+// limit. They are stripped out; anything already uploaded (an https URL from a
+// pre-upload or a re-save) is kept, since those are just strings.
+//
+// provisionalSave:true marks the record as "grade present, photos may not be".
+// The real save at the end of submitForm() clears it. A document still carrying
+// the flag minutes later is one of these interrupted saves.
+//
+// BEST EFFORT, ALWAYS. Any failure here is swallowed: this is a safety net, and
+// a safety net that can block the save it exists to protect is worse than none.
+async function _saveProvisional(id) {
+  try {
+    if (!id || id === SAMPLE_COMIC_ID) return;
+    // Nothing worth protecting unless an assessment actually produced something.
+    const hasAssessment = !!(formData.predictedGrade || formData.assessedCGCGrade ||
+      (formData.roboGrade && formData.roboGrade.score != null) || formData.aiAssessment);
+    if (!hasAssessment) return;
+    const keepUploaded = a => (Array.isArray(a) ? a.filter(x => typeof x === "string" && !isDataUrl(x)) : []);
+    const rec = { ...formData, id };
+    for (const k of ["images", "cornerImages", "interiorImages", "interiorCoverImages",
+                     "signatureImages", "insertImages", "couponImages",
+                     "restorationImages", "userDefectImages", "cleanBeforeImages", "cleanAfterImages"]) {
+      if (k in rec) rec[k] = keepUploaded(rec[k]);
+    }
+    rec.provisionalSave = true;
+    if (rec.type == null) rec.type = "comic";
+    if (rec.ownership == null) rec.ownership = "Owned";
+    syncMsg("Saving grade\u2026");
+    await fsSetDoc(userItemDoc(id), nestForFirestore(rec));
+    // Settle the credit now too. The assessment is durable from this moment, so
+    // the orphan sweep in /api/credit_sweep must not hand the credit back.
+    _settleCredits(rec);
+  } catch (e) {
+    console.warn("[provisional-save] failed (continuing):", e && e.message);
+  }
+}
+
 async function submitForm() {
   if (!formData.title?.trim()) {
     return;
@@ -17041,6 +17127,8 @@ async function submitForm() {
   if (formData.seller?.trim()) updateSellerList(formData.seller.trim());
   const id = formData.id || buildComicId(formData.title, formData.issue);
   formData.id = id; // S20 (P0 fix): pin the id so Back/cancelForm can return to the saved item
+  // v5.80: WRITE THE GRADE BEFORE THE PHOTOS. See _saveProvisional below.
+  await _saveProvisional(id);
   const rawImages = (formData.images || []).filter(Boolean);
   const rawCornerImages = (formData.cornerImages || []).filter(Boolean);
   const rawInteriorImages = formData.interiorImages || [];
@@ -17335,6 +17423,9 @@ async function submitForm() {
       }
     }
   }
+  // v5.80: the photos are uploaded and their URLs are on `rec`, so this record
+  // is complete. Clear the provisional marker written by _saveProvisional().
+  rec.provisionalSave = false;
   const _tSave = Date.now();
   await saveItem(rec);
   console.log("[complete] saveItem (Firestore):", Date.now() - _tSave, "ms");
