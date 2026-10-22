@@ -286,6 +286,12 @@ export default async function handler(req, res) {
       //   cleanComparison      the whole Cleaning Compare result, write-up
       //                        included. Users pay for this and it was
       //                        invisible server-side.
+      // v5.81: the per-assessment history. The admin had no way to see it, which
+      // is how a cross-book history bleed went unnoticed for months. NOTE: the
+      // roboGradeId INSIDE each entry is NOT the item's searchable Grade ID -
+      // that is the top-level roboGradeId above. They are different values and
+      // confusing them wastes a lot of time.
+      assessmentHistory: Array.isArray(flat.assessmentHistory) ? flat.assessmentHistory : [],
       fullAssessmentNotes: flat.fullAssessmentNotes || '',
       gradeRevisionReason: flat.gradeRevisionReason || '',
       cleanComparison: flat.cleanComparison || null,
