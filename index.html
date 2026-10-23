@@ -6384,7 +6384,9 @@ function showDetail(id) {
   // sample book is excluded too: these images carry an RG-ID and read as a real
   // assessment, which a demo entry is not.
   if (selected.roboGrade && selected.type !== "card" && !isSample) {
-    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n      <button class="rg-btn rg-btn-action rg-btn-md" id="export-summary-btn" onclick="exportSummaryImage('${esc(selected.id)}')">Summary</button>\n      <button class="rg-btn rg-btn-action rg-btn-md" id="export-defects-btn" onclick="exportDefectListImage('${esc(selected.id)}')">Defect List</button>\n    </div>`;
+    // v5.82: ONE export image. Summary and Defect List were merged, so the
+    // second button has nothing left to produce.
+    html += `<div style="margin-top:10px">\n      <button class="rg-btn rg-btn-action rg-btn-md" style="width:100%" id="export-summary-btn" onclick="exportSummaryImage('${esc(selected.id)}')">Export Image</button>\n    </div>`;
   }
   html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    ${_giveBtn}\n    ${_complainBtn}\n  </div>\n  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    <button class="rg-btn rg-btn-destructive rg-btn-md" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')" style="grid-column:1 / span 2;justify-self:center;width:calc(50% - 5px)">Delete</button>\n  </div></div>`;
   document.getElementById("main").innerHTML = html;
@@ -7205,14 +7207,19 @@ const EXP = {
   green:   "#cce8b8", cream: "#f4f0dc", header: "#a8c898",
   ink:     "#1f2a08", inkHd: "#0a1404",  inkLt:  "#5a6a3a",
   oliveMid:"#4a7028",
-  titleInk:"#0d0d0f", issueInk:"#3a2e24", dateInk:"#7a6a5a",
+  titleInk:"#ffffff", issueInk:"#d8d2c6", dateInk:"#7a6a5a",
   printInk:"#6a5a4a", pubInk:"#8a7a6a",
   // Muted brick reds for the imprint lines. Tinted, deliberately below the
   // title and issue in weight so they do not compete with them.
   red1:    "#9a4f3c", red2:"#ab6d5c",
   cardBg:  "#0d0d0f", cardEdge:"#2a2a3a",
   badgeBg: "#1a5fa8", badgeEdge:"#1e40af",
-  discInk: "#6a5a4a", footInk:"#7aa838"
+  discInk: "#6a5a4a", footInk:"#7aa838",
+  // v5.82: `EXP.bg` was referenced by the score panel and never existed, so the
+  // fill silently inherited whatever colour was last set (the cover placeholder
+  // "#1a1a1a"). It LOOKED right, which is why it survived. Named properly now.
+  panel:   "#10150a",                    // the RoboGrade score panel + bookend
+  pageWhite:"#ffffff"                    // outside the rounded container corners
 };
 const EX_PQ_FALLBACK = { bg: "#f0ece6", text: "#5a4e44" };
 
@@ -7298,9 +7305,16 @@ function _exImgUrl(x) { return (x && (x.url || (typeof x === "string" ? x : null
 function _exFacts(item) {
   const rg = item.roboGrade || {};
   const v3 = (window.RoboScoreV3 && item.type !== "card") ? window.RoboScoreV3.forComic(item) : null;
-  const predicted = item.grade != null ? item.grade
-                  : (item.predictedGrade != null ? item.predictedGrade
-                  : (rg.predictedGrade != null ? rg.predictedGrade : null));
+  // v5.82 BUGFIX - THE EMPTY BLUE BADGE. This read `item.grade != null`, and
+  // item.grade is the MANUAL/official grade field, which the app stores as an
+  // EMPTY STRING on every book that has not been given one. "" is not null, so
+  // the first branch won. predicted became "", _exDrawCard drew "" into the
+  // badge, and the export shipped a solid blue square with no number in it on
+  // every ungraded book - which is nearly all of them.
+  const _has = v => v != null && String(v).trim() !== "";
+  const predicted = _has(item.grade) ? item.grade
+                  : (_has(item.predictedGrade) ? item.predictedGrade
+                  : (_has(rg.predictedGrade) ? rg.predictedGrade : null));
   let fmv = null;
   try {
     if (typeof window.matchFMV === "function" && predicted != null) {
@@ -7370,7 +7384,7 @@ function _exSections(item, f) {
 
 // ── Measured pieces ────────────────────────────────────────────────────────
 const EX_PAD   = P(16);     // box inner padding
-const EX_INSET = P(14);     // page margin around the box
+const EX_INSET = 0;         // v5.82: the container runs to the image edge
 
 // ── Header: TITLE AND ISSUE ON ONE LINE ────────────────────────────────────
 // Matt, 2026-10-20: "I don't know why we have a line break between Title and
@@ -7387,7 +7401,7 @@ const EX_INSET = P(14);     // page margin around the box
 // listings lines up.
 const EX_CSSH = 675;                       // 2025 / 3
 const EX_H = EX_CSSH * EX_S;
-const EX_BOXH = P(EX_CSSH - 14 * 2);       // the box now runs to the bottom inset
+const EX_BOXH = EX_H;                      // v5.82: full bleed, top to bottom
 // FLIPPED, 2026-10-21: the printout paper is the PURE WHITE now and the card
 // around it is the off-white. The green bands are unchanged, so the paper reads
 // brighter and the card recedes behind it.
@@ -7395,7 +7409,11 @@ const EX_BOXH = P(EX_CSSH - 14 * 2);       // the box now runs to the bottom ins
 // Warm enough to be paper, still a clear step up from the off-white around it
 // (the blue channel does most of that work: f5 against dc).
 const EX_PAPER = "#fbfaf5";    // continuous-form paper and its sprocket margins
-const EX_CARD  = "#f4f0dc";    // everything else inside the container
+// v5.82, Matt: the container is BLACK and runs to the edge of the image. Only
+// the four corner slivers outside the rounding stay white, so the image reads
+// as a single black card rather than a card floating on a page.
+const EX_CARD  = "#0d0d0f";    // everything else inside the container
+const EX_RADIUS = P(26);       // the container's corner rounding
 const EX_WHITE = "#ffffff";
 
 function _exTitleParts(item) {
@@ -7417,7 +7435,7 @@ function _exImprint(item) {
 
 function _exHeaderH(ctx, item) {
   const im = _exImprint(item);
-  let h = P(16) + P(29);
+  let h = P(26) + P(29);   // v5.82: matches the P(26) top in _exDrawHeader
   if (im.a) h += P(3) + P(17);
   if (im.b) h += P(2) + P(17);
   return h + P(12);
@@ -7430,7 +7448,7 @@ function _exHeaderH(ctx, item) {
 function _exDrawHeader(ctx, item, bx, by, boxW, innerW) {
   const h = _exHeaderH(ctx, item);
   const x = bx + EX_PAD;
-  let y = by + P(16);
+  let y = by + P(26);   // v5.82: was P(16), inside a page inset that no longer exists
   const tp = _exTitleParts(item);
   ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
   _exStretch(ctx, "extra-condensed");
@@ -7678,14 +7696,16 @@ function _exRowH(ctx, r, textW) {
   ctx.font = `800 ${P(11)}px ${F_MONO}`;
   const sevW = r.sev ? ctx.measureText(String(r.sev).toUpperCase()).width + P(8) : 0;
   ctx.font = `${P(11)}px ${F_MONO}`;
-  return P(12) + _exWrap(ctx, r.type + r.detail, textW - sevW).length * P(16);
+  // v5.82: tightened so the combined image fits more of the list. Was
+  // P(12) + lines * P(16).
+  return P(6) + _exWrap(ctx, r.type + r.detail, textW - sevW).length * P(14);
 }
 function _exPaperMeasure(ctx, sections, paperW) {
   const textW = paperW - EX_SPR * 2 - P(20);
   let h = 0;
   sections.forEach(sec => {
-    h += P(26);
-    if (!sec.rows.length) { h += P(28); return; }
+    h += P(20);                      // v5.82: section header, was P(26)
+    if (!sec.rows.length) { h += P(20); return; }
     sec.rows.forEach(r => { h += _exRowH(ctx, r, textW); });
   });
   return h;
@@ -7706,7 +7726,7 @@ function _exPaperPlan(ctx, sections, hidden, avail, used) {
   let nRows = hidden ? 1 : 0;
   sections.forEach(sec => { nRows += Math.max(1, sec.rows.length); });
   const slack = Math.max(0, avail - used);
-  const pad = Math.min(P(10), Math.floor(slack / Math.max(1, nRows)));
+  const pad = Math.min(P(3), Math.floor(slack / Math.max(1, nRows)));   // v5.82: was P(10)
   let residue = slack - pad * nRows;
   // A residue worth less than half a row is absorbed so the paper meets the
   // card cleanly; anything larger is left as box background.
@@ -7949,9 +7969,10 @@ function _exDrawCard(ctx, f, centreX, y, showFmv, fullW, maxW) {
 const EX_FOOTH = P(10) + P(11) + P(12);
 function _exDrawFoot(ctx, by, x, w) {
   ctx.textAlign = "center";
-  ctx.fillStyle = "#5a7028";
+  // v5.82: was #5a7028, which disappeared once the container went black.
+  ctx.fillStyle = EXP.footInk;
   ctx.font = `800 ${P(11)}px ${F_COND}`;
-  ctx.fillText("robograder.app", x + w / 2, by + EX_BOXH - P(14));
+  ctx.fillText("robograder.app", x + w / 2, by + EX_BOXH - P(16));
   ctx.textAlign = "left";
 }
 
@@ -7959,7 +7980,8 @@ function _exCanvas() {
   const c = document.createElement("canvas");
   c.width = EX_W; c.height = EX_H;
   const ctx = c.getContext("2d");
-  ctx.fillStyle = EXP.page; ctx.fillRect(0, 0, c.width, c.height);
+  // White first: it is what shows in the corners outside the rounding.
+  ctx.fillStyle = EXP.pageWhite; ctx.fillRect(0, 0, c.width, c.height);
   ctx.textBaseline = "alphabetic";
   return { c, ctx };
 }
@@ -7970,129 +7992,162 @@ function _exMeasureCtx() {
 }
 
 // ── DEFECT LIST ────────────────────────────────────────────────────────────
-// ONE interior object: the ID/graded bar is its header (rounded on top), the
-// paper runs between two green rules that continue the header's own colour down
-// both outer edges, and the conclusion card closes it off (square on top,
-// rounded at the bottom). Everything around that object is pure white; the
-// off-white belongs to the paper alone.
-const EX_RULE = P(3);
-async function _exRenderDefects(item) {
+// REMOVED v5.82. _exRenderDefects and exportDefectListImage are gone: the list
+// is drawn inside the single combined export (see _exRenderSummary), so a
+// second renderer producing half the same image had nothing to add. The paper
+// helpers it used - _exFitDefects, _exPaperPlan, _exDrawPaper, EX_RULE - are
+// still live and are called from there.
+
+// ── THE COMBINED EXPORT IMAGE ──────────────────────────────────────────────
+// v5.82, Matt: the Summary and the Defect List are ONE image now, same 15:8.
+// The Defect List button is gone. What made the merge fit:
+//   - the back-cover thumbnail is dropped, and the Predicted Grade and Page
+//     Quality move into the space it leaves, stacked beside the front cover
+//   - the ID and graded date share one line, directly under the imprint
+//   - the defect list's line spacing is tightened (see _exRowH)
+//   - the conclusion card at the foot is gone entirely; PG and PQ are the only
+//     things it carried, and they are now at the top
+// The score panel, the list and the bookend are drawn as ONE column: the panel
+// is rounded on top and square at the bottom, the list runs between its two
+// green rules, and the bookend closes it with square top and rounded bottom.
+function _exDrawGradeStack(ctx, f, x, y, w, h) {
+  const cx = x + w / 2;
+  const badge = Math.min(w * 0.66, P(86));
+  const pqH = f.pageQuality ? P(30) : 0;
+  const blockH = P(13) * 2 + P(6) + badge + (pqH ? P(16) + P(11) + pqH : 0);
+  let cy = y + Math.max(0, (h - blockH) / 2);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ffffff"; ctx.font = `800 ${P(12)}px ${F_COND}`;
+  ctx.fillText("PREDICTED", cx, cy + P(11));
+  ctx.fillText("GRADE", cx, cy + P(24));
+  cy += P(13) * 2 + P(6);
+
+  ctx.fillStyle = EXP.badgeBg;
+  _exRoundRect(ctx, cx - badge / 2, cy, badge, badge, P(18)); ctx.fill();
+  ctx.strokeStyle = EXP.badgeEdge; ctx.lineWidth = Math.max(1, P(1.5));
+  _exRoundRect(ctx, cx - badge / 2, cy, badge, badge, P(18)); ctx.stroke();
+
+  const gnum = f.predicted == null ? "\u2014" : String(f.predicted);
+  const numPx = P(f.atCeiling ? 40 : 46) * (gnum.length > 3 ? 0.8 : 1);
+  const numMid = cy + badge * 0.46;
+  ctx.font = `800 ${numPx}px ${F_NUM}`;
+  const halfNum = ctx.measureText(gnum).width * 0.7 / 2;
+  ctx.save();
+  ctx.translate(cx, numMid); ctx.scale(0.7, 1);
+  ctx.textAlign = "center"; ctx.fillStyle = "#fff";
+  ctx.font = `800 ${numPx}px ${F_NUM}`;
+  ctx.fillText(gnum, 0, numPx * 0.33);
+  ctx.restore();
+  ctx.textAlign = "center";
+  if (f.gradeLabel) {
+    ctx.fillStyle = "rgba(255,255,255,0.8)";
+    ctx.font = `600 ${P(9)}px ${F_COND}`;
+    ctx.fillText(f.gradeLabel, cx, cy + badge - P(10));
+  }
+  if (f.atCeiling) _exPlus(ctx, cx + halfNum, numMid + numPx * 0.1,
+                           cx + badge / 2 - P(4), "rgba(255,255,255,0.9)", numPx / 2.8);
+  cy += badge;
+
+  if (f.pageQuality) {
+    cy += P(16);
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#ffffff"; ctx.font = `800 ${P(10)}px ${F_COND}`;
+    ctx.fillText("PAGE QUALITY", cx, cy + P(9));
+    cy += P(11);
+    const pq = (typeof PQ_COLORS !== "undefined" && PQ_COLORS[f.pageQuality]) || EX_PQ_FALLBACK;
+    let px = P(13), lbl = f.pageQuality;
+    while (px > P(8)) { ctx.font = `600 ${px}px ${F_COND}`; if (ctx.measureText(lbl).width <= w - P(16)) break; px -= 1; }
+    const pw = Math.min(w, ctx.measureText(lbl).width + P(22));
+    ctx.fillStyle = pq.bg;
+    _exRoundRect(ctx, cx - pw / 2, cy, pw, pqH, P(8)); ctx.fill();
+    ctx.fillStyle = pq.text; ctx.font = `600 ${px}px ${F_COND}`;
+    ctx.fillText(lbl, cx, cy + P(20));
+  }
+  ctx.textAlign = "left";
+}
+
+const EX_BOOKEND = P(14);
+const EX_COVERH  = P(160);
+
+async function _exRenderSummary(item) {
   const f = _exFacts(item);
-  const boxW = EX_W - EX_INSET * 2;
+  const front = await _exLoadImage(_exImgUrl((item.images || [])[0]));
+
+  const boxW = EX_W;
   const innerW = boxW - EX_PAD * 2;
   const m = _exMeasureCtx();
-
   const headH = _exHeaderH(m, item);
   const hasProv = _exHasProv(item);
+  const GAP = P(10);
+
+  const boxSize = P(74);
+  const panelH = P(12) + P(20) + boxSize + P(12);
   const provH = hasProv ? EX_PROV_H : 0;
-  const cardH = _exCardMetrics(m, f, false, innerW).h;
-  const paperTop = EX_INSET + headH + P(10) + provH;
-  const avail = (EX_INSET + EX_BOXH - EX_FOOTH - cardH) - paperTop;
+
+  const listTop = headH + (hasProv ? P(4) + provH : 0) + GAP + EX_COVERH + GAP + panelH;
+  const avail = EX_BOXH - EX_FOOTH - EX_BOOKEND - listTop;
   const paperW = innerW - EX_RULE * 2;
   const fit = _exFitDefects(m, _exDefectList(item), paperW, avail);
   const plan = _exPaperPlan(m, fit.sections, fit.hidden, avail, fit.used);
 
   const { c, ctx } = _exCanvas();
-  const bx = EX_INSET, by = EX_INSET;
+  const bx = 0, by = 0;
   ctx.fillStyle = EX_CARD;
-  _exRoundRect(ctx, bx, by, boxW, EX_BOXH, P(14)); ctx.fill();
-  _exDrawHeader(ctx, item, bx, by, boxW, innerW);
+  _exRoundRect(ctx, bx, by, boxW, EX_BOXH, EX_RADIUS); ctx.fill();
 
+  let y = _exDrawHeader(ctx, item, bx, by, boxW, innerW);
   const px1 = bx + EX_PAD;
-  if (hasProv) _exDrawProv(ctx, item, px1, EX_INSET + headH + P(10), innerW, true);
+  if (hasProv) { y += P(4); _exDrawProv(ctx, item, px1, y, innerW, false); y += provH; }
+  y += GAP;
 
-  // The two green rules, continuing the header bar's edges down the list.
-  ctx.fillStyle = "#2a4a1e";
-  ctx.fillRect(px1, paperTop, EX_RULE, plan.h);
-  ctx.fillRect(px1 + innerW - EX_RULE, paperTop, EX_RULE, plan.h);
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(px1 + EX_RULE, paperTop, paperW, plan.h);
-  ctx.clip();
-  _exDrawPaper(ctx, fit.sections, fit.hidden, px1 + EX_RULE, paperTop, paperW, plan);
-  ctx.restore();
-
-  _exDrawCard(ctx, f, px1 + innerW / 2, paperTop + plan.h, false, innerW, innerW);
-  _exDrawFoot(ctx, by, px1, innerW);
-  return c;
-}
-
-// ── SUMMARY ────────────────────────────────────────────────────────────────
-// Everything below the covers is a constant, so the covers absorb whatever the
-// title block does not use. That is what holds the 15:8 lock whether a title
-// runs to one line or two.
-async function _exRenderSummary(item) {
-  const f = _exFacts(item);
-  const [front, back] = await Promise.all([
-    _exLoadImage(_exImgUrl((item.images || [])[0])),
-    _exLoadImage(_exImgUrl((item.images || [])[1]))
-  ]);
-
-  const boxW = EX_W - EX_INSET * 2;
-  const innerW = boxW - EX_PAD * 2;
-  const m = _exMeasureCtx();
-  const headH = _exHeaderH(m, item);
-  const provH = _exHasProv(item) ? EX_PROV_H + P(10) : 0;
-  const boxSize = P(92);
-  const panelH = P(12) + P(20) + boxSize + P(10) + provH + P(2);
-  const cardH = _exCardMetrics(m, f, true, innerW).h;
-  const GAP = P(8);
-  const coverH = EX_BOXH - headH - GAP - panelH - GAP - cardH - EX_FOOTH - GAP;
-
-  const { c, ctx } = _exCanvas();
-  const bx = EX_INSET, by = EX_INSET;
-  ctx.fillStyle = EX_CARD;
-  _exRoundRect(ctx, bx, by, boxW, EX_BOXH, P(14)); ctx.fill();
-  let y = _exDrawHeader(ctx, item, bx, by, boxW, innerW) + GAP;
-
-  // Slots take a comic's own 2:3 proportion and the PAIR is centred, rather
-  // than two wide boxes with the covers letterboxed inside them.
-  const gap = P(10);
-  const slotW = Math.min((innerW - gap) / 2, coverH * 0.72);
-  const pairW = back ? slotW * 2 + gap : slotW;
-  const x0 = bx + EX_PAD + (innerW - pairW) / 2;
-  const draw = (im, dx, dw) => {
-    ctx.fillStyle = "#1a1a1a";
-    _exRoundRect(ctx, dx, y, dw, coverH, P(6)); ctx.fill();
-    if (!im) return;
-    const s = Math.min(dw / im.naturalWidth, coverH / im.naturalHeight);
-    ctx.save(); _exRoundRect(ctx, dx, y, dw, coverH, P(6)); ctx.clip();
-    ctx.drawImage(im, dx + (dw - im.naturalWidth * s) / 2, y + (coverH - im.naturalHeight * s) / 2,
-                  im.naturalWidth * s, im.naturalHeight * s);
+  // Front cover on the left, Predicted Grade + Page Quality stacked on the
+  // right, in the space the back-cover thumbnail used to take.
+  const slotW = Math.min(innerW * 0.46, EX_COVERH * 0.70);
+  ctx.fillStyle = "#1a1a1a";
+  _exRoundRect(ctx, px1, y, slotW, EX_COVERH, P(6)); ctx.fill();
+  if (front) {
+    const sc = Math.min(slotW / front.naturalWidth, EX_COVERH / front.naturalHeight);
+    ctx.save(); _exRoundRect(ctx, px1, y, slotW, EX_COVERH, P(6)); ctx.clip();
+    ctx.drawImage(front, px1 + (slotW - front.naturalWidth * sc) / 2,
+                  y + (EX_COVERH - front.naturalHeight * sc) / 2,
+                  front.naturalWidth * sc, front.naturalHeight * sc);
     ctx.restore();
-  };
-  draw(front, x0, slotW);
-  if (back) draw(back, x0 + slotW + gap, slotW);
-  y += coverH + GAP;
+  }
+  const stackX = px1 + slotW + P(12);
+  _exDrawGradeStack(ctx, f, stackX, y, px1 + innerW - stackX, EX_COVERH);
+  y += EX_COVERH + GAP;
 
-  ctx.fillStyle = EXP.bg;
-  _exRoundRect(ctx, bx + EX_PAD, y, innerW, panelH, P(12)); ctx.fill();
-  ctx.strokeStyle = EXP.oliveMid; ctx.lineWidth = Math.max(1, P(1.5));
-  _exRoundRect(ctx, bx + EX_PAD, y, innerW, panelH, P(12)); ctx.stroke();
+  // Score panel: rounded on top, SQUARE at the bottom so the list meets it.
+  const panelTop = y;
+  ctx.fillStyle = EXP.panel;
+  const r = P(12);
+  ctx.beginPath();
+  ctx.moveTo(px1, panelTop + panelH); ctx.lineTo(px1, panelTop + r);
+  ctx.arcTo(px1, panelTop, px1 + r, panelTop, r); ctx.lineTo(px1 + innerW - r, panelTop);
+  ctx.arcTo(px1 + innerW, panelTop, px1 + innerW, panelTop + r, r);
+  ctx.lineTo(px1 + innerW, panelTop + panelH); ctx.closePath(); ctx.fill();
 
-  let py = y + P(12);
+  let py = panelTop + P(12);
   ctx.fillStyle = "#7aa838"; ctx.font = `700 ${P(11)}px ${F_COND}`;
   const sh = "ROBOGRADE SCORE";
   const shw = ctx.measureText(sh).width + (sh.length - 1) * P(2);
-  let scx = bx + EX_PAD + innerW / 2 - shw / 2;
+  let scx = px1 + innerW / 2 - shw / 2;
   ctx.textAlign = "left";
   for (const ch of sh) { ctx.fillText(ch, scx, py + P(9)); scx += ctx.measureText(ch).width + P(2); }
   py += P(20);
 
-  const px0 = bx + EX_PAD + P(12);
+  const px0 = px1 + P(12);
   const depth = (window.RoboScoreV3 && window.RoboScoreV3.depthOf) ? window.RoboScoreV3.depthOf(item) : "main";
   _exScoreBox(ctx, px0, py, boxSize, {
-    grade: f.rgGrade,
-    pmLabel: f.v3 ? f.v3.pmLabel : "",
+    grade: f.rgGrade, pmLabel: f.v3 ? f.v3.pmLabel : "",
     stars: depth === "full" ? 3 : depth === "deep" ? 2 : 1,
     restoStar: !!item.restorationCheckRan,
     footerText: "V" + (window.RG_GRADING_VERSION || ""),
     plus: !!(f.v3 && f.v3.ceilingHit && f.v3.upsell)
   });
-
   const gx = px0 + boxSize + P(8);
-  const gw = bx + EX_PAD + innerW - P(12) - gx;
+  const gw = px1 + innerW - P(12) - gx;
   const g2 = P(4);
   const cell = (cx, cy, cw, ch, val, lbl, numPx, lblPx) => {
     ctx.fillStyle = "#2a4a1e";
@@ -8101,26 +8156,45 @@ async function _exRenderSummary(item) {
     ctx.translate(cx + cw / 2, cy + ch * 0.48); ctx.scale(0.7, 1);
     ctx.textAlign = "center"; ctx.fillStyle = "#b8d820";
     ctx.font = `800 ${P(numPx)}px ${F_NUM}`;
-    ctx.fillText(val == null ? "—" : String(val), 0, P(numPx) * 0.34);
+    ctx.fillText(val == null ? "\u2014" : String(val), 0, P(numPx) * 0.34);
     ctx.restore();
     ctx.textAlign = "center"; ctx.fillStyle = "#7aa838";
     ctx.font = `600 ${P(lblPx)}px ${F_COND}`;
     ctx.fillText(lbl, cx + cw / 2, cy + ch - P(5));
     ctx.textAlign = "left";
   };
-  const s = f.sub;
-  const topH = P(48), botH = boxSize - topH - g2;
-  cell(gx, py, gw, topH, s ? f.fmtSub(s.front) : null, "FRONT", 26, 9);
+  const sub = f.sub;
+  const topH = P(40), botH = boxSize - topH - g2;
+  cell(gx, py, gw, topH, sub ? f.fmtSub(sub.front) : null, "FRONT", 22, 9);
   const unit = (gw - g2 * 2) / 5;
-  cell(gx, py + topH + g2, unit * 2, botH, s ? f.fmtSub(s.back) : null, "BACK", 19, 8);
-  cell(gx + unit * 2 + g2, py + topH + g2, unit * 2, botH, s ? f.fmtSub(s.spine) : null, "SPINE", 19, 8);
-  cell(gx + unit * 4 + g2 * 2, py + topH + g2, unit, botH, s ? f.fmtSub(s.interior) : null, "INT", 19, 8);
-  py += boxSize + P(10);
-  if (provH) _exDrawProv(ctx, item, px0, py, innerW - P(24), false);
+  cell(gx, py + topH + g2, unit * 2, botH, sub ? f.fmtSub(sub.back) : null, "BACK", 17, 8);
+  cell(gx + unit * 2 + g2, py + topH + g2, unit * 2, botH, sub ? f.fmtSub(sub.spine) : null, "SPINE", 17, 8);
+  cell(gx + unit * 4 + g2 * 2, py + topH + g2, unit, botH, sub ? f.fmtSub(sub.interior) : null, "INT", 17, 8);
+  y = panelTop + panelH;
 
-  y += panelH + GAP;
-  _exDrawCard(ctx, f, bx + boxW / 2, y, true, 0, innerW);
-  _exDrawFoot(ctx, by, bx + EX_PAD, innerW);
+  // The list, between the two green rules that continue the panel's edges.
+  ctx.fillStyle = "#2a4a1e";
+  ctx.fillRect(px1, y, EX_RULE, plan.h);
+  ctx.fillRect(px1 + innerW - EX_RULE, y, EX_RULE, plan.h);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(px1 + EX_RULE, y, paperW, plan.h); ctx.clip();
+  _exDrawPaper(ctx, fit.sections, fit.hidden, px1 + EX_RULE, y, paperW, plan);
+  ctx.restore();
+  y += plan.h;
+
+  // The bookend: same colour as the score panel, square on top, rounded below,
+  // so the panel and the list read as one object closed at both ends.
+  ctx.fillStyle = EXP.panel;
+  const br = P(12);
+  ctx.beginPath();
+  ctx.moveTo(px1, y); ctx.lineTo(px1 + innerW, y);
+  ctx.lineTo(px1 + innerW, y + EX_BOOKEND - br);
+  ctx.arcTo(px1 + innerW, y + EX_BOOKEND, px1 + innerW - br, y + EX_BOOKEND, br);
+  ctx.lineTo(px1 + br, y + EX_BOOKEND);
+  ctx.arcTo(px1, y + EX_BOOKEND, px1, y + EX_BOOKEND - br, br);
+  ctx.closePath(); ctx.fill();
+
+  _exDrawFoot(ctx, by, px1, innerW);
   return c;
 }
 
@@ -8157,10 +8231,7 @@ function exportSummaryImage(id) {
   const item = _exItem(id);
   if (item) _exRun("export-summary-btn", item, _exRenderSummary, "summary");
 }
-function exportDefectListImage(id) {
-  const item = _exItem(id);
-  if (item) _exRun("export-defects-btn", item, _exRenderDefects, "defects");
-}
+
 
 
 
