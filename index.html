@@ -829,6 +829,18 @@ onAuthStateChanged(auth, async user => {
       box-shadow: 0 2px 7px rgba(40,30,10,0.22);
       line-height: 1;
     }
+    /* v5.83: the Summary Image button's preview. SAME 44px height as the Start
+       Grading thumbnail above; the width is 44 * 8/15 = 23px, the export's own
+       1080x2025 ratio, so the two thumbnails line up optically. */
+    .rg-btn.btn-with-thumb {
+      display: inline-flex; align-items: center; justify-content: center;
+      gap: 9px; line-height: 1.12; text-align: left;
+    }
+    .rg-btn.btn-with-thumb .action-btn-thumb {
+      width: 23px; height: 44px; object-fit: cover;
+      border-radius: 3px; flex-shrink: 0;
+      box-shadow: 0 1px 4px rgba(40,30,10,0.25);
+    }
     .btn-topbar.btn-grade .grade-btn-thumb {
       width: 30px; height: 44px; object-fit: cover;
       border-radius: 4px; flex-shrink: 0;
@@ -6384,9 +6396,12 @@ function showDetail(id) {
   // sample book is excluded too: these images carry an RG-ID and read as a real
   // assessment, which a demo entry is not.
   if (selected.roboGrade && selected.type !== "card" && !isSample) {
-    // v5.82: ONE export image. Summary and Defect List were merged, so the
-    // second button has nothing left to produce.
-    html += `<div style="margin-top:10px">\n      <button class="rg-btn rg-btn-action rg-btn-md" style="width:100%" id="export-summary-btn" onclick="exportSummaryImage('${esc(selected.id)}')">Export Image</button>\n    </div>`;
+    // v5.83: the Summary button carries a thumbnail of what it produces, the
+    // same idea as the Start Grading button in the top bar. Print Label takes
+    // the slot the old Defect List button had and opens the SAME label viewer
+    // the List view uses, seeded on this one book, so the user picks a style
+    // and gets the Avery-positioned PDF that flow already produces.
+    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n      <button class="rg-btn rg-btn-action rg-btn-md btn-with-thumb" id="export-summary-btn" onclick="exportSummaryImage('${esc(selected.id)}')"><img src="assets/Summary_Image_Placeholder.png" alt="" decoding="async" class="action-btn-thumb"><span>Summary<br>Image</span></button>\n      <button class="rg-btn rg-btn-action rg-btn-md" id="print-label-btn" onclick="printLabel('${esc(selected.id)}')">Print Label</button>\n    </div>`;
   }
   html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    ${_giveBtn}\n    ${_complainBtn}\n  </div>\n  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    <button class="rg-btn rg-btn-destructive rg-btn-md" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')" style="grid-column:1 / span 2;justify-self:center;width:calc(50% - 5px)">Delete</button>\n  </div></div>`;
   document.getElementById("main").innerHTML = html;
@@ -7997,6 +8012,11 @@ function _exMeasureCtx() {
 // second renderer producing half the same image had nothing to add. The paper
 // helpers it used - _exFitDefects, _exPaperPlan, _exDrawPaper, EX_RULE - are
 // still live and are called from there.
+//
+// EX_RULE was declared immediately above the deleted function and went with it,
+// which is why 5.82 threw "Couldn't build the image" on every export: the
+// combined renderer still reads it three lines into its own layout maths.
+const EX_RULE = P(3);
 
 // ── THE COMBINED EXPORT IMAGE ──────────────────────────────────────────────
 // v5.82, Matt: the Summary and the Defect List are ONE image now, same 15:8.
@@ -8201,8 +8221,14 @@ async function _exRenderSummary(item) {
 // ── The two button handlers ────────────────────────────────────────────────
 async function _exRun(btnId, item, renderer, slug) {
   const btn = document.getElementById(btnId);
-  const label = btn ? btn.textContent : "";
-  if (btn) { btn.disabled = true; btn.textContent = "Rendering…"; }
+  // v5.83: write the status into the button's <span> when it has one. The
+  // Summary Image button now holds an <img> thumbnail as well as its label, and
+  // setting btn.textContent would DELETE that image — the restore in `finally`
+  // puts a text node back, so the thumbnail would vanish on the first export
+  // and not return until the view re-rendered.
+  const slot = (btn && btn.querySelector("span")) || btn;
+  const label = slot ? slot.innerHTML : "";
+  if (btn) { btn.disabled = true; slot.textContent = "Rendering…"; }
   try {
     // The fonts are already loaded by the app's CSS - this waits for that, it
     // does NOT fetch a webfont. A face that has not finished loading when
@@ -8211,18 +8237,23 @@ async function _exRun(btnId, item, renderer, slug) {
     if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) {} }
     const canvas = await renderer(item);
     const blob = await new Promise((res, rej) => {
-      try { canvas.toBlob(b => b ? res(b) : rej(new Error("toBlob returned null")), "image/jpeg", 0.92); }
+      // v5.83: PNG, not JPEG. This image is flat colour, hard edges and small
+      // monospace text on a black field — exactly what JPEG rings around. The
+      // cover photo inside it is the only part JPEG would compress well, and it
+      // is a fraction of the frame. Bigger file, but it is a listing image that
+      // gets zoomed.
+      try { canvas.toBlob(b => b ? res(b) : rej(new Error("toBlob returned null")), "image/png"); }
       catch (e) { rej(e); }
     });
     const stamp = (new Date).toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    await _saveImageBlob(blob, `robograder-${slug}-${stamp}.jpg`);
+    await _saveImageBlob(blob, `robograder-${slug}-${stamp}.png`);
   } catch (e) {
     console.warn("[export] render failed:", e);
     alert(String((e && e.name) || "") === "SecurityError"
       ? "Couldn't build the image because one of the cover photos wouldn't load for export. Please try again in a moment."
       : "Couldn't build the image. Please try again.");
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = label; }
+    if (btn) { btn.disabled = false; slot.innerHTML = label; }
   }
 }
 
