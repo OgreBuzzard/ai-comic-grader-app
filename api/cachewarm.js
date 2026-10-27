@@ -187,8 +187,20 @@ export default async function handler(req, res) {
   // its own timestamp, and debits no credits. Everything else on this endpoint
   // still requires a real signed-in Firebase user.
   const _isCron = _wantMode === 'warm' && _cronCredentialed;
-  if (_isCron) {
-    whoami = { email: 'vercel-cron', uid: 'cron' };
+  // mode:'status' IS NOW OPEN (2026-10-27). It was behind a Firebase ID token,
+  // which meant the only way to see whether the keep-warm ping had been running
+  // was to mint a token by hand — so for weeks "cache warming isn't working"
+  // could not be told apart from "warming is fine and something else is cold".
+  // An endpoint whose whole job is to make a silent failure visible must not
+  // itself be hard to reach.
+  // WHAT IT DISCLOSES: ping timestamps, token counts, costs in cents, and the
+  // app version. No user data, no comic data, no credits, no spend, no writes —
+  // the same reasoning that already let the cron in without a Firebase token.
+  // TO CLOSE IT AGAIN: delete the `|| _isOpenStatus` below. Nothing else
+  // depends on it.
+  const _isOpenStatus = _wantMode === 'status';
+  if (_isCron || _isOpenStatus) {
+    whoami = { email: _isCron ? 'vercel-cron' : 'anon-status', uid: _isCron ? 'cron' : 'anon' };
   } else
   try {
     const m = (req.headers.authorization || req.headers.Authorization || '').match(/^Bearer\s+(.+)$/);
@@ -348,7 +360,9 @@ export default async function handler(req, res) {
   // 47-52% cold against 9-11% at the 19:00 peak. DO NOT make it sleep at night.
   //
   // ACCEPTANCE TEST, and it is not optional after any prompt edit:
-  //   a warm ping must report cacheReadInputTokens around 19,800 and cost ~$0.01.
+  //   a warm ping must report cacheReadInputTokens around 31,400 and cost ~$0.006.
+  //   (19,800 was the v5.48 figure; the prefix has grown since. Measured
+  //   2026-10-27 against production 5.83: 31,402 read, $0.00633, verdict READ.)
   //   If it reports cacheCreation instead, the prefix no longer matches what
   //   /api/assess sends and the ping is burning money for nothing.
   if (mode === 'warm') {

@@ -832,9 +832,15 @@ onAuthStateChanged(auth, async user => {
     /* v5.83: the Summary Image button's preview. SAME 44px height as the Start
        Grading thumbnail above; the width is 44 * 8/15 = 23px, the export's own
        1080x2025 ratio, so the two thumbnails line up optically. */
+    /* v5.84: padding lifted from .btn-topbar.btn-grade - 6px 14px 6px 7px, so
+       the thumbnail sits close to the left edge and the button is only as tall
+       as the thumbnail plus 12px. min-height is overridden because .rg-btn-md
+       sets one that would reintroduce the vertical slack. */
     .rg-btn.btn-with-thumb {
-      display: inline-flex; align-items: center; justify-content: center;
-      gap: 9px; line-height: 1.12; text-align: left;
+      display: inline-flex; align-items: center; justify-content: flex-start;
+      gap: 9px; line-height: 1.1; text-align: left;
+      padding: 6px 14px 6px 7px;
+      height: 56px; min-height: 0; box-sizing: border-box;
     }
     .rg-btn.btn-with-thumb .action-btn-thumb {
       width: 23px; height: 44px; object-fit: cover;
@@ -919,12 +925,22 @@ onAuthStateChanged(auth, async user => {
     .rg-btn-primary:active { background: #243010; }
     /* S17: filled action buttons (View Link / Share / Give / Complain) — colored
        fill instead of the white rg-btn-secondary, per app button logic. */
+    /* v5.84, Matt: take the FINISH from .btn-topbar.btn-grade - the 135deg
+       surface gradient and the soft drop shadow - and keep the green. The flat
+       fill read as unfinished next to the Start Grading button at the top of
+       the same screen. Colours are the existing #3a7a20 / #2e6418 pair: the
+       gradient runs one step lighter at the top-left and lands on the base
+       colour, so the button is the same green, just lit. */
     .rg-btn-action {
-      background: #3a7a20;
+      background: linear-gradient(135deg, #4a9028 0%, #3a7a20 100%);
       color: #ffffff;
       border: 1.5px solid #2e6418;
+      box-shadow: 0 2px 7px rgba(10,30,5,0.22);
     }
-    .rg-btn-action:active { background: #2e6418; }
+    .rg-btn-action:active {
+      background: #2e6418;
+      box-shadow: 0 1px 3px rgba(10,30,5,0.28);
+    }
 
     /* S16: Assessment button tiers — brushed metal gradients.
        Bronze = Assess Grade, Silver = Deep, Gold = Full, Purple = Restoration.
@@ -6445,7 +6461,12 @@ async function printLabel(id) {
   if (!comic || !comic.roboGrade) return;
   try {
     const mod = await _preloadLabelModule();
-    mod.openLabelViewer(comic, items);
+    // v5.85: single:true -> the PDF page IS the label, at its own fixed size
+    // (a 4" x 1.33" label exports as a 4" x 1.33" page), instead of a letter
+    // sheet with the label placed at an Avery grid position. List view's
+    // printQueueSheet() still calls openLabelViewer WITHOUT this, so batch
+    // sheet printing is unchanged.
+    mod.openLabelViewer(comic, [comic], { single: true });
   } catch (e) {
     alert("Failed to load label printer: " + e.message);
   }
@@ -7111,10 +7132,20 @@ async function _saveImageBlob(blob, filename) {
       files: [ file ]
     })) {
       try {
-        await navigator.share({
-          files: [ file ]
-        });
-        return;
+        // v5.84: RACED, because navigator.share() can stay pending forever.
+        // On desktop Chrome canShare({files}) returns true, the OS share sheet
+        // opens, and dismissing it does not always reject - the promise simply
+        // never settles, and every caller awaiting it is stuck. 60s is far
+        // longer than any real share takes; losing the race falls through to
+        // the download path below, which is the correct desktop behaviour
+        // anyway. A late-resolving share after we have already downloaded is
+        // harmless - the user gets the file either way.
+        const _shared = await Promise.race([
+          navigator.share({ files: [ file ] }).then(() => "shared"),
+          new Promise(r => setTimeout(() => r("share-timeout"), 60000))
+        ]);
+        if (_shared === "shared") return;
+        console.warn("[save] share never settled; falling back to download");
       } catch (shareErr) {
         if (shareErr && shareErr.name === "AbortError") return;
         console.warn("share failed, falling back to download:", shareErr);
@@ -7226,7 +7257,9 @@ const EXP = {
   printInk:"#6a5a4a", pubInk:"#8a7a6a",
   // Muted brick reds for the imprint lines. Tinted, deliberately below the
   // title and issue in weight so they do not compete with them.
-  red1:    "#9a4f3c", red2:"#ab6d5c",
+  // v5.83: red1 was #9a4f3c, 3.29:1 on the black card - below AA, and dimmer
+  // than red2 beside it, so the MORE important line was the harder to read.
+  red1:    "#c4705a", red2:"#ab6d5c",
   cardBg:  "#0d0d0f", cardEdge:"#2a2a3a",
   badgeBg: "#1a5fa8", badgeEdge:"#1e40af",
   discInk: "#6a5a4a", footInk:"#7aa838",
@@ -7763,19 +7796,27 @@ function _exDrawPaper(ctx, sections, hidden, x, y, paperW, plan) {
   };
 
   sections.forEach(sec => {
+    // v5.83: these three heights MUST equal what _exPaperMeasure counts. v5.82
+    // tightened the measure side only - header P(26)->P(20), empty row
+    // P(28)->P(20), line pitch P(16)->P(14) - and left the draw side alone, so
+    // every section drew 18px taller than it was measured. _exRenderSummary
+    // clips the list to the MEASURED height, so the overflow was silently cut:
+    // on a clean book (three empty sections) that was 126px, which removed the
+    // whole SPINE section and left a band of bare black between the paper and
+    // the bookend. Change one of these and you must change the other.
     ctx.fillStyle = EXP.header;
-    ctx.fillRect(x, y, paperW, P(26));
+    ctx.fillRect(x, y, paperW, P(20));
     ctx.fillStyle = EXP.inkLt;
     ctx.fillRect(x, y, paperW, Math.max(1, P(1) / 2));
-    ctx.fillRect(x, y + P(26) - Math.max(1, P(1) / 2), paperW, Math.max(1, P(1) / 2));
+    ctx.fillRect(x, y + P(20) - Math.max(1, P(1) / 2), paperW, Math.max(1, P(1) / 2));
     ctx.fillStyle = EXP.inkHd; ctx.textAlign = "left";
     ctx.font = `700 ${P(10)}px ${F_MONO}`;
     let lx = textX;
-    for (const ch of sec.label) { ctx.fillText(ch, lx, y + P(17)); lx += ctx.measureText(ch).width + P(1.5); }
-    y += P(26);
+    for (const ch of sec.label) { ctx.fillText(ch, lx, y + P(14)); lx += ctx.measureText(ch).width + P(1.5); }
+    y += P(20);
 
     if (!sec.rows.length) {
-      const h2 = P(28) + pad;
+      const h2 = P(20) + pad;
       band(h2);
       ctx.fillStyle = EXP.inkLt; ctx.font = `italic ${P(11)}px ${F_MONO}`;
       ctx.fillText("No defects noted.", textX, y + h2 / 2 + P(4));
@@ -7798,7 +7839,9 @@ function _exDrawPaper(ctx, sections, hidden, x, y, paperW, plan) {
           rest = ln.slice(r.type.length);
         }
         ctx.font = `${P(11)}px ${F_MONO}`; ctx.fillStyle = EXP.ink;
-        ctx.fillText(rest, cx2, ly); ly += P(16);
+        // P(14), matching _exRowH's per-line allowance. At P(16) a wrapped
+        // defect's second line sat on the band boundary below its own row.
+        ctx.fillText(rest, cx2, ly); ly += P(14);
       });
       if (sevTxt) {
         ctx.textAlign = "right";
@@ -8032,9 +8075,13 @@ const EX_RULE = P(3);
 // green rules, and the bookend closes it with square top and rounded bottom.
 function _exDrawGradeStack(ctx, f, x, y, w, h) {
   const cx = x + w / 2;
-  const badge = Math.min(w * 0.66, P(86));
+  // v5.83: these were P(86)/P(16)/P(11), which made blockH 525 against an
+  // EX_COVERH of 480. Math.max(0, ...) below clamps the centring to 0, so the
+  // stack ran 45px PAST the cover slot and the score panel painted over the
+  // bottom of the Page Quality pill on every book that has one.
+  const badge = Math.min(w * 0.66, P(74));
   const pqH = f.pageQuality ? P(30) : 0;
-  const blockH = P(13) * 2 + P(6) + badge + (pqH ? P(16) + P(11) + pqH : 0);
+  const blockH = P(13) * 2 + P(6) + badge + (pqH ? P(10) + P(10) + pqH : 0);
   let cy = y + Math.max(0, (h - blockH) / 2);
 
   ctx.textAlign = "center";
@@ -8070,11 +8117,11 @@ function _exDrawGradeStack(ctx, f, x, y, w, h) {
   cy += badge;
 
   if (f.pageQuality) {
-    cy += P(16);
+    cy += P(10);
     ctx.textAlign = "center";
     ctx.fillStyle = "#ffffff"; ctx.font = `800 ${P(10)}px ${F_COND}`;
     ctx.fillText("PAGE QUALITY", cx, cy + P(9));
-    cy += P(11);
+    cy += P(10);
     const pq = (typeof PQ_COLORS !== "undefined" && PQ_COLORS[f.pageQuality]) || EX_PQ_FALLBACK;
     let px = P(13), lbl = f.pageQuality;
     while (px > P(8)) { ctx.font = `600 ${px}px ${F_COND}`; if (ctx.measureText(lbl).width <= w - P(16)) break; px -= 1; }
@@ -8124,8 +8171,15 @@ async function _exRenderSummary(item) {
   // Front cover on the left, Predicted Grade + Page Quality stacked on the
   // right, in the space the back-cover thumbnail used to take.
   const slotW = Math.min(innerW * 0.46, EX_COVERH * 0.70);
-  ctx.fillStyle = "#1a1a1a";
+  // v5.83: #1a1a1a was picked when the container was cream. On the black card
+  // it is 1.12:1 - a book whose cover fails to load showed nothing at all, not
+  // even an empty slot, with the grade stack apparently floating.
+  ctx.fillStyle = "#23232a";
   _exRoundRect(ctx, px1, y, slotW, EX_COVERH, P(6)); ctx.fill();
+  if (!front) {
+    ctx.strokeStyle = "#3a3a44"; ctx.lineWidth = Math.max(1, P(1));
+    _exRoundRect(ctx, px1, y, slotW, EX_COVERH, P(6)); ctx.stroke();
+  }
   if (front) {
     const sc = Math.min(slotW / front.naturalWidth, EX_COVERH / front.naturalHeight);
     ctx.save(); _exRoundRect(ctx, px1, y, slotW, EX_COVERH, P(6)); ctx.clip();
@@ -8246,6 +8300,12 @@ async function _exRun(btnId, item, renderer, slug) {
       catch (e) { rej(e); }
     });
     const stamp = (new Date).toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    // v5.84: restore the label BEFORE saving. The render is finished by this
+    // point, so "Rendering…" is already a lie, and _saveImageBlob hands control
+    // to a share sheet whose promise may never settle (see there). Measured on
+    // desktop Chrome: render 224ms, PNG encode 413ms, then the button sat on
+    // "Rendering…" indefinitely because navigator.share() never resolved.
+    if (btn) { btn.disabled = false; slot.innerHTML = label; }
     await _saveImageBlob(blob, `robograder-${slug}-${stamp}.png`);
   } catch (e) {
     console.warn("[export] render failed:", e);

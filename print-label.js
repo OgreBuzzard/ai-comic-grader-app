@@ -53,6 +53,7 @@
 //
 // Pixel dimensions for the rendered label markup are at 288 DPI so the
 // jsPDF output preserves crisp QR codes and text at print resolution.
+let _singleMode = false;   // see openLabelViewer
 const LABEL_FORMATS = {
   small: {
     name: 'small',
@@ -230,7 +231,10 @@ const OPTIONS_KEY = 'robograder.labelOptions.v1';
 //   Large ('large')   — goes over a CGC label
 //   Wide  ('small')   — regular bagged-and-boarded comics
 //   Square('square')  — corner placement, leaves the cover visible
-const VALID_SIZES = ['small-l', 'small', 'large', 'card', 'square'];
+// v5.86: 'large' removed from the choosable set. A stored preference of
+// 'large' (anyone who picked it before) now fails this check and falls back to
+// the default, instead of selecting a chip that no longer renders.
+const VALID_SIZES = ['small-l', 'small', 'card', 'square'];
 
 function readOptions() {
   try {
@@ -261,7 +265,14 @@ function writeOptions(opts) {
 // Opens the modal viewer for a single comic. allItems is required so that
 // when Print is tapped, queued comics can be looked up from the same array
 // the rest of the app uses.
-export function openLabelViewer(comic, allItems) {
+// v5.85, Matt: `opts.single` is set by the Detail view's Print Label button.
+// It changes ONE thing - the PDF page becomes the label itself instead of a
+// letter sheet with the label placed at an Avery grid position. The label's
+// own dimensions are unchanged: a 4" x 1.33" label still comes out 4" x 1.33",
+// because the point is to hand the user a file their printer driver can scale
+// to the physical stock. List view's batch sheet is untouched.
+export function openLabelViewer(comic, allItems, opts) {
+  _singleMode = !!(opts && opts.single);
   if (!comic || !comic.roboGrade) return;
   if (!Array.isArray(allItems)) {
     console.warn('[label] openLabelViewer requires allItems array');
@@ -626,9 +637,21 @@ function ensureStylesInjected() {
     font-family: 'Barlow Condensed', sans-serif;
     box-sizing: border-box;
   }
+  /* S22 (Wide light-box pass): the Wide score box flipped from the dark
+     #1a2208 fill to a light green from the app palette (#cfe8a8) with BLACK
+     numerals and a 3px border in the app's RoboGrade-Score dark green
+     (#0f1a05). Reason: thermal label printers are 1-bit BLACK-ONLY. A pale
+     numeral knocked out of a dark panel is physically unprintable on one —
+     the printer can only burn dark, so the panel prints solid and the number
+     disappears. Light interior + black ink is the only arrangement that
+     survives thermal, laser AND pre-printed stock. Only Wide changed; Case
+     (.rg-label-l), Square and Large keep the dark box because they are not
+     the thermal-roll format. */
   .rg-label .score-box {
     width: 252px; height: 252px;
-    background: #1a2208;
+    box-sizing: border-box;
+    background: #cfe8a8;
+    border: 3px solid #0f1a05;
     border-radius: 38px;
     position: absolute;
     right: 14px; top: 18px;
@@ -637,12 +660,12 @@ function ensureStylesInjected() {
   }
   .rg-label .rg-word {
     font-size: 24px; font-weight: 700;
-    color: #6a8030; letter-spacing: 3px;
+    color: #2a4010; letter-spacing: 3px;
     font-family: 'Barlow Condensed', sans-serif;
     position: absolute; top: 14px;
   }
   .rg-label .rg-stars {
-    opacity: 0.5;
+    opacity: 0.85;   /* S22: dark stars on the light box need no knock-down */
     position: absolute; top: 44px; left: 0; right: 0;
     text-align: center; font-size: 24px; line-height: 1;
     letter-spacing: 2px;
@@ -675,7 +698,7 @@ function ensureStylesInjected() {
        Matt reads the narrower condense as the better one. Wide and Case now
        match the other two variants exactly. */
     font-size: 150px; font-weight: 900;
-    color: #b8d820; line-height: 1;
+    color: #0d0d0f; line-height: 1;   /* S22: black on the light box */
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
     transform: scaleX(0.625);
@@ -694,7 +717,7 @@ function ensureStylesInjected() {
     position: absolute;
     top: 34px; right: 20px;
     font-size: 50px; font-weight: 700;
-    color: #b8d820; opacity: 0.9;
+    color: #0d0d0f; opacity: 0.85;   /* S22: black on the light box */
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
     transform: scaleX(0.625);
@@ -705,7 +728,7 @@ function ensureStylesInjected() {
   }
   .rg-label .rg-v {
     font-size: 20px;
-    color: #5a7030;
+    color: #3a5010;
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 500;
     position: absolute; bottom: 14px;
@@ -715,18 +738,31 @@ function ensureStylesInjected() {
      S12 May 6 v2: left edge bumped from 144 → 170px to accommodate the
      wider QR padding (QR ends at x=154 after the left-edge fix; +16px
      gap → info starts at 170). */
+  /* S22 (Wide QR relocation): the QR left the bottom-left corner for the
+     former mascot slot, so the info column now starts at the label's own left
+     margin (32px) instead of clearing a QR that is no longer there. That is
+     +138px of column — the point of the move — spent on bigger type below.
+     The has-price state is the exception: with a price pad in the mascot slot
+     the QR falls BACK to bottom-left, so .has-price .info keeps left:170. */
   .rg-label .info {
+    /* S22 (pre-print pass): the column now spans top to bottom and pushes
+       info-lower to the floor, so GRADED and ID sit at FIXED y on every
+       label regardless of how many lines the title took. That is what makes
+       them pre-printable — a flowed position could not be. The divider moved
+       with them (border-bottom on .info-upper -> border-top on .info-lower)
+       for the same reason. */
     position: absolute;
-    left: 170px; top: 14px; right: 282px;
-    display: flex; flex-direction: column;
+    left: 32px; top: 12px; right: 282px; bottom: 14px;
+    display: flex; flex-direction: column; justify-content: space-between;
   }
+  .rg-label .info-upper { overflow: hidden; }
   .rg-label .info-upper {
     /* S22: 8 -> 6. With a price pad the info column narrows to 462px, which wraps
        a longer title to two lines; measured, the block then ran 2px past the
        288px label and .rg-label's overflow:hidden shaved the bottom of the
        GRADE ID row. 4px comes off here and 4px off .info-lower below. */
-    padding-bottom: 6px;
-    border-bottom: 1px solid #b0b89a;
+    padding-bottom: 0;
+    border-bottom: none;   /* S22: moved to .info-lower's border-top */
     margin-bottom: 0;
   }
   /* S12 May 5: Title and Issue font sizes bumped after Matt printed
@@ -749,8 +785,22 @@ function ensureStylesInjected() {
        plus Case's 2-line clamp. Wide's info column is 700px wide (vs Case's
        462), so at 58px scaleX(0.625) it takes ~31 chars on a line — most
        titles still fit on one. The clamp only bites on the rare long one. */
-    font-size: 58px; font-weight: 900;
-    color: #0d0d0f; line-height: 1.0;
+    /* S22 (Wide QR relocation): 58 -> 66, line-height 1.0 -> 0.95, paid for
+       by the 138px the QR gave back. Two-line clamp holds at 128px
+       (2 x 66 x 0.95 = 125); measured worst case — 2-line title + issue +
+       both meta rows — ends at y=268 inside the 288px label. */
+    /* S22 (Wide QR relocation, 2nd pass): width 160%.
+       scaleX(0.625) compresses the RENDERED glyphs but leaves the layout box
+       alone, so the title was wrapping against the 602px column and then
+       rendering at 602 x 0.625 = 376px — 226px of the column thrown away on
+       every label, and a title as ordinary as "The Amazing Spider-Man"
+       wrapping to two lines for no reason. 160% = 1/0.625, so the line box is
+       963px and the rendered result is exactly 602px: the column's real
+       width, ~31 visual characters, and most titles back on one line. Same
+       correction applied to .iss below. */
+    width: 160%;
+    font-size: 62px; font-weight: 900;
+    color: #0d0d0f; line-height: 0.95;
     white-space: normal;
     max-height: 118px;
     overflow: hidden;
@@ -758,30 +808,48 @@ function ensureStylesInjected() {
     transform: scaleX(0.625);
     transform-origin: left center;
   }
+  /* S22: the issue number rides WITH the title - no line break between them.
+     If the line has to break it breaks before the issue number, never between
+     the issue number and the publication date, which is now the start of the
+     line below. */
+  .rg-label .ttl-iss { font-weight: 700; color: #2a2a2a; }
   .rg-label .iss {
     /* S22: 36 -> 46 toward Case's 52. Held 6pt under Case because Wide still
        carries the info-upper divider AND the ID row in the meta grid, so it
        has less vertical budget than Case (which moved ID into the URL). */
-    font-size: 46px; font-weight: 600;
+    width: 160%;   /* S22: see the .ttl width note above */
+    font-size: 48px; font-weight: 600;
     color: #333; line-height: 1.0;
     font-family: 'Noto Sans Display', sans-serif;
-    /* S14 PDF FIX: scaleX(0.625) replaces font-stretch. The flex row
-       (issue + date) compresses as a unit incl. its gap — proportional
-       and visually identical to the condensed-axis result. */
-    display: flex; gap: 24px; align-items: baseline;
+    /* S22: this line is now "<pub date>, <publisher>" as one string, so the
+       old flex row with a 24px gap is gone - a comma and a space do the
+       separating. scaleX(0.625) still compresses the line as a unit. */
+    display: block; white-space: nowrap;
     transform: scaleX(0.625);
     transform-origin: left center;
   }
   .rg-label .prt {
-    font-size: 20px; color: #555544;
+    font-size: 22px; color: #4a4a38;
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 500;
   }
-  .rg-label .info-lower { padding-top: 6px; }   /* S22: see .info-upper note */
+  .rg-label .info-lower {
+    /* S22: the rule takes the SAME colour as GRADED and ID (#2a3a18). The old
+       #b0b89a was a pale olive on an orange gradient - it all but vanished in
+       print, and since the rule and those two words are one pre-printed unit
+       at fixed positions, they should read as one. */
+    border-top: 1px solid #2a3a18;
+    padding-top: 6px;
+  }
+  /* S22: a 2-line title PLUS a printing line does not fit the room above the
+     pinned meta block. The template adds .has-prt to .info only when a
+     printing line is present, so in exactly that case the title clamps to one
+     line. Without a printing line the 2-line clamp stands. */
+  .rg-label .info.has-prt .ttl { max-height: 60px; }
   .rg-label .meta-grid {
     display: grid;
     grid-template-columns: max-content max-content;
-    column-gap: 16px; row-gap: 5px;
+    column-gap: 18px; row-gap: 3px;
     align-items: baseline;
   }
   .rg-label .meta-lbl {
@@ -798,7 +866,7 @@ function ensureStylesInjected() {
   .rg-label .meta-val {
     /* S22: 24 -> 28 toward Case's 34. Held under Case for the same reason
        as .iss — Wide keeps the ID row, so it pays for two meta rows. */
-    font-size: 28px; font-weight: 800;
+    font-size: 30px; font-weight: 800;
     color: #0d0d0f;
     font-family: 'Noto Sans Mono', monospace;
   }
@@ -812,18 +880,55 @@ function ensureStylesInjected() {
      module) is now ~34px. */
   .rg-label .qr-col {
     position: absolute;
-    /* S22: anchored to the BOTTOM instead of the top so the QR sits directly
-       above the URL it encodes — the arrangement Case and Square already use.
-       Top-anchored, it floated at the top of the label with the URL stranded
-       two inches below it. bottom:44 clears the URL (bottom:18, ~16px tall)
-       with a 10px gap. */
-    left: 32px; bottom: 44px;
-    width: 122px;
+    /* S22 (Wide QR relocation): the QR now occupies the slot the mascot used
+       to hold — top:14, right:282, a 220-wide column immediately left of the
+       score box. Two things come out of that. (1) The code goes from 118px
+       (0.41" at 288 DPI) to 200px (0.69"), which is the difference between a
+       phone having to hunt for it and a phone locking on; a 4" label gets
+       scanned at arm's length across a table. (2) The bottom-left corner it
+       vacated is what paid for the bigger title and meta type above. The URL
+       it encodes follows it and prints centred directly beneath it. */
+    /* S22: the code stays at its long-standing 118px - it scanned fine at
+       that size and growing it only crowded the column. The white pad is
+       134x134 (118 + 8px of quiet zone each side, which a scanner needs and
+       the orange gradient would otherwise eat) and the pad + URL together are
+       dropped 10% of the label height (29px) BELOW centre at Matt's
+       direction: pad 95..229, URL 233..249. Those are FIXED coordinates,
+       which is what lets the empty box be pre-printed. */
+    top: 95px; right: 282px;
+    left: auto; bottom: auto;
+    width: 220px;
     display: flex; flex-direction: column;
-    align-items: center; gap: 4px;
+    align-items: center; gap: 0;
+  }
+  .rg-label .qr-col .qrc {
+    background: #ffffff;
+    padding: 8px;
+    border-radius: 12px;
+    line-height: 0;
   }
   .rg-label .qr-col .qrc canvas,
   .rg-label .qr-col .qrc img {
+    width: 118px !important;
+    height: 118px !important;
+  }
+  /* has-price: the price pad takes the mascot slot, so the QR reverts to the
+     bottom-left corner at its old size and the info column yields (left:170
+     above). Nothing else about that state changed. */
+  .rg-label.has-price .qr-col {
+    top: auto; right: auto;
+    left: 32px; bottom: 44px;
+    width: 122px;
+  }
+  .rg-label.has-price .info { top: 14px; bottom: auto; display: flex;
+    flex-direction: column; justify-content: flex-start; }
+  .rg-label.has-price .info-upper { padding-bottom: 4px; border-bottom: 1px solid #b0b89a; }
+  .rg-label.has-price .info-lower { border-top: none; padding-top: 4px; }
+  .rg-label.has-price .qr-col .qrc {
+    background: none; padding: 0; border-radius: 0;
+  }
+  .rg-label.has-price .qr-col .qrc canvas,
+  .rg-label.has-price .qr-col .qrc img {
     width: 118px !important;
     height: 118px !important;
   }
@@ -835,14 +940,26 @@ function ensureStylesInjected() {
   }
   /* URL — paired with the QR at the bottom-left (S12 May 6 v2: left padded
      to 32px to match the QR column above for a consistent left margin). */
+  /* S22 (Wide QR relocation): the URL follows the QR into the centre-right
+     column and prints centred beneath it. In the has-price state the QR is
+     back at bottom-left, so the URL goes back with it. */
   .rg-label .url {
-    font-size: 16px; color: #5a6a4a;
+    /* 14px, not 17: at 17 the 24-character URL measured ~250px against the
+       220px column and ran out under the score box. nowrap keeps it on one
+       line so the overflow can never come back silently. */
+    font-size: 14px; color: #4a5a3a;
     font-family: ui-monospace, "SF Mono", Menlo, "Cascadia Mono", "Roboto Mono", monospace;
     font-weight: 500;
-    text-align: left;
+    text-align: center;
+    white-space: nowrap;
     position: absolute;
-    left: 32px; bottom: 18px;
+    left: auto; right: 282px; width: 220px; top: 233px; bottom: auto;
     letter-spacing: 0.2px;
+  }
+  .rg-label.has-price .url {
+    font-size: 16px; color: #5a6a4a;
+    text-align: left; white-space: normal;
+    left: 32px; right: auto; width: auto; top: auto; bottom: 18px;
   }
 
   /* ── Small L variant (S14) ────────────────────────────────────────────
@@ -1030,14 +1147,12 @@ function ensureStylesInjected() {
        Large — top:28  right:322  340x336
      The image is bottom-anchored and centred inside that box (same treatment as
      Case), inset so the mascot reads as art rather than filling a panel. */
-  .rg-label .robot-badge {
-    display: block;
-    position: absolute;
-    top: 18px; right: 282px;
-    width: 220px; height: 220px;
-    display: flex; align-items: flex-end; justify-content: center;
-  }
-  .rg-label .robot-badge img { width: 186px; height: auto; display: block; opacity: 0.85; }
+  /* S22 (Wide QR relocation): the Wide mascot badge is retired — the QR owns
+     this slot now. Matt is producing a Robograder figure that INTEGRATES the
+     code (the QR as Robo's chest, head/arms/wheels extending past it) for the
+     pre-printed stock; the app-rendered label draws the bare code. The base
+     `.robot-badge { display: none }` rule above already hides it, so there is
+     nothing to re-declare here. Case, Square and Large keep their badges. */
   .rg-label-large .robot-badge {
     display: block;
     position: absolute;
@@ -1349,6 +1464,7 @@ function ensureStylesInjected() {
      GRADED / ID labels and at the same weight (S12 May 6). The original
      pale thin "300 weight" was disappearing on the printed white pad. */
   .rg-label.has-price .info {
+    left: 170px;      /* S22: QR is back at bottom-left in this state */
     right: 518px;
   }
   /* S22: the mascot now fills the price pad's footprint, so .info has to yield
@@ -1357,7 +1473,7 @@ function ensureStylesInjected() {
      state: the template emits the price pad when priceTag is on and the badge
      when it is off, so "not .has-price" IS "robot showing". */
   .rg-label:not(.has-price) .info {
-    right: 518px;
+    right: 518px;     /* clears the QR box now occupying x = 282 .. 502 */
   }
   .rg-label .price-pad {
     display: none;
@@ -1925,7 +2041,14 @@ function renderModal(modal, comic, allItems) {
   const _isCardItem = !!(comic && comic.type === 'card');
   const sizeSegments = _isCardItem
     ? `<div class="lvm-segment-group">${seg('card', 'Card')}</div>`
-    : `<div class="lvm-segment-group">${seg('small-l', 'Case')}${seg('large', 'Large')}${seg('small', 'Wide')}${seg('square', 'Square')}</div>`;
+    // v5.86, Matt: Large is RETIRED from the picker in both views. It was an
+    // early experiment at matching CGC's own label size (OL5450, 7.5" x 1.5")
+    // and nobody uses it. It is also the one format that cannot ever work on a
+    // 4"-wide thermal printer, so leaving it on screen would promise something
+    // the printing path can't deliver. The format definition and its renderer
+    // stay in the file so existing saved options still resolve - see the
+    // VALID_SIZES note - but there is no way to choose it any more.
+    : `<div class="lvm-segment-group">${seg('small-l', 'Case')}${seg('small', 'Wide')}${seg('square', 'Square')}</div>`;
 
   const pricePillClass = opts.priceTag ? 'lvm-pill on' : 'lvm-pill';
 
@@ -2338,11 +2461,29 @@ async function handleSavePDF(modal, currentComic, allItems) {
 //     Label 7.5" × 1.5", 1 col × 7 rows = 7 per sheet
 async function generatePDF(comics, modal) {
   const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF({
-    orientation: 'portrait',
-    unit: 'in',
-    format: 'letter',  // 8.5 × 11
-  });
+  // SINGLE MODE: the page IS the label. Declared AFTER opts/fmt are read below
+  // in sheet mode, so the format lookup is duplicated here - cheap, and it
+  // keeps the sheet path's logic untouched.
+  const _singleFmt = _singleMode
+    ? LABEL_FORMATS[(() => {
+        const o = readOptions();
+        const f = comics && comics[0];
+        return (f && f.type === 'card') ? 'card' : (o.size === 'card' ? 'small-l' : o.size);
+      })()]
+    : null;
+  const pdf = _singleFmt
+    ? new jsPDF({
+        // jsPDF takes [width, height] in the given unit. Orientation is implied
+        // by the array, but state it so a square label (2x2) is unambiguous.
+        orientation: _singleFmt.labelW >= _singleFmt.labelH ? 'landscape' : 'portrait',
+        unit: 'in',
+        format: [_singleFmt.labelW, _singleFmt.labelH]
+      })
+    : new jsPDF({
+        orientation: 'portrait',
+        unit: 'in',
+        format: 'letter',  // 8.5 × 11
+      });
 
   // S12: read current options to determine format + price-tag inclusion.
   // Capture them at PDF-generation time (NOT at queue-add time) so the
@@ -2461,6 +2602,14 @@ async function generatePDF(comics, modal) {
     for (let i = 0; i < total; i++) {
       setProgress(`Generating ${i + 1}/${total}…`);
 
+      // SINGLE MODE: one label per page, drawn at the origin, no margins and
+      // no grid. Everything downstream still uses x/y and fmt.labelW/labelH,
+      // so the drawing code below needs no branch of its own.
+      let x, y;
+      if (_singleMode) {
+        if (i > 0) pdf.addPage([fmt.labelW, fmt.labelH], fmt.labelW >= fmt.labelH ? 'landscape' : 'portrait');
+        x = 0; y = 0;
+      } else {
       const cellIdx = i % perSheet;            // 0 .. perSheet-1
       const sheetIdx = Math.floor(i / perSheet);
 
@@ -2471,8 +2620,8 @@ async function generatePDF(comics, modal) {
 
       const col = cellIdx % fmt.cols;
       const row = Math.floor(cellIdx / fmt.cols);
-      let x = fmt.sheetLeftMargin + col * (fmt.labelW + fmt.colGap);
-      const y = fmt.sheetTopMargin + row * (fmt.labelH + fmt.rowGap);
+      x = fmt.sheetLeftMargin + col * (fmt.labelW + fmt.colGap);
+      y = fmt.sheetTopMargin + row * (fmt.labelH + fmt.rowGap);
 
       // S18: nudge the Small-L LEFT column right (see SMALL_L_LEFT_SHIFT_IN).
       if (opts.size === 'small-l' && col === 0) {
@@ -2484,6 +2633,7 @@ async function generatePDF(comics, modal) {
       if (bandImgData && col === 0) {
         pdf.addImage(bandImgData, 'JPEG', 0, y, 8.5, fmt.labelH);
       }
+      }   // end sheet-placement branch (single mode set x/y above)
 
       const canvas = await window.html2canvas(boxes[i], {
         scale: 1,
@@ -2750,6 +2900,10 @@ function renderLabelMarkup(comic, opts) {
   const isLarge  = opts.size === 'large';
   const isSquare = opts.size === 'square';
   const isSmallL = opts.size === 'small-l';
+  // S22: Wide is the thermal-roll format and the only variant with a LIGHT
+  // score box (see the .rg-label .score-box note in the CSS), so every colour
+  // decision below has to branch on it.
+  const isWide = !isLarge && !isSquare && !isSmallL;
   if (opts.size === 'card' || (comic && comic.type === 'card')) return renderCardLabelMarkup(comic, opts);
   const showPrice = !!opts.priceTag;
   const includePrice = !!opts.includePrice;
@@ -2759,9 +2913,18 @@ function renderLabelMarkup(comic, opts) {
   // S16: Restoration state for purple coloring + check mark
   const _labelRestored = !!(comic.restorationHighConfidence || (comic.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(comic.cgcNotes)));
   const _labelRestoNeg = !!(comic.restorationCheckRan && !comic.restorationFlag && !_labelRestored);
-  const _labelScoreColor = _labelRestored ? '#c8a8e8' : '#b8d820';
-  const _labelBgColor = _labelRestored ? '#1a0a2a' : '#1a2208';
-  const _labelCheckHtml = _labelRestoNeg ? '<span style="color:#9a7ab8;font-size:9px;font-weight:900;margin-left:2px">\u2713</span>' : '';
+  // S22: Wide's box is light (#cfe8a8 + black numerals), so the restoration
+  // palette inverts for it — a pale lavender numeral that reads on #1a0a2a is
+  // invisible on a light panel, and vice versa.
+  const _labelScoreColor = isWide
+    ? (_labelRestored ? '#3a1252' : '#0d0d0f')
+    : (_labelRestored ? '#c8a8e8' : '#b8d820');
+  const _labelBgColor = isWide
+    ? (_labelRestored ? '#ead8f5' : '#cfe8a8')
+    : (_labelRestored ? '#1a0a2a' : '#1a2208');
+  const _labelBorderColor = isWide ? (_labelRestored ? '#2a0f3a' : '#0f1a05') : null;
+  const _labelCheckColor = isWide ? '#5a3a7a' : '#9a7ab8';
+  const _labelCheckHtml = _labelRestoNeg ? `<span style="color:${_labelCheckColor};font-size:9px;font-weight:900;margin-left:2px">\u2713</span>` : '';
   // S17: assessment-tier stars on the label score box (room here, so ROBOGRADE
   // word stays and stars sit beneath it). 1 Main / 2 Deep / 3 Full + purple if
   // a Restoration check ran.
@@ -2773,7 +2936,7 @@ function renderLabelMarkup(comic, opts) {
     // S17: chunky SVG star (short points, thick center) in the score color, not
     // the pointy Unicode ★. Size comes from the .rg-stars CSS per format (the
     // SVG fills the line via height:1em). Restoration star is purple.
-    const _green = _labelRestored ? _labelScoreColor : '#b8d820';
+    const _green = _labelRestored ? _labelScoreColor : (isWide ? '#2a4010' : '#b8d820');
     const _star = (c) => `<svg viewBox="0 0 24 24" style="height:1em;width:1em;display:inline-block;vertical-align:middle"><path d="M12.00,2.00 15.64,6.98 21.51,8.91 17.90,13.92 17.88,20.09 12.00,18.20 6.12,20.09 6.10,13.92 2.49,8.91 8.36,6.98Z" fill="${c}"/></svg>`;
     let _s = '';
     for (let i = 0; i < _t; i++) _s += _star(_green);
@@ -2853,6 +3016,10 @@ function renderLabelMarkup(comic, opts) {
   const issue = comic.issue ? `#${esc(comic.issue)}` : '';
   const issueDate = esc(comic.issueDate || '');
   const printing = comic.printing ? esc(comic.printing) : '';
+  // S22: the line under the title is "<pub date>, <publisher>". Either half can
+  // be missing, so the comma only appears when both are present.
+  const publisher = esc(comic.publisher || '');
+  const issueLine = [issueDate, publisher].filter(Boolean).join(', ');
   const gradeId = esc(comic.roboGradeId || 'XXXXXX');
   const _dateObj = comic.roboGradeDate ? new Date(comic.roboGradeDate) : new Date();
   const gradeDate = _dateObj.toLocaleDateString('en-US', {
@@ -2899,23 +3066,23 @@ function renderLabelMarkup(comic, opts) {
     <div class="${wrapClass}" data-grade-id="${gradeId}">
       ${smallLWrap}
       ${faceOpen}
-      <div class="score-box"${_labelRestored ? ` style="background:${_labelBgColor}"` : ''}>
+      <div class="score-box"${_labelRestored ? ` style="background:${_labelBgColor}${_labelBorderColor ? `;border-color:${_labelBorderColor}` : ''}"` : ''}>
         <div class="rg-word">ROBOGRADE</div>
         ${_labelTierStars}
         <div class="rg-num-wrap"><span class="rg-num"${_labelRestored ? ` style="color:${_labelScoreColor}"` : ''}>${score}</span>${_labelCheckHtml}</div>
         ${precision ? `<span class="rg-prec"${_labelRestored ? ` style="color:${_labelScoreColor};opacity:0.9"` : ''}>${precision}</span>` : ''}
         <div class="rg-v">${versionStr}</div>
       </div>
-      <div class="info">
+      <div class="info${printing ? ' has-prt' : ''}">
         <div class="info-upper">
-          <div class="ttl">${title}</div>
-          <div class="iss">${issue ? `<span>${issue}</span>` : ''}${issueDate ? `<span>${issueDate}</span>` : ''}</div>
+          <div class="ttl">${title}${issue ? ` <span class="ttl-iss">${issue}</span>` : ''}</div>
+          <div class="iss">${issueLine}</div>
           ${printing ? `<div class="prt">${printing}</div>` : ''}
         </div>
         <div class="info-lower">
           <div class="meta-grid">
             <span class="meta-lbl">GRADED</span><span class="meta-val">${gradeDate}</span>
-            <span class="meta-lbl meta-id-lbl">GRADE ID</span><span class="meta-val meta-id-val">${gradeId}</span>
+            <span class="meta-lbl meta-id-lbl">ID</span><span class="meta-val meta-id-val">${gradeId}</span>
           </div>
         </div>
       </div>
@@ -2934,11 +3101,10 @@ function renderLabelMarkup(comic, opts) {
           return `<div class="price-pad"><div class="price-value">${priceStr}</div></div>`;
         }
         return `<div class="price-pad"><div class="price-placeholder">Price</div></div>`;
-      })() : '<div class="robot-badge"><img src="assets/Robograder_Charging.png" alt=""></div>'}
+      })() : (isWide ? '' : '<div class="robot-badge"><img src="assets/Robograder_Charging.png" alt=""></div>')}
       <div class="qr-col">
         ${comic.publicListing
-          ? `<div class="qrc" data-qr-id="${gradeId}"></div>
-             <div class="verify">SCAN TO VERIFY</div>`
+          ? `<div class="qrc" data-qr-id="${gradeId}"></div>`
           : `<!-- S14: private book — no QR. A scannable code that lands on a
                   "this listing is private" page reads as broken to anyone
                   who scans it (e.g. a booth visitor). Showing nothing is
