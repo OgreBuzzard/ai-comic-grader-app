@@ -330,15 +330,49 @@ export default async function handler(req, res) {
         prefixSha,        // must match what api/assess.js sends
         mainTally,        // read / write / uncached across the last 60 rows
         recentMains,
-        verdict: !caching.mainOn
+        // THE QUESTION THIS ENDPOINT EXISTS TO ANSWER, and until 2026-10-27 it
+        // was not asking it. Do the PING and real MAINS share a cache entry?
+        // Compare the token counts: the ping's own rows and the Main rows must
+        // agree. They differed by one token (31,402 vs 31,403) for 216 pings
+        // and 30 Mains while the verdict below cheerfully read "Warming is
+        // working" — because that string only ever asked whether Mains read
+        // SOMETHING, and Mains do read each other inside the hour.
+        pingTokens: (recent[0] && (recent[0].read || recent[0].created)) || null,
+        mainTokens: (recentMains[0] && (recentMains[0].cacheRead || recentMains[0].cacheCreate)) || null,
+        prefixesAgree: (() => {
+          const p = (recent[0] && (recent[0].read || recent[0].created)) || null;
+          const m = (recentMains.find(r => r.warmedPrefix === 'main') || {});
+          const mt = m.cacheRead || m.cacheCreate || null;
+          if (!p || !mt) return null;
+          return p === mt;
+        })(),
+        verdict: (() => {
+          // SPLIT PREFIX BEATS EVERY OTHER DIAGNOSIS. If the ping and the Mains
+          // are on different entries, nothing else here is worth reading: the
+          // ping can report a perfect run of READs forever while every
+          // assessment past the hour pays full cold price.
+          const p = (recent[0] && (recent[0].read || recent[0].created)) || null;
+          const m = (recentMains.find(r => r.warmedPrefix === 'main') || {});
+          const mt = m.cacheRead || m.cacheCreate || null;
+          if (p && mt && p !== mt) {
+            return 'SPLIT PREFIX — the ping is warming an entry no assessment uses. Ping ' + p +
+                   ' tokens, Main ' + mt + '. The ping will keep reporting healthy READs while every ' +
+                   'assessment more than an hour after the last one pays full cold price. Compare ' +
+                   'mainPrefixSha on a recent assessment_timings row against prefixSha above: equal ' +
+                   'means the system-array SHAPE differs, different means buildMainPrefix() is ' +
+                   'handing the two callers different bytes.';
+          }
+          return null;
+        })() ||
+        (!caching.mainOn
           ? 'MAIN CACHING IS OFF in config/caching. No assessment is caching anything, so there is no entry to keep warm. Switch the Comic chip back on in the admin header; the ping now refuses to spend while it is off.'
           : caching.ttl === '5m'
             ? 'TTL IS 5m. The cron fires every 15 minutes, so a 5-minute entry is always dead by the next fire: every ping pays the WRITE price and every assessment runs cold. Set the TTL to 1h in the admin header.'
             : mainTally.write > mainTally.read
               ? 'Mains are mostly WRITES. The prefix the ping sends and the one assess.js sends have come apart, or deploys are frequent enough to reset the key. Compare prefixSha against lib/main_prompt_check.mjs.'
               : mainTally.read > 0
-                ? 'Mains are reading the cache. Warming is working.'
-                : 'No Main rows in the last 60 timings — nothing to judge yet.',
+                ? 'Mains are reading the cache, and the ping is on the same entry. Warming is working.'
+                : 'No Main rows in the last 60 timings — nothing to judge yet.'),
         recent: recent.slice(0, 60)
       });
     } catch (e) {
@@ -481,7 +515,30 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           model: modelW,
           max_tokens: 1,                 // output spend is zero; we want the cache touch, not an answer
-          system: [{ type: 'text', text: prefix, cache_control: _ctlW }],
+          // TWO SYSTEM BLOCKS, MATCHING api/assess.js EXACTLY.
+          // 2026-10-27: mode=status proved this ping and real Mains have been
+          // on SEPARATE cache entries all along — every ping 31,402 tokens,
+          // every ordinary Main 31,403, one token apart, 216 pings and 30 Mains,
+          // never crossing. A Main at 03:05:25 WROTE five minutes after a ping
+          // at 03:00:19 READ, which is only possible if the keys differ.
+          // The prefix TEXT is built by the same buildMainPrefix(null) on both
+          // sides, so the remaining difference was the SHAPE: assess.js sends
+          //   [{text: prefix, cache_control}, {text: <variable tail>}]
+          // and this sent a single block. The cached segment is serialised with
+          // the block structure around it, so one block and two blocks are not
+          // the same key.
+          // The second block's CONTENT is irrelevant — it sits after the
+          // breakpoint and outside the key — but it must be non-empty, because
+          // the API rejects an empty text block.
+          // IF THIS IS WRONG, the next real Main says so: assess.js now stamps
+          // mainPrefixSha on its timing record. Equal to prefixSha here means
+          // the text matched and the shape was the bug (this fix). Different
+          // means buildMainPrefix() is handing the two callers different bytes
+          // and this change was beside the point.
+          system: [
+            { type: 'text', text: prefix, cache_control: _ctlW },
+            { type: 'text', text: '.' }
+          ],
           messages: [{ role: 'user', content: [{ type: 'text', text: 'ok' }] }]
         })
       });

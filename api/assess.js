@@ -31,6 +31,7 @@ import { anthropicWithRetry, fetchTimeout } from '../lib/anthropic_retry.js';
 import { getBookNote } from '../lib/book_notes.js';
 import { defectIndexPromptBlock } from '../lib/defect_index.js';
 import { buildMainPrefix } from '../lib/main_prompt.js';
+import * as _nodeCrypto from 'crypto';   // 2026-10-27: prefix sha on the timing record
 import { enforceCgcGrade } from '../lib/grade_definitions.js';
 import { computePhotograderPM, mergePhotograder, PHOTOGRADER_RUBRIC_MAIN } from '../lib/photograder.js';
 import { reserveCredit, refundCredit, insufficientCreditsPayload } from '../lib/credits.js';
@@ -2158,6 +2159,35 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           // the same defect that Card assessments caused on 2026-10-16, one
           // layer down. The gate counts 'main' only.
           warmedPrefix: _cacheOn ? (_ki ? 'main_ki' : 'main') : null,
+          // 2026-10-27 — THE INSTRUMENT THAT SETTLES THE KEEP-WARM SPLIT.
+          // /api/cachewarm?mode=status proved the ping and real Mains are on
+          // SEPARATE cache entries: every ping reads/writes 31,402 tokens and
+          // every ordinary Main reads/writes 31,403, and a Main at 03:05:25
+          // WROTE five minutes after a ping at 03:00:19 READ. One token apart,
+          // 216 pings and 30 Mains, never once crossing. $16.64 of pings that
+          // have never warmed an assessment.
+          // Two candidates, and this field tells them apart on the next Main:
+          //   sha MATCHES cachewarm's prefixSha -> the TEXT is identical and
+          //     the split is structural (the ping sends ONE system block, this
+          //     sends TWO), which is what the ping change ships to fix.
+          //   sha DIFFERS -> buildMainPrefix() is returning different bytes to
+          //     the two callers and the structural fix is beside the point.
+          // Cheap: one sha of a string we already hold, on a path that just
+          // spent 30 cents.
+          mainPrefixSha: (() => {
+            try {
+              if (!_cacheOn) return null;
+              const _sp0 = _activePrompt.split('\u00a7\u00a7CACHE_SPLIT\u00a7\u00a7')[0];
+              return _nodeCrypto.createHash('sha256').update(_sp0).digest('hex').slice(0, 16);
+            } catch { return null; }
+          })(),
+          mainPrefixChars: (() => {
+            try {
+              if (!_cacheOn) return null;
+              return _activePrompt.split('\u00a7\u00a7CACHE_SPLIT\u00a7\u00a7')[0].length;
+            } catch { return null; }
+          })(),
+          mainSystemBlocks: _cacheOn ? 2 : 1,
           attempts: _retryStats.attempts || null,
           upstreamStatus: _retryStats.lastStatus ?? null,
           retryWaitedMs: _retryStats.waitedMs || 0,
