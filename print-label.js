@@ -239,7 +239,7 @@ const VALID_SIZES = ['small-l', 'small', 'card', 'square'];
 function readOptions() {
   try {
     const raw = localStorage.getItem(OPTIONS_KEY);
-    if (!raw) return { size: 'small-l', priceTag: false, includePrice: false };
+    if (!raw) return { size: 'small-l', priceTag: false, includePrice: false, mono: false };
     const o = JSON.parse(raw);
     return {
       // Validated against the known set; unknown values fall back to square
@@ -251,9 +251,18 @@ function readOptions() {
       // INSIDE the price pad. Only meaningful when priceTag is also true and
       // the comic has an askingPrice set. UI toggle for this is conditionally
       // shown — see renderModal.
-      includePrice: !!o.includePrice
+      includePrice: !!o.includePrice,
+      // v5.91: THERMAL MODE. A direct-thermal roll printer (Rollo, Zebra, the
+      // Jadens) has one ink and one substrate: it burns black or it leaves the
+      // stock white. There is no orange, no green, and no grey - a mid-tone is
+      // dithered into hatching. Rendered untouched, the Wide label's full-bleed
+      // gradient covers the whole 4x1 in cross-hatch and swallows the smaller
+      // type outright (measured: the printing line and the URL both disappear).
+      // So thermal is not a print setting, it is a different RENDER: white
+      // ground, black ink, the score box as an outline instead of a fill.
+      mono: !!o.mono
     };
-  } catch { return { size: 'small-l', priceTag: false, includePrice: false }; }
+  } catch { return { size: 'small-l', priceTag: false, includePrice: false, mono: false }; }
 }
 
 function writeOptions(opts) {
@@ -1988,6 +1997,96 @@ function ensureStylesInjected() {
     font-size: 72px;
   }
 
+  /* ══════════════════════════════════════════════════════════════════════
+     THERMAL / MONOCHROME VARIANT (v5.91)
+
+     One layer of overrides on top of whichever format is selected, switched by
+     the `mono` class on the wrapper. It is deliberately a LAYER and not a
+     fourth set of geometry: every position, size and clamp is already tuned
+     per format and none of that changes for thermal. Only the ink changes.
+
+     Three rules it follows, and they are all consequences of a 1-bit head:
+       1. NOTHING MID-TONE. Every colour here is #000 or #fff. A thermal driver
+          turns anything between into a dither pattern, which at 203-300 dpi
+          reads as dirt and eats small type.
+       2. NO FILL BEHIND TEXT. The score box inverts from a filled panel to a
+          4px outline. Knocking white type out of a black panel means burning
+          the entire panel, which is slow, drains the ribbon-less head's duty
+          cycle, and leaves the number as the one unburned shape - the first
+          thing to close up as the head wears or the stock shifts.
+       3. WEIGHT AND POSITION CARRY WHAT COLOUR USED TO. Nothing here is
+          distinguished by hue alone, so nothing is lost converting it.
+
+     !important throughout, because renderLabelMarkup sets several of these
+     inline for restored books (purple box, purple numeral, purple check) and
+     the stars take their fill from an inline SVG attribute.
+
+     This does NOT replace the colour design. List view still prints Avery
+     sheets on a colour laser or inkjet, unchanged. */
+  .mono { background: #fff !important; border: 1px solid #000 !important; }
+  .mono .face,
+  .mono .wrap-strip { background: #fff !important; }
+  .mono .fold-guide { background: #000 !important; opacity: 1 !important; }
+
+  /* Score box: outline, not fill. The 4px border holds its own at 203 dpi
+     where a 1px hairline can drop out entirely between passes. */
+  .mono .score-box {
+    background: #fff !important;
+    border: 4px solid #000 !important;
+  }
+  .mono .rg-word,
+  .mono .rg-num,
+  .mono .rg-prec,
+  .mono .rg-v,
+  .mono .ttl,
+  .mono .ttl-iss,
+  .mono .iss,
+  .mono .prt,
+  .mono .meta-lbl,
+  .mono .meta-val,
+  .mono .url,
+  .mono .url-id,
+  .mono .verify,
+  .mono .ws-ttl, .mono .ws-iss, .mono .ws-date, .mono .ws-prt,
+  .mono .ws-id, .mono .ws-score {
+    color: #000 !important;
+    opacity: 1 !important;
+  }
+  /* Stars carry an inline fill from _labelTierStars, including the purple
+     restoration star — all of them go black. */
+  .mono .rg-stars { opacity: 1 !important; }
+  .mono .rg-stars svg path { fill: #000 !important; }
+  /* The restoration check mark is inline-styled purple. */
+  .mono .rg-num-wrap span { color: #000 !important; }
+
+  /* Rules: the divider and the info-upper border, black and 2px so they
+     survive the head. */
+  .mono .info-lower { border-top: 2px solid #000 !important; }
+  .mono .info-upper { border-bottom-color: #000 !important; }
+
+  /* QR: the stock is already white, so the white pad is redundant — drop it
+     and let the code sit directly on the label. The quiet zone is still
+     there; it is just the paper now. */
+  .mono .qrc {
+    background: none !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+  }
+  .mono .qr-private div { color: #000 !important; }
+
+  /* Price pad: outline, same reasoning as the score box. */
+  .mono .price-pad {
+    background: #fff !important;
+    border: 2px solid #000 !important;
+  }
+  .mono .price-placeholder,
+  .mono .price-value { color: #000 !important; }
+
+  /* The mascot is a photographic PNG with soft shading. There is no good
+     1-bit rendering of it — it dithers into a grey smudge — so thermal drops
+     it rather than printing something that looks like a fault. */
+  .mono .robot-badge { display: none !important; }
+
   /* Print sheet markup is no longer used — PDF generation (handleSavePDF)
      replaces window.print() entirely. The label DOM is captured by
      html2canvas off-screen and embedded into a jsPDF document. See
@@ -2051,6 +2150,10 @@ function renderModal(modal, comic, allItems) {
     : `<div class="lvm-segment-group">${seg('small-l', 'Case')}${seg('small', 'Wide')}${seg('square', 'Square')}</div>`;
 
   const pricePillClass = opts.priceTag ? 'lvm-pill on' : 'lvm-pill';
+  // v5.91: thermal toggle. Shown for every size — Case, Wide and Square are
+  // all within a 4" roll printer's width, so any of them can land on one.
+  // Cards keep it too; the renderer applies the same layer.
+  const monoPillClass = opts.mono ? 'lvm-pill on' : 'lvm-pill';
 
   // S12: Include Asking Price secondary toggle. Conditional visibility — only shows
   // when BOTH:
@@ -2117,6 +2220,13 @@ function renderModal(modal, comic, allItems) {
           <span class="${includePricePillClass}"></span>
         </div>
       </div>` : ''}
+      <div class="lvm-toggle-row lvm-toggle-row-secondary">
+        <div></div>
+        <div class="lvm-toggle" data-action="toggle-mono" role="button" tabindex="0">
+          <span class="lvm-toggle-label">Thermal printer (black only)</span>
+          <span class="${monoPillClass}"></span>
+        </div>
+      </div>
       <div class="lvm-preview-area">
         <div class="lvm-preview-frame" style="--lvm-label-w: ${fmt.pixelW}px; --lvm-label-h: ${fmt.pixelH}px;">
           <div class="lvm-preview-wrap" style="--lvm-label-w: ${fmt.pixelW}px; --lvm-label-h: ${fmt.pixelH}px;">
@@ -2154,6 +2264,12 @@ function renderModal(modal, comic, allItems) {
   modal.querySelector('[data-action="toggle-price"]').addEventListener('click', () => {
     const cur = readOptions();
     writeOptions({ ...cur, priceTag: !cur.priceTag });
+    renderModal(modal, comic, allItems);
+  });
+  // v5.91: thermal toggle. Unconditional in the DOM, so no guard needed.
+  modal.querySelector('[data-action="toggle-mono"]').addEventListener('click', () => {
+    const cur = readOptions();
+    writeOptions({ ...cur, mono: !cur.mono });
     renderModal(modal, comic, allItems);
   });
   // S12: Include Price toggle (conditional). The element only exists in the
@@ -2720,7 +2836,8 @@ async function generatePDF(comics, modal) {
                   : opts.size === 'small-l' ? '5162'
                   : '8161';
     const priceTag = opts.priceTag ? '-Price' : '';
-    const filename = `Robograder-Labels-${sizeTag}${priceTag}-${new Date().toISOString().slice(0, 10)}.pdf`;
+    const monoTag = opts.mono ? '-Thermal' : '';
+    const filename = `Robograder-Labels-${sizeTag}${priceTag}${monoTag}-${new Date().toISOString().slice(0, 10)}.pdf`;
     // Deliver the PDF. Three environments behave differently:
     //
     //   1. Native iOS app (Capacitor WKWebView): navigator.share is NOT wired
@@ -2862,7 +2979,7 @@ function renderCardLabelMarkup(comic, opts) {
     </div>`;
 
   return `
-    <div class="rg-label-card${perfect10 ? ' perfect10' : ''}" data-grade-id="${gradeId}">
+    <div class="rg-label-card${perfect10 ? ' perfect10' : ''}${opts && opts.mono ? ' mono' : ''}" data-grade-id="${gradeId}">
       ${backHTML}
       <div class="rgc-foldtop"></div>
       <div class="rgc-foldbot"></div>
@@ -3033,7 +3150,7 @@ function renderLabelMarkup(comic, opts) {
                   : isSquare ? 'rg-label-square'
                   : isSmallL ? 'rg-label-l'
                   : 'rg-label';
-  const wrapClass = baseClass + (showPrice ? ' has-price' : '');
+  const wrapClass = baseClass + (showPrice ? ' has-price' : '') + (opts.mono ? ' mono' : '');
 
   // S15 May 28: Small L wrap-strip — the 0.25" strip at the top of the
   // 4×1.333 label that folds 90° over the top of the comic case. Single
