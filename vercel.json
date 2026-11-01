@@ -122,6 +122,10 @@
       "schedule": "*/15 * * * *"
     },
     {
+      "path": "/api/cachewarm?mode=warmdeep",
+      "schedule": "*/15 * * * *"
+    },
+    {
       "path": "/api/credit_sweep",
       "schedule": "*/10 * * * *"
     }

@@ -73,6 +73,12 @@ import process from 'node:process';
 import { PRIMARY_MODEL, costOf } from '../lib/model.js';
 import { ROBOGRADE_VERSION } from '../lib/version.js';
 import { buildMainPrefix } from '../lib/main_prompt.js';
+import { buildDeepPrefix, deepVariantFlags, DEEP_VARIANTS } from '../lib/deep_prompt.js';
+// S23: top-level, because the Deep ping needs it too. The only other use was
+// a local `const { createHash } = await import(...)` inside mode:'status', which
+// is NOT in scope in the warmdeep block — the class of scope error `node --check`
+// cannot see.
+import { createHash } from 'crypto';
 import { getAdminDb } from '../lib/batch_common.js';
 
 // Deterministic filler. Must be IDENTICAL across the three calls of a run or the
@@ -122,7 +128,7 @@ function buildBlock(nonce, approxTokens) {
 // for docs written before the per-type chips existed. Fails OPEN (assume on,
 // 1h) so a Firestore blip never stops the ping.
 async function readCachingCfg(db) {
-  const out = { mainOn: true, ttl: '1h', source: 'default' };
+  const out = { mainOn: true, deepOn: false, ttl: '1h', source: 'default' };
   if (!db) return out;
   try {
     const snap = await db.collection('config').doc('caching').get();
@@ -130,6 +136,11 @@ async function readCachingCfg(db) {
     const d = snap.data() || {};
     const t = d.types;
     out.mainOn = t ? (t.main !== false) : (d.enabled !== false);
+    // S23: Deep is its OWN chip and defaults OFF. Main's caching is proven and
+    // must not be hostage to a Deep experiment. Mirrors readDeepCachingCfg() in
+    // api/assess_deep.js exactly — if these two ever disagree, the ping warms
+    // an entry assessments are not writing.
+    out.deepOn = !!(t && t.deep === true);
     out.ttl = d.ttl === '5m' ? '5m' : '1h';
     out.source = 'config/caching';
   } catch (e) {
@@ -186,7 +197,14 @@ export default async function handler(req, res) {
   // 50-minute traffic gate below. It returns no user data, writes nothing but
   // its own timestamp, and debits no credits. Everything else on this endpoint
   // still requires a real signed-in Firebase user.
-  const _isCron = _wantMode === 'warm' && _cronCredentialed;
+  // S23: 'warmdeep' JOINS 'warm' HERE, and leaving it out was a live bug for
+  // about ten minutes. The Deep cron carries ?mode=warmdeep, so _wantMode is
+  // 'warmdeep'; with only 'warm' on this line the request fell straight through
+  // to the Firebase branch and 401'd — silently, on a schedule, with nothing in
+  // the admin to show the Deep ping had never once run. That is the same shape
+  // as the defect the comment above describes. Both warm modes spend about a
+  // cent, write nothing but their own timestamp, and return no user data.
+  const _isCron = (_wantMode === 'warm' || _wantMode === 'warmdeep') && _cronCredentialed;
   // mode:'status' IS NOW OPEN (2026-10-27). It was behind a Firebase ID token,
   // which meant the only way to see whether the keep-warm ping had been running
   // was to mint a token by hand — so for weeks "cache warming isn't working"
@@ -226,7 +244,7 @@ export default async function handler(req, res) {
   // log. Anything else is a whoami. (5.57 shipped without 'status' in this
   // list, so mode=status returned the whoami payload and the status block was
   // unreachable.)
-  if (req.method === 'GET' && _wantMode !== 'warm' && _wantMode !== 'status') {
+  if (req.method === 'GET' && _wantMode !== 'warm' && _wantMode !== 'warmdeep' && _wantMode !== 'status') {
     return res.status(200).json({ ok: true, ...whoami, version: ROBOGRADE_VERSION });
   }
 
@@ -274,7 +292,6 @@ export default async function handler(req, res) {
       const caching = await readCachingCfg(sdb);
       let prefixSha = null;
       try {
-        const { createHash } = await import('node:crypto');
         prefixSha = createHash('sha256').update(buildMainPrefix(null)).digest('hex').slice(0, 16);
       } catch (e) { /* non-fatal */ }
       let recentMains = [], mainTally = { read: 0, write: 0, uncached: 0 };
@@ -377,6 +394,126 @@ export default async function handler(req, res) {
       });
     } catch (e) {
       return res.status(500).json({ error: 'status read failed', detail: String(e && e.message || e) });
+    }
+  }
+
+  // ── mode:'warmdeep' — THE DEEP KEEP-WARM PING (S23) ───────────────────────
+  // Everything the Main ping learned, applied up front instead of after three
+  // weeks of warming nothing:
+  //   • ONE SOURCE FOR THE TEXT. lib/deep_prompt.js, imported by both this and
+  //     api/assess_deep.js. No second copy to drift.
+  //   • THE REQUEST SHAPE IS COPIED, NOT APPROXIMATED. assess_deep.js sends ONE
+  //     system block (the static half only; everything per-book goes into the
+  //     user message after the images). So this sends ONE block — the OPPOSITE
+  //     of the Main ping, which sends two because assess.js sends two. Copying
+  //     the Main ping here would have been the same bug again.
+  //   • output_config and thinking are sent IDENTICALLY, because they are part
+  //     of the request and this endpoint no longer assumes which parts of a
+  //     request the cache key covers. That assumption is what cost $16.64.
+  //   • VARIANT-AWARE. Deep has three cache entries (deep / deep_ic / resto).
+  //     This warms ONE, named by ?variant= and defaulting to 'deep_ic'.
+  //     assess_deep.js stamps deepVariant on every timing record so the choice
+  //     can be made from traffic rather than from a guess — if the records say
+  //     'deep' dominates, change the default.
+  // max_tokens is 1 and thinking is adaptive; with a 1-token ceiling there is
+  // no room to think, so output spend stays at zero. If the API rejects that
+  // pairing the error surfaces here rather than silently costing anything.
+  if (mode === 'warmdeep') {
+    const apiKeyD = process.env.ANTHROPIC_API_KEY;
+    if (!apiKeyD) return res.status(500).json({ error: 'no ANTHROPIC_API_KEY' });
+    let dbD = null;
+    try { dbD = await getAdminDb(); } catch {}
+    const _cfgD = await readCachingCfg(dbD);
+    if (!force && !_cfgD.deepOn) {
+      return res.status(200).json({
+        ok: true, mode: 'warmdeep', skipped: true, version: ROBOGRADE_VERSION, costUsd: 0,
+        reason: 'Deep caching is OFF in config/caching (types.deep). api/assess_deep.js is sending its system prompt as a plain string with no cache_control, so there is no entry to keep warm and no Deep would read one. Not spending.',
+        action: 'Set types.deep = true on the config/caching doc, let one day of Deeps run, then check deepPrefixSha and the read/write split before leaving this cron on.',
+        caching: _cfgD
+      });
+    }
+    const _variant = DEEP_VARIANTS.includes(String(_src.variant)) ? String(_src.variant) : 'deep_ic';
+    // THE GATE. Unlike the Main ping this one has no traffic signal to read —
+    // a Deep does not write a row this endpoint can cheaply check — so it gates
+    // on its OWN last ping and nothing else. At a */15 cron with quietMinutes
+    // 40 that is a ping roughly every 45 minutes, 15 minutes of headroom inside
+    // the hour, about $0.20/day. Without this gate the same cron would ping 96
+    // times a day for no extra protection.
+    // Consequence worth knowing: when Deeps are running steadily they keep the
+    // entry alive themselves and this still pays for a ping. That waste is a
+    // fraction of a cent and the alternative — reading timing rows on every
+    // fire — costs more in Firestore reads than it saves.
+    const _warmDocD = 'cache_warm/deep_' + _variant;
+    if (!force && dbD) {
+      try {
+        const snapD = await dbD.doc(_warmDocD).get();
+        const lastD = snapD.exists ? Date.parse(snapD.data().lastWarmAt || '') : NaN;
+        if (Number.isFinite(lastD)) {
+          const sinceD = Date.now() - lastD;
+          if (sinceD < quietMinutes * 60 * 1000) {
+            return res.status(200).json({
+              ok: true, mode: 'warmdeep', variant: _variant, skipped: true,
+              version: ROBOGRADE_VERSION, costUsd: 0,
+              reason: 'Deep prefix pinged recently — still warm',
+              minutesSinceLastPing: Math.round(sinceD / 60000), quietMinutes
+            });
+          }
+        }
+      } catch { /* fail OPEN: a missed ping costs more than a wasted one */ }
+    }
+    const _prefixD = buildDeepPrefix(deepVariantFlags(_variant));
+    const _ttlD = (ttl === '5m' || _cfgD.ttl === '5m') ? '5m' : '1h';
+    const _ctlD = _ttlD === '1h' ? { type: 'ephemeral', ttl: '1h' } : { type: 'ephemeral' };
+    const _betaD = _ttlD === '1h' ? { 'anthropic-beta': 'extended-cache-ttl-2025-04-11' } : {};
+    const _shaD = createHash('sha256').update(_prefixD).digest('hex').slice(0, 16);
+    const t0d = Date.now();
+    try {
+      const rD = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKeyD, 'anthropic-version': '2023-06-01', ..._betaD },
+        body: JSON.stringify({
+          model: model || PRIMARY_MODEL,
+          output_config: { effort: 'medium' },   // copied from assess_deep.js
+          thinking: { type: 'adaptive' },        // copied from assess_deep.js
+          max_tokens: 1,
+          system: [{ type: 'text', text: _prefixD, cache_control: _ctlD }],
+          messages: [{ role: 'user', content: [{ type: 'text', text: 'ok' }] }]
+        })
+      });
+      const jD = await rD.json();
+      if (!rD.ok) {
+        return res.status(502).json({
+          error: 'anthropic error', mode: 'warmdeep', variant: _variant,
+          detail: jD.error ? jD.error.message : ('HTTP ' + rD.status)
+        });
+      }
+      const uD = jD.usage || {};
+      const createdD = uD.cache_creation_input_tokens || 0;
+      const readD = uD.cache_read_input_tokens || 0;
+      const costD = costOf(uD, model || PRIMARY_MODEL, _ttlD);
+      try {
+        if (dbD) await dbD.doc(_warmDocD).set({
+          lastWarmAt: new Date().toISOString(),
+          lastRead: readD, lastCreated: createdD, lastCostUsd: costD,
+          prefixSha: _shaD, variant: _variant,
+          totalPings: (await dbD.doc(_warmDocD).get()
+            .then(x => (x.exists && x.data().totalPings) || 0).catch(() => 0)) + 1
+        }, { merge: true });
+      } catch {}
+      return res.status(200).json({
+        ok: true, mode: 'warmdeep', variant: _variant, version: ROBOGRADE_VERSION,
+        model: model || PRIMARY_MODEL, prefixSha: _shaD, prefixChars: _prefixD.length,
+        ms: Date.now() - t0d, ttl: _ttlD,
+        cacheReadInputTokens: readD, cacheCreationInputTokens: createdD, costUsd: costD,
+        caching: _cfgD,
+        verdict: readD > 0
+          ? 'READ — the Deep entry for variant "' + _variant + '" was refreshed.'
+          : createdD > 0
+            ? 'WRITE — nothing was there to read. Expected on the first ping after a deploy or after an hour of silence. If EVERY ping writes, compare this prefixSha against deepPrefixSha on a recent Deep timing record: equal means the entry is simply expiring between pings, different means this ping and assess_deep.js have drifted apart.'
+            : 'NEITHER — the prefix may be under the minimum cacheable length for this model.'
+      });
+    } catch (e) {
+      return res.status(500).json({ error: 'deep warm failed', detail: String(e && e.message || e) });
     }
   }
 

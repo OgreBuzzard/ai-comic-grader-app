@@ -656,19 +656,30 @@ function ensureStylesInjected() {
      survives thermal, laser AND pre-printed stock. Only Wide changed; Case
      (.rg-label-l), Square and Large keep the dark box because they are not
      the thermal-roll format. */
+  /* S23 — SIZED FOR A WALL, NOT A DESK. These labels go on display walls read
+     from 10+ feet, so the score is the only element that has to carry at that
+     distance; everything else is read at arm's length. 252 -> 276 square (the
+     label is 288 tall, so 6px top and bottom is all the margin a die-cut can
+     safely give up) and the numeral goes with it. The four satellites are all
+     absolutely positioned OUT OF FLOW — wordmark top, stars under it, version
+     bottom, PM and the (+) on the right — so the numeral is centred in the
+     whole box and the ceiling is not arithmetic. It is the point at which the
+     glyph's cap height touches the stars above or the version below. Measured
+     at 300dpi: 196px at scaleX(0.625) is the largest that clears both, with the
+     PM and (+) still clear on the right. */
   .rg-label .score-box {
-    width: 252px; height: 252px;
+    width: 276px; height: 276px;
     box-sizing: border-box;
     background: #cfe8a8;
     border: 3px solid #0f1a05;
     border-radius: 38px;
     position: absolute;
-    right: 14px; top: 18px;
+    right: 6px; top: 6px;
     display: flex; flex-direction: column;
     align-items: center; justify-content: center;
   }
   .rg-label .rg-word {
-    font-size: 24px; font-weight: 700;
+    font-size: 26px; font-weight: 700;
     color: #2a4010; letter-spacing: 3px;
     font-family: 'Barlow Condensed', sans-serif;
     position: absolute; top: 14px;
@@ -705,8 +716,15 @@ function ensureStylesInjected() {
     /* S22 (2nd pass): back to 150px at scaleX(0.625). The S15 "Option A" test
        (160 @ 0.75) made the numeral noticeably WIDER than Large and Square, and
        Matt reads the narrower condense as the better one. Wide and Case now
-       match the other two variants exactly. */
-    font-size: 150px; font-weight: 900;
+       match the other two variants exactly.
+       S23: 150 -> 188 for wall readability. 188 and not more because MEASURED
+       ink extents (not line boxes) put the worst case — "9.5", three glyphs,
+       with a PM and three stars — at 17px clear of the stars and 18px clear of
+       the version at 188. At 192 the PM clearance drops to 3px and at 200 it
+       goes negative. Line-box arithmetic says there is room at 210; the ink
+       says otherwise, which is why this was measured by rasterising the box and
+       finding the black pixels. */
+    font-size: 188px; font-weight: 900;
     color: #0d0d0f; line-height: 1;   /* S22: black on the light box */
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
@@ -724,8 +742,8 @@ function ensureStylesInjected() {
        the 150px centered number (~10px gap; precision is absolute/out
        of flow so it cannot displace the number regardless). */
     position: absolute;
-    top: 34px; right: 20px;
-    font-size: 50px; font-weight: 700;
+    top: 30px; right: 16px;
+    font-size: 58px; font-weight: 700;   /* S23: 50 -> 58, tracks the numeral */
     color: #0d0d0f; opacity: 0.85;   /* S22: black on the light box */
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
@@ -734,6 +752,25 @@ function ensureStylesInjected() {
     line-height: 1;
     letter-spacing: 1px;
     white-space: nowrap;
+  }
+  /* S23 — THE (+) NOW EXISTS ON THE LABEL, AND IT IS BOTTOM-RIGHT.
+     It did not render here at all before: the app's score box draws it on the
+     RIGHT MIDLINE, the label's never did, and Matt asked for room to be left
+     for it. Room on the midline is the one thing this box cannot give — a
+     three-glyph grade like "9.5" already reaches x=223 of 276, so a midline
+     (+) overlaps it at EVERY numeral size, 140 included. Measured, not
+     assumed. So it goes to the bottom-right corner instead, beside the version
+     string and below the numeral band, where it costs the grade nothing. */
+  .rg-label .rg-plus {
+    position: absolute;
+    /* bottom:6/38px, not 10/44: at 44 the (+)'s cap sat 1px under the "9.5"
+       glyph's descender band. Measured, then dropped until the worst case
+       cleared by 9px. */
+    bottom: 6px; right: 12px;
+    font-size: 38px; font-weight: 700;
+    color: #0d0d0f; opacity: 0.85;
+    font-family: 'Saira', 'Barlow Condensed', sans-serif;
+    line-height: 1;
   }
   .rg-label .rg-v {
     font-size: 20px;
@@ -761,7 +798,10 @@ function ensureStylesInjected() {
        with them (border-bottom on .info-upper -> border-top on .info-lower)
        for the same reason. */
     position: absolute;
-    left: 32px; top: 12px; right: 282px; bottom: 14px;
+    /* S23: the box grew 24px and moved 8px left, so every column to its left
+       gives up 8px — 282 -> 290 here, on .qr-col and on .url, which keeps the
+       12px gutter between the QR and the box. */
+    left: 32px; top: 12px; right: 290px; bottom: 14px;
     display: flex; flex-direction: column; justify-content: space-between;
   }
   .rg-label .info-upper { overflow: hidden; }
@@ -904,7 +944,7 @@ function ensureStylesInjected() {
        dropped 10% of the label height (29px) BELOW centre at Matt's
        direction: pad 95..229, URL 233..249. Those are FIXED coordinates,
        which is what lets the empty box be pre-printed. */
-    top: 95px; right: 282px;
+    top: 95px; right: 290px;
     left: auto; bottom: auto;
     width: 220px;
     display: flex; flex-direction: column;
@@ -962,7 +1002,7 @@ function ensureStylesInjected() {
     text-align: center;
     white-space: nowrap;
     position: absolute;
-    left: auto; right: 282px; width: 220px; top: 233px; bottom: auto;
+    left: auto; right: 290px; width: 220px; top: 233px; bottom: auto;
     letter-spacing: 0.2px;
   }
   .rg-label.has-price .url {
@@ -1474,7 +1514,7 @@ function ensureStylesInjected() {
      pale thin "300 weight" was disappearing on the printed white pad. */
   .rg-label.has-price .info {
     left: 170px;      /* S22: QR is back at bottom-left in this state */
-    right: 518px;
+    right: 526px;     /* S23: +8, tracks the wider score box */
   }
   /* S22: the mascot now fills the price pad's footprint, so .info has to yield
      the same column whether the box holds a price or the robot — otherwise the
@@ -1482,7 +1522,7 @@ function ensureStylesInjected() {
      state: the template emits the price pad when priceTag is on and the badge
      when it is off, so "not .has-price" IS "robot showing". */
   .rg-label:not(.has-price) .info {
-    right: 518px;     /* clears the QR box now occupying x = 282 .. 502 */
+    right: 526px;     /* S23: clears the QR box at x = 290 .. 510 */
   }
   .rg-label .price-pad {
     display: none;
@@ -2058,6 +2098,7 @@ function ensureStylesInjected() {
   .mono .rg-stars svg path { fill: #000 !important; }
   /* The restoration check mark is inline-styled purple. */
   .mono .rg-num-wrap span { color: #000 !important; }
+  .mono .rg-plus { color: #000 !important; opacity: 1 !important; }
 
   /* Rules: the divider and the info-upper border, black and 2px so they
      survive the head. */
@@ -3041,6 +3082,12 @@ function renderLabelMarkup(comic, opts) {
     : (_labelRestored ? '#1a0a2a' : '#1a2208');
   const _labelBorderColor = isWide ? (_labelRestored ? '#2a0f3a' : '#0f1a05') : null;
   const _labelCheckColor = isWide ? '#5a3a7a' : '#9a7ab8';
+  // S23: same rule the app's score box uses — the score hit the depth cap and a
+  // deeper pass could still raise it. A 100 is already the ceiling, so it never
+  // carries one, and neither does an unlocked high-grade run.
+  const _labelShowPlus = !!(rg && rg.score != null
+    && Math.round(rg.score) >= 90 && Math.round(rg.score) < 100
+    && !comic.highGradeUnlocked);
   const _labelCheckHtml = _labelRestoNeg ? `<span style="color:${_labelCheckColor};font-size:9px;font-weight:900;margin-left:2px">\u2713</span>` : '';
   // S17: assessment-tier stars on the label score box (room here, so ROBOGRADE
   // word stays and stars sit beneath it). 1 Main / 2 Deep / 3 Full + purple if
@@ -3188,6 +3235,7 @@ function renderLabelMarkup(comic, opts) {
         ${_labelTierStars}
         <div class="rg-num-wrap"><span class="rg-num"${_labelRestored ? ` style="color:${_labelScoreColor}"` : ''}>${score}</span>${_labelCheckHtml}</div>
         ${precision ? `<span class="rg-prec"${_labelRestored ? ` style="color:${_labelScoreColor};opacity:0.9"` : ''}>${precision}</span>` : ''}
+        ${_labelShowPlus ? `<div class="rg-plus"${_labelRestored ? ` style="color:${_labelScoreColor}"` : ''}>(+)</div>` : ''}
         <div class="rg-v">${versionStr}</div>
       </div>
       <div class="info${printing ? ' has-prt' : ''}">
