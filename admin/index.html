@@ -1401,6 +1401,20 @@ function renderUsersTab() {
     </div>
     <div class="sort-bar" id="sort-bar"></div>
     <div id="users-section"><div class="loading">Loading users…</div></div>
+    <!-- S22 ONE-OFF: Deep double-charge remediation. Lives at the BOTTOM of the
+         Users tab, not the header, and is meant to be DELETED once it has been
+         run. It is here rather than in a .command file because admin/ sits
+         behind middleware.js's ADMIN_GATE_SECRET cookie gate, which curl cannot
+         present — any terminal tool pointed at an admin endpoint dies on
+         "gate: locked" before it ever reaches the auth check. Inside this page
+         the cookie and the Firebase token are both already in hand. -->
+    <div id="remediation-row" style="margin-top:18px;padding:10px 12px;border:1px solid #3a2a18;border-radius:8px;background:#17140f">
+      <div style="font-size:11px;color:#9a8a6a;margin-bottom:7px">
+        One-off: Deep double-charge refund (18 Sept → v5.99). Safe to re-run; anyone already credited is skipped.
+      </div>
+      <button id="remediation-check" style="padding:5px 11px;font-size:11px;border:1px solid #3a5a2a;border-radius:7px;cursor:pointer;background:var(--panel-2);color:#cde">Check who was affected</button>
+      <div id="remediation-out" style="margin-top:8px;font-size:11px;color:#cde;white-space:pre-wrap;line-height:1.5"></div>
+    </div>
   `;
   const searchInput = document.getElementById('users-search');
   const _clearBtn = document.getElementById('users-search-clear');
@@ -1416,6 +1430,47 @@ function renderUsersTab() {
   if (_clearBtn) _clearBtn.onclick = () => { searchInput.value = ''; _clearBtn.style.display = 'none'; state.userSearch = ''; loadUsers(true); searchInput.focus(); };
   renderSortBar();
   loadUsers(true);
+  _wireRemediation();
+}
+
+// S22 one-off. Two taps: see the numbers, then confirm. Nothing is written by
+// the first call — the endpoint is dry-run unless apply=1.
+function _wireRemediation() {
+  const btn = document.getElementById('remediation-check');
+  const out = document.getElementById('remediation-out');
+  if (!btn || !out) return;
+  btn.onclick = async () => {
+    btn.disabled = true; out.textContent = 'Checking…';
+    try {
+      const d = await api('/api/credit_remediation?since=2026-09-18');
+      out.textContent =
+        'Users who ran a Deep since ' + d.since + ': ' + d.usersWithADeep + '\n' +
+        'Already credited before: ' + d.alreadyCredited + '\n' +
+        'WOULD CREDIT: ' + d.usersToCredit + ' accounts, ' + d.creditsToGrant + ' credits';
+      if (d.usersToCredit > 0) {
+        const go = document.createElement('button');
+        go.textContent = 'Add ' + d.creditsToGrant + ' credits to ' + d.usersToCredit + ' accounts';
+        go.style.cssText = 'margin-top:8px;padding:5px 11px;font-size:11px;border:1px solid #6a3a2a;border-radius:7px;cursor:pointer;background:#2a1a14;color:#f0c0a0';
+        go.onclick = async () => {
+          if (!confirm('Add ' + d.creditsToGrant + ' credits across ' + d.usersToCredit + ' accounts?\n\nThis cannot be undone, but it is safe to re-run — nobody is credited twice.')) return;
+          go.disabled = true; go.textContent = 'Adding…';
+          try {
+            const r = await api('/api/credit_remediation?since=2026-09-18&apply=1', { method: 'POST' });
+            out.textContent =
+              'DONE.\n' +
+              'Accounts credited: ' + r.usersCredited + '\n' +
+              'Credits added: ' + r.creditsGranted + '\n' +
+              'Skipped (already done): ' + r.alreadyCreditedBefore + '\n' +
+              'Failed: ' + r.failed;
+          } catch (e) { out.textContent = 'FAILED: ' + (e && e.message); }
+        };
+        out.appendChild(document.createElement('br'));
+        out.appendChild(go);
+      }
+    } catch (e) {
+      out.textContent = 'FAILED: ' + (e && e.message);
+    } finally { btn.disabled = false; }
+  };
 }
 
 function renderItemsTab() {
