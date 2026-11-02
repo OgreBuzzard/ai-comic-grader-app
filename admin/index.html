@@ -1010,7 +1010,10 @@ async function _loadCacheCfg() {
   }
   _syncCacheCfgDom();
 }
-const _CACHE_LIVE = { main: true, card: true, deep: false, full: false, cardDeep: false };
+// S25: deep goes LIVE. api/assess_deep.js reads types.deep off this same doc as
+// of v5.92 and api/cachewarm.js?mode=warmdeep keeps that entry warm, so the chip
+// now drives real behaviour instead of being a no-op.
+const _CACHE_LIVE = { main: true, card: true, deep: true, full: false, cardDeep: false };
 const _CACHE_LABEL = { main: 'Comic (main)', card: 'Card (main)', deep: 'Deep', full: 'Full', cardDeep: 'Card Deep' };
 function _syncCacheCfgDom() {
   ['main','card','deep','full','cardDeep'].forEach(k => {
@@ -1196,6 +1199,7 @@ async function renderDashboard() {
           <div id="cache-types" style="display:flex;gap:3px;flex-wrap:wrap;max-width:200px">
             <button id="ct-main" onclick="_toggleCacheType('main')" style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:pointer;background:#1c1c22;color:#9ab" title="Comic (main) assessment prompt caching">Comic</button>
             <button id="ct-card" onclick="_toggleCacheType('card')" style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:pointer;background:#1c1c22;color:#9ab" title="Card (main) assessment prompt caching">Card</button>
+            <button id="ct-deep" onclick="_toggleCacheType('deep')" style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:pointer;background:#1c1c22;color:#9ab" title="Deep assessment prompt caching (v5.92+)">Deep</button>
           </div>
           <select id="cache-ttl" onchange="_saveCacheCfg()" style="background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:8px;padding:3px 6px;font-size:11px" title="Cache TTL"><option value="1h" ${_cacheCfg.ttl !== '5m' ? 'selected' : ''}>1h</option><option value="5m" ${_cacheCfg.ttl === '5m' ? 'selected' : ''}>5m</option></select>
         </div>

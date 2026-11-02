@@ -976,20 +976,35 @@ function ensureStylesInjected() {
     width: 100%; height: 100%;
     display: block;
   }
-  /* The code sits INSIDE the chest panel. White backing because a QR needs a
-     light quiet zone and the chest is transparent to the gradient behind it. */
+  /* S25 — THE PANEL IS SQUARED TO THE CODE.
+     The chest interior measures 166 x 157 in the 427x512 art — close to square
+     but not square, and v5.93 stretched the code to fill it. A stretched QR is
+     sloppy at best and unscannable at worst, since a decoder expects square
+     modules. The fix is geometric, not artistic: inscribe the LARGEST SQUARE
+     that fits the panel (157 x 157, centred horizontally, 4.5px of the art's
+     own interior left either side) and let the code fill that.
+       left  = (131 + 4.5) / 427 = 31.733%
+       top   =  149       / 512 = 29.102%
+       width =  157       / 427 = 36.768%
+       height=  157       / 512 = 30.664%
+     Against the 230 x 276 figure that is 84.6 x 84.6 — square to a tenth of a
+     pixel. Re-derive all four if the art is ever redrawn.
+     The code is then inset to 86% of the panel so the remaining white is its
+     quiet zone. A QR with no quiet zone, butted against the art's black chest
+     stroke, is the classic reason a code "looks fine and won't scan". */
   .rg-label .qr-col .qrc {
     position: absolute;
-    left: 30.68%; top: 29.10%;
-    width: 38.88%; height: 30.66%;
+    left: 31.733%; top: 29.102%;
+    width: 36.768%; height: 30.664%;
     background: #ffffff;
     padding: 0; border-radius: 2px; line-height: 0;
     display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
   }
   .rg-label .qr-col .qrc canvas,
   .rg-label .qr-col .qrc img {
-    width: 80px !important;
-    height: 80px !important;
+    width: 86% !important;
+    height: 86% !important;
   }
   /* has-price: the price pad takes the mascot slot, so the QR reverts to the
      bottom-left corner at its old size and the info column yields (left:170
@@ -1554,7 +1569,11 @@ function ensureStylesInjected() {
      state: the template emits the price pad when priceTag is on and the badge
      when it is off, so "not .has-price" IS "robot showing". */
   .rg-label:not(.has-price) .info {
-    right: 526px;     /* S23: clears the QR box at x = 290 .. 510 */
+    /* S25: 530, not 526. The figure occupies x 622..862 (right:290, width:240)
+       and the info box ended at 626 — a 4px overlap that only stayed invisible
+       because the meta rows are right-justified and the title is clamped. 530
+       lands the info edge exactly on the figure's left edge. */
+    right: 530px;
   }
   .rg-label .price-pad {
     display: none;
@@ -3381,11 +3400,21 @@ function renderQRsImmediately(container) {
     // data resolution should match the rendered pixels for crisp output.
     const isLarge  = !!el.closest('.rg-label-large');
     const isSquare = !!el.closest('.rg-label-square');
-    const qrPx = isLarge ? 178 : isSquare ? 174 : 118;
+    // S25: Wide's code now lives in Robo's chest at ~85 CSS px, well under the
+    // 118 it used to get, so it is rendered at 2x and scaled down by the CSS
+    // above — a canvas rasterised at its display size and then printed at
+    // 288 DPI loses module edges, and a QR is nothing but module edges.
+    const isWideChest = !isLarge && !isSquare && !!el.closest('.rg-label');
+    const qrPx = isLarge ? 178 : isSquare ? 174 : (isWideChest ? 240 : 118);
     new window.QRCode(el, {
       text: `https://robograder.app/id/${id}`,
       width: qrPx, height: qrPx,
-      colorDark: '#1a2208', colorLight: '#d4d9be',
+      // S25: PURE WHITE behind the chest code. The old #d4d9be was tuned to sit
+      // on the olive score box; on a white chest panel it reads as a dirty
+      // square and it costs contrast the small size cannot spare. Dark goes to
+      // true black for the same reason.
+      colorDark:  isWideChest ? '#000000' : '#1a2208',
+      colorLight: isWideChest ? '#ffffff' : '#d4d9be',
       correctLevel: window.QRCode.CorrectLevel.M
     });
   });
