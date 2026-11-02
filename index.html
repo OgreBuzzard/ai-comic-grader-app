@@ -1662,6 +1662,23 @@ onAuthStateChanged(auth, async user => {
            works correctly against this wrapper since the wrapper isn't being
            laid out by competing flex/grid logic.
          - #lightbox-img inside the wrapper just renders at natural fit. */
+    /* S22: capture date. Bottom-left, above the safe-area inset so it clears
+       the home indicator. Plain white on the lightbox's near-black backdrop —
+       no pill or chip, because this is a fact about the photo rather than a
+       control, and it should not invite a tap. */
+    #lightbox-captured {
+      position: absolute;
+      left: 14px;
+      bottom: max(env(safe-area-inset-bottom, 12px), 12px);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+      color: rgba(255,255,255,0.78);
+      text-shadow: 0 1px 3px rgba(0,0,0,0.9);
+      pointer-events: none;
+      z-index: 1002;
+      display: none;
+    }
     #lightbox-stage { width: 100%; flex: 1 1 auto; min-height: 0; display: grid; place-items: center; touch-action: none; overflow: hidden; }
     #lightbox-panzoom-wrap { max-width: 100%; max-height: 100%; touch-action: none; }
     #lightbox-img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; pointer-events: auto; touch-action: none; -webkit-touch-callout: none; cursor: grab; display: block; }
@@ -2289,6 +2306,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
 </div>
 
 <div id="lightbox" style="display:none">
+  <div id="lightbox-captured"></div>
   <div id="lightbox-stage">
     
     <div id="lightbox-panzoom-wrap">
@@ -6781,6 +6799,25 @@ function _lbShow() {
   _attachPanzoomToLightbox();
   _lbUpdateArrows();
   _lbRenderDefects();
+  _lbRenderCapturedAt();
+}
+
+// S22: the capture date, bottom-left, small and plain. Hidden entirely when the
+// photo has no recorded date rather than printing "unknown" — older books
+// predate the meta arrays and a row of "unknown" would read as a fault.
+function _lbRenderCapturedAt() {
+  const el = document.getElementById("lightbox-captured");
+  if (!el) return;
+  const _el = _lbList && _lbList[_lbIdx];
+  const iso = (_el && typeof _el === "object") ? _el.t : null;
+  if (!iso) { el.style.display = "none"; el.textContent = ""; return; }
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) { el.style.display = "none"; return; }
+  el.textContent = d.toLocaleString(undefined, {
+    year: "numeric", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit"
+  });
+  el.style.display = "block";
 }
 function _lbStep(dir) {
   if (!_lbList) return;
@@ -6960,35 +6997,48 @@ const LB_GROUPS = ["main", "deep", "full", "signature", "uv", "coupon", "insert"
 function _comicLbEntries(c) {
   const img = c.images || [];
   const e = [];
-  const push = (u, d, g, gi) => {
-    if (u) e.push({ u: u, d: (d == null ? null : d), g: g || null, gi: (gi == null ? null : gi) });
+  // S22 — WHEN WAS THIS PHOTO TAKEN. Every image array has a parallel *Meta
+  // array carrying { source, capturedAt }; the viewer never surfaced it.
+  // Showing it closes a real hole: a listing's grade is tied to the photos
+  // that produced it, but nothing stopped someone grading a clean copy,
+  // swapping in photos of a worse one, and keeping the screenshot or the
+  // Summary image. A visible capture date makes a mismatched set obvious to
+  // whoever is looking at the book, which is the person who needs to know.
+  // It is evidence, not enforcement — deliberately. Blocking the swap would
+  // punish the many people who legitimately re-shoot a bad photo.
+  const _meta = (arr, i) => {
+    const m = (arr || [])[i];
+    return (m && typeof m === 'object' && m.capturedAt) ? m.capturedAt : null;
   };
-  const pushGroup = (arr, g) => {
-    (arr || []).forEach((u, i) => push(u, null, g, i));
+  const push = (u, d, g, gi, t) => {
+    if (u) e.push({ u: u, d: (d == null ? null : d), g: g || null, gi: (gi == null ? null : gi), t: t || null });
+  };
+  const pushGroup = (arr, g, meta) => {
+    (arr || []).forEach((u, i) => push(u, null, g, i, _meta(meta, i)));
   };
 
   if (c.type === "card") {
-    [0, 1, 2, 3].forEach(i => push(img[i], i, "main", i));
-    pushGroup(c.cardDeepImages, "deep");
-    pushGroup(c.userDefectImages, "missing");
+    [0, 1, 2, 3].forEach(i => push(img[i], i, "main", i, _meta(c.imagesMeta, i)));
+    pushGroup(c.cardDeepImages, "deep", c.cardDeepMeta);
+    pushGroup(c.userDefectImages, "missing", c.userDefectMeta);
     return e;
   }
 
-  [0, 1, 2, 3].forEach(i => push(img[i], i, "main", i));
+  [0, 1, 2, 3].forEach(i => push(img[i], i, "main", i, _meta(c.imagesMeta, i)));
 
   // DEEP is two stored arrays: 4 corner macros + 2 interior covers = 6 slots.
   // They are indexed continuously here (interior front is deep 4) but each
   // opener passes its own array index, so openInteriorCoverLightbox(id, 0) must
   // map to deep 4 — see _lbOpenGroup's offset table.
-  pushGroup(c.cornerImages, "deep");
-  (c.interiorCoverImages || []).forEach((u, i) => push(u, null, "deep", (c.cornerImages || []).length + i));
+  pushGroup(c.cornerImages, "deep", c.cornerMeta);
+  (c.interiorCoverImages || []).forEach((u, i) => push(u, null, "deep", (c.cornerImages || []).length + i, _meta(c.interiorCoverMeta, i)));
 
-  pushGroup(c.interiorImages, "full");
-  pushGroup(c.signatureImages, "signature");
-  pushGroup(c.restorationImages, "uv");
-  pushGroup(c.couponImages, "coupon");
-  pushGroup(c.insertImages, "insert");
-  pushGroup(c.userDefectImages, "missing");
+  pushGroup(c.interiorImages, "full", c.interiorMeta);
+  pushGroup(c.signatureImages, "signature", c.signatureMeta);
+  pushGroup(c.restorationImages, "uv", c.restorationMeta);
+  pushGroup(c.couponImages, "coupon", c.couponMeta);
+  pushGroup(c.insertImages, "insert", c.insertMeta);
+  pushGroup(c.userDefectImages, "missing", c.userDefectMeta);
   return e;
 }
 
