@@ -74,7 +74,7 @@ import { PRIMARY_MODEL, costOf } from '../lib/model.js';
 import { ROBOGRADE_VERSION } from '../lib/version.js';
 import { buildMainPrefix } from '../lib/main_prompt.js';
 import { buildDeepPrefix, deepVariantFlags, DEEP_VARIANTS } from '../lib/deep_prompt.js';
-// S23: top-level, because the Deep ping needs it too. The only other use was
+// S22: top-level, because the Deep ping needs it too. The only other use was
 // a local `const { createHash } = await import(...)` inside mode:'status', which
 // is NOT in scope in the warmdeep block — the class of scope error `node --check`
 // cannot see.
@@ -100,7 +100,7 @@ function buildBlock(nonce, approxTokens) {
   return s;
 }
 
-// ── THE LIVE CACHING CONFIG (S23, 2026-10-18) ──────────────────────────────
+// ── THE LIVE CACHING CONFIG (S22, 2026-10-18) ──────────────────────────────
 // api/assess.js decides at request time whether to send cache_control AT ALL,
 // and with which TTL, by reading config/caching from the admin dashboard. The
 // ping did neither: it always sent a 1h ephemeral block with the extended-TTL
@@ -136,7 +136,7 @@ async function readCachingCfg(db) {
     const d = snap.data() || {};
     const t = d.types;
     out.mainOn = t ? (t.main !== false) : (d.enabled !== false);
-    // S23: Deep is its OWN chip and defaults OFF. Main's caching is proven and
+    // S22: Deep is its OWN chip and defaults OFF. Main's caching is proven and
     // must not be hostage to a Deep experiment. Mirrors readDeepCachingCfg() in
     // api/assess_deep.js exactly — if these two ever disagree, the ping warms
     // an entry assessments are not writing.
@@ -197,7 +197,7 @@ export default async function handler(req, res) {
   // 50-minute traffic gate below. It returns no user data, writes nothing but
   // its own timestamp, and debits no credits. Everything else on this endpoint
   // still requires a real signed-in Firebase user.
-  // S23: 'warmdeep' JOINS 'warm' HERE, and leaving it out was a live bug for
+  // S22: 'warmdeep' JOINS 'warm' HERE, and leaving it out was a live bug for
   // about ten minutes. The Deep cron carries ?mode=warmdeep, so _wantMode is
   // 'warmdeep'; with only 'warm' on this line the request fell straight through
   // to the Firebase branch and 401'd — silently, on a schedule, with nothing in
@@ -397,7 +397,7 @@ export default async function handler(req, res) {
     }
   }
 
-  // ── mode:'warmdeep' — THE DEEP KEEP-WARM PING (S23) ───────────────────────
+  // ── mode:'warmdeep' — THE DEEP KEEP-WARM PING (S22) ───────────────────────
   // Everything the Main ping learned, applied up front instead of after three
   // weeks of warming nothing:
   //   • ONE SOURCE FOR THE TEXT. lib/deep_prompt.js, imported by both this and
@@ -742,7 +742,7 @@ export default async function handler(req, res) {
         gateNote: gateNote || undefined
       });
     } catch (e) {
-      // ── RECORD THE FAILURE (S24, 2026-10-19) ─────────────────────────────
+      // ── RECORD THE FAILURE (S22, 2026-10-19) ─────────────────────────────
       // Until now a failed ping returned 500 and wrote NOTHING. `lastWarmAt`
       // only moves on success, so a run of failures and a cron that never fired
       // produce an identical trace: a long gap in `gapsMin` and nothing else.

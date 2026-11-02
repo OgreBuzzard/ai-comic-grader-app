@@ -87,10 +87,10 @@ export default async function handler(req, res) {
   function phaseDelta(name, since) { phaseTimings[name] = Date.now() - since; }
 
   // ── lazy Firestore admin (timing record write) ──────────────────────────────
-  // S23: the same config/caching doc api/assess.js and api/cachewarm.js read.
+  // S22: the same config/caching doc api/assess.js and api/cachewarm.js read.
   // `types.deep` is a separate chip from `types.main` — Main's caching is proven
   // and should not be hostage to a Deep experiment, and vice versa. Fails OPEN
-  // to OFF: if the read throws, Deep behaves exactly as it did before S23.
+  // to OFF: if the read throws, Deep behaves exactly as it did before S22.
   async function readDeepCachingCfg() {
     const out = { deepOn: false, ttl: '1h', source: 'default-off' };
     try {
@@ -352,7 +352,7 @@ export default async function handler(req, res) {
   //   - aiAssessment notes the revision if grade changed
   const initialGrade = initialAssessment.grade || initialAssessment?.roboGrade?.predictedGrade || '';
   const initialRG = initialAssessment.roboGrade || {};
-  // S23: the cached half now comes from lib/deep_prompt.js, so the keep-warm
+  // S22: the cached half now comes from lib/deep_prompt.js, so the keep-warm
   // ping in api/cachewarm.js and this endpoint build it from ONE source. Two
   // copies of a cached prefix is how Main's ping spent three weeks warming an
   // entry no assessment read. Verified byte-identical to the previous inline
@@ -690,7 +690,7 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
     // (2) teach /api/cachewarm to ping the hasInteriorCovers && hasFrontCover
     // variant, which covers 98.4% of 572 Deeps over 60 days; (3) confirm the
     // ping reports a cache READ; (4) only then set this to true.
-    // S23 — DEEP CACHING IS NOW SWITCHABLE FROM config/caching.
+    // S22 — DEEP CACHING IS NOW SWITCHABLE FROM config/caching.
     // Until now this was `cacheProfile === 'batch'` and nothing else, and that
     // flag is only sent by assess_batch_run.js. Every app-initiated Deep sent
     // its system prompt as a PLAIN STRING with no cache_control: no entry to
@@ -1034,7 +1034,7 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
     // Carry-forward enforcement: Back and Interior sub-scores must equal initial values.
     if (parsed.roboGrade) {
       if (initialRG.backScore != null) parsed.roboGrade.backScore = initialRG.backScore;
-      // S25: Interior/PQ. No interior covers -> Interior frozen (no new interior
+      // S22: Interior/PQ. No interior covers -> Interior frozen (no new interior
       // evidence). WITH interior covers, Deep may RARELY refine page quality from
       // the first/last interior-wrap pages (PHASE 2.5); keep PQ and Interior 1:1.
       const _pqToInterior = (pq) => {
@@ -1117,7 +1117,7 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
       // a bare "confirmed" is not a reason to move a grade.
       const _revText = String(parsed.gradeRevisionReason || '').trim();
       const hasStatedComparison = _revText.length >= 12;
-      // S25: a genuine page-quality refinement (interior covers) may move the grade
+      // S22: a genuine page-quality refinement (interior covers) may move the grade
       // in either direction — treat it like a deepAddition so the floor rule below
       // doesn't undo a legitimate PQ-driven decrease.
       const _pqRefined = hasInteriorCovers
@@ -1254,7 +1254,7 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
           version: ROBOGRADE_VERSION,
           model: PRIMARY_MODEL,
           deepAssessment: true,
-          // S23 — THE FIELDS THAT MAKE DEEP WARMING BUILDABLE AND CHECKABLE.
+          // S22 — THE FIELDS THAT MAKE DEEP WARMING BUILDABLE AND CHECKABLE.
           // deepVariant: which of the three cache entries this Deep used. A
           //   keep-warm ping can hold only one alive, so the distribution here
           //   decides which one is worth the money.
@@ -1357,7 +1357,7 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
           cacheCreationInputTokens: _cacheCreationInputTokens,
           // S15 May 28: per-assessment dollar cost (Opus 4.8). Same rate
           // block as assess.js — if model changes, update both.
-          // S23 2026-10-11: this block used to hardcode the cache-read
+          // S22 2026-10-11: this block used to hardcode the cache-read
           // multiplier at 0.05, while api/assess.js hardcoded 0.10. Exactly one
           // of them was right at any moment, and the Opus 5.5 cut-over flipped
           // which. Both now call the one helper in lib/model.js, which carries
@@ -1412,7 +1412,7 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
       if (db) {
         const key = `deep_err_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         await db.collection('assessment_timings').doc(key).set({
-          // S24: what this assessment COST THE USER in credits. Nothing recorded
+          // S22: what this assessment COST THE USER in credits. Nothing recorded
           // this before, so the admin's "cost per credit" was really cost per
           // ASSESSMENT — a lower, different number. Gross: a later refund is
           // subtracted from the ledger / the item's refund stamp, not from here.

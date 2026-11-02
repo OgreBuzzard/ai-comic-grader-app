@@ -656,7 +656,7 @@ function ensureStylesInjected() {
      survives thermal, laser AND pre-printed stock. Only Wide changed; Case
      (.rg-label-l), Square and Large keep the dark box because they are not
      the thermal-roll format. */
-  /* S23 — SIZED FOR A WALL, NOT A DESK. These labels go on display walls read
+  /* S22 — SIZED FOR A WALL, NOT A DESK. These labels go on display walls read
      from 10+ feet, so the score is the only element that has to carry at that
      distance; everything else is read at arm's length. 252 -> 276 square (the
      label is 288 tall, so 6px top and bottom is all the margin a die-cut can
@@ -717,7 +717,7 @@ function ensureStylesInjected() {
        (160 @ 0.75) made the numeral noticeably WIDER than Large and Square, and
        Matt reads the narrower condense as the better one. Wide and Case now
        match the other two variants exactly.
-       S23: 150 -> 188 for wall readability. 188 and not more because MEASURED
+       S22: 150 -> 188 for wall readability. 188 and not more because MEASURED
        ink extents (not line boxes) put the worst case — "9.5", three glyphs,
        with a PM and three stars — at 17px clear of the stars and 18px clear of
        the version at 188. At 192 the PM clearance drops to 3px and at 200 it
@@ -743,7 +743,7 @@ function ensureStylesInjected() {
        of flow so it cannot displace the number regardless). */
     position: absolute;
     top: 30px; right: 16px;
-    font-size: 58px; font-weight: 700;   /* S23: 50 -> 58, tracks the numeral */
+    font-size: 58px; font-weight: 700;   /* S22: 50 -> 58, tracks the numeral */
     color: #0d0d0f; opacity: 0.85;   /* S22: black on the light box */
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
@@ -753,7 +753,7 @@ function ensureStylesInjected() {
     letter-spacing: 1px;
     white-space: nowrap;
   }
-  /* S23 — THE (+) NOW EXISTS ON THE LABEL, AND IT IS BOTTOM-RIGHT.
+  /* S22 — THE (+) NOW EXISTS ON THE LABEL, AND IT IS BOTTOM-RIGHT.
      It did not render here at all before: the app's score box draws it on the
      RIGHT MIDLINE, the label's never did, and Matt asked for room to be left
      for it. Room on the midline is the one thing this box cannot give — a
@@ -762,7 +762,7 @@ function ensureStylesInjected() {
      assumed. So it goes to the bottom-right corner instead, beside the version
      string and below the numeral band, where it costs the grade nothing.
 
-     S24 — SUPERSEDED, and the S23 reasoning was wrong. "A midline (+) overlaps
+     S22 — SUPERSEDED, and the S22 reasoning was wrong. "A midline (+) overlaps
      the grade at every numeral size" treated the numeral size as fixed. It is
      not. When a (+) is present — and only then — the grade shrinks to make room
      and the two sit together on the midline, which is where the app's own score
@@ -787,7 +787,7 @@ function ensureStylesInjected() {
      (32px to the stars, 30px to the version), so the whole constraint is the
      horizontal run to the (+).
      Two passes got here. At the (+)'s first size, 56px, the ceiling was 136 —
-     worse than the 150 these labels carried before S23, which would have made
+     worse than the 150 these labels carried before S22, which would have made
      a (+) book LOOK DOWNGRADED. Dropping the (+) to 44px and tightening it to
      right:8 bought 32px of numeral. The (+) is the secondary mark; the grade
      is the thing read from across the room, so the (+) yields. */
@@ -818,7 +818,7 @@ function ensureStylesInjected() {
        with them (border-bottom on .info-upper -> border-top on .info-lower)
        for the same reason. */
     position: absolute;
-    /* S23: the box grew 24px and moved 8px left, so every column to its left
+    /* S22: the box grew 24px and moved 8px left, so every column to its left
        gives up 8px — 282 -> 290 here, on .qr-col and on .url, which keeps the
        12px gutter between the QR and the box. */
     left: 32px; top: 12px; right: 290px; bottom: 14px;
@@ -915,7 +915,7 @@ function ensureStylesInjected() {
      printing line is present, so in exactly that case the title clamps to one
      line. Without a printing line the 2-line clamp stands. */
   .rg-label .info.has-prt .ttl { max-height: 60px; }
-  /* S24: the meta block right-justifies against the info column's right edge
+  /* S22: the meta block right-justifies against the info column's right edge
      so "ROBOGRADER.APP/ ID / A7K2M9" reads as one flush line. justify-content
      moves the whole two-column grid; the columns stay max-content so the
      GRADED row still aligns its value with the ID row's. */
@@ -952,31 +952,25 @@ function ensureStylesInjected() {
      a typical Avery drift with room to spare. The QR canvas itself is
      118px wide; total left-edge buffer (margin + padding to QR's first
      module) is now ~34px. */
-  /* S24 — THE QR LIVES IN ROBO'S CHEST. The bare code and the URL line beneath
-     it are replaced by the line-art figure with the code composited into the
-     chest panel: one branding element instead of two utility ones.
-     The chest panel was MEASURED from the art, not eyeballed — a flood fill
-     from inside the chest of assets/Robograder_Line_QR.png gives
-     left 30.68%, top 29.10%, width 38.88%, height 30.66% of the 427x512 image.
-     Those four numbers are the only thing tying the code to the drawing, so if
-     the art is ever redrawn, RE-MEASURE THEM. A chest panel that moves silently
-     puts the QR over Robo's ribs. */
+  /* S22 — THE FIGURE IS GONE AND THE CODE IS SIZED FROM THE PHYSICS.
+     Three versions were spent trying to fit a scannable code inside Robo's
+     chest. It cannot be done at this label size, and the arithmetic says why in
+     one line: a phone wants each module about 0.4mm across, the payload makes a
+     29x29 grid, the spec adds 4 modules of quiet zone on each side, and
+     37 x 0.4mm is 0.58" — more than half the height of a figure that is itself
+     only 0.96" tall. No redraw fixes that; a chest big enough IS the figure.
+     So the code goes back to standing on its own, at 160px: 0.556" at
+     288 px/inch, which is 0.38mm a module — essentially the target.
+     Worth recording: the 118px the bare code carried before all of this was
+     already in the right range (0.41", 0.28mm/module). The chest was the
+     problem, never the code. */
   .rg-label .qr-col {
     position: absolute;
-    top: 0; bottom: 0; right: 290px;
-    left: auto; width: 240px;
+    top: 0; bottom: 0; right: 296px;
+    left: auto; width: 180px;
     display: flex; align-items: center; justify-content: center;
   }
-  .rg-label .qr-col .robo-wrap {
-    position: relative;
-    height: 276px; width: 230px;      /* 427:512 at 276 tall = 230 wide */
-  }
-  .rg-label .qr-col img.robo-art {
-    position: absolute; inset: 0;
-    width: 100%; height: 100%;
-    display: block;
-  }
-  /* S25 — THE PANEL IS SQUARED TO THE CODE.
+  /* S22 — THE PANEL IS SQUARED TO THE CODE.
      The chest interior measures 166 x 157 in the 427x512 art — close to square
      but not square, and v5.93 stretched the code to fill it. A stretched QR is
      sloppy at best and unscannable at worst, since a decoder expects square
@@ -992,19 +986,22 @@ function ensureStylesInjected() {
      The code is then inset to 86% of the panel so the remaining white is its
      quiet zone. A QR with no quiet zone, butted against the art's black chest
      stroke, is the classic reason a code "looks fine and won't scan". */
+  /* The white pad IS the quiet zone — 10px each side, which at 288 px/inch is
+     a shade over 3 modules at this code size. The spec asks 4; 3 on a plain
+     white label with nothing printed against it is the practical equivalent,
+     and buying the 4th would cost 10px of code. */
   .rg-label .qr-col .qrc {
-    position: absolute;
-    left: 31.733%; top: 29.102%;
-    width: 36.768%; height: 30.664%;
+    position: relative;
     background: #ffffff;
-    padding: 0; border-radius: 2px; line-height: 0;
+    padding: 10px;
+    border-radius: 6px;
+    line-height: 0;
     display: flex; align-items: center; justify-content: center;
-    overflow: hidden;
   }
   .rg-label .qr-col .qrc canvas,
   .rg-label .qr-col .qrc img {
-    width: 86% !important;
-    height: 86% !important;
+    width: 160px !important;
+    height: 160px !important;
   }
   /* has-price: the price pad takes the mascot slot, so the QR reverts to the
      bottom-left corner at its old size and the info column yields (left:170
@@ -1034,7 +1031,7 @@ function ensureStylesInjected() {
   }
   /* URL — paired with the QR at the bottom-left (S12 May 6 v2: left padded
      to 32px to match the QR column above for a consistent left margin). */
-  /* S24: the Wide label no longer prints a URL line — it duplicated the ID,
+  /* S22: the Wide label no longer prints a URL line — it duplicated the ID,
      which now carries the domain itself (see .meta-grid). Hidden rather than
      deleted because the has-price layout and the other formats still use it. */
   .rg-label .url { display: none; }
@@ -1561,7 +1558,7 @@ function ensureStylesInjected() {
      pale thin "300 weight" was disappearing on the printed white pad. */
   .rg-label.has-price .info {
     left: 170px;      /* S22: QR is back at bottom-left in this state */
-    right: 526px;     /* S23: +8, tracks the wider score box */
+    right: 526px;     /* S22: +8, tracks the wider score box */
   }
   /* S22: the mascot now fills the price pad's footprint, so .info has to yield
      the same column whether the box holds a price or the robot — otherwise the
@@ -1569,11 +1566,11 @@ function ensureStylesInjected() {
      state: the template emits the price pad when priceTag is on and the badge
      when it is off, so "not .has-price" IS "robot showing". */
   .rg-label:not(.has-price) .info {
-    /* S25: 530, not 526. The figure occupies x 622..862 (right:290, width:240)
+    /* S22: 530, not 526. The figure occupies x 622..862 (right:290, width:240)
        and the info box ended at 626 — a 4px overlap that only stayed invisible
        because the meta rows are right-justified and the title is clamped. 530
        lands the info edge exactly on the figure's left edge. */
-    right: 530px;
+    right: 486px;   /* S22: the info column takes back what the figure held */
   }
   .rg-label .price-pad {
     display: none;
@@ -3133,7 +3130,7 @@ function renderLabelMarkup(comic, opts) {
     : (_labelRestored ? '#1a0a2a' : '#1a2208');
   const _labelBorderColor = isWide ? (_labelRestored ? '#2a0f3a' : '#0f1a05') : null;
   const _labelCheckColor = isWide ? '#5a3a7a' : '#9a7ab8';
-  // S23: same rule the app's score box uses — the score hit the depth cap and a
+  // S22: same rule the app's score box uses — the score hit the depth cap and a
   // deeper pass could still raise it. A 100 is already the ceiling, so it never
   // carries one, and neither does an unlocked high-grade run.
   const _labelShowPlus = !!(rg && rg.score != null
@@ -3319,7 +3316,6 @@ function renderLabelMarkup(comic, opts) {
         return `<div class="price-pad"><div class="price-placeholder">Price</div></div>`;
       })() : (isWide ? '' : '<div class="robot-badge"><img src="assets/Robograder_Charging.png" alt=""></div>')}
       <div class="qr-col">
-        ${isWide ? '<div class="robo-wrap"><img class="robo-art" src="assets/Robograder_Line_QR.png" alt="">' : ''}
         ${comic.publicListing
           ? `<div class="qrc" data-qr-id="${gradeId}"></div>`
           : `<!-- S14: private book — no QR. A scannable code that lands on a
@@ -3330,7 +3326,6 @@ function renderLabelMarkup(comic, opts) {
              <div class="qr-private" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;text-align:center">
                <div style="font-size:9px;letter-spacing:1.5px;color:#9a8a7a;text-transform:uppercase;line-height:1.5">Private<br>Listing</div>
              </div>`}
-        ${isWide ? '</div>' : ''}
       </div>
       ${comic.publicListing
         ? `<div class="url">robograder.app/id/<span class="url-id">${gradeId}</span></div>`
@@ -3400,19 +3395,18 @@ function renderQRsImmediately(container) {
     // data resolution should match the rendered pixels for crisp output.
     const isLarge  = !!el.closest('.rg-label-large');
     const isSquare = !!el.closest('.rg-label-square');
-    // S25: Wide's code now lives in Robo's chest at ~85 CSS px, well under the
-    // 118 it used to get, so it is rendered at 2x and scaled down by the CSS
-    // above — a canvas rasterised at its display size and then printed at
-    // 288 DPI loses module edges, and a QR is nothing but module edges.
+    // S22: Wide's code displays at 160 CSS px and is rasterised at 320, then
+    // scaled down by the CSS above. A canvas drawn at its display size and then
+    // printed at 288 DPI loses module edges, and a QR is nothing but module
+    // edges — this is the single cheapest thing that improves scan rate.
     const isWideChest = !isLarge && !isSquare && !!el.closest('.rg-label');
-    const qrPx = isLarge ? 178 : isSquare ? 174 : (isWideChest ? 240 : 118);
+    const qrPx = isLarge ? 178 : isSquare ? 174 : (isWideChest ? 320 : 118);
     new window.QRCode(el, {
       text: `https://robograder.app/id/${id}`,
       width: qrPx, height: qrPx,
-      // S25: PURE WHITE behind the chest code. The old #d4d9be was tuned to sit
-      // on the olive score box; on a white chest panel it reads as a dirty
-      // square and it costs contrast the small size cannot spare. Dark goes to
-      // true black for the same reason.
+      // S22: pure black on pure white for Wide. The old #1a2208 on #d4d9be was
+      // tuned to sit on the olive score box; against the orange gradient it
+      // costs contrast the code has no need to spend.
       colorDark:  isWideChest ? '#000000' : '#1a2208',
       colorLight: isWideChest ? '#ffffff' : '#d4d9be',
       correctLevel: window.QRCode.CorrectLevel.M

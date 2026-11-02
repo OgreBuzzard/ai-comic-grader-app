@@ -732,7 +732,7 @@ export default async function handler(req, res) {
         }
         if (!volumes || !volumes.length) return;
         // Choose the volume.
-        // S25 disambiguation fix: an Annual/Special/King-Size/Giant-Size sub-series
+        // S22 disambiguation fix: an Annual/Special/King-Size/Giant-Size sub-series
         // is a SEPARATE volume whose start_year can beat the main series on a year
         // hint (e.g. "Fantastic Four Annual" start 1963 vs "Fantastic Four" 1961 for
         // a 1963-hinted FF #27 -> wrongly pulled Annual #27/1994). So: if the book
@@ -1170,7 +1170,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       // cost toward the expected <$0.10 — and gives the FAIR comparison to 4.8
       // (which effectively isn't thinking on these). If accuracy holds at low
       // effort, 4.6-low is the real cost-competitive option to weigh vs 4.8.
-      // S24: effort now comes from lib/model.js (MAIN_EFFORT) so a calibration
+      // S22: effort now comes from lib/model.js (MAIN_EFFORT) so a calibration
       // round can change it in one place, next to the model id it is paired with.
       output_config: { effort: MAIN_EFFORT },
       // S15 May 29: enable adaptive thinking on Opus 4.8. Model decides when
@@ -1248,7 +1248,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     // Both branches set these and then converge on the existing parse logic.
     let text;
     let _usage = {};
-    // S23: filled in place by anthropicWithRetry so both the success and the
+    // S22: filled in place by anthropicWithRetry so both the success and the
     // error record can say how many attempts it took and what the upstream
     // said. Without it a 50-second failure looks the same whether it was one
     // slow call or three 429s and two backoffs.
@@ -2053,7 +2053,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
         if (!parsed._diagnostics) parsed._diagnostics = {};
         parsed._diagnostics.timingKey = key;
         await db.collection('assessment_timings').doc(key).set({
-          // S24 (2026-10-19): WHOSE assessment this was. The row carried the
+          // S22 (2026-10-19): WHOSE assessment this was. The row carried the
           // book's title and its grades but nothing identifying the account, so
           // a logged assessment with no matching item — which happens whenever
           // the client never saved, or the user deleted the book afterwards —
@@ -2143,7 +2143,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           referenceYear: referenceYear,
           referenceVolume: referenceVolumeName,
           referenceComparison: parsed.referenceComparison || null,
-          // S23 2026-10-16: marks this row as one that actually TOUCHED THE MAIN
+          // S22 2026-10-16: marks this row as one that actually TOUCHED THE MAIN
           // PREFIX. api/cachewarm's traffic gate reads it. Before this existed
           // the gate treated ANY assessment_timings row as proof the Main cache
           // was warm — but Deeps, Card assessments, slab-checks and Batch passes
@@ -2214,7 +2214,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       console.error('assessment_timings write failed (non-fatal):', e);
     }
 
-    // ── TIER GRADE CEILING — ENFORCED ON THE SERVER (S23, 2026-10-18) ────
+    // ── TIER GRADE CEILING — ENFORCED ON THE SERVER (S22, 2026-10-18) ────
     // `gradeCeiling` has existed since S16 and was enforced in exactly two
     // places, neither of which is the number anyone sees:
     //   - the PROMPT ("predicted CGC grade must not exceed X"), which is a
@@ -2295,7 +2295,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
       if (db) {
         const key = `t_err_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         await db.collection('assessment_timings').doc(key).set({
-          // S24: what this assessment COST THE USER in credits. Nothing recorded
+          // S22: what this assessment COST THE USER in credits. Nothing recorded
           // this before, so the admin's "cost per credit" was really cost per
           // ASSESSMENT — a lower, different number. Gross: a later refund is
           // subtracted from the ledger / the item's refund stamp, not from here.
@@ -2318,7 +2318,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           // standard 4).
           imageCount: (typeof imageBlocks !== 'undefined' && Array.isArray(imageBlocks)) ? imageBlocks.length : null,
           highGrade: (typeof highGrade !== 'undefined') ? !!highGrade : null,
-          // ── S23 2026-10-11: THE $0 WAS WRONG, AND IT HID REAL MONEY ──────
+          // ── S22 2026-10-11: THE $0 WAS WRONG, AND IT HID REAL MONEY ──────
           // The old comment here read "errored assessments cost $0 because the
           // API never returned (no tokens billed)". That is true for a failure
           // BEFORE the request goes out. It is false for the case that actually

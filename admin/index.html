@@ -1010,7 +1010,7 @@ async function _loadCacheCfg() {
   }
   _syncCacheCfgDom();
 }
-// S25: deep goes LIVE. api/assess_deep.js reads types.deep off this same doc as
+// S22: deep goes LIVE. api/assess_deep.js reads types.deep off this same doc as
 // of v5.92 and api/cachewarm.js?mode=warmdeep keeps that entry warm, so the chip
 // now drives real behaviour instead of being a no-op.
 const _CACHE_LIVE = { main: true, card: true, deep: true, full: false, cardDeep: false };
@@ -1339,7 +1339,7 @@ function _renderSales() {
   if (!el || !data) return;
   const t = data.totals || {};
   const money = n => '$' + (Number(n) || 0).toFixed(2);
-  // S24: gross and net each get their own line. They used to share one line
+  // S22: gross and net each get their own line. They used to share one line
   // under white-space:nowrap, so once revenue reached five characters the pair
   // ("$1,234.56 ($1,108.21)") could not break, the card refused to shrink past
   // its widest word, and the four cards pushed the whole admin page wider than
@@ -1554,7 +1554,7 @@ function renderStats() {
         <div class="stats-grid">
           ${(function(){var pc=perCredit||{},ac=assessCost||{},cpc=costPerCredit||{};var money=function(v){return v==null?'\u2014':'$'+(v<1?v.toFixed(3):v.toFixed(2));};var trio=function(o){return '<div class="breakouts"><span><strong>'+money(o.day)+'</strong> 24h</span><span><strong>'+money(o.week)+'</strong> 7d</span><span><strong>'+money(o.month)+'</strong> 30d</span></div>';};return ''+
             '<div class="stat-card"><h3>Earned / Credit</h3><div class="total">'+money(pc.month)+'</div>'+trio(pc)+'</div>'+
-            // S24: this card used to be labelled "Cost / Credit Used" while
+            // S22: this card used to be labelled "Cost / Credit Used" while
             // showing cost per ASSESSMENT. They are different numbers and the
             // second is the lower one — it ignores refunded Deeps, Batch (3
             // credits for 10 assessments), uncharged slab-checks and probes,
@@ -2506,7 +2506,7 @@ const RGV2 = (function () {
     var pq = String(pageQuality || "").toLowerCase().trim();
     if (!pq) return 0.5;
     if (pq === "white") return 1;
-    // S23: Off-White or better rounds up to a full 1 (a book with Off-White pages
+    // S22: Off-White or better rounds up to a full 1 (a book with Off-White pages
     // can now reach a perfect interior). Cream-tinged tiers stay 0.5; cream/tan/
     // brittle score 0.
     if (pq === "off-white to white" || pq === "off-white") return 1;
@@ -2523,7 +2523,7 @@ const RGV2 = (function () {
 
   var DEPTH_CAP = { main: 9.0, deep: 9.5, full: 10.0 };
 
-  // S23: a true 10 is reserved for a genuinely flawless book. A comic needs NO
+  // S22: a true 10 is reserved for a genuinely flawless book. A comic needs NO
   // listed defects, White pages (full 1/1 interior), and v1 faces >= these
   // minimums; a card needs the same on its axes plus full centering. Anything
   // short is capped at 9.5 so round-then-sum can't hand a 10 to a flawed book.
@@ -2553,7 +2553,7 @@ const RGV2 = (function () {
     return s;
   }
 
-  // S23: card analogue of shaveToCap — shave 0.5 round-robin surface -> corners ->
+  // S22: card analogue of shaveToCap — shave 0.5 round-robin surface -> corners ->
   // edges (centering fixed) until the subscores sum to the ceiling.
   function shaveCardToCap(sub, cap) {
     var s = { surface: sub.surface, corners: sub.corners, edges: sub.edges, centering: sub.centering };
@@ -2616,7 +2616,7 @@ const RGV2 = (function () {
       spine: clamp((input.spine20 || 0) / 10, 0, 2),
       interior: interiorTier(input.pageQuality, !!input.interiorDefect)
     };
-    // S23: round EACH subscore to the nearest 0.5, THEN sum for the grade (was
+    // S22: round EACH subscore to the nearest 0.5, THEN sum for the grade (was
     // sum-then-round-once + decompose, which shaved legit subscores down — e.g. a
     // 46 front decomposed back to 4, a 30 front to 2.5). Interior is a 0/0.5/1 tier.
     var rounded = {
@@ -2629,7 +2629,7 @@ const RGV2 = (function () {
 
     var cap = DEPTH_CAP[depth] != null ? DEPTH_CAP[depth] : 9.0;
     if (slabbed) cap = Math.min(cap, 9.5);   // slab can never reach RG 10 (no Full)
-    // S23: gate the perfect 10 (see TEN_GATE). No listed defects, White pages,
+    // S22: gate the perfect 10 (see TEN_GATE). No listed defects, White pages,
     // near-max faces — else the ceiling drops to 9.5.
     var _perfect10 = !input.hasDefects
       && String(input.pageQuality || "").toLowerCase().trim() === "white"
@@ -2639,7 +2639,7 @@ const RGV2 = (function () {
       && (input.spine20 || 0) >= TEN_GATE.spine;
     if (!_perfect10) cap = Math.min(cap, 9.5);
 
-    // S25 (#5): photo quality gates the TOP grades. Severity > 1 (more than one B,
+    // S22 (#5): photo quality gates the TOP grades. Severity > 1 (more than one B,
     // OR any C) steps the top rungs down — a 10 needs clean photos (->9.5), a 9.5
     // needs clean photos (->9.0); one B leaves both intact. This is the ONE place
     // photo quality moves the grade (elsewhere it only sets PM).
@@ -2663,7 +2663,7 @@ const RGV2 = (function () {
     else if (depth === "deep" && ceilingHit && !slabbed) upsell = "full";
 
     var pm = computePM(input);
-    // S25 (#6): grade + PM can never exceed 10 -> 8.5<=1.5, 9<=1, 9.5<=0.5, 10->0.
+    // S22 (#6): grade + PM can never exceed 10 -> 8.5<=1.5, 9<=1, 9.5<=0.5, 10->0.
     pm = Math.max(0, Math.min(pm, 10 - grade));
 
     return {
@@ -2769,7 +2769,7 @@ const RGV2 = (function () {
       edges: clamp((input.edges20 || 0) / 10, 0, 2),
       centering: clamp(roundHalf((input.centering10 || 0) / 10), 0, 1)
     };
-    // S23: round each axis to 0.5 then sum (was sum-then-round + decompose).
+    // S22: round each axis to 0.5 then sum (was sum-then-round + decompose).
     var rounded = {
       surface: clamp(roundHalf(precise.surface), 0, 5),
       corners: clamp(roundHalf(precise.corners), 0, 2),
@@ -2779,7 +2779,7 @@ const RGV2 = (function () {
     var uncapped = roundHalf(rounded.surface + rounded.corners + rounded.edges + rounded.centering);
     var cap = DEPTH_CAP_CARD[depth] != null ? DEPTH_CAP_CARD[depth] : 9.0;
     if (slabbed) cap = Math.min(cap, 9.5);
-    // S23: gate the perfect 10 for cards — no listed defects, full centering, and
+    // S22: gate the perfect 10 for cards — no listed defects, full centering, and
     // near-max surface/corners/edges; else the ceiling drops to 9.5.
     var _perfectCard = !input.hasDefects
       && (input.centering10 || 0) >= TEN_GATE.centering10
@@ -2794,7 +2794,7 @@ const RGV2 = (function () {
     var ceilingHit = uncapped > cap + 1e-9;
     var upsell = (depth === "main" && ceilingHit && !slabbed) ? "deep" : null;   // cards: Main -> Deep only
     var pm = computePM({ depth: depth, slabbed: slabbed, photograder: input.photograder });  // reuse comic PM table
-    pm = Math.max(0, Math.min(pm, 10 - grade));   // S25 (#6): grade + PM can't exceed 10
+    pm = Math.max(0, Math.min(pm, 10 - grade));   // S22 (#6): grade + PM can't exceed 10
     return { grade: grade, uncappedGrade: uncapped, subscores: sub, rawSubscores: { surface: precise.surface, corners: precise.corners, edges: precise.edges, centering: precise.centering }, pm: pm, pmLabel: formatPM(pm), ceilingHit: ceilingHit, upsell: upsell, kind: "card" };
   }
   function forCard(card) {
@@ -3214,7 +3214,7 @@ function renderItemDetail(it) {
 
     ${(() => {
       // Interior Covers + Signature + Coupon + Insert + User Defect ("missed").
-      // S23: Coupon and Insert were captured and stored but never rendered here,
+      // S22: Coupon and Insert were captured and stored but never rendered here,
       // so an item with coupon/insert photos looked like it had none. The public
       // listing has shown them since S18 (couponBlock / insertBlock in
       // public.html) — admin was the odd one out. "Missed" slots are
@@ -3342,7 +3342,7 @@ function renderItemDetail(it) {
 async function downloadAllImages() {
   const it = window._adminItem; if (!it) return;
   // S20 (#36): include the Deep interior-cover images in the export set.
-  // S23: coupon + insert added — they were missing here as well, so "Download
+  // S22: coupon + insert added — they were missing here as well, so "Download
   // all images" was quietly incomplete for any item that had them.
   const urls = [].concat(it.images || [], it.cornerImages || [], it.interiorCoverImages || [], it.interiorImages || [], it.restorationImages || [], it.signatureImages || [], it.couponImages || [], it.insertImages || [], it.userDefectImages || []).filter(Boolean);
   const status = document.getElementById('dl-all-status');
@@ -3558,7 +3558,7 @@ let _catOrder = 'title';
 // training — a RAW book whose real grade is known is. That is the truthGraded
 // flag, set by hand per entry, so this filter reads it instead.
 let _catSort = 'rg', _catLevel = 'all', _catTruthOnly = false, _catQ = '';
-// S23: how an issue's copies are drawn. 'lines' is a one-row-per-assessment
+// S22: how an issue's copies are drawn. 'lines' is a one-row-per-assessment
 // summary and is the DEFAULT, because a popular book now carries 30+ copies
 // (ASM 129 has 31) and the full cards made finding a specific one a scroll.
 // 'cards' is the old view, kept for reading a single copy in detail.
@@ -4123,7 +4123,7 @@ async function _catSaveTruth(ref) {
 const CGC_GRADE_OPTS = ['', '0.5','1.0','1.5','1.8','2.0','2.5','3.0','3.5','4.0','4.5','5.0','5.5','6.0','6.5','7.0','7.5','8.0','8.5','9.0','9.2','9.4','9.6','9.8','10.0'];
 
 // ── ONE ASSESSMENT, ONE LINE ─────────────────────────────────────────────────
-// S23 (Matt): the issue screen is for finding a particular copy among many, and
+// S22 (Matt): the issue screen is for finding a particular copy among many, and
 // the card view buried that under detail. This is the scanning view: grade on
 // the left where the eye lands, then the four things that identify a copy -
 // Grade ID, date, who made it, and their 4-character user code. Click opens the
