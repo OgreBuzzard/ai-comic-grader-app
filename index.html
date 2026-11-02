@@ -11022,11 +11022,14 @@ async function submitCleanAssessment() {
     if (A.restorationHighConfidence) formData.restorationHighConfidence = true;
     formData._imagesChanged = true;
 
-    if (typeof res.creditsRemaining === "number") {
-      window._userCredits = res.creditsRemaining;
-      if (typeof updateStats === "function") updateStats();
-    }
-    onAssessmentSuccess(formData);
+    // S22 — SAME DOUBLE-CHARGE SHAPE AS THE DEEP BUG, one layer up. This synced
+    // the balance from res.creditsRemaining and then handed onAssessmentSuccess
+    // `formData`, which has no creditsRemaining on it — so applyServerCredits()
+    // returned false and decrementCredit() took a second credit on every
+    // Cleaning Compare run. Pass the SERVER's response, which is the object
+    // that actually carries the field; the explicit sync above is then
+    // redundant and applyServerCredits does it.
+    onAssessmentSuccess(res);
   } catch (e) {
     console.error("[clean] run failed:", e);
     setStep("clean-regrade", "failed");

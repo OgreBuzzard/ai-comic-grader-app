@@ -1244,7 +1244,7 @@ function ensureStylesInjected() {
      this slot now. Matt is producing a Robograder figure that INTEGRATES the
      code (the QR as Robo's chest, head/arms/wheels extending past it) for the
      pre-printed stock; the app-rendered label draws the bare code. The base
-     `.robot-badge { display: none }` rule above already hides it, so there is
+     '.robot-badge { display: none }' rule above already hides it, so there is
      nothing to re-declare here. Case, Square and Large keep their badges. */
   .rg-label-large .robot-badge {
     display: block;
@@ -2089,7 +2089,7 @@ function ensureStylesInjected() {
      THERMAL / MONOCHROME VARIANT (v5.91)
 
      One layer of overrides on top of whichever format is selected, switched by
-     the `mono` class on the wrapper. It is deliberately a LAYER and not a
+     the 'mono' class on the wrapper. It is deliberately a LAYER and not a
      fourth set of geometry: every position, size and clamp is already tuned
      per format and none of that changes for thermal. Only the ink changes.
 

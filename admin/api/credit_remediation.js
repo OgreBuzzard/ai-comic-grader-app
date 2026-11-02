@@ -1,0 +1,148 @@
+// admin/api/credit_remediation.js — make whole the users the Deep
+// double-charge bug overcharged. (S22, fixed in v5.99.)
+//
+// ── THE BUG, IN ONE LINE ────────────────────────────────────────────────────
+// api/assess_deep.js stamped `creditsRemaining` on its result INSIDE the
+// `if (wantsSSE)` branch, so the plain-JSON return shipped without it. The
+// client keys on exactly that field: no field means "the server did not take
+// the credit", so it decremented a SECOND time after the endpoint already had.
+// Live since v5.19 (~18 Sept 2026), when server-side crediting shipped.
+//
+// ── WHY THE LEDGER CANNOT NAME THE VICTIMS EXACTLY ──────────────────────────
+// The SERVER's debit writes a credit_events row. The CLIENT's extra decrement
+// writes the user doc directly and logs NOTHING. So the second charge is
+// invisible in the ledger, and there is no field anywhere recording whether a
+// given request streamed. What the ledger CAN do is name everyone who ran a
+// Deep in the window — which is the complete set of people who could possibly
+// have been hit. Streaming clients (the desktop PWA) were never affected.
+//
+// So this is deliberately GENEROUS rather than precise: +1 credit to every
+// account with at least one server-side Deep debit in the window. A desktop-only
+// user gets a credit they did not lose. That is the correct way to be wrong
+// here — the alternative is leaving real overcharges unrefunded to avoid
+// over-refunding a few cents.
+//
+// ── SAFETY ──────────────────────────────────────────────────────────────────
+//   • DRY RUN BY DEFAULT. Nothing is written without apply=1.
+//   • IDEMPOTENT. Every grant writes a credit_events row labelled
+//     'deep_doublecharge_fix'. A uid that already has one is skipped, so
+//     running this twice cannot double-credit anyone.
+//   • The grant goes through FieldValue.increment, so it cannot clobber a
+//     balance that changed while this was running.
+//
+// GET  ?since=2026-09-18                 -> dry run: who, how many, total cost
+// POST {since, apply:true}               -> grant
+// POST {since, apply:true, perDeep:true} -> grant one per Deep instead of one
+//                                           per account (fuller restitution,
+//                                           and over-credits streaming users
+//                                           proportionally more)
+
+const GRANT_LABEL = 'deep_doublecharge_fix';
+const DEFAULT_SINCE = '2026-09-18';   // v5.19 — server-side crediting shipped
+
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  try {
+    const m = (req.headers.authorization || '').match(/^Bearer\s+(.+)$/);
+    if (!m) return res.status(401).json({ error: 'auth required' });
+    const { initializeApp, getApps, cert } = await import('firebase-admin/app');
+    const { getAuth } = await import('firebase-admin/auth');
+    if (!getApps().length) initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
+    const decoded = await getAuth().verifyIdToken(m[1].trim());
+    const email = String(decoded.email || '').toLowerCase();
+    const admins = (process.env.ADMIN_EMAILS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+    if (!admins.includes(email)) return res.status(403).json({ error: 'not an admin' });
+  } catch (e) {
+    return res.status(401).json({ error: 'auth failed', detail: String((e && e.message) || e) });
+  }
+
+  const src = (req.body && Object.keys(req.body).length) ? req.body : (req.query || {});
+  const since = String(src.since || DEFAULT_SINCE);
+  const apply = src.apply === true || src.apply === 'true' || src.apply === '1';
+  const perDeep = src.perDeep === true || src.perDeep === 'true' || src.perDeep === '1';
+
+  try {
+    const { getFirestore, FieldValue } = await import('firebase-admin/firestore');
+    const db = getFirestore();
+
+    // Every server-side Deep debit. label is set by lib/credits.js:
+    // reserveCredit(..., label: 'deep'). Filter on label alone and window it in
+    // memory — credit_events has no composite index and one is not worth a
+    // deploy for a one-off remediation.
+    const snap = await db.collection('credit_events').where('label', '==', 'deep').get();
+
+    const byUid = new Map();
+    for (const d of snap.docs) {
+      const e = d.data() || {};
+      if (!e.uid) continue;
+      if (String(e.createdAt || '') < since) continue;
+      if (!(Number(e.delta) < 0)) continue;           // debits only
+      byUid.set(e.uid, (byUid.get(e.uid) || 0) + 1);
+    }
+
+    // Who has already been made whole.
+    const prior = await db.collection('credit_events').where('label', '==', GRANT_LABEL).get();
+    const alreadyDone = new Set(prior.docs.map(d => (d.data() || {}).uid).filter(Boolean));
+
+    const targets = [];
+    let skipped = 0;
+    for (const [uid, deeps] of byUid.entries()) {
+      if (alreadyDone.has(uid)) { skipped++; continue; }
+      targets.push({ uid, deeps, grant: perDeep ? deeps : 1 });
+    }
+    targets.sort((a, b) => b.deeps - a.deeps);
+    const totalCredits = targets.reduce((n, t) => n + t.grant, 0);
+
+    if (!apply) {
+      return res.status(200).json({
+        ok: true, dryRun: true, since, perDeep,
+        usersWithADeep: byUid.size,
+        alreadyCredited: skipped,
+        usersToCredit: targets.length,
+        creditsToGrant: totalCredits,
+        sample: targets.slice(0, 15),
+        note: 'Nothing was written. Re-send with apply=1 to grant. '
+            + 'Safe to run twice: anyone already carrying a ' + GRANT_LABEL
+            + ' event is skipped.'
+      });
+    }
+
+    let granted = 0, failed = 0;
+    const errors = [];
+    for (const t of targets) {
+      try {
+        await db.collection('users').doc(t.uid).update({
+          assessmentCredits: FieldValue.increment(t.grant)
+        });
+        await db.collection('credit_events').doc(
+          'ce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
+        ).set({
+          uid: t.uid,
+          delta: t.grant,
+          label: GRANT_LABEL,
+          createdAt: new Date().toISOString(),
+          deepsInWindow: t.deeps,
+          reason: 'Deep assessment double-charged on non-streaming clients between '
+                + since + ' and the v5.99 fix.'
+        });
+        granted++;
+      } catch (e) {
+        failed++;
+        if (errors.length < 10) errors.push({ uid: t.uid, detail: String((e && e.message) || e) });
+      }
+    }
+
+    return res.status(200).json({
+      ok: true, applied: true, since, perDeep,
+      usersCredited: granted, creditsGranted: totalCredits,
+      alreadyCreditedBefore: skipped, failed, errors,
+      note: 'Each grant wrote a ' + GRANT_LABEL + ' row, so this is safe to re-run.'
+    });
+  } catch (e) {
+    return res.status(500).json({ error: 'remediation failed', detail: String((e && e.message) || e) });
+  }
+}

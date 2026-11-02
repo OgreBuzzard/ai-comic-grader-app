@@ -1392,11 +1392,27 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
       console.error('deep timing write failed (non-fatal):', e);
     }
 
+    // S22 — THE DOUBLE-CHARGE BUG. This stamp used to sit INSIDE the wantsSSE
+    // branch below, so the plain-JSON return shipped a Deep result with no
+    // creditsRemaining on it. The client's applyServerCredits() keys on exactly
+    // that field: no field means "the server did not take the credit", so
+    // onAssessmentSuccess() falls through to decrementCredit() and takes a
+    // SECOND one — after this endpoint already debited. Every non-streaming
+    // Deep charged twice.
+    // That is the reported symptom exactly: a new account with 3 free credits
+    // runs one Main (-1, synced correctly, because api/assess.js has always
+    // stamped this ABOVE its own wantsSSE branch) and then one Deep (-1 here,
+    // -1 again on the client) and lands on 0 instead of 1.
+    // Streaming clients were unaffected, which is why it survived: the desktop
+    // PWA streams. A WebView that cannot read the stream falls back to plain
+    // JSON — and the native builds are the ones in users' hands.
+    // The stamp now sits above the branch, identical to api/assess.js. Keep
+    // these two shaped the same; the asymmetry WAS the bug.
+    if (_creditDebited && Number.isFinite(_creditsRemaining)) {
+      parsed.creditsCharged = _CREDIT_COST;
+      parsed.creditsRemaining = _creditsRemaining;
+    }
     if (wantsSSE) {
-      if (_creditDebited && Number.isFinite(_creditsRemaining)) {
-        parsed.creditsCharged = _CREDIT_COST;
-        parsed.creditsRemaining = _creditsRemaining;
-      }
       sseEvent('result', parsed);
       try { res.end(); } catch (e) {}
       return;
