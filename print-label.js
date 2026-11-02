@@ -667,22 +667,29 @@ function ensureStylesInjected() {
      glyph's cap height touches the stars above or the version below. Measured
      at 300dpi: 196px at scaleX(0.625) is the largest that clears both, with the
      PM and (+) still clear on the right. */
+  /* S22: 276 -> 262, right inset 6 -> 10, top 6 -> 12. Measured off Matt's
+     printed mock-up, not estimated. At 276/6 the box sat close enough to the
+     die-cut edge that a half-millimetre of thermal feed drift clipped it. */
   .rg-label .score-box {
-    width: 276px; height: 276px;
+    width: 262px; height: 262px;
     box-sizing: border-box;
     background: #cfe8a8;
     border: 3px solid #0f1a05;
     border-radius: 38px;
     position: absolute;
-    right: 6px; top: 6px;
+    right: 10px; top: 12px;
     display: flex; flex-direction: column;
     align-items: center; justify-content: center;
   }
+  /* S22: top 14 -> 8. The PM moved up to the mock's position and the wordmark
+     is full-box-width, so the two were overlapping. Lifting the wordmark puts
+     its ink at 8..28 and the PM's at 32..100 - no vertical overlap, so their
+     horizontal positions stop mattering. */
   .rg-label .rg-word {
     font-size: 26px; font-weight: 700;
     color: #2a4010; letter-spacing: 3px;
     font-family: 'Barlow Condensed', sans-serif;
-    position: absolute; top: 14px;
+    position: absolute; top: 8px;
   }
   .rg-label .rg-stars {
     opacity: 0.85;   /* S22: dark stars on the light box need no knock-down */
@@ -724,7 +731,10 @@ function ensureStylesInjected() {
        goes negative. Line-box arithmetic says there is room at 210; the ink
        says otherwise, which is why this was measured by rasterising the box and
        finding the black pixels. */
-    font-size: 188px; font-weight: 900;
+    /* S22: 188 -> 215. The mock keeps the numeral's TOP where it was and takes
+       the BOTTOM down toward the version string, using room the old size left
+       empty. Measured off the mock: 170px of ink against ~133 at 188. */
+    font-size: 215px; font-weight: 900;
     color: #0d0d0f; line-height: 1;   /* S22: black on the light box */
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
@@ -742,7 +752,7 @@ function ensureStylesInjected() {
        the 150px centered number (~10px gap; precision is absolute/out
        of flow so it cannot displace the number regardless). */
     position: absolute;
-    top: 30px; right: 16px;
+    top: 20px; right: 6px;   /* S22: matched to the mock */
     font-size: 58px; font-weight: 700;   /* S22: 50 -> 58, tracks the numeral */
     color: #0d0d0f; opacity: 0.85;   /* S22: black on the light box */
     font-family: 'Noto Sans Display', sans-serif;
@@ -831,7 +841,10 @@ function ensureStylesInjected() {
     left: 32px; top: 12px; right: 290px; bottom: 14px;
     display: flex; flex-direction: column; justify-content: space-between;
   }
-  .rg-label .info-upper { overflow: hidden; }
+  /* S22: VISIBLE, not hidden. .ttl carries its own max-height and overflow, so
+     this clip added nothing except eating descenders - the tail of the y in
+     "Fantasy" and the g in "Aug" were shaved off on every print. */
+  .rg-label .info-upper { overflow: visible; }
   .rg-label .info-upper {
     /* S22: 8 -> 6. With a price pad the info column narrows to 462px, which wraps
        a longer title to two lines; measured, the block then ran 2px past the
@@ -930,7 +943,7 @@ function ensureStylesInjected() {
     display: grid;
     justify-content: flex-end;   /* S22: not 'end' — html2canvas only knows the flex-* spellings */
     grid-template-columns: max-content max-content;
-    column-gap: 18px; row-gap: 3px;
+    column-gap: 8px; row-gap: 3px;   /* S22: 18 -> 8, slash sits against the ID */
     align-items: baseline;
   }
   .rg-label .meta-lbl {

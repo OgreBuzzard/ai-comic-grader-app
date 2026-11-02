@@ -1014,7 +1014,7 @@ async function _loadCacheCfg() {
 // of v5.92 and api/cachewarm.js?mode=warmdeep keeps that entry warm, so the chip
 // now drives real behaviour instead of being a no-op.
 const _CACHE_LIVE = { main: true, card: true, deep: true, full: false, cardDeep: false };
-const _CACHE_LABEL = { main: 'Comic (main)', card: 'Card (main)', deep: 'Deep', full: 'Full', cardDeep: 'Card Deep' };
+const _CACHE_LABEL = { main: 'Main', card: 'Card (main)', deep: 'Deep', full: 'Full', cardDeep: 'Card Deep' };
 function _syncCacheCfgDom() {
   ['main','card','deep','full','cardDeep'].forEach(k => {
     const el = document.getElementById('ct-' + k);
@@ -1196,10 +1196,19 @@ async function renderDashboard() {
         </div>
 
         <div style="display:flex;flex-direction:column;gap:5px;align-items:stretch">
-          <div id="cache-types" style="display:flex;gap:3px;flex-wrap:wrap;max-width:200px">
-            <button id="ct-main" onclick="_toggleCacheType('main')" style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:pointer;background:#1c1c22;color:#9ab" title="Comic (main) assessment prompt caching">Comic</button>
-            <button id="ct-card" onclick="_toggleCacheType('card')" style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:pointer;background:#1c1c22;color:#9ab" title="Card (main) assessment prompt caching">Card</button>
-            <button id="ct-deep" onclick="_toggleCacheType('deep')" style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:pointer;background:#1c1c22;color:#9ab" title="Deep assessment prompt caching (v5.92+)">Deep</button>
+          <!-- S22: MAIN + DEEP, nothing else. "Comic" next to "Deep" read as two
+               different KINDS of thing when they are two DEPTHS of the same
+               comic assessment; Main/Deep says what it is. Card is dropped from
+               the picker entirely - nobody is grading cards and its caching was
+               never wired - exactly as Large was dropped from the label sizes.
+               _CACHE_LIVE.card and the types.card field stay, so a stored value
+               survives and the chip can come back in one line if cards return.
+               nowrap + the narrower max-width is what keeps this column beside
+               FMV/Growth/Catalogue instead of wrapping onto its own row and
+               leaving the space to its right empty. -->
+          <div id="cache-types" style="display:flex;gap:3px;flex-wrap:nowrap;max-width:112px">
+            <button id="ct-main" onclick="_toggleCacheType('main')" style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:pointer;background:#1c1c22;color:#9ab;white-space:nowrap" title="Main (first-pass) comic assessment prompt caching">Main</button>
+            <button id="ct-deep" onclick="_toggleCacheType('deep')" style="padding:4px 7px;font-size:10px;border:1px solid #333;border-radius:7px;cursor:pointer;background:#1c1c22;color:#9ab;white-space:nowrap" title="Deep assessment prompt caching (v5.92+)">Deep</button>
           </div>
           <select id="cache-ttl" onchange="_saveCacheCfg()" style="background:var(--panel-2);color:#cde;border:1px solid #3a5a2a;border-radius:8px;padding:3px 6px;font-size:11px" title="Cache TTL"><option value="1h" ${_cacheCfg.ttl !== '5m' ? 'selected' : ''}>1h</option><option value="5m" ${_cacheCfg.ttl === '5m' ? 'selected' : ''}>5m</option></select>
         </div>
