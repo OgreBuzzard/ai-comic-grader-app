@@ -3461,5 +3461,30 @@ function renderQRsImmediately(container) {
       colorLight: isWideChest ? '#ffffff' : '#d4d9be',
       correctLevel: window.QRCode.CorrectLevel.M
     });
+    // S22 — CANVAS ONLY. qrcodejs builds BOTH a <canvas> and an <img>, then on
+    // some platforms hides the canvas and shows the img with a base64 data URL
+    // (its own iOS/Android branch). html2canvas must then LOAD that image
+    // inside its cloned document before it can draw, and on iOS that load is
+    // what hung Save PDF: the capture promise never settled, which is not a
+    // throw and therefore not catchable - the button just said
+    // "Generating 1/1..." forever.
+    // Reproduced the exact DOM qrcodejs produces (CANVAS block + IMG display
+    // none, then IMG block with a data: URL) in headless Chromium, where it
+    // captures fine - so this is platform-specific and cannot be chased from
+    // here. Removing the image removes the question: a <canvas> is drawn from
+    // its own pixels with nothing to load and nothing to wait for, on every
+    // platform. It is also the ONLY image on a Wide label.
+    // Runs twice because qrcodejs swaps canvas for img on a 0ms timeout, so
+    // the element may not exist yet when this returns.
+    const _canvasOnly = () => {
+      try {
+        const cv = el.querySelector('canvas');
+        if (!cv) return;                       // no canvas: leave whatever is there
+        el.querySelectorAll('img').forEach(im => im.remove());
+        cv.style.display = 'block';
+      } catch (e) { /* never break label rendering over this */ }
+    };
+    _canvasOnly();
+    setTimeout(_canvasOnly, 0);
   });
 }

@@ -1395,26 +1395,26 @@ function _renderSales() {
 
 function renderUsersTab() {
   document.getElementById('tab-content').innerHTML = `
+    <!-- S22 ONE-OFF: Deep double-charge remediation. AT THE TOP, because the
+         Users tab is a paginated list and anything below it is unreachable
+         without tapping Load More dozens of times - which is exactly what
+         happened when this sat at the bottom. It lives in the admin page at
+         all because admin/ is behind middleware.js's ADMIN_GATE_SECRET cookie
+         gate, which curl cannot present. DELETE THIS BLOCK AND _wireRemediation
+         ONCE IT HAS BEEN RUN. -->
+    <div id="remediation-row" style="margin-bottom:14px;padding:10px 12px;border:1px solid #3a2a18;border-radius:8px;background:#17140f">
+      <div style="font-size:11px;color:#9a8a6a;margin-bottom:7px">
+        One-off: Deep double-charge refund (18 Sept &rarr; v5.99). Safe to tap more than once &mdash; nobody is credited twice.
+      </div>
+      <button id="remediation-check" style="padding:5px 11px;font-size:11px;border:1px solid #3a5a2a;border-radius:7px;cursor:pointer;background:var(--panel-2);color:#cde">Check who was affected</button>
+      <div id="remediation-out" style="margin-top:8px;font-size:11px;color:#cde;white-space:pre-wrap;line-height:1.5"></div>
+    </div>
     <div style="position:relative">
       <input type="text" id="users-search" placeholder="Search by name, email, or User ID…" class="search-input" value="${escapeAttr(state.userSearch || '')}" style="padding-right:38px">
       <button type="button" id="users-search-clear" aria-label="Clear search" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-dim);font-size:20px;line-height:1;cursor:pointer;padding:2px 8px;display:${(state.userSearch || '') ? 'block' : 'none'}">✕</button>
     </div>
     <div class="sort-bar" id="sort-bar"></div>
     <div id="users-section"><div class="loading">Loading users…</div></div>
-    <!-- S22 ONE-OFF: Deep double-charge remediation. Lives at the BOTTOM of the
-         Users tab, not the header, and is meant to be DELETED once it has been
-         run. It is here rather than in a .command file because admin/ sits
-         behind middleware.js's ADMIN_GATE_SECRET cookie gate, which curl cannot
-         present — any terminal tool pointed at an admin endpoint dies on
-         "gate: locked" before it ever reaches the auth check. Inside this page
-         the cookie and the Firebase token are both already in hand. -->
-    <div id="remediation-row" style="margin-top:18px;padding:10px 12px;border:1px solid #3a2a18;border-radius:8px;background:#17140f">
-      <div style="font-size:11px;color:#9a8a6a;margin-bottom:7px">
-        One-off: Deep double-charge refund (18 Sept → v5.99). Safe to re-run; anyone already credited is skipped.
-      </div>
-      <button id="remediation-check" style="padding:5px 11px;font-size:11px;border:1px solid #3a5a2a;border-radius:7px;cursor:pointer;background:var(--panel-2);color:#cde">Check who was affected</button>
-      <div id="remediation-out" style="margin-top:8px;font-size:11px;color:#cde;white-space:pre-wrap;line-height:1.5"></div>
-    </div>
   `;
   const searchInput = document.getElementById('users-search');
   const _clearBtn = document.getElementById('users-search-clear');
@@ -1443,11 +1443,20 @@ function _wireRemediation() {
     btn.disabled = true; out.textContent = 'Checking…';
     try {
       const d = await api('/api/credit_remediation?since=2026-09-18');
+      // The question Matt actually has is "did this already run, or not?", so
+      // answer THAT first and in words, before any numbers.
+      if (d.usersToCredit === 0) {
+        out.textContent = d.alreadyCredited > 0
+          ? 'ALREADY DONE. All ' + d.alreadyCredited + ' affected accounts were credited on an earlier run. Nothing left to do.'
+          : 'Nothing to do - no Deep assessments found since ' + d.since + '.';
+        return;
+      }
       out.textContent =
+        'NOT YET DONE.\n' +
         'Users who ran a Deep since ' + d.since + ': ' + d.usersWithADeep + '\n' +
-        'Already credited before: ' + d.alreadyCredited + '\n' +
-        'WOULD CREDIT: ' + d.usersToCredit + ' accounts, ' + d.creditsToGrant + ' credits';
-      if (d.usersToCredit > 0) {
+        'Already credited on an earlier run: ' + d.alreadyCredited + '\n' +
+        'STILL TO CREDIT: ' + d.usersToCredit + ' accounts, ' + d.creditsToGrant + ' credits';
+      {
         const go = document.createElement('button');
         go.textContent = 'Add ' + d.creditsToGrant + ' credits to ' + d.usersToCredit + ' accounts';
         go.style.cssText = 'margin-top:8px;padding:5px 11px;font-size:11px;border:1px solid #6a3a2a;border-radius:7px;cursor:pointer;background:#2a1a14;color:#f0c0a0';
