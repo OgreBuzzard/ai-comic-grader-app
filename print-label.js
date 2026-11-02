@@ -772,8 +772,15 @@ function ensureStylesInjected() {
      box, exactly as the app's scoreBox() offsets its own (+) by the same nudge. */
   .rg-label .rg-plus {
     position: absolute;
+    /* S22: margin-top instead of calc() inside transform. html2canvas renders
+       into a cloned document and its transform parser does not evaluate
+       calc() — it threw there, the capture promise never settled, and Save PDF
+       sat on "Generating 1/1..." forever. Same visual result, parseable.
+       The 16px matches .rg-num-wrap's translateY so the (+) sits on the
+       NUMBER's midline rather than the box's. */
     top: 50%; right: 8px;
-    transform: translateY(calc(-50% + 16px));
+    margin-top: 16px;
+    transform: translateY(-50%);
     font-size: 44px; font-weight: 700;
     color: #0d0d0f; opacity: 0.85;
     font-family: 'Saira', 'Barlow Condensed', sans-serif;
@@ -921,7 +928,7 @@ function ensureStylesInjected() {
      GRADED row still aligns its value with the ID row's. */
   .rg-label .meta-grid {
     display: grid;
-    justify-content: end;
+    justify-content: flex-end;   /* S22: not 'end' — html2canvas only knows the flex-* spellings */
     grid-template-columns: max-content max-content;
     column-gap: 18px; row-gap: 3px;
     align-items: baseline;
@@ -1260,7 +1267,9 @@ function ensureStylesInjected() {
   .rg-label-l .url-id { font-size: 24px; }
   .rg-label-l .score-box {
     width: 252px; height: 252px;
-    background: #1a2208;
+    background: #cfe8a8;
+    border: 3px solid #0f1a05;
+    box-sizing: border-box;
     border-radius: 38px;
     position: absolute;
     left: 18px; top: 18px;
@@ -1269,12 +1278,12 @@ function ensureStylesInjected() {
   }
   .rg-label-l .rg-word {
     font-size: 24px; font-weight: 700;
-    color: #6a8030; letter-spacing: 3px;
+    color: #2a4010; letter-spacing: 3px;
     font-family: 'Barlow Condensed', sans-serif;
     position: absolute; top: 14px;
   }
   .rg-label-l .rg-stars {
-    opacity: 0.5;
+    opacity: 0.85;
     position: absolute; top: 44px; left: 0; right: 0;
     text-align: center; font-size: 24px; line-height: 1; letter-spacing: 2px;
   }
@@ -1293,7 +1302,7 @@ function ensureStylesInjected() {
        original 150px at scaleX(0.625), which also restores the ~10px clearance
        to .rg-prec that Option A was eating into. */
     font-size: 150px; font-weight: 900;
-    color: #b8d820; line-height: 1;
+    color: #0d0d0f; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
     transform: scaleX(0.625);
@@ -1306,7 +1315,7 @@ function ensureStylesInjected() {
     position: absolute;
     top: 34px; right: 20px;
     font-size: 50px; font-weight: 700;
-    color: #b8d820; opacity: 0.9;
+    color: #0d0d0f; opacity: 0.9;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
     transform: scaleX(0.625);
@@ -1317,7 +1326,7 @@ function ensureStylesInjected() {
   }
   .rg-label-l .rg-v {
     font-size: 20px;
-    color: #5a7030;
+    color: #3a5010;
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 500;
     position: absolute; bottom: 14px;
@@ -1630,7 +1639,9 @@ function ensureStylesInjected() {
   }
   .rg-label-square .score-box {
     width: 256px; height: 256px;
-    background: #1a2208;
+    background: #cfe8a8;
+    border: 3px solid #0f1a05;
+    box-sizing: border-box;
     border-radius: 36px;
     position: absolute;
     right: 14px; top: 14px;
@@ -1639,12 +1650,12 @@ function ensureStylesInjected() {
   }
   .rg-label-square .rg-word {
     font-size: 22px; font-weight: 700;
-    color: #6a8030; letter-spacing: 2.5px;
+    color: #2a4010; letter-spacing: 2.5px;
     font-family: 'Barlow Condensed', sans-serif;
     position: absolute; top: 12px;
   }
   .rg-label-square .rg-stars {
-    opacity: 0.5;
+    opacity: 0.85;
     position: absolute; top: 38px; left: 0; right: 0;
     text-align: center; font-size: 22px; line-height: 1; letter-spacing: 2px;
   }
@@ -1662,7 +1673,7 @@ function ensureStylesInjected() {
        the drop never rendered. One declaration now — the order matters, scaleX
        first then translateY, so the shift is in unscaled pixels. */
     font-size: 172px; font-weight: 900;
-    color: #b8d820; line-height: 1;
+    color: #0d0d0f; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
     transform: scaleX(0.625) translateY(14px);
@@ -1677,7 +1688,7 @@ function ensureStylesInjected() {
     position: absolute;
     top: 30px; right: 16px;
     font-size: 40px; font-weight: 700;   /* S22: +2pt-ish, was 34 — too small to read in print */
-    color: #b8d820; opacity: 0.9;
+    color: #0d0d0f; opacity: 0.9;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
     transform: scaleX(0.625);
@@ -1688,7 +1699,7 @@ function ensureStylesInjected() {
   }
   .rg-label-square .rg-v {
     font-size: 18px;
-    color: #5a7030;
+    color: #3a5010;
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 500;
     position: absolute; bottom: 12px;
@@ -2252,7 +2263,15 @@ function renderModal(modal, comic, allItems) {
   // of stored value. When shown, the toggle drives whether the asking-price
   // value renders inside the pad or the pad stays blank for hand-writing.
   const hasAskingPrice = comic.askingPrice != null && comic.askingPrice !== '' && Number(comic.askingPrice) > 0;
-  const showIncludePriceToggle = opts.priceTag && hasAskingPrice;
+  // S22: WIDE HAS NO PRICE PAD ANY MORE. At 4x1 the pad took the slot the QR
+  // now occupies and squeezed the info column to the point where a two-line
+  // title stopped fitting. Offering a toggle that cannot be honoured is worse
+  // than not offering it, so both price toggles are hidden on Wide and the
+  // stored priceTag is ignored for this size rather than cleared - switch to
+  // Case or Square and the setting is still there.
+  const _priceCapable = opts.size !== 'small';
+  const showPriceToggle = _priceCapable;
+  const showIncludePriceToggle = _priceCapable && opts.priceTag && hasAskingPrice;
   const includePricePillClass = opts.includePrice ? 'lvm-pill on' : 'lvm-pill';
 
   // Effective options for rendering: includePrice only takes effect if the
@@ -2294,13 +2313,14 @@ function renderModal(modal, comic, allItems) {
       <div class="lvm-toggle-row lvm-toggle-row-sizes">
         ${sizeSegments}
       </div>
+      ${showPriceToggle ? `
       <div class="lvm-toggle-row lvm-toggle-row-secondary">
         <div></div>
         <div class="lvm-toggle" data-action="toggle-price" role="button" tabindex="0">
           <span class="lvm-toggle-label">Include price tag</span>
           <span class="${pricePillClass}"></span>
         </div>
-      </div>
+      </div>` : ''}
       ${showIncludePriceToggle ? `
       <div class="lvm-toggle-row lvm-toggle-row-secondary">
         <div></div>
@@ -2350,11 +2370,16 @@ function renderModal(modal, comic, allItems) {
       renderModal(modal, comic, allItems);
     });
   });
-  modal.querySelector('[data-action="toggle-price"]').addEventListener('click', () => {
-    const cur = readOptions();
-    writeOptions({ ...cur, priceTag: !cur.priceTag });
-    renderModal(modal, comic, allItems);
-  });
+  // S22: absent on Wide (no price pad at 4x1), so guard it the way the
+  // include-price listener always has been.
+  const priceToggleEl = modal.querySelector('[data-action="toggle-price"]');
+  if (priceToggleEl) {
+    priceToggleEl.addEventListener('click', () => {
+      const cur = readOptions();
+      writeOptions({ ...cur, priceTag: !cur.priceTag });
+      renderModal(modal, comic, allItems);
+    });
+  }
   // v5.91: thermal toggle. Unconditional in the DOM, so no guard needed.
   modal.querySelector('[data-action="toggle-mono"]').addEventListener('click', () => {
     const cur = readOptions();
@@ -2840,7 +2865,17 @@ async function generatePDF(comics, modal) {
       }
       }   // end sheet-placement branch (single mode set x/y above)
 
-      const canvas = await window.html2canvas(boxes[i], {
+      // S22 - A HANG MUST NOT LOOK LIKE PROGRESS. Save PDF sat on
+      // 'Generating 1/1...' in a greyed-out button forever. handleSavePDF has
+      // always had a catch that alerts, so a THROW was never the problem:
+      // html2canvas never SETTLED, and an unsettled promise cannot be caught.
+      // It hangs waiting on a resource in the cloned document that neither
+      // loads nor errors - most often an image, and the QR is the only image
+      // on a Wide label. Racing it turns a dead button into a named failure,
+      // which is the difference between no information and a bug report that
+      // says which label and how far it got. 45s is generous: a 4x1 captures
+      // in under a second on desktop, 2-3s on an older iPhone.
+      const _capture = window.html2canvas(boxes[i], {
         scale: 1,
         useCORS: true,
         backgroundColor: '#d4d9be',
@@ -2895,6 +2930,14 @@ async function generatePDF(comics, modal) {
           } catch (e) { /* never let onclone throw — draw with what we have */ }
         },
       });
+      const canvas = await Promise.race([
+        _capture,
+        new Promise((_, reject) => setTimeout(() => reject(new Error(
+          'Label ' + (i + 1) + ' of ' + total + ' never finished rendering (45s). '
+          + 'This is almost always an image inside the label that will not load - '
+          + 'on a Wide label that means the QR code. Nothing was saved.'
+        )), 45000))
+      ]);
       // JPEG instead of PNG: the label uses photographic-style anti-aliased
       // text and a flat olive background — JPEG at quality 0.92 is visually
       // indistinguishable from PNG for this content but produces a PDF
@@ -3111,7 +3154,9 @@ function renderLabelMarkup(comic, opts) {
   // decision below has to branch on it.
   const isWide = !isLarge && !isSquare && !isSmallL;
   if (opts.size === 'card' || (comic && comic.type === 'card')) return renderCardLabelMarkup(comic, opts);
-  const showPrice = !!opts.priceTag;
+  // S22: Wide has no price pad. A priceTag stored from another size is ignored
+  // here rather than cleared, so switching back to Case or Square keeps it.
+  const showPrice = !!opts.priceTag && opts.size !== 'small';
   const includePrice = !!opts.includePrice;
 
   const rg = comic.roboGrade;
@@ -3122,14 +3167,19 @@ function renderLabelMarkup(comic, opts) {
   // S22: Wide's box is light (#cfe8a8 + black numerals), so the restoration
   // palette inverts for it — a pale lavender numeral that reads on #1a0a2a is
   // invisible on a light panel, and vice versa.
-  const _labelScoreColor = isWide
+  // S22: Case and Square joined Wide on the light score box, so the LIGHT
+  // palette is now the default and only Large (retired) keeps the dark one.
+  // Restored books invert with it: a lavender numeral that reads on #1a0a2a is
+  // invisible on a light panel.
+  const _lightBox = !isLarge;
+  const _labelScoreColor = _lightBox
     ? (_labelRestored ? '#3a1252' : '#0d0d0f')
     : (_labelRestored ? '#c8a8e8' : '#b8d820');
-  const _labelBgColor = isWide
+  const _labelBgColor = _lightBox
     ? (_labelRestored ? '#ead8f5' : '#cfe8a8')
     : (_labelRestored ? '#1a0a2a' : '#1a2208');
-  const _labelBorderColor = isWide ? (_labelRestored ? '#2a0f3a' : '#0f1a05') : null;
-  const _labelCheckColor = isWide ? '#5a3a7a' : '#9a7ab8';
+  const _labelBorderColor = _lightBox ? (_labelRestored ? '#2a0f3a' : '#0f1a05') : null;
+  const _labelCheckColor = _lightBox ? '#5a3a7a' : '#9a7ab8';
   // S22: same rule the app's score box uses — the score hit the depth cap and a
   // deeper pass could still raise it. A 100 is already the ceiling, so it never
   // carries one, and neither does an unlocked high-grade run.
@@ -3148,7 +3198,7 @@ function renderLabelMarkup(comic, opts) {
     // S17: chunky SVG star (short points, thick center) in the score color, not
     // the pointy Unicode ★. Size comes from the .rg-stars CSS per format (the
     // SVG fills the line via height:1em). Restoration star is purple.
-    const _green = _labelRestored ? _labelScoreColor : (isWide ? '#2a4010' : '#b8d820');
+    const _green = _labelRestored ? _labelScoreColor : (_lightBox ? '#2a4010' : '#b8d820');
     const _star = (c) => `<svg viewBox="0 0 24 24" style="height:1em;width:1em;display:inline-block;vertical-align:middle"><path d="M12.00,2.00 15.64,6.98 21.51,8.91 17.90,13.92 17.88,20.09 12.00,18.20 6.12,20.09 6.10,13.92 2.49,8.91 8.36,6.98Z" fill="${c}"/></svg>`;
     let _s = '';
     for (let i = 0; i < _t; i++) _s += _star(_green);
