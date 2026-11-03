@@ -209,6 +209,35 @@ const LABEL_BUY_LINKS = {
   }
 };
 
+// ── S22: ROLLS FOR SINGLE LABELS, SHEETS FOR SHEETS ────────────────────────
+// Printing one label at a time means a thermal roll printer, not an Avery
+// sheet - a sheet is 20 labels and you do not feed one through for a single
+// book. So the Buy button points at roll stock in single-label mode and at the
+// sheet stock in sheet mode.
+//
+// ASINS ARE NOT FILLED IN YET. Matt sent a.co short links; Amazon refuses
+// automated fetches, so the short links cannot be resolved to ASINs from here.
+// To fill these in: open each short link in a browser and copy the 10-character
+// code after /dp/ in the address bar.
+//   small    (4" x 1")    -> https://a.co/d/0dKZffce
+//   square   (2" x 2")    -> https://a.co/d/05lc861C
+//   small-l  (4" x 2")    -> https://a.co/d/0cjz3oIa
+// Until an asin is set, that size falls back to its sheet link, so the button
+// is never broken or pointed somewhere wrong - see buyLink in renderModal.
+//
+// NOTE on small-l: that roll is 4" x 2", not the 4" x 1.33" the Case layout is
+// built for. The layout has to be adapted to the taller stock before this link
+// is the right thing to offer.
+const AMAZON_ASSOCIATE_TAG = 'grailstoaston-20';
+function amazonProductUrl(asin) {
+  return 'https://www.amazon.com/dp/' + asin + '?tag=' + AMAZON_ASSOCIATE_TAG;
+}
+const LABEL_ROLL_LINKS = {
+  small:     { label: '4\u2033 \u00d7 1\u2033 thermal rolls', asin: '', vendor: 'Amazon' },
+  square:    { label: '2\u2033 \u00d7 2\u2033 thermal rolls', asin: '', vendor: 'Amazon' },
+  'small-l': { label: '4\u2033 \u00d7 2\u2033 thermal rolls', asin: '', vendor: 'Amazon' }
+};
+
 // ── Label options (persisted via localStorage) ─────────────────────────────
 // User's size + price-tag toggle preferences. Persists across sessions so a
 // user printing CGC-slab labels doesn't have to reset Small every open.
@@ -937,8 +966,8 @@ function ensureStylesInjected() {
     display: flex; flex-direction: column;
     /* 208, not the 214 the arithmetic gives: .info's top:12 lands at y=13
        inside the label's 1px border, so 214 put the block's bottom at 227
-       against a rule at 225 - measured, not assumed. 208 clears it by 4. */
-    max-height: 208px;
+       against a rule at 225 - measured, not assumed. 210 clears it by 2. */
+    max-height: 210px;
   }
   .rg-label .info-upper > .ttl,
   .rg-label .info-upper > .iss { flex: 0 0 auto; }
@@ -1029,7 +1058,7 @@ function ensureStylesInjected() {
     transform-origin: left center;
   }
   .rg-label .prt {
-    font-size: 28px; color: #4a4a38;   /* S22: 22 -> 28 */
+    font-size: 32px; color: #4a4a38;   /* S22: 22 -> 28 -> 32 */
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 500;
     /* S22: the line sat directly under .iss's baseline, so a descender in the
@@ -1043,8 +1072,13 @@ function ensureStylesInjected() {
        31px against ~38px of actual ink at 28px, so descenders hung outside it
        and any cut on a line boundary shaved them. 1.4 contains them, so
        clipping at a whole multiple of the line height cuts between lines and
-       touches no glyph. fitLabelText does that clamping. */
-    line-height: 1.4;
+       touches no glyph. fitLabelText does that clamping.
+       1.3 and not the 1.4 this started at: at 28px either value fitted two
+       lines, but at 32px two lines need 2 x 1.4 x 32 = 90 against the 89 this
+       column has, so 1.4 silently dropped the Key Info to ONE line and left
+       46px of the column empty. 1.3 gives 83 and still contains the glyphs -
+       Barlow Condensed's ascender plus descender is about 1.25em. */
+    line-height: 1.3;
     /* S22: this line carries the printing AND, after it, whatever of the
        book's Key Info fits. It WRAPS now - one line was throwing away most of
        a Key Info that is routinely a sentence. It is still clipped, because
@@ -2594,7 +2628,13 @@ function renderModal(modal, comic, allItems) {
   // buttons (was above the preview in v1). Restyled as a proper button
   // with no SEO-ish "Need labels?" preamble or arrow emoji. Updates when
   // the user switches sizes since renderModal re-runs on toggle.
-  const buyLink = LABEL_BUY_LINKS[opts.size];
+  // Roll stock when printing one label; sheet stock otherwise. An entry with
+  // no ASIN yet falls through to the sheet link rather than rendering a dead
+  // button.
+  const _roll = _singleMode ? LABEL_ROLL_LINKS[opts.size] : null;
+  const buyLink = (_roll && _roll.asin)
+    ? { label: _roll.label, url: amazonProductUrl(_roll.asin), vendor: _roll.vendor }
+    : LABEL_BUY_LINKS[opts.size];
   const buyLinkHTML = buyLink ? `
       <div class="lvm-buylink-footer">
         <button type="button" class="rg-btn rg-btn-secondary rg-btn-sm lvm-buylink-btn" data-action="open-buylink" data-url="${esc(buyLink.url)}">

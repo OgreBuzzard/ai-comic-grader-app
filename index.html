@@ -1666,10 +1666,18 @@ onAuthStateChanged(auth, async user => {
        the home indicator. Plain white on the lightbox's near-black backdrop —
        no pill or chip, because this is a fact about the photo rather than a
        control, and it should not invite a tap. */
+    /* S22: was position:absolute with bottom:safe-area, which put it in the
+       SAME place as #lightbox-footer - and the footer, being later in the DOM
+       at the same z-index, painted the defects box straight over it. Moving it
+       into the footer's flow, after the defects box, makes the overlap
+       structurally impossible and lifts the defects box by exactly this
+       element's height rather than by a guessed margin.
+       align-self keeps it bottom-LEFT in a footer that centres everything
+       else. */
     #lightbox-captured {
-      position: absolute;
-      left: 14px;
-      bottom: max(env(safe-area-inset-bottom, 12px), 12px);
+      position: static;
+      align-self: flex-start;
+      padding-left: 2px;
       font-size: 11px;
       font-weight: 500;
       letter-spacing: 0.02em;
@@ -1679,9 +1687,25 @@ onAuthStateChanged(auth, async user => {
       z-index: 1002;
       display: none;
     }
-    #lightbox-stage { width: 100%; flex: 1 1 auto; min-height: 0; display: grid; place-items: center; touch-action: none; overflow: hidden; }
-    #lightbox-panzoom-wrap { max-width: 100%; max-height: 100%; touch-action: none; }
-    #lightbox-img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; pointer-events: auto; touch-action: none; -webkit-touch-callout: none; cursor: grab; display: block; }
+    /* S22 - THE PAN TRAILS.
+       Horizontal streaks left behind when an image is dragged past the bottom
+       of the stage and pulled back up. The stage clips with overflow:hidden
+       while Panzoom translates a child inside it; on iOS Safari that clip is
+       repainted on the CPU, and rows of the previous frame survive along the
+       boundary - which is why they are horizontal and why they only appear
+       after the image has crossed an edge.
+       The remedy is to put the clip and the moving child on their own
+       compositor layers so the scroll-out region is recomposited rather than
+       patched: translateZ(0) promotes, contain:paint tells the engine nothing
+       inside the stage can affect pixels outside it, and
+       backface-visibility:hidden stops the half-pixel seam that promotion can
+       otherwise leave on a transformed element.
+       NOT VERIFIED ON DEVICE - this is the standard fix for the standard
+       symptom, and the symptom matches, but it is an iOS compositor bug and
+       only an iPhone can confirm it. */
+    #lightbox-stage { width: 100%; flex: 1 1 auto; min-height: 0; display: grid; place-items: center; touch-action: none; overflow: hidden; transform: translateZ(0); contain: paint; }
+    #lightbox-panzoom-wrap { max-width: 100%; max-height: 100%; touch-action: none; will-change: transform; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+    #lightbox-img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; pointer-events: auto; touch-action: none; -webkit-touch-callout: none; cursor: grab; display: block; backface-visibility: hidden; -webkit-backface-visibility: hidden; transform: translateZ(0); }
     #lightbox-img:active { cursor: grabbing; }
     #lightbox-close { position: absolute; top: max(env(safe-area-inset-top, 14px), 14px); left: 14px; width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; border: 1.5px solid rgba(255,255,255,0.3); font-size: 22px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; z-index: 1002; padding: 0; }
     #lightbox-close:hover { background: rgba(0,0,0,0.85); }
@@ -2306,7 +2330,6 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
 </div>
 
 <div id="lightbox" style="display:none">
-  <div id="lightbox-captured"></div>
   <div id="lightbox-stage">
     
     <div id="lightbox-panzoom-wrap">
@@ -2328,6 +2351,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
       <button id="lightbox-next" onclick="_lbStep(1)" aria-label="Next image" style="display:none">›</button>
     </div>
     <div id="lightbox-defects"></div>
+    <div id="lightbox-captured"></div>
   </div>
   <div id="lightbox-hint">PINCH OR DOUBLE-TAP TO ZOOM</div>
 </div>
@@ -10764,6 +10788,42 @@ function _batchReadRun() {
   };
 }
 function _batchRoundHalf(x) { return Math.round(x * 2) / 2; }
+
+// ── THE PG LADDER IS NOT THE RG SCALE ──────────────────────────────────────
+// Batch averaged the Predicted Grade and rounded it to the HALF POINT, with a
+// comment saying "same as RG". It is not the same as RG. RG v3 is a half-point
+// scale from 0 to 10, on which 9.5 is a legal value. PG is a CGC grade, and
+// above 9.0 that ladder steps 9.0, 9.2, 9.4, 9.6, 9.8 - there is no 9.5 and no
+// service issues one.
+//
+// Rounding to halves did not merely ALLOW an off-ladder grade, it manufactured
+// one: a batch averaging 9.4 - the commonest high-grade outcome there is -
+// rounds to 9.5, and so does one averaging 9.6. An average of 9.2 came out as
+// 9.0. So every Batch on a high-grade book published a grade that does not
+// exist, no matter how clean the five passes it averaged were. The individual
+// passes were never the problem: api/assess*.js run enforceCgcGrade() on the
+// way out, so every value going INTO this average was already on the ladder.
+//
+// This is the same ladder lib/grade_definitions.js enforces server-side. It is
+// restated rather than imported because that module also carries the full
+// grade-definition text, which this page has no use for and should not ship.
+// If one changes, change both.
+const _PG_LADDER = [0.5, 1.0, 1.5, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.2, 9.4, 9.6, 9.8, 9.9, 10.0];
+function _snapPgToLadder(x) {
+  const n = Number(x);
+  if (!isFinite(n)) return "";
+  const t = Math.round(n * 100);
+  let best = _PG_LADDER[0], bestD = Math.abs(t - Math.round(best * 100));
+  for (const g of _PG_LADDER) {
+    const d = Math.abs(t - Math.round(g * 100));
+    // strict <, over an ascending ladder, keeps the LOWER grade on a tie:
+    // 9.5 is equidistant from 9.4 and 9.6 and resolves to 9.4, which matches
+    // enforceCgcGrade() server-side and the prompt's own "choose the lower
+    // unless the evidence clearly supports the higher".
+    if (d < bestD) { best = g; bestD = d; }
+  }
+  return best.toFixed(1);
+}
 function _batchMedian(a) { const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; }
 // Styled batch-start confirm — app house style (Robograder head + dark card),
 // matching showCeilingUpsell. Resolves true = Run, false = Cancel.
@@ -11188,7 +11248,7 @@ async function submitBatchAssessment() {
     const loRaw = Math.min(...raws), hiRaw = Math.max(...raws);
 
     const pgs = done.map(p => parseFloat(p.grade)).filter(x => !isNaN(x));
-    const avgPG = pgs.length ? (Math.round(pgs.reduce((a, b) => a + b, 0) / pgs.length * 2) / 2).toFixed(1) : "";
+    const avgPG = pgs.length ? _snapPgToLadder(pgs.reduce((a, b) => a + b, 0) / pgs.length) : "";
     const pqCount = {}; done.forEach(p => { if (p.pq) pqCount[p.pq] = (pqCount[p.pq] || 0) + 1; });
     const modePQ = Object.keys(pqCount).sort((a, b) => pqCount[b] - pqCount[a])[0] || "";
 
