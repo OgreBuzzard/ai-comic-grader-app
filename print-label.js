@@ -887,7 +887,7 @@ function ensureStylesInjected() {
   .rg-label .score-box.num-3 .rg-num { font-size: 172px; }
   .rg-label .score-box.has-plus.num-3 .rg-num { font-size: 120px; }
   .rg-label .rg-v {
-    font-size: 22px;   /* S22: 20 -> 22 for legibility */
+    font-size: 24px;   /* S22: 20 -> 22 -> 24 for legibility */
     color: #3a5010;
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 500;
@@ -922,6 +922,27 @@ function ensureStylesInjected() {
      this clip added nothing except eating descenders - the tail of the y in
      "Fantasy" and the g in "Aug" were shaved off on every print. */
   .rg-label .info-upper { overflow: visible; }
+  /* S22 - WHO GIVES WAY WHEN THERE IS NOT ROOM FOR EVERYTHING.
+     The column runs y 12..226 (the rule), so 214px. Worst case wants more
+     than that: a 2-line title (118) + the date line (48) + a 2-line Key Info
+     (~69 with its margin) is 235.
+     Rather than pick a fixed line count for the Key Info - which would waste
+     the room a 1-line title leaves, and still overflow when the title takes
+     two - the column is a flex box with a hard 214px ceiling and the Key Info
+     is the only item allowed to shrink. So it takes two lines under a short
+     title and one under a long one, automatically, and the block can never
+     cross the rule.
+     flex-shrink on .prt alone is what does it; .ttl and .iss are 0 0 auto. */
+  .rg-label .info-upper {
+    display: flex; flex-direction: column;
+    /* 208, not the 214 the arithmetic gives: .info's top:12 lands at y=13
+       inside the label's 1px border, so 214 put the block's bottom at 227
+       against a rule at 225 - measured, not assumed. 208 clears it by 4. */
+    max-height: 208px;
+  }
+  .rg-label .info-upper > .ttl,
+  .rg-label .info-upper > .iss { flex: 0 0 auto; }
+  .rg-label .info-upper > .prt { flex: 0 1 auto; min-height: 0; }
   .rg-label .info-upper {
     /* S22: 8 -> 6. With a price pad the info column narrows to 462px, which wraps
        a longer title to two lines; measured, the block then ran 2px past the
@@ -1008,16 +1029,32 @@ function ensureStylesInjected() {
     transform-origin: left center;
   }
   .rg-label .prt {
-    font-size: 22px; color: #4a4a38;
+    font-size: 28px; color: #4a4a38;   /* S22: 22 -> 28 */
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 500;
-    /* S22: this line now carries the printing AND, after it, whatever of the
-       book's Key Info fits. Key Info is routinely a paragraph, so the line is
-       clamped to one and clipped at .info-upper's right edge - which is the
-       figure's left edge. The ellipsis is deliberate: a line that stops
-       mid-word with no mark reads as a rendering fault rather than a
-       deliberate truncation. */
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    /* S22: the line sat directly under .iss's baseline, so a descender in the
+       date line (the g in "Aug") came down into it. 6px of clearance. */
+    margin-top: 6px;
+    /* 1.4, and NO padding-bottom. The two were fighting: overflow:hidden clips
+       at the PADDING box, so padding added to save the last line's descenders
+       also let the tops of the next line through - which is exactly the sliced
+       row of letter-tops this was meant to prevent.
+       A line box has to contain its own glyphs instead. At 1.12 the box is
+       31px against ~38px of actual ink at 28px, so descenders hung outside it
+       and any cut on a line boundary shaved them. 1.4 contains them, so
+       clipping at a whole multiple of the line height cuts between lines and
+       touches no glyph. fitLabelText does that clamping. */
+    line-height: 1.4;
+    /* S22: this line carries the printing AND, after it, whatever of the
+       book's Key Info fits. It WRAPS now - one line was throwing away most of
+       a Key Info that is routinely a sentence. It is still clipped, because
+       Key Info can be a paragraph; what bounds it is the flex rule below, not
+       a fixed line count, so the number of lines it gets depends on how much
+       room the title left.
+       text-overflow:ellipsis does nothing on a wrapping element - it only
+       marks a single clipped line - so the cut is clean rather than marked.
+       That is the trade for showing several times as much of it. */
+    white-space: normal; overflow: hidden;
   }
   .rg-label .info-lower {
     /* S22: the rule takes the SAME colour as GRADED and ID (#2a3a18). The old
@@ -1059,7 +1096,11 @@ function ensureStylesInjected() {
      fault. 59 is the line box exactly, and nowrap + ellipsis makes the
      truncation deliberate rather than a cut. The 8px of padding-bottom still
      sits below it, so descenders survive. */
-  /* The ellipsis goes on the TITLE, not on the line. Truncating the line as
+  /* S22: this used to key on .has-prt - i.e. on the book HAVING a printing or
+     Key Info line - which meant every such book got a one-line, ellipsised
+     title whether or not it needed one. .squeeze is set by fitLabelText()
+     instead, only on the labels that measured short of room.
+     The ellipsis goes on the TITLE, not on the line. Truncating the line as
      one string ate the issue number - "The Amazing Spider-M..." with no #300 -
      and the issue number is identity, not decoration: a label that cannot say
      which issue it is has failed at its job. So in the clamped state the line
@@ -1072,14 +1113,15 @@ function ensureStylesInjected() {
      title 118 + date line 48 + printing/Key Info 26 = 192, inside the 214 the
      column now has. The flex rule below still applies - it is what keeps the
      issue number when a title is too long even for two lines. */
-  .rg-label .info.has-prt .ttl {
-    display: flex; align-items: baseline; flex-wrap: wrap;
+  .rg-label .info.squeeze .ttl {
+    max-height: 59px;
+    display: flex; align-items: baseline; flex-wrap: nowrap;
   }
-  .rg-label .info.has-prt .ttl > .ttl-name {
+  .rg-label .info.squeeze .ttl > .ttl-name {
     min-width: 0;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .rg-label .info.has-prt .ttl > .ttl-iss {
+  .rg-label .info.squeeze .ttl > .ttl-iss {
     flex: 0 0 auto;
     padding-left: 0.22em;
   }
@@ -2516,7 +2558,12 @@ function renderModal(modal, comic, allItems) {
   // does at a show, where the price is decided at the table.
   const _isWideSize = opts.size === 'small';
   const showPriceToggle = true;
-  const showWidePriceInput = _isWideSize && opts.priceTag;
+  // S22: the field is offered only where it can be honoured. On a sheet the
+  // same toggle leaves blank space to write in - see the _wideHandwrite note
+  // in renderLabelMarkup - so showing a field there would promise something
+  // the sheet path cannot deliver, which is the mistake the old Wide price
+  // toggle made in the other direction.
+  const showWidePriceInput = _isWideSize && opts.priceTag && _singleMode;
   const showIncludePriceToggle = !_isWideSize && opts.priceTag && hasAskingPrice;
   // The field shows what was typed for THIS book. For a book it has not been
   // typed for, it falls back to the record's asking price as a starting point
@@ -2571,7 +2618,7 @@ function renderModal(modal, comic, allItems) {
       <div class="lvm-toggle-row lvm-toggle-row-secondary">
         <div></div>
         <div class="lvm-toggle" data-action="toggle-price" role="button" tabindex="0">
-          <span class="lvm-toggle-label">Include price tag</span>
+          <span class="lvm-toggle-label">${_isWideSize && !_singleMode ? 'Leave space for a handwritten price' : 'Include price tag'}</span>
           <span class="${pricePillClass}"></span>
         </div>
       </div>` : ''}
@@ -2619,6 +2666,12 @@ function renderModal(modal, comic, allItems) {
 
   // Render QR for the previewed label
   renderQRsIn(modal);
+  // S22: snap the printing / Key Info line to whole lines. Run twice: once
+  // now, and again once the label font has actually loaded - the fallback
+  // face has different metrics and would snap to the wrong line count on the
+  // very first open of a session.
+  fitLabelText(modal);
+  ensureLabelFontsReady().then(() => fitLabelText(modal)).catch(() => {});
 
   // Wire up toggle handlers. All toggles persist immediately on tap and
   // re-render the modal so the user sees their selection reflected in the
@@ -2684,6 +2737,7 @@ function renderModal(modal, comic, allItems) {
         includePrice: showIncludePriceToggle && opts.includePrice
       });
       renderQRsIn(wrap);
+      fitLabelText(wrap);
     };
     widePriceEl.addEventListener('input', repaint);
     // Commit whatever is in the field when it loses focus too, so a value
@@ -3081,6 +3135,10 @@ async function generatePDF(comics, modal) {
     // timeout so a font-CDN hiccup degrades to "capture anyway" rather
     // than hanging the export forever.
     await ensureLabelFontsReady();
+    // S22: AFTER the font wait, never before - see fitLabelText's note. The
+    // sheet path measures the same way the preview does, so what is captured
+    // is what was shown.
+    fitLabelText(offscreen);
 
     // One more animation frame so layout + QR canvases are flushed after
     // fonts settle (font swap can reflow text).
@@ -3264,7 +3322,31 @@ async function generatePDF(comics, modal) {
                   : '8161';
     const priceTag = opts.priceTag ? '-Price' : '';
     const monoTag = opts.mono ? '-Thermal' : '';
-    const filename = `Robograder-Labels-${sizeTag}${priceTag}${monoTag}-${new Date().toISOString().slice(0, 10)}.pdf`;
+    // S22: ONE label -> name the file after the BOOK, not the stock. A folder
+    // of Robograder-Labels-8161-2026-11-03.pdf, -(1), -(2) is unsearchable;
+    // Amazing-Fantasy-15-2026-11-03.pdf is the thing you would look for.
+    // The date is the GRADE date, not today - the label is a snapshot of an
+    // assessment, and re-printing one next year should give the same name.
+    // A SHEET keeps the old name: several books on one page have no single
+    // title, and naming it after whichever happened to be first would be a
+    // lie on the other nineteen.
+    const _slug = (v) => String(v == null ? '' : v)
+      .replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+    let filename;
+    if (comics.length === 1) {
+      const c0 = comics[0];
+      const gd = c0.roboGradeDate ? new Date(c0.roboGradeDate) : null;
+      const dateStr = (gd && !isNaN(gd)) ? gd.toISOString().slice(0, 10)
+                                         : new Date().toISOString().slice(0, 10);
+      const bits = [_slug(c0.title), _slug(c0.issue), dateStr].filter(Boolean);
+      // Fall back to the old shape rather than emitting "--2026-11-03.pdf" for
+      // a record with no title.
+      filename = bits.length > 1
+        ? bits.join('-') + monoTag + '.pdf'
+        : `Robograder-Label-${sizeTag}${priceTag}${monoTag}-${dateStr}.pdf`;
+    } else {
+      filename = `Robograder-Labels-${sizeTag}${priceTag}${monoTag}-${new Date().toISOString().slice(0, 10)}.pdf`;
+    }
     // Deliver the PDF. Three environments behave differently:
     //
     //   1. Native iOS app (Capacitor WKWebView): navigator.share is NOT wired
@@ -3592,13 +3674,22 @@ function renderLabelMarkup(comic, opts) {
   // takes the black line version; a colour label takes the painted one. Both
   // files are 500x600, so the placement is byte-for-byte the same.
   const _artSrc = opts.mono ? 'assets/Robograder_Line.png' : 'assets/Robograder_Line_Colored.png';
-  // The price is scoped to the book it was typed for - see the widePriceFor
-  // note in readOptions. A queue of ten labels shows the price on the one it
-  // belongs to and the figure on the other nine.
-  const _wideRawPrice = (isWide && opts.priceTag && opts.widePriceFor && opts.widePriceFor === (comic.roboGradeId || ''))
+  // A TYPED price is a single-label thing. A sheet is twenty different books
+  // printed in one pass from a queue, and there is one price field - so a
+  // typed value could only ever be right for one of them, and would be wrong
+  // and CONFIDENT-looking on the other nineteen. On a sheet the toggle means
+  // something else: leave the slot empty so the price can be written in by
+  // hand, which is what actually happens at a table.
+  // The price is still scoped to the book it was typed for even in single
+  // mode - see the widePriceFor note in readOptions.
+  const _wideHandwrite = isWide && !!opts.priceTag && !_singleMode;
+  const _wideRawPrice = (isWide && opts.priceTag && _singleMode && opts.widePriceFor && opts.widePriceFor === (comic.roboGradeId || ''))
     ? String(opts.widePrice == null ? '' : opts.widePrice).trim()
     : '';
   const _wideSlot = (() => {
+    // Empty, and empty on purpose: no box, no placeholder, nothing to print
+    // around what gets written. The slot is 160 x 184 of clear label.
+    if (_wideHandwrite) return '<div class="rg-art is-price"></div>';
     const n = Number(String(_wideRawPrice).replace(/[^0-9.]/g, ''));
     if (!_wideRawPrice || !Number.isFinite(n) || n <= 0) {
       return '<div class="rg-art"><img src="' + _artSrc + '" alt=""></div>';
@@ -3754,6 +3845,57 @@ function ensureQRCodeLoaded() {
     document.head.appendChild(script);
   });
   return _qrcodeLoadPromise;
+}
+
+// ── fitLabelText: snap the printing / Key Info line to WHOLE lines ────────
+//
+// WHY THIS CANNOT BE CSS. .info-upper is a flex column with a hard ceiling and
+// .prt is the only item allowed to shrink, which correctly gives the Key Info
+// whatever the title left over. But flex shrinks to an arbitrary number of
+// pixels, and overflow:hidden then cuts the last line THROUGH the glyphs -
+// a half-height row of letter tops sitting on the rule, which reads as a
+// printing fault. CSS has no way to round a height down to a line box.
+//
+// Two steps, in this order:
+//   1. If there is not room for even ONE line of it, the TITLE gives way
+//      instead: .squeeze clamps the title to one line and hands ~59px back.
+//      The printing and the key fact are not optional; the second line of a
+//      long title is.
+//   2. Clamp .prt to a whole number of lines, plus its padding-bottom so the
+//      descenders on the last visible line survive the cut.
+//
+// Must run AFTER the label font has loaded - the fallback face has different
+// metrics and would snap to the wrong count. Both callers do that.
+function fitLabelText(container) {
+  if (!container) return;
+  container.querySelectorAll('.rg-label .info').forEach(info => {
+    const prt = info.querySelector('.prt');
+    if (!prt) return;
+    prt.style.maxHeight = '';
+    info.classList.remove('squeeze');
+    const measure = () => {
+      const cs = getComputedStyle(prt);
+      const lh = parseFloat(cs.lineHeight);
+      const pb = parseFloat(cs.paddingBottom) || 0;
+      // clientHeight is the PADDING box, which is also where overflow:hidden
+      // cuts. .prt carries no padding-bottom precisely so the two coincide;
+      // pb is read anyway so this still holds if one is ever added.
+      return { lh: lh, pb: pb, avail: prt.clientHeight - pb };
+    };
+    let m = measure();
+    if (!isFinite(m.lh) || m.lh <= 0) return;
+    // +0.01 absorbs sub-pixel line heights (1.12 x 28 = 31.36) so a line that
+    // exactly fits is not rounded away.
+    if (Math.floor(m.avail / m.lh + 0.01) < 1) {
+      info.classList.add('squeeze');
+      m = measure();
+    }
+    const lines = Math.max(1, Math.floor(m.avail / m.lh + 0.01));
+    // max-height sizes the CONTENT box, so the padding (if any) is added on
+    // top of this and the clip lands at lines * lh + pb - the same boundary
+    // avail was measured from.
+    prt.style.maxHeight = (lines * m.lh) + 'px';
+  });
 }
 
 function renderQRsIn(container) {
