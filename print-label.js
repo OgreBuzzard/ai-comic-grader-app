@@ -239,7 +239,7 @@ const VALID_SIZES = ['small-l', 'small', 'card', 'square'];
 function readOptions() {
   try {
     const raw = localStorage.getItem(OPTIONS_KEY);
-    if (!raw) return { size: 'small-l', priceTag: false, includePrice: false, mono: false };
+    if (!raw) return { size: 'small-l', priceTag: false, includePrice: false, mono: false, widePrice: '', widePriceFor: '' };
     const o = JSON.parse(raw);
     return {
       // Validated against the known set; unknown values fall back to square
@@ -260,9 +260,18 @@ function readOptions() {
       // type outright (measured: the printing line and the URL both disappear).
       // So thermal is not a print setting, it is a different RENDER: white
       // ground, black ink, the score box as an outline instead of a fill.
-      mono: !!o.mono
+      mono: !!o.mono,
+      // S22: the Wide price tag is a value Matt TYPES, not one read off the
+      // record, so it has to live somewhere both the preview and generatePDF
+      // can see it - and generatePDF reads options, not the modal. Hence here.
+      // widePriceFor is the roboGradeId it was typed for, and both render
+      // paths ignore widePrice unless it matches. Without that scope a price
+      // typed for one book would print on the next one opened, which on a
+      // print-and-stick workflow is a mispriced book on a wall.
+      widePrice: typeof o.widePrice === 'string' ? o.widePrice : '',
+      widePriceFor: typeof o.widePriceFor === 'string' ? o.widePriceFor : ''
     };
-  } catch { return { size: 'small-l', priceTag: false, includePrice: false, mono: false }; }
+  } catch { return { size: 'small-l', priceTag: false, includePrice: false, mono: false, widePrice: '', widePriceFor: '' }; }
 }
 
 function writeOptions(opts) {
@@ -878,7 +887,7 @@ function ensureStylesInjected() {
   .rg-label .score-box.num-3 .rg-num { font-size: 172px; }
   .rg-label .score-box.has-plus.num-3 .rg-num { font-size: 120px; }
   .rg-label .rg-v {
-    font-size: 20px;
+    font-size: 22px;   /* S22: 20 -> 22 for legibility */
     color: #3a5010;
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 500;
@@ -1785,6 +1794,25 @@ function ensureStylesInjected() {
     width: auto; height: auto;
     object-fit: contain; display: block;
   }
+  /* S22 - THE PRICE TAKES THE FIGURE'S SLOT, WITH NO BOX AROUND IT.
+     Same 160px column, same vertical band; only the content changes. Centred
+     rather than bottom-aligned, because a number has no feet to stand on the
+     rule with.
+     The SIZE is set inline, per label, from the string's own measured width -
+     see the price block in renderLabelMarkup. It cannot be done in CSS: "$10"
+     and "$1000" have to end up the same width on the label, and CSS has no way
+     to ask how wide a string is. Nothing here fixes a font-size for that
+     reason. */
+  .rg-label .rg-art.is-price { align-items: center; }
+  .rg-label .rg-price {
+    font-family: 'Noto Sans Display', sans-serif;
+    font-weight: 900;
+    color: #0d0d0f;
+    line-height: 1;
+    white-space: nowrap;
+    text-align: center;
+  }
+  .rg-label.mono .rg-price { color: #000; }
   /* 160 for the figure + a 12px gutter. */
   .rg-label .info-upper { padding-right: 172px; }
   /* With a price pad the QR falls back to bottom-left and there is no room for
@@ -2479,9 +2507,25 @@ function renderModal(modal, comic, allItems) {
   // than not offering it, so both price toggles are hidden on Wide and the
   // stored priceTag is ignored for this size rather than cleared - switch to
   // Case or Square and the setting is still there.
-  const _priceCapable = opts.size !== 'small';
-  const showPriceToggle = _priceCapable;
-  const showIncludePriceToggle = _priceCapable && opts.priceTag && hasAskingPrice;
+  // S22: WIDE HAS A PRICE AGAIN - a typed one, in the figure's slot.
+  // The note above is still true about the PAD: a 220px white box cannot fit
+  // at 4x1 beside the QR. What fits is the 160px column the figure occupies,
+  // and a number needs no box. So Wide gets the toggle back, and instead of
+  // the "include asking price" secondary toggle (which reads a value off the
+  // record) it gets a field to type one into - which is what Matt actually
+  // does at a show, where the price is decided at the table.
+  const _isWideSize = opts.size === 'small';
+  const showPriceToggle = true;
+  const showWidePriceInput = _isWideSize && opts.priceTag;
+  const showIncludePriceToggle = !_isWideSize && opts.priceTag && hasAskingPrice;
+  // The field shows what was typed for THIS book. For a book it has not been
+  // typed for, it falls back to the record's asking price as a starting point
+  // rather than opening blank - but only as the field's value; nothing renders
+  // on the label until the typed value is committed, which the input handler
+  // does on the first keystroke.
+  const _widePriceFieldValue = (opts.widePriceFor === (comic.roboGradeId || ''))
+    ? (opts.widePrice || '')
+    : (hasAskingPrice ? String(comic.askingPrice) : '');
   const includePricePillClass = opts.includePrice ? 'lvm-pill on' : 'lvm-pill';
 
   // Effective options for rendering: includePrice only takes effect if the
@@ -2537,6 +2581,19 @@ function renderModal(modal, comic, allItems) {
         <div class="lvm-toggle" data-action="toggle-include-price" role="button" tabindex="0">
           <span class="lvm-toggle-label">Include asking price</span>
           <span class="${includePricePillClass}"></span>
+        </div>
+      </div>` : ''}
+      ${showWidePriceInput ? `
+      <div class="lvm-toggle-row lvm-toggle-row-secondary">
+        <div></div>
+        <div class="lvm-toggle" style="cursor:default">
+          <span class="lvm-toggle-label">Price</span>
+          <span style="display:inline-flex;align-items:center;gap:4px">
+            <span style="font-size:16px;font-weight:700;color:#5a7030">$</span>
+            <input type="text" inputmode="decimal" data-action="wide-price"
+                   value="${esc(_widePriceFieldValue)}" placeholder="0"
+                   style="width:92px;padding:5px 8px;font-size:16px;font-weight:700;text-align:right;border:1px solid #c8d0b0;border-radius:8px;background:#fff;color:#1a1614">
+          </span>
         </div>
       </div>` : ''}
       <div class="lvm-toggle-row lvm-toggle-row-secondary">
@@ -2605,6 +2662,34 @@ function renderModal(modal, comic, allItems) {
       writeOptions({ ...cur, includePrice: !cur.includePrice });
       renderModal(modal, comic, allItems);
     });
+  }
+
+  // S22: the Wide price field. It does NOT call renderModal - that rebuilds
+  // the whole card and the field would lose focus on every keystroke, which on
+  // a phone also closes the keyboard. It repaints the PREVIEW only, which is
+  // the one thing that has to change while typing.
+  const widePriceEl = modal.querySelector('[data-action="wide-price"]');
+  if (widePriceEl) {
+    const repaint = () => {
+      // Strip anything that is not a number as it is typed, so a pasted
+      // "$1,250.00" lands as 1250.00 rather than rendering nothing.
+      const raw = String(widePriceEl.value || '').replace(/[^0-9.]/g, '');
+      if (raw !== widePriceEl.value) widePriceEl.value = raw;
+      const cur = readOptions();
+      writeOptions({ ...cur, widePrice: raw, widePriceFor: comic.roboGradeId || '' });
+      const wrap = modal.querySelector('.lvm-preview-wrap');
+      if (!wrap) return;
+      wrap.innerHTML = renderLabelMarkup(comic, {
+        ...readOptions(),
+        includePrice: showIncludePriceToggle && opts.includePrice
+      });
+      renderQRsIn(wrap);
+    };
+    widePriceEl.addEventListener('input', repaint);
+    // Commit whatever is in the field when it loses focus too, so a value
+    // typed and then tapped away from is in options before Save as PDF reads
+    // them - generatePDF reads options, never the field.
+    widePriceEl.addEventListener('change', repaint);
   }
 
   // S12 May 6 v2: buylink button — opens vendor URL in a new tab. Same
@@ -3500,6 +3585,42 @@ function renderLabelMarkup(comic, opts) {
   // existing at all, not on the printing alone - a book with Key Info and no
   // printing still spends the row.
   const prtLine = [printing, keyInfo].filter(Boolean).join(', ');
+
+  // ── THE WIDE SLOT: the figure, or a price in its place ────────────────────
+  // One 160px column either way. Which art depends on the render, not the
+  // printer setting in general: mono is a one-ink render on white stock, so it
+  // takes the black line version; a colour label takes the painted one. Both
+  // files are 500x600, so the placement is byte-for-byte the same.
+  const _artSrc = opts.mono ? 'assets/Robograder_Line.png' : 'assets/Robograder_Line_Colored.png';
+  // The price is scoped to the book it was typed for - see the widePriceFor
+  // note in readOptions. A queue of ten labels shows the price on the one it
+  // belongs to and the figure on the other nine.
+  const _wideRawPrice = (isWide && opts.priceTag && opts.widePriceFor && opts.widePriceFor === (comic.roboGradeId || ''))
+    ? String(opts.widePrice == null ? '' : opts.widePrice).trim()
+    : '';
+  const _wideSlot = (() => {
+    const n = Number(String(_wideRawPrice).replace(/[^0-9.]/g, ''));
+    if (!_wideRawPrice || !Number.isFinite(n) || n <= 0) {
+      return '<div class="rg-art"><img src="' + _artSrc + '" alt=""></div>';
+    }
+    // Whole numbers lose the decimals; 12.5 becomes 12.50, because a price
+    // reading "$12.5" looks like a typo.
+    const txt = '$' + (n % 1 === 0 ? String(Math.round(n)) : n.toFixed(2));
+    // THE FIT. Every label has to put this string in the same 160px, so the
+    // size comes from the string's own width rather than its length: a comma
+    // and a period are a third of a digit, and sizing on character COUNT makes
+    // "$1,250" the same size as "$12345", which it is visually not.
+    // The em widths are Noto Sans Display's, measured off the rendered glyphs
+    // (a digit is 0.556em - the same constant the three-glyph score size uses).
+    const EM = { '.': 0.28, ',': 0.26, '$': 0.60 };
+    const em = txt.split('').reduce((a, c) => a + (EM[c] != null ? EM[c] : 0.556), 0);
+    const SLOT = 160;   // .rg-art's width
+    // 132 is the ceiling, not a fit target: a short price like "$10" would
+    // otherwise come out taller than the grade number beside it, and the grade
+    // is the thing this label is for.
+    const fs = Math.max(16, Math.min(132, Math.floor(SLOT / em)));
+    return '<div class="rg-art is-price"><div class="rg-price" style="font-size:' + fs + 'px">' + esc(txt) + '</div></div>';
+  })();
   // S22: the line under the title is "<pub date>, <publisher>". Either half can
   // be missing, so the comma only appears when both are present.
   const publisher = esc(comic.publisher || '');
@@ -3586,8 +3707,7 @@ function renderLabelMarkup(comic, opts) {
           return `<div class="price-pad"><div class="price-value">${priceStr}</div></div>`;
         }
         return `<div class="price-pad"><div class="price-placeholder">Price</div></div>`;
-      })() : (isWide
-        ? '<div class="rg-art"><img src="assets/Robograder_Line.png" alt=""></div>'
+      })() : (isWide ? _wideSlot
         : '<div class="robot-badge"><img src="assets/Robograder_Charging.png" alt=""></div>')}
       <div class="qr-col">
         ${comic.publicListing
