@@ -1770,9 +1770,12 @@ function ensureStylesInjected() {
     position: absolute;
     right: 487px; width: 160px;
     /* S22: the rule moved down 36px and the figure goes with it rather than
-       growing into the gap - 10..190 becomes 42..226, the same 184 of height,
-       standing on the rule instead of 36px above it. */
-    top: 42px; height: 184px;
+       growing into the gap - the same 184 of height, lower down.
+       32, not 42: standing the figure exactly ON the rule read as an overlap
+       in print, because the tracks' outline IS the figure's bottom edge and
+       there is no visual gap between a 1px rule and a 1px outline touching it.
+       Bottom is 216, which leaves 10px of air under the tracks. */
+    top: 32px; height: 184px;
     /* flex-end, not end: html2canvas only knows the flex-* spellings. The
        figure stands ON the rule rather than floating above it. */
     display: flex; align-items: flex-end; justify-content: center;

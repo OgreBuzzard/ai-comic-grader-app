@@ -1460,10 +1460,13 @@ function _wireVanityCode() {
     if (!confirm('Set the User ID for\n\n' + uid + '\n\nto ' + code + '?\n\nTheir current code is released and stops working.')) return;
     btn.disabled = true; out.textContent = 'Working\u2026';
     try {
+      // api() stringifies opts.body itself and sets the Content-Type. Passing
+      // JSON.stringify(...) here double-encoded it: the server got a JSON
+      // STRING, req.body.action was undefined, and the call fell through to
+      // the endpoint's legacy branch. Pass the object.
       const r = await api('/api/set_transfer_codes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'assign', uid: uid, code: code })
+        body: { action: 'assign', uid: uid, code: code }
       });
       out.textContent =
         'DONE.\n' + (r.name ? r.name + ' ' : '') + (r.email || r.uid) + '\n'

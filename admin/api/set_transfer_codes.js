@@ -112,6 +112,28 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
+    // ── S22: BODY PARSING AND AN EXPLICIT ACTION ───────────────────────────
+    //
+    // req.body is not reliably an object. A caller that stringifies its own
+    // body (which the admin page's api() helper does for you, so passing
+    // JSON.stringify to it double-encodes) delivers a JSON STRING, and
+    // body.action then reads undefined.
+    //
+    // That alone would be a harmless no-op. What made it a real defect is what
+    // came NEXT: the original one-shot vanity-trio write sat at the bottom of
+    // this handler as the DEFAULT path, so a call whose action failed to parse
+    // did not fail - it silently rewrote three other accounts' codes. It is
+    // idempotent, so nothing was damaged, but a data-mutating default is the
+    // wrong shape for an endpoint that now takes several actions. Every branch
+    // is named explicitly below and an unrecognised action is a 400.
+    const body = (() => {
+      const b = req.body;
+      if (!b) return {};
+      if (typeof b === 'string') { try { return JSON.parse(b); } catch { return {}; } }
+      return b;
+    })();
+    const action = String(body.action || '').trim();
+
     // ── S22: action='assign' — set ONE account's User ID to a chosen code ───
     //
     // The ASSIGNMENTS list below this is a frozen one-shot from before Phase 1.
@@ -125,9 +147,9 @@ export default async function handler(req, res) {
     // is reported, not reassigned. Re-running with the same pair is a no-op in
     // effect. The user's previous code's reverse-index entry is freed, which is
     // what keeps the code space from filling with orphan reservations.
-    if ((req.body || {}).action === 'assign') {
-      const uid = String((req.body || {}).uid || '').trim();
-      const code = String((req.body || {}).code || '').trim().toUpperCase();
+    if (action === 'assign') {
+      const uid = String(body.uid || '').trim();
+      const code = String(body.code || '').trim().toUpperCase();
       if (!uid) return res.status(400).json({ error: 'uid is required' });
       if (!validateCode(code)) {
         return res.status(400).json({
@@ -190,8 +212,8 @@ export default async function handler(req, res) {
     // This sweep does the same work server-side, for everyone, without waiting
     // for a sign-in. Idempotent: accounts that already have a valid, correctly
     // indexed code are left untouched.
-    if ((req.body || {}).action === 'backfill_missing') {
-      const dryRun = (req.body || {}).dryRun === true;
+    if (action === 'backfill_missing') {
+      const dryRun = body.dryRun === true;
       const usersSnap = await db.collection('users').get();
       const out = { scanned: usersSnap.size, missing: [], fixed: [], reindexed: [], failed: [], dryRun };
 
@@ -238,6 +260,17 @@ export default async function handler(req, res) {
       }
 
       return res.status(200).json({ ok: true, mode: 'backfill_missing', ...out });
+    }
+
+    // The original one-shot. It is no longer the default: it runs only when
+    // asked for by name, so a malformed body can never reach it.
+    if (action !== 'legacy_vanity_trio') {
+      return res.status(400).json({
+        error: 'Unrecognised or missing action: "' + action + '".',
+        validActions: ['assign', 'backfill_missing', 'legacy_vanity_trio'],
+        hint: 'assign needs { action:"assign", uid, code }. If your client '
+            + 'serialises the body for you, pass the OBJECT, not a JSON string.'
+      });
     }
 
     // --- Validate all codes BEFORE writing anything ---
