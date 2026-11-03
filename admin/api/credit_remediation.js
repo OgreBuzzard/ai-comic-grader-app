@@ -32,6 +32,8 @@
 //
 // GET  ?since=2026-09-18                 -> dry run: who, how many, total cost
 // POST {since, apply:true}               -> grant
+// GET  ?emails=1                         -> the email addresses of everyone
+//                                           who actually received a grant
 // POST {since, apply:true, perDeep:true} -> grant one per Deep instead of one
 //                                           per account (fuller restitution,
 //                                           and over-credits streaming users
@@ -84,6 +86,54 @@ export default async function handler(req, res) {
   try {
     const { getFirestore, FieldValue } = await import('firebase-admin/firestore');
     const db = getFirestore();
+
+    // ── EMAIL LIST MODE ─────────────────────────────────────────────────────
+    // After the grant has run, Matt needs to write to the people who were made
+    // whole. The authoritative list is the GRANT_LABEL rows this endpoint
+    // wrote - not a re-derivation from the Deep debits, which would also
+    // include anyone credited on a different run or skipped.
+    // Email comes from the users doc; a ghost account whose doc has no email
+    // falls back to Firebase Auth, and anything still missing is reported as
+    // such rather than silently dropped, so the count always reconciles.
+    if (src.emails === true || src.emails === 'true' || src.emails === '1') {
+      const grants = await db.collection('credit_events').where('label', '==', GRANT_LABEL).get();
+      const rows = [];
+      const seen = new Set();
+      for (const d of grants.docs) {
+        const g = d.data() || {};
+        if (!g.uid || seen.has(g.uid)) continue;
+        seen.add(g.uid);
+        rows.push({ uid: g.uid, granted: Number(g.delta) || 0, at: g.createdAt || null, deepsInWindow: g.deepsInWindow || null });
+      }
+      const { getAuth: _getAuth } = await import('firebase-admin/auth');
+      for (const r of rows) {
+        let email = null, name = null;
+        try {
+          const u = await db.collection('users').doc(r.uid).get();
+          if (u.exists) { const ud = u.data() || {}; email = ud.email || null; name = ud.name || ud.displayName || null; }
+        } catch (e) {}
+        if (!email) {
+          try { const au = await _getAuth().getUser(r.uid); email = au.email || null; name = name || au.displayName || null; } catch (e) {}
+        }
+        r.email = email; r.name = name;
+      }
+      const withEmail = rows.filter(r => r.email);
+      const withoutEmail = rows.filter(r => !r.email);
+      withEmail.sort((a, b) => a.email.localeCompare(b.email));
+      return res.status(200).json({
+        ok: true, mode: 'emails', label: GRANT_LABEL,
+        accountsCredited: rows.length,
+        withEmail: withEmail.length,
+        withoutEmail: withoutEmail.length,
+        emails: withEmail.map(r => r.email),
+        emailList: withEmail.map(r => r.email).join(', '),
+        rows: withEmail,
+        missing: withoutEmail.map(r => r.uid),
+        note: 'These are the accounts that actually received a ' + GRANT_LABEL
+            + ' credit. Accounts with no email on file are legacy/ghost accounts '
+            + 'and are listed under "missing" by uid.'
+      });
+    }
 
     // Every server-side Deep debit. label is set by lib/credits.js:
     // reserveCredit(..., label: 'deep'). Filter on label alone and window it in

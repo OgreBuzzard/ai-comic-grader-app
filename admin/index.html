@@ -1416,7 +1416,13 @@ function renderUsersTab() {
         One-off: Deep double-charge refund (18 Sept &rarr; v5.99). Safe to tap more than once &mdash; nobody is credited twice.
       </div>
       <button id="remediation-check" style="padding:5px 11px;font-size:11px;border:1px solid #3a5a2a;border-radius:7px;cursor:pointer;background:var(--panel-2);color:#cde">Check who was affected</button>
+      <button id="remediation-emails" style="margin-left:6px;padding:5px 11px;font-size:11px;border:1px solid #2a4a6a;border-radius:7px;cursor:pointer;background:var(--panel-2);color:#cde">List the credited email addresses</button>
       <div id="remediation-out" style="margin-top:8px;font-size:11px;color:#cde;white-space:pre-wrap;line-height:1.5"></div>
+      <div id="remediation-emails-out" style="margin-top:8px;display:none">
+        <div id="remediation-emails-count" style="font-size:11px;color:#9ab;margin-bottom:5px"></div>
+        <textarea id="remediation-emails-box" readonly style="width:100%;height:110px;font-size:11px;font-family:ui-monospace,Menlo,monospace;background:#0e0c09;color:#cde;border:1px solid #3a2a18;border-radius:7px;padding:7px;box-sizing:border-box"></textarea>
+        <button id="remediation-emails-copy" style="margin-top:5px;padding:5px 11px;font-size:11px;border:1px solid #3a5a2a;border-radius:7px;cursor:pointer;background:var(--panel-2);color:#cde">Copy all</button>
+      </div>
     </div>
     <div style="position:relative">
       <input type="text" id="users-search" placeholder="Search by name, email, or User ID…" class="search-input" value="${escapeAttr(state.userSearch || '')}" style="padding-right:38px">
@@ -1489,6 +1495,45 @@ function _wireRemediation() {
       out.textContent = 'FAILED: ' + (e && e.message);
     } finally { btn.disabled = false; }
   };
+
+  // S22 one-off, part two: the addresses of everyone the grant actually
+  // reached, so Matt can write to them. Read from the grant rows, not
+  // re-derived from the Deep debits, so the list is exactly who got a credit.
+  const ebtn = document.getElementById('remediation-emails');
+  const ewrap = document.getElementById('remediation-emails-out');
+  const ebox = document.getElementById('remediation-emails-box');
+  const ecount = document.getElementById('remediation-emails-count');
+  const ecopy = document.getElementById('remediation-emails-copy');
+  if (ebtn && ewrap && ebox && ecount) {
+    ebtn.onclick = async () => {
+      ebtn.disabled = true;
+      const was = ebtn.textContent;
+      ebtn.textContent = 'Loading\u2026';
+      try {
+        const d = await api('/api/credit_remediation?emails=1');
+        ewrap.style.display = 'block';
+        ebox.value = (d.emails || []).join(', ');
+        ecount.textContent =
+          d.accountsCredited + ' accounts were credited. '
+          + d.withEmail + ' have an email address on file'
+          + (d.withoutEmail ? '; ' + d.withoutEmail + ' are legacy accounts with no email (' + (d.missing || []).join(', ') + ').' : '.');
+      } catch (e) {
+        ewrap.style.display = 'block';
+        ecount.textContent = 'FAILED: ' + (e && e.message);
+        ebox.value = '';
+      } finally { ebtn.disabled = false; ebtn.textContent = was; }
+    };
+  }
+  if (ecopy && ebox) {
+    ecopy.onclick = () => {
+      ebox.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      try { if (navigator.clipboard) navigator.clipboard.writeText(ebox.value); } catch (e) {}
+      const was = ecopy.textContent;
+      ecopy.textContent = 'Copied';
+      setTimeout(() => { ecopy.textContent = was; }, 1400);
+    };
+  }
 }
 
 function renderItemsTab() {

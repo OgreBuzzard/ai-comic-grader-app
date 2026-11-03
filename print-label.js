@@ -699,14 +699,29 @@ function ensureStylesInjected() {
     font-size: 22px; font-weight: 700;
     color: #2a4010; letter-spacing: 2px;
     font-family: 'Barlow Condensed', sans-serif;
-    position: absolute; top: 10px;
-    left: 6px; right: 76px;
+    /* S22: 10 -> 6. Centring the word on the box put its right end (x=209)
+       into the PM's column (x=192..251), so the two were only held apart
+       vertically - and measured, they were NOT: word ink ran y 17..33 and the
+       PM's y 31..72, a 2px overlap. The word goes up 4 and the PM down 4, for
+       8px of clear air between the two bands. */
+    position: absolute; top: 6px;
+    /* S22: left:6 / right:76 centred the word in the space LEFT of the PM, so
+       it printed visibly off-centre in the box. It is centred on the BOX now.
+       The PM is no longer held off by a horizontal box: it is held off
+       vertically, and that is measured, not assumed - the wordmark's ink runs
+       y 15..31 and the PM's y 36..100, so they cannot meet at any x.
+       overflow:hidden stays as the backstop against a future size change. */
+    left: 0; right: 0;
     text-align: center;
     overflow: hidden; white-space: nowrap;
   }
   .rg-label .rg-stars {
     opacity: 0.85;   /* S22: dark stars on the light box need no knock-down */
-    position: absolute; top: 44px; left: 0; right: 0;
+    /* S22: 44 -> 34. At 44 the stars sat midway between the wordmark and the
+       numeral and read as part of the number; they belong to the ROBOGRADE
+       line. 34 puts 3px under the wordmark's ink and hands the 10px back to
+       the numeral, which drops by the same amount below. */
+    position: absolute; top: 34px; left: 0; right: 0;
     text-align: center; font-size: 24px; line-height: 1;
     letter-spacing: 2px;
   }
@@ -728,9 +743,16 @@ function ensureStylesInjected() {
   }
   /* S22: 16 -> 26 on Wide only. Matt's mock sits the numeral lower in the box,
      closer to the version string. */
-  /* 20, not 26: at 26 the numeral's bottom landed 2px off the version string.
-     20 leaves 8px below and 17px to the stars. */
-  .rg-label .rg-num-wrap { transform: translateY(20px); }
+  /* S22: 20 -> 26. The 2px-off-the-version finding that pinned this at 20 was
+     measured at numeral 215; at 200 there is 15px more room under the ink, and
+     the stars moving up 10px added their own clearance above. Re-measured by
+     rasterising the box and diffing black pixels across 6 / 9.5 / 10 / 4.5:
+     at 26 the numeral's ink ended at y=227 and the version string's began at
+     226 - a 1px OVERLAP, which is what the first render of this showed: the 0
+     of "60" sitting on top of V4.81. 22 is the measured landing: 4px of clear
+     air under the numeral, 32 above it to the stars. Still 2px lower than the
+     20 it came from, which is the direction asked for. */
+  .rg-label .rg-num-wrap { transform: translateY(22px); }
   .rg-label .rg-num {
     /* S14: was 148, dropped to 140, now 150 — brought back up a touch
        to match the Large label's score-prominence pass now that the
@@ -770,7 +792,7 @@ function ensureStylesInjected() {
        the 150px centered number (~10px gap; precision is absolute/out
        of flow so it cannot displace the number regardless). */
     position: absolute;
-    top: 20px; right: 6px;   /* S22: matched to the mock */
+    top: 24px; right: 6px;   /* S22: 20 -> 24, see the .rg-word note */
     font-size: 58px; font-weight: 700;   /* S22: 50 -> 58, tracks the numeral */
     color: #0d0d0f; opacity: 0.85;   /* S22: black on the light box */
     font-family: 'Noto Sans Display', sans-serif;
@@ -827,6 +849,20 @@ function ensureStylesInjected() {
      right:8 bought 32px of numeral. The (+) is the secondary mark; the grade
      is the thing read from across the room, so the (+) yields. */
   .rg-label .score-box.has-plus .rg-num { font-size: 168px; }
+  /* S22 - THREE-GLYPH SCORES WERE BREAKING THE BOX, AND HAD BEEN FOR A WHILE.
+     .rg-num-wrap is a flex item in a 256px-wide column, so its width is capped
+     at the box interior. "100" at 200px is ~360px of UNSCALED text (scaleX
+     only shrinks what is drawn, never the line box the text wraps against), so
+     it wrapped to two lines inside the wrap and the second line ran down over
+     the version string - measured ink y 86..260 against 86..227 for a
+     two-glyph score. This is not new in this version; at 215 it was worse.
+     Two parts: nowrap so it can never break mid-score, and a smaller size for
+     three glyphs so the one line it is now forced onto fits the box.
+     This matters more under the v3 display than the 0-100 one: "9.5" is three
+     glyphs and ordinary, where 100 is rare. */
+  .rg-label .rg-num-wrap { white-space: nowrap; }
+  .rg-label .score-box.num-3 .rg-num { font-size: 168px; }
+  .rg-label .score-box.has-plus.num-3 .rg-num { font-size: 150px; }
   .rg-label .rg-v {
     font-size: 20px;
     color: #3a5010;
@@ -947,6 +983,13 @@ function ensureStylesInjected() {
     font-size: 22px; color: #4a4a38;
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 500;
+    /* S22: this line now carries the printing AND, after it, whatever of the
+       book's Key Info fits. Key Info is routinely a paragraph, so the line is
+       clamped to one and clipped at .info-upper's right edge - which is the
+       figure's left edge. The ellipsis is deliberate: a line that stops
+       mid-word with no mark reads as a rendering fault rather than a
+       deliberate truncation. */
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .rg-label .info-lower {
     /* S22: the rule takes the SAME colour as GRADED and ID (#2a3a18). The old
@@ -960,7 +1003,35 @@ function ensureStylesInjected() {
      pinned meta block. The template adds .has-prt to .info only when a
      printing line is present, so in exactly that case the title clamps to one
      line. Without a printing line the 2-line clamp stands. */
-  .rg-label .info.has-prt .ttl { max-height: 60px; }
+  /* S22: 60 -> 59 and a one-line clamp that LOOKS like one.
+     60 was the two-line clamp halved before .ttl carried padding-bottom; with
+     the padding in place it let 1px of the second line through, and the
+     narrower text column (the figure took 172px of it) makes two-line titles
+     much more common than they were - so what printed was a full first line
+     with a sliver of sliced glyph tops under it, which reads as a rendering
+     fault. 59 is the line box exactly, and nowrap + ellipsis makes the
+     truncation deliberate rather than a cut. The 8px of padding-bottom still
+     sits below it, so descenders survive. */
+  /* The ellipsis goes on the TITLE, not on the line. Truncating the line as
+     one string ate the issue number - "The Amazing Spider-M..." with no #300 -
+     and the issue number is identity, not decoration: a label that cannot say
+     which issue it is has failed at its job. So in the clamped state the line
+     becomes a flex row, the title takes the squeeze (min-width:0 is what lets
+     a flex item shrink below its content and is the whole trick here), and the
+     issue number is flex:0 0 auto - it is never the thing that goes. */
+  .rg-label .info.has-prt .ttl {
+    max-height: 59px;
+    overflow: hidden;
+    display: flex; align-items: baseline;
+  }
+  .rg-label .info.has-prt .ttl > .ttl-name {
+    min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .rg-label .info.has-prt .ttl > .ttl-iss {
+    flex: 0 0 auto;
+    padding-left: 0.22em;
+  }
   /* S22: the meta block right-justifies against the info column's right edge
      so "ROBOGRADER.APP/ ID / A7K2M9" reads as one flush line. justify-content
      moves the whole two-column grid; the columns stay max-content so the
@@ -1620,6 +1691,39 @@ function ensureStylesInjected() {
        lands the info edge exactly on the figure's left edge. */
     right: 486px;   /* S22: the info column takes back what the figure held */
   }
+  /* S22 - THE FIGURE IS BACK, BESIDE THE CODE RATHER THAN AROUND IT.
+     It was dropped entirely when the chest-QR idea was abandoned. It returns
+     as a column of its own, LEFT of the QR and ABOVE the rule, drawn from
+     assets/Robograder_Line.png - the filled-chest line art. The empty-chest
+     Robograder_Line_QR.png it replaces existed only to frame a code inside the
+     chest, which the physics ruled out, and is retired.
+     x 505..665. right:487 is the info column's own right edge, so the figure
+     ends exactly where GRADED and the ID row end and the rule runs under its
+     tracks; 160 wide leaves an 11px gutter to the QR at x=676.
+     The figure does NOT take its column by moving .info - the rule and the
+     meta rows still want the full width, and narrowing .info would pull them
+     left with it. Only .info-upper yields, through padding-right, so the
+     title, the date line and the printing/Key Info line wrap short of the
+     figure while everything below it stays full width. */
+  .rg-label .rg-art {
+    position: absolute;
+    right: 487px; width: 160px;
+    top: 10px; height: 180px;
+    /* flex-end, not end: html2canvas only knows the flex-* spellings. The
+       figure stands ON the rule rather than floating above it. */
+    display: flex; align-items: flex-end; justify-content: center;
+  }
+  .rg-label .rg-art img {
+    max-width: 100%; max-height: 100%;
+    width: auto; height: auto;
+    object-fit: contain; display: block;
+  }
+  /* 160 for the figure + a 12px gutter. */
+  .rg-label .info-upper { padding-right: 172px; }
+  /* With a price pad the QR falls back to bottom-left and there is no room for
+     the figure at all, so it goes and the text column takes its width back. */
+  .rg-label.has-price .rg-art { display: none; }
+  .rg-label.has-price .info-upper { padding-right: 0; }
   .rg-label .price-pad {
     display: none;
   }
@@ -3317,6 +3421,18 @@ function renderLabelMarkup(comic, opts) {
   const issue = comic.issue ? `#${esc(comic.issue)}` : '';
   const issueDate = esc(comic.issueDate || '');
   const printing = comic.printing ? esc(comic.printing) : '';
+  // S22: the printing line carries the Key Info after it when the book has
+  // any. Key Info is written by the assessment and is routinely a paragraph,
+  // so nothing is truncated HERE - the line is clamped and clipped in CSS at
+  // the figure's left edge, which is the only place that knows how much room
+  // there actually is. Newlines collapse to spaces so a multi-line Key Info
+  // cannot force the line box taller than one line.
+  const keyInfoRaw = String(comic.keyInfo == null ? '' : comic.keyInfo).replace(/\s+/g, ' ').trim();
+  const keyInfo = keyInfoRaw ? esc(keyInfoRaw) : '';
+  // has-prt (which clamps the title to one line) now keys on this line
+  // existing at all, not on the printing alone - a book with Key Info and no
+  // printing still spends the row.
+  const prtLine = [printing, keyInfo].filter(Boolean).join(' \u00b7 ');
   // S22: the line under the title is "<pub date>, <publisher>". Either half can
   // be missing, so the comma only appears when both are present.
   const publisher = esc(comic.publisher || '');
@@ -3367,7 +3483,7 @@ function renderLabelMarkup(comic, opts) {
     <div class="${wrapClass}" data-grade-id="${gradeId}">
       ${smallLWrap}
       ${faceOpen}
-      <div class="score-box${_labelShowPlus ? ' has-plus' : ''}"${_labelRestored ? ` style="background:${_labelBgColor}${_labelBorderColor ? `;border-color:${_labelBorderColor}` : ''}"` : ''}>
+      <div class="score-box${_labelShowPlus ? ' has-plus' : ''}${String(score).length >= 3 ? ' num-3' : ''}"${_labelRestored ? ` style="background:${_labelBgColor}${_labelBorderColor ? `;border-color:${_labelBorderColor}` : ''}"` : ''}>
         <div class="rg-word">ROBOGRADE</div>
         ${_labelTierStars}
         <div class="rg-num-wrap"><span class="rg-num"${_labelRestored ? ` style="color:${_labelScoreColor}"` : ''}>${score}</span>${_labelCheckHtml}</div>
@@ -3375,11 +3491,11 @@ function renderLabelMarkup(comic, opts) {
         ${_labelShowPlus ? `<div class="rg-plus"${_labelRestored ? ` style="color:${_labelScoreColor}"` : ''}>(+)</div>` : ''}
         <div class="rg-v">${versionStr}</div>
       </div>
-      <div class="info${printing ? ' has-prt' : ''}">
+      <div class="info${prtLine ? ' has-prt' : ''}">
         <div class="info-upper">
-          <div class="ttl">${title}${issue ? ` <span class="ttl-iss">${issue}</span>` : ''}</div>
+          <div class="ttl"><span class="ttl-name">${title}</span>${issue ? ` <span class="ttl-iss">${issue}</span>` : ''}</div>
           <div class="iss">${issueLine}</div>
-          ${printing ? `<div class="prt">${printing}</div>` : ''}
+          ${prtLine ? `<div class="prt">${prtLine}</div>` : ''}
         </div>
         <div class="info-lower">
           <div class="meta-grid">
@@ -3403,7 +3519,9 @@ function renderLabelMarkup(comic, opts) {
           return `<div class="price-pad"><div class="price-value">${priceStr}</div></div>`;
         }
         return `<div class="price-pad"><div class="price-placeholder">Price</div></div>`;
-      })() : (isWide ? '' : '<div class="robot-badge"><img src="assets/Robograder_Charging.png" alt=""></div>')}
+      })() : (isWide
+        ? '<div class="rg-art"><img src="assets/Robograder_Line.png" alt=""></div>'
+        : '<div class="robot-badge"><img src="assets/Robograder_Charging.png" alt=""></div>')}
       <div class="qr-col">
         ${comic.publicListing
           ? `<div class="qrc" data-qr-id="${gradeId}"></div>`
