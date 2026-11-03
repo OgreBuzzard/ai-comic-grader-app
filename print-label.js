@@ -685,11 +685,24 @@ function ensureStylesInjected() {
      is full-box-width, so the two were overlapping. Lifting the wordmark puts
      its ink at 8..28 and the PM's at 32..100 - no vertical overlap, so their
      horizontal positions stop mattering. */
+  /* S22: CONSTRAINED, not merely lifted. Relying on 12px of vertical clearance
+     between the wordmark and the PM meant any later nudge to either one put
+     them back on top of each other - which is what Matt printed. Boxing the
+     wordmark into the space LEFT of the PM makes the overlap impossible
+     whatever their vertical positions. right:76 is the PM's column plus a gap. */
   .rg-label .rg-word {
-    font-size: 26px; font-weight: 700;
-    color: #2a4010; letter-spacing: 3px;
+    /* 22/2, not 26/3: at 26 the word measured 192px of ink and simply
+       OVERFLOWED the 6..186 box - a box with no overflow:hidden does not
+       constrain anything - so it still ran under the PM. 22px with 2px of
+       tracking measures ~150 and fits. overflow:hidden is set as a backstop so
+       a future size change cannot quietly reintroduce the overlap. */
+    font-size: 22px; font-weight: 700;
+    color: #2a4010; letter-spacing: 2px;
     font-family: 'Barlow Condensed', sans-serif;
-    position: absolute; top: 8px;
+    position: absolute; top: 10px;
+    left: 6px; right: 76px;
+    text-align: center;
+    overflow: hidden; white-space: nowrap;
   }
   .rg-label .rg-stars {
     opacity: 0.85;   /* S22: dark stars on the light box need no knock-down */
@@ -713,6 +726,11 @@ function ensureStylesInjected() {
     display: inline-flex;
     line-height: 1;
   }
+  /* S22: 16 -> 26 on Wide only. Matt's mock sits the numeral lower in the box,
+     closer to the version string. */
+  /* 20, not 26: at 26 the numeral's bottom landed 2px off the version string.
+     20 leaves 8px below and 17px to the stars. */
+  .rg-label .rg-num-wrap { transform: translateY(20px); }
   .rg-label .rg-num {
     /* S14: was 148, dropped to 140, now 150 — brought back up a touch
        to match the Large label's score-prominence pass now that the
@@ -734,7 +752,7 @@ function ensureStylesInjected() {
     /* S22: 188 -> 215. The mock keeps the numeral's TOP where it was and takes
        the BOTTOM down toward the version string, using room the old size left
        empty. Measured off the mock: 170px of ink against ~133 at 188. */
-    font-size: 215px; font-weight: 900;
+    font-size: 200px; font-weight: 900;
     color: #0d0d0f; line-height: 1;   /* S22: black on the light box */
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
@@ -887,11 +905,19 @@ function ensureStylesInjected() {
        963px and the rendered result is exactly 602px: the column's real
        width, ~31 visual characters, and most titles back on one line. Same
        correction applied to .iss below. */
+    /* S22: the descender fix needed TWO changes and only one landed last time.
+       .info-upper's overflow:hidden was cutting the g in "Aug" (.iss) - fixed.
+       But .ttl carries its OWN overflow:hidden for the 2-line clamp, and at
+       line-height 0.95 the line box ends at the baseline, so the y in
+       "Fantasy" was still being cut by .ttl itself. padding-bottom extends the
+       box the clamp measures, so the tails show and the clamp still holds:
+       1 line = 59 + 8, 2 lines = 118 + 8, both inside 126. */
     width: 160%;
     font-size: 62px; font-weight: 900;
     color: #0d0d0f; line-height: 0.95;
     white-space: normal;
-    max-height: 118px;
+    padding-bottom: 8px;
+    max-height: 126px;
     overflow: hidden;
     font-family: 'Noto Sans Display', sans-serif;
     transform: scaleX(0.625);

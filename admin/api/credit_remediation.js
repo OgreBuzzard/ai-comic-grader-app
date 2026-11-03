@@ -40,6 +40,21 @@
 const GRANT_LABEL = 'deep_doublecharge_fix';
 const DEFAULT_SINCE = '2026-09-18';   // v5.19 — server-side crediting shipped
 
+// Copied VERBATIM from admin/api/history_repair.js. FIREBASE_SERVICE_ACCOUNT is
+// NOT reliably plain JSON: depending on how it was pasted into Vercel it can
+// arrive with escaped quotes, or base64-encoded. A bare
+// JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT) throws on both, and because
+// that call sits inside the auth try/catch it surfaces as "auth failed" - which
+// is exactly the wrong diagnosis, since the token was fine. That is what this
+// endpoint did on its first run.
+function parseServiceAccount() {
+  let raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (!raw) throw new Error('FIREBASE_SERVICE_ACCOUNT not set');
+  if (raw.includes('\\"')) raw = raw.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+  try { return JSON.parse(raw); }
+  catch { return JSON.parse(Buffer.from(raw, 'base64').toString('utf8')); }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -51,7 +66,8 @@ export default async function handler(req, res) {
     if (!m) return res.status(401).json({ error: 'auth required' });
     const { initializeApp, getApps, cert } = await import('firebase-admin/app');
     const { getAuth } = await import('firebase-admin/auth');
-    if (!getApps().length) initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
+    if (!process.env.FIREBASE_SERVICE_ACCOUNT) return res.status(500).json({ error: 'server misconfigured: FIREBASE_SERVICE_ACCOUNT not set' });
+    if (!getApps().length) initializeApp({ credential: cert(parseServiceAccount()) });
     const decoded = await getAuth().verifyIdToken(m[1].trim());
     const email = String(decoded.email || '').toLowerCase();
     const admins = (process.env.ADMIN_EMAILS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
