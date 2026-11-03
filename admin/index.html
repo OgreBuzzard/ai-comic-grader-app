@@ -1404,25 +1404,21 @@ function _renderSales() {
 
 function renderUsersTab() {
   document.getElementById('tab-content').innerHTML = `
-    <!-- S22 ONE-OFF: Deep double-charge remediation. AT THE TOP, because the
-         Users tab is a paginated list and anything below it is unreachable
-         without tapping Load More dozens of times - which is exactly what
-         happened when this sat at the bottom. It lives in the admin page at
-         all because admin/ is behind middleware.js's ADMIN_GATE_SECRET cookie
-         gate, which curl cannot present. DELETE THIS BLOCK AND _wireRemediation
-         ONCE IT HAS BEEN RUN. -->
-    <div id="remediation-row" style="margin-bottom:14px;padding:10px 12px;border:1px solid #3a2a18;border-radius:8px;background:#17140f">
-      <div style="font-size:11px;color:#9a8a6a;margin-bottom:7px">
-        One-off: Deep double-charge refund (18 Sept &rarr; v5.99). Safe to tap more than once &mdash; nobody is credited twice.
+    <!-- S22: Vanity User ID. Replaces the one-off Deep double-charge
+         remediation block, which has been run (43 accounts credited) and whose
+         addresses have been captured. This is here rather than in a terminal
+         for the same reason that one was: admin/ sits behind middleware.js's
+         ADMIN_GATE_SECRET cookie gate, which curl cannot present. -->
+    <div id="vanity-row" style="margin-bottom:14px;padding:10px 12px;border:1px solid #243244;border-radius:8px;background:#0f1319">
+      <div style="font-size:11px;color:#8a9aae;margin-bottom:7px">
+        Set a user's 4-character User ID. Letters and digits only, no 0, 1, O or U. A code already held by someone else is refused, not taken.
       </div>
-      <button id="remediation-check" style="padding:5px 11px;font-size:11px;border:1px solid #3a5a2a;border-radius:7px;cursor:pointer;background:var(--panel-2);color:#cde">Check who was affected</button>
-      <button id="remediation-emails" style="margin-left:6px;padding:5px 11px;font-size:11px;border:1px solid #2a4a6a;border-radius:7px;cursor:pointer;background:var(--panel-2);color:#cde">List the credited email addresses</button>
-      <div id="remediation-out" style="margin-top:8px;font-size:11px;color:#cde;white-space:pre-wrap;line-height:1.5"></div>
-      <div id="remediation-emails-out" style="margin-top:8px;display:none">
-        <div id="remediation-emails-count" style="font-size:11px;color:#9ab;margin-bottom:5px"></div>
-        <textarea id="remediation-emails-box" readonly style="width:100%;height:110px;font-size:11px;font-family:ui-monospace,Menlo,monospace;background:#0e0c09;color:#cde;border:1px solid #3a2a18;border-radius:7px;padding:7px;box-sizing:border-box"></textarea>
-        <button id="remediation-emails-copy" style="margin-top:5px;padding:5px 11px;font-size:11px;border:1px solid #3a5a2a;border-radius:7px;cursor:pointer;background:var(--panel-2);color:#cde">Copy all</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <input id="vanity-uid" type="text" placeholder="Account UID" spellcheck="false" style="flex:1 1 280px;min-width:0;padding:5px 9px;font-size:11px;font-family:ui-monospace,Menlo,monospace;background:#0e0c09;color:#cde;border:1px solid #243244;border-radius:7px">
+        <input id="vanity-code" type="text" placeholder="CODE" maxlength="4" spellcheck="false" style="width:74px;padding:5px 9px;font-size:11px;font-family:ui-monospace,Menlo,monospace;text-transform:uppercase;background:#0e0c09;color:#cde;border:1px solid #243244;border-radius:7px">
+        <button id="vanity-go" style="padding:5px 11px;font-size:11px;border:1px solid #2a4a6a;border-radius:7px;cursor:pointer;background:var(--panel-2);color:#cde">Set User ID</button>
       </div>
+      <div id="vanity-out" style="margin-top:8px;font-size:11px;color:#cde;white-space:pre-wrap;line-height:1.5"></div>
     </div>
     <div style="position:relative">
       <input type="text" id="users-search" placeholder="Search by name, email, or User ID…" class="search-input" value="${escapeAttr(state.userSearch || '')}" style="padding-right:38px">
@@ -1445,95 +1441,38 @@ function renderUsersTab() {
   if (_clearBtn) _clearBtn.onclick = () => { searchInput.value = ''; _clearBtn.style.display = 'none'; state.userSearch = ''; loadUsers(true); searchInput.focus(); };
   renderSortBar();
   loadUsers(true);
-  _wireRemediation();
+  _wireVanityCode();
 }
 
-// S22 one-off. Two taps: see the numbers, then confirm. Nothing is written by
-// the first call — the endpoint is dry-run unless apply=1.
-function _wireRemediation() {
-  const btn = document.getElementById('remediation-check');
-  const out = document.getElementById('remediation-out');
-  if (!btn || !out) return;
+// S22: vanity User ID. One call, with a confirm, because it changes the code
+// a user reads out loud to transfer a book - and the old code is released back
+// into the pool when it does.
+function _wireVanityCode() {
+  const uidEl = document.getElementById('vanity-uid');
+  const codeEl = document.getElementById('vanity-code');
+  const btn = document.getElementById('vanity-go');
+  const out = document.getElementById('vanity-out');
+  if (!uidEl || !codeEl || !btn || !out) return;
   btn.onclick = async () => {
-    btn.disabled = true; out.textContent = 'Checking…';
+    const uid = (uidEl.value || '').trim();
+    const code = (codeEl.value || '').trim().toUpperCase();
+    if (!uid || code.length !== 4) { out.textContent = 'Enter an account UID and a 4-character code.'; return; }
+    if (!confirm('Set the User ID for\n\n' + uid + '\n\nto ' + code + '?\n\nTheir current code is released and stops working.')) return;
+    btn.disabled = true; out.textContent = 'Working\u2026';
     try {
-      const d = await api('/api/credit_remediation?since=2026-09-18');
-      // The question Matt actually has is "did this already run, or not?", so
-      // answer THAT first and in words, before any numbers.
-      if (d.usersToCredit === 0) {
-        out.textContent = d.alreadyCredited > 0
-          ? 'ALREADY DONE. All ' + d.alreadyCredited + ' affected accounts were credited on an earlier run. Nothing left to do.'
-          : 'Nothing to do - no Deep assessments found since ' + d.since + '.';
-        return;
-      }
+      const r = await api('/api/set_transfer_codes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'assign', uid: uid, code: code })
+      });
       out.textContent =
-        'NOT YET DONE.\n' +
-        'Users who ran a Deep since ' + d.since + ': ' + d.usersWithADeep + '\n' +
-        'Already credited on an earlier run: ' + d.alreadyCredited + '\n' +
-        'STILL TO CREDIT: ' + d.usersToCredit + ' accounts, ' + d.creditsToGrant + ' credits';
-      {
-        const go = document.createElement('button');
-        go.textContent = 'Add ' + d.creditsToGrant + ' credits to ' + d.usersToCredit + ' accounts';
-        go.style.cssText = 'margin-top:8px;padding:5px 11px;font-size:11px;border:1px solid #6a3a2a;border-radius:7px;cursor:pointer;background:#2a1a14;color:#f0c0a0';
-        go.onclick = async () => {
-          if (!confirm('Add ' + d.creditsToGrant + ' credits across ' + d.usersToCredit + ' accounts?\n\nThis cannot be undone, but it is safe to re-run — nobody is credited twice.')) return;
-          go.disabled = true; go.textContent = 'Adding…';
-          try {
-            const r = await api('/api/credit_remediation?since=2026-09-18&apply=1', { method: 'POST' });
-            out.textContent =
-              'DONE.\n' +
-              'Accounts credited: ' + r.usersCredited + '\n' +
-              'Credits added: ' + r.creditsGranted + '\n' +
-              'Skipped (already done): ' + r.alreadyCreditedBefore + '\n' +
-              'Failed: ' + r.failed;
-          } catch (e) { out.textContent = 'FAILED: ' + (e && e.message); }
-        };
-        out.appendChild(document.createElement('br'));
-        out.appendChild(go);
-      }
+        'DONE.\n' + (r.name ? r.name + ' ' : '') + (r.email || r.uid) + '\n'
+        + 'User ID is now ' + r.code + (r.previousCode ? ' (was ' + r.previousCode + ')' : '');
+      codeEl.value = '';
     } catch (e) {
       out.textContent = 'FAILED: ' + (e && e.message);
     } finally { btn.disabled = false; }
   };
-
-  // S22 one-off, part two: the addresses of everyone the grant actually
-  // reached, so Matt can write to them. Read from the grant rows, not
-  // re-derived from the Deep debits, so the list is exactly who got a credit.
-  const ebtn = document.getElementById('remediation-emails');
-  const ewrap = document.getElementById('remediation-emails-out');
-  const ebox = document.getElementById('remediation-emails-box');
-  const ecount = document.getElementById('remediation-emails-count');
-  const ecopy = document.getElementById('remediation-emails-copy');
-  if (ebtn && ewrap && ebox && ecount) {
-    ebtn.onclick = async () => {
-      ebtn.disabled = true;
-      const was = ebtn.textContent;
-      ebtn.textContent = 'Loading\u2026';
-      try {
-        const d = await api('/api/credit_remediation?emails=1');
-        ewrap.style.display = 'block';
-        ebox.value = (d.emails || []).join(', ');
-        ecount.textContent =
-          d.accountsCredited + ' accounts were credited. '
-          + d.withEmail + ' have an email address on file'
-          + (d.withoutEmail ? '; ' + d.withoutEmail + ' are legacy accounts with no email (' + (d.missing || []).join(', ') + ').' : '.');
-      } catch (e) {
-        ewrap.style.display = 'block';
-        ecount.textContent = 'FAILED: ' + (e && e.message);
-        ebox.value = '';
-      } finally { ebtn.disabled = false; ebtn.textContent = was; }
-    };
-  }
-  if (ecopy && ebox) {
-    ecopy.onclick = () => {
-      ebox.select();
-      try { document.execCommand('copy'); } catch (e) {}
-      try { if (navigator.clipboard) navigator.clipboard.writeText(ebox.value); } catch (e) {}
-      const was = ecopy.textContent;
-      ecopy.textContent = 'Copied';
-      setTimeout(() => { ecopy.textContent = was; }, 1400);
-    };
-  }
 }
 
 function renderItemsTab() {

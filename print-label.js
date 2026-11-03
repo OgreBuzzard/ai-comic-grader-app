@@ -774,11 +774,19 @@ function ensureStylesInjected() {
     /* S22: 188 -> 215. The mock keeps the numeral's TOP where it was and takes
        the BOTTOM down toward the version string, using room the old size left
        empty. Measured off the mock: 170px of ink against ~133 at 188. */
-    font-size: 200px; font-weight: 900;
+    /* S22: scaleX 0.625 -> 0.78. 0.625 is a heavy condense - it is what let
+       the numeral grow to 200px without reaching the PM - but at that ratio
+       the strokes are thin enough that the grade, the one thing on this label
+       meant to be read from across a room, reads worst of anything on it.
+       Not removed, because the width is what keeps it clear of the PM: 0.78 is
+       a quarter wider and the measured horizontal gap to the PM is still
+       positive on every two-glyph case. The font size comes down with it so
+       the overall footprint is close to unchanged. */
+    font-size: 188px; font-weight: 900;
     color: #0d0d0f; line-height: 1;   /* S22: black on the light box */
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
-    transform: scaleX(0.625);
+    transform: scaleX(0.78);
     transform-origin: center;
   }
   .rg-label .rg-prec {
@@ -848,7 +856,7 @@ function ensureStylesInjected() {
      a (+) book LOOK DOWNGRADED. Dropping the (+) to 44px and tightening it to
      right:8 bought 32px of numeral. The (+) is the secondary mark; the grade
      is the thing read from across the room, so the (+) yields. */
-  .rg-label .score-box.has-plus .rg-num { font-size: 168px; }
+  .rg-label .score-box.has-plus .rg-num { font-size: 148px; }
   /* S22 - THREE-GLYPH SCORES WERE BREAKING THE BOX, AND HAD BEEN FOR A WHILE.
      .rg-num-wrap is a flex item in a 256px-wide column, so its width is capped
      at the box interior. "100" at 200px is ~360px of UNSCALED text (scaleX
@@ -861,8 +869,14 @@ function ensureStylesInjected() {
      This matters more under the v3 display than the 0-100 one: "9.5" is three
      glyphs and ordinary, where 100 is rare. */
   .rg-label .rg-num-wrap { white-space: nowrap; }
-  .rg-label .score-box.num-3 .rg-num { font-size: 168px; }
-  .rg-label .score-box.has-plus.num-3 .rg-num { font-size: 150px; }
+  /* 172, measured rather than guessed: a digit in Noto Sans Display is
+     0.556em, so "100" is 3 x 0.556 x 172 = 287px of UNSCALED text, 245px once
+     scaleX(0.78) has it, inside the 256px interior with 5px a side - and that
+     is with the restoration check mark, which rides inside .rg-num-wrap and
+     costs another ~27px. "9.5", which is the ordinary three-glyph case under
+     the v3 display, is narrower again (the period is ~0.28em). */
+  .rg-label .score-box.num-3 .rg-num { font-size: 172px; }
+  .rg-label .score-box.has-plus.num-3 .rg-num { font-size: 120px; }
   .rg-label .rg-v {
     font-size: 20px;
     color: #3a5010;
@@ -953,7 +967,12 @@ function ensureStylesInjected() {
     color: #0d0d0f; line-height: 0.95;
     white-space: normal;
     padding-bottom: 8px;
-    max-height: 126px;
+    /* S22: 126 -> 118. 2 x 62 x 0.95 = 117.8, so 126 was 8px MORE than two
+       lines and let the tops of a third line through under the second - the
+       same sliced-glyph sliver the one-line clamp had. 118 is the two line
+       boxes exactly; the 8px of padding-bottom below it is what carries the
+       descenders. */
+    max-height: 118px;
     overflow: hidden;
     font-family: 'Noto Sans Display', sans-serif;
     transform: scaleX(0.625);
@@ -999,6 +1018,25 @@ function ensureStylesInjected() {
     border-top: 1px solid #2a3a18;
     padding-top: 6px;
   }
+  /* S22 - THE RULE DROPS TO THE CODE'S BOTTOM EDGE AND THE META BLOCK GOES TO
+     ONE ROW. Two changes that only work together: stacking GRADED over the ID
+     row cost ~40px of height that the title and the Key Info line both wanted,
+     and the rule sitting where it did cut across the figure.
+     The band is pinned, not flowed - y 226..274, with the border-top landing
+     at exactly 226, which is also where the QR and the figure now end. Pinning
+     is what keeps GRADED and the ID at the SAME y on every label however the
+     title wrapped, which is the whole reason this stock can be pre-printed.
+     right:-191 takes it 191px PAST .info's own right edge (665) out to 856,
+     the right edge of the QR column: with the code ending above the rule there
+     is nothing below it to clear, so the ID row reads out to the full width
+     instead of stopping short. .info-upper keeps the narrow column, because
+     the figure is still beside it. */
+  .rg-label .info-lower {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 48px;
+    box-sizing: border-box;
+  }
   /* S22: a 2-line title PLUS a printing line does not fit the room above the
      pinned meta block. The template adds .has-prt to .info only when a
      printing line is present, so in exactly that case the title clamps to one
@@ -1019,10 +1057,14 @@ function ensureStylesInjected() {
      becomes a flex row, the title takes the squeeze (min-width:0 is what lets
      a flex item shrink below its content and is the whole trick here), and the
      issue number is flex:0 0 auto - it is never the thing that goes. */
+  /* S22: the one-line clamp is GONE. It existed because a 2-line title plus a
+     printing line did not fit above the rule; the rule is 36px lower now and
+     the meta block is one row instead of two, so it does. Measured worst case:
+     title 118 + date line 48 + printing/Key Info 26 = 192, inside the 214 the
+     column now has. The flex rule below still applies - it is what keeps the
+     issue number when a title is too long even for two lines. */
   .rg-label .info.has-prt .ttl {
-    max-height: 59px;
-    overflow: hidden;
-    display: flex; align-items: baseline;
+    display: flex; align-items: baseline; flex-wrap: wrap;
   }
   .rg-label .info.has-prt .ttl > .ttl-name {
     min-width: 0;
@@ -1043,6 +1085,22 @@ function ensureStylesInjected() {
     column-gap: 8px; row-gap: 3px;   /* S22: 18 -> 8, slash sits against the ID */
     align-items: baseline;
   }
+  /* One row: GRADED and its date on the left, the ID on the right. The four
+     spans are unchanged - margin-left:auto on the ID label is what splits them
+     into two groups, which beats restructuring markup that Case, Square and
+     Large all share. */
+  .rg-label .meta-grid {
+    display: flex; align-items: baseline; flex-wrap: nowrap;
+  }
+  .rg-label .meta-grid .meta-val { margin-left: 8px; }
+  .rg-label .meta-grid .meta-id-lbl { margin-left: auto; }
+  /* The TEXT runs 191px past .info's right edge, out to 856 - the right edge
+     of the QR column - while the RULE above it stops at 665 where it always
+     did, which is how the mock has it: a rule the width of the text block, and
+     an ID line that uses the room under the code now that the code ends above
+     the rule. Negative margin rather than a wider .info-lower, so the border
+     and the content can have different widths without a second element. */
+  .rg-label .meta-grid { margin-right: -191px; }
   .rg-label .meta-lbl {
     /* S14: +2pt (22→24) per user — Grade/Date and ID/Value were a touch
        small to read at arm's length on the printed Small label.
@@ -1081,10 +1139,13 @@ function ensureStylesInjected() {
      Worth recording: the 118px the bare code carried before all of this was
      already in the right range (0.41", 0.28mm/module). The chest was the
      problem, never the code. */
+  /* S22: the code was centred in the full label height, which put its bottom
+     at 234 - below the rule at its old position and below it again at the new
+     one. It is pinned to end ON the rule now: 46 + 180 = 226. */
   .rg-label .qr-col {
     position: absolute;
-    top: 0; bottom: 0; right: 296px;
-    left: auto; width: 180px;
+    top: 46px; bottom: auto; right: 296px;
+    left: auto; width: 180px; height: 180px;
     display: flex; align-items: center; justify-content: center;
   }
   /* S22 — THE PANEL IS SQUARED TO THE CODE.
@@ -1708,7 +1769,10 @@ function ensureStylesInjected() {
   .rg-label .rg-art {
     position: absolute;
     right: 487px; width: 160px;
-    top: 10px; height: 180px;
+    /* S22: the rule moved down 36px and the figure goes with it rather than
+       growing into the gap - 10..190 becomes 42..226, the same 184 of height,
+       standing on the rule instead of 36px above it. */
+    top: 42px; height: 184px;
     /* flex-end, not end: html2canvas only knows the flex-* spellings. The
        figure stands ON the rule rather than floating above it. */
     display: flex; align-items: flex-end; justify-content: center;
@@ -3432,7 +3496,7 @@ function renderLabelMarkup(comic, opts) {
   // has-prt (which clamps the title to one line) now keys on this line
   // existing at all, not on the printing alone - a book with Key Info and no
   // printing still spends the row.
-  const prtLine = [printing, keyInfo].filter(Boolean).join(' \u00b7 ');
+  const prtLine = [printing, keyInfo].filter(Boolean).join(', ');
   // S22: the line under the title is "<pub date>, <publisher>". Either half can
   // be missing, so the comma only appears when both are present.
   const publisher = esc(comic.publisher || '');

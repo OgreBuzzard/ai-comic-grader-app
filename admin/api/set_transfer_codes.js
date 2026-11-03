@@ -112,6 +112,62 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
+    // ── S22: action='assign' — set ONE account's User ID to a chosen code ───
+    //
+    // The ASSIGNMENTS list below this is a frozen one-shot from before Phase 1.
+    // Vanity-code requests keep arriving (M123, MATC), and editing a hardcoded
+    // array and redeploying for each one is the wrong shape: it needs a code
+    // change, a deploy and a Matt who does not use a terminal. This does the
+    // same work the array does, for a uid and code passed in, with the same
+    // validation, the same conflict check and the same orphan cleanup.
+    //
+    // It refuses rather than steals: a code already claimed by a DIFFERENT uid
+    // is reported, not reassigned. Re-running with the same pair is a no-op in
+    // effect. The user's previous code's reverse-index entry is freed, which is
+    // what keeps the code space from filling with orphan reservations.
+    if ((req.body || {}).action === 'assign') {
+      const uid = String((req.body || {}).uid || '').trim();
+      const code = String((req.body || {}).code || '').trim().toUpperCase();
+      if (!uid) return res.status(400).json({ error: 'uid is required' });
+      if (!validateCode(code)) {
+        return res.status(400).json({
+          error: 'Code "' + code + '" is not valid: it must be exactly 4 characters from '
+               + ID_ALPHABET + ' (no 0, 1, O or U).'
+        });
+      }
+      const userRef = db.collection('users').doc(uid);
+      const userSnap = await userRef.get();
+      if (!userSnap.exists) return res.status(404).json({ error: 'No user doc for uid ' + uid });
+
+      const codeRef = db.collection('transfer_codes').doc(code);
+      const codeSnap = await codeRef.get();
+      if (codeSnap.exists) {
+        const existingUid = (codeSnap.data() || {}).uid;
+        if (existingUid && existingUid !== uid) {
+          return res.status(409).json({
+            error: 'Code ' + code + ' is already claimed by ' + existingUid + '. Nothing was changed.'
+          });
+        }
+      }
+
+      const prevCode = (userSnap.data() || {}).transferCode;
+      const batch = db.batch();
+      if (prevCode && prevCode !== code) batch.delete(db.collection('transfer_codes').doc(prevCode));
+      batch.set(userRef, { transferCode: code }, { merge: true });
+      batch.set(codeRef, { uid, vanity: true, claimedAt: new Date().toISOString() });
+      await batch.commit();
+
+      return res.status(200).json({
+        ok: true, mode: 'assign', uid, code,
+        previousCode: prevCode || null,
+        email: (userSnap.data() || {}).email || null,
+        name: (userSnap.data() || {}).name || (userSnap.data() || {}).displayName || null,
+        note: prevCode && prevCode !== code
+          ? 'User ID set to ' + code + '. The previous code ' + prevCode + ' was released back into the pool.'
+          : 'User ID set to ' + code + '.'
+      });
+    }
+
     // ── S22: action='backfill_missing' — repair accounts with no User ID ─────
     //
     // WHY THIS EXISTS. Every account is supposed to get a 4-char code, from one
