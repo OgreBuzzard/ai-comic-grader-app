@@ -1413,7 +1413,9 @@ function ensureStylesInjected() {
   .rg-label-l .fold-back { display: none; }
   .rg-label-l.tall .face { top: 282px; }
   .rg-label-l.tall .wrap-strip { top: 192px; }
-  .rg-label-l.tall .fold-guide { display: none; }
+  /* Moves down with the chip row rather than being hidden: the 4x2 stock folds
+     TWICE and this is the second one. */
+  .rg-label-l.tall .fold-guide { top: 273px; }
   /* The FOLD. A thick rule across the top of the chip row: this is the line
      the label bends on, and it is the only thing on the label that is an
      instruction rather than information, so it is heavier than the hairlines
@@ -1433,13 +1435,22 @@ function ensureStylesInjected() {
      user precisely where to bend the label. Subtle but visible — same
      palette as the label border so it's understated but findable when
      folding. */
+  /* S22 — THERE ARE TWO FOLDS, SO THERE ARE TWO LINES.
+     This one is the lower of the pair: the chip row bends forward here so it
+     sits ON TOP of the case. The upper line (the chip row's border-top, on the
+     4x2 stock) is where the label bends BACK over the top and down the back.
+     Both are instructions rather than information, so both are heavy - and
+     this one is on EVERY version of the Case label, sheet and roll alike. A
+     fold line that is only on some of them is worse than none, because the
+     user learns to look for it.
+     7px to match the upper rule; the old 10px soft olive bar read as
+     decoration rather than as a mark to line a thumb up against. */
   .rg-label-l .fold-guide {
     position: absolute;
     left: 0; right: 0;
-    top: 80px; height: 10px;
-    background: #5a7030;
-    opacity: 0.8;
-    border-radius: 1px;
+    top: 81px; height: 7px;
+    background: #2a3a18;
+    opacity: 1;
   }
   /* Wrap strip: top 0.25" of the label that wraps over the top of the
      comic case. Single horizontal row, contents from left:
@@ -2614,6 +2625,23 @@ function ensureStylesInjected() {
   .mono { background: #fff !important; border: 1px solid #000 !important; }
   .mono .face,
   .mono .wrap-strip { background: #fff !important; }
+  /* S22: the fold-over back panel. It carried the orange gradient, which on a
+     one-ink printer dithers the whole 0.67in into cross-hatch for no
+     information at all - and it is the side that faces out on the shelf. */
+  .mono .fold-back { background: #fff !important; }
+  /* The upper fold rule is the chip row's border-top, so it needs its own
+     override - the .fold-guide rule below does not reach it. Olive on a
+     one-ink printer dithers to a grey hatch, which is exactly what a fold mark
+     must not be. */
+  .mono .wrap-strip { border-top-color: #000 !important; }
+  /* S22: the chip row's score box moved to light green with the face's box in
+     v6.15, and nothing here followed it, so the thermal label printed a green
+     panel. Outline, not fill - same rule as the face's box, at the 2px this
+     one uses. */
+  .mono .wrap-strip .ws-score {
+    background: #fff !important;
+    border: 2px solid #000 !important;
+  }
   .mono .fold-guide { background: #000 !important; opacity: 1 !important; }
 
   /* Score box: outline, not fill. The 4px border holds its own at 203 dpi
