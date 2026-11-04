@@ -2030,7 +2030,14 @@ function ensureStylesInjected() {
      to ask how wide a string is. Nothing here fixes a font-size for that
      reason. */
   .rg-label .rg-art.is-price { align-items: center; }
-  .rg-label .rg-price {
+  /* v6.21: ONE rule for every size. This was scoped to .rg-label, which is
+     Wide ONLY - Case is .rg-label-l and Square is .rg-label-square, so neither
+     ever got the face or the weight and both fell back to the container's
+     Barlow Condensed. The price is the same object on all three labels; it
+     reads from one place now. */
+  .rg-label .rg-price,
+  .rg-label-l .rg-price,
+  .rg-label-square .rg-price {
     font-family: 'Noto Sans Display', sans-serif;
     font-weight: 900;
     color: #0d0d0f;
@@ -2038,7 +2045,9 @@ function ensureStylesInjected() {
     white-space: nowrap;
     text-align: center;
   }
-  .rg-label.mono .rg-price { color: #000; }
+  .rg-label.mono .rg-price,
+  .rg-label-l.mono .rg-price,
+  .rg-label-square.mono .rg-price { color: #000; }
   /* 160 for the figure + a 12px gutter. */
   .rg-label .info-upper { padding-right: 172px; }
   /* With a price pad the QR falls back to bottom-left and there is no room for
