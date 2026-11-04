@@ -150,27 +150,17 @@
     return c * 2 + b;   // C counts double
   }
 
-  // PM (Precision Modifier). Returns one of 0, 0.5, 1, 1.5, 2.
-  function computePM(input) {
-    var depth = (input.depth || "main").toLowerCase();
-    var slab = !!input.slabbed;
-    var sev = photoSeverity(input.photograder);
-    var pm;
-    if (slab) {
-      pm = (depth === "deep") ? (sev <= 1 ? 1.0 : sev === 2 ? 1.5 : 2.0)
-                              : (sev <= 1 ? 1.5 : 2.0);          // slabbed main (2 imgs, through plastic)
-    } else if (depth === "full") {
-      pm = (input.all16Present && sev === 0) ? 0
-                                             : (sev <= 1 ? 0.5 : sev === 2 ? 1.0 : 1.5);
-    } else if (depth === "deep") {
-      pm = (sev <= 1 ? 0.5 : sev === 2 ? 1.0 : 1.5);
-    } else { // main (raw, 4 imgs)
-      pm = (sev <= 1 ? 1.0 : sev === 2 ? 1.5 : 2.0);
-      pm = pm + 0.5 * (input.missingCore || 0);                 // missing spine/interior widens
-    }
-    return Math.min(2.0, pm);
-  }
-  function formatPM(pm) { return (!pm || pm <= 0) ? "" : "±" + pm; }   // ±1 not ±1.0; ±0.5 keeps decimal
+  // ── PM (PRECISION MODIFIER) REMOVED — S22 ─────────────────────────────
+  // computePM() and formatPM() stood here. They were a hardcoded lookup on
+  // assessment depth and photo severity - nothing about the book - so a Deep
+  // with clean photos always produced the same +/-0.5. Measured against the
+  // engine's own run-to-run spread (7 / 5 / 5.5 / 5 / 5.5 on one book, five
+  // passes, identical inputs) the published figure was four times too narrow,
+  // and a stated uncertainty that wrong is worse than none. The 1/2/3 stars
+  // already say how hard we looked, which is the honest version of the signal.
+  // Full text in shared/_ARCHIVE/PM_REMOVED_S22.md.
+  // photoSeverity() STAYS: it also steps the grade CAP, which is a separate
+  // mechanism that has nothing to do with the +/-.
 
   function computeRoboScoreV3(input) {
     input = input || {};
@@ -233,17 +223,11 @@
     if (depth === "main" && ceilingHit) upsell = "deep";
     else if (depth === "deep" && ceilingHit && !slabbed) upsell = "full";
 
-    var pm = computePM(input);
-    // S25 (#6): grade + PM can never exceed 10 -> 8.5<=1.5, 9<=1, 9.5<=0.5, 10->0.
-    pm = Math.max(0, Math.min(pm, 10 - grade));
-
     return {
       grade: grade,
       uncappedGrade: uncapped,
       subscores: sub,
       rawSubscores: { front: precise.front, back: precise.back, spine: precise.spine, interior: precise.interior },
-      pm: pm,
-      pmLabel: formatPM(pm),
       ceilingHit: ceilingHit,
       upsell: upsell
     };
@@ -259,7 +243,7 @@
   // flex-centered so it is ALWAYS dead-center regardless of PM width; PM and the
   // footer (version / "RG") are stacked at the bottom, so PM can never touch the
   // stars or the number. One uniform-size decimal — no fragile superscript.
-  // opts: {grade, pmLabel, stars(0-3), restoStar, footer('version'|'RG'|''),
+  // opts: {grade, stars(0-3), restoStar, footer('version'|'RG'|''),
   //   footerText, size, numColor, starColor, footerColor, pmColor, bg, border}
   var _STAR_PATH = "M12,2 15.64,6.98 21.51,8.91 17.9,13.92 17.88,20.09 12,18.2 6.12,20.09 6.1,13.92 2.49,8.91 8.36,6.98Z";
   function _starRow(n, px, color, resto, restoColor) {
@@ -290,23 +274,11 @@
       + '<span style="font-family:\'League Spartan\',system-ui,sans-serif;font-weight:900;transform:scaleX(0.66) translateY(' + _nudge + 'px);transform-origin:center;display:inline-block;color:' + numColor + ';line-height:1;font-size:' + numSize + 'px">' + _numInner + '</span></div>';
     // Stars: top-center.
     var starsHtml = (stars > 0 || o.restoStar) ? '<div style="position:absolute;top:' + Math.round(size*0.05) + 'px;left:0;right:0;display:flex;justify-content:center;pointer-events:none">' + _starRow(stars, starPx, starColor, o.restoStar, o.restoColor) + '</div>' : "";
-    // PM: UPPER-RIGHT (never below the score).
-    var pmHtml = "";
-    if (o.pmLabel) {
-      var _pmM = String(o.pmLabel).match(/^([^0-9.]*)(.*)$/);
-      var _pmSym = _pmM ? _pmM[1] : '';
-      var _pmNum = _pmM ? _pmM[2] : String(o.pmLabel);
-      var _pmSize = Math.max(11, Math.round(size * 0.17));
-      var _pmTop = Math.round(size * 0.5 + _nudge - numSize * 0.365 - _pmSize - size * 0.10);
-      pmHtml = '<div style="position:absolute;top:' + _pmTop + 'px;right:' + Math.round(size*0.07) + 'px;line-height:1;white-space:nowrap;pointer-events:none;color:' + pmColor + ';font-weight:700">'
-        + '<span style="font-family:\'Saira\',system-ui,sans-serif;font-size:' + _pmSize + 'px">' + _pmSym + '</span>'
-        + '<span style="font-family:\'Saira Extra Condensed\',system-ui,sans-serif;font-size:' + _pmSize + 'px;transform:scaleX(0.72);display:inline-block">' + _pmNum + '</span></div>';
-    }
     // Footer (version / RG): bottom-center.
     var footHtml = "";
     if (o.footer === "RG") footHtml = '<div style="position:absolute;bottom:' + Math.round(size*0.05) + 'px;left:0;right:0;text-align:center;font-size:' + Math.max(8, Math.round(size*0.086)) + 'px;font-weight:700;color:' + footerColor + ';opacity:0.85;letter-spacing:1px;line-height:1;pointer-events:none">RG</div>';
     else if (o.footer === "version" && o.footerText) footHtml = '<div style="position:absolute;bottom:' + Math.round(size*0.05) + 'px;left:0;right:0;text-align:center;font-size:' + Math.max(7, Math.round(size*0.077)) + 'px;font-weight:700;color:' + footerColor + ';opacity:0.8;letter-spacing:0.8px;line-height:1;pointer-events:none">' + o.footerText + '</div>';
-    return '<div style="position:relative;width:' + size + 'px;height:' + size + 'px;background:' + bg + ';border:' + border + ';border-radius:' + Math.round(size*0.14) + 'px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">' + numHtml + starsHtml + pmHtml + footHtml + '</div>';
+    return '<div style="position:relative;width:' + size + 'px;height:' + size + 'px;background:' + bg + ';border:' + border + ';border-radius:' + Math.round(size*0.14) + 'px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">' + numHtml + starsHtml + footHtml + '</div>';
   }
 
   // ---- CARD scoring (v3) ----------------------------------------------------
@@ -364,9 +336,7 @@
       : { surface: rounded.surface, corners: rounded.corners, edges: rounded.edges, centering: rounded.centering };
     var ceilingHit = uncapped > cap + 1e-9;
     var upsell = (depth === "main" && ceilingHit && !slabbed) ? "deep" : null;   // cards: Main -> Deep only
-    var pm = computePM({ depth: depth, slabbed: slabbed, photograder: input.photograder });  // reuse comic PM table
-    pm = Math.max(0, Math.min(pm, 10 - grade));   // S25 (#6): grade + PM can't exceed 10
-    return { grade: grade, uncappedGrade: uncapped, subscores: sub, rawSubscores: { surface: precise.surface, corners: precise.corners, edges: precise.edges, centering: precise.centering }, pm: pm, pmLabel: formatPM(pm), ceilingHit: ceilingHit, upsell: upsell, kind: "card" };
+    return { grade: grade, uncappedGrade: uncapped, subscores: sub, rawSubscores: { surface: precise.surface, corners: precise.corners, edges: precise.edges, centering: precise.centering }, ceilingHit: ceilingHit, upsell: upsell, kind: "card" };
   }
   function forCard(card) {
     if (!card) return null;
@@ -430,7 +400,7 @@
     });
   }
 
-  var api = { compute: computeRoboScoreV3, forComic: forComic, computeCard: computeCardV3, forCard: forCard, depthOf: depthOf, computePM: computePM, formatPM: formatPM,
+  var api = { compute: computeRoboScoreV3, forComic: forComic, computeCard: computeCardV3, forCard: forCard, depthOf: depthOf, 
               formatGrade: formatGrade, gradeParts: gradeParts, scoreBox: scoreBox,
               interiorTier: interiorTier, interiorBase: interiorBase, roundHalf: roundHalf,
               shaveToCap: shaveToCap, DEPTH_CAP: DEPTH_CAP };

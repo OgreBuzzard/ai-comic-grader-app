@@ -33,7 +33,7 @@
 import { ROBOGRADE_VERSION } from '../lib/version.js';
 import { PRIMARY_MODEL, ratesFor, costOf } from '../lib/model.js';
 import { anthropicWithRetry } from '../lib/anthropic_retry.js';
-import { computePhotograderPM, mergePhotograder, PHOTOGRADER_RUBRIC_CLOSEUP } from '../lib/photograder.js';
+import { computeScoreCeilingPenalty, mergePhotograder, PHOTOGRADER_RUBRIC_CLOSEUP } from '../lib/photograder.js';
 import { enforceCgcGrade } from '../lib/grade_definitions.js';
 import { buildDeepPrefix, deepVariantName } from '../lib/deep_prompt.js';
 import { createHash as _deepCreateHash } from 'crypto';
@@ -410,7 +410,6 @@ JSON shape (same as initial assessment, with deepAddition tags on new defects):
   "roboGrade": {
     "version": "${ROBOGRADE_VERSION}",
     "score": 0,
-    "confidenceRange": 3,
     "frontScore": 0,
     "backScore": ${initialRG.backScore == null ? 'null' : initialRG.backScore},
     "spineScore": 0,
@@ -1174,16 +1173,20 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
       // (Cropping/Angle carry from Main), compute the PM with the monotonic clamp
       // against the prior tier's PM, and use it for the ± and the score ceiling.
       const _priorPG = initialAssessment.photograder || null;
-      const _priorPM = (initialRG && typeof initialRG.confidenceRange === 'number') ? initialRG.confidenceRange : null;
+      // Prefer the honest key; fall back to the legacy one for records written
+      // before the rename.
+      const _priorPM = (initialRG && typeof initialRG.scoreCeilingPenalty === 'number') ? initialRG.scoreCeilingPenalty
+        : ((initialRG && typeof initialRG.confidenceRange === 'number') ? initialRG.confidenceRange : null);
       const _mergedPG = mergePhotograder(_priorPG, parsed.photograder);
-      const _deepPM = computePhotograderPM(_mergedPG, 'deep', !!initialAssessment.labelDetected, _priorPM);
+      const _deepPM = computeScoreCeilingPenalty(_mergedPG, 'deep', !!initialAssessment.labelDetected, _priorPM);
       _mergedPG.pm = _deepPM;
       _mergedPG.tier = 'deep';
       parsed.photograder = _mergedPG;
       if (parsed.roboGrade) {
         const _ceil = 100 - _deepPM;
         if (typeof parsed.roboGrade.score === 'number' && parsed.roboGrade.score > _ceil) parsed.roboGrade.score = _ceil;
-        parsed.roboGrade.confidenceRange = _deepPM;
+        parsed.roboGrade.scoreCeilingPenalty = _deepPM;
+      parsed.roboGrade.confidenceRange = _deepPM;   // legacy alias
       }
       parsed.deepAssessmentRan = true;
     } else {

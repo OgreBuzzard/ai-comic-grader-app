@@ -37,7 +37,7 @@
 import { ROBOGRADE_VERSION } from '../lib/version.js';
 import { PRIMARY_MODEL, ratesFor, costOf } from '../lib/model.js';
 import { anthropicWithRetry } from '../lib/anthropic_retry.js';
-import { computePhotograderPM, mergePhotograder, PHOTOGRADER_RUBRIC_CLOSEUP } from '../lib/photograder.js';
+import { computeScoreCeilingPenalty, mergePhotograder, PHOTOGRADER_RUBRIC_CLOSEUP } from '../lib/photograder.js';
 import { enforceCgcGrade } from '../lib/grade_definitions.js';
 import { getAdminDb as getCreditDb, verifyUidFromAuthHeader } from '../lib/batch_common.js';
 import { reserveCredit, refundCredit, insufficientCreditsPayload } from '../lib/credits.js';
@@ -407,7 +407,6 @@ GRADE — IMPORTANT:
 - In all cases the grade change should be small and explainable; default to keeping the existing grade.
 
 PAGE QUALITY: do NOT change it — return the initial page-quality call unchanged and set pageQualityChanged to "same".
-PRECISION MODIFIER: with 6 images covering the structure and page completeness, your view is near-complete. Set confidenceRange as low as you honestly can — 1 for a clean, fully-documented book; 0 only if certain. Widen only for specific, nameable image-quality problems (glare, blur, hidden angle).
 
 ${PHOTOGRADER_RUBRIC_CLOSEUP}
 
@@ -420,7 +419,6 @@ JSON shape:
   "gradeChanged": "<'same' | 'down' | 'up'>",
   "pageQuality": "<the initial page-quality designation, UNCHANGED — do not re-judge it>",
   "pageQualityChanged": "same",
-  "confidenceRange": <number, precision modifier, 0-6 — go as low as 1 or 0 when warranted>,
   "photograder": { "focus": "A", "lighting": "A", "flags": [ {"category":"lighting","image":"Interior","note":"shadow across gutter"} ] },
   "fullAssessmentRan": true,
   "aiAssessment": ${JSON.stringify(typeof priorConditionAssessment === 'string' ? priorConditionAssessment : '')},
@@ -660,10 +658,13 @@ Rules:
     // param, and `initialAssessment` IS the prior roboGrade (so its
     // confidenceRange is the prior tier's PM).
     const _fullPriorPG = photograder || null;
-    const _fullPriorPM = (initialAssessment && typeof initialAssessment === 'object' && typeof initialAssessment.confidenceRange === 'number')
-      ? initialAssessment.confidenceRange : null;
+    // Prefer the honest key; fall back to the legacy one for older records.
+    const _fullPriorPM = (initialAssessment && typeof initialAssessment === 'object')
+      ? ((typeof initialAssessment.scoreCeilingPenalty === 'number') ? initialAssessment.scoreCeilingPenalty
+        : ((typeof initialAssessment.confidenceRange === 'number') ? initialAssessment.confidenceRange : null))
+      : null;
     const _fullPG = mergePhotograder(_fullPriorPG, parsed.photograder);
-    const confidenceRange = computePhotograderPM(_fullPG, 'full', false, _fullPriorPM);
+    const confidenceRange = computeScoreCeilingPenalty(_fullPG, 'full', false, _fullPriorPM);
     _fullPG.pm = confidenceRange;
     _fullPG.tier = 'full';
     // S20 (#36): page quality is FROZEN at the initial Main call. Full no longer
@@ -698,7 +699,8 @@ Rules:
       gradeChanged,
       pageQuality,
       pageQualityChanged,
-      confidenceRange,
+      scoreCeilingPenalty: confidenceRange,
+      confidenceRange,   // legacy alias - see lib/photograder.js
       aiAssessment,
       fullAssessment,
       slotFindings,

@@ -98,7 +98,19 @@ const LABEL_FORMATS = {
     sheetLeftMargin: 0.1556,
     colGap: 0.1875,
     rowGap: 0,
-    pixelW: 1152, pixelH: 384
+    pixelW: 1152, pixelH: 384,
+    // S22 — SINGLE-LABEL CASE IS A DIFFERENT PIECE OF STOCK.
+    // Nobody makes a 4" x 1.333" thermal roll. The roll Matt bought is 4" x 2",
+    // so a single Case label prints on that while the Avery 5162 SHEET keeps
+    // its 1.333". Same design, 0.67" (192px) taller, and the extra height is
+    // the fold-over: it wraps the top of the case and covers the back.
+    // Kept as a variant of 'small-l' rather than a new size: the format list is
+    // what the size chips render from, and a second Case chip would make the
+    // user choose between two things that are the same label.
+    single: {
+      labelW: 4.0, labelH: 2.0,
+      pixelW: 1152, pixelH: 576
+    }
   },
   // Card format — Avery 94235 (2.625"x2" fold-over, 756x576px @288DPI). Folds
   // horizontally over the top edge of a card case: BOTTOM half = FRONT (score +
@@ -244,6 +256,16 @@ const LABEL_ROLL_LINKS = {
 // rectangular labels obscure too much horizontal cover real estate. The
 // square shape lets users place a label in the upper-right of a comic
 // without clipping into the title or Marvel/DC box.
+// The geometry a size renders at. Only Case differs between one label and a
+// sheet - see the `single` block on 'small-l' - so everything else falls
+// straight through to its own entry.
+function _fmtFor(size) {
+  const f = LABEL_FORMATS[size];
+  if (!f) return f;
+  if (_singleMode && f.single) return { ...f, ...f.single };
+  return f;
+}
+
 const OPTIONS_KEY = 'robograder.labelOptions.v1';
 
 // S14: 'small-l' is the mirrored/tightened Small variant (right edge at
@@ -1135,6 +1157,13 @@ function ensureStylesInjected() {
      title 118 + date line 48 + printing/Key Info 26 = 192, inside the 214 the
      column now has. The flex rule below still applies - it is what keeps the
      issue number when a title is too long even for two lines. */
+  /* S22: Case is EXEMPT from the squeeze. Matt: do not truncate the title -
+     truncate the printing/variant line instead. On Case the title is the
+     thing being read across a shelf of slabs, and the printing is the
+     detail. fitLabelText only adds .squeeze when there is no room for even
+     one line of the printing; on Case that line simply gets none. */
+  .rg-label-l .info.squeeze .ttl { display: block; max-height: none; }
+  .rg-label-l .info.squeeze .ttl > .ttl-name { overflow: visible; text-overflow: clip; white-space: normal; }
   .rg-label .info.squeeze .ttl {
     max-height: 59px;
     display: flex; align-items: baseline; flex-wrap: nowrap;
@@ -1365,6 +1394,33 @@ function ensureStylesInjected() {
      the top edge so all the inner-element absolute coords (score box at
      top:18, info at top:14, etc.) continue to render in the right place
      relative to the FACE, not the new full-label-with-wrap canvas. */
+  /* S22 — THE 4in x 2in SINGLE-LABEL VARIANT.
+     The stock is 0.67in (192px) taller than the Avery sheet, and all of the
+     extra height goes ABOVE the existing design: it folds over the top of the
+     case and covers the back. The face and the chip row keep their layout
+     exactly and move down by 192 together, so nothing inside them had to be
+     re-measured.
+     The back is deliberately blank for now - just the gradient, INVERTED, so
+     that when the label is folded the two gradients run the same way as the
+     eye travels down the front and up the back. */
+  .rg-label-l.tall { height: 576px; }
+  .rg-label-l.tall .fold-back {
+    display: block;
+    position: absolute;
+    left: 0; right: 0; top: 0; height: 192px;
+    background: linear-gradient(0deg, #c97a14 0%, #dd9430 38%, #e8b571 100%);
+  }
+  .rg-label-l .fold-back { display: none; }
+  .rg-label-l.tall .face { top: 282px; }
+  .rg-label-l.tall .wrap-strip { top: 192px; }
+  .rg-label-l.tall .fold-guide { display: none; }
+  /* The FOLD. A thick rule across the top of the chip row: this is the line
+     the label bends on, and it is the only thing on the label that is an
+     instruction rather than information, so it is heavier than the hairlines
+     everywhere else. */
+  .rg-label-l.tall .wrap-strip {
+    border-top: 7px solid #2a3a18;
+  }
   .rg-label-l .face {
     position: absolute;
     left: 0; right: 0;
@@ -1405,14 +1461,22 @@ function ensureStylesInjected() {
     white-space: nowrap;
     background: linear-gradient(180deg, #c97a14 0%, #dd9430 45%, #e8b571 100%);
   }
+  /* S22: the fold-strip chip was still the OLD dark score box - #1a2208 with a
+     chartreuse numeral - while the face's box below it had moved to the light
+     green with black numerals. Same label, same book, two different score
+     boxes. It is also the thermal argument again: a pale numeral knocked out
+     of a dark panel is physically unprintable on a one-ink printer, which is
+     why the face changed in the first place. */
   .rg-label-l .wrap-strip .ws-score {
     flex: 0 0 auto;
     width: 60px; height: 56px;
-    background: #1a2208;
+    background: #cfe8a8;
+    border: 2px solid #0f1a05;
+    box-sizing: border-box;
     border-radius: 10px;
     display: flex;
     align-items: center; justify-content: center;
-    color: #b8d820;
+    color: #0d0d0f;
     font-family: 'Noto Sans Display', sans-serif;
     font-weight: 900;
     font-size: 38px;
@@ -1454,8 +1518,12 @@ function ensureStylesInjected() {
   }
   /* Separator dot between wrap-strip fields. Pure CSS, no DOM needed.
      Renders only between adjacent .ws-iss/.ws-date/.ws-prt elements. */
+  /* S22: a comma between the publication date and the printing, not a bullet -
+     Matt's call. The issue number keeps its bullet: "#15 . Aug 1962, 2nd
+     Printing" separates the identity from the description, which a second
+     comma would not. */
+  .rg-label-l .wrap-strip .ws-date + .ws-prt::before { content: ', '; margin: 0 2px 0 -2px; }
   .rg-label-l .wrap-strip .ws-iss + .ws-date::before,
-  .rg-label-l .wrap-strip .ws-date + .ws-prt::before,
   .rg-label-l .wrap-strip .ws-iss + .ws-prt::before {
     content: '·';
     margin-right: 14px;
@@ -1466,8 +1534,8 @@ function ensureStylesInjected() {
   /* Square: fill the empty bottom-right with the Robograder mascot when no price tag. */
   /* S22: 316 -> 269 (-15%). Its head was clipping over the score box. The
      bottom/right anchor is unchanged, so it simply shrinks in place. */
-  .rg-label-square .robot-badge { display: block; position: absolute; right: 20px; bottom: 22px; width: 269px; }
-  .rg-label-square .robot-badge img { width: 100%; height: auto; display: block; }
+  /* S22: the robot-badge is gone - the shared .rg-art slot replaced it, and
+     it holds the price too. */
   .rg-label-l .robot-badge {
     position: absolute;
     left: 760px; top: 20px; width: 190px; height: 232px;
@@ -1506,7 +1574,9 @@ function ensureStylesInjected() {
   }
   .rg-label-large .robot-badge img { width: 288px; height: auto; display: block; opacity: 0.85; }
 
-  .rg-label-l .meta-id-lbl, .rg-label-l .meta-id-val { display: none; }
+  /* S22: the ID pair was hidden here because the separate .url line under the
+     QR carried it. That line is gone - it said the same thing twice, in a
+     second typeface - so the ID belongs in the meta row, as on Wide. */
   .url-id { font-weight: 800; }
   .rg-label-l .url-id { font-size: 24px; }
   .rg-label-l .score-box {
@@ -1539,6 +1609,19 @@ function ensureStylesInjected() {
     display: inline-flex;
     line-height: 1;
   }
+  /* S22 (carried from Wide): a three-glyph score - "100", or "9.5" under the
+     v3 display, which is ordinary - wrapped to two lines inside the flex item
+     and ran down over the version string. The .num-3 class was already being
+     emitted for every size; only Wide had rules for it.
+     nowrap stops the break; the smaller size is what then fits the one line.
+     Sized off the measured glyph width (a digit is 0.556em in Noto Sans
+     Display) against each box's own interior, not copied from Wide's. */
+  .rg-label-l .rg-num-wrap { white-space: nowrap; }
+  .rg-label-l .score-box.num-3 .rg-num { font-size: 132px; }
+  .rg-label-l .score-box.has-plus.num-3 .rg-num { font-size: 118px; }
+  .rg-label-square .rg-num-wrap { white-space: nowrap; }
+  .rg-label-square .score-box.num-3 .rg-num { font-size: 134px; }
+  .rg-label-square .score-box.has-plus.num-3 .rg-num { font-size: 120px; }
   .rg-label-l .rg-num {
     /* S15's Option A (150 -> 160 at scaleX(0.75)) is REVERTED here in S22.
        Matt, comparing all four variants side by side: the Case/Wide numeral is
@@ -1552,8 +1635,23 @@ function ensureStylesInjected() {
     transform: scaleX(0.625);
     transform-origin: center;
   }
+  /* S22: Case had no .rg-plus rule. The base one is scoped to .rg-label, which
+     does NOT match .rg-label-l, so the (+) was a static block inside the
+     centring flex column - it rendered under the number rather than beside it.
+     Same fix as Square: on the number's midline, to its right. */
+  .rg-label-l .rg-plus {
+    position: absolute;
+    top: 50%; right: 10px;
+    margin-top: 16px;   /* tracks .rg-num-wrap's own translateY */
+    transform: translateY(-50%);
+    font-size: 48px; font-weight: 700;
+    color: #0d0d0f; opacity: 0.85;
+    font-family: 'Saira', 'Barlow Condensed', sans-serif;
+    line-height: 1;
+    white-space: nowrap;
+  }
   .rg-label-l .rg-v {
-    font-size: 20px;
+    font-size: 24px;   /* S22: 20 -> 24, matching Wide */
     color: #3a5010;
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 500;
@@ -1564,7 +1662,12 @@ function ensureStylesInjected() {
      of the price pad / QR column on the right side. */
   .rg-label-l .info {
     position: absolute;
-    left: 290px; top: 8px; right: 400px;
+    /* S22: a bottom inset added. The meta band is pinned to the BOTTOM of this
+       column, and without a bottom the column was auto-height - so the band
+       landed in the middle of the text instead of under it. */
+    /* right:490 (not 400) so the column ends before the art/price slot at
+       x=686 rather than running under it. */
+    left: 290px; top: 8px; right: 490px; bottom: 10px;
     display: flex; flex-direction: column;
   }
   .rg-label-l.has-price .info { right: 400px; }
@@ -1572,44 +1675,87 @@ function ensureStylesInjected() {
     padding-bottom: 4px;
   }
   .rg-label-l .ttl {
+    /* S22: width:160% (= 1/0.625). Without it the title wrapped against the
+       full box and then rendered at 0.625 of it, throwing away 37% of the
+       column - the same fault Wide and Square both had. "The Amazing
+       Spider-Man" took three lines where it takes two. */
+    width: 160%;
     font-size: 58px; font-weight: 900;
     color: #0d0d0f; line-height: 1.0;
     font-family: 'Noto Sans Display', sans-serif;
     transform: scaleX(0.625);
     transform-origin: left center;
     white-space: normal;
-    max-height: 118px;
+    max-height: 116px;
+    padding-bottom: 8px;
     overflow: hidden;
   }
   .rg-label-l .iss {
+    width: 160%;   /* S22: see the .ttl note */
     font-size: 52px; font-weight: 600;
     color: #333; line-height: 1.0;
     font-family: 'Noto Sans Display', sans-serif;
     transform: scaleX(0.625);
     transform-origin: left center;
-    display: flex; gap: 24px; align-items: baseline;
+    display: block; white-space: nowrap;
   }
   .rg-label-l .prt {
-    font-size: 20px; color: #555544;
+    /* S22 (carried from Wide): this line carries printing, then My Notes, then
+       whatever of the Key Info fits. 20 -> 26, and line-height 1.3 so a line
+       box contains its own descenders - fitLabelText clamps to whole lines and
+       a tighter box would have it cutting through glyphs. */
+    font-size: 26px; color: #555544;
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 500;
+    margin-top: 6px;
+    line-height: 1.3;
+    white-space: normal; overflow: hidden;
   }
-  .rg-label-l .info-lower { padding-top: 5px; }
+  .rg-label-l .info-upper {
+    display: flex; flex-direction: column;
+    /* The face is 294 tall, the column runs top:8 to bottom:10 of it, and the
+       pinned meta band takes 48 at the floor. 220 leaves the band clear. */
+    max-height: 220px;
+  }
+  .rg-label-l .info-upper > .ttl,
+  .rg-label-l .info-upper > .iss { flex: 0 0 auto; }
+  .rg-label-l .info-upper > .prt { flex: 0 1 auto; min-height: 0; }
+  /* S22 (carried from Wide): ONE meta row at the bottom, GRADED and the date
+     on the left, ROBOGRADER.APP/ ID / XXXXXX on the right, with a rule above
+     them in the same colour as the words - the rule and those two labels are
+     one pre-printed unit and should read as one.
+     Pinned rather than flowed, which is what keeps them at the SAME y on every
+     label however the title wrapped. That is the whole reason this stock can
+     be pre-printed, and a flowed position could not do it.
+     The separate .url line is gone with it: "robograder.app/id/XXXXXX" under
+     the QR said the same thing twice, in a second typeface, and was the thing
+     that did not fit its column. */
+  .rg-label-l .info-lower {
+    position: absolute;
+    /* .info's right edge is x=662; -285 takes the band out to 947, which is
+       the QR column's left edge. Narrower than that and the ID pair wrapped
+       to a second line inside the band. */
+    left: 0; right: -285px; bottom: 0;
+    height: 48px;
+    box-sizing: border-box;
+    border-top: 1px solid #2a3a18;
+    padding-top: 8px;
+  }
   .rg-label-l .meta-grid {
-    display: grid;
-    grid-template-columns: max-content max-content;
-    column-gap: 16px; row-gap: 3px;
-    align-items: baseline;
+    display: flex; align-items: baseline; flex-wrap: nowrap;
   }
+  .rg-label-l .meta-grid .meta-val { margin-left: 10px; }
+  .rg-label-l .meta-grid .meta-id-lbl { margin-left: auto; }
+  .rg-label-l .url { display: none; }
   /* +2pt vs Small R's already-bumped 24 → 26, per user spec for Small L. */
   .rg-label-l .meta-lbl {
-    font-size: 26px; font-weight: 600;
+    font-size: 20px; font-weight: 600;   /* S22: both pairs on one row */
     color: #2a3a18;
     font-family: 'Barlow Condensed', sans-serif;
     text-align: right; letter-spacing: 0.5px;
   }
   .rg-label-l .meta-val {
-    font-size: 34px; font-weight: 800;
+    font-size: 24px; font-weight: 800;   /* S22: 34 -> 24 so both pairs fit one row */
     color: #0d0d0f;
     font-family: 'Noto Sans Mono', monospace;
   }
@@ -1621,7 +1767,8 @@ function ensureStylesInjected() {
        right edge / 3.5" from left). align-items:flex-end so the QR
        canvas's right edge lands exactly on x=1008, matching the URL
        beneath it (which is right-anchored to the same line). */
-    right: 36px; bottom: 48px;
+    /* S22: bottom edge 14px clear of the meta rule, matching Square. */
+    right: 36px; bottom: 76px;
     width: 160px;
     display: flex; flex-direction: column;
     align-items: flex-end; gap: 4px;
@@ -1738,6 +1885,21 @@ function ensureStylesInjected() {
   .rg-label-card .rgc-score.gold .rgc-v { color: #7a5a10; }
   /* Price pad — to the LEFT of the QR column. Width 200, right edge at
      x=854 (20px gap to the QR col at x=874) → left x=654. */
+  /* S22: the shared art/price slot. Bottom-aligned with the QR and with the
+     meta rule, so the figure stands on the line exactly as it does on Wide.
+     The white price box is gone - Matt cut it on every size. */
+  .rg-label-l .rg-art {
+    position: absolute;
+    right: 236px; bottom: 76px;
+    width: 230px; height: 184px;
+    display: flex; align-items: flex-end; justify-content: center;
+  }
+  .rg-label-l .rg-art.is-price { align-items: center; }
+  .rg-label-l .rg-art img {
+    max-width: 100%; max-height: 100%;
+    width: auto; height: auto;
+    object-fit: contain; display: block;
+  }
   .rg-label-l .price-pad { display: none; }
   .rg-label-l.has-price .price-pad {
     display: block;
@@ -1965,8 +2127,23 @@ function ensureStylesInjected() {
     transform: scaleX(0.625) translateY(14px);
     transform-origin: center;
   }
+  /* S22: the (+) was rendering UNDER the number because Square had no rule
+     for it and inherited a flow position. It belongs on the number's midline,
+     to its right, which is where the app's own score box draws it. */
+  .rg-label-square .rg-plus {
+    position: absolute;
+    top: 50%; right: 10px;
+    margin-top: 14px;   /* tracks .rg-num's own translateY so it sits on the
+                           NUMBER's midline, not the box's */
+    transform: translateY(-50%);
+    font-size: 54px; font-weight: 700;
+    color: #0d0d0f; opacity: 0.85;
+    font-family: 'Saira', 'Barlow Condensed', sans-serif;
+    line-height: 1;
+    white-space: nowrap;
+  }
   .rg-label-square .rg-v {
-    font-size: 18px;
+    font-size: 22px;   /* S22: 18 -> 22, matching Wide's bump proportionally */
     color: #3a5010;
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 500;
@@ -1974,75 +2151,137 @@ function ensureStylesInjected() {
     letter-spacing: 1px;
   }
   /* Info column — TOP-LEFT corner, beside the score box. */
+  /* S22 — SQUARE REBUILT FROM THE BOTTOM UP (576 x 576).
+       meta band   y 514..562   GRADED left, ROBOGRADER.APP/ ID / right
+       rule        y 514        the band's border-top
+       QR          y 340..500   bottom-right, 14px of air under it to the rule
+       art/price   y 320..500   bottom-left, bottom-aligned with the QR
+       score box   y 14..270    unchanged, top-right
+       info        y 14..306    top-left, stopping above the art slot
+     The QR sits directly above the grade ID, which is the pairing Matt asked
+     for: scan the code, or read the ID under it. */
   .rg-label-square .info {
     position: absolute;
-    left: 18px; top: 14px; right: 292px;
+    left: 18px; top: 14px; right: 292px; bottom: 270px;
     display: flex; flex-direction: column;
   }
   .rg-label-square .info-upper {
-    padding-bottom: 8px;
-    border-bottom: 1px solid #b0b89a;
+    padding-bottom: 0;
+    border-bottom: none;   /* the only rule on this label is the meta band's */
   }
   .rg-label-square .ttl {
-    /* S22: 34 -> 46. Sized for legibility first; there is ample vertical room
-       below, so a long title wrapping to 2-3 lines is fine and expected. */
-    font-size: 46px; font-weight: 900;
-    color: #0d0d0f; line-height: 1.05;
+    /* S22: 46 -> 62, matching Wide. Square is a 2in label read at the same
+       distance as a 4x1, so the title has no reason to be smaller on it. */
+    width: 160%;   /* S22: see the note above - 1/0.625, so the line box is
+                      the column's REAL width and the title stops wrapping
+                      three words early. */
+    font-size: 62px; font-weight: 900;
+    color: #0d0d0f; line-height: 1.0;
     font-family: 'Noto Sans Display', sans-serif;
     transform: scaleX(0.625);
     transform-origin: left center;
     word-wrap: break-word;
+    padding-bottom: 8px;   /* descenders survive any clamp */
   }
   .rg-label-square .iss {
-    font-size: 32px; font-weight: 600;   /* S22: was 24 */
+    width: 160%;   /* S22: see the .ttl note */
+    font-size: 48px; font-weight: 600;   /* S22: 32 -> 48, matching Wide */
     color: #333;
     font-family: 'Noto Sans Display', sans-serif;
     transform: scaleX(0.625);
     transform-origin: left center;
+    white-space: nowrap;
     display: flex; gap: 14px; align-items: baseline;
     margin-top: 4px;
   }
   .rg-label-square .prt {
-    font-size: 25px; color: #555544;   /* S22: was 19 */
+    font-size: 32px; color: #555544;   /* S22: 25 -> 32, matching Wide */
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 500;
-    margin-top: 3px;
+    margin-top: 6px;
+    line-height: 1.3;   /* S22: see the Case note - whole-line clamping */
+    white-space: normal; overflow: hidden;
   }
+  .rg-label-square .info-upper {
+    display: flex; flex-direction: column;
+    /* The column is y 14..306; the printing / My Notes / Key Info line wraps
+       into whatever the title and date line leave, and fitLabelText clamps it
+       to whole lines with a marked truncation. */
+    max-height: 292px;
+  }
+  .rg-label-square .info-upper > .ttl,
+  .rg-label-square .info-upper > .iss { flex: 0 0 auto; }
+  .rg-label-square .info-upper > .prt { flex: 0 1 auto; min-height: 0; }
   .rg-label-square .info-lower { padding-top: 10px; }
   /* S22: the ID row is BACK on Square. It was hidden on the argument that the ID
      is already under the QR, but Square's .url is 150px wide at 13px mono and
      "robograder.app/id/XXXXXX" does not fit in it, so in practice the grade ID
      was not readable anywhere on the label. The meta row shows it plainly. */
-  .rg-label-square .meta-grid {
-    display: grid;
-    grid-template-columns: max-content max-content;
-    column-gap: 14px; row-gap: 5px;
-    align-items: baseline;
+  /* S22 (carried from Wide): see the Case note above. */
+  /* The band is pinned to the LABEL, not to the info column - the column now
+     stops at y=306 and the band belongs at the floor, full width under both
+     the art slot and the QR. */
+  .rg-label-square .info-lower {
+    position: absolute;
+    /* .info is the containing block (left:18 right:292 bottom:270), so the
+       band reaches the LABEL's floor and right margin through negative insets:
+       .info's right edge is x=284 and the band ends at 558, hence -274; .info's
+       bottom is y=306 and the band's bottom is 562, hence -256. Negative
+       insets rather than a second element, so there is one thing to move. */
+    left: 0; right: -274px; bottom: -256px;
+    height: 48px;
+    box-sizing: border-box;
+    border-top: 1px solid #2a3a18;
+    padding-top: 8px;
   }
+  .rg-label-square .meta-grid {
+    display: flex; align-items: baseline; flex-wrap: nowrap;
+  }
+  .rg-label-square .meta-grid .meta-val { margin-left: 8px; }
+  .rg-label-square .meta-grid .meta-id-lbl { margin-left: auto; }
+  .rg-label-square .url { display: none; }
   .rg-label-square .meta-lbl {
-    font-size: 27px; font-weight: 600;   /* S22: GRADED label, was 22 */
-    color: #7a8a5a;
+    font-size: 17px; font-weight: 600;   /* S22: one row, with air between the
+                                            two groups rather than them meeting
+                                            in the middle */
+    color: #2a3a18;                      /* matches the rule, as on Wide */
     font-family: 'Barlow Condensed', sans-serif;
     text-align: right; letter-spacing: 0.5px;
   }
   .rg-label-square .meta-val {
-    font-size: 28px; font-weight: 800;   /* S22: grade date, was 22 */
+    font-size: 19px; font-weight: 800;   /* S22: one row now */
     color: #0d0d0f;
     font-family: 'Noto Sans Mono', monospace;
   }
   /* QR cluster — BOTTOM-LEFT corner. SCAN TO VERIFY above (flex order:-1),
      QR, then URL beneath. */
+  /* BOTTOM-RIGHT, directly above the grade ID in the band below it. Its
+     bottom edge is 14px clear of the rule, which is the "some space" Matt
+     asked for - flush would read as the code sitting ON the line. */
   .rg-label-square .qr-col {
     position: absolute;
-    left: 18px; bottom: 34px;
-    width: 150px;
-    display: flex; flex-direction: column;
-    align-items: center; gap: 2px;
+    right: 18px; bottom: 76px;
+    width: 160px; height: 160px;
+    display: flex; align-items: center; justify-content: center;
   }
   .rg-label-square .qr-col .qrc canvas,
   .rg-label-square .qr-col .qrc img {
-    width: 132px !important;
-    height: 132px !important;
+    width: 160px !important;
+    height: 160px !important;
+  }
+  /* Art / price slot: bottom-LEFT, bottom-aligned with the QR. It is the
+     space the QR vacated, so nothing new had to be found for it. */
+  .rg-label-square .rg-art {
+    position: absolute;
+    left: 18px; bottom: 76px;
+    width: 230px; height: 180px;
+    display: flex; align-items: flex-end; justify-content: center;
+  }
+  .rg-label-square .rg-art.is-price { align-items: center; }
+  .rg-label-square .rg-art img {
+    max-width: 100%; max-height: 100%;
+    width: auto; height: auto;
+    object-fit: contain; display: block;
   }
   .rg-label-square .verify {
     font-size: 14px; color: #7a8a5a;
@@ -2459,7 +2698,7 @@ function renderModal(modal, comic, allItems) {
   // S22: a card item always uses the Card format; a comic can't use the Card
   // label (would render blank card fields) -> fall back to Comic.
   opts.size = (comic && comic.type === 'card') ? 'card' : (opts.size === 'card' ? 'small-l' : opts.size);
-  const fmt = LABEL_FORMATS[opts.size];
+  const fmt = _fmtFor(opts.size);
 
   // Queue display tracks the active format's per-sheet count, NOT the
   // global QUEUE_LIMIT. Per Matt's spec: "Queue: 1 / 7" when Large is
@@ -2524,7 +2763,7 @@ function renderModal(modal, comic, allItems) {
   // is nowhere else for the number to come from.
   // The Wide note above remains true about the PAD - a 220px white box cannot
   // fit at 4x1 beside the QR. A price needs no box, so Wide shows it in the
-  // figure's 160px column instead. See _wideSlot in renderLabelMarkup.
+  // figure's 160px column instead. See _artSlot in renderLabelMarkup.
   const _isWideSize = opts.size === 'small';
   const showPriceToggle = true;
   // The secondary "include asking price" toggle is gone: it chose between a
@@ -2556,12 +2795,14 @@ function renderModal(modal, comic, allItems) {
   // buttons (was above the preview in v1). Restyled as a proper button
   // with no SEO-ish "Need labels?" preamble or arrow emoji. Updates when
   // the user switches sizes since renderModal re-runs on toggle.
-  // Roll stock when the output is going on a roll - which is what THERMAL
-  // means - or when printing a single label, since nobody feeds a 20-up Avery
-  // sheet through a printer for one book. Sheet stock otherwise. An entry with
-  // no ASIN falls through to the sheet link rather than rendering a dead
-  // button.
-  const _roll = (opts.mono || _singleMode) ? LABEL_ROLL_LINKS[opts.size] : null;
+  // Roll stock when printing a SINGLE label, sheet stock for a sheet. Keyed on
+  // single-label mode and not on thermal: a roll printer that prints in colour
+  // is still a roll printer, and sending that user to an Avery sheet because
+  // they did not tick "thermal" would be wrong. Thermal implies a roll; it is
+  // not the only thing that does.
+  // An entry with no ASIN falls through to the sheet link rather than
+  // rendering a dead button.
+  const _roll = _singleMode ? LABEL_ROLL_LINKS[opts.size] : null;
   const buyLink = (_roll && _roll.asin)
     ? { label: _roll.label, url: amazonProductUrl(_roll.asin), vendor: _roll.vendor }
     : LABEL_BUY_LINKS[opts.size];
@@ -2972,11 +3213,11 @@ async function generatePDF(comics, modal) {
   // in sheet mode, so the format lookup is duplicated here - cheap, and it
   // keeps the sheet path's logic untouched.
   const _singleFmt = _singleMode
-    ? LABEL_FORMATS[(() => {
+    ? _fmtFor((() => {
         const o = readOptions();
         const f = comics && comics[0];
         return (f && f.type === 'card') ? 'card' : (o.size === 'card' ? 'small-l' : o.size);
-      })()]
+      })())
     : null;
   const pdf = _singleFmt
     ? new jsPDF({
@@ -3003,7 +3244,7 @@ async function generatePDF(comics, modal) {
   // queue falls back to Comic.
   const _first = comics && comics[0];
   opts.size = (_first && _first.type === 'card') ? 'card' : (opts.size === 'card' ? 'small-l' : opts.size);
-  const fmt = LABEL_FORMATS[opts.size];
+  const fmt = _fmtFor(opts.size);
 
   // S18: Small-L only — shift the LEFT column right by this much so its grade
   // box + top-strip content clear the printer's non-printable left margin
@@ -3572,54 +3813,89 @@ function renderLabelMarkup(comic, opts) {
   // printing still spends the row.
   const prtLine = [printing, notes, keyInfo].filter(Boolean).join(', ');
 
-  // ── THE WIDE SLOT: the figure, or a price in its place ────────────────────
-  // One 160px column either way. Which art depends on the render, not the
-  // printer setting in general: mono is a one-ink render on white stock, so it
-  // takes the black line version; a colour label takes the painted one. Both
-  // files are 500x600, so the placement is byte-for-byte the same.
-  const _artSrc = opts.mono ? 'assets/Robograder_Line.png' : 'assets/Robograder_Line_Colored.png';
-  // S22: THE PRICE COMES FROM THE RECORD, NOT FROM A FIELD ON THIS SCREEN.
-  // The typed field is gone. It was a second place to put a price when the
-  // book already has an Asking Price on it, which meant two numbers that could
-  // disagree and no rule for which one was true. The label shows the record's
-  // Asking Price and nothing else, so the tag and the listing cannot disagree.
+  // ── NUMERAL SIZE: MEASURED, NOT COUNTED ─────────────────────────────────
+  // This used to be a .num-3 class - "three or more characters, use the small
+  // size" - with a hand-picked px value per size. Two things were wrong with
+  // it. Character count is not width: "10" is two characters but two FULL
+  // digits, wider than the three characters of "9.5" (a period is about a
+  // third of a digit), so "10" took the big size and ran into the (+). And
+  // every size's big value was picked once and never re-measured after the
+  // layouts moved underneath them.
   //
-  // Three states, and the empty one is deliberate:
-  //   toggle off                  -> the figure
-  //   toggle on, a price is set   -> $N (including $0 - a book priced at zero
-  //                                  is a giveaway, which is a real thing to
-  //                                  print, and is not the same as unpriced)
-  //   toggle on, no price set     -> EMPTY. No figure, no placeholder: 160 x
-  //                                  184 of clear label to write on, which is
-  //                                  what happens at a table when the price is
-  //                                  decided in front of the customer.
-  const _wideAskingRaw = comic.askingPrice;
-  const _wideAsking = (_wideAskingRaw == null || _wideAskingRaw === '')
+  // The size now comes from the string's own em width against the box's real
+  // interior, which is the same method the price fit uses. A digit is 0.556em
+  // in Noto Sans Display and a period 0.28em, measured off rendered glyphs.
+  //
+  //   interior  the usable width inside the box's border
+  //   sx        the horizontal compression that size draws at
+  //   max       the VERTICAL ceiling - what the stars above and the version
+  //             below allow, measured per size by rasterising the box
+  //   plusBudget  the RENDERED width the numeral may occupy when a (+) is
+  //               showing. Not "interior minus the (+)": the numeral is CENTRED
+  //               and the (+) is pinned right, so what binds is how far the ink
+  //               may reach from the centre before it meets the (+). Measured
+  //               per size by rasterising the box with a three-glyph score.
+  const _NUMFIT = {
+    'small':   { interior: 250, sx: 0.78,  max: 212, plusBudget: 128 },
+    'small-l': { interior: 246, sx: 0.625, max: 150, plusBudget: 112 },
+    'square':  { interior: 250, sx: 0.625, max: 172, plusBudget: 102 },
+  };
+  const _nf = _NUMFIT[opts.size];
+  let _numStyle = '';
+  if (_nf) {
+    const _numEm = String(score).split('').reduce((a, c) => a + (c === '.' ? 0.28 : 0.556), 0);
+    const _avail = _labelShowPlus ? _nf.plusBudget : _nf.interior;
+    // scaleX only shrinks what is DRAWN, so the unscaled text may be wider than
+    // the box by exactly 1/sx and still fit once drawn.
+    const _widthCap = Math.floor(_avail / _nf.sx / _numEm);
+    _numStyle = 'font-size:' + Math.max(40, Math.min(_nf.max, _widthCap)) + 'px';
+  }
+
+  // ── THE SLOT: the figure, or a price in its place ────────────────────────
+  // Every comic size has one: a fixed-width column that holds the Robograder
+  // figure, or the book's Asking Price when the price toggle is on. It
+  // replaces BOTH of the things that used to live there - the old white
+  // price-pad (a box around a number, which Matt cut) and the per-size
+  // robot-badge - so there is one rule for all of them.
+  //
+  // Which art depends on the RENDER, not the printer setting in general: mono
+  // is a one-ink render on white stock, so it takes the black line version; a
+  // colour label takes the painted one. Both files are 500x600, so the fit is
+  // identical.
+  const _artSrc = opts.mono ? 'assets/Robograder_Line.png' : 'assets/Robograder_Line_Colored.png';
+  // Slot width per size, in label pixels. The price is fitted to THIS, so a
+  // size with a wider slot gets a bigger price rather than the same one
+  // floating in space.
+  const _SLOT_W = { 'small': 160, 'square': 230, 'small-l': 230 };
+  const _slotW = _SLOT_W[opts.size] || 160;
+  const _askingRaw = comic.askingPrice;
+  const _asking = (_askingRaw == null || _askingRaw === '')
     ? null
-    : Number(String(_wideAskingRaw).replace(/[^0-9.\-]/g, ''));
-  const _widePriceOn = isWide && !!opts.priceTag;
-  const _wideSlot = (() => {
-    if (!_widePriceOn) return '<div class="rg-art"><img src="' + _artSrc + '" alt=""></div>';
-    if (_wideAsking == null || !Number.isFinite(_wideAsking) || _wideAsking < 0) {
+    : Number(String(_askingRaw).replace(/[^0-9.\-]/g, ''));
+  const _priceOn = !!opts.priceTag;
+  const _artSlot = (() => {
+    // Toggle on with no price set: EMPTY. No figure, no placeholder - clear
+    // label to write on, which is what happens at a table when the price is
+    // decided in front of the customer.
+    if (_priceOn && (_asking == null || !Number.isFinite(_asking) || _asking < 0)) {
       return '<div class="rg-art is-price"></div>';
     }
-    const n = _wideAsking;
+    if (!_priceOn) return '<div class="rg-art"><img src="' + _artSrc + '" alt=""></div>';
+    const n = _asking;
     // Whole numbers lose the decimals; 12.5 becomes 12.50, because a price
     // reading "$12.5" looks like a typo.
     const txt = '$' + (n % 1 === 0 ? String(Math.round(n)) : n.toFixed(2));
-    // THE FIT. Every label has to put this string in the same 160px, so the
-    // size comes from the string's own width rather than its length: a comma
-    // and a period are a third of a digit, and sizing on character COUNT makes
-    // "$1,250" the same size as "$12345", which it is visually not.
-    // The em widths are Noto Sans Display's, measured off the rendered glyphs
-    // (a digit is 0.556em - the same constant the three-glyph score size uses).
+    // THE FIT. Every price has to end up the same width, so the size comes from
+    // the string's own width rather than its length: a comma and a period are a
+    // third of a digit, and sizing on character COUNT makes "$1,250" the same
+    // size as "$12345", which it visually is not. Em widths are Noto Sans
+    // Display's, measured off rendered glyphs (a digit is 0.556em - the same
+    // constant the three-glyph score size uses).
     const EM = { '.': 0.28, ',': 0.26, '$': 0.60 };
     const em = txt.split('').reduce((a, c) => a + (EM[c] != null ? EM[c] : 0.556), 0);
-    const SLOT = 160;   // .rg-art's width
-    // 132 is the ceiling, not a fit target: a short price like "$10" would
-    // otherwise come out taller than the grade number beside it, and the grade
-    // is the thing this label is for.
-    const fs = Math.max(16, Math.min(132, Math.floor(SLOT / em)));
+    // The ceiling is proportional to the slot, not absolute: it stops a short
+    // price coming out taller than the grade beside it.
+    const fs = Math.max(16, Math.min(Math.round(_slotW * 0.83), Math.floor(_slotW / em)));
     return '<div class="rg-art is-price"><div class="rg-price" style="font-size:' + fs + 'px">' + esc(txt) + '</div></div>';
   })();
   // S22: the line under the title is "<pub date>, <publisher>". Either half can
@@ -3639,7 +3915,8 @@ function renderLabelMarkup(comic, opts) {
                   : isSquare ? 'rg-label-square'
                   : isSmallL ? 'rg-label-l'
                   : 'rg-label';
-  const wrapClass = baseClass + (showPrice ? ' has-price' : '') + (opts.mono ? ' mono' : '');
+  const wrapClass = baseClass + (showPrice ? ' has-price' : '') + (opts.mono ? ' mono' : '')
+    + ((isSmallL && _singleMode) ? ' tall' : '');
 
   // S15 May 28: Small L wrap-strip — the 0.25" strip at the top of the
   // 4×1.333 label that folds 90° over the top of the comic case. Single
@@ -3656,7 +3933,7 @@ function renderLabelMarkup(comic, opts) {
         ${issue ? `<div class="ws-iss">${issue}</div>` : ''}
         ${issueDate ? `<div class="ws-date">${issueDate}</div>` : ''}
         ${printing ? `<div class="ws-prt">${printing}</div>` : ''}
-        <div class="ws-id">GRADE ID: <b>${gradeId}</b></div>
+        <div class="ws-id">ID: <b>${gradeId}</b></div>
       </div>
       <div class="fold-guide"></div>
   ` : '';
@@ -3665,17 +3942,20 @@ function renderLabelMarkup(comic, opts) {
   // render correctly within the bottom 288px of the 384px canvas. For all
   // other sizes the face wrapper is omitted and the children sit directly
   // in the label canvas (unchanged behavior).
+  // S22: the extra 0.67in of the 4x2 single-label stock. Blank by design.
+  const foldBack = (isSmallL && _singleMode) ? '<div class="fold-back"></div>' : '';
   const faceOpen  = isSmallL ? '<div class="face">' : '';
   const faceClose = isSmallL ? '</div>'             : '';
 
   return `
     <div class="${wrapClass}" data-grade-id="${gradeId}">
+      ${foldBack}
       ${smallLWrap}
       ${faceOpen}
-      <div class="score-box${_labelShowPlus ? ' has-plus' : ''}${String(score).length >= 3 ? ' num-3' : ''}"${_labelRestored ? ` style="background:${_labelBgColor}${_labelBorderColor ? `;border-color:${_labelBorderColor}` : ''}"` : ''}>
+      <div class="score-box${_labelShowPlus ? ' has-plus' : ''}"${_labelRestored ? ` style="background:${_labelBgColor}${_labelBorderColor ? `;border-color:${_labelBorderColor}` : ''}"` : ''}>
         <div class="rg-word">ROBOGRADE</div>
         ${_labelTierStars}
-        <div class="rg-num-wrap"><span class="rg-num"${_labelRestored ? ` style="color:${_labelScoreColor}"` : ''}>${score}</span>${_labelCheckHtml}</div>
+        <div class="rg-num-wrap"><span class="rg-num" style="${_numStyle}${_labelRestored ? `;color:${_labelScoreColor}` : ''}">${score}</span>${_labelCheckHtml}</div>
         ${_labelShowPlus ? `<div class="rg-plus"${_labelRestored ? ` style="color:${_labelScoreColor}"` : ''}>(+)</div>` : ''}
         <div class="rg-v">${versionStr}</div>
       </div>
@@ -3688,27 +3968,11 @@ function renderLabelMarkup(comic, opts) {
         <div class="info-lower">
           <div class="meta-grid">
             <span class="meta-lbl">GRADED</span><span class="meta-val">${gradeDate}</span>
-            <span class="meta-lbl meta-id-lbl">${isWide ? 'ROBOGRADER.APP/ ID /' : 'ID'}</span><span class="meta-val meta-id-val">${gradeId}</span>
+            <span class="meta-lbl meta-id-lbl">ROBOGRADER.APP/ ID /</span><span class="meta-val meta-id-val">${gradeId}</span>
           </div>
         </div>
       </div>
-      ${showPrice ? (() => {
-        // Price pad rendering. Two states:
-        //   includePrice=false → faint "Price" placeholder for handwriting
-        //   includePrice=true  → bold dollar value of comic.askingPrice
-        // The label modal logic gates includePrice on (priceTag && askingPrice
-        // > 0), so by the time we get here we trust the inputs.
-        if (includePrice && comic.askingPrice != null) {
-          const priceNum = Number(comic.askingPrice);
-          // Format with $ and 2 decimals if cents exist, no decimals if whole
-          const priceStr = priceNum % 1 === 0
-            ? `$${Math.round(priceNum)}`
-            : `$${priceNum.toFixed(2)}`;
-          return `<div class="price-pad"><div class="price-value">${priceStr}</div></div>`;
-        }
-        return `<div class="price-pad"><div class="price-placeholder">Price</div></div>`;
-      })() : (isWide ? _wideSlot
-        : '<div class="robot-badge"><img src="assets/Robograder_Charging.png" alt=""></div>')}
+      ${_artSlot}
       <div class="qr-col">
         ${comic.publicListing
           ? `<div class="qrc" data-qr-id="${gradeId}"></div>`
@@ -3777,7 +4041,11 @@ function ensureQRCodeLoaded() {
 // metrics and would snap to the wrong count. Both callers do that.
 function fitLabelText(container) {
   if (!container) return;
-  container.querySelectorAll('.rg-label .info').forEach(info => {
+  // Every variant, not just Wide. The selector was '.rg-label .info', which is
+  // the Wide class alone - so Case and Square carried the same wrapping
+  // printing/notes/Key Info line with none of the clamping, and a long one
+  // simply ran past whatever was under it.
+  container.querySelectorAll('.rg-label .info, .rg-label-l .info, .rg-label-square .info, .rg-label-large .info').forEach(info => {
     const prt = info.querySelector('.prt');
     if (!prt) return;
     prt.style.maxHeight = '';

@@ -33,7 +33,7 @@ import { defectIndexPromptBlock } from '../lib/defect_index.js';
 import { buildMainPrefix } from '../lib/main_prompt.js';
 import * as _nodeCrypto from 'crypto';   // 2026-10-27: prefix sha on the timing record
 import { enforceCgcGrade } from '../lib/grade_definitions.js';
-import { computePhotograderPM, mergePhotograder, PHOTOGRADER_RUBRIC_MAIN } from '../lib/photograder.js';
+import { computeScoreCeilingPenalty, mergePhotograder, PHOTOGRADER_RUBRIC_MAIN } from '../lib/photograder.js';
 import { reserveCredit, refundCredit, insufficientCreditsPayload } from '../lib/credits.js';
 
 // ── A/B TEST TOGGLE (TEMPORARY) ──────────────────────────────────────
@@ -952,9 +952,7 @@ RULES FOR HIGH-GRADE ASSESSMENT:
 
 7. PRESUMPTION OF CLEAN: The default assumption for each corner macro is "this corner is clean and confirms a high grade." Only conclude a corner is damaged if you can specifically identify and name the defect. Do not invent defects.
 
-8. CONFIDENCE: For high-grade assessments, set confidenceRange between 3 and 6. Default to 3 (corner macros provide tight evidence). Widen toward 6 only if specific image-quality issues impair your read: heavy glare obscuring a corner, blurred macro, raking light too oblique to evaluate stress lines. Do not widen for "general caution" — only for image-quality issues you can name. Never exceed 6 on a high-grade run.
-
-9. FREQUENCY REMINDER: 40% of CGC-graded books receive a 9.8. This is the single most common outcome. If the book looks pristine in all 8 photos, 9.8 is the likely answer, not a conservative 9.4.
+8. FREQUENCY REMINDER: 40% of CGC-graded books receive a 9.8. This is the single most common outcome. If the book looks pristine in all 8 photos, 9.8 is the likely answer, not a conservative 9.4.
 
 ` : '';
 
@@ -1001,8 +999,7 @@ GATE CHECK: this exact image set already passed the gate on the earlier assessme
 ` : '';
 
   const systemPrompt = buildMainPrefix(_ki) + `§§CACHE_SPLIT§§${knownIdentityBlock}${gradedBlock}
-Confidence base ±${baseConf} (raise for glare/poor focus/no raking-light photo/staples not visible/restoration suspected).
-SCORE CEILING: with ±${baseConf}, max score is ${100 - baseConf}; do not exceed it.${highGrade ? ' Deep Assessment with corner macros, so ±3 and ceiling 97.' : ' A 4-photo assessment cannot see the fine detail distinguishing a near-perfect copy; a Deep Assessment is required above ' + (100 - baseConf) + '. If it looks pristine, score the ' + (100 - baseConf) + ' ceiling and let ±' + baseConf + ' express the upside.'}
+SCORE CEILING: max score is ${100 - baseConf}; do not exceed it.${highGrade ? ' Deep Assessment with corner macros, so ±3 and ceiling 97.' : ' A 4-photo assessment cannot see the fine detail distinguishing a near-perfect copy; a Deep Assessment is required above ' + (100 - baseConf) + '. If it looks pristine, score the ' + (100 - baseConf) + ' ceiling and let ±' + baseConf + ' express the upside.'}
 ${gradeCeiling ? `\nGRADE CEILING — predicted CGC grade must not exceed ${gradeCeiling}; if it appears to deserve higher, assign ${gradeCeiling} and note a higher tier may revise upward.` : (labelDetected ? '\nGRADE CEILING — for slabbed books, the label grade is the ceiling for your predicted grade.' : '')}
 
 ${PHOTOGRADER_RUBRIC_MAIN}
@@ -1050,7 +1047,6 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
   "roboGrade": {
     "version": "${ROBOGRADE_VERSION}",
     "score": 0,
-    "confidenceRange": ${baseConf},
     "frontScore": 0,
     "backScore": 0,
     "spineScore": 0,
@@ -1991,7 +1987,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     // ceiling down (we can't confirm a high grade when photos hide detail). Main
     // is computed fresh (no prior tier to clamp against).
     parsed.photograder = mergePhotograder(null, parsed.photograder);
-    const _pm = computePhotograderPM(parsed.photograder, 'main', !!labelDetected, null);
+    const _pm = computeScoreCeilingPenalty(parsed.photograder, 'main', !!labelDetected, null);
     parsed.photograder.pm = _pm;
     parsed.photograder.tier = 'main';
     if (parsed.roboGrade && typeof parsed.roboGrade.score === 'number') {
@@ -2012,14 +2008,19 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     }
 
     if (parsed.roboGrade) {
-      // S21: the ± is the Photograder PM (overrides whatever the model wrote).
-      // Since the ceiling is 100 − PM, the score fits and the headroom clamp is
-      // a no-op, but keep it as a guard against display implying a >100 score.
+      // S22: this is the PHOTO-QUALITY SCORE CEILING PENALTY, not a precision
+      // estimate - the +/- it used to be published as is gone (see
+      // lib/photograder.js). It is written under BOTH names: scoreCeilingPenalty
+      // is the honest one, confidenceRange is kept because every stored record
+      // carries it and because assess_deep/assess_full read the prior tier's
+      // value for the monotonic clamp. The old key retires when no live record
+      // depends on it.
       let conf = _pm;
       const score = Math.round(parsed.roboGrade.score || 0);
       const headroom = Math.max(0, 100 - score);
       if (conf > headroom) conf = headroom;
-      parsed.roboGrade.confidenceRange = conf;
+      parsed.roboGrade.scoreCeilingPenalty = conf;
+      parsed.roboGrade.confidenceRange = conf;   // legacy alias - see above
     }
 
     // ── S15 phase timing finalize ────────────────────────────────────────

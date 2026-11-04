@@ -21,7 +21,7 @@
 // Inputs:
 //   rg    — the comic.roboGrade object: { score, frontScore, backScore,
 //           spineScore, interiorScore, defects[], stapleCondition,
-//           restorationFlags[], confidenceRange, version }
+//           restorationFlags[], version }
 //   comic — the full comic record (for highGradeUnlocked, roboGradeDate,
 //           roboGradeId)
 //
@@ -87,47 +87,14 @@
     const _sbStar = _perfect10 ? '#5a3f06' : CHARTREUSE;
     const _sbVer = _perfect10 ? '#7a5a10' : '#5a7028';
 
-    // Precision suffix logic (mirrors print-label.js exactly).
-    // Score 100      → no suffix (perfect, no uncertainty)
-    // High-grade run → ±N (narrower confidence range, default ±3, capped 6)
-    // Score ≥90, no high-grade → no suffix ('+' teaser removed S18)
-    // Score <90, no high-grade → ±N (standard range, default ±8)
-    //
-    // S12 May 6: client-side clamping applied here too, defending against
-    // legacy records saved before the server-side clamp shipped:
-    //   - Mode cap (high-grade ≤6, standard ≤16) prevents nonsense ranges.
-    //   - Score+conf cap (score + N ≤ 100) prevents implied upper bounds
-    //     above 100 (e.g. score 94 ± 8 → range 102, capped to 94 ± 6 → 100).
-    const highGradeRun = !!(comic && comic.highGradeUnlocked);
-    let precision = '';
-    if (_v3) {
-      precision = _v3.pmLabel || '';
-    } else if (_v2on) {
-      const _slab = !!(comic && comic.labelDetected);
-      const _dp = !!(comic && (comic.highGradeTier || comic.deepAssessmentRan));
-      const _fl = !!(comic && (comic.fullAssessmentRan || comic.fullUnlocked));
-      const _base = _fl ? 0 : _dp ? 1 : _slab ? 4 : 2;
-      const _pg = comic && comic.photograder;
-      const _pen = _pg ? ['focus','lighting','cropping','angle'].reduce((a,k)=>{ const v=String(_pg[k]||'').trim().toUpperCase(); return a+(v==='B'?1:v==='C'?2:0); },0) : 0;
-      const _nt = _base + _pen;
-      precision = _nt > 0 ? '↕' + _nt : '';
-    } else if (scoreRounded < 100) {
-      if (highGradeRun) {
-        let n = rg.confidenceRange != null ? Math.round(rg.confidenceRange) : 3;
-        n = Math.max(0, Math.min(6, n));
-        const headroom = Math.max(0, 100 - scoreRounded);
-        if (n > headroom) n = headroom;
-        precision = n > 0 ? `±${n}` : '';
-      } else if (scoreRounded >= 90) {
-        precision = '';
-      } else {
-        let n = rg.confidenceRange != null ? Math.round(rg.confidenceRange) : 8;
-        n = Math.max(0, Math.min(16, n));
-        const headroom = Math.max(0, 100 - scoreRounded);
-        if (n > headroom) n = headroom;
-        precision = n > 0 ? `±${n}` : '';
-      }
-    }
+    // ── PM (PRECISION MODIFIER) REMOVED — S22 ─────────────────────────────
+    // ~35 lines stood here computing a +/- three different ways: the v3
+    // pmLabel, a v2 "severity notches" variant, and a legacy four-tier rule
+    // off rg.confidenceRange with mode caps and a headroom clamp. All three
+    // are gone. Full text in shared/_ARCHIVE/PM_REMOVED_S22.md.
+    // `precision` stays declared and empty so the render below, which is
+    // shared with the card panel, needs no branch for its absence.
+    const precision = '';
 
     // Severity color — tuned for the printout paper bands (pale green / cream
     // backgrounds), deeper and more saturated than dark-panel equivalents.
@@ -300,7 +267,7 @@
       <div style="font-size:12px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:10px;text-align:center">ROBOGRADE SCORE</div>
       <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px">
         ${_v3 ? window.RoboScoreV3.scoreBox({
-          grade: _v3.grade, pmLabel: _v3.pmLabel,
+          grade: _v3.grade,
           stars: (comic && comic.fullAssessmentRan) ? 3 : (comic && (comic.deepAssessmentRan || comic.highGradeTier || (comic.roboGrade && comic.roboGrade.deepAssessmentRan))) ? 2 : 1,
           restoStar: !!(comic && comic.restorationCheckRan), restoColor: '#b58be0',
           footer: 'version', footerText: 'V' + (window.RG_GRADING_VERSION || '4.81'),  // APP version (bumps to 5.0), not the engine schema version
@@ -457,7 +424,9 @@
     const _pen = _pg ? ["focus", "lighting", "cropping", "angle"].reduce((a, k) => {
       const v = String(_pg[k] || "").trim().toUpperCase(); return a + (v === "B" ? 1 : v === "C" ? 2 : 0);
     }, 0) : 0;
-    const precision = (_deep ? 0 : 1) + _pen;
+    // S22: PM removed - the card panel drew its own +/- from the same depth +
+    // photo-penalty lookup as the comic one. 0 so the render below drops it.
+    const precision = 0;
     const _stars = _deep ? 2 : 1;
     // Show the version that PERFORMED this assessment (stored on the item),
     // not the current app version. "card-v1" was an old placeholder — skip it.
@@ -581,7 +550,7 @@
     const _sbStar = _perfect10 ? '#5a3f06' : CHARTREUSE;
     const _sbVer = _perfect10 ? '#7a5a10' : '#5a7028';
     for (let i = 0; i < _stars; i++) _starsHTML += _starSvg(_sbStar);
-    const scoreBox = _cv3 ? window.RoboScoreV3.scoreBox({ grade: _cv3.grade, pmLabel: _cv3.pmLabel, stars: _stars, footer: 'version', footerText: 'V' + (window.RG_GRADING_VERSION || '4.81'), size: 104, numColor: _sbNum, starColor: _sbStar, footerColor: CHARTREUSE, pmColor: OLIVE_LT, bg: _sbBg, border: '1.5px solid ' + _sbBorder }) : `<div style="background:${_sbBg};border-radius:18px;width:104px;height:104px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px solid ${_sbBorder};position:relative">
+    const scoreBox = _cv3 ? window.RoboScoreV3.scoreBox({ grade: _cv3.grade, stars: _stars, footer: 'version', footerText: 'V' + (window.RG_GRADING_VERSION || '4.81'), size: 104, numColor: _sbNum, starColor: _sbStar, footerColor: CHARTREUSE, pmColor: OLIVE_LT, bg: _sbBg, border: '1.5px solid ' + _sbBorder }) : `<div style="background:${_sbBg};border-radius:18px;width:104px;height:104px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px solid ${_sbBorder};position:relative">
       ${precision > 0 ? `<span style="position:absolute;top:8px;right:8px;color:${_sbNum};line-height:1;display:inline-flex;align-items:center;gap:0;font-family:'League Spartan',sans-serif;font-size:16px;font-weight:800"><img src="/assets/pm-notch.svg" width="16" height="22" style="display:block" alt=""><span style="margin-left:-1px">${precision}</span></span>` : ""}
       <div style="position:absolute;top:6px;left:0;right:0;text-align:center;pointer-events:none;display:flex;justify-content:center;opacity:0.5"><span style="display:inline-flex;gap:1px;align-items:center;line-height:1">${_starsHTML}</span></div>
       <div style="line-height:1">${(() => { const _s=String(gradeLabel==null?"":gradeLabel); const _m=_s.match(/^(\d+|—|-)([+-])?$/); const _b=_m?_m[1]:_s; const _f=(_m&&_m[2])?_m[2]:""; return `<span style="position:relative;display:inline-block;line-height:1;font-family:'League Spartan',sans-serif;font-weight:800;color:${_sbNum}"><span style="font-size:60px;line-height:1;display:inline-block">${_b}</span>${_f?`<span style="position:absolute;left:100%;top:6px;font-size:30px;font-weight:600;line-height:1">${_f}</span>`:""}</span>`; })()}</div>
