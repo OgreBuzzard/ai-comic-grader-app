@@ -799,7 +799,20 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
     // chosen from each pass's OWN Main grade, which is what produces the
     // pass-to-pass variance Batch exists to show. They stay after the
     // breakpoint and bill in full.
-    if (DEEP_CACHE_ENABLED) {
+    //
+    // S22 — AND IT ONLY PAYS IN A BATCH. "Byte-identical on every pass of a
+    // BATCH" is exactly right, and it is also the whole catch: on an ordinary
+    // single Deep there is no second pass. These images are this one book's
+    // corners, interior covers and cover. Nothing will ever read the entry.
+    // A cache WRITE bills at 1.25x base, so an unread write is a 25% surcharge
+    // on everything it covers, paid on every single-book Deep.
+    // Measured on a real call (deep_1793747569602_li61uo, FF #121):
+    //   cacheReadInputTokens      8302   <- the system prefix. Working.
+    //   cacheCreationInputTokens  8817   <- this breakpoint. Written, never read.
+    // 8,817 tokens at the 0.25x premium is about $0.03 on a $0.134 call.
+    // So the breakpoint is set only for a batch pass, where four later passes
+    // read it back. A single Deep lets those images bill at base rate.
+    if (DEEP_CACHE_ENABLED && _isBatchPass) {
       try {
         const _lastInvariant =
           (refCoverBlocks.length ? refCoverBlocks[refCoverBlocks.length - 1] : null) ||

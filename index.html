@@ -836,14 +836,24 @@ onAuthStateChanged(auth, async user => {
        the thumbnail sits close to the left edge and the button is only as tall
        as the thumbnail plus 12px. min-height is overridden because .rg-btn-md
        sets one that would reintroduce the vertical slack. */
+    /* S22: the thumbnail is sized to the LABEL, not to the Start Grading
+       thumbnail it was matched to. "Summary Image" sets two lines at 14px /
+       1.1 = 30.8px, so the thumbnail is 31 tall and the button is only as tall
+       as its own text - 56px becomes ~44, and the Print Label button beside it
+       comes down with it (they share a grid row, so the taller one was setting
+       the height for both).
+       17 x 31 keeps the export's 1080x2025 proportion (0.533; 17/31 = 0.548,
+       half a pixel out at this size). Stated in px rather than em because an
+       aspect-ratio/em version depends on a newer WKWebView than the oldest
+       iPhone this ships to. */
     .rg-btn.btn-with-thumb {
       display: inline-flex; align-items: center; justify-content: flex-start;
       gap: 9px; line-height: 1.1; text-align: left;
       padding: 6px 14px 6px 7px;
-      height: 56px; min-height: 0; box-sizing: border-box;
+      height: auto; min-height: 0; box-sizing: border-box;
     }
     .rg-btn.btn-with-thumb .action-btn-thumb {
-      width: 23px; height: 44px; object-fit: cover;
+      width: 17px; height: 31px; object-fit: cover;
       border-radius: 3px; flex-shrink: 0;
       box-shadow: 0 1px 4px rgba(40,30,10,0.25);
     }
@@ -6411,9 +6421,15 @@ function showDetail(id) {
   if (selected.seller) {
     html += `<div style="margin-top:14px"><div style="font-size:12px;color:#8a7a6a">Purchased from: ${esc(selected.seller)}</div></div>`;
   }
-  const hasAnyCost = !!(selected.purchasePrice || selected.taxesFeesShipping || selected.gradingCost || selected.cgcShipping || selected.askingPrice);
+  // S22: Grading/Pressing and CGC Return Shipping were removed from both
+  // views - they date from before the app graded raw books itself, and nobody
+  // has a reason to fill them in now. They are NOT deleted from the record or
+  // from the save path: a book that carries old values keeps them, and
+  // totalCost() below still counts them so an existing book's total does not
+  // silently change. They just have no input and no read-out any more.
+  const hasAnyCost = !!(selected.purchasePrice || selected.taxesFeesShipping || selected.askingPrice);
   if (hasAnyCost) {
-    html += `<div class="divider"></div>\n    <div class="section-label" style="color:#6a8a6a">Cost Breakdown</div>\n    <div class="grid-2" style="margin-top:10px">\n      ${selected.purchasePrice ? `<div><div class="section-label">Purchase Price</div><div class="field-val">${fmt$(selected.purchasePrice)}</div></div>` : ""}\n      ${selected.taxesFeesShipping ? `<div><div class="section-label">Taxes/Fees/Ship</div><div class="field-val">${fmt$(selected.taxesFeesShipping)}</div></div>` : ""}\n      ${selected.gradingCost ? `<div><div class="section-label">Grading Cost</div><div class="field-val">${fmt$(selected.gradingCost)}</div></div>` : ""}\n      ${selected.cgcShipping ? `<div><div class="section-label">CGC Shipping</div><div class="field-val">${fmt$(selected.cgcShipping)}</div></div>` : ""}\n      ${selected.askingPrice ? `<div><div class="section-label">Asking Price</div><div class="field-val">${fmt$(selected.askingPrice)}</div></div>` : ""}\n    </div>`;
+    html += `<div class="divider"></div>\n    <div class="section-label" style="color:#6a8a6a">Cost Breakdown</div>\n    <div class="grid-2" style="margin-top:10px">\n      ${selected.purchasePrice ? `<div><div class="section-label">Purchase Price</div><div class="field-val">${fmt$(selected.purchasePrice)}</div></div>` : ""}\n      ${selected.taxesFeesShipping ? `<div><div class="section-label">Taxes/Fees/Ship</div><div class="field-val">${fmt$(selected.taxesFeesShipping)}</div></div>` : ""}\n      ${selected.askingPrice ? `<div><div class="section-label">Asking Price</div><div class="field-val">${fmt$(selected.askingPrice)}</div></div>` : ""}\n    </div>`;
   }
   if (!isSample) {
     const isPublic = !!selected.publicListing;
@@ -10809,9 +10825,19 @@ function _batchRoundHalf(x) { return Math.round(x * 2) / 2; }
 // grade-definition text, which this page has no use for and should not ship.
 // If one changes, change both.
 const _PG_LADDER = [0.5, 1.0, 1.5, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.2, 9.4, 9.6, 9.8, 9.9, 10.0];
-function _snapPgToLadder(x) {
+// `where` names the call site. Every firing is a defect to investigate: if
+// [pg-offladder] appears in a console, something upstream produced a grade
+// that no grading service issues, and the log line says which path.
+//
+// Non-numeric input is returned UNCHANGED, not blanked. "" is an ungraded
+// book and "NG" is a coverless/ungradeable one; both are legitimate stored
+// values and neither is a number to snap.
+function _snapPgToLadder(x, where) {
   const n = Number(x);
-  if (!isFinite(n)) return "";
+  if (x === "" || x == null || !isFinite(n)) return x;
+  // 0 is "no grade" in several places here, not a grade of zero. Snapping it
+  // would publish 0.5 - a real CGC grade - on a book nobody graded.
+  if (n <= 0) return x;
   const t = Math.round(n * 100);
   let best = _PG_LADDER[0], bestD = Math.abs(t - Math.round(best * 100));
   for (const g of _PG_LADDER) {
@@ -10822,7 +10848,13 @@ function _snapPgToLadder(x) {
     // unless the evidence clearly supports the higher".
     if (d < bestD) { best = g; bestD = d; }
   }
-  return best.toFixed(1);
+  const out = best.toFixed(1);
+  if (Math.round(best * 100) !== t) {
+    console.warn("[pg-offladder] " + (where || "?") + ": " + x
+      + " is not a CGC grade (above 9.0 the ladder is 9.0, 9.2, 9.4, 9.6, 9.8)."
+      + " Stored as " + out + ".");
+  }
+  return out;
 }
 function _batchMedian(a) { const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; }
 // Styled batch-start confirm — app house style (Robograder head + dark card),
@@ -11248,7 +11280,7 @@ async function submitBatchAssessment() {
     const loRaw = Math.min(...raws), hiRaw = Math.max(...raws);
 
     const pgs = done.map(p => parseFloat(p.grade)).filter(x => !isNaN(x));
-    const avgPG = pgs.length ? _snapPgToLadder(pgs.reduce((a, b) => a + b, 0) / pgs.length) : "";
+    const avgPG = pgs.length ? _snapPgToLadder(pgs.reduce((a, b) => a + b, 0) / pgs.length, "batch-average") : "";
     const pqCount = {}; done.forEach(p => { if (p.pq) pqCount[p.pq] = (pqCount[p.pq] || 0) + 1; });
     const modePQ = Object.keys(pqCount).sort((a, b) => pqCount[b] - pqCount[a])[0] || "";
 
@@ -12948,9 +12980,19 @@ async function _completeAssessmentInner() {
       if (prior.roboGradeId && !_dupH && !formData._batchMode) formData.assessmentHistory.unshift(prior);
     }
   }
-  formData.assessedCGCGrade = cgc.grade || "";
+  // S22: snapped on the way IN to formData, not trusted from the response.
+  // The server runs enforceCgcGrade() on every Main, Deep and Full result, so
+  // in principle this is redundant - but Matt is still seeing 9.5 on books
+  // that have only had a Main and a Deep, which means SOME path is producing
+  // an off-ladder PG that the server guard does not sit on. Until that path is
+  // identified, the guard goes where the value is stored, because every path
+  // ends here. The console warning names the site when it fires, which is how
+  // the remaining path gets found.
+  // PSA is NOT snapped: the PSA scale genuinely includes half grades, 9.5
+  // among them.
+  formData.assessedCGCGrade = _snapPgToLadder(cgc.grade || "", "assess-result");
   formData.assessedPSAGrade = psa.grade ? String(psa.grade).includes(".") ? String(psa.grade) : parseFloat(psa.grade).toFixed(1) : "";
-  formData.predictedGrade = cgc.grade || "";
+  formData.predictedGrade = _snapPgToLadder(cgc.grade || "", "assess-result");
   // The server sets gradeAtCeiling on both the Main and the Deep result, so a
   // Deep overwrites the Main's answer here rather than inheriting it.
   formData.gradeAtCeiling = !!cgc.gradeAtCeiling;
@@ -14192,7 +14234,7 @@ function renderForm() {
     if (showLabelNotesEdit) return "";
     if (!formData.keyInfo) return "";
     return `<div><label class="field-label">Key Info</label><textarea rows="3" readonly style="cursor:not-allowed;background:#ffffff;color:#1a1614" title="Key Info is populated by the assessment when the issue is in the recognized-key list. Not user-editable.">${esc(formData.keyInfo || "")}</textarea></div>`;
-  })()}\n    ${formData.cgcGrade || formData.psaGrade || formData.graderNotes ? `<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes ? 5 : 3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiAssessment ? `<div><label class="field-label">Main Assessment</label><textarea rows="${Math.max(8, Math.ceil(formData.aiAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>` : ""}\n    ${formData.deepAssessment ? `<div><label class="field-label">Deep Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.deepAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Deep pass.">${esc(formData.deepAssessment)}</textarea></div>` : ""}\n    ${formData.fullAssessment ? `<div><label class="field-label">Full Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.fullAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Full pass.">${esc(formData.fullAssessment)}</textarea></div>` : ""}\n    ${formData.gradeRevisionReason ? `<div><label class="field-label">Grade Revision</label><textarea rows="${Math.max(3, Math.ceil(formData.gradeRevisionReason.length / 80))}" readonly style="cursor:not-allowed" title="Why a Deep or Full pass moved the grade.">${esc(formData.gradeRevisionReason)}</textarea></div>` : ""}\n    ${(() => { const _rf = restorationFlagList(formData); return _rf.length ? `<div><label class="field-label">Restoration Noted During Grading</label><textarea rows="${Math.max(2, _rf.length)}" readonly style="cursor:not-allowed" title="Raised by the grading pass from ordinary-light photos. Not a UV finding.">${esc(_rf.join("\n"))}</textarea></div>` : ""; })()}\n    ${formData.restorationReport ? `<div><label class="field-label">UV Check</label><textarea rows="${Math.max(5, Math.ceil((formData.restorationReport || "").length / 80))}" readonly style="cursor:not-allowed" title="Populated by the UV Check.">${esc(formData.restorationReport)}</textarea></div>` : ""}\n    ${renderAssessmentHistorySection(formData.assessmentHistory, true)}\n    ${formData.psaNotes ? `<div><label class="field-label" style="color:#e87a7a">PSA Variance</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes || "")}</textarea></div>` : ""}\n\n    \x3c!-- Acquisition metadata (moved 2026-10-17 per Matt): Date Acquired and\n         Seller now sit BELOW the write-ups and the Assessment History and\n         ABOVE Cost Breakdown. Grading Date (slabbingDate) was removed outright in\n         the same pass — it meant the date CGC slabbed the book, nobody filled\n         it in, and the Robograde date already covers anything we graded. --\x3e\n    ${df("Date Acquired", "dateAcquired")}\n    <div><label class="field-label">Seller</label>\n      <input value="${esc(formData.seller || "")}" list="seller-list" oninput="formData.seller=this.value;updateSellerList(this.value)" placeholder="Name / source" autocomplete="off">\n      <datalist id="seller-list">${getSellerSuggestions().map(s => `<option value="${esc(s)}">`).join("")}</datalist>\n    </div>\n    \n    \x3c!-- Enhancement Candidate (S11): renamed from "Enhance Candidate"; moved\n         to between Condition Assessment and Cost Breakdown per user direction. --\x3e\n    \x3c!-- S20: Enhancement Candidate control hidden per request (odd inclusion, often inaccurate). Kept for future use: <div><label class="field-label">Enhancement Candidate</label><div style="display:flex;gap:10px">\${treatBtn("enhance", "Enhance")}</div></div> --\x3e\n\n    \x3c!-- Cost Breakdown (S11): now includes FMV ($) and FMV Date inside the\n         container, since they're financial fields conceptually grouped with\n         the cost data. --\x3e\n    <div class="cost-box">\n      <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>\n      <div class="form-grid-2">\n        ${mf("Purchase Price ($)", "purchasePrice")}\n        ${mf("Taxes / Fees / Shipping ($)", "taxesFeesShipping")}\n        ${mf("Grading / Pressing ($)", "gradingCost")}\n        ${mf("CGC Return Shipping ($)", "cgcShipping")}\n        \n        \n        ${mf("Asking Price ($)", "askingPrice")}\n      </div>\n    </div>\n\n    <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes || "")}</textarea></div>\n    ${""}\n    \n    <div style="display:flex;gap:10px;padding-top:4px">\n      ${isEdit ? "" : `<button id="save-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="submitForm()" ${(formData.title?.trim() && !isUploadInFlight()) ? "" : "disabled"} style="${isUploadInFlight() ? "opacity:0.55;cursor:progress" : ""}">${isUploadInFlight() ? "Uploading photos\u2026" : "Add to Collection"}</button>`}\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cancelForm()">Cancel</button>\n    </div>\n    ` : `\n    \x3c!-- Add-flow collapsed state (S11): show only the Enter Manually button.\n         Steers users toward photos-first by hiding the form fields until\n         either (a) they tap Enter Manually, or (b) an assessment runs and\n         _assessed becomes true. Edit view always shows the full form.\n         S14: ownership cycle pill inserted above Enter Manually. Lets a\n         user mark a book as Owned (default) / Watching / Sold before\n         assessing — so they can assess someone else's book without\n         claiming it, or track a book they're considering buying. Same\n         pill style as detail and edit views (color-coded by state),\n         centered between the two full-width buttons. Public-listing is\n         locked off whenever ownership !== 'Owned'; the cycleOwnership\n         handler clears formData.publicListing on transitions out of\n         Owned so a stale 'true' can't be saved. --\x3e\n    ${(() => {
+  })()}\n    ${formData.cgcGrade || formData.psaGrade || formData.graderNotes ? `<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes ? 5 : 3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiAssessment ? `<div><label class="field-label">Main Assessment</label><textarea rows="${Math.max(8, Math.ceil(formData.aiAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>` : ""}\n    ${formData.deepAssessment ? `<div><label class="field-label">Deep Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.deepAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Deep pass.">${esc(formData.deepAssessment)}</textarea></div>` : ""}\n    ${formData.fullAssessment ? `<div><label class="field-label">Full Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.fullAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Full pass.">${esc(formData.fullAssessment)}</textarea></div>` : ""}\n    ${formData.gradeRevisionReason ? `<div><label class="field-label">Grade Revision</label><textarea rows="${Math.max(3, Math.ceil(formData.gradeRevisionReason.length / 80))}" readonly style="cursor:not-allowed" title="Why a Deep or Full pass moved the grade.">${esc(formData.gradeRevisionReason)}</textarea></div>` : ""}\n    ${(() => { const _rf = restorationFlagList(formData); return _rf.length ? `<div><label class="field-label">Restoration Noted During Grading</label><textarea rows="${Math.max(2, _rf.length)}" readonly style="cursor:not-allowed" title="Raised by the grading pass from ordinary-light photos. Not a UV finding.">${esc(_rf.join("\n"))}</textarea></div>` : ""; })()}\n    ${formData.restorationReport ? `<div><label class="field-label">UV Check</label><textarea rows="${Math.max(5, Math.ceil((formData.restorationReport || "").length / 80))}" readonly style="cursor:not-allowed" title="Populated by the UV Check.">${esc(formData.restorationReport)}</textarea></div>` : ""}\n    ${renderAssessmentHistorySection(formData.assessmentHistory, true)}\n    ${formData.psaNotes ? `<div><label class="field-label" style="color:#e87a7a">PSA Variance</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes || "")}</textarea></div>` : ""}\n\n    \x3c!-- Acquisition metadata (moved 2026-10-17 per Matt): Date Acquired and\n         Seller now sit BELOW the write-ups and the Assessment History and\n         ABOVE Cost Breakdown. Grading Date (slabbingDate) was removed outright in\n         the same pass — it meant the date CGC slabbed the book, nobody filled\n         it in, and the Robograde date already covers anything we graded. --\x3e\n    ${df("Date Acquired", "dateAcquired")}\n    <div><label class="field-label">Seller</label>\n      <input value="${esc(formData.seller || "")}" list="seller-list" oninput="formData.seller=this.value;updateSellerList(this.value)" placeholder="Name / source" autocomplete="off">\n      <datalist id="seller-list">${getSellerSuggestions().map(s => `<option value="${esc(s)}">`).join("")}</datalist>\n    </div>\n    \n    \x3c!-- Enhancement Candidate (S11): renamed from "Enhance Candidate"; moved\n         to between Condition Assessment and Cost Breakdown per user direction. --\x3e\n    \x3c!-- S20: Enhancement Candidate control hidden per request (odd inclusion, often inaccurate). Kept for future use: <div><label class="field-label">Enhancement Candidate</label><div style="display:flex;gap:10px">\${treatBtn("enhance", "Enhance")}</div></div> --\x3e\n\n    \x3c!-- Cost Breakdown (S11): now includes FMV ($) and FMV Date inside the\n         container, since they're financial fields conceptually grouped with\n         the cost data. --\x3e\n    <div class="cost-box">\n      <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>\n      <div class="form-grid-2">\n        ${mf("Purchase Price ($)", "purchasePrice")}\n        ${mf("Taxes / Fees / Shipping ($)", "taxesFeesShipping")}\n        ${mf("Asking Price ($)", "askingPrice")}\n      </div>\n    </div>\n\n    <div><label class="field-label">My Notes</label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes || "")}</textarea></div>\n    ${""}\n    \n    <div style="display:flex;gap:10px;padding-top:4px">\n      ${isEdit ? "" : `<button id="save-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="submitForm()" ${(formData.title?.trim() && !isUploadInFlight()) ? "" : "disabled"} style="${isUploadInFlight() ? "opacity:0.55;cursor:progress" : ""}">${isUploadInFlight() ? "Uploading photos\u2026" : "Add to Collection"}</button>`}\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cancelForm()">Cancel</button>\n    </div>\n    ` : `\n    \x3c!-- Add-flow collapsed state (S11): show only the Enter Manually button.\n         Steers users toward photos-first by hiding the form fields until\n         either (a) they tap Enter Manually, or (b) an assessment runs and\n         _assessed becomes true. Edit view always shows the full form.\n         S14: ownership cycle pill inserted above Enter Manually. Lets a\n         user mark a book as Owned (default) / Watching / Sold before\n         assessing — so they can assess someone else's book without\n         claiming it, or track a book they're considering buying. Same\n         pill style as detail and edit views (color-coded by state),\n         centered between the two full-width buttons. Public-listing is\n         locked off whenever ownership !== 'Owned'; the cycleOwnership\n         handler clears formData.publicListing on transitions out of\n         Owned so a stale 'true' can't be saved. --\x3e\n    ${(() => {
     const own = formData.ownership || "Owned";
     const styleByState = {
       Owned: {
@@ -15875,8 +15917,12 @@ async function submitFullAssessment() {
             _fullGrade = _priorPredFull;
           }
         }
-        formData.predictedGrade = _fullGrade;
-        formData.assessedCGCGrade = _fullGrade;
+        // S22: same ladder guard as the Main/Deep result path. The clamps
+        // above can only copy a prior grade or 9.8, both of which are already
+        // on the ladder, but this is the write site and the guard belongs at
+        // write sites rather than at the paths we happen to have checked.
+        formData.predictedGrade = _snapPgToLadder(_fullGrade, "full-result");
+        formData.assessedCGCGrade = formData.predictedGrade;
         // Full is the last pass; there is no deeper tier to promise. Clear the
         // "(+)" so a 9.6(+) that a Full confirmed does not keep implying more.
         formData.gradeAtCeiling = false;

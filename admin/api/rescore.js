@@ -146,15 +146,29 @@ function scoreToGrade(newScore, originalScore, originalGrade) {
   return snapToGradeStep(newScore / 10);
 }
 
+// S22: this carried its OWN hardcoded ladder, and it was wrong in three
+// places - no 1.8, no 9.9, no 10.0. A 1.8 book rescored to 1.5 or 2.0, and a
+// rescore could never reach 9.9 or 10.0 whatever the score said. It was also a
+// SECOND definition of "the CGC ladder" in the codebase, which is how the
+// first one drifts. It defers to lib/grade_definitions.js now - the same
+// ladder the three assessment endpoints enforce against, and the same
+// ties-go-down rule.
+// The 9.8 cap stays deliberately: a rescore works from stored subscores, not
+// from fresh eyes on the book, so 9.9 and 10.0 are claims that should come
+// from a Full pass rather than from arithmetic. The ladder has them; this
+// endpoint's ceiling does not.
 function snapToGradeStep(raw) {
-  const steps = [9.8, 9.6, 9.4, 9.2, 9.0, 8.5, 8.0, 7.5, 7.0, 6.5, 6.0, 5.5, 5.0, 4.5, 4.0, 3.5, 3.0, 2.5, 2.0, 1.5, 1.0, 0.5];
-  let closest = 0.5;
-  let minDist = Infinity;
-  for (const s of steps) {
-    const d = Math.abs(raw - s);
-    if (d < minDist) { minDist = d; closest = s; }
-  }
-  return Math.min(closest, 9.8);
+  const snapped = parseFloat(_enforceCgcGrade(raw, 'admin-rescore'));
+  if (!Number.isFinite(snapped)) return 0.5;
+  return Math.min(snapped, 9.8);
+}
+
+// Loaded lazily, like the firebase-admin imports below, because this file has
+// no top-level imports and the handler is the only caller.
+let _enforceCgcGradeImpl = null;
+function _enforceCgcGrade(v, where) {
+  if (!_enforceCgcGradeImpl) throw new Error('grade ladder not loaded');
+  return _enforceCgcGradeImpl(v, where);
 }
 
 // ── Handler ─────────────────────────────────────────────────────────
@@ -168,6 +182,8 @@ export default async function handler(req, res) {
     const { initializeApp, getApps, cert } = await import('firebase-admin/app');
     const { getAuth } = await import('firebase-admin/auth');
     const { getFirestore } = await import('firebase-admin/firestore');
+    // The grade ladder, same module the assessment endpoints use.
+    ({ enforceCgcGrade: _enforceCgcGradeImpl } = await import('../../lib/grade_definitions.js'));
 
     if (!getApps().length) {
       initializeApp({ credential: cert(parseServiceAccount()) });

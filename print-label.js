@@ -215,15 +215,12 @@ const LABEL_BUY_LINKS = {
 // book. So the Buy button points at roll stock in single-label mode and at the
 // sheet stock in sheet mode.
 //
-// ASINS ARE NOT FILLED IN YET. Matt sent a.co short links; Amazon refuses
-// automated fetches, so the short links cannot be resolved to ASINs from here.
-// To fill these in: open each short link in a browser and copy the 10-character
-// code after /dp/ in the address bar.
-//   small    (4" x 1")    -> https://a.co/d/0dKZffce
-//   square   (2" x 2")    -> https://a.co/d/05lc861C
-//   small-l  (4" x 2")    -> https://a.co/d/0cjz3oIa
-// Until an asin is set, that size falls back to its sheet link, so the button
-// is never broken or pointed somewhere wrong - see buyLink in renderModal.
+// ASINs supplied by Matt (Amazon refuses automated fetches, so the a.co short
+// links he sent first could not be resolved from here). The associate tag is
+// appended at build time rather than stored in the URL, so there is one place
+// to change it if the tag ever does.
+// An entry with an empty asin falls back to that size's sheet link, so the
+// button is never broken or pointed somewhere wrong - see buyLink below.
 //
 // NOTE on small-l: that roll is 4" x 2", not the 4" x 1.33" the Case layout is
 // built for. The layout has to be adapted to the taller stock before this link
@@ -233,9 +230,9 @@ function amazonProductUrl(asin) {
   return 'https://www.amazon.com/dp/' + asin + '?tag=' + AMAZON_ASSOCIATE_TAG;
 }
 const LABEL_ROLL_LINKS = {
-  small:     { label: '4\u2033 \u00d7 1\u2033 thermal rolls', asin: '', vendor: 'Amazon' },
-  square:    { label: '2\u2033 \u00d7 2\u2033 thermal rolls', asin: '', vendor: 'Amazon' },
-  'small-l': { label: '4\u2033 \u00d7 2\u2033 thermal rolls', asin: '', vendor: 'Amazon' }
+  small:     { label: '4\u2033 \u00d7 1\u2033 thermal rolls', asin: 'B0H2668WYX', vendor: 'Amazon' },
+  square:    { label: '2\u2033 \u00d7 2\u2033 thermal rolls', asin: 'B0FDFWJ4K6', vendor: 'Amazon' },
+  'small-l': { label: '4\u2033 \u00d7 2\u2033 thermal rolls', asin: 'B0FGXX2NJC', vendor: 'Amazon' }
 };
 
 // ── Label options (persisted via localStorage) ─────────────────────────────
@@ -268,7 +265,7 @@ const VALID_SIZES = ['small-l', 'small', 'card', 'square'];
 function readOptions() {
   try {
     const raw = localStorage.getItem(OPTIONS_KEY);
-    if (!raw) return { size: 'small-l', priceTag: false, includePrice: false, mono: false, widePrice: '', widePriceFor: '' };
+    if (!raw) return { size: 'small-l', priceTag: false, includePrice: false, mono: false };
     const o = JSON.parse(raw);
     return {
       // Validated against the known set; unknown values fall back to square
@@ -289,18 +286,13 @@ function readOptions() {
       // type outright (measured: the printing line and the URL both disappear).
       // So thermal is not a print setting, it is a different RENDER: white
       // ground, black ink, the score box as an outline instead of a fill.
-      mono: !!o.mono,
-      // S22: the Wide price tag is a value Matt TYPES, not one read off the
-      // record, so it has to live somewhere both the preview and generatePDF
-      // can see it - and generatePDF reads options, not the modal. Hence here.
-      // widePriceFor is the roboGradeId it was typed for, and both render
-      // paths ignore widePrice unless it matches. Without that scope a price
-      // typed for one book would print on the next one opened, which on a
-      // print-and-stick workflow is a mispriced book on a wall.
-      widePrice: typeof o.widePrice === 'string' ? o.widePrice : '',
-      widePriceFor: typeof o.widePriceFor === 'string' ? o.widePriceFor : ''
+      mono: !!o.mono
     };
-  } catch { return { size: 'small-l', priceTag: false, includePrice: false, mono: false, widePrice: '', widePriceFor: '' }; }
+    // S22: widePrice / widePriceFor are GONE. They held a price typed on the
+    // label screen; the label reads comic.askingPrice now, so there is one
+    // price per book and no second place for it to disagree. Any stale pair
+    // left in a user's localStorage is simply ignored by the read above.
+  } catch { return { size: 'small-l', priceTag: false, includePrice: false, mono: false }; }
 }
 
 function writeOptions(opts) {
@@ -765,7 +757,7 @@ function ensureStylesInjected() {
   }
   /* League Spartan for every label score number + precision (all variants),
      matching the app score box. Override kept together so it is easy to find. */
-  .rg-num, .rgc-num, .rg-prec { font-family: 'League Spartan', sans-serif !important; }
+  .rg-num, .rgc-num { font-family: 'League Spartan', sans-serif !important; }
   .rg-label .rg-num-wrap {
     /* S22: Wide (Small R) — same score-number drop applied to Case and Large,
        so all three variants read identically. */
@@ -790,7 +782,7 @@ function ensureStylesInjected() {
      of "60" sitting on top of V4.81. 22 is the measured landing: 4px of clear
      air under the numeral, 32 above it to the stars. Still 2px lower than the
      20 it came from, which is the direction asked for. */
-  .rg-label .rg-num-wrap { transform: translateY(22px); }
+  .rg-label .rg-num-wrap { transform: translateY(14px); }
   .rg-label .rg-num {
     /* S14: was 148, dropped to 140, now 150 — brought back up a touch
        to match the Large label's score-prominence pass now that the
@@ -820,34 +812,23 @@ function ensureStylesInjected() {
        a quarter wider and the measured horizontal gap to the PM is still
        positive on every two-glyph case. The font size comes down with it so
        the overall footprint is close to unchanged. */
-    font-size: 188px; font-weight: 900;
+    /* S22: 188 -> 212. The PM was never the vertical constraint - removing it
+       freed the RIGHT side of the box, not the bottom - so the numeral could
+       not simply grow in place: at 188 the version string was already only 3px
+       under its ink. The room came from moving the numeral UP (translateY 22
+       -> 14, into the 28px of slack that had opened under the stars) and the
+       version DOWN (bottom 14 -> 10).
+       212 is measured, not chosen. Swept 196/204/208/212/216 across
+       6 / 9.5 / 100 / 4.5 / 8, rasterising the box and diffing black pixels:
+       at 212 the worst case clears the stars by 12, the version by 7 and the
+       (+) by 6. At 216 the version drops to 5 and there is no case for the
+       last 4px. */
+    font-size: 212px; font-weight: 900;
     color: #0d0d0f; line-height: 1;   /* S22: black on the light box */
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
     transform: scaleX(0.78);
     transform-origin: center;
-  }
-  .rg-label .rg-prec {
-    /* Upper-right of the score box, ABSOLUTELY positioned so it is out
-       of flow and cannot displace the centered number. Anchored to the
-       box at a fixed top/right inset.
-       S14: sized UP 30 → 50 to match the title (was barely readable in
-       print) — same rule applied to Large. scaleX(0.625) replaces
-       font-stretch; transform-origin:right keeps the compressed text
-       pinned at the right inset and growing leftward. Verified clear of
-       the 150px centered number (~10px gap; precision is absolute/out
-       of flow so it cannot displace the number regardless). */
-    position: absolute;
-    top: 24px; right: 6px;   /* S22: 20 -> 24, see the .rg-word note */
-    font-size: 58px; font-weight: 700;   /* S22: 50 -> 58, tracks the numeral */
-    color: #0d0d0f; opacity: 0.85;   /* S22: black on the light box */
-    font-family: 'Noto Sans Display', sans-serif;
-    display: inline-block;
-    transform: scaleX(0.625);
-    transform-origin: right center;
-    line-height: 1;
-    letter-spacing: 1px;
-    white-space: nowrap;
   }
   /* S22 — THE (+) NOW EXISTS ON THE LABEL, AND IT IS BOTTOM-RIGHT.
      It did not render here at all before: the app's score box draws it on the
@@ -894,7 +875,14 @@ function ensureStylesInjected() {
      a (+) book LOOK DOWNGRADED. Dropping the (+) to 44px and tightening it to
      right:8 bought 32px of numeral. The (+) is the secondary mark; the grade
      is the thing read from across the room, so the (+) yields. */
-  .rg-label .score-box.has-plus .rg-num { font-size: 148px; }
+  /* NOT scaled with the base size. Scaling it to 167 (148 x 212/188) put the
+     numeral's ink 1px INTO the (+) - measured, not predicted. The base numeral
+     grew because the room came from the vertical axis; the (+) is a HORIZONTAL
+     constraint on the midline, and nothing about removing the PM moved it (the
+     PM lived in the top-right corner, the (+) sits on the number's midline at
+     right:8). So a (+) book gains almost nothing here, which is correct: the
+     (+) is the thing taking the space. 152 leaves 5px. */
+  .rg-label .score-box.has-plus .rg-num { font-size: 152px; }
   /* S22 - THREE-GLYPH SCORES WERE BREAKING THE BOX, AND HAD BEEN FOR A WHILE.
      .rg-num-wrap is a flex item in a 256px-wide column, so its width is capped
      at the box interior. "100" at 200px is ~360px of UNSCALED text (scaleX
@@ -920,7 +908,7 @@ function ensureStylesInjected() {
     color: #3a5010;
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 500;
-    position: absolute; bottom: 14px;
+    position: absolute; bottom: 10px;   /* S22: 14 -> 10, room for the numeral */
     letter-spacing: 1px;
   }
   /* Info column — starts after the QR column on the left.
@@ -1564,22 +1552,6 @@ function ensureStylesInjected() {
     transform: scaleX(0.625);
     transform-origin: center;
   }
-  .rg-label-l .rg-prec {
-    /* Absolute to the score-box corner, out of flow — never displaces
-       the centered number. Matches Small R: sized up 30 → 50 (= title)
-       with the tighter top:34/right:20 inset for the larger glyph. */
-    position: absolute;
-    top: 34px; right: 20px;
-    font-size: 50px; font-weight: 700;
-    color: #0d0d0f; opacity: 0.9;
-    font-family: 'Noto Sans Display', sans-serif;
-    display: inline-block;
-    transform: scaleX(0.625);
-    transform-origin: right center;
-    line-height: 1;
-    letter-spacing: 1px;
-    white-space: nowrap;
-  }
   .rg-label-l .rg-v {
     font-size: 20px;
     color: #3a5010;
@@ -1993,24 +1965,6 @@ function ensureStylesInjected() {
     transform: scaleX(0.625) translateY(14px);
     transform-origin: center;
   }
-  /* Precision absolute to the score-box corner, out of flow — never
-     displaces the centered number. S14: sized up 24 → 34 to match the
-     Square title (same rule as the other labels). top:30/right:16 inset
-     tuned for the larger glyph in the 220px box; verified ~18px clear
-     of the 130px centered number. */
-  .rg-label-square .rg-prec {
-    position: absolute;
-    top: 30px; right: 16px;
-    font-size: 40px; font-weight: 700;   /* S22: +2pt-ish, was 34 — too small to read in print */
-    color: #0d0d0f; opacity: 0.9;
-    font-family: 'Noto Sans Display', sans-serif;
-    display: inline-block;
-    transform: scaleX(0.625);
-    transform-origin: right center;
-    line-height: 1;
-    letter-spacing: 1px;
-    white-space: nowrap;
-  }
   .rg-label-square .rg-v {
     font-size: 18px;
     color: #3a5010;
@@ -2217,24 +2171,6 @@ function ensureStylesInjected() {
     display: inline-block;
     transform: scaleX(0.625);
     transform-origin: center;
-  }
-  .rg-label-large .rg-prec {
-    /* Absolute to the score-box corner, out of flow — never displaces
-       the centered number. S14: sized UP to 64px to match the title
-       (was 46px, barely readable in print per user). At
-       transform-origin:right it grows leftward from the right:36 inset,
-       staying clear of the centered number (see .rg-num note). */
-    position: absolute;
-    top: 53px; right: 32px;
-    font-size: 61px; font-weight: 700;
-    color: #b8d820; opacity: 0.9;
-    font-family: 'Noto Sans Display', sans-serif;
-    display: inline-block;
-    transform: scaleX(0.625);
-    transform-origin: right center;
-    line-height: 1;
-    letter-spacing: 1px;
-    white-space: nowrap;
   }
   .rg-label-large .rg-v {
     font-size: 30px;
@@ -2449,7 +2385,6 @@ function ensureStylesInjected() {
   }
   .mono .rg-word,
   .mono .rg-num,
-  .mono .rg-prec,
   .mono .rg-v,
   .mono .ttl,
   .mono .ttl-iss,
@@ -2583,30 +2518,20 @@ function renderModal(modal, comic, allItems) {
   // than not offering it, so both price toggles are hidden on Wide and the
   // stored priceTag is ignored for this size rather than cleared - switch to
   // Case or Square and the setting is still there.
-  // S22: WIDE HAS A PRICE AGAIN - a typed one, in the figure's slot.
-  // The note above is still true about the PAD: a 220px white box cannot fit
-  // at 4x1 beside the QR. What fits is the 160px column the figure occupies,
-  // and a number needs no box. So Wide gets the toggle back, and instead of
-  // the "include asking price" secondary toggle (which reads a value off the
-  // record) it gets a field to type one into - which is what Matt actually
-  // does at a show, where the price is decided at the table.
+  // S22: ONE toggle, and it says which field it shows. "Include price tag"
+  // did not name a source, which is how a typed field on this screen ever
+  // seemed reasonable; "Include asking price" names the record field, so there
+  // is nowhere else for the number to come from.
+  // The Wide note above remains true about the PAD - a 220px white box cannot
+  // fit at 4x1 beside the QR. A price needs no box, so Wide shows it in the
+  // figure's 160px column instead. See _wideSlot in renderLabelMarkup.
   const _isWideSize = opts.size === 'small';
   const showPriceToggle = true;
-  // S22: the field is offered only where it can be honoured. On a sheet the
-  // same toggle leaves blank space to write in - see the _wideHandwrite note
-  // in renderLabelMarkup - so showing a field there would promise something
-  // the sheet path cannot deliver, which is the mistake the old Wide price
-  // toggle made in the other direction.
-  const showWidePriceInput = _isWideSize && opts.priceTag && _singleMode;
-  const showIncludePriceToggle = !_isWideSize && opts.priceTag && hasAskingPrice;
-  // The field shows what was typed for THIS book. For a book it has not been
-  // typed for, it falls back to the record's asking price as a starting point
-  // rather than opening blank - but only as the field's value; nothing renders
-  // on the label until the typed value is committed, which the input handler
-  // does on the first keystroke.
-  const _widePriceFieldValue = (opts.widePriceFor === (comic.roboGradeId || ''))
-    ? (opts.widePrice || '')
-    : (hasAskingPrice ? String(comic.askingPrice) : '');
+  // The secondary "include asking price" toggle is gone: it chose between a
+  // blank pad and the record's price, and one toggle that means "show the
+  // asking price, and leave the space blank if there is not one" covers both
+  // without a second tap or a second thing to explain.
+  const showIncludePriceToggle = false;
   const includePricePillClass = opts.includePrice ? 'lvm-pill on' : 'lvm-pill';
 
   // Effective options for rendering: includePrice only takes effect if the
@@ -2614,7 +2539,10 @@ function renderModal(modal, comic, allItems) {
   // a stored "true" value doesn't accidentally render a missing price.
   const effectiveOpts = {
     ...opts,
-    includePrice: showIncludePriceToggle && opts.includePrice
+    // Always true now: with one toggle, "price tag on" means "show the asking
+    // price". The non-Wide price pad reads this to decide value-vs-placeholder,
+    // and the placeholder is the right thing when there is no price to show.
+    includePrice: true
   };
 
   // Build the label preview markup. MUST come after effectiveOpts is declared
@@ -2628,10 +2556,12 @@ function renderModal(modal, comic, allItems) {
   // buttons (was above the preview in v1). Restyled as a proper button
   // with no SEO-ish "Need labels?" preamble or arrow emoji. Updates when
   // the user switches sizes since renderModal re-runs on toggle.
-  // Roll stock when printing one label; sheet stock otherwise. An entry with
-  // no ASIN yet falls through to the sheet link rather than rendering a dead
+  // Roll stock when the output is going on a roll - which is what THERMAL
+  // means - or when printing a single label, since nobody feeds a 20-up Avery
+  // sheet through a printer for one book. Sheet stock otherwise. An entry with
+  // no ASIN falls through to the sheet link rather than rendering a dead
   // button.
-  const _roll = _singleMode ? LABEL_ROLL_LINKS[opts.size] : null;
+  const _roll = (opts.mono || _singleMode) ? LABEL_ROLL_LINKS[opts.size] : null;
   const buyLink = (_roll && _roll.asin)
     ? { label: _roll.label, url: amazonProductUrl(_roll.asin), vendor: _roll.vendor }
     : LABEL_BUY_LINKS[opts.size];
@@ -2658,7 +2588,7 @@ function renderModal(modal, comic, allItems) {
       <div class="lvm-toggle-row lvm-toggle-row-secondary">
         <div></div>
         <div class="lvm-toggle" data-action="toggle-price" role="button" tabindex="0">
-          <span class="lvm-toggle-label">${_isWideSize && !_singleMode ? 'Leave space for a handwritten price' : 'Include price tag'}</span>
+          <span class="lvm-toggle-label">Include asking price</span>
           <span class="${pricePillClass}"></span>
         </div>
       </div>` : ''}
@@ -2668,19 +2598,6 @@ function renderModal(modal, comic, allItems) {
         <div class="lvm-toggle" data-action="toggle-include-price" role="button" tabindex="0">
           <span class="lvm-toggle-label">Include asking price</span>
           <span class="${includePricePillClass}"></span>
-        </div>
-      </div>` : ''}
-      ${showWidePriceInput ? `
-      <div class="lvm-toggle-row lvm-toggle-row-secondary">
-        <div></div>
-        <div class="lvm-toggle" style="cursor:default">
-          <span class="lvm-toggle-label">Price</span>
-          <span style="display:inline-flex;align-items:center;gap:4px">
-            <span style="font-size:16px;font-weight:700;color:#5a7030">$</span>
-            <input type="text" inputmode="decimal" data-action="wide-price"
-                   value="${esc(_widePriceFieldValue)}" placeholder="0"
-                   style="width:92px;padding:5px 8px;font-size:16px;font-weight:700;text-align:right;border:1px solid #c8d0b0;border-radius:8px;background:#fff;color:#1a1614">
-          </span>
         </div>
       </div>` : ''}
       <div class="lvm-toggle-row lvm-toggle-row-secondary">
@@ -2755,35 +2672,6 @@ function renderModal(modal, comic, allItems) {
       writeOptions({ ...cur, includePrice: !cur.includePrice });
       renderModal(modal, comic, allItems);
     });
-  }
-
-  // S22: the Wide price field. It does NOT call renderModal - that rebuilds
-  // the whole card and the field would lose focus on every keystroke, which on
-  // a phone also closes the keyboard. It repaints the PREVIEW only, which is
-  // the one thing that has to change while typing.
-  const widePriceEl = modal.querySelector('[data-action="wide-price"]');
-  if (widePriceEl) {
-    const repaint = () => {
-      // Strip anything that is not a number as it is typed, so a pasted
-      // "$1,250.00" lands as 1250.00 rather than rendering nothing.
-      const raw = String(widePriceEl.value || '').replace(/[^0-9.]/g, '');
-      if (raw !== widePriceEl.value) widePriceEl.value = raw;
-      const cur = readOptions();
-      writeOptions({ ...cur, widePrice: raw, widePriceFor: comic.roboGradeId || '' });
-      const wrap = modal.querySelector('.lvm-preview-wrap');
-      if (!wrap) return;
-      wrap.innerHTML = renderLabelMarkup(comic, {
-        ...readOptions(),
-        includePrice: showIncludePriceToggle && opts.includePrice
-      });
-      renderQRsIn(wrap);
-      fitLabelText(wrap);
-    };
-    widePriceEl.addEventListener('input', repaint);
-    // Commit whatever is in the field when it loses focus too, so a value
-    // typed and then tapped away from is in options before Save as PDF reads
-    // them - generatePDF reads options, never the field.
-    widePriceEl.addEventListener('change', repaint);
   }
 
   // S12 May 6 v2: buylink button — opens vendor URL in a new tab. Same
@@ -3629,53 +3517,22 @@ function renderLabelMarkup(comic, opts) {
   //   Initial only, 80+ → "+"
   //   Initial only, <80 → ±N (default ±8, capped 16)
   //
-  // S12 May 6: client-side clamping applied here too, mirroring the same
-  // logic in robograde-panel.js. Defends against legacy records where the
-  // server-side clamp wasn't yet shipping. Two stages:
-  //   1. Mode cap: high-grade ≤6, standard ≤16
-  //   2. Score+conf cap: score + N must not exceed 100
-  // S12 May 6: read assessment version from rg.version (not hardcoded V2.0
-  // anymore). Current model returns "2.3" (S13 v7 — added paper-loss
-  // defect category, per-corner inspection, severe-defect cap). Older
-  // books in the user's collection may carry "2.0", "2.1", or "2.2" tags
-  // from prior schema versions — display whatever was actually computed.
-  // Falls back to "2.0" only if the field is missing entirely (extremely
-  // old records pre-versioning).
+  // ── PM (PRECISION MODIFIER) REMOVED — S22 ─────────────────────────────────
+  // The +/- beside the grade is gone from every surface. What stood here was
+  // ~45 lines computing it: a four-tier rule off rg.confidenceRange with mode
+  // caps (high-grade <=6, standard <=16), a headroom clamp, and an age-widening
+  // hook. The full removed block is kept in _ARCHIVE/PM_REMOVED_S22.md.
   //
-  // S14: precision widening applied after the mode-cap, same as
-  // robograde-panel.js. The label is a snapshot tied to the print date,
-  // and the precision printed should reflect today's reduced certainty
-  // about a book originally assessed N years ago. Re-printing a label
-  // years from now will show a wider ± than the original printing —
-  // that's intentional. The print date is on the label too, so the
-  // pairing reads correctly: "as of this print, with N years of paper
-  // aging since the original assessment, the precision is wider."
-  const highGradeRun = !!comic.highGradeUnlocked;
-  const assessmentDateISO = comic.roboGradeDate;
-  const widenFn = (window.RobograderPanel && window.RobograderPanel.widenPrecisionForAge)
-    ? window.RobograderPanel.widenPrecisionForAge
-    : function(n){ return n; };  // defensive fallback if panel module didn't load
-  let precision = '';
-  if (score < 100) {
-    if (highGradeRun) {
-      let n = rg.confidenceRange != null ? Math.round(rg.confidenceRange) : 3;
-      n = Math.max(0, Math.min(6, n));
-      n = widenFn(n, assessmentDateISO);
-      const headroom = Math.max(0, 100 - score);
-      if (n > headroom) n = headroom;
-      precision = n > 0 ? `±${n}` : '';
-    } else if (score >= 90) {
-      precision = '';  // S18: '+' teaser removed
-    } else {
-      let n = rg.confidenceRange != null ? Math.round(rg.confidenceRange) : 8;
-      n = Math.max(0, Math.min(16, n));
-      n = widenFn(n, assessmentDateISO);
-      const headroom = Math.max(0, 100 - score);
-      if (n > headroom) n = headroom;
-      precision = n > 0 ? `±${n}` : '';
-    }
-  }
-
+  // Two things worth carrying forward about that code specifically:
+  //   * widenPrecisionForAge NEVER EXISTED. The call here looked it up on
+  //     window.RobograderPanel, which exports only buildDisplay,
+  //     buildCardDisplay and pgCell - so the lookup always fell through to the
+  //     identity function beside it. The comment above it described, in
+  //     detail, a paper-aging behaviour that has never run once.
+  //   * this file computed its OWN +/- on the old 0-100 scheme rather than
+  //     using the panel's, so the label and the app could disagree about the
+  //     same book. That is no longer possible, there being nothing to disagree
+  //     about.
   let versionStr = `V${esc((typeof window!=='undefined' && window.RG_GRADING_VERSION) || '4.81')}`;  // APP version, not engine schema
   // Scoring v2 preview (?v2=1): the score box shows the 31-tier grade instead of
   // the 0-100 number. Every numeric use of `score` above already ran; this only
@@ -3684,12 +3541,12 @@ function renderLabelMarkup(comic, opts) {
   if (window.RG_V3_DISPLAY && window.RoboScoreV3 && comic && comic.type !== 'card' && rg && rg.frontScore != null) {
     // Scoring v3 (?v3=1): half-point grade + PM on the printed label.
     const _v3 = window.RoboScoreV3.forComic(comic);
-    if (_v3) { score = window.RoboScoreV3.formatGrade(_v3.grade); precision = _v3.pmLabel || ''; }  // keep versionStr = app version (shown at bottom)
+    if (_v3) { score = window.RoboScoreV3.formatGrade(_v3.grade); }  // keep versionStr = app version (shown at bottom)
   } else if (window.RG_V2_DISPLAY && window.RGScoreV2 && rg) {
     let _v2g = null;
     if (rg.frontScore != null) _v2g = window.RGScoreV2.fromSubscores({ front: rg.frontScore, back: rg.backScore, spine: rg.spineScore, interior: rg.interiorScore }, 'comic').grade;
     else if (rg.score != null) _v2g = window.RGScoreV2.gradeFromScore(rg.score);
-    if (_v2g != null) { score = _v2g; precision = ''; }  // keep versionStr = app version
+    if (_v2g != null) { score = _v2g; }  // keep versionStr = app version
   }
   const title = esc(comic.title || '');
   const issue = comic.issue ? `#${esc(comic.issue)}` : '';
@@ -3703,10 +3560,17 @@ function renderLabelMarkup(comic, opts) {
   // cannot force the line box taller than one line.
   const keyInfoRaw = String(comic.keyInfo == null ? '' : comic.keyInfo).replace(/\s+/g, ' ').trim();
   const keyInfo = keyInfoRaw ? esc(keyInfoRaw) : '';
+  // S22: the owner's own notes, between the printing and the Key Info. This is
+  // where "Detached spine" or "coupon cut" lives - a fact about THIS copy,
+  // which outranks the Key Info (a fact about the issue, true of every copy)
+  // and so goes above it. Same wrap-and-clip treatment as the rest of the
+  // line; nothing is truncated in JS.
+  const notesRaw = String(comic.notes == null ? '' : comic.notes).replace(/\s+/g, ' ').trim();
+  const notes = notesRaw ? esc(notesRaw) : '';
   // has-prt (which clamps the title to one line) now keys on this line
   // existing at all, not on the printing alone - a book with Key Info and no
   // printing still spends the row.
-  const prtLine = [printing, keyInfo].filter(Boolean).join(', ');
+  const prtLine = [printing, notes, keyInfo].filter(Boolean).join(', ');
 
   // ── THE WIDE SLOT: the figure, or a price in its place ────────────────────
   // One 160px column either way. Which art depends on the render, not the
@@ -3714,26 +3578,32 @@ function renderLabelMarkup(comic, opts) {
   // takes the black line version; a colour label takes the painted one. Both
   // files are 500x600, so the placement is byte-for-byte the same.
   const _artSrc = opts.mono ? 'assets/Robograder_Line.png' : 'assets/Robograder_Line_Colored.png';
-  // A TYPED price is a single-label thing. A sheet is twenty different books
-  // printed in one pass from a queue, and there is one price field - so a
-  // typed value could only ever be right for one of them, and would be wrong
-  // and CONFIDENT-looking on the other nineteen. On a sheet the toggle means
-  // something else: leave the slot empty so the price can be written in by
-  // hand, which is what actually happens at a table.
-  // The price is still scoped to the book it was typed for even in single
-  // mode - see the widePriceFor note in readOptions.
-  const _wideHandwrite = isWide && !!opts.priceTag && !_singleMode;
-  const _wideRawPrice = (isWide && opts.priceTag && _singleMode && opts.widePriceFor && opts.widePriceFor === (comic.roboGradeId || ''))
-    ? String(opts.widePrice == null ? '' : opts.widePrice).trim()
-    : '';
+  // S22: THE PRICE COMES FROM THE RECORD, NOT FROM A FIELD ON THIS SCREEN.
+  // The typed field is gone. It was a second place to put a price when the
+  // book already has an Asking Price on it, which meant two numbers that could
+  // disagree and no rule for which one was true. The label shows the record's
+  // Asking Price and nothing else, so the tag and the listing cannot disagree.
+  //
+  // Three states, and the empty one is deliberate:
+  //   toggle off                  -> the figure
+  //   toggle on, a price is set   -> $N (including $0 - a book priced at zero
+  //                                  is a giveaway, which is a real thing to
+  //                                  print, and is not the same as unpriced)
+  //   toggle on, no price set     -> EMPTY. No figure, no placeholder: 160 x
+  //                                  184 of clear label to write on, which is
+  //                                  what happens at a table when the price is
+  //                                  decided in front of the customer.
+  const _wideAskingRaw = comic.askingPrice;
+  const _wideAsking = (_wideAskingRaw == null || _wideAskingRaw === '')
+    ? null
+    : Number(String(_wideAskingRaw).replace(/[^0-9.\-]/g, ''));
+  const _widePriceOn = isWide && !!opts.priceTag;
   const _wideSlot = (() => {
-    // Empty, and empty on purpose: no box, no placeholder, nothing to print
-    // around what gets written. The slot is 160 x 184 of clear label.
-    if (_wideHandwrite) return '<div class="rg-art is-price"></div>';
-    const n = Number(String(_wideRawPrice).replace(/[^0-9.]/g, ''));
-    if (!_wideRawPrice || !Number.isFinite(n) || n <= 0) {
-      return '<div class="rg-art"><img src="' + _artSrc + '" alt=""></div>';
+    if (!_widePriceOn) return '<div class="rg-art"><img src="' + _artSrc + '" alt=""></div>';
+    if (_wideAsking == null || !Number.isFinite(_wideAsking) || _wideAsking < 0) {
+      return '<div class="rg-art is-price"></div>';
     }
+    const n = _wideAsking;
     // Whole numbers lose the decimals; 12.5 becomes 12.50, because a price
     // reading "$12.5" looks like a typo.
     const txt = '$' + (n % 1 === 0 ? String(Math.round(n)) : n.toFixed(2));
@@ -3806,7 +3676,6 @@ function renderLabelMarkup(comic, opts) {
         <div class="rg-word">ROBOGRADE</div>
         ${_labelTierStars}
         <div class="rg-num-wrap"><span class="rg-num"${_labelRestored ? ` style="color:${_labelScoreColor}"` : ''}>${score}</span>${_labelCheckHtml}</div>
-        ${precision ? `<span class="rg-prec"${_labelRestored ? ` style="color:${_labelScoreColor};opacity:0.9"` : ''}>${precision}</span>` : ''}
         ${_labelShowPlus ? `<div class="rg-plus"${_labelRestored ? ` style="color:${_labelScoreColor}"` : ''}>(+)</div>` : ''}
         <div class="rg-v">${versionStr}</div>
       </div>
@@ -3913,6 +3782,8 @@ function fitLabelText(container) {
     if (!prt) return;
     prt.style.maxHeight = '';
     info.classList.remove('squeeze');
+    // Measure the FULL text, not a previous run's truncation.
+    if (prt.hasAttribute('data-full')) prt.textContent = prt.getAttribute('data-full');
     const measure = () => {
       const cs = getComputedStyle(prt);
       const lh = parseFloat(cs.lineHeight);
@@ -3934,7 +3805,34 @@ function fitLabelText(container) {
     // max-height sizes the CONTENT box, so the padding (if any) is added on
     // top of this and the clip lands at lines * lh + pb - the same boundary
     // avail was measured from.
-    prt.style.maxHeight = (lines * m.lh) + 'px';
+    const _cap = lines * m.lh;
+    prt.style.maxHeight = _cap + 'px';
+
+    // ── MARK THE CUT ──────────────────────────────────────────────────────
+    // A clamped block that simply stops reads as a rendering fault; an
+    // ellipsis reads as a decision. text-overflow cannot do it - it only
+    // marks a SINGLE clipped line - so the text is shortened here until it
+    // fits with the ellipsis included.
+    // Word-at-a-time from the end, not character-at-a-time: a cut mid-word
+    // ("First appearance of Spider-M…") looks like damage, where a cut
+    // between words looks deliberate. Trailing punctuation goes with the
+    // word so it never reads ", …".
+    // A plain loop over, at most, the number of words on the line. Binary
+    // search would be fewer steps and a worse trade: each step is a reflow,
+    // and the loop has to be obviously correct more than it has to be quick.
+    if (prt.scrollHeight > _cap + 1) {
+      const full = String(prt.getAttribute('data-full') || prt.textContent || '');
+      prt.setAttribute('data-full', full);
+      const words = full.split(' ');
+      for (let n = words.length - 1; n >= 1; n--) {
+        prt.textContent = words.slice(0, n).join(' ').replace(/[\s,;:.\-]+$/, '') + '\u2026';
+        if (prt.scrollHeight <= _cap + 1) break;
+      }
+    } else if (prt.hasAttribute('data-full')) {
+      // Re-running on a label that was clipped before and now is not - a
+      // repaint after the figure moved, say - has to put the text back.
+      prt.textContent = prt.getAttribute('data-full');
+    }
   });
 }
 

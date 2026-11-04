@@ -45,6 +45,11 @@ const FEATURES = [
   ['FMV printing/variant classifier',                 'fmvPrintingSlug'],
   ['Watching entries may be shared',                  '_publicEligibleOwnership'],
   ['share text uses the v3 grade',                    '_v3share'],
+  // v6.10: the PG ladder guard. Qualifies on both counts in the note above -
+  // losing it is expensive (it publishes grades no grading service issues)
+  // and it was invisible when broken, because an off-ladder 9.5 looks like
+  // an ordinary number until someone who knows the CGC scale sees it.
+  ['PG ladder guard',                                 '_snapPgToLadder'],
 ];
 
 // Platform deltas: [label, marker, mustBeInIos, mustBeInAndroid]
@@ -79,12 +84,27 @@ for (const t of TARGETS) {
 
   const html = fs.readFileSync(idx, 'utf8');
 
-  // 1. version stamp — the single clearest sign of a skipped sync
-  if (html.includes(ROBOGRADE_VERSION)) {
+  // 1. version stamp — the single clearest sign of a skipped sync.
+  //
+  // v6.10: this was `html.includes(ROBOGRADE_VERSION)`, a bare SUBSTRING test,
+  // and it passed on a bundle four weeks stale. "6.10" occurs in any number of
+  // innocent places in a 2MB document - a CSS length, a timestamp, a numeric
+  // literal - so the test was answering "does this file contain those four
+  // characters anywhere", not "is this file stamped with this version". That
+  // is the exact failure this script exists to catch, in the script itself.
+  //
+  // It reads the real stamp now: the same `window.RG_GRADING_VERSION = "x.yz"`
+  // line that sync-version.mjs writes and that the native generators inject.
+  // No stamp at all is a failure in its own right rather than a fall-through.
+  const _stamp = html.match(/window\.RG_GRADING_VERSION\s*=\s*(?:window\.RG_GRADING_VERSION\s*\|\|\s*)?"([0-9]+\.[0-9]+)"/);
+  if (!_stamp) {
+    bad(`no RG_GRADING_VERSION stamp found in this bundle at all. The generator `
+        + `did not run, or ran against the wrong source — re-run the generate step, `
+        + `then: npx cap sync ${t.isIos ? 'ios' : 'android'}`);
+  } else if (_stamp[1] === ROBOGRADE_VERSION) {
     ok(`carries version ${ROBOGRADE_VERSION}`);
   } else {
-    const found = (html.match(/\b5\.\d{1,2}\b/g) || []).sort().pop() || 'none found';
-    bad(`version ${ROBOGRADE_VERSION} NOT in this bundle (newest stamp present: ${found}). `
+    bad(`stamped ${_stamp[1]}, not ${ROBOGRADE_VERSION}. `
         + `The generator ran but the sync did not — run: npx cap sync ${t.isIos ? 'ios' : 'android'}`);
   }
 

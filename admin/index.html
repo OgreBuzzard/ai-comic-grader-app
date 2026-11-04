@@ -3567,15 +3567,23 @@ const CAT_FIELDS = [
   'interiorImages','restorationImages','_userName','_userEmail'
 ].join(',');
 
-// The six orderings, in Matt's order. 'title' is the default.
+// The orderings, in Matt's order. 'title' is the default.
+// S22: RG and PG added. They are the only two that REVERSE on a second tap -
+// see _catOrderDir - because "highest first" and "lowest first" are both
+// questions you ask of a grade, where "Title descending" is not a question
+// anybody asks.
 const CAT_SORTS = [
   ['title',  'Title'],
   ['ranked', 'Ranked'],
   ['date',   'Date'],
   ['user',   'User'],
+  ['rg',     'RG'],
+  ['pg',     'PG'],
   ['fmvaz',  'FMV A-Z'],
   ['fmvrank','FMV Ranked'],
 ];
+// Which orderings reverse on a repeat tap.
+const CAT_REVERSIBLE = new Set(['rg', 'pg']);
 
 // S22: the catalogue is two SCREENS, not a split pane. On a phone the old
 // list-left / entries-right layout pushed the entries off the right edge. The
@@ -3614,6 +3622,9 @@ const _CAT_RESTO_LABELS = ['UV Front', 'UV Back', 'Ext Top Staple', 'Ext Bottom 
 let _catAccounts = null;      // uid -> { name, email, code }
 let _catFmvKeys = null;       // Set of fmv keys that HAVE a curve
 let _catOrder = 'title';
+// 'desc' = highest grade first, which is what the first tap gives. A second
+// tap on the SAME button flips it; moving to a different button resets it.
+let _catOrderDir = 'desc';
 // S22: 'slabbed only' is gone. Matt: a slab is not what makes a copy useful for
 // training — a RAW book whose real grade is known is. That is the truthGraded
 // flag, set by hand per entry, so this filter reads it instead.
@@ -3873,6 +3884,27 @@ function _catOrdered() {
     return gs.slice().sort((a, b) => String(b.lastAt).localeCompare(String(a.lastAt)))
              .map(g => ({ type: 'book', g }));
   }
+  // S22: grade orderings. The grade is the primary key and the title is the
+  // secondary, so a tier reads alphabetically inside itself - at 3,000+ entries
+  // an unsorted tier is a wall.
+  // A book with no grade is UNRANKED, not zero: it sorts to the bottom in BOTH
+  // directions, because "lowest first" means lowest GRADE, not "ungraded
+  // first". Sending nulls to the top on the ascending pass would bury the
+  // thing the ordering was opened to find.
+  if (_catOrder === 'rg' || _catOrder === 'pg') {
+    const key = _catOrder === 'rg' ? 'avgRG' : 'avgPG';
+    const sign = _catOrderDir === 'asc' ? 1 : -1;
+    return gs.slice().sort((a, b) => {
+      const av = a[key], bv = b[key];
+      const an = (av == null || !isFinite(av)), bn = (bv == null || !isFinite(bv));
+      if (an && bn) return a.title.localeCompare(b.title) || String(a.issue).localeCompare(String(b.issue), undefined, { numeric: true });
+      if (an) return 1;
+      if (bn) return -1;
+      if (av !== bv) return sign * (av - bv);
+      return a.title.localeCompare(b.title) || String(a.issue).localeCompare(String(b.issue), undefined, { numeric: true });
+    }).map(g => ({ type: 'book', g }));
+  }
+
   if (_catOrder === 'fmvaz')   return _catTitleSorted(gs.filter(g => !_catHasFmv(g))).map(g => ({ type: 'book', g }));
   if (_catOrder === 'fmvrank') return ranked(gs.filter(g => !_catHasFmv(g))).map(g => ({ type: 'book', g }));
 
@@ -3931,7 +3963,7 @@ function _catRenderList() {
       <input id="cat-q" placeholder="Filter books…" value="${escapeHtml(_catQ)}"
         style="width:100%;padding:8px 10px;background:#0e0f12;border:1px solid #23252c;border-radius:8px;color:#e6e6e6;font-size:13px;box-sizing:border-box">
       <div id="cat-orders" style="display:flex;gap:4px;flex-wrap:wrap;margin:8px 0">
-        ${CAT_SORTS.map(([v, l]) => `<button data-ord="${v}" style="padding:5px 10px;font-size:11px;border-radius:7px;cursor:pointer;border:1px solid ${_catOrder === v ? '#5c5' : '#2a2d38'};background:${_catOrder === v ? '#1d2a20' : '#161821'};color:${_catOrder === v ? '#bfe8bf' : '#9ab'}">${l}</button>`).join('')}
+        ${CAT_SORTS.map(([v, l]) => `<button data-ord="${v}" style="padding:5px 10px;font-size:11px;border-radius:7px;cursor:pointer;border:1px solid ${_catOrder === v ? '#5c5' : '#2a2d38'};background:${_catOrder === v ? '#1d2a20' : '#161821'};color:${_catOrder === v ? '#bfe8bf' : '#9ab'}">${l}${(CAT_REVERSIBLE.has(v) && _catOrder === v) ? (_catOrderDir === 'asc' ? ' \u2191' : ' \u2193') : ''}</button>`).join('')}
       </div>
       <div id="cat-alpha-wrap"></div>
       <div id="cat-books" style="border:1px solid #23252c;border-radius:8px;overflow:hidden"></div>
@@ -3947,7 +3979,17 @@ function _catRenderList() {
   };
   document.getElementById('cat-orders').onclick = e => {
     const b = e.target.closest('[data-ord]'); if (!b) return;
-    _catOrder = b.dataset.ord;
+    const _ord = b.dataset.ord;
+    // Same reversible button twice = flip. Anything else = that ordering, in
+    // its default direction. Tracking the direction per-button instead would
+    // mean the arrow on a button you have not touched this session claims a
+    // state nobody chose.
+    if (_ord === _catOrder && CAT_REVERSIBLE.has(_ord)) {
+      _catOrderDir = (_catOrderDir === 'desc') ? 'asc' : 'desc';
+    } else {
+      _catOrderDir = 'desc';
+    }
+    _catOrder = _ord;
     _catShown = CAT_PAGE;
     _catReturnKey = null;              // a different ordering has no "back here"
     _catRenderList();

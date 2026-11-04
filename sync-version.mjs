@@ -122,6 +122,17 @@ if (failed) {
 if (checkOnly) {
   if (drift) { console.error(`\n✗ ${drift} mirror(s) adrift from lib/version.js (${version}). Run: node sync-version.mjs`); process.exit(1); }
   console.log(`\n✓ all ${MIRRORS.length} mirrors agree with lib/version.js (${version}).`);
+  // S22: the deploy gate also checks the CACHED PROMPT PREFIXES. A prompt edit
+  // is a cache event - it changes the cache key, kills every warm entry, and
+  // leaves the keep-warm ping warming something nothing reads. Nothing about a
+  // prompt diff looks like a caching change, which is why it went unnoticed for
+  // three weeks once. Running it from here means it is checked by the one
+  // command that already runs before every deploy, rather than by remembering.
+  {
+    const { spawnSync } = await import('node:child_process');
+    const r = spawnSync(process.execPath, [path.join(ROOT, 'check-cache-prefix.mjs')], { stdio: 'inherit' });
+    if (r.status !== 0) process.exit(r.status || 1);
+  }
 } else {
   console.log(`\n✓ ${version} — ${changed} mirror(s) updated, ${MIRRORS.length - changed} already correct.`);
   console.log('  Native bundles take their version by injection at generate time; no action needed here.');
