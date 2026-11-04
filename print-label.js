@@ -804,7 +804,12 @@ function ensureStylesInjected() {
      of "60" sitting on top of V4.81. 22 is the measured landing: 4px of clear
      air under the numeral, 32 above it to the stars. Still 2px lower than the
      20 it came from, which is the direction asked for. */
-  .rg-label .rg-num-wrap { transform: translateY(14px); }
+  /* v6.20: 24px, not 14. Measured with the REAL League Spartan 900 (every
+     earlier ink run in the harness fell back to a substitute face, whose
+     digits are shorter, so the clearance it reported was fiction). At 14px
+     the numeral's cap top landed 4-7px ABOVE the star's ink on every
+     no-plus grade - the collision on Matt's printed Batman #151. */
+  .rg-label .rg-num-wrap { transform: translateY(24px); }
   .rg-label .rg-num {
     /* S14: was 148, dropped to 140, now 150 — brought back up a touch
        to match the Large label's score-prominence pass now that the
@@ -2135,7 +2140,8 @@ function ensureStylesInjected() {
     color: #0d0d0f; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
-    transform: scaleX(0.625) translateY(14px);
+    /* v6.20: 17px, not 14 - real-font ink left only 5px over the stars. */
+    transform: scaleX(0.625) translateY(17px);
     transform-origin: center;
   }
   /* S22: the (+) was rendering UNDER the number because Square had no rule
@@ -3864,7 +3870,7 @@ function renderLabelMarkup(comic, opts) {
   //               may reach from the centre before it meets the (+). Measured
   //               per size by rasterising the box with a three-glyph score.
   const _NUMFIT = {
-    'small':   { interior: 250, sx: 0.78,  max: 212, plusBudget: 128 },
+    'small':   { interior: 250, sx: 0.78,  max: 204, plusBudget: 128 },  // 212 overlapped the stars
     'small-l': { interior: 246, sx: 0.625, max: 150, plusBudget: 112 },
     'square':  { interior: 250, sx: 0.625, max: 172, plusBudget: 102 },
   };
