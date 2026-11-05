@@ -3516,61 +3516,110 @@ function renderAssessmentMap(item) {
   if (!item || item.type === 'card') return '';
   const byKey = {};
   for (const n of ASSESSMENT_MAP_NODES) byKey[n.key] = n;
-  // Two passes: a node's dependency must be resolved before it is judged.
   for (const n of ASSESSMENT_MAP_NODES) { try { n.ranNow = !!n.ran(item); } catch (e) { n.ranNow = false; } }
   const state = {};
   for (const n of ASSESSMENT_MAP_NODES) {
     try { state[n.key] = _mapNodeState(n, item, byKey); } catch (e) { state[n.key] = 'locked'; }
   }
-  // window._userCredits is the app's own balance (loadUserCredits), and the
-  // coin in the header reads from it. Falling back to that coin's text keeps
-  // the map right if the balance has not resolved yet on a cold open.
   const bal = Number(window._userCredits != null ? window._userCredits
     : (document.getElementById('credit-coin-count') || {}).textContent) || 0;
 
+  // v6.31b: Matt's 3x3, with the arrows. The grid IS the explanation - the
+  // spine runs MAIN -> DEEP -> FULL down the first column, and each junction
+  // between two spine boxes feeds the row either side of it. So the four
+  // things MAIN unlocks branch off the MAIN->DEEP segment, and the two things
+  // DEEP unlocks branch off DEEP->FULL. Colour alone carries the state now:
+  // the label score box's light green for RUN, the dark green for AVAILABLE,
+  // grey for LOCKED. The words RUN and AVAILABLE are gone - if the box needs
+  // a caption to say which it is, the colour has failed.
+  // 84, not 78: an unaffordable box carries both its cost and NEED CREDITS -
+  // you cannot act on "you are short" without knowing short of what.
+  const BOX_H = 84, GAP_Y = 26;
+  const COL = ['16.666%', '50%', '83.333%'];
   const SKIN = {
-    ran:    { bg: '#2f4a18', bd: '#6a9a30', fg: '#cfe8a8', note: 'RUN' },
-    open:   { bg: '#1d2e10', bd: '#6a9a30', fg: '#b8d820', note: 'AVAILABLE' },
-    locked: { bg: '#121a0c', bd: '#2a3a1e', fg: '#6a7a5a', note: 'LOCKED' }
+    ran:    { bg: '#cfe8a8', bd: '#6a9a30', fg: '#1d2e10', sub: '#3f5a22' },
+    open:   { bg: '#2f4a18', bd: '#6a9a30', fg: '#cfe8a8', sub: '#9abf60' },
+    locked: { bg: '#26261f', bd: '#3a3a30', fg: '#7a7a6c', sub: '#5f5f54' },
+    short:  { bg: '#e8b4ac', bd: '#b05a4a', fg: '#4a1a12', sub: '#7a2e20' }
   };
+
   const card = (n) => {
     const st = state[n.key];
-    const sk = SKIN[st];
-    // Unlocked but unaffordable is its own thing: it is not locked, and
-    // telling someone it is would send them looking for a prerequisite that
-    // is already met.
+    // Unlocked but unaffordable is its own colour, not a caption on a green
+    // box: the thing stopping you is money, not a prerequisite.
     const short = st === 'open' && n.cost > bal;
+    const sk = short ? SKIN.short : SKIN[st];
     const stars = n.stars
-      ? `<div style="line-height:1;margin-bottom:3px;opacity:${st === 'locked' ? 0.3 : 0.85}">` +
-        Array.from({ length: n.stars }, () => tierStarSVG(11, sk.fg)).join('') + '</div>'
-      : '';
-    return `<div style="flex:1;min-width:0;background:${sk.bg};border:1.5px solid ${short ? '#8a6a2a' : sk.bd};
-        border-radius:10px;padding:8px 6px;text-align:center;display:flex;flex-direction:column;
-        align-items:center;gap:4px">
+      ? `<div style="line-height:1;height:12px">${Array.from({ length: n.stars }, () => tierStarSVG(11, sk.fg)).join('')}</div>`
+      : '<div style="height:12px"></div>';
+    const cost = n.cost === 0
+      ? `<div style="font-size:10px;font-weight:800;letter-spacing:1px;color:${sk.sub}">FREE</div>`
+      : `<div style="display:flex;align-items:center;justify-content:center;gap:4px">
+           <span style="font-size:9px;font-weight:800;letter-spacing:1px;color:${sk.sub}">COST</span>
+           ${_coinSVG(n.cost, 19, st === 'locked')}
+         </div>`;
+    return `<div style="background:${sk.bg};border:1.5px solid ${sk.bd};border-radius:9px;
+        height:${BOX_H}px;box-sizing:border-box;padding:6px 4px;display:flex;flex-direction:column;
+        align-items:center;justify-content:center;gap:3px;text-align:center">
         ${stars}
-        <div style="font-size:10px;font-weight:800;letter-spacing:0.6px;color:${sk.fg};line-height:1.15;
+        <div style="font-size:10px;font-weight:800;letter-spacing:0.4px;line-height:1.1;color:${sk.fg};
           word-break:break-word">${esc(n.label)}</div>
-        ${_coinSVG(n.cost, 22, st === 'locked')}
-        <div style="font-size:8px;font-weight:700;letter-spacing:0.8px;color:${short ? '#c8a04a' : sk.fg};opacity:0.75">${short ? 'NEED CREDITS' : sk.note}</div>
+        ${cost}
+        ${short ? `<div style="font-size:8px;font-weight:800;letter-spacing:0.7px;color:${sk.sub}">NEED CREDITS</div>` : ''}
       </div>`;
   };
-  const row = (keys) => `<div style="display:flex;gap:6px;align-items:stretch">
-      ${keys.map(k => card(ASSESSMENT_MAP_NODES.find(n => n.key === k))).join('')}
-    </div>`;
-  const spine = (lit) => `<div style="display:flex;justify-content:center">
-      <div style="width:2px;height:12px;background:${lit ? '#6a9a30' : '#2a3a1e'}"></div></div>`;
 
+  // ── connectors ────────────────────────────────────────────────────────────
+  // Plain divs, not SVG: the grid rows are a fixed height, so every coordinate
+  // here is arithmetic rather than measurement, and it survives html2canvas.
+  const LINE = '#6a9a30', DIM = '#3a3a30';
+  const vline = (x, y, h, on) =>
+    `<div style="position:absolute;left:${x};top:${y}px;width:2px;height:${h}px;margin-left:-1px;background:${on ? LINE : DIM}"></div>`;
+  const hline = (x1, x2, y, on) =>
+    `<div style="position:absolute;left:${x1};right:${x2};top:${y}px;height:2px;background:${on ? LINE : DIM}"></div>`;
+  // Arrowhead pointing UP (sitting on the box's bottom edge) or DOWN (on top).
+  const head = (x, y, dir, on) =>
+    `<div style="position:absolute;left:${x};top:${y}px;margin-left:-4px;width:0;height:0;
+       border-left:4px solid transparent;border-right:4px solid transparent;
+       ${dir === 'up' ? 'border-bottom' : 'border-top'}:6px solid ${on ? LINE : DIM}"></div>`;
+
+  const r1b = BOX_H;                       // bottom of row 1
+  const r2t = BOX_H + GAP_Y;               // top of row 2
+  const r2b = r2t + BOX_H;
+  const r3t = r2b + GAP_Y;
+  const j1 = r1b + GAP_Y / 2;              // MAIN -> DEEP junction
+  const j2 = r2b + GAP_Y / 2;              // DEEP -> FULL junction
+  const mainRan = state.main === 'ran';
+  const deepRan = state.deep === 'ran';
+
+  const wires =
+    // spine
+    vline(COL[0], r1b, GAP_Y, mainRan) + head(COL[0], r2t - 6, 'down', mainRan) +
+    vline(COL[0], r2b, GAP_Y, deepRan) + head(COL[0], r3t - 6, 'down', deepRan) +
+    // everything MAIN unlocks, off the MAIN -> DEEP segment
+    hline(COL[0], '16.666%', j1, mainRan) +
+    vline(COL[1], r1b, GAP_Y / 2, mainRan) + head(COL[1], r1b, 'up', mainRan) +
+    vline(COL[2], r1b, GAP_Y / 2, mainRan) + head(COL[2], r1b, 'up', mainRan) +
+    vline(COL[1], j1, GAP_Y / 2, mainRan) + head(COL[1], r2t - 6, 'down', mainRan) +
+    vline(COL[2], j1, GAP_Y / 2, mainRan) + head(COL[2], r2t - 6, 'down', mainRan) +
+    // everything DEEP unlocks, off the DEEP -> FULL segment
+    hline(COL[0], '16.666%', j2, deepRan) +
+    vline(COL[1], j2, GAP_Y / 2, deepRan) + head(COL[1], r3t - 6, 'down', deepRan) +
+    vline(COL[2], j2, GAP_Y / 2, deepRan) + head(COL[2], r3t - 6, 'down', deepRan);
+
+  const g = (k) => card(byKey[k]);
   return `<div style="margin-top:22px;padding-top:16px;border-top:1px dashed #3a5018">
-      <div style="font-size:11px;font-weight:700;letter-spacing:2px;color:#9abf60;margin-bottom:4px">ASSESSMENT MAP</div>
-      <div style="font-size:11px;color:#7a8a6a;line-height:1.45;margin-bottom:12px">What has been run, what is available now, and what each one costs.</div>
-      ${row(['main'])}
-      ${spine(state.main === 'ran')}
-      ${row(['sig', 'insert', 'coupon', 'uv'])}
-      ${spine(state.main === 'ran')}
-      ${row(['deep'])}
-      ${spine(state.deep === 'ran')}
-      ${row(['full', 'batch', 'clean'])}
-      <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:14px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:2px;color:#9abf60;margin-bottom:10px">ASSESSMENT MAP</div>
+      <div style="position:relative">
+        ${wires}
+        <div style="position:relative;display:grid;grid-template-columns:repeat(3,1fr);
+          column-gap:10px;row-gap:${GAP_Y}px">
+          ${g('main')}${g('sig')}${g('insert')}
+          ${g('deep')}${g('coupon')}${g('uv')}
+          ${g('full')}${g('batch')}${g('clean')}
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px">
         ${_coinSVG(bal, 26, false)}
         <span style="font-size:11px;font-weight:700;letter-spacing:1px;color:#9abf60">YOUR CREDITS</span>
       </div>
