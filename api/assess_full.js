@@ -128,22 +128,37 @@ function isDeepListBook(title, issue) {
   return DEEP_LIST_BOOKS.some(b => b.title === t && b.issue === i);
 }
 
-// S20 (#37): Full is gated CLIENT-SIDE on a completed Deep assessment AND FMV
-// tier >= 6 ($500+), and every run costs a credit. The old server score/grade
-// floor is removed: it would wrongly reject legitimately-valuable LOW-grade keys
-// (tier 6+ despite a low grade). The slabbed + prereq checks below still apply,
-// so a book only reaches here after Main + Deep have run.
+// Full is gated CLIENT-SIDE on a completed Deep assessment AND an FMV tier,
+// and every run costs a credit. The old server score/grade floor is removed: it
+// would wrongly reject legitimately-valuable LOW-grade keys. The slabbed +
+// prereq checks below still apply, so a book only reaches here after Main and
+// Deep have run.
+//
+// v6.34 - THE TIER LIVES IN TWO PLACES AND THEY MUST MATCH.
+// v6.32 lowered the CLIENT gate to tier 4 ($100+) and left this one at 6. The
+// button therefore appeared on every $100-$499 book and the server rejected
+// every one of them with INELIGIBLE_BOOK, which the client shows as the
+// generic "Assessment failed. Please try again." Tier 6+ books and the
+// near-perfect path still passed both gates, so it failed for some books and
+// not others on the same account - and looked like an outage rather than a
+// gate.
+// If the tier changes again it changes in BOTH files: index.html
+// isFullAssessmentEligible() and here.
+// Tier 4 = $100+. Was 6 ($500+), and 7 ($1000+) before that.
+const FULL_MIN_FMV_TIER = 4;
+
 function isFullEligible({ title, issueNumber, fmvTier, rgGrade, predictedGrade }) {
   // Historic mega-keys always qualify (server-authoritative list, independent
   // of the client).
   if (isDeepListBook(title, issueNumber)) return { eligible: true, reason: 'deep-list' };
-  // Everything else must be FMV tier >= 6 ($500+). The client computes fmvTier
-  // (matchFMV) and sends it. A client from BEFORE the FMV-tier gate (the old
-  // grade/score gate that wrongly unlocked Full on high-grade low-value books)
-  // omits fmvTier -> treated as ineligible here. This is the server backstop the
-  // gate previously lacked (it used to trust the client entirely).
+  // Everything else must clear FULL_MIN_FMV_TIER. The client computes fmvTier
+  // (matchFMV) and sends it. A client from BEFORE the FMV-tier gate omits
+  // fmvTier -> treated as ineligible here. This is the server backstop the gate
+  // previously lacked (it used to trust the client entirely).
   const t = Number(fmvTier);
-  if (Number.isFinite(t) && t >= 6) return { eligible: true, reason: 'fmv-tier6' };
+  if (Number.isFinite(t) && t >= FULL_MIN_FMV_TIER) {
+    return { eligible: true, reason: 'fmv-tier' + FULL_MIN_FMV_TIER };
+  }
   // S22: near-perfect books unlock Full regardless of value (the perfect-10 path):
   // RG hit the 9.5 Deep ceiling, or the predicted grade is 9.6+.
   const _rg = Number(rgGrade), _pg = Number(predictedGrade);
@@ -240,7 +255,7 @@ export default async function handler(req, res) {
   if (!elig.eligible) {
     return sseError(400, {
       error: 'INELIGIBLE_BOOK',
-      message: 'Full Assessment requires a near-perfect grade (RG 9.5 / predicted 9.6+), an FMV of $500+ (tier 6), or a book on the high-value list. If your app is out of date, please update it and try again.'
+      message: 'Full Assessment requires a near-perfect grade (RG 9.5 / predicted 9.6+), an FMV of $100+ (tier ' + FULL_MIN_FMV_TIER + '), or a book on the high-value list. If your app is out of date, please update it and try again.'
     });
   }
 
