@@ -1036,6 +1036,35 @@ onAuthStateChanged(auth, async user => {
     .badge-fill-psa { background: rgba(220,80,80,0.15); }
     .btn:disabled { background: #1c1814; color: #4a3e34; cursor: not-allowed; }
     input, select, textarea { background: #ffffff; border: 1px solid #ccc8c0; border-radius: 4px; color: #1a1614; padding: 8px 10px; font-size: 13px; font-family: inherit; outline: none; width: 100%; }
+    /* v6.32: a compact, styled select for the two dropdowns that are a choice
+       rather than a field - Added Label Notes and My Grade. The browser default
+       is a full-width box with the platform's own arrow, which on a form of
+       mostly-empty optional fields reads louder than the things that matter.
+       width:auto so it is as wide as its longest option and no wider;
+       max-width keeps a long option from spanning the entry. appearance:none
+       removes the platform chrome and the caret is drawn as a background SVG
+       so it matches on both platforms. */
+    select.rg-select {
+      width: auto;
+      min-width: 150px;
+      max-width: 100%;
+      padding: 7px 30px 7px 11px;
+      border: 1px solid #c0bbb2;
+      border-radius: 7px;
+      background-color: #fffdfa;
+      background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a7a6a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 11px center;
+      -webkit-appearance: none;
+      appearance: none;
+      font-weight: 600;
+      color: #3a2e24;
+      cursor: pointer;
+    }
+    select.rg-select:focus { border-color: #8aa85a; box-shadow: 0 0 0 2px rgba(138,168,90,0.18); }
+    /* My Grade carries "9.8 — Near Mint/Mint", which is the longest string
+       either of these holds. */
+    select.rg-select.rg-select-grade { min-width: 230px; }
     label.field-label { display: block; font-size: 11px; color: #8a7a6a; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
     /* S14 (anti-fraud): read-only field display for Pub Date / Printing on
        graded books. Visually distinct from editable inputs — muted fill,
@@ -3392,11 +3421,11 @@ function detailTab(item) {
   const id = item && item.id;
   if (_detailTabFor !== id) { _detailTabFor = id; _detailTab = null; }
   if (_detailTab) return _detailTab;
-  return _hasAssessment(item) ? "assessment" : "images";
+  return _hasAssessment(item) ? "assessment" : "photos";
 }
 
 function setDetailTab(t) {
-  _detailTab = (t === "images") ? "images" : "assessment";
+  _detailTab = (t === "photos") ? "photos" : "assessment";
   // Both views render through their own entry point; call whichever is live.
   if (view === "detail" && typeof showDetail === "function" && selected) showDetail(selected.id);
   else if (typeof renderForm === "function") renderForm();
@@ -3405,24 +3434,47 @@ function setDetailTab(t) {
 // The two tabs. Rendered as actual folder tabs - the inactive one is darker,
 // sits 2px lower and has no bottom border, so the active one reads as the
 // sheet you are looking at rather than as a selected button.
+const TAB_SKIN = {
+  // The PHOTOS sheet is the lighter of the two so the two halves are
+  // distinguishable at a glance even before you read the tab.
+  photos:     { bg: '#1e2f14', bd: '#4a7028', fg: '#cfe8a8' },
+  assessment: { bg: '#101c0a', bd: '#3a5018', fg: '#b8d820' },
+  off:        { bg: '#141a10', fg: '#7a8a6a', bd: '#2c3a22' }
+};
+
 function renderDetailTabs(item, opts) {
-  if (!TABS_ENABLED) return "";
+  if (!TABS_ENABLED) return '';
   const cur = detailTab(item);
   const ro = !!(opts && opts.readOnly);
+  // Real folder tabs: the active one shares its fill with the sheet below and
+  // covers the sheet's top border, so the two read as one object. The inactive
+  // one sits 3px lower, darker, with its own bottom border intact - it is a
+  // closed folder behind the open one.
   const tab = (key, label) => {
     const on = cur === key;
-    const click = ro ? "" : ` onclick="setDetailTab('${key}')"`;
+    const sk = TAB_SKIN[key];
+    const click = ro ? '' : ` onclick="setDetailTab('${key}')"`;
     return `<button type="button"${click} style="
-      flex:1;padding:${on ? "11px" : "9px"} 10px ${on ? "12px" : "10px"};margin-top:${on ? "0" : "2px"};
-      border:1.5px solid ${on ? "#6a9a30" : "#2a3a1e"};border-bottom:${on ? "none" : "1.5px solid #6a9a30"};
-      border-radius:10px 10px 0 0;cursor:${ro ? "default" : "pointer"};
-      font-family:inherit;font-size:12px;font-weight:${on ? 800 : 700};letter-spacing:1.5px;
-      background:${on ? "#1d2e10" : "#121a0c"};color:${on ? "#cfe8a8" : "#7a8a6a"}">${label}</button>`;
+      flex:1;min-width:0;border:1.5px solid ${on ? sk.bd : TAB_SKIN.off.bd};
+      ${on ? 'border-bottom:none;margin-bottom:-1.5px;position:relative;z-index:1;' : 'margin-top:3px;'}
+      border-radius:9px 9px 0 0;padding:${on ? '9px' : '8px'} 8px;
+      background:${on ? sk.bg : TAB_SKIN.off.bg};color:${on ? sk.fg : TAB_SKIN.off.fg};
+      font-family:inherit;font-size:11px;font-weight:${on ? 800 : 700};letter-spacing:1.6px;
+      cursor:${ro ? 'default' : 'pointer'};line-height:1">${label}</button>`;
   };
-  return `<div style="display:flex;gap:4px;align-items:flex-end;margin-top:18px">
-      ${tab("images", "IMAGES")}${tab("assessment", "ASSESSMENT")}
-    </div>
-    <div style="height:0;border-top:1.5px solid #6a9a30;margin-bottom:14px"></div>`;
+  const sk = TAB_SKIN[cur];
+  // Opens the sheet. tabWrapClose() closes it after BOTH panels.
+  return `<div style="margin-top:18px">
+      <div style="display:flex;gap:5px;align-items:flex-end">
+        ${tab('photos', 'PHOTOS')}${tab('assessment', 'ASSESSMENT')}
+      </div>
+      <div style="background:${sk.bg};border:1.5px solid ${sk.bd};
+        border-radius:${cur === 'photos' ? '0 10px 10px 10px' : '10px 0 10px 10px'};
+        padding:12px 10px">`;
+}
+
+function tabWrapClose() {
+  return TABS_ENABLED ? '</div></div>' : '';
 }
 
 // Panels are rendered either way and hidden with display, not omitted: the
@@ -3512,6 +3564,29 @@ function _mapNodeState(node, item, byKey) {
   return node.open(item) ? 'open' : 'locked';
 }
 
+// ── THE FOLDER PANEL ────────────────────────────────────────────────────────
+// A bordered panel whose title sits in a tab on its own top edge, the way a
+// manila folder's label does: the tab is part of the folder, drawn above the
+// line, open at the bottom so the two read as one object.
+//
+// Built from two elements rather than a pseudo-element so html2canvas can see
+// it: the tab is an inline-block with a bottom border the same colour as its
+// fill, which erases the panel's top line underneath it.
+function rgFolderPanel(title, inner, o) {
+  o = o || {};
+  const bg = o.bg || '#101c0a', bd = o.bd || '#3a5018', fg = o.fg || '#9abf60';
+  return `<div style="margin-top:${o.mt == null ? 18 : o.mt}px">
+      <div style="display:flex;padding-left:12px">
+        <div style="background:${bg};border:1.5px solid ${bd};border-bottom:none;
+          border-radius:8px 8px 0 0;padding:6px 14px 5px;margin-bottom:-1.5px;position:relative;z-index:1;
+          font-size:11px;font-weight:800;letter-spacing:1.6px;color:${fg};line-height:1">${esc(title)}</div>
+      </div>
+      <div style="background:${bg};border:1.5px solid ${bd};border-radius:0 10px 10px 10px;padding:14px 12px">
+        ${inner}
+      </div>
+    </div>`;
+}
+
 function renderAssessmentMap(item) {
   if (!item || item.type === 'card') return '';
   const byKey = {};
@@ -3524,106 +3599,97 @@ function renderAssessmentMap(item) {
   const bal = Number(window._userCredits != null ? window._userCredits
     : (document.getElementById('credit-coin-count') || {}).textContent) || 0;
 
-  // v6.31b: Matt's 3x3, with the arrows. The grid IS the explanation - the
-  // spine runs MAIN -> DEEP -> FULL down the first column, and each junction
-  // between two spine boxes feeds the row either side of it. So the four
-  // things MAIN unlocks branch off the MAIN->DEEP segment, and the two things
-  // DEEP unlocks branch off DEEP->FULL. Colour alone carries the state now:
-  // the label score box's light green for RUN, the dark green for AVAILABLE,
-  // grey for LOCKED. The words RUN and AVAILABLE are gone - if the box needs
-  // a caption to say which it is, the colour has failed.
-  // 84, not 78: an unaffordable box carries both its cost and NEED CREDITS -
-  // you cannot act on "you are short" without knowing short of what.
-  const BOX_H = 84, GAP_Y = 26;
+  // v6.32: Matt's 3x3 with the arrows drawn, inside a panel whose title sits in
+  // a folder tab on its top edge.
+  //
+  // COLOUR CARRIES THE STATE. Light green (the label score box) = run; the
+  // BATCH-card green = available, taken from that card's own values so the two
+  // cannot drift; grey = locked; light red = available but unaffordable. No RUN
+  // or AVAILABLE caption - if a box needs a word to say which it is, the colour
+  // has failed.
+  //
+  // THE SPINE IS THICKER. Main -> Deep -> Full is the assessment path; the
+  // other six hang off it. 3px against 2px says which is which without a
+  // legend.
+  const BOX_H = 62, GAP_Y = 24;
   const COL = ['16.666%', '50%', '83.333%'];
   const SKIN = {
+    // #152e10 / #4a7028 / #b8d820 are lifted from the BATCH ASSESSMENT
+    // AVAILABLE card. Same meaning, same colour.
     ran:    { bg: '#cfe8a8', bd: '#6a9a30', fg: '#1d2e10', sub: '#3f5a22' },
-    open:   { bg: '#2f4a18', bd: '#6a9a30', fg: '#cfe8a8', sub: '#9abf60' },
-    locked: { bg: '#26261f', bd: '#3a3a30', fg: '#7a7a6c', sub: '#5f5f54' },
+    open:   { bg: '#152e10', bd: '#4a7028', fg: '#b8d820', sub: '#9cc76a' },
+    locked: { bg: '#6e6e66', bd: '#8a8a80', fg: '#f0efe9', sub: '#d8d6cc' },
     short:  { bg: '#e8b4ac', bd: '#b05a4a', fg: '#4a1a12', sub: '#7a2e20' }
   };
 
   const card = (n) => {
     const st = state[n.key];
-    // Unlocked but unaffordable is its own colour, not a caption on a green
-    // box: the thing stopping you is money, not a prerequisite.
     const short = st === 'open' && n.cost > bal;
     const sk = short ? SKIN.short : SKIN[st];
-    const stars = n.stars
-      ? `<div style="line-height:1;height:12px">${Array.from({ length: n.stars }, () => tierStarSVG(11, sk.fg)).join('')}</div>`
-      : '<div style="height:12px"></div>';
     const cost = n.cost === 0
       ? `<div style="font-size:10px;font-weight:800;letter-spacing:1px;color:${sk.sub}">FREE</div>`
       : `<div style="display:flex;align-items:center;justify-content:center;gap:4px">
            <span style="font-size:9px;font-weight:800;letter-spacing:1px;color:${sk.sub}">COST</span>
-           ${_coinSVG(n.cost, 19, st === 'locked')}
+           ${_coinSVG(n.cost, 17, false)}
          </div>`;
-    return `<div style="background:${sk.bg};border:1.5px solid ${sk.bd};border-radius:9px;
-        height:${BOX_H}px;box-sizing:border-box;padding:6px 4px;display:flex;flex-direction:column;
-        align-items:center;justify-content:center;gap:3px;text-align:center">
+    // Only the starred three reserve a star row. The other six centre their two
+    // lines on the box's true middle instead of hanging below a blank strip.
+    const stars = n.stars
+      ? `<div style="line-height:1;height:11px">${Array.from({ length: n.stars }, () => tierStarSVG(10, sk.fg)).join('')}</div>`
+      : '';
+    return `<div style="background:${sk.bg};border:1.5px solid ${sk.bd};border-radius:8px;
+        height:${BOX_H}px;box-sizing:border-box;padding:4px;display:flex;flex-direction:column;
+        align-items:center;justify-content:center;gap:2px;text-align:center">
         ${stars}
-        <div style="font-size:10px;font-weight:800;letter-spacing:0.4px;line-height:1.1;color:${sk.fg};
+        <div style="font-size:10px;font-weight:800;letter-spacing:0.3px;line-height:1.1;color:${sk.fg};
           word-break:break-word">${esc(n.label)}</div>
         ${cost}
-        ${short ? `<div style="font-size:8px;font-weight:800;letter-spacing:0.7px;color:${sk.sub}">NEED CREDITS</div>` : ''}
+        ${short ? `<div style="font-size:8px;font-weight:800;letter-spacing:0.6px;color:${sk.sub}">NEED CREDITS</div>` : ''}
       </div>`;
   };
 
-  // ── connectors ────────────────────────────────────────────────────────────
-  // Plain divs, not SVG: the grid rows are a fixed height, so every coordinate
-  // here is arithmetic rather than measurement, and it survives html2canvas.
-  const LINE = '#6a9a30', DIM = '#3a3a30';
-  const vline = (x, y, h, on) =>
-    `<div style="position:absolute;left:${x};top:${y}px;width:2px;height:${h}px;margin-left:-1px;background:${on ? LINE : DIM}"></div>`;
-  const hline = (x1, x2, y, on) =>
-    `<div style="position:absolute;left:${x1};right:${x2};top:${y}px;height:2px;background:${on ? LINE : DIM}"></div>`;
-  // Arrowhead pointing UP (sitting on the box's bottom edge) or DOWN (on top).
-  const head = (x, y, dir, on) =>
-    `<div style="position:absolute;left:${x};top:${y}px;margin-left:-4px;width:0;height:0;
-       border-left:4px solid transparent;border-right:4px solid transparent;
-       ${dir === 'up' ? 'border-bottom' : 'border-top'}:6px solid ${on ? LINE : DIM}"></div>`;
+  // Connectors are plain divs: the rows are a fixed height, so every coordinate
+  // is arithmetic rather than measurement, and it survives html2canvas.
+  const LINE = '#6a9a30', DIM = '#4a4a42';
+  const vline = (x, y, h, on, w) =>
+    `<div style="position:absolute;left:${x};top:${y}px;width:${w}px;height:${h}px;margin-left:-${w / 2}px;background:${on ? LINE : DIM}"></div>`;
+  const hline = (x1, x2, y, on, w) =>
+    `<div style="position:absolute;left:${x1};right:${x2};top:${y}px;height:${w}px;background:${on ? LINE : DIM}"></div>`;
+  const head = (x, y, dir, on, big) => {
+    const hw = big ? 5 : 4, hh = big ? 7 : 6;
+    return `<div style="position:absolute;left:${x};top:${y}px;margin-left:-${hw}px;width:0;height:0;
+       border-left:${hw}px solid transparent;border-right:${hw}px solid transparent;
+       ${dir === 'up' ? 'border-bottom' : 'border-top'}:${hh}px solid ${on ? LINE : DIM}"></div>`;
+  };
 
-  const r1b = BOX_H;                       // bottom of row 1
-  const r2t = BOX_H + GAP_Y;               // top of row 2
-  const r2b = r2t + BOX_H;
-  const r3t = r2b + GAP_Y;
-  const j1 = r1b + GAP_Y / 2;              // MAIN -> DEEP junction
-  const j2 = r2b + GAP_Y / 2;              // DEEP -> FULL junction
-  const mainRan = state.main === 'ran';
-  const deepRan = state.deep === 'ran';
+  const r1b = BOX_H, r2t = BOX_H + GAP_Y, r2b = r2t + BOX_H, r3t = r2b + GAP_Y;
+  const j1 = r1b + GAP_Y / 2, j2 = r2b + GAP_Y / 2;
+  const mainRan = state.main === 'ran', deepRan = state.deep === 'ran';
+  const SPINE = 3, BRANCH = 2;
 
   const wires =
-    // spine
-    vline(COL[0], r1b, GAP_Y, mainRan) + head(COL[0], r2t - 6, 'down', mainRan) +
-    vline(COL[0], r2b, GAP_Y, deepRan) + head(COL[0], r3t - 6, 'down', deepRan) +
-    // everything MAIN unlocks, off the MAIN -> DEEP segment
-    hline(COL[0], '16.666%', j1, mainRan) +
-    vline(COL[1], r1b, GAP_Y / 2, mainRan) + head(COL[1], r1b, 'up', mainRan) +
-    vline(COL[2], r1b, GAP_Y / 2, mainRan) + head(COL[2], r1b, 'up', mainRan) +
-    vline(COL[1], j1, GAP_Y / 2, mainRan) + head(COL[1], r2t - 6, 'down', mainRan) +
-    vline(COL[2], j1, GAP_Y / 2, mainRan) + head(COL[2], r2t - 6, 'down', mainRan) +
-    // everything DEEP unlocks, off the DEEP -> FULL segment
-    hline(COL[0], '16.666%', j2, deepRan) +
-    vline(COL[1], j2, GAP_Y / 2, deepRan) + head(COL[1], r3t - 6, 'down', deepRan) +
-    vline(COL[2], j2, GAP_Y / 2, deepRan) + head(COL[2], r3t - 6, 'down', deepRan);
+    vline(COL[0], r1b, GAP_Y, mainRan, SPINE) + head(COL[0], r2t - 7, 'down', mainRan, true) +
+    vline(COL[0], r2b, GAP_Y, deepRan, SPINE) + head(COL[0], r3t - 7, 'down', deepRan, true) +
+    hline(COL[0], '16.666%', j1, mainRan, BRANCH) +
+    vline(COL[1], r1b, GAP_Y / 2, mainRan, BRANCH) + head(COL[1], r1b, 'up', mainRan) +
+    vline(COL[2], r1b, GAP_Y / 2, mainRan, BRANCH) + head(COL[2], r1b, 'up', mainRan) +
+    vline(COL[1], j1, GAP_Y / 2, mainRan, BRANCH) + head(COL[1], r2t - 6, 'down', mainRan) +
+    vline(COL[2], j1, GAP_Y / 2, mainRan, BRANCH) + head(COL[2], r2t - 6, 'down', mainRan) +
+    hline(COL[0], '16.666%', j2, deepRan, BRANCH) +
+    vline(COL[1], j2, GAP_Y / 2, deepRan, BRANCH) + head(COL[1], r3t - 6, 'down', deepRan) +
+    vline(COL[2], j2, GAP_Y / 2, deepRan, BRANCH) + head(COL[2], r3t - 6, 'down', deepRan);
 
   const g = (k) => card(byKey[k]);
-  return `<div style="margin-top:22px;padding-top:16px;border-top:1px dashed #3a5018">
-      <div style="font-size:11px;font-weight:700;letter-spacing:2px;color:#9abf60;margin-bottom:10px">ASSESSMENT MAP</div>
+  return rgFolderPanel('ASSESSMENT MAP', `
       <div style="position:relative">
         ${wires}
         <div style="position:relative;display:grid;grid-template-columns:repeat(3,1fr);
-          column-gap:10px;row-gap:${GAP_Y}px">
+          column-gap:9px;row-gap:${GAP_Y}px">
           ${g('main')}${g('sig')}${g('insert')}
           ${g('deep')}${g('coupon')}${g('uv')}
           ${g('full')}${g('batch')}${g('clean')}
         </div>
-      </div>
-      <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px">
-        ${_coinSVG(bal, 26, false)}
-        <span style="font-size:11px;font-weight:700;letter-spacing:1px;color:#9abf60">YOUR CREDITS</span>
-      </div>
-    </div>`;
+      </div>`, { bg: '#101c0a', bd: '#3a5018', fg: '#9abf60', mt: 22 });
 }
 
 function renderIdentityHeader(item) {
@@ -3666,9 +3732,9 @@ function renderAddedLabelNotesField() {
     ? `<option value="${esc(cur)}" selected>${esc(cur)}</option>` : "";
   const sig = hasConfirmedSignature(formData);
   return `<div>
-      <label class="field-label">Added Label Notes <span style="font-weight:600;letter-spacing:0;text-transform:none;color:#7a8a6a">&mdash; public, prints on the label</span></label>
-      <select onchange="setAddedLabelNote(this.value)">
-        <option value="">&mdash; none &mdash;</option>
+      <label class="field-label">Added Label Notes</label>
+      <select class="rg-select" onchange="setAddedLabelNote(this.value)">
+        <option value="">None</option>
         ${orphan}${opts}
       </select>
       ${extra.length ? `<div style="font-size:11px;color:#7a8a6a;margin-top:6px;line-height:1.45">Also on this book: ${esc(extra.join(", "))}. Saved before notes were limited to one; still printed.</div>` : ""}
@@ -3785,8 +3851,9 @@ function isFullAssessmentEligible(item) {
   if (!item) return null;
   if (item.labelDetected === true) return null;
   if (!isDeepAssessmentComplete(item)) return null;
-  // S20 (#37): $500+ FMV books qualify (tier 6) — a completeness pass, never refunded. (Was tier 7 / $1000+.)
-  if (fmvTierOf(item) >= 6) return { slots: FULL_SLOT_COUNT, slotDefs: FULL_SLOTS, reason: "fmv-tier6" };
+  // v6.32 (Matt): tier 4 — $100+. Was tier 6 ($500+), and tier 7 ($1000+)
+  // before that. A completeness pass, never refunded.
+  if (fmvTierOf(item) >= 4) return { slots: FULL_SLOT_COUNT, slotDefs: FULL_SLOTS, reason: "fmv-tier4" };
   // S22: near-perfect books qualify too — the perfect-10 path, refunded if it stays 9.5.
   if (isNearPerfectForFull(item)) return { slots: FULL_SLOT_COUNT, slotDefs: FULL_SLOTS, reason: "near-perfect" };
   return null;
@@ -4662,7 +4729,7 @@ function getVerificationState(item) {
 function buildIntegrityPill(item, forPublic = false) {
   const state = getVerificationState(item);
   if (state === "verified") {
-    return `<div class="integrity-pill integrity-verified" title="All assessed photos were captured in-app">\n      <span class="integrity-icon">📷</span>\n      <span class="integrity-text">Verified: in-app photos</span>\n    </div>`;
+    return `<div class="integrity-pill integrity-verified" title="All assessed photos were captured in-app">\n      <span class="integrity-text">Verified: in-app photos</span>\n    </div>`;
   }
   if (state === "unverified" && forPublic) {
     return `<div class="integrity-pill integrity-unverified" title="At least one assessed photo was uploaded from outside the app">\n      <span class="integrity-icon">⚠</span>\n      <span class="integrity-text">Unverified: photos taken outside of app</span>\n    </div>`;
@@ -6521,7 +6588,7 @@ function showDetail(id) {
   // write-ups. (Matt, 2026-11-05.) It is emitted inside the
   // `if (selected.images)` block below, which is already within this panel.
   html += renderDetailTabs(selected);
-  html += tabPanelOpen(selected, "images");
+  html += tabPanelOpen(selected, "photos");
   if (selected.images?.length > 0) {
     const imgs = selected.images;
     const imgAttrs = `loading="eager" decoding="async" onload="window.forceImgReflow(this)"`;
@@ -6670,7 +6737,7 @@ function showDetail(id) {
     const _cr = selected.cleanRuns || 0;
     html += `<div onclick="showEditToSection('${esc(selected.id)}','clean')" style="margin-top:14px;padding:14px;background:#0e2420;border:1.5px solid #2e7a6a;border-radius:12px;text-align:center;cursor:pointer">
         <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:#6ad0b8;margin-bottom:5px">BOOK HAS BEEN CLEANED${_cr ? ` &middot; RUN ${_cr + 1}` : ""}</div>
-        <div style="font-size:12px;color:#8fc4b8;line-height:1.45;margin-bottom:10px">Had this book cleaned or pressed? Re-shoot the ten photos and get an objective before/after comparison. The grade you have now is kept as the Before and never changes.</div>
+        <div style="font-size:12px;color:#8fc4b8;line-height:1.45;margin-bottom:10px">Once this book has been cleaned/pressed, re-shoot the 10 photos objective BEFORE/AFTER comparison. The current grade will be preserved as the BEFORE and a new AFTER grade will be determined.</div>
         <button class="rg-btn rg-btn-assess rg-btn-silver" style="pointer-events:none;display:inline-block">POST-CLEANING ASSESS</button>
       </div>`;
   }
@@ -6740,7 +6807,7 @@ function showDetail(id) {
     }
   }
   // v6.29: the image half ends here. Everything below is the assessment.
-  html += `</div>`;                       // close data-tab-panel="images"
+  html += `</div>`;                       // close data-tab-panel="photos"
   html += tabPanelOpen(selected, "assessment");
   if (selected.roboGrade || (selected.type === "card" && selected.cardData && selected.cardData.robograde)) {
     html += `<div style="margin-top:16px">${selected.type === "card" ? buildCardRoboDisplay(selected) : buildRoboGradeDisplay(selected.roboGrade, selected)}</div>`;
@@ -6888,6 +6955,7 @@ function showDetail(id) {
   // everything above it.
   html += renderAssessmentMap(selected);
   html += `</div>`;                       // close data-tab-panel="assessment"
+  html += tabWrapClose();                 // close the folder sheet
   // Below the panels and always visible, whichever tab is showing: acquisition,
   // cost, the public toggle, the action buttons and Delete.
   if (hasAnyDateCost) {
@@ -6904,7 +6972,7 @@ function showDetail(id) {
   // silently change. They just have no input and no read-out any more.
   const hasAnyCost = !!(selected.purchasePrice || selected.taxesFeesShipping || selected.askingPrice);
   if (hasAnyCost) {
-    html += `<div class="divider"></div>\n    <div class="section-label" style="color:#6a8a6a">Cost Breakdown</div>\n    <div class="grid-2" style="margin-top:10px">\n      ${selected.purchasePrice ? `<div><div class="section-label">Purchase Price</div><div class="field-val">${fmt$(selected.purchasePrice)}</div></div>` : ""}\n      ${selected.taxesFeesShipping ? `<div><div class="section-label">Taxes/Fees/Ship</div><div class="field-val">${fmt$(selected.taxesFeesShipping)}</div></div>` : ""}\n      ${selected.askingPrice ? `<div><div class="section-label">Asking Price</div><div class="field-val">${fmt$(selected.askingPrice)}</div></div>` : ""}\n    </div>`;
+    html += `<div class="divider"></div>\n    <div class="section-label">Cost Breakdown</div>\n    <div class="grid-2" style="margin-top:10px">\n      ${selected.purchasePrice ? `<div><div class="section-label">Purchase Price</div><div class="field-val">${fmt$(selected.purchasePrice)}</div></div>` : ""}\n      ${selected.taxesFeesShipping ? `<div><div class="section-label">Taxes/Fees/Ship</div><div class="field-val">${fmt$(selected.taxesFeesShipping)}</div></div>` : ""}\n      ${selected.askingPrice ? `<div><div class="section-label">Asking Price</div><div class="field-val">${fmt$(selected.askingPrice)}</div></div>` : ""}\n    </div>`;
   }
   if (!isSample) {
     const isPublic = !!selected.publicListing;
@@ -11958,7 +12026,7 @@ function renderCleanSection() {
   const runs = formData.cleanRuns || 0;
 
   const _headHTML = `<div style="font-size:11px;color:#6ad0b8;font-weight:700;letter-spacing:2px;margin-bottom:8px">BOOK HAS BEEN CLEANED${runs ? ` &middot; RUN ${runs + 1}` : ""}</div>`;
-  const _blurbHTML = `<div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Re-shoot all ten photos of the cleaned or pressed book and get an objective before/after comparison. The grade you have now is kept as the Before and never changes. <strong style="color:#c8b06a">There is no refund if the grade does not improve</strong> &mdash; you are paying for the measurement, not for a better number.</div>`;
+  const _blurbHTML = `<div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Once this book has been cleaned/pressed, re-shoot the 10 photos objective BEFORE/AFTER comparison. The current grade will be preserved as the BEFORE and a new AFTER grade will be determined.</div>`;
 
   // COLLAPSED BY DEFAULT (v5.72). The ten Before/After pairs are a 3,300px
   // block, and rendering it unconditionally put the rest of the section - and
@@ -14712,7 +14780,7 @@ function renderForm() {
     if (showLabelNotesEdit) return "";
     if (!formData.keyInfo) return "";
     return `<div><label class="field-label">Key Info</label><textarea rows="3" readonly style="cursor:not-allowed;background:#ffffff;color:#1a1614" title="Key Info is populated by the assessment when the issue is in the recognized-key list. Not user-editable.">${esc(formData.keyInfo || "")}</textarea></div>`;
-  })()}\n    ${formData.cgcGrade || formData.psaGrade || formData.graderNotes ? `<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes ? 5 : 3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiAssessment ? `<div><label class="field-label">Main Assessment</label><textarea rows="${Math.max(8, Math.ceil(formData.aiAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>` : ""}\n    ${formData.deepAssessment ? `<div><label class="field-label">Deep Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.deepAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Deep pass.">${esc(formData.deepAssessment)}</textarea></div>` : ""}\n    ${formData.fullAssessment ? `<div><label class="field-label">Full Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.fullAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Full pass.">${esc(formData.fullAssessment)}</textarea></div>` : ""}\n    ${formData.gradeRevisionReason ? `<div><label class="field-label">Grade Revision</label><textarea rows="${Math.max(3, Math.ceil(formData.gradeRevisionReason.length / 80))}" readonly style="cursor:not-allowed" title="Why a Deep or Full pass moved the grade.">${esc(formData.gradeRevisionReason)}</textarea></div>` : ""}\n    ${(() => { const _rf = restorationFlagList(formData); return _rf.length ? `<div><label class="field-label">Restoration Noted During Grading</label><textarea rows="${Math.max(2, _rf.length)}" readonly style="cursor:not-allowed" title="Raised by the grading pass from ordinary-light photos. Not a UV finding.">${esc(_rf.join("\n"))}</textarea></div>` : ""; })()}\n    ${formData.restorationReport ? `<div><label class="field-label">UV Check</label><textarea rows="${Math.max(5, Math.ceil((formData.restorationReport || "").length / 80))}" readonly style="cursor:not-allowed" title="Populated by the UV Check.">${esc(formData.restorationReport)}</textarea></div>` : ""}\n    ${renderAssessmentHistorySection(formData.assessmentHistory, true)}\n    ${formData.psaNotes ? `<div><label class="field-label" style="color:#e87a7a">PSA Variance</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes || "")}</textarea></div>` : ""}\n\n    \x3c!-- Acquisition metadata (moved 2026-10-17 per Matt): Date Acquired and\n         Seller now sit BELOW the write-ups and the Assessment History and\n         ABOVE Cost Breakdown. Grading Date (slabbingDate) was removed outright in\n         the same pass — it meant the date CGC slabbed the book, nobody filled\n         it in, and the Robograde date already covers anything we graded. --\x3e\n    ${formData.id ? renderAssessmentMap(formData) : ""}\n    ${df("Date Acquired", "dateAcquired")}\n    <div><label class="field-label">Seller</label>\n      <input value="${esc(formData.seller || "")}" list="seller-list" oninput="formData.seller=this.value;updateSellerList(this.value)" placeholder="Name / source" autocomplete="off">\n      <datalist id="seller-list">${getSellerSuggestions().map(s => `<option value="${esc(s)}">`).join("")}</datalist>\n    </div>\n    \x3c!-- v6.27: My Grade moved here, below Seller and above Cost Breakdown.\n         It is the owner's OWN opinion of the grade - personal record-keeping,\n         like the price and the seller. Beside the RG score it read as a\n         Robograder output. It never reaches the public listing: api/lookup.js\n         does not project it. --\x3e\n    ${formData.grade || formData.roboGrade ? `<div class="form-grid-2">\n      <div><label class="field-label">My Grade</label><select onchange="formData.grade=this.value">\n        <option value="">— select grade —</option>\n        ${GRADES.map(g => `<option value="${g}"${formData.grade === g ? " selected" : ""}>${g} — ${GRADE_LABELS[g]}</option>`).join("")}\n      </select></div>\n    </div>` : ""}\n    \n    \x3c!-- Enhancement Candidate (S11): renamed from "Enhance Candidate"; moved\n         to between Condition Assessment and Cost Breakdown per user direction. --\x3e\n    \x3c!-- S20: Enhancement Candidate control hidden per request (odd inclusion, often inaccurate). Kept for future use: <div><label class="field-label">Enhancement Candidate</label><div style="display:flex;gap:10px">\${treatBtn("enhance", "Enhance")}</div></div> --\x3e\n\n    \x3c!-- Cost Breakdown (S11): now includes FMV ($) and FMV Date inside the\n         container, since they're financial fields conceptually grouped with\n         the cost data. --\x3e\n    <div class="cost-box">\n      <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>\n      <div class="form-grid-2">\n        ${mf("Purchase Price ($)", "purchasePrice")}\n        ${mf("Taxes / Fees / Shipping ($)", "taxesFeesShipping")}\n        ${mf("Asking Price ($)", "askingPrice")}\n      </div>\n    </div>\n\n    <div><label class="field-label">My Notes <span style="font-weight:600;letter-spacing:0;text-transform:none;color:#7a8a6a">\u2014 private, never shown publicly</span></label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes || "")}</textarea></div>\n    ${""}\n    \n    <div style="display:flex;gap:10px;padding-top:4px">\n      ${isEdit ? "" : `<button id="save-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="submitForm()" ${(formData.title?.trim() && !isUploadInFlight()) ? "" : "disabled"} style="${isUploadInFlight() ? "opacity:0.55;cursor:progress" : ""}">${isUploadInFlight() ? "Uploading photos\u2026" : "Add to Collection"}</button>`}\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cancelForm()">Cancel</button>\n    </div>\n    ` : `\n    \x3c!-- Add-flow collapsed state (S11): show only the Enter Manually button.\n         Steers users toward photos-first by hiding the form fields until\n         either (a) they tap Enter Manually, or (b) an assessment runs and\n         _assessed becomes true. Edit view always shows the full form.\n         S14: ownership cycle pill inserted above Enter Manually. Lets a\n         user mark a book as Owned (default) / Watching / Sold before\n         assessing — so they can assess someone else's book without\n         claiming it, or track a book they're considering buying. Same\n         pill style as detail and edit views (color-coded by state),\n         centered between the two full-width buttons. Public-listing is\n         locked off whenever ownership !== 'Owned'; the cycleOwnership\n         handler clears formData.publicListing on transitions out of\n         Owned so a stale 'true' can't be saved. --\x3e\n    ${(() => {
+  })()}\n    ${formData.cgcGrade || formData.psaGrade || formData.graderNotes ? `<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes ? 5 : 3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiAssessment ? `<div><label class="field-label">Main Assessment</label><textarea rows="${Math.max(8, Math.ceil(formData.aiAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>` : ""}\n    ${formData.deepAssessment ? `<div><label class="field-label">Deep Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.deepAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Deep pass.">${esc(formData.deepAssessment)}</textarea></div>` : ""}\n    ${formData.fullAssessment ? `<div><label class="field-label">Full Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.fullAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Full pass.">${esc(formData.fullAssessment)}</textarea></div>` : ""}\n    ${formData.gradeRevisionReason ? `<div><label class="field-label">Grade Revision</label><textarea rows="${Math.max(3, Math.ceil(formData.gradeRevisionReason.length / 80))}" readonly style="cursor:not-allowed" title="Why a Deep or Full pass moved the grade.">${esc(formData.gradeRevisionReason)}</textarea></div>` : ""}\n    ${(() => { const _rf = restorationFlagList(formData); return _rf.length ? `<div><label class="field-label">Restoration Noted During Grading</label><textarea rows="${Math.max(2, _rf.length)}" readonly style="cursor:not-allowed" title="Raised by the grading pass from ordinary-light photos. Not a UV finding.">${esc(_rf.join("\n"))}</textarea></div>` : ""; })()}\n    ${formData.restorationReport ? `<div><label class="field-label">UV Check</label><textarea rows="${Math.max(5, Math.ceil((formData.restorationReport || "").length / 80))}" readonly style="cursor:not-allowed" title="Populated by the UV Check.">${esc(formData.restorationReport)}</textarea></div>` : ""}\n    ${renderAssessmentHistorySection(formData.assessmentHistory, true)}\n    ${formData.psaNotes ? `<div><label class="field-label" style="color:#e87a7a">PSA Variance</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes || "")}</textarea></div>` : ""}\n\n    \x3c!-- Acquisition metadata (moved 2026-10-17 per Matt): Date Acquired and\n         Seller now sit BELOW the write-ups and the Assessment History and\n         ABOVE Cost Breakdown. Grading Date (slabbingDate) was removed outright in\n         the same pass — it meant the date CGC slabbed the book, nobody filled\n         it in, and the Robograde date already covers anything we graded. --\x3e\n    ${formData.id ? renderAssessmentMap(formData) : ""}\n    ${df("Date Acquired", "dateAcquired")}\n    <div><label class="field-label">Seller</label>\n      <input value="${esc(formData.seller || "")}" list="seller-list" oninput="formData.seller=this.value;updateSellerList(this.value)" placeholder="Name / source" autocomplete="off">\n      <datalist id="seller-list">${getSellerSuggestions().map(s => `<option value="${esc(s)}">`).join("")}</datalist>\n    </div>\n    \x3c!-- v6.27: My Grade moved here, below Seller and above Cost Breakdown.\n         It is the owner's OWN opinion of the grade - personal record-keeping,\n         like the price and the seller. Beside the RG score it read as a\n         Robograder output. It never reaches the public listing: api/lookup.js\n         does not project it. --\x3e\n    ${formData.grade || formData.roboGrade ? `<div class="form-grid-2">\n      <div><label class="field-label">My Grade</label><select class="rg-select rg-select-grade" onchange="formData.grade=this.value">\n        <option value="">Select grade</option>\n        ${GRADES.map(g => `<option value="${g}"${formData.grade === g ? " selected" : ""}>${g} — ${GRADE_LABELS[g]}</option>`).join("")}\n      </select></div>\n    </div>` : ""}\n    \n    \x3c!-- Enhancement Candidate (S11): renamed from "Enhance Candidate"; moved\n         to between Condition Assessment and Cost Breakdown per user direction. --\x3e\n    \x3c!-- S20: Enhancement Candidate control hidden per request (odd inclusion, often inaccurate). Kept for future use: <div><label class="field-label">Enhancement Candidate</label><div style="display:flex;gap:10px">\${treatBtn("enhance", "Enhance")}</div></div> --\x3e\n\n    \x3c!-- Cost Breakdown (S11): now includes FMV ($) and FMV Date inside the\n         container, since they're financial fields conceptually grouped with\n         the cost data. --\x3e\n    <div class="cost-box">\n      <div class="section-label" style="margin-bottom:12px">Cost Breakdown</div>\n      <div class="form-grid-2">\n        ${mf("Purchase Price ($)", "purchasePrice")}\n        ${mf("Taxes / Fees / Shipping ($)", "taxesFeesShipping")}\n        ${mf("Asking Price ($)", "askingPrice")}\n      </div>\n    </div>\n\n    <div><label class="field-label">My Notes <span style="font-weight:600;letter-spacing:0;text-transform:none;color:#7a8a6a">\u2014 private, never shown publicly</span></label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes || "")}</textarea></div>\n    ${""}\n    \n    <div style="display:flex;gap:10px;padding-top:4px">\n      ${isEdit ? "" : `<button id="save-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="submitForm()" ${(formData.title?.trim() && !isUploadInFlight()) ? "" : "disabled"} style="${isUploadInFlight() ? "opacity:0.55;cursor:progress" : ""}">${isUploadInFlight() ? "Uploading photos\u2026" : "Add to Collection"}</button>`}\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cancelForm()">Cancel</button>\n    </div>\n    ` : `\n    \x3c!-- Add-flow collapsed state (S11): show only the Enter Manually button.\n         Steers users toward photos-first by hiding the form fields until\n         either (a) they tap Enter Manually, or (b) an assessment runs and\n         _assessed becomes true. Edit view always shows the full form.\n         S14: ownership cycle pill inserted above Enter Manually. Lets a\n         user mark a book as Owned (default) / Watching / Sold before\n         assessing — so they can assess someone else's book without\n         claiming it, or track a book they're considering buying. Same\n         pill style as detail and edit views (color-coded by state),\n         centered between the two full-width buttons. Public-listing is\n         locked off whenever ownership !== 'Owned'; the cycleOwnership\n         handler clears formData.publicListing on transitions out of\n         Owned so a stale 'true' can't be saved. --\x3e\n    ${(() => {
     const own = formData.ownership || "Owned";
     const styleByState = {
       Owned: {

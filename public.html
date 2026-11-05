@@ -1137,34 +1137,64 @@
   let _pubTab = null;
   const pubTab = () => _pubTab || 'assessment';
   window.setPubTab = (t) => {
-    _pubTab = (t === 'images') ? 'images' : 'assessment';
+    _pubTab = (t === 'photos') ? 'photos' : 'assessment';
     for (const el of document.querySelectorAll('[data-tab-panel]')) {
       el.style.display = el.getAttribute('data-tab-panel') === _pubTab ? 'block' : 'none';
     }
     for (const el of document.querySelectorAll('[data-tab-btn]')) {
-      const on = el.getAttribute('data-tab-btn') === _pubTab;
-      el.style.background = on ? '#1d2e10' : '#121a0c';
-      el.style.color = on ? '#cfe8a8' : '#7a8a6a';
-      el.style.borderBottom = on ? 'none' : '1.5px solid #6a9a30';
-      el.style.marginTop = on ? '0' : '2px';
+      const key = el.getAttribute('data-tab-btn');
+      const on = key === _pubTab;
+      const sk = PUB_TAB_SKIN[key];
+      el.style.background = on ? sk.bg : PUB_TAB_SKIN.off.bg;
+      el.style.color = on ? sk.fg : PUB_TAB_SKIN.off.fg;
+      el.style.borderColor = on ? sk.bd : PUB_TAB_SKIN.off.bd;
+      el.style.borderBottom = on ? 'none' : ('1.5px solid ' + PUB_TAB_SKIN.off.bd);
+      el.style.marginBottom = on ? '-1.5px' : '0';
+      el.style.marginTop = on ? '0' : '3px';
+      el.style.zIndex = on ? '1' : 'auto';
+      el.style.position = on ? 'relative' : 'static';
+      el.style.padding = (on ? '9px' : '8px') + ' 8px';
       el.style.fontWeight = on ? '800' : '700';
     }
+    // The sheet takes the active tab's colours and squares the corner under it.
+    const sheet = document.getElementById('pub-tab-sheet');
+    if (sheet) {
+      const sk = PUB_TAB_SKIN[_pubTab];
+      sheet.style.background = sk.bg;
+      sheet.style.borderColor = sk.bd;
+      sheet.style.borderRadius = _pubTab === 'photos' ? '0 10px 10px 10px' : '10px 0 10px 10px';
+    }
+  };
+  // Folder tabs, matching the app: the active tab shares its fill with the
+  // sheet below it and covers that sheet's top border, so the two are one
+  // object. PHOTOS is the lighter sheet of the two.
+  const PUB_TAB_SKIN = {
+    photos:     { bg: '#1e2f14', bd: '#4a7028', fg: '#cfe8a8' },
+    assessment: { bg: '#101c0a', bd: '#3a5018', fg: '#b8d820' },
+    off:        { bg: '#141a10', fg: '#7a8a6a', bd: '#2c3a22' }
   };
   const pubTabsHTML = () => {
     const btn = (key, label) => {
       const on = pubTab() === key;
+      const sk = PUB_TAB_SKIN[key];
       return `<button type="button" data-tab-btn="${key}" onclick="setPubTab('${key}')" style="
-        flex:1;padding:${on ? '11px' : '9px'} 10px ${on ? '12px' : '10px'};margin-top:${on ? '0' : '2px'};
-        border:1.5px solid ${on ? '#6a9a30' : '#2a3a1e'};border-bottom:${on ? 'none' : '1.5px solid #6a9a30'};
-        border-radius:10px 10px 0 0;cursor:pointer;font-family:inherit;font-size:12px;
-        font-weight:${on ? 800 : 700};letter-spacing:1.5px;
-        background:${on ? '#1d2e10' : '#121a0c'};color:${on ? '#cfe8a8' : '#7a8a6a'}">${label}</button>`;
+        flex:1;min-width:0;border:1.5px solid ${on ? sk.bd : PUB_TAB_SKIN.off.bd};
+        ${on ? 'border-bottom:none;margin-bottom:-1.5px;position:relative;z-index:1;' : 'margin-top:3px;'}
+        border-radius:9px 9px 0 0;padding:${on ? '9px' : '8px'} 8px;
+        background:${on ? sk.bg : PUB_TAB_SKIN.off.bg};color:${on ? sk.fg : PUB_TAB_SKIN.off.fg};
+        font-family:inherit;font-size:11px;font-weight:${on ? 800 : 700};letter-spacing:1.6px;
+        cursor:pointer;line-height:1">${label}</button>`;
     };
-    return `<div style="display:flex;gap:4px;align-items:flex-end;margin-top:18px">
-        ${btn('images', 'IMAGES')}${btn('assessment', 'ASSESSMENT')}
-      </div>
-      <div style="height:0;border-top:1.5px solid #6a9a30;margin-bottom:14px"></div>`;
+    const sk = PUB_TAB_SKIN[pubTab()];
+    return `<div style="margin-top:18px">
+        <div style="display:flex;gap:5px;align-items:flex-end">
+          ${btn('photos', 'PHOTOS')}${btn('assessment', 'ASSESSMENT')}
+        </div>
+        <div id="pub-tab-sheet" style="background:${sk.bg};border:1.5px solid ${sk.bd};
+          border-radius:${pubTab() === 'photos' ? '0 10px 10px 10px' : '10px 0 10px 10px'};
+          padding:12px 10px">`;
   };
+  const pubTabsClose = () => '</div></div>';
 
   app.innerHTML = isCard ? `
     ${cardIdentityHTML}
@@ -1175,7 +1205,7 @@
   ` : `
     ${identityHTML}
     ${PUB_TABS_ENABLED ? pubTabsHTML() : ''}
-    <div data-tab-panel="images" style="display:${!PUB_TABS_ENABLED || pubTab() === 'images' ? 'block' : 'none'}">
+    <div data-tab-panel="photos" style="display:${!PUB_TABS_ENABLED || pubTab() === 'photos' ? 'block' : 'none'}">
       ${photoBlock}
       ${cornerBlock}
       ${interiorCoverBlock}
@@ -1194,6 +1224,7 @@
       ${fullBlock}
       ${restorationBlock}
     </div>
+    ${PUB_TABS_ENABLED ? pubTabsClose() : ''}
   `;
 
   document.querySelector('.content').insertAdjacentHTML('beforeend', `
