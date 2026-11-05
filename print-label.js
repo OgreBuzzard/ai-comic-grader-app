@@ -1450,12 +1450,21 @@ function ensureStylesInjected() {
   .rg-label-l.tall .fold-back {
     display: block;
     position: absolute;
-    left: 0; right: 0; top: 0; height: 192px;
+    /* v6.31: 192 -> 129, tracking the raised chip row. */
+    left: 0; right: 0; top: 0; height: 129px;
     background: linear-gradient(0deg, #c97a14 0%, #dd9430 38%, #e8b571 100%);
   }
   .rg-label-l .fold-back { display: none; }
   .rg-label-l.tall .face { top: 282px; }
-  .rg-label-l.tall .wrap-strip { top: 192px; }
+  /* v6.31: the chip row is 0.5in - 144px at 288dpi - measured from the top of
+     the UPPER thick bar to the top of the lower one. The lower bar does NOT
+     move (273px): it is the fold the user makes first, and every label already
+     printed is creased there. So the upper bar rises instead, 273 - 144 = 129,
+     and the blank fold-over panel above it shrinks to suit.
+     The row's border-top IS the upper bar, so top and height define both. With
+     box-sizing:border-box and align-items:center the text centres in the 137px
+     BETWEEN the bars, not in the row including its own border. */
+  .rg-label-l.tall .wrap-strip { top: 129px; height: 144px; }
   /* Moves down with the chip row rather than being hidden: the 4x2 stock folds
      TWICE and this is the second one. */
   .rg-label-l.tall .fold-guide { top: 273px; }

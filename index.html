@@ -3433,6 +3433,150 @@ function tabPanelOpen(item, key) {
   return `<div data-tab-panel="${key}" style="display:${show ? "block" : "none"}">`;
 }
 
+// ── THE ASSESSMENT MAP (v6.31) ──────────────────────────────────────────────
+// Nine assessment types with different prices, different prerequisites and
+// three confidence tiers is more than anyone can hold in their head from
+// buttons that appear and disappear down a long page. The map answers, in one
+// picture: what have I run, what can I run now, what is still locked, what
+// does each cost, and which ones raise the star rating.
+//
+// THE GRAPH IS READ FROM THE REAL GATE FUNCTIONS, not drawn by hand, so it
+// cannot describe an app that no longer exists. Each node names the predicate
+// that actually decides it.
+//
+// This differs from Matt's sketch in one way worth knowing: Coupon and UV
+// hang off MAIN, not off DEEP. showRestorationTier() and matchCoupon() never
+// ask whether a Deep has run - they only need the book identified. Drawing
+// them under Deep would have told users to spend a credit they do not need.
+//
+// Costs live INSIDE the coins, as Matt asked, and the user's balance sits at
+// the bottom in the same coin - so "3 credits" and "you have 2" are read in
+// one glance, and the unlocked-but-unaffordable case looks different from the
+// locked one.
+const ASSESSMENT_MAP_NODES = [
+  { key: 'main',   label: 'MAIN',          cost: 1, stars: 1, dep: null,
+    ran: it => !!(it && (it.roboGrade || it.aiAssessment)),
+    open: () => true },
+  { key: 'sig',    label: 'SIGNATURE',     cost: 0, stars: 0, dep: 'main',
+    ran: it => (it.signatureImages || []).some(Boolean),
+    open: it => typeof hasIdentifiedSignatures === 'function' && hasIdentifiedSignatures(it) },
+  { key: 'insert', label: 'INSERT',        cost: 0, stars: 0, dep: 'main',
+    ran: it => !!it.insertFinding || (it.insertImages || []).some(Boolean),
+    open: it => !!(it.title && it.issue && typeof window.matchInsert === 'function' &&
+                   (window.matchInsert(it.title, it.issue) ||
+                    (typeof window.matchInsertCandidate === 'function' &&
+                     window.matchInsertCandidate(it.title,
+                       parseInt((String(it.issueDate || '').match(/\b(19|20)\d{2}\b/) || [])[0], 10))))) },
+  { key: 'coupon', label: 'COUPON',        cost: 0, stars: 0, dep: 'main',
+    ran: it => !!it.couponFinding || (it.couponImages || []).some(Boolean),
+    open: it => !!(it.title && it.issue && typeof window.matchCoupon === 'function' &&
+                   window.matchCoupon(it.title, it.issue)) },
+  { key: 'uv',     label: 'UV CHECK',      cost: 0, stars: 0, dep: 'main',
+    ran: it => typeof isRestorationCheckComplete === 'function' && isRestorationCheckComplete(it),
+    open: it => typeof showRestorationTier === 'function' && showRestorationTier(it) },
+  { key: 'deep',   label: 'DEEP',          cost: 1, stars: 2, dep: 'main',
+    ran: it => typeof isDeepAssessmentComplete === 'function' && isDeepAssessmentComplete(it),
+    open: it => typeof showDeepTier === 'function' && showDeepTier(it) },
+  { key: 'full',   label: 'FULL',          cost: 1, stars: 3, dep: 'deep',
+    ran: it => typeof isFullAssessmentComplete === 'function' && isFullAssessmentComplete(it),
+    open: it => typeof showFullTier === 'function' && showFullTier(it) },
+  { key: 'batch',  label: 'BATCH',         cost: 3, stars: 0, dep: 'deep',
+    ran: it => typeof hasBatchRun === 'function' && hasBatchRun(it),
+    open: it => typeof isBatchEligible === 'function' && isBatchEligible(it) },
+  { key: 'clean',  label: 'POST-CLEANING', cost: 2, stars: 0, dep: 'deep',
+    ran: it => (it.cleanRuns || 0) > 0,
+    open: it => typeof _cleanUnlocked === 'function' && _cleanUnlocked(it) }
+];
+
+// A credit coin with the number inside it. One definition; the map uses it for
+// both the per-type costs and the balance.
+function _coinSVG(n, px, dim) {
+  const id = 'coin-g' + Math.random().toString(36).slice(2, 7);
+  const fs = Math.round(px * 0.5);
+  return `<span style="position:relative;display:inline-flex;align-items:center;justify-content:center;
+      width:${px}px;height:${px}px;flex:0 0 ${px}px;${dim ? 'opacity:0.4;filter:saturate(0.25)' : ''}">
+      <svg viewBox="0 0 40 40" width="${px}" height="${px}" aria-hidden="true" style="position:absolute;inset:0">
+        <defs><radialGradient id="${id}" cx="0.35" cy="0.35" r="0.75">
+          <stop offset="0%" stop-color="#fde89a"/><stop offset="50%" stop-color="#e6bb4a"/>
+          <stop offset="100%" stop-color="#8c6a1a"/></radialGradient></defs>
+        <circle cx="20" cy="20" r="18.5" fill="url(#${id})" stroke="#5a4010" stroke-width="1.2"/>
+        <circle cx="20" cy="20" r="15.5" fill="none" stroke="#a57a20" stroke-width="0.7" opacity="0.55"/>
+      </svg>
+      <span style="position:relative;font-family:'Noto Sans Display',system-ui,sans-serif;font-weight:900;
+        font-size:${fs}px;color:#4a3408;line-height:1">${n}</span></span>`;
+}
+
+function _mapNodeState(node, item, byKey) {
+  if (node.ran(item)) return 'ran';
+  if (node.dep && !byKey[node.dep].ranNow) return 'locked';
+  return node.open(item) ? 'open' : 'locked';
+}
+
+function renderAssessmentMap(item) {
+  if (!item || item.type === 'card') return '';
+  const byKey = {};
+  for (const n of ASSESSMENT_MAP_NODES) byKey[n.key] = n;
+  // Two passes: a node's dependency must be resolved before it is judged.
+  for (const n of ASSESSMENT_MAP_NODES) { try { n.ranNow = !!n.ran(item); } catch (e) { n.ranNow = false; } }
+  const state = {};
+  for (const n of ASSESSMENT_MAP_NODES) {
+    try { state[n.key] = _mapNodeState(n, item, byKey); } catch (e) { state[n.key] = 'locked'; }
+  }
+  // window._userCredits is the app's own balance (loadUserCredits), and the
+  // coin in the header reads from it. Falling back to that coin's text keeps
+  // the map right if the balance has not resolved yet on a cold open.
+  const bal = Number(window._userCredits != null ? window._userCredits
+    : (document.getElementById('credit-coin-count') || {}).textContent) || 0;
+
+  const SKIN = {
+    ran:    { bg: '#2f4a18', bd: '#6a9a30', fg: '#cfe8a8', note: 'RUN' },
+    open:   { bg: '#1d2e10', bd: '#6a9a30', fg: '#b8d820', note: 'AVAILABLE' },
+    locked: { bg: '#121a0c', bd: '#2a3a1e', fg: '#6a7a5a', note: 'LOCKED' }
+  };
+  const card = (n) => {
+    const st = state[n.key];
+    const sk = SKIN[st];
+    // Unlocked but unaffordable is its own thing: it is not locked, and
+    // telling someone it is would send them looking for a prerequisite that
+    // is already met.
+    const short = st === 'open' && n.cost > bal;
+    const stars = n.stars
+      ? `<div style="line-height:1;margin-bottom:3px;opacity:${st === 'locked' ? 0.3 : 0.85}">` +
+        Array.from({ length: n.stars }, () => tierStarSVG(11, sk.fg)).join('') + '</div>'
+      : '';
+    return `<div style="flex:1;min-width:0;background:${sk.bg};border:1.5px solid ${short ? '#8a6a2a' : sk.bd};
+        border-radius:10px;padding:8px 6px;text-align:center;display:flex;flex-direction:column;
+        align-items:center;gap:4px">
+        ${stars}
+        <div style="font-size:10px;font-weight:800;letter-spacing:0.6px;color:${sk.fg};line-height:1.15;
+          word-break:break-word">${esc(n.label)}</div>
+        ${_coinSVG(n.cost, 22, st === 'locked')}
+        <div style="font-size:8px;font-weight:700;letter-spacing:0.8px;color:${short ? '#c8a04a' : sk.fg};opacity:0.75">${short ? 'NEED CREDITS' : sk.note}</div>
+      </div>`;
+  };
+  const row = (keys) => `<div style="display:flex;gap:6px;align-items:stretch">
+      ${keys.map(k => card(ASSESSMENT_MAP_NODES.find(n => n.key === k))).join('')}
+    </div>`;
+  const spine = (lit) => `<div style="display:flex;justify-content:center">
+      <div style="width:2px;height:12px;background:${lit ? '#6a9a30' : '#2a3a1e'}"></div></div>`;
+
+  return `<div style="margin-top:22px;padding-top:16px;border-top:1px dashed #3a5018">
+      <div style="font-size:11px;font-weight:700;letter-spacing:2px;color:#9abf60;margin-bottom:4px">ASSESSMENT MAP</div>
+      <div style="font-size:11px;color:#7a8a6a;line-height:1.45;margin-bottom:12px">What has been run, what is available now, and what each one costs.</div>
+      ${row(['main'])}
+      ${spine(state.main === 'ran')}
+      ${row(['sig', 'insert', 'coupon', 'uv'])}
+      ${spine(state.main === 'ran')}
+      ${row(['deep'])}
+      ${spine(state.deep === 'ran')}
+      ${row(['full', 'batch', 'clean'])}
+      <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:14px">
+        ${_coinSVG(bal, 26, false)}
+        <span style="font-size:11px;font-weight:700;letter-spacing:1px;color:#9abf60">YOUR CREDITS</span>
+      </div>
+    </div>`;
+}
+
 function renderIdentityHeader(item) {
   if (!item) return "";
   const _iss = item.issue
@@ -6691,6 +6835,9 @@ function showDetail(id) {
   const hasAnyDateCost = !!(selected.dateAcquired || cost > 0);
   // Batch sits at the bottom of the assessment half, after the history.
   html += _batchCard;
+  // v6.31: and the map closes the assessment half - it is the index to
+  // everything above it.
+  html += renderAssessmentMap(selected);
   html += `</div>`;                       // close data-tab-panel="assessment"
   // Below the panels and always visible, whichever tab is showing: acquisition,
   // cost, the public toggle, the action buttons and Delete.
@@ -14368,7 +14515,7 @@ function renderForm() {
   const _isCardForm = formData.type === "card" || !!formData._isCard || !!(formData._slabDetect && formData._slabDetect.isCard);
   const _saveLabelTop = formData.id ? "Save" : "Add";
   const _saveDisabledTop = formData.title && formData.title.trim() ? "" : "disabled";
-  let html = `<div class="sticky-back" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><button class="btn-ghost" onclick="cancelForm()">← Back</button><button class="btn btn-gold" id="save-btn-top" onclick="submitForm()" ${_saveDisabledTop}>${_saveLabelTop}</button></div>\n  <h2 style="font-size:18px;margin:8px 0 20px;color:#c8a96e">${isEdit ? "Edit Book" : "Add Book"}</h2>\n  <div class="card" style="display:flex;flex-direction:column;gap:14px">\n    ${ownershipSegmentForForm()}\n    ${formData.roboGrade ? (() => { const _ip = buildIntegrityPill(formData, true); return _ip ? `<div style="display:flex;justify-content:flex-end;margin-bottom:2px">${_ip}</div>` : ""; })() : ""}\n    <div>\n      <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">MAIN ASSESSMENT PHOTOS${formData.labelDetected ? ` <span style="color:#9a8a7a;font-weight:600">(graded slab)</span>` : ""}</div>\n      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px">\n        ${(() => {
+  let html = `<div class="sticky-back" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><button class="btn-ghost" onclick="cancelForm()">← Back</button><button class="btn btn-gold" id="save-btn-top" onclick="submitForm()" ${_saveDisabledTop}>${_saveLabelTop}</button></div>\n  <h2 style="font-size:18px;margin:8px 0 20px;color:#c8a96e">${isEdit ? "Edit Book" : "Add Book"}</h2>\n  <div class="card" style="display:flex;flex-direction:column;gap:14px">\n    \x3c!-- v6.31: the identity header is at the TOP of Edit, above the\n         ownership bar, which is where it belongs whether or not this view\n         ever gets tabs: "what book am I looking at" should not be several\n         thousand pixels below the photos of it. Same function Detail\n         renders, so the two cannot drift. Added Label Notes sits directly\n         under it. Neither appears until an assessment exists - before that\n         the editable Title / Issue / Pub Date / Publisher grid below is the\n         only identity the book has. --\x3e\n    ${formData.roboGrade ? `<div>${renderIdentityHeader(formData)}</div>\n    ${renderAddedLabelNotesField()}` : ""}\n    ${ownershipSegmentForForm()}\n    ${formData.roboGrade ? (() => { const _ip = buildIntegrityPill(formData, true); return _ip ? `<div style="display:flex;justify-content:flex-end;margin-bottom:2px">${_ip}</div>` : ""; })() : ""}\n    <div>\n      <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">MAIN ASSESSMENT PHOTOS${formData.labelDetected ? ` <span style="color:#9a8a7a;font-weight:600">(graded slab)</span>` : ""}</div>\n      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px">\n        ${(() => {
     const _isCardForm = formData.type === "card" || !!formData._isCard || !!(formData._slabDetect && formData._slabDetect.isCard);
     const slotLabels = _isCardForm
       ? [ "Front", "Back", "Top Front", "Bottom Front" ]
@@ -14477,14 +14624,7 @@ function renderForm() {
       ${tf("Issue", "issue", "Issue number", true)}
       ${tf("Pub Date", "issueDate", "Cover date")}
       ${tf("Publisher", "publisher", "Publisher")}
-    </div>`}\n    ${formData.roboGrade ? `<div style="margin-bottom:14px">
-      \x3c!-- v6.27: the SAME header Detail renders. Was four locked rof()
-           fields plus a fifth locked Printing row - the same information
-           shaped as "things you may not type in". Printing stays
-           unforgeable because it is no longer an input at all. --\x3e
-      ${renderIdentityHeader(formData)}
-    </div>
-    ${renderAddedLabelNotesField()}` : ""}\n    \x3c!-- Official Grades fields (S11): the disclosure container "OFFICIAL GRADES"\n         was removed. CGC Grade/Cert and PSA Grade/Cert sit as their own ordinary\n         fields when relevant.\n         Visibility:\n         • Not yet assessed (no roboGrade): show both CGC and PSA grids.\n         • Assessed and AI determined raw (no grades/certs): hide both.\n         • Assessed and CGC info present: show CGC grid only.\n         • Assessed and PSA info present: show PSA grid only.\n         A book can be CGC OR PSA officially, never both. --\x3e\n    ${(() => {
+    </div>`}\n    \n    \x3c!-- Official Grades fields (S11): the disclosure container "OFFICIAL GRADES"\n         was removed. CGC Grade/Cert and PSA Grade/Cert sit as their own ordinary\n         fields when relevant.\n         Visibility:\n         • Not yet assessed (no roboGrade): show both CGC and PSA grids.\n         • Assessed and AI determined raw (no grades/certs): hide both.\n         • Assessed and CGC info present: show CGC grid only.\n         • Assessed and PSA info present: show PSA grid only.\n         A book can be CGC OR PSA officially, never both. --\x3e\n    ${(() => {
     const hasOfficialCGC = !!(formData.cgcGrade || formData.cgcCert);
     const hasOfficialPSA = !!(formData.psaGrade || formData.psaCert);
     const everAssessed = !!formData.roboGrade;
@@ -14523,7 +14663,7 @@ function renderForm() {
     if (showLabelNotesEdit) return "";
     if (!formData.keyInfo) return "";
     return `<div><label class="field-label">Key Info</label><textarea rows="3" readonly style="cursor:not-allowed;background:#ffffff;color:#1a1614" title="Key Info is populated by the assessment when the issue is in the recognized-key list. Not user-editable.">${esc(formData.keyInfo || "")}</textarea></div>`;
-  })()}\n    ${formData.cgcGrade || formData.psaGrade || formData.graderNotes ? `<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes ? 5 : 3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiAssessment ? `<div><label class="field-label">Main Assessment</label><textarea rows="${Math.max(8, Math.ceil(formData.aiAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>` : ""}\n    ${formData.deepAssessment ? `<div><label class="field-label">Deep Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.deepAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Deep pass.">${esc(formData.deepAssessment)}</textarea></div>` : ""}\n    ${formData.fullAssessment ? `<div><label class="field-label">Full Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.fullAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Full pass.">${esc(formData.fullAssessment)}</textarea></div>` : ""}\n    ${formData.gradeRevisionReason ? `<div><label class="field-label">Grade Revision</label><textarea rows="${Math.max(3, Math.ceil(formData.gradeRevisionReason.length / 80))}" readonly style="cursor:not-allowed" title="Why a Deep or Full pass moved the grade.">${esc(formData.gradeRevisionReason)}</textarea></div>` : ""}\n    ${(() => { const _rf = restorationFlagList(formData); return _rf.length ? `<div><label class="field-label">Restoration Noted During Grading</label><textarea rows="${Math.max(2, _rf.length)}" readonly style="cursor:not-allowed" title="Raised by the grading pass from ordinary-light photos. Not a UV finding.">${esc(_rf.join("\n"))}</textarea></div>` : ""; })()}\n    ${formData.restorationReport ? `<div><label class="field-label">UV Check</label><textarea rows="${Math.max(5, Math.ceil((formData.restorationReport || "").length / 80))}" readonly style="cursor:not-allowed" title="Populated by the UV Check.">${esc(formData.restorationReport)}</textarea></div>` : ""}\n    ${renderAssessmentHistorySection(formData.assessmentHistory, true)}\n    ${formData.psaNotes ? `<div><label class="field-label" style="color:#e87a7a">PSA Variance</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes || "")}</textarea></div>` : ""}\n\n    \x3c!-- Acquisition metadata (moved 2026-10-17 per Matt): Date Acquired and\n         Seller now sit BELOW the write-ups and the Assessment History and\n         ABOVE Cost Breakdown. Grading Date (slabbingDate) was removed outright in\n         the same pass — it meant the date CGC slabbed the book, nobody filled\n         it in, and the Robograde date already covers anything we graded. --\x3e\n    ${df("Date Acquired", "dateAcquired")}\n    <div><label class="field-label">Seller</label>\n      <input value="${esc(formData.seller || "")}" list="seller-list" oninput="formData.seller=this.value;updateSellerList(this.value)" placeholder="Name / source" autocomplete="off">\n      <datalist id="seller-list">${getSellerSuggestions().map(s => `<option value="${esc(s)}">`).join("")}</datalist>\n    </div>\n    \x3c!-- v6.27: My Grade moved here, below Seller and above Cost Breakdown.\n         It is the owner's OWN opinion of the grade - personal record-keeping,\n         like the price and the seller. Beside the RG score it read as a\n         Robograder output. It never reaches the public listing: api/lookup.js\n         does not project it. --\x3e\n    ${formData.grade || formData.roboGrade ? `<div class="form-grid-2">\n      <div><label class="field-label">My Grade</label><select onchange="formData.grade=this.value">\n        <option value="">— select grade —</option>\n        ${GRADES.map(g => `<option value="${g}"${formData.grade === g ? " selected" : ""}>${g} — ${GRADE_LABELS[g]}</option>`).join("")}\n      </select></div>\n    </div>` : ""}\n    \n    \x3c!-- Enhancement Candidate (S11): renamed from "Enhance Candidate"; moved\n         to between Condition Assessment and Cost Breakdown per user direction. --\x3e\n    \x3c!-- S20: Enhancement Candidate control hidden per request (odd inclusion, often inaccurate). Kept for future use: <div><label class="field-label">Enhancement Candidate</label><div style="display:flex;gap:10px">\${treatBtn("enhance", "Enhance")}</div></div> --\x3e\n\n    \x3c!-- Cost Breakdown (S11): now includes FMV ($) and FMV Date inside the\n         container, since they're financial fields conceptually grouped with\n         the cost data. --\x3e\n    <div class="cost-box">\n      <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>\n      <div class="form-grid-2">\n        ${mf("Purchase Price ($)", "purchasePrice")}\n        ${mf("Taxes / Fees / Shipping ($)", "taxesFeesShipping")}\n        ${mf("Asking Price ($)", "askingPrice")}\n      </div>\n    </div>\n\n    <div><label class="field-label">My Notes <span style="font-weight:600;letter-spacing:0;text-transform:none;color:#7a8a6a">\u2014 private, never shown publicly</span></label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes || "")}</textarea></div>\n    ${""}\n    \n    <div style="display:flex;gap:10px;padding-top:4px">\n      ${isEdit ? "" : `<button id="save-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="submitForm()" ${(formData.title?.trim() && !isUploadInFlight()) ? "" : "disabled"} style="${isUploadInFlight() ? "opacity:0.55;cursor:progress" : ""}">${isUploadInFlight() ? "Uploading photos\u2026" : "Add to Collection"}</button>`}\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cancelForm()">Cancel</button>\n    </div>\n    ` : `\n    \x3c!-- Add-flow collapsed state (S11): show only the Enter Manually button.\n         Steers users toward photos-first by hiding the form fields until\n         either (a) they tap Enter Manually, or (b) an assessment runs and\n         _assessed becomes true. Edit view always shows the full form.\n         S14: ownership cycle pill inserted above Enter Manually. Lets a\n         user mark a book as Owned (default) / Watching / Sold before\n         assessing — so they can assess someone else's book without\n         claiming it, or track a book they're considering buying. Same\n         pill style as detail and edit views (color-coded by state),\n         centered between the two full-width buttons. Public-listing is\n         locked off whenever ownership !== 'Owned'; the cycleOwnership\n         handler clears formData.publicListing on transitions out of\n         Owned so a stale 'true' can't be saved. --\x3e\n    ${(() => {
+  })()}\n    ${formData.cgcGrade || formData.psaGrade || formData.graderNotes ? `<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes ? 5 : 3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiAssessment ? `<div><label class="field-label">Main Assessment</label><textarea rows="${Math.max(8, Math.ceil(formData.aiAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>` : ""}\n    ${formData.deepAssessment ? `<div><label class="field-label">Deep Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.deepAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Deep pass.">${esc(formData.deepAssessment)}</textarea></div>` : ""}\n    ${formData.fullAssessment ? `<div><label class="field-label">Full Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.fullAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Full pass.">${esc(formData.fullAssessment)}</textarea></div>` : ""}\n    ${formData.gradeRevisionReason ? `<div><label class="field-label">Grade Revision</label><textarea rows="${Math.max(3, Math.ceil(formData.gradeRevisionReason.length / 80))}" readonly style="cursor:not-allowed" title="Why a Deep or Full pass moved the grade.">${esc(formData.gradeRevisionReason)}</textarea></div>` : ""}\n    ${(() => { const _rf = restorationFlagList(formData); return _rf.length ? `<div><label class="field-label">Restoration Noted During Grading</label><textarea rows="${Math.max(2, _rf.length)}" readonly style="cursor:not-allowed" title="Raised by the grading pass from ordinary-light photos. Not a UV finding.">${esc(_rf.join("\n"))}</textarea></div>` : ""; })()}\n    ${formData.restorationReport ? `<div><label class="field-label">UV Check</label><textarea rows="${Math.max(5, Math.ceil((formData.restorationReport || "").length / 80))}" readonly style="cursor:not-allowed" title="Populated by the UV Check.">${esc(formData.restorationReport)}</textarea></div>` : ""}\n    ${renderAssessmentHistorySection(formData.assessmentHistory, true)}\n    ${formData.psaNotes ? `<div><label class="field-label" style="color:#e87a7a">PSA Variance</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes || "")}</textarea></div>` : ""}\n\n    \x3c!-- Acquisition metadata (moved 2026-10-17 per Matt): Date Acquired and\n         Seller now sit BELOW the write-ups and the Assessment History and\n         ABOVE Cost Breakdown. Grading Date (slabbingDate) was removed outright in\n         the same pass — it meant the date CGC slabbed the book, nobody filled\n         it in, and the Robograde date already covers anything we graded. --\x3e\n    ${formData.id ? renderAssessmentMap(formData) : ""}\n    ${df("Date Acquired", "dateAcquired")}\n    <div><label class="field-label">Seller</label>\n      <input value="${esc(formData.seller || "")}" list="seller-list" oninput="formData.seller=this.value;updateSellerList(this.value)" placeholder="Name / source" autocomplete="off">\n      <datalist id="seller-list">${getSellerSuggestions().map(s => `<option value="${esc(s)}">`).join("")}</datalist>\n    </div>\n    \x3c!-- v6.27: My Grade moved here, below Seller and above Cost Breakdown.\n         It is the owner's OWN opinion of the grade - personal record-keeping,\n         like the price and the seller. Beside the RG score it read as a\n         Robograder output. It never reaches the public listing: api/lookup.js\n         does not project it. --\x3e\n    ${formData.grade || formData.roboGrade ? `<div class="form-grid-2">\n      <div><label class="field-label">My Grade</label><select onchange="formData.grade=this.value">\n        <option value="">— select grade —</option>\n        ${GRADES.map(g => `<option value="${g}"${formData.grade === g ? " selected" : ""}>${g} — ${GRADE_LABELS[g]}</option>`).join("")}\n      </select></div>\n    </div>` : ""}\n    \n    \x3c!-- Enhancement Candidate (S11): renamed from "Enhance Candidate"; moved\n         to between Condition Assessment and Cost Breakdown per user direction. --\x3e\n    \x3c!-- S20: Enhancement Candidate control hidden per request (odd inclusion, often inaccurate). Kept for future use: <div><label class="field-label">Enhancement Candidate</label><div style="display:flex;gap:10px">\${treatBtn("enhance", "Enhance")}</div></div> --\x3e\n\n    \x3c!-- Cost Breakdown (S11): now includes FMV ($) and FMV Date inside the\n         container, since they're financial fields conceptually grouped with\n         the cost data. --\x3e\n    <div class="cost-box">\n      <div style="font-size:11px;color:#6a8a6a;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px">Cost Breakdown</div>\n      <div class="form-grid-2">\n        ${mf("Purchase Price ($)", "purchasePrice")}\n        ${mf("Taxes / Fees / Shipping ($)", "taxesFeesShipping")}\n        ${mf("Asking Price ($)", "askingPrice")}\n      </div>\n    </div>\n\n    <div><label class="field-label">My Notes <span style="font-weight:600;letter-spacing:0;text-transform:none;color:#7a8a6a">\u2014 private, never shown publicly</span></label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes || "")}</textarea></div>\n    ${""}\n    \n    <div style="display:flex;gap:10px;padding-top:4px">\n      ${isEdit ? "" : `<button id="save-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="submitForm()" ${(formData.title?.trim() && !isUploadInFlight()) ? "" : "disabled"} style="${isUploadInFlight() ? "opacity:0.55;cursor:progress" : ""}">${isUploadInFlight() ? "Uploading photos\u2026" : "Add to Collection"}</button>`}\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cancelForm()">Cancel</button>\n    </div>\n    ` : `\n    \x3c!-- Add-flow collapsed state (S11): show only the Enter Manually button.\n         Steers users toward photos-first by hiding the form fields until\n         either (a) they tap Enter Manually, or (b) an assessment runs and\n         _assessed becomes true. Edit view always shows the full form.\n         S14: ownership cycle pill inserted above Enter Manually. Lets a\n         user mark a book as Owned (default) / Watching / Sold before\n         assessing — so they can assess someone else's book without\n         claiming it, or track a book they're considering buying. Same\n         pill style as detail and edit views (color-coded by state),\n         centered between the two full-width buttons. Public-listing is\n         locked off whenever ownership !== 'Owned'; the cycleOwnership\n         handler clears formData.publicListing on transitions out of\n         Owned so a stale 'true' can't be saved. --\x3e\n    ${(() => {
     const own = formData.ownership || "Owned";
     const styleByState = {
       Owned: {
