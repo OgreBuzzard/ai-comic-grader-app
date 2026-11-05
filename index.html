@@ -3377,35 +3377,42 @@ function renderIdentityHeader(item) {
 
 function renderAddedLabelNotesField() {
   if (!formData) return "";
+  // v6.28: a <select>, not seven toggle chips. The chips were accurate about
+  // the data (a set) and wrong about the use: this is rarely filled in, and it
+  // was spending a seven-button block near the top of Edit to say nothing most
+  // of the time. Matt chose a single selection over the space.
+  // The DATA stays an array - the label, public.html and api/lookup.js all
+  // read a list, a book saved earlier may legitimately hold more than one, and
+  // a future multi-select needs no migration. The picker writes 0 or 1 entry;
+  // nothing clamps what is already stored.
   const chosen = Array.isArray(formData.addedLabelNotes) ? formData.addedLabelNotes : [];
+  const cur = chosen[0] || "";
+  const extra = chosen.slice(1);
+  const opts = ADDED_LABEL_NOTES.map(n =>
+    `<option value="${esc(n)}"${n === cur ? " selected" : ""}>${esc(n)}</option>`).join("");
+  // A value stored before this was a single-select, or dropped from the list,
+  // still appears and stays selectable rather than vanishing on the next save.
+  const orphan = cur && !ADDED_LABEL_NOTES.includes(cur)
+    ? `<option value="${esc(cur)}" selected>${esc(cur)}</option>` : "";
   const sig = hasConfirmedSignature(formData);
-  const chips = ADDED_LABEL_NOTES.map(n => {
-    const on = chosen.includes(n);
-    return `<button type="button" onclick="toggleAddedLabelNote(${JSON.stringify(n).replace(/"/g, "&quot;")})"
-      style="padding:7px 12px;border-radius:999px;cursor:pointer;font-size:13px;font-weight:${on ? 700 : 600};
-             font-family:inherit;letter-spacing:0.2px;
-             background:${on ? "#2f4a18" : "#141a10"};
-             color:${on ? "#cfe8a8" : "#8a9a7a"};
-             border:1.5px solid ${on ? "#6a9a30" : "#3a4a2a"}">${esc(n)}</button>`;
-  }).join("");
-  // The signature note is DERIVED from the Signature slots, so it is shown as a
-  // state rather than a choice - there is nothing here to toggle.
-  const sigChip = sig
-    ? `<span style="padding:7px 12px;border-radius:999px;font-size:13px;font-weight:700;
-             background:#2a3a4a;color:#a8c8e8;border:1.5px solid #4a6a8a">${esc(SIGNATURE_LABEL_NOTE)}</span>`
-    : "";
   return `<div>
       <label class="field-label">Added Label Notes <span style="font-weight:600;letter-spacing:0;text-transform:none;color:#7a8a6a">&mdash; public, prints on the label</span></label>
-      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:2px">${chips}${sigChip}</div>
-      ${sig ? `<div style="font-size:11px;color:#7a8a6a;margin-top:7px;line-height:1.45">&ldquo;${esc(SIGNATURE_LABEL_NOTE)}&rdquo; is added by Robograder because a Signature photo is on file. It is not editable.</div>` : ""}
+      <select onchange="setAddedLabelNote(this.value)">
+        <option value="">&mdash; none &mdash;</option>
+        ${orphan}${opts}
+      </select>
+      ${extra.length ? `<div style="font-size:11px;color:#7a8a6a;margin-top:6px;line-height:1.45">Also on this book: ${esc(extra.join(", "))}. Saved before notes were limited to one; still printed.</div>` : ""}
+      ${sig ? `<div style="font-size:11px;color:#7a8a6a;margin-top:6px;line-height:1.45">Robograder also prints &ldquo;${esc(SIGNATURE_LABEL_NOTE)}&rdquo; because a Signature photo is on file.</div>` : ""}
     </div>`;
 }
 
-function toggleAddedLabelNote(note) {
-  const cur = Array.isArray(formData.addedLabelNotes) ? formData.addedLabelNotes.slice() : [];
-  const i = cur.indexOf(note);
-  if (i >= 0) cur.splice(i, 1); else cur.push(note);
-  formData.addedLabelNotes = cur;
+function setAddedLabelNote(note) {
+  const cur = Array.isArray(formData.addedLabelNotes) ? formData.addedLabelNotes : [];
+  // Keep anything beyond the first entry: a book saved when this was
+  // multi-select still prints what it was given, and picking a new first note
+  // must not silently drop the rest.
+  const rest = cur.slice(1);
+  formData.addedLabelNotes = note ? [note, ...rest] : rest;
   renderForm();
 }
 
@@ -4747,7 +4754,9 @@ function appAlert(message, asHtml) {
     }
     if (asHtml) msgEl.innerHTML = message; else msgEl.textContent = message;
     if (cancelEl) cancelEl.style.display = "none";
-    if (okEl) okEl.textContent = "OK";
+    // v6.28: "OKAY", not "OK". This is the app's only alert dialog, so every
+    // message that is purely an acknowledgement reads the same way.
+    if (okEl) okEl.textContent = "OKAY";
     msgEl.style.userSelect = "text";
     overlay.style.display = "flex";
     const onKey = e => {
@@ -6637,7 +6646,7 @@ function showDetail(id) {
     const _subjBits = [selected.title || "", selected.issue ? "#" + selected.issue : "", selected.issueDate || ""].filter(Boolean).join(" ");
     const _subject = encodeURIComponent(`Complaint ID ${_cId} — ${_subjBits}`.trim());
     const _body = encodeURIComponent("User ID: " + (window._transferCode || "?") + "\n\nDescribe the issue:\n");
-    _complainBtn = `<a class="rg-btn rg-btn-action rg-btn-md" href="mailto:support@robograder.app?subject=${_subject}&body=${_body}" onclick="try{var q=(this.href.split('?')[1]||'');var pr=new URLSearchParams(q);if(navigator.clipboard&&navigator.clipboard.writeText){var nl=String.fromCharCode(10);navigator.clipboard.writeText('To: support@robograder.app'+nl+'Subject: '+(pr.get('subject')||'')+nl+nl+(pr.get('body')||''));}alert('Complaint details copied to your clipboard (send to support@robograder.app). If your email app did not open, just paste them into a new message.');}catch(e){}" style="display:flex;align-items:center;justify-content:center;text-decoration:none">Complain</a>`;
+    _complainBtn = `<a class="rg-btn rg-btn-action rg-btn-md" href="mailto:support@robograder.app?subject=${_subject}&body=${_body}" onclick="try{var q=(this.href.split('?')[1]||'');var pr=new URLSearchParams(q);if(navigator.clipboard&&navigator.clipboard.writeText){var nl=String.fromCharCode(10);navigator.clipboard.writeText('To: support@robograder.app'+nl+'Subject: '+(pr.get('subject')||'')+nl+nl+(pr.get('body')||''));}appAlert('Complaint details copied to your clipboard (send to support@robograder.app). If your email app did not open, just paste them into a new message.');}catch(e){}" style="display:flex;align-items:center;justify-content:center;text-decoration:none">Complain</a>`;
   }
   // EXPORT IMAGES (v5.71). Comics only - Cards is shelved and has no layout, so
   // there is nothing to decide there and both buttons are simply absent. A
@@ -8648,6 +8657,25 @@ const EMPTY = {
 function blankForm() {
   const f = { ...EMPTY };
   for (const k of Object.keys(f)) if (Array.isArray(f[k])) f[k] = f[k].slice();
+  // v6.28: "Make new assessments public" had no effect on new books.
+  // EMPTY.publicListing is `false`, and the save path reads
+  //     formData.publicListing != null ? !!formData.publicListing : !!window._publicByDefault
+  // - `false` is not null, so the fallback never ran and every new assessment
+  // saved private no matter what the setting said. The setting worked; nothing
+  // ever asked it.
+  // Applying it HERE rather than at save time also means the Public toggle in
+  // Edit shows the right state before the user saves, instead of flipping on
+  // afterwards. Ownership can still force it off (Sold and Watching are never
+  // public) and an explicit toggle still wins - this only sets the start value.
+  // Read the stored value directly rather than trusting window._publicByDefault
+  // to be populated: that is set inside the async boot sequence, and the first
+  // blankForm() runs at script top-level, before it. Reading the source of
+  // truth removes the ordering dependency instead of relying on it.
+  let _pubDefault = window._publicByDefault;
+  if (_pubDefault == null) {
+    try { _pubDefault = localStorage.getItem("rg_public_default") === "1"; } catch (e) { _pubDefault = false; }
+  }
+  f.publicListing = !!_pubDefault;
   return f;
 }
 
