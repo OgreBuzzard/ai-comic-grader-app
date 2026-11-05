@@ -3356,6 +3356,83 @@ function labelNotesText(item) {
 // That third line is the label's own line (see print-label.js prtLine), in the
 // same order and with the same contents, so the screen and the printed label
 // say the same thing in the same sequence.
+// ── IMAGES / ASSESSMENT TABS (v6.29) ────────────────────────────────────────
+// A fully-worked book runs past 10,000px. Splitting it means the two halves
+// people actually come for - "show me the photos" and "show me the grade" -
+// are each one screen rather than one expedition.
+//
+// THE DEFAULT IS THE WHOLE DESIGN. Matt's worry was that people would not
+// notice the tabs and would never see the assessment. So the assessment is
+// what you LAND on whenever one exists, and IMAGES is the thing you opt into -
+// which people go looking for anyway, because they arrive wanting to add or
+// check a photo. A book with no assessment opens on IMAGES, because that is
+// the only thing it has. The risk only exists in the arrangement where the
+// assessment is the hidden half; this is the other arrangement.
+//
+// Sticky per book, not global: _detailTab is cleared when the selected book
+// changes, so opening a different book re-applies the default rather than
+// inheriting wherever you happened to be.
+// THE KILL SWITCH. Set to false and every view renders exactly as it did
+// before tabs existed: renderDetailTabs() emits nothing and both panels render
+// open. Nothing else has to be touched or reverted, in any of the three views.
+// This is here because splitting the record is a judgement call that may turn
+// out to be wrong once it is in front of people, and the cost of finding that
+// out should be one word.
+const TABS_ENABLED = true;
+
+let _detailTab = null;
+let _detailTabFor = null;
+
+function _hasAssessment(item) {
+  return !!(item && (item.roboGrade || item.aiAssessment ||
+    (item.cardData && item.cardData.robograde)));
+}
+
+function detailTab(item) {
+  const id = item && item.id;
+  if (_detailTabFor !== id) { _detailTabFor = id; _detailTab = null; }
+  if (_detailTab) return _detailTab;
+  return _hasAssessment(item) ? "assessment" : "images";
+}
+
+function setDetailTab(t) {
+  _detailTab = (t === "images") ? "images" : "assessment";
+  // Both views render through their own entry point; call whichever is live.
+  if (view === "detail" && typeof showDetail === "function" && selected) showDetail(selected.id);
+  else if (typeof renderForm === "function") renderForm();
+}
+
+// The two tabs. Rendered as actual folder tabs - the inactive one is darker,
+// sits 2px lower and has no bottom border, so the active one reads as the
+// sheet you are looking at rather than as a selected button.
+function renderDetailTabs(item, opts) {
+  if (!TABS_ENABLED) return "";
+  const cur = detailTab(item);
+  const ro = !!(opts && opts.readOnly);
+  const tab = (key, label) => {
+    const on = cur === key;
+    const click = ro ? "" : ` onclick="setDetailTab('${key}')"`;
+    return `<button type="button"${click} style="
+      flex:1;padding:${on ? "11px" : "9px"} 10px ${on ? "12px" : "10px"};margin-top:${on ? "0" : "2px"};
+      border:1.5px solid ${on ? "#6a9a30" : "#2a3a1e"};border-bottom:${on ? "none" : "1.5px solid #6a9a30"};
+      border-radius:10px 10px 0 0;cursor:${ro ? "default" : "pointer"};
+      font-family:inherit;font-size:12px;font-weight:${on ? 800 : 700};letter-spacing:1.5px;
+      background:${on ? "#1d2e10" : "#121a0c"};color:${on ? "#cfe8a8" : "#7a8a6a"}">${label}</button>`;
+  };
+  return `<div style="display:flex;gap:4px;align-items:flex-end;margin-top:18px">
+      ${tab("images", "IMAGES")}${tab("assessment", "ASSESSMENT")}
+    </div>
+    <div style="height:0;border-top:1.5px solid #6a9a30;margin-bottom:14px"></div>`;
+}
+
+// Panels are rendered either way and hidden with display, not omitted: the
+// lightbox reel, the camera chain and every getElementById in here expect
+// their nodes to exist whichever tab is showing.
+function tabPanelOpen(item, key) {
+  const show = !TABS_ENABLED || detailTab(item) === key;
+  return `<div data-tab-panel="${key}" style="display:${show ? "block" : "none"}">`;
+}
+
 function renderIdentityHeader(item) {
   if (!item) return "";
   const _iss = item.issue
@@ -6245,6 +6322,13 @@ function showDetail(id) {
   const ownershipPillHtml = isSample ? "" : `<div id="detail-ownership-row" style="${_OWNERSHIP_PILL_WRAP};margin-top:10px">${_ownershipPills(selected.ownership || "Owned", "setOwnershipDetail")}</div>`;
   // S20 (#46): ownership pill sits ABOVE the images, matching the Add/Edit form.
   html += ownershipPillHtml;
+  // v6.29: tabs sit between the ownership bar and the integrity pill, and the
+  // pill is INSIDE the images panel - it reports whether the PHOTOS are
+  // unaltered, so it belongs with them and says nothing useful beside the
+  // write-ups. (Matt, 2026-11-05.) It is emitted inside the
+  // `if (selected.images)` block below, which is already within this panel.
+  html += renderDetailTabs(selected);
+  html += tabPanelOpen(selected, "images");
   if (selected.images?.length > 0) {
     const imgs = selected.images;
     const imgAttrs = `loading="eager" decoding="async" onload="window.forceImgReflow(this)"`;
@@ -6371,8 +6455,12 @@ function showDetail(id) {
   //
   // The 5 / 10 / 3 come from the constants, never typed into the sentence, so a
   // change to BATCH_N cannot leave the copy lying.
+  // v6.29: captured rather than appended - Batch is about assessing, not about
+  // this book's photos, so it goes at the bottom of the ASSESSMENT panel.
+  // Post-Cleaning stays here: it IS a capture flow (ten Before, ten After).
+  let _batchCard = "";
   if (!isSample && isBatchEligible(selected) && !hasBatchRun(selected)) {
-    html += `<div onclick="showEditToSection('${esc(selected.id)}','batch')" style="margin-top:14px;padding:14px;background:#152e10;border:1.5px solid #4a7028;border-radius:12px;text-align:center;cursor:pointer">
+    _batchCard = `<div onclick="showEditToSection('${esc(selected.id)}','batch')" style="margin-top:14px;padding:14px;background:#152e10;border:1.5px solid #4a7028;border-radius:12px;text-align:center;cursor:pointer">
         <div style="line-height:1;margin-bottom:8px;opacity:0.5">${tierStarSVG(15, "#b8d820")}${tierStarSVG(15, "#b8d820")}</div>
         <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:#b8d820;margin-bottom:5px">BATCH ASSESSMENT AVAILABLE</div>
         <div style="font-size:12px;color:#9cc76a;line-height:1.45;margin-bottom:10px">Re-runs both Main and Deep ${BATCH_N} times each to provide a range and cumulative average grade. A total of ${BATCH_N * 2} assessments for ${BATCH_CREDIT_COST} credits.</div>
@@ -6458,6 +6546,9 @@ function showDetail(id) {
       html += `</div></div>`;
     }
   }
+  // v6.29: the image half ends here. Everything below is the assessment.
+  html += `</div>`;                       // close data-tab-panel="images"
+  html += tabPanelOpen(selected, "assessment");
   if (selected.roboGrade || (selected.type === "card" && selected.cardData && selected.cardData.robograde)) {
     html += `<div style="margin-top:16px">${selected.type === "card" ? buildCardRoboDisplay(selected) : buildRoboGradeDisplay(selected.roboGrade, selected)}</div>`;
   }
@@ -6598,6 +6689,11 @@ function showDetail(id) {
   // field is deliberately left in COMIC_DATA_FIELDS so existing values are not
   // destroyed — it is simply no longer shown or editable.
   const hasAnyDateCost = !!(selected.dateAcquired || cost > 0);
+  // Batch sits at the bottom of the assessment half, after the history.
+  html += _batchCard;
+  html += `</div>`;                       // close data-tab-panel="assessment"
+  // Below the panels and always visible, whichever tab is showing: acquisition,
+  // cost, the public toggle, the action buttons and Delete.
   if (hasAnyDateCost) {
     html += `<div class="divider"></div>\n    <div class="grid-2">\n      ${selected.dateAcquired ? `<div><div class="section-label">Date Acquired</div><div class="field-val">${formatDate(selected.dateAcquired)}</div></div>` : ""}\n      ${cost > 0 ? `<div><div class="section-label">Total Cost</div><div class="field-val" style="color:#8abf8a;font-weight:700">${fmt$(cost)}</div></div>` : ""}\n      ${selected.fmv ? "" : ""}\n    </div>`;
   }
@@ -10227,6 +10323,7 @@ function _showCeilingModal() {
 // buying is exactly the kind of thing people want to send someone a link to,
 // and disabling that was a mistake. Sold stays excluded — the listing outlives
 // the book and the link would misrepresent what you have.
+// Confirmed by Matt 2026-11-05: Sold only. Do not re-exclude Watching.
 // One definition, used by the per-book toggle, both ownership-change paths and
 // the bulk make-public action, so they cannot drift apart.
 function _publicEligibleOwnership(own) {

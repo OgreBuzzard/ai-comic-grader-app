@@ -1117,6 +1117,55 @@
     catch (e) { console.warn('[public] card panel failed:', e); }
   }
 
+  // ── IMAGES / ASSESSMENT TABS (v6.30) ──────────────────────────────────────
+  // Same split, same default and the same reasoning as the app's Detail view:
+  // the assessment is what you LAND on, images is the half you opt into. A
+  // public listing always has an assessment - that is the only reason it
+  // exists - so this page has no "no assessment yet" case to default around.
+  //
+  // The integrity pill travels inside photoBlock, so it lands on the IMAGES
+  // tab exactly as it does in the app: it reports whether the PHOTOS are
+  // unaltered.
+  //
+  // CARDS ARE NOT TABBED. The card layout is five short blocks and does not
+  // have the length problem this solves.
+  //
+  // Set PUB_TABS_ENABLED to false and the page renders exactly as it did
+  // before: no tab bar, both panels open. Matches TABS_ENABLED in index.html -
+  // if you turn one off, turn the other off too.
+  const PUB_TABS_ENABLED = true;
+  let _pubTab = null;
+  const pubTab = () => _pubTab || 'assessment';
+  window.setPubTab = (t) => {
+    _pubTab = (t === 'images') ? 'images' : 'assessment';
+    for (const el of document.querySelectorAll('[data-tab-panel]')) {
+      el.style.display = el.getAttribute('data-tab-panel') === _pubTab ? 'block' : 'none';
+    }
+    for (const el of document.querySelectorAll('[data-tab-btn]')) {
+      const on = el.getAttribute('data-tab-btn') === _pubTab;
+      el.style.background = on ? '#1d2e10' : '#121a0c';
+      el.style.color = on ? '#cfe8a8' : '#7a8a6a';
+      el.style.borderBottom = on ? 'none' : '1.5px solid #6a9a30';
+      el.style.marginTop = on ? '0' : '2px';
+      el.style.fontWeight = on ? '800' : '700';
+    }
+  };
+  const pubTabsHTML = () => {
+    const btn = (key, label) => {
+      const on = pubTab() === key;
+      return `<button type="button" data-tab-btn="${key}" onclick="setPubTab('${key}')" style="
+        flex:1;padding:${on ? '11px' : '9px'} 10px ${on ? '12px' : '10px'};margin-top:${on ? '0' : '2px'};
+        border:1.5px solid ${on ? '#6a9a30' : '#2a3a1e'};border-bottom:${on ? 'none' : '1.5px solid #6a9a30'};
+        border-radius:10px 10px 0 0;cursor:pointer;font-family:inherit;font-size:12px;
+        font-weight:${on ? 800 : 700};letter-spacing:1.5px;
+        background:${on ? '#1d2e10' : '#121a0c'};color:${on ? '#cfe8a8' : '#7a8a6a'}">${label}</button>`;
+    };
+    return `<div style="display:flex;gap:4px;align-items:flex-end;margin-top:18px">
+        ${btn('images', 'IMAGES')}${btn('assessment', 'ASSESSMENT')}
+      </div>
+      <div style="height:0;border-top:1.5px solid #6a9a30;margin-bottom:14px"></div>`;
+  };
+
   app.innerHTML = isCard ? `
     ${cardIdentityHTML}
     ${photoBlock}
@@ -1125,21 +1174,26 @@
     ${conditionBlock}
   ` : `
     ${identityHTML}
-    ${photoBlock}
-    ${cornerBlock}
-    ${interiorCoverBlock}
-    ${interiorBlock}
-    ${restoImgBlock}
-    ${signatureBlock}
-    ${insertBlock}
-    ${couponBlock}
-    ${userDefectBlock}
-    ${robogradePanelHTML}
-    ${predictedBlock}
-    ${conditionBlock}
-    ${deepBlock}
-    ${fullBlock}
-    ${restorationBlock}
+    ${PUB_TABS_ENABLED ? pubTabsHTML() : ''}
+    <div data-tab-panel="images" style="display:${!PUB_TABS_ENABLED || pubTab() === 'images' ? 'block' : 'none'}">
+      ${photoBlock}
+      ${cornerBlock}
+      ${interiorCoverBlock}
+      ${interiorBlock}
+      ${restoImgBlock}
+      ${signatureBlock}
+      ${insertBlock}
+      ${couponBlock}
+      ${userDefectBlock}
+    </div>
+    <div data-tab-panel="assessment" style="display:${!PUB_TABS_ENABLED || pubTab() === 'assessment' ? 'block' : 'none'}">
+      ${robogradePanelHTML}
+      ${predictedBlock}
+      ${conditionBlock}
+      ${deepBlock}
+      ${fullBlock}
+      ${restorationBlock}
+    </div>
   `;
 
   document.querySelector('.content').insertAdjacentHTML('beforeend', `
