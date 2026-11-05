@@ -802,7 +802,20 @@
       <div class="book-title">${esc(data.title || '—')}${data.issue ? `<span class="book-issue">${esc(formatIssue(data.issue))}</span>` : ''}</div>
       ${data.issueDate ? `<div class="issue-row"><span class="book-date">${esc(formatIssueDateCompact(data.issueDate))}</span></div>` : ''}
       ${data.publisher ? `<div class="book-publisher">${esc(data.publisher)}</div>` : ''}
-      ${data.printing ? `<div class="book-publisher" style="opacity:0.8">${esc(data.printing)}</div>` : ''}
+      ${(() => {
+        // v6.26: one line, in the same order as the printed label - Printing,
+        // Added Label Notes, Key Info - so the page and the label agree.
+        // addedLabelNotes is a closed vocabulary chosen in Edit; "Signature
+        // detected" is DERIVED from the Signature photos, exactly as
+        // print-label.js derives it, and is never stored.
+        const _n = Array.isArray(data.addedLabelNotes)
+          ? data.addedLabelNotes.filter(x => typeof x === 'string' && x.trim())
+          : [];
+        if ((data.signatureImages || []).some(Boolean)) _n.push('Signature detected');
+        const _line = [data.printing, _n.join(', '), data.keyInfo]
+          .filter(x => x && String(x).trim()).join(', ');
+        return _line ? `<div class="book-publisher" style="opacity:0.8">${esc(_line)}</div>` : '';
+      })()}
     </div>
   `;
 

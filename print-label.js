@@ -410,6 +410,44 @@ function ensureStylesInjected() {
   const style = document.createElement('style');
   style.id = 'label-viewer-styles';
   style.textContent = `
+  /* ═══════════════════════════════════════════════════════════════════════
+     SHARED — every comic label (.rg-any)
+     ═══════════════════════════════════════════════════════════════════════
+     PUT A RULE HERE when it is true of Wide AND Case AND Square. Put it in a
+     variant section only when that variant genuinely differs.
+
+     WHY THIS EXISTS: four times now a rule written while working on Wide was
+     scoped to '.rg-label' - which is Wide and nothing else - for an object
+     that exists on every label. The score-box chip colour (twice), the '(+)'
+     mark, and the price face. Each one shipped looking subtly wrong on Case
+     and Square and was found by eye, on paper, weeks later.
+
+     THIS BLOCK IS FIRST IN SOURCE ORDER, deliberately. '.rg-any .x' and
+     '.rg-label-l .x' have identical specificity, so a variant rule later in
+     the file wins. Shared default, variant override, no '!important'.
+
+     SIZES AND POSITIONS DO NOT BELONG HERE. The labels are 4x1, 4x2 and 2x2
+     inches; a shared 'font-size' or 'top' is almost always a mistake. What
+     belongs here is what should not vary: typeface, weight, colour, tracking,
+     line-height, white-space. The grade numeral's size is computed per label
+     from the string's measured width (see _NUMFIT) - not here, and not in CSS.
+     ═══════════════════════════════════════════════════════════════════════ */
+
+  /* The Asking Price. Size is set inline per label from the measured string
+     width; everything that should NOT vary is here. */
+  .rg-any .rg-price {
+    font-family: 'Noto Sans Display', sans-serif;
+    font-weight: 900;
+    color: #0d0d0f;
+    line-height: 1;
+    white-space: nowrap;
+    text-align: center;
+  }
+  .rg-any.mono .rg-price { color: #000; }
+
+  /* The grade numeral's FACE. Its size and offset are per-variant. */
+  .rg-any .rg-num, .rg-any .rgc-num { font-family: 'League Spartan', sans-serif; }
+
   /* ── Modal chrome (screen only) ──────────────────────────────────────── */
   /* Body scroll lock: when the modal is open, prevent the page underneath
      from scrolling on touch. Without this, taps that land on the modal's
@@ -1538,7 +1576,14 @@ function ensureStylesInjected() {
      Matt's call. The issue number keeps its bullet: "#15 . Aug 1962, 2nd
      Printing" separates the identity from the description, which a second
      comma would not. */
-  .rg-label-l .wrap-strip .ws-date + .ws-prt::before { content: ', '; margin: 0 2px 0 -2px; }
+  .rg-label-l .wrap-strip .ws-date + .ws-prt::before {
+    /* v6.25: -14px cancels the strip's flex gap of 14px, which sat between the
+       date and this pseudo-element and printed as "May 1988 , 1st Printing".
+       A comma has to touch the word before it; the bullet beside it wants the
+       gap, which is why only this one needs the cancel. */
+    content: ', ';
+    margin: 0 2px 0 -14px;
+  }
   .rg-label-l .wrap-strip .ws-iss + .ws-date::before,
   .rg-label-l .wrap-strip .ws-iss + .ws-prt::before {
     content: '·';
@@ -1686,7 +1731,14 @@ function ensureStylesInjected() {
     left: 290px; top: 8px; right: 490px; bottom: 10px;
     display: flex; flex-direction: column;
   }
-  .rg-label-l.has-price .info { right: 400px; }
+  /* v6.25: DELETED - .rg-label-l.has-price .info { right: 400px; }
+     It made the text column 90px WIDER when the price was on (490 -> 400), a
+     leftover from the retired white price-pad, which sat somewhere else on the
+     label. The shared .rg-art slot occupies the SAME box whether it holds the
+     figure or the price, so the column must not move at all - and because
+     .info-lower is positioned against .info, that 90px also slid
+     ROBOGRADER.APP/ID sideways whenever the toggle changed. The text wrapped
+     later, ran into the price, and the ID moved. One rule did all three. */
   .rg-label-l .info-upper {
     padding-bottom: 4px;
   }
@@ -1748,10 +1800,14 @@ function ensureStylesInjected() {
      that did not fit its column. */
   .rg-label-l .info-lower {
     position: absolute;
-    /* .info's right edge is x=662; -285 takes the band out to 947, which is
-       the QR column's left edge. Narrower than that and the ID pair wrapped
-       to a second line inside the band. */
-    left: 0; right: -285px; bottom: 0;
+    /* v6.25: -454, not -285. .info's right edge is x=662 (1152 - 490); the QR
+       column is right:36 and its image is right-aligned within it, so the QR's
+       right edge is x=1116, and 662 + 454 = 1116. The band and its border-top
+       - the horizontal rule - now stop exactly under the QR's right edge. The
+       printed code and the code the QR encodes are the same thing, so they
+       share an edge. -285 stopped at 947 and read as arbitrary, because it
+       was: it was measured off the QR column's LEFT edge. */
+    left: 0; right: -454px; bottom: 0;
     height: 48px;
     box-sizing: border-box;
     border-top: 1px solid #2a3a18;
@@ -1917,39 +1973,14 @@ function ensureStylesInjected() {
     object-fit: contain; display: block;
   }
   .rg-label-l .price-pad { display: none; }
-  .rg-label-l.has-price .price-pad {
-    display: block;
-    position: absolute;
-    /* S22: was 190x234 — noticeably taller than the pad on Wide (220x220),
-       Large (340x336) and Square (210x190), which all read as square-ish.
-       Squared off at 190x190 and re-centred against the 252px score box
-       (top = 18 + (252-190)/2 = 49) so it doesn't ride high in the cell. */
-    left: 760px; top: 49px;
-    width: 190px; height: 190px;
-    background: #ffffff;
-    border: 1px solid #b8c098;
-    border-radius: 14px;
-  }
-  .rg-label-l.has-price .price-pad .price-placeholder {
-    position: absolute;
-    top: 16px; left: 0; right: 0;
-    text-align: center;
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 36px; font-weight: 600;
-    color: #7a8a5a; letter-spacing: 0.5px;
-  }
-  .rg-label-l.has-price .price-pad .price-value {
-    position: absolute;
-    top: 50%; left: 0; right: 0;
-    transform: translateY(-50%);
-    text-align: center;
-    font-family: 'Noto Sans Display', sans-serif;
-    display: inline-block;
-    transform: scaleX(0.625);
-    transform-origin: center;
-    font-size: 52px; font-weight: 900;
-    color: #0d0d0f;
-  }
+  /* v6.25: the three .rg-label-l.has-price .price-pad rules are gone. The
+     white price pad was replaced by the shared .rg-art slot in v6.17 and the
+     class has not been emitted since - "price-pad" appears nowhere in the
+     markup. Dead CSS describing a live-looking layout.
+     The same is true of the .rg-label.has-price, .rg-label-square.has-price
+     and .rg-label-large.has-price price-pad rules, and of EVERY
+     .rg-label.has-price rule, because showPrice is hard-coded false for size
+     "small". Left in place deliberately - see LABEL_SHARED_STYLES.md. */
 
   /* ── Price pad (S12, May 5) ────────────────────────────────────────────
      White rounded-rectangle space between the identity block and the QR
@@ -2030,24 +2061,7 @@ function ensureStylesInjected() {
      to ask how wide a string is. Nothing here fixes a font-size for that
      reason. */
   .rg-label .rg-art.is-price { align-items: center; }
-  /* v6.21: ONE rule for every size. This was scoped to .rg-label, which is
-     Wide ONLY - Case is .rg-label-l and Square is .rg-label-square, so neither
-     ever got the face or the weight and both fell back to the container's
-     Barlow Condensed. The price is the same object on all three labels; it
-     reads from one place now. */
-  .rg-label .rg-price,
-  .rg-label-l .rg-price,
-  .rg-label-square .rg-price {
-    font-family: 'Noto Sans Display', sans-serif;
-    font-weight: 900;
-    color: #0d0d0f;
-    line-height: 1;
-    white-space: nowrap;
-    text-align: center;
-  }
-  .rg-label.mono .rg-price,
-  .rg-label-l.mono .rg-price,
-  .rg-label-square.mono .rg-price { color: #000; }
+  /* The price face/weight/colour now live in the SHARED block at the top. */
   /* 160 for the figure + a 12px gutter. */
   .rg-label .info-upper { padding-right: 172px; }
   /* With a price pad the QR falls back to bottom-left and there is no room for
@@ -3844,12 +3858,31 @@ function renderLabelMarkup(comic, opts) {
   // cannot force the line box taller than one line.
   const keyInfoRaw = String(comic.keyInfo == null ? '' : comic.keyInfo).replace(/\s+/g, ' ').trim();
   const keyInfo = keyInfoRaw ? esc(keyInfoRaw) : '';
-  // S22: the owner's own notes, between the printing and the Key Info. This is
-  // where "Detached spine" or "coupon cut" lives - a fact about THIS copy,
-  // which outranks the Key Info (a fact about the issue, true of every copy)
-  // and so goes above it. Same wrap-and-clip treatment as the rest of the
-  // line; nothing is truncated in JS.
-  const notesRaw = String(comic.notes == null ? '' : comic.notes).replace(/\s+/g, ' ').trim();
+  // ADDED LABEL NOTES - facts about THIS copy, between the printing and the Key
+  // Info. A fact about this copy outranks the Key Info (a fact about the issue,
+  // true of every copy) and so goes above it. Same wrap-and-clip treatment as
+  // the rest of the line; nothing is truncated in JS.
+  //
+  // v6.26: this used to read comic.notes - the owner's PRIVATE "My Notes"
+  // field - and print it on the label and on the public listing line. That is
+  // free text on a public surface, which is the user-generated-content
+  // exposure the Added Label Notes picker exists to avoid. My Notes is private
+  // again and nothing public reads it.
+  //
+  // addedLabelNotes is a closed vocabulary chosen in Edit; the picker and its
+  // list live in index.html (ADDED_LABEL_NOTES). Nothing here validates the
+  // strings - a note the picker no longer offers still prints, so dropping an
+  // option cannot silently rewrite a book that already carries it.
+  const _aln = Array.isArray(comic.addedLabelNotes)
+    ? comic.addedLabelNotes.filter(n => typeof n === 'string' && n.trim())
+    : [];
+  // Added by Robograder, not the user: the Main assessment flags a possible
+  // signature and the owner filling a Signature slot confirms it is not a false
+  // positive. It says nothing about WHERE the signature is or whether it was
+  // witnessed - it may have been; we do not know. (The same string is in
+  // index.html as SIGNATURE_LABEL_NOTE, for Detail and the public view.)
+  if ((comic.signatureImages || []).some(Boolean)) _aln.push('Signature detected');
+  const notesRaw = _aln.join(', ').replace(/\s+/g, ' ').trim();
   const notes = notesRaw ? esc(notesRaw) : '';
   // has-prt (which clamps the title to one line) now keys on this line
   // existing at all, not on the printing alone - a book with Key Info and no
@@ -3909,8 +3942,22 @@ function renderLabelMarkup(comic, opts) {
   // Slot width per size, in label pixels. The price is fitted to THIS, so a
   // size with a wider slot gets a bigger price rather than the same one
   // floating in space.
-  const _SLOT_W = { 'small': 160, 'square': 230, 'small-l': 230 };
-  const _slotW = _SLOT_W[opts.size] || 160;
+  // v6.25: this is the width the FIGURE actually draws at, not the width of
+  // the box it sits in. The asset is 500x600, and `.rg-art img` fits it with
+  // object-fit:contain inside a box that is wider than it is tall - so the
+  // figure is height-constrained and the box has empty air either side:
+  //     small    160 x 184 -> 184 * (500/600) = 153
+  //     small-l  230 x 184 -> 153   (77px of the box is empty)
+  //     square   230 x 180 -> 150   (80px empty)
+  // Sizing the price off the BOX made it 230px wide against a 153px figure,
+  // which is what Matt saw: "the price is taking up more than the Robograder
+  // watermark's width". The price and the figure are alternates in one slot;
+  // they have to occupy the same space or the label changes shape with a
+  // toggle.
+  const _ART_ASPECT = 500 / 600;
+  const _SLOT_BOX = { 'small': [160, 184], 'square': [230, 180], 'small-l': [230, 184] };
+  const _box = _SLOT_BOX[opts.size] || _SLOT_BOX['small'];
+  const _slotW = Math.round(Math.min(_box[0], _box[1] * _ART_ASPECT));
   const _askingRaw = comic.askingPrice;
   const _asking = (_askingRaw == null || _askingRaw === '')
     ? null
@@ -3934,8 +3981,13 @@ function renderLabelMarkup(comic, opts) {
     // size as "$12345", which it visually is not. Em widths are Noto Sans
     // Display's, measured off rendered glyphs (a digit is 0.556em - the same
     // constant the three-glyph score size uses).
-    const EM = { '.': 0.28, ',': 0.26, '$': 0.60 };
-    const em = txt.split('').reduce((a, c) => a + (EM[c] != null ? EM[c] : 0.556), 0);
+    // v6.25: MEASURED, not guessed. Noto Sans Display 900 via canvas
+    // measureText at 100px: every digit AND the dollar sign are 0.558em, and
+    // both the period and the comma are 0.274em. The old table had '$' at
+    // 0.60 and digits at 0.556 - close enough to look right and wrong enough
+    // to matter once the slot got tight.
+    const EM = { '.': 0.274, ',': 0.274 };
+    const em = txt.split('').reduce((a, c) => a + (EM[c] != null ? EM[c] : 0.558), 0);
     // The ceiling is proportional to the slot, not absolute: it stops a short
     // price coming out taller than the grade beside it.
     const fs = Math.max(16, Math.min(Math.round(_slotW * 0.83), Math.floor(_slotW / em)));
@@ -3958,7 +4010,15 @@ function renderLabelMarkup(comic, opts) {
                   : isSquare ? 'rg-label-square'
                   : isSmallL ? 'rg-label-l'
                   : 'rg-label';
-  const wrapClass = baseClass + (showPrice ? ' has-price' : '') + (opts.mono ? ' mono' : '')
+  // v6.22: `rg-any` rides along on EVERY comic label root (Wide, Case, Square,
+  // Large). It is the hook for the SHARED block near the top of the stylesheet
+  // - anything true of the price, the typography or the score-box interior on
+  // all of them is written once against `.rg-any` instead of three times. A
+  // variant that genuinely differs overrides it at equal specificity, which
+  // works because the shared block is FIRST in source order.
+  // The card label (`rg-label-card`) deliberately does NOT get this: it has its
+  // own `rgc-*` element vocabulary and shares no selectors with these.
+  const wrapClass = baseClass + ' rg-any' + (showPrice ? ' has-price' : '') + (opts.mono ? ' mono' : '')
     + ((isSmallL && _singleMode) ? ' tall' : '');
 
   // S15 May 28: Small L wrap-strip — the 0.25" strip at the top of the

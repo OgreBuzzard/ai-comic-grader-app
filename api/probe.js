@@ -203,11 +203,16 @@ export default async function handler(req, res) {
     // of probing turns into a surprise on the invoice a month later.
     //
     // kind:'probe' so it is filterable in the admin Logs and can be excluded
-    // from assessment averages. Fire-and-forget: a failed write must never
-    // fail a probe.
+    // from assessment averages.
+    //
+    // v6.23: AWAITED, and the write itself still swallows its own errors - a
+    // failed write must never fail a probe, but an UNAWAITED one is not
+    // "best effort", it is a row you will not get. The handler returns shortly
+    // after this and Vercel freezes the instance mid-write. See
+    // lib/credits.js logCreditEvent.
     const _ms = Date.now() - t0;
     const _cost = costOf(j.usage || {}, useModel, null);
-    (async () => {
+    await (async () => {
       try {
         const db = await getAdminDb();
         if (!db) return;

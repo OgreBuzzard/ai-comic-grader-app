@@ -289,7 +289,11 @@ Return ONLY the prose. No preamble, no JSON, no quotation marks around it.`;
   // Timing row, same collection and shape as every other paid call, so this
   // shows up in the admin Logs and in the cost figures rather than being
   // invisible the way api/probe.js was until 5.63.
-  (async () => {
+  // v6.23: AWAITED. The response returns on the next line, which freezes this
+  // instance with the write still in flight - it then rejects with
+  // DEADLINE_EXCEEDED against an unrelated later request. See lib/credits.js
+  // logCreditEvent for the full note.
+  await (async () => {
     try {
       if (!db) return;
       const key = `clean_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;

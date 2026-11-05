@@ -166,6 +166,11 @@ export default async function handler(req, res) {
       issueDate:         comic.issueDate || '',
       publisher:         comic.publisher || '',
       printing:          comic.printing || null,
+      // v6.26: the owner's chosen Added Label Notes - a CLOSED vocabulary, not
+      // free text. comic.notes ("My Notes") is free text and stays private; it
+      // is deliberately not here and must not be added.
+      addedLabelNotes:   Array.isArray(comic.addedLabelNotes) ? comic.addedLabelNotes : [],
+      keyInfo:           comic.keyInfo || '',
       images:            flatImages,
       cornerImages:      flatCornerImages,
       // Page quality is condition info, not personal — include it

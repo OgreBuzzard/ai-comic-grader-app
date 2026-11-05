@@ -134,7 +134,11 @@ export default async function handler(req, res) {
   // total by 3." This row is the 3. costUsd is 0 because the money is already
   // counted on the pass rows — double-counting it here would be the opposite
   // error.
-  (async () => {
+  // v6.23: AWAITED. The response returns on the next line, which freezes this
+  // instance with the write still in flight - it then rejects with
+  // DEADLINE_EXCEEDED against an unrelated later request. See lib/credits.js
+  // logCreditEvent for the full note.
+  await (async () => {
     try {
       const key = `batchcr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       await db.collection('assessment_timings').doc(key).set({

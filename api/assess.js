@@ -327,8 +327,13 @@ export default async function handler(req, res) {
     // Haiku 4.5 pricing: $1/M input, $5/M output.
     const scCost = +((scIn * (1 / 1e6)) + (scOut * (5 / 1e6))).toFixed(6);
 
-    // Fire-and-forget timing log → shows in the admin Logs tab.
-    (async () => {
+    // v6.23: AWAITED, not fire-and-forget. The response was returned on the
+    // very next line, which froze this instance with the write still in
+    // flight; it then rejected with DEADLINE_EXCEEDED ("name resolution:
+    // 234.605s") against a later request. 10 of these in 12 hours on Nov 4.
+    // Awaiting costs one small Firestore write on a path that just made a
+    // model call, and it is the difference between having the row and not.
+    await (async () => {
       try {
         const db = await getAdminDb();
         if (!db) return;
