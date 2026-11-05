@@ -251,7 +251,7 @@
           dateStr = dt.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
         } catch (e) { dateStr = ''; }
       }
-      provenanceHTML = `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:${OLIVE};border-radius:6px;margin-bottom:10px;font-family:'IBM Plex Mono','Menlo',monospace;font-size:11px">
+      provenanceHTML = `<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:${OLIVE};margin-bottom:0;font-family:'IBM Plex Mono','Menlo',monospace;font-size:11px">
         ${comic.roboGradeId ? `<div><span style="color:${OLIVE_LT};letter-spacing:1px;font-size:9px;font-weight:700">ID</span> <span style="color:${CHARTREUSE};margin-left:6px;letter-spacing:0.5px">${comic.roboGradeId}</span></div>` : '<div></div>'}
         ${dateStr ? `<div><span style="color:${OLIVE_LT};letter-spacing:1px;font-size:9px;font-weight:700">GRADED</span> <span style="color:${CHARTREUSE};margin-left:6px">${dateStr}</span></div>` : ''}
       </div>`;
@@ -263,7 +263,18 @@
     // on a full row and Back+Spine+Int at 2:2:1 below, encoding the score
     // weights (50/20/20/10) into visible box sizes. The defect listing is
     // styled as 1970s tractor-feed printout paper.
-    return `<div style="background:${BG};border:1.5px solid ${OLIVE_MID};border-radius:12px;padding:14px 14px 0;margin-bottom:8px;overflow:hidden">
+    // v6.33 - NO BOX INSIDE A BOX.
+    // This used to be one bordered container holding everything. Once the
+    // ASSESSMENT tab put it inside a sheet of its own, the score row was
+    // paying for two sets of borders and padding and the sub-scores clipped -
+    // "0.5 INT" lost its last character on a phone.
+    // The outer container is transparent now: the sheet IS the box, and it
+    // carries this panel's own colour, so nothing is lost visually. The score
+    // box and the sub-grade grid sit directly on it with the full width to
+    // themselves. Everything BELOW them - the ID / GRADED line, the defect
+    // printout and the Photograder panel - is one bordered box whose three
+    // parts are joined top, middle and bottom.
+    return `<div style="margin-bottom:8px">
       <div style="font-size:12px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:10px;text-align:center">ROBOGRADE SCORE</div>
       <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px">
         ${_v3 ? window.RoboScoreV3.scoreBox({
@@ -305,8 +316,9 @@
           </div>
         </div>
       </div>
+      <div style="border:1.5px solid ${OLIVE_MID};border-radius:10px;overflow:hidden">
       ${provenanceHTML}
-      ${sectionsHTML || extrasHTML ? `<div style="margin:0 -14px;border-top:2px solid ${OLIVE_MID};border-bottom:1.5px solid ${OLIVE_MID};position:relative">
+      ${sectionsHTML || extrasHTML ? `<div style="border-top:2px solid ${OLIVE_MID};border-bottom:1.5px solid ${OLIVE_MID};position:relative">
         <div style="position:absolute;left:0;top:0;bottom:0;width:8px;background-image:radial-gradient(circle at 4px 8px, ${OLIVE_MID} 1.5px, transparent 1.6px);background-size:8px 14px;background-repeat:repeat-y;background-color:${PAPER_CREAM};z-index:1"></div>
         <div style="position:absolute;right:0;top:0;bottom:0;width:8px;background-image:radial-gradient(circle at 4px 8px, ${OLIVE_MID} 1.5px, transparent 1.6px);background-size:8px 14px;background-repeat:repeat-y;background-color:${PAPER_CREAM};z-index:1"></div>
         <div style="margin:0 8px;background:${PAPER_CREAM}">
@@ -315,6 +327,7 @@
         </div>
       </div>` : ''}
       ${renderPhotograderPanel((comic && comic.photograder) || (rg && rg.photograder))}
+      </div>
     </div>`;
   }
 
@@ -365,7 +378,7 @@
         const body = parts.join(': ');
         return `<div style="font-size:11px;line-height:1.45;color:#1f2a08;font-family:'IBM Plex Mono','Menlo',monospace;padding:6px 10px;background:${bg}">${cat ? `<b>${_pgEsc(cat)}</b>${body ? ' — ' : ''}` : ''}${body}</div>`;
       }).join('');
-      flagsHTML = `<div style="margin:12px -14px 0;border-top:2px solid #4a7028;border-bottom:1.5px solid #4a7028;position:relative">
+      flagsHTML = `<div style="margin:12px 0 0;border-top:2px solid #4a7028;border-bottom:1.5px solid #4a7028;position:relative">
         <div style="position:absolute;left:0;top:0;bottom:0;width:8px;background-image:radial-gradient(circle at 4px 8px, #4a7028 1.5px, transparent 1.6px);background-size:8px 14px;background-repeat:repeat-y;background-color:#f4f0dc;z-index:1"></div>
         <div style="position:absolute;right:0;top:0;bottom:0;width:8px;background-image:radial-gradient(circle at 4px 8px, #4a7028 1.5px, transparent 1.6px);background-size:8px 14px;background-repeat:repeat-y;background-color:#f4f0dc;z-index:1"></div>
         <div style="margin:0 8px;background:#f4f0dc">${rows}</div>
@@ -373,7 +386,7 @@
     }
     // No border-top here — the defect list's border-bottom already separates
     // this dark-green section from the printout above.
-    return `<div style="margin-top:14px;padding-bottom:${flags.length ? '0' : '12px'}">
+    return `<div style="padding:12px 12px ${flags.length ? '0' : '12px'};background:#152e10">
       <div style="font-size:12px;font-weight:700;color:#7aa838;letter-spacing:2px;text-align:center;margin-bottom:10px">PHOTOGRADER</div>
       <div style="display:flex;gap:6px">${cells}</div>
       ${flagsHTML}

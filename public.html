@@ -1148,8 +1148,8 @@
       el.style.background = on ? sk.bg : PUB_TAB_SKIN.off.bg;
       el.style.color = on ? sk.fg : PUB_TAB_SKIN.off.fg;
       el.style.borderColor = on ? sk.bd : PUB_TAB_SKIN.off.bd;
-      el.style.borderBottom = on ? 'none' : ('1.5px solid ' + PUB_TAB_SKIN.off.bd);
-      el.style.marginBottom = on ? '-1.5px' : '0';
+      el.style.borderBottom = 'none';
+      el.style.marginBottom = '-1.5px';
       el.style.marginTop = on ? '0' : '3px';
       el.style.zIndex = on ? '1' : 'auto';
       el.style.position = on ? 'relative' : 'static';
@@ -1169,8 +1169,8 @@
   // sheet below it and covers that sheet's top border, so the two are one
   // object. PHOTOS is the lighter sheet of the two.
   const PUB_TAB_SKIN = {
-    photos:     { bg: '#1e2f14', bd: '#4a7028', fg: '#cfe8a8' },
-    assessment: { bg: '#101c0a', bd: '#3a5018', fg: '#b8d820' },
+    photos:     { bg: '#e6e2d4', bd: '#b8b3a0', fg: '#3a3426' },
+    assessment: { bg: '#152e10', bd: '#4a7028', fg: '#b8d820' },
     off:        { bg: '#141a10', fg: '#7a8a6a', bd: '#2c3a22' }
   };
   const pubTabsHTML = () => {
@@ -1179,7 +1179,8 @@
       const sk = PUB_TAB_SKIN[key];
       return `<button type="button" data-tab-btn="${key}" onclick="setPubTab('${key}')" style="
         flex:1;min-width:0;border:1.5px solid ${on ? sk.bd : PUB_TAB_SKIN.off.bd};
-        ${on ? 'border-bottom:none;margin-bottom:-1.5px;position:relative;z-index:1;' : 'margin-top:3px;'}
+        border-bottom:none;
+        ${on ? 'margin-bottom:-1.5px;position:relative;z-index:1;' : 'margin-top:3px;margin-bottom:-1.5px;'}
         border-radius:9px 9px 0 0;padding:${on ? '9px' : '8px'} 8px;
         background:${on ? sk.bg : PUB_TAB_SKIN.off.bg};color:${on ? sk.fg : PUB_TAB_SKIN.off.fg};
         font-family:inherit;font-size:11px;font-weight:${on ? 800 : 700};letter-spacing:1.6px;

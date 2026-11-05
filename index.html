@@ -843,10 +843,15 @@ onAuthStateChanged(auth, async user => {
        iPhone this ships to. */
     .rg-btn.btn-with-thumb {
       display: inline-flex; align-items: center; justify-content: flex-start;
-      gap: 9px; line-height: 1.1; text-align: left;
+      gap: 9px; line-height: 1.1;
       padding: 6px 14px 6px 7px;
       height: auto; min-height: 0; box-sizing: border-box;
     }
+    /* v6.33: the label centres on ITSELF, in the space the thumbnail leaves.
+       Left-aligned, "Summary" and "Image" lined up on their left edges and the
+       pair sat against the thumbnail, which read as a caption rather than as
+       the button's name. */
+    .rg-btn.btn-with-thumb > span { flex: 1; text-align: center; }
     .rg-btn.btn-with-thumb .action-btn-thumb {
       width: 17px; height: 31px; object-fit: cover;
       border-radius: 3px; flex-shrink: 0;
@@ -1796,6 +1801,9 @@ onAuthStateChanged(auth, async user => {
     #app-confirm-actions {
       display: flex; gap: 10px; justify-content: flex-end;
     }
+    /* v6.33: an alert has one button and nothing to align it against, so
+       flex-end just pins it to a corner. appAlert() adds this. */
+    #app-confirm-actions.single { justify-content: center; }
     #app-confirm-actions button {
       font-family: 'Barlow Condensed', sans-serif;
       font-size: 14px; font-weight: 700; letter-spacing: 0.5px;
@@ -3031,7 +3039,12 @@ function buildPredictedGradeBox(badgesHtml, pqHtml, fmvMatch, showDisclaimer) {
   const hdr = "font-size:12px;font-weight:800;letter-spacing:1.5px;color:#fff;text-transform:uppercase;text-align:center;line-height:1.15";
   const fmvBlock = fmvMatch ? `<div style="${hdr};margin-top:16px">FMV</div><div style="color:#fff;font-weight:800;font-size:20px;line-height:1;letter-spacing:0.01em;white-space:nowrap;margin-top:6px">${formatFMVCompact(fmvMatch)}</div>` : "";
   const disc = showDisclaimer ? `<div style="font-size:10px;color:#6a5a4a;text-align:center;line-height:1.4;margin-top:14px;font-style:italic">Independent prediction. Robograder is not affiliated with any encapsulation grading or price guide service.</div>` : "";
-  return `<div style="margin:16px auto 0;max-width:66%;padding:16px 20px;background:#0d0d0f;border:1px solid #2a2a3a;border-radius:10px;display:flex;flex-direction:column;align-items:center">
+  // v6.33: full width, not max-width:66%. The box was a fixed fraction of the
+  // column, so a long page-quality string ("Cream to Off-White") had nowhere
+  // to go and the disclaimer wrapped to four lines inside a box with empty
+  // space either side of it. It is the same width as the defect list above it
+  // now, which is what it is read against.
+  return `<div style="margin:16px 0 0;padding:16px 20px;background:#0d0d0f;border:1px solid #2a2a3a;border-radius:10px;display:flex;flex-direction:column;align-items:center">
     <div style="${hdr}">Predicted Grade</div>
     ${badgesHtml ? `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;justify-content:center;margin-top:12px">${badgesHtml}</div>` : ""}
     ${pqHtml ? `<div style="margin-top:10px;white-space:nowrap">${pqHtml}</div>` : ""}
@@ -3437,8 +3450,14 @@ function setDetailTab(t) {
 const TAB_SKIN = {
   // The PHOTOS sheet is the lighter of the two so the two halves are
   // distinguishable at a glance even before you read the tab.
-  photos:     { bg: '#1e2f14', bd: '#4a7028', fg: '#cfe8a8' },
-  assessment: { bg: '#101c0a', bd: '#3a5018', fg: '#b8d820' },
+  // v6.33: PHOTOS is the beige sheet - the paper tone the label and the
+  // export images use (#e8e4d8 / #d4d9be family), so the photo half reads as
+  // a contact sheet rather than another green panel.
+  photos:     { bg: '#e6e2d4', bd: '#b8b3a0', fg: '#3a3426' },
+  // v6.33: #152e10 is the Robograde panel's own BG. The sheet IS that box now
+  // - the panel dropped its container so the sub-scores stop clipping - so the
+  // two have to be the same colour or the join shows.
+  assessment: { bg: '#152e10', bd: '#4a7028', fg: '#b8d820' },
   off:        { bg: '#141a10', fg: '#7a8a6a', bd: '#2c3a22' }
 };
 
@@ -3456,7 +3475,8 @@ function renderDetailTabs(item, opts) {
     const click = ro ? '' : ` onclick="setDetailTab('${key}')"`;
     return `<button type="button"${click} style="
       flex:1;min-width:0;border:1.5px solid ${on ? sk.bd : TAB_SKIN.off.bd};
-      ${on ? 'border-bottom:none;margin-bottom:-1.5px;position:relative;z-index:1;' : 'margin-top:3px;'}
+      border-bottom:none;
+      ${on ? 'margin-bottom:-1.5px;position:relative;z-index:1;' : 'margin-top:3px;margin-bottom:-1.5px;'}
       border-radius:9px 9px 0 0;padding:${on ? '9px' : '8px'} 8px;
       background:${on ? sk.bg : TAB_SKIN.off.bg};color:${on ? sk.fg : TAB_SKIN.off.fg};
       font-family:inherit;font-size:11px;font-weight:${on ? 800 : 700};letter-spacing:1.6px;
@@ -3509,17 +3529,17 @@ const ASSESSMENT_MAP_NODES = [
   { key: 'main',   label: 'MAIN',          cost: 1, stars: 1, dep: null,
     ran: it => !!(it && (it.roboGrade || it.aiAssessment)),
     open: () => true },
-  { key: 'sig',    label: 'SIGNATURE',     cost: 0, stars: 0, dep: 'main',
+  { key: 'sig',    label: 'SIGNATURE CHECK', cost: 0, stars: 0, dep: 'main',
     ran: it => (it.signatureImages || []).some(Boolean),
     open: it => typeof hasIdentifiedSignatures === 'function' && hasIdentifiedSignatures(it) },
-  { key: 'insert', label: 'INSERT',        cost: 0, stars: 0, dep: 'main',
+  { key: 'insert', label: 'INSERT CHECK',  cost: 0, stars: 0, dep: 'main',
     ran: it => !!it.insertFinding || (it.insertImages || []).some(Boolean),
     open: it => !!(it.title && it.issue && typeof window.matchInsert === 'function' &&
                    (window.matchInsert(it.title, it.issue) ||
                     (typeof window.matchInsertCandidate === 'function' &&
                      window.matchInsertCandidate(it.title,
                        parseInt((String(it.issueDate || '').match(/\b(19|20)\d{2}\b/) || [])[0], 10))))) },
-  { key: 'coupon', label: 'COUPON',        cost: 0, stars: 0, dep: 'main',
+  { key: 'coupon', label: 'COUPON CHECK',  cost: 0, stars: 0, dep: 'main',
     ran: it => !!it.couponFinding || (it.couponImages || []).some(Boolean),
     open: it => !!(it.title && it.issue && typeof window.matchCoupon === 'function' &&
                    window.matchCoupon(it.title, it.issue)) },
@@ -3575,10 +3595,15 @@ function _mapNodeState(node, item, byKey) {
 function rgFolderPanel(title, inner, o) {
   o = o || {};
   const bg = o.bg || '#101c0a', bd = o.bd || '#3a5018', fg = o.fg || '#9abf60';
+  // v6.33: the tab sits flush with the panel's LEFT edge, so the two left
+  // borders are one unbroken line running from the top of the tab to the
+  // bottom of the panel. Indenting it left a step in that line, which is the
+  // hard corner Matt saw. Square the tab's bottom-left and the panel's
+  // top-left for the same reason.
   return `<div style="margin-top:${o.mt == null ? 18 : o.mt}px">
-      <div style="display:flex;padding-left:12px">
+      <div style="display:flex">
         <div style="background:${bg};border:1.5px solid ${bd};border-bottom:none;
-          border-radius:8px 8px 0 0;padding:6px 14px 5px;margin-bottom:-1.5px;position:relative;z-index:1;
+          border-radius:9px 9px 0 0;padding:6px 16px 5px;margin-bottom:-1.5px;position:relative;z-index:1;
           font-size:11px;font-weight:800;letter-spacing:1.6px;color:${fg};line-height:1">${esc(title)}</div>
       </div>
       <div style="background:${bg};border:1.5px solid ${bd};border-radius:0 10px 10px 10px;padding:14px 12px">
@@ -3621,6 +3646,10 @@ function renderAssessmentMap(item) {
     locked: { bg: '#6e6e66', bd: '#8a8a80', fg: '#f0efe9', sub: '#d8d6cc' },
     short:  { bg: '#e8b4ac', bd: '#b05a4a', fg: '#4a1a12', sub: '#7a2e20' }
   };
+  // Long names were wrapping to two lines inside a 62px box and pushing the
+  // cost out. Sized from the string's own length rather than a per-node
+  // override, so adding a tenth type needs nothing here.
+  const _labelPx = (t) => t.length > 15 ? 8 : t.length > 11 ? 9 : 10;
 
   const card = (n) => {
     const st = state[n.key];
@@ -3637,12 +3666,20 @@ function renderAssessmentMap(item) {
     const stars = n.stars
       ? `<div style="line-height:1;height:11px">${Array.from({ length: n.stars }, () => tierStarSVG(10, sk.fg)).join('')}</div>`
       : '';
-    return `<div style="background:${sk.bg};border:1.5px solid ${sk.bd};border-radius:8px;
+    // An available type is a way in, not a status light: tapping it goes to
+    // the control that runs it, the same jump the BATCH / FULL cards make.
+    // Run and locked types are inert - there is nothing to do at either.
+    const live = st === 'open';
+    const jump = live
+      ? ` onclick="showEditToSection('${esc(item.id || '')}','${n.key}')" role="button" tabindex="0"`
+      : '';
+    return `<div${jump} style="background:${sk.bg};border:1.5px solid ${sk.bd};border-radius:8px;
         height:${BOX_H}px;box-sizing:border-box;padding:4px;display:flex;flex-direction:column;
-        align-items:center;justify-content:center;gap:2px;text-align:center">
+        align-items:center;justify-content:center;gap:2px;text-align:center;
+        ${live ? 'cursor:pointer' : ''}">
         ${stars}
-        <div style="font-size:10px;font-weight:800;letter-spacing:0.3px;line-height:1.1;color:${sk.fg};
-          word-break:break-word">${esc(n.label)}</div>
+        <div style="font-size:${_labelPx(n.label)}px;font-weight:800;letter-spacing:0.2px;line-height:1.1;
+          color:${sk.fg};white-space:nowrap">${esc(n.label)}</div>
         ${cost}
         ${short ? `<div style="font-size:8px;font-weight:800;letter-spacing:0.6px;color:${sk.sub}">NEED CREDITS</div>` : ''}
       </div>`;
@@ -3650,7 +3687,7 @@ function renderAssessmentMap(item) {
 
   // Connectors are plain divs: the rows are a fixed height, so every coordinate
   // is arithmetic rather than measurement, and it survives html2canvas.
-  const LINE = '#6a9a30', DIM = '#4a4a42';
+  const LINE = '#4a7028', DIM = '#b0aa9a';
   const vline = (x, y, h, on, w) =>
     `<div style="position:absolute;left:${x};top:${y}px;width:${w}px;height:${h}px;margin-left:-${w / 2}px;background:${on ? LINE : DIM}"></div>`;
   const hline = (x1, x2, y, on, w) =>
@@ -3689,7 +3726,7 @@ function renderAssessmentMap(item) {
           ${g('deep')}${g('coupon')}${g('uv')}
           ${g('full')}${g('batch')}${g('clean')}
         </div>
-      </div>`, { bg: '#101c0a', bd: '#3a5018', fg: '#9abf60', mt: 22 });
+      </div>`, { bg: '#eef3e6', bd: '#cdd8be', fg: '#4a6a2a', mt: 22 });
 }
 
 function renderIdentityHeader(item) {
@@ -5051,6 +5088,9 @@ function appConfirm(message, okLabel, asHtml) {
       return;
     }
     if (cancelEl) cancelEl.style.display = "";
+    // v6.33: and the two-button dialog takes the centring off again.
+    const _act = document.getElementById("app-confirm-actions");
+    if (_act) _act.classList.remove("single");
     if (okEl) okEl.textContent = "Continue";
     if (asHtml) msgEl.innerHTML = message; else msgEl.textContent = message;
     if (okEl && okLabel) okEl.textContent = okLabel;
@@ -5091,6 +5131,8 @@ function appAlert(message, asHtml) {
     }
     if (asHtml) msgEl.innerHTML = message; else msgEl.textContent = message;
     if (cancelEl) cancelEl.style.display = "none";
+    const actionsEl = document.getElementById("app-confirm-actions");
+    if (actionsEl) actionsEl.classList.add("single");
     // v6.28: "OKAY", not "OK". This is the app's only alert dialog, so every
     // message that is purely an acknowledgement reads the same way.
     if (okEl) okEl.textContent = "OKAY";
@@ -6727,6 +6769,18 @@ function showDetail(id) {
         <button class="rg-btn rg-btn-assess rg-btn-silver" style="pointer-events:none;display:inline-block">RUN BATCH &times;${BATCH_N}</button>
       </div>`;
   }
+  // v6.33: FULL comes before POST-CLEANING. Full is the next step up the
+  // assessment ladder; Post-Cleaning is a thing you do to the book and then
+  // re-measure. The ladder reads top to bottom.
+  if (!isFullAssessmentComplete(selected) && isDeepAssessmentComplete(selected) && showFullTier(selected)) {
+    const _np = (typeof isNearPerfectForFull === "function") && isNearPerfectForFull(selected);
+    html += `<div onclick="showEditToSection('${esc(selected.id)}','full')" style="margin-top:14px;padding:14px;background:#1c1608;border:1.5px solid #7a5e1e;border-radius:12px;text-align:center;cursor:pointer">
+        <div style="line-height:1;margin-bottom:8px;opacity:0.6">${tierStarSVG(15, "#f0c53a")}${tierStarSVG(15, "#f0c53a")}${tierStarSVG(15, "#f0c53a")}</div>
+        <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:#f0c53a;margin-bottom:5px">FULL ASSESSMENT AVAILABLE</div>
+        <div style="font-size:12px;color:#d8c58a;line-height:1.45;margin-bottom:10px">${_np ? "This book is near-perfect — a Full can confirm a perfect 10." : "Add 6 interior &amp; structure photos to confirm the grade."}</div>
+        <button class="rg-btn rg-btn-assess rg-btn-gold" style="pointer-events:none;display:inline-block">RUN FULL ASSESSMENT</button>
+      </div>`;
+  }
   // CLEANING COMPARE (v5.72). It had NO Detail-view presence at all: the only
   // way in was to open Edit and scroll, and on a graded book with every photo
   // slot filled that put it ~9,200px down an 10,800px page. Matt ran a Deep,
@@ -6737,17 +6791,8 @@ function showDetail(id) {
     const _cr = selected.cleanRuns || 0;
     html += `<div onclick="showEditToSection('${esc(selected.id)}','clean')" style="margin-top:14px;padding:14px;background:#0e2420;border:1.5px solid #2e7a6a;border-radius:12px;text-align:center;cursor:pointer">
         <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:#6ad0b8;margin-bottom:5px">BOOK HAS BEEN CLEANED${_cr ? ` &middot; RUN ${_cr + 1}` : ""}</div>
-        <div style="font-size:12px;color:#8fc4b8;line-height:1.45;margin-bottom:10px">Once this book has been cleaned/pressed, re-shoot the 10 photos objective BEFORE/AFTER comparison. The current grade will be preserved as the BEFORE and a new AFTER grade will be determined.</div>
+        <div style="font-size:12px;color:#8fc4b8;line-height:1.45;margin-bottom:10px">Once this book has been cleaned/pressed, re-shoot the 10 photos for an objective BEFORE/AFTER comparison. The current grade will be preserved as the BEFORE and a new AFTER grade will be determined.</div>
         <button class="rg-btn rg-btn-assess rg-btn-silver" style="pointer-events:none;display:inline-block">POST-CLEANING ASSESS</button>
-      </div>`;
-  }
-  if (!isFullAssessmentComplete(selected) && isDeepAssessmentComplete(selected) && showFullTier(selected)) {
-    const _np = (typeof isNearPerfectForFull === "function") && isNearPerfectForFull(selected);
-    html += `<div onclick="showEditToSection('${esc(selected.id)}','full')" style="margin-top:14px;padding:14px;background:#1c1608;border:1.5px solid #7a5e1e;border-radius:12px;text-align:center;cursor:pointer">
-        <div style="line-height:1;margin-bottom:8px;opacity:0.6">${tierStarSVG(15, "#f0c53a")}${tierStarSVG(15, "#f0c53a")}${tierStarSVG(15, "#f0c53a")}</div>
-        <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:#f0c53a;margin-bottom:5px">FULL ASSESSMENT AVAILABLE</div>
-        <div style="font-size:12px;color:#d8c58a;line-height:1.45;margin-bottom:10px">${_np ? "This book is near-perfect — a Full can confirm a perfect 10." : "Add 6 interior &amp; structure photos to confirm the grade."}</div>
-        <button class="rg-btn rg-btn-assess rg-btn-gold" style="pointer-events:none;display:inline-block">RUN FULL ASSESSMENT</button>
       </div>`;
   }
   if (isFullAssessmentComplete(selected)) {
@@ -9239,9 +9284,17 @@ function showEditToSection(id, section) {
   showEdit(id);
   requestAnimationFrame(function () {
     requestAnimationFrame(function () {
+      // v6.33: the assessment map taps through to these, so every type the
+      // map can offer needs an anchor here. Unknown keys still fall through to
+      // the Deep section rather than scrolling nowhere.
       var _id = section === "full" ? "full-staple-section"
               : section === "batch" ? "batch-section"          // v5.27
               : section === "clean" ? "clean-section"          // v5.72
+              : section === "uv" ? "uv-section"
+              : section === "sig" ? "signature-section"
+              : section === "insert" ? "insert-section"
+              : section === "coupon" ? "coupon-section"
+              : section === "main" ? "assess-btn"
               : "deep-corner-section";
       var el = document.getElementById(_id);
       if (!el) return;
@@ -12026,7 +12079,7 @@ function renderCleanSection() {
   const runs = formData.cleanRuns || 0;
 
   const _headHTML = `<div style="font-size:11px;color:#6ad0b8;font-weight:700;letter-spacing:2px;margin-bottom:8px">BOOK HAS BEEN CLEANED${runs ? ` &middot; RUN ${runs + 1}` : ""}</div>`;
-  const _blurbHTML = `<div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Once this book has been cleaned/pressed, re-shoot the 10 photos objective BEFORE/AFTER comparison. The current grade will be preserved as the BEFORE and a new AFTER grade will be determined.</div>`;
+  const _blurbHTML = `<div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Once this book has been cleaned/pressed, re-shoot the 10 photos for an objective BEFORE/AFTER comparison. The current grade will be preserved as the BEFORE and a new AFTER grade will be determined.</div>`;
 
   // COLLAPSED BY DEFAULT (v5.72). The ten Before/After pairs are a 3,300px
   // block, and rendering it unconditionally put the rest of the section - and
@@ -14675,7 +14728,7 @@ function renderForm() {
     const sigImgs = formData.signatureImages || [ null, null ];
     const sigGhosts = ["assets/ghosts/Signature_1.webp", "assets/ghosts/Signature_2.webp"];
     const signerLabel = formatSignerList(formData);
-    return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a6abf">\n            <div style="font-size:11px;color:#a08fd4;font-weight:700;letter-spacing:2px;margin-bottom:4px">SIGNATURE MACROS</div>\n            <div style="font-size:11px;color:#9a8aaa;margin-bottom:10px;line-height:1.5">\n              ${`Signature${getSignatures(formData).length > 1 ? "s" : ""} detected on this book. Add close-up photos for buyer inspection — optional, two slots available.`}\n            </div>\n            <div style="display:flex;flex-direction:column;gap:8px">\n              ${[ 0, 1 ].map(i => {
+    return `\n          <div id="signature-section" style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a6abf">\n            <div style="font-size:11px;color:#a08fd4;font-weight:700;letter-spacing:2px;margin-bottom:4px">SIGNATURE MACROS</div>\n            <div style="font-size:11px;color:#9a8aaa;margin-bottom:10px;line-height:1.5">\n              ${`Signature${getSignatures(formData).length > 1 ? "s" : ""} detected on this book. Add close-up photos for buyer inspection — optional, two slots available.`}\n            </div>\n            <div style="display:flex;flex-direction:column;gap:8px">\n              ${[ 0, 1 ].map(i => {
       const img = sigImgs[i];
       return img ? `<div class="drag-slot" style="height:auto;position:relative;overflow:visible" onclick="tapSlot(${i},'signature')">\n                      <img src="${img}" style="display:block;width:100%;height:auto;border-radius:inherit">\n                      <button class="slot-edit" onclick="event.stopPropagation();openCropper('signature',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>\n                      <button class="slot-x" onclick="event.stopPropagation();removeSignatureImg(${i})">×</button>\n                     </div>` : `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:2/1;position:relative;overflow:hidden" onclick="tapSlot(${i},'signature')">\n                      ${sigGhosts[i] ? `<img src="${sigGhosts[i]}" alt="" loading="lazy" decoding="async" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.7;pointer-events:none">` : ""}\n                      <div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:8px;left:10px;background:rgba(255,255,255,0.82);color:#1a1a1a;padding:3px 8px;border-radius:4px;text-align:left"><span style="display:block;font-size:11px;font-weight:800;letter-spacing:0.4px;text-transform:uppercase">SIGNATURE ${i + 1}</span><span style="display:block;font-size:9px;font-weight:600;opacity:0.7;margin-top:1px">Tap to add</span></span></div>\n                     </div>`;
     }).join("")}\n            </div>\n            <input id="signature-photo-input" type="file" accept="image/*" multiple onchange="handleSignatureImages(event)" style="display:none">\n          </div>\n        `;
@@ -14683,7 +14736,7 @@ function renderForm() {
     if (_isCardForm || !formData.roboGrade || !formData.title || !formData.issue || typeof window.matchInsert !== "function") return "";
     const _im = window.matchInsert(formData.title, formData.issue);
     if (_im) {
-      return _renderExtraPhotoSection({ title: "MARK JEWELERS INSERT", blurb: "Some copies of this issue carried a Mark Jewelers or other insert card (a rare variant that adds value). If your copy has an insert bound in the centerfold, add these two optional photos to verify.", accent: "#c8962a", inputId: "insert-photo-input", tapFn: "tapInsertSlot", removeFn: "removeInsertImg", onchange: "handleInsertImages(event)", defs: insertSlotDefs(), imgs: formData.insertImages || [ null, null ], runFn: "runInsertAssessment", runLabel: "RUN INSERT CHECK", finding: formData.insertFinding, foundLabel: "INSERT" });
+      return _renderExtraPhotoSection({ anchor: "insert-section", title: "MARK JEWELERS INSERT", blurb: "Some copies of this issue carried a Mark Jewelers or other insert card (a rare variant that adds value). If your copy has an insert bound in the centerfold, add these two optional photos to verify.", accent: "#c8962a", inputId: "insert-photo-input", tapFn: "tapInsertSlot", removeFn: "removeInsertImg", onchange: "handleInsertImages(event)", defs: insertSlotDefs(), imgs: formData.insertImages || [ null, null ], runFn: "runInsertAssessment", runLabel: "RUN INSERT CHECK", finding: formData.insertFinding, foundLabel: "INSERT" });
     }
     // S23: no confirmed hit -> if the title/era is a candidate (broad index),
     // show a softer "might have one" prompt. Reuses the same slots + check.
@@ -14691,13 +14744,13 @@ function renderForm() {
     const _ic = (typeof window.matchInsertCandidate === "function") ? window.matchInsertCandidate(formData.title, _yr) : null;
     // keep showing if it's a candidate, or the user already has insert photos/finding.
     if (!_ic && !((formData.insertImages || []).some(Boolean) || formData.insertFinding)) return "";
-    return _renderExtraPhotoSection({ title: "POSSIBLE MARK JEWELERS INSERT", blurb: "Some copies of this issue carried a Mark Jewelers or other insert card (a rare variant that adds value). If your copy has an insert bound in the centerfold, add these two optional photos to verify.", accent: "#8a7a4a", inputId: "insert-photo-input", tapFn: "tapInsertSlot", removeFn: "removeInsertImg", onchange: "handleInsertImages(event)", defs: insertSlotDefs(), imgs: formData.insertImages || [ null, null ], runFn: "runInsertAssessment", runLabel: "RUN INSERT CHECK", finding: formData.insertFinding, foundLabel: "INSERT" });
+    return _renderExtraPhotoSection({ anchor: "insert-section", title: "POSSIBLE MARK JEWELERS INSERT", blurb: "Some copies of this issue carried a Mark Jewelers or other insert card (a rare variant that adds value). If your copy has an insert bound in the centerfold, add these two optional photos to verify.", accent: "#8a7a4a", inputId: "insert-photo-input", tapFn: "tapInsertSlot", removeFn: "removeInsertImg", onchange: "handleInsertImages(event)", defs: insertSlotDefs(), imgs: formData.insertImages || [ null, null ], runFn: "runInsertAssessment", runLabel: "RUN INSERT CHECK", finding: formData.insertFinding, foundLabel: "INSERT" });
   })()}
       ${(() => {
     if (_isCardForm || !formData.roboGrade || !formData.title || !formData.issue || typeof window.matchCoupon !== "function") return "";
     const _cm = window.matchCoupon(formData.title, formData.issue);
     if (!_cm) return "";
-    return _renderExtraPhotoSection({ title: "COUPON / PIN-UP PAGE", blurb: "This issue is known for a coupon, stamp, or pin-up page that is often cut out. Add these two optional photos to show whether it is present.", accent: "#3a9a5a", inputId: "coupon-photo-input", tapFn: "tapCouponSlot", removeFn: "removeCouponImg", onchange: "handleCouponImages(event)", defs: couponSlotDefs(_cm), imgs: formData.couponImages || [ null, null ], runFn: "runCouponAssessment", runLabel: "RUN COUPON CHECK", finding: formData.couponFinding, foundLabel: "COUPON" });
+    return _renderExtraPhotoSection({ anchor: "coupon-section", title: "COUPON / PIN-UP PAGE", blurb: "This issue is known for a coupon, stamp, or pin-up page that is often cut out. Add these two optional photos to show whether it is present.", accent: "#3a9a5a", inputId: "coupon-photo-input", tapFn: "tapCouponSlot", removeFn: "removeCouponImg", onchange: "handleCouponImages(event)", defs: couponSlotDefs(_cm), imgs: formData.couponImages || [ null, null ], runFn: "runCouponAssessment", runLabel: "RUN COUPON CHECK", finding: formData.couponFinding, foundLabel: "COUPON" });
   })()}
       ${(() => {
     const _fullDone = isFullAssessmentComplete(formData);
@@ -14733,7 +14786,7 @@ function renderForm() {
     const rReady = rFilled === RESTORATION_SLOT_COUNT && !assessing;
     const _uvLeft = uvChecksLeft(formData);
     if (_uvLeft <= 0) return "";
-    return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n            <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">UV CHECK — FREE</div>\n            <div style="font-size:11px;color:#9a8aaa;margin-bottom:10px;line-height:1.5">\n              Color touch restoration is most easily identified under a blacklight. Take 2 photos of the front and back cover under a UV light source in an otherwise-dark room to check for this type of restoration. This assessment is free.\n            </div>\n            ${renderRestorationSlotGrid(rImgs, {editable: true})}\n            <input id="restoration-photo-input" type="file" accept="image/*" multiple onchange="handleRestorationImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="restoration-check-btn" class="rg-btn rg-btn-assess rg-btn-purple${assessing ? ' assessing' : ''}" onclick="submitRestorationCheck()" ${rReady ? "" : "disabled"}>\n                ${assessing ? "Checking…" : `UV CHECK ${rFilled < RESTORATION_SLOT_COUNT ? `(${rFilled}/${RESTORATION_SLOT_COUNT})` : `(${_uvLeft} LEFT)`}`}\n              </button>\n            </div>\n          </div>\n        `;
+    return `\n          <div id="uv-section" style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n            <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">UV CHECK — FREE</div>\n            <div style="font-size:11px;color:#9a8aaa;margin-bottom:10px;line-height:1.5">\n              Color touch restoration is most easily identified under a blacklight. Take 2 photos of the front and back cover under a UV light source in an otherwise-dark room to check for this type of restoration. This assessment is free.\n            </div>\n            ${renderRestorationSlotGrid(rImgs, {editable: true})}\n            <input id="restoration-photo-input" type="file" accept="image/*" multiple onchange="handleRestorationImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="restoration-check-btn" class="rg-btn rg-btn-assess rg-btn-purple${assessing ? ' assessing' : ''}" onclick="submitRestorationCheck()" ${rReady ? "" : "disabled"}>\n                ${assessing ? "Checking…" : `UV CHECK ${rFilled < RESTORATION_SLOT_COUNT ? `(${rFilled}/${RESTORATION_SLOT_COUNT})` : `(${_uvLeft} LEFT)`}`}\n              </button>\n            </div>\n          </div>\n        `;
   })()}${renderBatchSection()}${renderCleanSection()}${renderUserDefectSlots()}\n      <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">\n      <input id="userdefect-photo-input" type="file" accept="image/*" onchange="handleUserDefectImages(event)" style="display:none">\n      <input id="restoration-photo-input" type="file" accept="image/*" onchange="handleRestorationImages(event)" style="display:none">\n\n      \x3c!-- S11: Pre-assessment Grader Notes (Option B for the chicken-and-egg\n           problem). For graded books in slabs, the official grader notes are\n           highly informative inputs to the AI assessment — but we don't\n           know a book is graded until after the AI has assessed it, so the\n           field would normally be unavailable on first-pass. This collapsible\n           section gives users who have a slabbed book a way to enter the\n           grader notes BEFORE running the assessment. Defaults closed so\n           the standard image-first flow stays visually clean for raw books;\n           opens with a single tap. Only renders pre-assessment in the\n           image-first flow (no _assessed, no _addManualMode, no isEdit) —\n           after assessment, the Grader Notes field appears in the normal\n           form section below where it can also be edited. --\x3e\n      \x3c!-- The "Optional: official label info" collapsible was removed in S12.\n           It let users type CGC/PSA grader notes BEFORE assessment to nudge\n           accuracy. Pulled because:\n           - Used by an extreme minority of users (only those entering\n             already-graded books and willing to transcribe slab text)\n           - Cluttered the otherwise-clean image-first Add flow\n           - The same info can still be typed in the post-assessment form\n             where the Grader Notes field still lives.\n           If we want this back later, the JS field (formData.graderNotes)\n           still wires through to assess.js — only the UI was removed. --\x3e\n\n    </div>\n    ${isEdit || _assessed || _addManualMode ? `\n    ${""}\n    ${formData.roboGrade ? "" : `<div class="form-grid-2">
       \x3c!-- Title gets a special handler (not the generic tf) because we need
            live-toggle the save button as the user types. --\x3e
@@ -15908,7 +15961,7 @@ function _renderExtraPhotoSection(cfg) {
     const busy = !!window._extraAssessing;
     footer += `<div style="display:flex;justify-content:center;margin-top:10px"><button class="rg-btn rg-btn-assess rg-btn-bronze${busy ? " assessing" : ""}" style="min-height:44px" ${busy ? "disabled" : ""} onclick="${cfg.runFn}()">${busy ? "CHECKING…" : (f ? ("RE-RUN " + cfg.runLabel) : (cfg.runLabel + " — FREE"))}</button></div>`;
   }
-  return `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed ${cfg.accent}"><div style="font-size:11px;color:${cfg.accent};font-weight:700;letter-spacing:2px;margin-bottom:4px">${cfg.title}</div><div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">${cfg.blurb}</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start">${slots}</div>${footer}<input id="${cfg.inputId}" type="file" accept="image/*" onchange="${cfg.onchange}" style="display:none"></div>`;
+  return `<div${cfg.anchor ? ` id="${cfg.anchor}"` : ""} style="margin-top:14px;padding-top:14px;border-top:1px dashed ${cfg.accent}"><div style="font-size:11px;color:${cfg.accent};font-weight:700;letter-spacing:2px;margin-bottom:4px">${cfg.title}</div><div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">${cfg.blurb}</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start">${slots}</div>${footer}<input id="${cfg.inputId}" type="file" accept="image/*" onchange="${cfg.onchange}" style="display:none"></div>`;
 }
 
 let _extraAssessing = false;
@@ -17723,10 +17776,48 @@ async function cameraFinish() {
   // replayed — runCropperSequence reads the flag, so resetting it earlier would
   // send the last batch into the book's own image lists and overwrite the
   // Before set, which is the one thing this feature must never do.
+  // Read before the flag is cleared below.
+  const _wasClean = _cleanCapture;
   if (_cleanCapture) {
     _cleanCapture = false;
     try { renderForm(); } catch (e) {}
   }
+  // v6.33: land on the photos that were just taken. The camera closes straight
+  // back into a 10,000px form at whatever scroll offset it was opened from,
+  // which after a Deep put the user somewhere unrelated to the six photos they
+  // had just shot. The LAST batch is the one they finished on, so that is the
+  // section to show.
+  try {
+    const _lastKind = _batches.length ? _batches[_batches.length - 1].kind : null;
+    _scrollToCaptureSection(_wasClean ? "clean" : _lastKind);
+  } catch (e) { /* never let a scroll break the capture */ }
+}
+
+// Where a finished capture of each kind should leave the user. Shares the
+// 70px sticky-bar offset and the two-frame wait with showEditToSection(): the
+// form re-renders after the crop sequence, so the node does not exist yet on
+// the first frame.
+function _scrollToCaptureSection(kind) {
+  const ID = {
+    corner: "deep-corner-section",
+    interiorCover: "deep-corner-section",
+    interior: "full-staple-section",
+    restoration: "uv-section",
+    signature: "signature-section",
+    insert: "insert-section",
+    coupon: "coupon-section",
+    clean: "clean-section"
+  };
+  const id = ID[kind];
+  if (!id) return;   // `main` is the top of the form; leave the view alone
+  requestAnimationFrame(function () {
+    requestAnimationFrame(function () {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const y = el.getBoundingClientRect().top + window.pageYOffset - 70;
+      window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+    });
+  });
 }
 
 // S22: yield until the browser has actually laid out and painted. cameraFinish()

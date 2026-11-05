@@ -333,6 +333,11 @@ function writeOptions(opts) {
 // because the point is to hand the user a file their printer driver can scale
 // to the physical stock. List view's batch sheet is untouched.
 export function openLabelViewer(comic, allItems, opts) {
+  // v6.33: start the QR library downloading NOW rather than when the first
+  // render asks for it. renderQRsIn() has a deferred path for the
+  // not-yet-loaded case, but the whole point is that there should be nothing
+  // to defer by the time the preview paints.
+  try { ensureQRCodeLoaded(); } catch (e) {}
   _singleMode = !!(opts && opts.single);
   if (!comic || !comic.roboGrade) return;
   if (!Array.isArray(allItems)) {
@@ -4280,15 +4285,40 @@ function renderQRsImmediately(container) {
     // platform. It is also the ONLY image on a Wide label.
     // Runs twice because qrcodejs swaps canvas for img on a 0ms timeout, so
     // the element may not exist yet when this returns.
+    // v6.33 - WHY THIS IS A SEQUENCE AND NOT TWO CALLS.
+    // qrcodejs builds the canvas synchronously and then, on its own
+    // setTimeout(0), may build an <img> from the canvas's data URL and set the
+    // canvas to display:none. Two zero-delay timers whose order depends on
+    // which was registered first, on a main thread that is busy on the first
+    // open of a session. When ours won, qrcodejs hid the canvas immediately
+    // afterwards and the code vanished - which is exactly the reported bug:
+    // missing on first open, present as soon as any toggle re-rendered the
+    // preview, because by then nothing was racing.
+    // Re-asserting across several frames makes the outcome independent of that
+    // ordering. It stops as soon as it sees a visible canvas and no images,
+    // and if a platform produced an img and no canvas it leaves the img alone
+    // rather than deleting the only thing on screen.
     const _canvasOnly = () => {
       try {
         const cv = el.querySelector('canvas');
-        if (!cv) return;                       // no canvas: leave whatever is there
+        if (!cv) return false;                 // no canvas: leave whatever is there
         el.querySelectorAll('img').forEach(im => im.remove());
         cv.style.display = 'block';
-      } catch (e) { /* never break label rendering over this */ }
+        return true;
+      } catch (e) { return false; }            // never break label rendering over this
     };
     _canvasOnly();
-    setTimeout(_canvasOnly, 0);
+    let _tries = 0;
+    const _settle = () => {
+      const ok = _canvasOnly();
+      if (++_tries >= 6) return;
+      // Keep going even once it looks right: the swap we are guarding against
+      // happens AFTER a successful pass, not before it.
+      setTimeout(_settle, _tries < 3 ? 16 : 120);
+      if (!ok && _tries === 1 && typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(_canvasOnly);
+      }
+    };
+    setTimeout(_settle, 0);
   });
 }
