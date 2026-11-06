@@ -34,7 +34,7 @@
 //   phase 3 (confirming)   — verdict + reasons captured
 //
 // =============================================================================
-import { ROBOGRADE_VERSION } from '../lib/version.js';
+import { ROBOGRADE_VERSION, GRADING_EPOCH } from '../lib/version.js';
 import { PRIMARY_MODEL, ratesFor, costOf } from '../lib/model.js';
 import { anthropicWithRetry } from '../lib/anthropic_retry.js';
 import { computeScoreCeilingPenalty, mergePhotograder, PHOTOGRADER_RUBRIC_CLOSEUP } from '../lib/photograder.js';
@@ -200,6 +200,30 @@ function _sanitizeFullDefects(list) {
     .filter(d => d.type)      // a defect with no type is not a defect
     .slice(0, 6);
 }
+
+// The grade rule as arithmetic. Exported for test-full-defects.mjs.
+// Returns { grade, blocked } where `blocked` is null when the model's answer
+// stood, and a reason string when it did not.
+export function applyFullGradeGate(grade, priorPG, newDefectCount) {
+  if (grade == null || !Number.isFinite(priorPG)) return { grade, blocked: null };
+  const foundNew = newDefectCount > 0;
+  if (grade > priorPG && foundNew) {
+    return { grade: priorPG, blocked: 'raise blocked: ' + newDefectCount + ' new structural defect(s)' };
+  }
+  if (grade > priorPG && priorPG < FULL_RAISE_FLOOR) {
+    // Below the Deep ceiling there is nothing for a Full to confirm. The extra
+    // detail confirms or lowers; it does not inflate.
+    return { grade: priorPG, blocked: 'raise blocked: prior ' + priorPG + ' is below the ' + FULL_RAISE_FLOOR + ' Deep ceiling' };
+  }
+  if (grade < priorPG && !foundNew) {
+    // A lower grade with an empty defect list is the model re-grading the book
+    // from scratch on evidence it already had, which is not this pass's job.
+    return { grade: priorPG, blocked: 'drop blocked: no new structural defect was reported' };
+  }
+  return { grade, blocked: null };
+}
+// The Deep pass's PG ceiling. A Full may only raise from at-or-above it.
+const FULL_RAISE_FLOOR = 9.6;
 
 export default async function handler(req, res) {
   // CORS: the iOS Capacitor app calls this cross-origin (local file origin →
@@ -451,6 +475,10 @@ WRITING THE FULL-ASSESSMENT WRITE-UP (S20: a SEPARATE field "fullAssessment"):
 - Mention trimming ONLY in the very rare case of genuine, clear signs. Keep it buyer-facing, factual, and concise (2-4 sentences).
 
 GRADE — IMPORTANT:
+- NO CHANGE IS THE NORMAL ANSWER. This is a confirmation pass. Most Full assessments should return the prior grade exactly.
+- You may LOWER the grade ONLY if "fullDefects" contains a defect these 6 images revealed that was not already in the prior defect list. No new defect means no drop — if you believe the prior grade is wrong on the evidence you already had, that is not this pass's job.
+- You may RAISE the grade ONLY if the prior grade is 9.6 or higher AND "fullDefects" is empty. That is the one thing this pass exists to confirm: a book already at the Deep ceiling, with a clean and complete structure, can be stated as a 9.8.
+- These two rules are ENFORCED after you answer. A raise with a non-empty fullDefects, a raise from below 9.6, or a drop with an empty fullDefects is discarded and the prior grade is kept. Your grade and your fullDefects must agree with each other.
 - The PRIOR predicted grade, from the Main + Deep passes, is ${predictedGrade != null && predictedGrade !== '' ? predictedGrade : 'not provided'} on the CGC 0.5-10 scale.
 - If the prior grade is 9.6 or higher, this book is a PERFECT-10 CANDIDATE. The Full pass exists to give the confidence to confirm perfection. If the 6 structural images show a clean, complete, defect-free interior — staples sound, pages complete and unmarried, no trimming, no interior tanning — you MAY raise the grade up to a maximum of 9.8 to reflect that confirmed perfection. If ANY defect is visible, keep the grade or lower it.
 - If the prior grade is BELOW 9.6, KEEP it. Return it unchanged unless the 6 structural images reveal a NEW, specific defect that LOWERS it. NEVER return a grade higher than the prior grade for these books — the extra detail confirms or lowers, it does not inflate.
@@ -707,9 +735,34 @@ Rules:
     // returned an unparseable grade with no prior predictedGrade to fall back
     // on. Stays a Number: roboScore below multiplies it.
     const _gradeRaw = _num(parsed.grade, 0.5, 10.0, parseFloat(predictedGrade) || null);
-    const grade = Number.isFinite(_gradeRaw)
+    let grade = Number.isFinite(_gradeRaw)
       ? parseFloat(enforceCgcGrade(Math.min(_gradeRaw, 9.9), 'full'))
       : null;
+
+    // ── v6.45: THE FULL'S GRADE RULE IS ENFORCED, NOT REQUESTED ──────────
+    // Matt's rule, stated 2026-11-06: a Full should leave the grade alone more
+    // often than not. It may LOWER only when a new defect is revealed that was
+    // not noted before, and it may RAISE only from at-or-near the Deep ceiling
+    // (9.6) when nothing new was found - confirming a 9.8 is justifiable.
+    //
+    // The prompt has asked for this since S20 and asking is not the same as
+    // getting. Until v6.44 there was nothing to check the model against: it
+    // returned a grade and some prose, and "was a new defect revealed?" was a
+    // question only the prose could answer. fullDefects made it DATA, so the
+    // rule became arithmetic, and arithmetic is where it belongs.
+    //
+    // Both directions are clamped to the PRIOR grade rather than rejected: a
+    // Full is a confirmation pass, so "no change" is the correct answer
+    // whenever the move is not earned, and it is never a reason to fail the
+    // run the user has already paid for.
+    const _priorPG = parseFloat(predictedGrade);
+    const _fullDefects = _sanitizeFullDefects(parsed.fullDefects);
+    const _gated = applyFullGradeGate(grade, _priorPG, _fullDefects.length);
+    grade = _gated.grade;
+    if (_gated.blocked) {
+      console.log('[full-grade-gate] ' + _gated.blocked
+        + ' (model said ' + _gradeRaw + ', held at ' + _priorPG + ')');
+    }
     // S21 Photograder: Full sees close-up strips → grades Focus/Lighting only;
     // Cropping/Angle carry forward from Main via the merge. The PM is
     // monotonically clamped against the prior tier's PM (the Deep result), and
@@ -749,7 +802,12 @@ Rules:
     // S20 (#53): Full observations live in their own field, not appended to aiAssessment.
     const fullAssessment = (typeof parsed.fullAssessment === 'string' && parsed.fullAssessment.trim())
       ? parsed.fullAssessment.trim() : '';
-    const gradeChanged = ['same', 'up', 'down'].includes(parsed.gradeChanged) ? parsed.gradeChanged : 'same';
+    // v6.45: derived from the grade that SHIPPED, not from the model's own
+    // claim about it. With the gate above those can now disagree, and the
+    // field is read by the client and the admin.
+    const gradeChanged = (grade == null || !Number.isFinite(_priorPG))
+      ? (['same', 'up', 'down'].includes(parsed.gradeChanged) ? parsed.gradeChanged : 'same')
+      : (grade > _priorPG ? 'up' : grade < _priorPG ? 'down' : 'same');
 
     // A Full Assessment always "runs" (it produces a grade); there is no
     // refund/rejection path anymore. imageIssues simply note any unusable
@@ -790,7 +848,7 @@ Rules:
       // fullAddition so the client can carry them through a Main or Deep
       // re-assess and through a Batch, none of which ever see these six images
       // and none of which could therefore re-derive them.
-      fullDefects: _sanitizeFullDefects(parsed.fullDefects),
+      fullDefects: _fullDefects,
       photograder: _fullPG,
       _diagnostics: { phaseTimings }
     };
@@ -811,6 +869,7 @@ Rules:
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
+          epoch: GRADING_EPOCH,   // pool by THIS, not by version - see lib/version.js
           model: PRIMARY_MODEL,
           fullAssessment: true,
           grade,
@@ -904,6 +963,7 @@ Rules:
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
+          epoch: GRADING_EPOCH,   // pool by THIS, not by version - see lib/version.js
           model: PRIMARY_MODEL,
           fullAssessment: true,
           imageCount: Array.isArray(imageBlocks) ? imageBlocks.length : 0,

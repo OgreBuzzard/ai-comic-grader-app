@@ -45,7 +45,7 @@
 //     before: {...}, identity: {...}, runNumber }
 //   -> { after, comparison, creditsCharged, ms }
 import process from 'node:process';
-import { ROBOGRADE_VERSION } from '../lib/version.js';
+import { ROBOGRADE_VERSION, GRADING_EPOCH } from '../lib/version.js';
 import {
   CLIENT_SECRET, applyCors, getAdminDb, verifyUidFromAuthHeader, fetchAll
 } from '../lib/batch_common.js';
@@ -118,7 +118,8 @@ export default async function handler(req, res) {
     try {
       await stageRef.set({
         stage, itemId, runNumber, at: new Date().toISOString(),
-        version: ROBOGRADE_VERSION, ...(extra || {})
+        version: ROBOGRADE_VERSION,
+        epoch: GRADING_EPOCH,   // pool by THIS, not by version - see lib/version.js ...(extra || {})
       }, { merge: true });
     } catch (e) { /* non-fatal */ }
   };
@@ -229,6 +230,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ok: true,
       version: ROBOGRADE_VERSION,
+      epoch: GRADING_EPOCH,   // pool by THIS, not by version - see lib/version.js
       after,
       comparison: C.comparison || null,
       creditsCharged,

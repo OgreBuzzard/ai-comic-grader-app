@@ -30,7 +30,7 @@
 //   phase 4 (confirming)    — model has emitted revised roboGrade
 //
 // =============================================================================
-import { ROBOGRADE_VERSION } from '../lib/version.js';
+import { ROBOGRADE_VERSION, GRADING_EPOCH } from '../lib/version.js';
 import { PRIMARY_MODEL, ratesFor, costOf } from '../lib/model.js';
 import { anthropicWithRetry } from '../lib/anthropic_retry.js';
 import { computeScoreCeilingPenalty, mergePhotograder, PHOTOGRADER_RUBRIC_CLOSEUP } from '../lib/photograder.js';
@@ -1016,6 +1016,7 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
             totalMs: phaseTimings.totalMs,
             phases: phaseTimings,
             version: ROBOGRADE_VERSION,
+            epoch: GRADING_EPOCH,   // pool by THIS, not by version - see lib/version.js
             model: PRIMARY_MODEL,
             deepAssessment: true,
             gateResult: 'IMAGE_MISMATCH',
@@ -1268,6 +1269,7 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
+          epoch: GRADING_EPOCH,   // pool by THIS, not by version - see lib/version.js
           model: PRIMARY_MODEL,
           deepAssessment: true,
           // S22 — THE FIELDS THAT MAKE DEEP WARMING BUILDABLE AND CHECKABLE.
@@ -1453,6 +1455,7 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
+          epoch: GRADING_EPOCH,   // pool by THIS, not by version - see lib/version.js
           model: PRIMARY_MODEL,
           deepAssessment: true,
           imageCount: macroBlocks.length,

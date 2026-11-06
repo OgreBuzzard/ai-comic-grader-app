@@ -19,7 +19,7 @@
 // worker requests are tiny (batchId + pass number) now that images are not in
 // the payload.
 
-import { ROBOGRADE_VERSION } from '../lib/version.js';
+import { ROBOGRADE_VERSION, GRADING_EPOCH } from '../lib/version.js';
 import {
   BATCH_N, BATCH_CREDIT_COST, applyCors, getAdminDb, verifyUidFromAuthHeader,
   itemRef, comicOf, imageUrlsOf, checkEligibility, bracketAnchorGrade,
@@ -95,6 +95,7 @@ export default async function handler(req, res) {
   const doc = newBatchDoc({
     uid, itemId, n: BATCH_N,
     version: ROBOGRADE_VERSION,
+    epoch: GRADING_EPOCH,   // pool by THIS, not by version - see lib/version.js
     anchorGrade: bracketAnchorGrade(item),
     refs: {
       front: item.referenceImageUrl || c.referenceImageUrl || null,

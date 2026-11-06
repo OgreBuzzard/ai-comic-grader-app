@@ -2401,12 +2401,18 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.44";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.46";
+      // v6.46: the GRADING epoch - the version the assessment last actually
+      // changed at. RG_GRADING_VERSION above is the BUILD number and moves on
+      // every change; this one does not. The label stamps THIS, because "V6.45"
+      // on a label is a claim about what graded the book, not about which CSS
+      // fix was live that day. See lib/version.js and HOW_WE_WORK section 10a.
+      window.RG_EPOCH = window.RG_EPOCH || "6.45";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.44");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.46");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -9212,7 +9218,7 @@ async function _exRenderSummary(item) {
     grade: f.rgGrade,
     stars: depth === "full" ? 3 : depth === "deep" ? 2 : 1,
     restoStar: !!item.restorationCheckRan,
-    footerText: "V" + (window.RG_GRADING_VERSION || ""),
+    footerText: "V" + (window.RG_EPOCH || window.RG_GRADING_VERSION || ""),   // v6.46: the grading epoch, not the build
     plus: !!(f.v3 && f.v3.ceilingHit && f.v3.upsell)
   });
   const gx = px0 + boxSize + P(8);
@@ -13624,7 +13630,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "6.44"),
+      appVersion: (window.RG_GRADING_VERSION || "6.46"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,

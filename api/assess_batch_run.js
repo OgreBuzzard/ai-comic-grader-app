@@ -20,7 +20,7 @@
 // in-region re-POST of ~1.2MB of base64. If that latency turns out to matter,
 // swap the two callGrader() calls for direct core calls; nothing else changes.
 
-import { ROBOGRADE_VERSION } from '../lib/version.js';
+import { ROBOGRADE_VERSION, GRADING_EPOCH } from '../lib/version.js';
 import {
   CLIENT_SECRET, BATCH_FIXED_BRACKET, applyCors, getAdminDb, verifyUidFromAuthHeader,
   batchRef, fetchAll, passList
@@ -259,6 +259,7 @@ export default async function handler(req, res) {
       deepMs,
       deepTimingKey: (D._diagnostics && D._diagnostics.timingKey) || null,
       version: ROBOGRADE_VERSION,
+      epoch: GRADING_EPOCH,   // pool by THIS, not by version - see lib/version.js
       finishedAt: new Date().toISOString(),
       error: null
     });

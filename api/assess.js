@@ -24,7 +24,7 @@
 //         rubric tied to Spine score deductions, pressing/cleaning candidate
 //         tags for non-color-breaking defects (S14 May 22)
 // =============================================================================
-import { ROBOGRADE_VERSION } from '../lib/version.js';
+import { ROBOGRADE_VERSION, GRADING_EPOCH } from '../lib/version.js';
 import { PRIMARY_MODEL, MAIN_EFFORT, ratesFor, costOf } from '../lib/model.js';
 import { parseAblation, applyAblation } from '../lib/ablation.js';
 import { anthropicWithRetry, fetchTimeout } from '../lib/anthropic_retry.js';
@@ -2070,6 +2070,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
+          epoch: GRADING_EPOCH,   // pool by THIS, not by version - see lib/version.js
           // _activeModel, not PRIMARY_MODEL: an ablation round overrides the
           // model per request, and a timings record that names the wrong model
           // is worse than none — the admin dashboard reads these, and a round
@@ -2310,6 +2311,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,
           version: ROBOGRADE_VERSION,
+          epoch: GRADING_EPOCH,   // pool by THIS, not by version - see lib/version.js
           // _activeModel, not PRIMARY_MODEL: an ablation round overrides the
           // model per request, and a timings record that names the wrong model
           // is worse than none — the admin dashboard reads these, and a round

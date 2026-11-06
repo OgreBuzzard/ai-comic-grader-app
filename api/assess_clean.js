@@ -48,7 +48,7 @@
 //   -> { comparison: { writeUp, resolved, survived, introduced, counts,
 //                      restorationAppeared, pageQualityMove, gradeDelta } }
 import process from 'node:process';
-import { ROBOGRADE_VERSION } from '../lib/version.js';
+import { ROBOGRADE_VERSION, GRADING_EPOCH } from '../lib/version.js';
 import { PRIMARY_MODEL, costOf } from '../lib/model.js';
 import { anthropicWithRetry } from '../lib/anthropic_retry.js';
 import { getAdminDb, verifyUidFromAuthHeader } from '../lib/batch_common.js';
@@ -315,6 +315,7 @@ Return ONLY the prose. No preamble, no JSON, no quotation marks around it.`;
   return res.status(200).json({
     ok: true,
     version: ROBOGRADE_VERSION,
+    epoch: GRADING_EPOCH,   // pool by THIS, not by version - see lib/version.js
     comparison: {
       writeUp,
       counts,

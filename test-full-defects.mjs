@@ -38,9 +38,9 @@ const { fullDefectsOf, carryFullDefects } =
 
 const fullSrc = readFileSync(new URL('./api/assess_full.js', import.meta.url), 'utf8');
 const serverSrc =
-  slice(fullSrc, "const _FULL_DEFECT_CATEGORIES", '\nexport default async function handler', 'the sanitizer')
+  slice(fullSrc, "const _FULL_DEFECT_CATEGORIES", '\nexport default async function handler', 'the sanitizer and the grade gate')
   + '\nexport { _sanitizeFullDefects };\n';
-const { _sanitizeFullDefects } =
+const { _sanitizeFullDefects, applyFullGradeGate } =
   await import('data:text/javascript;base64,' + Buffer.from(serverSrc).toString('base64'));
 
 const cover = (n) => ({ type: 'Corner wear ' + n, category: 'Front', severity: 'Low' });
@@ -134,6 +134,30 @@ ok('a roboGrade with no defects is an empty list', fullDefectsOf({}).length === 
   ok('structural defects are appended BEYOND the 13-defect cap, never competing for a slot',
     next.defects.length === 16 && fullDefectsOf(next).length === 3);
 }
+
+// ── the grade gate ────────────────────────────────────────────────────────
+// Matt's rule (2026-11-06): a Full leaves the grade alone more often than not.
+// Lower ONLY on a new structural defect; raise ONLY from at-or-above the 9.6
+// Deep ceiling with nothing new found. Enforced, not requested — until
+// fullDefects existed there was no way to check the model against it.
+const G = (grade, prior, n) => applyFullGradeGate(grade, prior, n);
+
+ok('no new defect, grade held: stands', G(9.0, 9.0, 0).grade === 9.0 && G(9.0, 9.0, 0).blocked === null);
+ok('new defect, grade lowered: stands', G(8.5, 9.0, 2).grade === 8.5 && G(8.5, 9.0, 2).blocked === null);
+ok('9.6 prior, nothing found, raised to 9.8: stands',
+  G(9.8, 9.6, 0).grade === 9.8 && G(9.8, 9.6, 0).blocked === null);
+ok('9.8 prior, nothing found, held: stands', G(9.8, 9.8, 0).grade === 9.8);
+
+ok('RAISE with a new defect is blocked', G(9.8, 9.6, 1).grade === 9.6 && /raise blocked/.test(G(9.8, 9.6, 1).blocked));
+ok('RAISE from below 9.6 is blocked', G(9.6, 9.4, 0).grade === 9.4 && /below the 9.6/.test(G(9.6, 9.4, 0).blocked));
+ok('RAISE from well below is blocked', G(8.0, 5.0, 0).grade === 5.0);
+ok('DROP with no new defect is blocked',
+  G(8.0, 9.0, 0).grade === 9.0 && /drop blocked/.test(G(8.0, 9.0, 0).blocked));
+ok('DROP with a new defect from a low prior stands', G(4.0, 5.0, 1).grade === 4.0);
+
+ok('a null grade is passed through untouched', G(null, 9.0, 0).grade === null);
+ok('a missing prior cannot gate anything', G(9.8, NaN, 3).grade === 9.8 && G(9.8, NaN, 3).blocked === null);
+ok('the boundary is inclusive: exactly 9.6 may raise', G(9.8, 9.6, 0).grade === 9.8);
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed.');
 process.exit(fail ? 1 : 0);

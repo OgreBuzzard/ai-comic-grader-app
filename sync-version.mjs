@@ -37,6 +37,16 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const VERSION_FILE = path.join(ROOT, 'lib/version.js');
 const VERSION_RE = /export const ROBOGRADE_VERSION = '([0-9]+\.[0-9]+)';/;
 
+// v6.46: the EPOCH has mirrors of its own. It is a different number with a
+// different rule (see lib/version.js) and it must not be stamped from the
+// build version, so it gets its own list rather than a row in MIRRORS.
+const EPOCH_MIRRORS = [
+  { file: 'index.html',  what: 'PWA grading epoch',
+    re: /window\.RG_EPOCH = window\.RG_EPOCH \|\| "([0-9]+\.[0-9]+)";/ },
+  { file: 'public.html', what: 'public page grading epoch',
+    re: /window\.RG_EPOCH = "([0-9]+\.[0-9]+)";/ },
+];
+
 const MIRRORS = [
   { file: 'index.html',  what: 'PWA version line (primary)',
     re: /window\.RG_GRADING_VERSION = window\.RG_GRADING_VERSION \|\| "([0-9]+\.[0-9]+)";/ },
@@ -113,6 +123,50 @@ for (const m of MIRRORS) {
   }
 }
 
+// ── the epoch's own mirrors ───────────────────────────────────────────────
+// Stamped from GRADING_EPOCH, never from the build version. They are checked
+// in BOTH modes and never auto-bumped by a plain `node sync-version.mjs`,
+// because the whole point of the epoch is that it does not move on its own.
+const EPOCH_RE = /export const GRADING_EPOCH = '([0-9]+\.[0-9]+)';/;
+const epochMatch = fs.readFileSync(VERSION_FILE, 'utf8').match(EPOCH_RE);
+if (!epochMatch) {
+  console.error('\n✗ lib/version.js has no GRADING_EPOCH. It is the version the ASSESSMENT');
+  console.error('  last changed at and the calibration tools pool by it. See HOW_WE_WORK section 10a.');
+  process.exit(1);
+}
+const epoch = epochMatch[1];
+let epochDrift = 0;
+for (const m of EPOCH_MIRRORS) {
+  let src;
+  try { src = read(m.file); }
+  catch { console.error(`  ✗ ${m.file} — cannot read (${m.what})`); failed++; continue; }
+  const all = src.match(new RegExp(m.re.source, 'g')) || [];
+  if (all.length !== 1) {
+    console.error(`  ✗ ${m.file} — ${m.what}: pattern matched ${all.length} times, expected exactly 1.`);
+    failed++;
+    continue;
+  }
+  const found = src.match(m.re)[1];
+  if (found === epoch) { console.log(`  ✓ ${m.file} — ${m.what}: ${found}`); continue; }
+  epochDrift++;
+  if (checkOnly) {
+    console.error(`  ✗ ADRIFT  ${m.file} — ${m.what}: ${found}, expected ${epoch}`);
+  } else {
+    cache.set(m.file, src.replace(m.re, (str, g) => str.replace(`"${g}"`, `"${epoch}"`)));
+    changed++;
+    console.log(`  ✓ ${m.file} — ${m.what}: ${found} → ${epoch}`);
+  }
+}
+if (epochDrift && checkOnly) drift += epochDrift;
+
+// The epoch is a point in the build sequence, so it can never be ahead of it.
+if (parseFloat(epoch) > parseFloat(version)) {
+  console.error(`\n✗ GRADING_EPOCH (${epoch}) is AHEAD of ROBOGRADE_VERSION (${version}).`);
+  console.error('  The epoch marks the build at which the assessment last changed; it cannot');
+  console.error('  be a build that does not exist yet. See HOW_WE_WORK section 10a.');
+  process.exit(1);
+}
+
 if (!checkOnly) for (const [f, src] of cache) fs.writeFileSync(path.join(ROOT, f), src);
 
 if (failed) {
@@ -122,6 +176,7 @@ if (failed) {
 if (checkOnly) {
   if (drift) { console.error(`\n✗ ${drift} mirror(s) adrift from lib/version.js (${version}). Run: node sync-version.mjs`); process.exit(1); }
   console.log(`\n✓ all ${MIRRORS.length} mirrors agree with lib/version.js (${version}).`);
+  console.log(`✓ grading epoch ${epoch}${epoch === version ? ' (the assessment changed in this build)' : ` — the assessment has not changed since ${epoch}`}`);
   // S22: the deploy gate also checks the CACHED PROMPT PREFIXES. A prompt edit
   // is a cache event - it changes the cache key, kills every warm entry, and
   // leaves the keep-warm ping warming something nothing reads. Nothing about a
