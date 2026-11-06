@@ -374,7 +374,20 @@ async function handleSend(req, res) {
       });
     }
 
-    // Snapshot item + image manifest at SEND time.
+    // Snapshot item at SEND time.
+    //
+    // v6.39: imageManifest IS NO LONGER WHAT GETS COPIED. It only ever held
+    // `item.images` - the four main covers - so the corner macros, interior
+    // covers, Full slots, signature, restoration, insert, coupon, user defect
+    // photos and the Cleaning Compare sets were never copied to the recipient
+    // at all; their entry pointed at files in the sender's Storage folder.
+    // And since schemaVersion 3 those entries are { url, source, capturedAt,
+    // hash } OBJECTS, which the copy loop could not parse, so it copied
+    // nothing whatsoever. transfer_resolve now WALKS the snapshot for every
+    // file the entry refers to, which cannot miss a field - including a field
+    // added after it was written, which is precisely how this happened.
+    // Kept, unchanged, as a record of what the sender's four covers were at
+    // send time. Nothing reads it to decide anything.
     const imageManifest = Array.isArray(item.images)
       ? item.images.filter(Boolean)
       : [];

@@ -121,6 +121,152 @@ function objectPathFromUrl(url) {
   }
 }
 
+// ── v6.39 — A TRANSFER USED TO COPY FOUR PHOTOS AND MISS THE REST ─────────
+// The accept copied exactly `imageManifest`, which transfer_recv builds from
+// `item.images` alone. Two things were wrong with that, and the second one
+// hid the first.
+//
+//   1. It only ever covered the four MAIN covers. Corner macros, interior
+//      covers, Full's six structure slots, signature, restoration, insert,
+//      coupon, the user's own defect photos, the Cleaning Compare before and
+//      after sets, thumbnails - none of them were copied. B's entry pointed
+//      at files sitting in A's Storage folder. They still RENDER, because
+//      these are download-token URLs and tokens bypass the Storage rules, so
+//      nothing looked broken; but B's book was one "delete" by A away from
+//      losing most of its photographs, and the deletion that does it is a
+//      perfectly ordinary thing for A to do with an entry they no longer own.
+//
+//   2. Since schemaVersion 3, it copied NOTHING. v3 stores images as
+//      { url, source, capturedAt, hash } objects, so `imageManifest` became
+//      an array of OBJECTS, and objectPathFromUrl returns null for anything
+//      that is not a string. Every entry fell through the
+//      `if (!srcPath) { newImages.push(url); continue; }` branch, which was
+//      written for an unparseable legacy URL and quietly became the only
+//      path. No file was copied at all.
+//
+//      That same object-vs-string split is where the verification bug lived.
+//      On the pre-v3 string path the copy worked and B's images were written
+//      back as bare STRINGS, which splitImageArray maps to
+//      source:"upload" - so a book the sender had shot entirely in-app
+//      arrived at the recipient permanently "Unverified: photos taken
+//      outside of app". The v3 regression masked it by not copying anything.
+//
+// So: stop using the manifest. WALK the snapshot instead and copy every file
+// the entry refers to, wherever in the document it is written. A walk cannot
+// miss a field, including a field added after this code was written - which
+// is the failure mode above, exactly.
+//
+// The image OBJECTS are left intact and only their `url` is rewritten, so
+// source / capturedAt / hash cross with the photo and a verified book stays
+// verified. That is the whole fix for the reported bug; the rest is the
+// larger one found underneath it.
+
+// Exported for test-transfer-images.mjs. Vercel dispatches on the DEFAULT
+// export, so named exports beside it change nothing about how this runs.
+export function _storagePathOf(url) {
+  if (typeof url !== 'string') return null;
+  if (url.indexOf('firebasestorage.googleapis.com') === -1) return null;
+  if (url.indexOf('/b/' + STORAGE_BUCKET + '/o/') === -1) return null;
+  return objectPathFromUrl(url);
+}
+
+// Visits every string in a plain object/array tree and replaces it with
+// whatever fn returns (undefined = leave it).
+// Anything with a prototype of its own - a Firestore Timestamp, a GeoPoint -
+// is left strictly alone rather than having its internals rewritten.
+// Depth-capped: a Firestore document cannot contain a cycle, but a malformed
+// snapshot must not be able to hang an accept.
+export function _walkStrings(node, fn, depth) {
+  depth = depth || 0;
+  if (depth > 12 || node == null) return node;
+  if (typeof node === 'string') {
+    const out = fn(node);
+    return out === undefined ? node : out;
+  }
+  if (Array.isArray(node)) {
+    for (let i = 0; i < node.length; i++) node[i] = _walkStrings(node[i], fn, depth + 1);
+    return node;
+  }
+  if (typeof node === 'object') {
+    if (Object.getPrototypeOf(node) !== Object.prototype) return node;
+    for (const k of Object.keys(node)) node[k] = _walkStrings(node[k], fn, depth + 1);
+    return node;
+  }
+  return node;
+}
+
+// Copies every file `snapItem` refers to into B's folder and rewrites the
+// snapshot in place to point at the copies. MUTATES snapItem, which is a
+// local read of the transfer doc and is never written back.
+//
+// Idempotent: destinations are derived from the SORTED list of source paths,
+// so a resumed retry of the same transfer copies to the same places and
+// overwrites rather than littering B's folder with duplicates.
+export async function copyEntryImages({ bucket, snapItem, toUid, bItemId, tid }) {
+  const srcPaths = new Set();
+  _walkStrings(snapItem, (str) => {
+    const path = _storagePathOf(str);
+    // Already B's (a re-run, or a book transferred back) - nothing to do.
+    if (path && path.indexOf('users/' + toUid + '/') !== 0) srcPaths.add(path);
+    return undefined;
+  });
+
+  const ordered = Array.from(srcPaths).sort();
+  const map = new Map();
+  for (let n = 0; n < ordered.length; n++) {
+    const srcPath = ordered[n];
+    const rawBase = srcPath.split('/').pop() || 'image.jpg';
+    const base = rawBase.replace(/[^A-Za-z0-9._-]/g, '_');
+    // The n- prefix is not decoration. Two of these arrays can both hold a
+    // file called "0.jpg", and without it the corner macro would overwrite
+    // the front cover - a silent, unrecoverable mix-up inside the copy.
+    const destPath = 'users/' + toUid + '/items/' + bItemId + '/' + n + '-' + base;
+    const token = tid + '-' + n;
+    map.set(srcPath, {
+      destPath,
+      token,
+      url: 'https://firebasestorage.googleapis.com/v0/b/' + STORAGE_BUCKET
+         + '/o/' + encodeURIComponent(destPath) + '?alt=media&token=' + token,
+    });
+  }
+
+  const missing = [];
+  for (const [srcPath, d] of map) {
+    try {
+      await bucket.file(srcPath).copy(bucket.file(d.destPath));
+      await bucket.file(d.destPath).setMetadata({
+        metadata: { firebaseStorageDownloadTokens: d.token },
+      });
+    } catch (copyErr) {
+      const code = copyErr && (copyErr.code || copyErr.status);
+      if (code === 404 || /no such object|not found/i.test(copyErr.message || '')) {
+        // A deleted this photo between send and accept. Retrying will never
+        // find it, so failing the transfer would strand the recipient on a
+        // book they can never accept. Leave that one URL pointing where it
+        // pointed, record it, and carry on with the rest.
+        missing.push(srcPath);
+        map.delete(srcPath);
+        continue;
+      }
+      // Anything else is a real failure, and it is PRE-COMMIT: throwing here
+      // leaves the transfer pending and safely retryable.
+      throw new Error('image copy failed (' + srcPath + '): ' + copyErr.message);
+    }
+  }
+
+  let rewritten = 0;
+  _walkStrings(snapItem, (str) => {
+    const path = _storagePathOf(str);
+    if (!path) return undefined;
+    const d = map.get(path);
+    if (!d) return undefined;
+    rewritten++;
+    return d.url;
+  });
+
+  return { copied: map.size, rewritten, missing };
+}
+
 export default async function handler(req, res) {
   // CORS: native Capacitor apps call this cross-origin (WebView origin
   // https://localhost → robograder.app). The Authorization header + JSON body
@@ -204,7 +350,6 @@ export default async function handler(req, res) {
         // ===== ACCEPT =====
         const fromUid = t.fromUid;
         const snapItem = t.itemSnapshot || {};
-        const manifest = Array.isArray(t.imageManifest) ? t.imageManifest : [];
         const originalRoboGradeId = t.originalRoboGradeId || snapItem.roboGradeId || null;
 
         // Deterministic new item id for B (stable across resumed retries
@@ -213,32 +358,18 @@ export default async function handler(req, res) {
         const bItemRef = db.collection('users').doc(uid)
           .collection('items').doc(bItemId);
 
-        // (1) Copy image objects A→B. B's object path mirrors the app's
-        // own convention: users/{B}/items/{bItemId}/{basename}. We keep
-        // the original basename (slot.jpg) from the source path.
-        const newImages = [];
-        for (const url of manifest) {
-          const srcPath = objectPathFromUrl(url);
-          if (!srcPath) { newImages.push(url); continue; }  // unparseable; leave as-is
-          const base = srcPath.split('/').pop() || 'image.jpg';
-          const destPath = `users/${uid}/items/${bItemId}/${base}`;
-          try {
-            await bucket.file(srcPath).copy(bucket.file(destPath));
-            // Make B's copy downloadable the same way the app's uploads
-            // are: a long-lived media URL via a download token.
-            const token2 = `${tid}-${base}`;
-            await bucket.file(destPath).setMetadata({
-              metadata: { firebaseStorageDownloadTokens: token2 },
-            });
-            newImages.push(
-              `https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}` +
-              `/o/${encodeURIComponent(destPath)}?alt=media&token=${token2}`
-            );
-          } catch (copyErr) {
-            // A pre-commit failure: abort THIS transfer, leave it
-            // pending, surface it. No registry moved yet → safe retry.
-            throw new Error(`image copy failed (${base}): ${copyErr.message}`);
-          }
+        // (1) Copy EVERY file this entry refers to, A→B, and rewrite the
+        // snapshot in place to point at the copies. See copyEntryImages:
+        // this used to copy `imageManifest` (the four main covers only), and
+        // since schemaVersion 3 it copied nothing at all. A pre-commit
+        // failure throws, leaving the transfer pending and safely retryable.
+        const _copy = await copyEntryImages({
+          bucket, snapItem, toUid: uid, bItemId, tid,
+        });
+        if (_copy.missing.length) {
+          console.warn('[transfer] ' + tid + ': ' + _copy.missing.length
+            + ' source file(s) no longer exist, left pointing at the original:',
+            _copy.missing);
         }
 
         // (2) Write B's item — Owned + Public, carrying ORIGINAL cert id
@@ -250,7 +381,10 @@ export default async function handler(req, res) {
           ownership: 'Owned',
           public: true,
           roboGradeId: bRoboGradeId,
-          images: newImages,
+          // images (and cornerImages, and every other slot) were rewritten in
+          // place by copyEntryImages above. The image OBJECTS keep their
+          // source / capturedAt / hash, so a book the sender shot in-app
+          // arrives VERIFIED - which it did not before.
           // Provenance: a quiet marker (not user-facing) so support can
           // see this item arrived via transfer. Not used for any logic.
           _transferredFrom: fromUid,
@@ -306,11 +440,17 @@ export default async function handler(req, res) {
           continue;
         }
 
-        // (5) Mark accepted.
+        // (5) Mark accepted. The copy counts are recorded because the last
+        // version of this endpoint copied nothing and nothing said so - a
+        // transfer that silently copies zero files has to be visible from the
+        // transfer doc alone.
         await tRef.update({
           status: 'accepted',
           resolvedAt: new Date().toISOString(),
           bItemId,
+          imagesCopied: _copy.copied,
+          imageUrlsRewritten: _copy.rewritten,
+          imagesMissing: _copy.missing.length ? _copy.missing : null,
         });
         accepted++;
         results.push({ tid, outcome: 'accepted' });
