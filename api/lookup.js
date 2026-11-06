@@ -206,9 +206,31 @@ export default async function handler(req, res) {
         graderNotes:        comic.cardData.graderNotes || null,
         reasoning:          comic.cardData.reasoning || null,
       } : undefined,
+      // v6.37 - THE PUBLIC LINK SHOWED ONE STAR ON A TWO-STAR BOOK.
+      // For a comic this read the Deep flag ONLY from inside roboGrade, while
+      // the app's own star test (robograde-panel.js, and depthOf() in the
+      // inlined v3 engine) accepts any of four places it can live:
+      //     comic.deepAssessmentRan
+      //     comic.highGradeTier
+      //     comic.highGradeAssessed
+      //     comic.roboGrade.deepAssessmentRan
+      // A book whose flag sits at the top level - which is where
+      // completeAssessment writes it - projected as false, so the panel on the
+      // public page drew one star while the same panel in the app drew two,
+      // for the same record, under the same ID. Reported on CXWDMG.
+      // Same test as the app now. It is a READ-TIME projection, so every
+      // existing listing is corrected the moment this deploys; nothing needs
+      // backfilling.
       deepAssessmentRan: comic.type === 'card'
         ? !!comic.deepAssessmentRan
-        : !!(comic.roboGrade && comic.roboGrade.deepAssessmentRan),
+        : !!(comic.deepAssessmentRan
+             || comic.highGradeTier
+             || comic.highGradeAssessed
+             || (comic.roboGrade && comic.roboGrade.deepAssessmentRan)),
+      // Projected too, because the panel tests it directly: without it the
+      // public copy of the panel was reasoning from a field that was never
+      // there.
+      highGradeTier: !!(comic.highGradeTier || comic.highGradeAssessed),
       fullAssessmentRan: !!comic.fullAssessmentRan,
       restorationCheckRan: !!comic.restorationCheckRan,
       restorationFlag: !!comic.restorationFlag,

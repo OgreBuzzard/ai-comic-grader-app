@@ -453,6 +453,28 @@ function ensureStylesInjected() {
   /* The grade numeral's FACE. Its size and offset are per-variant. */
   .rg-any .rg-num, .rg-any .rgc-num { font-family: 'League Spartan', sans-serif; }
 
+  /* v6.38: the issue number inside the title. Weight and colour are
+     PROPERTIES, so they belong here - they were set on Wide alone, which is
+     why the same number read lighter on Case and Square. Its SIZE still comes
+     from each variant's .ttl, as it should. */
+  .rg-any .ttl-iss { font-weight: 700; color: #2a2a2a; }
+
+  /* v6.38 - THE DATE / PUBLISHER LINE WRAPS. It was 'white-space: nowrap' on
+     all three variants, with a width of 160% to undo the scaleX(0.625). A
+     line longer than the column therefore could not break; it simply drew
+     past the end of the info column and over the score box. Reported on
+     Square, where the column is narrowest, but the rule was the same on Wide
+     and Case and only the geometry hid it.
+     Shared, because whether a line may break is a BEHAVIOUR of the line, not
+     a size or a position - the two things LABEL_SHARED_STYLES.md says are
+     legitimately per-variant. The per-variant nowrap declarations are gone;
+     this one rule governs all of them. */
+  .rg-any .iss {
+    display: block;
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
+
   /* ── Modal chrome (screen only) ──────────────────────────────────────── */
   /* Body scroll lock: when the modal is open, prevent the page underneath
      from scrolling on touch. Without this, taps that land on the modal's
@@ -482,7 +504,14 @@ function ensureStylesInjected() {
     border-radius: 14px;
     width: calc(100vw - 24px);
     max-width: 720px;
-    max-height: calc(100vh - 24px);
+    /* v6.38: was 100vh - 24px, which left a 12px strip of backdrop. On
+       Square - a 1:1 label, so the preview is as tall as it is wide - the
+       card took the whole screen and tap-outside-to-close had almost nothing
+       left to tap. 88px guarantees a ~44px band top and bottom, a real touch
+       target, and the preview area is flex:1 with overflow:auto so it gives
+       up the height rather than anything being cut. The explicit close
+       control in the header is the belt to this pair of braces. */
+    max-height: calc(100vh - 88px);
     display: flex; flex-direction: column;
     overflow: hidden;
     /* Restore native touch behavior inside the card so the preview area
@@ -496,6 +525,29 @@ function ensureStylesInjected() {
     border-bottom: 1px solid #e0d8c8;
     gap: 12px;
   }
+  /* v6.38: tap-outside was the ONLY way out of this modal. That reads well
+     when there is a backdrop to tap; it is a trap when the card fills the
+     screen, which is what Square does. A close control is not clutter at the
+     point where the alternative is being stuck.
+     It is a CLOSE, not a Cancel: the note on the old Back button still holds
+     - leaving must never read as erasing the queue - so it is an x in the
+     corner rather than a worded button in the action row. */
+  .lvm-close {
+    appearance: none; -webkit-appearance: none;
+    border: 1px solid #ddd3c2;
+    background: #fffdf8;
+    color: #6a5c4a;
+    width: 34px; height: 34px;
+    min-width: 34px;
+    border-radius: 999px;
+    font-size: 19px; line-height: 1;
+    font-family: inherit;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    padding: 0;
+  }
+  .lvm-close:active { background: #f0e8da; }
   /* Right-side stack: Queue count on top, subtitle directly under it.
      Right-aligned so it visually pairs as a unit. The subtitle moved here
      from under the Print Label title so it sits exactly where users look
@@ -1099,7 +1151,6 @@ function ensureStylesInjected() {
      If the line has to break it breaks before the issue number, never between
      the issue number and the publication date, which is now the start of the
      line below. */
-  .rg-label .ttl-iss { font-weight: 700; color: #2a2a2a; }
   .rg-label .iss {
     /* S22: 36 -> 46 toward Case's 52. Held 6pt under Case because Wide still
        carries the info-upper divider AND the ID row in the meta grid, so it
@@ -1111,7 +1162,6 @@ function ensureStylesInjected() {
     /* S22: this line is now "<pub date>, <publisher>" as one string, so the
        old flex row with a 24px gap is gone - a comma and a space do the
        separating. scaleX(0.625) still compresses the line as a unit. */
-    display: block; white-space: nowrap;
     transform: scaleX(0.625);
     transform-origin: left center;
   }
@@ -1348,26 +1398,15 @@ function ensureStylesInjected() {
     width: 160px !important;
     height: 160px !important;
   }
-  /* has-price: the price pad takes the mascot slot, so the QR reverts to the
-     bottom-left corner at its old size and the info column yields (left:170
-     above). Nothing else about that state changed. */
-  .rg-label.has-price .qr-col {
-    top: auto; right: auto;
-    left: 32px; bottom: 44px;
-    width: 122px;
-  }
-  .rg-label.has-price .info { top: 14px; bottom: auto; display: flex;
-    flex-direction: column; justify-content: flex-start; }
-  .rg-label.has-price .info-upper { padding-bottom: 4px; border-bottom: 1px solid #b0b89a; }
-  .rg-label.has-price .info-lower { border-top: none; padding-top: 4px; }
-  .rg-label.has-price .qr-col .qrc {
-    background: none; padding: 0; border-radius: 0;
-  }
-  .rg-label.has-price .qr-col .qrc canvas,
-  .rg-label.has-price .qr-col .qrc img {
-    width: 118px !important;
-    height: 118px !important;
-  }
+  /* v6.38 - EVERY .rg-label.has-price RULE IS DELETED. Wide NEVER CARRIES THE
+     CLASS: showPrice is opts.priceTag AND size is not 'small', and Wide IS
+     'small', so none of these has matched since the per-size price slot
+     arrived. They described the retired white price-pad layout - QR moved to
+     bottom-left at 118px, the figure hidden, the info column reclaiming its
+     width - a label that cannot be produced any more. Same removal, and the
+     same reasoning, as the Case rules in v6.25.
+     The .price-pad rules go with them on the stronger ground that the class is
+     not emitted ANYWHERE in this file, on any variant. */
   .rg-label .verify {
     font-size: 14px; color: #7a8a5a;
     letter-spacing: 1px;
@@ -1796,7 +1835,6 @@ function ensureStylesInjected() {
     font-family: 'Noto Sans Display', sans-serif;
     transform: scaleX(0.625);
     transform-origin: left center;
-    display: block; white-space: nowrap;
   }
   .rg-label-l .prt {
     /* S22 (carried from Wide): this line carries printing, then My Notes, then
@@ -2110,32 +2148,6 @@ function ensureStylesInjected() {
   /* The price face/weight/colour now live in the SHARED block at the top. */
   /* 160 for the figure + a 12px gutter. */
   .rg-label .info-upper { padding-right: 172px; }
-  /* With a price pad the QR falls back to bottom-left and there is no room for
-     the figure at all, so it goes and the text column takes its width back. */
-  .rg-label.has-price .rg-art { display: none; }
-  .rg-label.has-price .info-upper { padding-right: 0; }
-  .rg-label .price-pad {
-    display: none;
-  }
-  .rg-label.has-price .price-pad {
-    display: block;
-    position: absolute;
-    top: 18px; right: 282px;
-    width: 220px; height: 220px;
-    background: #ffffff;
-    border: 1px solid #b8c098;
-    border-radius: 14px;
-  }
-  .rg-label.has-price .price-pad .price-placeholder {
-    position: absolute;
-    top: 18px; left: 0; right: 0;
-    text-align: center;
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 36px;
-    font-weight: 600;
-    color: #7a8a5a;
-    letter-spacing: 0.5px;
-  }
 
   /* ── Square variant (Avery 22806, 2" × 2" → 576 × 576 px) ──────────────
      S14 OVERHAUL. New layout per user direction:
@@ -2276,8 +2288,9 @@ function ensureStylesInjected() {
     font-family: 'Noto Sans Display', sans-serif;
     transform: scaleX(0.625);
     transform-origin: left center;
-    white-space: nowrap;
-    display: flex; gap: 14px; align-items: baseline;
+    /* v6.38: the flex row and its 14px gap were left from when this line was
+       two elements. It is one string now - the comma does the separating -
+       and flex was stopping .rg-any's wrap rule from applying. */
     margin-top: 4px;
   }
   .rg-label-square .prt {
@@ -2950,6 +2963,7 @@ function renderModal(modal, comic, allItems) {
           ${_singleMode ? '' : `<div class="${queueClass}">Queue: ${queueCount} / ${queueCap}</div>`}
           ${subtitleText ? `<div class="lvm-subtitle">${subtitleText}</div>` : ''}
         </div>
+        <button type="button" class="lvm-close" data-action="close" aria-label="Close">\u00d7</button>
       </div>
       <div class="lvm-toggle-row lvm-toggle-row-sizes">
         ${sizeSegments}
@@ -3076,6 +3090,14 @@ function renderModal(modal, comic, allItems) {
   if (_shareBtn) _shareBtn.addEventListener('click', (e) => {
     if (e.currentTarget.disabled) return;
     handleSavePDF(modal, comic, allItems, 'share');
+  });
+
+  // v6.38: the explicit close. Same closeModal as the backdrop, so the queue
+  // is preserved either way.
+  const _closeBtn = modal.querySelector('[data-action="close"]');
+  if (_closeBtn) _closeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeModal(modal);
   });
 
   // Tap-outside-to-close. Backdrop click closes; clicks on .lvm-card stop
@@ -3542,6 +3564,9 @@ async function generatePDF(comics, modal, intent) {
       // which is the difference between no information and a bug report that
       // says which label and how far it got. 45s is generous: a 4x1 captures
       // in under a second on desktop, 2-3s on an older iPhone.
+      // v6.38: the last word on what is in this box, in the same tick as the
+      // capture. See settleLabelImagesSync.
+      settleLabelImagesSync(boxes[i]);
       const _capture = window.html2canvas(boxes[i], {
         scale: 1,
         useCORS: true,
@@ -3600,10 +3625,10 @@ async function generatePDF(comics, modal, intent) {
       const canvas = await Promise.race([
         _capture,
         new Promise((_, reject) => setTimeout(() => reject(new Error(
-          'Label ' + (i + 1) + ' of ' + total + ' never finished rendering (45s). '
+          'Label ' + (i + 1) + ' of ' + total + ' never finished rendering (20s). '
           + 'This is almost always an image inside the label that will not load - '
-          + 'on a Wide label that means the QR code. Nothing was saved.'
-        )), 45000))
+          + 'the QR code or the watermark figure. Nothing was saved.'
+        )), 20000))
       ]);
       // JPEG instead of PNG: the label uses photographic-style anti-aliased
       // text and a flat olive background — JPEG at quality 0.92 is visually
@@ -4126,7 +4151,22 @@ function renderLabelMarkup(comic, opts) {
     const em = txt.split('').reduce((a, c) => a + (EM[c] != null ? EM[c] : 0.558), 0);
     // The ceiling is proportional to the slot, not absolute: it stops a short
     // price coming out taller than the grade beside it.
-    const fs = Math.max(16, Math.min(Math.round(_slotW * 0.83), Math.floor(_slotW / em)));
+      // v6.38 - SQUARE'S PRICE IS NO LONGER TIED TO THE WATERMARK'S WIDTH.
+    // The price was budgeted at the width the FIGURE draws at, because the two
+    // are alternates in one slot and a label should not change shape with a
+    // toggle. That reasoning holds for the handled labels. Square is the WALL
+    // label - read across a hall, not across a table - and its slot BOX is
+    // 230 wide while the figure only draws 150 of it, so 80px was dead air
+    // that the price was forbidden from using. 150 x 1.5 = 225 fills the box.
+    const _PRICE_W = { 'square': 1.5 };
+    const _priceW = Math.round(_slotW * (_PRICE_W[opts.size] || 1));
+    // A SHORT price ("$5") is not width-limited at all, so without a second
+    // wall it would now draw taller than the slot and run into the QR beneath
+    // it. The box's own height is that wall. line-height is 1 and these
+    // strings have no descenders, so the line box IS the type size: 0.95 of
+    // the slot leaves a hair of clearance and nothing more.
+    const _priceH = Math.round(_box[1] * 0.95);
+    const fs = Math.max(16, Math.min(Math.round(_priceW * 0.83), _priceH, Math.floor(_priceW / em)));
     return '<div class="rg-art is-price"><div class="rg-price" style="font-size:' + fs + 'px">' + esc(txt) + '</div></div>';
   })();
   // S22: the line under the title is "<pub date>, <publisher>". Either half can
@@ -4356,6 +4396,60 @@ function fitLabelText(container) {
       prt.textContent = prt.getAttribute('data-full');
     }
   });
+}
+
+// ── v6.38: NOTHING UNRESOLVED GOES INTO A CAPTURE ──────────────────────────
+// Save PDF freezes on 'Generating 1/1...' and comes back on a retry. A hang
+// that clears when you try again is a RACE, and there is exactly one race in
+// this file: qrcodejs builds a <canvas> synchronously and then, on its own
+// setTimeout(0), may replace it with an <img> carrying a data: URL and hide
+// the canvas. renderQRsImmediately re-asserts canvas-only across six ticks
+// spanning about 400ms - but the capture does not wait for those ticks, it
+// waits for the FONTS. When the fonts resolve quickly the capture starts
+// first, and if qrcodejs's swap lands after the last re-assertion an <img>
+// survives into html2canvas's cloned document, where on iOS its load neither
+// completes nor errors. An unsettled promise is not a throw, so nothing is
+// catchable and the button sits there.
+//
+// Guessing at the ordering is what the six ticks already do. This stops
+// guessing: run the sweep ONE LAST TIME, synchronously, in the same tick as
+// the capture call, after which nothing can be inserted before html2canvas
+// reads the DOM.
+//
+// It also covers the OTHER image on a label - the watermark figure in the art
+// slot - which has to be complete, or dropped, for the same reason. A label
+// drawn without its watermark is a flaw; a label that never draws is a dead
+// button at a convention table.
+//
+// GUESS, STATED AS ONE: the mechanism above fits every symptom (Square and
+// Wide both carry a QR, it clears on retry, it never throws) but it has not
+// been reproduced on a device - headless Chromium captures the exact DOM
+// qrcodejs produces without complaint, which is why this was not caught
+// before. If Save PDF still hangs after this, the next thing to look at is
+// the art-slot image, not the QR.
+function settleLabelImagesSync(box) {
+  if (!box) return;
+  try {
+    // 1. QR: canvas wins, every time.
+    box.querySelectorAll('.qrc').forEach(el => {
+      const cv = el.querySelector('canvas');
+      if (!cv) return;                       // no canvas: leave what is there
+      el.querySelectorAll('img').forEach(im => im.remove());
+      cv.style.display = 'block';
+    });
+    // 2. Any other image that has not finished loading is removed rather than
+    //    waited on. naturalWidth is 0 both for 'still loading' and for
+    //    'failed', and the capture must not depend on telling them apart.
+    box.querySelectorAll('img').forEach(im => {
+      if (!im.complete || !im.naturalWidth) {
+        console.warn('[label] dropping an unloaded image from the capture:', im.getAttribute('src'));
+        im.remove();
+      }
+    });
+  } catch (e) {
+    // Never let the guard be the thing that breaks the export.
+    console.warn('[label] image settle failed (capturing anyway):', e);
+  }
 }
 
 function renderQRsIn(container) {

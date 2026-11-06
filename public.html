@@ -37,7 +37,7 @@
      canonical copy in index.html; if you edit the ladder/CONFIG there, update here too. -->
 <script>
   window.RG_V2_DISPLAY = true;
-  window.RG_GRADING_VERSION = "6.20";
+  window.RG_GRADING_VERSION = "6.38";
   window.RGScoreV2 = (function () {
     const LADDER = ["0","0+","1-","1","1+","2-","2","2+","3-","3","3+","4-","4","4+","5-","5","5+","6-","6","6+","7-","7","7+","8-","8","8+","9-","9","9+","10-","10"];
     const CONFIG = {
@@ -1145,10 +1145,9 @@
       const key = el.getAttribute('data-tab-btn');
       const on = key === _pubTab;
       const sk = PUB_TAB_SKIN[key];
-      el.style.background = on ? sk.bg : (key === 'photos' ? sk.bg : PUB_TAB_SKIN.off.bg);
-      el.style.color = on ? sk.fg : (key === 'photos' ? sk.fg : PUB_TAB_SKIN.off.fg);
-      el.style.opacity = on ? '1' : '0.72';
-      el.style.borderColor = on ? sk.bd : PUB_TAB_SKIN.off.bd;
+      el.style.background = sk.bg;
+      el.style.color = sk.fg;
+      el.style.borderColor = sk.bd;
       el.style.borderBottom = 'none';
       el.style.marginBottom = '-1.5px';
       el.style.marginTop = on ? '0' : '3px';
@@ -1157,13 +1156,14 @@
       el.style.padding = (on ? '9px' : '8px') + ' 8px';
       el.style.fontWeight = on ? '800' : '700';
     }
-    // The sheet takes the active tab's colours and squares the corner under it.
+    // The sheet takes the active tab's colours. v6.38: both top corners are
+    // square - there is no corner for the page background to show through.
     const sheet = document.getElementById('pub-tab-sheet');
     if (sheet) {
       const sk = PUB_TAB_SKIN[_pubTab];
       sheet.style.background = sk.bg;
       sheet.style.borderColor = sk.bd;
-      sheet.style.borderRadius = _pubTab === 'photos' ? '0 10px 10px 10px' : '10px 0 10px 10px';
+      sheet.style.borderRadius = '0 0 10px 10px';
     }
   };
   // Folder tabs, matching the app: the active tab shares its fill with the
@@ -1171,22 +1171,20 @@
   // object. PHOTOS is the lighter sheet of the two.
   const PUB_TAB_SKIN = {
     photos:     { bg: '#e6e2d4', bd: '#b8b3a0', fg: '#3a3426' },
-    assessment: { bg: '#152e10', bd: '#4a7028', fg: '#b8d820' },
-    off:        { bg: '#141a10', fg: '#7a8a6a', bd: '#2c3a22' }
+    // v6.38: the sheet is a tint; the panel carries #152e10 itself now.
+    assessment: { bg: '#1d3317', bd: '#4a7028', fg: '#b8d820' }
   };
   const pubTabsHTML = () => {
     const btn = (key, label) => {
       const on = pubTab() === key;
       const sk = PUB_TAB_SKIN[key];
-      // PHOTOS keeps its beige closed as well as open - see index.html.
-      const offBg = key === 'photos' ? sk.bg : PUB_TAB_SKIN.off.bg;
-      const offFg = key === 'photos' ? sk.fg : PUB_TAB_SKIN.off.fg;
+      // v6.38: every tab always its own colour, open or closed - see index.html.
       return `<button type="button" data-tab-btn="${key}" onclick="setPubTab('${key}')" style="
-        flex:1;min-width:0;border:1.5px solid ${on ? sk.bd : PUB_TAB_SKIN.off.bd};
+        flex:1;min-width:0;border:1.5px solid ${sk.bd};
         border-bottom:none;
-        ${on ? 'margin-bottom:-1.5px;position:relative;z-index:1;' : 'margin-top:3px;margin-bottom:-1.5px;opacity:0.72;'}
+        ${on ? 'margin-bottom:-1.5px;position:relative;z-index:1;' : 'margin-top:3px;margin-bottom:-1.5px;'}
         border-radius:9px 9px 0 0;padding:${on ? '9px' : '8px'} 8px;
-        background:${on ? sk.bg : offBg};color:${on ? sk.fg : offFg};
+        background:${sk.bg};color:${sk.fg};
         font-family:inherit;font-size:11px;font-weight:${on ? 800 : 700};letter-spacing:1.6px;
         cursor:pointer;line-height:1">${label}</button>`;
     };
@@ -1196,7 +1194,7 @@
           ${btn('photos', 'PHOTOS')}${btn('assessment', 'ASSESSMENT')}
         </div>
         <div id="pub-tab-sheet" style="background:${sk.bg};border:1.5px solid ${sk.bd};
-          border-radius:${pubTab() === 'photos' ? '0 10px 10px 10px' : '10px 0 10px 10px'};
+          border-radius:0 0 10px 10px;
           padding:12px 10px">`;
   };
   const pubTabsClose = () => '</div></div>';

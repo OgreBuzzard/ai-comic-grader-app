@@ -274,7 +274,21 @@
     // themselves. Everything BELOW them - the ID / GRADED line, the defect
     // printout and the Photograder panel - is one bordered box whose three
     // parts are joined top, middle and bottom.
-    return `<div style="margin-bottom:8px">
+    // v6.38 - THE PANEL IS AN OBJECT AGAIN (option 3).
+    // v6.33 made the outer container transparent so the ASSESSMENT tab's
+    // sheet could BE the box. That solved the clipping, and it cost the panel
+    // its identity everywhere the sheet is not: in Edit view it was a stack
+    // of dark boxes floating on white with no edge, and the same markup read
+    // as two different objects depending which screen you were on.
+    // It has its own container again - one background, one border, one
+    // radius - and Detail's sheet is a slightly lighter tint behind it, so
+    // the panel reads as a card lying on the sheet rather than as the sheet.
+    // THE CLIPPING DOES NOT COME BACK: what fixed it was the sub-grade grid
+    // (2fr 2fr 1fr, min-width:0 on every cell, locked to 104px), not the
+    // removal of this box. One container's padding is ~20px of width, and the
+    // INT cell keeps ~32px of content on a 390px phone against ~22px of
+    // "INT" - the measurement that was failing before.
+    return `<div style="margin-bottom:8px;background:${BG};border:1.5px solid ${OLIVE_MID};border-radius:12px;padding:12px 10px">
       <div style="font-size:12px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:10px;text-align:center">ROBOGRADE SCORE</div>
       <!-- v6.35: the sub-grade grid is locked to the score box's 104px. It was
            auto-height and came out TALLER than the box beside it, leaving a
@@ -304,20 +318,20 @@
                size 2x2 grid that preceded this misrepresented Front as just
                1/4 of the score when it's actually 1/2. -->
           <div style="grid-column:1/-1;background:${OLIVE};border-radius:6px;padding:4px 6px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0">
-            <div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:29px;font-weight:800;color:${CHARTREUSE};line-height:1">${fs}</div>
+            <div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:29px;font-weight:800;color:${CHARTREUSE};line-height:0.72">${fs}</div>
             <div style="font-size:9px;color:${OLIVE_LT};letter-spacing:1.5px;margin-top:3px">FRONT</div>
           </div>
           <!-- Row 2: Back and Spine at 2/5 each, Interior at 1/5 ("INT"). -->
           <div style="background:${OLIVE};border-radius:6px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0">
-            <div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:20px;font-weight:800;color:${CHARTREUSE};line-height:1">${bs}</div>
+            <div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:20px;font-weight:800;color:${CHARTREUSE};line-height:0.72">${bs}</div>
             <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:2px">BACK</div>
           </div>
           <div style="background:${OLIVE};border-radius:6px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0">
-            <div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:20px;font-weight:800;color:${CHARTREUSE};line-height:1">${ss}</div>
+            <div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:20px;font-weight:800;color:${CHARTREUSE};line-height:0.72">${ss}</div>
             <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:2px">SPINE</div>
           </div>
           <div style="background:${OLIVE};border-radius:6px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0">
-            <div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:20px;font-weight:800;color:${CHARTREUSE};line-height:1">${ins}</div>
+            <div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:20px;font-weight:800;color:${CHARTREUSE};line-height:0.72">${ins}</div>
             <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:2px">INT</div>
           </div>
         </div>

@@ -560,7 +560,7 @@
   <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 
-import { getFirestore, initializeFirestore, collection, getDocs, setDoc, deleteDoc, doc, onSnapshot, getDoc, updateDoc, increment, query, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, getDocs, setDoc, deleteDoc, doc, onSnapshot, getDoc, updateDoc, increment, query, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 import { getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signInWithCredential, signInWithCustomToken, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
@@ -577,9 +577,39 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-const db = initializeFirestore(app, {
-  experimentalAutoDetectLongPolling: true
-});
+// v6.38 - THE RELOAD AFTER BACKGROUNDING.
+// iOS discards a backgrounded WKWebView's content process under memory
+// pressure and Android does the same, so coming back to the app is a COLD
+// START of the document. That part is the OS and cannot be argued with.
+// What was ours: with no local cache, every one of those cold starts
+// refetched the entire items collection over the network before anything
+// could be drawn - which is the long blank the reload actually feels like.
+// persistentLocalCache keeps the collection in IndexedDB, so the first
+// snapshot comes back from disk in milliseconds and the network update
+// arrives behind it. It helps every cold start, not only the evicted ones.
+//
+// SINGLE TAB, DELIBERATELY. persistentMultipleTabManager synchronises the
+// cache across tabs and fails if the browser cannot run its leader election;
+// single-tab takes the lock and the SECOND tab silently falls back to
+// memory-only rather than erroring. Nobody runs two Robograder tabs on a
+// phone, and the failure mode of the multi-tab manager is worse than the
+// thing it buys.
+//
+// The cache is a cache: it is not a backup, nothing is written to it that is
+// not also written to Firestore, and it does not change any write path.
+let db;
+try {
+  db = initializeFirestore(app, {
+    experimentalAutoDetectLongPolling: true,
+    localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) })
+  });
+} catch (e) {
+  // Private browsing, a blocked IndexedDB, or a second tab holding the lock.
+  // Memory-only is the pre-6.38 behaviour, which worked - so degrade to it
+  // rather than refusing to start.
+  console.warn("[init] persistent cache unavailable, using memory cache:", e);
+  db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+}
 
 const storage = getStorage(app);
 
@@ -2352,12 +2382,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.20";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.38";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.20");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.38");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -3467,8 +3497,12 @@ const TAB_SKIN = {
   // v6.33: #152e10 is the Robograde panel's own BG. The sheet IS that box now
   // - the panel dropped its container so the sub-scores stop clipping - so the
   // two have to be the same colour or the join shows.
-  assessment: { bg: '#152e10', bd: '#4a7028', fg: '#b8d820' },
-  off:        { bg: '#141a10', fg: '#7a8a6a', bd: '#2c3a22' }
+  // v6.38: the sheet is a TINT now, not the panel's own colour. The panel got
+  // its container back (robograde-panel.js, option 3), so if the sheet stayed
+  // #152e10 the card and the thing it lies on would be the same colour and
+  // there would be no card. #1d3317 is the same hue a step lighter - enough
+  // to read as two surfaces, not enough to read as two designs.
+  assessment: { bg: '#1d3317', bd: '#4a7028', fg: '#b8d820' }
 };
 
 function renderDetailTabs(item, opts) {
@@ -3482,19 +3516,19 @@ function renderDetailTabs(item, opts) {
   const tab = (key, label) => {
     const on = cur === key;
     const sk = TAB_SKIN[key];
-    // v6.35: PHOTOS keeps its beige whether or not it is the open tab. The
-    // tab is the FOLDER - a folder does not change colour when you close it -
-    // and the grey "off" fill made the pair read as one live tab and one dead
-    // control rather than as two folders with one in front.
-    const off = { bg: key === 'photos' ? sk.bg : TAB_SKIN.off.bg, fg: key === 'photos' ? sk.fg : TAB_SKIN.off.fg };
+    // v6.35 did this for PHOTOS; v6.38 finishes it for ASSESSMENT. The tab is
+    // the FOLDER, and a folder does not change colour when you close it. The
+    // grey "off" fill and the 0.72 opacity made the pair read as one live tab
+    // and one dead control. Both are gone - every tab is always its own
+    // colour, and OPEN is carried by position (the closed one sits 3px lower)
+    // and weight, which is how a real tab tells you.
     const click = ro ? '' : ` onclick="setDetailTab('${key}')"`;
     return `<button type="button"${click} style="
-      flex:1;min-width:0;border:1.5px solid ${on ? sk.bd : TAB_SKIN.off.bd};
+      flex:1;min-width:0;border:1.5px solid ${sk.bd};
       border-bottom:none;
       ${on ? 'margin-bottom:-1.5px;position:relative;z-index:1;' : 'margin-top:3px;margin-bottom:-1.5px;'}
       border-radius:9px 9px 0 0;padding:${on ? '9px' : '8px'} 8px;
-      background:${on ? sk.bg : off.bg};color:${on ? sk.fg : off.fg};
-      ${on ? '' : 'opacity:0.72;'}
+      background:${sk.bg};color:${sk.fg};
       font-family:inherit;font-size:11px;font-weight:${on ? 800 : 700};letter-spacing:1.6px;
       cursor:${ro ? 'default' : 'pointer'};line-height:1">${label}</button>`;
   };
@@ -3505,7 +3539,12 @@ function renderDetailTabs(item, opts) {
         ${tab('photos', 'PHOTOS')}${tab('assessment', 'ASSESSMENT')}
       </div>
       <div style="background:${sk.bg};border:1.5px solid ${sk.bd};
-        border-radius:${cur === 'photos' ? '0 10px 10px 10px' : '10px 0 10px 10px'};
+        /* v6.38: BOTH top corners square. The sheet used to round the corner
+           AWAY from the open tab - so under the closed tab there was a 10px
+           arc with the page background showing through it, the white wedge
+           Matt circled. The tabs sit along the whole top edge; a folder's
+           sheet has no visible top corners at all. */
+        border-radius:0 0 10px 10px;
         padding:12px 10px">`;
 }
 
@@ -4562,6 +4601,9 @@ async function initFirebase() {
       renderList();
       updateStats();
       _migratePrintState();   // S22: migrate legacy Print ownership -> inPrintQueue flag
+      // v6.38: now that the items exist, reopen whatever the user was looking
+      // at before the WebView was discarded. See _restoreRememberedView.
+      try { _initViewMemory(); _restoreRememberedView(); } catch (e) { console.warn("[restore]", e); }
       if (typeof window.signalAppReady === "function") window.signalAppReady();
     } else {
       if (view === "list") renderList();
@@ -6060,6 +6102,7 @@ window.rgHandleBack = function () {
 function showList() {
   view = "list";
   selected = null;
+  _rememberNow();
   refreshHeaderControls();
   renderList();
   requestAnimationFrame(() => {
@@ -6646,6 +6689,107 @@ function toggleOwnership(ownership) {
   renderList();
 }
 
+// ── v6.38: SURVIVING AN EVICTION ───────────────────────────────────────────
+// The app has never remembered where it was. Background it, let iOS discard
+// the WebView, come back - and it is a fresh document at the top of the list,
+// whatever you were reading. Nothing here stops the eviction; this just makes
+// coming back land where you left.
+//
+// localStorage WITH A FRESHNESS WINDOW, not sessionStorage. sessionStorage is
+// the right LIFETIME on paper - "where was I in this session" - but it is
+// scoped to the browsing context, and whether it survives a WKWebView content
+// process being discarded and rebuilt is not something this code gets to
+// decide. If it does not survive, the fix does nothing in the app it was
+// written for. localStorage certainly survives; the 30-minute window supplies
+// the lifetime sessionStorage would have given us, so coming back from
+// another app lands where you were and opening the app fresh tomorrow opens
+// on the list. (STATED AS A GUESS: I have not verified which way WKWebView
+// goes on sessionStorage here. This arrangement is correct either way, which
+// is why it is the one that shipped.)
+//
+// DETAIL AND THE LIST POSITION ONLY. Edit and Add are deliberately NOT
+// restored: the form lives in formData in page memory, the photos in it may
+// be data: URLs that were never uploaded, and reopening an edit screen with
+// half of its content silently missing is worse than landing on the list.
+// Someone evicted mid-edit has lost that edit either way; this does not
+// pretend otherwise.
+const _VIEW_KEY = "rg_last_view";
+const _VIEW_TTL_MS = 30 * 60 * 1000;
+function _rememberView(o) {
+  try {
+    o.t = Date.now();
+    localStorage.setItem(_VIEW_KEY, JSON.stringify(o));
+  } catch (e) {}
+}
+function _readRememberedView() {
+  try {
+    const raw = localStorage.getItem(_VIEW_KEY);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    if (!o || typeof o !== "object") return null;
+    if (!o.t || (Date.now() - o.t) > _VIEW_TTL_MS) return null;
+    return o;
+  } catch (e) { return null; }
+}
+// Called once, after the FIRST items snapshot - the item has to exist before
+// it can be opened. Any failure leaves the user on the list, which is where
+// they would have been anyway.
+function _restoreRememberedView() {
+  const o = _readRememberedView();
+  if (!o) return;
+  try {
+    if (o.view === "detail" && o.id && items.some(c => c.id === o.id)) {
+      // Seed the tab BEFORE the render. detailTab() resets _detailTab whenever
+      // _detailTabFor changes id, so both have to be set together or showDetail
+      // would clear it on the way in.
+      if (o.tab === "photos" || o.tab === "assessment") {
+        _detailTabFor = o.id;
+        _detailTab = o.tab;
+      }
+      showDetail(o.id);
+      if (typeof o.y === "number" && o.y > 0) {
+        requestAnimationFrame(() => window.scrollTo(0, o.y));
+      }
+      return;
+    }
+    if (o.view === "list" && typeof o.y === "number" && o.y > 0) {
+      requestAnimationFrame(() => window.scrollTo(0, o.y));
+    }
+  } catch (e) {
+    console.warn("[restore] could not reopen the last view:", e);
+  }
+}
+// The scroll position changes constantly, so it is written on a throttle
+// rather than on every scroll event. pagehide is the one that matters on iOS
+// (visibilitychange can be the last event a backgrounded page ever gets, and
+// unload is not fired at all), so both are hooked.
+let _rememberT = 0;
+function _rememberNow() {
+  const y = window.scrollY || document.documentElement.scrollTop || 0;
+  if (view === "detail" && selected) {
+    _rememberView({ view: "detail", id: selected.id, tab: detailTab(selected), y: y });
+  } else if (view === "list") {
+    _rememberView({ view: "list", y: y });
+  } else {
+    // add / edit: leave whatever was last recorded rather than recording a
+    // view that will not be restored.
+  }
+}
+function _initViewMemory() {
+  if (window._viewMemHooked) return;
+  window._viewMemHooked = true;
+  window.addEventListener("scroll", () => {
+    const n = Date.now();
+    if (n - _rememberT < 400) return;
+    _rememberT = n;
+    _rememberNow();
+  }, { passive: true });
+  window.addEventListener("pagehide", _rememberNow);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") _rememberNow();
+  });
+}
+
 function showDetail(id) {
   _listScrollY = window.scrollY || document.documentElement.scrollTop || 0;
   _lastDetailId = id;
@@ -6653,6 +6797,7 @@ function showDetail(id) {
   if (!selected) return;
   stickTierUnlocks(selected);
   view = "detail";
+  _rememberNow();
   const _ab = document.getElementById("add-btn");
   if (_ab) _ab.style.visibility = "hidden";
   const cost = totalCost(selected);
@@ -13281,7 +13426,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "6.20"),
+      appVersion: (window.RG_GRADING_VERSION || "6.38"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
