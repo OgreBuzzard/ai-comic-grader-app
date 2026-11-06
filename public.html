@@ -1145,8 +1145,9 @@
       const key = el.getAttribute('data-tab-btn');
       const on = key === _pubTab;
       const sk = PUB_TAB_SKIN[key];
-      el.style.background = on ? sk.bg : PUB_TAB_SKIN.off.bg;
-      el.style.color = on ? sk.fg : PUB_TAB_SKIN.off.fg;
+      el.style.background = on ? sk.bg : (key === 'photos' ? sk.bg : PUB_TAB_SKIN.off.bg);
+      el.style.color = on ? sk.fg : (key === 'photos' ? sk.fg : PUB_TAB_SKIN.off.fg);
+      el.style.opacity = on ? '1' : '0.72';
       el.style.borderColor = on ? sk.bd : PUB_TAB_SKIN.off.bd;
       el.style.borderBottom = 'none';
       el.style.marginBottom = '-1.5px';
@@ -1177,12 +1178,15 @@
     const btn = (key, label) => {
       const on = pubTab() === key;
       const sk = PUB_TAB_SKIN[key];
+      // PHOTOS keeps its beige closed as well as open - see index.html.
+      const offBg = key === 'photos' ? sk.bg : PUB_TAB_SKIN.off.bg;
+      const offFg = key === 'photos' ? sk.fg : PUB_TAB_SKIN.off.fg;
       return `<button type="button" data-tab-btn="${key}" onclick="setPubTab('${key}')" style="
         flex:1;min-width:0;border:1.5px solid ${on ? sk.bd : PUB_TAB_SKIN.off.bd};
         border-bottom:none;
-        ${on ? 'margin-bottom:-1.5px;position:relative;z-index:1;' : 'margin-top:3px;margin-bottom:-1.5px;'}
+        ${on ? 'margin-bottom:-1.5px;position:relative;z-index:1;' : 'margin-top:3px;margin-bottom:-1.5px;opacity:0.72;'}
         border-radius:9px 9px 0 0;padding:${on ? '9px' : '8px'} 8px;
-        background:${on ? sk.bg : PUB_TAB_SKIN.off.bg};color:${on ? sk.fg : PUB_TAB_SKIN.off.fg};
+        background:${on ? sk.bg : offBg};color:${on ? sk.fg : offFg};
         font-family:inherit;font-size:11px;font-weight:${on ? 800 : 700};letter-spacing:1.6px;
         cursor:pointer;line-height:1">${label}</button>`;
     };

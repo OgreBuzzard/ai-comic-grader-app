@@ -1062,7 +1062,6 @@ onAuthStateChanged(auth, async user => {
       background-position: right 11px center;
       -webkit-appearance: none;
       appearance: none;
-      font-weight: 600;
       color: #3a2e24;
       cursor: pointer;
     }
@@ -1072,7 +1071,10 @@ onAuthStateChanged(auth, async user => {
        labelled fields around it. Muted and regular while empty; it takes the
        normal weight and colour as soon as something is chosen. */
     select.rg-select.is-empty { color: #8a7a6a; font-weight: 500; }
-    select.rg-select option { color: #3a2e24; font-weight: 600; }
+    /* v6.35: 600 made the chosen value as loud as a heading on a form of
+       optional fields. 500, the same as any other field's text. */
+    select.rg-select { font-weight: 500; }
+    select.rg-select option { color: #3a2e24; font-weight: 500; }
     /* My Grade carries "9.8 — Near Mint/Mint", which is the longest string
        either of these holds. */
     select.rg-select.rg-select-grade { min-width: 230px; }
@@ -1720,9 +1722,11 @@ onAuthStateChanged(auth, async user => {
        align-self keeps it bottom-LEFT in a footer that centres everything
        else. */
     #lightbox-captured {
-      position: static;
-      align-self: flex-start;
-      padding-left: 2px;
+      /* v6.35: positioned against the STAGE, from the image's own box - see
+         _lbPlaceCapturedAt(). It used to sit in the footer, which put it in the
+         viewer's bottom-left corner with no relationship to the photo. */
+      position: absolute;
+      left: 0; top: 0;
       font-size: 11px;
       font-weight: 500;
       letter-spacing: 0.02em;
@@ -1748,7 +1752,7 @@ onAuthStateChanged(auth, async user => {
        NOT VERIFIED ON DEVICE - this is the standard fix for the standard
        symptom, and the symptom matches, but it is an iOS compositor bug and
        only an iPhone can confirm it. */
-    #lightbox-stage { width: 100%; flex: 1 1 auto; min-height: 0; display: grid; place-items: center; touch-action: none; overflow: hidden; transform: translateZ(0); contain: paint; }
+    #lightbox-stage { position: relative; width: 100%; flex: 1 1 auto; min-height: 0; display: grid; place-items: center; touch-action: none; overflow: hidden; transform: translateZ(0); contain: paint; }
     #lightbox-panzoom-wrap { max-width: 100%; max-height: 100%; touch-action: none; will-change: transform; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
     #lightbox-img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-drag: none; pointer-events: auto; touch-action: none; -webkit-touch-callout: none; cursor: grab; display: block; backface-visibility: hidden; -webkit-backface-visibility: hidden; transform: translateZ(0); }
     #lightbox-img:active { cursor: grabbing; }
@@ -2383,6 +2387,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
     <div id="lightbox-panzoom-wrap">
       <img id="lightbox-img" src="">
     </div>
+    <div id="lightbox-captured"></div>
   </div>
   <button id="lightbox-close" onclick="closeLightbox()" aria-label="Close">×</button>
   
@@ -2399,7 +2404,6 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
       <button id="lightbox-next" onclick="_lbStep(1)" aria-label="Next image" style="display:none">›</button>
     </div>
     <div id="lightbox-defects"></div>
-    <div id="lightbox-captured"></div>
   </div>
   <div id="lightbox-hint">PINCH OR DOUBLE-TAP TO ZOOM</div>
 </div>
@@ -3478,13 +3482,19 @@ function renderDetailTabs(item, opts) {
   const tab = (key, label) => {
     const on = cur === key;
     const sk = TAB_SKIN[key];
+    // v6.35: PHOTOS keeps its beige whether or not it is the open tab. The
+    // tab is the FOLDER - a folder does not change colour when you close it -
+    // and the grey "off" fill made the pair read as one live tab and one dead
+    // control rather than as two folders with one in front.
+    const off = { bg: key === 'photos' ? sk.bg : TAB_SKIN.off.bg, fg: key === 'photos' ? sk.fg : TAB_SKIN.off.fg };
     const click = ro ? '' : ` onclick="setDetailTab('${key}')"`;
     return `<button type="button"${click} style="
       flex:1;min-width:0;border:1.5px solid ${on ? sk.bd : TAB_SKIN.off.bd};
       border-bottom:none;
       ${on ? 'margin-bottom:-1.5px;position:relative;z-index:1;' : 'margin-top:3px;margin-bottom:-1.5px;'}
       border-radius:9px 9px 0 0;padding:${on ? '9px' : '8px'} 8px;
-      background:${on ? sk.bg : TAB_SKIN.off.bg};color:${on ? sk.fg : TAB_SKIN.off.fg};
+      background:${on ? sk.bg : off.bg};color:${on ? sk.fg : off.fg};
+      ${on ? '' : 'opacity:0.72;'}
       font-family:inherit;font-size:11px;font-weight:${on ? 800 : 700};letter-spacing:1.6px;
       cursor:${ro ? 'default' : 'pointer'};line-height:1">${label}</button>`;
   };
@@ -3642,7 +3652,7 @@ function renderAssessmentMap(item) {
   // THE SPINE IS THICKER. Main -> Deep -> Full is the assessment path; the
   // other six hang off it. 3px against 2px says which is which without a
   // legend.
-  const BOX_H = 62, GAP_Y = 24;
+  const BOX_H = 62, GAP_Y = 32;   // v6.35: 24 -> 32, so the arrowheads have room to read
   const COL = ['16.666%', '50%', '83.333%'];
   const SKIN = {
     // #152e10 / #4a7028 / #b8d820 are lifted from the BATCH ASSESSMENT
@@ -3652,10 +3662,14 @@ function renderAssessmentMap(item) {
     locked: { bg: '#6e6e66', bd: '#8a8a80', fg: '#f0efe9', sub: '#d8d6cc' },
     short:  { bg: '#e8b4ac', bd: '#b05a4a', fg: '#4a1a12', sub: '#7a2e20' }
   };
-  // Long names were wrapping to two lines inside a 62px box and pushing the
-  // cost out. Sized from the string's own length rather than a per-node
-  // override, so adding a tenth type needs nothing here.
-  const _labelPx = (t) => t.length > 15 ? 8 : t.length > 11 ? 9 : 10;
+  // v6.35: sized from the LONGEST WORD, not the whole string. Two lines is
+  // fine - "SIGNATURE" then "CHECK" - what is not fine is a word breaking
+  // across lines, and what decides that is the longest unbreakable run.
+  // "POST-CLEANING" breaks at its hyphen, so its longest run is "CLEANING".
+  const _labelPx = (t) => {
+    const longest = String(t).split(/[\s-]+/).reduce((a, w) => Math.max(a, w.length), 0);
+    return longest > 9 ? 9 : 10;
+  };
 
   const card = (n) => {
     const st = state[n.key];
@@ -3679,13 +3693,16 @@ function renderAssessmentMap(item) {
     const jump = live
       ? ` onclick="showEditToSection('${esc(item.id || '')}','${n.key}')" role="button" tabindex="0"`
       : '';
+    // min-width:0 is load-bearing: a grid item's default min-width is
+    // min-content, so one long label widened its column and pushed the map off
+    // the right of the screen.
     return `<div${jump} style="background:${sk.bg};border:1.5px solid ${sk.bd};border-radius:8px;
-        height:${BOX_H}px;box-sizing:border-box;padding:4px;display:flex;flex-direction:column;
-        align-items:center;justify-content:center;gap:2px;text-align:center;
+        height:${BOX_H}px;min-width:0;box-sizing:border-box;padding:4px 3px;display:flex;
+        flex-direction:column;align-items:center;justify-content:center;gap:2px;text-align:center;
         ${live ? 'cursor:pointer' : ''}">
         ${stars}
-        <div style="font-size:${_labelPx(n.label)}px;font-weight:800;letter-spacing:0.2px;line-height:1.1;
-          color:${sk.fg};white-space:nowrap">${esc(n.label)}</div>
+        <div style="font-size:${_labelPx(n.label)}px;font-weight:800;letter-spacing:0.2px;line-height:1.15;
+          color:${sk.fg};white-space:normal;overflow-wrap:normal;word-break:normal">${esc(n.label)}</div>
         ${cost}
         ${short ? `<div style="font-size:8px;font-weight:800;letter-spacing:0.6px;color:${sk.sub}">NEED CREDITS</div>` : ''}
       </div>`;
@@ -3708,7 +3725,7 @@ function renderAssessmentMap(item) {
   const r1b = BOX_H, r2t = BOX_H + GAP_Y, r2b = r2t + BOX_H, r3t = r2b + GAP_Y;
   const j1 = r1b + GAP_Y / 2, j2 = r2b + GAP_Y / 2;
   const mainRan = state.main === 'ran', deepRan = state.deep === 'ran';
-  const SPINE = 3, BRANCH = 2;
+  const SPINE = 5, BRANCH = 2;   // v6.35: 3 -> 5. The spine is the assessment path.
 
   const wires =
     vline(COL[0], r1b, GAP_Y, mainRan, SPINE) + head(COL[0], r2t - 7, 'down', mainRan, true) +
@@ -6570,18 +6587,41 @@ function wireSwipeRows() {
       delBtn._wired = true;
       // S23: route list swipe-delete through the same confirm POPUP the Detail
       // delete uses — the swipe alone was deleting with no confirmation/feedback.
-      delBtn.addEventListener("click", async e => {
-        e.preventDefault();
-        e.stopPropagation();
-        const id = delBtn.getAttribute("data-del-id");
-        const _it = items.find(c => c.id === id);
-        const _nm = _it ? ((_it.title || "this book") + (_it.issue ? " #" + _it.issue : "")) : "this book";
-        const ok = await appConfirm(`Delete ${_nm}? This can\'t be undone.`, "Delete");
-        if (ok) { swipeDeleteItem(id); return; }
-        const _fg = rowEl.querySelector(".swipe-fg");
-        if (_fg) { _fg.classList.remove("swiped-open"); _fg.style.transform = ""; }
-        rowEl.classList.remove("swipe-active");
-      });
+      //
+      // v6.35: fires on POINTER DOWN, not click. It took two taps: slide, tap,
+      // tap again, confirm. The first tap was being consumed somewhere between
+      // the row's own gesture handling and the click the browser synthesises
+      // after a touch, and chasing exactly where is not worth it when the
+      // button has one job and nothing to disambiguate - there is no drag, no
+      // long-press and no other gesture on it. Acting on the press removes the
+      // whole question.
+      // _busy guards the synthetic click that follows the touch, and also a
+      // second press while the confirm is open.
+      const _onDelete = async (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        if (delBtn._busy) return;
+        delBtn._busy = true;
+        try {
+          const id = delBtn.getAttribute("data-del-id");
+          const _it = items.find(c => c.id === id);
+          const _nm = _it ? ((_it.title || "this book") + (_it.issue ? " #" + _it.issue : "")) : "this book";
+          const ok = await appConfirm(`Delete ${_nm}? This can\'t be undone.`, "Delete");
+          if (ok) { swipeDeleteItem(id); return; }
+          const _fg = rowEl.querySelector(".swipe-fg");
+          if (_fg) { _fg.classList.remove("swiped-open"); _fg.style.transform = ""; }
+          rowEl.classList.remove("swipe-active");
+        } finally {
+          setTimeout(() => { delBtn._busy = false; }, 400);
+        }
+      };
+      if (window.PointerEvent) {
+        delBtn.addEventListener("pointerdown", _onDelete);
+      } else {
+        delBtn.addEventListener("touchstart", _onDelete, { passive: false });
+      }
+      // Mouse and keyboard still arrive as a click; _busy keeps it from
+      // running twice on touch.
+      delBtn.addEventListener("click", _onDelete);
     }
   });
 }
@@ -6793,9 +6833,14 @@ function showDetail(id) {
   // looked in both views and reported the feature missing - it was rendering
   // correctly the whole time, just unreachable. Same card shape as Batch and
   // Full above, so it is found the same way they are.
+  // v6.35: captured, not appended. It sat between the FULL card and the Full
+  // photos, cutting the run of assessment photo blocks in half. It belongs
+  // below the whole Full section - before a Full has run (card only) and after
+  // it has (card plus photos).
+  let _cleanCard = "";
   if (!isSample && _cleanUnlocked(selected)) {
     const _cr = selected.cleanRuns || 0;
-    html += `<div onclick="showEditToSection('${esc(selected.id)}','clean')" style="margin-top:14px;padding:14px;background:#0e2420;border:1.5px solid #2e7a6a;border-radius:12px;text-align:center;cursor:pointer">
+    _cleanCard = `<div onclick="showEditToSection('${esc(selected.id)}','clean')" style="margin-top:14px;padding:14px;background:#0e2420;border:1.5px solid #2e7a6a;border-radius:12px;text-align:center;cursor:pointer">
         <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:#6ad0b8;margin-bottom:5px">BOOK HAS BEEN CLEANED${_cr ? ` &middot; RUN ${_cr + 1}` : ""}</div>
         <div style="font-size:12px;color:#8fc4b8;line-height:1.45;margin-bottom:10px">Once this book has been cleaned/pressed, re-shoot the 10 photos for an objective BEFORE/AFTER comparison. The current grade will be preserved as the BEFORE and a new AFTER grade will be determined.</div>
         <button class="rg-btn rg-btn-assess rg-btn-silver" style="pointer-events:none;display:inline-block">POST-CLEANING ASSESS</button>
@@ -6807,6 +6852,7 @@ function showDetail(id) {
       html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT — INTERIOR &amp; STRUCTURE</div>\n        ${renderFullSlotGrid(interior, {editable: false, comicId: selected.id, item: selected})}\n      </div>`;
     }
   }
+  html += _cleanCard;
   if ((isRestorationCheckComplete(selected) || selected.restorationCheckTier || selected.restorationUnlocked) && Array.isArray(selected.restorationImages) && selected.restorationImages.some(Boolean)) {
     html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n        <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">UV CHECK</div>\n        ${renderRestorationSlotGrid(selected.restorationImages, {editable: false, comicId: selected.id})}\n      </div>`;
   }
@@ -7430,10 +7476,20 @@ function _lbShow() {
   if (!_lbList || !_lbList[_lbIdx]) return;
   const _el = _lbList[_lbIdx];
   img.src = (_el && _el.u) ? _el.u : _el;
+  // v6.35: the caption is positioned from the image's rendered box, which does
+  // not exist until the image has laid out. Place it again on load, on the next
+  // frame (a cached image fires no load event), and on resize/rotate.
+  if (!img._lbCaptionWired) {
+    img._lbCaptionWired = true;
+    img.addEventListener("load", _lbPlaceCapturedAt);
+    window.addEventListener("resize", _lbPlaceCapturedAt);
+    window.addEventListener("orientationchange", () => setTimeout(_lbPlaceCapturedAt, 250));
+  }
   _attachPanzoomToLightbox();
   _lbUpdateArrows();
   _lbRenderDefects();
   _lbRenderCapturedAt();
+  requestAnimationFrame(_lbPlaceCapturedAt);
 }
 
 // S22: the capture date, bottom-left, small and plain. Hidden entirely when the
@@ -7443,15 +7499,48 @@ function _lbRenderCapturedAt() {
   const el = document.getElementById("lightbox-captured");
   if (!el) return;
   const _el = _lbList && _lbList[_lbIdx];
-  const iso = (_el && typeof _el === "object") ? _el.t : null;
+  const _t = (_el && typeof _el === "object") ? _el.t : null;
+  // `t` was a bare ISO string before v6.35 and is {at, src} now. Older entries
+  // still arrive as a string.
+  const iso = (_t && typeof _t === "object") ? _t.at : _t;
+  const src = (_t && typeof _t === "object") ? _t.src : null;
   if (!iso) { el.style.display = "none"; el.textContent = ""; return; }
   const d = new Date(iso);
   if (isNaN(d.getTime())) { el.style.display = "none"; return; }
-  el.textContent = d.toLocaleString(undefined, {
+  const when = d.toLocaleString(undefined, {
     year: "numeric", month: "short", day: "numeric",
     hour: "numeric", minute: "2-digit"
   });
+  // "Taken" only where we know it was shot in the app. An uploaded file's
+  // timestamp is when it reached Robograder, which is not when the photo was
+  // taken, and saying so would be a guess dressed as a fact.
+  el.textContent = (src === "camera" ? "Taken " : "Added ") + when;
   el.style.display = "block";
+  _lbPlaceCapturedAt();
+}
+
+// Pin the caption under the IMAGE's bottom-left corner rather than the
+// viewer's. The panzoom wrapper shrink-wraps the image, so its box IS the
+// image's box; measuring it while the transform is identity gives the letterbox
+// rect whatever the aspect ratio. Hidden while zoomed: the caption is anchored
+// to the un-zoomed image, so at any other scale it would sit somewhere
+// arbitrary, and a zoomed-in reader is not looking for it.
+function _lbPlaceCapturedAt() {
+  const el = document.getElementById("lightbox-captured");
+  const stage = document.getElementById("lightbox-stage");
+  const wrap = document.getElementById("lightbox-panzoom-wrap");
+  if (!el || !stage || !wrap || el.style.display === "none") return;
+  let zoomed = false;
+  try {
+    const t = getComputedStyle(wrap).transform;
+    zoomed = !!(t && t !== "none" && t !== "matrix(1, 0, 0, 1, 0, 0)");
+  } catch (e) {}
+  if (zoomed) { el.style.visibility = "hidden"; return; }
+  el.style.visibility = "visible";
+  const sr = stage.getBoundingClientRect();
+  const wr = wrap.getBoundingClientRect();
+  el.style.left = Math.max(0, Math.round(wr.left - sr.left)) + "px";
+  el.style.top = Math.round(wr.bottom - sr.top + 6) + "px";
 }
 function _lbStep(dir) {
   if (!_lbList) return;
@@ -7640,9 +7729,13 @@ function _comicLbEntries(c) {
   // whoever is looking at the book, which is the person who needs to know.
   // It is evidence, not enforcement — deliberately. Blocking the swap would
   // punish the many people who legitimately re-shoot a bad photo.
+  // v6.35: the SOURCE comes through as well as the time. "Taken" and "Added"
+  // are different claims and the viewer was making neither - it printed a bare
+  // date and left the reader to guess what it was the date of.
   const _meta = (arr, i) => {
     const m = (arr || [])[i];
-    return (m && typeof m === 'object' && m.capturedAt) ? m.capturedAt : null;
+    if (!m || typeof m !== 'object' || !m.capturedAt) return null;
+    return { at: m.capturedAt, src: m.source || 'upload' };
   };
   const push = (u, d, g, gi, t) => {
     if (u) e.push({ u: u, d: (d == null ? null : d), g: g || null, gi: (gi == null ? null : gi), t: t || null });
@@ -17825,10 +17918,14 @@ async function cameraFinish() {
 // form re-renders after the crop sequence, so the node does not exist yet on
 // the first frame.
 function _scrollToCaptureSection(kind) {
+  // v6.35: the BUTTON, not the slots. After a capture the photos are already
+  // on screen behind the camera; what the user needs next is the control that
+  // spends them. Scrolling to the top of the slot grid put the button below
+  // the fold again.
   const ID = {
-    corner: "deep-corner-section",
-    interiorCover: "deep-corner-section",
-    interior: "full-staple-section",
+    corner: "hg-assess-btn",
+    interiorCover: "hg-assess-btn",
+    interior: "full-assess-btn",
     restoration: "uv-section",
     signature: "signature-section",
     insert: "insert-section",
@@ -17841,7 +17938,10 @@ function _scrollToCaptureSection(kind) {
     requestAnimationFrame(function () {
       const el = document.getElementById(id);
       if (!el) return;
-      const y = el.getBoundingClientRect().top + window.pageYOffset - 70;
+      // A button wants to be IN the view, not pinned to the top of it: show it
+      // with the last photos still visible above.
+      const r = el.getBoundingClientRect();
+      const y = r.top + window.pageYOffset - Math.max(70, (window.innerHeight - r.height) * 0.62);
       window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
     });
   });

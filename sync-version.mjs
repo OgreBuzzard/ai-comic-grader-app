@@ -133,6 +133,19 @@ if (checkOnly) {
     const r = spawnSync(process.execPath, [path.join(ROOT, 'check-cache-prefix.mjs')], { stdio: 'inherit' });
     if (r.status !== 0) process.exit(r.status || 1);
   }
+  // v6.34: and the values that live in TWO files. A client gate and its server
+  // backstop are duplicated deliberately - the server cannot trust the client -
+  // and nothing about editing one of them looks like editing the other. The
+  // Full FMV tier was lowered on the client alone in 6.32 and every $100-$499
+  // book failed for a day. Same reasoning as the cache-prefix check above:
+  // attach it to the command that already runs before every deploy rather than
+  // to somebody remembering.
+  {
+    const { spawnSync } = await import('node:child_process');
+    console.log('');
+    const r = spawnSync(process.execPath, [path.join(ROOT, 'check-paired-constants.mjs')], { stdio: 'inherit' });
+    if (r.status !== 0) process.exit(r.status || 1);
+  }
 } else {
   console.log(`\n✓ ${version} — ${changed} mirror(s) updated, ${MIRRORS.length - changed} already correct.`);
   console.log('  Native bundles take their version by injection at generate time; no action needed here.');

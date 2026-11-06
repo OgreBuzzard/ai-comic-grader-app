@@ -276,6 +276,12 @@
     // parts are joined top, middle and bottom.
     return `<div style="margin-bottom:8px">
       <div style="font-size:12px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:10px;text-align:center">ROBOGRADE SCORE</div>
+      <!-- v6.35: the sub-grade grid is locked to the score box's 104px. It was
+           auto-height and came out TALLER than the box beside it, leaving a
+           band of empty green under the score. Two equal rows: Front takes the
+           top half, Back / Spine / Int share the bottom. The 2:2:1 columns
+           still encode the weights (Front 50 on its own row, Back 20, Spine
+           20, Interior 10). -->
       <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px">
         ${_v3 ? window.RoboScoreV3.scoreBox({
           grade: _v3.grade,
@@ -290,27 +296,27 @@
           plus: !!(_v3.ceilingHit && _v3.upsell),
           size: 104, numColor: _sbNum, starColor: _sbStar, footerColor: _sbVer, pmColor: OLIVE_LT, bg: _sbBg, border: '1.5px solid ' + _sbBorder
         }) : `<div style="background:${_sbBg};border-radius:18px;width:104px;height:104px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border:1.5px solid ${_sbBorder};position:relative"><span style="font-family:'League Spartan',sans-serif;font-weight:900;color:${_sbNum};font-size:56px;transform:scaleX(0.82);display:inline-block">${scoreRounded}</span></div>`}
-        <div style="flex:1;display:grid;grid-template-columns:2fr 2fr 1fr;grid-template-rows:auto auto;gap:4px">
+        <div style="flex:1;display:grid;grid-template-columns:2fr 2fr 1fr;grid-template-rows:1fr 1fr;gap:4px;height:104px;box-sizing:border-box">
           <!-- Row 1: Front spans the full width of the sub-score grid. The
                proportional layout (Front full row; Back+Spine+Int below at
                2:2:1) encodes the underlying score weights (Front 50, Back 20,
                Spine 20, Interior 10) into the visible box sizes. The equal-
                size 2x2 grid that preceded this misrepresented Front as just
                1/4 of the score when it's actually 1/2. -->
-          <div style="grid-column:1/-1;background:${OLIVE};border-radius:6px;padding:10px 6px;text-align:center">
+          <div style="grid-column:1/-1;background:${OLIVE};border-radius:6px;padding:4px 6px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0">
             <div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:29px;font-weight:800;color:${CHARTREUSE};line-height:1">${fs}</div>
             <div style="font-size:9px;color:${OLIVE_LT};letter-spacing:1.5px;margin-top:3px">FRONT</div>
           </div>
           <!-- Row 2: Back and Spine at 2/5 each, Interior at 1/5 ("INT"). -->
-          <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
+          <div style="background:${OLIVE};border-radius:6px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0">
             <div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:20px;font-weight:800;color:${CHARTREUSE};line-height:1">${bs}</div>
             <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:2px">BACK</div>
           </div>
-          <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
+          <div style="background:${OLIVE};border-radius:6px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0">
             <div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:20px;font-weight:800;color:${CHARTREUSE};line-height:1">${ss}</div>
             <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:2px">SPINE</div>
           </div>
-          <div style="background:${OLIVE};border-radius:6px;padding:6px;text-align:center">
+          <div style="background:${OLIVE};border-radius:6px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:0">
             <div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:20px;font-weight:800;color:${CHARTREUSE};line-height:1">${ins}</div>
             <div style="font-size:8px;color:${OLIVE_LT};letter-spacing:1px;margin-top:2px">INT</div>
           </div>

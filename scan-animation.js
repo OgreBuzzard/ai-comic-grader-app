@@ -183,7 +183,12 @@
     { idx: 4, slotName: 'full-4', rotate: true  },  // Ext Bottom Staple
     { idx: 5, slotName: 'full-5', rotate: false },  // Int Staples (portrait capture -> upright)
     { idx: 0, slotName: 'full-0', rotate: true  },  // Top Pages
-    { idx: 1, slotName: 'full-1', rotate: true  },  // Outer Edge
+    // v6.35: CCW, not CW. The Outer Edge is shot from the opposite side of the
+    // book to the other edge strips, so rotating it the same way as them put it
+    // on screen upside down relative to the rest of the sweep. rotate-CCW is
+    // exactly 180 degrees from rotate-CW and shares .rotated's sizing, so
+    // nothing else about the slot changes.
+    { idx: 1, slotName: 'full-1', rotate: true, rotateCCW: true },  // Outer Edge
     { idx: 2, slotName: 'full-2', rotate: true  },  // Bottom Pages
   ];
 

@@ -1707,7 +1707,7 @@ function ensureStylesInjected() {
     color: #0d0d0f; line-height: 1;
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
-    transform: scaleX(0.625);
+    transform: scaleX(0.78);
     transform-origin: center;
   }
   /* S22: Case had no .rg-plus rule. The base one is scoped to .rg-label, which
@@ -1821,10 +1821,21 @@ function ensureStylesInjected() {
        printed code and the code the QR encodes are the same thing, so they
        share an edge. -285 stopped at 947 and read as arbitrary, because it
        was: it was measured off the QR column's LEFT edge. */
+    /* v6.36b: the BAND goes back to full width (-454, the QR's right edge):
+       GRADED sits at its left and the ID pair at its right, and shortening the
+       band wrapped the ID onto a second line. The RULE is a different object
+       from the band, so it is drawn as a background strip rather than a
+       border - 644px, stopping 30px short of the QR's left edge at x=935, so
+       the QR's bottom edge rests ON the line instead of being cut off from the
+       ID text by it. */
     left: 0; right: -454px; bottom: 0;
     height: 48px;
     box-sizing: border-box;
-    border-top: 1px solid #2a3a18;
+    border-top: none;
+    background-image: linear-gradient(#2a3a18, #2a3a18);
+    background-repeat: no-repeat;
+    background-position: left top;
+    background-size: 644px 1px;
     padding-top: 8px;
   }
   .rg-label-l .meta-grid {
@@ -1853,8 +1864,12 @@ function ensureStylesInjected() {
        right edge / 3.5" from left). align-items:flex-end so the QR
        canvas's right edge lands exactly on x=1008, matching the URL
        beneath it (which is right-anchored to the same line). */
-    /* S22: bottom edge 14px clear of the meta rule, matching Square. */
-    right: 36px; bottom: 76px;
+    /* v6.36: 76 -> 58. The band is 48px tall against .info's bottom:10, so the
+       rule sits at labelH-58 and the QR's bottom edge now lands on it. The
+       rule itself stops 20px short of the QR (see .info-lower): it used to run
+       underneath the code and cut it off from the ID text below, and those two
+       are the same thing pointing at the same place. Wide does it this way. */
+    right: 36px; bottom: 58px;
     width: 160px;
     display: flex; flex-direction: column;
     align-items: flex-end; gap: 4px;
@@ -2178,7 +2193,7 @@ function ensureStylesInjected() {
     font-family: 'Noto Sans Display', sans-serif;
     display: inline-block;
     /* v6.20: 17px, not 14 - real-font ink left only 5px over the stars. */
-    transform: scaleX(0.625) translateY(17px);
+    transform: scaleX(0.78) translateY(17px);
     transform-origin: center;
   }
   /* S22: the (+) was rendering UNDER the number because Square had no rule
@@ -2282,10 +2297,16 @@ function ensureStylesInjected() {
        .info's right edge is x=284 and the band ends at 558, hence -274; .info's
        bottom is y=306 and the band's bottom is 562, hence -256. Negative
        insets rather than a second element, so there is one thing to move. */
+    /* v6.36b: band full width (-274); the rule is a short background strip -
+       see the Case note. 360px stops it at x=378, 20px short of the QR. */
     left: 0; right: -274px; bottom: -256px;
     height: 48px;
     box-sizing: border-box;
-    border-top: 1px solid #2a3a18;
+    border-top: none;
+    background-image: linear-gradient(#2a3a18, #2a3a18);
+    background-repeat: no-repeat;
+    background-position: left top;
+    background-size: 360px 1px;
     padding-top: 8px;
   }
   .rg-label-square .meta-grid {
@@ -2314,7 +2335,9 @@ function ensureStylesInjected() {
      asked for - flush would read as the code sitting ON the line. */
   .rg-label-square .qr-col {
     position: absolute;
-    right: 18px; bottom: 76px;
+    /* v6.36: 76 -> 62, so the QR rests on the rule (y=514: band bottom 562,
+       height 48). Same correction as Case. */
+    right: 18px; bottom: 62px;
     width: 160px; height: 160px;
     display: flex; align-items: center; justify-content: center;
   }
@@ -2720,7 +2743,20 @@ function ensureStylesInjected() {
 
   /* Rules: the divider and the info-upper border, black and 2px so they
      survive the head. */
+  /* v6.36b: Wide still draws its rule as a border; Case and Square draw a
+     SHORT rule as a background strip, so mono overrides whichever the variant
+     actually uses. */
   .mono .info-lower { border-top: 2px solid #000 !important; }
+  .rg-label-l.mono .info-lower {
+    border-top: none !important;
+    background-image: linear-gradient(#000, #000) !important;
+    background-size: 644px 2px !important;
+  }
+  .rg-label-square.mono .info-lower {
+    border-top: none !important;
+    background-image: linear-gradient(#000, #000) !important;
+    background-size: 360px 2px !important;
+  }
   .mono .info-upper { border-bottom-color: #000 !important; }
 
   /* QR: the stock is already white, so the white pad is redundant — drop it
@@ -2786,7 +2822,12 @@ function renderModal(modal, comic, allItems) {
 
   // Pluralize correctly on the subtitle. Tracks the active format's
   // sheetCount: 20 for Small (Avery 8161), 7 for Large (OL5450).
-  const subtitleText = `Labels print ${fmt.sheetCount} to a sheet`;
+  // v6.36: in single-label mode neither of these is true. One label is being
+  // printed, on its own stock, so "Queue: 1 / 14" counts toward a capacity
+  // that is not being used and "Labels print 14 to a sheet" describes a sheet
+  // that is not being printed. Both are sheet facts; they belong to the sheet
+  // flow, which is List view.
+  const subtitleText = _singleMode ? '' : `Labels print ${fmt.sheetCount} to a sheet`;
 
   // S12 May 6: 3-way size segmented control replaces the binary Small/Large
   // pill. Each segment is "active" when its size is the currently selected
@@ -2889,8 +2930,8 @@ function renderModal(modal, comic, allItems) {
       <div class="lvm-header">
         <div class="lvm-title">Print Label</div>
         <div class="lvm-header-right">
-          <div class="${queueClass}">Queue: ${queueCount} / ${queueCap}</div>
-          <div class="lvm-subtitle">${subtitleText}</div>
+          ${_singleMode ? '' : `<div class="${queueClass}">Queue: ${queueCount} / ${queueCap}</div>`}
+          ${subtitleText ? `<div class="lvm-subtitle">${subtitleText}</div>` : ''}
         </div>
       </div>
       <div class="lvm-toggle-row lvm-toggle-row-sizes">
@@ -2928,6 +2969,7 @@ function renderModal(modal, comic, allItems) {
       </div>
       <div class="lvm-actions">
         <button class="rg-btn rg-btn-primary rg-btn-md" data-action="print" ${printDisabled ? 'disabled' : ''}>Save as PDF</button>
+        <button class="rg-btn rg-btn-secondary rg-btn-md" data-action="share" ${printDisabled ? 'disabled' : ''}>Share…</button>
       </div>
       ${buyLinkHTML}
     </div>
@@ -3007,7 +3049,16 @@ function renderModal(modal, comic, allItems) {
   // feel like erasing what you just added. Tap-outside avoids that conflict.
   modal.querySelector('[data-action="print"]').addEventListener('click', (e) => {
     if (e.currentTarget.disabled) return;
-    handleSavePDF(modal, comic, allItems);
+    handleSavePDF(modal, comic, allItems, 'save');
+  });
+  // v6.36: SAVE and SHARE are different intentions and were the same button.
+  // "Save as PDF" opened the iOS share sheet, where Save to Files is behind
+  // "View More" - so saving a label, the common case, cost three extra taps
+  // and the thing the user wanted was the one option not on screen.
+  const _shareBtn = modal.querySelector('[data-action="share"]');
+  if (_shareBtn) _shareBtn.addEventListener('click', (e) => {
+    if (e.currentTarget.disabled) return;
+    handleSavePDF(modal, comic, allItems, 'share');
   });
 
   // Tap-outside-to-close. Backdrop click closes; clicks on .lvm-card stop
@@ -3221,7 +3272,7 @@ function loadScript(src) {
   });
 }
 
-async function handleSavePDF(modal, currentComic, allItems) {
+async function handleSavePDF(modal, currentComic, allItems, intent) {
   // S17: the Print ownership category IS the queue. Print every passed-in book
   // that has an RG grade (only graded books get a label) — no separate
   // localStorage queue. Books are added/removed via the List-view LABEL toggle.
@@ -3235,20 +3286,26 @@ async function handleSavePDF(modal, currentComic, allItems) {
 
   // Show a transient "Generating PDF…" overlay so the user knows something
   // is happening (PDF gen takes 2-5s for a full sheet).
-  const saveBtn = modal.querySelector('[data-action="print"]');
+  // v6.36: whichever button was pressed shows the progress, and BOTH are
+  // disabled - a second tap on the other one while the first is rendering
+  // would start a second PDF.
+  const saveBtn = modal.querySelector(intent === 'share' ? '[data-action="share"]' : '[data-action="print"]');
+  const otherBtn = modal.querySelector(intent === 'share' ? '[data-action="print"]' : '[data-action="share"]');
   const origLabel = saveBtn ? saveBtn.textContent : 'Save as PDF';
   if (saveBtn) {
     saveBtn.disabled = true;
     saveBtn.textContent = 'Generating…';
   }
+  if (otherBtn) otherBtn.disabled = true;
 
   try {
     await ensurePdfLibsLoaded();
-    await generatePDF(comicsToprint, modal);
+    await generatePDF(comicsToprint, modal, intent === 'share' ? 'share' : 'save');
     renderModal(modal, currentComic, allItems);
   } catch (err) {
     console.error('[label] PDF generation failed:', err);
     alert('PDF generation failed: ' + err.message);
+    if (otherBtn) otherBtn.disabled = false;
     if (saveBtn) {
       saveBtn.disabled = false;
       saveBtn.textContent = origLabel;
@@ -3278,7 +3335,7 @@ async function handleSavePDF(modal, currentComic, allItems) {
 //   LARGE (OL5450):
 //     Top margin 0.25", left margin 0.5", no gaps
 //     Label 7.5" × 1.5", 1 col × 7 rows = 7 per sheet
-async function generatePDF(comics, modal) {
+async function generatePDF(comics, modal, intent) {
   const { jsPDF } = window.jspdf;
   // SINGLE MODE: the page IS the label. Declared AFTER opts/fmt are read below
   // in sheet mode, so the format lookup is duplicated here - cheap, and it
@@ -3601,6 +3658,42 @@ async function generatePDF(comics, modal) {
     //
     const Cap = window.Capacitor;
     const isNative = !!(Cap && typeof Cap.isNativePlatform === 'function' && Cap.isNativePlatform());
+    const _wantShare = intent === 'share';
+
+    // v6.36 — SAVE WRITES STRAIGHT TO FILES.
+    // The share sheet was the only delivery, and Save to Files lives behind
+    // "View More" on it, so the common case - keep the label, print it from
+    // the printer's own app - cost: Save as PDF, View More, Save to Files,
+    // pick a folder, Save. Five taps for a file the user already said they
+    // wanted. Writing to DOCUMENTS puts it in Files → On My iPhone →
+    // Robograder in one.
+    //
+    // THIS NEEDS TWO Info.plist KEYS TO BE VISIBLE, and without them the file
+    // is written to a private directory the user cannot reach:
+    //     UIFileSharingEnabled            = YES
+    //     LSSupportsOpeningDocumentsInPlace = YES
+    // If they are missing, Share… is still there and still works.
+    if (isNative && !_wantShare) {
+      const P = (Cap && Cap.Plugins) || {};
+      const FS = P.Filesystem;
+      if (FS) {
+        try {
+          const b64 = pdf.output('datauristring').split(',')[1];
+          await FS.writeFile({ path: filename, data: b64, directory: 'DOCUMENTS' });
+          try {
+            if (typeof window.appAlert === 'function') {
+              await window.appAlert('Saved to Files → On My iPhone → Robograder\n\n' + filename);
+            }
+          } catch (e) {}
+          return;
+        } catch (e) {
+          // Fall through to the share sheet rather than failing: a label the
+          // user cannot get at is worse than an extra tap.
+          console.warn('[label] save to Documents failed, falling back to share:', e);
+        }
+      }
+    }
+
     if (isNative) {
       const P = (Cap && Cap.Plugins) || {};
       const FS = P.Filesystem;
@@ -3634,7 +3727,9 @@ async function generatePDF(comics, modal) {
     // browser download where file-sharing isn't offered. This path works today.
     const pdfBlob = pdf.output('blob');
     const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
-    if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+    // v6.36: on the web, SAVE is a download - which on iOS Safari lands in
+    // Files → Downloads without a share sheet. Only Share… asks to share.
+    if (_wantShare && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
       try {
         await navigator.share({ files: [pdfFile], title: filename });
         return; // delivered via the share sheet (finally still runs cleanup)
@@ -3927,8 +4022,18 @@ function renderLabelMarkup(comic, opts) {
   //               per size by rasterising the box with a three-glyph score.
   const _NUMFIT = {
     'small':   { interior: 250, sx: 0.78,  max: 204, plusBudget: 128 },  // 212 overlapped the stars
-    'small-l': { interior: 246, sx: 0.625, max: 150, plusBudget: 112 },
-    'square':  { interior: 250, sx: 0.625, max: 172, plusBudget: 102 },
+    // v6.36: sx 0.625 -> 0.78 to match Wide. 0.625 squeezed the glyph 25%
+    // harder, which thins every stroke - the numeral read as a lighter WEIGHT
+    // than Wide's rather than a smaller one. Same compression and face on all
+    // three now; only the size differs, which is the only thing that should.
+    // The CAPS DO NOT CHANGE. Dropping them to preserve the drawn WIDTH would
+    // have shrunk the numeral's HEIGHT by the same 25% - fixing the weight by
+    // making the number smaller, which is not what was asked and left 21px of
+    // dead air under the stars. Height follows font-size, so the size stays
+    // and the glyph simply draws wider: "9.5" at 150px/0.78 is 163px against
+    // a 246px interior, and still fits.
+    'small-l': { interior: 246, sx: 0.78, max: 150, plusBudget: 112 },
+    'square':  { interior: 250, sx: 0.78, max: 172, plusBudget: 102 },
   };
   const _nf = _NUMFIT[opts.size];
   let _numStyle = '';
