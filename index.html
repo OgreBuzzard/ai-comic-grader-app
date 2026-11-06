@@ -1350,6 +1350,30 @@ onAuthStateChanged(auth, async user => {
        Scoped to the interior-cover guide only (toggled in JS by guide filename), so
        the staple/edge/main guides are unaffected. */
     #camera-guide.guide-interior-cover { padding-top: calc(env(safe-area-inset-top, 0px) + 56px); }
+    /* v6.42: THE SHUTTER MOVES OFF THE BOOK ON THE OPEN-SPREAD SHOTS.
+       Interior Front / Interior Back are the two landscape captures: the book is
+       open and fills the frame edge to edge. A shutter at bottom-centre sits on
+       top of the comic, which is the part you are trying to frame. In portrait
+       the same button would be at the side, so put it there - centre-right,
+       where a thumb already is when the phone is turned.
+       position:fixed rather than moving it inside #camera-controls: that bar
+       also holds Photo Library and the lens selector, and those belong at the
+       bottom. Fixed against the viewport is the same box as the modal
+       (#camera-modal is position:fixed; inset:0), so this positions against the
+       frame without disturbing its siblings.
+       The guide then reserves room on the RIGHT instead of losing it at the
+       bottom, so the spread actually gets taller than it was. */
+    body.camera-kind-spread #camera-capture {
+      position: fixed;
+      left: auto; top: 50%;
+      right: calc(env(safe-area-inset-right, 0px) + 22px);
+      transform: translateY(-50%);
+      z-index: 8;
+    }
+    body.camera-kind-spread #camera-capture:active::before { transform: translate(-50%, -50%) scale(0.85); background: #d8d8d8; }
+    body.camera-kind-spread #camera-guide {
+      padding-right: calc(env(safe-area-inset-right, 0px) + 124px);
+    }
     /* S13: Rotate-orientation card. Shown inside the camera-stage when the
        active slot's preferred orientation doesn't match the device's current
        orientation. Replaces the camera viewfinder + guide for as long as the
@@ -2382,12 +2406,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.41";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.42";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.41");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.42");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -11602,7 +11626,10 @@ async function assessHighGrade() {
     const _pgTo = (() => { const n = parseFloat(cgc && cgc.grade); return Number.isFinite(n) ? n : null; })();
     const _pgImproved = (initialPG != null && _pgTo != null) ? (_pgTo > initialPG) : false;
     const _deepImproved = _rgImproved || _pgImproved;
-    dbg(`deep refund test: RG improved=${_rgImproved}, PG ${initialPG} -> ${_pgTo} improved=${_pgImproved} => charged=${_deepImproved}`);
+    // v6.42: console, not dbg(). `dbg` is a LOCAL const inside mountResults;
+    // this line is in assessHighGrade, where the name does not exist. See the
+    // version header - this one line killed every Deep assessment in 6.41.
+    console.log(`[deep] refund test: RG improved=${_rgImproved}, PG ${initialPG} -> ${_pgTo} improved=${_pgImproved} => charged=${_deepImproved}`);
     // S25: refund the Deep credit only the FIRST time a re-run fails to improve.
     // deepRefundUsed then latches (persisted via onAssessmentSuccess->submitForm),
     // so all later re-runs are charged — no endless refunded re-rolls.
@@ -13505,7 +13532,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "6.41"),
+      appVersion: (window.RG_GRADING_VERSION || "6.42"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
@@ -17277,8 +17304,14 @@ async function cameraOpen(state) {
   document.body.classList.remove("camera-perm-shown");
   modal.classList.add("open");
   document.body.classList.add("camera-modal-open");
-  document.body.classList.remove("camera-kind-main", "camera-kind-corner", "camera-kind-interior", "camera-kind-restoration");
+  document.body.classList.remove("camera-kind-main", "camera-kind-corner", "camera-kind-interior", "camera-kind-restoration", "camera-kind-spread");
   document.body.classList.add(state.kind === "corner" ? "camera-kind-corner" : state.kind === "interior" || state.kind === "interiorCover" || state.kind === "restoration" ? "camera-kind-interior" : "camera-kind-main");
+  // v6.42: an ADDITIONAL class, not a replacement - interiorCover still wants
+  // everything camera-kind-interior gives it (the 16px slot label). This one
+  // only moves the shutter. Scoped to interiorCover alone: the Full interior
+  // slots and the restoration spreads are landscape too, and if Matt wants
+  // them moved as well it is one more kind on this line.
+  document.body.classList.toggle("camera-kind-spread", state.kind === "interiorCover");
   document.body.classList.toggle("camera-is-card", !!(_cameraState && _cameraState.isCard));
   const video = document.getElementById("camera-video");
   if (video) video.style.objectFit = "cover";
@@ -17433,7 +17466,19 @@ async function cameraOpen(state) {
             // INTENTIONALLY want it; for wide/main captures force the MINIMUM
             // zoom so a full cover fits in frame (was applying 2x here — the bug).
             const _zmin = caps.zoom.min || 1;
-            const _wantsZoom = _cameraState.kind === "corner" || _cameraState.kind === "signature" || _cameraState.kind === "carddeep" || _interiorZoomSlot || _isZoomedRestorationSlot;
+            // v6.42: `_interiorZoomSlot` and `_isZoomedRestorationSlot` used to
+            // be here and NEITHER HAS EVER EXISTED - they appear nowhere else in
+            // this file. `||` evaluates left to right, so on any kind that is not
+            // corner / signature / carddeep this line threw ReferenceError, the
+            // enclosing catch logged "Android zoom fallback failed", and NO zoom
+            // constraint was applied at all. The S19 forced-wide fix has been
+            // dead on this path since it was written. Found by
+            // check-undefined-names.mjs on its first run.
+            // They are simply removed: whatever they were meant to mean was never
+            // written down, and the remaining three kinds are the ones the comment
+            // above says intentionally want zoom. Everything else forces minimum,
+            // which is the behaviour this branch exists to produce.
+            const _wantsZoom = _cameraState.kind === "corner" || _cameraState.kind === "signature" || _cameraState.kind === "carddeep";
             const z = _wantsZoom ? Math.min(caps.zoom.max, Math.max(_zmin, targetZoom)) : _zmin;
             await track.applyConstraints({ advanced: [ { zoom: z } ] });
             console.log("[camera] Android no-label fallback: zoom", z, _wantsZoom ? "(intentional)" : "(forced wide)", "of max", caps.zoom.max);
@@ -18090,8 +18135,9 @@ function _cameraChainNext() {
   _cameraState.captures = [];
   _cameraState.current = nextSlots[0];
   _cameraState.queue = nextSlots.slice(1);
-  document.body.classList.remove("camera-kind-corner", "camera-kind-main", "camera-kind-restoration", "camera-kind-interior");
+  document.body.classList.remove("camera-kind-corner", "camera-kind-main", "camera-kind-restoration", "camera-kind-interior", "camera-kind-spread");
   document.body.classList.add(_nextKind === "corner" ? "camera-kind-corner" : "camera-kind-interior");
+  document.body.classList.toggle("camera-kind-spread", _nextKind === "interiorCover");
   console.log("[camera] chaining " + _k + " -> " + _nextKind + ", slots:", nextSlots);
   cameraOpenSlot(_cameraState.current);
   return true;
@@ -18360,7 +18406,7 @@ function cameraCloseStream() {
     _cameraOrientationTimeout = null;
   }
   document.body.classList.remove("camera-modal-open");
-  document.body.classList.remove("camera-kind-main", "camera-kind-corner", "camera-kind-interior");
+  document.body.classList.remove("camera-kind-main", "camera-kind-corner", "camera-kind-interior", "camera-kind-spread");
   document.body.classList.remove("camera-perm-shown");
 }
 

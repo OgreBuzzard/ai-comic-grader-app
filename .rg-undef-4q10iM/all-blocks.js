@@ -1,0 +1,17218 @@
+
+  if (location.hostname === "robograder.app") {
+    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+    n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+    document,'script','https://connect.facebook.net/en_US/fbevents.js');
+    fbq('init','2154744801750730'); fbq('track','PageView');
+  }
+  
+
+  if (location.hostname === "robograder.app") {
+    var _gaS = document.createElement("script"); _gaS.async = true;
+    _gaS.src = "https://www.googletagmanager.com/gtag/js?id=G-LW4DM2DHTJ";
+    document.head.appendChild(_gaS);
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function(){ dataLayer.push(arguments); };
+    gtag("js", new Date());
+    gtag("config", "G-LW4DM2DHTJ");
+    // S22: Google Ads destination rides the SAME gtag.js load. One library, two
+    // destinations — this is what gtag multi-destination is for, and it keeps
+    // the Ads tag inside the hostname guard above so it is stripped from the
+    // iOS/Android builds exactly like the Meta Pixel and GA4.
+    // DO NOT paste Google's stock "Google tag" snippet at the top of this file:
+    // it is ungated, so it ships the Ads tag inside the native apps, and it
+    // redeclares gtag() which fights with the shim above.
+    gtag("config", "AW-16873230529");
+    try {
+      var _pp = new URLSearchParams(location.search);
+      if (_pp.get("payment") === "success") {
+        var _cr = parseInt(_pp.get("credits") || "0", 10);
+        var _pv = ({ 5: 10, 20: 30, 100: 100 })[_cr] || 0;
+        var _sid = _pp.get("sid") || ("web-" + Date.now());
+        gtag("event", "purchase", { transaction_id: _sid, value: _pv, currency: "USD",
+          items: [{ item_name: "Robograder Credits", item_variant: _cr + " credits", quantity: 1, price: _pv }] });
+        _pp.delete("payment"); _pp.delete("credits"); _pp.delete("sid");
+        var _qs = _pp.toString();
+        if (history.replaceState) history.replaceState(null, "", location.pathname + (_qs ? "?" + _qs : "") + location.hash);
+      }
+    } catch (e) { console.warn("[ga4 purchase]", e); }
+  }
+  
+
+  window.RGScoreV2 = (function () {
+    const LADDER = ["0","0+","1-","1","1+","2-","2","2+","3-","3","3+","4-","4","4+","5-","5","5+","6-","6","6+","7-","7","7+","8-","8","8+","9-","9","9+","10-","10"];
+    const CONFIG = {
+      comic: [ {key:"front",label:"Front",max:50}, {key:"back",label:"Back",max:20}, {key:"spine",label:"Spine",max:20}, {key:"interior",label:"Interior",max:10} ],
+      card:  [ {key:"surface",label:"Surface",max:50}, {key:"corners",label:"Corners",max:20}, {key:"edges",label:"Edges",max:20}, {key:"centering",label:"Centering",max:10} ],
+    };
+    const clampTier = t => Math.max(0, Math.min(30, t));
+    const roundHalfUp = x => Math.floor(x + 0.5);
+    const tierFromThirds = th => LADDER[clampTier(th)];
+    const subThirds = (val, max) => Math.max(0, Math.min(roundHalfUp(max*0.3), roundHalfUp((val||0)*0.3)));
+    const gradeFromScore = score => tierFromThirds(clampTier(roundHalfUp((score||0)*0.3)));
+    function fromSubscores(subscores, type) {
+      const cfg = CONFIG[type] || CONFIG.comic;
+      const subs = cfg.map(c => { const th = subThirds(subscores && subscores[c.key], c.max); return { key:c.key, label:c.label, thirds:th, maxThirds: roundHalfUp(c.max*0.3), display: tierFromThirds(th) }; });
+      const totalThirds = clampTier(subs.reduce((a,s)=>a+s.thirds,0));
+      return { grade: tierFromThirds(totalThirds), totalThirds, subs };
+    }
+    function pmBand(gradeLabel, pmNotches) { const i = LADDER.indexOf(gradeLabel); if (i < 0 || !(pmNotches>0)) return gradeLabel; return LADDER[clampTier(i-pmNotches)] + " to " + LADDER[clampTier(i+pmNotches)]; }
+    const PM_BASE = { slabbed:4, main:2, deep:1, full:0 };
+    return { LADDER, CONFIG, gradeFromScore, fromSubscores, tierFromThirds, subThirds, pmBand, PM_BASE, tierIndex: l=>LADDER.indexOf(l) };
+  })();
+  
+
+// lib/roboscore_v3.js — Robograder Scoring v3 (half-point 0–10).
+// Pure display/quantization transform over the stored 0–100 subscores.
+// See claude/SCORING_V3_SPEC.md. Classic-script + CommonJS dual export.
+(function (root) {
+  "use strict";
+
+  function roundHalf(x) { return Math.round(Number(x) * 2) / 2; }
+  function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
+
+  function interiorBase(pageQuality) {
+    var pq = String(pageQuality || "").toLowerCase().trim();
+    if (!pq) return 0.5;
+    if (pq === "white") return 1;
+    // S23: Off-White or better rounds up to a full 1 (a book with Off-White pages
+    // can now reach a perfect interior). Cream-tinged tiers stay 0.5; cream/tan/
+    // brittle score 0.
+    if (pq === "off-white to white" || pq === "off-white") return 1;
+    if (pq === "cream to off-white") return 0.5;
+    if (pq.indexOf("cream") === 0 || pq.indexOf("tan") !== -1 || pq.indexOf("brittle") !== -1) return 0;
+    if (pq.indexOf("off-white") !== -1) return 1;
+    return 0;
+  }
+  function interiorTier(pageQuality, interiorDefect) {
+    var base = interiorBase(pageQuality);
+    if (interiorDefect) base = Math.max(0, base - 0.5);
+    return base;
+  }
+
+  var DEPTH_CAP = { main: 9.0, deep: 9.5, full: 10.0 };
+
+  // S23: a true 10 is reserved for a genuinely flawless book. A comic needs NO
+  // listed defects, White pages (full 1/1 interior), and v1 faces >= these
+  // minimums; a card needs the same on its axes plus full centering. Anything
+  // short is capped at 9.5 so round-then-sum can't hand a 10 to a flawed book.
+  // Bump these to 50/20/20 (and centering10 stays 10) to make 10 near-unreachable.
+  var TEN_GATE = { front: 49, back: 19, spine: 19, centering10: 10 };
+
+  // Confidence-hold cap: shave 0.5 at a time until the subscores sum to the
+  // ceiling. v5.05: shave DEFECT-BEARING faces FIRST (a spine-only defect no longer
+  // leaves Spine at a perfect 2.0 while Front/Back get docked), then fall back to
+  // the safe filler order front -> back -> spine (Front is safest to hold, restored
+  // first as depth increases). Interior (page-quality) is never shaved. Subscores
+  // always reconcile to the displayed grade.
+  function shaveToCap(sub, cap, defectFaces) {
+    var s = { front: sub.front, back: sub.back, spine: sub.spine, interior: sub.interior };
+    var df = defectFaces || {};
+    var order = [];
+    ["front", "back", "spine"].forEach(function (k) { if (df[k]) order.push(k); });
+    ["front", "back", "spine"].forEach(function (k) { order.push(k); });
+    var i = 0, guard = 0;
+    function total() { return s.front + s.back + s.spine + s.interior; }
+    while (total() > cap + 1e-9 && guard < 200) {
+      var k = order[i % order.length];
+      if (s[k] >= 0.5) s[k] = roundHalf(s[k] - 0.5);
+      i++; guard++;
+      if (s.front <= 0 && s.back <= 0 && s.spine <= 0) break;
+    }
+    return s;
+  }
+
+  // S23: card analogue of shaveToCap — shave 0.5 round-robin surface -> corners ->
+  // edges (centering fixed) until the subscores sum to the ceiling.
+  function shaveCardToCap(sub, cap) {
+    var s = { surface: sub.surface, corners: sub.corners, edges: sub.edges, centering: sub.centering };
+    var order = ["surface", "corners", "edges"];
+    var i = 0, guard = 0;
+    function total() { return s.surface + s.corners + s.edges + s.centering; }
+    while (total() > cap + 1e-9 && guard < 200) {
+      var k = order[i % order.length];
+      if (s[k] >= 0.5) s[k] = roundHalf(s[k] - 0.5);
+      i++; guard++;
+      if (s.surface <= 0 && s.corners <= 0 && s.edges <= 0) break;
+    }
+    return s;
+  }
+
+  function photoSeverity(pg) {
+    if (!pg) return 0;
+    var c = 0, b = 0;
+    ["focus", "lighting", "cropping", "angle"].forEach(function (k) {
+      var v = String(pg[k] || "").toUpperCase();
+      if (v === "C") c++; else if (v === "B") b++;
+    });
+    return c * 2 + b;   // C counts double
+  }
+
+  // ── PM (PRECISION MODIFIER) REMOVED — S22 ─────────────────────────────
+  // computePM() and formatPM() stood here. They were a hardcoded lookup on
+  // assessment depth and photo severity - nothing about the book - so a Deep
+  // with clean photos always produced the same +/-0.5. Measured against the
+  // engine's own run-to-run spread (7 / 5 / 5.5 / 5 / 5.5 on one book, five
+  // passes, identical inputs) the published figure was four times too narrow,
+  // and a stated uncertainty that wrong is worse than none. The 1/2/3 stars
+  // already say how hard we looked, which is the honest version of the signal.
+  // Full text in shared/_ARCHIVE/PM_REMOVED_S22.md.
+  // photoSeverity() STAYS: it also steps the grade CAP, which is a separate
+  // mechanism that has nothing to do with the +/-.
+
+  function computeRoboScoreV3(input) {
+    input = input || {};
+    var depth = (input.depth || "main").toLowerCase();
+    var slabbed = !!input.slabbed;
+
+    // S22: FULL-PRECISION (0.1) subscores from the v1 0-100 subscores. The grade
+    // is their sum ROUNDED ONCE to the nearest 0.5 — NOT each subscore rounded
+    // then summed — so it tracks the v1 grade with no rounding inflation (a 92 in
+    // v1 no longer jumps to a perfect 10). Interior stays the tier value (0/0.5/1).
+    var precise = {
+      front: clamp((input.front50 || 0) / 10, 0, 5),
+      back: clamp((input.back20 || 0) / 10, 0, 2),
+      spine: clamp((input.spine20 || 0) / 10, 0, 2),
+      interior: interiorTier(input.pageQuality, !!input.interiorDefect)
+    };
+    // S23: round EACH subscore to the nearest 0.5, THEN sum for the grade (was
+    // sum-then-round-once + decompose, which shaved legit subscores down — e.g. a
+    // 46 front decomposed back to 4, a 30 front to 2.5). Interior is a 0/0.5/1 tier.
+    var rounded = {
+      front: clamp(roundHalf(precise.front), 0, 5),
+      back: clamp(roundHalf(precise.back), 0, 2),
+      spine: clamp(roundHalf(precise.spine), 0, 2),
+      interior: precise.interior
+    };
+    var uncapped = roundHalf(rounded.front + rounded.back + rounded.spine + rounded.interior);
+
+    var cap = DEPTH_CAP[depth] != null ? DEPTH_CAP[depth] : 9.0;
+    if (slabbed) cap = Math.min(cap, 9.5);   // slab can never reach RG 10 (no Full)
+    // S23: gate the perfect 10 (see TEN_GATE). No listed defects, White pages,
+    // near-max faces — else the ceiling drops to 9.5.
+    var _perfect10 = !input.hasDefects
+      && String(input.pageQuality || "").toLowerCase().trim() === "white"
+      && rounded.interior >= 1
+      && (input.front50 || 0) >= TEN_GATE.front
+      && (input.back20 || 0) >= TEN_GATE.back
+      && (input.spine20 || 0) >= TEN_GATE.spine;
+    if (!_perfect10) cap = Math.min(cap, 9.5);
+
+    // S25 (#5): photo quality gates the TOP grades. Severity > 1 (more than one B,
+    // OR any C) steps the top rungs down — a 10 needs clean photos (->9.5), a 9.5
+    // needs clean photos (->9.0); one B leaves both intact. This is the ONE place
+    // photo quality moves the grade (elsewhere it only sets PM).
+    var _pgSev = photoSeverity(input.photograder);
+    if (_pgSev > 1) {
+      if (cap >= 10) cap = 9.5;
+      else if (cap >= 9.5) cap = 9.0;
+    }
+
+    var grade = Math.min(uncapped, cap);
+    // Subscores always sum to the grade. When the cap bites, shave 0.5 at a time
+    // (front -> back -> spine, interior fixed) to reach the ceiling; otherwise the
+    // rounded subscores already sum to the grade with no adjustment.
+    var sub = (uncapped > cap + 1e-9)
+      ? shaveToCap(rounded, cap, input.defectFaces)
+      : { front: rounded.front, back: rounded.back, spine: rounded.spine, interior: rounded.interior };
+    var ceilingHit = uncapped > cap + 1e-9;
+
+    var upsell = null;
+    if (depth === "main" && ceilingHit) upsell = "deep";
+    else if (depth === "deep" && ceilingHit && !slabbed) upsell = "full";
+
+    return {
+      grade: grade,
+      uncappedGrade: uncapped,
+      subscores: sub,
+      rawSubscores: { front: precise.front, back: precise.back, spine: precise.spine, interior: precise.interior },
+      ceilingHit: ceilingHit,
+      upsell: upsell
+    };
+  }
+
+  // Display formatting: integers show bare ("9","10"); halves keep one decimal
+  // ("9.5","8.5"). Same on EVERY surface (screens + labels) — no ".0".
+  function formatGrade(g){ g = Number(g); return (g % 1 === 0) ? String(g) : g.toFixed(1); }
+  function gradeParts(g){ g = Number(g); var w = Math.trunc(g); return { whole: String(w), frac: (g % 1 === 0) ? "" : ("." + Math.round((g - w) * 10)) }; }
+
+  // ---- Shared score-box renderer (identical look on every surface) ----------
+  // Structural anti-clip layout: stars pinned top-center; the number is
+  // flex-centered so it is ALWAYS dead-center regardless of PM width; PM and the
+  // footer (version / "RG") are stacked at the bottom, so PM can never touch the
+  // stars or the number. One uniform-size decimal — no fragile superscript.
+  // opts: {grade, stars(0-3), restoStar, footer('version'|'RG'|''),
+  //   footerText, size, numColor, starColor, footerColor, pmColor, bg, border}
+  var _STAR_PATH = "M12,2 15.64,6.98 21.51,8.91 17.9,13.92 17.88,20.09 12,18.2 6.12,20.09 6.1,13.92 2.49,8.91 8.36,6.98Z";
+  function _starRow(n, px, color, resto, restoColor) {
+    var s = "";
+    for (var i = 0; i < n; i++) s += '<svg viewBox="0 0 24 24" width="' + px + '" height="' + px + '" style="display:inline-block"><path d="' + _STAR_PATH + '" fill="' + color + '"/></svg>';
+    if (resto) s += '<svg viewBox="0 0 24 24" width="' + px + '" height="' + px + '" style="display:inline-block"><path d="' + _STAR_PATH + '" fill="' + (restoColor || "#b58be0") + '"/></svg>';
+    return s ? '<span style="display:inline-flex;gap:1px;align-items:center;line-height:1">' + s + '</span>' : "";
+  }
+  function scoreBox(o) {
+    o = o || {};
+    var size = o.size || 104;
+    var numColor = o.numColor || "#b8d820";
+    var starColor = o.starColor || numColor;
+    var footerColor = o.footerColor || numColor;
+    var pmColor = o.pmColor || footerColor;
+    var bg = o.bg || "#0f1a05";
+    var border = o.border || ("1.5px solid " + (o.borderColor || "#3a5010"));
+    var stars = o.stars || 0;
+    var starPx = o.starPx || Math.max(8, Math.round(size * 0.11));
+    var numSize = o.numSize || Math.round(size * 0.66);
+    var _nudge = Math.round(numSize * 0.09);
+    var p = gradeParts(o.grade);
+    // Number: ABSOLUTELY centered in the full box so PM/stars/footer never shift
+    // it off-center. font-stretch 62.5% uses Noto Sans Display's real condensed
+    // width axis (narrow glyphs, prints correctly) so decimals like 5.5 stay tight.
+    var _numInner = p.frac ? (p.whole + '<span style="font-size:0.8em">.</span>' + p.frac.slice(1)) : p.whole;
+    // S22 v6.23: SHRINK THE NUMBER TO CLEAR THE "(+)".
+    // The number is drawn dead-centre at a size derived only from the BOX, and
+    // the "(+)" is pinned to the right edge - so nothing stopped them sharing
+    // the same pixels. "9.5(+)" overlapped on every real device; a 2-glyph
+    // grade happened to fit, which is why this survived.
+    // Measured the same way print-label.js sizes its numeral: em-width of the
+    // actual string, not its character count. League Spartan digits are 0.556em,
+    // and the decimal point is drawn at 0.8em so it costs 0.28 * 0.8.
+    var _numSizeFit = numSize;
+    if (o.plus) {
+      var _plusSizeW = Math.max(9, Math.round(numSize / 3.6));
+      var _plusBoxW  = _plusSizeW * 1.55;              // Saira 700 "(+)" ~1.55em
+      var _plusInset = Math.round(size * 0.06);
+      var _gap       = Math.round(size * 0.03);
+      // Centred text: its half-width has to clear the (+)'s left edge.
+      var _halfCap = (size / 2) - (_plusInset + _plusBoxW + _gap);
+      var _em = 0;
+      for (var _i = 0; _i < String(p.whole).length; _i++) _em += 0.556;
+      if (p.frac) _em += 0.224 + 0.556 * (p.frac.length - 1);
+      // scaleX(0.66) shrinks what is DRAWN, so the unscaled size may be larger.
+      var _cap = Math.floor((_halfCap * 2) / (0.66 * _em));
+      _numSizeFit = Math.max(12, Math.min(numSize, _cap));
+    }
+    var numHtml = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">'
+      + '<span style="font-family:\'League Spartan\',system-ui,sans-serif;font-weight:900;transform:scaleX(0.66) translateY(' + _nudge + 'px);transform-origin:center;display:inline-block;color:' + numColor + ';line-height:1;font-size:' + _numSizeFit + 'px">' + _numInner + '</span></div>';
+    // Stars: top-center.
+    var starsHtml = (stars > 0 || o.restoStar) ? '<div style="position:absolute;top:' + Math.round(size*0.05) + 'px;left:0;right:0;display:flex;justify-content:center;pointer-events:none">' + _starRow(stars, starPx, starColor, o.restoStar, o.restoColor) + '</div>' : "";
+    // Footer (version / RG): bottom-center.
+    var footHtml = "";
+    if (o.footer === "RG") footHtml = '<div style="position:absolute;bottom:' + Math.round(size*0.05) + 'px;left:0;right:0;text-align:center;font-size:' + Math.max(8, Math.round(size*0.086)) + 'px;font-weight:700;color:' + footerColor + ';opacity:0.85;letter-spacing:1px;line-height:1;pointer-events:none">RG</div>';
+    else if (o.footer === "version" && o.footerText) footHtml = '<div style="position:absolute;bottom:' + Math.round(size*0.05) + 'px;left:0;right:0;text-align:center;font-size:' + Math.max(7, Math.round(size*0.077)) + 'px;font-weight:700;color:' + footerColor + ';opacity:0.8;letter-spacing:0.8px;line-height:1;pointer-events:none">' + o.footerText + '</div>';
+    // "(+)" — the v3 score hit its depth cap and a deeper pass can raise it
+    // (o.plus is ceilingHit && upsell, which this engine already computes).
+    // Placed absolutely on the RIGHT-MIDDLE so it cannot disturb the number:
+    // the whole point of this layout is that the number stays dead-centre
+    // whatever else is drawn, so appending to it was never an option. PM owns
+    // the upper-right and the footer the bottom, leaving the midline free.
+    // Offset by _nudge to sit on the NUMBER's midline rather than the box's.
+    var plusHtml = "";
+    if (o.plus) {
+      // v6.23: /3.6 not /3. At a third of the numeral it was the loudest thing
+      // in the box after the grade itself, and it is a hint, not a result.
+      var _plusSize = Math.max(9, Math.round(numSize / 3.6));
+      plusHtml = '<div style="position:absolute;top:50%;right:' + Math.round(size*0.06) + 'px;transform:translateY(calc(-50% + ' + _nudge + 'px));line-height:1;pointer-events:none;font-weight:700;opacity:0.85;color:' + numColor + ';font-family:\'Saira\',system-ui,sans-serif;font-size:' + _plusSize + 'px">(+)</div>';
+    }
+    return '<div style="position:relative;width:' + size + 'px;height:' + size + 'px;background:' + bg + ';border:' + border + ';border-radius:' + Math.round(size*0.14) + 'px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">' + numHtml + starsHtml + footHtml + plusHtml + '</div>';
+  }
+
+  // ---- CARD scoring (v3) ----------------------------------------------------
+  // Card axes: Surface 0-5, Corners 0-2, Edges 0-2, Centering 0-1. Cards have no
+  // "Full" (no interior/spine to open), so a Deep (raking-light, all angles) is
+  // the deepest pass and CAN confirm a 10. Caps: Main 9.0, Deep 10; slab <= 9.5.
+  var DEPTH_CAP_CARD = { main: 9.5, deep: 10.0 };  // cards have no interior surfaces — confident to 9.5 on the first pass
+  function shaveToCapCard(sub, cap) {
+    var s = { surface: sub.surface, corners: sub.corners, edges: sub.edges, centering: sub.centering };
+    var order = ["surface", "corners", "edges"];  // centering never shaved (mirrors interior)
+    var i = 0, guard = 0;
+    function total() { return s.surface + s.corners + s.edges + s.centering; }
+    while (total() > cap + 1e-9 && guard < 200) {
+      var k = order[i % order.length];
+      if (s[k] >= 0.5) s[k] = roundHalf(s[k] - 0.5);
+      i++; guard++;
+      if (s.surface <= 0 && s.corners <= 0 && s.edges <= 0) break;
+    }
+    return s;
+  }
+  function computeCardV3(input) {
+    input = input || {};
+    var depth = (input.depth || "main").toLowerCase();
+    var slabbed = !!input.slabbed;
+    // S22: full-precision subscores; grade = sum rounded ONCE to 0.5; then the
+    // subscores are decomposed to sum to it (round-robin, surface shaved first).
+    // Centering is the fixed 4th axis (mirrors comic interior).
+    var precise = {
+      surface: clamp((input.surface50 || 0) / 10, 0, 5),
+      corners: clamp((input.corners20 || 0) / 10, 0, 2),
+      edges: clamp((input.edges20 || 0) / 10, 0, 2),
+      centering: clamp(roundHalf((input.centering10 || 0) / 10), 0, 1)
+    };
+    // S23: round each axis to 0.5 then sum (was sum-then-round + decompose).
+    var rounded = {
+      surface: clamp(roundHalf(precise.surface), 0, 5),
+      corners: clamp(roundHalf(precise.corners), 0, 2),
+      edges: clamp(roundHalf(precise.edges), 0, 2),
+      centering: precise.centering
+    };
+    var uncapped = roundHalf(rounded.surface + rounded.corners + rounded.edges + rounded.centering);
+    var cap = DEPTH_CAP_CARD[depth] != null ? DEPTH_CAP_CARD[depth] : 9.0;
+    if (slabbed) cap = Math.min(cap, 9.5);
+    // S23: gate the perfect 10 for cards — no listed defects, full centering, and
+    // near-max surface/corners/edges; else the ceiling drops to 9.5.
+    var _perfectCard = !input.hasDefects
+      && (input.centering10 || 0) >= TEN_GATE.centering10
+      && (input.surface50 || 0) >= TEN_GATE.front
+      && (input.corners20 || 0) >= TEN_GATE.back
+      && (input.edges20 || 0) >= TEN_GATE.spine;
+    if (!_perfectCard) cap = Math.min(cap, 9.5);
+    var grade = Math.min(uncapped, cap);
+    var sub = (uncapped > cap + 1e-9)
+      ? shaveCardToCap(rounded, cap)
+      : { surface: rounded.surface, corners: rounded.corners, edges: rounded.edges, centering: rounded.centering };
+    var ceilingHit = uncapped > cap + 1e-9;
+    var upsell = (depth === "main" && ceilingHit && !slabbed) ? "deep" : null;   // cards: Main -> Deep only
+    return { grade: grade, uncappedGrade: uncapped, subscores: sub, rawSubscores: { surface: precise.surface, corners: precise.corners, edges: precise.edges, centering: precise.centering }, ceilingHit: ceilingHit, upsell: upsell, kind: "card" };
+  }
+  function forCard(card) {
+    if (!card) return null;
+    var cd = (card.cardData && card.cardData.robograde) || (card.roboGrade && card.roboGrade.subscores);
+    if (!cd) return null;
+    var g = function (k) { return cd[k] && cd[k].total; };
+    var surf = g("surface"), corn = g("corners"), edg = g("edges"), cent = g("centering");
+    if (surf == null && corn == null && edg == null && cent == null) return null;
+    var depth = (card.fullAssessmentRan || card.deepAssessmentRan || card.highGradeTier) ? "deep" : "main";
+    return computeCardV3({
+      surface50: surf, corners20: corn, edges20: edg, centering10: cent,
+      depth: depth, slabbed: !!(card.officialPSAGrade || card.officialCGCGrade || card.labelDetected),
+      photograder: card.photograder || (card.roboGrade && card.roboGrade.photograder) || null
+    });
+  }
+
+  // ---- Comic-record adapter (shared by all render surfaces) -----------------
+  // Interior PHYSICAL-flaw keywords, distinct from page COLOR (pageQuality
+  // already scores color). Presence drops the interior tier one step (§3 step 2).
+  var INT_FLAW = /(tear|split|tape|stain|spill|water|damp|mold|mildew|chip|piece|missing|detach|loose page|writing|ink stain|stamp|marker|crayon|glue|residue|hole|punch|clip|rust stain|brittle|crack)/i;
+
+  function depthOf(comic) {
+    if (comic && comic.fullAssessmentRan === true) return "full";
+    if (comic && (comic.highGradeTier === true || comic.highGradeAssessed === true ||
+                  comic._highGradeTier === true || comic.deepAssessmentRan === true)) return "deep";
+    return "main";
+  }
+
+  // Compute the v3 result straight from a stored COMIC record. Returns null for
+  // cards, missing roboGrade, or records with no comic subscores.
+  function forComic(comic) {
+    if (!comic || comic.type === "card") return null;
+    var rg = comic.roboGrade; if (!rg) return null;
+    if (rg.frontScore == null && rg.backScore == null && rg.spineScore == null) return null;
+    var defects = Array.isArray(rg.defects) ? rg.defects : [];
+    var interiorDefect = defects.some(function (d) {
+      return String(d && d.category || "").toLowerCase() === "interior" &&
+             INT_FLAW.test(String(d && d.type || ""));
+    });
+    // v5.05: which exterior faces carry a real (severity-bearing) defect, so the
+    // cap-shave pulls its held-back points from the damaged face first. Empty-
+    // severity entries (miswrap, page-quality note, apparent signature) don't count.
+    var defectFaces = { front: false, back: false, spine: false };
+    defects.forEach(function (d) {
+      var fc = String(d && d.category || "").toLowerCase();
+      var sev = String(d && d.severity || "").trim();
+      if (sev && (fc === "front" || fc === "back" || fc === "spine")) defectFaces[fc] = true;
+    });
+    var depth = depthOf(comic);
+    return computeRoboScoreV3({
+      front50: rg.frontScore, back20: rg.backScore, spine20: rg.spineScore,
+      pageQuality: rg.pageQuality || comic.pageQuality,
+      interiorDefect: interiorDefect,
+      defectFaces: defectFaces,
+      hasDefects: defects.length > 0,
+      depth: depth,
+      slabbed: comic.labelDetected === true,
+      photograder: comic.photograder || rg.photograder || null,
+      all16Present: depth === "full" && comic.fullInteriorComplete === true,
+      missingCore: 0
+    });
+  }
+
+  var api = { compute: computeRoboScoreV3, forComic: forComic, computeCard: computeCardV3, forCard: forCard, depthOf: depthOf, 
+              formatGrade: formatGrade, gradeParts: gradeParts, scoreBox: scoreBox,
+              interiorTier: interiorTier, interiorBase: interiorBase, roundHalf: roundHalf,
+              shaveToCap: shaveToCap, DEPTH_CAP: DEPTH_CAP };
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  if (typeof window !== "undefined") window.RoboScoreV3 = api;
+})(typeof globalThis !== "undefined" ? globalThis : this);
+
+  
+
+  /* Shared styled popup — replaces native alert() for purchase (and other) messages.
+     window.rgPopup(message, { type:'success'|'error'|'info', title, okText, onClose }). */
+  window.rgPopup = function(message, opts) {
+    opts = opts || {};
+    var type = opts.type || 'info';
+    var title = opts.title || (type === 'success' ? 'Success' : type === 'error' ? 'Something went wrong' : 'Heads up');
+    var okText = opts.okText || 'OK';
+    var accents = {
+      success: { bar:'#4e9e2e', icon:'\u2713', iconbg:'#2c6e12' },
+      error:   { bar:'#e0a72e', icon:'!',        iconbg:'#7a5610' },
+      info:    { bar:'#4a90c2', icon:'i',        iconbg:'#2a5670' }
+    };
+    var a = accents[type] || accents.info;
+    var prev = document.getElementById('rg-popup-overlay'); if (prev) prev.remove();
+    var ov = document.createElement('div'); ov.id = 'rg-popup-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:24px;padding-top:max(24px,env(safe-area-inset-top));padding-bottom:max(24px,env(safe-area-inset-bottom));opacity:0;transition:opacity .15s ease;';
+    var card = document.createElement('div');
+    card.style.cssText = 'width:100%;max-width:340px;background:#141210;border:1.5px solid #6a4a10;border-radius:18px;overflow:hidden;box-shadow:0 12px 44px rgba(0,0,0,0.55);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,\"Segoe UI\",sans-serif;';
+    // (Top accent strip removed — all message pop-ups now read as one house style.)
+    var body = document.createElement('div'); body.style.cssText = 'padding:20px 20px 18px;text-align:center;';
+    var icon = document.createElement('div'); icon.style.cssText='width:52px;height:52px;border-radius:50%;background:'+a.iconbg+';color:#fff;font-size:28px;font-weight:700;line-height:52px;margin:0 auto 12px;'; icon.textContent=a.icon;
+    var h = document.createElement('div'); h.style.cssText='font-size:16px;font-weight:700;color:#eaf5df;margin-bottom:6px;'; h.textContent=title;
+    var msg = document.createElement('div'); msg.style.cssText='font-size:13.5px;line-height:1.5;color:#b7cfa6;white-space:pre-line;'; msg.textContent=message||'';
+    var btn = document.createElement('button'); btn.style.cssText='margin-top:18px;width:100%;padding:12px;border:none;border-radius:10px;background:#4e9e2e;color:#0d1f08;font-size:15px;font-weight:800;letter-spacing:.3px;cursor:pointer;'; btn.textContent=okText;
+    body.appendChild(icon); body.appendChild(h); body.appendChild(msg); body.appendChild(btn);
+    card.appendChild(body); ov.appendChild(card); document.body.appendChild(ov);
+    requestAnimationFrame(function(){ ov.style.opacity='1'; card.style.transform='translateY(0) scale(1)'; });
+    function close(){ ov.style.opacity='0'; setTimeout(function(){ if(ov.parentNode) ov.parentNode.removeChild(ov); },160); if(opts.onClose){try{opts.onClose();}catch(e){}} }
+    btn.onclick=close; ov.addEventListener('click',function(e){ if(e.target===ov) close(); });
+    return close;
+  };
+  
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCDfjpnL94J0L09vJpg3I8ANu6zUzrrKxM",
+  authDomain: "robograder.app",
+  projectId: "ai-comic-grader",
+  storageBucket: "ai-comic-grader.firebasestorage.app",
+  messagingSenderId: "700471029422",
+  appId: "1:700471029422:web:5f5269c70cece04bf2473f"
+};
+
+const app = initializeApp(firebaseConfig);
+
+// v6.38 - THE RELOAD AFTER BACKGROUNDING.
+// iOS discards a backgrounded WKWebView's content process under memory
+// pressure and Android does the same, so coming back to the app is a COLD
+// START of the document. That part is the OS and cannot be argued with.
+// What was ours: with no local cache, every one of those cold starts
+// refetched the entire items collection over the network before anything
+// could be drawn - which is the long blank the reload actually feels like.
+// persistentLocalCache keeps the collection in IndexedDB, so the first
+// snapshot comes back from disk in milliseconds and the network update
+// arrives behind it. It helps every cold start, not only the evicted ones.
+//
+// SINGLE TAB, DELIBERATELY. persistentMultipleTabManager synchronises the
+// cache across tabs and fails if the browser cannot run its leader election;
+// single-tab takes the lock and the SECOND tab silently falls back to
+// memory-only rather than erroring. Nobody runs two Robograder tabs on a
+// phone, and the failure mode of the multi-tab manager is worse than the
+// thing it buys.
+//
+// The cache is a cache: it is not a backup, nothing is written to it that is
+// not also written to Firestore, and it does not change any write path.
+let db;
+try {
+  db = initializeFirestore(app, {
+    experimentalAutoDetectLongPolling: true,
+    localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) })
+  });
+} catch (e) {
+  // Private browsing, a blocked IndexedDB, or a second tab holding the lock.
+  // Memory-only is the pre-6.38 behaviour, which worked - so degrade to it
+  // rather than refusing to start.
+  console.warn("[init] persistent cache unavailable, using memory cache:", e);
+  db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+}
+
+const storage = getStorage(app);
+
+window._db = db;
+
+window._storage = storage;
+
+window._fsRef = ref;
+
+window._fsUploadBytes = uploadBytes;
+
+window._fsGetDownloadURL = getDownloadURL;
+
+window._fsDeleteObject = deleteObject;
+
+window._fsListAll = listAll;
+
+window._fsCollection = collection;
+
+window._fsGetDocs = getDocs;
+
+window._fsSetDoc = setDoc;
+
+window._fsDeleteDoc = deleteDoc;
+
+window._fsDoc = doc;
+
+window._fsOnSnapshot = onSnapshot;
+
+window._fsGetDoc = getDoc;
+
+window._fsUpdateDoc = updateDoc;
+
+window._fsIncrement = increment;
+
+window._fsQuery = query;
+
+window._fsWhere = where;
+
+const auth = getAuth(app);
+
+const googleProvider = new GoogleAuthProvider;
+const appleProvider = new OAuthProvider('apple.com');
+appleProvider.addScope('email'); appleProvider.addScope('name');
+
+window._auth = auth;
+
+window._googleProvider = googleProvider;
+window._appleProvider = appleProvider;
+
+window._signInWithPopup = signInWithPopup;
+window._signInWithRedirect = signInWithRedirect;
+window._getRedirectResult = getRedirectResult;
+window._signInWithCustomToken = signInWithCustomToken;
+
+window._signOut = signOut;
+
+window._onAuthStateChanged = onAuthStateChanged;
+
+window._GoogleAuthProvider = GoogleAuthProvider;
+window._OAuthProvider = OAuthProvider;
+window._signInWithCredential = signInWithCredential;
+
+window._loadingState = true;
+
+function tryRevealAuthScreen() {
+  if (window._currentUser !== undefined) return;
+  if (typeof window._signInWithPopup !== "function") {
+    setTimeout(tryRevealAuthScreen, 500);
+    return;
+  }
+  const authScreen = document.getElementById("auth-screen");
+  if (authScreen) authScreen.style.display = "flex";
+  if (typeof window.signalAppReady === "function") window.signalAppReady();
+}
+
+window._authFallbackTimer = setTimeout(tryRevealAuthScreen, 3000);
+
+// Capacitor iOS: check for redirect result on page load
+if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+  getRedirectResult(auth).catch(() => {});
+}
+
+onAuthStateChanged(auth, async user => {
+  if (window._authFallbackTimer) {
+    clearTimeout(window._authFallbackTimer);
+    window._authFallbackTimer = null;
+  }
+  window._currentUser = user;
+  const authScreen = document.getElementById("auth-screen");
+  const appEl = document.getElementById("app");
+  if (user) {
+    if (authScreen) authScreen.style.display = "none";
+    if (appEl) appEl.style.display = "";
+    if (!window._firebaseReady) {
+      window._firebaseReady = true;
+      window.dispatchEvent(new Event("firebase-ready"));
+    }
+    try {
+      const stored = localStorage.getItem("rg_public_default");
+      window._publicByDefault = stored === "1";
+    } catch (e) {
+      window._publicByDefault = false;
+    }
+    await loadUserCredits();
+    await checkTermsAcceptance();
+    // PWA welcome credit (web/PWA only; native is guarded out). Server
+    // decides: nothing on the first session, +1 one-time on a return visit.
+    if (!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) {
+      setTimeout(() => { try { _maybeGrantPwaWelcome(); } catch (e) {} }, 1700);
+    }
+    const _chestPreload = new Image;
+    _chestPreload.src = "assets/Robograder_Scan_Frame.webp";
+    if (_chestPreload.decode) {
+      _chestPreload.decode().catch(() => {});
+    }
+    // Preload slot ghost images AFTER the list view renders (no impact on initial load)
+    setTimeout(() => {
+      const _preloadUrls = [
+        "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Front_Cover.jpg",
+        "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Back_Cover.jpg",
+        "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Page_Quality.jpg",
+        "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Raking_Light.jpg",
+        "assets/ghosts/TopLeft_Macro.jpg", "assets/ghosts/TopRight_Macro.jpg",
+        "assets/ghosts/BottomLeft_Macro.jpg", "assets/ghosts/BottomRight_Macro.jpg"
+      ];
+      _preloadUrls.forEach(u => { const _p = new Image(); _p.src = u; });
+    }, 2000);
+    setTimeout(() => {
+      checkPendingTransfers();
+    }, 1500);
+    if (!window._xferVisHooked) {
+      window._xferVisHooked = true;
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible" && window._currentUser) {
+          checkPendingTransfers();
+        }
+      });
+    }
+  } else {
+    window._loadingState = false;
+    if (authScreen) authScreen.style.display = "flex";
+    if (appEl) appEl.style.display = "none";
+    if (!window._firebaseReady) {
+      window._firebaseReady = true;
+      window.dispatchEvent(new Event("firebase-ready"));
+    }
+    if (typeof window.signalAppReady === "function") window.signalAppReady();
+  }
+});
+  
+
+// Show iOS-specific auth UI when running in Capacitor
+if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+  var _pwaBtns = document.getElementById('auth-pwa-buttons');
+  var _iosBtns = document.getElementById('auth-ios-buttons');
+  if (_pwaBtns) _pwaBtns.style.display = 'none';
+  if (_iosBtns) _iosBtns.style.display = 'flex';
+}
+
+
+      /* Version line. Grading version comes from RG_GRADING_VERSION — the SINGLE client
+         source of truth; bump it whenever lib/version.js ROBOGRADE_VERSION changes (the
+         PWA has no build step to inject it). The native store version + platform label are
+         read LIVE from Capacitor so they always match the installed build (no hardcoding).
+         Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.41";
+      (function(){
+        function setVer(){
+          var el = document.getElementById("rgVersionLine");
+          if(!el) return;
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.41");
+          try{
+            var Cap = window.Capacitor;
+            if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
+              var plat = (Cap.getPlatform && Cap.getPlatform()) || "";
+              var label = plat === "ios" ? "iOS" : plat === "android" ? "Android" : "";
+              if(label && Cap.Plugins && Cap.Plugins.App && Cap.Plugins.App.getInfo){
+                Cap.Plugins.App.getInfo().then(function(info){
+                  el.textContent = base + (info && info.version ? " • " + label + " v" + info.version : "");
+                }).catch(function(){ el.textContent = base; });
+                return;
+              }
+            }
+          }catch(e){}
+          el.textContent = base;
+        }
+        if(document.readyState !== "loading") setVer();
+        else document.addEventListener("DOMContentLoaded", setVer);
+      })();
+      
+
+const GRADES = [ "10.0", "9.9", "9.8", "9.6", "9.4", "9.2", "9.0", "8.5", "8.0", "7.5", "7.0", "6.5", "6.0", "5.5", "5.0", "4.5", "4.0", "3.5", "3.0", "2.5", "2.0", "1.8", "1.5", "1.0", "0.5" ];
+
+const GRADE_LABELS = {
+  "10.0": "Gem Mint",
+  9.9: "Mint",
+  9.8: "NM/M",
+  9.6: "NM+",
+  9.4: "NM",
+  9.2: "NM-",
+  "9.0": "VF/NM",
+  8.5: "VF+",
+  "8.0": "VF",
+  7.5: "VF-",
+  "7.0": "FN/VF",
+  6.5: "FN+",
+  "6.0": "FN",
+  5.5: "FN-",
+  "5.0": "VG/FN",
+  4.5: "VG+",
+  "4.0": "VG",
+  3.5: "VG-",
+  "3.0": "G/VG",
+  2.5: "G+",
+  "2.0": "G",
+  1.8: "G-",
+  1.5: "Fa/G",
+  "1.0": "Fa",
+  0.5: "Poor"
+};
+
+const PQ_ABBREV = {
+  White: "White",
+  "Off-White to White": "OW/W",
+  "Off-White": "OW",
+  "Cream to Off-White": "C/OW",
+  Cream: "Cream",
+  "Light Tan to Off-White": "LT/OW",
+  "Light Tan to Cream": "LT/C",
+  "Light Tan": "LT",
+  "Tan to Off-White": "T/OW",
+  "Tan to Cream": "T/C",
+  Tan: "Tan",
+  "Dark Tan to Off-White": "DT/OW",
+  "Dark Tan": "DT",
+  "Brown to Off-White": "Br/OW",
+  "Brown to Tan": "Br/T",
+  Brown: "Brown",
+  "Brown/Brittle": "Br/Brit",
+  "Slightly Brittle": "S.Brit",
+  Brittle: "Brit"
+};
+
+const PAGE_QUALITIES = [ "White", "Off-White to White", "Off-White", "Cream to Off-White", "Cream", "Light Tan to Off-White", "Light Tan to Cream", "Light Tan", "Tan to Off-White", "Tan to Cream", "Tan", "Dark Tan to Off-White", "Dark Tan", "Brown to Off-White", "Brown to Tan", "Brown", "Brown/Brittle", "Slightly Brittle", "Brittle" ];
+
+function gradeColor(g) {
+  const n = parseFloat(g);
+  if (n >= 9.8) return "#00d4a0";
+  if (n >= 9.0) return "#4db8ff";
+  if (n >= 7.0) return "#a78bfa";
+  if (n >= 5.0) return "#f59e0b";
+  if (n >= 3.0) return "#f97316";
+  return "#ef4444";
+}
+
+function displayGrade(c, showPSA = false) {
+  if (c.cgcGrade) return {
+    gradeVal: c.cgcGrade,
+    type: "cgc-official"
+  };
+  if (c.psaGrade) return {
+    gradeVal: c.psaGrade,
+    type: "psa-official"
+  };
+  if (c.predictedGrade) return {
+    gradeVal: c.predictedGrade,
+    type: "predicted"
+  };
+  if (c.assessedCGCGrade) return {
+    gradeVal: c.assessedCGCGrade,
+    type: "predicted"
+  };
+  if (c.grade) return {
+    gradeVal: c.grade,
+    type: "raw"
+  };
+  return {
+    gradeVal: "—",
+    type: "none"
+  };
+}
+
+function gradeBadgeStyle(c, showPSA = false) {
+  const dg = displayGrade(c, showPSA);
+  const gc = dg.type === "none" ? "#4a4040" : gradeColor(dg.gradeVal);
+  let fill = "transparent", topLabel = "";
+  if (dg.type === "cgc-official") {
+    fill = "#1a5fa8";
+    topLabel = "CGC";
+  } else if (dg.type === "psa-official") {
+    fill = "#b91c1c";
+    topLabel = "PSA";
+  } else if (dg.type === "predicted") {
+    fill = "rgba(26,95,168,0.18)";
+  } else if (dg.type === "raw") {
+    fill = "#1a1a1a";
+  }
+  return {
+    fill: fill,
+    topLabel: topLabel,
+    gc: gc,
+    gradeVal: dg.gradeVal
+  };
+}
+
+function detectDesignation(c) {
+  if (c.cgcDesignation) return c.cgcDesignation;
+  const h = (c.graderNotes || "") + " " + (c.notes || "") + " " + (c.cgcNotes || "");
+  if (/\b(RC|restored|restoration|conserved)\b/i.test(h)) return "restored";
+  if (/\bqualified\b/i.test(h)) return "qualified";
+  return "universal";
+}
+
+function normalizeGrade(g) {
+  if (!g) return g;
+  const gs = String(g);
+  if (gs.includes(".")) return gs;
+  const n = parseFloat(gs);
+  // S20 (#49): a coverless / ungradeable book shows "NG" (No Grade), not "NaN".
+  return isNaN(n) ? "NG" : n.toFixed(1);
+}
+
+const TITLE_ALIASES = {
+  "uncanny x-men": "Uncanny X-Men",
+  "uncanny x men": "Uncanny X-Men",
+  "uncanny xmen": "Uncanny X-Men"
+};
+
+const TITLE_ALIASES_DATED = {
+  "x-men": disambiguateXMen,
+  "x men": disambiguateXMen,
+  xmen: disambiguateXMen
+};
+
+function disambiguateXMen(year, printing) {
+  if (printing && /facsimile|reprint/i.test(printing)) return "Uncanny X-Men";
+  if (year && year >= 1991) return "X-Men";
+  return "Uncanny X-Men";
+}
+
+function disambiguateWolverine(year, printing) {
+  // The 1982 4-issue Claremont/Miller limited series (Sep 1982 - early 1983) is
+  // its own run; everything from the 1988 vol-1 ongoing onward collapses to
+  // "Wolverine" so issues of the same series group together in the list.
+  if (printing && /facsimile|reprint/i.test(printing)) return "Wolverine";
+  if (year && year >= 1982 && year <= 1983) return "Wolverine (Limited Series)";
+  return "Wolverine";
+}
+
+function extractYearFromIssueDate(s) {
+  if (!s) return null;
+  if (typeof s === "number") return s >= 1900 && s <= 2100 ? s : null;
+  const m = String(s).match(/(19|20)\d{2}/);
+  return m ? parseInt(m[0], 10) : null;
+}
+
+let _valueKeys = null;
+
+function _normalizeKeyTitle(s) {
+  if (!s) return "";
+  return s.toString().trim().replace(/\s+/g, " ").replace(/^The\s+/i, "").toLowerCase();
+}
+
+function _normalizeKeyIssue(s) {
+  if (s == null) return "";
+  return s.toString().trim().replace(/^#/, "").replace(/^0+(\d)/, "$1");
+}
+
+// S21: FMV key builder with ANNUAL folding + Iron Man volume-name canonicalization.
+// The app labels annuals with "Annual" in the TITLE ("Amazing Spider-Man Annual",
+// issue "1"), while the index stores them under the BASE title with an "A"-prefixed
+// issue (amazing spider-man|A1). We canonicalize BOTH to base-title + "A<n>" (Matt's
+// A1/A2/A3 convention) so they always match. Also folds "Invincible Iron Man" ->
+// "Iron Man" (ComicVine returns both for the same 1968 vol-1 series). The fmv.json
+// converter MUST mirror this exactly.
+// title|issue, plus |<printing slug> for a variant or later printing. The
+// third argument is optional and empty for base/channel printings, so every
+// existing caller keeps the key it has always produced.
+function _fmvKeyOf(title, issue, printing) {
+  let t = (title == null ? "" : title.toString()).trim().replace(/\s+/g, " ");
+  let i = (issue == null ? "" : issue.toString()).trim().replace(/^#/, "");
+  const titleHasAnnual = /\bannual\b/i.test(t);
+  const mAnnualIssue = i.match(/^\s*(?:annual|ann\.?)\s*#?\s*0*(\d+)\s*$/i);
+  const mAIssue = i.match(/^\s*A\s*0*(\d+)\s*$/i);
+  if (titleHasAnnual) {
+    t = t.replace(/\bannual\b/ig, "").replace(/\s+/g, " ").trim();
+    const num = mAnnualIssue ? mAnnualIssue[1] : (mAIssue ? mAIssue[1] : i.replace(/^0+(\d)/, "$1"));
+    i = "A" + num;
+  } else if (mAnnualIssue) {
+    i = "A" + mAnnualIssue[1];
+  } else if (mAIssue) {
+    i = "A" + mAIssue[1];
+  } else {
+    i = i.replace(/^0+(\d)/, "$1");
+  }
+  // Iron Man vol-1 (1968) is catalogued as both "Iron Man" and "Invincible Iron
+  // Man". Canonicalize to "iron man" (volumeGuards separate later volumes by year).
+  t = t.replace(/^invincible\s+iron\s+man\b/i, "Iron Man");
+  const _base = _normalizeKeyTitle(t) + "|" + i;
+  const _slug = (printing && typeof window.fmvPrintingSlug === "function")
+    ? window.fmvPrintingSlug(printing) : "";
+  return _slug ? (_base + "|" + _slug) : _base;
+}
+
+window.matchValueKey = function matchValueKey(title, issue, publisher, printing) {
+  if (!_valueKeys) return null;
+  // S16: Reprint gate restored — facsimile/reprint editions are not value keys
+  if (printing && typeof printing === "string") {
+    const p = printing.toLowerCase();
+    if (p.includes("facsimile") || p.includes("reprint")) return null;
+  }
+  const nt = _normalizeKeyTitle(title);
+  const ni = _normalizeKeyIssue(issue);
+  if (!nt || !ni) return null;
+  const np = (publisher || "").toString().trim().toLowerCase();
+  for (const entry of _valueKeys) {
+    if (_normalizeKeyIssue(entry.issue) !== ni) continue;
+    const canon = _normalizeKeyTitle(entry.title);
+    const titleHit = canon === nt || (entry.aliases || []).some(a => _normalizeKeyTitle(a) === nt);
+    if (!titleHit) continue;
+    if (entry.publisher) {
+      const ep = entry.publisher.toLowerCase();
+      if (!np || !np.includes(ep) && !ep.includes(np)) continue;
+    }
+    return entry;
+  }
+  return null;
+};
+
+(async function loadValueKeys() {
+  try {
+    const r = await fetch("/value-keys.json", {
+      cache: "default"
+    });
+    if (!r.ok) {
+      console.warn("[value_keys] fetch failed:", r.status);
+      return;
+    }
+    const data = await r.json();
+    if (data && Array.isArray(data.keys)) {
+      _valueKeys = data.keys;
+      console.log(`[value_keys] loaded ${data.keys.length} entries (v${data.version || "?"})`);
+    }
+  } catch (e) {
+    console.warn("[value_keys] load error:", e?.message || e);
+  }
+})();
+
+
+// -- Insert / Coupon indexes (S21) --------------------------------------------
+// Static JSON indexes fetched like value-keys. Insert = Mark Jewelers insert
+// confirmed books; Coupon = Marvel Value Stamp / pin-up books. When a book being
+// assessed matches, the assess screen surfaces two optional photo slots (see
+// insertSlotDefs / couponSlotDefs) and the images ride along to the grader.
+// Server mirrors these lists in lib/insert_list.js / lib/coupon_list.js.
+let _insertIndex = null;
+let _couponIndex = null;
+
+function _idxTitleHit(entry, nt) {
+  if (_normalizeKeyTitle(entry.title) === nt) return true;
+  return (entry.aliases || []).some(a => _normalizeKeyTitle(a) === nt);
+}
+
+window.matchInsert = function matchInsert(title, issue, vol) {
+  if (!_insertIndex || !Array.isArray(_insertIndex.books)) return null;
+  const nt = _normalizeKeyTitle(title), ni = _normalizeKeyIssue(issue);
+  if (!nt || !ni) return null;
+  const matches = _insertIndex.books.filter(e => _normalizeKeyIssue(e.issue) === ni && _idxTitleHit(e, nt));
+  if (!matches.length) return null;
+  if (vol != null) {
+    const v = parseInt(vol, 10);
+    const byVol = matches.find(e => e.vol === v);
+    if (byVol) return byVol;
+  }
+  return matches[0];
+};
+
+window.matchCoupon = function matchCoupon(title, issue) {
+  if (!_couponIndex || !Array.isArray(_couponIndex.books)) return null;
+  const nt = _normalizeKeyTitle(title), ni = _normalizeKeyIssue(issue);
+  if (!nt || !ni) return null;
+  return _couponIndex.books.find(e => _normalizeKeyIssue(e.issue) === ni && _idxTitleHit(e, nt)) || null;
+};
+
+// S23: broad candidate check — is this a title/era that SOMETIMES carried a Mark
+// Jewelers insert? Uses the served candidate list (mirrors lib INSERT_TITLES).
+// Use matchInsert() first for a confirmed hit; this is the softer "might have one".
+window.matchInsertCandidate = function matchInsertCandidate(title, year) {
+  if (!_insertIndex || !Array.isArray(_insertIndex.candidates)) return null;
+  const nt = _normalizeKeyTitle(title), y = parseInt(year, 10);
+  if (!nt || !isFinite(y)) return null;
+  const era = _insertIndex.era || [0, 9999];
+  const hit = _insertIndex.candidates.find(e => _normalizeKeyTitle(e.title) === nt);
+  if (!hit) return null;
+  const lo = (hit.yearRange && hit.yearRange[0]) || era[0];
+  const hi = (hit.yearRange && hit.yearRange[1]) || era[1];
+  return (y >= lo && y <= hi) ? hit : null;
+};
+
+function insertSlotDefs() {
+  return [
+    { key: "insert_spread", label: "Insert 1 - Interior Spread",
+      hint: "Take a photo of the full insert." },
+    { key: "insert_verify", label: "Insert 2 - Top Edge/Cover",
+      hint: "Show the top edge of the book with the cover visible and the insert sticking out to verify." }
+  ];
+}
+
+function _couponPieceName(e) {
+  if (!e) return "coupon / pin-up";
+  if (e.item) return e.item;
+  return e.kind === "stamp" ? "Marvel Value Stamp" : "coupon / pin-up";
+}
+
+function couponSlotDefs(entry) {
+  const e = entry || {};
+  const piece = _couponPieceName(e);
+  const locator = e.desc ? e.desc : piece;
+  const place = (e.page != null) ? ("page " + e.page) : null;
+  const hint1 = place
+    ? ("Open the comic to " + place + " and take a close-up of the " + locator + ", showing whether it is present or has been cut/torn out.")
+    : ("Find the " + locator + " and take a close-up showing whether it is present or has been cut/torn out.");
+  const hint2 = place
+    ? ("Take a wider shot of the comic opened to " + place + " with the front or back cover also visible in the frame, so the close-up can be tied to this exact book.")
+    : ("Take a wider shot of the comic opened to that page with the front or back cover also visible in the frame, so the close-up can be tied to this exact book.");
+  return [
+    { key: "coupon_page", label: piece + " — close-up", hint: hint1 },
+    { key: "coupon_verify", label: piece + " — page + cover", hint: hint2 }
+  ];
+}
+
+(async function loadInsertIndex() {
+  try {
+    const r = await fetch("/insert_index.json", { cache: "default" });
+    if (!r.ok) { console.warn("[insert_index] fetch failed:", r.status); return; }
+    _insertIndex = await r.json();
+    console.log(`[insert_index] loaded ${(_insertIndex.books || []).length} books (v${_insertIndex.version || "?"})`);
+  } catch (e) { console.warn("[insert_index] load error:", e?.message || e); }
+})();
+
+(async function loadCouponIndex() {
+  try {
+    const r = await fetch("/coupon_index.json", { cache: "default" });
+    if (!r.ok) { console.warn("[coupon_index] fetch failed:", r.status); return; }
+    _couponIndex = await r.json();
+    console.log(`[coupon_index] loaded ${(_couponIndex.books || []).length} books (v${_couponIndex.version || "?"})`);
+  } catch (e) { console.warn("[coupon_index] load error:", e?.message || e); }
+})();
+
+
+// ── FMV index (S18) ────────────────────────────────────────────────────────
+// Index-driven Fair Market Value ranges. The data file /fmv.json is OPTIONAL:
+// when absent (404) the feature stays dormant and nothing renders. When present,
+// a book's grade maps to one of 13 price tiers, shown as a $ range.
+// Schema (single source of truth — tiers live in the file, not hardcoded here):
+//   { "version":"1.0.0",
+//     "tiers": { "1":[1,20], "2":[20,50], ... "13":[100000,null] },   // [low, high]; high=null => "low+"
+//     "books": { "<normTitle>|<normIssue>": [[grade,tier], ...] } }    // ascending grade breakpoints (step fn)
+// Keys use the SAME normalization as value-keys (_normalizeKeyTitle/_normalizeKeyIssue),
+// so the converter that builds fmv.json must mirror those exactly.
+let _fmvIndex = null;
+let _fmvOverrides = {};  // manual FMV curves keyed by _fmvKeyOf, merged over the static index
+let _fmvCardIndex = null;      // fmv_pokemon.json
+let _fmvCardOverrides = {};    // fmv_dashboard/pokemon manual overrides
+
+window.matchFMV = function matchFMV(title, issue, grade, printing, year) {
+  if (!_fmvIndex || !_fmvIndex.books) return null;
+  // The index is keyed title|issue and its values are for the ORIGINAL printing
+  // with the standard cover. A later printing or a variant cover is a different
+  // book that happens to share that key, so handing it the base value overstates
+  // it badly — reported on TMNT #1, where a third printing was showing
+  // first-printing money. The old gate caught only the literal words "facsimile"
+  // and "reprint", so "3rd print", "Virgin variant" and "Gold edition" all sailed
+  // through and took the first printing's value.
+  const _pclass = window.fmvPrintingClass(printing);
+  if (_pclass === "other") {
+    // A variant, a later printing or a price variant is its own book. It gets
+    // its own key — title|issue|<printing slug> — and its own curve, entered by
+    // hand in the admin catalogue. It NEVER falls back to the original
+    // printing's curve: that was the TMNT #1 bug.
+    // Until that curve exists the answer is simply nothing. Blank beats a wrong
+    // number, and blank also beats an explanation nobody asked for.
+    const _vkey = _fmvKeyOf(title, issue, printing);
+    const _vov = _fmvOverrides && _fmvOverrides[_vkey];
+    if (Array.isArray(_vov) && _vov.length) {
+      let _vt = _vov[0][1];
+      for (const b of _vov) { if (g >= b[0]) _vt = b[1]; else break; }
+      const _vr = _fmvIndex.tiers && _fmvIndex.tiers[String(_vt)];
+      if (_vr) return { tier: _vt, low: _vr[0], high: _vr[1], manual: true, variant: true };
+    }
+    return null;
+  }
+  const g = parseFloat(grade);
+  if (!isFinite(g)) return null;
+  const key = _fmvKeyOf(title, issue);
+  // Manual dashboard FMV wins over the static index for this key.
+  const _ov = _fmvOverrides && _fmvOverrides[key];
+  if (Array.isArray(_ov) && _ov.length) {
+    let _t = _ov[0][1];
+    for (const b of _ov) { if (g >= b[0]) _t = b[1]; else break; }
+    const _r = _fmvIndex.tiers && _fmvIndex.tiers[String(_t)];
+    if (_r) return { tier: _t, low: _r[0], high: _r[1], manual: true };
+  }
+  let breaks;
+  // Volume/year model (S21): `volumes[key]` is an ordered list of
+  // [curveIndex, minYear, maxYear] candidates for a title|issue that was reused
+  // across eras (e.g. Silver Surfer #1 in 1968 vs 1987). Pick the candidate whose
+  // year range contains the book's cover year. No year or no matching volume ->
+  // no curve (fall through to blanket/null) rather than guessing the wrong era's
+  // value. This generalizes the old single-boundary volumeGuards.
+  const _vols = _fmvIndex.volumes && _fmvIndex.volumes[key];
+  if (Array.isArray(_vols) && _vols.length) {
+    const _vy = parseInt(year, 10);
+    let _ci = null;
+    if (isFinite(_vy)) { for (const _c of _vols) { if (_vy >= _c[1] && _vy <= _c[2]) { _ci = _c[0]; break; } } }
+    breaks = (_ci != null && _fmvIndex.curves) ? _fmvIndex.curves[_ci] : null;
+  } else {
+    // Compression (S20): books[key] may be an integer index into a shared `curves`
+    // table. Deref it. Inline arrays still work.
+    breaks = _fmvIndex.books[key];
+    if (typeof breaks === "number" && _fmvIndex.curves) breaks = _fmvIndex.curves[breaks];
+    // Legacy single-boundary volume guard — kept so older shipped bundles + any
+    // un-migrated data still behave; superseded by `volumes` above.
+    const _vg = _fmvIndex.volumeGuards && _fmvIndex.volumeGuards[key];
+    if (_vg && Array.isArray(breaks)) {
+      const _vy = parseInt(year, 10);
+      if (isFinite(_vy) && _vy > _vg) breaks = null;
+    }
+  }
+  if (!Array.isArray(breaks) || !breaks.length) {
+    // S20 blanket rule: uncovered modern books (1991+) default to tier 1 ($1-20)
+    // at ALL grades. Indexed books (matched above) override this — so exceptions
+    // like Walking Dead #1 / Absolute Batman #1 keep their real values.
+    const y = parseInt(year, 10);
+    if (isFinite(y) && y >= 1991 && _fmvIndex.tiers && _fmvIndex.tiers["1"]) {
+      // The app's top grade (9.8) on a blanket book is worth more than the
+      // $1-20 tier-1 floor; seat it at tier 2 ($20-50).
+      const _bt = (g >= 9.8 && _fmvIndex.tiers["2"]) ? "2" : "1";
+      const _bb = _fmvIndex.tiers[_bt];
+      return { tier: Number(_bt), low: _bb[0], high: _bb[1], blanket: true };
+    }
+    return null;
+  }
+  // breaks ascending by grade; tier = the highest breakpoint whose grade <= g
+  let tier = breaks[0][1];
+  for (const b of breaks) { if (g >= b[0]) tier = b[1]; else break; }
+  const range = _fmvIndex.tiers && _fmvIndex.tiers[String(tier)];
+  if (!range) return null;
+  return { tier, low: range[0], high: range[1] };
+};
+
+window.matchCardFMV = function matchCardFMV(ident, grade) {
+  if (!_fmvCardIndex || !_fmvCardIndex.books || !ident) return null;
+  const g = parseFloat(grade);
+  if (!isFinite(g)) return null;
+  const set = (ident.set || "").toString().trim().toLowerCase();
+  const num = (ident.number || "").toString().trim().toLowerCase().replace(/\s+/g, "");
+  if (!set || !num) return null;
+  const rawPr = ((ident.printing || "") + " " + (ident.variant || "")).toLowerCase();
+  let cands;
+  if (rawPr.includes("shadowless")) cands = ["shadowless", "unlimited"];
+  else if (rawPr.includes("1st") || rawPr.includes("first edition")) cands = ["1st edition", "unlimited"];
+  else if (rawPr.includes("unlimited")) cands = ["unlimited"];
+  else cands = ["unlimited", "1st edition", "shadowless", ""];  // printing unknown from a photo → prefer the common (Unlimited) value
+  const deref = k => {
+    const ov = _fmvCardOverrides && _fmvCardOverrides[k];
+    if (Array.isArray(ov) && ov.length) return ov;
+    let b = _fmvCardIndex.books[k];
+    if (typeof b === "number" && _fmvCardIndex.curves) b = _fmvCardIndex.curves[b];
+    return Array.isArray(b) ? b : null;
+  };
+  let breaks = null, usedKey = null;
+  for (const pr of cands) { const k = set + "|" + num + "|" + pr; const b = deref(k); if (b) { breaks = b; usedKey = k; break; } }
+  if (!breaks) return null;
+  let tier = breaks[0][1];
+  for (const b of breaks) { if (g >= b[0]) tier = b[1]; else break; }
+  const range = _fmvCardIndex.tiers && _fmvCardIndex.tiers[String(tier)];
+  if (!range) return null;
+  return { tier: tier, low: range[0], high: range[1], key: usedKey };
+};
+
+function formatFMV(m) {
+  if (!m) return "";
+  const n = v => "$" + Number(v).toLocaleString("en-US");
+  return (m.high == null) ? (n(m.low) + "+") : (n(m.low) + "\u2013" + n(m.high));
+}
+
+// S20 (#37): FMV tier for Deep/Full gating. Uses the item's best available grade
+// (official CGC, then predicted/assessed, then the RoboGrade prediction). Returns
+// 0 when there's no FMV match. Deep unlocks at tier >= 3 ($50+); Full at tier
+// >= 7 ($1000+). Year is only needed for the 1991+ blanket (which is tier 1, so
+// it never affects these thresholds) \u2014 safe to be null.
+function fmvTierOf(item) {
+  if (!item) return 0;
+  const grade = item.assessedCGCGrade ?? item.predictedGrade ?? item.grade
+    ?? (item.roboGrade && (item.roboGrade.predictedGrade ?? item.roboGrade.assessedCGCGrade));
+  const m = (typeof window.matchFMV === "function")
+    ? window.matchFMV(item.title, item.issue, grade, item.printing, extractYearFromIssueDate(item.issueDate))
+    : null;
+  // A suppressed match has no tier — treat it as unknown value (0), which is
+  // what it is. This closes the FMV routes into Deep ($50+) and Full ($500+)
+  // for a variant we cannot price; the near-perfect route into Full is
+  // unaffected, and a manual FMV entry restores both.
+  return (m && m.tier) ? m.tier : 0;
+}
+// Compact FMV: $2,000 -> $2K, $100,000 -> $100K (tier boundaries are round).
+function formatFMVK(v) {
+  if (v == null) return "";
+  return v >= 1000 ? "$" + (v / 1000) + "K" : "$" + v;
+}
+function formatFMVCompact(m) {
+  if (!m || m.suppressed) return "";
+  return (m.high == null) ? (formatFMVK(m.low) + "+") : (formatFMVK(m.low) + "\u2013" + formatFMVK(m.high));
+}
+
+// Printing/variant classification for FMV. Three answers:
+//   'base'    — empty, or an explicit first printing. Carries the index value.
+//   'channel' — newsstand or direct edition. A distribution channel, not a
+//               different book: same issue, same cover, same value. This matters
+//               — "Newsstand variant" is by far the commonest populated value
+//               (566 of 4,527 items), and treating it as a variant would strip
+//               the FMV off an eighth of every collection for no reason.
+//   'other'   — a later printing, a variant cover, a facsimile, a price variant,
+//               a special edition. A different book. No base value.
+// Exported on window so the three bundles share one definition of the rule.
+window.fmvPrintingClass = function fmvPrintingClass(printing) {
+  const p = String(printing || "").trim().toLowerCase();
+  if (!p) return "base";
+  // Order matters: "Newsstand variant" contains the word "variant", so the
+  // channel test has to run first — but only when nothing ELSE in the string
+  // names a later printing or a different cover.
+  // "direct edition" IS the channel, so neutralise it before testing for the
+  // word "edition" — otherwise "Direct Edition" reads as a special edition.
+  const _p2 = p.replace(/\bdirect edition\b/g, "direct");
+  // Deliberately NOT the bare word "variant": "Newsstand variant" is the app's
+  // own wording for a plain newsstand copy and must stay a channel. This list
+  // is only here to catch strings that name a channel AND something else, like
+  // "Silver Edition (Newsstand)".
+  const _looksVariant = /(\d+\s*(st|nd|rd|th)\s*print|reprint|facsimile|virgin|foil|sketch|lenticular|exclusive|incentive|1:\s*\d+|pence|price variant|edition\b)/.test(_p2);
+  if (/^(newsstand|direct)\b/.test(p) || /\b(newsstand|direct edition)\b/.test(p)) {
+    if (!_looksVariant) return "channel";
+  }
+  // An explicit first printing, and nothing else in the string.
+  if (/^(1st|first)(\s+(print|printing|edition))?$/.test(p)) return "base";
+  return "other";
+};
+
+// A stable slug for an 'other' printing, so a variant can carry its OWN FMV
+// curve instead of borrowing the original printing's. Empty for base/channel —
+// those keep the plain title|issue key and the static index value.
+// Light normalisation folds the spellings people actually type: "3rd Printing",
+// "Third Printing" and "3rd print" are one book and must be one key. Anything
+// in parentheses is KEPT — "Facsimile Reprint (2019)" and "(1992)" are
+// genuinely different books with different values.
+window.fmvPrintingSlug = function fmvPrintingSlug(printing) {
+  if (window.fmvPrintingClass(printing) !== "other") return "";
+  return String(printing || "").trim().toLowerCase()
+    .replace(/\bfirst\b/g, "1st").replace(/\bsecond\b/g, "2nd")
+    .replace(/\bthird\b/g, "3rd").replace(/\bfourth\b/g, "4th")
+    .replace(/\bfifth\b/g, "5th").replace(/\bsixth\b/g, "6th")
+    .replace(/\bprinting\b/g, "print")
+    .replace(/[.,]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+// Two-column PREDICTED GRADE box: grade badge(s) + page quality on the left,
+// FMV on the right. White bold headers; FMV value white and 26px (the grade
+// badge number is 30px, so it stays dominant). Single column when no FMV.
+function buildPredictedGradeBox(badgesHtml, pqHtml, fmvMatch, showDisclaimer) {
+  const hdr = "font-size:12px;font-weight:800;letter-spacing:1.5px;color:#fff;text-transform:uppercase;text-align:center;line-height:1.15";
+  const fmvBlock = fmvMatch ? `<div style="${hdr};margin-top:16px">FMV</div><div style="color:#fff;font-weight:800;font-size:20px;line-height:1;letter-spacing:0.01em;white-space:nowrap;margin-top:6px">${formatFMVCompact(fmvMatch)}</div>` : "";
+  const disc = showDisclaimer ? `<div style="font-size:10px;color:#6a5a4a;text-align:center;line-height:1.4;margin-top:14px;font-style:italic">Independent prediction. Robograder is not affiliated with any encapsulation grading or price guide service.</div>` : "";
+  // v6.33: full width, not max-width:66%. The box was a fixed fraction of the
+  // column, so a long page-quality string ("Cream to Off-White") had nowhere
+  // to go and the disclaimer wrapped to four lines inside a box with empty
+  // space either side of it. It is the same width as the defect list above it
+  // now, which is what it is read against.
+  return `<div style="margin:16px 0 0;padding:16px 20px;background:#0d0d0f;border:1px solid #2a2a3a;border-radius:10px;display:flex;flex-direction:column;align-items:center">
+    <div style="${hdr}">Predicted Grade</div>
+    ${badgesHtml ? `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;justify-content:center;margin-top:12px">${badgesHtml}</div>` : ""}
+    ${pqHtml ? `<div style="margin-top:10px;white-space:nowrap">${pqHtml}</div>` : ""}
+    ${fmvBlock}
+    ${disc}
+  </div>`;
+}
+
+(async function loadFMV() {
+  try {
+    const r = await fetch("/fmv_comics.json", { cache: "default" });
+    if (!r.ok) { if (r.status !== 404) console.warn("[fmv] fetch failed:", r.status); return; }
+    const data = await r.json();
+    if (data && data.books) {
+      _fmvIndex = data;
+      console.log(`[fmv] loaded ${Object.keys(data.books).length} books (v${data.version || "?"})`);
+    }
+  } catch (e) { console.warn("[fmv] load error:", e?.message || e); }
+  try {
+    const rc = await fetch("/fmv_pokemon.json", { cache: "default" });
+    if (rc.ok) { const dc = await rc.json(); if (dc && dc.books) { _fmvCardIndex = dc; console.log(`[fmv] loaded ${Object.keys(dc.books).length} pokemon cards (v${dc.version || "?"})`); } }
+    else if (rc.status !== 404) console.warn("[fmv] pokemon fetch failed:", rc.status);
+  } catch (e) { console.warn("[fmv] pokemon load error:", e?.message || e); }
+})();
+
+// Manual FMV overrides live in Firestore (fmv_dashboard/comics), written from the
+// admin dashboard. Merge them over the static index; retries until Firestore is ready.
+async function loadFmvOverrides(attempt) {
+  attempt = attempt || 0;
+  try {
+    if (!window._db || !window._fsDoc || !window._fsGetDoc) {
+      if (attempt < 20) setTimeout(() => loadFmvOverrides(attempt + 1), 1500);
+      return;
+    }
+    const snap = await window._fsGetDoc(window._fsDoc(window._db, "fmv_dashboard", "comics"));
+    const data = snap && (typeof snap.exists === "function" ? (snap.exists() ? snap.data() : null) : (snap.exists ? snap.data() : null));
+    if (data && typeof data === "object") {
+      const conv = {};
+      for (const k in data) { const v = data[k]; if (Array.isArray(v)) conv[k] = v.map(o => Array.isArray(o) ? o : [o.g, o.t]); }
+      _fmvOverrides = conv;
+      console.log(`[fmv] merged ${Object.keys(conv).length} manual override(s)`);
+    }
+    try {
+      const snapC = await window._fsGetDoc(window._fsDoc(window._db, "fmv_dashboard", "pokemon"));
+      const dataC = snapC && (typeof snapC.exists === "function" ? (snapC.exists() ? snapC.data() : null) : (snapC.exists ? snapC.data() : null));
+      if (dataC && typeof dataC === "object") {
+        const convC = {};
+        for (const k in dataC) { const v = dataC[k]; if (Array.isArray(v)) convC[k] = v.map(o => Array.isArray(o) ? o : [o.g, o.t]); }
+        _fmvCardOverrides = convC;
+        console.log(`[fmv] merged ${Object.keys(convC).length} pokemon override(s)`);
+      }
+    } catch (e) { console.warn("[fmv] pokemon overrides:", e?.message || e); }
+  } catch (e) { console.warn("[fmv] overrides load:", e?.message || e); }
+}
+loadFmvOverrides();
+
+function normalizeTitle(s, issueDate, printing) {
+  if (!s) return s;
+  const trimmed = s.trim().replace(/\s+/g, " ").replace(/^The\s+/i, "");
+  const key = trimmed.toLowerCase();
+  if (TITLE_ALIASES[key]) return TITLE_ALIASES[key];
+  if (TITLE_ALIASES_DATED[key]) {
+    const year = extractYearFromIssueDate(issueDate);
+    return TITLE_ALIASES_DATED[key](year, printing);
+  }
+  // Wolverine: unify the model's inconsistent title strings (e.g. "Wolverine" vs
+  // "Wolverine (Limited Series)") so same-series issues group together. Matches
+  // "wolverine", "wolverine (...", "wolverine limited series", "wolverine vol N"
+  // but NOT distinct series like "Wolverine and the X-Men" or "Wolverine: Origin".
+  if (/^wolverine(\s*\(|\s+limited\s+series|\s+vol\b|\s*$)/.test(key)) {
+    return disambiguateWolverine(extractYearFromIssueDate(issueDate), printing);
+  }
+  return trimmed;
+}
+
+const FULL_DEEP_LIST = [ {
+  title: "action comics",
+  issue: "1"
+}, {
+  title: "superman",
+  issue: "1"
+}, {
+  title: "detective comics",
+  issue: "27"
+}, {
+  title: "batman",
+  issue: "1"
+}, {
+  title: "all-star comics",
+  issue: "8"
+}, {
+  title: "marvel comics",
+  issue: "1"
+}, {
+  title: "captain america comics",
+  issue: "1"
+}, {
+  title: "amazing fantasy",
+  issue: "15"
+}, {
+  title: "fantastic four",
+  issue: "1"
+}, {
+  title: "incredible hulk",
+  issue: "1"
+}, {
+  title: "x-men",
+  issue: "1"
+}, {
+  title: "uncanny x-men",
+  issue: "1"
+}, {
+  title: "tales of suspense",
+  issue: "39"
+} ];
+
+// S16: FULL_SLOTS is in CAPTURE order = STORAGE order (interiorImages[i] maps to
+// FULL_SLOTS[i]; the camera walks 0..7 in this order — Matt's smoothest flow).
+// DISPLAY order/layout matches capture order. Interior Staples is last (slot 7,
+// portrait, auto-rotated CW). Exterior staples and top/bottom pages are zoomed.
+// S20 (#47): slot order = edge group (Top Pages, Outer Edge, Bottom Pages) then
+// staple group (Exterior Top/Bottom Staple, Interior Staples). Matches capture
+// logic — shoot the first 5 by rotating the CLOSED book, then open for the last
+// interior-staple shot. slotKeys travel with the images so the server maps
+// correctly regardless of order.
+const FULL_SLOTS = [ {
+  key: "top_pages",
+  label: "Top Pages",
+  hint: "Looking down at the top, close to the spine, back cover showing"
+}, {
+  key: "outer_edge",
+  label: "Outer Edge",
+  hint: ""
+}, {
+  key: "bottom_pages",
+  label: "Bottom Pages",
+  hint: "Looking up at the bottom, close to the spine, back cover showing"
+}, {
+  key: "exterior_top_staple",
+  label: "Ext Top Staple",
+  hint: "Close-up of the top staple from outside the spine"
+}, {
+  key: "exterior_bottom_staple",
+  label: "Ext Bottom Staple",
+  hint: "Close-up of the bottom staple from outside the spine"
+}, {
+  key: "interior_staple",
+  label: "Interior Staples",   // S22: was "Int Staples" — users read INT as an error
+  hint: "Both staples, from inside the centerfold (macro)"
+} ];
+// S20 (#36): Interior Front / Interior Back moved OUT of Full and into the Deep
+// pass (captured as cornerImages[4] and [5] on raw books). Full is now 6 slots.
+
+// S16: Display order matches capture order. 5 full-width strips, then
+// interior_front + interior_back side by side, then interior_staple strip.
+// Interior Staples (slot 7) is captured portrait, auto-rotated CW at capture.
+const FULL_DISPLAY = [ {
+  key: "top_pages",
+  width: "full",
+  aspect: "5 / 1"
+}, {
+  key: "outer_edge",
+  width: "full",
+  aspect: "5 / 1"
+}, {
+  key: "bottom_pages",
+  width: "full",
+  aspect: "5 / 1"
+}, {
+  key: "exterior_top_staple",
+  width: "full",
+  aspect: "5 / 1"
+}, {
+  key: "exterior_bottom_staple",
+  width: "full",
+  aspect: "5 / 1"
+}, {
+  key: "interior_staple",
+  width: "full",
+  aspect: "5 / 1"
+} ];
+
+const FULL_GHOSTS = {
+  top_pages: 'assets/ghosts/Top_Edge.jpg',
+  outer_edge: 'assets/ghosts/Outer_Edge.jpg',
+  bottom_pages: 'assets/ghosts/Bottom_Edge.jpg',
+  exterior_top_staple: 'assets/ghosts/Exterior_Top_Staple.jpg',
+  exterior_bottom_staple: 'assets/ghosts/Exterior_Bottom_Staple.jpg',
+  interior_staple: 'assets/ghosts/Interior_Staple.jpg'
+};
+function fullSlotIndex(key) {
+  return FULL_SLOTS.findIndex(s => s.key === key);
+}
+
+const FULL_SLOT_COUNT = 6;
+
+// ── v5.28: BINDING DECIDES WHICH FULL SLOTS ARE ASKED FOR ──────────────────
+// Three constructions, decided by the Main pass from the 4 Main images (see the
+// BINDING rule in api/assess.js) and stored on the item as `binding`:
+//
+//   saddle  stapled through the fold — the normal comic. All 6 slots.
+//   square  SQUARE-BOUND WITH HIDDEN STAPLES (1960s–early-80s annuals, giants,
+//           100-page specials). The staples are driven up through the last
+//           interior page and folded on the first, so they CANNOT be photographed
+//           without forcing the covers wide open and risking the spine — on
+//           exactly the books least able to take it. The interior staple shot is
+//           therefore DROPPED; the two exterior slots stay and are re-aimed at
+//           where a hidden staple presses THROUGH THE FRONT COVER (a bump, or a
+//           spot of exposed metal). Back-cover penetration matters less and is
+//           not worth a slot. 5 slots.
+//   none    glued or sewn, no staples anywhere. All three staple slots dropped.
+//           3 slots — which puts a whole book at 4 Main + 6 Deep + 3 Full = 13
+//           images, with the single centerfold interior shot the only one that
+//           requires opening it.
+//
+// Storage does NOT change: interiorImages stays a fixed 6-long array indexed by
+// FULL_SLOTS order, with nulls in the dropped positions. Only which slots are
+// SHOWN, required, captured and submitted changes. That keeps every existing
+// item readable and every index stable.
+//
+// Unknown or missing binding => saddle. Old items have no `binding` field, and
+// "assume stapled" is the safe default: it asks for one photo that may be
+// unnecessary rather than skipping evidence that was there.
+const BINDING_SLOT_KEYS = {
+  saddle: [ "top_pages", "outer_edge", "bottom_pages", "exterior_top_staple", "exterior_bottom_staple", "interior_staple" ],
+  square: [ "top_pages", "outer_edge", "bottom_pages", "exterior_top_staple", "exterior_bottom_staple" ],
+  none:   [ "top_pages", "outer_edge", "bottom_pages" ]
+};
+// Square-bound re-aims the two exterior staple slots — same slot, different job.
+const SQUARE_STAPLE_HINTS = {
+  exterior_top_staple: "Where the TOP hidden staple presses through the front cover \u2014 look for a bump or exposed metal",
+  exterior_bottom_staple: "Where the BOTTOM hidden staple presses through the front cover \u2014 look for a bump or exposed metal"
+};
+function bindingOf(item) {
+  const b = String((item && item.binding) || "").toLowerCase().trim();
+  return BINDING_SLOT_KEYS[b] ? b : "saddle";
+}
+function fullRequiredKeys(item) { return BINDING_SLOT_KEYS[bindingOf(item)]; }
+function fullRequiredIdx(item) { return fullRequiredKeys(item).map(k => fullSlotIndex(k)).filter(i => i >= 0); }
+function fullRequiredCount(item) { return fullRequiredKeys(item).length; }
+// The slot defs the user sees, with square-bound hints swapped in.
+function fullSlotsFor(item) {
+  const sq = bindingOf(item) === "square";
+  return fullRequiredIdx(item).map(i => {
+    const s = FULL_SLOTS[i];
+    return (sq && SQUARE_STAPLE_HINTS[s.key]) ? Object.assign({}, s, { hint: SQUARE_STAPLE_HINTS[s.key] }) : s;
+  });
+}
+// Filled-required count, for the gate and the button label.
+function fullFilledCount(item) {
+  const imgs = (item && item.interiorImages) || [];
+  return fullRequiredIdx(item).filter(i => imgs[i]).length;
+}
+
+// ── UV Check Slots (S22 restructure) ────────────────────────
+// S22: the old 8-image "Restoration Check" is now a 2-image UV CHECK.
+// WHY: SIX of those eight were ordinary-light shots — exterior staples x2,
+// outer edge, interior front, interior back, interior staples — already
+// examined by Main / Deep / Full, which call restoration out themselves
+// (purple grade) at no extra charge. The other TWO, UV Front and UV Back, are
+// the only ones that ever needed a blacklight, and they are the two that stay.
+// The one thing NO other pass can see is COLOR TOUCH: added ink that
+// fluoresces differently under UV. That is the entire remaining job of this
+// tier, so it is those 2 images, a lean prompt, and FREE.
+// Nothing here is shared with Full any more: both images must be shot under UV,
+// so neither can be inherited.
+const RESTORATION_SLOTS = [ {
+  key: "uv_front",
+  label: "UV Front",
+  hint: "Front cover under UV light in a dark room, no ambient light"
+}, {
+  key: "uv_back",
+  label: "UV Back",
+  hint: "Back cover under UV light in a dark room, no ambient light"
+} ];
+
+const RESTORATION_DISPLAY = [ {
+  key: "uv_front",
+  width: "half",
+  aspect: "3 / 4"
+}, {
+  key: "uv_back",
+  width: "half",
+  aspect: "3 / 4"
+} ];
+
+// ── ADDED LABEL NOTES (v6.26) ────────────────────────────────────────────────
+// A PUBLIC, user-chosen line about THIS copy, printed on the label and shown on
+// the public listing. It is a fixed vocabulary on purpose.
+//
+// WHY NOT FREE TEXT: a free-text field displayed publicly makes Robograder an
+// app that publishes user-generated content, which brings App Store 1.2 and
+// Play's UGC policy with it - content filtering, a report mechanism, a way to
+// block a user, published contact info - and an ongoing moderation duty for a
+// one-person company. A closed list is not UGC. The owner's free-text thoughts
+// still exist: that is `notes` ("My Notes"), which stays PRIVATE.
+//
+// WHAT THIS REPLACES: until now the label and the public line printed
+// `comic.notes` - the private field - which was the exposure this avoids.
+const ADDED_LABEL_NOTES = [
+  "Married pages",
+  "Spine detached",
+  "Centerfold detached",
+  "Staple detached",
+  "Staple missing",
+  "Coupon missing",
+  "Pin-up missing"
+];
+
+// Added by Robograder, not by the user, and DERIVED rather than stored so it
+// can never go stale: the Main assessment flags a possible signature, and the
+// user populating a Signature slot is the confirmation that it is not a false
+// positive. Deliberately says nothing about WHERE the signature is or whether
+// it was witnessed - it may well have been; we do not know. We report that a
+// signature of some kind was found and confirmed, and stop there.
+const SIGNATURE_LABEL_NOTE = "Signature detected";
+
+function hasConfirmedSignature(item) {
+  return !!(item && (item.signatureImages || []).some(Boolean));
+}
+
+// The list as it should appear anywhere public: the label, the public listing,
+// Detail. Order follows ADDED_LABEL_NOTES so two books read the same way, with
+// the derived signature note last.
+function effectiveLabelNotes(item) {
+  if (!item) return [];
+  const chosen = Array.isArray(item.addedLabelNotes) ? item.addedLabelNotes : [];
+  const out = ADDED_LABEL_NOTES.filter(n => chosen.includes(n));
+  // Anything stored that is no longer in the vocabulary still shows; dropping a
+  // note from the list silently rewrites books that already carry it.
+  for (const n of chosen) if (!ADDED_LABEL_NOTES.includes(n) && n !== SIGNATURE_LABEL_NOTE) out.push(n);
+  if (hasConfirmedSignature(item)) out.push(SIGNATURE_LABEL_NOTE);
+  return out;
+}
+
+function labelNotesText(item) {
+  return effectiveLabelNotes(item).join(", ");
+}
+
+// ── THE IDENTITY HEADER (v6.27) ──────────────────────────────────────────────
+// ONE function, rendered by BOTH Detail and Edit, so the two cannot drift.
+// Edit used to re-declare it as four locked `rof()` fields in a form grid plus
+// a fifth locked Printing row - the same information in a different shape,
+// which read as "four things you are not allowed to type in" rather than as a
+// heading.
+//
+//   Title #Issue
+//   Pub Date, Publisher
+//   Printing, Added Label Notes, Key Info        <- same order as the label
+//
+// That third line is the label's own line (see print-label.js prtLine), in the
+// same order and with the same contents, so the screen and the printed label
+// say the same thing in the same sequence.
+// ── IMAGES / ASSESSMENT TABS (v6.29) ────────────────────────────────────────
+// A fully-worked book runs past 10,000px. Splitting it means the two halves
+// people actually come for - "show me the photos" and "show me the grade" -
+// are each one screen rather than one expedition.
+//
+// THE DEFAULT IS THE WHOLE DESIGN. Matt's worry was that people would not
+// notice the tabs and would never see the assessment. So the assessment is
+// what you LAND on whenever one exists, and IMAGES is the thing you opt into -
+// which people go looking for anyway, because they arrive wanting to add or
+// check a photo. A book with no assessment opens on IMAGES, because that is
+// the only thing it has. The risk only exists in the arrangement where the
+// assessment is the hidden half; this is the other arrangement.
+//
+// Sticky per book, not global: _detailTab is cleared when the selected book
+// changes, so opening a different book re-applies the default rather than
+// inheriting wherever you happened to be.
+// THE KILL SWITCH. Set to false and every view renders exactly as it did
+// before tabs existed: renderDetailTabs() emits nothing and both panels render
+// open. Nothing else has to be touched or reverted, in any of the three views.
+// This is here because splitting the record is a judgement call that may turn
+// out to be wrong once it is in front of people, and the cost of finding that
+// out should be one word.
+const TABS_ENABLED = true;
+
+let _detailTab = null;
+let _detailTabFor = null;
+
+function _hasAssessment(item) {
+  return !!(item && (item.roboGrade || item.aiAssessment ||
+    (item.cardData && item.cardData.robograde)));
+}
+
+function detailTab(item) {
+  const id = item && item.id;
+  if (_detailTabFor !== id) { _detailTabFor = id; _detailTab = null; }
+  if (_detailTab) return _detailTab;
+  return _hasAssessment(item) ? "assessment" : "photos";
+}
+
+function setDetailTab(t) {
+  _detailTab = (t === "photos") ? "photos" : "assessment";
+  // Both views render through their own entry point; call whichever is live.
+  if (view === "detail" && typeof showDetail === "function" && selected) showDetail(selected.id);
+  else if (typeof renderForm === "function") renderForm();
+}
+
+// The two tabs. Rendered as actual folder tabs - the inactive one is darker,
+// sits 2px lower and has no bottom border, so the active one reads as the
+// sheet you are looking at rather than as a selected button.
+const TAB_SKIN = {
+  // The PHOTOS sheet is the lighter of the two so the two halves are
+  // distinguishable at a glance even before you read the tab.
+  // v6.33: PHOTOS is the beige sheet - the paper tone the label and the
+  // export images use (#e8e4d8 / #d4d9be family), so the photo half reads as
+  // a contact sheet rather than another green panel.
+  photos:     { bg: '#e6e2d4', bd: '#b8b3a0', fg: '#3a3426' },
+  // v6.33: #152e10 is the Robograde panel's own BG. The sheet IS that box now
+  // - the panel dropped its container so the sub-scores stop clipping - so the
+  // two have to be the same colour or the join shows.
+  // v6.41: back to #152e10, the panel's own colour, as it was before v6.38.
+  // Detail renders the panel UNFRAMED, so the sheet IS the box - one surface,
+  // no border inside a border. The v6.38 tint existed only to sit behind a
+  // framed panel, and Matt's read was that it looked worse. Edit is the one
+  // that frames, and Edit has no sheet.
+  assessment: { bg: '#152e10', bd: '#4a7028', fg: '#b8d820' }
+};
+
+function renderDetailTabs(item, opts) {
+  if (!TABS_ENABLED) return '';
+  const cur = detailTab(item);
+  const ro = !!(opts && opts.readOnly);
+  // Real folder tabs: the active one shares its fill with the sheet below and
+  // covers the sheet's top border, so the two read as one object. The inactive
+  // one sits 3px lower, darker, with its own bottom border intact - it is a
+  // closed folder behind the open one.
+  const tab = (key, label) => {
+    const on = cur === key;
+    const sk = TAB_SKIN[key];
+    // v6.35 did this for PHOTOS; v6.38 finishes it for ASSESSMENT. The tab is
+    // the FOLDER, and a folder does not change colour when you close it. The
+    // grey "off" fill and the 0.72 opacity made the pair read as one live tab
+    // and one dead control. Both are gone - every tab is always its own
+    // colour, and OPEN is carried by position (the closed one sits 3px lower)
+    // and weight, which is how a real tab tells you.
+    const click = ro ? '' : ` onclick="setDetailTab('${key}')"`;
+    return `<button type="button"${click} style="
+      flex:1;min-width:0;border:1.5px solid ${sk.bd};
+      border-bottom:none;
+      ${on ? 'margin-bottom:-1.5px;position:relative;z-index:1;' : 'margin-top:3px;margin-bottom:-1.5px;'}
+      border-radius:9px 9px 0 0;padding:${on ? '9px' : '8px'} 8px;
+      background:${sk.bg};color:${sk.fg};
+      font-family:inherit;font-size:11px;font-weight:${on ? 800 : 700};letter-spacing:1.6px;
+      cursor:${ro ? 'default' : 'pointer'};line-height:1">${label}</button>`;
+  };
+  const sk = TAB_SKIN[cur];
+  // Opens the sheet. tabWrapClose() closes it after BOTH panels.
+  return `<div style="margin-top:18px">
+      <div style="display:flex;gap:5px;align-items:flex-end">
+        ${tab('photos', 'PHOTOS')}${tab('assessment', 'ASSESSMENT')}
+      </div>
+      <div style="background:${sk.bg};border:1.5px solid ${sk.bd};
+        /* v6.38: BOTH top corners square. The sheet used to round the corner
+           AWAY from the open tab - so under the closed tab there was a 10px
+           arc with the page background showing through it, the white wedge
+           Matt circled. The tabs sit along the whole top edge; a folder's
+           sheet has no visible top corners at all. */
+        border-radius:0 0 10px 10px;
+        padding:12px 10px">`;
+}
+
+function tabWrapClose() {
+  return TABS_ENABLED ? '</div></div>' : '';
+}
+
+// Panels are rendered either way and hidden with display, not omitted: the
+// lightbox reel, the camera chain and every getElementById in here expect
+// their nodes to exist whichever tab is showing.
+function tabPanelOpen(item, key) {
+  const show = !TABS_ENABLED || detailTab(item) === key;
+  return `<div data-tab-panel="${key}" style="display:${show ? "block" : "none"}">`;
+}
+
+// ── THE ASSESSMENT MAP (v6.31) ──────────────────────────────────────────────
+// Nine assessment types with different prices, different prerequisites and
+// three confidence tiers is more than anyone can hold in their head from
+// buttons that appear and disappear down a long page. The map answers, in one
+// picture: what have I run, what can I run now, what is still locked, what
+// does each cost, and which ones raise the star rating.
+//
+// THE GRAPH IS READ FROM THE REAL GATE FUNCTIONS, not drawn by hand, so it
+// cannot describe an app that no longer exists. Each node names the predicate
+// that actually decides it.
+//
+// This differs from Matt's sketch in one way worth knowing: Coupon and UV
+// hang off MAIN, not off DEEP. showRestorationTier() and matchCoupon() never
+// ask whether a Deep has run - they only need the book identified. Drawing
+// them under Deep would have told users to spend a credit they do not need.
+//
+// Costs live INSIDE the coins, as Matt asked, and the user's balance sits at
+// the bottom in the same coin - so "3 credits" and "you have 2" are read in
+// one glance, and the unlocked-but-unaffordable case looks different from the
+// locked one.
+const ASSESSMENT_MAP_NODES = [
+  { key: 'main',   label: 'MAIN',          cost: 1, stars: 1, dep: null,
+    ran: it => !!(it && (it.roboGrade || it.aiAssessment)),
+    open: () => true },
+  { key: 'sig',    label: 'SIGNATURE CHECK', cost: 0, stars: 0, dep: 'main',
+    ran: it => (it.signatureImages || []).some(Boolean),
+    open: it => typeof hasIdentifiedSignatures === 'function' && hasIdentifiedSignatures(it) },
+  { key: 'insert', label: 'INSERT CHECK',  cost: 0, stars: 0, dep: 'main',
+    ran: it => !!it.insertFinding || (it.insertImages || []).some(Boolean),
+    open: it => !!(it.title && it.issue && typeof window.matchInsert === 'function' &&
+                   (window.matchInsert(it.title, it.issue) ||
+                    (typeof window.matchInsertCandidate === 'function' &&
+                     window.matchInsertCandidate(it.title,
+                       parseInt((String(it.issueDate || '').match(/\b(19|20)\d{2}\b/) || [])[0], 10))))) },
+  { key: 'coupon', label: 'COUPON CHECK',  cost: 0, stars: 0, dep: 'main',
+    ran: it => !!it.couponFinding || (it.couponImages || []).some(Boolean),
+    open: it => !!(it.title && it.issue && typeof window.matchCoupon === 'function' &&
+                   window.matchCoupon(it.title, it.issue)) },
+  { key: 'uv',     label: 'UV CHECK',      cost: 0, stars: 0, dep: 'main',
+    ran: it => typeof isRestorationCheckComplete === 'function' && isRestorationCheckComplete(it),
+    open: it => typeof showRestorationTier === 'function' && showRestorationTier(it) },
+  { key: 'deep',   label: 'DEEP',          cost: 1, stars: 2, dep: 'main',
+    ran: it => typeof isDeepAssessmentComplete === 'function' && isDeepAssessmentComplete(it),
+    open: it => typeof showDeepTier === 'function' && showDeepTier(it) },
+  { key: 'full',   label: 'FULL',          cost: 1, stars: 3, dep: 'deep',
+    ran: it => typeof isFullAssessmentComplete === 'function' && isFullAssessmentComplete(it),
+    open: it => typeof showFullTier === 'function' && showFullTier(it) },
+  { key: 'batch',  label: 'BATCH',         cost: 3, stars: 0, dep: 'deep',
+    ran: it => typeof hasBatchRun === 'function' && hasBatchRun(it),
+    open: it => typeof isBatchEligible === 'function' && isBatchEligible(it) },
+  { key: 'clean',  label: 'POST-CLEANING', cost: 2, stars: 0, dep: 'deep',
+    ran: it => (it.cleanRuns || 0) > 0,
+    open: it => typeof _cleanUnlocked === 'function' && _cleanUnlocked(it) }
+];
+
+// A credit coin with the number inside it. One definition; the map uses it for
+// both the per-type costs and the balance.
+function _coinSVG(n, px, dim) {
+  const id = 'coin-g' + Math.random().toString(36).slice(2, 7);
+  const fs = Math.round(px * 0.5);
+  return `<span style="position:relative;display:inline-flex;align-items:center;justify-content:center;
+      width:${px}px;height:${px}px;flex:0 0 ${px}px;${dim ? 'opacity:0.4;filter:saturate(0.25)' : ''}">
+      <svg viewBox="0 0 40 40" width="${px}" height="${px}" aria-hidden="true" style="position:absolute;inset:0">
+        <defs><radialGradient id="${id}" cx="0.35" cy="0.35" r="0.75">
+          <stop offset="0%" stop-color="#fde89a"/><stop offset="50%" stop-color="#e6bb4a"/>
+          <stop offset="100%" stop-color="#8c6a1a"/></radialGradient></defs>
+        <circle cx="20" cy="20" r="18.5" fill="url(#${id})" stroke="#5a4010" stroke-width="1.2"/>
+        <circle cx="20" cy="20" r="15.5" fill="none" stroke="#a57a20" stroke-width="0.7" opacity="0.55"/>
+      </svg>
+      <span style="position:relative;font-family:'Noto Sans Display',system-ui,sans-serif;font-weight:900;
+        font-size:${fs}px;color:#4a3408;line-height:1">${n}</span></span>`;
+}
+
+function _mapNodeState(node, item, byKey) {
+  if (node.ran(item)) return 'ran';
+  if (node.dep && !byKey[node.dep].ranNow) return 'locked';
+  return node.open(item) ? 'open' : 'locked';
+}
+
+// ── THE FOLDER PANEL ────────────────────────────────────────────────────────
+// A bordered panel whose title sits in a tab on its own top edge, the way a
+// manila folder's label does: the tab is part of the folder, drawn above the
+// line, open at the bottom so the two read as one object.
+//
+// Built from two elements rather than a pseudo-element so html2canvas can see
+// it: the tab is an inline-block with a bottom border the same colour as its
+// fill, which erases the panel's top line underneath it.
+function rgFolderPanel(title, inner, o) {
+  o = o || {};
+  const bg = o.bg || '#101c0a', bd = o.bd || '#3a5018', fg = o.fg || '#9abf60';
+  // v6.33: the tab sits flush with the panel's LEFT edge, so the two left
+  // borders are one unbroken line running from the top of the tab to the
+  // bottom of the panel. Indenting it left a step in that line, which is the
+  // hard corner Matt saw. Square the tab's bottom-left and the panel's
+  // top-left for the same reason.
+  return `<div style="margin-top:${o.mt == null ? 18 : o.mt}px">
+      <div style="display:flex">
+        <div style="background:${bg};border:1.5px solid ${bd};border-bottom:none;
+          border-radius:9px 9px 0 0;padding:6px 16px 5px;margin-bottom:-1.5px;position:relative;z-index:1;
+          font-size:11px;font-weight:800;letter-spacing:1.6px;color:${fg};line-height:1">${esc(title)}</div>
+      </div>
+      <div style="background:${bg};border:1.5px solid ${bd};border-radius:0 10px 10px 10px;padding:14px 12px">
+        ${inner}
+      </div>
+    </div>`;
+}
+
+function renderAssessmentMap(item) {
+  if (!item || item.type === 'card') return '';
+  const byKey = {};
+  for (const n of ASSESSMENT_MAP_NODES) byKey[n.key] = n;
+  for (const n of ASSESSMENT_MAP_NODES) { try { n.ranNow = !!n.ran(item); } catch (e) { n.ranNow = false; } }
+  const state = {};
+  for (const n of ASSESSMENT_MAP_NODES) {
+    try { state[n.key] = _mapNodeState(n, item, byKey); } catch (e) { state[n.key] = 'locked'; }
+  }
+  const bal = Number(window._userCredits != null ? window._userCredits
+    : (document.getElementById('credit-coin-count') || {}).textContent) || 0;
+
+  // v6.32: Matt's 3x3 with the arrows drawn, inside a panel whose title sits in
+  // a folder tab on its top edge.
+  //
+  // COLOUR CARRIES THE STATE. Light green (the label score box) = run; the
+  // BATCH-card green = available, taken from that card's own values so the two
+  // cannot drift; grey = locked; light red = available but unaffordable. No RUN
+  // or AVAILABLE caption - if a box needs a word to say which it is, the colour
+  // has failed.
+  //
+  // THE SPINE IS THICKER. Main -> Deep -> Full is the assessment path; the
+  // other six hang off it. 3px against 2px says which is which without a
+  // legend.
+  const BOX_H = 62, GAP_Y = 32;   // v6.35: 24 -> 32, so the arrowheads have room to read
+  const COL = ['16.666%', '50%', '83.333%'];
+  const SKIN = {
+    // #152e10 / #4a7028 / #b8d820 are lifted from the BATCH ASSESSMENT
+    // AVAILABLE card. Same meaning, same colour.
+    ran:    { bg: '#cfe8a8', bd: '#6a9a30', fg: '#1d2e10', sub: '#3f5a22' },
+    open:   { bg: '#152e10', bd: '#4a7028', fg: '#b8d820', sub: '#9cc76a' },
+    locked: { bg: '#6e6e66', bd: '#8a8a80', fg: '#f0efe9', sub: '#d8d6cc' },
+    short:  { bg: '#e8b4ac', bd: '#b05a4a', fg: '#4a1a12', sub: '#7a2e20' }
+  };
+  // v6.35: sized from the LONGEST WORD, not the whole string. Two lines is
+  // fine - "SIGNATURE" then "CHECK" - what is not fine is a word breaking
+  // across lines, and what decides that is the longest unbreakable run.
+  // "POST-CLEANING" breaks at its hyphen, so its longest run is "CLEANING".
+  const _labelPx = (t) => {
+    const longest = String(t).split(/[\s-]+/).reduce((a, w) => Math.max(a, w.length), 0);
+    return longest > 9 ? 9 : 10;
+  };
+
+  const card = (n) => {
+    const st = state[n.key];
+    const short = st === 'open' && n.cost > bal;
+    const sk = short ? SKIN.short : SKIN[st];
+    const cost = n.cost === 0
+      ? `<div style="font-size:10px;font-weight:800;letter-spacing:1px;color:${sk.sub}">FREE</div>`
+      : `<div style="display:flex;align-items:center;justify-content:center;gap:4px">
+           <span style="font-size:9px;font-weight:800;letter-spacing:1px;color:${sk.sub}">COST</span>
+           ${_coinSVG(n.cost, 17, false)}
+         </div>`;
+    // Only the starred three reserve a star row. The other six centre their two
+    // lines on the box's true middle instead of hanging below a blank strip.
+    const stars = n.stars
+      ? `<div style="line-height:1;height:11px">${Array.from({ length: n.stars }, () => tierStarSVG(10, sk.fg)).join('')}</div>`
+      : '';
+    // An available type is a way in, not a status light: tapping it goes to
+    // the control that runs it, the same jump the BATCH / FULL cards make.
+    // Run and locked types are inert - there is nothing to do at either.
+    const live = st === 'open';
+    const jump = live
+      ? ` onclick="showEditToSection('${esc(item.id || '')}','${n.key}')" role="button" tabindex="0"`
+      : '';
+    // min-width:0 is load-bearing: a grid item's default min-width is
+    // min-content, so one long label widened its column and pushed the map off
+    // the right of the screen.
+    return `<div${jump} style="background:${sk.bg};border:1.5px solid ${sk.bd};border-radius:8px;
+        height:${BOX_H}px;min-width:0;box-sizing:border-box;padding:4px 3px;display:flex;
+        flex-direction:column;align-items:center;justify-content:center;gap:2px;text-align:center;
+        ${live ? 'cursor:pointer' : ''}">
+        ${stars}
+        <div style="font-size:${_labelPx(n.label)}px;font-weight:800;letter-spacing:0.2px;line-height:1.15;
+          color:${sk.fg};white-space:normal;overflow-wrap:normal;word-break:normal">${esc(n.label)}</div>
+        ${cost}
+        ${short ? `<div style="font-size:8px;font-weight:800;letter-spacing:0.6px;color:${sk.sub}">NEED CREDITS</div>` : ''}
+      </div>`;
+  };
+
+  // Connectors are plain divs: the rows are a fixed height, so every coordinate
+  // is arithmetic rather than measurement, and it survives html2canvas.
+  const LINE = '#4a7028', DIM = '#b0aa9a';
+  const vline = (x, y, h, on, w) =>
+    `<div style="position:absolute;left:${x};top:${y}px;width:${w}px;height:${h}px;margin-left:-${w / 2}px;background:${on ? LINE : DIM}"></div>`;
+  const hline = (x1, x2, y, on, w) =>
+    `<div style="position:absolute;left:${x1};right:${x2};top:${y}px;height:${w}px;background:${on ? LINE : DIM}"></div>`;
+  const head = (x, y, dir, on, big) => {
+    const hw = big ? 5 : 4, hh = big ? 7 : 6;
+    return `<div style="position:absolute;left:${x};top:${y}px;margin-left:-${hw}px;width:0;height:0;
+       border-left:${hw}px solid transparent;border-right:${hw}px solid transparent;
+       ${dir === 'up' ? 'border-bottom' : 'border-top'}:${hh}px solid ${on ? LINE : DIM}"></div>`;
+  };
+
+  const r1b = BOX_H, r2t = BOX_H + GAP_Y, r2b = r2t + BOX_H, r3t = r2b + GAP_Y;
+  const j1 = r1b + GAP_Y / 2, j2 = r2b + GAP_Y / 2;
+  const mainRan = state.main === 'ran', deepRan = state.deep === 'ran';
+  const SPINE = 5, BRANCH = 2;   // v6.35: 3 -> 5. The spine is the assessment path.
+
+  const wires =
+    vline(COL[0], r1b, GAP_Y, mainRan, SPINE) + head(COL[0], r2t - 7, 'down', mainRan, true) +
+    vline(COL[0], r2b, GAP_Y, deepRan, SPINE) + head(COL[0], r3t - 7, 'down', deepRan, true) +
+    hline(COL[0], '16.666%', j1, mainRan, BRANCH) +
+    vline(COL[1], r1b, GAP_Y / 2, mainRan, BRANCH) + head(COL[1], r1b, 'up', mainRan) +
+    vline(COL[2], r1b, GAP_Y / 2, mainRan, BRANCH) + head(COL[2], r1b, 'up', mainRan) +
+    vline(COL[1], j1, GAP_Y / 2, mainRan, BRANCH) + head(COL[1], r2t - 6, 'down', mainRan) +
+    vline(COL[2], j1, GAP_Y / 2, mainRan, BRANCH) + head(COL[2], r2t - 6, 'down', mainRan) +
+    hline(COL[0], '16.666%', j2, deepRan, BRANCH) +
+    vline(COL[1], j2, GAP_Y / 2, deepRan, BRANCH) + head(COL[1], r3t - 6, 'down', deepRan) +
+    vline(COL[2], j2, GAP_Y / 2, deepRan, BRANCH) + head(COL[2], r3t - 6, 'down', deepRan);
+
+  const g = (k) => card(byKey[k]);
+  return rgFolderPanel('ASSESSMENT MAP', `
+      <div style="position:relative">
+        ${wires}
+        <div style="position:relative;display:grid;grid-template-columns:repeat(3,1fr);
+          column-gap:9px;row-gap:${GAP_Y}px">
+          ${g('main')}${g('sig')}${g('insert')}
+          ${g('deep')}${g('coupon')}${g('uv')}
+          ${g('full')}${g('batch')}${g('clean')}
+        </div>
+      </div>`, { bg: '#eef3e6', bd: '#cdd8be', fg: '#4a6a2a', mt: 22 });
+}
+
+function renderIdentityHeader(item) {
+  if (!item) return "";
+  const _iss = item.issue
+    ? `<span style="font-weight:600;color:#3a2e24;margin-left:0.28em">${item.type === "card" ? esc(formatCardNumber(item.issue)) : formatIssue(item.issue, item.title)}</span>`
+    : "";
+  // Pub Date and Publisher share a line, separated by a comma - they are one
+  // fact about the edition, not two.
+  const _datePub = [
+    item.issueDate ? esc(formatIssueDateCompact(item.issueDate)) : "",
+    item.publisher ? esc(item.publisher) : ""
+  ].filter(Boolean).join(", ");
+  const _notes = labelNotesText(item);
+  const _third = [item.printing, _notes, item.keyInfo]
+    .filter(x => x && String(x).trim()).map(x => esc(String(x).trim())).join(", ");
+  return `<h2 style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:26px;font-weight:900;color:#0d0d0f;line-height:1.1;margin:0">${esc(item.title || "")}${_iss}</h2>
+    ${_datePub ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:600;color:#7a6a5a;margin-top:6px">${_datePub}</div>` : ""}
+    ${_third ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:500;color:#6a5a4a;margin-top:4px;line-height:1.35">${_third}</div>` : ""}`;
+}
+
+function renderAddedLabelNotesField() {
+  if (!formData) return "";
+  // v6.28: a <select>, not seven toggle chips. The chips were accurate about
+  // the data (a set) and wrong about the use: this is rarely filled in, and it
+  // was spending a seven-button block near the top of Edit to say nothing most
+  // of the time. Matt chose a single selection over the space.
+  // The DATA stays an array - the label, public.html and api/lookup.js all
+  // read a list, a book saved earlier may legitimately hold more than one, and
+  // a future multi-select needs no migration. The picker writes 0 or 1 entry;
+  // nothing clamps what is already stored.
+  const chosen = Array.isArray(formData.addedLabelNotes) ? formData.addedLabelNotes : [];
+  const cur = chosen[0] || "";
+  const extra = chosen.slice(1);
+  const opts = ADDED_LABEL_NOTES.map(n =>
+    `<option value="${esc(n)}"${n === cur ? " selected" : ""}>${esc(n)}</option>`).join("");
+  // A value stored before this was a single-select, or dropped from the list,
+  // still appears and stays selectable rather than vanishing on the next save.
+  const orphan = cur && !ADDED_LABEL_NOTES.includes(cur)
+    ? `<option value="${esc(cur)}" selected>${esc(cur)}</option>` : "";
+  const sig = hasConfirmedSignature(formData);
+  return `<div>
+      <label class="field-label">Added Label Notes</label>
+      <select class="rg-select${cur ? "" : " is-empty"}" onchange="this.classList.toggle('is-empty', !this.value);setAddedLabelNote(this.value)">
+        <option value="">None</option>
+        ${orphan}${opts}
+      </select>
+      ${extra.length ? `<div style="font-size:11px;color:#7a8a6a;margin-top:6px;line-height:1.45">Also on this book: ${esc(extra.join(", "))}. Saved before notes were limited to one; still printed.</div>` : ""}
+      ${sig ? `<div style="font-size:11px;color:#7a8a6a;margin-top:6px;line-height:1.45">Robograder also prints &ldquo;${esc(SIGNATURE_LABEL_NOTE)}&rdquo; because a Signature photo is on file.</div>` : ""}
+    </div>`;
+}
+
+function setAddedLabelNote(note) {
+  const cur = Array.isArray(formData.addedLabelNotes) ? formData.addedLabelNotes : [];
+  // Keep anything beyond the first entry: a book saved when this was
+  // multi-select still prints what it was given, and picking a new first note
+  // must not silently drop the rest.
+  const rest = cur.slice(1);
+  formData.addedLabelNotes = note ? [note, ...rest] : rest;
+  renderForm();
+}
+
+const RESTORATION_SLOT_COUNT = 2;
+
+// Mapping: UV slot index → Full Assessment slot index (null = unique).
+// Both are null now — a UV photo can never be inherited from a normal-light pass.
+const RESTORATION_TO_FULL = [ null, null ];
+// Mapping: Full Assessment slot index → UV slot index (null = not shared)
+const FULL_TO_RESTORATION = [ null, null, null, null, null, null, null, null ];
+
+function restorationSlotIndex(key) {
+  return RESTORATION_SLOTS.findIndex(s => s.key === key);
+}
+
+// Camera orientation for UV slots (both are full covers, portrait)
+const CAMERA_SLOT_ORIENTATION_RESTORATION = [ "portrait", "portrait" ];
+// Camera zoom for UV slots — never zoom, the whole cover must be in frame
+const CAMERA_SLOT_ZOOM_RESTORATION = [ false, false ];
+
+// ── S22: SINGLE SOURCE OF TRUTH FOR THE PER-SLOT LENS DEFAULT ──────────────
+// Matt reported (3rd time) that Main's Back Cover and Interior still opened on
+// ZOOM IN. Root cause: TWO places decided the default lens and they disagreed.
+//   • camera init (_zoomDefault) followed the S25 spec — Main = WIDE.
+//   • cameraOpenSlot() carried a stale copy that forced idx 1 for
+//     kind "main" slots 0/1/2 AND for every "interior" slot but outer_edge.
+// The first slot of a session goes through init (correct), every slot AFTER it
+// goes through cameraOpenSlot (wrong) — which is exactly the symptom: Front was
+// fine, Back and Interior were zoomed. Previous fixes patched init only.
+// Both call sites now call this function. Do not re-derive the rule inline.
+//
+// S25 spec:
+//   Main (Front/Back/Interior/Spine)          -> WIDE
+//   Corner macros / Signature / Card (any)    -> ZOOM
+//   Full "interior": top_pages, bottom_pages,
+//     exterior_top_staple, exterior_bottom_staple -> ZOOM; all others WIDE
+//   Restoration: CAMERA_SLOT_ZOOM_RESTORATION
+// Android has no telephoto — idx 1 there is the WIDER lens — so Android never
+// takes the zoom default.
+function _slotWantsZoom(kind, slotIndex, isCard) {
+  const _android = !!(window.Capacitor && Capacitor.getPlatform && Capacitor.getPlatform() === "android");
+  if (_android) return false;
+  if (kind === "corner" || kind === "signature" || kind === "carddeep") return true;
+  if (isCard) return true;
+  if (kind === "main") return false;
+  if (kind === "interior") {
+    return slotIndex === fullSlotIndex("top_pages")
+        || slotIndex === fullSlotIndex("bottom_pages")
+        || slotIndex === fullSlotIndex("exterior_top_staple")
+        || slotIndex === fullSlotIndex("exterior_bottom_staple");
+  }
+  if (kind === "restoration") return !!CAMERA_SLOT_ZOOM_RESTORATION[slotIndex];
+  return false;
+}
+// Near-field focus is a SEPARATE question from lens choice: only true macro
+// slots get it. Card front/back/raking are zoomed but not macro.
+function _slotWantsMacroFocus(kind, slotIndex, isCard) {
+  if (kind === "corner" || kind === "signature") return true;
+  if (kind === "carddeep" || isCard) return slotIndex === 2 || slotIndex === 3;
+  if (kind === "interior") {
+    return slotIndex === fullSlotIndex("top_pages")
+        || slotIndex === fullSlotIndex("bottom_pages")
+        || slotIndex === fullSlotIndex("exterior_top_staple")
+        || slotIndex === fullSlotIndex("exterior_bottom_staple");
+  }
+  if (kind === "restoration") return !!CAMERA_SLOT_ZOOM_RESTORATION[slotIndex];
+  return false;
+}
+
+function _normTitleForFull(t) {
+  if (!t) return "";
+  return String(t).trim().toLowerCase().replace(/^the\s+/i, "").replace(/\s+/g, " ");
+}
+
+function _normIssueForFull(i) {
+  if (i == null) return "";
+  const s = String(i).trim().replace(/^#/, "");
+  if (/^\d+$/.test(s)) return String(parseInt(s, 10));
+  return s;
+}
+
+function _isFullDeepListBook(item) {
+  const t = _normTitleForFull(item.title);
+  const i = _normIssueForFull(item.issue);
+  return FULL_DEEP_LIST.some(b => b.title === t && b.issue === i);
+}
+
+function isNearPerfectForFull(item) {
+  // S22: a near-perfect book unlocks Full (the perfect-10 path) regardless of
+  // value — the Deep RG hit the 9.5 ceiling OR the predicted grade is 9.6+.
+  if (!item || item.labelDetected === true) return false;
+  if (!isDeepAssessmentComplete(item)) return false;
+  var _pg = parseFloat(item.predictedGrade != null && item.predictedGrade !== "" ? item.predictedGrade : item.assessedCGCGrade);
+  if (Number.isFinite(_pg) && _pg >= 9.6) return true;
+  var _v3 = (typeof rgV3ForComic === "function" && item.type !== "card") ? rgV3ForComic(item) : null;
+  if (_v3 && _v3.grade >= 9.5) return true;
+  return false;
+}
+function isFullAssessmentEligible(item) {
+  if (!item) return null;
+  if (item.labelDetected === true) return null;
+  if (!isDeepAssessmentComplete(item)) return null;
+  // v6.32 (Matt): tier 4 — $100+. Was tier 6 ($500+), and tier 7 ($1000+)
+  // before that. A completeness pass, never refunded.
+  if (fmvTierOf(item) >= 4) return { slots: FULL_SLOT_COUNT, slotDefs: FULL_SLOTS, reason: "fmv-tier4" };
+  // S22: near-perfect books qualify too — the perfect-10 path, refunded if it stays 9.5.
+  if (isNearPerfectForFull(item)) return { slots: FULL_SLOT_COUNT, slotDefs: FULL_SLOTS, reason: "near-perfect" };
+  return null;
+}
+
+function isFullAssessmentComplete(item) {
+  return !!(item && item.fullAssessmentRan === true);
+}
+
+// S17: Assessment-tier STAR GRAMMAR. One star = Main, two = Deep, three = Full
+// (highest tier reached); a restoration star is appended when a Restoration
+// check has run. Uses a custom chunky 5-point star (inner ratio 0.55 → short
+// points, thick center) that stays legible at small sizes, NOT the pointy
+// Unicode ★. Stars inherit color from the caller (set color on the wrapper to
+// match the score text); the restoration star is purple.
+//   size: pixel box size per star
+//   color: gold/normal star fill (defaults to currentColor so it matches text)
+const TIER_STAR_PATH = "M12.00,2.00 15.64,6.98 21.51,8.91 17.90,13.92 17.88,20.09 12.00,18.20 6.12,20.09 6.10,13.92 2.49,8.91 8.36,6.98Z";
+function tierStarSVG(px, fill) {
+  return `<svg viewBox="0 0 24 24" width="${px}" height="${px}" style="display:inline-block;vertical-align:middle" aria-hidden="true"><path d="${TIER_STAR_PATH}" fill="${fill}"/></svg>`;
+}
+function assessmentTierStars(item, opts) {
+  opts = opts || {};
+  const size = opts.size || 10;
+  const color = opts.color || "currentColor";
+  if (!item || !item.roboGrade) return "";
+  let tier = 1;
+  if (isFullAssessmentComplete(item)) tier = 3;
+  else if (isDeepAssessmentComplete(item)) tier = 2;
+  const restorationRan = isRestorationCheckComplete(item);
+  const PURPLE = "#b58be0";
+  let stars = "";
+  for (let i = 0; i < tier; i++) stars += tierStarSVG(size, color);
+  if (restorationRan) stars += tierStarSVG(size, PURPLE);
+  return `<span style="line-height:1;white-space:nowrap;display:inline-flex;gap:1px;align-items:center">${stars}</span>`;
+}
+
+function isGoldenAgeBook(item) {
+  if (!item) return false;
+  const d = String(item.issueDate || "");
+  const m = d.match(/\b(18|19|20)\d{2}\b/);
+  if (!m) return false;
+  return parseInt(m[0], 10) <= 1959;
+}
+
+function isRestorationEligible(item) {
+  if (!item) return false;
+  if (item.labelDetected === true) return false;
+  // S16: Use the full VALUE_KEYS list (matchValueKey), not just the tiny FULL_DEEP_LIST
+  const valueGate = typeof window.matchValueKey === "function" ? !!window.matchValueKey(item.title, item.issue, item.publisher, item.printing) : false;
+  return valueGate || _isFullDeepListBook(item) || isGoldenAgeBook(item);
+}
+
+function isRestorationCheckComplete(item) {
+  return !!(item && item.restorationCheckRan === true);
+}
+
+// ── v5.27: RESTORATION INFERRED BY THE GRADING PASS ────────────────────────
+// Two different things can say "restoration" about a book, and until now only
+// one of them reached the screen.
+//
+//   1. The UV CHECK — a deliberate 2-image blacklight pass. Writes
+//      restorationReport / restorationFlag / restorationCheckRan.
+//   2. The GRADING PASS itself — assess.js's RESTORATION INFERENCE rule asks
+//      the model to flag amber/brown adhesive, backing or reinforcement
+//      material, leaf casting, a married cover, or a spine that is
+//      implausibly clean for the book's age. That lands in
+//      roboGrade.restorationFlags.
+//
+// (2) has been persisted on every graded item all along (roboGrade is stored
+// whole) and rendered NOWHERE. The Restoration Assessment section was gated on
+// the UV check alone, so a book the grader believed was restored looked exactly
+// like a book nothing had ever been said about.
+//
+// These are NOT merged. A UV check is evidence; a grading flag is a suspicion
+// raised from ordinary-light photos. They are shown as separate, separately
+// labelled blocks, and a grading flag deliberately does NOT set
+// restorationFlag or restorationHighConfidence — those drive the RESTORED
+// badge and the public listing, and they should keep meaning "the UV pass
+// found something."
+//
+// Shape tolerance: the prompt declares restorationFlags as a bare array and
+// does not pin the element type, so accept a string or an object and pull the
+// first readable field. Anything unreadable is dropped rather than rendered as
+// "[object Object]".
+function normRestorationFlags(raw) {
+  const out = [];
+  for (const f of (Array.isArray(raw) ? raw : [])) {
+    let t = "";
+    if (typeof f === "string") t = f;
+    else if (f && typeof f === "object") t = f.flag || f.type || f.note || f.description || f.text || "";
+    t = String(t || "").trim();
+    if (t && !out.some(x => x.toLowerCase() === t.toLowerCase())) out.push(t);
+  }
+  return out;
+}
+
+function restorationFlagList(item) {
+  const rg = item && item.roboGrade;
+  return normRestorationFlags(rg && rg.restorationFlags);
+}
+
+// v5.27: restoration is a property of the BOOK, not of one pass, so the list
+// only ever GROWS. This matters because each pass sees a different class of it:
+//   Main  — glue, structural-support tape, obvious amateur colour touch
+//   Deep  — leaf casting and added/replaced pieces, seen from the interior covers
+//   Full  — replaced or reset staples, trimming, married pages
+//   UV    — colour touch, and ONLY colour touch (kept separate; not merged here)
+// Deep and Full return a whole roboGrade object, and the client adopts it
+// wholesale — so without this, a Deep would have silently ERASED what the Main
+// pass found. Union, case-insensitively, prior first.
+//
+// Nothing here ever REMOVES a flag. A later pass not seeing what an earlier one
+// saw is not a retraction: no pass can establish that a book is unrestored.
+function mergeRestorationFlags(priorRG, nextRG, extra) {
+  if (!nextRG || typeof nextRG !== "object") return nextRG;
+  const merged = normRestorationFlags(
+    normRestorationFlags(priorRG && priorRG.restorationFlags)
+      .concat(normRestorationFlags(nextRG.restorationFlags))
+      .concat(normRestorationFlags(extra))
+  );
+  if (merged.length || Array.isArray(nextRG.restorationFlags)) nextRG.restorationFlags = merged;
+  return nextRG;
+}
+
+// ── S22: UV CHECK ALLOWANCE ────────────────────────────────────────────────
+// The UV Check is free, which makes it the one tier a user can run forever at
+// Matt's expense. So it is metered rather than charged: THREE runs per book,
+// and the meter resets to zero whenever a PAID assessment lands on that book
+// (Main, Deep, Full or Batch).
+//
+// The reset is not an arbitrary refill. A re-check is worth running when the
+// BOOK has changed — and it genuinely can: a collector who has color touch cut
+// out to remove the restoration WILL get a different UV result afterwards, and
+// confirming the touch is gone is exactly what they want the check for. Work
+// like that is followed by a re-grade, which is a paid pass. So "paid a credit"
+// and "this book may now read differently under UV" are the same event, and
+// that event is what buys the next three. What the limit stops is re-shooting
+// an UNCHANGED book over and over — the only case where repeat runs cost money
+// and tell the user nothing new.
+//
+// uvCheckRuns counts runs SINCE the last paid assessment, not lifetime runs.
+const UV_CHECK_LIMIT = 3;
+
+function uvChecksUsed(item) {
+  const n = item && Number(item.uvCheckRuns);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+function uvChecksLeft(item) {
+  return Math.max(0, UV_CHECK_LIMIT - uvChecksUsed(item));
+}
+// Clears the meter. Called from every paid assessment's success path.
+function resetUvCheckAllowance(target) {
+  const t = target || formData;
+  if (t && uvChecksUsed(t) > 0) t.uvCheckRuns = 0;
+}
+
+// v6.24: _restorationRevealed and revealRestorationSlots() are gone with the
+// CHECK RESTORATION button. The function's only remaining effect was a
+// re-render: its "auto-populate shared slots from Full Assessment" loop walked
+// RESTORATION_TO_FULL, which has been [null, null] since the check dropped to
+// 2 photos, so the loop could never populate anything. Dead code that read as
+// live - the comment in the capture handler below still pointed at it.
+
+function isDeepAssessmentComplete(item) {
+  return !!(item && (item.highGradeTier === true || item.highGradeAssessed === true || item._highGradeTier === true || item.deepAssessmentRan === true));
+}
+
+// S17 (June 14): sticky tier unlocks. Per spec, once an entry qualifies for a
+// tier it stays unlocked FOREVER for that entry — a later re-run that scores
+// below threshold must NOT relock it, and running one tier must not hide
+// another. We latch three flags (deepUnlocked / fullUnlocked / restorationUnlocked)
+// to true the moment the entry qualifies OR has run that tier, and never clear
+// them. Display gates read these flags (see renderForm / showDetail) instead of
+// recomputing live eligibility, which was the cause of tiers vanishing.
+function stickTierUnlocks(item) {
+  if (!item) return item;
+  // Deep: qualifies if highGradeUnlocked was ever set, or deep has run, OR the
+  // CURRENT grade is at/above the threshold (RG >= 90). The score condition
+  // covers ADMIN RE-SCORES that cross the threshold; latching is one-way — a
+  // later re-score that drops below threshold never clears it.
+  if (item.highGradeUnlocked === true
+      || isDeepAssessmentComplete(item)
+      || (item.roboGrade && typeof item.roboGrade.score === 'number' && item.roboGrade.score >= 90)
+      || (typeof fmvTierOf === "function" && fmvTierOf(item) >= 3)) {   // FMV Deep gate ($50+, tier 3) latches too
+    item.deepUnlocked = true;
+  }
+  // Full: qualifies if currently full-eligible, or full has run. (Per Matt
+  // June 14: Full shows whenever full-eligible regardless of Deep.)
+  var _fe = isFullAssessmentEligible(item);
+  if (_fe || isFullAssessmentComplete(item)) {
+    item.fullUnlocked = true;
+    if (_fe && _fe.reason && !item.fullUnlockReason) item.fullUnlockReason = _fe.reason;
+  }
+  // Restoration: qualifies if restoration-eligible, or restoration has run.
+  if (isRestorationEligible(item) || isRestorationCheckComplete(item)) {
+    item.restorationUnlocked = true;
+  }
+  return item;
+}
+
+// Sticky-aware display predicates. Once latched, true forever.
+function showDeepTier(item) {
+  return !!(item && (item.deepUnlocked === true || item.highGradeUnlocked === true || isDeepAssessmentComplete(item)));
+}
+function showFullTier(item) {
+  return !!(item && (item.fullUnlocked === true || isFullAssessmentEligible(item) || isFullAssessmentComplete(item)));
+}
+function showRestorationTier(item) {
+  return !!(item && (item.restorationUnlocked === true || isRestorationEligible(item) || isRestorationCheckComplete(item)));
+}
+// S22: whether the RUN button is offered. The tier itself keeps showing once a
+// check has run — the report stays readable — but the button goes away at the
+// limit until a paid assessment refills it.
+function canRunUvCheck(item) {
+  return showRestorationTier(item) && uvChecksLeft(item) > 0;
+}
+
+function getSignatures(item) {
+  if (!item) return [];
+  const sigs = item.roboGrade && Array.isArray(item.roboGrade.signatures) ? item.roboGrade.signatures : Array.isArray(item.signatures) ? item.signatures : [];
+  return sigs.filter(s => s && typeof s === "object");
+}
+
+function hasIdentifiedSignatures(item) {
+  return getSignatures(item).length > 0;
+}
+
+function formatSignerList(item) {
+  const named = getSignatures(item).map(s => (s.signer || "").trim()).filter(Boolean);
+  if (!named.length) return "";
+  return named.join(", ");
+}
+
+const COMIC_TITLE_ABBR = {
+  "amazing spider-man": "asm",
+  "spectacular spider-man": "spec",
+  "web of spider-man": "web",
+  "uncanny x-men": "uxm",
+  "x-men": "xm",
+  "x-factor": "xfac",
+  "x-force": "xfor",
+  "new mutants": "nmut",
+  wolverine: "wolv",
+  "incredible hulk": "hulk",
+  "fantastic four": "ff",
+  avengers: "aveng",
+  "west coast avengers": "wca",
+  "iron man": "im",
+  "captain america": "cap",
+  thor: "thor",
+  "journey into mystery": "jim",
+  "tales of suspense": "tos",
+  "tales to astonish": "tta",
+  "strange tales": "st",
+  daredevil: "dd",
+  "doctor strange": "doc",
+  "silver surfer": "ss",
+  "sub-mariner": "sub",
+  punisher: "pun",
+  "ghost rider": "gr",
+  "conan the barbarian": "conan",
+  "savage sword of conan": "ssoc",
+  "tomb of dracula": "tod",
+  "marvel team-up": "mtu",
+  "marvel two-in-one": "mtio",
+  "marvel premiere": "mp",
+  "marvel spotlight": "msl",
+  "master of kung fu": "mokf",
+  "power man and iron fist": "pmif",
+  "power man": "pm",
+  "iron fist": "if",
+  "moon knight": "mk",
+  nova: "nova",
+  warlock: "warl",
+  "star wars": "sw",
+  "action comics": "ac",
+  "detective comics": "dc",
+  superman: "sup",
+  batman: "bat",
+  "world's finest comics": "wfc",
+  "world's finest": "wfc",
+  "wonder woman": "ww",
+  "green lantern": "gl",
+  "green arrow": "ga",
+  flash: "flash",
+  "justice league of america": "jla",
+  "justice league": "jl",
+  "teen titans": "tt",
+  "new teen titans": "ntt",
+  "legion of super-heroes": "losh",
+  aquaman: "aqua",
+  "house of mystery": "hom",
+  "house of secrets": "hos",
+  "brave and the bold": "bb",
+  "all-star comics": "asc",
+  "all-star squadron": "ass",
+  sandman: "sand",
+  "swamp thing": "swth"
+};
+
+function abbreviateTitleForId(title) {
+  if (!title) return "untitled";
+  const key = title.trim().toLowerCase();
+  if (COMIC_TITLE_ABBR[key]) return COMIC_TITLE_ABBR[key];
+  return key.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || "untitled";
+}
+
+function padIssueForId(issue) {
+  if (issue == null || issue === "") return "000";
+  const digits = String(issue).replace(/\D/g, "");
+  if (!digits) return "000";
+  return digits.padStart(3, "0");
+}
+
+function buildComicId(title, issue) {
+  const abbr = abbreviateTitleForId(title);
+  const issueStr = padIssueForId(issue);
+  return `comic:${abbr}-${issueStr}-${Date.now()}`;
+}
+
+function psaCondShort(g) {
+  const s = String(g == null ? "" : g).trim().toUpperCase();
+  if (s === "AA") return "AA";
+  if (s.indexOf("AUTH") === 0) return "AUTH";
+  const n = parseFloat(s);
+  if (!isFinite(n)) return "";
+  if (n >= 10) return "GEM MT";
+  if (n >= 9) return "MINT";
+  if (n >= 8) return "NM-MT";
+  if (n >= 7) return "NM";
+  if (n >= 6) return "EX-MT";
+  if (n >= 5) return "EX";
+  if (n >= 4) return "VG-EX";
+  if (n >= 3) return "VG";
+  if (n >= 2) return "GD";
+  if (n >= 1.5) return "FR";
+  if (n >= 1) return "PR";
+  return "";
+}
+
+function buildBadge(gradeVal, type, designation, sm, fullAssessment, deepAssessment, restored, qualified, atCeiling) {
+  const cls = sm ? "ubadge ubadge-sm" : "ubadge";
+  const lbl = GRADE_LABELS[gradeVal] || "";
+  // "(+)" — this pass landed on its tier ceiling AND found nothing worse than a
+  // LOW-severity defect, so a deeper pass could legitimately go higher. The
+  // server decides (gradeAtCeiling on the Main and Deep results); this only
+  // draws it. Suppressed on the small list badge, where a third of an already
+  // small numeral is not readable — the detail and edit views carry it.
+  // v5.72: it used to sit INLINE inside .ubadge-num, which is a centred flex
+  // child - so adding it widened the content and shoved the grade number off
+  // centre, which is exactly what it looked like. It is now absolutely
+  // positioned in the badge's upper right, so the number is dead centre whether
+  // the mark is there or not, and it is 2pt larger (13.2px -> 15px) because at
+  // a third of the numeral it was barely readable. The big RG score box has
+  // always done it this way and Matt confirmed that one reads correctly.
+  const plus = (atCeiling && !sm) ? '<span class="ubadge-plus" style="position:absolute;top:13px;right:6px;font-size:15px;line-height:1;opacity:0.85;font-weight:600;letter-spacing:0;color:#fff;pointer-events:none">(+)</span>' : "";
+  // S16: If restoration detected, predicted badge turns purple
+  if (restored && (type === "predicted" || type === "cgc-ai" || type === "psa-ai")) {
+    return `<div class="${cls}" style="border-color:#7c3aed;background:linear-gradient(180deg,#9a6ad8 0%,#6a3ab0 100%)"><div class="ubadge-body" style="background:transparent"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.8)">${lbl}</div></div></div>`;
+  }
+  // S23: a flagged missing coupon/stamp/pin-up turns the PREDICTED (PG) badge
+  // GREEN — but we no longer relabel it "Qualified" (Robograder drops that
+  // distinction; the missing element is spelled out in the assessment). RG is
+  // left unchanged. Keep the normal grade label under the green badge.
+  if (qualified && (type === "predicted" || type === "cgc-ai" || type === "psa-ai")) {
+    return `<div class="${cls}" style="border-color:#166534;background:linear-gradient(180deg,#2e9a52 0%,#166534 100%)"><div class="ubadge-body" style="background:transparent"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.85)">${lbl}</div></div></div>`;
+  }
+  // S17: Tier is now shown via STARS on the RG score box (assessmentTierStars),
+  // not by tinting the predicted badge gold/silver. The old Full→gold and
+  // Deep→silver branches were removed — predicted badges are neutral blue
+  // regardless of tier (purple still applies for restoration, above).
+  if (type === "cgc-official" || type === "psa-official") {
+    let sc = "#1a5fa8", sl = type === "psa-official" ? "PSA" : "CGC";
+    if (designation === "restored") {
+      sc = "#7c3aed";
+      sl = "CGC";
+    } else if (designation === "qualified") {
+      sc = "#166534";
+      sl = "QUALIFIED";
+    } else if (type === "psa-official") {
+      sc = "#b91c1c";
+    }
+    return `<div class="${cls}" style="border-color:rgba(0,0,0,0.25)"><div class="ubadge-strip" style="background:${sc}"><span>${sl}</span></div><div class="ubadge-body" style="background:#fff"><div class="ubadge-num" style="color:#000">${gradeVal}</div><div class="ubadge-lbl" style="color:#333">${sm ? "" : lbl}</div></div></div>`;
+  }
+  if (type === "psa-predicted") return `<div class="${cls}" style="border-color:#7f1d1d;background:#b91c1c"><div class="ubadge-body" style="background:#b91c1c"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.85)">${psaCondShort(gradeVal) || "PSA"}</div></div></div>`;
+  if (type === "predicted" || type === "cgc-ai" || type === "psa-ai") return `<div class="${cls}" style="border-color:#1e40af;background:#1a5fa8"><div class="ubadge-body" style="background:#1a5fa8"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.8)">${lbl}</div>${plus}</div></div>`;
+  return `<div class="${cls}" style="border-color:#333;background:#1a1a1a"><div class="ubadge-body" style="background:#1a1a1a"><div class="ubadge-num" style="color:#1a1614">${gradeVal}</div><div class="ubadge-lbl" style="color:#6a5a4a">${lbl}</div></div></div>`;
+}
+
+function aiCgcGrade(c) {
+  if (c.predictedGrade) return c.predictedGrade;
+  if (c.assessedCGCGrade) return c.assessedCGCGrade;
+  if ((c.myAssessment || c.aiAssessment) && c.grade) return c.grade;
+  return null;
+}
+
+// Scoring v2 display: preview live with ?v2=1 (normal visitors unaffected until rollout).
+const RG_V2_DISPLAY = window.RG_V2_DISPLAY = (function(){ try { const p = new URLSearchParams(location.search); if (p.has("v2")) return p.get("v2") !== "0"; } catch(e){} return false; })();
+// v2 31-tier grade for an item, from its stored 0-100 subscores (type-aware). Null if no data.
+function rgV2Grade(c) {
+  try {
+    if (!c || !window.RGScoreV2) return null;
+    if (c.type === "card") {
+      const cr = (c.cardData && c.cardData.robograde) || (c.roboGrade && c.roboGrade.subscores);
+      if (cr) {
+        const s = { surface: cr.surface && cr.surface.total, centering: cr.centering && cr.centering.total, corners: cr.corners && cr.corners.total, edges: cr.edges && cr.edges.total };
+        if ([s.surface,s.centering,s.corners,s.edges].some(v => v != null)) return window.RGScoreV2.fromSubscores(s, "card").grade;
+      }
+      return (c.roboGrade && c.roboGrade.score != null) ? window.RGScoreV2.gradeFromScore(c.roboGrade.score) : null;
+    }
+    const rg = c.roboGrade; if (!rg) return null;
+    const s = { front: rg.frontScore, back: rg.backScore, spine: rg.spineScore, interior: rg.interiorScore };
+    if ([s.front,s.back,s.spine,s.interior].some(v => v != null)) return window.RGScoreV2.fromSubscores(s, "comic").grade;
+    return rg.score != null ? window.RGScoreV2.gradeFromScore(rg.score) : null;
+  } catch (e) { return null; }
+}
+
+// Scoring v3 display: half-point 0-10. Preview live with ?v3=1 (normal visitors
+// unaffected until rollout). When RG_V3_DISPLAY is on, COMICS render the v3
+// grade + PM; cards keep v2. Flip the default to true at launch (one constant).
+const RG_V3_DISPLAY = window.RG_V3_DISPLAY = (function(){ try { const p = new URLSearchParams(location.search); if (p.has("v3")) return p.get("v3") !== "0"; } catch(e){} return true; })();  // v3 LIVE (S22); ?v3=0 to disable
+// Full v3 result object for a COMIC (grade, upsell, ceilingHit, ...), or null.
+// Delegates to the shared RoboScoreV3.forComic derivation (single source of truth).
+function rgV3ForComic(c) { try { return (RG_V3_DISPLAY && window.RoboScoreV3) ? window.RoboScoreV3.forComic(c) : null; } catch (e) { return null; } }
+// "9.5"/"10.0" grade string (always one decimal, spec v3 s2), or null.
+function rgV3GradeStr(c) { const r = rgV3ForComic(c); return r ? window.RoboScoreV3.formatGrade(r.grade) : null; }
+// "±0.5" PM string, or "" when PM hidden. Null if no v3.
+
+function buildListBadge(c) {
+  if (c.roboGrade && c.roboGrade.score != null) {
+    const rgScore = Math.round(c.roboGrade.score);
+    const _v3g = (RG_V3_DISPLAY && c.type !== "card") ? rgV3GradeStr(c) : null;  // comics: v3 half-point
+    const _v2g = (_v3g == null && (RG_V2_DISPLAY || c.type === "card")) ? rgV2Grade(c) : null;  // cards always show v2
+    const _dispG = _v3g != null ? _v3g : _v2g;  // unified display grade (v3 for comics, v2 for cards)
+    const showPlus = rgScore >= 90 && rgScore < 100 && !c.highGradeUnlocked;
+    // S17: match the dark score-box color used in every other view (was a
+    // lighter green tuned to the List background, which made it inconsistent and
+    // hid the stars). Purple for restored books, green otherwise.
+    const _isRestored = !!(c.restorationHighConfidence || (c.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(c.cgcNotes)));
+    const bgColor = _isRestored ? '#1a1226' : '#152e10';
+    const borderColor = _isRestored ? '#4a2a6a' : '#3a5818';
+    const numColor = _isRestored ? '#c8a8e8' : '#b8d820';
+    // v3 comics: shared score box (stars + number only; no PM/version in List — too small).
+    if (_v3g != null) {
+      const _r3 = rgV3ForComic(c);
+      return window.RoboScoreV3.scoreBox({ grade: _r3.grade, stars: isFullAssessmentComplete(c) ? 3 : isDeepAssessmentComplete(c) ? 2 : 1, restoStar: isRestorationCheckComplete(c), restoColor: '#b58be0', footer: '', size: 56, numSize: 36, numColor: numColor, starColor: numColor, bg: bgColor, borderColor: borderColor });
+    }
+    if (RG_V3_DISPLAY && c.type === "card" && window.RoboScoreV3) {
+      const _rc = window.RoboScoreV3.forCard(c);
+      if (_rc) return window.RoboScoreV3.scoreBox({ grade: _rc.grade, stars: (c.deepAssessmentRan || c.fullAssessmentRan || c.highGradeTier) ? 2 : 1, footer: '', size: 56, numSize: 36, numColor: numColor, starColor: numColor, bg: bgColor, borderColor: borderColor });
+    }
+    // Score stays DEAD CENTER (cardinal rule). Stars are an absolutely-positioned
+    // overlay near the top so they never displace the number.
+    return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="position:absolute;top:6px;left:0;right:0;text-align:center;display:flex;justify-content:center">${assessmentTierStars(c, { size: 9, color: numColor })}</div>\n      <div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:30px;font-weight:900;color:${numColor};line-height:1">${_dispG != null ? (() => { const _s=String(_dispG); const _m=_s.match(/^(\d+|—|-)([+\-]|\.\d)?$/); const _b=_m?_m[1]:_s; const _f=(_m&&_m[2])?_m[2]:""; return `<span style="position:relative;display:inline-block;line-height:1">${_b}${_f?`<span style="position:absolute;left:100%;top:3px;font-size:15px;font-weight:600;line-height:1">${_f}</span>`:""}</span>`; })() : `${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#7aa838;margin-left:1px">+</span>' : ""}`}</div>\n    </div>`;
+  }
+  // S23: the list left box is ALWAYS RG (above) or, if never robograded, the
+  // predicted grade — never the official CGC/PSA slab grade.
+  const ac = aiCgcGrade(c);
+  const _listRestored = !!(c.restorationHighConfidence || (c.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(c.cgcNotes)));
+  if (ac) return buildBadge(ac, "predicted", "", true, isFullAssessmentComplete(c), isDeepAssessmentComplete(c), _listRestored, !!c.couponQualified);
+  if (c.grade) return buildBadge(c.grade, "my", "", true);
+  return "";
+}
+
+function buildListPG(c) {
+  // S23: predicted grade (PG) — smaller and less prominent than RG, anchored to
+  // the TOP of the row (aligned with the title). Green when a coupon/pin-up is
+  // flagged missing. Never the official slab grade.
+  const val = c.predictedGrade || c.assessedCGCGrade || c.assessedPSAGrade || ((c.myAssessment || c.aiAssessment) && c.grade ? c.grade : null);
+  if (!val) return "";
+  const v = String(val).includes(".") ? val : parseFloat(val).toFixed(1);
+  const pgBg = c.couponQualified ? "#2e7d46" : "#1a5fa8";
+  // S22: was align-self:center, which put the box mid-row and straight under the
+  // print icon in the top-right corner. Anchored to the BOTTOM instead, so its
+  // base lines up with the bottom of the cover thumbnail and the icon is clear.
+  return `<div style="flex-shrink:0;align-self:flex-end;background:${pgBg};border-radius:7px;width:40px;height:32px;display:flex;align-items:center;justify-content:center"><div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.66) translateY(0.11em);display:inline-block;font-weight:800;font-size:24px;line-height:1;color:#fff">${v}</div></div>`;
+}
+
+function buildStackedGradePair(officialBadge, aiBadge) {
+  if (!officialBadge && !aiBadge) return "";
+  if (!officialBadge) return aiBadge;
+  if (!aiBadge) return officialBadge;
+  return `<div style="display:flex;flex-direction:column;gap:6px;align-items:center">${officialBadge}${aiBadge}</div>`;
+}
+
+function fmt$(v) {
+  return v != null && v > 0 ? `$${v.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })}` : "—";
+}
+
+function totalCost(c) {
+  return [ c.purchasePrice, c.taxesFeesShipping, c.gradingCost, c.cgcShipping ].filter(v => v != null && v > 0).reduce((a, b) => a + b, 0);
+}
+
+function formatDate(d) {
+  if (!d) return null;
+  const months = [ "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" ];
+  const p = d.split("-");
+  if (p.length < 3) return d;
+  const mo = parseInt(p[1], 10) - 1;
+  if (isNaN(mo) || mo < 0 || mo > 11) return d;
+  return months[mo] + " " + p[2].replace(/^0/, "") + ", " + p[0];
+}
+
+function formatIssue(i, t) {
+  if (!i) return null;
+  const m = i.match(/^A(\d+)$/i);
+  if (m) {
+    const isAnnualTitle = t && /annual$/i.test(t.trim());
+    return isAnnualTitle ? `#${m[1]}` : `Annual #${m[1]}`;
+  }
+  return `#${i}`;
+}
+
+function formatCardNumber(n) {
+  if (!n) return "";
+  return String(n).trim().replace(/^#/, "").split("/").map(part => part.replace(/^0+(\d)/, "$1")).join("/");
+}
+
+function formatIssueDateCompact(d) {
+  if (!d) return null;
+  const s = String(d).trim();
+  if (/^[A-Z][a-z]{2,3}\s+\d{4}$/.test(s)) return s;
+  const monthAbbrev = {
+    january: "Jan",
+    february: "Feb",
+    march: "Mar",
+    april: "Apr",
+    may: "May",
+    june: "Jun",
+    july: "Jul",
+    august: "Aug",
+    september: "Sep",
+    october: "Oct",
+    november: "Nov",
+    december: "Dec",
+    spring: "Spr",
+    summer: "Sum",
+    fall: "Fall",
+    autumn: "Fall",
+    winter: "Win",
+    "fall/winter": "F/W",
+    "spring/summer": "S/S",
+    "winter/spring": "W/S",
+    "summer/fall": "S/F"
+  };
+  const MONTH_BY_NUM = [ "", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" ];
+  let m = s.match(/^([A-Za-z\/]+)\s+(\d{4})$/);
+  if (m) {
+    const key = m[1].toLowerCase();
+    if (monthAbbrev[key]) return `${monthAbbrev[key]} ${m[2]}`;
+  }
+  m = s.match(/^(\d{1,2})\/(\d{2}|\d{4})$/);
+  if (m) {
+    const month = parseInt(m[1], 10);
+    let year = parseInt(m[2], 10);
+    if (m[2].length === 2) year = year >= 30 ? 1900 + year : 2000 + year;
+    if (month >= 1 && month <= 12) return `${MONTH_BY_NUM[month]} ${year}`;
+  }
+  if (/^\d{4}$/.test(s)) return s;
+  return s;
+}
+
+function esc(s) {
+  return s ? String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;") : "";
+}
+
+function escJsAttr(s) {
+  return s ? String(s).replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;") : "";
+}
+
+let items = [], collapsed = {}, view = "list", selected = null, sortBy = "title", search = "", _listScrollY = 0, _lastDetailId = null, _showComics = true, _showCards = true;
+
+let db, fsCollection, fsGetDocs, fsSetDoc, fsDeleteDoc, fsDoc, fsOnSnapshot, fsGetDoc;
+
+let seeded = false;
+
+function syncMsg(msg) {
+  const bar = document.getElementById("sync-bar");
+  const txt = document.getElementById("sync-msg");
+  if (msg) {
+    bar.style.display = "flex";
+    txt.textContent = msg;
+  } else {
+    bar.style.display = "none";
+  }
+}
+
+async function initFirebase() {
+  if (!window._firebaseReady) {
+    await new Promise(res => window.addEventListener("firebase-ready", res, {
+      once: true
+    }));
+  }
+  db = window._db;
+  fsCollection = window._fsCollection;
+  fsGetDocs = window._fsGetDocs;
+  fsSetDoc = window._fsSetDoc;
+  fsDeleteDoc = window._fsDeleteDoc;
+  fsDoc = window._fsDoc;
+  fsGetDoc = window._fsGetDoc;
+  fsOnSnapshot = window._fsOnSnapshot;
+  _initClientMeta();   // S21: resolve platform + native app version for item stamping
+  if (!window._currentUser) {
+    return;
+  }
+  await migrateComicsToItems();
+  await migrateAllItemsToNested();
+  await migrateCornerSwap();
+  // S17: the label localStorage queue was removed (the Print ownership category
+  // is now the source of truth), so there's no longer a queue to clear on init.
+  // S16 (C): one live listener does BOTH the initial load and live updates.
+  // Previously startup ran loadItems() (a full getDocs) AND set up this
+  // onSnapshot, fetching the whole collection twice. The first emission now
+  // handles initial-load sequencing; an error callback falls back to a one-off
+  // getDocs so the app can never get stuck on the loading state.
+  let _firstSnap = true;
+  const _tSnap = Date.now();
+  fsOnSnapshot(userItemsCollection(), snap => {
+    console.log("[load] snapshot", snap.docs.length, "docs in", Date.now() - _tSnap, "ms", _firstSnap ? "(initial)" : "(update)");
+    // S20: guard each doc so a single malformed item can't throw and wipe the
+    // whole list. A user seeing ONLY the sample book is the signature of this
+    // map throwing on one bad entry — now the bad one is skipped (and logged)
+    // and the rest still load.
+    items = snap.docs.map(d => {
+      try {
+        const c = flattenForApp({ id: d.id, ...d.data() });
+        return { ...c, pageQuality: normPageQuality(c.pageQuality) };
+      } catch (e) {
+        console.error("[load] skipped unparseable item", d.id, e);
+        return null;
+      }
+    }).filter(Boolean);
+    if (items.length === 0) {
+      items = [ {
+        ...SAMPLE_COMIC
+      } ];
+    }
+    if (_firstSnap) {
+      _firstSnap = false;
+      window._loadingState = false;
+      refreshHeaderControls();
+      renderList();
+      updateStats();
+      _migratePrintState();   // S22: migrate legacy Print ownership -> inPrintQueue flag
+      // v6.38: now that the items exist, reopen whatever the user was looking
+      // at before the WebView was discarded. See _restoreRememberedView.
+      try { _initViewMemory(); _restoreRememberedView(); } catch (e) { console.warn("[restore]", e); }
+      if (typeof window.signalAppReady === "function") window.signalAppReady();
+    } else {
+      if (view === "list") renderList();
+      updateStats();
+    }
+  }, err => {
+    console.error("[load] snapshot listener error:", err);
+    if (_firstSnap) {
+      _firstSnap = false;
+      loadItems();
+    }
+  });
+}
+
+function userItemsCollection() {
+  const uid = window._currentUser?.uid;
+  if (!uid) throw new Error("Not signed in");
+  return fsCollection(db, "users", uid, "items");
+}
+
+function userMetaDoc(name) {
+  const uid = window._currentUser?.uid;
+  if (!uid) throw new Error("Not signed in");
+  return fsDoc(db, "users", uid, "meta", name);
+}
+
+function userItemDoc(id) {
+  const uid = window._currentUser?.uid;
+  if (!uid) throw new Error("Not signed in");
+  return fsDoc(db, "users", uid, "items", id);
+}
+
+function userLegacyComicsCollection() {
+  const uid = window._currentUser?.uid;
+  if (!uid) throw new Error("Not signed in");
+  return fsCollection(db, "users", uid, "comics");
+}
+
+function userLegacyComicDoc(id) {
+  const uid = window._currentUser?.uid;
+  if (!uid) throw new Error("Not signed in");
+  return fsDoc(db, "users", uid, "comics", id);
+}
+
+async function migrateComicsToItems() {
+  if (!window._currentUser) return;
+  if (!db) return;
+  const uid = window._currentUser.uid;
+  try {
+    // PERF: this used to do a full items getDocs on EVERY load (a second
+    // whole-collection fetch on top of the live listener, blocking it from
+    // starting). Once we've confirmed the user is on the items collection, skip
+    // it and read a tiny marker doc instead — like the other two migrations.
+    try {
+      const _cm = await window._fsGetDoc(userMetaDoc("comics_migrated"));
+      if (_cm.exists() && _cm.data()?.done === true) return;
+    } catch (e) {}
+    const itemsSnap = await fsGetDocs(userItemsCollection());
+    if (itemsSnap.size > 0) {
+      try { await fsSetDoc(userMetaDoc("comics_migrated"), { done: true, at: (new Date).toISOString() }); } catch (e) {}
+      return;
+    }
+    const comicsSnap = await fsGetDocs(userLegacyComicsCollection());
+    if (comicsSnap.size === 0) {
+      try { await fsSetDoc(userMetaDoc("comics_migrated"), { done: true, at: (new Date).toISOString() }); } catch (e) {}
+      return;
+    }
+    console.log(`Migrating ${comicsSnap.size} comics → items for user ${uid}`);
+    const copies = [];
+    for (const docSnap of comicsSnap.docs) {
+      const data = docSnap.data();
+      if (!data.type) data.type = "comic";
+      copies.push(fsSetDoc(userItemDoc(docSnap.id), data));
+    }
+    await Promise.all(copies);
+    console.log(`Migration copy phase complete (${copies.length} docs).`);
+    const deletes = comicsSnap.docs.map(docSnap => fsDeleteDoc(userLegacyComicDoc(docSnap.id)));
+    await Promise.all(deletes);
+    console.log(`Migration cleanup complete (${deletes.length} legacy docs removed).`);
+  } catch (e) {
+    console.error("Migration failed:", e);
+  }
+}
+
+const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "addedLabelNotes", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "gradeAtCeiling", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "uvCheckRuns", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "fullUnlockReason", "deepAssessmentRan", "binding", "bindingBasis", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "deepRefundUsed", "deepRefundAt", "fullRefundUsed", "insertImages", "couponImages", "userDefectImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue", "signatures", "gradeRevisionReason", "cleanUnlocked", "cleanAssessmentRan", "cleanRuns", "cleanBeforeImages", "cleanBeforeMeta", "cleanBeforeResult", "cleanAfterImages", "cleanAfterMeta", "cleanAfterResult", "cleanComparison" ];
+
+const COMIC_DROP_FIELDS = [ "press", "uv", "clean" ];
+
+const DEFAULT_IMG_META = {
+  source: "upload",
+  capturedAt: null,
+  hash: null
+};
+
+function isFacsimilePrinting(printing) {
+  if (!printing || typeof printing !== "string") return false;
+  const p = printing.toLowerCase();
+  return p.includes("facsimile") || p.includes("reprint");
+}
+
+function splitImageArray(arr) {
+  if (!Array.isArray(arr)) return {
+    urls: [],
+    metas: []
+  };
+  const urls = [], metas = [];
+  for (const entry of arr) {
+    if (!entry) continue;
+    if (typeof entry === "string") {
+      urls.push(entry);
+      metas.push({
+        ...DEFAULT_IMG_META
+      });
+    } else if (typeof entry === "object" && entry.url) {
+      urls.push(entry.url);
+      metas.push({
+        source: entry.source || "upload",
+        capturedAt: entry.capturedAt || null,
+        hash: entry.hash || null
+      });
+    }
+  }
+  return {
+    urls: urls,
+    metas: metas
+  };
+}
+
+function zipImageArray(urls, metas) {
+  const out = [];
+  if (!Array.isArray(urls)) return out;
+  for (let i = 0; i < urls.length; i++) {
+    const url = urls[i];
+    if (!url) continue;
+    const m = Array.isArray(metas) && metas[i] ? metas[i] : DEFAULT_IMG_META;
+    out.push({
+      url: url,
+      source: m.source || "upload",
+      capturedAt: m.capturedAt || null,
+      hash: m.hash || null
+    });
+  }
+  return out;
+}
+
+function flattenForApp(doc) {
+  if (!doc) return doc;
+  const _addPredictedAlias = rec => {
+    if (rec && rec.predictedGrade == null && rec.assessedCGCGrade != null) {
+      rec.predictedGrade = rec.assessedCGCGrade;
+    }
+    return rec;
+  };
+  if (doc.schemaVersion === 3) {
+    const {comicData: comicData = {}, cardData: cardData = {}, images: images, cornerImages: cornerImages, ...root} = doc;
+    const main = splitImageArray(images);
+    const corner = splitImageArray(cornerImages);
+    return _addPredictedAlias({
+      ...root,
+      ...comicData,
+      cardData,
+      images: main.urls,
+      imagesMeta: main.metas,
+      cornerImages: corner.urls,
+      cornerMeta: corner.metas
+    });
+  }
+  const main = splitImageArray(doc.images);
+  const corner = splitImageArray(doc.cornerImages);
+  return _addPredictedAlias({
+    ...doc,
+    images: main.urls,
+    imagesMeta: main.metas,
+    cornerImages: corner.urls,
+    cornerMeta: corner.metas
+  });
+}
+
+function nestForFirestore(rec) {
+  if (!rec) return rec;
+  const comicData = {};
+  const otherFields = {};
+  for (const [k, v] of Object.entries(rec)) {
+    if (COMIC_DROP_FIELDS.includes(k)) continue;
+    if (k.startsWith("_")) continue;
+    if (k === "imagesMeta" || k === "cornerMeta") continue;
+    if (k === "images" || k === "cornerImages") continue;
+    if (k === "schemaVersion" || k === "type") continue;
+    if (COMIC_DATA_FIELDS.includes(k)) {
+      comicData[k] = v;
+    } else {
+      otherFields[k] = v;
+    }
+  }
+  const out = {
+    comicData: comicData,
+    type: rec.type || "comic",
+    schemaVersion: 3,
+    images: zipImageArray(rec.images, rec.imagesMeta),
+    cornerImages: zipImageArray(rec.cornerImages, rec.cornerMeta),
+    ...otherFields
+  };
+  return out;
+}
+
+function getVerificationState(item) {
+  // S20: the Verified badge requires EVERY grade-determining photo to be an
+  // in-app camera capture. Main + corner macros (Deep) + interior covers (Deep) +
+  // interior images (Full) all count — a single library upload among them flips
+  // the entry to unverified. Null entries are unfilled slots and are ignored.
+  // (Optional signature / restoration extras aren't grade inputs, so they don't
+  // gate the badge.)
+  const all = [
+    ...(item?.imagesMeta || []),
+    ...(item?.cornerMeta || []),
+    ...(item?.interiorCoverMeta || []),
+    ...(item?.interiorMeta || []),
+    ...(item?.insertMeta || []),
+    ...(item?.couponMeta || [])
+  ].filter(Boolean);
+  if (all.length === 0) return "empty";
+  return all.every(m => m.source === "camera") ? "verified" : "unverified";
+}
+
+function buildIntegrityPill(item, forPublic = false) {
+  const state = getVerificationState(item);
+  if (state === "verified") {
+    return `<div class="integrity-pill integrity-verified" title="All assessed photos were captured in-app">\n      <span class="integrity-text">Verified: in-app photos</span>\n    </div>`;
+  }
+  if (state === "unverified" && forPublic) {
+    return `<div class="integrity-pill integrity-unverified" title="At least one assessed photo was uploaded from outside the app">\n      <span class="integrity-icon">⚠</span>\n      <span class="integrity-text">Unverified: photos taken outside of app</span>\n    </div>`;
+  }
+  return "";
+}
+
+async function migrateAllItemsToNested() {
+  try {
+    const metaSnap = await window._fsGetDoc(userMetaDoc("migration"));
+    if (metaSnap.exists() && metaSnap.data()?.schemaVersion === 3) {
+      return {
+        skipped: true
+      };
+    }
+  } catch (e) {}
+  let migrated = 0, alreadyV3 = 0, failed = 0;
+  const errors = [];
+  try {
+    const snap = await fsGetDocs(userItemsCollection());
+    if (snap.empty) {
+      await fsSetDoc(userMetaDoc("migration"), {
+        schemaVersion: 3,
+        migratedAt: (new Date).toISOString(),
+        itemCount: 0
+      });
+      console.log("[schema v3] No items — stamped marker for fresh user");
+      return {
+        skipped: false,
+        migrated: 0,
+        alreadyV3: 0,
+        failed: 0
+      };
+    }
+    const writes = [];
+    for (const docSnap of snap.docs) {
+      const data = docSnap.data();
+      if (data.schemaVersion === 3) {
+        alreadyV3++;
+        continue;
+      }
+      try {
+        const flat = flattenForApp({
+          id: docSnap.id,
+          ...data
+        });
+        const nested = nestForFirestore(flat);
+        delete nested.id;
+        writes.push(fsSetDoc(userItemDoc(docSnap.id), nested).then(() => {
+          migrated++;
+        }).catch(err => {
+          failed++;
+          errors.push({
+            id: docSnap.id,
+            message: err.message
+          });
+          throw err;
+        }));
+      } catch (e) {
+        failed++;
+        errors.push({
+          id: docSnap.id,
+          message: e.message
+        });
+        throw e;
+      }
+    }
+    if (writes.length > 0) await Promise.all(writes);
+    await fsSetDoc(userMetaDoc("migration"), {
+      schemaVersion: 3,
+      migratedAt: (new Date).toISOString(),
+      itemCount: snap.size,
+      migratedCount: migrated,
+      alreadyV3Count: alreadyV3
+    });
+    console.log(`[schema v3] Complete — ${migrated} migrated, ${alreadyV3} already v3, ${snap.size} total`);
+    return {
+      skipped: false,
+      migrated: migrated,
+      alreadyV3: alreadyV3,
+      failed: 0
+    };
+  } catch (err) {
+    console.error("[schema v3] FAILED — partial state may exist. Will retry on next sign-in.", err);
+    console.error("[schema v3] Per-doc errors:", errors);
+    return {
+      skipped: false,
+      migrated: migrated,
+      alreadyV3: alreadyV3,
+      failed: failed,
+      error: err.message,
+      errors: errors
+    };
+  }
+}
+
+async function migrateCornerSwap() {
+  try {
+    const metaSnap = await window._fsGetDoc(userMetaDoc("corner_swap"));
+    if (metaSnap.exists() && metaSnap.data()?.done === true) {
+      return {
+        skipped: true
+      };
+    }
+  } catch (e) {}
+  let swapped = 0, untouched = 0, failed = 0;
+  const errors = [];
+  try {
+    const snap = await fsGetDocs(userItemsCollection());
+    if (snap.empty) {
+      await fsSetDoc(userMetaDoc("corner_swap"), {
+        done: true,
+        ranAt: (new Date).toISOString(),
+        swappedCount: 0
+      });
+      return {
+        skipped: false,
+        swapped: 0,
+        untouched: 0,
+        failed: 0
+      };
+    }
+    const writes = [];
+    for (const docSnap of snap.docs) {
+      const data = docSnap.data();
+      const corners = data.cornerImages;
+      if (!Array.isArray(corners) || corners.length < 4) {
+        untouched++;
+        continue;
+      }
+      const newCorners = [ ...corners ];
+      [newCorners[2], newCorners[3]] = [ newCorners[3], newCorners[2] ];
+      try {
+        writes.push(fsSetDoc(userItemDoc(docSnap.id), {
+          cornerImages: newCorners
+        }, {
+          merge: true
+        }).then(() => {
+          swapped++;
+        }).catch(err => {
+          failed++;
+          errors.push({
+            id: docSnap.id,
+            message: err.message
+          });
+          throw err;
+        }));
+      } catch (e) {
+        failed++;
+        errors.push({
+          id: docSnap.id,
+          message: e.message
+        });
+        throw e;
+      }
+    }
+    if (writes.length > 0) await Promise.all(writes);
+    await fsSetDoc(userMetaDoc("corner_swap"), {
+      done: true,
+      ranAt: (new Date).toISOString(),
+      swappedCount: swapped,
+      untouchedCount: untouched
+    });
+    console.log(`[corner swap] Complete — ${swapped} swapped, ${untouched} untouched`);
+    return {
+      skipped: false,
+      swapped: swapped,
+      untouched: untouched,
+      failed: 0
+    };
+  } catch (err) {
+    console.error("[corner swap] FAILED — partial state may exist. Will retry on next sign-in.", err);
+    console.error("[corner swap] Per-doc errors:", errors);
+    return {
+      skipped: false,
+      swapped: swapped,
+      untouched: untouched,
+      failed: failed,
+      error: err.message,
+      errors: errors
+    };
+  }
+}
+
+const SAMPLE_COMIC_ID = "sample_unerring_robograder_1";
+
+const SAMPLE_COMIC = {
+  id: SAMPLE_COMIC_ID,
+  _isSample: true,
+  type: "comic",
+  title: "The Unerring Robograder",
+  issue: "1",
+  issueDate: "April 2026",
+  publisher: "Robograder",
+  grade: "5.5",
+  pageQuality: "Off-White",
+  cgcGrade: "",
+  cgcCert: "",
+  psaGrade: "",
+  psaCert: "",
+  assessedCGCGrade: "5.5",
+  assessedPSAGrade: "5.5",
+  predictedGrade: "5.5",
+  roboGrade: {
+    version: "2.0",
+    score: 60,
+    confidenceRange: 0,
+    frontScore: 25,
+    backScore: 15,
+    spineScore: 15,
+    interiorScore: 5,
+    pageQuality: "Off-White",
+    defects: [
+      { category: "Front", type: "Corner blunting", location: "lower-right corner", severity: "Low", colorBreaking: false },
+      { category: "Front", type: "Surface wear", location: "lower cover", severity: "Med", colorBreaking: false },
+      { category: "Back", type: "Soiling", location: "lower edge", severity: "Low", colorBreaking: false },
+      { category: "Spine", type: "Spine tick", location: "center spine", severity: "Low", colorBreaking: false },
+      { category: "Spine", type: "Color-breaking spine stress", location: "lower spine", severity: "Low", colorBreaking: true },
+      { category: "Interior", type: "Page tanning", location: "edges", severity: "Low", colorBreaking: false }
+    ],
+    stapleCondition: "Clean, centered, no rust or migration",
+    restorationFlags: []
+  },
+  roboGradeId: "",
+  roboGradeDate: "",
+  highGradeTier: false,
+  highGradeUnlocked: false,
+  restorationCheckTier: false,
+  restorationReport: null,
+  restorationFlag: false,
+  enhance: null,
+  press: null,
+  uv: null,
+  clean: null,
+  publicListing: false,
+  purchasePrice: "",
+  seller: "",
+  images: [ "assets/ghosts/Front_Cover.jpg", "assets/ghosts/Back_Cover.jpg", "assets/ghosts/Page_Quality.jpg", "assets/ghosts/Raking_Light.jpg" ],
+  cornerImages: [],
+  interiorCoverImages: [],
+  keyInfo: "",
+  aiGraderNotes: "",
+  aiAssessment: "Cover shows moderate surface wear across the lower front and a lightly blunted lower-right corner. A color-breaking stress line and a short tick run along the spine, with light soiling at the back lower edge. Interior pages carry light edge tanning, seating this as a solid mid-grade copy.",
+  psaNotes: "",
+  assessmentHistory: [],
+  notes: ""
+};
+
+async function loadItems() {
+  const _tLoad = Date.now();
+  try {
+    const snap = await fsGetDocs(userItemsCollection());
+    console.log("[load] fetch", snap.docs.length, "docs in", Date.now() - _tLoad, "ms");
+    items = snap.docs.map(d => {
+      try {
+        const c = flattenForApp({ id: d.id, ...d.data() });
+        return { ...c, pageQuality: normPageQuality(c.pageQuality) };
+      } catch (e) {
+        console.error("[load] skipped unparseable item", d.id, e);
+        return null;
+      }
+    }).filter(Boolean);
+  } catch (e) {
+    console.error("Load error:", e);
+    items = [];
+  }
+  if (items.length === 0) {
+    items = [ {
+      ...SAMPLE_COMIC
+    } ];
+  }
+  window._loadingState = false;
+  refreshHeaderControls();
+  renderList();
+  updateStats();
+  if (typeof window.signalAppReady === "function") window.signalAppReady();
+}
+
+function refreshHeaderControls() {
+  const loading = !!window._loadingState;
+  const coinBtn = document.getElementById("credit-coin-btn");
+  const buyBtn = document.getElementById("credits-btn");
+  const addBtn = document.getElementById("add-btn");
+  const gradeBtn = document.getElementById("grade-btn");
+  const placeholder = document.getElementById("header-loading-pill");
+  if (loading) {
+    if (coinBtn) coinBtn.style.display = "none";
+    if (buyBtn) buyBtn.style.display = "none";
+    if (addBtn) addBtn.style.display = "none";
+    if (gradeBtn && !gradeBtn.dataset.shown) gradeBtn.style.display = "none";
+    if (placeholder) placeholder.style.display = "";
+  } else {
+    if (coinBtn) coinBtn.style.display = "";
+    if (buyBtn) buyBtn.style.display = "";
+    if (addBtn) {
+      addBtn.style.display = "";
+      addBtn.style.visibility = "visible";
+    }
+    if (gradeBtn && !gradeBtn.dataset.shown) {
+      gradeBtn.style.display = "";
+      gradeBtn.style.visibility = "visible";
+      gradeBtn.dataset.shown = "1";
+    }
+    if (placeholder) placeholder.style.display = "none";
+  }
+}
+
+let _appConfirmResolver = null;
+
+function appConfirm(message, okLabel, asHtml) {
+  return new Promise(resolve => {
+    _appConfirmResolver = resolve;
+    const overlay = document.getElementById("app-confirm-overlay");
+    const msgEl = document.getElementById("app-confirm-msg");
+    const okEl = document.getElementById("app-confirm-ok");
+    const cancelEl = document.getElementById("app-confirm-cancel");
+    if (!overlay || !msgEl) {
+      resolve(window.confirm(message));
+      return;
+    }
+    if (cancelEl) cancelEl.style.display = "";
+    // v6.33: and the two-button dialog takes the centring off again.
+    const _act = document.getElementById("app-confirm-actions");
+    if (_act) _act.classList.remove("single");
+    if (okEl) okEl.textContent = "Continue";
+    if (asHtml) msgEl.innerHTML = message; else msgEl.textContent = message;
+    if (okEl && okLabel) okEl.textContent = okLabel;
+    overlay.style.display = "flex";
+    const onKey = e => {
+      if (e.key === "Escape") _appConfirmResolve(false); else if (e.key === "Enter") _appConfirmResolve(true);
+    };
+    overlay._onKey = onKey;
+    document.addEventListener("keydown", onKey);
+  });
+}
+
+function _appConfirmResolve(val) {
+  const overlay = document.getElementById("app-confirm-overlay");
+  if (overlay) {
+    overlay.style.display = "none";
+    if (overlay._onKey) {
+      document.removeEventListener("keydown", overlay._onKey);
+      overlay._onKey = null;
+    }
+  }
+  const r = _appConfirmResolver;
+  _appConfirmResolver = null;
+  if (r) r(!!val);
+}
+
+function appAlert(message, asHtml) {
+  return new Promise(resolve => {
+    _appConfirmResolver = () => resolve(true);
+    const overlay = document.getElementById("app-confirm-overlay");
+    const msgEl = document.getElementById("app-confirm-msg");
+    const okEl = document.getElementById("app-confirm-ok");
+    const cancelEl = document.getElementById("app-confirm-cancel");
+    if (!overlay || !msgEl) {
+      window.alert(message);
+      resolve(true);
+      return;
+    }
+    if (asHtml) msgEl.innerHTML = message; else msgEl.textContent = message;
+    if (cancelEl) cancelEl.style.display = "none";
+    const actionsEl = document.getElementById("app-confirm-actions");
+    if (actionsEl) actionsEl.classList.add("single");
+    // v6.28: "OKAY", not "OK". This is the app's only alert dialog, so every
+    // message that is purely an acknowledgement reads the same way.
+    if (okEl) okEl.textContent = "OKAY";
+    msgEl.style.userSelect = "text";
+    overlay.style.display = "flex";
+    const onKey = e => {
+      if (e.key === "Escape" || e.key === "Enter") _appConfirmResolve(true);
+    };
+    overlay._onKey = onKey;
+    document.addEventListener("keydown", onKey);
+  });
+}
+
+async function gradeFromHeader() {
+  if (view === "add" || view === "edit") {
+    const ok = await appConfirm("Start grading a new comic? Any unsaved changes to the current entry will be lost.", "Start New");
+    if (!ok) return;
+  }
+  showAdd();
+}
+
+// Client build stamp (S21): record which platform + app build wrote each item,
+// so a corrupted/odd entry can be traced to a specific client (e.g. an old iOS
+// binary vs the current PWA) instead of reconstructed after the fact. Native
+// version comes from @capacitor/app App.getInfo(); resolved once at boot.
+let _clientAppVersionCache = null;
+async function _initClientMeta() {
+  _initBackButton();
+  try {
+    const App = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+    if (App && App.getInfo) {
+      const i = await App.getInfo();
+      _clientAppVersionCache = String(i.version || "?") + (i.build ? "+" + i.build : "");
+    }
+  } catch (e) { /* fall through to web */ }
+  if (!_clientAppVersionCache) _clientAppVersionCache = "web";
+}
+// ── ANDROID HARDWARE / GESTURE BACK ──────────────────────────────────────────
+// v6.24. Before this there was NO back handling in the app at all: no
+// backButton listener, no pushState, no popstate. Views are swapped in JS
+// without ever touching history, so Android's Back found a one-entry WebView
+// history and Capacitor did the only thing it could - exit the app. A tester
+// reported "Start Grading then Back kicks me out", and separately that coming
+// back from an external link landed on the main screen instead of the screen
+// he left. Both are this.
+//
+// Order matters: the TOPMOST thing on screen is what Back must close, so
+// overlays are tested before the view. An overlay is "open" only if it is
+// actually laid out (offsetParent), which is the one check that survives all
+// the different ways these are shown (display, class, inline style).
+//
+// Deliberately NOT closed by Back: the in-progress assessment modal. Backing
+// out of a paid call that is already running reads as a cancellation we cannot
+// honour - the credit is spent and the request is in flight.
+function _overlayOpen(id) {
+  const el = document.getElementById(id);
+  if (!el) return false;
+  if (el.offsetParent !== null) return true;
+  // position:fixed elements report offsetParent null; fall back to the box.
+  const r = el.getBoundingClientRect();
+  return (r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden');
+}
+
+function handleAppBack() {
+  // 1. Overlays, outermost-last.
+  if (_overlayOpen('cropper-modal'))      { try { cancelCrop(); } catch (e) {} return; }
+  if (_overlayOpen('camera-modal'))       { try { cameraExit(); } catch (e) {} return; }
+  if (_overlayOpen('lightbox'))           { try { closeLightbox(); } catch (e) {} return; }
+  if (_overlayOpen('app-confirm-overlay')) {
+    // A confirm dialog: Back is "no", which is the safe answer for all of them.
+    try { _appConfirmResolve(false); } catch (e) {}
+    return;
+  }
+  if (_overlayOpen('give-overlay'))       { try { closeGiveDialog(); } catch (e) {} return; }
+  if (_overlayOpen('settings-overlay'))   { try { closeSettings(); } catch (e) {} return; }
+  // The label viewer lives in print-label.js and does not export its closer;
+  // this mirrors closeModal() there exactly. If that ever grows a step, export
+  // it and call it instead.
+  const _lv = document.getElementById('label-viewer-modal');
+  if (_lv && _lv.classList.contains('open')) {
+    _lv.classList.remove('open');
+    document.body.classList.remove('lvm-locked');
+    return;
+  }
+  // hideBuyCredits() knows to return to Settings when Buy was opened from
+  // there, so Back through that pair lands where the user actually came from -
+  // which is the second half of the tester's complaint.
+  if (_overlayOpen('buy-credits-modal'))    { try { hideBuyCredits(); } catch (e) {} return; }
+  if (_overlayOpen('public-preview-modal')) { try { closePublicPreview(); } catch (e) {} return; }
+
+  // 2. The view stack.
+  if (view === 'add' || view === 'edit') { try { cancelForm(); } catch (e) { showList(); } return; }
+  if (view === 'detail') { try { showList(); } catch (e) {} return; }
+
+  // 3. At the list, Back means leave. Only the native shell can do that; on the
+  //    web there is nothing to exit to, so it is a no-op rather than a
+  //    history.back() that would walk the user out of the PWA unpredictably.
+  try {
+    const App = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+    if (App && App.exitApp) App.exitApp();
+  } catch (e) {}
+}
+
+function _initBackButton() {
+  try {
+    const App = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+    if (!App || !App.addListener) return;
+    App.addListener('backButton', () => { handleAppBack(); });
+  } catch (e) { /* web: no hardware back */ }
+}
+
+function _clientPlatform() {
+  try { return (window.Capacitor && window.Capacitor.getPlatform && window.Capacitor.getPlatform()) || "web"; }
+  catch (e) { return "web"; }
+}
+function _clientAppVersion() { return _clientAppVersionCache || "pending"; }
+
+function _settleCredits(rec) {
+  try {
+    const keys = (rec && Array.isArray(rec.assessmentTimingKeys)) ? rec.assessmentTimingKeys.slice(-12) : [];
+    if (!keys.length) return;
+    if (!window._currentUser || typeof window._currentUser.getIdToken !== "function") return;
+    window._currentUser.getIdToken().then(token => {
+      if (!token) return;
+      return fetch("/api/credit_settle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+        body: JSON.stringify({ timingKeys: keys }),
+        keepalive: true   // survives the page going away right after the save
+      });
+    }).catch(() => {});
+  } catch (e) {}
+}
+
+async function saveItem(rec) {
+  if (rec && rec.id === SAMPLE_COMIC_ID) return;
+  if (rec) {
+    if (rec.type == null) rec.type = "comic";
+    if (rec.ownership == null) rec.ownership = "Owned";
+    if (rec.dateSold === undefined) rec.dateSold = null;
+    if (rec.salePrice === undefined) rec.salePrice = null;
+    if (rec.askingPrice === undefined) rec.askingPrice = null;
+    // S21: stamp the writing client on every save.
+    rec.clientPlatform = _clientPlatform();
+    rec.clientAppVersion = _clientAppVersion();
+    rec.clientSavedAt = new Date().toISOString();
+    // S25 (#5): latch tier unlocks on every persisted save, so a threshold crossing
+    // (grade/FMV) during ANY re-assessment sticks FOREVER — Deep/Full never relock
+    // once unlocked. stickTierUnlocks only ever sets flags true, never clears them.
+    if (typeof stickTierUnlocks === "function") stickTierUnlocks(rec);
+  }
+  syncMsg("Saving...");
+  try {
+    const nested = nestForFirestore(rec);
+    await fsSetDoc(userItemDoc(rec.id), nested);
+    // S20 (P0 fix): keep the in-memory `items` list in sync with what we just
+    // wrote to Firestore. showDetail/showEdit both do `items.find(...); if(!x) return;`
+    // so if the just-saved book isn't in `items` yet (the Firestore listener may
+    // not have fired), the screen right after a completed assessment finds nothing
+    // and the paid assessment appears lost. Upsert it here so it's always found.
+    const _ix = items.findIndex(c => c && c.id === rec.id);
+    if (_ix >= 0) items[_ix] = { ...items[_ix], ...rec };
+    else items.unshift(rec);
+    // v5.80: the book is now safely in Firestore, so tell the server to keep the
+    // credit. /api/assess writes every charged assessment as PENDING and a cron
+    // refunds anything still pending after 15 minutes — that is what gives a
+    // user their credit back when the app dies mid-save (Punisher 1, 2026-10-21:
+    // clean 9.0, app froze during the save, book gone, credit kept, user had to
+    // email). This call is what stops that safety net refunding the assessments
+    // that DID land.
+    // Deliberately fire-and-forget with no retry and nothing surfaced to the
+    // user: if it fails, the sweep hands back a credit the user arguably owes,
+    // which is the correct direction to be wrong in. Never let it block or fail
+    // the save — the save is the thing that matters.
+    _settleCredits(rec);
+    await dismissSampleIfNeeded();
+  } catch (e) {
+    alert("Save failed: " + e.message);
+  }
+  syncMsg(null);
+}
+
+async function swipeDeleteItem(id) {
+  try {
+    await deleteItem(id);
+  } catch (e) {
+    console.error("Swipe delete failed:", e);
+    syncMsg("Delete failed. Try again.");
+    return;
+  }
+  // deleteItem() already re-rendered via showList() and restored scroll; a second
+  // renderList() here would wipe that scroll restore (S23 jump fix).
+}
+
+async function deleteItem(id) {
+  if (id === SAMPLE_COMIC_ID) {
+    items = items.filter(c => c.id !== SAMPLE_COMIC_ID);
+    await dismissSampleIfNeeded();
+    showList();
+    return;
+  }
+  syncMsg("Deleting...");
+  try {
+    if (window._currentUser) {
+      const uid = window._currentUser.uid;
+      await deleteStorageFolder(`users/${uid}/items/${id}`);
+      await deleteStorageFolder(`users/${uid}/comics/${id}`);
+    }
+    if (window._db && window._currentUser?.uid && window._fsQuery && window._fsWhere) {
+      try {
+        const archCol = window._fsCollection(window._db, "archived_assessments");
+        const q = window._fsQuery(archCol, window._fsWhere("archivedFromComicId", "==", id), window._fsWhere("archivedUserId", "==", window._currentUser.uid));
+        const snap = await window._fsGetDocs(q);
+        for (const d of snap.docs) {
+          try {
+            await fsDeleteDoc(fsDoc(window._db, "archived_assessments", d.id));
+            await fsDeleteDoc(fsDoc(window._db, "robograde_ids", d.id));
+          } catch (e) {
+            console.warn("[archive] delete-cleanup failed for", d.id, e);
+          }
+        }
+      } catch (e) {
+        console.warn("[archive] delete-cleanup query failed:", e);
+      }
+    }
+    const live = items.find(c => c.id === id);
+    if (live && live.roboGradeId && window._db) {
+      try {
+        await fsDeleteDoc(fsDoc(window._db, "robograde_ids", live.roboGradeId));
+      } catch (e) {
+        console.warn("[archive] live registry cleanup failed:", e);
+      }
+    }
+    await fsDeleteDoc(userItemDoc(id));
+    items = items.filter(c => c.id !== id);
+  } catch (e) {
+    alert("Delete failed: " + e.message);
+  }
+  syncMsg(null);
+  // S20 (#48): keep the List View where the user was. The deleted row is gone,
+  // so clear _lastDetailId (otherwise showList tries to scroll-to/highlight a
+  // phantom row) and restore the saved list scroll. Re-clamp after layout
+  // settles — the list is now one row shorter and lazy images reflow, so a
+  // single early scroll lands short.
+  // S23: when deleting from the list, the live scroll position is the truth —
+  // _listScrollY is only refreshed when entering Detail, so it is stale here and
+  // was causing the jump. Capture the current scroll and seed _listScrollY so
+  // showList restores to exactly where the user was.
+  const _restoreY = (view === "list") ? (window.scrollY || document.documentElement.scrollTop || 0) : _listScrollY;
+  _listScrollY = _restoreY;
+  _lastDetailId = null;
+  showList();
+  const _clampAndScroll = () => {
+    const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    window.scrollTo(0, Math.min(_restoreY, maxY));
+  };
+  requestAnimationFrame(() => requestAnimationFrame(_clampAndScroll));
+  setTimeout(_clampAndScroll, 150);
+}
+
+async function dismissSampleIfNeeded() {
+  if (window._sampleDismissed === true) return;
+  window._sampleDismissed = true;
+  try {
+    if (window._currentUser && window._db) {
+      const userRef = window._fsDoc(window._db, "users", window._currentUser.uid);
+      await window._fsSetDoc(userRef, {
+        sampleDismissed: true
+      }, {
+        merge: true
+      });
+    }
+  } catch (e) {
+    console.error("Failed to dismiss sample:", e);
+  }
+}
+
+// ── Native iOS sign-in (S18) ────────────────────────────────────────────────
+// Uses the installed @capacitor-firebase/authentication plugin: Apple's / Google's
+// OWN native sheet hands a credential DIRECTLY to the app — no web bridge page, no
+// server token store, no polling, no sheet to close. Replaces the external-Safari /
+// custom-scheme round-trip Apple rejected (Guideline 4 / 2.1a). skipNativeAuth:true
+// runs the native UI but returns the credential so we exchange it into the JS SDK
+// auth instance the rest of the app uses. If the plugin isn't reachable at runtime,
+// we log it and fall back to the old bridge flow (so a bad build is never stuck).
+async function iosNativeSignIn(provider) {
+  var FA = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.FirebaseAuthentication;
+  var status = document.getElementById('auth-ios-status');
+  if (!FA || typeof FA.signInWithApple !== 'function') {
+    console.warn('[native-signin] FirebaseAuthentication plugin NOT reachable — falling back to bridge');
+    return signInGoogle();
+  }
+  if (status) { status.style.display = 'block'; status.textContent = 'Opening sign-in\u2026'; }
+  try {
+    var cred;
+    if (provider === 'apple') {
+      var ra = await FA.signInWithApple({ skipNativeAuth: true });
+      cred = new window._OAuthProvider('apple.com').credential({
+        idToken: ra.credential && ra.credential.idToken,
+        rawNonce: ra.credential && ra.credential.nonce,
+      });
+    } else {
+      // Android's Credential Manager (the plugin default) returns "No credentials
+      // available" on many devices even when a Google account IS present and the
+      // config is correct. On any failure, retry with the legacy Intent-based Google
+      // Sign-In (useCredentialManager:false), which reliably shows the account picker
+      // and returns an ID token. (No-op difference on iOS, which ignores the flag.)
+      var rg;
+      try {
+        rg = await FA.signInWithGoogle({ skipNativeAuth: true });
+      } catch (ceErr) {
+        var ceMsg = (ceErr && (ceErr.message || ceErr.errorMessage)) ? (ceErr.message || ceErr.errorMessage) : String(ceErr);
+        console.warn('[native-signin] Credential Manager failed (' + ceMsg + ') — retrying legacy Google Sign-In');
+        rg = await FA.signInWithGoogle({ skipNativeAuth: true, useCredentialManager: false });
+      }
+      cred = window._GoogleAuthProvider.credential(
+        rg.credential && rg.credential.idToken,
+        rg.credential && rg.credential.accessToken
+      );
+    }
+    if (status) status.textContent = 'Signing in\u2026';
+    await window._signInWithCredential(window._auth, cred);
+    console.log('[native-signin] ' + provider + ' OK');
+    if (typeof window.exitSplashSigninAndShowApp === 'function') window.exitSplashSigninAndShowApp();
+    await loadItems();
+  } catch (e) {
+    var msg = (e && (e.message || e.errorMessage)) ? (e.message || e.errorMessage) : String(e);
+    console.warn('[native-signin] ' + provider + ' FAILED: ' + msg);
+    if (status) { status.style.display = 'block'; status.textContent = 'Sign-in failed. Tap a button to try again.'; }
+  }
+}
+window.iosNativeSignIn = iosNativeSignIn;
+
+async function signInGoogle() {
+  try {
+    if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+      // iOS app: open Safari auth bridge, then poll for the custom token
+      const session = 'ios_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+      window.open('https://robograder.app/auth-ios.html?s=' + session, '_blank');
+      // Show polling status
+      const iosStatus = document.getElementById('auth-ios-status');
+      if (iosStatus) iosStatus.style.display = 'block';
+      const poll = async () => {
+        for (let i = 0; i < 120; i++) {
+          await new Promise(r => setTimeout(r, 2000));
+          try {
+            const resp = await fetch('/api/ios-auth?session=' + session);
+            if (resp.ok) {
+              const data = await resp.json();
+              if (data.customToken) {
+                if (iosStatus) iosStatus.textContent = 'Signed in! Loading your collection...';
+                await window._signInWithCustomToken(window._auth, data.customToken);
+                await loadItems();
+                return true;
+              }
+            }
+          } catch (_) {}
+        }
+        return false;
+      };
+      const ok = await poll();
+      if (!ok) {
+        if (iosStatus) iosStatus.textContent = 'Sign-in timed out. Tap Continue to try again.';
+      }
+      return;
+    }
+    await window._signInWithPopup(window._auth, window._googleProvider);
+    await loadItems();
+  } catch (e) {
+    const benignCodes = new Set([ "auth/popup-closed-by-user", "auth/cancelled-popup-request", "auth/popup-blocked" ]);
+    if (!benignCodes.has(e.code)) {
+      alert("Sign in failed: " + e.message);
+    }
+  }
+}
+
+// S19: web Apple sign-in for the PWA (the button previously called the iOS
+// native path, which fails on web — so iOS users who made an Apple account
+// couldn't sign in on the PWA to buy credits). Mirrors signInGoogle.
+async function signInApple() {
+  try {
+    await window._signInWithPopup(window._auth, window._appleProvider);
+    await loadItems();
+  } catch (e) {
+    const benignCodes = new Set([ "auth/popup-closed-by-user", "auth/cancelled-popup-request", "auth/popup-blocked" ]);
+    if (e && (e.code === "auth/popup-blocked" || e.code === "auth/operation-not-supported-in-this-environment")) {
+      try { await window._signInWithRedirect(window._auth, window._appleProvider); return; } catch (_) {}
+    }
+    if (!benignCodes.has(e && e.code)) alert("Sign in failed: " + (e && e.message));
+  }
+}
+window.signInApple = signInApple;
+
+async function signOutUser() {
+  if (!confirm("Sign out?")) return;
+  await window._signOut(window._auth);
+  window.location.reload();
+}
+
+// S24: credit count-up + coin pulse. When the balance INCREASES (purchase, admin
+// gift, referral, promo, refund) the header coin counts up to the new total and
+// pops — mirrors the score-reveal. Baseline is the last shown value in-session, or
+// (on a fresh page-load, e.g. returning from Stripe checkout) the last value this
+// browser persisted for this account, so web purchases + admin gifts animate on
+// the next load too. Decreases and first-ever render set the number directly.
+function _coinBaselineKey() {
+  try { return "rg_lastCredit_" + ((window._currentUser && window._currentUser.uid) || "anon"); } catch (e) { return "rg_lastCredit_anon"; }
+}
+function _readCoinBaseline() {
+  try { const v = localStorage.getItem(_coinBaselineKey()); return v == null ? null : parseInt(v, 10); } catch (e) { return null; }
+}
+function _writeCoinBaseline(n) {
+  try { localStorage.setItem(_coinBaselineKey(), String(n)); } catch (e) {}
+}
+function _pulseCoin() {
+  const b = document.getElementById("credit-coin-btn");
+  if (!b) return;
+  b.classList.remove("rg-coin-pop");
+  void b.offsetWidth;
+  b.classList.add("rg-coin-pop");
+  setTimeout(() => b.classList.remove("rg-coin-pop"), 550);
+}
+function _animateCreditCountUp(el, from, to) {
+  from = Math.round(Number(from) || 0);
+  to = Math.round(Number(to) || 0);
+  const fmt = (v) => (v > 999 ? "999+" : String(v));
+  if (from === to) { el.textContent = fmt(to); _pulseCoin(); return; }
+  const dur = Math.min(1100, 350 + Math.abs(to - from) * 45);
+  const start = performance.now();
+  function tick(now) {
+    const t = Math.min((now - start) / dur, 1);
+    const v = Math.round(from + (to - from) * easeOutCubic(t));
+    el.textContent = fmt(v);
+    if (t < 1) requestAnimationFrame(tick);
+    else { el.textContent = fmt(to); _pulseCoin(); }
+  }
+  requestAnimationFrame(tick);
+}
+function updateStats() {
+  const coinCount = document.getElementById("credit-coin-count");
+  if (!coinCount) return;
+  if (window._userCredits === undefined || window._userCredits === null) {
+    coinCount.textContent = "·";
+    coinCount.style.fontSize = "12px";
+    return;
+  }
+  const credits = window._userCredits;
+  // size for the FINAL value first so a count-up never resizes mid-animation
+  if (credits >= 100) coinCount.style.fontSize = "9px"; else if (credits >= 10) coinCount.style.fontSize = "11px"; else coinCount.style.fontSize = "12px";
+  const prev = (typeof window._creditDisplayShown === "number") ? window._creditDisplayShown : _readCoinBaseline();
+  const reduce = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  if (typeof prev === "number" && credits > prev && !reduce && document.getElementById("credit-coin-btn")) {
+    _animateCreditCountUp(coinCount, prev, credits);
+  } else {
+    coinCount.textContent = credits > 999 ? "999+" : String(credits);
+  }
+  window._creditDisplayShown = credits;
+  _writeCoinBaseline(credits);
+}
+
+async function _fsReadWithRetry(doReadFn, attempts = 5, delayMs = 600) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await doReadFn();
+    } catch (e) {
+      lastErr = e;
+      const code = e && e.code || "";
+      const msg = e && e.message || "";
+      const transient = code === "unavailable" || code === "deadline-exceeded" || /offline|unavailable|backend|transport/i.test(msg);
+      if (!transient || i === attempts - 1) throw e;
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+  throw lastErr;
+}
+
+// ── Ad-source (UTM) capture ─────────────────────────────────────────────────
+// The /get landing page passes utm_* through to robograder.app on web/PWA. Stash
+// them so they survive until the account doc is created, then stamp them on the
+// user doc (new-user branch in loadUserCredits). Last-touch: most recent ad wins.
+// Harmless on native (no utm in the URL there) — the fields just stay null.
+function _rgGetStoredUTM() {
+  try { return JSON.parse(localStorage.getItem("rg_utm") || "null"); } catch (e) { return null; }
+}
+// Parse a utm query string ("utm_source=youtube&utm_medium=paid_video&...") into
+// rg_utm. First touch wins (won't overwrite an existing capture). Shared by the
+// web/PWA URL path and the Android Play Install Referrer path.
+function _rgStoreUTMFromQuery(qsStr) {
+  try {
+    if (_rgGetStoredUTM()) return false;
+    var qs = new URLSearchParams(qsStr || "");
+    var keys = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"];
+    var got = {}, any = false;
+    keys.forEach(function (k) { var v = qs.get(k); if (v) { got[k] = String(v).slice(0, 120); any = true; } });
+    if (any) { got.capturedAt = new Date().toISOString(); localStorage.setItem("rg_utm", JSON.stringify(got)); return true; }
+  } catch (e) {}
+  return false;
+}
+// Android native: MainActivity fetches the Play Install Referrer, sets it on
+// window.__RG_ANDROID_REFERRER__ (a utm query string) and calls this callback.
+// Also checked on load in case it was injected before this script ran.
+window.__rgOnAndroidReferrer = function () { try { _rgStoreUTMFromQuery(window.__RG_ANDROID_REFERRER__ || ""); } catch (e) {} };
+(function _rgCaptureUTM() {
+  _rgStoreUTMFromQuery(location.search || "");
+  try { if (window.__RG_ANDROID_REFERRER__) window.__rgOnAndroidReferrer(); } catch (e) {}
+})();
+
+async function loadUserCredits() {
+  if (!window._currentUser) return;
+  try {
+    const db = window._db;
+    const fsDoc = window._fsDoc;
+    const fsGetDoc = window._fsGetDoc;
+    const snap = await _fsReadWithRetry(() => fsGetDoc(fsDoc(db, "users", window._currentUser.uid)));
+    const profile = {
+      displayName: window._currentUser.displayName || null,
+      email: window._currentUser.email || null
+    };
+    if (snap.exists()) {
+      const data = snap.data();
+      // S20 gift-credit pop-up: fires when an admin has granted credits (marker
+      // set by admin/api/user.js on a manual raise; never on purchases).
+      if (data.giftCredits && typeof data.giftCredits.amount === "number" && data.giftCredits.amount > 0) {
+        setTimeout(() => _showGiftModal(data.giftCredits.amount), 800);
+      }
+      if (Array.isArray(data.referralBonusQueue) && data.referralBonusQueue.length) {
+        setTimeout(() => _processReferralQueue(data.referralBonusQueue), 1200);
+      }
+      // Repeat-Purchase Discount (all tiers): server-cached next-purchase bonuses.
+      window._nextBonuses = (data.nextBonuses && typeof data.nextBonuses === "object") ? data.nextBonuses : null;
+      window._lastPurchaseAt = data.lastPurchaseAt || data.lastShortBoxAt || null;
+      window._nextShortBoxBonus = (typeof data.nextShortBoxBonus === "number") ? data.nextShortBoxBonus : (window._nextBonuses ? (window._nextBonuses.short_box || 0) : 0);
+      window._lastShortBoxAt = data.lastShortBoxAt || data.lastPurchaseAt || null;
+      if (typeof data.assessmentCredits === "number") {
+        window._userCredits = data.assessmentCredits;
+      } else if (window._userCredits === undefined) {
+        console.warn("assessmentCredits missing/non-numeric on existing user doc; leaving balance unset rather than zeroing");
+      }
+      window._sampleDismissed = data.sampleDismissed === true;
+      if (data.everPurchased) window._userEverPaid = true; else if (window._userCredits > 0) window._userEverPaid = true;
+      // Strict purchaser flag (S21): true ONLY if the account has actually bought
+      // credits (web sets everPurchased; mobile increments totalPurchased). Free
+      // signup + referral credits do NOT count. Gates the Give (transfer) feature.
+      window._userHasPurchased = (data.everPurchased === true) || (typeof data.totalPurchased === "number" && data.totalPurchased > 0);
+      window._trainingOptIn = data.trainingOptIn !== false;
+      window._printOptIn = data.printOptIn === true; // S18: persisted print-mode opt-in
+      if (typeof data.transferCode === "string" && data.transferCode.length === 4) {
+        window._transferCode = data.transferCode;
+      } else {
+        const backfillCode = generateTransferCode();
+        window._transferCode = backfillCode;
+        try {
+          const tcRef = window._fsDoc(db, "users", window._currentUser.uid);
+          await window._fsSetDoc(tcRef, {
+            transferCode: backfillCode
+          }, {
+            merge: true
+          });
+        } catch (e) {
+          console.warn("transferCode backfill write failed (will retry next sign-in):", e);
+        }
+      }
+      ensureTransferCodeRegistered();
+      const needsUpdate = data.displayName !== profile.displayName || data.email !== profile.email;
+      if (needsUpdate) {
+        const userRef = window._fsDoc(db, "users", window._currentUser.uid);
+        await window._fsSetDoc(userRef, profile, {
+          merge: true
+        });
+      }
+    } else {
+      const userRef = window._fsDoc(db, "users", window._currentUser.uid);
+      const newCode = generateTransferCode();
+      const _utm = _rgGetStoredUTM() || {};
+      await window._fsSetDoc(userRef, {
+        ...profile,
+        assessmentCredits: 3,
+        createdAt: (new Date).toISOString(),
+        freeCreditsGranted: true,
+        transferCode: newCode,
+        utmSource: _utm.utm_source || null,
+        utmMedium: _utm.utm_medium || null,
+        utmCampaign: _utm.utm_campaign || null,
+        utmContent: _utm.utm_content || null,
+        utmTerm: _utm.utm_term || null,
+        acqReferrer: (document.referrer || "").slice(0, 200) || null
+      });
+      // Meta Pixel (S24): a brand-new account was just created — fire
+      // CompleteRegistration so Meta accrues signup-conversion volume for a
+      // future signup-optimized campaign. Only fires on web/PWA (pixel gated).
+      try { if (window.fbq) window.fbq("track", "CompleteRegistration"); } catch (e) {}
+      window._userCredits = 3;
+      window._sampleDismissed = false;
+      window._transferCode = newCode;
+      window._trainingOptIn = true;
+    }
+    updateStats();
+  } catch (e) {
+    console.error("Failed to load credits:", e);
+  }
+}
+
+const TERMS_VERSION = "2026-04-27";
+
+async function checkTermsAcceptance() {
+  if (!window._currentUser) return;
+  try {
+    const db = window._db;
+    const userRef = window._fsDoc(db, "users", window._currentUser.uid);
+    const snap = await _fsReadWithRetry(() => window._fsGetDoc(userRef));
+    const data = snap.exists() ? snap.data() : {};
+    if (data.termsAccepted && data.termsVersion === TERMS_VERSION) return;
+    showTermsModal();
+  } catch (e) {
+    console.error("Terms check failed:", e);
+  }
+}
+
+function showTermsModal() {
+  if (document.getElementById("terms-modal")) return;
+  const overlay = document.createElement("div");
+  overlay.id = "terms-modal";
+  overlay.style.cssText = "position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.78);display:flex;align-items:center;justify-content:center;padding:20px;";
+  const box = document.createElement("div");
+  box.style.cssText = "background:#f0ede6;color:#0d0f0a;border-radius:14px;padding:28px 26px;max-width:460px;width:100%;max-height:88vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,0.5);";
+  box.innerHTML = `\n    <div style="font-size:22px;font-weight:900;letter-spacing:-0.3px;margin-bottom:6px;color:#1a2208">Welcome to Robograder</div>\n    <div style="font-size:12px;color:#6a7a5a;letter-spacing:2px;text-transform:uppercase;font-weight:700;margin-bottom:20px">Alpha Release</div>\n    <p style="font-size:14px;line-height:1.55;margin-bottom:14px">Robograder is a comic grading assistant in early testing. Before you dive in, please read and agree to how it works.</p>\n    <ul style="font-size:13.5px;line-height:1.55;margin:10px 0 18px 20px">\n      <li style="margin-bottom:8px"><strong>Grades are estimates, not official.</strong> Robograder produces informational grades. They are not CGC, PSA, or any professional grading service's official grades.</li>\n      <li style="margin-bottom:8px"><strong>Don't rely on RG grades for sales or insurance.</strong> Use them for your own tracking and as a gut check before submitting to a real grading service.</li>\n      <li style="margin-bottom:8px"><strong>Upload only comic book photos.</strong> Non-comic or inappropriate content will be flagged; three flags can trigger account review.</li>\n      <li style="margin-bottom:8px"><strong>This is an alpha release.</strong> Expect bugs. Please tell us what you find.</li>\n    </ul>\n    <p style="font-size:13px;color:#3a4a28;margin-bottom:14px">Full details in our <a href="/terms.html" target="_blank" rel="noopener" style="color:#1a2208;text-decoration:underline">Terms of Service</a> and <a href="/privacy.html" target="_blank" rel="noopener" style="color:#1a2208;text-decoration:underline">Privacy Policy</a>.</p>\n    <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:#e6e2d6;border-radius:8px;margin-bottom:18px;cursor:pointer;user-select:none;">\n      <input type="checkbox" id="terms-email-optin" checked style="margin-top:2px;flex-shrink:0;width:16px;height:16px;cursor:pointer;accent-color:#3a5818">\n      <span style="font-size:13px;line-height:1.45;color:#1a2208">Email me when public beta launches and for occasional product updates. (Unsubscribe anytime.)</span>\n    </label>\n    <div style="display:flex;gap:10px;flex-direction:column">\n      <button id="terms-agree-btn" class="rg-btn rg-btn-primary rg-btn-lg">I agree — let me in</button>\n      <button id="terms-decline-btn" class="rg-btn rg-btn-ghost rg-btn-sm" style="text-decoration:underline">I don't agree — sign me out</button>\n    </div>`;
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  document.getElementById("terms-agree-btn").onclick = async () => {
+    try {
+      const optInEl = document.getElementById("terms-email-optin");
+      const emailOptIn = !!(optInEl && optInEl.checked);
+      const db = window._db;
+      const userRef = window._fsDoc(db, "users", window._currentUser.uid);
+      await window._fsSetDoc(userRef, {
+        termsAccepted: true,
+        termsVersion: TERMS_VERSION,
+        termsAcceptedAt: (new Date).toISOString(),
+        emailOptIn: emailOptIn,
+        emailOptInUpdatedAt: (new Date).toISOString()
+      }, {
+        merge: true
+      });
+      overlay.remove();
+    } catch (e) {
+      alert("Failed to save agreement. Please try again.");
+      console.error(e);
+    }
+  };
+  document.getElementById("terms-decline-btn").onclick = async () => {
+    overlay.remove();
+    if (window._signOut && window._auth) {
+      await window._signOut(window._auth);
+    }
+  };
+}
+
+async function buyCredits(pkg) {
+  if (!window._currentUser) {
+    window.rgPopup("Please sign in to purchase credits.", { type: "info" });
+    return;
+  }
+  try {
+    const token = await window._currentUser.getIdToken();
+    const resp = await fetch("/api/checkout", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + token
+      },
+      body: JSON.stringify({
+        package: pkg
+      })
+    });
+    const data = await resp.json();
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      window.rgPopup("Failed to start checkout: " + (data.error || "Unknown error"), { type: "error" });
+    }
+  } catch (e) {
+    window.rgPopup("Checkout error: " + e.message, { type: "error" });
+  }
+}
+
+// S20 gift-credit pop-up. Shown once when an admin grants free credits; the
+// acknowledge button clears the marker so it never repeats. Robot art lives at
+// assets/Robograder_Gift.webp (make-ios D5 rewrites the path for iOS).
+function _showGiftModal(amount) {
+  if (document.getElementById("gift-credit-modal")) return;
+  const overlay = document.createElement("div");
+  overlay.id = "gift-credit-modal";
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px";
+  overlay.innerHTML = `
+    <div style="background:#141210;border-radius:18px;padding:24px 24px 20px;max-width:340px;width:100%;border:1.5px solid #6a4a10;text-align:center;box-shadow:0 12px 44px rgba(0,0,0,0.55)">
+      <img src="assets/Robograder_Gift.webp" alt="" style="width:112px;height:auto;margin:0 auto 14px;display:block">
+      <div style="font-size:15px;color:#e8d9b8;line-height:1.6;margin-bottom:20px">
+        Robograder has bestowed upon you <strong style="color:#f0c860">${amount}</strong> free assessment credit${amount === 1 ? "" : "s"}. Use ${amount === 1 ? "it" : "them"} wisely.
+      </div>
+      <button class="rg-btn rg-btn-branded rg-btn-md" onclick="_ackGift()" style="width:100%">Cool!</button>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+async function _ackGift() {
+  const m = document.getElementById("gift-credit-modal");
+  if (m) m.remove();
+  try {
+    if (window._currentUser) {
+      await window._fsSetDoc(window._fsDoc(window._db, "users", window._currentUser.uid), { giftCredits: null }, { merge: true });
+    }
+  } catch (e) { console.warn("[gift] acknowledge clear failed", e); }
+}
+
+function showBuyCredits() {
+  const modal = document.getElementById("buy-credits-modal");
+  if (modal) modal.style.display = "flex";
+  refreshPromoRow();
+  refreshReferralEligibility();
+  refreshShortBoxCard();
+}
+
+// Repeat-Purchase Discount: show the bonus the user's NEXT Short Box would earn.
+// Server computes it (window._nextShortBoxBonus / _lastShortBoxAt via the user
+// doc); the client only renders, so it always matches what's actually granted.
+function refreshShortBoxCard() {
+  // Repeat-Purchase Discount (all tiers). Name kept so the iOS showBuyCredits
+  // hook still matches; body now refreshes all three cards. Server computes the
+  // per-tier next-purchase bonus (window._nextBonuses); the client only renders.
+  const WINDOW = 183 * 24 * 60 * 60 * 1000;   // ~6 months (repeat-bonus window; was 1 year)
+  const last = window._lastPurchaseAt ? Date.parse(window._lastPurchaseAt)
+             : (window._lastShortBoxAt ? Date.parse(window._lastShortBoxAt) : 0);
+  const chainAlive = !!last && (Date.now() - last <= WINDOW);
+  const nb = window._nextBonuses
+    || (typeof window._nextShortBoxBonus === "number" ? { short_box: window._nextShortBoxBonus } : null);
+  const TIERS = [
+    { key: "comic_stack", base: 5,   price: 10,  line: "stack-bonus-line" },
+    { key: "comic_wall",  base: 20,  price: 30,  line: "wall-bonus-line" },
+    { key: "short_box",   base: 100, price: 100, line: "short-box-bonus-line" },
+  ];
+  TIERS.forEach(t => {
+    const el = document.getElementById(t.line);
+    if (!el) return;
+    const unit = el.previousElementSibling;   // the "($X.XX each)" line
+    const bonus = (nb && typeof nb[t.key] === "number") ? nb[t.key] : 0;
+    if (chainAlive && bonus > 0) {
+      const per = t.price / (t.base + bonus);
+      el.textContent = `+${bonus} repeat bonus ($${per.toFixed(2)} each)`;
+      el.style.display = "block";
+      if (unit) unit.style.display = "none";
+    } else {
+      el.style.display = "none";
+      if (unit) unit.style.display = "block";
+    }
+  });
+}
+
+function hideBuyCredits() {
+  const modal = document.getElementById("buy-credits-modal");
+  if (modal) modal.style.display = "none";
+  clearPromoFields("");
+  // S16: Return to Settings if Buy was opened from there
+  if (window._buyOpenedFromSettings) {
+    window._buyOpenedFromSettings = false;
+    const overlay = document.getElementById("settings-overlay");
+    if (overlay) overlay.style.display = "flex";
+  }
+}
+
+// Mirror of the server registry in api/redeem_promo.js — dates only, no codes.
+// Used solely to decide whether to SHOW the promo field; the server is
+// authoritative on every redemption. Keep both lists in step.
+const PROMOS_CLIENT = [ {
+  code: "BCC26",
+  activeFrom: "2026-09-23T00:00:00-07:00",
+  expiresAt: "2026-10-01T00:00:00-07:00"
+}, {
+  code: "FENCON26",
+  activeFrom: "2026-05-15T00:00:00-07:00",
+  expiresAt: "2026-05-21T00:00:00-07:00"
+} ];
+
+function isAnyPromoActiveNow() {
+  const now = Date.now();
+  for (const p of PROMOS_CLIENT) {
+    const start = Date.parse(p.activeFrom);
+    const end = Date.parse(p.expiresAt);
+    if (Number.isFinite(start) && Number.isFinite(end) && now >= start && now < end) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// S23: the promo field lives on the Buy / Purchase screen only — that is where
+// someone is already thinking about credits. It was briefly added to Settings
+// too; Matt removed it as the wrong home. The scope-suffix plumbing below is
+// kept because it costs nothing and makes a second surface a one-line change.
+const PROMO_SCOPES = [""];
+
+function refreshPromoRow() {
+  const on = isAnyPromoActiveNow();
+  PROMO_SCOPES.forEach(function (s) {
+    const row = document.getElementById("promo-code-row" + s);
+    if (row) row.style.display = on ? "block" : "none";
+  });
+}
+
+function clearPromoFields(scope) {
+  const s = scope || "";
+  const inp = document.getElementById("promo-code-input" + s);
+  const fb = document.getElementById("promo-feedback" + s);
+  if (inp) inp.value = "";
+  if (fb) { fb.textContent = ""; fb.style.color = ""; }
+}
+
+async function redeemPromoCode(scope) {
+  const s = scope || "";
+  const inp = document.getElementById("promo-code-input" + s);
+  const btn = document.getElementById("promo-redeem-btn" + s);
+  const fb = document.getElementById("promo-feedback" + s);
+  if (!inp || !btn || !fb) return;
+  const code = (inp.value || "").trim().toUpperCase().replace(/\s+/g, "");
+  if (!code) {
+    fb.textContent = "Enter a code to redeem.";
+    fb.style.color = "#9a4a2a";
+    return;
+  }
+  if (!window._currentUser || typeof window._currentUser.getIdToken !== "function") {
+    fb.textContent = "You must be signed in to redeem a code.";
+    fb.style.color = "#9a4a2a";
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = "…";
+  fb.textContent = "";
+  fb.style.color = "";
+  try {
+    const token = await window._currentUser.getIdToken();
+    const resp = await fetch("/api/redeem_promo", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + token
+      },
+      body: JSON.stringify({
+        code: code
+      })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      fb.textContent = data.error || "Redemption failed.";
+      fb.style.color = "#9a4a2a";
+      return;
+    }
+    if (typeof data.newBalance === "number") {
+      window._userCredits = data.newBalance;
+    } else if (typeof data.creditsGranted === "number") {
+      window._userCredits = (window._userCredits || 0) + data.creditsGranted;
+    }
+    if (typeof refreshHeaderControls === "function") refreshHeaderControls();
+    updateStats();
+    const credEl = document.getElementById("settings-credits");
+    if (credEl) credEl.textContent = String(Math.max(0, window._userCredits || 0));
+    const granted = data.creditsGranted || 0;
+    fb.textContent = `+${granted} ${granted === 1 ? "credit" : "credits"} added. New balance: ${window._userCredits}.`;
+    fb.style.color = "#2a7a3a";
+    inp.value = "";
+  } catch (e) {
+    console.error("[promo] redeem error:", e);
+    fb.textContent = "Network error. Please try again.";
+    fb.style.color = "#9a4a2a";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "REDEEM";
+  }
+}
+
+// Android hardware-back handler: pop the deepest open surface, else detail/edit
+// -> list. Returns true if it consumed the back press, false to allow app exit.
+// Called by the Android runtime in make-android-index.mjs (no-op on web/iOS).
+window.rgHandleBack = function () {
+  try {
+    if (typeof assessing !== "undefined" && assessing) return true; // swallow mid-assessment
+    var _vis = function (id) {
+      var el = document.getElementById(id);
+      if (!el) return false;
+      var st = window.getComputedStyle(el);
+      return !!st && st.display !== "none" && st.visibility !== "hidden";
+    };
+    if (_vis("camera-modal")) { if (typeof cameraExit === "function") cameraExit(); return true; }
+    if (_vis("cropper-modal")) { if (typeof cancelCrop === "function") cancelCrop(); return true; }
+    if (_vis("lightbox")) { if (typeof closeLightbox === "function") closeLightbox(); return true; }
+    if (_vis("buy-credits-modal")) { if (typeof hideBuyCredits === "function") hideBuyCredits(); return true; }
+    if (typeof view !== "undefined" && (view === "detail" || view === "edit")) {
+      if (typeof showList === "function") { showList(); return true; }
+    }
+  } catch (e) {}
+  return false;
+};
+
+function showList() {
+  view = "list";
+  selected = null;
+  _rememberNow();
+  refreshHeaderControls();
+  renderList();
+  requestAnimationFrame(() => {
+    let landed = false;
+    if (_lastDetailId) {
+      const row = document.querySelector(`.comic-row[data-row-id="${window.CSS && CSS.escape ? CSS.escape(_lastDetailId) : _lastDetailId}"]`);
+      if (row && typeof row.scrollIntoView === "function") {
+        row.scrollIntoView({
+          block: "center"
+        });
+        row.style.transition = "background-color 0.6s ease-out";
+        const prevBg = row.style.backgroundColor;
+        row.style.backgroundColor = "rgba(200,169,110,0.28)";
+        setTimeout(() => {
+          row.style.backgroundColor = prevBg || "";
+        }, 700);
+        landed = true;
+      }
+    }
+    if (!landed) window.scrollTo(0, _listScrollY);
+  });
+}
+
+// Print-label redesign (S18): the gradient LABEL badge is replaced by a small
+// print icon (rotate-icon green) that only appears once the user opts in. An
+// entry already in the Print section shows the icon with a red X (tap to remove).
+const PRINT_ICON_SVG = '<svg viewBox="0 0 100 100" width="30" height="30" fill="none" style="stroke:#7aa838;stroke-width:6;stroke-linecap:round;stroke-linejoin:round"><path d="M30,36 L30,21 A4,4 0 0 1 34,17 L66,17 A4,4 0 0 1 70,21 L70,36"/><path d="M30,66 L20,66 A8,8 0 0 1 12,58 L12,44 A8,8 0 0 1 20,36 L80,36 A8,8 0 0 1 88,44 L88,58 A8,8 0 0 1 80,66 L70,66"/><path d="M22,47 L33,47"/><rect x="30" y="58" width="40" height="28" rx="3"/><path d="M40,70 L60,70"/><path d="M40,78 L60,78"/></svg>';
+const PRINT_ICON_X_SVG = '<svg viewBox="0 0 100 100" width="30" height="30" fill="none" style="stroke:#7aa838;stroke-width:6;stroke-linecap:round;stroke-linejoin:round"><path d="M30,36 L30,21 A4,4 0 0 1 34,17 L66,17 A4,4 0 0 1 70,21 L70,36"/><path d="M30,66 L20,66 A8,8 0 0 1 12,58 L12,44 A8,8 0 0 1 20,36 L80,36 A8,8 0 0 1 88,44 L88,58 A8,8 0 0 1 80,66 L70,66"/><path d="M22,47 L33,47"/><rect x="30" y="58" width="40" height="28" rx="3"/><g style="stroke:#c0392b;stroke-width:7"><path d="M38,66 L62,82"/><path d="M62,66 L38,82"/></g></svg>';
+// Session opt-in: tapping "Want to print labels?" reveals the icons. Also
+// considered on once any entry is in the Print state (derived from data, so it
+// stays on across reloads once the user has actually marked something).
+let _printOptInSession = false;
+function enablePrintMode() {
+  _printOptInSession = true;
+  window._printOptIn = true;
+  renderList();
+  // Persist so the Print drop-zone stays on across reloads (best-effort).
+  try {
+    if (window._currentUser && window._db && window._fsSetDoc && window._fsDoc) {
+      window._fsSetDoc(window._fsDoc(window._db, "users", window._currentUser.uid), { printOptIn: true }, { merge: true })
+        .catch(function(e) { console.warn("printOptIn persist failed:", e); });
+    }
+  } catch (e) { console.warn("printOptIn persist error:", e); }
+}
+function disablePrintMode() {
+  _printOptInSession = false;
+  window._printOptIn = false;
+  renderList();
+  // Persist the off state so print mode stays off across reloads (best-effort).
+  try {
+    if (window._currentUser && window._db && window._fsSetDoc && window._fsDoc) {
+      window._fsSetDoc(window._fsDoc(window._db, "users", window._currentUser.uid), { printOptIn: false }, { merge: true })
+        .catch(function(e) { console.warn("printOptIn persist failed:", e); });
+    }
+  } catch (e) { console.warn("printOptIn persist error:", e); }
+}
+
+// iOS StoreKit price prefetch (S18, restored S20): warms the Buy Credits prices
+// while browsing so the modal shows real prices instantly. No-op on web (guarded
+// by isNativePlatform); _iosFetchPrices/_applyIosPrices are injected into the iOS
+// build by make-ios-index.mjs.
+let _iosPricePrefetched = false;
+function _iosPrefetchPrices() {
+  if (_iosPricePrefetched) return;
+  if (!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) return;
+  _iosPricePrefetched = true;
+  _iosFetchPrices().then(function(p) { if (p) _applyIosPrices(p); }).catch(function() {});
+}
+// S20: Title separators. New accounts — and any account where no title has more
+// than one issue — show a FLAT alphabetical list (no collapsible title dividers).
+// The moment any title has 2+ issues, dividers appear across the whole list, and
+// they auto-revert to flat once no multi-issue title remains. A Settings toggle
+// ("Title Separators") overrides: 'on'/'off' force it; unset (default) = auto.
+function _hasMultiTitle() {
+  const counts = {};
+  for (const c of items) {
+    if (!c || c.id === SAMPLE_COMIC_ID) continue;
+    const t = (c.title || "").trim().toLowerCase();
+    if (!t) continue;
+    counts[t] = (counts[t] || 0) + 1;
+    if (counts[t] > 1) return true;
+  }
+  return false;
+}
+function _showTitleSeparators() {
+  let o = null;
+  try { o = localStorage.getItem("rg_title_sep"); } catch (_) {}
+  if (o === "on") return true;
+  if (o === "off") return false;
+  return _hasMultiTitle();
+}
+function toggleTitleSeparators() {
+  const now = _showTitleSeparators();
+  try { localStorage.setItem("rg_title_sep", now ? "off" : "on"); } catch (_) {}
+  _syncTitleSepRow();
+  if (view === "list") renderList();
+}
+function _syncTitleSepRow() {
+  const on = _showTitleSeparators();
+  const cb = document.getElementById("settings-titlesep-toggle");
+  const track = document.getElementById("settings-titlesep-track");
+  const thumb = document.getElementById("settings-titlesep-thumb");
+  if (cb) cb.checked = on;
+  if (track) track.style.background = on ? "#3a7a20" : "#2a2a2a";
+  if (thumb) thumb.style.left = on ? "23px" : "3px";
+}
+
+function toggleTypeFilter(which) {
+  // Two independent on/off toggles. Never allow BOTH off (that would show
+  // nothing) — tapping the last-on box is a no-op.
+  if (which === "comic") { if (_showComics && !_showCards) return; _showComics = !_showComics; }
+  else { if (_showCards && !_showComics) return; _showCards = !_showCards; }
+  renderList();
+}
+
+function _typeFilterChips() {
+  const box = (which, label, on) => `<button onclick="toggleTypeFilter('${which}')" style="flex:1;padding:7px 10px;border:2px solid ${on ? "#2a2724" : "#d6d2cc"};border-radius:8px;font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:800;letter-spacing:1px;text-transform:uppercase;cursor:pointer;background:${on ? "#2a2724" : "#f0eee9"};color:${on ? "#ffffff" : "#a49c92"}">${label}</button>`;
+  return `<div style="display:flex;gap:6px;margin:4px 0 14px">${box("comic", "Comics", _showComics)}${box("card", "Cards", _showCards)}</div>`;
+}
+
+function renderList() {
+  if (window._rgCollapseLoadedFor !== _collapseKey()) { _loadCollapsed(); window._rgCollapseLoadedFor = _collapseKey(); }
+  const main = document.getElementById("main");
+  _iosPrefetchPrices(); // warm StoreKit prices during browsing (iOS only, once)
+  if (window._loadingState) {
+    main.innerHTML = `\n      <div style="padding:60px 20px;text-align:center;color:#8a7a6a">\n        <div style="width:32px;height:32px;border:3px solid #ddd8d0;border-top-color:#5a4a3a;border-radius:50%;animation:spin 0.9s linear infinite;margin:0 auto 16px"></div>\n        <div style="font-size:14px;letter-spacing:0.3px">Loading your collection…</div>\n      </div>\n    `;
+    return;
+  }
+  let filt = items.filter(c => {
+    const q = search.toLowerCase();
+    return !q || c.title?.toLowerCase().includes(q) || c.issue?.toLowerCase().includes(q) || c.cgcCert?.includes(q);
+  });
+  // Card MVP: type-aware view. The All/Comics/Cards chips + per-row type badge
+  // appear ONLY for a MIXED collection (has both comics and cards); comic-only
+  // and card-only users never see a card/comic element (SPEC section 9).
+  const _realItems = items.filter(c => c.id !== SAMPLE_COMIC_ID);
+  const _hasCards = _realItems.some(c => c.type === "card");
+  const _hasComics = _realItems.some(c => c.type !== "card");
+  const _mixed = _hasCards && _hasComics;
+  const _cardCount = _realItems.filter(c => c.type === "card").length;
+  const _comicCount = _realItems.length - _cardCount;
+  const _majorityType = _cardCount > _comicCount ? "card" : "comic";
+  if (_mixed) {
+    filt = filt.filter(c => (c.type === "card") ? _showCards : _showComics);
+  }
+  // S23: count copies of each title+issue in the visible list so a row shows its
+  // assessment date ONLY when there is more than one copy to tell apart.
+  const _dupKey = c => {
+    const t = (c.type === "card") ? (c.title || "Unknown") : (normalizeTitle(c.title, c.issueDate, c.printing) || c.title || "Unknown");
+    // S23: scope duplicates to the same ownership section — copies split across
+    // Owned/Sold/Watching are already told apart by their section, so only 2+
+    // copies sitting TOGETHER need the graded date to distinguish them.
+    return (c.ownership || "Owned") + "||" + t + "||" + String(c.issue == null ? "" : c.issue).trim().replace(/^#/, "").toLowerCase();
+  };
+  const _dupCounts = {};
+  filt.forEach(c => { const k = _dupKey(c); _dupCounts[k] = (_dupCounts[k] || 0) + 1; });
+  const OWNERSHIP_ORDER = [ "Owned", "Sold", "Watching" ];
+  const buildTitleGroups = list => {
+    const groups = {};
+    list.forEach(c => {
+      const t = (c.type === "card")
+        ? (c.title || "Unknown")
+        : (normalizeTitle(c.title, c.issueDate, c.printing) || c.title || "Unknown");
+      if (!groups[t]) groups[t] = [];
+      groups[t].push(c);
+    });
+    Object.values(groups).forEach(g => g.sort((a, b) => {
+      if (sortBy === "dateAdded") {
+        const d = new Date(b.dateAdded) - new Date(a.dateAdded);
+        if (d !== 0) return d;
+      } else if (sortBy === "grade") {
+        const ga = parseFloat(a.cgcGrade || a.psaGrade || a.predictedGrade || a.assessedCGCGrade || a.grade || 0);
+        const gb = parseFloat(b.cgcGrade || b.psaGrade || b.predictedGrade || b.assessedCGCGrade || b.grade || 0);
+        if (gb !== ga) return gb - ga;
+      }
+      const na = parseFloat(a.issue) || 0, nb = parseFloat(b.issue) || 0;
+      if (na !== nb) return na - nb;
+      const is = a.issue || "", ibs = b.issue || "";
+      if (is !== ibs) return is.localeCompare(ibs);
+      // S23: duplicate copies (same title+issue) sort chronologically, oldest first.
+      const _aad = a.roboGradeDate || a.dateAdded || "", _bad = b.roboGradeDate || b.dateAdded || "";
+      if (_aad !== _bad) return (new Date(_aad)) - (new Date(_bad));
+      const ga = parseFloat(a.cgcGrade || a.psaGrade || a.predictedGrade || a.assessedCGCGrade || a.grade || 0);
+      const gb = parseFloat(b.cgcGrade || b.psaGrade || b.predictedGrade || b.assessedCGCGrade || b.grade || 0);
+      if (gb !== ga) return gb - ga;
+      const offA = !!(a.cgcGrade || a.psaGrade), offB = !!(b.cgcGrade || b.psaGrade);
+      if (offA !== offB) return offA ? -1 : 1;
+      const da = a.dateAcquired || "9999", db = b.dateAcquired || "9999";
+      if (da !== db) return da.localeCompare(db);
+      return new Date(a.dateAdded) - new Date(b.dateAdded);
+    }));
+    let titles = Object.keys(groups);
+    if (sortBy === "dateAdded") {
+      titles.sort((a, b) => {
+        const la = Math.max(...groups[a].map(c => +new Date(c.dateAdded) || 0));
+        const lb = Math.max(...groups[b].map(c => +new Date(c.dateAdded) || 0));
+        return lb - la;
+      });
+    } else if (sortBy === "grade") {
+      titles.sort((a, b) => {
+        const best = g => Math.max(...groups[g].map(c => parseFloat(c.cgcGrade || c.psaGrade || c.predictedGrade || c.assessedCGCGrade || c.grade || 0)));
+        return best(b) - best(a);
+      });
+    } else {
+      titles.sort((a, b) => a.localeCompare(b));
+    }
+    // S21: on a MIXED collection, keep comics and cards in separate blocks —
+    // the majority type first (fully alphabetical), then the other type
+    // (alphabetical). Stable sort preserves the per-type ordering above.
+    if (_mixed) {
+      const _typeOf = t => (groups[t][0] && groups[t][0].type === "card") ? "card" : "comic";
+      titles.sort((a, b) => (_typeOf(a) === _majorityType ? 0 : 1) - (_typeOf(b) === _majorityType ? 0 : 1));
+    }
+    return {
+      titles: titles,
+      groups: groups
+    };
+  };
+  // Print mode: icons + the persistent Print drop-zone appear once the user has
+  // opted in (persisted via window._printOptIn) or once any entry is in the Print
+  // state. _printOptInSession is the immediate in-memory echo of a fresh opt-in.
+  const printModeEnabled = _printOptInSession || window._printOptIn === true || items.some(c => c.inPrintQueue === true);
+  const sections = OWNERSHIP_ORDER.map(own => {
+    const subset = filt.filter(c => (c.ownership || "Owned") === own);
+    if (subset.length === 0) return null;
+    const {titles: titles, groups: groups} = buildTitleGroups(subset);
+    return {
+      ownership: own,
+      titles: titles,
+      groups: groups
+    };
+  }).filter(Boolean);
+  // S22: Print is an independent QUEUE (inPrintQueue flag), not an ownership — a
+  // book keeps its real ownership AND may appear here. Append it as its own section.
+  {
+    const _printSubset = filt.filter(c => c.inPrintQueue === true);
+    if (_printSubset.length || printModeEnabled) {
+      const { titles: _pt, groups: _pg } = buildTitleGroups(_printSubset);
+      sections.push({ ownership: "Print", titles: _pt, groups: _pg });
+    }
+  }
+  // S22: matched to the printed label's own gradient (print-label.js .rg-label
+  // et al). The bar is an invitation to print a label, so it should look like
+  // one; the muted tan it used was the PRE-S22 label colour and had drifted.
+  const _LABEL_GRADIENT = "linear-gradient(180deg, #c97a14 0%, #dd9430 38%, #e8b571 100%)";
+  // Ink matched to the label's title colour too. The old #3a2a18 scored only
+  // 4.12:1 against the new gradient's darkest stop — under the 4.5:1 floor for
+  // 14px bold text. #0d0d0f is what the label prints its title in and lifts the
+  // worst case to 5.80:1.
+  const _LABEL_INK = "#0d0d0f";
+  const hasRealBooks = items.some(c => c.id !== SAMPLE_COMIC_ID);
+  let html = ``;
+  if (_mixed) html += _typeFilterChips();
+  const anyBooks = sections.some(s => s.titles.length > 0);
+  if (!anyBooks) {
+    html += ``;
+  } else {
+    sections.forEach(section => {
+      // Ownership section is collapsible. Default state: Owned open, Sold &
+      // Watching closed (keeps the list uncluttered when those are unused).
+      // collapsed convention: === false means OPEN; undefined/true means CLOSED.
+      // We seed the default per-ownership the first time, then respect the
+      // user's explicit toggle thereafter.
+      const ownKey = `__own__${section.ownership}`;
+      if (collapsed[ownKey] === undefined) {
+        collapsed[ownKey] = section.ownership === "Owned" ? false : true;
+      }
+      const ownOpen = collapsed[ownKey] === false;
+      if (section.ownership && sections.length > 1) {
+        // S17: Owned/Sold/Watching headers are charcoal (white text) when
+        // EXPANDED, light gray (dark text) when COLLAPSED.
+        // S22 (2026-09-19): the PRINT header now uses the SAME _LABEL_GRADIENT /
+        // _LABEL_INK as the "Want to print labels?" bar above it. It had its own
+        // hardcoded tan (#b58a5f/#d6b391/#eedbc5) left over from the pre-S22
+        // label palette, so the two bars in the same view disagreed. Declared
+        // above the forEach on purpose — a const referenced from inside this
+        // callback but declared below it would be in the temporal dead zone.
+        let _headerBg, _headerFg;
+        if (section.ownership === "Print") {
+          _headerBg = _LABEL_GRADIENT;
+          _headerFg = _LABEL_INK;
+        } else if (ownOpen) {
+          _headerBg = "#2a2724";
+          _headerFg = "#ffffff";
+        } else {
+          _headerBg = "#e2e0dc";
+          _headerFg = "#3a3632";
+        }
+        const oc = { bg: _headerBg, fg: _headerFg };
+        const count = section.titles.reduce((n, t) => n + section.groups[t].length, 0);
+        const printBtn = section.ownership === "Print"
+          ? `<button onclick="event.stopPropagation();printQueueSheet()" style="margin-left:auto;font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#fff;background:rgba(0,0,0,0.35);border:none;border-radius:6px;padding:5px 12px;cursor:pointer">Print Labels</button>`
+          : "";
+        html += `<div onclick="toggleOwnership('${escJsAttr(section.ownership)}')" style="display:flex;align-items:center;gap:8px;margin:18px 0 10px;padding:7px 12px;background:${oc.bg};border-radius:8px;cursor:pointer;user-select:none">\n          <span class="group-chevron${ownOpen ? " open" : ""}" style="color:${oc.fg}">›</span>\n          <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:${oc.fg}">${section.ownership}</span>\n          <span style="font-size:12px;color:${oc.fg};opacity:0.7;letter-spacing:0.5px">(${count})</span>${printBtn}\n        </div>`;
+      }
+      if (!ownOpen) return;
+      const LABEL_GRADIENT_ROW = "linear-gradient(180deg, #58723b 0%, #93ab66 38%, #9ba37e 100%)";
+      const GRAY_GRADIENT_ROW = "linear-gradient(180deg, #5a5a5a 0%, #8a8a8a 38%, #9a9a9a 100%)";
+      const buildRow = c => {
+        const _dupN = _dupCounts[_dupKey(c)] || 0;
+        const _adRaw = c.roboGradeDate || c.dateAdded;
+        const _adStr = (_dupN > 1 && _adRaw) ? (() => { try { const _d = new Date(_adRaw); return String(_d.getMonth() + 1).padStart(2, "0") + "/" + String(_d.getDate()).padStart(2, "0") + "/" + String(_d.getFullYear()).slice(-2); } catch (e) { return ""; } })() : "";
+        const thumbSrc = c.thumbnails?.[0] || c.images?.[0];
+        const thumb = thumbSrc ? `<img class="comic-thumb" data-src="${thumbSrc}" decoding="async" style="background:#221d18">` : "";
+        // S18: print icon (upper-right) replaces the old LABEL badge. Shown only
+        // once print mode is opted into. Tap toggles the entry into/out of the
+        // Print section. In Print -> icon shows a red X (tap to remove).
+        const _inPrint = c.inPrintQueue === true;
+        const _canLabel = c.roboGrade && c.id !== SAMPLE_COMIC_ID;
+        const _labelBtn = (printModeEnabled && _canLabel)
+          ? `<button onclick="event.stopPropagation();togglePrintState('${esc(c.id)}')" title="${_inPrint ? "Remove from print queue" : "Add to print queue"}"\n              style="position:absolute;top:4px;right:6px;z-index:3;background:none;border:none;padding:2px;line-height:0;cursor:pointer">${_inPrint ? PRINT_ICON_X_SVG : PRINT_ICON_SVG}</button>`
+          : "";
+        return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0;align-self:stretch;display:flex;flex-direction:column;justify-content:center;gap:2px">\n                  <div style="display:flex;align-items:flex-start;gap:8px">\n                    <div style="flex:1;min-width:0;font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1;overflow-wrap:anywhere">${esc(c.title)}${c.issue ? `<span style="font-weight:600;color:#3a2e24;margin-left:0.28em">${c.type === "card" ? esc(formatCardNumber(c.issue)) : formatIssue(c.issue, c.title)}</span>` : ""}</div>\n                  </div>\n                  <div style="display:flex;align-items:center;gap:8px">\n                    <div style="flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;overflow:hidden">\n                      ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                    </div>\n                    ${_adStr ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:600;color:#9a8a7a;flex-shrink:0;white-space:nowrap;letter-spacing:0.2px">${_adStr}</span>` : ""}\n                  </div>\n                </div>\n                ${buildListPG(c)}\n                ${_labelBtn}\n              </div>\n            </div>`;
+      };
+      const _showSep = _showTitleSeparators();
+      section.titles.forEach(title => {
+        const group = section.groups[title];
+        if (!_showSep) {
+          // S20: flat mode — no title dividers; render rows directly (the list
+          // is already ordered alphabetically by title, then issue).
+          group.forEach(c => { html += buildRow(c); });
+          return;
+        }
+        const collapseKey = section.ownership ? `${section.ownership}::${title}` : title;
+        // Default open state by entry count: a single-entry title defaults to
+        // EXPANDED (so its cover thumbnail shows — keeps the list from being a
+        // wall of collapsed text), a multi-entry title defaults to COLLAPSED
+        // (so big runs don't force endless scrolling). The title header is
+        // always shown so a lone book never looks like it lives inside an
+        // unrelated collapsed title. Respect the user's explicit toggle after.
+        if (collapsed[collapseKey] === undefined) {
+          collapsed[collapseKey] = group.length === 1 ? false : true;
+        }
+        const isOpen = collapsed[collapseKey] === false;
+        html += `<div style="margin-bottom:7px;padding-bottom:7px;border-bottom:1px solid #ccc8c0">\n          <div class="group-header" onclick="toggleGroup('${escJsAttr(collapseKey)}')">\n            <span class="group-chevron${isOpen ? " open" : ""}">›</span>\n            ${esc(title)} <span style="color:#9a8a7a;letter-spacing:1px">(${group.length})</span>\n          </div>`;
+        if (isOpen) {
+          html += `<div>`;
+          group.forEach(c => { html += buildRow(c); });
+          html += `</div>`;
+        }
+        html += `</div>`;
+      });
+    });
+  }
+  // S18: print-label opt-in. If the user has a graded book but hasn't turned on
+  // print mode, offer it at the bottom; tapping reveals the per-entry print icons.
+  const _hasGraded = items.some(c => c.roboGrade && c.id !== SAMPLE_COMIC_ID);
+  const _printQueueCount = items.filter(c => c.inPrintQueue === true).length;
+  if (_hasGraded && !printModeEnabled) {
+    html += `<div onclick="enablePrintMode()" style="display:flex;align-items:center;justify-content:center;gap:8px;margin:18px 0 10px;padding:9px 12px;background:${_LABEL_GRADIENT};border-radius:8px;cursor:pointer;user-select:none">\n      <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:${_LABEL_INK}">Want to print labels?</span>\n    </div>`;
+  } else if (_hasGraded && printModeEnabled && _printQueueCount === 0) {
+    // Once print mode is on with nothing queued, offer a way back out. Tapping
+    // clears the opt-in, hides the per-row print icons, and the bar reverts to
+    // the "Want to print labels?" prompt on the next render.
+    html += `<div onclick="disablePrintMode()" style="display:flex;align-items:center;justify-content:center;gap:8px;margin:18px 0 10px;padding:9px 12px;background:${_LABEL_GRADIENT};border-radius:8px;cursor:pointer;user-select:none">\n      <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:${_LABEL_INK}">Turn off printing?</span>\n    </div>`;
+  }
+  const _tRender = Date.now();
+  main.innerHTML = html;
+  console.log("[load] renderList innerHTML set in", Date.now() - _tRender, "ms (rows:", items.length + ")");
+  wireSwipeRows();
+  // S23: defer hydration one frame so the browser commits the new list layout
+  // (making it scrollable) before we spend a burst assigning image srcs.
+  requestAnimationFrame(hydrateThumbs);
+}
+
+function hydrateThumbs() {
+  const imgs = document.querySelectorAll("img.comic-thumb[data-src]");
+  if (!imgs.length) return;
+  if (window._thumbObserver) {
+    window._thumbObserver.disconnect();
+    window._thumbObserver = null;
+  }
+  if (!("IntersectionObserver" in window)) {
+    imgs.forEach(img => {
+      img.src = img.dataset.src;
+      img.removeAttribute("data-src");
+    });
+    return;
+  }
+  // S16: eagerly hydrate the first screenful (top rows are visible immediately)
+  // so they decode right away instead of showing the dark placeholder until the
+  // observer callback runs — that callback can be delayed behind the big
+  // innerHTML parse, which read as "black thumbnails for a few seconds."
+  const EAGER = 12;
+  for (let i = 0; i < imgs.length && i < EAGER; i++) {
+    if (imgs[i].dataset.src) {
+      imgs[i].src = imgs[i].dataset.src;
+      imgs[i].removeAttribute("data-src");
+    }
+  }
+  const rest = document.querySelectorAll("img.comic-thumb[data-src]");
+  if (!rest.length) return;
+  window._thumbObserver = new IntersectionObserver((entries, obs) => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+      const img = entry.target;
+      if (img.dataset.src) {
+        img.src = img.dataset.src;
+        img.removeAttribute("data-src");
+      }
+      obs.unobserve(img);
+    });
+  }, {
+    root: null,
+    rootMargin: "300px 0px",
+    threshold: 0.01
+  });
+  rest.forEach(img => window._thumbObserver.observe(img));
+}
+
+function onRowTap(ev, id) {
+  if (window._swipeSuppressTap) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    return;
+  }
+  const openRow = document.querySelector(".swipe-fg.swiped-open");
+  if (openRow) {
+    openRow.classList.remove("swiped-open");
+    openRow.style.transform = "";
+    const parentRow = openRow.closest(".swipe-row");
+    if (parentRow) {
+      setTimeout(() => {
+        if (!openRow.classList.contains("swiped-open")) {
+          parentRow.classList.remove("swipe-active");
+        }
+      }, 200);
+    }
+    ev.preventDefault();
+    ev.stopPropagation();
+    return;
+  }
+  showDetail(id);
+}
+
+function wireSwipeRows() {
+  const OPEN_X = -84;
+  const LATCH = -42;
+  document.querySelectorAll(".swipe-row").forEach(rowEl => {
+    const fg = rowEl.querySelector(".swipe-fg");
+    const delBtn = rowEl.querySelector(".swipe-del");
+    if (!fg || fg._swipeWired) return;
+    fg._swipeWired = true;
+    let startX = 0, startY = 0, dx = 0, dragging = false, decided = false, horiz = false;
+    fg.addEventListener("touchstart", e => {
+      if (e.touches.length !== 1) return;
+      document.querySelectorAll(".swipe-fg.swiped-open").forEach(o => {
+        if (o !== fg) {
+          o.classList.remove("swiped-open");
+          o.style.transform = "";
+        }
+      });
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      dx = 0;
+      dragging = true;
+      decided = false;
+      horiz = false;
+      fg.style.transition = "none";
+    }, {
+      passive: true
+    });
+    fg.addEventListener("touchmove", e => {
+      if (!dragging) return;
+      const cx = e.touches[0].clientX, cy = e.touches[0].clientY;
+      const mvx = cx - startX, mvy = cy - startY;
+      if (!decided) {
+        if (Math.abs(mvx) > 8 || Math.abs(mvy) > 8) {
+          decided = true;
+          horiz = Math.abs(mvx) > Math.abs(mvy);
+          if (!horiz) {
+            dragging = false;
+            return;
+          }
+          rowEl.classList.add("swipe-active");
+        } else {
+          return;
+        }
+      }
+      if (!horiz) return;
+      const base = fg.classList.contains("swiped-open") ? OPEN_X : 0;
+      dx = base + mvx;
+      if (dx > 0) dx = 0;
+      if (dx < OPEN_X - 20) dx = OPEN_X - 20;
+      fg.style.transform = `translateX(${dx}px)`;
+      // S23: no preventDefault here. touch-action:pan-y (on .swipe-fg) already
+      // hands vertical scrolling to the browser's compositor and reserves only
+      // horizontal for us, so a passive listener keeps the first scroll after a
+      // list re-render from being gated on the main thread (the "tap-to-scroll
+      // hangs the first few times" bug).
+    }, {
+      passive: true
+    });
+    const endDrag = () => {
+      if (!dragging && !decided) return;
+      dragging = false;
+      fg.style.transition = "transform 0.18s ease";
+      const shouldOpen = dx <= LATCH;
+      if (shouldOpen) {
+        fg.classList.add("swiped-open");
+        fg.style.transform = `translateX(${OPEN_X}px)`;
+      } else {
+        fg.classList.remove("swiped-open");
+        fg.style.transform = "";
+        setTimeout(() => {
+          if (!fg.classList.contains("swiped-open")) {
+            rowEl.classList.remove("swipe-active");
+          }
+        }, 200);
+      }
+      if (horiz && Math.abs(dx) > 6) {
+        window._swipeSuppressTap = true;
+        setTimeout(() => {
+          window._swipeSuppressTap = false;
+        }, 120);
+      }
+    };
+    fg.addEventListener("touchend", endDrag, {
+      passive: true
+    });
+    fg.addEventListener("touchcancel", endDrag, {
+      passive: true
+    });
+    if (delBtn && !delBtn._wired) {
+      delBtn._wired = true;
+      // S23: route list swipe-delete through the same confirm POPUP the Detail
+      // delete uses — the swipe alone was deleting with no confirmation/feedback.
+      //
+      // v6.35: fires on POINTER DOWN, not click. It took two taps: slide, tap,
+      // tap again, confirm. The first tap was being consumed somewhere between
+      // the row's own gesture handling and the click the browser synthesises
+      // after a touch, and chasing exactly where is not worth it when the
+      // button has one job and nothing to disambiguate - there is no drag, no
+      // long-press and no other gesture on it. Acting on the press removes the
+      // whole question.
+      // _busy guards the synthetic click that follows the touch, and also a
+      // second press while the confirm is open.
+      const _onDelete = async (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        if (delBtn._busy) return;
+        delBtn._busy = true;
+        try {
+          const id = delBtn.getAttribute("data-del-id");
+          const _it = items.find(c => c.id === id);
+          const _nm = _it ? ((_it.title || "this book") + (_it.issue ? " #" + _it.issue : "")) : "this book";
+          const ok = await appConfirm(`Delete ${_nm}? This can\'t be undone.`, "Delete");
+          if (ok) { swipeDeleteItem(id); return; }
+          const _fg = rowEl.querySelector(".swipe-fg");
+          if (_fg) { _fg.classList.remove("swiped-open"); _fg.style.transform = ""; }
+          rowEl.classList.remove("swipe-active");
+        } finally {
+          setTimeout(() => { delBtn._busy = false; }, 400);
+        }
+      };
+      if (window.PointerEvent) {
+        delBtn.addEventListener("pointerdown", _onDelete);
+      } else {
+        delBtn.addEventListener("touchstart", _onDelete, { passive: false });
+      }
+      // Mouse and keyboard still arrive as a click; _busy keeps it from
+      // running twice on touch.
+      delBtn.addEventListener("click", _onDelete);
+    }
+  });
+}
+
+function _collapseKey() {
+  try { return "rg_collapsed_" + ((window._currentUser && window._currentUser.uid) || "anon"); }
+  catch (e) { return "rg_collapsed_anon"; }
+}
+function _saveCollapsed() { try { localStorage.setItem(_collapseKey(), JSON.stringify(collapsed)); } catch (e) {} }
+function _loadCollapsed() { try { const v = localStorage.getItem(_collapseKey()); if (v) collapsed = JSON.parse(v) || {}; } catch (e) {} }
+
+function toggleGroup(title) {
+  collapsed[title] = collapsed[title] === false ? true : false;
+  _saveCollapsed();
+  renderList();
+}
+
+function toggleOwnership(ownership) {
+  const k = `__own__${ownership}`;
+  collapsed[k] = collapsed[k] === false ? true : false;
+  _saveCollapsed();
+  renderList();
+}
+
+// ── v6.38: SURVIVING AN EVICTION ───────────────────────────────────────────
+// The app has never remembered where it was. Background it, let iOS discard
+// the WebView, come back - and it is a fresh document at the top of the list,
+// whatever you were reading. Nothing here stops the eviction; this just makes
+// coming back land where you left.
+//
+// localStorage WITH A FRESHNESS WINDOW, not sessionStorage. sessionStorage is
+// the right LIFETIME on paper - "where was I in this session" - but it is
+// scoped to the browsing context, and whether it survives a WKWebView content
+// process being discarded and rebuilt is not something this code gets to
+// decide. If it does not survive, the fix does nothing in the app it was
+// written for. localStorage certainly survives; the 30-minute window supplies
+// the lifetime sessionStorage would have given us, so coming back from
+// another app lands where you were and opening the app fresh tomorrow opens
+// on the list. (STATED AS A GUESS: I have not verified which way WKWebView
+// goes on sessionStorage here. This arrangement is correct either way, which
+// is why it is the one that shipped.)
+//
+// DETAIL AND THE LIST POSITION ONLY. Edit and Add are deliberately NOT
+// restored: the form lives in formData in page memory, the photos in it may
+// be data: URLs that were never uploaded, and reopening an edit screen with
+// half of its content silently missing is worse than landing on the list.
+// Someone evicted mid-edit has lost that edit either way; this does not
+// pretend otherwise.
+const _VIEW_KEY = "rg_last_view";
+const _VIEW_TTL_MS = 30 * 60 * 1000;
+function _rememberView(o) {
+  try {
+    o.t = Date.now();
+    localStorage.setItem(_VIEW_KEY, JSON.stringify(o));
+  } catch (e) {}
+}
+function _readRememberedView() {
+  try {
+    const raw = localStorage.getItem(_VIEW_KEY);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    if (!o || typeof o !== "object") return null;
+    if (!o.t || (Date.now() - o.t) > _VIEW_TTL_MS) return null;
+    return o;
+  } catch (e) { return null; }
+}
+// Called once, after the FIRST items snapshot - the item has to exist before
+// it can be opened. Any failure leaves the user on the list, which is where
+// they would have been anyway.
+function _restoreRememberedView() {
+  const o = _readRememberedView();
+  if (!o) return;
+  try {
+    if (o.view === "detail" && o.id && items.some(c => c.id === o.id)) {
+      // Seed the tab BEFORE the render. detailTab() resets _detailTab whenever
+      // _detailTabFor changes id, so both have to be set together or showDetail
+      // would clear it on the way in.
+      if (o.tab === "photos" || o.tab === "assessment") {
+        _detailTabFor = o.id;
+        _detailTab = o.tab;
+      }
+      showDetail(o.id);
+      if (typeof o.y === "number" && o.y > 0) {
+        requestAnimationFrame(() => window.scrollTo(0, o.y));
+      }
+      return;
+    }
+    if (o.view === "list" && typeof o.y === "number" && o.y > 0) {
+      requestAnimationFrame(() => window.scrollTo(0, o.y));
+    }
+  } catch (e) {
+    console.warn("[restore] could not reopen the last view:", e);
+  }
+}
+// The scroll position changes constantly, so it is written on a throttle
+// rather than on every scroll event. pagehide is the one that matters on iOS
+// (visibilitychange can be the last event a backgrounded page ever gets, and
+// unload is not fired at all), so both are hooked.
+let _rememberT = 0;
+function _rememberNow() {
+  const y = window.scrollY || document.documentElement.scrollTop || 0;
+  if (view === "detail" && selected) {
+    _rememberView({ view: "detail", id: selected.id, tab: detailTab(selected), y: y });
+  } else if (view === "list") {
+    _rememberView({ view: "list", y: y });
+  } else {
+    // add / edit: leave whatever was last recorded rather than recording a
+    // view that will not be restored.
+  }
+}
+function _initViewMemory() {
+  if (window._viewMemHooked) return;
+  window._viewMemHooked = true;
+  window.addEventListener("scroll", () => {
+    const n = Date.now();
+    if (n - _rememberT < 400) return;
+    _rememberT = n;
+    _rememberNow();
+  }, { passive: true });
+  window.addEventListener("pagehide", _rememberNow);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") _rememberNow();
+  });
+}
+
+function showDetail(id) {
+  _listScrollY = window.scrollY || document.documentElement.scrollTop || 0;
+  _lastDetailId = id;
+  selected = items.find(c => c.id === id);
+  if (!selected) return;
+  stickTierUnlocks(selected);
+  view = "detail";
+  _rememberNow();
+  const _ab = document.getElementById("add-btn");
+  if (_ab) _ab.style.visibility = "hidden";
+  const cost = totalCost(selected);
+  const isSample = selected._isSample === true;
+  let html = `<div class="sticky-back" style="display:flex;justify-content:space-between;align-items:center;gap:10px">\n    <button class="btn-ghost" onclick="showList()">← Back</button>\n    ${!isSample ? `<button class="btn btn-gold" onclick="showEdit('${esc(selected.id)}')">Edit</button>` : ""}\n  </div>\n  <div class="card" style="margin-top:4px;background:#fff">`;
+  if (isSample) {
+    html += `<div style="background:#12200a;border:1px solid #3a5818;border-radius:10px;padding:12px 14px;margin-bottom:14px">\n        <div style="font-size:12px;font-weight:800;color:#9abf60;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:4px">Sample Entry</div>\n        <div style="font-size:12px;color:#cfe0b8;line-height:1.5">This is an example of what a graded book looks like. Add your first book to clear it, or tap Delete below to remove it now.</div>\n      </div>`;
+  }
+  if (selected.type === "card") { html += _cardIdentityHTML(selected); } else {
+  html += `<div>\n    ${renderIdentityHeader(selected)}\n    ${selected.cgcCert || selected.psaCert ? `<div style="font-family:'IBM Plex Mono','Menlo',monospace;font-size:13px;color:#5a4a3a;margin-top:6px;letter-spacing:0.3px">\n      ${selected.cgcCert ? `<div><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">CGC</span> <span style="margin-left:6px">${esc(selected.cgcCert)}</span></div>` : ""}\n      ${selected.psaCert ? `<div style="margin-top:2px"><span style="color:#8a7a6a;font-size:11px;font-weight:700;letter-spacing:1px">PSA</span> <span style="margin-left:6px">${esc(selected.psaCert)}</span></div>` : ""}\n    </div>` : ""}\n  </div>`;
+  }
+  // S20 (#46): same badge-pill ownership control as the Add/Edit form, rendered
+  // in a keyed row so setOwnershipDetail can update it in place (no re-render →
+  // images don't reload).
+  const ownershipPillHtml = isSample ? "" : `<div id="detail-ownership-row" style="${_OWNERSHIP_PILL_WRAP};margin-top:10px">${_ownershipPills(selected.ownership || "Owned", "setOwnershipDetail")}</div>`;
+  // S20 (#46): ownership pill sits ABOVE the images, matching the Add/Edit form.
+  html += ownershipPillHtml;
+  // v6.29: tabs sit between the ownership bar and the integrity pill, and the
+  // pill is INSIDE the images panel - it reports whether the PHOTOS are
+  // unaltered, so it belongs with them and says nothing useful beside the
+  // write-ups. (Matt, 2026-11-05.) It is emitted inside the
+  // `if (selected.images)` block below, which is already within this panel.
+  html += renderDetailTabs(selected);
+  html += tabPanelOpen(selected, "photos");
+  if (selected.images?.length > 0) {
+    const imgs = selected.images;
+    const imgAttrs = `loading="eager" decoding="async" onload="window.forceImgReflow(this)"`;
+    const integrityHtml = buildIntegrityPill(selected, false);
+    html += `<div style="display:flex;flex-direction:column;gap:6px;margin-top:16px">`;
+    if (integrityHtml) {
+      html += `<div style="display:flex;justify-content:flex-end;margin-bottom:2px">${integrityHtml}</div>`;
+    }
+    if (selected.type === "card") {
+      // Card images with slot labels (match Public view); macros square + side-by-side.
+      const _cimg = (u, idx, lbl, ar) => u ? `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:${ar}"><img class="detail-cover" src="${u}" ${imgAttrs} style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;min-height:0" onclick="openLightbox('${selected.id}',${idx})"><div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(0,0,0,0.55);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${lbl}</div></div>` : `<div></div>`;
+      if (imgs[0] || imgs[1]) html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">${_cimg(imgs[0],0,'FRONT','5/7')}${_cimg(imgs[1],1,'BACK','5/7')}</div>`;
+      if (imgs[2] || imgs[3]) html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">${_cimg(imgs[2],2,'TOP FRONT','1/1')}${_cimg(imgs[3],3,'BOTTOM FRONT','1/1')}</div>`;
+    } else {
+      // ── v5.27: REFERENCE-COVER LAYOUT (Detail only) ───────────────────────
+      // The point of putting a reference cover on this page is to show the user
+      // their book was checked against a known-good copy — which is how the
+      // grader tells a defect from the printed art. That is a glance, not an
+      // inspection, so reference cells are NOT clickable and are NOT in the
+      // lightbox reel (Matt: nobody wants to look at a reference scan up close).
+      //
+      // GATED ON DEEP. The reference images are fetched during Main, but Main
+      // cannot use them for the comparison — the pipeline does not allow it, and
+      // making it allow it would slow down the one pass that has to feel fast.
+      // The comparison actually happens in Deep. Showing the reference after a
+      // Main-only run would claim a check that has not been performed, so a
+      // Main-only book keeps the plain layout.
+      //
+      // Three cases, matching the admin viewer:
+      //   NEITHER            unchanged — Front | Back, Interior, Spine
+      //   COMICVINE FRONT    Front | ComicVine, then Back | Interior, then Spine
+      //   LOCAL FRONT+BACK   Front | Ref Front, Back | Ref Back, Interior, Spine
+      // The local pair is the higher-confidence source (vetted 9.8 scans we host
+      // for frequently-submitted books), so it wins when both exist.
+      const _refDeep = isDeepAssessmentComplete(selected);
+      const _refF = _refDeep ? selected.referenceImageUrl : null;
+      const _refB = _refDeep ? selected.referenceBackImageUrl : null;
+      const _refYr = selected.referenceYear ? ` (${esc(String(selected.referenceYear))})` : "";
+      // A reference cell: green border, label tag, no click target, no zoom cursor.
+      // Tapping a reference opens it alone (openReferenceLightbox), not in the
+      // user's photo reel. zoom-in cursor so it reads as enlargeable.
+      const _refCell = (u, lbl) => `<div style="position:relative;border-radius:6px;overflow:hidden;border:2px solid #2f9e44;background:#eaf3ea;display:flex;align-items:center;justify-content:center;min-height:200px;cursor:zoom-in" onclick="openReferenceLightbox('${u}')"><img src="${u}" ${imgAttrs} style="width:100%;max-height:100%;object-fit:contain;display:block"><div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(38,132,58,0.92);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${lbl}</div></div>`;
+      const _mainCell = i => imgs[i] ? `<img class="detail-cover" src="${imgs[i]}" ${imgAttrs} onclick="openLightbox('${selected.id}',${i})">` : `<div></div>`;
+      // Half-width Interior that matches the height of the cover beside it. The
+      // grid row is sized by the cover (a normal auto-height <img>); this cell
+      // stretches to that row and the image fills it, so the two stay aligned
+      // however tall the cover turns out to be.
+      const _halfInteriorCell = () => `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;align-self:stretch;min-height:100%;cursor:zoom-in" onclick="openLightbox('${selected.id}',2)"><img src="${imgs[2]}" ${imgAttrs} style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block"></div>`;
+
+      let _interiorPlaced = false;
+      if (_refF && _refB) {
+        html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:start">${_mainCell(0)}${_refCell(_refF, "REFERENCE FRONT")}</div>`;
+        html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:start">${_mainCell(1)}${_refCell(_refB, "REFERENCE BACK")}</div>`;
+      } else if (_refF) {
+        // ComicVine front only. The Back cover has no partner, so the Interior
+        // moves up beside it rather than leaving half a row empty.
+        html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:start">${_mainCell(0)}${_refCell(_refF, "COMICVINE REFERENCE" + _refYr)}</div>`;
+        if (imgs[1] && imgs[2]) {
+          html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:stretch">${_mainCell(1)}${_halfInteriorCell()}</div>`;
+          _interiorPlaced = true;
+        } else if (imgs[1]) {
+          html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:start">${_mainCell(1)}<div></div></div>`;
+        }
+      } else if (imgs[0] || imgs[1]) {
+        html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:start">${_mainCell(0)}${_mainCell(1)}</div>`;
+      }
+      if (imgs[2] && !_interiorPlaced) html += `<img class="detail-cover" src="${imgs[2]}" ${imgAttrs} onclick="openLightbox('${selected.id}',2)">`;
+      if (imgs[3]) html += `<img class="photo-spine" src="${imgs[3]}" ${imgAttrs} onclick="openLightbox('${selected.id}',3)">`;
+    }
+    html += `</div>`;
+  }
+  if (showDeepTier(selected) || (selected.cornerImages || []).some(u => u)) {
+    const ci = selected.cornerImages || [];
+    const hasAnyCorner = ci.some(u => u);
+    const imgAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
+    const labels = [ "Top Left", "Top Right", "Bottom Left", "Bottom Right" ];
+    const cornerGhosts = [ "assets/ghosts/TopLeft_Macro.jpg", "assets/ghosts/TopRight_Macro.jpg", "assets/ghosts/BottomLeft_Macro.jpg", "assets/ghosts/BottomRight_Macro.jpg" ];
+    const icv = selected.interiorCoverImages || [];
+    if (!hasAnyCorner) {
+      // S20: Deep unlocked but not yet run — compact badge instead of 4 empty
+      // slots. Tapping Edit reveals the capture slots.
+      html += `<div onclick="showEditToSection('${esc(selected.id)}','deep')" style="margin-top:14px;padding:14px;background:#152e10;border:1.5px solid #4a7028;border-radius:12px;text-align:center;cursor:pointer">
+        <div style="line-height:1;margin-bottom:8px;opacity:0.5">${tierStarSVG(15, "#b8d820")}${tierStarSVG(15, "#b8d820")}</div>
+        <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:#b8d820;margin-bottom:5px">DEEP ASSESSMENT AVAILABLE</div>
+        <div style="font-size:12px;color:#9cc76a;line-height:1.45;margin-bottom:10px">Add 6 more images for a more accurate grade — free if it doesn't go up.</div>
+        <button class="rg-btn rg-btn-assess rg-btn-silver" style="pointer-events:none;display:inline-block">RUN DEEP ASSESSMENT</button>
+      </div>`;
+    } else {
+    html += `<div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
+    [ 0, 1, 2, 3 ].forEach(srcIdx => {
+      const url = ci[srcIdx];
+      if (url) {
+        html += `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:2/3">\n          <img class="detail-corner" src="${url}" ${imgAttrs} onclick="openCornerLightbox('${selected.id}',${srcIdx})" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block">\n          <div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(0,0,0,0.55);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${labels[srcIdx].toUpperCase()}</div>\n        </div>`;
+      } else {
+        html += `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:2/3">\n          <img src="${cornerGhosts[srcIdx]}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.32" alt="">\n          <div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(0,0,0,0.55);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${labels[srcIdx].toUpperCase()}</div>\n        </div>`;
+      }
+    });
+    html += `</div>`;
+    // S20: interior covers (full-width rows) when a Deep with covers has been run.
+    if (icv.some(u => u)) {
+      const icLabels = [ "Interior Front", "Interior Back" ];
+      html += `<div style="margin-top:6px;display:grid;grid-template-columns:1fr;gap:6px">`;
+      [ 0, 1 ].forEach(k => {
+        const u = icv[k];
+        if (u) html += `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:3/2"><img src="${u}" ${imgAttrs} onclick="openInteriorCoverLightbox('${selected.id}',${k})" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block"><div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(0,0,0,0.55);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${icLabels[k].toUpperCase()}</div></div>`;
+      });
+      html += `</div>`;
+    }
+    }
+  }
+  // ── v5.27: BATCH ANNOUNCEMENT (Detail) ────────────────────────────────────
+  // Same card as the Deep announcement, in the slot the Deep card vacates: the
+  // Deep badge shows only while no corner macros exist, so the moment a Deep has
+  // run it disappears and this can take its place. The two can never appear
+  // together — isBatchEligible() requires a completed Deep, which is exactly the
+  // condition that removes the Deep badge — and it goes away for good once a
+  // Batch has been run.
+  //
+  // Card chrome copied from the Deep badge; the button is gold because the Batch
+  // button is gold everywhere else and the colour is how the action is
+  // recognised. Whole card is the click target (the button is inert) and routes
+  // to the Batch section in Edit, where the control actually lives. Two stars,
+  // matching how a Batch reads in Assessment History.
+  //
+  // The 5 / 10 / 3 come from the constants, never typed into the sentence, so a
+  // change to BATCH_N cannot leave the copy lying.
+  // v6.29: captured rather than appended - Batch is about assessing, not about
+  // this book's photos, so it goes at the bottom of the ASSESSMENT panel.
+  // Post-Cleaning stays here: it IS a capture flow (ten Before, ten After).
+  let _batchCard = "";
+  if (!isSample && isBatchEligible(selected) && !hasBatchRun(selected)) {
+    _batchCard = `<div onclick="showEditToSection('${esc(selected.id)}','batch')" style="margin-top:14px;padding:14px;background:#152e10;border:1.5px solid #4a7028;border-radius:12px;text-align:center;cursor:pointer">
+        <div style="line-height:1;margin-bottom:8px;opacity:0.5">${tierStarSVG(15, "#b8d820")}${tierStarSVG(15, "#b8d820")}</div>
+        <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:#b8d820;margin-bottom:5px">BATCH ASSESSMENT AVAILABLE</div>
+        <div style="font-size:12px;color:#9cc76a;line-height:1.45;margin-bottom:10px">Re-runs both Main and Deep ${BATCH_N} times each to provide a range and cumulative average grade. A total of ${BATCH_N * 2} assessments for ${BATCH_CREDIT_COST} credits.</div>
+        <button class="rg-btn rg-btn-assess rg-btn-silver" style="pointer-events:none;display:inline-block">RUN BATCH &times;${BATCH_N}</button>
+      </div>`;
+  }
+  // v6.33: FULL comes before POST-CLEANING. Full is the next step up the
+  // assessment ladder; Post-Cleaning is a thing you do to the book and then
+  // re-measure. The ladder reads top to bottom.
+  if (!isFullAssessmentComplete(selected) && isDeepAssessmentComplete(selected) && showFullTier(selected)) {
+    const _np = (typeof isNearPerfectForFull === "function") && isNearPerfectForFull(selected);
+    html += `<div onclick="showEditToSection('${esc(selected.id)}','full')" style="margin-top:14px;padding:14px;background:#1c1608;border:1.5px solid #7a5e1e;border-radius:12px;text-align:center;cursor:pointer">
+        <div style="line-height:1;margin-bottom:8px;opacity:0.6">${tierStarSVG(15, "#f0c53a")}${tierStarSVG(15, "#f0c53a")}${tierStarSVG(15, "#f0c53a")}</div>
+        <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:#f0c53a;margin-bottom:5px">FULL ASSESSMENT AVAILABLE</div>
+        <div style="font-size:12px;color:#d8c58a;line-height:1.45;margin-bottom:10px">${_np ? "This book is near-perfect — a Full can confirm a perfect 10." : "Add 6 interior &amp; structure photos to confirm the grade."}</div>
+        <button class="rg-btn rg-btn-assess rg-btn-gold" style="pointer-events:none;display:inline-block">RUN FULL ASSESSMENT</button>
+      </div>`;
+  }
+  // CLEANING COMPARE (v5.72). It had NO Detail-view presence at all: the only
+  // way in was to open Edit and scroll, and on a graded book with every photo
+  // slot filled that put it ~9,200px down an 10,800px page. Matt ran a Deep,
+  // looked in both views and reported the feature missing - it was rendering
+  // correctly the whole time, just unreachable. Same card shape as Batch and
+  // Full above, so it is found the same way they are.
+  // v6.35: captured, not appended. It sat between the FULL card and the Full
+  // photos, cutting the run of assessment photo blocks in half. It belongs
+  // below the whole Full section - before a Full has run (card only) and after
+  // it has (card plus photos).
+  let _cleanCard = "";
+  if (!isSample && _cleanUnlocked(selected)) {
+    const _cr = selected.cleanRuns || 0;
+    _cleanCard = `<div onclick="showEditToSection('${esc(selected.id)}','clean')" style="margin-top:14px;padding:14px;background:#0e2420;border:1.5px solid #2e7a6a;border-radius:12px;text-align:center;cursor:pointer">
+        <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:#6ad0b8;margin-bottom:5px">BOOK HAS BEEN CLEANED${_cr ? ` &middot; RUN ${_cr + 1}` : ""}</div>
+        <div style="font-size:12px;color:#8fc4b8;line-height:1.45;margin-bottom:10px">Once this book has been cleaned/pressed, re-shoot the 10 photos for an objective BEFORE/AFTER comparison. The current grade will be preserved as the BEFORE and a new AFTER grade will be determined.</div>
+        <button class="rg-btn rg-btn-assess rg-btn-silver" style="pointer-events:none;display:inline-block">POST-CLEANING ASSESS</button>
+      </div>`;
+  }
+  if (isFullAssessmentComplete(selected)) {
+    const interior = selected.interiorImages || [];
+    if (interior.some(u => u)) {
+      html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT — INTERIOR &amp; STRUCTURE</div>\n        ${renderFullSlotGrid(interior, {editable: false, comicId: selected.id, item: selected})}\n      </div>`;
+    }
+  }
+  html += _cleanCard;
+  if ((isRestorationCheckComplete(selected) || selected.restorationCheckTier || selected.restorationUnlocked) && Array.isArray(selected.restorationImages) && selected.restorationImages.some(Boolean)) {
+    html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n        <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">UV CHECK</div>\n        ${renderRestorationSlotGrid(selected.restorationImages, {editable: false, comicId: selected.id})}\n      </div>`;
+  }
+  if (hasIdentifiedSignatures(selected)) {
+    const sigImgs = (selected.signatureImages || []).filter(u => u);
+    if (sigImgs.length > 0) {
+      const imgAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
+      const signerLabel = formatSignerList(selected);
+      html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a6abf">\n        <div style="font-size:11px;color:#a08fd4;font-weight:700;letter-spacing:2px;margin-bottom:8px">SIGNATURE${sigImgs.length > 1 ? "S" : ""}</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
+      sigImgs.forEach((url, displayIdx) => {
+        const storageIdx = (selected.signatureImages || []).findIndex((u, i) => u === url && i >= displayIdx);
+        html += `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a">\n          <img src="${url}" ${imgAttrs} onclick="openSignatureLightbox('${selected.id}',${storageIdx})" style="display:block;width:100%;height:auto;border-radius:inherit;cursor:zoom-in">\n        </div>`;
+      });
+      html += `</div></div>`;
+    }
+  }
+  if (selected.type !== "card") {
+    const _insD = (selected.insertImages || []).filter(u => u);
+    if (_insD.length) {
+      html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #c8962a">\n        <div style="font-size:11px;color:#c8962a;font-weight:700;letter-spacing:2px;margin-bottom:8px">MARK JEWELERS INSERT</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
+      _insD.forEach((url, di) => {
+        const si = (selected.insertImages || []).findIndex((u, i) => u === url && i >= di);
+        html += `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a"><img src="${url}" loading="lazy" decoding="async" onclick="openInsertLightbox('${selected.id}',${si})" style="display:block;width:100%;height:auto;border-radius:inherit;cursor:zoom-in"></div>`;
+      });
+      html += `</div></div>`;
+    }
+    const _coupD = (selected.couponImages || []).filter(u => u);
+    if (_coupD.length) {
+      html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #3a9a5a">\n        <div style="font-size:11px;color:#3a9a5a;font-weight:700;letter-spacing:2px;margin-bottom:8px">COUPON / PIN-UP PAGE</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">`;
+      _coupD.forEach((url, di) => {
+        const si = (selected.couponImages || []).findIndex((u, i) => u === url && i >= di);
+        html += `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a"><img src="${url}" loading="lazy" decoding="async" onclick="openCouponLightbox('${selected.id}',${si})" style="display:block;width:100%;height:auto;border-radius:inherit;cursor:zoom-in"></div>`;
+      });
+      html += `</div></div>`;
+    }
+  }
+  // User-submitted uncaught-defect photos (informational; NOT graded/annotated).
+  // Rendered below every other assessment image block, above the RoboGrade panel.
+  {
+    const _udD = (selected.userDefectImages || []).filter(u => u);
+    if (_udD.length) {
+      const _udAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
+      html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #8a6a4a">\n        <div style="font-size:11px;color:#b08a5a;font-weight:700;letter-spacing:2px;margin-bottom:8px">DEFECTS ROBOGRADER MISSED</div>\n        <div style="display:grid;grid-template-columns:1fr;gap:6px">`;
+      _udD.forEach((url, di) => {
+        const si = (selected.userDefectImages || []).findIndex((u, i) => u === url && i >= di);
+        html += `<img class="photo-spine" src="${url}" ${_udAttrs} onclick="openUserDefectLightbox('${selected.id}',${si})">`;
+      });
+      html += `</div></div>`;
+    }
+  }
+  // v6.29: the image half ends here. Everything below is the assessment.
+  html += `</div>`;                       // close data-tab-panel="photos"
+  html += tabPanelOpen(selected, "assessment");
+  if (selected.roboGrade || (selected.type === "card" && selected.cardData && selected.cardData.robograde)) {
+    html += `<div style="margin-top:16px">${selected.type === "card" ? buildCardRoboDisplay(selected) : buildRoboGradeDisplay(selected.roboGrade, selected)}</div>`;
+  }
+  if (selected.type === "card") {
+    const _cn = (selected.cardData && (selected.cardData.graderNotes || selected.cardData.reasoning)) || "";
+    if (_cn) html += `<div style="margin-top:16px"><div class="section-label">Condition Assessment</div><div class="notes-box" style="font-style:normal;white-space:pre-line">${esc(_cn)}</div></div>`;
+  }
+  const _isCardItem = selected.type === "card";
+  const _cardPsaRaw = _isCardItem ? ((selected.cardData && selected.cardData.psaGrade != null) ? selected.cardData.psaGrade : (selected.assessedPSAGrade || null)) : null;
+  const _cardPsaStr = (_cardPsaRaw == null || _cardPsaRaw === "") ? null : ((typeof _cardPsaRaw === "number" || /^[0-9.]+$/.test(String(_cardPsaRaw))) ? normalizeGrade(String(_cardPsaRaw)) : String(_cardPsaRaw));
+  const _cardPsaDisp = _cardPsaStr ? String(_cardPsaStr).replace(/\.0$/, "") : _cardPsaStr;
+  const cardPsaBadge = _cardPsaStr ? buildBadge(_cardPsaDisp, "psa-predicted", "", false) : null;
+  const cgcOfficialBadge = (!_isCardItem && selected.cgcGrade) ? buildBadge(normalizeGrade(selected.cgcGrade), "cgc-official", detectDesignation(selected), false) : null;
+  const psaOfficialBadge = (!_isCardItem && selected.psaGrade) ? buildBadge(normalizeGrade(selected.psaGrade), "psa-official", selected.psaDesignation || "universal", false) : null;
+  const predictedGradeValue = _isCardItem ? null : aiCgcGrade(selected);
+  const _detailRestored = !!(selected.restorationHighConfidence || (selected.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(selected.cgcNotes)));
+  const predictedBadge = predictedGradeValue ? buildBadge(normalizeGrade(predictedGradeValue), "predicted", "", false, isFullAssessmentComplete(selected), isDeepAssessmentComplete(selected), _detailRestored, !!selected.couponQualified, !!selected.gradeAtCeiling) : null;
+  const predictionBoxes = [ cgcOfficialBadge, psaOfficialBadge, cardPsaBadge, predictedBadge ].filter(Boolean);
+  const isGraded = !_isCardItem && !!(selected.cgcGrade || selected.psaGrade);
+  const hasInteriorPhoto = !!(selected.images && selected.images[2]);
+  const showPQ = !_isCardItem && selected.pageQuality && (isGraded || hasInteriorPhoto);
+  if (predictionBoxes.length > 0 || showPQ) {
+    // S18/S20: index-driven FMV. Uses the official grade if graded, else predicted.
+    const _fmvGrade = _isCardItem ? _cardPsaStr : (selected.cgcGrade || selected.psaGrade || predictedGradeValue);
+    const _fmvMatch = _isCardItem
+      ? ((window.matchCardFMV && _fmvGrade && selected.cardData) ? window.matchCardFMV(selected.cardData.cardIdentification, _fmvGrade) : null)
+      : ((typeof window.matchFMV === "function" && _fmvGrade) ? window.matchFMV(selected.title, selected.issue, _fmvGrade, selected.printing, extractYearFromIssueDate(selected.issueDate)) : null);
+    const _pqHtml = showPQ ? `<div style="display:flex;justify-content:center">${buildPQBox(selected.pageQuality)}</div>` : "";
+    html += buildPredictedGradeBox(predictionBoxes.join(""), _pqHtml, _fmvMatch, !!(predictedBadge || cardPsaBadge));
+  }
+  // S20: "Enhanceable?: Yes/No" box hidden per request — it's an odd inclusion,
+  // often inaccurate, and not essential. Left in code (commented) in case it's
+  // brought back later.
+  /*
+  let enhanceVal = selected.enhance;
+  if (enhanceVal === null || enhanceVal === undefined) {
+    const legacyVals = [ selected.press, selected.uv, selected.clean ].filter(v => v === true || v === false);
+    if (legacyVals.length > 0) {
+      enhanceVal = legacyVals.some(v => v === true) ? true : false;
+    }
+  }
+  if (enhanceVal === true || enhanceVal === false || enhanceVal === "done" || enhanceVal === "dontcare") {
+    let bg, bc, col, txt;
+    if (enhanceVal === true) {
+      bg = "#1a2a10";
+      bc = "#4a7a20";
+      col = "#8abf40";
+      txt = "Yes";
+    } else if (enhanceVal === false) {
+      bg = "#2a1a10";
+      bc = "#5a2a10";
+      col = "#bf6040";
+      txt = "No";
+    } else if (enhanceVal === "done") {
+      bg = "#0a1a2a";
+      bc = "#1a3a5c";
+      col = "#5a9adf";
+      txt = "Done";
+    } else {
+      bg = "#1a1a18";
+      bc = "#3a3a35";
+      col = "#9a8a7a";
+      txt = "Don't Care";
+    }
+    html += `<div style="margin-top:16px"><div style="display:inline-block;padding:5px 12px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:1px;background:transparent;border:1px solid #d8d0c8;color:#5a4e44">Enhanceable?: ${txt}</div></div>`;
+  }
+  */
+  if (selected.notes) {
+    html += `<div style="margin-top:20px"><div class="section-label">My Notes</div><div style="font-size:13px;color:#1a1614;line-height:1.7">${esc(selected.notes)}</div></div>`;
+  }
+  const showLabelNotes = isGraded && selected.cgcNotes && selected.cgcNotes.trim();
+  if (showLabelNotes) {
+    html += `<div style="margin-top:20px"><div class="section-label" style="color:#4a7a4a">Grader Label Notes</div><div class="notes-box" style="border-color:#1a3a1a;color:#80b080">${esc(selected.cgcNotes)}</div></div>`;
+  }
+  if (!showLabelNotes && selected.keyInfo && selected.keyInfo.trim()) {
+    html += `<div style="margin-top:20px"><div class="section-label" style="color:#4a7a4a">Key Info</div><div class="notes-box" style="border-color:#1a3a1a;color:#80b080">${esc(selected.keyInfo)}</div></div>`;
+  }
+  if (isGraded && selected.graderNotes) {
+    html += `<div style="margin-top:20px"><div class="section-label">Grader Notes</div><div class="notes-box" style="white-space:pre-line">${esc(selected.graderNotes)}</div></div>`;
+  }
+  // S20 (#53): the write-up is split by assessment level, not one growing field.
+  const _mainText = selected.aiAssessment || selected.myAssessment || "";
+  if (_mainText) {
+    html += `<div style="margin-top:20px"><div class="section-label">Main Assessment</div><div class="notes-box" style="font-style:normal">${esc(_mainText)}</div></div>`;
+  }
+  if (selected.deepAssessment) {
+    html += `<div style="margin-top:14px"><div class="section-label">Deep Assessment</div><div class="notes-box" style="font-style:normal">${esc(selected.deepAssessment)}</div></div>`;
+  }
+  if (selected.fullAssessment) {
+    html += `<div style="margin-top:14px"><div class="section-label">Full Assessment</div><div class="notes-box" style="font-style:normal">${esc(selected.fullAssessment)}</div></div>`;
+  }
+  // v5.26: GRADE REVISION. Its own box rather than a line buried in the Deep
+  // write-up — when a second pass moves the number, why it moved is the first
+  // thing the user wants and the thing they will otherwise assume is a glitch.
+  // Only the reason is shown; the before/after numbers are already in the score
+  // boxes and the Assessment History.
+  if (typeof selected.gradeRevisionReason === "string" && selected.gradeRevisionReason.trim()) {
+    html += `<div style="margin-top:14px"><div class="section-label">Grade Revision</div><div class="notes-box" style="font-style:normal">${esc(selected.gradeRevisionReason.trim())}</div></div>`;
+  }
+  // S20 (#7): Restoration renders with the other assessments, in order
+  // Main → Deep → Full → Restoration, before the Past Assessments history.
+  // v5.27: the section now has TWO possible sources — see restorationFlagList().
+  // It renders when the UV Check ran OR when the grading pass raised a flag, and
+  // labels which is which so a suspicion from ordinary-light photos is never
+  // read as a blacklight finding.
+  const _restoFlags = restorationFlagList(selected);
+  const _uvRan = !!(selected.restorationCheckTier || isRestorationCheckComplete(selected));
+  if (_uvRan || _restoFlags.length) {
+    const report = typeof selected.restorationReport === "string" ? selected.restorationReport.trim() : "";
+    let rHtml = `<div style="margin-top:14px"><div class="section-label">Restoration Assessment</div><div class="notes-box">`;
+    if (_restoFlags.length) {
+      rHtml += `<div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:#8a7a6a;margin-bottom:6px">Noted during grading</div>`;
+      rHtml += `<ul style="margin:0 0 ${_uvRan ? "12px" : "0"} 0;padding-left:18px;font-size:12px;line-height:1.55">` + _restoFlags.map(f => `<li>${esc(f)}</li>`).join("") + `</ul>`;
+    }
+    if (_uvRan) {
+      if (_restoFlags.length) {
+        rHtml += `<div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:#8a7a6a;margin-bottom:6px">UV Check</div>`;
+      }
+      if (report) {
+        rHtml += `<div style="font-size:12px;line-height:1.55">${esc(report)}</div>`;
+      } else {
+        rHtml += `<div style="color:#9a8a7a;font-size:12px">UV Check ran, but no report text was recorded.</div>`;
+      }
+    } else {
+      rHtml += `<div style="color:#8a7a6a;font-size:11px;margin-top:8px;line-height:1.5">Seen in ordinary light during grading. A UV Check can look for ink that fluoresces differently from the ink around it.</div>`;
+    }
+    rHtml += `<div style="color:#8a7a6a;font-size:10px;margin-top:8px;font-style:italic">Observations only — not a determination of restoration. Some restoration cannot be detected without professional examination.</div>`;
+    rHtml += "</div></div>";
+    html += rHtml;
+  }
+  // Card details moved to the top-of-entry identity block (_cardIdentityHTML).
+  // Assessment History (Detail view) — shared renderer: RANGE SUMMARY bars +
+  // per-record rows (subscores + tier stars) + Batch shown as its N runs.
+  html += renderAssessmentHistorySection(selected.assessmentHistory, false);
+  // "Date Graded" (slabbingDate) was removed from the UI 2026-10-17. It meant
+  // the date CGC slabbed the book, which nobody was filling in and which the
+  // Robograde date already covers for anything this app graded. The stored
+  // field is deliberately left in COMIC_DATA_FIELDS so existing values are not
+  // destroyed — it is simply no longer shown or editable.
+  const hasAnyDateCost = !!(selected.dateAcquired || cost > 0);
+  // Batch sits at the bottom of the assessment half, after the history.
+  html += _batchCard;
+  // v6.31: and the map closes the assessment half - it is the index to
+  // everything above it.
+  html += renderAssessmentMap(selected);
+  html += `</div>`;                       // close data-tab-panel="assessment"
+  html += tabWrapClose();                 // close the folder sheet
+  // Below the panels and always visible, whichever tab is showing: acquisition,
+  // cost, the public toggle, the action buttons and Delete.
+  if (hasAnyDateCost) {
+    html += `<div class="divider"></div>\n    <div class="grid-2">\n      ${selected.dateAcquired ? `<div><div class="section-label">Date Acquired</div><div class="field-val">${formatDate(selected.dateAcquired)}</div></div>` : ""}\n      ${cost > 0 ? `<div><div class="section-label">Total Cost</div><div class="field-val" style="color:#8abf8a;font-weight:700">${fmt$(cost)}</div></div>` : ""}\n      ${selected.fmv ? "" : ""}\n    </div>`;
+  }
+  if (selected.seller) {
+    html += `<div style="margin-top:14px"><div style="font-size:12px;color:#8a7a6a">Purchased from: ${esc(selected.seller)}</div></div>`;
+  }
+  // S22: Grading/Pressing and CGC Return Shipping were removed from both
+  // views - they date from before the app graded raw books itself, and nobody
+  // has a reason to fill them in now. They are NOT deleted from the record or
+  // from the save path: a book that carries old values keeps them, and
+  // totalCost() below still counts them so an existing book's total does not
+  // silently change. They just have no input and no read-out any more.
+  const hasAnyCost = !!(selected.purchasePrice || selected.taxesFeesShipping || selected.askingPrice);
+  if (hasAnyCost) {
+    html += `<div class="divider"></div>\n    <div class="section-label">Cost Breakdown</div>\n    <div class="grid-2" style="margin-top:10px">\n      ${selected.purchasePrice ? `<div><div class="section-label">Purchase Price</div><div class="field-val">${fmt$(selected.purchasePrice)}</div></div>` : ""}\n      ${selected.taxesFeesShipping ? `<div><div class="section-label">Taxes/Fees/Ship</div><div class="field-val">${fmt$(selected.taxesFeesShipping)}</div></div>` : ""}\n      ${selected.askingPrice ? `<div><div class="section-label">Asking Price</div><div class="field-val">${fmt$(selected.askingPrice)}</div></div>` : ""}\n    </div>`;
+  }
+  if (!isSample) {
+    const isPublic = !!selected.publicListing;
+    const isReprintLocked = isFacsimilePrinting(selected.printing);
+    if (isReprintLocked) {
+      html += `<div style="display:flex;align-items:center;gap:12px;margin-top:20px;opacity:0.85">\n        <div style="flex:1">\n          <div style="font-size:13px;font-weight:700;color:#7a4a2a;letter-spacing:0.05em">Public Listing Disabled</div>\n          <div style="font-size:11px;color:#8a6a5a;margin-top:3px;line-height:1.5">This book has been identified as a Facsimile Reprint and cannot be publicly listed.</div>\n        </div>\n        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:not-allowed;flex-shrink:0;opacity:0.5">\n          <input type="checkbox" disabled style="opacity:0;width:0;height:0;position:absolute">\n          <span style="position:absolute;inset:0;border-radius:12px;background:#bbb6ad"></span>\n          <span style="position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,0.2)"></span>\n        </label>\n      </div>`;
+    } else {
+      html += `<div style="display:flex;align-items:center;gap:12px;margin-top:20px">\n        <div style="flex:1">\n          <div style="font-size:13px;font-weight:700;color:#3a2e24;letter-spacing:0.05em">${isPublic ? "Public Listing" : "Private Listing"}</div>\n          <div style="font-size:11px;color:#8a7a6a;margin-top:3px;line-height:1.5">${isPublic ? "Robograde score and images can be viewed from public ID link" : "Info cannot be seen publicly"}</div>\n        </div>\n        <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer;flex-shrink:0">\n          <input type="checkbox" ${isPublic ? "checked" : ""} onchange="togglePublicListing('${esc(selected.id)}', this.checked)"\n            style="opacity:0;width:0;height:0;position:absolute">\n          <span style="position:absolute;inset:0;border-radius:12px;background:${isPublic ? "#3a7a20" : "#bbb6ad"};transition:background 0.2s" id="detail-public-track"></span>\n          <span style="position:absolute;left:${isPublic ? "23px" : "3px"};top:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left 0.2s;box-shadow:0 1px 2px rgba(0,0,0,0.2)" id="detail-public-thumb"></span>\n        </label>\n      </div>`;
+      if (isPublic && selected.roboGradeId) {
+        html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">\n          <button class="rg-btn rg-btn-action rg-btn-md" onclick="openPublicPreview('${esc(selected.roboGradeId)}')">View Link</button>\n          <button class="rg-btn rg-btn-action rg-btn-md" onclick="sharePublicListing('${esc(selected.roboGradeId)}', '${esc(selected.title || "").replace(/'/g, "\\'")}', '${esc(selected.issue || "").replace(/'/g, "\\'")}')">Share</button>\n        </div>`;
+      }
+    }
+  }
+  const _canGive = !isSample && selected.roboGrade;
+  // S17: bottom button grid — 3 rows.
+  //   Row 1 (public only): View Link | Share   (rendered above)
+  //   Row 2 (always):      Give | Complain
+  //   Row 3 (always):      Delete (centered, half-width)
+  // Print Label removed (batch printing now lives in List view). Complain is a
+  // regular button in the grid (replaces the old text link / Print Label slot).
+  // S21: Give is gated to accounts that have PURCHASED credits (abuse prevention).
+  // Non-purchasers see a grayed button that explains why on tap.
+  const _giveBtn = _canGive
+    ? (window._userHasPurchased
+        ? `<button class="rg-btn rg-btn-action rg-btn-md" onclick="openGiveDialog('${esc(selected.id)}')">Give</button>`
+        : `<button class="rg-btn rg-btn-action rg-btn-md" style="opacity:0.45" onclick="appAlert('Giving entries is available once you have purchased credits.')">Give</button>`)
+    : `<span></span>`;
+  let _complainBtn = `<span></span>`;
+  if (selected.roboGrade) {
+    const _cId = (selected.roboGradeId || selected.id || "").toString().slice(-6).toUpperCase();
+    const _subjBits = [selected.title || "", selected.issue ? "#" + selected.issue : "", selected.issueDate || ""].filter(Boolean).join(" ");
+    const _subject = encodeURIComponent(`Complaint ID ${_cId} — ${_subjBits}`.trim());
+    const _body = encodeURIComponent("User ID: " + (window._transferCode || "?") + "\n\nDescribe the issue:\n");
+    _complainBtn = `<a class="rg-btn rg-btn-action rg-btn-md" href="mailto:support@robograder.app?subject=${_subject}&body=${_body}" onclick="try{var q=(this.href.split('?')[1]||'');var pr=new URLSearchParams(q);if(navigator.clipboard&&navigator.clipboard.writeText){var nl=String.fromCharCode(10);navigator.clipboard.writeText('To: support@robograder.app'+nl+'Subject: '+(pr.get('subject')||'')+nl+nl+(pr.get('body')||''));}appAlert('Complaint details copied to your clipboard (send to support@robograder.app). If your email app did not open, just paste them into a new message.');}catch(e){}" style="display:flex;align-items:center;justify-content:center;text-decoration:none">Complain</a>`;
+  }
+  // EXPORT IMAGES (v5.71). Comics only - Cards is shelved and has no layout, so
+  // there is nothing to decide there and both buttons are simply absent. A
+  // sample book is excluded too: these images carry an RG-ID and read as a real
+  // assessment, which a demo entry is not.
+  if (selected.roboGrade && selected.type !== "card" && !isSample) {
+    // v5.83: the Summary button carries a thumbnail of what it produces, the
+    // same idea as the Start Grading button in the top bar. Print Label takes
+    // the slot the old Defect List button had and opens the SAME label viewer
+    // the List view uses, seeded on this one book, so the user picks a style
+    // and gets the Avery-positioned PDF that flow already produces.
+    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n      <button class="rg-btn rg-btn-action rg-btn-md btn-with-thumb" id="export-summary-btn" onclick="exportSummaryImage('${esc(selected.id)}')"><img src="assets/Summary_Image_Placeholder.png" alt="" decoding="async" class="action-btn-thumb"><span>Summary<br>Image</span></button>\n      <button class="rg-btn rg-btn-action rg-btn-md" id="print-label-btn" onclick="printLabel('${esc(selected.id)}')">Print Label</button>\n    </div>`;
+  }
+  html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    ${_giveBtn}\n    ${_complainBtn}\n  </div>\n  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    <button class="rg-btn rg-btn-destructive rg-btn-md" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')" style="grid-column:1 / span 2;justify-self:center;width:calc(50% - 5px)">Delete</button>\n  </div></div>`;
+  document.getElementById("main").innerHTML = html;
+  window.scrollTo(0, 0);
+  document.querySelectorAll(".detail-cover, .photo-spine").forEach(img => {
+    if (img.complete && img.naturalHeight > 0) {
+      window.forceImgReflow(img);
+    }
+  });
+}
+
+window.forceImgReflow = function(imgEl) {
+  if (!imgEl) return;
+  // S23: defer the forced layout to the next frame. Running a synchronous
+  // offsetHeight read inside every image's onload (Detail can have ~14) bursts
+  // forced reflows right after render and blocks the compositor's first scroll
+  // (the "swipe does nothing, then it scrolls" lock in Detail view). rAF batches
+  // them off the load critical path.
+  requestAnimationFrame(function() {
+    void imgEl.offsetHeight;
+    if (imgEl.style.height && imgEl.style.height !== "auto") {
+      imgEl.style.height = "";
+    }
+  });
+};
+
+let _labelModulePromise = null;
+
+function _preloadLabelModule() {
+  if (!_labelModulePromise) {
+    _labelModulePromise = import("/print-label.js").catch(e => {
+      _labelModulePromise = null;
+      throw e;
+    });
+  }
+  return _labelModulePromise;
+}
+
+async function printLabel(id) {
+  const comic = items.find(c => c.id === id);
+  if (!comic || !comic.roboGrade) return;
+  try {
+    const mod = await _preloadLabelModule();
+    // v5.85: single:true -> the PDF page IS the label, at its own fixed size
+    // (a 4" x 1.33" label exports as a 4" x 1.33" page), instead of a letter
+    // sheet with the label placed at an Avery grid position. List view's
+    // printQueueSheet() still calls openLabelViewer WITHOUT this, so batch
+    // sheet printing is unchanged.
+    mod.openLabelViewer(comic, [comic], { single: true });
+  } catch (e) {
+    alert("Failed to load label printer: " + e.message);
+  }
+}
+
+function openPublicPreview(roboGradeId) {
+  if (!roboGradeId) return;
+  let modal = document.getElementById("public-preview-modal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "public-preview-modal";
+    modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.85);display:none;align-items:center;justify-content:center;z-index:1500;padding:0;touch-action:none";
+    document.body.appendChild(modal);
+    modal.addEventListener("click", e => {
+      if (e.target === modal) closePublicPreview();
+    });
+  }
+  // S17: the iframe must point at the PRODUCTION origin. On the PWA a relative
+  // "/id/:id" resolves to robograder.app and the Vercel rewrite serves
+  // public.html — fine. But in the iOS Capacitor app the page runs from the
+  // local bundle (capacitor://localhost), where "/id/:id" resolves against the
+  // app bundle and there is no such route, so the preview was blank. Always use
+  // the absolute https origin.
+  const _previewBase = (location.protocol === "https:" && /robograder\.app$/i.test(location.hostname))
+    ? "" // already on the production web origin — relative is fine
+    : "https://robograder.app";
+  modal.innerHTML = `\n    <div style="background:#fff;border-radius:14px;width:calc(100vw - 24px);max-width:720px;height:calc(100vh - 80px);display:flex;flex-direction:column;overflow:hidden">\n      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#f4f0e8;border-bottom:1px solid #e0d8c8">\n        <div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;color:#3a3028;letter-spacing:1px;text-transform:uppercase">Link Preview</div>\n        <button class="rg-btn rg-btn-ghost" onclick="closePublicPreview()" style="font-size:22px;padding:0 8px;min-height:auto" aria-label="Close">×</button>\n      </div>\n      <iframe src="${_previewBase}/id/${roboGradeId}" style="flex:1;width:100%;border:none;background:#f5f3ee" title="Public listing preview"></iframe>\n    </div>\n  `;
+  const card = modal.firstElementChild;
+  if (card) card.addEventListener("click", e => e.stopPropagation());
+  modal.style.display = "flex";
+  document.body.style.overflow = "hidden";
+}
+
+function closePublicPreview() {
+  const modal = document.getElementById("public-preview-modal");
+  if (modal) modal.style.display = "none";
+  document.body.style.overflow = "";
+}
+
+function buildListingSummary(roboGradeId, title, issue, prefix) {
+  const url = `https://robograder.app/id/${roboGradeId}`;
+  const it = (items || []).find(c => c && c.roboGradeId === roboGradeId);
+  const issueStr = issue ? ((it && it.type === "card") ? ` ${issue}` : ` #${issue}`) : "";
+  const header = `${title}${issueStr}`.trim();
+  const pfx = prefix ? `${prefix}\n` : "";
+  if (!it) {
+    return {
+      url: url,
+      header: header,
+      text: `${pfx}${header}\n${url}`
+    };
+  }
+  const rg = it.roboGrade || {};
+  const lines = [ header ];
+  // Robograde only — no precision modifier in the shared text (per request).
+  // THE v3 DISPLAY GRADE, not the v1 0-100 score. This was still emitting
+  // Math.round(rg.score), so a shared assessment read "Robograde: 95" while
+  // every surface in the app had shown 9.5 since v3 landed. Both share paths
+  // (public listing, and the give-a-book notify text) run through here.
+  const _v3share = (() => {
+    try {
+      if (!window.RoboScoreV3) return null;
+      const r = (it.type === "card")
+        ? window.RoboScoreV3.forCard(it)
+        : window.RoboScoreV3.forComic(it);
+      return r ? window.RoboScoreV3.formatGrade(r.grade) : null;
+    } catch (e) { return null; }
+  })();
+  if (_v3share) lines.push(`Robograde: ${_v3share}`);
+  else if (rg.score != null) lines.push(`Robograde: ${Math.round(rg.score)}`);
+  // Predicted grade: comics use predicted/CGC; cards use the PSA prediction.
+  const predicted = (it.type === "card")
+    ? (it.assessedPSAGrade || (it.cardData && it.cardData.psaGrade) || "")
+    : (it.predictedGrade || it.assessedCGCGrade || "");
+  if (predicted) {
+    const _pg = (it.type === "card") ? String(normalizeGrade(predicted)).replace(/\.0$/, "") : normalizeGrade(predicted);
+    lines.push(`Predicted grade: ${_pg}`);
+  }
+  // Page Quality intentionally omitted from the shared text (per request).
+  lines.push(url);
+  return {
+    url: url,
+    header: header,
+    text: pfx + lines.join("\n")
+  };
+}
+
+async function sharePublicListing(roboGradeId, title, issue) {
+  if (!roboGradeId) return;
+  const summary = buildListingSummary(roboGradeId, title, issue);
+  const shareData = {
+    title: `Robograder: ${summary.header}`,
+    text: summary.text
+  };
+  if (navigator.share) {
+    try {
+      await navigator.share(shareData);
+    } catch (err) {
+      if (err && err.name !== "AbortError") {
+        console.warn("[share] navigator.share failed:", err);
+      }
+    }
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(summary.text);
+    appAlert("Listing summary copied to clipboard:\n\n" + summary.text);
+  } catch (err) {
+    appAlert("Copy this listing summary:\n\n" + summary.text);
+  }
+}
+
+async function togglePublicListing(id, val) {
+  if (val) {
+    const comic = items.find(c => c.id === id);
+    if (comic && isFacsimilePrinting(comic.printing)) {
+      alert("This book has been identified as a Facsimile Reprint and cannot be publicly listed.");
+      try {
+        showDetail(id);
+      } catch (e) {}
+      return;
+    }
+    if (comic && !_publicEligibleOwnership(comic.ownership)) {
+      _showBrandedModal("NOT WHILE SOLD", "A book marked Sold can't be listed publicly. Switch it to Owned or Watching to share it.", "GOT IT");
+      try {
+        showDetail(id);
+      } catch (e) {}
+      return;
+    }
+  }
+  const track = document.getElementById("detail-public-track");
+  const thumb = document.getElementById("detail-public-thumb");
+  if (track) track.style.background = val ? "#3a7a20" : "#2a2a2a";
+  if (thumb) thumb.style.left = val ? "23px" : "3px";
+  try {
+    const ref = fsDoc(window._db, "users", window._currentUser.uid, "items", id);
+    await fsSetDoc(ref, {
+      publicListing: val
+    }, {
+      merge: true
+    });
+    const comic = items.find(c => c.id === id);
+    if (comic && comic.roboGradeId) {
+      const idRef = fsDoc(window._db, "robograde_ids", comic.roboGradeId);
+      await fsSetDoc(idRef, {
+        comicId: comic.id,
+        userId: window._currentUser?.uid,
+        public: val
+      }, {
+        merge: true
+      });
+    }
+    if (window._db && window._currentUser?.uid && window._fsQuery && window._fsWhere) {
+      try {
+        const archCol = window._fsCollection(window._db, "archived_assessments");
+        const q = window._fsQuery(archCol, window._fsWhere("archivedFromComicId", "==", id), window._fsWhere("archivedUserId", "==", window._currentUser.uid));
+        const snap = await window._fsGetDocs(q);
+        await Promise.all(snap.docs.map(async d => {
+          const oldId = d.id;
+          const archRef = fsDoc(window._db, "archived_assessments", oldId);
+          await fsSetDoc(archRef, {
+            publicListing: val
+          }, {
+            merge: true
+          });
+          const oldIdRef = fsDoc(window._db, "robograde_ids", oldId);
+          await fsSetDoc(oldIdRef, {
+            public: val
+          }, {
+            merge: true
+          });
+        }));
+      } catch (e) {
+        console.warn("[archive] privacy propagation failed:", e);
+      }
+    }
+    if (comic) comic.publicListing = val;
+    if (selected && selected.id === id) {
+      const savedScroll = window.scrollY || document.documentElement.scrollTop || 0;
+      showDetail(id);
+      requestAnimationFrame(() => window.scrollTo(0, savedScroll));
+    }
+  } catch (e) {
+    alert("Failed to update: " + e.message);
+    if (track) track.style.background = !val ? "#3a7a20" : "#2a2a2a";
+    if (thumb) thumb.style.left = !val ? "23px" : "3px";
+  }
+}
+
+async function printQueueSheet() {
+  // The "Print" ownership category IS the print queue. Gather every book
+  // tagged Print that has an RG grade (only graded books get a label), then
+  // hand them to the label viewer for batch printing on an Avery sheet.
+  const queue = items.filter(c => c.inPrintQueue === true && c.roboGrade && c.id !== SAMPLE_COMIC_ID);
+  if (queue.length === 0) {
+    alert("No graded books in the Print queue. Move a graded book to the Print category to add it.");
+    return;
+  }
+  try {
+    if (!_labelModulePromise) {
+      _labelModulePromise = import("/print-label.js").catch(e => {
+        _labelModulePromise = null;
+        throw e;
+      });
+    }
+    const mod = await _labelModulePromise;
+    // Seed the viewer on the first queued book; pass the Print-category subset
+    // as the working set so the batch sheet contains exactly the queue.
+    mod.openLabelViewer(queue[0], queue);
+  } catch (e) {
+    alert("Could not open the print sheet: " + (e && e.message || e));
+  }
+}
+
+// S17: toggle an entry into/out of the Print section from the List view's mini
+// LABEL button. Going TO Print stores the prior ownership; coming back restores
+// it. Persists to Firestore and re-renders the list (the book jumps sections).
+// S20: "Print" ownership is a temporary label-printing workflow state — it
+// should not survive across app sessions. On load, revert any persisted Print
+// book to its prior ownership (default Owned). This also permanently clears the
+// earlier issue where books stuck in Print became invisible when print mode was off.
+async function _migratePrintState() {
+  // S22 MIGRATION: Print used to be an `ownership` value; it is now the independent
+  // `inPrintQueue` flag. Convert any legacy Print item to its real prior ownership +
+  // inPrintQueue:true. One-time, lazy, per-item, best-effort — safe because
+  // priorOwnership already preserved the real status.
+  const legacy = items.filter(c => c.ownership === "Print" && c.id !== SAMPLE_COMIC_ID);
+  if (!legacy.length) return;
+  for (const c of legacy) {
+    const restore = c.priorOwnership || "Owned";
+    try {
+      const ref = fsDoc(window._db, "users", window._currentUser.uid, "items", c.id);
+      await fsSetDoc(ref, { ownership: restore, priorOwnership: null, inPrintQueue: true }, { merge: true });
+      c.ownership = restore; c.priorOwnership = null; c.inPrintQueue = true;
+    } catch (e) { console.warn("[print] migrate failed", c.id, e); }
+  }
+  renderList();
+}
+
+async function togglePrintState(id) {
+  const comic = items.find(c => c.id === id);
+  if (!comic) return;
+  const next = !(comic.inPrintQueue === true);   // S22: print queue is an independent flag
+  try {
+    const ref = fsDoc(window._db, "users", window._currentUser.uid, "items", id);
+    await fsSetDoc(ref, { inPrintQueue: next }, { merge: true });
+    comic.inPrintQueue = next;
+    const savedScroll = window.scrollY || document.documentElement.scrollTop || 0;
+    renderList();
+    requestAnimationFrame(() => window.scrollTo(0, savedScroll));
+  } catch (e) {
+    alert("Failed to update: " + e.message);
+  }
+}
+
+async function cycleOwnershipFromDetail(id) {
+  const comic = items.find(c => c.id === id);
+  if (!comic) return;
+  const cur = comic.ownership || "Owned";
+  const next = cur === "Owned" ? "Watching" : cur === "Watching" ? "Sold" : "Owned";
+  const update = {
+    ownership: next
+  };
+  // Moving to Sold kills the public link; Owned and Watching both keep it.
+  // Print is a transient label state — leave publicListing intact so the link
+  // stays live through a label print and is restored with the prior ownership.
+  if (!_publicEligibleOwnership(next)) update.publicListing = false;
+  try {
+    const ref = fsDoc(window._db, "users", window._currentUser.uid, "items", id);
+    await fsSetDoc(ref, update, {
+      merge: true
+    });
+    comic.ownership = next;
+    if (update.publicListing === false) comic.publicListing = false;
+    if (selected && selected.id === id) {
+      const savedScroll = window.scrollY || document.documentElement.scrollTop || 0;
+      showDetail(id);
+      requestAnimationFrame(() => window.scrollTo(0, savedScroll));
+    }
+  } catch (e) {
+    alert("Failed to update ownership: " + e.message);
+  }
+}
+
+function confirmDelete(id) {
+  const btn = document.getElementById("del-btn");
+  if (btn.dataset.confirm === "1") {
+    deleteItem(id);
+  } else {
+    btn.dataset.confirm = "1";
+    btn.textContent = "Tap again to confirm";
+  }
+}
+
+let _panzoomInstance = null;
+
+let _lightboxLastTap = 0;
+
+let _lbList = null, _lbIdx = 0, _lbDefCtx = null;
+function _lbNonNull() { return (_lbList || []).filter(Boolean).length; }
+function _lbUpdateArrows() {
+  const show = _lbNonNull() > 1;
+  const p = document.getElementById("lightbox-prev"), nx = document.getElementById("lightbox-next");
+  if (p) p.style.display = show ? "flex" : "none";
+  if (nx) nx.style.display = show ? "flex" : "none";
+}
+function _lbShow() {
+  const img = document.getElementById("lightbox-img");
+  if (!_lbList || !_lbList[_lbIdx]) return;
+  const _el = _lbList[_lbIdx];
+  img.src = (_el && _el.u) ? _el.u : _el;
+  // v6.35: the caption is positioned from the image's rendered box, which does
+  // not exist until the image has laid out. Place it again on load, on the next
+  // frame (a cached image fires no load event), and on resize/rotate.
+  if (!img._lbCaptionWired) {
+    img._lbCaptionWired = true;
+    img.addEventListener("load", _lbPlaceCapturedAt);
+    window.addEventListener("resize", _lbPlaceCapturedAt);
+    window.addEventListener("orientationchange", () => setTimeout(_lbPlaceCapturedAt, 250));
+  }
+  _attachPanzoomToLightbox();
+  _lbUpdateArrows();
+  _lbRenderDefects();
+  _lbRenderCapturedAt();
+  requestAnimationFrame(_lbPlaceCapturedAt);
+}
+
+// S22: the capture date, bottom-left, small and plain. Hidden entirely when the
+// photo has no recorded date rather than printing "unknown" — older books
+// predate the meta arrays and a row of "unknown" would read as a fault.
+function _lbRenderCapturedAt() {
+  const el = document.getElementById("lightbox-captured");
+  if (!el) return;
+  const _el = _lbList && _lbList[_lbIdx];
+  const _t = (_el && typeof _el === "object") ? _el.t : null;
+  // `t` was a bare ISO string before v6.35 and is {at, src} now. Older entries
+  // still arrive as a string.
+  const iso = (_t && typeof _t === "object") ? _t.at : _t;
+  const src = (_t && typeof _t === "object") ? _t.src : null;
+  if (!iso) { el.style.display = "none"; el.textContent = ""; return; }
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) { el.style.display = "none"; return; }
+  const when = d.toLocaleString(undefined, {
+    year: "numeric", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit"
+  });
+  // "Taken" only where we know it was shot in the app. An uploaded file's
+  // timestamp is when it reached Robograder, which is not when the photo was
+  // taken, and saying so would be a guess dressed as a fact.
+  el.textContent = (src === "camera" ? "Taken " : "Added ") + when;
+  el.style.display = "block";
+  _lbPlaceCapturedAt();
+}
+
+// Pin the caption under the IMAGE's bottom-left corner rather than the
+// viewer's. The panzoom wrapper shrink-wraps the image, so its box IS the
+// image's box; measuring it while the transform is identity gives the letterbox
+// rect whatever the aspect ratio. Hidden while zoomed: the caption is anchored
+// to the un-zoomed image, so at any other scale it would sit somewhere
+// arbitrary, and a zoomed-in reader is not looking for it.
+function _lbPlaceCapturedAt() {
+  const el = document.getElementById("lightbox-captured");
+  const stage = document.getElementById("lightbox-stage");
+  const wrap = document.getElementById("lightbox-panzoom-wrap");
+  if (!el || !stage || !wrap || el.style.display === "none") return;
+  let zoomed = false;
+  try {
+    const t = getComputedStyle(wrap).transform;
+    zoomed = !!(t && t !== "none" && t !== "matrix(1, 0, 0, 1, 0, 0)");
+  } catch (e) {}
+  if (zoomed) { el.style.visibility = "hidden"; return; }
+  el.style.visibility = "visible";
+  const sr = stage.getBoundingClientRect();
+  const wr = wrap.getBoundingClientRect();
+  el.style.left = Math.max(0, Math.round(wr.left - sr.left)) + "px";
+  el.style.top = Math.round(wr.bottom - sr.top + 6) + "px";
+}
+function _lbStep(dir) {
+  if (!_lbList) return;
+  const n = _lbList.length; let i = _lbIdx, t = 0;
+  do { i = (i + dir + n) % n; t++; } while (!_lbList[i] && t <= n);
+  if (!_lbList[i]) return;
+  _lbIdx = i; _lbShow();
+}
+function _lbOpen(list, idx, defCtx) {
+  _lbList = list; _lbIdx = idx; _lbDefCtx = defCtx || null;
+  const box = document.getElementById("lightbox");
+  box.style.display = "flex";
+  _lbShow();
+  box.onclick = e => { if (e.target === box || e.target.id === "lightbox-stage") closeLightbox(); };
+  if (!window._lbKeyed) {
+    window._lbKeyed = true;
+    document.addEventListener("keydown", e => {
+      const b = document.getElementById("lightbox");
+      if (!b || b.style.display === "none" || b.style.display === "") return;
+      if (e.key === "ArrowLeft") _lbStep(-1);
+      else if (e.key === "ArrowRight") _lbStep(1);
+      else if (e.key === "Escape") closeLightbox();
+    });
+  }
+}
+
+function _attachPanzoomToLightbox() {
+  const img = document.getElementById("lightbox-img");
+  const wrap = document.getElementById("lightbox-panzoom-wrap");
+  const box = document.getElementById("lightbox");
+  if (typeof Panzoom !== "function") return;
+  if (_panzoomInstance) {
+    try {
+      _panzoomInstance.destroy();
+    } catch (e) {}
+    _panzoomInstance = null;
+  }
+  const init = () => {
+    wrap.style.transform = "";
+    img.style.transform = "";
+    _panzoomInstance = Panzoom(wrap, {
+      maxScale: 6,
+      minScale: 0.5,
+      step: 0.4,
+      animate: true,
+      pinchAndPan: true,
+      cursor: false
+    });
+    box.addEventListener("wheel", _panzoomInstance.zoomWithWheel, {
+      passive: false
+    });
+    wrap.addEventListener("touchstart", _trackTouchStart);
+    wrap.addEventListener("touchend", handleDoubleTap);
+    wrap.addEventListener("dblclick", handleDoubleTap);
+  };
+  if (img.naturalWidth > 0) {
+    init();
+  } else {
+    img.addEventListener("load", init, {
+      once: true
+    });
+  }
+}
+
+// ── S21: Lightbox per-image defect box (MAIN images only, comic + card) ───────
+// Comic main image index -> defect category. Card main images map to per-side
+// data (corners/centering are front/back-tagged; free-text surface defects are
+// not side-tagged, so they show on the Front view).
+const _LB_COMIC_CAT = ["Front", "Back", "Interior", "Spine"];
+const _LB_CARD_HEAD = ["Front defects", "Back defects", "Top defects", "Bottom defects"];
+function _lbSevColor(x) { const u = String(x || "").toUpperCase(); return u === "HIGH" ? "#e0555f" : (u === "MED" || u === "MEDIUM") ? "#e0a020" : "#8fbf5a"; }
+function _lbRow(text, sev) {
+  const chip = sev ? `<span class="lbd-sev" style="color:${_lbSevColor(sev)}">${String(sev).toUpperCase() === "MEDIUM" ? "MED" : String(sev).toUpperCase()}</span>` : "";
+  return `<div class="lbd-row"><span>${esc(String(text))}</span>${chip}</div>`;
+}
+function _lbBox(head, rowsHTML) {
+  return `<div class="lbd-head">${esc(head)}</div>${rowsHTML || '<div class="lbd-none">No defects noted for this view.</div>'}`;
+}
+function _lbParseSev(str) {
+  let s = String(str == null ? "" : str).trim();
+  if (!s) return null;
+  let sev = null;
+  const m = s.match(/[\s,;.–-]*\b(HIGH|MED|MEDIUM|LOW)\b\.?$/i);
+  if (m) { sev = m[1].toUpperCase(); s = s.slice(0, m.index).trim(); }
+  s = s.replace(/[.\s]+$/, "");
+  return s ? { t: s, sev: sev } : null;
+}
+function _lbComicDefectsHTML(item, idx) {
+  const cat = _LB_COMIC_CAT[idx];
+  if (!cat) return "";
+  const rg = item.roboGrade || {};
+  const _pqWhite = /^white$/i.test(String(rg.pageQuality || "").trim());
+  const _isPQ = d => /^page\s*quality$/i.test(String(d.type || ""));
+  // Show the page-quality designation as an interior line UNLESS it is White
+  // (White = perfect, not worth noting). Below White, it IS worth showing.
+  const list = Array.isArray(rg.defects) ? rg.defects.filter(d => String(d.category || "") === cat && !(_isPQ(d) && _pqWhite)) : [];
+  const rows = list.map(d => {
+    if (_isPQ(d)) return _lbRow((rg.pageQuality || "Page quality") + " pages", null);
+    let t = d.type || "Defect";
+    if (d.location && d.location !== "N/A") t += " — " + d.location;
+    if (d.colorBreaking) t += " (color-breaking)";
+    return _lbRow(t, d.severity);
+  }).join("");
+  return _lbBox(cat + " defects", rows);
+}
+function _lbCardDefectsHTML(item, idx) {
+  const cd = (item.cardData && item.cardData.robograde) || {};
+  const df = (item.cardData && item.cardData.defects) || {};
+  const rows = [];
+  const CORNER_HUMAN = { frontTopLeft: "top-left", frontTopRight: "top-right", frontBottomLeft: "bottom-left", frontBottomRight: "bottom-right", backTopLeft: "top-left", backTopRight: "top-right", backBottomLeft: "bottom-left", backBottomRight: "bottom-right" };
+  const CORNER_SEV = { "SLIGHT FRAY": "LOW", "MINOR BLUNT": "LOW", "SOFT": "LOW", "HEAVY BLUNT": "MED", "CHIPPED": "MED", "DESTROYED": "HIGH" };
+  const EDGE_SEV = { "LIGHT WEAR": "LOW", "NOTCHING": "MED", "CHIPPING": "MED", "ROUGH": "MED", "TEAR": "HIGH" };
+  const pc = (cd.corners && cd.corners.perCorner) || {};
+  const edges = cd.edges || {};
+  const arr = k => Array.isArray(df[k]) ? df[k] : [];
+  const addCorners = keys => keys.forEach(k => { const v = String(pc[k] || "").toUpperCase().trim(); if (!v || v === "PRISTINE" || v === "SHARP") return; rows.push(_lbRow("Corner " + CORNER_HUMAN[k] + " — " + (v.charAt(0) + v.slice(1).toLowerCase()), CORNER_SEV[v] || "MED")); });
+  const addEdge = side => { const v = String(edges[side] || "").toUpperCase().trim(); if (!v || v === "CLEAN") return; rows.push(_lbRow((v.charAt(0) + v.slice(1).toLowerCase()) + " — " + side + " edge", EDGE_SEV[v] || "MED")); };
+  const addFree = () => [].concat(arr("creases"), arr("scratches"), arr("printDefects"), arr("stains"), arr("other"), arr("edgeIssues")).forEach(txt => { const p = _lbParseSev(txt); if (p) rows.push(_lbRow(p.t, p.sev)); });
+  const centerLine = which => { const c = cd.centering || {}; const r = c[which + "Ratio"]; if (r) rows.push(_lbRow("Centering " + r, null)); };
+  if (idx === 0) { addCorners(["frontTopLeft", "frontTopRight", "frontBottomLeft", "frontBottomRight"]); addEdge("left"); addEdge("right"); centerLine("front"); addFree(); }
+  else if (idx === 1) { addCorners(["backTopLeft", "backTopRight", "backBottomLeft", "backBottomRight"]); centerLine("back"); }
+  else if (idx === 2) { addCorners(["frontTopLeft", "frontTopRight"]); addEdge("top"); }
+  else if (idx === 3) { addCorners(["frontBottomLeft", "frontBottomRight"]); addEdge("bottom"); }
+  else return "";
+  return _lbBox(_LB_CARD_HEAD[idx] || "Defects", rows.join(""));
+}
+function _lbSyncFooter() {
+  const footer = document.getElementById("lightbox-footer");
+  const nav = document.getElementById("lightbox-nav");
+  const def = document.getElementById("lightbox-defects");
+  const navShown = _lbNonNull() > 1;
+  if (nav) nav.style.display = navShown ? "flex" : "none";
+  const defShown = !!(def && def.style.display !== "none" && def.innerHTML.trim() !== "");
+  if (footer) footer.style.display = (navShown || defShown) ? "flex" : "none";
+}
+function _lbRenderDefects() {
+  const def = document.getElementById("lightbox-defects");
+  if (!def) return;
+  let html = "";
+  const ctx = _lbDefCtx;
+  const _el = _lbList && _lbList[_lbIdx];
+  const _di = (_el && typeof _el === "object") ? _el.d : _lbIdx;
+  if (ctx && ctx.item && _di != null && _di >= 0 && _di <= 3) {
+    html = (ctx.item.type === "card") ? _lbCardDefectsHTML(ctx.item, _di) : _lbComicDefectsHTML(ctx.item, _di);
+  }
+  def.innerHTML = html;
+  def.style.display = html ? "block" : "none";
+  _lbSyncFooter();
+}
+
+function openRefLightbox(u) { if (u && typeof _lbOpen === 'function') _lbOpen([u], 0); }
+// v5.27: ONE cycle through every photo on the book, in the order the user shot
+// them. Before this, the list held Main + reference covers + Deep macros + Full,
+// and every OTHER group had its own opener that built a private little list —
+// so opening a signature photo let you cycle the signatures and nothing else,
+// opening an interior cover cycled the two interior covers and stopped, and the
+// interior covers were absent from the main cycle entirely. Six separate dead
+// ends where the user expects one reel.
+//
+// Order, as Matt specified it:
+//   MAIN 4        front, back, interior, spine
+//   DEEP 6        4 corner macros, then interior front + interior back
+//   FULL 6        the structural slots, in FULL_SLOTS capture order
+//   then          Signature, UV, Coupon, Insert, Missing
+//
+// The ComicVine / local REFERENCE covers are deliberately NOT in the reel
+// (v5.27, Matt): nobody wants to examine a reference scan up close. They exist
+// on the Detail page to show that the book was compared against a known-good
+// copy, which is a glance, not an inspection. Same in admin.
+//
+// Every entry carries its group and its index WITHIN that group, so an opener
+// can say "signature 2" and land on the right frame of the unified reel.
+// `d` stays the MAIN slot index (0-3) or null: _lbRenderDefects() keys the
+// per-image defect box off it, and only Main images have one.
+const LB_GROUPS = ["main", "deep", "full", "signature", "uv", "coupon", "insert", "missing"];
+
+function _comicLbEntries(c) {
+  const img = c.images || [];
+  const e = [];
+  // S22 — WHEN WAS THIS PHOTO TAKEN. Every image array has a parallel *Meta
+  // array carrying { source, capturedAt }; the viewer never surfaced it.
+  // Showing it closes a real hole: a listing's grade is tied to the photos
+  // that produced it, but nothing stopped someone grading a clean copy,
+  // swapping in photos of a worse one, and keeping the screenshot or the
+  // Summary image. A visible capture date makes a mismatched set obvious to
+  // whoever is looking at the book, which is the person who needs to know.
+  // It is evidence, not enforcement — deliberately. Blocking the swap would
+  // punish the many people who legitimately re-shoot a bad photo.
+  // v6.35: the SOURCE comes through as well as the time. "Taken" and "Added"
+  // are different claims and the viewer was making neither - it printed a bare
+  // date and left the reader to guess what it was the date of.
+  const _meta = (arr, i) => {
+    const m = (arr || [])[i];
+    if (!m || typeof m !== 'object' || !m.capturedAt) return null;
+    return { at: m.capturedAt, src: m.source || 'upload' };
+  };
+  const push = (u, d, g, gi, t) => {
+    if (u) e.push({ u: u, d: (d == null ? null : d), g: g || null, gi: (gi == null ? null : gi), t: t || null });
+  };
+  const pushGroup = (arr, g, meta) => {
+    (arr || []).forEach((u, i) => push(u, null, g, i, _meta(meta, i)));
+  };
+
+  if (c.type === "card") {
+    [0, 1, 2, 3].forEach(i => push(img[i], i, "main", i, _meta(c.imagesMeta, i)));
+    pushGroup(c.cardDeepImages, "deep", c.cardDeepMeta);
+    pushGroup(c.userDefectImages, "missing", c.userDefectMeta);
+    return e;
+  }
+
+  [0, 1, 2, 3].forEach(i => push(img[i], i, "main", i, _meta(c.imagesMeta, i)));
+
+  // DEEP is two stored arrays: 4 corner macros + 2 interior covers = 6 slots.
+  // They are indexed continuously here (interior front is deep 4) but each
+  // opener passes its own array index, so openInteriorCoverLightbox(id, 0) must
+  // map to deep 4 — see _lbOpenGroup's offset table.
+  pushGroup(c.cornerImages, "deep", c.cornerMeta);
+  (c.interiorCoverImages || []).forEach((u, i) => push(u, null, "deep", (c.cornerImages || []).length + i, _meta(c.interiorCoverMeta, i)));
+
+  pushGroup(c.interiorImages, "full", c.interiorMeta);
+  pushGroup(c.signatureImages, "signature", c.signatureMeta);
+  pushGroup(c.restorationImages, "uv", c.restorationMeta);
+  pushGroup(c.couponImages, "coupon", c.couponMeta);
+  pushGroup(c.insertImages, "insert", c.insertMeta);
+  pushGroup(c.userDefectImages, "missing", c.userDefectMeta);
+  return e;
+}
+
+// Open the unified reel at whichever frame holds (group, index-within-group).
+// `offset` covers the one group assembled from two arrays: an interior-cover
+// tap sends index 0-1, which is deep 4-5.
+function _lbOpenGroup(id, group, idx, offset) {
+  const c = items.find(x => x.id === id);
+  if (!c) return;
+  const want = idx + (offset || 0);
+  const list = _comicLbEntries(c);
+  let start = list.findIndex(e => e.g === group && e.gi === want);
+  if (start < 0) start = 0;           // photo not in the reel (stale render) — open at the top rather than nothing
+  _lbOpen(list, start, { item: c });
+}
+function openLightbox(id, idx) {
+  const c = items.find(x => x.id === id);
+  if (!c || !c.images?.[idx]) return;
+  const list = _comicLbEntries(c);
+  let start = list.findIndex(e => e.d === idx);
+  if (start < 0) start = 0;
+  _lbOpen(list, start, { item: c });   // MAIN images get the per-image defect box
+}
+// v5.27: all of these used to build a private one-group list. They now open the
+// ONE reel built by _comicLbEntries() at the frame that was tapped, so a swipe
+// carries on into the next group instead of dead-ending.
+function openCornerLightbox(id, idx)        { _lbOpenGroup(id, "deep", idx); }
+function openInteriorCoverLightbox(id, idx) {
+  // Interior covers are stored separately but belong to DEEP, after the corners.
+  const c = items.find(x => x.id === id);
+  _lbOpenGroup(id, "deep", idx, c ? (c.cornerImages || []).length : 4);
+}
+function openInteriorLightbox(id, idx)      { _lbOpenGroup(id, "full", idx); }
+function openSignatureLightbox(id, idx)     { _lbOpenGroup(id, "signature", idx); }
+function openRestorationLightbox(id, idx)   { _lbOpenGroup(id, "uv", idx); }
+function openCouponLightbox(id, idx)        { _lbOpenGroup(id, "coupon", idx); }
+function openInsertLightbox(id, idx)        { _lbOpenGroup(id, "insert", idx); }
+function openUserDefectLightbox(id, idx)    { _lbOpenGroup(id, "missing", idx); }
+
+// ── REFERENCE COVERS OPEN ON THEIR OWN (S23, 2026-10-18) ────────────────────
+// A ComicVine or locally-hosted reference scan could not be enlarged at all:
+// `_refCell` rendered it with no click target, so the one image you most want
+// to look at closely — the clean copy you are comparing damage against — was
+// the one image stuck at thumbnail size.
+//
+// It is deliberately NOT added to _comicLbEntries(). That reel is the user's
+// OWN photos, and swiping from "my front cover" into "a stock scan of someone
+// else's copy" would misrepresent what the reel is. A one-entry list gets the
+// same Panzoom pinch and double-tap, and _lbUpdateArrows()/_lbSyncFooter()
+// already hide the prev/next chrome and the defect box when the list holds a
+// single frame — no new lightbox mode needed.
+function openReferenceLightbox(url) {
+  if (!url) return;
+  _lbOpen([ { u: url } ], 0, null);
+}
+
+let _lightboxLastTouchFingers = 0;
+
+function _trackTouchStart(e) {
+  _lightboxLastTouchFingers = e.touches ? e.touches.length : 0;
+}
+
+function handleDoubleTap(e) {
+  if (!_panzoomInstance) return;
+  if (e.type === "dblclick") {
+    e.preventDefault();
+    const current = _panzoomInstance.getScale();
+    if (current > 1.1) _panzoomInstance.reset(); else _panzoomInstance.zoom(2.5, {
+      animate: true
+    });
+    return;
+  }
+  if (_lightboxLastTouchFingers !== 1) return;
+  if (e.touches && e.touches.length > 0) return;
+  const now = Date.now();
+  const isDouble = now - _lightboxLastTap < 300;
+  _lightboxLastTap = now;
+  if (!isDouble) return;
+  e.preventDefault();
+  const current = _panzoomInstance.getScale();
+  if (current > 1.1) {
+    _panzoomInstance.reset();
+  } else {
+    _panzoomInstance.zoom(2.5, {
+      animate: true
+    });
+  }
+}
+
+function closeLightbox() {
+  _lbList = null;
+  const box = document.getElementById("lightbox");
+  if (_panzoomInstance) {
+    try {
+      _panzoomInstance.destroy();
+    } catch (e) {}
+    _panzoomInstance = null;
+  }
+  const wrap = document.getElementById("lightbox-panzoom-wrap");
+  if (wrap) wrap.style.transform = "";
+  const img = document.getElementById("lightbox-img");
+  if (img) img.style.transform = "";
+  if (box) box.style.display = "none";
+}
+
+async function saveLightboxImage() {
+  const btn = document.getElementById("lightbox-save");
+  const img = document.getElementById("lightbox-img");
+  if (!img || !img.src) return;
+  if (btn) btn.disabled = true;
+  try {
+    const resp = await fetch(img.src);
+    if (!resp.ok) throw new Error("fetch failed: " + resp.status);
+    const blob = await resp.blob();
+    let ext = "jpg";
+    if (blob.type === "image/png") ext = "png"; else if (blob.type === "image/webp") ext = "webp"; else if (blob.type === "image/gif") ext = "gif";
+    const stamp = (new Date).toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    await _saveImageBlob(blob, `robograder-${stamp}.${ext}`);
+  } catch (e) {
+    console.warn("Save image failed:", e);
+    try {
+      window.open(img.src, "_blank", "noopener");
+    } catch (openErr) {
+      alert("Unable to save image. Try long-pressing the image to save it manually.");
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// EXTRACTED FROM saveLightboxImage (v5.71) so the export images reuse it rather
+// than growing a second save path. This is the one that is verified on hardware
+// - it is what fixed Android's silent save failure in 1.13 - and a second
+// implementation would drift from it. Behaviour is unchanged; only the blob now
+// comes from either a fetched photo or a rendered canvas.
+async function _saveImageBlob(blob, filename) {
+    const file = new File([ blob ], filename, {
+      type: blob.type
+    });
+    if (navigator.share && navigator.canShare && navigator.canShare({
+      files: [ file ]
+    })) {
+      try {
+        // v5.84: RACED, because navigator.share() can stay pending forever.
+        // On desktop Chrome canShare({files}) returns true, the OS share sheet
+        // opens, and dismissing it does not always reject - the promise simply
+        // never settles, and every caller awaiting it is stuck. 60s is far
+        // longer than any real share takes; losing the race falls through to
+        // the download path below, which is the correct desktop behaviour
+        // anyway. A late-resolving share after we have already downloaded is
+        // harmless - the user gets the file either way.
+        const _shared = await Promise.race([
+          navigator.share({ files: [ file ] }).then(() => "shared"),
+          new Promise(r => setTimeout(() => r("share-timeout"), 60000))
+        ]);
+        if (_shared === "shared") return;
+        console.warn("[save] share never settled; falling back to download");
+      } catch (shareErr) {
+        if (shareErr && shareErr.name === "AbortError") return;
+        console.warn("share failed, falling back to download:", shareErr);
+      }
+    }
+    // ── NATIVE SAVE (Capacitor) ─────────────────────────────────────────
+    // WHY ANDROID COULD NOT SAVE IMAGES (reported 2026-10-17): this function had
+    // exactly two paths, and on Android BOTH are no-ops.
+    //   1. navigator.share({files}) — Web Share Level 2. WKWebView implements it,
+    //      so iOS works. A plain Android WebView does not: canShare({files})
+    //      returns false and the branch is skipped.
+    //   2. <a download> + blob: URL — Android WebView ignores the download
+    //      attribute entirely unless the host app installs a DownloadListener on
+    //      the WebView. MainActivity does not install one. The click does nothing,
+    //      throws nothing, and logs nothing. Silent failure, Android only.
+    // @capacitor/filesystem and @capacitor/share are both already registered in
+    // the Android project (capacitor.settings.gradle) and file_paths.xml already
+    // exposes cache-path, so writing to Cache and handing the URI to the system
+    // share sheet needs no new plugin, no new permission and no native code. The
+    // sheet is where "Save to Photos" lives.
+    const _cap = window.Capacitor;
+    if (_cap && typeof _cap.isNativePlatform === "function" && _cap.isNativePlatform()
+        && _cap.Plugins && _cap.Plugins.Filesystem && _cap.Plugins.Share) {
+      try {
+        const _b64 = await new Promise((res, rej) => {
+          const fr = new FileReader();
+          fr.onload = () => res(String(fr.result || "").split(",")[1] || "");
+          fr.onerror = () => rej(fr.error);
+          fr.readAsDataURL(blob);
+        });
+        await _cap.Plugins.Filesystem.writeFile({ path: filename, data: _b64, directory: "CACHE" });
+        const _u = await _cap.Plugins.Filesystem.getUri({ path: filename, directory: "CACHE" });
+        await _cap.Plugins.Share.share({ title: filename, url: _u && _u.uri, dialogTitle: "Save image" });
+        return;
+      } catch (capErr) {
+        const _m = String((capErr && capErr.message) || capErr || "").toLowerCase();
+        if (_m.includes("cancel") || _m.includes("abort")) return;  // user dismissed the sheet
+        console.warn("[save] native save failed, falling back to download:", capErr);
+      }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EXPORT IMAGES — Summary and Defect List        (spec: SUMMARY_IMAGE_SPEC v2)
+//
+// Two shareable 1080x1920 JPEGs rendered on an OFFSCREEN CANVAS. Not a DOM
+// screenshot: a DOM capture inherits the detail view's scroll position, its
+// chrome and whatever is half-loaded.
+//
+// Matt wanted both rather than a choice between them - "two different versions
+// of the same idea, and I'm not sure which will be more useful to sellers".
+// SUMMARY shows the book (covers + grade, no defect detail). DEFECT LIST shows
+// the condition in full (every defect, no covers). Same header, same footer,
+// same save path; they differ only in the body.
+//
+// FIXED BANDS, NO REFLOW. Long titles shrink to fit their band and then
+// ellipsise; nothing ever pushes anything else down. The defect list is the one
+// variable-height element and the app caps a list at 13, so the worst case is
+// known and sized for.
+// ═══════════════════════════════════════════════════════════════════════════
+// EXPORT IMAGES — Summary and Defect List        (spec: SUMMARY_IMAGE_SPEC v2)
+//
+// Two shareable JPEGs rendered on an OFFSCREEN CANVAS and handed to the app's
+// existing save path. Not a DOM screenshot: a DOM capture inherits the detail
+// view's scroll position, its chrome and whatever is half-loaded.
+//
+// STYLE (v5.72, after Matt: "your sample images have none of the established
+// Robograder formatting"). The first attempt invented a dark poster layout.
+// These now draw the app's OWN surfaces, with the constants lifted from where
+// they already live rather than re-picked by eye:
+//   - the title block copies showDetail()'s header (Noto Sans Display at the
+//     62.5% width axis, then Barlow Condensed for the imprint lines)
+//   - the defect table is robograde-panel.js's tractor-feed continuous-form
+//     paper: pale mint-green and cream bands alternating CONTINUOUSLY across
+//     section breaks, sprocket margins down both edges, dark olive ink,
+//     IBM Plex Mono, with the four category headers carrying their subscore
+//   - the conclusion is buildPredictedGradeBox(): black card, the blue PG
+//     badge, the page-quality pill in its own PQ_COLORS tint, FMV, disclaimer
+//
+// HEIGHT IS VARIABLE, which is a deliberate break from the spec's fixed
+// 1080x1920. Matt: leave room for the defect list to get long "without
+// creating an image that's too vertically long to be readable on a phone".
+// A fixed canvas can only do one of those. So the paper grows to its content
+// and the conclusion is laid out in two columns - grade left, page quality and
+// FMV right - which is what buys the vertical room.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const EX_S = 3;                          // canvas px per CSS px (1080 / 360)
+const EX_CSSW = 360;                     // the app's own narrow-phone width
+const EX_W = EX_CSSW * EX_S;
+const EX_MAX_DEFECTS = 13;               // the app's own cap on a defect list
+const P = v => Math.round(v * EX_S);
+
+// Lifted from robograde-panel.js and index.html. Not re-picked by eye.
+const EXP = {
+  page:    "#1a1814",                    // the app's own body background
+  green:   "#cce8b8", cream: "#f4f0dc", header: "#a8c898",
+  ink:     "#1f2a08", inkHd: "#0a1404",  inkLt:  "#5a6a3a",
+  oliveMid:"#4a7028",
+  titleInk:"#ffffff", issueInk:"#d8d2c6", dateInk:"#7a6a5a",
+  printInk:"#6a5a4a", pubInk:"#8a7a6a",
+  // Muted brick reds for the imprint lines. Tinted, deliberately below the
+  // title and issue in weight so they do not compete with them.
+  // v5.83: red1 was #9a4f3c, 3.29:1 on the black card - below AA, and dimmer
+  // than red2 beside it, so the MORE important line was the harder to read.
+  red1:    "#c4705a", red2:"#ab6d5c",
+  cardBg:  "#0d0d0f", cardEdge:"#2a2a3a",
+  badgeBg: "#1a5fa8", badgeEdge:"#1e40af",
+  discInk: "#6a5a4a", footInk:"#7aa838",
+  // v5.82: `EXP.bg` was referenced by the score panel and never existed, so the
+  // fill silently inherited whatever colour was last set (the cover placeholder
+  // "#1a1a1a"). It LOOKED right, which is why it survived. Named properly now.
+  panel:   "#10150a",                    // the RoboGrade score panel + bookend
+  pageWhite:"#ffffff"                    // outside the rounded container corners
+};
+const EX_PQ_FALLBACK = { bg: "#f0ece6", text: "#5a4e44" };
+
+const F_TITLE = "'Noto Sans Display', system-ui, sans-serif";
+const F_MONO  = "'IBM Plex Mono', Menlo, monospace";
+const F_COND  = "'Barlow Condensed', system-ui, sans-serif";
+const F_NUM   = "'League Spartan', system-ui, sans-serif";
+// PM splits across two faces exactly as scoreBox does on screen: the symbol in
+// Saira, the number in Saira Extra Condensed at scaleX(0.72).
+const F_PM    = "'Saira', system-ui, sans-serif";
+const F_PMC   = "'Saira Extra Condensed', system-ui, sans-serif";
+
+function _exSevColor(s) {
+  const u = String(s || "").toUpperCase();
+  if (!u) return EXP.inkLt;
+  if (u === "HIGH") return "#a8202a";
+  if (u === "MED" || u === "MEDIUM") return "#a86010";
+  return "#3a5018";
+}
+
+// font-stretch in canvas. Chrome and Safari support ctx.fontStretch; where they
+// do not, the title simply draws at normal width and _exFit shrinks it to fit,
+// so this degrades to "slightly wider title", never to a broken layout.
+function _exStretch(ctx, v) { try { ctx.fontStretch = v; } catch (e) {} }
+
+function _exRoundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function _exFit(ctx, text, maxW, startPx, minPx, weight, family) {
+  let px = startPx;
+  const set = p => { ctx.font = `${weight} ${p}px ${family}`; };
+  set(px);
+  while (ctx.measureText(text).width > maxW && px > minPx) { px -= 1; set(px); }
+  if (ctx.measureText(text).width <= maxW) return text;
+  let s = text;
+  while (s.length > 1 && ctx.measureText(s + "…").width > maxW) s = s.slice(0, -1);
+  return s + "…";
+}
+
+function _exWrap(ctx, text, maxW) {
+  const words = String(text).split(/\s+/).filter(Boolean);
+  const out = []; let cur = "";
+  for (const w of words) {
+    const t = cur ? cur + " " + w : w;
+    if (!cur || ctx.measureText(t).width <= maxW) cur = t;
+    else { out.push(cur); cur = w; }
+  }
+  if (cur) out.push(cur);
+  return out.length ? out : [""];
+}
+
+// THE TAINTED-CANVAS TRAP (Summary only; the Defect List draws no photographs).
+// toBlob() throws SecurityError unless the image was loaded with
+// crossOrigin="anonymous" AND the host sends CORS headers. Firebase Storage's
+// config is already right - the cropper proves it - but the detail view and the
+// lightbox load these same URLs WITHOUT crossOrigin, so the browser keeps two
+// separate cached copies, and the flag set AFTER src silently does nothing.
+// Hence: fresh Image, flag first, src last. One extra fetch of the covers is
+// the price of a clean canvas.
+function _exLoadImage(url) {
+  return new Promise(resolve => {
+    if (!url) return resolve(null);
+    const im = new Image();
+    im.crossOrigin = "anonymous";
+    im.onload = () => resolve(im);
+    im.onerror = () => resolve(null);
+    im.src = url;
+  });
+}
+function _exImgUrl(x) { return (x && (x.url || (typeof x === "string" ? x : null))) || null; }
+
+// ── The facts both images read ─────────────────────────────────────────────
+// RoboGrade and subscores come from RoboScoreV3.forComic - the v3 half-point
+// display and ITS subscores, never the raw v1 0-100 roboGrade object. The share
+// text carried exactly that bug and it was fixed in 5.62.
+function _exFacts(item) {
+  const rg = item.roboGrade || {};
+  const v3 = (window.RoboScoreV3 && item.type !== "card") ? window.RoboScoreV3.forComic(item) : null;
+  // v5.82 BUGFIX - THE EMPTY BLUE BADGE. This read `item.grade != null`, and
+  // item.grade is the MANUAL/official grade field, which the app stores as an
+  // EMPTY STRING on every book that has not been given one. "" is not null, so
+  // the first branch won. predicted became "", _exDrawCard drew "" into the
+  // badge, and the export shipped a solid blue square with no number in it on
+  // every ungraded book - which is nearly all of them.
+  const _has = v => v != null && String(v).trim() !== "";
+  const predicted = _has(item.grade) ? item.grade
+                  : (_has(item.predictedGrade) ? item.predictedGrade
+                  : (_has(rg.predictedGrade) ? rg.predictedGrade : null));
+  let fmv = null;
+  try {
+    if (typeof window.matchFMV === "function" && predicted != null) {
+      fmv = window.matchFMV(item.title, item.issue, predicted, item.printing,
+        (typeof extractYearFromIssueDate === "function") ? extractYearFromIssueDate(item.issueDate) : null);
+    }
+  } catch (e) { fmv = null; }
+  // A null or suppressed match drops the FMV line ENTIRELY. Blank beats a wrong
+  // number, which is already the rule everywhere else.
+  const fmvStr = (fmv && !fmv.suppressed && typeof formatFMVCompact === "function") ? formatFMVCompact(fmv) : "";
+  const fmt = v => (v == null) ? "—"
+    : ((window.RoboScoreV3 && window.RoboScoreV3.formatGrade) ? window.RoboScoreV3.formatGrade(v) : String(v));
+  return {
+    v3, sub: v3 ? v3.subscores : null,
+    rgGrade: v3 ? fmt(v3.grade) : null,
+    predicted: predicted == null ? null : String(predicted),
+    gradeLabel: (typeof GRADE_LABELS !== "undefined" && predicted != null) ? (GRADE_LABELS[predicted] || "") : "",
+    atCeiling: !!item.gradeAtCeiling,
+    pageQuality: item.pageQuality || rg.pageQuality || "",
+    fmv: fmvStr,
+    rgid: (item.roboGradeId || item.id || "").toString().slice(-6).toUpperCase(),
+    fmtSub: fmt
+  };
+}
+
+// Grouped exactly as robograde-panel.js groups them, including its page-quality
+// special case: a PQ entry drops its location and shows the canonical
+// designation instead, because "Page quality - interior" says nothing.
+function _exSections(item, f) {
+  const rg = item.roboGrade || {};
+  const defects = Array.isArray(rg.defects) ? rg.defects : [];
+  const byCat = { Front: [], Back: [], Spine: [], Interior: [] };
+  let taken = 0;
+  defects.forEach(d => {
+    const cat = String(d.category || "").trim();
+    if (!byCat[cat] || taken >= EX_MAX_DEFECTS) return;
+    taken++;
+    const isPQ = /^page\s*quality$/i.test(String(d.type || ""));
+    const parts = [];
+    if (isPQ) {
+      const p = String(f.pageQuality || "").trim() || String(d.measurement || "").trim();
+      if (p && !/^n\/a$/i.test(p)) parts.push(p);
+    }
+    if (d.location && d.location !== "N/A" && !isPQ) parts.push(d.location);
+    if (d.measurement && d.measurement !== "N/A" && !isPQ) parts.push(String(d.measurement).replace(/^~\s*/, ""));
+    if (d.colorBreaking) parts.push("color breaking");
+    byCat[cat].push({
+      type: isPQ ? "Page Quality" : (d.type || "Defect"),
+      detail: parts.length ? " — " + parts.join(", ") : "",
+      // Page-quality rows never wear a severity chip - they are an observation,
+      // not a defect. Empty severity is deliberate upstream and must not fall
+      // through to "Low".
+      sev: isPQ ? "" : (d.severity == null ? "Low" : d.severity)
+    });
+  });
+  const s = f.sub;
+  // ALL FOUR sections always render, unlike the in-app panel which hides empty
+  // ones. On a shareable image the four subscores are part of the claim: a
+  // missing SPINE row reads as withheld rather than as clean.
+  return [
+    { label: "FRONT",    score: s ? f.fmtSub(s.front)    : "—", rows: byCat.Front },
+    { label: "BACK",     score: s ? f.fmtSub(s.back)     : "—", rows: byCat.Back },
+    { label: "SPINE",    score: s ? f.fmtSub(s.spine)    : "—", rows: byCat.Spine },
+    { label: "INTERIOR", score: s ? f.fmtSub(s.interior) : "—", rows: byCat.Interior }
+  ];
+}
+
+// ── Measured pieces ────────────────────────────────────────────────────────
+const EX_PAD   = P(16);     // box inner padding
+const EX_INSET = 0;         // v5.82: the container runs to the image edge
+
+// ── Header: TITLE AND ISSUE ON ONE LINE ────────────────────────────────────
+// Matt, 2026-10-20: "I don't know why we have a line break between Title and
+// Issue. They should appear together unless a line-break happens to be
+// required." Same change was made to List, Detail and the public listing. The
+// issue inherits the title's family, width axis and SIZE; only weight and
+// colour still separate them. The cover date drops to its own line with the
+// publisher and printing.
+// ── FIXED CANVAS: 1080 x 2025, i.e. 15:8 ───────────────────────────────────
+// Locked because that is what Whatnot listings want, and a listing crops to the
+// CENTRAL 1:1 square - so the layout is tuned around what lands in that square:
+// the RoboGrade panel with the lower covers above it on the Summary, mid-list
+// on the Defect List. The card is pinned to the bottom on both, so a grid of
+// listings lines up.
+const EX_CSSH = 675;                       // 2025 / 3
+const EX_H = EX_CSSH * EX_S;
+const EX_BOXH = EX_H;                      // v5.82: full bleed, top to bottom
+// FLIPPED, 2026-10-21: the printout paper is the PURE WHITE now and the card
+// around it is the off-white. The green bands are unchanged, so the paper reads
+// brighter and the card recedes behind it.
+// Paper white, not screen white: #ffffff read as a hole punched in the card.
+// Warm enough to be paper, still a clear step up from the off-white around it
+// (the blue channel does most of that work: f5 against dc).
+const EX_PAPER = "#fbfaf5";    // continuous-form paper and its sprocket margins
+// v5.82, Matt: the container is BLACK and runs to the edge of the image. Only
+// the four corner slivers outside the rounding stay white, so the image reads
+// as a single black card rather than a card floating on a page.
+const EX_CARD  = "#0d0d0f";    // everything else inside the container
+const EX_RADIUS = P(26);       // the container's corner rounding
+const EX_WHITE = "#ffffff";
+
+function _exTitleParts(item) {
+  const iss = item.issue
+    ? ((item.type === "card" && typeof formatCardNumber === "function") ? formatCardNumber(item.issue)
+      : (typeof formatIssue === "function" ? formatIssue(item.issue, item.title) : "#" + item.issue))
+    : "";
+  return { title: String(item.title || "Untitled"), issue: iss };
+}
+
+// Pub date and publisher share a line, comma-separated; printing follows.
+function _exImprint(item) {
+  const d = item.issueDate
+    ? ((typeof formatIssueDateCompact === "function") ? formatIssueDateCompact(item.issueDate) : String(item.issueDate))
+    : "";
+  const a = [d, item.publisher ? String(item.publisher) : ""].filter(Boolean).join(", ");
+  return { a: a, b: item.printing ? String(item.printing) : "" };
+}
+
+function _exHeaderH(ctx, item) {
+  const im = _exImprint(item);
+  let h = P(26) + P(29);   // v5.82: matches the P(26) top in _exDrawHeader
+  if (im.a) h += P(3) + P(17);
+  if (im.b) h += P(2) + P(17);
+  return h + P(12);
+}
+
+// The whole container is pure white now, so this needs no band and no rule
+// under it - the off-white belongs to the defect paper alone. Title and issue
+// share one line in one face; only weight and colour separate them, and the
+// imprint lines are a muted brick red.
+function _exDrawHeader(ctx, item, bx, by, boxW, innerW) {
+  const h = _exHeaderH(ctx, item);
+  const x = bx + EX_PAD;
+  let y = by + P(26);   // v5.82: was P(16), inside a page inset that no longer exists
+  const tp = _exTitleParts(item);
+  ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  _exStretch(ctx, "extra-condensed");
+  let px = P(26);
+  const widthAt = p => {
+    ctx.font = `900 ${p}px ${F_TITLE}`;
+    let w = ctx.measureText(tp.title).width;
+    if (tp.issue) { ctx.font = `600 ${p}px ${F_TITLE}`; w += p * 0.28 + ctx.measureText(tp.issue).width; }
+    return w;
+  };
+  while (px > P(14) && widthAt(px) > innerW) px -= 1;
+  ctx.fillStyle = EXP.titleInk;
+  ctx.font = `900 ${px}px ${F_TITLE}`;
+  let t = tp.title;
+  if (widthAt(px) > innerW) {
+    // Ellipsise the TITLE, never the issue - the issue is the half that
+    // identifies the book.
+    ctx.font = `600 ${px}px ${F_TITLE}`;
+    const issW = tp.issue ? px * 0.28 + ctx.measureText(tp.issue).width : 0;
+    ctx.font = `900 ${px}px ${F_TITLE}`;
+    while (t.length > 1 && ctx.measureText(t + "…").width + issW > innerW) t = t.slice(0, -1);
+    t += "…";
+  }
+  ctx.fillText(t, x, y + P(23));
+  const cx = x + ctx.measureText(t).width + px * 0.28;
+  if (tp.issue) {
+    ctx.fillStyle = EXP.issueInk;
+    ctx.font = `600 ${px}px ${F_TITLE}`;
+    ctx.fillText(tp.issue, cx, y + P(23));
+  }
+  y += P(29);
+  _exStretch(ctx, "normal");
+
+  const im = _exImprint(item);
+  const line = (txt, weight, color, gap) => {
+    y += P(gap);
+    ctx.fillStyle = color;
+    ctx.font = `${weight} ${P(16)}px ${F_COND}`;
+    ctx.fillText(_exFit(ctx, txt, innerW, P(16), P(10), weight, F_COND), x, y + P(15));
+    y += P(17);
+  };
+  if (im.a) line(im.a, "600", EXP.red1, 3);
+  if (im.b) line(im.b, "600", EXP.red2, 2);
+  return by + h;
+}
+
+// ── Provenance ─────────────────────────────────────────────────────────────
+// On the Defect List this doubles as the list's HEADER: rounded on top, square
+// on the bottom, the same width as the paper, so the two read as one object and
+// no padding is wasted between them.
+const EX_PROV_H = P(34);
+function _exProvText(item) {
+  let dateStr = "";
+  if (item.roboGradeDate) {
+    try { dateStr = new Date(item.roboGradeDate).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }); }
+    catch (e) { dateStr = ""; }
+  }
+  return { id: item.roboGradeId ? String(item.roboGradeId) : "", date: dateStr };
+}
+function _exHasProv(item) { const p = _exProvText(item); return !!(p.id || p.date); }
+function _exDrawProv(ctx, item, x, y, w, topOnly) {
+  const p = _exProvText(item);
+  if (!p.id && !p.date) return y;
+  ctx.fillStyle = "#2a4a1e";
+  if (topOnly) {
+    const r = P(8);
+    ctx.beginPath();
+    ctx.moveTo(x, y + EX_PROV_H); ctx.lineTo(x, y + r);
+    ctx.arcTo(x, y, x + r, y, r); ctx.lineTo(x + w - r, y);
+    ctx.arcTo(x + w, y, x + w, y + r, r); ctx.lineTo(x + w, y + EX_PROV_H);
+    ctx.closePath(); ctx.fill();
+  } else { _exRoundRect(ctx, x, y, w, EX_PROV_H, P(6)); ctx.fill(); }
+  const mid = y + P(22);
+  if (p.id) {
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#7aa838"; ctx.font = `700 ${P(9)}px ${F_MONO}`;
+    ctx.fillText("ID", x + P(14), mid);
+    const lw = ctx.measureText("ID").width;
+    ctx.fillStyle = "#b8d820"; ctx.font = `${P(11)}px ${F_MONO}`;
+    ctx.fillText(p.id, x + P(14) + lw + P(6), mid);
+  }
+  if (p.date) {
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#b8d820"; ctx.font = `${P(11)}px ${F_MONO}`;
+    ctx.fillText(p.date, x + w - P(14), mid);
+    const vw = ctx.measureText(p.date).width;
+    ctx.fillStyle = "#7aa838"; ctx.font = `700 ${P(9)}px ${F_MONO}`;
+    ctx.fillText("GRADED", x + w - P(14) - vw - P(6), mid);
+    ctx.textAlign = "left";
+  }
+  return y + EX_PROV_H;
+}
+
+// ── The "(+)" ──────────────────────────────────────────────────────────────
+// Sits on the numeral's midline, condensed into whatever room is left rather
+// than overlapping it. Both grade numerals also shrink when it is present, so
+// an ordinary book keeps the big number and only a ceiling-hit book pays.
+function _exPlus(ctx, numRightX, midY, limitX, color, sizePx) {
+  ctx.font = `700 ${sizePx}px ${F_COND}`;
+  const w = ctx.measureText("(+)").width;
+  const gap = sizePx * 0.16;
+  const room = limitX - (numRightX + gap);
+  if (room <= 0) return;
+  ctx.save();
+  ctx.translate(numRightX + gap, midY);
+  ctx.scale(Math.min(1, room / w), 1);
+  ctx.textAlign = "left"; ctx.fillStyle = color;
+  ctx.fillText("(+)", 0, 0);
+  ctx.restore();
+  ctx.textAlign = "left";
+}
+
+// ── RoboScoreV3.scoreBox, ported to canvas ─────────────────────────────────
+const EX_STAR = "M12,2 15.64,6.98 21.51,8.91 17.9,13.92 17.88,20.09 12,18.2 6.12,20.09 6.1,13.92 2.49,8.91 8.36,6.98Z";
+function _exDrawStar(ctx, x, y, px, color) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(px / 24, px / 24);
+  ctx.fillStyle = color; ctx.fill(new Path2D(EX_STAR)); ctx.restore();
+}
+function _exScoreBox(ctx, x, y, size, o) {
+  const perfect = String(o.grade) === "10";
+  const numColor = perfect ? "#1a1206" : "#b8d820";
+  const verColor = perfect ? "#7a5a10" : "#5a7028";
+  if (perfect) {
+    const g = ctx.createLinearGradient(x, y, x + size, y + size);
+    g.addColorStop(0, "#fdeea0"); g.addColorStop(0.34, "#f0c53a");
+    g.addColorStop(0.66, "#d99e12"); g.addColorStop(1, "#b57e0c");
+    ctx.fillStyle = g;
+  } else ctx.fillStyle = "#0f1a05";
+  _exRoundRect(ctx, x, y, size, size, size * 0.14); ctx.fill();
+  ctx.strokeStyle = perfect ? "#8a6209" : "#4a7028";
+  ctx.lineWidth = Math.max(1, size * 0.014);
+  _exRoundRect(ctx, x, y, size, size, size * 0.14); ctx.stroke();
+
+  const numSize = size * (o.plus ? 0.45 : 0.52);
+  const midY = y + size / 2 + numSize * 0.09;
+  const shown = o.grade == null ? "—" : String(o.grade);
+  ctx.font = `900 ${numSize}px ${F_NUM}`;
+  const halfW = ctx.measureText(shown).width * 0.66 / 2;
+  ctx.save();
+  ctx.translate(x + size / 2, midY); ctx.scale(0.66, 1);
+  ctx.textAlign = "center"; ctx.fillStyle = numColor;
+  ctx.font = `900 ${numSize}px ${F_NUM}`;
+  ctx.fillText(shown, 0, numSize * 0.35);
+  ctx.restore();
+  ctx.textAlign = "left";
+
+  const stars = o.stars || 0;
+  if (stars > 0 || o.restoStar) {
+    const px = Math.max(8, size * 0.11);
+    const n = stars + (o.restoStar ? 1 : 0);
+    let sx = x + size / 2 - (n * (px + 1) - 1) / 2;
+    for (let i = 0; i < stars; i++) { _exDrawStar(ctx, sx, y + size * 0.05, px, numColor); sx += px + 1; }
+    if (o.restoStar) _exDrawStar(ctx, sx, y + size * 0.05, px, "#b58be0");
+  }
+
+  // PM: the app draws the SYMBOL in Saira and the NUMBER in Saira Extra
+  // Condensed at scaleX(0.72). Same split here, so the two surfaces match.
+  if (o.footerText) {
+    ctx.textAlign = "center"; ctx.fillStyle = verColor;
+    ctx.font = `700 ${Math.max(7, size * 0.077)}px ${F_COND}`;
+    ctx.fillText(o.footerText, x + size / 2, y + size - size * 0.05);
+    ctx.textAlign = "left";
+  }
+  if (o.plus) _exPlus(ctx, x + size / 2 + halfW, midY + numSize * 0.12, x + size - size * 0.05, numColor, numSize / 2.6);
+}
+
+// ── Defects ────────────────────────────────────────────────────────────────
+const EX_CATS = ["Front", "Back", "Spine", "Interior"];
+function _exSevRank(s) {
+  const u = String(s || "").toUpperCase();
+  return u === "HIGH" ? 0 : (u === "MED" || u === "MEDIUM") ? 1 : u === "LOW" ? 2 : 3;
+}
+function _exDefectList(item) {
+  const rg = item.roboGrade || {};
+  const out = [];
+  (Array.isArray(rg.defects) ? rg.defects : []).forEach(d => {
+    const cat = String(d.category || "").trim();
+    if (EX_CATS.indexOf(cat) < 0) return;
+    // Page quality is stated in the conclusion; a row here was duplication.
+    if (/^page\s*quality$/i.test(String(d.type || ""))) return;
+    const parts = [];
+    if (d.location && d.location !== "N/A") parts.push(d.location);
+    if (d.measurement && d.measurement !== "N/A") parts.push(String(d.measurement).replace(/^~\s*/, ""));
+    if (d.colorBreaking) parts.push("color breaking");
+    out.push({
+      cat, type: d.type || "Defect",
+      detail: parts.length ? " — " + parts.join(", ") : "",
+      sev: (d.severity == null) ? "Low" : d.severity
+    });
+  });
+  return out;
+}
+// `all` is the UNTRUNCATED list and decides whether an empty section means
+// "this face is clean" or "its defects did not fit". A section whose rows were
+// all dropped is OMITTED - showing BACK as clean on a book with a tanned back
+// cover is the worst failure a seller's image could have.
+function _exBuildSections(list, all) {
+  const mk = (label, cat) => {
+    const rows = list.filter(r => r.cat === cat);
+    if (!rows.length && all.some(r => r.cat === cat)) return null;
+    return { label, rows };
+  };
+  const out = [mk("FRONT", "Front"), mk("BACK", "Back"), mk("SPINE", "Spine")].filter(Boolean);
+  const int = list.filter(r => r.cat === "Interior");
+  if (int.length) out.push({ label: "INTERIOR", rows: int });
+  return out;
+}
+
+const EX_MORE_H = P(26);
+function _exFitDefects(ctx, all, paperW, avail) {
+  const order = all.map((r, i) => i).sort((a, b) =>
+    (_exSevRank(all[a].sev) - _exSevRank(all[b].sev)) || (a - b));
+  for (let keep = all.length; keep >= 0; keep--) {
+    const kept = new Set(order.slice(0, keep));
+    const list = all.filter((_, i) => kept.has(i));
+    const sections = _exBuildSections(list, all);
+    const hidden = all.length - keep;
+    const used = _exPaperMeasure(ctx, sections, paperW) + (hidden ? EX_MORE_H : 0);
+    if (used <= avail) return { sections, hidden, used };
+  }
+  return { sections: [], hidden: all.length, used: EX_MORE_H };
+}
+
+const EX_SPR = P(8);
+function _exRowH(ctx, r, textW) {
+  ctx.font = `800 ${P(11)}px ${F_MONO}`;
+  const sevW = r.sev ? ctx.measureText(String(r.sev).toUpperCase()).width + P(8) : 0;
+  ctx.font = `${P(11)}px ${F_MONO}`;
+  // v5.82: tightened so the combined image fits more of the list. Was
+  // P(12) + lines * P(16).
+  return P(6) + _exWrap(ctx, r.type + r.detail, textW - sevW).length * P(14);
+}
+function _exPaperMeasure(ctx, sections, paperW) {
+  const textW = paperW - EX_SPR * 2 - P(20);
+  let h = 0;
+  sections.forEach(sec => {
+    h += P(20);                      // v5.82: section header, was P(26)
+    if (!sec.rows.length) { h += P(20); return; }
+    sec.rows.forEach(r => { h += _exRowH(ctx, r, textW); });
+  });
+  return h;
+}
+
+// Rows share out whatever space the quantised heights left over, so the paper
+// ends exactly on the card with no blank band - and "and N more" stays the
+// bottom line, in the same black monospace as the defects themselves.
+// How tall the paper ACTUALLY ends up, worked out before anything is drawn so
+// the caller can clip to it and round the real bottom corners.
+//
+// Rows share out a little of the leftover space so the quantised heights do not
+// leave a hairline gap, but only a little: stretching a three-row clean book
+// across the whole band produced a vast empty tract of cream with sprockets
+// down the sides, which looked broken. A clean book simply has a short list,
+// and the paper is allowed to end where its content does.
+function _exPaperPlan(ctx, sections, hidden, avail, used) {
+  let nRows = hidden ? 1 : 0;
+  sections.forEach(sec => { nRows += Math.max(1, sec.rows.length); });
+  const slack = Math.max(0, avail - used);
+  const pad = Math.min(P(3), Math.floor(slack / Math.max(1, nRows)));   // v5.82: was P(10)
+  let residue = slack - pad * nRows;
+  // A residue worth less than half a row is absorbed so the paper meets the
+  // card cleanly; anything larger is left as box background.
+  if (!hidden && residue > P(40)) residue = 0;
+  return { pad, residue, nRows, h: used + pad * nRows + residue };
+}
+
+function _exDrawPaper(ctx, sections, hidden, x, y, paperW, plan) {
+  const top = y;
+  const textX = x + EX_SPR + P(10);
+  const textW = paperW - EX_SPR * 2 - P(20);
+  const pad = plan.pad;
+  let residue = plan.residue;
+  let idx = 0;
+
+  const band = (h2) => {
+    ctx.fillStyle = (idx % 2 === 0) ? EXP.green : EX_PAPER; idx++;
+    ctx.fillRect(x, y, paperW, h2);
+  };
+
+  sections.forEach(sec => {
+    // v5.83: these three heights MUST equal what _exPaperMeasure counts. v5.82
+    // tightened the measure side only - header P(26)->P(20), empty row
+    // P(28)->P(20), line pitch P(16)->P(14) - and left the draw side alone, so
+    // every section drew 18px taller than it was measured. _exRenderSummary
+    // clips the list to the MEASURED height, so the overflow was silently cut:
+    // on a clean book (three empty sections) that was 126px, which removed the
+    // whole SPINE section and left a band of bare black between the paper and
+    // the bookend. Change one of these and you must change the other.
+    ctx.fillStyle = EXP.header;
+    ctx.fillRect(x, y, paperW, P(20));
+    ctx.fillStyle = EXP.inkLt;
+    ctx.fillRect(x, y, paperW, Math.max(1, P(1) / 2));
+    ctx.fillRect(x, y + P(20) - Math.max(1, P(1) / 2), paperW, Math.max(1, P(1) / 2));
+    ctx.fillStyle = EXP.inkHd; ctx.textAlign = "left";
+    ctx.font = `700 ${P(10)}px ${F_MONO}`;
+    let lx = textX;
+    for (const ch of sec.label) { ctx.fillText(ch, lx, y + P(14)); lx += ctx.measureText(ch).width + P(1.5); }
+    y += P(20);
+
+    if (!sec.rows.length) {
+      const h2 = P(20) + pad;
+      band(h2);
+      ctx.fillStyle = EXP.inkLt; ctx.font = `italic ${P(11)}px ${F_MONO}`;
+      ctx.fillText("No defects noted.", textX, y + h2 / 2 + P(4));
+      y += h2;
+      return;
+    }
+    sec.rows.forEach(r => {
+      const sevTxt = r.sev ? (String(r.sev).toUpperCase() === "MEDIUM" ? "MED" : String(r.sev).toUpperCase()) : "";
+      ctx.font = `${P(11)}px ${F_MONO}`;
+      const lines = _exWrap(ctx, r.type + r.detail, textW - (sevTxt ? (ctx.measureText(sevTxt).width + P(8)) : 0));
+      const h2 = _exRowH(ctx, r, textW) + pad;
+      band(h2);
+      let ly = y + P(6) + pad / 2 + P(12);
+      lines.forEach((ln, li) => {
+        let cx2 = textX, rest = ln;
+        if (li === 0 && ln.startsWith(r.type)) {
+          ctx.font = `700 ${P(11)}px ${F_MONO}`; ctx.fillStyle = EXP.ink;
+          ctx.fillText(r.type, cx2, ly);
+          cx2 += ctx.measureText(r.type).width;
+          rest = ln.slice(r.type.length);
+        }
+        ctx.font = `${P(11)}px ${F_MONO}`; ctx.fillStyle = EXP.ink;
+        // P(14), matching _exRowH's per-line allowance. At P(16) a wrapped
+        // defect's second line sat on the band boundary below its own row.
+        ctx.fillText(rest, cx2, ly); ly += P(14);
+      });
+      if (sevTxt) {
+        ctx.textAlign = "right";
+        ctx.font = `800 ${P(11)}px ${F_MONO}`;
+        ctx.fillStyle = _exSevColor(r.sev);
+        ctx.fillText(sevTxt, x + paperW - EX_SPR - P(10), y + P(6) + pad / 2 + P(12));
+        ctx.textAlign = "left";
+      }
+      y += h2;
+    });
+  });
+
+  if (hidden) {
+    const h2 = EX_MORE_H + pad + residue;   // the residue lands here, never below it
+    band(h2);
+    ctx.fillStyle = EXP.ink;
+    ctx.font = `${P(11)}px ${F_MONO}`;        // plain, like the defect detail
+    // Leading ellipsis: the list is cut off mid-flow, and the mark says so.
+    // Plural agreement is kept - "and 12 more defect" would read as a typo on a
+    // seller's image, and `hidden` is 1 often enough for it to matter.
+    // Drawn as three runs so the COUNT is bold while the sentence around it is
+    // not; canvas has no inline markup, so the x position is carried along.
+    const _mBase = y + h2 / 2 + P(4);
+    let _mx = textX;
+    ctx.font = `${P(11)}px ${F_MONO}`;
+    ctx.fillText("\u2026and ", _mx, _mBase);
+    _mx += ctx.measureText("\u2026and ").width;
+    ctx.font = `700 ${P(11)}px ${F_MONO}`;
+    ctx.fillText(String(hidden), _mx, _mBase);
+    _mx += ctx.measureText(String(hidden)).width;
+    ctx.font = `${P(11)}px ${F_MONO}`;
+    ctx.fillText(" more defect" + (hidden === 1 ? "" : "s") + ", not shown", _mx, _mBase);
+    y += h2;
+    residue = 0;
+  } else if (residue > 0) {
+    band(residue);
+    y += residue;
+  }
+
+  const h = y - top;
+  // Sprockets, then the hairline frame. The paper is a single object with
+  // square top (it butts the provenance header) and rounded bottom corners.
+  [x, x + paperW - EX_SPR].forEach(sx => {
+    ctx.fillStyle = EX_PAPER;
+    ctx.fillRect(sx, top, EX_SPR, h);
+    ctx.fillStyle = EXP.oliveMid;
+    for (let dy = top + P(8); dy < top + h - P(2); dy += P(14)) {
+      ctx.beginPath(); ctx.arc(sx + EX_SPR / 2, dy, P(1.5), 0, Math.PI * 2); ctx.fill();
+    }
+  });
+  return y;
+}
+
+// ── The conclusion ─────────────────────────────────────────────────────────
+// Two equal halves. PREDICTED / GRADE is a two-line heading centred over the
+// blue badge on the LEFT, because it describes that box and nothing else -
+// page quality is not a kind of grade and reading as a subhead under
+// "Predicted Grade" was simply wrong. Page quality (and, on the Summary, FMV)
+// occupies the right half on its own.
+const EX_BADGE = P(88);
+// `maxW` is the hard ceiling - the container it sits in. The card grows to its
+// contents and stays centred, but a wide page-quality name ("Off-White to
+// White") must never push it past that: the first build let it, and the card
+// bled off both sides of the white container.
+function _exCardMetrics(ctx, f, showFmv, maxW) {
+  const wantFmv = showFmv && !!f.fmv;
+  ctx.font = `800 ${P(13)}px ${F_COND}`;
+  const hdrW = Math.max(ctx.measureText("PREDICTED").width, ctx.measureText("GRADE").width) + P(4);
+  const leftW = Math.max(EX_BADGE, hdrW);
+  const leftH = P(30) + P(6) + EX_BADGE;
+
+  // The right column may use at most half the ceiling, less its own padding.
+  const halfLimit = maxW / 2 - P(16);
+  let pqW = 0, pqLabel = "", pqFont = P(13);
+  if (f.pageQuality) {
+    pqLabel = _exFit(ctx, f.pageQuality, halfLimit - P(24), P(13), P(9), "600", F_COND);
+    ctx.font = `600 ${P(13)}px ${F_COND}`;
+    const natural = ctx.measureText(f.pageQuality).width;
+    if (natural > halfLimit - P(24)) {
+      // _exFit stepped the size down; recover the size it settled on.
+      let px = P(13);
+      while (px > P(9) ) { ctx.font = `600 ${px}px ${F_COND}`; if (ctx.measureText(f.pageQuality).width <= halfLimit - P(24)) break; px -= 1; }
+      pqFont = px; pqLabel = _exFit(ctx, f.pageQuality, halfLimit - P(24), px, P(9), "600", F_COND);
+    }
+    ctx.font = `600 ${pqFont}px ${F_COND}`;
+    pqW = Math.min(halfLimit, ctx.measureText(pqLabel).width + P(24));
+  }
+  let fmvW = 0, fmvVal = "";
+  if (wantFmv) {
+    fmvVal = _exFit(ctx, f.fmv, halfLimit, P(20), P(12), "800", F_COND);
+    fmvW = ctx.measureText(fmvVal).width;
+  }
+  const rightW = Math.max(pqW, fmvW, P(70));
+  const rightH = (f.pageQuality ? P(15) + P(28) : 0) + (wantFmv ? (f.pageQuality ? P(10) : 0) + P(15) + P(24) : 0);
+
+  const halfW = Math.max(leftW, rightW);
+  return {
+    wantFmv, pqLabel, pqW, pqFont, fmvVal, fmvW, leftH, rightH, halfW,
+    w: Math.min(maxW, halfW * 2 + P(56)),
+    h: P(14) + Math.max(leftH, rightH) + P(14)
+  };
+}
+
+// `fullW` connects the card to the bottom of the defect list: same width,
+// square top corners, rounded only at the bottom.
+function _exDrawCard(ctx, f, centreX, y, showFmv, fullW, maxW) {
+  const mm = _exCardMetrics(ctx, f, showFmv, fullW || maxW);
+  const w = fullW || mm.w, h = mm.h, x = centreX - w / 2, r = P(12);
+  ctx.fillStyle = EXP.cardBg;
+  if (fullW) {
+    ctx.beginPath();
+    ctx.moveTo(x, y); ctx.lineTo(x + w, y);
+    ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+    ctx.lineTo(x + r, y + h); ctx.arcTo(x, y + h, x, y + h - r, r);
+    ctx.closePath(); ctx.fill();
+  } else { _exRoundRect(ctx, x, y, w, h, r); ctx.fill(); }
+
+  const lcx = x + w * 0.25, rcx = x + w * 0.75;
+  const contentH = Math.max(mm.leftH, mm.rightH);
+
+  // LEFT: heading, then badge.
+  let ly = y + P(14) + (contentH - mm.leftH) / 2;
+  ctx.textAlign = "center"; ctx.fillStyle = "#fff";
+  ctx.font = `800 ${P(13)}px ${F_COND}`;
+  ctx.fillText("PREDICTED", lcx, ly + P(11));
+  ctx.fillText("GRADE", lcx, ly + P(26));
+  ly += P(30) + P(6);
+
+  const bx = lcx - EX_BADGE / 2, bw = EX_BADGE;
+  ctx.fillStyle = EXP.badgeBg;
+  _exRoundRect(ctx, bx, ly, bw, bw, P(18)); ctx.fill();
+  ctx.strokeStyle = EXP.badgeEdge; ctx.lineWidth = Math.max(1, P(1.5));
+  _exRoundRect(ctx, bx, ly, bw, bw, P(18)); ctx.stroke();
+
+  const gnum = f.predicted == null ? "—" : String(f.predicted);
+  const numPx = P(f.atCeiling ? 42 : 48) * (gnum.length > 3 ? 0.8 : 1);
+  const numMid = ly + bw * 0.46;
+  ctx.font = `800 ${numPx}px ${F_NUM}`;
+  const halfNum = ctx.measureText(gnum).width * 0.7 / 2;
+  ctx.save();
+  ctx.translate(lcx, numMid); ctx.scale(0.7, 1);
+  ctx.textAlign = "center"; ctx.fillStyle = "#fff";
+  ctx.font = `800 ${numPx}px ${F_NUM}`;
+  ctx.fillText(gnum, 0, numPx * 0.33);
+  ctx.restore();
+  ctx.textAlign = "center";
+  if (f.gradeLabel) {
+    ctx.fillStyle = "rgba(255,255,255,0.8)";
+    ctx.font = `600 ${P(9.5)}px ${F_COND}`;
+    ctx.fillText(f.gradeLabel, lcx, ly + bw - P(11));
+  }
+  ctx.textAlign = "left";
+  if (f.atCeiling) _exPlus(ctx, lcx + halfNum, numMid + numPx * 0.1, bx + bw - P(4), "rgba(255,255,255,0.9)", numPx / 2.8);
+
+  // RIGHT: page quality, and FMV centred beneath it on the Summary.
+  let ry = y + P(14) + (contentH - mm.rightH) / 2;
+  if (f.pageQuality) {
+    const pq = (typeof PQ_COLORS !== "undefined" && PQ_COLORS[f.pageQuality]) || EX_PQ_FALLBACK;
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#fff"; ctx.font = `800 ${P(10)}px ${F_COND}`;
+    ctx.fillText("PAGE QUALITY", rcx, ry + P(9));
+    ry += P(15);
+    ctx.fillStyle = pq.bg;
+    _exRoundRect(ctx, rcx - mm.pqW / 2, ry, mm.pqW, P(28), P(8)); ctx.fill();
+    ctx.fillStyle = pq.text; ctx.font = `600 ${mm.pqFont}px ${F_COND}`;
+    ctx.fillText(mm.pqLabel, rcx, ry + P(19));
+    ctx.textAlign = "left";
+    ry += P(28) + (mm.wantFmv ? P(10) : 0);
+  }
+  if (mm.wantFmv) {
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#fff"; ctx.font = `800 ${P(10)}px ${F_COND}`;
+    ctx.fillText("FMV", rcx, ry + P(9));
+    ry += P(15);
+    ctx.font = `800 ${P(20)}px ${F_COND}`;
+    ctx.fillText(mm.fmvVal, rcx, ry + P(19));
+    ctx.textAlign = "left";
+    ctx.textAlign = "left";
+  }
+  return y + h;
+}
+
+const EX_FOOTH = P(10) + P(11) + P(12);
+function _exDrawFoot(ctx, by, x, w) {
+  ctx.textAlign = "center";
+  // v5.82: was #5a7028, which disappeared once the container went black.
+  ctx.fillStyle = EXP.footInk;
+  ctx.font = `800 ${P(11)}px ${F_COND}`;
+  ctx.fillText("robograder.app", x + w / 2, by + EX_BOXH - P(16));
+  ctx.textAlign = "left";
+}
+
+function _exCanvas() {
+  const c = document.createElement("canvas");
+  c.width = EX_W; c.height = EX_H;
+  const ctx = c.getContext("2d");
+  // White first: it is what shows in the corners outside the rounding.
+  ctx.fillStyle = EXP.pageWhite; ctx.fillRect(0, 0, c.width, c.height);
+  ctx.textBaseline = "alphabetic";
+  return { c, ctx };
+}
+function _exMeasureCtx() {
+  const c = document.createElement("canvas");
+  c.width = EX_W; c.height = 10;
+  return c.getContext("2d");
+}
+
+// ── DEFECT LIST ────────────────────────────────────────────────────────────
+// REMOVED v5.82. _exRenderDefects and exportDefectListImage are gone: the list
+// is drawn inside the single combined export (see _exRenderSummary), so a
+// second renderer producing half the same image had nothing to add. The paper
+// helpers it used - _exFitDefects, _exPaperPlan, _exDrawPaper, EX_RULE - are
+// still live and are called from there.
+//
+// EX_RULE was declared immediately above the deleted function and went with it,
+// which is why 5.82 threw "Couldn't build the image" on every export: the
+// combined renderer still reads it three lines into its own layout maths.
+const EX_RULE = P(3);
+
+// ── THE COMBINED EXPORT IMAGE ──────────────────────────────────────────────
+// v5.82, Matt: the Summary and the Defect List are ONE image now, same 15:8.
+// The Defect List button is gone. What made the merge fit:
+//   - the back-cover thumbnail is dropped, and the Predicted Grade and Page
+//     Quality move into the space it leaves, stacked beside the front cover
+//   - the ID and graded date share one line, directly under the imprint
+//   - the defect list's line spacing is tightened (see _exRowH)
+//   - the conclusion card at the foot is gone entirely; PG and PQ are the only
+//     things it carried, and they are now at the top
+// The score panel, the list and the bookend are drawn as ONE column: the panel
+// is rounded on top and square at the bottom, the list runs between its two
+// green rules, and the bookend closes it with square top and rounded bottom.
+function _exDrawGradeStack(ctx, f, x, y, w, h) {
+  const cx = x + w / 2;
+  // v5.83: these were P(86)/P(16)/P(11), which made blockH 525 against an
+  // EX_COVERH of 480. Math.max(0, ...) below clamps the centring to 0, so the
+  // stack ran 45px PAST the cover slot and the score panel painted over the
+  // bottom of the Page Quality pill on every book that has one.
+  const badge = Math.min(w * 0.66, P(74));
+  const pqH = f.pageQuality ? P(30) : 0;
+  const blockH = P(13) * 2 + P(6) + badge + (pqH ? P(10) + P(10) + pqH : 0);
+  let cy = y + Math.max(0, (h - blockH) / 2);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ffffff"; ctx.font = `800 ${P(12)}px ${F_COND}`;
+  ctx.fillText("PREDICTED", cx, cy + P(11));
+  ctx.fillText("GRADE", cx, cy + P(24));
+  cy += P(13) * 2 + P(6);
+
+  ctx.fillStyle = EXP.badgeBg;
+  _exRoundRect(ctx, cx - badge / 2, cy, badge, badge, P(18)); ctx.fill();
+  ctx.strokeStyle = EXP.badgeEdge; ctx.lineWidth = Math.max(1, P(1.5));
+  _exRoundRect(ctx, cx - badge / 2, cy, badge, badge, P(18)); ctx.stroke();
+
+  const gnum = f.predicted == null ? "\u2014" : String(f.predicted);
+  const numPx = P(f.atCeiling ? 40 : 46) * (gnum.length > 3 ? 0.8 : 1);
+  const numMid = cy + badge * 0.46;
+  ctx.font = `800 ${numPx}px ${F_NUM}`;
+  const halfNum = ctx.measureText(gnum).width * 0.7 / 2;
+  ctx.save();
+  ctx.translate(cx, numMid); ctx.scale(0.7, 1);
+  ctx.textAlign = "center"; ctx.fillStyle = "#fff";
+  ctx.font = `800 ${numPx}px ${F_NUM}`;
+  ctx.fillText(gnum, 0, numPx * 0.33);
+  ctx.restore();
+  ctx.textAlign = "center";
+  if (f.gradeLabel) {
+    ctx.fillStyle = "rgba(255,255,255,0.8)";
+    ctx.font = `600 ${P(9)}px ${F_COND}`;
+    ctx.fillText(f.gradeLabel, cx, cy + badge - P(10));
+  }
+  if (f.atCeiling) _exPlus(ctx, cx + halfNum, numMid + numPx * 0.1,
+                           cx + badge / 2 - P(4), "rgba(255,255,255,0.9)", numPx / 2.8);
+  cy += badge;
+
+  if (f.pageQuality) {
+    cy += P(10);
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#ffffff"; ctx.font = `800 ${P(10)}px ${F_COND}`;
+    ctx.fillText("PAGE QUALITY", cx, cy + P(9));
+    cy += P(10);
+    const pq = (typeof PQ_COLORS !== "undefined" && PQ_COLORS[f.pageQuality]) || EX_PQ_FALLBACK;
+    let px = P(13), lbl = f.pageQuality;
+    while (px > P(8)) { ctx.font = `600 ${px}px ${F_COND}`; if (ctx.measureText(lbl).width <= w - P(16)) break; px -= 1; }
+    const pw = Math.min(w, ctx.measureText(lbl).width + P(22));
+    ctx.fillStyle = pq.bg;
+    _exRoundRect(ctx, cx - pw / 2, cy, pw, pqH, P(8)); ctx.fill();
+    ctx.fillStyle = pq.text; ctx.font = `600 ${px}px ${F_COND}`;
+    ctx.fillText(lbl, cx, cy + P(20));
+  }
+  ctx.textAlign = "left";
+}
+
+const EX_BOOKEND = P(14);
+const EX_COVERH  = P(160);
+
+async function _exRenderSummary(item) {
+  const f = _exFacts(item);
+  const front = await _exLoadImage(_exImgUrl((item.images || [])[0]));
+
+  const boxW = EX_W;
+  const innerW = boxW - EX_PAD * 2;
+  const m = _exMeasureCtx();
+  const headH = _exHeaderH(m, item);
+  const hasProv = _exHasProv(item);
+  const GAP = P(10);
+
+  const boxSize = P(74);
+  const panelH = P(12) + P(20) + boxSize + P(12);
+  const provH = hasProv ? EX_PROV_H : 0;
+
+  const listTop = headH + (hasProv ? P(4) + provH : 0) + GAP + EX_COVERH + GAP + panelH;
+  const avail = EX_BOXH - EX_FOOTH - EX_BOOKEND - listTop;
+  const paperW = innerW - EX_RULE * 2;
+  const fit = _exFitDefects(m, _exDefectList(item), paperW, avail);
+  const plan = _exPaperPlan(m, fit.sections, fit.hidden, avail, fit.used);
+
+  const { c, ctx } = _exCanvas();
+  const bx = 0, by = 0;
+  ctx.fillStyle = EX_CARD;
+  _exRoundRect(ctx, bx, by, boxW, EX_BOXH, EX_RADIUS); ctx.fill();
+
+  let y = _exDrawHeader(ctx, item, bx, by, boxW, innerW);
+  const px1 = bx + EX_PAD;
+  if (hasProv) { y += P(4); _exDrawProv(ctx, item, px1, y, innerW, false); y += provH; }
+  y += GAP;
+
+  // Front cover on the left, Predicted Grade + Page Quality stacked on the
+  // right, in the space the back-cover thumbnail used to take.
+  const slotW = Math.min(innerW * 0.46, EX_COVERH * 0.70);
+  // v5.83: #1a1a1a was picked when the container was cream. On the black card
+  // it is 1.12:1 - a book whose cover fails to load showed nothing at all, not
+  // even an empty slot, with the grade stack apparently floating.
+  ctx.fillStyle = "#23232a";
+  _exRoundRect(ctx, px1, y, slotW, EX_COVERH, P(6)); ctx.fill();
+  if (!front) {
+    ctx.strokeStyle = "#3a3a44"; ctx.lineWidth = Math.max(1, P(1));
+    _exRoundRect(ctx, px1, y, slotW, EX_COVERH, P(6)); ctx.stroke();
+  }
+  if (front) {
+    const sc = Math.min(slotW / front.naturalWidth, EX_COVERH / front.naturalHeight);
+    ctx.save(); _exRoundRect(ctx, px1, y, slotW, EX_COVERH, P(6)); ctx.clip();
+    ctx.drawImage(front, px1 + (slotW - front.naturalWidth * sc) / 2,
+                  y + (EX_COVERH - front.naturalHeight * sc) / 2,
+                  front.naturalWidth * sc, front.naturalHeight * sc);
+    ctx.restore();
+  }
+  const stackX = px1 + slotW + P(12);
+  _exDrawGradeStack(ctx, f, stackX, y, px1 + innerW - stackX, EX_COVERH);
+  y += EX_COVERH + GAP;
+
+  // Score panel: rounded on top, SQUARE at the bottom so the list meets it.
+  const panelTop = y;
+  ctx.fillStyle = EXP.panel;
+  const r = P(12);
+  ctx.beginPath();
+  ctx.moveTo(px1, panelTop + panelH); ctx.lineTo(px1, panelTop + r);
+  ctx.arcTo(px1, panelTop, px1 + r, panelTop, r); ctx.lineTo(px1 + innerW - r, panelTop);
+  ctx.arcTo(px1 + innerW, panelTop, px1 + innerW, panelTop + r, r);
+  ctx.lineTo(px1 + innerW, panelTop + panelH); ctx.closePath(); ctx.fill();
+
+  let py = panelTop + P(12);
+  ctx.fillStyle = "#7aa838"; ctx.font = `700 ${P(11)}px ${F_COND}`;
+  const sh = "ROBOGRADE SCORE";
+  const shw = ctx.measureText(sh).width + (sh.length - 1) * P(2);
+  let scx = px1 + innerW / 2 - shw / 2;
+  ctx.textAlign = "left";
+  for (const ch of sh) { ctx.fillText(ch, scx, py + P(9)); scx += ctx.measureText(ch).width + P(2); }
+  py += P(20);
+
+  const px0 = px1 + P(12);
+  const depth = (window.RoboScoreV3 && window.RoboScoreV3.depthOf) ? window.RoboScoreV3.depthOf(item) : "main";
+  _exScoreBox(ctx, px0, py, boxSize, {
+    grade: f.rgGrade,
+    stars: depth === "full" ? 3 : depth === "deep" ? 2 : 1,
+    restoStar: !!item.restorationCheckRan,
+    footerText: "V" + (window.RG_GRADING_VERSION || ""),
+    plus: !!(f.v3 && f.v3.ceilingHit && f.v3.upsell)
+  });
+  const gx = px0 + boxSize + P(8);
+  const gw = px1 + innerW - P(12) - gx;
+  const g2 = P(4);
+  const cell = (cx, cy, cw, ch, val, lbl, numPx, lblPx) => {
+    ctx.fillStyle = "#2a4a1e";
+    _exRoundRect(ctx, cx, cy, cw, ch, P(6)); ctx.fill();
+    ctx.save();
+    ctx.translate(cx + cw / 2, cy + ch * 0.48); ctx.scale(0.7, 1);
+    ctx.textAlign = "center"; ctx.fillStyle = "#b8d820";
+    ctx.font = `800 ${P(numPx)}px ${F_NUM}`;
+    ctx.fillText(val == null ? "\u2014" : String(val), 0, P(numPx) * 0.34);
+    ctx.restore();
+    ctx.textAlign = "center"; ctx.fillStyle = "#7aa838";
+    ctx.font = `600 ${P(lblPx)}px ${F_COND}`;
+    ctx.fillText(lbl, cx + cw / 2, cy + ch - P(5));
+    ctx.textAlign = "left";
+  };
+  const sub = f.sub;
+  const topH = P(40), botH = boxSize - topH - g2;
+  cell(gx, py, gw, topH, sub ? f.fmtSub(sub.front) : null, "FRONT", 22, 9);
+  const unit = (gw - g2 * 2) / 5;
+  cell(gx, py + topH + g2, unit * 2, botH, sub ? f.fmtSub(sub.back) : null, "BACK", 17, 8);
+  cell(gx + unit * 2 + g2, py + topH + g2, unit * 2, botH, sub ? f.fmtSub(sub.spine) : null, "SPINE", 17, 8);
+  cell(gx + unit * 4 + g2 * 2, py + topH + g2, unit, botH, sub ? f.fmtSub(sub.interior) : null, "INT", 17, 8);
+  y = panelTop + panelH;
+
+  // The list, between the two green rules that continue the panel's edges.
+  ctx.fillStyle = "#2a4a1e";
+  ctx.fillRect(px1, y, EX_RULE, plan.h);
+  ctx.fillRect(px1 + innerW - EX_RULE, y, EX_RULE, plan.h);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(px1 + EX_RULE, y, paperW, plan.h); ctx.clip();
+  _exDrawPaper(ctx, fit.sections, fit.hidden, px1 + EX_RULE, y, paperW, plan);
+  ctx.restore();
+  y += plan.h;
+
+  // The bookend: same colour as the score panel, square on top, rounded below,
+  // so the panel and the list read as one object closed at both ends.
+  ctx.fillStyle = EXP.panel;
+  const br = P(12);
+  ctx.beginPath();
+  ctx.moveTo(px1, y); ctx.lineTo(px1 + innerW, y);
+  ctx.lineTo(px1 + innerW, y + EX_BOOKEND - br);
+  ctx.arcTo(px1 + innerW, y + EX_BOOKEND, px1 + innerW - br, y + EX_BOOKEND, br);
+  ctx.lineTo(px1 + br, y + EX_BOOKEND);
+  ctx.arcTo(px1, y + EX_BOOKEND, px1, y + EX_BOOKEND - br, br);
+  ctx.closePath(); ctx.fill();
+
+  _exDrawFoot(ctx, by, px1, innerW);
+  return c;
+}
+
+// ── The two button handlers ────────────────────────────────────────────────
+async function _exRun(btnId, item, renderer, slug) {
+  const btn = document.getElementById(btnId);
+  // v5.83: write the status into the button's <span> when it has one. The
+  // Summary Image button now holds an <img> thumbnail as well as its label, and
+  // setting btn.textContent would DELETE that image — the restore in `finally`
+  // puts a text node back, so the thumbnail would vanish on the first export
+  // and not return until the view re-rendered.
+  const slot = (btn && btn.querySelector("span")) || btn;
+  const label = slot ? slot.innerHTML : "";
+  if (btn) { btn.disabled = true; slot.textContent = "Rendering…"; }
+  try {
+    // The fonts are already loaded by the app's CSS - this waits for that, it
+    // does NOT fetch a webfont. A face that has not finished loading when
+    // fillText runs falls back silently and the image ships in the wrong
+    // typeface with no error anywhere.
+    if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) {} }
+    const canvas = await renderer(item);
+    const blob = await new Promise((res, rej) => {
+      // v5.83: PNG, not JPEG. This image is flat colour, hard edges and small
+      // monospace text on a black field — exactly what JPEG rings around. The
+      // cover photo inside it is the only part JPEG would compress well, and it
+      // is a fraction of the frame. Bigger file, but it is a listing image that
+      // gets zoomed.
+      try { canvas.toBlob(b => b ? res(b) : rej(new Error("toBlob returned null")), "image/png"); }
+      catch (e) { rej(e); }
+    });
+    const stamp = (new Date).toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    // v5.84: restore the label BEFORE saving. The render is finished by this
+    // point, so "Rendering…" is already a lie, and _saveImageBlob hands control
+    // to a share sheet whose promise may never settle (see there). Measured on
+    // desktop Chrome: render 224ms, PNG encode 413ms, then the button sat on
+    // "Rendering…" indefinitely because navigator.share() never resolved.
+    if (btn) { btn.disabled = false; slot.innerHTML = label; }
+    await _saveImageBlob(blob, `robograder-${slug}-${stamp}.png`);
+  } catch (e) {
+    console.warn("[export] render failed:", e);
+    alert(String((e && e.name) || "") === "SecurityError"
+      ? "Couldn't build the image because one of the cover photos wouldn't load for export. Please try again in a moment."
+      : "Couldn't build the image. Please try again.");
+  } finally {
+    if (btn) { btn.disabled = false; slot.innerHTML = label; }
+  }
+}
+
+function _exItem(id) { return (items || []).find(c => c.id === id) || selected || null; }
+function exportSummaryImage(id) {
+  const item = _exItem(id);
+  if (item) _exRun("export-summary-btn", item, _exRenderSummary, "summary");
+}
+
+
+
+
+const EMPTY = {
+  type: "comic",
+  title: "",
+  issue: "",
+  issueDate: "",
+  publisher: "",
+  printing: "",
+  grade: "",
+  pageQuality: "",
+  cgcGrade: "",
+  cgcCert: "",
+  psaGrade: "",
+  psaCert: "",
+  assessedCGCGrade: "",
+  assessedPSAGrade: "",
+  predictedGrade: "",
+  roboGrade: null,
+  roboGradeId: "",
+  roboGradeDate: "",
+  highGradeTier: false,
+  highGradeUnlocked: false,
+  restorationCheckTier: false,
+  restorationReport: null,
+  restorationFlag: false,
+  enhance: null,
+  press: null,
+  uv: null,
+  clean: null,
+  ownership: "Owned",
+  dateSold: null,
+  salePrice: null,
+  askingPrice: "",
+  publicListing: false,
+  dateAcquired: "",
+  seller: "",
+  slabbingDate: "",
+  purchasePrice: "",
+  taxesFeesShipping: "",
+  gradingCost: "",
+  cgcShipping: "",
+  fmv: "",
+  fmvDate: "",
+  images: [],
+  cornerImages: [],
+  interiorCoverImages: [],
+  userDefectImages: [],
+  cgcNotes: "",
+  keyInfo: "",
+  graderNotes: "",
+  aiGraderNotes: "",
+  aiAssessment: "",
+  psaNotes: "",
+  assessmentHistory: [],
+  notes: ""
+};
+
+// S24 — CROSS-BOOK HISTORY BLEED. `{ ...EMPTY }` is a SHALLOW spread, so every
+// array value in EMPTY (assessmentHistory, images, cornerImages, ...) came out
+// of it as a REFERENCE to the one array literal declared up in EMPTY - not a
+// copy. `formData.assessmentHistory.unshift(rec)` therefore mutated EMPTY
+// itself, and the next book to start from EMPTY inherited every record filed
+// under every previous book in that session.
+//
+// Confirmed on ASM 48 (2026-09-25): its Assessment History contained XWBG69,
+// 3MPNBQ, AZZFQ7, 7JJKVY and BATCH-WPYX7P, all of which are ASM 78's genuine
+// records, plus ASM 79's. The admin timings log has NO assess calls for issue 48
+// at those timestamps - the records were never that book's. The summary block
+// then computed a range and an average across three different comics.
+//
+// The S22 `_sameBookH` guard does not help: it stops a NEW prior from being
+// filed under the wrong book, and says nothing about an array that arrived
+// already polluted.
+//
+// Every formData reset goes through this, so the arrays are always fresh.
+function blankForm() {
+  const f = { ...EMPTY };
+  for (const k of Object.keys(f)) if (Array.isArray(f[k])) f[k] = f[k].slice();
+  // v6.28: "Make new assessments public" had no effect on new books.
+  // EMPTY.publicListing is `false`, and the save path reads
+  //     formData.publicListing != null ? !!formData.publicListing : !!window._publicByDefault
+  // - `false` is not null, so the fallback never ran and every new assessment
+  // saved private no matter what the setting said. The setting worked; nothing
+  // ever asked it.
+  // Applying it HERE rather than at save time also means the Public toggle in
+  // Edit shows the right state before the user saves, instead of flipping on
+  // afterwards. Ownership can still force it off (Sold and Watching are never
+  // public) and an explicit toggle still wins - this only sets the start value.
+  // Read the stored value directly rather than trusting window._publicByDefault
+  // to be populated: that is set inside the async boot sequence, and the first
+  // blankForm() runs at script top-level, before it. Reading the source of
+  // truth removes the ordering dependency instead of relying on it.
+  let _pubDefault = window._publicByDefault;
+  if (_pubDefault == null) {
+    try { _pubDefault = localStorage.getItem("rg_public_default") === "1"; } catch (e) { _pubDefault = false; }
+  }
+  f.publicListing = !!_pubDefault;
+  return f;
+}
+
+let formData = blankForm();
+
+let assessing = false;
+
+let _assessed = false;
+
+let _routeToEditAfterSave = false;
+
+let _addManualMode = false;
+
+function showAdd() {
+  formData = blankForm();
+  view = "add";
+  _assessed = false;
+  _addManualMode = false;
+  const ab = document.getElementById("add-btn");
+  if (ab) ab.style.visibility = "hidden";
+  renderForm();
+  window.scrollTo(0, 0);
+}
+
+function enterManualMode() {
+  _addManualMode = true;
+  renderForm();
+}
+
+function ownershipPillForForm() {
+  const own = formData.ownership || "Owned";
+  const styleByState = {
+    Owned: { bg: "#d8e4f0", fg: "#1a4a6a", border: "#88b0d0" },
+    Watching: { bg: "#ffd97a", fg: "#7a5018", border: "#d8a868" },
+    Sold: { bg: "#f5d8d8", fg: "#8a1a1a", border: "#d09090" },
+    Print: { bg: "#dcecd0", fg: "#2a5a18", border: "#9cc080" }
+  };
+  const s = styleByState[own] || styleByState["Owned"];
+  return `<div style="display:flex;align-items:center;gap:10px;margin:10px 0 2px">
+        <span style="font-family:'Barlow Condensed',sans-serif;font-size:12px;letter-spacing:1px;color:#8a7a6a">OWNERSHIP</span>
+        <button onclick="cycleOwnership()"
+          style="font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;
+                 padding:5px 14px;border-radius:14px;cursor:pointer;
+                 background:${s.bg};color:${s.fg};border:1px solid ${s.border}">
+          ${own.toUpperCase()}
+        </button>
+      </div>`;
+}
+
+function cycleOwnership() {
+  const cur = formData.ownership || "Owned";
+  const next = cur === "Owned" ? "Watching" : cur === "Watching" ? "Sold" : "Owned";
+  formData.ownership = next;
+  renderForm();
+}
+
+// S20 (#46): ownership control — three directly-tappable state badges styled
+// after the "Verified" integrity pill (soft rounded pill, translucent fill,
+// muted-on-color text). The SAME renderer is used in the Add/Edit form and the
+// Detail view so the control is identical everywhere. Three real states —
+// OWNED | SOLD | WATCHING; the active one is filled in its color, the others
+// sit dim/outline. ("Print" is a transient label-printing workflow state, not a
+// user ownership choice, so it isn't offered — a book in Print reads as Owned.)
+// S20 (#46): all three states share the same Verified-green fill (no per-state
+// colors) — the active segment is simply the filled one.
+const _OWNERSHIP_STATES = [
+  { key: "Owned",    label: "OWNED",    bg: "rgba(40,80,50,0.9)", fg: "#b8e6c0" },
+  { key: "Sold",     label: "SOLD",     bg: "rgba(40,80,50,0.9)", fg: "#b8e6c0" },
+  { key: "Watching", label: "WATCHING", bg: "rgba(40,80,50,0.9)", fg: "#b8e6c0" },
+];
+// Returns the three segment <button>s (no wrapper) for the single wide pill.
+// `handlerJs` is the click handler name ('setOwnership' in the form,
+// 'setOwnershipDetail' in Detail). Styled after the "Verified" integrity pill:
+// soft translucent fill, muted text, subtle border. The active segment is filled
+// in its state color; inactive segments are transparent with muted text and a
+// hairline divider between them.
+function _ownershipPills(current, handlerJs) {
+  const cur = current || "Owned";
+  const active = _OWNERSHIP_STATES.some(s => s.key === cur) ? cur : "Owned";
+  return _OWNERSHIP_STATES.map((s, i) => {
+    const on = s.key === active;
+    const divider = i > 0 ? "border-left:1px solid rgba(120,180,130,0.25);" : "";
+    const st = on ? `background:${s.bg};color:${s.fg};` : "background:transparent;color:#6f8f76;";
+    return `<button type="button" onclick="${handlerJs}('${s.key}')" aria-pressed="${on}"
+      style="flex:1;border:none;${divider}padding:8px 0;font-size:11px;font-weight:700;letter-spacing:1px;text-align:center;cursor:pointer;-webkit-tap-highlight-color:transparent;${st}">${s.label}</button>`;
+  }).join("");
+}
+
+// The single wide pill wrapper (Verified-pill look): full width, rounded, one
+// soft green-tinted border around all three segments.
+const _OWNERSHIP_PILL_WRAP = "display:flex;width:100%;border-radius:12px;overflow:hidden;border:2px solid rgba(120,180,130,0.55)";
+
+function ownershipSegmentForForm() {
+  return `<div style="${_OWNERSHIP_PILL_WRAP};margin-bottom:14px">${_ownershipPills(formData.ownership || "Owned", "setOwnership")}</div>`;
+}
+
+function setOwnership(next) {
+  const _wasPublic = !!formData.publicListing;
+  formData.ownership = next;
+  // Sold locks the book out of public listing; Owned and Watching do not.
+  if (!_publicEligibleOwnership(next)) formData.publicListing = false;
+  renderForm();
+  // S20: if the book had been public, tell the user it was switched to Private.
+  if (!_publicEligibleOwnership(next) && _wasPublic) {
+    _showBrandedModal("SWITCHED TO PRIVATE", `This book was set to Private — a book marked Sold can't be listed publicly.`, "OKAY");
+  }
+}
+
+// Detail-view ownership change. Persists to Firestore and updates ONLY the pill
+// row in place — a full showDetail() re-render would tear down and re-fetch
+// every image (Deep/interior covers are loading="lazy" and visibly reload).
+async function setOwnershipDetail(next) {
+  const id = selected && selected.id;
+  if (!id) return;
+  const comic = items.find(c => c.id === id);
+  if (!comic) return;
+  if ((comic.ownership || "Owned") === next) return; // no-op if already that state
+  const _wasPublic = !!comic.publicListing;
+  const update = { ownership: next };
+  if (!_publicEligibleOwnership(next)) update.publicListing = false; // Sold may not be public
+  try {
+    const ref = fsDoc(window._db, "users", window._currentUser.uid, "items", id);
+    await fsSetDoc(ref, update, { merge: true });
+    comic.ownership = next;
+    if (update.publicListing === false) comic.publicListing = false;
+    if (selected && selected.id === id) {
+      selected.ownership = next;
+      if (update.publicListing === false) selected.publicListing = false;
+    }
+    const row = document.getElementById("detail-ownership-row");
+    if (row) row.innerHTML = _ownershipPills(next, "setOwnershipDetail");
+    // Switching to Sold drops the public listing — flip the Public toggle off
+    // in place so it visibly tracks the ownership change.
+    if (update.publicListing === false) {
+      const _pt = document.getElementById("detail-public-track");
+      const _pth = document.getElementById("detail-public-thumb");
+      if (_pt) {
+        _pt.style.background = "#bbb6ad";
+        const _cb = _pt.parentElement && _pt.parentElement.querySelector('input[type=checkbox]');
+        if (_cb) _cb.checked = false;
+      }
+      if (_pth) _pth.style.left = "3px";
+    }
+    // S20: if the book had been public, tell the user it was switched to Private.
+    if (next !== "Owned" && _wasPublic) {
+      _showBrandedModal("SWITCHED TO PRIVATE", `This book was set to Private — only books marked Owned can be listed publicly.`, "OKAY");
+    }
+  } catch (e) {
+    alert("Failed to update ownership: " + e.message);
+  }
+}
+
+function showEdit(id) {
+  const c = items.find(x => x.id === id);
+  if (!c) return;
+  formData = {
+    ...blankForm(),
+    ...c,
+    pageQuality: normPageQuality(c.pageQuality),
+    purchasePrice: c.purchasePrice != null ? String(c.purchasePrice) : "",
+    taxesFeesShipping: c.taxesFeesShipping != null ? String(c.taxesFeesShipping) : "",
+    gradingCost: c.gradingCost != null ? String(c.gradingCost) : "",
+    cgcShipping: c.cgcShipping != null ? String(c.cgcShipping) : "",
+    fmv: c.fmv != null ? String(c.fmv) : "",
+    fmvDate: c.fmvDate || "",
+    askingPrice: c.askingPrice != null ? String(c.askingPrice) : ""
+  };
+  // S24: `...c` hands over references to the ITEM's own arrays, so filing a
+  // record would mutate items[] in place. Detach the one array that gets
+  // mutated, and give a book with no history its own empty array rather than
+  // letting it fall through to EMPTY's.
+  formData.assessmentHistory = Array.isArray(c.assessmentHistory)
+    ? c.assessmentHistory.map(r => ({ ...r }))
+    : [];
+  formData._savedImages = [ ...c.images || [] ];
+  formData._savedCornerImages = [ ...c.cornerImages || [] ];
+  formData._savedInteriorImages = [ ...c.interiorImages || [] ];
+  formData._savedInteriorCoverImages = [ ...c.interiorCoverImages || [] ];
+  formData._savedSignatureImages = [ ...c.signatureImages || [] ];
+  formData._savedRestorationImages = [ ...c.restorationImages || [] ];
+  formData._savedInsertImages = [ ...c.insertImages || [] ];
+  formData._savedCouponImages = [ ...c.couponImages || [] ];
+  formData._imagesChanged = false;
+  stickTierUnlocks(formData);
+  view = "add";
+  _assessed = !!(c.assessedCGCGrade || c.aiAssessment || c.assessedPSAGrade || (c.cardData && c.cardData.robograde) || c.roboGradeId);
+  const _ab2 = document.getElementById("add-btn");
+  if (_ab2) _ab2.style.visibility = "hidden";
+  _prewarmCropCache([].concat(formData.images || [], formData.cornerImages || [], formData.interiorImages || [], formData.interiorCoverImages || [], formData.signatureImages || [], formData.insertImages || [], formData.couponImages || []));
+  renderForm();
+  window.scrollTo(0, 0);
+}
+
+// S25 (#1): open Edit and scroll straight to a tier's capture section instead of
+// landing at the top (Main slots). Used by the Detail-view Deep/Full upsell cards.
+// ── v6.41: A JUMP THAT STAYS JUMPED ────────────────────────────────────────
+// showEditToSection measured the anchor after two animation frames and scrolled
+// once. Two frames is enough for LAYOUT and not for CONTENT: every photo slot
+// above the target is an <img> with height:auto, so each one that decodes after
+// the scroll makes the page taller ABOVE the anchor and pushes it further down.
+// The scroll was right at the moment it was taken and wrong a quarter of a
+// second later, which is why tapping DEEP did not land on the Deep slots.
+//
+// So re-assert it while the page settles: re-measure, and scroll again only if
+// the anchor has actually moved. It stops early the moment the position is
+// stable twice running, and it stops immediately if the user touches the
+// screen - nothing is more annoying than a page that scrolls itself out from
+// under a finger.
+function _settleScrollTo(elId, topGap) {
+  const AT = [0, 120, 300, 600, 1000];
+  let cancelled = false, stable = 0, lastY = null;
+  const stop = () => {
+    cancelled = true;
+    window.removeEventListener("touchstart", stop);
+    window.removeEventListener("wheel", stop);
+    window.removeEventListener("keydown", stop);
+  };
+  window.addEventListener("touchstart", stop, { passive: true, once: true });
+  window.addEventListener("wheel", stop, { passive: true, once: true });
+  window.addEventListener("keydown", stop, { once: true });
+  const pass = () => {
+    if (cancelled) return;
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const y = Math.max(0, el.getBoundingClientRect().top + window.pageYOffset - topGap);
+    if (lastY != null && Math.abs(y - lastY) < 4) {
+      if (++stable >= 2) { stop(); return; }   // settled; leave it alone
+    } else {
+      stable = 0;
+    }
+    lastY = y;
+    window.scrollTo({ top: y, behavior: "smooth" });
+  };
+  AT.forEach(ms => setTimeout(pass, ms));
+}
+
+function showEditToSection(id, section) {
+  // Arriving from Detail's "BOOK HAS BEEN CLEANED" card means the user has
+  // already said what they want, so the section opens expanded rather than
+  // making them tap a second time. Keyed by id so it cannot leak to another book.
+  if (section === "clean") _cleanExpandedFor = id;
+  showEdit(id);
+  requestAnimationFrame(function () {
+    requestAnimationFrame(function () {
+      // v6.33: the assessment map taps through to these, so every type the
+      // map can offer needs an anchor here. Unknown keys still fall through to
+      // the Deep section rather than scrolling nowhere.
+      var _id = section === "full" ? "full-staple-section"
+              : section === "batch" ? "batch-section"          // v5.27
+              : section === "clean" ? "clean-section"          // v5.72
+              : section === "uv" ? "uv-section"
+              : section === "sig" ? "signature-section"
+              : section === "insert" ? "insert-section"
+              : section === "coupon" ? "coupon-section"
+              : section === "main" ? "assess-btn"
+              : "deep-corner-section";
+      if (!document.getElementById(_id)) return;
+      // 70px clears the sticky top bar, so the section's own heading is the
+      // first thing under it - which is the top of its photo slots.
+      _settleScrollTo(_id, 70);
+    });
+  });
+}
+
+async function compressImage(dataUrl, maxDim = 1200, quality = 0.65, asBlob = false) {   // S25: 1400->1200 (A/B eval: grade delta within model self-noise). Governs all grading images.
+  return new Promise((res, rej) => {
+    const img = new Image;
+    // S16: Timeout prevents permanent hang if image fails to load
+    const _timeout = setTimeout(() => {
+      console.error("[compress] image load timed out after 15s:", (dataUrl || "").substring(0, 80));
+      rej(new Error("Image compression timed out"));
+    }, 15000);
+    img.onload = () => {
+      clearTimeout(_timeout);
+      let w = img.width, h = img.height;
+      if (w > maxDim || h > maxDim) {
+        if (w > h) {
+          h = Math.round(h * maxDim / w);
+          w = maxDim;
+        } else {
+          w = Math.round(w * maxDim / h);
+          h = maxDim;
+        }
+      }
+      const c = document.createElement("canvas");
+      c.width = w;
+      c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      if (asBlob) {
+        c.toBlob(blob => res(blob), "image/jpeg", quality);
+      } else {
+        res(c.toDataURL("image/jpeg", quality));
+      }
+    };
+    img.onerror = (e) => {
+      clearTimeout(_timeout);
+      console.error("[compress] image load failed:", (dataUrl || "").substring(0, 80));
+      rej(new Error("Image failed to load for compression"));
+    };
+    img.crossOrigin = "anonymous";
+    img.src = dataUrl;
+  });
+}
+
+async function compressImagesSequentially(dataUrls) {
+  const out = [];
+  for (let i = 0; i < dataUrls.length; i++) {
+    const t0 = performance.now();
+    out.push(await compressImage(dataUrls[i]));
+    const t1 = performance.now();
+    if (window.RobograderScan && window.RobograderScan.debugLog) {
+      window.RobograderScan.debugLog(`  compress[${i}] ${Math.round(t1 - t0)}ms`);
+    }
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  }
+  return out;
+}
+
+const STORAGE_SLOTS_MAIN = [ "front_cover", "back_cover", "page_quality", "raking_light" ];
+const STORAGE_SLOTS_CARD = [ "card_front", "card_back", "card_top_macro", "card_bottom_macro" ];
+const STORAGE_SLOTS_CARD_DEEP = [ "card_front_raking", "card_back_raking", "card_back_top_macro", "card_back_bottom_macro" ];
+
+const STORAGE_SLOTS_CORNER = [ "corner_tl", "corner_tr", "corner_bl", "corner_br" ];
+// S20 (#36): the two Deep interior-cover photos (raw books only).
+const STORAGE_SLOTS_INTERIOR_COVER = [ "interior_cover_front", "interior_cover_back" ];
+
+function storageSlotsInterior(n) {
+  return Array.from({
+    length: n
+  }, (_, i) => `interior_${String(i + 1).padStart(2, "0")}`);
+}
+
+function storageSlotsRestoration(n) {
+  return Array.from({
+    length: n
+  }, (_, i) => `restoration_${String(i + 1).padStart(2, "0")}`);
+}
+
+async function uploadImageToStorage(blob, itemId, slot) {
+  if (!window._currentUser || !window._storage) {
+    throw new Error("Storage not initialized");
+  }
+  const uid = window._currentUser.uid;
+  const path = `users/${uid}/items/${itemId}/${slot}.jpg`;
+  const storageRef = window._fsRef(window._storage, path);
+  // S21 reliability: retry transient upload failures (flaky mobile connections
+  // were aborting the whole save AFTER the credit was already spent). 3 attempts
+  // with backoff; only throw if all fail.
+  let lastErr;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const _timeout = ms => new Promise((_, rej) => setTimeout(() => rej(new Error("upload timeout")), ms));
+      await Promise.race([ window._fsUploadBytes(storageRef, blob, { contentType: "image/jpeg" }), _timeout(25000) ]);
+      return await Promise.race([ window._fsGetDownloadURL(storageRef), _timeout(15000) ]);
+    } catch (e) {
+      lastErr = e;
+      console.warn(`[upload] ${slot} attempt ${attempt + 1} failed:`, e && e.message);
+      if (attempt < 2) await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
+    }
+  }
+  throw lastErr || new Error("upload failed");
+}
+
+function isDataUrl(s) {
+  return typeof s === "string" && s.startsWith("data:");
+}
+
+const _hashCache = new Map;
+
+async function hashImage(urlOrDataUrl) {
+  if (!urlOrDataUrl) return null;
+  if (_hashCache.has(urlOrDataUrl)) return _hashCache.get(urlOrDataUrl);
+  try {
+    let bytes;
+    if (isDataUrl(urlOrDataUrl)) {
+      const base64 = urlOrDataUrl.split(",")[1] || "";
+      const binary = atob(base64);
+      bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    } else {
+      const _ac = new AbortController();
+      const _to = setTimeout(() => _ac.abort(), 10000);
+      let resp;
+      try {
+        resp = await fetch(urlOrDataUrl, { signal: _ac.signal });
+      } finally {
+        clearTimeout(_to);
+      }
+      const buf = await resp.arrayBuffer();
+      bytes = new Uint8Array(buf);
+    }
+    const hashBuf = await crypto.subtle.digest("SHA-256", bytes);
+    const hashArr = Array.from(new Uint8Array(hashBuf));
+    const hashHex = hashArr.map(b => b.toString(16).padStart(2, "0")).join("");
+    _hashCache.set(urlOrDataUrl, hashHex);
+    return hashHex;
+  } catch (e) {
+    console.warn("[hashImage] Failed to hash:", e);
+    return null;
+  }
+}
+
+async function hashImageArray(imgs) {
+  if (!Array.isArray(imgs)) return [];
+  return Promise.all(imgs.map(img => hashImage(img)));
+}
+
+async function findDuplicateAssessment(currentImages, currentItemId) {
+  if (!Array.isArray(currentImages) || currentImages.length < 4) return null;
+  const filtered = currentImages.filter(Boolean);
+  if (filtered.length < 4) return null;
+  const currentHashes = (await hashImageArray(filtered)).filter(Boolean);
+  if (currentHashes.length < 4) return null;
+  const currentSet = new Set(currentHashes);
+  for (const item of window.items || []) {
+    if (!item || item.id === currentItemId) continue;
+    if (!item.roboGrade) continue;
+    const existingMetas = item.imagesMeta || [];
+    const existingHashes = existingMetas.map(m => m && m.hash).filter(Boolean);
+    if (existingHashes.length < 4) continue;
+    const allMatch = existingHashes.every(h => currentSet.has(h));
+    if (allMatch) return item;
+  }
+  return null;
+}
+
+// ── S22 (test note 9651): SAVE IS LOCKED WHILE PHOTOS ARE UPLOADING ────────
+// The pre-upload starts as soon as an assessment kicks off and runs in the
+// background while the model works. Until it settles, formData.images still
+// holds data: URLs, not Storage URLs. Tapping "Add to Collection" in that window
+// raced the upload and could write an item whose image fields were half data
+// URLs and half nothing — a record there is no honest way to repair afterwards,
+// because the originals only ever existed in that page's memory.
+//
+// So the button is disabled for exactly as long as an upload is in flight, and
+// says so. _uploadsInFlight is a COUNT, not a boolean: the Deep and Main paths
+// can each have started one, and a boolean would let the first to finish
+// unlock the button while the second was still going.
+let _uploadsInFlight = 0;
+
+function isUploadInFlight() { return _uploadsInFlight > 0; }
+
+// Repaint the live button without a full renderForm() — this is called from
+// promise callbacks, and re-rendering the whole form under the user mid-typing
+// would throw away anything they had in an unsaved field.
+function refreshSaveButtonLock() {
+  const btn = document.getElementById("save-btn");
+  if (!btn) return;
+  const busy = isUploadInFlight();
+  const titled = !!(formData && formData.title && formData.title.trim());
+  btn.disabled = busy || !titled;
+  btn.textContent = busy ? "Uploading photos\u2026" : "Add to Collection";
+  // Two different disabled reasons, two different affordances: an upload in
+  // flight is a wait (progress cursor), a missing title is the user's move
+  // (not-allowed). The title field's oninput calls straight back into here, so
+  // typing a title can never unlock the button while an upload is still going.
+  btn.style.opacity = (busy || !titled) ? "0.55" : "";
+  btn.style.cursor = busy ? "progress" : (titled ? "" : "not-allowed");
+}
+
+// Wrap a pre-upload promise so the counter is always balanced, including on
+// failure. Returns the same promise so callers are unchanged.
+function trackUpload(promise) {
+  _uploadsInFlight++;
+  refreshSaveButtonLock();
+  return promise.finally(() => {
+    _uploadsInFlight = Math.max(0, _uploadsInFlight - 1);
+    refreshSaveButtonLock();
+  });
+}
+
+async function startPreUpload(rawImages, rawCornerImages, comicId) {
+  if (window.RobograderScan && window.RobograderScan.debugLog) {
+    window.RobograderScan.debugLog(`startPreUpload: id=${comicId}, images=${rawImages.filter(Boolean).length}, corners=${rawCornerImages.filter(Boolean).length}`);
+  }
+  const mainResult = await processImagesForSave(rawImages, comicId, STORAGE_SLOTS_MAIN, {
+    generateThumbs: true
+  });
+  const cornerResult = await processImagesForSave(rawCornerImages, comicId, STORAGE_SLOTS_CORNER, {
+    generateThumbs: false
+  });
+  if (window.RobograderScan && window.RobograderScan.debugLog) {
+    window.RobograderScan.debugLog(`startPreUpload done: ${mainResult.images.length} main URLs, ${cornerResult.images.length} corner URLs`);
+  }
+  return {
+    id: comicId,
+    mainResult: mainResult,
+    cornerResult: cornerResult
+  };
+}
+
+async function processImagesForSave(images, comicId, slotNames, options = {}) {
+  const {generateThumbs: generateThumbs = false, existingThumbs: existingThumbs = [], preserveNulls: preserveNulls = false} = options;
+  // S23: compress + upload ALL images CONCURRENTLY. Previously each image was
+  // awaited one-at-a-time, so a 6-image Deep save was 6 serial round-trips — a
+  // long delay, and if one upload stalled the whole save appeared to freeze.
+  const perImage = await Promise.all((images || []).map(async (img, i) => {
+    if (!img) return { skip: !preserveNulls, image: null, thumb: null };
+    const wantThumb = generateThumbs && i === 0;
+    if (isDataUrl(img)) {
+      const slot = slotNames[i] || `image_${i + 1}`;
+      const [fullUrl, thumb] = await Promise.all([
+        compressImage(img, 1200, 0.65, true).then(blob => uploadImageToStorage(blob, comicId, slot)),
+        wantThumb ? compressImage(img, 120, 0.9, false) : Promise.resolve(null)
+      ]);
+      return { skip: false, image: fullUrl, thumb: wantThumb ? thumb : null };
+    }
+    return { skip: false, image: img, thumb: wantThumb ? (existingThumbs[i] || null) : null };
+  }));
+  const fullResult = [];
+  const thumbResult = [];
+  for (const r of perImage) {
+    if (r.skip) continue;
+    fullResult.push(r.image);
+    thumbResult.push(r.thumb);
+  }
+  return {
+    images: fullResult,
+    thumbnails: thumbResult
+  };
+}
+
+async function deleteStorageFolder(pathPrefix) {
+  if (!window._storage || !window._fsListAll || !window._fsDeleteObject) return;
+  try {
+    const folderRef = window._fsRef(window._storage, pathPrefix);
+    const listing = await window._fsListAll(folderRef);
+    await Promise.all(listing.items.map(item => window._fsDeleteObject(item).catch(() => {})));
+    for (const subfolder of listing.prefixes) {
+      await deleteStorageFolder(subfolder.fullPath);
+    }
+  } catch (e) {
+    console.warn("deleteStorageFolder:", pathPrefix, e.message);
+  }
+}
+
+let _pendingAssessResult = null;
+
+const ASSESS_MODAL_BG = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/progress_modal.PNG";
+
+const ASSESS_DEFAULT_BOX = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/default_box.PNG";
+
+const ASSESS_SUCCESS_BOX = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/success_box.PNG";
+
+const ASSESS_FAILURE_BOX = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/failure_box.PNG";
+
+const ASSESS_OVERLAY_BG = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay.webp";
+
+(function preloadAssessBoxes() {
+  [ ASSESS_DEFAULT_BOX, ASSESS_SUCCESS_BOX, ASSESS_FAILURE_BOX, ASSESS_OVERLAY_BG, ASSESS_MODAL_BG ].forEach(url => {
+    const img = new Image;
+    img.src = url;
+  });
+})();
+
+const ASSESS_FRAMES = [ "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_01.PNG", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_02.PNG", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_03.PNG", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_04.PNG", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_05.PNG", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/frame_06.PNG" ];
+
+function mountStepTracker(kind) {
+  if (window.RobograderScan && window.RobograderScan.debugLog) {
+    window.RobograderScan.debugLog("mountStepTracker called");
+  }
+  if (!window.RobograderScan || !window.RobograderScan.slideOverlayIntoChest) {
+    console.warn("mountStepTracker: scan-animation module not loaded (or missing slideOverlayIntoChest)");
+    return;
+  }
+  const stepDefs = [ {
+    id: "populating",
+    label: "POPULATING INFO"
+  }, {
+    id: "mint",
+    label: "COMPARING TO MINT"
+  }, {
+    id: "pq",
+    label: "PAGE QUALITY CHECK"
+  }, {
+    id: "grading",
+    label: "GRADING"
+  }, {
+    id: "confirming",
+    label: "CONFIRMING GRADE"
+  } ];
+  const BTN_LEFT_PCT = 11.81;
+  const BTN_WIDTH_PCT = 75.95;
+  const BTN_HEIGHT_PCT = 9.01;
+  const BTN_TOPS_PCT = [ 36.42, 46.36, 56.29, 66.23, 76.16 ];
+  const boxesHtml = stepDefs.map((s, i) => `<div id="tracker-box-${s.id}"\n      style="position:absolute;left:${BTN_LEFT_PCT}%;top:${BTN_TOPS_PCT[i]}%;\n             width:${BTN_WIDTH_PCT}%;height:${BTN_HEIGHT_PCT}%;\n             background-image:url('${ASSESS_DEFAULT_BOX}');\n             background-size:100% 100%;background-repeat:no-repeat;\n             pointer-events:none;"></div>`).join("");
+  const overlayHtml = `\n    <img src="${(kind && typeof TIER_OVERLAY_BG !== 'undefined' && TIER_OVERLAY_BG[kind]) ? TIER_OVERLAY_BG[kind] : ASSESS_OVERLAY_BG}" alt=""\n         style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;" />`;
+  window.RobograderScan.slideOverlayIntoChest(overlayHtml, boxesHtml);
+  if (window._gridCycleStartTimer) clearTimeout(window._gridCycleStartTimer);
+  window._gridCycleStartTimer = setTimeout(() => {
+    window._gridCycleStartTimer = null;
+    if (window.RobograderScan && window.RobograderScan.startGridCycle) {
+      window.RobograderScan.startGridCycle();
+    }
+    setStep("populating", "done");
+  }, 2000);
+}
+
+// S17 (June 14): generic in-chest progress tracker for Full + Restoration,
+// mirroring mountStepTracker (Main). Same slide-in overlay + 5 step boxes that
+// light green/red via setStep — the only differences are the overlay artwork
+// and the step ids/labels. Box coordinates are identical to Main (Matt kept the
+// three overlay artworks' button layout the same). Step ids are prefixed so
+// they don't collide with Main's, and setStep works on any tracker-box-* id.
+const TIER_OVERLAY_BG = {
+  deep: "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay_Deep.webp",
+  full: "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay_Full.webp",
+  restoration: "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay_Restoration.webp",
+  // Matt's artwork, 2026-10-19. NOTE: these resolve against raw.githubusercontent.com,
+  // so assets/modal/Progress_Overlay_Cleaned.webp has to be in a PUSHED commit
+  // before this overlay will load — being on disk is not enough.
+  cleaned: "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay_Cleaned.webp"
+};
+(function preloadTierOverlays() {
+  Object.values(TIER_OVERLAY_BG).forEach(url => { const img = new Image; img.src = url; });
+})();
+
+function mountTierTracker(kind, stepDefs, opts) {
+  opts = opts || {};
+  if (!window.RobograderScan || !window.RobograderScan.slideOverlayIntoChest) {
+    console.warn("mountTierTracker: scan-animation module not loaded");
+    return {};
+  }
+  // Same coordinates as Main (mountStepTracker).
+  const BTN_LEFT_PCT = 11.81;
+  const BTN_WIDTH_PCT = 75.95;
+  const BTN_HEIGHT_PCT = 9.01;
+  const BTN_TOPS_PCT = [ 36.42, 46.36, 56.29, 66.23, 76.16 ];
+  const boxesHtml = stepDefs.map((s, i) => `<div id="tracker-box-${s.id}"\n      style="position:absolute;left:${BTN_LEFT_PCT}%;top:${BTN_TOPS_PCT[i]}%;\n             width:${BTN_WIDTH_PCT}%;height:${BTN_HEIGHT_PCT}%;\n             background-image:url('${ASSESS_DEFAULT_BOX}');\n             background-size:100% 100%;background-repeat:no-repeat;\n             pointer-events:none;"></div>`).join("");
+  const overlayHtml = `\n    <img src="${TIER_OVERLAY_BG[kind]}" alt=""\n         style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;" />`;
+  window.RobograderScan.slideOverlayIntoChest(overlayHtml, boxesHtml);
+  const _timers = [];
+  if (window._tierStepTimers) window._tierStepTimers.forEach(t => clearTimeout(t));
+  window._tierStepTimers = _timers;
+  const startDelay = 1200;
+  _timers.push(setTimeout(() => {
+    if (window.RobograderScan && window.RobograderScan.startGridCycle) {
+      window.RobograderScan.startGridCycle();
+    }
+  }, startDelay));
+  // S17: a SINGLE sequential timeline owns box lighting so boxes never light out
+  // of order. For Full (default), light boxes 0..(n-2) one second apart; the last
+  // box is left for the completion handler. For Restoration (opts.noAutoLight),
+  // do NOT pre-light — every box turns green/red per finding at completion.
+  if (!opts.noAutoLight) {
+    for (let i = 0; i < stepDefs.length - 1; i++) {
+      _timers.push(setTimeout(() => { setStep(stepDefs[i].id, "done"); }, startDelay + i * 1000));
+    }
+  }
+  return {
+    finishAll: () => { stepDefs.forEach(s => setStep(s.id, "done")); },
+    clearTimers: () => { _timers.forEach(t => clearTimeout(t)); }
+  };
+}
+
+// ── BATCH progress tracker (S22) ────────────────────────────────────────────
+// Lives here, beside mountStepTracker/mountTierTracker, because the house style
+// (default_box / success_box assets, the overlay coordinates, the results-panel
+// badge layout, the COMPLETE button) is all defined in this file. The first cut
+// drew its own boxes inside scan-animation.js and landed out of alignment.
+//
+// Geometry: the grade boxes keep Main/Deep/Full's EXACT left edge, tops and
+// height, so their upper-left corners are pixel-identical across all four
+// assessment types. ONLY the width is reduced, pulling the right edge left to
+// open up room for the two result boxes per row. Result-box columns measured
+// off Matt's placement mockup (474x747 = the overlay region at 1:1).
+const BATCH_OVERLAY_BG = "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/Progress_Overlay_Batch.webp";
+// The NARROW box art Matt added for Batch: 206x68 against the full-size 360x68,
+// same height, right edge pulled in to make room for the two result boxes.
+const _BATCH_ASSET = n => "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/modal/" + n;
+const BATCH_DEFAULT_BOX = _BATCH_ASSET("default_box_small.webp");
+const BATCH_SUCCESS_BOX = _BATCH_ASSET("success_box_small.webp");
+const BATCH_FAILURE_BOX = _BATCH_ASSET("failure_box_small.webp");
+// S22: the MAIN -> DEEP split-flap (Main_Deep1..10) was tried and REMOVED.
+// Matt: it read as incoherent chaos — a row going green, then grey, then green
+// again made five independent judgements look like a malfunction. The artwork's
+// labels are back to GRADE 1-5 and a row is simply grey until its Deep lands.
+(function preloadBatchArt() {
+  [BATCH_OVERLAY_BG, BATCH_DEFAULT_BOX, BATCH_SUCCESS_BOX, BATCH_FAILURE_BOX]
+    .forEach(u => { const i = new Image; i.src = u; });
+})();
+
+const BATCH_BTN_LEFT_PCT   = 11.81;   // identical to Main/Deep/Full
+const BATCH_BTN_TOPS_PCT   = [36.42, 46.36, 56.29, 66.23, 76.16];  // identical
+const BATCH_BTN_HEIGHT_PCT = 9.01;    // identical
+const BATCH_BTN_WIDTH_PCT  = 43.46;   // 206/474 — the small asset at 1:1, like the house boxes (360/474 = 75.95)
+// S22 sizing pass. Measured on Matt's 960px-wide screenshot the boxes rendered
+// 109 x 104 px with only ~2.6px between RG and PG. He asked for 4px smaller and
+// more breathing room, so:
+//   width  14.80% -> 14.26%  (-4px at that render width)
+//   height  9.01% ->  8.69%  (-4px; own constant now, see below)
+//   gap      0.36% ->  1.20% (~2.6px -> ~8.8px)
+// Outer edges are unchanged: RG's left and PG's right still line up with the
+// label boxes and the plate. Everything is a percentage of the overlay, so it
+// scales with the device — the px figures are that one screenshot's scale.
+const BATCH_RES_W_PCT      = 14.26;
+const BATCH_RES_LEFTS_PCT  = [57.92, 73.38];  // RG, PG
+// The result boxes no longer borrow BATCH_BTN_HEIGHT_PCT. That constant has to
+// keep matching the artwork's recess cut-outs for the GRADE 1-5 label boxes;
+// shrinking it would have pulled those off their recesses too.
+const BATCH_RES_H_PCT      = 8.69;
+// ...and are re-centred on the row so losing 4px of height doesn't ride them up.
+const BATCH_RES_TOP_NUDGE  = 0.16;
+
+function mountBatchTracker(n) {
+  if (!window.RobograderScan || !window.RobograderScan.slideOverlayIntoChest) {
+    console.warn("mountBatchTracker: scan-animation module not loaded");
+    return;
+  }
+  n = n || 5;
+  let boxesHtml = "";
+  // Separate layer for the score boxes. .rg-scan-boxes sits at z-index 13 and
+  // the artwork at 14, so anything in boxesHtml that isn't under one of the five
+  // recess cut-outs is hidden behind the plate. The score boxes sit ON the grey
+  // plate, so they must be appended into the overlay layer instead.
+  let resultsHtml = "";
+  for (let i = 0; i < n; i++) {
+    const top = BATCH_BTN_TOPS_PCT[i];
+    if (top == null) break;
+    // The label box: same asset, same corner, narrower.
+    //
+    // NO TEXT IS DRAWN HERE. Progress_Overlay_Batch.webp already carries the
+    // GRADE 1..5 labels, printed dark-on-black in the recesses so they are
+    // invisible on the bare artwork and only resolve once a light box sits over
+    // them — which is why default_box_small / success_box_small are translucent
+    // (max alpha 251, never fully opaque). Drawing our own label on top produced
+    // the doubled "GRADE 1 / ADE 1" text in the first test.
+    boxesHtml += `<div id="batch-box-${i + 1}"
+      style="position:absolute;left:${BATCH_BTN_LEFT_PCT}%;top:${top}%;
+             width:${BATCH_BTN_WIDTH_PCT}%;height:${BATCH_BTN_HEIGHT_PCT}%;
+             background-image:url('${BATCH_DEFAULT_BOX}');
+             background-size:100% 100%;background-repeat:no-repeat;
+             pointer-events:none;"></div>`;
+    // default_box_small / success_box_small are ~2% translucent across their
+    // whole surface (peak alpha 251 of 255), and the artwork layer sits ABOVE
+    // them at z-index 14, so the recess tint dims them further. The full-size
+    // Main/Deep/Full art doesn't have that problem. Nothing here sets opacity.
+    // Two result boxes per row: RG then PG. These go in the OVERLAY layer, not
+    // the boxes layer — see the resultsHtml note below.
+    // Left column = RG, styled like the RG score box: near-black ground,
+    // chartreuse numerals. Right column = PG, styled like the CGC box: blue
+    // ground, white numerals. (The mockup had both blue — that was placement
+    // only, not styling.)
+    [
+      { kind: "rg", bg: "#0f1a05", border: "#3a5010", ink: "#b8d820" },
+      { kind: "pg", bg: "#2a5a8a", border: "#4a7fb5", ink: "#ffffff" }
+    ].forEach((c, k) => {
+      resultsHtml += `<div id="batch-${c.kind}-${i + 1}"
+        style="position:absolute;left:${BATCH_RES_LEFTS_PCT[k]}%;top:${(top + BATCH_RES_TOP_NUDGE).toFixed(2)}%;
+               width:${BATCH_RES_W_PCT}%;height:${BATCH_RES_H_PCT}%;
+               background:${c.bg};border:1.5px solid ${c.border};border-radius:7px;
+               display:flex;align-items:center;justify-content:center;padding:0 4%;box-sizing:border-box;
+               box-shadow:0 1px 4px rgba(0,0,0,0.45);
+               transition:box-shadow .2s ease;
+               pointer-events:none;">
+          <span style="font-family:'League Spartan',system-ui,sans-serif;font-weight:900;
+                       transform:scaleX(0.66) translateY(0.11em);transform-origin:center;display:inline-block;
+                       font-size:clamp(13px,7.4vw,30px);color:${c.ink};
+                       font-variant-numeric:tabular-nums;white-space:nowrap;
+                       line-height:1;"></span>
+        </div>`;
+    });
+  }
+  const overlayHtml = `\n    <img src="${BATCH_OVERLAY_BG}" alt=""\n         style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;" />${resultsHtml}`;
+  window.RobograderScan.slideOverlayIntoChest(overlayHtml, boxesHtml);
+  seedBatchRows(n);
+  if (window._batchGridTimer) clearTimeout(window._batchGridTimer);
+  window._batchGridTimer = setTimeout(() => {
+    window._batchGridTimer = null;
+    if (window.RobograderScan && window.RobograderScan.startGridCycle) window.RobograderScan.startGridCycle();
+    if (window.RobograderScan && window.RobograderScan.startNeedlePulse) window.RobograderScan.startNeedlePulse();
+  }, 1200);
+}
+
+// ── Per-row sequence ────────────────────────────────────────────────────────
+// Rows start grey with their score boxes seeded at 0 / 0.0. When a pass's DEEP
+// lands, that row turns green and its two scores count up to the final values,
+// then pulse with a white outline — the same landing beat the score boxes at
+// the bottom use. Rows advance independently, so they finish out of order; that
+// is the point, not a glitch.
+//
+// The MAIN->DEEP split-flap that briefly lived here is GONE (Matt): a row going
+// green, grey, then green again made the panel read as malfunctioning.
+const _batchRowState = {};   // pass -> 'pending' | 'done' | 'error'
+
+function _batchBoxEl(pass) { return document.getElementById("batch-box-" + pass); }
+
+function _batchSetBox(pass, which) {
+  const el = _batchBoxEl(pass);
+  if (!el) return;
+  const url = which === "success" ? BATCH_SUCCESS_BOX : which === "failure" ? BATCH_FAILURE_BOX : BATCH_DEFAULT_BOX;
+  el.style.backgroundImage = "url('" + url + "')";
+}
+
+// PG follows CGC's convention: whole grades carry the .0 (4 -> 4.0).
+function _batchPgText(v) {
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n.toFixed(1) : "";
+}
+
+function _batchPaint(pass, kind, text) {
+  const box = document.getElementById(`batch-${kind}-${pass}`);
+  const sp = box && box.firstElementChild;
+  if (!sp) return;
+  const v = text == null ? "" : String(text);
+  // S24 (Matt): these are now ALWAYS centred.
+  //
+  // The previous fix pinned the span to the left while counting and re-centred
+  // only if the final value was a whole number, on the theory that a decimal
+  // reads better left-anchored. On device it did not: "6.5" sat off-centre and
+  // clipped against the left edge of its box while "7" in the row above was
+  // centred, so the column looked broken. The span is also scaleX(0.66) about
+  // its own centre, which pulls a wider string further left of where the flex
+  // box put it - the wider the value, the worse the offset.
+  //
+  // The jitter that justified left-pinning is handled at the source instead:
+  // tabular-nums fixes digit width, and _batchCountUp now counts in the same
+  // shape as the final value, so the string never changes length mid-count.
+  if (v && window.RoboScoreV3 && window.RoboScoreV3.gradeParts && kind === "rg") {
+    try {
+      const p = window.RoboScoreV3.gradeParts(v);
+      sp.innerHTML = p.frac ? `${p.whole}<span style="font-size:0.8em">.</span>${String(p.frac).slice(1)}` : String(p.whole);
+      return;
+    } catch (e) {}
+  }
+  // PG keeps its decimal point at the same reduced size as every other score box.
+  const m = /^(\d+)\.(\d)$/.exec(v);
+  sp.innerHTML = m ? `${m[1]}<span style="font-size:0.8em">.</span>${m[2]}` : v;
+}
+
+// Seed every box at 0 / 0.0 as the tracker mounts.
+function seedBatchRows(n) {
+  for (let i = 1; i <= (n || 5); i++) {
+    ["rg", "pg"].forEach(k => {
+      const b = document.getElementById(`batch-${k}-${i}`);
+      if (b) { delete b.dataset.settled; b.style.justifyContent = "center"; }
+    });
+    _batchPaint(i, "rg", "0");
+    _batchPaint(i, "pg", "0.0");
+  }
+}
+
+// Count from 0 to the final value, then flash a white outline.
+function _batchCountUp(pass, kind, finalText) {
+  return new Promise(resolve => {
+    const box = document.getElementById(`batch-${kind}-${pass}`);
+    if (!box) return resolve();
+    const target = parseFloat(finalText);
+    if (!Number.isFinite(target)) { _batchPaint(pass, kind, finalText); return resolve(); }
+    // S22: 900 -> 1800. Matt: the in-line scores flicked past too fast to read.
+    const DUR = 1800, t0 = performance.now();
+    // Count in the SAME SHAPE as the final value so the string length never
+    // changes mid-count: an RG landing on 7.5 counts 0.0/0.5/1.0..., an RG
+    // landing on 7 counts 0/1/2... PG always had a decimal, so it was already
+    // stable. Combined with tabular-nums this removes the width jitter the old
+    // left-pinning was working around.
+    const _finalHasFrac = /\./.test(kind === "pg" ? _batchPgText(finalText) : String(finalText));
+    const fmt = v => kind === "pg"
+      ? v.toFixed(1)                                   // unchanged: always N.N
+      : _finalHasFrac
+        ? (Math.round(v * 2) / 2).toFixed(1)           // RG landing on a half
+        : String(Math.round(v));                      // RG landing whole
+    const step = now => {
+      const k = Math.min(1, (now - t0) / DUR);
+      const eased = 1 - Math.pow(1 - k, 3);
+      _batchPaint(pass, kind, fmt(Math.round(target * eased * 2) / 2));
+      if (k < 1) return requestAnimationFrame(step);
+      const _final = kind === "pg" ? _batchPgText(finalText) : String(finalText);
+      box.dataset.settled = "1";
+      _batchPaint(pass, kind, _final);
+      // White-outline pulse, matching the bottom score boxes' landing.
+      box.style.boxShadow = "0 0 0 2.5px #ffffff, 0 0 12px rgba(255,255,255,.85)";
+      setTimeout(() => { box.style.boxShadow = "0 1px 4px rgba(0,0,0,0.45)"; resolve(); }, 420);
+    };
+    requestAnimationFrame(step);
+  });
+}
+
+// S22: ONE v3 path for every batch number — each row, the average, and the grade
+// the item ends up displaying. Built by cloning the ITEM and swapping in the
+// subscores, so defects, page quality, photograder, slab state and depth are all
+// the real ones.
+//
+// The previous version hand-built a bare object with `defects: []`, which:
+//   • skipped the interior-defect penalty (interior tier never lost its 0.5),
+//   • skipped the cap shave (defectFaces all false, hasDefects false),
+//   • hard-coded depth "deep" even on a Full book.
+// A batch row could therefore read half a point above the same subscores on the
+// Detail screen. Do not re-introduce a bespoke v3 call here.
+//
+// NOTE: forComic IGNORES roboGrade.score entirely — the grade is derived from
+// frontScore/backScore/spineScore + pageQuality. That is the bug that made the
+// batch average read 7.0: the old code passed the averaged 0-100 score but pass
+// 1's subscores, so it just re-reported pass 1's grade.
+function _batchV3(sub, pq) {
+  if (!window.RoboScoreV3 || !sub) return null;
+  try {
+    const n = v => (typeof v === "number" && isFinite(v)) ? v : 0;
+    return window.RoboScoreV3.forComic({
+      ...formData,
+      type: "comic",
+      pageQuality: pq || formData.pageQuality,
+      roboGrade: {
+        ...(formData.roboGrade || {}),
+        score: n(sub.front) + n(sub.back) + n(sub.spine) + n(sub.interior),
+        frontScore: sub.front, backScore: sub.back,
+        spineScore: sub.spine, interiorScore: sub.interior,
+        pageQuality: pq || (formData.roboGrade && formData.roboGrade.pageQuality) || formData.pageQuality
+      }
+    });
+  } catch (e) { return null; }
+}
+
+function _batchV3Label(p) {
+  const v = p ? _batchV3(p.subscores, p.pq) : null;
+  return v ? window.RoboScoreV3.formatGrade(v.grade) : "";
+}
+
+// Called on every poll with that pass's slot. Idempotent.
+async function advanceBatchRow(pass, p) {
+  if (!p) return;
+  const st = _batchRowState[pass] || "pending";
+  if (st !== "pending") return;
+
+  if (p.stage === "error") {
+    _batchRowState[pass] = "error";
+    _batchSetBox(pass, "failure");
+    return;
+  }
+  if (p.stage === "done" && typeof p.rg === "number") {
+    _batchRowState[pass] = "done";
+    _batchSetBox(pass, "success");
+    await Promise.all([
+      _batchCountUp(pass, "rg", _batchV3Label(p) || "0"),
+      _batchCountUp(pass, "pg", _batchPgText(p.grade) || "0.0")
+    ]);
+  }
+}
+
+// Results panel — matches Main/Deep/Full exactly: RG + CGC badges, a Page
+// Quality pill, and the COMPLETE button. No bespoke "BATCH · N PASSES" header.
+function mountBatchResults(summary) {
+  if (!window.RobograderScan || !window.RobograderScan.slideResultsIntoPanel) return;
+  const s = summary || {};
+  setTimeout(() => {
+    if (window.RobograderScan.stopGridCycle) window.RobograderScan.stopGridCycle();
+    if (window.RobograderScan.stopNeedlePulse) window.RobograderScan.stopNeedlePulse();
+    if (window.RobograderScan.sweepNeedleToScore && s.rawAvg != null) {
+      window.RobograderScan.sweepNeedleToScore(Math.round(s.rawAvg));
+    }
+  }, 600);
+  const gridEl = document.getElementById("tracker-grid-frame");
+  if (gridEl) gridEl.style.display = "none";
+  // Identical structure to mountResults() makeBadge: the number is absolutely
+  // centred across the whole 64px box and the label is pinned to the bottom, so
+  // the digit gets the full height. The flex-column card variant squeezed it.
+  const badge = (bg, txt, val, label, border, valId) =>
+    `<div style="position:relative;width:64px;height:64px;${border ? `border:${border};` : ""}background:${bg};border-radius:8px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">` +
+    `<div ${valId ? `id="${valId}" ` : ""}style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'League Spartan',sans-serif;transform:scaleX(0.7);font-size:38px;font-weight:800;color:${txt};line-height:1">${val}</div>` +
+    `<div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:${txt};opacity:0.75;letter-spacing:0.8px">${label}</div></div>`;
+  let badges = "";
+  if (s.average != null) badges += badge("#0f1a05", "#b8d820", s.average, "RG", "1.5px solid #3a5010", "batch-val-rg");
+  if (s.pg) badges += badge("#2a5a8a", "#e0f0ff", s.pg, "PG", "", "batch-val-pg");   // v6.41: see makeBadge
+  const pqHtml = s.pq
+    ? `<div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">${s.pq}</div>`
+    : "";
+  const html = `
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;">
+      <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badges}</div>
+      <div style="position:relative;width:100%;display:flex;align-items:center;justify-content:center;min-height:22px;">${pqHtml}</div>
+      <button id="assess-complete-btn" style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#3a9ee0;color:#fff;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">COMPLETE</button>
+    </div>`;
+  // S24 (Matt, post-Baltimore): slide the progress panel back out to the right
+  // to uncover the front cover, one beat after the last step box lands and
+  // while the score boxes are still counting up. Cover and grade in the same
+  // frame is what closes the loop for a first-time user.
+  // Deep and Full never scan the cover, so hand over the STORED front cover -
+  // it must already exist for those passes to be offered at all.
+  try {
+    const _rvU = x => (x && (x.url || (typeof x === "string" ? x : null))) || null;
+    const _cover = _rvU((formData.images || [])[0]);
+    window.RobograderScan.revealScannedPhoto('front', 1000, _cover);
+  } catch (e) {}
+  window.RobograderScan.slideResultsIntoPanel(html);
+  const rgEl = document.getElementById("batch-val-rg");
+  if (rgEl) setTimeout(() => { if (typeof popResultBadge === "function") popResultBadge(rgEl); }, 700);
+  setTimeout(() => {
+    const btn = document.getElementById("assess-complete-btn");
+    if (btn) btn.onclick = completeBatchAssessment;
+  }, 400);
+}
+
+// The batch equivalent of completeCardAssessment — without this the panel had
+// no COMPLETE button at all and the app was stranded behind the overlay.
+async function completeBatchAssessment() {
+  formData._batchMode = false;
+  // S22: was renderForm(), which drops the user on EDIT. Every other assessment
+  // finishes on DETAIL via submitForm() with _routeToEditAfterSave cleared (see
+  // completeAssessment) — Batch now does the same, so the averaged grade is the
+  // first thing shown. submitForm also persists the batch write-back above; the
+  // earlier saveItem call stays as the safety net for a user who never taps
+  // COMPLETE.
+  try {
+    _routeToEditAfterSave = false;
+    await submitForm();
+  } catch (e) {
+    console.warn("[batch] submitForm after complete:", e);
+    try { renderForm(); } catch (e2) {}
+  }
+  if (window.RobograderScan && window.RobograderScan.dismiss) {
+    try { window.RobograderScan.dismiss(); } catch (e) {}
+  }
+}
+
+// Deleting an Assessment History entry is destructive and the × sits right at
+// the edge of a small row — far too easy to hit by accident. Confirm first, with
+// the destructive action in red.
+function confirmDeleteHistoryEntry(i) {
+  const h = (formData.assessmentHistory || [])[i];
+  if (!h) return;
+  const label = h._batch
+    ? `the BATCH record (${h.runCount || 5} grades)`
+    : `the ${String(h.depth || "main").toUpperCase()} record${h.rgV3Grade ? " — RG " + h.rgV3Grade : ""}`;
+  const prev = document.getElementById("rg-hist-del-overlay");
+  if (prev) prev.remove();
+  const ov = document.createElement("div");
+  ov.id = "rg-hist-del-overlay";
+  ov.style.cssText = "position:fixed;inset:0;z-index:2147483600;background:rgba(0,0,0,.66);display:flex;align-items:center;justify-content:center;padding:24px";
+  ov.innerHTML = `
+    <div style="background:#1e2414;border:1.5px solid #4a7a20;border-radius:14px;max-width:340px;width:100%;padding:20px 18px;box-shadow:0 10px 40px rgba(0,0,0,.6);text-align:center">
+      <div style="font-family:'League Spartan',sans-serif;font-weight:800;font-size:15px;letter-spacing:1px;color:#cfe8a8;margin-bottom:8px">DELETE THIS ENTRY?</div>
+      <div style="font-size:13px;color:#9a9a8a;line-height:1.5;margin-bottom:18px">This permanently removes ${label} from this book's Assessment History. It cannot be undone, and the grades it contributed to the summary will be gone.</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button id="rg-hist-del-go" style="width:100%;height:42px;background:#a02c2c;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:800;letter-spacing:1.5px;cursor:pointer">DELETE</button>
+        <button id="rg-hist-del-cancel" style="width:100%;height:42px;background:#2a3320;color:#cfe8a8;border:1px solid #4a7a20;border-radius:8px;font-size:14px;font-weight:700;letter-spacing:1px;cursor:pointer">CANCEL</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  const close = () => { if (ov.parentNode) ov.remove(); };
+  ov.querySelector("#rg-hist-del-go").onclick = () => {
+    close();
+    formData.assessmentHistory.splice(i, 1);
+    renderForm();
+  };
+  ov.querySelector("#rg-hist-del-cancel").onclick = close;
+  ov.addEventListener("click", e => { if (e.target === ov) close(); });
+}
+
+function setStep(id, state, detail = "") {
+  if (window.RobograderScan && window.RobograderScan.debugLog) {
+    window.RobograderScan.debugLog(`setStep: ${id} → ${state}`);
+  }
+  const box = document.getElementById("tracker-box-" + id);
+  if (!box) {
+    if (window.RobograderScan && window.RobograderScan.debugLog) {
+      window.RobograderScan.debugLog(`  ⚠ box not found: tracker-box-${id}`);
+    }
+    return;
+  }
+  if (state === "done") {
+    box.style.backgroundImage = "url('" + ASSESS_SUCCESS_BOX + "')";
+  } else if (state === "failed") {
+    box.style.backgroundImage = "url('" + ASSESS_FAILURE_BOX + "')";
+  } else if (state === "skipped") {
+    box.style.backgroundImage = "url('" + ASSESS_DEFAULT_BOX + "')";
+    box.style.opacity = "0.5";
+  } else if (state === "running") {
+    box.style.backgroundImage = "url('" + ASSESS_SUCCESS_BOX + "')";
+  }
+}
+
+function delay(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+function delayRAF(ms) {
+  return new Promise(resolve => {
+    const start = performance.now();
+    function check() {
+      if (performance.now() - start >= ms) resolve(); else requestAnimationFrame(check);
+    }
+    requestAnimationFrame(check);
+  });
+}
+
+async function animateStepsFromDiagnostics(d) {
+  const dbg = msg => {
+    if (window.RobograderScan && window.RobograderScan.debugLog) {
+      window.RobograderScan.debugLog(msg);
+    }
+  };
+  dbg(`animateStepsFromDiagnostics called, d keys: ${Object.keys(d || {}).join(",") || "none"}`);
+  setStep("populating", "done");
+  if (window.RobograderScan && window.RobograderScan.startGridCycle) {
+    window.RobograderScan.startGridCycle();
+  }
+  dbg("astFD: populating marked done + grid started (safety net)");
+  const STEP_GAP = 1000;
+  await delayRAF(STEP_GAP);
+  dbg("astFD: gap 1 done; marking mint");
+  setStep("mint", d.comicvineRef ? "done" : "failed");
+  await delayRAF(STEP_GAP);
+  dbg("astFD: gap 2 done; marking pq + starting needle pulse");
+  const interiorIncluded = d.hasInteriorPhoto !== false;
+  const pqOk = d.pageQualityRef && interiorIncluded;
+  setStep("pq", pqOk ? "done" : "failed");
+  if (window.RobograderScan && window.RobograderScan.startNeedlePulse) {
+    window.RobograderScan.startNeedlePulse();
+  }
+  await delayRAF(STEP_GAP);
+  dbg("astFD: gap 3 done; marking grading");
+  setStep("grading", "done");
+  await delayRAF(STEP_GAP);
+  dbg("astFD: gap 4 done; marking confirming");
+  setStep("confirming", "done");
+  dbg("astFD: all steps done");
+}
+
+function supportsResponseStreaming() {
+  try {
+    return typeof ReadableStream !== "undefined" && typeof TextDecoder !== "undefined" && new Response(new ReadableStream).body && typeof new Response(new ReadableStream).body.getReader === "function";
+  } catch (e) {
+    return false;
+  }
+}
+
+async function streamAssessRequest(url, fetchInit, onPhase) {
+  const init = {
+    ...fetchInit
+  };
+  init.headers = {
+    ...fetchInit.headers || {},
+    Accept: "text/event-stream"
+  };
+  const resp = await fetch(url, init);
+  const ctype = (resp.headers.get("Content-Type") || "").toLowerCase();
+  if (!ctype.includes("text/event-stream")) {
+    const err = new Error("Server did not return SSE");
+    err.fallbackResponse = resp;
+    throw err;
+  }
+  if (!resp.ok) {
+    throw new Error("Assessment error: " + await resp.text());
+  }
+  if (!resp.body || typeof resp.body.getReader !== "function") {
+    const err = new Error("Browser cannot stream response body");
+    err.fallbackResponse = resp;
+    throw err;
+  }
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder;
+  let buffer = "";
+  let finalResult = null;
+  let finalError = null;
+  while (true) {
+    const {value: value, done: done} = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, {
+      stream: true
+    });
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() || "";
+    for (const frame of frames) {
+      let evtType = "message";
+      const dataLines = [];
+      for (const line of frame.split("\n")) {
+        if (line.startsWith("event:")) evtType = line.slice(6).trim(); else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+      }
+      if (!dataLines.length) continue;
+      let payload;
+      try {
+        payload = JSON.parse(dataLines.join(""));
+      } catch (e) {
+        continue;
+      }
+      if (evtType === "phase") {
+        try {
+          onPhase && onPhase(payload);
+        } catch (e) {}
+      } else if (evtType === "result") {
+        finalResult = payload;
+      } else if (evtType === "error") {
+        finalError = payload && payload.error ? payload.error : "Assessment error";
+      }
+    }
+  }
+  if (finalError) throw new Error(finalError);
+  if (!finalResult) throw new Error("Stream ended without a result event");
+  return finalResult;
+}
+
+function makeStepAnimator() {
+  const STEP_FLOOR_MS = 1000;
+  const PHASE_TO_STEP = {
+    0: "populating",
+    1: "mint",
+    2: "pq",
+    3: "grading",
+    4: "confirming"
+  };
+  const dbg = msg => {
+    if (window.RobograderScan && window.RobograderScan.debugLog) {
+      window.RobograderScan.debugLog(msg);
+    }
+  };
+  let awaitedPhase = -1;
+  let shownPhase = -1;
+  let lastAdvanceAt = 0;
+  let finalized = false;
+  let resolveDone;
+  const donePromise = new Promise(r => {
+    resolveDone = r;
+  });
+  function advanceTo(phase) {
+    while (shownPhase < phase) {
+      shownPhase++;
+      const stepName = PHASE_TO_STEP[shownPhase];
+      if (!stepName) continue;
+      setStep(stepName, "done");
+      dbg(`stepAnim: ${stepName} → done (phase ${shownPhase})`);
+      if (shownPhase === 0) {
+        if (window.RobograderScan && window.RobograderScan.startGridCycle) {
+          window.RobograderScan.startGridCycle();
+        }
+      }
+      if (shownPhase === 2) {
+        if (window.RobograderScan && window.RobograderScan.startNeedlePulse) {
+          window.RobograderScan.startNeedlePulse();
+        }
+      }
+    }
+    lastAdvanceAt = performance.now();
+  }
+  async function tick() {
+    while (!finalized || shownPhase < awaitedPhase) {
+      if (shownPhase < awaitedPhase) {
+        const sinceLast = performance.now() - lastAdvanceAt;
+        const wait = Math.max(0, STEP_FLOOR_MS - sinceLast);
+        if (wait > 0) await delayRAF(wait);
+        advanceTo(shownPhase + 1);
+      } else {
+        await delayRAF(60);
+      }
+    }
+    while (shownPhase < 4) {
+      const sinceLast = performance.now() - lastAdvanceAt;
+      const wait = Math.max(0, STEP_FLOOR_MS - sinceLast);
+      if (wait > 0) await delayRAF(wait);
+      advanceTo(shownPhase + 1);
+    }
+    dbg("stepAnim: all steps shown, resolving done");
+    resolveDone();
+  }
+  tick();
+  return {
+    setPhase(p) {
+      if (typeof p !== "number") return;
+      if (p > awaitedPhase) awaitedPhase = p;
+    },
+    finalize() {
+      finalized = true;
+      if (awaitedPhase < 4) awaitedPhase = 4;
+    },
+    promise: donePromise
+  };
+}
+
+const PQ_COLORS = {
+  White: {
+    bg: "#EEE8DC",
+    text: "#5a4e3a"
+  },
+  "Off-White to White": {
+    bg: "#EAE0C2",
+    text: "#5a4e3a"
+  },
+  "Off-White": {
+    bg: "#E0D3B2",
+    text: "#5a4e3a"
+  },
+  "Cream to Off-White": {
+    bg: "#D7C898",
+    text: "#4a3e28"
+  },
+  Cream: {
+    bg: "#CDBE90",
+    text: "#4a3e28"
+  },
+  "Light Tan to Cream": {
+    bg: "#D5BC97",
+    text: "#4a3e28"
+  },
+  "Light Tan": {
+    bg: "#CFB489",
+    text: "#3a2e18"
+  },
+  Tan: {
+    bg: "#C49E74",
+    text: "#3a2e18"
+  }
+};
+
+const PQ_CYCLE_ORDER = [ "White", "Off-White to White", "Off-White", "Cream to Off-White", "Cream", "Light Tan to Cream", "Light Tan" ];
+
+function buildPQBox(pq, size = "normal") {
+  if (!pq) return "";
+  const colors = PQ_COLORS[pq] || {
+    bg: "#f0ece6",
+    text: "#5a4e44"
+  };
+  const pad = size === "small" ? "4px 10px" : "8px 16px";
+  const fs = size === "small" ? "11px" : "13px";
+  const fw = "600";
+  return `<div style="background:${colors.bg};color:${colors.text};padding:${pad};border-radius:8px;font-size:${fs};font-weight:${fw};letter-spacing:0.03em;display:inline-block">${pq}</div>`;
+}
+
+const CGC_GRADE_LIST = [ 0.5, 1.0, 1.5, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.2, 9.4, 9.6, 9.8, 9.9, 10.0 ];
+
+const PSA_GRADE_LIST = [ 0.3, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.2, 9.4, 9.6, 9.8, 10.0 ];
+
+function fmtGrade(g) {
+  if (g == null || g === "") return "";
+  const n = parseFloat(g);
+  if (isNaN(n)) return "NG"; // S20 (#49): coverless/ungradeable → "No Grade", not blank/NaN
+  if (n === 10.0 || n === 10) return "10";
+  return n.toFixed(1);
+}
+
+function easeOutCubic(t) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function animateRoboGrade(el, target, duration) {
+  return new Promise(resolve => {
+    const start = performance.now();
+    const tgt = Math.round(target);
+    function tick(now) {
+      const elapsed = now - start;
+      const t = Math.min(elapsed / duration, 1);
+      const eased = easeOutCubic(t);
+      const current = Math.round(eased * tgt);
+      el.textContent = String(current);
+      if (t < 1) requestAnimationFrame(tick); else {
+        el.textContent = String(tgt);
+        resolve();
+      }
+    }
+    requestAnimationFrame(tick);
+  });
+}
+
+function animateGradeList(el, target, list, duration) {
+  return new Promise(resolve => {
+    const tgtIdx = list.findIndex(g => Math.abs(g - parseFloat(target)) < 0.01);
+    const stopIdx = tgtIdx >= 0 ? tgtIdx : list.length - 1;
+    const path = list.slice(0, stopIdx + 1);
+    if (path.length === 0) {
+      el.textContent = fmtGrade(target);
+      resolve();
+      return;
+    }
+    const start = performance.now();
+    let lastIdx = -1;
+    function tick(now) {
+      const elapsed = now - start;
+      const t = Math.min(elapsed / duration, 1);
+      const eased = easeOutCubic(t);
+      const idx = Math.min(Math.floor(eased * path.length), path.length - 1);
+      if (idx !== lastIdx) {
+        el.textContent = fmtGrade(path[idx]);
+        lastIdx = idx;
+      }
+      if (t < 1) requestAnimationFrame(tick); else {
+        el.textContent = fmtGrade(target);
+        resolve();
+      }
+    }
+    requestAnimationFrame(tick);
+  });
+}
+
+// S20: previous-grade → new-grade animations for Deep/Full/Re-Assess. The results
+// panel now slides in showing the PREVIOUS grade (see buildResultsPlaceholder),
+// then the number animates up or down to the revised grade. When it's done (or
+// immediately, if unchanged) the badge pops/glows to signal the revision.
+function animateRoboGradeFromTo(el, from, to, duration) {
+  return new Promise(resolve => {
+    from = Math.round(Number(from) || 0);
+    to = Math.round(Number(to) || 0);
+    if (from === to) { el.textContent = String(to); resolve(); return; }
+    const start = performance.now();
+    function tick(now) {
+      const t = Math.min((now - start) / duration, 1);
+      const eased = easeOutCubic(t);
+      el.textContent = String(Math.round(from + (to - from) * eased));
+      if (t < 1) requestAnimationFrame(tick); else { el.textContent = String(to); resolve(); }
+    }
+    requestAnimationFrame(tick);
+  });
+}
+
+function animateRGLadder(el, toGrade, duration) {
+  return new Promise(resolve => {
+    const L = (window.RGScoreV2 && window.RGScoreV2.LADDER) || ["0", "10"];
+    let toIdx = L.indexOf(String(toGrade));
+    if (toIdx < 0) toIdx = L.length - 1;
+    const start = performance.now();
+    let lastIdx = -1;
+    // Render the grade with the number locked center and the +/- absolutely
+    // positioned to the side, so cycling suffixes never shift the number.
+    const fmtLadder = (g) => {
+      const gg = String(g);
+      const mm = gg.match(/^(\d+)([+-])?$/);
+      const base = mm ? mm[1] : gg;
+      const suf = (mm && mm[2]) ? mm[2] : "";
+      return `<span style="position:relative;display:inline-block;line-height:1">${base}${suf ? `<span style="position:absolute;left:100%;top:0;font-size:0.55em;font-weight:600;line-height:1">${suf}</span>` : ""}</span>`;
+    };
+    function tick(now) {
+      const t = Math.min((now - start) / duration, 1);
+      const eased = easeOutCubic(t);
+      const idx = Math.min(Math.floor(eased * (toIdx + 1)), toIdx);
+      if (idx !== lastIdx) { el.innerHTML = fmtLadder(L[idx]); lastIdx = idx; }
+      if (t < 1) requestAnimationFrame(tick); else { el.innerHTML = fmtLadder(L[toIdx]); resolve(); }
+    }
+    requestAnimationFrame(tick);
+  });
+}
+
+function animateV3Ladder(el, toGrade, duration) {
+  // Count up in WHOLE integers only (0,1,2,...,floor(to)), then reveal the final
+  // value (with its .5 if any) once at the end. Animating half-steps made the
+  // width alternate between whole ("7") and decimal ("7.5") every tick, which
+  // flickered because the number is center-anchored. Integers-only keeps a
+  // stable width during the count and changes width just once, at the finish.
+  return new Promise(resolve => {
+    const to = Math.max(0, Math.min(10, Number(toGrade)));
+    const topInt = Math.floor(to);
+    const fmt = (v) => window.RoboScoreV3.formatGrade(v);
+    const start = performance.now(); let lastIdx = -1;
+    function tick(now){ const t=Math.min((now-start)/duration,1); const eased=easeOutCubic(t);
+      const idx=Math.min(Math.floor(eased*(topInt+1)),topInt);
+      if(idx!==lastIdx){ el.textContent=String(idx); lastIdx=idx; }
+      if(t<1) requestAnimationFrame(tick); else { el.textContent=fmt(to); resolve(); } }
+    requestAnimationFrame(tick);
+  });
+}
+
+// S23: count from the PREVIOUS grade to the new one (up or down) — Deep/Full
+// re-assessments were resetting to 0 and counting up. Integers-only for a stable
+// width; reveals the final .5 once at the end.
+function animateV3LadderFromTo(el, fromGrade, toGrade, duration) {
+  return new Promise(resolve => {
+    const to = Math.max(0, Math.min(10, Number(toGrade)));
+    const from = Math.max(0, Math.min(10, Number(fromGrade) || 0));
+    const fmt = (v) => window.RoboScoreV3.formatGrade(v);
+    const fromInt = Math.floor(from), toInt = Math.floor(to);
+    if (fromInt === toInt) {
+      el.textContent = fmt(from);
+      const s0 = performance.now();
+      (function hold(now){ if (now - s0 < duration) requestAnimationFrame(hold); else { el.textContent = fmt(to); resolve(); } })(performance.now());
+      return;
+    }
+    const step = toInt > fromInt ? 1 : -1;
+    const seq = [];
+    for (let v = fromInt; v !== toInt + step; v += step) seq.push(v);
+    const start = performance.now(); let lastIdx = -1;
+    function tick(now){ const t=Math.min((now-start)/duration,1); const eased=easeOutCubic(t);
+      const idx=Math.min(Math.floor(eased*seq.length), seq.length-1);
+      if(idx!==lastIdx){ el.textContent=String(seq[idx]); lastIdx=idx; }
+      if(t<1) requestAnimationFrame(tick); else { el.textContent=fmt(to); resolve(); } }
+    requestAnimationFrame(tick);
+  });
+}
+
+function animateGradeListFromTo(el, from, to, list, duration) {
+  return new Promise(resolve => {
+    const fromIdx = list.findIndex(g => Math.abs(g - parseFloat(from)) < 0.01);
+    const toIdx = list.findIndex(g => Math.abs(g - parseFloat(to)) < 0.01);
+    if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) { el.textContent = fmtGrade(to); resolve(); return; }
+    const step = toIdx > fromIdx ? 1 : -1;
+    const path = [];
+    for (let i = fromIdx; i !== toIdx + step; i += step) path.push(list[i]);
+    const start = performance.now();
+    let lastIdx = -1;
+    function tick(now) {
+      const t = Math.min((now - start) / duration, 1);
+      const eased = easeOutCubic(t);
+      const idx = Math.min(Math.floor(eased * path.length), path.length - 1);
+      if (idx !== lastIdx) { el.textContent = fmtGrade(path[idx]); lastIdx = idx; }
+      if (t < 1) requestAnimationFrame(tick); else { el.textContent = fmtGrade(to); resolve(); }
+    }
+    requestAnimationFrame(tick);
+  });
+}
+
+// Pop + glow the badge box that holds `valueEl`. Restarts cleanly if re-applied.
+function popResultBadge(valueEl) {
+  const box = valueEl && valueEl.parentElement;
+  if (!box) return;
+  box.classList.remove("rg-result-pop");
+  void box.offsetWidth;
+  box.classList.add("rg-result-pop");
+  setTimeout(() => box.classList.remove("rg-result-pop"), 750);
+}
+
+// S22: perfect-10 gold — when the ladder resolves to a clean 10, swap the scan
+// badge to gold with near-black text (mirrors the gold score box in the panel).
+function applyPerfect10Gold(valueEl, grade) {
+  if (String(grade == null ? "" : grade).trim() !== "10") return;
+  const box = valueEl && valueEl.parentElement;
+  if (!box) return;
+  box.style.background = "linear-gradient(150deg,#fdeea0 0%,#f0c53a 34%,#d99e12 66%,#b57e0c 100%)";
+  box.style.borderColor = "#8a6209";
+  box.querySelectorAll("div,span").forEach(n => { n.style.color = "#3a2606"; });
+  valueEl.style.color = "#1a1206";
+}
+
+// S20: snapshot the current (about-to-be-superseded) grade so the results panel
+// can slide in showing it and then animate to the revised grade. Called at
+// scan-start for Re-Assess / Deep / Full. Null on a first assessment (no prior
+// grade) so the panel shows 0/0.0 and animates up from zero as before.
+function _capturePrevAssessResult() {
+  const _isCard = formData.type === "card";
+  const _gradeSrc = _isCard ? (formData.assessedPSAGrade || "") : (formData.predictedGrade || formData.assessedCGCGrade || "");
+  window._prevAssessResult = (formData.roboGrade && formData.roboGrade.score != null) ? {
+    score: Math.round(formData.roboGrade.score),
+    rgV3: (typeof rgV3GradeStr === "function" && !_isCard) ? rgV3GradeStr(formData) : (_isCard && window.RoboScoreV3 ? (function(){ try { const _r = window.RoboScoreV3.forCard(formData); return _r ? window.RoboScoreV3.formatGrade(_r.grade) : null; } catch(e){ return null; } })() : null), // S22: cards get a v3 grade too, so the scan placeholder never shows the v1 score
+    gradeText: normalizeGrade(_gradeSrc) || "0.0",
+    gradeVal: parseFloat(_gradeSrc) || null
+  } : null;
+}
+
+function animatePageQuality(pqEl, target, duration) {
+  return new Promise(resolve => {
+    if (!target) {
+      resolve();
+      return;
+    }
+    const list = PQ_CYCLE_ORDER;
+    const cycleMs = Math.max(0, duration - 200);
+    const perItem = cycleMs / list.length;
+    const start = performance.now();
+    let lastIdx = -1;
+    function renderPQ(pq) {
+      const colors = PQ_COLORS[pq] || {
+        bg: "#f0ece6",
+        text: "#5a4e44"
+      };
+      pqEl.innerHTML = `<div style="background:${colors.bg};color:${colors.text};padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">${pq}</div>`;
+    }
+    function tick(now) {
+      const elapsed = now - start;
+      if (elapsed >= duration) {
+        renderPQ(target);
+        resolve();
+        return;
+      }
+      let pq;
+      if (elapsed < cycleMs) {
+        const idx = Math.min(Math.floor(elapsed / perItem), list.length - 1);
+        pq = list[idx];
+      } else {
+        pq = target;
+      }
+      if (lastIdx === -1 || pq !== list[lastIdx]) {
+        renderPQ(pq);
+        lastIdx = list.indexOf(pq);
+      }
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  });
+}
+
+// S20 (#45): centered modal shown when a Main assessment maxes out at RG 92 —
+// the standard pass can't resolve higher, and Deep (more images) may lift the
+// grade. Replaces the cramped floating caption on the result screen.
+function _showCeilingModal() {
+  if (document.getElementById("ceiling-modal")) return;
+  const o = document.createElement("div");
+  o.id = "ceiling-modal";
+  o.style.cssText = "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;padding:20px";
+  o.innerHTML = `<div style="background:#141210;border-radius:18px;max-width:340px;width:100%;padding:24px 24px 20px;border:1.5px solid #4a7a20;text-align:center;box-shadow:0 12px 44px rgba(0,0,0,0.55)">
+    <img src="assets/Robograder_Gift.webp" alt="" style="width:112px;height:auto;margin:0 auto 12px;display:block">
+    <div style="font-size:13px;font-weight:800;letter-spacing:2px;color:#aaee30;margin-bottom:10px">DEEP ASSESSMENT UNLOCKED</div>
+    <div style="font-size:15px;color:#e8d9b8;line-height:1.6;margin-bottom:20px">This is a high-grade comic. Robograder requires additional images to determine whether an even higher grade can be given.</div>
+    <button id="ceiling-ok-btn" class="rg-btn rg-btn-branded rg-btn-md" style="display:inline-block;width:auto;padding:0 44px">OKAY</button>
+  </div>`;
+  const close = () => o.remove();
+  o.onclick = e => { if (e.target === o) close(); };
+  document.body.appendChild(o);
+  const b = document.getElementById("ceiling-ok-btn");
+  if (b) b.onclick = close;
+}
+
+// WHICH OWNERSHIP STATES MAY BE PUBLICLY LISTED (changed 2026-10-17).
+// Was Owned only. Watching is now allowed too: a book you are tracking before
+// buying is exactly the kind of thing people want to send someone a link to,
+// and disabling that was a mistake. Sold stays excluded — the listing outlives
+// the book and the link would misrepresent what you have.
+// Confirmed by Matt 2026-11-05: Sold only. Do not re-exclude Watching.
+// One definition, used by the per-book toggle, both ownership-change paths and
+// the bulk make-public action, so they cannot drift apart.
+function _publicEligibleOwnership(own) {
+  const o = own || "Owned";
+  return o === "Owned" || o === "Watching";
+}
+
+// S20: generic branded message modal (Robograder head), styled like the Gift
+// Credit / ceiling modals. Used for the "Different Comic" mismatch message and
+// the "only Owned books can be public" message so they don't fall back to a
+// plain browser alert.
+function _showBrandedModal(title, body, btnLabel) {
+  const existing = document.getElementById("rg-branded-modal");
+  if (existing) existing.remove();
+  const o = document.createElement("div");
+  o.id = "rg-branded-modal";
+  o.style.cssText = "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;padding:20px";
+  o.innerHTML = `<div style="background:#141210;border-radius:18px;max-width:340px;width:100%;padding:24px 24px 20px;border:1.5px solid #4a7a20;text-align:center;box-shadow:0 12px 44px rgba(0,0,0,0.55)">
+    <img src="assets/Robograder_Gift.webp" alt="" style="width:112px;height:auto;margin:0 auto 12px;display:block">
+    <div style="font-size:13px;font-weight:800;letter-spacing:2px;color:#aaee30;margin-bottom:10px">${esc(title)}</div>
+    <div style="font-size:15px;color:#e8d9b8;line-height:1.6;margin-bottom:20px">${esc(body)}</div>
+    <button id="rg-branded-ok-btn" class="rg-btn rg-btn-branded rg-btn-md" style="display:inline-block;width:auto;padding:0 44px">${esc(btnLabel || "OKAY")}</button>
+  </div>`;
+  const close = () => o.remove();
+  o.onclick = e => { if (e.target === o) close(); };
+  document.body.appendChild(o);
+  const b = document.getElementById("rg-branded-ok-btn");
+  if (b) b.onclick = close;
+}
+
+// Signature-detected pop-up. Shown after an assessment that identified creator
+// signature(s), so the user doesn't miss the close-up photo slots we add for them.
+// Styled like rgPopup with the Robograder head + OKAY. onDone runs after close.
+function showSignatureDetected(item, onDone) {
+  var sigs = (typeof getSignatures === 'function') ? getSignatures(item) : [];
+  if (!sigs.length) { if (onDone) onDone(); return; }
+  var GOLD = '#d4af37';
+  var names = (typeof formatSignerList === 'function') ? formatSignerList(item) : '';
+  var plural = sigs.length > 1;
+  var title = plural ? 'Signatures detected' : 'Signature detected';
+  var who = names ? ('by <strong style="color:#eaf5df">' + names + '</strong> ') : '';
+  var slotWord = plural ? 'two close-up photo slots have' : 'a close-up photo slot has';
+  var msg = 'A creator signature ' + who + (plural ? '' : '') + 'has been detected on this book, and ' + slotWord
+    + ' been added below your photos. Add a close-up' + (plural ? 's' : '') + ' of the signature'
+    + (plural ? 's' : '') + ' so buyers can inspect ' + (plural ? 'them' : 'it') + ' — optional, but recommended for signed books.';
+  var prev = document.getElementById('rg-sig-overlay'); if (prev) prev.remove();
+  var ov = document.createElement('div'); ov.id = 'rg-sig-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:24px;padding-top:max(24px,env(safe-area-inset-top));padding-bottom:max(24px,env(safe-area-inset-bottom));opacity:0;transition:opacity .15s ease;';
+  var card = document.createElement('div');
+  card.style.cssText = 'width:100%;max-width:340px;background:#141210;border:1.5px solid #6a4a10;border-radius:18px;overflow:hidden;box-shadow:0 12px 44px rgba(0,0,0,0.55);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,\'Segoe UI\',sans-serif;';
+  card.innerHTML = ''
+    + '<div style="padding:18px 20px 18px;text-align:center;">'
+    + '<img src="assets/Robograder_Gift.webp" alt="Robograder" style="width:88px;height:auto;object-fit:contain;margin:0 auto 10px;display:block">'
+    + '<div style="font-size:16px;font-weight:800;color:#f0c860;margin-bottom:8px">' + title + '</div>'
+    + '<div style="font-size:13.5px;line-height:1.6;color:#e8d9b8;text-align:left">' + msg + '</div>'
+    + '<button id="rg-sig-ok" style="margin-top:18px;width:100%;padding:12px;border:none;border-radius:10px;background:#4e9e2e;color:#0d1f08;font-size:15px;font-weight:800;letter-spacing:.5px;cursor:pointer">OKAY</button>'
+    + '</div>';
+  ov.appendChild(card); document.body.appendChild(ov);
+  requestAnimationFrame(function(){ ov.style.opacity='1'; card.style.transform='translateY(0) scale(1)'; });
+  function close(){ ov.style.opacity='0'; setTimeout(function(){ if(ov.parentNode) ov.parentNode.removeChild(ov); if (onDone) onDone(); },160); }
+  card.querySelector('#rg-sig-ok').onclick = close;
+  ov.addEventListener('click', function(e){ if(e.target===ov) close(); });
+}
+
+// Depth-ceiling upsell pop-up (v3). Auto-shown after an assessment whose grade
+// hit the Main (9.0) or Deep (9.5) ceiling. Styled like rgPopup with the
+// Robograder head; star + coin symbols inline; single OKAY button.
+function showCeilingUpsell(upsell) {
+  if (upsell !== 'deep' && upsell !== 'full') return;
+  var GOLD = '#d4af37';
+  var star = function(n){ var s=''; for(var i=0;i<n;i++) s+=tierStarSVG(15, GOLD); return '<span style="display:inline-flex;gap:1px;vertical-align:-3px">'+s+'</span>'; };
+  var coin = '<img src="assets/robocoin2.webp" style="width:18px;height:18px;vertical-align:-4px;display:inline-block" alt="credit">';
+  var title, msg;
+  if (upsell === 'deep') {
+    title = 'Push it higher?';
+    msg = 'This book has hit the 9.0 ceiling for a '+star(1)+' assessment. A '+star(2)+' with 6 new images can push it to 9.5.' + (formData.deepRefundUsed ? '' : ' The '+coin+' will be refunded if neither grade goes up.');
+  } else {
+    title = 'Confirm a 10?';
+    msg = 'This book is near-perfect. A '+star(3)+' Full assessment with 6 new images can confirm a perfect 10.' + (formData.fullRefundUsed ? '' : ' Your '+coin+' is refunded if the grade stays at 9.5.');
+  }
+  var prev = document.getElementById('rg-upsell-overlay'); if (prev) prev.remove();
+  var ov = document.createElement('div'); ov.id = 'rg-upsell-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:24px;padding-top:max(24px,env(safe-area-inset-top));padding-bottom:max(24px,env(safe-area-inset-bottom));opacity:0;transition:opacity .15s ease;';
+  var card = document.createElement('div');
+  card.style.cssText = 'width:100%;max-width:340px;background:#141210;border:1.5px solid #6a4a10;border-radius:18px;overflow:hidden;box-shadow:0 12px 44px rgba(0,0,0,0.55);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,\"Segoe UI\",sans-serif;';
+  card.innerHTML = '<div style="padding:24px 24px 20px;text-align:center;">'
+    + '<img src="assets/Robograder_Gift.webp" alt="Robograder" style="width:88px;height:auto;object-fit:contain;margin:0 auto 10px;display:block">'
+    + '<div style="font-size:16px;font-weight:800;color:#f0c860;margin-bottom:8px">'+title+'</div>'
+    + '<div style="font-size:13.5px;line-height:1.6;color:#e8d9b8;text-align:left;margin-bottom:20px">'+msg+'</div>'
+    + '<button id="rg-upsell-ok" class="rg-btn rg-btn-branded rg-btn-md" style="width:100%">OKAY</button>'
+    + '</div>';
+  ov.appendChild(card); document.body.appendChild(ov);
+  requestAnimationFrame(function(){ ov.style.opacity='1'; card.style.transform='translateY(0) scale(1)'; });
+  function close(){ ov.style.opacity='0'; setTimeout(function(){ if(ov.parentNode) ov.parentNode.removeChild(ov); },160); }
+  card.querySelector('#rg-upsell-ok').onclick = close;
+  ov.addEventListener('click', function(e){ if(e.target===ov) close(); });
+}
+function _showAssessRefundCoin() {
+  // S22: the +1 refund coin appears only AFTER the score animation lands, as a
+  // persistent absolutely-positioned element (sibling of the PQ row, so the PQ
+  // pill render can't wipe it). It stays until the scan panel is dismissed on
+  // Complete (returning to Detail/Edit).
+  try {
+    var panel = document.querySelector(".rg-scan-results");
+    if (!panel) return;
+    var host = panel.querySelector(":scope > div") || panel;
+    if (host.querySelector("#rg-refund-coin")) return;
+    var c = document.createElement("div");
+    c.id = "rg-refund-coin";
+    c.style.cssText = "position:absolute;right:8px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:0;line-height:1.05;pointer-events:none;z-index:6";
+    c.innerHTML = '<img src="assets/robocoin2.webp" style="width:28px;height:28px" alt="Credit refunded"><div style="color:#d4af37;font-size:10px;font-weight:800;letter-spacing:0.3px;margin-top:1px">+1</div><div style="color:#cfc3a8;font-size:7px;font-weight:800;letter-spacing:0.4px">REFUNDED</div>';
+    host.appendChild(c);
+  } catch (e) {}
+}
+
+function mountResults(cgc, psa) {
+  const dbg = msg => {
+    if (window.RobograderScan && window.RobograderScan.debugLog) {
+      window.RobograderScan.debugLog(msg);
+    }
+  };
+  dbg("mountResults called");
+  const _refunded = !!window._creditRefunded;
+  window._creditRefunded = false;
+  if (!window.RobograderScan || !window.RobograderScan.slideResultsIntoPanel) {
+    console.warn("mountResults: scan-animation module not loaded");
+    return;
+  }
+  const cgcGrade = normalizeGrade(cgc.grade || "");
+  const psaGrade = normalizeGrade(psa.grade || "");
+  const predictedGrade = cgcGrade || psaGrade;
+  const pq = cgc.pageQuality ? normPageQuality(cgc.pageQuality) : "";
+  const roboGrade = window._pendingRoboGrade;
+  const roboScore = roboGrade && roboGrade.score != null ? Math.round(roboGrade.score) : null;
+  // S20: previous grade (set at scan-start for Deep/Full/Re-Assess). The results
+  // panel shows these instead of 0/0.0, then animates to the new values below.
+  const _prev = window._prevAssessResult || null;
+  const _rgFrom = _prev && _prev.score != null ? _prev.score : 0;
+  const _rgInitStr = _prev && _prev.rgV3 ? _prev.rgV3 : "0"; // S22: never show the v1 0-100 score
+  const _gradeFrom = _prev && _prev.gradeVal != null ? _prev.gradeVal : null;
+  const _gradeInitStr = _prev && _prev.gradeText ? _prev.gradeText : "0.0";
+  // ── v6.41: THE NEEDLE LANDS, THEN THE PANEL GOES ────────────────────────
+  // S24 added the reveal - the panel slides out to uncover the cover - and it
+  // was taking the gauge off screen mid-swing. The needle's whole job is to
+  // arrive at the grade; pulling the panel before it arrives throws away the
+  // gesture the gauge exists for.
+  //
+  // The order Matt asked for, which is also the only order that reads as one
+  // event: RG and PG start counting, the needle sweeps and the grid lights
+  // stop, ALL AT THE SAME MOMENT. Everything is a 2000ms animation, so they
+  // all land together. Then - and only then - the panel slides away.
+  //
+  // Nothing downstream got slower: the PQ pill and the COMPLETE button keep
+  // their own timings, and PG actually arrives a second EARLIER than it used
+  // to because its 1000ms head start is gone.
+  //
+  // BATCH IS NOT AFFECTED. mountBatchResults is a separate function with its
+  // own pacing, and revealScannedPhoto returns early for batch anyway - the
+  // panel stays up and the five results stay on screen.
+  const RESULT_COUNT_MS = 2000;        // RG ladder, PG list, and .final-sweep
+  const REVEAL_AFTER_MS = RESULT_COUNT_MS + 150;   // a beat for the badge pop
+  if (window.RobograderScan && window.RobograderScan.stopGridCycle) {
+    window.RobograderScan.stopGridCycle();
+    dbg("mountResults: stopGridCycle returned");
+  }
+  if (window.RobograderScan && window.RobograderScan.stopNeedlePulse) {
+    window.RobograderScan.stopNeedlePulse();
+    dbg("mountResults: stopNeedlePulse returned");
+  }
+  if (window.RobograderScan && window.RobograderScan.sweepNeedleToScore && roboScore != null) {
+    window.RobograderScan.sweepNeedleToScore(roboScore);
+    dbg(`mountResults: sweep needle to score ${roboScore}`);
+  }
+  if (window._modalFrameTimer) {
+    clearInterval(window._modalFrameTimer);
+    window._modalFrameTimer = null;
+  }
+  const gridEl = document.getElementById("tracker-grid-frame");
+  if (gridEl) gridEl.style.display = "none";
+  const makeBadge = (type, valueId) => {
+    const configs = {
+      predicted: {
+        bg: "#2a5a8a",
+        text: "#e0f0ff",
+        label: "PG",   // v6.41: our Predicted Grade, not a grading company's
+        initial: _gradeInitStr
+      },
+      "cgc-ai": {
+        bg: "#2a5a8a",
+        text: "#e0f0ff",
+        label: "PG",   // v6.41: our Predicted Grade, not a grading company's
+        initial: _gradeInitStr
+      },
+      "psa-ai": {
+        bg: "#2a5a8a",
+        text: "#e0f0ff",
+        label: "PG",   // v6.41: our Predicted Grade, not a grading company's
+        initial: _gradeInitStr
+      },
+      robograde: {
+        bg: "#0f1a05",
+        text: "#b8d820",
+        label: "RG",
+        initial: _rgInitStr,
+        border: "1.5px solid #3a5010"
+      }
+    };
+    const c = configs[type];
+    const border = c.border ? `border:${c.border};` : "";
+    return `<div style="position:relative;width:64px;height:64px;${border}background:${c.bg};border-radius:8px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n      <div id="${valueId}" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'League Spartan',sans-serif;transform:scaleX(0.7);font-size:38px;font-weight:800;color:${c.text};line-height:1">${c.initial}</div>\n      <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:${c.text};opacity:0.75;letter-spacing:0.8px">${c.label}</div>\n    </div>`;
+  };
+  let badgesHtml = "";
+  if (roboScore != null) badgesHtml += makeBadge("robograde", "anim-val-robo");
+  if (predictedGrade) badgesHtml += makeBadge("predicted", "anim-val-cgc");
+  const resultsHtml = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n      <div id="result-grades" style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badgesHtml}</div>\n      <div id="result-pq" style="position:relative;width:100%;display:flex;align-items:center;justify-content:center;min-height:22px;">\n        <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n      </div>\n      <button id="assess-complete-btn" disabled\n        style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">\n        ASSESSING…\n      </button>\n    </div>`;
+  // S24 (Matt, post-Baltimore): slide the progress panel back out to the right
+  // to uncover the front cover, one beat after the last step box lands and
+  // while the score boxes are still counting up. Watching people at the booth:
+  // they track their own book into the chest, lose the thread behind the
+  // progress panel, then get a grade with no picture attached to it. Cover and
+  // grade in the same frame is what closes the loop.
+  // Deep and Full never scan the cover, so hand over the STORED front cover -
+  // it must already exist for those passes to be offered at all.
+  try {
+    const _rvU = x => (x && (x.url || (typeof x === "string" ? x : null))) || null;
+    const _cover = _rvU((formData.images || [])[0]);
+    window.RobograderScan.revealScannedPhoto('front', REVEAL_AFTER_MS, _cover);
+  } catch (e) {}
+  window.RobograderScan.slideResultsIntoPanel(resultsHtml);
+  dbg("mountResults: results html replaced");
+  const roboEl = document.getElementById("anim-val-robo");
+  const cgcEl = document.getElementById("anim-val-cgc");
+  const pqEl = document.getElementById("result-pq");
+  if (roboEl && roboScore != null) {
+    // v2 preview (?v2=1): count up the RG badge along the 31-tier scale
+    // (0, 0+, 1-, 1, … 10) and land on the grade — no 0-100 number.
+    const _v2g = (window.RG_V2_DISPLAY && window.RGScoreV2 && roboGrade)
+      ? (roboGrade.frontScore != null
+          ? window.RGScoreV2.fromSubscores({ front: roboGrade.frontScore, back: roboGrade.backScore, spine: roboGrade.spineScore, interior: roboGrade.interiorScore }, 'comic').grade
+          : window.RGScoreV2.gradeFromScore(roboScore))
+      : null;
+    const _deepPassResults = !!(cgc && cgc._highGradeTier === true) || formData.deepAssessmentRan === true || formData.highGradeTier === true;
+    const _v3res = (window.RG_V3_DISPLAY && window.RoboScoreV3 && formData.type !== 'card' && roboGrade && roboGrade.frontScore != null) ? window.RoboScoreV3.forComic({ ...formData, roboGrade: roboGrade, deepAssessmentRan: _deepPassResults }) : null;
+    if (_v3res != null) {
+      roboEl.style.fontSize = '38px';
+      animateV3LadderFromTo(roboEl, (_prev && _prev.rgV3 != null ? Number(_prev.rgV3) : 0), _v3res.grade, 2000).then(() => { popResultBadge(roboEl); if (_refunded) _showAssessRefundCoin(); if (_v3res.grade === 10) applyPerfect10Gold(roboEl, '10');
+        setTimeout(() => {
+          var _sigNew = (typeof getSignatures === 'function') && getSignatures(formData).length > 0 && !((formData.signatureImages || []).some(Boolean));
+          // S22: the DEEP upsell ("Push it higher?") may only appear after a 1-star MAIN.
+    // The FULL upsell ("Confirm a 10?") appears after a 2-star Deep. _deepPassResults
+    // is true on a Deep/Full pass, so suppress the deep upsell there.
+    var _upsellKind = _v3res.upsell;
+    if (_upsellKind === 'deep' && _deepPassResults) _upsellKind = null;
+    // S22: a near-perfect PG (>=9.6) on a Deep also offers Full (perfect-10 path),
+    // even when the RG didn't hit the 9.5 ceiling.
+    if (!_upsellKind && _deepPassResults && !formData.fullAssessmentRan) {
+      var _pgUp = parseFloat(predictedGrade);
+      if (Number.isFinite(_pgUp) && _pgUp >= 9.6) _upsellKind = 'full';
+    }
+    var _ceiling = _upsellKind ? (() => showCeilingUpsell(_upsellKind)) : null;
+          if (_sigNew) showSignatureDetected(formData, _ceiling); else if (_ceiling) _ceiling();
+        }, 700);
+      });
+    } else if (_v2g != null) {
+      roboEl.style.fontSize = '38px';
+      animateRGLadder(roboEl, _v2g, 2000).then(() => { popResultBadge(roboEl); applyPerfect10Gold(roboEl, _v2g); });
+    } else if (_rgFrom === roboScore) {
+      // S20: animate from the PREVIOUS RG (0 on a first assessment) to the new one.
+      setTimeout(() => popResultBadge(roboEl), 700);
+    } else {
+      animateRoboGradeFromTo(roboEl, _rgFrom, roboScore, 2000).then(() => popResultBadge(roboEl));
+    }
+  }
+  if (cgcEl && predictedGrade) {
+    // v6.41: was a 1000ms head start for RG. The two now move together, so
+    // they finish together and the panel has one moment to wait for.
+    const _gNew = parseFloat(predictedGrade);
+    if (_gradeFrom != null && Math.abs(_gradeFrom - _gNew) < 0.01) {
+      popResultBadge(cgcEl);
+    } else {
+      animateGradeListFromTo(cgcEl, _gradeFrom != null ? _gradeFrom : CGC_GRADE_LIST[0], predictedGrade, CGC_GRADE_LIST, RESULT_COUNT_MS).then(() => popResultBadge(cgcEl));
+    }
+  }
+  if (pq && pqEl) {
+    setTimeout(() => {
+      const colors = PQ_COLORS[pq] || {
+        bg: "#f0ece6",
+        text: "#5a4e44"
+      };
+      pqEl.innerHTML = `<div style="background:${colors.bg};color:${colors.text};padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">${pq}</div>`;
+      dbg(`mountResults: PQ pill set to "${pq}"`);
+    }, 4000);
+  }
+  setTimeout(() => {
+    const btn = document.getElementById("assess-complete-btn");
+    if (!btn) return;
+    const isPostDeepRun = !!(cgc && cgc._highGradeTier);
+    const hgAlreadyRun = isPostDeepRun || !!(formData && formData.highGradeTier) || !!(formData && formData.deepUnlocked);
+    const predictedNum = parseFloat(cgc && cgc.grade);
+    const scoreGate = roboScore != null && roboScore >= 90;
+    const predictedGate = Number.isFinite(predictedNum) && predictedNum >= 9.0;
+    // Deep unlocks on RG>=90, predicted>=9.0, OR FMV tier >= 3 ($50+)
+    // — replacing the old value_keys list with real market value.
+    const fmvGate = fmvTierOf(cgc) >= 3;
+    const qualifies = scoreGate || predictedGate || fmvGate;
+    const hgUnlocked = qualifies && !hgAlreadyRun;
+    if (_pendingAssessResult && _pendingAssessResult.cgc) {
+      _pendingAssessResult.cgc._highGradeUnlocked = qualifies;
+      // S16/S20: track WHY it unlocked so Edit view can show the right explanation
+      _pendingAssessResult.cgc._highGradeReason = (fmvGate && !scoreGate && !predictedGate) ? "value" : "grade";
+    }
+    // S20 (#45): the "maxed out at initial assessment" modal fires on any MAIN
+    // result (not a post-Deep run) that hits the Deep-unlock GRADE threshold —
+    // RG >= 90 OR predicted >= 9.0 — regardless of value, and again on every
+    // Re-assess. A book that unlocks Deep only by value ($100+ tier) does NOT get it.
+    if (!isPostDeepRun && (scoreGate || predictedGate)) {
+      _showCeilingModal();
+    }
+    if (hgUnlocked) {
+      btn.innerHTML = `<div style="font-size:14px;font-weight:800;letter-spacing:1.5px;line-height:1.2">DEEP ASSESSMENT</div><div style="font-size:12px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
+      btn.style.background = "#3a9ee0";
+      btn.style.color = "#fff";
+      btn.style.textAlign = "center";
+    } else if (isPostDeepRun) {
+      const _fullEligible = isFullAssessmentEligible({
+        title: cgc && cgc.title || formData.title,
+        issue: cgc && cgc.issue || formData.issue,
+        issueDate: cgc && cgc.issueDate || formData.issueDate,
+        publisher: cgc && cgc.publisher || formData.publisher,
+        printing: cgc && cgc.printing || formData.printing,
+        labelDetected: cgc && cgc.labelDetected || formData.labelDetected,
+        // S20 (#37): we're in the post-Deep-run branch, so Deep IS complete —
+        // flag it so the FMV-tier-7 Full gate (which requires Deep-complete) sees it.
+        highGradeTier: true,
+        roboScore: typeof roboScore !== "undefined" && roboScore != null ? roboScore : formData && formData.roboGrade && formData.roboGrade.score,
+        predictedGrade: cgc && cgc.grade || formData.predictedGrade || formData && formData.assessedCGCGrade
+      });
+      const _fullAlreadyRun = isFullAssessmentComplete(cgc) || isFullAssessmentComplete(formData) || !!(formData && formData.fullUnlocked);
+      if (_fullEligible && !_fullAlreadyRun) {
+        btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">FULL ASSESSMENT</div><div style="font-size:12px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">UNLOCKED</div>`;
+        btn.style.background = "#3a9ee0";
+        btn.style.color = "#fff";
+        btn.style.textAlign = "center";
+      } else {
+        btn.innerHTML = "Complete";
+        btn.style.background = "#3a9ee0";
+        btn.style.color = "#fff";
+        btn.style.textAlign = "center";
+      }
+    } else if (hgAlreadyRun) {
+      btn.innerHTML = `<div style="font-size:13px;font-weight:800;letter-spacing:2px;line-height:1.2">COMPLETE</div>`;
+      btn.style.background = "#3a9ee0";
+      btn.style.color = "#fff";
+      btn.style.textAlign = "center";
+    } else if (typeof hasIdentifiedSignatures === "function" && hasIdentifiedSignatures(cgc && cgc._roboGrade ? {
+      roboGrade: cgc._roboGrade
+    } : cgc)) {
+      btn.innerHTML = `<div style="font-size:14px;font-weight:800;letter-spacing:1.5px;line-height:1.2">SIGNATURE</div><div style="font-size:12px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">DETECTED</div>`;
+      btn.style.background = "#6a4ba8";
+      btn.style.color = "#fff";
+      btn.style.textAlign = "center";
+    } else if (typeof isRestorationEligible === "function" && isRestorationEligible(formData) && !isRestorationCheckComplete(formData) && !(formData && formData.restorationUnlocked) && uvChecksLeft(formData) > 0) {
+      btn.innerHTML = `<div style="font-size:12px;font-weight:800;letter-spacing:1.5px;line-height:1.2">UV CHECK</div><div style="font-size:12px;font-weight:700;letter-spacing:2px;opacity:0.85;margin-top:2px">FREE</div>`;
+      btn.style.background = "#7a4ba8";
+      btn.style.color = "#fff";
+      btn.style.textAlign = "center";
+    } else {
+      btn.innerHTML = "COMPLETE";
+      btn.style.background = "#3a9ee0";
+      btn.style.color = "#fff";
+    }
+    btn.disabled = false;
+    btn.style.cursor = "pointer";
+    btn.onclick = completeAssessment;
+    dbg("mountResults: ASSESSING → active button");
+  }, 4200);
+}
+
+function showResultPreview(cgc, psa) {
+  return mountResults(cgc, psa);
+}
+
+async function assessHighGrade() {
+  const imgs = (formData.images || []).filter(Boolean);
+  const corners = (formData.cornerImages || []).filter(Boolean);
+  // Slabbed books only ever capture front + back (interior + raking are skipped),
+  // so require just those two; raw books require all 4 main photos.
+  if (formData.labelDetected) {
+    if (!(formData.images || [])[0] || !(formData.images || [])[1]) {
+      alert("Front and back photos are required for Deep Assessment.");
+      return;
+    }
+  } else if (imgs.length < 4) {
+    alert("All 4 main photos are required for Deep Assessment.");
+    return;
+  }
+  if (corners.length < 4) {
+    alert("All 4 corner photos are required for Deep Assessment.");
+    return;
+  }
+  // S20 (#36): raw books also need the 2 interior-cover photos (slabbed can't open).
+  const rawInteriorCovers = formData.labelDetected ? [] : (formData.interiorCoverImages || []).filter(Boolean);
+  if (!formData.labelDetected && rawInteriorCovers.length < 2) {
+    alert("Both interior-cover photos (Interior Front and Interior Back) are required for Deep Assessment.");
+    return;
+  }
+  if (assessing) return;
+  const eligibility = await checkAssessmentEligibility();
+  if (!eligibility.allowed) {
+    alert(eligibility.message);
+    return;
+  }
+  if (window._userCredits !== undefined && window._userCredits <= 0) {
+    showBuyCredits();
+    return;
+  }
+  const initialRG = formData.roboGrade;
+  // v6.41: capture the pre-Deep PG HERE, beside the pre-Deep RG, because the
+  // refund test needs both and formData is rewritten later in this flow.
+  const initialPG = (() => {
+    const n = parseFloat(formData.predictedGrade || formData.assessedCGCGrade);
+    return Number.isFinite(n) ? n : null;
+  })();
+  if (!initialRG) {
+    alert("Run a standard assessment first before running Deep Assessment.");
+    return;
+  }
+  assessing = true;
+  const _hgBtn = document.getElementById("hg-assess-btn") || document.getElementById("assess-btn");
+  if (_hgBtn) {
+    _hgBtn.textContent = "ASSESSING…";
+    _hgBtn.disabled = true;
+    _hgBtn.style.opacity = "0.75";
+  }
+  // S20 (#40): Deep now animates 6 images — the 4 corner macros plus the 2
+  // interior covers (raw books). Order [tl, tr, bl, br, interiorFront,
+  // interiorBack] matches SLOTS_CORNER. Slabbed books have no interior covers,
+  // so only the 4 corners scan.
+  const _deepScanPhotos = [
+    ...(formData.cornerImages || []).filter(Boolean).slice(0, 4),
+    ...(formData.labelDetected ? [] : (formData.interiorCoverImages || []).filter(Boolean).slice(0, 2))
+  ];
+  _capturePrevAssessResult(); // S20: Deep revises the Main grade — show it sliding in
+  const scanController = window.RobograderScan ? window.RobograderScan.runScanAnimation(_deepScanPhotos, "corner") : {
+    promise: Promise.resolve(),
+    cancel: () => {}
+  };
+  try {
+    const cornerDataUrls = await Promise.all(corners.slice(0, 4).map(async img => {
+      if (img.startsWith("http")) {
+        const resp = await fetch(img);
+        const blob = await resp.blob();
+        return new Promise(res => {
+          const r = new FileReader;
+          r.onload = ev => res(ev.target.result);
+          r.readAsDataURL(blob);
+        });
+      }
+      return img;
+    }));
+    const compressedCorners = await compressImagesSequentially(cornerDataUrls);
+    // S20 (#36): compress the 2 interior covers the same way (raw books only).
+    let compressedCovers = [];
+    if (rawInteriorCovers.length >= 2) {
+      const coverDataUrls = await Promise.all(rawInteriorCovers.slice(0, 2).map(async img => {
+        if (img.startsWith("http")) {
+          const resp = await fetch(img);
+          const blob = await resp.blob();
+          return new Promise(res => { const r = new FileReader; r.onload = ev => res(ev.target.result); r.readAsDataURL(blob); });
+        }
+        return img;
+      }));
+      compressedCovers = await compressImagesSequentially(coverDataUrls);
+    }
+    // S20 (#44): send the Main front-cover image as the identity anchor so the
+    // Deep endpoint can verify the corner macros are the SAME physical book. A
+    // confident mismatch returns a gate and costs no credit. Non-fatal if it
+    // fails to compress — Deep then simply grades without the same-book check.
+    let compressedFront = null;
+    try {
+      const _frontRaw = (formData.images || [])[0];
+      if (_frontRaw) {
+        let _frontUrl = _frontRaw;
+        if (_frontRaw.startsWith("http")) {
+          const resp = await fetch(_frontRaw);
+          const blob = await resp.blob();
+          _frontUrl = await new Promise(res => { const r = new FileReader; r.onload = ev => res(ev.target.result); r.readAsDataURL(blob); });
+        }
+        const _cf = await compressImagesSequentially([_frontUrl]);
+        compressedFront = (_cf && _cf[0]) || null;
+      }
+    } catch (e) { console.warn("[deep] front-cover anchor compress failed (non-fatal):", e); compressedFront = null; }
+    const token = window._currentUser ? await window._currentUser.getIdToken() : null;
+    const _initialPayload = {
+      title: formData.title || "",
+      issue: formData.issue || "",
+      issueDate: formData.issueDate || "",
+      publisher: formData.publisher || "",
+      printing: formData.printing || "",
+      pageQuality: formData.pageQuality || initialRG.pageQuality || "",
+      grade: formData.predictedGrade || formData.assessedCGCGrade || "",
+      graderNotes: formData.graderNotes || "",
+      aiAssessment: formData.aiAssessment || "",
+      labelNotes: formData.labelNotes || "",
+      keyInfo: formData.keyInfo || "",
+      enhance: formData.enhance,
+      labelDetected: !!formData.labelDetected,
+      roboGrade: initialRG,
+      photograder: formData.photograder || null
+    };
+    const _deepFetchInit = {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-client-secret": "022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",
+        ...token ? {
+          Authorization: "Bearer " + token
+        } : {}
+      },
+      body: JSON.stringify({
+        // S22 (9646): tells the server to enforce AND debit the credit itself.
+        // Clients that do not send this get the floor only, and keep doing their
+        // own decrement — which is how old native builds avoid a double charge.
+        serverCredits: true,
+        initialAssessment: _initialPayload,
+        cornerMacros: compressedCorners,
+        interiorCovers: compressedCovers,
+        frontCover: compressedFront,
+        title: formData.title || "",
+        issueNumber: formData.issue || "",
+        // S22: the ComicVine cover the Main pass stored on this item. Deep falls
+        // back to it for STRUCTURAL comparison only when there is no curated
+        // reference_covers/ scan for the issue.
+        referenceImageUrl: formData.referenceImageUrl || ""
+      })
+    };
+    let _bufferedPhases = [];
+    let _stepAnimator = null;
+    function _onPhase(payload) {
+      if (_stepAnimator) _stepAnimator.setPhase(payload.phase); else _bufferedPhases.push(payload);
+    }
+    let respPromise;
+    let _usingStreaming = false;
+    if (typeof supportsResponseStreaming === "function" && supportsResponseStreaming()) {
+      _usingStreaming = true;
+      respPromise = streamAssessRequest("/api/assess_deep", _deepFetchInit, _onPhase).catch(err => {
+        if (err && err.fallbackResponse) {
+          _usingStreaming = false;
+          return err.fallbackResponse;
+        }
+        throw err;
+      });
+    } else {
+      respPromise = fetch("/api/assess_deep", _deepFetchInit);
+    }
+    await scanController.promise;
+    if (window.RobograderScan && window.RobograderScan.debugLog) {
+      window.RobograderScan.debugLog("hg: scanController.promise resolved");
+    }
+    mountStepTracker('deep');
+    if (_usingStreaming) {
+      _stepAnimator = makeStepAnimator();
+      for (const p of _bufferedPhases) _stepAnimator.setPhase(p.phase);
+      _bufferedPhases = [];
+    }
+    const _resp = await respPromise;
+    let unified;
+    if (_usingStreaming) {
+      unified = _resp;
+      if (_stepAnimator) {
+        _stepAnimator.finalize();
+        await _stepAnimator.promise;
+      }
+    } else {
+      if (!_resp.ok) {
+        const e = await _resp.text();
+        throw new Error("Deep Assessment error: " + e);
+      }
+      unified = await _resp.json();
+    }
+    if (window.RobograderScan && window.RobograderScan.debugLog) {
+      window.RobograderScan.debugLog("hg: API returned, unified.gateResult=" + (unified.gateResult || "COMIC") + ", streaming=" + _usingStreaming);
+    }
+    if (unified.error) throw new Error(unified.error);
+    if (unified.gateResult && unified.gateResult !== "COMIC") {
+      // S20 (#44): IMAGE_MISMATCH is an innocent mix-up (Deep photos of the wrong
+      // book), not abuse — never counts as a strike, same as MISSING_COVER.
+      const isStrikeGate = unified.gateResult !== "MISSING_COVER" && unified.gateResult !== "IMAGE_MISMATCH";
+      if (isStrikeGate && !("lockout" in unified)) {
+        await incrementStrike(unified.gateResult, unified.gateReason || "");
+      }
+      showGateTerminatedPreview(unified.gateResult, unified.gateReason || "", unified.lockout, {
+        cropFailure: unified.cropFailure || null,
+        missingCover: unified.missingCover || null
+      });
+      assessing = false;
+      return;
+    }
+    _recordTimingKey(unified); // S20 (#33): stash the Deep log key on the item
+    const cgc = {
+      ...unified.cgc || unified
+    };
+    const psa = unified.psa || (unified.psaGrade ? {
+      grade: unified.psaGrade,
+      psaNotes: unified.psaNotes || ""
+    } : {});
+    if (unified.roboGrade) cgc._roboGrade = unified.roboGrade;
+    if (unified.psaGrade) cgc._psaGrade = unified.psaGrade;
+    cgc._highGradeTier = true;
+    const _predictedNum = parseFloat(cgc.grade);
+    // Deep unlock on RG>=90, predicted>=9.0, OR FMV tier >= 3 ($50+).
+    const _fmvGate = fmvTierOf(cgc) >= 3;
+    const _scoreOrGrade = (unified.roboGrade && unified.roboGrade.score >= 90) || (Number.isFinite(_predictedNum) && _predictedNum >= 9.0);
+    cgc._highGradeUnlocked = _scoreOrGrade || _fmvGate;
+    cgc._highGradeReason = (_fmvGate && !_scoreOrGrade) ? "value" : "grade";
+    try {
+      const normalizedTitle = normalizeTitle((cgc.title || formData.title || "").trim().replace(/\s+/g, " ").replace(/^The\s+/i, ""), cgc.issueDate || formData.issueDate, cgc.printing || formData.printing);
+      const issueForId = cgc.issue != null ? String(cgc.issue) : formData.issue || "";
+      const preUploadId = formData.id || buildComicId(normalizedTitle, issueForId);
+      const rawImages = (formData.images || []).filter(Boolean);
+      const rawCornerImages = (formData.cornerImages || []).filter(Boolean);
+      const hasNewImages = rawImages.some(isDataUrl) || rawCornerImages.some(isDataUrl);
+      if (hasNewImages && formData._imagesChanged !== false) {
+        if (!formData.id) formData.id = preUploadId;
+        formData._preUploadId = preUploadId;
+        formData._preUploadPromise = trackUpload(startPreUpload(rawImages, rawCornerImages, preUploadId)).catch(err => {
+          if (window.RobograderScan && window.RobograderScan.debugLog) {
+            window.RobograderScan.debugLog(`hg pre-upload failed: ${err.message}`);
+          }
+          console.warn("[pre-upload hg] failed:", err);
+          formData._preUploadPromise = null;
+          formData._preUploadId = null;
+          return null;
+        });
+      }
+    } catch (e) {
+      console.warn("[pre-upload hg] setup failed:", e);
+    }
+    const d = unified._diagnostics || {};
+    if (!_usingStreaming) {
+      await animateStepsFromDiagnostics(d);
+    }
+    _pendingAssessResult = {
+      cgc: cgc,
+      psa: psa
+    };
+    window._pendingRoboGrade = cgc._roboGrade || null;
+    // S21: refund the Deep credit if the grade did not improve vs the pre-Deep
+    // RoboGrade. Unknown scores => treat as improved (no refund) to stay safe.
+    //
+    // v6.41 - PG COUNTS TOO. The test was RG only, so a Deep that moved the
+    // PREDICTED grade 5.0 -> 5.5 while the RoboGrade stayed flat was refunded.
+    // Matt hit exactly that. The user is shown TWO numbers and told the credit
+    // comes back "if the score doesn't go up"; one of the two went up, so the
+    // refund read as a bug, and from where they sit it is one.
+    // A Deep is improved if EITHER number rose. The RG branch keeps its
+    // treat-unknown-as-improved safety (never refund on missing data); the PG
+    // branch defaults to NOT-improved, because the RG default already covers
+    // the safe case and two safe-defaults OR'd together would refund nothing.
+    let _rgImproved;
+    if (window.RG_V3_DISPLAY && window.RoboScoreV3 && formData.type !== 'card' && initialRG && cgc._roboGrade) {
+      // v3: refund is judged on the DISPLAYED (capped) grade, not the raw 0-100
+      // score. A Deep lifts the ceiling 9.0->9.5, so a clean book improves even
+      // when the raw score is unchanged; only a Deep that doesn't move the shown
+      // grade is refunded.
+      const _oldV3 = window.RoboScoreV3.forComic({ roboGrade: initialRG, photograder: formData.photograder, labelDetected: !!formData.labelDetected });
+      const _newV3 = window.RoboScoreV3.forComic({ roboGrade: cgc._roboGrade, photograder: formData.photograder, labelDetected: !!formData.labelDetected, deepAssessmentRan: true });
+      _rgImproved = (_oldV3 && _newV3) ? (_newV3.grade > _oldV3.grade) : true;
+    } else {
+      const _oldScore = (initialRG && typeof initialRG.score === "number") ? initialRG.score : null;
+      const _newScore = (cgc._roboGrade && typeof cgc._roboGrade.score === "number") ? cgc._roboGrade.score : null;
+      _rgImproved = (_newScore != null && _oldScore != null) ? (_newScore > _oldScore) : true;
+    }
+    const _pgTo = (() => { const n = parseFloat(cgc && cgc.grade); return Number.isFinite(n) ? n : null; })();
+    const _pgImproved = (initialPG != null && _pgTo != null) ? (_pgTo > initialPG) : false;
+    const _deepImproved = _rgImproved || _pgImproved;
+    // v6.42: console, not dbg(). `dbg` is a LOCAL const inside mountResults;
+    // this line is in assessHighGrade, where the name does not exist. See the
+    // version header - this one line killed every Deep assessment in 6.41.
+    console.log(`[deep] refund test: RG improved=${_rgImproved}, PG ${initialPG} -> ${_pgTo} improved=${_pgImproved} => charged=${_deepImproved}`);
+    // S25: refund the Deep credit only the FIRST time a re-run fails to improve.
+    // deepRefundUsed then latches (persisted via onAssessmentSuccess->submitForm),
+    // so all later re-runs are charged — no endless refunded re-rolls.
+    var _deepRefundEligible = !_deepImproved && !formData.deepRefundUsed;
+    window._creditRefunded = _deepRefundEligible;
+    if (_deepRefundEligible) {
+      formData.deepRefundUsed = true;
+      // S24: WHEN, not just whether. This refund is decided on the client after
+      // the result comes back, so the server's timing row for that Deep records
+      // a credit charged and nothing ever records that it was given back. The
+      // admin's cost-per-credit figure needs a DATE to put the refund in the
+      // right 24h / 7d / 30d bucket; `deepRefundUsed` is a latch and carries none.
+      formData.deepRefundAt = (new Date()).toISOString();
+    }
+    // S22: a paid assessment on this book refills the 3 free UV Checks.
+    resetUvCheckAllowance();
+    mountResults(cgc, psa);
+    onAssessmentSuccess(unified);
+    if (_deepRefundEligible) refundCredit();
+  } catch (e) {
+    dismissAssessModal(e.message);
+  }
+  assessing = false;
+  if (window.RobograderScan && window.RobograderScan.debugLog) {
+    window.RobograderScan.debugLog(`hg post-catch: view=${view}, assessing=${assessing}`);
+  }
+  if (view === "edit" || view === "add" || view === "detail") {
+    renderForm();
+  }
+  const _stuck = document.getElementById("assess-btn") || document.getElementById("hg-assess-btn");
+  if (_stuck && _stuck.textContent && /ASSESS/i.test(_stuck.textContent)) {
+    _stuck.textContent = _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE";
+    _stuck.disabled = false;
+    _stuck.style.opacity = "";
+  }
+}
+
+const IMAGE_SOFT_CAP = 20;
+
+const IMAGE_HARD_CAP = 25;
+
+const IMAGE_PAID_CAP = 1000;
+
+// ── Batch assessment (ASSESS_BATCH_SPEC) ─────────────────────────────────────
+// Runs the FULL Main->Deep pipeline N times on the same stored images to reveal
+// the realistic grade RANGE. Reuses assessGrade()/assessHighGrade() so payloads,
+// parsing and v3 math stay single-sourced. The per-run history churn is
+// suppressed via formData._batchMode; one batch record (with all N runs) is
+// filed in assessmentHistory. The app keeps the LAST run's grade (spec §9).
+const BATCH_N = 5;
+// Advertised flat batch price (placeholder — Matt is guessing; tune after
+// measuring the real cached cost per ASSESS_BATCH_SPEC §8). NOTE: the 10
+// underlying calls still charge per-call today; capping the actual charge to
+// this flat price is a billing task pending that measurement + Matt's call.
+const BATCH_CREDIT_COST = 3;
+// Batch eligibility (Matt, S22g): available whenever Main + Deep have run AND
+// the Photograder returned at most one B with the rest A (no C). The old gate
+// used isDeepAssessmentComplete(), which reads TRANSIENT flags (deepAssessmentRan)
+// that are lost when a book is reloaded in Edit — so Batch wrongly disappeared
+// until Deep was re-run. This checks PERSISTENT evidence that Deep ran instead.
+function _batchDeepRan(item) {
+  if (!item) return false;
+  // S22 (Matt): Batch was offered after a Main alone. Two of the old tests were
+  // about Deep being AVAILABLE, not about Deep having RUN —
+  //   highGradeUnlocked / deepUnlocked mean "the Deep button is offered",
+  //   4 corner images mean "the photos exist", which they do as soon as the
+  //   camera walkthrough finishes, before anything is graded.
+  // A near-perfect Main unlocks Deep and the corner shots are already on the
+  // item, so Batch appeared immediately. Only evidence that a Deep RESULT exists
+  // counts now.
+  if (item.deepAssessmentRan === true) return true;
+  if (typeof isDeepAssessmentComplete === "function" && isDeepAssessmentComplete(item)) return true;
+  if (item.deepAssessment && String(item.deepAssessment).trim()) return true;
+  return false;
+}
+function _batchPhotoOK(item) {
+  const pg = (item && (item.photograder || (item.roboGrade && item.roboGrade.photograder))) || null;
+  if (!pg) return false; // need photograde data to confirm clean photos
+  let c = 0, b = 0;
+  ["focus", "lighting", "cropping", "angle"].forEach(k => {
+    const v = String(pg[k] || "").toUpperCase();
+    if (v === "C") c++; else if (v === "B") b++;
+  });
+  return c === 0 && b <= 1;
+}
+function isBatchEligible(item) {
+  if (!item || item.type === "card") return false;
+  return _batchDeepRan(item) && _batchPhotoOK(item);
+}
+// v5.27: has this book already been through a Batch? A batch writes ONE history
+// entry carrying _batch:true (its N runs hang off that entry), so the history is
+// the record — there is no separate flag to drift out of step with it.
+function hasBatchRun(item) {
+  return !!(item && Array.isArray(item.assessmentHistory) && item.assessmentHistory.some(h => h && h._batch));
+}
+function _batchBanner(n, total, phase) {
+  let el = document.getElementById("batch-banner");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "batch-banner";
+    el.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:2147483000;background:#1c1608;color:#f0c53a;font:800 13px/1.4 'Barlow Condensed',Arial,sans-serif;letter-spacing:1.5px;text-align:center;padding:10px 12px;box-shadow:0 2px 12px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;gap:10px";
+    document.body.appendChild(el);
+  }
+  el.innerHTML = `<img src="assets/modal/Progress_Overlay_Batch.webp" style="height:24px;width:auto" alt=""> BATCH — GRADE ${n} OF ${total}${phase ? " · " + phase : ""}`;
+}
+function _batchBannerHide() { const el = document.getElementById("batch-banner"); if (el) el.remove(); }
+function _batchReadRun() {
+  let v3 = null;
+  try { v3 = (typeof rgV3ForComic === "function") ? rgV3ForComic(formData) : null; } catch (e) {}
+  return {
+    rgV3Raw: v3 ? v3.grade : null,
+    rgV3Grade: (v3 && window.RoboScoreV3) ? window.RoboScoreV3.formatGrade(v3.grade) : null,
+    predictedGrade: formData.predictedGrade || formData.assessedCGCGrade || "",
+    pageQuality: formData.pageQuality || "",
+    // v3 half-point subscores (front 0-5, back 0-2, spine 0-2, interior 0/0.5/1).
+    subscores: (v3 && v3.subscores) ? v3.subscores : null
+  };
+}
+function _batchRoundHalf(x) { return Math.round(x * 2) / 2; }
+
+// ── THE PG LADDER IS NOT THE RG SCALE ──────────────────────────────────────
+// Batch averaged the Predicted Grade and rounded it to the HALF POINT, with a
+// comment saying "same as RG". It is not the same as RG. RG v3 is a half-point
+// scale from 0 to 10, on which 9.5 is a legal value. PG is a CGC grade, and
+// above 9.0 that ladder steps 9.0, 9.2, 9.4, 9.6, 9.8 - there is no 9.5 and no
+// service issues one.
+//
+// Rounding to halves did not merely ALLOW an off-ladder grade, it manufactured
+// one: a batch averaging 9.4 - the commonest high-grade outcome there is -
+// rounds to 9.5, and so does one averaging 9.6. An average of 9.2 came out as
+// 9.0. So every Batch on a high-grade book published a grade that does not
+// exist, no matter how clean the five passes it averaged were. The individual
+// passes were never the problem: api/assess*.js run enforceCgcGrade() on the
+// way out, so every value going INTO this average was already on the ladder.
+//
+// This is the same ladder lib/grade_definitions.js enforces server-side. It is
+// restated rather than imported because that module also carries the full
+// grade-definition text, which this page has no use for and should not ship.
+// If one changes, change both.
+const _PG_LADDER = [0.5, 1.0, 1.5, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.2, 9.4, 9.6, 9.8, 9.9, 10.0];
+// `where` names the call site. Every firing is a defect to investigate: if
+// [pg-offladder] appears in a console, something upstream produced a grade
+// that no grading service issues, and the log line says which path.
+//
+// Non-numeric input is returned UNCHANGED, not blanked. "" is an ungraded
+// book and "NG" is a coverless/ungradeable one; both are legitimate stored
+// values and neither is a number to snap.
+function _snapPgToLadder(x, where) {
+  const n = Number(x);
+  if (x === "" || x == null || !isFinite(n)) return x;
+  // 0 is "no grade" in several places here, not a grade of zero. Snapping it
+  // would publish 0.5 - a real CGC grade - on a book nobody graded.
+  if (n <= 0) return x;
+  const t = Math.round(n * 100);
+  let best = _PG_LADDER[0], bestD = Math.abs(t - Math.round(best * 100));
+  for (const g of _PG_LADDER) {
+    const d = Math.abs(t - Math.round(g * 100));
+    // strict <, over an ascending ladder, keeps the LOWER grade on a tie:
+    // 9.5 is equidistant from 9.4 and 9.6 and resolves to 9.4, which matches
+    // enforceCgcGrade() server-side and the prompt's own "choose the lower
+    // unless the evidence clearly supports the higher".
+    if (d < bestD) { best = g; bestD = d; }
+  }
+  const out = best.toFixed(1);
+  if (Math.round(best * 100) !== t) {
+    console.warn("[pg-offladder] " + (where || "?") + ": " + x
+      + " is not a CGC grade (above 9.0 the ladder is 9.0, 9.2, 9.4, 9.6, 9.8)."
+      + " Stored as " + out + ".");
+  }
+  return out;
+}
+function _batchMedian(a) { const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; }
+// Styled batch-start confirm — app house style (Robograder head + dark card),
+// matching showCeilingUpsell. Resolves true = Run, false = Cancel.
+function _batchConfirm(message) {
+  return new Promise(function (resolve) {
+    var prev = document.getElementById('rg-batch-confirm-overlay'); if (prev) prev.remove();
+    var ov = document.createElement('div'); ov.id = 'rg-batch-confirm-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:100001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:24px;padding-top:max(24px,env(safe-area-inset-top));padding-bottom:max(24px,env(safe-area-inset-bottom));opacity:0;transition:opacity .15s ease;';
+    var card = document.createElement('div');
+    card.style.cssText = 'width:100%;max-width:340px;background:#141210;border:1.5px solid #6a4a10;border-radius:18px;overflow:hidden;box-shadow:0 12px 44px rgba(0,0,0,0.55);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;';
+    card.innerHTML = '<div style="padding:24px 24px 20px;text-align:center;">'
+      + '<img src="assets/Robograder_Gift.webp" alt="Robograder" style="width:88px;height:auto;object-fit:contain;margin:0 auto 10px;display:block">'
+      + '<div style="font-size:16px;font-weight:800;color:#f0c860;margin-bottom:8px">Run Batch Assessment?</div>'
+      + '<div style="font-size:13.5px;line-height:1.6;color:#e8d9b8;text-align:center;margin-bottom:20px">' + message + '</div>'
+      + '<button id="rg-batch-go" class="rg-btn rg-btn-branded rg-btn-md" style="width:100%;margin-bottom:8px">RUN BATCH</button>'
+      + '<button id="rg-batch-cancel" class="rg-btn rg-btn-secondary rg-btn-md" style="width:100%">Cancel</button>'
+      + '</div>';
+    ov.appendChild(card); document.body.appendChild(ov);
+    requestAnimationFrame(function () { ov.style.opacity = '1'; card.style.transform = 'translateY(0) scale(1)'; });
+    function done(val) { ov.style.opacity = '0'; setTimeout(function () { if (ov.parentNode) ov.parentNode.removeChild(ov); }, 160); resolve(val); }
+    card.querySelector('#rg-batch-go').onclick = function () { done(true); };
+    card.querySelector('#rg-batch-cancel').onclick = function () { done(false); };
+    ov.addEventListener('click', function (e) { if (e.target === ov) done(false); });
+  });
+}
+// ── BATCH ASSESSMENT (client) ──────────────────────────────────────────────
+// Spec: claude/ASSESS_BATCH_SPEC.md v3.1. Rewritten S22.
+//
+// The v2 implementation looped assessGrade()/assessHighGrade() 5x here. Each of
+// those re-uploaded every image, played the full scan animation and decremented
+// a credit — 10 full-price assessments and 10 animations. This does none of
+// that: the book is already saved, so its images are already in Storage, and
+// the server works from itemId alone.
+//
+// The CLIENT owns the staggered fan-out (spec §3.3 option C). It has to: a
+// Vercel function cannot outlive its own response, so assess_batch_start cannot
+// hold a timer waiting for pass 1. The browser can, it is already polling, and
+// the worker requests are tiny now that images are not in the payload.
+//   pass 1 at t=0  ->  passes 2..5 the moment pass 1's Main lands (its slot
+//   flips to stage 'deep'), so they read the cache pass 1 just wrote  ->  35s
+//   safety fallback fires them anyway if pass 1's Main is slow.
+const BATCH_POLL_MS = 1000;
+const BATCH_FANOUT_FALLBACK_MS = 35000;
+const BATCH_MAX_WALL_MS = 240000;
+
+async function _batchApi(path, opts) {
+  const token = window._currentUser ? await window._currentUser.getIdToken() : null;
+  const r = await fetch(path, {
+    method: opts && opts.method || "GET",
+    headers: {
+      "Content-Type": "application/json",
+      "x-client-secret": "022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",
+      ...token ? { Authorization: "Bearer " + token } : {}
+    },
+    ...opts && opts.body ? { body: JSON.stringify(opts.body) } : {}
+  });
+  const text = await r.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch (e) {}
+  if (!r.ok) {
+    const err = new Error((data && (data.message || data.error)) || `${path} ${r.status}`);
+    err.status = r.status; err.data = data;
+    throw err;
+  }
+  return data;
+}
+
+// Fire a worker. Deliberately NOT awaited by the caller: a pass takes ~50s and
+// we only need the request to have been dispatched.
+function _batchFireWorker(batchId, pass) {
+  _batchApi("/api/assess_batch_run", { method: "POST", body: { batchId, pass } })
+    .catch(e => console.warn(`[batch] worker ${pass} dispatch:`, e && e.message));
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// CLEANING COMPARE — the client half (v5.69, 2026-10-19)
+// Spec: claude/POST_CLEANING_ASSESSMENT_SPEC.md v5.
+//
+// The RUN itself is server-orchestrated (api/assess_clean_run.js): Main → Deep →
+// compare, on the api/assess_batch_run.js pattern. This file does four things —
+// decide whether to offer it, freeze the Before, hand the After photos over, and
+// light the modal from the server's own progress.
+// ════════════════════════════════════════════════════════════════════════════
+
+// The five boxes in Matt's Progress_Overlay_Cleaned.webp, in order. The labels
+// live in the ARTWORK; these ids only have to be unique and ordered.
+const CLEAN_STEPS = [
+  { id: "clean-scan",    label: "PRE-CLEANING SCAN" },
+  { id: "clean-main",    label: "RUNNING MAIN" },
+  { id: "clean-deep",    label: "RUNNING DEEP" },
+  { id: "clean-compare", label: "COMPARING DEFECTS" },
+  { id: "clean-regrade", label: "RE-GRADING" }
+];
+
+// Where the ten After photos are stored. Distinct slot names so an After set can
+// never overwrite the book's original images — Before is immutable and that is
+// the entire value of the feature (decision 2 of the spec).
+const STORAGE_SLOTS_CLEAN_AFTER = [
+  "clean_front_cover", "clean_back_cover", "clean_page_quality", "clean_raking_light",
+  "clean_corner_tl", "clean_corner_tr", "clean_corner_bl", "clean_corner_br",
+  "clean_interior_cover_front", "clean_interior_cover_back"
+];
+
+const CLEAN_CREDIT_COST = 2;
+
+// Offered only on a book with a COMPLETED Deep — the same bar Batch uses, and
+// for the same reason: `deepUnlocked` means the button is showing and four
+// corner photos mean the camera finished, neither of which means a Deep RESULT
+// exists. Reuses _batchDeepRan rather than restating the test, so the two
+// cannot drift apart.
+function _cleanUnlocked(item) {
+  if (!item || item.type === "card") return false;
+  return _batchDeepRan(item);
+}
+
+// The frozen Before. Written ONCE, on the first run, and never again however
+// many times the book is re-run (decision 2). Taken from the item's CURRENT
+// result, which at first-run time is its pre-cleaning state.
+function _cleanBeforeSnapshot(item) {
+  const rg = (item && item.roboGrade) || {};
+  return {
+    grade: item.grade || null,
+    roboGrade: rg,
+    pageQuality: item.pageQuality || rg.pageQuality || "",
+    defects: Array.isArray(rg.defects) ? rg.defects : [],
+    restorationFlag: !!item.restorationFlag,
+    restorationHighConfidence: !!item.restorationHighConfidence,
+    aiAssessment: item.aiAssessment || "",
+    frozenAt: (new Date()).toISOString()
+  };
+}
+
+// Light the modal from the SERVER'S OWN progress rather than a timer.
+// api/assess_clean_run.js writes its stage to users/{uid}/meta/clean_run after
+// each step, and that path is already owner-readable under the existing
+// Firestore rules — so this needs no endpoint and no rules change.
+//
+// Returns an unsubscribe function, or null when onSnapshot is unavailable, in
+// which case the caller falls back to timed lights. Matt said timed lights would
+// be acceptable; they are the fallback, not the plan.
+function _cleanWatchStage(onStage) {
+  try {
+    if (!window._fsOnSnapshot || !window._db || !window._currentUser) return null;
+    const ref = window._fsDoc(window._db, "users", window._currentUser.uid, "meta", "clean_run");
+    return window._fsOnSnapshot(ref, snap => {
+      const d = snap && snap.data ? snap.data() : null;
+      if (d && d.stage) onStage(d.stage, d);
+    }, err => console.warn("[clean] stage watch failed:", err && err.message));
+  } catch (e) {
+    console.warn("[clean] stage watch unavailable:", e && e.message);
+    return null;
+  }
+}
+
+async function submitCleanAssessment() {
+  if (assessing || formData._batchMode || formData._cleanMode) return;
+  if (!_cleanUnlocked(formData)) {
+    await appAlert("Run a Deep assessment first — Post-Cleaning measures the change against a Deep result.");
+    return;
+  }
+  if (!formData.id) { await appAlert("Save this book before running a Post-Cleaning assessment."); return; }
+
+  const after = (formData.cleanAfterImages || []).filter(Boolean);
+  if (after.length < 10) {
+    await appAlert("All ten after-cleaning photos are needed before this can run. " + after.length + " of 10 so far.");
+    return;
+  }
+  if (window._userCredits !== undefined && window._userCredits < CLEAN_CREDIT_COST) {
+    await appAlert("Post-Cleaning costs " + CLEAN_CREDIT_COST + " credits. You have " + window._userCredits + ".");
+    if (typeof showBuyCredits === "function") showBuyCredits();
+    return;
+  }
+  // NO REFUND, and the charge is made unambiguous BEFORE the tap, not after
+  // (decision 1). The user is buying a verdict, not hoping for a bump.
+  if (!(await _batchConfirm(
+    "Re-grades the book from your ten after-cleaning photos and compares it to the Deep result. Cost: " +
+    CLEAN_CREDIT_COST + " credits. There is no refund if the grade does not improve — you are paying for the measurement."
+  ))) return;
+
+  _capturePrevAssessResult();
+  formData._cleanMode = true;
+  let unwatch = null, tracker = null;
+  try {
+    // Freeze Before on the FIRST run only.
+    if (!formData.cleanBeforeResult) formData.cleanBeforeResult = _cleanBeforeSnapshot(formData);
+
+    // Animation first, network second — same ordering Batch uses, so the shell
+    // is already moving while the upload and the run start.
+    const _u = x => (x && (x.url || (typeof x === "string" ? x : null))) || null;
+    if (window.RobograderScan && window.RobograderScan.runScanAnimation) {
+      try {
+        window.RobograderScan.runScanAnimation(after.map(_u), "batch");
+        tracker = mountTierTracker("cleaned", CLEAN_STEPS, { noAutoLight: true });
+      } catch (e) { console.warn("[clean] animation:", e); }
+    }
+    setStep("clean-scan", "done");
+
+    // The ten After photos go to Storage under their own slots; the runner is
+    // handed URLs and fetches them itself, so a phone never holds ten base64
+    // blobs in memory and the request body stays small.
+    const up = await processImagesForSave(after, formData.id, STORAGE_SLOTS_CLEAN_AFTER, { preserveNulls: true });
+    const urls = (up && up.images ? up.images : after).map(_u);
+    formData.cleanAfterImages = urls;
+
+    unwatch = _cleanWatchStage(stage => {
+      if (stage === "main") setStep("clean-main", "running");
+      else if (stage === "deep") { setStep("clean-main", "done"); setStep("clean-deep", "running"); }
+      else if (stage === "comparing") { setStep("clean-deep", "done"); setStep("clean-compare", "running"); }
+      else if (stage === "error") setStep("clean-deep", "failed");
+    });
+    // Fallback only: if onSnapshot is unavailable the lights still move, on the
+    // measured shape of a run (Main ~12s, then Deep).
+    if (!unwatch) {
+      setTimeout(() => setStep("clean-main", "running"), 800);
+      setTimeout(() => { setStep("clean-main", "done"); setStep("clean-deep", "running"); }, 13000);
+    }
+
+    const res = await _batchApi("/api/assess_clean_run", {
+      method: "POST",
+      body: {
+        itemId: formData.id,
+        runNumber: (formData.cleanRuns || 0) + 1,
+        afterUrls: {
+          main: urls.slice(0, 4),
+          corner: urls.slice(4, 8),
+          interiorCover: urls.slice(8, 10)
+        },
+        before: formData.cleanBeforeResult,
+        identity: {
+          title: formData.title || "",
+          issue: String(formData.issue || ""),
+          issueDate: formData.issueDate || "",
+          publisher: formData.publisher || "",
+          printing: formData.printing || "",
+          referenceImageUrl: formData.referenceImageUrl || null
+        }
+      }
+    });
+    if (!res || !res.ok) throw new Error((res && res.detail) || "cleaning compare failed");
+
+    setStep("clean-compare", "done");
+    setStep("clean-regrade", "done");
+
+    // AFTER IS THE ITEM'S GRADE from here on (decision 3) — Catalogue, FMV and
+    // history all read the normal fields, so the After result is written into
+    // them and the Before stays beside it, labelled.
+    const A = res.after || {};
+    formData.cleanAfterResult = A;
+    formData.cleanComparison = res.comparison || null;
+    formData.cleanRuns = (formData.cleanRuns || 0) + 1;
+    formData.cleanAssessmentRan = true;
+    if (A.grade) formData.grade = A.grade;
+    if (A.roboGrade) formData.roboGrade = A.roboGrade;
+    if (A.pageQuality) formData.pageQuality = A.pageQuality;
+    if (A.restorationFlag) formData.restorationFlag = true;
+    if (A.restorationHighConfidence) formData.restorationHighConfidence = true;
+    formData._imagesChanged = true;
+
+    // S22 — SAME DOUBLE-CHARGE SHAPE AS THE DEEP BUG, one layer up. This synced
+    // the balance from res.creditsRemaining and then handed onAssessmentSuccess
+    // `formData`, which has no creditsRemaining on it — so applyServerCredits()
+    // returned false and decrementCredit() took a second credit on every
+    // Cleaning Compare run. Pass the SERVER's response, which is the object
+    // that actually carries the field; the explicit sync above is then
+    // redundant and applyServerCredits does it.
+    onAssessmentSuccess(res);
+  } catch (e) {
+    console.error("[clean] run failed:", e);
+    setStep("clean-regrade", "failed");
+    await appAlert("The cleaning comparison did not finish. " + ((e && e.message) || "") +
+      " Any credits already spent on a completed pass are not returned — the grading was done.");
+  } finally {
+    if (unwatch) { try { unwatch(); } catch (e) {} }
+    if (tracker && tracker.clearTimers) { try { tracker.clearTimers(); } catch (e) {} }
+    formData._cleanMode = false;
+  }
+}
+
+async function submitBatchAssessment() {
+  if (assessing || formData._batchMode) return;
+  if (formData.type === "card") { await appAlert("Batch assessment is for comics."); return; }
+  if (!_batchDeepRan(formData)) {
+    await appAlert("Run Main and Deep first — Batch re-runs the Main → Deep pipeline on this book's photos.");
+    return;
+  }
+  if (!_batchPhotoOK(formData)) {
+    await appAlert("Batch needs clean photos — the Photograder must return at most one B, with the rest A. Retake the flagged photo(s) and re-run Deep, then Batch will be available.");
+    return;
+  }
+  if (!formData.id) {
+    await appAlert("Save this book before running a Batch.");
+    return;
+  }
+  if (window._userCredits !== undefined && window._userCredits < BATCH_CREDIT_COST) {
+    await appAlert(`Batch costs ${BATCH_CREDIT_COST} credits. You have ${window._userCredits}. Add credits and try again.`);
+    if (typeof showBuyCredits === "function") showBuyCredits();
+    return;
+  }
+  if (!(await _batchConfirm(`${BATCH_N} Main and ${BATCH_N} Deep passes to produce an average grade. ${BATCH_N * 2} total assessments. Cost: ${BATCH_CREDIT_COST} credits.`))) return;
+
+  // Snapshot the grade the item is ON RIGHT NOW, so the results panel slides in
+  // showing it and animates to the batch average. Batch was the only pass that
+  // never did this, so it inherited whatever _prevAssessResult a previous action
+  // happened to leave behind — and the Deep captures ITS snapshot BEFORE it
+  // runs, which is the Main grade. Run Main, then Deep, then Batch, and Batch
+  // opened on the Main grade: the symptom reported 2026-10-17.
+  _capturePrevAssessResult();
+  formData._batchMode = true;
+  let anim = null;
+  try {
+    // ── animation FIRST, then the start call ────────────────────────────────
+    // S22: this order used to be reversed — /api/assess_batch_start was awaited
+    // (a full round-trip: auth, eligibility, a Firestore credit transaction and
+    // the batch-doc write) before a single pixel moved, so Batch sat dead for
+    // about a second after the tap while Main/Deep/Full appeared to start
+    // instantly. Those paths open their overlay before their network call; Batch
+    // now does the same. The two run concurrently, so the start latency is spent
+    // behind the shell sliding up instead of in front of it.
+    //
+    // All 10 photos in one sweep, in the order SLOTS_BATCH expects:
+    // [front, back, pq, spine, tl, tr, bl, br, icFront, icBack].
+    const _u = x => (x && (x.url || (typeof x === "string" ? x : null))) || null;
+    const _batchPhotos = [
+      ...(formData.images || []).map(_u).slice(0, 4),
+      ...(formData.cornerImages || []).map(_u).slice(0, 4),
+      ...(formData.interiorCoverImages || []).map(_u).slice(0, 2)
+    ];
+    if (window.RobograderScan && window.RobograderScan.runScanAnimation) {
+      try {
+        const _run = window.RobograderScan.runScanAnimation(_batchPhotos, "batch");
+        // BATCH_N rather than started.n — the tracker mounts on the animation's
+        // own timeline now and must not wait on the start response. The server
+        // has never returned anything but BATCH_N here.
+        const _mount = () => { try { mountBatchTracker(BATCH_N); } catch (e) { console.warn("[batch] tracker mount:", e); } };
+        _run.promise.then(_mount).catch(_mount);
+        anim = { run: _run, mounted: true };
+      } catch (e) { console.warn("[batch] animation failed to start (non-fatal):", e); anim = null; }
+    }
+
+    // ── start: one call, 3 credits deducted server-side, batch doc created ──
+    let started;
+    try {
+      started = await _batchApi("/api/assess_batch_start", { method: "POST", body: { itemId: formData.id } });
+    } catch (e) {
+      // The overlay is already up, so tear it down before the alert.
+      if (window.RobograderScan && window.RobograderScan.dismiss) { try { window.RobograderScan.dismiss(); } catch (e2) {} }
+      formData._batchMode = false;
+      if (e.status === 402) {
+        await appAlert(e.message || "Not enough credits for a Batch.");
+        if (typeof showBuyCredits === "function") showBuyCredits();
+      } else {
+        await appAlert("Batch could not start: " + (e.message || "unknown error") + "\n\nNo credits were charged.");
+      }
+      renderForm();
+      return;
+    }
+    const batchId = started.batchId;
+    if (typeof started.creditsRemaining === "number") {
+      // Server-side deduction, so mirror the balance the same way the redeem /
+      // welcome-grant paths do. (There is no updateCreditDisplay() in this app —
+      // the header is refreshed by refreshHeaderControls + updateStats.)
+      window._userCredits = started.creditsRemaining;
+      if (typeof refreshHeaderControls === "function") refreshHeaderControls();
+      if (typeof updateStats === "function") updateStats();
+      const _credEl = document.getElementById("settings-credits");
+      if (_credEl) _credEl.textContent = String(Math.max(0, window._userCredits || 0));
+    }
+
+    // ── staggered fan-out + poll ────────────────────────────────────────────
+    Object.keys(_batchRowState).forEach(k => delete _batchRowState[k]);
+    _batchFireWorker(batchId, 1);
+    let fannedOut = false;
+    const t0 = Date.now();
+    const fanOut = (why) => {
+      if (fannedOut) return;
+      fannedOut = true;
+      console.log(`[batch] fan-out passes 2..${started.n || BATCH_N} (${why}) at +${Date.now() - t0}ms`);
+      for (let i = 2; i <= (started.n || BATCH_N); i++) _batchFireWorker(batchId, i);
+    };
+
+    const fmtGrade = g => window.RoboScoreV3 ? window.RoboScoreV3.formatGrade(g) : String(g);
+    let status = null;
+    while (true) {
+      await new Promise(r => setTimeout(r, BATCH_POLL_MS));
+      try { status = await _batchApi(`/api/assess_batch_status?batchId=${encodeURIComponent(batchId)}`); }
+      catch (e) { console.warn("[batch] poll failed (retrying):", e && e.message); continue; }
+
+      if (anim) {
+        // Each row advances independently and asynchronously — a row mid-flip
+        // doesn't hold up any other row, and they finish out of order.
+        (status.passes || []).forEach(p => {
+          try { advanceBatchRow(p.pass, p); } catch (e) { console.warn("[batch] row " + p.pass + ":", e); }
+        });
+      }
+
+      if (!fannedOut) {
+        const p1 = (status.passes || [])[0];
+        // 'deep' means pass 1's Main response came back and its prefix is written.
+        if (p1 && (p1.stage === "deep" || p1.stage === "done" || p1.stage === "error")) fanOut("pass 1 main landed");
+        else if (Date.now() - t0 > BATCH_FANOUT_FALLBACK_MS) fanOut("35s fallback");
+      }
+      if (status.status === "complete" || status.status === "failed") break;
+      if (Date.now() - t0 > BATCH_MAX_WALL_MS) { console.warn("[batch] wall-clock limit hit; using what landed"); break; }
+    }
+
+    // ── results ─────────────────────────────────────────────────────────────
+    const done = (status.passes || []).filter(p => p.stage === "done" && typeof p.rg === "number");
+    if (!done.length) {
+      if (window.RobograderScan && window.RobograderScan.dismiss) { try { window.RobograderScan.dismiss(); } catch (e) {} }
+      formData._batchMode = false;
+      const firstErr = (status.passes || []).map(p => p.error).filter(Boolean)[0];
+      await appAlert("Batch produced no grades." + (firstErr ? "\n\n" + firstErr : ""));
+      renderForm();
+      return;
+    }
+
+    // NO OUTLIER TRIMMING — every completed pass counts (spec §6.1). The v2 code
+    // here filtered to |x - median| <= 1.5, which contradicted that decision.
+    const fmt = fmtGrade;
+    const raws = done.map(p => p.rg);
+    const avgRaw = raws.reduce((a, b) => a + b, 0) / raws.length;
+    const loRaw = Math.min(...raws), hiRaw = Math.max(...raws);
+
+    const pgs = done.map(p => parseFloat(p.grade)).filter(x => !isNaN(x));
+    const avgPG = pgs.length ? _snapPgToLadder(pgs.reduce((a, b) => a + b, 0) / pgs.length, "batch-average") : "";
+    const pqCount = {}; done.forEach(p => { if (p.pq) pqCount[p.pq] = (pqCount[p.pq] || 0) + 1; });
+    const modePQ = Object.keys(pqCount).sort((a, b) => pqCount[b] - pqCount[a])[0] || "";
+
+    // ── THE AVERAGE ────────────────────────────────────────────────────────
+    // S22 BUG FIX. This used to average the raw 0-100 scores and then hand the
+    // average to v3 together with PASS 1's subscores. RoboScoreV3.forComic
+    // IGNORES roboGrade.score — it grades from frontScore/backScore/spineScore
+    // plus page quality — so the averaged number was thrown away and the panel
+    // reported pass 1's grade as the "average". On Matt's Uncanny X-Men #35 run
+    // (7 / 5 / 5.5 / 5 / 5.5) it printed 7. Low and High were computed the same
+    // way, so all three were identical and the history range bar was flat.
+    //
+    // The average is now taken on the SUBSCORES, which is what v3 actually reads.
+    // The four averages are still full-precision; v3 does the one rounding, so
+    // this keeps the "average raw, quantize once" intent that was the point.
+    const _subKeys = ["front", "back", "spine", "interior"];
+    const avgSub = {};
+    _subKeys.forEach(k => {
+      const xs = done.map(p => p.subscores && p.subscores[k]).filter(v => typeof v === "number" && isFinite(v));
+      avgSub[k] = xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+    });
+    const _haveSub = _subKeys.every(k => typeof avgSub[k] === "number");
+
+    const vAvg = _haveSub ? _batchV3(avgSub, modePQ) : null;
+    const gAvg = vAvg ? vAvg.grade : Math.round(avgRaw / 10 * 2) / 2;
+
+    // Low/High are the min and max of the five ROW grades, not v3 re-run on the
+    // min/max raw score. The five numbers on screen are what the range describes,
+    // so the bar ends must be two of them.
+    const perGrades = done.map(p => { const v = _batchV3(p.subscores, p.pq); return v ? v.grade : null; })
+                          .filter(g => typeof g === "number");
+    const gLo = perGrades.length ? Math.min(...perGrades) : gAvg;
+    const gHi = perGrades.length ? Math.max(...perGrades) : gAvg;
+
+    // ── S22: WHICH DEFECT LIST DOES THE BOOK KEEP? ────────────────────
+    // The batch writes an AVERAGED grade, so keeping the pre-batch Deep's defect
+    // list left the book showing a list that argued for a different number — a
+    // 5.5 book carrying the defects that justified a 7. There is no such thing
+    // as an "average defect list" (you cannot average prose), so the book adopts
+    // the list from the pass that landed CLOSEST TO THE AVERAGE: a real list,
+    // written by a real pass, for the grade the book is actually showing.
+    // Ties break toward the lower grade (the more conservative list) and then
+    // toward the earlier pass, so the choice is deterministic.
+    let _pickDefects = null, _pickPass = null;
+    (function () {
+      let best = null;
+      done.forEach((p, i) => {
+        if (!Array.isArray(p.defects) || !p.defects.length) return;
+        const v = _batchV3(p.subscores, p.pq);
+        const g = v ? v.grade : null;
+        if (typeof g !== "number") return;
+        const d = Math.abs(g - gAvg);
+        // Strict improvement only, so an exact tie on BOTH distance and grade
+        // keeps the pass we saw first (lowest pass number).
+        if (!best || d < best.d - 1e-9 || (Math.abs(d - best.d) < 1e-9 && g < best.g)) {
+          best = { d, g, i, p };
+        }
+      });
+      if (best) { _pickDefects = best.p.defects; _pickPass = best.p.pass ?? best.i + 1; }
+    })();
+
+    const rec = {
+      _batch: true, depth: "batch", runCount: done.length,
+      roboGradeId: "BATCH-" + (typeof generateRoboId === "function" ? generateRoboId() : String(Date.now())),
+      batchId,
+      date: (new Date).toISOString(),
+      version: status.version || (window.RG_GRADING_VERSION || ""),
+      rgV3Grade: fmt(gAvg), rgV3Low: fmt(gLo), rgV3High: fmt(gHi),
+      defectsFromPass: _pickPass,
+      grade: avgPG, predictedGrade: avgPG, pageQuality: modePQ,
+      // Raw 0-100 kept for range/averaging maths only. NOT displayed anywhere —
+      // ASSESSMENT_HISTORY_SPEC.md forbids surfacing a 0-100 Roboscore.
+      _rawAvg: avgRaw, _rawLow: loRaw, _rawHigh: hiRaw,
+      runs: done.map(p => {
+        const v = _batchV3(p.subscores, p.pq);
+        return {
+          rgV3Grade: v ? fmt(v.grade) : "",
+          predictedGrade: p.grade || "",
+          pageQuality: p.pq || "",
+          subscores: v && v.subscores ? v.subscores : null,
+          _raw: p.rg
+        };
+      })
+    };
+    if (!Array.isArray(formData.assessmentHistory)) formData.assessmentHistory = [];
+    formData.assessmentHistory.unshift(rec);
+
+    // ── APPLY THE BATCH TO THE BOOK ─────────────────────────────────────────
+    // S22: the batch used to write nothing but a history record, so Detail and
+    // Edit still showed the pre-batch grade and Matt (correctly) read that as
+    // "Batch doesn't update the displayed grade." The whole point of paying for
+    // five passes is that their average becomes the book's grade.
+    //
+    // aiAssessment and deepAssessment are left exactly as the book's last real
+    // Deep wrote them — per Matt, the batch does not need (or pay for) five more
+    // write-ups, and the existing prose was written with full reasoning.
+    //
+    // S22: the DEFECT LIST is no longer left alone. It is replaced with the list
+    // from the pass closest to the average (chosen above), so the list the user
+    // reads justifies the grade the batch just wrote. v3's interior-defect
+    // penalty and cap-shave read roboGrade.defects, so the swap happens BEFORE
+    // anything re-grades through the item.
+    if (_haveSub) {
+      const r1 = x => Math.round(x * 10) / 10;
+      if (!formData.roboGrade) formData.roboGrade = {};
+      if (_pickDefects) {
+        formData.roboGrade.defects = _pickDefects;
+        formData.roboGrade.defectsFromBatchPass = _pickPass;
+      }
+      formData.roboGrade.frontScore    = r1(avgSub.front);
+      formData.roboGrade.backScore     = r1(avgSub.back);
+      formData.roboGrade.spineScore    = r1(avgSub.spine);
+      formData.roboGrade.interiorScore = r1(avgSub.interior);
+      // v1 0-100 score = the four subscores summed. Admin LOGS and the Full path
+      // both read roboGrade.score, so it has to stay consistent with them.
+      formData.roboGrade.score = r1(avgSub.front + avgSub.back + avgSub.spine + avgSub.interior);
+      if (modePQ) formData.roboGrade.pageQuality = modePQ;
+      const _pms = done.map(p => p.pm).filter(x => typeof x === "number" && isFinite(x));
+      if (_pms.length) formData.roboGrade.confidenceRange = Math.round(_pms.reduce((a, b) => a + b, 0) / _pms.length);
+      formData.roboGrade.batchAveraged = true;
+      formData.roboGrade.batchRunCount = done.length;
+    }
+    if (modePQ) formData.pageQuality = modePQ;
+    // S22: a Batch is 3 credits and re-grades the book, so it refills the UV
+    // Check allowance exactly like a single paid pass. (Matt named Main/Deep/
+    // Full; a Batch is five Deeps and costs more than any of them, so excluding
+    // it would have been the odd choice.)
+    resetUvCheckAllowance();
+    if (avgPG) {
+      // PG is averaged and rounded to the half point, same as RG. The slab's
+      // official grade (formData.cgcGrade) is untouched — only our prediction.
+      formData.predictedGrade = avgPG;
+      formData.assessedCGCGrade = avgPG;
+    }
+
+    const _saveRec = { ...formData };
+    ["_batchMode", "_bypassDuplicateCheck", "_imagesChanged", "_savedImages", "_savedCornerImages", "_savedInteriorImages", "_savedSignatureImages", "_savedInsertImages", "_savedCouponImages", "_savedRestorationImages", "_savedInteriorCoverImages", "_preUploadPromise", "_preUploadId", "_slabDetect"].forEach(k => delete _saveRec[k]);
+    try { await saveItem(_saveRec); } catch (e) { console.warn("[batch] save failed:", e); }
+
+    if (anim) {
+      // Give the last row's flip/score reveal a beat to finish before the
+      // results panel slides up over it.
+      await new Promise(r => setTimeout(r, 900));
+      // The COMPLETE button in this panel is what dismisses the overlay and
+      // returns to the form (completeBatchAssessment). Without it the app is
+      // stranded behind the scan shell with no way out.
+      try { mountBatchResults({ average: fmt(gAvg), pg: avgPG, pq: modePQ, rawAvg: avgRaw, n: done.length }); }
+      catch (e) {
+        console.warn("[batch] results panel failed:", e);
+        if (window.RobograderScan && window.RobograderScan.dismiss) window.RobograderScan.dismiss();
+        formData._batchMode = false;
+        renderForm();
+      }
+    } else {
+      formData._batchMode = false;
+      renderForm();
+      await appAlert(`Batch complete — ${done.length} pass${done.length === 1 ? "" : "es"}.\n\nRoboGrade range ${fmt(gLo)} to ${fmt(gHi)}, average ${fmt(gAvg)}.`);
+    }
+  } catch (e) {
+    console.error("[batch] failed:", e);
+    formData._batchMode = false;
+    if (window.RobograderScan && window.RobograderScan.dismiss) { try { window.RobograderScan.dismiss(); } catch (e2) {} }
+    await appAlert("Batch stopped: " + (e && e.message ? e.message : "unknown error"));
+    renderForm();
+  }
+}
+// ── CLEANING COMPARE — the capture screen (v5.70) ──────────────────────────
+// Ten Before photos down the left, ten After slots down the right, paired. The
+// assess button stays greyed until all ten After photos exist, and the 2-credit
+// charge with no refund is stated BEFORE the tap (decision 1 of the spec).
+const CLEAN_PAIR_LABELS = [
+  "Front Cover", "Back Cover", "Interior / Page Quality", "Raking Light",
+  "Top Left", "Top Right", "Bottom Left", "Bottom Right",
+  "Interior Front", "Interior Back"
+];
+
+// The book's own ten, in the same order the After set uses.
+function _cleanBeforePhotos(item) {
+  const u = x => (x && (x.url || (typeof x === "string" ? x : null))) || null;
+  return [
+    ...[0, 1, 2, 3].map(i => u((item.images || [])[i])),
+    ...[0, 1, 2, 3].map(i => u((item.cornerImages || [])[i])),
+    ...[0, 1].map(i => u((item.interiorCoverImages || [])[i]))
+  ];
+}
+
+// Re-shoot ONE After slot. Maps the 0-9 index back to the camera kind that owns
+// it, so the retake uses the same guide and orientation as the original.
+function retakeCleanSlot(idx) {
+  const kind = idx < 4 ? "main" : idx < 8 ? "corner" : "interiorCover";
+  _cleanCapture = true;
+  tapSlot(idx - CLEAN_CAPTURE_OFFSET[kind], kind);
+}
+
+function renderCleanSection() {
+  if (!_cleanUnlocked(formData) || !formData.id) return "";
+  const before = _cleanBeforePhotos(formData);
+  const after = formData.cleanAfterImages || [];
+  const have = after.filter(Boolean).length;
+  const ready = have >= 10;
+  const runs = formData.cleanRuns || 0;
+
+  const _headHTML = `<div style="font-size:11px;color:#6ad0b8;font-weight:700;letter-spacing:2px;margin-bottom:8px">BOOK HAS BEEN CLEANED${runs ? ` &middot; RUN ${runs + 1}` : ""}</div>`;
+  const _blurbHTML = `<div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Once this book has been cleaned/pressed, re-shoot the 10 photos for an objective BEFORE/AFTER comparison. The current grade will be preserved as the BEFORE and a new AFTER grade will be determined.</div>`;
+
+  // COLLAPSED BY DEFAULT (v5.72). The ten Before/After pairs are a 3,300px
+  // block, and rendering it unconditionally put the rest of the section - and
+  // the button that starts a run - at the far bottom of an already 10,800px
+  // Edit page. Matt ran a Deep, went looking in Detail and Edit, and reported
+  // the feature missing; it was rendering the whole time and simply could not
+  // be found. It now presents as a compact offer, the same as Batch and Full do,
+  // and opens on a tap. Already having After photos counts as opened, so a run
+  // in progress is never hidden behind a tap.
+  if (!((_cleanExpandedFor === formData.id) || have > 0)) {
+    return `
+        <div id="clean-section" style="margin-top:14px;padding-top:14px;border-top:1px dashed #2e7a6a">
+          ${_headHTML}${_blurbHTML}
+          <div style="display:flex;justify-content:center">
+            <button class="rg-btn rg-btn-assess rg-btn-bronze" onclick="expandCleanSection()" style="flex-direction:column;line-height:1.15;text-align:center">
+              <span style="display:block">POST-CLEANING</span>
+              <span style="display:block;font-size:0.8em;font-weight:600;opacity:0.85">${CLEAN_CREDIT_COST} CREDITS</span>
+            </button>
+          </div>
+        </div>`;
+  }
+
+  const rows = CLEAN_PAIR_LABELS.map((lbl, i) => {
+    const b = before[i], a = after[i];
+    const bCell = b
+      ? `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:3/4"><img src="${b}" loading="lazy" decoding="async" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"></div>`
+      : `<div style="border-radius:4px;background:#161c12;aspect-ratio:3/4"></div>`;
+    const aCell = a
+      ? `<div class="drag-slot" style="aspect-ratio:3/4" onclick="retakeCleanSlot(${i})"><img src="${a}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"></div>`
+      : `<div class="drag-slot" style="aspect-ratio:3/4;display:flex;align-items:center;justify-content:center" onclick="retakeCleanSlot(${i})"><span style="font-size:20px;color:#3f5a35">+</span></div>`;
+    return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:center;margin-bottom:6px">
+        ${bCell}${aCell}
+      </div>
+      <div style="font-size:9px;color:#5f7a52;letter-spacing:.06em;text-transform:uppercase;margin:-2px 0 8px">${lbl}</div>`;
+  }).join("");
+
+  const btn = ready
+    ? `<button class="rg-btn rg-btn-assess rg-btn-silver${assessing ? " assessing" : ""}" onclick="submitCleanAssessment()" ${assessing ? "disabled" : ""} style="flex-direction:column;line-height:1.15;text-align:center">
+         <span style="display:block">POST-CLEANING ASSESS</span>
+         <span style="display:block;font-size:0.8em;font-weight:600;opacity:0.85">(${CLEAN_CREDIT_COST} CREDITS)</span>
+       </button>`
+    : `<button class="rg-btn rg-btn-assess rg-btn-silver" disabled style="flex-direction:column;line-height:1.15;text-align:center;opacity:0.45;cursor:not-allowed">
+         <span style="display:block">POST-CLEANING ASSESS</span>
+         <span style="display:block;font-size:0.8em;font-weight:600;opacity:0.85">${have} OF 10 PHOTOS</span>
+       </button>`;
+
+  return `
+        <div id="clean-section" style="margin-top:14px;padding-top:14px;border-top:1px dashed #2e7a6a">
+          ${_headHTML}${_blurbHTML}
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:9px;color:#6abf6a;font-weight:700;letter-spacing:.12em;margin-bottom:6px"><div>BEFORE</div><div>AFTER</div></div>
+          ${rows}
+          <div style="display:flex;justify-content:center;gap:10px;margin-top:4px;flex-wrap:wrap">
+            <button class="rg-btn rg-btn-assess rg-btn-bronze" onclick="startCleanCapture()" style="flex-direction:column;line-height:1.15;text-align:center">
+              <span style="display:block">${have ? "RETAKE ALL TEN" : "POST-CLEANING"}</span>
+              <span style="display:block;font-size:0.8em;font-weight:600;opacity:0.85">ONE CONTINUOUS FLOW</span>
+            </button>
+            ${btn}
+          </div>
+        </div>`;
+}
+
+function renderBatchSection() {
+  // S22: once a Deep has run the section is ALWAYS shown. If the Photograder says
+  // the photos aren't clean enough, the button is greyed with the reason, instead
+  // of the section silently not existing — Matt couldn't tell "not eligible yet"
+  // apart from "feature missing".
+  if (formData.type === "card" || !_batchDeepRan(formData)) return "";
+  const _photoOK = _batchPhotoOK(formData);
+  if (!_photoOK) {
+    return `\n        <div id="batch-section" style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n          <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">BATCH ASSESSMENT (×${BATCH_N})</div>\n          <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Batch needs clean photos so the ${BATCH_N} passes differ on the book, not on the pictures. The Photograder must return at most one B, with the rest A. Retake the flagged photo(s) and re-run Deep to unlock it.</div>\n          <div style="display:flex;justify-content:center">\n            <button class="rg-btn rg-btn-assess rg-btn-silver" disabled style="flex-direction:column;line-height:1.15;text-align:center;opacity:0.45;cursor:not-allowed">\n              <span style="display:block">RUN BATCH ×${BATCH_N}</span>\n              <span style="display:block;font-size:0.8em;font-weight:600;opacity:0.85">PHOTOS NEED WORK</span>\n            </button>\n          </div>\n        </div>`;
+  }
+  if (!isBatchEligible(formData)) return "";
+  return `\n        <div id="batch-section" style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n          <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">BATCH ASSESSMENT (×${BATCH_N})</div>\n          <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Re-runs the Main → Deep pipeline ${BATCH_N} times to give a better idea of the High/Low grade range for this book, as well as a cumulative average. All ${BATCH_N} grades are recorded in the Assessment History. The cost is ${BATCH_CREDIT_COST} credits for a total of ${BATCH_N * 2} assessments.</div>\n          <div style="display:flex;justify-content:center">\n            <button class="rg-btn rg-btn-assess rg-btn-silver${assessing ? ' assessing' : ''}" onclick="submitBatchAssessment()" ${assessing ? "disabled" : ""} style="flex-direction:column;line-height:1.15;text-align:center">\n              <span style="display:block">RUN BATCH ×${BATCH_N}</span>\n              <span style="display:block;font-size:0.8em;font-weight:600;opacity:0.85">(${BATCH_CREDIT_COST} CREDITS)</span>\n            </button>\n          </div>\n        </div>`;
+}
+// ── Assessment History: shared render helpers (v5.08) ──────────────────────
+// One renderer for BOTH Detail and Edit. A visual RANGE SUMMARY: thick solid RG
+// + PG bars with the Average marked ABOVE by a downward wedge and Low/High below
+// the ends in the score font. Each record row shows v3 subscores on the RG line
+// and PG + PQ on a second line, with assessment-tier stars. A Batch renders as
+// its N individual runs (each a Deep-tier assessment).
+const _AHF = "font-family:'League Spartan',sans-serif;font-weight:800"; // thick score font
+function _histNum(g) { if (g == null) return null; const n = parseFloat(String(g).replace(/[^0-9.]/g, "")); return isNaN(n) ? null : n; }
+function _histRoundHalf(x) { return Math.round(x * 2) / 2; }
+function _histFmt(x) { return (window.RoboScoreV3 ? window.RoboScoreV3.formatGrade(x) : Number(x).toFixed(1)); }
+function _histDateMMDD(d) { if (!d) return ""; try { const dt = new Date(d); const p = n => String(n).padStart(2, "0"); return `${p(dt.getMonth() + 1)}/${p(dt.getDate())}/${dt.getFullYear()}`; } catch (e) { return ""; } }
+// Collect RG and PG numeric data points across all records. A Batch contributes
+// its N run grades as N separate points (matching how it displays).
+function _histPoints(history) {
+  const rg = [], pg = [], pq = {};
+  (history || []).forEach(h => {
+    if (h._batch && Array.isArray(h.runs)) {
+      h.runs.forEach(r => {
+        const a = _histNum(r.rgV3Grade); if (a != null) rg.push(a);
+        const b = _histNum(r.predictedGrade); if (b != null) pg.push(b);
+        if (r.pageQuality) pq[r.pageQuality] = (pq[r.pageQuality] || 0) + 1;
+      });
+    } else {
+      const a = _histNum(h.rgV3Grade); if (a != null) rg.push(a);
+      const b = _histNum(h.grade != null ? h.grade : h.predictedGrade); if (b != null) pg.push(b);
+      if (h.pageQuality) pq[h.pageQuality] = (pq[h.pageQuality] || 0) + 1;
+    }
+  });
+  return { rg, pg, pq };
+}
+// One thick, solid (no-gradient) range bar: Average value + downward wedge ABOVE
+// the bar at its position; Low / High under the ends in the thick score font.
+function _histRangeBar(label, arr, color) {
+  if (!arr || !arr.length) return "";
+  const lo = Math.min(...arr), hi = Math.max(...arr);
+  const avg = _histRoundHalf(arr.reduce((a, b) => a + b, 0) / arr.length);
+  const span = hi - lo;
+  const pct = span <= 0 ? 50 : Math.max(0, Math.min(100, ((avg - lo) / span) * 100));
+  return `
+    <div style="margin:12px 0 4px">
+      <div style="font-size:13px;letter-spacing:1.5px;color:#8a9a7a;font-weight:700;margin-bottom:38px">${label}</div>
+      <div style="position:relative;margin:0 8px">
+        <div style="position:absolute;left:${pct}%;bottom:100%;transform:translateX(-50%);text-align:center;white-space:nowrap;margin-bottom:2px">
+          <div style="font-size:10px;letter-spacing:1px;color:#8a9a7a;font-weight:700;line-height:1;margin-bottom:1px">AVG.</div>
+          <div style="${_AHF};font-size:20px;color:${color};line-height:1">${_histFmt(avg)}</div>
+          <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid ${color};margin:1px auto 0"></div>
+        </div>
+        <div style="height:12px;border-radius:6px;background:${color}"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin:5px 8px 0">
+        <span style="text-align:left">
+          <span style="display:block;font-size:9px;letter-spacing:1px;color:#8a9a7a;font-weight:700;line-height:1">LOW</span>
+          <span style="${_AHF};font-size:19px;color:#5a7030">${_histFmt(lo)}</span></span>
+        <span style="text-align:right">
+          <span style="display:block;font-size:9px;letter-spacing:1px;color:#8a9a7a;font-weight:700;line-height:1">HIGH</span>
+          <span style="${_AHF};font-size:19px;color:#5a7030">${_histFmt(hi)}</span></span>
+      </div>
+    </div>`;
+}
+function renderAHSummary(history) {
+  const p = _histPoints(history);
+  if (!p.rg.length && !p.pg.length) return "";
+  // S22 (Matt): a range/average across ONE grade is not a summary — it is the same
+  // number printed three times with a bar under it. Wait for a second grade.
+  if (Math.max(p.rg.length, p.pg.length) < 2) return "";
+  const modePQ = Object.keys(p.pq).sort((a, b) => p.pq[b] - p.pq[a])[0] || "";
+  const n = p.rg.length || p.pg.length;
+  return `<div style="background:#eef3e6;border:1px solid #cdd8be;border-radius:10px;padding:12px 14px 14px;margin-top:8px">
+      <div style="font-size:14px;letter-spacing:1px;color:#4a7a20;font-weight:800">SUMMARY${n ? `: ${n} grade${n === 1 ? "" : "s"}` : ""}</div>
+      ${_histRangeBar("ROBOGRADE", p.rg, "#4a7a20")}
+      ${_histRangeBar("PREDICTED", p.pg, "#3a5a8a")}
+      ${modePQ ? `<div style="margin-top:12px;font-size:11px;color:#8a7a6a">${esc(modePQ)}</div>` : ""}
+    </div>`;
+}
+// Assessment-tier stars for a stored record, by depth: main=1, deep=2, full=3.
+// Batch runs are Deep-tier (2) — each grade is essentially a Deep.
+function _histStars(depth, size, color) {
+  let tier = 1;
+  if (depth === "full") tier = 3;
+  else if (depth === "deep" || depth === "batch") tier = 2;
+  let s = ""; for (let i = 0; i < tier; i++) s += tierStarSVG(size || 11, color || "#5a7030");
+  return `<span style="line-height:1;white-space:nowrap;display:inline-flex;gap:1px;align-items:center">${s}</span>`;
+}
+// v3 half-point subscores, inline (no border): F 4.5 · B 1.5 · S 2 · I 1 (sum = grade / 10).
+function _histSubscores(sub) {
+  if (!sub) return "";
+  const cells = [];
+  const add = (l, v) => { if (v != null && v !== "") cells.push(`<span style="color:#8a9a7a">${l} <span style="${_AHF};color:#5a7030">${_histFmt(v)}</span></span>`); };
+  add("F", sub.front); add("B", sub.back); add("S", sub.spine); add("I", sub.interior);
+  return cells.join('<span style="color:#c8b8a8;margin:0 1px">·</span>');
+}
+// One standard record row. Line 1: RG · PM · F · B · S · I. Line 2: PG · PQ.
+function renderAHRow(h, editable, i) {
+  const rg = h.rgV3Grade != null
+    ? `<span style="color:#5a7030;font-weight:700">RG <span style="${_AHF};font-size:14px">${h.rgV3Grade}</span></span>`
+    : (h.rgScore != null ? `<span style="font-family:'IBM Plex Mono',monospace;font-weight:700;color:#5a7030">RG ${h.rgScore}</span>` : "");
+  // S22: PM removed from Assessment History (Matt). It is worth showing for the
+  // CURRENT grade, but on a past record it is low-value and it was pushing the
+  // subscores onto a second line. The value is still stored on the record.
+  const subs = _histSubscores(h.subscores);
+  const line1 = [rg, subs].filter(Boolean).join('<span style="color:#c8b8a8;margin:0 3px">·</span>');
+  const pg = h.grade ? `<span style="color:#3a5a8a">PG <span style="${_AHF}">${normalizeGrade(h.grade)}</span></span>` : "";
+  const psa = h.psaGrade ? `<span style="color:#8a3a3a">PSA ${normalizeGrade(h.psaGrade)}</span>` : "";
+  const pq = h.pageQuality ? `<span style="font-size:11px;color:#8a7a6a">${esc(h.pageQuality)}</span>` : "";
+  const line2 = [pg, psa, pq].filter(Boolean).join('<span style="color:#c8b8a8;margin:0 4px">·</span>');
+  const stars = _histStars(h.depth, 11, "#5a7030");
+  const date = _histDateMMDD(h.date);
+  const rm = editable ? `<button onclick="confirmDeleteHistoryEntry(${i})" style="background:none;border:none;color:#a05a5a;font-size:16px;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0" title="Remove this entry">×</button>` : "";
+  return `<div style="padding:8px 10px;background:#f4f0e6;border:1px solid #d8d0c0;border-radius:6px">
+      <div style="display:flex;align-items:flex-start;gap:10px">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;flex-wrap:wrap;font-size:12px">${line1}</div>
+          ${line2 ? `<div style="display:flex;align-items:center;flex-wrap:wrap;font-size:12px;margin-top:4px">${line2}</div>` : ""}
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0">${stars}${date ? `<span style="font-size:10px;color:#9a8a7a">${date}</span>` : ""}</div>
+        ${rm}
+      </div>
+    </div>`;
+}
+// A single Batch run — same two-line format, Deep-tier (2 stars), no date/remove.
+function _histBatchRunRow(r, idx) {
+  const rg = `<span style="color:#5a7030;font-weight:700">RG <span style="${_AHF};font-size:14px">${r.rgV3Grade || "—"}</span></span>`;
+  const subs = _histSubscores(r.subscores);
+  const line1 = [rg, subs].filter(Boolean).join('<span style="color:#c8b8a8;margin:0 3px">·</span>');
+  const pg = r.predictedGrade ? `<span style="color:#3a5a8a">PG <span style="${_AHF}">${normalizeGrade(r.predictedGrade)}</span></span>` : "";
+  const pq = r.pageQuality ? `<span style="font-size:11px;color:#8a7a6a">${esc(r.pageQuality)}</span>` : "";
+  const line2 = [pg, pq].filter(Boolean).join('<span style="color:#c8b8a8;margin:0 4px">·</span>');
+  return `<div style="padding:7px 9px;background:#f4f0e6;border:1px solid #d8d0c0;border-radius:6px">
+      <div style="display:flex;align-items:flex-start;gap:10px">
+        <span style="width:22px;font-size:11px;color:#8a9a7a;font-weight:700;flex-shrink:0">#${idx + 1}</span>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;flex-wrap:wrap;font-size:12px">${line1}</div>
+          ${line2 ? `<div style="display:flex;align-items:center;flex-wrap:wrap;font-size:12px;margin-top:4px">${line2}</div>` : ""}
+        </div>
+        <div style="flex-shrink:0">${_histStars("deep", 10, "#5a7030")}</div>
+      </div>
+    </div>`;
+}
+// Batch container: just "BATCH" + the N runs, with the date at the BOTTOM.
+function _renderBatchHistoryRow(h, editable, i) {
+  const runs = h.runs || [];
+  const rm = editable ? `<button onclick="formData.assessmentHistory.splice(${i},1);renderForm()" style="margin-left:auto;background:none;border:none;color:#a05a5a;font-size:16px;cursor:pointer;padding:0 2px;line-height:1" title="Remove this batch">×</button>` : "";
+  const date = _histDateMMDD(h.date);
+  return `<div style="padding:8px 10px;background:#e7eede;border:1px solid #cdd8be;border-radius:8px">
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px">
+        <span style="font-weight:800;color:#4a7a20;letter-spacing:1px">BATCH</span>${rm}
+      </div>
+      <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px">${runs.map((r, idx) => _histBatchRunRow(r, idx)).join("")}</div>
+      ${date ? `<div style="text-align:right;margin-top:6px;font-size:10px;color:#9a8a7a">${date}</div>` : ""}
+    </div>`;
+}
+// Full section (label + summary + list) — used by both Detail and Edit views.
+function renderAssessmentHistorySection(history, editable) {
+  history = history || [];
+  if (!history.length) return "";
+  const rows = history.map((h, i) => h._batch ? _renderBatchHistoryRow(h, editable, i) : renderAHRow(h, editable, i)).join("");
+  return `<div style="margin-top:20px"><div class="section-label">Assessment History</div>${renderAHSummary(history)}<div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">${rows}</div></div>`;
+}
+
+function countBooksWithImages() {
+  return items.filter(c => c.images && c.images.length > 0).length;
+}
+
+function userHasPaidCredits() {
+  return !!(window._userEverPaid || window._userCredits && window._userCredits > 0);
+}
+
+function checkImageCap(isExistingBook) {
+  if (isExistingBook) return "ok";
+  const userEmail = window._currentUser && window._currentUser.email || "";
+  if (userEmail.toLowerCase() === "wherethehellismatt@gmail.com") return "ok";
+  const count = countBooksWithImages();
+  const paid = userHasPaidCredits();
+  const hardCap = paid ? IMAGE_PAID_CAP : IMAGE_HARD_CAP;
+  if (count >= hardCap) return "hard";
+  if (!paid && count >= IMAGE_SOFT_CAP) return "soft";
+  return "ok";
+}
+
+function _bulkState() {
+  const all = (typeof items !== "undefined" && Array.isArray(items) ? items : []).filter(c => c && c.id !== SAMPLE_COMIC_ID && c.roboGrade);
+  if (!all.length) return "none";
+  const anyPublic = all.some(c => !!c.publicListing);
+  if (!anyPublic) return "private";
+  const pubEligible = all.filter(c => _publicEligibleOwnership(c.ownership) && !isFacsimilePrinting(c.printing));
+  const allEligiblePublic = pubEligible.length > 0 && pubEligible.every(c => !!c.publicListing);
+  return allEligiblePublic ? "public" : "mixed";
+}
+function _syncBulkButtons() {
+  const st = _bulkState();
+  const pb = document.getElementById("bulk-public-btn"), pv = document.getElementById("bulk-private-btn");
+  if (!pb || !pv) return;
+  const base = "padding:8px 16px;border-radius:10px;font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:800;letter-spacing:1px;text-transform:uppercase;cursor:pointer;min-height:36px;transition:background 0.15s;";
+  const lit = "background:#3a7a20;color:#fff;border:1.5px solid #2e6418;";
+  const off = "background:#ffffff;color:#3a7a20;border:1.5px solid #3a7a20;";
+  pb.style.cssText = base + (st === "public" ? lit : off);
+  pv.style.cssText = base + (st === "private" ? lit : off);
+}
+async function _bulkTap(makePublic) {
+  const st = _bulkState();
+  if (makePublic && st === "public") return;   // already all public -> no-op
+  if (!makePublic && st === "private") return;  // already all private -> no-op
+  await bulkSetAllPublic(makePublic);           // shows the styled confirm + applies
+  _syncBulkButtons();
+}
+async function bulkSetAllPublic(makePublic) {
+  if (!window._db || !window._currentUser || !window._currentUser.uid) {
+    appAlert("You need to be signed in to change listing privacy."); return;
+  }
+  const all = (typeof items !== "undefined" && Array.isArray(items)) ? items : [];
+  // Eligible = real graded books. Making public also requires a publicly
+  // listable ownership (Owned or Watching) and a non-reprint printing — the same
+  // rules as the per-book toggle. Making private applies to everything.
+  const eligible = all.filter(c => {
+    if (!c || c.id === SAMPLE_COMIC_ID || !c.roboGrade) return false;
+    if (makePublic) {
+      if (!_publicEligibleOwnership(c.ownership)) return false;
+      if (isFacsimilePrinting(c.printing)) return false;
+    }
+    return true;
+  });
+  const targets = eligible.filter(c => (!!c.publicListing) !== makePublic);
+  if (targets.length === 0) {
+    appAlert(makePublic
+      ? "All eligible books are already public. Only Owned or Watching, non-reprint books with a Robograde can be listed."
+      : "All your books are already private.");
+    return;
+  }
+  const verb = makePublic ? "public" : "private";
+  const ok = await appConfirm(
+    `Make ${targets.length} book${targets.length === 1 ? "" : "s"} ${verb}? ` +
+    (makePublic
+      ? "Their Robograde, photos, title and issue will be viewable from a public link."
+      : "Their public links will stop working."),
+    makePublic ? "Make Public" : "Make Private");
+  if (!ok) return;
+  const uid = window._currentUser.uid;
+  let done = 0, failed = 0;
+  const CHUNK = 8; // small batches so large collections don't hammer Firestore
+  for (let i = 0; i < targets.length; i += CHUNK) {
+    await Promise.all(targets.slice(i, i + CHUNK).map(async c => {
+      try {
+        await fsSetDoc(fsDoc(window._db, "users", uid, "items", c.id), { publicListing: makePublic }, { merge: true });
+        if (c.roboGradeId) {
+          await fsSetDoc(fsDoc(window._db, "robograde_ids", c.roboGradeId), { comicId: c.id, userId: uid, public: makePublic }, { merge: true });
+        }
+        c.publicListing = makePublic;
+        done++;
+      } catch (e) { failed++; console.warn("[bulk-public] failed for", c.id, e); }
+    }));
+  }
+  try { if (typeof renderList === "function") renderList(); } catch (e) {}
+  appAlert(`Updated ${done} book${done === 1 ? "" : "s"} to ${verb}.` +
+    (failed ? ` ${failed} could not be updated \u2014 try again.` : ""));
+}
+
+function savePublicSetting(val) {
+  window._publicByDefault = val;
+  try {
+    localStorage.setItem("rg_public_default", val ? "1" : "0");
+  } catch (e) {}
+  const track = document.getElementById("settings-public-track");
+  const thumb = document.getElementById("settings-public-thumb");
+  if (track) track.style.background = val ? "#3a7a20" : "#2a2a2a";
+  if (thumb) thumb.style.left = val ? "23px" : "3px";
+}
+
+function loadPublicSetting() {
+  try {
+    const stored = localStorage.getItem("rg_public_default");
+    window._publicByDefault = stored === "1";
+  } catch (e) {
+    window._publicByDefault = false;
+  }
+  const cb = document.getElementById("settings-public-toggle");
+  if (cb) {
+    cb.checked = window._publicByDefault;
+    savePublicSetting(window._publicByDefault);
+  }
+}
+
+async function saveTrainingSetting(val) {
+  window._trainingOptIn = val;
+  const track = document.getElementById("settings-training-track");
+  const thumb = document.getElementById("settings-training-thumb");
+  if (track) track.style.background = val ? "#3a7a20" : "#2a2a2a";
+  if (thumb) thumb.style.left = val ? "23px" : "3px";
+  if (!window._currentUser || !window._db) return;
+  try {
+    const userRef = window._fsDoc(window._db, "users", window._currentUser.uid);
+    await window._fsSetDoc(userRef, {
+      trainingOptIn: val,
+      trainingOptInUpdatedAt: (new Date).toISOString()
+    }, {
+      merge: true
+    });
+  } catch (e) {
+    console.error("Failed to save training opt-in:", e);
+  }
+}
+
+async function loadTrainingSetting() {
+  if (window._trainingOptIn !== undefined) {
+    const val = !!window._trainingOptIn;
+    const cb = document.getElementById("settings-training-toggle");
+    if (cb) {
+      cb.checked = val;
+      const track = document.getElementById("settings-training-track");
+      const thumb = document.getElementById("settings-training-thumb");
+      if (track) track.style.background = val ? "#3a7a20" : "#2a2a2a";
+      if (thumb) thumb.style.left = val ? "23px" : "3px";
+    }
+    return;
+  }
+  let val = true;
+  if (window._currentUser && window._db) {
+    try {
+      const snap = await window._fsGetDoc(window._fsDoc(window._db, "users", window._currentUser.uid));
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.trainingOptIn === false) val = false;
+      }
+    } catch (e) {
+      console.error("Failed to load training opt-in:", e);
+    }
+  }
+  window._trainingOptIn = val;
+  const cb = document.getElementById("settings-training-toggle");
+  if (cb) {
+    cb.checked = val;
+    const track = document.getElementById("settings-training-track");
+    const thumb = document.getElementById("settings-training-thumb");
+    if (track) track.style.background = val ? "#3a7a20" : "#2a2a2a";
+    if (thumb) thumb.style.left = val ? "23px" : "3px";
+  }
+}
+
+async function deleteAccountFlow() {
+  if (!window._currentUser || !window._db) return;
+  const ok1 = confirm("Delete your Robograder account?\n\n" + "This will permanently delete:\n" + "• Your account and sign-in credentials\n" + "• All your saved comics and assessments\n" + "• All photos you've uploaded\n" + "• Any remaining assessment credits\n\n" + "This cannot be undone. Continue?");
+  if (!ok1) return;
+  const typed = prompt("Type DELETE (in capitals) to confirm permanent deletion of your account:");
+  if (typed !== "DELETE") {
+    alert("Deletion cancelled.");
+    return;
+  }
+  const overlay = document.createElement("div");
+  overlay.style.cssText = "position:fixed;inset:0;z-index:11000;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;color:#c8b8a8;font-size:16px;";
+  overlay.textContent = "Deleting account...";
+  document.body.appendChild(overlay);
+  try {
+    const db = window._db;
+    const uid = window._currentUser.uid;
+    const fsCollection = window._fsCollection;
+    const fsGetDocs = window._fsGetDocs;
+    const fsDeleteDoc = window._fsDeleteDoc;
+    const fsDoc = window._fsDoc;
+    if (fsCollection && fsGetDocs && fsDeleteDoc) {
+      const allItemIds = [];
+      const robograde_ids_to_delete = [];
+      const sweepCollection = async collectionName => {
+        const col = fsCollection(db, "users", uid, collectionName);
+        const snap = await fsGetDocs(col);
+        for (const d of snap.docs) {
+          allItemIds.push({
+            collection: collectionName,
+            id: d.id
+          });
+          const data = d.data();
+          if (data.roboGradeId) robograde_ids_to_delete.push(data.roboGradeId);
+        }
+      };
+      await sweepCollection("items");
+      await sweepCollection("comics");
+      for (const {collection: collection, id: id} of allItemIds) {
+        try {
+          await fsDeleteDoc(fsDoc(db, "users", uid, collection, id));
+        } catch (e) {
+          console.error(`Failed to delete ${collection}/${id}`, e);
+        }
+      }
+      for (const rgId of robograde_ids_to_delete) {
+        try {
+          await fsDeleteDoc(fsDoc(db, "robograde_ids", rgId));
+        } catch (e) {
+          console.error("Failed to delete robograde_id", rgId, e);
+        }
+      }
+      try {
+        if (window._fsQuery && window._fsWhere) {
+          const archCol = fsCollection(db, "archived_assessments");
+          const archQ = window._fsQuery(archCol, window._fsWhere("archivedUserId", "==", uid));
+          const archSnap = await fsGetDocs(archQ);
+          for (const d of archSnap.docs) {
+            try {
+              await fsDeleteDoc(fsDoc(db, "archived_assessments", d.id));
+              await fsDeleteDoc(fsDoc(db, "robograde_ids", d.id));
+            } catch (e) {
+              console.error("Failed to delete archive", d.id, e);
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Failed to sweep archived_assessments:", e);
+      }
+    }
+    try {
+      await deleteStorageFolder(`users/${uid}`);
+    } catch (e) {
+      console.error("Failed to wipe Storage folder:", e);
+    }
+    try {
+      await fsDeleteDoc(fsDoc(db, "users", uid));
+    } catch (e) {
+      console.error("Failed to delete user doc:", e);
+    }
+    try {
+      await window._currentUser.delete();
+    } catch (e) {
+      if (e.code === "auth/requires-recent-login") {
+        alert("Your account data has been deleted, but for security reasons you need to sign in again to remove your sign-in credentials. Please sign in once more, then return to Settings → Delete Account to finish removing your account.");
+      } else {
+        console.error("Auth user delete failed:", e);
+      }
+      if (window._signOut && window._auth) await window._signOut(window._auth);
+    }
+  } catch (e) {
+    overlay.remove();
+    alert("Account deletion failed: " + e.message + "\n\nSome data may have been deleted. Please contact support to ensure full removal.");
+    return;
+  }
+  overlay.remove();
+  alert("Your account has been deleted.");
+}
+
+let _giveItemId = null;
+
+function openGiveDialog(itemId) {
+  const it = (items || []).find(c => c.id === itemId);
+  if (!it || it._isSample || !it.roboGrade) return;
+  if (!window._userHasPurchased) { appAlert("Giving entries is available once you have purchased credits."); return; }
+  _giveItemId = itemId;
+  const ov = document.getElementById("give-overlay");
+  const step1 = document.getElementById("give-step1");
+  const step2 = document.getElementById("give-step2");
+  const input = document.getElementById("give-code-input");
+  const err = document.getElementById("give-code-err");
+  if (!ov) return;
+  step1.style.display = "";
+  step2.style.display = "none";
+  input.value = "";
+  err.textContent = "";
+  ov.style.display = "flex";
+  setTimeout(() => {
+    try {
+      input.focus();
+    } catch (e) {}
+  }, 50);
+}
+
+function closeGiveDialog() {
+  const ov = document.getElementById("give-overlay");
+  if (ov) ov.style.display = "none";
+  _giveItemId = null;
+}
+
+function giveDialogBack() {
+  document.getElementById("give-step2").style.display = "none";
+  document.getElementById("give-step1").style.display = "";
+}
+
+function _normalizeGiveCode(raw) {
+  const code = String(raw || "").trim().toUpperCase();
+  if (code.length !== 4) return null;
+  for (const ch of code) {
+    if (ID_ALPHABET.indexOf(ch) === -1) return null;
+  }
+  return code;
+}
+
+function giveDialogNext() {
+  const input = document.getElementById("give-code-input");
+  const err = document.getElementById("give-code-err");
+  const code = _normalizeGiveCode(input.value);
+  if (!code) {
+    err.textContent = "Enter a valid 4-character code (letters/numbers, no O, U, 0 or 1).";
+    return;
+  }
+  if (code === window._transferCode) {
+    err.textContent = "That's your own code — pick the recipient's code.";
+    return;
+  }
+  err.textContent = "";
+  const it = (items || []).find(c => c.id === _giveItemId);
+  const own = it && it.ownership || "Watching";
+  const keepState = own === "Sold" ? "Sold" : "Watching";
+  document.getElementById("give-confirm-msg").innerHTML = `Give this Robograder entry to <b style="color:#d4e82a;font-family:'IBM Plex Mono',monospace;letter-spacing:1px">${code}</b>?<br><br>` + `You'll keep a copy with a new ID, set to <b>${keepState}</b> and <b>Private</b>. ` + `The recipient gets full access to it on their account once they accept.`;
+  document.getElementById("give-step1").style.display = "none";
+  document.getElementById("give-step2").style.display = "";
+  document.getElementById("give-confirm-btn").dataset.code = code;
+}
+
+async function giveDialogConfirm() {
+  const btn = document.getElementById("give-confirm-btn");
+  const code = btn.dataset.code;
+  const itemId = _giveItemId;
+  if (!code || !itemId) {
+    closeGiveDialog();
+    return;
+  }
+  if (!window._currentUser || typeof window._currentUser.getIdToken !== "function") {
+    appAlert("You must be signed in to give an entry.");
+    return;
+  }
+  btn.disabled = true;
+  const origLabel = btn.textContent;
+  btn.textContent = "Sending…";
+  try {
+    const token = await window._currentUser.getIdToken();
+    const resp = await fetch("/api/transfer_recv", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + token
+      },
+      body: JSON.stringify({
+        sourceItemId: itemId,
+        toCode: code,
+        action: "send"
+      })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data || !data.ok) {
+      const msg = data && data.error || `Send failed (${resp.status})`;
+      btn.disabled = false;
+      btn.textContent = origLabel;
+      giveDialogBack();
+      document.getElementById("give-code-err").textContent = msg;
+      return;
+    }
+    closeGiveDialog();
+    await appAlert(data.message || `Sent to ${code}. They'll see it next time they open the app.`);
+    try {
+      const gi = (items || []).find(c => c && c.id === itemId);
+      if (gi && gi.roboGradeId) {
+        const wantNotify = await appConfirm(`Transfer sent to ${code}.<br><br>Send them a text so they know to open the app and accept it?`, "Notify", true);
+        if (wantNotify) {
+          const summary = buildListingSummary(gi.roboGradeId, gi.title || "", gi.issue || "", "You've been given an assessment.");
+          const shareData = {
+            title: `Robograder: ${summary.header}`,
+            text: summary.text
+          };
+          if (navigator.share) {
+            try {
+              await navigator.share(shareData);
+            } catch (err) {
+              if (err && err.name !== "AbortError") console.warn("[give-notify] share failed:", err);
+            }
+          } else {
+            try {
+              await navigator.clipboard.writeText(summary.text);
+              await appAlert("Notification copied to clipboard:\n\n" + summary.text);
+            } catch (err) {
+              await appAlert("Copy this notification:\n\n" + summary.text);
+            }
+          }
+        }
+      }
+    } catch (notifyErr) {
+      console.warn("[give-notify] error (transfer still sent):", notifyErr);
+    }
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = origLabel;
+    giveDialogBack();
+    document.getElementById("give-code-err").textContent = e && e.message || "Network error — try again.";
+  }
+}
+
+document.addEventListener("input", e => {
+  if (e.target && e.target.id === "give-code-input") {
+    const v = e.target.value.toUpperCase();
+    if (v !== e.target.value) e.target.value = v;
+  }
+});
+
+let _xferPolling = false;
+
+let _xferPromptOpen = false;
+
+async function ensureTransferCodeRegistered() {
+  try {
+    if (!window._currentUser || typeof window._currentUser.getIdToken !== "function") return;
+    const token = await window._currentUser.getIdToken();
+    const resp = await fetch("/api/transfer_recv", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + token
+      },
+      body: JSON.stringify({
+        action: "register_code"
+      })
+    });
+    if (!resp.ok) {
+      console.warn("[transfer] register_code failed", resp.status, "— code not resolvable until next sign-in");
+      return;
+    }
+    const data = await resp.json().catch(() => null);
+    if (data && data.ok && typeof data.code === "string" && data.code.length === 4) {
+      if (window._transferCode !== data.code) {
+        window._transferCode = data.code;
+        const tcEl = document.getElementById("settings-transfer-code");
+        if (tcEl) tcEl.textContent = data.code;
+      }
+      if (data.action === "reassigned-due-to-collision") {
+        console.log("[transfer] code reassigned (collision):", data.previous, "→", data.code);
+      }
+    }
+  } catch (e) {
+    console.warn("[transfer] register_code error (non-fatal):", e);
+  }
+}
+
+async function checkPendingTransfers() {
+  if (_xferPolling || _xferPromptOpen) return;
+  if (!window._currentUser || typeof window._currentUser.getIdToken !== "function") return;
+  // S17: debounce — don't hit /api/transfer_recv more than once every 60s. The
+  // visibilitychange hook fires often on mobile (every focus/blur), which was
+  // spamming the endpoint with calls that almost always return "no pending".
+  const _now = Date.now();
+  if (window._xferLastPoll && (_now - window._xferLastPoll) < 60000) return;
+  window._xferLastPoll = _now;
+  _xferPolling = true;
+  try {
+    const token = await window._currentUser.getIdToken();
+    const resp = await fetch("/api/transfer_recv?action=pending", {
+      method: "GET",
+      headers: {
+        Authorization: "Bearer " + token
+      }
+    });
+    if (!resp.ok) return;
+    const data = await resp.json().catch(() => null);
+    if (!data || !data.ok || !Array.isArray(data.groups) || data.groups.length === 0) return;
+    await promptTransferGroup(data.groups[0]);
+  } catch (e) {} finally {
+    _xferPolling = false;
+  }
+}
+
+function _xferEsc(s) {
+  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function _xferGroupLabel(g) {
+  if (g.count === 1 && g.singleTitle) {
+    const iss = g.singleIssue ? ` #${g.singleIssue}` : "";
+    return `Someone sent you an assessment: <b>${_xferEsc(g.singleTitle)}${_xferEsc(iss)}</b>.`;
+  }
+  return `Someone sent you <b>${g.count} assessments</b>.`;
+}
+
+async function promptTransferGroup(g) {
+  if (!g || !Array.isArray(g.transferIds) || g.transferIds.length === 0) return;
+  _xferPromptOpen = true;
+  try {
+    const msg = _xferGroupLabel(g) + `<br><br>Accept ${g.count === 1 ? "it" : "them all"} into your collection? ` + `You'll own ${g.count === 1 ? "this entry" : "these entries"} and can edit ${g.count === 1 ? "it" : "them"}.`;
+    const ok = await appConfirm(msg, g.count === 1 ? "Accept" : `Accept all ${g.count}`, true);
+    const action = ok ? "accept" : "decline";
+    const big = g.transferIds.length > 8;
+    if (big) syncMsg(`${ok ? "Accepting" : "Declining"} 0/${g.transferIds.length}…`);
+    const token = await window._currentUser.getIdToken();
+    const CHUNK = 25;
+    let done = 0, accT = 0, decT = 0, failT = 0;
+    for (let i = 0; i < g.transferIds.length; i += CHUNK) {
+      const slice = g.transferIds.slice(i, i + CHUNK);
+      const r = await fetch("/api/transfer_resolve", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + token
+        },
+        body: JSON.stringify({
+          transferIds: slice,
+          action: action
+        })
+      });
+      const rd = await r.json().catch(() => null);
+      if (rd && rd.summary) {
+        accT += rd.summary.accepted || 0;
+        decT += rd.summary.declined || 0;
+        failT += rd.summary.failed || 0;
+      }
+      done += slice.length;
+      if (big) syncMsg(`${ok ? "Accepting" : "Declining"} ${Math.min(done, g.transferIds.length)}/${g.transferIds.length}…`);
+    }
+    if (big) syncMsg(null);
+    if (ok) {
+      try {
+        await loadItems();
+        if (typeof renderList === "function") renderList();
+      } catch (e) {}
+      let m = `Added ${accT} ${accT === 1 ? "entry" : "entries"} to your collection.`;
+      if (failT > 0) m += ` ${failT} couldn't be added — reopen the app to retry ${failT === 1 ? "it" : "them"}.`;
+      await appAlert(m);
+    }
+  } catch (e) {
+    syncMsg(null);
+  } finally {
+    _xferPromptOpen = false;
+  }
+}
+
+async function copyTransferCode() {
+  const code = typeof window._transferCode === "string" && window._transferCode.length === 4 ? window._transferCode : null;
+  if (!code) return;
+  const tcEl = document.getElementById("settings-transfer-code");
+  const flash = txt => {
+    if (!tcEl) return;
+    const prev = tcEl.textContent;
+    tcEl.textContent = txt;
+    setTimeout(() => {
+      tcEl.textContent = prev;
+    }, 1100);
+  };
+  try {
+    await navigator.clipboard.writeText(code);
+    flash("Copied");
+  } catch (err) {
+    appAlert("User ID:\n\n" + code);
+  }
+}
+
+function openSettings() {
+  loadPublicSetting();
+  loadTrainingSetting();
+  const overlay = document.getElementById("settings-overlay");
+  if (!overlay) return;
+  {
+    const optIn = window._trainingOptIn !== undefined ? !!window._trainingOptIn : true;
+    const cb = document.getElementById("settings-training-toggle");
+    const track = document.getElementById("settings-training-track");
+    const thumb = document.getElementById("settings-training-thumb");
+    if (cb) cb.checked = optIn;
+    if (track) track.style.background = optIn ? "#3a7a20" : "#2a2a2a";
+    if (thumb) thumb.style.left = optIn ? "23px" : "3px";
+  }
+  _syncTitleSepRow(); // S20: reflect current Title Separators state
+  _syncBulkButtons();
+  const emailEl = document.getElementById("settings-email");
+  if (emailEl && window._currentUser) emailEl.textContent = window._currentUser.email || "—";
+  // S20 bugfix: this line used to be the hardcoded string "Signed in with Google",
+  // so an Apple sign-in was mislabeled as Google. Derive it from providerData.
+  // (If both are linked to the same email, Firebase reports both — show both.)
+  const provEl = document.getElementById("settings-provider");
+  if (provEl) {
+    const _ids = ((window._currentUser && window._currentUser.providerData) || [])
+      .map(function(p) { return p && p.providerId; }).filter(Boolean);
+    const _names = [];
+    if (_ids.indexOf("apple.com") !== -1) _names.push("Apple");
+    if (_ids.indexOf("google.com") !== -1) _names.push("Google");
+    provEl.textContent = _names.length ? ("Signed in with " + _names.join(" & ")) : "Signed in";
+  }
+  const tcEl = document.getElementById("settings-transfer-code");
+  if (tcEl) {
+    tcEl.textContent = typeof window._transferCode === "string" && window._transferCode.length === 4 ? window._transferCode : "—";
+  }
+  const credEl = document.getElementById("settings-credits");
+  if (credEl) {
+    const c = window._userCredits || 0;
+    credEl.textContent = `${c} credit${c !== 1 ? "s" : ""} remaining`;
+  }
+
+  const imgEl = document.getElementById("settings-img-count");
+  if (imgEl) {
+    const n = countBooksWithImages();
+    const paid = userHasPaidCredits();
+    const cap = paid ? IMAGE_PAID_CAP : IMAGE_HARD_CAP;
+    imgEl.textContent = `${n} entries`;
+  }
+  refreshExportRemainingDisplay();
+  refreshReferralEligibility();
+  overlay.style.display = "flex";
+}
+
+function closeSettings() {
+  const overlay = document.getElementById("settings-overlay");
+  if (overlay) overlay.style.display = "none";
+}
+
+// ── Referral Bonus (client) ─────────────────────────────────────────────
+async function refreshReferralEligibility() {
+  const row = document.getElementById("settings-referral-row");
+  const note = document.getElementById("buy-referral-note");
+  const setVis = function(el, show, disp) { if (el) el.style.display = show ? disp : "none"; };
+  try {
+    if (!window._currentUser) { setVis(row, false, "flex"); setVis(note, false, "block"); return; }
+    const token = await window._currentUser.getIdToken();
+    const resp = await fetch("/api/referral", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify({ action: "status" })
+    });
+    const data = await resp.json().catch(() => ({}));
+    const eligible = !!(data && data.eligible);
+    setVis(row, eligible, "flex");
+    setVis(note, eligible, "block");
+  } catch (e) { setVis(row, false, "flex"); setVis(note, false, "block"); }
+}
+
+function openReferralPrompt() {
+  if (document.getElementById("referral-modal")) return;
+  const overlay = document.createElement("div");
+  overlay.id = "referral-modal";
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px";
+  overlay.innerHTML = `
+    <div style="background:#141210;border-radius:18px;padding:24px 22px 20px;max-width:340px;width:100%;border:1.5px solid #4a7028;box-shadow:0 12px 44px rgba(0,0,0,0.55)">
+      <div style="font-size:13px;font-weight:700;color:#7aa838;letter-spacing:2px;text-align:center;margin-bottom:10px">REFERRAL BONUS</div>
+      <div style="font-size:14px;color:#c8b8a8;line-height:1.5;text-align:center;margin-bottom:16px">Enter the 4-character code of the user who recommended Robograder.</div>
+      <input id="referral-code-input" type="text" inputmode="text" autocapitalize="characters" autocomplete="off" maxlength="4"
+        style="width:100%;text-align:center;font-family:'IBM Plex Mono','Menlo',monospace;font-size:26px;font-weight:700;letter-spacing:8px;text-transform:uppercase;padding:12px;border-radius:10px;border:1.5px solid #4a7028;background:#0d0f0a;color:#eaf5df;box-sizing:border-box">
+      <div id="referral-feedback" style="min-height:18px;font-size:12.5px;color:#e0a72e;text-align:center;margin-top:8px"></div>
+      <div style="display:flex;gap:10px;margin-top:14px">
+        <button class="rg-btn rg-btn-ghost rg-btn-md" onclick="closeReferralPrompt()" style="flex:1">Cancel</button>
+        <button id="referral-submit-btn" class="rg-btn rg-btn-branded rg-btn-md" onclick="submitReferral()" style="flex:1">Send</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const inp = document.getElementById("referral-code-input");
+  if (inp) {
+    inp.focus();
+    inp.addEventListener("input", () => { inp.value = inp.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4); });
+  }
+}
+function closeReferralPrompt() {
+  const m = document.getElementById("referral-modal");
+  if (m) m.remove();
+}
+async function submitReferral() {
+  const inp = document.getElementById("referral-code-input");
+  const fb = document.getElementById("referral-feedback");
+  const btn = document.getElementById("referral-submit-btn");
+  const code = ((inp && inp.value) || "").trim().toUpperCase();
+  if (code.length !== 4) { if (fb) fb.textContent = "Enter a 4-character code."; return; }
+  if (btn) { btn.disabled = true; btn.textContent = "Sending…"; }
+  try {
+    const token = await window._currentUser.getIdToken();
+    const resp = await fetch("/api/referral", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify({ action: "issue", code })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (resp.ok && data.ok && !data.alreadyDone) {
+      closeReferralPrompt();
+      window.rgPopup("You earned 3 credits for your generosity.", { type: "success", title: "Bonus sent!" });
+      if (typeof loadUserCredits === "function") loadUserCredits();
+      refreshReferralEligibility();
+    } else if (data.alreadyDone) {
+      closeReferralPrompt();
+      refreshReferralEligibility();
+    } else {
+      if (fb) fb.textContent = data.error || "Something went wrong — try again.";
+      if (btn) { btn.disabled = false; btn.textContent = "Send"; }
+    }
+  } catch (e) {
+    if (fb) fb.textContent = "Network error — try again.";
+    if (btn) { btn.disabled = false; btn.textContent = "Send"; }
+  }
+}
+
+// Recipient side: stacked "you received a bonus" popups on app load.
+function _processReferralQueue(queue) {
+  if (!Array.isArray(queue) || !queue.length) return;
+  const items = queue.slice();
+  let i = 0;
+  const showNext = () => {
+    if (i >= items.length) {
+      try {
+        if (window._currentUser) {
+          window._fsSetDoc(window._fsDoc(window._db, "users", window._currentUser.uid), { referralBonusQueue: [] }, { merge: true });
+        }
+      } catch (e) { console.warn("[referral] queue clear failed", e); }
+      return;
+    }
+    const item = items[i++];
+    _showReferralBonusModal((item && item.credits) || 0, showNext);
+  };
+  showNext();
+}
+async function _maybeGrantPwaWelcome() {
+  // Web / PWA only — never native.
+  if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) return;
+  if (!window._currentUser || typeof window._currentUser.getIdToken !== "function") return;
+  // S23: the server grants on the FIRST call now (no return-visit gate), so this
+  // is purely call-volume hygiene, not part of the grant rule.
+  // Hard backstop: if this browser has already seen a definitive answer, never
+  // ask again. NOTE when testing: clearing the Firestore flag is not enough —
+  // localStorage rg_pwa_welcome_done will still short-circuit the call in that
+  // browser. Clear it (or use a private window) as well.
+  try { if (localStorage.getItem("rg_pwa_welcome_done") === "1") return; } catch (e) {}
+  // Ping at most once per browser session (server is the real one-time authority).
+  try { if (sessionStorage.getItem("rg_pwa_welcome_pinged") === "1") return; } catch (e) {}
+  try { sessionStorage.setItem("rg_pwa_welcome_pinged", "1"); } catch (e) {}
+  try {
+    const token = await window._currentUser.getIdToken();
+    const resp = await fetch("/api/pwa_welcome", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: "{}"
+    });
+    const data = await resp.json().catch(() => ({}));
+    // Any definitive server answer (granted now, or already granted before) means
+    // this account is done — remember it so this browser never calls again.
+    if (data && (data.grantedNow || data.status === "already")) {
+      try { localStorage.setItem("rg_pwa_welcome_done", "1"); } catch (e) {}
+    }
+    if (!resp.ok || !data || !data.grantedNow) return;
+    if (typeof data.newBalance === "number") {
+      window._userCredits = data.newBalance;
+    } else {
+      window._userCredits = (window._userCredits || 0) + (data.creditsGranted || 1);
+    }
+    if (typeof refreshHeaderControls === "function") refreshHeaderControls();
+    updateStats(); // count-up + coin pulse fire off the balance change
+    const credEl = document.getElementById("settings-credits");
+    if (credEl) credEl.textContent = String(Math.max(0, window._userCredits || 0));
+    _showPwaWelcomeModal(data.creditsGranted || 1);
+  } catch (e) {
+    console.warn("[pwa_welcome] grant check failed:", e);
+  }
+}
+
+function _showPwaWelcomeModal(amount) {
+  const overlay = document.createElement("div");
+  overlay.className = "pwa-welcome-modal";
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px";
+  overlay.innerHTML = `
+    <div style="background:#141210;border-radius:18px;padding:24px 24px 20px;max-width:340px;width:100%;border:1.5px solid #2f6a3a;text-align:center;box-shadow:0 12px 44px rgba(0,0,0,0.55)">
+      <img src="assets/Robograder_Gift.webp" alt="" style="width:112px;height:auto;margin:0 auto 14px;display:block">
+      <div style="font-size:16px;font-weight:700;color:#8fe0a0;margin-bottom:8px">Welcome</div>
+      <div style="font-size:15px;color:#dfe8e2;line-height:1.6;margin-bottom:20px">
+        Here${"’"}s <strong style="color:#7ee08c">1</strong> free credit for logging in on the web. This is the best place to buy credits. And you can still use them in the apps.
+      </div>
+      <button class="rg-btn rg-btn-branded rg-btn-md" style="width:100%">Thanks!</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  const btn = overlay.querySelector("button");
+  if (btn) btn.onclick = () => { overlay.remove(); };
+}
+
+function _showReferralBonusModal(amount, onClose) {
+  const overlay = document.createElement("div");
+  overlay.className = "referral-bonus-modal";
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;z-index:99999;padding:20px";
+  overlay.innerHTML = `
+    <div style="background:#141210;border-radius:18px;padding:24px 24px 20px;max-width:340px;width:100%;border:1.5px solid #6a4a10;text-align:center;box-shadow:0 12px 44px rgba(0,0,0,0.55)">
+      <img src="assets/Robograder_Gift.webp" alt="" style="width:112px;height:auto;margin:0 auto 14px;display:block">
+      <div style="font-size:15px;color:#e8d9b8;line-height:1.6;margin-bottom:20px">
+        A user has issued you <strong style="color:#f0c860">${amount}</strong> bonus credit${amount === 1 ? "" : "s"} for recommending Robograder. Robograder has detected an unusual response within its circuitry. Is this...gratitude?
+      </div>
+      <button class="rg-btn rg-btn-branded rg-btn-md" style="width:100%">Cool!</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  const btn = overlay.querySelector("button");
+  if (btn) btn.onclick = () => { overlay.remove(); if (typeof onClose === "function") onClose(); };
+}
+
+function openSettings_buyCredits() {
+  closeSettings();
+  window._buyOpenedFromSettings = true;
+  showBuyCredits();
+}
+
+async function exportCollection() {
+  if (!items.length) {
+    alert("Nothing to export — your collection is empty.");
+    return;
+  }
+  const EXPORT_LIMIT = 3;
+  const EXPORT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+  const userEmail = window._currentUser && window._currentUser.email || "";
+  const isAdmin = userEmail.toLowerCase() === "wherethehellismatt@gmail.com";
+  let userRef = null;
+  let userSnap = null;
+  let exportLog = [];
+  if (!isAdmin && window._currentUser) {
+    try {
+      userRef = window._fsDoc(window._db, "users", window._currentUser.uid);
+      userSnap = await window._fsGetDoc(userRef);
+      const data = userSnap.exists() ? userSnap.data() : {};
+      const raw = Array.isArray(data.exportLog) ? data.exportLog : [];
+      const cutoff = Date.now() - EXPORT_WINDOW_MS;
+      exportLog = raw.filter(iso => {
+        const t = Date.parse(iso);
+        return Number.isFinite(t) && t >= cutoff;
+      });
+      if (exportLog.length >= EXPORT_LIMIT) {
+        const oldest = exportLog.slice().sort()[0];
+        const nextAvail = new Date(Date.parse(oldest) + EXPORT_WINDOW_MS);
+        const dateStr = nextAvail.toLocaleDateString();
+        alert(`You've reached the export limit. Next export available ${dateStr}.`);
+        return;
+      }
+    } catch (e) {
+      console.warn("Export rate-limit check failed; proceeding:", e);
+    }
+  }
+  const statusEl = document.getElementById("settings-img-count");
+  const origText = statusEl ? statusEl.textContent : "";
+  if (statusEl) statusEl.textContent = "Preparing export…";
+  try {
+    const archiveModule = await import("/archive-viewer.js");
+    const makeSafeBookName = archiveModule.makeSafeBookName;
+    const buildArchiveViewer = archiveModule.buildArchiveViewer;
+    await new Promise((res, rej) => {
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+      s.onload = res;
+      s.onerror = rej;
+      document.head.appendChild(s);
+    });
+    const zip = new JSZip;
+    const exportDate = (new Date).toISOString();
+    const userId = window._currentUser && window._currentUser.uid || "unknown";
+    zip.file("_export_info.json", JSON.stringify({
+      app: "Robograder",
+      appVersion: (window.RG_GRADING_VERSION || "6.41"),
+      exportDate: exportDate,
+      userEmail: userEmail || "unknown",
+      userId: userId,
+      bookCount: items.length,
+      totalImages: items.reduce((s, c) => s + (c.images || []).length, 0),
+      schemaNotes: {
+        roboGrade: "Proprietary public-facing grade (0-100) with component breakdown and defects",
+        cgcAI: "AI prediction of the grade CGC would assign (internal use only)",
+        psaAI: "AI prediction of the grade PSA would assign (internal use only)",
+        cgcGrade: "Real CGC slab grade (only present for slabbed books)",
+        psaGrade: "Real PSA slab grade (only present for slabbed books)"
+      }
+    }, null, 2));
+    const collectionData = items.map(c => {
+      const {images: images, ...rest} = c;
+      const safeName = makeSafeBookName(c);
+      rest._archiveFolder = `images/${safeName}`;
+      rest._archiveImageCount = (images || []).length;
+      return rest;
+    });
+    zip.file("collection.json", JSON.stringify(collectionData, null, 2));
+    const imgFolder = zip.folder("images");
+    items.forEach(c => {
+      if (!c.images || !c.images.length) return;
+      const safeName = makeSafeBookName(c);
+      const bookFolder = imgFolder.folder(safeName);
+      const labels = [ "front_cover", "back_cover", "page_quality", "raking_light" ];
+      c.images.forEach((img, i) => {
+        if (!img || !img.startsWith("data:")) return;
+        const [header, data] = img.split(",");
+        const ext = header.includes("png") ? "png" : "jpg";
+        const slotLabel = labels[i] || `image_${i + 1}`;
+        bookFolder.file(`${slotLabel}.${ext}`, data, {
+          base64: true
+        });
+      });
+    });
+    const dateStamp = (new Date).toISOString().slice(0, 10);
+    zip.file(`robograder_archive_${dateStamp}.html`, buildArchiveViewer(collectionData, exportDate, items.length));
+    const blob = await zip.generateAsync({
+      type: "blob",
+      compression: "DEFLATE",
+      compressionOptions: {
+        level: 6
+      }
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `robograder-collection-${(new Date).toISOString().slice(0, 10)}.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+    if (!isAdmin && userRef) {
+      try {
+        const newLog = [ ...exportLog, exportDate ];
+        await window._fsSetDoc(userRef, {
+          exportLog: newLog
+        }, {
+          merge: true
+        });
+        updateExportRemainingDisplay(EXPORT_LIMIT - newLog.length);
+      } catch (e) {
+        console.warn("Could not write exportLog:", e);
+      }
+    }
+    if (statusEl) statusEl.textContent = origText;
+  } catch (e) {
+    if (statusEl) statusEl.textContent = origText;
+    alert("Export failed: " + e.message);
+  }
+}
+
+async function refreshExportRemainingDisplay() {
+  const detailEl = document.getElementById("export-detail");
+  if (!detailEl) return;
+  const userEmail = window._currentUser && window._currentUser.email || "";
+  if (userEmail.toLowerCase() === "wherethehellismatt@gmail.com") {
+    detailEl.textContent = "Download all your data as a ZIP file";
+    return;
+  }
+  if (!window._currentUser || !window._db || !window._fsGetDoc) {
+    detailEl.textContent = "Download all your data as a ZIP file";
+    return;
+  }
+  try {
+    const userRef = window._fsDoc(window._db, "users", window._currentUser.uid);
+    const snap = await window._fsGetDoc(userRef);
+    const data = snap.exists() ? snap.data() : {};
+    const raw = Array.isArray(data.exportLog) ? data.exportLog : [];
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const recent = raw.filter(iso => {
+      const t = Date.parse(iso);
+      return Number.isFinite(t) && t >= cutoff;
+    }).length;
+    const remaining = Math.max(0, 3 - recent);
+    updateExportRemainingDisplay(remaining);
+  } catch (e) {
+    detailEl.textContent = "Download all your data as a ZIP file";
+  }
+}
+
+function updateExportRemainingDisplay(remaining) {
+  const detailEl = document.getElementById("export-detail");
+  if (!detailEl) return;
+  if (remaining <= 0) {
+    detailEl.textContent = "Download all your data as a ZIP file: 0 remaining.";
+  } else {
+    detailEl.textContent = `Download all your data as a ZIP file: ${remaining} remaining.`;
+  }
+}
+
+// S22: this fires an UNCONDITIONAL FieldValue.increment(-1) on Firestore while
+// checking only the LOCAL copy of the balance. A local copy that is stale-high
+// — spent on another device, a refund that never landed, a tab left open — drove
+// the STORED balance below zero, which is where a "-1 credits" reading comes
+// from. Two things stop it now: the server-side floor (note 9646) refuses the
+// assessment before this can run at zero, and applyServerCredits() returns early
+// so a client whose debit the SERVER performed never reaches this at all. The
+// local guard below remains the last line of defence for older clients.
+function decrementCredit() {
+  if (window._userCredits !== undefined && window._userCredits > 0) {
+    window._userCredits--;
+    updateStats();
+    if (window._currentUser && window._db) {
+      try {
+        const userRef = window._fsDoc(window._db, "users", window._currentUser.uid);
+        if (window._fsUpdateDoc && window._fsIncrement) {
+          window._fsUpdateDoc(userRef, {
+            assessmentCredits: window._fsIncrement(-1)
+          }).catch(e => console.error("Atomic credit decrement failed:", e));
+        } else {
+          if (Number.isFinite(window._userCredits) && window._userCredits >= 0) {
+            window._fsSetDoc(userRef, {
+              assessmentCredits: window._userCredits
+            }, {
+              merge: true
+            });
+          }
+        }
+      } catch (e) {
+        console.error("Failed to decrement credits in Firestore:", e);
+      }
+    }
+  }
+}
+
+// S21: Deep credit refund. When a Deep assessment does not raise the grade,
+// Matt absorbs the cost and refunds the charged credit (charge-then-refund, so
+// the net balance is unchanged and any onAssessmentSuccess side effects run).
+function refundCredit() {
+  window._userCredits = (window._userCredits || 0) + 1;
+  updateStats();
+  if (window._currentUser && window._db) {
+    try {
+      const userRef = window._fsDoc(window._db, "users", window._currentUser.uid);
+      if (window._fsUpdateDoc && window._fsIncrement) {
+        window._fsUpdateDoc(userRef, {
+          assessmentCredits: window._fsIncrement(1)
+        }).catch(e => console.error("Atomic credit refund failed:", e));
+      } else if (Number.isFinite(window._userCredits) && window._userCredits >= 0) {
+        window._fsSetDoc(userRef, {
+          assessmentCredits: window._userCredits
+        }, {
+          merge: true
+        });
+      }
+    } catch (e) {
+      console.error("Failed to refund credit in Firestore:", e);
+    }
+  }
+}
+
+const ID_ALPHABET = "23456789ABCDEFGHIJKLMNPQRSTVWXYZ";
+
+function _randomFromAlphabet(len) {
+  const arr = new Uint8Array(len);
+  crypto.getRandomValues(arr);
+  return Array.from(arr).map(b => ID_ALPHABET[b % ID_ALPHABET.length]).join("");
+}
+
+function generateRoboId() {
+  return _randomFromAlphabet(6);
+}
+
+// S20 (#33): capture the assessment log's doc key (returned by the endpoints in
+// _diagnostics.timingKey) and stash it on the item's assessmentTimingKeys. The
+// item's roboGradeId is minted client-side AFTER assessment, so it can't be the
+// log key server-side; persisting the log key on the item is the bridge that
+// lets the admin dashboard's "Logs → tap to open item" resolve to this entry.
+function _recordTimingKey(unified) {
+  try {
+    const k = unified && unified._diagnostics && unified._diagnostics.timingKey;
+    if (!k) return;
+    const arr = Array.isArray(formData.assessmentTimingKeys) ? formData.assessmentTimingKeys.slice() : [];
+    if (!arr.includes(k)) arr.push(k);
+    formData.assessmentTimingKeys = arr.slice(-12);
+  } catch (e) {}
+}
+
+function generateTransferCode() {
+  return _randomFromAlphabet(4);
+}
+
+// ── Cover perceptual hash (dHash) — S21 cover-index feature ──────────────────
+// Fingerprints a front cover so a cover we hand-corrected once can teach the
+// right issue number to future identical covers. dHash: 9x8 grayscale, compare
+// each pixel to its right neighbor -> 64 bits -> 16 hex chars. Robust to resize/
+// recompression/light; Hamming distance = # of differing bits (small = same cover).
+const RG_COVER_THRESH = 8; // max Hamming distance (of 64) to treat as the same cover
+function _coverIndexKey(t) {
+  return String(t == null ? "" : t).trim().toLowerCase().replace(/[\/#]/g, " ").replace(/\s+/g, " ").trim();
+}
+window.RGCover = (function () {
+  function _hashFromImage(img) {
+    const W = 9, H = 8;
+    const c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, W, H);
+    const d = ctx.getImageData(0, 0, W, H).data; // throws on a tainted (cross-origin) canvas
+    let bits = "";
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W - 1; x++) {
+        const i = (y * W + x) * 4, j = (y * W + x + 1) * 4;
+        const g1 = (d[i] + d[i + 1] + d[i + 2]) / 3;
+        const g2 = (d[j] + d[j + 1] + d[j + 2]) / 3;
+        bits += g1 > g2 ? "1" : "0";
+      }
+    }
+    let hex = "";
+    for (let k = 0; k < 64; k += 4) hex += parseInt(bits.slice(k, k + 4), 2).toString(16);
+    return hex;
+  }
+  function hashImage(src) {
+    return new Promise((resolve, reject) => {
+      if (!src) return reject(new Error("no src"));
+      const img = new Image();
+      if (/^https?:/i.test(src)) img.crossOrigin = "anonymous";
+      img.onload = () => { try { resolve(_hashFromImage(img)); } catch (e) { reject(e); } };
+      img.onerror = () => reject(new Error("image load failed"));
+      img.src = src;
+    });
+  }
+  function hamming(a, b) {
+    if (!a || !b || a.length !== b.length) return 64;
+    let d = 0;
+    for (let i = 0; i < a.length; i++) { let x = parseInt(a[i], 16) ^ parseInt(b[i], 16); while (x) { d += x & 1; x >>= 1; } }
+    return d;
+  }
+  return { hashImage, hamming };
+})();
+
+// S24 — DOUBLE-TAP ON COMPLETE FILED THE SAME ASSESSMENT TWICE.
+//
+// The `!_pendingAssessResult` check below looks like a re-entry guard, and it is
+// not one. `_pendingAssessResult` is not cleared until ~150 lines further down,
+// and the body awaits before it gets there: RGCover.hashImage, then a Firestore
+// read of `cover_index`. A second tap during that await sails past the check,
+// because the flag it tests has not been cleared yet. Both calls then mint their
+// own roboGradeId + roboGradeDate and both unshift a prior record.
+//
+// Observed on ASM 48 (2026-09-25): records JCX7AI and 3HQ45J, 12 MILLISECONDS
+// apart, identical grade / RoboGrade / page quality - one real Main (20:55:33 in
+// the timings log) filed twice. The existing duplicate guard cannot catch it
+// either: it compares roboGradeId and date, both freshly generated per call.
+//
+// The window opens exactly when the network is slow, which is exactly when a
+// user taps again because nothing appears to be happening. Matt hit it at a
+// convention.
+//
+// Fix: a synchronous latch set before the first await and cleared in a finally,
+// plus disabling the button so the UI stops inviting the second tap. The body is
+// untouched - it moved into _completeAssessmentInner verbatim.
+let _completingAssessment = false;
+async function completeAssessment() {
+  if (_completingAssessment) return;
+  if (!_pendingAssessResult) return;
+  _completingAssessment = true;
+  const _cbtn = document.getElementById("assess-complete-btn");
+  if (_cbtn) { _cbtn.disabled = true; _cbtn.style.cursor = "progress"; _cbtn.style.opacity = "0.7"; }
+  try {
+    await _completeAssessmentInner();
+  } finally {
+    _completingAssessment = false;
+    // Only re-enable if the panel is still up (an error path left it mounted).
+    // On the success path the overlay is dismissed and this element is gone.
+    const _b2 = document.getElementById("assess-complete-btn");
+    if (_b2) { _b2.disabled = false; _b2.style.cursor = "pointer"; _b2.style.opacity = "1"; }
+  }
+}
+
+async function _completeAssessmentInner() {
+  if (!_pendingAssessResult) return;
+  const {cgc: cgc, psa: psa} = _pendingAssessResult;
+  // S22: capture the book identity BEFORE it is overwritten from the new scan —
+  // used below to decide whether the prior grade belongs to THIS book (history
+  // cross-contamination guard).
+  const _priorTitleH = formData.title || "";
+  const _priorIssueH = formData.issue || "";
+  formData.title = normalizeTitle((cgc.title || formData.title || "").trim().replace(/\s+/g, " ").replace(/^The\s+/i, ""), cgc.issueDate || formData.issueDate, cgc.printing || formData.printing);
+  formData.issue = cgc.issue != null ? String(cgc.issue) : formData.issue || "";
+  formData.issueDate = cgc.issueDate || formData.issueDate || "";
+  formData.publisher = cgc.publisher || formData.publisher || "";
+  formData.printing = cgc.printing || "";
+  // S21 cover-index: fingerprint the front cover; if a previously hand-corrected
+  // cover matches closely, adopt ITS issue number over the model's guess. Fully
+  // fail-safe — nothing here may break assessment.
+  try {
+    if (formData.type !== "card" && formData.images && formData.images[0] && window.RGCover) {
+      const _ch = await window.RGCover.hashImage(formData.images[0]);
+      if (_ch) {
+        formData.coverHash = _ch;
+        const _nt = _coverIndexKey(formData.title);
+        if (_nt && window._db && window._fsDoc && window._fsGetDoc) {
+          const _snap = await window._fsGetDoc(window._fsDoc(window._db, "cover_index", _nt));
+          if (_snap.exists()) {
+            const _entries = (_snap.data() && _snap.data().entries) || [];
+            let _best = null, _bestD = 999;
+            for (const _e of _entries) {
+              if (!_e || !_e.phash) continue;
+              const _d = window.RGCover.hamming(_ch, _e.phash);
+              if (_d < _bestD) { _bestD = _d; _best = _e; }
+            }
+            if (_best && _bestD <= RG_COVER_THRESH && _best.issue != null && _best.issue !== "") {
+              if (String(_best.issue) !== String(formData.issue)) {
+                console.log("[coverIndex] override issue", { title: _nt, from: formData.issue, to: _best.issue, dist: _bestD });
+                formData.issue = String(_best.issue);
+                formData.issueSource = "coverIndex";
+              } else {
+                console.log("[coverIndex] confirmed", { title: _nt, issue: formData.issue, dist: _bestD });
+              }
+            } else if (_best) {
+              console.log("[coverIndex] no close match", { title: _nt, nearest: _bestD, thresh: RG_COVER_THRESH });
+            }
+          }
+        }
+      }
+    }
+  } catch (_e) { console.warn("[coverIndex] skipped:", _e && _e.message); }
+  if (cgc.labelDetected && cgc.officialCGCGrade) {
+    formData.cgcGrade = normalizeGrade(cgc.officialCGCGrade);
+    if (cgc.officialCGCCert) formData.cgcCert = cgc.officialCGCCert;
+    if (cgc.officialPageQuality) formData.pageQuality = cgc.officialPageQuality;
+  }
+  if (psa.labelDetected && psa.officialPSAGrade) {
+    formData.psaGrade = normalizeGrade(psa.officialPSAGrade);
+    if (psa.officialPSACert) formData.psaCert = psa.officialPSACert;
+    if (psa.officialPageQuality && !formData.pageQuality) formData.pageQuality = psa.officialPageQuality;
+  }
+  if (formData.assessedCGCGrade || formData.predictedGrade) {
+    // S22: only file a PRIOR assessment under THIS book. formData is reused in
+    // memory; shooting a DIFFERENT book over an existing form must not push the
+    // old book's grade into the new book's Past Assessments (cross-book bleed).
+    const _nrmH = t => String(t == null ? "" : t).trim().toLowerCase().replace(/^the\s+/, "").replace(/\s+/g, " ");
+    const _nisH = i => String(i == null ? "" : i).trim().replace(/^#/, "");
+    const _sameBookH = _nrmH(_priorTitleH) === _nrmH(formData.title) && _nisH(_priorIssueH) === _nisH(formData.issue);
+    if (_sameBookH) {
+      if (!Array.isArray(formData.assessmentHistory)) formData.assessmentHistory = [];
+      // v3 grade of the prior pass: formData.roboGrade still holds it here (it is
+      // overwritten a few lines below). Stored so Past Assessments renders v3 RG
+      // in League Spartan instead of the legacy 0-100 v1 score.
+      const _priorV3H = (typeof rgV3ForComic === "function" && formData.type !== "card" && formData.roboGrade) ? rgV3ForComic(formData) : null;
+      const prior = {
+        grade: formData.predictedGrade || formData.assessedCGCGrade,
+        psaGrade: "",
+        pageQuality: formData.pageQuality || "",
+        rgScore: formData.roboGrade && formData.roboGrade.score != null ? Math.round(formData.roboGrade.score) : null,
+        rgVersion: formData.roboGrade && formData.roboGrade.version ? formData.roboGrade.version : null,
+        rgV3Grade: (_priorV3H && window.RoboScoreV3) ? window.RoboScoreV3.formatGrade(_priorV3H.grade) : null,
+        rgConfidenceRange: formData.roboGrade && formData.roboGrade.confidenceRange != null ? Math.round(formData.roboGrade.confidenceRange) : null,
+        rgHighGradeUnlocked: !!formData.highGradeUnlocked,
+        // v5.07: store depth + subscores so Assessment History can show the
+        // assessment-tier stars (main=1, deep=2, full=3) and the F/B/S/I
+        // component subscores per record.
+        depth: (formData.fullAssessmentRan ? "full" : ((typeof isDeepAssessmentComplete === "function" && isDeepAssessmentComplete(formData)) ? "deep" : "main")),
+        subscores: (_priorV3H && _priorV3H.subscores) ? _priorV3H.subscores : null,
+        roboGradeId: formData.roboGradeId || "",
+        date: formData.roboGradeDate || ""
+      };
+      // v5.06: only file a GENUINE, DISTINCT prior. Require a real prior roboGradeId,
+      // and never duplicate the newest existing entry — kills the "byte-identical
+      // past-assessment line on every same-day book" report. (A record with no
+      // roboGradeId is a placeholder/unsaved grade and must never be filed.)
+      const _h0H = formData.assessmentHistory[0];
+      const _dupH = _h0H && ((prior.roboGradeId && _h0H.roboGradeId === prior.roboGradeId) ||
+        (_h0H.rgScore === prior.rgScore && _h0H.grade === prior.grade &&
+         _h0H.date === prior.date && _h0H.pageQuality === prior.pageQuality));
+      if (prior.roboGradeId && !_dupH && !formData._batchMode) formData.assessmentHistory.unshift(prior);
+    }
+  }
+  // S22: snapped on the way IN to formData, not trusted from the response.
+  // The server runs enforceCgcGrade() on every Main, Deep and Full result, so
+  // in principle this is redundant - but Matt is still seeing 9.5 on books
+  // that have only had a Main and a Deep, which means SOME path is producing
+  // an off-ladder PG that the server guard does not sit on. Until that path is
+  // identified, the guard goes where the value is stored, because every path
+  // ends here. The console warning names the site when it fires, which is how
+  // the remaining path gets found.
+  // PSA is NOT snapped: the PSA scale genuinely includes half grades, 9.5
+  // among them.
+  formData.assessedCGCGrade = _snapPgToLadder(cgc.grade || "", "assess-result");
+  formData.assessedPSAGrade = psa.grade ? String(psa.grade).includes(".") ? String(psa.grade) : parseFloat(psa.grade).toFixed(1) : "";
+  formData.predictedGrade = _snapPgToLadder(cgc.grade || "", "assess-result");
+  // The server sets gradeAtCeiling on both the Main and the Deep result, so a
+  // Deep overwrites the Main's answer here rather than inheriting it.
+  formData.gradeAtCeiling = !!cgc.gradeAtCeiling;
+  // S24 — SIGNATURES WERE ANNOUNCED AND THEN LOST.
+  //
+  // The model returns `signatures` at the TOP LEVEL of the response. Nothing here
+  // ever copied it onto formData, and "signatures" was missing from
+  // COMIC_DATA_FIELDS, so the array lived only as long as the in-memory assess
+  // result: long enough to light up the SIGNATURE DETECTED button, gone by the
+  // time Edit re-read the saved book. getSignatures() then found neither
+  // roboGrade.signatures nor item.signatures, so the macro section rendered as an
+  // empty string - slots promised, slots absent.
+  //
+  // Confirmed on the affected book: {topLevel: 0, inRoboGrade: 0, sigImages: 0}.
+  //
+  // assess.js's schema and its prose also disagreed about WHERE the array goes
+  // (schema said inside roboGrade, prose said top level), so which one the model
+  // filled varied per call. The schema now matches the prose. Both locations are
+  // still accepted here, because books assessed before this fix may carry it in
+  // whichever place their own call happened to choose.
+  {
+    const _sigs = Array.isArray(cgc.signatures) ? cgc.signatures
+      : (cgc._roboGrade && Array.isArray(cgc._roboGrade.signatures)) ? cgc._roboGrade.signatures
+      : null;
+    if (_sigs) formData.signatures = _sigs.filter(x => x && typeof x === "object");
+  }
+  if (cgc._roboGrade) {
+    // v5.27: carry restoration findings forward — see mergeRestorationFlags().
+    // The assignment below REPLACES roboGrade, so anything the previous pass
+    // recorded and this one did not re-state would be lost.
+    mergeRestorationFlags(formData.roboGrade, cgc._roboGrade);
+    formData.roboGrade = cgc._roboGrade;
+    formData.roboGradeId = generateRoboId();
+    formData.roboGradeDate = (new Date).toISOString();
+  }
+  formData.highGradeTier = !!cgc._highGradeTier;
+  // Star-badge integrity (S23): completeAssessment runs only for Main and Deep.
+  // A Full assessment is therefore no longer the most-recent depth, so drop its
+  // badge; on a Main re-run (no high-grade pass) clear the Deep flags too so the
+  // score box shows the shallow grade just produced. Higher-tier IMAGES stay on
+  // the entry (untouched here) so the user can re-run those depths; restoration
+  // is intentionally NOT reset (it persists as a property).
+  formData.fullAssessmentRan = false;
+  if (!cgc._highGradeTier) {
+    formData.deepAssessmentRan = false;
+    formData.highGradeAssessed = false;
+    formData._highGradeTier = false;
+  }
+  formData.highGradeUnlocked = !!cgc._highGradeUnlocked;
+  formData.highGradeReason = cgc._highGradeReason || "grade";
+  // v5.28: binding, from the Main pass. Only ever written when the response
+  // actually carries a recognised value AND says it is confident — a low-
+  // confidence call is treated as no call, which leaves the saddle default in
+  // place. Deep and Full do not re-judge binding, so their responses (which
+  // carry no `binding` key) leave the stored value alone.
+  if (typeof cgc.binding === "string") {
+    const _b = cgc.binding.toLowerCase().trim();
+    const _conf = String(cgc.bindingConfidence || "").toLowerCase().trim();
+    if (BINDING_SLOT_KEYS[_b] && _conf !== "low") {
+      formData.binding = _b;
+      formData.bindingBasis = String(cgc.bindingBasis || "").trim().slice(0, 160);
+    }
+  }
+  formData.restorationCheckTier = !!cgc._restorationCheckTier;
+  stickTierUnlocks(formData);
+  if (cgc.restorationReport) formData.restorationReport = cgc.restorationReport;
+  // v5.27: only the UV pass may set this. It was assigned unconditionally, so a
+  // later Main or Deep — whose response carries no restorationFlag at all —
+  // silently reset a book that HAD failed its UV check back to false, while the
+  // report text beside it (guarded by an `if`) survived. restorationFlag feeds
+  // the RESTORED badge and the public listing, so the two disagreed.
+  if (Object.prototype.hasOwnProperty.call(cgc, "restorationFlag")) {
+    formData.restorationFlag = !!cgc.restorationFlag;
+  }
+  formData.pageQuality = cgc.pageQuality ? normPageQuality(cgc.pageQuality) : formData.pageQuality;
+  formData.aiGraderNotes = cgc.graderNotes || "";
+  formData.aiAssessment = cgc.aiAssessment || formData.aiAssessment || "";
+  // S20 (#53): Deep observations go in their own field (aiAssessment stays the Main write-up).
+  // v5.26: why the grade moved. Deep/Full may revise up or down, and "the
+  // number changed" without a reason is the single thing a user is most likely
+  // to ask about. Stored on the item so it survives a reload, and cleared when
+  // a pass does NOT revise so a stale reason can never sit under a new grade.
+  if (typeof cgc.gradeRevisionReason === "string") {
+    let _grr = cgc.gradeRevisionReason.trim();
+    // v5.29: a note, not a write-up (Matt: 7 lines is too long, 4 is plenty). The
+    // prompt asks for <=2 sentences / 35 words; this is the backstop for when it
+    // does not comply. Trim at a SENTENCE boundary — a mid-sentence ellipsis in a
+    // box whose whole job is to explain something reads worse than no box.
+    const _words = _grr.split(/\s+/);
+    if (_words.length > 45) {
+      const _sent = _grr.match(/[^.!?]+[.!?]+/g) || [];
+      let _keep = "";
+      for (const _s of _sent) {
+        if ((_keep + _s).split(/\s+/).length > 45) break;
+        _keep += _s;
+      }
+      _grr = (_keep.trim() || _words.slice(0, 45).join(" ")).trim();
+    }
+    formData.gradeRevisionReason = _grr.length >= 12 ? _grr : "";
+  }
+  if (cgc.deepAssessment) formData.deepAssessment = cgc.deepAssessment;
+  if (cgc.photograder) formData.photograder = cgc.photograder; // S21: persist photo grades
+  // ComicVine reference fields — copy from the assess result onto formData so
+  // they persist to the item doc (the whitelist in nestForFirestore only keeps
+  // fields that are actually ON the record; they must be assigned here first).
+  // Powers the admin side-by-side reference display + wrong-volume diagnosis.
+  if (cgc.referenceImageUrl) formData.referenceImageUrl = cgc.referenceImageUrl;
+  if (cgc.referenceVolume) formData.referenceVolume = cgc.referenceVolume;
+  if (cgc.referenceYear != null) formData.referenceYear = cgc.referenceYear;
+  if (cgc.referenceComparison) formData.referenceComparison = cgc.referenceComparison;
+  if (cgc.referenceBackImageUrl) formData.referenceBackImageUrl = cgc.referenceBackImageUrl;
+  if (cgc.refDebug) formData.refDebug = cgc.refDebug;
+  if (cgc.labelNotes && cgc.labelNotes.trim()) formData.cgcNotes = cgc.labelNotes.trim() + (formData.cgcNotes ? "\n" + formData.cgcNotes : "");
+  formData.psaNotes = psa.psaNotes || "";
+  if (cgc.keyInfo && cgc.keyInfo.trim() && !formData.keyInfo) formData.keyInfo = cgc.keyInfo.trim();
+  const enhanceLocked = formData.enhance === "done" || formData.enhance === "dontcare";
+  if (!enhanceLocked) {
+    if (cgc.enhance === "Y" || cgc.enhance === true) formData.enhance = true; else if (cgc.enhance === "N" || cgc.enhance === false) formData.enhance = false; else if (cgc.press === true || cgc.uv === true || cgc.clean === true) formData.enhance = true; else if (cgc.press === false && cgc.uv === false && cgc.clean === false) formData.enhance = false;
+  }
+  _assessed = true;
+  _pendingAssessResult = null;
+  if (!formData.title?.trim()) {
+    if (window.RobograderScan && window.RobograderScan.dismiss) {
+      window.RobograderScan.dismiss();
+    }
+    renderForm();
+    return;
+  }
+  const _sigDetected = typeof hasIdentifiedSignatures === "function" ? hasIdentifiedSignatures(formData) : false;
+  // S22: always return to Detail after an assessment completes (see it finished),
+  // never auto-jump to Edit. Deep/Full/Restoration are launched from the Detail
+  // CTAs instead. (_sigDetected retained for the signature pop-up above.)
+  _routeToEditAfterSave = false;
+  const _tComplete = Date.now();
+  console.log("[complete] tapped → submitForm start");
+  await submitForm();
+  console.log("[complete] submitForm done in", Date.now() - _tComplete, "ms");
+  if (window.RobograderScan && window.RobograderScan.dismiss) {
+    window.RobograderScan.dismiss();
+  }
+}
+
+// S22 (9646): the server now enforces the credit floor and, for clients that
+// send `serverCredits: true`, performs the debit itself inside a transaction.
+// When a response carries creditsRemaining, that number IS the balance — the
+// client must sync to it and must NOT decrement again. When it does not (server
+// in check-only mode, or an older deployment), we fall back to the local
+// decrement that has always been here. Returns true when the server owned it.
+function applyServerCredits(result) {
+  if (!result || typeof result !== "object") return false;
+  if (!Number.isFinite(result.creditsRemaining)) return false;
+  window._userCredits = result.creditsRemaining;
+  updateStats();
+  return true;
+}
+
+function onAssessmentSuccess(result) {
+  if (applyServerCredits(result)) return;
+  decrementCredit();
+}
+
+function describeAssessmentError(rawErr) {
+  const text = String(rawErr || "");
+  // S22 (9646): the server now refuses an assessment it can't charge for. This
+  // arrives either as a 402 body (non-streaming) or as an SSE error payload.
+  if (/insufficient_credits/i.test(text)) {
+    return "You're out of credits, so the assessment didn't run. Nothing was charged. Tap Buy Credits to top up.";
+  }
+  // S22: the free UV Check is metered at 3 per book (see UV_CHECK_LIMIT).
+  if (/uv_check_limit/i.test(text)) {
+    return "You've used all 3 free UV Checks on this book. If it has been worked on since, run a new assessment and you'll get 3 more.";
+  }
+  if (/overloaded_error|Overloaded|529/i.test(text)) {
+    return "Robograder is busy right now. Please wait a moment and try again. (No credit was used.)";
+  }
+  if (/FUNCTION_INVOCATION_TIMEOUT|timeout/i.test(text)) {
+    return "The assessment took too long and was cut off. Please try again. If this keeps happening, please contact support. (No credit was used.)";
+  }
+  if (/rate_limit|rate limit|429/i.test(text)) {
+    return "Too many assessments in a short time. Please wait a minute and try again. (No credit was used.)";
+  }
+  if (/Failed to fetch|NetworkError|ECONN|ENOTFOUND|fetch failed/i.test(text)) {
+    return "Network problem reaching Robograder. Check your connection and try again. (No credit was used.)";
+  }
+  if (/401|403|Unauthorized|Forbidden/i.test(text)) {
+    return "Your session may have expired. Please reload the app and sign in again. (No credit was used.)";
+  }
+  // v6.34: the server's own refusals carry a message written for the user, and
+  // throwing it away cost a day. A tier-4 book hit the server's tier-6 Full
+  // gate and every one of them reported "Assessment failed. Please try again."
+  // - advice that could not work, on a book that would never pass, with the
+  // reason sitting unread in the response body.
+  if (/INELIGIBLE_BOOK|INELIGIBLE_SLABBED|INELIGIBLE/i.test(text)) {
+    const m = text.match(/"message"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    if (m) {
+      try { return JSON.parse('"' + m[1] + '"') + " (No credit was used.)"; } catch (e) {}
+    }
+    return "This book doesn't qualify for that assessment. (No credit was used.)";
+  }
+  console.warn("[assess] unmatched error:", text);
+  return "Assessment failed. Please try again. If this keeps happening, please contact support. (No credit was used.)";
+}
+
+function dismissAssessModal(err) {
+  if (window._modalFrameTimer) {
+    clearInterval(window._modalFrameTimer);
+    window._modalFrameTimer = null;
+  }
+  if (window.RobograderScan && window.RobograderScan.dismiss) {
+    window.RobograderScan.dismiss();
+  } else {
+    const overlay = document.getElementById("assess-modal-overlay");
+    if (overlay) overlay.remove();
+  }
+  if (err) alert(describeAssessmentError(err));
+}
+
+let _pendingCardResult = null;
+let _cardDeepSlot = 0;
+
+// Card grading path (Pokemon MVP). Fully isolated from the comic assessGrade():
+// uploads photos, calls /api/assess_card, saves a type:"card" item + cardData,
+// spends one credit (same as comics), and shows an RG + predicted-PSA result.
+// Reuses the existing scan animation; card-specific animation/panel is deferred
+// to the v2 type-aware display work (see CARDS_MVP_SPEC).
+function cardDeepEligible(item) {
+  if (!item || (item.type !== "card" && !item._isCard) || !item.roboGrade) return false;
+  const pgRaw = (item.cardData && item.cardData.psaGrade != null) ? item.cardData.psaGrade : item.assessedPSAGrade;
+  const pg = parseFloat(pgRaw);
+  if (isFinite(pg) && pg >= 9.0) return true;
+  // FMV >= $100 gate (tier >= 4). Uses the card's predicted PSA grade against
+  // fmv_pokemon.json via matchCardFMV.
+  const m = (window.matchCardFMV && item.cardData) ? window.matchCardFMV(item.cardData.cardIdentification, pg) : null;
+  if (m && isFinite(m.low) && m.low >= 100) return true;
+  return false;
+}
+
+function _cardDeepSectionHtml(item) {
+  const isCard = !!(item && (item.type === "card" || item._isCard));
+  if (!isCard || !item.roboGrade || !cardDeepEligible(item)) return "";
+  const labels = ["Front Raking", "Back Raking", "Back Top Macro", "Back Bottom Macro"];
+  const slots = labels.map((lbl, i) => {
+    const im = (item.cardDeepImages || [])[i];
+    return im
+      ? `<div class="drag-slot" style="aspect-ratio:5/7" onclick="tapSlot(${i}, 'carddeep')"><img src="${im}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"><button class="slot-x" onclick="event.stopPropagation();removeCardDeepImg(${i})">\u00d7</button></div>`
+      : `<div class="drag-slot" style="padding:0;background:#161616;aspect-ratio:5/7;position:relative" onclick="tapSlot(${i}, 'carddeep')"><div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700;letter-spacing:1px;text-align:center;padding:8px">${lbl.toUpperCase()}<div style="font-size:10px;opacity:0.8;margin-top:4px;font-weight:500">Tap to add</div></div></div>`;
+  }).join("");
+  const ready = (item.cardDeepImages || []).filter(Boolean).length >= 4;
+  return `
+      <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">
+        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">DEEP ASSESSMENT</div>
+        <div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Higher-value cards: add raking-light and back close-ups to refine surface, back corners, and edges. For the raking shots, tilt the card under a single light so the surface catches the glare.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">${slots}</div>
+        <input id="card-deep-photo-input" type="file" accept="image/*" onchange="handleCardDeepImage(event)" style="display:none">
+        <div style="display:flex;justify-content:center;margin-top:12px"><button id="card-deep-btn" class="rg-btn rg-btn-assess rg-btn-bronze" onclick="assessCardDeep()" ${(!ready || assessing) ? "disabled" : ""}>${assessing ? "Assessing\u2026" : "RUN DEEP ASSESSMENT"}</button></div>
+      </div>`;
+}
+
+function tapCardDeepSlot(i) {
+  _cardDeepSlot = i;
+  const inp = document.getElementById("card-deep-photo-input");
+  if (inp) { inp.value = ""; inp.click(); }
+}
+
+async function handleCardDeepImage(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const dataUrl = await new Promise(res => { const r = new FileReader; r.onload = ev => res(ev.target.result); r.readAsDataURL(file); });
+  const list = [...(formData.cardDeepImages || [])];
+  while (list.length < 4) list.push(null);
+  list[_cardDeepSlot] = dataUrl;
+  formData.cardDeepImages = list;
+  renderForm();
+}
+
+function removeCardDeepImg(i) {
+  const list = [...(formData.cardDeepImages || [])];
+  if (i < list.length) list[i] = null;
+  formData.cardDeepImages = list;
+  renderForm();
+}
+
+// Card Deep = revise the existing grade using the 4 new photos only. Sends the
+// prior card assessment + the 4 Deep images to /api/assess_card (deep:true).
+async function assessCardDeep() {
+  const deep = (formData.cardDeepImages || []).filter(Boolean);
+  if (deep.length < 4) { alert("Add all 4 Deep photos first (Front Raking, Back Raking, Back Top Macro, Back Bottom Macro)."); return; }
+  if (assessing) return;
+  if (!formData.cardData) { alert("Run the Main card assessment first."); return; }
+  const eligibility = await checkAssessmentEligibility();
+  if (!eligibility.allowed) { alert(eligibility.message); return; }
+  if (window._userCredits !== undefined && window._userCredits <= 0) {
+    showBuyCredits();
+    return;
+  }
+  assessing = true;
+  const _b = document.getElementById("card-deep-btn"); if (_b) { _b.textContent = "ASSESSING\u2026"; _b.disabled = true; }
+  const scanController = window.RobograderScan
+    ? window.RobograderScan.runScanAnimation(formData.cardDeepImages.filter(Boolean), "card")
+    : { promise: Promise.resolve(), cancel: () => {} };
+  try {
+    const dataUrls = await Promise.all(deep.slice(0, 4).map(async img => {
+      if (typeof img === "string" && img.startsWith("http")) {
+        const resp = await fetch(img); const blob = await resp.blob();
+        return await new Promise(res => { const r = new FileReader; r.onload = ev => res(ev.target.result); r.readAsDataURL(blob); });
+      }
+      return img;
+    }));
+    const compressed = await compressImagesSequentially(dataUrls);
+    const _respPromise = fetch("/api/assess_card", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(window._currentUser ? { Authorization: "Bearer " + await window._currentUser.getIdToken() } : {}) },
+      body: JSON.stringify({ serverCredits: true, deep: true, initialAssessment: formData.cardData, images: compressed })
+    });
+    await scanController.promise;
+    try { mountStepTracker('deep'); } catch (e) {}
+    const _resp = await _respPromise;
+    if (!_resp.ok) { const e = await _resp.text(); throw new Error("Assessment error: " + e); }
+    const out = await _resp.json();
+    if (out.error) throw new Error(out.error);
+    const card = out.card || {};
+    const rgTotal = card.robograde && card.robograde.total != null ? Math.round(card.robograde.total) : (formData.roboGrade && formData.roboGrade.score);
+    const cardId = formData.id || ("card_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7));
+    formData.id = cardId;
+    let deepStored = formData.cardDeepImages;
+    try {
+      const proc = await processImagesForSave(formData.cardDeepImages.filter(Boolean), cardId, STORAGE_SLOTS_CARD_DEEP, { generateThumbs: false });
+      deepStored = proc.images;
+    } catch (e) { console.warn("[carddeep] deep image save failed:", e); }
+    formData.cardData = card;
+    formData.assessedPSAGrade = card.psaGrade != null ? String(card.psaGrade) : formData.assessedPSAGrade;
+    formData.roboGrade = rgTotal != null ? { score: rgTotal, version: card.version || "card-v1", subscores: card.robograde || null } : formData.roboGrade;
+    formData.deepAssessmentRan = true;
+    formData.cardDeepImages = deepStored;
+    const rec = { ...formData, id: cardId };
+    await saveItem(rec);
+    onAssessmentSuccess(out);
+    _assessed = true;
+    _pendingCardResult = rec;
+    mountCardResults(rec);
+  } catch (e) {
+    if (typeof dismissAssessModal === "function") dismissAssessModal(e.message); else alert("Deep assessment failed: " + (e.message || e));
+  }
+  assessing = false;
+  const _bb = document.getElementById("card-deep-btn"); if (_bb) { _bb.textContent = "RUN DEEP ASSESSMENT"; _bb.disabled = false; }
+}
+
+async function assessCardGrade() {
+  const imgs = (formData.images || []).filter(Boolean);
+  if (imgs.length === 0) { alert("Add at least one photo first."); return; }
+  if (assessing) return;
+  window._rgScanIsCard = true;  // card scan → red PSA box in the scan placeholder
+
+  const _cb0 = document.getElementById("assess-btn") || document.getElementById("hg-assess-btn");
+  if (_cb0) { _cb0.textContent = "Preparing…"; _cb0.disabled = true; _cb0.style.opacity = "0.75"; }
+
+  const eligibility = await checkAssessmentEligibility();
+  if (!eligibility.allowed) {
+    alert(eligibility.message);
+    if (_cb0) { _cb0.textContent = _assessed ? "RE-ASSESS GRADE" : "ASSESS GRADE"; _cb0.disabled = false; _cb0.style.opacity = ""; }
+    return;
+  }
+  if (window._userCredits !== undefined && window._userCredits <= 0) {
+    showBuyCredits();
+    if (_cb0) { _cb0.textContent = _assessed ? "RE-ASSESS GRADE" : "ASSESS GRADE"; _cb0.disabled = false; _cb0.style.opacity = ""; }
+    return;
+  }
+
+  assessing = true;
+  const _cb = document.getElementById("assess-btn") || document.getElementById("hg-assess-btn");
+  if (_cb) { _cb.textContent = "ASSESSING…"; _cb.disabled = true; _cb.style.opacity = "0.75"; }
+
+  _capturePrevAssessResult(); // S21: show the prior grade sliding in during the card scan (matches comics)
+  const scanController = window.RobograderScan
+    ? window.RobograderScan.runScanAnimation(formData.images || [], "card")
+    : { promise: Promise.resolve(), cancel: () => {} };
+
+  try {
+    const dataUrls = await Promise.all(imgs.slice(0, 4).map(async img => {
+      if (img.startsWith("http")) {
+        const resp = await fetch(img);
+        const blob = await resp.blob();
+        return await new Promise(res => { const r = new FileReader; r.onload = ev => res(ev.target.result); r.readAsDataURL(blob); });
+      }
+      return img;
+    }));
+    const compressed = await compressImagesSequentially(dataUrls);
+
+    const _respPromise = fetch("/api/assess_card", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(window._currentUser ? { Authorization: "Bearer " + await window._currentUser.getIdToken() } : {})
+      },
+      body: JSON.stringify({ serverCredits: true, images: compressed })
+    });
+    await scanController.promise;
+    try { mountStepTracker(); } catch (e) {}
+    const _resp = await _respPromise;
+    if (!_resp.ok) { const e = await _resp.text(); throw new Error("Assessment error: " + e); }
+    const out = await _resp.json();
+    if (out.error) throw new Error(out.error);
+    const card = out.card || {};
+
+    const ident = card.cardIdentification || {};
+    const cardName = String(ident.name || (out.identification && out.identification.name) || "Card").trim() || "Card";
+    const cardNumber = String(ident.number || (out.identification && out.identification.number) || "").trim();
+    const rgTotal = card.robograde && card.robograde.total != null ? Math.round(card.robograde.total) : null;
+
+    const cardId = (formData.id && String(formData.id)) || ("card_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7));
+    const rawImages = (formData.images || []).filter(Boolean);
+    const proc = await processImagesForSave(rawImages, cardId, STORAGE_SLOTS_CARD, { generateThumbs: true });
+    const imageMetas = (formData.imagesMeta || []).filter(Boolean);
+
+    const rec = {
+      id: cardId,
+      type: "card",
+      title: cardName,
+      issue: cardNumber,
+      cardData: card,
+      images: proc.images,
+      thumbnails: proc.thumbnails,
+      imagesMeta: imageMetas.length ? imageMetas : rawImages.map(() => ({ source: "camera", capturedAt: new Date().toISOString() })),
+      // Preserve stored higher-tier (Deep) card photos across a Main re-run so the
+      // user isn't forced to re-shoot them. saveItem does a full setDoc REPLACE, so
+      // anything omitted from this record is wiped. deepAssessmentRan is intentionally
+      // NOT carried, so the badge drops to 1 star (Main) while the Deep photos remain
+      // and Deep can be re-run from them.
+      ...((formData.cardDeepImages || []).filter(Boolean).length ? { cardDeepImages: formData.cardDeepImages } : {}),
+      assessedPSAGrade: card.psaGrade != null ? String(card.psaGrade) : "",
+      roboGrade: rgTotal != null ? { score: rgTotal, version: card.version || "card-v1", subscores: card.robograde || null } : null,
+      roboGradeId: generateRoboId(),
+      roboGradeDate: new Date().toISOString(),
+      dateAdded: new Date().toISOString(),
+      ownership: "Owned"
+    };
+
+    await saveItem(rec);
+    try {
+      if (rec.roboGradeId && window._db && window._currentUser) {
+        const idRef = fsDoc(window._db, "robograde_ids", rec.roboGradeId);
+        const existing = await fsGetDoc(idRef);
+        if (!existing.exists()) await fsSetDoc(idRef, { comicId: rec.id, userId: window._currentUser.uid, claimedAt: new Date().toISOString(), public: !!window._publicByDefault });
+      }
+    } catch (e) { console.warn("[card] roboId register failed:", e); }
+    onAssessmentSuccess(out);
+
+    _pendingCardResult = rec;
+    mountCardResults(rec);
+  } catch (e) {
+    dismissAssessModal(e.message);
+  }
+  assessing = false;
+  const _stuck = document.getElementById("assess-btn") || document.getElementById("hg-assess-btn");
+  if (_stuck && _stuck.textContent && /ASSESS/i.test(_stuck.textContent)) {
+    _stuck.textContent = _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE";
+    _stuck.disabled = false;
+    _stuck.style.opacity = "";
+  }
+}
+
+function _cardIdentityHTML(sel) {
+  const ci = (sel.cardData && sel.cardData.cardIdentification) || {};
+  const num = formatCardNumber(ci.number || sel.issue || "");
+  const year = (ci.year != null && String(ci.year).trim() !== "") ? String(ci.year).trim() : "";
+  const variant = (ci.variant || "").toString().trim();
+  const artist = (ci.illustrator || ci.artist || "").toString().trim();
+  const set = (ci.set || "").toString().trim();
+  const line2 = [num, year].filter(Boolean).join(", ");
+  const setLine = set;
+  const artistLine = artist ? "Artist: " + artist : "";
+  return `<div>
+    <h2 style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:26px;font-weight:900;color:#0d0d0f;line-height:1.1;margin:0">${esc(sel.title || "Card")}</h2>
+    ${line2 ? `<div style="font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:18px;font-weight:600;color:#3a2e24;margin-top:6px">${esc(line2)}</div>` : ""}
+    ${variant ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#6a5a4a;margin-top:4px">${esc(variant)}</div>` : ""}
+    ${setLine ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;color:#8a7a6a;margin-top:4px">${esc(setLine)}</div>` : ""}
+    ${artist ? `<div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:500;color:#8a7a6a;margin-top:4px">Artist: <strong style="font-weight:700">${esc(artist)}</strong></div>` : ""}
+  </div>`;
+}
+
+function buildCardRoboDisplay(item) {
+  try { return window.RobograderPanel.buildCardDisplay(item); }
+  catch (e) {
+    console.warn("[card panel] render failed:", e);
+    var _s = item && item.roboGrade && item.roboGrade.score;
+    if (_s == null && item && item.cardData && item.cardData.robograde) _s = item.cardData.robograde.total;
+    return _s != null
+      ? `<div style="margin-top:16px;background:#152e10;border:1.5px solid #4a7028;border-radius:12px;padding:16px;text-align:center"><div style="font-size:12px;color:#7aa838;letter-spacing:2px;margin-bottom:8px">ROBOGRADE SCORE</div><div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-weight:900;font-size:48px;color:#b8d820;line-height:1">${Math.round(_s)}</div></div>`
+      : "";
+  }
+}
+
+function mountCardResults(rec) {
+  if (!window.RobograderScan || !window.RobograderScan.slideResultsIntoPanel) {
+    if (window.RobograderScan && window.RobograderScan.dismiss) window.RobograderScan.dismiss();
+    completeCardAssessment();
+    return;
+  }
+  const roboScore = rec.roboGrade && rec.roboGrade.score != null ? Math.round(rec.roboGrade.score) : null;
+  // v2 scoring: the scan RG badge shows the 31-tier grade (matches the detail panel),
+  // not the legacy 0-100 score. Compute it from the card subscores.
+  const _cdScan = rec.cardData && rec.cardData.robograde;
+  const _cardSubsScan = _cdScan ? { surface: _cdScan.surface && _cdScan.surface.total, corners: _cdScan.corners && _cdScan.corners.total, edges: _cdScan.edges && _cdScan.edges.total, centering: _cdScan.centering && _cdScan.centering.total } : null;
+  const _hasSubsScan = !!(_cardSubsScan && [_cardSubsScan.surface, _cardSubsScan.corners, _cardSubsScan.edges, _cardSubsScan.centering].some(v => v != null));
+  const _v2cardScan = (window.RGScoreV2 && _hasSubsScan) ? window.RGScoreV2.fromSubscores(_cardSubsScan, "card") : null;
+  const _rgGradeScan = _v2cardScan ? _v2cardScan.grade : (window.RGScoreV2 && roboScore != null ? window.RGScoreV2.gradeFromScore(roboScore) : (roboScore != null ? String(roboScore) : "0"));
+  const _psaRaw = String(rec.assessedPSAGrade || rec.psaGrade || (rec.cardData && rec.cardData.psaGrade) || "");
+  // PSA shows no decimal on whole-number grades (decimals only when fractional).
+  const psa = _psaRaw ? String(normalizeGrade(_psaRaw)).replace(/\.0$/, "") : "";
+  // Previous grade (captured at scan-start on a re-assess) so RG counts up from it.
+  const _prevCard = window._prevAssessResult || null;
+  const _rgFromCard = _prevCard && _prevCard.score != null ? _prevCard.score : 0;
+  const _rgInitCard = _prevCard && _prevCard.score != null ? String(_prevCard.score) : "0";
+  setTimeout(() => {
+    if (window.RobograderScan.stopGridCycle) window.RobograderScan.stopGridCycle();
+    if (window.RobograderScan.stopNeedlePulse) window.RobograderScan.stopNeedlePulse();
+    if (window.RobograderScan.sweepNeedleToScore && roboScore != null) window.RobograderScan.sweepNeedleToScore(roboScore);
+  }, 1500);
+  if (window._modalFrameTimer) { clearInterval(window._modalFrameTimer); window._modalFrameTimer = null; }
+  const gridEl = document.getElementById("tracker-grid-frame");
+  if (gridEl) gridEl.style.display = "none";
+  const badge = (bg, txt, val, label, border, valId) => `<div style="width:64px;height:64px;${border ? `border:${border};` : ""}background:${bg};border-radius:8px;padding:4px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)"><div ${valId ? `id="${valId}" ` : ""}style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:24px;font-weight:800;color:${txt};line-height:1">${val}</div><div style="font-size:9px;color:${txt};opacity:0.75;margin-top:2px;letter-spacing:0.8px">${label}</div></div>`;
+  let badges = "";
+  const _rgColCard = (window.RG_V3_DISPLAY && window.RoboScoreV3) ? "#b8d820" : "#aaee30";
+  if (roboScore != null) badges += badge("#0f1a05", _rgColCard, "0", "RG", "1.5px solid #3a5010", "anim-val-robo-card");
+  if (psa) badges += badge("#b91c1c", "#ffffff", psa, "PSA", "", "anim-val-psa-card");
+  const html = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:10px;">\n      <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badges}</div>\n      <button id="assess-complete-btn" style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#3a9ee0;color:#fff;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">COMPLETE</button>\n    </div>`;
+  // S24 (Matt, post-Baltimore): slide the progress panel back out to the right
+  // to uncover the front cover, one beat after the last step box lands and
+  // while the score boxes are still counting up. Cover and grade in the same
+  // frame is what closes the loop for a first-time user.
+  try { window.RobograderScan.revealScannedPhoto('card-0', 1000); } catch (e) {}
+  window.RobograderScan.slideResultsIntoPanel(html);
+  // Animate the RG count-up, then pop/glow both badges when the final score
+  // lands — mirrors the comic results reveal (mountResults) so cards get the
+  // same little glow on the final score.
+  const _roboElCard = document.getElementById("anim-val-robo-card");
+  const _psaElCard = document.getElementById("anim-val-psa-card");
+  if (_roboElCard && roboScore != null) {
+    const _cv3Scan = (window.RG_V3_DISPLAY && window.RoboScoreV3) ? window.RoboScoreV3.forCard(rec) : null;
+    if (_cv3Scan && typeof animateV3Ladder === "function") {
+      _roboElCard.style.fontSize = "38px";
+      animateV3LadderFromTo(_roboElCard, (_prevCard && _prevCard.rgV3 != null ? Number(_prevCard.rgV3) : 0), _cv3Scan.grade, 1800).then(() => { popResultBadge(_roboElCard); if (_cv3Scan.grade === 10) applyPerfect10Gold(_roboElCard, "10"); });
+    } else if (typeof animateRGLadder === "function" && window.RGScoreV2) {
+      _roboElCard.style.fontSize = "38px";
+      animateRGLadder(_roboElCard, _rgGradeScan, 1800).then(() => { popResultBadge(_roboElCard); applyPerfect10Gold(_roboElCard, _rgGradeScan); });
+    } else {
+      _roboElCard.textContent = _rgGradeScan;
+      setTimeout(() => popResultBadge(_roboElCard), 700);
+    }
+  }
+  if (_psaElCard && psa) setTimeout(() => popResultBadge(_psaElCard), 1100);
+  setTimeout(() => {
+    const btn = document.getElementById("assess-complete-btn");
+    if (btn) btn.onclick = completeCardAssessment;
+  }, 600);
+}
+
+async function completeCardAssessment() {
+  const rec = _pendingCardResult;
+  _pendingCardResult = null;
+  _assessed = true;
+  if (window.RobograderScan && window.RobograderScan.dismiss) window.RobograderScan.dismiss();
+  if (rec && rec.id) { _lastDetailId = rec.id; showDetail(rec.id); }
+  else showList();
+}
+
+async function assessGrade() {
+  const imgs = (formData.images || []).filter(Boolean);
+  if (imgs.length === 0) {
+    alert("Add at least one photo first.");
+    return;
+  }
+  if (assessing) return;
+  if (formData.type === "card" || formData._isCard || (formData._slabDetect && formData._slabDetect.isCard)) {
+    return assessCardGrade();
+  }
+  window._rgScanIsCard = false;  // comic scan → blue GRADE box in the scan placeholder
+  const _earlyBtn = document.getElementById("assess-btn") || document.getElementById("hg-assess-btn");
+  if (_earlyBtn) {
+    _earlyBtn.textContent = "Preparing…";
+    _earlyBtn.disabled = true;
+    _earlyBtn.style.opacity = "0.75";
+  }
+  const eligibility = await checkAssessmentEligibility();
+  if (!eligibility.allowed) {
+    alert(eligibility.message);
+    if (_earlyBtn) {
+      _earlyBtn.textContent = _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE";
+      _earlyBtn.disabled = false;
+      _earlyBtn.style.opacity = "";
+    }
+    return;
+  }
+  if (window._userCredits !== undefined && window._userCredits <= 0) {
+    showBuyCredits();
+    if (_earlyBtn) {
+      _earlyBtn.textContent = _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE";
+      _earlyBtn.disabled = false;
+      _earlyBtn.style.opacity = "";
+    }
+    return;
+  }
+  const _isReassessOfAssessed = !!(formData.id && formData.roboGradeId);
+  if (!formData._bypassDuplicateCheck && !_isReassessOfAssessed) {
+    const dup = await findDuplicateAssessment(formData.images, formData.id);
+    if (dup) {
+      const dupGrade = dup.roboGrade?.score ?? "?";
+      const dupGradeStr = typeof dupGrade === "number" ? dupGrade.toFixed(1) : "?";
+      const dupDate = dup.roboGradeDate ? new Date(dup.roboGradeDate).toLocaleDateString() : "unknown";
+      const dupTitle = dup.title || "an existing book";
+      const dupIssue = dup.issue ? `#${dup.issue}` : "";
+      const ok = confirm(`These photos match an existing assessment:\n\n` + `${dupTitle} ${dupIssue}\n` + `Robograde Score: ${dupGradeStr}\n` + `Assessed: ${dupDate}\n\n` + `Re-running may produce a slightly different grade due to natural assessment variance. ` + `Run anyway? (1 credit will be used.)`);
+      if (!ok) {
+        if (_earlyBtn) {
+          _earlyBtn.textContent = _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE";
+          _earlyBtn.disabled = false;
+          _earlyBtn.style.opacity = "";
+        }
+        return;
+      }
+      formData._bypassDuplicateCheck = true;
+    }
+  }
+  delete formData._bypassDuplicateCheck;
+  assessing = true;
+  const _assessBtn = document.getElementById("assess-btn") || document.getElementById("hg-assess-btn");
+  if (_assessBtn) {
+    _assessBtn.textContent = "ASSESSING…";
+    _assessBtn.disabled = true;
+    _assessBtn.style.opacity = "0.75";
+  }
+  _capturePrevAssessResult(); // S20: Re-Assess shows the prior grade sliding in (null on a first assessment)
+  const scanController = window.RobograderScan ? window.RobograderScan.runScanAnimation(formData.images || []) : {
+    promise: Promise.resolve(),
+    cancel: () => {}
+  };
+  try {
+    const _dbg = msg => {
+      if (window.RobograderScan && window.RobograderScan.debugLog) {
+        window.RobograderScan.debugLog(msg);
+      }
+    };
+    _dbg("std: try block enter");
+    const rawImages = formData.images || [];
+    const slotsFilled = {
+      front: !!rawImages[0],
+      back: !!rawImages[1],
+      interior: !!rawImages[2],
+      raking: !!rawImages[3]
+    };
+    _dbg("std: about to fetch dataUrls");
+    const dataUrls = await Promise.all(imgs.slice(0, 4).map(async img => {
+      if (img.startsWith("http")) {
+        const resp = await fetch(img);
+        const blob = await resp.blob();
+        return new Promise(res => {
+          const r = new FileReader;
+          r.onload = ev => res(ev.target.result);
+          r.readAsDataURL(blob);
+        });
+      }
+      return img;
+    }));
+    _dbg(`std: dataUrls done (${dataUrls.length}); compressing`);
+    const compressed = await compressImagesSequentially(dataUrls);
+    _dbg("std: compression done; firing API");
+    const _assessFetchInit = {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-client-secret": "022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",
+        ...window._currentUser ? {
+          Authorization: "Bearer " + await window._currentUser.getIdToken()
+        } : {}
+      },
+      body: JSON.stringify({
+        // S22 (9646): tells the server to enforce AND debit the credit itself.
+        // Clients that do not send this get the floor only, and keep doing their
+        // own decrement — which is how old native builds avoid a double charge.
+        serverCredits: true,
+        images: compressed,
+        slotsFilled: slotsFilled,
+        grader: "CGC",
+        title: formData.title || "",
+        issueNumber: formData.issue || "",
+        issueDate: formData.issueDate || "",
+        labelDetected: !!formData.labelDetected,
+        labelKind: formData.labelKind || ""
+      })
+    };
+    let _bufferedPhases = [];
+    let _stepAnimator = null;
+    function _onPhase(payload) {
+      if (_stepAnimator) {
+        _stepAnimator.setPhase(payload.phase);
+      } else {
+        _bufferedPhases.push(payload);
+      }
+    }
+    let unifiedRespPromise;
+    let _usingStreaming = false;
+    if (supportsResponseStreaming()) {
+      _usingStreaming = true;
+      unifiedRespPromise = streamAssessRequest("/api/assess", _assessFetchInit, _onPhase).catch(err => {
+        if (err && err.fallbackResponse) {
+          _usingStreaming = false;
+          return err.fallbackResponse;
+        }
+        throw err;
+      });
+    } else {
+      unifiedRespPromise = fetch("/api/assess", _assessFetchInit);
+    }
+    await scanController.promise;
+    if (window.RobograderScan && window.RobograderScan.debugLog) {
+      window.RobograderScan.debugLog("std: scanController.promise resolved");
+    }
+    mountStepTracker();
+    if (_usingStreaming) {
+      _stepAnimator = makeStepAnimator();
+      for (const p of _bufferedPhases) _stepAnimator.setPhase(p.phase);
+      _bufferedPhases = [];
+    }
+    const _resp = await unifiedRespPromise;
+    let unified;
+    if (_usingStreaming) {
+      unified = _resp;
+      if (_stepAnimator) {
+        _stepAnimator.finalize();
+        await _stepAnimator.promise;
+      }
+    } else {
+      if (!_resp.ok) {
+        const e = await _resp.text();
+        throw new Error("Assessment error: " + e);
+      }
+      unified = await _resp.json();
+    }
+    if (window.RobograderScan && window.RobograderScan.debugLog) {
+      window.RobograderScan.debugLog("std: API returned, unified.gateResult=" + (unified.gateResult || "COMIC") + ", streaming=" + _usingStreaming);
+    }
+    if (unified.error) throw new Error(unified.error);
+    if (unified.gateResult && unified.gateResult !== "COMIC") {
+      const isStrikeGate = unified.gateResult !== "MISSING_COVER";
+      if (isStrikeGate && !("lockout" in unified)) {
+        await incrementStrike(unified.gateResult, unified.gateReason || "");
+      }
+      showGateTerminatedPreview(unified.gateResult, unified.gateReason || "", unified.lockout, {
+        cropFailure: unified.cropFailure || null,
+        missingCover: unified.missingCover || null
+      });
+      assessing = false;
+      return;
+    }
+    _recordTimingKey(unified); // S20 (#33): stash the Main log key on the item
+    const cgc = {
+      ...unified.cgc || unified
+    };
+    const psa = unified.psa || (unified.psaGrade ? {
+      grade: unified.psaGrade,
+      psaNotes: unified.psaNotes || ""
+    } : {});
+    if (unified.roboGrade) {
+      cgc._roboGrade = unified.roboGrade;
+    }
+    if (unified.psaGrade) cgc._psaGrade = unified.psaGrade;
+    try {
+      const normalizedTitle = normalizeTitle((cgc.title || formData.title || "").trim().replace(/\s+/g, " ").replace(/^The\s+/i, ""), cgc.issueDate || formData.issueDate, cgc.printing || formData.printing);
+      const issueForId = cgc.issue != null ? String(cgc.issue) : formData.issue || "";
+      const preUploadId = formData.id || buildComicId(normalizedTitle, issueForId);
+      const rawImages = (formData.images || []).filter(Boolean);
+      const rawCornerImages = (formData.cornerImages || []).filter(Boolean);
+      const hasNewImages = rawImages.some(isDataUrl) || rawCornerImages.some(isDataUrl);
+      if (hasNewImages && formData._imagesChanged !== false) {
+        if (!formData.id) formData.id = preUploadId;
+        formData._preUploadId = preUploadId;
+        formData._preUploadPromise = trackUpload(startPreUpload(rawImages, rawCornerImages, preUploadId)).catch(err => {
+          if (window.RobograderScan && window.RobograderScan.debugLog) {
+            window.RobograderScan.debugLog(`pre-upload failed: ${err.message}`);
+          }
+          console.warn("[pre-upload std] failed:", err);
+          formData._preUploadPromise = null;
+          formData._preUploadId = null;
+          return null;
+        });
+      }
+    } catch (e) {
+      console.warn("[pre-upload std] setup failed:", e);
+    }
+    const d = unified._diagnostics || cgc._diagnostics || {};
+    if (!_usingStreaming) {
+      await animateStepsFromDiagnostics(d);
+    }
+    _pendingAssessResult = {
+      cgc: cgc,
+      psa: psa
+    };
+    window._pendingRoboGrade = cgc._roboGrade || null;
+    // S22: a paid assessment on this book refills the 3 free UV Checks.
+    resetUvCheckAllowance();
+    mountResults(cgc, psa);
+    onAssessmentSuccess(unified);
+  } catch (e) {
+    dismissAssessModal(e.message);
+  }
+  assessing = false;
+  if (window.RobograderScan && window.RobograderScan.debugLog) {
+    window.RobograderScan.debugLog(`std post-catch: view=${view}, assessing=${assessing}, will renderForm=${view === "edit" || view === "add" || view === "detail"}`);
+  }
+  if (view === "edit" || view === "add" || view === "detail") {
+    renderForm();
+  }
+  const _stuck = document.getElementById("assess-btn") || document.getElementById("hg-assess-btn");
+  if (_stuck && _stuck.textContent && /ASSESS/i.test(_stuck.textContent)) {
+    _stuck.textContent = _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE";
+    _stuck.disabled = false;
+    _stuck.style.opacity = "";
+  }
+}
+
+function showGateTerminatedPreview(gateResult, reason, lockout, details) {
+  if (window._modalFrameTimer) {
+    clearInterval(window._modalFrameTimer);
+    window._modalFrameTimer = null;
+  }
+  if (window._gridCycleStartTimer) {
+    clearTimeout(window._gridCycleStartTimer);
+    window._gridCycleStartTimer = null;
+  }
+  if (window.RobograderScan && window.RobograderScan.stopGridCycle) {
+    window.RobograderScan.stopGridCycle();
+  }
+  if (window.RobograderScan && window.RobograderScan.stopNeedlePulse) {
+    window.RobograderScan.stopNeedlePulse();
+  }
+  if (window.RobograderScan && window.RobograderScan.setNeedleAngle) {
+    window.RobograderScan.setNeedleAngle(-48);
+  }
+  const allSteps = [ "populating", "mint", "pq", "grading", "confirming" ];
+  allSteps.forEach((s, i) => {
+    setTimeout(() => setStep(s, "failed"), 120 + i * 60);
+  });
+  if (!window.RobograderScan || !window.RobograderScan.slideResultsIntoPanel) {
+    console.warn("showGateTerminatedPreview: scan-animation module not loaded");
+    return;
+  }
+  let label;
+  switch (gateResult) {
+   case "FLAGGED":
+    label = "INAPPROPRIATE";
+    break;
+
+   case "MISSING_COVER":
+    {
+      const m = details && details.missingCover || {};
+      if (m.frontMissing && m.backMissing) label = "MISSING COVERS"; else if (m.frontMissing) label = "MISSING FRONT COVER"; else if (m.backMissing) label = "MISSING BACK COVER"; else label = "MISSING COVER";
+      break;
+    }
+
+   case "CROP_FAILURE":
+    label = "CROPPED PHOTO";
+    break;
+
+   case "IMAGE_MISMATCH":
+    label = "DIFFERENT COMIC";
+    break;
+
+   case "NOT_COMIC":
+   default:
+    label = "NOT A COMIC";
+    break;
+  }
+  window._pendingGateExplanation = {
+    label: label,
+    gateResult: gateResult,
+    reason: reason,
+    lockout: lockout,
+    details: details || null
+  };
+  const html = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:5% 5%;box-sizing:border-box;gap:5%;">\n      <div style="padding:8px 18px;background:#3a1810;color:#ff8060;border-radius:8px;font-size:16px;font-weight:900;letter-spacing:1.5px;text-align:center;border:1.5px solid #ff8060;box-shadow:0 2px 10px rgba(0,0,0,0.4)">${label}</div>\n      <div style="display:flex;align-items:center;gap:12px">\n        <button id="assess-complete-btn"\n          style="width:auto;min-width:140px;max-width:280px;padding:0 24px;height:44px;background:#5a3030;color:#fff;border:none;font-size:14px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">\n          CANCEL\n        </button>\n        <div style="display:flex;flex-direction:column;align-items:center;gap:2px">\n          <img src="assets/robocoin2.webp" style="width:48px;height:48px">\n          <div style="color:#d4af37;font-size:12px;font-weight:800;letter-spacing:0.5px">+1</div>\n        </div>\n      </div>\n    </div>`;
+  window.RobograderScan.slideResultsIntoPanel(html);
+  setTimeout(() => {
+    const btn = document.getElementById("assess-complete-btn");
+    if (btn) {
+      btn.onclick = () => {
+        dismissAssessModal(null);
+        setTimeout(() => showGateExplanationPopup(), 100);
+      };
+    }
+  }, 600);
+}
+
+function showGateExplanationPopup() {
+  const data = window._pendingGateExplanation;
+  if (!data) return;
+  window._pendingGateExplanation = null;
+  // S20 (#44): the Different-Comic mismatch gets the branded Robograder-head
+  // modal instead of the plain white gate popup.
+  if (data.gateResult === "IMAGE_MISMATCH") {
+    _showBrandedModal("DIFFERENT COMIC", data.reason || "These close-ups don't appear to be the same comic as the one you assessed. Re-take the photos of that book and try again.", "OKAY");
+    return;
+  }
+  let lockoutHtml = "";
+  if (data.lockout && data.lockout.type === "permanent") {
+    lockoutHtml = `<div style="margin-top:14px;padding:10px 14px;background:#3a1010;color:#ff8080;border-radius:8px;font-size:13px;font-weight:700;line-height:1.4;text-align:center">⚠ Account flagged for review — repeated invalid uploads</div>`;
+  } else if (data.lockout && data.lockout.type === "temp") {
+    const unlockAt = data.lockout.unlockAt ? new Date(data.lockout.unlockAt).toLocaleString() : "";
+    lockoutHtml = `<div style="margin-top:14px;padding:10px 14px;background:#2a2010;color:#ffc080;border-radius:8px;font-size:13px;font-weight:700;line-height:1.4;text-align:center">Assessment locked for 24 hours${unlockAt ? `<br><span style="font-weight:500;opacity:0.9">until ${esc(unlockAt)}</span>` : ""}</div>`;
+  }
+  let bodyHtml = "";
+  const details = data.details || {};
+  if (data.gateResult === "MISSING_COVER" && details.missingCover) {
+    const m = details.missingCover;
+    let msg = "";
+    if (m.frontMissing && m.backMissing) {
+      msg = "Both a front and a back cover photo are required to assess a comic. Please add both photos and try again.";
+    } else if (m.frontMissing) {
+      msg = "A front cover photo is required to assess a comic. Please add a front cover photo and try again.";
+    } else if (m.backMissing) {
+      msg = "A back cover photo is required to assess a comic. Both front and back must be photographed so the full book can be evaluated. Please add a back cover photo and try again.";
+    } else {
+      msg = data.reason || "Front and back cover photos are required.";
+    }
+    bodyHtml = `<div style="font-size:14px;color:#3a2a1a;line-height:1.5;text-align:left">${esc(msg)}</div>`;
+  } else if (data.gateResult === "CROP_FAILURE" && details.cropFailure) {
+    const c = details.cropFailure;
+    const intro = `All four corners and edges of both the front and back cover must be visible in the photo. Cropped photos can hide critical details that change the assessment.`;
+    let specific = "";
+    if (!c.frontFourCornersVisible && c.frontIssue) {
+      specific += `<div style="margin-top:10px"><strong style="color:#3a2a1a">Front cover:</strong> ${esc(c.frontIssue)}</div>`;
+    } else if (!c.frontFourCornersVisible) {
+      specific += `<div style="margin-top:10px"><strong style="color:#3a2a1a">Front cover:</strong> not fully visible in photo.</div>`;
+    }
+    if (!c.backFourCornersVisible && c.backIssue) {
+      specific += `<div style="margin-top:6px"><strong style="color:#3a2a1a">Back cover:</strong> ${esc(c.backIssue)}</div>`;
+    } else if (!c.backFourCornersVisible) {
+      specific += `<div style="margin-top:6px"><strong style="color:#3a2a1a">Back cover:</strong> not fully visible in photo.</div>`;
+    }
+    bodyHtml = `<div style="font-size:14px;color:#3a2a1a;line-height:1.5;text-align:left">${esc(intro)}${specific}<div style="margin-top:10px;font-size:13px;color:#6a5a4a">Please retake or re-crop the photo and try again.</div></div>`;
+  } else if (data.reason) {
+    bodyHtml = `<div style="font-size:14px;color:#3a2a1a;line-height:1.5;text-align:center">${esc(data.reason)}</div>`;
+  }
+  const popup = document.createElement("div");
+  popup.id = "gate-explanation-popup";
+  popup.style.cssText = "position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:20px;";
+  popup.innerHTML = `\n    <div style="background:#fff;border-radius:14px;padding:24px 22px;max-width:380px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,0.3)">\n      <div style="font-size:18px;font-weight:900;color:#1a1008;letter-spacing:1px;text-align:center;margin-bottom:10px">${data.label}</div>\n      ${bodyHtml}\n      ${lockoutHtml}\n      <button id="gate-explanation-okay" style="margin-top:18px;width:100%;height:46px;background:#3a9ee0;color:#fff;border:none;font-size:15px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:10px">OKAY</button>\n    </div>`;
+  document.body.appendChild(popup);
+  document.getElementById("gate-explanation-okay").onclick = () => {
+    popup.remove();
+  };
+}
+
+const STRIKE_LOCKOUT_THRESHOLD = 3;
+
+const STRIKE_LOCKOUT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+const STRIKE_LOCKOUT_DURATION_MS = 24 * 60 * 60 * 1000;
+
+const STRIKE_PERMANENT_THRESHOLD = 10;
+
+const STRIKE_PERMANENT_WINDOW_MS = 96 * 60 * 60 * 1000;
+
+function countStrikesInWindow(strikeHistory, windowMs) {
+  if (!Array.isArray(strikeHistory)) return 0;
+  const cutoff = Date.now() - windowMs;
+  return strikeHistory.filter(s => {
+    const t = new Date(s.timestamp).getTime();
+    return !isNaN(t) && t >= cutoff;
+  }).length;
+}
+
+async function checkAssessmentEligibility() {
+  try {
+    if (!window._currentUser || !window._db) return {
+      allowed: true
+    };
+    const userRef = window._fsDoc(window._db, "users", window._currentUser.uid);
+    const snap = await window._fsGetDoc(userRef);
+    if (!snap.exists()) return {
+      allowed: true
+    };
+    const data = snap.data();
+    if (data.accountFlagged) {
+      return {
+        allowed: false,
+        reason: "permanent",
+        message: "Your account has been flagged for review due to repeated invalid uploads. Please contact support if you believe this is an error."
+      };
+    }
+    if (data.assessmentLockedUntil) {
+      const unlockAt = new Date(data.assessmentLockedUntil);
+      if (unlockAt.getTime() > Date.now()) {
+        return {
+          allowed: false,
+          reason: "lockout",
+          unlockAt: unlockAt,
+          message: `Assessment is temporarily locked due to repeated invalid uploads. Try again after ${unlockAt.toLocaleString()}.`
+        };
+      }
+    }
+    return {
+      allowed: true
+    };
+  } catch (e) {
+    console.error("Eligibility check failed:", e);
+    return {
+      allowed: true
+    };
+  }
+}
+
+async function incrementStrike(gateResult, reason) {
+  try {
+    if (!window._currentUser || !window._db) return;
+    const userRef = window._fsDoc(window._db, "users", window._currentUser.uid);
+    const snap = await window._fsGetDoc(userRef);
+    const data = snap.exists() ? snap.data() : {};
+    const strikeHistory = Array.isArray(data.strikeHistory) ? [ ...data.strikeHistory ] : [];
+    strikeHistory.push({
+      timestamp: (new Date).toISOString(),
+      gateResult: gateResult,
+      reason: reason
+    });
+    const totalStrikes = strikeHistory.length;
+    const recent24h = countStrikesInWindow(strikeHistory, STRIKE_LOCKOUT_WINDOW_MS);
+    const recent96h = countStrikesInWindow(strikeHistory, STRIKE_PERMANENT_WINDOW_MS);
+    const update = {
+      strikes: totalStrikes,
+      strikeHistory: strikeHistory,
+      lastStrikeAt: (new Date).toISOString()
+    };
+    if (recent96h >= STRIKE_PERMANENT_THRESHOLD) {
+      update.accountFlagged = true;
+      update.flaggedAt = data.flaggedAt || (new Date).toISOString();
+    } else if (recent24h >= STRIKE_LOCKOUT_THRESHOLD) {
+      update.assessmentLockedUntil = new Date(Date.now() + STRIKE_LOCKOUT_DURATION_MS).toISOString();
+    }
+    await window._fsSetDoc(userRef, update, {
+      merge: true
+    });
+  } catch (e) {
+    console.error("Strike tracking failed:", e);
+  }
+}
+
+let _sellerList = JSON.parse(localStorage.getItem("sellerList") || "[]");
+
+const SEED_SELLERS = [ "Michael at Poteet's Pop Culture", "Tyson at Amazing Heroes", "eBay", "ECCC", "Front Row Card Show, Tacoma" ];
+
+SEED_SELLERS.forEach(s => {
+  if (!_sellerList.includes(s)) _sellerList.push(s);
+});
+
+function getSellerSuggestions() {
+  return _sellerList.sort();
+}
+
+function updateSellerList(val) {
+  if (val && val.trim() && !_sellerList.includes(val.trim())) {
+    _sellerList.push(val.trim());
+    try {
+      localStorage.setItem("sellerList", JSON.stringify(_sellerList));
+    } catch (e) {}
+  }
+}
+
+function setDateField(field, val, monthOnly) {
+  if (!val) {
+    formData[field] = "";
+    return;
+  }
+  formData[field] = monthOnly ? val : val;
+}
+
+const SLOT_GHOSTS = [ "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Front_Cover.jpg", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Back_Cover.jpg", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Page_Quality.jpg", "https://raw.githubusercontent.com/OgreBuzzard/ai-comic-grader-app/main/assets/ghosts/Raking_Light.jpg" ];
+
+function renderForm() {
+  const isEdit = !!formData.id;
+  function tf(label, field, ph = "", numeric = false) {
+    const mode = numeric ? ` inputmode="decimal" pattern="[0-9.]*"` : "";
+    return `<div><label class="field-label">${label}</label><input value="${esc(formData[field] || "")}"${mode} oninput="formData['${field}']=this.value" placeholder="${ph}"></div>`;
+  }
+  // v6.27: rof() is gone. It rendered a "locked" read-only field; its only
+  // callers were Title / Issue / Pub Date / Publisher in Edit, which are now
+  // part of renderIdentityHeader() - the one header Detail and Edit share.
+  function mf(label, field) {
+    const val = formData[field] != null && formData[field] !== "" ? formData[field] : "";
+    return `<div><label class="field-label">${label}</label><div style="position:relative"><span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#8a7a6a;font-size:13px;pointer-events:none">$</span><input value="${esc(val)}" inputmode="decimal" pattern="[0-9.]*" oninput="formData['${field}']=this.value" placeholder="0.00" style="padding-left:22px"></div></div>`;
+  }
+  function df(label, field, monthOnly = false, placeholder = "Apr 18, 1938") {
+    const val = formData[field] || "";
+    const inputVal = monthOnly ? val.length >= 7 ? val.slice(0, 7) : val : val.length >= 10 ? val.slice(0, 10) : val;
+    const type = monthOnly ? "month" : "date";
+    const showGhost = !inputVal;
+    return `<div><label class="field-label">${label}</label><div style="position:relative;max-width:100%;overflow:hidden">\n      <input type="${type}" value="${esc(inputVal)}" onchange="setDateField('${field}',this.value,${monthOnly});this.parentElement.querySelector('.date-ghost')?.remove()" style="width:100%;max-width:100%;box-sizing:border-box;text-align:left;-webkit-appearance:none;appearance:none;min-width:0;padding-right:10px;${showGhost ? "color:transparent" : ""}">\n      ${showGhost ? `<span class="date-ghost" style="position:absolute;left:12px;right:30px;top:50%;transform:translateY(-50%);color:#a89e8e;font-size:14px;pointer-events:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${placeholder}</span>` : ""}\n    </div></div>`;
+  }
+  function treatBtn(key, label) {
+    const v = formData[key];
+    const isDone = v === "done";
+    const isDontCare = v === "dontcare";
+    const bg = v === true ? "#1a2a10" : v === false ? "#2a1a10" : isDone ? "#0a1a2a" : isDontCare ? "#1a1a18" : "#1a1a1a";
+    const bc = v === true ? "#4a7a20" : v === false ? "#5a2a10" : isDone ? "#1a3a5c" : isDontCare ? "#3a3a35" : "#3a3a3a";
+    const col = v === true ? "#8abf40" : v === false ? "#bf6040" : isDone ? "#5a9adf" : isDontCare ? "#9a8a7a" : "#6b6b6b";
+    const txt = v === true ? "Yes" : v === false ? "No" : isDone ? "Done" : isDontCare ? "Don't Care" : "—";
+    const cancelBtn = v === true || v === false || isDone || isDontCare ? `<button onclick="cancelTreatment('${key}',event)" style="margin-left:6px;background:none;border:none;color:#9a6a6a;font-size:13px;cursor:pointer;padding:0;line-height:1" title="Reset">×</button>` : "";
+    return `<span style="display:inline-flex;align-items:center"><button class="treatment-btn" style="background:${bg};border-color:${bc};color:${col}" onclick="cycleTreatment('${key}')">${txt}</button>${cancelBtn}</span>`;
+  }
+  const _isCardForm = formData.type === "card" || !!formData._isCard || !!(formData._slabDetect && formData._slabDetect.isCard);
+  const _saveLabelTop = formData.id ? "Save" : "Add";
+  const _saveDisabledTop = formData.title && formData.title.trim() ? "" : "disabled";
+  let html = `<div class="sticky-back" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><button class="btn-ghost" onclick="cancelForm()">← Back</button><button class="btn btn-gold" id="save-btn-top" onclick="submitForm()" ${_saveDisabledTop}>${_saveLabelTop}</button></div>\n  <h2 style="font-size:18px;margin:8px 0 20px;color:#c8a96e">${isEdit ? "Edit Book" : "Add Book"}</h2>\n  <div class="card" style="display:flex;flex-direction:column;gap:14px">\n    \x3c!-- v6.31: the identity header is at the TOP of Edit, above the\n         ownership bar, which is where it belongs whether or not this view\n         ever gets tabs: "what book am I looking at" should not be several\n         thousand pixels below the photos of it. Same function Detail\n         renders, so the two cannot drift. Added Label Notes sits directly\n         under it. Neither appears until an assessment exists - before that\n         the editable Title / Issue / Pub Date / Publisher grid below is the\n         only identity the book has. --\x3e\n    ${formData.roboGrade ? `<div>${renderIdentityHeader(formData)}</div>\n    ${renderAddedLabelNotesField()}` : ""}\n    ${ownershipSegmentForForm()}\n    ${formData.roboGrade ? (() => { const _ip = buildIntegrityPill(formData, true); return _ip ? `<div style="display:flex;justify-content:flex-end;margin-bottom:2px">${_ip}</div>` : ""; })() : ""}\n    <div>\n      <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">MAIN ASSESSMENT PHOTOS${formData.labelDetected ? ` <span style="color:#9a8a7a;font-weight:600">(graded slab)</span>` : ""}</div>\n      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px">\n        ${(() => {
+    const _isCardForm = formData.type === "card" || !!formData._isCard || !!(formData._slabDetect && formData._slabDetect.isCard);
+    const slotLabels = _isCardForm
+      ? [ "Front", "Back", "Top Front", "Bottom Front" ]
+      : [ "Front Cover", "Back Cover", "Interior", "Spine" ];
+    const renderSlot = i => {
+      const img = (formData.images || [])[i];
+      return img ? `<div class="drag-slot" draggable="true"\n                  ondragstart="dragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"\n                  onclick="tapSlot(${i},'main')">\n                  <img src="${img}"${_isCardForm ? ` style="width:100%;aspect-ratio:${i < 2 ? '5/7' : '1/1'};object-fit:cover;display:block;border-radius:4px"` : ''}>\n                  <button class="slot-edit" onclick="event.stopPropagation();openCropper('main',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>\n                  <button class="slot-x" onclick="event.stopPropagation();removeImg(${i})">×</button>\n                 </div>` : `<div class="drag-slot" style="padding:0;background:none;"\n                  ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropSlot(event,${i})"\n                  onclick="tapSlot(${i},'main')">\n                  ${_isCardForm ? `<div style="width:100%;aspect-ratio:${i < 2 ? '5/7' : '1/1'};background:#161616;border-radius:4px"></div>` : `<img src="${SLOT_GHOSTS[i]}" style="width:100%;height:auto;display:block;border-radius:4px;opacity:0.7;">`}\n                  <div style="position:absolute;inset:0;pointer-events:none;">\n                    <span style="position:absolute;top:8px;left:10px;font-size:11px;font-weight:700;color:#000;letter-spacing:1px;text-transform:uppercase;background:rgba(255,255,255,0.75);padding:2px 6px;border-radius:3px;">${slotLabels[i]}</span>\n                  </div>\n                 </div>`;
+    };
+    return formData.labelDetected ? `\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">\n              ${renderSlot(0)}\n              ${renderSlot(1)}\n            </div>\n          ` : `\n            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">\n              ${renderSlot(0)}\n              ${renderSlot(1)}\n            </div>\n            ${_isCardForm ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${renderSlot(2)}${renderSlot(3)}</div>` : `${renderSlot(2)}\n            ${renderSlot(3)}`}\n          `;
+  })()}\n      </div>\n      ${_preAssessPGPanel() || ""}\n      <div style="display:flex;justify-content:center;margin-top:12px"><button id="assess-btn" class="rg-btn rg-btn-assess rg-btn-bronze${_assessed ? ' reassess' : ''}${assessing ? ' assessing' : ''}" onclick="assessGrade()" ${!formData.images || !formData.images[0] || assessing ? "disabled" : ""}>${assessing ? "Assessing…" : _assessed ? (_isCardForm ? "RE-ASSESS GRADE" : "RE-RUN MAIN ASSESSMENT") : "ASSESS GRADE"}</button></div>\n      ${_cardDeepSectionHtml(formData)}${(!_isCardForm && showDeepTier(formData)) ? `\n      <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n        <div id="deep-corner-section" style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">DEEP ASSESSMENT CORNER MACROS</div>\n        <div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Tighten the grade with more detail where small defects are most common.</div>\n        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">\n          ${[ 0, 1, 2, 3 ].map(i => {
+    const cornerLabels = [ "Top Left", "Top Right", "Bottom Left", "Bottom Right" ];
+    const cornerGhosts = [ "assets/ghosts/TopLeft_Macro.jpg", "assets/ghosts/TopRight_Macro.jpg", "assets/ghosts/BottomLeft_Macro.jpg", "assets/ghosts/BottomRight_Macro.jpg" ];
+    const img = (formData.cornerImages || [])[i];
+    return img ? `<div class="drag-slot" draggable="true" style="aspect-ratio:2/3"\n                  ondragstart="cornerDragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="cornerDropSlot(event,${i})"\n                  onclick="tapSlot(${i},'corner')">\n                  <img src="${img}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">\n                  <button class="slot-edit" onclick="event.stopPropagation();openCropper('corner',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>\n                  <button class="slot-x" onclick="event.stopPropagation();removeCornerImg(${i})">×</button>\n                 </div>` : `<div class="drag-slot" style="padding:0;background:none;aspect-ratio:2/3;position:relative;overflow:hidden"\n                  ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="cornerDropSlot(event,${i})"\n                  onclick="tapSlot(${i},'corner')">\n                  <img src="${cornerGhosts[i]}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.7;pointer-events:none">\n                  <div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:8px;left:10px;background:rgba(255,255,255,0.82);color:#1a1a1a;padding:3px 8px;border-radius:4px;text-align:left"><span style="display:block;font-size:11px;font-weight:800;letter-spacing:0.4px;text-transform:uppercase">${cornerLabels[i]}</span><span style="display:block;font-size:9px;font-weight:600;opacity:0.7;margin-top:1px">Tap to add</span></span></div>\n                 </div>`;
+  }).join("")}\n        </div>\n        <input id="corner-photo-input" type="file" accept="image/*" multiple onchange="handleCornerImages(event)" style="display:none">${!formData.labelDetected ? `<div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin:16px 0 8px">INTERIOR COVERS</div><div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Full spreads of the interior front and interior back, where defects can sometimes hide.</div><div style="display:grid;grid-template-columns:1fr;gap:6px">${[0,1].map(i => { const icLabels = ["Interior Front","Interior Back"]; const _icimg = (formData.interiorCoverImages || [])[i]; return _icimg ? `<div class="drag-slot" style="aspect-ratio:3/2" onclick="tapSlot(${i},'interiorCover')"><img src="${_icimg}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"><button class="slot-edit" onclick="event.stopPropagation();openCropper('interiorCover',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button><button class="slot-x" onclick="event.stopPropagation();removeInteriorCoverImg(${i})">×</button></div>` : `<div class="drag-slot" style="padding:0;background:none;aspect-ratio:3/2;position:relative;overflow:hidden" onclick="tapSlot(${i},'interiorCover')"><img src="assets/ghosts/Interior_${i === 0 ? 'Front' : 'Back'}_Cover.jpg" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.7;pointer-events:none"><div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:8px;${i === 0 ? "left:10px" : "right:10px"};background:rgba(255,255,255,0.82);color:#1a1a1a;padding:3px 8px;border-radius:4px;text-align:${i === 0 ? "left" : "right"}"><span style="display:block;font-size:11px;font-weight:800;letter-spacing:0.4px;text-transform:uppercase">${icLabels[i]}</span><span style="display:block;font-size:9px;font-weight:600;opacity:0.7;margin-top:1px">Tap to add</span></span></div></div>`; }).join("")}</div><input id="interior-cover-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorCoverImages(event)" style="display:none">` : ""}\n        ${(() => {
+    const alreadyRun = !!formData.highGradeTier;
+    const cornerCount = (formData.cornerImages || []).filter(Boolean).length;
+    // S20 (#36): raw books also capture 2 interior covers (6 total); slabbed books
+    // can't be opened, so they stay at 4 corners.
+    const needsCovers = !formData.labelDetected;
+    const coverCount = (formData.interiorCoverImages || []).filter(Boolean).length;
+    const haveCount = cornerCount + (needsCovers ? coverCount : 0);
+    const needCount = needsCovers ? 6 : 4;
+    const ready = haveCount === needCount && !assessing;
+    const ambient = haveCount === needCount ? "#1a4a2a" : "#2a2a2a";
+    const ambientText = haveCount === needCount ? "#6abf6a" : "#6a6a6a";
+    const baseLabel = alreadyRun ? "RE-RUN DEEP ASSESSMENT" : "DEEP ASSESSMENT";
+    // S20 (#35): if the Main pass hit its RG-92 ceiling and Deep hasn't run yet,
+    // lead with the clarity nudge — the grade may be higher than the capped 9.2.
+    const _atMainCeiling = formData.roboGrade && typeof formData.roboGrade.score === "number"
+      && Math.round(formData.roboGrade.score) >= 92 && !alreadyRun;
+    const _hgReason = _atMainCeiling
+      ? "This book reached the highest grade the Main assessment can award. Additional images could possibly revise the grade higher."
+      : formData.highGradeReason === "value"
+      ? "This high-value book can be graded more precisely with additional photos."
+      : "This high-grade book can be graded more precisely with additional photos.";
+    return `<div style="display:flex;justify-content:center;margin-top:12px">\n            <button id="hg-assess-btn" class="rg-btn rg-btn-assess rg-btn-silver${assessing ? ' assessing' : ''}" onclick="assessHighGrade()" ${ready ? "" : "disabled"}>\n              ${assessing ? "Assessing…" : `${baseLabel} ${haveCount < needCount ? `(${haveCount}/${needCount})` : ""}`}\n            </button>\n          </div>`;
+  })()}\n      </div>` : ""}\n      ${(() => {
+    if (!hasIdentifiedSignatures(formData)) return "";
+    const sigImgs = formData.signatureImages || [ null, null ];
+    const sigGhosts = ["assets/ghosts/Signature_1.webp", "assets/ghosts/Signature_2.webp"];
+    const signerLabel = formatSignerList(formData);
+    return `\n          <div id="signature-section" style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a6abf">\n            <div style="font-size:11px;color:#a08fd4;font-weight:700;letter-spacing:2px;margin-bottom:4px">SIGNATURE MACROS</div>\n            <div style="font-size:11px;color:#9a8aaa;margin-bottom:10px;line-height:1.5">\n              ${`Signature${getSignatures(formData).length > 1 ? "s" : ""} detected on this book. Add close-up photos for buyer inspection — optional, two slots available.`}\n            </div>\n            <div style="display:flex;flex-direction:column;gap:8px">\n              ${[ 0, 1 ].map(i => {
+      const img = sigImgs[i];
+      return img ? `<div class="drag-slot" style="height:auto;position:relative;overflow:visible" onclick="tapSlot(${i},'signature')">\n                      <img src="${img}" style="display:block;width:100%;height:auto;border-radius:inherit">\n                      <button class="slot-edit" onclick="event.stopPropagation();openCropper('signature',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button>\n                      <button class="slot-x" onclick="event.stopPropagation();removeSignatureImg(${i})">×</button>\n                     </div>` : `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:2/1;position:relative;overflow:hidden" onclick="tapSlot(${i},'signature')">\n                      ${sigGhosts[i] ? `<img src="${sigGhosts[i]}" alt="" loading="lazy" decoding="async" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.7;pointer-events:none">` : ""}\n                      <div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:8px;left:10px;background:rgba(255,255,255,0.82);color:#1a1a1a;padding:3px 8px;border-radius:4px;text-align:left"><span style="display:block;font-size:11px;font-weight:800;letter-spacing:0.4px;text-transform:uppercase">SIGNATURE ${i + 1}</span><span style="display:block;font-size:9px;font-weight:600;opacity:0.7;margin-top:1px">Tap to add</span></span></div>\n                     </div>`;
+    }).join("")}\n            </div>\n            <input id="signature-photo-input" type="file" accept="image/*" multiple onchange="handleSignatureImages(event)" style="display:none">\n          </div>\n        `;
+  })()}\n      ${(() => {
+    if (_isCardForm || !formData.roboGrade || !formData.title || !formData.issue || typeof window.matchInsert !== "function") return "";
+    const _im = window.matchInsert(formData.title, formData.issue);
+    if (_im) {
+      return _renderExtraPhotoSection({ anchor: "insert-section", title: "MARK JEWELERS INSERT", blurb: "Some copies of this issue carried a Mark Jewelers or other insert card (a rare variant that adds value). If your copy has an insert bound in the centerfold, add these two optional photos to verify.", accent: "#c8962a", inputId: "insert-photo-input", tapFn: "tapInsertSlot", removeFn: "removeInsertImg", onchange: "handleInsertImages(event)", defs: insertSlotDefs(), imgs: formData.insertImages || [ null, null ], runFn: "runInsertAssessment", runLabel: "RUN INSERT CHECK", finding: formData.insertFinding, foundLabel: "INSERT" });
+    }
+    // S23: no confirmed hit -> if the title/era is a candidate (broad index),
+    // show a softer "might have one" prompt. Reuses the same slots + check.
+    const _yr = parseInt((String(formData.issueDate || "").match(/\b(19|20)\d{2}\b/) || [])[0], 10);
+    const _ic = (typeof window.matchInsertCandidate === "function") ? window.matchInsertCandidate(formData.title, _yr) : null;
+    // keep showing if it's a candidate, or the user already has insert photos/finding.
+    if (!_ic && !((formData.insertImages || []).some(Boolean) || formData.insertFinding)) return "";
+    return _renderExtraPhotoSection({ anchor: "insert-section", title: "POSSIBLE MARK JEWELERS INSERT", blurb: "Some copies of this issue carried a Mark Jewelers or other insert card (a rare variant that adds value). If your copy has an insert bound in the centerfold, add these two optional photos to verify.", accent: "#8a7a4a", inputId: "insert-photo-input", tapFn: "tapInsertSlot", removeFn: "removeInsertImg", onchange: "handleInsertImages(event)", defs: insertSlotDefs(), imgs: formData.insertImages || [ null, null ], runFn: "runInsertAssessment", runLabel: "RUN INSERT CHECK", finding: formData.insertFinding, foundLabel: "INSERT" });
+  })()}
+      ${(() => {
+    if (_isCardForm || !formData.roboGrade || !formData.title || !formData.issue || typeof window.matchCoupon !== "function") return "";
+    const _cm = window.matchCoupon(formData.title, formData.issue);
+    if (!_cm) return "";
+    return _renderExtraPhotoSection({ anchor: "coupon-section", title: "COUPON / PIN-UP PAGE", blurb: "This issue is known for a coupon, stamp, or pin-up page that is often cut out. Add these two optional photos to show whether it is present.", accent: "#3a9a5a", inputId: "coupon-photo-input", tapFn: "tapCouponSlot", removeFn: "removeCouponImg", onchange: "handleCouponImages(event)", defs: couponSlotDefs(_cm), imgs: formData.couponImages || [ null, null ], runFn: "runCouponAssessment", runLabel: "RUN COUPON CHECK", finding: formData.couponFinding, foundLabel: "COUPON" });
+  })()}
+      ${(() => {
+    const _fullDone = isFullAssessmentComplete(formData);
+    if (!showFullTier(formData)) return "";
+    // v5.28: N is the REQUIRED slot count for this book's binding, not a constant.
+    const N = fullRequiredCount(formData);
+    const interior = formData.interiorImages || [];
+    const filled = fullFilledCount(formData);
+    const ready = filled === N && !assessing;
+    const blurb = _fullDone ? `Full Assessment has run on this book. You can replace any photo below and re-run to update the interior/structure findings.` : `This book qualifies for Full Assessment. Add all ${N} named photos below — each documents a specific part of the book's structure and page completeness. Once all ${N} are added, Full Assessment runs a deeper confirmation of the grade.`;
+    const btnLabel = assessing ? "Assessing…" : _fullDone ? `RE-RUN FULL ASSESSMENT${filled < N ? ` (${filled}/${N})` : ""}` : `FULL ASSESSMENT${filled < N ? ` (${filled}/${N})` : ""}`;
+    return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">\n            <div id="full-staple-section" style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">FULL ASSESSMENT - EDGES AND STAPLES</div>\n            <div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Checks for staple wear and missing pages. For a near-perfect book, this is the pass that can confirm a perfect 10. For any other book it confirms the grade and can only lower it if a previously-unseen defect is revealed.</div>\n            ${renderFullSlotGrid(interior, {editable: true})}\n            <input id="interior-photo-input" type="file" accept="image/*" multiple onchange="handleInteriorImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="full-assess-btn" class="rg-btn rg-btn-assess rg-btn-gold${assessing ? ' assessing' : ''}" onclick="submitFullAssessment()" ${ready ? "" : "disabled"}>\n                ${btnLabel}\n              </button>\n            </div>\n          </div>\n        `;
+  })()}\n      ${(() => {
+    if (!showRestorationTier(formData)) return "";
+    if (isRestorationCheckComplete(formData)) {
+      const rImgs = formData.restorationImages || [];
+      const _uvLeft = uvChecksLeft(formData);
+      // Out of runs: keep the photos and the report on screen, drop the button
+      // and say plainly what brings it back.
+      const _uvFooter = _uvLeft > 0
+        ? `\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="restoration-check-btn" class="rg-btn rg-btn-assess rg-btn-purple${assessing ? ' assessing' : ''}" onclick="submitRestorationCheck()" ${rImgs.slice(0, RESTORATION_SLOT_COUNT).filter(Boolean).length >= RESTORATION_SLOT_COUNT ? "" : "disabled"}>\n                ${assessing ? "Checking…" : `RE-RUN UV CHECK (${_uvLeft} LEFT)`}\n              </button>\n            </div>`
+        : `\n            <div style="margin-top:12px;padding:10px 12px;border:1px solid #5a3a7a;border-radius:10px;background:#1a1226;color:#b8a8cc;font-size:11px;line-height:1.5;text-align:center">\n              You have used all ${UV_CHECK_LIMIT} free UV Checks on this book. If it has been worked on since — color touch cut out, for instance — run a new assessment and you will get ${UV_CHECK_LIMIT} more.\n            </div>`;
+      return `\n          <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n            <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">UV CHECK</div>\n            ${renderRestorationSlotGrid(rImgs, {editable: true})}\n            <input id="restoration-photo-input" type="file" accept="image/*" multiple onchange="handleRestorationImages(event)" style="display:none">${_uvFooter}\n          </div>\n        `;
+    }
+    if (uvChecksLeft(formData) <= 0 && !isRestorationCheckComplete(formData)) return "";
+    // v6.24: the CHECK RESTORATION reveal gate is gone. It hid the UV Check
+    // behind a button whose own blurb was wrong - it promised 8 photos (UV
+    // front/back, staples, edge, interior) when the check has needed 2 for
+    // some time. A free check behind a tap that misdescribes it is worse than
+    // no tap: qualifying books now show the UV Check section directly.
+    const rImgs = formData.restorationImages || [];
+    const rFilled = rImgs.slice(0, RESTORATION_SLOT_COUNT).filter(Boolean).length;
+    const rReady = rFilled === RESTORATION_SLOT_COUNT && !assessing;
+    const _uvLeft = uvChecksLeft(formData);
+    if (_uvLeft <= 0) return "";
+    return `\n          <div id="uv-section" style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n            <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">UV CHECK — FREE</div>\n            <div style="font-size:11px;color:#9a8aaa;margin-bottom:10px;line-height:1.5">\n              Color touch restoration is most easily identified under a blacklight. Take 2 photos of the front and back cover under a UV light source in an otherwise-dark room to check for this type of restoration. This assessment is free.\n            </div>\n            ${renderRestorationSlotGrid(rImgs, {editable: true})}\n            <input id="restoration-photo-input" type="file" accept="image/*" multiple onchange="handleRestorationImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="restoration-check-btn" class="rg-btn rg-btn-assess rg-btn-purple${assessing ? ' assessing' : ''}" onclick="submitRestorationCheck()" ${rReady ? "" : "disabled"}>\n                ${assessing ? "Checking…" : `UV CHECK ${rFilled < RESTORATION_SLOT_COUNT ? `(${rFilled}/${RESTORATION_SLOT_COUNT})` : `(${_uvLeft} LEFT)`}`}\n              </button>\n            </div>\n          </div>\n        `;
+  })()}${renderBatchSection()}${renderCleanSection()}${renderUserDefectSlots()}\n      <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">\n      <input id="userdefect-photo-input" type="file" accept="image/*" onchange="handleUserDefectImages(event)" style="display:none">\n      <input id="restoration-photo-input" type="file" accept="image/*" onchange="handleRestorationImages(event)" style="display:none">\n\n      \x3c!-- S11: Pre-assessment Grader Notes (Option B for the chicken-and-egg\n           problem). For graded books in slabs, the official grader notes are\n           highly informative inputs to the AI assessment — but we don't\n           know a book is graded until after the AI has assessed it, so the\n           field would normally be unavailable on first-pass. This collapsible\n           section gives users who have a slabbed book a way to enter the\n           grader notes BEFORE running the assessment. Defaults closed so\n           the standard image-first flow stays visually clean for raw books;\n           opens with a single tap. Only renders pre-assessment in the\n           image-first flow (no _assessed, no _addManualMode, no isEdit) —\n           after assessment, the Grader Notes field appears in the normal\n           form section below where it can also be edited. --\x3e\n      \x3c!-- The "Optional: official label info" collapsible was removed in S12.\n           It let users type CGC/PSA grader notes BEFORE assessment to nudge\n           accuracy. Pulled because:\n           - Used by an extreme minority of users (only those entering\n             already-graded books and willing to transcribe slab text)\n           - Cluttered the otherwise-clean image-first Add flow\n           - The same info can still be typed in the post-assessment form\n             where the Grader Notes field still lives.\n           If we want this back later, the JS field (formData.graderNotes)\n           still wires through to assess.js — only the UI was removed. --\x3e\n\n    </div>\n    ${isEdit || _assessed || _addManualMode ? `\n    ${""}\n    ${formData.roboGrade ? "" : `<div class="form-grid-2">
+      \x3c!-- Title gets a special handler (not the generic tf) because we need
+           live-toggle the save button as the user types. --\x3e
+      <div><label class="field-label">Title<span style="color:#c0392b;margin-left:2px">*</span></label><input id="title-input" value="${esc(formData.title || "")}" oninput="formData.title=this.value;refreshSaveButtonLock()" placeholder="Series title"></div>
+      ${tf("Issue", "issue", "Issue number", true)}
+      ${tf("Pub Date", "issueDate", "Cover date")}
+      ${tf("Publisher", "publisher", "Publisher")}
+    </div>`}\n    \n    \x3c!-- Official Grades fields (S11): the disclosure container "OFFICIAL GRADES"\n         was removed. CGC Grade/Cert and PSA Grade/Cert sit as their own ordinary\n         fields when relevant.\n         Visibility:\n         • Not yet assessed (no roboGrade): show both CGC and PSA grids.\n         • Assessed and AI determined raw (no grades/certs): hide both.\n         • Assessed and CGC info present: show CGC grid only.\n         • Assessed and PSA info present: show PSA grid only.\n         A book can be CGC OR PSA officially, never both. --\x3e\n    ${(() => {
+    const hasOfficialCGC = !!(formData.cgcGrade || formData.cgcCert);
+    const hasOfficialPSA = !!(formData.psaGrade || formData.psaCert);
+    const everAssessed = !!formData.roboGrade;
+    const isAssessedRaw = everAssessed && !hasOfficialCGC && !hasOfficialPSA;
+    if (isAssessedRaw) return "";
+    const showCGC = !everAssessed || hasOfficialCGC;
+    const showPSA = !everAssessed || hasOfficialPSA;
+    let h = "";
+    if (showCGC) {
+      h += `<div class="form-grid-2">\n          ${tf("CGC Grade", "cgcGrade", "e.g. 9.4", true)}\n          ${tf("CGC Cert #", "cgcCert", "Cert number")}\n        </div>`;
+    }
+    if (showPSA) {
+      h += `<div class="form-grid-2">\n          ${tf("PSA Grade", "psaGrade", "e.g. 9.4", true)}\n          ${tf("PSA Cert #", "psaCert", "Cert number")}\n        </div>`;
+    }
+    return h;
+  })()}\n    \x3c!-- Robograde Score panel (S11): full RG display panel — score, sub-grades,\n         provenance strip, and printout-paper defect listing. Placed here right\n         after My Grade / Page Quality so the user sees the full RG output\n         before the Grader Predictions row below it. Previously rendered at\n         the bottom of the form; moved up to match the detail-view ordering. --\x3e\n    ${(_isCardForm ? (formData.roboGrade || (formData.cardData && formData.cardData.robograde)) : formData.roboGrade) ? (_isCardForm ? buildCardRoboDisplay(formData) : buildRoboGradeDisplay(formData.roboGrade, formData, { framed: true })) : ""}\n    \x3c!-- Integrity badge (S12) — Assessment results screen shows BOTH states.\n         This is the moment-of-truth surface: the user just got a grade and\n         needs to know whether the result will display as Verified on a public\n         link before they save. If they wanted Verified and didn't get it,\n         they can retake/recapture in-app before saving. Placed right below\n         the Robograde panel so it associates visually with the grade output. --\x3e\n    ${formData.roboGrade ? (() => {
+    void buildIntegrityPill; // S20: integrity pill moved ABOVE the image slots
+    return "";               // (see the form card top) to match Detail view.
+  })() : ""}\n\n    \x3c!-- Grader Predictions (S11): renamed from "Assessment Results". This row\n         shows all of the relevant grade badges side-by-side: CGC Official, CGC\n         AI, PSA Official, PSA AI. A book can only be officially graded by one\n         service (CGC or PSA, not both), so at most 3 badges ever appear at\n         once — three boxes fit comfortably on one row. --\x3e\n    ${_assessed ? (() => {
+      const _isCardItem = formData.type === "card";
+      const _cardPsaRaw = _isCardItem ? ((formData.cardData && formData.cardData.psaGrade != null) ? formData.cardData.psaGrade : (formData.assessedPSAGrade || null)) : null;
+      const _cardPsaStr = (_cardPsaRaw == null || _cardPsaRaw === "") ? null : ((typeof _cardPsaRaw === "number" || /^[0-9.]+$/.test(String(_cardPsaRaw))) ? normalizeGrade(String(_cardPsaRaw)) : String(_cardPsaRaw));
+      const _cardPsaDisp = _cardPsaStr ? String(_cardPsaStr).replace(/\.0$/, "") : _cardPsaStr;
+      const cardPsa = _cardPsaStr ? buildBadge(_cardPsaDisp, "psa-predicted", "", false) : "";
+      const cgcOff = (!_isCardItem && formData.cgcGrade) ? buildBadge(normalizeGrade(formData.cgcGrade), "cgc-official", detectDesignation(formData), false) : "";
+      const psaOff = (!_isCardItem && formData.psaGrade) ? buildBadge(normalizeGrade(formData.psaGrade), "psa-official", formData.psaDesignation || "universal", false) : "";
+      const predVal = _isCardItem ? null : (formData.predictedGrade || formData.assessedCGCGrade);
+      const _editRestored = !!(formData.restorationHighConfidence || (formData.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(formData.cgcNotes)));
+      const predicted = predVal ? buildBadge(normalizeGrade(predVal), "predicted", "", false, false, false, _editRestored, !!formData.couponQualified, !!formData.gradeAtCeiling) : "";
+      const _pqHtml = (!_isCardItem && formData.pageQuality) ? `<div style="display:flex;justify-content:center">${buildPQBox(formData.pageQuality)}</div>` : "";
+      const _fmvGrade = _isCardItem ? _cardPsaStr : (formData.cgcGrade || formData.psaGrade || aiCgcGrade(formData));
+      const _fmvMatch = _isCardItem ? ((window.matchCardFMV && _fmvGrade && formData.cardData) ? window.matchCardFMV(formData.cardData.cardIdentification, _fmvGrade) : null) : ((typeof window.matchFMV === "function" && _fmvGrade) ? window.matchFMV(formData.title, formData.issue, _fmvGrade, formData.printing, extractYearFromIssueDate(formData.issueDate)) : null);
+      return buildPredictedGradeBox([ cgcOff, psaOff, cardPsa, predicted ].filter(Boolean).join(""), _pqHtml, _fmvMatch, !!(predicted || cardPsa));
+    })() : ""}\n\n    \x3c!-- The S11 "transaction metadata" block that sat here is gone: Date\n         Acquired and Seller moved down above Cost Breakdown (2026-10-17), and\n         Grading Date (slabbingDate) was removed from the UI in the same pass. --\x3e\n    \x3c!-- Analysis block (S11 reorder per user direction):\n         Defect Notes, Condition Assessment first\n         Then Enhancement Candidate\n         Then Cost Breakdown (now including FMV inside it)\n         Other gated text fields (Label Notes, Key Info, Grader Notes,\n         Past Assessments) live in their previous positions\n         around these. --\x3e\n    ${formData.cgcGrade || formData.psaGrade || formData.cgcNotes ? `<div><label class="field-label">Grader Label Notes</label><textarea rows="3" readonly style="cursor:not-allowed" title="Grader Label Notes is the text on the CGC or PSA slab label. Populated by the assessment, not user-editable.">${esc(formData.cgcNotes || "")}</textarea></div>` : ""}\n    ${(() => {
+    const showLabelNotesEdit = (formData.cgcGrade || formData.psaGrade) && formData.cgcNotes && formData.cgcNotes.trim();
+    if (showLabelNotesEdit) return "";
+    if (!formData.keyInfo) return "";
+    return `<div><label class="field-label">Key Info</label><textarea rows="3" readonly style="cursor:not-allowed;background:#ffffff;color:#1a1614" title="Key Info is populated by the assessment when the issue is in the recognized-key list. Not user-editable.">${esc(formData.keyInfo || "")}</textarea></div>`;
+  })()}\n    ${formData.cgcGrade || formData.psaGrade || formData.graderNotes ? `<div><label class="field-label">Grader Notes</label><textarea rows="${formData.graderNotes ? 5 : 3}" style="font-style:italic" placeholder="Manually enter official grader notes. These will be considered in assessment predictions." oninput="formData.graderNotes=this.value">${esc(formData.graderNotes || "")}</textarea></div>` : ""}\n    ${formData.aiAssessment ? `<div><label class="field-label">Main Assessment</label><textarea rows="${Math.max(8, Math.ceil(formData.aiAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the assessment. Not user-editable.">${esc(formData.aiAssessment)}</textarea></div>` : ""}\n    ${formData.deepAssessment ? `<div><label class="field-label">Deep Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.deepAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Deep pass.">${esc(formData.deepAssessment)}</textarea></div>` : ""}\n    ${formData.fullAssessment ? `<div><label class="field-label">Full Assessment</label><textarea rows="${Math.max(5, Math.ceil(formData.fullAssessment.length / 80))}" readonly style="cursor:not-allowed" title="Populated by the Full pass.">${esc(formData.fullAssessment)}</textarea></div>` : ""}\n    ${formData.gradeRevisionReason ? `<div><label class="field-label">Grade Revision</label><textarea rows="${Math.max(3, Math.ceil(formData.gradeRevisionReason.length / 80))}" readonly style="cursor:not-allowed" title="Why a Deep or Full pass moved the grade.">${esc(formData.gradeRevisionReason)}</textarea></div>` : ""}\n    ${(() => { const _rf = restorationFlagList(formData); return _rf.length ? `<div><label class="field-label">Restoration Noted During Grading</label><textarea rows="${Math.max(2, _rf.length)}" readonly style="cursor:not-allowed" title="Raised by the grading pass from ordinary-light photos. Not a UV finding.">${esc(_rf.join("\n"))}</textarea></div>` : ""; })()}\n    ${formData.restorationReport ? `<div><label class="field-label">UV Check</label><textarea rows="${Math.max(5, Math.ceil((formData.restorationReport || "").length / 80))}" readonly style="cursor:not-allowed" title="Populated by the UV Check.">${esc(formData.restorationReport)}</textarea></div>` : ""}\n    ${renderAssessmentHistorySection(formData.assessmentHistory, true)}\n    ${formData.psaNotes ? `<div><label class="field-label" style="color:#e87a7a">PSA Variance</label><textarea rows="5" style="border-color:#5c1a1a" oninput="formData.psaNotes=this.value">${esc(formData.psaNotes || "")}</textarea></div>` : ""}\n\n    \x3c!-- Acquisition metadata (moved 2026-10-17 per Matt): Date Acquired and\n         Seller now sit BELOW the write-ups and the Assessment History and\n         ABOVE Cost Breakdown. Grading Date (slabbingDate) was removed outright in\n         the same pass — it meant the date CGC slabbed the book, nobody filled\n         it in, and the Robograde date already covers anything we graded. --\x3e\n    ${formData.id ? renderAssessmentMap(formData) : ""}\n    ${df("Date Acquired", "dateAcquired")}\n    <div><label class="field-label">Seller</label>\n      <input value="${esc(formData.seller || "")}" list="seller-list" oninput="formData.seller=this.value;updateSellerList(this.value)" placeholder="Name / source" autocomplete="off">\n      <datalist id="seller-list">${getSellerSuggestions().map(s => `<option value="${esc(s)}">`).join("")}</datalist>\n    </div>\n    \x3c!-- v6.27: My Grade moved here, below Seller and above Cost Breakdown.\n         It is the owner's OWN opinion of the grade - personal record-keeping,\n         like the price and the seller. Beside the RG score it read as a\n         Robograder output. It never reaches the public listing: api/lookup.js\n         does not project it. --\x3e\n    ${formData.grade || formData.roboGrade ? `<div class="form-grid-2">\n      <div><label class="field-label">My Grade</label><select class="rg-select rg-select-grade${formData.grade ? "" : " is-empty"}" onchange="formData.grade=this.value;this.classList.toggle('is-empty', !this.value)">\n        <option value="">Select grade</option>\n        ${GRADES.map(g => `<option value="${g}"${formData.grade === g ? " selected" : ""}>${g} — ${GRADE_LABELS[g]}</option>`).join("")}\n      </select></div>\n    </div>` : ""}\n    \n    \x3c!-- Enhancement Candidate (S11): renamed from "Enhance Candidate"; moved\n         to between Condition Assessment and Cost Breakdown per user direction. --\x3e\n    \x3c!-- S20: Enhancement Candidate control hidden per request (odd inclusion, often inaccurate). Kept for future use: <div><label class="field-label">Enhancement Candidate</label><div style="display:flex;gap:10px">\${treatBtn("enhance", "Enhance")}</div></div> --\x3e\n\n    \x3c!-- Cost Breakdown (S11): now includes FMV ($) and FMV Date inside the\n         container, since they're financial fields conceptually grouped with\n         the cost data. --\x3e\n    <div class="cost-box">\n      <div class="section-label" style="margin-bottom:12px">Cost Breakdown</div>\n      <div class="form-grid-2">\n        ${mf("Purchase Price ($)", "purchasePrice")}\n        ${mf("Taxes / Fees / Shipping ($)", "taxesFeesShipping")}\n        ${mf("Asking Price ($)", "askingPrice")}\n      </div>\n    </div>\n\n    <div><label class="field-label">My Notes <span style="font-weight:600;letter-spacing:0;text-transform:none;color:#7a8a6a">\u2014 private, never shown publicly</span></label><textarea rows="2" oninput="formData.notes=this.value" placeholder="Personal notes, purchase context, etc.">${esc(formData.notes || "")}</textarea></div>\n    ${""}\n    \n    <div style="display:flex;gap:10px;padding-top:4px">\n      ${isEdit ? "" : `<button id="save-btn" class="rg-btn rg-btn-primary rg-btn-lg" onclick="submitForm()" ${(formData.title?.trim() && !isUploadInFlight()) ? "" : "disabled"} style="${isUploadInFlight() ? "opacity:0.55;cursor:progress" : ""}">${isUploadInFlight() ? "Uploading photos\u2026" : "Add to Collection"}</button>`}\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="cancelForm()">Cancel</button>\n    </div>\n    ` : `\n    \x3c!-- Add-flow collapsed state (S11): show only the Enter Manually button.\n         Steers users toward photos-first by hiding the form fields until\n         either (a) they tap Enter Manually, or (b) an assessment runs and\n         _assessed becomes true. Edit view always shows the full form.\n         S14: ownership cycle pill inserted above Enter Manually. Lets a\n         user mark a book as Owned (default) / Watching / Sold before\n         assessing — so they can assess someone else's book without\n         claiming it, or track a book they're considering buying. Same\n         pill style as detail and edit views (color-coded by state),\n         centered between the two full-width buttons. Public-listing is\n         locked off whenever ownership !== 'Owned'; the cycleOwnership\n         handler clears formData.publicListing on transitions out of\n         Owned so a stale 'true' can't be saved. --\x3e\n    ${(() => {
+    const own = formData.ownership || "Owned";
+    const styleByState = {
+      Owned: {
+        bg: "#d8e4f0",
+        fg: "#1a4a6a",
+        border: "#88b0d0"
+      },
+      Watching: {
+        bg: "#ffd97a",
+        fg: "#7a5018",
+        border: "#d8a868"
+      },
+      Sold: {
+        bg: "#f5d8d8",
+        fg: "#8a1a1a",
+        border: "#d09090"
+      },
+      Print: {
+        bg: "#dcecd0",
+        fg: "#2a5a18",
+        border: "#9cc080"
+      }
+    };
+    const s = styleByState[own] || styleByState["Owned"];
+    void s;
+    return ""; // S20 (#46): collapsed add-flow pill removed; the segmented pill renders above the image slots in every form state.
+  })()}\n    <div style="display:flex;justify-content:center;margin-top:8px">\n      <button class="rg-btn rg-btn-secondary rg-btn-lg" onclick="enterManualMode()" style="width:75%">Enter Manually</button>\n    </div>\n    `}\n  </div>`;
+  document.getElementById("main").innerHTML = html;
+  _maybeRefreshLocalPG(); // S21: refresh the on-device Photograder pre-check if images changed
+}
+
+function renderImgPreview() {}
+
+// S22: UV Check slot grid — one row, two half-width 3:4 cells (UV Front, UV
+// Back), the two shots that always required a blacklight. The six normal-light
+// rows (staples x2, outer edge, interiors x2, interior staples) went away with
+// the 8-image Restoration Check; Main, Deep and Full cover that ground free.
+function renderRestorationSlotGrid(restoration, opts) {
+  const editable = !!(opts && opts.editable);
+  const _cid = opts && opts.comicId ? opts.comicId : '';
+  const cell = (key, aspect, o) => {
+    o = o || {};
+    const i = restorationSlotIndex(key);
+    const slot = RESTORATION_SLOTS[i];
+    const img = (restoration || [])[i];
+    const dim = o.fill ? 'height:100%' : ('aspect-ratio:' + aspect);
+    const extra = o.extra ? (';' + o.extra) : '';
+    const labelTag = `<div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(122,75,168,0.85);padding:2px 6px;border-radius:3px;letter-spacing:0.04em">${slot.label.toUpperCase()}</div>`;
+    if (editable) {
+      if (img) {
+        return `<div class="drag-slot" style="${dim};position:relative;overflow:hidden${extra}" onclick="tapRestorationSlot(${i})"><img src="${img}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">${labelTag}<button class="slot-x" onclick="event.stopPropagation();removeRestorationImg(${i})">×</button></div>`;
+      }
+      const hint = o.strip ? `<div style="font-size:9px;font-weight:500;opacity:0.7;margin-top:3px;line-height:1.25">${slot.hint}</div>` : '';
+      return `<div class="drag-slot" style="padding:0;background:#1a1a1a;${dim};position:relative;overflow:hidden${extra}" onclick="tapRestorationSlot(${i})"><div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#c8a8e8;font-size:11px;font-weight:700;letter-spacing:0.4px;text-align:center;padding:4px"><div>${slot.label.toUpperCase()}</div>${hint}<div style="font-size:9px;opacity:0.5;margin-top:3px">Tap to add</div></div></div>`;
+    }
+    if (!img) return "";
+    return `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;${dim}${extra}"><img src="${img}" loading="lazy" decoding="async" onload="window.forceImgReflow(this)" onclick="openRestorationLightbox('${_cid}',${i})" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in">${labelTag}</div>`;
+  };
+  let html = '';
+  html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">${cell('uv_front', '3 / 4')}${cell('uv_back', '3 / 4')}</div>`;
+  return html;
+}
+
+// S16: ensure defect-note bullets render one-per-line. The model emits them as
+// a single "• a • b • c" string (no newlines); older assessments had newlines.
+// Split on the bullet char and rejoin newline-separated. Idempotent and
+// retroactive (fixes already-stored single-line notes at render time).
+function formatBulletNotes(s) {
+  if (!s) return s;
+  const parts = String(s).split("•").map(p => p.trim()).filter(Boolean);
+  if (parts.length <= 1) return String(s).trim();
+  return parts.map(p => "• " + p).join("\n");
+}
+
+function buildRoboGradeDisplay(rg, comic, opts) {
+  return window.RobograderPanel.buildDisplay(rg, comic, opts);
+}
+
+// S21: Full Assessment slot grid (Edit editable / Detail read-only). Layout:
+// a staple SQUARE — two 1:1 exterior staples stacked on the left, Interior
+// Staples spanning full height on the right (~1:2) — then three full-width
+// strips: Top Pages 5:1, Outer Edge 4:1, Bottom Pages 5:1. Storage index is
+// resolved by key, so display is independent of storage/capture order.
+function renderFullSlotGrid(interior, opts) {
+  const editable = !!(opts && opts.editable);
+  const comicId = opts && opts.comicId;
+  const cell = (key, aspect, o) => {
+    o = o || {};
+    const i = fullSlotIndex(key);
+    // v5.28: on a square-bound book the two exterior slots keep their position
+    // but change their job, so take the def from fullSlotsFor() when it has one.
+    const _sq = fullSlotsFor((opts && opts.item) || formData).find(x => x.key === key);
+    const slot = _sq || FULL_SLOTS[i];
+    const img = (interior || [])[i];
+    const dim = o.fill ? 'height:100%' : ('aspect-ratio:' + aspect);
+    const extra = o.extra ? (';' + o.extra) : '';
+    const labelTag = `<div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(184,134,11,0.85);padding:2px 6px;border-radius:3px;letter-spacing:0.04em">${slot.label.toUpperCase()}</div>`;
+    if (editable) {
+      if (img) {
+        return `<div class="drag-slot" draggable="true" style="${dim};position:relative;overflow:hidden${extra}" ondragstart="interiorDragStart(event,${i})" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="interiorDropSlot(event,${i})" onclick="tapSlot(${i},'interior')"><img src="${img}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">${labelTag}<button class="slot-edit" onclick="event.stopPropagation();openCropper('interior',${i})" aria-label="Crop photo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M7 1 V17 H23"/><path d="M1 7 H17 V23"/></svg></button><button class="slot-x" onclick="event.stopPropagation();removeInteriorImg(${i})">×</button></div>`;
+      }
+      const hint = (o.strip && slot.hint) ? `<div style="font-size:9px;font-weight:500;margin-top:1px;line-height:1.2;color:#2a2a2a">${slot.hint}</div>` : '';
+      const ghost = FULL_GHOSTS[key] ? `<img src="${FULL_GHOSTS[key]}" alt="" loading="lazy" decoding="async" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0.7">` : '';
+      return `<div class="drag-slot" style="padding:0;background:none;${dim};position:relative;overflow:hidden${extra}" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="interiorDropSlot(event,${i})" onclick="tapSlot(${i},'interior')">${ghost}<div style="position:absolute;top:6px;left:6px;max-width:${(key === 'exterior_top_staple' || key === 'exterior_bottom_staple') ? 'calc(100% - 12px)' : '58%'};background:rgba(255,255,255,0.85);color:#1a1a1a;padding:3px 8px;border-radius:4px;text-align:left"><div style="font-size:11px;font-weight:800;letter-spacing:0.4px">${slot.label.toUpperCase()}</div>${hint}<div style="font-size:9px;font-weight:600;opacity:0.7;margin-top:1px">Tap to add</div></div></div>`;
+    }
+    if (!img) return "";
+    const imgAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
+    return `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;${dim}${extra}"><img src="${img}" ${imgAttrs} onclick="openInteriorLightbox('${comicId}',${i})" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in">${labelTag}</div>`;
+  };
+  // v5.28: the staple block depends on the binding (see BINDING_SLOT_KEYS).
+  //   saddle  two exterior macros left, the tall interior macro right
+  //   square  the interior macro is gone, so the two exterior shots sit side by
+  //           side and are aimed at cover penetration, not at the staple itself
+  //   none    no staple block at all
+  const _item = (opts && opts.item) || formData;
+  const _need = new Set(fullRequiredKeys(_item));
+  let html = '';
+  if (_need.has('interior_staple')) {
+    html += `<div style="display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:6px;margin-top:6px;aspect-ratio:1 / 1">`
+      + cell('exterior_top_staple', null, { fill: true, extra: 'grid-column:1;grid-row:1' })
+      + cell('interior_staple', null, { fill: true, extra: 'grid-column:2;grid-row:1 / span 2' })
+      + cell('exterior_bottom_staple', null, { fill: true, extra: 'grid-column:1;grid-row:2' })
+      + `</div>`;
+  } else if (_need.has('exterior_top_staple')) {
+    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;aspect-ratio:2 / 1">`
+      + cell('exterior_top_staple', null, { fill: true })
+      + cell('exterior_bottom_staple', null, { fill: true })
+      + `</div>`;
+  }
+  html += `<div style="margin-top:6px">${cell('top_pages', '4 / 1', { strip: true })}</div>`;
+  html += `<div style="margin-top:6px">${cell('outer_edge', '2.4 / 1', { strip: true })}</div>`;
+  html += `<div style="margin-top:6px">${cell('bottom_pages', '4 / 1', { strip: true })}</div>`;
+  return html;
+}
+function removeImg(i) {
+  const imgs = [ ...formData.images || [] ];
+  imgs[i] = null;
+  while (imgs.length && imgs[imgs.length - 1] === null) imgs.pop();
+  formData.images = imgs;
+  formData._imagesChanged = true;
+  renderForm();
+}
+
+let _cropperInstance = null;
+
+let _cropResizeObs = null;   // S22: watches #cropper-inner while a crop is open
+
+let _cropperTarget = null;
+
+let _cropperOriginalSrc = null;
+
+// S23: The cropper sets img.crossOrigin='anonymous' (required so getCroppedCanvas
+// isn't tainted), which forces a SEPARATE CORS-flavored cache entry. The list /
+// detail / lightbox load the same image WITHOUT crossOrigin, so the CORS copy is
+// a cache MISS on first crop -> a full re-download (the 2-3s delay). Warming the
+// CORS-cached copy in the background when the edit view opens makes the crop
+// instant. Failures (older images without CORS headers) are silent; display is
+// unaffected because it never uses crossOrigin.
+function _prewarmCropCache(urls) {
+  if (!window._cropWarmed) window._cropWarmed = new Set();
+  (urls || []).forEach(u => {
+    if (typeof u !== "string" || !u.startsWith("http") || window._cropWarmed.has(u)) return;
+    window._cropWarmed.add(u);
+    try { const im = new Image(); im.crossOrigin = "anonymous"; im.decoding = "async"; im.src = u; } catch (e) {}
+  });
+}
+
+function openCropper(type, index) {
+  const list = type === "corner" ? formData.cornerImages : type === "interiorCover" ? formData.interiorCoverImages : type === "interior" ? formData.interiorImages : type === "signature" ? formData.signatureImages : type === "insert" ? formData.insertImages : type === "coupon" ? formData.couponImages : formData.images;
+  const src = (list || [])[index];
+  if (!src) return;
+  _cropperTarget = {
+    type: type,
+    index: index
+  };
+  _cropperOriginalSrc = src;
+  _cropperRotation = 0;
+  const modal = document.getElementById("cropper-modal");
+  const img = document.getElementById("cropper-img");
+  if (_cropperInstance) {
+    try {
+      _cropperInstance.destroy();
+    } catch (e) {}
+    _cropperInstance = null;
+  }
+  img.removeAttribute("src");
+  img.removeAttribute("crossorigin");
+  if (src.startsWith("http")) {
+    img.crossOrigin = "anonymous";
+  }
+  const onErrorOnce = () => {
+    img.removeEventListener("load", attach);
+    alert("Could not load this image for cropping.\n\n" + "This usually happens when older photos were uploaded before CORS settings were applied to the storage bucket. " + "You may need to delete and re-upload this photo to enable cropping.");
+    cancelCrop();
+  };
+  img.addEventListener("error", onErrorOnce, {
+    once: true
+  });
+  img.src = src;
+  modal.classList.add("open");
+  // S22 (4th attempt at the first-image bug). The previous three all guessed at
+  // WHEN the stage would have a box — a resize(), then a render(), then rAF +
+  // 180ms + 450ms. Matt's new clue kills the timing theory: escaping the cropper
+  // and re-entering fixes it, i.e. the layout is fine by then; only the very
+  // first open measures too early. Rather than guess a fourth delay, we now
+  // OBSERVE the box: don't build Cropper until the stage actually has one, and
+  // re-fit on every later size change. That is correct whatever the cause —
+  // first open, a late safe-area resolve, rotation, keyboard, anything.
+  const _stageBox = () => {
+    const inner = document.getElementById("cropper-inner");
+    if (!inner) return null;
+    const r = inner.getBoundingClientRect();
+    return (r.width > 40 && r.height > 40) ? r : null;
+  };
+  const _whenSized = () => new Promise(resolve => {
+    if (_stageBox()) return resolve(true);
+    let tries = 0;
+    const tick = () => {
+      if (_stageBox()) return resolve(true);
+      if (++tries > 60) return resolve(false);   // ~1s, then build anyway
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+
+  const attach = async () => {
+    img.removeEventListener("error", onErrorOnce);
+    await _whenSized();
+    if (typeof Cropper !== "function") {
+      alert("Cropper library failed to load. Try refreshing the page.");
+      cancelCrop();
+      return;
+    }
+    const _cropCardFB = (formData.type === "card" || !!formData._isCard) && type === "main" && index < 2;
+    const _cropComicFB = !(formData.type === "card" || !!formData._isCard) && type === "main" && index < 2;
+    _cropperInstance = new Cropper(img, {
+      aspectRatio: _cropCardFB ? 5/7 : NaN,
+      // S23: viewMode 2 (whole image fits WITHIN the frame) instead of 1 (image
+      // COVERS the frame). With movable:false, viewMode 1 scaled a landscape
+      // photo — e.g. a re-shot Spine — up to fill the portrait crop frame, so its
+      // width overflowed off-screen and the right side was unreachable. viewMode 2
+      // always shows the entire image regardless of orientation.
+      viewMode: 2,
+      autoCropArea: 1.0,
+      background: false,
+      modal: true,
+      guides: true,
+      center: true,
+      highlight: false,
+      dragMode: "none",
+      toggleDragModeOnDblclick: false,
+      movable: false,
+      responsive: true,
+      // S25 FIX (spine landscape → portrait bug): modern iOS/Android WebViews already
+      // auto-orient the <img> from its EXIF tag. checkOrientation:true made Cropper
+      // apply that SAME EXIF rotation a SECOND time, so a wide landscape photo (kept
+      // its EXIF because it was imported from the library, not canvas-processed) was
+      // measured as portrait and scaled to fit height — overflowing off the right.
+      // Trust the browser's orientation; do not re-apply it.
+      checkOrientation: false,
+      ready: function() {
+        const stage = document.getElementById("cropper-stage");
+        if (stage) stage.classList.add("ready");
+        // Re-measure against the settled, safe-area-padded container. Cropper
+        // measures at attach time, before the padded layout fully settles, which
+        // left tall/EXIF-rotated phone photos collapsed to a strip or pushed past
+        // the safe area. A resize() after ready forces a correct fit for any
+        // image aspect ratio or orientation.
+        // S25: fit the image to the (safe-area-padded) container, then default the
+        // Front/Back crop box to ~9:14 centered. Wrapped in a reusable _fitCrop and
+        // run TWICE — once next frame, once after 180ms. The FIRST auto-opened crop
+        // (camera modal closes as the cropper opens) measures its container mid open-
+        // transition, so image #1 was scaled up with its right half pushed off-screen
+        // while #2-4 (modal already settled) were fine. The delayed re-fit corrects
+        // #1 and is idempotent for the rest.
+        // S22 (3rd attempt at the first-image bug — the previous two used
+        // resize(), which CANNOT fix this case):
+        //   Cropper.resize() bails out early when
+        //     containerData.width <= 200 || containerData.height <= 100
+        //   and it only re-renders at all when the container's measured size has
+        //   CHANGED since init. cameraFinish() removes .open from #camera-modal
+        //   and calls runCropperSequence() in the same task, so for capture #1 the
+        //   cropper modal is measured before the browser has laid it out — the
+        //   stage comes back at ~0px. Cropper stores that as containerData, scales
+        //   the image to it (hence "zoomed far in"), and then every resize() we
+        //   called afterwards hit the min-size guard and returned without doing
+        //   anything. Captures #2-4 were fine because the modal was already laid
+        //   out by then.
+        //   Fix is two-part: (1) render() instead of resize() — render() re-runs
+        //   initContainer() against the live DOM with no guard and no change
+        //   detection; (2) runCropperSequence() now yields real layout frames
+        //   before the first openCropper() so the measurement is right the first
+        //   time. resize() is kept only as a fallback for a Cropper build without
+        //   render() on the prototype.
+        const _fitCrop = function() {
+          if (!_cropperInstance) return;
+          try {
+            if (typeof _cropperInstance.render === "function") _cropperInstance.render();
+            else if (typeof _cropperInstance.resize === "function") _cropperInstance.resize();
+          } catch (e) {}
+          if (_cropComicFB && _cropperInstance) {
+            requestAnimationFrame(function() {
+              try {
+                const _cc = _cropperInstance.getCanvasData();
+                if (!_cc || !(_cc.width > 0) || !(_cc.height > 0)) return;
+                const _ar = 9 / 14;
+                let _w = _cc.width, _h = _w / _ar;
+                if (_h > _cc.height) { _h = _cc.height; _w = _h * _ar; }
+                _cropperInstance.setCropBoxData({ left: _cc.left + (_cc.width - _w) / 2, top: _cc.top + (_cc.height - _h) / 2, width: _w, height: _h });
+              } catch (e) {}
+            });
+          }
+        };
+        requestAnimationFrame(_fitCrop);
+        // The observer is the actual fix; these two keep the old behaviour for a
+        // WebView without ResizeObserver (none we ship to, but it costs nothing).
+        setTimeout(_fitCrop, 180);
+        setTimeout(_fitCrop, 450);
+        // Re-fit whenever the stage's box changes, for as long as the cropper is
+        // open. env(safe-area-inset-*) resolving late, the camera modal finishing
+        // its teardown, an orientation change — all of them land here instead of
+        // needing their own timeout. Torn down in cancelCrop/confirmCrop.
+        try {
+          if (window.ResizeObserver) {
+            const _inner = document.getElementById("cropper-inner");
+            if (_inner) {
+              let _lastW = 0, _lastH = 0;
+              _cropResizeObs = new ResizeObserver(entries => {
+                for (const e of entries) {
+                  const w = Math.round(e.contentRect.width), h = Math.round(e.contentRect.height);
+                  if (w === _lastW && h === _lastH) continue;   // ignore no-op notifications
+                  _lastW = w; _lastH = h;
+                  if (w > 40 && h > 40) _fitCrop();
+                }
+              });
+              _cropResizeObs.observe(_inner);
+            }
+          }
+        } catch (e) { console.warn("[cropper] ResizeObserver unavailable:", e); }
+      }
+    });
+    let _lastCropTap = 0;
+    const stage = document.getElementById("cropper-stage");
+    const dblHandler = e => {
+      const now = Date.now();
+      if (now - _lastCropTap < 320) {
+        if (_cropperInstance) {
+          const canvas = _cropperInstance.getCanvasData();
+          _cropperInstance.setCropBoxData({
+            left: canvas.left,
+            top: canvas.top,
+            width: canvas.width,
+            height: canvas.height
+          });
+        }
+        _lastCropTap = 0;
+        e.preventDefault();
+      } else {
+        _lastCropTap = now;
+      }
+    };
+    if (stage._dblHandler) stage.removeEventListener("touchend", stage._dblHandler);
+    if (stage._dblClickHandler) stage.removeEventListener("dblclick", stage._dblClickHandler);
+    stage._dblHandler = dblHandler;
+    stage._dblClickHandler = dblHandler;
+    stage.addEventListener("touchend", dblHandler);
+    stage.addEventListener("dblclick", dblHandler);
+  };
+  if (img.complete && img.naturalWidth > 0) attach(); else img.addEventListener("load", attach, {
+    once: true
+  });
+}
+
+function cancelCrop() {
+  const modal = document.getElementById("cropper-modal");
+  const stage = document.getElementById("cropper-stage");
+  if (_cropResizeObs) { try { _cropResizeObs.disconnect(); } catch (e) {} _cropResizeObs = null; }
+  if (_cropperInstance) {
+    try {
+      _cropperInstance.destroy();
+    } catch (e) {}
+    _cropperInstance = null;
+  }
+  modal.classList.remove("open");
+  if (stage) stage.classList.remove("ready");
+  _cropperTarget = null;
+  if (_cropperSequenceResolve) {
+    const r = _cropperSequenceResolve;
+    _cropperSequenceResolve = null;
+    r();
+  }
+}
+
+let _cropperRotation = 0;
+
+function rotateCropImage(degrees) {
+  if (!_cropperInstance) return;
+  _cropperInstance.rotate(degrees);
+  _cropperRotation += degrees;
+  if (_cropperRotation > 180) _cropperRotation -= 360;
+  if (_cropperRotation < -180) _cropperRotation += 360;
+  updateRotationDisplay();
+}
+
+function resetCropRotation() {
+  if (!_cropperInstance || _cropperRotation === 0) return;
+  _cropperInstance.rotate(-_cropperRotation);
+  _cropperRotation = 0;
+  updateRotationDisplay();
+}
+
+function updateRotationDisplay() {
+  const el = document.getElementById("cropper-rotation-value");
+  if (!el) return;
+  if (_cropperRotation === 0) {
+    el.textContent = "0°";
+    el.classList.remove("rotated");
+  } else {
+    const sign = _cropperRotation > 0 ? "+" : "";
+    el.textContent = `${sign}${_cropperRotation}°`;
+    el.classList.add("rotated");
+  }
+}
+
+function confirmCrop() {
+  if (!_cropperInstance || !_cropperTarget) {
+    cancelCrop();
+    return;
+  }
+  const canvas = _cropperInstance.getCroppedCanvas({
+    imageSmoothingEnabled: true,
+    imageSmoothingQuality: "high"
+  });
+  if (!canvas) {
+    cancelCrop();
+    return;
+  }
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+  const {type: type, index: index} = _cropperTarget;
+  if (type === "corner") {
+    const list = [ ...formData.cornerImages || [] ];
+    list[index] = dataUrl;
+    formData.cornerImages = list;
+  } else if (type === "interior") {
+    const list = [ ...formData.interiorImages || [] ];
+    list[index] = dataUrl;
+    formData.interiorImages = list;
+  } else if (type === "signature") {
+    const list = [ ...formData.signatureImages || [ null, null ] ];
+    while (list.length < 2) list.push(null);
+    list[index] = dataUrl;
+    formData.signatureImages = list;
+  } else if (type === "insert" || type === "coupon") {
+    const _k = type === "insert" ? "insertImages" : "couponImages";
+    const list = [ ...formData[_k] || [ null, null ] ];
+    while (list.length < 2) list.push(null);
+    list[index] = dataUrl;
+    formData[_k] = list;
+  } else if (type === "interiorCover") {
+    // BUGFIX: interiorCover crops were falling through to the `else` and
+    // OVERWRITING formData.images[index] (the Main front/back cover) with the
+    // cropped interior. Route them to the correct array.
+    const list = [ ...formData.interiorCoverImages || [] ];
+    while (list.length < 2) list.push(null);
+    list[index] = dataUrl;
+    formData.interiorCoverImages = list;
+  } else {
+    const list = [ ...formData.images || [] ];
+    list[index] = dataUrl;
+    formData.images = list;
+    if (index === 0 && _cropperOriginalSrc) {
+      if (formData._slabCheckedAtCapture) {
+        // Camera walkthrough already ran detection at front-capture time (to
+        // drive the interior/raking auto-skip). Don't re-fire. Clear the flag.
+        formData._slabCheckedAtCapture = false;
+      } else {
+        // Upload path (no walkthrough capture-time check): detect now on the
+        // uncropped source, record-only (no slots to prune for an upload).
+        const _origForDetect = _cropperOriginalSrc;
+        detectSlabFromDataUrl(_origForDetect).catch(e => console.warn("[slab] detect failed:", e));
+      }
+    }
+  }
+  formData._imagesChanged = true;
+  cancelCrop();
+  renderForm();
+}
+
+let _dragSrc = null;
+
+let _tappedSlot = 0;
+
+function dragStart(e, i) {
+  _dragSrc = i;
+  e.dataTransfer.effectAllowed = "move";
+}
+
+function dragOver(e) {
+  e.preventDefault();
+  e.currentTarget.classList.add("drag-over");
+}
+
+function dragLeave(e) {
+  e.currentTarget.classList.remove("drag-over");
+}
+
+function dropSlot(e, target) {
+  e.preventDefault();
+  e.currentTarget.classList.remove("drag-over");
+  if (_dragSrc === null || _dragSrc === target) {
+    _dragSrc = null;
+    return;
+  }
+  const imgs = [ ...formData.images || [] ];
+  while (imgs.length < 4) imgs.push(null);
+  const tmp = imgs[_dragSrc];
+  imgs[_dragSrc] = imgs[target] || null;
+  imgs[target] = tmp;
+  while (imgs.length && imgs[imgs.length - 1] === null) imgs.pop();
+  formData.images = imgs;
+  formData._imagesChanged = true;
+  _dragSrc = null;
+  renderForm();
+}
+
+async function detectSlabFromDataUrl(dataUrl) {
+  if (!dataUrl) return null;
+  if (!window._currentUser || typeof window._currentUser.getIdToken !== "function") return null;
+  try {
+    const small = await (async () => {
+      try {
+        const im = await new Promise((res, rej) => {
+          const i = new Image;
+          if (dataUrl.startsWith("http")) i.crossOrigin = "anonymous";
+          i.onload = () => res(i);
+          i.onerror = () => rej(new Error("img load failed"));
+          i.src = dataUrl;
+        });
+        const maxd = 800;
+        const scale = Math.min(1, maxd / Math.max(im.naturalWidth || im.width, im.naturalHeight || im.height));
+        const cw = Math.max(1, Math.round((im.naturalWidth || im.width) * scale));
+        const ch = Math.max(1, Math.round((im.naturalHeight || im.height) * scale));
+        const cv = document.createElement("canvas");
+        cv.width = cw;
+        cv.height = ch;
+        cv.getContext("2d").drawImage(im, 0, 0, cw, ch);
+        return cv.toDataURL("image/jpeg", 0.8);
+      } catch (e) {
+        return dataUrl.startsWith("data:") ? dataUrl : null;
+      }
+    })();
+    if (!small) {
+      console.warn("[slab] could not prepare image (CORS?)");
+      return null;
+    }
+    const token = await window._currentUser.getIdToken();
+    const _ac = new AbortController();
+    const _to = setTimeout(() => _ac.abort(), 8000);
+    let resp;
+    try {
+      resp = await fetch("/api/assess", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + token
+        },
+        body: JSON.stringify({
+          mode: "slabcheck",
+          images: [ small ]
+        }),
+        signal: _ac.signal
+      });
+    } finally {
+      clearTimeout(_to);
+    }
+    if (!resp.ok) {
+      console.warn("[slab] slabcheck HTTP", resp.status);
+      return null;
+    }
+    const r = await resp.json();
+    formData._slabDetect = r;
+    console.log("[slab] vision slabcheck:", JSON.stringify(r));
+    // Reflow: a detected raw card switches the add form to the 4 card slots
+    // (Full Front / Full Back / Top Front Macro / Bottom Front Macro). The photo
+    // that triggered detection is already in slot 0. Only re-render if the form
+    // is still on screen (photo-input is the form's file picker).
+    if (r && r.isCard && !formData._isCard) {
+      formData._isCard = true;
+      if (document.getElementById("photo-input")) { try { renderForm(); } catch (e) {} }
+    }
+    return r;
+  } catch (e) {
+    console.warn("[slab] slabcheck failed:", e?.message || e);
+    return null;
+  }
+}
+
+async function handleImages(e) {
+  // Cleaning Compare: never let the library picker touch the Before photos.
+  if (await _cleanHandleLibraryFiles(e, "main", _tappedSlot)) return;
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  const nonImage = files.find(f => !f.type.startsWith("image/"));
+  if (nonImage) {
+    alert(`"${nonImage.name}" doesn't look like an image file. Please pick photos only (JPG, PNG, HEIC, etc.).`);
+    e.target.value = "";
+    return;
+  }
+  const isExistingWithImages = !!(formData.id && formData._savedImages && formData._savedImages.length > 0);
+  const capStatus = checkImageCap(isExistingWithImages);
+  if (capStatus === "hard") {
+    const paid = userHasPaidCredits();
+    if (paid) {
+      alert(`You've reached the ${IMAGE_PAID_CAP}-book image limit. Please contact support if you need more storage.`);
+    } else {
+      showImageCapModal("hard");
+    }
+    e.target.value = "";
+    return;
+  }
+  if (capStatus === "soft") {
+    showImageCapModal("soft");
+  }
+  const newImgs = await Promise.all(files.map(f => new Promise(res => {
+    const r = new FileReader;
+    r.onload = ev => res(ev.target.result);
+    r.readAsDataURL(f);
+  })));
+  e.target.value = "";
+  if (newImgs.length > 1) {
+    // Multi-select: iOS returns the picked files sorted by NAME, not by the order
+    // tapped, and the web platform exposes no selection order — so we can't infer
+    // where each image belongs. Let the user place them (tap a photo, tap its slot).
+    _openAssignOverlay(newImgs);
+    return;
+  }
+  const imgs = [ ...formData.images || [] ];
+  while (imgs.length < 4) imgs.push(null);
+  imgs[_tappedSlot % 4] = newImgs[0];
+  _assignCommit(imgs);
+}
+
+// ── S21: multi-select placement overlay ──────────────────────────────────────
+// iOS can't tell us the order photos were tapped, so instead of guessing, the
+// user places each picked image into its slot. Pre-filled in picked order as a
+// starting guess (so a correctly-ordered pick is just "Done").
+let _assign = null;
+function _mainSlotLabels() {
+  const isCard = formData.type === "card" || !!formData._isCard || !!(formData._slabDetect && formData._slabDetect.isCard);
+  return isCard ? ["Front", "Back", "Top Front", "Bottom Front"] : ["Front Cover", "Back Cover", "Interior", "Spine"];
+}
+function _assignCommit(imgsArr) {
+  formData.images = imgsArr.filter(Boolean);
+  formData._imagesChanged = true;
+  renderForm();
+  const btn = document.getElementById("assess-btn");
+  if (btn) btn.disabled = formData.images.filter(Boolean).length === 0 || assessing;
+}
+function _openAssignOverlay(picked, cfg) {
+  cfg = cfg || {};
+  const slotN = cfg.slotN || 4;
+  const labels = cfg.labels || _mainSlotLabels();
+  const startSlot = (((cfg.startSlot != null ? cfg.startSlot : _tappedSlot) % slotN) + slotN) % slotN;
+  const slots = [ ...(cfg.current || formData.images || []) ]; while (slots.length < slotN) slots.push(null);
+  slots.length = slotN;                                          // positional array, exactly slotN long
+  const tray = [];
+  const n = Math.min(picked.length, slotN);
+  for (let k = 0; k < n; k++) { const sIdx = (startSlot + k) % slotN; slots[sIdx] = picked[k]; }   // starting guess
+  for (let k = slotN; k < picked.length; k++) tray.push(picked[k]);                                 // overflow beyond slots
+  _assign = { labels, slots, tray, active: null, slotN, commit: cfg.commit || _assignCommit, title: cfg.title || "Place your photos" };
+  let ov = document.getElementById("assign-overlay");
+  if (!ov) { ov = document.createElement("div"); ov.id = "assign-overlay"; document.body.appendChild(ov); }
+  ov.style.cssText = "position:fixed;inset:0;z-index:100001;background:radial-gradient(circle at 50% 0%, #16300f 0%, #0a1705 72%);display:flex;flex-direction:column;padding:max(env(safe-area-inset-top,16px),16px) 14px max(env(safe-area-inset-bottom,16px),16px);overflow:auto";
+  _renderAssign();
+}
+function _closeAssign() { const ov = document.getElementById("assign-overlay"); if (ov) ov.style.display = "none"; _assign = null; }
+function _renderAssign() {
+  const ov = document.getElementById("assign-overlay"); if (!ov || !_assign) return;
+  const A = _assign;
+  const slotCells = A.slots.map((src, i) => {
+    const _hl = A.active != null && !src;   // only EMPTY slots highlight while a photo is picked
+    const inner = src
+      ? `<img src="${src}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"><button onclick="event.stopPropagation();_assignClearSlot(${i})" aria-label="Remove" style="position:absolute;top:4px;right:4px;z-index:2;background:rgba(0,0,0,0.55);color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:14px;line-height:1;cursor:pointer">×</button>`
+      : `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:${_hl ? '#b8d820' : '#5a7040'};font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase">${_hl ? "TAP TO PLACE" : "EMPTY"}</div>`;
+    return `<div onclick="_assignTapSlot(${i})" style="position:relative;aspect-ratio:5/7;background:#12200a;border:2px solid ${_hl ? '#b8d820' : '#3a5818'};border-radius:10px;overflow:hidden;cursor:pointer;box-shadow:${_hl ? '0 0 0 3px rgba(184,216,32,0.18)' : '0 1px 4px rgba(0,0,0,0.4)'};transition:border-color .12s,box-shadow .12s">${inner}<div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(10,23,5,0.92));color:#d7e8c2;font-size:10px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;padding:10px 4px 4px;text-align:center;font-family:'Barlow Condensed',sans-serif">${A.labels[i]}</div></div>`;
+  }).join("");
+  const trayCells = A.tray.length
+    ? A.tray.map((src, i) => `<div onclick="_assignTapTray(${i})" style="position:relative;width:64px;height:88px;flex:0 0 auto;border:2px solid ${A.active === i ? '#b8d820' : '#3a5818'};border-radius:8px;overflow:hidden;cursor:pointer;${A.active === i ? 'box-shadow:0 0 0 3px rgba(184,216,32,0.28)' : 'box-shadow:0 1px 4px rgba(0,0,0,0.4)'}"><img src="${src}" style="width:100%;height:100%;object-fit:cover"></div>`).join("")
+    : '';
+  ov.innerHTML = `
+    <div style="max-width:384px;margin:0 auto;width:100%;display:flex;flex-direction:column;flex:1">
+      <div style="color:#eaf5df;font-size:23px;font-weight:700;font-family:'Barlow Condensed',sans-serif;letter-spacing:0.5px;margin-bottom:6px;text-align:center">${A.title || 'Place your photos'}</div>
+      <div style="color:#9abf60;font-size:12.5px;margin-bottom:16px;line-height:1.5;text-align:center">If any of these photos are in the wrong slot, tap the X to remove it, then tap the photo again down below and tap the slot it belongs in.</div>
+      <div style="display:grid;grid-template-columns:repeat(${A.slotN > 4 ? 3 : A.slotN},1fr);gap:6px;margin:0 auto 16px;width:100%">${slotCells}</div>
+      <div style="color:#7aa838;font-size:11px;text-transform:uppercase;letter-spacing:1.2px;font-weight:700;margin-bottom:8px">Photos${A.active != null ? ' — now tap a slot' : ''}</div>
+      <div style="display:flex;gap:8px;overflow-x:auto;padding:8px;min-height:104px;align-items:center;justify-content:${A.tray.length ? 'flex-start' : 'center'};border:1.5px dashed #3a5818;border-radius:10px;background:#0e1806">${A.tray.length ? trayCells : '<span style="color:#5a7040;font-size:11px;font-weight:700;letter-spacing:0.7px;text-transform:uppercase">No photos left to place</span>'}</div>
+      <div style="display:flex;gap:10px;margin-top:14px">
+        <button onclick="_assignCancel()" style="flex:1;padding:13px;border-radius:12px;background:transparent;color:#9abf60;border:1.5px solid #3a5818;font-size:14px;font-weight:800;letter-spacing:0.5px;cursor:pointer;font-family:system-ui,sans-serif">CANCEL</button>
+        <button onclick="_assignDone()" style="flex:2;padding:13px;border-radius:12px;background:#4e9e2e;color:#0d1f08;border:none;font-size:15px;font-weight:800;letter-spacing:1px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.4);font-family:system-ui,sans-serif">DONE</button>
+      </div>
+    </div>`;
+}
+function _assignTapTray(i) { if (!_assign) return; _assign.active = (_assign.active === i) ? null : i; _renderAssign(); }
+function _assignTapSlot(i) {
+  if (!_assign) return; const A = _assign;
+  if (A.active != null) {
+    const src = A.tray[A.active];
+    A.tray.splice(A.active, 1);
+    if (A.slots[i]) A.tray.push(A.slots[i]);   // displaced image returns to the tray
+    A.slots[i] = src; A.active = null;
+  } else if (A.slots[i]) {
+    A.tray.push(A.slots[i]); A.slots[i] = null; A.active = A.tray.length - 1;   // pick up for a slot->slot move
+  }
+  _renderAssign();
+}
+function _assignClearSlot(i) { if (!_assign) return; const A = _assign; if (A.slots[i]) { A.tray.push(A.slots[i]); A.slots[i] = null; } A.active = null; _renderAssign(); }
+function _assignCancel() { _closeAssign(); }
+function _assignDone() { if (!_assign) return; const slots = _assign.slots.slice(); const commit = _assign.commit || _assignCommit; _closeAssign(); commit(slots); }
+
+// Positional commit helpers for the generalized placement overlay (Deep / Full).
+function _assignCommitCorners(slotsArr) {
+  const imgs = slotsArr.slice(0, 4); while (imgs.length < 4) imgs.push(null);
+  formData.cornerImages = imgs; formData._imagesChanged = true; renderForm();
+}
+function _assignCommitDeep(slotsArr) {
+  const imgs = slotsArr.slice(0, 4); while (imgs.length < 4) imgs.push(null);
+  const cov = slotsArr.slice(4, 6); while (cov.length < 2) cov.push(null);
+  formData.cornerImages = imgs; formData.interiorCoverImages = cov; formData._imagesChanged = true; renderForm();
+}
+function _assignCommitInteriorCovers(slotsArr) {
+  const cov = slotsArr.slice(0, 2); while (cov.length < 2) cov.push(null);
+  formData.interiorCoverImages = cov; formData._imagesChanged = true; renderForm();
+}
+// v5.28: the overlay shows only the slots this book's binding asks for, so its
+// array is COMPACT (3 / 5 / 6) while storage stays a fixed 6 indexed by
+// FULL_SLOTS order. Scatter back through the index map; never write positionally,
+// or a 3-slot glue-bound book would drop its Outer Edge into the staple slot.
+function _assignCommitInterior(slotsArr) {
+  const imgs = [ ...(formData.interiorImages || []) ];
+  while (imgs.length < FULL_SLOT_COUNT) imgs.push(null);
+  imgs.length = FULL_SLOT_COUNT;
+  fullRequiredIdx(formData).forEach((storeIdx, k) => { imgs[storeIdx] = slotsArr[k] || null; });
+  formData.interiorImages = imgs; formData._imagesChanged = true; renderForm();
+}
+
+let _tappedCornerSlot = 0;
+
+let _cornerDragSrc = null;
+
+function cornerDragStart(e, i) {
+  _cornerDragSrc = i;
+  e.dataTransfer.effectAllowed = "move";
+}
+
+function cornerDropSlot(e, target) {
+  e.preventDefault();
+  e.currentTarget.classList.remove("drag-over");
+  if (_cornerDragSrc === null || _cornerDragSrc === target) {
+    _cornerDragSrc = null;
+    return;
+  }
+  const imgs = [ ...formData.cornerImages || [] ];
+  while (imgs.length < 4) imgs.push(null);
+  const tmp = imgs[_cornerDragSrc];
+  imgs[_cornerDragSrc] = imgs[target] || null;
+  imgs[target] = tmp;
+  formData.cornerImages = imgs;
+  formData._imagesChanged = true;
+  _cornerDragSrc = null;
+  renderForm();
+}
+
+function removeCornerImg(i) {
+  const imgs = [ ...formData.cornerImages || [] ];
+  while (imgs.length < 4) imgs.push(null);
+  imgs[i] = null;
+  formData.cornerImages = imgs;
+  formData._imagesChanged = true;
+  renderForm();
+}
+
+async function handleCornerImages(e) {
+  // Cleaning Compare: never let the library picker touch the Before photos.
+  if (await _cleanHandleLibraryFiles(e, "corner", _tappedCornerSlot)) return;
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  const nonImage = files.find(f => !f.type.startsWith("image/"));
+  if (nonImage) {
+    alert(`"${nonImage.name}" doesn't look like an image file. Please pick photos only (JPG, PNG, HEIC, etc.).`);
+    e.target.value = "";
+    return;
+  }
+  const newImgs = await Promise.all(files.map(f => new Promise(res => {
+    const r = new FileReader;
+    r.onload = ev => res(ev.target.result);
+    r.readAsDataURL(f);
+  })));
+  if (newImgs.length > 1) {
+    // Multi-select: user places each photo (order can't be inferred from the picker).
+    e.target.value = "";
+    if (!formData.labelDetected) {
+      const cur = [ ...(formData.cornerImages || []) ]; while (cur.length < 4) cur.push(null); cur.length = 4;
+      const cov = [ ...(formData.interiorCoverImages || []) ]; while (cov.length < 2) cov.push(null); cov.length = 2;
+      _openAssignOverlay(newImgs, { slotN: 6, labels: [ "Top Left", "Top Right", "Bottom Left", "Bottom Right", "Interior Front", "Interior Back" ], current: [ ...cur, ...cov ], startSlot: _tappedCornerSlot, commit: _assignCommitDeep, title: "Place your Deep photos" });
+    } else {
+      const cur = [ ...(formData.cornerImages || []) ]; while (cur.length < 4) cur.push(null); cur.length = 4;
+      _openAssignOverlay(newImgs, { slotN: 4, labels: [ "Top Left", "Top Right", "Bottom Left", "Bottom Right" ], current: cur, startSlot: _tappedCornerSlot, commit: _assignCommitCorners, title: "Place your corner macros" });
+    }
+    return;
+  }
+  const imgs = [ ...formData.cornerImages || [] ];
+  while (imgs.length < 4) imgs.push(null);
+  const count = Math.min(newImgs.length, 4);
+  for (let n = 0; n < count; n++) {
+    const slot = (_tappedCornerSlot + n) % 4;
+    imgs[slot] = newImgs[n];
+  }
+  formData.cornerImages = imgs;
+  // S20: if the user multi-selected more than 4 in Deep capture order (4 corner
+  // macros, then the 2 interior covers), overflow the extras into the interior-
+  // cover slots so all 6 can be added at once. Raw books only.
+  if (!formData.labelDetected && newImgs.length > 4) {
+    const covers = [ ...formData.interiorCoverImages || [] ];
+    while (covers.length < 2) covers.push(null);
+    for (let k = 0; k < Math.min(newImgs.length - 4, 2); k++) covers[k] = newImgs[4 + k];
+    formData.interiorCoverImages = covers;
+  }
+  formData._imagesChanged = true;
+  e.target.value = "";
+  renderForm();
+}
+
+// S20 (#36): Deep interior-cover capture (2 slots). File-input only — bypasses
+// the corner camera-walkthrough so it doesn't disturb that flow.
+let _tappedInteriorCoverSlot = 0;
+function removeInteriorCoverImg(i) {
+  const imgs = [ ...formData.interiorCoverImages || [] ];
+  while (imgs.length < 2) imgs.push(null);
+  imgs[i] = null;
+  formData.interiorCoverImages = imgs;
+  formData._imagesChanged = true;
+  renderForm();
+}
+async function handleInteriorCoverImages(e) {
+  // Cleaning Compare: never let the library picker touch the Before photos.
+  if (await _cleanHandleLibraryFiles(e, "interiorCover", _tappedInteriorCoverSlot)) return;
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  const nonImage = files.find(f => !f.type.startsWith("image/"));
+  if (nonImage) {
+    alert(`"${nonImage.name}" doesn't look like an image file. Please pick photos only (JPG, PNG, HEIC, etc.).`);
+    e.target.value = "";
+    return;
+  }
+  const newImgs = await Promise.all(files.map(f => new Promise(res => {
+    const r = new FileReader;
+    r.onload = ev => res(ev.target.result);
+    r.readAsDataURL(f);
+  })));
+  if (newImgs.length > 1) {
+    e.target.value = "";
+    const cur = [ ...(formData.interiorCoverImages || []) ]; while (cur.length < 2) cur.push(null); cur.length = 2;
+    _openAssignOverlay(newImgs, { slotN: 2, labels: [ "Interior Front", "Interior Back" ], current: cur, startSlot: _tappedInteriorCoverSlot, commit: _assignCommitInteriorCovers, title: "Place your interior covers" });
+    return;
+  }
+  const imgs = [ ...formData.interiorCoverImages || [] ];
+  while (imgs.length < 2) imgs.push(null);
+  const count = Math.min(newImgs.length, 2);
+  for (let n = 0; n < count; n++) {
+    const slot = (_tappedInteriorCoverSlot + n) % 2;
+    imgs[slot] = newImgs[n];
+  }
+  formData.interiorCoverImages = imgs;
+  formData._imagesChanged = true;
+  e.target.value = "";
+  renderForm();
+}
+
+// ── User-submitted uncaught-defect photos ───────────────────────────────────
+// Informational only: NOT graded, NOT annotated. Edit-only blank slot; once a
+// slot is filled the image shows in all views (Detail/Public/Admin). Max 2.
+// Persist through re-assessment (userDefectImages is a saved field, never
+// cleared by an assess run). Uses a plain library/camera picker (no guided
+// camera / cropper) since these are voluntary reference photos.
+let _tappedUserDefectSlot = 0;
+function renderUserDefectSlots() {
+  // Only offered on a Robograder-assessed book (a "defect Robograder missed"
+  // has no meaning before an assessment or on a manual entry).
+  if (!formData.roboGrade) return "";
+  const list = (formData.userDefectImages || []).filter(Boolean).slice(0, 2);
+  const label = "Add a defect photo Robograder missed";
+  let slots = "";
+  list.forEach((url, i) => {
+    slots += `<div class="drag-slot" style="aspect-ratio:3/1" onclick="pickUserDefect(${i})"><img src="${url}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"><button class="slot-x" onclick="event.stopPropagation();removeUserDefectImg(${i})">×</button></div>`;
+  });
+  if (list.length < 2) {
+    const blankIdx = list.length;
+    // TODO(Matt): swap this placeholder for the user-defect ghost asset when
+    // ready, e.g. an <img src="assets/ghosts/User_Defect.jpg"> fill like the
+    // interior-cover blank slots use.
+    slots += `<div class="drag-slot" style="aspect-ratio:3/1;background:#161410;border:1px dashed #6a5a3a" onclick="pickUserDefect(${blankIdx})"><div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;pointer-events:none;color:#b8a06a"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg><span style="font-size:11px;font-weight:700;letter-spacing:0.4px;text-align:center;padding:0 12px">${label}</span></div></div>`;
+  }
+  return `\n        <div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin:16px 0 8px">DEFECTS ROBOGRADER MISSED</div><div style="font-size:11px;color:#4a5a44;margin-bottom:10px;line-height:1.5">Optional. Add a photo of a defect Robograder didn't capture. This will not change the grade, but it will represent the condition more accurately and help to improve Robograder.</div><div style="display:grid;grid-template-columns:1fr;gap:6px">${slots}</div>`;
+}
+function pickUserDefect(slotIndex) {
+  _tappedUserDefectSlot = slotIndex;
+  const el = document.getElementById("userdefect-photo-input");
+  if (el) el.click();
+}
+async function handleUserDefectImages(e) {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  const f = files[0];
+  if (!f.type.startsWith("image/")) {
+    alert(`"${f.name}" doesn't look like an image file. Please pick a photo (JPG, PNG, HEIC, etc.).`);
+    e.target.value = "";
+    return;
+  }
+  const dataUrl = await new Promise(res => {
+    const r = new FileReader;
+    r.onload = ev => res(ev.target.result);
+    r.readAsDataURL(f);
+  });
+  const imgs = (formData.userDefectImages || []).filter(Boolean).slice(0, 2);
+  const idx = Math.min(_tappedUserDefectSlot, imgs.length, 1);
+  imgs[idx] = dataUrl;
+  formData.userDefectImages = imgs.filter(Boolean).slice(0, 2);
+  formData._imagesChanged = true;
+  e.target.value = "";
+  renderForm();
+}
+function removeUserDefectImg(i) {
+  const imgs = (formData.userDefectImages || []).filter(Boolean);
+  imgs.splice(i, 1);
+  formData.userDefectImages = imgs;
+  formData._imagesChanged = true;
+  renderForm();
+}
+
+let _interiorDragSrc = null;
+
+function interiorDragStart(e, i) {
+  _interiorDragSrc = i;
+  e.dataTransfer.effectAllowed = "move";
+}
+
+function interiorDropSlot(e, target) {
+  e.preventDefault();
+  e.currentTarget.classList.remove("drag-over");
+  if (_interiorDragSrc === null || _interiorDragSrc === target) {
+    _interiorDragSrc = null;
+    return;
+  }
+  const entry = isFullAssessmentEligible(formData);
+  if (!entry) {
+    _interiorDragSrc = null;
+    return;
+  }
+  const imgs = [ ...formData.interiorImages || [] ];
+  while (imgs.length < entry.slots) imgs.push(null);
+  const tmp = imgs[_interiorDragSrc];
+  imgs[_interiorDragSrc] = imgs[target] || null;
+  imgs[target] = tmp;
+  formData.interiorImages = imgs;
+  formData._imagesChanged = true;
+  _interiorDragSrc = null;
+  renderForm();
+}
+
+function removeInteriorImg(i) {
+  const entry = isFullAssessmentEligible(formData);
+  if (!entry) return;
+  const imgs = [ ...formData.interiorImages || [] ];
+  while (imgs.length < entry.slots) imgs.push(null);
+  imgs[i] = null;
+  formData.interiorImages = imgs;
+  formData._imagesChanged = true;
+  renderForm();
+}
+
+let _tappedInteriorSlot = 0;
+
+async function handleInteriorImages(e) {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  // S20 FIX (D): use FULL_SLOT_COUNT directly. This previously re-gated on
+  // isFullAssessmentEligible() and bailed if it returned null — but the stricter
+  // S20 gate (Deep-complete AND FMV tier 7) can read false mid-edit, which
+  // silently dropped every selected photo (slots stayed empty). If the Full
+  // section is on screen, just fill the slots.
+  const _slotN = fullRequiredCount(formData);   // v5.28: binding decides how many
+  const nonImage = files.find(f => !f.type.startsWith("image/"));
+  if (nonImage) {
+    alert(`"${nonImage.name}" doesn't look like an image file. Please pick photos only (JPG, PNG, HEIC, etc.).`);
+    e.target.value = "";
+    return;
+  }
+  const newImgs = await Promise.all(files.map(f => new Promise(res => {
+    const r = new FileReader;
+    r.onload = ev => res(ev.target.result);
+    r.readAsDataURL(f);
+  })));
+  if (newImgs.length > 1) {
+    e.target.value = "";
+    // Compact the stored 6 down to just the required slots, in required order.
+    const _allCur = formData.interiorImages || [];
+    const _reqI = fullRequiredIdx(formData);
+    const cur = _reqI.map(i => _allCur[i] || null);
+    // _tappedInteriorSlot is a STORAGE index; translate it to this overlay's.
+    const _start = Math.max(0, _reqI.indexOf(_tappedInteriorSlot));
+    _openAssignOverlay(newImgs, { slotN: _slotN, labels: fullSlotsFor(formData).map(s => s.label), current: cur, startSlot: _start, commit: _assignCommitInterior, title: "Place your Full photos" });
+    return;
+  }
+  // v5.80 BUGFIX — THE WBN 32 CASE. This loop used to compute
+  //     const slot = (_tappedInteriorSlot + n) % _slotN;
+  // which mixes two different numbering systems. _tappedInteriorSlot is a
+  // STORAGE index into the fixed 6-long interiorImages array (FULL_SLOTS order:
+  // 0 exterior_top_staple, 1 exterior_bottom_staple, 2 top_pages, 3 bottom_pages,
+  // 4 outer_edge, 5 interior_staple). _slotN is how many slots THIS BINDING asks
+  // for, which is 3 on a glue-bound book and 5 on a square-bound one. Taking a
+  // storage index modulo the required COUNT produces a number that means nothing.
+  //
+  // On a 3-slot book it is actively destructive. Tapping Outer Edge (storage 4)
+  // gives 4 % 3 = 1, writing the photo into exterior_bottom_staple — a slot that
+  // binding dropped, so it is not rendered and the user never sees it land.
+  // Tapping Bottom Pages (storage 3) gives 3 % 3 = 0, the other dropped staple
+  // slot. Only Top Pages (2 % 3 = 2) happened to be correct. submitFullAssessment
+  // then reads the REQUIRED indices [2,4,3], finds them empty, and the photos the
+  // user actually took are silently discarded — which is how a Full ran on three
+  // staple close-ups sitting in the page/edge slots.
+  //
+  // The multi-image path never had this bug: _assignCommitInterior maps overlay
+  // position -> storage index through fullRequiredIdx(). This now does the same.
+  // Walk REQUIRED POSITIONS, not raw storage indices, and translate at the end.
+  const _reqI = fullRequiredIdx(formData);
+  const imgs = [ ...formData.interiorImages || [] ];
+  while (imgs.length < FULL_SLOT_COUNT) imgs.push(null);
+  imgs.length = FULL_SLOT_COUNT;
+  // Where the tapped slot sits among the REQUIRED ones. -1 (a slot this binding
+  // does not use) falls back to the first required position.
+  const _startPos = Math.max(0, _reqI.indexOf(_tappedInteriorSlot));
+  const count = Math.min(newImgs.length, _reqI.length);
+  for (let n = 0; n < count; n++) {
+    let pos = (_startPos + n) % _reqI.length;
+    let probed = 0;
+    while (imgs[_reqI[pos]] && probed < _reqI.length) { pos = (pos + 1) % _reqI.length; probed++; }
+    if (probed >= _reqI.length) break;   // every required slot is full
+    imgs[_reqI[pos]] = newImgs[n];
+  }
+  formData.interiorImages = imgs;
+  formData._imagesChanged = true;
+  e.target.value = "";
+  renderForm();
+}
+
+let _tappedSignatureSlot = 0;
+
+function removeSignatureImg(i) {
+  const imgs = [ ...formData.signatureImages || [ null, null ] ];
+  while (imgs.length < 2) imgs.push(null);
+  imgs[i] = null;
+  formData.signatureImages = imgs;
+  formData._imagesChanged = true;
+  renderForm();
+}
+
+// S21: Insert / Coupon optional photo slots. These attach to a normal grade for
+// books on the Mark Jewelers insert index or the coupon/stamp/pin-up index. They
+// use the file picker (camera-or-library) rather than the guided in-app camera.
+let _tappedInsertSlot = 0;
+let _tappedCouponSlot = 0;
+function tapInsertSlot(i) { tapSlot(i, "insert"); }
+function tapCouponSlot(i) { tapSlot(i, "coupon"); }
+
+async function _handleExtraImages(e, key, tappedIdx) {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  const nonImage = files.find(f => !f.type.startsWith("image/"));
+  if (nonImage) {
+    alert(`"${nonImage.name}" doesn't look like an image file. Please pick photos only (JPG, PNG, HEIC, etc.).`);
+    e.target.value = "";
+    return;
+  }
+  const newImg = await new Promise(res => { const r = new FileReader; r.onload = ev => res(ev.target.result); r.readAsDataURL(files[0]); });
+  const imgs = [ ...formData[key] || [ null, null ] ];
+  while (imgs.length < 2) imgs.push(null);
+  imgs[tappedIdx % 2] = newImg;
+  formData[key] = imgs;
+  const mk = key === "insertImages" ? "insertMeta" : "couponMeta";
+  const meta = [ ...formData[mk] || [] ];
+  while (meta.length < 2) meta.push(null);
+  meta[tappedIdx % 2] = { source: "upload", capturedAt: (new Date).toISOString() };
+  formData[mk] = meta;
+  formData._imagesChanged = true;
+  e.target.value = "";
+  renderForm();
+}
+function handleInsertImages(e) { return _handleExtraImages(e, "insertImages", _tappedInsertSlot); }
+function handleCouponImages(e) { return _handleExtraImages(e, "couponImages", _tappedCouponSlot); }
+function removeInsertImg(i) { const a = [ ...formData.insertImages || [ null, null ] ]; while (a.length < 2) a.push(null); a[i] = null; formData.insertImages = a; const m = [ ...formData.insertMeta || [] ]; if (m.length > i) m[i] = null; formData.insertMeta = m; formData._imagesChanged = true; renderForm(); }
+function removeCouponImg(i) { const a = [ ...formData.couponImages || [ null, null ] ]; while (a.length < 2) a.push(null); a[i] = null; formData.couponImages = a; const m = [ ...formData.couponMeta || [] ]; if (m.length > i) m[i] = null; formData.couponMeta = m; formData._imagesChanged = true; renderForm(); }
+
+// Shared renderer for the two-slot Insert/Coupon sections. cfg = { title, blurb,
+// accent, inputId, tapFn, removeFn, onchange, defs, imgs }.
+function _renderExtraPhotoSection(cfg) {
+  const defs = cfg.defs || [];
+  const imgs = cfg.imgs || [ null, null ];
+  const slots = [ 0, 1 ].map(i => {
+    const img = imgs[i];
+    const d = defs[i] || { label: "Photo " + (i + 1), hint: "" };
+    if (img) {
+      return `<div class="drag-slot" style="height:auto;position:relative;overflow:visible" onclick="${cfg.tapFn}(${i})"><img src="${img}" style="display:block;width:100%;height:auto;border-radius:inherit"><button class="slot-x" onclick="event.stopPropagation();${cfg.removeFn}(${i})">×</button></div>`;
+    }
+    return `<div class="drag-slot" style="padding:0;background:#1a1a1a;aspect-ratio:3/4;position:relative;overflow:hidden" onclick="${cfg.tapFn}(${i})"><div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:${cfg.accent};font-size:11px;font-weight:600;text-align:center;padding:10px"><div style="font-size:20px;margin-bottom:6px">＋</div><div style="font-weight:800;margin-bottom:4px">${esc(d.label)}</div><div style="font-size:10px;opacity:0.9;line-height:1.35;font-weight:500">${esc(d.hint)}</div></div></div>`;
+  }).join("");
+  const bothFilled = !!(imgs[0] && imgs[1]);
+  let footer = "";
+  const f = cfg.finding;
+  if (f) {
+    const col = f.present === false ? "#d46a4a" : (f.sameBook === false ? "#d4a642" : "#3a9a5a");
+    const head = f.present === false ? "NOT PRESENT / REMOVED" : (f.sameBook === false ? "PRESENT — BOOK UNCONFIRMED" : "PRESENT & CONFIRMED");
+    footer += `<div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:#141210;border:1px solid ${col}"><div style="font-size:11px;font-weight:800;letter-spacing:1px;color:${col};margin-bottom:4px">${esc(cfg.foundLabel || "RESULT")}: ${head}</div><div style="font-size:12px;color:#cfc3a8;line-height:1.4">${esc(f.note || "")}</div></div>`;
+  }
+  if (bothFilled && cfg.runFn) {
+    const busy = !!window._extraAssessing;
+    footer += `<div style="display:flex;justify-content:center;margin-top:10px"><button class="rg-btn rg-btn-assess rg-btn-bronze${busy ? " assessing" : ""}" style="min-height:44px" ${busy ? "disabled" : ""} onclick="${cfg.runFn}()">${busy ? "CHECKING…" : (f ? ("RE-RUN " + cfg.runLabel) : (cfg.runLabel + " — FREE"))}</button></div>`;
+  }
+  return `<div${cfg.anchor ? ` id="${cfg.anchor}"` : ""} style="margin-top:14px;padding-top:14px;border-top:1px dashed ${cfg.accent}"><div style="font-size:11px;color:${cfg.accent};font-weight:700;letter-spacing:2px;margin-bottom:4px">${cfg.title}</div><div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">${cfg.blurb}</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start">${slots}</div>${footer}<input id="${cfg.inputId}" type="file" accept="image/*" onchange="${cfg.onchange}" style="display:none"></div>`;
+}
+
+let _extraAssessing = false;
+async function runInsertAssessment() { return _runExtraAssessment("insert"); }
+async function runCouponAssessment() { return _runExtraAssessment("coupon"); }
+// S21: insert/coupon findings are appended as a comment at the END of the
+// Condition Assessment. Idempotent: a prior line with the same marker is
+// replaced so re-running does not stack duplicates.
+function _upsertConditionNote(marker, line) {
+  let txt = formData.aiAssessment || "";
+  const esc = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  txt = txt.replace(new RegExp("\\n*" + esc + "[^\\n]*", "g"), "").replace(/\s+$/, "");
+  formData.aiAssessment = (txt ? txt + "\n\n" : "") + line;
+}
+
+async function _runExtraAssessment(kind) {
+  if (window._extraAssessing) return;
+  const imgKey = kind === "insert" ? "insertImages" : "couponImages";
+  const imgs = (formData[imgKey] || []).filter(Boolean);
+  if (imgs.length < 2) { alert("Both photos are required to run this check."); return; }
+  const entry = kind === "insert"
+    ? (typeof window.matchInsert === "function" ? window.matchInsert(formData.title, formData.issue) : null)
+    : (typeof window.matchCoupon === "function" ? window.matchCoupon(formData.title, formData.issue) : null);
+  window._extraAssessing = true;
+  renderForm();
+  try {
+    const prep = async u => {
+      if (typeof u === "string" && u.startsWith("http")) {
+        const r = await fetch(u); const b = await r.blob();
+        return await new Promise(res => { const fr = new FileReader; fr.onload = ev => res(ev.target.result); fr.readAsDataURL(b); });
+      }
+      return u;
+    };
+    const prepared = [];
+    for (const im of imgs.slice(0, 2)) prepared.push(await prep(im));
+    const compressed = await compressImagesSequentially(prepared);
+    let front = (formData.images || [])[0] || null;
+    let compFront = null;
+    if (front) { front = await prep(front); compFront = (await compressImagesSequentially([front]))[0] || null; }
+    const token = window._currentUser ? await window._currentUser.getIdToken() : null;
+    const resp = await fetch("/api/assess_" + kind, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-client-secret": "022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d", ...(token ? { Authorization: "Bearer " + token } : {}) },
+      body: JSON.stringify({ images: compressed, frontCover: compFront, title: formData.title || "", issueNumber: formData.issue || "", entry: entry || null })
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    const dataR = await resp.json();
+    if (dataR.error) throw new Error(dataR.error);
+    if (kind === "insert") {
+      formData.insertFinding = dataR;
+      const bookNote = dataR.sameBook === false ? " (image 2 did not confirm the same book)" : "";
+      _upsertConditionNote("Mark Jewelers insert:", "Mark Jewelers insert: " + (dataR.present ? "present in the centerfold" : "not present") + bookNote + (dataR.note ? " — " + dataR.note : ""));
+    } else {
+      formData.couponFinding = dataR;
+      const piece = dataR.piece || "coupon / pin-up";
+      const bookNote = dataR.sameBook === false ? " (image 2 did not confirm the same book)" : "";
+      _upsertConditionNote("Coupon/pin-up check:", "Coupon/pin-up check: " + piece + " " + (dataR.present ? "present/intact" : "appears cut out or removed") + bookNote + (dataR.note ? " — " + dataR.note : ""));
+      // S21: a removed coupon/stamp/pin-up drops the Interior sub-score severely
+      // and flags the book CGC "Qualified" (green predicted badge). Restored if a
+      // later re-run finds it present.
+      const rg = formData.roboGrade;
+      if (dataR.present === false) {
+        if (rg && typeof rg.interiorScore === "number") {
+          if (rg._interiorPreCoupon == null) rg._interiorPreCoupon = rg.interiorScore;
+          rg.interiorScore = Math.min(rg.interiorScore, 10);
+        }
+        formData.couponQualified = true;
+      } else {
+        if (rg && rg._interiorPreCoupon != null) { rg.interiorScore = rg._interiorPreCoupon; delete rg._interiorPreCoupon; }
+        formData.couponQualified = false;
+      }
+    }
+  } catch (e) {
+    alert("Assessment failed: " + (e && e.message ? e.message : e));
+  } finally {
+    window._extraAssessing = false;
+    renderForm();
+  }
+}
+
+async function handleSignatureImages(e) {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  const nonImage = files.find(f => !f.type.startsWith("image/"));
+  if (nonImage) {
+    alert(`"${nonImage.name}" doesn't look like an image file. Please pick photos only (JPG, PNG, HEIC, etc.).`);
+    e.target.value = "";
+    return;
+  }
+  const newImgs = await Promise.all(files.map(f => new Promise(res => {
+    const r = new FileReader;
+    r.onload = ev => res(ev.target.result);
+    r.readAsDataURL(f);
+  })));
+  const imgs = [ ...formData.signatureImages || [ null, null ] ];
+  while (imgs.length < 2) imgs.push(null);
+  const count = Math.min(newImgs.length, 2);
+  for (let n = 0; n < count; n++) {
+    const slot = (_tappedSignatureSlot + n) % 2;
+    imgs[slot] = newImgs[n];
+  }
+  formData.signatureImages = imgs;
+  formData._imagesChanged = true;
+  e.target.value = "";
+  renderForm();
+}
+
+let _tappedRestorationSlot = 0;
+
+function _ensureRestorationArray() {
+  const fullImgs = formData.interiorImages || [];
+  const r = [ ...formData.restorationImages || [] ];
+  while (r.length < RESTORATION_SLOT_COUNT) r.push(null);
+  // S16: Auto-populate shared slots from Full Assessment images
+  RESTORATION_TO_FULL.forEach((fullIdx, rIdx) => {
+    if (fullIdx !== null && !r[rIdx] && fullImgs[fullIdx]) {
+      r[rIdx] = fullImgs[fullIdx];
+    }
+  });
+  formData.restorationImages = r;
+  return r;
+}
+
+function removeRestorationImg(i) {
+  const r = _ensureRestorationArray();
+  r[i] = null;
+  formData.restorationImages = r;
+  formData._imagesChanged = true;
+  renderForm();
+}
+
+function tapRestorationSlot(i) {
+  _ensureRestorationArray();
+  // S16: UV Front (slot 0) and UV Back (slot 1) show the UV card first
+  if ((i === 0 || i === 1) && !formData.restorationImages[i]) {
+    showUvFrontCard();
+    return;
+  }
+  if (!window._cameraSupported) {
+    _tappedRestorationSlot = i;
+    document.getElementById("restoration-photo-input").click();
+    return;
+  }
+  const list = formData.restorationImages || [];
+  const captureOrder = [ 0, 1, 2, 3, 4, 5, 6, 7 ];
+  const emptySlotsInOrder = captureOrder.filter(idx => !list[idx]);
+  const isMultiEmpty = emptySlotsInOrder.length > 1;
+  if (isMultiEmpty) {
+    const startIdx = emptySlotsInOrder.indexOf(i);
+    const queue = startIdx >= 0 ? [ ...emptySlotsInOrder.slice(startIdx + 1) ] : [ ...emptySlotsInOrder ];
+    cameraOpen({
+      mode: "walkthrough",
+      kind: "restoration",
+      queue: queue,
+      current: i,
+      captures: []
+    });
+  } else {
+    cameraOpen({
+      mode: "single",
+      kind: "restoration",
+      queue: [],
+      current: i,
+      captures: []
+    });
+  }
+}
+
+function showUvFrontCard() {
+  let card = document.getElementById("uv-front-card");
+  if (!card) {
+    card = document.createElement("div");
+    card.id = "uv-front-card";
+    card.style.cssText = "position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.78);display:flex;align-items:center;justify-content:center;padding:24px";
+    card.innerHTML = `\n      <div style="background:#1a1226;border:1px solid #7a4ba8;border-radius:16px;max-width:340px;width:100%;padding:26px 22px;text-align:center">\n        <svg viewBox="0 0 64 64" width="64" height="64" style="margin:0 auto 14px;display:block" fill="none" stroke="#b06bff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">\n          <rect x="24" y="6" width="16" height="14" rx="2"/>\n          <path d="M22 20 H42 L38 30 H26 Z"/>\n          <rect x="27" y="30" width="10" height="26" rx="2"/>\n          <path d="M32 2 V-2 M44 8 L48 4 M20 8 L16 4" stroke="#b06bff" stroke-width="2.5"/>\n        </svg>\n        <div style="color:#e8d8ff;font-size:15px;font-weight:700;letter-spacing:0.5px;margin-bottom:8px">UV Photos</div>\n        <div style="color:#b8a8cc;font-size:12px;line-height:1.5;margin-bottom:20px">The next two photos must be the front and back covers under a UV (blacklight) flashlight, in a dark room. UV light is the only way to see color touch — ink added to cover a defect. The UV Check needs both.</div>\n        <button onclick="uvCardProceed()" style="width:100%;min-height:48px;border-radius:10px;background:#7a4ba8;color:#fff;border:none;font-size:14px;font-weight:700;letter-spacing:1px;cursor:pointer;margin-bottom:10px">Okay</button>\n        <button onclick="uvCardCancel()" style="width:100%;min-height:44px;border-radius:10px;background:transparent;color:#a890c0;border:1px solid #5a3a7a;font-size:13px;font-weight:600;cursor:pointer">I don't have a UV light</button>\n      </div>`;
+    document.body.appendChild(card);
+  }
+  card.style.display = "flex";
+}
+
+function uvCardCancel() {
+  const card = document.getElementById("uv-front-card");
+  if (card) card.style.display = "none";
+}
+
+function uvCardProceed() {
+  const card = document.getElementById("uv-front-card");
+  if (card) card.style.display = "none";
+  if (window._cameraSupported) {
+    // S22: UV walkthrough is two shots — UV Front then UV Back.
+    const list = formData.restorationImages || [];
+    const captureOrder = [ 0, 1 ];
+    const emptySlotsInOrder = captureOrder.filter(idx => !list[idx]);
+    const queue = emptySlotsInOrder.length > 1 ? [ ...emptySlotsInOrder.slice(1) ] : [];
+    cameraOpen({
+      mode: queue.length > 0 ? "walkthrough" : "single",
+      kind: "restoration",
+      queue: queue,
+      current: 0,
+      captures: []
+    });
+  } else {
+    document.getElementById("restoration-photo-input").click();
+  }
+}
+
+async function handleRestorationImages(e) {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  const nonImage = files.find(f => !f.type.startsWith("image/"));
+  if (nonImage) {
+    alert(`"${nonImage.name}" doesn't look like an image file.`);
+    e.target.value = "";
+    return;
+  }
+  const dataUrl = await new Promise(res => {
+    const r = new FileReader;
+    r.onload = ev => res(ev.target.result);
+    r.readAsDataURL(files[0]);
+  });
+  const r = _ensureRestorationArray();
+  r[_tappedRestorationSlot] = dataUrl;
+  formData.restorationImages = r;
+  formData._imagesChanged = true;
+  e.target.value = "";
+  renderForm();
+}
+
+async function submitRestorationCheck() {
+  if (assessing) return;
+  // S22: only the two UV slots matter. Legacy books still carry an 8-long
+  // restorationImages array from the old Restoration Check — slice so those
+  // stale entries neither count toward the gate nor get sent to the model.
+  const r = _ensureRestorationArray().slice(0, RESTORATION_SLOT_COUNT);
+  const filled = r.filter(Boolean);
+  if (filled.length !== RESTORATION_SLOT_COUNT) {
+    alert("Please add both UV photos first — front cover and back cover, under a blacklight in a dark room.");
+    return;
+  }
+  // Allowance guard. The UI already hides the button at zero, so reaching this
+  // means a stale render or a hand-rolled call — either way, stop here.
+  if (uvChecksLeft(formData) <= 0) {
+    alert(`You have used all ${UV_CHECK_LIMIT} free UV Checks on this book. If it has been worked on since, run a new assessment and you will get ${UV_CHECK_LIMIT} more.`);
+    return;
+  }
+  // NO CREDIT GATE AND NO decrementCredit() BELOW. S22: the UV Check is free.
+  // It is a 2-image, short-prompt call, and it is the only way a user can get
+  // color touch looked at — charging for it discouraged exactly the check we
+  // most want run. Main/Deep/Full flag restoration on their own, also free.
+  assessing = true;
+  renderForm();
+  let restoScanController = null;
+  try {
+    // S17: warm the Restoration overlay artwork now so it doesn't pop on slide-in.
+    if (typeof TIER_OVERLAY_BG !== "undefined") { const _pi = new Image(); _pi.src = TIER_OVERLAY_BG.restoration; }
+    // S16: Start scan animation for restoration images
+    if (window.RobograderScan && window.RobograderScan.runScanAnimation) {
+      restoScanController = window.RobograderScan.runScanAnimation(r, "restoration");
+    }
+    const compressed = await compressImagesSequentially(r, {
+      maxDim: 1000,
+      quality: 0.6
+    }).catch(e => {
+      throw new Error("Image compression failed: " + e.message);
+    });
+    // r is already sliced to the 2 UV slots above; compressed is 2 long.
+    const token = window._currentUser ? await window._currentUser.getIdToken() : null;
+    const apiPromise = fetch("/api/assess_deep", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...token ? {
+          Authorization: "Bearer " + token
+        } : {}
+      },
+      body: JSON.stringify({
+        mode: "restoration",
+        // S22: lets the server check the allowance against the stored item
+        // rather than trusting the client's count (see assess_deep.js).
+        itemId: formData.id || "",
+        uvCheckRuns: uvChecksUsed(formData),
+        restorationImages: compressed,
+        initialAssessment: formData.roboGrade || {
+          title: formData.title,
+          issue: formData.issue
+        },
+        title: formData.title || "",
+        issueNumber: formData.issue || ""
+      })
+    });
+    // Wait for scan animation (with safety timeout)
+    if (restoScanController && restoScanController.promise) {
+      try {
+        await Promise.race([restoScanController.promise, new Promise(r => setTimeout(r, 25000))]);
+      } catch (_e) {}
+    }
+    // S17: do NOT dismiss the scan stage — the tracker overlay slides into the
+    // live chest (same as Main/Full). Dismiss happens at COMPLETE.
+    // FIVE steps, not three. Progress_Overlay_Restoration.webp has five fixed
+    // cut-out rows; mounting three leaves two empty holes in the artwork. These
+    // five are real stages of a UV read, not padding — verify the light, read
+    // each cover, compare, judge. If the overlay is ever redrawn with three
+    // rows, drop "resto-compare" and "resto-back"/"resto-front" can merge.
+    const _restoSteps = [
+      { id: "resto-uvlight", label: "UV LIGHT CHECK" },
+      { id: "resto-front", label: "FRONT COVER SCAN" },
+      { id: "resto-back", label: "BACK COVER SCAN" },
+      { id: "resto-compare", label: "INK COMPARISON" },
+      { id: "resto-judge", label: "COLOR TOUCH JUDGMENT" }
+    ];
+    const _restoTracker = mountTierTracker("restoration", _restoSteps, { noAutoLight: true });
+    // The restoration scan placeholder already shows the empty conclusion box +
+    // ASSESSING button (buildResultsPlaceholder('restoration')) during the scan,
+    // so no RG/GRADE score boxes appear. Completion fills it in below.
+    const resp = await apiPromise;
+    if (!resp.ok) {
+      const t = await resp.text();
+      throw new Error(describeAssessmentError(t) || "UV Check failed: " + t.slice(0, 200));
+    }
+    const result = await resp.json();
+    if (result.uvCheckFailed === true || result.uvLightPresent === false) {
+      alert("These photos do not appear to have been taken under UV light, so color touch could not be evaluated. Retake the front and back covers under a UV (blacklight) flashlight in a dark room, with the room lights off, and run the UV Check again. No credit was used.");
+    }
+    if (result.restorationCheckRan === true) {
+      if (_restoTracker && _restoTracker.clearTimers) _restoTracker.clearTimers();
+      formData.restorationCheckTier = true;
+      formData.restorationCheckRan = true;
+      stickTierUnlocks(formData);
+      formData.restorationReport = result.restorationReport || "";
+      formData.restorationFlag = result.indicatorsObserved === true;
+      // S16: high-confidence restoration → purple score box
+      formData.restorationHighConfidence = result.highConfidence === true;
+      // Spend one of the three. Persisted by the save that COMPLETE triggers.
+      formData.uvCheckRuns = uvChecksUsed(formData) + 1;
+      formData._imagesChanged = true;
+      // S22: deliberately NOT calling onAssessmentSuccess() — that decrements a
+      // credit. The UV Check is free.
+      const _restoFound = formData.restorationFlag;
+      // S17: light the 5 overlay boxes ONE SECOND APART, each in its final colour
+      // — green (clear) or red (restoration found) per finding-group. The grid +
+      // needle keep animating UNTIL the determination shows, then stop.
+      const _findings = Array.isArray(result.findings) ? result.findings : [];
+      const _foundIn = (areas) => _findings.some(f => areas.includes(f.area) && f.indicatorPresent === true);
+      // null areas = judged on the overall result. "resto-uvlight" is the one
+      // box that fails on a BAD PHOTO rather than on a finding.
+      const _uvBad = (result.uvCheckFailed === true || result.uvLightPresent === false);
+      const _boxPlan = [
+        ["resto-uvlight", "uvlight"],
+        ["resto-front", ["uv_front"]],
+        ["resto-back", ["uv_back"]],
+        ["resto-compare", null],
+        ["resto-judge", null]
+      ];
+      _boxPlan.forEach(([id, areas], i) => {
+        setTimeout(() => {
+          const isFail = areas === "uvlight" ? _uvBad
+                       : areas === null ? _restoFound
+                       : _foundIn(areas);
+          setStep(id, isFail ? "failed" : "done");
+        }, i * 1000);
+      });
+      const _revealMs = _boxPlan.length * 1000; // after the last box lights
+      const _judgeColor = _restoFound ? '#ff4040' : '#60c060';
+      const _judgeLabel = _restoFound ? "COLOR TOUCH INDICATED" : "NO COLOR TOUCH FOUND";
+      // S23: the verdict line alone overstates what two UV photos can settle.
+      // "NO COLOR TOUCH FOUND" in green reads as a clean bill of health, and a
+      // false negative is the expensive direction — someone buys on it. This
+      // check finds OBVIOUS color touch; it is not a restoration certification.
+      const _judgeSub = _restoFound
+        ? "Have this confirmed by a professional before buying or selling."
+        : "Screening only. This does not rule out restoration.";
+      // The empty conclusion box + ASSESSING… button are the scan placeholder's
+      // (#result-resto-conclusion / #assess-complete-btn). Fill them in when the
+      // boxes finish, with a smooth CSS transition (no pop), and stop the grid/
+      // needle (needle holds the existing grade — restoration doesn't change it).
+      setTimeout(() => {
+        if (window.RobograderScan && window.RobograderScan.stopGridCycle) window.RobograderScan.stopGridCycle();
+        if (window.RobograderScan && window.RobograderScan.stopNeedlePulse) window.RobograderScan.stopNeedlePulse();
+        const _heldScore = formData.roboGrade ? Math.round(formData.roboGrade.score) : null;
+        if (window.RobograderScan && window.RobograderScan.sweepNeedleToScore && _heldScore != null) {
+          window.RobograderScan.sweepNeedleToScore(_heldScore);
+        }
+        const _concl = document.getElementById("result-resto-conclusion");
+        if (_concl) {
+          _concl.style.transition = "border-color 0.4s ease, background-color 0.4s ease";
+          _concl.style.border = `2px solid ${_judgeColor}40`;
+          _concl.style.background = _restoFound ? '#2a0a0a' : '#0a2a0a';
+          _concl.innerHTML = `<div style="color:${_judgeColor};font-size:16px;font-weight:800;letter-spacing:1.5px;text-align:center;transition:opacity 0.4s ease">${_judgeLabel}</div>`
+            + `<div style="color:#9aa89a;font-size:11px;font-weight:600;letter-spacing:0.3px;text-align:center;margin-top:5px;line-height:1.35;transition:opacity 0.4s ease">${_judgeSub}</div>`;
+        }
+        const _cb = document.getElementById("assess-complete-btn");
+        if (_cb) {
+          _cb.style.transition = "background-color 0.4s ease, color 0.4s ease";
+          _cb.innerHTML = "COMPLETE";
+          _cb.style.background = "#3a9ee0";
+          _cb.style.color = "#fff";
+          _cb.disabled = false;
+          _cb.style.cursor = "pointer";
+          _cb.onclick = () => {
+            if (window.RobograderScan && window.RobograderScan.dismiss) window.RobograderScan.dismiss();
+            submitForm().then(() => { showDetail(formData.id); });
+          };
+        }
+      }, _revealMs);
+    } else {
+      throw new Error("Unexpected UV Check response shape");
+    }
+  } catch (e) {
+    if (window._tierStepTimers) window._tierStepTimers.forEach(t => clearTimeout(t));
+    if (restoScanController && restoScanController.cancel) restoScanController.cancel();
+    if (window.RobograderScan && window.RobograderScan.dismiss) window.RobograderScan.dismiss();
+    alert(describeAssessmentError(e.message) || "Error: " + e.message);
+  } finally {
+    assessing = false;
+    renderForm();
+  }
+}
+
+async function submitFullAssessment() {
+  if (assessing) return;
+  // S17: gate on the sticky unlock, not live eligibility — once unlocked the
+  // entry stays Full-eligible forever (a later re-run scoring lower must not
+  // relock it). Deep is NOT a prerequisite (per spec June 14).
+  if (!showFullTier(formData)) {
+    alert("This book is not eligible for Full Assessment.");
+    return;
+  }
+  const entry = isFullAssessmentEligible(formData) || { slots: FULL_SLOT_COUNT, slotDefs: FULL_SLOTS };
+  // v5.28: only the slots this book's binding actually asks for. A square-bound
+  // or glue-bound book has nulls sitting in the dropped positions, so filtering
+  // the whole array for truthy values would under-count and block submission.
+  const _reqIdx = fullRequiredIdx(formData);
+  const _reqKeys = fullRequiredKeys(formData);
+  const _allImgs = formData.interiorImages || [];
+  const interior = _reqIdx.map(i => _allImgs[i]);
+  if (interior.some(x => !x)) {
+    alert(`Please fill all ${_reqIdx.length} slots before submitting.`);
+    return;
+  }
+  if (typeof window._userCredits === "number" && window._userCredits < 1) {
+    showBuyCredits();
+    return;
+  }
+  assessing = true;
+  renderForm();
+  const btn = document.getElementById("full-assess-btn");
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = "Assessing…";
+  }
+  // S17: warm the Full overlay artwork now (scan runs ~8s) so it doesn't pop
+  // when it slides into the chest at completion.
+  if (typeof TIER_OVERLAY_BG !== "undefined") { const _pi = new Image(); _pi.src = TIER_OVERLAY_BG.full; }
+  // S16: run the 8-image Full Assessment scan animation (1.0s per scan) while the
+  // API call is in flight — mirrors the standard/Deep flow's scan shell.
+  _capturePrevAssessResult(); // S20: Full revises the prior grade — show it sliding in
+  const fullScanController = window.RobograderScan ? window.RobograderScan.runScanAnimation(interior, "full") : {
+    promise: Promise.resolve(),
+    cancel: () => {}
+  };
+  try {
+    const compressed = await compressImagesSequentially(interior, {
+      maxDim: 1000,
+      quality: 0.6
+    }).catch(e => {
+      // S16: Log which image failed compression
+      console.error("[FULL] compression failed:", e.message);
+      if (window.RobograderScan && window.RobograderScan.dismiss) window.RobograderScan.dismiss();
+      throw new Error("Image compression failed: " + e.message + ". Try retaking the photos.");
+    });
+    const token = window._currentUser ? await window._currentUser.getIdToken() : null;
+    // S16: Start the API call BEFORE awaiting the scan so they run in parallel
+    const apiPromise = fetch("/api/assess_full", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...token ? {
+          Authorization: "Bearer " + token
+        } : {}
+      },
+      body: JSON.stringify({
+        serverCredits: true,
+        title: formData.title || "",
+        issueNumber: formData.issue || "",
+        interiorImages: compressed,
+        slotKeys: _reqKeys,            // v5.28: matches `interiorImages` above, 3 / 5 / 6 long
+        binding: bindingOf(formData),  // so the server can word the prompt for this construction
+        labelDetected: !!formData.labelDetected,
+        initialAssessmentComplete: true,
+        deepAssessmentComplete: true,
+        roboScore: formData.roboGrade && formData.roboGrade.score != null ? formData.roboGrade.score : null,
+        predictedGrade: formData.predictedGrade || formData.assessedCGCGrade || null,
+        fmvTier: (typeof fmvTierOf === "function" ? fmvTierOf(formData) : null),  // server re-checks Full gate (>= 6)
+        rgGrade: (typeof rgV3ForComic === "function" ? ((rgV3ForComic(formData) || {}).grade != null ? (rgV3ForComic(formData) || {}).grade : null) : null),  // S22: v3 RG for the near-perfect Full gate
+        fullUnlockReason: formData.fullUnlockReason || null,
+        initialPageQuality: formData.pageQuality || "",
+        priorConditionAssessment: formData.aiAssessment || "",
+        priorDefectNotes: formData.aiGraderNotes || "",
+        initialAssessment: formData.roboGrade || null,
+        photograder: formData.photograder || null
+      })
+    });
+    // S16: Wait for scan animation, but don't hang forever.
+    // Safety timeout: if scan promise doesn't resolve in 25s, proceed anyway.
+    try {
+      await Promise.race([
+        fullScanController.promise,
+        new Promise(r => setTimeout(r, 25000))
+      ]);
+    } catch (_e) {}
+    // S17: do NOT dismiss the scan stage here — the tracker overlay slides into
+    // the live chest (same as Main). Dismiss happens at COMPLETE.
+    // S17: use the in-chest progress tracker (same as Main) instead of a crude
+    // full-screen div. The scan stage stays up; the Full overlay artwork slides
+    // into the chest and the 5 step boxes light green/red as work completes.
+    const _fullSteps = [
+      { id: "full-staples", label: "INSPECTING STAPLES" },
+      { id: "full-pages", label: "COUNTING PAGES" },
+      { id: "full-edges", label: "EVALUATING EDGES" },
+      { id: "full-interior", label: "INTERIOR CHECK" },
+      { id: "full-confirm", label: "CONFIRMING GRADE" }
+    ];
+    const _fullTracker = mountTierTracker("full", _fullSteps); // S22: auto-light boxes 0..n-2 during the API call
+    const _fullTrackerMountAt = Date.now();
+    // Now await the API response
+    const resp = await apiPromise;
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error("Full Assessment API error: " + text.slice(0, 300));
+    }
+    const result = await resp.json();
+    if (result.fullAssessmentRan === true) {
+      // S22: boxes 0..(n-2) auto-light during the API call (mountTierTracker's
+      // default timeline). The LAST box is held until the API returns AND that
+      // sequence reaches it; when it greens, the score animation begins (see
+      // _startFullScoreAnim below). Do NOT clear the auto-light timers here.
+      formData.fullAssessmentRan = true;
+      _recordTimingKey(result); // S20 (#33): stash the Full log key on the item
+      stickTierUnlocks(formData);
+      if (result.grade != null && Number.isFinite(parseFloat(result.grade))) {
+        // S22: Full may raise the predicted grade ONLY for an otherwise-perfect
+        // book (prior PG >= 9.6), and only up to 9.8. For any other book it can
+        // confirm or lower but NEVER raise — this keeps the 4.0 -> 6.0 jump
+        // impossible while letting a near-perfect book earn its 9.8.
+        const _priorPredFull = parseFloat(formData.predictedGrade != null && formData.predictedGrade !== "" ? formData.predictedGrade : formData.assessedCGCGrade);
+        let _fullGrade = parseFloat(result.grade);
+        if (Number.isFinite(_priorPredFull)) {
+          if (_priorPredFull >= 9.6) {
+            if (_fullGrade > 9.8) _fullGrade = 9.8; // perfect-book ceiling for PG
+          } else if (_fullGrade > _priorPredFull) {
+            console.warn("[FULL] server grade " + _fullGrade + " > prior " + _priorPredFull + " — clamping (Full cannot raise a non-perfect book)");
+            _fullGrade = _priorPredFull;
+          }
+        }
+        // S22: same ladder guard as the Main/Deep result path. The clamps
+        // above can only copy a prior grade or 9.8, both of which are already
+        // on the ladder, but this is the write site and the guard belongs at
+        // write sites rather than at the paths we happen to have checked.
+        formData.predictedGrade = _snapPgToLadder(_fullGrade, "full-result");
+        formData.assessedCGCGrade = formData.predictedGrade;
+        // Full is the last pass; there is no deeper tier to promise. Clear the
+        // "(+)" so a 9.6(+) that a Full confirmed does not keep implying more.
+        formData.gradeAtCeiling = false;
+      }
+      if (result.pageQuality) formData.pageQuality = result.pageQuality;
+      if (result.confidenceRange != null && formData.roboGrade) {
+        formData.roboGrade.confidenceRange = result.confidenceRange;
+      }
+      // S16: Full Assessment recomputes the RoboScore with the confidence
+      // of 8 additional interior/structure images. This lets the score
+      // exceed the Deep ceiling (97) when the interior confirms quality.
+      if (result.roboScore != null && formData.roboGrade) {
+        formData.roboGrade.score = result.roboScore;
+      }
+      if (result.photograder) formData.photograder = result.photograder; // S21: persist photo grades
+      if (result.fullAssessmentNotes) formData.fullAssessmentNotes = result.fullAssessmentNotes;
+      if (result.aiAssessment && result.aiAssessment.trim()) formData.aiAssessment = result.aiAssessment.trim();
+      // S20 (#53): Full observations go in their own field (Main write-up unchanged).
+      if (result.fullAssessment && result.fullAssessment.trim()) formData.fullAssessment = result.fullAssessment.trim();
+      formData.fullInteriorComplete = result.interiorComplete !== false;
+      // S22: Full finished on EDIT. Every other assessment clears this before its
+      // save so submitForm() routes to Detail (see completeAssessment).
+      _routeToEditAfterSave = false;
+      formData.fullTrimmingSuspected = result.trimmingSuspected === true;
+      // v5.27: Full returns no roboGrade — it patches the existing one — so its
+      // restoration findings (replaced staples, trimming, married pages) arrive
+      // top-level and are merged in here. Full is the ONLY pass that can see
+      // those two, so dropping them would lose the finding entirely.
+      if (formData.roboGrade) mergeRestorationFlags(formData.roboGrade, formData.roboGrade, result.restorationFlags);
+      formData._imagesChanged = true;
+      // S22: a paid assessment on this book refills the 3 free UV Checks.
+      resetUvCheckAllowance();
+      onAssessmentSuccess(result);
+      // S22: perfect-10 refund — a book that unlocked Full via the near-perfect
+      // GRADE path (not the $1000+ FMV path) gets its credit back if the Full did
+      // not confirm a perfect 10 (RG stayed below 10). FMV-value books, which run
+      // Full purely for completeness, are never refunded.
+      // S22 (Matt): FULL NEVER REFUNDS. The near-perfect refund was wrong on its own
+      // terms — we tell the user up front that Full cannot RAISE a grade, only
+      // confirm or lower it, so "it didn't go up" is the advertised outcome, not a
+      // failure to deliver. Deep refunds when it fails to raise; Full charges
+      // regardless. fullRefundUsed stays in the schema so old records still read.
+      window._creditRefunded = false;
+      // S17: grid + needle stop, sweep needle to the assessed score (2s, like Main).
+      const _newScore = formData.roboGrade ? Math.round(formData.roboGrade.score) : null;
+      const _newGradeNum = formData.predictedGrade ? parseFloat(formData.predictedGrade) : null;
+      const _newGrade = _newGradeNum != null ? _newGradeNum.toFixed(1) : null;
+      const _pq = formData.pageQuality ? normPageQuality(formData.pageQuality) : "";
+      setTimeout(() => {
+        if (window.RobograderScan && window.RobograderScan.stopGridCycle) window.RobograderScan.stopGridCycle();
+        if (window.RobograderScan && window.RobograderScan.stopNeedlePulse) window.RobograderScan.stopNeedlePulse();
+        if (window.RobograderScan && window.RobograderScan.sweepNeedleToScore && _newScore != null) {
+          window.RobograderScan.sweepNeedleToScore(_newScore);
+        }
+      }, 2000);
+      // S17: results panel built EXACTLY like Main (mountResults): 64px badges
+      // that start at 0 and animate, page-quality pill, ASSESSING… button that
+      // becomes COMPLETE. Full is already-run by definition, so no UNLOCKED.
+      // S20: show the PREVIOUS grade sliding in, then animate to the Full result.
+      const _prev = window._prevAssessResult || null;
+      const _rgFrom = _prev && _prev.score != null ? _prev.score : 0;
+      const _rgInit = _prev && _prev.rgV3 ? _prev.rgV3 : "0"; // S22: never show the v1 0-100 score
+      const _gradeFrom = _prev && _prev.gradeVal != null ? _prev.gradeVal : null;
+      const _gradeInit = _prev && _prev.gradeText ? _prev.gradeText : "0.0";
+      const _fullRefunded = !!window._creditRefunded; // S22: perfect-10 refund coin (same as Deep)
+      let _badges = "";
+      if (_newScore != null) _badges += `<div style="position:relative;width:64px;height:64px;border:1.5px solid #3a5010;background:#0f1a05;border-radius:8px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-robo" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'League Spartan',sans-serif;transform:scaleX(0.7);font-size:38px;font-weight:800;color:#aaee30;line-height:1">${_rgInit}</div>\n        <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:#aaee30;opacity:0.75;letter-spacing:0.8px">RG</div>\n      </div>`;
+      if (_newGrade != null) _badges += `<div style="position:relative;width:64px;height:64px;background:#2a5a8a;border-radius:8px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">\n        <div id="full-anim-grade" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'League Spartan',sans-serif;transform:scaleX(0.7);font-size:38px;font-weight:800;color:#e0f0ff;line-height:1">${_gradeInit}</div>\n        <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:#e0f0ff;opacity:0.75;letter-spacing:0.8px">CGC</div>\n      </div>`;
+      const _fullResultsHtml = `\n        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n          <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${_badges}</div>\n          <div id="full-result-pq" style="position:relative;width:100%;display:flex;align-items:center;justify-content:center;min-height:22px;">\n            <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n          </div>\n          <button id="full-complete-btn" disabled\n            style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">ASSESSING…</button>\n        </div>`;
+      if (window.RobograderScan && window.RobograderScan.slideResultsIntoPanel) {
+        window.RobograderScan.slideResultsIntoPanel(_fullResultsHtml);
+      }
+      // Animate the badges exactly like Main.
+      // S22: hold the final box + score animation until the API has returned AND
+      // the auto-lit boxes (0..n-2) have finished. When the LAST box greens, the
+      // score animation begins — never before the tier boxes are all green.
+      const _lastFullStepId = _fullSteps[_fullSteps.length - 1].id;
+      const _lastBoxDelay = Math.max(0, (1200 + (_fullSteps.length - 1) * 1000) - (Date.now() - _fullTrackerMountAt));
+      const _startFullScoreAnim = () => {
+        setStep(_lastFullStepId, "done"); // final box greens now
+        if (window.RobograderScan && window.RobograderScan.stopGridCycle) window.RobograderScan.stopGridCycle();
+        if (window.RobograderScan && window.RobograderScan.stopNeedlePulse) window.RobograderScan.stopNeedlePulse();
+        if (window.RobograderScan && window.RobograderScan.sweepNeedleToScore && _newScore != null) window.RobograderScan.sweepNeedleToScore(_newScore);
+        const _roboEl = document.getElementById("full-anim-robo");
+        const _gradeEl = document.getElementById("full-anim-grade");
+        const _pqEl = document.getElementById("full-result-pq");
+        const _fullV3 = (typeof rgV3ForComic === "function") ? rgV3ForComic(formData) : null;
+        if (_roboEl && _fullV3 != null) {
+          _roboEl.style.fontSize = "38px";
+          animateV3LadderFromTo(_roboEl, (_prev && _prev.rgV3 != null ? Number(_prev.rgV3) : 0), _fullV3.grade, 2000).then(() => { popResultBadge(_roboEl); if (_fullRefunded) _showAssessRefundCoin(); });
+        } else if (_roboEl && _newScore != null) {
+          if (_rgFrom === _newScore) setTimeout(() => popResultBadge(_roboEl), 700);
+          else animateRoboGradeFromTo(_roboEl, _rgFrom, _newScore, 2000).then(() => popResultBadge(_roboEl));
+        }
+        if (_gradeEl && _newGradeNum != null) setTimeout(() => {
+          if (_gradeFrom != null && Math.abs(_gradeFrom - _newGradeNum) < 0.01) popResultBadge(_gradeEl);
+          else animateGradeListFromTo(_gradeEl, _gradeFrom != null ? _gradeFrom : CGC_GRADE_LIST[0], _newGrade, CGC_GRADE_LIST, 2000).then(() => popResultBadge(_gradeEl));
+        }, 1000);
+        if (_pq && _pqEl) setTimeout(() => {
+          const colors = PQ_COLORS[_pq] || { bg: "#f0ece6", text: "#5a4e44" };
+          _pqEl.innerHTML = `<div style="background:${colors.bg};color:${colors.text};padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">${_pq}</div>`;
+        }, 2500);
+        setTimeout(() => {
+          const _cb = document.getElementById("full-complete-btn");
+          if (!_cb) return;
+          _cb.style.transition = "background-color 0.4s ease, color 0.4s ease";
+          _cb.innerHTML = "COMPLETE";
+          _cb.style.background = "#3a9ee0";
+          _cb.style.color = "#fff";
+          _cb.disabled = false;
+          _cb.style.cursor = "pointer";
+          _cb.onclick = () => {
+            if (window.RobograderScan && window.RobograderScan.dismiss) window.RobograderScan.dismiss();
+            submitForm().then(() => { showDetail(formData.id); });
+          };
+        }, 3000);
+      };
+      setTimeout(_startFullScoreAnim, _lastBoxDelay);
+    } else {
+      throw new Error("Unexpected Full Assessment response shape");
+    }
+  } catch (e) {
+    console.error("[FULL ASSESS] error:", e.message, e.stack);
+    if (fullScanController && fullScanController.cancel) fullScanController.cancel();
+    if (window.RobograderScan && window.RobograderScan.dismiss) {
+      window.RobograderScan.dismiss();
+    }
+    const userMsg = describeAssessmentError(e.message);
+    alert(userMsg || e.message);
+  } finally {
+    assessing = false;
+    renderForm();
+  }
+}
+
+window._cameraSupported = (() => {
+  const ua = navigator.userAgent || '';
+  const isMobileUA = /iPhone|iPad|iPod|Android/i.test(ua);
+  // iPadOS 13+ Safari masquerades as macOS ("MacIntel") — the only Mac-like
+  // platform that is actually touch is an iPad. Without this, iPad users were
+  // forced onto the file-upload path and could never earn the in-app Verified badge.
+  const isIPadOS = (navigator.platform === 'MacIntel' || /Macintosh/.test(ua)) && (navigator.maxTouchPoints || 0) > 1;
+  const hasGetUserMedia = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  return (isMobileUA || isIPadOS) && hasGetUserMedia;
+})();
+
+const CAMERA_LABEL_MAIN = [ "Front", "Back", "Interior", "Spine" ];
+
+const CAMERA_LABEL_CORNER = [ "Top Left", "Top Right", "Bottom Left", "Bottom Right" ];
+
+const CAMERA_GUIDE_MAIN = [ "guide_front.svg", "guide_back.svg", "guide_pq.svg", "guide_spine_landscape.svg" ];
+const CAMERA_GUIDE_CARD = [ "guide_card.svg", "guide_card.svg", "guide_card_top_macro.svg", "guide_card_bottom_macro.svg" ];
+const CAMERA_GUIDE_CARDDEEP = [ "guide_card.svg", "guide_card.svg", "guide_card_top_macro.svg", "guide_card_bottom_macro.svg" ];
+
+const CAMERA_GUIDE_CORNER = [ "guide_corner_tl.svg", "guide_corner_tr.svg", "guide_corner_bl.svg", "guide_corner_br.svg" ];
+
+// S21: overlays for the Full-assessment (kind "interior"), Deep interior-cover
+// (kind "interiorCover"), and Restoration (kind "restoration") slots — previously
+// none. The exterior top/bottom staple SVGs are identical, so both slots point at
+// guide_staple_ext_upper.svg; the interior front/back SVGs are identical, so both
+// point at guide_interior_front.svg. guide_edge_bottom is the mirror of _top.
+// (Matt can delete the unreferenced guide_staple_ext_lower.svg / guide_interior_back.svg.)
+const CAMERA_GUIDE_INTERIOR = [
+  "guide_edge_top.svg",          // top_pages
+  "guide_edge_outer.svg",        // outer_edge
+  "guide_edge_bottom.svg",       // bottom_pages
+  "guide_staple_ext_upper.svg",  // exterior_top_staple
+  "guide_staple_ext_upper.svg",  // exterior_bottom_staple
+  "guide_staple_interior.svg",   // interior_staple
+];
+
+const CAMERA_GUIDE_INTERIOR_COVER = [
+  "guide_interior_front.svg",    // interior_cover_front
+  "guide_interior_front.svg",    // interior_cover_back
+];
+
+const CAMERA_GUIDE_RESTORATION = [
+  CAMERA_GUIDE_MAIN[0],          // uv_front  -> reuse Front-cover guide
+  CAMERA_GUIDE_MAIN[1],          // uv_back   -> reuse Back-cover guide
+];
+
+const CAMERA_SLOT_ORIENTATION_MAIN = [ "portrait", "portrait", "portrait", "landscape" ];
+const CAMERA_LABEL_CARD = [ "Front", "Back", "Top Front", "Bottom Front" ];
+const CAMERA_SLOT_ORIENTATION_CARD = [ "portrait", "portrait", "portrait", "portrait" ];
+const CAMERA_LABEL_CARDDEEP = [ "Front Raking", "Back Raking", "Back Top Macro", "Back Bottom Macro" ];
+const CAMERA_SLOT_ORIENTATION_CARDDEEP = [ "portrait", "portrait", "landscape", "landscape" ];
+const CAMERA_CAPTURE_ORDER_CARDDEEP = [ 0, 1, 2, 3 ];
+// S16: Full Assessment slots — exterior staples + top/bottom pages = landscape;
+// interior_staple (slot 7) = portrait (auto-rotated CW at capture time)
+// S20: Full is now 6 slots (top_pages, outer_edge, bottom_pages, exterior_top_staple,
+// exterior_bottom_staple, interior_staple). Interior Staples (slot 5) captures
+// better in PORTRAIT; the other five are landscape.
+const CAMERA_SLOT_ORIENTATION_INTERIOR = [ "landscape", "landscape", "landscape", "landscape", "landscape", "portrait" ];
+const CAMERA_SLOT_ORIENTATION_INSERT = [ "landscape", "portrait" ];
+const CAMERA_SLOT_ORIENTATION_COUPON = [ "portrait", "landscape" ];
+
+// S21 (per Matt): capture order unified to storage order — Front(0), Back(1),
+// Interior(2), Spine(3). Front/Back/Interior are all top-down portrait; Spine (the
+// reposition-and-rotate shot) is isolated LAST. Matches the display order and the
+// multi-select fill order (handleImages fills 0,1,2,3), so capture, display, and the
+// 4-photo library tap sequence are all identical and intuitive. Was [0,3,2,1].
+const CAMERA_CAPTURE_ORDER_MAIN = [ 0, 1, 2, 3 ];
+
+const CAMERA_CAPTURE_ORDER_CORNER = [ 0, 1, 3, 2 ];
+
+let _cameraState = null;
+
+let _cameraOrientationListener = null;
+
+let _cameraOrientationTimeout = null;
+
+// ── Photograder: free on-device Focus/Lighting pre-check (S21) ──────────────
+// Runs client-side as photos are added — no model call, no credit. Powers the
+// pre-assessment mini-panel under the image slots (Cropping/Angle stay '?' until
+// an assessment runs). Focus = Laplacian variance (edge sharpness); Lighting =
+// blown-highlight (glare) / clipped-shadow fractions. Thresholds are a starting
+// point and will want calibration on real captures.
+function _pgWorst(a, b) {
+  const r = { A: 0, B: 1, C: 2 };
+  const na = /^[ABC]$/.test(a) ? a : "A", nb = /^[ABC]$/.test(b) ? b : "A";
+  return r[nb] > r[na] ? nb : na;
+}
+async function _analyzePhotoQuality(src) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const N = 256;
+        const scale = Math.min(1, N / Math.max(img.width, img.height));
+        const w = Math.max(2, Math.round(img.width * scale));
+        const h = Math.max(2, Math.round(img.height * scale));
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = h;
+        const ctx = c.getContext("2d", { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0, w, h);
+        const data = ctx.getImageData(0, 0, w, h).data;
+        const n = w * h;
+        const gray = new Float32Array(n);
+        for (let i = 0; i < n; i++) {
+          gray[i] = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2];
+        }
+        // S23: analyze only the CENTRAL region. The comic usually fills the middle
+        // of the frame; a bright white surface behind it (common on desk shots)
+        // otherwise reads as blown glare (false "C" lighting) and its detail-free
+        // expanse drags the focus variance down. Insetting ~10% each side keeps
+        // the background from dominating.
+        const mx = Math.max(1, Math.round(w * 0.10)), my = Math.max(1, Math.round(h * 0.10));
+        const x0 = mx, x1 = w - mx, y0 = my, y1 = h - my;
+        let blown = 0, dark = 0, region = 0;
+        for (let yy = y0; yy < y1; yy++) {
+          for (let xx = x0; xx < x1; xx++) {
+            const y = gray[yy * w + xx];
+            region++;
+            if (y >= 250) blown++;
+            if (y <= 10) dark++;
+          }
+        }
+        // Laplacian variance (Welford) for focus — central region only.
+        let mean = 0, m2 = 0, cnt = 0;
+        for (let yy = Math.max(1, y0); yy < Math.min(h - 1, y1); yy++) {
+          for (let xx = Math.max(1, x0); xx < Math.min(w - 1, x1); xx++) {
+            const idx = yy * w + xx;
+            const lap = 4 * gray[idx] - gray[idx - 1] - gray[idx + 1] - gray[idx - w] - gray[idx + w];
+            cnt++;
+            const d = lap - mean;
+            mean += d / cnt;
+            m2 += d * (lap - mean);
+          }
+        }
+        const lapVar = cnt > 1 ? m2 / (cnt - 1) : 0;
+        const _den = region || n;
+        const blownFrac = blown / _den, darkFrac = dark / _den;
+        // S25 (#4): loosened so good captures reliably hit A and B is actually
+        // reachable (was 120/45, which left most real photos in an A-or-C split and
+        // tripped C on glossy-cover glare). Still a heuristic — fine-tune to samples.
+        const focus = lapVar >= 70 ? "A" : lapVar >= 25 ? "B" : "C";
+        const lighting = (blownFrac >= 0.12 || darkFrac >= 0.40) ? "C"
+          : (blownFrac >= 0.05 || darkFrac >= 0.22) ? "B" : "A";
+        resolve({ focus, lighting });
+      } catch (e) { resolve(null); } // tainted (cross-origin) or decode fail → no local grade
+    };
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+async function _computeLocalPhotograder() {
+  const imgs = (formData.images || []).filter(Boolean);
+  if (!imgs.length) { formData._pgLocal = null; return; }
+  const results = await Promise.all(imgs.map(_analyzePhotoQuality));
+  const valid = results.filter(Boolean);
+  if (!valid.length) { formData._pgLocal = null; return; }
+  let focus = "A", lighting = "A";
+  for (const r of valid) { focus = _pgWorst(focus, r.focus); lighting = _pgWorst(lighting, r.lighting); }
+  formData._pgLocal = { focus, lighting };
+}
+function _preAssessPGCellsHTML() {
+  const pg = formData._pgLocal || {};
+  // Use the SAME cell renderer as the full results panel (robograde-panel.js →
+  // window.RobograderPanel.pgCell) so the pre-assessment and results panels match
+  // exactly. Fallback kept only in case the panel script hasn't loaded yet.
+  // Pre-assessment shows EMOJI, not the A/B/C letters used in the post-assessment
+  // bookend, so when the model returns the real grade a change does not read as
+  // "the grade got revised." Streetlight color still carries the signal; the emoji
+  // sets tone. A good, B minor, C not-recommended, unknown = graded after assess.
+  const cell = (label, letter) => {
+    const L = String(letter || "").toUpperCase();
+    const map = { A: { bg: "#4e9e2e", lab: "#143d08", emoji: "👌", aria: "good" }, B: { bg: "#ffd655", lab: "#4a3406", emoji: "😕", aria: "minor issue" }, C: { bg: "#cc4436", lab: "#4a1410", emoji: "😬", aria: "not recommended" } };
+    const s = map[L] || { bg: "#26331c", lab: "#6a8a4a", emoji: "🤷", aria: "graded after assessment" };
+    return `<div style="flex:1;text-align:center;background:${s.bg};border:1.5px solid #4a7028;border-radius:8px;padding:8px 2px"><div style="font-size:9px;color:${s.lab};letter-spacing:0.5px;margin-bottom:3px">${label}</div><div style="font-size:23px;line-height:1.15" role="img" aria-label="${s.aria}">${s.emoji}</div></div>`;
+  };
+  return cell("FOCUS", pg.focus) + cell("LIGHTING", pg.lighting) + cell("CROPPING", "?") + cell("ANGLE", "?");
+}
+// The pre-assessment mini-panel. Hidden once the book is assessed (the real
+// Photograder then lives in the RoboGrade Score box) and when no photos exist.
+function _preAssessPGPanel() {
+  if (formData.roboGrade) return "";
+  if (!(formData.images || []).filter(Boolean).length) return "";
+  return `<div style="margin-top:12px;background:#152e10;border:1.5px solid #4a7028;border-radius:12px;padding:12px">
+    <div style="font-size:12px;font-weight:700;color:#7aa838;letter-spacing:2px;text-align:center;margin-bottom:10px">PHOTOGRADER</div>
+    <div id="pre-assess-photograder-cells" style="display:flex;gap:6px">${_preAssessPGCellsHTML()}</div>
+    <div style="margin-top:8px;font-size:10px;color:#6a8a4a;text-align:center;line-height:1.4">Cropping and Angle are graded after assessment.</div>
+  </div>`;
+}
+// Called after renderForm: re-run the on-device analysis only when the main
+// image set actually changed, then repaint the cells in place.
+function _maybeRefreshLocalPG() {
+  if (!formData || formData.roboGrade) return;
+  const imgs = (formData.images || []).filter(Boolean);
+  const sig = imgs.length + ":" + imgs.map(u => String(u).slice(-24)).join("|");
+  if (sig === formData._pgLocalSig) return;
+  formData._pgLocalSig = sig;
+  if (!imgs.length) { formData._pgLocal = null; return; }
+  _computeLocalPhotograder().then(() => {
+    const el = document.getElementById("pre-assess-photograder-cells");
+    if (el) el.innerHTML = _preAssessPGCellsHTML();
+  }).catch(() => {});
+}
+
+function tapSlot(slotIndex, kind) {
+  // S20 (#52): every slot type is camera-first (the in-app guided camera), with a
+  // photo-library fallback when the camera isn't available. Deep interior covers
+  // and Full interior images now use the same guided-camera path as the main and
+  // corner shots — the #36 D-fix had forced them straight to the library picker,
+  // which dropped the in-app capture experience. (The file-input handlers remain
+  // as the fallback below and for multi-select library uploads.)
+  if (!window._cameraSupported) {
+    if (kind === "corner") { _tappedCornerSlot = slotIndex; document.getElementById("corner-photo-input").click(); }
+    else if (kind === "interiorCover") { _tappedInteriorCoverSlot = slotIndex; document.getElementById("interior-cover-photo-input").click(); }
+    else if (kind === "interior") { _tappedInteriorSlot = slotIndex; document.getElementById("interior-photo-input").click(); }
+    else if (kind === "signature") { _tappedSignatureSlot = slotIndex; document.getElementById("signature-photo-input").click(); }
+    else if (kind === "insert") { _tappedInsertSlot = slotIndex; document.getElementById("insert-photo-input").click(); }
+    else if (kind === "coupon") { _tappedCouponSlot = slotIndex; document.getElementById("coupon-photo-input").click(); }
+    else if (kind === "carddeep") { _cardDeepSlot = slotIndex; document.getElementById("card-deep-photo-input").click(); }
+    else { _tappedSlot = slotIndex; document.getElementById("photo-input").click(); }
+    return;
+  }
+  if (_cameraState && _cameraState.mode === "walkthrough" && _cameraState.kind === kind) {
+    _cameraState.current = slotIndex;
+    _cameraState.queue = _cameraState.queue.filter(s => s !== slotIndex);
+    cameraOpenSlot(slotIndex);
+    return;
+  }
+  const list = (kind === "corner" ? formData.cornerImages : kind === "signature" ? formData.signatureImages : kind === "insert" ? formData.insertImages : kind === "coupon" ? formData.couponImages : kind === "interiorCover" ? formData.interiorCoverImages : kind === "interior" ? formData.interiorImages : kind === "carddeep" ? formData.cardDeepImages : formData.images) || [];
+  const captureOrder = kind === "corner" ? CAMERA_CAPTURE_ORDER_CORNER : kind === "signature" ? [ 0, 1 ] : kind === "insert" ? [ 0, 1 ] : kind === "coupon" ? [ 0, 1 ] : kind === "interiorCover" ? [ 0, 1 ] : kind === "interior" ? fullRequiredIdx(formData)   /* v5.28: skip the slots this binding drops */ : kind === "carddeep" ? CAMERA_CAPTURE_ORDER_CARDDEEP : CAMERA_CAPTURE_ORDER_MAIN;
+  const emptySlotsInOrder = captureOrder.filter(i => !list[i]);
+  const isMultiEmpty = kind !== "signature" && kind !== "insert" && kind !== "coupon" && emptySlotsInOrder.length > 1 && (emptySlotsInOrder.includes(slotIndex) || kind === "interior" || kind === "interiorCover");
+  console.log("[tapSlot] kind:", kind, "slot:", slotIndex, "emptySlots:", emptySlotsInOrder.length, "isMultiEmpty:", isMultiEmpty, "mode:", isMultiEmpty ? "walkthrough" : "single");
+  if (isMultiEmpty) {
+    const startIdx = emptySlotsInOrder.indexOf(slotIndex);
+    // v6.34: a Full capture is ONE session of six, wherever you start it.
+    // The queue used to be "the empty slots AFTER the one you tapped", so
+    // tapping the first staple shot three and stopped, and the three edge
+    // shots above it needed a second trip through the camera. Matt:
+    // "the photo flow for Full interrupts after the three staple images."
+    // Wrapping round covers the earlier slots in the same session while still
+    // starting where the user actually tapped. Only `interior` wraps: for the
+    // other kinds "I only want this one" is a real intention, and the order of
+    // the main four is a sequence the user is being walked through, not a set.
+    const queue = (kind === "interior")
+      ? [ ...emptySlotsInOrder.slice(startIdx + 1), ...emptySlotsInOrder.slice(0, startIdx) ]
+      : [ ...emptySlotsInOrder.slice(startIdx + 1) ];
+    cameraOpen({
+      mode: "walkthrough",
+      kind: kind,
+      queue: queue,
+      current: slotIndex,
+      captures: []
+    });
+  } else {
+    cameraOpen({
+      mode: "single",
+      kind: kind,
+      queue: [],
+      current: slotIndex,
+      captures: []
+    });
+  }
+}
+
+async function cameraOpen(state) {
+  _cameraState = {
+    ...state,
+    stream: null,
+    lenses: [],
+    currentLensIdx: 0
+  };
+  // Card entries must capture/crop with card guides, labels, and orientation.
+  // For an existing card being edited (or a card add), formData.type is "card";
+  // derive isCard here so tapping a slot to replace loads the CARD slot, not the
+  // comic one. (A fresh add can still promote to card later via slab-detect.)
+  if (_cameraState.isCard == null && state.kind === "main") {
+    _cameraState.isCard = (formData.type === "card" || !!formData._isCard || !!(formData._slabDetect && formData._slabDetect.isCard));
+  }
+  const modal = document.getElementById("camera-modal");
+  const permDialog = document.getElementById("camera-perm-dialog");
+  permDialog.classList.remove("show");
+  document.body.classList.remove("camera-perm-shown");
+  modal.classList.add("open");
+  document.body.classList.add("camera-modal-open");
+  document.body.classList.remove("camera-kind-main", "camera-kind-corner", "camera-kind-interior", "camera-kind-restoration");
+  document.body.classList.add(state.kind === "corner" ? "camera-kind-corner" : state.kind === "interior" || state.kind === "interiorCover" || state.kind === "restoration" ? "camera-kind-interior" : "camera-kind-main");
+  document.body.classList.toggle("camera-is-card", !!(_cameraState && _cameraState.isCard));
+  const video = document.getElementById("camera-video");
+  if (video) video.style.objectFit = "cover";
+  if (!_cameraOrientationListener) {
+    _cameraOrientationListener = () => {
+      const guideEl = document.getElementById("camera-guide");
+      if (guideEl) guideEl.innerHTML = "";
+      applyCameraOrientationState();
+      setTimeout(() => {
+        if (_cameraState) applyCameraOrientationState();
+      }, 250);
+      setTimeout(() => {
+        if (_cameraState) applyCameraOrientationState();
+      }, 600);
+      if (_cameraOrientationTimeout) clearTimeout(_cameraOrientationTimeout);
+      _cameraOrientationTimeout = setTimeout(() => {
+        if (_cameraState) cameraOpenSlot(_cameraState.current);
+        _cameraOrientationTimeout = null;
+      }, 350);
+    };
+    window.addEventListener("orientationchange", _cameraOrientationListener);
+    window.addEventListener("resize", _cameraOrientationListener);
+  }
+  cameraOpenSlot(state.current);
+  try {
+    const initialStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: {
+          ideal: "environment"
+        },
+        width: {
+          ideal: 2560
+        },
+        height: {
+          ideal: 1920
+        }
+      },
+      audio: false
+    });
+    _cameraState.stream = initialStream;
+    // S16: Enable continuous auto-focus so close-up shots (exterior staples,
+    // interior staples) stay sharp without manual tap-to-focus.
+    try {
+      const _afTrack = initialStream.getVideoTracks()[0];
+      if (_afTrack && _afTrack.applyConstraints) {
+        await _afTrack.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
+      }
+    } catch (_afErr) { /* focusMode not supported on this device */ }
+    const video = document.getElementById("camera-video");
+    video.srcObject = initialStream;
+    // S17: tap-to-focus removed. Researched and confirmed unsupported on iOS
+    // Safari/WKWebView — getUserMedia exposes no focusMode/focusDistance/
+    // pointOfInterest constraints there (getCapabilities returns nothing for
+    // focus), so a tap could show a circle but never change focus. Real tap-to-
+    // focus would require a native AVFoundation plugin. Continuous autofocus
+    // (set above) is the best available on the web stack.
+    try {
+      const allDevices = await navigator.mediaDevices.enumerateDevices();
+      const videoInputs = allDevices.filter(d => d.kind === "videoinput");
+      console.log("[camera] enumerated", videoInputs.length, "video devices");
+      videoInputs.forEach((d, i) => {
+        console.log(`[camera] device ${i}: label="${d.label}" deviceId=${d.deviceId.slice(0, 8)}…`);
+      });
+      const backCamera = videoInputs.find(d => {
+        const label = (d.label || "").toLowerCase();
+        return label === "back camera";
+      });
+      const standaloneWide = videoInputs.find(d => {
+        const label = (d.label || "").toLowerCase();
+        return label === "back wide camera";
+      });
+      const wide = backCamera || standaloneWide;
+      console.log("[camera] picked device:", wide ? wide.label : "none");
+      console.log("[camera] zoom constraint supported:", supportsZoomConstraint());
+      const targetZoom = (_cameraState.kind === "corner" || _cameraState.kind === "carddeep") ? 3 : 2;
+      const isAndroid = !!(window.Capacitor && Capacitor.getPlatform && Capacitor.getPlatform() === "android");
+      const lensOptions = [];
+      // ANDROID (S21): Samsung/Android labels are "camera N, facing back", so the iOS
+      // exact-match finder above returns nothing and facingMode:environment grabs an
+      // arbitrary back lens — usually the ULTRA-WIDE, giving the too-wide, soft frame
+      // users hit. getCapabilities() exposes no `zoom` on this hardware, so web zoom is
+      // out. Fix by LENS selection: list the back cameras sorted by index (camera 0 is
+      // the MAIN lens) and default to the main (tighter, sharper). If a second back lens
+      // exists it's the wider one, offered as a ZOOM OUT toggle. isAndroid-guarded; iOS
+      // is untouched. (The lens.zoomOnly branch in switchToLens is now unused/harmless.)
+      let androidLens = false;
+      if (isAndroid) {
+        try {
+          const camNum = d => { const m = /camera (\d+)/i.exec(d.label || ""); return m ? parseInt(m[1]) : 99; };
+          const backCams = videoInputs
+            .filter(d => /facing back|back camera|rear/i.test(d.label || ""))
+            .sort((a, b) => camNum(a) - camNum(b));
+          if (backCams.length) {
+            backCams.forEach((d, i) => lensOptions.push({ device: d, zoom: 1, digitalZoom: 1, label: i === 0 ? "MAIN" : "WIDE" }));
+            androidLens = true;
+            console.log("[camera] android back lenses (main first):", backCams.map(d => d.label).join(" | "));
+          }
+        } catch (e) { console.warn("[camera] android lens select failed:", e); }
+      }
+      if (!androidLens && wide && supportsZoomConstraint()) {
+        lensOptions.push({
+          device: wide,
+          zoom: 1,
+          digitalZoom: 1,
+          label: "1×"
+        });
+        lensOptions.push({
+          device: wide,
+          zoom: targetZoom,
+          digitalZoom: targetZoom,
+          label: targetZoom + "×"
+        });
+      } else if (!androidLens && wide) {
+        lensOptions.push({
+          device: wide,
+          zoom: 1,
+          digitalZoom: 1,
+          label: "1×"
+        });
+      }
+      console.log("[camera] kind=" + _cameraState.kind + " target=" + targetZoom + "x lens options:", lensOptions.map(l => l.label).join(","));
+      _cameraState.lenses = lensOptions;
+      // S16: default to zoomed lens for corners AND Full Assessment close-up
+      // slots (exterior staples 0,1 + top/bottom pages 2,3 need macro detail).
+      // Outer Edge (4), Interior Front (5), Interior Back (6), Interior Staples (7)
+      // stay at wide (1×). Main-kind captures also default wide.
+      // S21 ANDROID: lens idx 0 is the MAIN back lens (tighter/sharper) — always the
+      // Android default; idx 1 (if present) is the wider lens (ZOOM OUT). The iOS
+      // zoom-per-slot defaults below are skipped on Android (no telephoto to zoom into).
+      _cameraState.androidLensMode = androidLens;
+      // S25 per-slot lens defaults (Matt's spec):
+      //   Main (all 4: Front/Back/Interior/Spine) -> WIDE (Zoom Out).
+      //   Corner macros -> zoom. Interior Front/Back (kind "interiorCover") -> WIDE (not in list).
+      //   Full/"interior" slots: Top Edge (top_pages), Bottom Edge (bottom_pages) and BOTH
+      //   exterior staples -> zoom; Outer Edge and Interior Staple -> WIDE.
+      // S22: rule lives in _slotWantsZoom() — see its comment. Do not inline it
+      // here again; the duplicate copy in cameraOpenSlot() is what kept Main's
+      // Back/Interior opening zoomed after two "fixes".
+      const _zoomDefault = _slotWantsZoom(_cameraState.kind, _cameraState.current, _cameraState.isCard) && lensOptions.length > 1;
+      _cameraState.currentLensIdx = _zoomDefault ? 1 : 0;
+      if (lensOptions.length > 0) {
+        await switchToLens(_cameraState.currentLensIdx);
+        renderLensSelector();
+      } else {
+        try {
+          const track = _cameraState.stream && _cameraState.stream.getVideoTracks && _cameraState.stream.getVideoTracks()[0];
+          const caps = track && track.getCapabilities ? track.getCapabilities() : null;
+          if (track && caps && caps.zoom && typeof caps.zoom.max === "number") {
+            // ANDROID MULTI-LENS FIX (S19): when the wide lens can't be
+            // identified (unlabeled "camera 0/1/2"), facingMode may hand us the
+            // telephoto — already zoomed. Only apply target zoom on slots that
+            // INTENTIONALLY want it; for wide/main captures force the MINIMUM
+            // zoom so a full cover fits in frame (was applying 2x here — the bug).
+            const _zmin = caps.zoom.min || 1;
+            const _wantsZoom = _cameraState.kind === "corner" || _cameraState.kind === "signature" || _cameraState.kind === "carddeep" || _interiorZoomSlot || _isZoomedRestorationSlot;
+            const z = _wantsZoom ? Math.min(caps.zoom.max, Math.max(_zmin, targetZoom)) : _zmin;
+            await track.applyConstraints({ advanced: [ { zoom: z } ] });
+            console.log("[camera] Android no-label fallback: zoom", z, _wantsZoom ? "(intentional)" : "(forced wide)", "of max", caps.zoom.max);
+          } else {
+            console.log("[camera] no zoom capability on this device; 1× is the hardware limit");
+          }
+        } catch (zfErr) {
+          console.warn("[camera] Android zoom fallback failed:", zfErr);
+        }
+      }
+    } catch (enumErr) {
+      console.warn("[camera] enumerate failed:", enumErr);
+    }
+  } catch (err) {
+    console.warn("[camera] getUserMedia failed:", err);
+    permDialog.classList.add("show");
+    document.body.classList.add("camera-perm-shown");
+  }
+}
+
+function supportsZoomConstraint() {
+  try {
+    const supported = navigator.mediaDevices.getSupportedConstraints();
+    return !!supported.zoom;
+  } catch {
+    return false;
+  }
+}
+
+function renderLensSelector() {
+  const sel = document.getElementById("camera-lens-selector");
+  if (!_cameraState || !_cameraState.lenses || _cameraState.lenses.length < 2) {
+    sel.classList.remove("show");
+    sel.innerHTML = "";
+    return;
+  }
+  const atOne = _cameraState.currentLensIdx === 0;
+  const targetIdx = atOne ? 1 : 0;
+  // On Android, lens idx 0 = MAIN (tighter) and idx 1 = the wider lens, so switching to
+  // idx 1 is ZOOM OUT — the reverse of iOS, where idx 1 is the more-zoomed lens.
+  const label = _cameraState.androidLensMode
+    ? (atOne ? "ZOOM OUT" : "ZOOM IN")
+    : (atOne ? "ZOOM IN" : "ZOOM OUT");
+  sel.innerHTML = `<button class="lens-btn active" onclick="switchToLens(${targetIdx})">${label}</button>`;
+  sel.classList.add("show");
+}
+
+async function switchToLens(idx) {
+  if (!_cameraState || !_cameraState.lenses[idx]) return;
+  const lens = _cameraState.lenses[idx];
+  // ANDROID (S21): zoom-only lens — keep the current stream and just change zoom via
+  // applyConstraints. Reopening by deviceId isn't reliable on Android; this is what
+  // makes the ZOOM IN/OUT toggle work there. iOS lenses carry .device (no .zoomOnly).
+  if (lens.zoomOnly) {
+    try {
+      const track = _cameraState.stream && _cameraState.stream.getVideoTracks && _cameraState.stream.getVideoTracks()[0];
+      if (track && track.applyConstraints) {
+        await track.applyConstraints({ advanced: [ { zoom: lens.zoomValue } ] });
+      }
+      _cameraState.currentLensIdx = idx;
+      renderLensSelector();
+    } catch (err) {
+      console.warn("[camera] zoom-only lens apply failed:", err);
+    }
+    return;
+  }
+  if (_cameraState.stream) {
+    _cameraState.stream.getTracks().forEach(t => t.stop());
+  }
+  try {
+    const constraints = {
+      video: {
+        deviceId: {
+          exact: lens.device.deviceId
+        },
+        width: {
+          ideal: 2560
+        },
+        height: {
+          ideal: 1920
+        }
+      },
+      audio: false
+    };
+    if (lens.digitalZoom && lens.digitalZoom > 1) {
+      constraints.video.zoom = lens.digitalZoom;
+    }
+    const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+    _cameraState.stream = newStream;
+    _cameraState.currentLensIdx = idx;
+    const video = document.getElementById("camera-video");
+    video.srcObject = newStream;
+    if (lens.digitalZoom && lens.digitalZoom > 1) {
+      try {
+        const track = newStream.getVideoTracks()[0];
+        const caps = track.getCapabilities ? track.getCapabilities() : null;
+        if (caps && caps.zoom) {
+          const z = Math.min(caps.zoom.max, Math.max(caps.zoom.min, lens.digitalZoom));
+          await track.applyConstraints({
+            advanced: [ {
+              zoom: z
+            } ]
+          });
+        }
+      } catch (zoomErr) {
+        console.warn("[camera] applyConstraints zoom failed:", zoomErr);
+      }
+    }
+    renderLensSelector();
+  } catch (err) {
+    console.warn("[camera] lens switch failed, falling back:", err);
+    try {
+      const fallback = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: {
+            ideal: "environment"
+          },
+          width: {
+            ideal: 2560
+          },
+          height: {
+            ideal: 1920
+          }
+        },
+        audio: false
+      });
+      _cameraState.stream = fallback;
+      const video = document.getElementById("camera-video");
+      video.srcObject = fallback;
+    } catch (e2) {
+      console.warn("[camera] fallback also failed:", e2);
+    }
+  }
+}
+
+function getCurrentOrientation() {
+  try {
+    if (window.matchMedia) {
+      if (window.matchMedia("(orientation: landscape)").matches) return "landscape";
+      if (window.matchMedia("(orientation: portrait)").matches) return "portrait";
+    }
+  } catch (e) {}
+  return window.innerHeight >= window.innerWidth ? "portrait" : "landscape";
+}
+
+function cameraRotateForceRecheck() {
+  if (!_cameraState) return;
+  applyCameraOrientationState();
+  setTimeout(() => {
+    if (_cameraState) applyCameraOrientationState();
+  }, 250);
+  setTimeout(() => {
+    if (_cameraState) applyCameraOrientationState();
+  }, 600);
+}
+
+function cameraSkipRotation() {
+  if (!_cameraState) return;
+  _cameraState.rotationSkipped = true;
+  const card = document.getElementById("camera-rotate-card");
+  const modal = document.getElementById("camera-modal");
+  if (card) card.classList.remove("show", "to-landscape", "to-portrait");
+  if (modal) modal.classList.remove("rotate-needed");
+  if (typeof cameraOpenSlot === "function") {
+    try {
+      cameraOpenSlot(_cameraState.current);
+    } catch (e) {}
+  }
+}
+
+function applyCameraOrientationState() {
+  if (!_cameraState) return;
+  if (_cameraState.rotationSkipped) {
+    const card = document.getElementById("camera-rotate-card");
+    const modal = document.getElementById("camera-modal");
+    if (card) card.classList.remove("show", "to-landscape", "to-portrait");
+    if (modal) modal.classList.remove("rotate-needed");
+    return true;
+  }
+  const {kind: kind, current: current} = _cameraState;
+  const preferred = kind === "corner" ? "portrait" : kind === "signature" ? "landscape" : kind === "insert" ? (CAMERA_SLOT_ORIENTATION_INSERT[current] || "portrait") : kind === "coupon" ? (CAMERA_SLOT_ORIENTATION_COUPON[current] || "portrait") : kind === "interiorCover" ? "landscape" : kind === "interior" ? (CAMERA_SLOT_ORIENTATION_INTERIOR[current] || "landscape") : kind === "restoration" ? (CAMERA_SLOT_ORIENTATION_RESTORATION[current] || "portrait") : kind === "uvfront" ? "portrait" : kind === "carddeep" ? (CAMERA_SLOT_ORIENTATION_CARDDEEP[current] || "portrait") : (_cameraState.isCard ? (CAMERA_SLOT_ORIENTATION_CARD[current] || "portrait") : CAMERA_SLOT_ORIENTATION_MAIN[current]);
+  const actual = getCurrentOrientation();
+  const match = preferred === actual;
+  const card = document.getElementById("camera-rotate-card");
+  const modal = document.getElementById("camera-modal");
+  const guideEl = document.getElementById("camera-guide");
+  if (!match) {
+    const title = document.getElementById("camera-rotate-title");
+    const iconEl = card.querySelector(".rotate-icon");
+    // S16: CW and CCW phone icons from repo assets (avoids inline SVG corruption)
+    if (iconEl) iconEl.innerHTML = preferred === "landscape"
+      ? `<img src="assets/rotate-ccw.svg" alt="" style="width:100%;height:100%">`
+      : `<img src="assets/rotate-cw.svg" alt="" style="width:100%;height:100%">`;
+    if (preferred === "landscape") {
+      card.classList.add("to-landscape");
+      card.classList.remove("to-portrait");
+      if (title) title.textContent = "Rotate to landscape";
+    } else {
+      card.classList.add("to-portrait");
+      card.classList.remove("to-landscape");
+      if (title) title.textContent = "Rotate to portrait";
+    }
+    card.classList.add("show");
+    modal.classList.add("rotate-needed");
+    if (guideEl) guideEl.innerHTML = "";
+  } else {
+    card.classList.remove("show", "to-landscape", "to-portrait");
+    modal.classList.remove("rotate-needed");
+  }
+  return match;
+}
+
+// S16: Apply near-field focus for macro/zoomed slots (staples, corners).
+// Sets focusDistance to ~5cm (2 inches) for close-up shots. Falls back
+// gracefully if the device doesn't support focusDistance.
+async function _applyMacroFocus(isMacro) {
+  try {
+    const stream = _cameraState && _cameraState.stream;
+    if (!stream) return;
+    const track = stream.getVideoTracks()[0];
+    if (!track) return;
+    const caps = track.getCapabilities ? track.getCapabilities() : null;
+    if (caps && caps.focusDistance) {
+      if (isMacro) {
+        // Near-field: set focus to minimum supported distance or 5cm
+        const nearDist = Math.max(caps.focusDistance.min || 0.03, 0.05);
+        await track.applyConstraints({ advanced: [{ focusMode: "manual", focusDistance: nearDist }] });
+      } else {
+        // Normal: return to continuous autofocus
+        await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
+      }
+    } else if (isMacro) {
+      // No focusDistance support — try single-shot focus as best effort
+      await track.applyConstraints({ advanced: [{ focusMode: "single-shot" }] });
+    }
+  } catch (_e) {
+    // focusDistance not supported on this device — silent fallback
+  }
+}
+
+function cameraOpenSlot(slotIndex) {
+  if (!_cameraState) return;
+  if (_cameraState.current !== slotIndex) _cameraState.rotationSkipped = false;
+  _cameraState.current = slotIndex;
+  // S16: Re-evaluate zoom default for this slot
+  const _slotLenses = _cameraState.lenses || [];
+  if (_slotLenses.length > 1) {
+    // S22: was a stale hand-rolled copy of the lens rule that forced ZOOM IN on
+    // kind "main" slots 0/1/2 (Front/Back/Interior) and on every "interior" slot
+    // except outer_edge. Both contradicted the S25 spec that camera init already
+    // followed, and because init only runs for the FIRST slot, this copy is what
+    // the user actually saw from the second photo onward. Now shares the rule.
+    const _zd = _slotWantsZoom(_cameraState.kind, slotIndex, _cameraState.isCard);
+    const _macroFocus = _slotWantsMacroFocus(_cameraState.kind, slotIndex, _cameraState.isCard);
+    const targetIdx = _zd ? 1 : 0;
+    if (_cameraState.currentLensIdx !== targetIdx) {
+      _cameraState.currentLensIdx = targetIdx;
+      switchToLens(targetIdx).then(() => {
+        renderLensSelector();
+        _applyMacroFocus(_macroFocus);
+      });
+    } else {
+      _applyMacroFocus(_macroFocus);
+    }
+  }
+  const {kind: kind, mode: mode, queue: queue} = _cameraState;
+  const guideFile = (kind === "corner" ? CAMERA_GUIDE_CORNER : kind === "signature" ? [ null, null ] : kind === "insert" ? [ null, null ] : kind === "coupon" ? [ null, null ] : kind === "interiorCover" ? CAMERA_GUIDE_INTERIOR_COVER : kind === "interior" ? CAMERA_GUIDE_INTERIOR : kind === "restoration" ? CAMERA_GUIDE_RESTORATION : kind === "uvfront" ? [ CAMERA_GUIDE_MAIN[0] ] : kind === "carddeep" ? CAMERA_GUIDE_CARDDEEP : (_cameraState.isCard ? CAMERA_GUIDE_CARD : CAMERA_GUIDE_MAIN))[slotIndex];
+  const label = (kind === "corner" ? CAMERA_LABEL_CORNER : kind === "signature" ? [ "Signature 1", "Signature 2" ] : kind === "insert" ? [ "Insert spread", "Top edge + cover" ] : kind === "coupon" ? [ "Coupon / pin-up page", "Page + cover" ] : kind === "interiorCover" ? [ "Interior Front", "Interior Back" ] : kind === "interior" ? FULL_SLOTS.map(s => s.label) : kind === "restoration" ? RESTORATION_SLOTS.map(s => s.label) : kind === "uvfront" ? [ "UV FRONT" ] : kind === "carddeep" ? CAMERA_LABEL_CARDDEEP : (_cameraState.isCard ? CAMERA_LABEL_CARD : CAMERA_LABEL_MAIN))[slotIndex];
+  const labelEl = document.getElementById("camera-slot-label");
+  if (labelEl) labelEl.textContent = (label || "").toUpperCase();
+  const orientationMatch = applyCameraOrientationState();
+  if (!orientationMatch) {
+    const progress = document.getElementById("camera-progress");
+    if (mode === "walkthrough") {
+      const _off = _cameraState.progressDone || 0;
+      const total = queue.length + 1 + _cameraState.captures.length + _off;
+      const done = _cameraState.captures.length + 1 + _off;
+      progress.textContent = `${done} of ${total} — ${label}`;
+    } else {
+      progress.textContent = label;
+    }
+    return;
+  }
+  const guideEl = document.getElementById("camera-guide");
+  // S21: reserve label/shutter room for the Interior Front/Back frame only.
+  if (guideEl) guideEl.classList.toggle("guide-interior-cover", guideFile === "guide_interior_front.svg");
+  // S16: clear stale guide immediately so the user never sees the previous
+  // slot's overlay while the new one loads. Also bump a sequence counter so
+  // a slow fetch from a prior slot can't overwrite a newer slot's guide.
+  if (guideEl) guideEl.innerHTML = "";
+  if (!_cameraState._guideSeq) _cameraState._guideSeq = 0;
+  const guideSeq = ++_cameraState._guideSeq;
+  if (guideFile) {
+    fetch("/assets/guides/" + guideFile + "?v=s16").then(r => r.text()).then(svgText => {
+      if (_cameraState && _cameraState._guideSeq === guideSeq) {
+        guideEl.innerHTML = svgText;
+      }
+    }).catch(err => {
+      console.warn("[camera] guide fetch failed:", err);
+      if (_cameraState && _cameraState._guideSeq === guideSeq) guideEl.innerHTML = "";
+    });
+  }
+  const progress = document.getElementById("camera-progress");
+  if (mode === "walkthrough") {
+    const _off2 = _cameraState.progressDone || 0;
+    const total = queue.length + 1 + _cameraState.captures.length + _off2;
+    const done = _cameraState.captures.length + 1 + _off2;
+    progress.textContent = `${done} of ${total} — ${label}`;
+  } else {
+    progress.textContent = label;
+  }
+}
+
+
+function detectSlabLabel(dataUrl) {
+  return new Promise(resolve => {
+    const img = new Image;
+    img.onload = () => {
+      try {
+        const W = img.naturalWidth || img.width;
+        const H = img.naturalHeight || img.height;
+        if (!W || !H) return resolve(null);
+        const sampleW = Math.min(W, 600);
+        const sampleH = Math.round(H * 0.15 * (sampleW / W));
+        const canvas = document.createElement("canvas");
+        canvas.width = sampleW;
+        canvas.height = sampleH;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, sampleW, sampleH);
+        const data = ctx.getImageData(0, 0, sampleW, sampleH).data;
+        const ROWS_TO_SAMPLE = 20;
+        const rowStep = Math.max(1, Math.floor(sampleH / ROWS_TO_SAMPLE));
+        let cgcRowCount = 0;
+        let psaRowCount = 0;
+        let totalRowsSampled = 0;
+        for (let y = 0; y < sampleH; y += rowStep) {
+          totalRowsSampled++;
+          let sumR = 0, sumG = 0, sumB = 0;
+          let sumR2 = 0, sumG2 = 0, sumB2 = 0;
+          const rowStart = y * sampleW * 4;
+          for (let x = 0; x < sampleW; x++) {
+            const i = rowStart + x * 4;
+            const r = data[i], g = data[i + 1], b = data[i + 2];
+            sumR += r;
+            sumG += g;
+            sumB += b;
+            sumR2 += r * r;
+            sumG2 += g * g;
+            sumB2 += b * b;
+          }
+          const meanR = sumR / sampleW;
+          const meanG = sumG / sampleW;
+          const meanB = sumB / sampleW;
+          const varR = sumR2 / sampleW - meanR * meanR;
+          const varG = sumG2 / sampleW - meanG * meanG;
+          const varB = sumB2 / sampleW - meanB * meanB;
+          const stddev = Math.sqrt((varR + varG + varB) / 3);
+          if (stddev > 45) continue;
+          if (meanR > 180 && meanG > 140 && meanB < 120 && meanR - meanB > 80) {
+            cgcRowCount++;
+            continue;
+          }
+          const maxC = Math.max(meanR, meanG, meanB);
+          const minC = Math.min(meanR, meanG, meanB);
+          if (minC > 200 && maxC - minC < 40) {
+            psaRowCount++;
+            continue;
+          }
+        }
+        const cgcRatio = cgcRowCount / Math.max(1, totalRowsSampled);
+        const psaRatio = psaRowCount / Math.max(1, totalRowsSampled);
+        if (cgcRatio >= 0.35) return resolve("cgc");
+        if (psaRatio >= 0.35) return resolve("psa");
+        return resolve(null);
+      } catch (e) {
+        console.warn("[label-detect] failed:", e);
+        return resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+}
+
+async function cameraCapture() {
+  if (!_cameraState || !_cameraState.stream) return;
+  const modal = document.getElementById("camera-modal");
+  if (modal && modal.classList.contains("rotate-needed")) return;
+  const video = document.getElementById("camera-video");
+  if (!video.videoWidth || !video.videoHeight) return;
+  const captureBtn = document.getElementById("camera-capture");
+  const focusing = document.getElementById("camera-focusing");
+  if (captureBtn) captureBtn.disabled = true;
+  if (focusing) focusing.classList.add("active");
+  try {
+    const track = _cameraState.stream.getVideoTracks()[0];
+    if (track && track.applyConstraints) {
+      try {
+        await track.applyConstraints({
+          advanced: [ {
+            focusMode: "single-shot"
+          } ]
+        });
+      } catch (afErr) {
+        try {
+          await track.applyConstraints({
+            advanced: [ {
+              focusMode: "continuous"
+            } ]
+          });
+        } catch (e2) {}
+      }
+    }
+    await new Promise(r => setTimeout(r, 350));
+  } finally {
+    if (focusing) focusing.classList.remove("active");
+  }
+  const flash = document.getElementById("camera-flash");
+  if (flash) {
+    flash.classList.add("flash");
+    setTimeout(() => flash.classList.remove("flash"), 120);
+  }
+  const stage = document.getElementById("camera-stage");
+  const stageW = stage.clientWidth;
+  const stageH = stage.clientHeight;
+  const videoW = video.videoWidth;
+  const videoH = video.videoHeight;
+  const coverScale = Math.max(stageW / videoW, stageH / videoH);
+  const visibleW = Math.round(stageW / coverScale);
+  const visibleH = Math.round(stageH / coverScale);
+  const sx = Math.round((videoW - visibleW) / 2);
+  const sy = Math.round((videoH - visibleH) / 2);
+  const canvas = document.createElement("canvas");
+  canvas.width = visibleW;
+  canvas.height = visibleH;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(video, sx, sy, visibleW, visibleH, 0, 0, visibleW, visibleH);
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+  _cameraState.captures.push({
+    slot: _cameraState.current,
+    dataUrl: dataUrl
+  });
+  console.log("[camera] captured slot", _cameraState.current, "kind:", _cameraState.kind, "mode:", _cameraState.mode, "queue:", JSON.stringify(_cameraState.queue));
+  // S16 Pass 2b: on the FRONT capture (slot 0) of a main walkthrough, run slab
+  // detection NOW on the raw uncropped frame, so a detected slab can prune the
+  // remaining interior (page_quality, slot 2) + raking (slot 3) slots before
+  // they're prompted — a slabbed book can't be opened to shoot those. ~0.8–1.2s
+  // (8s timeout fallback). Sets labelDetected so cameraFinish carries it to
+  // formData and the assessment uses the graded precision ladder.
+  if (_cameraState.mode === "walkthrough" && _cameraState.kind === "main" && _cameraState.current === 0) {
+    const checkEl = document.getElementById("camera-checking");
+    if (checkEl) checkEl.classList.add("show");
+    let _slab = null;
+    try {
+      _slab = await detectSlabFromDataUrl(dataUrl);
+    } catch (e) {
+      console.warn("[camera] slabcheck threw:", e);
+    }
+    if (checkEl) checkEl.classList.remove("show");
+    formData._slabCheckedAtCapture = true;
+    if (_slab && _slab.detected && _cameraState) {
+      _cameraState.queue = _cameraState.queue.filter(s => s !== 2 && s !== 3);
+      _cameraState.labelDetected = true;
+      _cameraState.labelKind = (_slab.company || "CGC").toLowerCase();
+      console.log("[camera] SLAB detected (" + _cameraState.labelKind + ") — skipping interior + raking; remaining queue:", _cameraState.queue);
+    } else if (_slab && _slab.isCard && _cameraState) {
+      // Guided card flow: Front (slot 0, already shot) -> Top Front Macro (2) ->
+      // Bottom Front Macro (3) -> Back (1). Slot indices stay grader-aligned.
+      _cameraState.queue = [2, 3, 1];
+      _cameraState.isCard = true;
+      console.log("[camera] CARD detected — guided card flow; remaining queue:", _cameraState.queue);
+    } else {
+      console.log("[camera] not a slab (or detect unavailable) — full walkthrough");
+    }
+    if (!_cameraState) return;
+  }
+  if (captureBtn) captureBtn.disabled = false;
+  console.log("[camera] advance check: mode=", _cameraState?.mode, "queueLen=", _cameraState?.queue?.length, "kind=", _cameraState?.kind);
+  if (_cameraState.mode === "walkthrough" && _cameraState.queue.length > 0) {
+    const nextSlot = _cameraState.queue.shift();
+    console.log("[camera] advancing to slot", nextSlot);
+    cameraOpenSlot(nextSlot);
+  } else if (_cameraChainNext()) {
+    // Deep's interior covers continue in this same session — see _cameraChainNext.
+  } else {
+    console.log("[camera] finishing — mode:", _cameraState?.mode, "queueEmpty:", !_cameraState?.queue?.length);
+    cameraFinish();
+  }
+}
+
+// ── S23 BUGFIX: A DEEP CAPTURE IS ONE SESSION, NOT TWO ─────────────────────
+// Reported repeatedly: after the four corner macros the camera closed, the user
+// was dropped back into the Edit form, and had to find and tap the Interior
+// Front slot to shoot the remaining two photos. Nothing told them more photos
+// were needed. A Deep needs six images and the walkthrough only ever walked
+// four of them, because `corner` and `interiorCover` were separate kinds with
+// separate camera sessions and nothing joined them.
+//
+// This joins them. When the corner queue empties, the session CONTINUES into
+// Interior Front/Back instead of calling cameraFinish().
+//
+// WHY THE CAPTURES ARE BATCHED RATHER THAN APPENDED: runCropperSequence() picks
+// its destination list from the KIND (`cornerImages` vs `interiorCoverImages`),
+// so one flat captures array carrying both kinds would write the interior covers
+// into the corner slots. Each kind's captures are parked as their own batch and
+// replayed in order at finish.
+//
+// NOT chained: a slabbed book (labelDetected) has no interior-cover slots at
+// all, and a single-slot re-shoot stays a single-slot re-shoot.
+// ── CLEANING COMPARE CAPTURE MODE (v5.70, 2026-10-19) ──────────────────────
+// The ten After photos must be shot EXACTLY the way the Before ten were, or the
+// comparison is measuring the photography rather than the cleaning. So this does
+// NOT introduce a tenth camera `kind` with its own labels, guides, orientations
+// and zoom rules to drift out of step with the real ones. It reuses `main`,
+// `corner` and `interiorCover` unchanged — same guides, same macro focus, same
+// orientation gates — and only REDIRECTS WHERE THE RESULT IS STORED.
+//
+// One flag, three small hooks: the chain (main -> corner -> interiorCover), the
+// storage redirect in runCropperSequence(), and the opener below.
+//
+// Index map, which is also the order api/assess_clean_run.js slices:
+//   main 0-3          -> cleanAfterImages 0-3   (front, back, pq, raking)
+//   corner 0-3        -> cleanAfterImages 4-7   (tl, tr, bl, br)
+//   interiorCover 0-1 -> cleanAfterImages 8-9   (interior front, interior back)
+let _cleanCapture = false;
+const CLEAN_CAPTURE_OFFSET = { main: 0, corner: 4, interiorCover: 8 };
+const CLEAN_CAPTURE_COUNT = { main: 4, corner: 4, interiorCover: 2 };
+
+function _cleanSlotIndex(kind, slot) {
+  const off = CLEAN_CAPTURE_OFFSET[kind];
+  return (off == null) ? null : off + slot;
+}
+
+// Which slots of `kind` are still empty in the After set.
+function _cleanEmptySlots(kind) {
+  const arr = formData.cleanAfterImages || [];
+  const off = CLEAN_CAPTURE_OFFSET[kind], cnt = CLEAN_CAPTURE_COUNT[kind];
+  if (off == null) return [];
+  const out = [];
+  for (let i = 0; i < cnt; i++) if (!arr[off + i]) out.push(i);
+  return out;
+}
+
+// Start the ten-photo After capture. One continuous flow — the spec's hard
+// requirement, and the reason the Deep drop-out bug had to be fixed first.
+function startCleanCapture() {
+  if (!formData.id) return;
+  _cleanCapture = true;
+  const arr = [ ...(formData.cleanAfterImages || []) ];
+  while (arr.length < 10) arr.push(null);
+  formData.cleanAfterImages = arr.slice(0, 10);
+  // Enter through the ordinary main walkthrough; _cameraChainNext carries it on.
+  tapSlot(0, "main");
+}
+
+function cancelCleanCapture() { _cleanCapture = false; }
+
+// Which entry has its Cleaning Compare section open. Keyed by ITEM ID rather
+// than a bare boolean so the open state cannot leak from one book to the next.
+let _cleanExpandedFor = null;
+function expandCleanSection() {
+  if (!formData || !formData.id) return;
+  _cleanExpandedFor = formData.id;
+  renderForm();
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const el = document.getElementById("clean-section");
+    if (!el) return;
+    window.scrollTo({ top: Math.max(0, el.getBoundingClientRect().top + window.pageYOffset - 70), behavior: "smooth" });
+  }));
+}
+
+// CLEANING COMPARE AND THE LIBRARY PICKER.
+//
+// The redirect in runCropperSequence() only covers the CAMERA path. When
+// window._cameraSupported is false - a desktop PWA, which is exactly how a test
+// run from a prepared "after" image set gets done - tapSlot() falls through to
+// the hidden file inputs instead, and handleImages / handleCornerImages /
+// handleInteriorCoverImages write into formData.images, .cornerImages and
+// .interiorCoverImages: THE BOOK'S OWN BEFORE PHOTOS. Before is immutable
+// (decision 2 of the spec) and overwriting it is the one thing this feature must
+// never do, so those three handlers call this FIRST and return if it took the
+// files.
+//
+// Disarming at the end is deliberate and is the camera path's opposite. The
+// camera keeps _cleanCapture set across the whole chained walkthrough and clears
+// it when the chain ends. There is no chain here: one picker fills one group, so
+// leaving the flag set would silently redirect the NEXT ordinary slot tap too.
+// retakeCleanSlot() re-arms it on each tap, which is all the library path needs.
+async function _cleanHandleLibraryFiles(e, kind, startSlot) {
+  if (!_cleanCapture) return false;
+  const off = CLEAN_CAPTURE_OFFSET[kind], cnt = CLEAN_CAPTURE_COUNT[kind];
+  if (off == null) return false;
+
+  const files = Array.from(e.target.files || []);
+  e.target.value = "";
+  if (!files.length) { _cleanCapture = false; return true; }   // handled: picker cancelled
+
+  const nonImage = files.find(f => !f.type.startsWith("image/"));
+  if (nonImage) {
+    alert(`"${nonImage.name}" doesn't look like an image file. Please pick photos only (JPG, PNG, HEIC, etc.).`);
+    _cleanCapture = false;
+    return true;
+  }
+
+  const urls = await Promise.all(files.map(f => new Promise(res => {
+    const r = new FileReader;
+    r.onload = ev => res(ev.target.result);
+    r.readAsDataURL(f);
+  })));
+
+  const arr = [ ...(formData.cleanAfterImages || []) ];  while (arr.length < 10) arr.push(null);
+  const meta = [ ...(formData.cleanAfterMeta || []) ];   while (meta.length < 10) meta.push(null);
+
+  // Multi-select fills forward from the tapped slot and stops at the group's
+  // edge rather than wrapping into the next group's photos.
+  const base = Math.max(0, Math.min(cnt - 1, startSlot | 0));
+  for (let n = 0; n < urls.length && base + n < cnt; n++) {
+    arr[off + base + n] = urls[n];
+    meta[off + base + n] = { source: "library", capturedAt: (new Date).toISOString() };
+  }
+
+  formData.cleanAfterImages = arr.slice(0, 10);
+  formData.cleanAfterMeta = meta.slice(0, 10);
+  formData._imagesChanged = true;
+  _cleanCapture = false;
+  renderForm();
+  return true;
+}
+
+function _cameraChainNext() {
+  if (!_cameraState) return false;
+  if (_cameraState.mode !== "walkthrough") return false;
+
+  // CLEANING COMPARE runs the whole ten in one session: main -> corner ->
+  // interiorCover. Emptiness is judged against cleanAfterImages, not against the
+  // book's own photos, which are all already present.
+  let _k = _cameraState.kind, _nextKind = null, nextSlots = [];
+  if (_cleanCapture) {
+    if (_k === "main") { _nextKind = "corner"; nextSlots = _cleanEmptySlots("corner"); }
+    else if (_k === "corner" && !formData.labelDetected) { _nextKind = "interiorCover"; nextSlots = _cleanEmptySlots("interiorCover"); }
+    if (!_nextKind || !nextSlots.length) return false;
+  } else {
+    if (_k !== "corner") return false;
+    if (formData.labelDetected) return false;
+    const cov = formData.interiorCoverImages || [];
+    _nextKind = "interiorCover";
+    nextSlots = [ 0, 1 ].filter(i => !cov[i]);
+    if (!nextSlots.length) return false;
+  }
+  (_cameraState.batches = _cameraState.batches || []).push({ kind: _k, captures: [ ..._cameraState.captures ] });
+  // Keeps the on-screen counter continuous: "5 of 6", not a restart at "1 of 2".
+  _cameraState.progressDone = (_cameraState.progressDone || 0) + _cameraState.captures.length;
+  _cameraState.kind = _nextKind;
+  _cameraState.captures = [];
+  _cameraState.current = nextSlots[0];
+  _cameraState.queue = nextSlots.slice(1);
+  document.body.classList.remove("camera-kind-corner", "camera-kind-main", "camera-kind-restoration", "camera-kind-interior");
+  document.body.classList.add(_nextKind === "corner" ? "camera-kind-corner" : "camera-kind-interior");
+  console.log("[camera] chaining " + _k + " -> " + _nextKind + ", slots:", nextSlots);
+  cameraOpenSlot(_cameraState.current);
+  return true;
+}
+
+async function cameraFinish() {
+  if (!_cameraState) return;
+  const {kind: kind, captures: captures, labelDetected: labelDetected, labelKind: labelKind, isCard: _isCardCap} = _cameraState;
+  // A chained session (corner -> interiorCover) carries earlier kinds as parked
+  // batches. Each must be replayed against its OWN kind or it lands in the wrong
+  // image list. The current kind is always the last batch.
+  const _batches = (_cameraState.batches || []).concat([ { kind: kind, captures: captures } ]);
+  cameraCloseStream();
+  document.getElementById("camera-modal").classList.remove("open");
+  // S16: clear the guide so stale SVG can't leak into the next camera session
+  const _gEl = document.getElementById("camera-guide");
+  if (_gEl) _gEl.innerHTML = "";
+  _cameraState = null;
+  if (labelDetected) {
+    formData.labelDetected = true;
+    formData.labelKind = labelKind || "cgc";
+  }
+  if (_isCardCap) formData._isCard = true;
+  for (const b of _batches) await runCropperSequence(b.captures, b.kind);
+  // Clear the Cleaning Compare redirect only AFTER every batch has been
+  // replayed — runCropperSequence reads the flag, so resetting it earlier would
+  // send the last batch into the book's own image lists and overwrite the
+  // Before set, which is the one thing this feature must never do.
+  // Read before the flag is cleared below.
+  const _wasClean = _cleanCapture;
+  if (_cleanCapture) {
+    _cleanCapture = false;
+    try { renderForm(); } catch (e) {}
+  }
+  // v6.33: land on the photos that were just taken. The camera closes straight
+  // back into a 10,000px form at whatever scroll offset it was opened from,
+  // which after a Deep put the user somewhere unrelated to the six photos they
+  // had just shot. The LAST batch is the one they finished on, so that is the
+  // section to show.
+  try {
+    const _lastKind = _batches.length ? _batches[_batches.length - 1].kind : null;
+    _scrollToCaptureSection(_wasClean ? "clean" : _lastKind);
+  } catch (e) { /* never let a scroll break the capture */ }
+}
+
+// Where a finished capture of each kind should leave the user. Shares the
+// 70px sticky-bar offset and the two-frame wait with showEditToSection(): the
+// form re-renders after the crop sequence, so the node does not exist yet on
+// the first frame.
+function _scrollToCaptureSection(kind) {
+  // v6.35: the BUTTON, not the slots. After a capture the photos are already
+  // on screen behind the camera; what the user needs next is the control that
+  // spends them. Scrolling to the top of the slot grid put the button below
+  // the fold again.
+  const ID = {
+    corner: "hg-assess-btn",
+    interiorCover: "hg-assess-btn",
+    interior: "full-assess-btn",
+    restoration: "uv-section",
+    signature: "signature-section",
+    insert: "insert-section",
+    coupon: "coupon-section",
+    clean: "clean-section"
+  };
+  const id = ID[kind];
+  if (!id) return;   // `main` is the top of the form; leave the view alone
+  requestAnimationFrame(function () {
+    requestAnimationFrame(function () {
+      const el = document.getElementById(id);
+      if (!el) return;
+      // A button wants to be IN the view, not pinned to the top of it: show it
+      // with the last photos still visible above.
+      const r = el.getBoundingClientRect();
+      const y = r.top + window.pageYOffset - Math.max(70, (window.innerHeight - r.height) * 0.62);
+      window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+    });
+  });
+}
+
+// S22: yield until the browser has actually laid out and painted. cameraFinish()
+// closes the camera modal and calls this synchronously, so without this the first
+// cropper open measures a stage that has no box yet (see the _fitCrop note in
+// openCropper). Two rAFs = one committed layout+paint; the 60ms timeout covers
+// WebViews that coalesce rAFs while a fullscreen view is tearing down.
+function _afterLayout() {
+  return new Promise(resolve => {
+    requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 60)));
+  });
+}
+
+async function runCropperSequence(captures, kind) {
+  const ordered = [ ...captures ];
+  let _firstCrop = true;
+  for (const cap of ordered) {
+    if (kind === "uvfront") {
+      const r = [ ...formData.restorationImages || [] ];
+      while (r.length < 4) r.push(null);
+      r[3] = cap.dataUrl;
+      formData.restorationImages = r;
+      formData._imagesChanged = true;
+      continue;
+    }
+    // CLEANING COMPARE: the capture reused main/corner/interiorCover so the
+    // photography is identical to the Before set, which means the ordinary
+    // listKey below would overwrite the BOOK'S OWN photos with the after-cleaning
+    // ones. Before is immutable (decision 2) and that would destroy it. Redirect
+    // into cleanAfterImages at the mapped index and skip the normal path.
+    if (_cleanCapture && CLEAN_CAPTURE_OFFSET[kind] != null) {
+      const _ci = _cleanSlotIndex(kind, cap.slot);
+      const _ca = [ ...(formData.cleanAfterImages || []) ];
+      while (_ca.length < 10) _ca.push(null);
+      _ca[_ci] = cap.dataUrl;
+      formData.cleanAfterImages = _ca;
+      const _cm = [ ...(formData.cleanAfterMeta || []) ];
+      while (_cm.length < 10) _cm.push(null);
+      _cm[_ci] = { source: "camera", capturedAt: (new Date).toISOString() };
+      formData.cleanAfterMeta = _cm;
+      formData._imagesChanged = true;
+      continue;
+    }
+    const listKey = kind === "corner" ? "cornerImages" : kind === "signature" ? "signatureImages" : kind === "insert" ? "insertImages" : kind === "coupon" ? "couponImages" : kind === "interiorCover" ? "interiorCoverImages" : kind === "interior" ? "interiorImages" : kind === "restoration" ? "restorationImages" : kind === "carddeep" ? "cardDeepImages" : "images";
+    const metaKey = kind === "corner" ? "cornerMeta" : kind === "signature" ? "signatureMeta" : kind === "insert" ? "insertMeta" : kind === "coupon" ? "couponMeta" : kind === "interiorCover" ? "interiorCoverMeta" : kind === "interior" ? "interiorMeta" : kind === "restoration" ? "restorationMeta" : kind === "carddeep" ? "cardDeepMeta" : "imagesMeta";
+    const list = [ ...formData[listKey] || [] ];
+    while (list.length <= cap.slot) list.push(null);
+    // S16: Interior Staples auto-rotate 90° CW at capture time
+    // Interior kind: slot 7. Restoration kind: slot 6.
+    let finalUrl = cap.dataUrl;
+    if ((kind === "interior" && cap.slot === 7) || (kind === "restoration" && cap.slot === 7)) {
+      try { finalUrl = await _rotateImage90CW(cap.dataUrl); } catch (e) { console.warn("[camera] rotate failed, using original:", e); }
+    }
+    list[cap.slot] = finalUrl;
+    formData[listKey] = list;
+    // S20: do NOT auto-populate Restoration slots when capturing Full images.
+    // That made the Restoration Check slots appear pre-filled before the user
+    // ever opened the check. v6.24: the reveal step it referred to is gone, and
+    // the sync it describes had already been reduced to a no-op table.
+    if (kind === "restoration" && RESTORATION_TO_FULL[cap.slot] != null) {
+      const fIdx = RESTORATION_TO_FULL[cap.slot];
+      const fImgs = [ ...formData.interiorImages || [] ];
+      while (fImgs.length < FULL_SLOT_COUNT) fImgs.push(null);
+      fImgs[fIdx] = finalUrl;
+      formData.interiorImages = fImgs;
+    }
+    const meta = [ ...formData[metaKey] || [] ];
+    while (meta.length <= cap.slot) meta.push(null);
+    meta[cap.slot] = {
+      source: "camera",
+      capturedAt: (new Date).toISOString()
+    };
+    formData[metaKey] = meta;
+    formData._imagesChanged = true;
+    // S25: auto-cropper runs for Main (all 4), plus — now the first-image measure
+    // bug is fixed — Deep's Interior Front/Back (interiorCover) and Full's three
+    // EDGE shots (Top/Outer/Bottom). Corner macros and the three staple shots
+    // don't benefit from cropping, so they skip it.
+    const _edgeCropSlots = [ fullSlotIndex("top_pages"), fullSlotIndex("outer_edge"), fullSlotIndex("bottom_pages") ];
+    const _wantsAutoCrop = kind === "main"
+      || kind === "interiorCover"
+      || (kind === "interior" && _edgeCropSlots.includes(cap.slot));
+    if (!_wantsAutoCrop) continue;
+    if (_firstCrop) { await _afterLayout(); _firstCrop = false; }
+    await new Promise(resolve => {
+      _cropperSequenceResolve = resolve;
+      openCropper(kind, cap.slot);
+    });
+    _cropperSequenceResolve = null;
+  }
+  renderForm();
+  // S16: after corner captures, scroll Edit view to center the Deep Assessment
+  // button so the user sees it immediately instead of Save/Back at the top
+  if (kind === "corner") {
+    setTimeout(() => {
+      const hgBtn = document.getElementById("hg-assess-btn");
+      if (hgBtn) hgBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 120);
+  }
+}
+
+let _cropperSequenceResolve = null;
+
+// S16: rotate a data-URL image 90° clockwise (portrait → landscape)
+function _rotateImage90CW(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = img.height;
+      c.height = img.width;
+      const ctx = c.getContext("2d");
+      ctx.translate(c.width, 0);
+      ctx.rotate(Math.PI / 2);
+      ctx.drawImage(img, 0, 0);
+      resolve(c.toDataURL("image/jpeg", 0.92));
+    };
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+
+function cameraExit() {
+  if (!_cameraState) return;
+  cameraFinish();
+}
+
+function cameraUploadInstead() {
+  if (!_cameraState) return;
+  const {kind: kind, current: current, mode: mode, captures: captures} = _cameraState;
+  const hadCaptures = mode === "walkthrough" && Array.isArray(captures) && captures.length > 0;
+  const savedKind = kind, savedCurrent = current, savedCaptures = hadCaptures ? [ ...captures ] : null;
+  // S23: if the session had already chained (corner -> interiorCover), the corner
+  // photos are parked in `batches` and would be silently thrown away here.
+  const savedBatches = (_cameraState.batches || []).map(b => ({ kind: b.kind, captures: [ ...b.captures ] }));
+  const savedLabelDetected = _cameraState.labelDetected, savedLabelKind = _cameraState.labelKind;
+  cameraCloseStream();
+  document.getElementById("camera-modal").classList.remove("open");
+  // S16: clear the guide so stale SVG can't leak into next session
+  const _gElUp = document.getElementById("camera-guide");
+  if (_gElUp) _gElUp.innerHTML = "";
+  _cameraState = null;
+  // S20 CRITICAL FIX: route "upload from library instead" to the CORRECT file
+  // input per kind. Previously every non-corner kind fell through to the MAIN
+  // input (_tappedSlot + photo-input), so a library import for a Full interior
+  // or Deep interior-cover slot was written into formData.images — corrupting
+  // the Front/Back photos. This was latent until #52 routed interior/interiorCover
+  // through the camera flow, which made this path reachable for them.
+  const openPicker = () => {
+    if (savedKind === "corner") { _tappedCornerSlot = savedCurrent; document.getElementById("corner-photo-input").click(); }
+    else if (savedKind === "interiorCover") { _tappedInteriorCoverSlot = savedCurrent; document.getElementById("interior-cover-photo-input").click(); }
+    else if (savedKind === "interior") { _tappedInteriorSlot = savedCurrent; document.getElementById("interior-photo-input").click(); }
+    else if (savedKind === "signature") { _tappedSignatureSlot = savedCurrent; document.getElementById("signature-photo-input").click(); }
+    else if (savedKind === "insert") { _tappedInsertSlot = savedCurrent; document.getElementById("insert-photo-input").click(); }
+    else if (savedKind === "coupon") { _tappedCouponSlot = savedCurrent; document.getElementById("coupon-photo-input").click(); }
+    else if (savedKind === "restoration" || savedKind === "uvfront") { _tappedRestorationSlot = savedCurrent; document.getElementById("restoration-photo-input").click(); }
+    else { _tappedSlot = savedCurrent; document.getElementById("photo-input").click(); }
+  };
+  if (savedCaptures || savedBatches.length) {
+    if (savedLabelDetected) {
+      formData.labelDetected = true;
+      formData.labelKind = savedLabelKind || "cgc";
+    }
+    const _all = savedBatches.concat(savedCaptures ? [ { kind: savedKind, captures: savedCaptures } ] : []);
+    (async () => { for (const b of _all) await runCropperSequence(b.captures, b.kind); })()
+      .then(openPicker).catch(openPicker);
+  } else {
+    openPicker();
+  }
+}
+
+function cameraPermissionFallback() {
+  cameraUploadInstead();
+}
+
+function cameraCloseStream() {
+  if (_cameraState && _cameraState.stream) {
+    _cameraState.stream.getTracks().forEach(t => t.stop());
+  }
+  const video = document.getElementById("camera-video");
+  if (video) video.srcObject = null;
+  if (_cameraOrientationListener) {
+    window.removeEventListener("orientationchange", _cameraOrientationListener);
+    window.removeEventListener("resize", _cameraOrientationListener);
+    _cameraOrientationListener = null;
+  }
+  if (_cameraOrientationTimeout) {
+    clearTimeout(_cameraOrientationTimeout);
+    _cameraOrientationTimeout = null;
+  }
+  document.body.classList.remove("camera-modal-open");
+  document.body.classList.remove("camera-kind-main", "camera-kind-corner", "camera-kind-interior");
+  document.body.classList.remove("camera-perm-shown");
+}
+
+function showImageCapModal(type) {
+  const existing = document.getElementById("image-cap-modal");
+  if (existing) existing.remove();
+  const isHard = type === "hard";
+  const overlay = document.createElement("div");
+  overlay.id = "image-cap-modal";
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:3000;display:flex;align-items:center;justify-content:center;padding:24px";
+  overlay.innerHTML = `\n    <div style="background:#141210;border-radius:16px;padding:28px 24px;max-width:320px;width:100%;border:1.5px solid ${isHard ? "#8b1a1a" : "#6a4a10"}">\n      <div style="font-size:18px;font-weight:700;color:${isHard ? "#e87a7a" : "#c8a96e"};margin-bottom:12px">\n        ${isHard ? "🚫 Image Storage Full" : "📸 Storage Limit Approaching"}\n      </div>\n      <div style="font-size:13px;color:#a09080;line-height:1.6;margin-bottom:20px">\n        ${isHard ? `You've reached the free limit of ${IMAGE_HARD_CAP} books with photos. Purchase any credit package to continue adding images — no limit applies to your text entries.` : `You've added photos to ${IMAGE_SOFT_CAP} books. You can add photos to ${IMAGE_HARD_CAP - IMAGE_SOFT_CAP} more books on the free plan. Purchase credits to unlock unlimited photo storage.`}\n      </div>\n      <div style="display:flex;gap:10px">\n        <button class="rg-btn rg-btn-branded rg-btn-md" onclick="document.getElementById('image-cap-modal').remove();showBuyCredits()" style="flex:2">\n          Buy Credits\n        </button>\n        <button class="rg-btn rg-btn-ghost rg-btn-md" onclick="document.getElementById('image-cap-modal').remove()" style="flex:1">\n          ${isHard ? "Cancel" : "Continue"}\n        </button>\n      </div>\n    </div>`;
+  document.body.appendChild(overlay);
+}
+
+function cycleTreatment(key) {
+  const v = formData[key];
+  if (v === null || v === undefined) formData[key] = false; else if (v === false) formData[key] = true; else if (v === true) formData[key] = "done"; else if (v === "done") formData[key] = "dontcare"; else formData[key] = false;
+  renderForm();
+}
+
+function cancelTreatment(key, e) {
+  e.stopPropagation();
+  formData[key] = null;
+  renderForm();
+}
+
+// ── v5.80: PROVISIONAL SAVE — the grade lands before the photos do ──────────
+//
+// WHAT WENT WRONG (Punisher 1, 2026-10-21). submitForm() uploads every photo to
+// Cloud Storage and only then writes the item to Firestore. That ordering means
+// the ENTIRE assessment — grade, page quality, defect list, write-up, the credit
+// the user just spent — exists nowhere but this browser tab for the whole length
+// of the upload, which on a phone on cell data is the slowest part of the flow.
+// A user's app froze in that window. The server had graded the book cleanly
+// (9.0, 12.9s, stopReason end_turn); he reopened the app and it was simply gone.
+// Nothing could be recovered because the photos had never left his phone and the
+// grade had never left the tab.
+//
+// THE FIX IS ORDERING, NOT RETRYING. A grade with no pictures is recoverable —
+// the user sees the book in their library and can add photos. A grade with
+// nowhere to live is not. So the text half of the record is written FIRST, as
+// its own Firestore document, before a single byte of image is uploaded. If the
+// app dies at any point after this line, the book is in the library with its
+// grade intact.
+//
+// WHAT IS DELIBERATELY NOT WRITTEN: data: URLs. Image arrays at this point hold
+// base64 of the raw photos — megabytes each, against a 1MB Firestore document
+// limit. They are stripped out; anything already uploaded (an https URL from a
+// pre-upload or a re-save) is kept, since those are just strings.
+//
+// provisionalSave:true marks the record as "grade present, photos may not be".
+// The real save at the end of submitForm() clears it. A document still carrying
+// the flag minutes later is one of these interrupted saves.
+//
+// BEST EFFORT, ALWAYS. Any failure here is swallowed: this is a safety net, and
+// a safety net that can block the save it exists to protect is worse than none.
+async function _saveProvisional(id) {
+  try {
+    if (!id || id === SAMPLE_COMIC_ID) return;
+    // Nothing worth protecting unless an assessment actually produced something.
+    const hasAssessment = !!(formData.predictedGrade || formData.assessedCGCGrade ||
+      (formData.roboGrade && formData.roboGrade.score != null) || formData.aiAssessment);
+    if (!hasAssessment) return;
+    const keepUploaded = a => (Array.isArray(a) ? a.filter(x => typeof x === "string" && !isDataUrl(x)) : []);
+    const rec = { ...formData, id };
+    for (const k of ["images", "cornerImages", "interiorImages", "interiorCoverImages",
+                     "signatureImages", "insertImages", "couponImages",
+                     "restorationImages", "userDefectImages", "cleanBeforeImages", "cleanAfterImages"]) {
+      if (k in rec) rec[k] = keepUploaded(rec[k]);
+    }
+    rec.provisionalSave = true;
+    if (rec.type == null) rec.type = "comic";
+    if (rec.ownership == null) rec.ownership = "Owned";
+    syncMsg("Saving grade\u2026");
+    await fsSetDoc(userItemDoc(id), nestForFirestore(rec));
+    // Settle the credit now too. The assessment is durable from this moment, so
+    // the orphan sweep in /api/credit_sweep must not hand the credit back.
+    _settleCredits(rec);
+  } catch (e) {
+    console.warn("[provisional-save] failed (continuing):", e && e.message);
+  }
+}
+
+async function submitForm() {
+  if (!formData.title?.trim()) {
+    return;
+  }
+  formData.title = normalizeTitle(formData.title.trim().replace(/\s+/g, " ").replace(/^The\s+/i, ""), formData.issueDate, formData.printing);
+  if (formData.seller?.trim()) updateSellerList(formData.seller.trim());
+  const id = formData.id || buildComicId(formData.title, formData.issue);
+  formData.id = id; // S20 (P0 fix): pin the id so Back/cancelForm can return to the saved item
+  // v5.80: WRITE THE GRADE BEFORE THE PHOTOS. See _saveProvisional below.
+  await _saveProvisional(id);
+  const rawImages = (formData.images || []).filter(Boolean);
+  const rawCornerImages = (formData.cornerImages || []).filter(Boolean);
+  const rawInteriorImages = formData.interiorImages || [];
+  const newInteriorCount = rawInteriorImages.filter(x => x && isDataUrl(x)).length;
+  const rawSignatureImages = formData.signatureImages || [];
+  const newSignatureCount = rawSignatureImages.filter(x => x && isDataUrl(x)).length;
+  const rawInsertImages = formData.insertImages || [];
+  const newInsertCount = rawInsertImages.filter(x => x && isDataUrl(x)).length;
+  const rawCouponImages = formData.couponImages || [];
+  const newCouponCount = rawCouponImages.filter(x => x && isDataUrl(x)).length;
+  const rawRestorationImages = formData.restorationImages || [];
+  const newRestorationCount = rawRestorationImages.filter(x => x && isDataUrl(x)).length;
+  // S20 (#36): Deep interior-cover photos.
+  const rawInteriorCoverImages = formData.interiorCoverImages || [];
+  const newInteriorCoverCount = rawInteriorCoverImages.filter(x => x && isDataUrl(x)).length;
+  // User-defect photos (informational). Persist through re-assessment.
+  const rawUserDefectImages = (formData.userDefectImages || []).filter(Boolean).slice(0, 2);
+  const newUserDefectCount = rawUserDefectImages.filter(x => x && isDataUrl(x)).length;
+  const newImageCount = rawImages.filter(isDataUrl).length + rawCornerImages.filter(isDataUrl).length + newInteriorCount + newSignatureCount + newRestorationCount + newInteriorCoverCount + newInsertCount + newCouponCount + newUserDefectCount;
+  let finalImages, finalCornerImages, finalThumbnails, finalInteriorImages, finalSignatureImages, finalRestorationImages, finalInteriorCoverImages, finalInsertImages, finalCouponImages, finalUserDefectImages;
+  try {
+    if (formData._imagesChanged && newImageCount > 0) {
+      let preUpload = null;
+      if (formData._preUploadPromise && formData._preUploadId === id) {
+        syncMsg("Finishing upload…");
+        const _tpu = Date.now();
+        try {
+          preUpload = await formData._preUploadPromise;
+        } catch (e) {
+          console.warn("[pre-upload] await failed; running fresh upload:", e);
+          preUpload = null;
+        }
+        console.log("[complete] pre-upload await:", Date.now() - _tpu, "ms");
+        formData._preUploadPromise = null;
+        formData._preUploadId = null;
+      }
+      if (preUpload && preUpload.mainResult && preUpload.cornerResult) {
+        finalImages = preUpload.mainResult.images;
+        finalThumbnails = preUpload.mainResult.thumbnails;
+        finalCornerImages = preUpload.cornerResult.images;
+      } else {
+        syncMsg(`Uploading ${newImageCount} image${newImageCount === 1 ? "" : "s"}...`);
+        const existingComic = formData.id ? items.find(c => c.id === formData.id) : null;
+        const existingThumbs = existingComic?.thumbnails || [];
+        const mainResult = await processImagesForSave(rawImages, id, STORAGE_SLOTS_MAIN, {
+          generateThumbs: true,
+          existingThumbs: existingThumbs
+        });
+        const cornerResult = await processImagesForSave(rawCornerImages, id, STORAGE_SLOTS_CORNER, {
+          generateThumbs: false
+        });
+        finalImages = mainResult.images;
+        finalThumbnails = mainResult.thumbnails;
+        finalCornerImages = cornerResult.images;
+      }
+      if (rawInteriorImages.some(Boolean)) {
+        syncMsg(`Uploading ${newInteriorCount || rawInteriorImages.filter(Boolean).length} interior image${rawInteriorImages.filter(Boolean).length === 1 ? "" : "s"}...`);
+        const interiorResult = await processImagesForSave(rawInteriorImages, id, storageSlotsInterior(FULL_SLOT_COUNT), {
+          generateThumbs: false,
+          preserveNulls: true
+        });
+        finalInteriorImages = interiorResult.images;
+      }
+      if (rawSignatureImages.length > 0 && rawSignatureImages.some(Boolean)) {
+        syncMsg(`Uploading signature photo${newSignatureCount === 1 ? "" : "s"}...`);
+        const signatureResult = await processImagesForSave(rawSignatureImages, id, [ "signature_01", "signature_02" ], {
+          generateThumbs: false,
+          preserveNulls: true
+        });
+        finalSignatureImages = signatureResult.images;
+      }
+      if (rawInsertImages.length > 0 && rawInsertImages.some(Boolean)) {
+        syncMsg(`Uploading insert photo${newInsertCount === 1 ? "" : "s"}...`);
+        const insertResult = await processImagesForSave(rawInsertImages, id, [ "insert_01", "insert_02" ], {
+          generateThumbs: false,
+          preserveNulls: true
+        });
+        finalInsertImages = insertResult.images;
+      }
+      if (rawCouponImages.length > 0 && rawCouponImages.some(Boolean)) {
+        syncMsg(`Uploading coupon photo${newCouponCount === 1 ? "" : "s"}...`);
+        const couponResult = await processImagesForSave(rawCouponImages, id, [ "coupon_01", "coupon_02" ], {
+          generateThumbs: false,
+          preserveNulls: true
+        });
+        finalCouponImages = couponResult.images;
+      }
+      if (rawInteriorCoverImages.length > 0 && rawInteriorCoverImages.some(Boolean)) {
+        syncMsg(`Uploading interior-cover photo${newInteriorCoverCount === 1 ? "" : "s"}...`);
+        const interiorCoverResult = await processImagesForSave(rawInteriorCoverImages, id, STORAGE_SLOTS_INTERIOR_COVER, {
+          generateThumbs: false,
+          preserveNulls: true
+        });
+        finalInteriorCoverImages = interiorCoverResult.images;
+      }
+      if (rawUserDefectImages.length > 0 && rawUserDefectImages.some(Boolean)) {
+        syncMsg(`Uploading defect photo${newUserDefectCount === 1 ? "" : "s"}...`);
+        const userDefectResult = await processImagesForSave(rawUserDefectImages, id, [ "userdefect_01", "userdefect_02" ], {
+          generateThumbs: false,
+          preserveNulls: true
+        });
+        finalUserDefectImages = (userDefectResult.images || []).filter(Boolean).slice(0, 2);
+      }
+      if (rawRestorationImages.length > 0 && rawRestorationImages.some(Boolean)) {
+        // S16: Deduplicate — if a restoration image matches an already-uploaded interior image,
+        // reuse the Cloud Storage URL instead of uploading again
+        const dedupedRestoration = rawRestorationImages.map((img, idx) => {
+          if (!img || !isDataUrl(img)) return img;
+          // Check if this same data URL exists in the interior images
+          const matchIdx = rawInteriorImages.findIndex(iImg => iImg === img);
+          if (matchIdx >= 0 && finalInteriorImages && finalInteriorImages[matchIdx]) {
+            return finalInteriorImages[matchIdx]; // Use already-uploaded URL
+          }
+          return img;
+        });
+        const dedupedNewCount = dedupedRestoration.filter(x => x && isDataUrl(x)).length;
+        if (dedupedNewCount > 0) {
+          syncMsg(`Uploading ${dedupedNewCount} restoration photo${dedupedNewCount === 1 ? "" : "s"}...`);
+        }
+        // S22: slot names must cover the array we were handed, not just the two
+        // live UV slots — books graded before the UV Check restructure still
+        // carry an 8-long restorationImages array and must not lose it on save.
+        const restorationResult = await processImagesForSave(dedupedRestoration, id, storageSlotsRestoration(Math.max(RESTORATION_SLOT_COUNT, dedupedRestoration.length)), {
+          generateThumbs: false,
+          preserveNulls: true
+        });
+        finalRestorationImages = restorationResult.images;
+      }
+    } else {
+      const existingComic = formData.id ? items.find(c => c.id === formData.id) : null;
+      finalImages = formData._savedImages || existingComic?.images || [];
+      finalThumbnails = existingComic?.thumbnails || [];
+      finalCornerImages = formData._savedCornerImages || existingComic?.cornerImages || [];
+      finalInteriorImages = formData._savedInteriorImages || existingComic?.interiorImages || formData.interiorImages || [];
+      finalSignatureImages = formData._savedSignatureImages || existingComic?.signatureImages || formData.signatureImages || [];
+      finalInsertImages = formData._savedInsertImages || existingComic?.insertImages || formData.insertImages || [];
+      finalCouponImages = formData._savedCouponImages || existingComic?.couponImages || formData.couponImages || [];
+      finalRestorationImages = formData._savedRestorationImages || existingComic?.restorationImages || formData.restorationImages || [];
+      finalInteriorCoverImages = formData._savedInteriorCoverImages || existingComic?.interiorCoverImages || formData.interiorCoverImages || [];
+      finalUserDefectImages = (existingComic?.userDefectImages || formData.userDefectImages || []).filter(Boolean).slice(0, 2);
+    }
+    syncMsg(null);
+  } catch (e) {
+    syncMsg(null);
+    alert(`Image upload failed: ${e.message}\n\nPlease try again.`);
+    return;
+  }
+  const existingComicForMeta = formData.id ? items.find(c => c.id === formData.id) : null;
+  const existingImagesMeta = formData.imagesMeta || existingComicForMeta?.imagesMeta || [];
+  const existingCornerMeta = formData.cornerMeta || existingComicForMeta?.cornerMeta || [];
+  const _tHash = Date.now();
+  const finalImagesMeta = await Promise.all(finalImages.map(async (url, i) => {
+    const prevUrl = existingComicForMeta?.images?.[i];
+    if (url === prevUrl && existingImagesMeta[i]) return existingImagesMeta[i];
+    const baseMeta = existingImagesMeta[i] || {
+      source: "upload",
+      capturedAt: (new Date).toISOString(),
+      hash: null
+    };
+    if (!baseMeta.hash || url !== prevUrl) {
+      baseMeta.hash = await hashImage(url);
+    }
+    return baseMeta;
+  }));
+  const finalCornerMeta = await Promise.all(finalCornerImages.map(async (url, i) => {
+    const prevUrl = existingComicForMeta?.cornerImages?.[i];
+    if (url === prevUrl && existingCornerMeta[i]) return existingCornerMeta[i];
+    const baseMeta = existingCornerMeta[i] || {
+      source: "upload",
+      capturedAt: (new Date).toISOString(),
+      hash: null
+    };
+    if (!baseMeta.hash || url !== prevUrl) {
+      baseMeta.hash = await hashImage(url);
+    }
+    return baseMeta;
+  }));
+  const _sanitizeSlots = arr => Array.isArray(arr) ? arr.map(v => v === undefined ? null : v) : arr;
+  console.log("[complete] hash-meta:", Date.now() - _tHash, "ms");
+  finalSignatureImages = _sanitizeSlots(finalSignatureImages);
+  finalInteriorImages = _sanitizeSlots(finalInteriorImages);
+  finalRestorationImages = _sanitizeSlots(finalRestorationImages);
+  finalInteriorCoverImages = _sanitizeSlots(finalInteriorCoverImages);
+  finalInsertImages = _sanitizeSlots(finalInsertImages);
+  finalCouponImages = _sanitizeSlots(finalCouponImages);
+  // S20: derive interior-cover / interior meta so a library-uploaded grade photo
+  // is recorded as source:"upload" (camera captures already carry source:"camera"
+  // from runCropperSequence). getVerificationState reads these to gate the
+  // Verified badge — any non-camera grade photo makes the whole entry unverified.
+  const _deriveMeta = (finalArr, existingArr, prevArr) => (finalArr || []).map((url, i) => {
+    if (url == null) return null;
+    const prevUrl = prevArr && prevArr[i];
+    if (url === prevUrl && existingArr[i]) return existingArr[i];
+    return existingArr[i] || { source: "upload", capturedAt: (new Date).toISOString() };
+  });
+  const finalInteriorCoverMeta = _deriveMeta(finalInteriorCoverImages, formData.interiorCoverMeta || existingComicForMeta?.interiorCoverMeta || [], existingComicForMeta?.interiorCoverImages);
+  const finalInteriorMeta = _deriveMeta(finalInteriorImages, formData.interiorMeta || existingComicForMeta?.interiorMeta || [], existingComicForMeta?.interiorImages);
+  const finalInsertMeta = _deriveMeta(finalInsertImages, formData.insertMeta || existingComicForMeta?.insertMeta || [], existingComicForMeta?.insertImages);
+  const finalCouponMeta = _deriveMeta(finalCouponImages, formData.couponMeta || existingComicForMeta?.couponMeta || [], existingComicForMeta?.couponImages);
+  const rec = {
+    ...formData,
+    id: id,
+    type: formData.type || "comic",
+    publicListing: formData.publicListing != null ? !!formData.publicListing : !!window._publicByDefault,
+    ownership: formData.ownership || "Owned",
+    dateSold: formData.dateSold || null,
+    salePrice: formData.salePrice !== "" && formData.salePrice != null ? parseFloat(formData.salePrice) : null,
+    askingPrice: formData.askingPrice !== "" && formData.askingPrice != null ? parseFloat(formData.askingPrice) : null,
+    purchasePrice: formData.purchasePrice !== "" ? parseFloat(formData.purchasePrice) : null,
+    taxesFeesShipping: formData.taxesFeesShipping !== "" ? parseFloat(formData.taxesFeesShipping) : null,
+    gradingCost: formData.gradingCost !== "" ? parseFloat(formData.gradingCost) : null,
+    cgcShipping: formData.cgcShipping !== "" ? parseFloat(formData.cgcShipping) : null,
+    fmv: formData.fmv !== "" ? parseFloat(formData.fmv) : null,
+    fmvDate: formData.fmvDate || null,
+    images: finalImages,
+    imagesMeta: finalImagesMeta,
+    thumbnails: finalThumbnails,
+    cornerImages: finalCornerImages,
+    cornerMeta: finalCornerMeta,
+    interiorImages: finalInteriorImages || formData.interiorImages || [],
+    interiorMeta: finalInteriorMeta,
+    signatureImages: finalSignatureImages || formData.signatureImages || [],
+    insertImages: finalInsertImages || formData.insertImages || [],
+    couponImages: finalCouponImages || formData.couponImages || [],
+    insertMeta: finalInsertMeta || formData.insertMeta || [],
+    couponMeta: finalCouponMeta || formData.couponMeta || [],
+    restorationImages: finalRestorationImages || [],
+    interiorCoverImages: finalInteriorCoverImages || formData.interiorCoverImages || [],
+    interiorCoverMeta: finalInteriorCoverMeta,
+    userDefectImages: (finalUserDefectImages || formData.userDefectImages || []).filter(Boolean).slice(0, 2),
+    dateAdded: formData.dateAdded || (new Date).toISOString()
+  };
+  delete rec._savedImages;
+  delete rec._savedCornerImages;
+  delete rec._savedInteriorImages;
+  delete rec._savedSignatureImages;
+  delete rec._savedInsertImages;
+  delete rec._savedCouponImages;
+  delete rec._savedRestorationImages;
+  delete rec._imagesChanged;
+  delete rec.schemaVersion;
+  if (formData.id && rec.roboGradeId && window._db && window._currentUser?.uid) {
+    try {
+      const liveRef = fsDoc(window._db, "users", window._currentUser.uid, "items", formData.id);
+      const liveSnap = await fsGetDoc(liveRef);
+      if (liveSnap.exists()) {
+        const liveData = liveSnap.data();
+        const liveFlat = liveData.schemaVersion === 3 ? {
+          ...liveData,
+          ...liveData.comicData || {},
+          ...liveData.cardData || {}
+        } : liveData;
+        const oldRoboGradeId = liveFlat.roboGradeId;
+        if (oldRoboGradeId && oldRoboGradeId !== rec.roboGradeId) {
+          const archiveRef = fsDoc(window._db, "archived_assessments", oldRoboGradeId);
+          const archivePayload = {
+            ...liveFlat,
+            archivedAt: (new Date).toISOString(),
+            archivedFromComicId: formData.id,
+            archivedUserId: window._currentUser.uid,
+            publicListing: !!liveFlat.publicListing
+          };
+          await fsSetDoc(archiveRef, archivePayload);
+        }
+      }
+    } catch (e) {
+      console.warn("[archive] failed to snapshot old assessment:", e);
+    }
+  }
+  if (rec.roboGradeId && window._db) {
+    let claimed = false;
+    let attempts = 0;
+    while (!claimed && attempts < 5) {
+      attempts++;
+      try {
+        const idRef = fsDoc(window._db, "robograde_ids", rec.roboGradeId);
+        const existing = await fsGetDoc(idRef);
+        // v6.25: "already claimed" is not the same as "claimed by somebody
+        // else". This ran on EVERY save, including every edit of an already-
+        // saved book - so the second save found the book's own claim, read it
+        // as a collision, and minted a fresh 6-character code. Edit a book
+        // twice and its printed label, its QR and its public URL all disagreed
+        // with the shelf. Matt: "the code is different than it was the last
+        // time it was printed."
+        // The claim document has always recorded comicId; nothing read it.
+        const _owner = existing.exists() ? (existing.data() || {}).comicId : null;
+        if (existing.exists() && _owner === rec.id) {
+          // Our own claim from a previous save. Keep the code.
+          claimed = true;
+        } else if (existing.exists()) {
+          rec.roboGradeId = generateRoboId();
+          formData.roboGradeId = rec.roboGradeId;
+        } else {
+          await fsSetDoc(idRef, {
+            comicId: rec.id,
+            userId: window._currentUser?.uid || "anon",
+            claimedAt: (new Date).toISOString(),
+            public: !!window._publicByDefault
+          });
+          claimed = true;
+        }
+      } catch (e) {
+        claimed = true;
+      }
+    }
+  }
+  // v5.80: the photos are uploaded and their URLs are on `rec`, so this record
+  // is complete. Clear the provisional marker written by _saveProvisional().
+  rec.provisionalSave = false;
+  const _tSave = Date.now();
+  await saveItem(rec);
+  console.log("[complete] saveItem (Firestore):", Date.now() - _tSave, "ms");
+  if (_routeToEditAfterSave) {
+    _routeToEditAfterSave = false;
+    showEdit(rec.id);
+    return;
+  }
+  showDetail(rec.id);
+}
+
+function cancelForm() {
+  // S20 (P0 fix): a completed assessment is already saved on Complete, so Back
+  // must NEVER strand or discard it. If this form has a saved item, Back returns
+  // to that item's detail (unsaved FIELD edits like Notes/Seller are dropped —
+  // that's the intended difference from Save, which persists them).
+  const savedId = formData && formData.id;
+  if (savedId && items.find(c => c.id === savedId)) {
+    showDetail(savedId);
+  } else if (selected) {
+    showDetail(selected.id);
+  } else {
+    showList();
+  }
+}
+
+function normPageQuality(pq) {
+  if (!pq) return pq;
+  const map = {
+    "OW/W": "Off-White to White",
+    "C/OW": "Cream to Off-White",
+    OW: "Off-White",
+    W: "White",
+    "Cream to OW": "Cream to Off-White",
+    "Light Tan to OW": "Light Tan to Off-White",
+    "Tan to OW": "Tan to Off-White",
+    "Dark Tan to OW": "Dark Tan to Off-White",
+    "Brown to OW": "Brown to Off-White"
+  };
+  return map[pq] || pq;
+}
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+}
+
+(function runSplash() {
+  const returnParams = new URLSearchParams(window.location.search);
+  if (returnParams.get("payment")) {
+    const splash = document.getElementById("splash");
+    if (splash) {
+      splash.style.display = "none";
+      document.body.classList.add("app-ready");
+      document.body.style.overflow = "";
+    }
+    return;
+  }
+  const splash = document.getElementById("splash");
+  if (!splash) return;
+  (function gateSplashEntrance() {
+    const robot = document.getElementById("splash-robot");
+    const logo = document.getElementById("splash-logo");
+    let triggered = false;
+    const reveal = () => {
+      if (triggered) return;
+      triggered = true;
+      splash.classList.add("assets-ready");
+    };
+    const waitFor = img => {
+      if (!img) return Promise.resolve();
+      if (img.decode) {
+        return img.decode().catch(() => new Promise(res => {
+          if (img.complete) return res();
+          img.addEventListener("load", res, {
+            once: true
+          });
+          img.addEventListener("error", res, {
+            once: true
+          });
+        }));
+      }
+      return new Promise(res => {
+        if (img.complete) return res();
+        img.addEventListener("load", res, {
+          once: true
+        });
+        img.addEventListener("error", res, {
+          once: true
+        });
+      });
+    };
+    Promise.all([ waitFor(robot), waitFor(logo) ]).then(reveal);
+    setTimeout(reveal, 2500);
+  })();
+  const splashStartTime = Date.now();
+  const MIN_DWELL_MS = 1500;
+  const MAX_DWELL_MS = 8000;
+  let dismissed = false;
+  function dismiss() {
+    if (dismissed) return;
+    dismissed = true;
+    splash.classList.add("exit");
+    document.body.classList.add("app-ready");
+    setTimeout(() => {
+      splash.style.display = "none";
+      document.body.style.overflow = "";
+    }, 450);
+  }
+  function tryDismiss() {
+    if (dismissed) return;
+    const elapsed = Date.now() - splashStartTime;
+    if (!window._appReadyToShow) {
+      return;
+    }
+    if (elapsed < MIN_DWELL_MS) {
+      setTimeout(tryDismiss, MIN_DWELL_MS - elapsed);
+      return;
+    }
+    dismiss();
+  }
+  window.addEventListener("app-ready", tryDismiss, {
+    once: true
+  });
+  if (window._appReadyToShow) tryDismiss();
+  setTimeout(() => {
+    if (!dismissed) dismiss();
+  }, MAX_DWELL_MS);
+  splash.addEventListener("click", () => {
+    const elapsed = Date.now() - splashStartTime;
+    if (elapsed >= MIN_DWELL_MS) dismiss();
+  });
+})();
+
+window.signalAppReady = function signalAppReady() {
+  if (window._appReadyToShow) return;
+  window._appReadyToShow = true;
+  window.dispatchEvent(new Event("app-ready"));
+};
+
+// Repeat-Purchase Discount: Robograder-head popup shown after a completed purchase.
+function showRepeatBuyerDiscount() {
+  var GOLD = '#d4af37';
+  var prev = document.getElementById('rg-repeat-overlay'); if (prev) prev.remove();
+  var ov = document.createElement('div'); ov.id = 'rg-repeat-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100001;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);padding:24px;padding-top:max(24px,env(safe-area-inset-top));padding-bottom:max(24px,env(safe-area-inset-bottom));opacity:0;transition:opacity .15s ease;';
+  var card = document.createElement('div');
+  card.style.cssText = "width:100%;max-width:340px;background:#141210;border:1.5px solid #6a4a10;border-radius:18px;overflow:hidden;box-shadow:0 12px 44px rgba(0,0,0,0.55);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,sans-serif;";
+  card.innerHTML = ''
+    + '<div style="padding:18px 20px 18px;text-align:center;">'
+    + '<img src="assets/Robograder_Gift.webp" alt="Robograder" style="width:88px;height:auto;object-fit:contain;margin:0 auto 10px;display:block">'
+    + '<div style="font-size:16px;font-weight:800;color:' + GOLD + ';letter-spacing:.5px;margin-bottom:8px">REPEAT BUYER DISCOUNT</div>'
+    + '<div style="font-size:13.5px;line-height:1.55;color:#c3d9b2">20% bonus credits unlocked on future purchases made within 6 months.</div>'
+    + '<button id="rg-repeat-ok" style="margin-top:18px;width:100%;padding:12px;border:none;border-radius:10px;background:#4e9e2e;color:#0d1f08;font-size:15px;font-weight:800;letter-spacing:.5px;cursor:pointer">OKAY</button>'
+    + '</div>';
+  ov.appendChild(card); document.body.appendChild(ov);
+  requestAnimationFrame(function(){ ov.style.opacity='1'; card.style.transform='translateY(0) scale(1)'; });
+  function close(){ ov.style.opacity='0'; setTimeout(function(){ if(ov.parentNode) ov.parentNode.removeChild(ov); },160); }
+  card.querySelector('#rg-repeat-ok').onclick = close;
+  ov.addEventListener('click', function(e){ if(e.target===ov) close(); });
+}
+// Show it only when the program actually granted a future bonus (suppressed after
+// REPEAT_BONUS_UNTIL, when the server returns all-zero bonuses).
+function maybeShowRepeatBuyerDiscount() {
+  var nb = window._nextBonuses;
+  var any = nb && ((nb.comic_stack > 0) || (nb.comic_wall > 0) || (nb.short_box > 0));
+  if (!any && !(window._nextShortBoxBonus > 0)) return;
+  showRepeatBuyerDiscount();
+}
+
+function showPaymentSuccess(credits) {
+  const m = document.getElementById("payment-success-modal");
+  const n = document.getElementById("payment-success-credits");
+  if (n) n.textContent = credits;
+  if (m) m.style.display = "flex";
+}
+
+function hidePaymentSuccess() {
+  const m = document.getElementById("payment-success-modal");
+  if (m) m.style.display = "none";
+  if (typeof maybeShowRepeatBuyerDiscount === "function") maybeShowRepeatBuyerDiscount();
+}
+
+function showPaymentCancelled() {
+  const m = document.getElementById("payment-cancelled-modal");
+  if (m) m.style.display = "flex";
+}
+
+function hidePaymentCancelled() {
+  const m = document.getElementById("payment-cancelled-modal");
+  if (m) m.style.display = "none";
+}
+
+(function checkPaymentReturn() {
+  const params = new URLSearchParams(window.location.search);
+  const payment = params.get("payment");
+  const credits = params.get("credits");
+  if (payment === "success" && credits) {
+    setTimeout(() => {
+      showPaymentSuccess(credits);
+      loadUserCredits();
+    }, 800);
+  } else if (payment === "cancelled") {
+    setTimeout(() => {
+      showPaymentCancelled();
+    }, 400);
+  }
+  if (payment) {
+    window.history.replaceState({}, "", "/");
+  }
+})();
+
+initFirebase();
+
+
+(function watchHeaderHeight() {
+  const header = document.getElementById("header");
+  if (!header) return;
+  function update() {
+    const h = header.offsetHeight;
+    if (h > 0) {
+      document.documentElement.style.setProperty("--header-h", h + "px");
+    }
+  }
+  update();
+  setTimeout(update, 100);
+  setTimeout(update, 500);
+  if (typeof ResizeObserver === "function") {
+    new ResizeObserver(update).observe(header);
+  }
+  window.addEventListener("resize", update);
+})();
+

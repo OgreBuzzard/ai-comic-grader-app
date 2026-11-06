@@ -10,3 +10,6 @@ Thumbs.db
 node_modules/
 # Firebase service-account key for one-off local scripts — NEVER commit
 service-account.json
+
+# Scratch dir for check-undefined-names.mjs — regenerated on every run
+.rg-undef/
