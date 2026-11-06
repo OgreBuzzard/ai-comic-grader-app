@@ -1210,6 +1210,23 @@ function ensureStylesInjected() {
      thing being read across a shelf of slabs, and the printing is the
      detail. fitLabelText only adds .squeeze when there is no room for even
      one line of the printing; on Case that line simply gets none. */
+  /* v6.37: Square had NO squeeze rule, so when fitLabelText decided the
+     printing/Key Info line could not fit a whole line and added .squeeze,
+     nothing happened and the line stayed half-height. The title is what
+     should give - it is the longest thing in the column and it already
+     truncates elsewhere - so it clamps to two lines with an ellipsis.
+     (Case deliberately does the opposite: Matt asked that its title never
+     truncate, and its squeeze rule RELEASES the title's clamp instead.) */
+  .rg-label-square .info.squeeze .ttl {
+    max-height: 2.1em;
+    overflow: hidden;
+  }
+  .rg-label-square .info.squeeze .ttl > .ttl-name {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
   .rg-label-l .info.squeeze .ttl { display: block; max-height: none; }
   .rg-label-l .info.squeeze .ttl > .ttl-name { overflow: visible; text-overflow: clip; white-space: normal; }
   .rg-label .info.squeeze .ttl {
@@ -4285,6 +4302,21 @@ function fitLabelText(container) {
     };
     let m = measure();
     if (!isFinite(m.lh) || m.lh <= 0) return;
+    // v6.37 - NEVER LEAVE A HALF LINE.
+    // .prt is `flex: 0 1 auto`, so a title that takes most of the column can
+    // shrink it BELOW one line - 23px against a 41.6px line box on Square -
+    // and the overflow:hidden then cut straight through the glyphs. A clamp
+    // that leaves half a letter row reads as a rendering fault, which is the
+    // same reason the ellipsis exists.
+    // A floor of one whole line, set before the squeeze is considered: if the
+    // column genuinely cannot afford it, squeeze frees the room by tightening
+    // the title, which is the thing that should give.
+    if (m.avail < m.lh) {
+      prt.style.minHeight = m.lh + 'px';
+      m = measure();
+    } else {
+      prt.style.minHeight = '';
+    }
     // +0.01 absorbs sub-pixel line heights (1.12 x 28 = 31.36) so a line that
     // exactly fits is not rounded away.
     if (Math.floor(m.avail / m.lh + 0.01) < 1) {
