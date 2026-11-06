@@ -560,7 +560,7 @@
   <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentSingleTabManager, collection, getDocs, setDoc, deleteDoc, doc, onSnapshot, getDoc, updateDoc, increment, query, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { getFirestore, initializeFirestore, collection, getDocs, setDoc, deleteDoc, doc, onSnapshot, getDoc, updateDoc, increment, query, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 import { getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signInWithCredential, signInWithCustomToken, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
@@ -577,39 +577,34 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-// v6.38 - THE RELOAD AFTER BACKGROUNDING.
-// iOS discards a backgrounded WKWebView's content process under memory
-// pressure and Android does the same, so coming back to the app is a COLD
-// START of the document. That part is the OS and cannot be argued with.
-// What was ours: with no local cache, every one of those cold starts
-// refetched the entire items collection over the network before anything
-// could be drawn - which is the long blank the reload actually feels like.
-// persistentLocalCache keeps the collection in IndexedDB, so the first
-// snapshot comes back from disk in milliseconds and the network update
-// arrives behind it. It helps every cold start, not only the evicted ones.
+// v6.38 / REVERTED v6.44 - THE LOCAL CACHE IS OFF AGAIN.
 //
-// SINGLE TAB, DELIBERATELY. persistentMultipleTabManager synchronises the
-// cache across tabs and fails if the browser cannot run its leader election;
-// single-tab takes the lock and the SECOND tab silently falls back to
-// memory-only rather than erroring. Nobody runs two Robograder tabs on a
-// phone, and the failure mode of the multi-tab manager is worse than the
-// thing it buys.
+// v6.38 turned on persistentLocalCache with persistentSingleTabManager so a
+// cold start could render from IndexedDB instead of refetching the whole items
+// collection over the network. The reasoning was sound and the risk assessment
+// was not: that note claimed a second tab would "silently fall back to
+// memory-only rather than erroring". It does not.
 //
-// The cache is a cache: it is not a backup, nothing is written to it that is
-// not also written to Firestore, and it does not change any write path.
-let db;
-try {
-  db = initializeFirestore(app, {
-    experimentalAutoDetectLongPolling: true,
-    localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) })
-  });
-} catch (e) {
-  // Private browsing, a blocked IndexedDB, or a second tab holding the lock.
-  // Memory-only is the pre-6.38 behaviour, which worked - so degrade to it
-  // rather than refusing to start.
-  console.warn("[init] persistent cache unavailable, using memory cache:", e);
-  db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
-}
+// WHAT MATT HIT: "Save failed: the client has already been terminated." That is
+// Firestore's error for an operation issued after the SDK has terminated its
+// own client, and the SDK terminates it when the IndexedDB persistence layer
+// hits something it cannot recover from - a lost single-tab lease, an eviction,
+// a quota failure. Nothing in this file calls terminate(); before v6.38 there
+// was no persistence layer that could. I introduced the only mechanism that
+// produces this error, and the symptom is a SAVE THAT FAILS.
+//
+// A faster cold start is not worth a failed save, and it is certainly not worth
+// it in the week 1.15 ships - the largest native jump the app has had, into a
+// WebView whose IndexedDB behaviour under memory pressure is exactly the thing
+// nobody has tested. So: back to the pre-6.38 line, byte for byte.
+//
+// IF IT IS TRIED AGAIN, persistentMultipleTabManager is the SDK's answer to
+// this case and single-tab is now a known dead end - do not re-litigate it from
+// first principles. Ship it on its own, after a release rather than before one,
+// and verify by opening the app in two tabs and saving from the first.
+const db = initializeFirestore(app, {
+  experimentalAutoDetectLongPolling: true
+});
 
 const storage = getStorage(app);
 
@@ -2406,12 +2401,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.42";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.44";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.42");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.44");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -3733,6 +3728,26 @@ function renderAssessmentMap(item) {
     const longest = String(t).split(/[\s-]+/).reduce((a, w) => Math.max(a, w.length), 0);
     return longest > 9 ? 9 : 10;
   };
+  // v6.43: "SIGNATURE" is exactly 9 characters, so it sat one under the step
+  // above and rendered at the full 10px - too wide for a third of the row.
+  // Dropping the WHOLE label to 9 would shrink "CHECK" with it for no reason,
+  // so the oversized WORD alone is set 2px down (Matt's instruction, and the
+  // right call: it is one word, not one label, that does not fit).
+  // Generalised by length rather than by name, so the next long one is handled
+  // without anyone noticing it needed handling.
+  const _LONG_WORD = 9;
+  // Operates on LETTER RUNS, not space-separated words, so a hyphen is a break
+  // here exactly as it is in _labelPx and in the line box. "POST-CLEANING" is
+  // POST + CLEANING - neither is long - and stays at full size; splitting on
+  // spaces alone would have measured it as 13 and shrunk it for nothing.
+  const _labelHTML = (t) => {
+    const base = _labelPx(t);
+    return esc(String(t)).replace(/[A-Za-z]+/g, (w) =>
+      w.length >= _LONG_WORD
+        ? `<span style="font-size:${base - 2}px">${w}</span>`
+        : w
+    );
+  };
 
   const card = (n) => {
     const st = state[n.key];
@@ -3759,13 +3774,25 @@ function renderAssessmentMap(item) {
     // min-width:0 is load-bearing: a grid item's default min-width is
     // min-content, so one long label widened its column and pushed the map off
     // the right of the screen.
+    // v6.43 - THE COST LINE IS PINNED TO THE BOTTOM.
+    // Everything used to be centred as one stack, so the cost sat at whatever
+    // height the rest of that box happened to leave it: FULL carries three
+    // stars, POST-CLEANING wraps onto two lines, BATCH has neither - and its
+    // COST 3 floated about 6px above the COST 1 and COST 2 either side of it.
+    // Matt read that as Batch being misaligned, which it was.
+    // Stars and label now centre in the space ABOVE a bottom-anchored cost, so
+    // every cost line in the map shares a baseline rather than only the three
+    // Matt happened to be looking at.
     return `<div${jump} style="background:${sk.bg};border:1.5px solid ${sk.bd};border-radius:8px;
         height:${BOX_H}px;min-width:0;box-sizing:border-box;padding:4px 3px;display:flex;
         flex-direction:column;align-items:center;justify-content:center;gap:2px;text-align:center;
         ${live ? 'cursor:pointer' : ''}">
-        ${stars}
-        <div style="font-size:${_labelPx(n.label)}px;font-weight:800;letter-spacing:0.2px;line-height:1.15;
-          color:${sk.fg};white-space:normal;overflow-wrap:normal;word-break:normal">${esc(n.label)}</div>
+        <div style="flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;
+          justify-content:center;gap:2px;width:100%">
+          ${stars}
+          <div style="font-size:${_labelPx(n.label)}px;font-weight:800;letter-spacing:0.2px;line-height:1.15;
+            color:${sk.fg};white-space:normal;overflow-wrap:normal;word-break:normal">${_labelHTML(n.label)}</div>
+        </div>
         ${cost}
         ${short ? `<div style="font-size:8px;font-weight:800;letter-spacing:0.6px;color:${sk.sub}">NEED CREDITS</div>` : ''}
       </div>`;
@@ -3779,7 +3806,7 @@ function renderAssessmentMap(item) {
   const hline = (x1, x2, y, on, w) =>
     `<div style="position:absolute;left:${x1};right:${x2};top:${y}px;height:${w}px;background:${on ? LINE : DIM}"></div>`;
   const head = (x, y, dir, on, big) => {
-    const hw = big ? 5 : 4, hh = big ? 7 : 6;
+    const hw = big ? 4 : 4, hh = big ? 6 : 6;   // v6.43: one size, with the wires
     return `<div style="position:absolute;left:${x};top:${y}px;margin-left:-${hw}px;width:0;height:0;
        border-left:${hw}px solid transparent;border-right:${hw}px solid transparent;
        ${dir === 'up' ? 'border-bottom' : 'border-top'}:${hh}px solid ${on ? LINE : DIM}"></div>`;
@@ -3788,7 +3815,11 @@ function renderAssessmentMap(item) {
   const r1b = BOX_H, r2t = BOX_H + GAP_Y, r2b = r2t + BOX_H, r3t = r2b + GAP_Y;
   const j1 = r1b + GAP_Y / 2, j2 = r2b + GAP_Y / 2;
   const mainRan = state.main === 'ran', deepRan = state.deep === 'ran';
-  const SPINE = 5, BRANCH = 2;   // v6.35: 3 -> 5. The spine is the assessment path.
+  // v6.43: SPINE 5 -> 2. It was thickened twice (3, then 5) to say that
+  // Main -> Deep -> Full is the main path; Matt's call on seeing it printed is
+  // that it reads as emphasis the map does not need. One weight for every wire.
+  // The arrowheads come down with it, or a 2px line arrives at a 5px head.
+  const SPINE = 2, BRANCH = 2;
 
   const wires =
     vline(COL[0], r1b, GAP_Y, mainRan, SPINE) + head(COL[0], r2t - 7, 'down', mainRan, true) +
@@ -3810,7 +3841,10 @@ function renderAssessmentMap(item) {
           column-gap:9px;row-gap:${GAP_Y}px">
           ${g('main')}${g('sig')}${g('insert')}
           ${g('deep')}${g('coupon')}${g('uv')}
-          ${g('full')}${g('batch')}${g('clean')}
+          <!-- v6.43: ordered by COST - Full 1, Post-Cleaning 2, Batch 3. The
+               wires are drawn against COLUMNS, not nodes, so swapping two
+               cells here moves the boxes and nothing else. -->
+          ${g('full')}${g('clean')}${g('batch')}
         </div>
       </div>`, { bg: '#eef3e6', bd: '#cdd8be', fg: '#4a6a2a', mt: 22 });
 }
@@ -4091,6 +4125,40 @@ function restorationFlagList(item) {
 //
 // Nothing here ever REMOVES a flag. A later pass not seeing what an earlier one
 // saw is not a retraction: no pass can establish that a book is unrestored.
+// ── v6.44: FULL DEFECTS SURVIVE EVERY LATER PASS ───────────────────────────
+// A Full pass is the only one that sees the six structural images - staples,
+// page edges, outer edge - so it is the only pass that can produce those
+// defects, and the ONLY pass that can re-derive them. Main, Deep and Batch all
+// replace roboGrade.defects wholesale with what their own photographs showed,
+// which would delete a staple-rust finding every single time.
+//
+// Exactly the problem mergeRestorationFlags solves for restoration, so it is
+// solved the same way and sits next to it: carry the marked entries forward.
+//
+// THE CAP IS NOT APPLIED TO THEM. Main and Deep cap at 13 defects and
+// consolidate beyond that; TASKLIST's rule is "never discard, and never drop a
+// structural defect to make room". Full defects ARE the structural ones, and
+// there are at most 6, so they are appended AFTER any cap rather than
+// competing for a slot in it.
+function fullDefectsOf(rg) {
+  const list = (rg && Array.isArray(rg.defects)) ? rg.defects : [];
+  return list.filter(d => d && d.fullAddition === true);
+}
+// Returns nextRG with the prior pass's Full defects re-appended. Any
+// fullAddition entries already on nextRG win - that is a fresh Full result,
+// not a carried one - so re-running a Full replaces its own findings rather
+// than stacking a second copy of them.
+function carryFullDefects(priorRG, nextRG) {
+  if (!nextRG || typeof nextRG !== "object") return nextRG;
+  const carried = fullDefectsOf(priorRG);
+  if (!carried.length) return nextRG;
+  const own = fullDefectsOf(nextRG);
+  if (own.length) return nextRG;
+  const base = Array.isArray(nextRG.defects) ? nextRG.defects.filter(d => d && d.fullAddition !== true) : [];
+  nextRG.defects = base.concat(carried);
+  return nextRG;
+}
+
 function mergeRestorationFlags(priorRG, nextRG, extra) {
   if (!nextRG || typeof nextRG !== "object") return nextRG;
   const merged = normRestorationFlags(
@@ -4712,7 +4780,7 @@ async function migrateComicsToItems() {
   }
 }
 
-const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "addedLabelNotes", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "gradeAtCeiling", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "uvCheckRuns", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "fullUnlockReason", "deepAssessmentRan", "binding", "bindingBasis", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "deepRefundUsed", "deepRefundAt", "fullRefundUsed", "insertImages", "couponImages", "userDefectImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue", "signatures", "gradeRevisionReason", "cleanUnlocked", "cleanAssessmentRan", "cleanRuns", "cleanBeforeImages", "cleanBeforeMeta", "cleanBeforeResult", "cleanAfterImages", "cleanAfterMeta", "cleanAfterResult", "cleanComparison" ];
+const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "addedLabelNotes", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "gradeAtCeiling", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "uvCheckRuns", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "fullUnlockReason", "deepAssessmentRan", "binding", "bindingBasis", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "deepRefundUsed", "deepRefundAt", "fullRefundUsed", "insertImages", "couponImages", "userDefectImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue", "signatures", "gradeRevisionReason", "photograderPreFull", "cleanUnlocked", "cleanAssessmentRan", "cleanRuns", "cleanBeforeImages", "cleanBeforeMeta", "cleanBeforeResult", "cleanAfterImages", "cleanAfterMeta", "cleanAfterResult", "cleanComparison" ];
 
 const COMIC_DROP_FIELDS = [ "press", "uv", "clean" ];
 
@@ -11706,8 +11774,28 @@ function _batchDeepRan(item) {
   return false;
 }
 function _batchPhotoOK(item) {
+  // v6.43 - A FULL MUST NOT GATE A BATCH (Matt, 2026-11-06).
+  // Batch re-runs Main -> Deep on the stored main covers, corner macros and
+  // interior covers. It never looks at the Full's six structure images, so the
+  // Full's verdict on those photographs has no bearing on whether a Batch can
+  // run - and because mergePhotograder keeps the WORST letter seen on any
+  // pass, one C from a staple macro locked Batch out permanently.
+  if (item && item.fullAssessmentRan) {
+    // Books that ran a Full BEFORE v6.43 have no snapshot and the pre-Full
+    // record cannot be reconstructed. The rule is categorical, so they pass:
+    // every one of them had already cleared this gate at Deep time, which is
+    // the same set of photographs Batch uses.
+    const pre = item.photograderPreFull;
+    if (!pre) return true;
+    return _photoLettersOK(pre);
+  }
   const pg = (item && (item.photograder || (item.roboGrade && item.roboGrade.photograder))) || null;
   if (!pg) return false; // need photograde data to confirm clean photos
+  return _photoLettersOK(pg);
+}
+// At most one B, no C, across the four photo grades.
+function _photoLettersOK(pg) {
+  if (!pg) return false;
   let c = 0, b = 0;
   ["focus", "lighting", "cropping", "angle"].forEach(k => {
     const v = String(pg[k] || "").toUpperCase();
@@ -12332,7 +12420,11 @@ async function submitBatchAssessment() {
       const r1 = x => Math.round(x * 10) / 10;
       if (!formData.roboGrade) formData.roboGrade = {};
       if (_pickDefects) {
-        formData.roboGrade.defects = _pickDefects;
+        // v6.44: the chosen pass is a Deep, so its list covers covers, corners
+        // and interior covers - never the six structural images. Re-append what
+        // the Full found or a Batch silently deletes it.
+        const _carriedFull = fullDefectsOf(formData.roboGrade);
+        formData.roboGrade.defects = _pickDefects.filter(d => d && d.fullAddition !== true).concat(_carriedFull);
         formData.roboGrade.defectsFromBatchPass = _pickPass;
       }
       formData.roboGrade.frontScore    = r1(avgSub.front);
@@ -13532,7 +13624,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "6.42"),
+      appVersion: (window.RG_GRADING_VERSION || "6.44"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
@@ -13967,6 +14059,10 @@ async function _completeAssessmentInner() {
     // The assignment below REPLACES roboGrade, so anything the previous pass
     // recorded and this one did not re-state would be lost.
     mergeRestorationFlags(formData.roboGrade, cgc._roboGrade);
+    // v6.44: same reason, same place - this assignment REPLACES roboGrade, and
+    // a Main or Deep re-assess has never seen the structural images, so its
+    // defect list cannot contain what the Full found.
+    carryFullDefects(formData.roboGrade, cgc._roboGrade);
     formData.roboGrade = cgc._roboGrade;
     formData.roboGradeId = generateRoboId();
     formData.roboGradeDate = (new Date).toISOString();
@@ -16897,6 +16993,32 @@ async function submitFullAssessment() {
       // exceed the Deep ceiling (97) when the interior confirms quality.
       if (result.roboScore != null && formData.roboGrade) {
         formData.roboGrade.score = result.roboScore;
+      }
+      // v6.44 - THE FULL'S STRUCTURAL FINDINGS GO INTO THE DEFECT LIST.
+      // They used to exist only inside the fullAssessment prose, so a staple or
+      // trimming finding never appeared on the label, the public page, the
+      // panel or the admin defect printout - and the v3 engine, which reads
+      // roboGrade.defects, could not see it either.
+      // A re-run REPLACES its own previous entries rather than adding a second
+      // copy, which is why the old ones are filtered out first.
+      if (Array.isArray(result.fullDefects) && formData.roboGrade) {
+        const _priorNonFull = Array.isArray(formData.roboGrade.defects)
+          ? formData.roboGrade.defects.filter(d => d && d.fullAddition !== true)
+          : [];
+        formData.roboGrade.defects = _priorNonFull.concat(result.fullDefects);
+      }
+      // v6.43 - SNAPSHOT THE PHOTOGRADER BEFORE THE FULL REWRITES IT.
+      // mergePhotograder takes the WORST letter across every pass. A Full
+      // grades six hard macros - staples, outer edge, page edges - and one C
+      // or a second B from those is then carried on the record forever. Batch
+      // reads that record to decide whether the FOUR MAIN COVER PHOTOS are
+      // clean enough to re-grade, and those are different photographs
+      // entirely. So Batch went grey the moment a Full ran, which is what Matt
+      // reported. Keep what the record said before the Full touched it.
+      // FIRST Full wins: a second Full must not be able to snapshot a value
+      // the first one already poisoned.
+      if (result.photograder && !formData.photograderPreFull && formData.photograder) {
+        formData.photograderPreFull = { ...formData.photograder };
       }
       if (result.photograder) formData.photograder = result.photograder; // S21: persist photo grades
       if (result.fullAssessmentNotes) formData.fullAssessmentNotes = result.fullAssessmentNotes;

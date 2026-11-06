@@ -166,6 +166,41 @@ function isFullEligible({ title, issueNumber, fmvTier, rgGrade, predictedGrade }
   return { eligible: false, reason: 'ineligible' };
 }
 
+// v6.44: the Full's structural defects, cleaned before they go near a record.
+// Trusted for CONTENT and not for SHAPE: a malformed entry must not be able to
+// break the defect panel, and an unbounded list must not be able to grow a
+// Firestore document without limit.
+const _FULL_DEFECT_CATEGORIES = ['Front', 'Back', 'Spine', 'Interior'];
+const _FULL_DEFECT_SEVERITIES = ['Low', 'Med', 'High'];
+function _sanitizeFullDefects(list) {
+  if (!Array.isArray(list)) return [];
+  const str = (v, n) => (typeof v === 'string' ? v : '').trim().slice(0, n);
+  return list
+    .filter(d => d && typeof d === 'object')
+    .map(d => {
+      const cat = str(d.category, 20);
+      const sev = str(d.severity, 10);
+      return {
+        type: str(d.type, 80),
+        location: str(d.location, 120),
+        measurement: str(d.measurement, 80),
+        severity: _FULL_DEFECT_SEVERITIES.includes(sev) ? sev : 'Low',
+        colorBreaking: !!d.colorBreaking,
+        // Anything unrecognised lands in Interior: these six images are the
+        // staples, the page edges and the outer edge, so Interior is the
+        // honest default rather than a guess at a cover.
+        category: _FULL_DEFECT_CATEGORIES.includes(cat) ? cat : 'Interior',
+        // The marker every later pass keys off. Without it they cannot tell a
+        // Full finding from one they are entitled to replace.
+        fullAddition: true,
+        deepAddition: false,
+        revisionReason: '',
+      };
+    })
+    .filter(d => d.type)      // a defect with no type is not a defect
+    .slice(0, 6);
+}
+
 export default async function handler(req, res) {
   // CORS: the iOS Capacitor app calls this cross-origin (local file origin →
   // robograder.app) and preflights with OPTIONS + custom headers. PWA is
@@ -443,11 +478,22 @@ JSON shape:
   ],
   "interiorComplete": <true | false — false only if Top/Bottom Pages show missing/married pages>,
   "trimmingSuspected": <true | false — only true with clear Outer Edge evidence>,
+  "fullDefects": [
+    { "type": "Staple rust", "location": "top staple, exterior", "measurement": "light orange halo, ~2mm", "severity": "Low", "colorBreaking": false, "category": "Interior" }
+  ],
   "fullAssessmentNotes": "<1-3 sentence internal summary of what the interior/structure pass found and any grade/PQ effect>",
   "restorationFlags": []
 }
 
 RESTORATION (v5.27): these 6 structural images are the only pass that can see two specific kinds of restoration, so say so when you see them. REPLACED OR RESET STAPLES — staples that are bright, unrusted, differently shaped, or sitting in torn/doubled holes on a book whose wear says otherwise; and TRIMMING — a cut outer edge, squarer and cleaner than the other edges, with no natural fray. Also flag reinforcement or backing material and married/added pages if the page photos show them. Put each as a short phrase in "restorationFlags" ("staples replaced", "outer edge trimmed"), naming what and where. Flag ONLY when confident — and NEVER state or imply the book is UNrestored: much restoration cannot be seen in ordinary light, so a clean structural pass says nothing either way. An empty array means "nothing seen here", never "nothing there". Keep trimmingSuspected as it is defined above; restorationFlags is in addition to it, not instead of it. MAX 8 entries.
+
+FULL DEFECTS (v6.44) — THE STRUCTURAL FINDINGS AS DATA, NOT ONLY AS PROSE:
+- "fullDefects" is the list of defects YOU can see in these 6 structural images and that the cover and corner passes could not have seen: staple condition, page completeness, outer-edge fraying or trimming, interior structural damage.
+- ONLY structural findings from THESE images. Do NOT restate a cover, spine or corner defect from the prior list — those are already recorded, and repeating one here would double-count it against the grade.
+- Each entry takes the same shape as the prior defect entries: type, location, measurement, severity ("Low" | "Med" | "High"), colorBreaking, category.
+- "category" must be one of Front / Back / Spine / Interior. Staples, pages and the outer edge are "Interior" unless the damage is plainly on a cover.
+- An empty array is the normal and expected answer for a sound book. Do NOT pad it. MAX 6 entries.
+- The grade you return must already account for these. "fullDefects" records WHAT you saw; "grade" records what it is worth. They must agree: do not list a High-severity structural defect and return the prior grade unchanged.
 
 Rules:
 - Include a slotFindings entry for EACH of the ${_keys.length} slots you were given, in order, with brief observations. Do not invent entries for slots that were not sent.
@@ -737,6 +783,14 @@ Rules:
       // and the prompt instructs consistency with prior defects, but the Full
       // Assessment CAN adjust the grade in either direction if justified.
       roboScore: Math.min(Math.round(grade * 10), 100 - confidenceRange),
+      // v6.44 - THE FULL PASS NOW RETURNS DEFECTS.
+      // It never did: it returned a revised grade and prose, so a staple or an
+      // outer-edge finding existed only as a sentence and vanished from the
+      // defect list the moment any later pass rewrote it. These are stamped
+      // fullAddition so the client can carry them through a Main or Deep
+      // re-assess and through a Batch, none of which ever see these six images
+      // and none of which could therefore re-derive them.
+      fullDefects: _sanitizeFullDefects(parsed.fullDefects),
       photograder: _fullPG,
       _diagnostics: { phaseTimings }
     };
