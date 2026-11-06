@@ -30,8 +30,17 @@
 (function () {
   'use strict';
 
-  function buildRoboGradeDisplay(rg, comic) {
+  // v6.41 - FRAMED IS AN OPTION, BECAUSE THE TWO HOSTS WANT DIFFERENT THINGS.
+  // v6.38 gave the panel its own container everywhere. Edit needed it: there
+  // is no sheet there, so the panel was a stack of dark boxes floating on
+  // white. Detail did NOT - it already has the ASSESSMENT sheet, and a bordered
+  // card inside a bordered sheet is the box-inside-a-box that v6.33 removed.
+  // So: opts.framed. Edit frames, Detail and the public page do not, and both
+  // get what they actually looked right as. One flag rather than two renderers,
+  // because the moment this file has two of anything the two drift.
+  function buildRoboGradeDisplay(rg, comic, opts) {
     if (!rg) return '';
+    const _framed = !!(opts && opts.framed);
 
     const score = rg.score;
     const scoreRounded = Math.round(score);
@@ -288,7 +297,10 @@
     // removal of this box. One container's padding is ~20px of width, and the
     // INT cell keeps ~32px of content on a 390px phone against ~22px of
     // "INT" - the measurement that was failing before.
-    return `<div style="margin-bottom:8px;background:${BG};border:1.5px solid ${OLIVE_MID};border-radius:12px;padding:12px 10px">
+    const _frame = _framed
+      ? `background:${BG};border:1.5px solid ${OLIVE_MID};border-radius:12px;padding:12px 10px`
+      : '';
+    return `<div style="margin-bottom:8px;${_frame}">
       <div style="font-size:12px;font-weight:700;color:${OLIVE_LT};letter-spacing:2px;margin-bottom:10px;text-align:center">ROBOGRADE SCORE</div>
       <!-- v6.35: the sub-grade grid is locked to the score box's 104px. It was
            auto-height and came out TALLER than the box beside it, leaving a

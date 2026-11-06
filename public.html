@@ -37,7 +37,7 @@
      canonical copy in index.html; if you edit the ladder/CONFIG there, update here too. -->
 <script>
   window.RG_V2_DISPLAY = true;
-  window.RG_GRADING_VERSION = "6.40";
+  window.RG_GRADING_VERSION = "6.41";
   window.RGScoreV2 = (function () {
     const LADDER = ["0","0+","1-","1","1+","2-","2","2+","3-","3","3+","4-","4","4+","5-","5","5+","6-","6","6+","7-","7","7+","8-","8","8+","9-","9","9+","10-","10"];
     const CONFIG = {
@@ -1171,8 +1171,9 @@
   // object. PHOTOS is the lighter sheet of the two.
   const PUB_TAB_SKIN = {
     photos:     { bg: '#e6e2d4', bd: '#b8b3a0', fg: '#3a3426' },
-    // v6.38: the sheet is a tint; the panel carries #152e10 itself now.
-    assessment: { bg: '#1d3317', bd: '#4a7028', fg: '#b8d820' }
+    // v6.41: back to #152e10 - the public page renders the panel unframed, as
+    // Detail does, so the sheet is the box. See index.html.
+    assessment: { bg: '#152e10', bd: '#4a7028', fg: '#b8d820' }
   };
   const pubTabsHTML = () => {
     const btn = (key, label) => {

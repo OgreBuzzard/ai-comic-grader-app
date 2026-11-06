@@ -2,10 +2,10 @@
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
 <svg width="100%" height="100%" viewBox="0 0 600 1100" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;">
     <path d="M560,164L560,936C560,944.831 552.831,952 544,952L56,952C47.169,952 40,944.831 40,936L40,164C40,155.169 47.169,148 56,148L544,148C552.831,148 560,155.169 560,164Z" style="fill:none;stroke:rgb(122,168,56);stroke-width:4px;"/>
-    <g transform="matrix(0.716366,0,0,0.716366,67.3823,179.423)">
-        <path d="M300,464.322C300.034,422.914 300.377,422.828 300,384.603C349.128,384.603 410.64,414.311 410.376,470.21C410.234,500.249 411.712,527.548 410.376,561.075C410.376,500.819 346.261,464.322 300,464.322Z" style="fill:rgb(122,168,56);stroke:black;stroke-width:2.79px;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:1.5;"/>
+    <g transform="matrix(0.498968,0,0,0.498968,137.975,291.883)">
+        <path d="M300,464.322C300.034,422.914 300.377,422.828 300,384.603C349.128,384.603 410.64,414.311 410.376,470.21C410.234,500.249 411.712,527.548 410.376,561.075C410.376,500.819 346.261,464.322 300,464.322Z" style="fill:rgb(122,168,56);stroke:black;stroke-width:4.01px;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:1.5;"/>
     </g>
-    <g transform="matrix(0.716366,0,0,0.716366,67.3823,179.423)">
-        <path d="M300,540C300.949,511.481 300,510 300,510L238.499,580L300,650C300,650 300.116,635.545 300,620C343.863,620 410.381,597.307 410.381,560.94L410.381,469.895C410.381,514.674 344.779,540 300,540Z" style="fill:rgb(122,168,56);stroke:black;stroke-width:2.79px;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:1.5;"/>
+    <g transform="matrix(0.498968,0,0,0.498968,137.975,291.883)">
+        <path d="M300,540C300.949,511.481 300,510 300,510L238.499,580L300,650C300,650 300.116,635.545 300,620C343.863,620 410.381,597.307 410.381,560.94L410.381,469.895C410.381,514.674 344.779,540 300,540Z" style="fill:rgb(122,168,56);stroke:black;stroke-width:4.01px;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:1.5;"/>
     </g>
 </svg>

@@ -1028,7 +1028,13 @@
       ? (_prev && _prev.gradeText ? String(_prev.gradeText).replace(/\.0$/, '') : '0')
       : (_prev && _prev.gradeText ? _prev.gradeText : '0.0');
     var _gradeBg = _isCardScan ? '#b91c1c' : '#2a5a8a';
-    var _gradeLabel = _isCardScan ? 'PSA' : 'CGC';
+    // v6.41: PG, not CGC / PSA. This box holds OUR predicted grade. Labelling
+    // it with a grading company's name states, on our own screen, that what we
+    // are selling is their grade - which is exactly the claim the rest of the
+    // app was scrubbed of. The number is on their SCALE; it is not their
+    // grade, and the label now says so. Cards too: the same reasoning applies
+    // to PSA and there is no reason to leave one of them standing.
+    var _gradeLabel = 'PG';
     return `
       <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">
         <div style="display:flex;gap:12px;justify-content:center;align-items:center;">

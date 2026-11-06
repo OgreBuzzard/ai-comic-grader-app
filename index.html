@@ -2382,12 +2382,12 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.40";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.41";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.40");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.41");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -3497,12 +3497,12 @@ const TAB_SKIN = {
   // v6.33: #152e10 is the Robograde panel's own BG. The sheet IS that box now
   // - the panel dropped its container so the sub-scores stop clipping - so the
   // two have to be the same colour or the join shows.
-  // v6.38: the sheet is a TINT now, not the panel's own colour. The panel got
-  // its container back (robograde-panel.js, option 3), so if the sheet stayed
-  // #152e10 the card and the thing it lies on would be the same colour and
-  // there would be no card. #1d3317 is the same hue a step lighter - enough
-  // to read as two surfaces, not enough to read as two designs.
-  assessment: { bg: '#1d3317', bd: '#4a7028', fg: '#b8d820' }
+  // v6.41: back to #152e10, the panel's own colour, as it was before v6.38.
+  // Detail renders the panel UNFRAMED, so the sheet IS the box - one surface,
+  // no border inside a border. The v6.38 tint existed only to sit behind a
+  // framed panel, and Matt's read was that it looked worse. Edit is the one
+  // that frames, and Edit has no sheet.
+  assessment: { bg: '#152e10', bd: '#4a7028', fg: '#b8d820' }
 };
 
 function renderDetailTabs(item, opts) {
@@ -9520,6 +9520,47 @@ function showEdit(id) {
 
 // S25 (#1): open Edit and scroll straight to a tier's capture section instead of
 // landing at the top (Main slots). Used by the Detail-view Deep/Full upsell cards.
+// ── v6.41: A JUMP THAT STAYS JUMPED ────────────────────────────────────────
+// showEditToSection measured the anchor after two animation frames and scrolled
+// once. Two frames is enough for LAYOUT and not for CONTENT: every photo slot
+// above the target is an <img> with height:auto, so each one that decodes after
+// the scroll makes the page taller ABOVE the anchor and pushes it further down.
+// The scroll was right at the moment it was taken and wrong a quarter of a
+// second later, which is why tapping DEEP did not land on the Deep slots.
+//
+// So re-assert it while the page settles: re-measure, and scroll again only if
+// the anchor has actually moved. It stops early the moment the position is
+// stable twice running, and it stops immediately if the user touches the
+// screen - nothing is more annoying than a page that scrolls itself out from
+// under a finger.
+function _settleScrollTo(elId, topGap) {
+  const AT = [0, 120, 300, 600, 1000];
+  let cancelled = false, stable = 0, lastY = null;
+  const stop = () => {
+    cancelled = true;
+    window.removeEventListener("touchstart", stop);
+    window.removeEventListener("wheel", stop);
+    window.removeEventListener("keydown", stop);
+  };
+  window.addEventListener("touchstart", stop, { passive: true, once: true });
+  window.addEventListener("wheel", stop, { passive: true, once: true });
+  window.addEventListener("keydown", stop, { once: true });
+  const pass = () => {
+    if (cancelled) return;
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const y = Math.max(0, el.getBoundingClientRect().top + window.pageYOffset - topGap);
+    if (lastY != null && Math.abs(y - lastY) < 4) {
+      if (++stable >= 2) { stop(); return; }   // settled; leave it alone
+    } else {
+      stable = 0;
+    }
+    lastY = y;
+    window.scrollTo({ top: y, behavior: "smooth" });
+  };
+  AT.forEach(ms => setTimeout(pass, ms));
+}
+
 function showEditToSection(id, section) {
   // Arriving from Detail's "BOOK HAS BEEN CLEANED" card means the user has
   // already said what they want, so the section opens expanded rather than
@@ -9540,10 +9581,10 @@ function showEditToSection(id, section) {
               : section === "coupon" ? "coupon-section"
               : section === "main" ? "assess-btn"
               : "deep-corner-section";
-      var el = document.getElementById(_id);
-      if (!el) return;
-      var y = el.getBoundingClientRect().top + window.pageYOffset - 70; // clear the sticky top bar
-      window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+      if (!document.getElementById(_id)) return;
+      // 70px clears the sticky top bar, so the section's own heading is the
+      // first thing under it - which is the top of its photo slots.
+      _settleScrollTo(_id, 70);
     });
   });
 }
@@ -10246,7 +10287,7 @@ function mountBatchResults(summary) {
     `<div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:${txt};opacity:0.75;letter-spacing:0.8px">${label}</div></div>`;
   let badges = "";
   if (s.average != null) badges += badge("#0f1a05", "#b8d820", s.average, "RG", "1.5px solid #3a5010", "batch-val-rg");
-  if (s.pg) badges += badge("#2a5a8a", "#e0f0ff", s.pg, "CGC", "", "batch-val-pg");
+  if (s.pg) badges += badge("#2a5a8a", "#e0f0ff", s.pg, "PG", "", "batch-val-pg");   // v6.41: see makeBadge
   const pqHtml = s.pq
     ? `<div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">${s.pq}</div>`
     : "";
@@ -10960,7 +11001,7 @@ function showCeilingUpsell(upsell) {
   var title, msg;
   if (upsell === 'deep') {
     title = 'Push it higher?';
-    msg = 'This book has hit the 9.0 ceiling for a '+star(1)+' assessment. A '+star(2)+' with 6 new images can push it to 9.5.' + (formData.deepRefundUsed ? '' : ' The '+coin+' will be refunded if the score doesn’t go up.');
+    msg = 'This book has hit the 9.0 ceiling for a '+star(1)+' assessment. A '+star(2)+' with 6 new images can push it to 9.5.' + (formData.deepRefundUsed ? '' : ' The '+coin+' will be refunded if neither grade goes up.');
   } else {
     title = 'Confirm a 10?';
     msg = 'This book is near-perfect. A '+star(3)+' Full assessment with 6 new images can confirm a perfect 10.' + (formData.fullRefundUsed ? '' : ' Your '+coin+' is refunded if the grade stays at 9.5.');
@@ -11026,20 +11067,38 @@ function mountResults(cgc, psa) {
   const _rgInitStr = _prev && _prev.rgV3 ? _prev.rgV3 : "0"; // S22: never show the v1 0-100 score
   const _gradeFrom = _prev && _prev.gradeVal != null ? _prev.gradeVal : null;
   const _gradeInitStr = _prev && _prev.gradeText ? _prev.gradeText : "0.0";
-  setTimeout(() => {
-    if (window.RobograderScan && window.RobograderScan.stopGridCycle) {
-      window.RobograderScan.stopGridCycle();
-      dbg("mountResults: stopGridCycle (after 2s delay) returned");
-    }
-    if (window.RobograderScan && window.RobograderScan.stopNeedlePulse) {
-      window.RobograderScan.stopNeedlePulse();
-      dbg("mountResults: stopNeedlePulse returned");
-    }
-    if (window.RobograderScan && window.RobograderScan.sweepNeedleToScore && roboScore != null) {
-      window.RobograderScan.sweepNeedleToScore(roboScore);
-      dbg(`mountResults: sweep needle to score ${roboScore}`);
-    }
-  }, 2000);
+  // ── v6.41: THE NEEDLE LANDS, THEN THE PANEL GOES ────────────────────────
+  // S24 added the reveal - the panel slides out to uncover the cover - and it
+  // was taking the gauge off screen mid-swing. The needle's whole job is to
+  // arrive at the grade; pulling the panel before it arrives throws away the
+  // gesture the gauge exists for.
+  //
+  // The order Matt asked for, which is also the only order that reads as one
+  // event: RG and PG start counting, the needle sweeps and the grid lights
+  // stop, ALL AT THE SAME MOMENT. Everything is a 2000ms animation, so they
+  // all land together. Then - and only then - the panel slides away.
+  //
+  // Nothing downstream got slower: the PQ pill and the COMPLETE button keep
+  // their own timings, and PG actually arrives a second EARLIER than it used
+  // to because its 1000ms head start is gone.
+  //
+  // BATCH IS NOT AFFECTED. mountBatchResults is a separate function with its
+  // own pacing, and revealScannedPhoto returns early for batch anyway - the
+  // panel stays up and the five results stay on screen.
+  const RESULT_COUNT_MS = 2000;        // RG ladder, PG list, and .final-sweep
+  const REVEAL_AFTER_MS = RESULT_COUNT_MS + 150;   // a beat for the badge pop
+  if (window.RobograderScan && window.RobograderScan.stopGridCycle) {
+    window.RobograderScan.stopGridCycle();
+    dbg("mountResults: stopGridCycle returned");
+  }
+  if (window.RobograderScan && window.RobograderScan.stopNeedlePulse) {
+    window.RobograderScan.stopNeedlePulse();
+    dbg("mountResults: stopNeedlePulse returned");
+  }
+  if (window.RobograderScan && window.RobograderScan.sweepNeedleToScore && roboScore != null) {
+    window.RobograderScan.sweepNeedleToScore(roboScore);
+    dbg(`mountResults: sweep needle to score ${roboScore}`);
+  }
   if (window._modalFrameTimer) {
     clearInterval(window._modalFrameTimer);
     window._modalFrameTimer = null;
@@ -11051,19 +11110,19 @@ function mountResults(cgc, psa) {
       predicted: {
         bg: "#2a5a8a",
         text: "#e0f0ff",
-        label: "CGC",
+        label: "PG",   // v6.41: our Predicted Grade, not a grading company's
         initial: _gradeInitStr
       },
       "cgc-ai": {
         bg: "#2a5a8a",
         text: "#e0f0ff",
-        label: "CGC",
+        label: "PG",   // v6.41: our Predicted Grade, not a grading company's
         initial: _gradeInitStr
       },
       "psa-ai": {
         bg: "#2a5a8a",
         text: "#e0f0ff",
-        label: "CGC",
+        label: "PG",   // v6.41: our Predicted Grade, not a grading company's
         initial: _gradeInitStr
       },
       robograde: {
@@ -11093,7 +11152,7 @@ function mountResults(cgc, psa) {
   try {
     const _rvU = x => (x && (x.url || (typeof x === "string" ? x : null))) || null;
     const _cover = _rvU((formData.images || [])[0]);
-    window.RobograderScan.revealScannedPhoto('front', 1000, _cover);
+    window.RobograderScan.revealScannedPhoto('front', REVEAL_AFTER_MS, _cover);
   } catch (e) {}
   window.RobograderScan.slideResultsIntoPanel(resultsHtml);
   dbg("mountResults: results html replaced");
@@ -11141,14 +11200,14 @@ function mountResults(cgc, psa) {
     }
   }
   if (cgcEl && predictedGrade) {
-    setTimeout(() => {
-      const _gNew = parseFloat(predictedGrade);
-      if (_gradeFrom != null && Math.abs(_gradeFrom - _gNew) < 0.01) {
-        popResultBadge(cgcEl);
-      } else {
-        animateGradeListFromTo(cgcEl, _gradeFrom != null ? _gradeFrom : CGC_GRADE_LIST[0], predictedGrade, CGC_GRADE_LIST, 2000).then(() => popResultBadge(cgcEl));
-      }
-    }, 1000);
+    // v6.41: was a 1000ms head start for RG. The two now move together, so
+    // they finish together and the panel has one moment to wait for.
+    const _gNew = parseFloat(predictedGrade);
+    if (_gradeFrom != null && Math.abs(_gradeFrom - _gNew) < 0.01) {
+      popResultBadge(cgcEl);
+    } else {
+      animateGradeListFromTo(cgcEl, _gradeFrom != null ? _gradeFrom : CGC_GRADE_LIST[0], predictedGrade, CGC_GRADE_LIST, RESULT_COUNT_MS).then(() => popResultBadge(cgcEl));
+    }
   }
   if (pq && pqEl) {
     setTimeout(() => {
@@ -11284,6 +11343,12 @@ async function assessHighGrade() {
     return;
   }
   const initialRG = formData.roboGrade;
+  // v6.41: capture the pre-Deep PG HERE, beside the pre-Deep RG, because the
+  // refund test needs both and formData is rewritten later in this flow.
+  const initialPG = (() => {
+    const n = parseFloat(formData.predictedGrade || formData.assessedCGCGrade);
+    return Number.isFinite(n) ? n : null;
+  })();
   if (!initialRG) {
     alert("Run a standard assessment first before running Deep Assessment.");
     return;
@@ -11510,7 +11575,17 @@ async function assessHighGrade() {
     window._pendingRoboGrade = cgc._roboGrade || null;
     // S21: refund the Deep credit if the grade did not improve vs the pre-Deep
     // RoboGrade. Unknown scores => treat as improved (no refund) to stay safe.
-    let _deepImproved;
+    //
+    // v6.41 - PG COUNTS TOO. The test was RG only, so a Deep that moved the
+    // PREDICTED grade 5.0 -> 5.5 while the RoboGrade stayed flat was refunded.
+    // Matt hit exactly that. The user is shown TWO numbers and told the credit
+    // comes back "if the score doesn't go up"; one of the two went up, so the
+    // refund read as a bug, and from where they sit it is one.
+    // A Deep is improved if EITHER number rose. The RG branch keeps its
+    // treat-unknown-as-improved safety (never refund on missing data); the PG
+    // branch defaults to NOT-improved, because the RG default already covers
+    // the safe case and two safe-defaults OR'd together would refund nothing.
+    let _rgImproved;
     if (window.RG_V3_DISPLAY && window.RoboScoreV3 && formData.type !== 'card' && initialRG && cgc._roboGrade) {
       // v3: refund is judged on the DISPLAYED (capped) grade, not the raw 0-100
       // score. A Deep lifts the ceiling 9.0->9.5, so a clean book improves even
@@ -11518,12 +11593,16 @@ async function assessHighGrade() {
       // grade is refunded.
       const _oldV3 = window.RoboScoreV3.forComic({ roboGrade: initialRG, photograder: formData.photograder, labelDetected: !!formData.labelDetected });
       const _newV3 = window.RoboScoreV3.forComic({ roboGrade: cgc._roboGrade, photograder: formData.photograder, labelDetected: !!formData.labelDetected, deepAssessmentRan: true });
-      _deepImproved = (_oldV3 && _newV3) ? (_newV3.grade > _oldV3.grade) : true;
+      _rgImproved = (_oldV3 && _newV3) ? (_newV3.grade > _oldV3.grade) : true;
     } else {
       const _oldScore = (initialRG && typeof initialRG.score === "number") ? initialRG.score : null;
       const _newScore = (cgc._roboGrade && typeof cgc._roboGrade.score === "number") ? cgc._roboGrade.score : null;
-      _deepImproved = (_newScore != null && _oldScore != null) ? (_newScore > _oldScore) : true;
+      _rgImproved = (_newScore != null && _oldScore != null) ? (_newScore > _oldScore) : true;
     }
+    const _pgTo = (() => { const n = parseFloat(cgc && cgc.grade); return Number.isFinite(n) ? n : null; })();
+    const _pgImproved = (initialPG != null && _pgTo != null) ? (_pgTo > initialPG) : false;
+    const _deepImproved = _rgImproved || _pgImproved;
+    dbg(`deep refund test: RG improved=${_rgImproved}, PG ${initialPG} -> ${_pgTo} improved=${_pgImproved} => charged=${_deepImproved}`);
     // S25: refund the Deep credit only the FIRST time a re-run fails to improve.
     // deepRefundUsed then latches (persisted via onAssessmentSuccess->submitForm),
     // so all later re-runs are charged — no endless refunded re-rolls.
@@ -13426,7 +13505,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "6.40"),
+      appVersion: (window.RG_GRADING_VERSION || "6.41"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
@@ -15066,7 +15145,7 @@ function renderForm() {
       h += `<div class="form-grid-2">\n          ${tf("PSA Grade", "psaGrade", "e.g. 9.4", true)}\n          ${tf("PSA Cert #", "psaCert", "Cert number")}\n        </div>`;
     }
     return h;
-  })()}\n    \x3c!-- Robograde Score panel (S11): full RG display panel — score, sub-grades,\n         provenance strip, and printout-paper defect listing. Placed here right\n         after My Grade / Page Quality so the user sees the full RG output\n         before the Grader Predictions row below it. Previously rendered at\n         the bottom of the form; moved up to match the detail-view ordering. --\x3e\n    ${(_isCardForm ? (formData.roboGrade || (formData.cardData && formData.cardData.robograde)) : formData.roboGrade) ? (_isCardForm ? buildCardRoboDisplay(formData) : buildRoboGradeDisplay(formData.roboGrade, formData)) : ""}\n    \x3c!-- Integrity badge (S12) — Assessment results screen shows BOTH states.\n         This is the moment-of-truth surface: the user just got a grade and\n         needs to know whether the result will display as Verified on a public\n         link before they save. If they wanted Verified and didn't get it,\n         they can retake/recapture in-app before saving. Placed right below\n         the Robograde panel so it associates visually with the grade output. --\x3e\n    ${formData.roboGrade ? (() => {
+  })()}\n    \x3c!-- Robograde Score panel (S11): full RG display panel — score, sub-grades,\n         provenance strip, and printout-paper defect listing. Placed here right\n         after My Grade / Page Quality so the user sees the full RG output\n         before the Grader Predictions row below it. Previously rendered at\n         the bottom of the form; moved up to match the detail-view ordering. --\x3e\n    ${(_isCardForm ? (formData.roboGrade || (formData.cardData && formData.cardData.robograde)) : formData.roboGrade) ? (_isCardForm ? buildCardRoboDisplay(formData) : buildRoboGradeDisplay(formData.roboGrade, formData, { framed: true })) : ""}\n    \x3c!-- Integrity badge (S12) — Assessment results screen shows BOTH states.\n         This is the moment-of-truth surface: the user just got a grade and\n         needs to know whether the result will display as Verified on a public\n         link before they save. If they wanted Verified and didn't get it,\n         they can retake/recapture in-app before saving. Placed right below\n         the Robograde panel so it associates visually with the grade output. --\x3e\n    ${formData.roboGrade ? (() => {
     void buildIntegrityPill; // S20: integrity pill moved ABOVE the image slots
     return "";               // (see the form card top) to match Detail view.
   })() : ""}\n\n    \x3c!-- Grader Predictions (S11): renamed from "Assessment Results". This row\n         shows all of the relevant grade badges side-by-side: CGC Official, CGC\n         AI, PSA Official, PSA AI. A book can only be officially graded by one\n         service (CGC or PSA, not both), so at most 3 badges ever appear at\n         once — three boxes fit comfortably on one row. --\x3e\n    ${_assessed ? (() => {
@@ -15164,8 +15243,8 @@ function formatBulletNotes(s) {
   return parts.map(p => "• " + p).join("\n");
 }
 
-function buildRoboGradeDisplay(rg, comic) {
-  return window.RobograderPanel.buildDisplay(rg, comic);
+function buildRoboGradeDisplay(rg, comic, opts) {
+  return window.RobograderPanel.buildDisplay(rg, comic, opts);
 }
 
 // S21: Full Assessment slot grid (Edit editable / Detail read-only). Layout:
