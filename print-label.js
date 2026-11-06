@@ -259,7 +259,7 @@ const LABEL_ROLL_LINKS = {
 // The geometry a size renders at. Only Case differs between one label and a
 // sheet - see the `single` block on 'small-l' - so everything else falls
 // straight through to its own entry.
-function _fmtFor(size) {
+export function _fmtFor(size) {
   const f = LABEL_FORMATS[size];
   if (!f) return f;
   if (_singleMode && f.single) return { ...f, ...f.single };
@@ -373,7 +373,12 @@ export function openLabelViewer(comic, allItems, opts) {
 // Includes both screen styles (modal chrome, scaled label preview) and print
 // styles (multi-label sheet at exact Avery 8161 dimensions).
 
-function ensureStylesInjected() {
+// ── Exported for the label measurement harness (label-measure.mjs) ────────
+// Nothing in the app imports these; openLabelViewer remains the only entry
+// point. They are exported because the alternative is a harness that measures
+// a COPY of the label, and this file's history says that is how you end up
+// measuring something that is not what ships.
+export function ensureStylesInjected() {
   if (document.getElementById('label-viewer-styles')) return;
 
   // Load the same Google Fonts the popup version used. <link> append works
@@ -473,6 +478,14 @@ function ensureStylesInjected() {
     display: block;
     white-space: normal;
     overflow-wrap: break-word;
+    /* v6.40: Wide and Case both declared line-height 1.0 here and SQUARE DID
+       NOT, so its date line fell back to 'normal' - about 1.35 - and carried
+       roughly 17px of internal leading nobody asked for. That is the "too
+       tall" spacing between Title/Issue and Pub Date/Publisher, and between
+       that line and Printing/Variant: not a margin, the line box itself.
+       Shared, for the same reason the wrap rule above is - this is how the
+       line is SET, not where it sits. */
+    line-height: 1.0;
   }
 
   /* ── Modal chrome (screen only) ──────────────────────────────────────── */
@@ -1157,7 +1170,7 @@ function ensureStylesInjected() {
        has less vertical budget than Case (which moved ID into the URL). */
     width: 160%;   /* S22: see the .ttl width note above */
     font-size: 48px; font-weight: 600;
-    color: #333; line-height: 1.0;
+    color: #333;   /* v6.40: line-height moved to .rg-any .iss */
     font-family: 'Noto Sans Display', sans-serif;
     /* S22: this line is now "<pub date>, <publisher>" as one string, so the
        old flex row with a 24px gap is gone - a comma and a space do the
@@ -1831,7 +1844,7 @@ function ensureStylesInjected() {
   .rg-label-l .iss {
     width: 160%;   /* S22: see the .ttl note */
     font-size: 52px; font-weight: 600;
-    color: #333; line-height: 1.0;
+    color: #333;   /* v6.40: line-height moved to .rg-any .iss */
     font-family: 'Noto Sans Display', sans-serif;
     transform: scaleX(0.625);
     transform-origin: left center;
@@ -2291,13 +2304,13 @@ function ensureStylesInjected() {
     /* v6.38: the flex row and its 14px gap were left from when this line was
        two elements. It is one string now - the comma does the separating -
        and flex was stopping .rg-any's wrap rule from applying. */
-    margin-top: 4px;
+    margin-top: 2px;   /* v6.40: 4 -> 2, on top of the line-height fix */
   }
   .rg-label-square .prt {
     font-size: 32px; color: #555544;   /* S22: 25 -> 32, matching Wide */
     font-family: 'Barlow Condensed', sans-serif;
     font-weight: 500;
-    margin-top: 6px;
+    margin-top: 4px;   /* v6.40: 6 -> 4 */
     line-height: 1.3;   /* S22: see the Case note - whole-line clamping */
     white-space: normal; overflow: hidden;
   }
@@ -2380,8 +2393,12 @@ function ensureStylesInjected() {
      space the QR vacated, so nothing new had to be found for it. */
   .rg-label-square .rg-art {
     position: absolute;
-    left: 18px; bottom: 76px;
-    width: 230px; height: 180px;
+    /* v6.40: bottom 76 -> 73, height 180 -> 184. That is every pixel between
+       the info column (ends y=306) and the meta rule (y=513) with clearance
+       at both ends - the slot is y 319..503. The price is capped to the
+       slot's INK, so a taller slot is a bigger price. */
+    left: 18px; bottom: 73px;
+    width: 230px; height: 184px;
     display: flex; align-items: flex-end; justify-content: center;
   }
   .rg-label-square .rg-art.is-price { align-items: center; }
@@ -3184,16 +3201,35 @@ function fitPreviewToFrame(modal) {
   const availW = (area.clientWidth - padX) * 0.96;
   if (availW <= 0) return;
   // Available HEIGHT must NOT come from area.clientHeight: the frame is a
-  // child of the area, so if the area hugs its content, shrinking the
-  // label shrinks the area, which would feed back into a smaller scale
-  // on the next call — the ratchet-to-micro bug. Derive a STABLE height
-  // budget from the viewport instead: the preview should occupy at most
-  // ~38% of the visible viewport height. This value does not change when
-  // we change the label scale, so repeated fit() calls converge to the
-  // same result instead of spiralling. (The window-level resize listener
-  // re-runs fit on genuine viewport changes, which is correct.)
+  // child of the area, so if the area hugs its content, shrinking the label
+  // shrinks the area, which feeds back into a smaller scale on the next call
+  // — the ratchet-to-micro bug. The old guard against that was a flat 38% of
+  // the viewport, which is stable but is not the room that actually exists.
+  //
+  // v6.40: measure the room instead. The card's OTHER children — header,
+  // toggle rows, actions, the buy link — are the only things competing with
+  // the preview, and not one of their heights depends on the label's scale.
+  // So they are safe to measure and the ratchet cannot start. What is left
+  // after them is the budget.
+  //
+  // This is what v6.38 broke. Shortening the card to 100vh-88px (to leave a
+  // band of backdrop to tap) took 64px out of a budget nothing was tracking;
+  // the preview area is flex:1 with overflow:auto, so it absorbed the loss by
+  // SCROLLING, and on Square - the one label as tall as it is wide - that
+  // meant you could no longer see the whole thing at once.
   const vh = window.innerHeight || document.documentElement.clientHeight || 800;
-  const availH = vh * 0.38;
+  const card = modal.querySelector('.lvm-card');
+  let budget = card ? parseFloat(getComputedStyle(card).maxHeight) : NaN;
+  if (!isFinite(budget) || budget <= 0) budget = vh - 88;   // mirrors the CSS
+  let chrome = 0;
+  if (card) {
+    for (const kid of card.children) {
+      if (kid !== area) chrome += kid.getBoundingClientRect().height;
+    }
+  }
+  const padY = parseFloat(areaStyle.paddingTop) + parseFloat(areaStyle.paddingBottom);
+  // The 8px is the same "don't touch the edges" courtesy the 0.96 gives width.
+  const availH = Math.max(80, budget - chrome - padY - 8);
   // Read the format's pixel dimensions from inline CSS variables on the
   // frame (set in renderModal based on the active format). Falls back to
   // 1152×288 (Small) if not set.
@@ -3889,7 +3925,7 @@ function renderCardLabelMarkup(comic, opts) {
   `;
 }
 
-function renderLabelMarkup(comic, opts) {
+export function renderLabelMarkup(comic, opts) {
   // S12: opts is { size, priceTag, includePrice }. Defaults to small + no
   // price tag + no included price if not supplied (preserves backward
   // compatibility for any caller still using the single-argument form).
@@ -4116,7 +4152,8 @@ function renderLabelMarkup(comic, opts) {
   // they have to occupy the same space or the label changes shape with a
   // toggle.
   const _ART_ASPECT = 500 / 600;
-  const _SLOT_BOX = { 'small': [160, 184], 'square': [230, 180], 'small-l': [230, 184] };
+  // v6.40: square 180 -> 184, matching its taller slot (see the .rg-art note).
+  const _SLOT_BOX = { 'small': [160, 184], 'square': [230, 184], 'small-l': [230, 184] };
   const _box = _SLOT_BOX[opts.size] || _SLOT_BOX['small'];
   const _slotW = Math.round(Math.min(_box[0], _box[1] * _ART_ASPECT));
   const _askingRaw = comic.askingPrice;
@@ -4162,10 +4199,17 @@ function renderLabelMarkup(comic, opts) {
     const _priceW = Math.round(_slotW * (_PRICE_W[opts.size] || 1));
     // A SHORT price ("$5") is not width-limited at all, so without a second
     // wall it would now draw taller than the slot and run into the QR beneath
-    // it. The box's own height is that wall. line-height is 1 and these
-    // strings have no descenders, so the line box IS the type size: 0.95 of
-    // the slot leaves a hair of clearance and nothing more.
-    const _priceH = Math.round(_box[1] * 0.95);
+    // it. The box's own height is that wall - but THE LINE BOX IS NOT THE
+    // INK. v6.38 capped at 0.95 of the slot, reasoning that line-height:1
+    // makes the line box the type size. It does, and the GLYPHS overflow it:
+    // measured in the harness against the real face, Noto Sans Display 900
+    // paints 1.36x its font-size, so "$5" at 171px drew ink from y=292.5 to
+    // y=525.5 - over the printing line above it (ink ends 302.6) and down
+    // across the meta rule below. Matt reported it as the price "clipping
+    // over" the printing text, and said it did not actually overlap. It did.
+    // The cap is the INK now, so a painted price always fits its slot.
+    const _PRICE_INK = 1.37;   // measured 1.356-1.363; rounded up for margin
+    const _priceH = Math.floor(_box[1] / _PRICE_INK);
     const fs = Math.max(16, Math.min(Math.round(_priceW * 0.83), _priceH, Math.floor(_priceW / em)));
     return '<div class="rg-art is-price"><div class="rg-price" style="font-size:' + fs + 'px">' + esc(txt) + '</div></div>';
   })();
@@ -4318,7 +4362,7 @@ function ensureQRCodeLoaded() {
 //
 // Must run AFTER the label font has loaded - the fallback face has different
 // metrics and would snap to the wrong count. Both callers do that.
-function fitLabelText(container) {
+export function fitLabelText(container) {
   if (!container) return;
   // Every variant, not just Wide. The selector was '.rg-label .info', which is
   // the Wide class alone - so Case and Square carried the same wrapping

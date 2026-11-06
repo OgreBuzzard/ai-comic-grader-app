@@ -3206,6 +3206,18 @@ function renderItemDetail(it) {
       <div class="notes-block" style="margin-top:16px;">
         <h4>Signatures</h4>
         <p>${it.signatures.map(s => escapeHtml(typeof s === 'string' ? s : (s.name || JSON.stringify(s)))).join(' · ')}</p>
+        <!-- v6.40: say whether close-ups exist. The Signature image section
+             below only renders when signatureImages is non-empty, so an
+             absent section read as "no signature" and as "signature detected
+             but no close-up taken" identically - and those are completely
+             different facts about the book. The close-ups are optional and
+             most users do not take them; now the page says which case it is
+             instead of leaving it to be inferred from a missing heading. -->
+        <p style="margin-top:6px;font-size:12px;color:${(it.signatureImages && it.signatureImages.some(Boolean)) ? '#7aa838' : '#8a8a8a'}">
+          ${(it.signatureImages && it.signatureImages.some(Boolean))
+            ? 'Close-up photos: ' + it.signatureImages.filter(Boolean).length + ' (below)'
+            : 'Close-up photos: none taken \u2014 the user did not photograph the signature. Detected from the cover images.'}
+        </p>
       </div>` : ''}
 
     ${(it.officialCGCGrade || it.officialCGCCert || it.officialPSAGrade || it.officialPSACert) ? `
