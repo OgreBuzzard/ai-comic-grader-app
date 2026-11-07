@@ -4172,7 +4172,18 @@ export function renderLabelMarkup(comic, opts) {
     const n = _asking;
     // Whole numbers lose the decimals; 12.5 becomes 12.50, because a price
     // reading "$12.5" looks like a typo.
-    const txt = '$' + (n % 1 === 0 ? String(Math.round(n)) : n.toFixed(2));
+    // v6.47: a thousands comma once the number runs to FIVE digits. "$12500"
+    // reads as a typo at arm's length and "$12,500" does not, which is the
+    // whole job of a label you price a book with across a table.
+    // Four digits stay bare, which is Matt's call and the right one: a comma
+    // costs a separator's width - 0.274em, half a digit - and "$1,250" is
+    // unambiguous without it. The EM table below already carries a width for
+    // ',' so the fit needs no other change.
+    // Grouping is applied to the WHOLE-number part only: the lookahead needs
+    // three digits with no digit after them, and the decimal point satisfies
+    // that, so "12500.50" groups as "12,500.50" and ".50" is left alone.
+    const _body = n % 1 === 0 ? String(Math.round(n)) : n.toFixed(2);
+    const txt = '$' + (n >= 10000 ? _body.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : _body);
     // THE FIT. Every price has to end up the same width, so the size comes from
     // the string's own width rather than its length: a comma and a period are a
     // third of a digit, and sizing on character COUNT makes "$1,250" the same
