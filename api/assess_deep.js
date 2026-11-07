@@ -1265,6 +1265,33 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
         // item (assessmentTimingKeys) — the bridge for admin Logs → open item.
         parsed._diagnostics.timingKey = key;
         await db.collection('assessment_timings').doc(key).set({
+          // v6.50 - DEEP/FULL ORPHANS WERE INVISIBLE TO THE SWEEP.
+          // api/assess.js has written these three fields since the Punisher 1
+          // incident: a charged assessment is PENDING until the client calls
+          // /api/credit_settle on save, and whatever is still pending after the
+          // grace period is refunded by the cron. Only Main ever wrote them.
+          // So a Deep or a Full that was charged and whose client never saved -
+          // app killed, signal lost, or the ReferenceError that broke every
+          // Deep in 6.41 - took the credit and was unsweepable. That is why
+          // the sweep has been reporting "scanned 0" while Matt was losing
+          // credits to the 6.41 bug: it could not see them.
+          // SAFE TO ADD HERE AND ONLY HERE. This is the SUCCESS row, and its
+          // key is the one returned in _diagnostics.timingKey, which
+          // _recordTimingKey() stashes on the item and _settleCredits() hands
+          // to /api/credit_settle. The error rows have already refunded, so
+          // they must stay absent - a pending stamp on top of a refund is a
+          // double refund.
+          // NOT ADDED to assess_clean or the batch runner: neither records a
+          // timing key on the item, so nothing would ever settle them and
+          // every successful run would be refunded 15 minutes later. Wiring
+          // _recordTimingKey through those flows comes first.
+          ...(_creditDebited ? {
+            creditSettled: false,
+            creditPendingUid: _deepUid || null,
+            creditPendingCost: _CREDIT_COST,
+            creditPendingLabel: 'deep',
+            creditPendingAt: Date.now()
+          } : {}),
           createdAt: new Date().toISOString(),
           totalMs: phaseTimings.totalMs,
           phases: phaseTimings,

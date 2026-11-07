@@ -79,8 +79,25 @@ export default async function handler(req, res) {
     console.log(`[credit_sweep] scanned ${snap.size} orphan candidate(s): ${refunded} refunded, ${skipped} skipped`);
     return res.status(200).json({ scanned: snap.size, refunded, skipped });
   } catch (e) {
-    console.error('[credit_sweep]', e && e.message);
-    return res.status(500).json({ error: 'sweep failed', detail: String(e && e.message).slice(0, 200) });
+    const msg = String((e && e.message) || e);
+    // v6.49 - A MISSING INDEX MUST SAY WHERE TO CREATE IT.
+    // Firestore's FAILED_PRECONDITION message carries a one-click console URL
+    // that builds the exact composite index, fields and order already filled
+    // in. The old `.slice(0, 200)` cut that URL in half, so the one piece of
+    // information the error existed to deliver was the piece thrown away -
+    // and this endpoint has been failing on every 10-minute cron run since,
+    // with nothing anywhere saying what to click.
+    // Logged in full and returned as its own field.
+    const indexUrl = (msg.match(/https:\/\/console\.firebase\.google\.com\/\S+/) || [null])[0];
+    if (indexUrl) {
+      console.error('[credit_sweep] MISSING FIRESTORE INDEX. Create it here:\n' + indexUrl);
+    }
+    console.error('[credit_sweep]', msg);
+    return res.status(500).json({
+      error: 'sweep failed',
+      detail: msg.slice(0, 900),
+      ...(indexUrl ? { indexUrl } : {}),
+    });
   }
 }
 

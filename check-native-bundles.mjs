@@ -139,6 +139,42 @@ for (const t of TARGETS) {
   console.log('');
 }
 
+// ── v6.48: THE iOS Info.plist KEYS, CHECKED HERE INSTEAD OF IN XCODE ──────
+// "Save as PDF" writes the label into the app's Documents directory. Without
+// UIFileSharingEnabled and LSSupportsOpeningDocumentsInPlace that directory is
+// PRIVATE: the write succeeds, reports success, and the user can never reach
+// the file. It does not throw, so print-label.js's share-sheet fallback never
+// fires either. The failure is invisible until someone cannot find a label.
+//
+// This was a manual step in the 1.15 run sheet and the instruction pointed at
+// the wrong pane - the project's Info tab, which shows Configurations, not the
+// TARGET's, which shows the plist keys. A verification step that sends someone
+// to the wrong screen is worse than no step: it reports "I don't see it",
+// which is indistinguishable from the keys being gone.
+// So it is read from the file. No Xcode, no clicking, no display names.
+{
+  const plistPath = path.join(ROOT, 'ios/App/App/Info.plist');
+  console.log('iOS Info.plist — ' + plistPath);
+  const NEEDED = [
+    ['UIFileSharingEnabled', 'the label PDF is visible in Files'],
+    ['LSSupportsOpeningDocumentsInPlace', 'and can be opened in place'],
+  ];
+  if (!fs.existsSync(plistPath)) {
+    bad('Info.plist not found at ' + plistPath);
+  } else {
+    const xml = fs.readFileSync(plistPath, 'utf8');
+    for (const [key, why] of NEEDED) {
+      // <key>NAME</key> followed by <true/>, whitespace and comments between.
+      const re = new RegExp('<key>' + key + '</key>\\s*(?:<!--[\\s\\S]*?-->\\s*)*<(true|false)\\s*/>');
+      const m = xml.match(re);
+      if (!m) bad(`${key} is MISSING — ${why}. Saved labels will be unreachable.`);
+      else if (m[1] !== 'true') bad(`${key} is <${m[1]}/>, must be <true/> — ${why}.`);
+      else ok(`${key} = YES`);
+    }
+  }
+  console.log('');
+}
+
 if (failed) {
   console.log(`\x1b[31m${failed} problem(s). DO NOT ARCHIVE.\x1b[0m`);
   console.log('Fix, then re-run. The usual cause is a skipped `npx cap sync`.\n');

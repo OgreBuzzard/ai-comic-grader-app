@@ -100,7 +100,58 @@ for (const pair of PAIRS) {
   console.log(`  ok    ${pair.what} — both ${A.value}`);
 }
 
+// ── v6.50: CHARGING AND SWEEPING MUST AGREE ───────────────────────────────
+// Not a pair of constants, but the same failure in a different shape, and it
+// belongs in the same gate: an endpoint that RESERVES a credit and does not
+// stamp the pending fields on its success row is invisible to
+// /api/credit_sweep. A charged assessment whose client never saves then keeps
+// the credit with nothing anywhere able to give it back.
+// That is exactly what happened to every Deep broken by the 6.41
+// ReferenceError, while the sweep logged "scanned 0" ten minutes apart,
+// because only api/assess.js had ever written those fields.
+//
+// EXEMPTIONS ARE EXPLICIT AND THEY HAVE TO STAY THAT WAY. An endpoint is only
+// exempt because nothing settles it - it records no timing key on the item -
+// so stamping it pending would refund every SUCCESSFUL run 15 minutes later.
+// The fix for an exemption is to wire _recordTimingKey() through that flow and
+// then remove it from this list, never to widen the list.
+console.log('\nendpoints that charge a credit must be sweepable');
+const CHARGERS = [
+  { file: 'api/assess.js',           label: 'Main' },
+  { file: 'api/assess_deep.js',      label: 'Deep' },
+  { file: 'api/assess_full.js',      label: 'Full' },
+  { file: 'api/assess_clean.js',     label: 'Post-Cleaning',
+    exempt: 'records no timing key on the item — wire _recordTimingKey() first' },
+  { file: 'api/assess_clean_run.js', label: 'Post-Cleaning runner',
+    exempt: 'orchestrates Main + Deep, which stamp their own rows' },
+  { file: 'api/assess_batch_run.js', label: 'Batch',
+    exempt: 'the 3 credits are charged once by assess_batch_start; its passes cost 0' },
+];
+let unswept = 0;
+for (const c of CHARGERS) {
+  let src;
+  try { src = fs.readFileSync(path.join(ROOT, c.file), 'utf8'); }
+  catch { console.log(`  BLIND ${c.label} — cannot read ${c.file}`); blind++; continue; }
+  const reserves = /reserveCredit\s*\(/.test(src);
+  const stamps = /creditPendingAt/.test(src);
+  if (!reserves) { console.log(`  ok    ${c.label} — charges nothing`); continue; }
+  if (stamps) { console.log(`  ok    ${c.label} — charges and stamps pending`); continue; }
+  if (c.exempt) { console.log(`  ok    ${c.label} — exempt: ${c.exempt}`); continue; }
+  unswept++;
+  console.log(`  UNSWEPT ${c.label} (${c.file})`);
+  console.log('        reserves a credit and never writes creditPendingAt, so');
+  console.log('        /api/credit_sweep cannot refund it when a client fails to save.');
+}
+
 console.log('');
+if (unswept) {
+  console.error(`✗ ${unswept} endpoint(s) charge a credit the sweep cannot see.`);
+  console.error('  Stamp creditSettled / creditPendingUid / creditPendingCost /');
+  console.error('  creditPendingLabel / creditPendingAt on the SUCCESS timing row — the one');
+  console.error('  whose key is returned in _diagnostics.timingKey. Never on an error row:');
+  console.error('  those have already refunded, and a pending stamp on a refund pays twice.');
+  process.exit(1);
+}
 if (blind) {
   console.error(`✗ ${blind} pair(s) could not be read. Treat this as a BLOCKER: a pair this script`);
   console.error('  cannot see is a pair that will drift with nothing watching. Fix the pattern.');

@@ -2401,7 +2401,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.47";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.50";
       // v6.46: the GRADING epoch - the version the assessment last actually
       // changed at. RG_GRADING_VERSION above is the BUILD number and moves on
       // every change; this one does not. The label stamps THIS, because "V6.45"
@@ -2412,7 +2412,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.47");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.50");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -7084,7 +7084,7 @@ function showDetail(id) {
   if (!isSample && _cleanUnlocked(selected)) {
     const _cr = selected.cleanRuns || 0;
     _cleanCard = `<div onclick="showEditToSection('${esc(selected.id)}','clean')" style="margin-top:14px;padding:14px;background:#0e2420;border:1.5px solid #2e7a6a;border-radius:12px;text-align:center;cursor:pointer">
-        <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:#6ad0b8;margin-bottom:5px">BOOK HAS BEEN CLEANED${_cr ? ` &middot; RUN ${_cr + 1}` : ""}</div>
+        <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:#6ad0b8;margin-bottom:5px">POST-CLEANING${_cr ? ` &middot; RUN ${_cr + 1}` : ""}</div>
         <div style="font-size:12px;color:#8fc4b8;line-height:1.45;margin-bottom:10px">Once this book has been cleaned/pressed, re-shoot the 10 photos for an objective BEFORE/AFTER comparison. The current grade will be preserved as the BEFORE and a new AFTER grade will be determined.</div>
         <button class="rg-btn rg-btn-assess rg-btn-silver" style="pointer-events:none;display:inline-block">POST-CLEANING ASSESS</button>
       </div>`;
@@ -7096,6 +7096,11 @@ function showDetail(id) {
     }
   }
   html += _cleanCard;
+  // v6.49: the results of a run that has already happened. The card above is
+  // the way IN; this is the thing the two credits bought, and until now it was
+  // stored and never drawn.
+  html += renderPostCleaningResults(selected);
+  html += renderPostCleaningPhotos(selected);
   if ((isRestorationCheckComplete(selected) || selected.restorationCheckTier || selected.restorationUnlocked) && Array.isArray(selected.restorationImages) && selected.restorationImages.some(Boolean)) {
     html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n        <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">UV CHECK</div>\n        ${renderRestorationSlotGrid(selected.restorationImages, {editable: false, comicId: selected.id})}\n      </div>`;
   }
@@ -7175,7 +7180,7 @@ function showDetail(id) {
     const _fmvGrade = _isCardItem ? _cardPsaStr : (selected.cgcGrade || selected.psaGrade || predictedGradeValue);
     const _fmvMatch = _isCardItem
       ? ((window.matchCardFMV && _fmvGrade && selected.cardData) ? window.matchCardFMV(selected.cardData.cardIdentification, _fmvGrade) : null)
-      : ((typeof window.matchFMV === "function" && _fmvGrade) ? window.matchFMV(selected.title, selected.issue, _fmvGrade, selected.printing, extractYearFromIssueDate(selected.issueDate)) : null);
+      : ((typeof window.matchFMV === "function" && _fmvGrade && !_fmvWithheld(selected)) ? window.matchFMV(selected.title, selected.issue, _fmvGrade, selected.printing, extractYearFromIssueDate(selected.issueDate)) : null);
     const _pqHtml = showPQ ? `<div style="display:flex;justify-content:center">${buildPQBox(selected.pageQuality)}</div>` : "";
     html += buildPredictedGradeBox(predictionBoxes.join(""), _pqHtml, _fmvMatch, !!(predictedBadge || cardPsaBadge));
   }
@@ -9660,7 +9665,7 @@ function _settleScrollTo(elId, topGap) {
 }
 
 function showEditToSection(id, section) {
-  // Arriving from Detail's "BOOK HAS BEEN CLEANED" card means the user has
+  // Arriving from Detail's "POST-CLEANING" card means the user has
   // already said what they want, so the section opens expanded rather than
   // making them tap a second time. Keyed by id so it cannot leak to another book.
   if (section === "clean") _cleanExpandedFor = id;
@@ -12016,7 +12021,16 @@ function _cleanUnlocked(item) {
 function _cleanBeforeSnapshot(item) {
   const rg = (item && item.roboGrade) || {};
   return {
-    grade: item.grade || null,
+    // v6.49 - THIS WAS `item.grade`, WHICH IS MY GRADE.
+    // `grade` is the OWNER'S OWN opinion of the book (v6.27 moved it down
+    // beside the price and the seller for exactly that reason). The predicted
+    // grade is `predictedGrade`. api/assess_clean.js diffs before.grade
+    // against after.grade, and the After side comes from the assess endpoints,
+    // where `grade` means the PREDICTED grade - so the comparison was holding
+    // My Grade up against a predicted grade, and on the common case where the
+    // owner never filled My Grade in it was comparing a predicted grade
+    // against nothing and reporting no movement at all.
+    grade: item.predictedGrade || item.assessedCGCGrade || null,
     roboGrade: rg,
     pageQuality: item.pageQuality || rg.pageQuality || "",
     defects: Array.isArray(rg.defects) ? rg.defects : [],
@@ -12146,7 +12160,13 @@ async function submitCleanAssessment() {
     formData.cleanComparison = res.comparison || null;
     formData.cleanRuns = (formData.cleanRuns || 0) + 1;
     formData.cleanAssessmentRan = true;
-    if (A.grade) formData.grade = A.grade;
+    // v6.49 - WAS `formData.grade = A.grade`, three bugs in one line:
+    //   it overwrote the owner's My Grade with a model output,
+    //   it never updated predictedGrade, so the screen kept showing the
+    //   BEFORE grade after a run that exists to change it,
+    //   and it skipped _snapPgToLadder, which every other pass goes through.
+    // My Grade is the user's and this pass does not get to touch it.
+    if (A.grade) formData.predictedGrade = _snapPgToLadder(A.grade, "clean-result");
     if (A.roboGrade) formData.roboGrade = A.roboGrade;
     if (A.pageQuality) formData.pageQuality = A.pageQuality;
     if (A.restorationFlag) formData.restorationFlag = true;
@@ -12490,6 +12510,172 @@ async function submitBatchAssessment() {
     renderForm();
   }
 }
+// v6.49 - NO MARKET VALUE WHILE RESTORATION IS OUTSTANDING.
+// POST_CLEANING_ASSESSMENT_SPEC.md: when the after pass detects restoration
+// the before pass did not, the FMV is left blank. The index prices an
+// UNRESTORED copy at a grade; printing that number beside a book whose latest
+// pass saw restoration states a value nobody has any basis for, on the one
+// screen a buyer is most likely to be shown.
+// Blank, not zero and not a guess. The panel above says why.
+function _fmvWithheld(item) {
+  return !!(item && item.cleanComparison && item.cleanComparison.restorationAppeared);
+}
+
+// ── POST-CLEANING RESULTS (v6.49) ──────────────────────────────────────────
+// The run has stored `cleanComparison` since v5.69 and NOTHING HAS EVER
+// RENDERED IT. Two credits bought a before/after diff, a computed defect
+// reconciliation and a written explanation, and the only visible effect was
+// that the grade moved. This is the half that was missing.
+//
+// Rendered from the STORED record, so it is the same in Detail and in Edit and
+// it survives a reload. Every number on it was computed in code by
+// api/assess_clean.js - resolved / survived / introduced are a defect-key diff,
+// not something the model counted - so this panel can state them flatly.
+//
+// HONESTY CONSTRAINT, from POST_CLEANING_ASSESSMENT_SPEC.md and repeated here
+// because it is the easiest thing to lose in a rewrite: when restoration shows
+// up on the after photos and not the before ones, we say WHAT EACH PASS FOUND.
+// We never say the book was restored, who did it, or when. The before pass may
+// simply have missed it. The field is called restorationAppeared for that
+// reason and the wording below matches it.
+const _PC = { bg: '#0e2420', bd: '#2e7a6a', fg: '#6ad0b8', dim: '#8fc4b8' };
+
+function _pcV3(rgLike) {
+  try {
+    if (!rgLike || !window.RoboScoreV3) return null;
+    const r = window.RoboScoreV3.forComic({ roboGrade: rgLike, deepAssessmentRan: true });
+    return r ? window.RoboScoreV3.formatGrade(r.grade) : null;
+  } catch (e) { return null; }
+}
+
+// One before -> after pair. Equal weight either side: the whole point is the
+// comparison, so neither number is allowed to look like the headline.
+function _pcPair(label, before, after, delta) {
+  const arrow = delta == null ? ''
+    : `<span style="font-size:11px;font-weight:800;color:${delta > 0 ? '#9ade6a' : delta < 0 ? '#e88a7a' : _PC.dim};margin-left:6px">${delta > 0 ? '+' : ''}${delta}</span>`;
+  const box = (v, sub) => `<div style="flex:1;min-width:0;text-align:center">
+      <div style="font-family:'League Spartan',sans-serif;font-weight:800;font-size:26px;line-height:1;color:${_PC.fg};transform:scaleX(0.8);display:inline-block">${esc(v || '—')}</div>
+      <div style="font-size:8px;letter-spacing:1.2px;color:${_PC.dim};margin-top:4px">${sub}</div>
+    </div>`;
+  return `<div style="flex:1;min-width:0;background:rgba(0,0,0,0.22);border-radius:8px;padding:8px 6px">
+      <div style="font-size:9px;font-weight:800;letter-spacing:1.4px;color:${_PC.dim};text-align:center;margin-bottom:6px">${label}${arrow}</div>
+      <div style="display:flex;align-items:flex-end;gap:4px">
+        ${box(before, 'BEFORE')}
+        <div style="width:1px;align-self:stretch;background:${_PC.bd};opacity:0.8"></div>
+        ${box(after, 'AFTER')}
+      </div>
+    </div>`;
+}
+
+function _pcCount(n, label, tone) {
+  return `<div style="flex:1;min-width:0;text-align:center">
+      <div style="font-family:'League Spartan',sans-serif;font-weight:800;font-size:20px;line-height:1;color:${tone}">${n}</div>
+      <div style="font-size:8px;letter-spacing:1px;color:${_PC.dim};margin-top:3px">${label}</div>
+    </div>`;
+}
+
+function _pcDefectList(title, list, tone) {
+  const arr = Array.isArray(list) ? list.filter(Boolean) : [];
+  if (!arr.length) return '';
+  const row = d => {
+    const t = (d && (d.type || d.name)) || '';
+    const loc = (d && d.location) || '';
+    if (!t && !loc) return '';
+    return `<li style="margin:0 0 3px 0">${esc(t)}${loc ? `<span style="color:${_PC.dim}"> — ${esc(loc)}</span>` : ''}</li>`;
+  };
+  const rows = arr.map(row).filter(Boolean).join('');
+  if (!rows) return '';
+  return `<div style="flex:1;min-width:0">
+      <div style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:${tone};margin-bottom:5px">${title} (${arr.length})</div>
+      <ul style="margin:0;padding-left:14px;font-size:11px;line-height:1.45;color:#cfe4dd">${rows}</ul>
+    </div>`;
+}
+
+function renderPostCleaningResults(item) {
+  const c = item && item.cleanComparison;
+  if (!c) return '';
+  const before = (item.cleanBeforeResult) || {};
+  const after = (item.cleanAfterResult) || {};
+  const counts = c.counts || {};
+  const pq = c.pageQualityMove || {};
+
+  const rgB = _pcV3(before.roboGrade), rgA = _pcV3(after.roboGrade || item.roboGrade);
+  const rgDelta = (rgB != null && rgA != null) ? +(parseFloat(rgA) - parseFloat(rgB)).toFixed(1) : null;
+
+  // The restoration line leads when it is there. It is the most consequential
+  // thing a post-cleaning pass can turn up and it must not sit under a grade.
+  const restoBanner = c.restorationAppeared ? `
+    <div style="background:#3a1410;border:1.5px solid #a0503c;border-radius:8px;padding:10px 12px;margin-bottom:10px">
+      <div style="font-size:10px;font-weight:800;letter-spacing:1.4px;color:#f0a090;margin-bottom:4px">RESTORATION DETECTED ON THE AFTER PHOTOS</div>
+      <div style="font-size:11.5px;line-height:1.5;color:#e8cfc8">The before pass did not detect restoration and the after pass did. That is a difference between two assessments, not a statement about what was done to the book — the earlier photos may simply not have shown it. Market value is not estimated while this is outstanding.</div>
+    </div>` : '';
+
+  const pqMoved = pq.before && pq.after && pq.before !== pq.after;
+  const pqLine = pqMoved ? `
+    <div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:11px;color:${_PC.dim}">
+      <span style="font-weight:800;letter-spacing:1.2px;font-size:9px">PAGE QUALITY</span>
+      <span style="color:#cfe4dd">${esc(pq.before)} → ${esc(pq.after)}</span>
+      ${pq.suspicious ? `<span style="color:#e8b36a;font-size:10px">· flagged as a larger move than cleaning explains</span>` : ''}
+    </div>` : '';
+
+  const lists = [
+    _pcDefectList('RESOLVED', c.resolved, '#9ade6a'),
+    _pcDefectList('INTRODUCED', c.introduced, '#e88a7a'),
+  ].filter(Boolean).join('');
+
+  const when = c.at ? new Date(c.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+
+  return `<div style="margin-top:14px;padding:14px;background:${_PC.bg};border:1.5px solid ${_PC.bd};border-radius:12px">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:800;letter-spacing:2px;color:${_PC.fg}">POST-CLEANING${c.runNumber ? ` &middot; RUN ${c.runNumber}` : ''}</div>
+        ${when ? `<div style="font-size:10px;color:${_PC.dim}">${esc(when)}</div>` : ''}
+      </div>
+      ${restoBanner}
+      <div style="display:flex;gap:8px">
+        ${_pcPair('ROBOGRADE', rgB, rgA, rgDelta)}
+        ${_pcPair('PREDICTED', before.grade, after.grade || item.predictedGrade, c.gradeDelta)}
+      </div>
+      <div style="display:flex;gap:6px;margin-top:10px;background:rgba(0,0,0,0.22);border-radius:8px;padding:9px 6px">
+        ${_pcCount(counts.resolved != null ? counts.resolved : '—', 'RESOLVED', '#9ade6a')}
+        ${_pcCount(counts.survived != null ? counts.survived : '—', 'SURVIVED', _PC.fg)}
+        ${_pcCount(counts.introduced != null ? counts.introduced : '—', 'INTRODUCED', '#e88a7a')}
+      </div>
+      ${pqLine}
+      ${c.writeUp ? `<div style="font-size:12px;line-height:1.55;color:#cfe4dd;margin-top:10px;white-space:pre-wrap">${esc(c.writeUp)}</div>` : ''}
+      ${lists ? `<div style="display:flex;gap:14px;margin-top:12px;padding-top:10px;border-top:1px dashed ${_PC.bd}">${lists}</div>` : ''}
+    </div>`;
+}
+
+// The ten photos, paired. Before on the left of each row, After on the right,
+// so a row IS the comparison - two galleries one above the other would make
+// the reader hold ten images in their head to do the same job.
+const _PC_SLOT_LABELS = ['Front', 'Back', 'Interior', 'Raking', 'Top Left', 'Top Right', 'Bottom Left', 'Bottom Right', 'Int. Front', 'Int. Back'];
+
+function renderPostCleaningPhotos(item) {
+  const b = (item && item.cleanBeforeImages) || [];
+  const a = (item && item.cleanAfterImages) || [];
+  if (!b.some(Boolean) && !a.some(Boolean)) return '';
+  const cell = (url, who) => url
+    ? `<div style="flex:1;min-width:0;position:relative;border-radius:6px;overflow:hidden;background:#0a1512" onclick="openReferenceLightbox('${esc(url)}')">
+         <img src="${esc(url)}" style="display:block;width:100%;height:auto;cursor:zoom-in">
+         <div style="position:absolute;top:3px;left:4px;background:rgba(0,0,0,0.65);color:#cfe4dd;font-size:8px;letter-spacing:0.8px;padding:1px 5px;border-radius:3px">${who}</div>
+       </div>`
+    : `<div style="flex:1;min-width:0;aspect-ratio:3/4;border-radius:6px;background:#0a1512;border:1px dashed ${_PC.bd}"></div>`;
+  const rows = [];
+  for (let i = 0; i < 10; i++) {
+    if (!b[i] && !a[i]) continue;
+    rows.push(`<div style="margin-top:8px">
+        <div style="font-size:9px;letter-spacing:1.2px;color:${_PC.dim};margin-bottom:3px">${_PC_SLOT_LABELS[i] || ('Slot ' + (i + 1))}</div>
+        <div style="display:flex;gap:6px;align-items:flex-start">${cell(b[i], 'BEFORE')}${cell(a[i], 'AFTER')}</div>
+      </div>`);
+  }
+  if (!rows.length) return '';
+  return `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed ${_PC.bd}">
+      <div style="font-size:11px;color:${_PC.fg};font-weight:700;letter-spacing:2px;margin-bottom:4px">POST-CLEANING PHOTOS</div>
+      ${rows.join('')}
+    </div>`;
+}
+
 // ── CLEANING COMPARE — the capture screen (v5.70) ──────────────────────────
 // Ten Before photos down the left, ten After slots down the right, paired. The
 // assess button stays greyed until all ten After photos exist, and the 2-credit
@@ -12518,6 +12704,14 @@ function retakeCleanSlot(idx) {
   tapSlot(idx - CLEAN_CAPTURE_OFFSET[kind], kind);
 }
 
+// v6.49: Edit shows the same stored results, from the same renderer. Two
+// renderers for one record is how Detail and Edit drift apart - see the
+// identity header in v6.27, which was the last time that happened.
+function renderCleanResultsForEdit() {
+  if (!formData || !formData.cleanComparison) return "";
+  return renderPostCleaningResults(formData) + renderPostCleaningPhotos(formData);
+}
+
 function renderCleanSection() {
   if (!_cleanUnlocked(formData) || !formData.id) return "";
   const before = _cleanBeforePhotos(formData);
@@ -12526,7 +12720,7 @@ function renderCleanSection() {
   const ready = have >= 10;
   const runs = formData.cleanRuns || 0;
 
-  const _headHTML = `<div style="font-size:11px;color:#6ad0b8;font-weight:700;letter-spacing:2px;margin-bottom:8px">BOOK HAS BEEN CLEANED${runs ? ` &middot; RUN ${runs + 1}` : ""}</div>`;
+  const _headHTML = `<div style="font-size:11px;color:#6ad0b8;font-weight:700;letter-spacing:2px;margin-bottom:8px">POST-CLEANING${runs ? ` &middot; RUN ${runs + 1}` : ""}</div>`;
   const _blurbHTML = `<div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Once this book has been cleaned/pressed, re-shoot the 10 photos for an objective BEFORE/AFTER comparison. The current grade will be preserved as the BEFORE and a new AFTER grade will be determined.</div>`;
 
   // COLLAPSED BY DEFAULT (v5.72). The ten Before/After pairs are a 3,300px
@@ -13630,7 +13824,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "6.47"),
+      appVersion: (window.RG_GRADING_VERSION || "6.50"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
@@ -15251,7 +15445,7 @@ function renderForm() {
     const _uvLeft = uvChecksLeft(formData);
     if (_uvLeft <= 0) return "";
     return `\n          <div id="uv-section" style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n            <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">UV CHECK — FREE</div>\n            <div style="font-size:11px;color:#9a8aaa;margin-bottom:10px;line-height:1.5">\n              Color touch restoration is most easily identified under a blacklight. Take 2 photos of the front and back cover under a UV light source in an otherwise-dark room to check for this type of restoration. This assessment is free.\n            </div>\n            ${renderRestorationSlotGrid(rImgs, {editable: true})}\n            <input id="restoration-photo-input" type="file" accept="image/*" multiple onchange="handleRestorationImages(event)" style="display:none">\n            <div style="display:flex;justify-content:center;margin-top:12px">\n              <button id="restoration-check-btn" class="rg-btn rg-btn-assess rg-btn-purple${assessing ? ' assessing' : ''}" onclick="submitRestorationCheck()" ${rReady ? "" : "disabled"}>\n                ${assessing ? "Checking…" : `UV CHECK ${rFilled < RESTORATION_SLOT_COUNT ? `(${rFilled}/${RESTORATION_SLOT_COUNT})` : `(${_uvLeft} LEFT)`}`}\n              </button>\n            </div>\n          </div>\n        `;
-  })()}${renderBatchSection()}${renderCleanSection()}${renderUserDefectSlots()}\n      <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">\n      <input id="userdefect-photo-input" type="file" accept="image/*" onchange="handleUserDefectImages(event)" style="display:none">\n      <input id="restoration-photo-input" type="file" accept="image/*" onchange="handleRestorationImages(event)" style="display:none">\n\n      \x3c!-- S11: Pre-assessment Grader Notes (Option B for the chicken-and-egg\n           problem). For graded books in slabs, the official grader notes are\n           highly informative inputs to the AI assessment — but we don't\n           know a book is graded until after the AI has assessed it, so the\n           field would normally be unavailable on first-pass. This collapsible\n           section gives users who have a slabbed book a way to enter the\n           grader notes BEFORE running the assessment. Defaults closed so\n           the standard image-first flow stays visually clean for raw books;\n           opens with a single tap. Only renders pre-assessment in the\n           image-first flow (no _assessed, no _addManualMode, no isEdit) —\n           after assessment, the Grader Notes field appears in the normal\n           form section below where it can also be edited. --\x3e\n      \x3c!-- The "Optional: official label info" collapsible was removed in S12.\n           It let users type CGC/PSA grader notes BEFORE assessment to nudge\n           accuracy. Pulled because:\n           - Used by an extreme minority of users (only those entering\n             already-graded books and willing to transcribe slab text)\n           - Cluttered the otherwise-clean image-first Add flow\n           - The same info can still be typed in the post-assessment form\n             where the Grader Notes field still lives.\n           If we want this back later, the JS field (formData.graderNotes)\n           still wires through to assess.js — only the UI was removed. --\x3e\n\n    </div>\n    ${isEdit || _assessed || _addManualMode ? `\n    ${""}\n    ${formData.roboGrade ? "" : `<div class="form-grid-2">
+  })()}${renderBatchSection()}${renderCleanResultsForEdit()}${renderCleanSection()}${renderUserDefectSlots()}\n      <input id="photo-input" type="file" accept="image/*" multiple onchange="handleImages(event)" style="display:none">\n      <input id="userdefect-photo-input" type="file" accept="image/*" onchange="handleUserDefectImages(event)" style="display:none">\n      <input id="restoration-photo-input" type="file" accept="image/*" onchange="handleRestorationImages(event)" style="display:none">\n\n      \x3c!-- S11: Pre-assessment Grader Notes (Option B for the chicken-and-egg\n           problem). For graded books in slabs, the official grader notes are\n           highly informative inputs to the AI assessment — but we don't\n           know a book is graded until after the AI has assessed it, so the\n           field would normally be unavailable on first-pass. This collapsible\n           section gives users who have a slabbed book a way to enter the\n           grader notes BEFORE running the assessment. Defaults closed so\n           the standard image-first flow stays visually clean for raw books;\n           opens with a single tap. Only renders pre-assessment in the\n           image-first flow (no _assessed, no _addManualMode, no isEdit) —\n           after assessment, the Grader Notes field appears in the normal\n           form section below where it can also be edited. --\x3e\n      \x3c!-- The "Optional: official label info" collapsible was removed in S12.\n           It let users type CGC/PSA grader notes BEFORE assessment to nudge\n           accuracy. Pulled because:\n           - Used by an extreme minority of users (only those entering\n             already-graded books and willing to transcribe slab text)\n           - Cluttered the otherwise-clean image-first Add flow\n           - The same info can still be typed in the post-assessment form\n             where the Grader Notes field still lives.\n           If we want this back later, the JS field (formData.graderNotes)\n           still wires through to assess.js — only the UI was removed. --\x3e\n\n    </div>\n    ${isEdit || _assessed || _addManualMode ? `\n    ${""}\n    ${formData.roboGrade ? "" : `<div class="form-grid-2">
       \x3c!-- Title gets a special handler (not the generic tf) because we need
            live-toggle the save button as the user types. --\x3e
       <div><label class="field-label">Title<span style="color:#c0392b;margin-left:2px">*</span></label><input id="title-input" value="${esc(formData.title || "")}" oninput="formData.title=this.value;refreshSaveButtonLock()" placeholder="Series title"></div>
@@ -15290,7 +15484,7 @@ function renderForm() {
       const predicted = predVal ? buildBadge(normalizeGrade(predVal), "predicted", "", false, false, false, _editRestored, !!formData.couponQualified, !!formData.gradeAtCeiling) : "";
       const _pqHtml = (!_isCardItem && formData.pageQuality) ? `<div style="display:flex;justify-content:center">${buildPQBox(formData.pageQuality)}</div>` : "";
       const _fmvGrade = _isCardItem ? _cardPsaStr : (formData.cgcGrade || formData.psaGrade || aiCgcGrade(formData));
-      const _fmvMatch = _isCardItem ? ((window.matchCardFMV && _fmvGrade && formData.cardData) ? window.matchCardFMV(formData.cardData.cardIdentification, _fmvGrade) : null) : ((typeof window.matchFMV === "function" && _fmvGrade) ? window.matchFMV(formData.title, formData.issue, _fmvGrade, formData.printing, extractYearFromIssueDate(formData.issueDate)) : null);
+      const _fmvMatch = _isCardItem ? ((window.matchCardFMV && _fmvGrade && formData.cardData) ? window.matchCardFMV(formData.cardData.cardIdentification, _fmvGrade) : null) : ((typeof window.matchFMV === "function" && _fmvGrade && !_fmvWithheld(formData)) ? window.matchFMV(formData.title, formData.issue, _fmvGrade, formData.printing, extractYearFromIssueDate(formData.issueDate)) : null);
       return buildPredictedGradeBox([ cgcOff, psaOff, cardPsa, predicted ].filter(Boolean).join(""), _pqHtml, _fmvMatch, !!(predicted || cardPsa));
     })() : ""}\n\n    \x3c!-- The S11 "transaction metadata" block that sat here is gone: Date\n         Acquired and Seller moved down above Cost Breakdown (2026-10-17), and\n         Grading Date (slabbingDate) was removed from the UI in the same pass. --\x3e\n    \x3c!-- Analysis block (S11 reorder per user direction):\n         Defect Notes, Condition Assessment first\n         Then Enhancement Candidate\n         Then Cost Breakdown (now including FMV inside it)\n         Other gated text fields (Label Notes, Key Info, Grader Notes,\n         Past Assessments) live in their previous positions\n         around these. --\x3e\n    ${formData.cgcGrade || formData.psaGrade || formData.cgcNotes ? `<div><label class="field-label">Grader Label Notes</label><textarea rows="3" readonly style="cursor:not-allowed" title="Grader Label Notes is the text on the CGC or PSA slab label. Populated by the assessment, not user-editable.">${esc(formData.cgcNotes || "")}</textarea></div>` : ""}\n    ${(() => {
     const showLabelNotesEdit = (formData.cgcGrade || formData.psaGrade) && formData.cgcNotes && formData.cgcNotes.trim();
