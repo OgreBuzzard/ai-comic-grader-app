@@ -2401,18 +2401,18 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.54";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.55";
       // v6.46: the GRADING epoch - the version the assessment last actually
       // changed at. RG_GRADING_VERSION above is the BUILD number and moves on
       // every change; this one does not. The label stamps THIS, because "V6.45"
       // on a label is a claim about what graded the book, not about which CSS
       // fix was live that day. See lib/version.js and HOW_WE_WORK section 10a.
-      window.RG_EPOCH = window.RG_EPOCH || "6.45";
+      window.RG_EPOCH = window.RG_EPOCH || "6.55";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.51");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.55");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -10850,6 +10850,13 @@ function buildPQBox(pq, size = "normal") {
   return `<div style="background:${colors.bg};color:${colors.text};padding:${pad};border-radius:8px;font-size:${fs};font-weight:${fw};letter-spacing:0.03em;display:inline-block">${pq}</div>`;
 }
 
+// v6.55: the Main PG ceiling, and the rung at which the "you may be at the
+// ceiling" modal fires. Kept together and next to the ladder so a future cap
+// change moves both. api/assess.js owns the ENFORCED ceiling (it is the server
+// that clamps); this pair is the client's copy for the modal only — if they
+// ever disagree, the server wins and the modal is merely early or late.
+const MAIN_PG_CEILING = 9.4;
+const MAIN_PG_CEILING_TRIGGER = 9.2;   // one rung below the cap
 const CGC_GRADE_LIST = [ 0.5, 1.0, 1.5, 1.8, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.2, 9.4, 9.6, 9.8, 9.9, 10.0 ];
 
 const PSA_GRADE_LIST = [ 0.3, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.2, 9.4, 9.6, 9.8, 10.0 ];
@@ -11538,7 +11545,21 @@ function mountResults(cgc, psa) {
     // result (not a post-Deep run) that hits the Deep-unlock GRADE threshold —
     // RG >= 90 OR predicted >= 9.0 — regardless of value, and again on every
     // Re-assess. A book that unlocks Deep only by value ($100+ tier) does NOT get it.
-    if (!isPostDeepRun && (scoreGate || predictedGate)) {
+    // v6.55: the ceiling modal now fires on a CEILING, not on an absolute
+    // grade. Each arm is "at or within one rung of its OWN Main ceiling":
+    //   RG   Main cap 9.0 (roboscore_v3 DEPTH_CAP) -> score >= 90, unchanged;
+    //        at 9.0 the RG genuinely IS maxed.
+    //   PG   Main cap just moved 9.2 -> 9.4, so the trigger moves 9.0 -> 9.2.
+    // Matt, 2026-11-10: "We should perhaps drop the message on the 9.0 grade
+    // and just leave it on Mains that come in at 9.2 or 9.4." Right, and the
+    // reason is the one that makes it self-maintaining: under the old 9.2 cap
+    // a 9.0 was one rung off the ceiling; under 9.4 it is two, and a book two
+    // rungs clear of the cap was never clamped, so telling its owner the grade
+    // was limited is simply untrue. Written against MAIN_PG_CEILING so the next
+    // cap change carries it automatically instead of stranding another literal.
+    const _mainPgCeilingTrigger = MAIN_PG_CEILING_TRIGGER;
+    const _ceilingPredictedGate = Number.isFinite(predictedNum) && predictedNum >= _mainPgCeilingTrigger;
+    if (!isPostDeepRun && (scoreGate || _ceilingPredictedGate)) {
       _showCeilingModal();
     }
     if (hgUnlocked) {
@@ -14018,7 +14039,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "6.51"),
+      appVersion: (window.RG_GRADING_VERSION || "6.55"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,

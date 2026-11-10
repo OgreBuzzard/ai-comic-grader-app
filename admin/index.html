@@ -40,6 +40,47 @@
     padding-top: var(--safe-top);
     padding-bottom: var(--safe-bot);
   }
+  /* ── iOS 26 SCROLL EDGE EFFECT ─────────────────────────────────────────
+     v6.55. iOS 26 paints a blur + dim band (~40pt) over the top of an
+     installed home-screen web app. It is not ours and no CSS of ours causes
+     it; it sits on top of whatever is there, which is why "RG ADMIN" and Sign
+     Out look smeared even before anything scrolls.
+     WebKit's FixedContainerEdges logic SKIPS the effect when a position:fixed,
+     full-width, opaque box taller than ~10px occupies the top edge. This is
+     that box. It paints the same colour as the area it covers, so nothing
+     looks different if the trick stops working.
+     STANDALONE ONLY. In a normal browser tab there is no effect to suppress
+     and a fixed bar would just cover 12px of the page, so it is gated on
+     display-mode: standalone plus an html[data-standalone] fallback set from
+     navigator.standalone (iOS's own signal, which predates the media query
+     being reliable for home-screen apps).
+     THIS IS AN UNVERIFIED COMMUNITY WORKAROUND. Several PWA projects landed
+     the same fix in late 2026 and none of them confirmed it on a real device
+     in their own PRs. Matt's phone is the test. If the band is still there,
+     the next thing to try is making the whole app shell a fixed, opaque,
+     viewport-spanning container - a bigger change, so it is not the first
+     attempt. */
+  #ios-edge-guard { display: none; }
+  @media (display-mode: standalone) {
+    #ios-edge-guard {
+      display: block;
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: max(var(--safe-top), 12px);
+      background: var(--bg);
+      z-index: 9;            /* under the header (10), over the page */
+      pointer-events: none;
+    }
+  }
+  html[data-standalone] #ios-edge-guard {
+    display: block;
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: max(var(--safe-top), 12px);
+    background: var(--bg);
+    z-index: 9;
+    pointer-events: none;
+  }
   header {
     position: sticky;
     top: var(--safe-top);
@@ -619,8 +660,15 @@
   #ap-ok { background: var(--danger); color: #fff; }
   #ap-ok:active, #ap-cancel:active { filter: brightness(0.9); }
 </style>
+<script>
+/* v6.55: iOS's own standalone signal, set before first paint so #ios-edge-guard
+   is present from the very first frame. The display-mode media query is the
+   primary route; this is the belt to its braces on iOS home-screen apps. */
+try { if (window.navigator && window.navigator.standalone) document.documentElement.setAttribute('data-standalone',''); } catch (e) {}
+</script>
 </head>
 <body>
+<div id="ios-edge-guard" aria-hidden="true"></div>
 
 <!-- S14: in-app prompt dialog (replaces native prompt() for the delete
      confirmation, which mobile Safari / standalone PWA mode can suppress). -->

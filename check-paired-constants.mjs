@@ -36,6 +36,14 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
 
 const PAIRS = [
   {
+    what: 'Main PG ceiling',
+    why: 'the server CLAMPS at this value; the client decides whether to tell '
+       + 'the user the grade was limited. If they drift, the modal fires on a '
+       + 'book that was never capped, or stays silent on one that was.',
+    a: { file: 'index.html',    re: /const\s+MAIN_PG_CEILING\s*=\s*([\d.]+)/ },
+    b: { file: 'api/assess.js', re: /const\s+MAIN_PG_CEILING\s*=\s*([\d.]+)/ }
+  },
+  {
     what: 'Full Assessment FMV tier gate',
     why: 'client draws the button, server decides whether to honour it',
     a: { file: 'index.html',          re: /fmvTierOf\(item\)\s*>=\s*(\d+)/ },

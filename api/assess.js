@@ -936,13 +936,28 @@ CRITICAL — CENSUS USE IS INTERNAL ONLY: the census data above is a calibration
         : (photoCount >= 4 ? 8 : photoCount === 3 ? 12 : 15));
   const rgCeiling = 100 - baseConf;
 
+  // Named, not inline: check-paired-constants.mjs watches this against
+  // index.html's MAIN_PG_CEILING, and a bare `? 9.4 :` is not something a
+  // dumb text matcher can find unambiguously in a 2,400-line file.
+  const MAIN_PG_CEILING = 9.4;      // raw Main, 4+ images
+  const MAIN_PG_CEILING_LOW = 8.5;  // raw Main, fewer than 4 images
   // Predicted grade ceiling depends on assessment tier + image count.
   // VK status does NOT affect ceilings — it only affects which tiers unlock.
   const gradeCeiling = labelDetected
     ? null  // slabbed: label grade is ceiling (handled in prompt)
     : (highGrade
         ? 9.6   // Deep Assessment
-        : (photoCount >= 4 ? 9.2 : 8.5)); // Raw Main: 9.2 (4 imgs) / 8.5 (fewer)
+        : (photoCount >= 4 ? MAIN_PG_CEILING : MAIN_PG_CEILING_LOW));
+  // v6.55: Main raised 9.2 -> 9.4 (Matt, 2026-11-10). Three reasons, all his:
+  //   1. a first-time user shooting a clean modern and getting 9.2 on a 9.8
+  //      book is the worst possible first impression;
+  //   2. 9.4 / 9.6 / 9.8 for Main / Deep / Full is one clean step each and is
+  //      memorable in a way 9.2 / 9.6 / 9.8 is not;
+  //   3. he is confident in the grader to 9.4 off the four Main images.
+  // NOT evidence-led by the 15-key round: every book in it sat far below the
+  // old cap, so that data says nothing either way. This is a product call.
+  // The RG caps are untouched - RG Main stays 9.0 (lib/roboscore_v3.js
+  // DEPTH_CAP). Only the PG ladder moves.
 
   // ── High-grade block ────────────────────────────────────────────────────────
   // When highGrade=true, 4 corner macros (TL, TR, BL, BR) are appended after the
