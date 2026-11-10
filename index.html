@@ -2401,7 +2401,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.50";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.54";
       // v6.46: the GRADING epoch - the version the assessment last actually
       // changed at. RG_GRADING_VERSION above is the BUILD number and moves on
       // every change; this one does not. The label stamps THIS, because "V6.45"
@@ -2412,7 +2412,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.50");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.51");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -2893,6 +2893,7 @@ function couponSlotDefs(entry) {
 // Keys use the SAME normalization as value-keys (_normalizeKeyTitle/_normalizeKeyIssue),
 // so the converter that builds fmv.json must mirror those exactly.
 let _fmvIndex = null;
+let _fmvMagIndex = null;   // v6.51: fmv_magazines.json, same schema, optional
 let _fmvOverrides = {};  // manual FMV curves keyed by _fmvKeyOf, merged over the static index
 let _fmvCardIndex = null;      // fmv_pokemon.json
 let _fmvCardOverrides = {};    // fmv_dashboard/pokemon manual overrides
@@ -3024,8 +3025,54 @@ function formatFMV(m) {
 // 0 when there's no FMV match. Deep unlocks at tier >= 3 ($50+); Full at tier
 // >= 7 ($1000+). Year is only needed for the 1991+ blanket (which is tier 1, so
 // it never affects these thresholds) \u2014 safe to be null.
+// v6.51: a magazine's FMV key. Comics key on title|issue; magazines mostly
+// have no issue number, so the cover DATE is the key - normalised to
+// "YYYY-MM", which is the granularity a cover actually states ("July 1986").
+// An issue number is used when one exists, so a numbered magazine behaves
+// exactly like a comic.
+window.matchMagazineFMV = function matchMagazineFMV(title, issue, issueDate, grade) {
+  if (!_fmvMagIndex || !_fmvMagIndex.books) return null;
+  const t = (typeof _normalizeKeyTitle === "function") ? _normalizeKeyTitle(title) : String(title || "").toLowerCase().trim();
+  if (!t) return null;
+  let key = null;
+  if (issue && String(issue).trim()) {
+    key = String(issue).trim().replace(/^#/, "");
+  } else if (issueDate) {
+    const d = new Date(issueDate);
+    if (!isNaN(d)) key = d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0");
+  }
+  if (!key) return null;
+  const curve = _fmvMagIndex.books[t + "|" + key.toLowerCase()];
+  if (!Array.isArray(curve) || !curve.length) return null;
+  // Same step function as comics: ascending [grade, tier] breakpoints, take
+  // the highest breakpoint at or below this grade.
+  const g = parseFloat(grade);
+  if (!isFinite(g)) return null;
+  let tier = null;
+  for (const pair of curve) {
+    if (!Array.isArray(pair) || pair.length < 2) continue;
+    if (g >= pair[0]) tier = pair[1]; else break;
+  }
+  if (tier == null) return null;
+  const range = (_fmvMagIndex.tiers && _fmvMagIndex.tiers[String(tier)]) || null;
+  return { tier, low: range ? range[0] : null, high: range ? range[1] : null, source: "magazine" };
+};
+
 function fmvTierOf(item) {
   if (!item) return 0;
+  // v6.51: magazines price from their own index. Returning 0 when it has no
+  // entry is the correct answer and the same one a comic gets - it closes the
+  // FMV routes into Deep and Full for a publication we cannot price, while
+  // the grade-based routes and a manual FMV entry both still work. That is
+  // the whole behaviour on day one, when the index is empty.
+  if (isMagazine(item)) {
+    const mg = item.assessedCGCGrade ?? item.predictedGrade
+      ?? (item.roboGrade && item.roboGrade.predictedGrade);
+    const mm = (typeof window.matchMagazineFMV === "function")
+      ? window.matchMagazineFMV(item.title, item.issue, item.issueDate, mg)
+      : null;
+    return (mm && mm.tier) ? mm.tier : 0;
+  }
   const grade = item.assessedCGCGrade ?? item.predictedGrade ?? item.grade
     ?? (item.roboGrade && (item.roboGrade.predictedGrade ?? item.roboGrade.assessedCGCGrade));
   const m = (typeof window.matchFMV === "function")
@@ -3128,6 +3175,25 @@ function buildPredictedGradeBox(badgesHtml, pqHtml, fmvMatch, showDisclaimer) {
       console.log(`[fmv] loaded ${Object.keys(data.books).length} books (v${data.version || "?"})`);
     }
   } catch (e) { console.warn("[fmv] load error:", e?.message || e); }
+  // v6.51: the magazine index. OPTIONAL and absent on day one, exactly as
+  // fmv_comics.json was - a 404 leaves the feature dormant and nothing renders
+  // a value. Matt populates it over time; nothing here waits for that.
+  // SAME SCHEMA as fmv_comics.json (version / tiers / books), so the tier
+  // ladder, the $ range rendering and the Deep and Full value gates all work
+  // the day the first entry lands. Keys are "<title>|<key>" where key is the
+  // issue number if the magazine has one and the ISO year-month if it does
+  // not: "sports illustrated|1986-07".
+  try {
+    const rm = await fetch("/fmv_magazines.json", { cache: "default" });
+    if (rm.ok) {
+      const dm = await rm.json();
+      if (dm && dm.books) {
+        _fmvMagIndex = dm;
+        console.log(`[fmv] loaded ${Object.keys(dm.books).length} magazines (v${dm.version || "?"})`);
+      }
+    } else if (rm.status !== 404) { console.warn("[fmv-mag] fetch failed:", rm.status); }
+  } catch (e) { console.warn("[fmv-mag] load error:", e?.message || e); }
+
   try {
     const rc = await fetch("/fmv_pokemon.json", { cache: "default" });
     if (rc.ok) { const dc = await rc.json(); if (dc && dc.books) { _fmvCardIndex = dc; console.log(`[fmv] loaded ${Object.keys(dc.books).length} pokemon cards (v${dc.version || "?"})`); } }
@@ -3857,13 +3923,23 @@ function renderAssessmentMap(item) {
 
 function renderIdentityHeader(item) {
   if (!item) return "";
-  const _iss = item.issue
-    ? `<span style="font-weight:600;color:#3a2e24;margin-left:0.28em">${item.type === "card" ? esc(formatCardNumber(item.issue)) : formatIssue(item.issue, item.title)}</span>`
+  // v6.51: magazines fall back to the cover date when they carry no issue
+  // number, so the identity header reads "Life  Jul 12, 1965" rather than
+  // just "Life".
+  const _issText = item.type === "card" ? esc(formatCardNumber(item.issue))
+    : (formatIssue(item.issue, item.title)
+       || (isMagazine(item) && item.issueDate ? esc(formatIssueDateCompact(item.issueDate)) : null));
+  const _iss = _issText
+    ? `<span style="font-weight:600;color:#3a2e24;margin-left:0.28em">${_issText}</span>`
     : "";
   // Pub Date and Publisher share a line, separated by a comma - they are one
   // fact about the edition, not two.
+  // v6.51: when the date has been promoted beside the title (a magazine with
+  // no issue number), it must not also appear on this line. Printing a
+  // magazine's date twice is the first thing anyone would notice.
+  const _datePromoted = !!(isMagazine(item) && !item.issue && item.issueDate);
   const _datePub = [
-    item.issueDate ? esc(formatIssueDateCompact(item.issueDate)) : "",
+    (item.issueDate && !_datePromoted) ? esc(formatIssueDateCompact(item.issueDate)) : "",
     item.publisher ? esc(item.publisher) : ""
   ].filter(Boolean).join(", ");
   const _notes = labelNotesText(item);
@@ -4558,6 +4634,13 @@ function formatDate(d) {
   return months[mo] + " " + p[2].replace(/^0/, "") + ", " + p[0];
 }
 
+// v6.51: a magazine identifies by its COVER DATE. Most carry no issue number
+// on the cover at all, and the ones that do print a volume/number nobody
+// quotes - a collector says "Sports Illustrated, July 1986", never
+// "vol 23 #9". So when a magazine has no issue, the date IS the identifier and
+// the caller renders it in the issue's place rather than showing nothing.
+// Returns null when there is nothing to show, exactly as before, so every
+// existing `? :` on this function keeps working.
 function formatIssue(i, t) {
   if (!i) return null;
   const m = i.match(/^A(\d+)$/i);
@@ -4786,7 +4869,7 @@ async function migrateComicsToItems() {
   }
 }
 
-const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "addedLabelNotes", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "gradeAtCeiling", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "uvCheckRuns", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "fullUnlockReason", "deepAssessmentRan", "binding", "bindingBasis", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "deepRefundUsed", "deepRefundAt", "fullRefundUsed", "insertImages", "couponImages", "userDefectImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue", "signatures", "gradeRevisionReason", "photograderPreFull", "cleanUnlocked", "cleanAssessmentRan", "cleanRuns", "cleanBeforeImages", "cleanBeforeMeta", "cleanBeforeResult", "cleanAfterImages", "cleanAfterMeta", "cleanAfterResult", "cleanComparison" ];
+const COMIC_DATA_FIELDS = [ "title", "issue", "issueDate", "publisher", "printing", "addedLabelNotes", "grade", "pageQuality", "cgcGrade", "cgcCert", "cgcNotes", "psaGrade", "psaCert", "psaNotes", "assessedCGCGrade", "assessedPSAGrade", "predictedGrade", "gradeAtCeiling", "keyInfo", "graderNotes", "aiGraderNotes", "aiAssessment", "roboGrade", "highGradeTier", "highGradeUnlocked", "highGradeReason", "restorationCheckTier", "restorationReport", "restorationFlag", "restorationHighConfidence", "restorationCheckRan", "uvCheckRuns", "enhance", "slabbingDate", "assessmentHistory", "fullAssessmentRan", "fullUnlockReason", "deepAssessmentRan", "binding", "bindingBasis", "fullAssessmentNotes", "fullInteriorComplete", "fullTrimmingSuspected", "referenceImageUrl", "referenceVolume", "referenceYear", "referenceComparison", "referenceBackImageUrl", "refDebug", "deepUnlocked", "fullUnlocked", "restorationUnlocked", "deepRefundUsed", "deepRefundAt", "fullRefundUsed", "insertImages", "couponImages", "userDefectImages", "insertMeta", "couponMeta", "insertFinding", "couponFinding", "couponQualified", "inPrintQueue", "signatures", "gradeRevisionReason", "photograderPreFull", "format", "adultContent", "cleanUnlocked", "cleanAssessmentRan", "cleanRuns", "cleanBeforeImages", "cleanBeforeMeta", "cleanBeforeResult", "cleanAfterImages", "cleanAfterMeta", "cleanAfterResult", "cleanComparison" ];
 
 const COMIC_DROP_FIELDS = [ "press", "uv", "clean" ];
 
@@ -7679,7 +7762,11 @@ async function cycleOwnershipFromDetail(id) {
   // Moving to Sold kills the public link; Owned and Watching both keep it.
   // Print is a transient label state — leave publicListing intact so the link
   // stays live through a label print and is restored with the prior ownership.
-  if (!_publicEligibleOwnership(next)) update.publicListing = false;
+  // v6.52: same string-spread bug as setOwnershipDetail had. `next` is a
+  // STRING, so { ...next } was {0:"O",1:"w",...} with ownership undefined and
+  // canBePublic() always returned true — cycling a public adult or Sold book
+  // from here left the listing live.
+  if (!canBePublic({ ...comic, ownership: next })) update.publicListing = false;   // ownership AND the adult guard
   try {
     const ref = fsDoc(window._db, "users", window._currentUser.uid, "items", id);
     await fsSetDoc(ref, update, {
@@ -9528,11 +9615,16 @@ function setOwnership(next) {
   const _wasPublic = !!formData.publicListing;
   formData.ownership = next;
   // Sold locks the book out of public listing; Owned and Watching do not.
-  if (!_publicEligibleOwnership(next)) formData.publicListing = false;
+  const _nowPublic = canBePublic({ ...formData, ownership: next });
+  if (!_nowPublic) formData.publicListing = false;   // v6.51
   renderForm();
-  // S20: if the book had been public, tell the user it was switched to Private.
-  if (!_publicEligibleOwnership(next) && _wasPublic) {
-    _showBrandedModal("SWITCHED TO PRIVATE", `This book was set to Private — a book marked Sold can't be listed publicly.`, "OKAY");
+  // v6.52: same fix as setOwnershipDetail — announce only an actual change.
+  // A book that was already private gets no modal, and a switch that leaves it
+  // public (Owned <-> Watching) gets none either.
+  if (!_nowPublic && _wasPublic) {
+    _showBrandedModal("SWITCHED TO PRIVATE", isAdultItem({ ...formData, ownership: next })
+      ? `This book was set to Private — adult titles can't be listed publicly.`
+      : `This book was set to Private — a book marked Sold can't be listed publicly.`, "OKAY");
   }
 }
 
@@ -9547,7 +9639,13 @@ async function setOwnershipDetail(next) {
   if ((comic.ownership || "Owned") === next) return; // no-op if already that state
   const _wasPublic = !!comic.publicListing;
   const update = { ownership: next };
-  if (!_publicEligibleOwnership(next)) update.publicListing = false; // Sold may not be public
+  // v6.52 BUG FIX. This read `{ ...next, ownership: next.ownership }` and `next`
+  // is a STRING — the spread produced {0:"W",1:"a",...} and `next.ownership` was
+  // undefined, so canBePublic() fell through to its "Owned" default and ALWAYS
+  // returned true. Consequence: switching a public book to Sold in the detail
+  // view did not actually drop the listing, and neither did the adult guard.
+  const _nextItem = { ...comic, ownership: next };
+  if (!canBePublic(_nextItem)) update.publicListing = false;   // ownership AND the adult guard
   try {
     const ref = fsDoc(window._db, "users", window._currentUser.uid, "items", id);
     await fsSetDoc(ref, update, { merge: true });
@@ -9571,9 +9669,17 @@ async function setOwnershipDetail(next) {
       }
       if (_pth) _pth.style.left = "3px";
     }
-    // S20: if the book had been public, tell the user it was switched to Private.
-    if (next !== "Owned" && _wasPublic) {
-      _showBrandedModal("SWITCHED TO PRIVATE", `This book was set to Private — only books marked Owned can be listed publicly.`, "OKAY");
+    // v6.52: the modal now fires off what ACTUALLY happened, not off a second
+    // copy of the eligibility rule. It used to read `next !== "Owned"`, which was
+    // written before Watching became public-eligible and was never updated — so
+    // switching Owned -> Watching announced "SWITCHED TO PRIVATE" on a book that
+    // stayed public, which is both annoying and untrue. Deriving it from
+    // update.publicListing means the message cannot drift from the rule again:
+    // if nothing was made private, nothing is announced.
+    if (update.publicListing === false && _wasPublic) {
+      _showBrandedModal("SWITCHED TO PRIVATE", isAdultItem(_nextItem)
+        ? `This book was set to Private — adult titles can't be listed publicly.`
+        : `This book was set to Private — a book marked Sold can't be listed publicly.`, "OKAY");
     }
   } catch (e) {
     alert("Failed to update ownership: " + e.message);
@@ -11031,6 +11137,94 @@ function _showCeilingModal() {
 // Confirmed by Matt 2026-11-05: Sold only. Do not re-exclude Watching.
 // One definition, used by the per-book toggle, both ownership-change paths and
 // the bulk make-public action, so they cannot drift apart.
+// ── MAGAZINES (v6.51) ──────────────────────────────────────────────────────
+// A magazine is a COMIC with format:"magazine", not a third top-level type.
+//
+// WHY A SUBTYPE. There are ~72 `type === "card"` branches in this file alone,
+// plus more in api/, public.html and the admin, and every one of them is a
+// BINARY - card or not-card. A third top-level type does not fall into the
+// comic branch automatically; each site has to be read and decided, and the
+// one that gets missed ships a magazine through the card label renderer.
+// As a subtype, everything that branches on `type` keeps working unchanged and
+// only the four places that genuinely differ read the flag:
+//   identity (a date, not an issue number), FMV (its own index), the grading
+//   gate (which currently rejects magazines by name), and the adult guard.
+//
+// WHAT IS *NOT* DIFFERENT, and this is most of it: the photo slots, the defect
+// model, v3 scoring, page quality, binding (saddle / square / glued already
+// covers magazines exactly), the labels, transfers, Post-Cleaning, UV.
+// CGC grades magazines on the same 10-point scale, so the standard carries.
+const FORMAT_COMIC = "comic", FORMAT_MAGAZINE = "magazine";
+function itemFormat(item) {
+  return (item && item.format === FORMAT_MAGAZINE) ? FORMAT_MAGAZINE : FORMAT_COMIC;
+}
+function isMagazine(item) { return itemFormat(item) === FORMAT_MAGAZINE; }
+
+// ── THE ADULT GUARD (Matt, 2026-11-09) ─────────────────────────────────────
+// Matt's answer to the Playboy problem: grade them and print labels, but never
+// publish them. No QR, no public link, no shareable page - so nothing reaches
+// an audience the App Store and Play listings are not rated for, and the app
+// never becomes a place adult material is distributed.
+//
+// The flag is on the ITEM, not on a title list, because a list would have to
+// be maintained forever and would be wrong the first time someone photographs
+// a title nobody thought of. It is set by the assessment (the gate already
+// identifies the publication) and can be set by hand in Edit.
+//
+// ENFORCED IN THREE PLACES, deliberately, because one is not enough:
+//   1. here, so the toggle cannot be turned on;
+//   2. at save, so a record that arrives public is corrected;
+//   3. in api/lookup.js, so an already-public listing stops resolving.
+// The third is the one that matters: the first two can be bypassed by an old
+// client, and the public page is the thing with the audience.
+function isAdultItem(item) {
+  return !!(item && item.adultContent === true);
+}
+// A magazine's own publisher-level adult flag plus the generic ownership rule.
+// Everything that decides publishability goes through here.
+function canBePublic(item) {
+  if (isAdultItem(item)) return false;
+  return _publicEligibleOwnership(item && item.ownership);
+}
+
+// ── CONCIERGE GATE ────────────────────────────────────────────────────────
+// v6.52. Is this book worth offering the combined Main+Deep on, BEFORE it has
+// been graded?
+//
+// THE GATE IS THE TIER AT GRADE 0.5, NOT AT A TYPICAL GRADE. Matt, 2026-11-10:
+// gating on the value at 3.0 would let through a book worth $50+ only in mid
+// grade, and a 1.0 copy of that book is not worth 2 credits. At 0.5 the book
+// clears $50 IN ANY CONDITION, so the offer can never cost someone more than
+// the book is worth. It is strictly conservative, and it needs no grade — which
+// is the whole point, because the book has not been graded yet.
+//
+// Tier 3 is $50-$100. The same threshold already gates the FMV route into Deep
+// (fmvTierOf >= 3); this reads it at a FIXED 0.5 instead of at the assessed
+// grade. SILENCE IS THE DEFAULT: no identity, no FMV row, or tier < 3 all mean
+// no offer, and a miss costs nothing.
+const CONCIERGE_MIN_TIER = 3;
+const CONCIERGE_GATE_GRADE = 0.5;
+
+function conciergeGate(title, issue) {
+  const out = { eligible: false, tier: 0, title: title || null, issue: issue || null, reason: "" };
+  if (!title || !issue) { out.reason = "no-identity"; return out; }
+  if (typeof window.matchFMV !== "function") { out.reason = "no-fmv-index"; return out; }
+  let m = null;
+  // printing and year are deliberately NOT passed. Both are unknown from a
+  // single cover shot, and matchFMV treats a wrong printing as a different
+  // book. Letting it match on title+issue alone is the permissive direction,
+  // which is right for a gate whose false positives are harmless and whose
+  // false negatives are silent.
+  try { m = window.matchFMV(title, issue, CONCIERGE_GATE_GRADE, null, null); }
+  catch (e) { out.reason = "fmv-threw"; return out; }
+  if (!m || !m.tier) { out.reason = "no-match"; return out; }
+  out.tier = m.tier;
+  out.eligible = m.tier >= CONCIERGE_MIN_TIER;
+  out.reason = out.eligible ? "eligible" : "below-tier";
+  return out;
+}
+// ── end concierge gate ────────────────────────────────────────────────────
+
 function _publicEligibleOwnership(own) {
   const o = own || "Owned";
   return o === "Owned" || o === "Watching";
@@ -13824,7 +14018,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "6.50"),
+      appVersion: (window.RG_GRADING_VERSION || "6.51"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
@@ -15637,6 +15831,12 @@ function removeImg(i) {
 
 let _cropperInstance = null;
 
+// S22 v6.52 autocrop: the detected box, cached per open, and the latch that
+// stops _fitCrop re-stomping it once the user has touched a handle.
+let _cropAutoBox = null;
+let _cropAutoTried = false;
+let _cropUserMoved = false;
+
 let _cropResizeObs = null;   // S22: watches #cropper-inner while a crop is open
 
 let _cropperTarget = null;
@@ -15659,6 +15859,231 @@ function _prewarmCropCache(urls) {
   });
 }
 
+// ── AUTO-CROP ─────────────────────────────────────────────────────────────
+// S22 v6.52. Deterministic. No model, no network, no cost. The ~20-30s of
+// per-book tedium at a convention is dragging four crop boxes onto four
+// photos of the same rectangle; this puts the box roughly where it belongs
+// and leaves the handles for the cases it gets wrong.
+//
+// WHY IT PADS OUTWARD. /api/assess terminates at CROP_FAILURE when a cover
+// edge runs off the frame, and main_prompt.js's EDGE SILHOUETTE test can
+// only see a missing piece against visible background. So the box is the
+// detected book outline plus ~1cm of background on all four sides. A crop
+// tight to the book is WORSE than no crop. AUTOCROP_PAD_FRAC is that 1cm
+// expressed against a comic's 6.625in (16.83cm) width; a magazine at 8.5in
+// gets ~1.3cm, which is the harmless direction.
+//
+// WHY THE DETECTOR IS SPLIT FROM THE CANVAS. autocropDetect() is pure - a
+// grayscale array in, normalised fractions out - so test-autocrop.mjs can
+// slice it out of this file and run it in node against synthetic images.
+// The canvas half (autocropFromImage) is ten lines and untestable; keeping
+// it thin is the point.
+const AUTOCROP_PAD_CM     = 1.0;
+const AUTOCROP_BOOK_W_CM  = 16.83;          // comic trim width, 6.625 in
+const AUTOCROP_PAD_FRAC   = AUTOCROP_PAD_CM / AUTOCROP_BOOK_W_CM;   // 0.0594
+const AUTOCROP_MIN_CONF   = 0.50;
+const AUTOCROP_SAMPLE_W   = 320;            // detection runs on a downscale
+
+function _acMedian(arr) {
+  if (!arr || !arr.length) return 0;
+  const a = Array.prototype.slice.call(arr).sort(function (x, y) { return x - y; });
+  return a[a.length >> 1];
+}
+
+// gray: Uint8ClampedArray|Array of length >= w*h, 0-255 luminance.
+// Returns { ok, left, top, right, bottom, confidence, method } where the four
+// bounds are fractions of w/h in [0,1] and describe the BOOK, unpadded.
+function autocropDetect(gray, w, h) {
+  const fail = { ok: false, left: 0, top: 0, right: 1, bottom: 1, confidence: 0, method: "none" };
+  if (!gray || !(w > 16) || !(h > 16) || gray.length < w * h) return fail;
+
+  // 1. Background from a border ring. A comic is photographed ON something;
+  //    the ring is that something unless the book runs off the frame, in
+  //    which case the mask fills and the plausibility check below rejects it.
+  const R = Math.max(2, Math.round(Math.min(w, h) * 0.02));
+  const ring = [];
+  for (let y = 0; y < h; y++) {
+    const o = y * w;
+    for (let x = 0; x < w; x++) {
+      if (x < R || y < R || x >= w - R || y >= h - R) ring.push(gray[o + x]);
+    }
+  }
+  const bg = _acMedian(ring);
+  const dev = new Array(ring.length);
+  for (let i = 0; i < ring.length; i++) dev[i] = Math.abs(ring[i] - bg);
+  const ringMad = _acMedian(dev);
+  const tol = Math.max(18, ringMad * 3);
+
+  // 1b. THE RING HAS TO ACTUALLY BE A BACKGROUND. Measured against ten real
+  //     calibration photos, this is the guard that matters. When the book fills
+  //     the frame - an already-cropped photo, or one shot tight - the border
+  //     ring IS cover artwork, the "background" tone comes back as some colour
+  //     out of the cover, and the mask then finds a logo box or a panel border
+  //     and reports it with high confidence. Four of ten real photos failed
+  //     exactly that way before this check existed, and the confidence score
+  //     did NOT separate them (a wrong box scored 0.98).
+  //     A real background is duller than the thing sitting on it, so: the ring's
+  //     spread must be well under the whole frame's. If it isn't, there is no
+  //     background to crop back to and the honest answer is no suggestion.
+  //     The frame's spread is the 90th PERCENTILE, not the median: a book that
+  //     covers less than half the pixels has a median deviation of zero, which
+  //     would make this test refuse every correctly-framed photo.
+  const allDev = [];
+  for (let i = 0; i < gray.length; i += 7) allDev.push(Math.abs(gray[i] - bg));
+  allDev.sort(function (a, b) { return a - b; });
+  const imgSpread = allDev.length ? allDev[Math.floor(allDev.length * 0.90)] : 0;
+  if (!(ringMad < 40) || !(imgSpread > 0 && ringMad <= imgSpread * 0.45)) {
+    return { ok: false, left: 0, top: 0, right: 1, bottom: 1, confidence: 0, method: "no-background" };
+  }
+
+  // 2. Coverage profiles of "not background".
+  const col = new Float64Array(w), row = new Float64Array(h);
+  for (let y = 0; y < h; y++) {
+    const o = y * w;
+    for (let x = 0; x < w; x++) {
+      if (Math.abs(gray[o + x] - bg) > tol) { col[x]++; row[y]++; }
+    }
+  }
+  for (let x = 0; x < w; x++) col[x] /= h;
+  for (let y = 0; y < h; y++) row[y] /= w;
+
+  // 3. Span = outermost indices reaching 35% of the profile's own peak. The
+  //    threshold is RELATIVE so a book that fills half the frame is found as
+  //    readily as one that fills all of it.
+  function span(prof, n) {
+    let mx = 0;
+    for (let i = 0; i < n; i++) if (prof[i] > mx) mx = prof[i];
+    if (mx < 0.15) return null;                 // nothing stands out at all
+    // 0.25, not 0.35. On a light textured backdrop the outermost rows/columns
+    // of a cover differ from the background by less than the middle of the book
+    // does, so a higher threshold cut the span short and the box clipped the
+    // edge. Lower is the safe direction here: too wide costs a little
+    // background, too narrow costs the edge the grader needs to see.
+    const thr = mx * 0.25;
+    let a = -1, b = -1;
+    for (let i = 0; i < n; i++) if (prof[i] >= thr) { a = i; break; }
+    for (let i = n - 1; i >= 0; i--) if (prof[i] >= thr) { b = i; break; }
+    return (a >= 0 && b > a) ? { a: a, b: b, mx: mx } : null;
+  }
+  const cs = span(col, w), rs = span(row, h);
+  if (!cs || !rs) return fail;
+
+  // 4. Snap each edge to the strongest gradient line within +/-12% of the
+  //    book's own size. The mask finds the book; the gradient finds the EDGE,
+  //    which is what a crop line wants to sit on. Searching a window around
+  //    the mask answer is deliberate - an unconstrained peak search lands on
+  //    whatever high-contrast artwork the cover happens to carry.
+  const gx = new Float64Array(w), gy = new Float64Array(h);
+  for (let y = 1; y < h - 1; y++) {
+    const o = y * w;
+    for (let x = 1; x < w - 1; x++) {
+      gx[x] += Math.abs(gray[o + x + 1] - gray[o + x - 1]);
+      gy[y] += Math.abs(gray[o + w + x] - gray[o - w + x]);
+    }
+  }
+  const bw = cs.b - cs.a, bh = rs.b - rs.a;
+  // dir: -1 for a LEFT/TOP edge, +1 for a RIGHT/BOTTOM edge. The snap may only
+  // move an edge OUTWARD. Measured on 40 composited real covers, an unrestricted
+  // snap clipped the book by up to 8% of its width - it kept catching the cover's
+  // own border rule or logo band just inside the true edge. A clipped crop is the
+  // one outcome worse than no crop at all: it is what trips CROP_FAILURE and what
+  // blinds the EDGE SILHOUETTE test. Outward-only makes that failure impossible
+  // and costs only a slightly looser box when the mask was already right.
+  function snap(g, n, at, extent, dir) {
+    const win = Math.max(1, Math.round(extent * 0.12));
+    const lo = Math.max(1, at - win), hi = Math.min(n - 2, at + win);
+    // bv starts at the MASK's own answer, and the comparison is strict, so a
+    // flat window (no gradient to snap to - the outermost rows of a book that
+    // runs off the frame are exactly this) leaves the edge where the mask put
+    // it instead of dragging it a whole window inward to the first tied index.
+    let bi = at, bv = g[Math.max(0, Math.min(n - 1, at))], sum = 0, cnt = 0;
+    for (let i = lo; i <= hi; i++) { if (g[i] > bv) { bv = g[i]; bi = i; } sum += g[i]; cnt++; }
+    const mean = cnt ? sum / cnt : 0;
+    // prominence: 0 when the window is flat, 1 when the peak is 3x its mean
+    const prom = mean > 0 ? Math.min(1, (bv / mean - 1) / 2) : 0;
+    const outward = dir < 0 ? Math.min(bi, at) : Math.max(bi, at);
+    return { at: outward, prom: prom };
+  }
+  const sL = snap(gx, w, cs.a, bw, -1), sR = snap(gx, w, cs.b, bw, +1);
+  const sT = snap(gy, h, rs.a, bh, -1), sB = snap(gy, h, rs.b, bh, +1);
+  const L = Math.min(sL.at, sR.at), Rr = Math.max(sL.at, sR.at);
+  const T = Math.min(sT.at, sB.at), B = Math.max(sT.at, sB.at);
+
+  // 5. Plausibility. A box that fills the frame means the book runs off it
+  //    (or the background matched the cover); a sliver means the mask caught
+  //    a shadow. Either way, hand back to the manual default.
+  const fw = (Rr - L) / w, fh = (B - T) / h;
+  const ar = (Rr - L) / Math.max(1, B - T);
+  const plausible = fw > 0.20 && fw < 0.98 && fh > 0.20 && fh < 0.98 && ar > 0.25 && ar < 3.0;
+  if (!plausible) return fail;
+
+  // 5b. There must be room to pad on all four sides. If an edge is already at
+  //     the frame boundary the book runs off it, /api/assess will gate the book
+  //     at CROP_FAILURE whatever we do here, and a crop that trims the other
+  //     three sides only makes the gate harder to understand. Refuse.
+  const mx4 = Math.max(2, Math.round(Math.min(w, h) * 0.015));
+  if (L < mx4 || T < mx4 || Rr > w - 1 - mx4 || B > h - 1 - mx4) {
+    return { ok: false, left: 0, top: 0, right: 1, bottom: 1, confidence: 0, method: "runs-off-frame" };
+  }
+
+  const conf = Math.max(0, Math.min(1,
+    0.45 * Math.min(1, cs.mx / 0.6) +
+    0.45 * ((sL.prom + sR.prom + sT.prom + sB.prom) / 4) +
+    0.10
+  ));
+
+  return {
+    ok: conf >= AUTOCROP_MIN_CONF,
+    left: L / w, top: T / h, right: Rr / w, bottom: B / h,
+    confidence: conf, method: "mask+gradient"
+  };
+}
+
+// Grow a normalised box outward by padFrac of its own WIDTH on all four
+// sides, clamped to the image. Equal absolute pad per side - width is the
+// dimension whose physical size is known, so it sets the scale.
+function autocropPad(box, imgW, imgH, padFrac) {
+  const f = (typeof padFrac === "number") ? padFrac : AUTOCROP_PAD_FRAC;
+  const pxW = (box.right - box.left) * imgW * f;          // pad in px
+  const dx = pxW / imgW, dy = pxW / imgH;                 // same px, each axis
+  return {
+    left:   Math.max(0, box.left   - dx),
+    top:    Math.max(0, box.top    - dy),
+    right:  Math.min(1, box.right  + dx),
+    bottom: Math.min(1, box.bottom + dy)
+  };
+}
+// ── end pure auto-crop ────────────────────────────────────────────────────
+
+// Canvas half. Downscales to AUTOCROP_SAMPLE_W, pulls luminance, delegates.
+// Returns a PADDED normalised box or null. Never throws - a tainted canvas,
+// a zero-size image or a missing 2d context all mean "no suggestion".
+function autocropFromImage(img) {
+  try {
+    const nw = img && img.naturalWidth, nh = img && img.naturalHeight;
+    if (!(nw > 0) || !(nh > 0)) return null;
+    const sw = Math.min(AUTOCROP_SAMPLE_W, nw);
+    const sh = Math.max(8, Math.round(nh * (sw / nw)));
+    const c = document.createElement("canvas");
+    c.width = sw; c.height = sh;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, sw, sh);
+    const d = ctx.getImageData(0, 0, sw, sh).data;
+    const gray = new Uint8ClampedArray(sw * sh);
+    for (let i = 0, p = 0; i < gray.length; i++, p += 4) {
+      gray[i] = (d[p] * 77 + d[p + 1] * 151 + d[p + 2] * 28) >> 8;
+    }
+    const box = autocropDetect(gray, sw, sh);
+    if (!box.ok) { console.log("[autocrop] no suggestion (conf " + box.confidence.toFixed(2) + ", " + box.method + ")"); return null; }
+    console.log("[autocrop] conf " + box.confidence.toFixed(2));
+    return autocropPad(box, sw, sh, AUTOCROP_PAD_FRAC);
+  } catch (e) {
+    console.warn("[autocrop] unavailable:", e);
+    return null;
+  }
+}
+
 function openCropper(type, index) {
   const list = type === "corner" ? formData.cornerImages : type === "interiorCover" ? formData.interiorCoverImages : type === "interior" ? formData.interiorImages : type === "signature" ? formData.signatureImages : type === "insert" ? formData.insertImages : type === "coupon" ? formData.couponImages : formData.images;
   const src = (list || [])[index];
@@ -15669,6 +16094,9 @@ function openCropper(type, index) {
   };
   _cropperOriginalSrc = src;
   _cropperRotation = 0;
+  _cropAutoBox = null;
+  _cropAutoTried = false;
+  _cropUserMoved = false;
   const modal = document.getElementById("cropper-modal");
   const img = document.getElementById("cropper-img");
   if (_cropperInstance) {
@@ -15727,6 +16155,11 @@ function openCropper(type, index) {
     }
     const _cropCardFB = (formData.type === "card" || !!formData._isCard) && type === "main" && index < 2;
     const _cropComicFB = !(formData.type === "card" || !!formData._isCard) && type === "main" && index < 2;
+    // Auto-crop applies to any whole-book main shot of a comic or magazine.
+    // NOT to cards (aspect-locked 5/7, different shape) and NOT to the macro
+    // slots - corners, spine, signature, coupon, insert have no book outline
+    // to find, and a bounding box round a close-up is actively wrong.
+    const _cropAutoOK = !(formData.type === "card" || !!formData._isCard) && type === "main";
     _cropperInstance = new Cropper(img, {
       aspectRatio: _cropCardFB ? 5/7 : NaN,
       // S23: viewMode 2 (whole image fits WITHIN the frame) instead of 1 (image
@@ -15752,6 +16185,7 @@ function openCropper(type, index) {
       // measured as portrait and scaled to fit height — overflowing off the right.
       // Trust the browser's orientation; do not re-apply it.
       checkOrientation: false,
+      cropstart: function() { _cropUserMoved = true; },
       ready: function() {
         const stage = document.getElementById("cropper-stage");
         if (stage) stage.classList.add("ready");
@@ -15792,11 +16226,35 @@ function openCropper(type, index) {
             if (typeof _cropperInstance.render === "function") _cropperInstance.render();
             else if (typeof _cropperInstance.resize === "function") _cropperInstance.resize();
           } catch (e) {}
-          if (_cropComicFB && _cropperInstance) {
+          // S22 v6.52: AUTO-CROP, then the 9:14 default as the fallback.
+          // _cropAutoOK is wider than _cropComicFB on purpose - all four main
+          // slots are whole-book shots (front, back, page quality, raking), and
+          // all four are worth detecting. The 9:14 fallback stays on Front/Back
+          // only, because that is the only pair whose shape is known.
+          // The _cropUserMoved latch matters more now than it did: _fitCrop runs
+          // on rAF, at 180ms, at 450ms and on every ResizeObserver notification,
+          // and without the latch a user who nudged a handle at 200ms had it
+          // yanked back at 450ms.
+          if (_cropperInstance && _cropAutoOK && !_cropUserMoved) {
             requestAnimationFrame(function() {
+              if (!_cropperInstance || _cropUserMoved) return;
               try {
                 const _cc = _cropperInstance.getCanvasData();
                 if (!_cc || !(_cc.width > 0) || !(_cc.height > 0)) return;
+                if (!_cropAutoTried) {
+                  _cropAutoTried = true;
+                  _cropAutoBox = autocropFromImage(document.getElementById("cropper-img"));
+                }
+                if (_cropAutoBox) {
+                  _cropperInstance.setCropBoxData({
+                    left:   _cc.left + _cropAutoBox.left * _cc.width,
+                    top:    _cc.top  + _cropAutoBox.top  * _cc.height,
+                    width:  (_cropAutoBox.right  - _cropAutoBox.left) * _cc.width,
+                    height: (_cropAutoBox.bottom - _cropAutoBox.top)  * _cc.height
+                  });
+                  return;
+                }
+                if (!_cropComicFB) return;
                 const _ar = 9 / 14;
                 let _w = _cc.width, _h = _w / _ar;
                 if (_h > _cc.height) { _h = _cc.height; _w = _h * _ar; }
@@ -16074,6 +16532,16 @@ async function detectSlabFromDataUrl(dataUrl) {
     const r = await resp.json();
     formData._slabDetect = r;
     console.log("[slab] vision slabcheck:", JSON.stringify(r));
+    // v6.52 concierge, step 1: INSTRUMENT ONLY. No modal, no flow change.
+    // The gate is evaluated and logged so the two questions that decide
+    // whether the rest is worth building can be answered from real captures:
+    // how often Haiku names the book off one cover shot, and how often that
+    // book clears the bar. See shared/_LIBRARY/CONCIERGE_FLOW_SPEC.md.
+    try {
+      const _cg = conciergeGate(r && r.title, r && r.issue);
+      console.log("[concierge] " + JSON.stringify(_cg));
+      formData._conciergeGate = _cg;
+    } catch (e) { console.warn("[concierge] gate threw:", e); }
     // Reflow: a detected raw card switches the add form to the 4 card slots
     // (Full Front / Full Back / Top Front Macro / Bottom Front Macro). The photo
     // that triggered detection is already in slot 0. Only re-render if the form
@@ -19025,7 +19493,10 @@ async function submitForm() {
     ...formData,
     id: id,
     type: formData.type || "comic",
-    publicListing: formData.publicListing != null ? !!formData.publicListing : !!window._publicByDefault,
+    // v6.51: an adult item is never public, whatever the form said and whatever
+    // an older client sent. This is enforcement point 2 of 3 - see canBePublic.
+    publicListing: isAdultItem(formData) ? false
+      : (formData.publicListing != null ? !!formData.publicListing : !!window._publicByDefault),
     ownership: formData.ownership || "Owned",
     dateSold: formData.dateSold || null,
     salePrice: formData.salePrice !== "" && formData.salePrice != null ? parseFloat(formData.salePrice) : null,

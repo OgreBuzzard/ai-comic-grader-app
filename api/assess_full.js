@@ -885,6 +885,24 @@ Rules:
           // timing key on the item, so nothing would ever settle them and
           // every successful run would be refunded 15 minutes later. Wiring
           // _recordTimingKey through those flows comes first.
+          // v6.54: WHAT THIS ROW COST IN CREDITS, on the SUCCESS path.
+          // Only the error row and the slabcheck row carried creditsCharged;
+          // the success rows - which are nearly all of the spend - did not.
+          // admin/api/stats.js computes coverage = stamped / cost-bearing rows
+          // and WITHHOLDS cost-per-credit below 0.8, so the card could never
+          // populate no matter how many books were assessed. That is exactly
+          // the bug Matt reported: "you said it would start populating after
+          // more books were assessed, but it never did."
+          // 0, not absent, for an uncharged run: a batch pass genuinely charges
+          // nothing (the 3 credits sit on the batch_credits row), and recording
+          // a real 0 keeps the row inside the coverage count, where leaving the
+          // field off would not.
+          creditsCharged: _creditDebited ? _CREDIT_COST : 0,
+          // v6.54: the per-type cost averages need a discriminator. Nothing on
+          // these rows said what KIND of assessment they were - the admin was
+          // averaging Main, Deep, Full, Batch passes and Post-Cleaning into one
+          // number, which is why it could not answer "what does a Main cost".
+          kind: 'full',
           ...(_creditDebited ? {
             creditSettled: false,
             creditPendingUid: _fullUid || null,

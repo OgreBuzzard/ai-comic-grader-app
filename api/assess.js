@@ -287,7 +287,7 @@ export default async function handler(req, res) {
     } catch (e) { imgBlock = null; }
     if (!imgBlock) return res.status(400).json({ error: 'no front image' });
 
-    const scPrompt = 'You are looking at a photo of a single collectible. First decide its TYPE. If it is a TRADING CARD — a small rigid card such as Pokémon, a sports card, or Magic: The Gathering, whether raw or in a card slab — respond ONLY with {"isCard": true, "slab": false, "company": null} and nothing else. Otherwise it is a COMIC BOOK (a magazine-sized paper book); decide whether the comic is encapsulated in a rigid third-party GRADING SLAB (a sealed hard plastic case with a printed grading label across the top — CGC, PSA, or CBCS) or is RAW (no case and no grading label; a raw comic\'s top edge is its own cover art — publisher banner, price box, barcode — which is NOT a grading label). Respond with ONLY a JSON object and nothing else: {"isCard": false, "slab": true or false, "company": "CGC" | "PSA" | "CBCS" | null}. Set company only when slab is true and you can read which grader; otherwise null.';
+    const scPrompt = 'You are looking at a photo of a single collectible. First decide its TYPE. If it is a TRADING CARD — a small rigid card such as Pokémon, a sports card, or Magic: The Gathering, whether raw or in a card slab — respond ONLY with {"isCard": true, "slab": false, "company": null} and nothing else. Otherwise it is a COMIC BOOK (a magazine-sized paper book); decide whether the comic is encapsulated in a rigid third-party GRADING SLAB (a sealed hard plastic case with a printed grading label across the top — CGC, PSA, or CBCS) or is RAW (no case and no grading label; a raw comic\'s top edge is its own cover art — publisher banner, price box, barcode — which is NOT a grading label). Respond with ONLY a JSON object and nothing else: {"isCard": false, "slab": true or false, "company": "CGC" | "PSA" | "CBCS" | null}. Set company only when slab is true and you can read which grader; otherwise null. ALSO, for a COMIC only (slab or raw), read its identity off the cover and add two more fields: "title" (the series name exactly as printed on the cover, without any issue number) and "issue" (the issue number as a plain number, digits only). Read only what is printed; if you cannot read either one with confidence, set it to null rather than guessing. For a card, set both to null.';
 
     let scText = '', scIn = 0, scOut = 0, scModel = '', scStop = '';
     try {
@@ -314,14 +314,32 @@ export default async function handler(req, res) {
       return res.status(502).json({ error: 'slabcheck upstream failed' });
     }
 
-    let detected = false, company = null, isCard = false;
+    let detected = false, company = null, isCard = false, scTitle = null, scIssue = null;
     try {
       const mt = scText.match(/\{[\s\S]*\}/);
       const obj = mt ? JSON.parse(mt[0]) : {};
       isCard = obj.isCard === true;
       detected = !isCard && obj.slab === true;
       company = detected && ['CGC', 'PSA', 'CBCS'].includes(obj.company) ? obj.company : null;
-    } catch (e) { detected = false; company = null; isCard = false; }
+      // v6.52 (concierge, step 1): identity off the cover, from the call that
+      // was already being made. Sanitised hard, because this feeds an FMV
+      // lookup and then an upsell: a hallucinated title that happens to match
+      // a key would offer the concierge flow on the wrong book.
+      //   - title: a printed series name, not a sentence. Cap the length,
+      //     collapse whitespace, reject anything with a digit-only body.
+      //   - issue: digits only. "15" yes, "15A" and "Annual" no - a variant
+      //     suffix changes which FMV row applies and we cannot resolve it here.
+      // Nothing downstream may treat these as authoritative: the GRADING model
+      // identifies the book for real, and its answer wins.
+      if (!isCard && typeof obj.title === 'string') {
+        const t = obj.title.replace(/\s+/g, ' ').trim();
+        if (t && t.length <= 60 && /[A-Za-z]/.test(t)) scTitle = t;
+      }
+      if (!isCard && obj.issue != null) {
+        const n = String(obj.issue).trim();
+        if (/^\d{1,5}$/.test(n)) scIssue = n;
+      }
+    } catch (e) { detected = false; company = null; isCard = false; scTitle = null; scIssue = null; }
 
     const scMs = Date.now() - _sc0;
     // Haiku 4.5 pricing: $1/M input, $5/M output.
@@ -351,12 +369,18 @@ export default async function handler(req, res) {
           slabDetected: detected,
           slabCompany: company,
           isCard: isCard,
+          // v6.52: logged so the accept/accuracy question can be answered from
+          // data before any of the concierge UI exists. idOk is the number that
+          // decides whether the rest of the flow is worth building.
+          idTitle: scTitle,
+          idIssue: scIssue,
+          idOk: !!(scTitle && scIssue),
           rawText: typeof scText === 'string' ? scText.slice(0, 500) : null
         });
       } catch (e) { console.error('slabcheck timing write failed (non-fatal):', e); }
     })();
 
-    return res.status(200).json({ detected, company, isCard, costUsd: scCost, ms: scMs, model: scModel });
+    return res.status(200).json({ detected, company, isCard, title: scTitle, issue: scIssue, costUsd: scCost, ms: scMs, model: scModel });
   }
 
   // ── Front + back cover requirement (server-side gate, pre-API) ─────────────
@@ -2100,6 +2124,24 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           // still pending after the grace period is refunded by the cron in
           // /api/credit_sweep. Absent field = nothing was charged, so an
           // uncharged or batch pass can never be swept.
+          // v6.54: WHAT THIS ROW COST IN CREDITS, on the SUCCESS path.
+          // Only the error row and the slabcheck row carried creditsCharged;
+          // the success rows - which are nearly all of the spend - did not.
+          // admin/api/stats.js computes coverage = stamped / cost-bearing rows
+          // and WITHHOLDS cost-per-credit below 0.8, so the card could never
+          // populate no matter how many books were assessed. That is exactly
+          // the bug Matt reported: "you said it would start populating after
+          // more books were assessed, but it never did."
+          // 0, not absent, for an uncharged run: a batch pass genuinely charges
+          // nothing (the 3 credits sit on the batch_credits row), and recording
+          // a real 0 keeps the row inside the coverage count, where leaving the
+          // field off would not.
+          creditsCharged: _creditDebited ? _CREDIT_COST : 0,
+          // v6.54: the per-type cost averages need a discriminator. Nothing on
+          // these rows said what KIND of assessment they were - the admin was
+          // averaging Main, Deep, Full, Batch passes and Post-Cleaning into one
+          // number, which is why it could not answer "what does a Main cost".
+          kind: _isBatchPass ? 'batchpass' : 'main',
           ...(_creditDebited ? {
             creditSettled: false,
             creditPendingUid: _authedUid || null,

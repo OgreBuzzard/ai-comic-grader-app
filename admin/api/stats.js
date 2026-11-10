@@ -73,9 +73,33 @@ export default async function handler(req, res) {
     // reports the share of cost-bearing rows that carry the field — a window
     // with low coverage gets null rather than a confidently wrong number.
     const creditUse = {
-      day:   { charged: 0, refunded: 0, costCents: 0, rows: 0, stamped: 0 },
-      week:  { charged: 0, refunded: 0, costCents: 0, rows: 0, stamped: 0 },
-      month: { charged: 0, refunded: 0, costCents: 0, rows: 0, stamped: 0 },
+      day:   { charged: 0, refunded: 0, costCents: 0, stampedCents: 0, rows: 0, stamped: 0 },
+      week:  { charged: 0, refunded: 0, costCents: 0, stampedCents: 0, rows: 0, stamped: 0 },
+      month: { charged: 0, refunded: 0, costCents: 0, stampedCents: 0, rows: 0, stamped: 0 },
+    };
+    // ── v6.54: COST BY ASSESSMENT KIND (Matt's ask, 2026-11-10) ────────────
+    // "add a line that averages the cost/credit for Main assessments over the
+    // last day/week/month and then separately averages Deep assessments over
+    // the same spans, and one more that averages all assessments combined."
+    // Full, Batch and Post-Cleaning are deliberately NOT broken out - they are
+    // rare, and a mean over three rows is noise wearing a number's clothes.
+    // They are in `all`, because they are real assessments that cost real money.
+    // slabcheck is NOT in `all`: it is a one-second identity check, not an
+    // assessment, and ~70 of them would drag the mean down for no reason.
+    //
+    // KIND COMES FROM `kind` ON THE ROW, falling back to `creditPendingLabel`.
+    // `kind` only exists from v6.54 onward; creditPendingLabel has been written
+    // on every CHARGED row for longer, so the fallback gives Main and Deep real
+    // history instead of starting both at zero today. Rows with neither are
+    // counted in `all` and in no per-kind bucket - `n` on each line is what
+    // says whether a figure is worth reading.
+    const _kindBucket = () => ({ day: { cents: 0, n: 0 }, week: { cents: 0, n: 0 }, month: { cents: 0, n: 0 } });
+    const costByKind = { main: _kindBucket(), deep: _kindBucket(), all: _kindBucket() };
+    const _addKind = (bucket, ms, cents) => {
+      if (Number.isNaN(ms)) return;
+      if (ms >= cutoffs.day)   { bucket.day.cents += cents;   bucket.day.n++; }
+      if (ms >= cutoffs.week)  { bucket.week.cents += cents;  bucket.week.n++; }
+      if (ms >= cutoffs.month) { bucket.month.cents += cents; bucket.month.n++; }
     };
     const _eachWindow = (ms, fn) => {
       if (Number.isNaN(ms)) return;
@@ -276,6 +300,14 @@ export default async function handler(req, res) {
           if (ms >= cutoffs.month) { assessCost.month.cents += cents; assessCost.month.n++; }
         }
         if (t.kind !== 'slabcheck' && cost > 0 && costs.length < 100) costs.push(cost);
+        // v6.54: per-kind cost. Same filter as assessCost above (a real
+        // assessment that cost money), then split by kind.
+        if (t.kind !== 'slabcheck' && cost > 0 && !Number.isNaN(ms)) {
+          const _k = t.kind || t.creditPendingLabel || null;
+          _addKind(costByKind.all, ms, cents);
+          if (_k === 'main') _addKind(costByKind.main, ms, cents);
+          else if (_k === 'deep') _addKind(costByKind.deep, ms, cents);
+        }
         // EVERY row's cost, including slab-checks, probes and comparison passes.
         // The point of this figure is that nothing is left out of the numerator.
         _eachWindow(ms, w => {
@@ -291,7 +323,15 @@ export default async function handler(req, res) {
           // window comes from rows new enough to carry the field at all.
           if (cost > 0) {
             w.rows++;
-            if (typeof t.creditsCharged === 'number') w.stamped++;
+            // v6.54: the numerator has to come from the SAME rows as the
+            // denominator. It used to be every dollar in the window while the
+            // denominator counted only stamped rows' credits, so every
+            // unstamped row inflated cost-per-credit - which is why the figure
+            // had to be gated behind 80% coverage in the first place, and why
+            // it never appeared. Summing only stamped rows' cost makes the
+            // ratio correct at ANY coverage; coverage now just says how much of
+            // the window it speaks for.
+            if (typeof t.creditsCharged === 'number') { w.stamped++; w.stampedCents += cents; }
           }
         });
         // A row with no cost is NOT a free call. An errored or timed-out run
@@ -513,10 +553,28 @@ export default async function handler(req, res) {
           out.detail[k] = { creditsCharged: w.charged, creditsRefunded: w.refunded,
                             creditsNet: net, apiCents: w.costCents, warmCents,
                             rows: w.rows, rowsStamped: w.stamped };
-          if (net > 0 && cov >= 0.8) out[k] = +((w.costCents + warmCents) / 100 / net).toFixed(4);
+          // Warm-ping spend is pro-rated by coverage: it is overhead for the
+          // whole window, so charging all of it against a partial set of
+          // credits would overstate the cost. At full coverage this is the
+          // whole ping, which is correct.
+          if (net > 0 && cov > 0) out[k] = +((w.stampedCents + warmCents * cov) / 100 / net).toFixed(4);
         }
         return out;
       })(),
+      costByKind: {
+        main: { day: costByKind.main.day.n ? +(costByKind.main.day.cents / 100 / costByKind.main.day.n).toFixed(4) : null,
+                week: costByKind.main.week.n ? +(costByKind.main.week.cents / 100 / costByKind.main.week.n).toFixed(4) : null,
+                month: costByKind.main.month.n ? +(costByKind.main.month.cents / 100 / costByKind.main.month.n).toFixed(4) : null,
+                n: { day: costByKind.main.day.n, week: costByKind.main.week.n, month: costByKind.main.month.n } },
+        deep: { day: costByKind.deep.day.n ? +(costByKind.deep.day.cents / 100 / costByKind.deep.day.n).toFixed(4) : null,
+                week: costByKind.deep.week.n ? +(costByKind.deep.week.cents / 100 / costByKind.deep.week.n).toFixed(4) : null,
+                month: costByKind.deep.month.n ? +(costByKind.deep.month.cents / 100 / costByKind.deep.month.n).toFixed(4) : null,
+                n: { day: costByKind.deep.day.n, week: costByKind.deep.week.n, month: costByKind.deep.month.n } },
+        all:  { day: costByKind.all.day.n ? +(costByKind.all.day.cents / 100 / costByKind.all.day.n).toFixed(4) : null,
+                week: costByKind.all.week.n ? +(costByKind.all.week.cents / 100 / costByKind.all.week.n).toFixed(4) : null,
+                month: costByKind.all.month.n ? +(costByKind.all.month.cents / 100 / costByKind.all.month.n).toFixed(4) : null,
+                n: { day: costByKind.all.day.n, week: costByKind.all.week.n, month: costByKind.all.month.n } },
+      },
       assessCost: {
         day: assessCost.day.n ? +(assessCost.day.cents / 100 / assessCost.day.n).toFixed(4) : null,
         week: assessCost.week.n ? +(assessCost.week.cents / 100 / assessCost.week.n).toFixed(4) : null,

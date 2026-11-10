@@ -1563,7 +1563,7 @@ async function loadStats() {
 
 function renderStats() {
   if (!state.stats) return;
-  const { accounts, items, platforms, revenue, credits, spend, spendBreakdown, perCredit, assessCost, costPerCredit, devCost } = state.stats;
+  const { accounts, items, platforms, revenue, credits, spend, spendBreakdown, perCredit, assessCost, costPerCredit, costByKind, devCost } = state.stats;
   const r = revenue || {}, sp = spend || {};
   const dollars = c => '$' + ((c || 0) / 100).toFixed(2);
   const netDay = (r.webNetDayCents || 0) + (r.iosNetDayCents || 0) + (r.androidNetDayCents || 0);
@@ -1623,9 +1623,36 @@ function renderStats() {
             // underneath, because it is still the right number for judging a
             // prompt or model change.
             '<div class="stat-card"><h3>Cost / Credit</h3><div class="total">'+money(cpc.month)+'</div>'+trio(cpc)+
-              '<div style="opacity:.7;font-size:11px;margin-top:4px">per assessment '+money(ac.month)+
-              (cpc.month==null?' \u00b7 credit figure needs more data':'')+'</div>'+
-            '</div>';})()}
+              (cpc.month==null?'<div style="opacity:.7;font-size:11px;margin-top:4px">credit figure needs more data</div>':'')+
+            '</div>'+
+            // v6.54: the flat "per assessment $0.0xx" line is gone. It was one
+            // mean over Main, Deep, Full, every Batch pass and Post-Cleaning,
+            // which answers no question anyone has - Matt: "I think that's
+            // stale info." Replaced with Matt's ask: Main and Deep separately,
+            // plus a combined line. Full / Batch / Post-Cleaning are inside
+            // `all` but not broken out; they are rare and a mean over three
+            // rows is noise. `n` is printed because a figure with n=1 should
+            // not be read the same way as one with n=200.
+            (function(){
+              var ck = costByKind || {};
+              var line = function(label, o){
+                o = o || {}; var n = o.n || {};
+                var cell = function(v, c){ return '<span><strong>'+money(v)+'</strong> '+(c?c:0)+'</span>'; };
+                return '<div style="display:flex;font-size:11px;margin:3px 0;opacity:.85">'
+                  + '<span style="width:42px;color:#8a8d96;font-weight:700">'+label+'</span>'
+                  + '<span style="flex:1;text-align:right">'+cell(o.day, n.day)+'</span>'
+                  + '<span style="flex:1;text-align:right">'+cell(o.week, n.week)+'</span>'
+                  + '<span style="flex:1;text-align:right">'+cell(o.month, n.month)+'</span>'
+                  + '</div>';
+              };
+              return '<div class="stat-card"><h3>Cost / Assessment</h3>'
+                + '<div style="display:flex;font-size:10px;color:#8a8d96;letter-spacing:1px;margin-bottom:2px">'
+                +   '<span style="width:42px"></span><span style="flex:1;text-align:right">24h</span>'
+                +   '<span style="flex:1;text-align:right">7d</span><span style="flex:1;text-align:right">30d</span></div>'
+                + line('Main', ck.main) + line('Deep', ck.deep) + line('All', ck.all)
+                + '<div style="opacity:.55;font-size:10px;margin-top:4px">mean \u00b7 n beside each</div>'
+                + '</div>';
+            })();})()}
         </div>
         <div class="stats-grid">
           <div class="stat-card"><h3>Revenue</h3><div class="total">${dollars(r.netCents || 0)}</div>${bo(netDay, netWeek, netMonth)}${sub('iOS', r.iosNetDayCents, r.iosNetWeekCents, r.iosNetMonthCents)}${sub('Android', r.androidNetDayCents, r.androidNetWeekCents, r.androidNetMonthCents)}${sub('Web', r.webNetDayCents, r.webNetWeekCents, r.webNetMonthCents)}</div>

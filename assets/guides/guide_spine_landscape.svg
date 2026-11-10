@@ -11,10 +11,10 @@
         <g transform="matrix(0.77734,1.71636e-17,-1.77892e-17,0.75,-29.4221,163.75)">
             <path d="M400,395L400,435" style="fill:none;fill-rule:nonzero;stroke:rgb(122,168,56);stroke-width:10.29px;stroke-linecap:round;stroke-linejoin:miter;"/>
         </g>
-        <g transform="matrix(-0.38265,3.02919e-17,-4.68611e-17,-0.247352,354.576,284.565)">
+        <g transform="matrix(-0.38265,3.02919e-17,-4.68611e-17,-0.247352,335.488,284.565)">
             <path d="M300,473.269L300,413.145L238.499,580L300,733.807L300,673.682L403.512,805.84L403.512,347.239L300,473.269Z" style="fill:rgb(122,168,56);stroke:black;stroke-width:4.01px;stroke-linecap:round;stroke-miterlimit:1.5;"/>
         </g>
-        <g transform="matrix(-0.38265,3.02919e-17,-4.68611e-17,-0.247352,354.576,565.952)">
+        <g transform="matrix(-0.38265,3.02919e-17,-4.68611e-17,-0.247352,335.488,565.952)">
             <path d="M300,473.269L300,413.145L238.499,580L300,733.807L300,673.682L403.512,805.84L403.512,347.239L300,473.269Z" style="fill:rgb(122,168,56);stroke:black;stroke-width:4.01px;stroke-linecap:round;stroke-miterlimit:1.5;"/>
         </g>
     </g>

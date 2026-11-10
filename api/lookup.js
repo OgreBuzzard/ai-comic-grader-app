@@ -105,6 +105,21 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: 'This assessment is private' });
     }
 
+    // ── v6.51: AN ADULT ITEM NEVER RESOLVES, WHATEVER publicListing SAYS ────
+    // Matt's rule for adult magazines (2026-11-09): grade them, print labels
+    // for them, never publish them. No QR target, no shareable page.
+    // THIS is the enforcement that matters. The client refuses to set the
+    // toggle and the save corrects a record that arrives public, but both of
+    // those run in a browser - an older build, a restored backup or a record
+    // written before the flag existed can all arrive here marked public. The
+    // public page is the half with an audience, so it refuses here too, and
+    // it refuses on the CURRENT record rather than on anything cached.
+    // Same 403 as a private listing: the response must not confirm that an
+    // adult item exists at this ID.
+    if (comic.adultContent === true) {
+      return res.status(403).json({ error: 'This assessment is private' });
+    }
+
     // Step 5: normalize image arrays to flat URL strings + compute integrity.
     // v3 stores images as [{url, source, capturedAt}]; pre-v3 stored them as
     // plain URL strings. The badge needs to know whether ALL assessed photos
@@ -221,6 +236,12 @@ export default async function handler(req, res) {
       // Same test as the app now. It is a READ-TIME projection, so every
       // existing listing is corrected the moment this deploys; nothing needs
       // backfilling.
+      // v6.51: a magazine, and whether it is adult. The public record carries
+      // the format so public.html can render a date-identified magazine
+      // correctly; adultContent is projected for completeness, but the real
+      // enforcement is the refusal above - an adult item never resolves here
+      // at all.
+      format: comic.format === 'magazine' ? 'magazine' : 'comic',
       deepAssessmentRan: comic.type === 'card'
         ? !!comic.deepAssessmentRan
         : !!(comic.deepAssessmentRan
