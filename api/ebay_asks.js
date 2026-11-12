@@ -107,6 +107,33 @@ async function getAppToken(db) {
 // company tells us nothing about condition.
 const SLAB_RE = /\b(CGC|CBCS|PSA)\s*[:\-]?\s*(10(?:\.0)?|\d(?:\.\d)?)\b/i;
 
+// ── REPRINTS AND FACSIMILES ────────────────────────────────────────────────
+// Matt, 2026-11-12: "The more of a key a book is, the more likely it is that
+// its listing is crowded with n-th printings or facsimile reprints. Filtering
+// for CGC in the listing would weed out some, but not all. You'll still find
+// facsimiles in CGC cases."
+//
+// That is exactly what made FF 1 come back at a $615 median. The GOLDEN RECORD
+// reprints are the specific trap: 1966 reprints of JIM 83, ASM 1, Avengers 4
+// and FF 1, slabbed by CGC, genuinely collectable, and selling in the low
+// hundreds where the originals are five figures. They are indistinguishable
+// from the real book by price band alone — only the title says so.
+//
+// Deliberately conservative. A false exclusion costs one listing out of fifty;
+// a false INCLUSION drags the median toward a different book entirely, which
+// is the failure actually observed. Terms that are ambiguous (a "variant", a
+// "sketch cover") are NOT here — those are real copies of the real book.
+const JUNK_RE = new RegExp([
+  'facsimile', 'reprint', 'replica', 'reproduction', 'golden\\s*record',
+  '(?:2nd|second|3rd|third|4th|fourth)\\s*print(?:ing)?',
+  'lot\\s+of', 'set\\s+of', '\\bposter\\b', '\\bportfolio\\b',
+  '\\bcanvas\\b', '\\bmagazine\\b', '\\bphotocopy\\b'
+].join('|'), 'i');
+
+export function isJunkListing(title) {
+  return JUNK_RE.test(String(title || ''));
+}
+
 export function parseSlabGrade(title) {
   if (!title) return null;
   const m = String(title).match(SLAB_RE);
@@ -140,9 +167,16 @@ export function bandFor(grade, rungs) {
 
 export function summarise(items, grade) {
   const slabs = [];
+  // `slabs` is also returned under `matched` when debug=1, so a wrong-looking
+  // median can be explained by LOOKING at what matched instead of theorising
+  // about it. That is how the first live call was diagnosed: FF 1 at 4.5 came
+  // back with a median of $615 and a high of $20,900, and no real CGC 4.5
+  // Fantastic Four #1 sells for $615 — so most of the band was something else.
+  // Guessing at a filter without seeing the titles would have been a coin flip.
   for (const it of (items || [])) {
     const parsed = parseSlabGrade(it.title);
     if (!parsed) continue;
+    if (isJunkListing(it.title)) continue;
     const price = parseFloat(
       (it.price && it.price.value) ||
       (it.currentBidPrice && it.currentBidPrice.value) || ''
@@ -150,9 +184,9 @@ export function summarise(items, grade) {
     if (!Number.isFinite(price) || price <= 0) continue;
     const cur = (it.price && it.price.currency) || 'USD';
     if (cur !== 'USD') continue;      // mixing currencies would be nonsense
-    slabs.push({ grade: parsed.grade, company: parsed.company, price });
+    slabs.push({ grade: parsed.grade, company: parsed.company, price, title: it.title });
   }
-  if (!slabs.length) return { n: 0, reason: 'no-slabbed-listings' };
+  if (!slabs.length) return { n: 0, reason: 'no-slabbed-listings', matched: [] };
 
   // One rung either side first. Widen to two only if that is too thin, and
   // SAY SO — a widened band is a weaker statement and the UI shows it.
@@ -161,18 +195,28 @@ export function summarise(items, grade) {
     const inBand = slabs.filter(s => s.grade >= b.lo && s.grade <= b.hi);
     if (inBand.length >= MIN_LISTINGS) {
       const prices = inBand.map(s => s.price);
+      const med = median(prices);
       return {
         n: inBand.length,
-        median: median(prices),
+        median: med,
         low: Math.min(...prices),
         high: Math.max(...prices),
         band: { lo: b.lo, hi: b.hi },
         widened: rungs > 1,
-        grade
+        grade,
+        // SPREAD IS A DATA-QUALITY ALARM, not decoration. On a correctly
+        // matched set of same-grade slabs the high should be a small multiple
+        // of the median. When it is 30x, the band is full of DIFFERENT BOOKS
+        // that happen to share a title and an issue number — a later volume's
+        // #1, a reprint, a lot. The UI must not print a median flagged this
+        // way as if it were trustworthy.
+        spreadRatio: med > 0 ? +(Math.max(...prices) / med).toFixed(1) : null,
+        suspect: med > 0 && (Math.max(...prices) / med) > 8,
+        matched: inBand
       };
     }
   }
-  return { n: 0, reason: 'too-few-in-band', slabbedFound: slabs.length };
+  return { n: 0, reason: 'too-few-in-band', slabbedFound: slabs.length, matched: slabs };
 }
 
 // ── handler ─────────────────────────────────────────────────────────────────
@@ -190,12 +234,18 @@ export default async function handler(req, res) {
   const title = String(q.title || '').trim();
   const issue = String(q.issue || '').trim();
   const grade = parseFloat(q.grade);
+  // Optional. A four-digit publication year; anything else is ignored rather
+  // than rejected, because a bad year should weaken the query, not 400 it.
+  const year = /^(19|20)\d{2}$/.test(String(q.year || '').trim()) ? String(q.year).trim() : null;
   if (!title || !issue || !Number.isFinite(grade)) {
     return res.status(400).json({ error: 'title, issue and grade are required' });
   }
 
   const db = await getAdminDb();
-  const key = `${title}|${issue}|${grade}`.toLowerCase().replace(/[^a-z0-9|.\- ]/g, '').slice(0, 300);
+  // The year is part of the cache key: a result fetched with a year filter is
+  // a different answer from one fetched without, and serving one for the other
+  // would be silently wrong.
+  const key = `${title}|${issue}|${grade}|${year || ''}`.toLowerCase().replace(/[^a-z0-9|.\- ]/g, '').slice(0, 300);
   const docId = Buffer.from(key).toString('base64url').slice(0, 400);
 
   if (db) {
@@ -220,13 +270,19 @@ export default async function handler(req, res) {
   // CGC in the query, not a filter: eBay has no "is slabbed" filter, and the
   // word is in essentially every slab listing's title. SLAB_RE does the real
   // work on the way back.
-  const url = new URL(EBAY_SEARCH);
-  url.searchParams.set('q', `${title} ${issue} CGC`);
-  url.searchParams.set('limit', String(SEARCH_LIMIT));
-  url.searchParams.set('filter', 'buyingOptions:{FIXED_PRICE}');
-
-  let items = [], upstream = null;
-  try {
+  // YEAR IN THE QUERY. Matt's suggestion and it is the right one: "If I were
+  // searching eBay and trying to filter out reprints, I'd include the year of
+  // publication in the title search, which we have." A 1961 in the query
+  // excludes most later-printing noise that no exclusion list would catch.
+  // BUT it is a keyword match, so it also drops legitimate listings that
+  // simply do not mention the year — common on moderns. So it NARROWS FIRST
+  // and falls back: same shape as the grade band widening, and for the same
+  // reason. Two calls worst case against a 5,000/day budget.
+  async function browse(useYear) {
+    const url = new URL(EBAY_SEARCH);
+    url.searchParams.set('q', `${title} ${issue} CGC${(useYear && year) ? ' ' + year : ''}`);
+    url.searchParams.set('limit', String(SEARCH_LIMIT));
+    url.searchParams.set('filter', 'buyingOptions:{FIXED_PRICE}');
     const r = await fetch(url, {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -236,25 +292,53 @@ export default async function handler(req, res) {
     });
     const text = await r.text();
     if (!r.ok) {
-      console.error('[ebay] browse', r.status, text.slice(0, 400));
-      return res.status(502).json({ error: 'ebay search failed', status: r.status,
-        detail: text.slice(0, 400) });
+      const err = new Error(text.slice(0, 400));
+      err.status = r.status;
+      throw err;
     }
-    upstream = JSON.parse(text);
-    items = upstream.itemSummaries || [];
-  } catch (e) {
-    console.error('[ebay] browse threw:', e.message);
-    return res.status(502).json({ error: 'ebay search failed', detail: e.message.slice(0, 300) });
+    return JSON.parse(text).itemSummaries || [];
   }
 
-  const result = summarise(items, grade);
+  let items = [], result, yearUsed = false;
+  try {
+    if (year) {
+      items = await browse(true);
+      result = summarise(items, grade);
+      yearUsed = true;
+      if (result.n < MIN_LISTINGS) {
+        const wide = await browse(false);
+        const wideResult = summarise(wide, grade);
+        if (wideResult.n >= MIN_LISTINGS) { items = wide; result = wideResult; yearUsed = false; }
+      }
+    } else {
+      items = await browse(false);
+      result = summarise(items, grade);
+    }
+  } catch (e) {
+    console.error('[ebay] browse', e.status || '', e.message);
+    return res.status(502).json({ error: 'ebay search failed', status: e.status || null,
+      detail: String(e.message).slice(0, 400) });
+  }
+
   result.searched = items.length;
+  result.yearUsed = yearUsed;
+  // The matched listings are for DIAGNOSIS ONLY and never reach the app UI.
+  // They are kept out of the cached document too — they are the bulky part and
+  // nothing in production reads them.
+  const matched = result.matched || [];
+  delete result.matched;
+  if (String(q.debug || '') === '1') {
+    result.sample = matched.slice(0, 25).map(m => ({
+      grade: m.grade, company: m.company, price: m.price,
+      title: String(m.title || '').slice(0, 110)
+    }));
+  }
   const fetchedAt = Date.now();
 
   if (db) {
     try {
       await db.collection('ebay_asks').doc(docId)
-        .set({ key, result, fetchedAt, title, issue, grade });
+        .set({ key, result, fetchedAt, title, issue, grade, year: year || null });
     } catch (e) { console.warn('[ebay] asks cache write failed:', e.message); }
   }
   return res.status(200).json({ ...result, fetchedAt, cached: false });
