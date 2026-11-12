@@ -53,6 +53,12 @@
     },
     "api/assess_clean_run.js": {
       "maxDuration": 180
+    },
+    "api/ebay_asks.js": {
+      "maxDuration": 15
+    },
+    "api/ebay_deletion.js": {
+      "maxDuration": 10
     }
   },
   "headers": [
