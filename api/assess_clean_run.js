@@ -116,10 +116,17 @@ export default async function handler(req, res) {
   const setStage = async (stage, extra) => {
     if (!stageRef) return;
     try {
+      // v6.64: `...(extra || {})` used to sit INSIDE the trailing comment on the
+      // epoch line, so it was never code. Every extra this function is called
+      // with - afterGrade, gradeDelta, finishedAt, and the error message on the
+      // failure path - was silently dropped, which is why a run that died
+      // server-side left a stage doc saying only 'error' with no reason in it.
       await stageRef.set({
         stage, itemId, runNumber, at: new Date().toISOString(),
+        // pool by GRADING_EPOCH, not by version - see lib/version.js
         version: ROBOGRADE_VERSION,
-        epoch: GRADING_EPOCH,   // pool by THIS, not by version - see lib/version.js ...(extra || {})
+        epoch: GRADING_EPOCH,
+        ...(extra || {})
       }, { merge: true });
     } catch (e) { /* non-fatal */ }
   };

@@ -120,5 +120,43 @@ survives('no date', { cleanComparison: { counts: {}, at: null } });
     && renderPostCleaningPhotos({ cleanBeforeImages: [], cleanAfterImages: [] }) === '');
 }
 
+// ── the in-overlay results panel (v6.64) ──────────────────────────────────
+// Source checks, not render checks: mountCleanResults talks to the scan module
+// and the DOM. What has to hold is that it EXISTS, that the run calls it, and
+// that the four things Matt specified are in it — because the bug being fixed
+// here was a panel that was never mounted at all, which no amount of testing
+// the Detail-view renderers could have caught.
+{
+  ok('mountCleanResults exists', html.includes('function mountCleanResults('));
+  ok('the run mounts it', /mountCleanResults\(formData\.cleanBeforeResult/.test(html));
+  ok('there is a way out of the overlay',
+    html.includes('function completeCleanAssessment(') && html.includes('btn.onclick = completeCleanAssessment'));
+  ok('BEFORE and AFTER are both columns', html.includes('>BEFORE</div>') && html.includes('>AFTER</div>'));
+  const panel = html.slice(html.indexOf('function mountCleanResults('),
+                           html.indexOf('async function completeCleanAssessment('));
+  ok('After RG starts at 0',   /val: "0",/.test(panel));
+  ok('After PG starts at 0.0', /val: "0\.0",/.test(panel));
+  ok('both After badges animate from the bottom',
+    /animateV3LadderFromTo\(rgEl, 0,/.test(panel) && /animateGradeListFromTo\(pgEl, CGC_GRADE_LIST\[0\]/.test(panel));
+  ok('NO page quality pill in the panel (spec decision 6)',
+    !/pageQuality|Page Quality/i.test(panel));
+  ok('restoration turns the After pair purple', panel.includes('restorationAppeared') && panel.includes('#241036'));
+}
+
+// ── the confirm card is not hard-coded to Batch (v6.64) ───────────────────
+{
+  ok('the confirm card takes a title and a button label',
+    html.includes('function _batchConfirm(message, opts)'));
+  ok('Post-Cleaning passes its own',
+    html.includes('title: "Run Post-Cleaning Assessment?"') && html.includes('cta: "RUN POST-CLEANING"'));
+  ok('Batch still says Batch', html.includes('"Run Batch Assessment?"') && html.includes('"RUN BATCH"'));
+}
+
+// ── the run cannot hang forever (v6.64) ───────────────────────────────────
+{
+  ok('_batchApi supports a timeout', html.includes('opts && opts.timeoutMs') && html.includes('AbortController'));
+  ok('the clean run sets one', html.includes('timeoutMs: 200000'));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed.');
 process.exit(fail ? 1 : 0);

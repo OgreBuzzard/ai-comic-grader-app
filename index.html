@@ -3215,21 +3215,43 @@ function _ebayAsksRender(r) {
     <div style="font-size:10px;color:#8a7a6a;margin-top:4px;letter-spacing:0.04em">${sub}</div>`;
 }
 
-async function _ebayAsksScan() {
+// v6.64: this SAYS WHAT IT DID on every path. The first build printed nothing
+// at all when it declined to ask, when the fetch failed, and when the answer
+// was too thin to render - three different situations that look identical from
+// the outside, and "I don't see eBay Asking" could have been any of them.
+async function _ebayAsksScan(attempt) {
   const el = document.getElementById("ebay-asks-line");
-  if (!el || !el.dataset.eq) return;
+  if (!el) { console.log("[ebay] no line on this view (not a comic with a title, issue and grade)"); return; }
+  if (!el.dataset.eq) return;
   const qs = el.dataset.eq;
   const hit = _ebayAskCache[qs];
   if (hit === "pending") return;
   if (hit !== undefined) { el.innerHTML = _ebayAsksRender(hit); return; }
-  if (!window._currentUser || typeof window._currentUser.getIdToken !== "function") return;
+  // Auth loads asynchronously. Opening a book within a second of launch used to
+  // return here silently and never come back, which looked exactly like a
+  // feature that was not deployed.
+  if (!window._currentUser || typeof window._currentUser.getIdToken !== "function") {
+    const n = (attempt || 0) + 1;
+    if (n <= 10) { setTimeout(function () { _ebayAsksScan(n); }, 600); return; }
+    console.warn("[ebay] not signed in after 6s - no asking prices");
+    return;
+  }
   _ebayAskCache[qs] = "pending";
+  console.log("[ebay] asking: " + decodeURIComponent(qs.replace(/\+/g, " ")));
   try {
     const token = await window._currentUser.getIdToken();
     const resp = await fetch("/api/ebay_asks?" + qs, { headers: { Authorization: "Bearer " + token } });
     const j = await resp.json().catch(() => null);
     _ebayAskCache[qs] = resp.ok ? j : null;
-    if (!resp.ok) console.warn("[ebay] asks failed:", resp.status, j && j.error);
+    if (!resp.ok) {
+      console.warn("[ebay] HTTP " + resp.status + (j && j.error ? " - " + j.error : "") + " (endpoint deployed? keys in Vercel?)");
+    } else if (!j || !j.n) {
+      console.log("[ebay] nothing to show: " + ((j && j.reason) || "no result") + (j && j.slabbedFound ? " (" + j.slabbedFound + " slabbed listings found, none in band)" : ""));
+    } else if (j.suspect) {
+      console.warn("[ebay] " + j.n + " in band, median $" + j.median + ", but spread " + j.spreadRatio + "x - SUPPRESSED (band is probably other books)");
+    } else {
+      console.log("[ebay] " + j.n + " listed, median $" + j.median + (j.widened ? " (band widened)" : "") + (j.cached ? " [cached]" : ""));
+    }
     const live = document.getElementById("ebay-asks-line");
     if (live && live.dataset.eq === qs) live.innerHTML = _ebayAsksRender(_ebayAskCache[qs]);
   } catch (e) {
@@ -3242,11 +3264,14 @@ async function _ebayAsksScan() {
 // Needs a title, a numeric-ish issue and a grade; cards are excluded (the
 // endpoint is a comic-slab matcher).
 function _ebayAsksQuery(item, grade) {
-  if (!item || !grade) return null;
+  if (!item || !grade) { console.log("[ebay] no grade yet - not asking"); return null; }
   const t = String(item.title || "").trim();
   const i = String(item.issue || "").trim();
   const g = parseFloat(grade);
-  if (!t || !i || !Number.isFinite(g)) return null;
+  if (!t || !i || !Number.isFinite(g)) {
+    console.log("[ebay] not asking: title=" + JSON.stringify(t) + " issue=" + JSON.stringify(i) + " grade=" + JSON.stringify(grade));
+    return null;
+  }
   const y = (typeof extractYearFromIssueDate === "function") ? extractYearFromIssueDate(item.issueDate) : null;
   const p = new URLSearchParams({ title: t, issue: i, grade: String(g) });
   if (y) p.set("year", String(y));
@@ -9582,9 +9607,16 @@ function _exShowPreview(blob, filename) {
   const url = URL.createObjectURL(blob);
   const o = document.createElement("div");
   o.id = "ex-preview";
+  // v6.64, Matt: "The Summary Image pops onto the screen jarringly. Can we slide
+  // it in from the right and slide it away when the user taps Close or Save
+  // Image?" The whole overlay travels - backdrop included - so it reads as a
+  // panel arriving over the detail view rather than a flash. 220ms in on the
+  // standard decelerate curve, 180ms out, and the object URL is revoked and the
+  // node removed only AFTER the exit finishes.
   o.style.cssText = "position:fixed;inset:0;z-index:100001;background:rgba(0,0,0,0.92);"
     + "display:flex;flex-direction:column;"
-    + "padding:calc(env(safe-area-inset-top,0px) + 12px) 12px calc(env(safe-area-inset-bottom,0px) + 12px);";
+    + "padding:calc(env(safe-area-inset-top,0px) + 12px) 12px calc(env(safe-area-inset-bottom,0px) + 12px);"
+    + "transform:translateX(100%);transition:transform .22s cubic-bezier(.2,.8,.2,1);will-change:transform;";
   const scroller = document.createElement("div");
   scroller.style.cssText = "flex:1;min-height:0;overflow-y:auto;display:flex;align-items:flex-start;justify-content:center;";
   const img = document.createElement("img");
@@ -9604,7 +9636,19 @@ function _exShowPreview(blob, filename) {
   save.textContent = "Save Image";
   bar.appendChild(close); bar.appendChild(save);
   o.appendChild(scroller); o.appendChild(bar);
-  const done = () => { try { URL.revokeObjectURL(url); } catch (e) {} o.remove(); };
+  let _closing = false;
+  const done = () => {
+    if (_closing) return;                 // a double tap must not queue two exits
+    _closing = true;
+    o.style.transition = "transform .18s cubic-bezier(.4,0,1,1)";
+    o.style.transform = "translateX(100%)";
+    const finish = () => { try { URL.revokeObjectURL(url); } catch (e) {} o.remove(); };
+    o.addEventListener("transitionend", finish, { once: true });
+    // transitionend does not fire if the element is already offscreen or the
+    // user has reduced motion on, so the URL would leak and the node would
+    // stay. The timer is the guarantee; `once` makes the double-run harmless.
+    setTimeout(finish, 260);
+  };
   close.onclick = done;
   save.onclick = async () => {
     save.disabled = true; save.textContent = "Saving\u2026";
@@ -9616,6 +9660,10 @@ function _exShowPreview(blob, filename) {
     done();
   };
   document.body.appendChild(o);
+  // Two frames: one for the browser to accept the starting transform, one to
+  // change it. A single rAF sometimes lands in the same style flush and the
+  // panel appears without moving - which is the bug this is fixing.
+  requestAnimationFrame(() => requestAnimationFrame(() => { o.style.transform = "translateX(0)"; }));
 }
 
 async function _exRun(btnId, item, renderer, slug) {
@@ -12397,7 +12445,14 @@ function _snapPgToLadder(x, where) {
 function _batchMedian(a) { const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; }
 // Styled batch-start confirm — app house style (Robograder head + dark card),
 // matching showCeilingUpsell. Resolves true = Run, false = Cancel.
-function _batchConfirm(message) {
+// v6.64: the heading and the button are PARAMETERS, not literals. Post-Cleaning
+// has always reused this card and it has always said "Run Batch Assessment?"
+// over a paragraph about cleaning, with a RUN BATCH button underneath. Matt:
+// "When I tap the Post-Cleaning button, I get a message asking if I want to run
+// a Batch." Defaults keep the Batch call site unchanged.
+function _batchConfirm(message, opts) {
+  const _ttl = (opts && opts.title) || "Run Batch Assessment?";
+  const _cta = (opts && opts.cta) || "RUN BATCH";
   return new Promise(function (resolve) {
     var prev = document.getElementById('rg-batch-confirm-overlay'); if (prev) prev.remove();
     var ov = document.createElement('div'); ov.id = 'rg-batch-confirm-overlay';
@@ -12406,9 +12461,9 @@ function _batchConfirm(message) {
     card.style.cssText = 'width:100%;max-width:340px;background:#141210;border:1.5px solid #6a4a10;border-radius:18px;overflow:hidden;box-shadow:0 12px 44px rgba(0,0,0,0.55);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;';
     card.innerHTML = '<div style="padding:24px 24px 20px;text-align:center;">'
       + '<img src="assets/Robograder_Gift.webp" alt="Robograder" style="width:88px;height:auto;object-fit:contain;margin:0 auto 10px;display:block">'
-      + '<div style="font-size:16px;font-weight:800;color:#f0c860;margin-bottom:8px">Run Batch Assessment?</div>'
+      + '<div style="font-size:16px;font-weight:800;color:#f0c860;margin-bottom:8px">' + esc(_ttl) + '</div>'
       + '<div style="font-size:13.5px;line-height:1.6;color:#e8d9b8;text-align:center;margin-bottom:20px">' + message + '</div>'
-      + '<button id="rg-batch-go" class="rg-btn rg-btn-branded rg-btn-md" style="width:100%;margin-bottom:8px">RUN BATCH</button>'
+      + '<button id="rg-batch-go" class="rg-btn rg-btn-branded rg-btn-md" style="width:100%;margin-bottom:8px">' + esc(_cta) + '</button>'
       + '<button id="rg-batch-cancel" class="rg-btn rg-btn-secondary rg-btn-md" style="width:100%">Cancel</button>'
       + '</div>';
     ov.appendChild(card); document.body.appendChild(ov);
@@ -12439,17 +12494,39 @@ const BATCH_POLL_MS = 1000;
 const BATCH_FANOUT_FALLBACK_MS = 35000;
 const BATCH_MAX_WALL_MS = 240000;
 
+// v6.64: an OPTIONAL timeout. Post-Cleaning holds one request open for the
+// whole run - Main, then Deep, then the compare - and with no abort a dropped
+// connection or a backgrounded phone left the promise pending forever: the
+// overlay stayed up, no error fired, and the run looked like it had hung. The
+// server's own ceiling is 180s (vercel.json), so 200s here outlives it and the
+// timeout can only fire on a connection that is genuinely gone.
 async function _batchApi(path, opts) {
   const token = window._currentUser ? await window._currentUser.getIdToken() : null;
-  const r = await fetch(path, {
-    method: opts && opts.method || "GET",
-    headers: {
-      "Content-Type": "application/json",
-      "x-client-secret": "022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",
-      ...token ? { Authorization: "Bearer " + token } : {}
-    },
-    ...opts && opts.body ? { body: JSON.stringify(opts.body) } : {}
-  });
+  const ms = opts && opts.timeoutMs;
+  const ctl = (ms && typeof AbortController === "function") ? new AbortController() : null;
+  const timer = ctl ? setTimeout(() => ctl.abort(), ms) : null;
+  let r;
+  try {
+    r = await fetch(path, {
+      method: opts && opts.method || "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "x-client-secret": "022dd9f3586314b52b283f86342ee839c74b0cafbb2ca925494205377815d47d",
+        ...token ? { Authorization: "Bearer " + token } : {}
+      },
+      ...ctl ? { signal: ctl.signal } : {},
+      ...opts && opts.body ? { body: JSON.stringify(opts.body) } : {}
+    });
+  } catch (e) {
+    if (timer) clearTimeout(timer);
+    if (e && e.name === "AbortError") {
+      const te = new Error(path + " timed out after " + Math.round(ms / 1000) + "s");
+      te.timedOut = true;
+      throw te;
+    }
+    throw e;
+  }
+  if (timer) clearTimeout(timer);
   const text = await r.text();
   let data = null;
   try { data = JSON.parse(text); } catch (e) {}
@@ -12557,6 +12634,130 @@ function _cleanWatchStage(onStage) {
   }
 }
 
+// ── THE IN-OVERLAY PANEL FOR A POST-CLEANING RUN ────────────────────────────────────────────
+// v6.64. The spec has carried `[ ] Results panel` since 5.64 and NOTHING ever
+// mounted one: the scan ran, the five lights lit, and then the overlay just sat
+// there with no COMPLETE button. Matt: "the assessment never finished and I got
+// no results." It had finished. There was simply nothing to show it in, and no
+// way out of the overlay.
+//
+// Layout is Matt's correction to the spec's four-across row: BEFORE stacked on
+// the left (RG over PG), AFTER stacked on the right, a rule between them.
+//
+//   BEFORE  │  AFTER        - Before is drawn muted from the first frame; those
+//    [RG]   │   [RG]          grades are already known.
+//    [PG]   │   [PG]        - After starts at RG 0 / PG 0.0 and animates into
+//                             place. Nothing reflows: all four boxes are full
+//                             size from frame one.
+//
+// NO PAGE QUALITY PILL (spec decision 6): page quality rates the interior and a
+// cleaning does not change it. It is still computed and stored, just not drawn.
+const _CLEAN_MUTED = { bgRG: "#141a0e", bgPG: "#1e3348", ink: "#8d9a7f", inkPG: "#8fa6bb", border: "1px solid #39412f" };
+
+function _cleanBadge(o) {
+  const border = o.border ? `border:${o.border};` : "";
+  return `<div style="position:relative;width:64px;height:64px;${border}background:${o.bg};border-radius:8px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">`
+    + `<div ${o.id ? `id="${o.id}" ` : ""}style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'League Spartan',sans-serif;transform:scaleX(0.7);font-size:34px;font-weight:800;color:${o.ink};line-height:1">${o.val}</div>`
+    + `<div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:${o.ink};opacity:0.75;letter-spacing:0.8px">${o.label}</div></div>`;
+}
+
+function mountCleanResults(before, after, comparison) {
+  if (!window.RobograderScan || !window.RobograderScan.slideResultsIntoPanel) {
+    console.warn("[clean] scan-animation module not loaded - no results panel");
+    return;
+  }
+  const B = before || {}, A = after || {}, C = comparison || {};
+  const resto = !!C.restorationAppeared;
+
+  const rgBefore = _pcV3(B.roboGrade);
+  const rgAfter  = _pcV3(A.roboGrade);
+  const pgBefore = B.grade ? fmtGrade(parseFloat(B.grade)) : null;
+  const pgAfterN = A.grade != null ? parseFloat(A.grade) : null;
+
+  // Restoration turns the AFTER pair purple, the app's existing visual language
+  // for it (spec decision 4). Before stays as it was - the claim is "detected
+  // now, not detected before", and recolouring Before would overstate it.
+  const afterRGBg = resto ? "#241036" : "#0f1a05";
+  const afterRGInk = resto ? "#d9b6ff" : "#b8d820";
+  const afterPGBg = resto ? "#3a1a56" : "#2a5a8a";
+  const afterPGInk = resto ? "#ecd9ff" : "#e0f0ff";
+
+  const colHdr = "font-size:9px;font-weight:800;letter-spacing:1.6px;text-align:center;margin-bottom:6px;";
+  const beforeCol = `<div style="display:flex;flex-direction:column;align-items:center">`
+    + `<div style="${colHdr}color:${_CLEAN_MUTED.ink}">BEFORE</div>`
+    + `<div style="display:flex;flex-direction:column;gap:6px">`
+    + _cleanBadge({ bg: _CLEAN_MUTED.bgRG, ink: _CLEAN_MUTED.ink,  label: "RG", val: rgBefore != null ? rgBefore : "—", border: _CLEAN_MUTED.border })
+    + _cleanBadge({ bg: _CLEAN_MUTED.bgPG, ink: _CLEAN_MUTED.inkPG, label: "PG", val: pgBefore != null ? pgBefore : "—" })
+    + `</div></div>`;
+  const afterCol = `<div style="display:flex;flex-direction:column;align-items:center">`
+    + `<div style="${colHdr}color:${afterRGInk}">AFTER</div>`
+    + `<div style="display:flex;flex-direction:column;gap:6px">`
+    + _cleanBadge({ bg: afterRGBg, ink: afterRGInk, label: "RG", val: "0",   id: "clean-val-rg", border: resto ? "1.5px solid #6a3a9a" : "1.5px solid #3a5010" })
+    + _cleanBadge({ bg: afterPGBg, ink: afterPGInk, label: "PG", val: "0.0", id: "clean-val-pg" })
+    + `</div></div>`;
+  const rule = `<div style="width:1px;align-self:stretch;margin:14px 12px 0;background:#3a4433"></div>`;
+
+  // The only thing that makes this screen taller, and only in this case.
+  const restoStrip = resto ? `<div style="max-width:300px;margin-top:10px;background:#241036;border:1px solid #6a3a9a;border-radius:8px;padding:8px 10px;font-size:10.5px;line-height:1.45;color:#ecd9ff;text-align:center">Restoration was detected on the after photos and not on the before photos. That is a difference between two assessments, not a statement about what was done to the book.</div>` : "";
+
+  const html = `
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:10px;">
+      <div style="display:flex;justify-content:center;align-items:flex-start;flex-wrap:nowrap;">${beforeCol}${rule}${afterCol}</div>
+      ${restoStrip}
+      <button id="assess-complete-btn" style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#3a9ee0;color:#fff;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">COMPLETE</button>
+    </div>`;
+
+  if (window.RobograderScan.stopGridCycle) { try { window.RobograderScan.stopGridCycle(); } catch (e) {} }
+  if (window.RobograderScan.stopNeedlePulse) { try { window.RobograderScan.stopNeedlePulse(); } catch (e) {} }
+  const gridEl = document.getElementById("tracker-grid-frame");
+  if (gridEl) gridEl.style.display = "none";
+  try {
+    const _u = x => (x && (x.url || (typeof x === "string" ? x : null))) || null;
+    window.RobograderScan.revealScannedPhoto("front", 2150, _u((formData.cleanAfterImages || [])[0]));
+  } catch (e) {}
+  window.RobograderScan.slideResultsIntoPanel(html);
+
+  // Both counters start at zero and run the same 2000ms, so they land together
+  // the way every other results panel does.
+  const rgEl = document.getElementById("clean-val-rg");
+  const pgEl = document.getElementById("clean-val-pg");
+  if (rgEl) {
+    const to = rgAfter != null ? parseFloat(rgAfter) : null;
+    if (to != null && window.RoboScoreV3) {
+      animateV3LadderFromTo(rgEl, 0, to, 2000).then(() => { try { popResultBadge(rgEl); } catch (e) {} });
+    } else { rgEl.textContent = "—"; }
+  }
+  if (pgEl) {
+    if (pgAfterN != null && !isNaN(pgAfterN)) {
+      // CGC_GRADE_LIST[0] is 0.5, the bottom of the ladder. The badge OPENS
+      // showing "0.0" - the spec's starting state - and the count runs the
+      // ladder up from the bottom, which is what every other PG badge does.
+      animateGradeListFromTo(pgEl, CGC_GRADE_LIST[0], pgAfterN, CGC_GRADE_LIST, 2000).then(() => { try { popResultBadge(pgEl); } catch (e) {} });
+    } else { pgEl.textContent = "—"; }
+  }
+  setTimeout(() => {
+    const btn = document.getElementById("assess-complete-btn");
+    if (btn) btn.onclick = completeCleanAssessment;
+  }, 300);
+}
+
+// Without this the panel has no way out and the app is stranded behind the
+// overlay - the same trap completeBatchAssessment exists to avoid. Routes to
+// DETAIL, where the before/after write-up actually lives.
+async function completeCleanAssessment() {
+  formData._cleanMode = false;
+  try {
+    _routeToEditAfterSave = false;
+    await submitForm();
+  } catch (e) {
+    console.warn("[clean] submitForm after complete:", e);
+    try { renderForm(); } catch (e2) {}
+  }
+  if (window.RobograderScan && window.RobograderScan.dismiss) {
+    try { window.RobograderScan.dismiss(); } catch (e) {}
+  }
+}
+
 async function submitCleanAssessment() {
   if (assessing || formData._batchMode || formData._cleanMode) return;
   if (!_cleanUnlocked(formData)) {
@@ -12579,12 +12780,13 @@ async function submitCleanAssessment() {
   // (decision 1). The user is buying a verdict, not hoping for a bump.
   if (!(await _batchConfirm(
     "Re-grades the book from your ten after-cleaning photos and compares it to the Deep result. Cost: " +
-    CLEAN_CREDIT_COST + " credits. There is no refund if the grade does not improve — you are paying for the measurement."
+    CLEAN_CREDIT_COST + " credits. There is no refund if the grade does not improve — you are paying for the measurement.",
+    { title: "Run Post-Cleaning Assessment?", cta: "RUN POST-CLEANING" }
   ))) return;
 
   _capturePrevAssessResult();
   formData._cleanMode = true;
-  let unwatch = null, tracker = null;
+  let unwatch = null, tracker = null, _lastCleanStage = null;
   try {
     // Freeze Before on the FIRST run only.
     if (!formData.cleanBeforeResult) formData.cleanBeforeResult = _cleanBeforeSnapshot(formData);
@@ -12608,6 +12810,7 @@ async function submitCleanAssessment() {
     formData.cleanAfterImages = urls;
 
     unwatch = _cleanWatchStage(stage => {
+      _lastCleanStage = stage;
       if (stage === "main") setStep("clean-main", "running");
       else if (stage === "deep") { setStep("clean-main", "done"); setStep("clean-deep", "running"); }
       else if (stage === "comparing") { setStep("clean-deep", "done"); setStep("clean-compare", "running"); }
@@ -12622,6 +12825,7 @@ async function submitCleanAssessment() {
 
     const res = await _batchApi("/api/assess_clean_run", {
       method: "POST",
+      timeoutMs: 200000,
       body: {
         itemId: formData.id,
         runNumber: (formData.cleanRuns || 0) + 1,
@@ -12675,10 +12879,17 @@ async function submitCleanAssessment() {
     // that actually carries the field; the explicit sync above is then
     // redundant and applyServerCredits does it.
     onAssessmentSuccess(res);
+
+    // v6.64: AND SHOW IT. Nothing mounted a results panel for this pass, so the
+    // run finished, the credits were spent, the fields were written - and the
+    // user was left looking at a progress overlay with no COMPLETE button and
+    // no way out. Spec: "[ ] Results panel", open since 5.64.
+    mountCleanResults(formData.cleanBeforeResult, A, formData.cleanComparison);
   } catch (e) {
-    console.error("[clean] run failed:", e);
+    console.error("[clean] run failed:", e, "last stage seen:", _lastCleanStage);
     setStep("clean-regrade", "failed");
-    await appAlert("The cleaning comparison did not finish. " + ((e && e.message) || "") +
+    const _where = _lastCleanStage ? " It stopped after the “" + _lastCleanStage + "” step." : "";
+    await appAlert("The cleaning comparison did not finish." + _where + " " + ((e && e.message) || "") +
       " Any credits already spent on a completed pass are not returned — the grading was done.");
   } finally {
     if (unwatch) { try { unwatch(); } catch (e) {} }
