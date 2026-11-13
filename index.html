@@ -11578,6 +11578,96 @@ function conciergeGate(title, issue) {
   out.reason = out.eligible ? "eligible" : "below-tier";
   return out;
 }
+
+// ── CONCIERGE OFFER (v6.66, spec steps 4-6) ───────────────────────────────
+// v6.52 shipped steps 1-3 as INSTRUMENT ONLY: evaluate the gate, log it, act on
+// nothing. The two questions it was there to answer have now been answered on a
+// real capture - Haiku named Avengers #2 off one cover shot and it cleared the
+// bar - so this is the rest.
+//
+//   4. Tier >= 3 -> branded modal naming the book.
+//   5. Accept -> the walkthrough extends from 4 slots to 10 and the user shoots
+//      once, continuously; Main then Deep run on finish for 2 credits.
+//   6. Decline -> the queue is untouched and nothing is lost.
+//
+// TWO THINGS THE COPY MUST NOT DO (spec, and BRAND_MESSAGING_RULES):
+//   - it must never assert a VALUE. Haiku misreading a cover and offering the
+//     upsell on a common book is a mild annoyance; quoting a dollar figure for
+//     a different issue is a complaint. It says the book is worth looking at
+//     closely, not what it is worth.
+//   - no "AI", "AI-powered", "machine learning", "neural", or any variant.
+const CONCIERGE_COST = 2;
+
+// Armed by an accepted offer; read by _cameraChainNext to carry the walkthrough
+// on past the main four, and by runCropperSequence's caller to clear it. Lives
+// beside _cleanCapture and behaves the same way, for the same reason.
+let _conciergeCapture = false;
+
+function conciergeOffer(gate) {
+  return new Promise(function (resolve) {
+    const prev = document.getElementById("rg-concierge-overlay");
+    if (prev) prev.remove();
+    const ov = document.createElement("div");
+    ov.id = "rg-concierge-overlay";
+    // Above the camera modal: the offer is made DURING the walkthrough, at the
+    // pause the slab check already creates, so it has to sit over the viewfinder.
+    ov.style.cssText = "position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.72);padding:24px;padding-top:max(24px,env(safe-area-inset-top));padding-bottom:max(24px,env(safe-area-inset-bottom));opacity:0;transition:opacity .15s ease;";
+    const card = document.createElement("div");
+    card.style.cssText = 'width:100%;max-width:340px;background:#141210;border:1.5px solid #6a4a10;border-radius:18px;overflow:hidden;box-shadow:0 12px 44px rgba(0,0,0,0.6);transform:translateY(8px) scale(.98);transition:transform .18s cubic-bezier(.2,.8,.2,1);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;';
+    const book = [ gate && gate.title, gate && gate.issue ? "#" + gate.issue : "" ].filter(Boolean).join(" ");
+    card.innerHTML = '<div style="padding:24px 24px 20px;text-align:center;">'
+      + '<img src="assets/Robograder_Gift.webp" alt="Robograder" style="width:88px;height:auto;object-fit:contain;margin:0 auto 10px;display:block">'
+      + '<div style="font-size:16px;font-weight:800;color:#f0c860;margin-bottom:6px">Worth a closer look</div>'
+      + (book ? '<div style="font-size:13px;font-weight:700;color:#fff;letter-spacing:0.4px;margin-bottom:8px">' + esc(book) + '</div>' : '')
+      + '<div style="font-size:13.5px;line-height:1.6;color:#e8d9b8;margin-bottom:20px">This one looks like a book worth grading closely. Take 10 photos instead of 4 and Robograder will run both a Main and a Deep assessment in one go, for ' + CONCIERGE_COST + ' credits.</div>'
+      + '<button id="rg-conc-go" class="rg-btn rg-btn-branded rg-btn-md" style="width:100%;margin-bottom:8px">SHOOT 10 &amp; GO DEEP</button>'
+      + '<button id="rg-conc-no" class="rg-btn rg-btn-secondary rg-btn-md" style="width:100%">Just the 4 photos</button>'
+      + '</div>';
+    ov.appendChild(card);
+    document.body.appendChild(ov);
+    requestAnimationFrame(function () { ov.style.opacity = "1"; card.style.transform = "translateY(0) scale(1)"; });
+    let done = false;
+    const finish = v => {
+      if (done) return;
+      done = true;
+      ov.style.opacity = "0";
+      setTimeout(function () { if (ov.parentNode) ov.parentNode.removeChild(ov); }, 160);
+      console.log("[concierge] offer " + (v ? "ACCEPTED" : "declined"));
+      resolve(v);
+    };
+    card.querySelector("#rg-conc-go").onclick = function () { finish(true); };
+    card.querySelector("#rg-conc-no").onclick = function () { finish(false); };
+    // Tapping the backdrop is a DECLINE, not a dismissal with no answer: the
+    // walkthrough is paused waiting on this and must not be left hanging.
+    ov.addEventListener("click", function (e) { if (e.target === ov) finish(false); });
+  });
+}
+
+// Should the offer be made at all? Everything here is a reason for SILENCE,
+// which is the default and costs nothing.
+function conciergeShouldOffer(slab) {
+  if (!CONCIERGE_MIN_TIER) return false;
+  if (slab && (slab.detected || slab.isCard)) return false;   // a slab has a grade on the label
+  if (formData.type === "card" || formData._isCard) return false;
+  if (formData.deepAssessmentRan || formData.highGradeTier) return false;  // already been done
+  if ((formData.cornerImages || []).some(Boolean)) return false;           // already has Deep photos
+  if (window._userCredits !== undefined && window._userCredits < CONCIERGE_COST) return false;
+  const g = formData._conciergeGate;
+  if (!g || !g.eligible) return false;
+  return true;
+}
+
+// The ten slots, in the order the walkthrough shoots them, judged against the
+// BOOK'S OWN arrays - the opposite of Post-Cleaning, which judges against
+// cleanAfterImages because the book's own are all already there.
+function _conciergeEmptySlots(kind) {
+  if (kind === "corner") {
+    const c = formData.cornerImages || [];
+    return [ 0, 1, 2, 3 ].filter(i => !c[i]);
+  }
+  const v = formData.interiorCoverImages || [];
+  return [ 0, 1 ].filter(i => !v[i]);
+}
 // ── end concierge gate ────────────────────────────────────────────────────
 
 function _publicEligibleOwnership(own) {
@@ -15327,6 +15417,23 @@ async function _completeAssessmentInner() {
   console.log("[complete] submitForm done in", Date.now() - _tComplete, "ms");
   if (window.RobograderScan && window.RobograderScan.dismiss) {
     window.RobograderScan.dismiss();
+  }
+  // v6.66, concierge step 5, second half. The user bought Main AND Deep in one
+  // decision, so the Deep follows on its own the moment the Main is finished
+  // and saved. Flag off FIRST - whatever happens next, this must never fire
+  // twice, and a failed Deep leaves the ordinary RUN DEEP button exactly where
+  // it always is.
+  if (formData._conciergeRun) {
+    formData._conciergeRun = false;
+    const _c = (formData.cornerImages || []).filter(Boolean).length;
+    if (_c >= 4) {
+      console.log("[concierge] Main complete - running the Deep");
+      setTimeout(function () {
+        try { assessHighGrade(); } catch (e) { console.warn("[concierge] Deep failed to start:", e); }
+      }, 400);
+    } else {
+      console.log("[concierge] no corner macros at Main completion - Deep not started");
+    }
   }
 }
 
@@ -19926,6 +20033,18 @@ async function cameraCapture() {
       console.log("[camera] CARD detected — guided card flow; remaining queue:", _cameraState.queue);
     } else {
       console.log("[camera] not a slab (or detect unavailable) — full walkthrough");
+      // v6.66, concierge step 4-5. Offered HERE and nowhere else: the slab check
+      // has already paused the walkthrough at this exact point, so the question
+      // costs no extra interruption, and it is asked BEFORE photos 2, 3 and 4 -
+      // which is the whole point. Asking after the Main would mean a second
+      // shooting session and a second payment decision, the friction this is
+      // meant to remove.
+      try {
+        if (conciergeShouldOffer(_slab) && await conciergeOffer(formData._conciergeGate)) {
+          _conciergeCapture = true;
+          formData._conciergeRun = true;
+        }
+      } catch (e) { console.warn("[concierge] offer threw:", e); }
     }
     if (!_cameraState) return;
   }
@@ -20107,7 +20226,14 @@ function _cameraChainNext() {
   // interiorCover. Emptiness is judged against cleanAfterImages, not against the
   // book's own photos, which are all already present.
   let _k = _cameraState.kind, _nextKind = null, nextSlots = [];
-  if (_cleanCapture) {
+  if (_conciergeCapture) {
+    // v6.66: the accepted offer turns the 4-slot Main walkthrough into the full
+    // 10, in one continuous session. Same chain Post-Cleaning uses; the only
+    // difference is which arrays "empty" is judged against.
+    if (_k === "main") { _nextKind = "corner"; nextSlots = _conciergeEmptySlots("corner"); }
+    else if (_k === "corner" && !formData.labelDetected) { _nextKind = "interiorCover"; nextSlots = _conciergeEmptySlots("interiorCover"); }
+    if (!_nextKind || !nextSlots.length) return false;
+  } else if (_cleanCapture) {
     if (_k === "main") { _nextKind = "corner"; nextSlots = _cleanEmptySlots("corner"); }
     else if (_k === "corner" && !formData.labelDetected) { _nextKind = "interiorCover"; nextSlots = _cleanEmptySlots("interiorCover"); }
     if (!_nextKind || !nextSlots.length) return false;
@@ -20163,6 +20289,12 @@ async function cameraFinish() {
     _cleanCapture = false;
     try { renderForm(); } catch (e) {}
   }
+  // v6.66: the concierge capture is over. Disarmed AFTER the replay for the
+  // same reason the cleaning flag is - runCropperSequence reads nothing from
+  // it, but _cameraChainNext does, and a flag left armed would carry the next
+  // ordinary Main walkthrough into the corner macros.
+  const _wasConcierge = _conciergeCapture;
+  if (_conciergeCapture) _conciergeCapture = false;
   // v6.33: land on the photos that were just taken. The camera closes straight
   // back into a 10,000px form at whatever scroll offset it was opened from,
   // which after a Deep put the user somewhere unrelated to the six photos they
@@ -20172,6 +20304,26 @@ async function cameraFinish() {
     const _lastKind = _batches.length ? _batches[_batches.length - 1].kind : null;
     _scrollToCaptureSection(_wasClean ? "clean" : _lastKind);
   } catch (e) { /* never let a scroll break the capture */ }
+
+  // v6.66, concierge step 5: the user already agreed to 2 credits in the modal,
+  // so there is no second tap. Main starts itself; the Deep follows from
+  // _completeAssessmentInner when the Main's COMPLETE is tapped, which keeps
+  // the whole thing on the one pair of result panels the user expects.
+  if (_wasConcierge && formData._conciergeRun) {
+    const _m = (formData.images || []).filter(Boolean).length;
+    const _c = (formData.cornerImages || []).filter(Boolean).length;
+    if (_m >= 4 && _c >= 4) {
+      console.log("[concierge] capture complete - starting Main, Deep to follow");
+      try { await assessGrade(); }
+      catch (e) { console.warn("[concierge] Main failed to start:", e); formData._conciergeRun = false; }
+    } else {
+      // Shot short. Nothing is charged and nothing is lost - the ordinary
+      // buttons are all still there - but the chained Deep must not fire off a
+      // partial set later, so the flag comes off.
+      console.log("[concierge] capture incomplete (" + _m + " main, " + _c + " corner) - standing down");
+      formData._conciergeRun = false;
+    }
+  }
 }
 
 // Where a finished capture of each kind should leave the user. Shares the

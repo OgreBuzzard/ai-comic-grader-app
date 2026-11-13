@@ -86,10 +86,45 @@ ok('identity is returned to the client', /title: scTitle, issue: scIssue/.test(a
 ok('identity is logged to the timing row', /idOk: !!\(scTitle && scIssue\)/.test(assess),
   'idOk is the number that decides whether the rest of the flow gets built');
 
-// ── step 1 is instrumentation ONLY ────────────────────────────────────────
+// -- steps 4-6: the offer, the extended capture, the chained run (v6.66) ---
+// Step 1 was instrumentation only and said so. This is the rest. What must not
+// regress is the two things the spec is emphatic about: silence is still the
+// default, and the modal never asserts a VALUE.
 ok('the gate is evaluated at capture', /const _cg = conciergeGate\(r && r\.title, r && r\.issue\);/.test(html));
-ok('no concierge modal exists yet', !/CONCIERGE_MODAL|showConciergeOffer/.test(html),
-  'step 1 ships instrumentation only — the modal comes after the logs say it is worth building');
+ok('the offer exists', html.includes('function conciergeOffer('));
+ok('it is offered at the slab-check pause, before photos 2-4',
+  /conciergeShouldOffer\(_slab\) && await conciergeOffer\(formData\._conciergeGate\)/.test(html));
+
+{
+  const modal = html.slice(html.indexOf('function conciergeOffer('),
+                           html.indexOf('function conciergeShouldOffer('));
+  ok('the modal names the book', modal.includes('gate && gate.title'));
+  ok('the modal NEVER quotes a value', !/matchFMV|fmvTierOf|tier/i.test(modal),
+    'quoting a dollar figure for a misread issue is a complaint, not an annoyance');
+  ok('no banned brand words', !/\bAI\b|artificial intelligence|machine learning|neural/i.test(modal));
+  ok('the cost is stated before the tap', /CONCIERGE_COST \+ ' credits/.test(modal));
+  ok('dismissing the backdrop is a decline, not a hang', modal.includes('if (e.target === ov) finish(false)'));
+}
+
+{
+  const guard = html.slice(html.indexOf('function conciergeShouldOffer('),
+                           html.indexOf('function _conciergeEmptySlots('));
+  ok('a slab or a card is never offered', guard.includes('slab.detected || slab.isCard'));
+  ok('a book that already has Deep photos is never offered', guard.includes('formData.cornerImages'));
+  ok('it is not offered without the credits for it', guard.includes('< CONCIERGE_COST'));
+  ok('an ineligible gate is silent', guard.includes('if (!g || !g.eligible) return false;'));
+}
+
+ok('accepting extends the walkthrough to the full ten',
+  /if \(_conciergeCapture\) \{[\s\S]{0,500}_nextKind = "corner"[\s\S]{0,400}_nextKind = "interiorCover"/.test(html));
+ok('the flag is disarmed when the capture ends',
+  html.includes('const _wasConcierge = _conciergeCapture;') && html.includes('if (_conciergeCapture) _conciergeCapture = false;'));
+ok('Main starts itself only on a COMPLETE set',
+  /if \(_m >= 4 && _c >= 4\)[\s\S]{0,300}await assessGrade\(\)/.test(html));
+ok('a short capture stands the run down rather than charging for a partial set',
+  /standing down[\s\S]{0,120}_conciergeRun = false/.test(html));
+ok('the Deep follows the Main automatically',
+  /if \(formData\._conciergeRun\) \{[\s\S]{0,200}_conciergeRun = false;[\s\S]{0,400}assessHighGrade\(\)/.test(html));
 
 console.log('\n  ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
