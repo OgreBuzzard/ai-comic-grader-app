@@ -1002,6 +1002,17 @@
   // the animation with the real animated values, then transforms the
   // ASSESSING button into COMPLETE.
   function buildResultsPlaceholder(kind) {
+    // v6.65: a caller may hand in its own placeholder. Post-Cleaning does, so
+    // its BEFORE/AFTER layout is on screen from the first frame rather than the
+    // standard RG | PG | Page Quality row being drawn and then swapped out at
+    // the end. CONSUMED on read, so it can never leak into the next run.
+    try {
+      if (typeof window !== 'undefined' && window._cleanPanelHtml) {
+        var _h = window._cleanPanelHtml;
+        window._cleanPanelHtml = null;
+        return _h;
+      }
+    } catch (e) {}
     if (kind === 'restoration') {
       // The UV Check does not produce a score — show an empty conclusion box
       // (styled like the final COLOR-TOUCH box) + ASSESSING button.

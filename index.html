@@ -3205,14 +3205,30 @@ window.fmvPrintingSlug = function fmvPrintingSlug(printing) {
 // Nothing here blocks the render: the box draws, then this fills in or doesn't.
 const _ebayAskCache = Object.create(null);   // query -> result | null | "pending"
 
+// v6.65, Matt's styling pass. Two things:
+//
+//   THE TWO NUMBERS ARE NOT THE SAME KIND OF NUMBER and must not be the same
+//   colour. FMV is a soft, general figure off a price curve - gold, the app's
+//   own value colour. eBay Asking is live, mostly good news, and not to be
+//   taken as settled, because these are ASKS and not sales - blue, the same
+//   family as the PG badge, which reads as informational rather than as a
+//   verdict. The two headers stay white: the labels match, the values do not.
+//
+//   "MEDIAN" IS OUT. Matt: "most people don't know what it means and it looks
+//   weird there." The caveat is still carried, just in words everyone has:
+//   the count moves under the value as "from 9 listings", centred, in the
+//   value's own colour at the small size. The number never ships without it.
+const EBAY_INK = "#6fb3e8";
+const FMV_INK  = "#f0c860";
+
 function _ebayAsksRender(r) {
   if (!r || !r.n || !r.median || r.suspect) return "";
   const hdr = "font-size:12px;font-weight:800;letter-spacing:1.5px;color:#fff;text-transform:uppercase;text-align:center;line-height:1.15";
   const money = v => "$" + Math.round(v).toLocaleString();
-  const sub = `${r.n} listed${r.widened ? " \u00b7 \u00b12 grades" : ""}`;
+  const sub = "from " + r.n + " listing" + (r.n === 1 ? "" : "s") + (r.widened ? ", \u00b12 grades" : "");
   return `<div style="${hdr};margin-top:14px">eBay Asking</div>
-    <div style="color:#fff;font-weight:800;font-size:17px;line-height:1;letter-spacing:0.01em;white-space:nowrap;margin-top:5px">${money(r.median)} median</div>
-    <div style="font-size:10px;color:#8a7a6a;margin-top:4px;letter-spacing:0.04em">${sub}</div>`;
+    <div style="color:${EBAY_INK};font-weight:800;font-size:17px;line-height:1;letter-spacing:0.01em;white-space:nowrap;margin-top:5px;text-align:center">${money(r.median)}</div>
+    <div style="font-size:10px;color:${EBAY_INK};opacity:0.8;margin-top:4px;letter-spacing:0.04em;text-align:center">${sub}</div>`;
 }
 
 // v6.64: this SAYS WHAT IT DID on every path. The first build printed nothing
@@ -3280,7 +3296,8 @@ function _ebayAsksQuery(item, grade) {
 
 function buildPredictedGradeBox(badgesHtml, pqHtml, fmvMatch, showDisclaimer, ebayQuery) {
   const hdr = "font-size:12px;font-weight:800;letter-spacing:1.5px;color:#fff;text-transform:uppercase;text-align:center;line-height:1.15";
-  const fmvBlock = fmvMatch ? `<div style="${hdr};margin-top:16px">FMV</div><div style="color:#fff;font-weight:800;font-size:20px;line-height:1;letter-spacing:0.01em;white-space:nowrap;margin-top:6px">${formatFMVCompact(fmvMatch)}</div>` : "";
+  // v6.65: gold, not white - see EBAY_INK / FMV_INK above. The header stays white.
+  const fmvBlock = fmvMatch ? `<div style="${hdr};margin-top:16px">FMV</div><div style="color:${FMV_INK};font-weight:800;font-size:20px;line-height:1;letter-spacing:0.01em;white-space:nowrap;margin-top:6px;text-align:center">${formatFMVCompact(fmvMatch)}</div>` : "";
   const disc = showDisclaimer ? `<div style="font-size:10px;color:#6a5a4a;text-align:center;line-height:1.4;margin-top:14px;font-style:italic">Independent prediction. Robograder is not affiliated with any encapsulation grading or price guide service.</div>` : "";
   // v6.33: full width, not max-width:66%. The box was a fixed fraction of the
   // column, so a long page-quality string ("Cream to Off-White") had nowhere
@@ -7150,7 +7167,16 @@ function showDetail(id) {
   // `if (selected.images)` block below, which is already within this panel.
   html += renderDetailTabs(selected);
   html += tabPanelOpen(selected, "photos");
-  if (selected.images?.length > 0) {
+  // v6.65: a book that has been graded before and after a cleaning shows BOTH
+  // sets, paired, instead of the single set the rest of the app draws. Matt:
+  // "The Photos tab should look like it does in Edit view, with all 10 images
+  // stacked on both the left and the right, with the words BEFORE and AFTER at
+  // the top." The ordinary image blocks are skipped for these books - the ten
+  // Before photos are the left column, so drawing them again above it is just
+  // the same pictures twice.
+  const _postCleaned = isPostCleaned(selected);
+  if (_postCleaned) html += renderCleanPhotoColumns(selected);
+  if (!_postCleaned && selected.images?.length > 0) {
     const imgs = selected.images;
     const imgAttrs = `loading="eager" decoding="async" onload="window.forceImgReflow(this)"`;
     const integrityHtml = buildIntegrityPill(selected, false);
@@ -7229,7 +7255,7 @@ function showDetail(id) {
     }
     html += `</div>`;
   }
-  if (showDeepTier(selected) || (selected.cornerImages || []).some(u => u)) {
+  if (!_postCleaned && (showDeepTier(selected) || (selected.cornerImages || []).some(u => u))) {
     const ci = selected.cornerImages || [];
     const hasAnyCorner = ci.some(u => u);
     const imgAttrs = `loading="lazy" decoding="async" onload="window.forceImgReflow(this)"`;
@@ -7337,8 +7363,14 @@ function showDetail(id) {
   // v6.49: the results of a run that has already happened. The card above is
   // the way IN; this is the thing the two credits bought, and until now it was
   // stored and never drawn.
-  html += renderPostCleaningResults(selected);
-  html += renderPostCleaningPhotos(selected);
+  // v6.65: superseded in Detail by the AFTER container and the paired photo
+  // columns. Still rendered for a book the new path does not cover (a partial
+  // record from before 6.64, where one of the two results is missing), and
+  // still used by the Edit view, which has no tabs to put containers in.
+  if (!_postCleaned) {
+    html += renderPostCleaningResults(selected);
+    html += renderPostCleaningPhotos(selected);
+  }
   if ((isRestorationCheckComplete(selected) || selected.restorationCheckTier || selected.restorationUnlocked) && Array.isArray(selected.restorationImages) && selected.restorationImages.some(Boolean)) {
     html += `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed #7a4ba8">\n        <div style="font-size:11px;color:#c8a8e8;font-weight:700;letter-spacing:2px;margin-bottom:8px">UV CHECK</div>\n        ${renderRestorationSlotGrid(selected.restorationImages, {editable: false, comicId: selected.id})}\n      </div>`;
   }
@@ -7392,8 +7424,18 @@ function showDetail(id) {
   // v6.29: the image half ends here. Everything below is the assessment.
   html += `</div>`;                       // close data-tab-panel="photos"
   html += tabPanelOpen(selected, "assessment");
-  if (selected.roboGrade || (selected.type === "card" && selected.cardData && selected.cardData.robograde)) {
-    html += `<div style="margin-top:16px">${selected.type === "card" ? buildCardRoboDisplay(selected) : buildRoboGradeDisplay(selected.roboGrade, selected)}</div>`;
+  // v6.65: AFTER on top, BEFORE underneath, each in its own container. The
+  // item's own fields ARE the After pass (spec decision 3), so everything
+  // below this point is pointed at a BEFORE-shaped shim and the After gets its
+  // own block above. `_aSrc` is `selected` for every ordinary book.
+  if (_postCleaned) {
+    html += renderCleanAfterContainer(selected);
+    html += `<div style="margin-top:18px;border:1.5px solid #3a4433;border-radius:14px;padding:14px;background:#0f120e">`;
+    html += _cleanBand("BEFORE", "The assessment this book carried before it was cleaned", "#9aa894");
+  }
+  const _aSrc = _postCleaned ? _cleanBeforeItem(selected) : selected;
+  if (_aSrc.roboGrade || (selected.type === "card" && selected.cardData && selected.cardData.robograde)) {
+    html += `<div style="margin-top:16px">${selected.type === "card" ? buildCardRoboDisplay(selected) : buildRoboGradeDisplay(_aSrc.roboGrade, _aSrc)}</div>`;
   }
   if (selected.type === "card") {
     const _cn = (selected.cardData && (selected.cardData.graderNotes || selected.cardData.reasoning)) || "";
@@ -7406,24 +7448,24 @@ function showDetail(id) {
   const cardPsaBadge = _cardPsaStr ? buildBadge(_cardPsaDisp, "psa-predicted", "", false) : null;
   const cgcOfficialBadge = (!_isCardItem && selected.cgcGrade) ? buildBadge(normalizeGrade(selected.cgcGrade), "cgc-official", detectDesignation(selected), false) : null;
   const psaOfficialBadge = (!_isCardItem && selected.psaGrade) ? buildBadge(normalizeGrade(selected.psaGrade), "psa-official", selected.psaDesignation || "universal", false) : null;
-  const predictedGradeValue = _isCardItem ? null : aiCgcGrade(selected);
-  const _detailRestored = !!(selected.restorationHighConfidence || (selected.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(selected.cgcNotes)));
+  const predictedGradeValue = _isCardItem ? null : aiCgcGrade(_aSrc);
+  const _detailRestored = !!(_aSrc.restorationHighConfidence || (selected.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(selected.cgcNotes)));
   const predictedBadge = predictedGradeValue ? buildBadge(normalizeGrade(predictedGradeValue), "predicted", "", false, isFullAssessmentComplete(selected), isDeepAssessmentComplete(selected), _detailRestored, !!selected.couponQualified, !!selected.gradeAtCeiling) : null;
   const predictionBoxes = [ cgcOfficialBadge, psaOfficialBadge, cardPsaBadge, predictedBadge ].filter(Boolean);
   const isGraded = !_isCardItem && !!(selected.cgcGrade || selected.psaGrade);
   const hasInteriorPhoto = !!(selected.images && selected.images[2]);
-  const showPQ = !_isCardItem && selected.pageQuality && (isGraded || hasInteriorPhoto);
+  const showPQ = !_isCardItem && !_postCleaned && _aSrc.pageQuality && (isGraded || hasInteriorPhoto);
   if (predictionBoxes.length > 0 || showPQ) {
     // S18/S20: index-driven FMV. Uses the official grade if graded, else predicted.
     const _fmvGrade = _isCardItem ? _cardPsaStr : (selected.cgcGrade || selected.psaGrade || predictedGradeValue);
     const _fmvMatch = _isCardItem
       ? ((window.matchCardFMV && _fmvGrade && selected.cardData) ? window.matchCardFMV(selected.cardData.cardIdentification, _fmvGrade) : null)
-      : ((typeof window.matchFMV === "function" && _fmvGrade && !_fmvWithheld(selected)) ? window.matchFMV(selected.title, selected.issue, _fmvGrade, selected.printing, extractYearFromIssueDate(selected.issueDate)) : null);
-    const _pqHtml = showPQ ? `<div style="display:flex;justify-content:center">${buildPQBox(selected.pageQuality)}</div>` : "";
+      : ((typeof window.matchFMV === "function" && _fmvGrade && !_fmvWithheld(_aSrc)) ? window.matchFMV(selected.title, selected.issue, _fmvGrade, selected.printing, extractYearFromIssueDate(selected.issueDate)) : null);
+    const _pqHtml = showPQ ? `<div style="display:flex;justify-content:center">${buildPQBox(_aSrc.pageQuality)}</div>` : "";
     // v6.63: eBay asking prices, graded listings only, beneath FMV. Uses the
     // official grade when the book is slabbed, else the predicted grade - the
     // same grade FMV is read at, so the two numbers describe the same book.
-    const _ebayQ = _isCardItem ? null : _ebayAsksQuery(selected, _fmvGrade);
+    const _ebayQ = (_isCardItem || _postCleaned) ? null : _ebayAsksQuery(selected, _fmvGrade);
     html += buildPredictedGradeBox(predictionBoxes.join(""), _pqHtml, _fmvMatch, !!(predictedBadge || cardPsaBadge), _ebayQ);
   }
   // S20: "Enhanceable?: Yes/No" box hidden per request — it's an odd inclusion,
@@ -7541,6 +7583,7 @@ function showDetail(id) {
   // v6.31: and the map closes the assessment half - it is the index to
   // everything above it.
   html += renderAssessmentMap(selected);
+  if (_postCleaned) html += `</div>`;     // close the BEFORE container
   html += `</div>`;                       // close data-tab-panel="assessment"
   html += tabWrapClose();                 // close the folder sheet
   // Below the panels and always visible, whichever tab is showing: acquisition,
@@ -12603,6 +12646,10 @@ function _cleanBeforeSnapshot(item) {
     // against nothing and reporting no movement at all.
     grade: item.predictedGrade || item.assessedCGCGrade || null,
     roboGrade: rg,
+    // v6.65: frozen with the rest of Before, for the same reason - the Detail
+    // view shows a Photograder panel on each side, and the item's own
+    // photograder is overwritten by the After pass.
+    photograder: item.photograder || rg.photograder || null,
     pageQuality: item.pageQuality || rg.pageQuality || "",
     defects: Array.isArray(rg.defects) ? rg.defects : [],
     restorationFlag: !!item.restorationFlag,
@@ -12661,51 +12708,87 @@ function _cleanBadge(o) {
     + `<div style="position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:9px;color:${o.ink};opacity:0.75;letter-spacing:0.8px">${o.label}</div></div>`;
 }
 
+// v6.65, Matt, looking at a real run: "there clearly isn't enough space."
+// Stacking each pair vertically made the block 134px tall before the strip and
+// the button, which pushed COMPLETE down and shrank it. The pairs go back
+// SIDE BY SIDE inside each column - Before on the left, After on the right -
+// which is half the height and leaves COMPLETE where it sits on every other
+// results panel, at its normal size.
+//
+//      BEFORE          AFTER          BEFORE / AFTER: white, 13px (half again
+//   [RG][PG]  |  [RG][PG]             bigger than the 9px box labels), centred
+//            COMPLETE                 over the pair they belong to.
+//
+// Page quality is not drawn at all (spec decision 6): a cleaning does not move
+// it, so there is nothing to compare.
+function _cleanPanelMarkup(before, o) {
+  o = o || {};
+  const B = before || {};
+  const resto = !!o.restoration;
+  const rgBefore = _pcV3(B.roboGrade);
+  const pgBefore = B.grade ? fmtGrade(parseFloat(B.grade)) : null;
+
+  // Restoration turns the AFTER pair purple, the app's existing visual language
+  // for it (spec decision 4). Before is NOT recoloured: the claim is "detected
+  // now, not detected before", and recolouring Before would overstate it.
+  const aRGBg  = resto ? "#241036" : "#0f1a05";
+  const aRGInk = resto ? "#d9b6ff" : "#b8d820";
+  const aPGBg  = resto ? "#3a1a56" : "#2a5a8a";
+  const aPGInk = resto ? "#ecd9ff" : "#e0f0ff";
+
+  const hdr = "font-size:13px;font-weight:800;letter-spacing:1.6px;color:#ffffff;text-align:center;margin-bottom:5px;line-height:1";
+  const col = (label, pair) => `<div style="display:flex;flex-direction:column;align-items:center">`
+    + `<div style="${hdr}">${label}</div><div style="display:flex;gap:6px">${pair}</div></div>`;
+
+  const beforePair =
+    _cleanBadge({ bg: _CLEAN_MUTED.bgRG, ink: _CLEAN_MUTED.ink,   label: "RG", val: rgBefore != null ? rgBefore : "—", border: _CLEAN_MUTED.border })
+    + _cleanBadge({ bg: _CLEAN_MUTED.bgPG, ink: _CLEAN_MUTED.inkPG, label: "PG", val: pgBefore != null ? pgBefore : "—" });
+  const afterPair =
+    _cleanBadge({ bg: aRGBg, ink: aRGInk, label: "RG", val: "0",   id: "clean-val-rg", border: resto ? "1.5px solid #6a3a9a" : "1.5px solid #3a5010" })
+    + _cleanBadge({ bg: aPGBg, ink: aPGInk, label: "PG", val: "0.0", id: "clean-val-pg" });
+
+  const rule = `<div style="width:1px;align-self:stretch;margin:18px 12px 0;background:#3a4433"></div>`;
+  // The only thing that makes this panel taller, and only in this case.
+  const strip = resto ? `<div style="max-width:300px;background:#241036;border:1px solid #6a3a9a;border-radius:8px;padding:7px 10px;font-size:10.5px;line-height:1.4;color:#ecd9ff;text-align:center">Restoration was detected on the after photos and not on the before photos. That is a difference between two assessments, not a statement about what was done to the book.</div>` : "";
+  const btn = o.done
+    ? `<button id="assess-complete-btn" style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#3a9ee0;color:#fff;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">COMPLETE</button>`
+    : `<button id="assess-complete-btn" disabled style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">ASSESSING…</button>`;
+
+  return `
+    <div id="clean-result-panel" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">
+      <div style="display:flex;justify-content:center;align-items:flex-start;flex-wrap:nowrap;">${col("BEFORE", beforePair)}${rule}${col("AFTER", afterPair)}</div>
+      ${strip}
+      ${btn}
+    </div>`;
+}
+
+// The panel is already on screen when this runs - scan-animation puts
+// _cleanPanelMarkup up as its placeholder the moment the shell mounts, so the
+// Before grades are visible from the first frame and the After pair sits at
+// 0 / 0.0 throughout the run. All this does is animate the After pair, swap
+// ASSESSING for COMPLETE, and re-render ONLY if restoration turned up (which
+// changes the colours) or the placeholder never made it up.
 function mountCleanResults(before, after, comparison) {
   if (!window.RobograderScan || !window.RobograderScan.slideResultsIntoPanel) {
     console.warn("[clean] scan-animation module not loaded - no results panel");
     return;
   }
-  const B = before || {}, A = after || {}, C = comparison || {};
+  const A = after || {}, C = comparison || {};
   const resto = !!C.restorationAppeared;
+  const inPlace = !!document.getElementById("clean-val-rg");
 
-  const rgBefore = _pcV3(B.roboGrade);
-  const rgAfter  = _pcV3(A.roboGrade);
-  const pgBefore = B.grade ? fmtGrade(parseFloat(B.grade)) : null;
-  const pgAfterN = A.grade != null ? parseFloat(A.grade) : null;
-
-  // Restoration turns the AFTER pair purple, the app's existing visual language
-  // for it (spec decision 4). Before stays as it was - the claim is "detected
-  // now, not detected before", and recolouring Before would overstate it.
-  const afterRGBg = resto ? "#241036" : "#0f1a05";
-  const afterRGInk = resto ? "#d9b6ff" : "#b8d820";
-  const afterPGBg = resto ? "#3a1a56" : "#2a5a8a";
-  const afterPGInk = resto ? "#ecd9ff" : "#e0f0ff";
-
-  const colHdr = "font-size:9px;font-weight:800;letter-spacing:1.6px;text-align:center;margin-bottom:6px;";
-  const beforeCol = `<div style="display:flex;flex-direction:column;align-items:center">`
-    + `<div style="${colHdr}color:${_CLEAN_MUTED.ink}">BEFORE</div>`
-    + `<div style="display:flex;flex-direction:column;gap:6px">`
-    + _cleanBadge({ bg: _CLEAN_MUTED.bgRG, ink: _CLEAN_MUTED.ink,  label: "RG", val: rgBefore != null ? rgBefore : "—", border: _CLEAN_MUTED.border })
-    + _cleanBadge({ bg: _CLEAN_MUTED.bgPG, ink: _CLEAN_MUTED.inkPG, label: "PG", val: pgBefore != null ? pgBefore : "—" })
-    + `</div></div>`;
-  const afterCol = `<div style="display:flex;flex-direction:column;align-items:center">`
-    + `<div style="${colHdr}color:${afterRGInk}">AFTER</div>`
-    + `<div style="display:flex;flex-direction:column;gap:6px">`
-    + _cleanBadge({ bg: afterRGBg, ink: afterRGInk, label: "RG", val: "0",   id: "clean-val-rg", border: resto ? "1.5px solid #6a3a9a" : "1.5px solid #3a5010" })
-    + _cleanBadge({ bg: afterPGBg, ink: afterPGInk, label: "PG", val: "0.0", id: "clean-val-pg" })
-    + `</div></div>`;
-  const rule = `<div style="width:1px;align-self:stretch;margin:14px 12px 0;background:#3a4433"></div>`;
-
-  // The only thing that makes this screen taller, and only in this case.
-  const restoStrip = resto ? `<div style="max-width:300px;margin-top:10px;background:#241036;border:1px solid #6a3a9a;border-radius:8px;padding:8px 10px;font-size:10.5px;line-height:1.45;color:#ecd9ff;text-align:center">Restoration was detected on the after photos and not on the before photos. That is a difference between two assessments, not a statement about what was done to the book.</div>` : "";
-
-  const html = `
-    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:10px;">
-      <div style="display:flex;justify-content:center;align-items:flex-start;flex-wrap:nowrap;">${beforeCol}${rule}${afterCol}</div>
-      ${restoStrip}
-      <button id="assess-complete-btn" style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#3a9ee0;color:#fff;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">COMPLETE</button>
-    </div>`;
+  if (!inPlace || resto) {
+    window.RobograderScan.slideResultsIntoPanel(_cleanPanelMarkup(before, { restoration: resto, done: true }));
+  } else {
+    const btn = document.getElementById("assess-complete-btn");
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "COMPLETE";
+      btn.style.background = "#3a9ee0";
+      btn.style.color = "#fff";
+      btn.style.cursor = "pointer";
+    }
+  }
 
   if (window.RobograderScan.stopGridCycle) { try { window.RobograderScan.stopGridCycle(); } catch (e) {} }
   if (window.RobograderScan.stopNeedlePulse) { try { window.RobograderScan.stopNeedlePulse(); } catch (e) {} }
@@ -12715,10 +12798,11 @@ function mountCleanResults(before, after, comparison) {
     const _u = x => (x && (x.url || (typeof x === "string" ? x : null))) || null;
     window.RobograderScan.revealScannedPhoto("front", 2150, _u((formData.cleanAfterImages || [])[0]));
   } catch (e) {}
-  window.RobograderScan.slideResultsIntoPanel(html);
 
   // Both counters start at zero and run the same 2000ms, so they land together
   // the way every other results panel does.
+  const rgAfter = _pcV3(A.roboGrade);
+  const pgAfterN = A.grade != null ? parseFloat(A.grade) : null;
   const rgEl = document.getElementById("clean-val-rg");
   const pgEl = document.getElementById("clean-val-pg");
   if (rgEl) {
@@ -12796,11 +12880,28 @@ async function submitCleanAssessment() {
     const _u = x => (x && (x.url || (typeof x === "string" ? x : null))) || null;
     if (window.RobograderScan && window.RobograderScan.runScanAnimation) {
       try {
-        window.RobograderScan.runScanAnimation(after.map(_u), "batch");
-        tracker = mountTierTracker("cleaned", CLEAN_STEPS, { noAutoLight: true });
+        // v6.65: the BEFORE/AFTER panel is the placeholder, so it is on screen
+        // from the first frame instead of the standard RG | PG | Page Quality
+        // row being drawn and then replaced at the end. scan-animation picks
+        // this up and clears it, so it can never leak into another run.
+        window._cleanPanelHtml = _cleanPanelMarkup(formData.cleanBeforeResult, {});
+        const _run = window.RobograderScan.runScanAnimation(after.map(_u), "batch");
+        // v6.65, Matt: "the overlay slid into place and the green display boxes
+        // started filling up before the 10 images had even started scanning."
+        // The tracker was mounted synchronously beside the animation. It waits
+        // for the photo sweep now - the same thing Batch already does with
+        // _run.promise.then(_mount) - and PRE-CLEANING SCAN lights at that
+        // moment too, because that is when the scan is actually over.
+        const _mount = () => {
+          try {
+            tracker = mountTierTracker("cleaned", CLEAN_STEPS, { noAutoLight: true });
+            setStep("clean-scan", "done");
+          } catch (e) { console.warn("[clean] tracker mount:", e); }
+        };
+        if (_run && _run.promise) _run.promise.then(_mount).catch(_mount);
+        else _mount();
       } catch (e) { console.warn("[clean] animation:", e); }
     }
-    setStep("clean-scan", "done");
 
     // The ten After photos go to Storage under their own slots; the runner is
     // handed URLs and fetches them itself, so a phone never holds ten base64
@@ -13294,6 +13395,156 @@ function _pcDefectList(title, list, tone) {
       <div style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:${tone};margin-bottom:5px">${title} (${arr.length})</div>
       <ul style="margin:0;padding-left:14px;font-size:11px;line-height:1.45;color:#cfe4dd">${rows}</ul>
     </div>`;
+}
+
+// ── A BOOK THAT HAS BEEN GRADED TWICE (v6.65) ──────────────────────────────
+// Matt: "We need to preserve the old images and the old assessment results
+// while also displaying the new ones so that cleaners can show their results."
+//
+// The item's own fields ARE the After pass after a run (spec decision 3 -
+// Catalogue, FMV and history all read the normal fields). So the Detail view
+// does not need an After source; it needs a BEFORE one, and these two shims
+// give it a plain item-shaped object for each side that every existing
+// renderer - buildRoboGradeDisplay, buildBadge, matchFMV, buildPQBox - can be
+// pointed at unchanged. Identity (title, issue, printing, cgcGrade) spreads
+// through from the real item, because that is the same book either way.
+function isPostCleaned(item) {
+  return !!(item && item.cleanAssessmentRan && item.cleanBeforeResult && item.cleanAfterResult);
+}
+
+function _cleanBeforeItem(item) {
+  const B = (item && item.cleanBeforeResult) || {};
+  return Object.assign({}, item, {
+    roboGrade: B.roboGrade || {},
+    predictedGrade: B.grade || null,
+    assessedCGCGrade: B.grade || null,
+    pageQuality: B.pageQuality || "",
+    photograder: B.photograder || (B.roboGrade && B.roboGrade.photograder) || null,
+    restorationFlag: !!B.restorationFlag,
+    restorationHighConfidence: !!B.restorationHighConfidence,
+    aiAssessment: B.aiAssessment || item.aiAssessment || ""
+  });
+}
+
+function _cleanAfterItem(item) {
+  const A = (item && item.cleanAfterResult) || {};
+  return Object.assign({}, item, {
+    roboGrade: A.roboGrade || {},
+    predictedGrade: A.grade || null,
+    assessedCGCGrade: A.grade || null,
+    pageQuality: A.pageQuality || "",
+    photograder: A.photograder || (A._deep && A._deep.photograder) || (A._main && A._main.photograder)
+                 || item.photograder || null,
+    restorationFlag: !!A.restorationFlag,
+    restorationHighConfidence: !!A.restorationHighConfidence,
+    aiAssessment: A.aiAssessment || ""
+  });
+}
+
+// The band that opens each container. Big and plain, because its whole job is
+// to stop a cleaner's customer reading the wrong grade off the screen.
+function _cleanBand(word, sub, ink) {
+  return `<div style="text-align:center;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,0.10)">
+    <div style="font-family:'League Spartan',sans-serif;font-size:30px;font-weight:800;letter-spacing:4px;color:${ink};line-height:1">${word}</div>
+    ${sub ? `<div style="font-size:10.5px;letter-spacing:1.2px;color:${ink};opacity:0.72;margin-top:4px">${esc(sub)}</div>` : ""}
+  </div>`;
+}
+
+// The Predicted Grade box for ONE side of a cleaned book. Comics only - a
+// cleaning pass never runs on a card - so this is the comic path of the
+// general block in showDetail, with the card branches left out.
+//
+// FMV IS WITHHELD ON THE AFTER SIDE WHEN RESTORATION TURNED UP, per the spec:
+// a restored copy does not price off the universal-grade curve. _fmvWithheld
+// already encodes that rule, and the shim items carry the flags it reads.
+function _cleanPredictedBox(it) {
+  const g = aiCgcGrade(it);
+  const official = it.cgcGrade || it.psaGrade || null;
+  const boxes = [];
+  if (it.cgcGrade) boxes.push(buildBadge(normalizeGrade(it.cgcGrade), "cgc-official", detectDesignation(it), false));
+  if (it.psaGrade) boxes.push(buildBadge(normalizeGrade(it.psaGrade), "psa-official", it.psaDesignation || "universal", false));
+  const restored = !!(it.restorationHighConfidence || (it.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(it.cgcNotes)));
+  if (g) boxes.push(buildBadge(normalizeGrade(g), "predicted", "", false, isFullAssessmentComplete(it), isDeepAssessmentComplete(it), restored, !!it.couponQualified, !!it.gradeAtCeiling));
+  if (!boxes.length) return "";
+  const fmvGrade = official || g;
+  const fmv = (typeof window.matchFMV === "function" && fmvGrade && !_fmvWithheld(it))
+    ? window.matchFMV(it.title, it.issue, fmvGrade, it.printing, extractYearFromIssueDate(it.issueDate))
+    : null;
+  // No page-quality pill and no eBay line on either side: page quality does not
+  // move with a cleaning (spec decision 6), and one asking-price lookup per
+  // book is enough - it is on the live grade, which is the After.
+  return buildPredictedGradeBox(boxes.join(""), "", fmv, true, null);
+}
+
+// The AFTER container: the new assessment, on top, ending with the write-up.
+function renderCleanAfterContainer(item) {
+  const A = _cleanAfterItem(item);
+  const C = item.cleanComparison || {};
+  const runs = item.cleanRuns || 1;
+  let h = `<div style="margin-top:16px;border:1.5px solid #2e7a6a;border-radius:14px;padding:14px;background:#0b1a18">`;
+  h += _cleanBand("AFTER", "Re-shot after cleaning" + (runs > 1 ? " · run " + runs : ""), "#6ad0b8");
+  if (A.roboGrade && Object.keys(A.roboGrade).length) {
+    h += `<div style="margin-top:14px">${buildRoboGradeDisplay(A.roboGrade, A)}</div>`;
+  }
+  h += _cleanPredictedBox(A);
+  const w = C.writeUp || "";
+  if (w) {
+    h += `<div style="margin-top:18px"><div class="section-label" style="color:#6ad0b8">Post-Cleaning Assessment</div>`
+      + `<div class="notes-box" style="font-style:normal;white-space:pre-line;border-color:#2e7a6a;color:#cfe4dd">${esc(w)}</div></div>`;
+  }
+  h += `</div>`;
+  return h;
+}
+
+// The Photos tab for a cleaned book: the ten Before down the left, the ten
+// After down the right, paired, the way the capture screen in Edit shows them.
+function renderCleanPhotoColumns(item) {
+  const u = x => (x && (x.url || (typeof x === "string" ? x : null))) || null;
+  const before = [
+    ...[ 0, 1, 2, 3 ].map(i => u((item.images || [])[i])),
+    ...[ 0, 1, 2, 3 ].map(i => u((item.cornerImages || [])[i])),
+    ...[ 0, 1 ].map(i => u((item.interiorCoverImages || [])[i]))
+  ];
+  const after = [ ...(item.cleanAfterImages || []) ].map(u);
+  while (after.length < 10) after.push(null);
+  if (!before.some(Boolean) && !after.some(Boolean)) return "";
+  const hdr = "font-family:'League Spartan',sans-serif;font-size:20px;font-weight:800;letter-spacing:3px;text-align:center;line-height:1;padding:6px 0";
+  const cell = (url, ar, side, idx) => url
+    ? `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;aspect-ratio:${ar}"><img loading="lazy" decoding="async" src="${url}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block" onclick="openCleanLightbox('${esc(item.id)}','${side}',${idx})"></div>`
+    : `<div style="border-radius:4px;border:1px dashed #3a4433;background:#121511;aspect-ratio:${ar}"></div>`;
+  // Same aspect per ROW on both sides, so the two columns stay in step: covers
+  // and page-quality shots are portrait, the corner macros are 2:3, the
+  // interior covers are landscape.
+  const AR = [ "2/3", "2/3", "2/3", "16/5", "2/3", "2/3", "2/3", "2/3", "3/2", "3/2" ];
+  const LBL = [ "Front Cover", "Back Cover", "Interior / Page Quality", "Raking Light",
+                "Top Left", "Top Right", "Bottom Left", "Bottom Right", "Interior Front", "Interior Back" ];
+  let rows = "";
+  for (let i = 0; i < 10; i++) {
+    rows += `<div style="grid-column:1 / span 2;font-size:9px;font-weight:700;letter-spacing:1.2px;color:#7a8a74;margin-top:${i ? 6 : 2}px">${LBL[i].toUpperCase()}</div>`
+      + cell(before[i], AR[i], "before", i) + cell(after[i], AR[i], "after", i);
+  }
+  return `<div style="margin-top:16px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;position:sticky;top:0;z-index:2;background:#0b1a18;border-radius:8px">
+      <div style="${hdr};color:#9aa894">BEFORE</div><div style="${hdr};color:#6ad0b8">AFTER</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">${rows}</div>
+  </div>`;
+}
+
+// Open the right reel for whichever side was tapped. The Before set is the
+// book's own three arrays; the After set is the flat ten.
+function openCleanLightbox(id, side, idx) {
+  const it = items.find(c => c.id === id);
+  if (!it) return;
+  if (side === "after") {
+    const urls = [ ...(it.cleanAfterImages || []) ].map(x => (x && (x.url || (typeof x === "string" ? x : null))) || null);
+    const u = urls[idx];
+    if (u && typeof openReferenceLightbox === "function") openReferenceLightbox(u);
+    return;
+  }
+  if (idx < 4) return openLightbox(id, idx);
+  if (idx < 8) return openCornerLightbox(id, idx - 4);
+  return openInteriorCoverLightbox(id, idx - 8);
 }
 
 function renderPostCleaningResults(item) {
@@ -19815,12 +20066,29 @@ async function _cleanHandleLibraryFiles(e, kind, startSlot) {
   const arr = [ ...(formData.cleanAfterImages || []) ];  while (arr.length < 10) arr.push(null);
   const meta = [ ...(formData.cleanAfterMeta || []) ];   while (meta.length < 10) meta.push(null);
 
-  // Multi-select fills forward from the tapped slot and stops at the group's
-  // edge rather than wrapping into the next group's photos.
+  // v6.65: MULTI-SELECT FILLS THE WHOLE AFTER SET, NOT JUST ITS GROUP.
+  //
+  // This used to clamp at `base + n < cnt`, so picking ten photos filled four
+  // and dropped six. Matt: "it fills the 4 macro slots, but again it doesn't
+  // fill the interior front and back cover slots... so it takes three tries."
+  // The clamp was guarding against one group's photos wrapping into another
+  // group's - but this function only ever runs with _cleanCapture set, and in
+  // Post-Cleaning all ten slots ARE one group: a single continuous ten-image
+  // After set in a fixed order (front, back, page quality, raking, TL, TR, BL,
+  // BR, interior front, interior back). The spec calls it "a single continuous
+  // 10-image capture flow" and the camera path already treats it that way;
+  // only the library path did not.
+  //
+  // So the write is against the ABSOLUTE index into the ten, and it runs to the
+  // end of the array rather than to the end of the kind that opened the picker.
   const base = Math.max(0, Math.min(cnt - 1, startSlot | 0));
-  for (let n = 0; n < urls.length && base + n < cnt; n++) {
-    arr[off + base + n] = urls[n];
-    meta[off + base + n] = { source: "library", capturedAt: (new Date).toISOString() };
+  const from = off + base;
+  for (let n = 0; n < urls.length && from + n < 10; n++) {
+    arr[from + n] = urls[n];
+    meta[from + n] = { source: "library", capturedAt: (new Date).toISOString() };
+  }
+  if (urls.length > 10 - from) {
+    console.warn("[clean] " + urls.length + " photos picked for " + (10 - from) + " remaining slot(s) - the extras were ignored");
   }
 
   formData.cleanAfterImages = arr.slice(0, 10);

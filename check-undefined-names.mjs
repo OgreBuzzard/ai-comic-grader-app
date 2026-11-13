@@ -149,11 +149,18 @@ writeFileSync(join(dir, 'eslint.config.mjs'),
 
 const cleanup = () => { try { rmSync(dir, { recursive: true, force: true }); } catch (e) {} };
 
+// v6.65: maxBuffer. eslint's JSON formatter attaches the file's whole SOURCE to
+// a result that has messages, so the payload is index.html's combined blocks -
+// about 1.1MB once this file passed ~19,000 lines. Node's default maxBuffer is
+// 1MB, so execFileSync started throwing ENOBUFS and the gate reported "eslint
+// returned something that is not JSON" against a perfectly valid file. It was
+// reading a TRUNCATED payload, not a broken one, and it would have kept failing
+// forever as the app grew.
 let raw = '';
 try {
   raw = execFileSync('npx', ['eslint', '--no-ignore', '-f', 'json',
                              '-c', join(dir, 'eslint.config.mjs'), file],
-                     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+                     { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
 } catch (e) {
   raw = (e.stdout || '').toString();       // eslint exits 1 when it finds something
   if (!raw.trim()) {

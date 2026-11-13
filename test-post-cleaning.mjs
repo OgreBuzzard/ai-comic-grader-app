@@ -131,8 +131,14 @@ survives('no date', { cleanComparison: { counts: {}, at: null } });
   ok('the run mounts it', /mountCleanResults\(formData\.cleanBeforeResult/.test(html));
   ok('there is a way out of the overlay',
     html.includes('function completeCleanAssessment(') && html.includes('btn.onclick = completeCleanAssessment'));
-  ok('BEFORE and AFTER are both columns', html.includes('>BEFORE</div>') && html.includes('>AFTER</div>'));
-  const panel = html.slice(html.indexOf('function mountCleanResults('),
+  ok('BEFORE and AFTER are both columns', html.includes('col("BEFORE"') && html.includes('col("AFTER"'));
+  ok('the panel is the scan placeholder too, so it is up from frame one',
+    html.includes('window._cleanPanelHtml = _cleanPanelMarkup('));
+  ok('the tracker waits for the photo sweep',
+    /_run\.promise\.then\(_mount\)/.test(html));
+  // The markup moved into _cleanPanelMarkup in 6.65 so the same layout can be
+  // the scan placeholder AND the final panel. Slice from there.
+  const panel = html.slice(html.indexOf('function _cleanPanelMarkup('),
                            html.indexOf('async function completeCleanAssessment('));
   ok('After RG starts at 0',   /val: "0",/.test(panel));
   ok('After PG starts at 0.0', /val: "0\.0",/.test(panel));
@@ -156,6 +162,30 @@ survives('no date', { cleanComparison: { counts: {}, at: null } });
 {
   ok('_batchApi supports a timeout', html.includes('opts && opts.timeoutMs') && html.includes('AbortController'));
   ok('the clean run sets one', html.includes('timeoutMs: 200000'));
+}
+
+// ── the cleaned-book Detail view (v6.65) ──────────────────────────────────
+{
+  ok('isPostCleaned requires both sides',
+    html.includes('item.cleanAssessmentRan && item.cleanBeforeResult && item.cleanAfterResult'));
+  ok('there is a BEFORE shim and an AFTER shim',
+    html.includes('function _cleanBeforeItem(') && html.includes('function _cleanAfterItem('));
+  ok('the AFTER container is drawn first', /renderCleanAfterContainer\(selected\);[\s\S]{0,400}_cleanBand\("BEFORE"/.test(html));
+  ok('the BEFORE container is closed', html.includes('close the BEFORE container'));
+  ok('everything below AFTER reads the BEFORE shim',
+    html.includes('const _aSrc = _postCleaned ? _cleanBeforeItem(selected) : selected;')
+    && html.includes('aiCgcGrade(_aSrc)') && html.includes('_fmvWithheld(_aSrc)'));
+  ok('the photo columns replace the single set', html.includes('if (_postCleaned) html += renderCleanPhotoColumns(selected);')
+    && html.includes('if (!_postCleaned && selected.images?.length > 0)'));
+  const after = html.slice(html.indexOf('function renderCleanAfterContainer('),
+                           html.indexOf('function renderCleanPhotoColumns('));
+  ok('AFTER carries the score panel, the predicted grade and the write-up',
+    after.includes('buildRoboGradeDisplay(A.roboGrade, A)') && after.includes('_cleanPredictedBox(A)')
+    && after.includes('Post-Cleaning Assessment') && after.includes('C.writeUp'));
+  ok('the photograder is frozen into BEFORE and carried on AFTER',
+    html.includes('photograder: item.photograder || rg.photograder || null'));
+  ok('one eBay lookup per book, on the live grade only',
+    html.includes('(_isCardItem || _postCleaned) ? null : _ebayAsksQuery'));
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed.');

@@ -212,6 +212,10 @@ export default async function handler(req, res) {
       restorationFlag: !!(D.restorationFlag || M.restorationFlag),
       restorationHighConfidence: !!(D.restorationHighConfidence || M.restorationHighConfidence),
       aiAssessment: D.aiAssessment || M.aiAssessment || '',
+      // v6.65: the Detail view draws a Photograder panel for each side of a
+      // cleaned book, so the After pass has to carry its own. Deep wins when
+      // it ran, because it graded the same photos more closely.
+      photograder: D.photograder || M.photograder || null,
       deepAssessment: D.deepAssessment || '',
       gradeAtCeiling: !!D.gradeAtCeiling,
       _main: M, _deep: D
