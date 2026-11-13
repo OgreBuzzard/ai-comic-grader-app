@@ -2415,7 +2415,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.61";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.62";
       // v6.46: the GRADING epoch - the version the assessment last actually
       // changed at. RG_GRADING_VERSION above is the BUILD number and moves on
       // every change; this one does not. The label stamps THIS, because "V6.45"
@@ -2426,7 +2426,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.61");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.62");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -6293,6 +6293,15 @@ window.rgHandleBack = function () {
       var st = window.getComputedStyle(el);
       return !!st && st.display !== "none" && st.visibility !== "hidden";
     };
+    // v6.62: the export preview takes the back button before anything else.
+    // It sits above every other overlay, and an overlay the hardware back
+    // button cannot dismiss is the same trap as a disabled button.
+    if (_vis("ex-preview")) {
+      const _p = document.getElementById("ex-preview");
+      const _c = _p && _p.querySelector("button");
+      if (_c) _c.click(); else if (_p) _p.remove();
+      return true;
+    }
     if (_vis("camera-modal")) { if (typeof cameraExit === "function") cameraExit(); return true; }
     if (_vis("cropper-modal")) { if (typeof cancelCrop === "function") cancelCrop(); return true; }
     if (_vis("lightbox")) { if (typeof closeLightbox === "function") closeLightbox(); return true; }
@@ -8389,7 +8398,9 @@ const EXP = {
   green:   "#cce8b8", cream: "#f4f0dc", header: "#a8c898",
   ink:     "#1f2a08", inkHd: "#0a1404",  inkLt:  "#5a6a3a",
   oliveMid:"#4a7028",
-  titleInk:"#ffffff", issueInk:"#d8d2c6", dateInk:"#7a6a5a",
+  // v6.62, Matt: the title band is now a near-white strip, so the title and
+  // issue have to be DARK to read on it. They were white-on-black.
+  titleInk:"#1a1610", issueInk:"#4a4238", dateInk:"#7a6a5a",
   printInk:"#6a5a4a", pubInk:"#8a7a6a",
   // Muted brick reds for the imprint lines. Tinted, deliberately below the
   // title and issue in weight so they do not compete with them.
@@ -8403,7 +8414,20 @@ const EXP = {
   // fill silently inherited whatever colour was last set (the cover placeholder
   // "#1a1a1a"). It LOOKED right, which is why it survived. Named properly now.
   panel:   "#10150a",                    // the RoboGrade score panel + bookend
-  pageWhite:"#ffffff"                    // outside the rounded container corners
+  // v6.62, Matt: "the corners of the image outside of the rounded container
+  // should be pure black." Named for where it is, not what colour it used to
+  // be - it was #ffffff and the name outlived the decision once already.
+  pageOutside:"#000000",
+  // v6.62: the container was #0d0d0f. Matt: "The main container that is
+  // currently black should be the beige tone used elsewhere in the app."
+  // This is the app's paper beige, the same family as the label stock and the
+  // PHOTOS sheet, one step warmer than the continuous-form paper so the defect
+  // table still reads as a separate surface sitting on it.
+  cardBeige:"#efe7d5",
+  // Ink that sits ON the beige. The old inks were chosen against black and are
+  // unreadable here.
+  beigeInk:"#1a1610", beigeInkDim:"#5a5247",
+  titleBand:"#faf8f4"                    // the near-white strip behind the title
 };
 const EX_PQ_FALLBACK = { bg: "#f0ece6", text: "#5a4e44" };
 
@@ -8596,7 +8620,7 @@ const EX_PAPER = "#fbfaf5";    // continuous-form paper and its sprocket margins
 // v5.82, Matt: the container is BLACK and runs to the edge of the image. Only
 // the four corner slivers outside the rounding stay white, so the image reads
 // as a single black card rather than a card floating on a page.
-const EX_CARD  = "#0d0d0f";    // everything else inside the container
+const EX_CARD  = EXP.cardBeige;   // v6.62: was "#0d0d0f" — see EXP.cardBeige
 const EX_RADIUS = P(26);       // the container's corner rounding
 const EX_WHITE = "#ffffff";
 
@@ -8632,6 +8656,20 @@ function _exHeaderH(ctx, item) {
 function _exDrawHeader(ctx, item, bx, by, boxW, innerW) {
   const h = _exHeaderH(ctx, item);
   const x = bx + EX_PAD;
+  // v6.62: a near-white band behind the whole header block. It is clipped to
+  // the container's rounding at the TOP ONLY — square at the bottom, so it
+  // meets the beige as a clean edge rather than a floating rounded strip.
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(bx, by + h);
+  ctx.lineTo(bx, by + EX_RADIUS);
+  ctx.quadraticCurveTo(bx, by, bx + EX_RADIUS, by);
+  ctx.lineTo(bx + boxW - EX_RADIUS, by);
+  ctx.quadraticCurveTo(bx + boxW, by, bx + boxW, by + EX_RADIUS);
+  ctx.lineTo(bx + boxW, by + h);
+  ctx.closePath();
+  ctx.fillStyle = EXP.titleBand; ctx.fill();
+  ctx.restore();
   let y = by + P(26);   // v5.82: was P(16), inside a page inset that no longer exists
   const tp = _exTitleParts(item);
   ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
@@ -9155,8 +9193,8 @@ function _exCanvas() {
   const c = document.createElement("canvas");
   c.width = EX_W; c.height = EX_H;
   const ctx = c.getContext("2d");
-  // White first: it is what shows in the corners outside the rounding.
-  ctx.fillStyle = EXP.pageWhite; ctx.fillRect(0, 0, c.width, c.height);
+  // This is what shows in the four corners outside the rounding. v6.62: black.
+  ctx.fillStyle = EXP.pageOutside; ctx.fillRect(0, 0, c.width, c.height);
   ctx.textBaseline = "alphabetic";
   return { c, ctx };
 }
@@ -9198,11 +9236,14 @@ function _exDrawGradeStack(ctx, f, x, y, w, h) {
   // bottom of the Page Quality pill on every book that has one.
   const badge = Math.min(w * 0.66, P(74));
   const pqH = f.pageQuality ? P(30) : 0;
-  const blockH = P(13) * 2 + P(6) + badge + (pqH ? P(10) + P(10) + pqH : 0);
+  // v6.62: the two P(10)s became P(12) + P(16) in the PQ block below, so the
+  // measured height has to follow or the stack re-centres wrong and runs past
+  // the cover slot again (the v5.83 bug).
+  const blockH = P(13) * 2 + P(6) + badge + (pqH ? P(12) + P(16) + pqH : 0);
   let cy = y + Math.max(0, (h - blockH) / 2);
 
   ctx.textAlign = "center";
-  ctx.fillStyle = "#ffffff"; ctx.font = `800 ${P(12)}px ${F_COND}`;
+  ctx.fillStyle = EXP.beigeInk; ctx.font = `800 ${P(12)}px ${F_COND}`;
   ctx.fillText("PREDICTED", cx, cy + P(11));
   ctx.fillText("GRADE", cx, cy + P(24));
   cy += P(13) * 2 + P(6);
@@ -9234,11 +9275,16 @@ function _exDrawGradeStack(ctx, f, x, y, w, h) {
   cy += badge;
 
   if (f.pageQuality) {
-    cy += P(10);
+    // v6.62, Matt: "The Page Quality header is clipping into the PQ pill below
+    // it... and the 'Page Quality' text should be the same size as the
+    // 'Predicted Grade' text." P(12) matches PREDICTED / GRADE above, and the
+    // gap below the baseline goes from P(10) to P(16) so a 12px cap height
+    // cannot reach into the pill.
+    cy += P(12);
     ctx.textAlign = "center";
-    ctx.fillStyle = "#ffffff"; ctx.font = `800 ${P(10)}px ${F_COND}`;
-    ctx.fillText("PAGE QUALITY", cx, cy + P(9));
-    cy += P(10);
+    ctx.fillStyle = EXP.beigeInk; ctx.font = `800 ${P(12)}px ${F_COND}`;
+    ctx.fillText("PAGE QUALITY", cx, cy + P(11));
+    cy += P(16);
     const pq = (typeof PQ_COLORS !== "undefined" && PQ_COLORS[f.pageQuality]) || EX_PQ_FALLBACK;
     let px = P(13), lbl = f.pageQuality;
     while (px > P(8)) { ctx.font = `600 ${px}px ${F_COND}`; if (ctx.measureText(lbl).width <= w - P(16)) break; px -= 1; }
@@ -9344,10 +9390,18 @@ async function _exRenderSummary(item) {
     ctx.fillStyle = "#2a4a1e";
     _exRoundRect(ctx, cx, cy, cw, ch, P(6)); ctx.fill();
     ctx.save();
-    ctx.translate(cx + cw / 2, cy + ch * 0.48); ctx.scale(0.7, 1);
+    // v6.62, Matt: "The subscore values for Back, Spine, and Int. are clipping
+    // into the text in those boxes, so those numbers should be raised higher.
+    // The Front value should be raised as well."
+    // The number was centred at 48% of the cell and then drawn a further 0.34
+    // of its own size BELOW that baseline — on the short Back/Spine/Int cells
+    // that put its descender into the label. Centre at 40% and drop the extra
+    // baseline push to 0.30, which lifts every cell and lifts the short ones
+    // most, because the push is proportional to the number's size.
+    ctx.translate(cx + cw / 2, cy + ch * 0.40); ctx.scale(0.7, 1);
     ctx.textAlign = "center"; ctx.fillStyle = "#b8d820";
     ctx.font = `800 ${P(numPx)}px ${F_NUM}`;
-    ctx.fillText(val == null ? "\u2014" : String(val), 0, P(numPx) * 0.34);
+    ctx.fillText(val == null ? "\u2014" : String(val), 0, P(numPx) * 0.30);
     ctx.restore();
     ctx.textAlign = "center"; ctx.fillStyle = "#7aa838";
     ctx.font = `600 ${P(lblPx)}px ${F_COND}`;
@@ -9390,6 +9444,56 @@ async function _exRenderSummary(item) {
 }
 
 // ── The two button handlers ────────────────────────────────────────────────
+// ── PREVIEW BEFORE SAVE ────────────────────────────────────────────────────
+// A plain full-screen overlay: the image, Save, Close. Deliberately not a
+// modal built on the app's other sheet machinery — this one has to show a tall
+// image at whatever height it came out, and it is the only screen in the app
+// whose entire job is "look at this before you commit to it".
+//
+// The object URL is revoked on close. A summary PNG is a megabyte or so and
+// leaking one per export would be invisible until a long session on a phone.
+function _exShowPreview(blob, filename) {
+  const prev = document.getElementById("ex-preview");
+  if (prev) prev.remove();
+  const url = URL.createObjectURL(blob);
+  const o = document.createElement("div");
+  o.id = "ex-preview";
+  o.style.cssText = "position:fixed;inset:0;z-index:100001;background:rgba(0,0,0,0.92);"
+    + "display:flex;flex-direction:column;"
+    + "padding:calc(env(safe-area-inset-top,0px) + 12px) 12px calc(env(safe-area-inset-bottom,0px) + 12px);";
+  const scroller = document.createElement("div");
+  scroller.style.cssText = "flex:1;min-height:0;overflow-y:auto;display:flex;align-items:flex-start;justify-content:center;";
+  const img = document.createElement("img");
+  img.src = url;
+  img.alt = "";
+  img.style.cssText = "max-width:100%;height:auto;display:block;border-radius:10px;";
+  scroller.appendChild(img);
+  const bar = document.createElement("div");
+  bar.style.cssText = "display:flex;gap:10px;padding-top:12px;flex:none;";
+  const close = document.createElement("button");
+  close.className = "rg-btn rg-btn-secondary rg-btn-md";
+  close.style.cssText = "flex:1;";
+  close.textContent = "Close";
+  const save = document.createElement("button");
+  save.className = "rg-btn rg-btn-primary rg-btn-md";
+  save.style.cssText = "flex:1;";
+  save.textContent = "Save Image";
+  bar.appendChild(close); bar.appendChild(save);
+  o.appendChild(scroller); o.appendChild(bar);
+  const done = () => { try { URL.revokeObjectURL(url); } catch (e) {} o.remove(); };
+  close.onclick = done;
+  save.onclick = async () => {
+    save.disabled = true; save.textContent = "Saving\u2026";
+    try { await _saveImageBlob(blob, filename); }
+    catch (e) { console.warn("[export] save failed:", e); }
+    // Closed either way: the share sheet has taken over, and leaving the
+    // preview underneath it means the user comes back to a screen they already
+    // finished with.
+    done();
+  };
+  document.body.appendChild(o);
+}
+
 async function _exRun(btnId, item, renderer, slug) {
   const btn = document.getElementById(btnId);
   // v5.83: write the status into the button's <span> when it has one. The
@@ -9423,7 +9527,12 @@ async function _exRun(btnId, item, renderer, slug) {
     // desktop Chrome: render 224ms, PNG encode 413ms, then the button sat on
     // "Rendering…" indefinitely because navigator.share() never resolved.
     if (btn) { btn.disabled = false; slot.innerHTML = label; }
-    await _saveImageBlob(blob, `robograder-${slug}-${stamp}.png`);
+    // v6.62, Matt: "when I tap the Summary Image button, I get an option to
+    // save it to my photo library, but I don't get to see the actual image
+    // before doing so." It used to go straight to the share sheet, so the
+    // first time anyone saw the image was in Photos, after committing to it.
+    // Now it previews, and SAVE from the preview is what reaches the old path.
+    _exShowPreview(blob, `robograder-${slug}-${stamp}.png`);
   } catch (e) {
     console.warn("[export] render failed:", e);
     alert(String((e && e.name) || "") === "SecurityError"
@@ -14085,7 +14194,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "6.61"),
+      appVersion: (window.RG_GRADING_VERSION || "6.62"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
@@ -15962,6 +16071,36 @@ function _acMedian(arr) {
   return a[a.length >> 1];
 }
 
+// ── WHY AUTO-CROP STILL REFUSES ON A REAL DESK, AND WHAT THE FIX IS ───────
+// v6.62. Eight real captures from Matt (DKR 3 and FF 1, kept in
+// shared/_WORKING/autocrop_samples/). Six refused, two returned a box around
+// the CUTTING MAT. Not one found the book.
+//
+// THE SETUP IS THREE LEVELS, NOT TWO: wood table -> green cutting mat ->
+// comic. autocropDetect finds whatever differs from the border ring, the ring
+// is the table, so what it finds is the mat. The composite test set never
+// showed this because a composite has exactly one background by construction.
+// Real desks have two.
+//
+// A nested version was written and TESTED AND REMOVED: find the mat, then
+// search inside it. It failed in a way worth recording, because the next
+// attempt will be tempted by it. Inside the mat the strongest contrast is not
+// the book's edge against the mat - it is the book's own artwork. On the DKR 3
+// cover it boxed the black Batman logo. Burrowing one level finds the mat;
+// burrowing two finds a design element. There is no depth that is reliably
+// "the book".
+//
+// THE ACTUAL PROBLEM IS THE COLOUR SPACE. _acRender converts to GRAYSCALE
+// immediately, which throws away the one signal that separates these cleanly:
+// the mat is a saturated green and a comic cover is not. In luminance a green
+// mat and a mid-tone cover are neighbours; in RGB they are far apart. The fix
+// is to carry colour through and measure per-pixel distance from the
+// background COLOUR rather than its brightness. That is a real rework of
+// autocropDetect, not a parameter.
+//
+// Until then this refuses on a mat, which costs nothing: a refusal leaves the
+// whole image selected (v6.59) and the user crops by hand as before.
+//
 // gray: Uint8ClampedArray|Array of length >= w*h, 0-255 luminance.
 // Returns { ok, left, top, right, bottom, confidence, method } where the four
 // bounds are fractions of w/h in [0,1] and describe the BOOK, unpadded.
