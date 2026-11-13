@@ -350,12 +350,22 @@
     // Measured the same way print-label.js sizes its numeral: em-width of the
     // actual string, not its character count. League Spartan digits are 0.556em,
     // and the decimal point is drawn at 0.8em so it costs 0.28 * 0.8.
+    // v6.63, Matt: "The (+) is forcing the grade number to be far too small.
+    // The (+) should be horizontally compressed and the grade number should be
+    // sized up to bump up close to it without clipping."
+    // Two changes, and the first is what buys most of the room: the "(+)" is
+    // now drawn with scaleX(0.62), so its BOX is 0.62 of its natural width.
+    // The clearance maths below has to use that narrowed width or the number
+    // is still sized around glyphs that are no longer that wide. Then the gap
+    // drops from 3% of the box to 1.2% — "close to it without clipping" is
+    // the ask, and the measurement is exact, so the margin can be small.
+    var _PLUS_SQUEEZE = 0.62;
     var _numSizeFit = numSize;
     if (o.plus) {
       var _plusSizeW = Math.max(9, Math.round(numSize / 3.6));
-      var _plusBoxW  = _plusSizeW * 1.55;              // Saira 700 "(+)" ~1.55em
-      var _plusInset = Math.round(size * 0.06);
-      var _gap       = Math.round(size * 0.03);
+      var _plusBoxW  = _plusSizeW * 1.55 * _PLUS_SQUEEZE;   // Saira 700 "(+)" ~1.55em, squeezed
+      var _plusInset = Math.round(size * 0.05);
+      var _gap       = Math.round(size * 0.012);
       // Centred text: its half-width has to clear the (+)'s left edge.
       var _halfCap = (size / 2) - (_plusInset + _plusBoxW + _gap);
       var _em = 0;
@@ -385,7 +395,15 @@
       // v6.23: /3.6 not /3. At a third of the numeral it was the loudest thing
       // in the box after the grade itself, and it is a hint, not a result.
       var _plusSize = Math.max(9, Math.round(numSize / 3.6));
-      plusHtml = '<div style="position:absolute;top:50%;right:' + Math.round(size*0.06) + 'px;transform:translateY(calc(-50% + ' + _nudge + 'px));line-height:1;pointer-events:none;font-weight:700;opacity:0.85;color:' + numColor + ';font-family:\'Saira\',system-ui,sans-serif;font-size:' + _plusSize + 'px">(+)</div>';
+      // v6.63: scaleX narrows the "(+)" to match the clearance maths above,
+      // and the VERTICAL offset is now tunable per box. Matt: the (+) sits
+      // "too high on the PG and a bit low on the RG" — the two boxes draw
+      // their numerals with different baseline pushes, so one shared offset
+      // could only ever be right for one of them. o.plusDy is a nudge in
+      // fractions of the numeral size; it defaults to 0 so nothing that does
+      // not set it moves.
+      var _plusDy = Math.round(_numSizeFit * (typeof o.plusDy === "number" ? o.plusDy : 0));
+      plusHtml = '<div style="position:absolute;top:50%;right:' + Math.round(size*0.05) + 'px;transform:translateY(calc(-50% + ' + (_nudge + _plusDy) + 'px)) scaleX(' + _PLUS_SQUEEZE + ');transform-origin:right center;line-height:1;pointer-events:none;font-weight:700;opacity:0.85;color:' + numColor + ';font-family:\'Saira\',system-ui,sans-serif;font-size:' + _plusSize + 'px">(+)</div>';
     }
     return '<div style="position:relative;width:' + size + 'px;height:' + size + 'px;background:' + bg + ';border:' + border + ';border-radius:' + Math.round(size*0.14) + 'px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.4)">' + numHtml + starsHtml + footHtml + plusHtml + '</div>';
   }
@@ -3171,7 +3189,71 @@ window.fmvPrintingSlug = function fmvPrintingSlug(printing) {
 // Two-column PREDICTED GRADE box: grade badge(s) + page quality on the left,
 // FMV on the right. White bold headers; FMV value white and 26px (the grade
 // badge number is 30px, so it stays dominant). Single column when no FMV.
-function buildPredictedGradeBox(badgesHtml, pqHtml, fmvMatch, showDisclaimer) {
+// ── v6.63: EBAY ASKING PRICES ───────────────────────────────────────────────
+// Additive line beneath FMV inside the Predicted Grade box. ASKING prices, not
+// sales: eBay retired findCompletedItems and sold data sits behind the
+// partner-only Marketplace Insights API, so active listings are all the free
+// Browse API can give us. The label says "asking" for exactly that reason -
+// calling it anything else would be a lie about what the number is.
+//
+// Rules the UI obeys:
+//   - graded slabs only, so the number is comparable to a predicted grade
+//   - count AND median, never a median alone ("9 listed" is the caveat)
+//   - a suspect spread (high > 8x median) prints NOTHING. A median drawn from
+//     a band full of reprints and later-volume #1s is worse than no number.
+//   - fewer than the endpoint's minimum prints nothing. No "1 listed".
+// Nothing here blocks the render: the box draws, then this fills in or doesn't.
+const _ebayAskCache = Object.create(null);   // query -> result | null | "pending"
+
+function _ebayAsksRender(r) {
+  if (!r || !r.n || !r.median || r.suspect) return "";
+  const hdr = "font-size:12px;font-weight:800;letter-spacing:1.5px;color:#fff;text-transform:uppercase;text-align:center;line-height:1.15";
+  const money = v => "$" + Math.round(v).toLocaleString();
+  const sub = `${r.n} listed${r.widened ? " \u00b7 \u00b12 grades" : ""}`;
+  return `<div style="${hdr};margin-top:14px">eBay Asking</div>
+    <div style="color:#fff;font-weight:800;font-size:17px;line-height:1;letter-spacing:0.01em;white-space:nowrap;margin-top:5px">${money(r.median)} median</div>
+    <div style="font-size:10px;color:#8a7a6a;margin-top:4px;letter-spacing:0.04em">${sub}</div>`;
+}
+
+async function _ebayAsksScan() {
+  const el = document.getElementById("ebay-asks-line");
+  if (!el || !el.dataset.eq) return;
+  const qs = el.dataset.eq;
+  const hit = _ebayAskCache[qs];
+  if (hit === "pending") return;
+  if (hit !== undefined) { el.innerHTML = _ebayAsksRender(hit); return; }
+  if (!window._currentUser || typeof window._currentUser.getIdToken !== "function") return;
+  _ebayAskCache[qs] = "pending";
+  try {
+    const token = await window._currentUser.getIdToken();
+    const resp = await fetch("/api/ebay_asks?" + qs, { headers: { Authorization: "Bearer " + token } });
+    const j = await resp.json().catch(() => null);
+    _ebayAskCache[qs] = resp.ok ? j : null;
+    if (!resp.ok) console.warn("[ebay] asks failed:", resp.status, j && j.error);
+    const live = document.getElementById("ebay-asks-line");
+    if (live && live.dataset.eq === qs) live.innerHTML = _ebayAsksRender(_ebayAskCache[qs]);
+  } catch (e) {
+    _ebayAskCache[qs] = null;
+    console.warn("[ebay] asks error:", e && e.message || e);
+  }
+}
+
+// Build the query string for a book, or null when it cannot be asked about.
+// Needs a title, a numeric-ish issue and a grade; cards are excluded (the
+// endpoint is a comic-slab matcher).
+function _ebayAsksQuery(item, grade) {
+  if (!item || !grade) return null;
+  const t = String(item.title || "").trim();
+  const i = String(item.issue || "").trim();
+  const g = parseFloat(grade);
+  if (!t || !i || !Number.isFinite(g)) return null;
+  const y = (typeof extractYearFromIssueDate === "function") ? extractYearFromIssueDate(item.issueDate) : null;
+  const p = new URLSearchParams({ title: t, issue: i, grade: String(g) });
+  if (y) p.set("year", String(y));
+  return p.toString();
+}
+
+function buildPredictedGradeBox(badgesHtml, pqHtml, fmvMatch, showDisclaimer, ebayQuery) {
   const hdr = "font-size:12px;font-weight:800;letter-spacing:1.5px;color:#fff;text-transform:uppercase;text-align:center;line-height:1.15";
   const fmvBlock = fmvMatch ? `<div style="${hdr};margin-top:16px">FMV</div><div style="color:#fff;font-weight:800;font-size:20px;line-height:1;letter-spacing:0.01em;white-space:nowrap;margin-top:6px">${formatFMVCompact(fmvMatch)}</div>` : "";
   const disc = showDisclaimer ? `<div style="font-size:10px;color:#6a5a4a;text-align:center;line-height:1.4;margin-top:14px;font-style:italic">Independent prediction. Robograder is not affiliated with any encapsulation grading or price guide service.</div>` : "";
@@ -3185,6 +3267,7 @@ function buildPredictedGradeBox(badgesHtml, pqHtml, fmvMatch, showDisclaimer) {
     ${badgesHtml ? `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;justify-content:center;margin-top:12px">${badgesHtml}</div>` : ""}
     ${pqHtml ? `<div style="margin-top:10px;white-space:nowrap">${pqHtml}</div>` : ""}
     ${fmvBlock}
+    ${ebayQuery ? `<div id="ebay-asks-line" data-eq="${esc(ebayQuery)}"></div>` : ""}
     ${disc}
   </div>`;
 }
@@ -4507,7 +4590,13 @@ function buildBadge(gradeVal, type, designation, sm, fullAssessment, deepAssessm
   // the mark is there or not, and it is 2pt larger (13.2px -> 15px) because at
   // a third of the numeral it was barely readable. The big RG score box has
   // always done it this way and Matt confirmed that one reads correctly.
-  const plus = (atCeiling && !sm) ? '<span class="ubadge-plus" style="position:absolute;top:13px;right:6px;font-size:15px;line-height:1;opacity:0.85;font-weight:600;letter-spacing:0;color:#fff;pointer-events:none">(+)</span>' : "";
+  // v6.63, Matt: the (+) is "too high on the PG". top:13px put it level with
+  // the top of the numeral rather than on its midline, reading as a
+  // superscript on a badge whose number is vertically centred. It now sits on
+  // the midline with a small downward bias, and is horizontally squeezed to
+  // match the RG box — the two marks are the same mark and were drawn by two
+  // different rules, which is why only one of them looked right.
+  const plus = (atCeiling && !sm) ? '<span class="ubadge-plus" style="position:absolute;top:50%;right:5px;transform:translateY(-34%) scaleX(0.62);transform-origin:right center;font-size:17px;line-height:1;opacity:0.85;font-weight:600;letter-spacing:0;color:#fff;pointer-events:none">(+)</span>' : "";
   // S16: If restoration detected, predicted badge turns purple
   if (restored && (type === "predicted" || type === "cgc-ai" || type === "psa-ai")) {
     return `<div class="${cls}" style="border-color:#7c3aed;background:linear-gradient(180deg,#9a6ad8 0%,#6a3ab0 100%)"><div class="ubadge-body" style="background:transparent"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.8)">${lbl}</div></div></div>`;
@@ -7078,12 +7167,20 @@ function showDetail(id) {
       // Tapping a reference opens it alone (openReferenceLightbox), not in the
       // user's photo reel. zoom-in cursor so it reads as enlargeable.
       const _refCell = (u, lbl) => `<div style="position:relative;border-radius:6px;overflow:hidden;border:2px solid #2f9e44;background:#eaf3ea;display:flex;align-items:center;justify-content:center;min-height:200px;cursor:zoom-in" onclick="openReferenceLightbox('${u}')"><img src="${u}" ${imgAttrs} style="width:100%;max-height:100%;object-fit:contain;display:block"><div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(38,132,58,0.92);padding:2px 6px;border-radius:3px;letter-spacing:0.05em">${lbl}</div></div>`;
-      const _mainCell = i => imgs[i] ? `<img class="detail-cover" src="${imgs[i]}" ${imgAttrs} onclick="openLightbox('${selected.id}',${i})">` : `<div></div>`;
+      // v6.63: label the Main slots the way the Deep corners and the interior
+      // covers are already labelled. Matt asked why Main was the only tier
+      // without them: no reason — it was never added. Same tag chrome as the
+      // corner cells (9px, white on 55% black, top-left), on a relative wrapper
+      // so the <img> keeps its class, its auto height and its grid behaviour.
+      const _MAIN_SLOT_LABELS = [ "Front Cover", "Back Cover", "Interior / Page Quality", "Raking Light" ];
+      const _slotTag = lbl => `<div style="position:absolute;top:4px;left:6px;font-size:9px;font-weight:700;color:#fff;background:rgba(0,0,0,0.55);padding:2px 6px;border-radius:3px;letter-spacing:0.05em;pointer-events:none">${lbl.toUpperCase()}</div>`;
+      const _mainWrap = (inner, lbl) => `<div style="position:relative">${inner}${_slotTag(lbl)}</div>`;
+      const _mainCell = i => imgs[i] ? _mainWrap(`<img class="detail-cover" src="${imgs[i]}" ${imgAttrs} onclick="openLightbox('${selected.id}',${i})">`, _MAIN_SLOT_LABELS[i]) : `<div></div>`;
       // Half-width Interior that matches the height of the cover beside it. The
       // grid row is sized by the cover (a normal auto-height <img>); this cell
       // stretches to that row and the image fills it, so the two stay aligned
       // however tall the cover turns out to be.
-      const _halfInteriorCell = () => `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;align-self:stretch;min-height:100%;cursor:zoom-in" onclick="openLightbox('${selected.id}',2)"><img src="${imgs[2]}" ${imgAttrs} style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block"></div>`;
+      const _halfInteriorCell = () => `<div style="position:relative;border-radius:4px;overflow:hidden;background:#1a1a1a;align-self:stretch;min-height:100%;cursor:zoom-in" onclick="openLightbox('${selected.id}',2)"><img src="${imgs[2]}" ${imgAttrs} style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block">${_slotTag(_MAIN_SLOT_LABELS[2])}</div>`;
 
       let _interiorPlaced = false;
       if (_refF && _refB) {
@@ -7102,8 +7199,8 @@ function showDetail(id) {
       } else if (imgs[0] || imgs[1]) {
         html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;align-items:start">${_mainCell(0)}${_mainCell(1)}</div>`;
       }
-      if (imgs[2] && !_interiorPlaced) html += `<img class="detail-cover" src="${imgs[2]}" ${imgAttrs} onclick="openLightbox('${selected.id}',2)">`;
-      if (imgs[3]) html += `<img class="photo-spine" src="${imgs[3]}" ${imgAttrs} onclick="openLightbox('${selected.id}',3)">`;
+      if (imgs[2] && !_interiorPlaced) html += _mainWrap(`<img class="detail-cover" src="${imgs[2]}" ${imgAttrs} onclick="openLightbox('${selected.id}',2)">`, _MAIN_SLOT_LABELS[2]);
+      if (imgs[3]) html += _mainWrap(`<img class="photo-spine" src="${imgs[3]}" ${imgAttrs} onclick="openLightbox('${selected.id}',3)">`, _MAIN_SLOT_LABELS[3]);
     }
     html += `</div>`;
   }
@@ -7298,7 +7395,11 @@ function showDetail(id) {
       ? ((window.matchCardFMV && _fmvGrade && selected.cardData) ? window.matchCardFMV(selected.cardData.cardIdentification, _fmvGrade) : null)
       : ((typeof window.matchFMV === "function" && _fmvGrade && !_fmvWithheld(selected)) ? window.matchFMV(selected.title, selected.issue, _fmvGrade, selected.printing, extractYearFromIssueDate(selected.issueDate)) : null);
     const _pqHtml = showPQ ? `<div style="display:flex;justify-content:center">${buildPQBox(selected.pageQuality)}</div>` : "";
-    html += buildPredictedGradeBox(predictionBoxes.join(""), _pqHtml, _fmvMatch, !!(predictedBadge || cardPsaBadge));
+    // v6.63: eBay asking prices, graded listings only, beneath FMV. Uses the
+    // official grade when the book is slabbed, else the predicted grade - the
+    // same grade FMV is read at, so the two numbers describe the same book.
+    const _ebayQ = _isCardItem ? null : _ebayAsksQuery(selected, _fmvGrade);
+    html += buildPredictedGradeBox(predictionBoxes.join(""), _pqHtml, _fmvMatch, !!(predictedBadge || cardPsaBadge), _ebayQ);
   }
   // S20: "Enhanceable?: Yes/No" box hidden per request — it's an odd inclusion,
   // often inaccurate, and not essential. Left in code (commented) in case it's
@@ -7489,6 +7590,9 @@ function showDetail(id) {
       window.forceImgReflow(img);
     }
   });
+  // v6.63: fill the eBay asking line, if this book has one. Fire-and-forget -
+  // the detail view is already on screen and does not wait for it.
+  _ebayAsksScan();
 }
 
 window.forceImgReflow = function(imgEl) {
@@ -9240,10 +9344,25 @@ function _exDrawGradeStack(ctx, f, x, y, w, h) {
   // measured height has to follow or the stack re-centres wrong and runs past
   // the cover slot again (the v5.83 bug).
   const blockH = P(13) * 2 + P(6) + badge + (pqH ? P(12) + P(16) + pqH : 0);
-  let cy = y + Math.max(0, (h - blockH) / 2);
+  // v6.63, Matt: "The Predicted Grade and Page Quality should be in a black
+  // container." Same chrome as the in-app Predicted Grade box (#0d0d0f on a
+  // #2a2a3a edge), so the summary image reads as the app rather than as a
+  // beige card with a dark badge floating on it. The container is measured
+  // from the stack, not the other way round: blockH already accounts for the
+  // header, the badge and the PQ pill, so padding it keeps the v5.83 centring
+  // bug (a stack taller than its slot) from coming back.
+  const _cPad = P(12);
+  const _cOuterH = blockH + _cPad * 2;
+  const _cW = w;
+  const _cTop = y + Math.max(0, (h - _cOuterH) / 2);
+  ctx.fillStyle = "#0d0d0f";
+  _exRoundRect(ctx, cx - _cW / 2, _cTop, _cW, _cOuterH, P(10)); ctx.fill();
+  ctx.strokeStyle = "#2a2a3a"; ctx.lineWidth = Math.max(1, P(1));
+  _exRoundRect(ctx, cx - _cW / 2, _cTop, _cW, _cOuterH, P(10)); ctx.stroke();
+  let cy = _cTop + _cPad;
 
   ctx.textAlign = "center";
-  ctx.fillStyle = EXP.beigeInk; ctx.font = `800 ${P(12)}px ${F_COND}`;
+  ctx.fillStyle = "#ffffff"; ctx.font = `800 ${P(12)}px ${F_COND}`;
   ctx.fillText("PREDICTED", cx, cy + P(11));
   ctx.fillText("GRADE", cx, cy + P(24));
   cy += P(13) * 2 + P(6);
@@ -9282,7 +9401,7 @@ function _exDrawGradeStack(ctx, f, x, y, w, h) {
     // cannot reach into the pill.
     cy += P(12);
     ctx.textAlign = "center";
-    ctx.fillStyle = EXP.beigeInk; ctx.font = `800 ${P(12)}px ${F_COND}`;
+    ctx.fillStyle = "#ffffff"; ctx.font = `800 ${P(12)}px ${F_COND}`;
     ctx.fillText("PAGE QUALITY", cx, cy + P(11));
     cy += P(16);
     const pq = (typeof PQ_COLORS !== "undefined" && PQ_COLORS[f.pageQuality]) || EX_PQ_FALLBACK;
@@ -9381,7 +9500,12 @@ async function _exRenderSummary(item) {
     stars: depth === "full" ? 3 : depth === "deep" ? 2 : 1,
     restoStar: !!item.restorationCheckRan,
     footerText: "V" + (window.RG_EPOCH || window.RG_GRADING_VERSION || ""),   // v6.46: the grading epoch, not the build
-    plus: !!(f.v3 && f.v3.ceilingHit && f.v3.upsell)
+    plus: !!(f.v3 && f.v3.ceilingHit && f.v3.upsell),
+    // v6.63, Matt: the (+) sits "a bit low on the RG". Negative is up, in
+    // fractions of the numeral size. The RG box pushes its numeral down by
+    // _nudge to sit on the glyph midline; the (+) inherited that push and
+    // then needed a little of it back.
+    plusDy: -0.06
   });
   const gx = px0 + boxSize + P(8);
   const gw = px1 + innerW - P(12) - gx;
@@ -16104,149 +16228,221 @@ function _acMedian(arr) {
 // gray: Uint8ClampedArray|Array of length >= w*h, 0-255 luminance.
 // Returns { ok, left, top, right, bottom, confidence, method } where the four
 // bounds are fractions of w/h in [0,1] and describe the BOOK, unpadded.
-function autocropDetect(gray, w, h) {
-  const fail = { ok: false, left: 0, top: 0, right: 1, bottom: 1, confidence: 0, method: "none" };
-  if (!gray || !(w > 16) || !(h > 16) || gray.length < w * h) return fail;
+// v6.63 REWORK. Two changes, and they only work together.
+//
+//   COLOUR. _acRender now carries RGB alongside luminance and the detector
+//   measures Euclidean distance from the background COLOUR. A green cutting
+//   mat and a mid-tone comic cover are neighbours in luminance and far apart
+//   in RGB; that collision is what made the grayscale mask select the black
+//   Batman logo and nothing else.
+//
+//   PEELING. Colour alone does not fix the nesting. The border ring is the
+//   TABLE, so the first object found is the MAT whatever colour space we use.
+//   So the detector finds an object, then looks again INSIDE it. What stops it
+//   burrowing into artwork is _acField's uniformity test, not a depth limit:
+//   the ring just inside a mat is mat, and the ring just inside a comic's edge
+//   is cover artwork, which fails the test and ends the peel. The v6.62 nested
+//   attempt had no such test, which is why it came back with a logo.
+//
+//   The gradient snap now runs on the DISTANCE FIELD rather than on luminance.
+//   Inside the book the distance from the background is uniformly large, so
+//   artwork contributes almost no gradient and the book's edge is the only
+//   strong line in the window.
+//
+// A "pixels" object is { gray, rgb }, rgb optional and w*h*3 bytes when
+// present. With no rgb the distance is |luminance - bg| exactly as before, so
+// the gray-only path - and every test written against it - is unchanged.
+const AUTOCROP_PEEL_MAX    = 2;      // table -> mat -> book is the deepest real case
+const AUTOCROP_PEEL_SHRINK = 0.80;   // an inner box must be this much smaller to count
 
-  // 1. Background from a border ring. A comic is photographed ON something;
-  //    the ring is that something unless the book runs off the frame, in
-  //    which case the mask fills and the plausibility check below rejects it.
-  const R = Math.max(2, Math.round(Math.min(w, h) * 0.02));
-  const ring = [];
-  for (let y = 0; y < h; y++) {
+function _acDistTo(px, i, bg) {
+  if (px.rgb) {
+    const p = i * 3;
+    const dr = px.rgb[p] - bg[0], dg = px.rgb[p + 1] - bg[1], db = px.rgb[p + 2] - bg[2];
+    return Math.sqrt(dr * dr + dg * dg + db * db);
+  }
+  return Math.abs(px.gray[i] - bg[0]);
+}
+
+// The background inside `rect`, measured from a ring just inside its boundary.
+// Returns null when that ring is not a plausible background, which is both the
+// no-background guard for the whole frame AND the stop condition for the peel.
+//
+// A real background is duller than the thing sitting on it, so the ring's own
+// spread must be well under the rect's. The rect's spread is the 90th
+// PERCENTILE, not the median: an object covering less than half the pixels has
+// a median distance of zero, which would refuse every correctly-framed photo.
+function _acField(px, w, h, rect) {
+  const rw = rect.x1 - rect.x0, rh = rect.y1 - rect.y0;
+  if (!(rw > 16) || !(rh > 16)) return null;
+  const R = Math.max(2, Math.round(Math.min(rw, rh) * 0.02));
+  const isRing = (x, y) => x < rect.x0 + R || y < rect.y0 + R || x >= rect.x1 - R || y >= rect.y1 - R;
+  const c0 = [], c1 = [], c2 = [];
+  for (let y = rect.y0; y < rect.y1; y++) {
     const o = y * w;
-    for (let x = 0; x < w; x++) {
-      if (x < R || y < R || x >= w - R || y >= h - R) ring.push(gray[o + x]);
+    for (let x = rect.x0; x < rect.x1; x++) {
+      if (!isRing(x, y)) continue;
+      const i = o + x;
+      if (px.rgb) { const q = i * 3; c0.push(px.rgb[q]); c1.push(px.rgb[q + 1]); c2.push(px.rgb[q + 2]); }
+      else c0.push(px.gray[i]);
     }
   }
-  const bg = _acMedian(ring);
-  const dev = new Array(ring.length);
-  for (let i = 0; i < ring.length; i++) dev[i] = Math.abs(ring[i] - bg);
-  const ringMad = _acMedian(dev);
-  const tol = Math.max(18, ringMad * 3);
+  if (c0.length < 32) return null;
+  const bg = [ _acMedian(c0), px.rgb ? _acMedian(c1) : 0, px.rgb ? _acMedian(c2) : 0 ];
 
-  // 1b. THE RING HAS TO ACTUALLY BE A BACKGROUND. Measured against ten real
-  //     calibration photos, this is the guard that matters. When the book fills
-  //     the frame - an already-cropped photo, or one shot tight - the border
-  //     ring IS cover artwork, the "background" tone comes back as some colour
-  //     out of the cover, and the mask then finds a logo box or a panel border
-  //     and reports it with high confidence. Four of ten real photos failed
-  //     exactly that way before this check existed, and the confidence score
-  //     did NOT separate them (a wrong box scored 0.98).
-  //     A real background is duller than the thing sitting on it, so: the ring's
-  //     spread must be well under the whole frame's. If it isn't, there is no
-  //     background to crop back to and the honest answer is no suggestion.
-  //     The frame's spread is the 90th PERCENTILE, not the median: a book that
-  //     covers less than half the pixels has a median deviation of zero, which
-  //     would make this test refuse every correctly-framed photo.
-  const allDev = [];
-  for (let i = 0; i < gray.length; i += 7) allDev.push(Math.abs(gray[i] - bg));
-  allDev.sort(function (a, b) { return a - b; });
-  const imgSpread = allDev.length ? allDev[Math.floor(allDev.length * 0.90)] : 0;
-  if (!(ringMad < 40) || !(imgSpread > 0 && ringMad <= imgSpread * 0.45)) {
-    return { ok: false, left: 0, top: 0, right: 1, bottom: 1, confidence: 0, method: "no-background" };
-  }
-
-  // 2. Coverage profiles of "not background".
-  const col = new Float64Array(w), row = new Float64Array(h);
-  for (let y = 0; y < h; y++) {
+  const rdev = [];
+  for (let y = rect.y0; y < rect.y1; y++) {
     const o = y * w;
-    for (let x = 0; x < w; x++) {
-      if (Math.abs(gray[o + x] - bg) > tol) { col[x]++; row[y]++; }
+    for (let x = rect.x0; x < rect.x1; x++) if (isRing(x, y)) rdev.push(_acDistTo(px, o + x, bg));
+  }
+  const mad = _acMedian(rdev);
+  // Tolerance floors differ because the scales differ: 18 luminance levels and
+  // 26 units of RGB distance are about the same amount of "not the background".
+  const tol = Math.max(px.rgb ? 26 : 18, mad * 3);
+
+  const all = [];
+  for (let y = rect.y0; y < rect.y1; y += 2) {
+    const o = y * w;
+    for (let x = rect.x0; x < rect.x1; x += 3) all.push(_acDistTo(px, o + x, bg));
+  }
+  all.sort(function (a, b) { return a - b; });
+  const spread = all.length ? all[Math.floor(all.length * 0.90)] : 0;
+  if (!(mad < (px.rgb ? 55 : 40)) || !(spread > 0 && mad <= spread * 0.45)) return null;
+  return { bg: bg, mad: mad, tol: tol, R: R, spread: spread };
+}
+
+// Span = outermost indices reaching 25% of the profile's own peak. RELATIVE, so
+// an object filling half the rect is found as readily as one filling all of it.
+// 0.25 rather than 0.35 because the outermost rows of a cover differ from the
+// background by less than its middle does, and a short span CLIPS the edge -
+// the one failure worse than no crop at all.
+function _acSpan(prof, n) {
+  let mx = 0;
+  for (let i = 0; i < n; i++) if (prof[i] > mx) mx = prof[i];
+  if (mx < 0.15) return null;
+  const thr = mx * 0.25;
+  let a = -1, b = -1;
+  for (let i = 0; i < n; i++) if (prof[i] >= thr) { a = i; break; }
+  for (let i = n - 1; i >= 0; i--) if (prof[i] >= thr) { b = i; break; }
+  return (a >= 0 && b > a) ? { a: a, b: b, mx: mx } : null;
+}
+
+// dir: -1 for a LEFT/TOP edge, +1 for a RIGHT/BOTTOM edge. The snap may only
+// move an edge OUTWARD. An unrestricted snap clipped the book by up to 8% of
+// its width on 40 composited covers - it kept catching the cover's own border
+// rule just inside the true edge. Outward-only makes that impossible and costs
+// only a slightly looser box when the mask was already right.
+function _acSnap(g, n, at, extent, dir) {
+  const win = Math.max(1, Math.round(extent * 0.12));
+  const lo = Math.max(1, at - win), hi = Math.min(n - 2, at + win);
+  // bv starts at the MASK's own answer and the comparison is strict, so a flat
+  // window leaves the edge where the mask put it rather than dragging it a
+  // whole window inward to the first tied index.
+  let bi = at, bv = g[Math.max(0, Math.min(n - 1, at))], sum = 0, cnt = 0;
+  for (let i = lo; i <= hi; i++) { if (g[i] > bv) { bv = g[i]; bi = i; } sum += g[i]; cnt++; }
+  const mean = cnt ? sum / cnt : 0;
+  const prom = mean > 0 ? Math.min(1, (bv / mean - 1) / 2) : 0;
+  return { at: dir < 0 ? Math.min(bi, at) : Math.max(bi, at), prom: prom };
+}
+
+// One object inside `rect`, in ABSOLUTE pixel coordinates, or null.
+function _acFindBox(px, w, h, rect, f) {
+  const rw = rect.x1 - rect.x0, rh = rect.y1 - rect.y0;
+  const dist = new Float32Array(rw * rh);
+  const col = new Float64Array(rw), row = new Float64Array(rh);
+  for (let y = 0; y < rh; y++) {
+    const o = (y + rect.y0) * w + rect.x0, q = y * rw;
+    for (let x = 0; x < rw; x++) {
+      const d = _acDistTo(px, o + x, f.bg);
+      dist[q + x] = d;
+      if (d > f.tol) { col[x]++; row[y]++; }
     }
   }
-  for (let x = 0; x < w; x++) col[x] /= h;
-  for (let y = 0; y < h; y++) row[y] /= w;
+  for (let x = 0; x < rw; x++) col[x] /= rh;
+  for (let y = 0; y < rh; y++) row[y] /= rw;
+  const cs = _acSpan(col, rw), rs = _acSpan(row, rh);
+  if (!cs || !rs) return null;
 
-  // 3. Span = outermost indices reaching 35% of the profile's own peak. The
-  //    threshold is RELATIVE so a book that fills half the frame is found as
-  //    readily as one that fills all of it.
-  function span(prof, n) {
-    let mx = 0;
-    for (let i = 0; i < n; i++) if (prof[i] > mx) mx = prof[i];
-    if (mx < 0.15) return null;                 // nothing stands out at all
-    // 0.25, not 0.35. On a light textured backdrop the outermost rows/columns
-    // of a cover differ from the background by less than the middle of the book
-    // does, so a higher threshold cut the span short and the box clipped the
-    // edge. Lower is the safe direction here: too wide costs a little
-    // background, too narrow costs the edge the grader needs to see.
-    const thr = mx * 0.25;
-    let a = -1, b = -1;
-    for (let i = 0; i < n; i++) if (prof[i] >= thr) { a = i; break; }
-    for (let i = n - 1; i >= 0; i--) if (prof[i] >= thr) { b = i; break; }
-    return (a >= 0 && b > a) ? { a: a, b: b, mx: mx } : null;
-  }
-  const cs = span(col, w), rs = span(row, h);
-  if (!cs || !rs) return fail;
-
-  // 4. Snap each edge to the strongest gradient line within +/-12% of the
-  //    book's own size. The mask finds the book; the gradient finds the EDGE,
-  //    which is what a crop line wants to sit on. Searching a window around
-  //    the mask answer is deliberate - an unconstrained peak search lands on
-  //    whatever high-contrast artwork the cover happens to carry.
-  const gx = new Float64Array(w), gy = new Float64Array(h);
-  for (let y = 1; y < h - 1; y++) {
-    const o = y * w;
-    for (let x = 1; x < w - 1; x++) {
-      gx[x] += Math.abs(gray[o + x + 1] - gray[o + x - 1]);
-      gy[y] += Math.abs(gray[o + w + x] - gray[o - w + x]);
+  const gx = new Float64Array(rw), gy = new Float64Array(rh);
+  for (let y = 1; y < rh - 1; y++) {
+    const q = y * rw;
+    for (let x = 1; x < rw - 1; x++) {
+      gx[x] += Math.abs(dist[q + x + 1] - dist[q + x - 1]);
+      gy[y] += Math.abs(dist[q + rw + x] - dist[q - rw + x]);
     }
   }
   const bw = cs.b - cs.a, bh = rs.b - rs.a;
-  // dir: -1 for a LEFT/TOP edge, +1 for a RIGHT/BOTTOM edge. The snap may only
-  // move an edge OUTWARD. Measured on 40 composited real covers, an unrestricted
-  // snap clipped the book by up to 8% of its width - it kept catching the cover's
-  // own border rule or logo band just inside the true edge. A clipped crop is the
-  // one outcome worse than no crop at all: it is what trips CROP_FAILURE and what
-  // blinds the EDGE SILHOUETTE test. Outward-only makes that failure impossible
-  // and costs only a slightly looser box when the mask was already right.
-  function snap(g, n, at, extent, dir) {
-    const win = Math.max(1, Math.round(extent * 0.12));
-    const lo = Math.max(1, at - win), hi = Math.min(n - 2, at + win);
-    // bv starts at the MASK's own answer, and the comparison is strict, so a
-    // flat window (no gradient to snap to - the outermost rows of a book that
-    // runs off the frame are exactly this) leaves the edge where the mask put
-    // it instead of dragging it a whole window inward to the first tied index.
-    let bi = at, bv = g[Math.max(0, Math.min(n - 1, at))], sum = 0, cnt = 0;
-    for (let i = lo; i <= hi; i++) { if (g[i] > bv) { bv = g[i]; bi = i; } sum += g[i]; cnt++; }
-    const mean = cnt ? sum / cnt : 0;
-    // prominence: 0 when the window is flat, 1 when the peak is 3x its mean
-    const prom = mean > 0 ? Math.min(1, (bv / mean - 1) / 2) : 0;
-    const outward = dir < 0 ? Math.min(bi, at) : Math.max(bi, at);
-    return { at: outward, prom: prom };
-  }
-  const sL = snap(gx, w, cs.a, bw, -1), sR = snap(gx, w, cs.b, bw, +1);
-  const sT = snap(gy, h, rs.a, bh, -1), sB = snap(gy, h, rs.b, bh, +1);
+  const sL = _acSnap(gx, rw, cs.a, bw, -1), sR = _acSnap(gx, rw, cs.b, bw, +1);
+  const sT = _acSnap(gy, rh, rs.a, bh, -1), sB = _acSnap(gy, rh, rs.b, bh, +1);
   const L = Math.min(sL.at, sR.at), Rr = Math.max(sL.at, sR.at);
   const T = Math.min(sT.at, sB.at), B = Math.max(sT.at, sB.at);
-
-  // 5. Plausibility. A box that fills the frame means the book runs off it
-  //    (or the background matched the cover); a sliver means the mask caught
-  //    a shadow. Either way, hand back to the manual default.
-  const fw = (Rr - L) / w, fh = (B - T) / h;
-  const ar = (Rr - L) / Math.max(1, B - T);
-  const plausible = fw > 0.20 && fw < 0.98 && fh > 0.20 && fh < 0.98 && ar > 0.25 && ar < 3.0;
-  if (!plausible) return fail;
-
-  // 5b. There must be room to pad on all four sides. If an edge is already at
-  //     the frame boundary the book runs off it, /api/assess will gate the book
-  //     at CROP_FAILURE whatever we do here, and a crop that trims the other
-  //     three sides only makes the gate harder to understand. Refuse.
-  const mx4 = Math.max(2, Math.round(Math.min(w, h) * 0.015));
-  if (L < mx4 || T < mx4 || Rr > w - 1 - mx4 || B > h - 1 - mx4) {
-    return { ok: false, left: 0, top: 0, right: 1, bottom: 1, confidence: 0, method: "runs-off-frame" };
-  }
-
   const conf = Math.max(0, Math.min(1,
     0.45 * Math.min(1, cs.mx / 0.6) +
     0.45 * ((sL.prom + sR.prom + sT.prom + sB.prom) / 4) +
     0.10
   ));
+  return { x0: rect.x0 + L, y0: rect.y0 + T, x1: rect.x0 + Rr, y1: rect.y0 + B, conf: conf };
+}
+
+// gray: Uint8ClampedArray|Array of length >= w*h, 0-255 luminance.
+// rgb:  OPTIONAL Uint8ClampedArray of length >= w*h*3. Supplying it is what
+//       makes a cutting mat separable from a cover.
+// Returns { ok, left, top, right, bottom, confidence, method } where the four
+// bounds are fractions of w/h in [0,1] and describe the BOOK, unpadded.
+function autocropDetect(gray, w, h, rgb) {
+  const fail = { ok: false, left: 0, top: 0, right: 1, bottom: 1, confidence: 0, method: "none" };
+  if (!gray || !(w > 16) || !(h > 16) || gray.length < w * h) return fail;
+  const px = { gray: gray, rgb: (rgb && rgb.length >= w * h * 3) ? rgb : null };
+
+  let rect = { x0: 0, y0: 0, x1: w, y1: h };
+  let best = null, depth = 0, hadField = false;
+  for (let lvl = 0; lvl <= AUTOCROP_PEEL_MAX; lvl++) {
+    const f = _acField(px, w, h, rect);
+    if (!f) break;
+    hadField = true;
+    const box = _acFindBox(px, w, h, rect, f);
+    if (!box) break;
+    if (best) {
+      const aPrev = (best.x1 - best.x0) * (best.y1 - best.y0);
+      const aNow = (box.x1 - box.x0) * (box.y1 - box.y0);
+      if (!(aNow > 0) || !(aNow <= aPrev * AUTOCROP_PEEL_SHRINK)) break;  // same object twice
+    }
+    best = box; depth = lvl;
+    const inset = Math.max(2, Math.round(Math.min(box.x1 - box.x0, box.y1 - box.y0) * 0.02));
+    rect = { x0: box.x0 + inset, y0: box.y0 + inset, x1: box.x1 - inset, y1: box.y1 - inset };
+    if (rect.x1 - rect.x0 < 24 || rect.y1 - rect.y0 < 24) break;
+  }
+  if (!hadField) {
+    // The border ring IS the thing we would be cropping - an already-cropped
+    // photo, or one shot tight. There is no background to crop back to and the
+    // honest answer is no suggestion. Four of ten real photos used to fail by
+    // returning a logo box here, at confidence 0.98.
+    return { ok: false, left: 0, top: 0, right: 1, bottom: 1, confidence: 0, method: "no-background" };
+  }
+  if (!best) return fail;
+
+  const L = best.x0, Rr = best.x1, T = best.y0, B = best.y1;
+
+  // Plausibility. A box that fills the frame means the book runs off it (or the
+  // background matched the cover); a sliver means a shadow was caught.
+  const fw = (Rr - L) / w, fh = (B - T) / h;
+  const ar = (Rr - L) / Math.max(1, B - T);
+  if (!(fw > 0.20 && fw < 0.98 && fh > 0.20 && fh < 0.98 && ar > 0.25 && ar < 3.0)) return fail;
+
+  // There must be room to pad on all four sides. If an edge is already at the
+  // frame boundary the book runs off it, /api/assess will gate the book at
+  // CROP_FAILURE whatever we do here, and trimming the other three sides only
+  // makes the gate harder to understand.
+  const mx4 = Math.max(2, Math.round(Math.min(w, h) * 0.015));
+  if (L < mx4 || T < mx4 || Rr > w - 1 - mx4 || B > h - 1 - mx4) {
+    return { ok: false, left: 0, top: 0, right: 1, bottom: 1, confidence: 0, method: "runs-off-frame" };
+  }
 
   return {
-    ok: conf >= AUTOCROP_MIN_CONF,
+    ok: best.conf >= AUTOCROP_MIN_CONF,
     left: L / w, top: T / h, right: Rr / w, bottom: B / h,
-    confidence: conf, method: "mask+gradient"
+    confidence: best.conf,
+    method: (px.rgb ? "colour" : "mask") + "+gradient" + (depth ? "+peel" + depth : "")
   };
 }
 
@@ -16287,7 +16483,7 @@ function _acFitSlope(pts) {
 // gray/w/h as autocropDetect takes them; box is its UNPADDED result.
 // Returns degrees to rotate the image by to bring the book upright
 // (positive = clockwise), or 0.
-function autocropAngle(gray, w, h, box) {
+function autocropAngle(gray, w, h, box, rgb) {
   if (!box || !box.ok) return 0;
   const x0 = Math.round(box.left * w), x1 = Math.round(box.right * w);
   const y0 = Math.round(box.top * h), y1 = Math.round(box.bottom * h);
@@ -16297,18 +16493,28 @@ function autocropAngle(gray, w, h, box) {
   // Middle 70% of the book's height only. The corners are where a rounded or
   // chipped edge lies, and they would drag the fit.
   const from = y0 + Math.round(bh * 0.15), to = y1 - Math.round(bh * 0.15);
-  // Re-derive the background from the same ring rule the detector uses, so the
-  // two never disagree about what "background" means.
-  const R = Math.max(2, Math.round(Math.min(w, h) * 0.02));
-  const ring = [];
-  for (let y = 0; y < h; y++) {
+  // v6.63: the background is the surface the BOOK sits on, taken from a band
+  // just OUTSIDE the box - not from the frame border. On a cutting mat those
+  // are two different surfaces, and reading the frame border meant the first
+  // "not background" pixel scanning inward was the mat's edge, so both fits
+  // traced the mat and the skew came back as the mat's skew.
+  const px = { gray: gray, rgb: (rgb && rgb.length >= w * h * 3) ? rgb : null };
+  const band = Math.max(3, Math.round((x1 - x0) * 0.04));
+  const c0 = [], c1 = [], c2 = [];
+  for (let y = Math.max(0, y0 - band); y < Math.min(h, y1 + band); y++) {
     const o = y * w;
-    for (let x = 0; x < w; x++) if (x < R || y < R || x >= w - R || y >= h - R) ring.push(gray[o + x]);
+    for (let x = Math.max(0, x0 - band); x < Math.min(w, x1 + band); x++) {
+      if (x >= x0 && x < x1 && y >= y0 && y < y1) continue;   // inside the book
+      const i = o + x;
+      if (px.rgb) { const q = i * 3; c0.push(px.rgb[q]); c1.push(px.rgb[q + 1]); c2.push(px.rgb[q + 2]); }
+      else c0.push(gray[i]);
+    }
   }
-  const bg = _acMedian(ring);
-  const dev = new Array(ring.length);
-  for (let i = 0; i < ring.length; i++) dev[i] = Math.abs(ring[i] - bg);
-  const tol = Math.max(18, _acMedian(dev) * 3);
+  if (c0.length < 32) return 0;
+  const bg = [ _acMedian(c0), px.rgb ? _acMedian(c1) : 0, px.rgb ? _acMedian(c2) : 0 ];
+  const dev = [];
+  for (let k = 0; k < c0.length; k++) dev.push(px.rgb ? Math.hypot(c0[k] - bg[0], c1[k] - bg[1], c2[k] - bg[2]) : Math.abs(c0[k] - bg[0]));
+  const tol = Math.max(px.rgb ? 26 : 18, _acMedian(dev) * 3);
 
   const L = [], Rr = [];
   const pad = Math.max(2, Math.round((x1 - x0) * 0.25));
@@ -16316,10 +16522,10 @@ function autocropAngle(gray, w, h, box) {
     const o = y * w;
     let lx = -1, rx = -1;
     for (let x = Math.max(0, x0 - pad); x < Math.min(w, x1 + pad); x++) {
-      if (Math.abs(gray[o + x] - bg) > tol) { lx = x; break; }
+      if (_acDistTo(px, o + x, bg) > tol) { lx = x; break; }
     }
     for (let x = Math.min(w - 1, x1 + pad); x >= Math.max(0, x0 - pad); x--) {
-      if (Math.abs(gray[o + x] - bg) > tol) { rx = x; break; }
+      if (_acDistTo(px, o + x, bg) > tol) { rx = x; break; }
     }
     if (lx >= 0) L.push({ x: lx, y });
     if (rx >= 0) Rr.push({ x: rx, y });
@@ -16380,10 +16586,14 @@ function _acRender(img, deg) {
   ctx.drawImage(img, -nw * scale / 2, -nh * scale / 2, nw * scale, nh * scale);
   const d = ctx.getImageData(0, 0, sw, sh).data;
   const gray = new Uint8ClampedArray(sw * sh);
-  for (let i = 0, p = 0; i < gray.length; i++, p += 4) {
+  // v6.63: RGB travels with the luminance. Packed 3-wide rather than passing
+  // the RGBA buffer through so the detector never has to know the stride.
+  const rgb = new Uint8ClampedArray(sw * sh * 3);
+  for (let i = 0, p = 0, q = 0; i < gray.length; i++, p += 4, q += 3) {
     gray[i] = (d[p] * 77 + d[p + 1] * 151 + d[p + 2] * 28) >> 8;
+    rgb[q] = d[p]; rgb[q + 1] = d[p + 1]; rgb[q + 2] = d[p + 2];
   }
-  return { gray, w: sw, h: sh };
+  return { gray, rgb, w: sw, h: sh };
 }
 
 // Returns { box, angle } or null. `box` is PADDED and expressed against the
@@ -16394,10 +16604,10 @@ function autocropFromImage(img) {
 
     const flat = _acRender(img, 0);
     if (!flat) return null;
-    const first = autocropDetect(flat.gray, flat.w, flat.h);
+    const first = autocropDetect(flat.gray, flat.w, flat.h, flat.rgb);
     if (!first.ok) { console.log("[autocrop] no suggestion (" + first.method + ", conf " + first.confidence.toFixed(2) + ")"); return null; }
 
-    const angle = autocropAngle(flat.gray, flat.w, flat.h, first);
+    const angle = autocropAngle(flat.gray, flat.w, flat.h, first, flat.rgb);
     if (!angle) {
       console.log("[autocrop] conf " + first.confidence.toFixed(2) + ", no skew");
       return { box: autocropPad(first, flat.w, flat.h, AUTOCROP_PAD_FRAC), angle: 0 };
@@ -16408,7 +16618,7 @@ function autocropFromImage(img) {
     // again once it is upright is what makes the 1cm margin actually 1cm.
     const rot = _acRender(img, -angle);
     if (!rot) return { box: autocropPad(first, flat.w, flat.h, AUTOCROP_PAD_FRAC), angle: 0 };
-    const second = autocropDetect(rot.gray, rot.w, rot.h);
+    const second = autocropDetect(rot.gray, rot.w, rot.h, rot.rgb);
     if (!second.ok) {
       console.log("[autocrop] skew " + angle + "deg found but the derotated frame did not detect (" + second.method + ") - not rotating");
       return { box: autocropPad(first, flat.w, flat.h, AUTOCROP_PAD_FRAC), angle: 0 };
@@ -17938,7 +18148,20 @@ async function submitRestorationCheck() {
           _cb.style.cursor = "pointer";
           _cb.onclick = () => {
             if (window.RobograderScan && window.RobograderScan.dismiss) window.RobograderScan.dismiss();
-            submitForm().then(() => { showDetail(formData.id); });
+            // v6.63: submitForm() already routes to detail; this is a second
+            // chance, not a duplicate. What was missing is the case where
+            // showDetail CANNOT route — it does `items.find(...); if
+            // (!selected) return;` and silently leaves whatever view was last
+            // rendered, which after an unconditional renderForm() is the EDIT
+            // form. Matt reported exactly that after a Full. A silent return is
+            // how a navigation bug hides, so it now says so and goes somewhere.
+            (async () => {
+              try { await submitForm(); } catch (e) { console.error("[complete] submitForm:", e); }
+              const _id = formData && formData.id;
+              if (_id && items.find(c => c.id === _id)) { showDetail(_id); return; }
+              console.error("[complete] could not route to detail; id=" + _id + " view=" + view);
+              if (typeof showList === "function") showList();
+            })();
           };
         }
       }, _revealMs);
@@ -18237,7 +18460,20 @@ async function submitFullAssessment() {
           _cb.style.cursor = "pointer";
           _cb.onclick = () => {
             if (window.RobograderScan && window.RobograderScan.dismiss) window.RobograderScan.dismiss();
-            submitForm().then(() => { showDetail(formData.id); });
+            // v6.63: submitForm() already routes to detail; this is a second
+            // chance, not a duplicate. What was missing is the case where
+            // showDetail CANNOT route — it does `items.find(...); if
+            // (!selected) return;` and silently leaves whatever view was last
+            // rendered, which after an unconditional renderForm() is the EDIT
+            // form. Matt reported exactly that after a Full. A silent return is
+            // how a navigation bug hides, so it now says so and goes somewhere.
+            (async () => {
+              try { await submitForm(); } catch (e) { console.error("[complete] submitForm:", e); }
+              const _id = formData && formData.id;
+              if (_id && items.find(c => c.id === _id)) { showDetail(_id); return; }
+              console.error("[complete] could not route to detail; id=" + _id + " view=" + view);
+              if (typeof showList === "function") showList();
+            })();
           };
         }, 3000);
       };
@@ -18255,7 +18491,15 @@ async function submitFullAssessment() {
     alert(userMsg || e.message);
   } finally {
     assessing = false;
-    renderForm();
+    // v6.63: matched to assessHighGrade's finally, which has always been
+    // guarded. Full re-rendered the form UNCONDITIONALLY, including from views
+    // that are not a form — and an unconditional renderForm() is how a user
+    // ends up looking at the edit screen after an action that should have left
+    // them on detail. HOW_WE_WORK section 3: when two paths must agree, make
+    // them LOOK the same. These two did not, and only one was reported.
+    if (view === "edit" || view === "add" || view === "detail") {
+      renderForm();
+    }
   }
 }
 

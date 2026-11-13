@@ -1698,7 +1698,21 @@ function renderStats() {
                 +   '<span style="width:42px"></span><span style="flex:1;text-align:right">24h</span>'
                 +   '<span style="flex:1;text-align:right">7d</span><span style="flex:1;text-align:right">30d</span></div>'
                 + line('Main', ck.main) + line('Deep', ck.deep) + line('All', ck.all)
-                + '<div style="opacity:.55;font-size:10px;margin-top:4px">mean \u00b7 n beside each</div>'
+                + (function(){
+                    // v6.63: SAY WHY IT IS EMPTY. Three dashes and no
+                    // explanation sent Matt back twice with "it's not
+                    // working", which is all the card allowed him to say.
+                    var allN = (ck.all && ck.all.n) || {};
+                    if (allN.month) return '<div style="opacity:.55;font-size:10px;margin-top:4px">mean \u00b7 n beside each</div>';
+                    var sb = state.stats.statsBuild;
+                    if (!sb) return '<div style="font-size:10px;margin-top:4px;color:#e4564a">'
+                      + 'this admin build predates the card \u2014 redeploy</div>';
+                    var ac = (assessCost && assessCost.n) || {};
+                    if (ac.month) return '<div style="font-size:10px;margin-top:4px;color:#e4564a">'
+                      + 'split is broken: ' + ac.month + ' cost rows in 30d but none bucketed</div>';
+                    return '<div style="opacity:.7;font-size:10px;margin-top:4px">'
+                      + 'no cost-bearing timing rows in 30d (server ' + sb + ')</div>';
+                  })()
                 + '</div>';
             })();})()}
         </div>

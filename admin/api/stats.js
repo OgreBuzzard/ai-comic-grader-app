@@ -579,7 +579,19 @@ export default async function handler(req, res) {
         day: assessCost.day.n ? +(assessCost.day.cents / 100 / assessCost.day.n).toFixed(4) : null,
         week: assessCost.week.n ? +(assessCost.week.cents / 100 / assessCost.week.n).toFixed(4) : null,
         month: assessCost.month.n ? +(assessCost.month.cents / 100 / assessCost.month.n).toFixed(4) : null,
+        // v6.63: n is published so the Cost/Assessment card can tell "no rows
+        // matched" apart from "this field never arrived". assessCost and
+        // costByKind use the IDENTICAL row filter, so if this n is non-zero
+        // while costByKind's is zero, the bug is in the split; if both are
+        // zero, no cost-bearing timing rows exist in the window; and if
+        // assessCost itself is missing from the response, the admin project is
+        // running a build older than v6.54. Three outcomes, one line of data.
+        n: { day: assessCost.day.n, week: assessCost.week.n, month: assessCost.month.n },
       },
+      // Echoed so the card can say which build answered it. A stale admin
+      // deploy and a genuinely empty window look identical otherwise, and that
+      // ambiguity has now cost two round-trips.
+      statsBuild: '6.63',
       generatedAt: new Date().toISOString(),
     });
 
