@@ -134,6 +134,51 @@ export function isJunkListing(title) {
   return JUNK_RE.test(String(title || ''));
 }
 
+// ── THE ISSUE NUMBER. This is the big one. ─────────────────────────────────
+// The first live debug dump showed what was actually wrecking FF 1: the band
+// contained Fantastic Four #5, #55, #7, #52 and #13. eBay's keyword search
+// returns any issue of the title, SLAB_RE happily read each one's grade, and
+// nothing anywhere checked that the listing was the issue we asked for. The
+// reprints were a real problem but a second-order one; this was first-order
+// and it affects EVERY book, not just the keys.
+//
+// The number must appear as its own token:
+//   - not preceded by a digit or a dot  -> "1962" is not issue 2, "9.4" is
+//                                          not issue 4
+//   - not followed by a digit or a dot  -> "#13" is not issue 1, "5.0" is not
+//                                          issue 5
+//   - not followed by an ORDINAL SUFFIX  -> "1st Appearance" is not issue 1
+// An optional '#' and leading zeros are allowed, so "#007" matches issue 7.
+//
+// The ordinal rule is the one that is not obvious and it caught three of the
+// nine live listings. Comic titles are PACKED with "1st Appearance", "1st
+// App", "2nd Print" — a bare digit check reads every one of those as issue 1
+// or 2, which would have let Fantastic Four #13 ("1st Watcher") and #52 ("1st
+// Black Panther") back in as issue 1.
+export function titleHasIssue(title, issue) {
+  const t = String(title || '');
+  const n = String(issue || '').trim();
+  if (!t || !/^\d{1,5}$/.test(n)) return true;   // non-numeric issue: cannot check, do not reject
+  const re = new RegExp('(?:^|[^0-9.])#?\\s*0*' + n + '(?![0-9.])(?!(?:st|nd|rd|th)\\b)', 'i');
+  return re.test(t);
+}
+
+// ── NON-UNIVERSAL CGC LABELS ───────────────────────────────────────────────
+// RESTORED (purple label) and QUALIFIED (green) are the same book at the same
+// numeric grade and a materially different price — restoration typically
+// trades at a steep discount to an unrestored copy of the same grade. CGC
+// itself distinguishes them with a different coloured label, which is the
+// clearest possible signal that they are not comparable. Both appeared in the
+// first live sample: a "CGC 4.5 RESTORED" FF 1 and a "CGC 6.5 Qualified"
+// Hulk 181.
+// Signature Series is deliberately NOT excluded. It is a universal-grade book
+// with an autograph; it usually carries a premium, but it is the same comic in
+// the same condition, and excluding it would thin an already thin set.
+const LABEL_RE = /\b(restored|restoration|qualified|conserved)\b/i;
+export function isNonUniversalLabel(title) {
+  return LABEL_RE.test(String(title || ''));
+}
+
 export function parseSlabGrade(title) {
   if (!title) return null;
   const m = String(title).match(SLAB_RE);
@@ -165,7 +210,7 @@ export function bandFor(grade, rungs) {
   };
 }
 
-export function summarise(items, grade) {
+export function summarise(items, grade, issue) {
   const slabs = [];
   // `slabs` is also returned under `matched` when debug=1, so a wrong-looking
   // median can be explained by LOOKING at what matched instead of theorising
@@ -177,6 +222,8 @@ export function summarise(items, grade) {
     const parsed = parseSlabGrade(it.title);
     if (!parsed) continue;
     if (isJunkListing(it.title)) continue;
+    if (!titleHasIssue(it.title, issue)) continue;
+    if (isNonUniversalLabel(it.title)) continue;
     const price = parseFloat(
       (it.price && it.price.value) ||
       (it.currentBidPrice && it.currentBidPrice.value) || ''
@@ -303,16 +350,16 @@ export default async function handler(req, res) {
   try {
     if (year) {
       items = await browse(true);
-      result = summarise(items, grade);
+      result = summarise(items, grade, issue);
       yearUsed = true;
       if (result.n < MIN_LISTINGS) {
         const wide = await browse(false);
-        const wideResult = summarise(wide, grade);
+        const wideResult = summarise(wide, grade, issue);
         if (wideResult.n >= MIN_LISTINGS) { items = wide; result = wideResult; yearUsed = false; }
       }
     } else {
       items = await browse(false);
-      result = summarise(items, grade);
+      result = summarise(items, grade, issue);
     }
   } catch (e) {
     console.error('[ebay] browse', e.status || '', e.message);

@@ -116,7 +116,7 @@ export default async function handler(req, res) {
         };
     };
 
-    // ── User ID fast path (S24) ──────────────────────────────────────────────
+    // ── User ID fast path (S22) ──────────────────────────────────────────────
     // WHY. The generic search below loads EVERY user doc and then every one of
     // their items subcollections just to filter on a substring. At the booth,
     // with someone standing there reading a 4-character code off their phone,

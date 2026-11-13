@@ -173,8 +173,48 @@ ok('auto-crop is gated to main slots only', /_cropAutoOK = .*type === "main";/.t
 ok('the user-moved latch is armed on cropstart', /cropstart: function\(\) \{ _cropUserMoved = true; \}/.test(html),
   'without it, _fitCrop at 450ms yanks the box back from under the user');
 ok('detection runs once per open', /if \(!_cropAutoTried\) \{/.test(html));
-ok('the 9:14 default survives as the fallback', /if \(!_cropComicFB\) return;/.test(html),
-  'detection refuses often enough that the fallback has to stay');
+// v6.59. The opposite of what this file asserted a week ago, and the reason
+// is worth keeping: the 9:14 fallback cut both side edges off a correctly
+// framed photo and the assessment failed at the gate that needs whole edges.
+// confirmCrop() replaces the stored image, so it destroyed the original.
+// An automatic action that destroys data has to be right far more often than
+// that was. A refusal now leaves the WHOLE IMAGE selected.
+ok('there is NO aspect-ratio fallback box', !/const _ar = 9 \/ 14;/.test(html),
+  'a 9:14 box is a claim about the BOOK, not the PHOTO - imposing it on the canvas cuts');
+ok('a refusal leaves the crop box alone',
+  /if \(!_cropAutoBox \|\| !_cropAutoBox\.box\) return;/.test(html),
+  'no crop is recoverable; a wrong crop is not');
+ok('rotation is applied before any box is set',
+  html.indexOf('_cropperInstance.rotate(_cropAutoBox.angle)') <
+  html.indexOf('_cropperInstance.setCropBoxData({\n                  left:   _cc.left + _b.left')
+  || /rotate\(_cropAutoBox\.angle\)/.test(html));
+ok('the skew estimator requires BOTH edges to agree',
+  /AUTOCROP_SKEW_AGREE/.test(html) && /edges disagree on skew/.test(html),
+  'two parallel fits agreeing is the evidence; one fit alone could be a mat rule or a shadow');
+ok('skew is bounded', /AUTOCROP_MAX_SKEW\s*=\s*12/.test(html) && /AUTOCROP_MIN_SKEW\s*=\s*0\.4/.test(html));
+
+// ── v6.61: nothing may destroy pixels the user cannot get back ────────────
+// Two separate places were throwing image data away, and only one of them was
+// the crop tool:
+//   1. cameraCapture() reproduced the VIEWFINDER, which is object-fit:cover
+//      and therefore already a crop of the sensor feed. The pixels outside the
+//      stage aspect never reached the file, so the cropper could not show them
+//      and the handles could not reach them. This is what Matt actually hit.
+//   2. confirmCrop() replaced the slot image, so the pre-crop frame was gone.
+ok('the camera captures the FULL sensor frame',
+  /canvas\.width = videoW;[\s\S]{0,120}ctx\.drawImage\(video, 0, 0, videoW, videoH\)/.test(html),
+  'the viewfinder is a crop of the feed - capturing what it showed is how the margin was lost');
+ok('the old cover-rect capture is gone',
+  !/ctx\.drawImage\(video, sx, sy, visibleW, visibleH/.test(html));
+ok('the pre-crop original is kept', /formData\._cropOriginals\[_key\] = _cropperOriginalSrc/.test(html));
+ok('only the FIRST original is kept',
+  /if \(!formData\._cropOriginals\[_key\] && _cropperOriginalSrc\)/.test(html),
+  'crop twice and you must still get back to the camera frame, not to the last crop');
+ok('the cropper reopens on the ORIGINAL', /const src = _orig \|\| shown;/.test(html));
+ok('the previous box is restored on reopen', /_cropperReopenBox/.test(html));
+ok('a reopen does not re-run auto-crop',
+  /_cropAutoTried = true;   \/\/ and do not let auto-crop fire after it/.test(html),
+  're-detecting would silently overrule a framing the user already chose');
 
 console.log('\n  ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

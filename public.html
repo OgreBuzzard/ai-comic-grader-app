@@ -37,7 +37,7 @@
      canonical copy in index.html; if you edit the ladder/CONFIG there, update here too. -->
 <script>
   window.RG_V2_DISPLAY = true;
-  window.RG_GRADING_VERSION = "6.57";
+  window.RG_GRADING_VERSION = "6.61";
   window.RG_EPOCH = "6.55";   // v6.46: see lib/version.js
   window.RGScoreV2 = (function () {
     const LADDER = ["0","0+","1-","1","1+","2-","2","2+","3-","3","3+","4-","4","4+","5-","5","5+","6-","6","6+","7-","7","7+","8-","8","8+","9-","9","9+","10-","10"];
@@ -78,7 +78,7 @@
     var pq = String(pageQuality || "").toLowerCase().trim();
     if (!pq) return 0.5;
     if (pq === "white") return 1;
-    // S23: Off-White or better rounds up to a full 1 (a book with Off-White pages
+    // S22: Off-White or better rounds up to a full 1 (a book with Off-White pages
     // can now reach a perfect interior). Cream-tinged tiers stay 0.5; cream/tan/
     // brittle score 0.
     if (pq === "off-white to white" || pq === "off-white") return 1;
@@ -95,7 +95,7 @@
 
   var DEPTH_CAP = { main: 9.0, deep: 9.5, full: 10.0 };
 
-  // S23: a true 10 is reserved for a genuinely flawless book. A comic needs NO
+  // S22: a true 10 is reserved for a genuinely flawless book. A comic needs NO
   // listed defects, White pages (full 1/1 interior), and v1 faces >= these
   // minimums; a card needs the same on its axes plus full centering. Anything
   // short is capped at 9.5 so round-then-sum can't hand a 10 to a flawed book.
@@ -125,7 +125,7 @@
     return s;
   }
 
-  // S23: card analogue of shaveToCap — shave 0.5 round-robin surface -> corners ->
+  // S22: card analogue of shaveToCap — shave 0.5 round-robin surface -> corners ->
   // edges (centering fixed) until the subscores sum to the ceiling.
   function shaveCardToCap(sub, cap) {
     var s = { surface: sub.surface, corners: sub.corners, edges: sub.edges, centering: sub.centering };
@@ -178,7 +178,7 @@
       spine: clamp((input.spine20 || 0) / 10, 0, 2),
       interior: interiorTier(input.pageQuality, !!input.interiorDefect)
     };
-    // S23: round EACH subscore to the nearest 0.5, THEN sum for the grade (was
+    // S22: round EACH subscore to the nearest 0.5, THEN sum for the grade (was
     // sum-then-round-once + decompose, which shaved legit subscores down — e.g. a
     // 46 front decomposed back to 4, a 30 front to 2.5). Interior is a 0/0.5/1 tier.
     var rounded = {
@@ -191,7 +191,7 @@
 
     var cap = DEPTH_CAP[depth] != null ? DEPTH_CAP[depth] : 9.0;
     if (slabbed) cap = Math.min(cap, 9.5);   // slab can never reach RG 10 (no Full)
-    // S23: gate the perfect 10 (see TEN_GATE). No listed defects, White pages,
+    // S22: gate the perfect 10 (see TEN_GATE). No listed defects, White pages,
     // near-max faces — else the ceiling drops to 9.5.
     var _perfect10 = !input.hasDefects
       && String(input.pageQuality || "").toLowerCase().trim() === "white"
@@ -201,7 +201,7 @@
       && (input.spine20 || 0) >= TEN_GATE.spine;
     if (!_perfect10) cap = Math.min(cap, 9.5);
 
-    // S25 (#5): photo quality gates the TOP grades. Severity > 1 (more than one B,
+    // S22 (#5): photo quality gates the TOP grades. Severity > 1 (more than one B,
     // OR any C) steps the top rungs down — a 10 needs clean photos (->9.5), a 9.5
     // needs clean photos (->9.0); one B leaves both intact. This is the ONE place
     // photo quality moves the grade (elsewhere it only sets PM).
@@ -313,7 +313,7 @@
       edges: clamp((input.edges20 || 0) / 10, 0, 2),
       centering: clamp(roundHalf((input.centering10 || 0) / 10), 0, 1)
     };
-    // S23: round each axis to 0.5 then sum (was sum-then-round + decompose).
+    // S22: round each axis to 0.5 then sum (was sum-then-round + decompose).
     var rounded = {
       surface: clamp(roundHalf(precise.surface), 0, 5),
       corners: clamp(roundHalf(precise.corners), 0, 2),
@@ -323,7 +323,7 @@
     var uncapped = roundHalf(rounded.surface + rounded.corners + rounded.edges + rounded.centering);
     var cap = DEPTH_CAP_CARD[depth] != null ? DEPTH_CAP_CARD[depth] : 9.0;
     if (slabbed) cap = Math.min(cap, 9.5);
-    // S23: gate the perfect 10 for cards — no listed defects, full centering, and
+    // S22: gate the perfect 10 for cards — no listed defects, full centering, and
     // near-max surface/corners/edges; else the ceiling drops to 9.5.
     var _perfectCard = !input.hasDefects
       && (input.centering10 || 0) >= TEN_GATE.centering10
@@ -472,10 +472,10 @@
   .content {
     width: 100%;
     max-width: 720px;
-    padding: 16px 16px 0;   /* S23: top padding replaces the removed header's */
+    padding: 16px 16px 0;   /* S22: top padding replaces the removed header's */
   }
 
-  /* S23: the whole assessment sits in one container, matching the app's
+  /* S22: the whole assessment sits in one container, matching the app's
      Detail view (.card in index.html: #fff / 1px #ddd8d0 / 8px radius).
      #app holds only the assessment — the CTA and the footer disclaimer are
      appended to .content AFTER it, so they stay outside the box. */
@@ -662,7 +662,7 @@
 </head>
 <body>
 
-<!-- S23: logo + "COMIC GRADING APP" header removed. The listing leads with
+<!-- S22: logo + "COMIC GRADING APP" header removed. The listing leads with
      the book now; branding lives in the CTA at the bottom instead. -->
 
 <div class="content">
@@ -1259,7 +1259,7 @@
   // no path forward into the app. The CTA gives them one. The iframe
   // gate (window.self !== window.top) means it never appears inside the
   // in-app modal where the original concerns apply.
-  // S23 (Matt): the button had gone missing in practice because of the
+  // S22 (Matt): the button had gone missing in practice because of the
   // standalone-only gate above — viewed from inside the app (the common path)
   // the listing renders in an iframe, so it never appeared. It now renders
   // ALWAYS. The original reason for the gate was a reload loop: href="/"

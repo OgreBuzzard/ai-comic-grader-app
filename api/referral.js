@@ -15,7 +15,7 @@ import process from 'node:process';
 import { tierOf } from '../lib/repeat_bonus.js';
 
 // Bonus to the REFERRER (the code owner), by tier. The issuer always gets +3.
-// S23 (2026-09-24): comic_stack 5 -> 3. On a 5-credit pack a 5-credit referrer
+// S22 (2026-09-24): comic_stack 5 -> 3. On a 5-credit pack a 5-credit referrer
 // bonus paid out MORE than the buyer's own purchase, which made the smallest
 // tier the cheapest way to farm credits. 3 keeps it generous without inverting.
 // This is also the number stated in the public release video, so the two now agree.

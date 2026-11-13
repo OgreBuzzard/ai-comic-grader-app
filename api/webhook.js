@@ -154,7 +154,7 @@ export default async function handler(req, res) {
         const nowMs = Date.now();
         const priorSnap = await db.collection('purchases').where('userId', '==', userId).get();
         const priorDatas = priorSnap.docs.map(d => d.data());
-        // S24: EFFECTIVE, not earned. A customer whose repeat Comic Stack bonus has
+        // S22: EFFECTIVE, not earned. A customer whose repeat Comic Stack bonus has
         // made the Stack cheaper per credit than an unbonused Comic Wall gets the
         // Wall unlocked to parity, so moving up a tier is never a worse deal.
         // See the CROSS-TIER PARITY UNLOCK block in lib/repeat_bonus.js.

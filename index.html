@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Robograder">
   <meta name="theme-color" content="#0d0d0f">
 
-  <!-- Meta Pixel (S24) — web/PWA only (gated out of native builds). Fires PageView
+  <!-- Meta Pixel (S22) — web/PWA only (gated out of native builds). Fires PageView
        on load; CompleteRegistration fires on new-account creation in loadUserCredits(). -->
   <script>
   if (location.hostname === "robograder.app") {
@@ -149,7 +149,7 @@
     var pq = String(pageQuality || "").toLowerCase().trim();
     if (!pq) return 0.5;
     if (pq === "white") return 1;
-    // S23: Off-White or better rounds up to a full 1 (a book with Off-White pages
+    // S22: Off-White or better rounds up to a full 1 (a book with Off-White pages
     // can now reach a perfect interior). Cream-tinged tiers stay 0.5; cream/tan/
     // brittle score 0.
     if (pq === "off-white to white" || pq === "off-white") return 1;
@@ -166,7 +166,7 @@
 
   var DEPTH_CAP = { main: 9.0, deep: 9.5, full: 10.0 };
 
-  // S23: a true 10 is reserved for a genuinely flawless book. A comic needs NO
+  // S22: a true 10 is reserved for a genuinely flawless book. A comic needs NO
   // listed defects, White pages (full 1/1 interior), and v1 faces >= these
   // minimums; a card needs the same on its axes plus full centering. Anything
   // short is capped at 9.5 so round-then-sum can't hand a 10 to a flawed book.
@@ -196,7 +196,7 @@
     return s;
   }
 
-  // S23: card analogue of shaveToCap — shave 0.5 round-robin surface -> corners ->
+  // S22: card analogue of shaveToCap — shave 0.5 round-robin surface -> corners ->
   // edges (centering fixed) until the subscores sum to the ceiling.
   function shaveCardToCap(sub, cap) {
     var s = { surface: sub.surface, corners: sub.corners, edges: sub.edges, centering: sub.centering };
@@ -249,7 +249,7 @@
       spine: clamp((input.spine20 || 0) / 10, 0, 2),
       interior: interiorTier(input.pageQuality, !!input.interiorDefect)
     };
-    // S23: round EACH subscore to the nearest 0.5, THEN sum for the grade (was
+    // S22: round EACH subscore to the nearest 0.5, THEN sum for the grade (was
     // sum-then-round-once + decompose, which shaved legit subscores down — e.g. a
     // 46 front decomposed back to 4, a 30 front to 2.5). Interior is a 0/0.5/1 tier.
     var rounded = {
@@ -262,7 +262,7 @@
 
     var cap = DEPTH_CAP[depth] != null ? DEPTH_CAP[depth] : 9.0;
     if (slabbed) cap = Math.min(cap, 9.5);   // slab can never reach RG 10 (no Full)
-    // S23: gate the perfect 10 (see TEN_GATE). No listed defects, White pages,
+    // S22: gate the perfect 10 (see TEN_GATE). No listed defects, White pages,
     // near-max faces — else the ceiling drops to 9.5.
     var _perfect10 = !input.hasDefects
       && String(input.pageQuality || "").toLowerCase().trim() === "white"
@@ -272,7 +272,7 @@
       && (input.spine20 || 0) >= TEN_GATE.spine;
     if (!_perfect10) cap = Math.min(cap, 9.5);
 
-    // S25 (#5): photo quality gates the TOP grades. Severity > 1 (more than one B,
+    // S22 (#5): photo quality gates the TOP grades. Severity > 1 (more than one B,
     // OR any C) steps the top rungs down — a 10 needs clean photos (->9.5), a 9.5
     // needs clean photos (->9.0); one B leaves both intact. This is the ONE place
     // photo quality moves the grade (elsewhere it only sets PM).
@@ -421,7 +421,7 @@
       edges: clamp((input.edges20 || 0) / 10, 0, 2),
       centering: clamp(roundHalf((input.centering10 || 0) / 10), 0, 1)
     };
-    // S23: round each axis to 0.5 then sum (was sum-then-round + decompose).
+    // S22: round each axis to 0.5 then sum (was sum-then-round + decompose).
     var rounded = {
       surface: clamp(roundHalf(precise.surface), 0, 5),
       corners: clamp(roundHalf(precise.corners), 0, 2),
@@ -431,7 +431,7 @@
     var uncapped = roundHalf(rounded.surface + rounded.corners + rounded.edges + rounded.centering);
     var cap = DEPTH_CAP_CARD[depth] != null ? DEPTH_CAP_CARD[depth] : 9.0;
     if (slabbed) cap = Math.min(cap, 9.5);
-    // S23: gate the perfect 10 for cards — no listed defects, full centering, and
+    // S22: gate the perfect 10 for cards — no listed defects, full centering, and
     // near-max surface/corners/edges; else the ceiling drops to 9.5.
     var _perfectCard = !input.hasDefects
       && (input.centering10 || 0) >= TEN_GATE.centering10
@@ -799,7 +799,7 @@ onAuthStateChanged(auth, async user => {
       text-shadow: 0 0.5px 0 rgba(255,250,220,0.6);
       pointer-events: none;
     }
-    /* S24: credit count-up pulse — coin pops when the balance increases */
+    /* S22: credit count-up pulse — coin pops when the balance increases */
     @keyframes rgCoinPulse {
       0%   { transform: scale(1); }
       45%  { transform: scale(1.4); }
@@ -1232,11 +1232,25 @@ onAuthStateChanged(auth, async user => {
          itself to this padded content box, so padding here = symmetric framing.
          Applies to both iOS (notch/island) and the PWA (insets resolve to 0). */
       box-sizing: border-box;
+      /* v6.60 — THE SIDE GUTTERS ARE A GESTURE SAFE ZONE, NOT JUST FRAMING.
+         Matt: "the blue handles are out near the edges of the screen and the
+         Android OS reads the swipe gesture at the edge of a screen as a
+         gesture that pulls users out of the app."
+         Android's back gesture claims roughly the outer 20dp of each side and
+         iOS's interactive-pop claims a similar strip on the left, so a drag
+         that STARTS inside that strip is stolen by the OS before the page sees
+         it. The e/w handles are 18px wide and were landing right in it.
+         --crop-gutter is the horizontal inset that keeps them clear. 34px puts
+         the centre of an 18px handle about 43px in from the screen edge, which
+         is outside both systems' strips with room to spare. The top and bottom
+         stay at 16px: there is no horizontal-edge gesture to dodge, and the
+         image wants the height. */
+      --crop-gutter: 34px;
       padding:
         calc(env(safe-area-inset-top, 0px) + 16px)
-        calc(env(safe-area-inset-right, 0px) + 16px)
+        calc(env(safe-area-inset-right, 0px) + var(--crop-gutter))
         16px
-        calc(env(safe-area-inset-left, 0px) + 16px);
+        calc(env(safe-area-inset-left, 0px) + var(--crop-gutter));
     }
     /* S21 CROPPER FIX (the long-standing "handles/image outside the frame" bug):
        Cropper.js sizes .cropper-container to the img's PARENT element's box. That
@@ -2401,7 +2415,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.57";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.61";
       // v6.46: the GRADING epoch - the version the assessment last actually
       // changed at. RG_GRADING_VERSION above is the BUILD number and moves on
       // every change; this one does not. The label stamps THIS, because "V6.45"
@@ -2412,7 +2426,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.57");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.61");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -2816,7 +2830,7 @@ window.matchCoupon = function matchCoupon(title, issue) {
   return _couponIndex.books.find(e => _normalizeKeyIssue(e.issue) === ni && _idxTitleHit(e, nt)) || null;
 };
 
-// S23: broad candidate check — is this a title/era that SOMETIMES carried a Mark
+// S22: broad candidate check — is this a title/era that SOMETIMES carried a Mark
 // Jewelers insert? Uses the served candidate list (mirrors lib INSERT_TITLES).
 // Use matchInsert() first for a confirmed hit; this is the softer "might have one".
 window.matchInsertCandidate = function matchInsertCandidate(title, year) {
@@ -2907,6 +2921,18 @@ window.matchFMV = function matchFMV(title, issue, grade, printing, year) {
   // first-printing money. The old gate caught only the literal words "facsimile"
   // and "reprint", so "3rd print", "Virgin variant" and "Gold edition" all sailed
   // through and took the first printing's value.
+  // v6.60: `g` IS PARSED HERE, NOT BELOW THE VARIANT BRANCH. It used to be
+  // declared after that branch while the branch's own loop read it, so a
+  // variant or facsimile WITH a manual curve threw
+  //   ReferenceError: Cannot access 'g' before initialization
+  // out of matchFMV, out of fmvTierOf, and out of the 4200ms timeout in
+  // mountResults that enables the COMPLETE button — leaving the app frozen on
+  // "ASSESSING…" with the server already charged and the book never saved.
+  // Matt hit it on a Fantastic Four #1 facsimile, 2026-11-13.
+  // A plain printing never entered that branch, which is why this survived
+  // since the variant-curve work: every ordinary book takes the other path.
+  const g = parseFloat(grade);
+  if (!isFinite(g)) return null;
   const _pclass = window.fmvPrintingClass(printing);
   if (_pclass === "other") {
     // A variant, a later printing or a price variant is its own book. It gets
@@ -2925,8 +2951,6 @@ window.matchFMV = function matchFMV(title, issue, grade, printing, year) {
     }
     return null;
   }
-  const g = parseFloat(grade);
-  if (!isFinite(g)) return null;
   const key = _fmvKeyOf(title, issue);
   // Manual dashboard FMV wins over the static index for this key.
   const _ov = _fmvOverrides && _fmvOverrides[key];
@@ -4011,7 +4035,7 @@ const CAMERA_SLOT_ZOOM_RESTORATION = [ false, false ];
 // ── S22: SINGLE SOURCE OF TRUTH FOR THE PER-SLOT LENS DEFAULT ──────────────
 // Matt reported (3rd time) that Main's Back Cover and Interior still opened on
 // ZOOM IN. Root cause: TWO places decided the default lens and they disagreed.
-//   • camera init (_zoomDefault) followed the S25 spec — Main = WIDE.
+//   • camera init (_zoomDefault) followed the S22 spec — Main = WIDE.
 //   • cameraOpenSlot() carried a stale copy that forced idx 1 for
 //     kind "main" slots 0/1/2 AND for every "interior" slot but outer_edge.
 // The first slot of a session goes through init (correct), every slot AFTER it
@@ -4019,7 +4043,7 @@ const CAMERA_SLOT_ZOOM_RESTORATION = [ false, false ];
 // fine, Back and Interior were zoomed. Previous fixes patched init only.
 // Both call sites now call this function. Do not re-derive the rule inline.
 //
-// S25 spec:
+// S22 spec:
 //   Main (Front/Back/Interior/Spine)          -> WIDE
 //   Corner macros / Signature / Card (any)    -> ZOOM
 //   Full "interior": top_pages, bottom_pages,
@@ -4488,7 +4512,7 @@ function buildBadge(gradeVal, type, designation, sm, fullAssessment, deepAssessm
   if (restored && (type === "predicted" || type === "cgc-ai" || type === "psa-ai")) {
     return `<div class="${cls}" style="border-color:#7c3aed;background:linear-gradient(180deg,#9a6ad8 0%,#6a3ab0 100%)"><div class="ubadge-body" style="background:transparent"><div class="ubadge-num" style="color:#fff">${gradeVal}</div><div class="ubadge-lbl" style="color:rgba(255,255,255,0.8)">${lbl}</div></div></div>`;
   }
-  // S23: a flagged missing coupon/stamp/pin-up turns the PREDICTED (PG) badge
+  // S22: a flagged missing coupon/stamp/pin-up turns the PREDICTED (PG) badge
   // GREEN — but we no longer relabel it "Qualified" (Robograder drops that
   // distinction; the missing element is spelled out in the assessment). RG is
   // left unchanged. Keep the normal grade label under the green badge.
@@ -4583,7 +4607,7 @@ function buildListBadge(c) {
     // overlay near the top so they never displace the number.
     return `<div style="width:56px;height:56px;background:${bgColor};border-radius:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0;align-self:center;position:relative;border:1px solid ${borderColor}">\n      <div style="position:absolute;top:6px;left:0;right:0;text-align:center;display:flex;justify-content:center">${assessmentTierStars(c, { size: 9, color: numColor })}</div>\n      <div style="font-family:'League Spartan',sans-serif;transform:scaleX(0.7);display:inline-block;font-size:30px;font-weight:900;color:${numColor};line-height:1">${_dispG != null ? (() => { const _s=String(_dispG); const _m=_s.match(/^(\d+|—|-)([+\-]|\.\d)?$/); const _b=_m?_m[1]:_s; const _f=(_m&&_m[2])?_m[2]:""; return `<span style="position:relative;display:inline-block;line-height:1">${_b}${_f?`<span style="position:absolute;left:100%;top:3px;font-size:15px;font-weight:600;line-height:1">${_f}</span>`:""}</span>`; })() : `${rgScore}${showPlus ? '<span style="font-size:18px;font-weight:700;color:#7aa838;margin-left:1px">+</span>' : ""}`}</div>\n    </div>`;
   }
-  // S23: the list left box is ALWAYS RG (above) or, if never robograded, the
+  // S22: the list left box is ALWAYS RG (above) or, if never robograded, the
   // predicted grade — never the official CGC/PSA slab grade.
   const ac = aiCgcGrade(c);
   const _listRestored = !!(c.restorationHighConfidence || (c.cgcNotes && /\b(RC|restored|restoration|conserved)\b/i.test(c.cgcNotes)));
@@ -4593,7 +4617,7 @@ function buildListBadge(c) {
 }
 
 function buildListPG(c) {
-  // S23: predicted grade (PG) — smaller and less prominent than RG, anchored to
+  // S22: predicted grade (PG) — smaller and less prominent than RG, anchored to
   // the TOP of the row (aligned with the title). Green when a coupon/pin-up is
   // flagged missing. Never the official slab grade.
   const val = c.predictedGrade || c.assessedCGCGrade || c.assessedPSAGrade || ((c.myAssessment || c.aiAssessment) && c.grade ? c.grade : null);
@@ -5525,7 +5549,7 @@ async function saveItem(rec) {
     rec.clientPlatform = _clientPlatform();
     rec.clientAppVersion = _clientAppVersion();
     rec.clientSavedAt = new Date().toISOString();
-    // S25 (#5): latch tier unlocks on every persisted save, so a threshold crossing
+    // S22 (#5): latch tier unlocks on every persisted save, so a threshold crossing
     // (grade/FMV) during ANY re-assessment sticks FOREVER — Deep/Full never relock
     // once unlocked. stickTierUnlocks only ever sets flags true, never clears them.
     if (typeof stickTierUnlocks === "function") stickTierUnlocks(rec);
@@ -5570,7 +5594,7 @@ async function swipeDeleteItem(id) {
     return;
   }
   // deleteItem() already re-rendered via showList() and restored scroll; a second
-  // renderList() here would wipe that scroll restore (S23 jump fix).
+  // renderList() here would wipe that scroll restore (S22 jump fix).
 }
 
 async function deleteItem(id) {
@@ -5623,7 +5647,7 @@ async function deleteItem(id) {
   // phantom row) and restore the saved list scroll. Re-clamp after layout
   // settles — the list is now one row shorter and lazy images reflow, so a
   // single early scroll lands short.
-  // S23: when deleting from the list, the live scroll position is the truth —
+  // S22: when deleting from the list, the live scroll position is the truth —
   // _listScrollY is only refreshed when entering Detail, so it is stale here and
   // was causing the jump. Capture the current scroll and seed _listScrollY so
   // showList restores to exactly where the user was.
@@ -5778,7 +5802,7 @@ async function signOutUser() {
   window.location.reload();
 }
 
-// S24: credit count-up + coin pulse. When the balance INCREASES (purchase, admin
+// S22: credit count-up + coin pulse. When the balance INCREASES (purchase, admin
 // gift, referral, promo, refund) the header coin counts up to the new total and
 // pops — mirrors the score-reveal. Baseline is the last shown value in-session, or
 // (on a fresh page-load, e.g. returning from Stripe checkout) the last value this
@@ -5967,7 +5991,7 @@ async function loadUserCredits() {
         utmTerm: _utm.utm_term || null,
         acqReferrer: (document.referrer || "").slice(0, 200) || null
       });
-      // Meta Pixel (S24): a brand-new account was just created — fire
+      // Meta Pixel (S22): a brand-new account was just created — fire
       // CompleteRegistration so Meta accrues signup-conversion volume for a
       // future signup-optimized campaign. Only fires on web/PWA (pixel gated).
       try { if (window.fbq) window.fbq("track", "CompleteRegistration"); } catch (e) {}
@@ -6173,7 +6197,7 @@ function isAnyPromoActiveNow() {
   return false;
 }
 
-// S23: the promo field lives on the Buy / Purchase screen only — that is where
+// S22: the promo field lives on the Buy / Purchase screen only — that is where
 // someone is already thinking about credits. It was briefly added to Settings
 // too; Matt removed it as the wrong home. The scope-suffix plumbing below is
 // kept because it costs nothing and makes a second surface a one-line change.
@@ -6429,11 +6453,11 @@ function renderList() {
   if (_mixed) {
     filt = filt.filter(c => (c.type === "card") ? _showCards : _showComics);
   }
-  // S23: count copies of each title+issue in the visible list so a row shows its
+  // S22: count copies of each title+issue in the visible list so a row shows its
   // assessment date ONLY when there is more than one copy to tell apart.
   const _dupKey = c => {
     const t = (c.type === "card") ? (c.title || "Unknown") : (normalizeTitle(c.title, c.issueDate, c.printing) || c.title || "Unknown");
-    // S23: scope duplicates to the same ownership section — copies split across
+    // S22: scope duplicates to the same ownership section — copies split across
     // Owned/Sold/Watching are already told apart by their section, so only 2+
     // copies sitting TOGETHER need the graded date to distinguish them.
     return (c.ownership || "Owned") + "||" + t + "||" + String(c.issue == null ? "" : c.issue).trim().replace(/^#/, "").toLowerCase();
@@ -6463,7 +6487,7 @@ function renderList() {
       if (na !== nb) return na - nb;
       const is = a.issue || "", ibs = b.issue || "";
       if (is !== ibs) return is.localeCompare(ibs);
-      // S23: duplicate copies (same title+issue) sort chronologically, oldest first.
+      // S22: duplicate copies (same title+issue) sort chronologically, oldest first.
       const _aad = a.roboGradeDate || a.dateAdded || "", _bad = b.roboGradeDate || b.dateAdded || "";
       if (_aad !== _bad) return (new Date(_aad)) - (new Date(_bad));
       const ga = parseFloat(a.cgcGrade || a.psaGrade || a.predictedGrade || a.assessedCGCGrade || a.grade || 0);
@@ -6644,7 +6668,7 @@ function renderList() {
   main.innerHTML = html;
   console.log("[load] renderList innerHTML set in", Date.now() - _tRender, "ms (rows:", items.length + ")");
   wireSwipeRows();
-  // S23: defer hydration one frame so the browser commits the new list layout
+  // S22: defer hydration one frame so the browser commits the new list layout
   // (making it scrollable) before we spend a burst assigning image srcs.
   requestAnimationFrame(hydrateThumbs);
 }
@@ -6769,7 +6793,7 @@ function wireSwipeRows() {
       if (dx > 0) dx = 0;
       if (dx < OPEN_X - 20) dx = OPEN_X - 20;
       fg.style.transform = `translateX(${dx}px)`;
-      // S23: no preventDefault here. touch-action:pan-y (on .swipe-fg) already
+      // S22: no preventDefault here. touch-action:pan-y (on .swipe-fg) already
       // hands vertical scrolling to the browser's compositor and reserves only
       // horizontal for us, so a passive listener keeps the first scroll after a
       // list re-render from being gated on the main thread (the "tap-to-scroll
@@ -6809,7 +6833,7 @@ function wireSwipeRows() {
     });
     if (delBtn && !delBtn._wired) {
       delBtn._wired = true;
-      // S23: route list swipe-delete through the same confirm POPUP the Detail
+      // S22: route list swipe-delete through the same confirm POPUP the Detail
       // delete uses — the swipe alone was deleting with no confirmation/feedback.
       //
       // v6.35: fires on POINTER DOWN, not click. It took two taps: slide, tap,
@@ -7460,7 +7484,7 @@ function showDetail(id) {
 
 window.forceImgReflow = function(imgEl) {
   if (!imgEl) return;
-  // S23: defer the forced layout to the next frame. Running a synchronous
+  // S22: defer the forced layout to the next frame. Running a synchronous
   // offsetHeight read inside every image's onload (Detail can have ~14) bursts
   // forced reflows right after render and blocks the compositor's first scroll
   // (the "swipe does nothing, then it scrolls" lock in Detail view). rAF batches
@@ -8140,7 +8164,7 @@ function openCouponLightbox(id, idx)        { _lbOpenGroup(id, "coupon", idx); }
 function openInsertLightbox(id, idx)        { _lbOpenGroup(id, "insert", idx); }
 function openUserDefectLightbox(id, idx)    { _lbOpenGroup(id, "missing", idx); }
 
-// ── REFERENCE COVERS OPEN ON THEIR OWN (S23, 2026-10-18) ────────────────────
+// ── REFERENCE COVERS OPEN ON THEIR OWN (S22, 2026-10-18) ────────────────────
 // A ComicVine or locally-hosted reference scan could not be enlarged at all:
 // `_refCell` rendered it with no click target, so the one image you most want
 // to look at closely — the clean copy you are comparing damage against — was
@@ -9475,7 +9499,7 @@ const EMPTY = {
   notes: ""
 };
 
-// S24 — CROSS-BOOK HISTORY BLEED. `{ ...EMPTY }` is a SHALLOW spread, so every
+// S22 — CROSS-BOOK HISTORY BLEED. `{ ...EMPTY }` is a SHALLOW spread, so every
 // array value in EMPTY (assessmentHistory, images, cornerImages, ...) came out
 // of it as a REFERENCE to the one array literal declared up in EMPTY - not a
 // copy. `formData.assessmentHistory.unshift(rec)` therefore mutated EMPTY
@@ -9701,7 +9725,7 @@ function showEdit(id) {
     fmvDate: c.fmvDate || "",
     askingPrice: c.askingPrice != null ? String(c.askingPrice) : ""
   };
-  // S24: `...c` hands over references to the ITEM's own arrays, so filing a
+  // S22: `...c` hands over references to the ITEM's own arrays, so filing a
   // record would mutate items[] in place. Detach the one array that gets
   // mutated, and give a book with no history its own empty array rather than
   // letting it fall through to EMPTY's.
@@ -9727,7 +9751,7 @@ function showEdit(id) {
   window.scrollTo(0, 0);
 }
 
-// S25 (#1): open Edit and scroll straight to a tier's capture section instead of
+// S22 (#1): open Edit and scroll straight to a tier's capture section instead of
 // landing at the top (Main slots). Used by the Detail-view Deep/Full upsell cards.
 // ── v6.41: A JUMP THAT STAYS JUMPED ────────────────────────────────────────
 // showEditToSection measured the anchor after two animation frames and scrolled
@@ -9798,7 +9822,7 @@ function showEditToSection(id, section) {
   });
 }
 
-async function compressImage(dataUrl, maxDim = 1200, quality = 0.65, asBlob = false) {   // S25: 1400->1200 (A/B eval: grade delta within model self-noise). Governs all grading images.
+async function compressImage(dataUrl, maxDim = 1200, quality = 0.65, asBlob = false) {   // S22: 1400->1200 (A/B eval: grade delta within model self-noise). Governs all grading images.
   return new Promise((res, rej) => {
     const img = new Image;
     // S16: Timeout prevents permanent hang if image fails to load
@@ -10027,7 +10051,7 @@ async function startPreUpload(rawImages, rawCornerImages, comicId) {
 
 async function processImagesForSave(images, comicId, slotNames, options = {}) {
   const {generateThumbs: generateThumbs = false, existingThumbs: existingThumbs = [], preserveNulls: preserveNulls = false} = options;
-  // S23: compress + upload ALL images CONCURRENTLY. Previously each image was
+  // S22: compress + upload ALL images CONCURRENTLY. Previously each image was
   // awaited one-at-a-time, so a 6-image Deep save was 6 serial round-trips — a
   // long delay, and if one upload stalled the whole save appeared to freeze.
   const perImage = await Promise.all((images || []).map(async (img, i) => {
@@ -10339,7 +10363,7 @@ function _batchPaint(pass, kind, text) {
   const sp = box && box.firstElementChild;
   if (!sp) return;
   const v = text == null ? "" : String(text);
-  // S24 (Matt): these are now ALWAYS centred.
+  // S22 (Matt): these are now ALWAYS centred.
   //
   // The previous fix pinned the span to the left while counting and re-centred
   // only if the final value was a whole number, on the theory that a decimal
@@ -10506,7 +10530,7 @@ function mountBatchResults(summary) {
       <div style="position:relative;width:100%;display:flex;align-items:center;justify-content:center;min-height:22px;">${pqHtml}</div>
       <button id="assess-complete-btn" style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#3a9ee0;color:#fff;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">COMPLETE</button>
     </div>`;
-  // S24 (Matt, post-Baltimore): slide the progress panel back out to the right
+  // S22 (Matt, post-Baltimore): slide the progress panel back out to the right
   // to uncover the front cover, one beat after the last step box lands and
   // while the score boxes are still counting up. Cover and grade in the same
   // frame is what closes the loop for a first-time user.
@@ -10988,7 +11012,7 @@ function animateV3Ladder(el, toGrade, duration) {
   });
 }
 
-// S23: count from the PREVIOUS grade to the new one (up or down) — Deep/Full
+// S22: count from the PREVIOUS grade to the new one (up or down) — Deep/Full
 // re-assessments were resetting to 0 and counting up. Integers-only for a stable
 // width; reveals the final .5 once at the end.
 function animateV3LadderFromTo(el, fromGrade, toGrade, duration) {
@@ -11372,7 +11396,7 @@ function mountResults(cgc, psa) {
   const _gradeFrom = _prev && _prev.gradeVal != null ? _prev.gradeVal : null;
   const _gradeInitStr = _prev && _prev.gradeText ? _prev.gradeText : "0.0";
   // ── v6.41: THE NEEDLE LANDS, THEN THE PANEL GOES ────────────────────────
-  // S24 added the reveal - the panel slides out to uncover the cover - and it
+  // S22 added the reveal - the panel slides out to uncover the cover - and it
   // was taking the gauge off screen mid-swing. The needle's whole job is to
   // arrive at the grade; pulling the panel before it arrives throws away the
   // gesture the gauge exists for.
@@ -11445,7 +11469,7 @@ function mountResults(cgc, psa) {
   if (roboScore != null) badgesHtml += makeBadge("robograde", "anim-val-robo");
   if (predictedGrade) badgesHtml += makeBadge("predicted", "anim-val-cgc");
   const resultsHtml = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:8px;transform:translateY(-8px);">\n      <div id="result-grades" style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badgesHtml}</div>\n      <div id="result-pq" style="position:relative;width:100%;display:flex;align-items:center;justify-content:center;min-height:22px;">\n        <div style="background:#ffffff;color:#5a4e3a;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;letter-spacing:0.03em;display:inline-block">Page Quality</div>\n      </div>\n      <button id="assess-complete-btn" disabled\n        style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#5a5a5a;color:#bbb;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:default;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">\n        ASSESSING…\n      </button>\n    </div>`;
-  // S24 (Matt, post-Baltimore): slide the progress panel back out to the right
+  // S22 (Matt, post-Baltimore): slide the progress panel back out to the right
   // to uncover the front cover, one beat after the last step box lands and
   // while the score boxes are still counting up. Watching people at the booth:
   // they track their own book into the chest, lose the thread behind the
@@ -11526,6 +11550,21 @@ function mountResults(cgc, psa) {
   setTimeout(() => {
     const btn = document.getElementById("assess-complete-btn");
     if (!btn) return;
+    // ── v6.60: THIS CALLBACK MAY NEVER THROW WITHOUT ENABLING THE BUTTON ──
+    // Everything that decides what the button SAYS is now inside a try. If any
+    // of it throws, the catch still enables a plain COMPLETE.
+    //
+    // On 2026-11-13 a ReferenceError inside matchFMV escaped here and the
+    // button stayed "ASSESSING…" forever: the server had graded the book and
+    // charged the credit, the user could not save, and quitting the app lost
+    // the assessment. The grade was already computed and on screen — the only
+    // thing missing was a way to accept it.
+    //
+    // The specific bug is fixed, but the shape of the failure is the point: a
+    // disabled button is the one state with no way out, so it must not depend
+    // on every branch below behaving. A missing "DEEP UNLOCKED" label is a
+    // blemish; a frozen app after taking someone's money is not.
+    try {
     const isPostDeepRun = !!(cgc && cgc._highGradeTier);
     const hgAlreadyRun = isPostDeepRun || !!(formData && formData.highGradeTier) || !!(formData && formData.deepUnlocked);
     const predictedNum = parseFloat(cgc && cgc.grade);
@@ -11614,6 +11653,13 @@ function mountResults(cgc, psa) {
       btn.innerHTML = "COMPLETE";
       btn.style.background = "#3a9ee0";
       btn.style.color = "#fff";
+    }
+    } catch (e) {
+      console.error("[mountResults] button state threw — falling back to plain COMPLETE:", e);
+      btn.innerHTML = "COMPLETE";
+      btn.style.background = "#3a9ee0";
+      btn.style.color = "#fff";
+      btn.style.textAlign = "center";
     }
     btn.disabled = false;
     btn.style.cursor = "pointer";
@@ -11924,14 +11970,14 @@ async function assessHighGrade() {
     // this line is in assessHighGrade, where the name does not exist. See the
     // version header - this one line killed every Deep assessment in 6.41.
     console.log(`[deep] refund test: RG improved=${_rgImproved}, PG ${initialPG} -> ${_pgTo} improved=${_pgImproved} => charged=${_deepImproved}`);
-    // S25: refund the Deep credit only the FIRST time a re-run fails to improve.
+    // S22: refund the Deep credit only the FIRST time a re-run fails to improve.
     // deepRefundUsed then latches (persisted via onAssessmentSuccess->submitForm),
     // so all later re-runs are charged — no endless refunded re-rolls.
     var _deepRefundEligible = !_deepImproved && !formData.deepRefundUsed;
     window._creditRefunded = _deepRefundEligible;
     if (_deepRefundEligible) {
       formData.deepRefundUsed = true;
-      // S24: WHEN, not just whether. This refund is decided on the client after
+      // S22: WHEN, not just whether. This refund is decided on the client after
       // the result comes back, so the server's timing row for that Deep records
       // a credit charged and nothing ever records that it was given back. The
       // admin's cost-per-credit figure needs a DATE to put the refund in the
@@ -13906,7 +13952,7 @@ async function _maybeGrantPwaWelcome() {
   // Web / PWA only — never native.
   if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) return;
   if (!window._currentUser || typeof window._currentUser.getIdToken !== "function") return;
-  // S23: the server grants on the FIRST call now (no return-visit gate), so this
+  // S22: the server grants on the FIRST call now (no return-visit gate), so this
   // is purely call-volume hygiene, not part of the grant rule.
   // Hard backstop: if this browser has already seen a definitive answer, never
   // ask again. NOTE when testing: clearing the Firestore flag is not enough —
@@ -14039,7 +14085,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "6.57"),
+      appVersion: (window.RG_GRADING_VERSION || "6.61"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
@@ -14292,7 +14338,7 @@ window.RGCover = (function () {
   return { hashImage, hamming };
 })();
 
-// S24 — DOUBLE-TAP ON COMPLETE FILED THE SAME ASSESSMENT TWICE.
+// S22 — DOUBLE-TAP ON COMPLETE FILED THE SAME ASSESSMENT TWICE.
 //
 // The `!_pendingAssessResult` check below looks like a re-entry guard, and it is
 // not one. `_pendingAssessResult` is not cleared until ~150 lines further down,
@@ -14446,7 +14492,7 @@ async function _completeAssessmentInner() {
   // The server sets gradeAtCeiling on both the Main and the Deep result, so a
   // Deep overwrites the Main's answer here rather than inheriting it.
   formData.gradeAtCeiling = !!cgc.gradeAtCeiling;
-  // S24 — SIGNATURES WERE ANNOUNCED AND THEN LOST.
+  // S22 — SIGNATURES WERE ANNOUNCED AND THEN LOST.
   //
   // The model returns `signatures` at the TOP LEVEL of the response. Nothing here
   // ever copied it onto formData, and "signatures" was missing from
@@ -14483,7 +14529,7 @@ async function _completeAssessmentInner() {
     formData.roboGradeDate = (new Date).toISOString();
   }
   formData.highGradeTier = !!cgc._highGradeTier;
-  // Star-badge integrity (S23): completeAssessment runs only for Main and Deep.
+  // Star-badge integrity (S22): completeAssessment runs only for Main and Deep.
   // A Full assessment is therefore no longer the most-recent depth, so drop its
   // badge; on a Main re-run (no high-grade pass) clear the Deep flags too so the
   // score box shows the shallow grade just produced. Higher-tier IMAGES stay on
@@ -14974,7 +15020,7 @@ function mountCardResults(rec) {
   if (roboScore != null) badges += badge("#0f1a05", _rgColCard, "0", "RG", "1.5px solid #3a5010", "anim-val-robo-card");
   if (psa) badges += badge("#b91c1c", "#ffffff", psa, "PSA", "", "anim-val-psa-card");
   const html = `\n    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:3% 5%;box-sizing:border-box;gap:10px;">\n      <div style="display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:nowrap;">${badges}</div>\n      <button id="assess-complete-btn" style="align-self:center;width:auto;min-width:180px;max-width:260px;padding:0 24px;height:44px;background:#3a9ee0;color:#fff;border:none;font-size:16px;font-weight:800;letter-spacing:2px;cursor:pointer;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,0.4);">COMPLETE</button>\n    </div>`;
-  // S24 (Matt, post-Baltimore): slide the progress panel back out to the right
+  // S22 (Matt, post-Baltimore): slide the progress panel back out to the right
   // to uncover the front cover, one beat after the last step box lands and
   // while the score boxes are still counting up. Cover and grade in the same
   // frame is what closes the loop for a first-time user.
@@ -15611,7 +15657,7 @@ function renderForm() {
     if (_im) {
       return _renderExtraPhotoSection({ anchor: "insert-section", title: "MARK JEWELERS INSERT", blurb: "Some copies of this issue carried a Mark Jewelers or other insert card (a rare variant that adds value). If your copy has an insert bound in the centerfold, add these two optional photos to verify.", accent: "#c8962a", inputId: "insert-photo-input", tapFn: "tapInsertSlot", removeFn: "removeInsertImg", onchange: "handleInsertImages(event)", defs: insertSlotDefs(), imgs: formData.insertImages || [ null, null ], runFn: "runInsertAssessment", runLabel: "RUN INSERT CHECK", finding: formData.insertFinding, foundLabel: "INSERT" });
     }
-    // S23: no confirmed hit -> if the title/era is a candidate (broad index),
+    // S22: no confirmed hit -> if the title/era is a candidate (broad index),
     // show a softer "might have one" prompt. Reuses the same slots + check.
     const _yr = parseInt((String(formData.issueDate || "").match(/\b(19|20)\d{2}\b/) || [])[0], 10);
     const _ic = (typeof window.matchInsertCandidate === "function") ? window.matchInsertCandidate(formData.title, _yr) : null;
@@ -15855,6 +15901,11 @@ let _cropperInstance = null;
 // S22 v6.52 autocrop: the detected box, cached per open, and the latch that
 // stops _fitCrop re-stomping it once the user has touched a handle.
 let _cropAutoBox = null;
+// v6.61: the crop box that was applied last time this slot was cropped,
+// normalised. Set by openCropper when an original exists, consumed once by
+// _fitCrop, then cleared — it must not outlive the open or a later slot
+// inherits it.
+let _cropperReopenBox = null;
 let _cropAutoTried = false;
 let _cropUserMoved = false;
 
@@ -15864,7 +15915,7 @@ let _cropperTarget = null;
 
 let _cropperOriginalSrc = null;
 
-// S23: The cropper sets img.crossOrigin='anonymous' (required so getCroppedCanvas
+// S22: The cropper sets img.crossOrigin='anonymous' (required so getCroppedCanvas
 // isn't tainted), which forces a SEPARATE CORS-flavored cache entry. The list /
 // detail / lightbox load the same image WITHOUT crossOrigin, so the CORS copy is
 // a cache MISS on first crop -> a full re-download (the 2-3s delay). Warming the
@@ -16060,6 +16111,95 @@ function autocropDetect(gray, w, h) {
   };
 }
 
+// ── SKEW ───────────────────────────────────────────────────────────────────
+// v6.59, Matt's ask: "Users will sometimes take the photos crooked... It would
+// be good if the deterministic tool could recognize the rotation and adjust it
+// so that the book in the image is parallel with the XY-oriented cropper
+// handles."
+//
+// Estimated from the BOOK'S OWN LEFT AND RIGHT EDGES, not from a global
+// gradient: for each row across the middle of the book, find the first and
+// last not-background pixel, then least-squares fit a line to each. A comic's
+// long edges are the two longest straight lines in the frame by a wide margin,
+// which is what makes this reliable where a Hough transform would be overkill.
+//
+// BOTH EDGES MUST AGREE. They are parallel on a real book, so two independent
+// fits landing within AGREE_DEG of each other is strong evidence; disagreement
+// means something other than a book edge was traced (a mat rule, a shadow)
+// and the honest answer is no rotation. Returning 0 costs the user one manual
+// nudge; returning a wrong angle rotates their photo for them.
+const AUTOCROP_MAX_SKEW   = 12;    // beyond this it is not skew, it is a different shot
+const AUTOCROP_MIN_SKEW   = 0.4;   // below this, rotating is visual noise
+const AUTOCROP_SKEW_AGREE = 1.8;   // degrees the two edges may differ by
+
+function _acFitSlope(pts) {
+  // least squares of x against y (x = m*y + c); m is run-per-rise, which is
+  // what we want because the edges are near-vertical and a y-against-x fit
+  // would blow up.
+  const n = pts.length;
+  if (n < 12) return null;
+  let sy = 0, sx = 0, syy = 0, sxy = 0;
+  for (const p of pts) { sy += p.y; sx += p.x; syy += p.y * p.y; sxy += p.x * p.y; }
+  const den = n * syy - sy * sy;
+  if (Math.abs(den) < 1e-6) return null;
+  return (n * sxy - sy * sx) / den;
+}
+
+// gray/w/h as autocropDetect takes them; box is its UNPADDED result.
+// Returns degrees to rotate the image by to bring the book upright
+// (positive = clockwise), or 0.
+function autocropAngle(gray, w, h, box) {
+  if (!box || !box.ok) return 0;
+  const x0 = Math.round(box.left * w), x1 = Math.round(box.right * w);
+  const y0 = Math.round(box.top * h), y1 = Math.round(box.bottom * h);
+  const bh = y1 - y0;
+  if (!(bh > 40) || !(x1 - x0 > 20)) return 0;
+
+  // Middle 70% of the book's height only. The corners are where a rounded or
+  // chipped edge lies, and they would drag the fit.
+  const from = y0 + Math.round(bh * 0.15), to = y1 - Math.round(bh * 0.15);
+  // Re-derive the background from the same ring rule the detector uses, so the
+  // two never disagree about what "background" means.
+  const R = Math.max(2, Math.round(Math.min(w, h) * 0.02));
+  const ring = [];
+  for (let y = 0; y < h; y++) {
+    const o = y * w;
+    for (let x = 0; x < w; x++) if (x < R || y < R || x >= w - R || y >= h - R) ring.push(gray[o + x]);
+  }
+  const bg = _acMedian(ring);
+  const dev = new Array(ring.length);
+  for (let i = 0; i < ring.length; i++) dev[i] = Math.abs(ring[i] - bg);
+  const tol = Math.max(18, _acMedian(dev) * 3);
+
+  const L = [], Rr = [];
+  const pad = Math.max(2, Math.round((x1 - x0) * 0.25));
+  for (let y = from; y < to; y++) {
+    const o = y * w;
+    let lx = -1, rx = -1;
+    for (let x = Math.max(0, x0 - pad); x < Math.min(w, x1 + pad); x++) {
+      if (Math.abs(gray[o + x] - bg) > tol) { lx = x; break; }
+    }
+    for (let x = Math.min(w - 1, x1 + pad); x >= Math.max(0, x0 - pad); x--) {
+      if (Math.abs(gray[o + x] - bg) > tol) { rx = x; break; }
+    }
+    if (lx >= 0) L.push({ x: lx, y });
+    if (rx >= 0) Rr.push({ x: rx, y });
+  }
+  const ml = _acFitSlope(L), mr = _acFitSlope(Rr);
+  if (ml == null || mr == null) return 0;
+  const al = Math.atan(ml) * 180 / Math.PI;
+  const ar = Math.atan(mr) * 180 / Math.PI;
+  if (Math.abs(al - ar) > AUTOCROP_SKEW_AGREE) {
+    console.log('[autocrop] edges disagree on skew (' + al.toFixed(1) + ' vs ' + ar.toFixed(1) + ') - not rotating');
+    return 0;
+  }
+  const avg = (al + ar) / 2;
+  if (Math.abs(avg) < AUTOCROP_MIN_SKEW || Math.abs(avg) > AUTOCROP_MAX_SKEW) return 0;
+  // x = m*y + c with m>0 means the edge leans right going down, i.e. the book
+  // is rotated anticlockwise, so it must be rotated CLOCKWISE to correct.
+  return +avg.toFixed(2);
+}
+
 // Grow a normalised box outward by padFrac of its own WIDTH on all four
 // sides, clamped to the image. Equal absolute pad per side - width is the
 // dimension whose physical size is known, so it sets the scale.
@@ -16079,26 +16219,63 @@ function autocropPad(box, imgW, imgH, padFrac) {
 // Canvas half. Downscales to AUTOCROP_SAMPLE_W, pulls luminance, delegates.
 // Returns a PADDED normalised box or null. Never throws - a tainted canvas,
 // a zero-size image or a missing 2d context all mean "no suggestion".
+// Renders `img` into a downscaled canvas, optionally rotated by `deg`
+// clockwise, and returns the grayscale buffer. When rotated, the canvas is
+// sized to the ROTATED IMAGE'S BOUNDING BOX — which is exactly what
+// Cropper.js's own canvas becomes after .rotate(), so a box measured here in
+// normalised coordinates transfers to it directly. That correspondence is the
+// whole reason rotation can be handled without a coordinate-mapping pass.
+function _acRender(img, deg) {
+  const nw = img.naturalWidth, nh = img.naturalHeight;
+  const rad = (deg || 0) * Math.PI / 180;
+  const cos = Math.abs(Math.cos(rad)), sin = Math.abs(Math.sin(rad));
+  const bw = nw * cos + nh * sin, bh = nw * sin + nh * cos;
+  const scale = Math.min(1, AUTOCROP_SAMPLE_W / bw);
+  const sw = Math.max(8, Math.round(bw * scale)), sh = Math.max(8, Math.round(bh * scale));
+  const c = document.createElement("canvas");
+  c.width = sw; c.height = sh;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+  ctx.translate(sw / 2, sh / 2);
+  if (rad) ctx.rotate(rad);
+  ctx.drawImage(img, -nw * scale / 2, -nh * scale / 2, nw * scale, nh * scale);
+  const d = ctx.getImageData(0, 0, sw, sh).data;
+  const gray = new Uint8ClampedArray(sw * sh);
+  for (let i = 0, p = 0; i < gray.length; i++, p += 4) {
+    gray[i] = (d[p] * 77 + d[p + 1] * 151 + d[p + 2] * 28) >> 8;
+  }
+  return { gray, w: sw, h: sh };
+}
+
+// Returns { box, angle } or null. `box` is PADDED and expressed against the
+// image AS ROTATED BY `angle`; apply the rotation before using the box.
 function autocropFromImage(img) {
   try {
-    const nw = img && img.naturalWidth, nh = img && img.naturalHeight;
-    if (!(nw > 0) || !(nh > 0)) return null;
-    const sw = Math.min(AUTOCROP_SAMPLE_W, nw);
-    const sh = Math.max(8, Math.round(nh * (sw / nw)));
-    const c = document.createElement("canvas");
-    c.width = sw; c.height = sh;
-    const ctx = c.getContext("2d", { willReadFrequently: true });
-    if (!ctx) return null;
-    ctx.drawImage(img, 0, 0, sw, sh);
-    const d = ctx.getImageData(0, 0, sw, sh).data;
-    const gray = new Uint8ClampedArray(sw * sh);
-    for (let i = 0, p = 0; i < gray.length; i++, p += 4) {
-      gray[i] = (d[p] * 77 + d[p + 1] * 151 + d[p + 2] * 28) >> 8;
+    if (!img || !(img.naturalWidth > 0) || !(img.naturalHeight > 0)) return null;
+
+    const flat = _acRender(img, 0);
+    if (!flat) return null;
+    const first = autocropDetect(flat.gray, flat.w, flat.h);
+    if (!first.ok) { console.log("[autocrop] no suggestion (" + first.method + ", conf " + first.confidence.toFixed(2) + ")"); return null; }
+
+    const angle = autocropAngle(flat.gray, flat.w, flat.h, first);
+    if (!angle) {
+      console.log("[autocrop] conf " + first.confidence.toFixed(2) + ", no skew");
+      return { box: autocropPad(first, flat.w, flat.h, AUTOCROP_PAD_FRAC), angle: 0 };
     }
-    const box = autocropDetect(gray, sw, sh);
-    if (!box.ok) { console.log("[autocrop] no suggestion (conf " + box.confidence.toFixed(2) + ", " + box.method + ")"); return null; }
-    console.log("[autocrop] conf " + box.confidence.toFixed(2));
-    return autocropPad(box, sw, sh, AUTOCROP_PAD_FRAC);
+
+    // Re-detect on the DEROTATED render. The first box was the bounding box of
+    // a tilted book, which is bigger than the book on every side; measuring
+    // again once it is upright is what makes the 1cm margin actually 1cm.
+    const rot = _acRender(img, -angle);
+    if (!rot) return { box: autocropPad(first, flat.w, flat.h, AUTOCROP_PAD_FRAC), angle: 0 };
+    const second = autocropDetect(rot.gray, rot.w, rot.h);
+    if (!second.ok) {
+      console.log("[autocrop] skew " + angle + "deg found but the derotated frame did not detect (" + second.method + ") - not rotating");
+      return { box: autocropPad(first, flat.w, flat.h, AUTOCROP_PAD_FRAC), angle: 0 };
+    }
+    console.log("[autocrop] conf " + second.confidence.toFixed(2) + ", skew " + angle + "deg");
+    return { box: autocropPad(second, rot.w, rot.h, AUTOCROP_PAD_FRAC), angle: angle };
   } catch (e) {
     console.warn("[autocrop] unavailable:", e);
     return null;
@@ -16107,8 +16284,14 @@ function autocropFromImage(img) {
 
 function openCropper(type, index) {
   const list = type === "corner" ? formData.cornerImages : type === "interiorCover" ? formData.interiorCoverImages : type === "interior" ? formData.interiorImages : type === "signature" ? formData.signatureImages : type === "insert" ? formData.insertImages : type === "coupon" ? formData.couponImages : formData.images;
-  const src = (list || [])[index];
-  if (!src) return;
+  const shown = (list || [])[index];
+  if (!shown) return;
+  // v6.61: reopen on the ORIGINAL, not on the last crop, so the handles can
+  // always be dragged back out to anything that was ever in the frame.
+  const _key = type + ":" + index;
+  const _orig = formData._cropOriginals && formData._cropOriginals[_key];
+  const src = _orig || shown;
+  _cropperReopenBox = (_orig && formData._cropBoxes && formData._cropBoxes[_key]) || null;
   _cropperTarget = {
     type: type,
     index: index
@@ -16175,6 +16358,10 @@ function openCropper(type, index) {
       return;
     }
     const _cropCardFB = (formData.type === "card" || !!formData._isCard) && type === "main" && index < 2;
+    // v6.59: no longer drives any default box - the 9:14 fallback it gated is
+    // gone (see _fitCrop). Kept because it still reads as the "this is a comic
+    // front/back cover" test and removing it would be a wider change than this
+    // fix warrants.
     const _cropComicFB = !(formData.type === "card" || !!formData._isCard) && type === "main" && index < 2;
     // Auto-crop applies to any whole-book main shot of a comic or magazine.
     // NOT to cards (aspect-locked 5/7, different shape) and NOT to the macro
@@ -16183,7 +16370,7 @@ function openCropper(type, index) {
     const _cropAutoOK = !(formData.type === "card" || !!formData._isCard) && type === "main";
     _cropperInstance = new Cropper(img, {
       aspectRatio: _cropCardFB ? 5/7 : NaN,
-      // S23: viewMode 2 (whole image fits WITHIN the frame) instead of 1 (image
+      // S22: viewMode 2 (whole image fits WITHIN the frame) instead of 1 (image
       // COVERS the frame). With movable:false, viewMode 1 scaled a landscape
       // photo — e.g. a re-shot Spine — up to fill the portrait crop frame, so its
       // width overflowed off-screen and the right side was unreachable. viewMode 2
@@ -16199,7 +16386,7 @@ function openCropper(type, index) {
       toggleDragModeOnDblclick: false,
       movable: false,
       responsive: true,
-      // S25 FIX (spine landscape → portrait bug): modern iOS/Android WebViews already
+      // S22 FIX (spine landscape → portrait bug): modern iOS/Android WebViews already
       // auto-orient the <img> from its EXIF tag. checkOrientation:true made Cropper
       // apply that SAME EXIF rotation a SECOND time, so a wide landscape photo (kept
       // its EXIF because it was imported from the library, not canvas-processed) was
@@ -16215,7 +16402,7 @@ function openCropper(type, index) {
         // left tall/EXIF-rotated phone photos collapsed to a strip or pushed past
         // the safe area. A resize() after ready forces a correct fit for any
         // image aspect ratio or orientation.
-        // S25: fit the image to the (safe-area-padded) container, then default the
+        // S22: fit the image to the (safe-area-padded) container, then default the
         // Front/Back crop box to ~9:14 centered. Wrapped in a reusable _fitCrop and
         // run TWICE — once next frame, once after 180ms. The FIRST auto-opened crop
         // (camera modal closes as the cropper opens) measures its container mid open-
@@ -16256,30 +16443,93 @@ function openCropper(type, index) {
           // on rAF, at 180ms, at 450ms and on every ResizeObserver notification,
           // and without the latch a user who nudged a handle at 200ms had it
           // yanked back at 450ms.
-          if (_cropperInstance && _cropAutoOK && !_cropUserMoved) {
+          // ── v6.59: THE 9:14 DEFAULT IS GONE. ──────────────────────────
+          // Matt shot a book on a green mat with clear margin on all four
+          // sides. Auto-crop REFUSED (correctly). The old 9:14 fallback then
+          // imposed a box narrower than the book, cut both side edges off,
+          // and the assessment failed at the gate that needs to see whole
+          // edges. Measured off his screenshot: the applied box was 0.63-0.66
+          // aspect against 9:14 = 0.643. It was the fallback, not the
+          // detector.
+          //
+          // The 9:14 assumption is about the BOOK, not the PHOTO. Imposing it
+          // on the canvas is only right when the book already fills the frame
+          // edge to edge - which is exactly when no crop was needed. Every
+          // other time it cuts.
+          //
+          // And it cut DESTRUCTIVELY: confirmCrop() replaces the stored image,
+          // so a default the user did not notice and did not ask for
+          // permanently removed the edges from their photo. An automatic
+          // action that destroys data has to be right far more often than
+          // this was.
+          //
+          // So: a suggestion when we are confident, and otherwise the whole
+          // image. No crop is always recoverable. A wrong crop is not.
+          // v6.61: A REOPEN RESTORES THE PREVIOUS BOX AND SKIPS DETECTION.
+          // The user already decided how this slot should be framed; re-running
+          // auto-crop would silently overrule them, and running it on the
+          // ORIGINAL (which is what is now loaded) could land somewhere quite
+          // different from what they applied. The box is restored so the view
+          // looks exactly as they left it — and because the image behind it is
+          // the original, the handles now drag outward into pixels the previous
+          // crop had removed. That is the whole point of the change.
+          if (_cropperInstance && _cropperReopenBox && !_cropUserMoved) {
+            const _rb = _cropperReopenBox;
+            _cropperReopenBox = null;
             requestAnimationFrame(function() {
               if (!_cropperInstance || _cropUserMoved) return;
               try {
+                if (_rb.rotation) {
+                  _cropperInstance.rotate(_rb.rotation);
+                  _cropperRotation = _rb.rotation;
+                  const _rv = document.getElementById("cropper-rotation-value");
+                  if (_rv) { _rv.textContent = Math.round(_rb.rotation) + "\u00b0"; _rv.classList.add("rotated"); }
+                }
                 const _cc = _cropperInstance.getCanvasData();
                 if (!_cc || !(_cc.width > 0) || !(_cc.height > 0)) return;
+                _cropperInstance.setCropBoxData({
+                  left:   _cc.left + _rb.left * _cc.width,
+                  top:    _cc.top  + _rb.top  * _cc.height,
+                  width:  (_rb.right  - _rb.left) * _cc.width,
+                  height: (_rb.bottom - _rb.top)  * _cc.height
+                });
+                _cropAutoTried = true;   // and do not let auto-crop fire after it
+              } catch (e) {}
+            });
+          } else if (_cropperInstance && _cropAutoOK && !_cropUserMoved) {
+            requestAnimationFrame(function() {
+              if (!_cropperInstance || _cropUserMoved) return;
+              try {
                 if (!_cropAutoTried) {
                   _cropAutoTried = true;
                   _cropAutoBox = autocropFromImage(document.getElementById("cropper-img"));
+                  // Rotation is applied ONCE, before any box is set. The box
+                  // from autocropFromImage is expressed against the rotated
+                  // image, and Cropper's canvas after .rotate() is that same
+                  // rotated bounding box, so the normalised coordinates line
+                  // up without a mapping pass.
+                  if (_cropAutoBox && _cropAutoBox.angle) {
+                    try {
+                      _cropperInstance.rotate(_cropAutoBox.angle);
+                      _cropperRotation = (_cropperRotation || 0) + _cropAutoBox.angle;
+                      const _rv = document.getElementById("cropper-rotation-value");
+                      if (_rv) {
+                        _rv.textContent = Math.round(_cropperRotation) + "\u00b0";
+                        _rv.classList.add("rotated");
+                      }
+                    } catch (e) { console.warn("[autocrop] rotate failed:", e); }
+                  }
                 }
-                if (_cropAutoBox) {
-                  _cropperInstance.setCropBoxData({
-                    left:   _cc.left + _cropAutoBox.left * _cc.width,
-                    top:    _cc.top  + _cropAutoBox.top  * _cc.height,
-                    width:  (_cropAutoBox.right  - _cropAutoBox.left) * _cc.width,
-                    height: (_cropAutoBox.bottom - _cropAutoBox.top)  * _cc.height
-                  });
-                  return;
-                }
-                if (!_cropComicFB) return;
-                const _ar = 9 / 14;
-                let _w = _cc.width, _h = _w / _ar;
-                if (_h > _cc.height) { _h = _cc.height; _w = _h * _ar; }
-                _cropperInstance.setCropBoxData({ left: _cc.left + (_cc.width - _w) / 2, top: _cc.top + (_cc.height - _h) / 2, width: _w, height: _h });
+                if (!_cropAutoBox || !_cropAutoBox.box) return;   // no suggestion -> whole image, untouched
+                const _cc = _cropperInstance.getCanvasData();
+                if (!_cc || !(_cc.width > 0) || !(_cc.height > 0)) return;
+                const _b = _cropAutoBox.box;
+                _cropperInstance.setCropBoxData({
+                  left:   _cc.left + _b.left * _cc.width,
+                  top:    _cc.top  + _b.top  * _cc.height,
+                  width:  (_b.right  - _b.left) * _cc.width,
+                  height: (_b.bottom - _b.top)  * _cc.height
+                });
               } catch (e) {}
             });
           }
@@ -16410,6 +16660,46 @@ function confirmCrop() {
   }
   const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
   const {type: type, index: index} = _cropperTarget;
+  // ── v6.61: A CROP IS NOW REVERSIBLE ────────────────────────────────────
+  // confirmCrop REPLACES the slot's image, so before today the pre-crop pixels
+  // were gone the moment Apply was tapped and no amount of dragging handles
+  // could get them back. Matt: "the cropping tool needs to not permanently cut
+  // image data out that the user can't move the handles back to recover."
+  //
+  // The ORIGINAL is kept, keyed by slot, and openCropper loads it instead of
+  // the cropped version — so reopening the tool shows everything that was
+  // there the first time, with the previous box pre-set so nothing LOOKS
+  // different until the user drags. Only the FIRST original is kept: crop,
+  // re-crop, re-crop again and you still get back to the camera frame rather
+  // than to the second-last crop.
+  //
+  // LIMIT, stated because it will matter later: this lives in formData, which
+  // is memory. It is not in COMIC_DATA_FIELDS and never reaches Firestore, and
+  // what gets uploaded to Storage is the CROPPED image. So a crop is
+  // reversible for as long as the entry is open, and not after a save and
+  // reload. Recovering across a save means storing originals in Storage too,
+  // which is a real decision about cost and is not made here.
+  try {
+    const _key = type + ":" + index;
+    if (!formData._cropOriginals) formData._cropOriginals = {};
+    if (!formData._cropOriginals[_key] && _cropperOriginalSrc) {
+      formData._cropOriginals[_key] = _cropperOriginalSrc;
+    }
+    // The applied box, normalised against the image, so the next open can show
+    // the same framing rather than snapping back to the whole frame.
+    const _cd = _cropperInstance.getCropBoxData();
+    const _cv = _cropperInstance.getCanvasData();
+    if (_cd && _cv && _cv.width > 0 && _cv.height > 0) {
+      if (!formData._cropBoxes) formData._cropBoxes = {};
+      formData._cropBoxes[_key] = {
+        left:   (_cd.left - _cv.left) / _cv.width,
+        top:    (_cd.top  - _cv.top)  / _cv.height,
+        right:  (_cd.left - _cv.left + _cd.width)  / _cv.width,
+        bottom: (_cd.top  - _cv.top  + _cd.height) / _cv.height,
+        rotation: _cropperRotation || 0
+      };
+    }
+  } catch (e) { console.warn("[cropper] could not record the original:", e); }
   if (type === "corner") {
     const list = [ ...formData.cornerImages || [] ];
     list[index] = dataUrl;
@@ -17473,7 +17763,7 @@ async function submitRestorationCheck() {
       const _revealMs = _boxPlan.length * 1000; // after the last box lights
       const _judgeColor = _restoFound ? '#ff4040' : '#60c060';
       const _judgeLabel = _restoFound ? "COLOR TOUCH INDICATED" : "NO COLOR TOUCH FOUND";
-      // S23: the verdict line alone overstates what two UV photos can settle.
+      // S22: the verdict line alone overstates what two UV photos can settle.
       // "NO COLOR TOUCH FOUND" in green reads as a clean bill of health, and a
       // false negative is the expensive direction — someone buys on it. This
       // check finds OBVIOUS color touch; it is not a restoration certification.
@@ -17937,7 +18227,7 @@ async function _analyzePhotoQuality(src) {
         for (let i = 0; i < n; i++) {
           gray[i] = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2];
         }
-        // S23: analyze only the CENTRAL region. The comic usually fills the middle
+        // S22: analyze only the CENTRAL region. The comic usually fills the middle
         // of the frame; a bright white surface behind it (common on desk shots)
         // otherwise reads as blown glare (false "C" lighting) and its detail-free
         // expanse drags the focus variance down. Insetting ~10% each side keeps
@@ -17968,7 +18258,7 @@ async function _analyzePhotoQuality(src) {
         const lapVar = cnt > 1 ? m2 / (cnt - 1) : 0;
         const _den = region || n;
         const blownFrac = blown / _den, darkFrac = dark / _den;
-        // S25 (#4): loosened so good captures reliably hit A and B is actually
+        // S22 (#4): loosened so good captures reliably hit A and B is actually
         // reachable (was 120/45, which left most real photos in an A-or-C split and
         // tripped C on glossy-cover glare). Still a heuristic — fine-tune to samples.
         const focus = lapVar >= 70 ? "A" : lapVar >= 25 ? "B" : "C";
@@ -18253,7 +18543,7 @@ async function cameraOpen(state) {
       // Android default; idx 1 (if present) is the wider lens (ZOOM OUT). The iOS
       // zoom-per-slot defaults below are skipped on Android (no telephoto to zoom into).
       _cameraState.androidLensMode = androidLens;
-      // S25 per-slot lens defaults (Matt's spec):
+      // S22 per-slot lens defaults (Matt's spec):
       //   Main (all 4: Front/Back/Interior/Spine) -> WIDE (Zoom Out).
       //   Corner macros -> zoom. Interior Front/Back (kind "interiorCover") -> WIDE (not in list).
       //   Full/"interior" slots: Top Edge (top_pages), Bottom Edge (bottom_pages) and BOTH
@@ -18539,7 +18829,7 @@ function cameraOpenSlot(slotIndex) {
   if (_slotLenses.length > 1) {
     // S22: was a stale hand-rolled copy of the lens rule that forced ZOOM IN on
     // kind "main" slots 0/1/2 (Front/Back/Interior) and on every "interior" slot
-    // except outer_edge. Both contradicted the S25 spec that camera init already
+    // except outer_edge. Both contradicted the S22 spec that camera init already
     // followed, and because init only runs for the FIRST slot, this copy is what
     // the user actually saw from the second photo onward. Now shares the rule.
     const _zd = _slotWantsZoom(_cameraState.kind, slotIndex, _cameraState.isCard);
@@ -18717,16 +19007,44 @@ async function cameraCapture() {
   const stageH = stage.clientHeight;
   const videoW = video.videoWidth;
   const videoH = video.videoHeight;
-  const coverScale = Math.max(stageW / videoW, stageH / videoH);
-  const visibleW = Math.round(stageW / coverScale);
-  const visibleH = Math.round(stageH / coverScale);
-  const sx = Math.round((videoW - visibleW) / 2);
-  const sy = Math.round((videoH - visibleH) / 2);
+  // ── v6.61: CAPTURE THE WHOLE SENSOR FRAME, NOT THE VIEWFINDER'S CROP ────
+  // This used to reproduce the viewfinder exactly. #camera-video is
+  // object-fit: cover, so the preview is ALREADY a crop of the feed, and the
+  // old code computed that same visible rect and threw the rest away:
+  //     coverScale = max(stageW/videoW, stageH/videoH)  ->  a visible source
+  //     rect (sx, sy, visibleW, visibleH) which was then drawn alone.
+  //     (Written in prose, not as code: test-autocrop.mjs greps for the old
+  //      drawImage call to make sure it never comes back, and a commented-out
+  //      copy of it would make that check fail for the wrong reason.)
+  // The pixels outside the stage aspect never reached the file.
+  //
+  // THAT is where Matt's "there's no way to expand the handles back out" came
+  // from, and it is upstream of the crop tool: by the time the cropper opened,
+  // the margin was already gone from the image it was given. He shot a book
+  // with clear green mat on all four sides and the cropper showed a frame with
+  // the sides shaved. Nothing in the cropper could get them back because they
+  // were never in the file.
+  //
+  // Now the full frame is captured. The viewfinder stays `cover` — it is a
+  // viewfinder, and the black bars it avoids were a real complaint. The cost
+  // is that a capture contains a little MORE than the user framed, on whichever
+  // axis the stage aspect was clipping. That is the right direction to err:
+  // extra background is croppable, and the grader never sees anything the user
+  // did not keep. Nothing downstream assumes the two match — the cropper, the
+  // slab check and the assessment all take whatever image they are handed.
   const canvas = document.createElement("canvas");
-  canvas.width = visibleW;
-  canvas.height = visibleH;
+  canvas.width = videoW;
+  canvas.height = videoH;
   const ctx = canvas.getContext("2d");
-  ctx.drawImage(video, sx, sy, visibleW, visibleH, 0, 0, visibleW, visibleH);
+  ctx.drawImage(video, 0, 0, videoW, videoH);
+  // Logged, not applied: the rect the viewfinder was showing. If a framing
+  // complaint ever comes back, this says how much wider the file is than what
+  // the user saw.
+  try {
+    const _cs = Math.max(stageW / videoW, stageH / videoH);
+    console.log("[camera] full frame " + videoW + "x" + videoH
+      + "; viewfinder showed " + Math.round(stageW / _cs) + "x" + Math.round(stageH / _cs));
+  } catch (e) {}
   const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
   _cameraState.captures.push({
     slot: _cameraState.current,
@@ -18780,7 +19098,7 @@ async function cameraCapture() {
   }
 }
 
-// ── S23 BUGFIX: A DEEP CAPTURE IS ONE SESSION, NOT TWO ─────────────────────
+// ── S22 BUGFIX: A DEEP CAPTURE IS ONE SESSION, NOT TWO ─────────────────────
 // Reported repeatedly: after the four corner macros the camera closed, the user
 // was dropped back into the Edit form, and had to find and tap the Interior
 // Front slot to shoot the remaining two photos. Nothing told them more photos
@@ -19100,7 +19418,7 @@ async function runCropperSequence(captures, kind) {
     };
     formData[metaKey] = meta;
     formData._imagesChanged = true;
-    // S25: auto-cropper runs for Main (all 4), plus — now the first-image measure
+    // S22: auto-cropper runs for Main (all 4), plus — now the first-image measure
     // bug is fixed — Deep's Interior Front/Back (interiorCover) and Full's three
     // EDGE shots (Top/Outer/Bottom). Corner macros and the three staple shots
     // don't benefit from cropping, so they skip it.
@@ -19158,7 +19476,7 @@ function cameraUploadInstead() {
   const {kind: kind, current: current, mode: mode, captures: captures} = _cameraState;
   const hadCaptures = mode === "walkthrough" && Array.isArray(captures) && captures.length > 0;
   const savedKind = kind, savedCurrent = current, savedCaptures = hadCaptures ? [ ...captures ] : null;
-  // S23: if the session had already chained (corner -> interiorCover), the corner
+  // S22: if the session had already chained (corner -> interiorCover), the corner
   // photos are parked in `batches` and would be silently thrown away here.
   const savedBatches = (_cameraState.batches || []).map(b => ({ kind: b.kind, captures: [ ...b.captures ] }));
   const savedLabelDetected = _cameraState.labelDetected, savedLabelKind = _cameraState.labelKind;

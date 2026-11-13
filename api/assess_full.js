@@ -918,7 +918,7 @@ Rules:
           model: PRIMARY_MODEL,
           fullAssessment: true,
           grade,
-          // S23: the admin LOGS tab reads `predictedGrade` / `precisionMod`, not
+          // S22: the admin LOGS tab reads `predictedGrade` / `precisionMod`, not
           // `grade` / `confidenceRange`. Full has been writing the latter names
           // since it shipped, so every Full row rendered with a blank grade —
           // 0 of 10 Full rows in the current log window carry a readable grade.
@@ -942,12 +942,12 @@ Rules:
           outputTokens: _outputTokens,
           cacheReadInputTokens: _cacheReadInputTokens,
           cacheCreationInputTokens: _cacheCreationInputTokens,
-          // S23: was a hardcoded $5/$25 block with a comment telling the next
+          // S22: was a hardcoded $5/$25 block with a comment telling the next
           // person to keep it in step with assess.js by hand. It was NOT kept in
           // step — when grading moved to Opus 5.5 ($4/$20, cache read 5%) this
           // kept billing the log at Opus 5 rates, overstating every Full by ~20%.
           // Now reads lib/model.js like assess.js does. Nothing to remember.
-          // S23 2026-10-11: this block used to hardcode the cache-read
+          // S22 2026-10-11: this block used to hardcode the cache-read
           // multiplier at 0.05, while api/assess.js hardcoded 0.10. Exactly one
           // of them was right at any moment, and the Opus 5.5 cut-over flipped
           // which. Both now call the one helper in lib/model.js, which carries
@@ -999,7 +999,7 @@ Rules:
       if (db) {
         const key = `full_err_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         await db.collection('assessment_timings').doc(key).set({
-          // S24: what this assessment COST THE USER in credits. Nothing recorded
+          // S22: what this assessment COST THE USER in credits. Nothing recorded
           // this before, so the admin's "cost per credit" was really cost per
           // ASSESSMENT — a lower, different number. Gross: a later refund is
           // subtracted from the ledger / the item's refund stamp, not from here.

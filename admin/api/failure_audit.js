@@ -1,7 +1,7 @@
 // /api/failure_audit.js — ONE-TIME DIAGNOSTIC. How much are failed assessments
 // costing us, how often do they happen, and why.
 //
-// WHY THIS EXISTS (S23, 2026-10-12)
+// WHY THIS EXISTS (S22, 2026-10-12)
 // api/assess.js used to record `costUsd: 0` on every errored run, under the
 // comment "the API never returned (no tokens billed)". That is true for a
 // failure BEFORE the request goes out and false for a TIMEOUT, which is the

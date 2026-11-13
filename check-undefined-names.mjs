@@ -132,7 +132,18 @@ writeFileSync(join(dir, 'eslint.config.mjs'),
   "    sourceType: 'script',\n" +
   '    globals: ' + JSON.stringify(globalsObj) + ',\n' +
   '  },\n' +
-  "  rules: { 'no-undef': 'error' },\n" +
+  // v6.60: no-use-before-define JOINS no-undef, and it earned its place.
+  // `const g` sat BELOW a branch that read `g`, so a facsimile with a manual
+  // FMV curve threw "Cannot access 'g' before initialization" out of
+  // matchFMV and froze the app on "ASSESSING..." with the credit charged.
+  // no-undef cannot see that: `g` IS defined in scope, just later. A
+  // temporal-dead-zone read is a name that resolves to nothing at the moment
+  // it runs, which is the same failure this script exists for.
+  // functions:false and classes:false because declarations hoist and flagging
+  // them would bury the real finding in hundreds of false positives;
+  // variables:true is the whole point.
+  "  rules: { 'no-undef': 'error',\n" +
+  "           'no-use-before-define': ['error', { functions: false, classes: false, variables: true }] },\n" +
   '}];\n');
 
 
@@ -159,14 +170,42 @@ try { results = JSON.parse(raw); } catch (e) {
   console.error('eslint returned something that is not JSON:', raw.slice(0, 300));
   process.exit(2);
 }
-const msgs = (results[0] && results[0].messages) || [];
-if (!msgs.length) {
-  console.log('  ok    every name resolves (' + blocks.length + ' inline block(s), '
-              + map.length + ' lines)');
+const all = (results[0] && results[0].messages) || [];
+
+// TWO RULES, TWO SEVERITIES, AND THE SPLIT MATTERS.
+//
+// no-undef is fatal: the name resolves to NOTHING, anywhere, ever.
+//
+// no-use-before-define is ADVISORY, because ESLint judges textual position
+// and not execution order. The overwhelming majority of its hits are a
+// function body referring to a `let` declared further down the file — which
+// is completely safe, because the function is not called until long after
+// that line has run. Making those fail the build would bury the one real
+// finding in forty safe ones, and a gate that cries wolf gets ignored. That
+// is the "a check that encodes the wrong belief is worse than no check" rule
+// in HOW_WE_WORK §3.
+//
+// THE DANGEROUS CASE, and the one that cost an app freeze and a charged
+// credit on 2026-11-13: the read and the declaration are in the SAME
+// straight-line path, so the read really does hit the temporal dead zone.
+// Nothing here can tell those apart automatically — read each one and ask
+// "does this line run before that declaration does?"
+const fatal = all.filter(m => m.ruleId === 'no-undef');
+const tdz   = all.filter(m => m.ruleId === 'no-use-before-define');
+
+if (tdz.length) {
+  console.log('\n' + tdz.length + ' use-before-define (ADVISORY — most are safe; see the note in this file):\n');
+  for (const x of tdz) console.log('  ' + SRC + ':' + map[x.line - 1] + '  ' + x.message);
+}
+
+if (!fatal.length) {
+  console.log((tdz.length ? '\n' : '') + '  ok    every name resolves (' + blocks.length
+              + ' inline block(s), ' + map.length + ' lines)'
+              + (tdz.length ? '  [' + tdz.length + ' advisory]' : ''));
   process.exit(0);
 }
-console.log('\n' + msgs.length + ' UNDEFINED NAME(S) — each one throws the moment that line runs:\n');
-for (const x of msgs) {
+console.log('\n' + fatal.length + ' UNDEFINED NAME(S) — each one throws the moment that line runs:\n');
+for (const x of fatal) {
   const src = map[x.line - 1];
   console.log('  ' + SRC + ':' + src + '  ' + x.message);
 }

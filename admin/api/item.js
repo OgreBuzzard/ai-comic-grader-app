@@ -184,7 +184,7 @@ export default async function handler(req, res) {
     //
     // couponImages, insertImages and userDefectImages ARE in COMIC_DATA_FIELDS.
     // They are written to comicData.couponImages, so raw.couponImages is
-    // undefined and normImages() returned [] every time. S23 added the admin
+    // undefined and normImages() returned [] every time. S22 added the admin
     // rendering for Coupon and Insert and it has never drawn anything, because
     // the data was being read from the wrong half of the document. Matt spotted
     // the coupon case and correctly predicted inserts were missing too; user
@@ -338,7 +338,7 @@ export default async function handler(req, res) {
       restorationFlag: !!flat.restorationFlag,
       restorationImages,
       signatureImages,
-      // S23: coupon / insert / missed-defect sets + their finding text.
+      // S22: coupon / insert / missed-defect sets + their finding text.
       couponImages,
       insertImages,
       userDefectImages,

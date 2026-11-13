@@ -51,7 +51,7 @@ export default async function handler(req, res) {
   const { images = [], frontCover = null, title = '', issueNumber = '', entry = null } = req.body || {};
   const imgBlocks = (images || []).map(toImageBlock).filter(Boolean);
   if (imgBlocks.length < 2) return res.status(400).json({ error: 'Two coupon photos are required' });
-  // S23: server-side read of the SAME curated coupon list the client matches
+  // S22: server-side read of the SAME curated coupon list the client matches
   // against (kept in sync by make-indexes.mjs). Non-blocking; logs a mismatch so
   // drift/abuse is visible, and echoes it back for the client/admin.
   const _onIndex = !!couponEntry(title, issueNumber);

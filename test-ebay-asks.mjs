@@ -11,7 +11,7 @@
 //   3. below MIN_LISTINGS we return nothing. Three listings is not a market.
 // Run: node test-ebay-asks.mjs
 
-import { parseSlabGrade, median, bandFor, summarise, isJunkListing } from './api/ebay_asks.js';
+import { parseSlabGrade, median, bandFor, summarise, isJunkListing, titleHasIssue, isNonUniversalLabel } from './api/ebay_asks.js';
 
 let pass = 0, fail = 0;
 const ok = (n, c, x) => { if (c) { pass++; console.log('  ok    ' + n); } else { fail++; console.log('  FAIL  ' + n + (x ? '\n        ' + x : '')); } };
@@ -95,6 +95,71 @@ ok('a non-USD listing is dropped', summarise(
                        L('ASM 129 CGC 9.6', 400), { title: 'ASM 129 CGC 9.4' }], 9.4);
   ok('a listing with no price is dropped, not counted as 0',
     s.n === 3 && s.median === 300 && s.low === 250, JSON.stringify(s));
+}
+
+// ── THE ISSUE NUMBER ──────────────────────────────────────────────────────
+// Every one of these is a real title from the first live debug dump. The band
+// for "Fantastic Four 1" contained issues 5, 55, 7, 52 and 13, because eBay's
+// keyword search returns any issue of the title and nothing checked.
+ok('the asked-for issue matches', titleHasIssue('Fantastic Four #1 CGC 4.5 Origin & 1st Appearance Marvel 1961', '1'));
+ok('a different issue does not', !titleHasIssue('Fantastic Four #5 CGC 4.5 (1962) Marvel Comics', '1'));
+ok('#55 is not #5', !titleHasIssue('Marvel Fantastic Four 55 CGC 4.5 1966 1st Silver Surfer', '5'));
+ok('#13 is not #1', !titleHasIssue('Fantastic Four #13 CGC 4.5 1st Watcher and Red Ghost', '1'));
+ok('#52 is not #5', !titleHasIssue('Fantastic Four # 52 (1966) CGC 5.0 1st Black Panther', '5'));
+ok('a YEAR is not an issue number', !titleHasIssue('Fantastic Four CGC 4.5 Marvel 1961', '1'),
+  'the 1 in 1961 must not count');
+ok('a GRADE is not an issue number', !titleHasIssue('Fantastic Four CGC 5.0 Marvel', '5'),
+  'the 5 in "5.0" must not count');
+ok('9.4 is not issue 4', !titleHasIssue('Amazing Spider-Man CGC 9.4 Marvel', '4'));
+ok('no hash, spaces either side', titleHasIssue('Fantastic Four 1 CGC 5.0', '1'));
+ok('space after the hash', titleHasIssue('Fantastic Four # 52 (1966) CGC 5.0', '52'));
+ok('three digits', titleHasIssue('The Incredible Hulk 181 CGC 6.0 1st WOLVERINE', '181'));
+ok('leading zeros in the title', titleHasIssue('Action Comics #007 CGC 3.0', '7'));
+ok('a non-numeric issue is not rejected', titleHasIssue('Whatever CGC 9.8', '1A'),
+  'if we cannot check it, we must not drop it');
+// The ordinal rule. Comic titles are packed with "1st Appearance" and this
+// caught three of the nine live listings on its own.
+ok('"1st Appearance" is not issue 1',
+  !titleHasIssue('Fantastic Four #13 CGC 4.5 1st Watcher and Red Ghost', '1'));
+ok('"1st App" is not issue 1',
+  !titleHasIssue('Fantastic Four #5 Origin & 1st App Dr. Doom 1962 CGC 5.0', '1'));
+ok('"2nd" is not issue 2', !titleHasIssue('Batman 423 2nd Print CGC 9.6', '2'));
+ok('but a real #1 with "1st Appearance" in it still matches',
+  titleHasIssue('Fantastic Four #1 CGC 4.5 Origin & 1st Appearance of Fantastic Four Marvel 1961', '1'),
+  'the ordinal rule must not throw out the book it is protecting');
+
+// ── non-universal CGC labels ──────────────────────────────────────────────
+// Both of these are real titles from the first live sample.
+ok('RESTORED is excluded', isNonUniversalLabel('Fantastic Four #1 CGC 4.5 RESTORED 1961 1st app.'),
+  'purple label — same number, materially different market');
+ok('Qualified is excluded', isNonUniversalLabel('Incredible Hulk (1974) #181 CGC 6.5 Qualified'));
+ok('Signature Series is NOT excluded',
+  !isNonUniversalLabel('Fantastic Four #1 - Marvel Comics 1961 CGC 4.0 1st App FF SIGNED STAN LEE'),
+  'a universal-grade book with an autograph is still the same comic in the same condition');
+ok('an ordinary listing is not excluded', !isNonUniversalLabel('Fantastic Four #1 CGC 4.5 Marvel 1961'));
+
+// ── the whole filter chain against the real FF 1 dump ─────────────────────
+{
+  const R = (t, p) => ({ title: t, price: { value: String(p), currency: 'USD' } });
+  const live = [
+    R('Fantastic Four #5 Origin & 1st App Dr. Doom Silver Age Marvel Comic 1962 CGC 5.0', 7500),
+    R('Fantastic Four #1 CGC 4.5 Origin & 1st Appearance of Fantastic Four Marvel 1961', 14990),
+    R('FANTASTIC FOUR #1 CGC 5.0 OW/WH PAGES // ORIGIN+1ST APPEARANCE OF FANTASTIC FOUR', 20900),
+    R('Marvel Fantastic Four 55 CGC 4.5 1966 1st Appearance Silver Surfer', 109.99),
+    R('Fantastic Four #5 CGC 4.5 (1962) Marvel Comics "Meet..Doctor Doom!" WHITE PAGES', 7500),
+    R('Fantastic Four #7 CGC 5.0 Marvel 1962 Kurrgo Planet X Stan Lee Jack Kirby', 475),
+    R('Fantastic Four # 52 (1966) CGC 5.0 Kirby 1st Black Panther (T\'Challa), Wakanda', 625),
+    R('Fantastic Four #13 CGC 4.5 1st Watcher and Red Ghost Stan Lee Jack Kirby', 450),
+    R('Fantastic Four #52 CGC 5.0 Marvel Comics 1966 1st Appearance Of Black Panther', 615)
+  ];
+  const before = summarise(live, 4.5);                 // no issue = old behaviour
+  const after  = summarise(live, 4.5, '1');
+  ok('without the issue check this really did return nine listings', before.n === 9,
+    'reproducing the live bug: ' + JSON.stringify({ n: before.n, median: before.median }));
+  ok('with it, only the two real #1s survive', after.n === 2 || after.reason === 'too-few-in-band',
+    JSON.stringify(after));
+  ok('and the $109.99 Fantastic Four 55 is gone',
+    !(after.n > 0 && after.low === 109.99), JSON.stringify(after));
 }
 
 // ── reprints and facsimiles ───────────────────────────────────────────────

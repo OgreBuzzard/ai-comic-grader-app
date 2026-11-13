@@ -49,7 +49,7 @@ export default async function handler(req, res) {
   const { images = [], frontCover = null, title = '', issueNumber = '', entry = null } = req.body || {};
   const imgBlocks = (images || []).map(toImageBlock).filter(Boolean);
   if (imgBlocks.length < 2) return res.status(400).json({ error: 'Two insert photos are required' });
-  // S23: server-side read of the SAME curated list the client matches against
+  // S22: server-side read of the SAME curated list the client matches against
   // (kept in sync by make-indexes.mjs). Non-blocking — a candidate-era book is a
   // legitimate check even without a confirmed hit — but we log a mismatch so
   // drift/abuse is visible, and echo it back for the client/admin.

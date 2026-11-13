@@ -47,7 +47,7 @@ export default async function handler(req, res) {
     const APPLE_CUTOFF_MS = Date.UTC(2026, 7, 14); // Aug 14 2026: Apple 30%->15% (small-business)
     const perCredit = { day: { net: 0, credits: 0 }, week: { net: 0, credits: 0 }, month: { net: 0, credits: 0 } };
     const assessCost = { day: { cents: 0, n: 0 }, week: { cents: 0, n: 0 }, month: { cents: 0, n: 0 } };
-    // ── TRUE COST PER CREDIT (S24, 2026-10-19, Matt's ask) ──────────────────
+    // ── TRUE COST PER CREDIT (S22, 2026-10-19, Matt's ask) ──────────────────
     // `assessCost` above is cost per ASSESSMENT and has always been labelled
     // "Cost / Credit Used", which is a different number and a lower one. Matt:
     // "we're refunding credits on Deep runs that don't raise the grade, so a
@@ -249,7 +249,7 @@ export default async function handler(req, res) {
     let spendTruncated = false;      // true = the 30d window did not reach 30 days
     let zeroCostRows = { day: 0, week: 0, month: 0 };   // billed by Anthropic, logged as $0
     try {
-      // S23 2026-10-11 — THIS WAS A SINGLE .limit(2500) AND IT SILENTLY
+      // S22 2026-10-11 — THIS WAS A SINGLE .limit(2500) AND IT SILENTLY
       // TRUNCATED THE 30-DAY FIGURE.
       // The comment used to read "recent ~2500 - last ~5 weeks at current
       // volume". Volume outgrew it. Every assessment writes a row, and so does
@@ -444,7 +444,7 @@ export default async function handler(req, res) {
     // Spending breakdown for the dashboard's Spending box — four buckets, each
     // 24h / 7d / 30d. API = Anthropic assessment cost; Ads = paid-ad plan;
     // Sub = Claude Max subscription; Site = Firebase + Vercel + domain.
-    // ── KEEP-WARM PING SPEND (S23 2026-10-16, Matt's ask) ───────────────────
+    // ── KEEP-WARM PING SPEND (S22 2026-10-16, Matt's ask) ───────────────────
     // The ping spends real money and writes NO assessment_timings row, so it is
     // invisible to every other figure on this page. api/cachewarm.js keeps a
     // running total and a 30-day log at config/cache_warm/main; this reads it

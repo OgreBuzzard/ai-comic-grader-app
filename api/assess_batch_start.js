@@ -122,7 +122,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'batch_create_failed', message: 'Could not start the batch. Your credits were not charged.' });
   }
 
-  // ── RECORD THE 3 CREDITS (S24, 2026-10-19, Matt) ─────────────────────────
+  // ── RECORD THE 3 CREDITS (S22, 2026-10-19, Matt) ─────────────────────────
   // Batch debits in its own transaction above, bypassing lib/credits.js, and
   // its ten passes each write a timing row stamped creditsCharged: 0 — because
   // the passes genuinely cost nothing extra, the batch paid up front. The net

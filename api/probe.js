@@ -194,7 +194,7 @@ export default async function handler(req, res) {
     let parsed = null;
     try { parsed = JSON.parse(text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim()); }
     catch (_) { /* keep raw */ }
-    // ── LOG WHAT THIS COST (S23, 2026-10-18) ──────────────────────────────
+    // ── LOG WHAT THIS COST (S22, 2026-10-18) ──────────────────────────────
     // This endpoint used to spend real money and write NOTHING. It is the
     // leading explanation for the ~$134 gap between the Anthropic invoices and
     // the logged total over Sep 13 – Oct 11: during Session 22 this was hit

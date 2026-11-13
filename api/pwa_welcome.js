@@ -9,7 +9,7 @@
 //   (also honors the legacy nested flag pwaWelcome.granted === true so accounts
 //    granted under the previous build are not granted a second time.)
 //
-// Flow (S23): grant on the FIRST call, full stop.
+// Flow (S22): grant on the FIRST call, full stop.
 //
 //   Previously this was a RETURN-visit reward: call #1 only recorded
 //   pwaFirstSeenMs and granted nothing, and the credit landed on a later call
@@ -62,7 +62,7 @@ export default async function handler(req, res) {
         const nowMs = Date.now();
         const nowIso = new Date(nowMs).toISOString();
 
-        // S23: no waiting period, no first-sighting bookkeeping. Not granted
+        // S22: no waiting period, no first-sighting bookkeeping. Not granted
         // yet -> grant now. The flag set in this same transaction is what makes
         // it one-time, and a transaction means two tabs racing cannot double it.
         const prev = (typeof d.assessmentCredits === 'number') ? d.assessmentCredits : 0;

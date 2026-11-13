@@ -317,7 +317,7 @@ export default async function handler(req, res) {
         roboGradeDate: flat.roboGradeDate || null,
         roboGradeId: flat.roboGradeId || '',
         score: flat.roboGrade?.score ?? null,
-        // S25: subscore fields so the admin _rgCell() can compute the v3
+        // S22: subscore fields so the admin _rgCell() can compute the v3
         // half-point grade for this list (was falling back to the raw v1
         // 0-100 score because these weren't projected).
         frontScore: flat.roboGrade?.frontScore ?? null,
