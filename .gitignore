@@ -11,5 +11,9 @@ node_modules/
 # Firebase service-account key for one-off local scripts — NEVER commit
 service-account.json
 
-# Scratch dir for check-undefined-names.mjs — regenerated on every run
+# Scratch dirs for check-undefined-names.mjs — regenerated on every run.
+# The glob matters: an older build of the gate made .rg-undef-<random>/ and a
+# crashed run leaves one behind holding a ~1MB copy of index.html's scripts.
+# `.rg-undef/` alone does not match those, so one sat in the repo for a week.
 .rg-undef/
+.rg-undef-*/

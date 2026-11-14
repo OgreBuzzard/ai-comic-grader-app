@@ -8514,48 +8514,20 @@ async function _saveImageBlob(blob, filename) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// EXPORT IMAGES — Summary and Defect List        (spec: SUMMARY_IMAGE_SPEC v2)
+// EXPORT IMAGES - Summary and Defect List     (spec: SUMMARY_IMAGE_SPEC v2)
 //
-// Two shareable 1080x1920 JPEGs rendered on an OFFSCREEN CANVAS. Not a DOM
-// screenshot: a DOM capture inherits the detail view's scroll position, its
-// chrome and whatever is half-loaded.
+// Two shareable JPEGs on an OFFSCREEN CANVAS, handed to the app's save path.
+// Not a DOM screenshot: a DOM capture inherits the detail view's scroll
+// position, its chrome and whatever is half-loaded.
 //
-// Matt wanted both rather than a choice between them - "two different versions
-// of the same idea, and I'm not sure which will be more useful to sellers".
-// SUMMARY shows the book (covers + grade, no defect detail). DEFECT LIST shows
-// the condition in full (every defect, no covers). Same header, same footer,
-// same save path; they differ only in the body.
+// They draw the app's OWN surfaces, with the constants lifted from where they
+// already live rather than re-picked by eye: showDetail()'s header, then
+// robograde-panel.js's continuous-form paper for the defect table, then
+// buildPredictedGradeBox() for the conclusion.
 //
-// FIXED BANDS, NO REFLOW. Long titles shrink to fit their band and then
-// ellipsise; nothing ever pushes anything else down. The defect list is the one
-// variable-height element and the app caps a list at 13, so the worst case is
-// known and sized for.
-// ═══════════════════════════════════════════════════════════════════════════
-// EXPORT IMAGES — Summary and Defect List        (spec: SUMMARY_IMAGE_SPEC v2)
-//
-// Two shareable JPEGs rendered on an OFFSCREEN CANVAS and handed to the app's
-// existing save path. Not a DOM screenshot: a DOM capture inherits the detail
-// view's scroll position, its chrome and whatever is half-loaded.
-//
-// STYLE (v5.72, after Matt: "your sample images have none of the established
-// Robograder formatting"). The first attempt invented a dark poster layout.
-// These now draw the app's OWN surfaces, with the constants lifted from where
-// they already live rather than re-picked by eye:
-//   - the title block copies showDetail()'s header (Noto Sans Display at the
-//     62.5% width axis, then Barlow Condensed for the imprint lines)
-//   - the defect table is robograde-panel.js's tractor-feed continuous-form
-//     paper: pale mint-green and cream bands alternating CONTINUOUSLY across
-//     section breaks, sprocket margins down both edges, dark olive ink,
-//     IBM Plex Mono, with the four category headers carrying their subscore
-//   - the conclusion is buildPredictedGradeBox(): black card, the blue PG
-//     badge, the page-quality pill in its own PQ_COLORS tint, FMV, disclaimer
-//
-// HEIGHT IS VARIABLE, which is a deliberate break from the spec's fixed
-// 1080x1920. Matt: leave room for the defect list to get long "without
-// creating an image that's too vertically long to be readable on a phone".
-// A fixed canvas can only do one of those. So the paper grows to its content
-// and the conclusion is laid out in two columns - grade left, page quality and
-// FMV right - which is what buys the vertical room.
+// HEIGHT IS VARIABLE, a deliberate break from the spec's fixed 1080x1920 -
+// Matt wants room for a long defect list without an image too tall to read on
+// a phone, and a fixed canvas can only do one of those.
 // ═══════════════════════════════════════════════════════════════════════════
 
 const EX_S = 3;                          // canvas px per CSS px (1080 / 360)
@@ -16764,63 +16736,27 @@ function _acMedian(arr) {
   return a[a.length >> 1];
 }
 
-// ── WHY AUTO-CROP STILL REFUSES ON A REAL DESK, AND WHAT THE FIX IS ───────
-// v6.62. Eight real captures from Matt (DKR 3 and FF 1, kept in
-// shared/_WORKING/autocrop_samples/). Six refused, two returned a box around
-// the CUTTING MAT. Not one found the book.
-//
-// THE SETUP IS THREE LEVELS, NOT TWO: wood table -> green cutting mat ->
-// comic. autocropDetect finds whatever differs from the border ring, the ring
-// is the table, so what it finds is the mat. The composite test set never
-// showed this because a composite has exactly one background by construction.
-// Real desks have two.
-//
-// A nested version was written and TESTED AND REMOVED: find the mat, then
-// search inside it. It failed in a way worth recording, because the next
-// attempt will be tempted by it. Inside the mat the strongest contrast is not
-// the book's edge against the mat - it is the book's own artwork. On the DKR 3
-// cover it boxed the black Batman logo. Burrowing one level finds the mat;
-// burrowing two finds a design element. There is no depth that is reliably
-// "the book".
-//
-// THE ACTUAL PROBLEM IS THE COLOUR SPACE. _acRender converts to GRAYSCALE
-// immediately, which throws away the one signal that separates these cleanly:
-// the mat is a saturated green and a comic cover is not. In luminance a green
-// mat and a mid-tone cover are neighbours; in RGB they are far apart. The fix
-// is to carry colour through and measure per-pixel distance from the
-// background COLOUR rather than its brightness. That is a real rework of
-// autocropDetect, not a parameter.
-//
-// Until then this refuses on a mat, which costs nothing: a refusal leaves the
-// whole image selected (v6.59) and the user crops by hand as before.
-//
 // gray: Uint8ClampedArray|Array of length >= w*h, 0-255 luminance.
-// Returns { ok, left, top, right, bottom, confidence, method } where the four
-// bounds are fractions of w/h in [0,1] and describe the BOOK, unpadded.
-// v6.63 REWORK. Two changes, and they only work together.
+// rgb:  OPTIONAL, w*h*3 bytes. With no rgb the distance is |luminance - bg|,
+//       so the gray-only path and every test written against it are unchanged.
+// Returns { ok, left, top, right, bottom, confidence, method }, bounds as
+// fractions of w/h describing the BOOK, unpadded.
 //
-//   COLOUR. _acRender now carries RGB alongside luminance and the detector
-//   measures Euclidean distance from the background COLOUR. A green cutting
-//   mat and a mid-tone comic cover are neighbours in luminance and far apart
-//   in RGB; that collision is what made the grayscale mask select the black
-//   Batman logo and nothing else.
+// COLOUR AND PEELING, AND THEY ONLY WORK TOGETHER. A real desk is three levels
+// - table, cutting mat, comic - and the border ring is the TABLE, so the first
+// object found is the mat in any colour space. Hence peeling: find an object,
+// look again inside it. What stops it burrowing into artwork is _acField's
+// background test, not a depth limit. Colour matters separately: a green mat
+// and a mid-tone cover are neighbours in luminance and far apart in RGB, and
+// that collision is what made the grayscale mask pick out a black logo.
+// The gradient snap runs on the DISTANCE FIELD, not luminance - inside the
+// book the distance is uniformly large, so artwork barely registers.
 //
-//   PEELING. Colour alone does not fix the nesting. The border ring is the
-//   TABLE, so the first object found is the MAT whatever colour space we use.
-//   So the detector finds an object, then looks again INSIDE it. What stops it
-//   burrowing into artwork is _acField's uniformity test, not a depth limit:
-//   the ring just inside a mat is mat, and the ring just inside a comic's edge
-//   is cover artwork, which fails the test and ends the peel. The v6.62 nested
-//   attempt had no such test, which is why it came back with a logo.
-//
-//   The gradient snap now runs on the DISTANCE FIELD rather than on luminance.
-//   Inside the book the distance from the background is uniformly large, so
-//   artwork contributes almost no gradient and the book's edge is the only
-//   strong line in the window.
-//
-// A "pixels" object is { gray, rgb }, rgb optional and w*h*3 bytes when
-// present. With no rgb the distance is |luminance - bg| exactly as before, so
-// the gray-only path - and every test written against it - is unchanged.
+// Measured state, and why this is still not finished:
+// shared/_WORKING/AUTOCROP_v6.63_NEGATIVE_RESULT.md. It refuses on all eight
+// of Matt's real captures (0 wrong boxes, against 2 in v6.62), so the feature
+// is safe and does not fire. A refusal costs nothing: the whole image stays
+// selected and the user crops by hand.
 const AUTOCROP_PEEL_MAX    = 2;      // table -> mat -> book is the deepest real case
 const AUTOCROP_PEEL_SHRINK = 0.80;   // an inner box must be this much smaller to count
 
@@ -17315,82 +17251,46 @@ function openCropper(type, index) {
       ready: function() {
         const stage = document.getElementById("cropper-stage");
         if (stage) stage.classList.add("ready");
-        // Re-measure against the settled, safe-area-padded container. Cropper
-        // measures at attach time, before the padded layout fully settles, which
-        // left tall/EXIF-rotated phone photos collapsed to a strip or pushed past
-        // the safe area. A resize() after ready forces a correct fit for any
-        // image aspect ratio or orientation.
-        // S22: fit the image to the (safe-area-padded) container, then default the
-        // Front/Back crop box to ~9:14 centered. Wrapped in a reusable _fitCrop and
-        // run TWICE — once next frame, once after 180ms. The FIRST auto-opened crop
-        // (camera modal closes as the cropper opens) measures its container mid open-
-        // transition, so image #1 was scaled up with its right half pushed off-screen
-        // while #2-4 (modal already settled) were fine. The delayed re-fit corrects
-        // #1 and is idempotent for the rest.
-        // S22 (3rd attempt at the first-image bug — the previous two used
-        // resize(), which CANNOT fix this case):
-        //   Cropper.resize() bails out early when
-        //     containerData.width <= 200 || containerData.height <= 100
-        //   and it only re-renders at all when the container's measured size has
-        //   CHANGED since init. cameraFinish() removes .open from #camera-modal
-        //   and calls runCropperSequence() in the same task, so for capture #1 the
-        //   cropper modal is measured before the browser has laid it out — the
-        //   stage comes back at ~0px. Cropper stores that as containerData, scales
-        //   the image to it (hence "zoomed far in"), and then every resize() we
-        //   called afterwards hit the min-size guard and returned without doing
-        //   anything. Captures #2-4 were fine because the modal was already laid
-        //   out by then.
-        //   Fix is two-part: (1) render() instead of resize() — render() re-runs
-        //   initContainer() against the live DOM with no guard and no change
-        //   detection; (2) runCropperSequence() now yields real layout frames
-        //   before the first openCropper() so the measurement is right the first
-        //   time. resize() is kept only as a fallback for a Cropper build without
-        //   render() on the prototype.
+        // RENDER(), NOT RESIZE(), AND YIELD A FRAME FIRST. Two earlier fixes
+        // used resize() and could not work. Cropper.resize() bails out when
+        // containerData is <=200x100 and only re-renders when the measured
+        // size CHANGED since init. cameraFinish() clears .open on the camera
+        // modal and calls runCropperSequence() in the same task, so capture #1
+        // was measured before layout - the stage came back at ~0px, Cropper
+        // stored that, scaled the image to it (hence "zoomed far in"), and
+        // every later resize() hit the min-size guard and did nothing. #2-4
+        // were fine because the modal had settled by then.
+        //   (1) render() re-runs initContainer() against the live DOM with no
+        //       guard and no change detection;
+        //   (2) runCropperSequence() yields real layout frames before the
+        //       first openCropper(), so the measurement is right first time.
+        // resize() is kept only as a fallback for a Cropper build with no
+        // render() on the prototype.
         const _fitCrop = function() {
           if (!_cropperInstance) return;
           try {
             if (typeof _cropperInstance.render === "function") _cropperInstance.render();
             else if (typeof _cropperInstance.resize === "function") _cropperInstance.resize();
           } catch (e) {}
-          // S22 v6.52: AUTO-CROP, then the 9:14 default as the fallback.
-          // _cropAutoOK is wider than _cropComicFB on purpose - all four main
-          // slots are whole-book shots (front, back, page quality, raking), and
-          // all four are worth detecting. The 9:14 fallback stays on Front/Back
-          // only, because that is the only pair whose shape is known.
-          // The _cropUserMoved latch matters more now than it did: _fitCrop runs
-          // on rAF, at 180ms, at 450ms and on every ResizeObserver notification,
-          // and without the latch a user who nudged a handle at 200ms had it
-          // yanked back at 450ms.
-          // ── v6.59: THE 9:14 DEFAULT IS GONE. ──────────────────────────
-          // Matt shot a book on a green mat with clear margin on all four
-          // sides. Auto-crop REFUSED (correctly). The old 9:14 fallback then
-          // imposed a box narrower than the book, cut both side edges off,
-          // and the assessment failed at the gate that needs to see whole
-          // edges. Measured off his screenshot: the applied box was 0.63-0.66
-          // aspect against 9:14 = 0.643. It was the fallback, not the
-          // detector.
+          // AUTO-CROP, AND NO FALLBACK BOX. _cropAutoOK covers all four main
+          // slots - they are all whole-book shots and all worth detecting.
           //
-          // The 9:14 assumption is about the BOOK, not the PHOTO. Imposing it
-          // on the canvas is only right when the book already fills the frame
-          // edge to edge - which is exactly when no crop was needed. Every
-          // other time it cuts.
+          // THE 9:14 DEFAULT IS GONE (v6.59) AND MUST NOT COME BACK. That
+          // assumption is about the BOOK, not the photo; imposing it on the
+          // canvas is only right when the book already fills the frame, which
+          // is exactly when no crop was needed. Every other time it cut the
+          // side edges off and the assessment failed the gate that needs to
+          // see whole edges. And confirmCrop() replaces the stored image, so
+          // it cut DESTRUCTIVELY. A suggestion when confident, otherwise the
+          // whole image: no crop is recoverable, a wrong crop is not.
           //
-          // And it cut DESTRUCTIVELY: confirmCrop() replaces the stored image,
-          // so a default the user did not notice and did not ask for
-          // permanently removed the edges from their photo. An automatic
-          // action that destroys data has to be right far more often than
-          // this was.
+          // _cropUserMoved latches because _fitCrop runs on rAF, at 180ms, at
+          // 450ms and on every ResizeObserver notification - without it a
+          // handle nudged at 200ms is yanked back at 450ms.
           //
-          // So: a suggestion when we are confident, and otherwise the whole
-          // image. No crop is always recoverable. A wrong crop is not.
-          // v6.61: A REOPEN RESTORES THE PREVIOUS BOX AND SKIPS DETECTION.
-          // The user already decided how this slot should be framed; re-running
-          // auto-crop would silently overrule them, and running it on the
-          // ORIGINAL (which is what is now loaded) could land somewhere quite
-          // different from what they applied. The box is restored so the view
-          // looks exactly as they left it — and because the image behind it is
-          // the original, the handles now drag outward into pixels the previous
-          // crop had removed. That is the whole point of the change.
+          // A REOPEN restores the previous box and skips detection: the user
+          // already framed this slot. The image behind it is the ORIGINAL, so
+          // the handles drag outward into pixels the last crop removed.
           if (_cropperInstance && _cropperReopenBox && !_cropUserMoved) {
             const _rb = _cropperReopenBox;
             _cropperReopenBox = null;
@@ -19959,31 +19859,21 @@ async function cameraCapture() {
   const stageH = stage.clientHeight;
   const videoW = video.videoWidth;
   const videoH = video.videoHeight;
-  // ── v6.61: CAPTURE THE WHOLE SENSOR FRAME, NOT THE VIEWFINDER'S CROP ────
-  // This used to reproduce the viewfinder exactly. #camera-video is
-  // object-fit: cover, so the preview is ALREADY a crop of the feed, and the
-  // old code computed that same visible rect and threw the rest away:
-  //     coverScale = max(stageW/videoW, stageH/videoH)  ->  a visible source
-  //     rect (sx, sy, visibleW, visibleH) which was then drawn alone.
-  //     (Written in prose, not as code: test-autocrop.mjs greps for the old
-  //      drawImage call to make sure it never comes back, and a commented-out
-  //      copy of it would make that check fail for the wrong reason.)
-  // The pixels outside the stage aspect never reached the file.
+  // CAPTURE THE WHOLE SENSOR FRAME, NOT THE VIEWFINDER'S CROP. #camera-video
+  // is object-fit: cover, so the preview is ALREADY a crop of the feed. The old
+  // code reproduced that visible rect and threw the rest away, which is where
+  // "there's no way to expand the handles back out" came from: the margin was
+  // gone before the cropper ever opened, and nothing in the cropper could get
+  // it back because it was never in the file.
+  //   (Described in prose, not as code: test-autocrop.mjs greps for the old
+  //    drawImage call to be sure it never returns, and a commented-out copy
+  //    would fail that check for the wrong reason.)
   //
-  // THAT is where Matt's "there's no way to expand the handles back out" came
-  // from, and it is upstream of the crop tool: by the time the cropper opened,
-  // the margin was already gone from the image it was given. He shot a book
-  // with clear green mat on all four sides and the cropper showed a frame with
-  // the sides shaved. Nothing in the cropper could get them back because they
-  // were never in the file.
-  //
-  // Now the full frame is captured. The viewfinder stays `cover` — it is a
-  // viewfinder, and the black bars it avoids were a real complaint. The cost
-  // is that a capture contains a little MORE than the user framed, on whichever
-  // axis the stage aspect was clipping. That is the right direction to err:
-  // extra background is croppable, and the grader never sees anything the user
-  // did not keep. Nothing downstream assumes the two match — the cropper, the
-  // slab check and the assessment all take whatever image they are handed.
+  // The viewfinder stays `cover` - it is a viewfinder, and the black bars it
+  // avoids were a real complaint. The cost is a capture containing a little
+  // MORE than the user framed, which is the right direction to err: extra
+  // background is croppable, and the grader never sees anything the user did
+  // not keep. Nothing downstream assumes the two match.
   const canvas = document.createElement("canvas");
   canvas.width = videoW;
   canvas.height = videoH;
@@ -20062,25 +19952,17 @@ async function cameraCapture() {
   }
 }
 
-// ── S22 BUGFIX: A DEEP CAPTURE IS ONE SESSION, NOT TWO ─────────────────────
-// Reported repeatedly: after the four corner macros the camera closed, the user
-// was dropped back into the Edit form, and had to find and tap the Interior
-// Front slot to shoot the remaining two photos. Nothing told them more photos
-// were needed. A Deep needs six images and the walkthrough only ever walked
-// four of them, because `corner` and `interiorCover` were separate kinds with
-// separate camera sessions and nothing joined them.
+// A DEEP CAPTURE IS ONE SESSION, NOT TWO. A Deep needs six images; the
+// walkthrough used to walk four, close, and leave the user to find the
+// Interior Front slot themselves. When the corner queue empties the session
+// CONTINUES into Interior Front/Back instead of calling cameraFinish().
 //
-// This joins them. When the corner queue empties, the session CONTINUES into
-// Interior Front/Back instead of calling cameraFinish().
+// CAPTURES ARE BATCHED PER KIND, NOT APPENDED. runCropperSequence() picks its
+// destination list from the KIND, so one flat array carrying both would write
+// the interior covers into the corner slots.
 //
-// WHY THE CAPTURES ARE BATCHED RATHER THAN APPENDED: runCropperSequence() picks
-// its destination list from the KIND (`cornerImages` vs `interiorCoverImages`),
-// so one flat captures array carrying both kinds would write the interior covers
-// into the corner slots. Each kind's captures are parked as their own batch and
-// replayed in order at finish.
-//
-// NOT chained: a slabbed book (labelDetected) has no interior-cover slots at
-// all, and a single-slot re-shoot stays a single-slot re-shoot.
+// NOT chained for a slabbed book (no interior-cover slots at all) or a
+// single-slot re-shoot.
 // ── CLEANING COMPARE CAPTURE MODE (v5.70, 2026-10-19) ──────────────────────
 // The ten After photos must be shot EXACTLY the way the Before ten were, or the
 // comparison is measuring the photography rather than the cleaning. So this does
@@ -20576,36 +20458,25 @@ function cancelTreatment(key, e) {
   renderForm();
 }
 
-// ── v5.80: PROVISIONAL SAVE — the grade lands before the photos do ──────────
+// PROVISIONAL SAVE - the grade lands before the photos do.
 //
-// WHAT WENT WRONG (Punisher 1, 2026-10-21). submitForm() uploads every photo to
-// Cloud Storage and only then writes the item to Firestore. That ordering means
-// the ENTIRE assessment — grade, page quality, defect list, write-up, the credit
-// the user just spent — exists nowhere but this browser tab for the whole length
-// of the upload, which on a phone on cell data is the slowest part of the flow.
-// A user's app froze in that window. The server had graded the book cleanly
-// (9.0, 12.9s, stopReason end_turn); he reopened the app and it was simply gone.
-// Nothing could be recovered because the photos had never left his phone and the
-// grade had never left the tab.
+// submitForm() uploads every photo and only then writes to Firestore, so the
+// whole assessment - grade, page quality, defects, write-up, the credit just
+// spent - existed nowhere but the browser tab for the length of the upload.
+// One user's app died in that window and a clean 9.0 was simply gone.
 //
-// THE FIX IS ORDERING, NOT RETRYING. A grade with no pictures is recoverable —
-// the user sees the book in their library and can add photos. A grade with
-// nowhere to live is not. So the text half of the record is written FIRST, as
-// its own Firestore document, before a single byte of image is uploaded. If the
-// app dies at any point after this line, the book is in the library with its
-// grade intact.
+// THE FIX IS ORDERING, NOT RETRYING. A grade with no pictures is recoverable;
+// a grade with nowhere to live is not. The text half is written FIRST, as its
+// own document, before a byte of image goes up.
 //
-// WHAT IS DELIBERATELY NOT WRITTEN: data: URLs. Image arrays at this point hold
-// base64 of the raw photos — megabytes each, against a 1MB Firestore document
-// limit. They are stripped out; anything already uploaded (an https URL from a
-// pre-upload or a re-save) is kept, since those are just strings.
+// NOT WRITTEN: data: URLs - megabytes of base64 against a 1MB document limit.
+// Stripped; already-uploaded https URLs are kept, being just strings.
 //
-// provisionalSave:true marks the record as "grade present, photos may not be".
-// The real save at the end of submitForm() clears it. A document still carrying
-// the flag minutes later is one of these interrupted saves.
+// provisionalSave:true means "grade present, photos may not be"; the real save
+// clears it. A document still carrying it minutes later was interrupted.
 //
-// BEST EFFORT, ALWAYS. Any failure here is swallowed: this is a safety net, and
-// a safety net that can block the save it exists to protect is worse than none.
+// BEST EFFORT. Any failure here is swallowed - a safety net that can block the
+// save it protects is worse than none.
 async function _saveProvisional(id) {
   try {
     if (!id || id === SAMPLE_COMIC_ID) return;
