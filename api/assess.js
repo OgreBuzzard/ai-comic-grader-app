@@ -1125,7 +1125,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
   // takes a cache MISS on its first call and costs more than a baseline arm.
   // That is expected; it does not affect the grade.
   //
-  // See shared/_LIBRARY/OPUS_55_ABLATION_PLAN.md.
+  // See shared/Notes/OPUS_55_ABLATION_PLAN.md.
   const _abl = parseAblation(req.body && req.body.ablate);
   const _activeModel = (req.body && typeof req.body.model === 'string' && req.body.model.trim())
     ? req.body.model.trim()

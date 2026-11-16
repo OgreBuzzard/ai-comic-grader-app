@@ -442,12 +442,13 @@ export default async function handler(req, res) {
     // next row's date. To record another change, append a row - never edit an
     // earlier one, because an earlier one is history that already happened.
     const CLAUDE_SUB_RATES = [
-      { from: '2026-09-15', cents: 22110 },   // $221.10
-      // TODO(Matt): the 2026-11-16 plan change. Replace the cents figure with
-      // the real monthly charge from the billing page, including tax, exactly
-      // as it appears. Until then this row repeats the previous rate, so the
-      // numbers are unchanged rather than wrong in a new direction.
-      { from: '2026-11-16', cents: 22110 }
+      { from: '2026-09-15', cents: 22110 },   // $221.10 (Max 20x, later renamed Ultra)
+      // 2026-11-16: dropped from Max 20x to Max 10x. $110.55 inc. tax.
+      // NAMING, so the history rows above are not "corrected" by a future
+      // reader: Ultra is the current name for what was Max 20x. The $221.10
+      // charges are that same plan under both names, so they are right as they
+      // stand and must not be touched.
+      { from: '2026-11-16', cents: 11055 }
     ];
     const _subRateAt = (d) => {
       let c = CLAUDE_SUB_RATES[0].cents;

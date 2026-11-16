@@ -312,7 +312,8 @@ export default async function handler(req, res) {
             recentMains.push({ at: r.createdAt || null, verdict,
               cacheRead: rd, cacheCreate: cr,
               costUsd: r.costUsd != null ? Number(r.costUsd) : null,
-              warmedPrefix: r.warmedPrefix || null, version: r.version || null });
+              warmedPrefix: r.warmedPrefix || null, version: r.version || null,
+              sha: r.mainPrefixSha || null });
           }
         }
       } catch (e) { recentMains = [{ error: String(e && e.message || e) }]; }
@@ -354,30 +355,73 @@ export default async function handler(req, res) {
         // and 30 Mains while the verdict below cheerfully read "Warming is
         // working" — because that string only ever asked whether Mains read
         // SOMETHING, and Mains do read each other inside the hour.
-        pingTokens: (recent[0] && (recent[0].read || recent[0].created)) || null,
-        mainTokens: (recentMains[0] && (recentMains[0].cacheRead || recentMains[0].cacheCreate)) || null,
-        prefixesAgree: (() => {
-          const p = (recent[0] && (recent[0].read || recent[0].created)) || null;
-          const m = (recentMains.find(r => r.warmedPrefix === 'main') || {});
-          const mt = m.cacheRead || m.cacheCreate || null;
-          if (!p || !mt) return null;
-          return p === mt;
+        // v6.68: THE COMPARISON HAS TO BE LIKE FOR LIKE, and it was not.
+        //
+        // `mainTokens` took recentMains[0] whatever it was. Two ways that cries
+        // wolf, both seen:
+        //   - a BATCH row. Batch sends buildMainPrefix(_ki), a different and
+        //     longer prefix stamped warmedPrefix 'main_ki'. It is SUPPOSED to
+        //     be a different entry. prefixesAgree below already filtered for
+        //     'main'; the printed number did not, so the two disagreed.
+        //   - a row from the OTHER SIDE OF A DEPLOY. Change the prompt and the
+        //     token count moves for everyone. If the last ping predates the
+        //     push and the last Main follows it, the figures differ for a
+        //     reason that has nothing to do with a split prefix, and the ping
+        //     may simply not have fired yet (the cron skips while Mains are
+        //     keeping the entry warm).
+        //
+        // So: the same filtered row prefixesAgree uses, plus the timestamps and
+        // versions of BOTH rows, so a stale comparison is visible instead of
+        // being read as a defect.
+        // v6.69: COMPARE ONLY ROWS ON THE SAME PROMPT. Matt hit this the day
+        // a prompt change shipped: the newest ping (04:45, old prompt, 31,558)
+        // against the newest Main (05:23, new prompt, a cold WRITE of 32,089),
+        // and the verdict below announced SPLIT PREFIX. The five Mains in
+        // between had all READ 31,558 - the ping and the assessments were on
+        // one entry the whole time. A push changes the prefix for everyone and
+        // the cron skips while real Mains keep the entry warm, so after any
+        // prompt deploy the ping row is the stale one, routinely, for up to an
+        // hour. Comparing across that boundary reports a defect that is not
+        // there.
+        //
+        // So each side picks its newest row whose sha is the CURRENT prefix
+        // sha. Ping rows carry the sha from v6.69 on; until a ping fires on
+        // the new prompt there is nothing to compare, and the honest answer is
+        // "not yet", not "split".
+        ...(() => {
+          const curPing = recent.find(r => r.sha && r.sha === prefixSha) || null;
+          const curMain = recentMains.find(r => r.warmedPrefix === 'main' && r.sha && r.sha === prefixSha) || null;
+          const pt = curPing ? (curPing.read || curPing.created || null) : null;
+          const mt = curMain ? (curMain.cacheRead || curMain.cacheCreate || null) : null;
+          return {
+            pingTokens: pt,
+            pingTokensAt: curPing ? curPing.at : null,
+            mainTokens: mt,
+            mainTokensAt: curMain ? curMain.at : null,
+            mainTokensVersion: curMain ? (curMain.version || null) : null,
+            // null = not comparable yet. Only a real pair can be true or false.
+            prefixesAgree: (pt && mt) ? pt === mt : null,
+            _awaiting: !curPing ? 'ping' : (!curMain ? 'main' : null),
+            _pt: pt, _mt: mt
+          };
         })(),
         verdict: (() => {
-          // SPLIT PREFIX BEATS EVERY OTHER DIAGNOSIS. If the ping and the Mains
-          // are on different entries, nothing else here is worth reading: the
-          // ping can report a perfect run of READs forever while every
-          // assessment past the hour pays full cold price.
-          const p = (recent[0] && (recent[0].read || recent[0].created)) || null;
-          const m = (recentMains.find(r => r.warmedPrefix === 'main') || {});
-          const mt = m.cacheRead || m.cacheCreate || null;
+          // SPLIT PREFIX BEATS EVERY OTHER DIAGNOSIS - but only on a like-for-
+          // like pair (see above). Without one, say what it is waiting for.
+          const curPing = recent.find(r => r.sha && r.sha === prefixSha) || null;
+          const curMain = recentMains.find(r => r.warmedPrefix === 'main' && r.sha && r.sha === prefixSha) || null;
+          const p = curPing ? (curPing.read || curPing.created || null) : null;
+          const mt = curMain ? (curMain.cacheRead || curMain.cacheCreate || null) : null;
+          if (!curPing) {
+            return 'NOT YET COMPARABLE - no keep-warm ping has fired on the current prompt. This is normal for up ' +
+                   'to an hour after a prompt deploy: the cron skips while real assessments are keeping the entry ' +
+                   'warm. Nothing is wrong. Check again later.';
+          }
           if (p && mt && p !== mt) {
-            return 'SPLIT PREFIX — the ping is warming an entry no assessment uses. Ping ' + p +
-                   ' tokens, Main ' + mt + '. The ping will keep reporting healthy READs while every ' +
-                   'assessment more than an hour after the last one pays full cold price. Compare ' +
-                   'mainPrefixSha on a recent assessment_timings row against prefixSha above: equal ' +
-                   'means the system-array SHAPE differs, different means buildMainPrefix() is ' +
-                   'handing the two callers different bytes.';
+            return 'SPLIT PREFIX - on the SAME prompt, the ping is warming an entry no assessment uses. Ping ' + p +
+                   ' tokens, Main ' + mt + '. Every assessment more than an hour after the last one pays full ' +
+                   'cold price. buildMainPrefix() is handing the two callers different bytes, or the system-array ' +
+                   'shape differs.';
           }
           return null;
         })() ||
@@ -710,7 +754,10 @@ export default async function handler(req, res) {
             totalReads: FieldValue.increment(read > 0 ? 1 : 0),
             totalWrites: FieldValue.increment(created > 0 ? 1 : 0),
             // a 30-day rolling log, one entry per paid ping, trimmed below
-            recent: FieldValue.arrayUnion({ at: new Date().toISOString(), costUsd: Number(costUsd.toFixed(5)), read, created })
+            // v6.69: the prefix sha the ping ACTUALLY sent, so a comparison
+            // against a Main can be made only between rows on the same prompt.
+            recent: FieldValue.arrayUnion({ at: new Date().toISOString(), costUsd: Number(costUsd.toFixed(5)), read, created,
+              sha: createHash('sha256').update(prefix).digest('hex').slice(0, 16) })
           }, { merge: true });
           // Trim `recent` to the last 30 days so the doc cannot grow without
           // bound. Best-effort; a failed trim costs a slightly larger document.

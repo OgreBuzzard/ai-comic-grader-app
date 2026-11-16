@@ -100,7 +100,7 @@
     // ~35 lines stood here computing a +/- three different ways: the v3
     // pmLabel, a v2 "severity notches" variant, and a legacy four-tier rule
     // off rg.confidenceRange with mode caps and a headroom clamp. All three
-    // are gone. Full text in shared/_ARCHIVE/PM_REMOVED_S22.md.
+    // are gone. Full text in shared/Archive/PM_REMOVED_S22.md.
     // `precision` stays declared and empty so the render below, which is
     // shared with the card panel, needs no branch for its absence.
     const precision = '';

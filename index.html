@@ -230,7 +230,7 @@
   // passes, identical inputs) the published figure was four times too narrow,
   // and a stated uncertainty that wrong is worse than none. The 1/2/3 stars
   // already say how hard we looked, which is the honest version of the signal.
-  // Full text in shared/_ARCHIVE/PM_REMOVED_S22.md.
+  // Full text in shared/Archive/PM_REMOVED_S22.md.
   // photoSeverity() STAYS: it also steps the grade CAP, which is a separate
   // mechanism that has nothing to do with the +/-.
 
@@ -2433,7 +2433,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.68";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.70";
       // v6.46: the GRADING epoch - the version the assessment last actually
       // changed at. RG_GRADING_VERSION above is the BUILD number and moves on
       // every change; this one does not. The label stamps THIS, because "V6.45"
@@ -2444,7 +2444,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.68");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.70");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -14842,7 +14842,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "6.68"),
+      appVersion: (window.RG_GRADING_VERSION || "6.70"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
@@ -16753,7 +16753,7 @@ function _acMedian(arr) {
 // book the distance is uniformly large, so artwork barely registers.
 //
 // Measured state, and why this is still not finished:
-// shared/_WORKING/AUTOCROP_v6.63_NEGATIVE_RESULT.md. It refuses on all eight
+// shared/Notes/AUTOCROP_v6.63_NEGATIVE_RESULT.md. It refuses on all eight
 // of Matt's real captures (0 wrong boxes, against 2 in v6.62), so the feature
 // is safe and does not fire. A refusal costs nothing: the whole image stays
 // selected and the user crops by hand.
@@ -17665,7 +17665,7 @@ async function detectSlabFromDataUrl(dataUrl) {
     // The gate is evaluated and logged so the two questions that decide
     // whether the rest is worth building can be answered from real captures:
     // how often Haiku names the book off one cover shot, and how often that
-    // book clears the bar. See shared/_LIBRARY/CONCIERGE_FLOW_SPEC.md.
+    // book clears the bar. See shared/Notes/CONCIERGE_FLOW_SPEC.md.
     try {
       const _cg = conciergeGate(r && r.title, r && r.issue);
       console.log("[concierge] " + JSON.stringify(_cg));

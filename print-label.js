@@ -4054,7 +4054,7 @@ export function renderLabelMarkup(comic, opts) {
   // The +/- beside the grade is gone from every surface. What stood here was
   // ~45 lines computing it: a four-tier rule off rg.confidenceRange with mode
   // caps (high-grade <=6, standard <=16), a headroom clamp, and an age-widening
-  // hook. The full removed block is kept in _ARCHIVE/PM_REMOVED_S22.md.
+  // hook. The full removed block is kept in Archive/PM_REMOVED_S22.md.
   //
   // Two things worth carrying forward about that code specifically:
   //   * widenPrecisionForAge NEVER EXISTED. The call here looked it up on
