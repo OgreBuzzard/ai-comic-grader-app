@@ -332,6 +332,28 @@ function writeOptions(opts) {
 // own dimensions are unchanged: a 4" x 1.33" label still comes out 4" x 1.33",
 // because the point is to hand the user a file their printer driver can scale
 // to the physical stock. List view's batch sheet is untouched.
+// v6.68: MIRRORS getVerificationState() in index.html. Deliberately a copy and
+// not an import: print-label.js is a dynamically imported module that must keep
+// working on its own, and importing from the page bundle would invert that.
+// The rule is the same one the app's integrity pill uses - EVERY
+// grade-determining photo must be an in-app camera capture, and one library
+// upload among them flips the whole entry. Optional extras (signature,
+// restoration) are not grade inputs and do not count. check-print-label.mjs
+// asserts the two lists still match, so a new meta array added to one and not
+// the other is caught rather than silently weakening the badge.
+function labelUnverified(comic) {
+  const all = [
+    ...((comic && comic.imagesMeta) || []),
+    ...((comic && comic.cornerMeta) || []),
+    ...((comic && comic.interiorCoverMeta) || []),
+    ...((comic && comic.interiorMeta) || []),
+    ...((comic && comic.insertMeta) || []),
+    ...((comic && comic.couponMeta) || [])
+  ].filter(Boolean);
+  if (!all.length) return false;              // nothing recorded - say nothing
+  return !all.every(m => m && m.source === 'camera');
+}
+
 export function openLabelViewer(comic, allItems, opts) {
   // v6.33: start the QR library downloading NOW rather than when the first
   // render asks for it. renderQRsIn() has a deferred path for the
@@ -1398,6 +1420,32 @@ export function ensureStylesInjected() {
      a shade over 3 modules at this code size. The spec asks 4; 3 on a plain
      white label with nothing printed against it is the practical equivalent,
      and buying the 4th would cost 10px of code. */
+  /* v6.68, Matt: an "Unverified Photos" pill on the label, above the QR.
+     UNSCOPED BY LAYOUT ON PURPOSE. Wide, Case, Square and Large each scope
+     their own .qr-col width, but the pill is the same object on all of them
+     and a per-layout copy is four places to forget. It is sized in em so it
+     tracks whatever the layout set, and it carries no background fill: on a
+     thermal printer a filled block costs heat and reads as a smudge, while a
+     hairline box and black text print clean in both colour and mono.
+     IT CAN COST THE QR SOME ROOM. The pill sits in normal flow above the
+     code, so on the tightest layout the QR shifts down by its height. Checked
+     on Wide, which has the least slack; if a future layout gets tighter this
+     is the first thing to look at. */
+  .qr-col .unver {
+    font-size: 15px;
+    line-height: 1.1;
+    font-weight: 800;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    text-align: center;
+    color: #1a1a1a;
+    border: 1px solid #1a1a1a;
+    border-radius: 4px;
+    padding: 3px 4px;
+    margin-bottom: 6px;
+    background: #ffffff;
+  }
+  .mono .qr-col .unver { color: #000 !important; border-color: #000 !important; }
   .rg-label .qr-col .qrc {
     position: relative;
     background: #ffffff;
@@ -4308,6 +4356,7 @@ export function renderLabelMarkup(comic, opts) {
       </div>
       ${_artSlot}
       <div class="qr-col">
+        ${labelUnverified(comic) ? '<div class="unver">Unverified Photos</div>' : ''}
         ${comic.publicListing
           ? `<div class="qrc" data-qr-id="${gradeId}"></div>`
           : `<!-- S14: private book — no QR. A scannable code that lands on a

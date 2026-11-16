@@ -81,5 +81,40 @@ if (warn.length) {
   console.log('  ok    no single-variant rules on shared elements');
 }
 
+// v6.68: the Unverified Photos pill, and the copy of the verification rule it
+// depends on. labelUnverified() in print-label.js mirrors getVerificationState()
+// in index.html by hand, because the label module is dynamically imported and
+// must not reach back into the page bundle. A meta array added to one and not
+// the other silently weakens the badge, so the two lists are compared here.
+{
+  const app = fs.readFileSync('index.html', 'utf8');
+  const metasFrom = (src, fnName) => {
+    const i = src.indexOf(fnName);
+    if (i < 0) return [];
+    const seg = src.slice(i, i + 1200);
+    return [...seg.matchAll(/\b(\w+Meta)\b/g)].map(m => m[1])
+      .filter((v, k, arr) => arr.indexOf(v) === k).sort();
+  };
+  const appMetas = metasFrom(app, 'function getVerificationState(');
+  const lblMetas = metasFrom(s, 'function labelUnverified(');
+  const check = (cond, name, extra) => {
+    if (cond) console.log('  ok    ' + name);
+    else { fail++; console.log('  FAIL  ' + name + (extra ? '\n        ' + extra : '')); }
+  };
+  check(s.includes('class="unver">Unverified Photos<'),
+    'the label carries an Unverified Photos pill');
+  // Scoped to the qr-col block: data-qr-id also appears in the CARD label and
+  // in the QR renderer further down, so a whole-file index comparison compares
+  // the wrong two things.
+  const col = s.slice(s.indexOf('<div class="qr-col">'), s.indexOf('<div class="qr-col">') + 900);
+  check(col.indexOf('class="unver"') > -1 && col.indexOf('class="unver"') < col.indexOf('data-qr-id'),
+    'the pill renders above the QR, not after it');
+  check(s.includes('.mono .qr-col .unver'),
+    'the pill has a mono rule so it prints on a thermal label');
+  check(appMetas.length > 0 && appMetas.join(',') === lblMetas.join(','),
+    'the label and the app agree on which photos count toward verification',
+    'app:   ' + appMetas.join(',') + '\n        label: ' + lblMetas.join(','));
+}
+
 console.log(fail ? '\nFAILED. Do not deploy.' : '\nOK.');
 process.exit(fail ? 1 : 0);

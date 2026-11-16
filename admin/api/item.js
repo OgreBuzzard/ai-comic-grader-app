@@ -380,6 +380,15 @@ export default async function handler(req, res) {
       item.fmvTiers = (item.type === 'card') ? null : ((idx && idx.tiers) || null);
     } catch (_) { item.fmvRange = item.fmvRange || null; }
 
+    // v6.68: the eBay asking figure this book was last shown at. Cache only -
+    // never a live lookup, so admin reports what the user saw rather than what
+    // eBay says now. See admin/lib/ebay_cache.js.
+    try {
+      const { loadEbayAsks, ebayKey, ebayDisplay } = await import('../lib/ebay_cache.js');
+      const m = await loadEbayAsks(db);
+      item.ebayAsk = ebayDisplay(m.get(ebayKey(item.title, item.issue)));
+    } catch (_) { item.ebayAsk = null; }
+
     return res.status(200).json({ item });
 
   } catch (e) {

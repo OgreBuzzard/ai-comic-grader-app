@@ -1609,6 +1609,27 @@ async function loadStats() {
   }
 }
 
+// v6.68: the eBay asking figure, as the USER saw it. Cache-only upstream
+// (admin/lib/ebay_cache.js), so a blank here means this book has never had a
+// lookup - the app only asks when a detail view opens - not that it failed.
+// A SUPPRESSED figure is still printed, struck through, with the reason. That
+// is the row worth looking at: it is a median the user was deliberately not
+// shown, and seeing nothing would waste it.
+function ebayLine(a, compact) {
+  if (!a) return '';
+  var blue = '#6fb3e8';
+  if (!a.shown && !a.text) {
+    return compact ? '' : '<div style="font-size:11px;color:#6a6e78;margin-top:1px">eBay — ' + escapeHtml(a.why || '') + '</div>';
+  }
+  if (!a.shown) {
+    return '<div style="font-size:11px;color:#8a6a6a;margin-top:1px">eBay <s>' + escapeHtml(a.text) + '</s> '
+      + '<span style="opacity:.8">hidden · ' + escapeHtml(a.why || '') + '</span></div>';
+  }
+  return '<div style="font-size:11px;color:' + blue + ';font-weight:600;margin-top:1px">eBay ' + escapeHtml(a.text)
+    + ' <span style="opacity:.75;font-weight:400">from ' + (a.n || 0) + ' listing' + ((a.n === 1) ? '' : 's')
+    + (a.widened ? ', ±2 grades' : '') + '</span></div>';
+}
+
 function renderStats() {
   if (!state.stats) return;
   const { accounts, items, platforms, revenue, credits, spend, spendBreakdown, perCredit, assessCost, costPerCredit, costByKind, devCost } = state.stats;
@@ -1662,17 +1683,14 @@ function renderStats() {
         <div class="stats-grid">
           ${(function(){var pc=perCredit||{},ac=assessCost||{},cpc=costPerCredit||{};var money=function(v){return v==null?'\u2014':'$'+(v<1?v.toFixed(3):v.toFixed(2));};var trio=function(o){return '<div class="breakouts"><span><strong>'+money(o.day)+'</strong> 24h</span><span><strong>'+money(o.week)+'</strong> 7d</span><span><strong>'+money(o.month)+'</strong> 30d</span></div>';};return ''+
             '<div class="stat-card"><h3>Earned / Credit</h3><div class="total">'+money(pc.month)+'</div>'+trio(pc)+'</div>'+
-            // S22: this card used to be labelled "Cost / Credit Used" while
-            // showing cost per ASSESSMENT. They are different numbers and the
-            // second is the lower one — it ignores refunded Deeps, Batch (3
-            // credits for 10 assessments), uncharged slab-checks and probes,
-            // and the keep-warm ping entirely. The headline is now the real
-            // cost of a charged credit; per-assessment keeps its own line
-            // underneath, because it is still the right number for judging a
-            // prompt or model change.
-            '<div class="stat-card"><h3>Cost / Credit</h3><div class="total">'+money(cpc.month)+'</div>'+trio(cpc)+
-              (cpc.month==null?'<div style="opacity:.7;font-size:11px;margin-top:4px">credit figure needs more data</div>':'')+
-            '</div>'+
+            // v6.68: the Cost / Credit card is GONE. It never worked - the
+            // headline sat at a dash through three attempts at the numerator -
+            // and once Cost / Assessment started reporting correctly the two
+            // were answering the same question with one of them wrong. Matt:
+            // "now there are two redundant blocks... let's get rid of it."
+            // costPerCredit is still computed server-side and still returned;
+            // nothing reads it. Left in the response rather than ripped out, so
+            // a future card can have it back without another server change.
             // v6.54: the flat "per assessment $0.0xx" line is gone. It was one
             // mean over Main, Deep, Full, every Batch pass and Post-Cleaning,
             // which answers no question anyone has - Matt: "I think that's
@@ -1683,9 +1701,28 @@ function renderStats() {
             // not be read the same way as one with n=200.
             (function(){
               var ck = costByKind || {};
+              // v6.68, Matt: round to the PENNY, not the tenth of a penny, and
+              // drop the leading zero - "$.08", not "$0.082". A tenth of a
+              // penny on a per-assessment mean is noise he has never acted on.
+              var pennies = function(v){
+                if (v == null) return '\u2014';
+                var t = Math.abs(v).toFixed(2);
+                if (t.charAt(0) === '0') t = t.slice(1);       // 0.08 -> .08
+                return (v < 0 ? '-$' : '$') + t;
+              };
+              // The money and the count get their own fixed sub-columns inside
+              // each period cell. Right-aligning the pair as one string lined
+              // the COUNTS up and left the dollar amounts ragged, which is the
+              // opposite of what you want to read down. Blue on the count so it
+              // never reads as part of the figure beside it.
               var line = function(label, o){
                 o = o || {}; var n = o.n || {};
-                var cell = function(v, c){ return '<span><strong>'+money(v)+'</strong> '+(c?c:0)+'</span>'; };
+                var cell = function(v, c){
+                  return '<span style="display:inline-flex;gap:7px;justify-content:flex-end">'
+                    + '<span style="min-width:40px;text-align:right"><strong>'+pennies(v)+'</strong></span>'
+                    + '<span style="min-width:24px;text-align:right;color:#5aa9e6">'+(c?c:0)+'</span>'
+                    + '</span>';
+                };
                 return '<div style="display:flex;font-size:11px;margin:3px 0;opacity:.85">'
                   + '<span style="width:42px;color:#8a8d96;font-weight:700">'+label+'</span>'
                   + '<span style="flex:1;text-align:right">'+cell(o.day, n.day)+'</span>'
@@ -1703,7 +1740,7 @@ function renderStats() {
                     // explanation sent Matt back twice with "it's not
                     // working", which is all the card allowed him to say.
                     var allN = (ck.all && ck.all.n) || {};
-                    if (allN.month) return '<div style="opacity:.55;font-size:10px;margin-top:4px">mean \u00b7 n beside each</div>';
+                    if (allN.month) return '<div style="opacity:.55;font-size:10px;margin-top:4px">mean cost \u00b7 <span style="color:#5aa9e6">assessments</span> it is averaged over</div>';
                     var sb = state.stats.statsBuild;
                     if (!sb) return '<div style="font-size:10px;margin-top:4px;color:#e4564a">'
                       + 'this admin build predates the card \u2014 redeploy</div>';
@@ -1976,6 +2013,7 @@ function renderItemsList() {
           <div class="title" style="white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escapeHtml(it.title)}${it.issue ? ' #' + escapeHtml(it.issue) : ''}</div>
           <div class="sub">${escapeHtml((it.userName || '').length > 20 ? it.userName.slice(0, 20) + '…' : it.userName)}${it.transferCode ? ' · <span style="color:#e8c257;font-weight:700;letter-spacing:0.5px">' + escapeHtml(it.transferCode) + '</span>' : ''} · ${it.roboGradeDate ? _fmtDateTime(it.roboGradeDate) : 'no date'}${it.roboGradeId ? ' · <span style="color:#c9a0ff;font-weight:700">' + escapeHtml(it.roboGradeId) + '</span>' : ''}</div>
           ${it.fmvRange ? `<div style="font-size:11px;color:#7fd0ff;font-weight:600;margin-top:1px;">${escapeHtml(it.fmvRange)}</div>` : ''}
+          ${ebayLine(it.ebayAsk, true)}
         </div>
         <div class="meta" style="display:flex;flex-direction:column;align-items:center;gap:1px;min-width:46px;">
           <div title="${it.tier === 3 ? 'Full' : it.tier === 2 ? 'Deep' : 'Main'} assessment" style="font-size:10px;color:#7aa838;letter-spacing:1px;height:12px;line-height:12px">${'★'.repeat(it.tier || 1)}</div>
@@ -2268,6 +2306,7 @@ function renderUserDetail(user, items, publicRate) {
               <div class="title" style="white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escapeHtml(it.title)}${it.issue ? ' #' + escapeHtml(it.issue) : ''}</div>
               <div class="sub">${it.roboGradeDate ? new Date(it.roboGradeDate).toLocaleDateString() : 'no date'}${it.roboGradeId ? ' · <span style="color:#c9a0ff;font-weight:700">' + escapeHtml(it.roboGradeId) + '</span>' : ''}</div>
               ${it.fmvRange ? `<div style="font-size:11px;color:#7fd0ff;font-weight:600;margin-top:1px;">${escapeHtml(it.fmvRange)}</div>` : ''}
+          ${ebayLine(it.ebayAsk, true)}
             </div>
             <div class="meta" style="display:flex;flex-direction:column;align-items:center;gap:1px;min-width:46px;">
               <div title="${it.tier === 3 ? 'Full' : it.tier === 2 ? 'Deep' : 'Main'} assessment" style="font-size:10px;color:#7aa838;letter-spacing:1px;height:12px;line-height:12px">${'★'.repeat(it.tier || 1)}</div>
@@ -3058,6 +3097,7 @@ function renderItemDetail(it) {
         ${it.transferCode ? `<span onclick="showUser('${escapeAttr(it.uid)}')" style="cursor:pointer;text-decoration:underline dotted;" title="Open this user's account">${it.userName ? escapeHtml(it.userName) : 'Unknown user'} · <span style="color:#e8c257;font-weight:700;">${escapeHtml(it.transferCode)}</span></span>` : (it.userName ? escapeHtml(it.userName) : 'Unknown user')}${it.userEmail ? ` · <a href="mailto:${escapeAttr(it.userEmail)}?subject=${encodeURIComponent('Robograder — ' + (it.title || '') + (it.issue ? ' #' + it.issue : ''))}" style="color:#7fd0ff;text-decoration:none;">✉ email user</a>` : ''}
       </div>
       <div style="margin-top:5px;font-size:13px;font-weight:700;line-height:1.3;">${(it.fmvRange || it.fmv) ? `<span style="color:#7fd0ff;">${escapeHtml(it.fmvRange || String(it.fmv))}</span>` : ''}${it.roboGradeId ? `<span style="color:#c9a0ff;margin-left:12px;">RG-ID ${escapeHtml(it.roboGradeId)}</span>` : ''}</div>
+      ${ebayLine(it.ebayAsk, false)}
     </div>
     ${(it.clientPlatform || it.clientAppVersion) ? `<div style="margin:-2px 0 12px;font-size:11px;color:#8a8d96;">\uD83D\uDCF1 CLIENT: <b style="color:#c8ccd4;">${escapeHtml(String(it.clientPlatform||'?')).toUpperCase()}</b>${it.clientAppVersion ? ' \u00B7 v' + escapeHtml(String(it.clientAppVersion)) : ''}${it.clientSavedAt ? ' \u00B7 saved ' + _fmtDateTime(it.clientSavedAt) : ''}</div>` : ''}
 

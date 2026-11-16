@@ -156,6 +156,11 @@ export default async function handler(req, res) {
     // ── Fetch all items via collection group ─────────────────────────────────
     const itemsSnap = await db.collectionGroup('items').get();
     const fmvIdx = await getFmvIndex();   // S20: one fetch, reused for every row
+    // v6.68: the eBay asking figures users have actually been shown. ONE read
+    // of the cache for the whole page, never a live lookup - see
+    // admin/lib/ebay_cache.js for why.
+    const { loadEbayAsks, ebayKey, ebayDisplay } = await import('../lib/ebay_cache.js');
+    const ebayMap = await loadEbayAsks(db);
     let allItems = itemsSnap.docs.map(d => {
       const raw = d.data();
       const flat = (raw.schemaVersion === 3)
@@ -229,6 +234,7 @@ export default async function handler(req, res) {
             return mm ? fmtFmv(mm) : null;
           } catch (_) { return null; }
         })(),
+        ebayAsk: ebayDisplay(ebayMap.get(ebayKey(flat.title, flat.issue))),
       };
     });
 

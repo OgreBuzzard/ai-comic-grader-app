@@ -427,14 +427,40 @@ export default async function handler(req, res) {
     // when that happens, change CLAUDE_MAX_MONTHLY_CENTS (or add a rate-change row).
     const CLAUDE_MAX_PAST = [
       13.56, 11.30, 5.53, 11.06, 11.90, 11.31, 49.75, 31.01, // Mar–Apr dev ramp
-      221.10, 221.10, 221.10, 221.10                          // May 15 – Aug 15 (20x)
+      221.10, 221.10, 221.10, 221.10                          // May 15 – Aug 15
     ];
-    const CLAUDE_MAX_MONTHLY_CENTS = 22110;      // $221.10 (Max 20x)
-    const CLAUDE_MAX_RECUR_START = '2026-09-15'; // first future recurring charge
+    // v6.68: A DATED RATE SCHEDULE, NOT A SINGLE CONSTANT.
+    //
+    // Matt changed plan on 2026-11-16. Swapping the old constant for the new
+    // price would have restated every recurring charge since 2026-09-15 at the
+    // new rate - the all-time Spending and Profit figures would silently move
+    // for months that were already billed and already correct. The comment
+    // here always said "add a rate-change row"; this is that.
+    //
+    // Each row is { from: first charge date AT this rate, cents: monthly }.
+    // Charges accrue on the 15th; a row applies from its own date until the
+    // next row's date. To record another change, append a row - never edit an
+    // earlier one, because an earlier one is history that already happened.
+    const CLAUDE_SUB_RATES = [
+      { from: '2026-09-15', cents: 22110 },   // $221.10
+      // TODO(Matt): the 2026-11-16 plan change. Replace the cents figure with
+      // the real monthly charge from the billing page, including tax, exactly
+      // as it appears. Until then this row repeats the previous rate, so the
+      // numbers are unchanged rather than wrong in a new direction.
+      { from: '2026-11-16', cents: 22110 }
+    ];
+    const _subRateAt = (d) => {
+      let c = CLAUDE_SUB_RATES[0].cents;
+      for (const r of CLAUDE_SUB_RATES) if (d >= new Date(r.from + 'T00:00:00Z').getTime()) c = r.cents;
+      return c;
+    };
+    const CLAUDE_MAX_MONTHLY_CENTS = _subRateAt(now);   // the CURRENT rate
     let devAllTimeCents = CLAUDE_MAX_PAST.reduce((a, v) => a + Math.round(v * 100), 0);
     try {
-      let _d = new Date(CLAUDE_MAX_RECUR_START + 'T00:00:00Z');
-      while (_d.getTime() <= now) { devAllTimeCents += CLAUDE_MAX_MONTHLY_CENTS; _d.setUTCMonth(_d.getUTCMonth() + 1); }
+      // Each recurring charge is billed at whatever rate was in force ON THAT
+      // DAY, which is the whole point of the schedule.
+      let _d = new Date(CLAUDE_SUB_RATES[0].from + 'T00:00:00Z');
+      while (_d.getTime() <= now) { devAllTimeCents += _subRateAt(_d.getTime()); _d.setUTCMonth(_d.getUTCMonth() + 1); }
     } catch (e) {}
     // Amortize the CURRENT monthly rate across the period trios (so the day/week/
     // month Profit figures carry their share of the subscription).
