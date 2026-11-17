@@ -896,7 +896,7 @@ onAuthStateChanged(auth, async user => {
        the button's name. */
     .rg-btn.btn-with-thumb > span { flex: 1; text-align: center; }
     .rg-btn.btn-with-thumb .action-btn-thumb {
-      width: 17px; height: 31px; object-fit: cover;
+      width: 17px; height: 32px; object-fit: cover;   /* v6.71: 17 x 32, Matt's thumbnail; 0.531 vs the export's 0.533 */
       border-radius: 3px; flex-shrink: 0;
       box-shadow: 0 1px 4px rgba(40,30,10,0.25);
     }
@@ -8924,13 +8924,23 @@ function _exScoreBox(ctx, x, y, size, o) {
   ctx.lineWidth = Math.max(1, size * 0.014);
   _exRoundRect(ctx, x, y, size, size, size * 0.14); ctx.stroke();
 
-  const numSize = size * (o.plus ? 0.45 : 0.52);
-  const midY = y + size / 2 + numSize * 0.09;
-  const shown = o.grade == null ? "—" : String(o.grade);
-  ctx.font = `900 ${numSize}px ${F_NUM}`;
-  const halfW = ctx.measureText(shown).width * 0.66 / 2;
+  // v6.71, Matt: the numeral was "smaller than it needs to be inside the
+  // container" - his mock-up had it about 1.5x the old 0.52, so 0.78 of the box.
+  // With a (+) the numeral steps down until numeral + (+) fit side by side,
+  // and the PAIR is centred, not the numeral alone. Anything else too wide for
+  // the box (a two-digit "10") steps down the same way.
+  const shown = o.grade == null ? "\u2014" : String(o.grade);
+  const fitW = size * 0.86;
+  const numW = n => { ctx.font = `900 ${n}px ${F_NUM}`; return ctx.measureText(shown).width * 0.66; };
+  const plusW = n => { const ps = n / 2.6; ctx.font = `700 ${ps}px ${F_COND}`; return ctx.measureText("(+)").width + ps * 0.16; };
+  let numSize = size * 0.78;
+  while (numSize > size * 0.40 && numW(numSize) + (o.plus ? plusW(numSize) : 0) > fitW) numSize -= 1;
+  const halfW = numW(numSize) / 2;
+  const numCX = x + size / 2 - (o.plus ? plusW(numSize) / 2 : 0);
+  // Centred between the star and the version line, as in the mock-up.
+  const midY = y + size / 2 - numSize * 0.025;
   ctx.save();
-  ctx.translate(x + size / 2, midY); ctx.scale(0.66, 1);
+  ctx.translate(numCX, midY); ctx.scale(0.66, 1);
   ctx.textAlign = "center"; ctx.fillStyle = numColor;
   ctx.font = `900 ${numSize}px ${F_NUM}`;
   ctx.fillText(shown, 0, numSize * 0.35);
@@ -8954,7 +8964,10 @@ function _exScoreBox(ctx, x, y, size, o) {
     ctx.fillText(o.footerText, x + size / 2, y + size - size * 0.05);
     ctx.textAlign = "left";
   }
-  if (o.plus) _exPlus(ctx, x + size / 2 + halfW, midY + numSize * 0.12, x + size - size * 0.05, numColor, numSize / 2.6);
+  // o.plusDy (fractions of the numeral size, negative = up) was passed since
+  // v6.63 but only the in-app box read it; the canvas ignored it until v6.71.
+  if (o.plus) _exPlus(ctx, numCX + halfW, midY + numSize * (0.12 + (typeof o.plusDy === "number" ? o.plusDy : 0)),
+                      x + size - size * 0.04, numColor, numSize / 2.6);
 }
 
 // ── Defects ────────────────────────────────────────────────────────────────
