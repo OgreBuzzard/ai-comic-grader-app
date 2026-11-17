@@ -3,6 +3,13 @@
 // GET ?session=XXX → returns stored custom token (polling endpoint)
 
 export default async function handler(req, res) {
+  // v6.73: answer the CORS preflight (see check-cors.mjs for why every
+  // endpoint the app calls must).
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, x-client-secret');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  if (req.method === 'OPTIONS') return res.status(204).end();
   try {
     const { initializeApp, getApps, cert } = await import('firebase-admin/app');
     const { getAuth } = await import('firebase-admin/auth');

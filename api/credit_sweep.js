@@ -58,6 +58,40 @@ export default async function handler(req, res) {
       .limit(MAX_PER_RUN)
       .get();
 
+    // v6.73 CIRCUIT BREAKER. From 7 to 17 Nov 2026 this sweep refunded almost
+    // every native assessment, because the apps' settle call never arrived (a
+    // CORS preflight the endpoint refused - see api/credit_settle.js and
+    // check-cors.mjs). It did exactly what it was built to do, and nothing
+    // noticed for ten days. A genuine orphan is RARE - the app dying between
+    // a good result and the save - so when refunds outnumber confirmed saves
+    // over the last 24 hours, the settle path is broken, not the users' apps.
+    // Then refund NOTHING, leave the rows pending, and say so loudly. Nothing
+    // is lost: the rows stay creditSettled:false, and once the 24h ratio
+    // recovers a later run refunds them exactly as it would have - the old
+    // behaviour, delayed until a person has had the chance to look.
+    // NOTE: right after the 6.73 fix the previous day's refunds still count,
+    // so the breaker will hold for up to 24 hours. That is expected.
+    if (snap.size) {
+      try {
+        const since = Date.now() - 24 * 3600 * 1000;
+        const col = db.collection('assessment_timings');
+        const [r, ok] = await Promise.all([
+          col.where('creditSettled', '==', 'refunded').where('creditPendingAt', '>', since).count().get(),
+          col.where('creditSettled', '==', true).where('creditPendingAt', '>', since).count().get()
+        ]);
+        const nRef = r.data().count, nOk = ok.data().count;
+        const pending = snap.size;
+        if (nRef + pending >= 10 && (nRef + pending) > nOk) {
+          console.error(`[credit_sweep] CIRCUIT BREAKER: last 24h refunded ${nRef}, settled ${nOk}, ${pending} more pending. `
+            + 'Refunds now outnumber confirmed saves - the settle path is probably broken (check /api/credit_settle from the native apps). Refunding nothing.');
+          return res.status(200).json({ scanned: pending, refunded: 0, skipped: 0, breaker: true, last24h: { refunded: nRef, settled: nOk } });
+        }
+      } catch (e) {
+        // A failed count must not stop real orphans being refunded.
+        console.warn('[credit_sweep] breaker count failed, proceeding:', e && e.message);
+      }
+    }
+
     let refunded = 0, skipped = 0;
     for (const doc of snap.docs) {
       const d = doc.data() || {};

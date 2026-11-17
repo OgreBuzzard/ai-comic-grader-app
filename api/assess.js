@@ -1066,6 +1066,8 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
 
 {
   "gateResult": "COMIC",
+  "format": "comic" or "magazine" (see FORMAT AND ADULT FLAG),
+  "adultContent": true or false (see FORMAT AND ADULT FLAG),
   "title": "series title, strip leading The",
   "issue": "e.g. 57 or A1. GOLD KEY / DELL CAUTION: these publishers frequently did NOT print a clear issue number on the cover. If the issue number is not plainly legible on the cover itself, output an EMPTY STRING rather than guessing — a blank issue is better than a wrong one. Do NOT infer the number from the cover date, price, or series context. (Pink Panther is Gold Key; Hogan's Heroes is Dell.)",
   "issueDate": "cover date as 'Mon YYYY' (e.g. 'Feb 1968'); season-only books 'Spr/Sum/Fall/Win YYYY'. For facsimile/reprint (see 'printing'), use the REPRINT year, not the original. Example: 2019 facsimile of AF #15 → 'Dec 2019', not 'Aug 1962'.",

@@ -153,7 +153,7 @@ const isReal = d => sev(d) === 'high' || sev(d) === 'med' || sev(d) === 'medium'
 
 function line(d) {
   const bits = [d && d.type, d && d.location, d && d.measurement].filter(Boolean).join(', ');
-  const cb = (d && d.colorBreaking) ? ', colour-breaking' : '';
+  const cb = (d && d.colorBreaking) ? ', color-breaking' : '';
   return `- [${(d && d.category) || '?'}] ${bits || 'unspecified'} (${(d && d.severity) || '?'}${cb})`;
 }
 
@@ -229,7 +229,7 @@ export default async function handler(req, res) {
   // ── THE WRITTEN HALF ─────────────────────────────────────────────────────
   // The model is handed the computed diff and asked ONLY to explain it. It is
   // explicitly told the counts so it cannot contradict what is on screen.
-  const prompt = `You are writing the "Post-Cleaning Assessment" section for a comic book that has been professionally cleaned and/or pressed. You are given the defect list from BEFORE the work and the defect list from AFTER, and a diff that has already been computed. Write the explanation. Do not recount anything.
+  const prompt = `You are writing the "Post-Cleaning Assessment" section for a comic book that has been professionally worked on since its last assessment: cleaned, pressed, or otherwise treated. You are not told which methods were used and must not assume any. You are given the defect list from BEFORE the work and the defect list from AFTER, and a diff that has already been computed. Write the explanation. Do not recount anything.
 
 BOOK: ${String(title || 'Unknown').trim()} ${String(issue || '').trim()}
 RUN: ${runNumber}
@@ -248,12 +248,12 @@ ${d.introduced.length ? d.introduced.map(line).join('\n') : '(none)'}
 
 RESTORATION: ${beforeRest ? 'detected' : 'not detected'} before, ${afterRest ? 'detected' : 'not detected'} after.
 
-WRITE 120-200 WORDS, plain prose, no headings, no bullet points. Rules, in order of importance:
+WRITE 70-130 WORDS, NEVER MORE, plain prose, no headings, no bullet points. Write in US English (color, not colour). Rules, in order of importance:
 
 1. BE HONEST WHEN NOTHING IMPROVED, OR WHEN THE GRADE FELL. Say so plainly and first. The person reading this paid for a verdict and there is no refund. A write-up that always finds improvement is worth nothing, and an encouraging one on a bad result is worse than nothing.
 2. ${restorationAppeared ? 'RESTORATION LEADS. Restoration was not detected on the before photos and is detected on the after photos. State exactly that comparison — what each pass found. Do NOT say the book was restored, who restored it, or when. The before pass may simply have missed it; say so. This is the most important thing on the page.' : 'Do not speculate about restoration; none appeared.'}
-3. Name what CHANGED, what did NOT, and what CANNOT. Creases, bends, dents, spine stress and non-colour-breaking handling wear generally press out. Tanning, foxing, staining and paper chemistry generally do not and will not, however many times the book is pressed. If something in the surviving list is in that second group, say it is not going to change.
-4. A COLOUR-BREAKING DEFECT DOES NOT UN-BREAK. If a colour-breaking defect appears in the resolved list, treat it with suspicion: it is more likely a difference in detection between two photo sets than a repair. Say that rather than crediting it.
+3. Say what CHANGED and what did NOT, from the two lists. Report only what is apparent in the two assessments. Do not say or imply what any treatment can or cannot achieve, do not assume the book was only pressed, and do not predict what further work would or would not change: cleaners have many methods and you do not know which were used.
+4. A defect in the resolved list may be a difference in how two photo sets were read rather than a change to the book, especially when a similar defect appears in the newly reported list at the same place. When that is the case, say the two are probably the same thing described differently, rather than crediting a repair.
 5. Newly reported defects are, likewise, more often a detection difference than damage caused by the work — unless they are severe. Do not accuse.
 6. ${pageQualityMove.suspicious ? `PAGE QUALITY MOVED ${pqDelta} TIERS LIGHTER (${pageQualityMove.before} to ${pageQualityMove.after}). Cleaning and pressing do not lighten interior paper; that is chemistry. A move this large is consistent with bleaching or deacidification, which are restoration rather than cleaning. Raise it, carefully, as something the owner should be aware of — not as an accusation.` : 'Do not discuss page quality; it did not move meaningfully, which is expected.'}
 

@@ -2442,18 +2442,18 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.73";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.75";
       // v6.46: the GRADING epoch - the version the assessment last actually
       // changed at. RG_GRADING_VERSION above is the BUILD number and moves on
       // every change; this one does not. The label stamps THIS, because "V6.45"
       // on a label is a claim about what graded the book, not about which CSS
       // fix was live that day. See lib/version.js and HOW_WE_WORK section 10a.
-      window.RG_EPOCH = window.RG_EPOCH || "6.73";
+      window.RG_EPOCH = window.RG_EPOCH || "6.74";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.73");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.75");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -7356,9 +7356,9 @@ function showDetail(id) {
   let _cleanCard = "";
   if (!isSample && _cleanUnlocked(selected)) {
     const _cr = selected.cleanRuns || 0;
-    _cleanCard = `<div onclick="showEditToSection('${esc(selected.id)}','clean')" style="margin-top:14px;padding:14px;background:#0e2420;border:1.5px solid #2e7a6a;border-radius:12px;text-align:center;cursor:pointer">
-        <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:#6ad0b8;margin-bottom:5px">POST-CLEANING${_cr ? ` &middot; RUN ${_cr + 1}` : ""}</div>
-        <div style="font-size:12px;color:#8fc4b8;line-height:1.45;margin-bottom:10px">Once this book has been cleaned/pressed, re-shoot the 10 photos for an objective BEFORE/AFTER comparison. The current grade will be preserved as the BEFORE and a new AFTER grade will be determined.</div>
+    _cleanCard = `<div onclick="showEditToSection('${esc(selected.id)}','clean')" style="margin-top:14px;padding:14px;background:#152e10;border:1.5px solid #4a7028;border-radius:12px;text-align:center;cursor:pointer">
+        <div style="font-size:12px;font-weight:800;letter-spacing:1.5px;color:#b8d820;margin-bottom:5px">POST-CLEANING${_cr ? ` &middot; RUN ${_cr + 1}` : ""}</div>
+        <div style="font-size:12px;color:#9cc76a;line-height:1.45;margin-bottom:10px">Once this book has been cleaned/pressed, re-shoot the 10 photos for an objective BEFORE/AFTER comparison. The current grade will be preserved as the BEFORE and a new AFTER grade will be determined.</div>
         <button class="rg-btn rg-btn-assess rg-btn-silver" style="pointer-events:none;display:inline-block">POST-CLEANING ASSESS</button>
       </div>`;
   }
@@ -7440,7 +7440,7 @@ function showDetail(id) {
   if (_postCleaned) {
     html += renderCleanAfterContainer(selected);
     html += `<div style="margin-top:18px;border:1.5px solid #3a4433;border-radius:14px;padding:14px;background:#0f120e">`;
-    html += _cleanBand("BEFORE", "The assessment this book carried before it was cleaned", "#9aa894");
+    html += _cleanBand("BEFORE", "", "#9aa894");
   }
   const _aSrc = _postCleaned ? _cleanBeforeItem(selected) : selected;
   if (_aSrc.roboGrade || (selected.type === "card" && selected.cardData && selected.cardData.robograde)) {
@@ -7522,7 +7522,7 @@ function showDetail(id) {
     html += `<div style="margin-top:20px"><div class="section-label" style="color:#4a7a4a">Grader Label Notes</div><div class="notes-box" style="border-color:#1a3a1a;color:#80b080">${esc(selected.cgcNotes)}</div></div>`;
   }
   if (!showLabelNotes && selected.keyInfo && selected.keyInfo.trim()) {
-    html += `<div style="margin-top:20px"><div class="section-label" style="color:#4a7a4a">Key Info</div><div class="notes-box" style="border-color:#1a3a1a;color:#80b080">${esc(selected.keyInfo)}</div></div>`;
+    html += `<div style="margin-top:20px"><div class="section-label">Key Info</div><div class="notes-box" style="font-style:normal">${esc(selected.keyInfo)}</div></div>`;   // v6.75: plain, like the other text fields
   }
   if (isGraded && selected.graderNotes) {
     html += `<div style="margin-top:20px"><div class="section-label">Grader Notes</div><div class="notes-box" style="white-space:pre-line">${esc(selected.graderNotes)}</div></div>`;
@@ -12823,6 +12823,17 @@ function _batchFireWorker(batchId, pass) {
 // light the modal from the server's own progress.
 // ════════════════════════════════════════════════════════════════════════════
 
+// Light the tracker for a server stage. CUMULATIVE: every step before the
+// current one is set done as well, so a stage that is applied late (replayed
+// when the tracker mounts after the photo sweep) still leaves the earlier
+// boxes green rather than unlit.
+function _cleanApplyStage(stage) {
+  if (stage === "main") setStep("clean-main", "running");
+  else if (stage === "deep") { setStep("clean-main", "done"); setStep("clean-deep", "running"); }
+  else if (stage === "comparing") { setStep("clean-main", "done"); setStep("clean-deep", "done"); setStep("clean-compare", "running"); }
+  else if (stage === "error") setStep("clean-deep", "failed");
+}
+
 // The five boxes in Matt's Progress_Overlay_Cleaned.webp, in order. The labels
 // live in the ARTWORK; these ids only have to be unique and ordered.
 const CLEAN_STEPS = [
@@ -13121,6 +13132,12 @@ async function submitCleanAssessment() {
           try {
             tracker = mountTierTracker("cleaned", CLEAN_STEPS, { noAutoLight: true });
             setStep("clean-scan", "done");
+            // v6.75, Matt: RUNNING MAIN never turned green. The tracker only
+            // exists once the photo sweep ends, and Main (~10s) usually starts
+            // AND finishes inside that sweep, so both stage events hit boxes
+            // that did not exist yet and were dropped. Replay whatever stage
+            // the server has already reached.
+            if (_lastCleanStage) _cleanApplyStage(_lastCleanStage);
           } catch (e) { console.warn("[clean] tracker mount:", e); }
         };
         if (_run && _run.promise) _run.promise.then(_mount).catch(_mount);
@@ -13137,10 +13154,7 @@ async function submitCleanAssessment() {
 
     unwatch = _cleanWatchStage(stage => {
       _lastCleanStage = stage;
-      if (stage === "main") setStep("clean-main", "running");
-      else if (stage === "deep") { setStep("clean-main", "done"); setStep("clean-deep", "running"); }
-      else if (stage === "comparing") { setStep("clean-deep", "done"); setStep("clean-compare", "running"); }
-      else if (stage === "error") setStep("clean-deep", "failed");
+      _cleanApplyStage(stage);
     });
     // Fallback only: if onSnapshot is unavailable the lights still move, on the
     // measured shape of a run (Main ~12s, then Deep).
@@ -13173,6 +13187,8 @@ async function submitCleanAssessment() {
     });
     if (!res || !res.ok) throw new Error((res && res.detail) || "cleaning compare failed");
 
+    setStep("clean-main", "done");
+    setStep("clean-deep", "done");
     setStep("clean-compare", "done");
     setStep("clean-regrade", "done");
 
@@ -13569,7 +13585,9 @@ function _fmvWithheld(item) {
 // We never say the book was restored, who did it, or when. The before pass may
 // simply have missed it. The field is called restorationAppeared for that
 // reason and the wording below matches it.
-const _PC = { bg: '#0e2420', bd: '#2e7a6a', fg: '#6ad0b8', dim: '#8fc4b8' };
+// v6.75: the BEFORE container's palette. Post-Cleaning had its own teal, and
+// Matt: colour that marks nothing is a habit, not a design.
+const _PC = { bg: '#0f120e', bd: '#3a4433', fg: '#9aa894', dim: '#7f8c78' };
 
 function _pcV3(rgLike) {
   try {
@@ -13618,7 +13636,7 @@ function _pcDefectList(title, list, tone) {
   if (!rows) return '';
   return `<div style="flex:1;min-width:0">
       <div style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:${tone};margin-bottom:5px">${title} (${arr.length})</div>
-      <ul style="margin:0;padding-left:14px;font-size:11px;line-height:1.45;color:#cfe4dd">${rows}</ul>
+      <ul style="margin:0;padding-left:14px;font-size:11px;line-height:1.45;color:#e0e4dc">${rows}</ul>
     </div>`;
 }
 
@@ -13705,17 +13723,20 @@ function _cleanPredictedBox(it) {
 function renderCleanAfterContainer(item) {
   const A = _cleanAfterItem(item);
   const C = item.cleanComparison || {};
-  const runs = item.cleanRuns || 1;
-  let h = `<div style="margin-top:16px;border:1.5px solid #2e7a6a;border-radius:14px;padding:14px;background:#0b1a18">`;
-  h += _cleanBand("AFTER", "Re-shot after cleaning" + (runs > 1 ? " · run " + runs : ""), "#6ad0b8");
+  // v6.75, Matt: same container and ink as BEFORE. The teal outline, teal
+  // AFTER and the "Re-shot after cleaning" caption are gone.
+  let h = `<div style="margin-top:16px;border:1.5px solid #3a4433;border-radius:14px;padding:14px;background:#0f120e">`;
+  h += _cleanBand("AFTER", "", "#9aa894");
   if (A.roboGrade && Object.keys(A.roboGrade).length) {
     h += `<div style="margin-top:14px">${buildRoboGradeDisplay(A.roboGrade, A)}</div>`;
   }
   h += _cleanPredictedBox(A);
   const w = C.writeUp || "";
   if (w) {
-    h += `<div style="margin-top:18px"><div class="section-label" style="color:#6ad0b8">Post-Cleaning Assessment</div>`
-      + `<div class="notes-box" style="font-style:normal;white-space:pre-line;border-color:#2e7a6a;color:#cfe4dd">${esc(w)}</div></div>`;
+    // v6.75: styled exactly like the Main and Deep write-ups (light teal text
+    // on the white notes box was unreadable).
+    h += `<div style="margin-top:18px"><div class="section-label">Post-Cleaning Assessment</div>`
+      + `<div class="notes-box" style="font-style:normal;white-space:pre-line">${esc(w)}</div></div>`;
   }
   h += `</div>`;
   return h;
@@ -13750,7 +13771,7 @@ function renderCleanPhotoColumns(item) {
   }
   return `<div style="margin-top:16px">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;position:sticky;top:0;z-index:2;background:#0b1a18;border-radius:8px">
-      <div style="${hdr};color:#9aa894">BEFORE</div><div style="${hdr};color:#6ad0b8">AFTER</div>
+      <div style="${hdr};color:#9aa894">BEFORE</div><div style="${hdr};color:#9aa894">AFTER</div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">${rows}</div>
   </div>`;
@@ -13795,7 +13816,7 @@ function renderPostCleaningResults(item) {
   const pqLine = pqMoved ? `
     <div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:11px;color:${_PC.dim}">
       <span style="font-weight:800;letter-spacing:1.2px;font-size:9px">PAGE QUALITY</span>
-      <span style="color:#cfe4dd">${esc(pq.before)} → ${esc(pq.after)}</span>
+      <span style="color:#e0e4dc">${esc(pq.before)} → ${esc(pq.after)}</span>
       ${pq.suspicious ? `<span style="color:#e8b36a;font-size:10px">· flagged as a larger move than cleaning explains</span>` : ''}
     </div>` : '';
 
@@ -13822,7 +13843,7 @@ function renderPostCleaningResults(item) {
         ${_pcCount(counts.introduced != null ? counts.introduced : '—', 'INTRODUCED', '#e88a7a')}
       </div>
       ${pqLine}
-      ${c.writeUp ? `<div style="font-size:12px;line-height:1.55;color:#cfe4dd;margin-top:10px;white-space:pre-wrap">${esc(c.writeUp)}</div>` : ''}
+      ${c.writeUp ? `<div style="font-size:12px;line-height:1.55;color:#e0e4dc;margin-top:10px;white-space:pre-wrap">${esc(c.writeUp)}</div>` : ''}
       ${lists ? `<div style="display:flex;gap:14px;margin-top:12px;padding-top:10px;border-top:1px dashed ${_PC.bd}">${lists}</div>` : ''}
     </div>`;
 }
@@ -13839,7 +13860,7 @@ function renderPostCleaningPhotos(item) {
   const cell = (url, who) => url
     ? `<div style="flex:1;min-width:0;position:relative;border-radius:6px;overflow:hidden;background:#0a1512" onclick="openReferenceLightbox('${esc(url)}')">
          <img src="${esc(url)}" style="display:block;width:100%;height:auto;cursor:zoom-in">
-         <div style="position:absolute;top:3px;left:4px;background:rgba(0,0,0,0.65);color:#cfe4dd;font-size:8px;letter-spacing:0.8px;padding:1px 5px;border-radius:3px">${who}</div>
+         <div style="position:absolute;top:3px;left:4px;background:rgba(0,0,0,0.65);color:#e0e4dc;font-size:8px;letter-spacing:0.8px;padding:1px 5px;border-radius:3px">${who}</div>
        </div>`
     : `<div style="flex:1;min-width:0;aspect-ratio:3/4;border-radius:6px;background:#0a1512;border:1px dashed ${_PC.bd}"></div>`;
   const rows = [];
@@ -13879,11 +13900,11 @@ function _cleanBeforePhotos(item) {
 
 // Re-shoot ONE After slot. Maps the 0-9 index back to the camera kind that owns
 // it, so the retake uses the same guide and orientation as the original.
-function retakeCleanSlot(idx) {
-  const kind = idx < 4 ? "main" : idx < 8 ? "corner" : "interiorCover";
-  _cleanCapture = true;
-  tapSlot(idx - CLEAN_CAPTURE_OFFSET[kind], kind);
-}
+// v6.75, Matt: tapping the nth AFTER slot starts the capture THERE and carries
+// on to the end of the ten, re-shooting any slot that already has a photo.
+// That replaced the RETAKE ALL TEN button: tapping the first slot is the same
+// thing, and it is where people tap anyway.
+function retakeCleanSlot(idx) { startCleanCapture(idx); }
 
 // v6.49: Edit shows the same stored results, from the same renderer. Two
 // renderers for one record is how Detail and Edit drift apart - see the
@@ -13901,7 +13922,7 @@ function renderCleanSection() {
   const ready = have >= 10;
   const runs = formData.cleanRuns || 0;
 
-  const _headHTML = `<div style="font-size:11px;color:#6ad0b8;font-weight:700;letter-spacing:2px;margin-bottom:8px">POST-CLEANING${runs ? ` &middot; RUN ${runs + 1}` : ""}</div>`;
+  const _headHTML = `<div style="font-size:11px;color:#6abf6a;font-weight:700;letter-spacing:2px;margin-bottom:8px">POST-CLEANING${runs ? ` &middot; RUN ${runs + 1}` : ""}</div>`;
   const _blurbHTML = `<div style="font-size:11px;color:#9a9a8a;margin-bottom:10px;line-height:1.5">Once this book has been cleaned/pressed, re-shoot the 10 photos for an objective BEFORE/AFTER comparison. The current grade will be preserved as the BEFORE and a new AFTER grade will be determined.</div>`;
 
   // COLLAPSED BY DEFAULT (v5.72). The ten Before/After pairs are a 3,300px
@@ -13914,7 +13935,7 @@ function renderCleanSection() {
   // in progress is never hidden behind a tap.
   if (!((_cleanExpandedFor === formData.id) || have > 0)) {
     return `
-        <div id="clean-section" style="margin-top:14px;padding-top:14px;border-top:1px dashed #2e7a6a">
+        <div id="clean-section" style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">
           ${_headHTML}${_blurbHTML}
           <div style="display:flex;justify-content:center">
             <button class="rg-btn rg-btn-assess rg-btn-bronze" onclick="expandCleanSection()" style="flex-direction:column;line-height:1.15;text-align:center">
@@ -13950,15 +13971,11 @@ function renderCleanSection() {
        </button>`;
 
   return `
-        <div id="clean-section" style="margin-top:14px;padding-top:14px;border-top:1px dashed #2e7a6a">
+        <div id="clean-section" style="margin-top:14px;padding-top:14px;border-top:1px dashed #4a7a20">
           ${_headHTML}${_blurbHTML}
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:9px;color:#6abf6a;font-weight:700;letter-spacing:.12em;margin-bottom:6px"><div>BEFORE</div><div>AFTER</div></div>
           ${rows}
           <div style="display:flex;justify-content:center;gap:10px;margin-top:4px;flex-wrap:wrap">
-            <button class="rg-btn rg-btn-assess rg-btn-bronze" onclick="startCleanCapture()" style="flex-direction:column;line-height:1.15;text-align:center">
-              <span style="display:block">${have ? "RETAKE ALL TEN" : "POST-CLEANING"}</span>
-              <span style="display:block;font-size:0.8em;font-weight:600;opacity:0.85">ONE CONTINUOUS FLOW</span>
-            </button>
             ${btn}
           </div>
         </div>`;
@@ -15005,7 +15022,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "6.73"),
+      appVersion: (window.RG_GRADING_VERSION || "6.75"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
@@ -16186,6 +16203,22 @@ async function assessGrade() {
       return;
     }
     _recordTimingKey(unified); // S20 (#33): stash the Main log key on the item
+    // v6.74: the gate now reports FORMAT and an ADULT flag (lib/main_prompt.js,
+    // FORMAT AND ADULT FLAG). The adult flag is STICKY: a later pass that says
+    // false never clears one an earlier pass set - the only consequence of the
+    // flag is "no public link", so a false positive costs little and a flag
+    // that flickers off is the failure that matters. Users cannot set or clear
+    // it (Matt, 2026-11-17); only admin can. Format is set only when the item
+    // has none, so a hand-corrected format is never overwritten.
+    try {
+      if (unified.adultContent === true) {
+        formData.adultContent = true;
+        formData.publicListing = false;
+      }
+      if (!formData.format && (unified.format === "magazine" || unified.format === "comic")) {
+        formData.format = unified.format;
+      }
+    } catch (e) {}
     const cgc = {
       ...unified.cgc || unified
     };
@@ -20150,26 +20183,28 @@ function _cleanSlotIndex(kind, slot) {
   return (off == null) ? null : off + slot;
 }
 
-// Which slots of `kind` are still empty in the After set.
-function _cleanEmptySlots(kind) {
-  const arr = formData.cleanAfterImages || [];
-  const off = CLEAN_CAPTURE_OFFSET[kind], cnt = CLEAN_CAPTURE_COUNT[kind];
-  if (off == null) return [];
-  const out = [];
-  for (let i = 0; i < cnt; i++) if (!arr[off + i]) out.push(i);
-  return out;
-}
-
 // Start the ten-photo After capture. One continuous flow — the spec's hard
 // requirement, and the reason the Deep drop-out bug had to be fixed first.
-function startCleanCapture() {
+function startCleanCapture(fromIdx) {
   if (!formData.id) return;
   _cleanCapture = true;
   const arr = [ ...(formData.cleanAfterImages || []) ];
   while (arr.length < 10) arr.push(null);
   formData.cleanAfterImages = arr.slice(0, 10);
-  // Enter through the ordinary main walkthrough; _cameraChainNext carries it on.
-  tapSlot(0, "main");
+  const i = Math.max(0, Math.min(9, fromIdx | 0));
+  const kind = i < 4 ? "main" : i < 8 ? "corner" : "interiorCover";
+  const slot = i - CLEAN_CAPTURE_OFFSET[kind];
+  // No camera (desktop PWA): the library picker, which already fills from the
+  // tapped slot to the end of the ten when several photos are picked.
+  if (!window._cameraSupported) { tapSlot(slot, kind); return; }
+  // Camera: a walkthrough of this kind from the tapped slot to its last slot,
+  // in the order the rows are shown, FILLED OR NOT. tapSlot() cannot be used
+  // here: it builds its queue from the book's OWN photos, which are all present
+  // in Post-Cleaning, so it always fell back to a single shot.
+  // _cameraChainNext then carries the session into the next kinds.
+  const queue = [];
+  for (let s2 = slot + 1; s2 < CLEAN_CAPTURE_COUNT[kind]; s2++) queue.push(s2);
+  cameraOpen({ mode: "walkthrough", kind: kind, queue: queue, current: slot, captures: [] });
 }
 
 function cancelCleanCapture() { _cleanCapture = false; }
@@ -20279,8 +20314,12 @@ function _cameraChainNext() {
     else if (_k === "corner" && !formData.labelDetected) { _nextKind = "interiorCover"; nextSlots = _conciergeEmptySlots("interiorCover"); }
     if (!_nextKind || !nextSlots.length) return false;
   } else if (_cleanCapture) {
-    if (_k === "main") { _nextKind = "corner"; nextSlots = _cleanEmptySlots("corner"); }
-    else if (_k === "corner" && !formData.labelDetected) { _nextKind = "interiorCover"; nextSlots = _cleanEmptySlots("interiorCover"); }
+    // v6.75: every slot of the next kind, filled or not - a capture started at
+    // slot n re-shoots n through 10 (Matt). Empty-only skipped photos the user
+    // had just chosen to retake.
+    const _all = k2 => Array.from({ length: CLEAN_CAPTURE_COUNT[k2] }, (_, j) => j);
+    if (_k === "main") { _nextKind = "corner"; nextSlots = _all("corner"); }
+    else if (_k === "corner" && !formData.labelDetected) { _nextKind = "interiorCover"; nextSlots = _all("interiorCover"); }
     if (!_nextKind || !nextSlots.length) return false;
   } else {
     if (_k !== "corner") return false;
