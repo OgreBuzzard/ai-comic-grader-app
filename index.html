@@ -8567,11 +8567,18 @@ const EXP = {
   // This is the app's paper beige, the same family as the label stock and the
   // PHOTOS sheet, one step warmer than the continuous-form paper so the defect
   // table still reads as a separate surface sitting on it.
-  cardBeige:"#efe7d5",
+  // v6.71, Matt: the band and the beige were "too close to each other", and a
+  // deeper beige then sat too close to the page-quality pills. So not paper at
+  // all: a pale grey-sage, light enough that the green and black containers
+  // still read as dark objects on it. (Name kept so nothing else moves.)
+  cardBeige:"#bcc4b4",
   // Ink that sits ON the beige. The old inks were chosen against black and are
   // unreadable here.
   beigeInk:"#1a1610", beigeInkDim:"#5a5247",
-  titleBand:"#faf8f4"                    // the near-white strip behind the title
+  titleBand:"#fdfcf9",                   // the near-white strip behind the title
+  // v6.71, Matt: both imprint lines one colour, the upper one heavier. One
+  // brick red tuned for the near-white band (red1/red2 were picked on black).
+  imprint: "#a4573f"
 };
 const EX_PQ_FALLBACK = { bg: "#f0ece6", text: "#5a4e44" };
 
@@ -8856,58 +8863,27 @@ function _exDrawHeader(ctx, item, bx, by, boxW, innerW) {
     ctx.fillText(_exFit(ctx, txt, innerW, P(16), P(10), weight, F_COND), x, y + P(15));
     y += P(17);
   };
-  if (im.a) line(im.a, "600", EXP.red1, 3);
-  if (im.b) line(im.b, "600", EXP.red2, 2);
+  if (im.a) line(im.a, "700", EXP.imprint, 3);
+  if (im.b) line(im.b, "500", EXP.imprint, 2);
   return by + h;
 }
 
-// ── Provenance ─────────────────────────────────────────────────────────────
-// On the Defect List this doubles as the list's HEADER: rounded on top, square
-// on the bottom, the same width as the paper, so the two read as one object and
-// no padding is wasted between them.
-const EX_PROV_H = P(34);
+// ── Provenance: GRADED date and RoboGrade ID (drawn by _exDrawProvBox) ──────
 function _exProvText(item) {
   let dateStr = "";
   if (item.roboGradeDate) {
     try { dateStr = new Date(item.roboGradeDate).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }); }
     catch (e) { dateStr = ""; }
   }
-  return { id: item.roboGradeId ? String(item.roboGradeId) : "", date: dateStr };
+  // v6.71: MM/DD/YY for the summary image's narrow GRADED box.
+  let short = "";
+  if (item.roboGradeDate) {
+    const d = new Date(item.roboGradeDate);
+    if (!isNaN(d)) short = String(d.getMonth() + 1).padStart(2, "0") + "/" + String(d.getDate()).padStart(2, "0") + "/" + String(d.getFullYear()).slice(-2);
+  }
+  return { id: item.roboGradeId ? String(item.roboGradeId) : "", date: dateStr, short };
 }
 function _exHasProv(item) { const p = _exProvText(item); return !!(p.id || p.date); }
-function _exDrawProv(ctx, item, x, y, w, topOnly) {
-  const p = _exProvText(item);
-  if (!p.id && !p.date) return y;
-  ctx.fillStyle = "#2a4a1e";
-  if (topOnly) {
-    const r = P(8);
-    ctx.beginPath();
-    ctx.moveTo(x, y + EX_PROV_H); ctx.lineTo(x, y + r);
-    ctx.arcTo(x, y, x + r, y, r); ctx.lineTo(x + w - r, y);
-    ctx.arcTo(x + w, y, x + w, y + r, r); ctx.lineTo(x + w, y + EX_PROV_H);
-    ctx.closePath(); ctx.fill();
-  } else { _exRoundRect(ctx, x, y, w, EX_PROV_H, P(6)); ctx.fill(); }
-  const mid = y + P(22);
-  if (p.id) {
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#7aa838"; ctx.font = `700 ${P(9)}px ${F_MONO}`;
-    ctx.fillText("ID", x + P(14), mid);
-    const lw = ctx.measureText("ID").width;
-    ctx.fillStyle = "#b8d820"; ctx.font = `${P(11)}px ${F_MONO}`;
-    ctx.fillText(p.id, x + P(14) + lw + P(6), mid);
-  }
-  if (p.date) {
-    ctx.textAlign = "right";
-    ctx.fillStyle = "#b8d820"; ctx.font = `${P(11)}px ${F_MONO}`;
-    ctx.fillText(p.date, x + w - P(14), mid);
-    const vw = ctx.measureText(p.date).width;
-    ctx.fillStyle = "#7aa838"; ctx.font = `700 ${P(9)}px ${F_MONO}`;
-    ctx.fillText("GRADED", x + w - P(14) - vw - P(6), mid);
-    ctx.textAlign = "left";
-  }
-  return y + EX_PROV_H;
-}
-
 // ── The "(+)" ──────────────────────────────────────────────────────────────
 // Sits on the numeral's midline, condensed into whatever room is left rather
 // than overlapping it. Both grade numerals also shrink when it is present, so
@@ -9024,18 +9000,64 @@ function _exBuildSections(list, all) {
 }
 
 const EX_MORE_H = P(26);
+// v6.71, Matt: "We want the defining defects to be the ones that are shown, so
+// prioritize by severity, and then within that, prioritize defects by how
+// visible they are; for example tape pull on the cover or a subscription
+// crease down the middle would be prioritized over corner blunting of the same
+// severity." So: severity, then visibility, then face (Front first), then the
+// order the assessment listed them in.
+//   0 - catches the eye from across a table: tape, tears, pieces out, stains,
+//       writing, subscription/centre creases, splits, detached covers, fading
+//   2 - has to be looked for: corner and edge wear, rubbing, stress lines,
+//       staples, tanning/toning, printing and bindery faults
+//   1 - everything else
+// A tier-1 defect described as running across the middle drops to tier 0.
+const EX_VIS_HIGH = /tape|tear|rip|piece|missing|chunk|hole|punch|puncture|stain|water|tide|mold|mould|writing|written|marker|pen\b|ink mark|crayon|pencil|scribbl|subscription|centre crease|center crease|whole-book|split|detach|loose cover|coupon|clipp|cut\b|chew|burn|fad|sun|spill|graffiti|sticker|label/i;
+const EX_VIS_LOW  = /corner|edge wear|edge rub|rubbing|rub\b|blunt|round|stress|staple|tan|ton|yellow|brown|page quality|printing|print defect|bindery|miswrap|off.?cent|trim|gloss|foxing|dust|light wear|minor/i;
+const EX_VIS_MID  = /middle|centre|center|across|full length|full width|entire/i;
+const EX_CAT_ORDER = { Front: 0, Spine: 1, Back: 2, Interior: 3 };
+function _exVisRank(r) {
+  const t = String(r.type || "");
+  if (EX_VIS_HIGH.test(t)) return 0;
+  if (EX_VIS_LOW.test(t)) return 2;
+  return EX_VIS_MID.test(r.detail || "") ? 0 : 1;
+}
 function _exFitDefects(ctx, all, paperW, avail) {
   const order = all.map((r, i) => i).sort((a, b) =>
-    (_exSevRank(all[a].sev) - _exSevRank(all[b].sev)) || (a - b));
+    (_exSevRank(all[a].sev) - _exSevRank(all[b].sev)) ||
+    (_exVisRank(all[a]) - _exVisRank(all[b])) ||
+    ((EX_CAT_ORDER[all[a].cat] ?? 9) - (EX_CAT_ORDER[all[b].cat] ?? 9)) || (a - b));
   for (let keep = all.length; keep >= 0; keep--) {
     const kept = new Set(order.slice(0, keep));
     const list = all.filter((_, i) => kept.has(i));
     const sections = _exBuildSections(list, all);
     const hidden = all.length - keep;
     const used = _exPaperMeasure(ctx, sections, paperW) + (hidden ? EX_MORE_H : 0);
-    if (used <= avail) return { sections, hidden, used };
+    if (used <= avail) return _exBackfill(ctx, all, order, keep, paperW, avail, { sections, hidden, used });
   }
   return { sections: [], hidden: all.length, used: EX_MORE_H };
+}
+// v6.71, Matt: a blank band above "and N more" should be defect text if there
+// are defects left to show. The first defect that did not fit may be a long
+// one while a later, shorter one would fit, so try the later ones too - but
+// only those of the SAME severity, so a Low is never shown while a Med is the
+// one cut.
+function _exBackfill(ctx, all, order, keep, paperW, avail, best) {
+  if (keep >= all.length) return best;
+  const rank = _exSevRank(all[order[keep]].sev);
+  const kept = new Set(order.slice(0, keep));
+  for (let k = keep + 1; k < order.length; k++) {
+    const i = order[k];
+    if (_exSevRank(all[i].sev) !== rank) break;
+    kept.add(i);
+    const list = all.filter((_, j) => kept.has(j));
+    const sections = _exBuildSections(list, all);
+    const hidden = all.length - kept.size;
+    const used = _exPaperMeasure(ctx, sections, paperW) + (hidden ? EX_MORE_H : 0);
+    if (used <= avail) best = { sections, hidden, used };
+    else kept.delete(i);
+  }
+  return best;
 }
 
 const EX_SPR = P(8);
@@ -9073,7 +9095,10 @@ function _exPaperPlan(ctx, sections, hidden, avail, used) {
   let nRows = hidden ? 1 : 0;
   sections.forEach(sec => { nRows += Math.max(1, sec.rows.length); });
   const slack = Math.max(0, avail - used);
-  const pad = Math.min(P(3), Math.floor(slack / Math.max(1, nRows)));   // v5.82: was P(10)
+  // v6.71: when the list is cut ("and N more"), the rows take up to P(8) each
+  // of the slack, so it becomes breathing room between defects instead of one
+  // blank band above the last line.
+  const pad = Math.min(hidden ? P(8) : P(3), Math.floor(slack / Math.max(1, nRows)));   // v5.82: was P(10)
   let residue = slack - pad * nRows;
   // A residue worth less than half a row is absorbed so the paper meets the
   // card cleanly; anything larger is left as box background.
@@ -9128,7 +9153,10 @@ function _exDrawPaper(ctx, sections, hidden, x, y, paperW, plan) {
       const lines = _exWrap(ctx, r.type + r.detail, textW - (sevTxt ? (ctx.measureText(sevTxt).width + P(8)) : 0));
       const h2 = _exRowH(ctx, r, textW) + pad;
       band(h2);
-      let ly = y + P(6) + pad / 2 + P(12);
+      // v6.71: baseline at P(15), not P(18). The row is P(6) + lines x P(14),
+      // and the old offset left P(2) under the last baseline against P(6) over
+      // the first, so every defect sat on the line below it.
+      let ly = y + pad / 2 + P(15);
       lines.forEach((ln, li) => {
         let cx2 = textX, rest = ln;
         if (li === 0 && ln.startsWith(r.type)) {
@@ -9146,7 +9174,7 @@ function _exDrawPaper(ctx, sections, hidden, x, y, paperW, plan) {
         ctx.textAlign = "right";
         ctx.font = `800 ${P(11)}px ${F_MONO}`;
         ctx.fillStyle = _exSevColor(r.sev);
-        ctx.fillText(sevTxt, x + paperW - EX_SPR - P(10), y + P(6) + pad / 2 + P(12));
+        ctx.fillText(sevTxt, x + paperW - EX_SPR - P(10), y + pad / 2 + P(15));
         ctx.textAlign = "left";
       }
       y += h2;
@@ -9326,8 +9354,8 @@ function _exDrawCard(ctx, f, centreX, y, showFmv, fullW, maxW) {
 const EX_FOOTH = P(10) + P(11) + P(12);
 function _exDrawFoot(ctx, by, x, w) {
   ctx.textAlign = "center";
-  // v5.82: was #5a7028, which disappeared once the container went black.
-  ctx.fillStyle = EXP.footInk;
+  // v6.71: the light green (#7aa838) washed out on the deeper beige.
+  ctx.fillStyle = EXP.oliveMid;
   ctx.font = `800 ${P(11)}px ${F_COND}`;
   ctx.fillText("robograder.app", x + w / 2, by + EX_BOXH - P(16));
   ctx.textAlign = "left";
@@ -9361,51 +9389,85 @@ function _exMeasureCtx() {
 const EX_RULE = P(3);
 
 // ── THE COMBINED EXPORT IMAGE ──────────────────────────────────────────────
-// v5.82, Matt: the Summary and the Defect List are ONE image now, same 15:8.
-// The Defect List button is gone. What made the merge fit:
-//   - the back-cover thumbnail is dropped, and the Predicted Grade and Page
-//     Quality move into the space it leaves, stacked beside the front cover
-//   - the ID and graded date share one line, directly under the imprint
-//   - the defect list's line spacing is tightened (see _exRowH)
-//   - the conclusion card at the foot is gone entirely; PG and PQ are the only
-//     things it carried, and they are now at the top
-// The score panel, the list and the bookend are drawn as ONE column: the panel
-// is rounded on top and square at the bottom, the list runs between its two
-// green rules, and the bookend closes it with square top and rounded bottom.
+// v6.71, Matt's mock-up (2026-11-16). Top to bottom:
+//   - the title band
+//   - LEFT column: front and back covers side by side, and under them the
+//     RoboGrade panel as a TAB rising out of the defect container
+//   - RIGHT column: GRADED / ID in a small green box, then Predicted Grade and
+//     Page Quality in their own container, set in the gutter beside the tab
+//   - the defect list, full width, in the same dark container as the tab
+// The tab and the defect container are ONE path, with a rounded inside corner
+// where the tab widens to full width, so they read as a single object.
+// (Before v6.71: one cover, the grade stack beside it, a full-width score
+// panel, and GRADED/ID on a full-width strip under the imprint.)
+// v6.71 second pass, Matt: "Make the spacings between the containers as
+// uniform as you can" - so ONE gap, EX_GAP, between every pair of containers
+// (the two covers excepted, which sit closer). The right column is exactly the
+// grade badge plus EX_GPAD each side, EX_GPAD being the same margin the stack
+// keeps above and below its content, and the covers and the tab take whatever
+// width that frees. Cover height follows from cover width at the 0.70 aspect.
+const EX_GAP     = P(10);    // between containers
+const EX_GPAD    = P(10);    // grade stack: padding on all four sides
+const EX_GBADGE  = P(74);    // the blue Predicted Grade badge
+const EX_RCOLW   = EX_GBADGE + EX_GPAD * 2;
+const EX_COVGAP  = P(5);     // between the two covers
+const EX_BOOKEND = P(14);
+const EX_PQ_H    = P(26);
+
+// GRADED and ID, each a small label over its value, centred. Matt (v6.71):
+// no horizontal squeeze - the date is MM/DD/YY instead. Label and value sit on
+// separate lines because even "GRADED 08/17/26" is wider than this column.
+function _exDrawProvBox(ctx, item, x, y, w, h) {
+  const p = _exProvText(item);
+  ctx.fillStyle = "#2a4a1e";
+  _exRoundRect(ctx, x, y, w, h, P(8)); ctx.fill();
+  const pairs = [];
+  if (p.short) pairs.push(["GRADED", p.short]);
+  if (p.id) pairs.push(["ID", p.id]);
+  // v6.71: pairs sit close (P(2) apart) so the spare height becomes margin
+  // above and below the block, centred, rather than space between DATE and ID.
+  const pairH = P(30), between = P(2);
+  let top = y + (h - (pairs.length * pairH + (pairs.length - 1) * between)) / 2;
+  ctx.textAlign = "center";
+  pairs.forEach(([lbl, val]) => {
+    ctx.fillStyle = "#7aa838"; ctx.font = `700 ${P(9)}px ${F_MONO}`;
+    ctx.fillText(lbl, x + w / 2, top + P(9));
+    ctx.fillStyle = "#b8d820";
+    ctx.fillText(_exFit(ctx, val, w - P(12), P(13), P(9), "400", F_MONO), x + w / 2, top + P(26));
+    top += pairH + between;
+  });
+  ctx.textAlign = "left";
+}
+
+// Predicted Grade and Page Quality in their own container, which FILLS the
+// rect it is given; the content is centred inside it. The badge gives way
+// first if the rect is short, so the stack can never run out of its box (the
+// v5.83 bug, where it painted over the score panel).
+// v6.71: espresso brown was tried and rejected ("Black was better"); it is
+// the app's Predicted Grade black again, #0d0d0f on a #2a2a3a edge.
+// Content height with a full-size badge; the layout sizes the box from this.
+function _exGradeStackH(f) {
+  return P(13) * 2 + P(6) + EX_GBADGE + (f.pageQuality ? P(10) + P(16) + EX_PQ_H : 0);
+}
 function _exDrawGradeStack(ctx, f, x, y, w, h) {
-  const cx = x + w / 2;
-  // v5.83: these were P(86)/P(16)/P(11), which made blockH 525 against an
-  // EX_COVERH of 480. Math.max(0, ...) below clamps the centring to 0, so the
-  // stack ran 45px PAST the cover slot and the score panel painted over the
-  // bottom of the Page Quality pill on every book that has one.
-  const badge = Math.min(w * 0.66, P(74));
-  const pqH = f.pageQuality ? P(30) : 0;
-  // v6.62: the two P(10)s became P(12) + P(16) in the PQ block below, so the
-  // measured height has to follow or the stack re-centres wrong and runs past
-  // the cover slot again (the v5.83 bug).
-  const blockH = P(13) * 2 + P(6) + badge + (pqH ? P(12) + P(16) + pqH : 0);
-  // v6.63, Matt: "The Predicted Grade and Page Quality should be in a black
-  // container." Same chrome as the in-app Predicted Grade box (#0d0d0f on a
-  // #2a2a3a edge), so the summary image reads as the app rather than as a
-  // beige card with a dark badge floating on it. The container is measured
-  // from the stack, not the other way round: blockH already accounts for the
-  // header, the badge and the PQ pill, so padding it keeps the v5.83 centring
-  // bug (a stack taller than its slot) from coming back.
-  const _cPad = P(12);
-  const _cOuterH = blockH + _cPad * 2;
-  const _cW = w;
-  const _cTop = y + Math.max(0, (h - _cOuterH) / 2);
   ctx.fillStyle = "#0d0d0f";
-  _exRoundRect(ctx, cx - _cW / 2, _cTop, _cW, _cOuterH, P(10)); ctx.fill();
+  _exRoundRect(ctx, x, y, w, h, P(10)); ctx.fill();
   ctx.strokeStyle = "#2a2a3a"; ctx.lineWidth = Math.max(1, P(1));
-  _exRoundRect(ctx, cx - _cW / 2, _cTop, _cW, _cOuterH, P(10)); ctx.stroke();
-  let cy = _cTop + _cPad;
+  _exRoundRect(ctx, x, y, w, h, P(10)); ctx.stroke();
+
+  const cx = x + w / 2;
+  const pqH = f.pageQuality ? EX_PQ_H : 0;
+  const headH = P(13) * 2 + P(6);
+  const pqBlock = pqH ? P(10) + P(16) + pqH : 0;
+  const badge = Math.max(P(40), Math.min(EX_GBADGE, w - EX_GPAD * 2, h - EX_GPAD * 2 - headH - pqBlock));
+  const blockH = headH + badge + pqBlock;
+  let cy = y + Math.max(EX_GPAD, (h - blockH) / 2);
 
   ctx.textAlign = "center";
   ctx.fillStyle = "#ffffff"; ctx.font = `800 ${P(12)}px ${F_COND}`;
   ctx.fillText("PREDICTED", cx, cy + P(11));
   ctx.fillText("GRADE", cx, cy + P(24));
-  cy += P(13) * 2 + P(6);
+  cy += headH;
 
   ctx.fillStyle = EXP.badgeBg;
   _exRoundRect(ctx, cx - badge / 2, cy, badge, badge, P(18)); ctx.fill();
@@ -9413,7 +9475,7 @@ function _exDrawGradeStack(ctx, f, x, y, w, h) {
   _exRoundRect(ctx, cx - badge / 2, cy, badge, badge, P(18)); ctx.stroke();
 
   const gnum = f.predicted == null ? "\u2014" : String(f.predicted);
-  const numPx = P(f.atCeiling ? 40 : 46) * (gnum.length > 3 ? 0.8 : 1);
+  const numPx = P(f.atCeiling ? 40 : 46) * (gnum.length > 3 ? 0.8 : 1) * (badge / EX_GBADGE);
   const numMid = cy + badge * 0.46;
   ctx.font = `800 ${numPx}px ${F_NUM}`;
   const halfNum = ctx.measureText(gnum).width * 0.7 / 2;
@@ -9434,104 +9496,128 @@ function _exDrawGradeStack(ctx, f, x, y, w, h) {
   cy += badge;
 
   if (f.pageQuality) {
-    // v6.62, Matt: "The Page Quality header is clipping into the PQ pill below
-    // it... and the 'Page Quality' text should be the same size as the
-    // 'Predicted Grade' text." P(12) matches PREDICTED / GRADE above, and the
-    // gap below the baseline goes from P(10) to P(16) so a 12px cap height
-    // cannot reach into the pill.
-    cy += P(12);
-    ctx.textAlign = "center";
+    // v6.62: PAGE QUALITY is the same size as PREDICTED / GRADE, with room
+    // below its baseline so the cap height cannot reach into the pill.
+    cy += P(10);
     ctx.fillStyle = "#ffffff"; ctx.font = `800 ${P(12)}px ${F_COND}`;
     ctx.fillText("PAGE QUALITY", cx, cy + P(11));
     cy += P(16);
     const pq = (typeof PQ_COLORS !== "undefined" && PQ_COLORS[f.pageQuality]) || EX_PQ_FALLBACK;
     let px = P(13), lbl = f.pageQuality;
-    while (px > P(8)) { ctx.font = `600 ${px}px ${F_COND}`; if (ctx.measureText(lbl).width <= w - P(16)) break; px -= 1; }
-    const pw = Math.min(w, ctx.measureText(lbl).width + P(22));
+    while (px > P(8)) { ctx.font = `600 ${px}px ${F_COND}`; if (ctx.measureText(lbl).width <= w - P(20)) break; px -= 1; }
+    const pw = Math.min(w - P(8), ctx.measureText(lbl).width + P(20));
     ctx.fillStyle = pq.bg;
     _exRoundRect(ctx, cx - pw / 2, cy, pw, pqH, P(8)); ctx.fill();
     ctx.fillStyle = pq.text; ctx.font = `600 ${px}px ${F_COND}`;
-    ctx.fillText(lbl, cx, cy + P(20));
+    ctx.fillText(lbl, cx, cy + pqH / 2 + px * 0.35);
   }
   ctx.textAlign = "left";
 }
 
-const EX_BOOKEND = P(14);
-const EX_COVERH  = P(160);
+// One cover photo in a rounded slot, scaled to fit. An empty slot keeps a
+// visible edge so a cover that fails to load does not just vanish.
+function _exDrawCover(ctx, img, x, y, w, h) {
+  ctx.fillStyle = "#23232a";
+  _exRoundRect(ctx, x, y, w, h, P(6)); ctx.fill();
+  if (!img) {
+    ctx.strokeStyle = "#3a3a44"; ctx.lineWidth = Math.max(1, P(1));
+    _exRoundRect(ctx, x, y, w, h, P(6)); ctx.stroke();
+    return;
+  }
+  const sc = Math.min(w / img.naturalWidth, h / img.naturalHeight);
+  ctx.save(); _exRoundRect(ctx, x, y, w, h, P(6)); ctx.clip();
+  ctx.drawImage(img, x + (w - img.naturalWidth * sc) / 2, y + (h - img.naturalHeight * sc) / 2,
+                img.naturalWidth * sc, img.naturalHeight * sc);
+  ctx.restore();
+}
 
 async function _exRenderSummary(item) {
   const f = _exFacts(item);
-  const front = await _exLoadImage(_exImgUrl((item.images || [])[0]));
+  const imgs = item.images || [];
+  const [front, back] = await Promise.all([
+    _exLoadImage(_exImgUrl(imgs[0])), _exLoadImage(_exImgUrl(imgs[1]))
+  ]);
 
   const boxW = EX_W;
   const innerW = boxW - EX_PAD * 2;
   const m = _exMeasureCtx();
   const headH = _exHeaderH(m, item);
   const hasProv = _exHasProv(item);
-  const GAP = P(10);
 
+  // Every vertical position is fixed by the left column; the right column and
+  // the list fit themselves to it.
+  const px1 = EX_PAD;
+  const leftW = innerW - EX_RCOLW - EX_GAP;
+  const rx = px1 + leftW + EX_GAP;
+  const slotW = (leftW - EX_COVGAP) / 2;
+  const coverH = Math.round(slotW / 0.70);
+  const coversTop = headH + EX_GAP;
+  const tabTop = coversTop + coverH + EX_GAP;
   const boxSize = P(74);
-  const panelH = P(12) + P(20) + boxSize + P(12);
-  const provH = hasProv ? EX_PROV_H : 0;
+  const py = tabTop + P(32);              // top of the score boxes
+  const paperTop = py + boxSize + P(12);
+  const shoulder = paperTop - P(14);       // where the tab widens to full width
 
-  const listTop = headH + (hasProv ? P(4) + provH : 0) + GAP + EX_COVERH + GAP + panelH;
-  const avail = EX_BOXH - EX_FOOTH - EX_BOOKEND - listTop;
+  const avail = EX_BOXH - EX_FOOTH - EX_BOOKEND - paperTop;
   const paperW = innerW - EX_RULE * 2;
   const fit = _exFitDefects(m, _exDefectList(item), paperW, avail);
   const plan = _exPaperPlan(m, fit.sections, fit.hidden, avail, fit.used);
 
   const { c, ctx } = _exCanvas();
-  const bx = 0, by = 0;
   ctx.fillStyle = EX_CARD;
-  _exRoundRect(ctx, bx, by, boxW, EX_BOXH, EX_RADIUS); ctx.fill();
+  _exRoundRect(ctx, 0, 0, boxW, EX_BOXH, EX_RADIUS); ctx.fill();
+  _exDrawHeader(ctx, item, 0, 0, boxW, innerW);
 
-  let y = _exDrawHeader(ctx, item, bx, by, boxW, innerW);
-  const px1 = bx + EX_PAD;
-  if (hasProv) { y += P(4); _exDrawProv(ctx, item, px1, y, innerW, false); y += provH; }
-  y += GAP;
-
-  // Front cover on the left, Predicted Grade + Page Quality stacked on the
-  // right, in the space the back-cover thumbnail used to take.
-  const slotW = Math.min(innerW * 0.46, EX_COVERH * 0.70);
-  // v5.83: #1a1a1a was picked when the container was cream. On the black card
-  // it is 1.12:1 - a book whose cover fails to load showed nothing at all, not
-  // even an empty slot, with the grade stack apparently floating.
-  ctx.fillStyle = "#23232a";
-  _exRoundRect(ctx, px1, y, slotW, EX_COVERH, P(6)); ctx.fill();
-  if (!front) {
-    ctx.strokeStyle = "#3a3a44"; ctx.lineWidth = Math.max(1, P(1));
-    _exRoundRect(ctx, px1, y, slotW, EX_COVERH, P(6)); ctx.stroke();
+  // Covers. With no back cover the front sits alone, centred over the tab,
+  // rather than beside an empty slot that would look like a failed upload.
+  if (back) {
+    _exDrawCover(ctx, front, px1, coversTop, slotW, coverH);
+    _exDrawCover(ctx, back, px1 + slotW + EX_COVGAP, coversTop, slotW, coverH);
+  } else {
+    _exDrawCover(ctx, front, px1 + (leftW - slotW) / 2, coversTop, slotW, coverH);
   }
-  if (front) {
-    const sc = Math.min(slotW / front.naturalWidth, EX_COVERH / front.naturalHeight);
-    ctx.save(); _exRoundRect(ctx, px1, y, slotW, EX_COVERH, P(6)); ctx.clip();
-    ctx.drawImage(front, px1 + (slotW - front.naturalWidth * sc) / 2,
-                  y + (EX_COVERH - front.naturalHeight * sc) / 2,
-                  front.naturalWidth * sc, front.naturalHeight * sc);
-    ctx.restore();
-  }
-  const stackX = px1 + slotW + P(12);
-  _exDrawGradeStack(ctx, f, stackX, y, px1 + innerW - stackX, EX_COVERH);
-  y += EX_COVERH + GAP;
 
-  // Score panel: rounded on top, SQUARE at the bottom so the list meets it.
-  const panelTop = y;
+  // Right column. The grade stack is sized to its content plus EX_GPAD all
+  // round and sits EX_GAP above the shoulder; GRADED/ID takes what is left
+  // above it. (Every comic assessment has an ID and a date; the fallback,
+  // stack filling the column, is for a record that somehow has neither.)
+  const gBottom = shoulder - EX_GAP;
+  if (hasProv) {
+    const gTop = gBottom - (_exGradeStackH(f) + EX_GPAD * 2);
+    _exDrawProvBox(ctx, item, rx, coversTop, EX_RCOLW, gTop - EX_GAP - coversTop);
+    _exDrawGradeStack(ctx, f, rx, gTop, EX_RCOLW, gBottom - gTop);
+  } else {
+    _exDrawGradeStack(ctx, f, rx, coversTop, EX_RCOLW, gBottom - coversTop);
+  }
+
+  // The dark container: the tab over the left column, widening at `shoulder`
+  // to full width, rounded at all four outer corners. arcTo at the reflex
+  // corner (tabR, shoulder) puts the fillet's centre OUTSIDE the shape, so it
+  // fills the notch - a concave curve, which is what the mock-up shows.
+  const bottom = paperTop + plan.h + EX_BOOKEND;
+  const L = px1, R = px1 + innerW, TR = px1 + leftW, r = P(12), rc = P(10);
   ctx.fillStyle = EXP.panel;
-  const r = P(12);
   ctx.beginPath();
-  ctx.moveTo(px1, panelTop + panelH); ctx.lineTo(px1, panelTop + r);
-  ctx.arcTo(px1, panelTop, px1 + r, panelTop, r); ctx.lineTo(px1 + innerW - r, panelTop);
-  ctx.arcTo(px1 + innerW, panelTop, px1 + innerW, panelTop + r, r);
-  ctx.lineTo(px1 + innerW, panelTop + panelH); ctx.closePath(); ctx.fill();
+  ctx.moveTo(L, tabTop + r);
+  ctx.arcTo(L, tabTop, L + r, tabTop, r);
+  ctx.lineTo(TR - r, tabTop);
+  ctx.arcTo(TR, tabTop, TR, tabTop + r, r);
+  ctx.lineTo(TR, shoulder - rc);
+  ctx.arcTo(TR, shoulder, TR + rc, shoulder, rc);
+  ctx.lineTo(R - r, shoulder);
+  ctx.arcTo(R, shoulder, R, shoulder + r, r);
+  ctx.lineTo(R, bottom - r);
+  ctx.arcTo(R, bottom, R - r, bottom, r);
+  ctx.lineTo(L + r, bottom);
+  ctx.arcTo(L, bottom, L, bottom - r, r);
+  ctx.closePath(); ctx.fill();
 
-  let py = panelTop + P(12);
   ctx.fillStyle = "#7aa838"; ctx.font = `700 ${P(11)}px ${F_COND}`;
   const sh = "ROBOGRADE SCORE";
   const shw = ctx.measureText(sh).width + (sh.length - 1) * P(2);
-  let scx = px1 + innerW / 2 - shw / 2;
+  let scx = px1 + leftW / 2 - shw / 2;
   ctx.textAlign = "left";
-  for (const ch of sh) { ctx.fillText(ch, scx, py + P(9)); scx += ctx.measureText(ch).width + P(2); }
-  py += P(20);
+  for (const ch of sh) { ctx.fillText(ch, scx, tabTop + P(21)); scx += ctx.measureText(ch).width + P(2); }
 
   const px0 = px1 + P(12);
   const depth = (window.RoboScoreV3 && window.RoboScoreV3.depthOf) ? window.RoboScoreV3.depthOf(item) : "main";
@@ -9541,31 +9627,29 @@ async function _exRenderSummary(item) {
     restoStar: !!item.restorationCheckRan,
     footerText: "V" + (window.RG_EPOCH || window.RG_GRADING_VERSION || ""),   // v6.46: the grading epoch, not the build
     plus: !!(f.v3 && f.v3.ceilingHit && f.v3.upsell),
-    // v6.63, Matt: the (+) sits "a bit low on the RG". Negative is up, in
-    // fractions of the numeral size. The RG box pushes its numeral down by
-    // _nudge to sit on the glyph midline; the (+) inherited that push and
-    // then needed a little of it back.
+    // v6.63: negative is up, in fractions of the numeral size. The RG box
+    // pushes its numeral down to sit on the glyph midline; the (+) inherited
+    // that push and needed a little of it back.
     plusDy: -0.06
   });
   const gx = px0 + boxSize + P(8);
-  const gw = px1 + innerW - P(12) - gx;
+  const gw = TR - P(12) - gx;
   const g2 = P(4);
   const cell = (cx, cy, cw, ch, val, lbl, numPx, lblPx) => {
     ctx.fillStyle = "#2a4a1e";
     _exRoundRect(ctx, cx, cy, cw, ch, P(6)); ctx.fill();
     ctx.save();
-    // v6.62, Matt: "The subscore values for Back, Spine, and Int. are clipping
-    // into the text in those boxes, so those numbers should be raised higher.
-    // The Front value should be raised as well."
-    // The number was centred at 48% of the cell and then drawn a further 0.34
-    // of its own size BELOW that baseline — on the short Back/Spine/Int cells
-    // that put its descender into the label. Centre at 40% and drop the extra
-    // baseline push to 0.30, which lifts every cell and lifts the short ones
-    // most, because the push is proportional to the number's size.
-    ctx.translate(cx + cw / 2, cy + ch * 0.40); ctx.scale(0.7, 1);
-    ctx.textAlign = "center"; ctx.fillStyle = "#b8d820";
+    // v6.62: centred at 40% with a 0.30 baseline push, so the number clears
+    // the label on the short Back/Spine/Int cells.
+    // v6.71: the INT cell is narrower in the tab layout, and "0.5" ran out of
+    // it. The numeral now narrows further when it would not fit; the size and
+    // baseline stay, so every cell's number still sits on the same line.
+    const _vt = val == null ? "\u2014" : String(val);
     ctx.font = `800 ${P(numPx)}px ${F_NUM}`;
-    ctx.fillText(val == null ? "\u2014" : String(val), 0, P(numPx) * 0.30);
+    const _sx = Math.min(0.7, (cw - P(4)) / Math.max(1, ctx.measureText(_vt).width));
+    ctx.translate(cx + cw / 2, cy + ch * 0.40); ctx.scale(_sx, 1);
+    ctx.textAlign = "center"; ctx.fillStyle = "#b8d820";
+    ctx.fillText(_vt, 0, P(numPx) * 0.30);
     ctx.restore();
     ctx.textAlign = "center"; ctx.fillStyle = "#7aa838";
     ctx.font = `600 ${P(lblPx)}px ${F_COND}`;
@@ -9579,31 +9663,17 @@ async function _exRenderSummary(item) {
   cell(gx, py + topH + g2, unit * 2, botH, sub ? f.fmtSub(sub.back) : null, "BACK", 17, 8);
   cell(gx + unit * 2 + g2, py + topH + g2, unit * 2, botH, sub ? f.fmtSub(sub.spine) : null, "SPINE", 17, 8);
   cell(gx + unit * 4 + g2 * 2, py + topH + g2, unit, botH, sub ? f.fmtSub(sub.interior) : null, "INT", 17, 8);
-  y = panelTop + panelH;
 
-  // The list, between the two green rules that continue the panel's edges.
+  // The list, between two green rules, inside the container.
   ctx.fillStyle = "#2a4a1e";
-  ctx.fillRect(px1, y, EX_RULE, plan.h);
-  ctx.fillRect(px1 + innerW - EX_RULE, y, EX_RULE, plan.h);
+  ctx.fillRect(L, paperTop, EX_RULE, plan.h);
+  ctx.fillRect(R - EX_RULE, paperTop, EX_RULE, plan.h);
   ctx.save();
-  ctx.beginPath(); ctx.rect(px1 + EX_RULE, y, paperW, plan.h); ctx.clip();
-  _exDrawPaper(ctx, fit.sections, fit.hidden, px1 + EX_RULE, y, paperW, plan);
+  ctx.beginPath(); ctx.rect(L + EX_RULE, paperTop, paperW, plan.h); ctx.clip();
+  _exDrawPaper(ctx, fit.sections, fit.hidden, L + EX_RULE, paperTop, paperW, plan);
   ctx.restore();
-  y += plan.h;
 
-  // The bookend: same colour as the score panel, square on top, rounded below,
-  // so the panel and the list read as one object closed at both ends.
-  ctx.fillStyle = EXP.panel;
-  const br = P(12);
-  ctx.beginPath();
-  ctx.moveTo(px1, y); ctx.lineTo(px1 + innerW, y);
-  ctx.lineTo(px1 + innerW, y + EX_BOOKEND - br);
-  ctx.arcTo(px1 + innerW, y + EX_BOOKEND, px1 + innerW - br, y + EX_BOOKEND, br);
-  ctx.lineTo(px1 + br, y + EX_BOOKEND);
-  ctx.arcTo(px1, y + EX_BOOKEND, px1, y + EX_BOOKEND - br, br);
-  ctx.closePath(); ctx.fill();
-
-  _exDrawFoot(ctx, by, px1, innerW);
+  _exDrawFoot(ctx, 0, px1, innerW);
   return c;
 }
 
@@ -9681,6 +9751,36 @@ function _exShowPreview(blob, filename) {
   requestAnimationFrame(() => requestAnimationFrame(() => { o.style.transform = "translateX(0)"; }));
 }
 
+// v6.71: the image draws in Barlow Condensed and IBM Plex Mono, and the app's
+// own <head> loads NEITHER. Barlow only arrived if the label viewer had been
+// opened first (print-label.js adds it); Plex Mono never did, so the defect
+// list shipped in the device's fallback monospace. The old comment here said
+// "the fonts are already loaded by the app's CSS" - they were not. Fetch them,
+// then ask for each face the canvas uses, because canvas text does not trigger
+// a webfont download by itself.
+async function _exEnsureFonts() {
+  if (!document.fonts) return;
+  if (!document.querySelector("link[data-export-fonts]")) {
+    const l = document.createElement("link");
+    l.rel = "stylesheet";
+    l.href = "https://fonts.googleapis.com/css2"
+      + "?family=Barlow+Condensed:wght@500;600;700;800"
+      + "&family=IBM+Plex+Mono:ital,wght@0,400;0,700;1,400"
+      + "&display=swap";
+    l.setAttribute("data-export-fonts", "true");
+    const loaded = new Promise(res => { l.onload = l.onerror = res; setTimeout(res, 4000); });
+    document.head.appendChild(l);
+    await loaded;
+  }
+  const faces = ["500 20px 'Barlow Condensed'", "600 20px 'Barlow Condensed'", "700 20px 'Barlow Condensed'",
+                 "800 20px 'Barlow Condensed'", "400 20px 'IBM Plex Mono'", "700 20px 'IBM Plex Mono'",
+                 "italic 400 20px 'IBM Plex Mono'", "900 20px 'Noto Sans Display'", "600 20px 'Noto Sans Display'",
+                 "800 20px 'League Spartan'"];
+  try { await Promise.race([Promise.all(faces.map(x => document.fonts.load(x))), new Promise(r => setTimeout(r, 5000))]); }
+  catch (e) {}
+  try { await document.fonts.ready; } catch (e) {}
+}
+
 async function _exRun(btnId, item, renderer, slug) {
   const btn = document.getElementById(btnId);
   // v5.83: write the status into the button's <span> when it has one. The
@@ -9692,11 +9792,9 @@ async function _exRun(btnId, item, renderer, slug) {
   const label = slot ? slot.innerHTML : "";
   if (btn) { btn.disabled = true; slot.textContent = "Rendering…"; }
   try {
-    // The fonts are already loaded by the app's CSS - this waits for that, it
-    // does NOT fetch a webfont. A face that has not finished loading when
-    // fillText runs falls back silently and the image ships in the wrong
-    // typeface with no error anywhere.
-    if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) {} }
+    // A face that has not finished loading when fillText runs falls back
+    // silently and the image ships in the wrong typeface with no error.
+    await _exEnsureFonts();
     const canvas = await renderer(item);
     const blob = await new Promise((res, rej) => {
       // v5.83: PNG, not JPEG. This image is flat colour, hard edges and small
