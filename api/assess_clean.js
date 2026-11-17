@@ -209,11 +209,11 @@ export default async function handler(req, res) {
   const afterRest  = !!(after.restorationFlag  || after.restorationHighConfidence);
   const restorationAppeared = !beforeRest && afterRest;
 
-  // Page quality. A clean and press does not change interior paper tone, so a
-  // move is not a result to show — it is a SIGNAL. One tier is assessment
-  // noise (the parity round measured PQ tracking at slope 0.32 against 1.00).
-  // More than one tier LIGHTER is consistent with bleaching or
-  // deacidification, which is restoration, not cleaning.
+  // Page quality. One tier is assessment noise (the parity round measured PQ
+  // tracking at slope 0.32 against 1.00). A move of more than one tier LIGHTER
+  // is reported as exactly that - the pages appear whiter. v6.75, Matt: no
+  // guess at the cause; different lighting between the two photo sets is as
+  // likely an explanation as anything done to the book.
   const pqB = pqIndex(before.pageQuality), pqA = pqIndex(after.pageQuality);
   const pqDelta = (pqB >= 0 && pqA >= 0) ? (pqB - pqA) : null;   // positive = lighter after
   const pageQualityMove = {
@@ -255,7 +255,7 @@ WRITE 70-130 WORDS, NEVER MORE, plain prose, no headings, no bullet points. Writ
 3. Say what CHANGED and what did NOT, from the two lists. Report only what is apparent in the two assessments. Do not say or imply what any treatment can or cannot achieve, do not assume the book was only pressed, and do not predict what further work would or would not change: cleaners have many methods and you do not know which were used.
 4. A defect in the resolved list may be a difference in how two photo sets were read rather than a change to the book, especially when a similar defect appears in the newly reported list at the same place. When that is the case, say the two are probably the same thing described differently, rather than crediting a repair.
 5. Newly reported defects are, likewise, more often a detection difference than damage caused by the work — unless they are severe. Do not accuse.
-6. ${pageQualityMove.suspicious ? `PAGE QUALITY MOVED ${pqDelta} TIERS LIGHTER (${pageQualityMove.before} to ${pageQualityMove.after}). Cleaning and pressing do not lighten interior paper; that is chemistry. A move this large is consistent with bleaching or deacidification, which are restoration rather than cleaning. Raise it, carefully, as something the owner should be aware of — not as an accusation.` : 'Do not discuss page quality; it did not move meaningfully, which is expected.'}
+6. ${pageQualityMove.suspicious ? `PAGE QUALITY: the after assessment reads the interior pages as whiter (${pageQualityMove.before} before, ${pageQualityMove.after} after). Say only that the interior pages appear whiter in the after photos. Do not suggest a cause: a difference in lighting between the two photo sets is as likely as anything done to the book.` : 'Do not discuss page quality; it did not move meaningfully, which is expected.'}
 
 Return ONLY the prose. No preamble, no JSON, no quotation marks around it.`;
 

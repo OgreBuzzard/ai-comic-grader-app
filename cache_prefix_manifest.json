@@ -1,11 +1,11 @@
 {
   "note": "Written by check-cache-prefix.mjs. Do not hand-edit. A change here means the cached prompt prefix changed and the keep-warm ping has been re-verified against it.",
-  "updatedAt": "2026-11-16T05:24:35.153Z",
-  "gradingEpoch": "6.68",
+  "updatedAt": "2026-11-17T23:30:49.208Z",
+  "gradingEpoch": "6.74",
   "prefixes": {
-    "main": "8f7cae5caf0a3006",
-    "deep:deep": "f88b764982ee6c7b",
-    "deep:deep_ic": "6d3ed9024eef3cff",
-    "deep:resto": "f9e342633ad86dbc"
+    "main": "70f0fe2431a98360",
+    "deep:deep": "45cab947c6ad2f9c",
+    "deep:deep_ic": "f1c7b448d074d8cf",
+    "deep:resto": "1ef4522419246d62"
   }
 }
