@@ -25,20 +25,27 @@
 
 const norm = s => String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' ');
 
-export const ebayKey = (title, issue) => norm(title) + '|' + norm(issue);
+// v6.72: keyed on GRADE too. Keyed on title|issue alone, every copy of a book
+// showed whichever grade was looked up last - all nine Iron Man 55s in admin
+// carried the 6.0 copy's $654. A row for a different grade is a different
+// number, so a book with no row AT ITS OWN GRADE shows nothing.
+const gnorm = g => { const n = parseFloat(g); return Number.isFinite(n) ? String(n) : ''; };
+export const ebayKey = (title, issue, grade) => norm(title) + '|' + norm(issue) + '|' + gnorm(grade);
 
 // Every cached ask, newest-first per book. Returns a Map of key -> entry.
 // `limit` caps the read; the collection holds one doc per (book, grade, year)
 // ever asked for, so it is small, but it is not bounded by anything structural.
-export async function loadEbayAsks(db, limit = 2000) {
+export async function loadEbayAsks(db, limit = 5000) {
   const out = new Map();
   if (!db) return out;
   try {
-    const snap = await db.collection('ebay_asks').limit(limit).get();
+    // v6.72: newest first. An unordered .limit() reads in doc-id order, so once
+    // the collection outgrows the limit it is arbitrary which books drop out.
+    const snap = await db.collection('ebay_asks').orderBy('fetchedAt', 'desc').limit(limit).get();
     snap.forEach(doc => {
       const d = doc.data() || {};
       if (!d.result) return;
-      const k = ebayKey(d.title, d.issue);
+      const k = ebayKey(d.title, d.issue, d.grade);
       const prev = out.get(k);
       // Newest wins. A book re-asked at a different grade has two rows; the
       // recent one is the one the user most likely saw.

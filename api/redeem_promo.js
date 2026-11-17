@@ -83,6 +83,18 @@ function findActivePromo(code, nowIso) {
 }
 
 export default async function handler(req, res) {
+  // v6.73: ANSWER THE CORS PREFLIGHT. The native apps load from
+  // capacitor://localhost and call https://robograder.app, so every POST with
+  // an Authorization header is cross-origin and the WebView sends OPTIONS
+  // first. This handler answered OPTIONS with 405, the preflight failed, and
+  // the real request was never sent. For credit_settle that meant no native
+  // assessment was ever confirmed, so /api/credit_sweep refunded every one of
+  // them 15 minutes later: 180 of 189 charged assessments, 15-17 Nov 2026.
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, x-client-secret');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }

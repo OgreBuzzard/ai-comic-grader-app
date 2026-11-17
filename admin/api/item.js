@@ -386,7 +386,8 @@ export default async function handler(req, res) {
     try {
       const { loadEbayAsks, ebayKey, ebayDisplay } = await import('../lib/ebay_cache.js');
       const m = await loadEbayAsks(db);
-      item.ebayAsk = ebayDisplay(m.get(ebayKey(item.title, item.issue)));
+      item.ebayAsk = ebayDisplay(m.get(ebayKey(item.title, item.issue,
+        item.cgcGrade || item.psaGrade || item.assessedCGCGrade || item.predictedGrade)));
     } catch (_) { item.ebayAsk = null; }
 
     return res.status(200).json({ item });

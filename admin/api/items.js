@@ -234,7 +234,10 @@ export default async function handler(req, res) {
             return mm ? fmtFmv(mm) : null;
           } catch (_) { return null; }
         })(),
-        ebayAsk: ebayDisplay(ebayMap.get(ebayKey(flat.title, flat.issue))),
+        // v6.72: at the grade the app asks at - the official grade if there is
+        // one, else the predicted grade (index.html _fmvGrade).
+        ebayAsk: ebayDisplay(ebayMap.get(ebayKey(flat.title, flat.issue,
+          flat.cgcGrade || flat.psaGrade || flat.assessedCGCGrade || flat.predictedGrade))),
       };
     });
 

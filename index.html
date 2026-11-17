@@ -900,6 +900,15 @@ onAuthStateChanged(auth, async user => {
       border-radius: 3px; flex-shrink: 0;
       box-shadow: 0 1px 4px rgba(40,30,10,0.25);
     }
+    /* v6.72: the Print Label button's thumbnail is a square label, so it is
+       square: the same 32px height as the Summary thumbnail beside it, so the
+       two buttons in the row stay the same height. */
+    .rg-btn.btn-with-thumb .action-btn-thumb.action-btn-thumb-sq {
+      width: 32px; height: 32px;
+    }
+    /* v6.73, Matt: the Print Label thumbnail sits on the RIGHT, so the tight
+       side padding moves to the right with it. */
+    .rg-btn.btn-with-thumb.btn-thumb-right { padding: 6px 7px 6px 14px; }
     .btn-topbar.btn-grade .grade-btn-thumb {
       width: 30px; height: 44px; object-fit: cover;
       border-radius: 4px; flex-shrink: 0;
@@ -2433,18 +2442,18 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.70";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.73";
       // v6.46: the GRADING epoch - the version the assessment last actually
       // changed at. RG_GRADING_VERSION above is the BUILD number and moves on
       // every change; this one does not. The label stamps THIS, because "V6.45"
       // on a label is a claim about what graded the book, not about which CSS
       // fix was live that day. See lib/version.js and HOW_WE_WORK section 10a.
-      window.RG_EPOCH = window.RG_EPOCH || "6.68";
+      window.RG_EPOCH = window.RG_EPOCH || "6.73";
       (function(){
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.70");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.73");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -7648,7 +7657,7 @@ function showDetail(id) {
     // the slot the old Defect List button had and opens the SAME label viewer
     // the List view uses, seeded on this one book, so the user picks a style
     // and gets the Avery-positioned PDF that flow already produces.
-    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n      <button class="rg-btn rg-btn-action rg-btn-md btn-with-thumb" id="export-summary-btn" onclick="exportSummaryImage('${esc(selected.id)}')"><img src="assets/Summary_Image_Placeholder.png" alt="" decoding="async" class="action-btn-thumb"><span>Summary<br>Image</span></button>\n      <button class="rg-btn rg-btn-action rg-btn-md" id="print-label-btn" onclick="printLabel('${esc(selected.id)}')">Print Label</button>\n    </div>`;
+    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n      <button class="rg-btn rg-btn-action rg-btn-md btn-with-thumb" id="export-summary-btn" onclick="exportSummaryImage('${esc(selected.id)}')"><img src="assets/Summary_Image_Placeholder.png" alt="" decoding="async" class="action-btn-thumb"><span>Summary<br>Image</span></button>\n      <button class="rg-btn rg-btn-action rg-btn-md btn-with-thumb btn-thumb-right" id="print-label-btn" onclick="printLabel('${esc(selected.id)}')"><span>Print<br>Label</span><img src="assets/Print_Label_Thumb.png" alt="" decoding="async" class="action-btn-thumb action-btn-thumb-sq"></button>\n    </div>`;
   }
   html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    ${_giveBtn}\n    ${_complainBtn}\n  </div>\n  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    <button class="rg-btn rg-btn-destructive rg-btn-md" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')" style="grid-column:1 / span 2;justify-self:center;width:calc(50% - 5px)">Delete</button>\n  </div></div>`;
   document.getElementById("main").innerHTML = html;
@@ -8575,7 +8584,14 @@ const EXP = {
   // Ink that sits ON the beige. The old inks were chosen against black and are
   // unreadable here.
   beigeInk:"#1a1610", beigeInkDim:"#5a5247",
-  titleBand:"#fdfcf9",                   // the near-white strip behind the title
+  // v6.72, Matt: "a lighter shade of gray instead of white." Neutral, a touch
+  // cool so it sits with the sage body rather than reading as paper.
+  titleBand:"#e3e6e1",
+  // v6.72: the rule under the header band, and the thin edges and soft shadow
+  // that lift the containers off the body.
+  headRule:"#8f988a",
+  edgeGreen:"#4f7a30", edgeBlack:"#4a4a5c",
+  shadow:"rgba(16,22,8,0.45)",
   // v6.71, Matt: both imprint lines one colour, the upper one heavier. One
   // brick red tuned for the near-white band (red1/red2 were picked on black).
   imprint: "#a4573f"
@@ -8794,7 +8810,7 @@ function _exImprint(item) {
 
 function _exHeaderH(ctx, item) {
   const im = _exImprint(item);
-  let h = P(26) + P(29);   // v5.82: matches the P(26) top in _exDrawHeader
+  let h = P(26) + P(33);   // v6.72: title line P(29) -> P(33) with the larger title
   if (im.a) h += P(3) + P(17);
   if (im.b) h += P(2) + P(17);
   return h + P(12);
@@ -8820,16 +8836,22 @@ function _exDrawHeader(ctx, item, bx, by, boxW, innerW) {
   ctx.lineTo(bx + boxW, by + h);
   ctx.closePath();
   ctx.fillStyle = EXP.titleBand; ctx.fill();
+  // v6.72, Matt: "a slightly thicker border between the header and the rest".
+  ctx.fillStyle = EXP.headRule;
+  ctx.fillRect(bx, by + h - P(1.5), boxW, P(1.5));
   ctx.restore();
   let y = by + P(26);   // v5.82: was P(16), inside a page inset that no longer exists
   const tp = _exTitleParts(item);
   ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
   _exStretch(ctx, "extra-condensed");
-  let px = P(26);
+  // v6.72, Matt: title and issue "slightly larger and heavier". P(26) ->
+  // P(30); 900 is already the face's heaviest weight, so the title gets a
+  // hairline stroke in its own ink on top, and the issue goes 600 -> 700.
+  let px = P(30);
   const widthAt = p => {
     ctx.font = `900 ${p}px ${F_TITLE}`;
     let w = ctx.measureText(tp.title).width;
-    if (tp.issue) { ctx.font = `600 ${p}px ${F_TITLE}`; w += p * 0.28 + ctx.measureText(tp.issue).width; }
+    if (tp.issue) { ctx.font = `700 ${p}px ${F_TITLE}`; w += p * 0.28 + ctx.measureText(tp.issue).width; }
     return w;
   };
   while (px > P(14) && widthAt(px) > innerW) px -= 1;
@@ -8839,20 +8861,23 @@ function _exDrawHeader(ctx, item, bx, by, boxW, innerW) {
   if (widthAt(px) > innerW) {
     // Ellipsise the TITLE, never the issue - the issue is the half that
     // identifies the book.
-    ctx.font = `600 ${px}px ${F_TITLE}`;
+    ctx.font = `700 ${px}px ${F_TITLE}`;
     const issW = tp.issue ? px * 0.28 + ctx.measureText(tp.issue).width : 0;
     ctx.font = `900 ${px}px ${F_TITLE}`;
     while (t.length > 1 && ctx.measureText(t + "…").width + issW > innerW) t = t.slice(0, -1);
     t += "…";
   }
-  ctx.fillText(t, x, y + P(23));
+  const tb = y + P(26);
+  ctx.fillText(t, x, tb);
+  ctx.strokeStyle = EXP.titleInk; ctx.lineWidth = P(0.5); ctx.lineJoin = "round";
+  ctx.strokeText(t, x, tb);
   const cx = x + ctx.measureText(t).width + px * 0.28;
   if (tp.issue) {
     ctx.fillStyle = EXP.issueInk;
-    ctx.font = `600 ${px}px ${F_TITLE}`;
-    ctx.fillText(tp.issue, cx, y + P(23));
+    ctx.font = `700 ${px}px ${F_TITLE}`;
+    ctx.fillText(tp.issue, cx, tb);
   }
-  y += P(29);
+  y += P(33);
   _exStretch(ctx, "normal");
 
   const im = _exImprint(item);
@@ -9427,13 +9452,33 @@ const EX_COVGAP  = P(5);     // between the two covers
 const EX_BOOKEND = P(14);
 const EX_PQ_H    = P(26);
 
+// v6.72, Matt: "Are there any other style techniques that can help the
+// containers pop more? Perhaps a very slight drop shadow?" A soft shadow under
+// each container on the body (covers, GRADED/ID, Predicted Grade, the score
+// tab + list), set for the FILL only and cleared before anything else draws,
+// so text and strokes never pick it up. EX_SHADOWS turns the whole effect off.
+const EX_SHADOWS = true;
+function _exLift(ctx, on) {
+  if (on && EX_SHADOWS) {
+    ctx.shadowColor = EXP.shadow; ctx.shadowBlur = P(6);
+    ctx.shadowOffsetX = 0; ctx.shadowOffsetY = P(2);
+  } else {
+    ctx.shadowColor = "rgba(0,0,0,0)"; ctx.shadowBlur = 0;
+    ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+  }
+}
+
 // GRADED and ID, each a small label over its value, centred. Matt (v6.71):
 // no horizontal squeeze - the date is MM/DD/YY instead. Label and value sit on
 // separate lines because even "GRADED 08/17/26" is wider than this column.
 function _exDrawProvBox(ctx, item, x, y, w, h) {
   const p = _exProvText(item);
   ctx.fillStyle = "#2a4a1e";
+  _exLift(ctx, true);
   _exRoundRect(ctx, x, y, w, h, P(8)); ctx.fill();
+  _exLift(ctx, false);
+  ctx.strokeStyle = EXP.edgeGreen; ctx.lineWidth = P(1);
+  _exRoundRect(ctx, x, y, w, h, P(8)); ctx.stroke();
   const pairs = [];
   if (p.short) pairs.push(["GRADED", p.short]);
   if (p.id) pairs.push(["ID", p.id]);
@@ -9464,8 +9509,10 @@ function _exGradeStackH(f) {
 }
 function _exDrawGradeStack(ctx, f, x, y, w, h) {
   ctx.fillStyle = "#0d0d0f";
+  _exLift(ctx, true);
   _exRoundRect(ctx, x, y, w, h, P(10)); ctx.fill();
-  ctx.strokeStyle = "#2a2a3a"; ctx.lineWidth = Math.max(1, P(1));
+  _exLift(ctx, false);
+  ctx.strokeStyle = EXP.edgeBlack; ctx.lineWidth = P(1);   // v6.72: was #2a2a3a, invisible
   _exRoundRect(ctx, x, y, w, h, P(10)); ctx.stroke();
 
   const cx = x + w / 2;
@@ -9531,7 +9578,9 @@ function _exDrawGradeStack(ctx, f, x, y, w, h) {
 // visible edge so a cover that fails to load does not just vanish.
 function _exDrawCover(ctx, img, x, y, w, h) {
   ctx.fillStyle = "#23232a";
+  _exLift(ctx, true);
   _exRoundRect(ctx, x, y, w, h, P(6)); ctx.fill();
+  _exLift(ctx, false);
   if (!img) {
     ctx.strokeStyle = "#3a3a44"; ctx.lineWidth = Math.max(1, P(1));
     _exRoundRect(ctx, x, y, w, h, P(6)); ctx.stroke();
@@ -9623,7 +9672,10 @@ async function _exRenderSummary(item) {
   ctx.arcTo(R, bottom, R - r, bottom, r);
   ctx.lineTo(L + r, bottom);
   ctx.arcTo(L, bottom, L, bottom - r, r);
-  ctx.closePath(); ctx.fill();
+  ctx.closePath();
+  _exLift(ctx, true); ctx.fill(); _exLift(ctx, false);
+  // v6.72: thin green edge round the whole tab + list, same as GRADED/ID.
+  ctx.strokeStyle = EXP.edgeGreen; ctx.lineWidth = P(1); ctx.stroke();
 
   ctx.fillStyle = "#7aa838"; ctx.font = `700 ${P(11)}px ${F_COND}`;
   const sh = "ROBOGRADE SCORE";
@@ -14953,7 +15005,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "6.70"),
+      appVersion: (window.RG_GRADING_VERSION || "6.73"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
