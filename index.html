@@ -9817,7 +9817,7 @@ function _exShowPreview(blob, filename) {
 }
 
 // v6.71: the image draws in Barlow Condensed and IBM Plex Mono, and the app's
-// own <head> loads NEITHER. Barlow only arrived if the label viewer had been
+// own page head loads NEITHER. Barlow only arrived if the label viewer had been
 // opened first (print-label.js adds it); Plex Mono never did, so the defect
 // list shipped in the device's fallback monospace. The old comment here said
 // "the fonts are already loaded by the app's CSS" - they were not. Fetch them,
@@ -13817,7 +13817,6 @@ function renderPostCleaningResults(item) {
     <div style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:11px;color:${_PC.dim}">
       <span style="font-weight:800;letter-spacing:1.2px;font-size:9px">PAGE QUALITY</span>
       <span style="color:#e0e4dc">${esc(pq.before)} → ${esc(pq.after)}</span>
-      ${pq.suspicious ? `<span style="color:#e8b36a;font-size:10px">· flagged as a larger move than cleaning explains</span>` : ''}
     </div>` : '';
 
   const lists = [
