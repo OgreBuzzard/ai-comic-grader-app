@@ -932,6 +932,42 @@ onAuthStateChanged(auth, async user => {
       filter: brightness(0.95);
       transform: scale(0.97);
     }
+    /* v6.77, Matt: THE BOTTOM BAR. Start Grading moves here from the header
+       (thumb's reach, and it is the button people tap most), with the print
+       queue to its right: the printer toggle shows/hides the per-row print
+       icons and carries the queue count, and PRINT opens the sheet viewer.
+       The left third is kept empty on purpose - it is where Gallery goes. */
+    #bottom-bar {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 100;
+      background: #ffffff; border-top: 1px solid #d8d0c8;
+      padding: 8px 12px calc(env(safe-area-inset-bottom, 0px) + 8px);
+      display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px;
+      box-shadow: 0 -2px 10px rgba(40,30,10,0.06);
+    }
+    #bottom-bar.kb-hidden { display: none !important; }
+    #bottom-bar .bb-right { display: flex; align-items: center; justify-content: flex-start; gap: 8px; }
+    #bb-print-toggle {
+      position: relative; width: 46px; height: 46px; border-radius: 12px;
+      border: 1.5px solid #c8c0b4; background: #ffffff; cursor: pointer; padding: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #bb-print-toggle.on { background: #2a2724; border-color: #2a2724; }
+    #bb-print-toggle svg { width: 30px; height: 30px; }
+    #bb-print-count {
+      position: absolute; top: -7px; right: -7px; min-width: 20px; height: 20px; padding: 0 5px;
+      border-radius: 10px; background: #c97a14; color: #fff; box-sizing: border-box;
+      font: 800 12px/20px 'Barlow Condensed', sans-serif; text-align: center;
+      box-shadow: 0 0 0 2px #fff;
+    }
+    #bb-print-go {
+      height: 46px; padding: 0 14px; border-radius: 12px; cursor: pointer;
+      border: 1.5px solid #a8701a;
+      background: linear-gradient(180deg, #c97a14 0%, #dd9430 38%, #e8b571 100%);
+      color: #0d0d0f; font: 800 16px/1 'Barlow Condensed', sans-serif; letter-spacing: 1.5px;
+    }
+    #bb-print-go:disabled { opacity: 0.4; cursor: default; }
+    body.has-bottom-bar #main { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); }
     .btn-gear {
       background: none; border: none; color: #8a7a6a; cursor: pointer;
       padding: 4px 6px; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
@@ -2248,10 +2284,6 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         <button class="btn btn-topbar btn-buy" onclick="showBuyCredits()" id="credits-btn" style="display:none">Buy</button>
       </div>
 
-      <button class="btn btn-topbar btn-grade" onclick="gradeFromHeader()" id="grade-btn" aria-label="Start Grading" title="Start Grading" style="display:none">
-        <img src="assets/ghosts/Front_Cover.jpg" alt="" decoding="async" class="grade-btn-thumb">
-        <span>Start<br>Grading</span>
-      </button>
       <button class="btn-gear" onclick="openSettings()" title="Settings" id="settings-btn" aria-label="Settings">
         
         <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
@@ -2261,6 +2293,17 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
     </div>
   </div>
   <div id="main"></div>
+</div>
+<div id="bottom-bar" style="display:none">
+  <div class="bb-left"></div>
+  <button class="btn btn-topbar btn-grade" onclick="gradeFromHeader()" id="grade-btn" aria-label="Start Grading" title="Start Grading">
+    <img src="assets/ghosts/Front_Cover.jpg" alt="" decoding="async" class="grade-btn-thumb">
+    <span>Start<br>Grading</span>
+  </button>
+  <div class="bb-right" id="bb-print" style="visibility:hidden">
+    <button type="button" id="bb-print-toggle" onclick="togglePrintModeFromBar()" aria-label="Show print queue buttons" title="Show or hide the add-to-print buttons"><span id="bb-print-icon"></span><span id="bb-print-count" style="display:none">0</span></button>
+    <button type="button" id="bb-print-go" onclick="printQueueSheet()">PRINT</button>
+  </div>
 </div>
 
 <div id="app-confirm-overlay" style="display:none" onclick="if(event.target===this)_appConfirmResolve(false)">
@@ -2442,7 +2485,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.76";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.77";
       // v6.46: the GRADING epoch - the version the assessment last actually
       // changed at. RG_GRADING_VERSION above is the BUILD number and moves on
       // every change; this one does not. The label stamps THIS, because "V6.45"
@@ -2453,7 +2496,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.76");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.77");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -5455,6 +5498,60 @@ async function loadItems() {
   if (typeof window.signalAppReady === "function") window.signalAppReady();
 }
 
+function _setBottomBar(on) {
+  const bar = document.getElementById("bottom-bar");
+  if (!bar) return;
+  bar.style.display = on ? "" : "none";
+  document.body.classList.toggle("has-bottom-bar", !!on);
+  if (on) renderBottomBar();
+}
+// The print half of the bar. Hidden until the user has a graded book (a new
+// user has nothing to label); the count is the number of books queued.
+function renderBottomBar() {
+  try {
+    const wrap = document.getElementById("bb-print");
+    if (!wrap) return;
+    const graded = (items || []).some(c => c.roboGrade && c.id !== SAMPLE_COMIC_ID);
+    wrap.style.visibility = graded ? "visible" : "hidden";
+    const n = (items || []).filter(c => c.inPrintQueue === true && c.roboGrade && c.id !== SAMPLE_COMIC_ID).length;
+    const on = _printModeOn();
+    const tog = document.getElementById("bb-print-toggle");
+    if (tog) {
+      tog.classList.toggle("on", on);
+      tog.setAttribute("aria-pressed", on ? "true" : "false");
+    }
+    const icon = document.getElementById("bb-print-icon");
+    if (icon) icon.innerHTML = on ? PRINT_ICON_SVG.replace("stroke:#7aa838", "stroke:#ffffff") : PRINT_ICON_SVG.replace("stroke:#7aa838", "stroke:#2a2724");
+    const cnt = document.getElementById("bb-print-count");
+    if (cnt) { cnt.textContent = String(n); cnt.style.display = n ? "" : "none"; }
+    const go = document.getElementById("bb-print-go");
+    if (go) go.disabled = !n;
+  } catch (e) {}
+}
+function _printModeOn() { return _printOptInSession || window._printOptIn === true; }
+function togglePrintModeFromBar() {
+  const turnOn = !_printModeOn();
+  if (turnOn) enablePrintMode(); else disablePrintMode();
+  // The icons live on the List view; turning them on from anywhere else takes
+  // you there, because that is the only place they do anything.
+  if (turnOn && view !== "list") showList();
+}
+// A fixed bar rides up on top of the on-screen keyboard in a WebView and covers
+// the field being typed into. Hide it while any text field has focus.
+document.addEventListener("focusin", e => {
+  const t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) {
+    const b = document.getElementById("bottom-bar"); if (b) b.classList.add("kb-hidden");
+  }
+});
+document.addEventListener("focusout", () => {
+  setTimeout(() => {
+    const a = document.activeElement;
+    if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable)) return;
+    const b = document.getElementById("bottom-bar"); if (b) b.classList.remove("kb-hidden");
+  }, 50);
+});
+
 function refreshHeaderControls() {
   const loading = !!window._loadingState;
   const coinBtn = document.getElementById("credit-coin-btn");
@@ -5466,8 +5563,8 @@ function refreshHeaderControls() {
     if (coinBtn) coinBtn.style.display = "none";
     if (buyBtn) buyBtn.style.display = "none";
     if (addBtn) addBtn.style.display = "none";
-    if (gradeBtn && !gradeBtn.dataset.shown) gradeBtn.style.display = "none";
     if (placeholder) placeholder.style.display = "";
+    _setBottomBar(false);
   } else {
     if (coinBtn) coinBtn.style.display = "";
     if (buyBtn) buyBtn.style.display = "";
@@ -5475,12 +5572,8 @@ function refreshHeaderControls() {
       addBtn.style.display = "";
       addBtn.style.visibility = "visible";
     }
-    if (gradeBtn && !gradeBtn.dataset.shown) {
-      gradeBtn.style.display = "";
-      gradeBtn.style.visibility = "visible";
-      gradeBtn.dataset.shown = "1";
-    }
     if (placeholder) placeholder.style.display = "none";
+    _setBottomBar(true);
   }
 }
 
@@ -6492,7 +6585,8 @@ let _printOptInSession = false;
 function enablePrintMode() {
   _printOptInSession = true;
   window._printOptIn = true;
-  renderList();
+  if (view === "list") renderList();
+  renderBottomBar();
   // Persist so the Print drop-zone stays on across reloads (best-effort).
   try {
     if (window._currentUser && window._db && window._fsSetDoc && window._fsDoc) {
@@ -6504,7 +6598,8 @@ function enablePrintMode() {
 function disablePrintMode() {
   _printOptInSession = false;
   window._printOptIn = false;
-  renderList();
+  if (view === "list") renderList();
+  renderBottomBar();
   // Persist the off state so print mode stays off across reloads (best-effort).
   try {
     if (window._currentUser && window._db && window._fsSetDoc && window._fsDoc) {
@@ -6577,6 +6672,28 @@ function _typeFilterChips() {
   return `<div style="display:flex;gap:6px;margin:4px 0 14px">${box("comic", "Comics", _showComics)}${box("card", "Cards", _showCards)}</div>`;
 }
 
+// v6.77, Matt: A-Z / DATE, styled like the OWNED / SOLD / WATCHING pill. No
+// dropdown and no search bar. Remembered on this device.
+try { const _s = localStorage.getItem("rg_list_sort"); if (_s === "gradeDate" || _s === "title") sortBy = _s; } catch (e) {}
+function _sortToggle() {
+  const seg = (key, label) => {
+    const on = (sortBy === "gradeDate") === (key === "gradeDate");
+    const st = on ? "background:rgba(40,80,50,0.9);color:#b8e6c0;" : "background:transparent;color:#6f8f76;";
+    const div = key === "gradeDate" ? "border-left:1px solid rgba(120,180,130,0.25);" : "";
+    return `<button type="button" onclick="setListSort('${key}')" aria-pressed="${on}" style="flex:none;min-width:64px;border:none;${div}padding:7px 16px;font-size:11px;font-weight:700;letter-spacing:1px;text-align:center;cursor:pointer;-webkit-tap-highlight-color:transparent;${st}">${label}</button>`;
+  };
+  // Only as wide as its two words (Matt), centred over the list.
+  return `<div style="display:flex;justify-content:center;margin:2px 0 12px"><div style="${_OWNERSHIP_PILL_WRAP};width:auto">${seg("title", "A–Z")}${seg("gradeDate", "DATE")}</div></div>`;
+}
+function setListSort(key) {
+  if (key !== "gradeDate" && key !== "title") return;
+  if (sortBy === key) return;
+  sortBy = key;
+  try { localStorage.setItem("rg_list_sort", key); } catch (e) {}
+  renderList();
+  window.scrollTo(0, 0);
+}
+
 function renderList() {
   if (window._rgCollapseLoadedFor !== _collapseKey()) { _loadCollapsed(); window._rgCollapseLoadedFor = _collapseKey(); }
   const main = document.getElementById("main");
@@ -6615,6 +6732,13 @@ function renderList() {
   filt.forEach(c => { const k = _dupKey(c); _dupCounts[k] = (_dupCounts[k] || 0) + 1; });
   const OWNERSHIP_ORDER = [ "Owned", "Sold", "Watching" ];
   const buildTitleGroups = list => {
+    // v6.77, Matt: DATE = most recently graded first, one flat run per section
+    // (title groups would scatter a date order). Books never graded go last.
+    if (sortBy === "gradeDate") {
+      const _t = c => { const d = c.roboGradeDate || (c.roboGrade ? c.dateAdded : null); const n = d ? +new Date(d) : 0; return isNaN(n) ? 0 : n; };
+      const all = list.slice().sort((a, b) => (_t(b) - _t(a)) || String(a.title || "").localeCompare(String(b.title || "")));
+      return { titles: all.length ? [ "__bydate__" ] : [], groups: { "__bydate__": all } };
+    }
     const groups = {};
     list.forEach(c => {
       const t = (c.type === "card")
@@ -6678,7 +6802,10 @@ function renderList() {
   // Print mode: icons + the persistent Print drop-zone appear once the user has
   // opted in (persisted via window._printOptIn) or once any entry is in the Print
   // state. _printOptInSession is the immediate in-memory echo of a fresh opt-in.
-  const printModeEnabled = _printOptInSession || window._printOptIn === true || items.some(c => c.inPrintQueue === true);
+  // v6.77: the per-row print icons follow the bottom bar's toggle ONLY. A
+  // non-empty queue no longer forces them on - the queue is kept, and its count
+  // shown on the bar, while the icons are hidden.
+  const printModeEnabled = _printModeOn();
   const sections = OWNERSHIP_ORDER.map(own => {
     const subset = filt.filter(c => (c.ownership || "Owned") === own);
     if (subset.length === 0) return null;
@@ -6689,15 +6816,9 @@ function renderList() {
       groups: groups
     };
   }).filter(Boolean);
-  // S22: Print is an independent QUEUE (inPrintQueue flag), not an ownership — a
-  // book keeps its real ownership AND may appear here. Append it as its own section.
-  {
-    const _printSubset = filt.filter(c => c.inPrintQueue === true);
-    if (_printSubset.length || printModeEnabled) {
-      const { titles: _pt, groups: _pg } = buildTitleGroups(_printSubset);
-      sections.push({ ownership: "Print", titles: _pt, groups: _pg });
-    }
-  }
+  // v6.77, Matt: the queued books are no longer gathered into a PRINT section
+  // at the bottom of the list. They stay where they are, wearing the red-X
+  // icon, and the bottom bar counts them.
   // S22: matched to the printed label's own gradient (print-label.js .rg-label
   // et al). The bar is an invitation to print a label, so it should look like
   // one; the muted tan it used was the PRE-S22 label colour and had drifted.
@@ -6710,6 +6831,9 @@ function renderList() {
   const hasRealBooks = items.some(c => c.id !== SAMPLE_COMIC_ID);
   let html = ``;
   if (_mixed) html += _typeFilterChips();
+  // v6.77, Matt: only from FOUR books. Three come free and many people stop
+  // there; they do not need the extra control.
+  if (_realItems.length >= 4) html += _sortToggle();
   const anyBooks = sections.some(s => s.titles.length > 0);
   if (!anyBooks) {
     html += ``;
@@ -6771,7 +6895,7 @@ function renderList() {
           : "";
         return `<div class="swipe-row" data-swipe-id="${esc(c.id)}">\n              <button class="swipe-del" type="button" data-del-id="${esc(c.id)}" aria-label="Delete ${esc(c.title)}">Delete</button>\n              <div class="comic-row swipe-fg" data-row-id="${esc(c.id)}" onclick="onRowTap(event,'${esc(c.id)}')" style="position:relative">\n                ${thumb}\n                ${buildListBadge(c)}\n                <div style="flex:1;min-width:0;align-self:stretch;display:flex;flex-direction:column;justify-content:center;gap:2px">\n                  <div style="display:flex;align-items:flex-start;gap:8px">\n                    <div style="flex:1;min-width:0;font-family:'Noto Sans Display',sans-serif;font-stretch:62.5%;font-size:15px;font-weight:900;color:#0d0d0f;line-height:1.1;overflow-wrap:anywhere">${esc(c.title)}${c.issue ? `<span style="font-weight:600;color:#3a2e24;margin-left:0.28em">${c.type === "card" ? esc(formatCardNumber(c.issue)) : formatIssue(c.issue, c.title)}</span>` : ""}</div>\n                  </div>\n                  <div style="display:flex;align-items:center;gap:8px">\n                    <div style="flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;overflow:hidden">\n                      ${c.issueDate ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:#7a6a5a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">${esc(formatIssueDateCompact(c.issueDate))}</span>` : ""}\n                    </div>\n                    ${_adStr ? `<span style="font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:600;color:#9a8a7a;flex-shrink:0;white-space:nowrap;letter-spacing:0.2px">${_adStr}</span>` : ""}\n                  </div>\n                </div>\n                ${buildListPG(c)}\n                ${_labelBtn}\n              </div>\n            </div>`;
       };
-      const _showSep = _showTitleSeparators();
+      const _showSep = _showTitleSeparators() && sortBy !== "gradeDate";
       section.titles.forEach(title => {
         const group = section.groups[title];
         if (!_showSep) {
@@ -6801,22 +6925,13 @@ function renderList() {
       });
     });
   }
-  // S18: print-label opt-in. If the user has a graded book but hasn't turned on
-  // print mode, offer it at the bottom; tapping reveals the per-entry print icons.
-  const _hasGraded = items.some(c => c.roboGrade && c.id !== SAMPLE_COMIC_ID);
-  const _printQueueCount = items.filter(c => c.inPrintQueue === true).length;
-  if (_hasGraded && !printModeEnabled) {
-    html += `<div onclick="enablePrintMode()" style="display:flex;align-items:center;justify-content:center;gap:8px;margin:18px 0 10px;padding:9px 12px;background:${_LABEL_GRADIENT};border-radius:8px;cursor:pointer;user-select:none">\n      <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:${_LABEL_INK}">Want to print labels?</span>\n    </div>`;
-  } else if (_hasGraded && printModeEnabled && _printQueueCount === 0) {
-    // Once print mode is on with nothing queued, offer a way back out. Tapping
-    // clears the opt-in, hides the per-row print icons, and the bar reverts to
-    // the "Want to print labels?" prompt on the next render.
-    html += `<div onclick="disablePrintMode()" style="display:flex;align-items:center;justify-content:center;gap:8px;margin:18px 0 10px;padding:9px 12px;background:${_LABEL_GRADIENT};border-radius:8px;cursor:pointer;user-select:none">\n      <span style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:${_LABEL_INK}">Turn off printing?</span>\n    </div>`;
-  }
+  // v6.77: the "Want to print labels?" / "Turn off" bars that sat at the foot
+  // of the list are gone - the bottom bar's printer button does both.
   const _tRender = Date.now();
   main.innerHTML = html;
   console.log("[load] renderList innerHTML set in", Date.now() - _tRender, "ms (rows:", items.length + ")");
   wireSwipeRows();
+  renderBottomBar();
   // S22: defer hydration one frame so the browser commits the new list layout
   // (making it scrollable) before we spend a burst assigning image srcs.
   requestAnimationFrame(hydrateThumbs);
@@ -7657,7 +7772,7 @@ function showDetail(id) {
     // the slot the old Defect List button had and opens the SAME label viewer
     // the List view uses, seeded on this one book, so the user picks a style
     // and gets the Avery-positioned PDF that flow already produces.
-    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n      <button class="rg-btn rg-btn-action rg-btn-md btn-with-thumb" id="export-summary-btn" onclick="exportSummaryImage('${esc(selected.id)}')"><img src="assets/Summary_Image_Placeholder.png" alt="" decoding="async" class="action-btn-thumb"><span>Summary<br>Image</span></button>\n      <button class="rg-btn rg-btn-action rg-btn-md btn-with-thumb btn-thumb-right" id="print-label-btn" onclick="printLabel('${esc(selected.id)}')"><span>Print<br>Label</span><i class="action-btn-thumb action-btn-thumb-sq" id="print-label-thumb" style="position:relative;overflow:hidden;background:#fff;display:inline-block"></i></button>\n    </div>`;
+    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n      <button class="rg-btn rg-btn-action rg-btn-md btn-with-thumb" id="export-summary-btn" onclick="exportSummaryImage('${esc(selected.id)}')"><img src="assets/Summary_Image_Placeholder.png" alt="" decoding="async" class="action-btn-thumb"><span>Summary<br>Image</span></button>\n      <button class="rg-btn rg-btn-action rg-btn-md btn-with-thumb btn-thumb-right" id="print-label-btn" onclick="printLabel('${esc(selected.id)}')"><span>Print<br>Label</span><i class="action-btn-thumb action-btn-thumb-sq" id="print-label-thumb" style="position:relative;overflow:hidden;background:#fff;display:inline-block;font-style:normal"></i></button>\n    </div>`;
   }
   html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    ${_giveBtn}\n    ${_complainBtn}\n  </div>\n  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    <button class="rg-btn rg-btn-destructive rg-btn-md" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')" style="grid-column:1 / span 2;justify-self:center;width:calc(50% - 5px)">Delete</button>\n  </div></div>`;
   document.getElementById("main").innerHTML = html;
@@ -7675,6 +7790,8 @@ function showDetail(id) {
   // print-label.js (loaded here rather than on first print; it is cached after).
   // The slot is an <i>, not a <span>: `.btn-with-thumb > span` is flex:1 (it
   // centres the button's text), and a span slot grew to twice its width.
+  // An <i> is italic by default and the label inherited it - hence the
+  // font-style:normal on the slot.
   try {
     const _lt = document.getElementById("print-label-thumb");
     if (_lt && selected) _preloadLabelModule().then(m => m.renderLabelThumb && m.renderLabelThumb(_lt, selected)).catch(() => {});
@@ -7914,7 +8031,7 @@ async function printQueueSheet() {
   // hand them to the label viewer for batch printing on an Avery sheet.
   const queue = items.filter(c => c.inPrintQueue === true && c.roboGrade && c.id !== SAMPLE_COMIC_ID);
   if (queue.length === 0) {
-    alert("No graded books in the Print queue. Move a graded book to the Print category to add it.");
+    alert("Nothing is queued to print. Turn on the printer button, then tap the printer icon on each book you want a label for.");
     return;
   }
   try {
@@ -7927,7 +8044,7 @@ async function printQueueSheet() {
     const mod = await _labelModulePromise;
     // Seed the viewer on the first queued book; pass the Print-category subset
     // as the working set so the batch sheet contains exactly the queue.
-    mod.openLabelViewer(queue[0], queue);
+    mod.openLabelViewer(queue[0], queue, { onClearQueue: clearPrintQueue });
   } catch (e) {
     alert("Could not open the print sheet: " + (e && e.message || e));
   }
@@ -7958,6 +8075,27 @@ async function _migratePrintState() {
   renderList();
 }
 
+// v6.77, Matt: empty the whole queue in one go, from the sheet viewer, rather
+// than un-ticking each book. Returns true when it is done so the viewer closes.
+async function clearPrintQueue() {
+  const queued = items.filter(c => c.inPrintQueue === true);
+  if (!queued.length) return true;
+  const uid = window._currentUser && window._currentUser.uid;
+  await Promise.all(queued.map(async c => {
+    try {
+      await fsSetDoc(fsDoc(window._db, "users", uid, "items", c.id), { inPrintQueue: false }, { merge: true });
+      c.inPrintQueue = false;
+    } catch (e) { console.warn("[print] clear failed", c.id, e); }
+  }));
+  if (view === "list") {
+    const y = window.scrollY || 0;
+    renderList();
+    requestAnimationFrame(() => window.scrollTo(0, y));
+  }
+  renderBottomBar();
+  return true;
+}
+
 async function togglePrintState(id) {
   const comic = items.find(c => c.id === id);
   if (!comic) return;
@@ -7968,6 +8106,7 @@ async function togglePrintState(id) {
     comic.inPrintQueue = next;
     const savedScroll = window.scrollY || document.documentElement.scrollTop || 0;
     renderList();
+    renderBottomBar();
     requestAnimationFrame(() => window.scrollTo(0, savedScroll));
   } catch (e) {
     alert("Failed to update: " + e.message);
@@ -15165,7 +15304,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "6.76"),
+      appVersion: (window.RG_GRADING_VERSION || "6.77"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,

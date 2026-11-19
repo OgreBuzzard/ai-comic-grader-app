@@ -54,6 +54,7 @@
 // Pixel dimensions for the rendered label markup are at 288 DPI so the
 // jsPDF output preserves crisp QR codes and text at print resolution.
 let _singleMode = false;   // see openLabelViewer
+let _clearQueueCb = null;  // v6.77, see openLabelViewer
 const LABEL_FORMATS = {
   small: {
     name: 'small',
@@ -361,6 +362,10 @@ export function openLabelViewer(comic, allItems, opts) {
   // to defer by the time the preview paints.
   try { ensureQRCodeLoaded(); } catch (e) {}
   _singleMode = !!(opts && opts.single);
+  // v6.77: List view's sheet viewer can empty the whole queue (Matt). The app
+  // owns the queue (it lives on the items in Firestore), so it hands in the
+  // function that clears it; the entry viewer passes nothing and shows nothing.
+  _clearQueueCb = (!_singleMode && opts && typeof opts.onClearQueue === 'function') ? opts.onClearQueue : null;
   if (!comic || !comic.roboGrade) return;
   if (!Array.isArray(allItems)) {
     console.warn('[label] openLabelViewer requires allItems array');
@@ -678,6 +683,10 @@ export function ensureStylesInjected() {
      slightly smaller font when its long "Remove from Queue" label is
      active so it doesn't wrap to three lines. */
   .lvm-actions .rg-btn { flex: 1; }
+  /* v6.77: Clear Queue shares the row with Save as PDF and Share. Three
+     buttons in a phone-width card, so all three tighten a little. */
+  .lvm-actions.three .rg-btn { padding-left: 6px; padding-right: 6px; font-size: 14px; white-space: nowrap; }
+  .lvm-clear-btn.armed { border-color: #a04018 !important; color: #a04018 !important; }
   .rg-btn-queue-active { font-size: 12px !important; }
 
   /* ── Options toggle row (S12, May 5) ──────────────────────────────────
@@ -2942,9 +2951,7 @@ function renderModal(modal, comic, allItems) {
     // the printing path can't deliver. The format definition and its renderer
     // stay in the file so existing saved options still resolve - see the
     // VALID_SIZES note - but there is no way to choose it any more.
-    // v6.76, Matt: Wide is shown as SEAL - its use is sealing a comic bag
-    // across the back. Stored key stays 'small' so saved choices still work.
-    : `<div class="lvm-segment-group">${seg('small-l', 'Case')}${seg('small', 'Seal')}${seg('square', 'Square')}</div>`;
+    : `<div class="lvm-segment-group">${seg('small-l', 'Case')}${seg('small', 'Wide')}${seg('square', 'Square')}</div>`;
 
   const pricePillClass = opts.priceTag ? 'lvm-pill on' : 'lvm-pill';
   // v5.91: thermal toggle. Shown for every size — Case, Wide and Square are
@@ -3065,9 +3072,10 @@ function renderModal(modal, comic, allItems) {
           </div>
         </div>
       </div>
-      <div class="lvm-actions">
+      <div class="lvm-actions${_clearQueueCb ? ' three' : ''}">
         <button class="rg-btn rg-btn-primary rg-btn-md" data-action="print" ${printDisabled ? 'disabled' : ''}>Save as PDF</button>
         <button class="rg-btn rg-btn-secondary rg-btn-md" data-action="share" ${printDisabled ? 'disabled' : ''}>Share…</button>
+        ${_clearQueueCb ? `<button type="button" class="rg-btn rg-btn-secondary rg-btn-md lvm-clear-btn" data-action="clear-queue">Clear Queue</button>` : ''}
       </div>
       ${buyLinkHTML}
     </div>
@@ -3157,6 +3165,27 @@ function renderModal(modal, comic, allItems) {
   if (_shareBtn) _shareBtn.addEventListener('click', (e) => {
     if (e.currentTarget.disabled) return;
     handleSavePDF(modal, comic, allItems, 'share');
+  });
+
+  // v6.77: CLEAR QUEUE. Two taps, no dialog: the first arms it and says what
+  // will happen, the second clears every book from the queue and closes. (A
+  // confirm dialog would open UNDER this modal - both sit at z-index 3000.)
+  const _clrBtn = modal.querySelector('[data-action="clear-queue"]');
+  if (_clrBtn) _clrBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const b = e.currentTarget;
+    if (!b.dataset.armed) {
+      b.dataset.armed = '1';
+      b.textContent = 'Confirm Clear';
+      b.classList.add('armed');
+      setTimeout(() => { if (b.isConnected && b.dataset.armed) { delete b.dataset.armed; b.textContent = 'Clear Queue'; b.classList.remove('armed'); } }, 4000);
+      return;
+    }
+    b.disabled = true; b.textContent = 'Clearing\u2026';
+    let ok = false;
+    try { ok = await _clearQueueCb(); } catch (err) { console.warn('[label] clear queue failed:', err); }
+    if (ok) closeModal(modal);
+    else { b.disabled = false; delete b.dataset.armed; b.textContent = 'Clear Queue'; b.classList.remove('armed'); }
   });
 
   // v6.38: the explicit close. Same closeModal as the backdrop, so the queue
