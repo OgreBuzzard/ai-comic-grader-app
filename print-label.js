@@ -2942,7 +2942,9 @@ function renderModal(modal, comic, allItems) {
     // the printing path can't deliver. The format definition and its renderer
     // stay in the file so existing saved options still resolve - see the
     // VALID_SIZES note - but there is no way to choose it any more.
-    : `<div class="lvm-segment-group">${seg('small-l', 'Case')}${seg('small', 'Wide')}${seg('square', 'Square')}</div>`;
+    // v6.76, Matt: Wide is shown as SEAL - its use is sealing a comic bag
+    // across the back. Stored key stays 'small' so saved choices still work.
+    : `<div class="lvm-segment-group">${seg('small-l', 'Case')}${seg('small', 'Seal')}${seg('square', 'Square')}</div>`;
 
   const pricePillClass = opts.priceTag ? 'lvm-pill on' : 'lvm-pill';
   // v5.91: thermal toggle. Shown for every size — Case, Wide and Square are
@@ -3971,6 +3973,32 @@ function renderCardLabelMarkup(comic, opts) {
       </div>
     </div>
   `;
+}
+
+// ── THE PRINT LABEL BUTTON'S THUMBNAIL (v6.76) ─────────────────────────────
+// Matt: the stock thumbnail showed a readable "6" on every book, and the
+// hand-drawn SVG that replaced it did not look like a real label. So this is
+// the REAL label: renderLabelMarkup at full size, real QR included, scaled
+// down into the slot. Square for comics (it is the one square label, and the
+// slot is square), Card for cards, in the colour or thermal style the user
+// last chose in the label viewer.
+export async function renderLabelThumb(slot, comic) {
+  if (!slot || !comic) return;
+  ensureStylesInjected();
+  const o = readOptions();
+  const size = (comic.type === 'card') ? 'card' : 'square';
+  const f = LABEL_FORMATS[size];
+  const box = slot.clientWidth || 32;
+  const sc = box / Math.max(f.pixelW, f.pixelH);
+  let html;
+  try { html = renderLabelMarkup(comic, { size, priceTag: false, includePrice: false, mono: !!o.mono }); }
+  catch (e) { console.warn('[label] thumb render failed:', e); return; }
+  slot.innerHTML = `<div class="lbl-thumb-in" style="position:absolute;left:${(box - f.pixelW * sc) / 2}px;top:${(box - f.pixelH * sc) / 2}px;width:${f.pixelW}px;height:${f.pixelH}px;transform:scale(${sc});transform-origin:0 0;pointer-events:none">${html}</div>`;
+  const inner = slot.firstElementChild;
+  try { await ensureLabelFontsReady(); } catch (e) {}
+  if (!inner.isConnected) return;
+  try { fitLabelText(inner); } catch (e) {}
+  renderQRsIn(inner);
 }
 
 export function renderLabelMarkup(comic, opts) {
