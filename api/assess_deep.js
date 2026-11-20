@@ -39,6 +39,7 @@ import { buildDeepPrefix, deepVariantName } from '../lib/deep_prompt.js';
 import { createHash as _deepCreateHash } from 'crypto';
 import { getAdminDb as getCreditDb, verifyUidFromAuthHeader } from '../lib/batch_common.js';
 import { reserveCredit, refundCredit, insufficientCreditsPayload } from '../lib/credits.js';
+import { imageHashOf } from '../lib/unlimited.js';
 
 export default async function handler(req, res) {
   // CORS: the iOS Capacitor app calls this cross-origin (local file origin →
@@ -211,14 +212,18 @@ export default async function handler(req, res) {
 
   let _creditDebited = false;
   let _creditsRemaining = null;
+  let _unlimitedCov = null;
   try {
     const _r = await reserveCredit(await getCreditDb(), _deepUid, {
       cost: _CREDIT_COST,
       debit: req.body && req.body.serverCredits === true,
-      label: isRestoration ? 'uvcheck' : (_isBatchPass ? 'batchpass' : 'deep')
+      label: isRestoration ? 'uvcheck' : (_isBatchPass ? 'batchpass' : 'deep'),
+      // v6.79: Unlimited covers a Deep (not a UV Check, which is free anyway).
+      unlimited: (isRestoration || _isBatchPass) ? null : { kind: 'deep', imageHash: imageHashOf(req.body && req.body.cornerMacros, req.body && req.body.interiorCovers) }
     });
     _creditDebited = _r.debited;
     _creditsRemaining = _r.remaining;
+    _unlimitedCov = _r.unlimited || null;
   } catch (e) {
     if (e && e.code === 'insufficient_credits') {
       return sseError(402, insufficientCreditsPayload(e, _CREDIT_COST));
@@ -1297,7 +1302,7 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
           // nothing (the 3 credits sit on the batch_credits row), and recording
           // a real 0 keeps the row inside the coverage count, where leaving the
           // field off would not.
-          creditsCharged: _creditDebited ? _CREDIT_COST : 0,
+          creditsCharged: _creditDebited ? _CREDIT_COST : 0, ...(_unlimitedCov ? { unlimited: true } : {}),
           // v6.54: the per-type cost averages need a discriminator. Nothing on
           // these rows said what KIND of assessment they were - the admin was
           // averaging Main, Deep, Full, Batch passes and Post-Cleaning into one
@@ -1474,6 +1479,11 @@ This is a repeat scoring pass. The narrative is discarded unread, so do not writ
     if (_creditDebited && Number.isFinite(_creditsRemaining)) {
       parsed.creditsCharged = _CREDIT_COST;
       parsed.creditsRemaining = _creditsRemaining;
+    }
+    if (_unlimitedCov) {
+      parsed.creditsCharged = 0;
+      parsed.unlimited = { covered: true, endsAt: _unlimitedCov.endsAt };
+      if (Number.isFinite(_creditsRemaining)) parsed.creditsRemaining = _creditsRemaining;
     }
     if (wantsSSE) {
       sseEvent('result', parsed);

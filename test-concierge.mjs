@@ -138,7 +138,7 @@ ok('the Main result is folded in without a save or a COMPLETE',
 ok('the Deep reuses the scan shell instead of starting a second animation',
   html.includes('const scanController = _conc ? { promise: Promise.resolve(), cancel: () => {} }'));
 ok('the pair keeps the Deep refund (Main vs Deep, same test as a solo Deep)',
-  html.includes('var _deepRefundEligible = !_deepImproved && !formData.deepRefundUsed;'));
+  html.includes('var _deepRefundEligible = !_deepImproved && !formData.deepRefundUsed && !(unified && unified.unlimited);'));
 ok('the refund is promised before the tap', /you get 1 credit back/.test(html));
 ok('the old auto-chained Deep after COMPLETE is gone',
   !/\[concierge\] Main complete - running the Deep/.test(html));

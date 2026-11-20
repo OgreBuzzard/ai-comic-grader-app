@@ -41,6 +41,7 @@ import { computeScoreCeilingPenalty, mergePhotograder, PHOTOGRADER_RUBRIC_CLOSEU
 import { enforceCgcGrade } from '../lib/grade_definitions.js';
 import { getAdminDb as getCreditDb, verifyUidFromAuthHeader } from '../lib/batch_common.js';
 import { reserveCredit, refundCredit, insufficientCreditsPayload } from '../lib/credits.js';
+import { imageHashOf } from '../lib/unlimited.js';
 
 // ── S15 May 30: Full Assessment REDESIGN (8 fixed named slots) ───────────────
 // The old design required 16/32 two-page-spread photos per book — impractical
@@ -394,14 +395,17 @@ export default async function handler(req, res) {
   if (!_fullUid) return sseError(401, { error: 'auth required' });
   let _creditDebited = false;
   let _creditsRemaining = null;
+  let _unlimitedCov = null;
   try {
     const _r = await reserveCredit(await getCreditDb(), _fullUid, {
       cost: _CREDIT_COST,
       debit: req.body && req.body.serverCredits === true,
-      label: 'full'
+      label: 'full',
+      unlimited: { kind: 'full', imageHash: imageHashOf(interiorImages) }   // v6.79
     });
     _creditDebited = _r.debited;
     _creditsRemaining = _r.remaining;
+    _unlimitedCov = _r.unlimited || null;
   } catch (e) {
     if (e && e.code === 'insufficient_credits') {
       return sseError(402, insufficientCreditsPayload(e, _CREDIT_COST));
@@ -897,7 +901,7 @@ Rules:
           // nothing (the 3 credits sit on the batch_credits row), and recording
           // a real 0 keeps the row inside the coverage count, where leaving the
           // field off would not.
-          creditsCharged: _creditDebited ? _CREDIT_COST : 0,
+          creditsCharged: _creditDebited ? _CREDIT_COST : 0, ...(_unlimitedCov ? { unlimited: true } : {}),
           // v6.54: the per-type cost averages need a discriminator. Nothing on
           // these rows said what KIND of assessment they were - the admin was
           // averaging Main, Deep, Full, Batch passes and Post-Cleaning into one
@@ -982,6 +986,11 @@ Rules:
     if (_creditDebited && Number.isFinite(_creditsRemaining)) {
       result.creditsCharged = _CREDIT_COST;
       result.creditsRemaining = _creditsRemaining;
+    }
+    if (_unlimitedCov) {   // v6.79
+      result.creditsCharged = 0;
+      result.unlimited = { covered: true, endsAt: _unlimitedCov.endsAt };
+      if (Number.isFinite(_creditsRemaining)) result.creditsRemaining = _creditsRemaining;
     }
     if (wantsSSE) {
       sseEvent('result', result);

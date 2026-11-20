@@ -949,6 +949,8 @@ onAuthStateChanged(auth, async user => {
     /* v6.78: and while an assessment's scan stage is up - it is see-through at
        the bottom, and the bar showed under the COMPLETE button. */
     body:has(.rg-scan-stage) #bottom-bar { display: none !important; }
+    /* v6.79: Unlimited is in-app camera only - no Photo Library button. */
+    body.rg-unlimited #camera-upload-link { display: none !important; }
     #bottom-bar .bb-cell { display: flex; align-items: center; min-width: 0; }
     #bottom-bar .bb-c1 { justify-content: flex-start; }
     #bottom-bar .bb-c2 { justify-content: flex-start; }
@@ -2512,7 +2514,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
          PWA has no build step to inject it). The native store version + platform label are
          read LIVE from Capacitor so they always match the installed build (no hardcoding).
          Renders: native -> "Robograder v4.57 • iOS v1.0.5"; PWA -> "Robograder v4.57". */
-      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.78";
+      window.RG_GRADING_VERSION = window.RG_GRADING_VERSION || "6.79";
       // v6.46: the GRADING epoch - the version the assessment last actually
       // changed at. RG_GRADING_VERSION above is the BUILD number and moves on
       // every change; this one does not. The label stamps THIS, because "V6.45"
@@ -2523,7 +2525,7 @@ if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         function setVer(){
           var el = document.getElementById("rgVersionLine");
           if(!el) return;
-          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.78");
+          var base = "Robograder v" + (window.RG_GRADING_VERSION || "6.79");
           try{
             var Cap = window.Capacitor;
             if(Cap && Cap.isNativePlatform && Cap.isNativePlatform()){
@@ -6187,6 +6189,13 @@ function _animateCreditCountUp(el, from, to) {
 function updateStats() {
   const coinCount = document.getElementById("credit-coin-count");
   if (!coinCount) return;
+  // v6.79: an Unlimited week (bought, waiting or running) shows an infinity
+  // sign in the coin instead of the balance. The balance itself is untouched.
+  if (typeof _unlimitedRefreshUI === "function" && _unlimitedRefreshUI()) {
+    coinCount.textContent = "\u221E";
+    coinCount.style.fontSize = "17px";
+    return;
+  }
   if (window._userCredits === undefined || window._userCredits === null) {
     coinCount.textContent = "·";
     coinCount.style.fontSize = "12px";
@@ -6280,6 +6289,9 @@ async function loadUserCredits() {
       window._lastPurchaseAt = data.lastPurchaseAt || data.lastShortBoxAt || null;
       window._nextShortBoxBonus = (typeof data.nextShortBoxBonus === "number") ? data.nextShortBoxBonus : (window._nextBonuses ? (window._nextBonuses.short_box || 0) : 0);
       window._lastShortBoxAt = data.lastShortBoxAt || data.lastPurchaseAt || null;
+      // v6.79: Unlimited state (lib/unlimited.js writes it).
+      window._unlimited = (data.unlimited && typeof data.unlimited === "object") ? data.unlimited : null;
+      window._unlimitedBlocked = data.unlimitedBlocked === true;
       if (typeof data.assessmentCredits === "number") {
         window._userCredits = data.assessmentCredits;
       } else if (window._userCredits === undefined) {
@@ -6460,6 +6472,146 @@ async function _ackGift() {
   } catch (e) { console.warn("[gift] acknowledge clear failed", e); }
 }
 
+// ── UNLIMITED GRADING (v6.79) ───────────────────────────────────────────────
+// Server side: lib/unlimited.js (state, rate limits, grants, refunds). This is
+// the client's half: reading the state off the user doc, the infinity coin,
+// skipping the client-side credit gates, the in-app-camera-only rule, the Buy
+// screen card and the purchase-time terms.
+//
+// UNLIMITED_BUY_ENABLED is the switch for the Buy screen card (Matt: keep it
+// off until he is ready to test). Everything else is live but does nothing
+// for an account without a purchase. With the switch on, the card shows
+// during the sale (27 Nov - 31 Dec 2026, US Pacific), or any time on a device
+// opened once with ?unlimitedtest=1 (Matt's testing; the server still refuses
+// web checkout before the sale unless the uid is in UNLIMITED_TESTERS).
+const UNLIMITED_BUY_ENABLED = false;
+const UNLIMITED_HOURS = 168;
+const UNLIMITED_START_WINDOW_DAYS = 30;
+const UNLIMITED_SALE_START = Date.parse("2026-11-27T08:00:00Z");
+const UNLIMITED_SALE_END = Date.parse("2027-01-01T08:00:00Z");
+try { if (/[?&]unlimitedtest=1\b/.test(location.search)) localStorage.setItem("rg_unlimited_tester", "1"); } catch (e) {}
+
+// Same rules as unlimitedState() in lib/unlimited.js.
+function _unlimitedStatus() {
+  const x = window._unlimited;
+  if (!x || !x.purchasedAt || x.revokedAt) return { status: "none" };
+  const now = Date.now();
+  const startBy = Date.parse(x.startBy || "") || (Date.parse(x.purchasedAt) + UNLIMITED_START_WINDOW_DAYS * 864e5);
+  let start = x.startedAt ? Date.parse(x.startedAt) : null;
+  if (!start && now >= startBy) start = startBy;
+  if (!start) return { status: "pending", startBy };
+  const end = start + UNLIMITED_HOURS * 3600e3;
+  return { status: now < end ? "active" : "ended", startedAt: start, endsAt: end, startBy };
+}
+// "On" = bought and not finished: pending (waiting for the first grade) or running.
+function _unlimitedOn() {
+  try { const s = _unlimitedStatus().status; return s === "pending" || s === "active"; } catch (e) { return false; }
+}
+function _unlimitedOnSale() {
+  const n = Date.now();
+  let tester = false;
+  try { tester = localStorage.getItem("rg_unlimited_tester") === "1"; } catch (e) {}
+  return tester || (n >= UNLIMITED_SALE_START && n < UNLIMITED_SALE_END);
+}
+// The coin and the camera-only body class follow the state. Called by updateStats.
+function _unlimitedRefreshUI() {
+  const on = _unlimitedOn();
+  document.body.classList.toggle("rg-unlimited", on);
+  return on;
+}
+// A covered assessment came back: the week may have just started.
+function _unlimitedNoteResult(result) {
+  if (!result || !result.unlimited || !window._unlimited) return;
+  if (!window._unlimited.startedAt && result.unlimited.endsAt) {
+    const end = Date.parse(result.unlimited.endsAt);
+    if (Number.isFinite(end)) {
+      window._unlimited.startedAt = new Date(end - UNLIMITED_HOURS * 3600e3).toISOString();
+      window._unlimited.endsAt = result.unlimited.endsAt;
+    }
+  }
+}
+
+// IN-APP CAMERA ONLY while Unlimited is on (Matt). Every library route ends
+// at a file input or a drop, so both are stopped here, at the document, in
+// the capture phase - one guard instead of one per slot type. The camera's
+// "Photo Library" button is hidden by the body class (CSS beside the camera).
+function _unlimitedLibraryBlocked() {
+  appAlert("While your Unlimited week is on, every photo has to be taken with Robograder's camera. Photo library uploads are off until it ends.");
+}
+document.addEventListener("click", function (e) {
+  const t = e.target;
+  if (t && t.tagName === "INPUT" && t.type === "file" && _unlimitedOn()) {
+    e.preventDefault(); e.stopPropagation();
+    _unlimitedLibraryBlocked();
+  }
+}, true);
+document.addEventListener("drop", function (e) {
+  if (_unlimitedOn() && e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+    e.preventDefault(); e.stopPropagation();
+    _unlimitedLibraryBlocked();
+  }
+}, true);
+
+// The Buy screen card. Hidden unless the switch is on and the sale is open.
+function _refreshUnlimitedCard() {
+  const card = document.getElementById("unlimited-buy-card");
+  if (!card) return;
+  const show = UNLIMITED_BUY_ENABLED && _unlimitedOnSale();
+  card.style.display = show ? "flex" : "none";
+  if (!show) return;
+  const st = _unlimitedStatus();
+  const sub = document.getElementById("unlimited-buy-sub");
+  if (sub) {
+    sub.textContent = st.status === "active" ? "Your week is running"
+      : st.status === "pending" ? "Bought - starts with your next assessment"
+      : "1 week of assessments, no credits used";
+  }
+}
+
+const UNLIMITED_TERMS_HTML = `<div style="font-size:17px;font-weight:700;color:#f0e6da;margin-bottom:8px">Unlimited Grading</div>
+<div style="font-size:13px;line-height:1.45;max-height:52vh;overflow:auto;padding-right:4px">
+<p style="margin:0 0 8px">One week (168 hours) of Main, Deep, Full, Batch and Post-Cleaning assessments without using credits. Comics and magazines only.</p>
+<p style="margin:0 0 8px"><b>The week starts with your first assessment</b> after you buy, not at purchase. If you haven't started within 30 days, it starts on its own on day 30.</p>
+<p style="margin:0 0 8px"><b>Photos must be taken with Robograder's camera.</b> Uploading from your photo library is off while Unlimited is on, so you'll need a phone or tablet with a camera.</p>
+<p style="margin:0 0 8px">Rate limits apply: re-running the same photos is limited to 3 times an hour for each kind of assessment, and Batch to once an hour and 3 times a day. Retaking any photo lifts the re-run limit.</p>
+<p style="margin:0 0 8px">Your credits aren't used. When the week ends you have the same balance you started with.</p>
+<p style="margin:0 0 8px">One Unlimited week at a time. You can buy another after it ends, while the offer lasts (until December 31, 2026).</p>
+<p style="margin:0">Refunds are handled by the store you paid. If one is granted, Unlimited ends immediately and can't be bought again on this account. You agree that we may tell Apple or Google how many assessments you ran, to help them decide a refund request.</p>
+</div>`;
+
+async function buyUnlimited() {
+  if (!window._currentUser) { appAlert("Please sign in first."); return; }
+  if (!_unlimitedOnSale()) { appAlert("Unlimited isn't on sale right now."); return; }
+  try { await loadUserCredits(); } catch (e) {}
+  if (window._unlimitedBlocked) { appAlert("Unlimited isn't available on this account. Email support@robograder.app if you think that's wrong."); return; }
+  const st = _unlimitedStatus().status;
+  if (st === "pending" || st === "active") {
+    appAlert(st === "active" ? "Your Unlimited week is already running. You can buy another when it ends." : "You already have an Unlimited week waiting. It starts with your next assessment.");
+    return;
+  }
+  const ok = await appConfirm(UNLIMITED_TERMS_HTML, "Agree and Buy", true);
+  if (!ok) return;
+  try {
+    const ref = window._fsDoc(window._db, "users", window._currentUser.uid);
+    await window._fsSetDoc(ref, { unlimitedTermsAcceptedAt: new Date().toISOString() }, { merge: true });
+  } catch (e) { console.warn("[unlimited] terms acceptance write failed:", e); }
+  await buyCredits("unlimited");
+}
+
+// After a store purchase (the native generators call this) or a Stripe return.
+function _unlimitedPurchased(outcome) {
+  if (outcome === "granted" || outcome === "already_processed") {
+    updateStats();
+    appAlert("Unlimited is ready. Your week starts with your first assessment and runs for 7 days from then. Remember: photos have to be taken with Robograder's camera.");
+  } else if (outcome === "blocked_active") {
+    appAlert("You already had an Unlimited week, so this purchase wasn't added. Email support@robograder.app and we'll refund it.");
+  } else if (outcome === "blocked_refund") {
+    appAlert("Unlimited isn't available on this account, so this purchase wasn't added. Email support@robograder.app and we'll refund it.");
+  } else {
+    appAlert("Purchase received. If Unlimited doesn't show on your coin in a minute, email support@robograder.app.");
+  }
+}
+
 function showBuyCredits() {
   const modal = document.getElementById("buy-credits-modal");
   if (modal) modal.style.display = "flex";
@@ -6472,6 +6624,7 @@ function showBuyCredits() {
 // Server computes it (window._nextShortBoxBonus / _lastShortBoxAt via the user
 // doc); the client only renders, so it always matches what's actually granted.
 function refreshShortBoxCard() {
+  try { _refreshUnlimitedCard(); } catch (e) {}
   // Repeat-Purchase Discount (all tiers). Name kept so the iOS showBuyCredits
   // hook still matches; body now refreshes all three cards. Server computes the
   // per-tier next-purchase bonus (window._nextBonuses); the client only renders.
@@ -12161,7 +12314,7 @@ function conciergeOffer(gate) {
       + '<img src="assets/Robograder_Gift.webp" alt="Robograder" style="width:88px;height:auto;object-fit:contain;margin:0 auto 10px;display:block">'
       + '<div style="font-size:16px;font-weight:800;color:#f0c860;margin-bottom:6px">Worth a closer look</div>'
       + (book ? '<div style="font-size:13px;font-weight:700;color:#fff;letter-spacing:0.4px;margin-bottom:8px">' + esc(book) + '</div>' : '')
-      + '<div style="font-size:13.5px;line-height:1.6;color:#e8d9b8;margin-bottom:20px">This one looks like a book worth grading closely. Take 10 photos instead of 4 and Robograder will run both a Main and a Deep assessment in one go, for ' + CONCIERGE_COST + ' credits. If the Deep doesn\'t raise the grade, you get 1 credit back.</div>'
+      + '<div style="font-size:13.5px;line-height:1.6;color:#e8d9b8;margin-bottom:20px">This one looks like a book worth grading closely. Take 10 photos instead of 4 and Robograder will run both a Main and a Deep assessment in one go' + (_unlimitedOn() ? ', included in your Unlimited week.' : ', for ' + CONCIERGE_COST + ' credits. If the Deep doesn\'t raise the grade, you get 1 credit back.') + '</div>'
       + '<button id="rg-conc-go" class="rg-btn rg-btn-branded rg-btn-md" style="width:100%;margin-bottom:8px">SHOOT 10 &amp; GO DEEP</button>'
       + '<button id="rg-conc-no" class="rg-btn rg-btn-secondary rg-btn-md" style="width:100%">Just the 4 photos</button>'
       + '</div>';
@@ -12193,7 +12346,7 @@ function conciergeShouldOffer(slab) {
   if (formData.type === "card" || formData._isCard) return false;
   if (formData.deepAssessmentRan || formData.highGradeTier) return false;  // already been done
   if ((formData.cornerImages || []).some(Boolean)) return false;           // already has Deep photos
-  if (window._userCredits !== undefined && window._userCredits < CONCIERGE_COST) return false;
+  if (!_unlimitedOn() && window._userCredits !== undefined && window._userCredits < CONCIERGE_COST) return false;
   const g = formData._conciergeGate;
   if (!g || !g.eligible) return false;
   return true;
@@ -12240,12 +12393,12 @@ function _conciergeBtnHtml() {
   const need = formData.labelDetected ? 8 : 10;
   return `<div style="display:flex;flex-direction:column;align-items:center;margin-top:12px;gap:6px">
     <button id="concierge-btn" class="rg-btn rg-btn-assess rg-btn-silver${assessing ? " assessing" : ""}" onclick="runConciergeAssessment()" ${ready ? "" : "disabled"}>${assessing ? "Assessing…" : `MAIN + DEEP ASSESSMENT${have < need ? ` (${have}/${need})` : ""}`}</button>
-    <div style="font-size:12px;color:#6a7a5a">${CONCIERGE_COST} credits \u00b7 1 back if the Deep doesn't raise the grade</div>
+    <div style="font-size:12px;color:#6a7a5a">${_unlimitedOn() ? "Included in your Unlimited week" : `${CONCIERGE_COST} credits \u00b7 1 back if the Deep doesn't raise the grade`}</div>
   </div>`;
 }
 async function runConciergeAssessment() {
   if (assessing || !_conciergeReady()) return;
-  if (window._userCredits !== undefined && window._userCredits < CONCIERGE_COST) { showBuyCredits(); return; }
+  if (!_unlimitedOn() && window._userCredits !== undefined && window._userCredits < CONCIERGE_COST) { showBuyCredits(); return; }
   const b = document.getElementById("concierge-btn");
   if (b) { b.disabled = true; b.textContent = "Preparing\u2026"; }
   console.log("[concierge] start - Main then Deep, one scan");
@@ -12703,7 +12856,7 @@ async function assessHighGrade(opts) {
     alert(eligibility.message);
     return;
   }
-  if (window._userCredits !== undefined && window._userCredits <= 0) {
+  if (!_unlimitedOn() && window._userCredits !== undefined && window._userCredits <= 0) {
     showBuyCredits();
     return;
   }
@@ -12980,7 +13133,9 @@ async function assessHighGrade(opts) {
     // here are the Main's result (it was folded into formData just before the
     // Deep started), so this is exactly the Main-vs-Deep comparison. Without
     // it, Main + Deep would be a worse deal than running them separately.
-    var _deepRefundEligible = !_deepImproved && !formData.deepRefundUsed;
+    // v6.79: a Deep an Unlimited week covered charged nothing, so there is
+    // nothing to refund (refunding would hand out a free credit).
+    var _deepRefundEligible = !_deepImproved && !formData.deepRefundUsed && !(unified && unified.unlimited);
     window._creditRefunded = _deepRefundEligible;
     if (_deepRefundEligible) {
       formData.deepRefundUsed = true;
@@ -13549,7 +13704,7 @@ async function submitCleanAssessment() {
     await appAlert("All ten after-cleaning photos are needed before this can run. " + after.length + " of 10 so far.");
     return;
   }
-  if (window._userCredits !== undefined && window._userCredits < CLEAN_CREDIT_COST) {
+  if (!_unlimitedOn() && window._userCredits !== undefined && window._userCredits < CLEAN_CREDIT_COST) {
     await appAlert("Post-Cleaning costs " + CLEAN_CREDIT_COST + " credits. You have " + window._userCredits + ".");
     if (typeof showBuyCredits === "function") showBuyCredits();
     return;
@@ -13713,7 +13868,7 @@ async function submitBatchAssessment() {
     await appAlert("Save this book before running a Batch.");
     return;
   }
-  if (window._userCredits !== undefined && window._userCredits < BATCH_CREDIT_COST) {
+  if (!_unlimitedOn() && window._userCredits !== undefined && window._userCredits < BATCH_CREDIT_COST) {
     await appAlert(`Batch costs ${BATCH_CREDIT_COST} credits. You have ${window._userCredits}. Add credits and try again.`);
     if (typeof showBuyCredits === "function") showBuyCredits();
     return;
@@ -15479,7 +15634,7 @@ async function exportCollection() {
     const userId = window._currentUser && window._currentUser.uid || "unknown";
     zip.file("_export_info.json", JSON.stringify({
       app: "Robograder",
-      appVersion: (window.RG_GRADING_VERSION || "6.78"),
+      appVersion: (window.RG_GRADING_VERSION || "6.79"),
       exportDate: exportDate,
       userEmail: userEmail || "unknown",
       userId: userId,
@@ -16041,6 +16196,7 @@ async function _completeAssessmentInner(opts) {
 // decrement that has always been here. Returns true when the server owned it.
 function applyServerCredits(result) {
   if (!result || typeof result !== "object") return false;
+  try { _unlimitedNoteResult(result); } catch (e) {}
   if (!Number.isFinite(result.creditsRemaining)) return false;
   window._userCredits = result.creditsRemaining;
   updateStats();
@@ -16095,6 +16251,13 @@ function onAssessmentSuccess(result) {
 
 function describeAssessmentError(rawErr) {
   const text = String(rawErr || "");
+  // v6.79: an Unlimited rate limit. The server's message says which limit and
+  // when it lifts; show it as written.
+  if (/unlimited_limit/.test(text)) {
+    const m = text.match(/"message"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    if (m) { try { return JSON.parse('"' + m[1] + '"'); } catch (e) { return m[1]; } }
+    return "Unlimited's rate limit was reached. Try again in a little while, or retake a photo. Nothing was charged.";
+  }
   // S22 (9646): the server now refuses an assessment it can't charge for. This
   // arrives either as a 402 body (non-streaming) or as an SSE error payload.
   if (/insufficient_credits/i.test(text)) {
@@ -16527,7 +16690,7 @@ async function assessGrade(opts) {
     }
     return;
   }
-  if (window._userCredits !== undefined && window._userCredits <= 0) {
+  if (!_unlimitedOn() && window._userCredits !== undefined && window._userCredits <= 0) {
     showBuyCredits();
     if (_earlyBtn) {
       _earlyBtn.textContent = _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE";
@@ -19375,7 +19538,7 @@ async function submitFullAssessment() {
     alert(`Please fill all ${_reqIdx.length} slots before submitting.`);
     return;
   }
-  if (typeof window._userCredits === "number" && window._userCredits < 1) {
+  if (!_unlimitedOn() && typeof window._userCredits === "number" && window._userCredits < 1) {
     showBuyCredits();
     return;
   }
@@ -21737,7 +21900,16 @@ function hidePaymentCancelled() {
   const params = new URLSearchParams(window.location.search);
   const payment = params.get("payment");
   const credits = params.get("credits");
-  if (payment === "success" && credits) {
+  if (payment === "success" && params.get("unlimited") === "1") {
+    // v6.79: Unlimited bought on the web. The webhook grants it; give it a
+    // moment, then read the account and confirm.
+    setTimeout(async () => {
+      try { await loadUserCredits(); } catch (e) {}
+      if (!_unlimitedOn()) { await new Promise(r => setTimeout(r, 2500)); try { await loadUserCredits(); } catch (e) {} }
+      updateStats();
+      _unlimitedPurchased(_unlimitedOn() ? "granted" : "unknown");
+    }, 800);
+  } else if (payment === "success" && credits) {
     setTimeout(() => {
       showPaymentSuccess(credits);
       loadUserCredits();
@@ -21756,12 +21928,23 @@ initFirebase();
 </script>
 
 <div id="buy-credits-modal" style="display:none;position:fixed;inset:0;z-index:8000;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;padding:20px">
-  <div style="background:#fff;border-radius:16px;padding:28px 24px;max-width:360px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,0.3)">
-    <h2 style="margin:0 0 6px;font-size:20px;color:#1a1008">Buy Assessments</h2>
-    <p style="margin:0 0 20px;font-size:13px;color:#6a5a4a">One credit per assessment.</p>
-    <div style="display:flex;flex-direction:column;gap:12px">
-      <button onclick="buyCredits('comic_stack')" style="display:flex;align-items:center;gap:14px;background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:12px 16px;cursor:pointer;text-align:left;width:100%">
-        <img src="/assets/products/Comic_Stack.png" alt="" width="64" height="64" style="flex-shrink:0;object-fit:contain">
+  <div style="background:#fff;border-radius:16px;padding:20px 20px 18px;max-width:360px;width:100%;max-height:calc(100vh - 40px);overflow-y:auto;box-sizing:border-box;box-shadow:0 8px 40px rgba(0,0,0,0.3)">
+    <h2 style="margin:0 0 4px;font-size:20px;color:#1a1008">Buy Assessments</h2>
+    <p style="margin:0 0 12px;font-size:13px;color:#6a5a4a">One credit per assessment.</p>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <!-- v6.79 UNLIMITED: shown only when UNLIMITED_BUY_ENABLED is true (see
+           the UNLIMITED GRADING block in the script) and the sale is open. -->
+      <button id="unlimited-buy-card" onclick="buyUnlimited()" style="display:none;align-items:center;gap:12px;background:#12200a;border:2px solid #7aa838;border-radius:10px;padding:9px 14px;cursor:pointer;text-align:left;width:100%">
+        <span style="flex-shrink:0;width:52px;height:52px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#fde89a 0%,#e6bb4a 50%,#8c6a1a 100%);border:1.5px solid #5a4010;display:flex;align-items:center;justify-content:center;font:800 30px/1 'Barlow Condensed',sans-serif;color:#3a2808">&#8734;</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:16px;font-weight:700;color:#e8f5d8">Unlimited Grading</div>
+          <div id="price-unlimited" style="font-size:15px;font-weight:700;color:#e8f5d8;margin-top:1px">$150</div>
+          <div id="unlimited-buy-sub" style="font-size:13px;color:#b8d890;margin-top:2px">1 week of assessments, no credits used</div>
+          <div style="font-size:11.5px;color:#8fae7c;margin-top:1px">Starts at your first grade · in-app camera only</div>
+        </div>
+      </button>
+      <button onclick="buyCredits('comic_stack')" style="display:flex;align-items:center;gap:14px;background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:8px 14px;cursor:pointer;text-align:left;width:100%">
+        <img src="/assets/products/Comic_Stack.png" alt="" width="52" height="52" style="flex-shrink:0;object-fit:contain">
         <div style="flex:1;min-width:0">
           <div style="font-size:16px;font-weight:700;color:#1a1008">Comic Stack</div>
           <div style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$10</div>
@@ -21770,8 +21953,8 @@ initFirebase();
           <div id="stack-bonus-line" style="display:none;font-size:12px;font-weight:700;color:#2c6e12;margin-top:2px"></div>
         </div>
       </button>
-      <button onclick="buyCredits('comic_wall')" style="display:flex;align-items:center;gap:14px;background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:12px 16px;cursor:pointer;text-align:left;width:100%">
-        <img src="/assets/products/Comic_Wall.png" alt="" width="64" height="64" style="flex-shrink:0;object-fit:contain">
+      <button onclick="buyCredits('comic_wall')" style="display:flex;align-items:center;gap:14px;background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:8px 14px;cursor:pointer;text-align:left;width:100%">
+        <img src="/assets/products/Comic_Wall.png" alt="" width="52" height="52" style="flex-shrink:0;object-fit:contain">
         <div style="flex:1;min-width:0">
           <div style="font-size:16px;font-weight:700;color:#1a1008">Comic Wall</div>
           <div style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$30</div>
@@ -21780,8 +21963,8 @@ initFirebase();
           <div id="wall-bonus-line" style="display:none;font-size:12px;font-weight:700;color:#2c6e12;margin-top:2px"></div>
         </div>
       </button>
-      <button onclick="buyCredits('short_box')" style="display:flex;align-items:center;gap:14px;background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:12px 16px;cursor:pointer;text-align:left;width:100%">
-        <img src="/assets/products/Short_Box.png" alt="" width="64" height="64" style="flex-shrink:0;object-fit:contain">
+      <button onclick="buyCredits('short_box')" style="display:flex;align-items:center;gap:14px;background:#f5f0e8;border:2px solid #c8a96e;border-radius:10px;padding:8px 14px;cursor:pointer;text-align:left;width:100%">
+        <img src="/assets/products/Short_Box.png" alt="" width="52" height="52" style="flex-shrink:0;object-fit:contain">
         <div style="flex:1;min-width:0">
           <div style="font-size:16px;font-weight:700;color:#1a1008">Short Box</div>
           <div style="font-size:15px;font-weight:700;color:#1a1008;margin-top:1px">$100</div>

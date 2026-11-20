@@ -1,4 +1,5 @@
 import Stripe from 'stripe';
+import { unlimitedOnSale, unlimitedState } from '../lib/unlimited.js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -39,7 +40,26 @@ export default async function handler(req, res) {
   }
 
   const { package: pkg } = req.body;
-  const selected = PACKAGES[pkg];
+  // v6.79: UNLIMITED. The price lives in Stripe (create a $150 one-time price
+  // and put its id in STRIPE_PRICE_UNLIMITED). Refused here - BEFORE anyone
+  // pays - outside the sale window, while a week is pending or running, and
+  // for an account that refunded Unlimited before.
+  if (pkg === 'unlimited') {
+    if (!process.env.STRIPE_PRICE_UNLIMITED) return res.status(503).json({ error: 'unlimited_not_configured', message: 'Unlimited is not available yet.' });
+    // UNLIMITED_TESTERS: comma-separated uids that may buy before the sale opens (Matt's test).
+    const _tester = String(process.env.UNLIMITED_TESTERS || '').split(',').map(x => x.trim()).includes(userId);
+    if (!unlimitedOnSale() && !_tester) return res.status(400).json({ error: 'unlimited_not_on_sale', message: 'Unlimited is not on sale right now.' });
+    try {
+      const { getFirestore } = await import('firebase-admin/firestore');
+      const u = (await getFirestore().collection('users').doc(userId).get()).data() || {};
+      if (u.unlimitedBlocked) return res.status(400).json({ error: 'unlimited_blocked', message: 'Unlimited is not available on this account.' });
+      const st = unlimitedState(u).status;
+      if (st === 'pending' || st === 'active') return res.status(400).json({ error: 'unlimited_active', message: 'You already have an Unlimited week. You can buy another when it ends.' });
+    } catch (e) { console.warn('[checkout] unlimited state check failed:', e && e.message); }
+  }
+  const selected = pkg === 'unlimited'
+    ? { credits: 0, priceId: process.env.STRIPE_PRICE_UNLIMITED, name: 'Unlimited Grading' }
+    : PACKAGES[pkg];
   if (!selected) return res.status(400).json({ error: 'Invalid package' });
 
   try {
@@ -64,7 +84,7 @@ export default async function handler(req, res) {
         credits: selected.credits,
         package: pkg,
       },
-      success_url: `${process.env.APP_URL || 'https://robograder.app'}/?payment=success&credits=${selected.credits}&sid={CHECKOUT_SESSION_ID}`,
+      success_url: `${process.env.APP_URL || 'https://robograder.app'}/?payment=success&credits=${selected.credits}${pkg === 'unlimited' ? '&unlimited=1' : ''}&sid={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.APP_URL || 'https://robograder.app'}/?payment=cancelled`,
     });
 

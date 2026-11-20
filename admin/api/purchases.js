@@ -22,6 +22,7 @@ const IOS_PRICE = {
   'app.robograder.credits.wall': 29.99,
   'app.robograder.credits.shortbox': 99.99,
   'app.robograder.credits.shortbox2': 99.99,
+  'app.robograder.unlimited.week': 149.99,   // v6.79 Unlimited
 };
 
 // "What you keep" after the platform's cut.

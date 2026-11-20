@@ -21,6 +21,7 @@
 // can't drop it and ESM detection holds.)
 import process from 'node:process';
 import { effectiveBonusForNextPurchase, nextBonuses, TIER_CONFIG, tierOf } from '../lib/repeat_bonus.js';
+import { UNLIMITED_PRODUCT_ID, grantUnlimitedInTx } from '../lib/unlimited.js';
 
 const BUNDLE_ID = 'app.robograder';
 
@@ -72,8 +73,9 @@ export default async function handler(req, res) {
     if (tx.bundleId && tx.bundleId !== BUNDLE_ID) {
       return res.status(400).json({ error: 'Bundle mismatch' });
     }
-    const baseCredits = PRODUCT_CREDITS[tx.productId];
-    if (!baseCredits) return res.status(400).json({ error: 'Unknown product: ' + tx.productId });
+    const _isUnl = tx.productId === UNLIMITED_PRODUCT_ID;
+    const baseCredits = _isUnl ? 0 : PRODUCT_CREDITS[tx.productId];
+    if (!baseCredits && !_isUnl) return res.status(400).json({ error: 'Unknown product: ' + tx.productId });
     const transactionId = String(tx.transactionId);
     const envName = tx.environment || 'Production';
     const tier = tierOf({ productId: tx.productId });
@@ -85,7 +87,7 @@ export default async function handler(req, res) {
     // from the account's PRIOR production, non-refunded purchases at this tier or
     // higher, computed BEFORE the txn (this purchase isn't written yet).
     let bonusCredits = 0, nextBonusesCache = null, lastPurchaseAt = null;
-    if (TIER_CONFIG[tier] && envName === 'Production') {
+    if (!_isUnl && TIER_CONFIG[tier] && envName === 'Production') {
       const nowMs = Date.now();
       const priorSnap = await db.collection('purchases').where('userId', '==', uid).get();
       const priorDatas = priorSnap.docs.map(d => d.data());
@@ -102,10 +104,16 @@ export default async function handler(req, res) {
     const purchaseRef = db.collection('purchases').doc('iap_' + transactionId);
     const userRef = db.collection('users').doc(uid);
     let alreadyProcessed = false;
+    let _unlOutcome = null;
+    const _purchaseDocId = 'iap_' + transactionId, _SOURCE = 'ios_iap';
     await db.runTransaction(async (t) => {
       const existing = await t.get(purchaseRef);
       if (existing.exists) { alreadyProcessed = true; return; }
       const userSnap = await t.get(userRef);
+      if (_isUnl) {
+        // v6.79: UNLIMITED - a week of uncharged assessments, not credits.
+        _unlOutcome = grantUnlimitedInTx(t, userRef, userSnap, { purchaseId: _purchaseDocId, source: _SOURCE });
+      } else {
       const userUpdate = {
         assessmentCredits: FieldValue.increment(credits),
         totalPurchased: FieldValue.increment(credits),
@@ -119,12 +127,14 @@ export default async function handler(req, res) {
       }
       if (userSnap.exists) t.update(userRef, userUpdate);
       else t.set(userRef, userUpdate, { merge: true });
+      }
       t.set(purchaseRef, {
         userId: uid,
         credits,
         baseCredits,
         bonusCredits,
-        tier,
+        tier: _isUnl ? 'unlimited' : tier,
+        ...(_isUnl ? { unlimitedOutcome: _unlOutcome } : {}),
         productId: tx.productId,
         transactionId,
         originalTransactionId: tx.originalTransactionId ? String(tx.originalTransactionId) : null,
@@ -135,7 +145,8 @@ export default async function handler(req, res) {
     });
 
     console.log(`[verify_iap] ${alreadyProcessed ? 'already-processed' : 'credited'} ${credits} (base ${baseCredits}+bonus ${bonusCredits}) to ${uid} (tx ${transactionId}, ${envName})`);
-    return res.status(200).json({ ok: true, credits, baseCredits, bonusCredits, alreadyProcessed });
+    if (_isUnl) console.log(`[verify_iap] unlimited ${_unlOutcome || 'already-processed'} for ${uid} (tx ${transactionId})`);
+    return res.status(200).json({ ok: true, credits, baseCredits, bonusCredits, alreadyProcessed, ...(_isUnl ? { unlimited: _unlOutcome || 'already_processed' } : {}) });
   } catch (e) {
     console.error('[verify_iap]', e && (e.stack || e.message || e));
     return res.status(400).json({ error: (e && e.message) || 'Validation failed' });

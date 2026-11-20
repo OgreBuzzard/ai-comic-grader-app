@@ -48,6 +48,15 @@ export default async function handler(req, res) {
     }
 
     const { userId, itemId, ownership } = req.body || {};
+    // v6.79: clear the sticky adult flag (the app never clears it itself).
+    if (req.body && req.body.clearAdult === true && userId && itemId) {
+      const db0 = getFirestore();
+      const ref0 = db0.doc(`users/${userId}/items/${itemId}`);
+      if (!(await ref0.get()).exists) return res.status(404).json({ error: 'Item not found' });
+      const _d0 = (await ref0.get()).data() || {};
+      await ref0.update({ adultContent: false, ...(_d0.comicData ? { 'comicData.adultContent': false } : {}), adultClearedAt: new Date().toISOString(), adultClearedBy: decoded.email });
+      return res.status(200).json({ success: true, message: 'Adult flag cleared. The owner can now make it public.' });
+    }
     if (!userId || !itemId || !VALID_STATES.includes(ownership)) {
       return res.status(400).json({ error: 'Missing/invalid userId, itemId, or ownership (Owned|Sold|Watching|Print)' });
     }

@@ -22,6 +22,7 @@
 // dynamically inside the handler.
 import process from 'node:process';
 import { effectiveBonusForNextPurchase, nextBonuses, TIER_CONFIG, tierOf } from '../lib/repeat_bonus.js';
+import { UNLIMITED_PRODUCT_ID, grantUnlimitedInTx } from '../lib/unlimited.js';
 
 const PACKAGE_NAME = 'app.robograder';
 
@@ -69,8 +70,9 @@ export default async function handler(req, res) {
     if (!purchaseToken) return res.status(400).json({ error: 'Missing purchaseToken' });
     if (!productId) return res.status(400).json({ error: 'Missing productId' });
 
-    const baseCredits = PRODUCT_CREDITS[productId];
-    if (!baseCredits) return res.status(400).json({ error: 'Unknown product: ' + productId });
+    const _isUnl = productId === UNLIMITED_PRODUCT_ID;
+    const baseCredits = _isUnl ? 0 : PRODUCT_CREDITS[productId];
+    if (!baseCredits && !_isUnl) return res.status(400).json({ error: 'Unknown product: ' + productId });
     const tier = tierOf({ productId });
 
     const { initializeApp, getApps, cert } = await import('firebase-admin/app');
@@ -121,7 +123,7 @@ export default async function handler(req, res) {
     // from the account's PRIOR production, non-refunded purchases at this tier or
     // higher, computed BEFORE the txn (this purchase isn't written yet).
     let bonusCredits = 0, nextBonusesCache = null, lastPurchaseAt = null;
-    if (TIER_CONFIG[tier] && envName === 'Production') {
+    if (!_isUnl && TIER_CONFIG[tier] && envName === 'Production') {
       const nowMs = Date.now();
       const priorSnap = await db.collection('purchases').where('userId', '==', uid).get();
       const priorDatas = priorSnap.docs.map(d => d.data());
@@ -138,10 +140,16 @@ export default async function handler(req, res) {
     const purchaseRef = db.collection('purchases').doc('play_' + orderId);
     const userRef = db.collection('users').doc(uid);
     let alreadyProcessed = false;
+    let _unlOutcome = null;
+    const _purchaseDocId = 'play_' + orderId, _SOURCE = 'android_play';
     await db.runTransaction(async (t) => {
       const existing = await t.get(purchaseRef);
       if (existing.exists) { alreadyProcessed = true; return; }
       const userSnap = await t.get(userRef);
+      if (_isUnl) {
+        // v6.79: UNLIMITED - a week of uncharged assessments, not credits.
+        _unlOutcome = grantUnlimitedInTx(t, userRef, userSnap, { purchaseId: _purchaseDocId, source: _SOURCE });
+      } else {
       const userUpdate = {
         assessmentCredits: FieldValue.increment(credits),
         totalPurchased: FieldValue.increment(credits),
@@ -155,12 +163,14 @@ export default async function handler(req, res) {
       }
       if (userSnap.exists) t.update(userRef, userUpdate);
       else t.set(userRef, userUpdate, { merge: true });
+      }
       t.set(purchaseRef, {
         userId: uid,
         credits,
         baseCredits,
         bonusCredits,
-        tier,
+        tier: _isUnl ? 'unlimited' : tier,
+        ...(_isUnl ? { unlimitedOutcome: _unlOutcome } : {}),
         productId,
         orderId,
         purchaseToken: String(purchaseToken),
@@ -197,7 +207,8 @@ export default async function handler(req, res) {
     }
 
     console.log(`[verify_play] ${alreadyProcessed ? 'already-processed' : 'credited'} ${credits} (base ${baseCredits}+bonus ${bonusCredits}) to ${uid} (order ${orderId})`);
-    return res.status(200).json({ ok: true, credits, baseCredits, bonusCredits, alreadyProcessed });
+    if (_isUnl) console.log(`[verify_play] unlimited ${_unlOutcome || 'already-processed'} for ${uid} (order ${orderId})`);
+    return res.status(200).json({ ok: true, credits, baseCredits, bonusCredits, alreadyProcessed, ...(_isUnl ? { unlimited: _unlOutcome || 'already_processed' } : {}) });
   } catch (e) {
     console.error('[verify_play]', e && (e.stack || e.message || e));
     return res.status(400).json({ error: (e && e.message) || 'Validation failed' });

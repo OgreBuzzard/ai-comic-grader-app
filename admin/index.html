@@ -1376,13 +1376,42 @@ async function renderSalesTab() {
   try { state.salesData = await api('/api/purchases'); }
   catch (e) { el.innerHTML = `<div class="empty">Sales failed: ${escapeHtml(e.message || String(e))}</div>`; return; }
   state.salesShown = 20;   // cap to the most recent 20; Load more reveals older
+  // v6.79: Unlimited buyers. Its own request, so a failure here never hides sales.
+  try { state.unlimitedData = await api('/api/unlimited'); } catch (e) { state.unlimitedData = { error: e.message || String(e) }; }
   _renderSales();
+}
+// v6.79: one row per Unlimited buyer - status, and how many assessments the
+// week has run, split by kind. Tap a row to open the account.
+function _unlimitedBlock() {
+  const d = state.unlimitedData;
+  if (!d) return '';
+  if (d.error) return `<div class="empty" style="margin-bottom:10px">Unlimited list failed: ${escapeHtml(d.error)}</div>`;
+  const rows = (d.rows || []).map(r => {
+    const k = r.usesByKind || {};
+    const kinds = ['main','deep','full','batch'].filter(x => k[x]).map(x => `${x} ${k[x]}`).join(' · ') || 'none yet';
+    const col = r.status === 'running' ? '#7fd07f' : r.status === 'refunded' ? '#e07a6a' : r.status === 'not started' ? '#e8c257' : '#9aa';
+    const when = r.status === 'running' ? 'ends ' + _fmtDateTime(r.endsAt) : r.status === 'not started' ? 'must start by ' + _fmtDateTime(r.startBy) : r.status === 'ended' ? 'ended ' + _fmtDateTime(r.endsAt) : 'refunded ' + _fmtDateTime(r.revokedAt);
+    const past = (r.pastWeeks || []).length ? ` · ${r.pastWeeks.length} earlier week(s), ${r.pastWeeks.reduce((s, w) => s + (w.uses || 0), 0)} assessments` : '';
+    return `<div class="row unl-row" data-uid="${escapeAttr(r.uid)}" style="align-items:center;cursor:pointer;">
+      <div class="main">
+        <div class="title" style="font-size:13px;"><b>${r.uses}</b> assessments · <span style="color:${col}">${escapeHtml(r.status)}</span></div>
+        <div class="sub">${escapeHtml(r.name)}${r.transferCode ? ' · <span style="color:#e8c257;font-weight:700;">' + escapeHtml(r.transferCode) + '</span>' : ''} · ${escapeHtml(kinds)}</div>
+        <div class="sub">${escapeHtml(when)}${past}</div>
+      </div>
+      <div class="meta" style="font-size:11px;color:#9aa;flex-shrink:0;text-align:right">${escapeHtml(r.source || '')}<br>${r.credits ?? '—'} credits</div>
+    </div>`;
+  }).join('');
+  return `<div style="margin-bottom:14px;padding:10px 12px;border:1px solid #2a4a2a;border-radius:8px;background:#0f1610">
+    <div style="font-size:12px;font-weight:700;color:#9fd09f;margin-bottom:6px">UNLIMITED · ${d.count || 0} buyer(s) · ${d.totalUses || 0} assessments</div>
+    ${rows || '<div style="font-size:11px;color:#8a9a8a">No Unlimited purchases yet.</div>'}
+  </div>`;
 }
 function _salesProduct(p) {
   const a = Math.round((Number(p.amount) || 0) * 100);
   if (a === 999) return 'Stack';
   if (a === 2999) return 'Wall';
   if (a === 9999) return 'Short Box';
+  if (a === 14999 || a === 15000) return 'Unlimited';
   const c = Number(p.credits) || 0;      // test buys ($0) + any odd amounts fall back to credits
   if (c >= 100) return 'Short Box';
   if (c >= 20) return 'Wall';
@@ -1435,13 +1464,15 @@ function _renderSales() {
   }).join('');
   const more = filtered.length > shown ? `<button class="load-more" id="load-more-sales">Load more (${filtered.length - shown})</button>` : '';
   el.innerHTML = `
+    ${_unlimitedBlock()}
     <div style="display:flex;gap:8px;margin-bottom:12px;max-width:100%;">${card('Web', t.web)}${card('iOS', t.ios)}${card('And.', t.android)}${card('Comb.', t.combined)}</div>
-    <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">${['all','Stack','Wall','Short Box'].map(k => `<button class="sales-filter" data-prod="${k}" style="padding:5px 10px;font-size:11px;border-radius:8px;cursor:pointer;border:1px solid ${prodFilter===k?'#7fd0ff':'#3a5a2a'};background:${prodFilter===k?'#12303f':'var(--panel-2)'};color:${prodFilter===k?'#cde':'#9ab'}">${k==='all'?'All':k==='Stack'?'Comic Stack':k==='Wall'?'Comic Wall':'Short Box'}</button>`).join('')}</div>
+    <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">${['all','Stack','Wall','Short Box','Unlimited'].map(k => `<button class="sales-filter" data-prod="${k}" style="padding:5px 10px;font-size:11px;border-radius:8px;cursor:pointer;border:1px solid ${prodFilter===k?'#7fd0ff':'#3a5a2a'};background:${prodFilter===k?'#12303f':'var(--panel-2)'};color:${prodFilter===k?'#cde':'#9ab'}">${k==='all'?'All':k==='Stack'?'Comic Stack':k==='Wall'?'Comic Wall':k==='Unlimited'?'Unlimited':'Short Box'}</button>`).join('')}</div>
     ${rows || '<div class="empty">No purchases in this filter.</div>'}
     ${more}
   `;
   // A sale with no userId (shouldn't happen, but old rows exist) stays inert
   // rather than navigating to a blank user page.
+  el.querySelectorAll('.unl-row[data-uid]').forEach(r => { r.onclick = () => showUser(r.dataset.uid); });
   el.querySelectorAll('.sales-row[data-uid]').forEach(r => {
     r.onclick = () => showUser(r.dataset.uid);
   });
@@ -3504,6 +3535,11 @@ function renderItemDetail(it) {
       </div>
       <div style="font-size:10px;color:#9aa;margin-top:6px">Tap Cycle to pick Owned/Sold/Watching/Print, then Confirm. Recovers books stuck in Print. Resets after 5s.</div>
     </div>
+    ${it.adultContent ? `<div style="margin-top:12px;border-top:1px solid var(--rule);padding-top:12px;">
+      <h3 class="section-h" style="margin-top:0">Adult flag (admin)</h3>
+      <div style="font-size:11px;color:#9aa;margin-bottom:8px">The grader flagged this book as adult content, so it cannot be made public. Users cannot clear this; you can.</div>
+      <div style="display:flex;align-items:center;gap:10px"><button onclick="clearAdultFlag()" style="padding:6px 12px;background:var(--panel-2);border:1px solid var(--rule);color:var(--text);border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">Clear adult flag</button><span id="adult-result" style="font-size:12px;color:#9aa"></span></div>
+    </div>` : ''}
     <div style="margin-top:20px;border-top:1px solid #3a1a1a;padding-top:14px;">
       <button onclick="deleteItemConfirm()" style="width:100%;padding:10px;background:#2a1414;color:#e85050;border:1px solid #5a2a2a;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🗑 Delete this entry (permanent)</button>
       <div id="delete-result" style="margin-top:6px;font-size:11px;color:#9aa;"></div>
@@ -4730,6 +4766,17 @@ function cycleState() {
   if (lbl) lbl.textContent = next;
   clearTimeout(_stateResetTimer);
   _stateResetTimer = setTimeout(_resetStateCycle, 5000);
+}
+// v6.79: clear the sticky adultContent flag on one book (TASKLIST S22).
+async function clearAdultFlag() {
+  const it = window._adminItem; if (!it) return;
+  const el = document.getElementById('adult-result');
+  if (el) { el.style.color = '#9aa'; el.textContent = 'Clearing…'; }
+  try {
+    const resp = await api('/api/set_state', { method: 'POST', body: { userId: it.uid, itemId: it.id, clearAdult: true } });
+    if (el) { el.style.color = '#6a6'; el.textContent = resp.message || 'Cleared'; }
+    setTimeout(() => showItem(it.uid, it.id, state.tab || 'items'), 1000);
+  } catch (e) { if (el) { el.style.color = '#e55'; el.textContent = 'Failed: ' + (e.message || e); } }
 }
 async function confirmState() {
   const it = window._adminItem; if (!it || !_stateCandidate) return;

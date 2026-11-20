@@ -26,6 +26,7 @@ import {
   newBatchDoc, batchRef, makeBatchId
 } from '../lib/batch_common.js';
 import { logCreditEvent } from '../lib/credits.js';
+import { unlimitedCoverInTx } from '../lib/unlimited.js';
 
 export default async function handler(req, res) {
   if (applyCors(req, res)) return;
@@ -60,8 +61,10 @@ export default async function handler(req, res) {
   // ── deduct 3 credits, once, atomically ────────────────────────────────────
   const uRef = db.collection('users').doc(uid);
   let remaining = null;
+  let unlimitedCov = null;   // v6.79: an Unlimited week covers the batch (1/hour, 3/day)
   try {
     remaining = await db.runTransaction(async tx => {
+      unlimitedCov = null;
       const uSnap = await tx.get(uRef);
       if (!uSnap.exists) throw Object.assign(new Error('no user doc'), { code: 'no_account' });
       const u = uSnap.data();
@@ -70,6 +73,8 @@ export default async function handler(req, res) {
         throw Object.assign(new Error('locked'), { code: 'temp_lockout' });
       }
       const bal = Number(u.assessmentCredits);
+      const cov = await unlimitedCoverInTx(tx, db, uRef, u, { kind: 'batch' });
+      if (cov) { unlimitedCov = cov; return Number.isFinite(bal) ? bal : null; }
       if (!Number.isFinite(bal) || bal < BATCH_CREDIT_COST) {
         throw Object.assign(new Error('insufficient'), { code: 'insufficient_credits', balance: Number.isFinite(bal) ? bal : 0 });
       }
@@ -78,6 +83,9 @@ export default async function handler(req, res) {
     });
   } catch (e) {
     const code = e && e.code;
+    if (code === 'insufficient_credits' && e.reason === 'unlimited_limit') {
+      return res.status(402).json({ error: code, reason: 'unlimited_limit', retryAt: e.retryAt || null, cost: 0, message: e.message });
+    }
     if (code === 'insufficient_credits') {
       return res.status(402).json({ error: code, balance: e.balance ?? 0, cost: BATCH_CREDIT_COST,
         message: `Batch costs ${BATCH_CREDIT_COST} credits. You have ${e.balance ?? 0}.` });
@@ -102,7 +110,8 @@ export default async function handler(req, res) {
       back: item.referenceBackImageUrl || c.referenceBackImageUrl || null
     }
   });
-  doc.creditsCharged = BATCH_CREDIT_COST;
+  doc.creditsCharged = unlimitedCov ? 0 : BATCH_CREDIT_COST;
+  if (unlimitedCov) doc.unlimited = true;
   doc.identity = {
     title: c.title || '', issue: String(c.issue || ''), issueDate: c.issueDate || '',
     publisher: c.publisher || '', printing: c.printing || '',
@@ -115,6 +124,7 @@ export default async function handler(req, res) {
   } catch (e) {
     // Refund rather than silently pocket the credits.
     console.error('[batch_start] batch doc write failed, refunding:', e);
+    if (unlimitedCov) return res.status(500).json({ error: 'batch_create_failed', message: 'Could not start the batch. Nothing was charged.' });
     try {
       const { FieldValue } = await import('firebase-admin/firestore');
       await uRef.update({ assessmentCredits: FieldValue.increment(BATCH_CREDIT_COST) });
@@ -139,7 +149,7 @@ export default async function handler(req, res) {
   // instance with the write still in flight - it then rejects with
   // DEADLINE_EXCEEDED against an unrelated later request. See lib/credits.js
   // logCreditEvent for the full note.
-  await (async () => {
+  if (!unlimitedCov) await (async () => {
     try {
       const key = `batchcr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       await db.collection('assessment_timings').doc(key).set({
@@ -154,7 +164,8 @@ export default async function handler(req, res) {
   })();
 
   return res.status(200).json({
-    batchId, n: BATCH_N, creditsCharged: BATCH_CREDIT_COST,
-    creditsRemaining: remaining, anchorGrade: doc.anchorGrade
+    batchId, n: BATCH_N, creditsCharged: unlimitedCov ? 0 : BATCH_CREDIT_COST,
+    creditsRemaining: remaining, anchorGrade: doc.anchorGrade,
+    ...(unlimitedCov ? { unlimited: { covered: true, endsAt: unlimitedCov.endsAt } } : {})
   });
 }

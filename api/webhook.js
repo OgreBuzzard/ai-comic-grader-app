@@ -1,4 +1,5 @@
 import Stripe from 'stripe';
+import { grantUnlimitedInTx, revokeUnlimited } from '../lib/unlimited.js';
 import { effectiveBonusForNextPurchase, nextBonuses, TIER_CONFIG, tierOf } from '../lib/repeat_bonus.js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
@@ -143,6 +144,24 @@ export default async function handler(req, res) {
       // fall back to amount_subtotal for older payloads. Both are ints in cents.
       const amountCents = session.amount_total ?? session.amount_subtotal ?? 0;
 
+      // v6.79: UNLIMITED - grant the week, record the purchase, done.
+      if (pkg === 'unlimited') {
+        let outcome = null, already = false;
+        await db.runTransaction(async (tx) => {
+          const existing = await tx.get(purchaseRef);
+          const userDoc = await tx.get(userRef);
+          if (existing.exists) { already = true; return; }
+          outcome = grantUnlimitedInTx(tx, userRef, userDoc, { purchaseId: session.id, source: 'stripe' });
+          tx.set(purchaseRef, {
+            userId, credits: 0, baseCredits: 0, bonusCredits: 0, tier: 'unlimited',
+            unlimitedOutcome: outcome, amountCents, sessionId: session.id,
+            createdAt: new Date().toISOString(), createdAtMs: Date.now(),
+          });
+        });
+        console.log(`[webhook] unlimited ${already ? 'already processed' : outcome} for ${userId} (session ${session.id})`);
+        return res.status(200).json({ received: true });
+      }
+
       const baseCredits = parseInt(credits);
       const tier = tierOf({ tier: pkg, credits: baseCredits });
 
@@ -271,6 +290,16 @@ export default async function handler(req, res) {
       userId = session.metadata?.userId;
       credits = session.metadata?.credits;
       sessionId = session.id;
+      // v6.79: refunding Unlimited ends the week and blocks a repurchase.
+      if (session.metadata?.package === 'unlimited' && userId) {
+        const { initializeApp, getApps, cert } = await import('firebase-admin/app');
+        const { getFirestore } = await import('firebase-admin/firestore');
+        if (!getApps().length) initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
+        const db = getFirestore();
+        await revokeUnlimited(db, userId, session.id, 'stripe_refund');
+        try { await db.collection('purchases').doc(session.id).set({ refunded: true, refundedAt: new Date().toISOString() }, { merge: true }); } catch (e) {}
+        return res.status(200).json({ received: true, unlimited: 'revoked' });
+      }
       if (!userId || !credits) {
         console.error(`[refund] Session ${session.id} missing userId/credits metadata.`);
         return res.status(200).json({ received: true, skipped: 'no_metadata' });

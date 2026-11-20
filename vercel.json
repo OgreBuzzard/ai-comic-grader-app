@@ -59,6 +59,12 @@
     },
     "api/ebay_deletion.js": {
       "maxDuration": 10
+    },
+    "api/appstore_notify.js": {
+      "maxDuration": 30
+    },
+    "api/play_voided.js": {
+      "maxDuration": 60
     }
   },
   "headers": [
@@ -134,6 +140,10 @@
     {
       "path": "/api/credit_sweep",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/play_voided",
+      "schedule": "17 */4 * * *"
     }
   ]
 }

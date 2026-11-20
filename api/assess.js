@@ -35,6 +35,7 @@ import * as _nodeCrypto from 'crypto';   // 2026-10-27: prefix sha on the timing
 import { enforceCgcGrade } from '../lib/grade_definitions.js';
 import { computeScoreCeilingPenalty, mergePhotograder, PHOTOGRADER_RUBRIC_MAIN } from '../lib/photograder.js';
 import { reserveCredit, refundCredit, insufficientCreditsPayload } from '../lib/credits.js';
+import { imageHashOf } from '../lib/unlimited.js';
 
 // ── A/B TEST TOGGLE (TEMPORARY) ──────────────────────────────────────
 // When true, the ComicVine reference is suppressed for ALL assessments so we
@@ -422,6 +423,7 @@ export default async function handler(req, res) {
   let _userRef = null;
   let _userData = null;
   let _creditsRemaining = null;   // S22: echoed to the client so it can sync
+  let _unlimitedCov = null;       // v6.79: set when an Unlimited week covered this run
   try {
     const uid = await verifyUidFromAuthHeader(req);
     if (uid) {
@@ -475,10 +477,14 @@ export default async function handler(req, res) {
     const _r = await reserveCredit(_db, _authedUid, {
       cost: _CREDIT_COST,
       debit: req.body && req.body.serverCredits === true,
-      label: _isBatchPass ? 'batchpass' : 'main'
+      label: _isBatchPass ? 'batchpass' : 'main',
+      // v6.79: an Unlimited week covers a Main (lib/unlimited.js). The hash is
+      // of the photos THIS request carries - the "same photos" rate limit.
+      unlimited: _isBatchPass ? null : { kind: 'main', imageHash: imageHashOf(images) }
     });
     _creditDebited = _r.debited;
     _creditsRemaining = _r.remaining;
+    _unlimitedCov = _r.unlimited || null;
   } catch (e) {
     if (e && e.code === 'insufficient_credits') {
       return sseError(402, insufficientCreditsPayload(e, _CREDIT_COST));
@@ -2153,7 +2159,7 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
           // nothing (the 3 credits sit on the batch_credits row), and recording
           // a real 0 keeps the row inside the coverage count, where leaving the
           // field off would not.
-          creditsCharged: _creditDebited ? _CREDIT_COST : 0,
+          creditsCharged: _creditDebited ? _CREDIT_COST : 0, ...(_unlimitedCov ? { unlimited: true } : {}),
           // v6.54: the per-type cost averages need a discriminator. Nothing on
           // these rows said what KIND of assessment they were - the admin was
           // averaging Main, Deep, Full, Batch passes and Post-Cleaning into one
@@ -2343,6 +2349,13 @@ Over-elaboration in output is the dominant cause of slow runs. Be thorough in ob
     if (_creditDebited && Number.isFinite(_creditsRemaining)) {
       parsed.creditsCharged = _CREDIT_COST;
       parsed.creditsRemaining = _creditsRemaining;
+    }
+    // v6.79: covered by Unlimited - nothing charged, but the client must still
+    // get a balance to sync to, or an older build decrements locally.
+    if (_unlimitedCov) {
+      parsed.creditsCharged = 0;
+      parsed.unlimited = { covered: true, endsAt: _unlimitedCov.endsAt };
+      if (Number.isFinite(_creditsRemaining)) parsed.creditsRemaining = _creditsRemaining;
     }
     if (wantsSSE) {
       sseEvent('result', parsed);

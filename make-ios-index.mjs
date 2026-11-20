@@ -494,6 +494,7 @@ const IOS_PRODUCT_IDS = {
   comic_stack: 'app.robograder.credits.stack',
   comic_wall:  'app.robograder.credits.wall',
   short_box:   'app.robograder.credits.shortbox2',
+  unlimited:   'app.robograder.unlimited.week',   // v6.79 Unlimited (non-renewing / one-time)
 };
 const IOS_CREDITS = { comic_stack: 5, comic_wall: 20, short_box: 100 };
 
@@ -531,7 +532,8 @@ async function _iosBuyCredits(pkg) {
       body: JSON.stringify({ jws })
     });
     const data = await resp.json().catch(function(){ return {}; });
-    if (resp.ok && data.ok) { await loadUserCredits(); hideBuyCredits(); window.rgPopup("Added " + data.credits + " assessments to your account.", { type: "success", title: "Purchase complete", onClose: function(){ if (typeof maybeShowRepeatBuyerDiscount === "function") maybeShowRepeatBuyerDiscount(); } }); }
+    if (resp.ok && data.ok && data.unlimited) { await loadUserCredits(); hideBuyCredits(); if (typeof _unlimitedPurchased === "function") _unlimitedPurchased(data.unlimited); }
+    else if (resp.ok && data.ok) { await loadUserCredits(); hideBuyCredits(); window.rgPopup("Added " + data.credits + " assessments to your account.", { type: "success", title: "Purchase complete", onClose: function(){ if (typeof maybeShowRepeatBuyerDiscount === "function") maybeShowRepeatBuyerDiscount(); } }); }
     else { window.rgPopup("We couldn't credit your purchase: " + (data.error || "unknown error") + "\\n\\nIf you were charged, your receipt is on file — email support@robograder.app and we'll fix it.", { type: "error" }); }
   } catch (e) {
     window.rgPopup("Network error verifying your purchase. If you were charged, reopen the app or email support@robograder.app.", { type: "error" });
