@@ -92,12 +92,30 @@ export default async function handler(req, res) {
       }
     }
 
-    let refunded = 0, skipped = 0;
+    let refunded = 0, skipped = 0, found = 0;
     for (const doc of snap.docs) {
       const d = doc.data() || {};
       const uid = d.creditPendingUid;
       const cost = Number(d.creditPendingCost || 0);
       if (!uid || !(cost > 0)) { skipped++; await doc.ref.set({ creditSettled: 'skipped' }, { merge: true }); continue; }
+      // v6.78 - LOOK FOR THE SAVED BOOK BEFORE REFUNDING.
+      // The settle call only exists in clients from v5.80 on. iOS 1.13 (v5.63)
+      // already sends serverCredits:true, so the server charges it, but it never
+      // settles - so every grade it made was refunded 15 minutes later. Found
+      // 2026-11-20: one 1.13 user had 59 grades refunded in two days, every book
+      // safely in his library. So the settle call is no longer the only proof:
+      // if the user's library has a save of the same issue after the charge, the
+      // book landed and the credit stays. Version-proof, needs no app update.
+      try {
+        if (await _bookLanded(db, uid, d)) {
+          await doc.ref.set({ creditSettled: true, creditSettledAt: Date.now(), creditSettledBy: 'sweep:item-found' }, { merge: true });
+          found++;
+          continue;
+        }
+      } catch (e) {
+        // A failed lookup falls through to the refund: the deliberate bias.
+        console.warn(`[credit_sweep] item lookup failed for ${doc.id}, refunding:`, e && e.message);
+      }
       try {
         await refundCredit(db, uid, cost, d.creditPendingLabel || 'orphan');
         await doc.ref.set({ creditSettled: 'refunded', creditRefundedAt: Date.now() }, { merge: true });
@@ -110,8 +128,8 @@ export default async function handler(req, res) {
     }
     // Printed every run, including zeroes, so the rate is visible in the logs
     // rather than inferred from support mail.
-    console.log(`[credit_sweep] scanned ${snap.size} orphan candidate(s): ${refunded} refunded, ${skipped} skipped`);
-    return res.status(200).json({ scanned: snap.size, refunded, skipped });
+    console.log(`[credit_sweep] scanned ${snap.size} orphan candidate(s): ${refunded} refunded, ${found} kept (book found in library), ${skipped} skipped`);
+    return res.status(200).json({ scanned: snap.size, refunded, kept: found, skipped });
   } catch (e) {
     const msg = String((e && e.message) || e);
     // v6.49 - A MISSING INDEX MUST SAY WHERE TO CREATE IT.
@@ -133,6 +151,38 @@ export default async function handler(req, res) {
       ...(indexUrl ? { indexUrl } : {}),
     });
   }
+}
+
+// v6.78 - Did the graded book reach the user's library?
+// Every client version stamps clientSavedAt (ISO string) on each save. Look for
+// a save of the SAME ISSUE between the charge and two hours after it. Issue
+// must match exactly (after stripping '#', spaces, leading zeros); title only
+// has to share its first real word, because Main can correct a typed title
+// ('G.I. Joe, A Real...' vs 'G.I. Joe: A Real...'). A save of a different book
+// in the same window does not count.
+async function _bookLanded(db, uid, d) {
+  const at = Number(d.creditPendingAt || 0);
+  if (!at) return false;
+  const norm = (x) => String(x == null ? '' : x).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const iss = (x) => norm(x).replace(/\s+/g, '').replace(/^0+(?=\d)/, '');
+  const firstWord = (x) => (norm(x).split(' ').find((w) => w.length > 1 && !['the', 'a', 'an'].includes(w)) || '');
+  const wantIssue = iss(d.issue);
+  const wantWord = firstWord(d.title);
+  if (!wantIssue && !wantWord) return false;
+  const lo = new Date(at).toISOString();
+  const hi = new Date(at + 2 * 3600 * 1000).toISOString();
+  const snap = await db.collection('users').doc(uid).collection('items')
+    .where('clientSavedAt', '>=', lo)
+    .where('clientSavedAt', '<=', hi)
+    .limit(50)
+    .get();
+  for (const it of snap.docs) {
+    const v = it.data() || {};
+    if (iss(v.issue) !== wantIssue) continue;
+    if (wantWord && firstWord(v.title) !== wantWord) continue;
+    return true;
+  }
+  return false;
 }
 
 function parseServiceAccount() {
