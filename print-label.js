@@ -4003,10 +4003,13 @@ function renderCardLabelMarkup(comic, opts) {
 // down into the slot. Square for comics (it is the one square label, and the
 // slot is square), Card for cards, in the colour or thermal style the user
 // last chose in the label viewer.
-export async function renderLabelThumb(slot, comic) {
+export async function renderLabelThumb(slot, comic, thumbOpts) {
   if (!slot || !comic) return;
   ensureStylesInjected();
   const o = readOptions();
+  // v6.78: the bottom bar asks for the thermal (black and white) style
+  // whatever the viewer's own setting is.
+  if (thumbOpts && typeof thumbOpts.mono === 'boolean') o.mono = thumbOpts.mono;
   const size = (comic.type === 'card') ? 'card' : 'square';
   const f = LABEL_FORMATS[size];
   const box = slot.clientWidth || 32;

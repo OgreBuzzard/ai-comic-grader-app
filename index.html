@@ -1938,8 +1938,12 @@ onAuthStateChanged(auth, async user => {
     /* S14: app-styled confirm dialog (replaces native confirm()). Centered
        card, dark panel matching the app's surfaces, green primary action
        consistent with the rest of the UI. */
+    /* v6.78: above EVERYTHING - the camera, the cropper, the scan stage, the
+       label viewer and the concierge offer all sit higher than the old 3000,
+       which is why some messages fell back to the plain system alert or
+       opened underneath. */
     #app-confirm-overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.62); z-index: 3000;
+      position: fixed; inset: 0; background: rgba(0,0,0,0.62); z-index: 2147483100;
       display: flex; align-items: center; justify-content: center;
       padding: 24px;
     }
@@ -5557,7 +5561,9 @@ function renderBottomBar() {
     if (key !== _bbKey) {
       _bbKey = key;
       if (view === "list") {
-        c[0].innerHTML = `<button type="button" class="bb-btn" id="bb-gallery" disabled title="Coming soon">Gallery</button>`;
+        // v6.78, Matt: Gallery is off until it has a spec; the space stays.
+        // c[0].innerHTML = `<button type="button" class="bb-btn" id="bb-gallery" disabled title="Coming soon">Gallery</button>`;
+        c[0].innerHTML = "";
         c[1].innerHTML = "";
         c[2].innerHTML = graded ? `<button type="button" id="bb-print-toggle" class="${on ? "on" : ""}" aria-pressed="${on}" onclick="togglePrintModeFromBar()" aria-label="Show print queue buttons" title="Show or hide the add-to-print buttons">${on ? PRINT_ICON_SVG.replace("stroke:#7aa838", "stroke:#ffffff") : PRINT_ICON_SVG}<span id="bb-print-count" style="${n ? "" : "display:none"}">${n}</span></button>` : "";
         c[3].innerHTML = graded ? `<button type="button" id="bb-print-go" onclick="printQueueSheet()" ${n ? "" : "disabled"}>PRINT</button>` : "";
@@ -5580,7 +5586,7 @@ function renderBottomBar() {
       const tk = it.id + "|" + (it.roboGradeId || "") + "|" + (it.score || "") + "|" + (it.title || "") + "|" + (it.issue || "");
       if (tk !== _bbThumbKey) {
         _bbThumbKey = tk;
-        _preloadLabelModule().then(m => m.renderLabelThumb && m.renderLabelThumb(slot, it)).catch(() => {});
+        _preloadLabelModule().then(m => m.renderLabelThumb && m.renderLabelThumb(slot, it, { mono: true })).catch(() => {});
       }
     }
   } catch (e) {}
@@ -5638,7 +5644,17 @@ function refreshHeaderControls() {
 
 let _appConfirmResolver = null;
 
-function appConfirm(message, okLabel, asHtml) {
+// v6.78: ONE DIALOG AT A TIME. Both appConfirm and appAlert drive the same
+// overlay through one resolver; a second call while one was open replaced the
+// first one's resolver, so its promise never settled. Calls now queue.
+let _dlgChain = Promise.resolve();
+function _dlgEnqueue(fn) {
+  const p = _dlgChain.then(fn, fn);
+  _dlgChain = p.then(() => {}, () => {});
+  return p;
+}
+function appConfirm(message, okLabel, asHtml) { return _dlgEnqueue(() => _appConfirmRaw(message, okLabel, asHtml)); }
+function _appConfirmRaw(message, okLabel, asHtml) {
   return new Promise(resolve => {
     _appConfirmResolver = resolve;
     const overlay = document.getElementById("app-confirm-overlay");
@@ -5646,9 +5662,10 @@ function appConfirm(message, okLabel, asHtml) {
     const okEl = document.getElementById("app-confirm-ok");
     const cancelEl = document.getElementById("app-confirm-cancel");
     if (!overlay || !msgEl) {
-      resolve(window.confirm(message));
+      resolve(_nativeConfirm(message));
       return;
     }
+    msgEl.style.whiteSpace = asHtml ? "" : "pre-line";
     if (cancelEl) cancelEl.style.display = "";
     // v6.33: and the two-button dialog takes the centring off again.
     const _act = document.getElementById("app-confirm-actions");
@@ -5679,7 +5696,8 @@ function _appConfirmResolve(val) {
   if (r) r(!!val);
 }
 
-function appAlert(message, asHtml) {
+function appAlert(message, asHtml) { return _dlgEnqueue(() => _appAlertRaw(message, asHtml)); }
+function _appAlertRaw(message, asHtml) {
   return new Promise(resolve => {
     _appConfirmResolver = () => resolve(true);
     const overlay = document.getElementById("app-confirm-overlay");
@@ -5687,10 +5705,11 @@ function appAlert(message, asHtml) {
     const okEl = document.getElementById("app-confirm-ok");
     const cancelEl = document.getElementById("app-confirm-cancel");
     if (!overlay || !msgEl) {
-      window.alert(message);
+      _nativeAlert(message);
       resolve(true);
       return;
     }
+    msgEl.style.whiteSpace = asHtml ? "" : "pre-line";
     if (asHtml) msgEl.innerHTML = message; else msgEl.textContent = message;
     if (cancelEl) cancelEl.style.display = "none";
     const actionsEl = document.getElementById("app-confirm-actions");
@@ -5706,6 +5725,38 @@ function appAlert(message, asHtml) {
     overlay._onKey = onKey;
     document.addEventListener("keydown", onKey);
   });
+}
+
+// v6.78: EVERY alert() IS THE APP'S DIALOG. There were ~65 plain alert()
+// calls (errors, validation, print and export failures) showing the system's
+// grey box. Rather than edit each one, alert itself is routed here: same
+// words, app styling, queued. Nothing in the app depends on alert() BLOCKING -
+// every call is followed by a return or by code that does not need the user
+// to have read it first. The originals are kept for the no-overlay fallback.
+const _nativeAlert = window.alert.bind(window);
+const _nativeConfirm = window.confirm.bind(window);
+window.alert = function (m) { appAlert(m == null ? "" : String(m)); };
+
+// A text-entry dialog in the same style (only the account deletion uses it).
+function appPrompt(message, okLabel) {
+  return _dlgEnqueue(() => new Promise(resolve => {
+    const msgEl = document.getElementById("app-confirm-msg");
+    if (!msgEl) { resolve(window.prompt(message)); return; }
+    _appConfirmRaw(message, okLabel || "Continue").then(ok => {
+      const inp = document.getElementById("app-prompt-input");
+      const v = inp ? inp.value : "";
+      if (inp) inp.remove();
+      resolve(ok ? v : null);
+    });
+    const inp = document.createElement("input");
+    inp.id = "app-prompt-input";
+    inp.type = "text";
+    inp.autocapitalize = "characters";
+    inp.autocomplete = "off";
+    inp.style.cssText = "display:block;width:100%;box-sizing:border-box;margin-top:12px;padding:10px 12px;border-radius:9px;border:1px solid #3a322c;background:#0d0c0b;color:#f0e6da;font:600 16px 'Barlow Condensed',sans-serif;letter-spacing:1px";
+    msgEl.appendChild(inp);
+    setTimeout(() => { try { inp.focus(); } catch (e) {} }, 60);
+  }));
 }
 
 async function gradeFromHeader() {
@@ -6089,7 +6140,7 @@ async function signInApple() {
 window.signInApple = signInApple;
 
 async function signOutUser() {
-  if (!confirm("Sign out?")) return;
+  if (!(await appConfirm("Sign out?", "Sign Out"))) return;
   await window._signOut(window._auth);
   window.location.reload();
 }
@@ -7810,12 +7861,15 @@ function showDetail(id) {
   // regular button in the grid (replaces the old text link / Print Label slot).
   // S21: Give is gated to accounts that have PURCHASED credits (abuse prevention).
   // Non-purchasers see a grayed button that explains why on tap.
+  // v6.78, Matt: GIVE IS OFF for now (kept, not deleted). Almost nobody used
+  // it, and "Give" beside "Share" read as two words for the same thing. To
+  // bring it back, restore _giveBtn into the Give | Complain row below.
   const _giveBtn = _canGive
     ? (window._userHasPurchased
         ? `<button class="rg-btn rg-btn-action rg-btn-md" onclick="openGiveDialog('${esc(selected.id)}')">Give</button>`
         : `<button class="rg-btn rg-btn-action rg-btn-md" style="opacity:0.45" onclick="appAlert('Giving entries is available once you have purchased credits.')">Give</button>`)
     : `<span></span>`;
-  let _complainBtn = `<span></span>`;
+  let _complainBtn = "";
   if (selected.roboGrade) {
     const _cId = (selected.roboGradeId || selected.id || "").toString().slice(-6).toUpperCase();
     const _subjBits = [selected.title || "", selected.issue ? "#" + selected.issue : "", selected.issueDate || ""].filter(Boolean).join(" ");
@@ -7834,10 +7888,13 @@ function showDetail(id) {
     // the List view uses, seeded on this one book, so the user picks a style
     // and gets the Avery-positioned PDF that flow already produces.
     // v6.78: Print Label is gone from here - the bottom bar carries the label
-    // thumbnail and PRINT. Summary Image sits alone, centred, half width.
-    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n      <button class="rg-btn rg-btn-action rg-btn-md btn-with-thumb" id="export-summary-btn" onclick="exportSummaryImage('${esc(selected.id)}')" style="grid-column:1 / span 2;justify-self:center;width:calc(50% - 5px)"><img src="assets/Summary_Image_Placeholder.png" alt="" decoding="async" class="action-btn-thumb"><span>Summary<br>Image</span></button>\n    </div>`;
+    // thumbnail and PRINT. With Give off, Summary Image pairs with Complain.
+    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n      <button class="rg-btn rg-btn-action rg-btn-md btn-with-thumb" id="export-summary-btn" onclick="exportSummaryImage('${esc(selected.id)}')"><img src="assets/Summary_Image_Placeholder.png" alt="" decoding="async" class="action-btn-thumb"><span>Summary<br>Image</span></button>\n      ${_complainBtn}\n    </div>`;
+    _complainBtn = "";
   }
-  html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    ${_giveBtn}\n    ${_complainBtn}\n  </div>\n  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    <button class="rg-btn rg-btn-destructive rg-btn-md" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')" style="grid-column:1 / span 2;justify-self:center;width:calc(50% - 5px)">Delete</button>\n  </div></div>`;
+  // Give | Complain row: Give is off (above), so only Complain can be left
+  // here - for a book with no Summary Image (a card, a sample).
+  html += `${_complainBtn ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    ${_complainBtn}\n  </div>` : ""}\n  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">\n    <button class="rg-btn rg-btn-destructive rg-btn-md" id="del-btn" onclick="confirmDelete('${esc(selected.id)}')" style="grid-column:1 / span 2;justify-self:center;width:calc(50% - 5px)">Delete</button>\n  </div></div>`;
   document.getElementById("main").innerHTML = html;
   window.scrollTo(0, 0);
   document.querySelectorAll(".detail-cover, .photo-spine").forEach(img => {
@@ -7916,7 +7973,11 @@ function openPublicPreview(roboGradeId) {
   const _previewBase = (location.protocol === "https:" && /robograder\.app$/i.test(location.hostname))
     ? "" // already on the production web origin — relative is fine
     : "https://robograder.app";
-  modal.innerHTML = `\n    <div style="background:#fff;border-radius:14px;width:calc(100vw - 24px);max-width:720px;height:calc(100vh - 80px);display:flex;flex-direction:column;overflow:hidden">\n      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#f4f0e8;border-bottom:1px solid #e0d8c8">\n        <div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;color:#3a3028;letter-spacing:1px;text-transform:uppercase">Link Preview</div>\n        <button class="rg-btn rg-btn-ghost" onclick="closePublicPreview()" style="font-size:22px;padding:0 8px;min-height:auto" aria-label="Close">×</button>\n      </div>\n      <iframe src="${_previewBase}/id/${roboGradeId}" style="flex:1;width:100%;border:none;background:#f5f3ee" title="Public listing preview"></iframe>\n    </div>\n  `;
+  // v6.78, Matt: FULL SCREEN. The old card was 24px narrower than the phone,
+  // so the page inside it laid out at ~366px and the subscores and the
+  // Photograder panel wrapped differently from the real link. The frame is
+  // now the full width of the screen - what a visitor's phone shows.
+  modal.innerHTML = `\n    <div style="background:#fff;width:100vw;height:100%;display:flex;flex-direction:column;overflow:hidden;padding-top:env(safe-area-inset-top,0px);box-sizing:border-box">\n      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#f4f0e8;border-bottom:1px solid #e0d8c8">\n        <div style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;color:#3a3028;letter-spacing:1px;text-transform:uppercase">Link Preview</div>\n        <button class="rg-btn rg-btn-ghost" onclick="closePublicPreview()" style="font-size:22px;padding:0 8px;min-height:auto" aria-label="Close">×</button>\n      </div>\n      <iframe src="${_previewBase}/id/${roboGradeId}" style="flex:1;width:100%;border:none;background:#f5f3ee" title="Public listing preview"></iframe>\n    </div>\n  `;
   const card = modal.firstElementChild;
   if (card) card.addEventListener("click", e => e.stopPropagation());
   modal.style.display = "flex";
@@ -12100,7 +12161,7 @@ function conciergeOffer(gate) {
       + '<img src="assets/Robograder_Gift.webp" alt="Robograder" style="width:88px;height:auto;object-fit:contain;margin:0 auto 10px;display:block">'
       + '<div style="font-size:16px;font-weight:800;color:#f0c860;margin-bottom:6px">Worth a closer look</div>'
       + (book ? '<div style="font-size:13px;font-weight:700;color:#fff;letter-spacing:0.4px;margin-bottom:8px">' + esc(book) + '</div>' : '')
-      + '<div style="font-size:13.5px;line-height:1.6;color:#e8d9b8;margin-bottom:20px">This one looks like a book worth grading closely. Take 10 photos instead of 4 and Robograder will run both a Main and a Deep assessment in one go, for ' + CONCIERGE_COST + ' credits.</div>'
+      + '<div style="font-size:13.5px;line-height:1.6;color:#e8d9b8;margin-bottom:20px">This one looks like a book worth grading closely. Take 10 photos instead of 4 and Robograder will run both a Main and a Deep assessment in one go, for ' + CONCIERGE_COST + ' credits. If the Deep doesn\'t raise the grade, you get 1 credit back.</div>'
       + '<button id="rg-conc-go" class="rg-btn rg-btn-branded rg-btn-md" style="width:100%;margin-bottom:8px">SHOOT 10 &amp; GO DEEP</button>'
       + '<button id="rg-conc-no" class="rg-btn rg-btn-secondary rg-btn-md" style="width:100%">Just the 4 photos</button>'
       + '</div>';
@@ -12179,7 +12240,7 @@ function _conciergeBtnHtml() {
   const need = formData.labelDetected ? 8 : 10;
   return `<div style="display:flex;flex-direction:column;align-items:center;margin-top:12px;gap:6px">
     <button id="concierge-btn" class="rg-btn rg-btn-assess rg-btn-silver${assessing ? " assessing" : ""}" onclick="runConciergeAssessment()" ${ready ? "" : "disabled"}>${assessing ? "Assessing…" : `MAIN + DEEP ASSESSMENT${have < need ? ` (${have}/${need})` : ""}`}</button>
-    <div style="font-size:12px;color:#6a7a5a">${CONCIERGE_COST} credits</div>
+    <div style="font-size:12px;color:#6a7a5a">${CONCIERGE_COST} credits \u00b7 1 back if the Deep doesn't raise the grade</div>
   </div>`;
 }
 async function runConciergeAssessment() {
@@ -12915,8 +12976,11 @@ async function assessHighGrade(opts) {
     // S22: refund the Deep credit only the FIRST time a re-run fails to improve.
     // deepRefundUsed then latches (persisted via onAssessmentSuccess->submitForm),
     // so all later re-runs are charged — no endless refunded re-rolls.
-    // v6.78: not in a concierge run - the user agreed to 2 credits for the pair.
-    var _deepRefundEligible = !_conc && !_deepImproved && !formData.deepRefundUsed;
+    // v6.78, Matt: the concierge pair gets the SAME refund. initialRG/initialPG
+    // here are the Main's result (it was folded into formData just before the
+    // Deep started), so this is exactly the Main-vs-Deep comparison. Without
+    // it, Main + Deep would be a worse deal than running them separately.
+    var _deepRefundEligible = !_deepImproved && !formData.deepRefundUsed;
     window._creditRefunded = _deepRefundEligible;
     if (_deepRefundEligible) {
       formData.deepRefundUsed = true;
@@ -14726,9 +14790,9 @@ async function loadTrainingSetting() {
 
 async function deleteAccountFlow() {
   if (!window._currentUser || !window._db) return;
-  const ok1 = confirm("Delete your Robograder account?\n\n" + "This will permanently delete:\n" + "• Your account and sign-in credentials\n" + "• All your saved comics and assessments\n" + "• All photos you've uploaded\n" + "• Any remaining assessment credits\n\n" + "This cannot be undone. Continue?");
+  const ok1 = await appConfirm("Delete your Robograder account?\n\n" + "This will permanently delete:\n" + "• Your account and sign-in credentials\n" + "• All your saved comics and assessments\n" + "• All photos you've uploaded\n" + "• Any remaining assessment credits\n\n" + "This cannot be undone. Continue?");
   if (!ok1) return;
-  const typed = prompt("Type DELETE (in capitals) to confirm permanent deletion of your account:");
+  const typed = await appPrompt("Type DELETE (in capitals) to confirm permanent deletion of your account:", "Delete");
   if (typed !== "DELETE") {
     alert("Deletion cancelled.");
     return;
@@ -16481,7 +16545,7 @@ async function assessGrade(opts) {
       const dupDate = dup.roboGradeDate ? new Date(dup.roboGradeDate).toLocaleDateString() : "unknown";
       const dupTitle = dup.title || "an existing book";
       const dupIssue = dup.issue ? `#${dup.issue}` : "";
-      const ok = confirm(`These photos match an existing assessment:\n\n` + `${dupTitle} ${dupIssue}\n` + `Robograde Score: ${dupGradeStr}\n` + `Assessed: ${dupDate}\n\n` + `Re-running may produce a slightly different grade due to natural assessment variance. ` + `Run anyway? (1 credit will be used.)`);
+      const ok = await appConfirm(`These photos match an existing assessment:\n\n` + `${dupTitle} ${dupIssue}\n` + `Robograde Score: ${dupGradeStr}\n` + `Assessed: ${dupDate}\n\n` + `Re-running may produce a slightly different grade due to natural assessment variance. ` + `Run anyway? (1 credit will be used.)`);
       if (!ok) {
         if (_earlyBtn) {
           _earlyBtn.textContent = _assessed ? "RE-RUN MAIN ASSESSMENT" : "ASSESS GRADE";

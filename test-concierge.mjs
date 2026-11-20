@@ -137,8 +137,9 @@ ok('the Main result is folded in without a save or a COMPLETE',
   /if \(_conc\) \{[\s\S]{0,600}_completeAssessmentInner\(\{ noSave: true \}\)[\s\S]{0,400}assessHighGrade\(\{ concierge: true \}\)/.test(html));
 ok('the Deep reuses the scan shell instead of starting a second animation',
   html.includes('const scanController = _conc ? { promise: Promise.resolve(), cancel: () => {} }'));
-ok('no Deep refund inside the 2-credit pair',
-  html.includes('var _deepRefundEligible = !_conc && '));
+ok('the pair keeps the Deep refund (Main vs Deep, same test as a solo Deep)',
+  html.includes('var _deepRefundEligible = !_deepImproved && !formData.deepRefundUsed;'));
+ok('the refund is promised before the tap', /you get 1 credit back/.test(html));
 ok('the old auto-chained Deep after COMPLETE is gone',
   !/\[concierge\] Main complete - running the Deep/.test(html));
 ok('corners are shot TL, TR, BR, BL',
